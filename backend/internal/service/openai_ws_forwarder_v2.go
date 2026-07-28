@@ -13,8 +13,10 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
+	coderws "github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
+	"go.uber.org/zap"
 )
 
 func (s *OpenAIGatewayService) forwardOpenAIWSV2(
@@ -36,6 +38,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	if s == nil || account == nil {
 		return nil, wrapOpenAIWSFallback("invalid_state", errors.New("service or account is nil"))
 	}
+	refusalRuntime := s.openAIRefusalRecoveryRuntime(ctx)
 
 	wsURL, err := s.buildOpenAIResponsesWSURL(account)
 	if err != nil {
@@ -431,6 +434,26 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			)
 		}
 	}
+	var refusalOutput *openAIRefusalRecoveryWSOutput
+	if reqStream && (refusalRuntime.CyberFailoverEnabled() || refusalRuntime.RewriteEnabled()) {
+		matcher := (*OpenAIRefusalMatcher)(nil)
+		if refusalRuntime.RewriteEnabled() {
+			matcher = refusalRuntime.Matcher
+		}
+		refusalOutput = newOpenAIRefusalRecoveryWSOutput(
+			matcher,
+			refusalRuntime.CyberFailoverEnabled(),
+			func(_ context.Context, messageType coderws.MessageType, payload []byte) error {
+				if messageType == coderws.MessageText {
+					emitStreamMessage(payload, openAIWSPassthroughIsTerminalOutput(payload))
+				}
+				return nil
+			},
+			func() {
+				logOpenAIWSModeInfo("refusal_recovery_buffer_limit account_id=%d transport=ws_to_sse", account.ID)
+			},
+		)
+	}
 
 	readTimeout := s.openAIWSReadTimeout()
 	var pendingJSONDocuments [][]byte
@@ -573,6 +596,12 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 					UpstreamInTok:  usage.InputTokens,
 					UpstreamOutTok: usage.OutputTokens,
 				})
+				if refusalRuntime.CyberFailoverEnabled() && !wroteDownstream {
+					if refusalOutput != nil {
+						refusalOutput.DropTurn()
+					}
+					return nil, NewOpenAICyberFailoverError(message, lease.HandshakeHeaders())
+				}
 			}
 		}
 
@@ -646,28 +675,34 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		}
 
 		if reqStream {
-			// 在首个 token 前先缓冲事件（如 response.created），
-			// 以便上游早期断连时仍可安全回退到 HTTP，不给下游发送半截流。
-			shouldBuffer := firstTokenMs == nil && !isTokenEvent && !isTerminalEvent
-			if shouldBuffer {
-				buffered := make([]byte, len(message))
-				copy(buffered, message)
-				bufferedStreamEvents = append(bufferedStreamEvents, buffered)
-				bufferedEventCount++
-				if debugEnabled && shouldLogOpenAIWSBufferedEvent(bufferedEventCount) {
-					logOpenAIWSModeDebug(
-						"buffer_enqueue account_id=%d conn_id=%s idx=%d event_idx=%d event_type=%s buffer_size=%d",
-						account.ID,
-						connID,
-						bufferedEventCount,
-						eventCount,
-						truncateOpenAIWSLogValue(eventType, openAIWSLogValueMaxLen),
-						len(bufferedStreamEvents),
-					)
+			if refusalOutput != nil {
+				if err := refusalOutput.Write(ctx, coderws.MessageText, message); err != nil {
+					return nil, fmt.Errorf("write refusal recovery stream output: %w", err)
 				}
 			} else {
-				flushBufferedStreamEvents(eventType)
-				emitStreamMessage(message, isTerminalEvent)
+				// 在首个 token 前先缓冲事件（如 response.created），
+				// 以便上游早期断连时仍可安全回退到 HTTP，不给下游发送半截流。
+				shouldBuffer := firstTokenMs == nil && !isTokenEvent && !isTerminalEvent
+				if shouldBuffer {
+					buffered := make([]byte, len(message))
+					copy(buffered, message)
+					bufferedStreamEvents = append(bufferedStreamEvents, buffered)
+					bufferedEventCount++
+					if debugEnabled && shouldLogOpenAIWSBufferedEvent(bufferedEventCount) {
+						logOpenAIWSModeDebug(
+							"buffer_enqueue account_id=%d conn_id=%s idx=%d event_idx=%d event_type=%s buffer_size=%d",
+							account.ID,
+							connID,
+							bufferedEventCount,
+							eventCount,
+							truncateOpenAIWSLogValue(eventType, openAIWSLogValueMaxLen),
+							len(bufferedStreamEvents),
+						)
+					}
+				} else {
+					flushBufferedStreamEvents(eventType)
+					emitStreamMessage(message, isTerminalEvent)
+				}
 			}
 		} else {
 			if responseField.Exists() && responseField.Type == gjson.JSON {
@@ -706,6 +741,15 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			finalResponse = s.replaceModelInResponseBody(finalResponse, mappedModel, originalModel)
 		}
 		finalResponse = s.correctToolCallsInResponseBody(finalResponse)
+		if refusalRuntime.RewriteEnabled() {
+			rewritten, matched, _, rewriteErr := RewriteOpenAIResponsesJSON(finalResponse, refusalRuntime.Matcher)
+			if rewriteErr != nil {
+				logger.FromContext(ctx).Warn("openai.refusal_recovery_rewrite_failed", zap.String("transport", "upstream_websocket"), zap.Error(rewriteErr))
+			} else if matched {
+				finalResponse = rewritten
+				logger.FromContext(ctx).Info("openai.refusal_recovery_rewritten", zap.String("transport", "upstream_websocket"))
+			}
+		}
 		populateOpenAIUsageFromResponseJSON(finalResponse, usage)
 		if responseID == "" {
 			responseID = strings.TrimSpace(gjson.GetBytes(finalResponse, "id").String())

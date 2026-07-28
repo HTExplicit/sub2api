@@ -58,6 +58,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			ctx = withOpenAIFastPolicyContext(ctx, settings)
 		}
 	}
+	refusalRuntime := s.openAIRefusalRecoveryRuntime(ctx)
 
 	wsDecision := s.getOpenAIWSProtocolResolver().Resolve(account)
 	forceHTTPBridge := account.Platform == PlatformGrok
@@ -390,10 +391,34 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}, nil
 	}
 
-	writeClientMessage := func(message []byte) error {
+	rawWriteClientMessage := func(message []byte) error {
 		writeCtx, cancel := context.WithTimeout(ctx, s.openAIWSWriteTimeout())
 		defer cancel()
 		return clientConn.Write(writeCtx, coderws.MessageText, message)
+	}
+	writeClientMessage := rawWriteClientMessage
+	var refusalOutput *openAIRefusalRecoveryWSOutput
+	if refusalRuntime.CyberFailoverEnabled() || refusalRuntime.RewriteEnabled() {
+		matcher := (*OpenAIRefusalMatcher)(nil)
+		if refusalRuntime.RewriteEnabled() {
+			matcher = refusalRuntime.Matcher
+		}
+		refusalOutput = newOpenAIRefusalRecoveryWSOutput(
+			matcher,
+			refusalRuntime.CyberFailoverEnabled(),
+			func(writeCtx context.Context, messageType coderws.MessageType, payload []byte) error {
+				if messageType != coderws.MessageText {
+					return errors.New("unsupported websocket response message type")
+				}
+				return rawWriteClientMessage(payload)
+			},
+			func() {
+				logOpenAIWSModeInfo("refusal_recovery_buffer_limit account_id=%d transport=websocket", account.ID)
+			},
+		)
+		writeClientMessage = func(message []byte) error {
+			return refusalOutput.Write(ctx, coderws.MessageText, message)
+		}
 	}
 
 	readClientMessage := func() ([]byte, error) {
@@ -549,6 +574,12 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				turn,
 				writeClientMessage,
 			)
+			if bridgeErr != nil && IsOpenAIRefusalRecoveryFailover(bridgeErr) && turn > 1 {
+				if refusalOutput != nil {
+					_ = refusalOutput.WriteRetryableFailure(ctx)
+				}
+				bridgeErr = newOpenAIWSCyberRecoveryError(nil, nil, false)
+			}
 			if hooks != nil && hooks.AfterTurn != nil {
 				hooks.AfterTurn(turn, result, bridgeErr)
 			}
@@ -940,6 +971,16 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 						UpstreamInTok:  usage.InputTokens,
 						UpstreamOutTok: usage.OutputTokens,
 					})
+					if refusalRuntime.CyberFailoverEnabled() {
+						replaySafe := turn == 1 && (refusalOutput == nil || !refusalOutput.SemanticOutputStarted())
+						if refusalOutput != nil {
+							refusalOutput.DropTurn()
+							if !replaySafe {
+								_ = refusalOutput.WriteRetryableFailure(ctx)
+							}
+						}
+						return nil, newOpenAIWSCyberRecoveryError(upstreamMessage, lease.HandshakeHeaders(), replaySafe)
+					}
 				}
 			}
 

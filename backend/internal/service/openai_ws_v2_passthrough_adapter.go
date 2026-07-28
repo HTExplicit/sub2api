@@ -674,6 +674,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	if err := validateOpenAIWSBearerToken(account, token); err != nil {
 		return err
 	}
+	refusalRuntime := s.openAIRefusalRecoveryRuntime(ctx)
 	if account.IsOpenAIOAuth() && isOpenAIResponsesLiteWebSocketPayload(firstClientMessage) {
 		liteFirstMessage, _, liteErr := normalizeOpenAIResponsesLiteToolsPayload(firstClientMessage)
 		if liteErr != nil {
@@ -1041,6 +1042,23 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 			cancel()
 		},
 	}
+	var relayClientConn openaiwsv2.FrameConn = policyClientConn
+	var refusalOutput *openAIRefusalRecoveryWSOutput
+	if refusalRuntime.CyberFailoverEnabled() || refusalRuntime.RewriteEnabled() {
+		matcher := (*OpenAIRefusalMatcher)(nil)
+		if refusalRuntime.RewriteEnabled() {
+			matcher = refusalRuntime.Matcher
+		}
+		refusalOutput = newOpenAIRefusalRecoveryWSOutput(
+			matcher,
+			refusalRuntime.CyberFailoverEnabled(),
+			policyClientConn.WriteFrame,
+			func() {
+				logOpenAIWSV2Passthrough("refusal_recovery_buffer_limit account_id=%d transport=websocket", account.ID)
+			},
+		)
+		relayClientConn = &openAIRefusalRecoveryWSFrameConn{inner: policyClientConn, output: refusalOutput}
+	}
 	upstreamFirstMessageSent := false
 	firstWriteCtx, cancelFirstWrite := context.WithTimeout(ctx, s.openAIWSWriteTimeout())
 	firstWriteErr := relayUpstreamFrameConn.WriteFrame(firstWriteCtx, coderws.MessageText, firstClientMessage)
@@ -1071,7 +1089,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 
 	relayResult, relayExit := openaiwsv2.RunEntry(openaiwsv2.EntryInput{
 		Ctx:                ctx,
-		ClientConn:         policyClientConn,
+		ClientConn:         relayClientConn,
 		UpstreamConn:       relayUpstreamFrameConn,
 		FirstClientMessage: firstClientMessage,
 		Options: openaiwsv2.RelayOptions{
@@ -1160,6 +1178,29 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 				eventType, _, _ := parseOpenAIWSEventEnvelope(payload)
 				if isOpenAIWSTerminalEvent(eventType) {
 					s.handleOpenAIWSTerminalTransientFailure(ctx, account, capturedSessionModel, handshakeHeaders, payload)
+				}
+				if eventType == "response.failed" {
+					if hit, code, msg := detectOpenAICyberPolicy(payload); hit {
+						usage, _ := extractOpenAIUsageFromJSONBytes(payload)
+						MarkOpsCyberPolicy(c, CyberPolicyMark{
+							Code:           code,
+							Message:        msg,
+							Body:           truncateString(string(payload), 4096),
+							UpstreamStatus: http.StatusOK,
+							UpstreamInTok:  usage.InputTokens,
+							UpstreamOutTok: usage.OutputTokens,
+						})
+						if refusalRuntime.CyberFailoverEnabled() {
+							replaySafe := completedTurns.Load() == 0 && (refusalOutput == nil || !refusalOutput.SemanticOutputStarted())
+							if refusalOutput != nil {
+								refusalOutput.DropTurn()
+								if !replaySafe {
+									_ = refusalOutput.WriteRetryableFailure(ctx)
+								}
+							}
+							return newOpenAIWSCyberRecoveryError(payload, handshakeHeaders, replaySafe)
+						}
+					}
 				}
 				if eventType == "error" {
 					s.handleOpenAIWSErrorEventTransientFailure(ctx, account, capturedSessionModel, handshakeHeaders, payload)

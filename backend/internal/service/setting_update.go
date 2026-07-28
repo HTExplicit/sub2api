@@ -115,6 +115,14 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 		return nil, infraerrors.BadRequest("INVALID_FORWARDED_CLIENT_IP_HEADERS", err.Error())
 	}
 	settings.ForwardedClientIPHeaders = normalizedForwardedClientIPHeaders
+	normalizedRefusalKeywords, err := NormalizeOpenAIRefusalKeywords(settings.OpenAIRefusalKeywords)
+	if err != nil {
+		return nil, infraerrors.BadRequest("INVALID_OPENAI_REFUSAL_RECOVERY", err.Error())
+	}
+	settings.OpenAIRefusalKeywords = normalizedRefusalKeywords
+	if err := ValidateOpenAIRefusalRecoverySettings(settings); err != nil {
+		return nil, infraerrors.BadRequest("INVALID_OPENAI_REFUSAL_RECOVERY", err.Error())
+	}
 	alipaySource, err := normalizeVisibleMethodSettingSource("alipay", settings.PaymentVisibleMethodAlipaySource, settings.PaymentVisibleMethodAlipayEnabled)
 	if err != nil {
 		return nil, err
@@ -405,6 +413,15 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	if settings.CyberSessionBlockTTLSeconds > 0 {
 		updates[SettingKeyCyberSessionBlockTTLSeconds] = strconv.Itoa(settings.CyberSessionBlockTTLSeconds)
 	}
+	updates[SettingKeyOpenAIRefusalRecoveryEnabled] = strconv.FormatBool(settings.OpenAIRefusalRecoveryEnabled)
+	updates[SettingKeyOpenAICyberFailoverEnabled] = strconv.FormatBool(settings.OpenAICyberFailoverEnabled)
+	updates[SettingKeyOpenAIRefusalRewriteEnabled] = strconv.FormatBool(settings.OpenAIRefusalRewriteEnabled)
+	refusalKeywordsJSON, err := json.Marshal(settings.OpenAIRefusalKeywords)
+	if err != nil {
+		return nil, fmt.Errorf("marshal OpenAI refusal keywords: %w", err)
+	}
+	updates[SettingKeyOpenAIRefusalKeywords] = string(refusalKeywordsJSON)
+	updates[SettingKeyOpenAIRefusalReplacement] = settings.OpenAIRefusalReplacement
 
 	// Claude Code version check
 	updates[SettingKeyMinClaudeCodeVersion] = settings.MinClaudeCodeVersion
@@ -559,6 +576,21 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 	if settings == nil {
 		return
 	}
+	keywordsJSON, err := json.Marshal(settings.OpenAIRefusalKeywords)
+	if err != nil {
+		keywordsJSON = []byte(defaultOpenAIRefusalKeywordsJSON)
+	}
+	s.openAIRefusalRecoverySF.Forget("openai_refusal_recovery")
+	s.openAIRefusalRecoveryCache.Store(&cachedOpenAIRefusalRecoveryRuntime{
+		runtime: buildOpenAIRefusalRecoveryRuntime(map[string]string{
+			SettingKeyOpenAIRefusalRecoveryEnabled: strconv.FormatBool(settings.OpenAIRefusalRecoveryEnabled),
+			SettingKeyOpenAICyberFailoverEnabled:   strconv.FormatBool(settings.OpenAICyberFailoverEnabled),
+			SettingKeyOpenAIRefusalRewriteEnabled:  strconv.FormatBool(settings.OpenAIRefusalRewriteEnabled),
+			SettingKeyOpenAIRefusalKeywords:        string(keywordsJSON),
+			SettingKeyOpenAIRefusalReplacement:     settings.OpenAIRefusalReplacement,
+		}),
+		expiresAt: time.Now().Add(openAIRefusalRecoveryCacheTTL).UnixNano(),
+	})
 
 	// 先使 inflight singleflight 失效，再刷新缓存，缩小旧值覆盖新值的竞态窗口
 	versionBoundsSF.Forget("version_bounds")

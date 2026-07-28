@@ -290,8 +290,13 @@ type SystemSettings struct {
 	RiskControlEnabled bool `json:"risk_control_enabled"`
 
 	// cyber 会话屏蔽开关 + TTL
-	CyberSessionBlockEnabled    bool `json:"cyber_session_block_enabled"`
-	CyberSessionBlockTTLSeconds int  `json:"cyber_session_block_ttl_seconds"`
+	CyberSessionBlockEnabled     bool     `json:"cyber_session_block_enabled"`
+	CyberSessionBlockTTLSeconds  int      `json:"cyber_session_block_ttl_seconds"`
+	OpenAIRefusalRecoveryEnabled bool     `json:"openai_refusal_recovery_enabled"`
+	OpenAICyberFailoverEnabled   bool     `json:"openai_cyber_failover_enabled"`
+	OpenAIRefusalRewriteEnabled  bool     `json:"openai_refusal_rewrite_enabled"`
+	OpenAIRefusalKeywords        []string `json:"openai_refusal_keywords"`
+	OpenAIRefusalReplacement     string   `json:"openai_refusal_replacement"`
 
 	// Affiliate (邀请返利) feature switch
 	AffiliateEnabled bool `json:"affiliate_enabled"`

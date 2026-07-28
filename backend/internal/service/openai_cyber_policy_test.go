@@ -69,7 +69,9 @@ func TestDetectOpenAICyberPolicy(t *testing.T) {
 	}{
 		{"top-level error", `{"error":{"code":"cyber_policy","message":"flagged"}}`, true, "flagged"},
 		{"response-wrapped", `{"response":{"error":{"code":"cyber_policy","message":"  bad  "}}}`, true, "bad"},
-		{"case-insensitive", `{"error":{"code":"Cyber_Policy"}}`, true, ""},
+		{"different case", `{"error":{"code":"Cyber_Policy"}}`, true, ""},
+		{"uppercase", `{"error":{"code":"CYBER_POLICY"}}`, true, ""},
+		{"surrounding whitespace", `{"error":{"code":" cyber_policy "}}`, true, ""},
 		{"content_policy not cyber", `{"error":{"code":"content_policy","message":"x"}}`, false, ""},
 		{"safety message not cyber", `{"error":{"type":"safety_error","message":"high-risk cyber activity"}}`, false, ""},
 		{"empty", ``, false, ""},

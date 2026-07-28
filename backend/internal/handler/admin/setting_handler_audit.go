@@ -2,6 +2,7 @@ package admin
 
 import (
 	"log/slog"
+	"slices"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -536,6 +537,21 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.CyberSessionBlockTTLSeconds != after.CyberSessionBlockTTLSeconds {
 		changed = append(changed, "cyber_session_block_ttl_seconds")
+	}
+	if before.OpenAIRefusalRecoveryEnabled != after.OpenAIRefusalRecoveryEnabled {
+		changed = append(changed, "openai_refusal_recovery_enabled")
+	}
+	if before.OpenAICyberFailoverEnabled != after.OpenAICyberFailoverEnabled {
+		changed = append(changed, "openai_cyber_failover_enabled")
+	}
+	if before.OpenAIRefusalRewriteEnabled != after.OpenAIRefusalRewriteEnabled {
+		changed = append(changed, "openai_refusal_rewrite_enabled")
+	}
+	if !slices.Equal(before.OpenAIRefusalKeywords, after.OpenAIRefusalKeywords) {
+		changed = append(changed, "openai_refusal_keywords")
+	}
+	if before.OpenAIRefusalReplacement != after.OpenAIRefusalReplacement {
+		changed = append(changed, "openai_refusal_replacement")
 	}
 	// Default platform quotas（JSON map，整体比较）
 	if !equalPlatformQuotaSettings(before.DefaultPlatformQuotas, after.DefaultPlatformQuotas) {

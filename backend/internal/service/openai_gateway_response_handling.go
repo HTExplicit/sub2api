@@ -19,6 +19,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"go.uber.org/zap"
 )
 
 // openaiStreamingResult streaming response result
@@ -97,6 +98,14 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		maxLineSize = s.cfg.Gateway.MaxLineSize
 	}
 	var firstTokenMs *int
+	var refusalStream *openAIRefusalStreamState
+	var refusalRuntime OpenAIRefusalRecoveryRuntime
+	if isOpenAIRefusalRecoveryResponsesRequest(c) {
+		refusalRuntime = s.openAIRefusalRecoveryRuntime(ctx)
+		if refusalRuntime.RewriteEnabled() {
+			refusalStream = newOpenAIRefusalStreamState(refusalRuntime.Matcher)
+		}
+	}
 	bufferedWriter := bufio.NewWriterSize(w, 4*1024)
 	var firstOutputStage *openAIFirstOutputStage
 	if guardFirstOutput {
@@ -107,11 +116,25 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			}
 		}()
 	}
-	writePendingString := func(value string) (int, error) {
+	baseWritePendingString := func(value string) (int, error) {
 		if firstOutputStage != nil && firstTokenMs == nil && !firstOutputStage.closed {
 			return firstOutputStage.WriteString(value)
 		}
 		return bufferedWriter.WriteString(value)
+	}
+	var refusalPending bytes.Buffer
+	refusalReplaced := false
+	writePendingString := func(value string) (int, error) {
+		if refusalStream != nil && !refusalStream.passthrough && !refusalReplaced {
+			return refusalPending.WriteString(value)
+		}
+		if refusalPending.Len() > 0 {
+			if _, err := baseWritePendingString(refusalPending.String()); err != nil {
+				return 0, err
+			}
+			refusalPending.Reset()
+		}
+		return baseWritePendingString(value)
 	}
 	pendingBytes := func() int64 {
 		if firstOutputStage != nil && firstTokenMs == nil && !firstOutputStage.closed {
@@ -401,6 +424,12 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		if streamEarlyErr != nil {
 			return
 		}
+		refusalAction := openAIRefusalStreamHold
+		var refusalReplacement []byte
+		if refusalStream != nil && !refusalStream.reserveLine(line) {
+			refusalAction = openAIRefusalStreamPass
+			logger.FromContext(ctx).Warn("openai.refusal_recovery_buffer_limit", zap.String("transport", "sse"))
+		}
 		// Extract data from SSE line (supports both "data: " and "data:" formats)
 		if data, ok := extractOpenAISSEDataLine(line); ok {
 			dataBytes := []byte(data)
@@ -429,6 +458,11 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 						UpstreamInTok:  usage.InputTokens,
 						UpstreamOutTok: usage.OutputTokens,
 					})
+					if refusalRuntime.CyberFailoverEnabled() && !openAIStreamClientOutputStarted(c, clientOutputStarted) {
+						sawFailedEvent = true
+						streamEarlyErr = NewOpenAICyberFailoverError(dataBytes, resp.Header)
+						return
+					}
 				}
 				if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
 					if status, errType, errMsg, matched := applyOpenAIStreamFailedErrorPassthroughRule(c, account.Platform, dataBytes, failedMessage); matched {
@@ -510,12 +544,46 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				data = string(sanitizedData)
 				line = "data: " + data
 			}
+			if refusalStream != nil && !refusalStream.passthrough {
+				var refusalErr error
+				refusalAction, refusalReplacement, refusalErr = refusalStream.observe(eventType, dataBytes)
+				if refusalErr != nil {
+					refusalStream.passthrough = true
+					refusalAction = openAIRefusalStreamPass
+					logger.FromContext(ctx).Warn("openai.refusal_recovery_stream_failed", zap.String("transport", "sse"), zap.Error(refusalErr))
+				}
+			}
 			// Replace model in response if needed.
 			// Fast path: most events do not contain model field values.
 			if needModelReplace && mappedModel != "" && strings.Contains(line, mappedModel) {
 				line = s.replaceModelInSSELine(line, mappedModel, originalModel)
 			}
+			s.parseSSEUsageBytes(dataBytes, usage)
+			if refusalAction == openAIRefusalStreamReplace {
+				refusalPending.Reset()
+				refusalReplaced = true
+				applyAttemptResponseHeaders()
+				if _, err := baseWritePendingString(string(refusalReplacement)); err != nil {
+					handlePendingWriteError(err)
+					return
+				}
+				if err := flushBuffered(); err != nil {
+					clientDisconnected = true
+					return
+				}
+				clientOutputStarted = true
+				lastDownstreamWriteAt = time.Now()
+				if firstTokenMs == nil {
+					ms := int(time.Since(startTime).Milliseconds())
+					firstTokenMs = &ms
+				}
+				logger.FromContext(ctx).Info("openai.refusal_recovery_rewritten", zap.String("transport", "sse"))
+				return
+			}
 			startsClientOutput := forceFlushFailedEvent || openAIStreamDataStartsClientOutput(data, eventType)
+			if refusalAction == openAIRefusalStreamHold && refusalStream != nil && !refusalStream.passthrough {
+				startsClientOutput = false
+			}
 			if guardFirstOutput {
 				eventStartsClientOutput = eventStartsClientOutput || startsClientOutput
 			}
@@ -543,7 +611,6 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				firstTokenMs = &ms
 				stopFirstOutputTimer()
 			}
-			s.parseSSEUsageBytes(dataBytes, usage)
 			return
 		}
 
@@ -591,6 +658,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		defer putSSEScannerBuf64K(scanBuf)
 		for documentScanner.Scan() {
 			processSSELine(documentScanner.Text(), true)
+			if refusalReplaced {
+				return resultWithUsage(), nil
+			}
 			if streamEarlyErr != nil {
 				return resultWithUsage(), streamEarlyErr
 			}
@@ -670,6 +740,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			}
 			processSSELine(ev.line, len(events) == 0)
 			markEventProcessed(ev)
+			if refusalReplaced {
+				return resultWithUsage(), nil
+			}
 			if streamEarlyErr != nil {
 				return resultWithUsage(), streamEarlyErr
 			}
@@ -1161,6 +1234,18 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	if err != nil {
 		return nil, fmt.Errorf("restore OpenAI namespace response: %w", err)
 	}
+	if isOpenAIRefusalRecoveryResponsesRequest(c) {
+		runtime := s.openAIRefusalRecoveryRuntime(ctx)
+		if runtime.RewriteEnabled() {
+			rewritten, matched, _, rewriteErr := RewriteOpenAIResponsesJSON(body, runtime.Matcher)
+			if rewriteErr != nil {
+				logger.FromContext(ctx).Warn("openai.refusal_recovery_rewrite_failed", zap.String("transport", "http"), zap.Error(rewriteErr))
+			} else if matched {
+				body = rewritten
+				logger.FromContext(ctx).Info("openai.refusal_recovery_rewritten", zap.String("transport", "http"))
+			}
+		}
+	}
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 
 	contentType := "application/json"
@@ -1239,6 +1324,17 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 			return nil, fmt.Errorf("restore OpenAI namespace response: %w", restoreErr)
 		}
 		body = restoredBody
+		if isOpenAIRefusalRecoveryResponsesRequest(c) {
+			runtime := s.openAIRefusalRecoveryRuntime(c.Request.Context())
+			if runtime.RewriteEnabled() {
+				if rewritten, matched, _, rewriteErr := RewriteOpenAIResponsesJSON(body, runtime.Matcher); rewriteErr != nil {
+					logger.FromContext(c.Request.Context()).Warn("openai.refusal_recovery_rewrite_failed", zap.String("transport", "http_sse_to_json"), zap.Error(rewriteErr))
+				} else if matched {
+					body = rewritten
+					logger.FromContext(c.Request.Context()).Info("openai.refusal_recovery_rewritten", zap.String("transport", "http_sse_to_json"))
+				}
+			}
+		}
 	} else {
 		terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText)
 		if terminalOK && terminalType == "response.failed" {

@@ -145,10 +145,15 @@ const (
 	SettingKeyContentModerationConfig          = "content_moderation_config"           // 内容审计配置（JSON）
 	SettingKeyCyberSessionBlockEnabled         = "cyber_session_block_enabled"         // cyber 命中后会话级自动屏蔽总开关(默认关)
 	SettingKeyCyberSessionBlockTTLSeconds      = "cyber_session_block_ttl_seconds"     // 会话屏蔽 TTL 秒数(默认 3600)
-	SettingKeyLoginAgreementEnabled            = "login_agreement_enabled"             // 登录前是否要求同意条款
-	SettingKeyLoginAgreementMode               = "login_agreement_mode"                // 条款确认展示模式：modal / checkbox
-	SettingKeyLoginAgreementUpdatedAt          = "login_agreement_updated_at"          // 条款更新日期（展示用）
-	SettingKeyLoginAgreementDocuments          = "login_agreement_documents"           // 条款文档列表（JSON，Markdown 内容）
+	SettingKeyOpenAIRefusalRecoveryEnabled     = "openai_refusal_recovery_enabled"
+	SettingKeyOpenAICyberFailoverEnabled       = "openai_cyber_failover_enabled"
+	SettingKeyOpenAIRefusalRewriteEnabled      = "openai_refusal_rewrite_enabled"
+	SettingKeyOpenAIRefusalKeywords            = "openai_refusal_keywords"
+	SettingKeyOpenAIRefusalReplacement         = "openai_refusal_replacement"
+	SettingKeyLoginAgreementEnabled            = "login_agreement_enabled"    // 登录前是否要求同意条款
+	SettingKeyLoginAgreementMode               = "login_agreement_mode"       // 条款确认展示模式：modal / checkbox
+	SettingKeyLoginAgreementUpdatedAt          = "login_agreement_updated_at" // 条款更新日期（展示用）
+	SettingKeyLoginAgreementDocuments          = "login_agreement_documents"  // 条款文档列表（JSON，Markdown 内容）
 
 	// 邮件服务设置
 	SettingKeySMTPHost     = "smtp_host"      // SMTP服务器地址

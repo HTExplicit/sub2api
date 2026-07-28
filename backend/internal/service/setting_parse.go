@@ -198,8 +198,13 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyRiskControlEnabled: "false",
 
 		// cyber 会话屏蔽（默认关闭，TTL 默认 3600s）
-		SettingKeyCyberSessionBlockEnabled:    "false",
-		SettingKeyCyberSessionBlockTTLSeconds: "3600",
+		SettingKeyCyberSessionBlockEnabled:     "false",
+		SettingKeyCyberSessionBlockTTLSeconds:  "3600",
+		SettingKeyOpenAIRefusalRecoveryEnabled: "false",
+		SettingKeyOpenAICyberFailoverEnabled:   "false",
+		SettingKeyOpenAIRefusalRewriteEnabled:  "false",
+		SettingKeyOpenAIRefusalKeywords:        defaultOpenAIRefusalKeywordsJSON,
+		SettingKeyOpenAIRefusalReplacement:     "",
 
 		// Claude Code version check (default: empty = disabled)
 		SettingKeyMinClaudeCodeVersion: "",
@@ -775,6 +780,11 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	} else {
 		result.CyberSessionBlockTTLSeconds = 3600
 	}
+	result.OpenAIRefusalRecoveryEnabled = settings[SettingKeyOpenAIRefusalRecoveryEnabled] == "true"
+	result.OpenAICyberFailoverEnabled = settings[SettingKeyOpenAICyberFailoverEnabled] == "true"
+	result.OpenAIRefusalRewriteEnabled = settings[SettingKeyOpenAIRefusalRewriteEnabled] == "true"
+	result.OpenAIRefusalKeywords = parseOpenAIRefusalKeywordsSetting(settings[SettingKeyOpenAIRefusalKeywords])
+	result.OpenAIRefusalReplacement = settings[SettingKeyOpenAIRefusalReplacement]
 
 	// Claude Code version check
 	result.MinClaudeCodeVersion = settings[SettingKeyMinClaudeCodeVersion]

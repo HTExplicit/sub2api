@@ -128,6 +128,112 @@ const openAIQuotaAutoPauseSettingsDBTimeout = 5 * time.Second
 
 const openAIQuotaAutoPauseSettingsRefreshKey = "openai_quota_auto_pause_settings"
 
+type OpenAIRefusalRecoveryRuntime struct {
+	Enabled       bool
+	CyberFailover bool
+	Rewrite       bool
+	Matcher       *OpenAIRefusalMatcher
+}
+
+type cachedOpenAIRefusalRecoveryRuntime struct {
+	runtime   OpenAIRefusalRecoveryRuntime
+	expiresAt int64
+}
+
+const openAIRefusalRecoveryCacheTTL = 60 * time.Second
+const openAIRefusalRecoveryErrorTTL = 5 * time.Second
+const openAIRefusalRecoveryDBTimeout = 5 * time.Second
+
+func (r OpenAIRefusalRecoveryRuntime) CyberFailoverEnabled() bool {
+	return r.Enabled && r.CyberFailover
+}
+
+func (r OpenAIRefusalRecoveryRuntime) RewriteEnabled() bool {
+	return r.Enabled && r.Rewrite && r.Matcher != nil
+}
+
+func (s *SettingService) GetOpenAIRefusalRecoveryRuntime(ctx context.Context) OpenAIRefusalRecoveryRuntime {
+	if s == nil {
+		return OpenAIRefusalRecoveryRuntime{}
+	}
+	if cached, ok := s.openAIRefusalRecoveryCache.Load().(*cachedOpenAIRefusalRecoveryRuntime); ok && cached != nil && time.Now().UnixNano() < cached.expiresAt {
+		return cached.runtime
+	}
+	if s.settingRepo == nil {
+		return OpenAIRefusalRecoveryRuntime{}
+	}
+	result, _, _ := s.openAIRefusalRecoverySF.Do("openai_refusal_recovery", func() (any, error) {
+		if cached, ok := s.openAIRefusalRecoveryCache.Load().(*cachedOpenAIRefusalRecoveryRuntime); ok && cached != nil && time.Now().UnixNano() < cached.expiresAt {
+			return cached, nil
+		}
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), openAIRefusalRecoveryDBTimeout)
+		defer cancel()
+		enabledValue, enabledErr := s.settingRepo.GetValue(dbCtx, SettingKeyOpenAIRefusalRecoveryEnabled)
+		if enabledErr != nil && !errors.Is(enabledErr, ErrSettingNotFound) {
+			slog.Warn("failed to load OpenAI refusal recovery switch", "error", enabledErr)
+			entry := &cachedOpenAIRefusalRecoveryRuntime{expiresAt: time.Now().Add(openAIRefusalRecoveryErrorTTL).UnixNano()}
+			s.openAIRefusalRecoveryCache.Store(entry)
+			return entry, nil
+		}
+		if enabledErr != nil || strings.TrimSpace(enabledValue) != "true" {
+			entry := &cachedOpenAIRefusalRecoveryRuntime{expiresAt: time.Now().Add(openAIRefusalRecoveryCacheTTL).UnixNano()}
+			s.openAIRefusalRecoveryCache.Store(entry)
+			return entry, nil
+		}
+
+		values, err := s.settingRepo.GetMultiple(dbCtx, []string{
+			SettingKeyOpenAICyberFailoverEnabled,
+			SettingKeyOpenAIRefusalRewriteEnabled,
+			SettingKeyOpenAIRefusalKeywords,
+			SettingKeyOpenAIRefusalReplacement,
+		})
+		if err != nil {
+			slog.Warn("failed to load OpenAI refusal recovery settings", "error", err)
+			entry := &cachedOpenAIRefusalRecoveryRuntime{expiresAt: time.Now().Add(openAIRefusalRecoveryErrorTTL).UnixNano()}
+			s.openAIRefusalRecoveryCache.Store(entry)
+			return entry, nil
+		}
+		if values == nil {
+			values = make(map[string]string)
+		}
+		values[SettingKeyOpenAIRefusalRecoveryEnabled] = "true"
+		entry := &cachedOpenAIRefusalRecoveryRuntime{
+			runtime:   buildOpenAIRefusalRecoveryRuntime(values),
+			expiresAt: time.Now().Add(openAIRefusalRecoveryCacheTTL).UnixNano(),
+		}
+		s.openAIRefusalRecoveryCache.Store(entry)
+		return entry, nil
+	})
+	if entry, ok := result.(*cachedOpenAIRefusalRecoveryRuntime); ok && entry != nil {
+		return entry.runtime
+	}
+	return OpenAIRefusalRecoveryRuntime{}
+}
+
+func buildOpenAIRefusalRecoveryRuntime(values map[string]string) OpenAIRefusalRecoveryRuntime {
+	runtime := OpenAIRefusalRecoveryRuntime{
+		Enabled:       values[SettingKeyOpenAIRefusalRecoveryEnabled] == "true",
+		CyberFailover: values[SettingKeyOpenAICyberFailoverEnabled] == "true",
+		Rewrite:       values[SettingKeyOpenAIRefusalRewriteEnabled] == "true",
+	}
+	if !runtime.Rewrite {
+		return runtime
+	}
+	matcher, err := NewOpenAIRefusalMatcher(
+		parseOpenAIRefusalKeywordsSetting(values[SettingKeyOpenAIRefusalKeywords]),
+		values[SettingKeyOpenAIRefusalReplacement],
+	)
+	if err != nil {
+		runtime.Rewrite = false
+		return runtime
+	}
+	runtime.Matcher = matcher
+	return runtime
+}
+
 // GetCyberSessionBlockRuntime 返回 (开关, TTL)，进程内缓存 ~60s，
 // 供网关热路径读取时避免 DB 往返。
 // 两个 setting key 在单次 singleflight 里一起读取，减少 DB 往返。

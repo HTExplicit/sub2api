@@ -326,13 +326,11 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 	// cyber_policy 硬阻断：透传上游原始错误体给客户端（不重包成通用 502），不冷却账号。
 	// 当前请求恒透传（需求1）；标记供 handler 事后写风控/邮件。400 cyber 不可 failover
 	// （shouldFailoverUpstreamError(400)=false），故走到此处即可安全早返回。
-	if hit, code, cyberMsg := detectOpenAICyberPolicy(body); hit {
-		MarkOpsCyberPolicy(c, CyberPolicyMark{
-			Code:           code,
-			Message:        cyberMsg,
-			Body:           truncateString(string(body), 4096),
-			UpstreamStatus: resp.StatusCode,
-		})
+	if hit, _, cyberMsg := detectOpenAICyberPolicy(body); hit {
+		markOpenAICyberPolicyFromResponse(c, resp.StatusCode, body)
+		if isOpenAIRefusalRecoveryResponsesRequest(c) && s.openAIRefusalRecoveryRuntime(ctx).CyberFailoverEnabled() {
+			return nil, NewOpenAICyberFailoverError(body, resp.Header)
+		}
 		setOpsUpstreamError(c, resp.StatusCode, cyberMsg, truncateString(string(body), 2048))
 		writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 		contentType := resp.Header.Get("Content-Type")

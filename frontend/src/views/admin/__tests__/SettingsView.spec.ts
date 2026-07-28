@@ -580,6 +580,16 @@ async function openUsersTab(wrapper: ReturnType<typeof mountView>) {
   await flushPromises();
 }
 
+async function openFeaturesTab(wrapper: ReturnType<typeof mountView>) {
+  const featuresTabButton = wrapper
+    .findAll("button")
+    .find((node) => node.text().includes("admin.settings.tabs.features"));
+
+  expect(featuresTabButton).toBeDefined();
+  await featuresTabButton?.trigger("click");
+  await flushPromises();
+}
+
 describe("admin SettingsView payment visible method controls", () => {
   beforeEach(() => {
     getSettings.mockReset();
@@ -710,6 +720,108 @@ describe("admin SettingsView payment visible method controls", () => {
       public_ip_rpm: 300,
     });
     expect(showSuccess).toHaveBeenCalled();
+  });
+
+  it("edits and saves OpenAI refusal recovery settings", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      cyber_session_block_enabled: false,
+      openai_refusal_recovery_enabled: true,
+      openai_cyber_failover_enabled: true,
+      openai_refusal_rewrite_enabled: true,
+      openai_refusal_keywords: ["cannot"],
+      openai_refusal_replacement: "Continue the task.",
+    });
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openFeaturesTab(wrapper);
+
+    expect(
+      wrapper.findAll('[data-testid="openai-refusal-keyword-tag"]'),
+    ).toHaveLength(1);
+    const input = wrapper.get(
+      '[data-testid="openai-refusal-keyword-input"]',
+    );
+    await input.setValue("I cannot");
+    await input.trigger("keydown", { key: "Enter" });
+    await wrapper
+      .get('[data-testid="openai-refusal-replacement"]')
+      .setValue("Keep working.");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        openai_refusal_recovery_enabled: true,
+        openai_cyber_failover_enabled: true,
+        openai_refusal_rewrite_enabled: true,
+        openai_refusal_keywords: ["cannot", "I cannot"],
+        openai_refusal_replacement: "Keep working.",
+      }),
+    );
+  });
+
+  it("deduplicates OpenAI refusal keywords without case sensitivity", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      openai_refusal_recovery_enabled: true,
+      openai_refusal_rewrite_enabled: true,
+      openai_refusal_keywords: ["cannot"],
+      openai_refusal_replacement: "Continue the task.",
+    });
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openFeaturesTab(wrapper);
+    const input = wrapper.get('[data-testid="openai-refusal-keyword-input"]');
+    await input.setValue("CANNOT");
+    await input.trigger("keydown", { key: "Enter" });
+
+    expect(
+      wrapper.findAll('[data-testid="openai-refusal-keyword-tag"]'),
+    ).toHaveLength(1);
+  });
+
+  it("validates refusal recovery only while the master switch is enabled", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      cyber_session_block_enabled: true,
+      openai_refusal_recovery_enabled: true,
+      openai_cyber_failover_enabled: false,
+      openai_refusal_rewrite_enabled: false,
+      openai_refusal_keywords: ["cannot"],
+      openai_refusal_replacement: "",
+    });
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openFeaturesTab(wrapper);
+    await wrapper
+      .get('[data-testid="openai-cyber-failover-toggle"]')
+      .setValue(true);
+    updateSettings.mockClear();
+    showError.mockClear();
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(showError).toHaveBeenCalled();
+    expect(updateSettings).not.toHaveBeenCalled();
+
+    await wrapper
+      .get('[data-testid="openai-refusal-recovery-toggle"]')
+      .setValue(false);
+    showError.mockClear();
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(showError).not.toHaveBeenCalled();
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        openai_refusal_recovery_enabled: false,
+        openai_cyber_failover_enabled: true,
+      }),
+    );
   });
 
   it("does not render legacy visible payment method controls", async () => {

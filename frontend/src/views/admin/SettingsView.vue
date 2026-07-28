@@ -6471,6 +6471,150 @@
                 class="input"
               />
             </div>
+
+            <div class="space-y-5 border-t border-gray-100 pt-5 dark:border-dark-700">
+              <div class="flex items-center justify-between gap-4">
+                <div class="min-w-0">
+                  <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {{ t('admin.settings.features.riskControl.refusalRecovery.enabled') }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('admin.settings.features.riskControl.refusalRecovery.enabledHint') }}
+                  </p>
+                </div>
+                <Toggle
+                  v-model="form.openai_refusal_recovery_enabled"
+                  data-testid="openai-refusal-recovery-toggle"
+                />
+              </div>
+
+              <div
+                v-if="form.openai_refusal_recovery_enabled"
+                class="space-y-5 rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-dark-600 dark:bg-dark-800/50"
+              >
+                <div>
+                  <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+                    {{ t('admin.settings.features.riskControl.refusalRecovery.title') }}
+                  </h3>
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('admin.settings.features.riskControl.refusalRecovery.description') }}
+                  </p>
+                </div>
+
+                <div class="flex items-center justify-between gap-4">
+                  <div class="min-w-0">
+                    <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {{ t('admin.settings.features.riskControl.refusalRecovery.cyberFailover') }}
+                    </label>
+                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t('admin.settings.features.riskControl.refusalRecovery.cyberFailoverHint') }}
+                    </p>
+                  </div>
+                  <Toggle
+                    v-model="form.openai_cyber_failover_enabled"
+                    data-testid="openai-cyber-failover-toggle"
+                  />
+                </div>
+
+                <div
+                  v-if="form.openai_cyber_failover_enabled && form.cyber_session_block_enabled"
+                  class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300"
+                  data-testid="openai-cyber-failover-conflict"
+                >
+                  {{ t('admin.settings.features.riskControl.refusalRecovery.cyberConflict') }}
+                </div>
+
+                <div class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600">
+                  <div class="min-w-0">
+                    <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {{ t('admin.settings.features.riskControl.refusalRecovery.rewrite') }}
+                    </label>
+                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t('admin.settings.features.riskControl.refusalRecovery.rewriteHint') }}
+                    </p>
+                  </div>
+                  <Toggle
+                    v-model="form.openai_refusal_rewrite_enabled"
+                    data-testid="openai-refusal-rewrite-toggle"
+                  />
+                </div>
+
+                <div
+                  v-if="form.openai_refusal_rewrite_enabled"
+                  class="space-y-4 border-t border-gray-200 pt-4 dark:border-dark-600"
+                >
+                  <div>
+                    <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <label class="input-label mb-0">
+                        {{ t('admin.settings.features.riskControl.refusalRecovery.keywords') }}
+                      </label>
+                      <button
+                        type="button"
+                        class="btn btn-secondary btn-sm inline-flex items-center gap-1.5"
+                        data-testid="openai-refusal-restore-defaults"
+                        @click="restoreDefaultOpenAIRefusalKeywords"
+                      >
+                        <Icon name="refresh" size="xs" />
+                        {{ t('admin.settings.features.riskControl.refusalRecovery.restoreDefaults') }}
+                      </button>
+                    </div>
+                    <div
+                      class="min-h-[2.75rem] rounded-lg border border-gray-300 bg-white p-2 dark:border-dark-500 dark:bg-dark-700"
+                    >
+                      <div class="flex flex-wrap items-center gap-2">
+                        <span
+                          v-for="(keyword, index) in form.openai_refusal_keywords"
+                          :key="keyword + '-' + index"
+                          class="inline-flex max-w-full items-center gap-1 rounded bg-gray-100 px-2 py-1 text-xs text-gray-700 dark:bg-dark-600 dark:text-gray-200"
+                          data-testid="openai-refusal-keyword-tag"
+                        >
+                          <span class="break-all">{{ keyword }}</span>
+                          <button
+                            type="button"
+                            class="rounded-full p-0.5 text-gray-500 hover:bg-gray-200 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-dark-500 dark:hover:text-white"
+                            :aria-label="t('admin.settings.features.riskControl.refusalRecovery.keywords')"
+                            @click="removeOpenAIRefusalKeyword(index)"
+                          >
+                            <Icon name="x" size="xs" />
+                          </button>
+                        </span>
+                        <input
+                          v-model="openAIRefusalKeywordDraft"
+                          type="text"
+                          class="min-w-[12rem] flex-1 bg-transparent px-1 py-1 text-sm text-gray-900 outline-none placeholder:text-gray-400 dark:text-white dark:placeholder:text-gray-500"
+                          :placeholder="t('admin.settings.features.riskControl.refusalRecovery.keywordPlaceholder')"
+                          data-testid="openai-refusal-keyword-input"
+                          @keydown="handleOpenAIRefusalKeywordKeydown"
+                          @paste="handleOpenAIRefusalKeywordPaste"
+                          @blur="commitOpenAIRefusalKeywordDraft"
+                        />
+                      </div>
+                    </div>
+                    <div class="mt-1.5 flex items-start justify-between gap-3 text-xs text-gray-500 dark:text-gray-400">
+                      <p>{{ t('admin.settings.features.riskControl.refusalRecovery.keywordsHint') }}</p>
+                      <span class="flex-shrink-0">{{ form.openai_refusal_keywords.length }}/128</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label class="input-label">
+                      {{ t('admin.settings.features.riskControl.refusalRecovery.replacement') }}
+                    </label>
+                    <textarea
+                      v-model="form.openai_refusal_replacement"
+                      rows="5"
+                      class="input min-h-[8rem] resize-y"
+                      :placeholder="t('admin.settings.features.riskControl.refusalRecovery.replacementPlaceholder')"
+                      data-testid="openai-refusal-replacement"
+                    ></textarea>
+                    <div class="mt-1.5 flex items-start justify-between gap-3 text-xs text-gray-500 dark:text-gray-400">
+                      <p>{{ t('admin.settings.features.riskControl.refusalRecovery.replacementHint') }}</p>
+                      <span class="flex-shrink-0">{{ openAIRefusalReplacementBytes }}/8192</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -7945,6 +8089,7 @@ import { ref, reactive, computed, onMounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { adminAPI } from "@/api";
 import {
+  DEFAULT_OPENAI_REFUSAL_KEYWORDS,
   appendAuthSourceDefaultsToUpdateRequest,
   buildAuthSourceDefaultsState,
   normalizePlatformQuotasMap,
@@ -8121,8 +8266,12 @@ const smtpPasswordManuallyEdited = ref(false);
 const testEmailAddress = ref("");
 const registrationEmailSuffixWhitelistTags = ref<string[]>([]);
 const registrationEmailSuffixWhitelistDraft = ref("");
+const openAIRefusalKeywordDraft = ref("");
 const forwardedClientIpHeaderDraft = ref("");
 const tablePageSizeOptionsInput = ref("10, 20, 50, 100");
+const openAIRefusalReplacementBytes = computed(
+  () => new TextEncoder().encode(form.openai_refusal_replacement).length,
+);
 
 // Admin API Key 状态
 const adminApiKeyLoading = ref(true);
@@ -8730,6 +8879,11 @@ const form = reactive<SettingsForm>({
   risk_control_enabled: false,
   cyber_session_block_enabled: false,
   cyber_session_block_ttl_seconds: 3600,
+  openai_refusal_recovery_enabled: false,
+  openai_cyber_failover_enabled: false,
+  openai_refusal_rewrite_enabled: false,
+  openai_refusal_keywords: [...DEFAULT_OPENAI_REFUSAL_KEYWORDS],
+  openai_refusal_replacement: "",
   payment_min_amount: 1,
   payment_max_amount: 10000,
   payment_daily_limit: 50000,
@@ -8935,6 +9089,110 @@ const form = reactive<SettingsForm>({
   // Allow user view error requests
   allow_user_view_error_requests: false,
 });
+
+const maxOpenAIRefusalKeywords = 128;
+const maxOpenAIRefusalKeywordCharacters = 64;
+const maxOpenAIRefusalReplacementBytes = 8192;
+
+function normalizeOpenAIRefusalKeywordForComparison(value: string): string {
+  return value
+    .normalize("NFKC")
+    .replace(/[‘’‚‛]/gu, "'")
+    .replace(/[“”„‟]/gu, '"')
+    .toLocaleLowerCase()
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function normalizeOpenAIRefusalKeywordsForForm(
+  keywords: readonly string[],
+): string[] {
+  const normalized: string[] = [];
+  const seen = new Set<string>();
+  for (const rawKeyword of keywords) {
+    const keyword = rawKeyword.trim();
+    if (!keyword) {
+      continue;
+    }
+    const comparisonKey = normalizeOpenAIRefusalKeywordForComparison(keyword);
+    if (!comparisonKey || seen.has(comparisonKey)) {
+      continue;
+    }
+    seen.add(comparisonKey);
+    normalized.push(keyword);
+  }
+  return normalized;
+}
+
+function addOpenAIRefusalKeyword(rawKeyword: string): boolean {
+  const keyword = rawKeyword.trim();
+  if (!keyword) {
+    return true;
+  }
+  if (Array.from(keyword).length > maxOpenAIRefusalKeywordCharacters) {
+    appStore.showError(
+      t("admin.settings.features.riskControl.refusalRecovery.keywordTooLong"),
+    );
+    return false;
+  }
+
+  const comparisonKey = normalizeOpenAIRefusalKeywordForComparison(keyword);
+  const duplicate = form.openai_refusal_keywords.some(
+    (existing) =>
+      normalizeOpenAIRefusalKeywordForComparison(existing) === comparisonKey,
+  );
+  if (duplicate) {
+    return true;
+  }
+  if (form.openai_refusal_keywords.length >= maxOpenAIRefusalKeywords) {
+    appStore.showError(
+      t("admin.settings.features.riskControl.refusalRecovery.keywordLimit"),
+    );
+    return false;
+  }
+  form.openai_refusal_keywords.push(keyword);
+  return true;
+}
+
+function commitOpenAIRefusalKeywordDraft(): boolean {
+  if (!addOpenAIRefusalKeyword(openAIRefusalKeywordDraft.value)) {
+    return false;
+  }
+  openAIRefusalKeywordDraft.value = "";
+  return true;
+}
+
+function handleOpenAIRefusalKeywordKeydown(event: KeyboardEvent): void {
+  if (event.isComposing || !["Enter", ",", ";"].includes(event.key)) {
+    return;
+  }
+  event.preventDefault();
+  commitOpenAIRefusalKeywordDraft();
+}
+
+function handleOpenAIRefusalKeywordPaste(event: ClipboardEvent): void {
+  const text = event.clipboardData?.getData("text") ?? "";
+  if (!text) {
+    return;
+  }
+  event.preventDefault();
+  const candidates = text.split(/[,，;；\r\n]+/u);
+  for (const candidate of candidates) {
+    if (!addOpenAIRefusalKeyword(candidate)) {
+      return;
+    }
+  }
+  openAIRefusalKeywordDraft.value = "";
+}
+
+function removeOpenAIRefusalKeyword(index: number): void {
+  form.openai_refusal_keywords.splice(index, 1);
+}
+
+function restoreDefaultOpenAIRefusalKeywords(): void {
+  form.openai_refusal_keywords = [...DEFAULT_OPENAI_REFUSAL_KEYWORDS];
+  openAIRefusalKeywordDraft.value = "";
+}
 
 type OpenAIAdvancedSchedulerOverrideKey =
   | "openai_advanced_scheduler_lb_top_k"
@@ -9883,6 +10141,12 @@ async function loadSettings() {
     form.forwarded_client_ip_headers = normalizeForwardedClientIpHeaders(
       settings.forwarded_client_ip_headers,
     );
+    form.openai_refusal_keywords = normalizeOpenAIRefusalKeywordsForForm(
+      Array.isArray(settings.openai_refusal_keywords)
+        ? settings.openai_refusal_keywords
+        : DEFAULT_OPENAI_REFUSAL_KEYWORDS,
+    );
+    openAIRefusalKeywordDraft.value = "";
     forwardedClientIpHeaderDraft.value = "";
     tablePageSizeOptionsInput.value = formatTablePageSizeOptions(
       Array.isArray(settings.table_page_size_options)
@@ -10055,6 +10319,57 @@ function findDuplicateDefaultSubscription(
 async function saveSettings() {
   saving.value = true;
   try {
+    if (!commitOpenAIRefusalKeywordDraft()) {
+      return;
+    }
+    form.openai_refusal_keywords = normalizeOpenAIRefusalKeywordsForForm(
+      form.openai_refusal_keywords,
+    );
+    if (
+      form.openai_refusal_keywords.some(
+        (keyword) =>
+          Array.from(keyword).length > maxOpenAIRefusalKeywordCharacters,
+      )
+    ) {
+      appStore.showError(
+        t("admin.settings.features.riskControl.refusalRecovery.keywordTooLong"),
+      );
+      return;
+    }
+    if (form.openai_refusal_keywords.length > maxOpenAIRefusalKeywords) {
+      appStore.showError(
+        t("admin.settings.features.riskControl.refusalRecovery.keywordLimit"),
+      );
+      return;
+    }
+    if (openAIRefusalReplacementBytes.value > maxOpenAIRefusalReplacementBytes) {
+      appStore.showError(
+        t("admin.settings.features.riskControl.refusalRecovery.replacementTooLong"),
+      );
+      return;
+    }
+    if (
+      form.openai_refusal_recovery_enabled &&
+      form.openai_cyber_failover_enabled &&
+      form.cyber_session_block_enabled
+    ) {
+      appStore.showError(
+        t("admin.settings.features.riskControl.refusalRecovery.cyberConflict"),
+      );
+      return;
+    }
+    if (
+      form.openai_refusal_recovery_enabled &&
+      form.openai_refusal_rewrite_enabled &&
+      (form.openai_refusal_keywords.length === 0 ||
+        !form.openai_refusal_replacement.trim())
+    ) {
+      appStore.showError(
+        t("admin.settings.features.riskControl.refusalRecovery.rewriteRequired"),
+      );
+      return;
+    }
+
     const normalizedTableDefaultPageSize = Math.floor(
       Number(form.table_default_page_size),
     );
@@ -10396,6 +10711,11 @@ async function saveSettings() {
       cyber_session_block_enabled: form.cyber_session_block_enabled,
       cyber_session_block_ttl_seconds:
         Number(form.cyber_session_block_ttl_seconds) || 3600,
+      openai_refusal_recovery_enabled: form.openai_refusal_recovery_enabled,
+      openai_cyber_failover_enabled: form.openai_cyber_failover_enabled,
+      openai_refusal_rewrite_enabled: form.openai_refusal_rewrite_enabled,
+      openai_refusal_keywords: [...form.openai_refusal_keywords],
+      openai_refusal_replacement: form.openai_refusal_replacement,
       payment_min_amount: Number(form.payment_min_amount) || 0,
       payment_max_amount: Number(form.payment_max_amount) || 0,
       payment_daily_limit: Number(form.payment_daily_limit) || 0,
@@ -10532,6 +10852,10 @@ async function saveSettings() {
     form.forwarded_client_ip_headers = normalizeForwardedClientIpHeaders(
       updated.forwarded_client_ip_headers,
     );
+    form.openai_refusal_keywords = normalizeOpenAIRefusalKeywordsForForm(
+      form.openai_refusal_keywords,
+    );
+    openAIRefusalKeywordDraft.value = "";
     forwardedClientIpHeaderDraft.value = "";
     tablePageSizeOptionsInput.value = formatTablePageSizeOptions(
       Array.isArray(updated.table_page_size_options)
