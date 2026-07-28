@@ -1,0 +1,97 @@
+name: Upstream Stable Sync
+
+on:
+  schedule:
+    - cron: '15 20 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: upstream-stable-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      UPSTREAM_REPOSITORY: Wei-Shaw/sub2api
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          ref: main
+      - name: Resolve latest stable release
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload=$(gh api "repos/${UPSTREAM_REPOSITORY}/releases/latest")
+          tag=$(jq -er 'select(.draft == false and .prerelease == false) | .tag_name' <<<"$payload")
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          current=$(tr -d '\r\n' < .downstream/upstream-base)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [[ "$tag" == "$current" ]]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Merge release into candidate branch
+        if: steps.release.outputs.changed == 'true'
+        id: merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag='${{ steps.release.outputs.tag }}'
+          branch="sync/upstream-${tag#v}"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git" 2>/dev/null || true
+          git fetch upstream "refs/tags/${tag}:refs/tags/${tag}" --force
+
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            echo "branch=$branch" >> "$GITHUB_OUTPUT"
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git switch -c "$branch"
+          set +e
+          git merge --no-ff --no-commit "$tag"
+          merge_rc=$?
+          set -e
+          if ((merge_rc != 0)); then
+            conflicts=$(git diff --name-only --diff-filter=U | sed 's/^/- `/' | sed 's/$/`/')
+            git merge --abort || true
+            title="Upstream ${tag} requires manual conflict resolution"
+            if ! gh issue list --state open --search "${title} in:title" --json title --jq '.[].title' | grep -Fxq "$title"; then
+              printf 'The scheduled downstream merge stopped without changing `main`.\n\n%s\n' "$conflicts" > /tmp/upstream-conflict.md
+              gh issue create --title "$title" --body-file /tmp/upstream-conflict.md
+            fi
+            exit 1
+          fi
+
+          printf '%s\n' "$tag" > .downstream/upstream-base
+          git add .downstream/upstream-base
+          git commit -m "chore: merge upstream ${tag}"
+          git push origin "HEAD:refs/heads/${branch}"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "created=true" >> "$GITHUB_OUTPUT"
+      - name: Open candidate pull request
+        if: steps.release.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch='${{ steps.merge.outputs.branch }}'
+          tag='${{ steps.release.outputs.tag }}'
+          if gh pr list --state open --head "$branch" --json number --jq 'length' | grep -qx 0; then
+            gh pr create \
+              --base main \
+              --head "$branch" \
+              --title "chore: merge upstream ${tag}" \
+              --body "Automated stable-release candidate. CI and the OCI candidate build must pass; merging this PR does not deploy production."
+          fi

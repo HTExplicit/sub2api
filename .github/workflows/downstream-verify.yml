@@ -1,0 +1,91 @@
+name: Downstream Verify
+
+on:
+  push:
+    branches:
+      - main
+      - 'sync/**'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: downstream-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Refusal recovery backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: backend/go.mod
+          check-latest: false
+          cache: true
+          cache-dependency-path: backend/go.sum
+      - name: Service tests
+        working-directory: backend
+        run: go test -p=1 ./internal/service -run 'Test.*(Refusal|CyberPolicy)' -count=1
+      - name: Handler tests
+        working-directory: backend
+        run: go test -p=1 ./internal/handler ./internal/handler/admin -run 'Test.*Refusal' -count=1
+
+  frontend:
+    name: Refusal recovery frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '20'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        working-directory: frontend
+        run: pnpm run typecheck
+      - name: Settings tests
+        working-directory: frontend
+        run: pnpm exec vitest run src/views/admin/__tests__/SettingsView.spec.ts
+
+  candidate-image:
+    name: Candidate OCI image
+    if: startsWith(github.ref, 'refs/heads/sync/')
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build candidate
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: false
+          outputs: type=oci,dest=/tmp/sub2api-candidate.tar
+          build-args: |
+            VERSION=0.0.0-candidate
+            COMMIT=${{ github.sha }}
+            GOPROXY=https://proxy.golang.org,direct
+            GOSUMDB=sum.golang.org
+          cache-from: type=gha,scope=sub2api-candidate-amd64
+          cache-to: type=gha,mode=max,scope=sub2api-candidate-amd64
+      - name: Upload candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sub2api-candidate-linux-amd64-${{ github.sha }}
+          path: /tmp/sub2api-candidate.tar
+          retention-days: 3
+          if-no-files-found: error

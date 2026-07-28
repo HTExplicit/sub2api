@@ -1,0 +1,98 @@
+name: Production Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag, for example v0.1.166-refusal-recovery.3'
+        required: true
+        type: string
+      confirmation:
+        description: 'Type DEPLOY to continue to the production approval gate'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-sub2api
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      image_ref: ${{ steps.resolve.outputs.image_ref }}
+      release_tag: ${{ steps.resolve.outputs.release_tag }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          ref: main
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Resolve immutable release image
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CONFIRMATION" == DEPLOY ]]
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-refusal-recovery\.[1-9][0-9]*$ ]]
+          gh release view "$RELEASE_TAG" --json tagName --jq '.tagName' | grep -Fxq "$RELEASE_TAG"
+          git fetch origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}" main
+          tag_commit=$(git rev-list -n 1 "$RELEASE_TAG")
+          git merge-base --is-ancestor "$tag_commit" origin/main
+          version="${RELEASE_TAG#v}"
+          image="ghcr.io/htexplicit/sub2api:${version}"
+          digest=$(docker buildx imagetools inspect "$image" | awk '$1 == "Digest:" {print $2; exit}')
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "image_ref=${image}@${digest}" >> "$GITHUB_OUTPUT"
+          echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: resolve
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    steps:
+      - name: Configure pinned SSH identity
+        env:
+          DEPLOY_KEY: ${{ secrets.VPS_DEPLOY_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/sub2api_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/sub2api_deploy ~/.ssh/known_hosts
+          ssh-keygen -y -f ~/.ssh/sub2api_deploy >/dev/null
+      - name: Deploy immutable image
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          IMAGE_REF: ${{ needs.resolve.outputs.image_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$VPS_PORT" =~ ^[0-9]+$ ]]
+          ssh \
+            -F /dev/null \
+            -i ~/.ssh/sub2api_deploy \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            -p "$VPS_PORT" \
+            "${VPS_USER}@${VPS_HOST}" \
+            "deploy ${IMAGE_REF}"
+      - name: Verify public health
+        env:
+          PUBLIC_HEALTH_URL: ${{ secrets.PUBLIC_HEALTH_URL }}
+        shell: bash
+        run: curl --fail --silent --show-error --retry 3 --retry-delay 2 --max-time 30 "$PUBLIC_HEALTH_URL" >/dev/null
