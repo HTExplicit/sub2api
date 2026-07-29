@@ -25,6 +25,7 @@ import (
 var (
 	ErrNoUpdateAvailable         = infraerrors.Conflict("ALREADY_UP_TO_DATE", "no update available; current version is latest")
 	ErrRollbackVersionNotAllowed = infraerrors.BadRequest("ROLLBACK_VERSION_NOT_ALLOWED", "version is not in the allowed rollback list")
+	ErrDownstreamUpdateManaged   = infraerrors.Conflict("DOWNSTREAM_UPDATE_MANAGED", "this downstream build is updated through its managed release channel")
 )
 
 const (
@@ -79,13 +80,16 @@ func NewUpdateService(cache UpdateCache, githubClient GitHubReleaseClient, versi
 
 // UpdateInfo contains update information
 type UpdateInfo struct {
-	CurrentVersion string       `json:"current_version"`
-	LatestVersion  string       `json:"latest_version"`
-	HasUpdate      bool         `json:"has_update"`
-	ReleaseInfo    *ReleaseInfo `json:"release_info,omitempty"`
-	Cached         bool         `json:"cached"`
-	Warning        string       `json:"warning,omitempty"`
-	BuildType      string       `json:"build_type"` // "source" or "release"
+	CurrentVersion          string       `json:"current_version"`
+	LatestVersion           string       `json:"latest_version"`
+	HasUpdate               bool         `json:"has_update"`
+	UpdateStrategy          string       `json:"update_strategy"`
+	UpstreamBaseVersion     string       `json:"upstream_base_version"`
+	UpstreamUpdateAvailable bool         `json:"upstream_update_available"`
+	ReleaseInfo             *ReleaseInfo `json:"release_info,omitempty"`
+	Cached                  bool         `json:"cached"`
+	Warning                 string       `json:"warning,omitempty"`
+	BuildType               string       `json:"build_type"` // "source" or "release"
 }
 
 // ReleaseInfo contains GitHub release details
@@ -146,12 +150,15 @@ func (s *UpdateService) CheckUpdate(ctx context.Context, force bool) (*UpdateInf
 			cached.Warning = "Using cached data: " + err.Error()
 			return cached, nil
 		}
+		strategy, baseVersion := updateStrategyForVersion(s.currentVersion)
 		return &UpdateInfo{
-			CurrentVersion: s.currentVersion,
-			LatestVersion:  s.currentVersion,
-			HasUpdate:      false,
-			Warning:        err.Error(),
-			BuildType:      s.buildType,
+			CurrentVersion:      s.currentVersion,
+			LatestVersion:       baseVersion,
+			HasUpdate:           false,
+			UpdateStrategy:      strategy,
+			UpstreamBaseVersion: baseVersion,
+			Warning:             err.Error(),
+			BuildType:           s.buildType,
 		}, nil
 	}
 
@@ -163,6 +170,10 @@ func (s *UpdateService) CheckUpdate(ctx context.Context, force bool) (*UpdateInf
 // PerformUpdate downloads and applies the update
 // Uses atomic file replacement pattern for safe in-place updates
 func (s *UpdateService) PerformUpdate(ctx context.Context) error {
+	if strategy, _ := updateStrategyForVersion(s.currentVersion); strategy == "downstream" {
+		return ErrDownstreamUpdateManaged
+	}
+
 	info, err := s.CheckUpdate(ctx, true)
 	if err != nil {
 		return err
@@ -281,6 +292,10 @@ func (s *UpdateService) applyReleaseAssets(ctx context.Context, releaseAssets []
 
 // Rollback restores the previous version
 func (s *UpdateService) Rollback() error {
+	if strategy, _ := updateStrategyForVersion(s.currentVersion); strategy == "downstream" {
+		return ErrDownstreamUpdateManaged
+	}
+
 	exePath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("failed to get executable path: %w", err)
@@ -307,6 +322,10 @@ func (s *UpdateService) Rollback() error {
 // strictly older than the current version (the current version itself is excluded),
 // newest first. Draft and prerelease entries are skipped.
 func (s *UpdateService) ListRollbackVersions(ctx context.Context) ([]RollbackVersion, error) {
+	if strategy, _ := updateStrategyForVersion(s.currentVersion); strategy == "downstream" {
+		return nil, ErrDownstreamUpdateManaged
+	}
+
 	releases, err := s.fetchRollbackCandidates(ctx)
 	if err != nil {
 		return nil, err
@@ -327,6 +346,10 @@ func (s *UpdateService) ListRollbackVersions(ctx context.Context) ([]RollbackVer
 // The target must be one of the versions returned by ListRollbackVersions;
 // anything else (including the current version) is rejected.
 func (s *UpdateService) RollbackToVersion(ctx context.Context, version string) error {
+	if strategy, _ := updateStrategyForVersion(s.currentVersion); strategy == "downstream" {
+		return ErrDownstreamUpdateManaged
+	}
+
 	target := strings.TrimPrefix(strings.TrimSpace(version), "v")
 	if target == "" {
 		return ErrRollbackVersionNotAllowed
@@ -416,10 +439,16 @@ func (s *UpdateService) fetchLatestRelease(ctx context.Context) (*UpdateInfo, er
 		}
 	}
 
+	strategy, baseVersion := updateStrategyForVersion(s.currentVersion)
+	upstreamUpdateAvailable := compareVersions(baseVersion, latestVersion) < 0
+
 	return &UpdateInfo{
-		CurrentVersion: s.currentVersion,
-		LatestVersion:  latestVersion,
-		HasUpdate:      compareVersions(s.currentVersion, latestVersion) < 0,
+		CurrentVersion:          s.currentVersion,
+		LatestVersion:           latestVersion,
+		HasUpdate:               strategy == "upstream" && upstreamUpdateAvailable,
+		UpdateStrategy:          strategy,
+		UpstreamBaseVersion:     baseVersion,
+		UpstreamUpdateAvailable: upstreamUpdateAvailable,
 		ReleaseInfo: &ReleaseInfo{
 			Name:        release.Name,
 			Body:        release.Body,
@@ -612,13 +641,18 @@ func (s *UpdateService) getFromCache(ctx context.Context) (*UpdateInfo, error) {
 		return nil, fmt.Errorf("cache expired")
 	}
 
+	strategy, baseVersion := updateStrategyForVersion(s.currentVersion)
+	upstreamUpdateAvailable := compareVersions(baseVersion, cached.Latest) < 0
 	return &UpdateInfo{
-		CurrentVersion: s.currentVersion,
-		LatestVersion:  cached.Latest,
-		HasUpdate:      compareVersions(s.currentVersion, cached.Latest) < 0,
-		ReleaseInfo:    cached.ReleaseInfo,
-		Cached:         true,
-		BuildType:      s.buildType,
+		CurrentVersion:          s.currentVersion,
+		LatestVersion:           cached.Latest,
+		HasUpdate:               strategy == "upstream" && upstreamUpdateAvailable,
+		UpdateStrategy:          strategy,
+		UpstreamBaseVersion:     baseVersion,
+		UpstreamUpdateAvailable: upstreamUpdateAvailable,
+		ReleaseInfo:             cached.ReleaseInfo,
+		Cached:                  true,
+		BuildType:               s.buildType,
 	}, nil
 }
 
@@ -654,7 +688,7 @@ func compareVersions(current, latest string) int {
 }
 
 func parseVersion(v string) [3]int {
-	v = strings.TrimPrefix(v, "v")
+	_, v = updateStrategyForVersion(v)
 	parts := strings.Split(v, ".")
 	result := [3]int{0, 0, 0}
 	for i := 0; i < len(parts) && i < 3; i++ {
@@ -663,4 +697,33 @@ func parseVersion(v string) [3]int {
 		}
 	}
 	return result
+}
+
+// updateStrategyForVersion returns the release owner and the official semantic
+// version on which the running build is based. The legacy suffix remains
+// recognized so an installed refusal-recovery image can transition to the
+// codexrip channel without being offered an unsafe official binary update.
+func updateStrategyForVersion(version string) (strategy string, baseVersion string) {
+	trimmed := strings.TrimPrefix(strings.TrimSpace(version), "v")
+	baseVersion = trimmed
+	strategy = "upstream"
+
+	separator := strings.IndexByte(trimmed, '-')
+	if separator < 0 {
+		return strategy, baseVersion
+	}
+
+	baseVersion = trimmed[:separator]
+	suffix := trimmed[separator+1:]
+	for _, channel := range []string{"codexrip.", "refusal-recovery."} {
+		if !strings.HasPrefix(suffix, channel) {
+			continue
+		}
+		patch := strings.TrimPrefix(suffix, channel)
+		if n, err := strconv.Atoi(patch); err == nil && n > 0 {
+			return "downstream", baseVersion
+		}
+	}
+
+	return strategy, baseVersion
 }

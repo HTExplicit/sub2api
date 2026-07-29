@@ -33,6 +33,18 @@ func (f AccountFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, err
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AccountMutation", m)
 }
 
+// The AccountFolderFunc type is an adapter to allow the use of ordinary
+// function as AccountFolder mutator.
+type AccountFolderFunc func(context.Context, *ent.AccountFolderMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AccountFolderFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AccountFolderMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AccountFolderMutation", m)
+}
+
 // The AccountGroupFunc type is an adapter to allow the use of ordinary
 // function as AccountGroup mutator.
 type AccountGroupFunc func(context.Context, *ent.AccountGroupMutation) (ent.Value, error)
@@ -43,6 +55,30 @@ func (f AccountGroupFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AccountGroupMutation", m)
+}
+
+// The AccountTagFunc type is an adapter to allow the use of ordinary
+// function as AccountTag mutator.
+type AccountTagFunc func(context.Context, *ent.AccountTagMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AccountTagFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AccountTagMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AccountTagMutation", m)
+}
+
+// The AccountTagBindingFunc type is an adapter to allow the use of ordinary
+// function as AccountTagBinding mutator.
+type AccountTagBindingFunc func(context.Context, *ent.AccountTagBindingMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AccountTagBindingFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AccountTagBindingMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AccountTagBindingMutation", m)
 }
 
 // The AnnouncementFunc type is an adapter to allow the use of ordinary

@@ -12,6 +12,8 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/Wei-Shaw/sub2api/ent/account"
+	"github.com/Wei-Shaw/sub2api/ent/accountfolder"
+	"github.com/Wei-Shaw/sub2api/ent/accounttag"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
@@ -135,6 +137,20 @@ func (_c *AccountCreate) SetProxyFallbackOriginID(v int64) *AccountCreate {
 func (_c *AccountCreate) SetNillableProxyFallbackOriginID(v *int64) *AccountCreate {
 	if v != nil {
 		_c.SetProxyFallbackOriginID(*v)
+	}
+	return _c
+}
+
+// SetManagementFolderID sets the "management_folder_id" field.
+func (_c *AccountCreate) SetManagementFolderID(v int64) *AccountCreate {
+	_c.mutation.SetManagementFolderID(v)
+	return _c
+}
+
+// SetNillableManagementFolderID sets the "management_folder_id" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableManagementFolderID(v *int64) *AccountCreate {
+	if v != nil {
+		_c.SetManagementFolderID(*v)
 	}
 	return _c
 }
@@ -432,6 +448,26 @@ func (_c *AccountCreate) AddGroups(v ...*Group) *AccountCreate {
 		ids[i] = v[i].ID
 	}
 	return _c.AddGroupIDs(ids...)
+}
+
+// SetManagementFolder sets the "management_folder" edge to the AccountFolder entity.
+func (_c *AccountCreate) SetManagementFolder(v *AccountFolder) *AccountCreate {
+	return _c.SetManagementFolderID(v.ID)
+}
+
+// AddTagIDs adds the "tags" edge to the AccountTag entity by IDs.
+func (_c *AccountCreate) AddTagIDs(ids ...int64) *AccountCreate {
+	_c.mutation.AddTagIDs(ids...)
+	return _c
+}
+
+// AddTags adds the "tags" edges to the AccountTag entity.
+func (_c *AccountCreate) AddTags(v ...*AccountTag) *AccountCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddTagIDs(ids...)
 }
 
 // SetProxy sets the "proxy" edge to the Proxy entity.
@@ -821,6 +857,43 @@ func (_c *AccountCreate) createSpec() (*Account, *sqlgraph.CreateSpec) {
 		edge.Target.Fields = specE.Fields
 		_spec.Edges = append(_spec.Edges, edge)
 	}
+	if nodes := _c.mutation.ManagementFolderIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   account.ManagementFolderTable,
+			Columns: []string{account.ManagementFolderColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(accountfolder.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.ManagementFolderID = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.TagsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: false,
+			Table:   account.TagsTable,
+			Columns: account.TagsPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(accounttag.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		createE := &AccountTagBindingCreate{config: _c.config, mutation: newAccountTagBindingMutation(_c.config, OpCreate)}
+		createE.defaults()
+		_, specE := createE.createSpec()
+		edge.Target.Fields = specE.Fields
+		_spec.Edges = append(_spec.Edges, edge)
+	}
 	if nodes := _c.mutation.ProxyIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.M2O,
@@ -1086,6 +1159,24 @@ func (u *AccountUpsert) AddProxyFallbackOriginID(v int64) *AccountUpsert {
 // ClearProxyFallbackOriginID clears the value of the "proxy_fallback_origin_id" field.
 func (u *AccountUpsert) ClearProxyFallbackOriginID() *AccountUpsert {
 	u.SetNull(account.FieldProxyFallbackOriginID)
+	return u
+}
+
+// SetManagementFolderID sets the "management_folder_id" field.
+func (u *AccountUpsert) SetManagementFolderID(v int64) *AccountUpsert {
+	u.Set(account.FieldManagementFolderID, v)
+	return u
+}
+
+// UpdateManagementFolderID sets the "management_folder_id" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateManagementFolderID() *AccountUpsert {
+	u.SetExcluded(account.FieldManagementFolderID)
+	return u
+}
+
+// ClearManagementFolderID clears the value of the "management_folder_id" field.
+func (u *AccountUpsert) ClearManagementFolderID() *AccountUpsert {
+	u.SetNull(account.FieldManagementFolderID)
 	return u
 }
 
@@ -1648,6 +1739,27 @@ func (u *AccountUpsertOne) UpdateProxyFallbackOriginID() *AccountUpsertOne {
 func (u *AccountUpsertOne) ClearProxyFallbackOriginID() *AccountUpsertOne {
 	return u.Update(func(s *AccountUpsert) {
 		s.ClearProxyFallbackOriginID()
+	})
+}
+
+// SetManagementFolderID sets the "management_folder_id" field.
+func (u *AccountUpsertOne) SetManagementFolderID(v int64) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetManagementFolderID(v)
+	})
+}
+
+// UpdateManagementFolderID sets the "management_folder_id" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateManagementFolderID() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateManagementFolderID()
+	})
+}
+
+// ClearManagementFolderID clears the value of the "management_folder_id" field.
+func (u *AccountUpsertOne) ClearManagementFolderID() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearManagementFolderID()
 	})
 }
 
@@ -2433,6 +2545,27 @@ func (u *AccountUpsertBulk) UpdateProxyFallbackOriginID() *AccountUpsertBulk {
 func (u *AccountUpsertBulk) ClearProxyFallbackOriginID() *AccountUpsertBulk {
 	return u.Update(func(s *AccountUpsert) {
 		s.ClearProxyFallbackOriginID()
+	})
+}
+
+// SetManagementFolderID sets the "management_folder_id" field.
+func (u *AccountUpsertBulk) SetManagementFolderID(v int64) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetManagementFolderID(v)
+	})
+}
+
+// UpdateManagementFolderID sets the "management_folder_id" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateManagementFolderID() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateManagementFolderID()
+	})
+}
+
+// ClearManagementFolderID clears the value of the "management_folder_id" field.
+func (u *AccountUpsertBulk) ClearManagementFolderID() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearManagementFolderID()
 	})
 }
 

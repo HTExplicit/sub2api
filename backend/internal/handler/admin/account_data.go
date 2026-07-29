@@ -20,7 +20,8 @@ import (
 const (
 	dataType       = "sub2api-data"
 	legacyDataType = "sub2api-bundle"
-	dataVersion    = 1
+	dataVersion    = 2
+	dataVersionV1  = 1
 	dataPageCap    = 1000
 )
 
@@ -70,20 +71,81 @@ type DataAccount struct {
 	RateMultiplier     *float64       `json:"rate_multiplier,omitempty"`
 	ExpiresAt          *int64         `json:"expires_at,omitempty"`
 	AutoPauseOnExpired *bool          `json:"auto_pause_on_expired,omitempty"`
+	ManagementFolder   *string        `json:"management_folder,omitempty"`
+	Tags               []string       `json:"tags,omitempty"`
+	Groups             []string       `json:"groups,omitempty"`
+	Status             string         `json:"status,omitempty"`
+	Schedulable        *bool          `json:"schedulable,omitempty"`
 }
 
 type DataImportRequest struct {
-	Data                 DataPayload `json:"data"`
-	SkipDefaultGroupBind *bool       `json:"skip_default_group_bind"`
+	Data                 DataPayload               `json:"data"`
+	SkipDefaultGroupBind *bool                     `json:"skip_default_group_bind"`
+	UniformSettings      DataImportUniformSettings `json:"uniform_settings,omitempty"`
+	Items                []DataImportItemDecision  `json:"items,omitempty"`
 }
 
 type DataImportResult struct {
-	ProxyCreated   int               `json:"proxy_created"`
-	ProxyReused    int               `json:"proxy_reused"`
-	ProxyFailed    int               `json:"proxy_failed"`
-	AccountCreated int               `json:"account_created"`
-	AccountFailed  int               `json:"account_failed"`
-	Errors         []DataImportError `json:"errors,omitempty"`
+	ProxyCreated   int                    `json:"proxy_created"`
+	ProxyReused    int                    `json:"proxy_reused"`
+	ProxyFailed    int                    `json:"proxy_failed"`
+	AccountCreated int                    `json:"account_created"`
+	AccountUpdated int                    `json:"account_updated"`
+	AccountSkipped int                    `json:"account_skipped"`
+	AccountFailed  int                    `json:"account_failed"`
+	AccountIDs     []int64                `json:"account_ids"`
+	Items          []DataImportItemResult `json:"items"`
+	Errors         []DataImportError      `json:"errors,omitempty"`
+}
+
+type DataImportNotesSetting struct {
+	Mode  string `json:"mode"`
+	Value string `json:"value"`
+}
+
+type DataImportUniformSettings struct {
+	NamePrefix       *string                 `json:"name_prefix,omitempty"`
+	NameSuffix       *string                 `json:"name_suffix,omitempty"`
+	Notes            *DataImportNotesSetting `json:"notes,omitempty"`
+	ManagementFolder *string                 `json:"management_folder,omitempty"`
+	Tags             *[]string               `json:"tags,omitempty"`
+	GroupIDs         *[]int64                `json:"group_ids,omitempty"`
+	ProxyID          *int64                  `json:"proxy_id,omitempty"`
+	Concurrency      *int                    `json:"concurrency,omitempty"`
+	Priority         *int                    `json:"priority,omitempty"`
+	RateMultiplier   *float64                `json:"rate_multiplier,omitempty"`
+	Status           *string                 `json:"status,omitempty"`
+	Schedulable      *bool                   `json:"schedulable,omitempty"`
+}
+
+type DataImportItemOverrides struct {
+	Name             *string                 `json:"name,omitempty"`
+	Notes            *DataImportNotesSetting `json:"notes,omitempty"`
+	ManagementFolder *string                 `json:"management_folder,omitempty"`
+	Tags             *[]string               `json:"tags,omitempty"`
+	GroupIDs         *[]int64                `json:"group_ids,omitempty"`
+	ProxyID          *int64                  `json:"proxy_id,omitempty"`
+	Concurrency      *int                    `json:"concurrency,omitempty"`
+	Priority         *int                    `json:"priority,omitempty"`
+	RateMultiplier   *float64                `json:"rate_multiplier,omitempty"`
+	Status           *string                 `json:"status,omitempty"`
+	Schedulable      *bool                   `json:"schedulable,omitempty"`
+}
+
+type DataImportItemDecision struct {
+	Index             int                     `json:"index"`
+	Action            string                  `json:"action"`
+	ExistingAccountID *int64                  `json:"existing_account_id,omitempty"`
+	Overrides         DataImportItemOverrides `json:"overrides,omitempty"`
+}
+
+type DataImportItemResult struct {
+	Index     int      `json:"index"`
+	Name      string   `json:"name"`
+	Action    string   `json:"action"`
+	AccountID *int64   `json:"account_id,omitempty"`
+	Warnings  []string `json:"warnings,omitempty"`
+	Error     string   `json:"error,omitempty"`
 }
 
 type DataImportError struct {
@@ -199,6 +261,22 @@ func (h *AccountHandler) ExportData(c *gin.Context) {
 			v := acc.ExpiresAt.Unix()
 			expiresAt = &v
 		}
+		var managementFolder *string
+		if acc.ManagementFolder != nil {
+			name := acc.ManagementFolder.Name
+			managementFolder = &name
+		}
+		tags := make([]string, 0, len(acc.Tags))
+		for _, tag := range acc.Tags {
+			tags = append(tags, tag.Name)
+		}
+		groups := make([]string, 0, len(acc.Groups))
+		for _, group := range acc.Groups {
+			if group != nil {
+				groups = append(groups, group.Name)
+			}
+		}
+		schedulable := acc.Schedulable
 		dataAccounts = append(dataAccounts, DataAccount{
 			Name:               acc.Name,
 			Notes:              acc.Notes,
@@ -212,10 +290,17 @@ func (h *AccountHandler) ExportData(c *gin.Context) {
 			RateMultiplier:     acc.RateMultiplier,
 			ExpiresAt:          expiresAt,
 			AutoPauseOnExpired: &acc.AutoPauseOnExpired,
+			ManagementFolder:   managementFolder,
+			Tags:               tags,
+			Groups:             groups,
+			Status:             acc.Status,
+			Schedulable:        &schedulable,
 		})
 	}
 
 	payload := DataPayload{
+		Type:           dataType,
+		Version:        dataVersion,
 		ExportedAt:     time.Now().UTC().Format(time.RFC3339),
 		Proxies:        dataProxies,
 		Accounts:       dataAccounts,
@@ -236,252 +321,14 @@ func (h *AccountHandler) ImportData(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
+	if err := validateDataImportRequest(req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
 
 	executeAdminIdempotentJSON(c, "admin.accounts.import_data", req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
 		return h.importData(ctx, req)
 	})
-}
-
-func (h *AccountHandler) importData(ctx context.Context, req DataImportRequest) (DataImportResult, error) {
-	skipDefaultGroupBind := true
-	if req.SkipDefaultGroupBind != nil {
-		skipDefaultGroupBind = *req.SkipDefaultGroupBind
-	}
-
-	dataPayload := req.Data
-	result := DataImportResult{}
-
-	existingProxies, err := h.listAllProxies(ctx)
-	if err != nil {
-		return result, err
-	}
-
-	proxyKeyToID := make(map[string]int64, len(existingProxies))
-	// proxyNameToID 用于 backup_proxy_name 反查：DB 已有 + 本批次新建均会写入
-	proxyNameToID := make(map[string]int64, len(existingProxies))
-	for i := range existingProxies {
-		p := existingProxies[i]
-		key := buildProxyKey(p.Protocol, p.Host, p.Port, p.Username, p.Password)
-		proxyKeyToID[key] = p.ID
-		if p.Name != "" {
-			proxyNameToID[p.Name] = p.ID
-		}
-	}
-
-	for i := range dataPayload.Proxies {
-		item := dataPayload.Proxies[i]
-		key := item.ProxyKey
-		if key == "" {
-			key = buildProxyKey(item.Protocol, item.Host, item.Port, item.Username, item.Password)
-		}
-		if err := validateDataProxy(item); err != nil {
-			result.ProxyFailed++
-			result.Errors = append(result.Errors, DataImportError{
-				Kind:     "proxy",
-				Name:     item.Name,
-				ProxyKey: key,
-				Message:  err.Error(),
-			})
-			continue
-		}
-		normalizedStatus := normalizeProxyStatus(item.Status)
-		if existingID, ok := proxyKeyToID[key]; ok {
-			proxyKeyToID[key] = existingID
-			result.ProxyReused++
-			if normalizedStatus != "" {
-				if proxy, getErr := h.adminService.GetProxy(ctx, existingID); getErr == nil && proxy != nil && proxy.Status != normalizedStatus {
-					// 同步 status 时传入完整字段，避免零值覆盖已存在代理的有效期/fallback 配置。
-					var existingExpiresAt *time.Time
-					if item.ExpiresAt != nil {
-						t := time.Unix(*item.ExpiresAt, 0).UTC()
-						existingExpiresAt = &t
-					}
-					existingFallbackMode := item.FallbackMode
-					if existingFallbackMode == "" {
-						existingFallbackMode = service.FallbackModeNone
-					}
-					var existingBackupProxyID *int64
-					if item.BackupProxyName != "" {
-						if bid, ok := proxyNameToID[item.BackupProxyName]; ok {
-							existingBackupProxyID = &bid
-						}
-					}
-					_, _ = h.adminService.UpdateProxy(ctx, existingID, &service.UpdateProxyInput{
-						Status:         normalizedStatus,
-						ExpiresAt:      existingExpiresAt,
-						FallbackMode:   existingFallbackMode,
-						BackupProxyID:  existingBackupProxyID,
-						ExpiryWarnDays: item.ExpiryWarnDays,
-						Name:           proxy.Name,
-						Protocol:       proxy.Protocol,
-						Host:           proxy.Host,
-						Port:           proxy.Port,
-						Username:       proxy.Username,
-						Password:       proxy.Password,
-					})
-				}
-			}
-			continue
-		}
-
-		// 解析 expires_at（unix 秒 → *time.Time）
-		var expiresAt *time.Time
-		if item.ExpiresAt != nil {
-			t := time.Unix(*item.ExpiresAt, 0).UTC()
-			expiresAt = &t
-		}
-
-		// 解析 backup_proxy_name → backup_proxy_id
-		fallbackMode := item.FallbackMode
-		var backupProxyID *int64
-		if item.BackupProxyName != "" {
-			if bid, ok := proxyNameToID[item.BackupProxyName]; ok {
-				backupProxyID = &bid
-			} else {
-				// 查不到备用代理：降级 fallback_mode=none，记录 warning
-				fallbackMode = service.FallbackModeNone
-				result.Errors = append(result.Errors, DataImportError{
-					Kind:     "proxy",
-					Name:     item.Name,
-					ProxyKey: key,
-					Message:  fmt.Sprintf("backup_proxy_name %q not found, fallback_mode downgraded to none", item.BackupProxyName),
-				})
-			}
-		}
-
-		created, createErr := h.adminService.CreateProxy(ctx, &service.CreateProxyInput{
-			Name:           defaultProxyName(item.Name),
-			Protocol:       item.Protocol,
-			Host:           item.Host,
-			Port:           item.Port,
-			Username:       item.Username,
-			Password:       item.Password,
-			ExpiresAt:      expiresAt,
-			FallbackMode:   fallbackMode,
-			BackupProxyID:  backupProxyID,
-			ExpiryWarnDays: item.ExpiryWarnDays,
-		})
-		if createErr != nil {
-			result.ProxyFailed++
-			result.Errors = append(result.Errors, DataImportError{
-				Kind:     "proxy",
-				Name:     item.Name,
-				ProxyKey: key,
-				Message:  createErr.Error(),
-			})
-			continue
-		}
-		proxyKeyToID[key] = created.ID
-		// 把新建代理的 name 也加入反查表，供后续批内代理引用
-		if created.Name != "" {
-			proxyNameToID[created.Name] = created.ID
-		}
-		result.ProxyCreated++
-
-		if normalizedStatus != "" && normalizedStatus != created.Status {
-			// 新建后同步 status 时，传入完整字段，避免零值覆盖刚创建的有效期/fallback 配置。
-			_, _ = h.adminService.UpdateProxy(ctx, created.ID, &service.UpdateProxyInput{
-				Status:         normalizedStatus,
-				ExpiresAt:      expiresAt,
-				FallbackMode:   fallbackMode,
-				BackupProxyID:  backupProxyID,
-				ExpiryWarnDays: item.ExpiryWarnDays,
-				Name:           created.Name,
-				Protocol:       created.Protocol,
-				Host:           created.Host,
-				Port:           created.Port,
-				Username:       created.Username,
-				Password:       created.Password,
-			})
-		}
-	}
-
-	// 收集需要异步设置隐私的 Antigravity OAuth 账号
-	var privacyAccounts []*service.Account
-
-	for i := range dataPayload.Accounts {
-		item := dataPayload.Accounts[i]
-		if err := validateDataAccount(item); err != nil {
-			result.AccountFailed++
-			result.Errors = append(result.Errors, DataImportError{
-				Kind:    "account",
-				Name:    item.Name,
-				Message: err.Error(),
-			})
-			continue
-		}
-
-		var proxyID *int64
-		if item.ProxyKey != nil && *item.ProxyKey != "" {
-			if id, ok := proxyKeyToID[*item.ProxyKey]; ok {
-				proxyID = &id
-			} else {
-				result.AccountFailed++
-				result.Errors = append(result.Errors, DataImportError{
-					Kind:     "account",
-					Name:     item.Name,
-					ProxyKey: *item.ProxyKey,
-					Message:  "proxy_key not found",
-				})
-				continue
-			}
-		}
-
-		enrichCredentialsFromIDToken(&item)
-
-		accountInput := &service.CreateAccountInput{
-			Name:                 item.Name,
-			Notes:                item.Notes,
-			Platform:             item.Platform,
-			Type:                 item.Type,
-			Credentials:          item.Credentials,
-			Extra:                item.Extra,
-			ProxyID:              proxyID,
-			Concurrency:          item.Concurrency,
-			Priority:             item.Priority,
-			RateMultiplier:       item.RateMultiplier,
-			GroupIDs:             nil,
-			ExpiresAt:            item.ExpiresAt,
-			AutoPauseOnExpired:   item.AutoPauseOnExpired,
-			SkipDefaultGroupBind: skipDefaultGroupBind,
-		}
-
-		created, err := h.adminService.CreateAccount(ctx, accountInput)
-		if err != nil {
-			result.AccountFailed++
-			result.Errors = append(result.Errors, DataImportError{
-				Kind:    "account",
-				Name:    item.Name,
-				Message: err.Error(),
-			})
-			continue
-		}
-		// 收集 Antigravity OAuth 账号，稍后异步设置隐私
-		if created.Platform == service.PlatformAntigravity && created.Type == service.AccountTypeOAuth {
-			privacyAccounts = append(privacyAccounts, created)
-		}
-		h.scheduleGrokImportProbe(created)
-		result.AccountCreated++
-	}
-
-	// 异步设置 Antigravity 隐私，避免大量导入时阻塞请求
-	if len(privacyAccounts) > 0 {
-		adminSvc := h.adminService
-		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					slog.Error("import_antigravity_privacy_panic", "recover", r)
-				}
-			}()
-			bgCtx := context.Background()
-			for _, acc := range privacyAccounts {
-				adminSvc.ForceAntigravityPrivacy(bgCtx, acc)
-			}
-			slog.Info("import_antigravity_privacy_done", "count", len(privacyAccounts))
-		}()
-	}
-
-	return result, nil
 }
 
 func (h *AccountHandler) listAllProxies(ctx context.Context) ([]service.Proxy, error) {
@@ -559,8 +406,39 @@ func (h *AccountHandler) resolveExportAccounts(ctx context.Context, ids []int64,
 			groupID = parsedGroupID
 		}
 	}
+	if hasAccountConsoleFilters(c) {
+		filters, filterErr := parseAccountConsoleFilters(c, groupID)
+		if filterErr != nil {
+			return nil, filterErr
+		}
+		if len(filters.Search) > 100 {
+			filters.Search = filters.Search[:100]
+		}
+		console, consoleErr := h.accountConsoleService()
+		if consoleErr != nil {
+			return nil, consoleErr
+		}
+		return h.listAccountsConsoleFiltered(ctx, console, filters)
+	}
 
 	return h.listAccountsFiltered(ctx, platform, accountType, status, search, groupID, privacyMode, sortBy, sortOrder)
+}
+
+func (h *AccountHandler) listAccountsConsoleFiltered(ctx context.Context, console accountConsoleAdminService, filters service.AccountConsoleFilters) ([]service.Account, error) {
+	page := 1
+	pageSize := dataPageCap
+	out := make([]service.Account, 0)
+	for {
+		items, total, err := console.ListAccountsConsole(ctx, page, pageSize, filters)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, items...)
+		if len(out) >= int(total) || len(items) == 0 {
+			return out, nil
+		}
+		page++
+	}
 }
 
 func (h *AccountHandler) resolveExportProxies(ctx context.Context, accounts []service.Account) ([]service.Proxy, error) {
@@ -639,7 +517,7 @@ func validateDataHeader(payload DataPayload) error {
 	if payload.Type != "" && payload.Type != dataType && payload.Type != legacyDataType {
 		return fmt.Errorf("unsupported data type: %s", payload.Type)
 	}
-	if payload.Version != 0 && payload.Version != dataVersion {
+	if payload.Version != 0 && payload.Version != dataVersionV1 && payload.Version != dataVersion {
 		return fmt.Errorf("unsupported data version: %d", payload.Version)
 	}
 	if payload.Proxies == nil {

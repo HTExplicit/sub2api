@@ -26,6 +26,9 @@ func (s *adminServiceImpl) ListAccounts(ctx context.Context, page, pageSize int,
 	if err != nil {
 		return nil, 0, err
 	}
+	if err := s.hydrateAccountTaxonomyValues(ctx, accounts); err != nil {
+		return nil, 0, err
+	}
 	return accounts, result.Total, nil
 }
 
@@ -47,7 +50,14 @@ func (s *adminServiceImpl) ListOpenAISchedulableAccountsForSchedulerScore(ctx co
 }
 
 func (s *adminServiceImpl) GetAccount(ctx context.Context, id int64) (*Account, error) {
-	return s.accountRepo.GetByID(ctx, id)
+	account, err := s.accountRepo.GetByID(ctx, id)
+	if err != nil || account == nil {
+		return account, err
+	}
+	if err := s.hydrateAccountTaxonomy(ctx, []*Account{account}); err != nil {
+		return nil, err
+	}
+	return account, nil
 }
 
 func (s *adminServiceImpl) GetAccountsByIDs(ctx context.Context, ids []int64) ([]*Account, error) {
@@ -58,6 +68,9 @@ func (s *adminServiceImpl) GetAccountsByIDs(ctx context.Context, ids []int64) ([
 	accounts, err := s.accountRepo.GetByIDs(ctx, ids)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get accounts by IDs: %w", err)
+	}
+	if err := s.hydrateAccountTaxonomy(ctx, accounts); err != nil {
+		return nil, fmt.Errorf("failed to hydrate account taxonomy: %w", err)
 	}
 
 	return accounts, nil
@@ -1124,6 +1137,24 @@ func upstreamBillingProbeIdentity(account *Account) map[string]any {
 func (s *adminServiceImpl) resolveBulkUpdateTargetIDs(ctx context.Context, filters *BulkUpdateAccountFilters) ([]int64, error) {
 	if filters == nil {
 		return nil, nil
+	}
+	if filters.Console != nil {
+		const pageSize = 500
+		page := 1
+		accountIDs := make([]int64, 0, pageSize)
+		for {
+			accounts, total, err := s.ListAccountsConsole(ctx, page, pageSize, *filters.Console)
+			if err != nil {
+				return nil, err
+			}
+			for _, account := range accounts {
+				accountIDs = append(accountIDs, account.ID)
+			}
+			if int64(len(accountIDs)) >= total || len(accounts) == 0 {
+				return accountIDs, nil
+			}
+			page++
+		}
 	}
 
 	groupID := int64(0)

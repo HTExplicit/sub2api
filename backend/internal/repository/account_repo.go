@@ -115,6 +115,9 @@ func createAccountRecord(ctx context.Context, client *dbent.Client, account *ser
 		SetErrorMessage(account.ErrorMessage).
 		SetSchedulable(account.Schedulable).
 		SetAutoPauseOnExpired(account.AutoPauseOnExpired)
+	if account.ManagementFolderID != nil {
+		builder.SetManagementFolderID(*account.ManagementFolderID)
+	}
 
 	if account.RateMultiplier != nil {
 		builder.SetRateMultiplier(*account.RateMultiplier)
@@ -261,7 +264,6 @@ func (r *accountRepository) GetByIDs(ctx context.Context, ids []int64) ([]*servi
 	entAccounts, err := r.client.Account.
 		Query().
 		Where(dbaccount.IDIn(uniqueIDs...)).
-		WithProxy().
 		All(ctx)
 	if err != nil {
 		return nil, err
@@ -270,48 +272,18 @@ func (r *accountRepository) GetByIDs(ctx context.Context, ids []int64) ([]*servi
 		return []*service.Account{}, nil
 	}
 
-	accountIDs := make([]int64, 0, len(entAccounts))
-	entByID := make(map[int64]*dbent.Account, len(entAccounts))
-	for _, acc := range entAccounts {
-		entByID[acc.ID] = acc
-		accountIDs = append(accountIDs, acc.ID)
-	}
-
-	groupsByAccount, groupIDsByAccount, accountGroupsByAccount, err := r.loadAccountGroups(ctx, accountIDs)
+	serviceAccounts, err := r.accountsToService(ctx, entAccounts)
 	if err != nil {
 		return nil, err
 	}
-
-	outByID := make(map[int64]*service.Account, len(entAccounts))
-	for _, entAcc := range entAccounts {
-		out := accountEntityToService(entAcc)
-		if out == nil {
-			continue
-		}
-
-		// Prefer the preloaded proxy edge when available.
-		if entAcc.Edges.Proxy != nil {
-			out.Proxy = proxyEntityToService(entAcc.Edges.Proxy)
-		}
-
-		if groups, ok := groupsByAccount[entAcc.ID]; ok {
-			out.Groups = groups
-		}
-		if groupIDs, ok := groupIDsByAccount[entAcc.ID]; ok {
-			out.GroupIDs = groupIDs
-		}
-		if ags, ok := accountGroupsByAccount[entAcc.ID]; ok {
-			out.AccountGroups = ags
-		}
-		outByID[entAcc.ID] = out
+	outByID := make(map[int64]*service.Account, len(serviceAccounts))
+	for i := range serviceAccounts {
+		outByID[serviceAccounts[i].ID] = &serviceAccounts[i]
 	}
 
 	// Preserve input order (first occurrence), and ignore missing IDs.
 	out := make([]*service.Account, 0, len(uniqueIDs))
 	for _, id := range uniqueIDs {
-		if _, ok := entByID[id]; !ok {
-			continue
-		}
 		if acc, ok := outByID[id]; ok && acc != nil {
 			out = append(out, acc)
 		}
@@ -3006,7 +2978,6 @@ func (r *accountRepository) accountsToService(ctx context.Context, accounts []*d
 	if err != nil {
 		return nil, err
 	}
-
 	outAccounts := make([]service.Account, 0, len(accounts))
 	for _, acc := range accounts {
 		out := accountEntityToService(acc)
@@ -3243,6 +3214,7 @@ func accountEntityToService(m *dbent.Account) *service.Account {
 		Extra:                   copyJSONMap(m.Extra),
 		ProxyID:                 m.ProxyID,
 		ProxyFallbackOriginID:   m.ProxyFallbackOriginID,
+		ManagementFolderID:      m.ManagementFolderID,
 		Concurrency:             m.Concurrency,
 		Priority:                m.Priority,
 		RateMultiplier:          &rateMultiplier,

@@ -22,6 +22,9 @@ vi.mock('@/api/admin', () => ({
     accounts: {
       list: listAccounts,
       listWithEtag,
+      getFacets: vi.fn().mockResolvedValue({ total: 0, uncategorized_count: 0, platforms: [], types: [], statuses: [], plans: [], proxies: [], folders: [], tags: [] }),
+      listFolders: vi.fn().mockResolvedValue([]),
+      listTags: vi.fn().mockResolvedValue([]),
       getBatchTodayStats,
       getUpstreamBillingProbeSettings: vi.fn().mockResolvedValue({ enabled: true, interval_minutes: 30 }),
       delete: vi.fn(),
@@ -232,7 +235,7 @@ describe('admin AccountsView scheduler score column', () => {
 
   it('requests scheduler scores when the migrated column settings explicitly show the column', async () => {
     localStorage.setItem('account-hidden-columns', JSON.stringify(['today_stats']))
-    localStorage.setItem('account-hidden-columns-version', 'scheduler-score-hidden-by-default')
+    localStorage.setItem('account-hidden-columns-version', 'cockpit-console-defaults-v1')
 
     mountView()
     await flushPromises()

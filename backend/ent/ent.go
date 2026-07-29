@@ -13,7 +13,10 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/Wei-Shaw/sub2api/ent/account"
+	"github.com/Wei-Shaw/sub2api/ent/accountfolder"
 	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
+	"github.com/Wei-Shaw/sub2api/ent/accounttag"
+	"github.com/Wei-Shaw/sub2api/ent/accounttagbinding"
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
@@ -113,7 +116,10 @@ func checkColumn(t, c string) error {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
 			apikey.Table:                        apikey.ValidColumn,
 			account.Table:                       account.ValidColumn,
+			accountfolder.Table:                 accountfolder.ValidColumn,
 			accountgroup.Table:                  accountgroup.ValidColumn,
+			accounttag.Table:                    accounttag.ValidColumn,
+			accounttagbinding.Table:             accounttagbinding.ValidColumn,
 			announcement.Table:                  announcement.ValidColumn,
 			announcementread.Table:              announcementread.ValidColumn,
 			authidentity.Table:                  authidentity.ValidColumn,

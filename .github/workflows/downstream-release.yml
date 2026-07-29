@@ -3,7 +3,7 @@ name: Downstream Release
 on:
   push:
     tags:
-      - 'v*.*.*-refusal-recovery.*'
+      - 'v*.*.*-codexrip.*'
 
 permissions:
   contents: write
@@ -32,7 +32,7 @@ jobs:
         run: |
           set -euo pipefail
           tag="$GITHUB_REF_NAME"
-          [[ "$tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-refusal-recovery\.([1-9][0-9]*)$ ]]
+          [[ "$tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-codexrip\.([1-9][0-9]*)$ ]]
           upstream_version="${BASH_REMATCH[1]}"
           version="${tag#v}"
           git fetch origin main
@@ -47,11 +47,16 @@ jobs:
           check-latest: false
           cache: true
           cache-dependency-path: backend/go.sum
-      - name: Backend refusal recovery tests
+      - name: Backend downstream tests
         working-directory: backend
         run: |
-          go test -p=1 ./internal/service -run 'Test.*(Refusal|CyberPolicy)' -count=1
+          go test -p=1 -tags unit ./internal/service -run 'Test.*(Refusal|CyberPolicy)|Test(UpdateService|NormalizeAccountTaxonomyName|FilterConsoleAccounts|AccountConsolePlan|AccountFacetMatcher)' -count=1
           go test -p=1 ./internal/handler ./internal/handler/admin -run 'Test.*Refusal' -count=1
+          go test -p=1 ./internal/handler/admin -run 'Test(ExportData|PreviewDataImport|ImportData|DataAccountIdentityKeys|BulkUpdateAccepts|AccountHandler)' -count=1
+          go test -p=1 ./internal/repository -run '^$'
+      - name: Account taxonomy migration integration test
+        working-directory: backend
+        run: go test -p=1 -tags integration ./internal/repository -run '^TestAccountTaxonomy.*Integration$' -count=1
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 9.15.9
@@ -60,12 +65,23 @@ jobs:
           node-version: '20'
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
-      - name: Frontend refusal recovery tests
+      - name: Frontend downstream checks
         working-directory: frontend
         run: |
           pnpm install --frozen-lockfile
+          pnpm run lint:check
           pnpm run typecheck
-          pnpm exec vitest run src/views/admin/__tests__/SettingsView.spec.ts
+          pnpm exec vitest run \
+            src/views/admin/__tests__/SettingsView.spec.ts \
+            src/components/common/__tests__/VersionBadge.downstream.spec.ts \
+            src/__tests__/integration/data-import.spec.ts \
+            src/components/admin/account/__tests__/AccountConsoleFilters.spec.ts \
+            src/views/admin/__tests__/AccountsView.console.spec.ts \
+            src/views/admin/__tests__/AccountsView.bulkEdit.spec.ts \
+            src/views/admin/__tests__/AccountsView.schedulerScore.spec.ts \
+            src/views/admin/__tests__/AccountsView.sparkShadow.spec.ts \
+            src/views/admin/__tests__/AccountsView.usageWindowsHint.spec.ts
+          pnpm run build
 
   publish:
     needs: verify
@@ -100,7 +116,7 @@ jobs:
             org.opencontainers.image.created=${{ env.BUILD_DATE }}
             org.opencontainers.image.licenses=LGPL-3.0
             io.github.htexplicit.upstream-version=${{ env.UPSTREAM_VERSION }}
-            io.github.htexplicit.patch=refusal-recovery
+            io.github.htexplicit.patch=codexrip
           build-args: |
             VERSION=${{ env.VERSION }}
             COMMIT=${{ github.sha }}
@@ -120,7 +136,7 @@ jobs:
         run: |
           set -euo pipefail
           cat > /tmp/release-notes.md <<EOF
-          Downstream Sub2API build based on upstream v${UPSTREAM_VERSION}.
+          Codexrip downstream Sub2API build based on upstream v${UPSTREAM_VERSION}.
 
           Image: \`${IMAGE}:${VERSION}@${{ steps.build.outputs.digest }}\`
           Source: \`${GITHUB_SHA}\`

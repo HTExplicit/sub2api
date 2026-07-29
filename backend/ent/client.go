@@ -16,7 +16,10 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/Wei-Shaw/sub2api/ent/account"
+	"github.com/Wei-Shaw/sub2api/ent/accountfolder"
 	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
+	"github.com/Wei-Shaw/sub2api/ent/accounttag"
+	"github.com/Wei-Shaw/sub2api/ent/accounttagbinding"
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
@@ -67,8 +70,14 @@ type Client struct {
 	APIKey *APIKeyClient
 	// Account is the client for interacting with the Account builders.
 	Account *AccountClient
+	// AccountFolder is the client for interacting with the AccountFolder builders.
+	AccountFolder *AccountFolderClient
 	// AccountGroup is the client for interacting with the AccountGroup builders.
 	AccountGroup *AccountGroupClient
+	// AccountTag is the client for interacting with the AccountTag builders.
+	AccountTag *AccountTagClient
+	// AccountTagBinding is the client for interacting with the AccountTagBinding builders.
+	AccountTagBinding *AccountTagBindingClient
 	// Announcement is the client for interacting with the Announcement builders.
 	Announcement *AnnouncementClient
 	// AnnouncementRead is the client for interacting with the AnnouncementRead builders.
@@ -154,7 +163,10 @@ func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
 	c.APIKey = NewAPIKeyClient(c.config)
 	c.Account = NewAccountClient(c.config)
+	c.AccountFolder = NewAccountFolderClient(c.config)
 	c.AccountGroup = NewAccountGroupClient(c.config)
+	c.AccountTag = NewAccountTagClient(c.config)
+	c.AccountTagBinding = NewAccountTagBindingClient(c.config)
 	c.Announcement = NewAnnouncementClient(c.config)
 	c.AnnouncementRead = NewAnnouncementReadClient(c.config)
 	c.AuthIdentity = NewAuthIdentityClient(c.config)
@@ -285,7 +297,10 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		config:                        cfg,
 		APIKey:                        NewAPIKeyClient(cfg),
 		Account:                       NewAccountClient(cfg),
+		AccountFolder:                 NewAccountFolderClient(cfg),
 		AccountGroup:                  NewAccountGroupClient(cfg),
+		AccountTag:                    NewAccountTagClient(cfg),
+		AccountTagBinding:             NewAccountTagBindingClient(cfg),
 		Announcement:                  NewAnnouncementClient(cfg),
 		AnnouncementRead:              NewAnnouncementReadClient(cfg),
 		AuthIdentity:                  NewAuthIdentityClient(cfg),
@@ -343,7 +358,10 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		config:                        cfg,
 		APIKey:                        NewAPIKeyClient(cfg),
 		Account:                       NewAccountClient(cfg),
+		AccountFolder:                 NewAccountFolderClient(cfg),
 		AccountGroup:                  NewAccountGroupClient(cfg),
+		AccountTag:                    NewAccountTagClient(cfg),
+		AccountTagBinding:             NewAccountTagBindingClient(cfg),
 		Announcement:                  NewAnnouncementClient(cfg),
 		AnnouncementRead:              NewAnnouncementReadClient(cfg),
 		AuthIdentity:                  NewAuthIdentityClient(cfg),
@@ -409,16 +427,16 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.APIKey, c.Account, c.AccountGroup, c.Announcement, c.AnnouncementRead,
-		c.AuthIdentity, c.AuthIdentityChannel, c.BatchImageEvent, c.BatchImageItem,
-		c.BatchImageJob, c.ChannelMonitor, c.ChannelMonitorDailyRollup,
-		c.ChannelMonitorHistory, c.ChannelMonitorRequestTemplate,
-		c.CompositeModelRoute, c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord,
-		c.IdentityAdoptionDecision, c.PaymentAuditLog, c.PaymentOrder,
-		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
-		c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
-		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
-		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
+		c.APIKey, c.Account, c.AccountFolder, c.AccountGroup, c.AccountTag,
+		c.AccountTagBinding, c.Announcement, c.AnnouncementRead, c.AuthIdentity,
+		c.AuthIdentityChannel, c.BatchImageEvent, c.BatchImageItem, c.BatchImageJob,
+		c.ChannelMonitor, c.ChannelMonitorDailyRollup, c.ChannelMonitorHistory,
+		c.ChannelMonitorRequestTemplate, c.CompositeModelRoute, c.ErrorPassthroughRule,
+		c.Group, c.IdempotencyRecord, c.IdentityAdoptionDecision, c.PaymentAuditLog,
+		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
+		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
+		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
+		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
 		c.UserPlatformQuota, c.UserSubscription,
 	} {
 		n.Use(hooks...)
@@ -429,16 +447,16 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.APIKey, c.Account, c.AccountGroup, c.Announcement, c.AnnouncementRead,
-		c.AuthIdentity, c.AuthIdentityChannel, c.BatchImageEvent, c.BatchImageItem,
-		c.BatchImageJob, c.ChannelMonitor, c.ChannelMonitorDailyRollup,
-		c.ChannelMonitorHistory, c.ChannelMonitorRequestTemplate,
-		c.CompositeModelRoute, c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord,
-		c.IdentityAdoptionDecision, c.PaymentAuditLog, c.PaymentOrder,
-		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
-		c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
-		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
-		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
+		c.APIKey, c.Account, c.AccountFolder, c.AccountGroup, c.AccountTag,
+		c.AccountTagBinding, c.Announcement, c.AnnouncementRead, c.AuthIdentity,
+		c.AuthIdentityChannel, c.BatchImageEvent, c.BatchImageItem, c.BatchImageJob,
+		c.ChannelMonitor, c.ChannelMonitorDailyRollup, c.ChannelMonitorHistory,
+		c.ChannelMonitorRequestTemplate, c.CompositeModelRoute, c.ErrorPassthroughRule,
+		c.Group, c.IdempotencyRecord, c.IdentityAdoptionDecision, c.PaymentAuditLog,
+		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
+		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
+		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
+		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
 		c.UserPlatformQuota, c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
@@ -452,8 +470,14 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.APIKey.mutate(ctx, m)
 	case *AccountMutation:
 		return c.Account.mutate(ctx, m)
+	case *AccountFolderMutation:
+		return c.AccountFolder.mutate(ctx, m)
 	case *AccountGroupMutation:
 		return c.AccountGroup.mutate(ctx, m)
+	case *AccountTagMutation:
+		return c.AccountTag.mutate(ctx, m)
+	case *AccountTagBindingMutation:
+		return c.AccountTagBinding.mutate(ctx, m)
 	case *AnnouncementMutation:
 		return c.Announcement.mutate(ctx, m)
 	case *AnnouncementReadMutation:
@@ -838,6 +862,38 @@ func (c *AccountClient) QueryGroups(_m *Account) *GroupQuery {
 	return query
 }
 
+// QueryManagementFolder queries the management_folder edge of a Account.
+func (c *AccountClient) QueryManagementFolder(_m *Account) *AccountFolderQuery {
+	query := (&AccountFolderClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(account.Table, account.FieldID, id),
+			sqlgraph.To(accountfolder.Table, accountfolder.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, account.ManagementFolderTable, account.ManagementFolderColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryTags queries the tags edge of a Account.
+func (c *AccountClient) QueryTags(_m *Account) *AccountTagQuery {
+	query := (&AccountTagClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(account.Table, account.FieldID, id),
+			sqlgraph.To(accounttag.Table, accounttag.FieldID),
+			sqlgraph.Edge(sqlgraph.M2M, false, account.TagsTable, account.TagsPrimaryKey...),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // QueryProxy queries the proxy edge of a Account.
 func (c *AccountClient) QueryProxy(_m *Account) *ProxyQuery {
 	query := (&ProxyClient{config: c.config}).Query()
@@ -918,6 +974,22 @@ func (c *AccountClient) QueryAccountGroups(_m *Account) *AccountGroupQuery {
 	return query
 }
 
+// QueryAccountTagBindings queries the account_tag_bindings edge of a Account.
+func (c *AccountClient) QueryAccountTagBindings(_m *Account) *AccountTagBindingQuery {
+	query := (&AccountTagBindingClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(account.Table, account.FieldID, id),
+			sqlgraph.To(accounttagbinding.Table, accounttagbinding.AccountColumn),
+			sqlgraph.Edge(sqlgraph.O2M, true, account.AccountTagBindingsTable, account.AccountTagBindingsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *AccountClient) Hooks() []Hook {
 	hooks := c.hooks.Account
@@ -942,6 +1014,155 @@ func (c *AccountClient) mutate(ctx context.Context, m *AccountMutation) (Value, 
 		return (&AccountDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown Account mutation op: %q", m.Op())
+	}
+}
+
+// AccountFolderClient is a client for the AccountFolder schema.
+type AccountFolderClient struct {
+	config
+}
+
+// NewAccountFolderClient returns a client for the AccountFolder from the given config.
+func NewAccountFolderClient(c config) *AccountFolderClient {
+	return &AccountFolderClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `accountfolder.Hooks(f(g(h())))`.
+func (c *AccountFolderClient) Use(hooks ...Hook) {
+	c.hooks.AccountFolder = append(c.hooks.AccountFolder, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `accountfolder.Intercept(f(g(h())))`.
+func (c *AccountFolderClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AccountFolder = append(c.inters.AccountFolder, interceptors...)
+}
+
+// Create returns a builder for creating a AccountFolder entity.
+func (c *AccountFolderClient) Create() *AccountFolderCreate {
+	mutation := newAccountFolderMutation(c.config, OpCreate)
+	return &AccountFolderCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AccountFolder entities.
+func (c *AccountFolderClient) CreateBulk(builders ...*AccountFolderCreate) *AccountFolderCreateBulk {
+	return &AccountFolderCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AccountFolderClient) MapCreateBulk(slice any, setFunc func(*AccountFolderCreate, int)) *AccountFolderCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AccountFolderCreateBulk{err: fmt.Errorf("calling to AccountFolderClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AccountFolderCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AccountFolderCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AccountFolder.
+func (c *AccountFolderClient) Update() *AccountFolderUpdate {
+	mutation := newAccountFolderMutation(c.config, OpUpdate)
+	return &AccountFolderUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AccountFolderClient) UpdateOne(_m *AccountFolder) *AccountFolderUpdateOne {
+	mutation := newAccountFolderMutation(c.config, OpUpdateOne, withAccountFolder(_m))
+	return &AccountFolderUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AccountFolderClient) UpdateOneID(id int64) *AccountFolderUpdateOne {
+	mutation := newAccountFolderMutation(c.config, OpUpdateOne, withAccountFolderID(id))
+	return &AccountFolderUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AccountFolder.
+func (c *AccountFolderClient) Delete() *AccountFolderDelete {
+	mutation := newAccountFolderMutation(c.config, OpDelete)
+	return &AccountFolderDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AccountFolderClient) DeleteOne(_m *AccountFolder) *AccountFolderDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AccountFolderClient) DeleteOneID(id int64) *AccountFolderDeleteOne {
+	builder := c.Delete().Where(accountfolder.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AccountFolderDeleteOne{builder}
+}
+
+// Query returns a query builder for AccountFolder.
+func (c *AccountFolderClient) Query() *AccountFolderQuery {
+	return &AccountFolderQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAccountFolder},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AccountFolder entity by its id.
+func (c *AccountFolderClient) Get(ctx context.Context, id int64) (*AccountFolder, error) {
+	return c.Query().Where(accountfolder.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AccountFolderClient) GetX(ctx context.Context, id int64) *AccountFolder {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryAccounts queries the accounts edge of a AccountFolder.
+func (c *AccountFolderClient) QueryAccounts(_m *AccountFolder) *AccountQuery {
+	query := (&AccountClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(accountfolder.Table, accountfolder.FieldID, id),
+			sqlgraph.To(account.Table, account.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, accountfolder.AccountsTable, accountfolder.AccountsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *AccountFolderClient) Hooks() []Hook {
+	return c.hooks.AccountFolder
+}
+
+// Interceptors returns the client interceptors.
+func (c *AccountFolderClient) Interceptors() []Interceptor {
+	return c.inters.AccountFolder
+}
+
+func (c *AccountFolderClient) mutate(ctx context.Context, m *AccountFolderMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AccountFolderCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AccountFolderUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AccountFolderUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AccountFolderDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AccountFolder mutation op: %q", m.Op())
 	}
 }
 
@@ -1058,6 +1279,287 @@ func (c *AccountGroupClient) mutate(ctx context.Context, m *AccountGroupMutation
 		return (&AccountGroupDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown AccountGroup mutation op: %q", m.Op())
+	}
+}
+
+// AccountTagClient is a client for the AccountTag schema.
+type AccountTagClient struct {
+	config
+}
+
+// NewAccountTagClient returns a client for the AccountTag from the given config.
+func NewAccountTagClient(c config) *AccountTagClient {
+	return &AccountTagClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `accounttag.Hooks(f(g(h())))`.
+func (c *AccountTagClient) Use(hooks ...Hook) {
+	c.hooks.AccountTag = append(c.hooks.AccountTag, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `accounttag.Intercept(f(g(h())))`.
+func (c *AccountTagClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AccountTag = append(c.inters.AccountTag, interceptors...)
+}
+
+// Create returns a builder for creating a AccountTag entity.
+func (c *AccountTagClient) Create() *AccountTagCreate {
+	mutation := newAccountTagMutation(c.config, OpCreate)
+	return &AccountTagCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AccountTag entities.
+func (c *AccountTagClient) CreateBulk(builders ...*AccountTagCreate) *AccountTagCreateBulk {
+	return &AccountTagCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AccountTagClient) MapCreateBulk(slice any, setFunc func(*AccountTagCreate, int)) *AccountTagCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AccountTagCreateBulk{err: fmt.Errorf("calling to AccountTagClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AccountTagCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AccountTagCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AccountTag.
+func (c *AccountTagClient) Update() *AccountTagUpdate {
+	mutation := newAccountTagMutation(c.config, OpUpdate)
+	return &AccountTagUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AccountTagClient) UpdateOne(_m *AccountTag) *AccountTagUpdateOne {
+	mutation := newAccountTagMutation(c.config, OpUpdateOne, withAccountTag(_m))
+	return &AccountTagUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AccountTagClient) UpdateOneID(id int64) *AccountTagUpdateOne {
+	mutation := newAccountTagMutation(c.config, OpUpdateOne, withAccountTagID(id))
+	return &AccountTagUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AccountTag.
+func (c *AccountTagClient) Delete() *AccountTagDelete {
+	mutation := newAccountTagMutation(c.config, OpDelete)
+	return &AccountTagDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AccountTagClient) DeleteOne(_m *AccountTag) *AccountTagDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AccountTagClient) DeleteOneID(id int64) *AccountTagDeleteOne {
+	builder := c.Delete().Where(accounttag.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AccountTagDeleteOne{builder}
+}
+
+// Query returns a query builder for AccountTag.
+func (c *AccountTagClient) Query() *AccountTagQuery {
+	return &AccountTagQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAccountTag},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AccountTag entity by its id.
+func (c *AccountTagClient) Get(ctx context.Context, id int64) (*AccountTag, error) {
+	return c.Query().Where(accounttag.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AccountTagClient) GetX(ctx context.Context, id int64) *AccountTag {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryAccounts queries the accounts edge of a AccountTag.
+func (c *AccountTagClient) QueryAccounts(_m *AccountTag) *AccountQuery {
+	query := (&AccountClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(accounttag.Table, accounttag.FieldID, id),
+			sqlgraph.To(account.Table, account.FieldID),
+			sqlgraph.Edge(sqlgraph.M2M, true, accounttag.AccountsTable, accounttag.AccountsPrimaryKey...),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryAccountTagBindings queries the account_tag_bindings edge of a AccountTag.
+func (c *AccountTagClient) QueryAccountTagBindings(_m *AccountTag) *AccountTagBindingQuery {
+	query := (&AccountTagBindingClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(accounttag.Table, accounttag.FieldID, id),
+			sqlgraph.To(accounttagbinding.Table, accounttagbinding.TagColumn),
+			sqlgraph.Edge(sqlgraph.O2M, true, accounttag.AccountTagBindingsTable, accounttag.AccountTagBindingsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *AccountTagClient) Hooks() []Hook {
+	return c.hooks.AccountTag
+}
+
+// Interceptors returns the client interceptors.
+func (c *AccountTagClient) Interceptors() []Interceptor {
+	return c.inters.AccountTag
+}
+
+func (c *AccountTagClient) mutate(ctx context.Context, m *AccountTagMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AccountTagCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AccountTagUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AccountTagUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AccountTagDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AccountTag mutation op: %q", m.Op())
+	}
+}
+
+// AccountTagBindingClient is a client for the AccountTagBinding schema.
+type AccountTagBindingClient struct {
+	config
+}
+
+// NewAccountTagBindingClient returns a client for the AccountTagBinding from the given config.
+func NewAccountTagBindingClient(c config) *AccountTagBindingClient {
+	return &AccountTagBindingClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `accounttagbinding.Hooks(f(g(h())))`.
+func (c *AccountTagBindingClient) Use(hooks ...Hook) {
+	c.hooks.AccountTagBinding = append(c.hooks.AccountTagBinding, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `accounttagbinding.Intercept(f(g(h())))`.
+func (c *AccountTagBindingClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AccountTagBinding = append(c.inters.AccountTagBinding, interceptors...)
+}
+
+// Create returns a builder for creating a AccountTagBinding entity.
+func (c *AccountTagBindingClient) Create() *AccountTagBindingCreate {
+	mutation := newAccountTagBindingMutation(c.config, OpCreate)
+	return &AccountTagBindingCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AccountTagBinding entities.
+func (c *AccountTagBindingClient) CreateBulk(builders ...*AccountTagBindingCreate) *AccountTagBindingCreateBulk {
+	return &AccountTagBindingCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AccountTagBindingClient) MapCreateBulk(slice any, setFunc func(*AccountTagBindingCreate, int)) *AccountTagBindingCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AccountTagBindingCreateBulk{err: fmt.Errorf("calling to AccountTagBindingClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AccountTagBindingCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AccountTagBindingCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AccountTagBinding.
+func (c *AccountTagBindingClient) Update() *AccountTagBindingUpdate {
+	mutation := newAccountTagBindingMutation(c.config, OpUpdate)
+	return &AccountTagBindingUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AccountTagBindingClient) UpdateOne(_m *AccountTagBinding) *AccountTagBindingUpdateOne {
+	mutation := newAccountTagBindingMutation(c.config, OpUpdateOne)
+	mutation.account = &_m.AccountID
+	mutation.tag = &_m.TagID
+	return &AccountTagBindingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AccountTagBinding.
+func (c *AccountTagBindingClient) Delete() *AccountTagBindingDelete {
+	mutation := newAccountTagBindingMutation(c.config, OpDelete)
+	return &AccountTagBindingDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Query returns a query builder for AccountTagBinding.
+func (c *AccountTagBindingClient) Query() *AccountTagBindingQuery {
+	return &AccountTagBindingQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAccountTagBinding},
+		inters: c.Interceptors(),
+	}
+}
+
+// QueryAccount queries the account edge of a AccountTagBinding.
+func (c *AccountTagBindingClient) QueryAccount(_m *AccountTagBinding) *AccountQuery {
+	return c.Query().
+		Where(accounttagbinding.AccountID(_m.AccountID), accounttagbinding.TagID(_m.TagID)).
+		QueryAccount()
+}
+
+// QueryTag queries the tag edge of a AccountTagBinding.
+func (c *AccountTagBindingClient) QueryTag(_m *AccountTagBinding) *AccountTagQuery {
+	return c.Query().
+		Where(accounttagbinding.AccountID(_m.AccountID), accounttagbinding.TagID(_m.TagID)).
+		QueryTag()
+}
+
+// Hooks returns the client hooks.
+func (c *AccountTagBindingClient) Hooks() []Hook {
+	return c.hooks.AccountTagBinding
+}
+
+// Interceptors returns the client interceptors.
+func (c *AccountTagBindingClient) Interceptors() []Interceptor {
+	return c.inters.AccountTagBinding
+}
+
+func (c *AccountTagBindingClient) mutate(ctx context.Context, m *AccountTagBindingMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AccountTagBindingCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AccountTagBindingUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AccountTagBindingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AccountTagBindingDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AccountTagBinding mutation op: %q", m.Op())
 	}
 }
 
@@ -6825,28 +7327,30 @@ func (c *UserSubscriptionClient) mutate(ctx context.Context, m *UserSubscription
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
-		AuthIdentityChannel, BatchImageEvent, BatchImageItem, BatchImageJob,
-		ChannelMonitor, ChannelMonitorDailyRollup, ChannelMonitorHistory,
-		ChannelMonitorRequestTemplate, CompositeModelRoute,
-		ErrorPassthroughRule, Group, IdempotencyRecord, IdentityAdoptionDecision,
-		PaymentAuditLog, PaymentOrder, PaymentProviderInstance, PendingAuthSession,
-		PromoCode, PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting,
-		SubscriptionPlan, TLSFingerprintProfile, UsageCleanupTask, UsageLog, User,
-		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
-		UserPlatformQuota, UserSubscription []ent.Hook
+		APIKey, Account, AccountFolder, AccountGroup, AccountTag, AccountTagBinding,
+		Announcement, AnnouncementRead, AuthIdentity, AuthIdentityChannel,
+		BatchImageEvent, BatchImageItem, BatchImageJob, ChannelMonitor,
+		ChannelMonitorDailyRollup, ChannelMonitorHistory,
+		ChannelMonitorRequestTemplate, CompositeModelRoute, ErrorPassthroughRule,
+		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
+		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
+		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
+		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
+		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
+		UserSubscription []ent.Hook
 	}
 	inters struct {
-		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
-		AuthIdentityChannel, BatchImageEvent, BatchImageItem, BatchImageJob,
-		ChannelMonitor, ChannelMonitorDailyRollup, ChannelMonitorHistory,
-		ChannelMonitorRequestTemplate, CompositeModelRoute,
-		ErrorPassthroughRule, Group, IdempotencyRecord, IdentityAdoptionDecision,
-		PaymentAuditLog, PaymentOrder, PaymentProviderInstance, PendingAuthSession,
-		PromoCode, PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting,
-		SubscriptionPlan, TLSFingerprintProfile, UsageCleanupTask, UsageLog, User,
-		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
-		UserPlatformQuota, UserSubscription []ent.Interceptor
+		APIKey, Account, AccountFolder, AccountGroup, AccountTag, AccountTagBinding,
+		Announcement, AnnouncementRead, AuthIdentity, AuthIdentityChannel,
+		BatchImageEvent, BatchImageItem, BatchImageJob, ChannelMonitor,
+		ChannelMonitorDailyRollup, ChannelMonitorHistory,
+		ChannelMonitorRequestTemplate, CompositeModelRoute, ErrorPassthroughRule,
+		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
+		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
+		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
+		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
+		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
+		UserSubscription []ent.Interceptor
 	}
 )
 

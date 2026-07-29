@@ -29,6 +29,7 @@ type Account struct {
 	ProxyID                 *int64
 	ProxyFallbackOriginID   *int64
 	ProxyFallbackOriginName *string // 仅展示用
+	ManagementFolderID      *int64
 	Concurrency             int
 	Priority                int
 	// RateMultiplier 账号计费倍率（>=0，允许 0 表示该账号计费为 0）。
@@ -59,10 +60,12 @@ type Account struct {
 	ParentAccountID *int64 // non-nil → 影子账号（不持凭据，透传母账号凭据）
 	QuotaDimension  string // 用量维度："" / "global" / "spark"
 
-	Proxy         *Proxy
-	AccountGroups []AccountGroup
-	GroupIDs      []int64
-	Groups        []*Group
+	Proxy            *Proxy
+	ManagementFolder *AccountManagementFolder
+	Tags             []AccountManagementTag
+	AccountGroups    []AccountGroup
+	GroupIDs         []int64
+	Groups           []*Group
 
 	// model_mapping 热路径缓存（非持久化字段）
 	modelMappingCache               map[string]string
@@ -79,6 +82,26 @@ type Account struct {
 	headerOverrideCacheRawPtr         uintptr
 	headerOverrideCacheRawLen         int
 	headerOverrideCacheRawSig         uint64
+}
+
+// AccountManagementFolder and AccountManagementTag are presentation and
+// administration metadata only. Scheduler code must not consult these fields.
+type AccountManagementFolder struct {
+	ID           int64
+	Name         string
+	SortOrder    int
+	AccountCount int
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+type AccountManagementTag struct {
+	ID           int64
+	Name         string
+	SortOrder    int
+	AccountCount int
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 type OpenAIEndpointCapability string

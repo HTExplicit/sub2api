@@ -1,12 +1,16 @@
 # HTExplicit Sub2API Downstream
 
-This public fork carries the `refusal-recovery` patch for OpenAI Responses.
+This public fork carries the maintained `codexrip` patch set for Sub2API. It includes
+OpenAI refusal recovery and the account management console extensions used by the
+downstream deployment.
 
 ## Release model
 
 - `main` is the tested downstream production line.
 - `.downstream/upstream-base` records the official stable release merged into `main`.
-- Custom tags use `vX.Y.Z-refusal-recovery.N`.
+- New custom tags use `vX.Y.Z-codexrip.N`.
+- Existing `vX.Y.Z-refusal-recovery.N` images are legacy inputs only. Production can
+  move from that channel to `codexrip`, but cannot deploy a new legacy image or move back.
 - Release images are published only as immutable version tags under `ghcr.io/htexplicit/sub2api`.
 - Production deployment always resolves and pins the registry digest.
 

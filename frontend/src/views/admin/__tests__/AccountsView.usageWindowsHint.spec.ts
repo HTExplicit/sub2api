@@ -22,6 +22,9 @@ vi.mock('@/api/admin', () => ({
     accounts: {
       list: listAccounts,
       listWithEtag,
+      getFacets: vi.fn().mockResolvedValue({ total: 0, uncategorized_count: 0, platforms: [], types: [], statuses: [], plans: [], proxies: [], folders: [], tags: [] }),
+      listFolders: vi.fn().mockResolvedValue([]),
+      listTags: vi.fn().mockResolvedValue([]),
       getBatchTodayStats,
       getUpstreamBillingProbeSettings: vi.fn().mockResolvedValue({ enabled: true, interval_minutes: 30 }),
       delete: vi.fn(),
@@ -159,7 +162,7 @@ describe('admin AccountsView usage windows hint', () => {
     const header = wrapper.find('[data-test="usage-header"]')
     expect(header.exists()).toBe(true)
     // Column label is still shown alongside the help icon.
-    expect(header.text()).toContain('admin.accounts.columns.usageWindows')
+    expect(header.text()).toContain('admin.accounts.columns.capacityUsage')
 
     const hint = wrapper.find('[data-test="usage-windows-hint"]')
     expect(hint.exists()).toBe(true)
@@ -177,6 +180,8 @@ describe('admin AccountsView usage windows hint', () => {
   })
 
   it('renders the upstream billing trust warning next to the declared-rate column', async () => {
+    localStorage.setItem('account-hidden-columns', JSON.stringify([]))
+    localStorage.setItem('account-hidden-columns-version', 'cockpit-console-defaults-v1')
     const wrapper = mountView()
     await flushPromises()
 

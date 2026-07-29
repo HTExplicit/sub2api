@@ -127,6 +127,7 @@ var (
 		{Name: "quota_dimension", Type: field.TypeEnum, Enums: []string{"global", "spark"}, Default: "global"},
 		{Name: "proxy_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "parent_account_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "management_folder_id", Type: field.TypeInt64, Nullable: true},
 	}
 	// AccountsTable holds the schema information for the "accounts" table.
 	AccountsTable = &schema.Table{
@@ -144,6 +145,12 @@ var (
 				Symbol:     "accounts_accounts_children",
 				Columns:    []*schema.Column{AccountsColumns[31]},
 				RefColumns: []*schema.Column{AccountsColumns[0]},
+				OnDelete:   schema.Restrict,
+			},
+			{
+				Symbol:     "accounts_account_folders_accounts",
+				Columns:    []*schema.Column{AccountsColumns[32]},
+				RefColumns: []*schema.Column{AccountFoldersColumns[0]},
 				OnDelete:   schema.Restrict,
 			},
 		},
@@ -167,6 +174,11 @@ var (
 				Name:    "account_proxy_id",
 				Unique:  false,
 				Columns: []*schema.Column{AccountsColumns[30]},
+			},
+			{
+				Name:    "account_management_folder_id",
+				Unique:  false,
+				Columns: []*schema.Column{AccountsColumns[32]},
 			},
 			{
 				Name:    "account_priority",
@@ -220,6 +232,28 @@ var (
 			},
 		},
 	}
+	// AccountFoldersColumns holds the columns for the "account_folders" table.
+	AccountFoldersColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "name", Type: field.TypeString, Size: 100},
+		{Name: "normalized_name", Type: field.TypeString, Unique: true, Size: 100},
+		{Name: "sort_order", Type: field.TypeInt, Default: 0},
+	}
+	// AccountFoldersTable holds the schema information for the "account_folders" table.
+	AccountFoldersTable = &schema.Table{
+		Name:       "account_folders",
+		Columns:    AccountFoldersColumns,
+		PrimaryKey: []*schema.Column{AccountFoldersColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "accountfolder_sort_order_name",
+				Unique:  false,
+				Columns: []*schema.Column{AccountFoldersColumns[5], AccountFoldersColumns[3]},
+			},
+		},
+	}
 	// AccountGroupsColumns holds the columns for the "account_groups" table.
 	AccountGroupsColumns = []*schema.Column{
 		{Name: "priority", Type: field.TypeInt, Default: 50},
@@ -256,6 +290,61 @@ var (
 				Name:    "accountgroup_priority",
 				Unique:  false,
 				Columns: []*schema.Column{AccountGroupsColumns[0]},
+			},
+		},
+	}
+	// AccountTagsColumns holds the columns for the "account_tags" table.
+	AccountTagsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "name", Type: field.TypeString, Size: 100},
+		{Name: "normalized_name", Type: field.TypeString, Unique: true, Size: 100},
+		{Name: "sort_order", Type: field.TypeInt, Default: 0},
+	}
+	// AccountTagsTable holds the schema information for the "account_tags" table.
+	AccountTagsTable = &schema.Table{
+		Name:       "account_tags",
+		Columns:    AccountTagsColumns,
+		PrimaryKey: []*schema.Column{AccountTagsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "accounttag_sort_order_name",
+				Unique:  false,
+				Columns: []*schema.Column{AccountTagsColumns[5], AccountTagsColumns[3]},
+			},
+		},
+	}
+	// AccountTagBindingsColumns holds the columns for the "account_tag_bindings" table.
+	AccountTagBindingsColumns = []*schema.Column{
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "account_id", Type: field.TypeInt64},
+		{Name: "tag_id", Type: field.TypeInt64},
+	}
+	// AccountTagBindingsTable holds the schema information for the "account_tag_bindings" table.
+	AccountTagBindingsTable = &schema.Table{
+		Name:       "account_tag_bindings",
+		Columns:    AccountTagBindingsColumns,
+		PrimaryKey: []*schema.Column{AccountTagBindingsColumns[1], AccountTagBindingsColumns[2]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "account_tag_bindings_accounts_account",
+				Columns:    []*schema.Column{AccountTagBindingsColumns[1]},
+				RefColumns: []*schema.Column{AccountsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+			{
+				Symbol:     "account_tag_bindings_account_tags_tag",
+				Columns:    []*schema.Column{AccountTagBindingsColumns[2]},
+				RefColumns: []*schema.Column{AccountTagsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "accounttagbinding_tag_id",
+				Unique:  false,
+				Columns: []*schema.Column{AccountTagBindingsColumns[2]},
 			},
 		},
 	}
@@ -2065,7 +2154,10 @@ var (
 	Tables = []*schema.Table{
 		APIKeysTable,
 		AccountsTable,
+		AccountFoldersTable,
 		AccountGroupsTable,
+		AccountTagsTable,
+		AccountTagBindingsTable,
 		AnnouncementsTable,
 		AnnouncementReadsTable,
 		AuthIdentitiesTable,
@@ -2113,13 +2205,25 @@ func init() {
 	}
 	AccountsTable.ForeignKeys[0].RefTable = ProxiesTable
 	AccountsTable.ForeignKeys[1].RefTable = AccountsTable
+	AccountsTable.ForeignKeys[2].RefTable = AccountFoldersTable
 	AccountsTable.Annotation = &entsql.Annotation{
 		Table: "accounts",
+	}
+	AccountFoldersTable.Annotation = &entsql.Annotation{
+		Table: "account_folders",
 	}
 	AccountGroupsTable.ForeignKeys[0].RefTable = AccountsTable
 	AccountGroupsTable.ForeignKeys[1].RefTable = GroupsTable
 	AccountGroupsTable.Annotation = &entsql.Annotation{
 		Table: "account_groups",
+	}
+	AccountTagsTable.Annotation = &entsql.Annotation{
+		Table: "account_tags",
+	}
+	AccountTagBindingsTable.ForeignKeys[0].RefTable = AccountsTable
+	AccountTagBindingsTable.ForeignKeys[1].RefTable = AccountTagsTable
+	AccountTagBindingsTable.Annotation = &entsql.Annotation{
+		Table: "account_tag_bindings",
 	}
 	AnnouncementsTable.Annotation = &entsql.Annotation{
 		Table: "announcements",

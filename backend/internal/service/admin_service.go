@@ -407,6 +407,10 @@ type BulkUpdateAccountFilters struct {
 	Group       string
 	Search      string
 	PrivacyMode string
+	// Console is populated only when the request uses the Cockpit console's
+	// multi-value taxonomy filters. Legacy scalar filters keep their original
+	// ListAccounts semantics when this field is nil.
+	Console *AccountConsoleFilters
 }
 
 // BulkUpdateAccountResult captures the result for a single account update.

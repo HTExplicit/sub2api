@@ -100,6 +100,11 @@ func ProxyFallbackOriginID(v int64) predicate.Account {
 	return predicate.Account(sql.FieldEQ(FieldProxyFallbackOriginID, v))
 }
 
+// ManagementFolderID applies equality check predicate on the "management_folder_id" field. It's identical to ManagementFolderIDEQ.
+func ManagementFolderID(v int64) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldManagementFolderID, v))
+}
+
 // Concurrency applies equality check predicate on the "concurrency" field. It's identical to ConcurrencyEQ.
 func Concurrency(v int) predicate.Account {
 	return predicate.Account(sql.FieldEQ(FieldConcurrency, v))
@@ -673,6 +678,36 @@ func ProxyFallbackOriginIDIsNil() predicate.Account {
 // ProxyFallbackOriginIDNotNil applies the NotNil predicate on the "proxy_fallback_origin_id" field.
 func ProxyFallbackOriginIDNotNil() predicate.Account {
 	return predicate.Account(sql.FieldNotNull(FieldProxyFallbackOriginID))
+}
+
+// ManagementFolderIDEQ applies the EQ predicate on the "management_folder_id" field.
+func ManagementFolderIDEQ(v int64) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldManagementFolderID, v))
+}
+
+// ManagementFolderIDNEQ applies the NEQ predicate on the "management_folder_id" field.
+func ManagementFolderIDNEQ(v int64) predicate.Account {
+	return predicate.Account(sql.FieldNEQ(FieldManagementFolderID, v))
+}
+
+// ManagementFolderIDIn applies the In predicate on the "management_folder_id" field.
+func ManagementFolderIDIn(vs ...int64) predicate.Account {
+	return predicate.Account(sql.FieldIn(FieldManagementFolderID, vs...))
+}
+
+// ManagementFolderIDNotIn applies the NotIn predicate on the "management_folder_id" field.
+func ManagementFolderIDNotIn(vs ...int64) predicate.Account {
+	return predicate.Account(sql.FieldNotIn(FieldManagementFolderID, vs...))
+}
+
+// ManagementFolderIDIsNil applies the IsNil predicate on the "management_folder_id" field.
+func ManagementFolderIDIsNil() predicate.Account {
+	return predicate.Account(sql.FieldIsNull(FieldManagementFolderID))
+}
+
+// ManagementFolderIDNotNil applies the NotNil predicate on the "management_folder_id" field.
+func ManagementFolderIDNotNil() predicate.Account {
+	return predicate.Account(sql.FieldNotNull(FieldManagementFolderID))
 }
 
 // ConcurrencyEQ applies the EQ predicate on the "concurrency" field.
@@ -1628,6 +1663,52 @@ func HasGroupsWith(preds ...predicate.Group) predicate.Account {
 	})
 }
 
+// HasManagementFolder applies the HasEdge predicate on the "management_folder" edge.
+func HasManagementFolder() predicate.Account {
+	return predicate.Account(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, ManagementFolderTable, ManagementFolderColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasManagementFolderWith applies the HasEdge predicate on the "management_folder" edge with a given conditions (other predicates).
+func HasManagementFolderWith(preds ...predicate.AccountFolder) predicate.Account {
+	return predicate.Account(func(s *sql.Selector) {
+		step := newManagementFolderStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasTags applies the HasEdge predicate on the "tags" edge.
+func HasTags() predicate.Account {
+	return predicate.Account(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2M, false, TagsTable, TagsPrimaryKey...),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasTagsWith applies the HasEdge predicate on the "tags" edge with a given conditions (other predicates).
+func HasTagsWith(preds ...predicate.AccountTag) predicate.Account {
+	return predicate.Account(func(s *sql.Selector) {
+		step := newTagsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // HasProxy applies the HasEdge predicate on the "proxy" edge.
 func HasProxy() predicate.Account {
 	return predicate.Account(func(s *sql.Selector) {
@@ -1735,6 +1816,29 @@ func HasAccountGroups() predicate.Account {
 func HasAccountGroupsWith(preds ...predicate.AccountGroup) predicate.Account {
 	return predicate.Account(func(s *sql.Selector) {
 		step := newAccountGroupsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasAccountTagBindings applies the HasEdge predicate on the "account_tag_bindings" edge.
+func HasAccountTagBindings() predicate.Account {
+	return predicate.Account(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, true, AccountTagBindingsTable, AccountTagBindingsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasAccountTagBindingsWith applies the HasEdge predicate on the "account_tag_bindings" edge with a given conditions (other predicates).
+func HasAccountTagBindingsWith(preds ...predicate.AccountTagBinding) predicate.Account {
+	return predicate.Account(func(s *sql.Selector) {
+		step := newAccountTagBindingsStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

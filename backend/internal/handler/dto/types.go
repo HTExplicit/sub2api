@@ -193,6 +193,8 @@ type Account struct {
 	ProxyID                 *int64                         `json:"proxy_id"`
 	ProxyFallbackOriginID   *int64                         `json:"proxy_fallback_origin_id"`
 	ProxyFallbackOriginName *string                        `json:"proxy_fallback_origin_name,omitempty"`
+	ManagementFolder        *AccountManagementFolder       `json:"management_folder,omitempty"`
+	Tags                    []AccountManagementTag         `json:"tags"`
 	Concurrency             int                            `json:"concurrency"`
 	LoadFactor              *int                           `json:"load_factor,omitempty"`
 	Priority                int                            `json:"priority"`
@@ -296,6 +298,24 @@ type Account struct {
 
 	GroupIDs []int64  `json:"group_ids,omitempty"`
 	Groups   []*Group `json:"groups,omitempty"`
+}
+
+type AccountManagementFolder struct {
+	ID           int64     `json:"id"`
+	Name         string    `json:"name"`
+	SortOrder    int       `json:"sort_order"`
+	AccountCount int       `json:"account_count"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+type AccountManagementTag struct {
+	ID           int64     `json:"id"`
+	Name         string    `json:"name"`
+	SortOrder    int       `json:"sort_order"`
+	AccountCount int       `json:"account_count"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type AccountGroup struct {

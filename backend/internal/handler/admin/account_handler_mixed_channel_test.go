@@ -221,6 +221,46 @@ func TestBulkUpdateAcceptsFilterTargetRequest(t *testing.T) {
 	var resp map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.Equal(t, float64(0), resp["code"])
+	require.NotNil(t, adminSvc.lastBulkUpdateAccountInput)
+	require.NotNil(t, adminSvc.lastBulkUpdateAccountInput.Filters)
+	require.Nil(t, adminSvc.lastBulkUpdateAccountInput.Filters.Console)
+}
+
+func TestBulkUpdateAcceptsCockpitConsoleFilterTargetRequest(t *testing.T) {
+	adminSvc := newStubAdminService()
+	router := setupAccountMixedChannelRouter(adminSvc)
+	body, _ := json.Marshal(map[string]any{
+		"filters": map[string]any{
+			"platforms": "openai,grok", "types": "oauth", "statuses": "active,error",
+			"plans": "team,pro", "proxies": "direct,5", "folders": "9",
+			"folder": "uncategorized", "tags": "3,4", "account_ids": "7,8",
+			"group": "12", "privacy_mode": "blocked", "search": "bulk-target",
+		},
+		"schedulable": true,
+	})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/bulk-update", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.NotNil(t, adminSvc.lastBulkUpdateAccountInput)
+	require.NotNil(t, adminSvc.lastBulkUpdateAccountInput.Filters)
+	filters := adminSvc.lastBulkUpdateAccountInput.Filters.Console
+	require.NotNil(t, filters)
+	require.Equal(t, []string{"openai", "grok"}, filters.Platforms)
+	require.Equal(t, []string{"oauth"}, filters.Types)
+	require.Equal(t, []string{"active", "error"}, filters.Statuses)
+	require.Equal(t, []string{"team", "pro"}, filters.Plans)
+	require.Equal(t, []int64{5}, filters.ProxyIDs)
+	require.True(t, filters.IncludeDirect)
+	require.Equal(t, []int64{9}, filters.FolderIDs)
+	require.True(t, filters.IncludeUncategorized)
+	require.Equal(t, []int64{3, 4}, filters.TagIDs)
+	require.Equal(t, []int64{7, 8}, filters.AccountIDs)
+	require.Equal(t, int64(12), filters.GroupID)
+	require.Equal(t, "blocked", filters.PrivacyMode)
+	require.Equal(t, "bulk-target", filters.Search)
 }
 
 func TestBulkUpdateAcceptsDedicatedUpstreamBillingProbeSetting(t *testing.T) {

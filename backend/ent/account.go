@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/Wei-Shaw/sub2api/ent/account"
+	"github.com/Wei-Shaw/sub2api/ent/accountfolder"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
 )
 
@@ -41,6 +42,8 @@ type Account struct {
 	ProxyID *int64 `json:"proxy_id,omitempty"`
 	// Original proxy id replaced by expiry-fallback; for manual revert. NULL = not in fallback.
 	ProxyFallbackOriginID *int64 `json:"proxy_fallback_origin_id,omitempty"`
+	// Flat management folder; never used by scheduling or billing.
+	ManagementFolderID *int64 `json:"management_folder_id,omitempty"`
 	// Concurrency holds the value of the "concurrency" field.
 	Concurrency int `json:"concurrency,omitempty"`
 	// LoadFactor holds the value of the "load_factor" field.
@@ -91,6 +94,10 @@ type Account struct {
 type AccountEdges struct {
 	// Groups holds the value of the groups edge.
 	Groups []*Group `json:"groups,omitempty"`
+	// ManagementFolder holds the value of the management_folder edge.
+	ManagementFolder *AccountFolder `json:"management_folder,omitempty"`
+	// Tags holds the value of the tags edge.
+	Tags []*AccountTag `json:"tags,omitempty"`
 	// Proxy holds the value of the proxy edge.
 	Proxy *Proxy `json:"proxy,omitempty"`
 	// Parent holds the value of the parent edge.
@@ -101,9 +108,11 @@ type AccountEdges struct {
 	UsageLogs []*UsageLog `json:"usage_logs,omitempty"`
 	// AccountGroups holds the value of the account_groups edge.
 	AccountGroups []*AccountGroup `json:"account_groups,omitempty"`
+	// AccountTagBindings holds the value of the account_tag_bindings edge.
+	AccountTagBindings []*AccountTagBinding `json:"account_tag_bindings,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [6]bool
+	loadedTypes [9]bool
 }
 
 // GroupsOrErr returns the Groups value or an error if the edge
@@ -115,12 +124,32 @@ func (e AccountEdges) GroupsOrErr() ([]*Group, error) {
 	return nil, &NotLoadedError{edge: "groups"}
 }
 
+// ManagementFolderOrErr returns the ManagementFolder value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e AccountEdges) ManagementFolderOrErr() (*AccountFolder, error) {
+	if e.ManagementFolder != nil {
+		return e.ManagementFolder, nil
+	} else if e.loadedTypes[1] {
+		return nil, &NotFoundError{label: accountfolder.Label}
+	}
+	return nil, &NotLoadedError{edge: "management_folder"}
+}
+
+// TagsOrErr returns the Tags value or an error if the edge
+// was not loaded in eager-loading.
+func (e AccountEdges) TagsOrErr() ([]*AccountTag, error) {
+	if e.loadedTypes[2] {
+		return e.Tags, nil
+	}
+	return nil, &NotLoadedError{edge: "tags"}
+}
+
 // ProxyOrErr returns the Proxy value or an error if the edge
 // was not loaded in eager-loading, or loaded but was not found.
 func (e AccountEdges) ProxyOrErr() (*Proxy, error) {
 	if e.Proxy != nil {
 		return e.Proxy, nil
-	} else if e.loadedTypes[1] {
+	} else if e.loadedTypes[3] {
 		return nil, &NotFoundError{label: proxy.Label}
 	}
 	return nil, &NotLoadedError{edge: "proxy"}
@@ -131,7 +160,7 @@ func (e AccountEdges) ProxyOrErr() (*Proxy, error) {
 func (e AccountEdges) ParentOrErr() (*Account, error) {
 	if e.Parent != nil {
 		return e.Parent, nil
-	} else if e.loadedTypes[2] {
+	} else if e.loadedTypes[4] {
 		return nil, &NotFoundError{label: account.Label}
 	}
 	return nil, &NotLoadedError{edge: "parent"}
@@ -140,7 +169,7 @@ func (e AccountEdges) ParentOrErr() (*Account, error) {
 // ChildrenOrErr returns the Children value or an error if the edge
 // was not loaded in eager-loading.
 func (e AccountEdges) ChildrenOrErr() ([]*Account, error) {
-	if e.loadedTypes[3] {
+	if e.loadedTypes[5] {
 		return e.Children, nil
 	}
 	return nil, &NotLoadedError{edge: "children"}
@@ -149,7 +178,7 @@ func (e AccountEdges) ChildrenOrErr() ([]*Account, error) {
 // UsageLogsOrErr returns the UsageLogs value or an error if the edge
 // was not loaded in eager-loading.
 func (e AccountEdges) UsageLogsOrErr() ([]*UsageLog, error) {
-	if e.loadedTypes[4] {
+	if e.loadedTypes[6] {
 		return e.UsageLogs, nil
 	}
 	return nil, &NotLoadedError{edge: "usage_logs"}
@@ -158,10 +187,19 @@ func (e AccountEdges) UsageLogsOrErr() ([]*UsageLog, error) {
 // AccountGroupsOrErr returns the AccountGroups value or an error if the edge
 // was not loaded in eager-loading.
 func (e AccountEdges) AccountGroupsOrErr() ([]*AccountGroup, error) {
-	if e.loadedTypes[5] {
+	if e.loadedTypes[7] {
 		return e.AccountGroups, nil
 	}
 	return nil, &NotLoadedError{edge: "account_groups"}
+}
+
+// AccountTagBindingsOrErr returns the AccountTagBindings value or an error if the edge
+// was not loaded in eager-loading.
+func (e AccountEdges) AccountTagBindingsOrErr() ([]*AccountTagBinding, error) {
+	if e.loadedTypes[8] {
+		return e.AccountTagBindings, nil
+	}
+	return nil, &NotLoadedError{edge: "account_tag_bindings"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -175,7 +213,7 @@ func (*Account) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case account.FieldRateMultiplier:
 			values[i] = new(sql.NullFloat64)
-		case account.FieldID, account.FieldProxyID, account.FieldProxyFallbackOriginID, account.FieldConcurrency, account.FieldLoadFactor, account.FieldPriority, account.FieldParentAccountID:
+		case account.FieldID, account.FieldProxyID, account.FieldProxyFallbackOriginID, account.FieldManagementFolderID, account.FieldConcurrency, account.FieldLoadFactor, account.FieldPriority, account.FieldParentAccountID:
 			values[i] = new(sql.NullInt64)
 		case account.FieldName, account.FieldNotes, account.FieldPlatform, account.FieldType, account.FieldStatus, account.FieldErrorMessage, account.FieldTempUnschedulableReason, account.FieldSessionWindowStatus, account.FieldQuotaDimension:
 			values[i] = new(sql.NullString)
@@ -275,6 +313,13 @@ func (_m *Account) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.ProxyFallbackOriginID = new(int64)
 				*_m.ProxyFallbackOriginID = value.Int64
+			}
+		case account.FieldManagementFolderID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field management_folder_id", values[i])
+			} else if value.Valid {
+				_m.ManagementFolderID = new(int64)
+				*_m.ManagementFolderID = value.Int64
 			}
 		case account.FieldConcurrency:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -427,6 +472,16 @@ func (_m *Account) QueryGroups() *GroupQuery {
 	return NewAccountClient(_m.config).QueryGroups(_m)
 }
 
+// QueryManagementFolder queries the "management_folder" edge of the Account entity.
+func (_m *Account) QueryManagementFolder() *AccountFolderQuery {
+	return NewAccountClient(_m.config).QueryManagementFolder(_m)
+}
+
+// QueryTags queries the "tags" edge of the Account entity.
+func (_m *Account) QueryTags() *AccountTagQuery {
+	return NewAccountClient(_m.config).QueryTags(_m)
+}
+
 // QueryProxy queries the "proxy" edge of the Account entity.
 func (_m *Account) QueryProxy() *ProxyQuery {
 	return NewAccountClient(_m.config).QueryProxy(_m)
@@ -450,6 +505,11 @@ func (_m *Account) QueryUsageLogs() *UsageLogQuery {
 // QueryAccountGroups queries the "account_groups" edge of the Account entity.
 func (_m *Account) QueryAccountGroups() *AccountGroupQuery {
 	return NewAccountClient(_m.config).QueryAccountGroups(_m)
+}
+
+// QueryAccountTagBindings queries the "account_tag_bindings" edge of the Account entity.
+func (_m *Account) QueryAccountTagBindings() *AccountTagBindingQuery {
+	return NewAccountClient(_m.config).QueryAccountTagBindings(_m)
 }
 
 // Update returns a builder for updating this Account.
@@ -513,6 +573,11 @@ func (_m *Account) String() string {
 	builder.WriteString(", ")
 	if v := _m.ProxyFallbackOriginID; v != nil {
 		builder.WriteString("proxy_fallback_origin_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.ManagementFolderID; v != nil {
+		builder.WriteString("management_folder_id=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")

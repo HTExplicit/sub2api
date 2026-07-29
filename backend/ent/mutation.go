@@ -13,7 +13,10 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/Wei-Shaw/sub2api/ent/account"
+	"github.com/Wei-Shaw/sub2api/ent/accountfolder"
 	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
+	"github.com/Wei-Shaw/sub2api/ent/accounttag"
+	"github.com/Wei-Shaw/sub2api/ent/accounttagbinding"
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
@@ -66,7 +69,10 @@ const (
 	// Node types.
 	TypeAPIKey                        = "APIKey"
 	TypeAccount                       = "Account"
+	TypeAccountFolder                 = "AccountFolder"
 	TypeAccountGroup                  = "AccountGroup"
+	TypeAccountTag                    = "AccountTag"
+	TypeAccountTagBinding             = "AccountTagBinding"
 	TypeAnnouncement                  = "Announcement"
 	TypeAnnouncementRead              = "AnnouncementRead"
 	TypeAuthIdentity                  = "AuthIdentity"
@@ -2323,6 +2329,11 @@ type AccountMutation struct {
 	groups                      map[int64]struct{}
 	removedgroups               map[int64]struct{}
 	clearedgroups               bool
+	management_folder           *int64
+	clearedmanagement_folder    bool
+	tags                        map[int64]struct{}
+	removedtags                 map[int64]struct{}
+	clearedtags                 bool
 	proxy                       *int64
 	clearedproxy                bool
 	parent                      *int64
@@ -2903,6 +2914,55 @@ func (m *AccountMutation) ResetProxyFallbackOriginID() {
 	m.proxy_fallback_origin_id = nil
 	m.addproxy_fallback_origin_id = nil
 	delete(m.clearedFields, account.FieldProxyFallbackOriginID)
+}
+
+// SetManagementFolderID sets the "management_folder_id" field.
+func (m *AccountMutation) SetManagementFolderID(i int64) {
+	m.management_folder = &i
+}
+
+// ManagementFolderID returns the value of the "management_folder_id" field in the mutation.
+func (m *AccountMutation) ManagementFolderID() (r int64, exists bool) {
+	v := m.management_folder
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldManagementFolderID returns the old "management_folder_id" field's value of the Account entity.
+// If the Account object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountMutation) OldManagementFolderID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldManagementFolderID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldManagementFolderID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldManagementFolderID: %w", err)
+	}
+	return oldValue.ManagementFolderID, nil
+}
+
+// ClearManagementFolderID clears the value of the "management_folder_id" field.
+func (m *AccountMutation) ClearManagementFolderID() {
+	m.management_folder = nil
+	m.clearedFields[account.FieldManagementFolderID] = struct{}{}
+}
+
+// ManagementFolderIDCleared returns if the "management_folder_id" field was cleared in this mutation.
+func (m *AccountMutation) ManagementFolderIDCleared() bool {
+	_, ok := m.clearedFields[account.FieldManagementFolderID]
+	return ok
+}
+
+// ResetManagementFolderID resets all changes to the "management_folder_id" field.
+func (m *AccountMutation) ResetManagementFolderID() {
+	m.management_folder = nil
+	delete(m.clearedFields, account.FieldManagementFolderID)
 }
 
 // SetConcurrency sets the "concurrency" field.
@@ -3929,6 +3989,87 @@ func (m *AccountMutation) ResetGroups() {
 	m.removedgroups = nil
 }
 
+// ClearManagementFolder clears the "management_folder" edge to the AccountFolder entity.
+func (m *AccountMutation) ClearManagementFolder() {
+	m.clearedmanagement_folder = true
+	m.clearedFields[account.FieldManagementFolderID] = struct{}{}
+}
+
+// ManagementFolderCleared reports if the "management_folder" edge to the AccountFolder entity was cleared.
+func (m *AccountMutation) ManagementFolderCleared() bool {
+	return m.ManagementFolderIDCleared() || m.clearedmanagement_folder
+}
+
+// ManagementFolderIDs returns the "management_folder" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// ManagementFolderID instead. It exists only for internal usage by the builders.
+func (m *AccountMutation) ManagementFolderIDs() (ids []int64) {
+	if id := m.management_folder; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetManagementFolder resets all changes to the "management_folder" edge.
+func (m *AccountMutation) ResetManagementFolder() {
+	m.management_folder = nil
+	m.clearedmanagement_folder = false
+}
+
+// AddTagIDs adds the "tags" edge to the AccountTag entity by ids.
+func (m *AccountMutation) AddTagIDs(ids ...int64) {
+	if m.tags == nil {
+		m.tags = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.tags[ids[i]] = struct{}{}
+	}
+}
+
+// ClearTags clears the "tags" edge to the AccountTag entity.
+func (m *AccountMutation) ClearTags() {
+	m.clearedtags = true
+}
+
+// TagsCleared reports if the "tags" edge to the AccountTag entity was cleared.
+func (m *AccountMutation) TagsCleared() bool {
+	return m.clearedtags
+}
+
+// RemoveTagIDs removes the "tags" edge to the AccountTag entity by IDs.
+func (m *AccountMutation) RemoveTagIDs(ids ...int64) {
+	if m.removedtags == nil {
+		m.removedtags = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.tags, ids[i])
+		m.removedtags[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedTags returns the removed IDs of the "tags" edge to the AccountTag entity.
+func (m *AccountMutation) RemovedTagsIDs() (ids []int64) {
+	for id := range m.removedtags {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// TagsIDs returns the "tags" edge IDs in the mutation.
+func (m *AccountMutation) TagsIDs() (ids []int64) {
+	for id := range m.tags {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetTags resets all changes to the "tags" edge.
+func (m *AccountMutation) ResetTags() {
+	m.tags = nil
+	m.clearedtags = false
+	m.removedtags = nil
+}
+
 // ClearProxy clears the "proxy" edge to the Proxy entity.
 func (m *AccountMutation) ClearProxy() {
 	m.clearedproxy = true
@@ -4138,7 +4279,7 @@ func (m *AccountMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *AccountMutation) Fields() []string {
-	fields := make([]string, 0, 31)
+	fields := make([]string, 0, 32)
 	if m.created_at != nil {
 		fields = append(fields, account.FieldCreatedAt)
 	}
@@ -4171,6 +4312,9 @@ func (m *AccountMutation) Fields() []string {
 	}
 	if m.proxy_fallback_origin_id != nil {
 		fields = append(fields, account.FieldProxyFallbackOriginID)
+	}
+	if m.management_folder != nil {
+		fields = append(fields, account.FieldManagementFolderID)
 	}
 	if m.concurrency != nil {
 		fields = append(fields, account.FieldConcurrency)
@@ -4262,6 +4406,8 @@ func (m *AccountMutation) Field(name string) (ent.Value, bool) {
 		return m.ProxyID()
 	case account.FieldProxyFallbackOriginID:
 		return m.ProxyFallbackOriginID()
+	case account.FieldManagementFolderID:
+		return m.ManagementFolderID()
 	case account.FieldConcurrency:
 		return m.Concurrency()
 	case account.FieldLoadFactor:
@@ -4333,6 +4479,8 @@ func (m *AccountMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldProxyID(ctx)
 	case account.FieldProxyFallbackOriginID:
 		return m.OldProxyFallbackOriginID(ctx)
+	case account.FieldManagementFolderID:
+		return m.OldManagementFolderID(ctx)
 	case account.FieldConcurrency:
 		return m.OldConcurrency(ctx)
 	case account.FieldLoadFactor:
@@ -4458,6 +4606,13 @@ func (m *AccountMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetProxyFallbackOriginID(v)
+		return nil
+	case account.FieldManagementFolderID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetManagementFolderID(v)
 		return nil
 	case account.FieldConcurrency:
 		v, ok := value.(int)
@@ -4704,6 +4859,9 @@ func (m *AccountMutation) ClearedFields() []string {
 	if m.FieldCleared(account.FieldProxyFallbackOriginID) {
 		fields = append(fields, account.FieldProxyFallbackOriginID)
 	}
+	if m.FieldCleared(account.FieldManagementFolderID) {
+		fields = append(fields, account.FieldManagementFolderID)
+	}
 	if m.FieldCleared(account.FieldLoadFactor) {
 		fields = append(fields, account.FieldLoadFactor)
 	}
@@ -4768,6 +4926,9 @@ func (m *AccountMutation) ClearField(name string) error {
 		return nil
 	case account.FieldProxyFallbackOriginID:
 		m.ClearProxyFallbackOriginID()
+		return nil
+	case account.FieldManagementFolderID:
+		m.ClearManagementFolderID()
 		return nil
 	case account.FieldLoadFactor:
 		m.ClearLoadFactor()
@@ -4849,6 +5010,9 @@ func (m *AccountMutation) ResetField(name string) error {
 	case account.FieldProxyFallbackOriginID:
 		m.ResetProxyFallbackOriginID()
 		return nil
+	case account.FieldManagementFolderID:
+		m.ResetManagementFolderID()
+		return nil
 	case account.FieldConcurrency:
 		m.ResetConcurrency()
 		return nil
@@ -4915,9 +5079,15 @@ func (m *AccountMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *AccountMutation) AddedEdges() []string {
-	edges := make([]string, 0, 5)
+	edges := make([]string, 0, 7)
 	if m.groups != nil {
 		edges = append(edges, account.EdgeGroups)
+	}
+	if m.management_folder != nil {
+		edges = append(edges, account.EdgeManagementFolder)
+	}
+	if m.tags != nil {
+		edges = append(edges, account.EdgeTags)
 	}
 	if m.proxy != nil {
 		edges = append(edges, account.EdgeProxy)
@@ -4941,6 +5111,16 @@ func (m *AccountMutation) AddedIDs(name string) []ent.Value {
 	case account.EdgeGroups:
 		ids := make([]ent.Value, 0, len(m.groups))
 		for id := range m.groups {
+			ids = append(ids, id)
+		}
+		return ids
+	case account.EdgeManagementFolder:
+		if id := m.management_folder; id != nil {
+			return []ent.Value{*id}
+		}
+	case account.EdgeTags:
+		ids := make([]ent.Value, 0, len(m.tags))
+		for id := range m.tags {
 			ids = append(ids, id)
 		}
 		return ids
@@ -4970,9 +5150,12 @@ func (m *AccountMutation) AddedIDs(name string) []ent.Value {
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *AccountMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 5)
+	edges := make([]string, 0, 7)
 	if m.removedgroups != nil {
 		edges = append(edges, account.EdgeGroups)
+	}
+	if m.removedtags != nil {
+		edges = append(edges, account.EdgeTags)
 	}
 	if m.removedchildren != nil {
 		edges = append(edges, account.EdgeChildren)
@@ -4990,6 +5173,12 @@ func (m *AccountMutation) RemovedIDs(name string) []ent.Value {
 	case account.EdgeGroups:
 		ids := make([]ent.Value, 0, len(m.removedgroups))
 		for id := range m.removedgroups {
+			ids = append(ids, id)
+		}
+		return ids
+	case account.EdgeTags:
+		ids := make([]ent.Value, 0, len(m.removedtags))
+		for id := range m.removedtags {
 			ids = append(ids, id)
 		}
 		return ids
@@ -5011,9 +5200,15 @@ func (m *AccountMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *AccountMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 5)
+	edges := make([]string, 0, 7)
 	if m.clearedgroups {
 		edges = append(edges, account.EdgeGroups)
+	}
+	if m.clearedmanagement_folder {
+		edges = append(edges, account.EdgeManagementFolder)
+	}
+	if m.clearedtags {
+		edges = append(edges, account.EdgeTags)
 	}
 	if m.clearedproxy {
 		edges = append(edges, account.EdgeProxy)
@@ -5036,6 +5231,10 @@ func (m *AccountMutation) EdgeCleared(name string) bool {
 	switch name {
 	case account.EdgeGroups:
 		return m.clearedgroups
+	case account.EdgeManagementFolder:
+		return m.clearedmanagement_folder
+	case account.EdgeTags:
+		return m.clearedtags
 	case account.EdgeProxy:
 		return m.clearedproxy
 	case account.EdgeParent:
@@ -5052,6 +5251,9 @@ func (m *AccountMutation) EdgeCleared(name string) bool {
 // if that edge is not defined in the schema.
 func (m *AccountMutation) ClearEdge(name string) error {
 	switch name {
+	case account.EdgeManagementFolder:
+		m.ClearManagementFolder()
+		return nil
 	case account.EdgeProxy:
 		m.ClearProxy()
 		return nil
@@ -5069,6 +5271,12 @@ func (m *AccountMutation) ResetEdge(name string) error {
 	case account.EdgeGroups:
 		m.ResetGroups()
 		return nil
+	case account.EdgeManagementFolder:
+		m.ResetManagementFolder()
+		return nil
+	case account.EdgeTags:
+		m.ResetTags()
+		return nil
 	case account.EdgeProxy:
 		m.ResetProxy()
 		return nil
@@ -5083,6 +5291,677 @@ func (m *AccountMutation) ResetEdge(name string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown Account edge %s", name)
+}
+
+// AccountFolderMutation represents an operation that mutates the AccountFolder nodes in the graph.
+type AccountFolderMutation struct {
+	config
+	op              Op
+	typ             string
+	id              *int64
+	created_at      *time.Time
+	updated_at      *time.Time
+	name            *string
+	normalized_name *string
+	sort_order      *int
+	addsort_order   *int
+	clearedFields   map[string]struct{}
+	accounts        map[int64]struct{}
+	removedaccounts map[int64]struct{}
+	clearedaccounts bool
+	done            bool
+	oldValue        func(context.Context) (*AccountFolder, error)
+	predicates      []predicate.AccountFolder
+}
+
+var _ ent.Mutation = (*AccountFolderMutation)(nil)
+
+// accountfolderOption allows management of the mutation configuration using functional options.
+type accountfolderOption func(*AccountFolderMutation)
+
+// newAccountFolderMutation creates new mutation for the AccountFolder entity.
+func newAccountFolderMutation(c config, op Op, opts ...accountfolderOption) *AccountFolderMutation {
+	m := &AccountFolderMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeAccountFolder,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withAccountFolderID sets the ID field of the mutation.
+func withAccountFolderID(id int64) accountfolderOption {
+	return func(m *AccountFolderMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *AccountFolder
+		)
+		m.oldValue = func(ctx context.Context) (*AccountFolder, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().AccountFolder.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withAccountFolder sets the old AccountFolder of the mutation.
+func withAccountFolder(node *AccountFolder) accountfolderOption {
+	return func(m *AccountFolderMutation) {
+		m.oldValue = func(context.Context) (*AccountFolder, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m AccountFolderMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m AccountFolderMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *AccountFolderMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *AccountFolderMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().AccountFolder.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *AccountFolderMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *AccountFolderMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the AccountFolder entity.
+// If the AccountFolder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountFolderMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *AccountFolderMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *AccountFolderMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *AccountFolderMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the AccountFolder entity.
+// If the AccountFolder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountFolderMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *AccountFolderMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetName sets the "name" field.
+func (m *AccountFolderMutation) SetName(s string) {
+	m.name = &s
+}
+
+// Name returns the value of the "name" field in the mutation.
+func (m *AccountFolderMutation) Name() (r string, exists bool) {
+	v := m.name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldName returns the old "name" field's value of the AccountFolder entity.
+// If the AccountFolder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountFolderMutation) OldName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldName: %w", err)
+	}
+	return oldValue.Name, nil
+}
+
+// ResetName resets all changes to the "name" field.
+func (m *AccountFolderMutation) ResetName() {
+	m.name = nil
+}
+
+// SetNormalizedName sets the "normalized_name" field.
+func (m *AccountFolderMutation) SetNormalizedName(s string) {
+	m.normalized_name = &s
+}
+
+// NormalizedName returns the value of the "normalized_name" field in the mutation.
+func (m *AccountFolderMutation) NormalizedName() (r string, exists bool) {
+	v := m.normalized_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldNormalizedName returns the old "normalized_name" field's value of the AccountFolder entity.
+// If the AccountFolder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountFolderMutation) OldNormalizedName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldNormalizedName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldNormalizedName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldNormalizedName: %w", err)
+	}
+	return oldValue.NormalizedName, nil
+}
+
+// ResetNormalizedName resets all changes to the "normalized_name" field.
+func (m *AccountFolderMutation) ResetNormalizedName() {
+	m.normalized_name = nil
+}
+
+// SetSortOrder sets the "sort_order" field.
+func (m *AccountFolderMutation) SetSortOrder(i int) {
+	m.sort_order = &i
+	m.addsort_order = nil
+}
+
+// SortOrder returns the value of the "sort_order" field in the mutation.
+func (m *AccountFolderMutation) SortOrder() (r int, exists bool) {
+	v := m.sort_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSortOrder returns the old "sort_order" field's value of the AccountFolder entity.
+// If the AccountFolder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountFolderMutation) OldSortOrder(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSortOrder is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSortOrder requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSortOrder: %w", err)
+	}
+	return oldValue.SortOrder, nil
+}
+
+// AddSortOrder adds i to the "sort_order" field.
+func (m *AccountFolderMutation) AddSortOrder(i int) {
+	if m.addsort_order != nil {
+		*m.addsort_order += i
+	} else {
+		m.addsort_order = &i
+	}
+}
+
+// AddedSortOrder returns the value that was added to the "sort_order" field in this mutation.
+func (m *AccountFolderMutation) AddedSortOrder() (r int, exists bool) {
+	v := m.addsort_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSortOrder resets all changes to the "sort_order" field.
+func (m *AccountFolderMutation) ResetSortOrder() {
+	m.sort_order = nil
+	m.addsort_order = nil
+}
+
+// AddAccountIDs adds the "accounts" edge to the Account entity by ids.
+func (m *AccountFolderMutation) AddAccountIDs(ids ...int64) {
+	if m.accounts == nil {
+		m.accounts = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.accounts[ids[i]] = struct{}{}
+	}
+}
+
+// ClearAccounts clears the "accounts" edge to the Account entity.
+func (m *AccountFolderMutation) ClearAccounts() {
+	m.clearedaccounts = true
+}
+
+// AccountsCleared reports if the "accounts" edge to the Account entity was cleared.
+func (m *AccountFolderMutation) AccountsCleared() bool {
+	return m.clearedaccounts
+}
+
+// RemoveAccountIDs removes the "accounts" edge to the Account entity by IDs.
+func (m *AccountFolderMutation) RemoveAccountIDs(ids ...int64) {
+	if m.removedaccounts == nil {
+		m.removedaccounts = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.accounts, ids[i])
+		m.removedaccounts[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedAccounts returns the removed IDs of the "accounts" edge to the Account entity.
+func (m *AccountFolderMutation) RemovedAccountsIDs() (ids []int64) {
+	for id := range m.removedaccounts {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// AccountsIDs returns the "accounts" edge IDs in the mutation.
+func (m *AccountFolderMutation) AccountsIDs() (ids []int64) {
+	for id := range m.accounts {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetAccounts resets all changes to the "accounts" edge.
+func (m *AccountFolderMutation) ResetAccounts() {
+	m.accounts = nil
+	m.clearedaccounts = false
+	m.removedaccounts = nil
+}
+
+// Where appends a list predicates to the AccountFolderMutation builder.
+func (m *AccountFolderMutation) Where(ps ...predicate.AccountFolder) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the AccountFolderMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *AccountFolderMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.AccountFolder, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *AccountFolderMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *AccountFolderMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (AccountFolder).
+func (m *AccountFolderMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *AccountFolderMutation) Fields() []string {
+	fields := make([]string, 0, 5)
+	if m.created_at != nil {
+		fields = append(fields, accountfolder.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, accountfolder.FieldUpdatedAt)
+	}
+	if m.name != nil {
+		fields = append(fields, accountfolder.FieldName)
+	}
+	if m.normalized_name != nil {
+		fields = append(fields, accountfolder.FieldNormalizedName)
+	}
+	if m.sort_order != nil {
+		fields = append(fields, accountfolder.FieldSortOrder)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *AccountFolderMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case accountfolder.FieldCreatedAt:
+		return m.CreatedAt()
+	case accountfolder.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case accountfolder.FieldName:
+		return m.Name()
+	case accountfolder.FieldNormalizedName:
+		return m.NormalizedName()
+	case accountfolder.FieldSortOrder:
+		return m.SortOrder()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *AccountFolderMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case accountfolder.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case accountfolder.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case accountfolder.FieldName:
+		return m.OldName(ctx)
+	case accountfolder.FieldNormalizedName:
+		return m.OldNormalizedName(ctx)
+	case accountfolder.FieldSortOrder:
+		return m.OldSortOrder(ctx)
+	}
+	return nil, fmt.Errorf("unknown AccountFolder field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AccountFolderMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case accountfolder.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case accountfolder.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case accountfolder.FieldName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetName(v)
+		return nil
+	case accountfolder.FieldNormalizedName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetNormalizedName(v)
+		return nil
+	case accountfolder.FieldSortOrder:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSortOrder(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AccountFolder field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *AccountFolderMutation) AddedFields() []string {
+	var fields []string
+	if m.addsort_order != nil {
+		fields = append(fields, accountfolder.FieldSortOrder)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *AccountFolderMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case accountfolder.FieldSortOrder:
+		return m.AddedSortOrder()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AccountFolderMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case accountfolder.FieldSortOrder:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSortOrder(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AccountFolder numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *AccountFolderMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *AccountFolderMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *AccountFolderMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown AccountFolder nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *AccountFolderMutation) ResetField(name string) error {
+	switch name {
+	case accountfolder.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case accountfolder.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case accountfolder.FieldName:
+		m.ResetName()
+		return nil
+	case accountfolder.FieldNormalizedName:
+		m.ResetNormalizedName()
+		return nil
+	case accountfolder.FieldSortOrder:
+		m.ResetSortOrder()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountFolder field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *AccountFolderMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.accounts != nil {
+		edges = append(edges, accountfolder.EdgeAccounts)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *AccountFolderMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case accountfolder.EdgeAccounts:
+		ids := make([]ent.Value, 0, len(m.accounts))
+		for id := range m.accounts {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *AccountFolderMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.removedaccounts != nil {
+		edges = append(edges, accountfolder.EdgeAccounts)
+	}
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *AccountFolderMutation) RemovedIDs(name string) []ent.Value {
+	switch name {
+	case accountfolder.EdgeAccounts:
+		ids := make([]ent.Value, 0, len(m.removedaccounts))
+		for id := range m.removedaccounts {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *AccountFolderMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedaccounts {
+		edges = append(edges, accountfolder.EdgeAccounts)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *AccountFolderMutation) EdgeCleared(name string) bool {
+	switch name {
+	case accountfolder.EdgeAccounts:
+		return m.clearedaccounts
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *AccountFolderMutation) ClearEdge(name string) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown AccountFolder unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *AccountFolderMutation) ResetEdge(name string) error {
+	switch name {
+	case accountfolder.EdgeAccounts:
+		m.ResetAccounts()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountFolder edge %s", name)
 }
 
 // AccountGroupMutation represents an operation that mutates the AccountGroup nodes in the graph.
@@ -5568,6 +6447,1094 @@ func (m *AccountGroupMutation) ResetEdge(name string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown AccountGroup edge %s", name)
+}
+
+// AccountTagMutation represents an operation that mutates the AccountTag nodes in the graph.
+type AccountTagMutation struct {
+	config
+	op              Op
+	typ             string
+	id              *int64
+	created_at      *time.Time
+	updated_at      *time.Time
+	name            *string
+	normalized_name *string
+	sort_order      *int
+	addsort_order   *int
+	clearedFields   map[string]struct{}
+	accounts        map[int64]struct{}
+	removedaccounts map[int64]struct{}
+	clearedaccounts bool
+	done            bool
+	oldValue        func(context.Context) (*AccountTag, error)
+	predicates      []predicate.AccountTag
+}
+
+var _ ent.Mutation = (*AccountTagMutation)(nil)
+
+// accounttagOption allows management of the mutation configuration using functional options.
+type accounttagOption func(*AccountTagMutation)
+
+// newAccountTagMutation creates new mutation for the AccountTag entity.
+func newAccountTagMutation(c config, op Op, opts ...accounttagOption) *AccountTagMutation {
+	m := &AccountTagMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeAccountTag,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withAccountTagID sets the ID field of the mutation.
+func withAccountTagID(id int64) accounttagOption {
+	return func(m *AccountTagMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *AccountTag
+		)
+		m.oldValue = func(ctx context.Context) (*AccountTag, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().AccountTag.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withAccountTag sets the old AccountTag of the mutation.
+func withAccountTag(node *AccountTag) accounttagOption {
+	return func(m *AccountTagMutation) {
+		m.oldValue = func(context.Context) (*AccountTag, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m AccountTagMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m AccountTagMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *AccountTagMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *AccountTagMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().AccountTag.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *AccountTagMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *AccountTagMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the AccountTag entity.
+// If the AccountTag object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountTagMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *AccountTagMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *AccountTagMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *AccountTagMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the AccountTag entity.
+// If the AccountTag object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountTagMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *AccountTagMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetName sets the "name" field.
+func (m *AccountTagMutation) SetName(s string) {
+	m.name = &s
+}
+
+// Name returns the value of the "name" field in the mutation.
+func (m *AccountTagMutation) Name() (r string, exists bool) {
+	v := m.name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldName returns the old "name" field's value of the AccountTag entity.
+// If the AccountTag object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountTagMutation) OldName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldName: %w", err)
+	}
+	return oldValue.Name, nil
+}
+
+// ResetName resets all changes to the "name" field.
+func (m *AccountTagMutation) ResetName() {
+	m.name = nil
+}
+
+// SetNormalizedName sets the "normalized_name" field.
+func (m *AccountTagMutation) SetNormalizedName(s string) {
+	m.normalized_name = &s
+}
+
+// NormalizedName returns the value of the "normalized_name" field in the mutation.
+func (m *AccountTagMutation) NormalizedName() (r string, exists bool) {
+	v := m.normalized_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldNormalizedName returns the old "normalized_name" field's value of the AccountTag entity.
+// If the AccountTag object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountTagMutation) OldNormalizedName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldNormalizedName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldNormalizedName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldNormalizedName: %w", err)
+	}
+	return oldValue.NormalizedName, nil
+}
+
+// ResetNormalizedName resets all changes to the "normalized_name" field.
+func (m *AccountTagMutation) ResetNormalizedName() {
+	m.normalized_name = nil
+}
+
+// SetSortOrder sets the "sort_order" field.
+func (m *AccountTagMutation) SetSortOrder(i int) {
+	m.sort_order = &i
+	m.addsort_order = nil
+}
+
+// SortOrder returns the value of the "sort_order" field in the mutation.
+func (m *AccountTagMutation) SortOrder() (r int, exists bool) {
+	v := m.sort_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSortOrder returns the old "sort_order" field's value of the AccountTag entity.
+// If the AccountTag object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountTagMutation) OldSortOrder(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSortOrder is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSortOrder requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSortOrder: %w", err)
+	}
+	return oldValue.SortOrder, nil
+}
+
+// AddSortOrder adds i to the "sort_order" field.
+func (m *AccountTagMutation) AddSortOrder(i int) {
+	if m.addsort_order != nil {
+		*m.addsort_order += i
+	} else {
+		m.addsort_order = &i
+	}
+}
+
+// AddedSortOrder returns the value that was added to the "sort_order" field in this mutation.
+func (m *AccountTagMutation) AddedSortOrder() (r int, exists bool) {
+	v := m.addsort_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSortOrder resets all changes to the "sort_order" field.
+func (m *AccountTagMutation) ResetSortOrder() {
+	m.sort_order = nil
+	m.addsort_order = nil
+}
+
+// AddAccountIDs adds the "accounts" edge to the Account entity by ids.
+func (m *AccountTagMutation) AddAccountIDs(ids ...int64) {
+	if m.accounts == nil {
+		m.accounts = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.accounts[ids[i]] = struct{}{}
+	}
+}
+
+// ClearAccounts clears the "accounts" edge to the Account entity.
+func (m *AccountTagMutation) ClearAccounts() {
+	m.clearedaccounts = true
+}
+
+// AccountsCleared reports if the "accounts" edge to the Account entity was cleared.
+func (m *AccountTagMutation) AccountsCleared() bool {
+	return m.clearedaccounts
+}
+
+// RemoveAccountIDs removes the "accounts" edge to the Account entity by IDs.
+func (m *AccountTagMutation) RemoveAccountIDs(ids ...int64) {
+	if m.removedaccounts == nil {
+		m.removedaccounts = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.accounts, ids[i])
+		m.removedaccounts[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedAccounts returns the removed IDs of the "accounts" edge to the Account entity.
+func (m *AccountTagMutation) RemovedAccountsIDs() (ids []int64) {
+	for id := range m.removedaccounts {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// AccountsIDs returns the "accounts" edge IDs in the mutation.
+func (m *AccountTagMutation) AccountsIDs() (ids []int64) {
+	for id := range m.accounts {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetAccounts resets all changes to the "accounts" edge.
+func (m *AccountTagMutation) ResetAccounts() {
+	m.accounts = nil
+	m.clearedaccounts = false
+	m.removedaccounts = nil
+}
+
+// Where appends a list predicates to the AccountTagMutation builder.
+func (m *AccountTagMutation) Where(ps ...predicate.AccountTag) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the AccountTagMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *AccountTagMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.AccountTag, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *AccountTagMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *AccountTagMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (AccountTag).
+func (m *AccountTagMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *AccountTagMutation) Fields() []string {
+	fields := make([]string, 0, 5)
+	if m.created_at != nil {
+		fields = append(fields, accounttag.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, accounttag.FieldUpdatedAt)
+	}
+	if m.name != nil {
+		fields = append(fields, accounttag.FieldName)
+	}
+	if m.normalized_name != nil {
+		fields = append(fields, accounttag.FieldNormalizedName)
+	}
+	if m.sort_order != nil {
+		fields = append(fields, accounttag.FieldSortOrder)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *AccountTagMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case accounttag.FieldCreatedAt:
+		return m.CreatedAt()
+	case accounttag.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case accounttag.FieldName:
+		return m.Name()
+	case accounttag.FieldNormalizedName:
+		return m.NormalizedName()
+	case accounttag.FieldSortOrder:
+		return m.SortOrder()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *AccountTagMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case accounttag.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case accounttag.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case accounttag.FieldName:
+		return m.OldName(ctx)
+	case accounttag.FieldNormalizedName:
+		return m.OldNormalizedName(ctx)
+	case accounttag.FieldSortOrder:
+		return m.OldSortOrder(ctx)
+	}
+	return nil, fmt.Errorf("unknown AccountTag field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AccountTagMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case accounttag.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case accounttag.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case accounttag.FieldName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetName(v)
+		return nil
+	case accounttag.FieldNormalizedName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetNormalizedName(v)
+		return nil
+	case accounttag.FieldSortOrder:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSortOrder(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AccountTag field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *AccountTagMutation) AddedFields() []string {
+	var fields []string
+	if m.addsort_order != nil {
+		fields = append(fields, accounttag.FieldSortOrder)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *AccountTagMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case accounttag.FieldSortOrder:
+		return m.AddedSortOrder()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AccountTagMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case accounttag.FieldSortOrder:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSortOrder(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AccountTag numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *AccountTagMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *AccountTagMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *AccountTagMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown AccountTag nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *AccountTagMutation) ResetField(name string) error {
+	switch name {
+	case accounttag.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case accounttag.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case accounttag.FieldName:
+		m.ResetName()
+		return nil
+	case accounttag.FieldNormalizedName:
+		m.ResetNormalizedName()
+		return nil
+	case accounttag.FieldSortOrder:
+		m.ResetSortOrder()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountTag field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *AccountTagMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.accounts != nil {
+		edges = append(edges, accounttag.EdgeAccounts)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *AccountTagMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case accounttag.EdgeAccounts:
+		ids := make([]ent.Value, 0, len(m.accounts))
+		for id := range m.accounts {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *AccountTagMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.removedaccounts != nil {
+		edges = append(edges, accounttag.EdgeAccounts)
+	}
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *AccountTagMutation) RemovedIDs(name string) []ent.Value {
+	switch name {
+	case accounttag.EdgeAccounts:
+		ids := make([]ent.Value, 0, len(m.removedaccounts))
+		for id := range m.removedaccounts {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *AccountTagMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedaccounts {
+		edges = append(edges, accounttag.EdgeAccounts)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *AccountTagMutation) EdgeCleared(name string) bool {
+	switch name {
+	case accounttag.EdgeAccounts:
+		return m.clearedaccounts
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *AccountTagMutation) ClearEdge(name string) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown AccountTag unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *AccountTagMutation) ResetEdge(name string) error {
+	switch name {
+	case accounttag.EdgeAccounts:
+		m.ResetAccounts()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountTag edge %s", name)
+}
+
+// AccountTagBindingMutation represents an operation that mutates the AccountTagBinding nodes in the graph.
+type AccountTagBindingMutation struct {
+	config
+	op             Op
+	typ            string
+	created_at     *time.Time
+	clearedFields  map[string]struct{}
+	account        *int64
+	clearedaccount bool
+	tag            *int64
+	clearedtag     bool
+	done           bool
+	oldValue       func(context.Context) (*AccountTagBinding, error)
+	predicates     []predicate.AccountTagBinding
+}
+
+var _ ent.Mutation = (*AccountTagBindingMutation)(nil)
+
+// accounttagbindingOption allows management of the mutation configuration using functional options.
+type accounttagbindingOption func(*AccountTagBindingMutation)
+
+// newAccountTagBindingMutation creates new mutation for the AccountTagBinding entity.
+func newAccountTagBindingMutation(c config, op Op, opts ...accounttagbindingOption) *AccountTagBindingMutation {
+	m := &AccountTagBindingMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeAccountTagBinding,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m AccountTagBindingMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m AccountTagBindingMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetAccountID sets the "account_id" field.
+func (m *AccountTagBindingMutation) SetAccountID(i int64) {
+	m.account = &i
+}
+
+// AccountID returns the value of the "account_id" field in the mutation.
+func (m *AccountTagBindingMutation) AccountID() (r int64, exists bool) {
+	v := m.account
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetAccountID resets all changes to the "account_id" field.
+func (m *AccountTagBindingMutation) ResetAccountID() {
+	m.account = nil
+}
+
+// SetTagID sets the "tag_id" field.
+func (m *AccountTagBindingMutation) SetTagID(i int64) {
+	m.tag = &i
+}
+
+// TagID returns the value of the "tag_id" field in the mutation.
+func (m *AccountTagBindingMutation) TagID() (r int64, exists bool) {
+	v := m.tag
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetTagID resets all changes to the "tag_id" field.
+func (m *AccountTagBindingMutation) ResetTagID() {
+	m.tag = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *AccountTagBindingMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *AccountTagBindingMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *AccountTagBindingMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// ClearAccount clears the "account" edge to the Account entity.
+func (m *AccountTagBindingMutation) ClearAccount() {
+	m.clearedaccount = true
+	m.clearedFields[accounttagbinding.FieldAccountID] = struct{}{}
+}
+
+// AccountCleared reports if the "account" edge to the Account entity was cleared.
+func (m *AccountTagBindingMutation) AccountCleared() bool {
+	return m.clearedaccount
+}
+
+// AccountIDs returns the "account" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// AccountID instead. It exists only for internal usage by the builders.
+func (m *AccountTagBindingMutation) AccountIDs() (ids []int64) {
+	if id := m.account; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetAccount resets all changes to the "account" edge.
+func (m *AccountTagBindingMutation) ResetAccount() {
+	m.account = nil
+	m.clearedaccount = false
+}
+
+// ClearTag clears the "tag" edge to the AccountTag entity.
+func (m *AccountTagBindingMutation) ClearTag() {
+	m.clearedtag = true
+	m.clearedFields[accounttagbinding.FieldTagID] = struct{}{}
+}
+
+// TagCleared reports if the "tag" edge to the AccountTag entity was cleared.
+func (m *AccountTagBindingMutation) TagCleared() bool {
+	return m.clearedtag
+}
+
+// TagIDs returns the "tag" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// TagID instead. It exists only for internal usage by the builders.
+func (m *AccountTagBindingMutation) TagIDs() (ids []int64) {
+	if id := m.tag; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetTag resets all changes to the "tag" edge.
+func (m *AccountTagBindingMutation) ResetTag() {
+	m.tag = nil
+	m.clearedtag = false
+}
+
+// Where appends a list predicates to the AccountTagBindingMutation builder.
+func (m *AccountTagBindingMutation) Where(ps ...predicate.AccountTagBinding) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the AccountTagBindingMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *AccountTagBindingMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.AccountTagBinding, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *AccountTagBindingMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *AccountTagBindingMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (AccountTagBinding).
+func (m *AccountTagBindingMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *AccountTagBindingMutation) Fields() []string {
+	fields := make([]string, 0, 3)
+	if m.account != nil {
+		fields = append(fields, accounttagbinding.FieldAccountID)
+	}
+	if m.tag != nil {
+		fields = append(fields, accounttagbinding.FieldTagID)
+	}
+	if m.created_at != nil {
+		fields = append(fields, accounttagbinding.FieldCreatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *AccountTagBindingMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case accounttagbinding.FieldAccountID:
+		return m.AccountID()
+	case accounttagbinding.FieldTagID:
+		return m.TagID()
+	case accounttagbinding.FieldCreatedAt:
+		return m.CreatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *AccountTagBindingMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	return nil, errors.New("edge schema AccountTagBinding does not support getting old values")
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AccountTagBindingMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case accounttagbinding.FieldAccountID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAccountID(v)
+		return nil
+	case accounttagbinding.FieldTagID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTagID(v)
+		return nil
+	case accounttagbinding.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AccountTagBinding field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *AccountTagBindingMutation) AddedFields() []string {
+	var fields []string
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *AccountTagBindingMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AccountTagBindingMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown AccountTagBinding numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *AccountTagBindingMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *AccountTagBindingMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *AccountTagBindingMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown AccountTagBinding nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *AccountTagBindingMutation) ResetField(name string) error {
+	switch name {
+	case accounttagbinding.FieldAccountID:
+		m.ResetAccountID()
+		return nil
+	case accounttagbinding.FieldTagID:
+		m.ResetTagID()
+		return nil
+	case accounttagbinding.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountTagBinding field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *AccountTagBindingMutation) AddedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.account != nil {
+		edges = append(edges, accounttagbinding.EdgeAccount)
+	}
+	if m.tag != nil {
+		edges = append(edges, accounttagbinding.EdgeTag)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *AccountTagBindingMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case accounttagbinding.EdgeAccount:
+		if id := m.account; id != nil {
+			return []ent.Value{*id}
+		}
+	case accounttagbinding.EdgeTag:
+		if id := m.tag; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *AccountTagBindingMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 2)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *AccountTagBindingMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *AccountTagBindingMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.clearedaccount {
+		edges = append(edges, accounttagbinding.EdgeAccount)
+	}
+	if m.clearedtag {
+		edges = append(edges, accounttagbinding.EdgeTag)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *AccountTagBindingMutation) EdgeCleared(name string) bool {
+	switch name {
+	case accounttagbinding.EdgeAccount:
+		return m.clearedaccount
+	case accounttagbinding.EdgeTag:
+		return m.clearedtag
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *AccountTagBindingMutation) ClearEdge(name string) error {
+	switch name {
+	case accounttagbinding.EdgeAccount:
+		m.ClearAccount()
+		return nil
+	case accounttagbinding.EdgeTag:
+		m.ClearTag()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountTagBinding unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *AccountTagBindingMutation) ResetEdge(name string) error {
+	switch name {
+	case accounttagbinding.EdgeAccount:
+		m.ResetAccount()
+		return nil
+	case accounttagbinding.EdgeTag:
+		m.ResetTag()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountTagBinding edge %s", name)
 }
 
 // AnnouncementMutation represents an operation that mutates the Announcement nodes in the graph.

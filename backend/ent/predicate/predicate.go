@@ -12,8 +12,17 @@ type APIKey func(*sql.Selector)
 // Account is the predicate function for account builders.
 type Account func(*sql.Selector)
 
+// AccountFolder is the predicate function for accountfolder builders.
+type AccountFolder func(*sql.Selector)
+
 // AccountGroup is the predicate function for accountgroup builders.
 type AccountGroup func(*sql.Selector)
+
+// AccountTag is the predicate function for accounttag builders.
+type AccountTag func(*sql.Selector)
+
+// AccountTagBinding is the predicate function for accounttagbinding builders.
+type AccountTagBinding func(*sql.Selector)
 
 // Announcement is the predicate function for announcement builders.
 type Announcement func(*sql.Selector)

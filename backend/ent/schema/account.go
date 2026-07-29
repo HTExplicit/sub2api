@@ -94,6 +94,10 @@ func (Account) Fields() []ent.Field {
 		field.Int64("proxy_fallback_origin_id").
 			Optional().Nillable().
 			Comment("Original proxy id replaced by expiry-fallback; for manual revert. NULL = not in fallback."),
+		field.Int64("management_folder_id").
+			Optional().
+			Nillable().
+			Comment("Flat management folder; never used by scheduling or billing."),
 
 		// concurrency: 账户最大并发请求数
 		// 用于限制同一时间对该账户发起的请求数量
@@ -212,6 +216,12 @@ func (Account) Edges() []ent.Edge {
 		// 一个账户可以属于多个分组，一个分组可以包含多个账户
 		edge.To("groups", Group.Type).
 			Through("account_groups", AccountGroup.Type),
+		edge.From("management_folder", AccountFolder.Type).
+			Ref("accounts").
+			Field("management_folder_id").
+			Unique(),
+		edge.To("tags", AccountTag.Type).
+			Through("account_tag_bindings", AccountTagBinding.Type),
 		// proxy: 账户使用的代理配置（可选的一对一关系）
 		// 使用已有的 proxy_id 外键字段
 		edge.To("proxy", Proxy.Type).
@@ -234,10 +244,11 @@ func (Account) Edges() []ent.Edge {
 // 每个索引对应一个常用的查询条件。
 func (Account) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("platform"),            // 按平台筛选
-		index.Fields("type"),                // 按认证类型筛选
-		index.Fields("status"),              // 按状态筛选
-		index.Fields("proxy_id"),            // 按代理筛选
+		index.Fields("platform"), // 按平台筛选
+		index.Fields("type"),     // 按认证类型筛选
+		index.Fields("status"),   // 按状态筛选
+		index.Fields("proxy_id"), // 按代理筛选
+		index.Fields("management_folder_id"),
 		index.Fields("priority"),            // 按优先级排序
 		index.Fields("last_used_at"),        // 按最后使用时间排序
 		index.Fields("schedulable"),         // 筛选可调度账户
