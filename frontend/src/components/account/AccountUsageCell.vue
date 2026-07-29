@@ -1,5 +1,61 @@
 <template>
-  <div ref="rootRef" v-if="showUsageWindows">
+  <div ref="rootRef" :data-usage-variant="variant">
+    <template v-if="variant === 'compact'">
+      <div v-if="compactLoading" class="flex h-5 items-center gap-1.5" data-test="usage-loading">
+        <div class="h-3 w-12 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
+        <div class="h-3 w-16 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
+      </div>
+      <div
+        v-else-if="compactHasData"
+        class="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5 text-[10px] leading-4"
+        data-test="usage-compact-summary"
+      >
+        <span
+          v-if="compactTextSummary"
+          class="min-w-0 text-gray-600 dark:text-gray-300"
+          :title="compactTextSummary"
+        >
+          {{ compactTextSummary }}
+        </span>
+        <template v-for="(segment, index) in compactUsageSegments" :key="segment.key">
+          <span v-if="compactTextSummary || index > 0" class="text-gray-300 dark:text-gray-600">·</span>
+          <UsageProgressBar
+            :label="segment.label"
+            :utilization="segment.utilization"
+            :resets-at="segment.resetsAt"
+            :remaining-capacity="segment.remainingCapacity"
+            :color="segment.color"
+            density="compact"
+          />
+        </template>
+        <span
+          v-if="compactPartialFailure"
+          class="font-medium text-red-600 dark:text-red-400"
+          data-test="usage-fetch-failed"
+        >
+          {{ t('admin.accounts.usageFetchFailed') }}
+        </span>
+        <span
+          v-if="showStaleMarker"
+          class="rounded bg-amber-100 px-1 py-0.5 font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+          data-test="usage-stale"
+        >
+          {{ t('admin.accounts.usageStale') }}
+        </span>
+      </div>
+      <div
+        v-else
+        :class="[
+          'text-xs',
+          hasFetchFailureWithoutData ? 'text-red-500' : 'text-gray-400 dark:text-gray-500'
+        ]"
+        :data-test="hasFetchFailureWithoutData ? 'usage-fetch-failed' : 'usage-no-data'"
+      >
+        {{ emptyUsageText }}
+      </div>
+    </template>
+
+    <template v-else-if="showUsageWindows">
     <!-- Anthropic OAuth and Setup Token accounts: fetch real usage data -->
     <template
       v-if="
@@ -8,7 +64,7 @@
       "
     >
       <!-- Loading state -->
-      <div v-if="loading" class="space-y-1.5">
+      <div v-if="loading && !usageInfo" class="space-y-1.5">
         <!-- OAuth: 3 rows, Setup Token: 1 row -->
         <div class="flex items-center gap-1">
           <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
@@ -30,7 +86,7 @@
       </div>
 
       <!-- Error state -->
-      <div v-else-if="error" class="text-xs text-red-500">
+      <div v-else-if="error && !usageInfo" class="text-xs text-red-500">
         {{ error }}
       </div>
 
@@ -43,6 +99,7 @@
         <!-- 5h Window -->
         <UsageProgressBar
           v-if="usageInfo.five_hour"
+          :density="usageBarDensity"
           label="5h"
           :utilization="usageInfo.five_hour.utilization"
           :resets-at="usageInfo.five_hour.resets_at"
@@ -53,6 +110,7 @@
         <!-- 7d Window (OAuth only) -->
         <UsageProgressBar
           v-if="usageInfo.seven_day"
+          :density="usageBarDensity"
           label="7d"
           :utilization="usageInfo.seven_day.utilization"
           :resets-at="usageInfo.seven_day.resets_at"
@@ -62,6 +120,7 @@
         <!-- 7d Sonnet Window (OAuth only) -->
         <UsageProgressBar
           v-if="usageInfo.seven_day_sonnet"
+          :density="usageBarDensity"
           label="7d S"
           :utilization="usageInfo.seven_day_sonnet.utilization"
           :resets-at="usageInfo.seven_day_sonnet.resets_at"
@@ -71,6 +130,7 @@
         <!-- 7d Fable Window (7d_oi) -->
         <UsageProgressBar
           v-if="usageInfo.seven_day_fable"
+          :density="usageBarDensity"
           label="7d F"
           :utilization="usageInfo.seven_day_fable.utilization"
           :resets-at="usageInfo.seven_day_fable.resets_at"
@@ -86,6 +146,7 @@
             {{ t('admin.accounts.usageWindow.passiveSampled') }}
           </span>
           <button
+            v-if="canInteract"
             type="button"
             class="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[9px] font-medium text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30 transition-colors"
             :disabled="activeQueryLoading"
@@ -112,9 +173,9 @@
 
       <!-- No data yet -->
       <div v-else class="space-y-1">
-        <div class="text-xs text-gray-400">-</div>
+        <div class="text-xs text-gray-400">{{ emptyUsageText }}</div>
         <!-- Always allow on-demand upstream quota probe, even before passive headers exist. -->
-        <GrokQuotaProbeCell :account="account" />
+        <GrokQuotaProbeCell v-if="canInteract" :account="account" />
       </div>
     </template>
 
@@ -123,6 +184,7 @@
       <div v-if="hasOpenAIUsageFallback" class="space-y-1">
         <UsageProgressBar
           v-if="usageInfo?.five_hour"
+          :density="usageBarDensity"
           label="5h"
           :utilization="usageInfo.five_hour.utilization"
           :resets-at="usageInfo.five_hour.resets_at"
@@ -132,6 +194,7 @@
         />
         <UsageProgressBar
           v-if="usageInfo?.seven_day"
+          :density="usageBarDensity"
           label="7d"
           :utilization="usageInfo.seven_day.utilization"
           :resets-at="usageInfo.seven_day.resets_at"
@@ -144,7 +207,7 @@
           refresh button is rendered via the pre-actions slot so the user sees a
           single row of related buttons instead of two stacked rows.
         -->
-        <OpenAIQuotaResetCell :account="account">
+        <OpenAIQuotaResetCell v-if="canInteract" :account="account">
           <template #pre-actions>
             <button
               type="button"
@@ -171,7 +234,7 @@
           </template>
         </OpenAIQuotaResetCell>
       </div>
-      <div v-else-if="loading" class="space-y-1.5">
+      <div v-else-if="loading && !usageInfo" class="space-y-1.5">
         <div class="flex items-center gap-1">
           <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
           <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
@@ -184,9 +247,9 @@
         </div>
       </div>
       <div v-else>
-        <div class="text-xs text-gray-400">-</div>
+        <div class="text-xs text-gray-400">{{ emptyUsageText }}</div>
         <!-- Always allow on-demand upstream quota query, even before local data exists. -->
-        <OpenAIQuotaResetCell :account="account" class="mt-1" />
+        <OpenAIQuotaResetCell v-if="canInteract" :account="account" class="mt-1" />
       </div>
     </template>
 
@@ -236,7 +299,7 @@
         >
           {{ forbiddenLabel }}
         </span>
-        <div v-if="validationURL" class="flex items-center gap-1">
+        <div v-if="canInteract && validationURL" class="flex items-center gap-1">
           <a
             :href="validationURL"
             target="_blank"
@@ -272,7 +335,7 @@
       </div>
 
       <!-- Loading state -->
-      <div v-else-if="loading" class="space-y-1.5">
+      <div v-else-if="loading && !usageInfo" class="space-y-1.5">
         <div class="flex items-center gap-1">
           <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
           <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
@@ -281,7 +344,7 @@
       </div>
 
       <!-- Error state -->
-      <div v-else-if="error" class="text-xs text-red-500">
+      <div v-else-if="error && !usageInfo" class="text-xs text-red-500">
         {{ error }}
       </div>
 
@@ -290,6 +353,7 @@
         <!-- Gemini 3 Pro -->
         <UsageProgressBar
           v-if="antigravity3ProUsageFromAPI !== null"
+          :density="usageBarDensity"
           :label="t('admin.accounts.usageWindow.gemini3Pro')"
           :utilization="antigravity3ProUsageFromAPI.utilization"
           :resets-at="antigravity3ProUsageFromAPI.resetTime"
@@ -299,6 +363,7 @@
         <!-- Gemini 3 Flash -->
         <UsageProgressBar
           v-if="antigravity3FlashUsageFromAPI !== null"
+          :density="usageBarDensity"
           :label="t('admin.accounts.usageWindow.gemini3Flash')"
           :utilization="antigravity3FlashUsageFromAPI.utilization"
           :resets-at="antigravity3FlashUsageFromAPI.resetTime"
@@ -308,6 +373,7 @@
         <!-- Gemini 3 Image -->
         <UsageProgressBar
           v-if="antigravity3ImageUsageFromAPI !== null"
+          :density="usageBarDensity"
           :label="t('admin.accounts.usageWindow.gemini3Image')"
           :utilization="antigravity3ImageUsageFromAPI.utilization"
           :resets-at="antigravity3ImageUsageFromAPI.resetTime"
@@ -317,6 +383,7 @@
         <!-- Claude -->
         <UsageProgressBar
           v-if="antigravityClaudeUsageFromAPI !== null"
+          :density="usageBarDensity"
           :label="t('admin.accounts.usageWindow.claude')"
           :utilization="antigravityClaudeUsageFromAPI.utilization"
           :resets-at="antigravityClaudeUsageFromAPI.resetTime"
@@ -330,19 +397,19 @@
       <div v-else-if="aiCreditsDisplay" class="text-[10px] text-gray-500 dark:text-gray-400">
         💳 {{ t('admin.accounts.aiCreditsBalance') }}: {{ aiCreditsDisplay }}
       </div>
-      <div v-else class="text-xs text-gray-400">-</div>
+      <div v-else class="text-xs text-gray-400">{{ emptyUsageText }}</div>
     </template>
 
     <!-- Grok OAuth accounts: passive xAI quota headers + local Sub2API usage -->
     <template v-else-if="account.platform === 'grok' && account.type === 'oauth'">
-      <div v-if="loading" class="space-y-1.5">
+      <div v-if="loading && !usageInfo" class="space-y-1.5">
         <div class="flex items-center gap-1">
           <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
           <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
           <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
         </div>
       </div>
-      <div v-else-if="error" class="text-xs text-red-500">
+      <div v-else-if="error && !usageInfo" class="text-xs text-red-500">
         {{ error }}
       </div>
       <div v-else-if="needsReauth" class="space-y-1">
@@ -362,7 +429,7 @@
           </span>
         </div>
         <div v-if="grokLocalUsage" class="mb-0.5 flex items-center">
-          <div class="flex items-center gap-1.5 text-[9px] text-gray-500 dark:text-gray-400">
+          <div class="flex flex-wrap items-center gap-1.5 text-[9px] text-gray-500 dark:text-gray-400">
             <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">
               {{ formatWindowRequests(grokLocalUsage) }} req
             </span>
@@ -383,6 +450,7 @@
         </div>
         <UsageProgressBar
           v-if="grokWeeklyBillingBar"
+          :density="usageBarDensity"
           label="7d"
           :utilization="grokWeeklyBillingBar.utilization"
           :resets-at="grokWeeklyBillingBar.resetsAt"
@@ -391,6 +459,7 @@
         />
         <UsageProgressBar
           v-if="!grokWeeklyBillingBar && !grokIsFree && grokRequestQuotaBar"
+          :density="usageBarDensity"
           :label="t('admin.accounts.usageWindow.grokRequests')"
           :utilization="grokRequestQuotaBar.utilization"
           :resets-at="grokRequestQuotaBar.resetsAt"
@@ -399,6 +468,7 @@
         />
         <UsageProgressBar
           v-if="!grokWeeklyBillingBar && !grokIsFree && grokTokenQuotaBar"
+          :density="usageBarDensity"
           :label="t('admin.accounts.usageWindow.grokTokens')"
           :utilization="grokTokenQuotaBar.utilization"
           :resets-at="grokTokenQuotaBar.resetsAt"
@@ -407,6 +477,7 @@
         />
         <UsageProgressBar
           v-if="grokFreeTokenBar"
+          :density="usageBarDensity"
           label="24h"
           :title="t('admin.accounts.usageWindow.grokFreeQuota24hHint', { limit: formatCompactNumber(grokFreeTokenBar.limit) })"
           :utilization="grokFreeTokenBar.utilization"
@@ -425,9 +496,9 @@
         <div v-if="grokQuotaStatusLine" class="text-[10px] text-gray-500 dark:text-gray-400">
           {{ grokQuotaStatusLine }}
         </div>
-        <GrokQuotaProbeCell :account="account" @probed="handleGrokProbed" />
+        <GrokQuotaProbeCell v-if="canInteract" :account="account" @probed="handleGrokProbed" />
       </div>
-      <div v-else class="text-xs text-gray-400">-</div>
+      <div v-else class="text-xs text-gray-400">{{ emptyUsageText }}</div>
     </template>
 
     <!-- Gemini platform: show quota + local usage window -->
@@ -481,7 +552,7 @@
           v-if="showGeminiTodayStats && todayStats"
           class="mb-0.5 flex items-center"
         >
-          <div class="flex items-center gap-1.5 text-[9px] text-gray-500 dark:text-gray-400">
+          <div class="flex flex-wrap items-center gap-1.5 text-[9px] text-gray-500 dark:text-gray-400">
             <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">
               {{ formatKeyRequests }} req
             </span>
@@ -508,14 +579,14 @@
           <div class="h-3 w-8 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
           <div class="h-3 w-12 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
         </div>
-        <div v-if="loading" class="space-y-1">
+        <div v-if="loading && !usageInfo" class="space-y-1">
           <div class="flex items-center gap-1">
             <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
             <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
             <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
           </div>
         </div>
-        <div v-else-if="error" class="text-xs text-red-500">
+        <div v-else-if="error && !usageInfo" class="text-xs text-red-500">
           {{ error }}
         </div>
         <!-- Gemini: show daily usage bars when available -->
@@ -523,6 +594,7 @@
           <UsageProgressBar
             v-for="bar in geminiUsageBars"
             :key="bar.key"
+            :density="usageBarDensity"
             :label="bar.label"
             :utilization="bar.utilization"
             :resets-at="bar.resetsAt"
@@ -534,20 +606,43 @@
           </p>
         </div>
         <!-- AI Studio Client OAuth: show unlimited flow (no usage tracking) -->
-        <div v-else class="text-xs text-gray-400">
+        <div v-else-if="account.type !== 'apikey' || !hasApiKeyQuota" class="text-xs text-gray-400">
           {{ t('admin.accounts.gemini.rateLimit.unlimited') }}
         </div>
+        <UsageProgressBar
+          v-if="quotaDailyBar"
+          :density="usageBarDensity"
+          label="1d"
+          :utilization="quotaDailyBar.utilization"
+          :resets-at="quotaDailyBar.resetsAt"
+          color="indigo"
+        />
+        <UsageProgressBar
+          v-if="quotaWeeklyBar"
+          :density="usageBarDensity"
+          label="7d"
+          :utilization="quotaWeeklyBar.utilization"
+          :resets-at="quotaWeeklyBar.resetsAt"
+          color="emerald"
+        />
+        <UsageProgressBar
+          v-if="quotaTotalBar"
+          :density="usageBarDensity"
+          label="total"
+          :utilization="quotaTotalBar.utilization"
+          color="purple"
+        />
       </div>
     </template>
 
     <!-- Other accounts: no usage window -->
     <template v-else>
-      <div class="text-xs text-gray-400">-</div>
+      <div class="text-xs text-gray-400">{{ emptyUsageText }}</div>
     </template>
-  </div>
+    </template>
 
-  <!-- Non-OAuth/Setup-Token accounts -->
-  <div ref="rootRef" v-else>
+    <!-- Non-OAuth/Setup-Token accounts -->
+    <template v-else>
     <!-- Gemini API Key accounts: show quota info -->
     <AccountQuotaInfo v-if="account.platform === 'gemini'" :account="account" />
     <!-- Key/Bedrock accounts: show today stats + optional quota bars -->
@@ -555,13 +650,14 @@
       <OllamaCloudUsageCell
         v-if="account.ollama_cloud_usage?.eligible"
         :account="account"
+        :density="usageBarDensity"
       />
       <!-- Today stats row (requests, tokens, cost, user_cost) -->
       <div
         v-if="todayStats"
         class="mb-0.5 flex items-center"
       >
-        <div class="flex items-center gap-1.5 text-[9px] text-gray-500 dark:text-gray-400">
+        <div class="flex flex-wrap items-center gap-1.5 text-[9px] text-gray-500 dark:text-gray-400">
           <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">
             {{ formatKeyRequests }} req
           </span>
@@ -593,6 +689,7 @@
       <!-- API Key accounts with quota limits: show progress bars -->
       <UsageProgressBar
         v-if="quotaDailyBar"
+        :density="usageBarDensity"
         label="1d"
         :utilization="quotaDailyBar.utilization"
         :resets-at="quotaDailyBar.resetsAt"
@@ -600,6 +697,7 @@
       />
       <UsageProgressBar
         v-if="quotaWeeklyBar"
+        :density="usageBarDensity"
         label="7d"
         :utilization="quotaWeeklyBar.utilization"
         :resets-at="quotaWeeklyBar.resetsAt"
@@ -607,6 +705,7 @@
       />
       <UsageProgressBar
         v-if="quotaTotalBar"
+        :density="usageBarDensity"
         label="total"
         :utilization="quotaTotalBar.utilization"
         color="purple"
@@ -616,10 +715,39 @@
       <div
         v-if="!todayStats && !todayStatsLoading && !hasApiKeyQuota && !account.ollama_cloud_usage?.eligible"
         class="text-xs text-gray-400"
-      >-</div>
+      >{{ emptyUsageText }}</div>
+    </div>
+    </template>
+
+    <div
+      v-if="variant !== 'compact' && showStaleMarker"
+      class="mt-1 text-[10px] font-medium text-amber-600 dark:text-amber-400"
+      data-test="usage-stale"
+    >
+      {{ t('admin.accounts.usageStale') }}
+    </div>
+    <div
+      v-if="variant !== 'compact' && compactPartialFailure"
+      class="mt-1 text-[10px] font-medium text-red-600 dark:text-red-400"
+      data-test="usage-fetch-failed"
+    >
+      {{ t('admin.accounts.usageFetchFailed') }}
     </div>
   </div>
 </template>
+
+<script lang="ts">
+// These caches must live at module scope so table/card/drawer instances share them.
+const _usageCache = new Map<number, {
+  data: import('@/types').AccountUsageInfo
+  ts: number
+  failedAt?: number
+}>()
+const _usageRequests = new Map<number, {
+  force: boolean
+  promise: Promise<import('@/types').AccountUsageInfo>
+}>()
+</script>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, onUnmounted, watch } from 'vue'
@@ -636,21 +764,63 @@ import OpenAIQuotaResetCell from './OpenAIQuotaResetCell.vue'
 import GrokQuotaProbeCell from './GrokQuotaProbeCell.vue'
 import OllamaCloudUsageCell from './OllamaCloudUsageCell.vue'
 
-// Module-level cache shared across all AccountUsageCell instances
-const _usageCache = new Map<number, { data: AccountUsageInfo; ts: number }>()
 const USAGE_CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+const USAGE_STALE_AFTER = 15 * 60 * 1000
+
+type UsageVariant = 'detail' | 'list' | 'compact'
+
+const requestUsage = async (
+  account: Account,
+  source?: 'passive' | 'active',
+  force = false
+): Promise<AccountUsageInfo> => {
+  const existing = _usageRequests.get(account.id)
+  if (existing) {
+    if (!force || existing.force) return existing.promise
+    // A manual force refresh must not be swallowed by an older passive request.
+    try {
+      await existing.promise
+    } catch {
+      // The explicit refresh below is still allowed to recover.
+    }
+  }
+
+  const promise = enqueueUsageRequest(account, () => {
+    if (force) return adminAPI.accounts.getUsage(account.id, source, true)
+    if (source) return adminAPI.accounts.getUsage(account.id, source)
+    return adminAPI.accounts.getUsage(account.id)
+  })
+  _usageRequests.set(account.id, { force, promise })
+  try {
+    return await promise
+  } finally {
+    if (_usageRequests.get(account.id)?.promise === promise) {
+      _usageRequests.delete(account.id)
+    }
+  }
+}
 
 const props = withDefaults(
   defineProps<{
     account: Account
     todayStats?: WindowStats | null
     todayStatsLoading?: boolean
+    todayStatsError?: boolean
+    todayStatsUpdatedAt?: number | null
     manualRefreshToken?: number
+    statusNow?: number
+    variant?: UsageVariant
+    readOnly?: boolean
   }>(),
   {
     todayStats: null,
     todayStatsLoading: false,
-    manualRefreshToken: 0
+    todayStatsError: false,
+    todayStatsUpdatedAt: null,
+    manualRefreshToken: 0,
+    statusNow: Date.now(),
+    variant: 'detail',
+    readOnly: false
   }
 )
 
@@ -664,6 +834,7 @@ const loading = ref(false)
 const activeQueryLoading = ref(false)
 const error = ref<string | null>(null)
 const usageInfo = ref<AccountUsageInfo | null>(null)
+const usageLastSuccessAt = ref<number | null>(null)
 const rootRef = ref<HTMLElement | null>(null)
 const isDesktopViewport = ref(
   typeof window === 'undefined' ? true : window.matchMedia(desktopViewportQuery).matches
@@ -675,6 +846,11 @@ const pendingAutoLoadSource = ref<'passive' | 'active' | undefined>(undefined)
 let desktopViewportMediaQuery: MediaQueryList | null = null
 let desktopViewportListener: ((event: MediaQueryListEvent) => void) | null = null
 let visibilityObserver: IntersectionObserver | null = null
+
+const canInteract = computed(() => props.variant === 'detail' && !props.readOnly)
+const usageBarDensity = computed<'detail' | 'list'>(() => (
+  props.variant === 'list' ? 'list' : 'detail'
+))
 
 // Show usage windows for OAuth and Setup Token accounts
 const showUsageWindows = computed(() => {
@@ -703,7 +879,8 @@ const shouldFetchUsage = computed(() => {
 })
 
 const showGeminiTodayStats = computed(() => {
-  return props.account.platform === 'gemini' && props.account.type === 'service_account'
+  return props.account.platform === 'gemini' &&
+    (props.account.type === 'service_account' || props.account.type === 'apikey')
 })
 
 const geminiUsageAvailable = computed(() => {
@@ -1262,14 +1439,51 @@ const isAnthropicOAuthOrSetupToken = computed(() => {
   return props.account.platform === 'anthropic' && (props.account.type === 'oauth' || props.account.type === 'setup-token')
 })
 
-const loadUsage = async (options?: { source?: 'passive' | 'active'; bypassCache?: boolean }) => {
+const applyUsageResult = (result: AccountUsageInfo) => {
+  const fetchedAt = Date.now()
+  const cached = _usageCache.get(props.account.id)
+
+  if (result.error) {
+    error.value = t('admin.accounts.usageFetchFailed')
+    if (cached) {
+      _usageCache.set(props.account.id, { ...cached, failedAt: fetchedAt })
+      usageLastSuccessAt.value = cached.ts
+      // Details still expose the latest diagnostic state; list views retain the last good quota.
+      usageInfo.value = props.variant === 'detail' ? result : cached.data
+    } else {
+      usageInfo.value = result
+    }
+    return
+  }
+
+  usageInfo.value = result
+  usageLastSuccessAt.value = fetchedAt
+  error.value = null
+  _usageCache.set(props.account.id, { data: result, ts: fetchedAt })
+}
+
+const markUsageRequestFailed = () => {
+  const cached = _usageCache.get(props.account.id)
+  if (cached) {
+    _usageCache.set(props.account.id, { ...cached, failedAt: Date.now() })
+  }
+  error.value = t('admin.accounts.usageFetchFailed')
+}
+
+const loadUsage = async (options?: {
+  source?: 'passive' | 'active'
+  bypassCache?: boolean
+  force?: boolean
+}) => {
   if (!shouldFetchUsage.value) return
 
-  // Check cache
-  if (!options?.bypassCache) {
-    const cached = _usageCache.get(props.account.id)
-    if (cached && Date.now() - cached.ts < USAGE_CACHE_TTL) {
-      usageInfo.value = cached.data
+  // An expired value is still useful while a refresh is running or failing.
+  const cached = _usageCache.get(props.account.id)
+  if (cached) {
+    usageInfo.value = cached.data
+    usageLastSuccessAt.value = cached.ts
+    error.value = cached.failedAt ? t('admin.accounts.usageFetchFailed') : null
+    if (!options?.bypassCache && Date.now() - cached.ts < USAGE_CACHE_TTL) {
       loading.value = false
       return
     }
@@ -1279,17 +1493,13 @@ const loadUsage = async (options?: { source?: 'passive' | 'active'; bypassCache?
   error.value = null
 
   try {
-    const fetchFn = () => options?.source
-      ? adminAPI.accounts.getUsage(props.account.id, options.source)
-      : adminAPI.accounts.getUsage(props.account.id)
-    const result = await enqueueUsageRequest(props.account, fetchFn)
+    const result = await requestUsage(props.account, options?.source, options?.force)
     if (!unmounted.value) {
-      usageInfo.value = result
-      _usageCache.set(props.account.id, { data: result, ts: Date.now() })
+      applyUsageResult(result)
     }
   } catch (e: any) {
     if (!unmounted.value) {
-      error.value = t('common.error')
+      markUsageRequestFailed()
       console.error('Failed to load usage:', e)
     }
   } finally {
@@ -1350,8 +1560,10 @@ const attachVisibilityObserver = () => {
 const loadActiveUsage = async () => {
   activeQueryLoading.value = true
   try {
-    usageInfo.value = await adminAPI.accounts.getUsage(props.account.id, 'active', true)
+    const result = await requestUsage(props.account, 'active', true)
+    applyUsageResult(result)
   } catch (e: any) {
+    markUsageRequestFailed()
     console.error('Failed to load active usage:', e)
   } finally {
     activeQueryLoading.value = false
@@ -1405,7 +1617,10 @@ const handleGrokProbed = (result: GrokQuotaProbeResult) => {
     error_code: result.billing || snapshot ? undefined : current.error_code
   }
   usageInfo.value = merged
-  _usageCache.set(props.account.id, { data: merged, ts: Date.now() })
+  const fetchedAt = Date.now()
+  usageLastSuccessAt.value = fetchedAt
+  error.value = null
+  _usageCache.set(props.account.id, { data: merged, ts: fetchedAt })
 }
 
 // ===== API Key quota progress bars =====
@@ -1473,6 +1688,254 @@ const quotaTotalBar = computed((): QuotaBarInfo | null => {
   return makeQuotaBar(props.account.quota_used ?? 0, limit)
 })
 
+interface CompactUsageSegment {
+  key: string
+  label: string
+  utilization: number
+  resetsAt?: string | null
+  remainingCapacity?: boolean
+  color: 'indigo' | 'emerald' | 'purple' | 'amber'
+}
+
+const parseObservedAt = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value !== 'string' || !value.trim()) return null
+  const timestamp = Date.parse(value)
+  return Number.isFinite(timestamp) ? timestamp : null
+}
+
+const hasOllamaUsageData = computed(() => {
+  const data = props.account.ollama_cloud_usage?.snapshot?.data
+  return Boolean(data?.five_hour || data?.seven_day)
+})
+
+const hasRemoteUsageData = computed(() => {
+  const info = usageInfo.value
+  if (!info) return false
+  return Boolean(
+    info.five_hour ||
+    info.seven_day ||
+    info.seven_day_sonnet ||
+    info.seven_day_fable ||
+    info.gemini_shared_daily ||
+    info.gemini_pro_daily ||
+    info.gemini_flash_daily ||
+    info.gemini_shared_minute ||
+    info.gemini_pro_minute ||
+    info.gemini_flash_minute ||
+    (info.antigravity_quota && Object.keys(info.antigravity_quota).length > 0) ||
+    info.grok_billing ||
+    info.grok_request_quota ||
+    info.grok_token_quota ||
+    info.grok_local_usage ||
+    info.grok_local_usage_24h ||
+    info.grok_local_usage_7d ||
+    info.grok_local_usage_monthly ||
+    (info.ai_credits && info.ai_credits.length > 0)
+  )
+})
+
+const hasDisplayUsageData = computed(() => Boolean(
+  hasRemoteUsageData.value ||
+  hasOllamaUsageData.value ||
+  props.todayStats ||
+  hasApiKeyQuota.value
+))
+
+const usageObservedAt = computed(() => {
+  const info = usageInfo.value
+  const candidates = [
+    info?.updated_at,
+    info?.grok_billing?.updated_at,
+    info?.grok_billing?.fetched_at,
+    info?.grok_last_headers_seen_at,
+    info?.grok_last_quota_probe_at,
+    props.account.ollama_cloud_usage?.snapshot?.last_attempt_at
+  ]
+  const observed = candidates
+    .map(parseObservedAt)
+    .filter((timestamp): timestamp is number => timestamp != null)
+  if (observed.length > 0) return Math.max(...observed)
+  return usageLastSuccessAt.value
+})
+
+const usageResponseFailed = computed(() => Boolean(error.value || usageInfo.value?.error))
+
+const usageIsStale = computed(() => {
+  if (!hasRemoteUsageData.value && !hasOllamaUsageData.value) return false
+  if (usageResponseFailed.value) return true
+  const observedAt = usageObservedAt.value
+  return observedAt != null && props.statusNow - observedAt > USAGE_STALE_AFTER
+})
+
+const todayStatsAreStale = computed(() => {
+  if (!props.todayStats) return false
+  if (props.todayStatsError) return true
+  return props.todayStatsUpdatedAt != null &&
+    props.statusNow - props.todayStatsUpdatedAt > USAGE_STALE_AFTER
+})
+
+const showStaleMarker = computed(() => usageIsStale.value || todayStatsAreStale.value)
+
+const compactUsageSegments = computed<CompactUsageSegment[]>(() => {
+  const segments: CompactUsageSegment[] = []
+  const pushWindow = (
+    key: string,
+    label: string,
+    window: { utilization: number; resets_at?: string | null } | null | undefined,
+    color: CompactUsageSegment['color']
+  ) => {
+    if (!window) return
+    segments.push({ key, label, utilization: window.utilization, resetsAt: window.resets_at, color })
+  }
+
+  if (props.account.platform === 'anthropic' || props.account.platform === 'openai') {
+    pushWindow('five-hour', '5h', usageInfo.value?.five_hour, 'indigo')
+    pushWindow('seven-day', '7d', usageInfo.value?.seven_day, 'emerald')
+    pushWindow('seven-day-sonnet', '7d S', usageInfo.value?.seven_day_sonnet, 'purple')
+    pushWindow('seven-day-fable', '7d F', usageInfo.value?.seven_day_fable, 'amber')
+  } else if (props.account.platform === 'antigravity') {
+    const antigravityBars = [
+      ['ag-pro', t('admin.accounts.usageWindow.gemini3Pro'), antigravity3ProUsageFromAPI.value, 'indigo'],
+      ['ag-flash', t('admin.accounts.usageWindow.gemini3Flash'), antigravity3FlashUsageFromAPI.value, 'emerald'],
+      ['ag-image', t('admin.accounts.usageWindow.gemini3Image'), antigravity3ImageUsageFromAPI.value, 'purple'],
+      ['ag-claude', t('admin.accounts.usageWindow.claude'), antigravityClaudeUsageFromAPI.value, 'amber']
+    ] as const
+    for (const [key, label, value, color] of antigravityBars) {
+      if (value) segments.push({ key, label, utilization: value.utilization, resetsAt: value.resetTime, color })
+    }
+  } else if (props.account.platform === 'grok') {
+    if (grokWeeklyBillingBar.value) {
+      segments.push({ key: 'grok-weekly', label: '7d', ...grokWeeklyBillingBar.value, color: 'indigo' })
+    } else if (grokFreeTokenBar.value) {
+      segments.push({ key: 'grok-free', label: '24h', utilization: grokFreeTokenBar.value.utilization, color: 'emerald' })
+    } else {
+      if (grokRequestQuotaBar.value) {
+        segments.push({
+          key: 'grok-requests',
+          label: t('admin.accounts.usageWindow.grokRequests'),
+          ...grokRequestQuotaBar.value,
+          remainingCapacity: true,
+          color: 'indigo'
+        })
+      }
+      if (grokTokenQuotaBar.value) {
+        segments.push({
+          key: 'grok-tokens',
+          label: t('admin.accounts.usageWindow.grokTokens'),
+          ...grokTokenQuotaBar.value,
+          remainingCapacity: true,
+          color: 'emerald'
+        })
+      }
+    }
+  } else if (props.account.platform === 'gemini') {
+    for (const bar of geminiUsageBars.value) {
+      segments.push({
+        key: `gemini-${bar.key}`,
+        label: bar.label,
+        utilization: bar.utilization,
+        resetsAt: bar.resetsAt,
+        color: bar.color
+      })
+    }
+  }
+
+  const ollamaData = props.account.ollama_cloud_usage?.snapshot?.data
+  if (ollamaData?.five_hour) {
+    segments.push({
+      key: 'ollama-five-hour',
+      label: '5h',
+      utilization: ollamaData.five_hour.used_percent,
+      resetsAt: ollamaData.five_hour.reset_at,
+      color: 'indigo'
+    })
+  }
+  if (ollamaData?.seven_day) {
+    segments.push({
+      key: 'ollama-seven-day',
+      label: '7d',
+      utilization: ollamaData.seven_day.used_percent,
+      resetsAt: ollamaData.seven_day.reset_at,
+      color: 'emerald'
+    })
+  }
+
+  if (quotaDailyBar.value) {
+    segments.push({ key: 'quota-daily', label: '1d', ...quotaDailyBar.value, color: 'indigo' })
+  }
+  if (quotaWeeklyBar.value) {
+    segments.push({ key: 'quota-weekly', label: '7d', ...quotaWeeklyBar.value, color: 'emerald' })
+  }
+  if (quotaTotalBar.value) {
+    segments.push({ key: 'quota-total', label: 'total', ...quotaTotalBar.value, color: 'purple' })
+  }
+  return segments
+})
+
+const shouldSummarizeTodayStats = computed(() => (
+  props.account.type === 'apikey' ||
+  props.account.type === 'bedrock' ||
+  props.account.type === 'service_account'
+))
+
+const compactTextSummary = computed(() => {
+  if (props.todayStats && shouldSummarizeTodayStats.value) {
+    const parts = [
+      `${formatCompactNumber(props.todayStats.requests, { allowBillions: false })} req`,
+      `${formatCompactNumber(props.todayStats.tokens)} Token`,
+      `A $${props.todayStats.cost.toFixed(2)}`
+    ]
+    if (props.todayStats.user_cost != null) parts.push(`U $${props.todayStats.user_cost.toFixed(2)}`)
+    return parts.join(' · ')
+  }
+  if (aiCreditsDisplay.value && compactUsageSegments.value.length === 0) {
+    return `${t('admin.accounts.aiCreditsBalance')}: ${aiCreditsDisplay.value}`
+  }
+  if (props.account.platform === 'grok' && grokLocalUsage.value && compactUsageSegments.value.length === 0) {
+    return `${formatWindowRequests(grokLocalUsage.value)} req · ${formatWindowTokens(grokLocalUsage.value)} · A $${formatWindowCost(grokLocalUsage.value)}`
+  }
+  if (
+    props.account.platform === 'gemini' &&
+    !loading.value &&
+    !usageResponseFailed.value &&
+    compactUsageSegments.value.length === 0
+  ) {
+    return t('admin.accounts.gemini.rateLimit.unlimited')
+  }
+  return ''
+})
+
+const compactHasData = computed(() => Boolean(
+  compactTextSummary.value || compactUsageSegments.value.length > 0
+))
+
+const compactLoading = computed(() => {
+  if (compactHasData.value) return false
+  if (loading.value && shouldFetchUsage.value) return true
+  return props.todayStatsLoading && shouldSummarizeTodayStats.value
+})
+
+const compactPartialFailure = computed(() => {
+  if (!hasDisplayUsageData.value) return false
+  return Boolean(
+    (usageResponseFailed.value && !hasRemoteUsageData.value) ||
+    (props.todayStatsError && !props.todayStats && shouldSummarizeTodayStats.value)
+  )
+})
+
+const hasFetchFailureWithoutData = computed(() => Boolean(
+  !hasDisplayUsageData.value &&
+  (usageResponseFailed.value || (props.todayStatsError && shouldSummarizeTodayStats.value))
+))
+
+const emptyUsageText = computed(() => {
+  if (props.variant === 'detail') return '-'
+  return hasFetchFailureWithoutData.value
+    ? t('admin.accounts.usageFetchFailed')
+    : t('admin.accounts.usageNoData')
+})
+
 // ===== Key account today stats formatters =====
 
 const formatKeyRequests = computed(() => {
@@ -1518,7 +1981,7 @@ watch(openAIUsageRefreshKey, (nextKey, prevKey) => {
   if (!prevKey || nextKey === prevKey) return
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return
 
-  _usageCache.delete(props.account.id)
+  // Incremental list refreshes may update last_used_at every few seconds; keep the 5-minute cache.
   requestAutoLoad()
 })
 
@@ -1528,9 +1991,7 @@ watch(
     if (nextToken === prevToken) return
     if (!shouldFetchUsage.value) return
 
-    const source = isAnthropicOAuthOrSetupToken.value ? 'passive' : undefined
-    _usageCache.delete(props.account.id)
-    loadUsage({ source, bypassCache: true }).catch((e) => {
+    loadUsage({ bypassCache: true, force: true }).catch((e) => {
       console.error('Failed to refresh usage after manual refresh:', e)
     })
   }

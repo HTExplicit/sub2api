@@ -1,5 +1,5 @@
 <template>
-  <div class="flex flex-col gap-0.5">
+  <div :class="compact ? 'flex flex-wrap items-center gap-1' : 'flex flex-col gap-0.5'">
     <!-- 并发槽位 -->
     <CapacityBadge :color-class="concurrencyClass" :current="currentConcurrency" :max="account.concurrency">
       <svg class="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -44,6 +44,7 @@ import QuotaBadge from '@/components/account/QuotaBadge.vue'
 
 const props = defineProps<{
   account: Account
+  compact?: boolean
 }>()
 
 const { t } = useI18n()

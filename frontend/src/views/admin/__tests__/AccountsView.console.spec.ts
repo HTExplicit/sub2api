@@ -94,9 +94,9 @@ const ViewModeStub = {
 }
 
 const DataTableStub = {
-  props: ['data'],
+  props: ['data', 'columns'],
   emits: ['row-click'],
-  template: '<div data-test="view-table"><button v-for="row in data" :key="row.id" data-test="open-row" @click="$emit(\'row-click\', row)">{{ row.name }}</button></div>'
+  template: '<div data-test="view-table" :data-columns="columns.map(column => column.key).join(\',\')"><button v-for="row in data" :key="row.id" data-test="open-row" @click="$emit(\'row-click\', row)">{{ row.name }}</button></div>'
 }
 
 const DetailsDrawerStub = {
@@ -135,12 +135,21 @@ const commonStubs = {
   AppLayout: { template: '<div><slot /></div>' },
   TablePageLayout: { template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>' },
   DataTable: DataTableStub,
-  AccountCompactList: { props: ['accounts'], template: '<div data-test="view-compact">{{ accounts.length }}</div>' },
-  AccountCardGrid: { props: ['accounts'], template: '<div data-test="view-cards">{{ accounts.length }}</div>' },
+  AccountCompactList: {
+    props: ['accounts', 'todayStats', 'todayStatsLoading', 'todayStatsError', 'manualRefreshToken'],
+    template: '<div data-test="view-compact" :data-refresh-token="String(manualRefreshToken)" :data-requests="String(todayStats[String(accounts[0]?.id)]?.requests ?? -1)">{{ accounts.length }}</div>'
+  },
+  AccountCardGrid: {
+    props: ['accounts', 'todayStats', 'todayStatsLoading', 'todayStatsError', 'manualRefreshToken'],
+    template: '<div data-test="view-cards" :data-refresh-token="String(manualRefreshToken)" :data-requests="String(todayStats[String(accounts[0]?.id)]?.requests ?? -1)">{{ accounts.length }}</div>'
+  },
   AccountViewModeSwitcher: ViewModeStub,
   AccountConsoleFilters: { props: ['modelValue'], template: '<div data-test="console-account-ids">{{ modelValue.account_ids.join(\',\') }}</div>' },
   AccountFolderBar: FolderBarStub,
-  AccountTableActions: { template: '<div><slot name="beforeCreate" /><slot name="after" /></div>' },
+  AccountTableActions: {
+    emits: ['refresh'],
+    template: '<div><button data-test="page-refresh" @click="$emit(\'refresh\')">refresh</button><slot name="beforeCreate" /><slot name="after" /></div>'
+  },
   AccountBulkActionsBar: { props: ['selectedIds'], template: '<div data-test="selected-ids">{{ selectedIds.join(\',\') }}</div>' },
   AccountActionMenu: true,
   ImportDataModal: ImportDataModalStub,
@@ -203,6 +212,51 @@ describe('admin AccountsView Cockpit console', () => {
     const restored = mountView()
     await flushPromises()
     expect(restored.find('[data-test="view-cards"]').exists()).toBe(true)
+  })
+
+  it('shows usage in the default table order', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.get('[data-test="view-table"]').attributes('data-columns')).toBe(
+      'select,name,platform_type,usage,status,taxonomy_route,actions'
+    )
+  })
+
+  it('migrates only usage visibility and preserves every other saved column choice', async () => {
+    localStorage.setItem('account-hidden-columns', JSON.stringify(['id', 'usage', 'priority']))
+    localStorage.setItem('account-hidden-columns-version', 'cockpit-console-defaults-v1')
+
+    mountView()
+    await flushPromises()
+
+    const hidden = JSON.parse(localStorage.getItem('account-hidden-columns') || '[]') as string[]
+    expect(hidden).toContain('id')
+    expect(hidden).toContain('priority')
+    expect(hidden).not.toContain('usage')
+    expect(localStorage.getItem('account-hidden-columns-version')).toBe('cockpit-console-defaults-v1')
+    expect(localStorage.getItem('account-usage-column-version')).toBe('usage-visible-v1')
+  })
+
+  it('forwards today stats and the manual force-refresh token to non-table views', async () => {
+    getBatchTodayStats.mockResolvedValue({
+      stats: {
+        '1': { requests: 8, tokens: 100, cost: 1, standard_cost: 1, user_cost: 2 }
+      }
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-test="mode-compact"]').trigger('click')
+    expect(wrapper.get('[data-test="view-compact"]').attributes('data-requests')).toBe('8')
+    expect(wrapper.get('[data-test="view-compact"]').attributes('data-refresh-token')).toBe('0')
+
+    await wrapper.get('[data-test="page-refresh"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="view-compact"]').attributes('data-refresh-token')).toBe('1')
+
+    await wrapper.get('[data-test="mode-cards"]').trigger('click')
+    expect(wrapper.get('[data-test="view-cards"]').attributes('data-requests')).toBe('8')
+    expect(wrapper.get('[data-test="view-cards"]').attributes('data-refresh-token')).toBe('1')
   })
 
   it('opens details on row click and edits only after the explicit edit command', async () => {

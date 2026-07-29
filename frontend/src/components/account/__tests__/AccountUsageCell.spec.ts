@@ -439,7 +439,7 @@ describe('AccountUsageCell', () => {
 	expect(wrapper.text()).toContain('7d|0|27700')
   })
 
-  it('OpenAI OAuth 在行数据刷新但仍无 codex 快照时会重新拉取 usage', async () => {
+  it('OpenAI OAuth 在行数据刷新时复用 5 分钟 usage 缓存', async () => {
 	getUsage
 	  .mockResolvedValueOnce({
 	    five_hour: {
@@ -508,8 +508,8 @@ describe('AccountUsageCell', () => {
 	})
 
 	await flushPromises()
-	expect(getUsage).toHaveBeenCalledTimes(2)
-	expect(wrapper.text()).toContain('5h|0|200')
+	expect(getUsage).toHaveBeenCalledTimes(1)
+	expect(wrapper.text()).toContain('5h|0|100')
   })
 
   it('OpenAI OAuth 已限额时显示 /usage API 返回的限额数据', async () => {
@@ -745,11 +745,11 @@ describe('AccountUsageCell', () => {
   })
 
   it.each([
-    { tokens: 0, expected: 0, compact: '0' },
-    { tokens: 500_000, expected: 50, compact: '500.0K' },
-    { tokens: 1_000_000, expected: 100, compact: '1.0M' },
-    { tokens: 1_100_000, expected: 100, compact: '1.1M' }
-  ])('Grok Free derives its 1M quota from local tokens: $tokens -> $expected%', async ({ tokens, expected, compact }) => {
+    { id: 4300, tokens: 0, expected: 0, compact: '0' },
+    { id: 4301, tokens: 500_000, expected: 50, compact: '500.0K' },
+    { id: 4302, tokens: 1_000_000, expected: 100, compact: '1.0M' },
+    { id: 4303, tokens: 1_100_000, expected: 100, compact: '1.1M' }
+  ])('Grok Free derives its 1M quota from local tokens: $tokens -> $expected%', async ({ id, tokens, expected, compact }) => {
     getUsage.mockResolvedValue({
       grok_free_token_limit: 1_000_000,
       grok_billing: {
@@ -770,7 +770,7 @@ describe('AccountUsageCell', () => {
 
     const wrapper = mount(AccountUsageCell, {
       props: {
-        account: makeAccount({ id: 4300 + expected, platform: 'grok', type: 'oauth', extra: {} })
+        account: makeAccount({ id, platform: 'grok', type: 'oauth', extra: {} })
       },
       global: {
         stubs: {
@@ -1301,6 +1301,7 @@ describe('AccountUsageCell', () => {
   })
 
   it('Vertex 账号会在 Gemini 用量窗口里展示 today stats 徽章', async () => {
+		getUsage.mockResolvedValue({})
 		const wrapper = mount(AccountUsageCell, {
 		  props: {
 		    account: makeAccount({

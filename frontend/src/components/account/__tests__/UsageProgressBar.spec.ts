@@ -146,4 +146,43 @@ describe('UsageProgressBar', () => {
     expect(wrapper.get('.h-1\\.5 > div').attributes('style')).toContain('width: 100%')
     expect(wrapper.get('.h-1\\.5 > div').classes()).toContain('bg-red-500')
   })
+
+  it('list 密度使用完整进度条并保留重置倒计时', () => {
+    const wrapper = mount(UsageProgressBar, {
+      props: {
+        label: '5h',
+        utilization: 27,
+        resetsAt: '2026-03-17T02:30:00Z',
+        color: 'indigo',
+        density: 'list'
+      }
+    })
+
+    expect(wrapper.attributes('data-density')).toBe('list')
+    expect(wrapper.get('.h-1\\.5').classes()).toContain('w-20')
+    expect(wrapper.text()).toContain('27%')
+    expect(wrapper.text()).toContain('2h 30m')
+  })
+
+  it('compact 密度渲染单行彩色百分比且不渲染进度槽', async () => {
+    const wrapper = mount(UsageProgressBar, {
+      props: {
+        label: '7d',
+        utilization: 80,
+        resetsAt: '2026-03-17T02:30:00Z',
+        color: 'emerald',
+        density: 'compact'
+      }
+    })
+
+    expect(wrapper.attributes('data-density')).toBe('compact')
+    expect(wrapper.find('.h-1\\.5').exists()).toBe(false)
+    expect(wrapper.text()).toContain('7d')
+    expect(wrapper.text()).toContain('80%')
+    expect(wrapper.text()).not.toContain('2h 30m')
+    expect(wrapper.get('span.text-right').classes()).toContain('text-amber-600')
+
+    await wrapper.setProps({ utilization: 100 })
+    expect(wrapper.get('span.text-right').classes()).toContain('text-red-600')
+  })
 })

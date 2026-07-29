@@ -345,12 +345,19 @@
             </div>
           </template>
           <template #cell-usage="{ row }">
-            <div class="flex min-w-[8rem] items-end justify-between gap-3">
-              <AccountCapacityCell :account="row" />
-              <div class="text-right text-[11px] leading-4 text-gray-500 dark:text-dark-300">
-                <div>{{ t('admin.accounts.todayRequestsShort', { count: todayStatsByAccountId[String(row.id)]?.requests || 0 }) }}</div>
-                <div class="font-mono">${{ Number(todayStatsByAccountId[String(row.id)]?.cost || 0).toFixed(2) }}</div>
-              </div>
+            <div class="min-w-[15rem] space-y-2">
+              <AccountUsageCell
+                :account="row"
+                :today-stats="todayStatsByAccountId[String(row.id)] ?? null"
+                :today-stats-loading="todayStatsLoading"
+                :today-stats-error="Boolean(todayStatsError)"
+                :today-stats-updated-at="todayStatsUpdatedAt"
+                :manual-refresh-token="usageManualRefreshToken"
+                :status-now="usageStatusNow"
+                variant="list"
+                read-only
+              />
+              <AccountCapacityCell :account="row" compact />
             </div>
           </template>
           <template #cell-proxy="{ row }">
@@ -469,6 +476,12 @@
           :accounts="accounts"
           :loading="loading"
           :selected-ids="selIds"
+          :today-stats="todayStatsByAccountId"
+          :today-stats-loading="todayStatsLoading"
+          :today-stats-error="Boolean(todayStatsError)"
+          :today-stats-updated-at="todayStatsUpdatedAt"
+          :manual-refresh-token="usageManualRefreshToken"
+          :status-now="usageStatusNow"
           @row-click="openDetails"
           @toggle="toggleSel"
           @edit="handleEdit"
@@ -481,6 +494,11 @@
           :loading="loading"
           :selected-ids="selIds"
           :today-stats="todayStatsByAccountId"
+          :today-stats-loading="todayStatsLoading"
+          :today-stats-error="Boolean(todayStatsError)"
+          :today-stats-updated-at="todayStatsUpdatedAt"
+          :manual-refresh-token="usageManualRefreshToken"
+          :status-now="usageStatusNow"
           @row-click="openDetails"
           @toggle="toggleSel"
           @edit="handleEdit"
@@ -593,6 +611,7 @@ import AccountStatusIndicator from '@/components/account/AccountStatusIndicator.
 import AccountTodayStatsCell from '@/components/account/AccountTodayStatsCell.vue'
 import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
 import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
+import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
 import UpstreamBillingRateCell from '@/components/account/UpstreamBillingRateCell.vue'
 import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -750,9 +769,11 @@ const DEFAULT_HIDDEN_COLUMNS = [
   'scheduler_score', 'rate_multiplier', 'upstream_billing_rate', 'last_used_at', 'created_at', 'expires_at'
 ]
 const HIDDEN_COLUMNS_KEY = 'account-hidden-columns'
-// One-time migration: hide scheduler score for existing admins too, because showing it opt-ins to heavy backend scoring.
+// Keep the historical compact-default migration separate from later column-specific migrations.
 const HIDDEN_COLUMNS_VERSION_KEY = 'account-hidden-columns-version'
 const HIDDEN_COLUMNS_CURRENT_VERSION = 'cockpit-console-defaults-v1'
+const USAGE_COLUMN_VERSION_KEY = 'account-usage-column-version'
+const USAGE_COLUMN_CURRENT_VERSION = 'usage-visible-v1'
 
 // Sorting settings
 const ACCOUNT_SORT_STORAGE_KEY = 'account-table-sort'
@@ -810,6 +831,12 @@ const todayStatsError = ref<string | null>(null)
 const todayStatsReqSeq = ref(0)
 const pendingTodayStatsRefresh = ref(false)
 const usageManualRefreshToken = ref(0)
+const todayStatsUpdatedAt = ref<number | null>(null)
+const usageStatusNow = ref(Date.now())
+
+useIntervalFn(() => {
+  usageStatusNow.value = Date.now()
+}, 60_000)
 
 const buildDefaultTodayStats = (): WindowStats => ({
   requests: 0,
@@ -824,7 +851,11 @@ const refreshTodayStatsBatch = async () => {
   // - today_stats column shows dedicated today's metrics.
   // - usage column also embeds today's stats for Key/Bedrock rows.
   // So we only skip fetching when BOTH columns are hidden.
-  if (hiddenColumns.has('today_stats') && hiddenColumns.has('usage')) {
+  if (
+    viewMode.value === 'table' &&
+    hiddenColumns.has('today_stats') &&
+    hiddenColumns.has('usage')
+  ) {
     todayStatsLoading.value = false
     todayStatsError.value = null
     return
@@ -834,6 +865,7 @@ const refreshTodayStatsBatch = async () => {
   const reqSeq = ++todayStatsReqSeq.value
   if (accountIDs.length === 0) {
     todayStatsByAccountId.value = {}
+    todayStatsUpdatedAt.value = null
     todayStatsError.value = null
     todayStatsLoading.value = false
     return
@@ -852,6 +884,7 @@ const refreshTodayStatsBatch = async () => {
       nextStats[key] = serverStats[key] ?? buildDefaultTodayStats()
     }
     todayStatsByAccountId.value = nextStats
+    todayStatsUpdatedAt.value = Date.now()
   } catch (error) {
     if (reqSeq !== todayStatsReqSeq.value) return
     todayStatsError.value = 'Failed'
@@ -909,23 +942,32 @@ const loadSavedColumns = () => {
       parsed.forEach(key => {
         hiddenColumns.add(key)
       })
-      // Apply the Cockpit console's compact defaults once while preserving later user choices.
+      // Preserve the original scheduler-score opt-in migration for pre-Cockpit preferences.
       if (localStorage.getItem(HIDDEN_COLUMNS_VERSION_KEY) !== HIDDEN_COLUMNS_CURRENT_VERSION) {
         DEFAULT_HIDDEN_COLUMNS.forEach(key => hiddenColumns.add(key))
         localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify([...hiddenColumns]))
         localStorage.setItem(HIDDEN_COLUMNS_VERSION_KEY, HIDDEN_COLUMNS_CURRENT_VERSION)
       }
+      // Only restore usage visibility; every other saved column choice remains untouched.
+      if (localStorage.getItem(USAGE_COLUMN_VERSION_KEY) !== USAGE_COLUMN_CURRENT_VERSION) {
+        hiddenColumns.delete('usage')
+        localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify([...hiddenColumns]))
+        localStorage.setItem(USAGE_COLUMN_VERSION_KEY, USAGE_COLUMN_CURRENT_VERSION)
+      }
     } else {
       DEFAULT_HIDDEN_COLUMNS.forEach(key => {
         hiddenColumns.add(key)
       })
+      hiddenColumns.delete('usage')
       localStorage.setItem(HIDDEN_COLUMNS_VERSION_KEY, HIDDEN_COLUMNS_CURRENT_VERSION)
+      localStorage.setItem(USAGE_COLUMN_VERSION_KEY, USAGE_COLUMN_CURRENT_VERSION)
     }
   } catch (e) {
     console.error('Failed to load saved columns:', e)
     DEFAULT_HIDDEN_COLUMNS.forEach(key => {
       hiddenColumns.add(key)
     })
+    hiddenColumns.delete('usage')
   }
 }
 
@@ -933,6 +975,7 @@ const saveColumnsToStorage = () => {
   try {
     localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify([...hiddenColumns]))
     localStorage.setItem(HIDDEN_COLUMNS_VERSION_KEY, HIDDEN_COLUMNS_CURRENT_VERSION)
+    localStorage.setItem(USAGE_COLUMN_VERSION_KEY, USAGE_COLUMN_CURRENT_VERSION)
   } catch (e) {
     console.error('Failed to save columns:', e)
   }
@@ -1643,16 +1686,16 @@ const allColumns = computed(() => {
     { key: 'name', label: t('admin.accounts.columns.name'), sortable: true },
     { key: 'id', label: t('admin.accounts.columns.id'), sortable: true },
     { key: 'platform_type', label: t('admin.accounts.columns.platformType'), sortable: false },
-    { key: 'capacity', label: t('admin.accounts.columns.capacity'), sortable: false },
+    { key: 'usage', label: t('admin.accounts.columns.usage'), sortable: false },
     { key: 'status', label: t('admin.accounts.columns.status'), sortable: true },
     { key: 'taxonomy_route', label: t('admin.accounts.columns.classificationRoute'), sortable: false },
+    { key: 'capacity', label: t('admin.accounts.columns.capacity'), sortable: false },
     { key: 'schedulable', label: t('admin.accounts.columns.schedulable'), sortable: true },
     { key: 'today_stats', label: t('admin.accounts.columns.todayStats'), sortable: false }
   ]
   if (!authStore.isSimpleMode) {
     c.push({ key: 'groups', label: t('admin.accounts.columns.groups'), sortable: false })
   }
-  c.push({ key: 'usage', label: t('admin.accounts.columns.capacityUsage'), sortable: false })
   c.push(
     { key: 'proxy', label: t('admin.accounts.columns.proxy'), sortable: false },
     { key: 'priority', label: t('admin.accounts.columns.priority'), sortable: true },

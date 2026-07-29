@@ -112,6 +112,9 @@ export default {
       directConnection: 'Direct',
       rateLimitResetAt: 'Rate Limit Reset',
       todayRequestsShort: '{count} requests today',
+      usageNoData: 'No quota data',
+      usageFetchFailed: 'Failed to load',
+      usageStale: 'Stale data',
       selectAccount: 'Select account {name}',
       syncFromCrsTitle: 'Sync Accounts from CRS',
       syncFromCrsDesc:
@@ -229,6 +232,7 @@ export default {
         todayStats: 'Today Stats',
         groups: 'Groups',
         classificationRoute: 'Classification / Routing',
+        usage: 'Usage',
         capacityUsage: 'Capacity / Usage',
         usageWindows: 'Usage Windows',
         proxy: 'Proxy',

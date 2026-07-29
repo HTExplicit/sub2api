@@ -51,7 +51,22 @@
           <AccountStatusIndicator :account="account" @show-temp-unsched="emit('showTempUnsched', account)" />
         </div>
 
-        <div class="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-gray-100 pt-3 dark:border-dark-700">
+        <div class="mt-3 border-t border-gray-100 pt-3 dark:border-dark-700" data-test="account-card-usage">
+          <AccountUsageCell
+            :account="account"
+            :today-stats="todayStats[String(account.id)] ?? null"
+            :today-stats-loading="todayStatsLoading"
+            :today-stats-error="todayStatsError"
+            :today-stats-updated-at="todayStatsUpdatedAt"
+            :manual-refresh-token="manualRefreshToken"
+            :status-now="statusNow"
+            variant="list"
+            read-only
+          />
+          <AccountCapacityCell :account="account" compact class="mt-2" />
+        </div>
+
+        <div class="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-gray-100 pt-3 dark:border-dark-700" data-test="account-card-taxonomy">
           <div class="min-w-0">
             <div class="text-[10px] font-medium uppercase text-gray-400">{{ t('admin.accounts.classification') }}</div>
             <div class="mt-1 truncate text-xs font-medium text-gray-700 dark:text-gray-200">
@@ -73,13 +88,6 @@
           </div>
         </div>
 
-        <div class="mt-3 flex items-end justify-between gap-3 border-t border-gray-100 pt-3 dark:border-dark-700">
-          <AccountCapacityCell :account="account" />
-          <div class="text-right text-xs text-gray-500 dark:text-dark-300">
-            <div>{{ t('admin.accounts.todayRequestsShort', { count: todayStats[String(account.id)]?.requests || 0 }) }}</div>
-            <div class="mt-0.5 font-mono">${{ Number(todayStats[String(account.id)]?.cost || 0).toFixed(2) }}</div>
-          </div>
-        </div>
       </article>
     </div>
   </div>
@@ -89,6 +97,7 @@
 import { useI18n } from 'vue-i18n'
 import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
 import AccountStatusIndicator from '@/components/account/AccountStatusIndicator.vue'
+import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
 import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
 import Icon from '@/components/icons/Icon.vue'
 import type { Account, WindowStats } from '@/types'
@@ -98,6 +107,11 @@ defineProps<{
   loading: boolean
   selectedIds: number[]
   todayStats: Record<string, WindowStats>
+  todayStatsLoading: boolean
+  todayStatsError: boolean
+  todayStatsUpdatedAt: number | null
+  manualRefreshToken: number
+  statusNow: number
 }>()
 
 const emit = defineEmits<{
