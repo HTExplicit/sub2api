@@ -304,10 +304,10 @@ func dataMapString(values map[string]any, keys ...string) string {
 }
 
 func dataAccountEmail(credentials, extra map[string]any) string {
-	if value := dataMapString(credentials, "email", "user_email"); value != "" {
+	if value := dataMapString(credentials, "email", "user_email", "client_email"); value != "" {
 		return value
 	}
-	return dataMapString(extra, "email", "user_email")
+	return dataMapString(extra, "email", "user_email", "client_email")
 }
 
 func dataAccountPlan(credentials, extra map[string]any) string {
@@ -352,7 +352,7 @@ func dataAccountIdentityKeys(platform string, credentials, extra map[string]any)
 	for _, source := range []map[string]any{credentials, extra} {
 		out = appendDataIdentityKey(out, seen, platform, "provider_subject", dataMapString(source, "provider_subject", "subject"))
 		out = appendDataIdentityKey(out, seen, platform, "crs_account_id", dataMapString(source, "crs_account_id"))
-		out = appendDataIdentityKey(out, seen, platform, "service_account_id", dataMapString(source, "service_account_id", "client_email"))
+		out = appendDataIdentityKey(out, seen, platform, "service_account_id", dataMapString(source, "service_account_id"))
 	}
 	return out
 }

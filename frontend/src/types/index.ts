@@ -1183,6 +1183,7 @@ export interface AccountFacetOption {
 
 export interface AccountConsoleFacets {
   total: number
+  uncategorized_count: number
   platforms: AccountFacetOption[]
   types: AccountFacetOption[]
   statuses: AccountFacetOption[]

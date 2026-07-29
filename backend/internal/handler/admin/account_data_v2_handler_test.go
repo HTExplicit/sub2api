@@ -351,6 +351,16 @@ func TestPreviewDataImportIsReadOnlyAndSeparatesStrongIdentityFromEmailWarnings(
 	require.Empty(t, svc.tags)
 }
 
+func TestDataAccountIdentityKeysTreatsClientEmailAsWarningOnly(t *testing.T) {
+	keys := dataAccountIdentityKeys("vertex", map[string]any{
+		"client_email": "service@example.com",
+	}, nil)
+	require.Empty(t, keys)
+	require.Equal(t, "service@example.com", dataAccountEmail(map[string]any{
+		"client_email": "service@example.com",
+	}, nil))
+}
+
 func TestImportDataAcceptsV1AndDefaultsStrongConflictToSkip(t *testing.T) {
 	svc := newDataV2AdminService()
 	svc.accounts = []service.Account{{

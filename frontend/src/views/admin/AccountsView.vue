@@ -178,7 +178,7 @@
       </template>
       <template #table>
         <AccountFolderBar
-          :folders="folders"
+          :folders="facetFolders"
           :active-folder="activeFolder"
           :total="folderNavigationTotal"
           @select="handleFolderSelect"
@@ -539,7 +539,7 @@
       :manual-refresh-token="usageManualRefreshToken"
       @close="detailsAccount = null"
       @edit="handleEdit"
-      @updated="handleAccountUpdated"
+      @updated="handleTaxonomyAccountUpdated"
       @show-temp-unsched="handleShowTempUnsched"
     />
     <AccountTaxonomyManager
@@ -636,6 +636,7 @@ const loadAccountViewMode = (): AccountViewMode => {
 const viewMode = ref<AccountViewMode>(loadAccountViewMode())
 const facets = ref<AccountConsoleFacets | null>(null)
 let facetsRequestSequence = 0
+let taxonomyRequestSequence = 0
 const activeFolder = ref('')
 const showTaxonomyManager = ref(false)
 const detailsAccount = ref<Account | null>(null)
@@ -651,12 +652,13 @@ const consoleFilters = ref<AccountConsoleFilterState>({
   privacy_mode: '',
   account_ids: []
 })
-const folders = computed<AccountManagementFolder[]>(() => facets.value?.folders || [])
-const tags = computed<AccountManagementTag[]>(() => facets.value?.tags || [])
+const folders = ref<AccountManagementFolder[]>([])
+const tags = ref<AccountManagementTag[]>([])
+const facetFolders = computed<AccountManagementFolder[]>(() => facets.value?.folders || [])
 const folderNavigationTotal = computed(() => {
   if (!facets.value) return pagination.total
   return facets.value.folders.reduce((sum, folder) => sum + folder.account_count, 0)
-    + Math.max(0, facets.value.total - facets.value.folders.reduce((sum, folder) => sum + folder.account_count, 0))
+    + facets.value.uncategorized_count
 })
 const accountTableRef = ref<HTMLElement | null>(null)
 const dataTableRef = ref<InstanceType<typeof DataTable> | null>(null)
@@ -1102,6 +1104,21 @@ const loadFacets = async () => {
   }
 }
 
+const loadTaxonomy = async () => {
+  const requestSequence = ++taxonomyRequestSequence
+  try {
+    const [nextFolders, nextTags] = await Promise.all([
+      adminAPI.accounts.listFolders(),
+      adminAPI.accounts.listTags()
+    ])
+    if (requestSequence !== taxonomyRequestSequence) return
+    folders.value = nextFolders
+    tags.value = nextTags
+  } catch (error) {
+    if (requestSequence === taxonomyRequestSequence) console.error('Failed to load account taxonomy:', error)
+  }
+}
+
 const handleConsoleFiltersChanged = () => {
   pagination.page = 1
   syncConsoleParams()
@@ -1119,7 +1136,7 @@ const handleFolderSelect = (folder: string) => {
 }
 
 const handleTaxonomyChanged = async () => {
-  await Promise.all([reload(), loadFacets()])
+  await Promise.all([reload(), loadFacets(), loadTaxonomy()])
   if (detailsAccount.value) {
     detailsAccount.value = accounts.value.find(account => account.id === detailsAccount.value?.id) || detailsAccount.value
   }
@@ -1938,7 +1955,7 @@ const handleDataImported = async (result: AdminDataImportResult) => {
   setSelectedIds(importedIDs)
   pagination.page = 1
   syncConsoleParams()
-  await Promise.all([load(), loadFacets()])
+  await Promise.all([load(), loadFacets(), loadTaxonomy()])
 }
 const ACCOUNT_UNGROUPED_GROUP_QUERY_VALUE = 'ungrouped'
 const ACCOUNT_PRIVACY_MODE_UNSET_QUERY_VALUE = '__unset__'
@@ -2063,6 +2080,10 @@ const handleProbeUpstreamBilling = async (account: Account) => {
 const handleAccountUpdated = (updatedAccount: Account) => {
   patchAccountInList(updatedAccount)
   enterAutoRefreshSilentWindow()
+}
+const handleTaxonomyAccountUpdated = async (updatedAccount: Account) => {
+  handleAccountUpdated(updatedAccount)
+  await Promise.all([loadFacets(), loadTaxonomy()])
 }
 const formatExportTimestamp = () => {
   const now = new Date()
@@ -2319,7 +2340,7 @@ const handleClickOutside = (event: MouseEvent) => {
 }
 
 onMounted(async () => {
-  await Promise.all([load(), loadFacets()])
+  await Promise.all([load(), loadFacets(), loadTaxonomy()])
   loadUpstreamBillingProbeGlobalState()
   try {
     const [p, g] = await Promise.all([adminAPI.proxies.getAll(), adminAPI.groups.getAll()])

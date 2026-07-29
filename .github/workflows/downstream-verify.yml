@@ -31,16 +31,16 @@ jobs:
           cache-dependency-path: backend/go.sum
       - name: Service tests
         working-directory: backend
-        run: go test -p=1 ./internal/service -run 'Test.*(Refusal|CyberPolicy)|Test(UpdateService|NormalizeAccountTaxonomyName|FilterConsoleAccounts|AccountConsolePlan)' -count=1
+        run: go test -p=1 -tags unit ./internal/service -run 'Test.*(Refusal|CyberPolicy)|Test(UpdateService|NormalizeAccountTaxonomyName|FilterConsoleAccounts|AccountConsolePlan|AccountFacetMatcher)' -count=1
       - name: Handler tests
         working-directory: backend
         run: |
           go test -p=1 ./internal/handler ./internal/handler/admin -run 'Test.*Refusal' -count=1
-          go test -p=1 ./internal/handler/admin -run 'Test(ExportData|PreviewDataImport|ImportData|BulkUpdateAccepts|AccountHandler)' -count=1
+          go test -p=1 ./internal/handler/admin -run 'Test(ExportData|PreviewDataImport|ImportData|DataAccountIdentityKeys|BulkUpdateAccepts|AccountHandler)' -count=1
           go test -p=1 ./internal/repository -run '^$'
       - name: Account taxonomy migration integration test
         working-directory: backend
-        run: go test -p=1 -tags integration ./internal/repository -run '^TestAccountTaxonomyMigrationAndRelationsIntegration$' -count=1
+        run: go test -p=1 -tags integration ./internal/repository -run '^TestAccountTaxonomy.*Integration$' -count=1
 
   frontend:
     name: Downstream frontend

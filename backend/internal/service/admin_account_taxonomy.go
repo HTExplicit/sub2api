@@ -60,14 +60,15 @@ type AccountFacetOption struct {
 }
 
 type AccountConsoleFacets struct {
-	Total     int                       `json:"total"`
-	Platforms []AccountFacetOption      `json:"platforms"`
-	Types     []AccountFacetOption      `json:"types"`
-	Statuses  []AccountFacetOption      `json:"statuses"`
-	Plans     []AccountFacetOption      `json:"plans"`
-	Proxies   []AccountFacetOption      `json:"proxies"`
-	Folders   []AccountManagementFolder `json:"folders"`
-	Tags      []AccountManagementTag    `json:"tags"`
+	Total              int                       `json:"total"`
+	UncategorizedCount int                       `json:"uncategorized_count"`
+	Platforms          []AccountFacetOption      `json:"platforms"`
+	Types              []AccountFacetOption      `json:"types"`
+	Statuses           []AccountFacetOption      `json:"statuses"`
+	Plans              []AccountFacetOption      `json:"plans"`
+	Proxies            []AccountFacetOption      `json:"proxies"`
+	Folders            []AccountManagementFolder `json:"folders"`
+	Tags               []AccountManagementTag    `json:"tags"`
 }
 
 func normalizeAccountTaxonomyName(value string) (string, string, error) {
@@ -272,6 +273,76 @@ func uniquePositiveIDs(ids []int64) []int64 {
 	return out
 }
 
+const accountTaxonomyHydrationBatchSize = 10000
+
+func (s *adminServiceImpl) hydrateAccountTaxonomyValues(ctx context.Context, accounts []Account) error {
+	pointers := make([]*Account, 0, len(accounts))
+	for i := range accounts {
+		pointers = append(pointers, &accounts[i])
+	}
+	return s.hydrateAccountTaxonomy(ctx, pointers)
+}
+
+func (s *adminServiceImpl) hydrateAccountTaxonomy(ctx context.Context, accounts []*Account) error {
+	if s == nil || s.entClient == nil || len(accounts) == 0 {
+		return nil
+	}
+	byID := make(map[int64]*Account, len(accounts))
+	ids := make([]int64, 0, len(accounts))
+	for _, account := range accounts {
+		if account == nil || account.ID <= 0 {
+			continue
+		}
+		account.ManagementFolder = nil
+		account.Tags = nil
+		if _, exists := byID[account.ID]; exists {
+			continue
+		}
+		byID[account.ID] = account
+		ids = append(ids, account.ID)
+	}
+	for start := 0; start < len(ids); start += accountTaxonomyHydrationBatchSize {
+		end := start + accountTaxonomyHydrationBatchSize
+		if end > len(ids) {
+			end = len(ids)
+		}
+		rows, err := s.entClient.Account.Query().
+			Where(dbaccount.IDIn(ids[start:end]...)).
+			WithManagementFolder().
+			WithTags().
+			All(ctx)
+		if err != nil {
+			return err
+		}
+		for _, row := range rows {
+			account := byID[row.ID]
+			if account == nil {
+				continue
+			}
+			if folder := row.Edges.ManagementFolder; folder != nil {
+				account.ManagementFolder = &AccountManagementFolder{
+					ID: folder.ID, Name: folder.Name, SortOrder: folder.SortOrder,
+					CreatedAt: folder.CreatedAt, UpdatedAt: folder.UpdatedAt,
+				}
+			}
+			for _, tag := range row.Edges.Tags {
+				account.Tags = append(account.Tags, AccountManagementTag{
+					ID: tag.ID, Name: tag.Name, SortOrder: tag.SortOrder,
+					CreatedAt: tag.CreatedAt, UpdatedAt: tag.UpdatedAt,
+				})
+			}
+			sort.SliceStable(account.Tags, func(i, j int) bool {
+				left, right := account.Tags[i], account.Tags[j]
+				if left.SortOrder != right.SortOrder {
+					return left.SortOrder < right.SortOrder
+				}
+				return strings.ToLower(left.Name) < strings.ToLower(right.Name)
+			})
+		}
+	}
+	return nil
+}
+
 func (s *adminServiceImpl) SetAccountTaxonomy(ctx context.Context, accountID int64, assignment AccountTaxonomyAssignment) (*Account, error) {
 	assignment.TagIDs = uniquePositiveIDs(assignment.TagIDs)
 	tx, err := s.entClient.Tx(ctx)
@@ -318,7 +389,7 @@ func (s *adminServiceImpl) SetAccountTaxonomy(ctx context.Context, accountID int
 	if err = tx.Commit(); err != nil {
 		return nil, err
 	}
-	return s.accountRepo.GetByID(ctx, accountID)
+	return s.GetAccount(ctx, accountID)
 }
 
 func (s *adminServiceImpl) accountConsoleQuery(filters AccountConsoleFilters) *dbent.AccountQuery {
@@ -500,6 +571,9 @@ func (s *adminServiceImpl) listAccountConsoleAll(ctx context.Context, filters Ac
 	}
 	accounts, err := s.accountRepo.GetByIDs(ctx, ids)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.hydrateAccountTaxonomy(ctx, accounts); err != nil {
 		return nil, err
 	}
 	return filterConsoleAccounts(accounts, filters), nil
@@ -704,6 +778,7 @@ func (s *adminServiceImpl) GetAccountConsoleFacets(ctx context.Context, filters 
 	tagAccounts := filterAccountsForFacet(accounts, matcher, accountFacetTags, now)
 	platforms, types, statuses, plans, proxies := map[string]int{}, map[string]int{}, map[string]int{}, map[string]int{}, map[string]int{}
 	folderCounts, tagCounts := map[int64]int{}, map[int64]int{}
+	uncategorizedCount := 0
 	for _, account := range platformAccounts {
 		platforms[account.Platform]++
 	}
@@ -728,6 +803,8 @@ func (s *adminServiceImpl) GetAccountConsoleFacets(ctx context.Context, filters 
 	for _, account := range folderAccounts {
 		if account.ManagementFolder != nil {
 			folderCounts[account.ManagementFolder.ID]++
+		} else {
+			uncategorizedCount++
 		}
 	}
 	for _, account := range tagAccounts {
@@ -763,7 +840,8 @@ func (s *adminServiceImpl) GetAccountConsoleFacets(ctx context.Context, filters 
 		return strings.ToLower(proxyOptions[i].Label) < strings.ToLower(proxyOptions[j].Label)
 	})
 	return &AccountConsoleFacets{
-		Total: len(fullyFiltered), Platforms: facetOptions(platforms), Types: facetOptions(types),
+		Total: len(fullyFiltered), UncategorizedCount: uncategorizedCount,
+		Platforms: facetOptions(platforms), Types: facetOptions(types),
 		Statuses: facetOptions(statuses), Plans: facetOptions(plans), Proxies: proxyOptions,
 		Folders: folders, Tags: tags,
 	}, nil

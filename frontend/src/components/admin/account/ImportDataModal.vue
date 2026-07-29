@@ -73,6 +73,39 @@
           </div>
         </div>
 
+        <details
+          v-if="preview.proxies.length"
+          class="rounded-md border border-gray-200 dark:border-dark-700"
+          data-test="import-proxy-preview"
+        >
+          <summary class="cursor-pointer px-3 py-2.5 text-sm font-medium text-gray-800 dark:text-gray-100">
+            {{ t('admin.accounts.importProxyPreview', { count: preview.proxies.length }) }}
+          </summary>
+          <div class="divide-y divide-gray-100 border-t border-gray-100 dark:divide-dark-700 dark:border-dark-700">
+            <div v-for="proxy in preview.proxies" :key="proxy.index" class="px-3 py-2.5" :data-test="`import-proxy-${proxy.index}`">
+              <div class="flex min-w-0 items-center justify-between gap-3">
+                <div class="min-w-0">
+                  <span class="truncate text-sm font-medium text-gray-800 dark:text-gray-100">{{ proxy.name || '-' }}</span>
+                  <span class="ml-2 text-xs text-gray-500 dark:text-dark-300">{{ proxy.protocol }}</span>
+                </div>
+                <span
+                  class="flex-shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium"
+                  :class="proxy.valid
+                    ? (proxy.will_reuse ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300')
+                    : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300'"
+                >
+                  {{ proxy.valid
+                    ? (proxy.will_reuse ? t('admin.accounts.importProxyReuse') : t('admin.accounts.importProxyCreate'))
+                    : t('admin.accounts.importProxyInvalid') }}
+                </span>
+              </div>
+              <div v-for="message in proxy.errors || []" :key="message" class="mt-1 text-xs text-red-600 dark:text-red-300">
+                {{ message }}
+              </div>
+            </div>
+          </div>
+        </details>
+
         <details class="rounded-md border border-gray-200 dark:border-dark-700">
           <summary class="cursor-pointer px-3 py-2.5 text-sm font-medium text-gray-800 dark:text-gray-100">
             {{ t('admin.accounts.importUniformSettings') }}

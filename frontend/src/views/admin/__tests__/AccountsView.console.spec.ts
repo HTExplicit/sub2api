@@ -6,6 +6,8 @@ const {
   listAccounts,
   listWithEtag,
   getFacets,
+  listFolders,
+  listTags,
   getBatchTodayStats,
   getUpstreamBillingProbeSettings,
   getAllProxies,
@@ -14,6 +16,8 @@ const {
   listAccounts: vi.fn(),
   listWithEtag: vi.fn(),
   getFacets: vi.fn(),
+  listFolders: vi.fn(),
+  listTags: vi.fn(),
   getBatchTodayStats: vi.fn(),
   getUpstreamBillingProbeSettings: vi.fn(),
   getAllProxies: vi.fn(),
@@ -26,6 +30,8 @@ vi.mock('@/api/admin', () => ({
       list: listAccounts,
       listWithEtag,
       getFacets,
+      listFolders,
+      listTags,
       getBatchTodayStats,
       getUpstreamBillingProbeSettings,
       delete: vi.fn(),
@@ -115,6 +121,16 @@ const ImportDataModalStub = {
   template: '<button data-test="emit-import-result" @click="$emit(\'imported\', result)">imported</button>'
 }
 
+const FolderBarStub = {
+  props: ['folders', 'total'],
+  template: '<div><span data-test="folder-facet-count">{{ folders[0]?.account_count ?? -1 }}</span><span data-test="folder-navigation-total">{{ total }}</span></div>'
+}
+
+const TaxonomyManagerStub = {
+  props: ['folders'],
+  template: '<div data-test="taxonomy-folder-count">{{ folders[0]?.account_count ?? -1 }}</div>'
+}
+
 const commonStubs = {
   AppLayout: { template: '<div><slot /></div>' },
   TablePageLayout: { template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>' },
@@ -123,7 +139,7 @@ const commonStubs = {
   AccountCardGrid: { props: ['accounts'], template: '<div data-test="view-cards">{{ accounts.length }}</div>' },
   AccountViewModeSwitcher: ViewModeStub,
   AccountConsoleFilters: { props: ['modelValue'], template: '<div data-test="console-account-ids">{{ modelValue.account_ids.join(\',\') }}</div>' },
-  AccountFolderBar: true,
+  AccountFolderBar: FolderBarStub,
   AccountTableActions: { template: '<div><slot name="beforeCreate" /><slot name="after" /></div>' },
   AccountBulkActionsBar: { props: ['selectedIds'], template: '<div data-test="selected-ids">{{ selectedIds.join(\',\') }}</div>' },
   AccountActionMenu: true,
@@ -142,7 +158,7 @@ const commonStubs = {
   TLSFingerprintProfilesModal: true,
   CreateAccountModal: true,
   BulkEditAccountModal: true,
-  AccountTaxonomyManager: true,
+  AccountTaxonomyManager: TaxonomyManagerStub,
   PlatformTypeBadge: true,
   AccountCapacityCell: true,
   AccountStatusIndicator: true,
@@ -161,7 +177,9 @@ describe('admin AccountsView Cockpit console', () => {
     localStorage.clear()
     listAccounts.mockReset().mockResolvedValue({ items: [account], total: 1, page: 1, page_size: 20, pages: 1 })
     listWithEtag.mockReset().mockResolvedValue({ notModified: true, etag: null, data: null })
-    getFacets.mockReset().mockResolvedValue({ total: 1, platforms: [], types: [], statuses: [], plans: [], proxies: [], folders: [], tags: [] })
+    getFacets.mockReset().mockResolvedValue({ total: 1, uncategorized_count: 1, platforms: [], types: [], statuses: [], plans: [], proxies: [], folders: [], tags: [] })
+    listFolders.mockReset().mockResolvedValue([])
+    listTags.mockReset().mockResolvedValue([])
     getBatchTodayStats.mockReset().mockResolvedValue({ stats: {} })
     getUpstreamBillingProbeSettings.mockReset().mockResolvedValue({ enabled: true, interval_minutes: 30 })
     getAllProxies.mockReset().mockResolvedValue([])
@@ -199,6 +217,23 @@ describe('admin AccountsView Cockpit console', () => {
     await wrapper.get('[data-test="drawer-edit"]').trigger('click')
     expect(wrapper.get('[data-test="edit-modal"]').attributes('data-show')).toBe('true')
     expect(wrapper.get('[data-test="edit-modal"]').attributes('data-id')).toBe('1')
+  })
+
+  it('uses unfiltered taxonomy counts for management and facet counts for navigation', async () => {
+    getFacets.mockResolvedValue({
+      total: 0,
+      uncategorized_count: 3,
+      platforms: [], types: [], statuses: [], plans: [], proxies: [], tags: [],
+      folders: [{ id: 7, name: 'Production', sort_order: 0, account_count: 0 }]
+    })
+    listFolders.mockResolvedValue([{ id: 7, name: 'Production', sort_order: 0, account_count: 4 }])
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="folder-facet-count"]').text()).toBe('0')
+    expect(wrapper.get('[data-test="folder-navigation-total"]').text()).toBe('3')
+    expect(wrapper.get('[data-test="taxonomy-folder-count"]').text()).toBe('4')
   })
 
   it('filters and selects successful account IDs after import', async () => {

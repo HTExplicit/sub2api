@@ -22,6 +22,7 @@ const state = (): AccountConsoleFilterState => ({
 
 const facets: AccountConsoleFacets = {
   total: 10,
+  uncategorized_count: 1,
   platforms: [
     { value: 'openai', label: 'OpenAI', count: 7 },
     { value: 'grok', label: 'Grok', count: 3 }

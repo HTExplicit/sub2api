@@ -180,6 +180,40 @@ describe('ImportDataModal', () => {
     expect(wrapper.emitted('imported')).toEqual([[expect.objectContaining({ account_ids: [101] })]])
   })
 
+  it('预览逐条显示代理复用和校验错误', async () => {
+    const { adminAPI } = await import('@/api/admin')
+    const preview = previewResult(previewAccount(0, 'a'))
+    preview.proxies = [
+      {
+        index: 0,
+        name: 'existing-proxy',
+        protocol: 'http',
+        valid: true,
+        will_reuse: true,
+        existing_proxy_id: 9
+      },
+      {
+        index: 1,
+        name: 'broken-proxy',
+        protocol: 'socks5',
+        valid: false,
+        will_reuse: false,
+        errors: ['proxy host is required']
+      }
+    ]
+    vi.mocked(adminAPI.accounts.previewDataImport).mockResolvedValue(preview)
+    const wrapper = mountModal()
+
+    await selectFiles(wrapper, [dataFile()])
+    await submitPreview(wrapper)
+
+    const proxyPreview = wrapper.get('[data-test="import-proxy-preview"]')
+    expect(proxyPreview.text()).toContain('admin.accounts.importProxyReuse')
+    expect(proxyPreview.text()).toContain('admin.accounts.importProxyInvalid')
+    expect(wrapper.get('[data-test="import-proxy-1"]').text()).toContain('proxy host is required')
+    expect(adminAPI.accounts.importData).not.toHaveBeenCalled()
+  })
+
   it('无有效 JSON 的后续选择不清空已有选择', async () => {
     const { adminAPI } = await import('@/api/admin')
     vi.mocked(adminAPI.accounts.previewDataImport).mockResolvedValue(previewResult(previewAccount(0, 'a')))

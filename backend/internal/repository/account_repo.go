@@ -15,16 +15,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	dbaccount "github.com/Wei-Shaw/sub2api/ent/account"
-	dbaccountfolder "github.com/Wei-Shaw/sub2api/ent/accountfolder"
 	dbaccountgroup "github.com/Wei-Shaw/sub2api/ent/accountgroup"
-	dbaccounttagbinding "github.com/Wei-Shaw/sub2api/ent/accounttagbinding"
 	dbgroup "github.com/Wei-Shaw/sub2api/ent/group"
 	dbpredicate "github.com/Wei-Shaw/sub2api/ent/predicate"
 	dbproxy "github.com/Wei-Shaw/sub2api/ent/proxy"
@@ -2963,7 +2960,6 @@ func (r *accountRepository) accountsToService(ctx context.Context, accounts []*d
 
 	accountIDs := make([]int64, 0, len(accounts))
 	proxyIDs := make([]int64, 0, len(accounts))
-	folderIDs := make([]int64, 0, len(accounts))
 	for _, acc := range accounts {
 		accountIDs = append(accountIDs, acc.ID)
 		if acc.ProxyID != nil {
@@ -2971,9 +2967,6 @@ func (r *accountRepository) accountsToService(ctx context.Context, accounts []*d
 		}
 		if acc.ProxyFallbackOriginID != nil {
 			proxyIDs = append(proxyIDs, *acc.ProxyFallbackOriginID)
-		}
-		if acc.ManagementFolderID != nil {
-			folderIDs = append(folderIDs, *acc.ManagementFolderID)
 		}
 	}
 
@@ -2985,11 +2978,6 @@ func (r *accountRepository) accountsToService(ctx context.Context, accounts []*d
 	if err != nil {
 		return nil, err
 	}
-	folderByID, tagsByAccount, err := r.loadAccountTaxonomy(ctx, accountIDs, folderIDs)
-	if err != nil {
-		return nil, err
-	}
-
 	outAccounts := make([]service.Account, 0, len(accounts))
 	for _, acc := range accounts {
 		out := accountEntityToService(acc)
@@ -3017,67 +3005,10 @@ func (r *accountRepository) accountsToService(ctx context.Context, accounts []*d
 		if ags, ok := accountGroupsByAccount[acc.ID]; ok {
 			out.AccountGroups = ags
 		}
-		if acc.ManagementFolderID != nil {
-			out.ManagementFolder = folderByID[*acc.ManagementFolderID]
-		}
-		out.Tags = tagsByAccount[acc.ID]
 		outAccounts = append(outAccounts, *out)
 	}
 
 	return outAccounts, nil
-}
-
-func (r *accountRepository) loadAccountTaxonomy(ctx context.Context, accountIDs, folderIDs []int64) (map[int64]*service.AccountManagementFolder, map[int64][]service.AccountManagementTag, error) {
-	folderByID := make(map[int64]*service.AccountManagementFolder)
-	tagsByAccount := make(map[int64][]service.AccountManagementTag)
-
-	folderIDs = uniquePositiveInt64s(folderIDs)
-	if len(folderIDs) > 0 {
-		folders, err := r.client.AccountFolder.Query().
-			Where(dbaccountfolder.IDIn(folderIDs...)).
-			All(ctx)
-		if err != nil {
-			return nil, nil, err
-		}
-		for _, folder := range folders {
-			folderByID[folder.ID] = &service.AccountManagementFolder{
-				ID: folder.ID, Name: folder.Name, SortOrder: folder.SortOrder,
-				CreatedAt: folder.CreatedAt, UpdatedAt: folder.UpdatedAt,
-			}
-		}
-	}
-
-	accountIDs = uniquePositiveInt64s(accountIDs)
-	if len(accountIDs) == 0 {
-		return folderByID, tagsByAccount, nil
-	}
-	bindings, err := r.client.AccountTagBinding.Query().
-		Where(dbaccounttagbinding.AccountIDIn(accountIDs...)).
-		WithTag().
-		All(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	for _, binding := range bindings {
-		tag := binding.Edges.Tag
-		if tag == nil {
-			continue
-		}
-		tagsByAccount[binding.AccountID] = append(tagsByAccount[binding.AccountID], service.AccountManagementTag{
-			ID: tag.ID, Name: tag.Name, SortOrder: tag.SortOrder,
-			CreatedAt: tag.CreatedAt, UpdatedAt: tag.UpdatedAt,
-		})
-	}
-	for accountID := range tagsByAccount {
-		sort.SliceStable(tagsByAccount[accountID], func(i, j int) bool {
-			left, right := tagsByAccount[accountID][i], tagsByAccount[accountID][j]
-			if left.SortOrder != right.SortOrder {
-				return left.SortOrder < right.SortOrder
-			}
-			return strings.ToLower(left.Name) < strings.ToLower(right.Name)
-		})
-	}
-	return folderByID, tagsByAccount, nil
 }
 
 func tempUnschedulablePredicate() dbpredicate.Account {

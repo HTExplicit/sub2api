@@ -26,7 +26,9 @@ vi.mock('@/api/admin', () => ({
     accounts: {
       list: listAccounts,
       listWithEtag,
-      getFacets: vi.fn().mockResolvedValue({ total: 0, platforms: [], types: [], statuses: [], plans: [], proxies: [], folders: [], tags: [] }),
+      getFacets: vi.fn().mockResolvedValue({ total: 0, uncategorized_count: 0, platforms: [], types: [], statuses: [], plans: [], proxies: [], folders: [], tags: [] }),
+      listFolders: vi.fn().mockResolvedValue([]),
+      listTags: vi.fn().mockResolvedValue([]),
       getBatchTodayStats,
       getUpstreamBillingProbeSettings,
       delete: vi.fn(),
