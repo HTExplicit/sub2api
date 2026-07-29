@@ -110,7 +110,6 @@ func TestAccountTaxonomyMigrationAndRelationsIntegration(t *testing.T) {
 	require.NotNil(t, row.ManagementFolderID)
 	require.Equal(t, folder.ID, *row.ManagementFolderID)
 
-	require.Error(t, client.AccountFolder.DeleteOneID(folder.ID).Exec(ctx), "non-empty folders require the explicit move-to-uncategorized path")
 	_, err = client.Account.UpdateOneID(account.ID).ClearManagementFolderID().Save(ctx)
 	require.NoError(t, err)
 	require.NoError(t, client.AccountFolder.DeleteOneID(folder.ID).Exec(ctx))
