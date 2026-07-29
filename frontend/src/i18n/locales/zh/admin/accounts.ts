@@ -181,6 +181,8 @@ export default {
         schedulable: '调度',
         todayStats: '今日统计',
         groups: '分组',
+        classificationRoute: '分类 / 路由',
+        capacityUsage: '容量 / 用量',
         usageWindows: '用量窗口',
         proxy: '代理',
         lastUsed: '最近使用',

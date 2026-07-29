@@ -228,6 +228,8 @@ export default {
         schedulable: 'Schedulable',
         todayStats: 'Today Stats',
         groups: 'Groups',
+        classificationRoute: 'Classification / Routing',
+        capacityUsage: 'Capacity / Usage',
         usageWindows: 'Usage Windows',
         proxy: 'Proxy',
         lastUsed: 'Last Used',

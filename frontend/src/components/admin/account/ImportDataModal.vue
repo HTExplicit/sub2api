@@ -273,7 +273,7 @@
             v-else-if="stage === 'preview'"
             type="button"
             class="btn btn-primary"
-            :disabled="busy || actionableCount === 0"
+            :disabled="busy"
             data-test="confirm-import"
             @click="handleImport"
           >
@@ -364,8 +364,6 @@ const selectedFilesLabel = computed(() => {
   return t('admin.accounts.selectedCount', { count: files.value.length })
 })
 const fileListTitle = computed(() => files.value.map(file => file.name).join(', '))
-const actionableCount = computed(() => Object.values(itemDrafts.value).filter(item => item.action !== 'skip').length)
-
 watch(() => props.show, open => {
   if (open) resetWizard()
 })
@@ -546,7 +544,7 @@ const buildSettings = (draft: AccountImportSettingsDraft, mode: 'uniform' | 'ite
 }
 
 const handleImport = async () => {
-  if (!payload.value || !preview.value || busy.value || actionableCount.value === 0) return
+  if (!payload.value || !preview.value || busy.value) return
   busy.value = true
   try {
     const decisions: AdminDataImportItemDecision[] = preview.value.accounts.map(item => {
