@@ -69,6 +69,54 @@ func TestUpdateServicePerformUpdateNoUpdateReturnsSentinel(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoUpdateAvailable)
 }
 
+func TestUpdateServiceDownstreamVersionUsesOfficialBaseWithoutOfferingUpdate(t *testing.T) {
+	for _, current := range []string{
+		"0.1.166-refusal-recovery.3",
+		"v0.1.166-codexrip.1",
+	} {
+		svc := NewUpdateService(
+			&updateServiceCacheStub{},
+			&updateServiceGitHubClientStub{release: &GitHubRelease{TagName: "v0.1.166"}},
+			current,
+			"release",
+		)
+
+		info, err := svc.CheckUpdate(context.Background(), true)
+
+		require.NoError(t, err)
+		require.Equal(t, "downstream", info.UpdateStrategy)
+		require.Equal(t, "0.1.166", info.UpstreamBaseVersion)
+		require.False(t, info.UpstreamUpdateAvailable)
+		require.False(t, info.HasUpdate)
+	}
+}
+
+func TestUpdateServiceDownstreamWaitsForManagedSyncWhenOfficialBaseAdvances(t *testing.T) {
+	svc := NewUpdateService(
+		&updateServiceCacheStub{},
+		&updateServiceGitHubClientStub{release: &GitHubRelease{TagName: "v0.1.167"}},
+		"0.1.166-codexrip.1",
+		"release",
+	)
+
+	info, err := svc.CheckUpdate(context.Background(), true)
+
+	require.NoError(t, err)
+	require.True(t, info.UpstreamUpdateAvailable)
+	require.False(t, info.HasUpdate, "official binaries must never be offered to a downstream build")
+	require.ErrorIs(t, svc.PerformUpdate(context.Background()), ErrDownstreamUpdateManaged)
+	require.ErrorIs(t, svc.Rollback(), ErrDownstreamUpdateManaged)
+	_, err = svc.ListRollbackVersions(context.Background())
+	require.ErrorIs(t, err, ErrDownstreamUpdateManaged)
+	require.ErrorIs(t, svc.RollbackToVersion(context.Background(), "0.1.165"), ErrDownstreamUpdateManaged)
+}
+
+func TestCompareVersionsParsesDownstreamPatchSuffix(t *testing.T) {
+	require.Zero(t, compareVersions("0.1.166-refusal-recovery.3", "0.1.166"))
+	require.Zero(t, compareVersions("0.1.166-codexrip.12", "v0.1.166"))
+	require.Less(t, compareVersions("0.1.166-codexrip.1", "0.1.167"), 0)
+}
+
 func newRollbackTestService(current string, releases []*GitHubRelease) *UpdateService {
 	return NewUpdateService(
 		&updateServiceCacheStub{},

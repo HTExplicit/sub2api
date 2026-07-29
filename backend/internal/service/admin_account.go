@@ -1125,6 +1125,24 @@ func (s *adminServiceImpl) resolveBulkUpdateTargetIDs(ctx context.Context, filte
 	if filters == nil {
 		return nil, nil
 	}
+	if filters.Console != nil {
+		const pageSize = 500
+		page := 1
+		accountIDs := make([]int64, 0, pageSize)
+		for {
+			accounts, total, err := s.ListAccountsConsole(ctx, page, pageSize, *filters.Console)
+			if err != nil {
+				return nil, err
+			}
+			for _, account := range accounts {
+				accountIDs = append(accountIDs, account.ID)
+			}
+			if int64(len(accountIDs)) >= total || len(accounts) == 0 {
+				return accountIDs, nil
+			}
+			page++
+		}
+	}
 
 	groupID := int64(0)
 	switch strings.TrimSpace(filters.Group) {

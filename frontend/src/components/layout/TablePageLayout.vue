@@ -12,7 +12,7 @@
 
     <!-- 滚动区域：表格 -->
     <div class="layout-section-scrollable">
-      <div class="card table-scroll-container">
+      <div :class="contentFramed ? 'card table-scroll-container' : 'table-scroll-container-unframed'">
         <slot name="table" />
       </div>
     </div>
@@ -26,6 +26,12 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
+
+withDefaults(defineProps<{
+  contentFramed?: boolean
+}>(), {
+  contentFramed: true
+})
 
 const isMobile = ref(false)
 
@@ -91,9 +97,17 @@ onUnmounted(() => {
   @apply px-5 py-4 text-sm text-gray-700 dark:text-gray-300 border-b border-gray-100 dark:border-dark-800;
 }
 
+.table-scroll-container-unframed {
+  @apply flex h-full min-h-0 flex-col overflow-y-auto;
+}
+
 /* 移动端：恢复正常滚动 */
 .table-page-layout.mobile-mode .table-scroll-container {
   @apply h-auto overflow-visible border-none shadow-none bg-transparent;
+}
+
+.table-page-layout.mobile-mode .table-scroll-container-unframed {
+  @apply h-auto overflow-visible;
 }
 
 .table-page-layout.mobile-mode .layout-section-scrollable {

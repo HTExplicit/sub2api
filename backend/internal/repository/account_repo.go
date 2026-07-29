@@ -15,13 +15,16 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	dbaccount "github.com/Wei-Shaw/sub2api/ent/account"
+	dbaccountfolder "github.com/Wei-Shaw/sub2api/ent/accountfolder"
 	dbaccountgroup "github.com/Wei-Shaw/sub2api/ent/accountgroup"
+	dbaccounttagbinding "github.com/Wei-Shaw/sub2api/ent/accounttagbinding"
 	dbgroup "github.com/Wei-Shaw/sub2api/ent/group"
 	dbpredicate "github.com/Wei-Shaw/sub2api/ent/predicate"
 	dbproxy "github.com/Wei-Shaw/sub2api/ent/proxy"
@@ -115,6 +118,9 @@ func createAccountRecord(ctx context.Context, client *dbent.Client, account *ser
 		SetErrorMessage(account.ErrorMessage).
 		SetSchedulable(account.Schedulable).
 		SetAutoPauseOnExpired(account.AutoPauseOnExpired)
+	if account.ManagementFolderID != nil {
+		builder.SetManagementFolderID(*account.ManagementFolderID)
+	}
 
 	if account.RateMultiplier != nil {
 		builder.SetRateMultiplier(*account.RateMultiplier)
@@ -261,7 +267,6 @@ func (r *accountRepository) GetByIDs(ctx context.Context, ids []int64) ([]*servi
 	entAccounts, err := r.client.Account.
 		Query().
 		Where(dbaccount.IDIn(uniqueIDs...)).
-		WithProxy().
 		All(ctx)
 	if err != nil {
 		return nil, err
@@ -270,48 +275,18 @@ func (r *accountRepository) GetByIDs(ctx context.Context, ids []int64) ([]*servi
 		return []*service.Account{}, nil
 	}
 
-	accountIDs := make([]int64, 0, len(entAccounts))
-	entByID := make(map[int64]*dbent.Account, len(entAccounts))
-	for _, acc := range entAccounts {
-		entByID[acc.ID] = acc
-		accountIDs = append(accountIDs, acc.ID)
-	}
-
-	groupsByAccount, groupIDsByAccount, accountGroupsByAccount, err := r.loadAccountGroups(ctx, accountIDs)
+	serviceAccounts, err := r.accountsToService(ctx, entAccounts)
 	if err != nil {
 		return nil, err
 	}
-
-	outByID := make(map[int64]*service.Account, len(entAccounts))
-	for _, entAcc := range entAccounts {
-		out := accountEntityToService(entAcc)
-		if out == nil {
-			continue
-		}
-
-		// Prefer the preloaded proxy edge when available.
-		if entAcc.Edges.Proxy != nil {
-			out.Proxy = proxyEntityToService(entAcc.Edges.Proxy)
-		}
-
-		if groups, ok := groupsByAccount[entAcc.ID]; ok {
-			out.Groups = groups
-		}
-		if groupIDs, ok := groupIDsByAccount[entAcc.ID]; ok {
-			out.GroupIDs = groupIDs
-		}
-		if ags, ok := accountGroupsByAccount[entAcc.ID]; ok {
-			out.AccountGroups = ags
-		}
-		outByID[entAcc.ID] = out
+	outByID := make(map[int64]*service.Account, len(serviceAccounts))
+	for i := range serviceAccounts {
+		outByID[serviceAccounts[i].ID] = &serviceAccounts[i]
 	}
 
 	// Preserve input order (first occurrence), and ignore missing IDs.
 	out := make([]*service.Account, 0, len(uniqueIDs))
 	for _, id := range uniqueIDs {
-		if _, ok := entByID[id]; !ok {
-			continue
-		}
 		if acc, ok := outByID[id]; ok && acc != nil {
 			out = append(out, acc)
 		}
@@ -2988,6 +2963,7 @@ func (r *accountRepository) accountsToService(ctx context.Context, accounts []*d
 
 	accountIDs := make([]int64, 0, len(accounts))
 	proxyIDs := make([]int64, 0, len(accounts))
+	folderIDs := make([]int64, 0, len(accounts))
 	for _, acc := range accounts {
 		accountIDs = append(accountIDs, acc.ID)
 		if acc.ProxyID != nil {
@@ -2996,6 +2972,9 @@ func (r *accountRepository) accountsToService(ctx context.Context, accounts []*d
 		if acc.ProxyFallbackOriginID != nil {
 			proxyIDs = append(proxyIDs, *acc.ProxyFallbackOriginID)
 		}
+		if acc.ManagementFolderID != nil {
+			folderIDs = append(folderIDs, *acc.ManagementFolderID)
+		}
 	}
 
 	proxyMap, err := r.loadProxies(ctx, proxyIDs)
@@ -3003,6 +2982,10 @@ func (r *accountRepository) accountsToService(ctx context.Context, accounts []*d
 		return nil, err
 	}
 	groupsByAccount, groupIDsByAccount, accountGroupsByAccount, err := r.loadAccountGroups(ctx, accountIDs)
+	if err != nil {
+		return nil, err
+	}
+	folderByID, tagsByAccount, err := r.loadAccountTaxonomy(ctx, accountIDs, folderIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -3034,10 +3017,67 @@ func (r *accountRepository) accountsToService(ctx context.Context, accounts []*d
 		if ags, ok := accountGroupsByAccount[acc.ID]; ok {
 			out.AccountGroups = ags
 		}
+		if acc.ManagementFolderID != nil {
+			out.ManagementFolder = folderByID[*acc.ManagementFolderID]
+		}
+		out.Tags = tagsByAccount[acc.ID]
 		outAccounts = append(outAccounts, *out)
 	}
 
 	return outAccounts, nil
+}
+
+func (r *accountRepository) loadAccountTaxonomy(ctx context.Context, accountIDs, folderIDs []int64) (map[int64]*service.AccountManagementFolder, map[int64][]service.AccountManagementTag, error) {
+	folderByID := make(map[int64]*service.AccountManagementFolder)
+	tagsByAccount := make(map[int64][]service.AccountManagementTag)
+
+	folderIDs = uniquePositiveInt64s(folderIDs)
+	if len(folderIDs) > 0 {
+		folders, err := r.client.AccountFolder.Query().
+			Where(dbaccountfolder.IDIn(folderIDs...)).
+			All(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, folder := range folders {
+			folderByID[folder.ID] = &service.AccountManagementFolder{
+				ID: folder.ID, Name: folder.Name, SortOrder: folder.SortOrder,
+				CreatedAt: folder.CreatedAt, UpdatedAt: folder.UpdatedAt,
+			}
+		}
+	}
+
+	accountIDs = uniquePositiveInt64s(accountIDs)
+	if len(accountIDs) == 0 {
+		return folderByID, tagsByAccount, nil
+	}
+	bindings, err := r.client.AccountTagBinding.Query().
+		Where(dbaccounttagbinding.AccountIDIn(accountIDs...)).
+		WithTag().
+		All(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, binding := range bindings {
+		tag := binding.Edges.Tag
+		if tag == nil {
+			continue
+		}
+		tagsByAccount[binding.AccountID] = append(tagsByAccount[binding.AccountID], service.AccountManagementTag{
+			ID: tag.ID, Name: tag.Name, SortOrder: tag.SortOrder,
+			CreatedAt: tag.CreatedAt, UpdatedAt: tag.UpdatedAt,
+		})
+	}
+	for accountID := range tagsByAccount {
+		sort.SliceStable(tagsByAccount[accountID], func(i, j int) bool {
+			left, right := tagsByAccount[accountID][i], tagsByAccount[accountID][j]
+			if left.SortOrder != right.SortOrder {
+				return left.SortOrder < right.SortOrder
+			}
+			return strings.ToLower(left.Name) < strings.ToLower(right.Name)
+		})
+	}
+	return folderByID, tagsByAccount, nil
 }
 
 func tempUnschedulablePredicate() dbpredicate.Account {
@@ -3243,6 +3283,7 @@ func accountEntityToService(m *dbent.Account) *service.Account {
 		Extra:                   copyJSONMap(m.Extra),
 		ProxyID:                 m.ProxyID,
 		ProxyFallbackOriginID:   m.ProxyFallbackOriginID,
+		ManagementFolderID:      m.ManagementFolderID,
 		Concurrency:             m.Concurrency,
 		Priority:                m.Priority,
 		RateMultiplier:          &rateMultiplier,

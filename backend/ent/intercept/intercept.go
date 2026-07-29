@@ -9,7 +9,10 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/account"
+	"github.com/Wei-Shaw/sub2api/ent/accountfolder"
 	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
+	"github.com/Wei-Shaw/sub2api/ent/accounttag"
+	"github.com/Wei-Shaw/sub2api/ent/accounttagbinding"
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
@@ -160,6 +163,33 @@ func (f TraverseAccount) Traverse(ctx context.Context, q ent.Query) error {
 	return fmt.Errorf("unexpected query type %T. expect *ent.AccountQuery", q)
 }
 
+// The AccountFolderFunc type is an adapter to allow the use of ordinary function as a Querier.
+type AccountFolderFunc func(context.Context, *ent.AccountFolderQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f AccountFolderFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.AccountFolderQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.AccountFolderQuery", q)
+}
+
+// The TraverseAccountFolder type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseAccountFolder func(context.Context, *ent.AccountFolderQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseAccountFolder) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseAccountFolder) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.AccountFolderQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.AccountFolderQuery", q)
+}
+
 // The AccountGroupFunc type is an adapter to allow the use of ordinary function as a Querier.
 type AccountGroupFunc func(context.Context, *ent.AccountGroupQuery) (ent.Value, error)
 
@@ -185,6 +215,60 @@ func (f TraverseAccountGroup) Traverse(ctx context.Context, q ent.Query) error {
 		return f(ctx, q)
 	}
 	return fmt.Errorf("unexpected query type %T. expect *ent.AccountGroupQuery", q)
+}
+
+// The AccountTagFunc type is an adapter to allow the use of ordinary function as a Querier.
+type AccountTagFunc func(context.Context, *ent.AccountTagQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f AccountTagFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.AccountTagQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.AccountTagQuery", q)
+}
+
+// The TraverseAccountTag type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseAccountTag func(context.Context, *ent.AccountTagQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseAccountTag) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseAccountTag) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.AccountTagQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.AccountTagQuery", q)
+}
+
+// The AccountTagBindingFunc type is an adapter to allow the use of ordinary function as a Querier.
+type AccountTagBindingFunc func(context.Context, *ent.AccountTagBindingQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f AccountTagBindingFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.AccountTagBindingQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.AccountTagBindingQuery", q)
+}
+
+// The TraverseAccountTagBinding type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseAccountTagBinding func(context.Context, *ent.AccountTagBindingQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseAccountTagBinding) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseAccountTagBinding) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.AccountTagBindingQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.AccountTagBindingQuery", q)
 }
 
 // The AnnouncementFunc type is an adapter to allow the use of ordinary function as a Querier.
@@ -1166,8 +1250,14 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.APIKeyQuery, predicate.APIKey, apikey.OrderOption]{typ: ent.TypeAPIKey, tq: q}, nil
 	case *ent.AccountQuery:
 		return &query[*ent.AccountQuery, predicate.Account, account.OrderOption]{typ: ent.TypeAccount, tq: q}, nil
+	case *ent.AccountFolderQuery:
+		return &query[*ent.AccountFolderQuery, predicate.AccountFolder, accountfolder.OrderOption]{typ: ent.TypeAccountFolder, tq: q}, nil
 	case *ent.AccountGroupQuery:
 		return &query[*ent.AccountGroupQuery, predicate.AccountGroup, accountgroup.OrderOption]{typ: ent.TypeAccountGroup, tq: q}, nil
+	case *ent.AccountTagQuery:
+		return &query[*ent.AccountTagQuery, predicate.AccountTag, accounttag.OrderOption]{typ: ent.TypeAccountTag, tq: q}, nil
+	case *ent.AccountTagBindingQuery:
+		return &query[*ent.AccountTagBindingQuery, predicate.AccountTagBinding, accounttagbinding.OrderOption]{typ: ent.TypeAccountTagBinding, tq: q}, nil
 	case *ent.AnnouncementQuery:
 		return &query[*ent.AnnouncementQuery, predicate.Announcement, announcement.OrderOption]{typ: ent.TypeAnnouncement, tq: q}, nil
 	case *ent.AnnouncementReadQuery:

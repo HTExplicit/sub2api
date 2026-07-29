@@ -6,7 +6,10 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/ent/account"
+	"github.com/Wei-Shaw/sub2api/ent/accountfolder"
 	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
+	"github.com/Wei-Shaw/sub2api/ent/accounttag"
+	"github.com/Wei-Shaw/sub2api/ent/accounttagbinding"
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
@@ -227,35 +230,90 @@ func init() {
 	// account.DefaultExtra holds the default value on creation for the extra field.
 	account.DefaultExtra = accountDescExtra.Default.(func() map[string]interface{})
 	// accountDescConcurrency is the schema descriptor for concurrency field.
-	accountDescConcurrency := accountFields[8].Descriptor()
+	accountDescConcurrency := accountFields[9].Descriptor()
 	// account.DefaultConcurrency holds the default value on creation for the concurrency field.
 	account.DefaultConcurrency = accountDescConcurrency.Default.(int)
 	// accountDescPriority is the schema descriptor for priority field.
-	accountDescPriority := accountFields[10].Descriptor()
+	accountDescPriority := accountFields[11].Descriptor()
 	// account.DefaultPriority holds the default value on creation for the priority field.
 	account.DefaultPriority = accountDescPriority.Default.(int)
 	// accountDescRateMultiplier is the schema descriptor for rate_multiplier field.
-	accountDescRateMultiplier := accountFields[11].Descriptor()
+	accountDescRateMultiplier := accountFields[12].Descriptor()
 	// account.DefaultRateMultiplier holds the default value on creation for the rate_multiplier field.
 	account.DefaultRateMultiplier = accountDescRateMultiplier.Default.(float64)
 	// accountDescStatus is the schema descriptor for status field.
-	accountDescStatus := accountFields[12].Descriptor()
+	accountDescStatus := accountFields[13].Descriptor()
 	// account.DefaultStatus holds the default value on creation for the status field.
 	account.DefaultStatus = accountDescStatus.Default.(string)
 	// account.StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	account.StatusValidator = accountDescStatus.Validators[0].(func(string) error)
 	// accountDescAutoPauseOnExpired is the schema descriptor for auto_pause_on_expired field.
-	accountDescAutoPauseOnExpired := accountFields[16].Descriptor()
+	accountDescAutoPauseOnExpired := accountFields[17].Descriptor()
 	// account.DefaultAutoPauseOnExpired holds the default value on creation for the auto_pause_on_expired field.
 	account.DefaultAutoPauseOnExpired = accountDescAutoPauseOnExpired.Default.(bool)
 	// accountDescSchedulable is the schema descriptor for schedulable field.
-	accountDescSchedulable := accountFields[17].Descriptor()
+	accountDescSchedulable := accountFields[18].Descriptor()
 	// account.DefaultSchedulable holds the default value on creation for the schedulable field.
 	account.DefaultSchedulable = accountDescSchedulable.Default.(bool)
 	// accountDescSessionWindowStatus is the schema descriptor for session_window_status field.
-	accountDescSessionWindowStatus := accountFields[25].Descriptor()
+	accountDescSessionWindowStatus := accountFields[26].Descriptor()
 	// account.SessionWindowStatusValidator is a validator for the "session_window_status" field. It is called by the builders before save.
 	account.SessionWindowStatusValidator = accountDescSessionWindowStatus.Validators[0].(func(string) error)
+	accountfolderMixin := schema.AccountFolder{}.Mixin()
+	accountfolderMixinFields0 := accountfolderMixin[0].Fields()
+	_ = accountfolderMixinFields0
+	accountfolderFields := schema.AccountFolder{}.Fields()
+	_ = accountfolderFields
+	// accountfolderDescCreatedAt is the schema descriptor for created_at field.
+	accountfolderDescCreatedAt := accountfolderMixinFields0[0].Descriptor()
+	// accountfolder.DefaultCreatedAt holds the default value on creation for the created_at field.
+	accountfolder.DefaultCreatedAt = accountfolderDescCreatedAt.Default.(func() time.Time)
+	// accountfolderDescUpdatedAt is the schema descriptor for updated_at field.
+	accountfolderDescUpdatedAt := accountfolderMixinFields0[1].Descriptor()
+	// accountfolder.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	accountfolder.DefaultUpdatedAt = accountfolderDescUpdatedAt.Default.(func() time.Time)
+	// accountfolder.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	accountfolder.UpdateDefaultUpdatedAt = accountfolderDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// accountfolderDescName is the schema descriptor for name field.
+	accountfolderDescName := accountfolderFields[0].Descriptor()
+	// accountfolder.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	accountfolder.NameValidator = func() func(string) error {
+		validators := accountfolderDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// accountfolderDescNormalizedName is the schema descriptor for normalized_name field.
+	accountfolderDescNormalizedName := accountfolderFields[1].Descriptor()
+	// accountfolder.NormalizedNameValidator is a validator for the "normalized_name" field. It is called by the builders before save.
+	accountfolder.NormalizedNameValidator = func() func(string) error {
+		validators := accountfolderDescNormalizedName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(normalized_name string) error {
+			for _, fn := range fns {
+				if err := fn(normalized_name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// accountfolderDescSortOrder is the schema descriptor for sort_order field.
+	accountfolderDescSortOrder := accountfolderFields[2].Descriptor()
+	// accountfolder.DefaultSortOrder holds the default value on creation for the sort_order field.
+	accountfolder.DefaultSortOrder = accountfolderDescSortOrder.Default.(int)
 	accountgroupFields := schema.AccountGroup{}.Fields()
 	_ = accountgroupFields
 	// accountgroupDescPriority is the schema descriptor for priority field.
@@ -266,6 +324,67 @@ func init() {
 	accountgroupDescCreatedAt := accountgroupFields[3].Descriptor()
 	// accountgroup.DefaultCreatedAt holds the default value on creation for the created_at field.
 	accountgroup.DefaultCreatedAt = accountgroupDescCreatedAt.Default.(func() time.Time)
+	accounttagMixin := schema.AccountTag{}.Mixin()
+	accounttagMixinFields0 := accounttagMixin[0].Fields()
+	_ = accounttagMixinFields0
+	accounttagFields := schema.AccountTag{}.Fields()
+	_ = accounttagFields
+	// accounttagDescCreatedAt is the schema descriptor for created_at field.
+	accounttagDescCreatedAt := accounttagMixinFields0[0].Descriptor()
+	// accounttag.DefaultCreatedAt holds the default value on creation for the created_at field.
+	accounttag.DefaultCreatedAt = accounttagDescCreatedAt.Default.(func() time.Time)
+	// accounttagDescUpdatedAt is the schema descriptor for updated_at field.
+	accounttagDescUpdatedAt := accounttagMixinFields0[1].Descriptor()
+	// accounttag.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	accounttag.DefaultUpdatedAt = accounttagDescUpdatedAt.Default.(func() time.Time)
+	// accounttag.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	accounttag.UpdateDefaultUpdatedAt = accounttagDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// accounttagDescName is the schema descriptor for name field.
+	accounttagDescName := accounttagFields[0].Descriptor()
+	// accounttag.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	accounttag.NameValidator = func() func(string) error {
+		validators := accounttagDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// accounttagDescNormalizedName is the schema descriptor for normalized_name field.
+	accounttagDescNormalizedName := accounttagFields[1].Descriptor()
+	// accounttag.NormalizedNameValidator is a validator for the "normalized_name" field. It is called by the builders before save.
+	accounttag.NormalizedNameValidator = func() func(string) error {
+		validators := accounttagDescNormalizedName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(normalized_name string) error {
+			for _, fn := range fns {
+				if err := fn(normalized_name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// accounttagDescSortOrder is the schema descriptor for sort_order field.
+	accounttagDescSortOrder := accounttagFields[2].Descriptor()
+	// accounttag.DefaultSortOrder holds the default value on creation for the sort_order field.
+	accounttag.DefaultSortOrder = accounttagDescSortOrder.Default.(int)
+	accounttagbindingFields := schema.AccountTagBinding{}.Fields()
+	_ = accounttagbindingFields
+	// accounttagbindingDescCreatedAt is the schema descriptor for created_at field.
+	accounttagbindingDescCreatedAt := accounttagbindingFields[2].Descriptor()
+	// accounttagbinding.DefaultCreatedAt holds the default value on creation for the created_at field.
+	accounttagbinding.DefaultCreatedAt = accounttagbindingDescCreatedAt.Default.(func() time.Time)
 	announcementFields := schema.Announcement{}.Fields()
 	_ = announcementFields
 	// announcementDescTitle is the schema descriptor for title field.

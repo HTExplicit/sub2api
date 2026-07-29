@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   backend:
-    name: Refusal recovery backend
+    name: Downstream backend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -31,13 +31,19 @@ jobs:
           cache-dependency-path: backend/go.sum
       - name: Service tests
         working-directory: backend
-        run: go test -p=1 ./internal/service -run 'Test.*(Refusal|CyberPolicy)' -count=1
+        run: go test -p=1 ./internal/service -run 'Test.*(Refusal|CyberPolicy)|Test(UpdateService|NormalizeAccountTaxonomyName|FilterConsoleAccounts|AccountConsolePlan)' -count=1
       - name: Handler tests
         working-directory: backend
-        run: go test -p=1 ./internal/handler ./internal/handler/admin -run 'Test.*Refusal' -count=1
+        run: |
+          go test -p=1 ./internal/handler ./internal/handler/admin -run 'Test.*Refusal' -count=1
+          go test -p=1 ./internal/handler/admin -run 'Test(ExportData|PreviewDataImport|ImportData|BulkUpdateAccepts|AccountHandler)' -count=1
+          go test -p=1 ./internal/repository -run '^$'
+      - name: Account taxonomy migration integration test
+        working-directory: backend
+        run: go test -p=1 -tags integration ./internal/repository -run '^TestAccountTaxonomyMigrationAndRelationsIntegration$' -count=1
 
   frontend:
-    name: Refusal recovery frontend
+    name: Downstream frontend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -54,10 +60,25 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Typecheck
         working-directory: frontend
-        run: pnpm run typecheck
-      - name: Settings tests
+        run: |
+          pnpm run lint:check
+          pnpm run typecheck
+      - name: Focused downstream tests
         working-directory: frontend
-        run: pnpm exec vitest run src/views/admin/__tests__/SettingsView.spec.ts
+        run: |
+          pnpm exec vitest run \
+            src/views/admin/__tests__/SettingsView.spec.ts \
+            src/components/common/__tests__/VersionBadge.downstream.spec.ts \
+            src/__tests__/integration/data-import.spec.ts \
+            src/components/admin/account/__tests__/AccountConsoleFilters.spec.ts \
+            src/views/admin/__tests__/AccountsView.console.spec.ts \
+            src/views/admin/__tests__/AccountsView.bulkEdit.spec.ts \
+            src/views/admin/__tests__/AccountsView.schedulerScore.spec.ts \
+            src/views/admin/__tests__/AccountsView.sparkShadow.spec.ts \
+            src/views/admin/__tests__/AccountsView.usageWindowsHint.spec.ts
+      - name: Production build
+        working-directory: frontend
+        run: pnpm run build
 
   candidate-image:
     name: Candidate OCI image

@@ -1050,6 +1050,8 @@ export interface Account {
     upstream_billing_probe?: UpstreamBillingProbeSnapshot
   } & Record<string, unknown>)
   proxy_id: number | null
+  management_folder?: AccountManagementFolder | null
+  tags?: AccountManagementTag[]
   proxy_fallback_origin_id?: number | null
   proxy_fallback_origin_name?: string | null
   concurrency: number
@@ -1064,7 +1066,7 @@ export interface Account {
   scheduler_scores?: AccountSchedulerGroupScore[] | null
   priority: number
   rate_multiplier?: number // Account billing multiplier (>=0, 0 means free)
-  status: 'active' | 'inactive' | 'error'
+  status: 'active' | 'inactive' | 'disabled' | 'error'
   error_message: string | null
   last_used_at: string | null
   expires_at: number | null
@@ -1150,6 +1152,54 @@ export interface Account {
   parent_privacy_mode?: string
   parent_subscription_expires_at?: string
   parent_chatgpt_account_id?: string
+}
+
+export interface AccountManagementFolder {
+  id: number
+  name: string
+  sort_order: number
+  account_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface AccountManagementTag {
+  id: number
+  name: string
+  sort_order: number
+  account_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface AccountFacetOption {
+  value: string
+  label: string
+  count: number
+}
+
+export interface AccountConsoleFacets {
+  total: number
+  platforms: AccountFacetOption[]
+  types: AccountFacetOption[]
+  statuses: AccountFacetOption[]
+  plans: AccountFacetOption[]
+  proxies: AccountFacetOption[]
+  folders: AccountManagementFolder[]
+  tags: AccountManagementTag[]
+}
+
+export interface AccountConsoleFilterState {
+  search: string
+  platforms: string[]
+  types: string[]
+  statuses: string[]
+  plans: string[]
+  proxies: string[]
+  tags: number[]
+  group: string
+  privacy_mode: string
+  account_ids: number[]
 }
 
 export interface AccountSchedulerGroupScore {
@@ -1434,6 +1484,97 @@ export interface AdminDataAccount {
   rate_multiplier?: number | null
   expires_at?: number | null
   auto_pause_on_expired?: boolean
+  management_folder?: string | null
+  tags?: string[]
+  groups?: string[]
+  status?: 'active' | 'inactive' | 'disabled' | 'error'
+  schedulable?: boolean
+}
+
+export type AdminDataImportAction = 'skip' | 'update' | 'create'
+
+export interface AdminDataImportNotesSetting {
+  mode: 'append' | 'replace'
+  value: string
+}
+
+export interface AdminDataImportUniformSettings {
+  name_prefix?: string
+  name_suffix?: string
+  notes?: AdminDataImportNotesSetting
+  management_folder?: string
+  tags?: string[]
+  group_ids?: number[]
+  proxy_id?: number
+  concurrency?: number
+  priority?: number
+  rate_multiplier?: number
+  status?: 'active' | 'disabled' | 'error'
+  schedulable?: boolean
+}
+
+export interface AdminDataImportItemOverrides {
+  name?: string
+  notes?: AdminDataImportNotesSetting
+  management_folder?: string
+  tags?: string[]
+  group_ids?: number[]
+  proxy_id?: number
+  concurrency?: number
+  priority?: number
+  rate_multiplier?: number
+  status?: 'active' | 'disabled' | 'error'
+  schedulable?: boolean
+}
+
+export interface AdminDataImportItemDecision {
+  index: number
+  action: AdminDataImportAction
+  existing_account_id?: number
+  overrides?: AdminDataImportItemOverrides
+}
+
+export interface AdminDataImportPreviewMatch {
+  account_id: number
+  name: string
+  matched_by: string
+}
+
+export interface AdminDataImportPreviewAccount {
+  index: number
+  name: string
+  platform: AccountPlatform
+  type: AccountType
+  masked_email?: string
+  plan?: string
+  management_folder?: string | null
+  tags?: string[]
+  groups?: string[]
+  valid: boolean
+  errors?: string[]
+  warnings?: string[]
+  strong_identity_matches?: AdminDataImportPreviewMatch[]
+  duplicate_of_index?: number
+  default_action: AdminDataImportAction
+}
+
+export interface AdminDataImportPreviewProxy {
+  index: number
+  name: string
+  protocol: ProxyProtocol
+  valid: boolean
+  will_reuse: boolean
+  existing_proxy_id?: number
+  errors?: string[]
+}
+
+export interface AdminDataImportPreviewResult {
+  type: string
+  version: number
+  accounts: AdminDataImportPreviewAccount[]
+  proxies: AdminDataImportPreviewProxy[]
+  valid: boolean
+  warnings?: string[]
 }
 
 export interface AdminDataImportError {
@@ -1448,7 +1589,18 @@ export interface AdminDataImportResult {
   proxy_reused: number
   proxy_failed: number
   account_created: number
+  account_updated: number
+  account_skipped: number
   account_failed: number
+  account_ids: number[]
+  items: Array<{
+    index: number
+    name: string
+    action: AdminDataImportAction | 'failed'
+    account_id?: number
+    warnings?: string[]
+    error?: string
+  }>
   errors?: AdminDataImportError[]
 }
 

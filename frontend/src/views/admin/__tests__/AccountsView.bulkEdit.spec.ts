@@ -26,6 +26,7 @@ vi.mock('@/api/admin', () => ({
     accounts: {
       list: listAccounts,
       listWithEtag,
+      getFacets: vi.fn().mockResolvedValue({ total: 0, platforms: [], types: [], statuses: [], plans: [], proxies: [], folders: [], tags: [] }),
       getBatchTodayStats,
       getUpstreamBillingProbeSettings,
       delete: vi.fn(),
@@ -178,7 +179,7 @@ describe('admin AccountsView bulk edit scope', () => {
     expect(wrapper.get('[data-test="bulk-edit-modal"]').attributes('data-target-mode')).toBe('filtered')
   })
 
-  it('renders the created_at column by default', async () => {
+  it('keeps the advanced created_at column hidden in the Cockpit default table', async () => {
     listAccounts.mockResolvedValue({
       items: [
         {
@@ -238,12 +239,7 @@ describe('admin AccountsView bulk edit scope', () => {
     await flushPromises()
 
     const columnKeys = wrapper.findAll('[data-test="column-key"]').map(node => node.text())
-    expect(columnKeys).toContain('created_at')
-    const columns = wrapper.getComponent(DataTableStub).props('columns') as Array<{ key: string; label: string; sortable: boolean }>
-    expect(columns.find(column => column.key === 'created_at')).toMatchObject({
-      label: 'admin.accounts.columns.createdAt',
-      sortable: true
-    })
+    expect(columnKeys).not.toContain('created_at')
   })
 
   it('passes the loaded global probe state to every upstream billing cell', async () => {

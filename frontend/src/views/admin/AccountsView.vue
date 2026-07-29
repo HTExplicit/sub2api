@@ -1,15 +1,13 @@
 <template>
   <AppLayout>
-    <TablePageLayout>
+    <TablePageLayout :content-framed="viewMode !== 'cards'">
       <template #filters>
         <div class="flex flex-wrap-reverse items-start justify-between gap-3">
-          <AccountTableFilters
-            v-model:searchQuery="params.search"
-            :filters="params"
+          <AccountConsoleFilters
+            v-model="consoleFilters"
+            :facets="facets"
             :groups="groups"
-            @update:filters="(newFilters) => Object.assign(params, newFilters)"
-            @change="debouncedReload"
-            @update:searchQuery="debouncedReload"
+            @change="handleConsoleFiltersChanged"
           />
           <AccountTableActions
             :loading="loading"
@@ -17,6 +15,8 @@
             @create="showCreate = true"
           >
             <template #after>
+              <AccountViewModeSwitcher v-model="viewMode" />
+
               <!-- Auto Refresh Dropdown -->
               <div class="relative" ref="autoRefreshDropdownRef">
                 <button
@@ -115,6 +115,7 @@
                         </span>
                       </button>
 
+                      <template v-if="viewMode === 'table'">
                       <div class="my-2 border-t border-gray-100 dark:border-dark-700"></div>
                       <div class="px-2 py-2">
                         <div class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
@@ -154,6 +155,7 @@
                           <Icon v-if="isColumnVisible(col.key)" name="check" size="sm" class="text-primary-500" />
                         </button>
                       </div>
+                      </template>
                     </div>
                   </div>
                 </Teleport>
@@ -175,6 +177,13 @@
         </div>
       </template>
       <template #table>
+        <AccountFolderBar
+          :folders="folders"
+          :active-folder="activeFolder"
+          :total="folderNavigationTotal"
+          @select="handleFolderSelect"
+          @manage="showTaxonomyManager = true"
+        />
         <AccountBulkActionsBar
           :selected-ids="selIds"
           @delete="handleBulkDelete"
@@ -189,6 +198,7 @@
         />
         <div ref="accountTableRef" class="flex min-h-0 flex-1 flex-col overflow-hidden">
         <DataTable
+          v-if="viewMode === 'table'"
           ref="dataTableRef"
           :columns="cols"
           :data="accounts"
@@ -202,6 +212,8 @@
           :estimate-row-height="156"
           :overscan="5"
           :virtualize-threshold="50"
+          :clickable-rows="true"
+          @row-click="openDetails"
         >
           <template #header-select>
             <input
@@ -213,7 +225,7 @@
             />
           </template>
           <template #cell-select="{ row }">
-            <input type="checkbox" :checked="isSelected(row.id)" @change="toggleSel(row.id)" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+            <input type="checkbox" :checked="isSelected(row.id)" @click.stop @change="toggleSel(row.id)" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
           </template>
           <template #cell-id="{ value }">
             <span class="font-mono text-xs text-gray-500 dark:text-gray-400">#{{ value }}</span>
@@ -230,8 +242,9 @@
                   <a
                     :href="accountHomepageUrl(row)"
                     target="_blank"
-                    rel="noopener noreferrer"
-                    class="border-b border-dotted border-gray-300 font-medium text-gray-900 dark:border-dark-600 dark:text-white"
+                  rel="noopener noreferrer"
+                  class="border-b border-dotted border-gray-300 font-medium text-gray-900 dark:border-dark-600 dark:text-white"
+                  @click.stop
                   >
                     {{ value }}
                   </a>
@@ -283,12 +296,15 @@
             <AccountCapacityCell :account="row" />
           </template>
           <template #cell-status="{ row }">
-            <div class="flex items-center gap-1.5">
+            <div class="flex items-center gap-1.5" @click.stop>
               <AccountStatusIndicator :account="row" @show-temp-unsched="handleShowTempUnsched" />
+              <button @click.stop="handleToggleSchedulable(row)" :disabled="togglingSchedulable === row.id" class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-dark-800" :class="[row.schedulable ? 'bg-primary-500 hover:bg-primary-600' : 'bg-gray-200 hover:bg-gray-300 dark:bg-dark-600 dark:hover:bg-dark-500']" :title="row.schedulable ? t('admin.accounts.schedulableEnabled') : t('admin.accounts.schedulableDisabled')">
+                <span class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out" :class="[row.schedulable ? 'translate-x-4' : 'translate-x-0']" />
+              </button>
             </div>
           </template>
           <template #cell-schedulable="{ row }">
-            <button @click="handleToggleSchedulable(row)" :disabled="togglingSchedulable === row.id" class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-dark-800" :class="[row.schedulable ? 'bg-primary-500 hover:bg-primary-600' : 'bg-gray-200 hover:bg-gray-300 dark:bg-dark-600 dark:hover:bg-dark-500']" :title="row.schedulable ? t('admin.accounts.schedulableEnabled') : t('admin.accounts.schedulableDisabled')">
+            <button @click.stop="handleToggleSchedulable(row)" :disabled="togglingSchedulable === row.id" class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-dark-800" :class="[row.schedulable ? 'bg-primary-500 hover:bg-primary-600' : 'bg-gray-200 hover:bg-gray-300 dark:bg-dark-600 dark:hover:bg-dark-500']" :title="row.schedulable ? t('admin.accounts.schedulableEnabled') : t('admin.accounts.schedulableDisabled')">
               <span class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out" :class="[row.schedulable ? 'translate-x-4' : 'translate-x-0']" />
             </button>
           </template>
@@ -302,6 +318,26 @@
           <template #cell-groups="{ row }">
             <AccountGroupsCell :groups="row.groups" :max-display="4" />
           </template>
+          <template #cell-taxonomy_route="{ row }">
+            <div class="max-w-[18rem] space-y-1">
+              <div class="flex min-w-0 flex-wrap items-center gap-1">
+                <span class="truncate text-xs font-medium text-gray-700 dark:text-gray-200">
+                  {{ row.management_folder?.name || t('admin.accounts.folderUncategorized') }}
+                </span>
+                <span
+                  v-for="tag in (row.tags || []).slice(0, 2)"
+                  :key="tag.id"
+                  class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-600 dark:bg-dark-700 dark:text-gray-300"
+                >
+                  {{ tag.name }}
+                </span>
+                <span v-if="(row.tags || []).length > 2" class="text-[10px] text-gray-400">+{{ row.tags.length - 2 }}</span>
+              </div>
+              <div class="truncate text-xs text-gray-500 dark:text-dark-300">
+                {{ accountRouteSummary(row) }}
+              </div>
+            </div>
+          </template>
           <template #header-usage="{ column }">
             <div class="flex items-center">
               <span>{{ column.label }}</span>
@@ -309,12 +345,13 @@
             </div>
           </template>
           <template #cell-usage="{ row }">
-            <AccountUsageCell
-              :account="row"
-              :today-stats="todayStatsByAccountId[String(row.id)] ?? null"
-              :today-stats-loading="todayStatsLoading"
-              :manual-refresh-token="usageManualRefreshToken"
-            />
+            <div class="flex min-w-[8rem] items-end justify-between gap-3">
+              <AccountCapacityCell :account="row" />
+              <div class="text-right text-[11px] leading-4 text-gray-500 dark:text-dark-300">
+                <div>{{ t('admin.accounts.todayRequestsShort', { count: todayStatsByAccountId[String(row.id)]?.requests || 0 }) }}</div>
+                <div class="font-mono">${{ Number(todayStatsByAccountId[String(row.id)]?.cost || 0).toFixed(2) }}</div>
+              </div>
+            </div>
           </template>
           <template #cell-proxy="{ row }">
             <div class="flex flex-col gap-1">
@@ -333,7 +370,7 @@
                 <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200" :title="t('admin.accounts.fallbackActiveTip', { origin: row.proxy_fallback_origin_name })">
                   {{ t('admin.accounts.fallbackActive') }}
                 </span>
-                <button class="text-xs px-1.5 py-0.5 rounded border border-gray-300 dark:border-dark-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-700" @click="onRevertFallback(row)">{{ t('admin.accounts.revertProxy') }}</button>
+                <button class="text-xs px-1.5 py-0.5 rounded border border-gray-300 dark:border-dark-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-700" @click.stop="onRevertFallback(row)">{{ t('admin.accounts.revertProxy') }}</button>
               </div>
             </div>
           </template>
@@ -411,22 +448,45 @@
             </div>
           </template>
           <template #cell-actions="{ row }">
-            <div class="flex items-center gap-1">
-              <button @click="handleEdit(row)" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400">
+            <div class="flex items-center gap-1" @click.stop>
+              <button @click.stop="handleEdit(row)" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400">
                 <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" /></svg>
                 <span class="text-xs">{{ t('common.edit') }}</span>
               </button>
-              <button @click="handleDelete(row)" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400">
+              <button @click.stop="handleDelete(row)" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400">
                 <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
                 <span class="text-xs">{{ t('common.delete') }}</span>
               </button>
-              <button @click="openMenu(row, $event)" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-dark-700 dark:hover:text-white">
+              <button @click.stop="openMenu(row, $event)" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-dark-700 dark:hover:text-white">
                 <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 12a.75.75 0 11-1.5 0 .75.75 0 011.5 0zM12.75 12a.75.75 0 11-1.5 0 .75.75 0 011.5 0zM18.75 12a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" /></svg>
                 <span class="text-xs">{{ t('common.more') }}</span>
               </button>
             </div>
           </template>
         </DataTable>
+        <AccountCompactList
+          v-else-if="viewMode === 'compact'"
+          :accounts="accounts"
+          :loading="loading"
+          :selected-ids="selIds"
+          @row-click="openDetails"
+          @toggle="toggleSel"
+          @edit="handleEdit"
+          @more="openMenu"
+          @show-temp-unsched="handleShowTempUnsched"
+        />
+        <AccountCardGrid
+          v-else
+          :accounts="accounts"
+          :loading="loading"
+          :selected-ids="selIds"
+          :today-stats="todayStatsByAccountId"
+          @row-click="openDetails"
+          @toggle="toggleSel"
+          @edit="handleEdit"
+          @more="openMenu"
+          @show-temp-unsched="handleShowTempUnsched"
+        />
         </div>
       </template>
       <template #pagination><Pagination v-if="pagination.total > 0" :page="pagination.page" :total="pagination.total" :page-size="pagination.page_size" @update:page="handlePageChange" @update:pageSize="handlePageSizeChange" /></template>
@@ -439,7 +499,15 @@
     <ScheduledTestsPanel :show="showSchedulePanel" :account-id="scheduleAcc?.id ?? null" :model-options="scheduleModelOptions" @close="closeSchedulePanel" />
     <AccountActionMenu :show="menu.show" :account="menu.acc" :position="menu.pos" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" />
     <SyncFromCrsModal :show="showSync" @close="showSync = false" @synced="reload" />
-    <ImportDataModal :show="showImportData" @close="showImportData = false" @imported="handleDataImported" />
+    <ImportDataModal
+      :show="showImportData"
+      :folders="folders"
+      :tags="tags"
+      :groups="groups"
+      :proxies="proxies"
+      @close="showImportData = false"
+      @imported="handleDataImported"
+    />
     <BulkEditAccountModal
       :show="showBulkEdit"
       :account-ids="selIds"
@@ -462,6 +530,25 @@
     </ConfirmDialog>
     <ErrorPassthroughRulesModal :show="showErrorPassthrough" @close="showErrorPassthrough = false" />
     <TLSFingerprintProfilesModal :show="showTLSFingerprintProfiles" @close="showTLSFingerprintProfiles = false" />
+    <AccountDetailsDrawer
+      :account="detailsAccount"
+      :folders="folders"
+      :tags="tags"
+      :today-stats="detailsAccount ? todayStatsByAccountId[String(detailsAccount.id)] ?? null : null"
+      :today-stats-loading="todayStatsLoading"
+      :manual-refresh-token="usageManualRefreshToken"
+      @close="detailsAccount = null"
+      @edit="handleEdit"
+      @updated="handleAccountUpdated"
+      @show-temp-unsched="handleShowTempUnsched"
+    />
+    <AccountTaxonomyManager
+      :show="showTaxonomyManager"
+      :folders="folders"
+      :tags="tags"
+      @close="showTaxonomyManager = false"
+      @changed="handleTaxonomyChanged"
+    />
     <TotpStepUpDialog :controller="accountExportStepUp" />
   </AppLayout>
 </template>
@@ -473,6 +560,7 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { adminAPI } from '@/api/admin'
+import type { AccountListFilters } from '@/api/admin/accounts'
 import { useTableLoader } from '@/composables/useTableLoader'
 import { useSwipeSelect, type SwipeSelectVirtualContext } from '@/composables/useSwipeSelect'
 import { useTableSelection } from '@/composables/useTableSelection'
@@ -486,9 +574,15 @@ import Pagination from '@/components/common/Pagination.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import { CreateAccountModal, EditAccountModal, BulkEditAccountModal, SyncFromCrsModal, TempUnschedStatusModal } from '@/components/account'
 import AccountTableActions from '@/components/admin/account/AccountTableActions.vue'
-import AccountTableFilters from '@/components/admin/account/AccountTableFilters.vue'
 import AccountBulkActionsBar from '@/components/admin/account/AccountBulkActionsBar.vue'
 import AccountActionMenu from '@/components/admin/account/AccountActionMenu.vue'
+import AccountCardGrid from '@/components/admin/account/AccountCardGrid.vue'
+import AccountCompactList from '@/components/admin/account/AccountCompactList.vue'
+import AccountConsoleFilters from '@/components/admin/account/AccountConsoleFilters.vue'
+import AccountDetailsDrawer from '@/components/admin/account/AccountDetailsDrawer.vue'
+import AccountFolderBar from '@/components/admin/account/AccountFolderBar.vue'
+import AccountTaxonomyManager from '@/components/admin/account/AccountTaxonomyManager.vue'
+import AccountViewModeSwitcher, { type AccountViewMode } from '@/components/admin/account/AccountViewModeSwitcher.vue'
 import ImportDataModal from '@/components/admin/account/ImportDataModal.vue'
 import ReAuthAccountModal from '@/components/admin/account/ReAuthAccountModal.vue'
 import AccountTestModal from '@/components/admin/account/AccountTestModal.vue'
@@ -496,7 +590,6 @@ import AccountStatsModal from '@/components/admin/account/AccountStatsModal.vue'
 import ScheduledTestsPanel from '@/components/admin/account/ScheduledTestsPanel.vue'
 import type { SelectOption } from '@/components/common/Select.vue'
 import AccountStatusIndicator from '@/components/account/AccountStatusIndicator.vue'
-import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
 import AccountTodayStatsCell from '@/components/account/AccountTodayStatsCell.vue'
 import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
 import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
@@ -511,7 +604,22 @@ import { proxyExpiryBadgeClass, proxyExpiryLabelKey } from '@/utils/proxyExpiry'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import { sanitizeUrl } from '@/utils/url'
 import { getFloatingPanelPosition } from '@/utils/floatingPanel'
-import type { Account, AccountPlatform, AccountSchedulerGroupScore, AccountType, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel, UpstreamBillingProbeSnapshot } from '@/types'
+import type {
+  Account,
+  AccountConsoleFacets,
+  AccountConsoleFilterState,
+  AccountManagementFolder,
+  AccountManagementTag,
+  AccountPlatform,
+  AccountSchedulerGroupScore,
+  AccountType,
+  AdminDataImportResult,
+  Proxy as AccountProxy,
+  AdminGroup,
+  WindowStats,
+  ClaudeModel,
+  UpstreamBillingProbeSnapshot
+} from '@/types'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -519,6 +627,37 @@ const authStore = useAuthStore()
 
 const proxies = ref<AccountProxy[]>([])
 const groups = ref<AdminGroup[]>([])
+const ACCOUNT_VIEW_MODE_STORAGE_KEY = 'account-console-view-mode'
+const loadAccountViewMode = (): AccountViewMode => {
+  if (typeof window === 'undefined') return 'table'
+  const saved = localStorage.getItem(ACCOUNT_VIEW_MODE_STORAGE_KEY)
+  return saved === 'compact' || saved === 'cards' || saved === 'table' ? saved : 'table'
+}
+const viewMode = ref<AccountViewMode>(loadAccountViewMode())
+const facets = ref<AccountConsoleFacets | null>(null)
+let facetsRequestSequence = 0
+const activeFolder = ref('')
+const showTaxonomyManager = ref(false)
+const detailsAccount = ref<Account | null>(null)
+const consoleFilters = ref<AccountConsoleFilterState>({
+  search: '',
+  platforms: [],
+  types: [],
+  statuses: [],
+  plans: [],
+  proxies: [],
+  tags: [],
+  group: '',
+  privacy_mode: '',
+  account_ids: []
+})
+const folders = computed<AccountManagementFolder[]>(() => facets.value?.folders || [])
+const tags = computed<AccountManagementTag[]>(() => facets.value?.tags || [])
+const folderNavigationTotal = computed(() => {
+  if (!facets.value) return pagination.total
+  return facets.value.folders.reduce((sum, folder) => sum + folder.account_count, 0)
+    + Math.max(0, facets.value.total - facets.value.folders.reduce((sum, folder) => sum + folder.account_count, 0))
+})
 const accountTableRef = ref<HTMLElement | null>(null)
 const dataTableRef = ref<InstanceType<typeof DataTable> | null>(null)
 type AccountBulkEditTarget =
@@ -530,16 +669,7 @@ type AccountBulkEditTarget =
     }
   | {
       mode: 'filtered'
-      filters: {
-        platform?: string
-        type?: string
-        status?: string
-        group?: string
-        search?: string
-        privacy_mode?: string
-        sort_by?: string
-        sort_order?: AccountSortOrder
-      }
+      filters: AccountListFilters
       previewCount: number
       selectedPlatforms: AccountPlatform[]
       selectedTypes: AccountType[]
@@ -613,11 +743,14 @@ const accountToolsDropdownStyle = computed(() => ({
   width: `${accountToolsDropdownPosition.width}px`
 }))
 const hiddenColumns = reactive<Set<string>>(new Set())
-const DEFAULT_HIDDEN_COLUMNS = ['today_stats', 'proxy', 'notes', 'priority', 'scheduler_score', 'rate_multiplier']
+const DEFAULT_HIDDEN_COLUMNS = [
+  'id', 'capacity', 'schedulable', 'today_stats', 'groups', 'proxy', 'notes', 'priority',
+  'scheduler_score', 'rate_multiplier', 'upstream_billing_rate', 'last_used_at', 'created_at', 'expires_at'
+]
 const HIDDEN_COLUMNS_KEY = 'account-hidden-columns'
 // One-time migration: hide scheduler score for existing admins too, because showing it opt-ins to heavy backend scoring.
 const HIDDEN_COLUMNS_VERSION_KEY = 'account-hidden-columns-version'
-const HIDDEN_COLUMNS_CURRENT_VERSION = 'scheduler-score-hidden-by-default'
+const HIDDEN_COLUMNS_CURRENT_VERSION = 'cockpit-console-defaults-v1'
 
 // Sorting settings
 const ACCOUNT_SORT_STORAGE_KEY = 'account-table-sort'
@@ -774,9 +907,9 @@ const loadSavedColumns = () => {
       parsed.forEach(key => {
         hiddenColumns.add(key)
       })
-      // Older saved column layouts may have scheduler_score visible; migrate them to the new safe default once.
+      // Apply the Cockpit console's compact defaults once while preserving later user choices.
       if (localStorage.getItem(HIDDEN_COLUMNS_VERSION_KEY) !== HIDDEN_COLUMNS_CURRENT_VERSION) {
-        hiddenColumns.add('scheduler_score')
+        DEFAULT_HIDDEN_COLUMNS.forEach(key => hiddenColumns.add(key))
         localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify([...hiddenColumns]))
         localStorage.setItem(HIDDEN_COLUMNS_VERSION_KEY, HIDDEN_COLUMNS_CURRENT_VERSION)
       }
@@ -837,6 +970,14 @@ if (typeof window !== 'undefined') {
   loadSavedAutoRefresh()
 }
 
+watch(viewMode, value => {
+  try {
+    localStorage.setItem(ACCOUNT_VIEW_MODE_STORAGE_KEY, value)
+  } catch (error) {
+    console.error('Failed to save account view mode:', error)
+  }
+})
+
 const setAutoRefreshEnabled = (enabled: boolean) => {
   autoRefreshEnabled.value = enabled
   saveAutoRefreshToStorage()
@@ -882,6 +1023,7 @@ const toggleColumn = (key: string) => {
 const isColumnVisible = (key: string) => !hiddenColumns.has(key)
 const shouldIncludeSchedulerScore = () => isColumnVisible('scheduler_score')
 const syncAccountListDerivedParams = () => {
+  syncConsoleParams()
   // Keep every load path, including auto-refresh and sorting, aligned with the current column visibility.
   const requestParams = params as any
   requestParams.include_scheduler_score = shouldIncludeSchedulerScore() ? '1' : '0'
@@ -903,6 +1045,14 @@ const {
     platform: '',
     type: '',
     status: '',
+    platforms: '',
+    types: '',
+    statuses: '',
+    plans: '',
+    proxies: '',
+    folder: '',
+    tags: '',
+    account_ids: '',
     privacy_mode: '',
     group: '',
     search: '',
@@ -911,6 +1061,69 @@ const {
     sort_order: sortState.sort_order
   }
 })
+
+const buildConsoleAPIParams = (includeFolder = true) => {
+  const state = consoleFilters.value
+  return {
+    platforms: state.platforms.length ? state.platforms.join(',') : undefined,
+    types: state.types.length ? state.types.join(',') : undefined,
+    statuses: state.statuses.length ? state.statuses.join(',') : undefined,
+    plans: state.plans.length ? state.plans.join(',') : undefined,
+    proxies: state.proxies.length ? state.proxies.join(',') : undefined,
+    folder: includeFolder && activeFolder.value ? activeFolder.value : undefined,
+    tags: state.tags.length ? state.tags.join(',') : undefined,
+    account_ids: state.account_ids.length ? state.account_ids.join(',') : undefined,
+    group: state.group || undefined,
+    privacy_mode: state.privacy_mode || undefined,
+    search: state.search.trim() || undefined,
+    sort_by: sortState.sort_by,
+    sort_order: sortState.sort_order
+  }
+}
+
+const syncConsoleParams = () => {
+  const requestParams = params as Record<string, unknown>
+  for (const key of [
+    'platform', 'type', 'status', 'platforms', 'types', 'statuses', 'plans', 'proxies',
+    'folder', 'folders', 'tags', 'account_ids', 'group', 'privacy_mode', 'search'
+  ]) {
+    delete requestParams[key]
+  }
+  Object.assign(requestParams, buildConsoleAPIParams(true))
+}
+
+const loadFacets = async () => {
+  const requestSequence = ++facetsRequestSequence
+  try {
+    const nextFacets = await adminAPI.accounts.getFacets(buildConsoleAPIParams(false))
+    if (requestSequence === facetsRequestSequence) facets.value = nextFacets
+  } catch (error) {
+    if (requestSequence === facetsRequestSequence) console.error('Failed to load account facets:', error)
+  }
+}
+
+const handleConsoleFiltersChanged = () => {
+  pagination.page = 1
+  syncConsoleParams()
+  debouncedReload()
+  void loadFacets()
+}
+
+const handleFolderSelect = (folder: string) => {
+  if (activeFolder.value === folder) return
+  activeFolder.value = folder
+  pagination.page = 1
+  syncConsoleParams()
+  void load()
+  void loadFacets()
+}
+
+const handleTaxonomyChanged = async () => {
+  await Promise.all([reload(), loadFacets()])
+  if (detailsAccount.value) {
+    detailsAccount.value = accounts.value.find(account => account.id === detailsAccount.value?.id) || detailsAccount.value
+  }
+}
 
 const {
   selectedIds: selIds,
@@ -1066,6 +1279,8 @@ const isAnyModalOpen = computed(() => {
     showTest.value ||
     showStats.value ||
     showSchedulePanel.value ||
+    showTaxonomyManager.value ||
+    detailsAccount.value !== null ||
     showErrorPassthrough.value ||
     showTLSFingerprintProfiles.value
   )
@@ -1101,6 +1316,7 @@ const syncAccountRefs = (nextAccount: Account) => {
   if (tempUnschedAcc.value?.id === nextAccount.id) tempUnschedAcc.value = nextAccount
   if (deletingAcc.value?.id === nextAccount.id) deletingAcc.value = nextAccount
   if (menu.acc?.id === nextAccount.id) menu.acc = nextAccount
+  if (detailsAccount.value?.id === nextAccount.id) detailsAccount.value = nextAccount
 }
 
 const mergeAccountsIncrementally = (nextRows: Account[]) => {
@@ -1329,6 +1545,17 @@ function accountDisplayEmail(row: any): string {
   return row.extra?.email_address || row.extra?.email || row.credentials?.email || row.parent_email || ''
 }
 
+const accountRouteSummary = (account: Account) => {
+  const groups = account.groups?.map(group => group.name).filter(Boolean) || []
+  const proxy = account.proxy?.name || t('admin.accounts.directConnection')
+  return groups.length ? `${groups.join(', ')} · ${proxy}` : proxy
+}
+
+const openDetails = (account: Account) => {
+  detailsAccount.value = account
+  menu.show = false
+}
+
 function accountHomepageUrl(row: Account): string {
   if (row.type !== 'apikey' || typeof row.credentials?.base_url !== 'string') return ''
   const baseUrl = sanitizeUrl(row.credentials.base_url)
@@ -1401,13 +1628,14 @@ const allColumns = computed(() => {
     { key: 'platform_type', label: t('admin.accounts.columns.platformType'), sortable: false },
     { key: 'capacity', label: t('admin.accounts.columns.capacity'), sortable: false },
     { key: 'status', label: t('admin.accounts.columns.status'), sortable: true },
+    { key: 'taxonomy_route', label: t('admin.accounts.columns.classificationRoute'), sortable: false },
     { key: 'schedulable', label: t('admin.accounts.columns.schedulable'), sortable: true },
     { key: 'today_stats', label: t('admin.accounts.columns.todayStats'), sortable: false }
   ]
   if (!authStore.isSimpleMode) {
     c.push({ key: 'groups', label: t('admin.accounts.columns.groups'), sortable: false })
   }
-  c.push({ key: 'usage', label: t('admin.accounts.columns.usageWindows'), sortable: false })
+  c.push({ key: 'usage', label: t('admin.accounts.columns.capacityUsage'), sortable: false })
   c.push(
     { key: 'proxy', label: t('admin.accounts.columns.proxy'), sortable: false },
     { key: 'priority', label: t('admin.accounts.columns.priority'), sortable: true },
@@ -1661,18 +1889,7 @@ const handleBulkToggleSchedulable = async (schedulable: boolean) => {
   }
 }
 const buildBulkEditFilterSnapshot = () => {
-  const rawParams = toRaw(params) as Record<string, unknown>
-  const sortOrder: AccountSortOrder = rawParams.sort_order === 'desc' ? 'desc' : 'asc'
-  return {
-    platform: typeof rawParams.platform === 'string' ? rawParams.platform : '',
-    type: typeof rawParams.type === 'string' ? rawParams.type : '',
-    status: typeof rawParams.status === 'string' ? rawParams.status : '',
-    group: typeof rawParams.group === 'string' ? rawParams.group : '',
-    search: typeof rawParams.search === 'string' ? rawParams.search : '',
-    privacy_mode: typeof rawParams.privacy_mode === 'string' ? rawParams.privacy_mode : '',
-    sort_by: typeof rawParams.sort_by === 'string' ? rawParams.sort_by : '',
-    sort_order: sortOrder
-  }
+  return buildAccountQueryFilters()
 }
 
 const collectSelectionMetadata = (rows: Account[]) => {
@@ -1711,59 +1928,69 @@ const handleBulkUpdated = () => {
   clearSelection()
   reload()
 }
-const handleDataImported = () => { showImportData.value = false; reload() }
+const handleDataImported = async (result: AdminDataImportResult) => {
+  const importedIDs = Array.from(new Set(result.account_ids || []))
+  activeFolder.value = ''
+  consoleFilters.value = {
+    ...consoleFilters.value,
+    account_ids: importedIDs
+  }
+  setSelectedIds(importedIDs)
+  pagination.page = 1
+  syncConsoleParams()
+  await Promise.all([load(), loadFacets()])
+}
 const ACCOUNT_UNGROUPED_GROUP_QUERY_VALUE = 'ungrouped'
 const ACCOUNT_PRIVACY_MODE_UNSET_QUERY_VALUE = '__unset__'
 const buildAccountQueryFilters = () => ({
-  platform: params.platform || '',
-  type: params.type || '',
-  status: params.status || '',
-  group: params.group || '',
-  privacy_mode: params.privacy_mode || '',
-  search: params.search || '',
+  ...buildConsoleAPIParams(true),
   sort_by: sortState.sort_by,
   sort_order: sortState.sort_order
 })
+const accountConsoleStatus = (account: Account) => {
+  if (account.status !== 'active') return account.status
+  const now = Date.now()
+  const tempUntil = account.temp_unschedulable_until ? new Date(account.temp_unschedulable_until).getTime() : Number.NaN
+  if (Number.isFinite(tempUntil) && tempUntil > now) return 'temp_unschedulable'
+  const rateLimitUntil = account.rate_limit_reset_at ? new Date(account.rate_limit_reset_at).getTime() : Number.NaN
+  if (Number.isFinite(rateLimitUntil) && rateLimitUntil > now) return 'rate_limited'
+  if (!account.schedulable) return 'unschedulable'
+  return 'active'
+}
 const accountMatchesCurrentFilters = (account: Account) => {
-  const filters = buildAccountQueryFilters()
-  if (filters.platform && account.platform !== filters.platform) return false
-  if (filters.type && account.type !== filters.type) return false
-  if (filters.status) {
-    const now = Date.now()
-    const rateLimitResetAt = account.rate_limit_reset_at ? new Date(account.rate_limit_reset_at).getTime() : Number.NaN
-    const isRateLimited = Number.isFinite(rateLimitResetAt) && rateLimitResetAt > now
-    const tempUnschedUntil = account.temp_unschedulable_until ? new Date(account.temp_unschedulable_until).getTime() : Number.NaN
-    const isTempUnschedulable = Number.isFinite(tempUnschedUntil) && tempUnschedUntil > now
-
-    if (filters.status === 'active') {
-      if (account.status !== 'active' || isRateLimited || isTempUnschedulable || !account.schedulable) return false
-    } else if (filters.status === 'rate_limited') {
-      if (account.status !== 'active' || !isRateLimited || isTempUnschedulable) return false
-    } else if (filters.status === 'temp_unschedulable') {
-      if (account.status !== 'active' || !isTempUnschedulable) return false
-    } else if (filters.status === 'unschedulable') {
-      if (account.status !== 'active' || account.schedulable || isRateLimited || isTempUnschedulable) return false
-    } else if (account.status !== filters.status) {
-      return false
-    }
+  const state = consoleFilters.value
+  if (state.platforms.length && !state.platforms.includes(account.platform)) return false
+  if (state.types.length && !state.types.includes(account.type)) return false
+  if (state.statuses.length && !state.statuses.includes(accountConsoleStatus(account))) return false
+  if (state.plans.length) {
+    const plan = String(getAccountPlanType(account) || '').toLowerCase()
+    if (!state.plans.some(value => value.toLowerCase() === plan)) return false
   }
-  if (filters.group) {
+  if (state.proxies.length) {
+    const proxyValue = account.proxy_id == null ? 'direct' : String(account.proxy_id)
+    if (!state.proxies.includes(proxyValue)) return false
+  }
+  if (activeFolder.value === 'uncategorized' && account.management_folder) return false
+  if (activeFolder.value && activeFolder.value !== 'uncategorized' && String(account.management_folder?.id || '') !== activeFolder.value) return false
+  if (state.tags.length && !account.tags?.some(tag => state.tags.includes(tag.id))) return false
+  if (state.account_ids.length && !state.account_ids.includes(account.id)) return false
+  if (state.group) {
     const groupIds = account.group_ids ?? account.groups?.map((group) => group.id) ?? []
-    if (filters.group === ACCOUNT_UNGROUPED_GROUP_QUERY_VALUE) {
+    if (state.group === ACCOUNT_UNGROUPED_GROUP_QUERY_VALUE) {
       if (groupIds.length > 0) return false
-    } else if (!groupIds.includes(Number(filters.group))) {
+    } else if (!groupIds.includes(Number(state.group))) {
       return false
     }
   }
   const privacyMode = typeof account.extra?.privacy_mode === 'string' ? account.extra.privacy_mode : ''
-  if (filters.privacy_mode) {
-    if (filters.privacy_mode === ACCOUNT_PRIVACY_MODE_UNSET_QUERY_VALUE) {
+  if (state.privacy_mode) {
+    if (state.privacy_mode === ACCOUNT_PRIVACY_MODE_UNSET_QUERY_VALUE) {
       if (privacyMode.trim() !== '') return false
-    } else if (privacyMode !== filters.privacy_mode) {
+    } else if (privacyMode !== state.privacy_mode) {
       return false
     }
   }
-  const search = String(filters.search || '').trim().toLowerCase()
+  const search = state.search.trim().toLowerCase()
   if (search && !account.name.toLowerCase().includes(search)) return false
   return true
 }
@@ -2092,7 +2319,7 @@ const handleClickOutside = (event: MouseEvent) => {
 }
 
 onMounted(async () => {
-  load()
+  await Promise.all([load(), loadFacets()])
   loadUpstreamBillingProbeGlobalState()
   try {
     const [p, g] = await Promise.all([adminAPI.proxies.getAll(), adminAPI.groups.getAll()])

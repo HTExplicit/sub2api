@@ -36,6 +36,7 @@ vi.mock('@/api/admin', () => ({
     accounts: {
       list: listAccounts,
       listWithEtag,
+      getFacets: vi.fn().mockResolvedValue({ total: 0, platforms: [], types: [], statuses: [], plans: [], proxies: [], folders: [], tags: [] }),
       getBatchTodayStats,
       duplicate: duplicateAccount,
       getUpstreamBillingProbeSettings: vi.fn().mockResolvedValue({ enabled: true, interval_minutes: 30 }),

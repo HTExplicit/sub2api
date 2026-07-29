@@ -173,6 +173,15 @@ type BulkUpdateAccountFilters struct {
 	Platform    string `json:"platform"`
 	Type        string `json:"type"`
 	Status      string `json:"status"`
+	Platforms   string `json:"platforms"`
+	Types       string `json:"types"`
+	Statuses    string `json:"statuses"`
+	Plans       string `json:"plans"`
+	Proxies     string `json:"proxies"`
+	Folder      string `json:"folder"`
+	Folders     string `json:"folders"`
+	Tags        string `json:"tags"`
+	AccountIDs  string `json:"account_ids"`
 	Group       string `json:"group"`
 	Search      string `json:"search"`
 	PrivacyMode string `json:"privacy_mode"`
@@ -531,7 +540,27 @@ func (h *AccountHandler) List(c *gin.Context) {
 		}
 	}
 
-	accounts, total, err := h.adminService.ListAccounts(c.Request.Context(), page, pageSize, platform, accountType, status, search, groupID, privacyMode, sortBy, sortOrder)
+	var (
+		accounts       []service.Account
+		total          int64
+		consoleFilters *service.AccountConsoleFilters
+		consoleService accountConsoleAdminService
+		err            error
+	)
+	if hasAccountConsoleFilters(c) {
+		filters, filterErr := parseAccountConsoleFilters(c, groupID)
+		if filterErr != nil {
+			response.ErrorFrom(c, filterErr)
+			return
+		}
+		consoleFilters = &filters
+		consoleService, err = h.accountConsoleService()
+		if err == nil {
+			accounts, total, err = consoleService.ListAccountsConsole(c.Request.Context(), page, pageSize, filters)
+		}
+	} else {
+		accounts, total, err = h.adminService.ListAccounts(c.Request.Context(), page, pageSize, platform, accountType, status, search, groupID, privacyMode, sortBy, sortOrder)
+	}
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -568,7 +597,15 @@ func (h *AccountHandler) List(c *gin.Context) {
 		}
 	}
 	if includeSchedulerScore && pageHasOpenAIAccounts {
-		schedulerFilterPool := h.listAccountSchedulerScoreFilterPool(c.Request.Context(), platform, accountType, status, search, groupID, privacyMode)
+		var schedulerFilterPool []service.Account
+		if consoleFilters != nil && consoleService != nil {
+			schedulerFilterPool, _, err = consoleService.ListAccountsConsole(c.Request.Context(), 1, 100000, *consoleFilters)
+			if err != nil {
+				schedulerFilterPool = accounts
+			}
+		} else {
+			schedulerFilterPool = h.listAccountSchedulerScoreFilterPool(c.Request.Context(), platform, accountType, status, search, groupID, privacyMode)
+		}
 		schedulerScores, schedulerGroupScores = h.buildOpenAIAccountSchedulerScores(c.Request.Context(), accounts, schedulerFilterPool)
 	}
 
@@ -1947,9 +1984,14 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 		return
 	}
 
+	serviceFilters, err := toServiceBulkUpdateAccountFilters(req.Filters)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
 	result, err := h.adminService.BulkUpdateAccounts(c.Request.Context(), &service.BulkUpdateAccountsInput{
 		AccountIDs:            req.AccountIDs,
-		Filters:               toServiceBulkUpdateAccountFilters(req.Filters),
+		Filters:               serviceFilters,
 		Name:                  req.Name,
 		ProxyID:               req.ProxyID,
 		Concurrency:           req.Concurrency,
@@ -1986,11 +2028,23 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 	response.Success(c, result)
 }
 
-func toServiceBulkUpdateAccountFilters(filters *BulkUpdateAccountFilters) *service.BulkUpdateAccountFilters {
-	if filters == nil {
-		return nil
+func splitBulkAccountFilterValues(values ...string) []string {
+	out := make([]string, 0)
+	for _, value := range values {
+		for _, part := range strings.Split(value, ",") {
+			if trimmed := strings.TrimSpace(part); trimmed != "" {
+				out = append(out, trimmed)
+			}
+		}
 	}
-	return &service.BulkUpdateAccountFilters{
+	return out
+}
+
+func toServiceBulkUpdateAccountFilters(filters *BulkUpdateAccountFilters) (*service.BulkUpdateAccountFilters, error) {
+	if filters == nil {
+		return nil, nil
+	}
+	out := &service.BulkUpdateAccountFilters{
 		Platform:    filters.Platform,
 		Type:        filters.Type,
 		Status:      filters.Status,
@@ -1998,6 +2052,61 @@ func toServiceBulkUpdateAccountFilters(filters *BulkUpdateAccountFilters) *servi
 		Search:      filters.Search,
 		PrivacyMode: filters.PrivacyMode,
 	}
+	usesConsoleFilters := strings.TrimSpace(filters.Platforms) != "" ||
+		strings.TrimSpace(filters.Types) != "" || strings.TrimSpace(filters.Statuses) != "" ||
+		strings.TrimSpace(filters.Plans) != "" || strings.TrimSpace(filters.Proxies) != "" ||
+		strings.TrimSpace(filters.Folder) != "" || strings.TrimSpace(filters.Folders) != "" ||
+		strings.TrimSpace(filters.Tags) != "" || strings.TrimSpace(filters.AccountIDs) != ""
+	if !usesConsoleFilters {
+		return out, nil
+	}
+	platforms := splitBulkAccountFilterValues(filters.Platforms)
+	if len(platforms) == 0 && strings.TrimSpace(filters.Platform) != "" {
+		platforms = []string{strings.TrimSpace(filters.Platform)}
+	}
+	types := splitBulkAccountFilterValues(filters.Types)
+	if len(types) == 0 && strings.TrimSpace(filters.Type) != "" {
+		types = []string{strings.TrimSpace(filters.Type)}
+	}
+	statuses := splitBulkAccountFilterValues(filters.Statuses)
+	if len(statuses) == 0 && strings.TrimSpace(filters.Status) != "" {
+		statuses = []string{strings.TrimSpace(filters.Status)}
+	}
+	console := &service.AccountConsoleFilters{
+		Platforms: platforms, Types: types, Statuses: statuses,
+		Plans: splitBulkAccountFilterValues(filters.Plans), Search: strings.TrimSpace(filters.Search),
+		GroupID: 0, PrivacyMode: strings.TrimSpace(filters.PrivacyMode), SortBy: "id", SortOrder: "asc",
+	}
+	switch strings.TrimSpace(filters.Group) {
+	case "":
+	case accountListGroupUngroupedQueryValue:
+		console.GroupID = service.AccountListGroupUngrouped
+	default:
+		groupID, err := strconv.ParseInt(strings.TrimSpace(filters.Group), 10, 64)
+		if err != nil || groupID <= 0 {
+			return nil, infraerrors.BadRequest("INVALID_GROUP_FILTER", "invalid group filter")
+		}
+		console.GroupID = groupID
+	}
+	var err error
+	console.ProxyIDs, console.IncludeDirect, err = parseIDQueryValues(splitBulkAccountFilterValues(filters.Proxies), "direct")
+	if err != nil {
+		return nil, err
+	}
+	console.FolderIDs, console.IncludeUncategorized, err = parseIDQueryValues(splitBulkAccountFilterValues(filters.Folders, filters.Folder), "uncategorized")
+	if err != nil {
+		return nil, err
+	}
+	console.TagIDs, _, err = parseIDQueryValues(splitBulkAccountFilterValues(filters.Tags), "")
+	if err != nil {
+		return nil, err
+	}
+	console.AccountIDs, _, err = parseIDQueryValues(splitBulkAccountFilterValues(filters.AccountIDs), "")
+	if err != nil {
+		return nil, err
+	}
+	out.Console = console
+	return out, nil
 }
 
 // ========== OAuth Handlers ==========

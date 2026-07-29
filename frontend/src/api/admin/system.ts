@@ -15,6 +15,9 @@ export interface VersionInfo {
   current_version: string
   latest_version: string
   has_update: boolean
+  update_strategy: 'upstream' | 'downstream'
+  upstream_base_version: string
+  upstream_update_available: boolean
   release_info?: ReleaseInfo
   cached: boolean
   warning?: string

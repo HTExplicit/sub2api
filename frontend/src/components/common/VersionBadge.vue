@@ -6,11 +6,11 @@
         @click="toggleDropdown"
         class="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs transition-colors"
         :class="[
-          hasUpdate
+          badgeNeedsAttention
             ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-900/50'
             : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-800 dark:text-dark-400 dark:hover:bg-dark-700'
         ]"
-        :title="hasUpdate ? t('version.updateAvailable') : t('version.upToDate')"
+        :title="badgeTitle"
       >
         <span v-if="currentVersion" class="font-medium">v{{ currentVersion }}</span>
         <span
@@ -18,7 +18,7 @@
           class="h-3 w-12 animate-pulse rounded bg-gray-200 font-medium dark:bg-dark-600"
         ></span>
         <!-- Update indicator -->
-        <span v-if="hasUpdate" class="relative flex h-2 w-2">
+        <span v-if="badgeNeedsAttention" class="relative flex h-2 w-2">
           <span
             class="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75"
           ></span>
@@ -32,7 +32,7 @@
           v-if="dropdownOpen"
           ref="dropdownRef"
           class="absolute left-0 z-50 mt-2 overflow-hidden whitespace-normal rounded-xl border border-gray-200 bg-white shadow-lg transition-all duration-200 dark:border-dark-700 dark:bg-dark-800"
-          :class="rollbackPanelOpen && isReleaseBuild ? 'w-80' : 'w-64'"
+          :class="rollbackPanelOpen && isReleaseBuild && !isDownstream ? 'w-80' : 'w-64'"
         >
           <!-- Header with refresh button -->
           <div
@@ -89,7 +89,7 @@
                   <span v-else class="text-2xl font-bold text-gray-400 dark:text-dark-500">--</span>
                   <!-- Show check mark when up to date -->
                   <span
-                    v-if="!hasUpdate"
+                    v-if="!badgeNeedsAttention"
                     class="flex h-5 w-5 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30"
                   >
                     <svg
@@ -107,9 +107,11 @@
                 </div>
                 <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">
                   {{
-                    hasUpdate
-                      ? t('version.latestVersion') + ': v' + latestVersion
-                      : t('version.upToDate')
+                    isDownstream
+                      ? t('version.upstreamBase', { version: upstreamBaseVersion })
+                      : hasUpdate
+                        ? t('version.latestVersion') + ': v' + latestVersion
+                        : t('version.upToDate')
                   }}
                 </p>
               </div>
@@ -231,7 +233,34 @@
                 </button>
               </div>
 
-              <!-- Priority 3: Update available for source build - show git pull hint -->
+              <!-- Priority 3: downstream releases are managed outside the official updater -->
+              <div v-else-if="isDownstream" class="space-y-2">
+                <div
+                  class="flex items-start gap-3 rounded-lg border p-3"
+                  :class="upstreamUpdateAvailable
+                    ? 'border-amber-200 bg-amber-50 dark:border-amber-800/50 dark:bg-amber-900/20'
+                    : 'border-blue-200 bg-blue-50 dark:border-blue-800/50 dark:bg-blue-900/20'"
+                >
+                  <div
+                    class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full"
+                    :class="upstreamUpdateAvailable
+                      ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/50 dark:text-amber-400'
+                      : 'bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400'"
+                  >
+                    <Icon :name="upstreamUpdateAvailable ? 'clock' : 'shield'" size="sm" />
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <p class="text-sm font-medium text-gray-800 dark:text-dark-100">
+                      {{ upstreamUpdateAvailable ? t('version.waitingDownstreamSync') : t('version.downstreamManaged') }}
+                    </p>
+                    <p class="mt-1 text-xs text-gray-600 dark:text-dark-300">
+                      {{ t('version.downstreamManagedHint', { current: upstreamBaseVersion, latest: latestVersion }) }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Priority 4: Update available for source build - show git pull hint -->
               <div v-else-if="hasUpdate && !isReleaseBuild" class="space-y-2">
                 <a
                   v-if="releaseInfo?.html_url && releaseInfo.html_url !== '#'"
@@ -291,7 +320,7 @@
                 </div>
               </div>
 
-              <!-- Priority 4: Update available for release build - show update button -->
+              <!-- Priority 5: Update available for release build - show update button -->
               <div v-else-if="hasUpdate && isReleaseBuild" class="space-y-2">
                 <!-- Update info card -->
                 <div
@@ -355,7 +384,7 @@
                 </a>
               </div>
 
-              <!-- Priority 5: Up to date - GitHub link + version rollback -->
+              <!-- Priority 6: Up to date - GitHub link + version rollback -->
               <div v-else class="space-y-2">
                 <a
                   v-if="releaseInfo?.html_url && releaseInfo.html_url !== '#'"
@@ -674,6 +703,9 @@ const loading = computed(() => appStore.versionLoading)
 const currentVersion = computed(() => appStore.currentVersion || props.version || '')
 const latestVersion = computed(() => appStore.latestVersion)
 const hasUpdate = computed(() => appStore.hasUpdate)
+const updateStrategy = computed(() => appStore.updateStrategy)
+const upstreamBaseVersion = computed(() => appStore.upstreamBaseVersion)
+const upstreamUpdateAvailable = computed(() => appStore.upstreamUpdateAvailable)
 const releaseInfo = computed(() => appStore.releaseInfo)
 const buildType = computed(() => appStore.buildType)
 
@@ -730,6 +762,16 @@ const activeManualCommand = computed(() =>
 
 // Only show update check for release builds (binary/docker deployment)
 const isReleaseBuild = computed(() => buildType.value === 'release')
+const isDownstream = computed(() => updateStrategy.value === 'downstream')
+const badgeNeedsAttention = computed(() => hasUpdate.value || (isDownstream.value && upstreamUpdateAvailable.value))
+const badgeTitle = computed(() => {
+  if (isDownstream.value) {
+    return upstreamUpdateAvailable.value
+      ? t('version.waitingDownstreamSync')
+      : t('version.downstreamManaged')
+  }
+  return hasUpdate.value ? t('version.updateAvailable') : t('version.upToDate')
+})
 
 function toggleDropdown() {
   dropdownOpen.value = !dropdownOpen.value
@@ -752,7 +794,7 @@ async function refreshVersion(force = true) {
 }
 
 async function handleUpdate() {
-  if (updating.value) return
+  if (updating.value || isDownstream.value) return
 
   updating.value = true
   updateError.value = ''
@@ -783,7 +825,7 @@ function resetRollbackState() {
 }
 
 async function toggleRollbackPanel() {
-  if (!isAdmin.value) return
+  if (!isAdmin.value || isDownstream.value) return
   rollbackPanelOpen.value = !rollbackPanelOpen.value
   // Source builds only show a hint, no version list to fetch
   if (

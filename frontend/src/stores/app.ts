@@ -41,6 +41,9 @@ export const useAppStore = defineStore('app', () => {
   const currentVersion = ref<string>('')
   const latestVersion = ref<string>('')
   const hasUpdate = ref<boolean>(false)
+  const updateStrategy = ref<'upstream' | 'downstream'>('upstream')
+  const upstreamBaseVersion = ref<string>('')
+  const upstreamUpdateAvailable = ref<boolean>(false)
   const buildType = ref<string>('source')
   const releaseInfo = ref<ReleaseInfo | null>(null)
 
@@ -247,6 +250,9 @@ export const useAppStore = defineStore('app', () => {
         current_version: currentVersion.value,
         latest_version: latestVersion.value,
         has_update: hasUpdate.value,
+        update_strategy: updateStrategy.value,
+        upstream_base_version: upstreamBaseVersion.value,
+        upstream_update_available: upstreamUpdateAvailable.value,
         build_type: buildType.value,
         release_info: releaseInfo.value || undefined,
         cached: true
@@ -264,6 +270,9 @@ export const useAppStore = defineStore('app', () => {
       currentVersion.value = data.current_version
       latestVersion.value = data.latest_version
       hasUpdate.value = data.has_update
+      updateStrategy.value = data.update_strategy || 'upstream'
+      upstreamBaseVersion.value = data.upstream_base_version || data.current_version
+      upstreamUpdateAvailable.value = Boolean(data.upstream_update_available)
       buildType.value = data.build_type || 'source'
       releaseInfo.value = data.release_info || null
       versionLoaded.value = true
@@ -449,6 +458,9 @@ export const useAppStore = defineStore('app', () => {
     currentVersion,
     latestVersion,
     hasUpdate,
+    updateStrategy,
+    upstreamBaseVersion,
+    upstreamUpdateAvailable,
     buildType,
     releaseInfo,
 

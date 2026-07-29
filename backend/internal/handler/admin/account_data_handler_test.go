@@ -37,14 +37,19 @@ type dataProxy struct {
 }
 
 type dataAccount struct {
-	Name        string         `json:"name"`
-	Platform    string         `json:"platform"`
-	Type        string         `json:"type"`
-	Credentials map[string]any `json:"credentials"`
-	Extra       map[string]any `json:"extra"`
-	ProxyKey    *string        `json:"proxy_key"`
-	Concurrency int            `json:"concurrency"`
-	Priority    int            `json:"priority"`
+	Name             string         `json:"name"`
+	Platform         string         `json:"platform"`
+	Type             string         `json:"type"`
+	Credentials      map[string]any `json:"credentials"`
+	Extra            map[string]any `json:"extra"`
+	ProxyKey         *string        `json:"proxy_key"`
+	Concurrency      int            `json:"concurrency"`
+	Priority         int            `json:"priority"`
+	ManagementFolder *string        `json:"management_folder"`
+	Tags             []string       `json:"tags"`
+	Groups           []string       `json:"groups"`
+	Status           string         `json:"status"`
+	Schedulable      *bool          `json:"schedulable"`
 }
 
 func setupAccountDataRouter() (*gin.Engine, *stubAdminService) {
@@ -70,6 +75,7 @@ func setupAccountDataRouter() (*gin.Engine, *stubAdminService) {
 	)
 
 	router.GET("/api/v1/admin/accounts/data", h.ExportData)
+	router.POST("/api/v1/admin/accounts/data/preview", h.PreviewDataImport)
 	router.POST("/api/v1/admin/accounts/data", h.ImportData)
 	return router, adminSvc
 }
@@ -102,16 +108,20 @@ func TestExportDataIncludesSecrets(t *testing.T) {
 	}
 	adminSvc.accounts = []service.Account{
 		{
-			ID:          21,
-			Name:        "account",
-			Platform:    service.PlatformOpenAI,
-			Type:        service.AccountTypeOAuth,
-			Credentials: map[string]any{"token": "secret"},
-			Extra:       map[string]any{"note": "x"},
-			ProxyID:     &proxyID,
-			Concurrency: 3,
-			Priority:    50,
-			Status:      service.StatusDisabled,
+			ID:               21,
+			Name:             "account",
+			Platform:         service.PlatformOpenAI,
+			Type:             service.AccountTypeOAuth,
+			Credentials:      map[string]any{"token": "secret"},
+			Extra:            map[string]any{"note": "x"},
+			ProxyID:          &proxyID,
+			Concurrency:      3,
+			Priority:         50,
+			Status:           service.StatusDisabled,
+			Schedulable:      false,
+			ManagementFolder: &service.AccountManagementFolder{ID: 31, Name: "Imported"},
+			Tags:             []service.AccountManagementTag{{ID: 41, Name: "Team"}},
+			Groups:           []*service.Group{{ID: 51, Name: "openai-default"}},
 		},
 	}
 
@@ -123,12 +133,19 @@ func TestExportDataIncludesSecrets(t *testing.T) {
 	var resp dataResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.Equal(t, 0, resp.Code)
-	require.Empty(t, resp.Data.Type)
-	require.Equal(t, 0, resp.Data.Version)
+	require.Equal(t, dataType, resp.Data.Type)
+	require.Equal(t, dataVersion, resp.Data.Version)
 	require.Len(t, resp.Data.Proxies, 1)
 	require.Equal(t, "pass", resp.Data.Proxies[0].Password)
 	require.Len(t, resp.Data.Accounts, 1)
 	require.Equal(t, "secret", resp.Data.Accounts[0].Credentials["token"])
+	require.NotNil(t, resp.Data.Accounts[0].ManagementFolder)
+	require.Equal(t, "Imported", *resp.Data.Accounts[0].ManagementFolder)
+	require.Equal(t, []string{"Team"}, resp.Data.Accounts[0].Tags)
+	require.Equal(t, []string{"openai-default"}, resp.Data.Accounts[0].Groups)
+	require.Equal(t, service.StatusDisabled, resp.Data.Accounts[0].Status)
+	require.NotNil(t, resp.Data.Accounts[0].Schedulable)
+	require.False(t, *resp.Data.Accounts[0].Schedulable)
 }
 
 func TestExportDataWithoutProxies(t *testing.T) {

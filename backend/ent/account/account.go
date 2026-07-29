@@ -38,6 +38,8 @@ const (
 	FieldProxyID = "proxy_id"
 	// FieldProxyFallbackOriginID holds the string denoting the proxy_fallback_origin_id field in the database.
 	FieldProxyFallbackOriginID = "proxy_fallback_origin_id"
+	// FieldManagementFolderID holds the string denoting the management_folder_id field in the database.
+	FieldManagementFolderID = "management_folder_id"
 	// FieldConcurrency holds the string denoting the concurrency field in the database.
 	FieldConcurrency = "concurrency"
 	// FieldLoadFactor holds the string denoting the load_factor field in the database.
@@ -80,6 +82,10 @@ const (
 	FieldQuotaDimension = "quota_dimension"
 	// EdgeGroups holds the string denoting the groups edge name in mutations.
 	EdgeGroups = "groups"
+	// EdgeManagementFolder holds the string denoting the management_folder edge name in mutations.
+	EdgeManagementFolder = "management_folder"
+	// EdgeTags holds the string denoting the tags edge name in mutations.
+	EdgeTags = "tags"
 	// EdgeProxy holds the string denoting the proxy edge name in mutations.
 	EdgeProxy = "proxy"
 	// EdgeParent holds the string denoting the parent edge name in mutations.
@@ -90,6 +96,8 @@ const (
 	EdgeUsageLogs = "usage_logs"
 	// EdgeAccountGroups holds the string denoting the account_groups edge name in mutations.
 	EdgeAccountGroups = "account_groups"
+	// EdgeAccountTagBindings holds the string denoting the account_tag_bindings edge name in mutations.
+	EdgeAccountTagBindings = "account_tag_bindings"
 	// Table holds the table name of the account in the database.
 	Table = "accounts"
 	// GroupsTable is the table that holds the groups relation/edge. The primary key declared below.
@@ -97,6 +105,18 @@ const (
 	// GroupsInverseTable is the table name for the Group entity.
 	// It exists in this package in order to avoid circular dependency with the "group" package.
 	GroupsInverseTable = "groups"
+	// ManagementFolderTable is the table that holds the management_folder relation/edge.
+	ManagementFolderTable = "accounts"
+	// ManagementFolderInverseTable is the table name for the AccountFolder entity.
+	// It exists in this package in order to avoid circular dependency with the "accountfolder" package.
+	ManagementFolderInverseTable = "account_folders"
+	// ManagementFolderColumn is the table column denoting the management_folder relation/edge.
+	ManagementFolderColumn = "management_folder_id"
+	// TagsTable is the table that holds the tags relation/edge. The primary key declared below.
+	TagsTable = "account_tag_bindings"
+	// TagsInverseTable is the table name for the AccountTag entity.
+	// It exists in this package in order to avoid circular dependency with the "accounttag" package.
+	TagsInverseTable = "account_tags"
 	// ProxyTable is the table that holds the proxy relation/edge.
 	ProxyTable = "accounts"
 	// ProxyInverseTable is the table name for the Proxy entity.
@@ -126,6 +146,13 @@ const (
 	AccountGroupsInverseTable = "account_groups"
 	// AccountGroupsColumn is the table column denoting the account_groups relation/edge.
 	AccountGroupsColumn = "account_id"
+	// AccountTagBindingsTable is the table that holds the account_tag_bindings relation/edge.
+	AccountTagBindingsTable = "account_tag_bindings"
+	// AccountTagBindingsInverseTable is the table name for the AccountTagBinding entity.
+	// It exists in this package in order to avoid circular dependency with the "accounttagbinding" package.
+	AccountTagBindingsInverseTable = "account_tag_bindings"
+	// AccountTagBindingsColumn is the table column denoting the account_tag_bindings relation/edge.
+	AccountTagBindingsColumn = "account_id"
 )
 
 // Columns holds all SQL columns for account fields.
@@ -142,6 +169,7 @@ var Columns = []string{
 	FieldExtra,
 	FieldProxyID,
 	FieldProxyFallbackOriginID,
+	FieldManagementFolderID,
 	FieldConcurrency,
 	FieldLoadFactor,
 	FieldPriority,
@@ -168,6 +196,9 @@ var (
 	// GroupsPrimaryKey and GroupsColumn2 are the table columns denoting the
 	// primary key for the groups relation (M2M).
 	GroupsPrimaryKey = []string{"account_id", "group_id"}
+	// TagsPrimaryKey and TagsColumn2 are the table columns denoting the
+	// primary key for the tags relation (M2M).
+	TagsPrimaryKey = []string{"account_id", "tag_id"}
 )
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -301,6 +332,11 @@ func ByProxyFallbackOriginID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldProxyFallbackOriginID, opts...).ToFunc()
 }
 
+// ByManagementFolderID orders the results by the management_folder_id field.
+func ByManagementFolderID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldManagementFolderID, opts...).ToFunc()
+}
+
 // ByConcurrency orders the results by the concurrency field.
 func ByConcurrency(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldConcurrency, opts...).ToFunc()
@@ -415,6 +451,27 @@ func ByGroups(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	}
 }
 
+// ByManagementFolderField orders the results by management_folder field.
+func ByManagementFolderField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newManagementFolderStep(), sql.OrderByField(field, opts...))
+	}
+}
+
+// ByTagsCount orders the results by tags count.
+func ByTagsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newTagsStep(), opts...)
+	}
+}
+
+// ByTags orders the results by tags terms.
+func ByTags(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newTagsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
 // ByProxyField orders the results by proxy field.
 func ByProxyField(field string, opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -470,11 +527,39 @@ func ByAccountGroups(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newAccountGroupsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByAccountTagBindingsCount orders the results by account_tag_bindings count.
+func ByAccountTagBindingsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newAccountTagBindingsStep(), opts...)
+	}
+}
+
+// ByAccountTagBindings orders the results by account_tag_bindings terms.
+func ByAccountTagBindings(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newAccountTagBindingsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newGroupsStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(GroupsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2M, false, GroupsTable, GroupsPrimaryKey...),
+	)
+}
+func newManagementFolderStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(ManagementFolderInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, ManagementFolderTable, ManagementFolderColumn),
+	)
+}
+func newTagsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(TagsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2M, false, TagsTable, TagsPrimaryKey...),
 	)
 }
 func newProxyStep() *sqlgraph.Step {
@@ -510,5 +595,12 @@ func newAccountGroupsStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(AccountGroupsInverseTable, AccountGroupsColumn),
 		sqlgraph.Edge(sqlgraph.O2M, true, AccountGroupsTable, AccountGroupsColumn),
+	)
+}
+func newAccountTagBindingsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(AccountTagBindingsInverseTable, AccountTagBindingsColumn),
+		sqlgraph.Edge(sqlgraph.O2M, true, AccountTagBindingsTable, AccountTagBindingsColumn),
 	)
 }

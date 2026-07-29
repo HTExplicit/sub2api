@@ -238,6 +238,8 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 		ProxyID:                 a.ProxyID,
 		ProxyFallbackOriginID:   a.ProxyFallbackOriginID,
 		ProxyFallbackOriginName: a.ProxyFallbackOriginName,
+		ManagementFolder:        accountManagementFolderFromService(a.ManagementFolder),
+		Tags:                    accountManagementTagsFromService(a.Tags),
 		Concurrency:             a.Concurrency,
 		LoadFactor:              a.LoadFactor,
 		Priority:                a.Priority,
@@ -389,6 +391,27 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 		}
 	}
 
+	return out
+}
+
+func accountManagementFolderFromService(folder *service.AccountManagementFolder) *AccountManagementFolder {
+	if folder == nil {
+		return nil
+	}
+	return &AccountManagementFolder{
+		ID: folder.ID, Name: folder.Name, SortOrder: folder.SortOrder,
+		AccountCount: folder.AccountCount, CreatedAt: folder.CreatedAt, UpdatedAt: folder.UpdatedAt,
+	}
+}
+
+func accountManagementTagsFromService(tags []service.AccountManagementTag) []AccountManagementTag {
+	out := make([]AccountManagementTag, 0, len(tags))
+	for i := range tags {
+		out = append(out, AccountManagementTag{
+			ID: tags[i].ID, Name: tags[i].Name, SortOrder: tags[i].SortOrder,
+			AccountCount: tags[i].AccountCount, CreatedAt: tags[i].CreatedAt, UpdatedAt: tags[i].UpdatedAt,
+		})
+	}
 	return out
 }
 
