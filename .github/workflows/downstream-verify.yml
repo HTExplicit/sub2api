@@ -69,6 +69,7 @@ jobs:
           pnpm exec vitest run \
             src/views/admin/__tests__/SettingsView.spec.ts \
             src/components/common/__tests__/VersionBadge.downstream.spec.ts \
+            src/i18n/__tests__/accountConsoleLocales.spec.ts \
             src/__tests__/integration/data-import.spec.ts \
             src/components/admin/account/__tests__/AccountConsoleFilters.spec.ts \
             src/views/admin/__tests__/AccountsView.console.spec.ts \

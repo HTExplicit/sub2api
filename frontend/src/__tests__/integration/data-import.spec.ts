@@ -180,6 +180,44 @@ describe('ImportDataModal', () => {
     expect(wrapper.emitted('imported')).toEqual([[expect.objectContaining({ account_ids: [101] })]])
   })
 
+  it('全部跳过时仍可提交并返回逐项结果', async () => {
+    const { adminAPI } = await import('@/api/admin')
+    vi.mocked(adminAPI.accounts.previewDataImport).mockResolvedValue(previewResult(
+      previewAccount(0, 'a', { default_action: 'skip' }),
+      previewAccount(1, 'b', { default_action: 'skip' })
+    ))
+    vi.mocked(adminAPI.accounts.importData).mockResolvedValue(importResult({
+      account_created: 0,
+      account_skipped: 2,
+      account_ids: [],
+      items: [
+        { index: 0, name: 'a', action: 'skip' },
+        { index: 1, name: 'b', action: 'skip' }
+      ]
+    }))
+    const wrapper = mountModal()
+
+    await selectFiles(wrapper, [dataFile('all-skip.json', [{ name: 'a' }, { name: 'b' }])])
+    await submitPreview(wrapper)
+
+    expect(wrapper.get('[data-test="confirm-import"]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('[data-test="confirm-import"]').trigger('click')
+    await flushPromises()
+
+    expect(adminAPI.accounts.importData).toHaveBeenCalledWith(expect.objectContaining({
+      items: [
+        { index: 0, action: 'skip' },
+        { index: 1, action: 'skip' }
+      ]
+    }))
+    expect(wrapper.text()).toContain('admin.accounts.importSkipped')
+    expect(wrapper.emitted('imported')).toEqual([[expect.objectContaining({
+      account_created: 0,
+      account_skipped: 2,
+      account_ids: []
+    })]])
+  })
+
   it('预览逐条显示代理复用和校验错误', async () => {
     const { adminAPI } = await import('@/api/admin')
     const preview = previewResult(previewAccount(0, 'a'))
