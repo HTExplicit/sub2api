@@ -10,6 +10,7 @@
       :utilization="snapshot.data.five_hour.used_percent"
       :resets-at="snapshot.data.five_hour.reset_at"
       color="indigo"
+      :density="density"
       data-testid="ollama-cloud-five-hour"
     />
     <UsageProgressBar
@@ -18,6 +19,7 @@
       :utilization="snapshot.data.seven_day.used_percent"
       :resets-at="snapshot.data.seven_day.reset_at"
       color="emerald"
+      :density="density"
       data-testid="ollama-cloud-seven-day"
     />
   </div>
@@ -29,7 +31,12 @@ import { computed } from 'vue'
 import type { Account } from '@/types'
 import UsageProgressBar from './UsageProgressBar.vue'
 
-const props = defineProps<{ account: Account }>()
+const props = withDefaults(defineProps<{
+  account: Account
+  density?: 'detail' | 'list' | 'compact'
+}>(), {
+  density: 'detail'
+})
 const state = computed(() => props.account.ollama_cloud_usage)
 const snapshot = computed(() => state.value?.snapshot)
 </script>

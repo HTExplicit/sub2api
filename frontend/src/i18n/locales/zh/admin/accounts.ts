@@ -112,6 +112,9 @@ export default {
       directConnection: '直连',
       rateLimitResetAt: '限流重置',
       todayRequestsShort: '今日 {count} 次请求',
+      usageNoData: '暂无额度数据',
+      usageFetchFailed: '获取失败',
+      usageStale: '数据已过期',
       selectAccount: '选择账号 {name}',
       syncFromCrsTitle: '从 CRS 同步账号',
       syncFromCrsDesc:
@@ -182,6 +185,7 @@ export default {
         todayStats: '今日统计',
         groups: '分组',
         classificationRoute: '分类 / 路由',
+        usage: '用量',
         capacityUsage: '容量 / 用量',
         usageWindows: '用量窗口',
         proxy: '代理',

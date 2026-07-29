@@ -12,13 +12,13 @@
       v-else
       :key="account.id"
       type="button"
-      class="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b border-gray-100 px-3 py-2.5 text-left transition-colors last:border-b-0 hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-800 sm:grid-cols-[auto_minmax(12rem,1.35fr)_minmax(9rem,0.8fr)_minmax(12rem,1fr)_auto]"
+      class="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 border-b border-gray-100 px-3 py-2.5 text-left transition-colors last:border-b-0 hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-800 lg:grid-cols-[auto_minmax(12rem,1.2fr)_minmax(8rem,0.65fr)_minmax(16rem,1fr)_minmax(12rem,0.9fr)_auto] lg:gap-y-0"
       :class="selectedIds.includes(account.id) ? 'bg-primary-50/50 dark:bg-primary-900/10' : ''"
       @click="emit('rowClick', account)"
     >
       <input
         type="checkbox"
-        class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+        class="row-span-2 h-4 w-4 self-start rounded border-gray-300 text-primary-600 focus:ring-primary-500 lg:row-span-1 lg:self-center"
         :checked="selectedIds.includes(account.id)"
         :aria-label="t('admin.accounts.selectAccount', { name: account.name })"
         @click.stop
@@ -31,7 +31,7 @@
           <span class="shrink-0 font-mono text-[10px] text-gray-400">#{{ account.id }}</span>
         </div>
         <div class="mt-0.5 truncate text-xs text-gray-500 dark:text-dark-300">{{ displayEmail(account) || '-' }}</div>
-        <div class="mt-1 flex flex-wrap gap-1 sm:hidden">
+        <div class="mt-1 flex flex-wrap gap-1 lg:hidden">
           <PlatformTypeBadge
             :platform="account.platform"
             :type="account.type"
@@ -41,7 +41,7 @@
         </div>
       </div>
 
-      <div class="hidden min-w-0 sm:block">
+      <div class="hidden min-w-0 lg:block">
         <PlatformTypeBadge
           :platform="account.platform"
           :type="account.type"
@@ -50,7 +50,22 @@
         />
       </div>
 
-      <div class="hidden min-w-0 sm:block">
+      <div class="col-start-2 row-start-2 min-w-0 lg:col-start-auto lg:row-start-auto" data-test="account-compact-usage">
+        <AccountUsageCell
+          :account="account"
+          :today-stats="todayStats[String(account.id)] ?? null"
+          :today-stats-loading="todayStatsLoading"
+          :today-stats-error="todayStatsError"
+          :today-stats-updated-at="todayStatsUpdatedAt"
+          :manual-refresh-token="manualRefreshToken"
+          :status-now="statusNow"
+          variant="compact"
+          read-only
+        />
+        <AccountCapacityCell :account="account" compact class="mt-1" />
+      </div>
+
+      <div class="hidden min-w-0 lg:block">
         <div class="flex items-center gap-2">
           <AccountStatusIndicator :account="account" @show-temp-unsched="emit('showTempUnsched', account)" />
           <span class="text-xs text-gray-400">{{ account.management_folder?.name || t('admin.accounts.folderUncategorized') }}</span>
@@ -60,7 +75,7 @@
         </div>
       </div>
 
-      <div class="flex items-center gap-0.5" @click.stop>
+      <div class="col-start-3 row-span-2 row-start-1 flex items-center gap-0.5 self-start lg:col-start-auto lg:row-span-1 lg:row-start-auto lg:self-center" @click.stop>
         <button type="button" class="icon-button" :title="t('common.edit')" @click="emit('edit', account)">
           <Icon name="edit" size="sm" />
         </button>
@@ -74,15 +89,23 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
 import AccountStatusIndicator from '@/components/account/AccountStatusIndicator.vue'
+import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
 import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
 import Icon from '@/components/icons/Icon.vue'
-import type { Account } from '@/types'
+import type { Account, WindowStats } from '@/types'
 
 defineProps<{
   accounts: Account[]
   loading: boolean
   selectedIds: number[]
+  todayStats: Record<string, WindowStats>
+  todayStatsLoading: boolean
+  todayStatsError: boolean
+  todayStatsUpdatedAt: number | null
+  manualRefreshToken: number
+  statusNow: number
 }>()
 
 const emit = defineEmits<{
