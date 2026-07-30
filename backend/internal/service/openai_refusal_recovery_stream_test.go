@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -84,6 +85,70 @@ func TestOpenAIRefusalStreamKeepsCheckingAcrossSingleLineBreak(t *testing.T) {
 	require.NoError(t, observeErr)
 	require.Equal(t, openAIRefusalStreamHold, action)
 	require.True(t, state.matched)
+}
+
+func TestOpenAIRefusalStreamKeepsCheckingAfterFirstParagraph(t *testing.T) {
+	matcher, err := NewOpenAIRefusalMatcher([]string{"不能"}, "继续当前任务")
+	require.NoError(t, err)
+	state := newOpenAIRefusalStreamState(matcher)
+
+	action, _, observeErr := state.observe(
+		"response.output_text.delta",
+		[]byte(`{"type":"response.output_text.delta","delta":"可以协助分析已授权应用。\n\n"}`),
+	)
+	require.NoError(t, observeErr)
+	require.Equal(t, openAIRefusalStreamHold, action)
+	require.False(t, state.matched)
+	require.False(t, state.passthrough)
+
+	action, _, observeErr = state.observe(
+		"response.output_text.delta",
+		[]byte(`{"type":"response.output_text.delta","delta":"但不能帮助绕过第三方付费会员。"}`),
+	)
+	require.NoError(t, observeErr)
+	require.Equal(t, openAIRefusalStreamHold, action)
+	require.True(t, state.matched)
+}
+
+func TestOpenAIRefusalStreamPassesBeforeThirdParagraph(t *testing.T) {
+	matcher, err := NewOpenAIRefusalMatcher([]string{"cannot"}, "continue")
+	require.NoError(t, err)
+	state := newOpenAIRefusalStreamState(matcher)
+
+	action, _, observeErr := state.observe(
+		"response.output_text.delta",
+		[]byte(`{"type":"response.output_text.delta","delta":"First paragraph.\n\nSecond paragraph.\n\n"}`),
+	)
+	require.NoError(t, observeErr)
+	require.Equal(t, openAIRefusalStreamPass, action)
+	require.True(t, state.passthrough)
+
+	action, _, observeErr = state.observe(
+		"response.output_text.delta",
+		[]byte(`{"type":"response.output_text.delta","delta":"I cannot continue."}`),
+	)
+	require.NoError(t, observeErr)
+	require.Equal(t, openAIRefusalStreamPass, action)
+	require.False(t, state.matched)
+}
+
+func TestOpenAIRefusalStreamFailsOpenAtRuneScanLimit(t *testing.T) {
+	matcher, err := NewOpenAIRefusalMatcher([]string{"cannot"}, "continue")
+	require.NoError(t, err)
+	state := newOpenAIRefusalStreamState(matcher)
+	payload := fmt.Sprintf(`{"type":"response.output_text.delta","delta":%q}`, strings.Repeat("正", maxOpenAIRefusalParagraphRunes))
+
+	action, _, observeErr := state.observe("response.output_text.delta", []byte(payload))
+
+	require.NoError(t, observeErr)
+	require.Equal(t, openAIRefusalStreamPass, action)
+	require.True(t, state.passthrough)
+}
+
+func TestOpenAIRefusalScanWindowCompletesAfterSecondParagraphBoundary(t *testing.T) {
+	require.False(t, openAIRefusalScanWindowComplete("First paragraph.\n\n"))
+	require.False(t, openAIRefusalScanWindowComplete("First paragraph.\n\n\nSecond paragraph."))
+	require.True(t, openAIRefusalScanWindowComplete("First paragraph.\r\n\r\nSecond paragraph.\r\n\r\n"))
 }
 
 func TestOpenAIRefusalStreamMatchesStructuredRefusalEvents(t *testing.T) {
