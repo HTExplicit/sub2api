@@ -55,7 +55,7 @@ func (s *openAIRefusalStreamState) observe(eventType string, payload []byte) (op
 	}
 
 	switch eventType {
-	case "response.output_text.delta":
+	case "response.output_text.delta", "response.refusal.delta":
 		_, _ = s.visibleText.WriteString(gjson.GetBytes(payload, "delta").String())
 		if matched, _ := s.matcher.MatchFirstParagraph(s.visibleText.String()); matched {
 			s.matched = true
@@ -65,8 +65,12 @@ func (s *openAIRefusalStreamState) observe(eventType string, payload []byte) (op
 			s.passthrough = true
 			return openAIRefusalStreamPass, nil, nil
 		}
-	case "response.output_text.done":
-		text := gjson.GetBytes(payload, "text").String()
+	case "response.output_text.done", "response.refusal.done":
+		textField := "text"
+		if eventType == "response.refusal.done" {
+			textField = "refusal"
+		}
+		text := gjson.GetBytes(payload, textField).String()
 		if current := s.visibleText.String(); current == "" || (strings.HasPrefix(text, current) && len(text) > len(current)) {
 			s.visibleText.Reset()
 			_, _ = s.visibleText.WriteString(text)
