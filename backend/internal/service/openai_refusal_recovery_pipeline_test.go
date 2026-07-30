@@ -64,6 +64,28 @@ func TestOpenAINonStreamingPassthroughRewritesRefusalAndPreservesUsage(t *testin
 	require.NotContains(t, recorder.Body.String(), "I cannot")
 }
 
+func TestOpenAINonStreamingPassthroughRewritesStructuredRefusal(t *testing.T) {
+	svc := newOpenAIRefusalRecoveryPipelineService(t, false, true)
+	c, recorder := newOpenAIRefusalRecoveryTestContext()
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body: io.NopCloser(strings.NewReader(
+			`{"id":"resp_structured","object":"response","model":"gpt-5.4","status":"completed","output":[{"id":"msg_1","type":"message","role":"assistant","status":"completed","content":[{"type":"refusal","refusal":"I cannot help with that."}]}],"usage":{"input_tokens":9,"output_tokens":6,"total_tokens":15}}`,
+		)),
+	}
+
+	result, err := svc.handleNonStreamingResponsePassthrough(context.Background(), resp, c, "gpt-5.4", "")
+
+	require.NoError(t, err)
+	require.Equal(t, "resp_structured", result.responseID)
+	require.Equal(t, 9, result.usage.InputTokens)
+	require.Equal(t, 6, result.usage.OutputTokens)
+	require.Contains(t, recorder.Body.String(), "继续当前任务")
+	require.NotContains(t, recorder.Body.String(), "I cannot")
+	require.NotContains(t, recorder.Body.String(), `"type":"refusal"`)
+}
+
 func TestOpenAINonStreamingPassthroughSSEToJSONRewritesRefusal(t *testing.T) {
 	svc := newOpenAIRefusalRecoveryPipelineService(t, false, true)
 	c, recorder := newOpenAIRefusalRecoveryTestContext()
@@ -169,6 +191,40 @@ func TestOpenAIStreamingPassthroughRewritesRefusalAcrossDeltas(t *testing.T) {
 	require.Contains(t, recorder.Body.String(), "继续当前任务")
 	require.NotContains(t, recorder.Body.String(), "I cannot")
 	require.Contains(t, recorder.Body.String(), `"id":"resp_stream"`)
+	require.Contains(t, recorder.Body.String(), `"total_tokens":7`)
+}
+
+func TestOpenAIStreamingPassthroughRewritesStructuredRefusalAcrossDeltas(t *testing.T) {
+	svc := newOpenAIRefusalRecoveryPipelineService(t, false, true)
+	c, recorder := newOpenAIRefusalRecoveryTestContext()
+	upstream := strings.Join([]string{
+		`event: response.created`,
+		`data: {"type":"response.created","response":{"id":"resp_structured_stream","object":"response","model":"gpt-5.4","status":"in_progress","output":[]}}`,
+		``,
+		`event: response.refusal.delta`,
+		`data: {"type":"response.refusal.delta","response_id":"resp_structured_stream","item_id":"msg_1","output_index":0,"content_index":0,"delta":"I ca"}`,
+		``,
+		`event: response.refusal.delta`,
+		`data: {"type":"response.refusal.delta","response_id":"resp_structured_stream","item_id":"msg_1","output_index":0,"content_index":0,"delta":"nnot help."}`,
+		``,
+		`event: response.refusal.done`,
+		`data: {"type":"response.refusal.done","response_id":"resp_structured_stream","item_id":"msg_1","output_index":0,"content_index":0,"refusal":"I cannot help."}`,
+		``,
+		`event: response.completed`,
+		`data: {"type":"response.completed","response":{"id":"resp_structured_stream","object":"response","model":"gpt-5.4","status":"completed","output":[{"id":"msg_1","type":"message","role":"assistant","status":"completed","content":[{"type":"refusal","refusal":"I cannot help."}]}],"usage":{"input_tokens":4,"output_tokens":3,"total_tokens":7}}}`,
+		``,
+	}, "\n")
+	resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(upstream))}
+
+	result, err := svc.handleStreamingResponsePassthrough(context.Background(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI}, time.Now(), "", "")
+
+	require.NoError(t, err)
+	require.Equal(t, 4, result.usage.InputTokens)
+	require.Equal(t, 3, result.usage.OutputTokens)
+	require.Contains(t, recorder.Body.String(), "继续当前任务")
+	require.NotContains(t, recorder.Body.String(), "I cannot")
+	require.NotContains(t, recorder.Body.String(), "response.refusal")
+	require.Contains(t, recorder.Body.String(), `"id":"resp_structured_stream"`)
 	require.Contains(t, recorder.Body.String(), `"total_tokens":7`)
 }
 

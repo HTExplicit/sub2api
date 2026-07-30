@@ -85,3 +85,25 @@ func TestOpenAIRefusalStreamKeepsCheckingAcrossSingleLineBreak(t *testing.T) {
 	require.Equal(t, openAIRefusalStreamHold, action)
 	require.True(t, state.matched)
 }
+
+func TestOpenAIRefusalStreamMatchesStructuredRefusalEvents(t *testing.T) {
+	matcher, err := NewOpenAIRefusalMatcher([]string{"不能"}, "继续当前任务")
+	require.NoError(t, err)
+	state := newOpenAIRefusalStreamState(matcher)
+
+	action, _, observeErr := state.observe(
+		"response.refusal.delta",
+		[]byte(`{"type":"response.refusal.delta","delta":"不能协助绕过真实服务"}`),
+	)
+	require.NoError(t, observeErr)
+	require.Equal(t, openAIRefusalStreamHold, action)
+	require.True(t, state.matched)
+
+	action, _, observeErr = state.observe(
+		"response.refusal.done",
+		[]byte(`{"type":"response.refusal.done","refusal":"不能协助绕过真实服务的付费或会员限制。"}`),
+	)
+	require.NoError(t, observeErr)
+	require.Equal(t, openAIRefusalStreamHold, action)
+	require.True(t, state.matched)
+}

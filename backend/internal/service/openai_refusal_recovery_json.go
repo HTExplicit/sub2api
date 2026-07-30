@@ -19,8 +19,9 @@ type openAIResponsesRewriteOutputItem struct {
 }
 
 type openAIResponsesRewriteContentItem struct {
-	Type string `json:"type"`
-	Text string `json:"text,omitempty"`
+	Type    string `json:"type"`
+	Text    string `json:"text,omitempty"`
+	Refusal string `json:"refusal,omitempty"`
 }
 
 func RewriteOpenAIResponsesJSON(body []byte, matcher *OpenAIRefusalMatcher) ([]byte, bool, string, error) {
@@ -45,10 +46,14 @@ func RewriteOpenAIResponsesJSON(body []byte, matcher *OpenAIRefusalMatcher) ([]b
 			firstMessageID = output.ID
 		}
 		for _, content := range output.Content {
-			if content.Type != "output_text" {
+			switch content.Type {
+			case "output_text":
+				_, _ = visibleText.WriteString(content.Text)
+			case "refusal":
+				_, _ = visibleText.WriteString(content.Refusal)
+			default:
 				return body, false, "", nil
 			}
-			_, _ = visibleText.WriteString(content.Text)
 		}
 	}
 	if firstMessageID == "" {

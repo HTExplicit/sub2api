@@ -217,6 +217,7 @@ func openAIRefusalRecoveryWSSemanticEvent(eventType string, payload []byte) bool
 	default:
 		return strings.Contains(eventType, ".delta") ||
 			strings.HasPrefix(eventType, "response.output_text") ||
+			strings.HasPrefix(eventType, "response.refusal") ||
 			strings.HasPrefix(eventType, "response.reasoning")
 	}
 }

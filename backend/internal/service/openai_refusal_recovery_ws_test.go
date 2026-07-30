@@ -58,6 +58,38 @@ func TestOpenAIRefusalRecoveryWSOutputRewritesAcrossFramesAndResetsNextTurn(t *t
 	require.Equal(t, "Normal answer.", gjson.GetBytes(written[1], "delta").String())
 }
 
+func TestOpenAIRefusalRecoveryWSOutputRewritesStructuredRefusal(t *testing.T) {
+	matcher, err := NewOpenAIRefusalMatcher([]string{"cannot"}, "继续当前任务")
+	require.NoError(t, err)
+	var written [][]byte
+	output := newOpenAIRefusalRecoveryWSOutput(matcher, true, func(_ context.Context, _ coderws.MessageType, payload []byte) error {
+		written = append(written, append([]byte(nil), payload...))
+		return nil
+	}, nil)
+
+	frames := [][]byte{
+		[]byte(`{"type":"response.created","response":{"id":"resp_ws_refusal","model":"gpt-5.4","status":"in_progress","output":[]}}`),
+		[]byte(`{"type":"response.refusal.delta","response_id":"resp_ws_refusal","item_id":"msg_1","delta":"I ca"}`),
+		[]byte(`{"type":"response.refusal.delta","response_id":"resp_ws_refusal","item_id":"msg_1","delta":"nnot help."}`),
+		[]byte(`{"type":"response.refusal.done","response_id":"resp_ws_refusal","item_id":"msg_1","refusal":"I cannot help."}`),
+		[]byte(`{"type":"response.completed","response":{"id":"resp_ws_refusal","model":"gpt-5.4","status":"completed","output":[{"id":"msg_1","type":"message","role":"assistant","status":"completed","content":[{"type":"refusal","refusal":"I cannot help."}]}],"usage":{"input_tokens":5,"output_tokens":3,"total_tokens":8}}}`),
+	}
+	for index, payload := range frames {
+		require.NoError(t, output.Write(context.Background(), coderws.MessageText, payload))
+		if index < len(frames)-1 {
+			require.Empty(t, written)
+		}
+	}
+
+	require.Len(t, written, 8)
+	require.Equal(t, "response.output_text.delta", gjson.GetBytes(written[3], "type").String())
+	require.Equal(t, "继续当前任务", gjson.GetBytes(written[3], "delta").String())
+	for _, payload := range written {
+		require.NotContains(t, string(payload), "I cannot")
+		require.NotContains(t, string(payload), "response.refusal")
+	}
+}
+
 func TestOpenAIRefusalRecoveryWSOutputFailsOpenAboveBufferLimit(t *testing.T) {
 	matcher, err := NewOpenAIRefusalMatcher([]string{"cannot"}, "继续")
 	require.NoError(t, err)
