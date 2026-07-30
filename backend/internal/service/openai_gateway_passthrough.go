@@ -1194,7 +1194,6 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 						clientDisconnected = true
 					} else {
 						flusher.Flush()
-						clientOutputStarted = true
 					}
 				}
 				if firstTokenMs == nil {
