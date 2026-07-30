@@ -237,6 +237,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	imageCount := 0
 	var imageOutputSizes []string
 	if reqStream {
+		setOpenAIRefusalEarlyStreamEligibility(c, account, body)
 		result, err := s.handleStreamingResponsePassthrough(ctx, resp, c, account, startTime, reqModel, upstreamPassthroughModel)
 		if err != nil {
 			return nil, err
@@ -991,10 +992,11 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	failedMessage := ""
 	clientOutputStarted := false
 	var refusalStream *openAIRefusalStreamState
+	refusalEarlyEmitted := false
 	if isOpenAIRefusalRecoveryResponsesRequest(c) {
 		runtime := s.openAIRefusalRecoveryRuntime(ctx)
 		if runtime.RewriteEnabled() {
-			refusalStream = newOpenAIRefusalStreamState(runtime.Matcher)
+			refusalStream = newOpenAIRefusalStreamStateWithEarlyEmission(runtime.Matcher, openAIRefusalEarlyStreamEligible(c))
 		}
 	}
 	upstreamRequestID := strings.TrimSpace(resp.Header.Get("x-request-id"))
@@ -1049,6 +1051,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		forceFlushFailedEvent := false
 		refusalAction := openAIRefusalStreamHold
 		var refusalReplacement []byte
+		var refusalCompletionErr error
 		if refusalStream != nil && !refusalStream.reserveLine(line) {
 			refusalAction = openAIRefusalStreamPass
 			logger.FromContext(ctx).Warn("openai.refusal_recovery_buffer_limit", zap.String("transport", "sse"))
@@ -1089,9 +1092,14 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				var refusalErr error
 				refusalAction, refusalReplacement, refusalErr = refusalStream.observe(eventType, dataBytes)
 				if refusalErr != nil {
-					refusalStream.passthrough = true
-					refusalAction = openAIRefusalStreamPass
-					logger.FromContext(ctx).Warn("openai.refusal_recovery_stream_failed", zap.String("transport", "sse"), zap.Error(refusalErr))
+					if refusalStream.earlyEmitted {
+						refusalCompletionErr = fmt.Errorf("complete early OpenAI refusal replacement: %w", refusalErr)
+						refusalAction = openAIRefusalStreamHold
+					} else {
+						refusalStream.passthrough = true
+						refusalAction = openAIRefusalStreamPass
+						logger.FromContext(ctx).Warn("openai.refusal_recovery_stream_failed", zap.String("transport", "sse"), zap.Error(refusalErr))
+					}
 				}
 			}
 			if eventType == "response.failed" {
@@ -1156,14 +1164,29 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				line = "data: " + string(sanitizedData)
 			}
 			lineStartsClientOutput = forceFlushFailedEvent || openAIStreamDataStartsClientOutput(trimmedData, eventType)
-			if firstTokenMs == nil && lineStartsClientOutput && trimmedData != "[DONE]" {
-				ms := int(time.Since(startTime).Milliseconds())
-				firstTokenMs = &ms
-			}
 			s.parseSSEUsageBytes(dataBytes, usage)
+		}
+		if refusalCompletionErr != nil {
+			return resultWithUsage(), refusalCompletionErr
 		}
 		if refusalStream != nil && !refusalStream.passthrough {
 			switch refusalAction {
+			case openAIRefusalStreamReplaceEarly:
+				pendingLines = pendingLines[:0]
+				refusalEarlyEmitted = true
+				if !clientDisconnected {
+					if _, err := w.Write(refusalReplacement); err != nil {
+						clientDisconnected = true
+					} else {
+						flusher.Flush()
+						clientOutputStarted = true
+					}
+				}
+				if firstTokenMs == nil {
+					ms := int(time.Since(startTime).Milliseconds())
+					firstTokenMs = &ms
+				}
+				continue
 			case openAIRefusalStreamReplace:
 				pendingLines = pendingLines[:0]
 				if !clientDisconnected {
@@ -1178,13 +1201,20 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 					firstTokenMs = &ms
 				}
 				s.clearOpenAIProxyStreamDisconnect(account)
-				logger.FromContext(ctx).Info("openai.refusal_recovery_rewritten", zap.String("transport", "sse"))
+				logger.FromContext(ctx).Info("openai.refusal_recovery_rewritten", zap.String("transport", "sse"), zap.Bool("early", refusalEarlyEmitted))
 				return resultWithUsage(), nil
 			case openAIRefusalStreamHold:
 				lineStartsClientOutput = false
 			}
 		} else if refusalStream != nil && refusalAction == openAIRefusalStreamPass && !lineStartsClientOutput {
 			lineStartsClientOutput = true
+		}
+		if refusalEarlyEmitted {
+			continue
+		}
+		if firstTokenMs == nil && lineStartsClientOutput {
+			ms := int(time.Since(startTime).Milliseconds())
+			firstTokenMs = &ms
 		}
 
 		if !clientDisconnected {

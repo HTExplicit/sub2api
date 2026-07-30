@@ -18,23 +18,33 @@ type openAIRefusalStreamAction uint8
 const (
 	openAIRefusalStreamHold openAIRefusalStreamAction = iota
 	openAIRefusalStreamPass
+	openAIRefusalStreamReplaceEarly
 	openAIRefusalStreamReplace
 )
 
 type openAIRefusalStreamState struct {
-	matcher      *OpenAIRefusalMatcher
-	visibleText  strings.Builder
-	matched      bool
-	passthrough  bool
-	bufferedSize int
+	matcher         *OpenAIRefusalMatcher
+	visibleText     strings.Builder
+	matched         bool
+	passthrough     bool
+	earlyEligible   bool
+	earlyEmitted    bool
+	bufferedSize    int
+	createdResponse []byte
+	responseID      string
+	messageID       string
 }
 
 func newOpenAIRefusalStreamState(matcher *OpenAIRefusalMatcher) *openAIRefusalStreamState {
 	return &openAIRefusalStreamState{matcher: matcher}
 }
 
+func newOpenAIRefusalStreamStateWithEarlyEmission(matcher *OpenAIRefusalMatcher, eligible bool) *openAIRefusalStreamState {
+	return &openAIRefusalStreamState{matcher: matcher, earlyEligible: eligible}
+}
+
 func (s *openAIRefusalStreamState) reserveLine(line string) bool {
-	if s == nil || s.passthrough {
+	if s == nil || s.passthrough || s.earlyEmitted {
 		return true
 	}
 	s.bufferedSize += len(line) + 1
@@ -49,6 +59,13 @@ func (s *openAIRefusalStreamState) observe(eventType string, payload []byte) (op
 	if s == nil || s.passthrough {
 		return openAIRefusalStreamPass, nil, nil
 	}
+	s.captureEventMetadata(eventType, payload)
+	if s.earlyEmitted {
+		if eventType != "response.completed" {
+			return openAIRefusalStreamHold, nil, nil
+		}
+		return s.completeEarlyReplacement(payload)
+	}
 	if openAIRefusalEventRequiresPassthrough(eventType, payload) {
 		s.passthrough = true
 		return openAIRefusalStreamPass, nil, nil
@@ -59,7 +76,7 @@ func (s *openAIRefusalStreamState) observe(eventType string, payload []byte) (op
 		_, _ = s.visibleText.WriteString(gjson.GetBytes(payload, "delta").String())
 		if matched, _ := s.matcher.MatchLeadingParagraphs(s.visibleText.String()); matched {
 			s.matched = true
-			return openAIRefusalStreamHold, nil, nil
+			return s.startEarlyReplacement()
 		}
 		if openAIRefusalScanWindowComplete(s.visibleText.String()) || utf8.RuneCountInString(s.visibleText.String()) >= maxOpenAIRefusalParagraphRunes {
 			s.passthrough = true
@@ -77,7 +94,7 @@ func (s *openAIRefusalStreamState) observe(eventType string, payload []byte) (op
 		}
 		if matched, _ := s.matcher.MatchLeadingParagraphs(s.visibleText.String()); matched {
 			s.matched = true
-			return openAIRefusalStreamHold, nil, nil
+			return s.startEarlyReplacement()
 		}
 		s.passthrough = true
 		return openAIRefusalStreamPass, nil, nil
@@ -105,6 +122,69 @@ func (s *openAIRefusalStreamState) observe(eventType string, payload []byte) (op
 		return openAIRefusalStreamPass, nil, nil
 	}
 	return openAIRefusalStreamHold, nil, nil
+}
+
+func (s *openAIRefusalStreamState) captureEventMetadata(eventType string, payload []byte) {
+	if s.responseID == "" {
+		s.responseID = strings.TrimSpace(gjson.GetBytes(payload, "response_id").String())
+		if s.responseID == "" {
+			s.responseID = strings.TrimSpace(gjson.GetBytes(payload, "response.id").String())
+		}
+	}
+	if s.messageID == "" {
+		s.messageID = strings.TrimSpace(gjson.GetBytes(payload, "item_id").String())
+		if s.messageID == "" && gjson.GetBytes(payload, "item.type").String() == "message" {
+			s.messageID = strings.TrimSpace(gjson.GetBytes(payload, "item.id").String())
+		}
+	}
+	if eventType == "response.created" {
+		response := gjson.GetBytes(payload, "response")
+		if response.Exists() {
+			s.createdResponse = append(s.createdResponse[:0], response.Raw...)
+		}
+	}
+}
+
+func (s *openAIRefusalStreamState) startEarlyReplacement() (openAIRefusalStreamAction, []byte, error) {
+	if !s.earlyEligible || s.earlyEmitted || len(s.createdResponse) == 0 || s.responseID == "" || s.messageID == "" {
+		return openAIRefusalStreamHold, nil, nil
+	}
+	prefix, err := buildOpenAIRefusalReplacementPrefixSSE(
+		s.createdResponse,
+		s.responseID,
+		s.messageID,
+		s.matcher.Replacement(),
+	)
+	if err != nil {
+		return openAIRefusalStreamHold, nil, err
+	}
+	s.earlyEmitted = true
+	return openAIRefusalStreamReplaceEarly, prefix, nil
+}
+
+func (s *openAIRefusalStreamState) completeEarlyReplacement(payload []byte) (openAIRefusalStreamAction, []byte, error) {
+	response := gjson.GetBytes(payload, "response")
+	if !response.Exists() {
+		return openAIRefusalStreamHold, nil, errors.New("early replacement terminal event is missing response")
+	}
+	rewritten, matched, _, err := RewriteOpenAIResponsesJSON([]byte(response.Raw), s.matcher)
+	if err != nil {
+		return openAIRefusalStreamHold, nil, err
+	}
+	if !matched {
+		return openAIRefusalStreamHold, nil, errors.New("early replacement terminal response is not text-only refusal output")
+	}
+	tail, err := buildOpenAIRefusalReplacementTerminalSSE(
+		payload,
+		rewritten,
+		s.responseID,
+		s.messageID,
+		s.matcher.Replacement(),
+	)
+	if err != nil {
+		return openAIRefusalStreamHold, nil, err
+	}
+	return openAIRefusalStreamReplace, tail, nil
 }
 
 func openAIRefusalScanWindowComplete(text string) bool {
@@ -149,19 +229,41 @@ func openAIRefusalEventRequiresPassthrough(eventType string, payload []byte) boo
 }
 
 func buildOpenAIRefusalReplacementSSE(terminalPayload, rewrittenResponse []byte, replacement string) ([]byte, error) {
-	responseID := gjson.GetBytes(rewrittenResponse, "id").String()
-	messageID := gjson.GetBytes(rewrittenResponse, "output.0.id").String()
+	responseID := strings.TrimSpace(gjson.GetBytes(rewrittenResponse, "id").String())
+	messageID := strings.TrimSpace(gjson.GetBytes(rewrittenResponse, "output.0.id").String())
 	if responseID == "" {
 		return nil, fmt.Errorf("replacement response is missing id")
 	}
 	if messageID == "" {
 		messageID = "msg_refusal_recovery"
 	}
+	prefix, err := buildOpenAIRefusalReplacementPrefixSSE(rewrittenResponse, responseID, messageID, replacement)
+	if err != nil {
+		return nil, err
+	}
+	tail, err := buildOpenAIRefusalReplacementTerminalSSE(terminalPayload, rewrittenResponse, responseID, messageID, replacement)
+	if err != nil {
+		return nil, err
+	}
+	return append(prefix, tail...), nil
+}
 
+func buildOpenAIRefusalReplacementPrefixSSE(responseTemplate []byte, responseID, messageID, replacement string) ([]byte, error) {
+	if strings.TrimSpace(responseID) == "" || strings.TrimSpace(messageID) == "" {
+		return nil, errors.New("early replacement stream is missing response or message id")
+	}
 	var createdResponse map[string]json.RawMessage
-	if err := json.Unmarshal(rewrittenResponse, &createdResponse); err != nil {
+	if err := json.Unmarshal(responseTemplate, &createdResponse); err != nil {
 		return nil, fmt.Errorf("decode replacement response: %w", err)
 	}
+	if templateID := strings.TrimSpace(gjson.GetBytes(responseTemplate, "id").String()); templateID != "" && templateID != responseID {
+		return nil, errors.New("replacement response id changed before early emission")
+	}
+	encodedResponseID, err := json.Marshal(responseID)
+	if err != nil {
+		return nil, fmt.Errorf("encode replacement response id: %w", err)
+	}
+	createdResponse["id"] = encodedResponseID
 	createdResponse["status"] = json.RawMessage(`"in_progress"`)
 	createdResponse["output"] = json.RawMessage(`[]`)
 	delete(createdResponse, "usage")
@@ -173,14 +275,34 @@ func buildOpenAIRefusalReplacementSSE(terminalPayload, rewrittenResponse []byte,
 	}
 
 	textPartEmpty := map[string]any{"type": "output_text", "text": "", "annotations": []any{}, "logprobs": []any{}}
-	textPartDone := map[string]any{"type": "output_text", "text": replacement, "annotations": []any{}, "logprobs": []any{}}
 	messageInProgress := map[string]any{"id": messageID, "type": "message", "status": "in_progress", "role": "assistant", "content": []any{}}
-	messageDone := map[string]any{"id": messageID, "type": "message", "status": "completed", "role": "assistant", "content": []any{textPartDone}}
 	events := []map[string]any{
 		{"type": "response.created", "sequence_number": 0, "response": json.RawMessage(createdResponseJSON)},
 		{"type": "response.output_item.added", "sequence_number": 1, "response_id": responseID, "output_index": 0, "item": messageInProgress},
 		{"type": "response.content_part.added", "sequence_number": 2, "response_id": responseID, "item_id": messageID, "output_index": 0, "content_index": 0, "part": textPartEmpty},
 		{"type": "response.output_text.delta", "sequence_number": 3, "response_id": responseID, "item_id": messageID, "output_index": 0, "content_index": 0, "delta": replacement, "logprobs": []any{}},
+	}
+
+	var out bytes.Buffer
+	for _, event := range events {
+		if err := writeOpenAIRefusalSSEMapEvent(&out, event); err != nil {
+			return nil, err
+		}
+	}
+	return out.Bytes(), nil
+}
+
+func buildOpenAIRefusalReplacementTerminalSSE(terminalPayload, rewrittenResponse []byte, responseID, messageID, replacement string) ([]byte, error) {
+	if terminalResponseID := strings.TrimSpace(gjson.GetBytes(rewrittenResponse, "id").String()); terminalResponseID == "" || terminalResponseID != responseID {
+		return nil, errors.New("replacement terminal response id does not match early emission")
+	}
+	if terminalMessageID := strings.TrimSpace(gjson.GetBytes(rewrittenResponse, "output.0.id").String()); terminalMessageID == "" || terminalMessageID != messageID {
+		return nil, errors.New("replacement terminal message id does not match early emission")
+	}
+
+	textPartDone := map[string]any{"type": "output_text", "text": replacement, "annotations": []any{}, "logprobs": []any{}}
+	messageDone := map[string]any{"id": messageID, "type": "message", "status": "completed", "role": "assistant", "content": []any{textPartDone}}
+	events := []map[string]any{
 		{"type": "response.output_text.done", "sequence_number": 4, "response_id": responseID, "item_id": messageID, "output_index": 0, "content_index": 0, "text": replacement, "logprobs": []any{}},
 		{"type": "response.content_part.done", "sequence_number": 5, "response_id": responseID, "item_id": messageID, "output_index": 0, "content_index": 0, "part": textPartDone},
 		{"type": "response.output_item.done", "sequence_number": 6, "response_id": responseID, "output_index": 0, "item": messageDone},
@@ -200,18 +322,25 @@ func buildOpenAIRefusalReplacementSSE(terminalPayload, rewrittenResponse []byte,
 
 	var out bytes.Buffer
 	for _, event := range events {
-		payload, marshalErr := json.Marshal(event)
-		if marshalErr != nil {
-			return nil, fmt.Errorf("encode replacement stream event: %w", marshalErr)
+		if err := writeOpenAIRefusalSSEMapEvent(&out, event); err != nil {
+			return nil, err
 		}
-		eventType, ok := event["type"].(string)
-		if !ok {
-			return nil, errors.New("replacement stream event type is not a string")
-		}
-		writeOpenAIRefusalSSEEvent(&out, eventType, payload)
 	}
 	writeOpenAIRefusalSSEEvent(&out, "response.completed", terminalJSON)
 	return out.Bytes(), nil
+}
+
+func writeOpenAIRefusalSSEMapEvent(out *bytes.Buffer, event map[string]any) error {
+	payload, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("encode replacement stream event: %w", err)
+	}
+	eventType, ok := event["type"].(string)
+	if !ok {
+		return errors.New("replacement stream event type is not a string")
+	}
+	writeOpenAIRefusalSSEEvent(out, eventType, payload)
+	return nil
 }
 
 func writeOpenAIRefusalSSEEvent(out *bytes.Buffer, eventType string, payload []byte) {

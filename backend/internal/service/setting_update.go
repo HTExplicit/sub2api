@@ -586,6 +586,7 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 	if err != nil {
 		keywordsJSON = []byte(defaultOpenAIRefusalKeywordsJSON)
 	}
+	s.openAIRefusalRecoveryCacheMu.Lock()
 	s.openAIRefusalRecoverySF.Forget("openai_refusal_recovery")
 	s.openAIRefusalRecoveryCache.Store(&cachedOpenAIRefusalRecoveryRuntime{
 		runtime: buildOpenAIRefusalRecoveryRuntime(map[string]string{
@@ -597,6 +598,7 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 		}),
 		expiresAt: time.Now().Add(openAIRefusalRecoveryCacheTTL).UnixNano(),
 	})
+	s.openAIRefusalRecoveryCacheMu.Unlock()
 
 	// 先使 inflight singleflight 失效，再刷新缓存，缩小旧值覆盖新值的竞态窗口
 	versionBoundsSF.Forget("version_bounds")

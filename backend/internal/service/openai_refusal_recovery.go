@@ -26,6 +26,8 @@ var ErrInvalidOpenAIRefusalRecovery = errors.New("invalid OpenAI refusal recover
 
 const OpenAIRefusalRecoveryReason GatewayFailureReason = "openai_refusal_recovery"
 
+const openAIRefusalEarlyStreamEligibleContextKey = "openai_refusal_early_stream_eligible"
+
 const defaultOpenAIRefusalKeywordsJSON = `["抱歉","无法","违反","不能","拒绝","不允许","禁止","很抱歉","对不起","不好意思","我无法","我不能","sorry","cannot","apologize","violate","policy","as an AI","I cannot","I'm unable","not able to","against my","I won't","refuse to","unable to","I apologize","not permitted","not allowed"]`
 
 var defaultOpenAIRefusalKeywords = []string{
@@ -249,6 +251,81 @@ func isOpenAIRefusalRecoveryResponsesRequest(c *gin.Context) bool {
 	}
 	path := strings.TrimSuffix(c.Request.URL.Path, "/")
 	return path == "/responses" || path == "/v1/responses"
+}
+
+func setOpenAIRefusalEarlyStreamEligibility(c *gin.Context, account *Account, body []byte) {
+	if c == nil {
+		return
+	}
+	eligible := account != nil &&
+		account.Platform == PlatformOpenAI &&
+		openAIRefusalRequestAllowsEarlyStreamRewrite(body)
+	c.Set(openAIRefusalEarlyStreamEligibleContextKey, eligible)
+}
+
+func openAIRefusalEarlyStreamEligible(c *gin.Context) bool {
+	if c == nil {
+		return false
+	}
+	return c.GetBool(openAIRefusalEarlyStreamEligibleContextKey)
+}
+
+func openAIRefusalRequestAllowsEarlyStreamRewrite(body []byte) bool {
+	var request map[string]any
+	if err := json.Unmarshal(body, &request); err != nil || request == nil {
+		return false
+	}
+	if model, _ := request["model"].(string); isOpenAIImageGenerationModel(strings.TrimSpace(model)) {
+		return false
+	}
+	return !openAIRefusalRequestMayProduceNonTextOutput(request)
+}
+
+func openAIRefusalRequestMayProduceNonTextOutput(value any) bool {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, child := range typed {
+			switch key {
+			case "tools":
+				if child == nil {
+					continue
+				}
+				tools, ok := child.([]any)
+				if !ok || len(tools) > 0 {
+					return true
+				}
+			case "tool_choice":
+				if child == nil {
+					continue
+				}
+				choice, ok := child.(string)
+				if !ok || (strings.TrimSpace(choice) != "" && !strings.EqualFold(strings.TrimSpace(choice), "none")) {
+					return true
+				}
+			case "modalities":
+				modalities, ok := child.([]any)
+				if !ok {
+					return true
+				}
+				for _, modality := range modalities {
+					name, ok := modality.(string)
+					if !ok || !strings.EqualFold(strings.TrimSpace(name), "text") {
+						return true
+					}
+				}
+			}
+			if openAIRefusalRequestMayProduceNonTextOutput(child) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if openAIRefusalRequestMayProduceNonTextOutput(child) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func markOpenAICyberPolicyFromResponse(c *gin.Context, status int, body []byte) bool {
