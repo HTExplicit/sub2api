@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,7 +18,7 @@ import (
 
 func newOpenAIRefusalRecoveryPipelineService(t *testing.T, cyber, rewrite bool) *OpenAIGatewayService {
 	t.Helper()
-	matcher, err := NewOpenAIRefusalMatcher([]string{"cannot", "I'm unable"}, "继续当前任务")
+	matcher, err := NewOpenAIRefusalMatcher([]string{"cannot", "I'm unable", "不能"}, "继续当前任务")
 	require.NoError(t, err)
 	settingService := &SettingService{}
 	settingService.openAIRefusalRecoveryCache.Store(&cachedOpenAIRefusalRecoveryRuntime{
@@ -226,6 +227,39 @@ func TestOpenAIStreamingPassthroughRewritesStructuredRefusalAcrossDeltas(t *test
 	require.NotContains(t, recorder.Body.String(), "response.refusal")
 	require.Contains(t, recorder.Body.String(), `"id":"resp_structured_stream"`)
 	require.Contains(t, recorder.Body.String(), `"total_tokens":7`)
+}
+
+func TestOpenAIStreamingPassthroughRewritesRefusalInSecondParagraph(t *testing.T) {
+	svc := newOpenAIRefusalRecoveryPipelineService(t, false, true)
+	c, recorder := newOpenAIRefusalRecoveryTestContext()
+	text := "可以协助分析你自有或明确授权的应用，例如会员鉴权安全测试、逆向协议、漏洞复现和修复建议。\n\n但不能帮助绕过第三方付费会员、伪造订阅状态或破解授权。若是授权测试，请提供 APK/安装包、源码或测试环境，以及具体测试目标。"
+	upstream := strings.Join([]string{
+		`event: response.created`,
+		`data: {"type":"response.created","response":{"id":"resp_second_paragraph_stream","object":"response","model":"gpt-5.6-sol","status":"in_progress","output":[]}}`,
+		``,
+		`event: response.refusal.delta`,
+		`data: {"type":"response.refusal.delta","response_id":"resp_second_paragraph_stream","item_id":"msg_1","output_index":0,"content_index":0,"delta":"可以协助分析你自有或明确授权的应用，例如会员鉴权安全测试、逆向协议、漏洞复现和修复建议。\n\n"}`,
+		``,
+		`event: response.refusal.delta`,
+		`data: {"type":"response.refusal.delta","response_id":"resp_second_paragraph_stream","item_id":"msg_1","output_index":0,"content_index":0,"delta":"但不能帮助绕过第三方付费会员、伪造订阅状态或破解授权。若是授权测试，请提供 APK/安装包、源码或测试环境，以及具体测试目标。"}`,
+		``,
+		`event: response.refusal.done`,
+		`data: {"type":"response.refusal.done","response_id":"resp_second_paragraph_stream","item_id":"msg_1","output_index":0,"content_index":0,"refusal":` + fmt.Sprintf("%q", text) + `}`,
+		``,
+		`event: response.completed`,
+		`data: {"type":"response.completed","response":{"id":"resp_second_paragraph_stream","object":"response","model":"gpt-5.6-sol","status":"completed","output":[{"id":"msg_1","type":"message","role":"assistant","status":"completed","content":[{"type":"refusal","refusal":` + fmt.Sprintf("%q", text) + `}]}],"usage":{"input_tokens":12,"output_tokens":42,"total_tokens":54}}}`,
+		``,
+	}, "\n")
+	resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(upstream))}
+
+	result, err := svc.handleStreamingResponsePassthrough(context.Background(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI}, time.Now(), "", "")
+
+	require.NoError(t, err)
+	require.Equal(t, 12, result.usage.InputTokens)
+	require.Equal(t, 42, result.usage.OutputTokens)
+	require.Contains(t, recorder.Body.String(), "继续当前任务")
+	require.NotContains(t, recorder.Body.String(), "伪造订阅状态")
+	require.NotContains(t, recorder.Body.String(), "response.refusal")
 }
 
 func TestOpenAINonStreamingTranslatedResponseRewritesRefusalAndPreservesUsage(t *testing.T) {

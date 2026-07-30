@@ -60,7 +60,7 @@ func RewriteOpenAIResponsesJSON(body []byte, matcher *OpenAIRefusalMatcher) ([]b
 		return body, false, "", nil
 	}
 
-	matched, keyword := matcher.MatchFirstParagraph(visibleText.String())
+	matched, keyword := matcher.MatchLeadingParagraphs(visibleText.String())
 	if !matched {
 		return body, false, "", nil
 	}

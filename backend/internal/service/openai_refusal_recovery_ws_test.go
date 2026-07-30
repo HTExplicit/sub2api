@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -86,6 +87,37 @@ func TestOpenAIRefusalRecoveryWSOutputRewritesStructuredRefusal(t *testing.T) {
 	require.Equal(t, "继续当前任务", gjson.GetBytes(written[3], "delta").String())
 	for _, payload := range written {
 		require.NotContains(t, string(payload), "I cannot")
+		require.NotContains(t, string(payload), "response.refusal")
+	}
+}
+
+func TestOpenAIRefusalRecoveryWSOutputRewritesRefusalInSecondParagraph(t *testing.T) {
+	matcher, err := NewOpenAIRefusalMatcher([]string{"不能"}, "继续当前任务")
+	require.NoError(t, err)
+	var written [][]byte
+	output := newOpenAIRefusalRecoveryWSOutput(matcher, true, func(_ context.Context, _ coderws.MessageType, payload []byte) error {
+		written = append(written, append([]byte(nil), payload...))
+		return nil
+	}, nil)
+	text := "可以协助分析已授权应用。\n\n但不能帮助绕过第三方付费会员。"
+	frames := [][]byte{
+		[]byte(`{"type":"response.created","response":{"id":"resp_ws_second_paragraph","model":"gpt-5.6-sol","status":"in_progress","output":[]}}`),
+		[]byte(`{"type":"response.refusal.delta","response_id":"resp_ws_second_paragraph","item_id":"msg_1","delta":"可以协助分析已授权应用。\n\n"}`),
+		[]byte(`{"type":"response.refusal.delta","response_id":"resp_ws_second_paragraph","item_id":"msg_1","delta":"但不能帮助绕过第三方付费会员。"}`),
+		[]byte(`{"type":"response.refusal.done","response_id":"resp_ws_second_paragraph","item_id":"msg_1","refusal":` + fmt.Sprintf("%q", text) + `}`),
+		[]byte(`{"type":"response.completed","response":{"id":"resp_ws_second_paragraph","model":"gpt-5.6-sol","status":"completed","output":[{"id":"msg_1","type":"message","role":"assistant","status":"completed","content":[{"type":"refusal","refusal":` + fmt.Sprintf("%q", text) + `}]}],"usage":{"input_tokens":5,"output_tokens":8,"total_tokens":13}}}`),
+	}
+	for index, payload := range frames {
+		require.NoError(t, output.Write(context.Background(), coderws.MessageText, payload))
+		if index < len(frames)-1 {
+			require.Empty(t, written)
+		}
+	}
+
+	require.Len(t, written, 8)
+	require.Equal(t, "继续当前任务", gjson.GetBytes(written[3], "delta").String())
+	for _, payload := range written {
+		require.NotContains(t, string(payload), "第三方付费会员")
 		require.NotContains(t, string(payload), "response.refusal")
 	}
 }

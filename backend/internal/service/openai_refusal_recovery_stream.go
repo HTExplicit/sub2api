@@ -57,11 +57,11 @@ func (s *openAIRefusalStreamState) observe(eventType string, payload []byte) (op
 	switch eventType {
 	case "response.output_text.delta", "response.refusal.delta":
 		_, _ = s.visibleText.WriteString(gjson.GetBytes(payload, "delta").String())
-		if matched, _ := s.matcher.MatchFirstParagraph(s.visibleText.String()); matched {
+		if matched, _ := s.matcher.MatchLeadingParagraphs(s.visibleText.String()); matched {
 			s.matched = true
 			return openAIRefusalStreamHold, nil, nil
 		}
-		if openAIRefusalFirstParagraphComplete(s.visibleText.String()) || utf8.RuneCountInString(s.visibleText.String()) >= maxOpenAIRefusalParagraphRunes {
+		if openAIRefusalScanWindowComplete(s.visibleText.String()) || utf8.RuneCountInString(s.visibleText.String()) >= maxOpenAIRefusalParagraphRunes {
 			s.passthrough = true
 			return openAIRefusalStreamPass, nil, nil
 		}
@@ -75,7 +75,7 @@ func (s *openAIRefusalStreamState) observe(eventType string, payload []byte) (op
 			s.visibleText.Reset()
 			_, _ = s.visibleText.WriteString(text)
 		}
-		if matched, _ := s.matcher.MatchFirstParagraph(s.visibleText.String()); matched {
+		if matched, _ := s.matcher.MatchLeadingParagraphs(s.visibleText.String()); matched {
 			s.matched = true
 			return openAIRefusalStreamHold, nil, nil
 		}
@@ -107,14 +107,25 @@ func (s *openAIRefusalStreamState) observe(eventType string, payload []byte) (op
 	return openAIRefusalStreamHold, nil, nil
 }
 
-func openAIRefusalFirstParagraphComplete(text string) bool {
+func openAIRefusalScanWindowComplete(text string) bool {
 	text = strings.ReplaceAll(text, "\r\n", "\n")
 	text = strings.ReplaceAll(text, "\r", "\n")
 	lines := strings.Split(text, "\n")
+	paragraphsComplete := 0
+	inBlankRun := false
 	for index := 1; index < len(lines)-1; index++ {
 		if strings.TrimSpace(lines[index]) == "" {
-			return true
+			if inBlankRun {
+				continue
+			}
+			paragraphsComplete++
+			if paragraphsComplete >= maxOpenAIRefusalScanParagraphs {
+				return true
+			}
+			inBlankRun = true
+			continue
 		}
+		inBlankRun = false
 	}
 	return false
 }

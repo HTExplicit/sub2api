@@ -19,6 +19,7 @@ const (
 	maxOpenAIRefusalKeywordRunes    = 64
 	maxOpenAIRefusalReplacementSize = 8192
 	maxOpenAIRefusalParagraphRunes  = 2048
+	maxOpenAIRefusalScanParagraphs  = 2
 )
 
 var ErrInvalidOpenAIRefusalRecovery = errors.New("invalid OpenAI refusal recovery settings")
@@ -125,7 +126,18 @@ func (m *OpenAIRefusalMatcher) MatchFirstParagraph(text string) (bool, string) {
 	if m == nil {
 		return false, ""
 	}
-	paragraph := normalizeOpenAIRefusalText(firstOpenAIRefusalParagraph(text))
+	return m.matchText(firstOpenAIRefusalParagraph(text))
+}
+
+func (m *OpenAIRefusalMatcher) MatchLeadingParagraphs(text string) (bool, string) {
+	if m == nil {
+		return false, ""
+	}
+	return m.matchText(leadingOpenAIRefusalParagraphs(text, maxOpenAIRefusalScanParagraphs))
+}
+
+func (m *OpenAIRefusalMatcher) matchText(text string) (bool, string) {
+	paragraph := normalizeOpenAIRefusalText(text)
 	for _, keyword := range m.keywords {
 		if strings.Contains(paragraph, keyword.normalized) {
 			return true, keyword.original
@@ -157,17 +169,36 @@ func normalizeOpenAIRefusalText(value string) string {
 }
 
 func firstOpenAIRefusalParagraph(value string) string {
+	return leadingOpenAIRefusalParagraphs(value, 1)
+}
+
+func leadingOpenAIRefusalParagraphs(value string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
 	value = strings.ReplaceAll(value, "\r\n", "\n")
 	value = strings.ReplaceAll(value, "\r", "\n")
 	lines := strings.Split(value, "\n")
-	paragraph := make([]string, 0, len(lines))
+	selected := make([]string, 0, len(lines))
+	paragraphsComplete := 0
+	inBlankRun := false
 	for index, line := range lines {
 		if index > 0 && strings.TrimSpace(line) == "" {
-			break
+			if inBlankRun {
+				continue
+			}
+			paragraphsComplete++
+			if paragraphsComplete >= limit {
+				break
+			}
+			selected = append(selected, "")
+			inBlankRun = true
+			continue
 		}
-		paragraph = append(paragraph, line)
+		inBlankRun = false
+		selected = append(selected, line)
 	}
-	runes := []rune(strings.Join(paragraph, "\n"))
+	runes := []rune(strings.Join(selected, "\n"))
 	if len(runes) > maxOpenAIRefusalParagraphRunes {
 		runes = runes[:maxOpenAIRefusalParagraphRunes]
 	}
