@@ -23,16 +23,17 @@ const (
 )
 
 type openAIRefusalStreamState struct {
-	matcher         *OpenAIRefusalMatcher
-	visibleText     strings.Builder
-	matched         bool
-	passthrough     bool
-	earlyEligible   bool
-	earlyEmitted    bool
-	bufferedSize    int
-	createdResponse []byte
-	responseID      string
-	messageID       string
+	matcher          *OpenAIRefusalMatcher
+	visibleText      strings.Builder
+	matched          bool
+	passthrough      bool
+	earlyEligible    bool
+	earlyEmitted     bool
+	bufferedSize     int
+	createdResponse  []byte
+	completedMessage []byte
+	responseID       string
+	messageID        string
 }
 
 func newOpenAIRefusalStreamState(matcher *OpenAIRefusalMatcher) *openAIRefusalStreamState {
@@ -143,6 +144,13 @@ func (s *openAIRefusalStreamState) captureEventMetadata(eventType string, payloa
 			s.createdResponse = append(s.createdResponse[:0], response.Raw...)
 		}
 	}
+	if eventType == "response.output_item.done" {
+		item := gjson.GetBytes(payload, "item")
+		itemID := strings.TrimSpace(item.Get("id").String())
+		if item.Get("type").String() == "message" && itemID != "" && itemID == s.messageID {
+			s.completedMessage = append(s.completedMessage[:0], item.Raw...)
+		}
+	}
 }
 
 func (s *openAIRefusalStreamState) startEarlyReplacement() (openAIRefusalStreamAction, []byte, error) {
@@ -167,7 +175,27 @@ func (s *openAIRefusalStreamState) completeEarlyReplacement(payload []byte) (ope
 	if !response.Exists() {
 		return openAIRefusalStreamHold, nil, errors.New("early replacement terminal event is missing response")
 	}
-	rewritten, matched, _, err := RewriteOpenAIResponsesJSON([]byte(response.Raw), s.matcher)
+	responseJSON := []byte(response.Raw)
+	if len(s.completedMessage) > 0 {
+		var responseObject map[string]json.RawMessage
+		if err := json.Unmarshal(responseJSON, &responseObject); err != nil {
+			return openAIRefusalStreamHold, nil, err
+		}
+		if rawOutput, ok := responseObject["output"]; ok {
+			var output []json.RawMessage
+			if err := json.Unmarshal(rawOutput, &output); err == nil && output != nil && len(output) == 0 {
+				responseObject["output"], err = json.Marshal([]json.RawMessage{json.RawMessage(s.completedMessage)})
+				if err != nil {
+					return openAIRefusalStreamHold, nil, err
+				}
+				responseJSON, err = json.Marshal(responseObject)
+				if err != nil {
+					return openAIRefusalStreamHold, nil, err
+				}
+			}
+		}
+	}
+	rewritten, matched, _, err := RewriteOpenAIResponsesJSON(responseJSON, s.matcher)
 	if err != nil {
 		return openAIRefusalStreamHold, nil, err
 	}

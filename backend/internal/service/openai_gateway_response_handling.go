@@ -520,6 +520,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 					streamOutputAccumulator.ProcessEvent(&streamEvent)
 				}
 			}
+			refusalTerminalData := dataBytes
 			if normalizedData, normalized := normalizeResponsesStreamingTerminalOutput(dataBytes, streamOutputAccumulator, streamImageOutputs); normalized {
 				dataBytes = normalizedData
 				data = string(normalizedData)
@@ -553,7 +554,12 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			}
 			if refusalStream != nil && !refusalStream.passthrough {
 				var refusalErr error
-				refusalAction, refusalReplacement, refusalErr = refusalStream.observe(eventType, dataBytes)
+				refusalData := dataBytes
+				terminalOutput := gjson.GetBytes(refusalTerminalData, "response.output")
+				if refusalStream.earlyEmitted && eventType == "response.completed" && terminalOutput.IsArray() && len(terminalOutput.Array()) == 0 {
+					refusalData = refusalTerminalData
+				}
+				refusalAction, refusalReplacement, refusalErr = refusalStream.observe(eventType, refusalData)
 				if refusalErr != nil {
 					if refusalStream.earlyEmitted {
 						refusalCompletionErr = fmt.Errorf("complete early OpenAI refusal replacement: %w", refusalErr)

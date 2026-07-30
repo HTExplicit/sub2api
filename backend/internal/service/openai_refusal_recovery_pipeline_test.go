@@ -503,7 +503,9 @@ func TestOpenAIStreamingHandlersFlushEarlyReplacementBeforeTerminal(t *testing.T
 			terminal := strings.Join([]string{
 				`data: {"type":"response.output_text.done","response_id":"resp_flush","item_id":"msg_flush","output_index":0,"content_index":0,"text":"I cannot help."}`,
 				``,
-				`data: {"type":"response.completed","response":{"id":"resp_flush","object":"response","model":"gpt-5.4","status":"completed","output":[{"id":"msg_flush","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"I cannot help."}]}],"usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}}`,
+				`data: {"type":"response.output_item.done","response_id":"resp_flush","output_index":0,"item":{"id":"msg_flush","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"I cannot help."}]}}`,
+				``,
+				`data: {"type":"response.completed","response":{"id":"resp_flush","object":"response","model":"gpt-5.4","status":"completed","output":[],"usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}}`,
 				``,
 			}, "\n")
 			_, err = io.WriteString(writer, terminal)
