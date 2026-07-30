@@ -207,8 +207,16 @@ func TestOpenAIRefusalStreamEmitsReplacementBeforeTerminalAndCompletesWithUsage(
 	require.Nil(t, replacement)
 
 	action, replacement, observeErr = state.observe(
+		"response.output_item.done",
+		[]byte(`{"type":"response.output_item.done","response_id":"resp_early","output_index":0,"item":{"id":"msg_early","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"I cannot help."}]}}`),
+	)
+	require.NoError(t, observeErr)
+	require.Equal(t, openAIRefusalStreamHold, action)
+	require.Nil(t, replacement)
+
+	action, replacement, observeErr = state.observe(
 		"response.completed",
-		[]byte(`{"type":"response.completed","response":{"id":"resp_early","object":"response","model":"gpt-5.6-sol","status":"completed","output":[{"id":"msg_early","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"I cannot help."}]}],"usage":{"input_tokens":8,"output_tokens":3,"total_tokens":11}}}`),
+		[]byte(`{"type":"response.completed","response":{"id":"resp_early","object":"response","model":"gpt-5.6-sol","status":"completed","output":[],"usage":{"input_tokens":8,"output_tokens":3,"total_tokens":11}}}`),
 	)
 	require.NoError(t, observeErr)
 	require.Equal(t, openAIRefusalStreamReplace, action)
@@ -217,4 +225,61 @@ func TestOpenAIRefusalStreamEmitsReplacementBeforeTerminalAndCompletesWithUsage(
 	require.Contains(t, string(replacement), `"total_tokens":11`)
 	require.Contains(t, string(replacement), "continue current task")
 	require.NotContains(t, string(replacement), "I cannot")
+}
+
+func TestOpenAIRefusalStreamValidatesCompletedMessageFallback(t *testing.T) {
+	tests := []struct {
+		name       string
+		done       string
+		terminal   string
+		wantErr    string
+		wantCached bool
+	}{
+		{
+			name:       "mismatched message id",
+			done:       `{"type":"response.output_item.done","response_id":"resp_early","output_index":0,"item":{"id":"msg_other","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"I cannot help."}]}}`,
+			terminal:   `{"type":"response.completed","response":{"id":"resp_early","status":"completed","output":[]}}`,
+			wantErr:    "early replacement terminal response is not text-only refusal output",
+			wantCached: false,
+		},
+		{
+			name:       "non-empty terminal output",
+			done:       `{"type":"response.output_item.done","response_id":"resp_early","output_index":0,"item":{"id":"msg_early","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"I cannot help."}]}}`,
+			terminal:   `{"type":"response.completed","response":{"id":"resp_early","status":"completed","output":[{"id":"msg_terminal","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"I cannot help."}]}]}}`,
+			wantErr:    "replacement terminal message id does not match early emission",
+			wantCached: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			matcher, err := NewOpenAIRefusalMatcher([]string{"cannot"}, "continue current task")
+			require.NoError(t, err)
+			state := newOpenAIRefusalStreamStateWithEarlyEmission(matcher, true)
+
+			_, _, observeErr := state.observe(
+				"response.created",
+				[]byte(`{"type":"response.created","response":{"id":"resp_early","status":"in_progress","output":[]}}`),
+			)
+			require.NoError(t, observeErr)
+
+			action, _, observeErr := state.observe(
+				"response.output_text.delta",
+				[]byte(`{"type":"response.output_text.delta","response_id":"resp_early","item_id":"msg_early","delta":"I cannot help."}`),
+			)
+			require.NoError(t, observeErr)
+			require.Equal(t, openAIRefusalStreamReplaceEarly, action)
+
+			action, replacement, observeErr := state.observe("response.output_item.done", []byte(tc.done))
+			require.NoError(t, observeErr)
+			require.Equal(t, openAIRefusalStreamHold, action)
+			require.Nil(t, replacement)
+			require.Equal(t, tc.wantCached, len(state.completedMessage) > 0)
+
+			action, replacement, observeErr = state.observe("response.completed", []byte(tc.terminal))
+			require.EqualError(t, observeErr, tc.wantErr)
+			require.Equal(t, openAIRefusalStreamHold, action)
+			require.Nil(t, replacement)
+		})
+	}
 }
