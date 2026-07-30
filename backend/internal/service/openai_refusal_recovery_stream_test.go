@@ -172,3 +172,49 @@ func TestOpenAIRefusalStreamMatchesStructuredRefusalEvents(t *testing.T) {
 	require.Equal(t, openAIRefusalStreamHold, action)
 	require.True(t, state.matched)
 }
+
+func TestOpenAIRefusalStreamEmitsReplacementBeforeTerminalAndCompletesWithUsage(t *testing.T) {
+	matcher, err := NewOpenAIRefusalMatcher([]string{"cannot"}, "continue current task")
+	require.NoError(t, err)
+	state := newOpenAIRefusalStreamStateWithEarlyEmission(matcher, true)
+
+	action, replacement, observeErr := state.observe(
+		"response.created",
+		[]byte(`{"type":"response.created","response":{"id":"resp_early","object":"response","model":"gpt-5.6-sol","status":"in_progress","output":[]}}`),
+	)
+	require.NoError(t, observeErr)
+	require.Equal(t, openAIRefusalStreamHold, action)
+	require.Nil(t, replacement)
+
+	action, replacement, observeErr = state.observe(
+		"response.output_text.delta",
+		[]byte(`{"type":"response.output_text.delta","response_id":"resp_early","item_id":"msg_early","output_index":0,"content_index":0,"delta":"I cannot help."}`),
+	)
+	require.NoError(t, observeErr)
+	require.Equal(t, openAIRefusalStreamReplaceEarly, action)
+	require.True(t, state.earlyEmitted)
+	require.Contains(t, string(replacement), `"type":"response.output_text.delta"`)
+	require.Contains(t, string(replacement), "continue current task")
+	require.NotContains(t, string(replacement), "response.completed")
+	require.NotContains(t, string(replacement), "I cannot")
+
+	action, replacement, observeErr = state.observe(
+		"response.output_text.done",
+		[]byte(`{"type":"response.output_text.done","response_id":"resp_early","item_id":"msg_early","output_index":0,"content_index":0,"text":"I cannot help."}`),
+	)
+	require.NoError(t, observeErr)
+	require.Equal(t, openAIRefusalStreamHold, action)
+	require.Nil(t, replacement)
+
+	action, replacement, observeErr = state.observe(
+		"response.completed",
+		[]byte(`{"type":"response.completed","response":{"id":"resp_early","object":"response","model":"gpt-5.6-sol","status":"completed","output":[{"id":"msg_early","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"I cannot help."}]}],"usage":{"input_tokens":8,"output_tokens":3,"total_tokens":11}}}`),
+	)
+	require.NoError(t, observeErr)
+	require.Equal(t, openAIRefusalStreamReplace, action)
+	require.Contains(t, string(replacement), `"type":"response.output_text.done"`)
+	require.Contains(t, string(replacement), `"type":"response.completed"`)
+	require.Contains(t, string(replacement), `"total_tokens":11`)
+	require.Contains(t, string(replacement), "continue current task")
+	require.NotContains(t, string(replacement), "I cannot")
+}

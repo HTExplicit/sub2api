@@ -152,6 +152,34 @@ func (r OpenAIRefusalRecoveryRuntime) RewriteEnabled() bool {
 	return r.Enabled && r.Rewrite && r.Matcher != nil
 }
 
+func (s *SettingService) commitOpenAIRefusalRecoveryRuntime(
+	observed *cachedOpenAIRefusalRecoveryRuntime,
+	next *cachedOpenAIRefusalRecoveryRuntime,
+) *cachedOpenAIRefusalRecoveryRuntime {
+	s.openAIRefusalRecoveryCacheMu.Lock()
+	defer s.openAIRefusalRecoveryCacheMu.Unlock()
+
+	current, _ := s.openAIRefusalRecoveryCache.Load().(*cachedOpenAIRefusalRecoveryRuntime)
+	if current != observed && current != nil {
+		return current
+	}
+	s.openAIRefusalRecoveryCache.Store(next)
+	return next
+}
+
+func cachedOpenAIRefusalRecoveryErrorRuntime(
+	stale *cachedOpenAIRefusalRecoveryRuntime,
+) *cachedOpenAIRefusalRecoveryRuntime {
+	runtime := OpenAIRefusalRecoveryRuntime{}
+	if stale != nil {
+		runtime = stale.runtime
+	}
+	return &cachedOpenAIRefusalRecoveryRuntime{
+		runtime:   runtime,
+		expiresAt: time.Now().Add(openAIRefusalRecoveryErrorTTL).UnixNano(),
+	}
+}
+
 func (s *SettingService) GetOpenAIRefusalRecoveryRuntime(ctx context.Context) OpenAIRefusalRecoveryRuntime {
 	if s == nil {
 		return OpenAIRefusalRecoveryRuntime{}
@@ -163,8 +191,9 @@ func (s *SettingService) GetOpenAIRefusalRecoveryRuntime(ctx context.Context) Op
 		return OpenAIRefusalRecoveryRuntime{}
 	}
 	result, _, _ := s.openAIRefusalRecoverySF.Do("openai_refusal_recovery", func() (any, error) {
-		if cached, ok := s.openAIRefusalRecoveryCache.Load().(*cachedOpenAIRefusalRecoveryRuntime); ok && cached != nil && time.Now().UnixNano() < cached.expiresAt {
-			return cached, nil
+		observed, _ := s.openAIRefusalRecoveryCache.Load().(*cachedOpenAIRefusalRecoveryRuntime)
+		if observed != nil && time.Now().UnixNano() < observed.expiresAt {
+			return observed, nil
 		}
 		if ctx == nil {
 			ctx = context.Background()
@@ -173,15 +202,13 @@ func (s *SettingService) GetOpenAIRefusalRecoveryRuntime(ctx context.Context) Op
 		defer cancel()
 		enabledValue, enabledErr := s.settingRepo.GetValue(dbCtx, SettingKeyOpenAIRefusalRecoveryEnabled)
 		if enabledErr != nil && !errors.Is(enabledErr, ErrSettingNotFound) {
-			slog.Warn("failed to load OpenAI refusal recovery switch", "error", enabledErr)
-			entry := &cachedOpenAIRefusalRecoveryRuntime{expiresAt: time.Now().Add(openAIRefusalRecoveryErrorTTL).UnixNano()}
-			s.openAIRefusalRecoveryCache.Store(entry)
-			return entry, nil
+			slog.Warn("failed to load OpenAI refusal recovery switch", "error", enabledErr, "using_stale", observed != nil)
+			entry := cachedOpenAIRefusalRecoveryErrorRuntime(observed)
+			return s.commitOpenAIRefusalRecoveryRuntime(observed, entry), nil
 		}
 		if enabledErr != nil || strings.TrimSpace(enabledValue) != "true" {
 			entry := &cachedOpenAIRefusalRecoveryRuntime{expiresAt: time.Now().Add(openAIRefusalRecoveryCacheTTL).UnixNano()}
-			s.openAIRefusalRecoveryCache.Store(entry)
-			return entry, nil
+			return s.commitOpenAIRefusalRecoveryRuntime(observed, entry), nil
 		}
 
 		values, err := s.settingRepo.GetMultiple(dbCtx, []string{
@@ -191,10 +218,9 @@ func (s *SettingService) GetOpenAIRefusalRecoveryRuntime(ctx context.Context) Op
 			SettingKeyOpenAIRefusalReplacement,
 		})
 		if err != nil {
-			slog.Warn("failed to load OpenAI refusal recovery settings", "error", err)
-			entry := &cachedOpenAIRefusalRecoveryRuntime{expiresAt: time.Now().Add(openAIRefusalRecoveryErrorTTL).UnixNano()}
-			s.openAIRefusalRecoveryCache.Store(entry)
-			return entry, nil
+			slog.Warn("failed to load OpenAI refusal recovery settings", "error", err, "using_stale", observed != nil)
+			entry := cachedOpenAIRefusalRecoveryErrorRuntime(observed)
+			return s.commitOpenAIRefusalRecoveryRuntime(observed, entry), nil
 		}
 		if values == nil {
 			values = make(map[string]string)
@@ -204,8 +230,7 @@ func (s *SettingService) GetOpenAIRefusalRecoveryRuntime(ctx context.Context) Op
 			runtime:   buildOpenAIRefusalRecoveryRuntime(values),
 			expiresAt: time.Now().Add(openAIRefusalRecoveryCacheTTL).UnixNano(),
 		}
-		s.openAIRefusalRecoveryCache.Store(entry)
-		return entry, nil
+		return s.commitOpenAIRefusalRecoveryRuntime(observed, entry), nil
 	})
 	if entry, ok := result.(*cachedOpenAIRefusalRecoveryRuntime); ok && entry != nil {
 		return entry.runtime

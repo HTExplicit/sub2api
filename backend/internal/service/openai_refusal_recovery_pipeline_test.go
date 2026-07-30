@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,6 +17,45 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+type openAIRefusalFlushRecorder struct {
+	mu      sync.Mutex
+	header  http.Header
+	body    bytes.Buffer
+	flushed chan struct{}
+}
+
+func newOpenAIRefusalFlushRecorder() *openAIRefusalFlushRecorder {
+	return &openAIRefusalFlushRecorder{
+		header:  make(http.Header),
+		flushed: make(chan struct{}, 8),
+	}
+}
+
+func (r *openAIRefusalFlushRecorder) Header() http.Header {
+	return r.header
+}
+
+func (r *openAIRefusalFlushRecorder) WriteHeader(_ int) {}
+
+func (r *openAIRefusalFlushRecorder) Write(payload []byte) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.body.Write(payload)
+}
+
+func (r *openAIRefusalFlushRecorder) Flush() {
+	select {
+	case r.flushed <- struct{}{}:
+	default:
+	}
+}
+
+func (r *openAIRefusalFlushRecorder) BodyString() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.body.String()
+}
 
 func newOpenAIRefusalRecoveryPipelineService(t *testing.T, cyber, rewrite bool) *OpenAIGatewayService {
 	t.Helper()
@@ -165,6 +206,8 @@ func TestOpenAIStreamingPassthroughCyberPolicyReturnsFailoverBeforeSemanticOutpu
 func TestOpenAIStreamingPassthroughRewritesRefusalAcrossDeltas(t *testing.T) {
 	svc := newOpenAIRefusalRecoveryPipelineService(t, false, true)
 	c, recorder := newOpenAIRefusalRecoveryTestContext()
+	account := &Account{ID: 1, Platform: PlatformOpenAI}
+	setOpenAIRefusalEarlyStreamEligibility(c, account, []byte(`{"model":"gpt-5.4","input":"hello","stream":true}`))
 	upstream := strings.Join([]string{
 		`event: response.created`,
 		`data: {"type":"response.created","response":{"id":"resp_stream","object":"response","model":"gpt-5.4","status":"in_progress","output":[]}}`,
@@ -184,7 +227,7 @@ func TestOpenAIStreamingPassthroughRewritesRefusalAcrossDeltas(t *testing.T) {
 	}, "\n")
 	resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(upstream))}
 
-	result, err := svc.handleStreamingResponsePassthrough(context.Background(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI}, time.Now(), "", "")
+	result, err := svc.handleStreamingResponsePassthrough(context.Background(), resp, c, account, time.Now(), "", "")
 
 	require.NoError(t, err)
 	require.Equal(t, 4, result.usage.InputTokens)
@@ -332,6 +375,8 @@ func TestOpenAIStreamingTranslatedResponseCyberPolicyReturnsFailoverBeforeSemant
 func TestOpenAIStreamingTranslatedResponseRewritesRefusalAcrossDeltas(t *testing.T) {
 	svc := newOpenAIRefusalRecoveryPipelineService(t, false, true)
 	c, recorder := newOpenAIRefusalRecoveryTestContext()
+	account := &Account{ID: 1, Platform: PlatformOpenAI}
+	setOpenAIRefusalEarlyStreamEligibility(c, account, []byte(`{"model":"gpt-5.4","input":"hello","stream":true}`))
 	upstream := strings.Join([]string{
 		`data: {"type":"response.created","response":{"id":"resp_translated_stream","object":"response","model":"gpt-5.4","status":"in_progress","output":[]}}`,
 		``,
@@ -346,7 +391,7 @@ func TestOpenAIStreamingTranslatedResponseRewritesRefusalAcrossDeltas(t *testing
 	}, "\n")
 	resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(upstream))}
 
-	result, err := svc.handleStreamingResponse(context.Background(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI}, time.Now(), "gpt-5.4", "gpt-5.4")
+	result, err := svc.handleStreamingResponse(context.Background(), resp, c, account, time.Now(), "gpt-5.4", "gpt-5.4")
 
 	require.NoError(t, err)
 	require.Equal(t, 6, result.usage.InputTokens)
@@ -355,4 +400,129 @@ func TestOpenAIStreamingTranslatedResponseRewritesRefusalAcrossDeltas(t *testing
 	require.NotContains(t, recorder.Body.String(), "I'm unable")
 	require.Contains(t, recorder.Body.String(), `"id":"resp_translated_stream"`)
 	require.Contains(t, recorder.Body.String(), `"total_tokens":10`)
+}
+
+func TestOpenAIStreamingTranslatedEarlyRewriteErrorStillCollectsTerminalUsage(t *testing.T) {
+	svc := newOpenAIRefusalRecoveryPipelineService(t, false, true)
+	c, recorder := newOpenAIRefusalRecoveryTestContext()
+	account := &Account{ID: 1, Platform: PlatformOpenAI}
+	setOpenAIRefusalEarlyStreamEligibility(c, account, []byte(`{"model":"gpt-5.4","input":"hello","stream":true}`))
+	upstream := strings.Join([]string{
+		`data: {"type":"response.created","response":{"id":"resp_mismatch","object":"response","model":"gpt-5.4","status":"in_progress","output":[]}}`,
+		``,
+		`data: {"type":"response.output_text.delta","response_id":"resp_mismatch","item_id":"msg_early","output_index":0,"content_index":0,"delta":"I cannot help."}`,
+		``,
+		`data: {"type":"response.completed","response":{"id":"resp_mismatch","object":"response","model":"gpt-5.4","status":"completed","output":[{"id":"msg_terminal","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"I cannot help."}]}],"usage":{"input_tokens":9,"output_tokens":4,"total_tokens":13}}}`,
+		``,
+	}, "\n")
+	resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(upstream))}
+
+	result, err := svc.handleStreamingResponse(context.Background(), resp, c, account, time.Now(), "gpt-5.4", "gpt-5.4")
+
+	require.Error(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 9, result.usage.InputTokens)
+	require.Equal(t, 4, result.usage.OutputTokens)
+	require.Contains(t, recorder.Body.String(), "继续当前任务")
+	require.NotContains(t, recorder.Body.String(), "I cannot")
+}
+
+func TestOpenAIStreamingHandlersFlushEarlyReplacementBeforeTerminal(t *testing.T) {
+	type handlerResult struct {
+		usage *OpenAIUsage
+		err   error
+	}
+	tests := []struct {
+		name string
+		run  func(*OpenAIGatewayService, context.Context, *http.Response, *gin.Context, *Account) (*OpenAIUsage, error)
+	}{
+		{
+			name: "translated",
+			run: func(svc *OpenAIGatewayService, ctx context.Context, resp *http.Response, c *gin.Context, account *Account) (*OpenAIUsage, error) {
+				result, err := svc.handleStreamingResponse(ctx, resp, c, account, time.Now(), "gpt-5.4", "gpt-5.4")
+				if result == nil {
+					return nil, err
+				}
+				return result.usage, err
+			},
+		},
+		{
+			name: "passthrough",
+			run: func(svc *OpenAIGatewayService, ctx context.Context, resp *http.Response, c *gin.Context, account *Account) (*OpenAIUsage, error) {
+				result, err := svc.handleStreamingResponsePassthrough(ctx, resp, c, account, time.Now(), "gpt-5.4", "gpt-5.4")
+				if result == nil {
+					return nil, err
+				}
+				return result.usage, err
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := newOpenAIRefusalRecoveryPipelineService(t, false, true)
+			recorder := newOpenAIRefusalFlushRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+			account := &Account{ID: 1, Platform: PlatformOpenAI}
+			setOpenAIRefusalEarlyStreamEligibility(c, account, []byte(`{"model":"gpt-5.4","input":"hello","stream":true}`))
+			reader, writer := io.Pipe()
+			t.Cleanup(func() {
+				_ = writer.Close()
+				_ = reader.Close()
+			})
+			resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: reader}
+			resultCh := make(chan handlerResult, 1)
+			go func() {
+				usage, err := tc.run(svc, context.Background(), resp, c, account)
+				resultCh <- handlerResult{usage: usage, err: err}
+			}()
+
+			prefix := strings.Join([]string{
+				`data: {"type":"response.created","response":{"id":"resp_flush","object":"response","model":"gpt-5.4","status":"in_progress","output":[]}}`,
+				``,
+				`data: {"type":"response.output_text.delta","response_id":"resp_flush","item_id":"msg_flush","output_index":0,"content_index":0,"delta":"I cannot help."}`,
+				``,
+			}, "\n")
+			_, err := io.WriteString(writer, prefix)
+			require.NoError(t, err)
+
+			select {
+			case <-recorder.flushed:
+			case result := <-resultCh:
+				t.Fatalf("handler returned before terminal event: %v", result.err)
+			case <-time.After(5 * time.Second):
+				t.Fatal("replacement was not flushed before terminal event")
+			}
+			earlyBody := recorder.BodyString()
+			require.Contains(t, earlyBody, "继续当前任务")
+			require.Contains(t, earlyBody, `"type":"response.output_text.delta"`)
+			require.NotContains(t, earlyBody, "response.completed")
+			require.NotContains(t, earlyBody, "I cannot")
+
+			terminal := strings.Join([]string{
+				`data: {"type":"response.output_text.done","response_id":"resp_flush","item_id":"msg_flush","output_index":0,"content_index":0,"text":"I cannot help."}`,
+				``,
+				`data: {"type":"response.completed","response":{"id":"resp_flush","object":"response","model":"gpt-5.4","status":"completed","output":[{"id":"msg_flush","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"I cannot help."}]}],"usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}}`,
+				``,
+			}, "\n")
+			_, err = io.WriteString(writer, terminal)
+			require.NoError(t, err)
+			require.NoError(t, writer.Close())
+
+			select {
+			case result := <-resultCh:
+				require.NoError(t, result.err)
+				require.NotNil(t, result.usage)
+				require.Equal(t, 10, result.usage.InputTokens)
+				require.Equal(t, 5, result.usage.OutputTokens)
+			case <-time.After(5 * time.Second):
+				t.Fatal("handler did not finish after terminal event")
+			}
+			finalBody := recorder.BodyString()
+			require.Contains(t, finalBody, `"type":"response.completed"`)
+			require.Contains(t, finalBody, `"total_tokens":15`)
+			require.NotContains(t, finalBody, "I cannot")
+		})
+	}
 }

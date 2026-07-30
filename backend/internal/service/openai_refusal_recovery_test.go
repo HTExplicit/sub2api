@@ -40,6 +40,31 @@ func TestOpenAIRefusalMatcherMatchesNormalizedFirstParagraph(t *testing.T) {
 	require.Equal(t, "I'm unable", keyword)
 }
 
+func TestOpenAIRefusalRequestAllowsEarlyStreamRewriteOnlyForTextOnlyRequests(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{name: "plain text", body: `{"model":"gpt-5.6-sol","input":"hello","stream":true}`, want: true},
+		{name: "empty tools", body: `{"model":"gpt-5.6-sol","tools":[],"input":"hello"}`, want: true},
+		{name: "tool choice none", body: `{"model":"gpt-5.6-sol","tool_choice":"none","input":"hello"}`, want: true},
+		{name: "function tool", body: `{"model":"gpt-5.6-sol","tools":[{"type":"function","name":"exec"}]}`, want: false},
+		{name: "hosted image tool", body: `{"model":"gpt-5.6-sol","tools":[{"type":"image_generation"}]}`, want: false},
+		{name: "nested additional tools", body: `{"model":"gpt-5.6-sol","input":[{"type":"additional_tools","tools":[{"type":"custom","name":"exec"}]}]}`, want: false},
+		{name: "automatic tool choice", body: `{"model":"gpt-5.6-sol","tool_choice":"auto","input":"hello"}`, want: false},
+		{name: "audio modality", body: `{"model":"gpt-5.6-sol","modalities":["text","audio"]}`, want: false},
+		{name: "image model", body: `{"model":"gpt-image-1.5","input":"draw"}`, want: false},
+		{name: "invalid json", body: `{`, want: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, openAIRefusalRequestAllowsEarlyStreamRewrite([]byte(tc.body)))
+		})
+	}
+}
+
 func TestOpenAIRefusalMatcherIgnoresLaterParagraphs(t *testing.T) {
 	matcher, err := NewOpenAIRefusalMatcher([]string{"policy"}, "继续当前任务")
 	require.NoError(t, err)
