@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"compress/zlib"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +13,29 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 )
+
+// RequestBodyReadError records where request-body consumption failed without
+// retaining or exposing the request content itself.
+type RequestBodyReadError struct {
+	Stage         string
+	ReceivedBytes int64
+	DecodedBytes  int64
+	Err           error
+}
+
+func (e *RequestBodyReadError) Error() string {
+	return fmt.Sprintf(
+		"%s request body after %d received bytes and %d decoded bytes: %v",
+		e.Stage,
+		e.ReceivedBytes,
+		e.DecodedBytes,
+		e.Err,
+	)
+}
+
+func (e *RequestBodyReadError) Unwrap() error {
+	return e.Err
+}
 
 const (
 	requestBodyReadInitCap    = 512
@@ -43,24 +67,64 @@ func ReadRequestBodyWithPrealloc(req *http.Request) ([]byte, error) {
 	}
 
 	buf := bytes.NewBuffer(make([]byte, 0, capHint))
-	if _, err := io.Copy(buf, req.Body); err != nil {
-		return nil, err
-	}
+	receivedBytes, readErr := io.Copy(buf, req.Body)
 	raw := buf.Bytes()
 
 	enc := strings.ToLower(strings.TrimSpace(req.Header.Get("Content-Encoding")))
 	if enc == "" || enc == "identity" {
+		if readErr != nil {
+			return raw, &RequestBodyReadError{
+				Stage:         "read",
+				ReceivedBytes: receivedBytes,
+				DecodedBytes:  int64(len(raw)),
+				Err:           readErr,
+			}
+		}
 		return raw, nil
 	}
-
-	decoded, err := decompressRequestBody(enc, raw)
-	if err != nil {
-		return nil, fmt.Errorf("decode Content-Encoding %q: %w", enc, err)
+	if readErr != nil && !errors.Is(readErr, io.ErrUnexpectedEOF) {
+		return nil, &RequestBodyReadError{
+			Stage:         "read",
+			ReceivedBytes: receivedBytes,
+			Err:           readErr,
+		}
 	}
 
-	req.Header.Del("Content-Encoding")
-	req.Header.Del("Content-Length")
-	req.ContentLength = int64(len(decoded))
+	decoded, decodeErr := decompressRequestBody(enc, raw)
+	if decodeErr != nil {
+		wrappedDecodeErr := fmt.Errorf("decode Content-Encoding %q: %w", enc, decodeErr)
+		if !errors.Is(decodeErr, io.ErrUnexpectedEOF) {
+			return nil, &RequestBodyReadError{
+				Stage:         "decode",
+				ReceivedBytes: receivedBytes,
+				DecodedBytes:  int64(len(decoded)),
+				Err:           wrappedDecodeErr,
+			}
+		}
+		combinedErr := wrappedDecodeErr
+		stage := "decode"
+		if readErr != nil {
+			combinedErr = errors.Join(readErr, wrappedDecodeErr)
+			stage = "read_decode"
+		}
+		updateDecodedRequestMetadata(req, len(decoded))
+		return decoded, &RequestBodyReadError{
+			Stage:         stage,
+			ReceivedBytes: receivedBytes,
+			DecodedBytes:  int64(len(decoded)),
+			Err:           combinedErr,
+		}
+	}
+
+	updateDecodedRequestMetadata(req, len(decoded))
+	if readErr != nil {
+		return decoded, &RequestBodyReadError{
+			Stage:         "read",
+			ReceivedBytes: receivedBytes,
+			DecodedBytes:  int64(len(decoded)),
+			Err:           readErr,
+		}
+	}
 
 	return decoded, nil
 }
@@ -68,11 +132,24 @@ func ReadRequestBodyWithPrealloc(req *http.Request) ([]byte, error) {
 // ReadLenientJSONRequestBodyWithPrealloc reads a request body and normalizes
 // JSON string control bytes before strict validation.
 func ReadLenientJSONRequestBodyWithPrealloc(req *http.Request, maxNormalizedBytes int64) ([]byte, error) {
-	body, err := ReadRequestBodyWithPrealloc(req)
-	if err != nil {
-		return nil, err
+	body, readErr := ReadRequestBodyWithPrealloc(req)
+	if readErr != nil && !errors.Is(readErr, io.ErrUnexpectedEOF) {
+		return nil, readErr
 	}
-	return NormalizeLenientJSONRequestBody(body, maxNormalizedBytes)
+	normalized, normalizeErr := NormalizeLenientJSONRequestBody(body, maxNormalizedBytes)
+	if normalizeErr != nil {
+		return nil, normalizeErr
+	}
+	if readErr != nil && !json.Valid(normalized) {
+		return nil, readErr
+	}
+	return normalized, nil
+}
+
+func updateDecodedRequestMetadata(req *http.Request, decodedBytes int) {
+	req.Header.Del("Content-Encoding")
+	req.Header.Del("Content-Length")
+	req.ContentLength = int64(decodedBytes)
 }
 
 func decompressRequestBody(encoding string, raw []byte) ([]byte, error) {
