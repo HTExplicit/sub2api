@@ -245,13 +245,13 @@ func rebuildOpenAIRefusalRequestInput(
 
 	var rebuilt bytes.Buffer
 	rebuilt.Grow(len(gjson.GetBytes(body, "input").Raw) + len(recoveryItem))
-	rebuilt.WriteByte('[')
+	_ = rebuilt.WriteByte('[')
 	written := 0
 	writeItem := func(raw []byte) {
 		if written > 0 {
-			rebuilt.WriteByte(',')
+			_ = rebuilt.WriteByte(',')
 		}
-		rebuilt.Write(raw)
+		_, _ = rebuilt.Write(raw)
 		written++
 	}
 	for index, item := range items {
@@ -263,7 +263,7 @@ func rebuildOpenAIRefusalRequestInput(
 	if insertAt == len(items) {
 		writeItem(recoveryItem)
 	}
-	rebuilt.WriteByte(']')
+	_ = rebuilt.WriteByte(']')
 
 	patched, err := sjson.SetRawBytes(body, "input", rebuilt.Bytes())
 	if err != nil {
