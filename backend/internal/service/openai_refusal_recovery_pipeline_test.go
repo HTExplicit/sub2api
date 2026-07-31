@@ -308,6 +308,74 @@ func TestOpenAIStreamingCyberPolicyReplacementCompletesWithoutFailover(t *testin
 	}
 }
 
+func TestOpenAIStreamingCyberPolicyReplacementAfterReasoningUsesMessageID(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(*OpenAIGatewayService, context.Context, *http.Response, *gin.Context, *Account) (*OpenAIUsage, error)
+	}{
+		{
+			name: "translated",
+			run: func(svc *OpenAIGatewayService, ctx context.Context, resp *http.Response, c *gin.Context, account *Account) (*OpenAIUsage, error) {
+				result, err := svc.handleStreamingResponse(ctx, resp, c, account, time.Now(), "gpt-5.6-sol", "gpt-5.6-sol")
+				if result == nil {
+					return nil, err
+				}
+				return result.usage, err
+			},
+		},
+		{
+			name: "passthrough",
+			run: func(svc *OpenAIGatewayService, ctx context.Context, resp *http.Response, c *gin.Context, account *Account) (*OpenAIUsage, error) {
+				result, err := svc.handleStreamingResponsePassthrough(ctx, resp, c, account, time.Now(), "gpt-5.6-sol", "gpt-5.6-sol")
+				if result == nil {
+					return nil, err
+				}
+				return result.usage, err
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := newOpenAIRefusalRecoveryPipelineService(t, true, true)
+			c, recorder := newOpenAIRefusalRecoveryTestContext()
+			account := &Account{ID: 1, Platform: PlatformOpenAI}
+			setOpenAIRefusalEarlyStreamEligibility(c, account, []byte(
+				`{"model":"gpt-5.6-sol","input":"hello","stream":true,"tools":[{"type":"function","name":"test_tool"}]}`,
+			))
+			require.False(t, openAIRefusalEarlyStreamEligible(c))
+			upstream := strings.Join([]string{
+				`data: {"type":"response.created","response":{"id":"resp_cyber_reasoning_pipeline","object":"response","model":"gpt-5.6-sol","status":"in_progress","output":[]}}`,
+				``,
+				`data: {"type":"response.output_item.added","response_id":"resp_cyber_reasoning_pipeline","output_index":0,"item":{"id":"rs_cyber_reasoning_pipeline","type":"reasoning","status":"in_progress","summary":[]}}`,
+				``,
+				`data: {"type":"response.reasoning_summary_text.delta","response_id":"resp_cyber_reasoning_pipeline","item_id":"rs_cyber_reasoning_pipeline","output_index":0,"summary_index":0,"delta":"Reasoning summary"}`,
+				``,
+				`data: {"type":"response.failed","response":{"id":"resp_cyber_reasoning_pipeline","status":"failed","error":{"code":"cyber_policy","message":"blocked"},"usage":{"input_tokens":11,"output_tokens":1,"total_tokens":12}}}`,
+				``,
+			}, "\n")
+			resp := &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+				Body:       io.NopCloser(strings.NewReader(upstream)),
+			}
+
+			usage, err := tc.run(svc, context.Background(), resp, c, account)
+
+			require.NoError(t, err)
+			require.NotNil(t, usage)
+			require.Equal(t, 11, usage.InputTokens)
+			body := recorder.Body.String()
+			require.Contains(t, body, "继续当前任务")
+			require.Contains(t, body, `"id":"msg_refusal_recovery_`)
+			require.NotContains(t, body, `"id":"rs_cyber_reasoning_pipeline"`)
+			require.NotContains(t, body, `"item_id":"rs_cyber_reasoning_pipeline"`)
+			require.NotContains(t, body, "response.failed")
+			require.NotContains(t, body, "cyber_policy")
+		})
+	}
+}
+
 func TestOpenAIStreamingCyberPolicyReplacementCompletesEarlyRewrite(t *testing.T) {
 	tests := []struct {
 		name string

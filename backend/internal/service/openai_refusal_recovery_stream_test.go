@@ -463,6 +463,35 @@ func TestOpenAIRefusalStreamReplacesCyberPolicyTerminal(t *testing.T) {
 	require.NotContains(t, string(replacement), "blocked")
 }
 
+func TestOpenAIRefusalStreamCyberReplacementDoesNotReuseReasoningItemID(t *testing.T) {
+	matcher, err := NewOpenAIRefusalMatcher([]string{"cannot"}, "continue current task")
+	require.NoError(t, err)
+	state := newOpenAIRefusalStreamStateWithEarlyEmission(matcher, false)
+
+	_, _, observeErr := state.observe(
+		"response.created",
+		[]byte(`{"type":"response.created","response":{"id":"resp_cyber_reasoning","object":"response","model":"gpt-5.6-sol","status":"in_progress","output":[]}}`),
+	)
+	require.NoError(t, observeErr)
+	_, _, observeErr = state.observe(
+		"response.reasoning_summary_text.delta",
+		[]byte(`{"type":"response.reasoning_summary_text.delta","response_id":"resp_cyber_reasoning","item_id":"rs_cyber_reasoning","output_index":0,"summary_index":0,"delta":"Reasoning summary"}`),
+	)
+	require.NoError(t, observeErr)
+	require.Empty(t, state.messageID)
+
+	action, replacement, replaceErr := state.replaceCyberPolicyFailure(
+		[]byte(`{"type":"response.failed","response":{"id":"resp_cyber_reasoning","status":"failed","error":{"code":"cyber_policy","message":"blocked"},"usage":{"input_tokens":8,"output_tokens":1,"total_tokens":9}}}`),
+		false,
+	)
+
+	require.NoError(t, replaceErr)
+	require.Equal(t, openAIRefusalStreamReplace, action)
+	require.Contains(t, string(replacement), `"id":"msg_refusal_recovery_`)
+	require.NotContains(t, string(replacement), `"id":"rs_cyber_reasoning"`)
+	require.NotContains(t, string(replacement), `"item_id":"rs_cyber_reasoning"`)
+}
+
 func TestOpenAIRefusalStreamCompletesEarlyReplacementAfterCyberPolicyTerminal(t *testing.T) {
 	matcher, err := NewOpenAIRefusalMatcher([]string{"cannot"}, "continue current task")
 	require.NoError(t, err)
