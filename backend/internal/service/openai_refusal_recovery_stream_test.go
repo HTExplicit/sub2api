@@ -227,6 +227,154 @@ func TestOpenAIRefusalStreamEmitsReplacementBeforeTerminalAndCompletesWithUsage(
 	require.NotContains(t, string(replacement), "I cannot")
 }
 
+func TestOpenAIRefusalStreamRewritesNonEarlyEmptyTerminalFromCompletedMessage(t *testing.T) {
+	tests := []struct {
+		name         string
+		deltaEvent   string
+		doneEvent    string
+		doneField    string
+		contentType  string
+		contentField string
+	}{
+		{
+			name:         "output text",
+			deltaEvent:   "response.output_text.delta",
+			doneEvent:    "response.output_text.done",
+			doneField:    "text",
+			contentType:  "output_text",
+			contentField: "text",
+		},
+		{
+			name:         "structured refusal",
+			deltaEvent:   "response.refusal.delta",
+			doneEvent:    "response.refusal.done",
+			doneField:    "refusal",
+			contentType:  "refusal",
+			contentField: "refusal",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			matcher, err := NewOpenAIRefusalMatcher([]string{"不能"}, "继续当前任务")
+			require.NoError(t, err)
+			state := newOpenAIRefusalStreamStateWithEarlyEmission(matcher, false)
+			refusalText := "不能完成测试请求。"
+
+			action, replacement, observeErr := state.observe(
+				"response.created",
+				[]byte(`{"type":"response.created","response":{"id":"resp_non_early","object":"response","model":"gpt-5.6-sol","status":"in_progress","output":[]}}`),
+			)
+			require.NoError(t, observeErr)
+			require.Equal(t, openAIRefusalStreamHold, action)
+			require.Nil(t, replacement)
+
+			deltaPayload := fmt.Sprintf(
+				`{"type":%q,"response_id":"resp_non_early","item_id":"msg_non_early","output_index":0,"content_index":0,"delta":%q}`,
+				tc.deltaEvent,
+				refusalText,
+			)
+			action, replacement, observeErr = state.observe(tc.deltaEvent, []byte(deltaPayload))
+			require.NoError(t, observeErr)
+			require.Equal(t, openAIRefusalStreamHold, action)
+			require.Nil(t, replacement)
+			require.True(t, state.matched)
+			require.False(t, state.earlyEmitted)
+
+			donePayload := fmt.Sprintf(
+				`{"type":%q,"response_id":"resp_non_early","item_id":"msg_non_early","output_index":0,"content_index":0,%q:%q}`,
+				tc.doneEvent,
+				tc.doneField,
+				refusalText,
+			)
+			action, replacement, observeErr = state.observe(tc.doneEvent, []byte(donePayload))
+			require.NoError(t, observeErr)
+			require.Equal(t, openAIRefusalStreamHold, action)
+			require.Nil(t, replacement)
+
+			itemDonePayload := fmt.Sprintf(
+				`{"type":"response.output_item.done","response_id":"resp_non_early","output_index":0,"item":{"id":"msg_non_early","type":"message","role":"assistant","status":"completed","content":[{"type":%q,%q:%q}]}}`,
+				tc.contentType,
+				tc.contentField,
+				refusalText,
+			)
+			action, replacement, observeErr = state.observe("response.output_item.done", []byte(itemDonePayload))
+			require.NoError(t, observeErr)
+			require.Equal(t, openAIRefusalStreamHold, action)
+			require.Nil(t, replacement)
+			require.NotEmpty(t, state.completedMessage)
+
+			action, replacement, observeErr = state.observe(
+				"response.completed",
+				[]byte(`{"type":"response.completed","response":{"id":"resp_non_early","object":"response","model":"gpt-5.6-sol","status":"completed","output":[],"usage":{"input_tokens":8,"output_tokens":3,"total_tokens":11}}}`),
+			)
+			require.NoError(t, observeErr)
+			require.Equal(t, openAIRefusalStreamReplace, action)
+			require.Contains(t, string(replacement), `"type":"response.completed"`)
+			require.Contains(t, string(replacement), `"total_tokens":11`)
+			require.Contains(t, string(replacement), "继续当前任务")
+			require.NotContains(t, string(replacement), refusalText)
+		})
+	}
+}
+
+func TestOpenAIRefusalStreamNonEarlyFallbackPreservesTerminalAuthority(t *testing.T) {
+	tests := []struct {
+		name       string
+		doneID     string
+		terminal   string
+		wantCached bool
+	}{
+		{
+			name:       "mismatched completed message id",
+			doneID:     "msg_other",
+			terminal:   `{"type":"response.completed","response":{"id":"resp_non_early","status":"completed","output":[]}}`,
+			wantCached: false,
+		},
+		{
+			name:       "non-empty terminal output",
+			doneID:     "msg_non_early",
+			terminal:   `{"type":"response.completed","response":{"id":"resp_non_early","status":"completed","output":[{"id":"msg_terminal","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Normal test result."}]}]}}`,
+			wantCached: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			matcher, err := NewOpenAIRefusalMatcher([]string{"不能"}, "继续当前任务")
+			require.NoError(t, err)
+			state := newOpenAIRefusalStreamStateWithEarlyEmission(matcher, false)
+
+			_, _, observeErr := state.observe(
+				"response.created",
+				[]byte(`{"type":"response.created","response":{"id":"resp_non_early","status":"in_progress","output":[]}}`),
+			)
+			require.NoError(t, observeErr)
+			action, _, observeErr := state.observe(
+				"response.output_text.delta",
+				[]byte(`{"type":"response.output_text.delta","response_id":"resp_non_early","item_id":"msg_non_early","delta":"不能完成测试请求。"}`),
+			)
+			require.NoError(t, observeErr)
+			require.Equal(t, openAIRefusalStreamHold, action)
+
+			itemDone := fmt.Sprintf(
+				`{"type":"response.output_item.done","response_id":"resp_non_early","item":{"id":%q,"type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"不能完成测试请求。"}]}}`,
+				tc.doneID,
+			)
+			action, _, observeErr = state.observe("response.output_item.done", []byte(itemDone))
+			require.NoError(t, observeErr)
+			require.Equal(t, openAIRefusalStreamHold, action)
+			require.Equal(t, tc.wantCached, len(state.completedMessage) > 0)
+
+			action, replacement, observeErr := state.observe("response.completed", []byte(tc.terminal))
+			require.NoError(t, observeErr)
+			require.Equal(t, openAIRefusalStreamPass, action)
+			require.Nil(t, replacement)
+			require.True(t, state.passthrough)
+		})
+	}
+}
+
 func TestOpenAIRefusalStreamReplacesCyberPolicyTerminal(t *testing.T) {
 	matcher, err := NewOpenAIRefusalMatcher([]string{"cannot"}, "continue current task")
 	require.NoError(t, err)

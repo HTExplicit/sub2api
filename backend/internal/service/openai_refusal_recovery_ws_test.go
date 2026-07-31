@@ -91,6 +91,37 @@ func TestOpenAIRefusalRecoveryWSOutputRewritesStructuredRefusal(t *testing.T) {
 	}
 }
 
+func TestOpenAIRefusalRecoveryWSOutputRewritesEmptyTerminalFromCompletedMessage(t *testing.T) {
+	matcher, err := NewOpenAIRefusalMatcher([]string{"不能"}, "继续当前任务")
+	require.NoError(t, err)
+	var written [][]byte
+	output := newOpenAIRefusalRecoveryWSOutput(matcher, true, func(_ context.Context, _ coderws.MessageType, payload []byte) error {
+		written = append(written, append([]byte(nil), payload...))
+		return nil
+	}, nil)
+
+	frames := [][]byte{
+		[]byte(`{"type":"response.created","response":{"id":"resp_ws_empty","model":"gpt-5.6-sol","status":"in_progress","output":[]}}`),
+		[]byte(`{"type":"response.output_text.delta","response_id":"resp_ws_empty","item_id":"msg_ws_empty","delta":"不能完成测试请求。"}`),
+		[]byte(`{"type":"response.output_text.done","response_id":"resp_ws_empty","item_id":"msg_ws_empty","text":"不能完成测试请求。"}`),
+		[]byte(`{"type":"response.output_item.done","response_id":"resp_ws_empty","output_index":0,"item":{"id":"msg_ws_empty","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"不能完成测试请求。"}]}}`),
+		[]byte(`{"type":"response.completed","response":{"id":"resp_ws_empty","model":"gpt-5.6-sol","status":"completed","output":[],"usage":{"input_tokens":8,"output_tokens":3,"total_tokens":11}}}`),
+	}
+	for index, payload := range frames {
+		require.NoError(t, output.Write(context.Background(), coderws.MessageText, payload))
+		if index < len(frames)-1 {
+			require.Empty(t, written)
+		}
+	}
+
+	require.Len(t, written, 8)
+	require.Equal(t, "继续当前任务", gjson.GetBytes(written[3], "delta").String())
+	require.Equal(t, int64(11), gjson.GetBytes(written[7], "response.usage.total_tokens").Int())
+	for _, payload := range written {
+		require.NotContains(t, string(payload), "不能完成测试请求")
+	}
+}
+
 func TestOpenAIRefusalRecoveryWSOutputRewritesRefusalInSecondParagraph(t *testing.T) {
 	matcher, err := NewOpenAIRefusalMatcher([]string{"不能"}, "继续当前任务")
 	require.NoError(t, err)

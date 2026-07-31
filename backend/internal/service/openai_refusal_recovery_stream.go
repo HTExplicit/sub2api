@@ -106,7 +106,11 @@ func (s *openAIRefusalStreamState) observe(eventType string, payload []byte) (op
 			s.passthrough = true
 			return openAIRefusalStreamPass, nil, nil
 		}
-		rewritten, matched, _, err := RewriteOpenAIResponsesJSON([]byte(response.Raw), s.matcher)
+		responseJSON, err := s.restoreCompletedMessageIntoEmptyOutput([]byte(response.Raw))
+		if err != nil {
+			return openAIRefusalStreamHold, nil, err
+		}
+		rewritten, matched, _, err := RewriteOpenAIResponsesJSON(responseJSON, s.matcher)
 		if err != nil {
 			return openAIRefusalStreamHold, nil, err
 		}
@@ -154,6 +158,30 @@ func (s *openAIRefusalStreamState) captureEventMetadata(eventType string, payloa
 	}
 }
 
+func (s *openAIRefusalStreamState) restoreCompletedMessageIntoEmptyOutput(responseJSON []byte) ([]byte, error) {
+	if s == nil || len(s.completedMessage) == 0 {
+		return responseJSON, nil
+	}
+	var responseObject map[string]json.RawMessage
+	if err := json.Unmarshal(responseJSON, &responseObject); err != nil {
+		return nil, err
+	}
+	rawOutput, ok := responseObject["output"]
+	if !ok {
+		return responseJSON, nil
+	}
+	var output []json.RawMessage
+	if err := json.Unmarshal(rawOutput, &output); err != nil || output == nil || len(output) != 0 {
+		return responseJSON, nil
+	}
+	restoredOutput, err := json.Marshal([]json.RawMessage{json.RawMessage(s.completedMessage)})
+	if err != nil {
+		return nil, err
+	}
+	responseObject["output"] = restoredOutput
+	return json.Marshal(responseObject)
+}
+
 func (s *openAIRefusalStreamState) startEarlyReplacement() (openAIRefusalStreamAction, []byte, error) {
 	if !s.earlyEligible || s.earlyEmitted || len(s.createdResponse) == 0 || s.responseID == "" || s.messageID == "" {
 		return openAIRefusalStreamHold, nil, nil
@@ -176,25 +204,9 @@ func (s *openAIRefusalStreamState) completeEarlyReplacement(payload []byte) (ope
 	if !response.Exists() {
 		return openAIRefusalStreamHold, nil, errors.New("early replacement terminal event is missing response")
 	}
-	responseJSON := []byte(response.Raw)
-	if len(s.completedMessage) > 0 {
-		var responseObject map[string]json.RawMessage
-		if err := json.Unmarshal(responseJSON, &responseObject); err != nil {
-			return openAIRefusalStreamHold, nil, err
-		}
-		if rawOutput, ok := responseObject["output"]; ok {
-			var output []json.RawMessage
-			if err := json.Unmarshal(rawOutput, &output); err == nil && output != nil && len(output) == 0 {
-				responseObject["output"], err = json.Marshal([]json.RawMessage{json.RawMessage(s.completedMessage)})
-				if err != nil {
-					return openAIRefusalStreamHold, nil, err
-				}
-				responseJSON, err = json.Marshal(responseObject)
-				if err != nil {
-					return openAIRefusalStreamHold, nil, err
-				}
-			}
-		}
+	responseJSON, err := s.restoreCompletedMessageIntoEmptyOutput([]byte(response.Raw))
+	if err != nil {
+		return openAIRefusalStreamHold, nil, err
 	}
 	rewritten, matched, _, err := RewriteOpenAIResponsesJSON(responseJSON, s.matcher)
 	if err != nil {
