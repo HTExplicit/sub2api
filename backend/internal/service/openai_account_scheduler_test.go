@@ -668,6 +668,113 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_ResponsesCapabilityExcl
 	})
 }
 
+func TestOpenAIGatewayService_SelectAccountWithSchedulerForCapabilityAndPreference_CyberFailoverMatrix(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+	defer resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+	groupID := int64(10126)
+	newSvc := func(accounts []Account, groupAware bool, cache *schedulerTestGatewayCache) *OpenAIGatewayService {
+		cfg := &config.Config{}
+		cfg.Gateway.Scheduling.LoadBatchEnabled = false
+		var repo AccountRepository = schedulerTestOpenAIAccountRepo{accounts: accounts}
+		if groupAware {
+			repo = schedulerGroupAwareOpenAIAccountRepo{schedulerTestOpenAIAccountRepo{accounts: accounts}}
+		}
+		if cache == nil {
+			cache = &schedulerTestGatewayCache{}
+		}
+		return &OpenAIGatewayService{
+			accountRepo:        repo,
+			cache:              cache,
+			cfg:                cfg,
+			concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+		}
+	}
+	selectAccount := func(t *testing.T, svc *OpenAIGatewayService, sessionHash string, excluded map[int64]struct{}, transport OpenAIUpstreamTransport, capability OpenAIEndpointCapability, preferredType string) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+		t.Helper()
+		return svc.SelectAccountWithSchedulerForCapabilityAndPreference(
+			context.Background(), &groupID, "", sessionHash, "gpt-5.1", excluded,
+			transport, capability, false, false, false, PlatformOpenAI,
+			OpenAIAccountTypePreference{PreferredType: preferredType, AllowCompatibleFallback: true},
+		)
+	}
+	account := func(id int64, accountType string, priority int) Account {
+		return Account{ID: id, Platform: PlatformOpenAI, Type: accountType, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: priority, GroupIDs: []int64{groupID}}
+	}
+
+	t.Run("oauth prefers another oauth before apikey", func(t *testing.T) {
+		accounts := []Account{account(38101, AccountTypeOAuth, 0), account(38102, AccountTypeOAuth, 10), account(38103, AccountTypeAPIKey, 0)}
+		selection, decision, err := selectAccount(t, newSvc(accounts, true, nil), "", map[int64]struct{}{38101: {}}, OpenAIUpstreamTransportHTTPSSE, OpenAIEndpointCapabilityResponses, AccountTypeOAuth)
+		require.NoError(t, err)
+		require.Equal(t, int64(38102), selection.Account.ID)
+		require.True(t, decision.TypePreferenceUsed)
+		require.False(t, decision.CrossTypeFallback)
+		selection.ReleaseFunc()
+	})
+
+	t.Run("oauth falls back to compatible apikey", func(t *testing.T) {
+		accounts := []Account{account(38111, AccountTypeOAuth, 0), account(38112, AccountTypeAPIKey, 0)}
+		selection, decision, err := selectAccount(t, newSvc(accounts, true, nil), "", map[int64]struct{}{38111: {}}, OpenAIUpstreamTransportHTTPSSE, OpenAIEndpointCapabilityResponses, AccountTypeOAuth)
+		require.NoError(t, err)
+		require.Equal(t, int64(38112), selection.Account.ID)
+		require.True(t, decision.CrossTypeFallback)
+		selection.ReleaseFunc()
+	})
+
+	t.Run("apikey prefers another apikey before oauth", func(t *testing.T) {
+		accounts := []Account{account(38121, AccountTypeAPIKey, 0), account(38122, AccountTypeAPIKey, 10), account(38123, AccountTypeOAuth, 0)}
+		selection, decision, err := selectAccount(t, newSvc(accounts, true, nil), "", map[int64]struct{}{38121: {}}, OpenAIUpstreamTransportHTTPSSE, OpenAIEndpointCapabilityResponses, AccountTypeAPIKey)
+		require.NoError(t, err)
+		require.Equal(t, int64(38122), selection.Account.ID)
+		require.False(t, decision.CrossTypeFallback)
+		selection.ReleaseFunc()
+	})
+
+	t.Run("incompatible apikey cannot be a fallback", func(t *testing.T) {
+		oauth := account(38131, AccountTypeOAuth, 0)
+		apiKey := account(38132, AccountTypeAPIKey, 0)
+		apiKey.Extra = map[string]any{"openai_responses_supported": false}
+		selection, decision, err := selectAccount(t, newSvc([]Account{oauth, apiKey}, true, nil), "", map[int64]struct{}{38131: {}}, OpenAIUpstreamTransportHTTPSSE, OpenAIEndpointCapabilityResponses, AccountTypeOAuth)
+		require.ErrorIs(t, err, ErrNoAvailableAccounts)
+		require.Nil(t, selection)
+		require.True(t, decision.TypePreferenceUsed)
+	})
+
+	t.Run("websocket transport capability is preserved", func(t *testing.T) {
+		oauth := account(38141, AccountTypeOAuth, 0)
+		apiKey := account(38142, AccountTypeAPIKey, 0)
+		selection, _, err := selectAccount(t, newSvc([]Account{oauth, apiKey}, true, nil), "", map[int64]struct{}{38141: {}}, OpenAIUpstreamTransportResponsesWebsocketV2, OpenAIEndpointCapabilityResponses, AccountTypeOAuth)
+		require.ErrorIs(t, err, ErrNoAvailableAccounts)
+		require.Nil(t, selection)
+	})
+
+	t.Run("single failed account is never retried", func(t *testing.T) {
+		selection, _, err := selectAccount(t, newSvc([]Account{account(38151, AccountTypeOAuth, 0)}, true, nil), "", map[int64]struct{}{38151: {}}, OpenAIUpstreamTransportHTTPSSE, OpenAIEndpointCapabilityResponses, AccountTypeOAuth)
+		require.ErrorIs(t, err, ErrNoAvailableAccounts)
+		require.Nil(t, selection)
+	})
+
+	t.Run("failed sticky account is excluded", func(t *testing.T) {
+		cache := &schedulerTestGatewayCache{sessionBindings: map[string]int64{"cyber-sticky": 38161}}
+		accounts := []Account{account(38161, AccountTypeOAuth, 0), account(38162, AccountTypeOAuth, 10)}
+		selection, _, err := selectAccount(t, newSvc(accounts, true, cache), "cyber-sticky", map[int64]struct{}{38161: {}}, OpenAIUpstreamTransportHTTPSSE, OpenAIEndpointCapabilityResponses, AccountTypeOAuth)
+		require.NoError(t, err)
+		require.Equal(t, int64(38162), selection.Account.ID)
+		selection.ReleaseFunc()
+	})
+
+	t.Run("cross group and cross platform candidates are forbidden", func(t *testing.T) {
+		failed := account(38171, AccountTypeOAuth, 0)
+		otherGroup := account(38172, AccountTypeOAuth, 0)
+		otherGroup.GroupIDs = []int64{groupID + 1}
+		otherPlatform := account(38173, AccountTypeOAuth, 0)
+		otherPlatform.Platform = PlatformGrok
+		selection, _, err := selectAccount(t, newSvc([]Account{failed, otherGroup, otherPlatform}, true, nil), "", map[int64]struct{}{38171: {}}, OpenAIUpstreamTransportHTTPSSE, OpenAIEndpointCapabilityResponses, AccountTypeOAuth)
+		require.ErrorIs(t, err, ErrNoAvailableAccounts)
+		require.Nil(t, selection)
+	})
+}
+
 // alpha/search 调度必须同时放行 OAuth 与 APIKey 账号：v0.1.157 曾因 OAuth-only
 // 门控把 APIKey 账号从候选池剔除，纯 APIKey 分组的独立搜索请求在选号阶段就
 // 报无可用账号，Codex 网页搜索整体失效（转发层其实一直支持 APIKey 路径）。

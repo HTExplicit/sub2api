@@ -191,7 +191,12 @@ func TestOpenAICyberFailoverErrorRetriesAnotherAccountWithoutHealthPenalty(t *te
 	require.False(t, err.RetryableOnSameAccount)
 	require.True(t, err.SuppressAccountHealthPenalty)
 	require.False(t, err.ShouldReportAccountScheduleFailure())
-	require.NotContains(t, strings.ToLower(string(err.ResponseBody)), "cyber")
+	require.Equal(t, OpenAICyberFailoverReason, err.Reason)
+	require.True(t, err.IsOpenAICyberFailover())
+	require.True(t, err.IsOpenAIRefusalRecovery())
+	require.Contains(t, string(err.ResponseBody), `"code":"cyber_failover_exhausted"`)
+	require.Contains(t, string(err.ResponseBody), `"retryable":true`)
+	require.NotContains(t, strings.ToLower(string(err.ResponseBody)), "cyber_policy")
 }
 
 func TestNormalizeOpenAIRefusalKeywordsDeduplicatesNormalizedValues(t *testing.T) {

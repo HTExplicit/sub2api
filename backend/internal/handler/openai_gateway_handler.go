@@ -450,6 +450,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	var lastFailoverErr *service.UpstreamFailoverError
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 	var passthroughFailoverState openAIPassthroughFailoverState
+	var accountTypePreference service.OpenAIAccountTypePreference
 
 	// 生图意图的 /v1/responses 请求必须调度到确实支持 Responses API 的账号，否则
 	// 会在 forward 阶段被静默降级为无法生图的 Chat Completions 直转（#4417）。
@@ -467,7 +468,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		}
 		// Select account supporting the requested model
 		reqLog.Debug("openai.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
-		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
+		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapabilityAndPreference(
 			c.Request.Context(),
 			apiKey.GroupID,
 			previousResponseID,
@@ -480,6 +481,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			false,
 			!imageIntent,
 			requestPlatform,
+			accountTypePreference,
 		)
 		if err != nil {
 			if failoverClientGone(c) {
@@ -529,6 +531,8 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			zap.Int("top_k", scheduleDecision.TopK),
 			zap.Int64("latency_ms", scheduleDecision.LatencyMs),
 			zap.Float64("load_skew", scheduleDecision.LoadSkew),
+			zap.Bool("type_preference_used", scheduleDecision.TypePreferenceUsed),
+			zap.Bool("cross_type_fallback", scheduleDecision.CrossTypeFallback),
 		)
 		account := selection.Account
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
@@ -642,6 +646,12 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					h.gatewayService.RecordOpenAIAccountSwitch()
 					failedAccountIDs[account.ID] = struct{}{}
 					lastFailoverErr = failoverErr
+					if failoverErr.IsOpenAICyberFailover() {
+						accountTypePreference = service.OpenAIAccountTypePreference{
+							PreferredType:           account.Type,
+							AllowCompatibleFallback: true,
+						}
+					}
 					if switchCount >= maxAccountSwitches {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
@@ -1024,6 +1034,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	var lastFailoverErr *service.UpstreamFailoverError
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 	effectiveMappedModel := preferredMappedModel
+	var accountTypePreference service.OpenAIAccountTypePreference
 
 	for {
 		if failoverClientGone(c) {
@@ -1034,7 +1045,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			currentRoutingModel = effectiveMappedModel
 		}
 		reqLog.Debug("openai_messages.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
-		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
+		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapabilityAndPreference(
 			c.Request.Context(),
 			apiKey.GroupID,
 			"", // no previous_response_id
@@ -1047,6 +1058,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			false,
 			true,
 			requestPlatform,
+			accountTypePreference,
 		)
 		if err != nil {
 			if failoverClientGone(c) {
@@ -1174,6 +1186,12 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					h.gatewayService.RecordOpenAIAccountSwitch()
 					failedAccountIDs[account.ID] = struct{}{}
 					lastFailoverErr = failoverErr
+					if failoverErr.IsOpenAICyberFailover() {
+						accountTypePreference = service.OpenAIAccountTypePreference{
+							PreferredType:           account.Type,
+							AllowCompatibleFallback: true,
+						}
+					}
 					if switchCount >= maxAccountSwitches {
 						h.handleAnthropicFailoverExhausted(c, failoverErr, streamStarted)
 						return
@@ -1287,22 +1305,44 @@ func (h *OpenAIGatewayHandler) anthropicErrorResponse(c *gin.Context, status int
 // anthropicStreamingAwareError handles errors that may occur during streaming,
 // using Anthropic SSE error format.
 func (h *OpenAIGatewayHandler) anthropicStreamingAwareError(c *gin.Context, status int, errType, message string, streamStarted bool) {
+	h.anthropicStreamingAwareErrorWithDetails(c, status, errType, "", message, streamStarted, false)
+}
+
+func (h *OpenAIGatewayHandler) anthropicStreamingAwareErrorWithDetails(c *gin.Context, status int, errType, code, message string, streamStarted, retryable bool) {
 	if streamStarted {
 		flusher, ok := c.Writer.(http.Flusher)
 		if ok {
+			errorObject := gin.H{
+				"type":    errType,
+				"message": message,
+			}
+			if code != "" {
+				errorObject["code"] = code
+			}
+			if retryable {
+				errorObject["retryable"] = true
+			}
 			errPayload, _ := json.Marshal(gin.H{
-				"type": "error",
-				"error": gin.H{
-					"type":    errType,
-					"message": message,
-				},
+				"type":  "error",
+				"error": errorObject,
 			})
 			fmt.Fprintf(c.Writer, "event: error\ndata: %s\n\n", errPayload) //nolint:errcheck
 			flusher.Flush()
 		}
 		return
 	}
-	h.anthropicErrorResponse(c, status, errType, message)
+	if code == "" && !retryable {
+		h.anthropicErrorResponse(c, status, errType, message)
+		return
+	}
+	errorObject := gin.H{"type": errType, "message": message}
+	if code != "" {
+		errorObject["code"] = code
+	}
+	if retryable {
+		errorObject["retryable"] = true
+	}
+	c.JSON(status, gin.H{"type": "error", "error": errorObject})
 }
 
 // handleAnthropicFailoverExhausted maps upstream failover errors to Anthropic format.
@@ -1313,6 +1353,18 @@ func (h *OpenAIGatewayHandler) handleAnthropicFailoverExhausted(c *gin.Context, 
 	if failoverErr != nil && failoverErr.IsCredentialFailure() {
 		status, message := credentialFailoverClientResponse(failoverErr)
 		h.anthropicStreamingAwareError(c, status, "api_error", message, streamStarted)
+		return
+	}
+	if failoverErr != nil && failoverErr.IsOpenAICyberFailover() {
+		h.anthropicStreamingAwareErrorWithDetails(
+			c,
+			http.StatusServiceUnavailable,
+			"api_error",
+			service.OpenAICyberFailoverExhaustedCode,
+			failoverErr.ClientMessage,
+			streamStarted,
+			true,
+		)
 		return
 	}
 	status, errType, errMsg := h.mapUpstreamError(failoverErr.StatusCode)
@@ -1702,6 +1754,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	failedAccountIDs := make(map[int64]struct{})
 	var lastFailoverErr *service.UpstreamFailoverError
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
+	var accountTypePreference service.OpenAIAccountTypePreference
 	handleWSFailover := func(account *service.Account, failoverErr *service.UpstreamFailoverError) bool {
 		if ctx.Err() != nil {
 			return false
@@ -1727,6 +1780,12 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		h.gatewayService.RecordOpenAIAccountSwitch()
 		failedAccountIDs[account.ID] = struct{}{}
 		lastFailoverErr = failoverErr
+		if failoverErr.IsOpenAICyberFailover() {
+			accountTypePreference = service.OpenAIAccountTypePreference{
+				PreferredType:           account.Type,
+				AllowCompatibleFallback: true,
+			}
+		}
 		if switchCount >= maxAccountSwitches {
 			closeOpenAIWSFailoverExhausted(wsConn, failoverErr)
 			return false
@@ -1761,7 +1820,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			return
 		}
 		reqLog.Debug("openai.websocket_account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
-		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
+		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapabilityAndPreference(
 			ctx,
 			apiKey.GroupID,
 			previousResponseID,
@@ -1774,6 +1833,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			previousResponseCanMove,
 			!imageIntent,
 			requestPlatform,
+			accountTypePreference,
 		)
 		if err != nil {
 			reqLog.Warn("openai.websocket_account_select_failed",
@@ -2324,6 +2384,19 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 	copyFailoverRetryAfter(c, failoverErr.ResponseHeaders)
 	if failoverErr.IsOpenAIRefusalRecovery() {
 		service.SetOpsUpstreamError(c, http.StatusServiceUnavailable, failoverErr.ClientMessage, "")
+		if failoverErr.IsOpenAICyberFailover() {
+			h.handleStreamingAwareErrorWithDetails(
+				c,
+				http.StatusServiceUnavailable,
+				"server_error",
+				service.OpenAICyberFailoverExhaustedCode,
+				failoverErr.ClientMessage,
+				streamStarted,
+				false,
+				true,
+			)
+			return
+		}
 		h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "server_error", failoverErr.ClientMessage, streamStarted)
 		return
 	}
@@ -2448,6 +2521,19 @@ func (h *OpenAIGatewayHandler) handleStreamingAwareErrorWithCode(
 	streamStarted bool,
 	countTowardsSLA bool,
 ) {
+	h.handleStreamingAwareErrorWithDetails(c, status, errType, code, message, streamStarted, countTowardsSLA, false)
+}
+
+func (h *OpenAIGatewayHandler) handleStreamingAwareErrorWithDetails(
+	c *gin.Context,
+	status int,
+	errType string,
+	code string,
+	message string,
+	streamStarted bool,
+	countTowardsSLA bool,
+	retryable bool,
+) {
 	// body-signal compact 心跳可能已把响应头提交为 200：先停心跳（建立
 	// happens-before，接管 ResponseWriter），并升级为流内错误处理。
 	if service.StopOpenAICompactSSEKeepaliveCommitted(c) {
@@ -2464,7 +2550,7 @@ func (h *OpenAIGatewayHandler) handleStreamingAwareErrorWithCode(
 		// 通用 `event: error` 帧不被识别为终止事件，会导致
 		// "stream closed before response.completed"。
 		if inboundIsResponses(c) {
-			if writeResponsesFailedSSE(c, errType, message) {
+			if writeResponsesFailedSSEWithDetails(c, errType, code, message, retryable) {
 				return
 			}
 		}
@@ -2474,6 +2560,9 @@ func (h *OpenAIGatewayHandler) handleStreamingAwareErrorWithCode(
 			errorObject := gin.H{"type": errType, "message": message}
 			if code != "" {
 				errorObject["code"] = code
+			}
+			if retryable {
+				errorObject["retryable"] = true
 			}
 			payload, err := json.Marshal(gin.H{"error": errorObject})
 			if err != nil {
@@ -2493,9 +2582,11 @@ func (h *OpenAIGatewayHandler) handleStreamingAwareErrorWithCode(
 		h.errorResponse(c, status, errType, message)
 		return
 	}
-	c.JSON(status, gin.H{"error": gin.H{
-		"type": errType, "code": code, "message": message,
-	}})
+	errorObject := gin.H{"type": errType, "code": code, "message": message}
+	if retryable {
+		errorObject["retryable"] = true
+	}
+	c.JSON(status, gin.H{"error": errorObject})
 }
 
 func (h *OpenAIGatewayHandler) ensureOpenAIStreamReadErrorResponse(c *gin.Context, err error, streamStarted bool) bool {
@@ -2677,7 +2768,9 @@ func prepareOpenAIRefusalPromptRetry(
 	body []byte,
 	failoverErr *service.UpstreamFailoverError,
 ) ([]byte, bool, error) {
-	if failoverErr == nil || !failoverErr.IsOpenAIRefusalRecovery() {
+	// Cyber recovery is account failover only. It must never mutate or replay
+	// the client prompt, especially when refusal rewriting is disabled.
+	if failoverErr == nil || failoverErr.Reason != service.OpenAIRefusalRecoveryReason {
 		return body, false, nil
 	}
 	repaired, changed, err := service.PrepareOpenAIRefusalPromptRetry(body)

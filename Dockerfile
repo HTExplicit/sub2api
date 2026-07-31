@@ -107,6 +107,10 @@ FROM ${POSTGRES_IMAGE} AS pg-client
 # -----------------------------------------------------------------------------
 FROM ${ALPINE_IMAGE}
 
+# Keep the Go heap below the 768 MiB production cgroup limit so concurrent
+# gateway requests trigger GC before the kernel OOM killer terminates Sub2API.
+ENV GOMEMLIMIT=600MiB
+
 # Labels
 LABEL maintainer="Wei-Shaw <github.com/Wei-Shaw>"
 LABEL description="Sub2API - AI API Gateway Platform"

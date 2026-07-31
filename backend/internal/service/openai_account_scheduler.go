@@ -86,6 +86,14 @@ type OpenAIAccountScheduleRequest struct {
 	ExcludedIDs             map[int64]struct{}
 }
 
+// OpenAIAccountTypePreference applies only to a failover selection. The
+// scheduler first searches the already-compatible pool for PreferredType and
+// falls back to other compatible account types only when explicitly allowed.
+type OpenAIAccountTypePreference struct {
+	PreferredType           string
+	AllowCompatibleFallback bool
+}
+
 type OpenAIAccountScheduleDecision struct {
 	Layer               string
 	StickyPreviousHit   bool
@@ -96,6 +104,8 @@ type OpenAIAccountScheduleDecision struct {
 	LoadSkew            float64
 	SelectedAccountID   int64
 	SelectedAccountType string
+	TypePreferenceUsed  bool
+	CrossTypeFallback   bool
 }
 
 type OpenAIAccountSchedulerMetricsSnapshot struct {
@@ -2015,6 +2025,82 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForCapability(
 		platform = platformOverride[0]
 	}
 	return s.selectAccountWithScheduler(ctx, groupID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, requiredCapability, "", requireCompact, platform, previousResponseCanMove, useUpstreamTokenCost)
+}
+
+// SelectAccountWithSchedulerForCapabilityAndPreference preserves all normal
+// group, platform, model, endpoint, transport and exclusion gates. It adds a
+// bounded account-type preference for request-local failover routing.
+func (s *OpenAIGatewayService) SelectAccountWithSchedulerForCapabilityAndPreference(
+	ctx context.Context,
+	groupID *int64,
+	previousResponseID string,
+	sessionHash string,
+	requestedModel string,
+	excludedIDs map[int64]struct{},
+	requiredTransport OpenAIUpstreamTransport,
+	requiredCapability OpenAIEndpointCapability,
+	requireCompact bool,
+	previousResponseCanMove bool,
+	useUpstreamTokenCost bool,
+	platform string,
+	preference OpenAIAccountTypePreference,
+) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+	preferredType := normalizeOpenAIAccountTypePreference(preference.PreferredType)
+	if preferredType == "" {
+		return s.selectAccountWithScheduler(ctx, groupID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, requiredCapability, "", requireCompact, platform, previousResponseCanMove, useUpstreamTokenCost)
+	}
+
+	preferredExclusions, err := s.exclusionsForOtherOpenAIAccountTypes(ctx, groupID, platform, excludedIDs, preferredType)
+	if err != nil {
+		return nil, OpenAIAccountScheduleDecision{TypePreferenceUsed: true}, err
+	}
+	selection, decision, err := s.selectAccountWithScheduler(ctx, groupID, previousResponseID, sessionHash, requestedModel, preferredExclusions, requiredTransport, requiredCapability, "", requireCompact, platform, previousResponseCanMove, useUpstreamTokenCost)
+	decision.TypePreferenceUsed = true
+	if err == nil && selection != nil && selection.Account != nil {
+		return selection, decision, nil
+	}
+	if !preference.AllowCompatibleFallback || (err != nil && !errors.Is(err, ErrNoAvailableAccounts) && !errors.Is(err, ErrNoAvailableCompactAccounts)) {
+		return selection, decision, err
+	}
+
+	selection, decision, err = s.selectAccountWithScheduler(ctx, groupID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, requiredCapability, "", requireCompact, platform, previousResponseCanMove, useUpstreamTokenCost)
+	decision.TypePreferenceUsed = true
+	decision.CrossTypeFallback = true
+	return selection, decision, err
+}
+
+func normalizeOpenAIAccountTypePreference(accountType string) string {
+	switch strings.TrimSpace(accountType) {
+	case AccountTypeOAuth:
+		return AccountTypeOAuth
+	case AccountTypeAPIKey:
+		return AccountTypeAPIKey
+	default:
+		return ""
+	}
+}
+
+func (s *OpenAIGatewayService) exclusionsForOtherOpenAIAccountTypes(
+	ctx context.Context,
+	groupID *int64,
+	platform string,
+	excludedIDs map[int64]struct{},
+	preferredType string,
+) (map[int64]struct{}, error) {
+	accounts, err := s.listSchedulableAccounts(ctx, groupID, normalizeOpenAICompatiblePlatform(platform))
+	if err != nil {
+		return nil, err
+	}
+	preferredExclusions := cloneExcludedAccountIDs(excludedIDs)
+	if preferredExclusions == nil {
+		preferredExclusions = make(map[int64]struct{})
+	}
+	for i := range accounts {
+		if accounts[i].Type != preferredType {
+			preferredExclusions[accounts[i].ID] = struct{}{}
+		}
+	}
+	return preferredExclusions, nil
 }
 
 func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
