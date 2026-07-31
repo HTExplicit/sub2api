@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import AccountsView from '../AccountsView.vue'
 
 const {
@@ -179,11 +180,12 @@ const commonStubs = {
   Icon: true
 }
 
-const mountView = () => mount(AccountsView, { global: { stubs: commonStubs } })
+const mountView = (plugins: any[] = []) => mount(AccountsView, { global: { stubs: commonStubs, plugins } })
 
 describe('admin AccountsView Cockpit console', () => {
   beforeEach(() => {
     localStorage.clear()
+    sessionStorage.clear()
     listAccounts.mockReset().mockResolvedValue({ items: [account], total: 1, page: 1, page_size: 20, pages: 1 })
     listWithEtag.mockReset().mockResolvedValue({ notModified: true, etag: null, data: null })
     getFacets.mockReset().mockResolvedValue({ total: 1, uncategorized_count: 1, platforms: [], types: [], statuses: [], plans: [], proxies: [], folders: [], tags: [] })
@@ -275,7 +277,7 @@ describe('admin AccountsView Cockpit console', () => {
 
   it('uses unfiltered taxonomy counts for management and facet counts for navigation', async () => {
     getFacets.mockResolvedValue({
-      total: 0,
+      total: 3,
       uncategorized_count: 3,
       platforms: [], types: [], statuses: [], plans: [], proxies: [], tags: [],
       folders: [{ id: 7, name: 'Production', sort_order: 0, account_count: 0 }]
@@ -301,5 +303,37 @@ describe('admin AccountsView Cockpit console', () => {
     expect(wrapper.get('[data-test="selected-ids"]').text()).toBe('101,102')
     expect(listAccounts.mock.calls.some(call => call[2]?.account_ids === '101,102')).toBe(true)
     expect(getFacets.mock.calls.some(call => call[0]?.account_ids === '101,102')).toBe(true)
+    expect(JSON.parse(sessionStorage.getItem('account-console-sensitive-filters-v1') || '{}')).toEqual({
+      search: '', account_ids: [101, 102]
+    })
+  })
+
+  it('restores URL filters through browser history while sensitive filters stay in session storage', async () => {
+    sessionStorage.setItem('account-console-sensitive-filters-v1', JSON.stringify({ search: 'private search', account_ids: [1] }))
+    listFolders.mockResolvedValue([{ id: 7, name: 'Production', sort_order: 0, account_count: 1 }])
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/admin/accounts', component: { template: '<div />' } }]
+    })
+    await router.push('/admin/accounts?folder=7&statuses=active&group=ungrouped&sort_by=status&sort_order=desc&page=2&page_size=50')
+    await router.isReady()
+    const wrapper = mountView([router])
+    await flushPromises()
+
+    expect(listAccounts).toHaveBeenCalledWith(2, 50, expect.objectContaining({
+      folder: '7', statuses: 'active', group: 'ungrouped', search: 'private search', account_ids: '1', sort_by: 'status', sort_order: 'desc'
+    }), expect.any(Object))
+    expect(router.currentRoute.value.query.search).toBeUndefined()
+    expect(router.currentRoute.value.query.account_ids).toBeUndefined()
+
+    await router.push('/admin/accounts?statuses=inactive')
+    await flushPromises()
+    expect(listAccounts).toHaveBeenLastCalledWith(1, 20, expect.objectContaining({ statuses: 'inactive', search: 'private search', account_ids: '1' }), expect.any(Object))
+
+    router.back()
+    await vi.waitFor(() => {
+      expect(listAccounts).toHaveBeenLastCalledWith(2, 50, expect.objectContaining({ folder: '7', statuses: 'active' }), expect.any(Object))
+    })
+    wrapper.unmount()
   })
 })

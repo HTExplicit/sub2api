@@ -22,6 +22,8 @@ import type {
   AccountManagementFolder,
   AccountManagementTag,
   AccountConsoleFacets,
+  AccountBulkTaxonomyRequest,
+  AccountBulkTaxonomyResult,
   CodexSessionImportRequest,
   CodexSessionImportResult,
   OpenAICodexPATCreateRequest,
@@ -692,6 +694,13 @@ export async function deleteFolder(id: number, moveAccounts = false): Promise<vo
   await apiClient.delete(`/admin/accounts/folders/${id}`, { params: { move_accounts: moveAccounts } })
 }
 
+export async function reorderFolders(orderedIds: number[]): Promise<AccountManagementFolder[]> {
+  const { data } = await apiClient.put<AccountManagementFolder[]>('/admin/accounts/folders/order', {
+    ordered_ids: orderedIds
+  })
+  return data
+}
+
 export async function listTags(): Promise<AccountManagementTag[]> {
   const { data } = await apiClient.get<AccountManagementTag[]>('/admin/accounts/tags')
   return data
@@ -717,6 +726,13 @@ export async function deleteTag(id: number): Promise<void> {
   await apiClient.delete(`/admin/accounts/tags/${id}`)
 }
 
+export async function reorderTags(orderedIds: number[]): Promise<AccountManagementTag[]> {
+  const { data } = await apiClient.put<AccountManagementTag[]>('/admin/accounts/tags/order', {
+    ordered_ids: orderedIds
+  })
+  return data
+}
+
 export async function setTaxonomy(id: number, folderId: number | null, tagIds: number[]): Promise<Account> {
   const { data } = await apiClient.put<Account>(`/admin/accounts/${id}/taxonomy`, {
     folder_id: folderId,
@@ -727,6 +743,11 @@ export async function setTaxonomy(id: number, folderId: number | null, tagIds: n
 
 export async function getFacets(filters?: AccountListFilters): Promise<AccountConsoleFacets> {
   const { data } = await apiClient.get<AccountConsoleFacets>('/admin/accounts/facets', { params: filters })
+  return data
+}
+
+export async function bulkUpdateTaxonomy(payload: AccountBulkTaxonomyRequest): Promise<AccountBulkTaxonomyResult> {
+  const { data } = await apiClient.post<AccountBulkTaxonomyResult>('/admin/accounts/bulk-taxonomy', payload)
   return data
 }
 
@@ -1040,12 +1061,15 @@ export const accountsAPI = {
   createFolder,
   updateFolder,
   deleteFolder,
+  reorderFolders,
   listTags,
   createTag,
   updateTag,
   deleteTag,
+  reorderTags,
   setTaxonomy,
   getFacets,
+  bulkUpdateTaxonomy,
   importCodexSession,
   createOpenAICodexPAT,
   getAntigravityDefaultModelMapping,

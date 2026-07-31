@@ -318,6 +318,24 @@ type AccountManagementTag struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
+type AccountConsoleFacets struct {
+	Total              int                       `json:"total"`
+	UncategorizedCount int                       `json:"uncategorized_count"`
+	Platforms          []AccountFacetOption      `json:"platforms"`
+	Types              []AccountFacetOption      `json:"types"`
+	Statuses           []AccountFacetOption      `json:"statuses"`
+	Plans              []AccountFacetOption      `json:"plans"`
+	Proxies            []AccountFacetOption      `json:"proxies"`
+	Folders            []AccountManagementFolder `json:"folders"`
+	Tags               []AccountManagementTag    `json:"tags"`
+}
+
+type AccountFacetOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+	Count int    `json:"count"`
+}
+
 type AccountGroup struct {
 	AccountID int64     `json:"account_id"`
 	GroupID   int64     `json:"group_id"`
