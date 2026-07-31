@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
 )
 
@@ -215,6 +216,130 @@ func (s *openAIRefusalStreamState) completeEarlyReplacement(payload []byte) (ope
 	return openAIRefusalStreamReplace, tail, nil
 }
 
+// replaceCyberPolicyFailure turns a terminal upstream policy error into a completed
+// Responses stream.  It is intentionally local to refusal recovery: callers only
+// use it when the configured replacement has already opted in to this behavior.
+func (s *openAIRefusalStreamState) replaceCyberPolicyFailure(payload []byte, clientOutputStarted bool) (openAIRefusalStreamAction, []byte, error) {
+	if s == nil || s.matcher == nil {
+		return openAIRefusalStreamHold, nil, errors.New("cyber policy replacement requires a refusal matcher")
+	}
+	s.captureEventMetadata("response.failed", payload)
+
+	completedResponse, responseID, messageID, err := buildOpenAIRefusalRecoveryCompletedResponse(
+		payload,
+		s.createdResponse,
+		s.responseID,
+		s.messageID,
+		s.matcher.Replacement(),
+	)
+	if err != nil {
+		return openAIRefusalStreamHold, nil, err
+	}
+	if s.earlyEmitted || clientOutputStarted {
+		tail, err := buildOpenAIRefusalReplacementTerminalSSE(
+			payload,
+			completedResponse,
+			responseID,
+			messageID,
+			s.matcher.Replacement(),
+		)
+		if err != nil {
+			return openAIRefusalStreamHold, nil, err
+		}
+		return openAIRefusalStreamReplace, tail, nil
+	}
+
+	stream, err := buildOpenAIRefusalReplacementSSE(payload, completedResponse, s.matcher.Replacement())
+	if err != nil {
+		return openAIRefusalStreamHold, nil, err
+	}
+	return openAIRefusalStreamReplace, stream, nil
+}
+
+func buildOpenAIRefusalRecoveryCompletedResponse(
+	terminalPayload []byte,
+	createdResponse []byte,
+	responseID string,
+	messageID string,
+	replacement string,
+) ([]byte, string, string, error) {
+	responseObject := make(map[string]json.RawMessage)
+	// A failed upstream response can carry request-derived or provider-private
+	// fields. Only retain the stable response metadata needed by the client.
+	copyResponseMetadata := func(source []byte) {
+		for _, key := range []string{"object", "model", "created_at", "service_tier", "usage"} {
+			if value := gjson.GetBytes(source, key); value.Exists() {
+				responseObject[key] = json.RawMessage([]byte(value.Raw))
+			}
+		}
+	}
+	copyResponseMetadata(createdResponse)
+	if failedResponse := gjson.GetBytes(terminalPayload, "response"); failedResponse.Exists() && failedResponse.IsObject() {
+		copyResponseMetadata([]byte(failedResponse.Raw))
+	}
+
+	responseID = strings.TrimSpace(responseID)
+	if responseID == "" {
+		responseID = strings.TrimSpace(gjson.GetBytes(terminalPayload, "response.id").String())
+	}
+	if responseID == "" {
+		responseID = strings.TrimSpace(gjson.GetBytes(createdResponse, "id").String())
+	}
+	if responseID == "" {
+		responseID = "resp_refusal_recovery_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	}
+
+	messageID = strings.TrimSpace(messageID)
+	if messageID == "" {
+		messageID = strings.TrimSpace(gjson.GetBytes(terminalPayload, "item_id").String())
+	}
+	if messageID == "" {
+		messageID = "msg_refusal_recovery_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	}
+
+	encodedResponseID, err := json.Marshal(responseID)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("encode recovery response id: %w", err)
+	}
+	encodedMessage, err := buildOpenAIRefusalReplacementMessage(messageID, replacement)
+	if err != nil {
+		return nil, "", "", err
+	}
+	encodedOutput, err := json.Marshal([]json.RawMessage{encodedMessage})
+	if err != nil {
+		return nil, "", "", fmt.Errorf("encode recovery output: %w", err)
+	}
+	responseObject["id"] = encodedResponseID
+	if _, exists := responseObject["object"]; !exists {
+		responseObject["object"] = json.RawMessage(`"response"`)
+	}
+	responseObject["status"] = json.RawMessage(`"completed"`)
+	responseObject["output"] = encodedOutput
+	delete(responseObject, "error")
+	delete(responseObject, "incomplete_details")
+
+	if _, exists := responseObject["usage"]; !exists {
+		if usage := gjson.GetBytes(terminalPayload, "usage"); usage.Exists() && usage.IsObject() {
+			responseObject["usage"] = json.RawMessage([]byte(usage.Raw))
+		}
+	}
+	encodedResponse, err := json.Marshal(responseObject)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("encode recovery response: %w", err)
+	}
+	return encodedResponse, responseID, messageID, nil
+}
+
+func buildOpenAIRefusalReplacementMessage(messageID string, replacement string) (json.RawMessage, error) {
+	textPart := map[string]any{"type": "output_text", "text": replacement, "annotations": []any{}, "logprobs": []any{}}
+	message := map[string]any{"id": messageID, "type": "message", "status": "completed", "role": "assistant", "content": []any{textPart}}
+	encodedMessage, err := json.Marshal(message)
+	if err != nil {
+		return nil, fmt.Errorf("encode replacement message: %w", err)
+	}
+	return encodedMessage, nil
+}
+
 func openAIRefusalScanWindowComplete(text string) bool {
 	text = strings.ReplaceAll(text, "\r\n", "\n")
 	text = strings.ReplaceAll(text, "\r", "\n")
@@ -343,6 +468,9 @@ func buildOpenAIRefusalReplacementTerminalSSE(terminalPayload, rewrittenResponse
 	terminal["type"] = json.RawMessage(`"response.completed"`)
 	terminal["sequence_number"] = json.RawMessage(`7`)
 	terminal["response"] = json.RawMessage(rewrittenResponse)
+	delete(terminal, "error")
+	delete(terminal, "message")
+	delete(terminal, "code")
 	terminalJSON, err := json.Marshal(terminal)
 	if err != nil {
 		return nil, fmt.Errorf("encode terminal event: %w", err)

@@ -613,12 +613,23 @@ func (s *OpenAIGatewayService) handleErrorResponsePassthrough(
 ) error {
 	body := s.redactAgentIdentitySensitiveBody(ctx, account, responseBody)
 
-	// cyber_policy 仍按原始 body 打内部标记，供 handler 事后写风控/邮件；面向客户端的
-	// 错误体在下方统一重建。cyber 是上游网络安全策略拦截，不冷却账号，
-	// 故下方跳过 handleOpenAIAccountUpstreamError（避免自定义 temp-unschedulable 规则误冷却）。
+	// cyber_policy 仍按原始 body 打内部标记，供 handler 事后写风控/邮件。已启用的
+	// Responses 恢复改写优先生成配置的完成响应。cyber 不冷却账号，故下方跳过
+	// handleOpenAIAccountUpstreamError（避免自定义 temp-unschedulable 规则误冷却）。
 	cyberHit := markOpenAICyberPolicyFromResponse(c, resp.StatusCode, body)
-	if cyberHit && isOpenAIRefusalRecoveryResponsesRequest(c) && s.openAIRefusalRecoveryRuntime(ctx).CyberFailoverEnabled() {
-		return NewOpenAICyberFailoverError(body, resp.Header)
+	if cyberHit && isOpenAIRefusalRecoveryResponsesRequest(c) {
+		runtime := s.openAIRefusalRecoveryRuntime(ctx)
+		if runtime.RewriteEnabled() {
+			if replaceErr := writeOpenAIRefusalRecoveryFailureReplacement(c, requestBody, body, runtime.Matcher.Replacement()); replaceErr == nil {
+				MarkResponseCommitted(c)
+				return errors.New("openai cyber policy replaced with configured recovery response")
+			} else {
+				logger.FromContext(ctx).Warn("openai.refusal_recovery_cyber_replace_failed", zap.String("transport", "http"), zap.Error(replaceErr))
+			}
+		}
+		if runtime.CyberFailoverEnabled() {
+			return NewOpenAICyberFailoverError(body, resp.Header)
+		}
 	}
 	MarkResponseCommitted(c)
 
@@ -1052,6 +1063,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		refusalAction := openAIRefusalStreamHold
 		var refusalReplacement []byte
 		var refusalCompletionErr error
+		cyberPolicyReplacement := false
 		if refusalStream != nil && !refusalStream.reserveLine(line) {
 			refusalAction = openAIRefusalStreamPass
 			logger.FromContext(ctx).Warn("openai.refusal_recovery_buffer_limit", zap.String("transport", "sse"))
@@ -1088,20 +1100,6 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				}
 			}
 			eventType := strings.TrimSpace(gjson.Get(trimmedData, "type").String())
-			if refusalStream != nil && !refusalStream.passthrough {
-				var refusalErr error
-				refusalAction, refusalReplacement, refusalErr = refusalStream.observe(eventType, dataBytes)
-				if refusalErr != nil {
-					if refusalStream.earlyEmitted {
-						refusalCompletionErr = fmt.Errorf("complete early OpenAI refusal replacement: %w", refusalErr)
-						refusalAction = openAIRefusalStreamHold
-					} else {
-						refusalStream.passthrough = true
-						refusalAction = openAIRefusalStreamPass
-						logger.FromContext(ctx).Warn("openai.refusal_recovery_stream_failed", zap.String("transport", "sse"), zap.Error(refusalErr))
-					}
-				}
-			}
 			if eventType == "response.failed" {
 				failedMessage = extractOpenAISSEErrorMessage(dataBytes)
 				// response.failed 自带上游已消耗的 usage（input token 通常已扣）；必须先解析
@@ -1117,11 +1115,22 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 						UpstreamInTok:  usage.InputTokens,
 						UpstreamOutTok: usage.OutputTokens,
 					})
-					if isOpenAIRefusalRecoveryResponsesRequest(c) && s.openAIRefusalRecoveryRuntime(ctx).CyberFailoverEnabled() && !openAIStreamClientOutputStarted(c, clientOutputStarted) {
+					runtime := s.openAIRefusalRecoveryRuntime(ctx)
+					if refusalStream != nil && runtime.RewriteEnabled() {
+						clientHasOutput := openAIStreamClientOutputStarted(c, clientOutputStarted)
+						if action, replacement, replaceErr := refusalStream.replaceCyberPolicyFailure(dataBytes, clientHasOutput); replaceErr != nil {
+							logger.FromContext(ctx).Warn("openai.refusal_recovery_cyber_replace_failed", zap.String("transport", "sse"), zap.Error(replaceErr))
+						} else if action == openAIRefusalStreamReplace {
+							refusalAction = action
+							refusalReplacement = replacement
+							cyberPolicyReplacement = true
+						}
+					}
+					if !cyberPolicyReplacement && runtime.CyberFailoverEnabled() && !openAIStreamClientOutputStarted(c, clientOutputStarted) {
 						return resultWithUsage(), NewOpenAICyberFailoverError(dataBytes, resp.Header)
 					}
 				}
-				if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
+				if !cyberPolicyReplacement && !openAIStreamClientOutputStarted(c, clientOutputStarted) {
 					if status, errType, errMsg, matched := applyOpenAIStreamFailedErrorPassthroughRule(c, account.Platform, dataBytes, failedMessage); matched {
 						// 命中透传规则也要记录 ops 上游错误事件（对齐 CC/Messages 与
 						// antigravity 先例），否则透传命中的 failed 在监控中不可见。
@@ -1141,8 +1150,24 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 							s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, failedMessage)
 					}
 				}
-				forceFlushFailedEvent = true
-				sawFailedEvent = true
+				if !cyberPolicyReplacement {
+					forceFlushFailedEvent = true
+					sawFailedEvent = true
+				}
+			}
+			if !cyberPolicyReplacement && refusalStream != nil && !refusalStream.passthrough {
+				var refusalErr error
+				refusalAction, refusalReplacement, refusalErr = refusalStream.observe(eventType, dataBytes)
+				if refusalErr != nil {
+					if refusalStream.earlyEmitted {
+						refusalCompletionErr = fmt.Errorf("complete early OpenAI refusal replacement: %w", refusalErr)
+						refusalAction = openAIRefusalStreamHold
+					} else {
+						refusalStream.passthrough = true
+						refusalAction = openAIRefusalStreamPass
+						logger.FromContext(ctx).Warn("openai.refusal_recovery_stream_failed", zap.String("transport", "sse"), zap.Error(refusalErr))
+					}
+				}
 			}
 			if trimmedData == "[DONE]" {
 				sawDone = true
@@ -1169,7 +1194,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		if refusalCompletionErr != nil {
 			return resultWithUsage(), refusalCompletionErr
 		}
-		if refusalStream != nil && !refusalStream.passthrough {
+		if cyberPolicyReplacement || (refusalStream != nil && !refusalStream.passthrough) {
 			switch refusalAction {
 			case openAIRefusalStreamReplaceEarly:
 				pendingLines = pendingLines[:0]

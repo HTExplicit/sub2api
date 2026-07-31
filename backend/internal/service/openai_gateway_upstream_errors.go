@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -323,13 +324,23 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 	body := s.readUpstreamErrorBody(resp)
 	body = s.redactAgentIdentitySensitiveBody(ctx, account, body)
 
-	// cyber_policy 硬阻断：透传上游原始错误体给客户端（不重包成通用 502），不冷却账号。
-	// 当前请求恒透传（需求1）；标记供 handler 事后写风控/邮件。400 cyber 不可 failover
-	// （shouldFailoverUpstreamError(400)=false），故走到此处即可安全早返回。
+	// cyber_policy 不冷却账号，并保留内部标记供 handler 事后写风控/邮件。已启用的
+	// Responses 恢复改写优先生成配置的完成响应；其他协议保留原有 failover/透传行为。
 	if hit, _, cyberMsg := detectOpenAICyberPolicy(body); hit {
 		markOpenAICyberPolicyFromResponse(c, resp.StatusCode, body)
-		if isOpenAIRefusalRecoveryResponsesRequest(c) && s.openAIRefusalRecoveryRuntime(ctx).CyberFailoverEnabled() {
-			return nil, NewOpenAICyberFailoverError(body, resp.Header)
+		if isOpenAIRefusalRecoveryResponsesRequest(c) {
+			runtime := s.openAIRefusalRecoveryRuntime(ctx)
+			if runtime.RewriteEnabled() {
+				if replaceErr := writeOpenAIRefusalRecoveryFailureReplacement(c, requestBody, body, runtime.Matcher.Replacement()); replaceErr == nil {
+					MarkResponseCommitted(c)
+					return nil, errors.New("openai cyber policy replaced with configured recovery response")
+				} else {
+					logger.FromContext(ctx).Warn("openai.refusal_recovery_cyber_replace_failed", zap.String("transport", "http"), zap.Error(replaceErr))
+				}
+			}
+			if runtime.CyberFailoverEnabled() {
+				return nil, NewOpenAICyberFailoverError(body, resp.Header)
+			}
 		}
 		setOpsUpstreamError(c, resp.StatusCode, cyberMsg, truncateString(string(body), 2048))
 		writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)

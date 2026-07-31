@@ -227,6 +227,64 @@ func TestOpenAIRefusalStreamEmitsReplacementBeforeTerminalAndCompletesWithUsage(
 	require.NotContains(t, string(replacement), "I cannot")
 }
 
+func TestOpenAIRefusalStreamReplacesCyberPolicyTerminal(t *testing.T) {
+	matcher, err := NewOpenAIRefusalMatcher([]string{"cannot"}, "continue current task")
+	require.NoError(t, err)
+	state := newOpenAIRefusalStreamStateWithEarlyEmission(matcher, true)
+
+	_, _, observeErr := state.observe(
+		"response.created",
+		[]byte(`{"type":"response.created","response":{"id":"resp_cyber","object":"response","model":"gpt-5.6-sol","status":"in_progress","output":[]}}`),
+	)
+	require.NoError(t, observeErr)
+
+	action, replacement, replaceErr := state.replaceCyberPolicyFailure(
+		[]byte(`{"type":"response.failed","response":{"id":"resp_cyber","status":"failed","error":{"code":"cyber_policy","message":"blocked"},"usage":{"input_tokens":8,"output_tokens":0,"total_tokens":8}},"error":{"code":"cyber_policy","message":"blocked"}}`),
+		false,
+	)
+
+	require.NoError(t, replaceErr)
+	require.Equal(t, openAIRefusalStreamReplace, action)
+	require.Contains(t, string(replacement), `"type":"response.completed"`)
+	require.Contains(t, string(replacement), `"total_tokens":8`)
+	require.Contains(t, string(replacement), "continue current task")
+	require.NotContains(t, string(replacement), "response.failed")
+	require.NotContains(t, string(replacement), "cyber_policy")
+	require.NotContains(t, string(replacement), "blocked")
+}
+
+func TestOpenAIRefusalStreamCompletesEarlyReplacementAfterCyberPolicyTerminal(t *testing.T) {
+	matcher, err := NewOpenAIRefusalMatcher([]string{"cannot"}, "continue current task")
+	require.NoError(t, err)
+	state := newOpenAIRefusalStreamStateWithEarlyEmission(matcher, true)
+
+	_, _, observeErr := state.observe(
+		"response.created",
+		[]byte(`{"type":"response.created","response":{"id":"resp_early_cyber","object":"response","model":"gpt-5.6-sol","status":"in_progress","output":[]}}`),
+	)
+	require.NoError(t, observeErr)
+	action, _, observeErr := state.observe(
+		"response.output_text.delta",
+		[]byte(`{"type":"response.output_text.delta","response_id":"resp_early_cyber","item_id":"msg_early_cyber","delta":"I cannot help."}`),
+	)
+	require.NoError(t, observeErr)
+	require.Equal(t, openAIRefusalStreamReplaceEarly, action)
+
+	action, replacement, replaceErr := state.replaceCyberPolicyFailure(
+		[]byte(`{"type":"response.failed","response":{"id":"resp_early_cyber","status":"failed","error":{"code":"cyber_policy","message":"blocked"},"usage":{"input_tokens":8,"output_tokens":1,"total_tokens":9}}}`),
+		true,
+	)
+
+	require.NoError(t, replaceErr)
+	require.Equal(t, openAIRefusalStreamReplace, action)
+	require.NotContains(t, string(replacement), `"type":"response.created"`)
+	require.Contains(t, string(replacement), `"type":"response.completed"`)
+	require.Contains(t, string(replacement), `"total_tokens":9`)
+	require.Contains(t, string(replacement), "continue current task")
+	require.NotContains(t, string(replacement), "cyber_policy")
+	require.NotContains(t, string(replacement), "blocked")
+}
+
 func TestOpenAIRefusalStreamValidatesCompletedMessageFallback(t *testing.T) {
 	tests := []struct {
 		name       string
