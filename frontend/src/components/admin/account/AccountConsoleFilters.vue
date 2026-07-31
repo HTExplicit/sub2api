@@ -66,6 +66,7 @@
       <select
         :value="modelValue.group"
         class="input h-9 w-44 py-1.5 text-sm"
+        :aria-label="t('admin.accounts.columns.groups')"
         @change="updateGroup(($event.target as HTMLSelectElement).value)"
       >
         <option value="">{{ t('admin.accounts.allGroups') }}</option>

@@ -66,12 +66,13 @@
       </div>
 
       <div class="hidden min-w-0 lg:block">
+        <div class="text-[10px] font-medium uppercase text-gray-400">{{ t('admin.accounts.classification') }}</div>
         <div class="flex items-center gap-2">
           <AccountStatusIndicator :account="account" @show-temp-unsched="emit('showTempUnsched', account)" />
           <span class="text-xs text-gray-400">{{ account.management_folder?.name || t('admin.accounts.folderUncategorized') }}</span>
         </div>
         <div class="mt-1 truncate text-xs text-gray-500 dark:text-dark-300">
-          {{ routeSummary(account) }}
+          <span class="mr-1 text-[10px] font-medium uppercase text-gray-400">{{ t('admin.accounts.routing') }}</span>{{ routeSummary(account) }}
         </div>
       </div>
 

@@ -177,13 +177,19 @@
         </div>
       </template>
       <template #table>
+        <div class="min-w-0 lg:grid lg:grid-cols-[13rem_minmax(0,1fr)]">
         <AccountFolderBar
           :folders="facetFolders"
           :active-folder="activeFolder"
           :total="folderNavigationTotal"
+          :uncategorized-count="folderNavigationUncategorized"
+          :loading="facetsLoading"
+          :error="Boolean(facetsError)"
           @select="handleFolderSelect"
           @manage="showTaxonomyManager = true"
+          @retry="loadFacets"
         />
+        <div class="min-w-0 p-3 sm:p-4">
         <AccountBulkActionsBar
           :selected-ids="selIds"
           @delete="handleBulkDelete"
@@ -192,6 +198,8 @@
           @probe-upstream-billing="handleBulkProbeUpstreamBilling"
           @edit-selected="openBulkEditSelected"
           @edit-filtered="openBulkEditFiltered"
+          @taxonomy-selected="openBulkTaxonomySelected"
+          @taxonomy-filtered="openBulkTaxonomyFiltered"
           @clear="clearSelection"
           @select-page="selectPage"
           @toggle-schedulable="handleBulkToggleSchedulable"
@@ -321,6 +329,7 @@
           <template #cell-taxonomy_route="{ row }">
             <div class="max-w-[18rem] space-y-1">
               <div class="flex min-w-0 flex-wrap items-center gap-1">
+                <span class="text-[10px] font-medium uppercase text-gray-400">{{ t('admin.accounts.classification') }}</span>
                 <span class="truncate text-xs font-medium text-gray-700 dark:text-gray-200">
                   {{ row.management_folder?.name || t('admin.accounts.folderUncategorized') }}
                 </span>
@@ -334,7 +343,7 @@
                 <span v-if="(row.tags || []).length > 2" class="text-[10px] text-gray-400">+{{ row.tags.length - 2 }}</span>
               </div>
               <div class="truncate text-xs text-gray-500 dark:text-dark-300">
-                {{ accountRouteSummary(row) }}
+                <span class="mr-1 text-[10px] font-medium uppercase text-gray-400">{{ t('admin.accounts.routing') }}</span>{{ accountRouteSummary(row) }}
               </div>
             </div>
           </template>
@@ -506,6 +515,8 @@
           @show-temp-unsched="handleShowTempUnsched"
         />
         </div>
+        </div>
+        </div>
       </template>
       <template #pagination><Pagination v-if="pagination.total > 0" :page="pagination.page" :total="pagination.total" :page-size="pagination.page_size" @update:page="handlePageChange" @update:pageSize="handlePageSizeChange" /></template>
     </TablePageLayout>
@@ -567,14 +578,24 @@
       @close="showTaxonomyManager = false"
       @changed="handleTaxonomyChanged"
     />
+    <AccountBulkTaxonomyModal
+      :show="showBulkTaxonomy"
+      :target="bulkTaxonomyTarget"
+      :folders="folders"
+      :tags="tags"
+      @close="closeBulkTaxonomy"
+      @updated="handleBulkTaxonomyUpdated"
+      @stale="handleBulkTaxonomyStale"
+    />
     <TotpStepUpDialog :controller="accountExportStepUp" />
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, toRaw, watch } from 'vue'
+import { ref, reactive, computed, inject, onMounted, onUnmounted, toRaw, watch } from 'vue'
 import { useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
+import { routeLocationKey, routerKey, type RouteLocationNormalizedLoaded, type Router } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { adminAPI } from '@/api/admin'
@@ -600,6 +621,7 @@ import AccountConsoleFilters from '@/components/admin/account/AccountConsoleFilt
 import AccountDetailsDrawer from '@/components/admin/account/AccountDetailsDrawer.vue'
 import AccountFolderBar from '@/components/admin/account/AccountFolderBar.vue'
 import AccountTaxonomyManager from '@/components/admin/account/AccountTaxonomyManager.vue'
+import AccountBulkTaxonomyModal, { type AccountBulkTaxonomyTarget } from '@/components/admin/account/AccountBulkTaxonomyModal.vue'
 import AccountViewModeSwitcher, { type AccountViewMode } from '@/components/admin/account/AccountViewModeSwitcher.vue'
 import ImportDataModal from '@/components/admin/account/ImportDataModal.vue'
 import ReAuthAccountModal from '@/components/admin/account/ReAuthAccountModal.vue'
@@ -643,6 +665,38 @@ import type {
 const { t } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
+const fallbackRoute = reactive({ query: {}, fullPath: '' }) as unknown as RouteLocationNormalizedLoaded
+const fallbackRouter = {
+  push: async () => undefined,
+  replace: async () => undefined
+} as unknown as Router
+const route = inject(routeLocationKey, fallbackRoute)
+const router = inject(routerKey, fallbackRouter)
+
+const ACCOUNT_CONSOLE_SESSION_KEY = 'account-console-sensitive-filters-v1'
+const queryString = (key: string) => {
+  const value = route.query[key]
+  return typeof value === 'string' ? value : ''
+}
+const queryList = (key: string) => queryString(key).split(',').map((value) => value.trim()).filter(Boolean)
+const queryPositiveInt = (key: string, fallback: number) => {
+  const value = Number(queryString(key))
+  return Number.isInteger(value) && value > 0 ? value : fallback
+}
+const loadSensitiveConsoleState = (): Pick<AccountConsoleFilterState, 'search' | 'account_ids'> => {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(ACCOUNT_CONSOLE_SESSION_KEY) || '{}') as { search?: unknown; account_ids?: unknown }
+    return {
+      search: typeof parsed.search === 'string' ? parsed.search : '',
+      account_ids: Array.isArray(parsed.account_ids)
+        ? [...new Set(parsed.account_ids.map(Number).filter((id) => Number.isInteger(id) && id > 0))]
+        : []
+    }
+  } catch {
+    return { search: '', account_ids: [] }
+  }
+}
+const initialSensitiveConsoleState = loadSensitiveConsoleState()
 
 const proxies = ref<AccountProxy[]>([])
 const groups = ref<AdminGroup[]>([])
@@ -654,31 +708,34 @@ const loadAccountViewMode = (): AccountViewMode => {
 }
 const viewMode = ref<AccountViewMode>(loadAccountViewMode())
 const facets = ref<AccountConsoleFacets | null>(null)
+const facetsLoading = ref(false)
+const facetsError = ref<unknown>(null)
 let facetsRequestSequence = 0
 let taxonomyRequestSequence = 0
-const activeFolder = ref('')
+const activeFolder = ref(queryString('folder'))
 const showTaxonomyManager = ref(false)
 const detailsAccount = ref<Account | null>(null)
 const consoleFilters = ref<AccountConsoleFilterState>({
-  search: '',
-  platforms: [],
-  types: [],
-  statuses: [],
-  plans: [],
-  proxies: [],
-  tags: [],
-  group: '',
-  privacy_mode: '',
-  account_ids: []
+  search: initialSensitiveConsoleState.search,
+  platforms: queryList('platforms'),
+  types: queryList('types'),
+  statuses: queryList('statuses'),
+  plans: queryList('plans'),
+  proxies: queryList('proxies'),
+  tags: queryList('tags').map(Number).filter((id) => Number.isInteger(id) && id > 0),
+  group: queryString('group'),
+  privacy_mode: queryString('privacy_mode'),
+  account_ids: initialSensitiveConsoleState.account_ids
 })
 const folders = ref<AccountManagementFolder[]>([])
 const tags = ref<AccountManagementTag[]>([])
 const facetFolders = computed<AccountManagementFolder[]>(() => facets.value?.folders || [])
-const folderNavigationTotal = computed(() => {
-  if (!facets.value) return pagination.total
-  return facets.value.folders.reduce((sum, folder) => sum + folder.account_count, 0)
-    + facets.value.uncategorized_count
-})
+const finiteFacetCount = (value: unknown): number | undefined => {
+  const count = Number(value)
+  return Number.isFinite(count) && count >= 0 ? count : undefined
+}
+const folderNavigationTotal = computed(() => finiteFacetCount(facets.value?.total))
+const folderNavigationUncategorized = computed(() => finiteFacetCount(facets.value?.uncategorized_count))
 const accountTableRef = ref<HTMLElement | null>(null)
 const dataTableRef = ref<InstanceType<typeof DataTable> | null>(null)
 type AccountBulkEditTarget =
@@ -719,6 +776,8 @@ const showExportDataDialog = ref(false)
 const includeProxyOnExport = ref(true)
 const showBulkEdit = ref(false)
 const bulkEditTarget = ref<AccountBulkEditTarget | null>(null)
+const showBulkTaxonomy = ref(false)
+const bulkTaxonomyTarget = ref<AccountBulkTaxonomyTarget | null>(null)
 const showTempUnsched = ref(false)
 const showDeleteDialog = ref(false)
 const showCreateShadowDialog = ref(false)
@@ -796,6 +855,10 @@ const ACCOUNT_SORTABLE_KEYS = new Set([
 ])
 const loadInitialAccountSortState = (): AccountSortState => {
   const fallback: AccountSortState = { sort_by: 'name', sort_order: 'asc' }
+  const routeKey = queryString('sort_by')
+  if (ACCOUNT_SORTABLE_KEYS.has(routeKey)) {
+    return { sort_by: routeKey, sort_order: queryString('sort_order') === 'desc' ? 'desc' : 'asc' }
+  }
   try {
     const raw = localStorage.getItem(ACCOUNT_SORT_STORAGE_KEY)
     if (!raw) return fallback
@@ -1107,6 +1170,70 @@ const {
   }
 })
 
+pagination.page = queryPositiveInt('page', pagination.page)
+pagination.page_size = queryPositiveInt('page_size', pagination.page_size)
+
+const saveSensitiveConsoleState = () => {
+  sessionStorage.setItem(ACCOUNT_CONSOLE_SESSION_KEY, JSON.stringify({
+    search: consoleFilters.value.search,
+    account_ids: consoleFilters.value.account_ids
+  }))
+}
+
+const buildConsoleRouteQuery = (): Record<string, string> => {
+  const state = consoleFilters.value
+  const query: Record<string, string> = {}
+  const setList = (key: string, values: Array<string | number>) => {
+    if (values.length) query[key] = values.join(',')
+  }
+  setList('platforms', state.platforms)
+  setList('types', state.types)
+  setList('statuses', state.statuses)
+  setList('plans', state.plans)
+  setList('proxies', state.proxies)
+  setList('tags', state.tags)
+  if (activeFolder.value) query.folder = activeFolder.value
+  if (state.group) query.group = state.group
+  if (state.privacy_mode) query.privacy_mode = state.privacy_mode
+  if (sortState.sort_by !== 'name' || sortState.sort_order !== 'asc') query.sort_by = sortState.sort_by
+  if (sortState.sort_order !== 'asc') query.sort_order = sortState.sort_order
+  if (pagination.page > 1) query.page = String(pagination.page)
+  if (pagination.page_size !== 20) query.page_size = String(pagination.page_size)
+  return query
+}
+
+const routeQuerySignature = (query: Record<string, unknown>) => JSON.stringify(
+  Object.entries(query).filter(([, value]) => typeof value === 'string' && value !== '').sort(([a], [b]) => a.localeCompare(b))
+)
+let ignoredRouteSignature = ''
+const syncConsoleRoute = (mode: 'push' | 'replace' = 'push') => {
+  const query = buildConsoleRouteQuery()
+  const signature = routeQuerySignature(query)
+  if (signature === routeQuerySignature(route.query)) return
+  ignoredRouteSignature = signature
+  void router[mode]({ query }).catch((error) => console.error('Failed to persist account console URL state:', error))
+}
+
+const applyConsoleRouteState = () => {
+  activeFolder.value = queryString('folder')
+  consoleFilters.value = {
+    ...consoleFilters.value,
+    platforms: queryList('platforms'),
+    types: queryList('types'),
+    statuses: queryList('statuses'),
+    plans: queryList('plans'),
+    proxies: queryList('proxies'),
+    tags: queryList('tags').map(Number).filter((id) => Number.isInteger(id) && id > 0),
+    group: queryString('group'),
+    privacy_mode: queryString('privacy_mode')
+  }
+  const sortKey = queryString('sort_by')
+  sortState.sort_by = ACCOUNT_SORTABLE_KEYS.has(sortKey) ? sortKey : 'name'
+  sortState.sort_order = queryString('sort_order') === 'desc' ? 'desc' : 'asc'
+  pagination.page = queryPositiveInt('page', 1)
+  pagination.page_size = queryPositiveInt('page_size', 20)
+}
+
 const buildConsoleAPIParams = (includeFolder = true) => {
   const state = consoleFilters.value
   return {
@@ -1139,11 +1266,21 @@ const syncConsoleParams = () => {
 
 const loadFacets = async () => {
   const requestSequence = ++facetsRequestSequence
+  facetsLoading.value = true
+  facetsError.value = null
   try {
     const nextFacets = await adminAPI.accounts.getFacets(buildConsoleAPIParams(false))
-    if (requestSequence === facetsRequestSequence) facets.value = nextFacets
+    if (requestSequence === facetsRequestSequence) {
+      facets.value = nextFacets
+    }
   } catch (error) {
-    if (requestSequence === facetsRequestSequence) console.error('Failed to load account facets:', error)
+    if (requestSequence === facetsRequestSequence) {
+      facets.value = null
+      facetsError.value = error
+      console.error('Failed to load account facets:', error)
+    }
+  } finally {
+    if (requestSequence === facetsRequestSequence) facetsLoading.value = false
   }
 }
 
@@ -1157,6 +1294,20 @@ const loadTaxonomy = async () => {
     if (requestSequence !== taxonomyRequestSequence) return
     folders.value = nextFolders
     tags.value = nextTags
+    const validFolderIDs = new Set(nextFolders.map((folder) => String(folder.id)))
+    const validTagIDs = new Set(nextTags.map((tag) => tag.id))
+    const normalizedFolder = activeFolder.value === '' || activeFolder.value === 'uncategorized' || validFolderIDs.has(activeFolder.value)
+      ? activeFolder.value
+      : ''
+    const normalizedTags = consoleFilters.value.tags.filter((id) => validTagIDs.has(id))
+    if (normalizedFolder !== activeFolder.value || normalizedTags.length !== consoleFilters.value.tags.length) {
+      activeFolder.value = normalizedFolder
+      consoleFilters.value = { ...consoleFilters.value, tags: normalizedTags }
+      pagination.page = 1
+      syncConsoleParams()
+      syncConsoleRoute('replace')
+      void Promise.all([load(), loadFacets()])
+    }
   } catch (error) {
     if (requestSequence === taxonomyRequestSequence) console.error('Failed to load account taxonomy:', error)
   }
@@ -1164,6 +1315,8 @@ const loadTaxonomy = async () => {
 
 const handleConsoleFiltersChanged = () => {
   pagination.page = 1
+  saveSensitiveConsoleState()
+  syncConsoleRoute()
   syncConsoleParams()
   debouncedReload()
   void loadFacets()
@@ -1173,6 +1326,7 @@ const handleFolderSelect = (folder: string) => {
   if (activeFolder.value === folder) return
   activeFolder.value = folder
   pagination.page = 1
+  syncConsoleRoute()
   syncConsoleParams()
   void load()
   void loadFacets()
@@ -1283,6 +1437,7 @@ const handlePageChange = (page: number) => {
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = true
   baseHandlePageChange(page)
+  syncConsoleRoute()
 }
 
 const handlePageSizeChange = (size: number) => {
@@ -1291,6 +1446,7 @@ const handlePageSizeChange = (size: number) => {
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = true
   baseHandlePageSizeChange(size)
+  syncConsoleRoute()
 }
 
 const handleSort = (key: string, order: AccountSortOrder) => {
@@ -1304,6 +1460,7 @@ const handleSort = (key: string, order: AccountSortOrder) => {
   hasPendingListSync.value = false
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = true
+  syncConsoleRoute()
   load()
 }
 
@@ -1323,6 +1480,17 @@ watch(upstreamBillingNow, () => {
   if (sortState.sort_by !== 'upstream_billing_rate' || loading.value) return
   if (typeof document !== 'undefined' && document.hidden) return
   void refreshUpstreamBillingSortedList()
+})
+
+watch(() => route.fullPath, async () => {
+  const signature = routeQuerySignature(route.query)
+  if (signature === ignoredRouteSignature) {
+    ignoredRouteSignature = ''
+    return
+  }
+  applyConsoleRouteState()
+  syncConsoleParams()
+  await Promise.all([load(), loadFacets()])
 })
 
 const isAnyModalOpen = computed(() => {
@@ -1982,6 +2150,48 @@ const openBulkEditFiltered = async () => {
   showBulkEdit.value = true
 }
 
+const openBulkTaxonomySelected = () => {
+  if (!selIds.value.length) return
+  bulkTaxonomyTarget.value = {
+    mode: 'selected',
+    accountIds: [...selIds.value],
+    count: selIds.value.length
+  }
+  showBulkTaxonomy.value = true
+}
+
+const openBulkTaxonomyFiltered = async () => {
+  try {
+    const filters = buildBulkEditFilterSnapshot()
+    const preview = await adminAPI.accounts.list(1, 1, filters)
+    bulkTaxonomyTarget.value = { mode: 'filtered', filters, count: preview.total }
+    showBulkTaxonomy.value = true
+  } catch (error: any) {
+    appStore.showError(error?.message || t('common.operationFailed'))
+  }
+}
+
+const closeBulkTaxonomy = () => {
+  showBulkTaxonomy.value = false
+  bulkTaxonomyTarget.value = null
+}
+
+const refreshAfterBulkTaxonomy = async () => {
+  await Promise.all([load(), loadFacets(), loadTaxonomy()])
+  setSelectedIds(selIds.value.filter((id) => accounts.value.some((account) => account.id === id && accountMatchesCurrentFilters(account))))
+}
+
+const handleBulkTaxonomyUpdated = async (_matchedCount: number, updatedCount: number) => {
+  closeBulkTaxonomy()
+  await refreshAfterBulkTaxonomy()
+  appStore.showSuccess(t('admin.accounts.bulkTaxonomy.success', { count: updatedCount }))
+}
+
+const handleBulkTaxonomyStale = async () => {
+  closeBulkTaxonomy()
+  await Promise.all([load(), loadFacets(), loadTaxonomy()])
+}
+
 const handleBulkUpdated = () => {
   showBulkEdit.value = false
   bulkEditTarget.value = null
@@ -1995,8 +2205,10 @@ const handleDataImported = async (result: AdminDataImportResult) => {
     ...consoleFilters.value,
     account_ids: importedIDs
   }
+  saveSensitiveConsoleState()
   setSelectedIds(importedIDs)
   pagination.page = 1
+  syncConsoleRoute()
   syncConsoleParams()
   await Promise.all([load(), loadFacets(), loadTaxonomy()])
 }

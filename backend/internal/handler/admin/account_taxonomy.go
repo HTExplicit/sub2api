@@ -26,12 +26,26 @@ type accountConsoleAdminService interface {
 	GetAccountConsoleFacets(ctx context.Context, filters service.AccountConsoleFilters) (*service.AccountConsoleFacets, error)
 }
 
+type accountTaxonomyMutationAdminService interface {
+	ReorderAccountFolders(ctx context.Context, orderedIDs []int64) ([]service.AccountManagementFolder, error)
+	ReorderAccountTags(ctx context.Context, orderedIDs []int64) ([]service.AccountManagementTag, error)
+	BulkUpdateAccountTaxonomy(ctx context.Context, input service.BulkAccountTaxonomyInput) (*service.BulkAccountTaxonomyResult, error)
+}
+
 func (h *AccountHandler) accountConsoleService() (accountConsoleAdminService, error) {
 	console, ok := h.adminService.(accountConsoleAdminService)
 	if !ok {
 		return nil, infraerrors.New(501, "ACCOUNT_CONSOLE_UNAVAILABLE", "account console service is unavailable")
 	}
 	return console, nil
+}
+
+func (h *AccountHandler) accountTaxonomyMutationService() (accountTaxonomyMutationAdminService, error) {
+	taxonomy, ok := h.adminService.(accountTaxonomyMutationAdminService)
+	if !ok {
+		return nil, infraerrors.New(501, "ACCOUNT_TAXONOMY_MUTATION_UNAVAILABLE", "account taxonomy mutation service is unavailable")
+	}
+	return taxonomy, nil
 }
 
 func parsePositivePathID(c *gin.Context, kind string) (int64, bool) {
@@ -55,6 +69,59 @@ func accountTagDTO(tag service.AccountManagementTag) dto.AccountManagementTag {
 		ID: tag.ID, Name: tag.Name, SortOrder: tag.SortOrder,
 		AccountCount: tag.AccountCount, CreatedAt: tag.CreatedAt, UpdatedAt: tag.UpdatedAt,
 	}
+}
+
+func accountFacetDTO(option service.AccountFacetOption) dto.AccountFacetOption {
+	return dto.AccountFacetOption{Value: option.Value, Label: option.Label, Count: option.Count}
+}
+
+func accountFacetsDTO(facets *service.AccountConsoleFacets) dto.AccountConsoleFacets {
+	out := dto.AccountConsoleFacets{
+		Total: facets.Total, UncategorizedCount: facets.UncategorizedCount,
+		Platforms: make([]dto.AccountFacetOption, 0, len(facets.Platforms)),
+		Types:     make([]dto.AccountFacetOption, 0, len(facets.Types)),
+		Statuses:  make([]dto.AccountFacetOption, 0, len(facets.Statuses)),
+		Plans:     make([]dto.AccountFacetOption, 0, len(facets.Plans)),
+		Proxies:   make([]dto.AccountFacetOption, 0, len(facets.Proxies)),
+		Folders:   make([]dto.AccountManagementFolder, 0, len(facets.Folders)),
+		Tags:      make([]dto.AccountManagementTag, 0, len(facets.Tags)),
+	}
+	for _, item := range facets.Platforms {
+		out.Platforms = append(out.Platforms, accountFacetDTO(item))
+	}
+	for _, item := range facets.Types {
+		out.Types = append(out.Types, accountFacetDTO(item))
+	}
+	for _, item := range facets.Statuses {
+		out.Statuses = append(out.Statuses, accountFacetDTO(item))
+	}
+	for _, item := range facets.Plans {
+		out.Plans = append(out.Plans, accountFacetDTO(item))
+	}
+	for _, item := range facets.Proxies {
+		out.Proxies = append(out.Proxies, accountFacetDTO(item))
+	}
+	for _, item := range facets.Folders {
+		out.Folders = append(out.Folders, accountFolderDTO(item))
+	}
+	for _, item := range facets.Tags {
+		out.Tags = append(out.Tags, accountTagDTO(item))
+	}
+	return out
+}
+
+type accountTaxonomyOrderRequest struct {
+	OrderedIDs []int64 `json:"ordered_ids"`
+}
+
+type bulkAccountTaxonomyRequest struct {
+	AccountIDs         []int64                   `json:"account_ids"`
+	Filters            *BulkUpdateAccountFilters `json:"filters"`
+	ExpectedMatchCount *int                      `json:"expected_match_count"`
+	FolderAction       string                    `json:"folder_action"`
+	FolderID           *int64                    `json:"folder_id"`
+	TagAddIDs          []int64                   `json:"tag_add_ids"`
+	TagRemoveIDs       []int64                   `json:"tag_remove_ids"`
 }
 
 func (h *AccountHandler) ListAccountFolders(c *gin.Context) {
@@ -134,6 +201,29 @@ func (h *AccountHandler) DeleteAccountFolder(c *gin.Context) {
 	response.Success(c, gin.H{"deleted": true, "moved_to_uncategorized": moveAccounts})
 }
 
+func (h *AccountHandler) ReorderAccountFolders(c *gin.Context) {
+	var req accountTaxonomyOrderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	console, err := h.accountTaxonomyMutationService()
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	items, err := console.ReorderAccountFolders(c.Request.Context(), req.OrderedIDs)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	out := make([]dto.AccountManagementFolder, 0, len(items))
+	for _, item := range items {
+		out = append(out, accountFolderDTO(item))
+	}
+	response.Success(c, out)
+}
+
 func (h *AccountHandler) ListAccountTags(c *gin.Context) {
 	console, err := h.accountConsoleService()
 	if err != nil {
@@ -210,6 +300,29 @@ func (h *AccountHandler) DeleteAccountTag(c *gin.Context) {
 	response.Success(c, gin.H{"deleted": true})
 }
 
+func (h *AccountHandler) ReorderAccountTags(c *gin.Context) {
+	var req accountTaxonomyOrderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	console, err := h.accountTaxonomyMutationService()
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	items, err := console.ReorderAccountTags(c.Request.Context(), req.OrderedIDs)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	out := make([]dto.AccountManagementTag, 0, len(items))
+	for _, item := range items {
+		out = append(out, accountTagDTO(item))
+	}
+	response.Success(c, out)
+}
+
 func (h *AccountHandler) SetAccountTaxonomy(c *gin.Context) {
 	accountID, ok := parsePositivePathID(c, "account")
 	if !ok {
@@ -231,6 +344,34 @@ func (h *AccountHandler) SetAccountTaxonomy(c *gin.Context) {
 		return
 	}
 	response.Success(c, h.accountResponseFromService(account))
+}
+
+func (h *AccountHandler) BulkUpdateAccountTaxonomy(c *gin.Context) {
+	var req bulkAccountTaxonomyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	filters, err := toServiceBulkUpdateAccountFilters(req.Filters)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	console, err := h.accountTaxonomyMutationService()
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	result, err := console.BulkUpdateAccountTaxonomy(c.Request.Context(), service.BulkAccountTaxonomyInput{
+		AccountIDs: req.AccountIDs, Filters: filters, ExpectedMatchCount: req.ExpectedMatchCount,
+		FolderAction: req.FolderAction, FolderID: req.FolderID,
+		TagAddIDs: req.TagAddIDs, TagRemoveIDs: req.TagRemoveIDs,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
 }
 
 func splitQueryValues(c *gin.Context, keys ...string) []string {
@@ -336,5 +477,5 @@ func (h *AccountHandler) GetAccountFacets(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, facets)
+	response.Success(c, accountFacetsDTO(facets))
 }

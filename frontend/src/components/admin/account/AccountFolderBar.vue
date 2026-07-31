@@ -1,57 +1,96 @@
 <template>
-  <div class="border-b border-gray-200 bg-gray-50/80 px-3 py-2 dark:border-dark-700 dark:bg-dark-900/35 sm:px-4">
-    <div class="mb-2 flex min-w-0 items-center gap-1 text-xs text-gray-500 dark:text-dark-300">
-      <Icon name="home" size="xs" />
-      <button type="button" class="truncate hover:text-primary-600" @click="emit('select', '')">
-        {{ t('admin.accounts.folderAll') }}
+  <div class="border-b border-gray-200 bg-gray-50/80 dark:border-dark-700 dark:bg-dark-900/35 lg:border-b-0 lg:border-r">
+    <div class="relative p-3 lg:hidden" ref="mobileMenuRef">
+      <button
+        ref="mobileTriggerRef"
+        type="button"
+        class="flex min-h-11 w-full items-center justify-between gap-3 rounded-md border border-gray-200 bg-white px-3 text-left text-sm text-gray-800 shadow-sm dark:border-dark-700 dark:bg-dark-800 dark:text-gray-100"
+        aria-haspopup="listbox"
+        :aria-expanded="mobileOpen"
+        @click="mobileOpen = !mobileOpen"
+        @keydown.down.prevent="openMobileOptions('first')"
+        @keydown.up.prevent="openMobileOptions('last')"
+        @keydown.esc.prevent="closeMobileMenu"
+      >
+        <span class="min-w-0">
+          <span class="block text-[11px] font-medium text-gray-500 dark:text-dark-300">{{ t('admin.accounts.managementClassification') }}</span>
+          <span class="block truncate font-medium">{{ activeLabel }}</span>
+        </span>
+        <Icon name="chevronDown" size="sm" class="shrink-0" />
       </button>
-      <template v-if="activeLabel">
-        <Icon name="chevronRight" size="xs" class="shrink-0 text-gray-300" />
-        <span class="truncate font-medium text-gray-800 dark:text-gray-100">{{ activeLabel }}</span>
-      </template>
+      <div
+        v-if="mobileOpen"
+        class="absolute inset-x-3 top-[calc(100%-0.5rem)] z-30 max-h-72 overflow-y-auto rounded-md border border-gray-200 bg-white p-1 shadow-lg dark:border-dark-700 dark:bg-dark-800"
+        role="listbox"
+        :aria-label="t('admin.accounts.managementClassification')"
+        @keydown="handleMobileMenuKeydown"
+      >
+        <button v-if="error" type="button" class="flex min-h-11 w-full items-center justify-between rounded px-3 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-900/20" @click="emit('retry')">
+          <span>{{ t('admin.accounts.facetsLoadFailed') }}</span>
+          <span class="font-medium text-primary-700 dark:text-primary-300">{{ t('common.retry') }}</span>
+        </button>
+        <div v-else-if="loading" class="space-y-2 p-2" aria-live="polite">
+          <div v-for="index in 3" :key="index" class="h-9 animate-pulse rounded bg-gray-200/70 dark:bg-dark-700" />
+        </div>
+        <template v-else>
+        <button
+          v-for="item in navigationItems"
+          :key="item.value || 'all'"
+          type="button"
+          role="option"
+          :aria-selected="activeFolder === item.value"
+          class="flex min-h-11 w-full items-center justify-between gap-3 rounded px-3 text-left text-sm hover:bg-gray-100 dark:hover:bg-dark-700"
+          :class="activeFolder === item.value ? 'font-semibold text-primary-700 dark:text-primary-300' : 'text-gray-700 dark:text-gray-200'"
+          @click="selectMobile(item.value)"
+        >
+          <span class="truncate">{{ item.label }}</span>
+          <span class="shrink-0 tabular-nums text-gray-400">{{ formatCount(item.count) }}</span>
+        </button>
+        </template>
+        <button type="button" class="flex min-h-11 w-full items-center gap-2 rounded px-3 text-sm text-gray-600 hover:bg-gray-100 dark:text-dark-300 dark:hover:bg-dark-700" @click="manageMobile">
+          <Icon name="cog" size="sm" />
+          <span>{{ t('admin.accounts.manageTaxonomy') }}</span>
+        </button>
+      </div>
     </div>
 
-    <div class="flex items-center gap-1.5 overflow-x-auto pb-0.5">
-      <button
-        type="button"
-        :class="folderButtonClass(activeFolder === '')"
-        @click="emit('select', '')"
-      >
-        <span>{{ t('admin.accounts.folderAll') }}</span>
-        <span class="tabular-nums text-gray-400">{{ total }}</span>
-      </button>
-      <button
-        type="button"
-        :class="folderButtonClass(activeFolder === 'uncategorized')"
-        @click="emit('select', 'uncategorized')"
-      >
-        <span>{{ t('admin.accounts.folderUncategorized') }}</span>
-        <span class="tabular-nums text-gray-400">{{ uncategorizedCount }}</span>
-      </button>
-      <button
-        v-for="folder in folders"
-        :key="folder.id"
-        type="button"
-        :class="folderButtonClass(activeFolder === String(folder.id))"
-        @click="emit('select', String(folder.id))"
-      >
-        <span class="max-w-40 truncate">{{ folder.name }}</span>
-        <span class="tabular-nums text-gray-400">{{ folder.account_count }}</span>
-      </button>
-      <button
-        type="button"
-        class="ml-auto inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-200 hover:text-gray-800 dark:text-dark-300 dark:hover:bg-dark-700 dark:hover:text-white"
-        :title="t('admin.accounts.manageTaxonomy')"
-        @click="emit('manage')"
-      >
-        <Icon name="cog" size="sm" />
-      </button>
-    </div>
+    <aside class="hidden h-full min-h-64 w-52 p-3 lg:block" :aria-label="t('admin.accounts.managementClassification')">
+      <div class="mb-2 flex min-h-9 items-center justify-between gap-2 px-2">
+        <h2 class="text-xs font-semibold uppercase text-gray-500 dark:text-dark-300">{{ t('admin.accounts.managementClassification') }}</h2>
+        <button type="button" class="icon-button shrink-0" :title="t('admin.accounts.manageTaxonomy')" @click="emit('manage')">
+          <Icon name="cog" size="sm" />
+        </button>
+      </div>
+
+      <div v-if="loading" class="space-y-2 px-2 py-3" aria-live="polite">
+        <div v-for="index in 3" :key="index" class="h-9 animate-pulse rounded bg-gray-200/70 dark:bg-dark-700" />
+      </div>
+      <div v-else-if="error" class="px-2 py-3 text-xs text-red-600 dark:text-red-300" role="status">
+        <p>{{ t('admin.accounts.facetsLoadFailed') }}</p>
+        <button type="button" class="mt-2 min-h-9 font-medium text-primary-700 hover:underline dark:text-primary-300" @click="emit('retry')">
+          {{ t('common.retry') }}
+        </button>
+      </div>
+      <nav v-else class="space-y-1">
+        <button
+          v-for="item in navigationItems"
+          :key="item.value || 'all'"
+          type="button"
+          class="flex min-h-10 w-full items-center justify-between gap-2 rounded-md px-2.5 text-left text-sm transition-colors"
+          :class="activeFolder === item.value ? 'bg-primary-50 font-semibold text-primary-700 dark:bg-primary-900/25 dark:text-primary-300' : 'text-gray-600 hover:bg-gray-100 dark:text-dark-300 dark:hover:bg-dark-800'"
+          @click="emit('select', item.value)"
+        >
+          <span class="truncate">{{ item.label }}</span>
+          <span class="shrink-0 tabular-nums text-gray-400">{{ formatCount(item.count) }}</span>
+        </button>
+        <p v-if="folders.length === 0" class="px-2.5 py-3 text-xs text-gray-400">{{ t('admin.accounts.noFolders') }}</p>
+      </nav>
+    </aside>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import type { AccountManagementFolder } from '@/types'
@@ -59,31 +98,73 @@ import type { AccountManagementFolder } from '@/types'
 const props = defineProps<{
   folders: AccountManagementFolder[]
   activeFolder: string
-  total: number
+  total?: number
+  uncategorizedCount?: number
+  loading?: boolean
+  error?: boolean
 }>()
 
 const emit = defineEmits<{
   select: [value: string]
   manage: []
+  retry: []
 }>()
 
 const { t } = useI18n()
-
-const uncategorizedCount = computed(() => {
-  const categorized = props.folders.reduce((sum, folder) => sum + folder.account_count, 0)
-  return Math.max(0, props.total - categorized)
-})
-
-const activeLabel = computed(() => {
-  if (props.activeFolder === 'uncategorized') return t('admin.accounts.folderUncategorized')
-  if (!props.activeFolder) return ''
-  return props.folders.find((folder) => String(folder.id) === props.activeFolder)?.name || ''
-})
-
-const folderButtonClass = (active: boolean) => [
-  'inline-flex h-8 shrink-0 items-center gap-2 rounded-md border px-2.5 text-sm transition-colors',
-  active
-    ? 'border-primary-300 bg-white font-medium text-primary-700 shadow-sm dark:border-primary-700 dark:bg-dark-800 dark:text-primary-300'
-    : 'border-transparent text-gray-600 hover:border-gray-200 hover:bg-white dark:text-dark-300 dark:hover:border-dark-700 dark:hover:bg-dark-800'
-]
+const mobileOpen = ref(false)
+const mobileMenuRef = ref<HTMLElement | null>(null)
+const mobileTriggerRef = ref<HTMLButtonElement | null>(null)
+const safeCount = (value: unknown): number | undefined => {
+  const count = Number(value)
+  return Number.isFinite(count) && count >= 0 ? count : undefined
+}
+const formatCount = (value: unknown) => safeCount(value)?.toLocaleString() ?? '-'
+const navigationItems = computed(() => [
+  { value: '', label: t('admin.accounts.allAccounts'), count: safeCount(props.total) },
+  { value: 'uncategorized', label: t('admin.accounts.folderUncategorized'), count: safeCount(props.uncategorizedCount) },
+  ...props.folders.map((folder) => ({ value: String(folder.id), label: folder.name || '-', count: safeCount(folder.account_count) }))
+])
+const activeLabel = computed(() => navigationItems.value.find((item) => item.value === props.activeFolder)?.label || t('admin.accounts.allAccounts'))
+const mobileOptions = () => Array.from(mobileMenuRef.value?.querySelectorAll<HTMLButtonElement>('[role="option"]') || [])
+const openMobileOptions = async (position: 'first' | 'last') => {
+  mobileOpen.value = true
+  await nextTick()
+  const options = mobileOptions()
+  const selected = options.find((option) => option.getAttribute('aria-selected') === 'true')
+  const target = position === 'last' ? options.at(-1) : selected || options[0]
+  target?.focus()
+}
+const closeMobileMenu = () => { mobileOpen.value = false }
+const handleMobileMenuKeydown = (event: KeyboardEvent) => {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    mobileOpen.value = false
+    void nextTick(() => mobileTriggerRef.value?.focus())
+    return
+  }
+  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+  const options = mobileOptions()
+  if (!options.length) return
+  event.preventDefault()
+  const current = options.indexOf(document.activeElement as HTMLButtonElement)
+  let next = current
+  if (event.key === 'Home') next = 0
+  else if (event.key === 'End') next = options.length - 1
+  else if (event.key === 'ArrowDown') next = current < 0 ? 0 : (current + 1) % options.length
+  else next = current < 0 ? options.length - 1 : (current - 1 + options.length) % options.length
+  options[next]?.focus()
+}
+const selectMobile = (value: string) => {
+  mobileOpen.value = false
+  emit('select', value)
+}
+const manageMobile = () => {
+  mobileOpen.value = false
+  emit('manage')
+}
+const handleOutsideClick = (event: MouseEvent) => {
+  if (mobileMenuRef.value && !mobileMenuRef.value.contains(event.target as Node)) mobileOpen.value = false
+}
+onMounted(() => document.addEventListener('click', handleOutsideClick))
+onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 </script>

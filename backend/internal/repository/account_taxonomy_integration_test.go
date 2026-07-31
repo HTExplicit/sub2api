@@ -10,7 +10,9 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	dbaccount "github.com/Wei-Shaw/sub2api/ent/account"
+	dbaccountgroup "github.com/Wei-Shaw/sub2api/ent/accountgroup"
 	dbaccounttagbinding "github.com/Wei-Shaw/sub2api/ent/accounttagbinding"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 )
@@ -21,13 +23,16 @@ type accountTaxonomyIntegrationAdmin interface {
 	CreateAccountFolder(context.Context, service.AccountTaxonomyInput) (*service.AccountManagementFolder, error)
 	UpdateAccountFolder(context.Context, int64, service.AccountTaxonomyInput) (*service.AccountManagementFolder, error)
 	DeleteAccountFolder(context.Context, int64, bool) error
+	ReorderAccountFolders(context.Context, []int64) ([]service.AccountManagementFolder, error)
 	ListAccountTags(context.Context) ([]service.AccountManagementTag, error)
 	CreateAccountTag(context.Context, service.AccountTaxonomyInput) (*service.AccountManagementTag, error)
 	UpdateAccountTag(context.Context, int64, service.AccountTaxonomyInput) (*service.AccountManagementTag, error)
 	DeleteAccountTag(context.Context, int64) error
+	ReorderAccountTags(context.Context, []int64) ([]service.AccountManagementTag, error)
 	SetAccountTaxonomy(context.Context, int64, service.AccountTaxonomyAssignment) (*service.Account, error)
 	ListAccountsConsole(context.Context, int, int, service.AccountConsoleFilters) ([]service.Account, int64, error)
 	GetAccountConsoleFacets(context.Context, service.AccountConsoleFilters) (*service.AccountConsoleFacets, error)
+	BulkUpdateAccountTaxonomy(context.Context, service.BulkAccountTaxonomyInput) (*service.BulkAccountTaxonomyResult, error)
 }
 
 func newAccountTaxonomyIntegrationAdmin(t *testing.T, prefix string) (*dbent.Client, accountTaxonomyIntegrationAdmin) {
@@ -48,6 +53,7 @@ func newAccountTaxonomyIntegrationAdmin(t *testing.T, prefix string) (*dbent.Cli
 			`DELETE FROM proxies WHERE name LIKE $1`,
 			`DELETE FROM account_tags WHERE name LIKE $1`,
 			`DELETE FROM account_folders WHERE name LIKE $1`,
+			`DELETE FROM groups WHERE name LIKE $1`,
 		} {
 			_, err := integrationDB.ExecContext(ctx, statement, prefix+"%")
 			require.NoError(t, err)
@@ -281,7 +287,7 @@ func TestAccountTaxonomyCombinedFiltersAndFacetsIntegration(t *testing.T) {
 
 	facets, err := admin.GetAccountConsoleFacets(ctx, filters)
 	require.NoError(t, err)
-	require.Equal(t, 1, facets.Total)
+	require.Equal(t, 3, facets.Total)
 	require.Equal(t, 1, facets.UncategorizedCount)
 	require.Equal(t, 1, integrationFacetCount(facets.Platforms, service.PlatformOpenAI))
 	require.Equal(t, 1, integrationFacetCount(facets.Platforms, service.PlatformGrok))
@@ -295,8 +301,138 @@ func TestAccountTaxonomyCombinedFiltersAndFacetsIntegration(t *testing.T) {
 	require.Equal(t, 1, integrationFacetCount(facets.Proxies, "direct"))
 	require.Equal(t, 1, integrationTaxonomyCount(facets.Folders, folderA.ID))
 	require.Equal(t, 1, integrationTaxonomyCount(facets.Folders, folderB.ID))
+	require.Equal(t, facets.Total, facets.UncategorizedCount+
+		integrationTaxonomyCount(facets.Folders, folderA.ID)+
+		integrationTaxonomyCount(facets.Folders, folderB.ID))
 	require.Equal(t, 1, integrationTagCount(facets.Tags, tagRed.ID))
 	require.Equal(t, 1, integrationTagCount(facets.Tags, tagBlue.ID))
+}
+
+func TestAccountTaxonomyBulkUpdateAndOrderingIntegration(t *testing.T) {
+	ctx := context.Background()
+	prefix := taxonomyIntegrationPrefix("bulk")
+	client, admin := newAccountTaxonomyIntegrationAdmin(t, prefix)
+
+	folderA, err := admin.CreateAccountFolder(ctx, service.AccountTaxonomyInput{Name: prefix + "Folder A"})
+	require.NoError(t, err)
+	folderB, err := admin.CreateAccountFolder(ctx, service.AccountTaxonomyInput{Name: prefix + "Folder B"})
+	require.NoError(t, err)
+	tagA, err := admin.CreateAccountTag(ctx, service.AccountTaxonomyInput{Name: prefix + "Tag A"})
+	require.NoError(t, err)
+	tagB, err := admin.CreateAccountTag(ctx, service.AccountTaxonomyInput{Name: prefix + "Tag B"})
+	require.NoError(t, err)
+	tagC, err := admin.CreateAccountTag(ctx, service.AccountTaxonomyInput{Name: prefix + "Tag C"})
+	require.NoError(t, err)
+	routeGroup, err := client.Group.Create().
+		SetName(prefix + "Route Group").
+		SetPlatform(service.PlatformOpenAI).
+		Save(ctx)
+	require.NoError(t, err)
+
+	accountIDs := make([]int64, 0, 2)
+	for _, suffix := range []string{"one", "two"} {
+		row, createErr := client.Account.Create().
+			SetName(prefix + suffix).
+			SetPlatform(service.PlatformOpenAI).
+			SetType(service.AccountTypeOAuth).
+			SetStatus(service.StatusActive).
+			SetSchedulable(true).
+			SetCredentials(map[string]any{"marker": suffix}).
+			Save(ctx)
+		require.NoError(t, createErr)
+		accountIDs = append(accountIDs, row.ID)
+		_, bindErr := client.AccountGroup.Create().
+			SetAccountID(row.ID).
+			SetGroupID(routeGroup.ID).
+			SetPriority(17).
+			Save(ctx)
+		require.NoError(t, bindErr)
+		_, assignErr := admin.SetAccountTaxonomy(ctx, row.ID, service.AccountTaxonomyAssignment{FolderID: &folderA.ID, TagIDs: []int64{tagA.ID}})
+		require.NoError(t, assignErr)
+	}
+
+	folders, err := admin.ReorderAccountFolders(ctx, []int64{folderB.ID, folderA.ID})
+	require.NoError(t, err)
+	require.Equal(t, []int64{folderB.ID, folderA.ID}, []int64{folders[0].ID, folders[1].ID})
+	tags, err := admin.ReorderAccountTags(ctx, []int64{tagC.ID, tagB.ID, tagA.ID})
+	require.NoError(t, err)
+	require.Equal(t, []int64{tagC.ID, tagB.ID, tagA.ID}, []int64{tags[0].ID, tags[1].ID, tags[2].ID})
+	_, err = admin.ReorderAccountFolders(ctx, []int64{folderA.ID})
+	require.Error(t, err)
+	require.Equal(t, 409, infraerrors.Code(err))
+
+	_, err = admin.BulkUpdateAccountTaxonomy(ctx, service.BulkAccountTaxonomyInput{
+		AccountIDs: []int64{accountIDs[0]}, TagAddIDs: []int64{tagB.ID}, TagRemoveIDs: []int64{tagB.ID},
+	})
+	require.Error(t, err)
+	require.Equal(t, 400, infraerrors.Code(err))
+
+	result, err := admin.BulkUpdateAccountTaxonomy(ctx, service.BulkAccountTaxonomyInput{
+		AccountIDs: []int64{accountIDs[0]}, FolderAction: "set", FolderID: &folderB.ID,
+		TagAddIDs: []int64{tagB.ID}, TagRemoveIDs: []int64{tagA.ID},
+	})
+	require.NoError(t, err)
+	require.Equal(t, &service.BulkAccountTaxonomyResult{MatchedCount: 1, UpdatedCount: 1}, result)
+	first, err := admin.GetAccount(ctx, accountIDs[0])
+	require.NoError(t, err)
+	require.Equal(t, folderB.ID, first.ManagementFolder.ID)
+	require.Equal(t, []int64{tagB.ID}, []int64{first.Tags[0].ID})
+	require.True(t, first.Schedulable)
+	require.Equal(t, "one", first.Credentials["marker"])
+	routeBindingCount, err := client.AccountGroup.Query().Where(
+		dbaccountgroup.AccountIDEQ(accountIDs[0]),
+		dbaccountgroup.GroupIDEQ(routeGroup.ID),
+		dbaccountgroup.PriorityEQ(17),
+	).Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, routeBindingCount, "management taxonomy must not alter request routing groups")
+	second, err := admin.GetAccount(ctx, accountIDs[1])
+	require.NoError(t, err)
+	require.Equal(t, folderA.ID, second.ManagementFolder.ID)
+	require.Equal(t, tagA.ID, second.Tags[0].ID)
+
+	expected := 2
+	result, err = admin.BulkUpdateAccountTaxonomy(ctx, service.BulkAccountTaxonomyInput{
+		Filters:            &service.BulkUpdateAccountFilters{Console: &service.AccountConsoleFilters{Search: prefix, SortBy: "id", SortOrder: "asc"}},
+		ExpectedMatchCount: &expected, FolderAction: "clear", TagAddIDs: []int64{tagC.ID},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 2, result.MatchedCount)
+	for _, accountID := range accountIDs {
+		loaded, loadErr := admin.GetAccount(ctx, accountID)
+		require.NoError(t, loadErr)
+		require.Nil(t, loaded.ManagementFolder)
+		require.Contains(t, []int64{loaded.Tags[0].ID, loaded.Tags[len(loaded.Tags)-1].ID}, tagC.ID)
+		bindingCount, countErr := client.AccountGroup.Query().Where(
+			dbaccountgroup.AccountIDEQ(accountID),
+			dbaccountgroup.GroupIDEQ(routeGroup.ID),
+			dbaccountgroup.PriorityEQ(17),
+		).Count(ctx)
+		require.NoError(t, countErr)
+		require.Equal(t, 1, bindingCount)
+	}
+
+	wrongExpected := 3
+	_, err = admin.BulkUpdateAccountTaxonomy(ctx, service.BulkAccountTaxonomyInput{
+		Filters:            &service.BulkUpdateAccountFilters{Console: &service.AccountConsoleFilters{Search: prefix, SortBy: "id", SortOrder: "asc"}},
+		ExpectedMatchCount: &wrongExpected, FolderAction: "set", FolderID: &folderA.ID,
+	})
+	require.Error(t, err)
+	require.Equal(t, 409, infraerrors.Code(err))
+	for _, accountID := range accountIDs {
+		loaded, loadErr := admin.GetAccount(ctx, accountID)
+		require.NoError(t, loadErr)
+		require.Nil(t, loaded.ManagementFolder)
+	}
+
+	missingTagID := int64(9223372036854770000)
+	_, err = admin.BulkUpdateAccountTaxonomy(ctx, service.BulkAccountTaxonomyInput{
+		AccountIDs: []int64{accountIDs[0]}, FolderAction: "set", FolderID: &folderA.ID, TagAddIDs: []int64{missingTagID},
+	})
+	require.ErrorIs(t, err, service.ErrAccountTagNotFound)
+	first, err = admin.GetAccount(ctx, accountIDs[0])
+	require.NoError(t, err)
+	require.Nil(t, first.ManagementFolder, "invalid tag must roll back the folder move")
 }
 
 func integrationFacetCount(options []service.AccountFacetOption, value string) int {

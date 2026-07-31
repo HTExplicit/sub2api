@@ -12,6 +12,7 @@ import (
 	dbaccountfolder "github.com/Wei-Shaw/sub2api/ent/accountfolder"
 	dbaccountgroup "github.com/Wei-Shaw/sub2api/ent/accountgroup"
 	dbaccounttag "github.com/Wei-Shaw/sub2api/ent/accounttag"
+	dbaccounttagbinding "github.com/Wei-Shaw/sub2api/ent/accounttagbinding"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 
 	entsql "entgo.io/ent/dialect/sql"
@@ -33,6 +34,21 @@ type AccountTaxonomyInput struct {
 type AccountTaxonomyAssignment struct {
 	FolderID *int64  `json:"folder_id"`
 	TagIDs   []int64 `json:"tag_ids"`
+}
+
+type BulkAccountTaxonomyInput struct {
+	AccountIDs         []int64
+	Filters            *BulkUpdateAccountFilters
+	ExpectedMatchCount *int
+	FolderAction       string
+	FolderID           *int64
+	TagAddIDs          []int64
+	TagRemoveIDs       []int64
+}
+
+type BulkAccountTaxonomyResult struct {
+	MatchedCount int `json:"matched_count"`
+	UpdatedCount int `json:"updated_count"`
 }
 
 type AccountConsoleFilters struct {
@@ -257,6 +273,84 @@ func (s *adminServiceImpl) DeleteAccountTag(ctx context.Context, id int64) error
 	return err
 }
 
+func validateTaxonomyOrderIDs(actual, ordered []int64) error {
+	if len(actual) != len(ordered) {
+		return infraerrors.Conflict("ACCOUNT_TAXONOMY_ORDER_CHANGED", "account taxonomy changed; reload and try again")
+	}
+	seen := make(map[int64]struct{}, len(ordered))
+	for _, id := range ordered {
+		if id <= 0 {
+			return infraerrors.BadRequest("ACCOUNT_TAXONOMY_ORDER_INVALID", "ordered_ids must contain positive unique IDs")
+		}
+		if _, exists := seen[id]; exists {
+			return infraerrors.BadRequest("ACCOUNT_TAXONOMY_ORDER_INVALID", "ordered_ids must contain positive unique IDs")
+		}
+		seen[id] = struct{}{}
+	}
+	for _, id := range actual {
+		if _, exists := seen[id]; !exists {
+			return infraerrors.Conflict("ACCOUNT_TAXONOMY_ORDER_CHANGED", "account taxonomy changed; reload and try again")
+		}
+	}
+	return nil
+}
+
+func (s *adminServiceImpl) ReorderAccountFolders(ctx context.Context, orderedIDs []int64) ([]AccountManagementFolder, error) {
+	tx, err := s.entClient.Tx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	rows, err := tx.AccountFolder.Query().ForUpdate().All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	actual := make([]int64, 0, len(rows))
+	for _, row := range rows {
+		actual = append(actual, row.ID)
+	}
+	if err = validateTaxonomyOrderIDs(actual, orderedIDs); err != nil {
+		return nil, err
+	}
+	for index, id := range orderedIDs {
+		if _, err = tx.AccountFolder.UpdateOneID(id).SetSortOrder(index).Save(ctx); err != nil {
+			return nil, err
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	return s.ListAccountFolders(ctx)
+}
+
+func (s *adminServiceImpl) ReorderAccountTags(ctx context.Context, orderedIDs []int64) ([]AccountManagementTag, error) {
+	tx, err := s.entClient.Tx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	rows, err := tx.AccountTag.Query().ForUpdate().All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	actual := make([]int64, 0, len(rows))
+	for _, row := range rows {
+		actual = append(actual, row.ID)
+	}
+	if err = validateTaxonomyOrderIDs(actual, orderedIDs); err != nil {
+		return nil, err
+	}
+	for index, id := range orderedIDs {
+		if _, err = tx.AccountTag.UpdateOneID(id).SetSortOrder(index).Save(ctx); err != nil {
+			return nil, err
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	return s.ListAccountTags(ctx)
+}
+
 func uniquePositiveIDs(ids []int64) []int64 {
 	seen := make(map[int64]struct{}, len(ids))
 	out := make([]int64, 0, len(ids))
@@ -271,6 +365,170 @@ func uniquePositiveIDs(ids []int64) []int64 {
 		out = append(out, id)
 	}
 	return out
+}
+
+func strictUniquePositiveIDs(ids []int64, reason string) ([]int64, error) {
+	unique := uniquePositiveIDs(ids)
+	if len(unique) != len(ids) {
+		return nil, infraerrors.BadRequest(reason, "IDs must be positive and unique")
+	}
+	return unique, nil
+}
+
+func taxonomyIDsOverlap(left, right []int64) bool {
+	seen := make(map[int64]struct{}, len(left))
+	for _, id := range left {
+		seen[id] = struct{}{}
+	}
+	for _, id := range right {
+		if _, exists := seen[id]; exists {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *adminServiceImpl) BulkUpdateAccountTaxonomy(ctx context.Context, input BulkAccountTaxonomyInput) (*BulkAccountTaxonomyResult, error) {
+	selectedTarget := len(input.AccountIDs) > 0
+	filteredTarget := input.Filters != nil
+	if selectedTarget == filteredTarget {
+		return nil, infraerrors.BadRequest("ACCOUNT_TAXONOMY_TARGET_INVALID", "provide exactly one of account_ids or filters")
+	}
+	var err error
+	input.AccountIDs, err = strictUniquePositiveIDs(input.AccountIDs, "ACCOUNT_TAXONOMY_ACCOUNT_IDS_INVALID")
+	if err != nil {
+		return nil, err
+	}
+	input.TagAddIDs, err = strictUniquePositiveIDs(input.TagAddIDs, "ACCOUNT_TAXONOMY_TAG_IDS_INVALID")
+	if err != nil {
+		return nil, err
+	}
+	input.TagRemoveIDs, err = strictUniquePositiveIDs(input.TagRemoveIDs, "ACCOUNT_TAXONOMY_TAG_IDS_INVALID")
+	if err != nil {
+		return nil, err
+	}
+	if taxonomyIDsOverlap(input.TagAddIDs, input.TagRemoveIDs) {
+		return nil, infraerrors.BadRequest("ACCOUNT_TAXONOMY_TAG_OPERATION_CONFLICT", "a tag cannot be added and removed in the same request")
+	}
+	switch input.FolderAction {
+	case "":
+		if input.FolderID != nil {
+			return nil, infraerrors.BadRequest("ACCOUNT_TAXONOMY_FOLDER_ACTION_INVALID", "folder_id requires folder_action=set")
+		}
+	case "set":
+		if input.FolderID == nil || *input.FolderID <= 0 {
+			return nil, infraerrors.BadRequest("ACCOUNT_TAXONOMY_FOLDER_ID_INVALID", "folder_id must be positive when folder_action=set")
+		}
+	case "clear":
+		if input.FolderID != nil {
+			return nil, infraerrors.BadRequest("ACCOUNT_TAXONOMY_FOLDER_ACTION_INVALID", "folder_id must be omitted when folder_action=clear")
+		}
+	default:
+		return nil, infraerrors.BadRequest("ACCOUNT_TAXONOMY_FOLDER_ACTION_INVALID", "folder_action must be set, clear, or omitted")
+	}
+	if input.FolderAction == "" && len(input.TagAddIDs) == 0 && len(input.TagRemoveIDs) == 0 {
+		return nil, infraerrors.BadRequest("ACCOUNT_TAXONOMY_OPERATION_REQUIRED", "at least one taxonomy operation is required")
+	}
+	if filteredTarget {
+		if input.ExpectedMatchCount == nil || *input.ExpectedMatchCount < 0 {
+			return nil, infraerrors.BadRequest("ACCOUNT_TAXONOMY_EXPECTED_COUNT_REQUIRED", "expected_match_count is required for filter targets")
+		}
+		input.AccountIDs, err = s.resolveBulkUpdateTargetIDs(ctx, input.Filters)
+		if err != nil {
+			return nil, err
+		}
+		input.AccountIDs = uniquePositiveIDs(input.AccountIDs)
+		if len(input.AccountIDs) != *input.ExpectedMatchCount {
+			return nil, infraerrors.Conflict("ACCOUNT_TAXONOMY_TARGET_CHANGED", "matching accounts changed; reload and confirm again").WithMetadata(map[string]string{
+				"expected_match_count": strconv.Itoa(*input.ExpectedMatchCount),
+				"actual_match_count":   strconv.Itoa(len(input.AccountIDs)),
+			})
+		}
+	}
+	if len(input.AccountIDs) == 0 {
+		return &BulkAccountTaxonomyResult{}, nil
+	}
+
+	tx, err := s.entClient.Tx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	lockedAccounts, err := tx.Account.Query().Where(
+		dbaccount.IDIn(input.AccountIDs...),
+		dbaccount.DeletedAtIsNil(),
+	).ForUpdate().IDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(lockedAccounts) != len(input.AccountIDs) {
+		if filteredTarget {
+			return nil, infraerrors.Conflict("ACCOUNT_TAXONOMY_TARGET_CHANGED", "matching accounts changed; reload and confirm again")
+		}
+		return nil, ErrAccountNotFound
+	}
+	if input.FolderAction == "set" {
+		exists, queryErr := tx.AccountFolder.Query().Where(dbaccountfolder.IDEQ(*input.FolderID)).Exist(ctx)
+		if queryErr != nil {
+			return nil, queryErr
+		}
+		if !exists {
+			return nil, ErrAccountFolderNotFound
+		}
+	}
+	allTagIDs := append(append([]int64(nil), input.TagAddIDs...), input.TagRemoveIDs...)
+	if len(allTagIDs) > 0 {
+		count, queryErr := tx.AccountTag.Query().Where(dbaccounttag.IDIn(allTagIDs...)).Count(ctx)
+		if queryErr != nil {
+			return nil, queryErr
+		}
+		if count != len(allTagIDs) {
+			return nil, ErrAccountTagNotFound
+		}
+	}
+	if input.FolderAction != "" {
+		update := tx.Account.Update().Where(dbaccount.IDIn(input.AccountIDs...), dbaccount.DeletedAtIsNil())
+		if input.FolderAction == "set" {
+			update.SetManagementFolderID(*input.FolderID)
+		} else {
+			update.ClearManagementFolderID()
+		}
+		if _, err = update.Save(ctx); err != nil {
+			return nil, err
+		}
+	}
+	if len(input.TagRemoveIDs) > 0 {
+		if _, err = tx.AccountTagBinding.Delete().Where(
+			dbaccounttagbinding.AccountIDIn(input.AccountIDs...),
+			dbaccounttagbinding.TagIDIn(input.TagRemoveIDs...),
+		).Exec(ctx); err != nil {
+			return nil, err
+		}
+	}
+	if len(input.TagAddIDs) > 0 {
+		const bindingBatchSize = 2000
+		builders := make([]*dbent.AccountTagBindingCreate, 0, len(input.AccountIDs)*len(input.TagAddIDs))
+		for _, accountID := range input.AccountIDs {
+			for _, tagID := range input.TagAddIDs {
+				builders = append(builders, tx.AccountTagBinding.Create().SetAccountID(accountID).SetTagID(tagID))
+				if len(builders) == bindingBatchSize {
+					if err = tx.AccountTagBinding.CreateBulk(builders...).OnConflictColumns("account_id", "tag_id").DoNothing().Exec(ctx); err != nil {
+						return nil, err
+					}
+					builders = builders[:0]
+				}
+			}
+		}
+		if len(builders) > 0 {
+			if err = tx.AccountTagBinding.CreateBulk(builders...).OnConflictColumns("account_id", "tag_id").DoNothing().Exec(ctx); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	return &BulkAccountTaxonomyResult{MatchedCount: len(input.AccountIDs), UpdatedCount: len(input.AccountIDs)}, nil
 }
 
 const accountTaxonomyHydrationBatchSize = 10000
@@ -768,7 +1026,6 @@ func (s *adminServiceImpl) GetAccountConsoleFacets(ctx context.Context, filters 
 	}
 	matcher := newAccountFacetMatcher(filters)
 	now := time.Now()
-	fullyFiltered := filterAccountsForFacet(accounts, matcher, accountFacetNone, now)
 	platformAccounts := filterAccountsForFacet(accounts, matcher, accountFacetPlatforms, now)
 	typeAccounts := filterAccountsForFacet(accounts, matcher, accountFacetTypes, now)
 	statusAccounts := filterAccountsForFacet(accounts, matcher, accountFacetStatuses, now)
@@ -840,7 +1097,9 @@ func (s *adminServiceImpl) GetAccountConsoleFacets(ctx context.Context, filters 
 		return strings.ToLower(proxyOptions[i].Label) < strings.ToLower(proxyOptions[j].Label)
 	})
 	return &AccountConsoleFacets{
-		Total: len(fullyFiltered), UncategorizedCount: uncategorizedCount,
+		// Folder navigation always represents the complete result set after all
+		// non-folder filters, so total must use the same population as its counts.
+		Total: len(folderAccounts), UncategorizedCount: uncategorizedCount,
 		Platforms: facetOptions(platforms), Types: facetOptions(types),
 		Statuses: facetOptions(statuses), Plans: facetOptions(plans), Proxies: proxyOptions,
 		Folders: folders, Tags: tags,

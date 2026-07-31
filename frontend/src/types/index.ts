@@ -1193,6 +1193,37 @@ export interface AccountConsoleFacets {
   tags: AccountManagementTag[]
 }
 
+export interface AccountBulkTaxonomyTargetFilters {
+  platforms?: string
+  types?: string
+  statuses?: string
+  plans?: string
+  proxies?: string
+  folder?: string
+  tags?: string
+  account_ids?: string
+  group?: string
+  privacy_mode?: string
+  search?: string
+  sort_by?: string
+  sort_order?: 'asc' | 'desc'
+}
+
+export interface AccountBulkTaxonomyRequest {
+  account_ids?: number[]
+  filters?: AccountBulkTaxonomyTargetFilters
+  expected_match_count?: number
+  folder_action?: 'set' | 'clear'
+  folder_id?: number
+  tag_add_ids?: number[]
+  tag_remove_ids?: number[]
+}
+
+export interface AccountBulkTaxonomyResult {
+  matched_count: number
+  updated_count: number
+}
+
 export interface AccountConsoleFilterState {
   search: string
   platforms: string[]
