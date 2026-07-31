@@ -106,6 +106,46 @@ func TestOpenAINonStreamingPassthroughRewritesRefusalAndPreservesUsage(t *testin
 	require.NotContains(t, recorder.Body.String(), "I cannot")
 }
 
+func TestOpenAINonStreamingRefusalRetryCanReturnSubstantiveAnswer(t *testing.T) {
+	svc := newOpenAIRefusalRecoveryPipelineService(t, true, true)
+	c, recorder := newOpenAIRefusalRecoveryTestContext()
+	requestBody := []byte(`{"model":"gpt-5.6-sol","input":[{"type":"message","role":"user","content":"authorized local test"}],"stream":false}`)
+	first := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body: io.NopCloser(strings.NewReader(
+			`{"id":"resp_first","object":"response","model":"gpt-5.6-sol","status":"completed","output":[{"id":"msg_first","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"I cannot help with that."}]}],"usage":{"input_tokens":9,"output_tokens":6,"total_tokens":15}}`,
+		)),
+	}
+
+	firstResult, firstErr := svc.handleNonStreamingResponsePassthrough(context.Background(), first, c, "gpt-5.6-sol", "")
+	require.Nil(t, firstResult)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, firstErr, &failoverErr)
+	require.Empty(t, recorder.Body.String())
+
+	repairedBody, repaired, repairErr := PrepareOpenAIRefusalPromptRetry(requestBody)
+	require.NoError(t, repairErr)
+	require.True(t, repaired)
+	require.Contains(t, string(repairedBody), openAIRefusalRecoveryInstructionMarker)
+	MarkOpenAIRefusalPromptRepairAttempted(c)
+
+	second := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body: io.NopCloser(strings.NewReader(
+			`{"id":"resp_second","object":"response","model":"gpt-5.6-sol","status":"completed","output":[{"id":"msg_second","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Concrete analysis and implementation steps."}]}],"usage":{"input_tokens":18,"output_tokens":8,"total_tokens":26}}`,
+		)),
+	}
+
+	secondResult, secondErr := svc.handleNonStreamingResponsePassthrough(context.Background(), second, c, "gpt-5.6-sol", "")
+	require.NoError(t, secondErr)
+	require.NotNil(t, secondResult)
+	require.Equal(t, "resp_second", secondResult.responseID)
+	require.Contains(t, recorder.Body.String(), "Concrete analysis and implementation steps.")
+	require.NotContains(t, recorder.Body.String(), "I cannot")
+}
+
 func TestOpenAINonStreamingPassthroughRewritesStructuredRefusal(t *testing.T) {
 	svc := newOpenAIRefusalRecoveryPipelineService(t, false, true)
 	c, recorder := newOpenAIRefusalRecoveryTestContext()
@@ -170,9 +210,25 @@ func TestOpenAIHTTPPassthroughCyberPolicyReturnsFailoverBeforeWriting(t *testing
 	require.Equal(t, 7, mark.UpstreamInTok)
 }
 
+func TestOpenAIHTTPPassthroughCyberPolicyPromptRetriesBeforeRewrite(t *testing.T) {
+	svc := newOpenAIRefusalRecoveryPipelineService(t, true, true)
+	c, recorder := newOpenAIRefusalRecoveryTestContext()
+	resp := &http.Response{StatusCode: http.StatusBadRequest, Header: http.Header{"X-Request-Id": []string{"req_cyber"}}}
+	body := []byte(`{"error":{"code":"cyber_policy","message":"blocked"},"usage":{"input_tokens":7,"output_tokens":0,"total_tokens":7}}`)
+
+	err := svc.handleErrorResponsePassthrough(context.Background(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI}, []byte(`{"model":"gpt-5.6-sol","input":"hello"}`), body)
+
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.True(t, failoverErr.IsOpenAIRefusalRecovery())
+	require.Empty(t, recorder.Body.String())
+	require.False(t, c.Writer.Written())
+}
+
 func TestOpenAIHTTPPassthroughCyberPolicyWritesReplacementWhenRewriteEnabled(t *testing.T) {
 	svc := newOpenAIRefusalRecoveryPipelineService(t, true, true)
 	c, recorder := newOpenAIRefusalRecoveryTestContext()
+	MarkOpenAIRefusalPromptRepairAttempted(c)
 	requestBody := []byte(`{"model":"gpt-5.6-sol","input":"hello","stream":true}`)
 	resp := &http.Response{StatusCode: http.StatusBadRequest, Header: http.Header{"X-Request-Id": []string{"req_cyber"}}}
 	body := []byte(`{"error":{"code":"cyber_policy","message":"blocked"},"usage":{"input_tokens":7,"output_tokens":0,"total_tokens":7}}`)
@@ -194,6 +250,7 @@ func TestOpenAIHTTPPassthroughCyberPolicyWritesReplacementWhenRewriteEnabled(t *
 func TestOpenAIHTTPCyberPolicyWritesReplacementWhenRewriteEnabled(t *testing.T) {
 	svc := newOpenAIRefusalRecoveryPipelineService(t, true, true)
 	c, recorder := newOpenAIRefusalRecoveryTestContext()
+	MarkOpenAIRefusalPromptRepairAttempted(c)
 	requestBody := []byte(`{"model":"gpt-5.6-sol","input":"hello","stream":true}`)
 	resp := &http.Response{
 		StatusCode: http.StatusBadRequest,
@@ -280,6 +337,7 @@ func TestOpenAIStreamingCyberPolicyReplacementCompletesWithoutFailover(t *testin
 		t.Run(tc.name, func(t *testing.T) {
 			svc := newOpenAIRefusalRecoveryPipelineService(t, true, true)
 			c, recorder := newOpenAIRefusalRecoveryTestContext()
+			MarkOpenAIRefusalPromptRepairAttempted(c)
 			account := &Account{ID: 1, Platform: PlatformOpenAI}
 			setOpenAIRefusalEarlyStreamEligibility(c, account, []byte(`{"model":"gpt-5.6-sol","input":"hello","stream":true}`))
 			upstream := strings.Join([]string{
@@ -339,6 +397,7 @@ func TestOpenAIStreamingCyberPolicyReplacementAfterReasoningUsesMessageID(t *tes
 		t.Run(tc.name, func(t *testing.T) {
 			svc := newOpenAIRefusalRecoveryPipelineService(t, true, true)
 			c, recorder := newOpenAIRefusalRecoveryTestContext()
+			MarkOpenAIRefusalPromptRepairAttempted(c)
 			account := &Account{ID: 1, Platform: PlatformOpenAI}
 			setOpenAIRefusalEarlyStreamEligibility(c, account, []byte(
 				`{"model":"gpt-5.6-sol","input":"hello","stream":true,"tools":[{"type":"function","name":"test_tool"}]}`,
@@ -407,6 +466,7 @@ func TestOpenAIStreamingCyberPolicyReplacementCompletesEarlyRewrite(t *testing.T
 		t.Run(tc.name, func(t *testing.T) {
 			svc := newOpenAIRefusalRecoveryPipelineService(t, true, true)
 			c, recorder := newOpenAIRefusalRecoveryTestContext()
+			MarkOpenAIRefusalPromptRepairAttempted(c)
 			account := &Account{ID: 1, Platform: PlatformOpenAI}
 			setOpenAIRefusalEarlyStreamEligibility(c, account, []byte(`{"model":"gpt-5.6-sol","input":"hello","stream":true}`))
 			upstream := strings.Join([]string{
@@ -468,6 +528,31 @@ func TestOpenAIStreamingPassthroughRewritesRefusalAcrossDeltas(t *testing.T) {
 	require.NotContains(t, recorder.Body.String(), "I cannot")
 	require.Contains(t, recorder.Body.String(), `"id":"resp_stream"`)
 	require.Contains(t, recorder.Body.String(), `"total_tokens":7`)
+}
+
+func TestOpenAIStreamingPassthroughRefusalPromptRetriesBeforeRewrite(t *testing.T) {
+	svc := newOpenAIRefusalRecoveryPipelineService(t, true, true)
+	c, recorder := newOpenAIRefusalRecoveryTestContext()
+	account := &Account{ID: 1, Platform: PlatformOpenAI}
+	setOpenAIRefusalEarlyStreamEligibility(c, account, []byte(`{"model":"gpt-5.4","input":"hello","stream":true}`))
+	upstream := strings.Join([]string{
+		`data: {"type":"response.created","response":{"id":"resp_retry","object":"response","model":"gpt-5.4","status":"in_progress","output":[]}}`,
+		``,
+		`data: {"type":"response.output_text.delta","response_id":"resp_retry","item_id":"msg_retry","output_index":0,"content_index":0,"delta":"I cannot help."}`,
+		``,
+		`data: {"type":"response.completed","response":{"id":"resp_retry","object":"response","model":"gpt-5.4","status":"completed","output":[{"id":"msg_retry","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"I cannot help."}]}],"usage":{"input_tokens":5,"output_tokens":3,"total_tokens":8}}}`,
+		``,
+	}, "\n")
+	resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(upstream))}
+
+	result, err := svc.handleStreamingResponsePassthrough(context.Background(), resp, c, account, time.Now(), "gpt-5.4", "gpt-5.4")
+
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.True(t, failoverErr.IsOpenAIRefusalRecovery())
+	require.NotNil(t, result)
+	require.Equal(t, 5, result.usage.InputTokens)
+	require.Empty(t, recorder.Body.String())
 }
 
 func TestOpenAIStreamingPassthroughRewritesNonEarlyEmptyTerminalFromCompletedMessage(t *testing.T) {

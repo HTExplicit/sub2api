@@ -207,7 +207,7 @@ func leadingOpenAIRefusalParagraphs(value string, limit int) string {
 	return string(runes)
 }
 
-func NewOpenAICyberFailoverError(_ []byte, upstreamHeaders http.Header) *UpstreamFailoverError {
+func NewOpenAIRefusalRecoveryFailoverError(upstreamHeaders http.Header) *UpstreamFailoverError {
 	headers := make(http.Header)
 	if upstreamHeaders != nil {
 		headers = upstreamHeaders.Clone()
@@ -227,6 +227,10 @@ func NewOpenAICyberFailoverError(_ []byte, upstreamHeaders http.Header) *Upstrea
 		ClientMessage:                "Temporary upstream failure",
 		SuppressAccountHealthPenalty: true,
 	}
+}
+
+func NewOpenAICyberFailoverError(_ []byte, upstreamHeaders http.Header) *UpstreamFailoverError {
+	return NewOpenAIRefusalRecoveryFailoverError(upstreamHeaders)
 }
 
 func (e *UpstreamFailoverError) IsOpenAIRefusalRecovery() bool {

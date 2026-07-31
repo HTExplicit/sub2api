@@ -103,7 +103,8 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	if isOpenAIRefusalRecoveryResponsesRequest(c) {
 		refusalRuntime = s.openAIRefusalRecoveryRuntime(ctx)
 		if refusalRuntime.RewriteEnabled() {
-			refusalStream = newOpenAIRefusalStreamStateWithEarlyEmission(refusalRuntime.Matcher, openAIRefusalEarlyStreamEligible(c))
+			allowEarlyRewrite := openAIRefusalEarlyStreamEligible(c) && !openAIRefusalShouldPromptRetry(c, refusalRuntime)
+			refusalStream = newOpenAIRefusalStreamStateWithEarlyEmission(refusalRuntime.Matcher, allowEarlyRewrite)
 		}
 	}
 	bufferedWriter := bufio.NewWriterSize(w, 4*1024)
@@ -466,6 +467,11 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 						UpstreamInTok:  usage.InputTokens,
 						UpstreamOutTok: usage.OutputTokens,
 					})
+					if openAIRefusalShouldPromptRetry(c, refusalRuntime) && !openAIStreamClientOutputStarted(c, clientOutputStarted) {
+						sawFailedEvent = true
+						streamEarlyErr = NewOpenAICyberFailoverError(dataBytes, resp.Header)
+						return
+					}
 					if refusalStream != nil && refusalRuntime.RewriteEnabled() {
 						clientHasOutput := openAIStreamClientOutputStarted(c, clientOutputStarted)
 						if action, replacement, replaceErr := refusalStream.replaceCyberPolicyFailure(dataBytes, clientHasOutput); replaceErr != nil {
@@ -620,6 +626,10 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				return
 			}
 			if refusalAction == openAIRefusalStreamReplace {
+				if openAIRefusalShouldPromptRetry(c, refusalRuntime) {
+					streamEarlyErr = NewOpenAIRefusalRecoveryFailoverError(resp.Header)
+					return
+				}
 				refusalPending.Reset()
 				refusalCompleted = true
 				applyAttemptResponseHeaders()
@@ -1305,6 +1315,9 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 			if rewriteErr != nil {
 				logger.FromContext(ctx).Warn("openai.refusal_recovery_rewrite_failed", zap.String("transport", "http"), zap.Error(rewriteErr))
 			} else if matched {
+				if openAIRefusalShouldPromptRetry(c, runtime) {
+					return nil, NewOpenAIRefusalRecoveryFailoverError(resp.Header)
+				}
 				body = rewritten
 				logger.FromContext(ctx).Info("openai.refusal_recovery_rewritten", zap.String("transport", "http"))
 			}
@@ -1394,6 +1407,9 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 				if rewritten, matched, _, rewriteErr := RewriteOpenAIResponsesJSON(body, runtime.Matcher); rewriteErr != nil {
 					logger.FromContext(c.Request.Context()).Warn("openai.refusal_recovery_rewrite_failed", zap.String("transport", "http_sse_to_json"), zap.Error(rewriteErr))
 				} else if matched {
+					if openAIRefusalShouldPromptRetry(c, runtime) {
+						return nil, NewOpenAIRefusalRecoveryFailoverError(resp.Header)
+					}
 					body = rewritten
 					logger.FromContext(c.Request.Context()).Info("openai.refusal_recovery_rewritten", zap.String("transport", "http_sse_to_json"))
 				}
