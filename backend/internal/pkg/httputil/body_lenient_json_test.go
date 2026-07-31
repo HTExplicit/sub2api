@@ -2,13 +2,32 @@ package httputil
 
 import (
 	"bytes"
+	"compress/gzip"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/klauspost/compress/zstd"
 	"github.com/tidwall/gjson"
 )
+
+type terminalErrorReader struct {
+	err error
+}
+
+func (r terminalErrorReader) Read(_ []byte) (int, error) {
+	return 0, r.err
+}
+
+func requestWithTerminalError(t *testing.T, body []byte, encoding string, terminalErr error) *http.Request {
+	t.Helper()
+	req := newRequestWithBody(t, body, encoding)
+	req.Body = io.NopCloser(io.MultiReader(bytes.NewReader(body), terminalErrorReader{err: terminalErr}))
+	req.ContentLength = int64(len(body) + 1)
+	return req
+}
 
 func TestNormalizeLenientJSONRequestBody_accepts_client_control_chars_in_strings(t *testing.T) {
 	tests := []struct {
@@ -180,5 +199,145 @@ func TestNormalizeLenientJSONRequestBody_rejects_expansion_past_limit(t *testing
 	}
 	if maxErr.Limit != int64(len(body)+5) {
 		t.Fatalf("limit mismatch: got %d want %d", maxErr.Limit, len(body)+5)
+	}
+}
+
+func TestReadRequestBodyWithPrealloc_preserves_identity_bytes_on_unexpected_eof(t *testing.T) {
+	req := requestWithTerminalError(t, []byte(samplePayload), "", io.ErrUnexpectedEOF)
+
+	body, err := ReadRequestBodyWithPrealloc(req)
+
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("expected unexpected EOF, got %T %v", err, err)
+	}
+	if string(body) != samplePayload {
+		t.Fatalf("partial body mismatch: got %q", body)
+	}
+	var readErr *RequestBodyReadError
+	if !errors.As(err, &readErr) {
+		t.Fatalf("expected RequestBodyReadError, got %T", err)
+	}
+	if readErr.Stage != "read" || readErr.ReceivedBytes != int64(len(samplePayload)) {
+		t.Fatalf("unexpected read metadata: %+v", readErr)
+	}
+}
+
+func TestReadLenientJSONRequestBodyWithPrealloc_recovers_complete_json_on_unexpected_eof(t *testing.T) {
+	req := requestWithTerminalError(t, []byte(samplePayload), "", io.ErrUnexpectedEOF)
+
+	body, err := ReadLenientJSONRequestBodyWithPrealloc(req, 1024)
+
+	if err != nil {
+		t.Fatalf("expected complete JSON recovery, got %v", err)
+	}
+	if string(body) != samplePayload {
+		t.Fatalf("recovered body mismatch: got %q", body)
+	}
+}
+
+func TestReadLenientJSONRequestBodyWithPrealloc_rejects_truncated_json_on_unexpected_eof(t *testing.T) {
+	req := requestWithTerminalError(t, []byte(`{"input":"unfinished`), "", io.ErrUnexpectedEOF)
+
+	_, err := ReadLenientJSONRequestBodyWithPrealloc(req, 1024)
+
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("expected unexpected EOF, got %T %v", err, err)
+	}
+}
+
+func TestReadLenientJSONRequestBodyWithPrealloc_rejects_non_eof_read_error(t *testing.T) {
+	terminalErr := errors.New("synthetic read failure")
+	req := requestWithTerminalError(t, []byte(samplePayload), "", terminalErr)
+
+	_, err := ReadLenientJSONRequestBodyWithPrealloc(req, 1024)
+
+	if !errors.Is(err, terminalErr) {
+		t.Fatalf("expected synthetic read failure, got %T %v", err, err)
+	}
+}
+
+func TestReadLenientJSONRequestBodyWithPrealloc_recovers_decoded_gzip_on_transport_eof(t *testing.T) {
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	if _, err := writer.Write([]byte(samplePayload)); err != nil {
+		t.Fatalf("gzip write: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("gzip close: %v", err)
+	}
+	req := requestWithTerminalError(t, compressed.Bytes(), "gzip", io.ErrUnexpectedEOF)
+
+	body, err := ReadLenientJSONRequestBodyWithPrealloc(req, 1024)
+
+	if err != nil {
+		t.Fatalf("expected decoded JSON recovery, got %v", err)
+	}
+	if string(body) != samplePayload {
+		t.Fatalf("recovered body mismatch: got %q", body)
+	}
+	if req.Header.Get("Content-Encoding") != "" || req.ContentLength != int64(len(samplePayload)) {
+		t.Fatalf("decoded request metadata not normalized")
+	}
+}
+
+func TestReadLenientJSONRequestBodyWithPrealloc_recovers_decoded_zstd_on_transport_eof(t *testing.T) {
+	writer, err := zstd.NewWriter(nil)
+	if err != nil {
+		t.Fatalf("zstd writer: %v", err)
+	}
+	compressed := writer.EncodeAll([]byte(samplePayload), nil)
+	if err := writer.Close(); err != nil {
+		t.Fatalf("zstd close: %v", err)
+	}
+	req := requestWithTerminalError(t, compressed, "zstd", io.ErrUnexpectedEOF)
+
+	body, err := ReadLenientJSONRequestBodyWithPrealloc(req, 1024)
+
+	if err != nil {
+		t.Fatalf("expected decoded JSON recovery, got %v", err)
+	}
+	if string(body) != samplePayload {
+		t.Fatalf("recovered body mismatch: got %q", body)
+	}
+}
+
+func TestReadLenientJSONRequestBodyWithPrealloc_recovers_gzip_payload_with_missing_footer(t *testing.T) {
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	if _, err := writer.Write([]byte(samplePayload)); err != nil {
+		t.Fatalf("gzip write: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("gzip close: %v", err)
+	}
+	withoutFooter := compressed.Bytes()[:compressed.Len()-8]
+	req := newRequestWithBody(t, withoutFooter, "gzip")
+
+	body, err := ReadLenientJSONRequestBodyWithPrealloc(req, 1024)
+
+	if err != nil {
+		t.Fatalf("expected complete decoded JSON recovery, got %v", err)
+	}
+	if string(body) != samplePayload {
+		t.Fatalf("recovered body mismatch: got %q", body)
+	}
+}
+
+func TestReadLenientJSONRequestBodyWithPrealloc_rejects_incomplete_gzip_json(t *testing.T) {
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	if _, err := writer.Write([]byte(`{"input":"unfinished`)); err != nil {
+		t.Fatalf("gzip write: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("gzip close: %v", err)
+	}
+	withoutFooter := compressed.Bytes()[:compressed.Len()-8]
+	req := newRequestWithBody(t, withoutFooter, "gzip")
+
+	_, err := ReadLenientJSONRequestBodyWithPrealloc(req, 1024)
+
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("expected unexpected EOF, got %T %v", err, err)
 	}
 }

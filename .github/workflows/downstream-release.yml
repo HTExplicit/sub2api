@@ -51,6 +51,7 @@ jobs:
         working-directory: backend
         run: |
           go test -p=1 -tags unit ./internal/service -run 'Test.*(Refusal|CyberPolicy)|Test(UpdateService|NormalizeAccountTaxonomyName|FilterConsoleAccounts|AccountConsolePlan|AccountFacetMatcher)' -count=1
+          go test -p=1 ./internal/pkg/httputil ./internal/handler -run 'Test(ReadRequestBodyWithPrealloc|ReadLenientJSONRequestBodyWithPrealloc|RequestBodyReadDiagnostics|ClassifyRequestContentEncoding)' -count=1
           go test -p=1 ./internal/handler ./internal/handler/admin -run 'Test.*Refusal' -count=1
           go test -p=1 ./internal/handler/admin -run 'Test(ExportData|PreviewDataImport|ImportData|DataAccountIdentityKeys|BulkUpdateAccepts|AccountHandler)' -count=1
           go test -p=1 ./internal/repository -run '^$'

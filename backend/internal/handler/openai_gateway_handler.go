@@ -266,12 +266,24 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	}
 
 	// Read request body
+	declaredContentLength := c.Request.ContentLength
+	requestContentEncoding := classifyRequestContentEncoding(c.GetHeader("Content-Encoding"))
 	body, err := readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
 	if err != nil {
 		if maxErr, ok := extractMaxBytesError(err); ok {
 			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
 			return
 		}
+		readStage, receivedBytes, decodedBytes := requestBodyReadMetrics(err)
+		reqLog.Warn(
+			"failed to read OpenAI Responses request body",
+			zap.String("error_class", classifyRequestBodyReadError(err)),
+			zap.String("read_stage", readStage),
+			zap.Int64("declared_content_length", declaredContentLength),
+			zap.Int64("received_bytes", receivedBytes),
+			zap.Int64("decoded_bytes", decodedBytes),
+			zap.String("content_encoding", requestContentEncoding),
+		)
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
 		return
 	}
