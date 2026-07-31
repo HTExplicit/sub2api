@@ -138,10 +138,7 @@ func (s *openAIRefusalStreamState) captureEventMetadata(eventType string, payloa
 		}
 	}
 	if s.messageID == "" {
-		s.messageID = strings.TrimSpace(gjson.GetBytes(payload, "item_id").String())
-		if s.messageID == "" && gjson.GetBytes(payload, "item.type").String() == "message" {
-			s.messageID = strings.TrimSpace(gjson.GetBytes(payload, "item.id").String())
-		}
+		s.messageID = openAIRefusalMessageID(eventType, payload)
 	}
 	if eventType == "response.created" {
 		response := gjson.GetBytes(payload, "response")
@@ -156,6 +153,25 @@ func (s *openAIRefusalStreamState) captureEventMetadata(eventType string, payloa
 			s.completedMessage = append(s.completedMessage[:0], item.Raw...)
 		}
 	}
+}
+
+func openAIRefusalMessageID(eventType string, payload []byte) string {
+	// item_id is shared by message and reasoning events. Binding a reasoning ID
+	// here prevents the later completed message from restoring an empty terminal.
+	switch eventType {
+	case "response.output_text.delta", "response.output_text.done", "response.refusal.delta", "response.refusal.done":
+		return strings.TrimSpace(gjson.GetBytes(payload, "item_id").String())
+	case "response.content_part.added", "response.content_part.done":
+		partType := strings.TrimSpace(gjson.GetBytes(payload, "part.type").String())
+		if partType == "output_text" || partType == "refusal" {
+			return strings.TrimSpace(gjson.GetBytes(payload, "item_id").String())
+		}
+	case "response.output_item.added", "response.output_item.done":
+		if strings.TrimSpace(gjson.GetBytes(payload, "item.type").String()) == "message" {
+			return strings.TrimSpace(gjson.GetBytes(payload, "item.id").String())
+		}
+	}
+	return ""
 }
 
 func (s *openAIRefusalStreamState) restoreCompletedMessageIntoEmptyOutput(responseJSON []byte) ([]byte, error) {

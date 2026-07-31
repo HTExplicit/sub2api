@@ -318,6 +318,68 @@ func TestOpenAIRefusalStreamRewritesNonEarlyEmptyTerminalFromCompletedMessage(t 
 	}
 }
 
+func TestOpenAIRefusalStreamReasoningItemIDDoesNotShadowCompletedMessage(t *testing.T) {
+	matcher, err := NewOpenAIRefusalMatcher([]string{"不能"}, "继续当前任务")
+	require.NoError(t, err)
+	state := newOpenAIRefusalStreamStateWithEarlyEmission(matcher, false)
+
+	events := []struct {
+		typeName string
+		payload  string
+	}{
+		{
+			typeName: "response.created",
+			payload:  `{"type":"response.created","response":{"id":"resp_reasoning_first","status":"in_progress","output":[]}}`,
+		},
+		{
+			typeName: "response.output_item.added",
+			payload:  `{"type":"response.output_item.added","response_id":"resp_reasoning_first","output_index":0,"item":{"id":"rs_reasoning_first","type":"reasoning","status":"in_progress","summary":[]}}`,
+		},
+		{
+			typeName: "response.reasoning_summary_text.delta",
+			payload:  `{"type":"response.reasoning_summary_text.delta","response_id":"resp_reasoning_first","item_id":"rs_reasoning_first","output_index":0,"summary_index":0,"delta":"Reasoning summary"}`,
+		},
+		{
+			typeName: "response.output_item.done",
+			payload:  `{"type":"response.output_item.done","response_id":"resp_reasoning_first","output_index":0,"item":{"id":"rs_reasoning_first","type":"reasoning","status":"completed","summary":[{"type":"summary_text","text":"Reasoning summary"}]}}`,
+		},
+		{
+			typeName: "response.output_item.added",
+			payload:  `{"type":"response.output_item.added","response_id":"resp_reasoning_first","output_index":1,"item":{"id":"msg_reasoning_first","type":"message","role":"assistant","status":"in_progress","content":[]}}`,
+		},
+		{
+			typeName: "response.output_text.delta",
+			payload:  `{"type":"response.output_text.delta","response_id":"resp_reasoning_first","item_id":"msg_reasoning_first","output_index":1,"content_index":0,"delta":"不能完成测试请求。"}`,
+		},
+		{
+			typeName: "response.output_text.done",
+			payload:  `{"type":"response.output_text.done","response_id":"resp_reasoning_first","item_id":"msg_reasoning_first","output_index":1,"content_index":0,"text":"不能完成测试请求。"}`,
+		},
+		{
+			typeName: "response.output_item.done",
+			payload:  `{"type":"response.output_item.done","response_id":"resp_reasoning_first","output_index":1,"item":{"id":"msg_reasoning_first","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"不能完成测试请求。"}]}}`,
+		},
+	}
+
+	for _, event := range events {
+		action, replacement, observeErr := state.observe(event.typeName, []byte(event.payload))
+		require.NoError(t, observeErr)
+		require.Equal(t, openAIRefusalStreamHold, action)
+		require.Nil(t, replacement)
+	}
+	require.Equal(t, "msg_reasoning_first", state.messageID)
+	require.NotEmpty(t, state.completedMessage)
+
+	action, replacement, observeErr := state.observe(
+		"response.completed",
+		[]byte(`{"type":"response.completed","response":{"id":"resp_reasoning_first","status":"completed","output":[],"usage":{"input_tokens":8,"output_tokens":4,"total_tokens":12}}}`),
+	)
+	require.NoError(t, observeErr)
+	require.Equal(t, openAIRefusalStreamReplace, action)
+	require.Contains(t, string(replacement), "继续当前任务")
+	require.NotContains(t, string(replacement), "不能完成测试请求")
+}
+
 func TestOpenAIRefusalStreamNonEarlyFallbackPreservesTerminalAuthority(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -399,6 +461,35 @@ func TestOpenAIRefusalStreamReplacesCyberPolicyTerminal(t *testing.T) {
 	require.NotContains(t, string(replacement), "response.failed")
 	require.NotContains(t, string(replacement), "cyber_policy")
 	require.NotContains(t, string(replacement), "blocked")
+}
+
+func TestOpenAIRefusalStreamCyberReplacementDoesNotReuseReasoningItemID(t *testing.T) {
+	matcher, err := NewOpenAIRefusalMatcher([]string{"cannot"}, "continue current task")
+	require.NoError(t, err)
+	state := newOpenAIRefusalStreamStateWithEarlyEmission(matcher, false)
+
+	_, _, observeErr := state.observe(
+		"response.created",
+		[]byte(`{"type":"response.created","response":{"id":"resp_cyber_reasoning","object":"response","model":"gpt-5.6-sol","status":"in_progress","output":[]}}`),
+	)
+	require.NoError(t, observeErr)
+	_, _, observeErr = state.observe(
+		"response.reasoning_summary_text.delta",
+		[]byte(`{"type":"response.reasoning_summary_text.delta","response_id":"resp_cyber_reasoning","item_id":"rs_cyber_reasoning","output_index":0,"summary_index":0,"delta":"Reasoning summary"}`),
+	)
+	require.NoError(t, observeErr)
+	require.Empty(t, state.messageID)
+
+	action, replacement, replaceErr := state.replaceCyberPolicyFailure(
+		[]byte(`{"type":"response.failed","response":{"id":"resp_cyber_reasoning","status":"failed","error":{"code":"cyber_policy","message":"blocked"},"usage":{"input_tokens":8,"output_tokens":1,"total_tokens":9}}}`),
+		false,
+	)
+
+	require.NoError(t, replaceErr)
+	require.Equal(t, openAIRefusalStreamReplace, action)
+	require.Contains(t, string(replacement), `"id":"msg_refusal_recovery_`)
+	require.NotContains(t, string(replacement), `"id":"rs_cyber_reasoning"`)
+	require.NotContains(t, string(replacement), `"item_id":"rs_cyber_reasoning"`)
 }
 
 func TestOpenAIRefusalStreamCompletesEarlyReplacementAfterCyberPolicyTerminal(t *testing.T) {
