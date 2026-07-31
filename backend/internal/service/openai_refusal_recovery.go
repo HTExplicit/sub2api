@@ -24,7 +24,11 @@ const (
 
 var ErrInvalidOpenAIRefusalRecovery = errors.New("invalid OpenAI refusal recovery settings")
 
-const OpenAIRefusalRecoveryReason GatewayFailureReason = "openai_refusal_recovery"
+const (
+	OpenAIRefusalRecoveryReason      GatewayFailureReason = "openai_refusal_recovery"
+	OpenAICyberFailoverReason        GatewayFailureReason = "openai_cyber_failover"
+	OpenAICyberFailoverExhaustedCode                      = "cyber_failover_exhausted"
+)
 
 const openAIRefusalEarlyStreamEligibleContextKey = "openai_refusal_early_stream_eligible"
 
@@ -230,11 +234,18 @@ func NewOpenAIRefusalRecoveryFailoverError(upstreamHeaders http.Header) *Upstrea
 }
 
 func NewOpenAICyberFailoverError(_ []byte, upstreamHeaders http.Header) *UpstreamFailoverError {
-	return NewOpenAIRefusalRecoveryFailoverError(upstreamHeaders)
+	err := NewOpenAIRefusalRecoveryFailoverError(upstreamHeaders)
+	err.Reason = OpenAICyberFailoverReason
+	err.ResponseBody = []byte(`{"error":{"message":"Temporary upstream failure","type":"server_error","code":"cyber_failover_exhausted","retryable":true}}`)
+	return err
 }
 
 func (e *UpstreamFailoverError) IsOpenAIRefusalRecovery() bool {
-	return e != nil && e.Reason == OpenAIRefusalRecoveryReason
+	return e != nil && (e.Reason == OpenAIRefusalRecoveryReason || e.Reason == OpenAICyberFailoverReason)
+}
+
+func (e *UpstreamFailoverError) IsOpenAICyberFailover() bool {
+	return e != nil && e.Reason == OpenAICyberFailoverReason
 }
 
 func IsOpenAIRefusalRecoveryFailover(err error) bool {

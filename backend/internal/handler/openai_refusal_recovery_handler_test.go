@@ -22,8 +22,8 @@ func TestOpenAIRefusalRecoveryFailoverExhaustionReturnsRetryable503(t *testing.T
 
 	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
 	require.Equal(t, "1", recorder.Header().Get("Retry-After"))
-	require.JSONEq(t, `{"error":{"type":"server_error","message":"Temporary upstream failure"}}`, recorder.Body.String())
-	require.NotContains(t, recorder.Body.String(), "cyber")
+	require.JSONEq(t, `{"error":{"type":"server_error","code":"cyber_failover_exhausted","message":"Temporary upstream failure","retryable":true}}`, recorder.Body.String())
+	require.NotContains(t, recorder.Body.String(), "cyber_policy")
 }
 
 func TestOpenAIRefusalRecoveryFailoverExhaustionWritesServerErrorSSE(t *testing.T) {
@@ -36,8 +36,22 @@ func TestOpenAIRefusalRecoveryFailoverExhaustionWritesServerErrorSSE(t *testing.
 
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.Contains(t, recorder.Body.String(), "event: response.failed")
-	require.Contains(t, recorder.Body.String(), `"code":"server_error"`)
-	require.NotContains(t, recorder.Body.String(), "cyber")
+	require.Contains(t, recorder.Body.String(), `"code":"cyber_failover_exhausted"`)
+	require.Contains(t, recorder.Body.String(), `"retryable":true`)
+	require.NotContains(t, recorder.Body.String(), "cyber_policy")
+}
+
+func TestOpenAIRefusalRecoveryFailoverExhaustionWritesAnthropicRetryableError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	(&OpenAIGatewayHandler{}).handleAnthropicFailoverExhausted(c, service.NewOpenAICyberFailoverError(nil, nil), false)
+
+	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
+	require.Equal(t, "1", recorder.Header().Get("Retry-After"))
+	require.JSONEq(t, `{"type":"error","error":{"type":"api_error","code":"cyber_failover_exhausted","message":"Temporary upstream failure","retryable":true}}`, recorder.Body.String())
 }
 
 func TestOpenAIRefusalRecoveryCyberAttemptClearsPerAttemptState(t *testing.T) {
@@ -61,7 +75,7 @@ func TestPrepareOpenAIRefusalPromptRetryIsBoundedAndPreservesRequest(t *testing.
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 	body := []byte(`{"model":"gpt-5.6-sol","stream":true,"input":[{"type":"message","role":"user","content":"task"}]}`)
-	failoverErr := service.NewOpenAICyberFailoverError(nil, nil)
+	failoverErr := service.NewOpenAIRefusalRecoveryFailoverError(nil)
 
 	repaired, changed, err := prepareOpenAIRefusalPromptRetry(c, body, failoverErr)
 
@@ -84,6 +98,18 @@ func TestPrepareOpenAIRefusalPromptRetryIgnoresOrdinaryFailover(t *testing.T) {
 	body := []byte(`{"model":"gpt-5.6-sol","input":"task"}`)
 
 	repaired, changed, err := prepareOpenAIRefusalPromptRetry(c, body, nil)
+
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Equal(t, body, repaired)
+}
+
+func TestPrepareOpenAIRefusalPromptRetryNeverMutatesCyberFailover(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	body := []byte(`{"model":"gpt-5.6-sol","input":"task"}`)
+
+	repaired, changed, err := prepareOpenAIRefusalPromptRetry(c, body, service.NewOpenAICyberFailoverError(nil, nil))
 
 	require.NoError(t, err)
 	require.False(t, changed)

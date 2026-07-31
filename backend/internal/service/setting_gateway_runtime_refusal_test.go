@@ -214,6 +214,19 @@ func TestOpenAIRefusalRuntimeInitialRefreshErrorDefaultsToDisabled(t *testing.T)
 	require.False(t, initial.RewriteEnabled())
 }
 
+func TestOpenAIRefusalRuntimeRewriteDisabledKeepsCyberFailoverWithoutMatcher(t *testing.T) {
+	repo := &openAIRefusalRuntimeRepo{values: openAIRefusalRuntimeValues(false)}
+	svc := &SettingService{settingRepo: repo}
+
+	runtime := svc.GetOpenAIRefusalRecoveryRuntime(context.Background())
+
+	require.True(t, runtime.Enabled)
+	require.True(t, runtime.CyberFailoverEnabled())
+	require.False(t, runtime.RewriteEnabled())
+	require.False(t, runtime.Rewrite)
+	require.Nil(t, runtime.Matcher)
+}
+
 func TestOpenAIRefusalRuntimeRefreshDoesNotOverwriteNewSettings(t *testing.T) {
 	repo := &openAIRefusalRuntimeRepo{values: openAIRefusalRuntimeValues(false)}
 	svc := &SettingService{settingRepo: repo}

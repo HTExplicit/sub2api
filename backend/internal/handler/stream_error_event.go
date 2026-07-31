@@ -13,8 +13,9 @@ import (
 
 // responsesFailedError 对齐 OpenAI Responses 协议 error 子对象。
 type responsesFailedError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code      string `json:"code"`
+	Message   string `json:"message"`
+	Retryable bool   `json:"retryable,omitempty"`
 }
 
 // responsesFailedBody 对齐 apicompat.makeResponsesCompletedEvent 输出的 response 子对象字段集。
@@ -53,11 +54,18 @@ type responsesFailedEvent struct {
 // 此时 caller 也无法回退到 JSON（HTTP 200 已固化），通常意味着连接已经损坏，
 // 应当让请求处理函数 return，由上层关闭连接。
 func writeResponsesFailedSSE(c *gin.Context, errType, message string) bool {
+	return writeResponsesFailedSSEWithDetails(c, errType, "", message, false)
+}
+
+func writeResponsesFailedSSEWithDetails(c *gin.Context, errType, code, message string, retryable bool) bool {
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
 		return false
 	}
 
+	if code == "" {
+		code = mapResponsesErrorCode(errType)
+	}
 	payload, err := json.Marshal(responsesFailedEvent{
 		Type: "response.failed",
 		Response: responsesFailedBody{
@@ -67,8 +75,9 @@ func writeResponsesFailedSSE(c *gin.Context, errType, message string) bool {
 			Status: "failed",
 			Output: []any{},
 			Error: responsesFailedError{
-				Code:    mapResponsesErrorCode(errType),
-				Message: message,
+				Code:      code,
+				Message:   message,
+				Retryable: retryable,
 			},
 		},
 	})

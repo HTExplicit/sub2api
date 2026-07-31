@@ -230,5 +230,5 @@ func newOpenAIWSCyberRecoveryError(payload []byte, headers http.Header, replaySa
 }
 
 func OpenAIWSRetryableFailureEvent() []byte {
-	return []byte(`{"type":"response.failed","response":{"id":"resp_retryable_failure","object":"response","status":"failed","output":[],"error":{"code":"server_error","message":"Temporary upstream failure"}}}`)
+	return []byte(`{"type":"response.failed","response":{"id":"resp_retryable_failure","object":"response","status":"failed","output":[],"error":{"code":"cyber_failover_exhausted","message":"Temporary upstream failure","retryable":true}}}`)
 }

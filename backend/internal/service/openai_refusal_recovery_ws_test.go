@@ -236,7 +236,8 @@ func TestOpenAIRefusalRecoveryWSOutputWritesRetryableFailureWithoutBufferedFrame
 
 	require.Len(t, written, 1)
 	require.Equal(t, "response.failed", gjson.GetBytes(written[0], "type").String())
-	require.Equal(t, "server_error", gjson.GetBytes(written[0], "response.error.code").String())
-	require.NotContains(t, string(written[0]), "cyber")
+	require.Equal(t, OpenAICyberFailoverExhaustedCode, gjson.GetBytes(written[0], "response.error.code").String())
+	require.True(t, gjson.GetBytes(written[0], "response.error.retryable").Bool())
+	require.NotContains(t, string(written[0]), "cyber_policy")
 	require.False(t, output.SemanticOutputStarted())
 }
