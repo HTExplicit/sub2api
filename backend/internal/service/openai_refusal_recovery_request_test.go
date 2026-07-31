@@ -107,6 +107,13 @@ func TestPrepareOpenAIRefusalPromptRetryConvertsStringInput(t *testing.T) {
 	require.False(t, gjson.GetBytes(repaired, "stream").Bool())
 }
 
+func TestOpenAIRefusalRecoveryInstructionRequiresSubstantiveAlternative(t *testing.T) {
+	require.Contains(t, openAIRefusalRecoveryInstruction, "do not repeat a refusal")
+	require.Contains(t, openAIRefusalRecoveryInstruction, "closest permitted concrete alternative")
+	require.Contains(t, openAIRefusalRecoveryInstruction, "continue the permitted work or alternative")
+	require.Contains(t, openAIRefusalRecoveryInstruction, "Output the useful work or alternative only")
+}
+
 func mustOpenAIRefusalMatcher(t *testing.T, replacement string) *OpenAIRefusalMatcher {
 	t.Helper()
 	matcher, err := NewOpenAIRefusalMatcher([]string{"不能"}, replacement)
