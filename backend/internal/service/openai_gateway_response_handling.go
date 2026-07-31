@@ -450,6 +450,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				responseID = extractOpenAIResponseIDFromJSONBytes(dataBytes)
 			}
 			forceFlushFailedEvent := false
+			cyberPolicyReplacement := false
 			if eventType == "response.failed" {
 				failedMessage = extractOpenAISSEErrorMessage(dataBytes)
 				// response.failed 自带上游已消耗的 usage（input token 通常已扣）；必须先解析
@@ -465,13 +466,23 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 						UpstreamInTok:  usage.InputTokens,
 						UpstreamOutTok: usage.OutputTokens,
 					})
-					if refusalRuntime.CyberFailoverEnabled() && !openAIStreamClientOutputStarted(c, clientOutputStarted) {
+					if refusalStream != nil && refusalRuntime.RewriteEnabled() {
+						clientHasOutput := openAIStreamClientOutputStarted(c, clientOutputStarted)
+						if action, replacement, replaceErr := refusalStream.replaceCyberPolicyFailure(dataBytes, clientHasOutput); replaceErr != nil {
+							logger.FromContext(ctx).Warn("openai.refusal_recovery_cyber_replace_failed", zap.String("transport", "sse"), zap.Error(replaceErr))
+						} else if action == openAIRefusalStreamReplace {
+							refusalAction = action
+							refusalReplacement = replacement
+							cyberPolicyReplacement = true
+						}
+					}
+					if !cyberPolicyReplacement && refusalRuntime.CyberFailoverEnabled() && !openAIStreamClientOutputStarted(c, clientOutputStarted) {
 						sawFailedEvent = true
 						streamEarlyErr = NewOpenAICyberFailoverError(dataBytes, resp.Header)
 						return
 					}
 				}
-				if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
+				if !cyberPolicyReplacement && !openAIStreamClientOutputStarted(c, clientOutputStarted) {
 					if status, errType, errMsg, matched := applyOpenAIStreamFailedErrorPassthroughRule(c, account.Platform, dataBytes, failedMessage); matched {
 						sawFailedEvent = true
 						// 命中透传规则也要记录 ops 上游错误事件（对齐 CC/Messages 与
@@ -494,8 +505,10 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 						return
 					}
 				}
-				forceFlushFailedEvent = true
-				sawFailedEvent = true
+				if !cyberPolicyReplacement {
+					forceFlushFailedEvent = true
+					sawFailedEvent = true
+				}
 			}
 			if normalizedData, normalized := normalizeCompletedImageGenerationStatus(dataBytes); normalized {
 				dataBytes = normalizedData
@@ -552,7 +565,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				data = string(sanitizedData)
 				line = "data: " + data
 			}
-			if refusalStream != nil && !refusalStream.passthrough {
+			if !cyberPolicyReplacement && refusalStream != nil && !refusalStream.passthrough {
 				var refusalErr error
 				refusalData := dataBytes
 				terminalOutput := gjson.GetBytes(refusalTerminalData, "response.output")
