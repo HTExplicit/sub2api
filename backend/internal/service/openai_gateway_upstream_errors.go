@@ -324,12 +324,15 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 	body := s.readUpstreamErrorBody(resp)
 	body = s.redactAgentIdentitySensitiveBody(ctx, account, body)
 
-	// cyber_policy 不冷却账号，并保留内部标记供 handler 事后写风控/邮件。已启用的
-	// Responses 恢复改写优先生成配置的完成响应；其他协议保留原有 failover/透传行为。
+	// cyber_policy 不冷却账号，并保留内部标记供 handler 事后写风控/邮件。Responses
+	// 恢复在首次命中时先触发一次带修复提示的重试；重试后仍失败才生成配置的完成响应。
 	if hit, _, cyberMsg := detectOpenAICyberPolicy(body); hit {
 		markOpenAICyberPolicyFromResponse(c, resp.StatusCode, body)
 		if isOpenAIRefusalRecoveryResponsesRequest(c) {
 			runtime := s.openAIRefusalRecoveryRuntime(ctx)
+			if openAIRefusalShouldPromptRetry(c, runtime) {
+				return nil, NewOpenAICyberFailoverError(body, resp.Header)
+			}
 			if runtime.RewriteEnabled() {
 				if replaceErr := writeOpenAIRefusalRecoveryFailureReplacement(c, requestBody, body, runtime.Matcher.Replacement()); replaceErr == nil {
 					MarkResponseCommitted(c)

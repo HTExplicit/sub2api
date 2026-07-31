@@ -317,6 +317,13 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			body = cappedBody
 		}
 	}
+	if repairedBody, repaired, repairErr := h.gatewayService.PrepareOpenAIRefusalContinuationRequest(c.Request.Context(), body); repairErr != nil {
+		reqLog.Warn("openai.refusal_continuation_repair_failed", zap.Error(repairErr))
+	} else if repaired {
+		body = repairedBody
+		service.MarkOpenAIRefusalPromptRepairAttempted(c)
+		reqLog.Info("openai.refusal_continuation_repaired")
+	}
 
 	reqStream, ok := parseOpenAICompatibleStream(body)
 	if !ok {
@@ -539,8 +546,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			}()
 			return h.gatewayService.Forward(c.Request.Context(), c, account, attemptBody)
 		}()
+		cyberAttempt := service.GetOpsCyberPolicy(c) != nil
 		cyberBlockKeyHTTP := ""
-		if service.GetOpsCyberPolicy(c) != nil {
+		if cyberAttempt {
 			cyberBlockKeyHTTP = service.CyberSessionBlockKey(apiKey.ID, c, sessionHashBody)
 		}
 		h.recordOpenAIResponsesCyberAttempt(c, apiKey, account, subscription, reqModel, err, cyberBlockKeyHTTP, clientRequestedUsageFields(c, channelMapping, reqModel, ""), service.HashUsageRequestPayload(body))
@@ -577,6 +585,17 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					}
 					if failoverErr.SafeToFailoverAfterWrite && c.Writer.Written() {
 						streamStarted = true
+					}
+					if repairedBody, repaired, repairErr := prepareOpenAIRefusalPromptRetry(c, forwardBody, failoverErr); repairErr != nil {
+						reqLog.Warn("openai.refusal_prompt_retry_prepare_failed", zap.Error(repairErr))
+					} else if repaired {
+						if result != nil && !cyberAttempt {
+							h.recordOpenAIRefusalRetryUsage(c, apiKey, account, subscription, reqModel, body, result, channelMapping)
+						}
+						forwardBody = repairedBody
+						clearCyberPolicyTurnState(c)
+						reqLog.Info("openai.refusal_prompt_retrying", zap.Int64("account_id", account.ID))
+						continue
 					}
 					if failoverErr.ShouldReportAccountScheduleFailure() {
 						h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), false, nil)
@@ -2639,6 +2658,72 @@ func openAIWSIngressFallbackSessionSeed(userID, apiKeyID int64, groupID *int64) 
 		gid = *groupID
 	}
 	return fmt.Sprintf("openai_ws_ingress:%d:%d:%d", gid, userID, apiKeyID)
+}
+
+func prepareOpenAIRefusalPromptRetry(
+	c *gin.Context,
+	body []byte,
+	failoverErr *service.UpstreamFailoverError,
+) ([]byte, bool, error) {
+	if failoverErr == nil || !failoverErr.IsOpenAIRefusalRecovery() {
+		return body, false, nil
+	}
+	repaired, changed, err := service.PrepareOpenAIRefusalPromptRetry(body)
+	if err != nil || !changed {
+		return repaired, changed, err
+	}
+	service.MarkOpenAIRefusalPromptRepairAttempted(c)
+	return repaired, true, nil
+}
+
+func (h *OpenAIGatewayHandler) recordOpenAIRefusalRetryUsage(
+	c *gin.Context,
+	apiKey *service.APIKey,
+	account *service.Account,
+	subscription *service.UserSubscription,
+	model string,
+	requestBody []byte,
+	result *service.OpenAIForwardResult,
+	channelMapping service.ChannelMappingResult,
+) {
+	if h == nil || c == nil || apiKey == nil || account == nil || result == nil {
+		return
+	}
+	userAgent := c.GetHeader("User-Agent")
+	clientIP := ip.GetClientIP(c)
+	requestPayloadHash := service.HashUsageRequestPayload(requestBody)
+	inboundEndpoint := GetInboundEndpoint(c)
+	upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, account, result)
+	quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+	sessionID := service.ExtractClientSessionID(c)
+	channelFields := clientRequestedUsageFields(c, channelMapping, model, result.UpstreamModel)
+
+	h.submitOpenAIUsageRecordTask(c.Request.Context(), result, func(ctx context.Context) {
+		if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
+			Result:             result,
+			APIKey:             apiKey,
+			User:               apiKey.User,
+			Account:            account,
+			Subscription:       subscription,
+			InboundEndpoint:    inboundEndpoint,
+			UpstreamEndpoint:   upstreamEndpoint,
+			UserAgent:          userAgent,
+			IPAddress:          clientIP,
+			RequestPayloadHash: requestPayloadHash,
+			APIKeyService:      h.apiKeyService,
+			QuotaPlatform:      quotaPlatform,
+			SessionID:          sessionID,
+			ChannelUsageFields: channelFields,
+			CyberBlocked:       false,
+		}); err != nil {
+			logger.L().With(
+				zap.String("component", "handler.openai_gateway.refusal_retry_usage"),
+				zap.Int64("api_key_id", apiKey.ID),
+				zap.Int64("account_id", account.ID),
+				zap.String("model", model),
+			).Error("openai.refusal_retry_usage_record_failed", zap.Error(err))
+		}
+	})
 }
 
 func isOpenAIWSUpgradeRequest(r *http.Request) bool {
