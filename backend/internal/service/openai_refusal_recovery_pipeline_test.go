@@ -450,6 +450,60 @@ func TestOpenAIStreamingPassthroughRewritesNonEarlyEmptyTerminalFromCompletedMes
 	require.NotContains(t, recorder.Body.String(), "不能完成测试请求")
 }
 
+func TestOpenAIStreamingPassthroughRewritesNonEarlyEmptyTerminalAfterReasoning(t *testing.T) {
+	svc := newOpenAIRefusalRecoveryPipelineService(t, false, true)
+	c, recorder := newOpenAIRefusalRecoveryTestContext()
+	account := &Account{ID: 1, Platform: PlatformOpenAI}
+	setOpenAIRefusalEarlyStreamEligibility(c, account, []byte(
+		`{"model":"gpt-5.6-sol","input":"test","stream":true,"tools":[{"type":"function","name":"test_tool"}]}`,
+	))
+	require.False(t, openAIRefusalEarlyStreamEligible(c))
+
+	upstream := strings.Join([]string{
+		`data: {"type":"response.created","response":{"id":"resp_reasoning_pipeline","object":"response","model":"gpt-5.6-sol","status":"in_progress","output":[]}}`,
+		``,
+		`data: {"type":"response.output_item.added","response_id":"resp_reasoning_pipeline","output_index":0,"item":{"id":"rs_reasoning_pipeline","type":"reasoning","status":"in_progress","summary":[]}}`,
+		``,
+		`data: {"type":"response.reasoning_summary_text.delta","response_id":"resp_reasoning_pipeline","item_id":"rs_reasoning_pipeline","output_index":0,"summary_index":0,"delta":"Reasoning summary"}`,
+		``,
+		`data: {"type":"response.output_item.done","response_id":"resp_reasoning_pipeline","output_index":0,"item":{"id":"rs_reasoning_pipeline","type":"reasoning","status":"completed","summary":[{"type":"summary_text","text":"Reasoning summary"}]}}`,
+		``,
+		`data: {"type":"response.output_item.added","response_id":"resp_reasoning_pipeline","output_index":1,"item":{"id":"msg_reasoning_pipeline","type":"message","role":"assistant","status":"in_progress","content":[]}}`,
+		``,
+		`data: {"type":"response.output_text.delta","response_id":"resp_reasoning_pipeline","item_id":"msg_reasoning_pipeline","output_index":1,"content_index":0,"delta":"不能完成测试请求。"}`,
+		``,
+		`data: {"type":"response.output_text.done","response_id":"resp_reasoning_pipeline","item_id":"msg_reasoning_pipeline","output_index":1,"content_index":0,"text":"不能完成测试请求。"}`,
+		``,
+		`data: {"type":"response.output_item.done","response_id":"resp_reasoning_pipeline","output_index":1,"item":{"id":"msg_reasoning_pipeline","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"不能完成测试请求。"}]}}`,
+		``,
+		`data: {"type":"response.completed","response":{"id":"resp_reasoning_pipeline","object":"response","model":"gpt-5.6-sol","status":"completed","output":[],"usage":{"input_tokens":8,"output_tokens":4,"total_tokens":12}}}`,
+		``,
+	}, "\n")
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(upstream)),
+	}
+
+	result, err := svc.handleStreamingResponsePassthrough(
+		context.Background(),
+		resp,
+		c,
+		account,
+		time.Now(),
+		"gpt-5.6-sol",
+		"gpt-5.6-sol",
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, 8, result.usage.InputTokens)
+	require.Equal(t, 4, result.usage.OutputTokens)
+	require.Contains(t, recorder.Body.String(), "继续当前任务")
+	require.Contains(t, recorder.Body.String(), `"id":"resp_reasoning_pipeline"`)
+	require.Contains(t, recorder.Body.String(), `"total_tokens":12`)
+	require.NotContains(t, recorder.Body.String(), "不能完成测试请求")
+}
+
 func TestOpenAIStreamingPassthroughRewritesStructuredRefusalAcrossDeltas(t *testing.T) {
 	svc := newOpenAIRefusalRecoveryPipelineService(t, false, true)
 	c, recorder := newOpenAIRefusalRecoveryTestContext()
