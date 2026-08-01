@@ -97,7 +97,19 @@ const ViewModeStub = {
 const DataTableStub = {
   props: ['data', 'columns'],
   emits: ['row-click'],
-  template: '<div data-test="view-table" :data-columns="columns.map(column => column.key).join(\',\')"><button v-for="row in data" :key="row.id" data-test="open-row" @click="$emit(\'row-click\', row)">{{ row.name }}</button></div>'
+  methods: {
+    columnClass(key: string) {
+      return this.columns.find((column: { key: string }) => column.key === key)?.class || ''
+    }
+  },
+  template: `
+    <div data-test="view-table" :data-columns="columns.map(column => column.key).join(',')" :data-name-class="columnClass('name')">
+      <div v-for="row in data" :key="row.id">
+        <button data-test="open-row" @click="$emit('row-click', row)">{{ row.name }}</button>
+        <slot name="cell-name" :row="row" :value="row.name" />
+      </div>
+    </div>
+  `
 }
 
 const DetailsDrawerStub = {
@@ -222,6 +234,20 @@ describe('admin AccountsView Cockpit console', () => {
     expect(wrapper.get('[data-test="view-table"]').attributes('data-columns')).toBe(
       'select,name,platform_type,usage,status,taxonomy_route,actions'
     )
+  })
+
+  it('keeps long account names inside a fixed, truncated column', async () => {
+    const longName = 'production-account-with-a-name-that-must-not-expand-the-table'
+    listAccounts.mockResolvedValue({ items: [{ ...account, name: longName }], total: 1, page: 1, page_size: 20, pages: 1 })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="view-table"]').attributes('data-name-class')).toContain('w-44')
+    const name = wrapper.get('[data-test="view-table"] span[title]')
+    expect(name.attributes('title')).toBe(longName)
+    expect(name.classes()).toContain('truncate')
+    expect(name.text()).toBe(longName)
   })
 
   it('migrates only usage visibility and preserves every other saved column choice', async () => {
