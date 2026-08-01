@@ -17,7 +17,10 @@ describe('AccountFolderBar', () => {
 
     expect(wrapper.text()).not.toContain('NaN')
     expect(wrapper.text()).toContain('Production')
-    expect(wrapper.find('aside').attributes('aria-label')).toBe('admin.accounts.managementClassification')
+    expect(wrapper.find('aside').exists()).toBe(false)
+    expect(wrapper.get('[data-test="desktop-taxonomy-bar"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="desktop-taxonomy-nav"]').classes()).toContain('overflow-x-auto')
+    expect(wrapper.get('[data-test="desktop-taxonomy-manage"]').classes()).toContain('shrink-0')
 
     await wrapper.find('button[aria-haspopup="listbox"]').trigger('click')
     expect(wrapper.find('[role="listbox"]').exists()).toBe(true)
@@ -51,9 +54,8 @@ describe('AccountFolderBar', () => {
     const wrapper = mount(AccountFolderBar, {
       props: { folders: [], activeFolder: '', error: true }
     })
-    const retry = wrapper.findAll('aside button').find((button) => button.text() === 'common.retry')
-    expect(retry).toBeDefined()
-    await retry!.trigger('click')
+    const retry = wrapper.get('[data-test="desktop-taxonomy-retry"]')
+    await retry.trigger('click')
     expect(wrapper.emitted('retry')).toHaveLength(1)
     expect(wrapper.text()).not.toContain('NaN')
   })

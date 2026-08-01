@@ -70,7 +70,7 @@ onUnmounted(() => {
 }
 
 .table-scroll-container :deep(.table-wrapper) {
-  @apply flex-1 overflow-x-auto overflow-y-auto;
+  @apply flex-1 min-h-0 overflow-x-auto overflow-y-auto;
   /* 确保横向滚动条显示在最底部 */
   scrollbar-gutter: stable;
 }
