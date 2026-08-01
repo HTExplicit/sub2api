@@ -124,7 +124,7 @@ const ImportDataModalStub = {
 
 const FolderBarStub = {
   props: ['folders', 'total'],
-  template: '<div><span data-test="folder-facet-count">{{ folders[0]?.account_count ?? -1 }}</span><span data-test="folder-navigation-total">{{ total }}</span></div>'
+  template: '<div data-test="account-taxonomy-bar"><span data-test="folder-facet-count">{{ folders[0]?.account_count ?? -1 }}</span><span data-test="folder-navigation-total">{{ total }}</span></div>'
 }
 
 const TaxonomyManagerStub = {
@@ -290,6 +290,16 @@ describe('admin AccountsView Cockpit console', () => {
     expect(wrapper.get('[data-test="folder-facet-count"]').text()).toBe('0')
     expect(wrapper.get('[data-test="folder-navigation-total"]').text()).toBe('3')
     expect(wrapper.get('[data-test="taxonomy-folder-count"]').text()).toBe('4')
+  })
+
+  it('keeps the taxonomy bar above a shrinkable account list container', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    const taxonomy = wrapper.get('[data-test="account-taxonomy-bar"]')
+    const list = wrapper.get('[data-test="account-list-scroll"]')
+    expect(taxonomy.element.compareDocumentPosition(list.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(list.classes()).toEqual(expect.arrayContaining(['flex', 'min-h-0', 'min-w-0', 'flex-1', 'flex-col']))
   })
 
   it('filters and selects successful account IDs after import', async () => {

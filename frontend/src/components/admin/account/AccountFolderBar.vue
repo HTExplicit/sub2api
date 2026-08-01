@@ -1,6 +1,6 @@
 <template>
-  <div class="border-b border-gray-200 bg-gray-50/80 dark:border-dark-700 dark:bg-dark-900/35 lg:border-b-0 lg:border-r">
-    <div class="relative p-3 lg:hidden" ref="mobileMenuRef">
+  <div class="min-w-0 bg-gray-50/80 dark:bg-dark-900/35">
+    <div class="relative border-b border-gray-200 p-3 dark:border-dark-700 lg:hidden" ref="mobileMenuRef">
       <button
         ref="mobileTriggerRef"
         type="button"
@@ -54,38 +54,46 @@
       </div>
     </div>
 
-    <aside class="hidden h-full min-h-64 w-52 p-3 lg:block" :aria-label="t('admin.accounts.managementClassification')">
-      <div class="mb-2 flex min-h-9 items-center justify-between gap-2 px-2">
-        <h2 class="text-xs font-semibold uppercase text-gray-500 dark:text-dark-300">{{ t('admin.accounts.managementClassification') }}</h2>
-        <button type="button" class="icon-button shrink-0" :title="t('admin.accounts.manageTaxonomy')" @click="emit('manage')">
-          <Icon name="cog" size="sm" />
-        </button>
-      </div>
+    <div
+      class="hidden min-w-0 items-center gap-3 border-b border-gray-200 px-3 py-2 dark:border-dark-700 lg:flex"
+      :aria-label="t('admin.accounts.managementClassification')"
+      data-test="desktop-taxonomy-bar"
+    >
+      <h2 class="shrink-0 text-xs font-semibold uppercase text-gray-500 dark:text-dark-300">
+        {{ t('admin.accounts.managementClassification') }}
+      </h2>
 
-      <div v-if="loading" class="space-y-2 px-2 py-3" aria-live="polite">
-        <div v-for="index in 3" :key="index" class="h-9 animate-pulse rounded bg-gray-200/70 dark:bg-dark-700" />
-      </div>
-      <div v-else-if="error" class="px-2 py-3 text-xs text-red-600 dark:text-red-300" role="status">
-        <p>{{ t('admin.accounts.facetsLoadFailed') }}</p>
-        <button type="button" class="mt-2 min-h-9 font-medium text-primary-700 hover:underline dark:text-primary-300" @click="emit('retry')">
-          {{ t('common.retry') }}
-        </button>
-      </div>
-      <nav v-else class="space-y-1">
-        <button
-          v-for="item in navigationItems"
-          :key="item.value || 'all'"
-          type="button"
-          class="flex min-h-10 w-full items-center justify-between gap-2 rounded-md px-2.5 text-left text-sm transition-colors"
-          :class="activeFolder === item.value ? 'bg-primary-50 font-semibold text-primary-700 dark:bg-primary-900/25 dark:text-primary-300' : 'text-gray-600 hover:bg-gray-100 dark:text-dark-300 dark:hover:bg-dark-800'"
-          @click="emit('select', item.value)"
-        >
-          <span class="truncate">{{ item.label }}</span>
-          <span class="shrink-0 tabular-nums text-gray-400">{{ formatCount(item.count) }}</span>
-        </button>
-        <p v-if="folders.length === 0" class="px-2.5 py-3 text-xs text-gray-400">{{ t('admin.accounts.noFolders') }}</p>
+      <nav class="min-w-0 flex-1 overflow-x-auto" :aria-label="t('admin.accounts.managementClassification')" data-test="desktop-taxonomy-nav">
+        <div v-if="loading" class="flex min-w-max items-center gap-2 py-1" aria-live="polite">
+          <div v-for="index in 3" :key="index" class="h-9 w-28 animate-pulse rounded bg-gray-200/70 dark:bg-dark-700" />
+        </div>
+        <div v-else-if="error" class="flex min-h-10 items-center gap-3 py-1 text-xs text-red-600 dark:text-red-300" role="status">
+          <span>{{ t('admin.accounts.facetsLoadFailed') }}</span>
+          <button type="button" class="min-h-9 shrink-0 font-medium text-primary-700 hover:underline dark:text-primary-300" data-test="desktop-taxonomy-retry" @click="emit('retry')">
+            {{ t('common.retry') }}
+          </button>
+        </div>
+        <div v-else class="flex min-w-max items-center gap-1 py-1">
+          <button
+            v-for="item in navigationItems"
+            :key="item.value || 'all'"
+            type="button"
+            class="flex min-h-10 shrink-0 items-center justify-between gap-2 rounded-md px-3 text-left text-sm transition-colors"
+            :class="activeFolder === item.value ? 'bg-primary-50 font-semibold text-primary-700 dark:bg-primary-900/25 dark:text-primary-300' : 'text-gray-600 hover:bg-gray-100 dark:text-dark-300 dark:hover:bg-dark-800'"
+            data-test="desktop-taxonomy-option"
+            @click="emit('select', item.value)"
+          >
+            <span class="max-w-48 truncate">{{ item.label }}</span>
+            <span class="shrink-0 tabular-nums text-gray-400">{{ formatCount(item.count) }}</span>
+          </button>
+          <span v-if="folders.length === 0" class="px-2 text-xs text-gray-400">{{ t('admin.accounts.noFolders') }}</span>
+        </div>
       </nav>
-    </aside>
+
+      <button type="button" class="icon-button shrink-0" :title="t('admin.accounts.manageTaxonomy')" data-test="desktop-taxonomy-manage" @click="emit('manage')">
+        <Icon name="cog" size="sm" />
+      </button>
+    </div>
   </div>
 </template>
 

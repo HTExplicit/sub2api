@@ -177,7 +177,7 @@
         </div>
       </template>
       <template #table>
-        <div class="min-w-0 lg:grid lg:grid-cols-[13rem_minmax(0,1fr)]">
+        <div class="flex h-full min-h-0 min-w-0 flex-1 flex-col">
         <AccountFolderBar
           :folders="facetFolders"
           :active-folder="activeFolder"
@@ -189,7 +189,7 @@
           @manage="showTaxonomyManager = true"
           @retry="loadFacets"
         />
-        <div class="min-w-0 p-3 sm:p-4">
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col p-3 sm:p-4">
         <AccountBulkActionsBar
           :selected-ids="selIds"
           @delete="handleBulkDelete"
@@ -204,7 +204,7 @@
           @select-page="selectPage"
           @toggle-schedulable="handleBulkToggleSchedulable"
         />
-        <div ref="accountTableRef" class="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div ref="accountTableRef" class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-test="account-list-scroll">
         <DataTable
           v-if="viewMode === 'table'"
           ref="dataTableRef"
