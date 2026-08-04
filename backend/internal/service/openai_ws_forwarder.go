@@ -44,6 +44,7 @@ const (
 	openAIWSStoreDisabledConnModeOff      = "off"
 
 	openAIWSIngressStagePreviousResponseNotFound = "previous_response_not_found"
+	openAIWSIngressStageInvalidEncryptedContent  = "invalid_encrypted_content"
 	openAIWSMaxPrevResponseIDDeletePasses        = 8
 )
 
@@ -165,6 +166,17 @@ func isOpenAIWSIngressPreviousResponseNotFound(err error) bool {
 	return !turnErr.wroteDownstream
 }
 
+func isOpenAIWSIngressInvalidEncryptedContent(err error) bool {
+	var turnErr *openAIWSIngressTurnError
+	if !errors.As(err, &turnErr) || turnErr == nil {
+		return false
+	}
+	if strings.TrimSpace(turnErr.stage) != openAIWSIngressStageInvalidEncryptedContent {
+		return false
+	}
+	return !turnErr.wroteDownstream
+}
+
 // NewOpenAIWSClientCloseError 创建一个客户端 WS 关闭错误。
 func NewOpenAIWSClientCloseError(statusCode coderws.StatusCode, reason string, err error) error {
 	return &OpenAIWSClientCloseError{
@@ -207,6 +219,10 @@ func (e *OpenAIWSClientCloseError) Reason() string {
 
 // OpenAIWSIngressHooks 定义入站 WS 每个 turn 的生命周期回调。
 type OpenAIWSIngressHooks struct {
+	// ClientLifecycleContext is the request context before an ingress lease
+	// adds its independent cancellation signal. Downstream writes bind to it
+	// so shutdown and disconnect cancellation remain direct during lease loss.
+	ClientLifecycleContext context.Context
 	// InitialRequestModel is the client-facing model from the first frame,
 	// before channel or account mapping. Ingress modes preserve it for usage
 	// attribution while MapRequestModel determines the upstream model.

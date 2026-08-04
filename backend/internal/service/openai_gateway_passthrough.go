@@ -191,6 +191,32 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	}
 
 	agentTaskRecoveryTried := false
+	invalidEncryptedContentRetryTried := false
+	tryRecoverInvalidEncryptedContent := func(upstreamMsg string, upstreamBody []byte) (bool, error) {
+		if invalidEncryptedContentRetryTried ||
+			!isOpenAIInvalidEncryptedContentError(upstreamMsg, upstreamBody) ||
+			ValidateFunctionCallOutputContextBytes(body).HasFunctionCallOutput {
+			return false, nil
+		}
+		var decoded map[string]any
+		decoder := json.NewDecoder(bytes.NewReader(body))
+		decoder.UseNumber()
+		if decodeErr := decoder.Decode(&decoded); decodeErr != nil || !trimOpenAIEncryptedReasoningItems(decoded) {
+			logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] Skip invalid_encrypted_content retry because encrypted reasoning items are missing or cannot be decoded (account: %s)", account.Name)
+			return false, nil
+		}
+		delete(decoded, "previous_response_id")
+		retryBody, marshalErr := marshalOpenAIUpstreamJSON(decoded)
+		if marshalErr != nil {
+			return false, fmt.Errorf("serialize passthrough invalid_encrypted_content retry body: %w", marshalErr)
+		}
+		body = retryBody
+		invalidEncryptedContentRetryTried = true
+		logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] Retrying request once on the same account after invalid_encrypted_content (account: %s)", account.Name)
+		return true, nil
+	}
+
+retryUpstream:
 	var resp *http.Response
 	for {
 		upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
@@ -217,6 +243,33 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		probeBody := s.readUpstreamErrorBody(resp)
 		_ = resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(probeBody))
+
+		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(probeBody))
+		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
+		continuationStateError := classifyOpenAIContinuationStateError(upstreamMsg, probeBody)
+		if recovered, recoveryErr := tryRecoverInvalidEncryptedContent(upstreamMsg, probeBody); recoveryErr != nil {
+			return nil, recoveryErr
+		} else if recovered {
+			continue
+		}
+		if continuationStateError != openAIContinuationStateErrorNone ||
+			isOpenAIOpaqueContinuationToolChainBadRequest(resp.StatusCode, body, upstreamMsg, probeBody) {
+			// Continuation failures describe request history rather than account
+			// health.  Classify them before agent recovery, failover, response
+			// commitment, or any scheduler/rate-limit side effect.
+			redactedBody := s.redactAgentIdentitySensitiveBody(ctx, account, probeBody)
+			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+				Platform:           account.Platform,
+				AccountID:          account.ID,
+				AccountName:        account.Name,
+				UpstreamStatusCode: resp.StatusCode,
+				UpstreamRequestID:  resp.Header.Get("x-request-id"),
+				Passthrough:        true,
+				Kind:               "continuation_state",
+				Message:            OpenAIContinuationStateUnavailableClientMessage,
+			})
+			return nil, NewOpenAIContinuationStateUnavailableError(resp.StatusCode, resp.Header, redactedBody)
+		}
 		if !agentTaskRecoveryTried && s.isAgentIdentityAccount(ctx, account) && isAgentIdentityTaskInvalidHTTPResponse(resp.StatusCode, probeBody) {
 			agentTaskRecoveryTried = true
 			expectedTaskID := account.GetCredential("task_id")
@@ -247,6 +300,16 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		setOpenAIRefusalEarlyStreamEligibility(c, account, body)
 		result, err := s.handleStreamingResponsePassthrough(ctx, resp, c, account, startTime, reqModel, upstreamPassthroughModel)
 		if err != nil {
+			var failoverErr *UpstreamFailoverError
+			if errors.As(err, &failoverErr) && !openAIStreamClientOutputStarted(c, false) {
+				upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(failoverErr.ResponseBody)))
+				if recovered, recoveryErr := tryRecoverInvalidEncryptedContent(upstreamMsg, failoverErr.ResponseBody); recoveryErr != nil {
+					return nil, recoveryErr
+				} else if recovered {
+					_ = resp.Body.Close()
+					goto retryUpstream
+				}
+			}
 			return nil, err
 		}
 		usage = result.usage
@@ -257,6 +320,16 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	} else {
 		result, err := s.handleNonStreamingResponsePassthrough(ctx, resp, c, reqModel, upstreamPassthroughModel)
 		if err != nil {
+			var failoverErr *UpstreamFailoverError
+			if errors.As(err, &failoverErr) && !openAIStreamClientOutputStarted(c, false) {
+				upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(failoverErr.ResponseBody)))
+				if recovered, recoveryErr := tryRecoverInvalidEncryptedContent(upstreamMsg, failoverErr.ResponseBody); recoveryErr != nil {
+					return nil, recoveryErr
+				} else if recovered {
+					_ = resp.Body.Close()
+					goto retryUpstream
+				}
+			}
 			return nil, err
 		}
 		usage = result.usage
@@ -444,15 +517,10 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	if s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
 		req.Header.Set("user-agent", codexCLIUserAgent)
 	}
-	// 浏览器型 UA 兜底：仅 OAuth（ChatGPT 内部接口）账号生效，若最终 user-agent 仍为浏览器
-	// （Chrome/Firefox/Safari/Edge 等），替换为后台配置的 Codex UA，避免 Cloudflare 触发 JS 质询。
-	s.overrideBrowserUserAgent(ctx, account, req)
-
-	// 终态收口：originator 必须与最终 User-Agent 首段配套且为官方身份，非官方 UA 整体回退为
-	// 默认 Codex CLI 身份（承接原「非 Codex UA 安全兜底」，并修复其把 codex-tui 等官方 UA 改写为
-	// codex_cli_rs 造成的 originator 错配 404），详见 issue #3901。
+	// 终态收口：透传路径的 OAuth 与非透传完全一致，同样强制统一出站身份
+	// （User-Agent / originator / version 同源自洽），客户端自报身份不会到达上游。
 	if account.Type == AccountTypeOAuth {
-		enforceCodexIdentityHeaders(req.Header)
+		enforceCodexIdentityHeadersWithUA(req.Header, s.codexIdentityOverrideUA(account))
 	}
 
 	if req.Header.Get("content-type") == "" {
@@ -766,15 +834,34 @@ func openAIStreamDataStartsClientOutput(data, eventType string) bool {
 	return !openAIStreamEventIsPreamble(eventType)
 }
 
+// openAIStreamFailedEventErrorCode 提取流内 failed 事件的错误码（小写），
+// 兼容 response.failed 的嵌套形态与裸 error 形态。
+func openAIStreamFailedEventErrorCode(payload []byte) string {
+	code := strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, "response.error.code").String()))
+	if code == "" {
+		code = strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, "error.code").String()))
+	}
+	return code
+}
+
+// isOpenAIUpstreamCapacityShedEvent 判断流内 failed 事件是否为上游容量降载信号。
+// 上游在容量紧张时会把请求丢进降载路径：HTTP 200 之后立刻推 event: error
+// （code=server_is_overloaded / slow_down）并以 response.failed 收尾。
+func isOpenAIUpstreamCapacityShedEvent(payload []byte) bool {
+	switch openAIStreamFailedEventErrorCode(payload) {
+	case "server_is_overloaded", "slow_down":
+		return true
+	default:
+		return false
+	}
+}
+
 func openAIStreamFailedEventSemanticStatus(payload []byte, message string) int {
 	if isOpenAIContextWindowError(message, payload) {
 		return http.StatusBadRequest
 	}
 
-	code := strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, "response.error.code").String()))
-	if code == "" {
-		code = strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, "error.code").String()))
-	}
+	code := openAIStreamFailedEventErrorCode(payload)
 	errType := strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, "response.error.type").String()))
 	if errType == "" {
 		errType = strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, "error.type").String()))
@@ -924,7 +1011,17 @@ func openAIStreamFailedEventShouldFailover(payload []byte, message string) bool 
 }
 
 func openAIStreamFailedEventRetryableOnSameAccount(account *Account, payload []byte, message string) bool {
-	if account == nil || !account.IsPoolMode() {
+	if account == nil {
+		return false
+	}
+	// 容量降载是请求级信号，不是账号级故障：上游只是让本次请求稍后再试。
+	// 换账号并不改变被降载的因素（客户端身份、模型容量都与账号无关），
+	// 只会让单个请求把整池账号逐个消耗掉，最终仍以同一个错误告终。
+	// 因此先在同一账号上做有界重试，用尽后才按常规流程切号。
+	if isOpenAIUpstreamCapacityShedEvent(payload) {
+		return true
+	}
+	if !account.IsPoolMode() {
 		return false
 	}
 	semanticStatus := openAIStreamFailedEventSemanticStatus(payload, message)
@@ -1012,6 +1109,7 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 		ResponseBody:           body,
 		ResponseHeaders:        headers,
 		RetryableOnSameAccount: openAIStreamFailedEventRetryableOnSameAccount(account, payload, message),
+		RequestScopedTransient: isOpenAIUpstreamCapacityShedEvent(payload),
 	}
 }
 
@@ -1157,6 +1255,9 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				// 再打 cyber 标记，否则 mark 记到的是解析前的 0，导致流式 cyber 按 0 token 计费
 				// 而漏记真实用量。对齐 WS V2 / Chat 流式路径（均先解析 usage 再 Mark）。
 				s.parseSSEUsageBytes(dataBytes, usage)
+				if continuationErr := openAIContinuationStateErrorFromFailedEvent(resp.StatusCode, resp.Header, dataBytes); continuationErr != nil {
+					return resultWithUsage(), continuationErr
+				}
 				if hit, code, msg := detectOpenAICyberPolicy(dataBytes); hit {
 					MarkOpsCyberPolicy(c, CyberPolicyMark{
 						Code:           code,
@@ -1402,6 +1503,9 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	if isEventStreamResponse(resp.Header) {
 		return s.handlePassthroughSSEToJSON(resp, c, body, originalModel, mappedModel)
 	}
+	if continuationErr := openAIContinuationStateErrorFromFailedEvent(resp.StatusCode, resp.Header, body); continuationErr != nil {
+		return nil, continuationErr
+	}
 	if markOpenAICyberPolicyFromResponse(c, resp.StatusCode, body) && isOpenAIRefusalRecoveryResponsesRequest(c) {
 		runtime := s.openAIRefusalRecoveryRuntime(ctx)
 		if runtime.CyberFailoverEnabled() {
@@ -1512,6 +1616,9 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 	} else {
 		terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText)
 		if terminalOK && terminalType == "response.failed" {
+			if continuationErr := openAIContinuationStateErrorFromFailedEvent(resp.StatusCode, resp.Header, terminalPayload); continuationErr != nil {
+				return nil, continuationErr
+			}
 			if markOpenAICyberPolicyFromResponse(c, resp.StatusCode, terminalPayload) && isOpenAIRefusalRecoveryResponsesRequest(c) {
 				runtime := s.openAIRefusalRecoveryRuntime(c.Request.Context())
 				if runtime.CyberFailoverEnabled() {

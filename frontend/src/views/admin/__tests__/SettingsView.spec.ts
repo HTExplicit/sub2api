@@ -225,6 +225,8 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.upstreamBillingProbe.intervalHint": "范围 5–1440 分钟。",
     "admin.settings.upstreamBillingProbe.saved": "上游倍率自动探测设置已保存",
     "admin.settings.upstreamBillingProbe.saveFailed": "保存上游倍率自动探测设置失败",
+    "admin.settings.gatewayForwarding.openaiCodexVersionSyncedValue":
+      "当前同步到：{version}",
     "admin.settings.security.passkeyDeploymentHint":
       "请由服务器运维在部署配置中将 webauthn.enabled 设为 true，填写 webauthn.rp_id（仅域名）与 webauthn.rp_origins（完整 HTTPS 来源），然后重启服务。",
     "admin.settings.site.uploadImage": "上传图片",
@@ -396,6 +398,11 @@ const baseSettingsResponse = {
   turnstile_enabled: false,
   turnstile_site_key: "",
   turnstile_secret_key_configured: false,
+  tencent_captcha_enabled: false,
+  tencent_captcha_app_id: "",
+  tencent_captcha_app_secret_key_configured: false,
+  tencent_captcha_cloud_secret_id_configured: false,
+  tencent_captcha_cloud_secret_key_configured: false,
   api_key_acl_trust_forwarded_ip: true,
   forwarded_client_ip_headers: [],
   linuxdo_connect_enabled: false,
@@ -459,6 +466,9 @@ const baseSettingsResponse = {
   enable_client_dateline_normalization: true,
   antigravity_user_agent_version: "",
   openai_codex_user_agent: "",
+  openai_codex_client_version: "",
+  openai_codex_client_version_synced: "0.146.0",
+  openai_codex_version_auto_sync_enabled: true,
   payment_enabled: true,
   payment_min_amount: 1,
   payment_max_amount: 10000,
@@ -921,6 +931,183 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({ passkey_enabled: false }),
     );
+  });
+
+  it("人机验证切换到腾讯天御并保存四项配置", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await openSecurityTab(wrapper);
+
+    const masterToggle = wrapper.get('[data-testid="captcha-enabled-toggle"]');
+    await masterToggle.setValue(true);
+    // 默认选中 Turnstile
+    expect(wrapper.text()).toContain("admin.settings.turnstile.siteKey");
+
+    await wrapper.get('[data-testid="captcha-provider-tencent"]').trigger("click");
+    await flushPromises();
+
+    const card = wrapper
+      .findAll(".card")
+      .find((node) => node.text().includes("admin.settings.captcha.title"));
+    expect(card).toBeDefined();
+    expect(card!.text()).not.toContain("admin.settings.turnstile.siteKey");
+    expect(card!.get('a[href="https://console.cloud.tencent.com/captcha"]').exists()).toBe(true);
+    expect(card!.get('a[href="https://console.cloud.tencent.com/cam/capi"]').exists()).toBe(true);
+    expect(
+      card!.get('a[href="https://cloud.tencent.com/document/product/1110/36841"]').exists(),
+    ).toBe(true);
+    const inputs = card!.findAll("input").filter((input) => input.attributes("type") !== "checkbox");
+    await inputs[0]!.setValue("123456789");
+    await inputs[1]!.setValue("app-secret-value");
+    await inputs[2]!.setValue("cloud-secret-id-value");
+    await inputs[3]!.setValue("cloud-secret-key-value");
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        turnstile_enabled: false,
+        tencent_captcha_enabled: true,
+        aliyun_captcha_enabled: false,
+        tencent_captcha_app_id: "123456789",
+        tencent_captcha_app_secret_key: "app-secret-value",
+        tencent_captcha_cloud_secret_id: "cloud-secret-id-value",
+        tencent_captcha_cloud_secret_key: "cloud-secret-key-value",
+      }),
+    );
+  });
+
+  it("人机验证切换到阿里云并保存配置", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await openSecurityTab(wrapper);
+
+    const masterToggle = wrapper.get('[data-testid="captcha-enabled-toggle"]');
+    await masterToggle.setValue(true);
+
+    await wrapper.get('[data-testid="captcha-provider-aliyun"]').trigger("click");
+    await flushPromises();
+
+    const card = wrapper
+      .findAll(".card")
+      .find((node) => node.text().includes("admin.settings.captcha.title"));
+    expect(card).toBeDefined();
+    expect(card!.text()).toContain("admin.settings.aliyunCaptcha.region");
+    expect(card!.text()).not.toContain("admin.settings.turnstile.siteKey");
+    const inputs = card!.findAll("input").filter((input) => input.attributes("type") !== "checkbox");
+    await inputs[0]!.setValue("prefix-1");
+    await inputs[1]!.setValue("scene-1");
+    await inputs[2]!.setValue("ak-id");
+    await inputs[3]!.setValue("ak-secret-value");
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        turnstile_enabled: false,
+        tencent_captcha_enabled: false,
+        aliyun_captcha_enabled: true,
+        aliyun_captcha_prefix: "prefix-1",
+        aliyun_captcha_scene_id: "scene-1",
+        aliyun_captcha_access_key_id: "ak-id",
+        aliyun_captcha_access_key_secret: "ak-secret-value",
+        aliyun_captcha_region: "cn",
+      }),
+    );
+  });
+
+  it("关闭人机验证总开关会同时关闭所有服务商", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      tencent_captcha_enabled: true,
+      tencent_captcha_app_id: "123456789",
+      tencent_captcha_app_secret_key_configured: true,
+      tencent_captcha_cloud_secret_id_configured: true,
+      tencent_captcha_cloud_secret_key_configured: true,
+    });
+    const wrapper = mountView();
+    await flushPromises();
+    await openSecurityTab(wrapper);
+
+    const masterToggle = wrapper.get('[data-testid="captcha-enabled-toggle"]');
+    expect((masterToggle.element as HTMLInputElement).checked).toBe(true);
+    // 加载后选中项跟随已启用的服务商
+    expect(wrapper.text()).toContain("admin.settings.tencentCaptcha.appId");
+
+    await masterToggle.setValue(false);
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        turnstile_enabled: false,
+        tencent_captcha_enabled: false,
+        aliyun_captcha_enabled: false,
+      }),
+    );
+  });
+
+  it("normalizes legacy multi-provider captcha state before saving", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      turnstile_enabled: true,
+      turnstile_site_key: "turnstile-site-key",
+      turnstile_secret_key_configured: true,
+      tencent_captcha_enabled: true,
+      tencent_captcha_app_id: "123456789",
+      tencent_captcha_app_secret_key_configured: true,
+      tencent_captcha_cloud_secret_id_configured: true,
+      tencent_captcha_cloud_secret_key_configured: true,
+    });
+    const wrapper = mountView();
+    await flushPromises();
+    await openSecurityTab(wrapper);
+
+    expect(wrapper.text()).toContain("admin.settings.tencentCaptcha.appId");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        turnstile_enabled: false,
+        tencent_captcha_enabled: true,
+        aliyun_captcha_enabled: false,
+      }),
+    );
+  });
+
+  it("loads and saves Codex version synchronization settings", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      openai_codex_client_version: "0.145.0",
+      openai_codex_client_version_synced: "0.146.0",
+      openai_codex_version_auto_sync_enabled: true,
+    });
+    const wrapper = mountView();
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    const versionInput = wrapper.get(
+      '[data-testid="openai-codex-client-version-input"]',
+    );
+    expect((versionInput.element as HTMLInputElement).value).toBe("0.145.0");
+    expect(wrapper.get('[data-testid="openai-codex-synced-version"]').text()).toContain(
+      "0.146.0",
+    );
+    await versionInput.setValue("0.147.0");
+    await wrapper
+      .get('[data-testid="openai-codex-version-auto-sync-toggle"]')
+      .setValue(false);
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    const payload = updateSettings.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(payload.openai_codex_client_version).toBe("0.147.0");
+    expect(payload.openai_codex_version_auto_sync_enabled).toBe(false);
+    expect(payload).not.toHaveProperty("openai_codex_client_version_synced");
   });
 
   it("disables passkey sign-in when the RP configuration is unavailable", async () => {

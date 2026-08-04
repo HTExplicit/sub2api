@@ -226,6 +226,7 @@ func TestResetRuntimeLogConfig_InvalidOperator(t *testing.T) {
 	_, err := svc.ResetRuntimeLogConfig(context.Background(), 0)
 	if err == nil {
 		t.Fatalf("expected invalid operator error")
+		return
 	}
 	if err.Error() != "invalid operator id" {
 		t.Fatalf("unexpected error: %v", err)

@@ -607,6 +607,14 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			if wsInvalidEncryptedContentRecoveryTried {
 				return false
 			}
+			if HasFunctionCallOutput(wsReqBody) {
+				logOpenAIWSModeInfo(
+					"reconnect_invalid_encrypted_content_recovery_skip account_id=%d attempt=%d reason=has_function_call_output",
+					account.ID,
+					attempt,
+				)
+				return false
+			}
 			removedReasoningItems := trimOpenAIEncryptedReasoningItems(wsReqBody)
 			if !removedReasoningItems {
 				logOpenAIWSModeInfo(
@@ -766,6 +774,19 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 			return wsResult, nil
 		}
+		continuationReason, _ := classifyOpenAIWSReconnectReason(wsErr)
+		switch strings.TrimPrefix(continuationReason, "prewarm_") {
+		case "invalid_encrypted_content", "previous_response_not_found":
+			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+				Platform:           account.Platform,
+				AccountID:          account.ID,
+				AccountName:        account.Name,
+				UpstreamStatusCode: http.StatusBadRequest,
+				Kind:               "continuation_state",
+				Message:            OpenAIContinuationStateUnavailableClientMessage,
+			})
+			return nil, NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
+		}
 		s.writeOpenAIWSFallbackErrorResponse(c, account, wsErr)
 		return nil, wsErr
 	}
@@ -785,6 +806,36 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	httpInvalidEncryptedContentRetryTried := false
 	agentTaskRecoveryTried := false
 	rejectedFieldRetryState := newOpenAIResponsesRejectedFieldRetryState(body)
+	tryRecoverInvalidEncryptedContent := func(upstreamMsg string, upstreamBody []byte) (bool, error) {
+		if httpInvalidEncryptedContentRetryTried ||
+			!isOpenAIInvalidEncryptedContentError(upstreamMsg, upstreamBody) ||
+			ValidateFunctionCallOutputContextBytes(body).HasFunctionCallOutput {
+			return false, nil
+		}
+		decoded, decodeErr := ensureReqBody()
+		if decodeErr != nil {
+			return false, decodeErr
+		}
+		if !trimOpenAIEncryptedReasoningItems(decoded) {
+			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Skip non-WSv2 invalid_encrypted_content retry because encrypted reasoning items are missing (account: %s)", account.Name)
+			return false, nil
+		}
+		// The continuation anchor and encrypted reasoning carrier are bound to
+		// the failed upstream state. Retry the cleaned request on this account
+		// once, whether the error arrived as HTTP failure or response.failed.
+		delete(decoded, "previous_response_id")
+		retryBody, marshalErr := marshalOpenAIUpstreamJSON(decoded)
+		if marshalErr != nil {
+			return false, fmt.Errorf("serialize invalid_encrypted_content retry body: %w", marshalErr)
+		}
+		body = retryBody
+		requestView = newOpenAIRequestView(body)
+		reqBody = nil
+		httpInvalidEncryptedContentRetryTried = true
+		rejectedFieldRetryState.remember(body)
+		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Retrying non-WSv2 request once after invalid_encrypted_content (account: %s)", account.Name)
+		return true, nil
+	}
 	for {
 		// Build upstream request
 		upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
@@ -860,31 +911,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			respBody = s.redactAgentIdentitySensitiveBody(ctx, account, respBody)
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
 			continuationStateError := classifyOpenAIContinuationStateError(upstreamMsg, respBody)
-			if isOpenAIInvalidEncryptedContentError(upstreamMsg, respBody) && !httpInvalidEncryptedContentRetryTried {
-				// A tool-output continuation is coupled to the previous upstream
-				// state. Never strip it and replay on a different interpretation of
-				// the conversation: a terminal request-scoped error is safer.
-				if !ValidateFunctionCallOutputContextBytes(body).HasFunctionCallOutput {
-					decoded, decodeErr := ensureReqBody()
-					if decodeErr != nil {
-						return nil, decodeErr
-					}
-					if trimOpenAIEncryptedReasoningItems(decoded) {
-						// HTTP transports already remove previous_response_id before
-						// forwarding. Keep this defensive delete so a future compatible
-						// transport cannot carry a stale anchor into the recovery retry.
-						delete(decoded, "previous_response_id")
-						body, err = marshalOpenAIUpstreamJSON(decoded)
-						if err != nil {
-							return nil, fmt.Errorf("serialize invalid_encrypted_content retry body: %w", err)
-						}
-						httpInvalidEncryptedContentRetryTried = true
-						rejectedFieldRetryState.remember(body)
-						logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Retrying non-WSv2 request once after invalid_encrypted_content (account: %s)", account.Name)
-						continue
-					}
-					logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Skip non-WSv2 invalid_encrypted_content retry because encrypted reasoning items are missing (account: %s)", account.Name)
-				}
+			if recovered, recoveryErr := tryRecoverInvalidEncryptedContent(upstreamMsg, respBody); recoveryErr != nil {
+				return nil, recoveryErr
+			} else if recovered {
+				continue
 			}
 			if continuationStateError != openAIContinuationStateErrorNone {
 				// The failure describes request history, not account health. Do not
@@ -979,6 +1009,16 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			setOpenAIRefusalEarlyStreamEligibility(c, account, body)
 			streamResult, err := s.handleStreamingResponseWithReasoning(ctx, resp, c, account, startTime, originalModel, upstreamModel, reasoningEffortValue)
 			if err != nil {
+				var failoverErr *UpstreamFailoverError
+				if errors.As(err, &failoverErr) && !openAIStreamClientOutputStarted(c, false) {
+					upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(failoverErr.ResponseBody)))
+					if recovered, recoveryErr := tryRecoverInvalidEncryptedContent(upstreamMsg, failoverErr.ResponseBody); recoveryErr != nil {
+						return nil, recoveryErr
+					} else if recovered {
+						_ = resp.Body.Close()
+						continue
+					}
+				}
 				return nil, err
 			}
 			usage = streamResult.usage
@@ -989,6 +1029,16 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		} else {
 			nonStreamResult, err := s.handleNonStreamingResponse(ctx, resp, c, account, originalModel, upstreamModel)
 			if err != nil {
+				var failoverErr *UpstreamFailoverError
+				if errors.As(err, &failoverErr) && !openAIStreamClientOutputStarted(c, false) {
+					upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(failoverErr.ResponseBody)))
+					if recovered, recoveryErr := tryRecoverInvalidEncryptedContent(upstreamMsg, failoverErr.ResponseBody); recoveryErr != nil {
+						return nil, recoveryErr
+					} else if recovered {
+						_ = resp.Body.Close()
+						continue
+					}
+				}
 				return nil, err
 			}
 			usage = nonStreamResult.usage
@@ -1145,13 +1195,10 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		req.Header.Set("user-agent", codexCLIUserAgent)
 	}
 
-	// 浏览器型 UA 兜底：仅 OAuth（ChatGPT 内部接口）账号生效，若最终 user-agent 仍为浏览器
-	// （Chrome/Firefox/Safari/Edge 等），替换为后台配置的 Codex UA，避免 Cloudflare 触发 JS 质询。
-	s.overrideBrowserUserAgent(ctx, account, req)
-
-	// 终态收口：originator 必须与最终 User-Agent 首段配套且为官方身份，否则上游 404（issue #3901）。
+	// 终态收口：强制统一 OAuth 出站身份（User-Agent / originator / version 同源自洽）。
+	// 客户端自报身份不参与构造，浏览器型 UA 也因此不会再到达上游（原浏览器 UA 兜底已被吸收）。
 	if account.Type == AccountTypeOAuth {
-		enforceCodexIdentityHeaders(req.Header)
+		enforceCodexIdentityHeadersWithUA(req.Header, s.codexIdentityOverrideUA(account))
 	}
 
 	// Ensure required headers exist
@@ -1165,26 +1212,12 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	return req, nil
 }
 
-// overrideBrowserUserAgent 检查请求的最终 user-agent，若为浏览器 UA 则替换为后台配置的 Codex UA。
-// 用于规避 Cloudflare 对浏览器型 UA 在 ChatGPT 内部接口上的访问质询。
-// 影响范围严格限定：仅 OAuth（Codex/ChatGPT 内部接口）账号生效；API Key 等其他账号原样透传。
-// 仅在识别为浏览器（Mozilla/...）时改写，其他 CLI/工具 UA 不动。
-func (s *OpenAIGatewayService) overrideBrowserUserAgent(ctx context.Context, account *Account, req *http.Request) {
-	if req == nil || account == nil {
-		return
+// codexIdentityOverrideUA 返回账号级显式配置的出站 User-Agent，供强制统一身份时作为覆写来源。
+// ForceCodexCLI 语义是「强制使用 Codex CLI 身份」，等价于使用网关规范身份，故返回空串；
+// 该优先级与历史行为一致（ForceCodexCLI 在账号自定义 UA 之后生效）。
+func (s *OpenAIGatewayService) codexIdentityOverrideUA(account *Account) string {
+	if s != nil && s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
+		return ""
 	}
-	if account.Type != AccountTypeOAuth {
-		return
-	}
-	currentUA := req.Header.Get("user-agent")
-	if !openai.IsBrowserUserAgent(currentUA) {
-		return
-	}
-	codexUA := DefaultOpenAICodexUserAgent
-	if s != nil && s.settingService != nil {
-		if v := strings.TrimSpace(s.settingService.GetOpenAICodexUserAgent(ctx)); v != "" {
-			codexUA = v
-		}
-	}
-	req.Header.Set("user-agent", codexUA)
+	return account.GetOpenAIUserAgent()
 }

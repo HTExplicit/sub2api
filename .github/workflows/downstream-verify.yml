@@ -31,14 +31,15 @@ jobs:
           cache-dependency-path: backend/go.sum
       - name: Service tests
         working-directory: backend
-        run: go test -p=1 -tags unit ./internal/service -run 'Test.*(Refusal|CyberPolicy)|Test(UpdateService|NormalizeAccountTaxonomyName|FilterConsoleAccounts|AccountConsolePlan|AccountFacetMatcher)' -count=1
+        run: go test -p=1 -tags unit ./internal/service -run 'Test.*(Refusal|CyberPolicy|Continuation|InvalidEncryptedContent|PreviousResponseNotFound|CapacityShed|RequestScopedTransient|ServerOverloaded)|Test(UpdateService|NormalizeAccountTaxonomyName|FilterConsoleAccounts|AccountConsolePlan|AccountFacetMatcher)' -count=1
       - name: Request body recovery tests
         working-directory: backend
         run: go test -p=1 ./internal/pkg/httputil ./internal/handler -run 'Test(ReadRequestBodyWithPrealloc|ReadLenientJSONRequestBodyWithPrealloc|RequestBodyReadDiagnostics|ClassifyRequestContentEncoding)' -count=1
       - name: Handler tests
         working-directory: backend
         run: |
-          go test -p=1 ./internal/handler ./internal/handler/admin -run 'Test.*Refusal' -count=1
+          go test -p=1 ./internal/handler ./internal/handler/admin -run 'Test.*(Refusal|Cyber|Continuation)' -count=1
+          go test -p=1 ./internal/handler/admin -run 'TestUpdateSettings(PartialPayload|RejectsTwoCaptchaProviders|RequiresFourTencentCaptchaCredentials|RetainsStoredTencentCaptchaCredentials|ValidatesTencentCaptchaAppID|ValidatesTurnstileSiteKey)' -count=1
           go test -p=1 ./internal/handler/admin -run 'Test(ExportData|PreviewDataImport|ImportData|DataAccountIdentityKeys|BulkUpdateAccepts|AccountHandler)' -count=1
           go test -p=1 ./internal/repository -run '^$'
       - name: Account taxonomy migration integration test

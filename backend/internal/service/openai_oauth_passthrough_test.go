@@ -414,7 +414,8 @@ func TestOpenAIGatewayService_OAuthPassthrough_StreamKeepsToolNameAndBodyNormali
 
 	// 2) only auth is replaced; inbound auth/cookie are not forwarded
 	require.Equal(t, "Bearer oauth-token", upstream.lastReq.Header.Get("Authorization"))
-	require.Equal(t, "codex_cli_rs/0.1.0", upstream.lastReq.Header.Get("User-Agent"))
+	// 强制统一出口：客户端自报的 codex_cli_rs/0.1.0 不会到达上游。
+	require.Equal(t, codexCLIUserAgent, upstream.lastReq.Header.Get("User-Agent"))
 	require.Empty(t, upstream.lastReq.Header.Get("Cookie"))
 	require.Empty(t, upstream.lastReq.Header.Get("X-Api-Key"))
 	require.Empty(t, upstream.lastReq.Header.Get("X-Goog-Api-Key"))
@@ -988,9 +989,10 @@ func TestOpenAIGatewayService_OAuthLegacy_CompositeCodexUAUsesCodexOriginator(t 
 	_, err := svc.Forward(context.Background(), c, account, inputBody)
 	require.NoError(t, err)
 	require.NotNil(t, upstream.lastReq)
-	// 浏览器型复合 UA 被替换为默认 Codex UA（codex-tui 形态），originator 随最终 UA 配套（issue #3901）。
+	// 浏览器型复合 UA 被替换为默认 Codex UA（CLI 形态，避开上游降载桶），
+	// originator 随最终 UA 配套（issue #3901）。
 	require.Equal(t, DefaultOpenAICodexUserAgent, upstream.lastReq.Header.Get("User-Agent"))
-	require.Equal(t, "codex-tui", upstream.lastReq.Header.Get("originator"))
+	require.Equal(t, "codex_cli_rs", upstream.lastReq.Header.Get("originator"))
 	require.NotEqual(t, "opencode", upstream.lastReq.Header.Get("originator"))
 }
 
@@ -1537,6 +1539,307 @@ func TestOpenAIGatewayService_OpenAIPassthrough_RetryableStatusesTriggerFailover
 	}
 }
 
+func TestOpenAIGatewayService_OpenAIPassthrough_InvalidEncryptedContentRetriesSameAccountOnce(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.1.0")
+
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		{
+			StatusCode: http.StatusServiceUnavailable,
+			Header: http.Header{
+				"Content-Type": []string{"application/json"},
+				"X-Request-Id": []string{"rid-invalid-encrypted"},
+			},
+			Body: io.NopCloser(strings.NewReader(`{"error":{"code":"invalid_encrypted_content","type":"server_error","message":"encrypted content could not be verified"}}`)),
+		},
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"resp_recovered","status":"completed","usage":{"input_tokens":1,"output_tokens":2}}`)),
+		},
+	}}
+	repo := &openAIPassthroughFailoverRepo{}
+	svc := &OpenAIGatewayService{
+		cfg:              &config.Config{Gateway: config.GatewayConfig{ForceCodexCLI: false}},
+		httpUpstream:     upstream,
+		rateLimitService: &RateLimitService{accountRepo: repo, cfg: &config.Config{}},
+	}
+	account := &Account{
+		ID:          130,
+		Name:        "passthrough-continuation-recovery",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://api.example.test"},
+		Extra:       map[string]any{"openai_passthrough": true},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+	requestBody := []byte(`{"model":"gpt-5.2","stream":false,"previous_response_id":"resp_stale","input":[{"type":"reasoning","encrypted_content":"gAAA","summary":[{"type":"summary_text","text":"keep me"}]},{"type":"message","content":[{"type":"input_text","text":"hi","nonce":9007199254740993}]}]}`)
+
+	result, err := svc.Forward(context.Background(), c, account, requestBody)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.bodies, 2, "invalid encrypted content recovery must be bounded to one same-account replay")
+	require.Equal(t, "resp_stale", gjson.GetBytes(upstream.bodies[0], "previous_response_id").String())
+	require.False(t, gjson.GetBytes(upstream.bodies[1], "previous_response_id").Exists())
+	require.Equal(t, "gAAA", gjson.GetBytes(upstream.bodies[0], "input.0.encrypted_content").String())
+	require.False(t, gjson.GetBytes(upstream.bodies[1], "input.0.encrypted_content").Exists())
+	require.Equal(t, "summary_text", gjson.GetBytes(upstream.bodies[1], "input.0.summary.0.type").String())
+	require.Equal(t, "9007199254740993", gjson.GetBytes(upstream.bodies[1], "input.1.content.0.nonce").Raw)
+	require.Empty(t, repo.rateLimitCalls)
+	require.Empty(t, repo.overloadCalls)
+}
+
+func TestOpenAIGatewayService_OpenAIPassthrough_ResponseFailedInvalidEncryptedContentRetriesSameAccountOnce(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name      string
+		stream    bool
+		responses func() []*http.Response
+	}{
+		{
+			name: "non-streaming response.failed",
+			responses: func() []*http.Response {
+				return []*http.Response{
+					{
+						StatusCode: http.StatusOK,
+						Header:     http.Header{"Content-Type": []string{"application/json"}},
+						Body: io.NopCloser(strings.NewReader(
+							`{"type":"response.failed","response":{"error":{"code":"invalid_encrypted_content","message":"encrypted content could not be verified"},"usage":{"input_tokens":1,"output_tokens":0}}}`,
+						)),
+					},
+					{
+						StatusCode: http.StatusOK,
+						Header:     http.Header{"Content-Type": []string{"application/json"}},
+						Body:       io.NopCloser(strings.NewReader(`{"id":"resp_recovered","status":"completed","usage":{"input_tokens":1,"output_tokens":2}}`)),
+					},
+				}
+			},
+		},
+		{
+			name:   "streaming response.failed",
+			stream: true,
+			responses: func() []*http.Response {
+				return []*http.Response{
+					{
+						StatusCode: http.StatusOK,
+						Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+						Body: io.NopCloser(strings.NewReader(
+							`data: {"type":"response.failed","error":{"code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}` + "\n\n",
+						)),
+					},
+					{
+						StatusCode: http.StatusOK,
+						Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+						Body: io.NopCloser(strings.NewReader(
+							`data: {"type":"response.completed","response":{"id":"resp_recovered_stream","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":2}}}` + "\n\n",
+						)),
+					},
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+			c.Request.Header.Set("User-Agent", "codex_cli_rs/0.1.0")
+			upstream := &httpUpstreamRecorder{responses: tt.responses()}
+			svc := &OpenAIGatewayService{
+				cfg:           &config.Config{Gateway: config.GatewayConfig{ForceCodexCLI: false}},
+				httpUpstream:  upstream,
+				toolCorrector: NewCodexToolCorrector(),
+			}
+			account := &Account{
+				ID:          133,
+				Name:        "passthrough-response-failed-recovery",
+				Platform:    PlatformOpenAI,
+				Type:        AccountTypeAPIKey,
+				Concurrency: 1,
+				Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://api.example.test"},
+				Extra:       map[string]any{"openai_passthrough": true},
+				Status:      StatusActive,
+				Schedulable: true,
+			}
+			requestBody := []byte(fmt.Sprintf(
+				`{"model":"gpt-5.2","stream":%t,"previous_response_id":"resp_stale","input":[{"type":"reasoning","encrypted_content":"gAAA"},{"type":"message","content":"hi"}]}`,
+				tt.stream,
+			))
+
+			result, err := svc.Forward(context.Background(), c, account, requestBody)
+
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.Len(t, upstream.bodies, 2)
+			require.False(t, gjson.GetBytes(upstream.bodies[1], "previous_response_id").Exists())
+			require.False(t, gjson.GetBytes(upstream.bodies[1], "input.0.encrypted_content").Exists())
+			require.NotContains(t, rec.Body.String(), "invalid_encrypted_content")
+		})
+	}
+}
+
+func TestOpenAIGatewayService_OpenAIPassthrough_InvalidEncryptedContentDoesNotRetryTwice(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		{
+			StatusCode: http.StatusBadGateway,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"error":{"code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}`)),
+		},
+		{
+			StatusCode: http.StatusForbidden,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"error":{"code":"invalid_encrypted_content","message":"encrypted content could not be verified again"}}`)),
+		},
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"must_not_be_reached","status":"completed"}`)),
+		},
+	}}
+	repo := &openAIPassthroughFailoverRepo{}
+	svc := &OpenAIGatewayService{
+		cfg:              &config.Config{Gateway: config.GatewayConfig{ForceCodexCLI: false}},
+		httpUpstream:     upstream,
+		rateLimitService: &RateLimitService{accountRepo: repo, cfg: &config.Config{}},
+	}
+	account := &Account{
+		ID:          131,
+		Name:        "passthrough-continuation-bounded",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://api.example.test"},
+		Extra:       map[string]any{"openai_passthrough": true},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+	requestBody := []byte(`{"model":"gpt-5.2","stream":false,"previous_response_id":"resp_stale","input":[{"type":"reasoning","encrypted_content":"gAAA"},{"type":"message","content":"hi"}]}`)
+
+	result, err := svc.Forward(context.Background(), c, account, requestBody)
+
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
+	require.False(t, failoverErr.ShouldRetryNextAccount())
+	require.True(t, failoverErr.SuppressAccountHealthPenalty)
+	require.Len(t, upstream.bodies, 2, "a second invalid encrypted response must terminate instead of replaying again")
+	require.False(t, c.Writer.Written())
+	require.Empty(t, repo.rateLimitCalls)
+	require.Empty(t, repo.overloadCalls)
+}
+
+func TestOpenAIGatewayService_OpenAIPassthrough_ContinuationErrorsStopBeforeAccountSideEffects(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name         string
+		statusCode   int
+		responseBody string
+		requestBody  string
+	}{
+		{
+			name:         "structured previous response 400",
+			statusCode:   http.StatusBadRequest,
+			responseBody: `{"error":{"code":"previous_response_not_found","message":"previous response not found"}}`,
+			requestBody:  `{"model":"gpt-5.2","stream":false,"previous_response_id":"resp_stale","input":"hi"}`,
+		},
+		{
+			name:         "structured invalid encrypted tool continuation 403",
+			statusCode:   http.StatusForbidden,
+			responseBody: `{"response":{"error":{"code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}}`,
+			requestBody:  `{"model":"gpt-5.2","stream":false,"input":[{"type":"reasoning","encrypted_content":"gAAA"},{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`,
+		},
+		{
+			name:         "narrow previous response message 502",
+			statusCode:   http.StatusBadGateway,
+			responseBody: `{"error":{"message":"Previous response not found"}}`,
+			requestBody:  `{"model":"gpt-5.2","stream":false,"previous_response_id":"resp_stale","input":"hi"}`,
+		},
+		{
+			name:         "narrow invalid encrypted message 503",
+			statusCode:   http.StatusServiceUnavailable,
+			responseBody: `{"error":{"message":"Encrypted content could not be verified"}}`,
+			requestBody:  `{"model":"gpt-5.2","stream":false,"input":"hi"}`,
+		},
+		{
+			name:         "opaque encrypted tool continuation 400",
+			statusCode:   http.StatusBadRequest,
+			responseBody: `{"error":{"message":"bad request"}}`,
+			requestBody:  `{"model":"gpt-5.2","stream":false,"input":[{"type":"reasoning","encrypted_content":"gAAA"},{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+
+			repo := &openAIPassthroughFailoverRepo{}
+			upstream := &httpUpstreamRecorder{resp: &http.Response{
+				StatusCode: tt.statusCode,
+				Header: http.Header{
+					"Content-Type": []string{"application/json"},
+					"X-Request-Id": []string{"rid-continuation"},
+				},
+				Body: io.NopCloser(strings.NewReader(tt.responseBody)),
+			}}
+			svc := &OpenAIGatewayService{
+				cfg:              &config.Config{Gateway: config.GatewayConfig{ForceCodexCLI: false}},
+				httpUpstream:     upstream,
+				rateLimitService: &RateLimitService{accountRepo: repo, cfg: &config.Config{}},
+			}
+			account := &Account{
+				ID:          132,
+				Name:        "passthrough-continuation-terminal",
+				Platform:    PlatformOpenAI,
+				Type:        AccountTypeAPIKey,
+				Concurrency: 1,
+				Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://api.example.test"},
+				Extra:       map[string]any{"openai_passthrough": true},
+				Status:      StatusActive,
+				Schedulable: true,
+			}
+
+			result, err := svc.Forward(context.Background(), c, account, []byte(tt.requestBody))
+
+			require.Nil(t, result)
+			var failoverErr *UpstreamFailoverError
+			require.ErrorAs(t, err, &failoverErr)
+			require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
+			require.Equal(t, http.StatusBadRequest, failoverErr.ClientStatusCode)
+			require.Equal(t, GatewayFailureScopeRequest, failoverErr.Scope)
+			require.False(t, failoverErr.ShouldRetryNextAccount())
+			require.True(t, failoverErr.SuppressAccountHealthPenalty)
+			require.Len(t, upstream.bodies, 1, "unsafe continuation requests must not be replayed")
+			require.False(t, c.Writer.Written(), "continuation classification must happen before downstream response commitment")
+			require.Empty(t, repo.rateLimitCalls)
+			require.Empty(t, repo.overloadCalls)
+
+			value, ok := c.Get(OpsUpstreamErrorsKey)
+			require.True(t, ok)
+			events, ok := value.([]*OpsUpstreamErrorEvent)
+			require.True(t, ok)
+			require.NotEmpty(t, events)
+			require.Equal(t, "continuation_state", events[len(events)-1].Kind)
+			require.True(t, events[len(events)-1].Passthrough)
+			require.Equal(t, OpenAIContinuationStateUnavailableClientMessage, events[len(events)-1].Message)
+		})
+	}
+}
+
 func TestOpenAIGatewayService_APIKeyPassthrough_Transient5xxTriggersFailover(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	requestBody := []byte(`{"model":"gpt-5.2","stream":false,"input":"hello"}`)
@@ -1783,13 +2086,13 @@ func TestOpenAIGatewayService_OAuthPassthrough_NonCodexUAFallbackToCodexUA(t *te
 	require.Equal(t, codexCLIUserAgent, upstream.lastReq.Header.Get("User-Agent"))
 }
 
-// 回归（issue #3901）：codex-tui 等官方 UA 在透传模式下必须逐字保留，且 originator
-// 由最终 UA 推导配套——历史实现会把 codex-tui UA 强改为 codex_cli_rs，而 originator
-// 保留客户端原值，造成 originator/UA 首段错配被上游 404。
-func TestOpenAIGatewayService_OAuthPassthrough_CodexTuiIdentityPreservedAndPaired(t *testing.T) {
+// 透传模式的 OAuth 与非透传一致：官方客户端身份同样被强制统一为网关规范身份，
+// originator 与 UA 首段天然配套，不会出现历史上 originator/UA 错配被上游 404 的形态
+// （issue #3901）。
+func TestOpenAIGatewayService_OAuthPassthrough_OfficialIdentityUnified(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	const tuiUA = "codex-tui/0.140.2 (Mac OS X 14.0; arm64) iTerm (codex-tui; 0.140.2)"
+	const tuiUA = "codex_vscode/0.140.2 (Mac OS X 14.0; arm64) vscode (codex_vscode; 0.140.2)"
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1828,8 +2131,53 @@ func TestOpenAIGatewayService_OAuthPassthrough_CodexTuiIdentityPreservedAndPaire
 	_, err := svc.Forward(context.Background(), c, account, inputBody)
 	require.NoError(t, err)
 	require.NotNil(t, upstream.lastReq)
-	require.Equal(t, tuiUA, upstream.lastReq.Header.Get("User-Agent"))
-	require.Equal(t, "codex-tui", upstream.lastReq.Header.Get("originator"))
+	require.Equal(t, codexCLIUserAgent, upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, "codex_cli_rs", upstream.lastReq.Header.Get("originator"))
+	require.Equal(t, codexCLIVersion, upstream.lastReq.Header.Get("version"))
+}
+
+// 透传模式下真实 TUI 客户端的身份同样被统一：被优先降载的身份不会带到上游。
+func TestOpenAIGatewayService_OAuthPassthrough_CodexTuiIdentityUnified(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+	c.Request.Header.Set("User-Agent", "codex-tui/0.140.2 (Mac OS X 14.0; arm64) iTerm (codex-tui; 0.140.2)")
+	c.Request.Header.Set("originator", "codex-tui")
+
+	inputBody := []byte(`{"model":"gpt-5.2","stream":false,"store":true,"input":[{"type":"text","text":"hi"}]}`)
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid"}},
+		Body:       io.NopCloser(strings.NewReader("data: [DONE]\n\n")),
+	}}
+
+	svc := &OpenAIGatewayService{
+		cfg:          &config.Config{Gateway: config.GatewayConfig{ForceCodexCLI: false}},
+		httpUpstream: upstream,
+	}
+
+	account := &Account{
+		ID:             123,
+		Name:           "acc",
+		Platform:       PlatformOpenAI,
+		Type:           AccountTypeOAuth,
+		Concurrency:    1,
+		Credentials:    map[string]any{"access_token": "oauth-token", "chatgpt_account_id": "chatgpt-acc"},
+		Extra:          map[string]any{"openai_passthrough": true},
+		Status:         StatusActive,
+		Schedulable:    true,
+		RateMultiplier: f64p(1),
+	}
+
+	_, err := svc.Forward(context.Background(), c, account, inputBody)
+	require.NoError(t, err)
+	require.NotNil(t, upstream.lastReq)
+	require.Equal(t, codexCLIUserAgent, upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, "codex_cli_rs", upstream.lastReq.Header.Get("originator"))
+	require.Equal(t, codexCLIVersion, upstream.lastReq.Header.Get("version"))
 }
 
 func TestOpenAIGatewayService_CodexCLIOnly_RejectsNonCodexClient(t *testing.T) {

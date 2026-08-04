@@ -1176,6 +1176,21 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 					return nil
 				}
 				eventType, _, _ := parseOpenAIWSEventEnvelope(payload)
+				if eventType == "response.failed" {
+					if continuationErr := openAIContinuationStateErrorFromFailedEvent(http.StatusOK, handshakeHeaders, payload); continuationErr != nil {
+						return continuationErr
+					}
+				}
+				if eventType == "error" {
+					errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(payload)
+					if classifyOpenAIContinuationStateError(errMsgRaw, payload) != openAIContinuationStateErrorNone {
+						return NewOpenAIContinuationStateUnavailableError(
+							openAIWSErrorHTTPStatusFromRaw(errCodeRaw, errTypeRaw),
+							handshakeHeaders,
+							append([]byte(nil), payload...),
+						)
+					}
+				}
 				if isOpenAIWSTerminalEvent(eventType) {
 					s.handleOpenAIWSTerminalTransientFailure(ctx, account, capturedSessionModel, handshakeHeaders, payload)
 				}

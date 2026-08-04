@@ -317,6 +317,7 @@ func TestNewWxpay(t *testing.T) {
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error, got nil")
+					return
 				}
 				if tt.errSubstr != "" && !strings.Contains(err.Error(), tt.errSubstr) {
 					t.Errorf("error %q should contain %q", err.Error(), tt.errSubstr)
@@ -328,6 +329,7 @@ func TestNewWxpay(t *testing.T) {
 			}
 			if got == nil {
 				t.Fatal("expected non-nil Wxpay instance")
+				return
 			}
 			if got.instanceID != "test-instance" {
 				t.Errorf("instanceID = %q, want %q", got.instanceID, "test-instance")
@@ -451,6 +453,7 @@ func TestResolveWxpayCreateMode(t *testing.T) {
 			if tt.wantErr != "" {
 				if err == nil {
 					t.Fatal("expected error, got nil")
+					return
 				}
 				if !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("error %q should contain %q", err.Error(), tt.wantErr)
@@ -539,6 +542,7 @@ func TestCreatePaymentWithOpenIDReturnsJSAPIResult(t *testing.T) {
 	}
 	if resp.JSAPI == nil {
 		t.Fatal("expected jsapi payload, got nil")
+		return
 	}
 	if resp.JSAPI.AppID != "wx123" {
 		t.Fatalf("jsapi appId = %q, want %q", resp.JSAPI.AppID, "wx123")
@@ -585,12 +589,14 @@ func TestCreatePaymentMobileH5IncludesConfiguredSceneInfo(t *testing.T) {
 		h5Calls++
 		if req.SceneInfo == nil {
 			t.Fatal("expected scene_info, got nil")
+			return nil, nil, nil
 		}
 		if got := wxSV(req.SceneInfo.PayerClientIp); got != "203.0.113.10" {
 			t.Fatalf("scene_info payer_client_ip = %q, want %q", got, "203.0.113.10")
 		}
 		if req.SceneInfo.H5Info == nil {
 			t.Fatal("expected scene_info.h5_info, got nil")
+			return nil, nil, nil
 		}
 		if got := wxSV(req.SceneInfo.H5Info.Type); got != wxpayH5Type {
 			t.Fatalf("scene_info.h5_info.type = %q, want %q", got, wxpayH5Type)
@@ -690,6 +696,7 @@ func TestCreatePaymentMobileH5ReturnsNoAuthErrorWithoutNativeFallback(t *testing
 	})
 	if err == nil {
 		t.Fatal("expected no-auth error, got nil")
+		return
 	}
 	if jsapiCalls != 0 {
 		t.Fatalf("jsapi prepay calls = %d, want 0", jsapiCalls)

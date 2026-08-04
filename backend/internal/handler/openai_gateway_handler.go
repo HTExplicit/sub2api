@@ -57,7 +57,22 @@ func newOpenAIWSUnsupportedModelSwitchError(model string) error {
 	return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "model switch requires reconnect", cause)
 }
 
+func openAIWSPostOutputCyberClose(err error) (*service.OpenAIWSClientCloseError, bool) {
+	var closeErr *service.OpenAIWSClientCloseError
+	if !errors.As(err, &closeErr) {
+		return nil, false
+	}
+	var failoverErr *service.UpstreamFailoverError
+	if !errors.As(err, &failoverErr) || !failoverErr.IsOpenAICyberFailover() {
+		return nil, false
+	}
+	return closeErr, true
+}
+
 func shouldReportOpenAIWSProxyAccountFailure(err error) bool {
+	if _, postOutputCyber := openAIWSPostOutputCyberClose(err); postOutputCyber {
+		return false
+	}
 	return err != nil && !errors.Is(err, errOpenAIWSUnsupportedModelSwitch)
 }
 
@@ -325,10 +340,8 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
 		return
 	}
-	if apiKey.Group != nil && apiKey.Group.Platform == service.PlatformOpenAI {
-		if cappedBody, changed := service.ApplyOpenAIReasoningEffortPolicy(body, apiKey.Group.MaxReasoningEffort, apiKey.Group.ReasoningEffortMappings); changed {
-			body = cappedBody
-		}
+	if cappedBody, changed := applyOpenAIReasoningEffortPolicyForRequest(c, apiKey, body); changed {
+		body = cappedBody
 	}
 	if repairedBody, repaired, repairErr := h.gatewayService.PrepareOpenAIRefusalContinuationRequest(c.Request.Context(), body); repairErr != nil {
 		reqLog.Warn("openai.refusal_continuation_repair_failed", zap.Error(repairErr))
@@ -698,7 +711,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					reqLog.Warn("openai.upstream_failover_switching", failoverSwitchFields...)
 					continue
 				}
-				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), false, nil)
+				if !cyberAttempt {
+					h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), false, nil)
+				}
 				upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 				wroteFallback := false
 				if !upstreamErrorAlreadyCommunicated {
@@ -992,6 +1007,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
 		return
 	}
+	bindOpenAIReasoningEffortPolicyForMessagesRequest(c, apiKey, body)
 	routingModel := service.NormalizeOpenAICompatRequestedModel(reqModel)
 	preferredMappedModel := resolveOpenAIMessagesDispatchMappedModel(apiKey, reqModel)
 	reqStream := gjson.GetBytes(body, "stream").Bool()
@@ -1696,7 +1712,8 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	reqLog.Info("openai.websocket_ingress_started")
 	clientIP := ip.GetClientIP(c)
 	userAgent := strings.TrimSpace(c.GetHeader("User-Agent"))
-	ctx := c.Request.Context()
+	clientLifecycleCtx := c.Request.Context()
+	ctx := clientLifecycleCtx
 	maxIngressConnections := 0
 	if h.cfg != nil {
 		maxIngressConnections = h.cfg.Gateway.OpenAIWS.MaxIngressConnectionsPerAPIKey
@@ -2106,12 +2123,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			zap.Int("candidate_count", scheduleDecision.CandidateCount),
 		)
 
-		maxReasoningEffort := ""
-		var reasoningEffortMappings []service.ReasoningEffortMapping
-		if apiKey.Group != nil && apiKey.Group.Platform == service.PlatformOpenAI {
-			maxReasoningEffort = apiKey.Group.MaxReasoningEffort
-			reasoningEffortMappings = apiKey.Group.ReasoningEffortMappings
-		}
+		maxReasoningEffort, reasoningEffortMappings, _ := openAIReasoningEffortPolicyForRequest(c, apiKey)
 		var requestPayloadHash string
 		// Passthrough rejects overlapping response.create frames, so one immutable
 		// turn-tagged slot preserves the exact mapping used for the in-flight request.
@@ -2122,6 +2134,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		// openAIWSTurnPricing 的注释——绝不能用建连时刻初始化。
 		var turnPricing openAIWSTurnPricing
 		hooks := &service.OpenAIWSIngressHooks{
+			ClientLifecycleContext:  clientLifecycleCtx,
 			InitialRequestModel:     reqModel,
 			MaxReasoningEffort:      maxReasoningEffort,
 			ReasoningEffortMappings: reasoningEffortMappings,
@@ -2329,6 +2342,15 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		requestPayloadHash = service.HashUsageRequestPayload(wsFirstMessage)
 
 		if err := h.gatewayService.ProxyResponsesWebSocketFromClient(ctx, c, wsConn, account, token, wsFirstMessage, hooks); err != nil {
+			if closeErr, postOutputCyber := openAIWSPostOutputCyberClose(err); postOutputCyber {
+				reqLog.Info("openai.websocket_post_output_cyber_closed",
+					zap.Int64("account_id", account.ID),
+					zap.Int("close_status", int(closeErr.StatusCode())),
+				)
+				closeOpenAIClientWS(wsConn, closeErr.StatusCode(), closeErr.Reason())
+				return
+			}
+
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
 				if handleWSFailover(account, failoverErr) {
@@ -3114,6 +3136,13 @@ func closeOpenAIWSFailoverExhausted(conn *coderws.Conn, failoverErr *service.Ups
 		closeOpenAIClientWS(conn, coderws.StatusTryAgainLater, "Temporary upstream failure; please retry")
 		return
 	}
+	if failoverErr.IsOpenAIContinuationStateUnavailable() {
+		writeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = conn.Write(writeCtx, coderws.MessageText, openAIWSContinuationStateUnavailableFailureEvent())
+		cancel()
+		closeOpenAIClientWS(conn, coderws.StatusPolicyViolation, "continuation state unavailable; start a new conversation")
+		return
+	}
 	if failoverErr.Stage == service.GatewayFailureStageAccountAuth {
 		closeOpenAIClientWS(conn, coderws.StatusTryAgainLater, service.GrokCredentialUnavailableClientMessage)
 		return
@@ -3128,6 +3157,27 @@ func closeOpenAIWSFailoverExhausted(conn *coderws.Conn, failoverErr *service.Ups
 	default:
 		closeOpenAIClientWS(conn, coderws.StatusInternalError, "upstream websocket proxy failed")
 	}
+}
+
+func openAIWSContinuationStateUnavailableFailureEvent() []byte {
+	payload, err := json.Marshal(gin.H{
+		"type": "response.failed",
+		"response": gin.H{
+			"id":     "resp_continuation_state_unavailable",
+			"object": "response",
+			"status": "failed",
+			"output": []any{},
+			"error": gin.H{
+				"type":    "invalid_request_error",
+				"code":    service.OpenAIContinuationStateUnavailableCode,
+				"message": service.OpenAIContinuationStateUnavailableClientMessage,
+			},
+		},
+	})
+	if err != nil {
+		return []byte(`{"type":"response.failed","response":{"id":"resp_continuation_state_unavailable","object":"response","status":"failed","output":[],"error":{"type":"invalid_request_error","code":"continuation_state_unavailable","message":"This conversation can no longer be resumed because its upstream state is unavailable. Start a new conversation to continue."}}}`)
+	}
+	return payload
 }
 
 func writeContentModerationWSError(ctx context.Context, conn *coderws.Conn, decision *service.ContentModerationDecision) {

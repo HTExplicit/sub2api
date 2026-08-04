@@ -81,3 +81,47 @@ func TestNewOpenAIOpaqueStreamPreflightErrorIsRequestScoped(t *testing.T) {
 	require.False(t, err.ShouldReportAccountScheduleFailure())
 	require.Equal(t, "value", err.ResponseHeaders.Get("X-Test"))
 }
+
+func TestOpenAIContinuationStateErrorFromFailedEvent(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload string
+		want    bool
+	}{
+		{
+			name:    "nested previous response error",
+			payload: `{"type":"response.failed","response":{"error":{"code":"previous_response_not_found","message":"previous response not found"}}}`,
+			want:    true,
+		},
+		{
+			name:    "top level invalid encrypted error",
+			payload: `{"type":"response.failed","error":{"code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}`,
+			want:    true,
+		},
+		{
+			name:    "ordinary server failure",
+			payload: `{"type":"response.failed","response":{"error":{"code":"server_error","message":"temporary failure"}}}`,
+			want:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := openAIContinuationStateErrorFromFailedEvent(
+				http.StatusOK,
+				http.Header{"X-Test": []string{"failed-event"}},
+				[]byte(tt.payload),
+			)
+			if !tt.want {
+				require.Nil(t, err)
+				return
+			}
+			require.NotNil(t, err)
+			require.True(t, err.IsOpenAIContinuationStateUnavailable())
+			require.False(t, err.ShouldRetryNextAccount())
+			require.False(t, err.ShouldReportAccountScheduleFailure())
+			require.Equal(t, "failed-event", err.ResponseHeaders.Get("X-Test"))
+			require.Equal(t, tt.payload, string(err.ResponseBody))
+		})
+	}
+}

@@ -315,6 +315,7 @@ func TestSMTPConnectionMandatoryStartTLSRefusesPlaintext(t *testing.T) {
 	err := svc.TestSMTPConnectionWithConfig(smtpTestConfig(port, true))
 	if err == nil {
 		t.Fatal("expected error when server does not support STARTTLS")
+		return
 	}
 	if !strings.Contains(err.Error(), "STARTTLS") {
 		t.Fatalf("expected STARTTLS-related error, got: %v", err)
