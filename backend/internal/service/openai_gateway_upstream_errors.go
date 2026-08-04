@@ -220,6 +220,13 @@ func (s *OpenAIGatewayService) shouldFailoverUpstreamError(statusCode int) bool 
 }
 
 func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(statusCode int, upstreamMsg string, upstreamBody []byte) bool {
+	// A continuation-state rejection is request-scoped: choosing a different
+	// account cannot validate a previous response or provider-specific encrypted
+	// reasoning item. The caller returns a bounded recovery or a terminal client
+	// error before account-health side effects run.
+	if isOpenAIContinuationStateError(upstreamMsg, upstreamBody) {
+		return false
+	}
 	if isOpenAIContextWindowError(upstreamMsg, upstreamBody) {
 		return false
 	}
@@ -238,6 +245,78 @@ const OpenAIRequestBodyTooLargeClientMessage = "Request payload is too large"
 
 const openAIRequestBodyTooLargeReason = GatewayFailureReason("openai_request_body_too_large")
 
+// OpenAIContinuationStateUnavailableCode identifies a request whose previous
+// response or encrypted reasoning state is no longer valid on its upstream.
+// It is deliberately non-retryable: retrying on another account can only make
+// the same account-bound state failure fan out across the scheduler pool.
+const OpenAIContinuationStateUnavailableCode = "continuation_state_unavailable"
+
+// OpenAIContinuationStateUnavailableClientMessage is safe to surface to a
+// Responses client without exposing upstream account or session details.
+const OpenAIContinuationStateUnavailableClientMessage = "This conversation can no longer be resumed because its upstream state is unavailable. Start a new conversation to continue."
+
+const openAIContinuationStateUnavailableReason = GatewayFailureReason("openai_continuation_state_unavailable")
+
+type openAIContinuationStateErrorKind string
+
+const (
+	openAIContinuationStateErrorNone                     openAIContinuationStateErrorKind = ""
+	openAIContinuationStateErrorPreviousResponseNotFound openAIContinuationStateErrorKind = "previous_response_not_found"
+	openAIContinuationStateErrorInvalidEncryptedContent  openAIContinuationStateErrorKind = "invalid_encrypted_content"
+)
+
+func classifyOpenAIContinuationStateError(upstreamMsg string, upstreamBody []byte) openAIContinuationStateErrorKind {
+	const (
+		previousResponseNotFound = "previous_response_not_found"
+		invalidEncryptedContent  = "invalid_encrypted_content"
+	)
+
+	for _, path := range []string{
+		"error.code",
+		"response.error.code",
+		"code",
+		"response.code",
+	} {
+		switch strings.ToLower(strings.TrimSpace(gjson.GetBytes(upstreamBody, path).String())) {
+		case previousResponseNotFound:
+			return openAIContinuationStateErrorPreviousResponseNotFound
+		case invalidEncryptedContent:
+			return openAIContinuationStateErrorInvalidEncryptedContent
+		}
+	}
+
+	// Compatibility upstreams sometimes put a stable error code in the message
+	// while using a gateway status such as 502 or 503. Restrict fallback matching
+	// to exact continuation-state phrases rather than scanning arbitrary bodies.
+	for _, message := range []string{
+		upstreamMsg,
+		gjson.GetBytes(upstreamBody, "error.message").String(),
+		gjson.GetBytes(upstreamBody, "response.error.message").String(),
+		gjson.GetBytes(upstreamBody, "message").String(),
+	} {
+		lower := strings.ToLower(strings.TrimSpace(message))
+		switch {
+		case strings.Contains(lower, previousResponseNotFound),
+			strings.Contains(lower, "previous response not found"):
+			return openAIContinuationStateErrorPreviousResponseNotFound
+		case strings.Contains(lower, invalidEncryptedContent),
+			strings.Contains(lower, "encrypted content could not be verified"),
+			strings.Contains(lower, "invalid encrypted content"):
+			return openAIContinuationStateErrorInvalidEncryptedContent
+		}
+	}
+
+	return openAIContinuationStateErrorNone
+}
+
+func isOpenAIContinuationStateError(upstreamMsg string, upstreamBody []byte) bool {
+	return classifyOpenAIContinuationStateError(upstreamMsg, upstreamBody) != openAIContinuationStateErrorNone
+}
+
+func isOpenAIInvalidEncryptedContentError(upstreamMsg string, upstreamBody []byte) bool {
+	return classifyOpenAIContinuationStateError(upstreamMsg, upstreamBody) == openAIContinuationStateErrorInvalidEncryptedContent
+}
+
 func isOpenAIRequestBodyTooLargeError(statusCode int, upstreamMsg string, upstreamBody []byte) bool {
 	return statusCode == http.StatusRequestEntityTooLarge && !isOpenAIContextWindowError(upstreamMsg, upstreamBody)
 }
@@ -249,6 +328,9 @@ func newOpenAIUpstreamFailoverError(
 	upstreamMsg string,
 	retryableOnSameAccount bool,
 ) *UpstreamFailoverError {
+	if isOpenAIContinuationStateError(upstreamMsg, responseBody) {
+		return NewOpenAIContinuationStateUnavailableError(statusCode, responseHeaders, responseBody)
+	}
 	failoverErr := &UpstreamFailoverError{
 		StatusCode:             statusCode,
 		ResponseBody:           responseBody,
@@ -270,6 +352,33 @@ func newOpenAIUpstreamFailoverError(
 // same request even though the selected account rejected its serialized size.
 func (e *UpstreamFailoverError) IsOpenAIRequestBodyTooLarge() bool {
 	return e != nil && e.Reason == openAIRequestBodyTooLargeReason
+}
+
+// NewOpenAIContinuationStateUnavailableError creates a request-scoped terminal
+// error. It intentionally carries the original upstream response only for
+// internal correlation; clients receive the fixed, non-sensitive message.
+func NewOpenAIContinuationStateUnavailableError(
+	statusCode int,
+	responseHeaders http.Header,
+	responseBody []byte,
+) *UpstreamFailoverError {
+	return &UpstreamFailoverError{
+		StatusCode:                   statusCode,
+		ResponseBody:                 responseBody,
+		ResponseHeaders:              responseHeaders.Clone(),
+		Scope:                        GatewayFailureScopeRequest,
+		Reason:                       openAIContinuationStateUnavailableReason,
+		NextAccountAction:            NextAccountStop,
+		ClientStatusCode:             http.StatusBadRequest,
+		ClientMessage:                OpenAIContinuationStateUnavailableClientMessage,
+		SuppressAccountHealthPenalty: true,
+	}
+}
+
+// IsOpenAIContinuationStateUnavailable reports a continuation-state failure
+// that must not switch accounts or reduce selected-account health.
+func (e *UpstreamFailoverError) IsOpenAIContinuationStateUnavailable() bool {
+	return e != nil && e.Reason == openAIContinuationStateUnavailableReason
 }
 
 func marshalOpenAIUpstreamJSON(v any) ([]byte, error) {

@@ -49,6 +49,34 @@ func (u *openAIResponsesFailoverCancelUpstream) calls() []int64 {
 	return append([]int64(nil), u.accountIDs...)
 }
 
+// openAIResponsesContinuationStateUpstream simulates a compatibility upstream
+// that wraps a request-history rejection in a generic 502. The handler must not
+// reinterpret this as an account failure and select account 2.
+type openAIResponsesContinuationStateUpstream struct {
+	service.HTTPUpstream
+	mu         sync.Mutex
+	accountIDs []int64
+}
+
+func (u *openAIResponsesContinuationStateUpstream) Do(_ *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
+	u.mu.Lock()
+	u.accountIDs = append(u.accountIDs, accountID)
+	u.mu.Unlock()
+	return &http.Response{
+		StatusCode: http.StatusBadGateway,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body: io.NopCloser(bytes.NewBufferString(
+			`{"error":{"code":"previous_response_not_found","message":"previous response not found"}}`,
+		)),
+	}, nil
+}
+
+func (u *openAIResponsesContinuationStateUpstream) calls() []int64 {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return append([]int64(nil), u.accountIDs...)
+}
+
 func newOpenAIResponsesFailoverTestHandler(t *testing.T, upstream service.HTTPUpstream) *OpenAIGatewayHandler {
 	t.Helper()
 	accounts := []service.Account{
@@ -191,4 +219,27 @@ func TestOpenAIGatewayHandlerResponses_FailoverContinuesForConnectedClient(t *te
 	require.Equal(t, []int64{1, 2}, upstream.calls(), "在线客户端应正常切换账号")
 	require.Equal(t, http.StatusBadGateway, rec.Code)
 	require.Equal(t, "upstream_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
+}
+
+func TestOpenAIGatewayHandlerResponses_ContinuationStateStopsBeforeSecondAccount(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstream := &openAIResponsesContinuationStateUpstream{}
+	handler := newOpenAIResponsesFailoverTestHandler(t, upstream)
+	c, rec := newOpenAIResponsesFailoverTestContext(t, nil)
+
+	handler.Responses(c)
+
+	require.Equal(t, []int64{1}, upstream.calls(), "a request-scoped continuation failure must not select account 2")
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Equal(t, "invalid_request_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
+	require.Equal(t, service.OpenAIContinuationStateUnavailableCode, gjson.GetBytes(rec.Body.Bytes(), "error.code").String())
+	require.Equal(t, service.OpenAIContinuationStateUnavailableClientMessage, gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
+
+	rawEvents, ok := c.Get(service.OpsUpstreamErrorsKey)
+	require.True(t, ok)
+	events, ok := rawEvents.([]*service.OpsUpstreamErrorEvent)
+	require.True(t, ok)
+	require.Len(t, events, 1)
+	require.Equal(t, "continuation_state", events[0].Kind)
 }
