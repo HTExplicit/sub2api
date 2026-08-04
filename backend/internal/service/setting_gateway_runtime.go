@@ -145,7 +145,7 @@ const openAIRefusalRecoveryErrorTTL = 5 * time.Second
 const openAIRefusalRecoveryDBTimeout = 5 * time.Second
 
 func (r OpenAIRefusalRecoveryRuntime) CyberFailoverEnabled() bool {
-	return r.Enabled && r.CyberFailover
+	return r.CyberFailover
 }
 
 func (r OpenAIRefusalRecoveryRuntime) RewriteEnabled() bool {
@@ -200,18 +200,8 @@ func (s *SettingService) GetOpenAIRefusalRecoveryRuntime(ctx context.Context) Op
 		}
 		dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), openAIRefusalRecoveryDBTimeout)
 		defer cancel()
-		enabledValue, enabledErr := s.settingRepo.GetValue(dbCtx, SettingKeyOpenAIRefusalRecoveryEnabled)
-		if enabledErr != nil && !errors.Is(enabledErr, ErrSettingNotFound) {
-			slog.Warn("failed to load OpenAI refusal recovery switch", "error", enabledErr, "using_stale", observed != nil)
-			entry := cachedOpenAIRefusalRecoveryErrorRuntime(observed)
-			return s.commitOpenAIRefusalRecoveryRuntime(observed, entry), nil
-		}
-		if enabledErr != nil || strings.TrimSpace(enabledValue) != "true" {
-			entry := &cachedOpenAIRefusalRecoveryRuntime{expiresAt: time.Now().Add(openAIRefusalRecoveryCacheTTL).UnixNano()}
-			return s.commitOpenAIRefusalRecoveryRuntime(observed, entry), nil
-		}
-
 		values, err := s.settingRepo.GetMultiple(dbCtx, []string{
+			SettingKeyOpenAIRefusalRecoveryEnabled,
 			SettingKeyOpenAICyberFailoverEnabled,
 			SettingKeyOpenAIRefusalRewriteEnabled,
 			SettingKeyOpenAIRefusalKeywords,
@@ -225,7 +215,6 @@ func (s *SettingService) GetOpenAIRefusalRecoveryRuntime(ctx context.Context) Op
 		if values == nil {
 			values = make(map[string]string)
 		}
-		values[SettingKeyOpenAIRefusalRecoveryEnabled] = "true"
 		entry := &cachedOpenAIRefusalRecoveryRuntime{
 			runtime:   buildOpenAIRefusalRecoveryRuntime(values),
 			expiresAt: time.Now().Add(openAIRefusalRecoveryCacheTTL).UnixNano(),
@@ -244,7 +233,7 @@ func buildOpenAIRefusalRecoveryRuntime(values map[string]string) OpenAIRefusalRe
 		CyberFailover: values[SettingKeyOpenAICyberFailoverEnabled] == "true",
 		Rewrite:       values[SettingKeyOpenAIRefusalRewriteEnabled] == "true",
 	}
-	if !runtime.Rewrite {
+	if !runtime.Enabled || !runtime.Rewrite {
 		return runtime
 	}
 	matcher, err := NewOpenAIRefusalMatcher(

@@ -22,7 +22,7 @@ func TestOpenAIRefusalRecoveryFailoverExhaustionReturnsRetryable503(t *testing.T
 
 	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
 	require.Equal(t, "1", recorder.Header().Get("Retry-After"))
-	require.JSONEq(t, `{"error":{"type":"server_error","code":"cyber_failover_exhausted","message":"Temporary upstream failure","retryable":true}}`, recorder.Body.String())
+	require.JSONEq(t, `{"error":{"type":"server_error","code":"upstream_retry_exhausted","message":"Temporary upstream failure","retryable":true}}`, recorder.Body.String())
 	require.NotContains(t, recorder.Body.String(), "cyber_policy")
 }
 
@@ -36,7 +36,7 @@ func TestOpenAIRefusalRecoveryFailoverExhaustionWritesServerErrorSSE(t *testing.
 
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.Contains(t, recorder.Body.String(), "event: response.failed")
-	require.Contains(t, recorder.Body.String(), `"code":"cyber_failover_exhausted"`)
+	require.Contains(t, recorder.Body.String(), `"code":"upstream_retry_exhausted"`)
 	require.Contains(t, recorder.Body.String(), `"retryable":true`)
 	require.NotContains(t, recorder.Body.String(), "cyber_policy")
 }
@@ -51,7 +51,7 @@ func TestOpenAIRefusalRecoveryFailoverExhaustionWritesAnthropicRetryableError(t 
 
 	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
 	require.Equal(t, "1", recorder.Header().Get("Retry-After"))
-	require.JSONEq(t, `{"type":"error","error":{"type":"api_error","code":"cyber_failover_exhausted","message":"Temporary upstream failure","retryable":true}}`, recorder.Body.String())
+	require.JSONEq(t, `{"type":"error","error":{"type":"api_error","code":"upstream_retry_exhausted","message":"Temporary upstream failure","retryable":true}}`, recorder.Body.String())
 }
 
 func TestOpenAIRefusalRecoveryCyberAttemptClearsPerAttemptState(t *testing.T) {

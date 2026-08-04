@@ -6598,6 +6598,29 @@
               <div class="flex items-center justify-between gap-4">
                 <div class="min-w-0">
                   <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {{ t('admin.settings.features.riskControl.refusalRecovery.cyberFailover') }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('admin.settings.features.riskControl.refusalRecovery.cyberFailoverHint') }}
+                  </p>
+                </div>
+                <Toggle
+                  v-model="form.openai_cyber_failover_enabled"
+                  data-testid="openai-cyber-failover-toggle"
+                />
+              </div>
+
+              <div
+                v-if="form.openai_cyber_failover_enabled && form.cyber_session_block_enabled"
+                class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300"
+                data-testid="openai-cyber-failover-conflict"
+              >
+                {{ t('admin.settings.features.riskControl.refusalRecovery.cyberConflict') }}
+              </div>
+
+              <div class="flex items-center justify-between gap-4 border-t border-gray-100 pt-5 dark:border-dark-700">
+                <div class="min-w-0">
+                  <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
                     {{ t('admin.settings.features.riskControl.refusalRecovery.enabled') }}
                   </label>
                   <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
@@ -6624,29 +6647,6 @@
                 </div>
 
                 <div class="flex items-center justify-between gap-4">
-                  <div class="min-w-0">
-                    <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      {{ t('admin.settings.features.riskControl.refusalRecovery.cyberFailover') }}
-                    </label>
-                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                      {{ t('admin.settings.features.riskControl.refusalRecovery.cyberFailoverHint') }}
-                    </p>
-                  </div>
-                  <Toggle
-                    v-model="form.openai_cyber_failover_enabled"
-                    data-testid="openai-cyber-failover-toggle"
-                  />
-                </div>
-
-                <div
-                  v-if="form.openai_cyber_failover_enabled && form.cyber_session_block_enabled"
-                  class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300"
-                  data-testid="openai-cyber-failover-conflict"
-                >
-                  {{ t('admin.settings.features.riskControl.refusalRecovery.cyberConflict') }}
-                </div>
-
-                <div class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600">
                   <div class="min-w-0">
                     <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
                       {{ t('admin.settings.features.riskControl.refusalRecovery.rewrite') }}
@@ -10480,7 +10480,6 @@ async function saveSettings() {
       return;
     }
     if (
-      form.openai_refusal_recovery_enabled &&
       form.openai_cyber_failover_enabled &&
       form.cyber_session_block_enabled
     ) {

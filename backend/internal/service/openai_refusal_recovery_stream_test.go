@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestOpenAIRefusalStreamFailsOpenWhenBufferExceedsOneMiB(t *testing.T) {
@@ -437,91 +438,35 @@ func TestOpenAIRefusalStreamNonEarlyFallbackPreservesTerminalAuthority(t *testin
 	}
 }
 
-func TestOpenAIRefusalStreamReplacesCyberPolicyTerminal(t *testing.T) {
-	matcher, err := NewOpenAIRefusalMatcher([]string{"cannot"}, "continue current task")
-	require.NoError(t, err)
-	state := newOpenAIRefusalStreamStateWithEarlyEmission(matcher, true)
+func TestSanitizeOpenAICyberPolicyFailedEventPreservesStableResponseFields(t *testing.T) {
+	payload := []byte(`{"type":"response.failed","response":{"id":"resp_policy_failure","object":"response","model":"gpt-5.6-sol","status":"failed","output":[{"type":"reasoning","id":"rs_1"}],"error":{"code":"cyber_policy","message":"blocked"},"usage":{"input_tokens":8,"output_tokens":1,"total_tokens":9}},"error":{"code":"cyber_policy","message":"blocked"}}`)
 
-	_, _, observeErr := state.observe(
-		"response.created",
-		[]byte(`{"type":"response.created","response":{"id":"resp_cyber","object":"response","model":"gpt-5.6-sol","status":"in_progress","output":[]}}`),
-	)
-	require.NoError(t, observeErr)
+	sanitized, changed := sanitizeOpenAICyberPolicyFailedEvent(payload)
 
-	action, replacement, replaceErr := state.replaceCyberPolicyFailure(
-		[]byte(`{"type":"response.failed","response":{"id":"resp_cyber","status":"failed","error":{"code":"cyber_policy","message":"blocked"},"usage":{"input_tokens":8,"output_tokens":0,"total_tokens":8}},"error":{"code":"cyber_policy","message":"blocked"}}`),
-		false,
-	)
-
-	require.NoError(t, replaceErr)
-	require.Equal(t, openAIRefusalStreamReplace, action)
-	require.Contains(t, string(replacement), `"type":"response.completed"`)
-	require.Contains(t, string(replacement), `"total_tokens":8`)
-	require.Contains(t, string(replacement), "continue current task")
-	require.NotContains(t, string(replacement), "response.failed")
-	require.NotContains(t, string(replacement), "cyber_policy")
-	require.NotContains(t, string(replacement), "blocked")
+	require.True(t, changed)
+	require.Equal(t, "response.failed", gjson.GetBytes(sanitized, "type").String())
+	require.Equal(t, "resp_policy_failure", gjson.GetBytes(sanitized, "response.id").String())
+	require.Equal(t, "gpt-5.6-sol", gjson.GetBytes(sanitized, "response.model").String())
+	require.Equal(t, "rs_1", gjson.GetBytes(sanitized, "response.output.0.id").String())
+	require.Equal(t, int64(9), gjson.GetBytes(sanitized, "response.usage.total_tokens").Int())
+	require.Equal(t, "server_error", gjson.GetBytes(sanitized, "response.error.type").String())
+	require.Equal(t, OpenAIUpstreamRetryExhaustedCode, gjson.GetBytes(sanitized, "response.error.code").String())
+	require.True(t, gjson.GetBytes(sanitized, "response.error.retryable").Bool())
+	require.False(t, gjson.GetBytes(sanitized, "error").Exists())
+	require.NotContains(t, strings.ToLower(string(sanitized)), "cyber")
+	require.NotContains(t, string(sanitized), "blocked")
 }
 
-func TestOpenAIRefusalStreamCyberReplacementDoesNotReuseReasoningItemID(t *testing.T) {
-	matcher, err := NewOpenAIRefusalMatcher([]string{"cannot"}, "continue current task")
-	require.NoError(t, err)
-	state := newOpenAIRefusalStreamStateWithEarlyEmission(matcher, false)
+func TestSanitizeOpenAICyberPolicyFailedEventBuildsResponseEnvelope(t *testing.T) {
+	payload := []byte(`{"type":"response.failed","response_id":"resp_top","error":{"code":"cyber_policy","message":"blocked"},"usage":{"input_tokens":3,"output_tokens":0,"total_tokens":3}}`)
 
-	_, _, observeErr := state.observe(
-		"response.created",
-		[]byte(`{"type":"response.created","response":{"id":"resp_cyber_reasoning","object":"response","model":"gpt-5.6-sol","status":"in_progress","output":[]}}`),
-	)
-	require.NoError(t, observeErr)
-	_, _, observeErr = state.observe(
-		"response.reasoning_summary_text.delta",
-		[]byte(`{"type":"response.reasoning_summary_text.delta","response_id":"resp_cyber_reasoning","item_id":"rs_cyber_reasoning","output_index":0,"summary_index":0,"delta":"Reasoning summary"}`),
-	)
-	require.NoError(t, observeErr)
-	require.Empty(t, state.messageID)
+	sanitized, changed := sanitizeOpenAICyberPolicyFailedEvent(payload)
 
-	action, replacement, replaceErr := state.replaceCyberPolicyFailure(
-		[]byte(`{"type":"response.failed","response":{"id":"resp_cyber_reasoning","status":"failed","error":{"code":"cyber_policy","message":"blocked"},"usage":{"input_tokens":8,"output_tokens":1,"total_tokens":9}}}`),
-		false,
-	)
-
-	require.NoError(t, replaceErr)
-	require.Equal(t, openAIRefusalStreamReplace, action)
-	require.Contains(t, string(replacement), `"id":"msg_refusal_recovery_`)
-	require.NotContains(t, string(replacement), `"id":"rs_cyber_reasoning"`)
-	require.NotContains(t, string(replacement), `"item_id":"rs_cyber_reasoning"`)
-}
-
-func TestOpenAIRefusalStreamCompletesEarlyReplacementAfterCyberPolicyTerminal(t *testing.T) {
-	matcher, err := NewOpenAIRefusalMatcher([]string{"cannot"}, "continue current task")
-	require.NoError(t, err)
-	state := newOpenAIRefusalStreamStateWithEarlyEmission(matcher, true)
-
-	_, _, observeErr := state.observe(
-		"response.created",
-		[]byte(`{"type":"response.created","response":{"id":"resp_early_cyber","object":"response","model":"gpt-5.6-sol","status":"in_progress","output":[]}}`),
-	)
-	require.NoError(t, observeErr)
-	action, _, observeErr := state.observe(
-		"response.output_text.delta",
-		[]byte(`{"type":"response.output_text.delta","response_id":"resp_early_cyber","item_id":"msg_early_cyber","delta":"I cannot help."}`),
-	)
-	require.NoError(t, observeErr)
-	require.Equal(t, openAIRefusalStreamReplaceEarly, action)
-
-	action, replacement, replaceErr := state.replaceCyberPolicyFailure(
-		[]byte(`{"type":"response.failed","response":{"id":"resp_early_cyber","status":"failed","error":{"code":"cyber_policy","message":"blocked"},"usage":{"input_tokens":8,"output_tokens":1,"total_tokens":9}}}`),
-		true,
-	)
-
-	require.NoError(t, replaceErr)
-	require.Equal(t, openAIRefusalStreamReplace, action)
-	require.NotContains(t, string(replacement), `"type":"response.created"`)
-	require.Contains(t, string(replacement), `"type":"response.completed"`)
-	require.Contains(t, string(replacement), `"total_tokens":9`)
-	require.Contains(t, string(replacement), "continue current task")
-	require.NotContains(t, string(replacement), "cyber_policy")
-	require.NotContains(t, string(replacement), "blocked")
+	require.True(t, changed)
+	require.Equal(t, "resp_top", gjson.GetBytes(sanitized, "response.id").String())
+	require.Equal(t, int64(3), gjson.GetBytes(sanitized, "response.usage.total_tokens").Int())
+	require.Equal(t, OpenAIUpstreamRetryExhaustedCode, gjson.GetBytes(sanitized, "response.error.code").String())
+	require.NotContains(t, strings.ToLower(string(sanitized)), "cyber")
 }
 
 func TestOpenAIRefusalStreamValidatesCompletedMessageFallback(t *testing.T) {

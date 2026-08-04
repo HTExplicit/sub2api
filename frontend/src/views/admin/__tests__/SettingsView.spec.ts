@@ -806,7 +806,7 @@ describe("admin SettingsView payment visible method controls", () => {
     ).toHaveLength(1);
   });
 
-  it("validates refusal recovery only while the master switch is enabled", async () => {
+  it("validates Cyber failover independently from refusal recovery", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,
       cyber_session_block_enabled: true,
@@ -838,11 +838,55 @@ describe("admin SettingsView payment visible method controls", () => {
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();
 
+    expect(showError).toHaveBeenCalled();
+    expect(updateSettings).not.toHaveBeenCalled();
+
+    await wrapper
+      .get('[data-testid="openai-cyber-failover-toggle"]')
+      .setValue(false);
+    showError.mockClear();
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
     expect(showError).not.toHaveBeenCalled();
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({
         openai_refusal_recovery_enabled: false,
+        openai_cyber_failover_enabled: false,
+      }),
+    );
+  });
+
+  it("renders and saves Cyber failover while refusal recovery is disabled", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      cyber_session_block_enabled: false,
+      openai_refusal_recovery_enabled: false,
+      openai_cyber_failover_enabled: true,
+      openai_refusal_rewrite_enabled: true,
+      openai_refusal_keywords: ["cannot"],
+      openai_refusal_replacement: "Continue the task.",
+    });
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openFeaturesTab(wrapper);
+
+    expect(
+      wrapper.find('[data-testid="openai-cyber-failover-toggle"]').exists(),
+    ).toBe(true);
+    expect(
+      wrapper.find('[data-testid="openai-refusal-keyword-input"]').exists(),
+    ).toBe(false);
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        openai_refusal_recovery_enabled: false,
         openai_cyber_failover_enabled: true,
+        openai_refusal_rewrite_enabled: true,
       }),
     );
   });

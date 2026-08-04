@@ -451,7 +451,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				responseID = extractOpenAIResponseIDFromJSONBytes(dataBytes)
 			}
 			forceFlushFailedEvent := false
-			cyberPolicyReplacement := false
+			cyberPolicySanitized := false
 			if eventType == "response.failed" {
 				failedMessage = extractOpenAISSEErrorMessage(dataBytes)
 				// response.failed 自带上游已消耗的 usage（input token 通常已扣）；必须先解析
@@ -467,28 +467,21 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 						UpstreamInTok:  usage.InputTokens,
 						UpstreamOutTok: usage.OutputTokens,
 					})
-					if openAIRefusalShouldPromptRetry(c, refusalRuntime) && !openAIStreamClientOutputStarted(c, clientOutputStarted) {
-						sawFailedEvent = true
-						streamEarlyErr = NewOpenAICyberFailoverError(dataBytes, resp.Header)
-						return
-					}
-					if refusalStream != nil && refusalRuntime.RewriteEnabled() {
-						clientHasOutput := openAIStreamClientOutputStarted(c, clientOutputStarted)
-						if action, replacement, replaceErr := refusalStream.replaceCyberPolicyFailure(dataBytes, clientHasOutput); replaceErr != nil {
-							logger.FromContext(ctx).Warn("openai.refusal_recovery_cyber_replace_failed", zap.String("transport", "sse"), zap.Error(replaceErr))
-						} else if action == openAIRefusalStreamReplace {
-							refusalAction = action
-							refusalReplacement = replacement
-							cyberPolicyReplacement = true
+					if refusalRuntime.CyberFailoverEnabled() {
+						if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
+							sawFailedEvent = true
+							streamEarlyErr = NewOpenAICyberFailoverError(dataBytes, resp.Header)
+							return
+						}
+						if sanitized, ok := sanitizeOpenAICyberPolicyFailedEvent(dataBytes); ok {
+							dataBytes = sanitized
+							data = string(sanitized)
+							line = "data: " + data
+							cyberPolicySanitized = true
 						}
 					}
-					if !cyberPolicyReplacement && refusalRuntime.CyberFailoverEnabled() && !openAIStreamClientOutputStarted(c, clientOutputStarted) {
-						sawFailedEvent = true
-						streamEarlyErr = NewOpenAICyberFailoverError(dataBytes, resp.Header)
-						return
-					}
 				}
-				if !cyberPolicyReplacement && !openAIStreamClientOutputStarted(c, clientOutputStarted) {
+				if !cyberPolicySanitized && !openAIStreamClientOutputStarted(c, clientOutputStarted) {
 					if status, errType, errMsg, matched := applyOpenAIStreamFailedErrorPassthroughRule(c, account.Platform, dataBytes, failedMessage); matched {
 						sawFailedEvent = true
 						// 命中透传规则也要记录 ops 上游错误事件（对齐 CC/Messages 与
@@ -511,10 +504,8 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 						return
 					}
 				}
-				if !cyberPolicyReplacement {
-					forceFlushFailedEvent = true
-					sawFailedEvent = true
-				}
+				forceFlushFailedEvent = true
+				sawFailedEvent = true
 			}
 			if normalizedData, normalized := normalizeCompletedImageGenerationStatus(dataBytes); normalized {
 				dataBytes = normalizedData
@@ -562,16 +553,36 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				line = "data: " + data
 				eventType = strings.TrimSpace(gjson.GetBytes(dataBytes, "type").String())
 			}
-			if sanitizedData, sanitized := sanitizeOpenAIResponseFailedEventForClient(
-				dataBytes,
-				eventType,
-				openAIStreamClientOutputStarted(c, clientOutputStarted),
-			); sanitized {
-				dataBytes = sanitizedData
-				data = string(sanitizedData)
-				line = "data: " + data
+			if !cyberPolicySanitized {
+				if sanitizedData, sanitized := sanitizeOpenAIResponseFailedEventForClient(
+					dataBytes,
+					eventType,
+					openAIStreamClientOutputStarted(c, clientOutputStarted),
+				); sanitized {
+					dataBytes = sanitizedData
+					data = string(sanitizedData)
+					line = "data: " + data
+				}
 			}
-			if !cyberPolicyReplacement && refusalStream != nil && !refusalStream.passthrough {
+			if cyberPolicySanitized && refusalEarlyEmitted {
+				applyAttemptResponseHeaders()
+				terminal := "event: response.failed\ndata: " + string(dataBytes) + "\n\n"
+				if !clientDisconnected {
+					if _, err := baseWritePendingString(terminal); err != nil {
+						handlePendingWriteError(err)
+						return
+					}
+					if err := flushBuffered(); err != nil {
+						clientDisconnected = true
+						return
+					}
+					clientOutputStarted = true
+					lastDownstreamWriteAt = time.Now()
+				}
+				streamEarlyErr = fmt.Errorf("upstream response failed: %s", failedMessage)
+				return
+			}
+			if !cyberPolicySanitized && refusalStream != nil && !refusalStream.passthrough {
 				var refusalErr error
 				refusalData := dataBytes
 				terminalOutput := gjson.GetBytes(refusalTerminalData, "response.output")
@@ -1286,6 +1297,12 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 			return nil, fmt.Errorf("convert Grok compact response: %w", err)
 		}
 	}
+	if markOpenAICyberPolicyFromResponse(c, resp.StatusCode, body) && isOpenAIRefusalRecoveryResponsesRequest(c) {
+		runtime := s.openAIRefusalRecoveryRuntime(ctx)
+		if runtime.CyberFailoverEnabled() {
+			return nil, NewOpenAICyberFailoverError(body, resp.Header)
+		}
+	}
 
 	usageValue, usageOK := extractOpenAIUsageFromJSONBytes(body)
 	if !usageOK {
@@ -1418,6 +1435,12 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 	} else {
 		terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText)
 		if terminalOK && terminalType == "response.failed" {
+			if markOpenAICyberPolicyFromResponse(c, resp.StatusCode, terminalPayload) && isOpenAIRefusalRecoveryResponsesRequest(c) {
+				runtime := s.openAIRefusalRecoveryRuntime(c.Request.Context())
+				if runtime.CyberFailoverEnabled() {
+					return nil, NewOpenAICyberFailoverError(terminalPayload, resp.Header)
+				}
+			}
 			msg := extractOpenAISSEErrorMessage(terminalPayload)
 			if msg == "" {
 				msg = "Upstream compact response failed"
@@ -1483,6 +1506,80 @@ func extractOpenAISSEErrorMessage(payload []byte) string {
 		}
 	}
 	return sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(payload)))
+}
+
+// sanitizeOpenAICyberPolicyFailedEvent replaces an upstream policy terminal
+// with a protocol-valid, provider-neutral retryable failure. Stable response
+// metadata and usage remain untouched; only client-visible error fields are
+// replaced so an already-started stream can terminate without replaying it.
+func sanitizeOpenAICyberPolicyFailedEvent(payload []byte) ([]byte, bool) {
+	if len(payload) == 0 || !gjson.ValidBytes(payload) {
+		return payload, false
+	}
+	if hit, _, _ := detectOpenAICyberPolicy(payload); !hit {
+		return payload, false
+	}
+
+	neutralError := map[string]any{
+		"type":      "server_error",
+		"code":      OpenAIUpstreamRetryExhaustedCode,
+		"message":   "Temporary upstream failure",
+		"retryable": true,
+	}
+	updated := payload
+	set := func(path string, value any) bool {
+		next, err := sjson.SetBytes(updated, path, value)
+		if err != nil {
+			return false
+		}
+		updated = next
+		return true
+	}
+	remove := func(path string) bool {
+		next, err := sjson.DeleteBytes(updated, path)
+		if err != nil {
+			return false
+		}
+		updated = next
+		return true
+	}
+
+	if !set("type", "response.failed") {
+		return payload, false
+	}
+	response := gjson.GetBytes(updated, "response")
+	if !response.Exists() || response.Type != gjson.JSON {
+		responseID := strings.TrimSpace(gjson.GetBytes(updated, "response_id").String())
+		if responseID == "" {
+			responseID = strings.TrimSpace(gjson.GetBytes(updated, "id").String())
+		}
+		if responseID == "" {
+			responseID = "resp_retryable_failure"
+		}
+		responseObject := map[string]any{
+			"id":     responseID,
+			"object": "response",
+			"status": "failed",
+			"output": []any{},
+			"error":  neutralError,
+		}
+		if usage := gjson.GetBytes(updated, "usage"); usage.Exists() && usage.Type == gjson.JSON {
+			responseObject["usage"] = json.RawMessage(usage.Raw)
+		}
+		if !set("response", responseObject) {
+			return payload, false
+		}
+	} else {
+		if !set("response.status", "failed") || !set("response.error", neutralError) {
+			return payload, false
+		}
+	}
+	for _, path := range []string{"error", "code", "message"} {
+		if gjson.GetBytes(updated, path).Exists() && !remove(path) {
+			return payload, false
+		}
+	}
+	return updated, true
 }
 
 func sanitizeOpenAIResponseFailedEventForClient(payload []byte, eventType string, clientOutputStarted bool) ([]byte, bool) {

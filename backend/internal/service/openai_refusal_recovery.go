@@ -27,7 +27,7 @@ var ErrInvalidOpenAIRefusalRecovery = errors.New("invalid OpenAI refusal recover
 const (
 	OpenAIRefusalRecoveryReason      GatewayFailureReason = "openai_refusal_recovery"
 	OpenAICyberFailoverReason        GatewayFailureReason = "openai_cyber_failover"
-	OpenAICyberFailoverExhaustedCode                      = "cyber_failover_exhausted"
+	OpenAIUpstreamRetryExhaustedCode                      = "upstream_retry_exhausted"
 )
 
 const openAIRefusalEarlyStreamEligibleContextKey = "openai_refusal_early_stream_eligible"
@@ -117,7 +117,7 @@ func ValidateOpenAIRefusalRecoverySettings(settings *SystemSettings) error {
 	if len([]byte(settings.OpenAIRefusalReplacement)) > maxOpenAIRefusalReplacementSize {
 		return fmt.Errorf("openai_refusal_replacement exceeds %d bytes: %w", maxOpenAIRefusalReplacementSize, ErrInvalidOpenAIRefusalRecovery)
 	}
-	if settings.OpenAIRefusalRecoveryEnabled && settings.OpenAICyberFailoverEnabled && settings.CyberSessionBlockEnabled {
+	if settings.OpenAICyberFailoverEnabled && settings.CyberSessionBlockEnabled {
 		return fmt.Errorf("disable cyber_session_block_enabled before enabling openai_cyber_failover_enabled: %w", ErrInvalidOpenAIRefusalRecovery)
 	}
 	if settings.OpenAIRefusalRecoveryEnabled && settings.OpenAIRefusalRewriteEnabled {
@@ -236,7 +236,7 @@ func NewOpenAIRefusalRecoveryFailoverError(upstreamHeaders http.Header) *Upstrea
 func NewOpenAICyberFailoverError(_ []byte, upstreamHeaders http.Header) *UpstreamFailoverError {
 	err := NewOpenAIRefusalRecoveryFailoverError(upstreamHeaders)
 	err.Reason = OpenAICyberFailoverReason
-	err.ResponseBody = []byte(`{"error":{"message":"Temporary upstream failure","type":"server_error","code":"cyber_failover_exhausted","retryable":true}}`)
+	err.ResponseBody = []byte(`{"error":{"message":"Temporary upstream failure","type":"server_error","code":"upstream_retry_exhausted","retryable":true}}`)
 	return err
 }
 

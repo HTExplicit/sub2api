@@ -179,26 +179,24 @@ func TestOpenAIRefusalRuntimeKeepsLastKnownSnapshotOnRefreshError(t *testing.T) 
 	again := svc.GetOpenAIRefusalRecoveryRuntime(context.Background())
 	require.True(t, again.RewriteEnabled())
 	getValueCalls, getMultipleCalls := repo.calls()
-	require.Equal(t, 2, getValueCalls)
+	require.Equal(t, 0, getValueCalls)
 	require.Equal(t, 2, getMultipleCalls)
 }
 
-func TestOpenAIRefusalRuntimeKeepsLastKnownSnapshotOnSwitchReadError(t *testing.T) {
-	repo := &openAIRefusalRuntimeRepo{values: openAIRefusalRuntimeValues(true)}
+func TestOpenAIRefusalRuntimeLoadsCyberWhenRefusalSwitchOff(t *testing.T) {
+	values := openAIRefusalRuntimeValues(true)
+	values[SettingKeyOpenAIRefusalRecoveryEnabled] = "false"
+	repo := &openAIRefusalRuntimeRepo{values: values}
 	svc := &SettingService{settingRepo: repo}
 
-	initial := svc.GetOpenAIRefusalRecoveryRuntime(context.Background())
-	require.True(t, initial.RewriteEnabled())
-	expireOpenAIRefusalRuntimeCache(t, svc)
-	repo.failValue(errors.New("temporary switch read failure"))
+	runtime := svc.GetOpenAIRefusalRecoveryRuntime(context.Background())
 
-	stale := svc.GetOpenAIRefusalRecoveryRuntime(context.Background())
-
-	require.True(t, stale.RewriteEnabled())
-	matched, _ := stale.Matcher.MatchLeadingParagraphs("I cannot help.")
-	require.True(t, matched)
+	require.False(t, runtime.Enabled)
+	require.True(t, runtime.CyberFailoverEnabled())
+	require.False(t, runtime.RewriteEnabled())
+	require.Nil(t, runtime.Matcher)
 	getValueCalls, getMultipleCalls := repo.calls()
-	require.Equal(t, 2, getValueCalls)
+	require.Equal(t, 0, getValueCalls)
 	require.Equal(t, 1, getMultipleCalls)
 }
 

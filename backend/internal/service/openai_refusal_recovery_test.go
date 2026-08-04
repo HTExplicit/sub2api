@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,15 +19,18 @@ func TestDefaultOpenAIRefusalKeywords(t *testing.T) {
 	require.Len(t, keywords, 28)
 }
 
-func TestOpenAIRefusalRecoveryDisabledDoesNotBulkLoadSettings(t *testing.T) {
-	repo := &openAIFastPolicyRepoStub{values: map[string]string{}}
-	settings := NewSettingService(repo, &config.Config{})
+func TestOpenAIRefusalRecoveryDisabledLoadsIndependentCyberSetting(t *testing.T) {
+	repo := &openAIRefusalRuntimeRepo{values: map[string]string{}}
+	settings := &SettingService{settingRepo: repo}
 
 	runtime := settings.GetOpenAIRefusalRecoveryRuntime(context.Background())
 
 	require.False(t, runtime.Enabled)
 	require.False(t, runtime.CyberFailoverEnabled())
 	require.False(t, runtime.RewriteEnabled())
+	getValueCalls, getMultipleCalls := repo.calls()
+	require.Equal(t, 0, getValueCalls)
+	require.Equal(t, 1, getMultipleCalls)
 }
 
 func TestOpenAIRefusalMatcherMatchesNormalizedFirstParagraph(t *testing.T) {
@@ -194,7 +196,7 @@ func TestOpenAICyberFailoverErrorRetriesAnotherAccountWithoutHealthPenalty(t *te
 	require.Equal(t, OpenAICyberFailoverReason, err.Reason)
 	require.True(t, err.IsOpenAICyberFailover())
 	require.True(t, err.IsOpenAIRefusalRecovery())
-	require.Contains(t, string(err.ResponseBody), `"code":"cyber_failover_exhausted"`)
+	require.Contains(t, string(err.ResponseBody), `"code":"upstream_retry_exhausted"`)
 	require.Contains(t, string(err.ResponseBody), `"retryable":true`)
 	require.NotContains(t, strings.ToLower(string(err.ResponseBody)), "cyber_policy")
 }
@@ -230,7 +232,7 @@ func TestValidateOpenAIRefusalRecoverySettingsRejectsCyberSessionBlockConflict(t
 	require.ErrorIs(t, err, ErrInvalidOpenAIRefusalRecovery)
 }
 
-func TestValidateOpenAIRefusalRecoverySettingsAllowsDormantChildSettings(t *testing.T) {
+func TestValidateOpenAIRefusalRecoverySettingsRejectsIndependentCyberSessionConflict(t *testing.T) {
 	settings := &SystemSettings{
 		CyberSessionBlockEnabled:     true,
 		OpenAIRefusalRecoveryEnabled: false,
@@ -240,7 +242,7 @@ func TestValidateOpenAIRefusalRecoverySettingsAllowsDormantChildSettings(t *test
 
 	err := ValidateOpenAIRefusalRecoverySettings(settings)
 
-	require.NoError(t, err)
+	require.ErrorIs(t, err, ErrInvalidOpenAIRefusalRecovery)
 }
 
 func TestNormalizeOpenAIRefusalKeywordsRejectsKeywordOver64Runes(t *testing.T) {
