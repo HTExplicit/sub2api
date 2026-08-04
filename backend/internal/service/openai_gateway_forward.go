@@ -849,7 +849,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 			upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 			upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
-			upstreamCode := extractUpstreamErrorCode(respBody)
 			if !agentTaskRecoveryTried && s.isAgentIdentityAccount(ctx, account) && isAgentIdentityTaskInvalidHTTPResponse(resp.StatusCode, respBody) {
 				agentTaskRecoveryTried = true
 				expectedTaskID := account.GetCredential("task_id")
@@ -860,22 +859,47 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 			respBody = s.redactAgentIdentitySensitiveBody(ctx, account, respBody)
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
-			if !httpInvalidEncryptedContentRetryTried && resp.StatusCode == http.StatusBadRequest && upstreamCode == "invalid_encrypted_content" {
-				decoded, decodeErr := ensureReqBody()
-				if decodeErr != nil {
-					return nil, decodeErr
-				}
-				if trimOpenAIEncryptedReasoningItems(decoded) {
-					body, err = marshalOpenAIUpstreamJSON(decoded)
-					if err != nil {
-						return nil, fmt.Errorf("serialize invalid_encrypted_content retry body: %w", err)
+			continuationStateError := classifyOpenAIContinuationStateError(upstreamMsg, respBody)
+			if isOpenAIInvalidEncryptedContentError(upstreamMsg, respBody) && !httpInvalidEncryptedContentRetryTried {
+				// A tool-output continuation is coupled to the previous upstream
+				// state. Never strip it and replay on a different interpretation of
+				// the conversation: a terminal request-scoped error is safer.
+				if !ValidateFunctionCallOutputContextBytes(body).HasFunctionCallOutput {
+					decoded, decodeErr := ensureReqBody()
+					if decodeErr != nil {
+						return nil, decodeErr
 					}
-					httpInvalidEncryptedContentRetryTried = true
-					rejectedFieldRetryState.remember(body)
-					logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Retrying non-WSv2 request once after invalid_encrypted_content (account: %s)", account.Name)
-					continue
+					if trimOpenAIEncryptedReasoningItems(decoded) {
+						// HTTP transports already remove previous_response_id before
+						// forwarding. Keep this defensive delete so a future compatible
+						// transport cannot carry a stale anchor into the recovery retry.
+						delete(decoded, "previous_response_id")
+						body, err = marshalOpenAIUpstreamJSON(decoded)
+						if err != nil {
+							return nil, fmt.Errorf("serialize invalid_encrypted_content retry body: %w", err)
+						}
+						httpInvalidEncryptedContentRetryTried = true
+						rejectedFieldRetryState.remember(body)
+						logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Retrying non-WSv2 request once after invalid_encrypted_content (account: %s)", account.Name)
+						continue
+					}
+					logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Skip non-WSv2 invalid_encrypted_content retry because encrypted reasoning items are missing (account: %s)", account.Name)
 				}
-				logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Skip non-WSv2 invalid_encrypted_content retry because encrypted reasoning items are missing (account: %s)", account.Name)
+			}
+			if continuationStateError != openAIContinuationStateErrorNone {
+				// The failure describes request history, not account health. Do not
+				// let a compatibility proxy's 4xx/5xx wrapper fan this one request
+				// out across the remaining scheduler pool.
+				appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+					Platform:           account.Platform,
+					AccountID:          account.ID,
+					AccountName:        account.Name,
+					UpstreamStatusCode: resp.StatusCode,
+					UpstreamRequestID:  resp.Header.Get("x-request-id"),
+					Kind:               "continuation_state",
+					Message:            OpenAIContinuationStateUnavailableClientMessage,
+				})
+				return nil, NewOpenAIContinuationStateUnavailableError(resp.StatusCode, resp.Header, respBody)
 			}
 			if retryBody, reason, changed, retryErr := normalizeOpenAIResponsesRejectedFieldRetryBody(resp.StatusCode, body, respBody); retryErr != nil {
 				return nil, fmt.Errorf("normalize rejected Responses field retry body: %w", retryErr)

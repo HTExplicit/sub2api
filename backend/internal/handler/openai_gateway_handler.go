@@ -2599,6 +2599,27 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 		)
 		return
 	}
+	if failoverErr.IsOpenAIContinuationStateUnavailable() {
+		statusCode := failoverErr.ClientStatusCode
+		if statusCode <= 0 {
+			statusCode = http.StatusBadRequest
+		}
+		message := failoverErr.ClientMessage
+		if message == "" {
+			message = service.OpenAIContinuationStateUnavailableClientMessage
+		}
+		service.SetOpsUpstreamError(c, statusCode, message, "")
+		h.handleStreamingAwareErrorWithCode(
+			c,
+			statusCode,
+			"invalid_request_error",
+			service.OpenAIContinuationStateUnavailableCode,
+			message,
+			streamStarted,
+			false,
+		)
+		return
+	}
 	copyFailoverRetryAfter(c, failoverErr.ResponseHeaders)
 	if failoverErr.IsOpenAIRefusalRecovery() {
 		service.SetOpsUpstreamError(c, http.StatusServiceUnavailable, failoverErr.ClientMessage, "")

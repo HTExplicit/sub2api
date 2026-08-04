@@ -155,6 +155,25 @@ func TestHandleFailoverError_BasicSwitch(t *testing.T) {
 		require.Contains(t, fs.FailedAccountIDs, int64(100))
 	})
 
+	t.Run("会话状态失效不切换账号也不临时封禁", func(t *testing.T) {
+		mock := &mockTempUnscheduler{}
+		fs := NewFailoverState(3, false)
+		err := service.NewOpenAIContinuationStateUnavailableError(
+			http.StatusBadGateway,
+			nil,
+			[]byte(`{"error":{"code":"previous_response_not_found"}}`),
+		)
+
+		action := fs.HandleFailoverError(context.Background(), mock, 102, service.PlatformOpenAI, maxSameAccountRetries, err)
+
+		require.Equal(t, FailoverExhausted, action)
+		require.Zero(t, fs.SwitchCount)
+		require.Empty(t, fs.FailedAccountIDs)
+		require.Empty(t, fs.SameAccountRetryCount)
+		require.Empty(t, mock.calls)
+		require.Equal(t, err, fs.LastFailoverErr)
+	})
+
 	t.Run("已取消的认证失败不改变切换状态", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()

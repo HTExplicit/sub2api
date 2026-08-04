@@ -322,6 +322,62 @@ func TestShouldFailoverOpenAIUpstreamResponseContextWindow502(t *testing.T) {
 	require.True(t, svc.shouldFailoverOpenAIUpstreamResponse(http.StatusBadGateway, "temporary upstream outage", []byte(`{"error":{"message":"temporary upstream outage"}}`)))
 }
 
+func TestOpenAIContinuationStateErrorsStopAccountFailover(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	tests := []struct {
+		name       string
+		statusCode int
+		message    string
+		body       []byte
+		wantKind   openAIContinuationStateErrorKind
+	}{
+		{
+			name:       "structured previous response wrapped as 502",
+			statusCode: http.StatusBadGateway,
+			body:       []byte(`{"error":{"code":"previous_response_not_found","message":"upstream wrapped error"}}`),
+			wantKind:   openAIContinuationStateErrorPreviousResponseNotFound,
+		},
+		{
+			name:       "structured encrypted content wrapped as 403",
+			statusCode: http.StatusForbidden,
+			body:       []byte(`{"response":{"error":{"code":"invalid_encrypted_content","message":"upstream wrapped error"}}}`),
+			wantKind:   openAIContinuationStateErrorInvalidEncryptedContent,
+		},
+		{
+			name:       "narrow previous response message fallback",
+			statusCode: http.StatusServiceUnavailable,
+			message:    "Previous response not found.",
+			wantKind:   openAIContinuationStateErrorPreviousResponseNotFound,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.wantKind, classifyOpenAIContinuationStateError(tt.message, tt.body))
+			require.True(t, isOpenAIContinuationStateError(tt.message, tt.body))
+			require.False(t, svc.shouldFailoverOpenAIUpstreamResponse(tt.statusCode, tt.message, tt.body))
+
+			failoverErr := newOpenAIUpstreamFailoverError(tt.statusCode, nil, tt.body, tt.message, true)
+			require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
+			require.False(t, failoverErr.ShouldRetryNextAccount())
+			require.Equal(t, GatewayFailureScopeRequest, failoverErr.Scope)
+			require.True(t, failoverErr.SuppressAccountHealthPenalty)
+			require.Equal(t, http.StatusBadRequest, failoverErr.ClientStatusCode)
+			require.Equal(t, OpenAIContinuationStateUnavailableClientMessage, failoverErr.ClientMessage)
+		})
+	}
+
+	require.False(t, isOpenAIContinuationStateError(
+		"temporary upstream outage",
+		[]byte(`{"error":{"code":"server_is_overloaded","message":"temporary upstream outage"}}`),
+	))
+	require.True(t, svc.shouldFailoverOpenAIUpstreamResponse(
+		http.StatusBadGateway,
+		"temporary upstream outage",
+		[]byte(`{"error":{"message":"temporary upstream outage"}}`),
+	))
+}
+
 func TestOpenAIGatewayService_Forward_LogsInstructionsRequiredDetails(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	logSink, restore := captureStructuredLog(t)
