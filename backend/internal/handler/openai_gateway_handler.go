@@ -2615,7 +2615,11 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 			"invalid_request_error",
 			service.OpenAIContinuationStateUnavailableCode,
 			message,
-			streamStarted,
+			// A stream:true request may fail before Forward writes its first byte.
+			// It is still a Responses SSE request from the client's perspective:
+			// replying with a 400 JSON envelope makes Codex report a generic
+			// transport/system error instead of receiving the protocol terminal.
+			streamStarted || inboundResponsesStreamRequested(c),
 			false,
 		)
 		return

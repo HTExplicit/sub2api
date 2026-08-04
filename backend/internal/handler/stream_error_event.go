@@ -62,6 +62,15 @@ func writeResponsesFailedSSEWithDetails(c *gin.Context, errType, code, message s
 	if !ok {
 		return false
 	}
+	// This helper can now also be used for a stream:true request that failed
+	// before any upstream byte was written.  Set the SSE headers before the
+	// first write in that case; once committed, preserve the headers selected by
+	// the normal streaming path.
+	if !c.Writer.Written() {
+		c.Header("Content-Type", "text/event-stream; charset=utf-8")
+		c.Header("Cache-Control", "no-cache")
+		c.Header("X-Accel-Buffering", "no")
+	}
 
 	if code == "" {
 		code = mapResponsesErrorCode(errType)
@@ -127,6 +136,18 @@ func inboundIsResponses(c *gin.Context) bool {
 		return false
 	}
 	return strings.HasSuffix(p, "/responses") || strings.Contains(p, "/responses/")
+}
+
+// inboundResponsesStreamRequested reports whether the parsed Responses request
+// asked for streaming.  It intentionally reads the handler's normalized request
+// context rather than reparsing the request body after it has been consumed.
+func inboundResponsesStreamRequested(c *gin.Context) bool {
+	if c == nil || !inboundIsResponses(c) {
+		return false
+	}
+	stream, _ := c.Get(opsStreamKey)
+	requested, _ := stream.(bool)
+	return requested
 }
 
 // synthesizeResponseID 为合成的 response.failed 事件生成一个稳定的 id。
