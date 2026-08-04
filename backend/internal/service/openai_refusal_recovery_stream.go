@@ -243,16 +243,6 @@ func (s *openAIRefusalStreamState) completeEarlyReplacement(payload []byte) (ope
 	return openAIRefusalStreamReplace, tail, nil
 }
 
-func buildOpenAIRefusalReplacementMessage(messageID string, replacement string) (json.RawMessage, error) {
-	textPart := map[string]any{"type": "output_text", "text": replacement, "annotations": []any{}, "logprobs": []any{}}
-	message := map[string]any{"id": messageID, "type": "message", "status": "completed", "role": "assistant", "content": []any{textPart}}
-	encodedMessage, err := json.Marshal(message)
-	if err != nil {
-		return nil, fmt.Errorf("encode replacement message: %w", err)
-	}
-	return encodedMessage, nil
-}
-
 func openAIRefusalScanWindowComplete(text string) bool {
 	text = strings.ReplaceAll(text, "\r\n", "\n")
 	text = strings.ReplaceAll(text, "\r", "\n")

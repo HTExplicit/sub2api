@@ -118,12 +118,6 @@ func (r *openAIRefusalRuntimeRepo) failMultiple(err error) {
 	r.getMultipleErr = err
 }
 
-func (r *openAIRefusalRuntimeRepo) failValue(err error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.getValueErr = err
-}
-
 func (r *openAIRefusalRuntimeRepo) blockNextMultiple(start chan<- struct{}, wait <-chan struct{}) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

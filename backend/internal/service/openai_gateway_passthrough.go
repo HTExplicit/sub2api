@@ -1242,7 +1242,6 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 						clientDisconnected = true
 					} else {
 						flusher.Flush()
-						clientOutputStarted = true
 					}
 				}
 				return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
