@@ -317,6 +317,108 @@ func isOpenAIInvalidEncryptedContentError(upstreamMsg string, upstreamBody []byt
 	return classifyOpenAIContinuationStateError(upstreamMsg, upstreamBody) == openAIContinuationStateErrorInvalidEncryptedContent
 }
 
+// openAIOpaqueStreamPreflightReason identifies a stream:true request that a
+// compatibility upstream rejected with an otherwise unclassified 400 before it
+// emitted any Responses event.  It is request-scoped: changing accounts cannot
+// make an opaque client request valid, and treating it as an account failure
+// would contaminate scheduler health with a request-local condition.
+const openAIOpaqueStreamPreflightReason = GatewayFailureReason("openai_opaque_stream_preflight")
+
+// isOpenAIOpaqueCompatibilityBadRequest detects the narrow compatibility
+// wrapper shape where an upstream exposes only a generic 400.  Explicit error
+// codes and the semantic cases handled elsewhere deliberately remain on their
+// existing paths; this is only the no-code fallback needed to preserve the
+// Responses streaming contract without retrying or penalizing an account.
+func isOpenAIOpaqueCompatibilityBadRequest(statusCode int, upstreamMsg string, upstreamBody []byte) bool {
+	if statusCode != http.StatusBadRequest {
+		return false
+	}
+	if classifyOpenAIContinuationStateError(upstreamMsg, upstreamBody) != openAIContinuationStateErrorNone {
+		return false
+	}
+	if hasOpenAIUpstreamStructuredErrorCode(upstreamBody) {
+		return false
+	}
+	if isOpenAIContextWindowError(upstreamMsg, upstreamBody) ||
+		isOpenAITransientProcessingError(statusCode, upstreamMsg, upstreamBody) {
+		return false
+	}
+	return true
+}
+
+func hasOpenAIUpstreamStructuredErrorCode(upstreamBody []byte) bool {
+	if strings.TrimSpace(extractUpstreamErrorCode(upstreamBody)) != "" {
+		return true
+	}
+	for _, path := range []string{
+		"error.code",
+		"response.error.code",
+		"code",
+		"response.code",
+	} {
+		if strings.TrimSpace(gjson.GetBytes(upstreamBody, path).String()) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// isOpenAIOpaqueContinuationToolChainBadRequest handles an upstream that has
+// removed the normal continuation-state code/message from a 400.  The request
+// shape is intentionally strict: an encrypted reasoning carrier plus a
+// function_call_output is an upstream-bound tool continuation and cannot be
+// safely replayed after its state disappears.  The caller must terminate it;
+// it must not strip the tool output, switch accounts, or downgrade health.
+func isOpenAIOpaqueContinuationToolChainBadRequest(
+	statusCode int,
+	requestBody []byte,
+	upstreamMsg string,
+	upstreamBody []byte,
+) bool {
+	if !isOpenAIOpaqueCompatibilityBadRequest(statusCode, upstreamMsg, upstreamBody) {
+		return false
+	}
+	if !ValidateFunctionCallOutputContextBytes(requestBody).HasFunctionCallOutput {
+		return false
+	}
+
+	input := parseRawJSONView(requestBody).Get("input")
+	if !input.IsArray() {
+		return false
+	}
+	hasEncryptedContinuationItem := false
+	input.ForEach(func(_, item gjson.Result) bool {
+		if !item.IsObject() {
+			return true
+		}
+		switch strings.TrimSpace(item.Get("type").String()) {
+		case "reasoning", "compaction", "compaction_summary":
+			if encrypted := strings.TrimSpace(item.Get("encrypted_content").String()); encrypted != "" {
+				hasEncryptedContinuationItem = true
+				return false
+			}
+		}
+		return true
+	})
+	return hasEncryptedContinuationItem
+}
+
+func newOpenAIOpaqueStreamPreflightError(
+	statusCode int,
+	responseHeaders http.Header,
+	responseBody []byte,
+) *UpstreamFailoverError {
+	return &UpstreamFailoverError{
+		StatusCode:                   statusCode,
+		ResponseBody:                 responseBody,
+		ResponseHeaders:              responseHeaders.Clone(),
+		Scope:                        GatewayFailureScopeRequest,
+		Reason:                       openAIOpaqueStreamPreflightReason,
+		NextAccountAction:            NextAccountStop,
+		SuppressAccountHealthPenalty: true,
+	}
+}
+
 func isOpenAIRequestBodyTooLargeError(statusCode int, upstreamMsg string, upstreamBody []byte) bool {
 	return statusCode == http.StatusRequestEntityTooLarge && !isOpenAIContextWindowError(upstreamMsg, upstreamBody)
 }
