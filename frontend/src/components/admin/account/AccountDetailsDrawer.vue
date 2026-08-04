@@ -128,6 +128,7 @@
                 :today-stats="todayStats"
                 :today-stats-loading="todayStatsLoading"
                 :manual-refresh-token="manualRefreshToken"
+                @account-updated="emit('updated', $event)"
               />
             </div>
           </section>

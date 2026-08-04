@@ -1594,6 +1594,76 @@ func TestShouldReportOpenAIWSProxyAccountFailure(t *testing.T) {
 	})
 }
 
+func TestOpenAIWSPostOutputCyberClose(t *testing.T) {
+	const reason = "Temporary upstream failure; please retry"
+	wrappedCyberClose := fmt.Errorf(
+		"wrapped ingress turn: %w",
+		service.NewOpenAIWSClientCloseError(
+			coderws.StatusTryAgainLater,
+			reason,
+			service.NewOpenAICyberFailoverError(nil, nil),
+		),
+	)
+
+	closeErr, ok := openAIWSPostOutputCyberClose(wrappedCyberClose)
+	require.True(t, ok)
+	require.NotNil(t, closeErr)
+	require.Equal(t, coderws.StatusTryAgainLater, closeErr.StatusCode())
+	require.Equal(t, reason, closeErr.Reason())
+	require.False(t, shouldReportOpenAIWSProxyAccountFailure(wrappedCyberClose))
+
+	_, ok = openAIWSPostOutputCyberClose(service.NewOpenAICyberFailoverError(nil, nil))
+	require.False(t, ok, "a replay-safe Cyber failover must remain eligible for account switching")
+
+	nonCyberClose := service.NewOpenAIWSClientCloseError(
+		coderws.StatusPolicyViolation,
+		"upstream websocket authentication failed",
+		errors.New("upstream rejected credentials"),
+	)
+	_, ok = openAIWSPostOutputCyberClose(nonCyberClose)
+	require.False(t, ok, "ordinary close errors must retain the existing handler order")
+}
+
+func TestCloseOpenAIWSFailoverExhausted_ContinuationWritesSingleFailureTerminal(t *testing.T) {
+	serverErrCh := make(chan error, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := coderws.Accept(w, r, nil)
+		if err != nil {
+			serverErrCh <- err
+			return
+		}
+		closeOpenAIWSFailoverExhausted(conn, service.NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil))
+		serverErrCh <- nil
+	}))
+	defer server.Close()
+
+	dialCtx, cancelDial := context.WithTimeout(context.Background(), 3*time.Second)
+	clientConn, _, err := coderws.Dial(dialCtx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	cancelDial()
+	require.NoError(t, err)
+	defer func() { _ = clientConn.CloseNow() }()
+
+	readCtx, cancelRead := context.WithTimeout(context.Background(), 3*time.Second)
+	messageType, payload, err := clientConn.Read(readCtx)
+	cancelRead()
+	require.NoError(t, err)
+	require.Equal(t, coderws.MessageText, messageType)
+	require.Equal(t, "response.failed", gjson.GetBytes(payload, "type").String())
+	require.Equal(t, "failed", gjson.GetBytes(payload, "response.status").String())
+	require.Equal(t, "invalid_request_error", gjson.GetBytes(payload, "response.error.type").String())
+	require.Equal(t, service.OpenAIContinuationStateUnavailableCode, gjson.GetBytes(payload, "response.error.code").String())
+	require.Equal(t, service.OpenAIContinuationStateUnavailableClientMessage, gjson.GetBytes(payload, "response.error.message").String())
+
+	readCtx, cancelRead = context.WithTimeout(context.Background(), 3*time.Second)
+	_, secondPayload, err := clientConn.Read(readCtx)
+	cancelRead()
+	require.Error(t, err, "the failure event must be the only terminal payload")
+	require.Empty(t, secondPayload)
+	require.Equal(t, coderws.StatusPolicyViolation, coderws.CloseStatus(err))
+
+	require.NoError(t, <-serverErrCh)
+}
+
 func TestSetOpenAIClientTransportHTTP(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

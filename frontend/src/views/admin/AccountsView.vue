@@ -370,6 +370,7 @@
                 :status-now="usageStatusNow"
                 variant="list"
                 read-only
+                @account-updated="handleAccountUpdated"
               />
               <AccountCapacityCell :account="row" compact />
             </div>
