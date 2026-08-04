@@ -2782,6 +2782,14 @@ func (h *OpenAIGatewayHandler) handleStreamingAwareErrorWithDetails(
 	if service.StopOpenAICompactSSEKeepaliveCommitted(c) {
 		streamStarted = true
 	}
+	// A Responses stream is a protocol contract, not merely an observation that
+	// an upstream byte has already arrived.  If a stream:true request fails
+	// during preflight or before the first upstream byte, a JSON HTTP error
+	// leaves strict clients waiting for a Responses terminal event and they
+	// surface a generic system/transport error.  Frame the failure in-band.
+	if !streamStarted && inboundResponsesStreamRequested(c) {
+		streamStarted = true
+	}
 	if streamStarted {
 		if countTowardsSLA {
 			service.MarkOpsStreamFailure(c, errType, code, message, status)
