@@ -419,6 +419,13 @@ func newOpenAIOpaqueStreamPreflightError(
 	}
 }
 
+// IsOpenAIOpaqueStreamPreflight reports the bounded no-code compatibility
+// wrapper that must be framed as a Responses terminal before any upstream
+// stream byte exists.  It is intentionally distinct from normal HTTP errors.
+func (e *UpstreamFailoverError) IsOpenAIOpaqueStreamPreflight() bool {
+	return e != nil && e.Reason == openAIOpaqueStreamPreflightReason
+}
+
 func isOpenAIRequestBodyTooLargeError(statusCode int, upstreamMsg string, upstreamBody []byte) bool {
 	return statusCode == http.StatusRequestEntityTooLarge && !isOpenAIContextWindowError(upstreamMsg, upstreamBody)
 }

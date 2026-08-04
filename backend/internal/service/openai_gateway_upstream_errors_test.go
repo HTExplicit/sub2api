@@ -76,6 +76,7 @@ func TestNewOpenAIOpaqueStreamPreflightErrorIsRequestScoped(t *testing.T) {
 	require.Equal(t, openAIOpaqueStreamPreflightReason, err.Reason)
 	require.Equal(t, NextAccountStop, err.NextAccountAction)
 	require.True(t, err.SuppressAccountHealthPenalty)
+	require.True(t, err.IsOpenAIOpaqueStreamPreflight())
 	require.False(t, err.ShouldRetryNextAccount())
 	require.False(t, err.ShouldReportAccountScheduleFailure())
 	require.Equal(t, "value", err.ResponseHeaders.Get("X-Test"))

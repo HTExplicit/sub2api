@@ -2624,6 +2624,12 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 		)
 		return
 	}
+	if failoverErr.IsOpenAIOpaqueStreamPreflight() {
+		// Only the service-classified code-less compatibility 400 needs an
+		// in-band pre-first-byte terminal.  Do not apply this to normal 429/4xx
+		// responses: those retain their established HTTP semantics.
+		streamStarted = streamStarted || inboundResponsesStreamRequested(c)
+	}
 	copyFailoverRetryAfter(c, failoverErr.ResponseHeaders)
 	if failoverErr.IsOpenAIRefusalRecovery() {
 		service.SetOpsUpstreamError(c, http.StatusServiceUnavailable, failoverErr.ClientMessage, "")
@@ -2780,14 +2786,6 @@ func (h *OpenAIGatewayHandler) handleStreamingAwareErrorWithDetails(
 	// body-signal compact 心跳可能已把响应头提交为 200：先停心跳（建立
 	// happens-before，接管 ResponseWriter），并升级为流内错误处理。
 	if service.StopOpenAICompactSSEKeepaliveCommitted(c) {
-		streamStarted = true
-	}
-	// A Responses stream is a protocol contract, not merely an observation that
-	// an upstream byte has already arrived.  If a stream:true request fails
-	// during preflight or before the first upstream byte, a JSON HTTP error
-	// leaves strict clients waiting for a Responses terminal event and they
-	// surface a generic system/transport error.  Frame the failure in-band.
-	if !streamStarted && inboundResponsesStreamRequested(c) {
 		streamStarted = true
 	}
 	if streamStarted {
