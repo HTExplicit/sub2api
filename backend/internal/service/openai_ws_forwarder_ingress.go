@@ -904,6 +904,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					!turnHasFunctionCallOutput &&
 					s.openAIWSIngressPreviousResponseRecoveryEnabled() &&
 					!wroteDownstream
+				recoverableInvalidEncrypted := fallbackReason == openAIWSIngressStageInvalidEncryptedContent &&
+					!turnHasFunctionCallOutput &&
+					!wroteDownstream
 				if recoverablePrevNotFound {
 					// 可恢复场景使用非 error 关键字日志，避免被 LegacyPrintf 误判为 ERROR 级别。
 					logOpenAIWSModeInfo(
@@ -954,6 +957,18 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 						false,
 					)
 				}
+				if recoverableInvalidEncrypted {
+					lease.MarkBroken()
+					return nil, wrapOpenAIWSIngressTurnError(
+						openAIWSIngressStageInvalidEncryptedContent,
+						NewOpenAIContinuationStateUnavailableError(
+							openAIWSErrorHTTPStatusFromRaw(errCodeRaw, errTypeRaw),
+							lease.HandshakeHeaders(),
+							append([]byte(nil), upstreamMessage...),
+						),
+						false,
+					)
+				}
 				if continuationStateError {
 					lease.MarkBroken()
 					return nil, NewOpenAIContinuationStateUnavailableError(
@@ -992,6 +1007,22 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			imageCounter.AddSSEData(upstreamMessage)
 
 			if eventType == "response.failed" {
+				continuationErr := openAIContinuationStateErrorFromFailedEvent(http.StatusOK, lease.HandshakeHeaders(), upstreamMessage)
+				if continuationErr != nil {
+					lease.MarkBroken()
+					kind := classifyOpenAIContinuationStateError(extractOpenAISSEErrorMessage(upstreamMessage), upstreamMessage)
+					if !wroteDownstream {
+						switch kind {
+						case openAIContinuationStateErrorPreviousResponseNotFound:
+							if turnPreviousResponseID != "" && s.openAIWSIngressPreviousResponseRecoveryEnabled() {
+								return nil, wrapOpenAIWSIngressTurnError(openAIWSIngressStagePreviousResponseNotFound, continuationErr, false)
+							}
+						case openAIContinuationStateErrorInvalidEncryptedContent:
+							return nil, wrapOpenAIWSIngressTurnError(openAIWSIngressStageInvalidEncryptedContent, continuationErr, false)
+						}
+					}
+					return nil, continuationErr
+				}
 				if hit, code, msg := detectOpenAICyberPolicy(upstreamMessage); hit {
 					MarkOpsCyberPolicy(c, CyberPolicyMark{
 						Code:           code,
@@ -1171,6 +1202,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	turn := 1
 	turnRetry := 0
 	turnPrevRecoveryTried := false
+	turnInvalidEncryptedRecoveryTried := false
 	lastTurnFinishedAt := time.Time{}
 	lastTurnResponseID := ""
 	lastTurnPayload := []byte(nil)
@@ -1263,6 +1295,50 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		currentPayloadBytes = len(updatedWithInput)
 		resetSessionLease(true)
 		skipBeforeTurn = true
+		return true
+	}
+	recoverIngressInvalidEncryptedContent := func(relayErr error, turn int, connID string) bool {
+		if !isOpenAIWSIngressInvalidEncryptedContent(relayErr) || turnInvalidEncryptedRecoveryTried {
+			return false
+		}
+		if hasCurrentOrReplayFunctionCallOutput(currentPayload) {
+			return false
+		}
+		var decoded map[string]any
+		decoder := json.NewDecoder(bytes.NewReader(currentPayload))
+		decoder.UseNumber()
+		if decodeErr := decoder.Decode(&decoded); decodeErr != nil || !trimOpenAIEncryptedReasoningItems(decoded) {
+			logOpenAIWSModeInfo(
+				"ingress_ws_invalid_encrypted_recovery_skip account_id=%d turn=%d conn_id=%s reason=missing_or_invalid_encrypted_reasoning",
+				account.ID,
+				turn,
+				truncateOpenAIWSLogValue(connID, openAIWSIDValueMaxLen),
+			)
+			return false
+		}
+		delete(decoded, "previous_response_id")
+		updatedPayload, marshalErr := marshalOpenAIUpstreamJSON(decoded)
+		if marshalErr != nil {
+			logOpenAIWSModeInfo(
+				"ingress_ws_invalid_encrypted_recovery_skip account_id=%d turn=%d conn_id=%s reason=serialize_failed cause=%s",
+				account.ID,
+				turn,
+				truncateOpenAIWSLogValue(connID, openAIWSIDValueMaxLen),
+				truncateOpenAIWSLogValue(marshalErr.Error(), openAIWSLogValueMaxLen),
+			)
+			return false
+		}
+		turnInvalidEncryptedRecoveryTried = true
+		currentPayload = updatedPayload
+		currentPayloadBytes = len(updatedPayload)
+		resetSessionLease(true)
+		skipBeforeTurn = true
+		logOpenAIWSModeInfo(
+			"ingress_ws_invalid_encrypted_recovery account_id=%d turn=%d conn_id=%s action=drop_encrypted_reasoning_and_previous_response_id retry=1",
+			account.ID,
+			turn,
+			truncateOpenAIWSLogValue(connID, openAIWSIDValueMaxLen),
+		)
 		return true
 	}
 	retryIngressTurn := func(relayErr error, turn int, connID string) bool {
@@ -1601,6 +1677,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		result, relayErr := sendAndRelay(turn, sessionLease, currentPayload, currentPayloadBytes, currentOriginalModel, currentImageBillingModel, currentImageSizeTier, currentImageInputSize)
 		if relayErr != nil {
 			lastTurnClean = false
+			if recoverIngressInvalidEncryptedContent(relayErr, turn, connID) {
+				continue
+			}
 			if recoverIngressPrevResponseNotFound(relayErr, turn, connID) {
 				continue
 			}
@@ -1619,6 +1698,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		turnRetry = 0
 		turnPrevRecoveryTried = false
+		turnInvalidEncryptedRecoveryTried = false
 		lastTurnFinishedAt = time.Now()
 		lastTurnClean = true
 		if hooks != nil && hooks.AfterTurn != nil {

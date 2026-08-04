@@ -209,6 +209,42 @@ func TestOpenAIStreamingPassthroughFailedAfterOutputFlushesAtBoundaryAndKeepsUsa
 	require.Equal(t, 2, result.usage.OutputTokens)
 }
 
+func TestOpenAIStreamingPassthroughContinuationFailedEventIsNeverForwarded(t *testing.T) {
+	tests := []struct {
+		name       string
+		prefix     string
+		wantPrefix string
+	}{
+		{name: "before semantic output"},
+		{
+			name:       "after semantic output",
+			prefix:     `data: {"type":"response.output_text.delta","delta":"partial"}` + "\n\n",
+			wantPrefix: `data: {"type":"response.output_text.delta","delta":"partial"}` + "\n\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			failed := `data: {"type":"response.failed","error":{"code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}` + "\n\n"
+			result, recorder, _, err := runPassthroughFlushTest(
+				t,
+				io.NopCloser(strings.NewReader(tt.prefix+failed)),
+				-1,
+			)
+
+			require.Error(t, err)
+			require.NotNil(t, result)
+			var failoverErr *UpstreamFailoverError
+			require.ErrorAs(t, err, &failoverErr)
+			require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
+			require.Equal(t, tt.wantPrefix, recorder.Body.String())
+			require.NotContains(t, recorder.Body.String(), "invalid_encrypted_content")
+			require.False(t, failoverErr.ShouldRetryNextAccount())
+			require.False(t, failoverErr.ShouldReportAccountScheduleFailure())
+		})
+	}
+}
+
 func TestOpenAIStreamingPassthroughClientDisconnectStillDrainsTerminalUsage(t *testing.T) {
 	firstOutput := `data: {"type":"response.output_text.delta","delta":"partial"}` + "\n\n"
 	terminalEvent := `data: {"type":"response.completed","response":{"id":"resp_drain","usage":{"input_tokens":11,"output_tokens":4,"total_tokens":15}}}` + "\n\n"

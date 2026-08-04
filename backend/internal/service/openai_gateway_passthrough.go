@@ -192,6 +192,31 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 
 	agentTaskRecoveryTried := false
 	invalidEncryptedContentRetryTried := false
+	tryRecoverInvalidEncryptedContent := func(upstreamMsg string, upstreamBody []byte) (bool, error) {
+		if invalidEncryptedContentRetryTried ||
+			!isOpenAIInvalidEncryptedContentError(upstreamMsg, upstreamBody) ||
+			ValidateFunctionCallOutputContextBytes(body).HasFunctionCallOutput {
+			return false, nil
+		}
+		var decoded map[string]any
+		decoder := json.NewDecoder(bytes.NewReader(body))
+		decoder.UseNumber()
+		if decodeErr := decoder.Decode(&decoded); decodeErr != nil || !trimOpenAIEncryptedReasoningItems(decoded) {
+			logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] Skip invalid_encrypted_content retry because encrypted reasoning items are missing or cannot be decoded (account: %s)", account.Name)
+			return false, nil
+		}
+		delete(decoded, "previous_response_id")
+		retryBody, marshalErr := marshalOpenAIUpstreamJSON(decoded)
+		if marshalErr != nil {
+			return false, fmt.Errorf("serialize passthrough invalid_encrypted_content retry body: %w", marshalErr)
+		}
+		body = retryBody
+		invalidEncryptedContentRetryTried = true
+		logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] Retrying request once on the same account after invalid_encrypted_content (account: %s)", account.Name)
+		return true, nil
+	}
+
+retryUpstream:
 	var resp *http.Response
 	for {
 		upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
@@ -222,27 +247,10 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(probeBody))
 		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
 		continuationStateError := classifyOpenAIContinuationStateError(upstreamMsg, probeBody)
-		if continuationStateError == openAIContinuationStateErrorInvalidEncryptedContent &&
-			!invalidEncryptedContentRetryTried &&
-			!ValidateFunctionCallOutputContextBytes(body).HasFunctionCallOutput {
-			var decoded map[string]any
-			decoder := json.NewDecoder(bytes.NewReader(body))
-			decoder.UseNumber()
-			if decodeErr := decoder.Decode(&decoded); decodeErr == nil && trimOpenAIEncryptedReasoningItems(decoded) {
-				// The Responses continuation anchor and encrypted reasoning carrier are
-				// upstream-bound.  Removing both is the only safe passthrough replay,
-				// and it remains on this account for a single bounded attempt.
-				delete(decoded, "previous_response_id")
-				retryBody, marshalErr := marshalOpenAIUpstreamJSON(decoded)
-				if marshalErr != nil {
-					return nil, fmt.Errorf("serialize passthrough invalid_encrypted_content retry body: %w", marshalErr)
-				}
-				body = retryBody
-				invalidEncryptedContentRetryTried = true
-				logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] Retrying request once on the same account after invalid_encrypted_content (account: %s)", account.Name)
-				continue
-			}
-			logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] Skip invalid_encrypted_content retry because encrypted reasoning items are missing or cannot be decoded (account: %s)", account.Name)
+		if recovered, recoveryErr := tryRecoverInvalidEncryptedContent(upstreamMsg, probeBody); recoveryErr != nil {
+			return nil, recoveryErr
+		} else if recovered {
+			continue
 		}
 		if continuationStateError != openAIContinuationStateErrorNone ||
 			isOpenAIOpaqueContinuationToolChainBadRequest(resp.StatusCode, body, upstreamMsg, probeBody) {
@@ -292,6 +300,16 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		setOpenAIRefusalEarlyStreamEligibility(c, account, body)
 		result, err := s.handleStreamingResponsePassthrough(ctx, resp, c, account, startTime, reqModel, upstreamPassthroughModel)
 		if err != nil {
+			var failoverErr *UpstreamFailoverError
+			if errors.As(err, &failoverErr) && !openAIStreamClientOutputStarted(c, false) {
+				upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(failoverErr.ResponseBody)))
+				if recovered, recoveryErr := tryRecoverInvalidEncryptedContent(upstreamMsg, failoverErr.ResponseBody); recoveryErr != nil {
+					return nil, recoveryErr
+				} else if recovered {
+					_ = resp.Body.Close()
+					goto retryUpstream
+				}
+			}
 			return nil, err
 		}
 		usage = result.usage
@@ -302,6 +320,16 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	} else {
 		result, err := s.handleNonStreamingResponsePassthrough(ctx, resp, c, reqModel, upstreamPassthroughModel)
 		if err != nil {
+			var failoverErr *UpstreamFailoverError
+			if errors.As(err, &failoverErr) && !openAIStreamClientOutputStarted(c, false) {
+				upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(failoverErr.ResponseBody)))
+				if recovered, recoveryErr := tryRecoverInvalidEncryptedContent(upstreamMsg, failoverErr.ResponseBody); recoveryErr != nil {
+					return nil, recoveryErr
+				} else if recovered {
+					_ = resp.Body.Close()
+					goto retryUpstream
+				}
+			}
 			return nil, err
 		}
 		usage = result.usage
@@ -1227,6 +1255,9 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				// 再打 cyber 标记，否则 mark 记到的是解析前的 0，导致流式 cyber 按 0 token 计费
 				// 而漏记真实用量。对齐 WS V2 / Chat 流式路径（均先解析 usage 再 Mark）。
 				s.parseSSEUsageBytes(dataBytes, usage)
+				if continuationErr := openAIContinuationStateErrorFromFailedEvent(resp.StatusCode, resp.Header, dataBytes); continuationErr != nil {
+					return resultWithUsage(), continuationErr
+				}
 				if hit, code, msg := detectOpenAICyberPolicy(dataBytes); hit {
 					MarkOpsCyberPolicy(c, CyberPolicyMark{
 						Code:           code,
@@ -1472,6 +1503,9 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	if isEventStreamResponse(resp.Header) {
 		return s.handlePassthroughSSEToJSON(resp, c, body, originalModel, mappedModel)
 	}
+	if continuationErr := openAIContinuationStateErrorFromFailedEvent(resp.StatusCode, resp.Header, body); continuationErr != nil {
+		return nil, continuationErr
+	}
 	if markOpenAICyberPolicyFromResponse(c, resp.StatusCode, body) && isOpenAIRefusalRecoveryResponsesRequest(c) {
 		runtime := s.openAIRefusalRecoveryRuntime(ctx)
 		if runtime.CyberFailoverEnabled() {
@@ -1582,6 +1616,9 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 	} else {
 		terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText)
 		if terminalOK && terminalType == "response.failed" {
+			if continuationErr := openAIContinuationStateErrorFromFailedEvent(resp.StatusCode, resp.Header, terminalPayload); continuationErr != nil {
+				return nil, continuationErr
+			}
 			if markOpenAICyberPolicyFromResponse(c, resp.StatusCode, terminalPayload) && isOpenAIRefusalRecoveryResponsesRequest(c) {
 				runtime := s.openAIRefusalRecoveryRuntime(c.Request.Context())
 				if runtime.CyberFailoverEnabled() {

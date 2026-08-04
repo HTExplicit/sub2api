@@ -265,6 +265,61 @@ func TestOpenAIWSPassthroughTurnLifecycle_SerializesTerminalCommitAndNextTurn(t 
 	require.False(t, <-admitted, "failed terminal write must keep the current turn in flight")
 }
 
+func TestPassthroughLifecycle_ContinuationEventsAreNotForwarded(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name  string
+		event string
+		code  string
+	}{
+		{
+			name:  "response.failed",
+			event: `{"type":"response.failed","response":{"error":{"code":"previous_response_not_found","message":"previous response not found"}}}`,
+			code:  "previous_response_not_found",
+		},
+		{
+			name:  "error event",
+			event: `{"type":"error","error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}`,
+			code:  "invalid_encrypted_content",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			controlCtx, cancelControl := context.WithCancelCause(context.Background())
+			defer cancelControl(context.Canceled)
+			upstream := newStagedPassthroughConn()
+			upstream.Send(tt.event)
+			server, serverErr := startPassthroughLifecycleServer(
+				t,
+				controlCtx,
+				newPassthroughLifecycleService(passthroughLifecycleConfig(), upstream),
+				passthroughLifecycleAccount(),
+			)
+			defer server.Close()
+			clientConn := dialPassthroughLifecycleClient(t, server)
+			defer func() { _ = clientConn.CloseNow() }()
+
+			_ = requirePassthroughUpstreamWrite(t, upstream, 3*time.Second)
+			payload, readErr := readPassthroughLifecycleFrame(t, clientConn, 3*time.Second)
+			require.Error(t, readErr)
+			require.NotContains(t, string(payload), tt.code)
+
+			select {
+			case proxyErr := <-serverErr:
+				var failoverErr *UpstreamFailoverError
+				require.ErrorAs(t, proxyErr, &failoverErr)
+				require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
+				require.False(t, failoverErr.ShouldRetryNextAccount())
+				require.False(t, failoverErr.ShouldReportAccountScheduleFailure())
+				require.Contains(t, string(failoverErr.ResponseBody), tt.code)
+			case <-time.After(3 * time.Second):
+				t.Fatal("passthrough continuation did not terminate")
+			}
+		})
+	}
+}
+
 func TestPassthroughLifecycle_LeaseLossSendsRetryClose(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	controlCtx, cancelControl := context.WithCancelCause(context.Background())

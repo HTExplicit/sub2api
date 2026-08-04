@@ -806,6 +806,36 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	httpInvalidEncryptedContentRetryTried := false
 	agentTaskRecoveryTried := false
 	rejectedFieldRetryState := newOpenAIResponsesRejectedFieldRetryState(body)
+	tryRecoverInvalidEncryptedContent := func(upstreamMsg string, upstreamBody []byte) (bool, error) {
+		if httpInvalidEncryptedContentRetryTried ||
+			!isOpenAIInvalidEncryptedContentError(upstreamMsg, upstreamBody) ||
+			ValidateFunctionCallOutputContextBytes(body).HasFunctionCallOutput {
+			return false, nil
+		}
+		decoded, decodeErr := ensureReqBody()
+		if decodeErr != nil {
+			return false, decodeErr
+		}
+		if !trimOpenAIEncryptedReasoningItems(decoded) {
+			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Skip non-WSv2 invalid_encrypted_content retry because encrypted reasoning items are missing (account: %s)", account.Name)
+			return false, nil
+		}
+		// The continuation anchor and encrypted reasoning carrier are bound to
+		// the failed upstream state. Retry the cleaned request on this account
+		// once, whether the error arrived as HTTP failure or response.failed.
+		delete(decoded, "previous_response_id")
+		retryBody, marshalErr := marshalOpenAIUpstreamJSON(decoded)
+		if marshalErr != nil {
+			return false, fmt.Errorf("serialize invalid_encrypted_content retry body: %w", marshalErr)
+		}
+		body = retryBody
+		requestView = newOpenAIRequestView(body)
+		reqBody = nil
+		httpInvalidEncryptedContentRetryTried = true
+		rejectedFieldRetryState.remember(body)
+		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Retrying non-WSv2 request once after invalid_encrypted_content (account: %s)", account.Name)
+		return true, nil
+	}
 	for {
 		// Build upstream request
 		upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
@@ -881,31 +911,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			respBody = s.redactAgentIdentitySensitiveBody(ctx, account, respBody)
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
 			continuationStateError := classifyOpenAIContinuationStateError(upstreamMsg, respBody)
-			if isOpenAIInvalidEncryptedContentError(upstreamMsg, respBody) && !httpInvalidEncryptedContentRetryTried {
-				// A tool-output continuation is coupled to the previous upstream
-				// state. Never strip it and replay on a different interpretation of
-				// the conversation: a terminal request-scoped error is safer.
-				if !ValidateFunctionCallOutputContextBytes(body).HasFunctionCallOutput {
-					decoded, decodeErr := ensureReqBody()
-					if decodeErr != nil {
-						return nil, decodeErr
-					}
-					if trimOpenAIEncryptedReasoningItems(decoded) {
-						// HTTP transports already remove previous_response_id before
-						// forwarding. Keep this defensive delete so a future compatible
-						// transport cannot carry a stale anchor into the recovery retry.
-						delete(decoded, "previous_response_id")
-						body, err = marshalOpenAIUpstreamJSON(decoded)
-						if err != nil {
-							return nil, fmt.Errorf("serialize invalid_encrypted_content retry body: %w", err)
-						}
-						httpInvalidEncryptedContentRetryTried = true
-						rejectedFieldRetryState.remember(body)
-						logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Retrying non-WSv2 request once after invalid_encrypted_content (account: %s)", account.Name)
-						continue
-					}
-					logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Skip non-WSv2 invalid_encrypted_content retry because encrypted reasoning items are missing (account: %s)", account.Name)
-				}
+			if recovered, recoveryErr := tryRecoverInvalidEncryptedContent(upstreamMsg, respBody); recoveryErr != nil {
+				return nil, recoveryErr
+			} else if recovered {
+				continue
 			}
 			if continuationStateError != openAIContinuationStateErrorNone {
 				// The failure describes request history, not account health. Do not
@@ -1000,6 +1009,16 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			setOpenAIRefusalEarlyStreamEligibility(c, account, body)
 			streamResult, err := s.handleStreamingResponseWithReasoning(ctx, resp, c, account, startTime, originalModel, upstreamModel, reasoningEffortValue)
 			if err != nil {
+				var failoverErr *UpstreamFailoverError
+				if errors.As(err, &failoverErr) && !openAIStreamClientOutputStarted(c, false) {
+					upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(failoverErr.ResponseBody)))
+					if recovered, recoveryErr := tryRecoverInvalidEncryptedContent(upstreamMsg, failoverErr.ResponseBody); recoveryErr != nil {
+						return nil, recoveryErr
+					} else if recovered {
+						_ = resp.Body.Close()
+						continue
+					}
+				}
 				return nil, err
 			}
 			usage = streamResult.usage
@@ -1010,6 +1029,16 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		} else {
 			nonStreamResult, err := s.handleNonStreamingResponse(ctx, resp, c, account, originalModel, upstreamModel)
 			if err != nil {
+				var failoverErr *UpstreamFailoverError
+				if errors.As(err, &failoverErr) && !openAIStreamClientOutputStarted(c, false) {
+					upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(failoverErr.ResponseBody)))
+					if recovered, recoveryErr := tryRecoverInvalidEncryptedContent(upstreamMsg, failoverErr.ResponseBody); recoveryErr != nil {
+						return nil, recoveryErr
+					} else if recovered {
+						_ = resp.Body.Close()
+						continue
+					}
+				}
 				return nil, err
 			}
 			usage = nonStreamResult.usage

@@ -312,6 +312,18 @@ func isOpenAIContinuationStateError(upstreamMsg string, upstreamBody []byte) boo
 	return classifyOpenAIContinuationStateError(upstreamMsg, upstreamBody) != openAIContinuationStateErrorNone
 }
 
+// openAIContinuationStateErrorFromFailedEvent classifies a protocol-level
+// response.failed payload before it can be forwarded, matched by a generic
+// passthrough rule, or treated as an account failure. Upstreams may return this
+// terminal inside an otherwise successful HTTP or WebSocket transport.
+func openAIContinuationStateErrorFromFailedEvent(statusCode int, responseHeaders http.Header, payload []byte) *UpstreamFailoverError {
+	message := extractOpenAISSEErrorMessage(payload)
+	if classifyOpenAIContinuationStateError(message, payload) == openAIContinuationStateErrorNone {
+		return nil
+	}
+	return NewOpenAIContinuationStateUnavailableError(statusCode, responseHeaders, append([]byte(nil), payload...))
+}
+
 func isOpenAIInvalidEncryptedContentError(upstreamMsg string, upstreamBody []byte) bool {
 	return classifyOpenAIContinuationStateError(upstreamMsg, upstreamBody) == openAIContinuationStateErrorInvalidEncryptedContent
 }

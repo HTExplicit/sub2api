@@ -44,6 +44,7 @@ const (
 	openAIWSStoreDisabledConnModeOff      = "off"
 
 	openAIWSIngressStagePreviousResponseNotFound = "previous_response_not_found"
+	openAIWSIngressStageInvalidEncryptedContent  = "invalid_encrypted_content"
 	openAIWSMaxPrevResponseIDDeletePasses        = 8
 )
 
@@ -160,6 +161,17 @@ func isOpenAIWSIngressPreviousResponseNotFound(err error) bool {
 		return false
 	}
 	if strings.TrimSpace(turnErr.stage) != openAIWSIngressStagePreviousResponseNotFound {
+		return false
+	}
+	return !turnErr.wroteDownstream
+}
+
+func isOpenAIWSIngressInvalidEncryptedContent(err error) bool {
+	var turnErr *openAIWSIngressTurnError
+	if !errors.As(err, &turnErr) || turnErr == nil {
+		return false
+	}
+	if strings.TrimSpace(turnErr.stage) != openAIWSIngressStageInvalidEncryptedContent {
 		return false
 	}
 	return !turnErr.wroteDownstream

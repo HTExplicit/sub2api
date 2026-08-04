@@ -3764,10 +3764,13 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ContinuationErro
 		expectedCode      string
 	}{
 		{
-			name:              "invalid encrypted content stops without raw downstream event",
-			request:           `{"type":"response.create","model":"gpt-5.1","stream":false,"previous_response_id":"resp_invalid_encrypted","input":[{"type":"reasoning","encrypted_content":"gAAA"}]}`,
-			upstreamEvents:    []string{`{"type":"error","error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}`},
-			expectedDialCount: 1,
+			name:    "invalid encrypted content retries once then stops without raw downstream event",
+			request: `{"type":"response.create","model":"gpt-5.1","stream":false,"previous_response_id":"resp_invalid_encrypted","input":[{"type":"reasoning","encrypted_content":"gAAA"}]}`,
+			upstreamEvents: []string{
+				`{"type":"error","error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}`,
+				`{"type":"error","error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified again"}}`,
+			},
+			expectedDialCount: 2,
 			expectedCode:      "invalid_encrypted_content",
 		},
 		{
@@ -3776,6 +3779,23 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ContinuationErro
 			upstreamEvents:    []string{`{"type":"error","error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"previous response not found"}}`},
 			expectedDialCount: 1,
 			expectedCode:      "previous_response_not_found",
+		},
+		{
+			name:    "response.failed previous response recovery is bounded",
+			request: `{"type":"response.create","model":"gpt-5.1","stream":false,"previous_response_id":"resp_failed_stale","input":[{"type":"input_text","text":"continue"}]}`,
+			upstreamEvents: []string{
+				`{"type":"response.failed","response":{"error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"first failed anchor"}}}`,
+				`{"type":"response.failed","response":{"error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"second failed anchor"}}}`,
+			},
+			expectedDialCount: 2,
+			expectedCode:      "previous_response_not_found",
+		},
+		{
+			name:              "response.failed encrypted tool continuation stops without replay",
+			request:           `{"type":"response.create","model":"gpt-5.1","stream":false,"input":[{"type":"reasoning","encrypted_content":"gAAA"},{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`,
+			upstreamEvents:    []string{`{"type":"response.failed","error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}`},
+			expectedDialCount: 1,
+			expectedCode:      "invalid_encrypted_content",
 		},
 		{
 			name:    "previous response recovery is attempted once",
@@ -3924,6 +3944,10 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ContinuationErro
 				captureConns[1].mu.Unlock()
 				require.True(t, gjson.Get(firstWrite, "previous_response_id").Exists())
 				require.False(t, gjson.Get(secondWrite, "previous_response_id").Exists(), "安全恢复只能去掉续接锚点重放一次")
+				if tt.expectedCode == "invalid_encrypted_content" {
+					require.True(t, gjson.Get(firstWrite, "input.0.encrypted_content").Exists())
+					require.False(t, gjson.Get(secondWrite, "input.0.encrypted_content").Exists(), "恢复重试必须移除失效加密推理")
+				}
 			}
 		})
 	}

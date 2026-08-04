@@ -402,6 +402,45 @@ func TestOpenAIResponseFlush_FailedAndErrorEventsFlushAtBoundaries(t *testing.T)
 	})
 }
 
+func TestOpenAIResponseFlush_ContinuationFailedEventIsNeverForwarded(t *testing.T) {
+	tests := []struct {
+		name       string
+		prefix     string
+		wantPrefix string
+	}{
+		{name: "before semantic output"},
+		{
+			name:       "after semantic output",
+			prefix:     "data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n",
+			wantPrefix: "data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			failed := "data: {\"type\":\"response.failed\",\"response\":{\"error\":{\"code\":\"previous_response_not_found\",\"message\":\"previous response not found\"}}}\n\n"
+			recorder := newOpenAIResponseFlushRecorder()
+
+			result, err := runOpenAIResponseFlushTest(
+				recorder,
+				io.NopCloser(strings.NewReader(tt.prefix+failed)),
+				config.GatewayConfig{},
+			)
+
+			require.Error(t, err)
+			require.NotNil(t, result)
+			var failoverErr *UpstreamFailoverError
+			require.ErrorAs(t, err, &failoverErr)
+			require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
+			body, _ := recorder.snapshot()
+			require.Equal(t, tt.wantPrefix, body)
+			require.NotContains(t, body, "previous_response_not_found")
+			require.False(t, failoverErr.ShouldRetryNextAccount())
+			require.False(t, failoverErr.ShouldReportAccountScheduleFailure())
+		})
+	}
+}
+
 func TestOpenAIResponseFlush_ReusedTypeKeepsSSEBytesAndTerminalSemantics(t *testing.T) {
 	tests := []struct {
 		name       string
