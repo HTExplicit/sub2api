@@ -103,6 +103,7 @@ func TestReadRequestBodyWithPrealloc_RejectsUnsupportedEncoding(t *testing.T) {
 	_, err := ReadRequestBodyWithPrealloc(req)
 	if err == nil {
 		t.Fatal("expected error for unsupported encoding, got nil")
+		return
 	}
 	if !strings.Contains(err.Error(), "br") {
 		t.Fatalf("error should mention encoding, got %v", err)

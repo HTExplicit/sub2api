@@ -947,6 +947,7 @@ func TestOpenAISelectAccountForModelWithExclusions_NoModelSupport(t *testing.T) 
 	acc, err := svc.SelectAccountForModelWithExclusions(context.Background(), nil, "", "gpt-4", nil)
 	if err == nil {
 		t.Fatalf("expected error for unsupported model")
+		return
 	}
 	if acc != nil {
 		t.Fatalf("expected nil account for unsupported model")
@@ -1185,6 +1186,7 @@ func TestOpenAISelectAccountForModelWithExclusions_NoAccounts(t *testing.T) {
 	acc, err := svc.SelectAccountForModelWithExclusions(context.Background(), nil, "", "", nil)
 	if err == nil {
 		t.Fatalf("expected error for no accounts")
+		return
 	}
 	if acc != nil {
 		t.Fatalf("expected nil account")
