@@ -1195,7 +1195,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 							if refusalOutput != nil {
 								refusalOutput.DropTurn()
 								if !replaySafe {
-									_ = refusalOutput.WriteRetryableFailure(ctx)
+									_ = refusalOutput.WriteRetryableFailure(ctx, payload)
 								}
 							}
 							return newOpenAIWSCyberRecoveryError(payload, handshakeHeaders, replaySafe)

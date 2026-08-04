@@ -901,6 +901,22 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				})
 				return nil, NewOpenAIContinuationStateUnavailableError(resp.StatusCode, resp.Header, respBody)
 			}
+			if isOpenAIOpaqueContinuationToolChainBadRequest(resp.StatusCode, body, upstreamMsg, respBody) {
+				// Some compatibility upstreams collapse continuation-state failures
+				// into a code-less 400.  The encrypted reasoning + tool-output shape
+				// proves this is an upstream-bound continuation, not an account fault.
+				// Do not strip/replay the tool output or let it fan out across accounts.
+				appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+					Platform:           account.Platform,
+					AccountID:          account.ID,
+					AccountName:        account.Name,
+					UpstreamStatusCode: resp.StatusCode,
+					UpstreamRequestID:  resp.Header.Get("x-request-id"),
+					Kind:               "continuation_state",
+					Message:            OpenAIContinuationStateUnavailableClientMessage,
+				})
+				return nil, NewOpenAIContinuationStateUnavailableError(resp.StatusCode, resp.Header, respBody)
+			}
 			if retryBody, reason, changed, retryErr := normalizeOpenAIResponsesRejectedFieldRetryBody(resp.StatusCode, body, respBody); retryErr != nil {
 				return nil, fmt.Errorf("normalize rejected Responses field retry body: %w", retryErr)
 			} else if changed && rejectedFieldRetryState.Allow(retryBody) {
@@ -909,6 +925,12 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				reqBody = nil
 				logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Retrying non-WSv2 request after %s (account: %s)", reason, account.Name)
 				continue
+			}
+			if reqStream && isOpenAIOpaqueCompatibilityBadRequest(resp.StatusCode, upstreamMsg, respBody) {
+				// Do not let a pre-first-byte generic 400 commit a JSON response.
+				// Return a request-scoped terminal instead so the handler can emit a
+				// single protocol-valid response.failed event for stream:true clients.
+				return nil, newOpenAIOpaqueStreamPreflightError(resp.StatusCode, resp.Header, respBody)
 			}
 			if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody) {
 				upstreamDetail := ""

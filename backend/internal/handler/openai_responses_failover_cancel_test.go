@@ -78,6 +78,33 @@ func (u *openAIResponsesContinuationStateUpstream) calls() []int64 {
 	return append([]int64(nil), u.accountIDs...)
 }
 
+// openAIResponsesGenericBadRequestUpstream models a compatibility upstream
+// that produces a non-semantic 400 before it writes any stream bytes.  This is
+// deliberately not recognized as a continuation-state error: the handler must
+// still uphold the client-requested Responses streaming contract.
+type openAIResponsesGenericBadRequestUpstream struct {
+	service.HTTPUpstream
+	mu         sync.Mutex
+	accountIDs []int64
+}
+
+func (u *openAIResponsesGenericBadRequestUpstream) Do(_ *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
+	u.mu.Lock()
+	u.accountIDs = append(u.accountIDs, accountID)
+	u.mu.Unlock()
+	return &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(bytes.NewBufferString(`{"error":{"message":"must-not-leak"}}`)),
+	}, nil
+}
+
+func (u *openAIResponsesGenericBadRequestUpstream) calls() []int64 {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return append([]int64(nil), u.accountIDs...)
+}
+
 func newOpenAIResponsesFailoverTestHandler(t *testing.T, upstream service.HTTPUpstream) *OpenAIGatewayHandler {
 	t.Helper()
 	accounts := []service.Account{
@@ -154,11 +181,16 @@ func newOpenAIResponsesFailoverTestContext(t *testing.T, ctx context.Context) (*
 
 func newOpenAIResponsesFailoverTestContextWithStream(t *testing.T, ctx context.Context, stream bool) (*gin.Context, *httptest.ResponseRecorder) {
 	t.Helper()
-	groupID := int64(3131)
 	body := []byte(`{"model":"gpt-5.1","stream":false,"input":"hello"}`)
 	if stream {
 		body = []byte(`{"model":"gpt-5.1","stream":true,"input":"hello"}`)
 	}
+	return newOpenAIResponsesFailoverTestContextWithBody(t, ctx, body)
+}
+
+func newOpenAIResponsesFailoverTestContextWithBody(t *testing.T, ctx context.Context, body []byte) (*gin.Context, *httptest.ResponseRecorder) {
+	t.Helper()
+	groupID := int64(3131)
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
 	if ctx != nil {
 		req = req.WithContext(ctx)
@@ -275,4 +307,60 @@ func TestOpenAIGatewayHandlerResponses_StreamingContinuationStateEmitsTerminalSS
 	require.Equal(t, service.OpenAIContinuationStateUnavailableCode, errObj["code"])
 	require.Equal(t, service.OpenAIContinuationStateUnavailableClientMessage, errObj["message"])
 	require.NotContains(t, rec.Body.String(), "previous response not found")
+}
+
+// A generic upstream 400 must use the same terminal framing.  It does not get
+// reclassified as continuation state, but a stream:true client still cannot
+// consume a preflight JSON error as a completed Responses stream.
+func TestOpenAIGatewayHandlerResponses_StreamingGenericPreflightErrorEmitsTerminalSSEBeforeFirstByte(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstream := &openAIResponsesGenericBadRequestUpstream{}
+	handler := newOpenAIResponsesFailoverTestHandler(t, upstream)
+	c, rec := newOpenAIResponsesFailoverTestContextWithStream(t, nil, true)
+
+	handler.Responses(c)
+
+	require.Equal(t, []int64{1}, upstream.calls())
+	require.Equal(t, http.StatusOK, rec.Code, "streaming terminal must be delivered in-band as SSE")
+	require.Contains(t, rec.Header().Get("Content-Type"), "text/event-stream")
+	require.Equal(t, 1, strings.Count(rec.Body.String(), "event: response.failed\n"), "emit exactly one terminal event")
+	require.NotContains(t, rec.Body.String(), "event: response.completed\n")
+	require.NotContains(t, rec.Body.String(), "must-not-leak")
+
+	resp, errObj := parseResponsesFailedSSE(t, rec.Body.String())
+	require.Equal(t, "failed", resp["status"])
+	require.NotEmpty(t, errObj["code"])
+}
+
+// A compatibility proxy may erase a continuation-state code completely.  The
+// encrypted reasoning + function_call_output combination is not safely
+// replayable, so the generic 400 must become the same request-scoped terminal
+// rather than affecting the selected account or emitting a JSON body.
+func TestOpenAIGatewayHandlerResponses_StreamingOpaqueContinuationToolChainStopsWithoutFailover(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstream := &openAIResponsesGenericBadRequestUpstream{}
+	handler := newOpenAIResponsesFailoverTestHandler(t, upstream)
+	body := []byte(`{"model":"gpt-5.1","stream":true,"input":[{"type":"reasoning","encrypted_content":"opaque-test-carrier"},{"type":"function_call","call_id":"call_opaque","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_opaque","output":"{}"}]}`)
+	c, rec := newOpenAIResponsesFailoverTestContextWithBody(t, nil, body)
+
+	handler.Responses(c)
+
+	require.Equal(t, []int64{1}, upstream.calls(), "opaque encrypted tool continuations must not select account 2")
+	require.Equal(t, http.StatusOK, rec.Code, "streaming terminal must be delivered in-band as SSE")
+	require.Contains(t, rec.Header().Get("Content-Type"), "text/event-stream")
+	require.Equal(t, 1, strings.Count(rec.Body.String(), "event: response.failed\n"), "emit exactly one terminal event")
+	require.NotContains(t, rec.Body.String(), "must-not-leak")
+
+	_, errObj := parseResponsesFailedSSE(t, rec.Body.String())
+	require.Equal(t, service.OpenAIContinuationStateUnavailableCode, errObj["code"])
+	require.Equal(t, service.OpenAIContinuationStateUnavailableClientMessage, errObj["message"])
+
+	rawEvents, ok := c.Get(service.OpsUpstreamErrorsKey)
+	require.True(t, ok)
+	events, ok := rawEvents.([]*service.OpsUpstreamErrorEvent)
+	require.True(t, ok)
+	require.Len(t, events, 1)
+	require.Equal(t, "continuation_state", events[0].Kind)
 }

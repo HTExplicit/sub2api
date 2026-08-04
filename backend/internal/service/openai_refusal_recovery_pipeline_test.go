@@ -210,7 +210,7 @@ func TestOpenAIHTTPPassthroughCyberPolicyReturnsFailoverBeforeWriting(t *testing
 	require.Equal(t, 7, mark.UpstreamInTok)
 }
 
-func TestOpenAIHTTPPassthroughCyberPolicyPromptRetriesBeforeRewrite(t *testing.T) {
+func TestOpenAIHTTPPassthroughCyberPolicyUsesAccountFailoverWhenRewriteEnabled(t *testing.T) {
 	svc := newOpenAIRefusalRecoveryPipelineService(t, true, true)
 	c, recorder := newOpenAIRefusalRecoveryTestContext()
 	resp := &http.Response{StatusCode: http.StatusBadRequest, Header: http.Header{"X-Request-Id": []string{"req_cyber"}}}
@@ -220,12 +220,12 @@ func TestOpenAIHTTPPassthroughCyberPolicyPromptRetriesBeforeRewrite(t *testing.T
 
 	var failoverErr *UpstreamFailoverError
 	require.ErrorAs(t, err, &failoverErr)
-	require.True(t, failoverErr.IsOpenAIRefusalRecovery())
+	require.True(t, failoverErr.IsOpenAICyberFailover())
 	require.Empty(t, recorder.Body.String())
 	require.False(t, c.Writer.Written())
 }
 
-func TestOpenAIHTTPPassthroughCyberPolicyWritesReplacementWhenRewriteEnabled(t *testing.T) {
+func TestOpenAIHTTPPassthroughCyberPolicyNeverFakesCompletion(t *testing.T) {
 	svc := newOpenAIRefusalRecoveryPipelineService(t, true, true)
 	c, recorder := newOpenAIRefusalRecoveryTestContext()
 	MarkOpenAIRefusalPromptRepairAttempted(c)
@@ -235,19 +235,14 @@ func TestOpenAIHTTPPassthroughCyberPolicyWritesReplacementWhenRewriteEnabled(t *
 
 	err := svc.handleErrorResponsePassthrough(context.Background(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI}, requestBody, body)
 
-	require.Error(t, err)
-	require.Equal(t, http.StatusOK, recorder.Code)
-	require.True(t, IsResponseCommitted(c))
-	stream := recorder.Body.String()
-	require.Contains(t, stream, "继续当前任务")
-	require.Contains(t, stream, `"type":"response.completed"`)
-	require.Contains(t, stream, `"total_tokens":7`)
-	require.NotContains(t, stream, "response.failed")
-	require.NotContains(t, stream, "cyber_policy")
-	require.NotContains(t, stream, "blocked")
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.True(t, failoverErr.IsOpenAICyberFailover())
+	require.Empty(t, recorder.Body.String())
+	require.False(t, IsResponseCommitted(c))
 }
 
-func TestOpenAIHTTPCyberPolicyWritesReplacementWhenRewriteEnabled(t *testing.T) {
+func TestOpenAIHTTPCyberPolicyNeverFakesCompletion(t *testing.T) {
 	svc := newOpenAIRefusalRecoveryPipelineService(t, true, true)
 	c, recorder := newOpenAIRefusalRecoveryTestContext()
 	MarkOpenAIRefusalPromptRepairAttempted(c)
@@ -261,16 +256,11 @@ func TestOpenAIHTTPCyberPolicyWritesReplacementWhenRewriteEnabled(t *testing.T) 
 	result, err := svc.handleErrorResponse(context.Background(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI}, requestBody)
 
 	require.Nil(t, result)
-	require.Error(t, err)
-	require.Equal(t, http.StatusOK, recorder.Code)
-	require.True(t, IsResponseCommitted(c))
-	stream := recorder.Body.String()
-	require.Contains(t, stream, "继续当前任务")
-	require.Contains(t, stream, `"type":"response.completed"`)
-	require.Contains(t, stream, `"total_tokens":7`)
-	require.NotContains(t, stream, "response.failed")
-	require.NotContains(t, stream, "cyber_policy")
-	require.NotContains(t, stream, "blocked")
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.True(t, failoverErr.IsOpenAICyberFailover())
+	require.Empty(t, recorder.Body.String())
+	require.False(t, IsResponseCommitted(c))
 }
 
 func TestOpenAIHTTPPassthroughNonCyberErrorDoesNotTriggerRecoveryFailover(t *testing.T) {
@@ -285,6 +275,108 @@ func TestOpenAIHTTPPassthroughNonCyberErrorDoesNotTriggerRecoveryFailover(t *tes
 	require.False(t, IsOpenAIRefusalRecoveryFailover(err))
 	require.True(t, recorder.Body.Len() > 0 || c.Writer.Written())
 	require.Nil(t, GetOpsCyberPolicy(c))
+}
+
+func TestOpenAINonStreamingCyberPolicyReturnsFailoverBeforeWriting(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(*OpenAIGatewayService, context.Context, *http.Response, *gin.Context) (any, error)
+	}{
+		{
+			name: "translated",
+			run: func(svc *OpenAIGatewayService, ctx context.Context, resp *http.Response, c *gin.Context) (any, error) {
+				return svc.handleNonStreamingResponse(ctx, resp, c, &Account{ID: 1, Platform: PlatformOpenAI}, "gpt-5.6-sol", "gpt-5.6-sol")
+			},
+		},
+		{
+			name: "passthrough",
+			run: func(svc *OpenAIGatewayService, ctx context.Context, resp *http.Response, c *gin.Context) (any, error) {
+				return svc.handleNonStreamingResponsePassthrough(ctx, resp, c, "gpt-5.6-sol", "gpt-5.6-sol")
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := newOpenAIRefusalRecoveryPipelineService(t, true, false)
+			c, recorder := newOpenAIRefusalRecoveryTestContext()
+			resp := &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body: io.NopCloser(strings.NewReader(
+					`{"id":"resp_json_cyber","object":"response","status":"failed","output":[],"error":{"code":"cyber_policy","message":"blocked"},"usage":{"input_tokens":7,"output_tokens":0,"total_tokens":7}}`,
+				)),
+			}
+
+			result, err := tc.run(svc, context.Background(), resp, c)
+
+			require.Nil(t, result)
+			var failoverErr *UpstreamFailoverError
+			require.ErrorAs(t, err, &failoverErr)
+			require.True(t, failoverErr.IsOpenAICyberFailover())
+			require.Empty(t, recorder.Body.String())
+			require.False(t, c.Writer.Written())
+			mark := GetOpsCyberPolicy(c)
+			require.NotNil(t, mark)
+			require.Equal(t, 7, mark.UpstreamInTok)
+		})
+	}
+}
+
+func TestOpenAIStreamingCyberPolicyPassesThroughWhenSwitchDisabled(t *testing.T) {
+	svc := newOpenAIRefusalRecoveryPipelineService(t, false, false)
+	c, recorder := newOpenAIRefusalRecoveryTestContext()
+	upstream := strings.Join([]string{
+		`data: {"type":"response.created","response":{"id":"resp_cyber_disabled"}}`,
+		``,
+		`data: {"type":"response.failed","response":{"id":"resp_cyber_disabled","status":"failed","error":{"code":"cyber_policy","message":"blocked"},"usage":{"input_tokens":5,"output_tokens":0,"total_tokens":5}}}`,
+		``,
+	}, "\n")
+	resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(upstream))}
+
+	result, err := svc.handleStreamingResponsePassthrough(context.Background(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI}, time.Now(), "", "")
+
+	require.Error(t, err)
+	require.NotNil(t, result)
+	require.Contains(t, recorder.Body.String(), "cyber_policy")
+	require.Contains(t, recorder.Body.String(), "blocked")
+}
+
+func TestOpenAINonStreamingSSECyberPolicyReturnsFailover(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(*OpenAIGatewayService, *http.Response, *gin.Context) (any, error)
+	}{
+		{
+			name: "translated",
+			run: func(svc *OpenAIGatewayService, resp *http.Response, c *gin.Context) (any, error) {
+				return svc.handleNonStreamingResponse(context.Background(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI}, "gpt-5.6-sol", "gpt-5.6-sol")
+			},
+		},
+		{
+			name: "passthrough",
+			run: func(svc *OpenAIGatewayService, resp *http.Response, c *gin.Context) (any, error) {
+				return svc.handleNonStreamingResponsePassthrough(context.Background(), resp, c, "gpt-5.6-sol", "gpt-5.6-sol")
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := newOpenAIRefusalRecoveryPipelineService(t, true, false)
+			c, recorder := newOpenAIRefusalRecoveryTestContext()
+			upstream := "data: " + `{"type":"response.failed","response":{"id":"resp_sse_json_cyber","status":"failed","error":{"code":"cyber_policy","message":"blocked"},"usage":{"input_tokens":6,"output_tokens":0,"total_tokens":6}}}` + "\n\n"
+			resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(upstream))}
+
+			result, err := tc.run(svc, resp, c)
+
+			require.Nil(t, result)
+			var failoverErr *UpstreamFailoverError
+			require.ErrorAs(t, err, &failoverErr)
+			require.True(t, failoverErr.IsOpenAICyberFailover())
+			require.Empty(t, recorder.Body.String())
+		})
+	}
 }
 
 func TestOpenAIStreamingPassthroughCyberPolicyReturnsFailoverBeforeSemanticOutput(t *testing.T) {
@@ -306,7 +398,7 @@ func TestOpenAIStreamingPassthroughCyberPolicyReturnsFailoverBeforeSemanticOutpu
 	require.Equal(t, 11, mark.UpstreamInTok)
 }
 
-func TestOpenAIStreamingCyberPolicyReplacementCompletesWithoutFailover(t *testing.T) {
+func TestOpenAIStreamingCyberPolicyFailsOverBeforeSemanticOutputEvenWithRewrite(t *testing.T) {
 	tests := []struct {
 		name string
 		run  func(*OpenAIGatewayService, context.Context, *http.Response, *gin.Context, *Account) (*OpenAIUsage, error)
@@ -350,15 +442,12 @@ func TestOpenAIStreamingCyberPolicyReplacementCompletesWithoutFailover(t *testin
 
 			usage, err := tc.run(svc, context.Background(), resp, c, account)
 
-			require.NoError(t, err)
+			var failoverErr *UpstreamFailoverError
+			require.ErrorAs(t, err, &failoverErr)
+			require.True(t, failoverErr.IsOpenAICyberFailover())
 			require.NotNil(t, usage)
 			require.Equal(t, 11, usage.InputTokens)
-			body := recorder.Body.String()
-			require.Contains(t, body, "继续当前任务")
-			require.Contains(t, body, `"type":"response.completed"`)
-			require.NotContains(t, body, "response.failed")
-			require.NotContains(t, body, "cyber_policy")
-			require.NotContains(t, body, "blocked")
+			require.Empty(t, recorder.Body.String())
 			mark := GetOpsCyberPolicy(c)
 			require.NotNil(t, mark)
 			require.Equal(t, 11, mark.UpstreamInTok)
@@ -366,7 +455,7 @@ func TestOpenAIStreamingCyberPolicyReplacementCompletesWithoutFailover(t *testin
 	}
 }
 
-func TestOpenAIStreamingCyberPolicyReplacementAfterReasoningUsesMessageID(t *testing.T) {
+func TestOpenAIStreamingCyberPolicyAfterReasoningWritesNeutralFailure(t *testing.T) {
 	tests := []struct {
 		name string
 		run  func(*OpenAIGatewayService, context.Context, *http.Response, *gin.Context, *Account) (*OpenAIUsage, error)
@@ -395,7 +484,7 @@ func TestOpenAIStreamingCyberPolicyReplacementAfterReasoningUsesMessageID(t *tes
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			svc := newOpenAIRefusalRecoveryPipelineService(t, true, true)
+			svc := newOpenAIRefusalRecoveryPipelineService(t, true, false)
 			c, recorder := newOpenAIRefusalRecoveryTestContext()
 			MarkOpenAIRefusalPromptRepairAttempted(c)
 			account := &Account{ID: 1, Platform: PlatformOpenAI}
@@ -421,21 +510,25 @@ func TestOpenAIStreamingCyberPolicyReplacementAfterReasoningUsesMessageID(t *tes
 
 			usage, err := tc.run(svc, context.Background(), resp, c, account)
 
-			require.NoError(t, err)
+			require.Error(t, err)
+			var failoverErr *UpstreamFailoverError
+			require.False(t, errors.As(err, &failoverErr))
 			require.NotNil(t, usage)
 			require.Equal(t, 11, usage.InputTokens)
 			body := recorder.Body.String()
-			require.Contains(t, body, "继续当前任务")
-			require.Contains(t, body, `"id":"msg_refusal_recovery_`)
-			require.NotContains(t, body, `"id":"rs_cyber_reasoning_pipeline"`)
-			require.NotContains(t, body, `"item_id":"rs_cyber_reasoning_pipeline"`)
-			require.NotContains(t, body, "response.failed")
+			require.Contains(t, body, "Reasoning summary")
+			require.Contains(t, body, `"id":"resp_cyber_reasoning_pipeline"`)
+			require.Contains(t, body, `"code":"upstream_retry_exhausted"`)
+			require.Contains(t, body, `"total_tokens":12`)
+			require.Equal(t, 1, strings.Count(body, `"type":"response.failed"`))
+			require.NotContains(t, body, `"type":"response.completed"`)
 			require.NotContains(t, body, "cyber_policy")
+			require.NotContains(t, body, "blocked")
 		})
 	}
 }
 
-func TestOpenAIStreamingCyberPolicyReplacementCompletesEarlyRewrite(t *testing.T) {
+func TestOpenAIStreamingCyberPolicyAfterEarlyRefusalOutputWritesNeutralFailure(t *testing.T) {
 	tests := []struct {
 		name string
 		run  func(*OpenAIGatewayService, context.Context, *http.Response, *gin.Context, *Account) (*OpenAIUsage, error)
@@ -481,14 +574,15 @@ func TestOpenAIStreamingCyberPolicyReplacementCompletesEarlyRewrite(t *testing.T
 
 			usage, err := tc.run(svc, context.Background(), resp, c, account)
 
-			require.NoError(t, err)
+			require.Error(t, err)
 			require.NotNil(t, usage)
 			require.Equal(t, 12, usage.InputTokens)
 			body := recorder.Body.String()
 			require.Contains(t, body, "继续当前任务")
-			require.Contains(t, body, `"type":"response.completed"`)
+			require.Contains(t, body, `"code":"upstream_retry_exhausted"`)
+			require.Equal(t, 1, strings.Count(body, `"type":"response.failed"`))
 			require.NotContains(t, body, "I cannot")
-			require.NotContains(t, body, "response.failed")
+			require.NotContains(t, body, `"type":"response.completed"`)
 			require.NotContains(t, body, "cyber_policy")
 			require.NotContains(t, body, "blocked")
 		})

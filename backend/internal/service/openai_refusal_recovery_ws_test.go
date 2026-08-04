@@ -236,8 +236,28 @@ func TestOpenAIRefusalRecoveryWSOutputWritesRetryableFailureWithoutBufferedFrame
 
 	require.Len(t, written, 1)
 	require.Equal(t, "response.failed", gjson.GetBytes(written[0], "type").String())
-	require.Equal(t, OpenAICyberFailoverExhaustedCode, gjson.GetBytes(written[0], "response.error.code").String())
+	require.Equal(t, OpenAIUpstreamRetryExhaustedCode, gjson.GetBytes(written[0], "response.error.code").String())
 	require.True(t, gjson.GetBytes(written[0], "response.error.retryable").Bool())
 	require.NotContains(t, string(written[0]), "cyber_policy")
 	require.False(t, output.SemanticOutputStarted())
+}
+
+func TestOpenAIRefusalRecoveryWSOutputSanitizesRetryableFailureAndPreservesUsage(t *testing.T) {
+	var written [][]byte
+	output := newOpenAIRefusalRecoveryWSOutput(nil, true, func(_ context.Context, _ coderws.MessageType, payload []byte) error {
+		written = append(written, append([]byte(nil), payload...))
+		return nil
+	}, nil)
+	upstream := []byte(`{"type":"response.failed","response":{"id":"resp_ws_policy_failure","object":"response","status":"failed","output":[{"id":"rs_1","type":"reasoning"}],"error":{"code":"cyber_policy","message":"blocked"},"usage":{"input_tokens":17,"output_tokens":2,"total_tokens":19}}}`)
+
+	require.NoError(t, output.WriteRetryableFailure(context.Background(), upstream))
+
+	require.Len(t, written, 1)
+	require.Equal(t, "response.failed", gjson.GetBytes(written[0], "type").String())
+	require.Equal(t, "resp_ws_policy_failure", gjson.GetBytes(written[0], "response.id").String())
+	require.Equal(t, int64(19), gjson.GetBytes(written[0], "response.usage.total_tokens").Int())
+	require.Equal(t, "rs_1", gjson.GetBytes(written[0], "response.output.0.id").String())
+	require.Equal(t, OpenAIUpstreamRetryExhaustedCode, gjson.GetBytes(written[0], "response.error.code").String())
+	require.NotContains(t, string(written[0]), "cyber_policy")
+	require.NotContains(t, string(written[0]), "blocked")
 }

@@ -55,8 +55,8 @@ func TestUpdateSettingsRejectsOpenAICyberFailoverWhenSessionBlockEnabled(t *test
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
-func TestUpdateSettingsAllowsDormantOpenAIRefusalRecoveryChildren(t *testing.T) {
-	h, repo := newStepUpSwitchTestHandler(t, map[string]string{
+func TestUpdateSettingsRejectsIndependentCyberFailoverSessionConflict(t *testing.T) {
+	h, _ := newStepUpSwitchTestHandler(t, map[string]string{
 		service.SettingKeyCyberSessionBlockEnabled: "true",
 	})
 	rec := doUpdateSettings(t, h, map[string]any{
@@ -67,10 +67,7 @@ func TestUpdateSettingsAllowsDormantOpenAIRefusalRecoveryChildren(t *testing.T) 
 		"openai_refusal_replacement":      "",
 	}, nil)
 
-	require.Equal(t, http.StatusOK, rec.Code)
-	require.Equal(t, "false", repo.values[service.SettingKeyOpenAIRefusalRecoveryEnabled])
-	require.Equal(t, "true", repo.values[service.SettingKeyOpenAICyberFailoverEnabled])
-	require.Equal(t, "true", repo.values[service.SettingKeyOpenAIRefusalRewriteEnabled])
+	require.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
 func TestDiffSettingsReportsOpenAIRefusalRecoveryFieldsWithoutContent(t *testing.T) {

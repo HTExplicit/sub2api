@@ -179,12 +179,18 @@ func (o *openAIRefusalRecoveryWSOutput) SemanticOutputStarted() bool {
 	return o != nil && o.semanticWrite
 }
 
-func (o *openAIRefusalRecoveryWSOutput) WriteRetryableFailure(ctx context.Context) error {
+func (o *openAIRefusalRecoveryWSOutput) WriteRetryableFailure(ctx context.Context, upstreamPayload ...[]byte) error {
 	if o == nil {
 		return nil
 	}
 	o.dropTurnBuffer()
-	err := o.write(ctx, coderws.MessageText, OpenAIWSRetryableFailureEvent())
+	payload := OpenAIWSRetryableFailureEvent()
+	if len(upstreamPayload) > 0 {
+		if sanitized, ok := sanitizeOpenAICyberPolicyFailedEvent(upstreamPayload[0]); ok {
+			payload = sanitized
+		}
+	}
+	err := o.write(ctx, coderws.MessageText, payload)
 	o.resetTurn()
 	return err
 }
@@ -230,5 +236,5 @@ func newOpenAIWSCyberRecoveryError(payload []byte, headers http.Header, replaySa
 }
 
 func OpenAIWSRetryableFailureEvent() []byte {
-	return []byte(`{"type":"response.failed","response":{"id":"resp_retryable_failure","object":"response","status":"failed","output":[],"error":{"code":"cyber_failover_exhausted","message":"Temporary upstream failure","retryable":true}}}`)
+	return []byte(`{"type":"response.failed","response":{"id":"resp_retryable_failure","object":"response","status":"failed","output":[],"error":{"type":"server_error","code":"upstream_retry_exhausted","message":"Temporary upstream failure","retryable":true}}}`)
 }

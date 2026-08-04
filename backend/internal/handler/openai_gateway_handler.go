@@ -1394,7 +1394,7 @@ func (h *OpenAIGatewayHandler) handleAnthropicFailoverExhausted(c *gin.Context, 
 			c,
 			http.StatusServiceUnavailable,
 			"api_error",
-			service.OpenAICyberFailoverExhaustedCode,
+			service.OpenAIUpstreamRetryExhaustedCode,
 			failoverErr.ClientMessage,
 			streamStarted,
 			true,
@@ -2624,6 +2624,12 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 		)
 		return
 	}
+	if failoverErr.IsOpenAIOpaqueStreamPreflight() {
+		// Only the service-classified code-less compatibility 400 needs an
+		// in-band pre-first-byte terminal.  Do not apply this to normal 429/4xx
+		// responses: those retain their established HTTP semantics.
+		streamStarted = streamStarted || inboundResponsesStreamRequested(c)
+	}
 	copyFailoverRetryAfter(c, failoverErr.ResponseHeaders)
 	if failoverErr.IsOpenAIRefusalRecovery() {
 		service.SetOpsUpstreamError(c, http.StatusServiceUnavailable, failoverErr.ClientMessage, "")
@@ -2632,7 +2638,7 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 				c,
 				http.StatusServiceUnavailable,
 				"server_error",
-				service.OpenAICyberFailoverExhaustedCode,
+				service.OpenAIUpstreamRetryExhaustedCode,
 				failoverErr.ClientMessage,
 				streamStarted,
 				false,

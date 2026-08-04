@@ -596,11 +596,19 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 					UpstreamInTok:  usage.InputTokens,
 					UpstreamOutTok: usage.OutputTokens,
 				})
-				if refusalRuntime.CyberFailoverEnabled() && !wroteDownstream {
-					if refusalOutput != nil {
-						refusalOutput.DropTurn()
+				if refusalRuntime.CyberFailoverEnabled() {
+					if !wroteDownstream {
+						if refusalOutput != nil {
+							refusalOutput.DropTurn()
+						}
+						return nil, NewOpenAICyberFailoverError(message, lease.HandshakeHeaders())
 					}
-					return nil, NewOpenAICyberFailoverError(message, lease.HandshakeHeaders())
+					if sanitized, ok := sanitizeOpenAICyberPolicyFailedEvent(message); ok {
+						message = sanitized
+						if refusalOutput != nil {
+							refusalOutput.DropTurn()
+						}
+					}
 				}
 			}
 		}

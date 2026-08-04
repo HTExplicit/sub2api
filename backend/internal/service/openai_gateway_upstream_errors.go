@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -317,6 +316,115 @@ func isOpenAIInvalidEncryptedContentError(upstreamMsg string, upstreamBody []byt
 	return classifyOpenAIContinuationStateError(upstreamMsg, upstreamBody) == openAIContinuationStateErrorInvalidEncryptedContent
 }
 
+// openAIOpaqueStreamPreflightReason identifies a stream:true request that a
+// compatibility upstream rejected with an otherwise unclassified 400 before it
+// emitted any Responses event.  It is request-scoped: changing accounts cannot
+// make an opaque client request valid, and treating it as an account failure
+// would contaminate scheduler health with a request-local condition.
+const openAIOpaqueStreamPreflightReason = GatewayFailureReason("openai_opaque_stream_preflight")
+
+// isOpenAIOpaqueCompatibilityBadRequest detects the narrow compatibility
+// wrapper shape where an upstream exposes only a generic 400.  Explicit error
+// codes and the semantic cases handled elsewhere deliberately remain on their
+// existing paths; this is only the no-code fallback needed to preserve the
+// Responses streaming contract without retrying or penalizing an account.
+func isOpenAIOpaqueCompatibilityBadRequest(statusCode int, upstreamMsg string, upstreamBody []byte) bool {
+	if statusCode != http.StatusBadRequest {
+		return false
+	}
+	if classifyOpenAIContinuationStateError(upstreamMsg, upstreamBody) != openAIContinuationStateErrorNone {
+		return false
+	}
+	if hasOpenAIUpstreamStructuredErrorCode(upstreamBody) {
+		return false
+	}
+	if isOpenAIContextWindowError(upstreamMsg, upstreamBody) ||
+		isOpenAITransientProcessingError(statusCode, upstreamMsg, upstreamBody) {
+		return false
+	}
+	return true
+}
+
+func hasOpenAIUpstreamStructuredErrorCode(upstreamBody []byte) bool {
+	if strings.TrimSpace(extractUpstreamErrorCode(upstreamBody)) != "" {
+		return true
+	}
+	for _, path := range []string{
+		"error.code",
+		"response.error.code",
+		"code",
+		"response.code",
+	} {
+		if strings.TrimSpace(gjson.GetBytes(upstreamBody, path).String()) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// isOpenAIOpaqueContinuationToolChainBadRequest handles an upstream that has
+// removed the normal continuation-state code/message from a 400.  The request
+// shape is intentionally strict: an encrypted reasoning carrier plus a
+// function_call_output is an upstream-bound tool continuation and cannot be
+// safely replayed after its state disappears.  The caller must terminate it;
+// it must not strip the tool output, switch accounts, or downgrade health.
+func isOpenAIOpaqueContinuationToolChainBadRequest(
+	statusCode int,
+	requestBody []byte,
+	upstreamMsg string,
+	upstreamBody []byte,
+) bool {
+	if !isOpenAIOpaqueCompatibilityBadRequest(statusCode, upstreamMsg, upstreamBody) {
+		return false
+	}
+	if !ValidateFunctionCallOutputContextBytes(requestBody).HasFunctionCallOutput {
+		return false
+	}
+
+	input := parseRawJSONView(requestBody).Get("input")
+	if !input.IsArray() {
+		return false
+	}
+	hasEncryptedContinuationItem := false
+	input.ForEach(func(_, item gjson.Result) bool {
+		if !item.IsObject() {
+			return true
+		}
+		switch strings.TrimSpace(item.Get("type").String()) {
+		case "reasoning", "compaction", "compaction_summary":
+			if encrypted := strings.TrimSpace(item.Get("encrypted_content").String()); encrypted != "" {
+				hasEncryptedContinuationItem = true
+				return false
+			}
+		}
+		return true
+	})
+	return hasEncryptedContinuationItem
+}
+
+func newOpenAIOpaqueStreamPreflightError(
+	statusCode int,
+	responseHeaders http.Header,
+	responseBody []byte,
+) *UpstreamFailoverError {
+	return &UpstreamFailoverError{
+		StatusCode:                   statusCode,
+		ResponseBody:                 responseBody,
+		ResponseHeaders:              responseHeaders.Clone(),
+		Scope:                        GatewayFailureScopeRequest,
+		Reason:                       openAIOpaqueStreamPreflightReason,
+		NextAccountAction:            NextAccountStop,
+		SuppressAccountHealthPenalty: true,
+	}
+}
+
+// IsOpenAIOpaqueStreamPreflight reports the bounded no-code compatibility
+// wrapper that must be framed as a Responses terminal before any upstream
+// stream byte exists.  It is intentionally distinct from normal HTTP errors.
+func (e *UpstreamFailoverError) IsOpenAIOpaqueStreamPreflight() bool {
+	return e != nil && e.Reason == openAIOpaqueStreamPreflightReason
+}
+
 func isOpenAIRequestBodyTooLargeError(statusCode int, upstreamMsg string, upstreamBody []byte) bool {
 	return statusCode == http.StatusRequestEntityTooLarge && !isOpenAIContextWindowError(upstreamMsg, upstreamBody)
 }
@@ -433,23 +541,12 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 	body := s.readUpstreamErrorBody(resp)
 	body = s.redactAgentIdentitySensitiveBody(ctx, account, body)
 
-	// cyber_policy 不冷却账号，并保留内部标记供 handler 事后写风控/邮件。Responses
-	// 恢复在首次命中时先触发一次带修复提示的重试；重试后仍失败才生成配置的完成响应。
+	// cyber_policy 不冷却账号，并保留内部标记供 handler 事后写风控/邮件。
+	// 开关开启时只做请求级账号 failover；关闭时维持原始上游透传。
 	if hit, _, cyberMsg := detectOpenAICyberPolicy(body); hit {
 		markOpenAICyberPolicyFromResponse(c, resp.StatusCode, body)
 		if isOpenAIRefusalRecoveryResponsesRequest(c) {
 			runtime := s.openAIRefusalRecoveryRuntime(ctx)
-			if openAIRefusalShouldPromptRetry(c, runtime) {
-				return nil, NewOpenAICyberFailoverError(body, resp.Header)
-			}
-			if runtime.RewriteEnabled() {
-				if replaceErr := writeOpenAIRefusalRecoveryFailureReplacement(c, requestBody, body, runtime.Matcher.Replacement()); replaceErr == nil {
-					MarkResponseCommitted(c)
-					return nil, errors.New("openai cyber policy replaced with configured recovery response")
-				} else {
-					logger.FromContext(ctx).Warn("openai.refusal_recovery_cyber_replace_failed", zap.String("transport", "http"), zap.Error(replaceErr))
-				}
-			}
 			if runtime.CyberFailoverEnabled() {
 				return nil, NewOpenAICyberFailoverError(body, resp.Header)
 			}
