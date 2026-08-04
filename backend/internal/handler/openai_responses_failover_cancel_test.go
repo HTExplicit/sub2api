@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -148,9 +149,16 @@ func newOpenAIResponsesFailoverTestHandler(t *testing.T, upstream service.HTTPUp
 }
 
 func newOpenAIResponsesFailoverTestContext(t *testing.T, ctx context.Context) (*gin.Context, *httptest.ResponseRecorder) {
+	return newOpenAIResponsesFailoverTestContextWithStream(t, ctx, false)
+}
+
+func newOpenAIResponsesFailoverTestContextWithStream(t *testing.T, ctx context.Context, stream bool) (*gin.Context, *httptest.ResponseRecorder) {
 	t.Helper()
 	groupID := int64(3131)
 	body := []byte(`{"model":"gpt-5.1","stream":false,"input":"hello"}`)
+	if stream {
+		body = []byte(`{"model":"gpt-5.1","stream":true,"input":"hello"}`)
+	}
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
 	if ctx != nil {
 		req = req.WithContext(ctx)
@@ -242,4 +250,29 @@ func TestOpenAIGatewayHandlerResponses_ContinuationStateStopsBeforeSecondAccount
 	require.True(t, ok)
 	require.Len(t, events, 1)
 	require.Equal(t, "continuation_state", events[0].Kind)
+}
+
+// Regression: a stream:true Responses request can encounter stale continuation
+// state before Forward has written any upstream bytes.  It must still receive a
+// syntactically valid response.failed terminal event, not an HTTP 400 JSON body
+// that strict Codex clients report as a transport/system error.
+func TestOpenAIGatewayHandlerResponses_StreamingContinuationStateEmitsTerminalSSEBeforeFirstByte(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstream := &openAIResponsesContinuationStateUpstream{}
+	handler := newOpenAIResponsesFailoverTestHandler(t, upstream)
+	c, rec := newOpenAIResponsesFailoverTestContextWithStream(t, nil, true)
+
+	handler.Responses(c)
+
+	require.Equal(t, []int64{1}, upstream.calls(), "a request-scoped continuation failure must not select account 2")
+	require.Equal(t, http.StatusOK, rec.Code, "streaming terminal must be delivered in-band as SSE")
+	require.Contains(t, rec.Header().Get("Content-Type"), "text/event-stream")
+	require.Equal(t, 1, strings.Count(rec.Body.String(), "event: response.failed\n"), "emit exactly one terminal event")
+	require.NotContains(t, rec.Body.String(), "event: response.completed\n")
+
+	_, errObj := parseResponsesFailedSSE(t, rec.Body.String())
+	require.Equal(t, service.OpenAIContinuationStateUnavailableCode, errObj["code"])
+	require.Equal(t, service.OpenAIContinuationStateUnavailableClientMessage, errObj["message"])
+	require.NotContains(t, rec.Body.String(), "previous response not found")
 }
