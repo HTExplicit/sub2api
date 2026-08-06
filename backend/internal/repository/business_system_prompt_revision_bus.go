@@ -2,16 +2,24 @@ package repository
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/redis/go-redis/v9"
 )
 
-const businessSystemPromptRevisionChannel = "business_system_prompt:revision"
+const (
+	businessSystemPromptRevisionChannel        = "business_system_prompt:revision"
+	businessSystemPromptResponseRouteKeyPrefix = "business_system_prompt:response_route:"
+)
 
 type businessSystemPromptRevisionBus struct {
 	rdb *redis.Client
@@ -65,4 +73,61 @@ func (b *businessSystemPromptRevisionBus) Subscribe(ctx context.Context, handler
 			handler(revision)
 		}
 	}
+}
+
+func (b *businessSystemPromptRevisionBus) StoreBusinessSystemPromptRouteMetadata(
+	ctx context.Context,
+	responseID string,
+	metadata service.BusinessSystemPromptBundleMetadata,
+	ttl time.Duration,
+) error {
+	if b == nil || b.rdb == nil {
+		return errors.New("business system prompt redis unavailable")
+	}
+	if strings.TrimSpace(responseID) == "" {
+		return nil
+	}
+	if err := service.ValidateBusinessSystemPromptBundleMetadata(metadata); err != nil {
+		return err
+	}
+	payload, err := json.Marshal(metadata)
+	if err != nil {
+		return fmt.Errorf("marshal business system prompt route metadata: %w", err)
+	}
+	if ttl <= 0 {
+		ttl = time.Hour
+	}
+	return b.rdb.Set(ctx, businessSystemPromptResponseRouteKey(responseID), payload, ttl).Err()
+}
+
+func (b *businessSystemPromptRevisionBus) LoadBusinessSystemPromptRouteMetadata(
+	ctx context.Context,
+	responseID string,
+) (service.BusinessSystemPromptBundleMetadata, bool, error) {
+	if b == nil || b.rdb == nil {
+		return service.BusinessSystemPromptBundleMetadata{}, false, errors.New("business system prompt redis unavailable")
+	}
+	if strings.TrimSpace(responseID) == "" {
+		return service.BusinessSystemPromptBundleMetadata{}, false, nil
+	}
+	payload, err := b.rdb.Get(ctx, businessSystemPromptResponseRouteKey(responseID)).Bytes()
+	if errors.Is(err, redis.Nil) {
+		return service.BusinessSystemPromptBundleMetadata{}, false, nil
+	}
+	if err != nil {
+		return service.BusinessSystemPromptBundleMetadata{}, false, err
+	}
+	var metadata service.BusinessSystemPromptBundleMetadata
+	if err := json.Unmarshal(payload, &metadata); err != nil {
+		return service.BusinessSystemPromptBundleMetadata{}, false, fmt.Errorf("decode business system prompt route metadata: %w", err)
+	}
+	if err := service.ValidateBusinessSystemPromptBundleMetadata(metadata); err != nil {
+		return service.BusinessSystemPromptBundleMetadata{}, false, err
+	}
+	return metadata, true, nil
+}
+
+func businessSystemPromptResponseRouteKey(responseID string) string {
+	digest := sha256.Sum256([]byte(strings.TrimSpace(responseID)))
+	return businessSystemPromptResponseRouteKeyPrefix + hex.EncodeToString(digest[:])
 }

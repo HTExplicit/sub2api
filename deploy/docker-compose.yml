@@ -30,6 +30,10 @@ services:
     volumes:
       # Data persistence (config.yaml will be auto-generated here)
       - sub2api_data:/app/data
+      # Read-only, content-addressed offline business skill bundle. The default
+      # is convenient for local Compose; production sets the host root to
+      # /opt/sub2api/skill-bundles without changing the container path.
+      - ${SUB2API_SYSTEM_PROMPT_BUNDLE_HOST_PATH:-./skill-bundles}/moxinggang-reverse-skill/22c227128165afbbcbda0175eb5e991ddb51d105b7d1e704572c625c64b626d7:/app/skill-bundles/moxinggang-reverse-skill/22c227128165afbbcbda0175eb5e991ddb51d105b7d1e704572c625c64b626d7:ro
       # Optional: Mount custom config.yaml (uncomment and create the file first)
       # Copy config.example.yaml to config.yaml, modify it, then uncomment:
       # - ./config.yaml:/app/data/config.yaml

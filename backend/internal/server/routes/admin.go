@@ -134,6 +134,8 @@ func registerSystemPromptRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		prompts.PUT("/runtime", h.Admin.SystemPrompt.UpdateRuntime)
 		prompts.POST("/preview/merge", h.Admin.SystemPrompt.PreviewMerge)
 		prompts.POST("/preview/upstream", h.Admin.SystemPrompt.PreviewUpstream)
+		prompts.GET("/bundles", h.Admin.SystemPrompt.Bundles)
+		prompts.GET("/bundles/:bundle_id", h.Admin.SystemPrompt.Bundle)
 		prompts.GET("/:id", h.Admin.SystemPrompt.Get)
 		prompts.GET("/:id/versions", h.Admin.SystemPrompt.Versions)
 		prompts.PATCH("/:id", h.Admin.SystemPrompt.Update)

@@ -12,6 +12,10 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v6
+      - name: Verify offline System Prompt bundle release asset
+        run: |
+          python3 -m unittest discover -s deploy/tests -p 'test_verify_business_system_prompt_bundle.py' -v
+          python3 tools/verify_business_system_prompt_bundle.py
       - name: Check deployment scripts
         run: |
           /bin/bash -n deploy/apple-container.sh

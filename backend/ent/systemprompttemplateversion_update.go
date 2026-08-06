@@ -113,6 +113,60 @@ func (_u *SystemPromptTemplateVersionUpdate) AddByteLength(v int) *SystemPromptT
 	return _u
 }
 
+// SetCompositionMode sets the "composition_mode" field.
+func (_u *SystemPromptTemplateVersionUpdate) SetCompositionMode(v string) *SystemPromptTemplateVersionUpdate {
+	_u.mutation.SetCompositionMode(v)
+	return _u
+}
+
+// SetNillableCompositionMode sets the "composition_mode" field if the given value is not nil.
+func (_u *SystemPromptTemplateVersionUpdate) SetNillableCompositionMode(v *string) *SystemPromptTemplateVersionUpdate {
+	if v != nil {
+		_u.SetCompositionMode(*v)
+	}
+	return _u
+}
+
+// SetBundleID sets the "bundle_id" field.
+func (_u *SystemPromptTemplateVersionUpdate) SetBundleID(v string) *SystemPromptTemplateVersionUpdate {
+	_u.mutation.SetBundleID(v)
+	return _u
+}
+
+// SetNillableBundleID sets the "bundle_id" field if the given value is not nil.
+func (_u *SystemPromptTemplateVersionUpdate) SetNillableBundleID(v *string) *SystemPromptTemplateVersionUpdate {
+	if v != nil {
+		_u.SetBundleID(*v)
+	}
+	return _u
+}
+
+// ClearBundleID clears the value of the "bundle_id" field.
+func (_u *SystemPromptTemplateVersionUpdate) ClearBundleID() *SystemPromptTemplateVersionUpdate {
+	_u.mutation.ClearBundleID()
+	return _u
+}
+
+// SetBundleManifestSha256 sets the "bundle_manifest_sha256" field.
+func (_u *SystemPromptTemplateVersionUpdate) SetBundleManifestSha256(v string) *SystemPromptTemplateVersionUpdate {
+	_u.mutation.SetBundleManifestSha256(v)
+	return _u
+}
+
+// SetNillableBundleManifestSha256 sets the "bundle_manifest_sha256" field if the given value is not nil.
+func (_u *SystemPromptTemplateVersionUpdate) SetNillableBundleManifestSha256(v *string) *SystemPromptTemplateVersionUpdate {
+	if v != nil {
+		_u.SetBundleManifestSha256(*v)
+	}
+	return _u
+}
+
+// ClearBundleManifestSha256 clears the value of the "bundle_manifest_sha256" field.
+func (_u *SystemPromptTemplateVersionUpdate) ClearBundleManifestSha256() *SystemPromptTemplateVersionUpdate {
+	_u.mutation.ClearBundleManifestSha256()
+	return _u
+}
+
 // SetNote sets the "note" field.
 func (_u *SystemPromptTemplateVersionUpdate) SetNote(v string) *SystemPromptTemplateVersionUpdate {
 	_u.mutation.SetNote(v)
@@ -261,6 +315,21 @@ func (_u *SystemPromptTemplateVersionUpdate) check() error {
 			return &ValidationError{Name: "byte_length", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.byte_length": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.CompositionMode(); ok {
+		if err := systemprompttemplateversion.CompositionModeValidator(v); err != nil {
+			return &ValidationError{Name: "composition_mode", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.composition_mode": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.BundleID(); ok {
+		if err := systemprompttemplateversion.BundleIDValidator(v); err != nil {
+			return &ValidationError{Name: "bundle_id", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.bundle_id": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.BundleManifestSha256(); ok {
+		if err := systemprompttemplateversion.BundleManifestSha256Validator(v); err != nil {
+			return &ValidationError{Name: "bundle_manifest_sha256", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.bundle_manifest_sha256": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Note(); ok {
 		if err := systemprompttemplateversion.NoteValidator(v); err != nil {
 			return &ValidationError{Name: "note", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.note": %w`, err)}
@@ -301,6 +370,21 @@ func (_u *SystemPromptTemplateVersionUpdate) sqlSave(ctx context.Context) (_node
 	}
 	if value, ok := _u.mutation.AddedByteLength(); ok {
 		_spec.AddField(systemprompttemplateversion.FieldByteLength, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.CompositionMode(); ok {
+		_spec.SetField(systemprompttemplateversion.FieldCompositionMode, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.BundleID(); ok {
+		_spec.SetField(systemprompttemplateversion.FieldBundleID, field.TypeString, value)
+	}
+	if _u.mutation.BundleIDCleared() {
+		_spec.ClearField(systemprompttemplateversion.FieldBundleID, field.TypeString)
+	}
+	if value, ok := _u.mutation.BundleManifestSha256(); ok {
+		_spec.SetField(systemprompttemplateversion.FieldBundleManifestSha256, field.TypeString, value)
+	}
+	if _u.mutation.BundleManifestSha256Cleared() {
+		_spec.ClearField(systemprompttemplateversion.FieldBundleManifestSha256, field.TypeString)
 	}
 	if value, ok := _u.mutation.Note(); ok {
 		_spec.SetField(systemprompttemplateversion.FieldNote, field.TypeString, value)
@@ -459,6 +543,60 @@ func (_u *SystemPromptTemplateVersionUpdateOne) SetNillableByteLength(v *int) *S
 // AddByteLength adds value to the "byte_length" field.
 func (_u *SystemPromptTemplateVersionUpdateOne) AddByteLength(v int) *SystemPromptTemplateVersionUpdateOne {
 	_u.mutation.AddByteLength(v)
+	return _u
+}
+
+// SetCompositionMode sets the "composition_mode" field.
+func (_u *SystemPromptTemplateVersionUpdateOne) SetCompositionMode(v string) *SystemPromptTemplateVersionUpdateOne {
+	_u.mutation.SetCompositionMode(v)
+	return _u
+}
+
+// SetNillableCompositionMode sets the "composition_mode" field if the given value is not nil.
+func (_u *SystemPromptTemplateVersionUpdateOne) SetNillableCompositionMode(v *string) *SystemPromptTemplateVersionUpdateOne {
+	if v != nil {
+		_u.SetCompositionMode(*v)
+	}
+	return _u
+}
+
+// SetBundleID sets the "bundle_id" field.
+func (_u *SystemPromptTemplateVersionUpdateOne) SetBundleID(v string) *SystemPromptTemplateVersionUpdateOne {
+	_u.mutation.SetBundleID(v)
+	return _u
+}
+
+// SetNillableBundleID sets the "bundle_id" field if the given value is not nil.
+func (_u *SystemPromptTemplateVersionUpdateOne) SetNillableBundleID(v *string) *SystemPromptTemplateVersionUpdateOne {
+	if v != nil {
+		_u.SetBundleID(*v)
+	}
+	return _u
+}
+
+// ClearBundleID clears the value of the "bundle_id" field.
+func (_u *SystemPromptTemplateVersionUpdateOne) ClearBundleID() *SystemPromptTemplateVersionUpdateOne {
+	_u.mutation.ClearBundleID()
+	return _u
+}
+
+// SetBundleManifestSha256 sets the "bundle_manifest_sha256" field.
+func (_u *SystemPromptTemplateVersionUpdateOne) SetBundleManifestSha256(v string) *SystemPromptTemplateVersionUpdateOne {
+	_u.mutation.SetBundleManifestSha256(v)
+	return _u
+}
+
+// SetNillableBundleManifestSha256 sets the "bundle_manifest_sha256" field if the given value is not nil.
+func (_u *SystemPromptTemplateVersionUpdateOne) SetNillableBundleManifestSha256(v *string) *SystemPromptTemplateVersionUpdateOne {
+	if v != nil {
+		_u.SetBundleManifestSha256(*v)
+	}
+	return _u
+}
+
+// ClearBundleManifestSha256 clears the value of the "bundle_manifest_sha256" field.
+func (_u *SystemPromptTemplateVersionUpdateOne) ClearBundleManifestSha256() *SystemPromptTemplateVersionUpdateOne {
+	_u.mutation.ClearBundleManifestSha256()
 	return _u
 }
 
@@ -623,6 +761,21 @@ func (_u *SystemPromptTemplateVersionUpdateOne) check() error {
 			return &ValidationError{Name: "byte_length", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.byte_length": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.CompositionMode(); ok {
+		if err := systemprompttemplateversion.CompositionModeValidator(v); err != nil {
+			return &ValidationError{Name: "composition_mode", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.composition_mode": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.BundleID(); ok {
+		if err := systemprompttemplateversion.BundleIDValidator(v); err != nil {
+			return &ValidationError{Name: "bundle_id", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.bundle_id": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.BundleManifestSha256(); ok {
+		if err := systemprompttemplateversion.BundleManifestSha256Validator(v); err != nil {
+			return &ValidationError{Name: "bundle_manifest_sha256", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.bundle_manifest_sha256": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Note(); ok {
 		if err := systemprompttemplateversion.NoteValidator(v); err != nil {
 			return &ValidationError{Name: "note", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.note": %w`, err)}
@@ -680,6 +833,21 @@ func (_u *SystemPromptTemplateVersionUpdateOne) sqlSave(ctx context.Context) (_n
 	}
 	if value, ok := _u.mutation.AddedByteLength(); ok {
 		_spec.AddField(systemprompttemplateversion.FieldByteLength, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.CompositionMode(); ok {
+		_spec.SetField(systemprompttemplateversion.FieldCompositionMode, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.BundleID(); ok {
+		_spec.SetField(systemprompttemplateversion.FieldBundleID, field.TypeString, value)
+	}
+	if _u.mutation.BundleIDCleared() {
+		_spec.ClearField(systemprompttemplateversion.FieldBundleID, field.TypeString)
+	}
+	if value, ok := _u.mutation.BundleManifestSha256(); ok {
+		_spec.SetField(systemprompttemplateversion.FieldBundleManifestSha256, field.TypeString, value)
+	}
+	if _u.mutation.BundleManifestSha256Cleared() {
+		_spec.ClearField(systemprompttemplateversion.FieldBundleManifestSha256, field.TypeString)
 	}
 	if value, ok := _u.mutation.Note(); ok {
 		_spec.SetField(systemprompttemplateversion.FieldNote, field.TypeString, value)

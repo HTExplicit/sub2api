@@ -118,4 +118,13 @@ export type { ErrorPassthroughRule, CreateRuleRequest, UpdateRuleRequest } from 
 export type { BackupAgentHealth, DataManagementConfig } from './dataManagement'
 export type { TLSFingerprintProfile, CreateProfileRequest, UpdateProfileRequest } from './tlsFingerprintProfile'
 export type { ContentModerationConfig, ContentModerationLog, ModerationMode } from './riskControl'
-export type { SystemPromptRuntime, SystemPromptTemplate, SystemPromptVersion } from './systemPrompts'
+export type {
+  SystemPromptBundleDetail,
+  SystemPromptBundleDocument,
+  SystemPromptBundleRoute,
+  SystemPromptBundleSummary,
+  SystemPromptCompositionMode,
+  SystemPromptRuntime,
+  SystemPromptTemplate,
+  SystemPromptVersion
+} from './systemPrompts'

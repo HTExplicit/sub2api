@@ -1699,6 +1699,9 @@ var (
 		{Name: "body", Type: field.TypeString, SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "sha256", Type: field.TypeString, Size: 64},
 		{Name: "byte_length", Type: field.TypeInt},
+		{Name: "composition_mode", Type: field.TypeString, Size: 32, Default: "inline"},
+		{Name: "bundle_id", Type: field.TypeString, Nullable: true, Size: 128},
+		{Name: "bundle_manifest_sha256", Type: field.TypeString, Nullable: true, Size: 64},
 		{Name: "note", Type: field.TypeString, Size: 500, Default: ""},
 		{Name: "created_by", Type: field.TypeInt64, Nullable: true},
 		{Name: "published_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
@@ -1714,7 +1717,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "system_prompt_template_versions_system_prompt_templates_versions",
-				Columns:    []*schema.Column{SystemPromptTemplateVersionsColumns[10]},
+				Columns:    []*schema.Column{SystemPromptTemplateVersionsColumns[13]},
 				RefColumns: []*schema.Column{SystemPromptTemplatesColumns[0]},
 				OnDelete:   schema.Restrict,
 			},
@@ -1723,7 +1726,7 @@ var (
 			{
 				Name:    "systemprompttemplateversion_template_id_version",
 				Unique:  true,
-				Columns: []*schema.Column{SystemPromptTemplateVersionsColumns[10], SystemPromptTemplateVersionsColumns[1]},
+				Columns: []*schema.Column{SystemPromptTemplateVersionsColumns[13], SystemPromptTemplateVersionsColumns[1]},
 			},
 		},
 	}

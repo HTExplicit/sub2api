@@ -6,12 +6,26 @@ export default {
       active: '已启用',
       disabled: '已关闭',
       degraded: '降级状态',
+      bundleUnavailable: '技能包不可用',
+      bundleDegraded: '技能包降级',
       enabled: '启用业务提示词',
       enabledHint: '仅作用于 OpenAI 及兼容适配器。',
       expose: '暴露服务端提示词',
       exposeHint: '允许客户端看到结构化响应 instructions。',
       compact: 'Compact 模式',
       compactHint: '独立控制本策略，不改变既有 Codex compact 兼容逻辑。'
+    },
+    bundle: {
+      compositionMode: '组合模式',
+      inline: '仅提示词正文',
+      offline: '离线技能包',
+      bundle: '技能包',
+      select: '选择技能包',
+      available: '可用',
+      unavailable: '不可用',
+      degraded: '降级',
+      documents: '个文档',
+      routes: '条路由'
     },
     templates: {
       title: '模板',
@@ -51,6 +65,7 @@ export default {
     },
     history: {
       version: '版本',
+      source: '组合来源',
       hash: 'SHA-256',
       size: '大小',
       note: '备注',
@@ -67,7 +82,10 @@ export default {
       protocol: '协议',
       compact: 'Compact',
       jsonBody: 'JSON 请求体',
-      application: '应用元数据'
+      application: '应用元数据',
+      effectiveHash: '有效提示词 SHA-256',
+      routes: '命中路由',
+      documents: '注入文档'
     },
     dialogs: {
       createTitle: '创建模板',
@@ -100,6 +118,7 @@ export default {
     errors: {
       load: '无法加载系统提示词运行状态。',
       loadDetail: '无法加载所选模板。',
+      loadBundle: '无法加载离线技能包详情。',
       saveDraft: '无法保存草稿。',
       saveMetadata: '无法保存模板元数据。',
       saveRuntime: '无法保存运行时开关。',
@@ -113,7 +132,8 @@ export default {
       invalidJson: '请输入合法的 JSON 请求体。',
       conflict: '服务端 revision 已变化，请重新加载后再写入。',
       unsavedSelection: '切换选择前请先保存或放弃当前草稿。',
-      saveBeforePublish: '请先保存草稿，再发布它。'
+      saveBeforePublish: '请先保存草稿，再发布它。',
+      bundleUnavailable: '所选离线技能包或固定 manifest 不可用。'
     }
   }
 }

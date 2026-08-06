@@ -2100,14 +2100,42 @@ func init() {
 	systemprompttemplateversionDescByteLength := systemprompttemplateversionFields[4].Descriptor()
 	// systemprompttemplateversion.ByteLengthValidator is a validator for the "byte_length" field. It is called by the builders before save.
 	systemprompttemplateversion.ByteLengthValidator = systemprompttemplateversionDescByteLength.Validators[0].(func(int) error)
+	// systemprompttemplateversionDescCompositionMode is the schema descriptor for composition_mode field.
+	systemprompttemplateversionDescCompositionMode := systemprompttemplateversionFields[5].Descriptor()
+	// systemprompttemplateversion.DefaultCompositionMode holds the default value on creation for the composition_mode field.
+	systemprompttemplateversion.DefaultCompositionMode = systemprompttemplateversionDescCompositionMode.Default.(string)
+	// systemprompttemplateversion.CompositionModeValidator is a validator for the "composition_mode" field. It is called by the builders before save.
+	systemprompttemplateversion.CompositionModeValidator = systemprompttemplateversionDescCompositionMode.Validators[0].(func(string) error)
+	// systemprompttemplateversionDescBundleID is the schema descriptor for bundle_id field.
+	systemprompttemplateversionDescBundleID := systemprompttemplateversionFields[6].Descriptor()
+	// systemprompttemplateversion.BundleIDValidator is a validator for the "bundle_id" field. It is called by the builders before save.
+	systemprompttemplateversion.BundleIDValidator = systemprompttemplateversionDescBundleID.Validators[0].(func(string) error)
+	// systemprompttemplateversionDescBundleManifestSha256 is the schema descriptor for bundle_manifest_sha256 field.
+	systemprompttemplateversionDescBundleManifestSha256 := systemprompttemplateversionFields[7].Descriptor()
+	// systemprompttemplateversion.BundleManifestSha256Validator is a validator for the "bundle_manifest_sha256" field. It is called by the builders before save.
+	systemprompttemplateversion.BundleManifestSha256Validator = func() func(string) error {
+		validators := systemprompttemplateversionDescBundleManifestSha256.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(bundle_manifest_sha256 string) error {
+			for _, fn := range fns {
+				if err := fn(bundle_manifest_sha256); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
 	// systemprompttemplateversionDescNote is the schema descriptor for note field.
-	systemprompttemplateversionDescNote := systemprompttemplateversionFields[5].Descriptor()
+	systemprompttemplateversionDescNote := systemprompttemplateversionFields[8].Descriptor()
 	// systemprompttemplateversion.DefaultNote holds the default value on creation for the note field.
 	systemprompttemplateversion.DefaultNote = systemprompttemplateversionDescNote.Default.(string)
 	// systemprompttemplateversion.NoteValidator is a validator for the "note" field. It is called by the builders before save.
 	systemprompttemplateversion.NoteValidator = systemprompttemplateversionDescNote.Validators[0].(func(string) error)
 	// systemprompttemplateversionDescCreatedAt is the schema descriptor for created_at field.
-	systemprompttemplateversionDescCreatedAt := systemprompttemplateversionFields[9].Descriptor()
+	systemprompttemplateversionDescCreatedAt := systemprompttemplateversionFields[12].Descriptor()
 	// systemprompttemplateversion.DefaultCreatedAt holds the default value on creation for the created_at field.
 	systemprompttemplateversion.DefaultCreatedAt = systemprompttemplateversionDescCreatedAt.Default.(func() time.Time)
 	tlsfingerprintprofileMixin := schema.TLSFingerprintProfile{}.Mixin()

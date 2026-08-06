@@ -28,6 +28,12 @@ type SystemPromptTemplateVersion struct {
 	Sha256 string `json:"sha256,omitempty"`
 	// ByteLength holds the value of the "byte_length" field.
 	ByteLength int `json:"byte_length,omitempty"`
+	// CompositionMode holds the value of the "composition_mode" field.
+	CompositionMode string `json:"composition_mode,omitempty"`
+	// BundleID holds the value of the "bundle_id" field.
+	BundleID *string `json:"bundle_id,omitempty"`
+	// BundleManifestSha256 holds the value of the "bundle_manifest_sha256" field.
+	BundleManifestSha256 *string `json:"bundle_manifest_sha256,omitempty"`
 	// Note holds the value of the "note" field.
 	Note string `json:"note,omitempty"`
 	// CreatedBy holds the value of the "created_by" field.
@@ -71,7 +77,7 @@ func (*SystemPromptTemplateVersion) scanValues(columns []string) ([]any, error) 
 		switch columns[i] {
 		case systemprompttemplateversion.FieldID, systemprompttemplateversion.FieldTemplateID, systemprompttemplateversion.FieldVersion, systemprompttemplateversion.FieldByteLength, systemprompttemplateversion.FieldCreatedBy, systemprompttemplateversion.FieldPublishedBy:
 			values[i] = new(sql.NullInt64)
-		case systemprompttemplateversion.FieldBody, systemprompttemplateversion.FieldSha256, systemprompttemplateversion.FieldNote:
+		case systemprompttemplateversion.FieldBody, systemprompttemplateversion.FieldSha256, systemprompttemplateversion.FieldCompositionMode, systemprompttemplateversion.FieldBundleID, systemprompttemplateversion.FieldBundleManifestSha256, systemprompttemplateversion.FieldNote:
 			values[i] = new(sql.NullString)
 		case systemprompttemplateversion.FieldPublishedAt, systemprompttemplateversion.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
@@ -125,6 +131,26 @@ func (_m *SystemPromptTemplateVersion) assignValues(columns []string, values []a
 				return fmt.Errorf("unexpected type %T for field byte_length", values[i])
 			} else if value.Valid {
 				_m.ByteLength = int(value.Int64)
+			}
+		case systemprompttemplateversion.FieldCompositionMode:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field composition_mode", values[i])
+			} else if value.Valid {
+				_m.CompositionMode = value.String
+			}
+		case systemprompttemplateversion.FieldBundleID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field bundle_id", values[i])
+			} else if value.Valid {
+				_m.BundleID = new(string)
+				*_m.BundleID = value.String
+			}
+		case systemprompttemplateversion.FieldBundleManifestSha256:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field bundle_manifest_sha256", values[i])
+			} else if value.Valid {
+				_m.BundleManifestSha256 = new(string)
+				*_m.BundleManifestSha256 = value.String
 			}
 		case systemprompttemplateversion.FieldNote:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -214,6 +240,19 @@ func (_m *SystemPromptTemplateVersion) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("byte_length=")
 	builder.WriteString(fmt.Sprintf("%v", _m.ByteLength))
+	builder.WriteString(", ")
+	builder.WriteString("composition_mode=")
+	builder.WriteString(_m.CompositionMode)
+	builder.WriteString(", ")
+	if v := _m.BundleID; v != nil {
+		builder.WriteString("bundle_id=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.BundleManifestSha256; v != nil {
+		builder.WriteString("bundle_manifest_sha256=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
 	builder.WriteString("note=")
 	builder.WriteString(_m.Note)

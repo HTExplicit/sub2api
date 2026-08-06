@@ -21,8 +21,8 @@ func TestBusinessSystemPromptRepositoryLoadsActiveSnapshot(t *testing.T) {
 
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT r.enabled")).
 		WillReturnRows(sqlmock.NewRows([]string{
-			"enabled", "expose_server_prompt", "compact_enabled", "active_template_id", "active_version_id", "revision", "template_version", "body", "sha256", "byte_length", "updated_at",
-		}).AddRow(true, false, false, int64(3), int64(8), int64(4), int64(2), "body", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", 4, time.Date(2026, 8, 6, 1, 2, 3, 0, time.UTC)))
+			"enabled", "expose_server_prompt", "compact_enabled", "active_template_id", "active_version_id", "revision", "template_version", "body", "sha256", "byte_length", "composition_mode", "bundle_id", "bundle_manifest_sha256", "updated_at",
+		}).AddRow(true, false, false, int64(3), int64(8), int64(4), int64(2), "body", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", 4, service.BusinessSystemPromptCompositionOfflineBundle, service.BusinessSystemPromptSeedBundleID, service.BusinessSystemPromptSeedBundleManifestSHA256, time.Date(2026, 8, 6, 1, 2, 3, 0, time.UTC)))
 
 	store := NewBusinessSystemPromptRepository(db)
 	snapshot, err := store.LoadBusinessSystemPrompt(context.Background())
@@ -31,6 +31,9 @@ func TestBusinessSystemPromptRepositoryLoadsActiveSnapshot(t *testing.T) {
 	require.Equal(t, int64(4), snapshot.Revision)
 	require.Equal(t, int64(2), snapshot.TemplateVersion)
 	require.Equal(t, "body", snapshot.Body)
+	require.Equal(t, service.BusinessSystemPromptCompositionOfflineBundle, snapshot.CompositionMode)
+	require.Equal(t, service.BusinessSystemPromptSeedBundleID, snapshot.BundleID)
+	require.Equal(t, service.BusinessSystemPromptSeedBundleManifestSHA256, snapshot.BundleManifestSHA256)
 	require.Equal(t, time.Date(2026, 8, 6, 1, 2, 3, 0, time.UTC), snapshot.UpdatedAt)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
@@ -45,7 +48,28 @@ func TestPublishBusinessSystemPromptVersionRejectsCorruptStoredBodyBeforeCommit(
 		WillReturnRows(sqlmock.NewRows([]string{"revision"}).AddRow(int64(7)))
 	mock.ExpectQuery("SELECT v\\.body, v\\.sha256, v\\.byte_length").
 		WithArgs(int64(3), int64(2)).
-		WillReturnRows(sqlmock.NewRows([]string{"body", "sha256", "byte_length"}).AddRow("body", strings.Repeat("0", 64), 4))
+		WillReturnRows(sqlmock.NewRows([]string{"body", "sha256", "byte_length", "composition_mode", "bundle_id", "bundle_manifest_sha256"}).AddRow("body", strings.Repeat("0", 64), 4, "inline", nil, nil))
+	mock.ExpectRollback()
+
+	store := NewBusinessSystemPromptRepository(db)
+	_, err = store.PublishBusinessSystemPromptVersion(context.Background(), 2, 3, 7, 9)
+	require.ErrorIs(t, err, service.ErrBusinessSystemPromptUnavailable)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPublishBusinessSystemPromptVersionRejectsInvalidOfflineBundleReference(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	body := "body"
+	digest := sha256.Sum256([]byte(body))
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT revision FROM system_prompt_runtime WHERE id = 1 FOR UPDATE")).
+		WillReturnRows(sqlmock.NewRows([]string{"revision"}).AddRow(int64(7)))
+	mock.ExpectQuery("SELECT v\\.body, v\\.sha256, v\\.byte_length").
+		WithArgs(int64(3), int64(2)).
+		WillReturnRows(sqlmock.NewRows([]string{"body", "sha256", "byte_length", "composition_mode", "bundle_id", "bundle_manifest_sha256"}).AddRow(body, hex.EncodeToString(digest[:]), len(body), "offline_bundle", "bundle", "bad"))
 	mock.ExpectRollback()
 
 	store := NewBusinessSystemPromptRepository(db)

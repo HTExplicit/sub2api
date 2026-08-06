@@ -39,6 +39,10 @@ func (r *businessSystemPromptRepository) EnsureBusinessSystemPromptSeed(ctx cont
 	if seed.ByteLength > 0 && seed.ByteLength != byteLength {
 		return fmt.Errorf("seed byte length mismatch")
 	}
+	composition, err := service.NormalizeBusinessSystemPromptComposition(seed.CompositionMode, seed.BundleID, seed.BundleManifestSHA256)
+	if err != nil {
+		return err
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin seed transaction: %w", err)
@@ -69,9 +73,10 @@ func (r *businessSystemPromptRepository) EnsureBusinessSystemPromptSeed(ctx cont
 	var versionID int64
 	if err := tx.QueryRowContext(ctx, `
 		INSERT INTO system_prompt_template_versions
-		(template_id, version, body, sha256, byte_length, note)
-		VALUES ($1, 1, $2, $3, $4, $5)
-		RETURNING id`, templateID, seed.Body, hash, byteLength, "captured reverse-engineered seed").Scan(&versionID); err != nil {
+		(template_id, version, body, sha256, byte_length, composition_mode, bundle_id, bundle_manifest_sha256, note)
+		VALUES ($1, 1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id`, templateID, seed.Body, hash, byteLength, composition.Mode,
+		nullableString(composition.BundleID), nullableString(composition.BundleManifestSHA256), "captured reverse-engineered seed").Scan(&versionID); err != nil {
 		return fmt.Errorf("insert system prompt seed version: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -96,18 +101,21 @@ func (r *businessSystemPromptRepository) LoadBusinessSystemPrompt(ctx context.Co
 func loadBusinessSystemPromptSnapshot(ctx context.Context, q businessSystemPromptQueryer) (service.BusinessSystemPromptSnapshot, error) {
 	var snapshot service.BusinessSystemPromptSnapshot
 	var templateID, versionID, templateVersion sql.NullInt64
-	var body, hash sql.NullString
+	var body, hash, compositionMode, bundleID, bundleManifestSHA256 sql.NullString
 	var byteLength sql.NullInt64
 	err := q.QueryRowContext(ctx, `
 		SELECT r.enabled, r.expose_server_prompt, r.compact_enabled,
 		       r.active_template_id, r.active_version_id, r.revision,
-		       v.version, v.body, v.sha256, v.byte_length, r.updated_at
+		       v.version, v.body, v.sha256, v.byte_length,
+		       v.composition_mode, v.bundle_id, v.bundle_manifest_sha256,
+		       r.updated_at
 		FROM system_prompt_runtime r
 		LEFT JOIN system_prompt_template_versions v
 		  ON v.id = r.active_version_id AND v.template_id = r.active_template_id
 		WHERE r.id = 1`).Scan(
 		&snapshot.Enabled, &snapshot.ExposeServerPrompt, &snapshot.CompactEnabled,
-		&templateID, &versionID, &snapshot.Revision, &templateVersion, &body, &hash, &byteLength, &snapshot.UpdatedAt,
+		&templateID, &versionID, &snapshot.Revision, &templateVersion, &body, &hash, &byteLength,
+		&compositionMode, &bundleID, &bundleManifestSHA256, &snapshot.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return service.BusinessSystemPromptSnapshot{}, service.ErrBusinessSystemPromptUnavailable
@@ -132,6 +140,15 @@ func loadBusinessSystemPromptSnapshot(ctx context.Context, q businessSystemPromp
 	}
 	if byteLength.Valid {
 		snapshot.ByteLength = int(byteLength.Int64)
+	}
+	if compositionMode.Valid {
+		snapshot.CompositionMode = compositionMode.String
+	}
+	if bundleID.Valid {
+		snapshot.BundleID = bundleID.String
+	}
+	if bundleManifestSHA256.Valid {
+		snapshot.BundleManifestSHA256 = bundleManifestSHA256.String
 	}
 	return snapshot, nil
 }
@@ -184,6 +201,10 @@ func (r *businessSystemPromptRepository) CreateBusinessSystemPromptTemplate(ctx 
 	if err != nil {
 		return service.BusinessSystemPromptTemplateDetail{}, err
 	}
+	composition, err := service.NormalizeBusinessSystemPromptComposition(req.CompositionMode, req.BundleID, req.BundleManifestSHA256)
+	if err != nil {
+		return service.BusinessSystemPromptTemplateDetail{}, err
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return service.BusinessSystemPromptTemplateDetail{}, err
@@ -200,8 +221,9 @@ func (r *businessSystemPromptRepository) CreateBusinessSystemPromptTemplate(ctx 
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO system_prompt_template_versions
-		(template_id, version, body, sha256, byte_length, note, created_by)
-		VALUES ($1, 1, $2, $3, $4, $5, $6)`, id, req.Body, hash, byteLength, req.Note, nullableActor(actorID)); err != nil {
+		(template_id, version, body, sha256, byte_length, composition_mode, bundle_id, bundle_manifest_sha256, note, created_by)
+		VALUES ($1, 1, $2, $3, $4, $5, $6, $7, $8, $9)`, id, req.Body, hash, byteLength,
+		composition.Mode, nullableString(composition.BundleID), nullableString(composition.BundleManifestSHA256), req.Note, nullableActor(actorID)); err != nil {
 		return service.BusinessSystemPromptTemplateDetail{}, fmt.Errorf("insert system prompt template version: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -247,7 +269,19 @@ func (r *businessSystemPromptRepository) UpdateBusinessSystemPromptTemplate(ctx 
 }
 
 func (r *businessSystemPromptRepository) CreateBusinessSystemPromptVersion(ctx context.Context, templateID int64, body, note string, actorID, expectedLatestVersion, expectedRevision int64) (service.BusinessSystemPromptVersion, error) {
-	hash, byteLength, err := service.ValidateBusinessSystemPromptBody(body)
+	return r.CreateBusinessSystemPromptVersionWithComposition(ctx, templateID, service.BusinessSystemPromptVersionCreate{
+		Body:            body,
+		Note:            note,
+		CompositionMode: service.BusinessSystemPromptCompositionInline,
+	}, actorID, expectedLatestVersion, expectedRevision)
+}
+
+func (r *businessSystemPromptRepository) CreateBusinessSystemPromptVersionWithComposition(ctx context.Context, templateID int64, req service.BusinessSystemPromptVersionCreate, actorID, expectedLatestVersion, expectedRevision int64) (service.BusinessSystemPromptVersion, error) {
+	hash, byteLength, err := service.ValidateBusinessSystemPromptBody(req.Body)
+	if err != nil {
+		return service.BusinessSystemPromptVersion{}, err
+	}
+	composition, err := service.NormalizeBusinessSystemPromptComposition(req.CompositionMode, req.BundleID, req.BundleManifestSHA256)
 	if err != nil {
 		return service.BusinessSystemPromptVersion{}, err
 	}
@@ -287,18 +321,24 @@ func (r *businessSystemPromptRepository) CreateBusinessSystemPromptVersion(ctx c
 	}
 	var version service.BusinessSystemPromptVersion
 	var createdBy sql.NullInt64
+	var bundleID, bundleManifestSHA256 sql.NullString
 	if err := tx.QueryRowContext(ctx, `
 		INSERT INTO system_prompt_template_versions
-		(template_id, version, body, sha256, byte_length, note, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		RETURNING id, template_id, version, body, sha256, byte_length, note,
+		(template_id, version, body, sha256, byte_length, composition_mode, bundle_id, bundle_manifest_sha256, note, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		RETURNING id, template_id, version, body, sha256, byte_length,
+		          composition_mode, bundle_id, bundle_manifest_sha256, note,
 		          created_by, published_at, published_by, created_at`,
-		templateID, latest+1, body, hash, byteLength, note, nullableActor(actorID)).Scan(
+		templateID, latest+1, req.Body, hash, byteLength, composition.Mode,
+		nullableString(composition.BundleID), nullableString(composition.BundleManifestSHA256), req.Note, nullableActor(actorID)).Scan(
 		&version.ID, &version.TemplateID, &version.Version, &version.Body, &version.SHA256,
-		&version.ByteLength, &version.Note, &createdBy, &version.PublishedAt, &version.PublishedBy, &version.CreatedAt); err != nil {
+		&version.ByteLength, &version.CompositionMode, &bundleID, &bundleManifestSHA256,
+		&version.Note, &createdBy, &version.PublishedAt, &version.PublishedBy, &version.CreatedAt); err != nil {
 		return service.BusinessSystemPromptVersion{}, translateBusinessSystemPromptWriteError(err)
 	}
 	version.CreatedBy = nullableInt64Value(createdBy)
+	version.BundleID = nullableStringValue(bundleID)
+	version.BundleManifestSHA256 = nullableStringValue(bundleManifestSHA256)
 	if err := tx.Commit(); err != nil {
 		return service.BusinessSystemPromptVersion{}, err
 	}
@@ -314,17 +354,21 @@ func (r *businessSystemPromptRepository) DuplicateBusinessSystemPromptTemplate(c
 	if err := lockBusinessSystemPromptRuntimeRevision(ctx, tx, expectedRevision); err != nil {
 		return service.BusinessSystemPromptTemplateDetail{}, err
 	}
-	var body, hash, note string
+	var body, hash, note, compositionMode string
+	var bundleID, bundleManifestSHA256 sql.NullString
 	var byteLength int
 	if err := tx.QueryRowContext(ctx, `
-		SELECT v.body, v.sha256, v.byte_length, v.note
+		SELECT v.body, v.sha256, v.byte_length, v.composition_mode,
+		       v.bundle_id, v.bundle_manifest_sha256, v.note
 		FROM system_prompt_templates t
 		JOIN LATERAL (
-			SELECT body, sha256, byte_length, note
+			SELECT body, sha256, byte_length, composition_mode,
+			       bundle_id, bundle_manifest_sha256, note
 			FROM system_prompt_template_versions
 			WHERE template_id = t.id ORDER BY version DESC LIMIT 1
 		) v ON TRUE
-		WHERE t.id = $1 AND t.deleted_at IS NULL`, sourceID).Scan(&body, &hash, &byteLength, &note); err != nil {
+		WHERE t.id = $1 AND t.deleted_at IS NULL`, sourceID).Scan(
+		&body, &hash, &byteLength, &compositionMode, &bundleID, &bundleManifestSHA256, &note); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return service.BusinessSystemPromptTemplateDetail{}, service.ErrBusinessSystemPromptTemplateNotFound
 		}
@@ -339,8 +383,9 @@ func (r *businessSystemPromptRepository) DuplicateBusinessSystemPromptTemplate(c
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO system_prompt_template_versions
-		(template_id, version, body, sha256, byte_length, note, created_by)
-		VALUES ($1, 1, $2, $3, $4, $5, $6)`, id, body, hash, byteLength, note, nullableActor(actorID)); err != nil {
+		(template_id, version, body, sha256, byte_length, composition_mode, bundle_id, bundle_manifest_sha256, note, created_by)
+		VALUES ($1, 1, $2, $3, $4, $5, $6, $7, $8, $9)`, id, body, hash, byteLength,
+		compositionMode, nullableString(nullableStringValue(bundleID)), nullableString(nullableStringValue(bundleManifestSHA256)), note, nullableActor(actorID)); err != nil {
 		return service.BusinessSystemPromptTemplateDetail{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -411,19 +456,22 @@ func (r *businessSystemPromptRepository) PublishBusinessSystemPromptVersion(ctx 
 	if expectedRevision < 1 || currentRevision != expectedRevision {
 		return service.BusinessSystemPromptSnapshot{}, service.ErrBusinessSystemPromptRevisionConflict
 	}
-	var body, hash string
+	var body, hash, compositionMode string
+	var bundleID, bundleManifestSHA256 sql.NullString
 	var byteLength int
 	if err := tx.QueryRowContext(ctx, `
-		SELECT v.body, v.sha256, v.byte_length
+		SELECT v.body, v.sha256, v.byte_length, v.composition_mode,
+		       v.bundle_id, v.bundle_manifest_sha256
 		FROM system_prompt_template_versions v
 		JOIN system_prompt_templates t ON t.id = v.template_id
-		WHERE v.id = $1 AND v.template_id = $2 AND t.deleted_at IS NULL`, versionID, templateID).Scan(&body, &hash, &byteLength); err != nil {
+		WHERE v.id = $1 AND v.template_id = $2 AND t.deleted_at IS NULL`, versionID, templateID).Scan(
+		&body, &hash, &byteLength, &compositionMode, &bundleID, &bundleManifestSHA256); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return service.BusinessSystemPromptSnapshot{}, service.ErrBusinessSystemPromptVersionNotFound
 		}
 		return service.BusinessSystemPromptSnapshot{}, err
 	}
-	if err := validateStoredBusinessSystemPrompt(body, hash, byteLength); err != nil {
+	if err := validateStoredBusinessSystemPromptVersion(body, hash, byteLength, compositionMode, nullableStringValue(bundleID), nullableStringValue(bundleManifestSHA256)); err != nil {
 		return service.BusinessSystemPromptSnapshot{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE system_prompt_template_versions SET published_at = COALESCE(published_at, NOW()), published_by = $3 WHERE id = $1 AND template_id = $2`, versionID, templateID, nullableActor(actorID)); err != nil {
@@ -442,6 +490,9 @@ func (r *businessSystemPromptRepository) PublishBusinessSystemPromptVersion(ctx 
 	}
 	if snapshot.Body == "" {
 		snapshot.Body, snapshot.SHA256, snapshot.ByteLength = body, hash, byteLength
+		snapshot.CompositionMode = compositionMode
+		snapshot.BundleID = nullableStringValue(bundleID)
+		snapshot.BundleManifestSHA256 = nullableStringValue(bundleManifestSHA256)
 	}
 	if err := tx.Commit(); err != nil {
 		return service.BusinessSystemPromptSnapshot{}, err
@@ -478,7 +529,7 @@ func (r *businessSystemPromptRepository) UpdateBusinessSystemPromptRuntime(ctx c
 		return service.BusinessSystemPromptSnapshot{}, err
 	}
 	if update.Enabled {
-		if err := validateStoredBusinessSystemPrompt(snapshot.Body, snapshot.SHA256, snapshot.ByteLength); err != nil {
+		if err := validateStoredBusinessSystemPromptVersion(snapshot.Body, snapshot.SHA256, snapshot.ByteLength, snapshot.CompositionMode, snapshot.BundleID, snapshot.BundleManifestSHA256); err != nil {
 			return service.BusinessSystemPromptSnapshot{}, err
 		}
 	}
@@ -499,6 +550,16 @@ func validateStoredBusinessSystemPrompt(body, expectedHash string, expectedLengt
 	return nil
 }
 
+func validateStoredBusinessSystemPromptVersion(body, expectedHash string, expectedLength int, compositionMode, bundleID, bundleManifestSHA256 string) error {
+	if err := validateStoredBusinessSystemPrompt(body, expectedHash, expectedLength); err != nil {
+		return err
+	}
+	if _, err := service.NormalizeBusinessSystemPromptComposition(compositionMode, bundleID, bundleManifestSHA256); err != nil {
+		return fmt.Errorf("%w: %v", service.ErrBusinessSystemPromptUnavailable, err)
+	}
+	return nil
+}
+
 func queryBusinessSystemPromptTemplate(ctx context.Context, q businessSystemPromptQueryer, id int64) (service.BusinessSystemPromptTemplate, error) {
 	row := q.QueryRowContext(ctx, `
 		SELECT id, slug, name, description, is_seed, deleted_at,
@@ -513,7 +574,8 @@ func queryBusinessSystemPromptTemplate(ctx context.Context, q businessSystemProm
 
 func queryBusinessSystemPromptVersions(ctx context.Context, q businessSystemPromptQueryer, templateID int64) ([]service.BusinessSystemPromptVersion, error) {
 	rows, err := q.QueryContext(ctx, `
-		SELECT id, template_id, version, body, sha256, byte_length, note,
+		SELECT id, template_id, version, body, sha256, byte_length,
+		       composition_mode, bundle_id, bundle_manifest_sha256, note,
 		       created_by, published_at, published_by, created_at
 		FROM system_prompt_template_versions
 		WHERE template_id = $1 ORDER BY version DESC`, templateID)
@@ -556,13 +618,17 @@ func scanBusinessSystemPromptTemplate(scanner businessSystemPromptScanner) (serv
 func scanBusinessSystemPromptVersion(scanner businessSystemPromptScanner) (service.BusinessSystemPromptVersion, error) {
 	var version service.BusinessSystemPromptVersion
 	var createdBy, publishedBy sql.NullInt64
+	var bundleID, bundleManifestSHA256 sql.NullString
 	err := scanner.Scan(&version.ID, &version.TemplateID, &version.Version, &version.Body, &version.SHA256,
-		&version.ByteLength, &version.Note, &createdBy, &version.PublishedAt, &publishedBy, &version.CreatedAt)
+		&version.ByteLength, &version.CompositionMode, &bundleID, &bundleManifestSHA256,
+		&version.Note, &createdBy, &version.PublishedAt, &publishedBy, &version.CreatedAt)
 	if err != nil {
 		return service.BusinessSystemPromptVersion{}, err
 	}
 	version.CreatedBy = nullableInt64Value(createdBy)
 	version.PublishedBy = nullableInt64Value(publishedBy)
+	version.BundleID = nullableStringValue(bundleID)
+	version.BundleManifestSHA256 = nullableStringValue(bundleManifestSHA256)
 	return version, nil
 }
 
@@ -571,6 +637,20 @@ func nullableActor(actorID int64) any {
 		return nil
 	}
 	return actorID
+}
+
+func nullableString(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
+}
+
+func nullableStringValue(value sql.NullString) string {
+	if !value.Valid {
+		return ""
+	}
+	return value.String
 }
 
 func nullableInt64Value(value sql.NullInt64) *int64 {
