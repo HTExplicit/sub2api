@@ -60,6 +60,7 @@ var auditExtraAllowedKeys = map[string]struct{}{
 	"matched_count": {}, "snapshot_max_id": {}, "filter_hash": {}, "confirm": {},
 	"template_id": {}, "template_version": {}, "old_sha256": {}, "new_sha256": {},
 	"byte_length": {}, "revision": {}, "expose_server_prompt": {}, "compact_enabled": {},
+	"composition_mode": {}, "bundle_id": {}, "bundle_manifest_sha256": {}, "degraded": {},
 }
 
 // SetAuditExtra adds allowlisted, scalar details to the current audit entry.
@@ -111,18 +112,20 @@ func truncateAuditExtraString(value string, limit int) string {
 
 // auditSensitiveReads 需要审计的敏感 GET 读取（method+FullPath → 动作名）。
 var auditSensitiveReads = map[string]string{
-	"GET /api/v1/admin/accounts/data":               "admin.accounts.export",
-	"GET /api/v1/admin/proxies/data":                "admin.proxies.export",
-	"GET /api/v1/admin/redeem-codes/export":         "admin.redeem_codes.export",
-	"GET /api/v1/admin/backups/:id/download-url":    "admin.backups.download",
-	"GET /api/v1/admin/settings/admin-api-key":      "admin.admin_api_key.read",
-	"GET /api/v1/admin/users/:id/api-keys":          "admin.users.api_keys.read",
-	"GET /api/v1/admin/groups/:id/api-keys":         "admin.groups.api_keys.read",
-	"GET /api/v1/admin/backups/s3-config":           "admin.backups.s3_config.read",
-	"GET /api/v1/admin/data-management/s3/config":   "admin.data_management.s3_config.read",
-	"GET /api/v1/admin/system-prompts":              "admin.system_prompts.list",
-	"GET /api/v1/admin/system-prompts/:id":          "admin.system_prompts.read",
-	"GET /api/v1/admin/system-prompts/:id/versions": "admin.system_prompts.versions.list",
+	"GET /api/v1/admin/accounts/data":                     "admin.accounts.export",
+	"GET /api/v1/admin/proxies/data":                      "admin.proxies.export",
+	"GET /api/v1/admin/redeem-codes/export":               "admin.redeem_codes.export",
+	"GET /api/v1/admin/backups/:id/download-url":          "admin.backups.download",
+	"GET /api/v1/admin/settings/admin-api-key":            "admin.admin_api_key.read",
+	"GET /api/v1/admin/users/:id/api-keys":                "admin.users.api_keys.read",
+	"GET /api/v1/admin/groups/:id/api-keys":               "admin.groups.api_keys.read",
+	"GET /api/v1/admin/backups/s3-config":                 "admin.backups.s3_config.read",
+	"GET /api/v1/admin/data-management/s3/config":         "admin.data_management.s3_config.read",
+	"GET /api/v1/admin/system-prompts":                    "admin.system_prompts.list",
+	"GET /api/v1/admin/system-prompts/:id":                "admin.system_prompts.read",
+	"GET /api/v1/admin/system-prompts/:id/versions":       "admin.system_prompts.versions.list",
+	"GET /api/v1/admin/system-prompts/bundles":            "admin.system_prompts.bundles.list",
+	"GET /api/v1/admin/system-prompts/bundles/:bundle_id": "admin.system_prompts.bundles.read",
 }
 
 // auditActionOverrides 变更类请求的动作名精确映射（未命中时自动推导）。

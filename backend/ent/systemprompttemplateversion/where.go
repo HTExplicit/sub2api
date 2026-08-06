@@ -80,6 +80,21 @@ func ByteLength(v int) predicate.SystemPromptTemplateVersion {
 	return predicate.SystemPromptTemplateVersion(sql.FieldEQ(FieldByteLength, v))
 }
 
+// CompositionMode applies equality check predicate on the "composition_mode" field. It's identical to CompositionModeEQ.
+func CompositionMode(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldEQ(FieldCompositionMode, v))
+}
+
+// BundleID applies equality check predicate on the "bundle_id" field. It's identical to BundleIDEQ.
+func BundleID(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldEQ(FieldBundleID, v))
+}
+
+// BundleManifestSha256 applies equality check predicate on the "bundle_manifest_sha256" field. It's identical to BundleManifestSha256EQ.
+func BundleManifestSha256(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldEQ(FieldBundleManifestSha256, v))
+}
+
 // Note applies equality check predicate on the "note" field. It's identical to NoteEQ.
 func Note(v string) predicate.SystemPromptTemplateVersion {
 	return predicate.SystemPromptTemplateVersion(sql.FieldEQ(FieldNote, v))
@@ -333,6 +348,221 @@ func ByteLengthLT(v int) predicate.SystemPromptTemplateVersion {
 // ByteLengthLTE applies the LTE predicate on the "byte_length" field.
 func ByteLengthLTE(v int) predicate.SystemPromptTemplateVersion {
 	return predicate.SystemPromptTemplateVersion(sql.FieldLTE(FieldByteLength, v))
+}
+
+// CompositionModeEQ applies the EQ predicate on the "composition_mode" field.
+func CompositionModeEQ(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldEQ(FieldCompositionMode, v))
+}
+
+// CompositionModeNEQ applies the NEQ predicate on the "composition_mode" field.
+func CompositionModeNEQ(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldNEQ(FieldCompositionMode, v))
+}
+
+// CompositionModeIn applies the In predicate on the "composition_mode" field.
+func CompositionModeIn(vs ...string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldIn(FieldCompositionMode, vs...))
+}
+
+// CompositionModeNotIn applies the NotIn predicate on the "composition_mode" field.
+func CompositionModeNotIn(vs ...string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldNotIn(FieldCompositionMode, vs...))
+}
+
+// CompositionModeGT applies the GT predicate on the "composition_mode" field.
+func CompositionModeGT(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldGT(FieldCompositionMode, v))
+}
+
+// CompositionModeGTE applies the GTE predicate on the "composition_mode" field.
+func CompositionModeGTE(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldGTE(FieldCompositionMode, v))
+}
+
+// CompositionModeLT applies the LT predicate on the "composition_mode" field.
+func CompositionModeLT(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldLT(FieldCompositionMode, v))
+}
+
+// CompositionModeLTE applies the LTE predicate on the "composition_mode" field.
+func CompositionModeLTE(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldLTE(FieldCompositionMode, v))
+}
+
+// CompositionModeContains applies the Contains predicate on the "composition_mode" field.
+func CompositionModeContains(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldContains(FieldCompositionMode, v))
+}
+
+// CompositionModeHasPrefix applies the HasPrefix predicate on the "composition_mode" field.
+func CompositionModeHasPrefix(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldHasPrefix(FieldCompositionMode, v))
+}
+
+// CompositionModeHasSuffix applies the HasSuffix predicate on the "composition_mode" field.
+func CompositionModeHasSuffix(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldHasSuffix(FieldCompositionMode, v))
+}
+
+// CompositionModeEqualFold applies the EqualFold predicate on the "composition_mode" field.
+func CompositionModeEqualFold(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldEqualFold(FieldCompositionMode, v))
+}
+
+// CompositionModeContainsFold applies the ContainsFold predicate on the "composition_mode" field.
+func CompositionModeContainsFold(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldContainsFold(FieldCompositionMode, v))
+}
+
+// BundleIDEQ applies the EQ predicate on the "bundle_id" field.
+func BundleIDEQ(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldEQ(FieldBundleID, v))
+}
+
+// BundleIDNEQ applies the NEQ predicate on the "bundle_id" field.
+func BundleIDNEQ(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldNEQ(FieldBundleID, v))
+}
+
+// BundleIDIn applies the In predicate on the "bundle_id" field.
+func BundleIDIn(vs ...string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldIn(FieldBundleID, vs...))
+}
+
+// BundleIDNotIn applies the NotIn predicate on the "bundle_id" field.
+func BundleIDNotIn(vs ...string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldNotIn(FieldBundleID, vs...))
+}
+
+// BundleIDGT applies the GT predicate on the "bundle_id" field.
+func BundleIDGT(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldGT(FieldBundleID, v))
+}
+
+// BundleIDGTE applies the GTE predicate on the "bundle_id" field.
+func BundleIDGTE(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldGTE(FieldBundleID, v))
+}
+
+// BundleIDLT applies the LT predicate on the "bundle_id" field.
+func BundleIDLT(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldLT(FieldBundleID, v))
+}
+
+// BundleIDLTE applies the LTE predicate on the "bundle_id" field.
+func BundleIDLTE(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldLTE(FieldBundleID, v))
+}
+
+// BundleIDContains applies the Contains predicate on the "bundle_id" field.
+func BundleIDContains(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldContains(FieldBundleID, v))
+}
+
+// BundleIDHasPrefix applies the HasPrefix predicate on the "bundle_id" field.
+func BundleIDHasPrefix(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldHasPrefix(FieldBundleID, v))
+}
+
+// BundleIDHasSuffix applies the HasSuffix predicate on the "bundle_id" field.
+func BundleIDHasSuffix(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldHasSuffix(FieldBundleID, v))
+}
+
+// BundleIDIsNil applies the IsNil predicate on the "bundle_id" field.
+func BundleIDIsNil() predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldIsNull(FieldBundleID))
+}
+
+// BundleIDNotNil applies the NotNil predicate on the "bundle_id" field.
+func BundleIDNotNil() predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldNotNull(FieldBundleID))
+}
+
+// BundleIDEqualFold applies the EqualFold predicate on the "bundle_id" field.
+func BundleIDEqualFold(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldEqualFold(FieldBundleID, v))
+}
+
+// BundleIDContainsFold applies the ContainsFold predicate on the "bundle_id" field.
+func BundleIDContainsFold(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldContainsFold(FieldBundleID, v))
+}
+
+// BundleManifestSha256EQ applies the EQ predicate on the "bundle_manifest_sha256" field.
+func BundleManifestSha256EQ(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldEQ(FieldBundleManifestSha256, v))
+}
+
+// BundleManifestSha256NEQ applies the NEQ predicate on the "bundle_manifest_sha256" field.
+func BundleManifestSha256NEQ(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldNEQ(FieldBundleManifestSha256, v))
+}
+
+// BundleManifestSha256In applies the In predicate on the "bundle_manifest_sha256" field.
+func BundleManifestSha256In(vs ...string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldIn(FieldBundleManifestSha256, vs...))
+}
+
+// BundleManifestSha256NotIn applies the NotIn predicate on the "bundle_manifest_sha256" field.
+func BundleManifestSha256NotIn(vs ...string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldNotIn(FieldBundleManifestSha256, vs...))
+}
+
+// BundleManifestSha256GT applies the GT predicate on the "bundle_manifest_sha256" field.
+func BundleManifestSha256GT(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldGT(FieldBundleManifestSha256, v))
+}
+
+// BundleManifestSha256GTE applies the GTE predicate on the "bundle_manifest_sha256" field.
+func BundleManifestSha256GTE(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldGTE(FieldBundleManifestSha256, v))
+}
+
+// BundleManifestSha256LT applies the LT predicate on the "bundle_manifest_sha256" field.
+func BundleManifestSha256LT(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldLT(FieldBundleManifestSha256, v))
+}
+
+// BundleManifestSha256LTE applies the LTE predicate on the "bundle_manifest_sha256" field.
+func BundleManifestSha256LTE(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldLTE(FieldBundleManifestSha256, v))
+}
+
+// BundleManifestSha256Contains applies the Contains predicate on the "bundle_manifest_sha256" field.
+func BundleManifestSha256Contains(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldContains(FieldBundleManifestSha256, v))
+}
+
+// BundleManifestSha256HasPrefix applies the HasPrefix predicate on the "bundle_manifest_sha256" field.
+func BundleManifestSha256HasPrefix(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldHasPrefix(FieldBundleManifestSha256, v))
+}
+
+// BundleManifestSha256HasSuffix applies the HasSuffix predicate on the "bundle_manifest_sha256" field.
+func BundleManifestSha256HasSuffix(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldHasSuffix(FieldBundleManifestSha256, v))
+}
+
+// BundleManifestSha256IsNil applies the IsNil predicate on the "bundle_manifest_sha256" field.
+func BundleManifestSha256IsNil() predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldIsNull(FieldBundleManifestSha256))
+}
+
+// BundleManifestSha256NotNil applies the NotNil predicate on the "bundle_manifest_sha256" field.
+func BundleManifestSha256NotNil() predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldNotNull(FieldBundleManifestSha256))
+}
+
+// BundleManifestSha256EqualFold applies the EqualFold predicate on the "bundle_manifest_sha256" field.
+func BundleManifestSha256EqualFold(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldEqualFold(FieldBundleManifestSha256, v))
+}
+
+// BundleManifestSha256ContainsFold applies the ContainsFold predicate on the "bundle_manifest_sha256" field.
+func BundleManifestSha256ContainsFold(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldContainsFold(FieldBundleManifestSha256, v))
 }
 
 // NoteEQ applies the EQ predicate on the "note" field.

@@ -1,5 +1,7 @@
 import { apiClient } from '../client'
 
+export type SystemPromptCompositionMode = 'inline' | 'offline_bundle'
+
 export interface SystemPromptRuntime {
   enabled: boolean
   expose_server_prompt: boolean
@@ -11,6 +13,12 @@ export interface SystemPromptRuntime {
   sha256: string
   byte_length: number
   degraded: boolean
+  composition_mode: SystemPromptCompositionMode
+  bundle_id: string
+  bundle_manifest_sha256: string
+  bundle_available: boolean
+  bundle_degraded: boolean
+  degraded_reason?: string
   updated_at: string
 }
 
@@ -34,11 +42,50 @@ export interface SystemPromptVersion {
   sha256: string
   byte_length: number
   note: string
+  composition_mode: SystemPromptCompositionMode
+  bundle_id: string
+  bundle_manifest_sha256: string
   created_by?: number
   published_at?: string
   published_by?: number
   created_at: string
   is_active: boolean
+}
+
+export interface SystemPromptBundleDocument {
+  path: string
+  sha256: string
+  byte_length: number
+  kind: 'text' | 'binary' | 'script'
+  required?: boolean
+}
+
+export interface SystemPromptBundleRoute {
+  id: string
+  keywords: string[]
+  entry: string
+  references: string[]
+  priority?: number
+}
+
+export interface SystemPromptBundleSummary {
+  bundle_id: string
+  name?: string
+  description?: string
+  version?: string
+  manifest_sha256: string
+  available: boolean
+  degraded: boolean
+  degraded_reason?: string
+  document_count: number
+  route_count: number
+  total_bytes: number
+  loaded_at?: string
+}
+
+export interface SystemPromptBundleDetail extends SystemPromptBundleSummary {
+  documents: SystemPromptBundleDocument[]
+  routes: SystemPromptBundleRoute[]
 }
 
 export interface SystemPromptListResponse {
@@ -58,6 +105,9 @@ export interface CreateSystemPromptRequest {
   description: string
   body: string
   note: string
+  composition_mode?: SystemPromptCompositionMode
+  bundle_id?: string
+  bundle_manifest_sha256?: string
   expected_revision: number
 }
 
@@ -70,6 +120,15 @@ export interface PreviewUpstreamResponse {
     server_instructions: string
     revision: number
     sha256: string
+    base_sha256?: string
+    effective_sha256?: string
+    effective_byte_length?: number
+    bundle_id?: string
+    bundle_manifest_sha256?: string
+    route_ids?: string[]
+    document_ids?: string[]
+    degraded?: boolean
+    degraded_reason?: string
   }
 }
 
@@ -88,6 +147,18 @@ export async function listVersions(id: number): Promise<SystemPromptVersion[]> {
   return data
 }
 
+export async function listBundles(): Promise<SystemPromptBundleSummary[]> {
+  const { data } = await apiClient.get<SystemPromptBundleSummary[]>('/admin/system-prompts/bundles')
+  return data
+}
+
+export async function getBundle(bundleId: string): Promise<SystemPromptBundleDetail> {
+  const { data } = await apiClient.get<SystemPromptBundleDetail>(
+    `/admin/system-prompts/bundles/${encodeURIComponent(bundleId)}`
+  )
+  return data
+}
+
 export async function create(payload: CreateSystemPromptRequest): Promise<SystemPromptDetailResponse> {
   const { data } = await apiClient.post<SystemPromptDetailResponse>('/admin/system-prompts', payload)
   return data
@@ -103,7 +174,15 @@ export async function updateMetadata(
 
 export async function saveDraft(
   id: number,
-  payload: { body: string; note: string; expected_latest_version: number; expected_revision: number }
+  payload: {
+    body: string
+    note: string
+    composition_mode: SystemPromptCompositionMode
+    bundle_id: string
+    bundle_manifest_sha256: string
+    expected_latest_version: number
+    expected_revision: number
+  }
 ): Promise<SystemPromptVersion> {
   const { data } = await apiClient.post<SystemPromptVersion>(`/admin/system-prompts/${id}/versions`, payload)
   return data
@@ -153,6 +232,10 @@ export async function previewMerge(payload: {
   version_id?: number
   client_instructions: string
   server_instructions?: string
+  composition_mode?: SystemPromptCompositionMode
+  bundle_id?: string
+  bundle_manifest_sha256?: string
+  body?: unknown
 }): Promise<{ instructions: string }> {
   const { data } = await apiClient.post<{ instructions: string }>('/admin/system-prompts/preview/merge', payload)
   return data
@@ -162,6 +245,9 @@ export async function previewUpstream(payload: {
   template_id: number
   version_id: number
   server_instructions?: string
+  composition_mode?: SystemPromptCompositionMode
+  bundle_id?: string
+  bundle_manifest_sha256?: string
   protocol: 'responses' | 'chat'
   compact: boolean
   body: unknown
@@ -174,6 +260,8 @@ export const systemPromptsAPI = {
   list,
   get,
   listVersions,
+  listBundles,
+  getBundle,
   create,
   updateMetadata,
   saveDraft,

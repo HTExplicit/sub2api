@@ -34,6 +34,14 @@
               <Icon name="exclamationTriangle" size="xs" />
               {{ t('admin.systemPrompts.runtime.degraded') }}
             </span>
+            <span v-if="runtime.composition_mode === 'offline_bundle' && !runtime.bundle_available" data-test="system-prompt-bundle-unavailable" class="inline-flex items-center gap-1.5 rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">
+              <Icon name="exclamationTriangle" size="xs" />
+              {{ t('admin.systemPrompts.runtime.bundleUnavailable') }}
+            </span>
+            <span v-else-if="runtime.composition_mode === 'offline_bundle' && runtime.bundle_degraded" data-test="system-prompt-bundle-degraded" class="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+              <Icon name="exclamationTriangle" size="xs" />
+              {{ t('admin.systemPrompts.runtime.bundleDegraded') }}
+            </span>
             <span class="truncate font-mono text-xs text-gray-500 dark:text-dark-400">
               rev {{ runtime.revision }} · v{{ runtime.template_version || '—' }} · {{ runtime.sha256 || '—' }} · {{ formatBytes(runtime.byte_length) }}
             </span>
@@ -164,6 +172,34 @@
           </div>
 
           <div v-if="activeTab === 'editor'" class="space-y-4">
+            <section class="grid gap-3 border border-gray-200 bg-gray-50/60 p-4 dark:border-dark-700 dark:bg-dark-800/50 lg:grid-cols-[220px_minmax(0,1fr)]">
+              <label class="min-w-0">
+                <span class="input-label">{{ t('admin.systemPrompts.bundle.compositionMode') }}</span>
+                <select v-model="compositionMode" data-test="system-prompt-composition-mode" class="input" @change="onCompositionModeChange">
+                  <option value="inline">{{ t('admin.systemPrompts.bundle.inline') }}</option>
+                  <option value="offline_bundle">{{ t('admin.systemPrompts.bundle.offline') }}</option>
+                </select>
+              </label>
+              <div v-if="compositionMode === 'offline_bundle'" class="min-w-0 space-y-2">
+                <label class="block min-w-0">
+                  <span class="input-label">{{ t('admin.systemPrompts.bundle.bundle') }}</span>
+                  <select v-model="bundleId" data-test="system-prompt-bundle-select" class="input" @change="onBundleChange">
+                    <option value="" disabled>{{ t('admin.systemPrompts.bundle.select') }}</option>
+                    <option v-for="item in bundles" :key="`${item.bundle_id}:${item.manifest_sha256}`" :value="item.bundle_id">
+                      {{ item.name || item.bundle_id }} · {{ item.available ? t('admin.systemPrompts.bundle.available') : t('admin.systemPrompts.bundle.unavailable') }}
+                    </option>
+                  </select>
+                </label>
+                <div class="flex min-w-0 flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-dark-400">
+                  <span :class="selectedBundleUsable ? 'badge badge-success' : 'badge badge-danger'">
+                    {{ selectedBundleUsable ? t('admin.systemPrompts.bundle.available') : t('admin.systemPrompts.bundle.unavailable') }}
+                  </span>
+                  <span v-if="selectedBundleInfo?.degraded" class="badge badge-warning">{{ t('admin.systemPrompts.bundle.degraded') }}</span>
+                  <span class="max-w-full truncate font-mono" :title="bundleManifestSHA256">{{ bundleManifestSHA256 || '—' }}</span>
+                  <span v-if="selectedBundleInfo">{{ selectedBundleInfo.document_count }} {{ t('admin.systemPrompts.bundle.documents') }} · {{ selectedBundleInfo.route_count }} {{ t('admin.systemPrompts.bundle.routes') }} · {{ formatBytes(selectedBundleInfo.total_bytes) }}</span>
+                </div>
+              </div>
+            </section>
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div class="inline-flex border border-gray-200 bg-gray-50 p-1 dark:border-dark-700 dark:bg-dark-800" role="tablist">
                 <button type="button" class="px-3 py-1.5 text-xs font-medium" :class="editorMode === 'raw' ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-600 dark:text-white' : 'text-gray-500 dark:text-dark-300'" @click="editorMode = 'raw'">
@@ -193,7 +229,7 @@
             </div>
             <div v-if="selectedVersion" class="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-3 text-xs text-gray-500 dark:border-dark-700 dark:text-dark-400">
               <span>{{ t('admin.systemPrompts.editor.versionCreated') }} {{ formatDate(selectedVersion.created_at) }}</span>
-              <button type="button" data-test="system-prompt-publish-selected" class="btn btn-secondary btn-sm" :disabled="selectedVersion.id === runtimeVersionId || !runtime" @click="openConfirm({ kind: 'publish', versionId: selectedVersion.id })">
+              <button type="button" data-test="system-prompt-publish-selected" class="btn btn-secondary btn-sm" :disabled="selectedVersion.id === runtimeVersionId || !runtime || !selectedBundleUsable" @click="openConfirm({ kind: 'publish', versionId: selectedVersion.id })">
                 <Icon name="upload" size="sm" class="mr-1" />
                 {{ t('admin.systemPrompts.actions.publish') }}
               </button>
@@ -206,6 +242,7 @@
                 <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500 dark:bg-dark-800 dark:text-dark-400">
                   <tr>
                     <th class="px-4 py-3">{{ t('admin.systemPrompts.history.version') }}</th>
+                    <th class="px-4 py-3">{{ t('admin.systemPrompts.history.source') }}</th>
                     <th class="px-4 py-3">{{ t('admin.systemPrompts.history.hash') }}</th>
                     <th class="px-4 py-3">{{ t('admin.systemPrompts.history.size') }}</th>
                     <th class="px-4 py-3">{{ t('admin.systemPrompts.history.note') }}</th>
@@ -219,21 +256,25 @@
                       <button type="button" class="font-semibold text-primary-600 hover:text-primary-700 dark:text-primary-300" @click="selectVersion(version)">v{{ version.version }}</button>
                       <span v-if="version.id === runtimeVersionId" class="ml-2 badge badge-success">{{ t('admin.systemPrompts.history.active') }}</span>
                     </td>
+                    <td class="max-w-[220px] px-4 py-3 text-xs text-gray-600 dark:text-dark-300">
+                      <span class="block font-medium">{{ t(`admin.systemPrompts.bundle.${version.composition_mode === 'offline_bundle' ? 'offline' : 'inline'}`) }}</span>
+                      <span v-if="version.bundle_id" class="block truncate font-mono text-[11px] text-gray-500 dark:text-dark-400" :title="version.bundle_manifest_sha256">{{ version.bundle_id }}</span>
+                    </td>
                     <td class="max-w-[220px] truncate px-4 py-3 font-mono text-xs text-gray-500 dark:text-dark-400" :title="version.sha256">{{ version.sha256 }}</td>
                     <td class="whitespace-nowrap px-4 py-3 text-gray-600 dark:text-dark-300">{{ formatBytes(version.byte_length) }}</td>
                     <td class="max-w-[240px] truncate px-4 py-3 text-gray-600 dark:text-dark-300" :title="version.note">{{ version.note || '—' }}</td>
                     <td class="whitespace-nowrap px-4 py-3 text-gray-500 dark:text-dark-400">{{ formatDate(version.created_at) }}</td>
                     <td class="whitespace-nowrap px-4 py-3 text-right">
-                      <button type="button" class="btn btn-secondary btn-sm mr-1" :disabled="version.id === runtimeVersionId" @click="openConfirm({ kind: 'publish', versionId: version.id })">
+                      <button type="button" class="btn btn-secondary btn-sm mr-1" :disabled="version.id === runtimeVersionId || !isVersionBundleUsable(version)" @click="openConfirm({ kind: 'publish', versionId: version.id })">
                         <Icon name="upload" size="xs" class="mr-1" />{{ t('admin.systemPrompts.actions.publish') }}
                       </button>
-                      <button type="button" class="btn btn-secondary btn-sm" :disabled="version.id === runtimeVersionId" @click="openConfirm({ kind: 'rollback', versionId: version.id })">
+                      <button type="button" class="btn btn-secondary btn-sm" :disabled="version.id === runtimeVersionId || !isVersionBundleUsable(version)" @click="openConfirm({ kind: 'rollback', versionId: version.id })">
                         <Icon name="refresh" size="xs" class="mr-1" />{{ t('admin.systemPrompts.actions.rollback') }}
                       </button>
                     </td>
                   </tr>
                   <tr v-if="!detail.versions.length">
-                    <td colspan="6" class="px-4 py-10 text-center text-sm text-gray-500 dark:text-dark-400">{{ t('admin.systemPrompts.history.empty') }}</td>
+                    <td colspan="7" class="px-4 py-10 text-center text-sm text-gray-500 dark:text-dark-400">{{ t('admin.systemPrompts.history.empty') }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -270,16 +311,31 @@
                 </div>
                 <div class="space-y-3 p-4">
                   <textarea v-model="previewBodyText" rows="8" class="input resize-y font-mono text-xs" spellcheck="false" :aria-label="t('admin.systemPrompts.preview.jsonBody')"></textarea>
-                  <button type="button" class="btn btn-secondary btn-sm" :disabled="previewingUpstream" @click="runUpstreamPreview">
+                  <button type="button" data-test="system-prompt-preview-upstream" class="btn btn-secondary btn-sm" :disabled="previewingUpstream || !selectedBundleUsable" @click="runUpstreamPreview">
                     <Icon name="play" size="sm" class="mr-1" />{{ previewingUpstream ? t('common.loading') : t('admin.systemPrompts.actions.previewUpstream') }}
                   </button>
                   <pre v-if="upstreamPreview" class="max-h-[360px] overflow-auto whitespace-pre-wrap border border-gray-200 bg-gray-50 p-3 font-mono text-xs leading-5 text-gray-800 dark:border-dark-700 dark:bg-dark-950 dark:text-dark-200">{{ prettyUpstream }}</pre>
                 </div>
               </section>
             </div>
-            <div v-if="upstreamPreview" class="border border-gray-200 px-4 py-3 text-xs text-gray-500 dark:border-dark-700 dark:text-dark-400">
-              <span class="font-medium text-gray-700 dark:text-dark-200">{{ t('admin.systemPrompts.preview.application') }}:</span>
-              {{ upstreamPreview.application.carrier }} · rev {{ upstreamPreview.application.revision }} · {{ upstreamPreview.application.sha256 || '—' }}
+            <div v-if="upstreamPreview" class="space-y-2 border border-gray-200 px-4 py-3 text-xs text-gray-500 dark:border-dark-700 dark:text-dark-400">
+              <div>
+                <span class="font-medium text-gray-700 dark:text-dark-200">{{ t('admin.systemPrompts.preview.application') }}:</span>
+                {{ upstreamPreview.application.carrier }} · rev {{ upstreamPreview.application.revision }} · {{ formatBytes(upstreamPreview.application.effective_byte_length || 0) }}
+              </div>
+              <div data-test="system-prompt-preview-effective-hash" class="break-all font-mono">
+                {{ t('admin.systemPrompts.preview.effectiveHash') }}: {{ upstreamPreview.application.effective_sha256 || upstreamPreview.application.sha256 || '—' }}
+              </div>
+              <div v-if="upstreamPreview.application.bundle_id" class="break-all font-mono">
+                {{ upstreamPreview.application.bundle_id }} · {{ upstreamPreview.application.bundle_manifest_sha256 || '—' }}
+              </div>
+              <div v-if="upstreamPreview.application.route_ids?.length || upstreamPreview.application.document_ids?.length" data-test="system-prompt-preview-routing" class="space-y-1">
+                <div>{{ t('admin.systemPrompts.preview.routes') }}: {{ upstreamPreview.application.route_ids?.join(', ') || '—' }}</div>
+                <div>{{ t('admin.systemPrompts.preview.documents') }}: {{ upstreamPreview.application.document_ids?.join(', ') || '—' }}</div>
+              </div>
+              <div v-if="upstreamPreview.application.degraded" class="text-amber-700 dark:text-amber-300">
+                {{ t('admin.systemPrompts.bundle.degraded') }}<span v-if="upstreamPreview.application.degraded_reason">: {{ upstreamPreview.application.degraded_reason }}</span>
+              </div>
             </div>
           </div>
         </section>
@@ -305,6 +361,24 @@
         <div>
           <label class="input-label">{{ t('admin.systemPrompts.dialogs.description') }}</label>
           <textarea v-model="createForm.description" rows="2" class="input resize-y"></textarea>
+        </div>
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label class="input-label">{{ t('admin.systemPrompts.bundle.compositionMode') }}</label>
+            <select v-model="createForm.composition_mode" class="input" @change="onCreateCompositionModeChange">
+              <option value="inline">{{ t('admin.systemPrompts.bundle.inline') }}</option>
+              <option value="offline_bundle">{{ t('admin.systemPrompts.bundle.offline') }}</option>
+            </select>
+          </div>
+          <div v-if="createForm.composition_mode === 'offline_bundle'">
+            <label class="input-label">{{ t('admin.systemPrompts.bundle.bundle') }}</label>
+            <select v-model="createForm.bundle_id" class="input" required @change="onCreateBundleChange">
+              <option value="" disabled>{{ t('admin.systemPrompts.bundle.select') }}</option>
+              <option v-for="item in bundles" :key="`create:${item.bundle_id}:${item.manifest_sha256}`" :value="item.bundle_id" :disabled="!item.available">
+                {{ item.name || item.bundle_id }} · {{ item.available ? t('admin.systemPrompts.bundle.available') : t('admin.systemPrompts.bundle.unavailable') }}
+              </option>
+            </select>
+          </div>
         </div>
         <div>
           <label class="input-label">{{ t('admin.systemPrompts.dialogs.body') }}</label>
@@ -363,6 +437,9 @@ import Toggle from '@/components/common/Toggle.vue'
 import { useAppStore } from '@/stores'
 import systemPromptsAPI, {
   type PreviewUpstreamResponse,
+  type SystemPromptBundleDetail,
+  type SystemPromptBundleSummary,
+  type SystemPromptCompositionMode,
   type SystemPromptRuntime,
   type SystemPromptTemplate,
   type SystemPromptVersion,
@@ -385,6 +462,11 @@ const selectedId = ref<number | null>(null)
 const selectedVersionId = ref<number | null>(null)
 const body = ref('')
 const note = ref('')
+const compositionMode = ref<SystemPromptCompositionMode>('inline')
+const bundleId = ref('')
+const bundleManifestSHA256 = ref('')
+const bundles = ref<SystemPromptBundleSummary[]>([])
+const bundleDetail = ref<SystemPromptBundleDetail | null>(null)
 const metaName = ref('')
 const metaDescription = ref('')
 const editorMode = ref<EditorMode>('raw')
@@ -401,7 +483,11 @@ const runtimeDraft = reactive({ enabled: false, expose_server_prompt: false, com
 
 const showCreateDialog = ref(false)
 const showDuplicateDialog = ref(false)
-const createForm = reactive({ slug: '', name: '', description: '', body: '', note: '' })
+const createForm = reactive({
+  slug: '', name: '', description: '', body: '', note: '',
+  composition_mode: 'inline' as SystemPromptCompositionMode,
+  bundle_id: '', bundle_manifest_sha256: ''
+})
 const duplicateForm = reactive({ slug: '', name: '' })
 const confirmState = ref<ConfirmAction | null>(null)
 
@@ -419,13 +505,30 @@ const selectedVersion = computed(() => detail.value?.versions.find(version => ve
 const latestVersion = computed(() => detail.value?.versions[0] ?? null)
 const runtimeTemplateId = computed(() => runtime.value?.template_id ?? 0)
 const runtimeVersionId = computed(() => runtime.value?.version_id ?? 0)
+const selectedBundle = computed(() => bundles.value.find(item => item.bundle_id === bundleId.value) ?? null)
+const selectedBundleInfo = computed<SystemPromptBundleSummary | SystemPromptBundleDetail | null>(() => {
+  const loaded = bundleDetail.value
+  if (loaded?.bundle_id === bundleId.value && loaded.manifest_sha256 === bundleManifestSHA256.value) return loaded
+  return selectedBundle.value
+})
+const selectedBundleUsable = computed(() => {
+  if (compositionMode.value !== 'offline_bundle') return true
+  const selected = selectedBundle.value
+  return !!selected && selected.available && selected.manifest_sha256 === bundleManifestSHA256.value
+})
 const metadataDirty = computed(() => {
   const template = selectedTemplate.value
   return !!template && (metaName.value !== template.name || metaDescription.value !== template.description)
 })
 const editorDirty = computed(() => {
   const version = selectedVersion.value
-  return !!version && (body.value !== version.body || note.value !== version.note)
+  return !!version && (
+    body.value !== version.body ||
+    note.value !== version.note ||
+    compositionMode.value !== normalizeCompositionMode(version.composition_mode) ||
+    bundleId.value !== (version.bundle_id || '') ||
+    bundleManifestSHA256.value !== (version.bundle_manifest_sha256 || '')
+  )
 })
 const runtimeDirty = computed(() => {
   if (!runtime.value) return false
@@ -477,6 +580,76 @@ function setRuntimeDraft(value: SystemPromptRuntime) {
   runtimeDraft.compact_enabled = value.compact_enabled
 }
 
+function normalizeCompositionMode(value: string | undefined): SystemPromptCompositionMode {
+  return value === 'offline_bundle' ? 'offline_bundle' : 'inline'
+}
+
+function isVersionBundleUsable(version: SystemPromptVersion): boolean {
+  if (normalizeCompositionMode(version.composition_mode) !== 'offline_bundle') return true
+  return bundles.value.some(item =>
+    item.bundle_id === version.bundle_id &&
+    item.manifest_sha256 === version.bundle_manifest_sha256 &&
+    item.available
+  )
+}
+
+async function loadBundleDetail(id: string) {
+  if (!id) {
+    bundleDetail.value = null
+    return
+  }
+  try {
+    bundleDetail.value = await systemPromptsAPI.getBundle(id)
+  } catch (error) {
+    bundleDetail.value = null
+    handleError(error, t('admin.systemPrompts.errors.loadBundle'))
+  }
+}
+
+function applyVersionToEditor(version: SystemPromptVersion) {
+  selectedVersionId.value = version.id
+  body.value = version.body
+  note.value = version.note
+  compositionMode.value = normalizeCompositionMode(version.composition_mode)
+  bundleId.value = version.bundle_id || ''
+  bundleManifestSHA256.value = version.bundle_manifest_sha256 || ''
+  void loadBundleDetail(compositionMode.value === 'offline_bundle' ? bundleId.value : '')
+}
+
+function onCompositionModeChange() {
+  if (compositionMode.value === 'inline') {
+    bundleId.value = ''
+    bundleManifestSHA256.value = ''
+    bundleDetail.value = null
+    return
+  }
+  const candidate = selectedBundle.value ?? bundles.value.find(item => item.available) ?? bundles.value[0]
+  bundleId.value = candidate?.bundle_id ?? ''
+  bundleManifestSHA256.value = candidate?.manifest_sha256 ?? ''
+  void loadBundleDetail(bundleId.value)
+}
+
+function onBundleChange() {
+  bundleManifestSHA256.value = selectedBundle.value?.manifest_sha256 ?? ''
+  void loadBundleDetail(bundleId.value)
+}
+
+function onCreateCompositionModeChange() {
+  if (createForm.composition_mode === 'inline') {
+    createForm.bundle_id = ''
+    createForm.bundle_manifest_sha256 = ''
+    return
+  }
+  const candidate = bundles.value.find(item => item.available)
+  createForm.bundle_id = candidate?.bundle_id ?? ''
+  createForm.bundle_manifest_sha256 = candidate?.manifest_sha256 ?? ''
+}
+
+function onCreateBundleChange() {
+  const selected = bundles.value.find(item => item.bundle_id === createForm.bundle_id)
+  createForm.bundle_manifest_sha256 = selected?.manifest_sha256 ?? ''
+}
+
 function isConflictError(error: unknown): boolean {
   const status = typeof error === 'object' && error !== null ? (error as { status?: number }).status : undefined
   return status === 409 || extractApiErrorCode(error) === 'system_prompt_revision_conflict'
@@ -490,8 +663,15 @@ function handleError(error: unknown, fallback: string) {
 async function loadAll(preferredId: number | null = selectedId.value) {
   loading.value = true
   try {
-    const result = await systemPromptsAPI.list()
+    const [result, bundleItems] = await Promise.all([
+      systemPromptsAPI.list(),
+      systemPromptsAPI.listBundles().catch(error => {
+        handleError(error, t('admin.systemPrompts.errors.loadBundle'))
+        return [] as SystemPromptBundleSummary[]
+      })
+    ])
     templates.value = result.templates
+    bundles.value = bundleItems
     runtime.value = result.runtime
     setRuntimeDraft(result.runtime)
     const nextId = preferredId && result.templates.some(template => template.id === preferredId)
@@ -520,13 +700,15 @@ async function loadDetail(id: number) {
       : undefined
     const version = result.versions[0] ?? active
     if (version) {
-      selectedVersionId.value = version.id
-      body.value = version.body
-      note.value = version.note
+      applyVersionToEditor(version)
     } else {
       selectedVersionId.value = null
       body.value = ''
       note.value = ''
+      compositionMode.value = 'inline'
+      bundleId.value = ''
+      bundleManifestSHA256.value = ''
+      bundleDetail.value = null
     }
     mergePreview.value = null
     upstreamPreview.value = null
@@ -550,9 +732,7 @@ async function selectVersion(version: SystemPromptVersion) {
     appStore.showWarning(t('admin.systemPrompts.errors.unsavedSelection'))
     return
   }
-  selectedVersionId.value = version.id
-  body.value = version.body
-  note.value = version.note
+  applyVersionToEditor(version)
   activeTab.value = 'editor'
 }
 
@@ -563,11 +743,18 @@ async function saveDraft() {
     appStore.showError(t('admin.systemPrompts.errors.invalidBody'))
     return
   }
+  if (!selectedBundleUsable.value) {
+    appStore.showError(t('admin.systemPrompts.errors.bundleUnavailable'))
+    return
+  }
   savingVersion.value = true
   try {
     const version = await systemPromptsAPI.saveDraft(detail.value.template.id, {
       body: body.value,
       note: note.value,
+      composition_mode: compositionMode.value,
+      bundle_id: compositionMode.value === 'offline_bundle' ? bundleId.value : '',
+      bundle_manifest_sha256: compositionMode.value === 'offline_bundle' ? bundleManifestSHA256.value : '',
       expected_latest_version: latestVersion.value?.version ?? 0,
       expected_revision: runtime.value.revision
     })
@@ -622,12 +809,22 @@ async function saveRuntime() {
 }
 
 function openCreate() {
-  Object.assign(createForm, { slug: '', name: '', description: '', body: '', note: '' })
+  Object.assign(createForm, {
+    slug: '', name: '', description: '', body: '', note: '',
+    composition_mode: 'inline', bundle_id: '', bundle_manifest_sha256: ''
+  })
   showCreateDialog.value = true
 }
 
 async function createTemplate() {
   if (!runtime.value) return
+  if (createForm.composition_mode === 'offline_bundle') {
+    const selected = bundles.value.find(item => item.bundle_id === createForm.bundle_id)
+    if (!selected?.available || selected.manifest_sha256 !== createForm.bundle_manifest_sha256) {
+      appStore.showError(t('admin.systemPrompts.errors.bundleUnavailable'))
+      return
+    }
+  }
   creating.value = true
   try {
     const result = await systemPromptsAPI.create({ ...createForm, expected_revision: runtime.value.revision })
@@ -706,7 +903,22 @@ async function deleteTemplate() {
 async function runMergePreview() {
   previewingMerge.value = true
   try {
-    const result = await systemPromptsAPI.previewMerge({ client_instructions: previewClientInstructions.value, server_instructions: body.value })
+    let requestBody: unknown
+    try {
+      requestBody = JSON.parse(previewBodyText.value)
+    } catch {
+      requestBody = undefined
+    }
+    const result = await systemPromptsAPI.previewMerge({
+      template_id: !editorDirty.value ? selectedTemplate.value?.id : 0,
+      version_id: !editorDirty.value ? selectedVersion.value?.id : 0,
+      client_instructions: previewClientInstructions.value,
+      server_instructions: body.value,
+      composition_mode: compositionMode.value,
+      bundle_id: compositionMode.value === 'offline_bundle' ? bundleId.value : '',
+      bundle_manifest_sha256: compositionMode.value === 'offline_bundle' ? bundleManifestSHA256.value : '',
+      body: requestBody
+    })
     mergePreview.value = result.instructions
   } catch (error) {
     handleError(error, t('admin.systemPrompts.errors.preview'))
@@ -726,9 +938,12 @@ async function runUpstreamPreview() {
   previewingUpstream.value = true
   try {
     upstreamPreview.value = await systemPromptsAPI.previewUpstream({
-      template_id: 0,
-      version_id: 0,
+      template_id: !editorDirty.value ? selectedTemplate.value?.id ?? 0 : 0,
+      version_id: !editorDirty.value ? selectedVersion.value?.id ?? 0 : 0,
       server_instructions: body.value,
+      composition_mode: compositionMode.value,
+      bundle_id: compositionMode.value === 'offline_bundle' ? bundleId.value : '',
+      bundle_manifest_sha256: compositionMode.value === 'offline_bundle' ? bundleManifestSHA256.value : '',
       protocol: previewProtocol.value,
       compact: previewCompact.value,
       body: parsedBody

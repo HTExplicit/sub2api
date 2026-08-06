@@ -44781,28 +44781,31 @@ func (m *SystemPromptTemplateMutation) ResetEdge(name string) error {
 // SystemPromptTemplateVersionMutation represents an operation that mutates the SystemPromptTemplateVersion nodes in the graph.
 type SystemPromptTemplateVersionMutation struct {
 	config
-	op              Op
-	typ             string
-	id              *int64
-	version         *int64
-	addversion      *int64
-	body            *string
-	sha256          *string
-	byte_length     *int
-	addbyte_length  *int
-	note            *string
-	created_by      *int64
-	addcreated_by   *int64
-	published_at    *time.Time
-	published_by    *int64
-	addpublished_by *int64
-	created_at      *time.Time
-	clearedFields   map[string]struct{}
-	template        *int64
-	clearedtemplate bool
-	done            bool
-	oldValue        func(context.Context) (*SystemPromptTemplateVersion, error)
-	predicates      []predicate.SystemPromptTemplateVersion
+	op                     Op
+	typ                    string
+	id                     *int64
+	version                *int64
+	addversion             *int64
+	body                   *string
+	sha256                 *string
+	byte_length            *int
+	addbyte_length         *int
+	composition_mode       *string
+	bundle_id              *string
+	bundle_manifest_sha256 *string
+	note                   *string
+	created_by             *int64
+	addcreated_by          *int64
+	published_at           *time.Time
+	published_by           *int64
+	addpublished_by        *int64
+	created_at             *time.Time
+	clearedFields          map[string]struct{}
+	template               *int64
+	clearedtemplate        bool
+	done                   bool
+	oldValue               func(context.Context) (*SystemPromptTemplateVersion, error)
+	predicates             []predicate.SystemPromptTemplateVersion
 }
 
 var _ ent.Mutation = (*SystemPromptTemplateVersionMutation)(nil)
@@ -45121,6 +45124,140 @@ func (m *SystemPromptTemplateVersionMutation) AddedByteLength() (r int, exists b
 func (m *SystemPromptTemplateVersionMutation) ResetByteLength() {
 	m.byte_length = nil
 	m.addbyte_length = nil
+}
+
+// SetCompositionMode sets the "composition_mode" field.
+func (m *SystemPromptTemplateVersionMutation) SetCompositionMode(s string) {
+	m.composition_mode = &s
+}
+
+// CompositionMode returns the value of the "composition_mode" field in the mutation.
+func (m *SystemPromptTemplateVersionMutation) CompositionMode() (r string, exists bool) {
+	v := m.composition_mode
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCompositionMode returns the old "composition_mode" field's value of the SystemPromptTemplateVersion entity.
+// If the SystemPromptTemplateVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateVersionMutation) OldCompositionMode(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCompositionMode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCompositionMode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCompositionMode: %w", err)
+	}
+	return oldValue.CompositionMode, nil
+}
+
+// ResetCompositionMode resets all changes to the "composition_mode" field.
+func (m *SystemPromptTemplateVersionMutation) ResetCompositionMode() {
+	m.composition_mode = nil
+}
+
+// SetBundleID sets the "bundle_id" field.
+func (m *SystemPromptTemplateVersionMutation) SetBundleID(s string) {
+	m.bundle_id = &s
+}
+
+// BundleID returns the value of the "bundle_id" field in the mutation.
+func (m *SystemPromptTemplateVersionMutation) BundleID() (r string, exists bool) {
+	v := m.bundle_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBundleID returns the old "bundle_id" field's value of the SystemPromptTemplateVersion entity.
+// If the SystemPromptTemplateVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateVersionMutation) OldBundleID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBundleID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBundleID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBundleID: %w", err)
+	}
+	return oldValue.BundleID, nil
+}
+
+// ClearBundleID clears the value of the "bundle_id" field.
+func (m *SystemPromptTemplateVersionMutation) ClearBundleID() {
+	m.bundle_id = nil
+	m.clearedFields[systemprompttemplateversion.FieldBundleID] = struct{}{}
+}
+
+// BundleIDCleared returns if the "bundle_id" field was cleared in this mutation.
+func (m *SystemPromptTemplateVersionMutation) BundleIDCleared() bool {
+	_, ok := m.clearedFields[systemprompttemplateversion.FieldBundleID]
+	return ok
+}
+
+// ResetBundleID resets all changes to the "bundle_id" field.
+func (m *SystemPromptTemplateVersionMutation) ResetBundleID() {
+	m.bundle_id = nil
+	delete(m.clearedFields, systemprompttemplateversion.FieldBundleID)
+}
+
+// SetBundleManifestSha256 sets the "bundle_manifest_sha256" field.
+func (m *SystemPromptTemplateVersionMutation) SetBundleManifestSha256(s string) {
+	m.bundle_manifest_sha256 = &s
+}
+
+// BundleManifestSha256 returns the value of the "bundle_manifest_sha256" field in the mutation.
+func (m *SystemPromptTemplateVersionMutation) BundleManifestSha256() (r string, exists bool) {
+	v := m.bundle_manifest_sha256
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBundleManifestSha256 returns the old "bundle_manifest_sha256" field's value of the SystemPromptTemplateVersion entity.
+// If the SystemPromptTemplateVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateVersionMutation) OldBundleManifestSha256(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBundleManifestSha256 is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBundleManifestSha256 requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBundleManifestSha256: %w", err)
+	}
+	return oldValue.BundleManifestSha256, nil
+}
+
+// ClearBundleManifestSha256 clears the value of the "bundle_manifest_sha256" field.
+func (m *SystemPromptTemplateVersionMutation) ClearBundleManifestSha256() {
+	m.bundle_manifest_sha256 = nil
+	m.clearedFields[systemprompttemplateversion.FieldBundleManifestSha256] = struct{}{}
+}
+
+// BundleManifestSha256Cleared returns if the "bundle_manifest_sha256" field was cleared in this mutation.
+func (m *SystemPromptTemplateVersionMutation) BundleManifestSha256Cleared() bool {
+	_, ok := m.clearedFields[systemprompttemplateversion.FieldBundleManifestSha256]
+	return ok
+}
+
+// ResetBundleManifestSha256 resets all changes to the "bundle_manifest_sha256" field.
+func (m *SystemPromptTemplateVersionMutation) ResetBundleManifestSha256() {
+	m.bundle_manifest_sha256 = nil
+	delete(m.clearedFields, systemprompttemplateversion.FieldBundleManifestSha256)
 }
 
 // SetNote sets the "note" field.
@@ -45445,7 +45582,7 @@ func (m *SystemPromptTemplateVersionMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SystemPromptTemplateVersionMutation) Fields() []string {
-	fields := make([]string, 0, 10)
+	fields := make([]string, 0, 13)
 	if m.template != nil {
 		fields = append(fields, systemprompttemplateversion.FieldTemplateID)
 	}
@@ -45460,6 +45597,15 @@ func (m *SystemPromptTemplateVersionMutation) Fields() []string {
 	}
 	if m.byte_length != nil {
 		fields = append(fields, systemprompttemplateversion.FieldByteLength)
+	}
+	if m.composition_mode != nil {
+		fields = append(fields, systemprompttemplateversion.FieldCompositionMode)
+	}
+	if m.bundle_id != nil {
+		fields = append(fields, systemprompttemplateversion.FieldBundleID)
+	}
+	if m.bundle_manifest_sha256 != nil {
+		fields = append(fields, systemprompttemplateversion.FieldBundleManifestSha256)
 	}
 	if m.note != nil {
 		fields = append(fields, systemprompttemplateversion.FieldNote)
@@ -45494,6 +45640,12 @@ func (m *SystemPromptTemplateVersionMutation) Field(name string) (ent.Value, boo
 		return m.Sha256()
 	case systemprompttemplateversion.FieldByteLength:
 		return m.ByteLength()
+	case systemprompttemplateversion.FieldCompositionMode:
+		return m.CompositionMode()
+	case systemprompttemplateversion.FieldBundleID:
+		return m.BundleID()
+	case systemprompttemplateversion.FieldBundleManifestSha256:
+		return m.BundleManifestSha256()
 	case systemprompttemplateversion.FieldNote:
 		return m.Note()
 	case systemprompttemplateversion.FieldCreatedBy:
@@ -45523,6 +45675,12 @@ func (m *SystemPromptTemplateVersionMutation) OldField(ctx context.Context, name
 		return m.OldSha256(ctx)
 	case systemprompttemplateversion.FieldByteLength:
 		return m.OldByteLength(ctx)
+	case systemprompttemplateversion.FieldCompositionMode:
+		return m.OldCompositionMode(ctx)
+	case systemprompttemplateversion.FieldBundleID:
+		return m.OldBundleID(ctx)
+	case systemprompttemplateversion.FieldBundleManifestSha256:
+		return m.OldBundleManifestSha256(ctx)
 	case systemprompttemplateversion.FieldNote:
 		return m.OldNote(ctx)
 	case systemprompttemplateversion.FieldCreatedBy:
@@ -45576,6 +45734,27 @@ func (m *SystemPromptTemplateVersionMutation) SetField(name string, value ent.Va
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetByteLength(v)
+		return nil
+	case systemprompttemplateversion.FieldCompositionMode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCompositionMode(v)
+		return nil
+	case systemprompttemplateversion.FieldBundleID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBundleID(v)
+		return nil
+	case systemprompttemplateversion.FieldBundleManifestSha256:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBundleManifestSha256(v)
 		return nil
 	case systemprompttemplateversion.FieldNote:
 		v, ok := value.(string)
@@ -45693,6 +45872,12 @@ func (m *SystemPromptTemplateVersionMutation) AddField(name string, value ent.Va
 // mutation.
 func (m *SystemPromptTemplateVersionMutation) ClearedFields() []string {
 	var fields []string
+	if m.FieldCleared(systemprompttemplateversion.FieldBundleID) {
+		fields = append(fields, systemprompttemplateversion.FieldBundleID)
+	}
+	if m.FieldCleared(systemprompttemplateversion.FieldBundleManifestSha256) {
+		fields = append(fields, systemprompttemplateversion.FieldBundleManifestSha256)
+	}
 	if m.FieldCleared(systemprompttemplateversion.FieldCreatedBy) {
 		fields = append(fields, systemprompttemplateversion.FieldCreatedBy)
 	}
@@ -45716,6 +45901,12 @@ func (m *SystemPromptTemplateVersionMutation) FieldCleared(name string) bool {
 // error if the field is not defined in the schema.
 func (m *SystemPromptTemplateVersionMutation) ClearField(name string) error {
 	switch name {
+	case systemprompttemplateversion.FieldBundleID:
+		m.ClearBundleID()
+		return nil
+	case systemprompttemplateversion.FieldBundleManifestSha256:
+		m.ClearBundleManifestSha256()
+		return nil
 	case systemprompttemplateversion.FieldCreatedBy:
 		m.ClearCreatedBy()
 		return nil
@@ -45747,6 +45938,15 @@ func (m *SystemPromptTemplateVersionMutation) ResetField(name string) error {
 		return nil
 	case systemprompttemplateversion.FieldByteLength:
 		m.ResetByteLength()
+		return nil
+	case systemprompttemplateversion.FieldCompositionMode:
+		m.ResetCompositionMode()
+		return nil
+	case systemprompttemplateversion.FieldBundleID:
+		m.ResetBundleID()
+		return nil
+	case systemprompttemplateversion.FieldBundleManifestSha256:
+		m.ResetBundleManifestSha256()
 		return nil
 	case systemprompttemplateversion.FieldNote:
 		m.ResetNote()

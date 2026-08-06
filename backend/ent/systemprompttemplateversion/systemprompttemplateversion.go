@@ -24,6 +24,12 @@ const (
 	FieldSha256 = "sha256"
 	// FieldByteLength holds the string denoting the byte_length field in the database.
 	FieldByteLength = "byte_length"
+	// FieldCompositionMode holds the string denoting the composition_mode field in the database.
+	FieldCompositionMode = "composition_mode"
+	// FieldBundleID holds the string denoting the bundle_id field in the database.
+	FieldBundleID = "bundle_id"
+	// FieldBundleManifestSha256 holds the string denoting the bundle_manifest_sha256 field in the database.
+	FieldBundleManifestSha256 = "bundle_manifest_sha256"
 	// FieldNote holds the string denoting the note field in the database.
 	FieldNote = "note"
 	// FieldCreatedBy holds the string denoting the created_by field in the database.
@@ -55,6 +61,9 @@ var Columns = []string{
 	FieldBody,
 	FieldSha256,
 	FieldByteLength,
+	FieldCompositionMode,
+	FieldBundleID,
+	FieldBundleManifestSha256,
 	FieldNote,
 	FieldCreatedBy,
 	FieldPublishedAt,
@@ -79,6 +88,14 @@ var (
 	Sha256Validator func(string) error
 	// ByteLengthValidator is a validator for the "byte_length" field. It is called by the builders before save.
 	ByteLengthValidator func(int) error
+	// DefaultCompositionMode holds the default value on creation for the "composition_mode" field.
+	DefaultCompositionMode string
+	// CompositionModeValidator is a validator for the "composition_mode" field. It is called by the builders before save.
+	CompositionModeValidator func(string) error
+	// BundleIDValidator is a validator for the "bundle_id" field. It is called by the builders before save.
+	BundleIDValidator func(string) error
+	// BundleManifestSha256Validator is a validator for the "bundle_manifest_sha256" field. It is called by the builders before save.
+	BundleManifestSha256Validator func(string) error
 	// DefaultNote holds the default value on creation for the "note" field.
 	DefaultNote string
 	// NoteValidator is a validator for the "note" field. It is called by the builders before save.
@@ -118,6 +135,21 @@ func BySha256(opts ...sql.OrderTermOption) OrderOption {
 // ByByteLength orders the results by the byte_length field.
 func ByByteLength(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldByteLength, opts...).ToFunc()
+}
+
+// ByCompositionMode orders the results by the composition_mode field.
+func ByCompositionMode(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCompositionMode, opts...).ToFunc()
+}
+
+// ByBundleID orders the results by the bundle_id field.
+func ByBundleID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBundleID, opts...).ToFunc()
+}
+
+// ByBundleManifestSha256 orders the results by the bundle_manifest_sha256 field.
+func ByBundleManifestSha256(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBundleManifestSha256, opts...).ToFunc()
 }
 
 // ByNote orders the results by the note field.

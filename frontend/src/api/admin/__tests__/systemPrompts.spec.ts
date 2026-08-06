@@ -20,6 +20,14 @@ describe('System Prompts API', () => {
     client.get.mockResolvedValue({ data: [] })
     await systemPromptsAPI.listVersions(12)
     expect(client.get).toHaveBeenCalledWith('/admin/system-prompts/12/versions')
+
+    client.get.mockResolvedValue({ data: [] })
+    await systemPromptsAPI.listBundles()
+    expect(client.get).toHaveBeenCalledWith('/admin/system-prompts/bundles')
+
+    client.get.mockResolvedValue({ data: { bundle_id: 'moxinggang-reverse-skill' } })
+    await systemPromptsAPI.getBundle('moxinggang-reverse-skill')
+    expect(client.get).toHaveBeenCalledWith('/admin/system-prompts/bundles/moxinggang-reverse-skill')
   })
 
   it('passes expected revision on every catalog mutation', async () => {
@@ -33,8 +41,15 @@ describe('System Prompts API', () => {
     await systemPromptsAPI.updateMetadata(12, { name: 'Renamed', expected_revision: 7 })
     expect(client.patch).toHaveBeenCalledWith('/admin/system-prompts/12', expect.objectContaining({ expected_revision: 7 }))
 
-    await systemPromptsAPI.saveDraft(12, { body: 'draft', note: '', expected_latest_version: 3, expected_revision: 7 })
-    expect(client.post).toHaveBeenCalledWith('/admin/system-prompts/12/versions', expect.objectContaining({ expected_latest_version: 3, expected_revision: 7 }))
+    await systemPromptsAPI.saveDraft(12, {
+      body: 'draft', note: '', expected_latest_version: 3, expected_revision: 7,
+      composition_mode: 'offline_bundle', bundle_id: 'moxinggang-reverse-skill',
+      bundle_manifest_sha256: 'b'.repeat(64),
+    })
+    expect(client.post).toHaveBeenCalledWith('/admin/system-prompts/12/versions', expect.objectContaining({
+      expected_latest_version: 3, expected_revision: 7, composition_mode: 'offline_bundle',
+      bundle_id: 'moxinggang-reverse-skill', bundle_manifest_sha256: 'b'.repeat(64),
+    }))
 
     await systemPromptsAPI.duplicate(12, { slug: 'custom-copy', name: 'Copy', expected_revision: 7 })
     expect(client.post).toHaveBeenCalledWith('/admin/system-prompts/12/duplicate', expect.objectContaining({ expected_revision: 7 }))

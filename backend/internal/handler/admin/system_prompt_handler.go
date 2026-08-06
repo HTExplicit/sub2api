@@ -25,17 +25,23 @@ func NewSystemPromptHandler(promptService *service.BusinessSystemPromptService) 
 }
 
 type systemPromptRuntimeResponse struct {
-	Enabled            bool      `json:"enabled"`
-	ExposeServerPrompt bool      `json:"expose_server_prompt"`
-	CompactEnabled     bool      `json:"compact_enabled"`
-	TemplateID         int64     `json:"template_id"`
-	VersionID          int64     `json:"version_id"`
-	TemplateVersion    int64     `json:"template_version"`
-	Revision           int64     `json:"revision"`
-	SHA256             string    `json:"sha256"`
-	ByteLength         int       `json:"byte_length"`
-	Degraded           bool      `json:"degraded"`
-	UpdatedAt          time.Time `json:"updated_at"`
+	Enabled              bool      `json:"enabled"`
+	ExposeServerPrompt   bool      `json:"expose_server_prompt"`
+	CompactEnabled       bool      `json:"compact_enabled"`
+	TemplateID           int64     `json:"template_id"`
+	VersionID            int64     `json:"version_id"`
+	TemplateVersion      int64     `json:"template_version"`
+	Revision             int64     `json:"revision"`
+	SHA256               string    `json:"sha256"`
+	ByteLength           int       `json:"byte_length"`
+	CompositionMode      string    `json:"composition_mode"`
+	BundleID             string    `json:"bundle_id,omitempty"`
+	BundleManifestSHA256 string    `json:"bundle_manifest_sha256,omitempty"`
+	BundleAvailable      bool      `json:"bundle_available"`
+	BundleDegraded       bool      `json:"bundle_degraded"`
+	DegradedReason       string    `json:"degraded_reason,omitempty"`
+	Degraded             bool      `json:"degraded"`
+	UpdatedAt            time.Time `json:"updated_at"`
 }
 
 type systemPromptEnvelope struct {
@@ -44,12 +50,15 @@ type systemPromptEnvelope struct {
 }
 
 type systemPromptCreateRequest struct {
-	Slug             string `json:"slug" binding:"required"`
-	Name             string `json:"name" binding:"required"`
-	Description      string `json:"description"`
-	Body             string `json:"body" binding:"required"`
-	Note             string `json:"note"`
-	ExpectedRevision int64  `json:"expected_revision"`
+	Slug                 string `json:"slug" binding:"required"`
+	Name                 string `json:"name" binding:"required"`
+	Description          string `json:"description"`
+	Body                 string `json:"body" binding:"required"`
+	Note                 string `json:"note"`
+	CompositionMode      string `json:"composition_mode"`
+	BundleID             string `json:"bundle_id"`
+	BundleManifestSHA256 string `json:"bundle_manifest_sha256"`
+	ExpectedRevision     int64  `json:"expected_revision"`
 }
 
 type systemPromptUpdateRequest struct {
@@ -61,6 +70,9 @@ type systemPromptUpdateRequest struct {
 type systemPromptVersionRequest struct {
 	Body                  string `json:"body" binding:"required"`
 	Note                  string `json:"note"`
+	CompositionMode       string `json:"composition_mode"`
+	BundleID              string `json:"bundle_id"`
+	BundleManifestSHA256  string `json:"bundle_manifest_sha256"`
 	ExpectedLatestVersion int64  `json:"expected_latest_version"`
 	ExpectedRevision      int64  `json:"expected_revision"`
 }
@@ -79,13 +91,16 @@ type systemPromptDuplicateRequest struct {
 }
 
 type systemPromptPreviewRequest struct {
-	TemplateID         int64           `json:"template_id"`
-	VersionID          int64           `json:"version_id"`
-	ClientInstructions string          `json:"client_instructions"`
-	ServerInstructions string          `json:"server_instructions"`
-	Protocol           string          `json:"protocol"`
-	Compact            bool            `json:"compact"`
-	Body               json.RawMessage `json:"body"`
+	TemplateID           int64           `json:"template_id"`
+	VersionID            int64           `json:"version_id"`
+	ClientInstructions   string          `json:"client_instructions"`
+	ServerInstructions   string          `json:"server_instructions"`
+	Protocol             string          `json:"protocol"`
+	Compact              bool            `json:"compact"`
+	Body                 json.RawMessage `json:"body"`
+	CompositionMode      string          `json:"composition_mode"`
+	BundleID             string          `json:"bundle_id"`
+	BundleManifestSHA256 string          `json:"bundle_manifest_sha256"`
 }
 
 func (h *SystemPromptHandler) actorID(c *gin.Context) (int64, bool) {
@@ -99,17 +114,23 @@ func (h *SystemPromptHandler) actorID(c *gin.Context) (int64, bool) {
 
 func businessSystemPromptRuntimeResponse(snapshot service.BusinessSystemPromptSnapshot) systemPromptRuntimeResponse {
 	return systemPromptRuntimeResponse{
-		Enabled:            snapshot.Enabled,
-		ExposeServerPrompt: snapshot.ExposeServerPrompt,
-		CompactEnabled:     snapshot.CompactEnabled,
-		TemplateID:         snapshot.TemplateID,
-		VersionID:          snapshot.VersionID,
-		TemplateVersion:    snapshot.TemplateVersion,
-		Revision:           snapshot.Revision,
-		SHA256:             strings.ToLower(snapshot.SHA256),
-		ByteLength:         snapshot.ByteLength,
-		Degraded:           snapshot.Degraded,
-		UpdatedAt:          snapshot.UpdatedAt,
+		Enabled:              snapshot.Enabled,
+		ExposeServerPrompt:   snapshot.ExposeServerPrompt,
+		CompactEnabled:       snapshot.CompactEnabled,
+		TemplateID:           snapshot.TemplateID,
+		VersionID:            snapshot.VersionID,
+		TemplateVersion:      snapshot.TemplateVersion,
+		Revision:             snapshot.Revision,
+		SHA256:               strings.ToLower(snapshot.SHA256),
+		ByteLength:           snapshot.ByteLength,
+		CompositionMode:      snapshot.CompositionMode,
+		BundleID:             snapshot.BundleID,
+		BundleManifestSHA256: snapshot.BundleManifestSHA256,
+		BundleAvailable:      snapshot.BundleAvailable,
+		BundleDegraded:       snapshot.BundleDegraded,
+		DegradedReason:       snapshot.DegradedReason,
+		Degraded:             snapshot.Degraded,
+		UpdatedAt:            snapshot.UpdatedAt,
 	}
 }
 
@@ -206,6 +227,7 @@ func (h *SystemPromptHandler) Create(c *gin.Context) {
 	}
 	created, err := h.service.CreateTemplate(c.Request.Context(), service.BusinessSystemPromptTemplateCreate{
 		Slug: req.Slug, Name: req.Name, Description: req.Description, Body: req.Body, Note: req.Note,
+		CompositionMode: req.CompositionMode, BundleID: req.BundleID, BundleManifestSHA256: req.BundleManifestSHA256,
 	}, actorID, req.ExpectedRevision)
 	if err != nil {
 		writeBusinessSystemPromptError(c, err)
@@ -215,7 +237,9 @@ func (h *SystemPromptHandler) Create(c *gin.Context) {
 		middleware.SetAuditExtra(c, map[string]any{
 			"template_id": created.Template.ID, "template_version": created.Versions[0].Version,
 			"new_sha256": created.Versions[0].SHA256, "byte_length": created.Versions[0].ByteLength,
-			"revision": req.ExpectedRevision, "result": "created",
+			"composition_mode": created.Versions[0].CompositionMode, "bundle_id": created.Versions[0].BundleID,
+			"bundle_manifest_sha256": created.Versions[0].BundleManifestSHA256,
+			"revision":               req.ExpectedRevision, "result": "created",
 		})
 	}
 	response.Created(c, created)
@@ -258,7 +282,10 @@ func (h *SystemPromptHandler) SaveVersion(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-	version, err := h.service.CreateVersion(c.Request.Context(), templateID, req.Body, req.Note, actorID, req.ExpectedLatestVersion, req.ExpectedRevision)
+	version, err := h.service.CreateVersionWithComposition(c.Request.Context(), templateID, service.BusinessSystemPromptVersionCreate{
+		Body: req.Body, Note: req.Note, CompositionMode: req.CompositionMode,
+		BundleID: req.BundleID, BundleManifestSHA256: req.BundleManifestSHA256,
+	}, actorID, req.ExpectedLatestVersion, req.ExpectedRevision)
 	if err != nil {
 		writeBusinessSystemPromptError(c, err)
 		return
@@ -266,7 +293,9 @@ func (h *SystemPromptHandler) SaveVersion(c *gin.Context) {
 	middleware.SetAuditExtra(c, map[string]any{
 		"template_id": templateID, "template_version": version.Version,
 		"new_sha256": version.SHA256, "byte_length": version.ByteLength,
-		"revision": req.ExpectedRevision, "result": "draft_saved",
+		"composition_mode": version.CompositionMode, "bundle_id": version.BundleID,
+		"bundle_manifest_sha256": version.BundleManifestSHA256,
+		"revision":               req.ExpectedRevision, "result": "draft_saved",
 	})
 	response.Created(c, version)
 }
@@ -318,6 +347,8 @@ func (h *SystemPromptHandler) publish(c *gin.Context) {
 		"template_id": templateID, "template_version": snapshot.TemplateVersion,
 		"old_sha256": oldSnapshot.SHA256, "new_sha256": snapshot.SHA256,
 		"byte_length": snapshot.ByteLength, "revision": snapshot.Revision, "result": result,
+		"composition_mode": snapshot.CompositionMode, "bundle_id": snapshot.BundleID,
+		"bundle_manifest_sha256": snapshot.BundleManifestSHA256, "degraded": snapshot.Degraded,
 	})
 	response.Success(c, businessSystemPromptRuntimeResponse(snapshot))
 }
@@ -346,6 +377,9 @@ func (h *SystemPromptHandler) Duplicate(c *gin.Context) {
 		extra["template_version"] = created.Versions[0].Version
 		extra["new_sha256"] = created.Versions[0].SHA256
 		extra["byte_length"] = created.Versions[0].ByteLength
+		extra["composition_mode"] = created.Versions[0].CompositionMode
+		extra["bundle_id"] = created.Versions[0].BundleID
+		extra["bundle_manifest_sha256"] = created.Versions[0].BundleManifestSHA256
 	}
 	middleware.SetAuditExtra(c, extra)
 	response.Created(c, created)
@@ -392,9 +426,24 @@ func (h *SystemPromptHandler) UpdateRuntime(c *gin.Context) {
 		"new_sha256": snapshot.SHA256, "byte_length": snapshot.ByteLength,
 		"revision": snapshot.Revision, "enabled": snapshot.Enabled,
 		"expose_server_prompt": snapshot.ExposeServerPrompt, "compact_enabled": snapshot.CompactEnabled,
+		"composition_mode": snapshot.CompositionMode, "bundle_id": snapshot.BundleID,
+		"bundle_manifest_sha256": snapshot.BundleManifestSHA256, "degraded": snapshot.Degraded,
 		"result": "runtime_updated",
 	})
 	response.Success(c, businessSystemPromptRuntimeResponse(snapshot))
+}
+
+func (h *SystemPromptHandler) Bundles(c *gin.Context) {
+	response.Success(c, h.service.ListBundles())
+}
+
+func (h *SystemPromptHandler) Bundle(c *gin.Context) {
+	detail, err := h.service.GetBundle(c.Param("bundle_id"))
+	if err != nil {
+		writeBusinessSystemPromptError(c, err)
+		return
+	}
+	response.Success(c, detail)
 }
 
 func (h *SystemPromptHandler) PreviewMerge(c *gin.Context) {
@@ -405,6 +454,7 @@ func (h *SystemPromptHandler) PreviewMerge(c *gin.Context) {
 	}
 	server := req.ServerInstructions
 	var templateVersion int64
+	composition := service.BusinessSystemPromptComposition{Mode: req.CompositionMode, BundleID: req.BundleID, BundleManifestSHA256: req.BundleManifestSHA256}
 	if server == "" && req.TemplateID > 0 {
 		detail, err := h.service.GetTemplate(c.Request.Context(), req.TemplateID)
 		if err != nil {
@@ -418,6 +468,7 @@ func (h *SystemPromptHandler) PreviewMerge(c *gin.Context) {
 		}
 		server = version.Body
 		templateVersion = version.Version
+		composition = service.BusinessSystemPromptComposition{Mode: version.CompositionMode, BundleID: version.BundleID, BundleManifestSHA256: version.BundleManifestSHA256}
 	}
 	hash, byteLength, err := service.ValidateBusinessSystemPromptBody(server)
 	if err != nil {
@@ -426,9 +477,23 @@ func (h *SystemPromptHandler) PreviewMerge(c *gin.Context) {
 	}
 	middleware.SetAuditExtra(c, map[string]any{
 		"template_id": req.TemplateID, "template_version": templateVersion,
-		"new_sha256": hash, "byte_length": byteLength, "result": "previewed",
+		"new_sha256": hash, "byte_length": byteLength, "composition_mode": composition.Mode,
+		"bundle_id": composition.BundleID, "bundle_manifest_sha256": composition.BundleManifestSHA256,
+		"result": "previewed",
 	})
-	response.Success(c, gin.H{"instructions": service.MergeBusinessSystemPromptInstructions(req.ClientInstructions, server)})
+	requestText := service.BusinessSystemPromptRequestText(req.Body, service.BusinessSystemPromptProtocolResponses)
+	if requestText == "" {
+		requestText = service.BusinessSystemPromptRequestText(req.Body, service.BusinessSystemPromptProtocolChat)
+	}
+	prepared, err := h.service.PrepareBusinessSystemPromptPreviewSnapshot(service.BusinessSystemPromptSnapshot{
+		Enabled: true, Revision: 1, Body: server, SHA256: hash, ByteLength: byteLength,
+		CompositionMode: composition.Mode, BundleID: composition.BundleID, BundleManifestSHA256: composition.BundleManifestSHA256,
+	}, requestText)
+	if err != nil {
+		writeBusinessSystemPromptError(c, err)
+		return
+	}
+	response.Success(c, gin.H{"instructions": service.MergeBusinessSystemPromptInstructions(req.ClientInstructions, prepared.Body)})
 }
 
 func (h *SystemPromptHandler) PreviewUpstream(c *gin.Context) {
@@ -443,6 +508,7 @@ func (h *SystemPromptHandler) PreviewUpstream(c *gin.Context) {
 	}
 	server := req.ServerInstructions
 	var versionID, templateVersion int64
+	composition := service.BusinessSystemPromptComposition{Mode: req.CompositionMode, BundleID: req.BundleID, BundleManifestSHA256: req.BundleManifestSHA256}
 	if req.TemplateID > 0 {
 		detail, err := h.service.GetTemplate(c.Request.Context(), req.TemplateID)
 		if err != nil {
@@ -457,6 +523,7 @@ func (h *SystemPromptHandler) PreviewUpstream(c *gin.Context) {
 		versionID = version.ID
 		templateVersion = version.Version
 		server = version.Body
+		composition = service.BusinessSystemPromptComposition{Mode: version.CompositionMode, BundleID: version.BundleID, BundleManifestSHA256: version.BundleManifestSHA256}
 	}
 	hash, byteLength, err := service.ValidateBusinessSystemPromptBody(server)
 	if err != nil {
@@ -465,16 +532,25 @@ func (h *SystemPromptHandler) PreviewUpstream(c *gin.Context) {
 	}
 	middleware.SetAuditExtra(c, map[string]any{
 		"template_id": req.TemplateID, "template_version": templateVersion,
-		"new_sha256": hash, "byte_length": byteLength, "result": "previewed",
+		"new_sha256": hash, "byte_length": byteLength, "composition_mode": composition.Mode,
+		"bundle_id": composition.BundleID, "bundle_manifest_sha256": composition.BundleManifestSHA256,
+		"result": "previewed",
 	})
 	protocol := strings.ToLower(strings.TrimSpace(req.Protocol))
 	if protocol == "" {
 		protocol = service.BusinessSystemPromptProtocolResponses
 	}
-	updated, application, err := service.ApplyBusinessSystemPromptToJSON(req.Body, service.BusinessSystemPromptSnapshot{
+	previewSnapshot, err := h.service.PrepareBusinessSystemPromptPreviewSnapshot(service.BusinessSystemPromptSnapshot{
 		Enabled: true, CompactEnabled: true, TemplateID: req.TemplateID, VersionID: versionID, TemplateVersion: templateVersion,
 		Revision: 1, Body: server, SHA256: hash, ByteLength: byteLength,
-	}, service.BusinessSystemPromptTarget{Platform: service.PlatformOpenAI, Protocol: protocol, Compact: req.Compact})
+		CompositionMode: composition.Mode, BundleID: composition.BundleID, BundleManifestSHA256: composition.BundleManifestSHA256,
+	}, service.BusinessSystemPromptRequestText(req.Body, protocol))
+	if err != nil {
+		writeBusinessSystemPromptError(c, err)
+		return
+	}
+	updated, application, err := service.ApplyBusinessSystemPromptToJSON(req.Body, previewSnapshot,
+		service.BusinessSystemPromptTarget{Platform: service.PlatformOpenAI, Protocol: protocol, Compact: req.Compact})
 	if err != nil {
 		writeBusinessSystemPromptError(c, err)
 		return

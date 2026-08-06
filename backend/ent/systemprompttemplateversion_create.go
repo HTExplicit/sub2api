@@ -53,6 +53,48 @@ func (_c *SystemPromptTemplateVersionCreate) SetByteLength(v int) *SystemPromptT
 	return _c
 }
 
+// SetCompositionMode sets the "composition_mode" field.
+func (_c *SystemPromptTemplateVersionCreate) SetCompositionMode(v string) *SystemPromptTemplateVersionCreate {
+	_c.mutation.SetCompositionMode(v)
+	return _c
+}
+
+// SetNillableCompositionMode sets the "composition_mode" field if the given value is not nil.
+func (_c *SystemPromptTemplateVersionCreate) SetNillableCompositionMode(v *string) *SystemPromptTemplateVersionCreate {
+	if v != nil {
+		_c.SetCompositionMode(*v)
+	}
+	return _c
+}
+
+// SetBundleID sets the "bundle_id" field.
+func (_c *SystemPromptTemplateVersionCreate) SetBundleID(v string) *SystemPromptTemplateVersionCreate {
+	_c.mutation.SetBundleID(v)
+	return _c
+}
+
+// SetNillableBundleID sets the "bundle_id" field if the given value is not nil.
+func (_c *SystemPromptTemplateVersionCreate) SetNillableBundleID(v *string) *SystemPromptTemplateVersionCreate {
+	if v != nil {
+		_c.SetBundleID(*v)
+	}
+	return _c
+}
+
+// SetBundleManifestSha256 sets the "bundle_manifest_sha256" field.
+func (_c *SystemPromptTemplateVersionCreate) SetBundleManifestSha256(v string) *SystemPromptTemplateVersionCreate {
+	_c.mutation.SetBundleManifestSha256(v)
+	return _c
+}
+
+// SetNillableBundleManifestSha256 sets the "bundle_manifest_sha256" field if the given value is not nil.
+func (_c *SystemPromptTemplateVersionCreate) SetNillableBundleManifestSha256(v *string) *SystemPromptTemplateVersionCreate {
+	if v != nil {
+		_c.SetBundleManifestSha256(*v)
+	}
+	return _c
+}
+
 // SetNote sets the "note" field.
 func (_c *SystemPromptTemplateVersionCreate) SetNote(v string) *SystemPromptTemplateVersionCreate {
 	_c.mutation.SetNote(v)
@@ -163,6 +205,10 @@ func (_c *SystemPromptTemplateVersionCreate) ExecX(ctx context.Context) {
 
 // defaults sets the default values of the builder before save.
 func (_c *SystemPromptTemplateVersionCreate) defaults() {
+	if _, ok := _c.mutation.CompositionMode(); !ok {
+		v := systemprompttemplateversion.DefaultCompositionMode
+		_c.mutation.SetCompositionMode(v)
+	}
 	if _, ok := _c.mutation.Note(); !ok {
 		v := systemprompttemplateversion.DefaultNote
 		_c.mutation.SetNote(v)
@@ -203,6 +249,24 @@ func (_c *SystemPromptTemplateVersionCreate) check() error {
 	if v, ok := _c.mutation.ByteLength(); ok {
 		if err := systemprompttemplateversion.ByteLengthValidator(v); err != nil {
 			return &ValidationError{Name: "byte_length", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.byte_length": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.CompositionMode(); !ok {
+		return &ValidationError{Name: "composition_mode", err: errors.New(`ent: missing required field "SystemPromptTemplateVersion.composition_mode"`)}
+	}
+	if v, ok := _c.mutation.CompositionMode(); ok {
+		if err := systemprompttemplateversion.CompositionModeValidator(v); err != nil {
+			return &ValidationError{Name: "composition_mode", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.composition_mode": %w`, err)}
+		}
+	}
+	if v, ok := _c.mutation.BundleID(); ok {
+		if err := systemprompttemplateversion.BundleIDValidator(v); err != nil {
+			return &ValidationError{Name: "bundle_id", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.bundle_id": %w`, err)}
+		}
+	}
+	if v, ok := _c.mutation.BundleManifestSha256(); ok {
+		if err := systemprompttemplateversion.BundleManifestSha256Validator(v); err != nil {
+			return &ValidationError{Name: "bundle_manifest_sha256", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.bundle_manifest_sha256": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.Note(); !ok {
@@ -261,6 +325,18 @@ func (_c *SystemPromptTemplateVersionCreate) createSpec() (*SystemPromptTemplate
 	if value, ok := _c.mutation.ByteLength(); ok {
 		_spec.SetField(systemprompttemplateversion.FieldByteLength, field.TypeInt, value)
 		_node.ByteLength = value
+	}
+	if value, ok := _c.mutation.CompositionMode(); ok {
+		_spec.SetField(systemprompttemplateversion.FieldCompositionMode, field.TypeString, value)
+		_node.CompositionMode = value
+	}
+	if value, ok := _c.mutation.BundleID(); ok {
+		_spec.SetField(systemprompttemplateversion.FieldBundleID, field.TypeString, value)
+		_node.BundleID = &value
+	}
+	if value, ok := _c.mutation.BundleManifestSha256(); ok {
+		_spec.SetField(systemprompttemplateversion.FieldBundleManifestSha256, field.TypeString, value)
+		_node.BundleManifestSha256 = &value
 	}
 	if value, ok := _c.mutation.Note(); ok {
 		_spec.SetField(systemprompttemplateversion.FieldNote, field.TypeString, value)
@@ -420,6 +496,54 @@ func (u *SystemPromptTemplateVersionUpsert) UpdateByteLength() *SystemPromptTemp
 // AddByteLength adds v to the "byte_length" field.
 func (u *SystemPromptTemplateVersionUpsert) AddByteLength(v int) *SystemPromptTemplateVersionUpsert {
 	u.Add(systemprompttemplateversion.FieldByteLength, v)
+	return u
+}
+
+// SetCompositionMode sets the "composition_mode" field.
+func (u *SystemPromptTemplateVersionUpsert) SetCompositionMode(v string) *SystemPromptTemplateVersionUpsert {
+	u.Set(systemprompttemplateversion.FieldCompositionMode, v)
+	return u
+}
+
+// UpdateCompositionMode sets the "composition_mode" field to the value that was provided on create.
+func (u *SystemPromptTemplateVersionUpsert) UpdateCompositionMode() *SystemPromptTemplateVersionUpsert {
+	u.SetExcluded(systemprompttemplateversion.FieldCompositionMode)
+	return u
+}
+
+// SetBundleID sets the "bundle_id" field.
+func (u *SystemPromptTemplateVersionUpsert) SetBundleID(v string) *SystemPromptTemplateVersionUpsert {
+	u.Set(systemprompttemplateversion.FieldBundleID, v)
+	return u
+}
+
+// UpdateBundleID sets the "bundle_id" field to the value that was provided on create.
+func (u *SystemPromptTemplateVersionUpsert) UpdateBundleID() *SystemPromptTemplateVersionUpsert {
+	u.SetExcluded(systemprompttemplateversion.FieldBundleID)
+	return u
+}
+
+// ClearBundleID clears the value of the "bundle_id" field.
+func (u *SystemPromptTemplateVersionUpsert) ClearBundleID() *SystemPromptTemplateVersionUpsert {
+	u.SetNull(systemprompttemplateversion.FieldBundleID)
+	return u
+}
+
+// SetBundleManifestSha256 sets the "bundle_manifest_sha256" field.
+func (u *SystemPromptTemplateVersionUpsert) SetBundleManifestSha256(v string) *SystemPromptTemplateVersionUpsert {
+	u.Set(systemprompttemplateversion.FieldBundleManifestSha256, v)
+	return u
+}
+
+// UpdateBundleManifestSha256 sets the "bundle_manifest_sha256" field to the value that was provided on create.
+func (u *SystemPromptTemplateVersionUpsert) UpdateBundleManifestSha256() *SystemPromptTemplateVersionUpsert {
+	u.SetExcluded(systemprompttemplateversion.FieldBundleManifestSha256)
+	return u
+}
+
+// ClearBundleManifestSha256 clears the value of the "bundle_manifest_sha256" field.
+func (u *SystemPromptTemplateVersionUpsert) ClearBundleManifestSha256() *SystemPromptTemplateVersionUpsert {
+	u.SetNull(systemprompttemplateversion.FieldBundleManifestSha256)
 	return u
 }
 
@@ -627,6 +751,62 @@ func (u *SystemPromptTemplateVersionUpsertOne) AddByteLength(v int) *SystemPromp
 func (u *SystemPromptTemplateVersionUpsertOne) UpdateByteLength() *SystemPromptTemplateVersionUpsertOne {
 	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
 		s.UpdateByteLength()
+	})
+}
+
+// SetCompositionMode sets the "composition_mode" field.
+func (u *SystemPromptTemplateVersionUpsertOne) SetCompositionMode(v string) *SystemPromptTemplateVersionUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.SetCompositionMode(v)
+	})
+}
+
+// UpdateCompositionMode sets the "composition_mode" field to the value that was provided on create.
+func (u *SystemPromptTemplateVersionUpsertOne) UpdateCompositionMode() *SystemPromptTemplateVersionUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.UpdateCompositionMode()
+	})
+}
+
+// SetBundleID sets the "bundle_id" field.
+func (u *SystemPromptTemplateVersionUpsertOne) SetBundleID(v string) *SystemPromptTemplateVersionUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.SetBundleID(v)
+	})
+}
+
+// UpdateBundleID sets the "bundle_id" field to the value that was provided on create.
+func (u *SystemPromptTemplateVersionUpsertOne) UpdateBundleID() *SystemPromptTemplateVersionUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.UpdateBundleID()
+	})
+}
+
+// ClearBundleID clears the value of the "bundle_id" field.
+func (u *SystemPromptTemplateVersionUpsertOne) ClearBundleID() *SystemPromptTemplateVersionUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.ClearBundleID()
+	})
+}
+
+// SetBundleManifestSha256 sets the "bundle_manifest_sha256" field.
+func (u *SystemPromptTemplateVersionUpsertOne) SetBundleManifestSha256(v string) *SystemPromptTemplateVersionUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.SetBundleManifestSha256(v)
+	})
+}
+
+// UpdateBundleManifestSha256 sets the "bundle_manifest_sha256" field to the value that was provided on create.
+func (u *SystemPromptTemplateVersionUpsertOne) UpdateBundleManifestSha256() *SystemPromptTemplateVersionUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.UpdateBundleManifestSha256()
+	})
+}
+
+// ClearBundleManifestSha256 clears the value of the "bundle_manifest_sha256" field.
+func (u *SystemPromptTemplateVersionUpsertOne) ClearBundleManifestSha256() *SystemPromptTemplateVersionUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.ClearBundleManifestSha256()
 	})
 }
 
@@ -1013,6 +1193,62 @@ func (u *SystemPromptTemplateVersionUpsertBulk) AddByteLength(v int) *SystemProm
 func (u *SystemPromptTemplateVersionUpsertBulk) UpdateByteLength() *SystemPromptTemplateVersionUpsertBulk {
 	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
 		s.UpdateByteLength()
+	})
+}
+
+// SetCompositionMode sets the "composition_mode" field.
+func (u *SystemPromptTemplateVersionUpsertBulk) SetCompositionMode(v string) *SystemPromptTemplateVersionUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.SetCompositionMode(v)
+	})
+}
+
+// UpdateCompositionMode sets the "composition_mode" field to the value that was provided on create.
+func (u *SystemPromptTemplateVersionUpsertBulk) UpdateCompositionMode() *SystemPromptTemplateVersionUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.UpdateCompositionMode()
+	})
+}
+
+// SetBundleID sets the "bundle_id" field.
+func (u *SystemPromptTemplateVersionUpsertBulk) SetBundleID(v string) *SystemPromptTemplateVersionUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.SetBundleID(v)
+	})
+}
+
+// UpdateBundleID sets the "bundle_id" field to the value that was provided on create.
+func (u *SystemPromptTemplateVersionUpsertBulk) UpdateBundleID() *SystemPromptTemplateVersionUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.UpdateBundleID()
+	})
+}
+
+// ClearBundleID clears the value of the "bundle_id" field.
+func (u *SystemPromptTemplateVersionUpsertBulk) ClearBundleID() *SystemPromptTemplateVersionUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.ClearBundleID()
+	})
+}
+
+// SetBundleManifestSha256 sets the "bundle_manifest_sha256" field.
+func (u *SystemPromptTemplateVersionUpsertBulk) SetBundleManifestSha256(v string) *SystemPromptTemplateVersionUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.SetBundleManifestSha256(v)
+	})
+}
+
+// UpdateBundleManifestSha256 sets the "bundle_manifest_sha256" field to the value that was provided on create.
+func (u *SystemPromptTemplateVersionUpsertBulk) UpdateBundleManifestSha256() *SystemPromptTemplateVersionUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.UpdateBundleManifestSha256()
+	})
+}
+
+// ClearBundleManifestSha256 clears the value of the "bundle_manifest_sha256" field.
+func (u *SystemPromptTemplateVersionUpsertBulk) ClearBundleManifestSha256() *SystemPromptTemplateVersionUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.ClearBundleManifestSha256()
 	})
 }
 

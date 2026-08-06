@@ -2,13 +2,47 @@ package repository
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 )
+
+func TestBusinessSystemPromptRevisionBusStoresBodyFreeResponseRouteMetadata(t *testing.T) {
+	server := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	defer func() { _ = client.Close() }()
+	bus := NewBusinessSystemPromptRevisionBus(client)
+	store, ok := bus.(service.BusinessSystemPromptRouteMetadataStore)
+	require.True(t, ok)
+
+	metadata := service.BusinessSystemPromptBundleMetadata{
+		BundleID: "bundle", ManifestSHA256: strings.Repeat("a", 64),
+		BaseSHA256: strings.Repeat("b", 64), EffectiveSHA256: strings.Repeat("c", 64),
+		ByteLength: 123,
+		RouteIDs:   []string{"api-security"}, DocumentPaths: []string{"skills/api-security/SKILL.md"},
+	}
+	require.NoError(t, store.StoreBusinessSystemPromptRouteMetadata(context.Background(), "resp_secret_identifier", metadata, time.Hour))
+	loaded, found, err := store.LoadBusinessSystemPromptRouteMetadata(context.Background(), "resp_secret_identifier")
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, metadata, loaded)
+
+	for _, key := range server.Keys() {
+		value, err := server.Get(key)
+		require.NoError(t, err)
+		require.NotContains(t, value, "server prompt body")
+		require.NotContains(t, key, "resp_secret_identifier", "raw response IDs must not appear in Redis keys")
+	}
+	server.FastForward(time.Hour + time.Second)
+	_, found, err = store.LoadBusinessSystemPromptRouteMetadata(context.Background(), "resp_secret_identifier")
+	require.NoError(t, err)
+	require.False(t, found)
+}
 
 func TestBusinessSystemPromptRevisionBusPublishesOnlyRevision(t *testing.T) {
 	server := miniredis.RunT(t)

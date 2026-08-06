@@ -396,6 +396,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			)
 		}
 		normalized = policyApplied
+		beginBusinessSystemPromptRequestTurn(c)
 		if updatedPromptPayload, application, promptErr := s.applyBusinessSystemPromptForRequest(
 			c, normalized, account, BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c),
 		); promptErr != nil {

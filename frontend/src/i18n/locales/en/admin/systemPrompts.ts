@@ -6,12 +6,26 @@ export default {
       active: 'Enabled',
       disabled: 'Disabled',
       degraded: 'Degraded',
+      bundleUnavailable: 'Bundle unavailable',
+      bundleDegraded: 'Bundle degraded',
       enabled: 'Enable business prompt',
       enabledHint: 'Applies only to OpenAI and compatible adapters.',
       expose: 'Expose server prompt',
       exposeHint: 'Keep structured response instructions visible to clients.',
       compact: 'Compact mode',
       compactHint: 'Controls this policy independently from legacy Codex compact handling.'
+    },
+    bundle: {
+      compositionMode: 'Composition mode',
+      inline: 'Prompt body only',
+      offline: 'Offline skill bundle',
+      bundle: 'Skill bundle',
+      select: 'Select a skill bundle',
+      available: 'Available',
+      unavailable: 'Unavailable',
+      degraded: 'Degraded',
+      documents: 'documents',
+      routes: 'routes'
     },
     templates: {
       title: 'Templates',
@@ -51,6 +65,7 @@ export default {
     },
     history: {
       version: 'Version',
+      source: 'Composition',
       hash: 'SHA-256',
       size: 'Size',
       note: 'Note',
@@ -67,7 +82,10 @@ export default {
       protocol: 'Protocol',
       compact: 'Compact',
       jsonBody: 'JSON body',
-      application: 'Application metadata'
+      application: 'Application metadata',
+      effectiveHash: 'Effective prompt SHA-256',
+      routes: 'Matched routes',
+      documents: 'Injected documents'
     },
     dialogs: {
       createTitle: 'Create template',
@@ -100,6 +118,7 @@ export default {
     errors: {
       load: 'Unable to load system prompt runtime.',
       loadDetail: 'Unable to load the selected template.',
+      loadBundle: 'Unable to load the offline skill bundle details.',
       saveDraft: 'Unable to save the draft.',
       saveMetadata: 'Unable to save template metadata.',
       saveRuntime: 'Unable to save runtime switches.',
@@ -113,7 +132,8 @@ export default {
       invalidJson: 'Enter a valid JSON request body.',
       conflict: 'The server revision changed. Reload before making another write.',
       unsavedSelection: 'Save or discard the current draft before changing the selection.',
-      saveBeforePublish: 'Save the draft before publishing it.'
+      saveBeforePublish: 'Save the draft before publishing it.',
+      bundleUnavailable: 'The selected offline bundle or pinned manifest is unavailable.'
     }
   }
 }
