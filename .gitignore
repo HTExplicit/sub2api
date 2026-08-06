@@ -141,5 +141,7 @@ docs/*
 .serena/
 .codex/
 frontend/coverage/
+__pycache__/
+*.py[cod]
 aicodex
 output/

@@ -46,6 +46,21 @@ jobs:
           git fetch origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}" main
           tag_commit=$(git rev-list -n 1 "$RELEASE_TAG")
           git merge-base --is-ancestor "$tag_commit" origin/main
+          git checkout --detach "$tag_commit"
+          bundle_asset=$(python3 -c 'import sys; sys.path.insert(0, "tools"); import verify_business_system_prompt_bundle as v; print(v.ASSET_NAME)')
+          bundle_checksum_asset=$(python3 -c 'import sys; sys.path.insert(0, "tools"); import verify_business_system_prompt_bundle as v; print(v.CHECKSUM_NAME)')
+          [[ "$bundle_asset" =~ ^moxinggang-reverse-skill-[0-9a-f]{64}\.zip$ ]]
+          [[ "$bundle_checksum_asset" == "${bundle_asset}.sha256" ]]
+          bundle_download_dir="$RUNNER_TEMP/sub2api-bundle-${RELEASE_TAG}"
+          install -d -m 700 "$bundle_download_dir"
+          gh release download "$RELEASE_TAG" \
+            --dir "$bundle_download_dir" \
+            --pattern "$bundle_asset" \
+            --pattern "$bundle_checksum_asset"
+          python3 tools/verify_business_system_prompt_bundle.py \
+            --zip "$bundle_download_dir/$bundle_asset" \
+            --manifest deploy/skill-bundles/moxinggang-reverse-skill/bundle-manifest.json \
+            --checksum "$bundle_download_dir/$bundle_checksum_asset"
           version="${RELEASE_TAG#v}"
           image="ghcr.io/htexplicit/sub2api:${version}"
           digest=$(docker buildx imagetools inspect "$image" | awk '$1 == "Digest:" {print $2; exit}')
