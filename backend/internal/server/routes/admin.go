@@ -114,11 +114,34 @@ func RegisterAdminRoutes(
 		// 独立提示词输入审计
 		registerPromptAuditRoutes(admin, h)
 
+		// 独立业务 System Prompt 管理
+		registerSystemPromptRoutes(admin, h)
+
 		// 邀请返利（专属用户管理）
 		registerAffiliateRoutes(admin, h)
 
 		// 操作审计日志
 		registerAuditLogRoutes(admin, h, stepUpAuth)
+	}
+}
+
+func registerSystemPromptRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	prompts := admin.Group("/system-prompts")
+	{
+		prompts.GET("", h.Admin.SystemPrompt.List)
+		prompts.POST("", h.Admin.SystemPrompt.Create)
+		prompts.GET("/runtime", h.Admin.SystemPrompt.Runtime)
+		prompts.PUT("/runtime", h.Admin.SystemPrompt.UpdateRuntime)
+		prompts.POST("/preview/merge", h.Admin.SystemPrompt.PreviewMerge)
+		prompts.POST("/preview/upstream", h.Admin.SystemPrompt.PreviewUpstream)
+		prompts.GET("/:id", h.Admin.SystemPrompt.Get)
+		prompts.GET("/:id/versions", h.Admin.SystemPrompt.Versions)
+		prompts.PATCH("/:id", h.Admin.SystemPrompt.Update)
+		prompts.DELETE("/:id", h.Admin.SystemPrompt.Delete)
+		prompts.POST("/:id/duplicate", h.Admin.SystemPrompt.Duplicate)
+		prompts.POST("/:id/versions", h.Admin.SystemPrompt.SaveVersion)
+		prompts.POST("/:id/versions/:version_id/publish", h.Admin.SystemPrompt.Publish)
+		prompts.POST("/:id/versions/:version_id/rollback", h.Admin.SystemPrompt.Rollback)
 	}
 }
 

@@ -585,6 +585,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/system-prompts',
+    name: 'AdminSystemPrompts',
+    component: () => import('@/views/admin/SystemPromptsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Business System Prompts',
+      titleKey: 'admin.systemPrompts.title',
+      descriptionKey: 'admin.systemPrompts.description'
+    }
+  },
+  {
     path: '/admin/risk-control',
     name: 'AdminRiskControl',
     component: () => import('@/views/admin/RiskControlView.vue'),

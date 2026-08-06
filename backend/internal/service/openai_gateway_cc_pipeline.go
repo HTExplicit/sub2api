@@ -63,11 +63,11 @@ func (s *OpenAIGatewayService) newStreamHeaderWriter(c *gin.Context, upstream ht
 	}
 }
 
-// readOpenAIUpstreamError 读取上游错误体并把 resp.Body 回卷为可重读的副本
-// （下游 handleXxxErrorResponse 需要再次读取），返回原始错误体与脱敏后的
-// 上游错误消息。
-func (s *OpenAIGatewayService) readOpenAIUpstreamError(resp *http.Response) ([]byte, string) {
+// readOpenAIUpstreamError 读取上游错误体，在任何解析或记录之前移除不可暴露的
+// 结构化业务提示字段，并把 resp.Body 回卷为可重读的副本。
+func (s *OpenAIGatewayService) readOpenAIUpstreamError(resp *http.Response, c *gin.Context) ([]byte, string) {
 	respBody := s.readUpstreamErrorBody(resp)
+	respBody = s.rewriteBusinessSystemPromptJSONForAnyRequest(c, respBody)
 	_ = resp.Body.Close()
 	resp.Body = io.NopCloser(bytes.NewReader(respBody))
 

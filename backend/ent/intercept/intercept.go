@@ -42,6 +42,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
+	"github.com/Wei-Shaw/sub2api/ent/systempromptruntime"
+	"github.com/Wei-Shaw/sub2api/ent/systemprompttemplate"
+	"github.com/Wei-Shaw/sub2api/ent/systemprompttemplateversion"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
@@ -1000,6 +1003,87 @@ func (f TraverseSubscriptionPlan) Traverse(ctx context.Context, q ent.Query) err
 	return fmt.Errorf("unexpected query type %T. expect *ent.SubscriptionPlanQuery", q)
 }
 
+// The SystemPromptRuntimeFunc type is an adapter to allow the use of ordinary function as a Querier.
+type SystemPromptRuntimeFunc func(context.Context, *ent.SystemPromptRuntimeQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f SystemPromptRuntimeFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.SystemPromptRuntimeQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.SystemPromptRuntimeQuery", q)
+}
+
+// The TraverseSystemPromptRuntime type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseSystemPromptRuntime func(context.Context, *ent.SystemPromptRuntimeQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseSystemPromptRuntime) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseSystemPromptRuntime) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.SystemPromptRuntimeQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.SystemPromptRuntimeQuery", q)
+}
+
+// The SystemPromptTemplateFunc type is an adapter to allow the use of ordinary function as a Querier.
+type SystemPromptTemplateFunc func(context.Context, *ent.SystemPromptTemplateQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f SystemPromptTemplateFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.SystemPromptTemplateQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.SystemPromptTemplateQuery", q)
+}
+
+// The TraverseSystemPromptTemplate type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseSystemPromptTemplate func(context.Context, *ent.SystemPromptTemplateQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseSystemPromptTemplate) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseSystemPromptTemplate) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.SystemPromptTemplateQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.SystemPromptTemplateQuery", q)
+}
+
+// The SystemPromptTemplateVersionFunc type is an adapter to allow the use of ordinary function as a Querier.
+type SystemPromptTemplateVersionFunc func(context.Context, *ent.SystemPromptTemplateVersionQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f SystemPromptTemplateVersionFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.SystemPromptTemplateVersionQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.SystemPromptTemplateVersionQuery", q)
+}
+
+// The TraverseSystemPromptTemplateVersion type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseSystemPromptTemplateVersion func(context.Context, *ent.SystemPromptTemplateVersionQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseSystemPromptTemplateVersion) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseSystemPromptTemplateVersion) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.SystemPromptTemplateVersionQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.SystemPromptTemplateVersionQuery", q)
+}
+
 // The TLSFingerprintProfileFunc type is an adapter to allow the use of ordinary function as a Querier.
 type TLSFingerprintProfileFunc func(context.Context, *ent.TLSFingerprintProfileQuery) (ent.Value, error)
 
@@ -1312,6 +1396,12 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.SettingQuery, predicate.Setting, setting.OrderOption]{typ: ent.TypeSetting, tq: q}, nil
 	case *ent.SubscriptionPlanQuery:
 		return &query[*ent.SubscriptionPlanQuery, predicate.SubscriptionPlan, subscriptionplan.OrderOption]{typ: ent.TypeSubscriptionPlan, tq: q}, nil
+	case *ent.SystemPromptRuntimeQuery:
+		return &query[*ent.SystemPromptRuntimeQuery, predicate.SystemPromptRuntime, systempromptruntime.OrderOption]{typ: ent.TypeSystemPromptRuntime, tq: q}, nil
+	case *ent.SystemPromptTemplateQuery:
+		return &query[*ent.SystemPromptTemplateQuery, predicate.SystemPromptTemplate, systemprompttemplate.OrderOption]{typ: ent.TypeSystemPromptTemplate, tq: q}, nil
+	case *ent.SystemPromptTemplateVersionQuery:
+		return &query[*ent.SystemPromptTemplateVersionQuery, predicate.SystemPromptTemplateVersion, systemprompttemplateversion.OrderOption]{typ: ent.TypeSystemPromptTemplateVersion, tq: q}, nil
 	case *ent.TLSFingerprintProfileQuery:
 		return &query[*ent.TLSFingerprintProfileQuery, predicate.TLSFingerprintProfile, tlsfingerprintprofile.OrderOption]{typ: ent.TypeTLSFingerprintProfile, tq: q}, nil
 	case *ent.UsageCleanupTaskQuery:

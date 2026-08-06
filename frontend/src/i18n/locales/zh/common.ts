@@ -199,6 +199,7 @@ export default {
     contentModeration: '内容审核',
     promptAudit: '提示词审计',
     auditLogs: '操作日志',
+    systemPrompts: '系统提示词',
   },
 
   // Auth

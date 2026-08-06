@@ -1641,6 +1641,92 @@ var (
 			},
 		},
 	}
+	// SystemPromptRuntimeColumns holds the columns for the "system_prompt_runtime" table.
+	SystemPromptRuntimeColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "enabled", Type: field.TypeBool, Default: false},
+		{Name: "expose_server_prompt", Type: field.TypeBool, Default: false},
+		{Name: "compact_enabled", Type: field.TypeBool, Default: false},
+		{Name: "revision", Type: field.TypeInt64, Default: 1},
+		{Name: "updated_by", Type: field.TypeInt64, Nullable: true},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "active_template_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "active_version_id", Type: field.TypeInt64, Nullable: true},
+	}
+	// SystemPromptRuntimeTable holds the schema information for the "system_prompt_runtime" table.
+	SystemPromptRuntimeTable = &schema.Table{
+		Name:       "system_prompt_runtime",
+		Columns:    SystemPromptRuntimeColumns,
+		PrimaryKey: []*schema.Column{SystemPromptRuntimeColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "system_prompt_runtime_system_prompt_templates_active_template",
+				Columns:    []*schema.Column{SystemPromptRuntimeColumns[7]},
+				RefColumns: []*schema.Column{SystemPromptTemplatesColumns[0]},
+				OnDelete:   schema.Restrict,
+			},
+			{
+				Symbol:     "system_prompt_runtime_system_prompt_template_versions_active_version",
+				Columns:    []*schema.Column{SystemPromptRuntimeColumns[8]},
+				RefColumns: []*schema.Column{SystemPromptTemplateVersionsColumns[0]},
+				OnDelete:   schema.Restrict,
+			},
+		},
+	}
+	// SystemPromptTemplatesColumns holds the columns for the "system_prompt_templates" table.
+	SystemPromptTemplatesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "slug", Type: field.TypeString, Unique: true, Size: 100},
+		{Name: "name", Type: field.TypeString, Size: 200},
+		{Name: "description", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "is_seed", Type: field.TypeBool, Default: false},
+		{Name: "created_by", Type: field.TypeInt64, Nullable: true},
+		{Name: "updated_by", Type: field.TypeInt64, Nullable: true},
+	}
+	// SystemPromptTemplatesTable holds the schema information for the "system_prompt_templates" table.
+	SystemPromptTemplatesTable = &schema.Table{
+		Name:       "system_prompt_templates",
+		Columns:    SystemPromptTemplatesColumns,
+		PrimaryKey: []*schema.Column{SystemPromptTemplatesColumns[0]},
+	}
+	// SystemPromptTemplateVersionsColumns holds the columns for the "system_prompt_template_versions" table.
+	SystemPromptTemplateVersionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "version", Type: field.TypeInt64},
+		{Name: "body", Type: field.TypeString, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "sha256", Type: field.TypeString, Size: 64},
+		{Name: "byte_length", Type: field.TypeInt},
+		{Name: "note", Type: field.TypeString, Size: 500, Default: ""},
+		{Name: "created_by", Type: field.TypeInt64, Nullable: true},
+		{Name: "published_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "published_by", Type: field.TypeInt64, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "template_id", Type: field.TypeInt64},
+	}
+	// SystemPromptTemplateVersionsTable holds the schema information for the "system_prompt_template_versions" table.
+	SystemPromptTemplateVersionsTable = &schema.Table{
+		Name:       "system_prompt_template_versions",
+		Columns:    SystemPromptTemplateVersionsColumns,
+		PrimaryKey: []*schema.Column{SystemPromptTemplateVersionsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "system_prompt_template_versions_system_prompt_templates_versions",
+				Columns:    []*schema.Column{SystemPromptTemplateVersionsColumns[10]},
+				RefColumns: []*schema.Column{SystemPromptTemplatesColumns[0]},
+				OnDelete:   schema.Restrict,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "systemprompttemplateversion_template_id_version",
+				Unique:  true,
+				Columns: []*schema.Column{SystemPromptTemplateVersionsColumns[10], SystemPromptTemplateVersionsColumns[1]},
+			},
+		},
+	}
 	// TLSFingerprintProfilesColumns holds the columns for the "tls_fingerprint_profiles" table.
 	TLSFingerprintProfilesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -2188,6 +2274,9 @@ var (
 		SecuritySecretsTable,
 		SettingsTable,
 		SubscriptionPlansTable,
+		SystemPromptRuntimeTable,
+		SystemPromptTemplatesTable,
+		SystemPromptTemplateVersionsTable,
 		TLSFingerprintProfilesTable,
 		UsageCleanupTasksTable,
 		UsageLogsTable,
@@ -2325,6 +2414,18 @@ func init() {
 	}
 	SubscriptionPlansTable.Annotation = &entsql.Annotation{
 		Table: "subscription_plans",
+	}
+	SystemPromptRuntimeTable.ForeignKeys[0].RefTable = SystemPromptTemplatesTable
+	SystemPromptRuntimeTable.ForeignKeys[1].RefTable = SystemPromptTemplateVersionsTable
+	SystemPromptRuntimeTable.Annotation = &entsql.Annotation{
+		Table: "system_prompt_runtime",
+	}
+	SystemPromptTemplatesTable.Annotation = &entsql.Annotation{
+		Table: "system_prompt_templates",
+	}
+	SystemPromptTemplateVersionsTable.ForeignKeys[0].RefTable = SystemPromptTemplatesTable
+	SystemPromptTemplateVersionsTable.Annotation = &entsql.Annotation{
+		Table: "system_prompt_template_versions",
 	}
 	TLSFingerprintProfilesTable.Annotation = &entsql.Annotation{
 		Table: "tls_fingerprint_profiles",

@@ -80,6 +80,12 @@ type Tx struct {
 	Setting *SettingClient
 	// SubscriptionPlan is the client for interacting with the SubscriptionPlan builders.
 	SubscriptionPlan *SubscriptionPlanClient
+	// SystemPromptRuntime is the client for interacting with the SystemPromptRuntime builders.
+	SystemPromptRuntime *SystemPromptRuntimeClient
+	// SystemPromptTemplate is the client for interacting with the SystemPromptTemplate builders.
+	SystemPromptTemplate *SystemPromptTemplateClient
+	// SystemPromptTemplateVersion is the client for interacting with the SystemPromptTemplateVersion builders.
+	SystemPromptTemplateVersion *SystemPromptTemplateVersionClient
 	// TLSFingerprintProfile is the client for interacting with the TLSFingerprintProfile builders.
 	TLSFingerprintProfile *TLSFingerprintProfileClient
 	// UsageCleanupTask is the client for interacting with the UsageCleanupTask builders.
@@ -262,6 +268,9 @@ func (tx *Tx) init() {
 	tx.SecuritySecret = NewSecuritySecretClient(tx.config)
 	tx.Setting = NewSettingClient(tx.config)
 	tx.SubscriptionPlan = NewSubscriptionPlanClient(tx.config)
+	tx.SystemPromptRuntime = NewSystemPromptRuntimeClient(tx.config)
+	tx.SystemPromptTemplate = NewSystemPromptTemplateClient(tx.config)
+	tx.SystemPromptTemplateVersion = NewSystemPromptTemplateVersionClient(tx.config)
 	tx.TLSFingerprintProfile = NewTLSFingerprintProfileClient(tx.config)
 	tx.UsageCleanupTask = NewUsageCleanupTaskClient(tx.config)
 	tx.UsageLog = NewUsageLogClient(tx.config)

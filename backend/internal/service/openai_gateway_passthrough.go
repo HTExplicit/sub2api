@@ -109,6 +109,26 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	}
 	body = updatedBody
 
+	// Keep the business policy as the final prompt-owning layer. In particular,
+	// it must not satisfy or bypass the legacy OAuth passthrough preflight above.
+	if updatedPromptBody, application, promptErr := s.applyBusinessSystemPromptForRequest(
+		c, body, account, BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c),
+	); promptErr != nil {
+		if errors.Is(promptErr, ErrBusinessSystemPromptUnavailable) {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{
+				"type": "system_prompt_unavailable", "code": "system_prompt_unavailable",
+				"message": "business system prompt is temporarily unavailable",
+			}})
+		}
+		return nil, promptErr
+	} else {
+		body = updatedPromptBody
+		body, promptErr = rewriteBusinessSystemPromptCacheKey(body, application)
+		if promptErr != nil {
+			return nil, promptErr
+		}
+	}
+
 	apiKey := getAPIKeyFromContext(c)
 	// 同一 attempt 的最终 model/body 只判定一次，权限检查与后续图片状态设置共用该结果。
 	imageIntent := resolveOpenAIPassthroughImageIntent(
@@ -464,6 +484,9 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	// OAuth 透传到 ChatGPT internal API 时补齐必要头。
 	if account.Type == AccountTypeOAuth {
 		promptCacheKey := strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
+		if application, ok := businessSystemPromptApplicationFromRequest(c, BusinessSystemPromptProtocolResponses); ok && application.Applied {
+			promptCacheKey = appendBusinessSystemPromptApplicationToCacheKey(promptCacheKey, application)
+		}
 		req.Host = "chatgpt.com"
 		if err := resolveAndSetOpenAIChatGPTAccountHeaders(ctx, s.accountRepo, req.Header, account); err != nil {
 			return nil, fmt.Errorf("resolve chatgpt account headers: %w", err)
@@ -641,6 +664,7 @@ func (s *OpenAIGatewayService) handleFailoverErrorResponsePassthrough(
 	responseBody []byte,
 ) error {
 	body := s.redactAgentIdentitySensitiveBody(ctx, account, responseBody)
+	body = s.rewriteBusinessSystemPromptJSONForRequest(c, body, BusinessSystemPromptProtocolResponses)
 
 	upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(body))
 	upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
@@ -1219,6 +1243,11 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		}
 		if data, ok := extractOpenAISSEDataLine(line); ok {
 			dataBytes := []byte(data)
+			if rewritten := s.rewriteBusinessSystemPromptJSONForRequest(c, dataBytes, BusinessSystemPromptProtocolResponses); !bytes.Equal(rewritten, dataBytes) {
+				dataBytes = rewritten
+				data = string(rewritten)
+				line = replaceOpenAISSEDataLinePayload(line, data)
+			}
 			trimmedData := strings.TrimSpace(data)
 			if needModelReplace && strings.Contains(data, mappedModel) {
 				line = s.replaceModelInSSELine(line, mappedModel, originalModel)
@@ -1495,6 +1524,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	if err != nil {
 		return nil, err
 	}
+	body = s.rewriteBusinessSystemPromptJSONForRequest(c, body, BusinessSystemPromptProtocolResponses)
 
 	// Detect SSE responses from upstream and convert to JSON.
 	// Some upstreams (e.g. other sub2api instances) may return SSE even when
@@ -1570,6 +1600,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 // preserving passthrough payloads, except compact-only model remapping may
 // rewrite model fields back to the original requested model.
 func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c *gin.Context, body []byte, originalModel string, mappedModel string) (*openaiNonStreamingResultPassthrough, error) {
+	body = s.rewriteBusinessSystemPromptSSEForRequest(c, body, BusinessSystemPromptProtocolResponses)
 	bodyText := string(body)
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
 

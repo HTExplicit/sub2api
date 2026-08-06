@@ -421,6 +421,7 @@ type OpenAIGatewayService struct {
 	balanceNotifyService  *BalanceNotifyService
 	settingService        *SettingService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
+	businessPromptService *BusinessSystemPromptService
 	liveAttestation       liveattestation.Provider
 	liveAttestationCipher SecretEncryptor
 
@@ -454,6 +455,17 @@ type OpenAIGatewayService struct {
 	codexModelsManifestCache            codexModelsManifestCache
 	openaiCompatSessionResponses        sync.Map
 	openaiCompatAnthropicDigestSessions sync.Map
+}
+
+// SetBusinessSystemPromptService attaches the global business prompt policy to
+// a gateway instance. A nil service is intentionally treated as disabled so
+// existing unit-test constructors and degraded development environments retain
+// their previous request bytes.
+func (s *OpenAIGatewayService) SetBusinessSystemPromptService(promptService *BusinessSystemPromptService) {
+	if s == nil {
+		return
+	}
+	s.businessPromptService = promptService
 }
 
 // NewOpenAIGatewayService creates a new OpenAIGatewayService

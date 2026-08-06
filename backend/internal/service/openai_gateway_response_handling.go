@@ -441,6 +441,11 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		// Extract data from SSE line (supports both "data: " and "data:" formats)
 		if data, ok := extractOpenAISSEDataLine(line); ok {
 			dataBytes := []byte(data)
+			if rewritten := s.rewriteBusinessSystemPromptJSONForRequest(c, dataBytes, BusinessSystemPromptProtocolResponses); !bytes.Equal(rewritten, dataBytes) {
+				dataBytes = rewritten
+				data = string(rewritten)
+				line = replaceOpenAISSEDataLinePayload(line, data)
+			}
 			eventTypeRaw := gjson.GetBytes(dataBytes, "type").String()
 			eventType := strings.TrimSpace(eventTypeRaw)
 			// 初始上游 data 的 type 只解析一次：原始值保持终止事件的精确匹配，规范化值供后续分支复用。
@@ -921,6 +926,17 @@ func extractOpenAISSEDataLine(line string) (string, bool) {
 	return line[start:], true
 }
 
+func replaceOpenAISSEDataLinePayload(line, payload string) string {
+	if !strings.HasPrefix(line, "data:") {
+		return line
+	}
+	start := len("data:")
+	for start < len(line) && (line[start] == ' ' || line[start] == '\t') {
+		start++
+	}
+	return line[:start] + payload
+}
+
 func extractOpenAISSEEventLine(line string) (string, bool) {
 	if !strings.HasPrefix(line, "event:") {
 		return "", false
@@ -1273,6 +1289,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	if err != nil {
 		return nil, err
 	}
+	body = s.rewriteBusinessSystemPromptJSONForRequest(c, body, BusinessSystemPromptProtocolResponses)
 
 	// Detect SSE responses for ALL account types via Content-Type header.
 	// Some OpenAI-compatible upstreams (including other sub2api instances)
@@ -1392,6 +1409,7 @@ func bodyHasSSEFraming(body []byte) bool {
 }
 
 func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Context, body []byte, originalModel, mappedModel string) (*openaiNonStreamingResult, error) {
+	body = s.rewriteBusinessSystemPromptSSEForRequest(c, body, BusinessSystemPromptProtocolResponses)
 	bodyText := string(body)
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
 

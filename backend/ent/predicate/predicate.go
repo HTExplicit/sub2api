@@ -105,6 +105,15 @@ type Setting func(*sql.Selector)
 // SubscriptionPlan is the predicate function for subscriptionplan builders.
 type SubscriptionPlan func(*sql.Selector)
 
+// SystemPromptRuntime is the predicate function for systempromptruntime builders.
+type SystemPromptRuntime func(*sql.Selector)
+
+// SystemPromptTemplate is the predicate function for systemprompttemplate builders.
+type SystemPromptTemplate func(*sql.Selector)
+
+// SystemPromptTemplateVersion is the predicate function for systemprompttemplateversion builders.
+type SystemPromptTemplateVersion func(*sql.Selector)
+
 // TLSFingerprintProfile is the predicate function for tlsfingerprintprofile builders.
 type TLSFingerprintProfile func(*sql.Selector)
 

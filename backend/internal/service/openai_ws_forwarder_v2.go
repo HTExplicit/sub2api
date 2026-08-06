@@ -530,6 +530,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		if normalized, changed := normalizeCompletedImageGenerationStatus(message); changed {
 			message = normalized
 		}
+		message = s.rewriteBusinessSystemPromptJSONForRequest(c, message, BusinessSystemPromptProtocolResponses)
 
 		eventType, eventResponseID, responseField := parseOpenAIWSEventEnvelope(message)
 		if eventType == "" {

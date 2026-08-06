@@ -4,6 +4,10 @@ backend/migrations/*.sql text eol=lf
 # Go 源代码文件
 *.go text eol=lf
 
+# Embedded system prompt seed must retain the exact LF byte sequence used for
+# its published SHA-256 and UTF-8 byte-length invariants.
+backend/internal/service/prompts/moxinggang_reverse_skill_system_prompt.txt text eol=lf
+
 # 前端 源代码文件
 *.ts text eol=lf
 *.tsx text eol=lf

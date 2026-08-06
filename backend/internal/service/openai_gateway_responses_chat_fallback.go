@@ -23,6 +23,7 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 	c *gin.Context,
 	account *Account,
 	body []byte,
+	compact bool,
 ) (*OpenAIForwardResult, error) {
 	startTime := time.Now()
 
@@ -80,6 +81,20 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 		}
 		return nil, err
 	}
+	if updatedPromptBody, application, promptErr := s.applyBusinessSystemPromptForRequest(
+		c, chatBody, account, BusinessSystemPromptProtocolChat, compact,
+	); promptErr != nil {
+		if errors.Is(promptErr, ErrBusinessSystemPromptUnavailable) {
+			writeOpenAIResponsesFallbackError(c, http.StatusServiceUnavailable, "system_prompt_unavailable", "business system prompt is temporarily unavailable")
+		}
+		return nil, promptErr
+	} else {
+		chatBody = updatedPromptBody
+		chatBody, promptErr = rewriteBusinessSystemPromptCacheKey(chatBody, application)
+		if promptErr != nil {
+			return nil, promptErr
+		}
+	}
 	if serviceTier == nil {
 		serviceTier = extractOpenAIServiceTierFromBody(chatBody)
 	}
@@ -104,7 +119,7 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
-		respBody, upstreamMsg := s.readOpenAIUpstreamError(resp)
+		respBody, upstreamMsg := s.readOpenAIUpstreamError(resp, c)
 		if foErr := s.failoverOpenAIUpstreamHTTPError(ctx, c, account, resp, respBody, upstreamMsg, upstreamModel); foErr != nil {
 			return nil, foErr
 		}
