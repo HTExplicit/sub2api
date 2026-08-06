@@ -138,6 +138,9 @@ if (-not (Test-Path -LiteralPath $parent)) {
     $null = New-Item -ItemType Directory -Path $parent
 }
 $json = $manifest | ConvertTo-Json -Depth 8
+# The published manifest digest covers CRLF bytes. Keep generation deterministic
+# on Windows and non-Windows PowerShell hosts.
+$json = $json -replace '\r?\n', "`r`n"
 [IO.File]::WriteAllText($outputFullPath, $json, [Text.UTF8Encoding]::new($false))
 
 $manifestBytes = [IO.File]::ReadAllBytes($outputFullPath)
