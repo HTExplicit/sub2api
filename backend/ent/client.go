@@ -48,6 +48,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
+	"github.com/Wei-Shaw/sub2api/ent/systempromptruntime"
+	"github.com/Wei-Shaw/sub2api/ent/systemprompttemplate"
+	"github.com/Wei-Shaw/sub2api/ent/systemprompttemplateversion"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
@@ -132,6 +135,12 @@ type Client struct {
 	Setting *SettingClient
 	// SubscriptionPlan is the client for interacting with the SubscriptionPlan builders.
 	SubscriptionPlan *SubscriptionPlanClient
+	// SystemPromptRuntime is the client for interacting with the SystemPromptRuntime builders.
+	SystemPromptRuntime *SystemPromptRuntimeClient
+	// SystemPromptTemplate is the client for interacting with the SystemPromptTemplate builders.
+	SystemPromptTemplate *SystemPromptTemplateClient
+	// SystemPromptTemplateVersion is the client for interacting with the SystemPromptTemplateVersion builders.
+	SystemPromptTemplateVersion *SystemPromptTemplateVersionClient
 	// TLSFingerprintProfile is the client for interacting with the TLSFingerprintProfile builders.
 	TLSFingerprintProfile *TLSFingerprintProfileClient
 	// UsageCleanupTask is the client for interacting with the UsageCleanupTask builders.
@@ -194,6 +203,9 @@ func (c *Client) init() {
 	c.SecuritySecret = NewSecuritySecretClient(c.config)
 	c.Setting = NewSettingClient(c.config)
 	c.SubscriptionPlan = NewSubscriptionPlanClient(c.config)
+	c.SystemPromptRuntime = NewSystemPromptRuntimeClient(c.config)
+	c.SystemPromptTemplate = NewSystemPromptTemplateClient(c.config)
+	c.SystemPromptTemplateVersion = NewSystemPromptTemplateVersionClient(c.config)
 	c.TLSFingerprintProfile = NewTLSFingerprintProfileClient(c.config)
 	c.UsageCleanupTask = NewUsageCleanupTaskClient(c.config)
 	c.UsageLog = NewUsageLogClient(c.config)
@@ -328,6 +340,9 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		SecuritySecret:                NewSecuritySecretClient(cfg),
 		Setting:                       NewSettingClient(cfg),
 		SubscriptionPlan:              NewSubscriptionPlanClient(cfg),
+		SystemPromptRuntime:           NewSystemPromptRuntimeClient(cfg),
+		SystemPromptTemplate:          NewSystemPromptTemplateClient(cfg),
+		SystemPromptTemplateVersion:   NewSystemPromptTemplateVersionClient(cfg),
 		TLSFingerprintProfile:         NewTLSFingerprintProfileClient(cfg),
 		UsageCleanupTask:              NewUsageCleanupTaskClient(cfg),
 		UsageLog:                      NewUsageLogClient(cfg),
@@ -389,6 +404,9 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		SecuritySecret:                NewSecuritySecretClient(cfg),
 		Setting:                       NewSettingClient(cfg),
 		SubscriptionPlan:              NewSubscriptionPlanClient(cfg),
+		SystemPromptRuntime:           NewSystemPromptRuntimeClient(cfg),
+		SystemPromptTemplate:          NewSystemPromptTemplateClient(cfg),
+		SystemPromptTemplateVersion:   NewSystemPromptTemplateVersionClient(cfg),
 		TLSFingerprintProfile:         NewTLSFingerprintProfileClient(cfg),
 		UsageCleanupTask:              NewUsageCleanupTaskClient(cfg),
 		UsageLog:                      NewUsageLogClient(cfg),
@@ -435,9 +453,10 @@ func (c *Client) Use(hooks ...Hook) {
 		c.Group, c.IdempotencyRecord, c.IdentityAdoptionDecision, c.PaymentAuditLog,
 		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
 		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
-		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
-		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
-		c.UserPlatformQuota, c.UserSubscription,
+		c.SubscriptionPlan, c.SystemPromptRuntime, c.SystemPromptTemplate,
+		c.SystemPromptTemplateVersion, c.TLSFingerprintProfile, c.UsageCleanupTask,
+		c.UsageLog, c.User, c.UserAllowedGroup, c.UserAttributeDefinition,
+		c.UserAttributeValue, c.UserPlatformQuota, c.UserSubscription,
 	} {
 		n.Use(hooks...)
 	}
@@ -455,9 +474,10 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.Group, c.IdempotencyRecord, c.IdentityAdoptionDecision, c.PaymentAuditLog,
 		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
 		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
-		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
-		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
-		c.UserPlatformQuota, c.UserSubscription,
+		c.SubscriptionPlan, c.SystemPromptRuntime, c.SystemPromptTemplate,
+		c.SystemPromptTemplateVersion, c.TLSFingerprintProfile, c.UsageCleanupTask,
+		c.UsageLog, c.User, c.UserAllowedGroup, c.UserAttributeDefinition,
+		c.UserAttributeValue, c.UserPlatformQuota, c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -532,6 +552,12 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Setting.mutate(ctx, m)
 	case *SubscriptionPlanMutation:
 		return c.SubscriptionPlan.mutate(ctx, m)
+	case *SystemPromptRuntimeMutation:
+		return c.SystemPromptRuntime.mutate(ctx, m)
+	case *SystemPromptTemplateMutation:
+		return c.SystemPromptTemplate.mutate(ctx, m)
+	case *SystemPromptTemplateVersionMutation:
+		return c.SystemPromptTemplateVersion.mutate(ctx, m)
 	case *TLSFingerprintProfileMutation:
 		return c.TLSFingerprintProfile.mutate(ctx, m)
 	case *UsageCleanupTaskMutation:
@@ -5704,6 +5730,471 @@ func (c *SubscriptionPlanClient) mutate(ctx context.Context, m *SubscriptionPlan
 	}
 }
 
+// SystemPromptRuntimeClient is a client for the SystemPromptRuntime schema.
+type SystemPromptRuntimeClient struct {
+	config
+}
+
+// NewSystemPromptRuntimeClient returns a client for the SystemPromptRuntime from the given config.
+func NewSystemPromptRuntimeClient(c config) *SystemPromptRuntimeClient {
+	return &SystemPromptRuntimeClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `systempromptruntime.Hooks(f(g(h())))`.
+func (c *SystemPromptRuntimeClient) Use(hooks ...Hook) {
+	c.hooks.SystemPromptRuntime = append(c.hooks.SystemPromptRuntime, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `systempromptruntime.Intercept(f(g(h())))`.
+func (c *SystemPromptRuntimeClient) Intercept(interceptors ...Interceptor) {
+	c.inters.SystemPromptRuntime = append(c.inters.SystemPromptRuntime, interceptors...)
+}
+
+// Create returns a builder for creating a SystemPromptRuntime entity.
+func (c *SystemPromptRuntimeClient) Create() *SystemPromptRuntimeCreate {
+	mutation := newSystemPromptRuntimeMutation(c.config, OpCreate)
+	return &SystemPromptRuntimeCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of SystemPromptRuntime entities.
+func (c *SystemPromptRuntimeClient) CreateBulk(builders ...*SystemPromptRuntimeCreate) *SystemPromptRuntimeCreateBulk {
+	return &SystemPromptRuntimeCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *SystemPromptRuntimeClient) MapCreateBulk(slice any, setFunc func(*SystemPromptRuntimeCreate, int)) *SystemPromptRuntimeCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &SystemPromptRuntimeCreateBulk{err: fmt.Errorf("calling to SystemPromptRuntimeClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*SystemPromptRuntimeCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &SystemPromptRuntimeCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for SystemPromptRuntime.
+func (c *SystemPromptRuntimeClient) Update() *SystemPromptRuntimeUpdate {
+	mutation := newSystemPromptRuntimeMutation(c.config, OpUpdate)
+	return &SystemPromptRuntimeUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *SystemPromptRuntimeClient) UpdateOne(_m *SystemPromptRuntime) *SystemPromptRuntimeUpdateOne {
+	mutation := newSystemPromptRuntimeMutation(c.config, OpUpdateOne, withSystemPromptRuntime(_m))
+	return &SystemPromptRuntimeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *SystemPromptRuntimeClient) UpdateOneID(id int64) *SystemPromptRuntimeUpdateOne {
+	mutation := newSystemPromptRuntimeMutation(c.config, OpUpdateOne, withSystemPromptRuntimeID(id))
+	return &SystemPromptRuntimeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for SystemPromptRuntime.
+func (c *SystemPromptRuntimeClient) Delete() *SystemPromptRuntimeDelete {
+	mutation := newSystemPromptRuntimeMutation(c.config, OpDelete)
+	return &SystemPromptRuntimeDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *SystemPromptRuntimeClient) DeleteOne(_m *SystemPromptRuntime) *SystemPromptRuntimeDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *SystemPromptRuntimeClient) DeleteOneID(id int64) *SystemPromptRuntimeDeleteOne {
+	builder := c.Delete().Where(systempromptruntime.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &SystemPromptRuntimeDeleteOne{builder}
+}
+
+// Query returns a query builder for SystemPromptRuntime.
+func (c *SystemPromptRuntimeClient) Query() *SystemPromptRuntimeQuery {
+	return &SystemPromptRuntimeQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeSystemPromptRuntime},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a SystemPromptRuntime entity by its id.
+func (c *SystemPromptRuntimeClient) Get(ctx context.Context, id int64) (*SystemPromptRuntime, error) {
+	return c.Query().Where(systempromptruntime.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *SystemPromptRuntimeClient) GetX(ctx context.Context, id int64) *SystemPromptRuntime {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryActiveTemplate queries the active_template edge of a SystemPromptRuntime.
+func (c *SystemPromptRuntimeClient) QueryActiveTemplate(_m *SystemPromptRuntime) *SystemPromptTemplateQuery {
+	query := (&SystemPromptTemplateClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(systempromptruntime.Table, systempromptruntime.FieldID, id),
+			sqlgraph.To(systemprompttemplate.Table, systemprompttemplate.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, false, systempromptruntime.ActiveTemplateTable, systempromptruntime.ActiveTemplateColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryActiveVersion queries the active_version edge of a SystemPromptRuntime.
+func (c *SystemPromptRuntimeClient) QueryActiveVersion(_m *SystemPromptRuntime) *SystemPromptTemplateVersionQuery {
+	query := (&SystemPromptTemplateVersionClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(systempromptruntime.Table, systempromptruntime.FieldID, id),
+			sqlgraph.To(systemprompttemplateversion.Table, systemprompttemplateversion.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, false, systempromptruntime.ActiveVersionTable, systempromptruntime.ActiveVersionColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *SystemPromptRuntimeClient) Hooks() []Hook {
+	return c.hooks.SystemPromptRuntime
+}
+
+// Interceptors returns the client interceptors.
+func (c *SystemPromptRuntimeClient) Interceptors() []Interceptor {
+	return c.inters.SystemPromptRuntime
+}
+
+func (c *SystemPromptRuntimeClient) mutate(ctx context.Context, m *SystemPromptRuntimeMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&SystemPromptRuntimeCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&SystemPromptRuntimeUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&SystemPromptRuntimeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&SystemPromptRuntimeDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown SystemPromptRuntime mutation op: %q", m.Op())
+	}
+}
+
+// SystemPromptTemplateClient is a client for the SystemPromptTemplate schema.
+type SystemPromptTemplateClient struct {
+	config
+}
+
+// NewSystemPromptTemplateClient returns a client for the SystemPromptTemplate from the given config.
+func NewSystemPromptTemplateClient(c config) *SystemPromptTemplateClient {
+	return &SystemPromptTemplateClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `systemprompttemplate.Hooks(f(g(h())))`.
+func (c *SystemPromptTemplateClient) Use(hooks ...Hook) {
+	c.hooks.SystemPromptTemplate = append(c.hooks.SystemPromptTemplate, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `systemprompttemplate.Intercept(f(g(h())))`.
+func (c *SystemPromptTemplateClient) Intercept(interceptors ...Interceptor) {
+	c.inters.SystemPromptTemplate = append(c.inters.SystemPromptTemplate, interceptors...)
+}
+
+// Create returns a builder for creating a SystemPromptTemplate entity.
+func (c *SystemPromptTemplateClient) Create() *SystemPromptTemplateCreate {
+	mutation := newSystemPromptTemplateMutation(c.config, OpCreate)
+	return &SystemPromptTemplateCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of SystemPromptTemplate entities.
+func (c *SystemPromptTemplateClient) CreateBulk(builders ...*SystemPromptTemplateCreate) *SystemPromptTemplateCreateBulk {
+	return &SystemPromptTemplateCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *SystemPromptTemplateClient) MapCreateBulk(slice any, setFunc func(*SystemPromptTemplateCreate, int)) *SystemPromptTemplateCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &SystemPromptTemplateCreateBulk{err: fmt.Errorf("calling to SystemPromptTemplateClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*SystemPromptTemplateCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &SystemPromptTemplateCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for SystemPromptTemplate.
+func (c *SystemPromptTemplateClient) Update() *SystemPromptTemplateUpdate {
+	mutation := newSystemPromptTemplateMutation(c.config, OpUpdate)
+	return &SystemPromptTemplateUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *SystemPromptTemplateClient) UpdateOne(_m *SystemPromptTemplate) *SystemPromptTemplateUpdateOne {
+	mutation := newSystemPromptTemplateMutation(c.config, OpUpdateOne, withSystemPromptTemplate(_m))
+	return &SystemPromptTemplateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *SystemPromptTemplateClient) UpdateOneID(id int64) *SystemPromptTemplateUpdateOne {
+	mutation := newSystemPromptTemplateMutation(c.config, OpUpdateOne, withSystemPromptTemplateID(id))
+	return &SystemPromptTemplateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for SystemPromptTemplate.
+func (c *SystemPromptTemplateClient) Delete() *SystemPromptTemplateDelete {
+	mutation := newSystemPromptTemplateMutation(c.config, OpDelete)
+	return &SystemPromptTemplateDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *SystemPromptTemplateClient) DeleteOne(_m *SystemPromptTemplate) *SystemPromptTemplateDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *SystemPromptTemplateClient) DeleteOneID(id int64) *SystemPromptTemplateDeleteOne {
+	builder := c.Delete().Where(systemprompttemplate.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &SystemPromptTemplateDeleteOne{builder}
+}
+
+// Query returns a query builder for SystemPromptTemplate.
+func (c *SystemPromptTemplateClient) Query() *SystemPromptTemplateQuery {
+	return &SystemPromptTemplateQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeSystemPromptTemplate},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a SystemPromptTemplate entity by its id.
+func (c *SystemPromptTemplateClient) Get(ctx context.Context, id int64) (*SystemPromptTemplate, error) {
+	return c.Query().Where(systemprompttemplate.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *SystemPromptTemplateClient) GetX(ctx context.Context, id int64) *SystemPromptTemplate {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryVersions queries the versions edge of a SystemPromptTemplate.
+func (c *SystemPromptTemplateClient) QueryVersions(_m *SystemPromptTemplate) *SystemPromptTemplateVersionQuery {
+	query := (&SystemPromptTemplateVersionClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(systemprompttemplate.Table, systemprompttemplate.FieldID, id),
+			sqlgraph.To(systemprompttemplateversion.Table, systemprompttemplateversion.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, systemprompttemplate.VersionsTable, systemprompttemplate.VersionsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *SystemPromptTemplateClient) Hooks() []Hook {
+	hooks := c.hooks.SystemPromptTemplate
+	return append(hooks[:len(hooks):len(hooks)], systemprompttemplate.Hooks[:]...)
+}
+
+// Interceptors returns the client interceptors.
+func (c *SystemPromptTemplateClient) Interceptors() []Interceptor {
+	inters := c.inters.SystemPromptTemplate
+	return append(inters[:len(inters):len(inters)], systemprompttemplate.Interceptors[:]...)
+}
+
+func (c *SystemPromptTemplateClient) mutate(ctx context.Context, m *SystemPromptTemplateMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&SystemPromptTemplateCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&SystemPromptTemplateUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&SystemPromptTemplateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&SystemPromptTemplateDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown SystemPromptTemplate mutation op: %q", m.Op())
+	}
+}
+
+// SystemPromptTemplateVersionClient is a client for the SystemPromptTemplateVersion schema.
+type SystemPromptTemplateVersionClient struct {
+	config
+}
+
+// NewSystemPromptTemplateVersionClient returns a client for the SystemPromptTemplateVersion from the given config.
+func NewSystemPromptTemplateVersionClient(c config) *SystemPromptTemplateVersionClient {
+	return &SystemPromptTemplateVersionClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `systemprompttemplateversion.Hooks(f(g(h())))`.
+func (c *SystemPromptTemplateVersionClient) Use(hooks ...Hook) {
+	c.hooks.SystemPromptTemplateVersion = append(c.hooks.SystemPromptTemplateVersion, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `systemprompttemplateversion.Intercept(f(g(h())))`.
+func (c *SystemPromptTemplateVersionClient) Intercept(interceptors ...Interceptor) {
+	c.inters.SystemPromptTemplateVersion = append(c.inters.SystemPromptTemplateVersion, interceptors...)
+}
+
+// Create returns a builder for creating a SystemPromptTemplateVersion entity.
+func (c *SystemPromptTemplateVersionClient) Create() *SystemPromptTemplateVersionCreate {
+	mutation := newSystemPromptTemplateVersionMutation(c.config, OpCreate)
+	return &SystemPromptTemplateVersionCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of SystemPromptTemplateVersion entities.
+func (c *SystemPromptTemplateVersionClient) CreateBulk(builders ...*SystemPromptTemplateVersionCreate) *SystemPromptTemplateVersionCreateBulk {
+	return &SystemPromptTemplateVersionCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *SystemPromptTemplateVersionClient) MapCreateBulk(slice any, setFunc func(*SystemPromptTemplateVersionCreate, int)) *SystemPromptTemplateVersionCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &SystemPromptTemplateVersionCreateBulk{err: fmt.Errorf("calling to SystemPromptTemplateVersionClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*SystemPromptTemplateVersionCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &SystemPromptTemplateVersionCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for SystemPromptTemplateVersion.
+func (c *SystemPromptTemplateVersionClient) Update() *SystemPromptTemplateVersionUpdate {
+	mutation := newSystemPromptTemplateVersionMutation(c.config, OpUpdate)
+	return &SystemPromptTemplateVersionUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *SystemPromptTemplateVersionClient) UpdateOne(_m *SystemPromptTemplateVersion) *SystemPromptTemplateVersionUpdateOne {
+	mutation := newSystemPromptTemplateVersionMutation(c.config, OpUpdateOne, withSystemPromptTemplateVersion(_m))
+	return &SystemPromptTemplateVersionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *SystemPromptTemplateVersionClient) UpdateOneID(id int64) *SystemPromptTemplateVersionUpdateOne {
+	mutation := newSystemPromptTemplateVersionMutation(c.config, OpUpdateOne, withSystemPromptTemplateVersionID(id))
+	return &SystemPromptTemplateVersionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for SystemPromptTemplateVersion.
+func (c *SystemPromptTemplateVersionClient) Delete() *SystemPromptTemplateVersionDelete {
+	mutation := newSystemPromptTemplateVersionMutation(c.config, OpDelete)
+	return &SystemPromptTemplateVersionDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *SystemPromptTemplateVersionClient) DeleteOne(_m *SystemPromptTemplateVersion) *SystemPromptTemplateVersionDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *SystemPromptTemplateVersionClient) DeleteOneID(id int64) *SystemPromptTemplateVersionDeleteOne {
+	builder := c.Delete().Where(systemprompttemplateversion.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &SystemPromptTemplateVersionDeleteOne{builder}
+}
+
+// Query returns a query builder for SystemPromptTemplateVersion.
+func (c *SystemPromptTemplateVersionClient) Query() *SystemPromptTemplateVersionQuery {
+	return &SystemPromptTemplateVersionQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeSystemPromptTemplateVersion},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a SystemPromptTemplateVersion entity by its id.
+func (c *SystemPromptTemplateVersionClient) Get(ctx context.Context, id int64) (*SystemPromptTemplateVersion, error) {
+	return c.Query().Where(systemprompttemplateversion.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *SystemPromptTemplateVersionClient) GetX(ctx context.Context, id int64) *SystemPromptTemplateVersion {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryTemplate queries the template edge of a SystemPromptTemplateVersion.
+func (c *SystemPromptTemplateVersionClient) QueryTemplate(_m *SystemPromptTemplateVersion) *SystemPromptTemplateQuery {
+	query := (&SystemPromptTemplateClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(systemprompttemplateversion.Table, systemprompttemplateversion.FieldID, id),
+			sqlgraph.To(systemprompttemplate.Table, systemprompttemplate.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, systemprompttemplateversion.TemplateTable, systemprompttemplateversion.TemplateColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *SystemPromptTemplateVersionClient) Hooks() []Hook {
+	return c.hooks.SystemPromptTemplateVersion
+}
+
+// Interceptors returns the client interceptors.
+func (c *SystemPromptTemplateVersionClient) Interceptors() []Interceptor {
+	return c.inters.SystemPromptTemplateVersion
+}
+
+func (c *SystemPromptTemplateVersionClient) mutate(ctx context.Context, m *SystemPromptTemplateVersionMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&SystemPromptTemplateVersionCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&SystemPromptTemplateVersionUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&SystemPromptTemplateVersionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&SystemPromptTemplateVersionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown SystemPromptTemplateVersion mutation op: %q", m.Op())
+	}
+}
+
 // TLSFingerprintProfileClient is a client for the TLSFingerprintProfile schema.
 type TLSFingerprintProfileClient struct {
 	config
@@ -7335,6 +7826,7 @@ type (
 		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
 		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
 		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
+		SystemPromptRuntime, SystemPromptTemplate, SystemPromptTemplateVersion,
 		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
 		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
 		UserSubscription []ent.Hook
@@ -7348,6 +7840,7 @@ type (
 		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
 		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
 		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
+		SystemPromptRuntime, SystemPromptTemplate, SystemPromptTemplateVersion,
 		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
 		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
 		UserSubscription []ent.Interceptor

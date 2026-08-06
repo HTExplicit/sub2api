@@ -39,6 +39,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
+	"github.com/Wei-Shaw/sub2api/ent/systempromptruntime"
+	"github.com/Wei-Shaw/sub2api/ent/systemprompttemplate"
+	"github.com/Wei-Shaw/sub2api/ent/systemprompttemplateversion"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
@@ -1981,6 +1984,132 @@ func init() {
 	subscriptionplan.DefaultUpdatedAt = subscriptionplanDescUpdatedAt.Default.(func() time.Time)
 	// subscriptionplan.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	subscriptionplan.UpdateDefaultUpdatedAt = subscriptionplanDescUpdatedAt.UpdateDefault.(func() time.Time)
+	systempromptruntimeFields := schema.SystemPromptRuntime{}.Fields()
+	_ = systempromptruntimeFields
+	// systempromptruntimeDescEnabled is the schema descriptor for enabled field.
+	systempromptruntimeDescEnabled := systempromptruntimeFields[0].Descriptor()
+	// systempromptruntime.DefaultEnabled holds the default value on creation for the enabled field.
+	systempromptruntime.DefaultEnabled = systempromptruntimeDescEnabled.Default.(bool)
+	// systempromptruntimeDescExposeServerPrompt is the schema descriptor for expose_server_prompt field.
+	systempromptruntimeDescExposeServerPrompt := systempromptruntimeFields[1].Descriptor()
+	// systempromptruntime.DefaultExposeServerPrompt holds the default value on creation for the expose_server_prompt field.
+	systempromptruntime.DefaultExposeServerPrompt = systempromptruntimeDescExposeServerPrompt.Default.(bool)
+	// systempromptruntimeDescCompactEnabled is the schema descriptor for compact_enabled field.
+	systempromptruntimeDescCompactEnabled := systempromptruntimeFields[2].Descriptor()
+	// systempromptruntime.DefaultCompactEnabled holds the default value on creation for the compact_enabled field.
+	systempromptruntime.DefaultCompactEnabled = systempromptruntimeDescCompactEnabled.Default.(bool)
+	// systempromptruntimeDescRevision is the schema descriptor for revision field.
+	systempromptruntimeDescRevision := systempromptruntimeFields[5].Descriptor()
+	// systempromptruntime.DefaultRevision holds the default value on creation for the revision field.
+	systempromptruntime.DefaultRevision = systempromptruntimeDescRevision.Default.(int64)
+	// systempromptruntimeDescUpdatedAt is the schema descriptor for updated_at field.
+	systempromptruntimeDescUpdatedAt := systempromptruntimeFields[7].Descriptor()
+	// systempromptruntime.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	systempromptruntime.DefaultUpdatedAt = systempromptruntimeDescUpdatedAt.Default.(func() time.Time)
+	// systempromptruntime.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	systempromptruntime.UpdateDefaultUpdatedAt = systempromptruntimeDescUpdatedAt.UpdateDefault.(func() time.Time)
+	systemprompttemplateMixin := schema.SystemPromptTemplate{}.Mixin()
+	systemprompttemplateMixinHooks1 := systemprompttemplateMixin[1].Hooks()
+	systemprompttemplate.Hooks[0] = systemprompttemplateMixinHooks1[0]
+	systemprompttemplateMixinInters1 := systemprompttemplateMixin[1].Interceptors()
+	systemprompttemplate.Interceptors[0] = systemprompttemplateMixinInters1[0]
+	systemprompttemplateMixinFields0 := systemprompttemplateMixin[0].Fields()
+	_ = systemprompttemplateMixinFields0
+	systemprompttemplateFields := schema.SystemPromptTemplate{}.Fields()
+	_ = systemprompttemplateFields
+	// systemprompttemplateDescCreatedAt is the schema descriptor for created_at field.
+	systemprompttemplateDescCreatedAt := systemprompttemplateMixinFields0[0].Descriptor()
+	// systemprompttemplate.DefaultCreatedAt holds the default value on creation for the created_at field.
+	systemprompttemplate.DefaultCreatedAt = systemprompttemplateDescCreatedAt.Default.(func() time.Time)
+	// systemprompttemplateDescUpdatedAt is the schema descriptor for updated_at field.
+	systemprompttemplateDescUpdatedAt := systemprompttemplateMixinFields0[1].Descriptor()
+	// systemprompttemplate.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	systemprompttemplate.DefaultUpdatedAt = systemprompttemplateDescUpdatedAt.Default.(func() time.Time)
+	// systemprompttemplate.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	systemprompttemplate.UpdateDefaultUpdatedAt = systemprompttemplateDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// systemprompttemplateDescSlug is the schema descriptor for slug field.
+	systemprompttemplateDescSlug := systemprompttemplateFields[0].Descriptor()
+	// systemprompttemplate.SlugValidator is a validator for the "slug" field. It is called by the builders before save.
+	systemprompttemplate.SlugValidator = func() func(string) error {
+		validators := systemprompttemplateDescSlug.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(slug string) error {
+			for _, fn := range fns {
+				if err := fn(slug); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// systemprompttemplateDescName is the schema descriptor for name field.
+	systemprompttemplateDescName := systemprompttemplateFields[1].Descriptor()
+	// systemprompttemplate.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	systemprompttemplate.NameValidator = func() func(string) error {
+		validators := systemprompttemplateDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// systemprompttemplateDescDescription is the schema descriptor for description field.
+	systemprompttemplateDescDescription := systemprompttemplateFields[2].Descriptor()
+	// systemprompttemplate.DefaultDescription holds the default value on creation for the description field.
+	systemprompttemplate.DefaultDescription = systemprompttemplateDescDescription.Default.(string)
+	// systemprompttemplateDescIsSeed is the schema descriptor for is_seed field.
+	systemprompttemplateDescIsSeed := systemprompttemplateFields[3].Descriptor()
+	// systemprompttemplate.DefaultIsSeed holds the default value on creation for the is_seed field.
+	systemprompttemplate.DefaultIsSeed = systemprompttemplateDescIsSeed.Default.(bool)
+	systemprompttemplateversionFields := schema.SystemPromptTemplateVersion{}.Fields()
+	_ = systemprompttemplateversionFields
+	// systemprompttemplateversionDescBody is the schema descriptor for body field.
+	systemprompttemplateversionDescBody := systemprompttemplateversionFields[2].Descriptor()
+	// systemprompttemplateversion.BodyValidator is a validator for the "body" field. It is called by the builders before save.
+	systemprompttemplateversion.BodyValidator = systemprompttemplateversionDescBody.Validators[0].(func(string) error)
+	// systemprompttemplateversionDescSha256 is the schema descriptor for sha256 field.
+	systemprompttemplateversionDescSha256 := systemprompttemplateversionFields[3].Descriptor()
+	// systemprompttemplateversion.Sha256Validator is a validator for the "sha256" field. It is called by the builders before save.
+	systemprompttemplateversion.Sha256Validator = func() func(string) error {
+		validators := systemprompttemplateversionDescSha256.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(sha256 string) error {
+			for _, fn := range fns {
+				if err := fn(sha256); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// systemprompttemplateversionDescByteLength is the schema descriptor for byte_length field.
+	systemprompttemplateversionDescByteLength := systemprompttemplateversionFields[4].Descriptor()
+	// systemprompttemplateversion.ByteLengthValidator is a validator for the "byte_length" field. It is called by the builders before save.
+	systemprompttemplateversion.ByteLengthValidator = systemprompttemplateversionDescByteLength.Validators[0].(func(int) error)
+	// systemprompttemplateversionDescNote is the schema descriptor for note field.
+	systemprompttemplateversionDescNote := systemprompttemplateversionFields[5].Descriptor()
+	// systemprompttemplateversion.DefaultNote holds the default value on creation for the note field.
+	systemprompttemplateversion.DefaultNote = systemprompttemplateversionDescNote.Default.(string)
+	// systemprompttemplateversion.NoteValidator is a validator for the "note" field. It is called by the builders before save.
+	systemprompttemplateversion.NoteValidator = systemprompttemplateversionDescNote.Validators[0].(func(string) error)
+	// systemprompttemplateversionDescCreatedAt is the schema descriptor for created_at field.
+	systemprompttemplateversionDescCreatedAt := systemprompttemplateversionFields[9].Descriptor()
+	// systemprompttemplateversion.DefaultCreatedAt holds the default value on creation for the created_at field.
+	systemprompttemplateversion.DefaultCreatedAt = systemprompttemplateversionDescCreatedAt.Default.(func() time.Time)
 	tlsfingerprintprofileMixin := schema.TLSFingerprintProfile{}.Mixin()
 	tlsfingerprintprofileMixinFields0 := tlsfingerprintprofileMixin[0].Fields()
 	_ = tlsfingerprintprofileMixinFields0

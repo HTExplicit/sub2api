@@ -98,7 +98,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 
 	if account.Type == AccountTypeAPIKey && !openai_compat.ShouldUseResponsesAPI(account.Extra) {
-		return s.forwardResponsesViaRawChatCompletions(ctx, c, account, body)
+		return s.forwardResponsesViaRawChatCompletions(ctx, c, account, body, compactPath)
 	}
 	if account.Platform == PlatformOpenAI && account.Type == AccountTypeAPIKey {
 		sanitizedBody, changed, sanitizeErr := sanitizeOpenAIResponsesInputItemIDs(body)
@@ -518,6 +518,32 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				return nil, fmt.Errorf("serialize request body: %w", marshalErr)
 			}
 			requestView = newOpenAIRequestView(body)
+		}
+	}
+
+	// Business System Prompt is deliberately the final service-owned prompt
+	// layer. All legacy Codex/image/compat transforms above run first, so the
+	// feature can be disabled without changing their request bytes.
+	if updatedBody, application, promptErr := s.applyBusinessSystemPromptForRequest(
+		c, body, account, BusinessSystemPromptProtocolResponses, compactPath,
+	); promptErr != nil {
+		if errors.Is(promptErr, ErrBusinessSystemPromptUnavailable) {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{
+				"type": "system_prompt_unavailable", "code": "system_prompt_unavailable",
+				"message": "business system prompt is temporarily unavailable",
+			}})
+		}
+		return nil, promptErr
+	} else {
+		body = updatedBody
+		if application.Applied {
+			promptCacheKey = appendBusinessSystemPromptApplicationToCacheKey(promptCacheKey, application)
+			body, promptErr = rewriteBusinessSystemPromptCacheKey(body, application)
+			if promptErr != nil {
+				return nil, promptErr
+			}
+			requestView = newOpenAIRequestView(body)
+			reqBody = nil
 		}
 	}
 	imageBillingModel := ""

@@ -105,6 +105,20 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 		return nil, policyErr
 	}
 	upstreamBody = updatedBody
+	if updatedPromptBody, application, promptErr := s.applyBusinessSystemPromptForRequest(
+		c, upstreamBody, account, BusinessSystemPromptProtocolChat, false,
+	); promptErr != nil {
+		if errors.Is(promptErr, ErrBusinessSystemPromptUnavailable) {
+			writeChatCompletionsError(c, http.StatusServiceUnavailable, "system_prompt_unavailable", "business system prompt is temporarily unavailable")
+		}
+		return nil, promptErr
+	} else {
+		upstreamBody = updatedPromptBody
+		upstreamBody, promptErr = rewriteBusinessSystemPromptCacheKey(upstreamBody, application)
+		if promptErr != nil {
+			return nil, promptErr
+		}
+	}
 
 	// Grok Composer does not accept image_url parts directly, but Grok Build
 	// can describe the images first. Bridge only this exact failure mode.
@@ -172,7 +186,7 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 
 	// 7. Handle error response with failover
 	if resp.StatusCode >= 400 {
-		respBody, upstreamMsg := s.readOpenAIUpstreamError(resp)
+		respBody, upstreamMsg := s.readOpenAIUpstreamError(resp, c)
 		if account.Platform == PlatformGrok {
 			kind := "http_error"
 			if s.shouldFailoverGrokUpstreamError(resp.StatusCode, respBody) {

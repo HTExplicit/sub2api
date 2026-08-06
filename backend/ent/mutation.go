@@ -46,6 +46,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
+	"github.com/Wei-Shaw/sub2api/ent/systempromptruntime"
+	"github.com/Wei-Shaw/sub2api/ent/systemprompttemplate"
+	"github.com/Wei-Shaw/sub2api/ent/systemprompttemplateversion"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
@@ -100,6 +103,9 @@ const (
 	TypeSecuritySecret                = "SecuritySecret"
 	TypeSetting                       = "Setting"
 	TypeSubscriptionPlan              = "SubscriptionPlan"
+	TypeSystemPromptRuntime           = "SystemPromptRuntime"
+	TypeSystemPromptTemplate          = "SystemPromptTemplate"
+	TypeSystemPromptTemplateVersion   = "SystemPromptTemplateVersion"
 	TypeTLSFingerprintProfile         = "TLSFingerprintProfile"
 	TypeUsageCleanupTask              = "UsageCleanupTask"
 	TypeUsageLog                      = "UsageLog"
@@ -42854,6 +42860,2985 @@ func (m *SubscriptionPlanMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *SubscriptionPlanMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown SubscriptionPlan edge %s", name)
+}
+
+// SystemPromptRuntimeMutation represents an operation that mutates the SystemPromptRuntime nodes in the graph.
+type SystemPromptRuntimeMutation struct {
+	config
+	op                     Op
+	typ                    string
+	id                     *int64
+	enabled                *bool
+	expose_server_prompt   *bool
+	compact_enabled        *bool
+	revision               *int64
+	addrevision            *int64
+	updated_by             *int64
+	addupdated_by          *int64
+	updated_at             *time.Time
+	clearedFields          map[string]struct{}
+	active_template        *int64
+	clearedactive_template bool
+	active_version         *int64
+	clearedactive_version  bool
+	done                   bool
+	oldValue               func(context.Context) (*SystemPromptRuntime, error)
+	predicates             []predicate.SystemPromptRuntime
+}
+
+var _ ent.Mutation = (*SystemPromptRuntimeMutation)(nil)
+
+// systempromptruntimeOption allows management of the mutation configuration using functional options.
+type systempromptruntimeOption func(*SystemPromptRuntimeMutation)
+
+// newSystemPromptRuntimeMutation creates new mutation for the SystemPromptRuntime entity.
+func newSystemPromptRuntimeMutation(c config, op Op, opts ...systempromptruntimeOption) *SystemPromptRuntimeMutation {
+	m := &SystemPromptRuntimeMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeSystemPromptRuntime,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withSystemPromptRuntimeID sets the ID field of the mutation.
+func withSystemPromptRuntimeID(id int64) systempromptruntimeOption {
+	return func(m *SystemPromptRuntimeMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *SystemPromptRuntime
+		)
+		m.oldValue = func(ctx context.Context) (*SystemPromptRuntime, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().SystemPromptRuntime.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withSystemPromptRuntime sets the old SystemPromptRuntime of the mutation.
+func withSystemPromptRuntime(node *SystemPromptRuntime) systempromptruntimeOption {
+	return func(m *SystemPromptRuntimeMutation) {
+		m.oldValue = func(context.Context) (*SystemPromptRuntime, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m SystemPromptRuntimeMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m SystemPromptRuntimeMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *SystemPromptRuntimeMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *SystemPromptRuntimeMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().SystemPromptRuntime.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetEnabled sets the "enabled" field.
+func (m *SystemPromptRuntimeMutation) SetEnabled(b bool) {
+	m.enabled = &b
+}
+
+// Enabled returns the value of the "enabled" field in the mutation.
+func (m *SystemPromptRuntimeMutation) Enabled() (r bool, exists bool) {
+	v := m.enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnabled returns the old "enabled" field's value of the SystemPromptRuntime entity.
+// If the SystemPromptRuntime object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptRuntimeMutation) OldEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnabled: %w", err)
+	}
+	return oldValue.Enabled, nil
+}
+
+// ResetEnabled resets all changes to the "enabled" field.
+func (m *SystemPromptRuntimeMutation) ResetEnabled() {
+	m.enabled = nil
+}
+
+// SetExposeServerPrompt sets the "expose_server_prompt" field.
+func (m *SystemPromptRuntimeMutation) SetExposeServerPrompt(b bool) {
+	m.expose_server_prompt = &b
+}
+
+// ExposeServerPrompt returns the value of the "expose_server_prompt" field in the mutation.
+func (m *SystemPromptRuntimeMutation) ExposeServerPrompt() (r bool, exists bool) {
+	v := m.expose_server_prompt
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExposeServerPrompt returns the old "expose_server_prompt" field's value of the SystemPromptRuntime entity.
+// If the SystemPromptRuntime object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptRuntimeMutation) OldExposeServerPrompt(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExposeServerPrompt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExposeServerPrompt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExposeServerPrompt: %w", err)
+	}
+	return oldValue.ExposeServerPrompt, nil
+}
+
+// ResetExposeServerPrompt resets all changes to the "expose_server_prompt" field.
+func (m *SystemPromptRuntimeMutation) ResetExposeServerPrompt() {
+	m.expose_server_prompt = nil
+}
+
+// SetCompactEnabled sets the "compact_enabled" field.
+func (m *SystemPromptRuntimeMutation) SetCompactEnabled(b bool) {
+	m.compact_enabled = &b
+}
+
+// CompactEnabled returns the value of the "compact_enabled" field in the mutation.
+func (m *SystemPromptRuntimeMutation) CompactEnabled() (r bool, exists bool) {
+	v := m.compact_enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCompactEnabled returns the old "compact_enabled" field's value of the SystemPromptRuntime entity.
+// If the SystemPromptRuntime object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptRuntimeMutation) OldCompactEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCompactEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCompactEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCompactEnabled: %w", err)
+	}
+	return oldValue.CompactEnabled, nil
+}
+
+// ResetCompactEnabled resets all changes to the "compact_enabled" field.
+func (m *SystemPromptRuntimeMutation) ResetCompactEnabled() {
+	m.compact_enabled = nil
+}
+
+// SetActiveTemplateID sets the "active_template_id" field.
+func (m *SystemPromptRuntimeMutation) SetActiveTemplateID(i int64) {
+	m.active_template = &i
+}
+
+// ActiveTemplateID returns the value of the "active_template_id" field in the mutation.
+func (m *SystemPromptRuntimeMutation) ActiveTemplateID() (r int64, exists bool) {
+	v := m.active_template
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldActiveTemplateID returns the old "active_template_id" field's value of the SystemPromptRuntime entity.
+// If the SystemPromptRuntime object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptRuntimeMutation) OldActiveTemplateID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldActiveTemplateID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldActiveTemplateID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldActiveTemplateID: %w", err)
+	}
+	return oldValue.ActiveTemplateID, nil
+}
+
+// ClearActiveTemplateID clears the value of the "active_template_id" field.
+func (m *SystemPromptRuntimeMutation) ClearActiveTemplateID() {
+	m.active_template = nil
+	m.clearedFields[systempromptruntime.FieldActiveTemplateID] = struct{}{}
+}
+
+// ActiveTemplateIDCleared returns if the "active_template_id" field was cleared in this mutation.
+func (m *SystemPromptRuntimeMutation) ActiveTemplateIDCleared() bool {
+	_, ok := m.clearedFields[systempromptruntime.FieldActiveTemplateID]
+	return ok
+}
+
+// ResetActiveTemplateID resets all changes to the "active_template_id" field.
+func (m *SystemPromptRuntimeMutation) ResetActiveTemplateID() {
+	m.active_template = nil
+	delete(m.clearedFields, systempromptruntime.FieldActiveTemplateID)
+}
+
+// SetActiveVersionID sets the "active_version_id" field.
+func (m *SystemPromptRuntimeMutation) SetActiveVersionID(i int64) {
+	m.active_version = &i
+}
+
+// ActiveVersionID returns the value of the "active_version_id" field in the mutation.
+func (m *SystemPromptRuntimeMutation) ActiveVersionID() (r int64, exists bool) {
+	v := m.active_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldActiveVersionID returns the old "active_version_id" field's value of the SystemPromptRuntime entity.
+// If the SystemPromptRuntime object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptRuntimeMutation) OldActiveVersionID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldActiveVersionID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldActiveVersionID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldActiveVersionID: %w", err)
+	}
+	return oldValue.ActiveVersionID, nil
+}
+
+// ClearActiveVersionID clears the value of the "active_version_id" field.
+func (m *SystemPromptRuntimeMutation) ClearActiveVersionID() {
+	m.active_version = nil
+	m.clearedFields[systempromptruntime.FieldActiveVersionID] = struct{}{}
+}
+
+// ActiveVersionIDCleared returns if the "active_version_id" field was cleared in this mutation.
+func (m *SystemPromptRuntimeMutation) ActiveVersionIDCleared() bool {
+	_, ok := m.clearedFields[systempromptruntime.FieldActiveVersionID]
+	return ok
+}
+
+// ResetActiveVersionID resets all changes to the "active_version_id" field.
+func (m *SystemPromptRuntimeMutation) ResetActiveVersionID() {
+	m.active_version = nil
+	delete(m.clearedFields, systempromptruntime.FieldActiveVersionID)
+}
+
+// SetRevision sets the "revision" field.
+func (m *SystemPromptRuntimeMutation) SetRevision(i int64) {
+	m.revision = &i
+	m.addrevision = nil
+}
+
+// Revision returns the value of the "revision" field in the mutation.
+func (m *SystemPromptRuntimeMutation) Revision() (r int64, exists bool) {
+	v := m.revision
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRevision returns the old "revision" field's value of the SystemPromptRuntime entity.
+// If the SystemPromptRuntime object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptRuntimeMutation) OldRevision(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRevision is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRevision requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRevision: %w", err)
+	}
+	return oldValue.Revision, nil
+}
+
+// AddRevision adds i to the "revision" field.
+func (m *SystemPromptRuntimeMutation) AddRevision(i int64) {
+	if m.addrevision != nil {
+		*m.addrevision += i
+	} else {
+		m.addrevision = &i
+	}
+}
+
+// AddedRevision returns the value that was added to the "revision" field in this mutation.
+func (m *SystemPromptRuntimeMutation) AddedRevision() (r int64, exists bool) {
+	v := m.addrevision
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRevision resets all changes to the "revision" field.
+func (m *SystemPromptRuntimeMutation) ResetRevision() {
+	m.revision = nil
+	m.addrevision = nil
+}
+
+// SetUpdatedBy sets the "updated_by" field.
+func (m *SystemPromptRuntimeMutation) SetUpdatedBy(i int64) {
+	m.updated_by = &i
+	m.addupdated_by = nil
+}
+
+// UpdatedBy returns the value of the "updated_by" field in the mutation.
+func (m *SystemPromptRuntimeMutation) UpdatedBy() (r int64, exists bool) {
+	v := m.updated_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedBy returns the old "updated_by" field's value of the SystemPromptRuntime entity.
+// If the SystemPromptRuntime object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptRuntimeMutation) OldUpdatedBy(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedBy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedBy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedBy: %w", err)
+	}
+	return oldValue.UpdatedBy, nil
+}
+
+// AddUpdatedBy adds i to the "updated_by" field.
+func (m *SystemPromptRuntimeMutation) AddUpdatedBy(i int64) {
+	if m.addupdated_by != nil {
+		*m.addupdated_by += i
+	} else {
+		m.addupdated_by = &i
+	}
+}
+
+// AddedUpdatedBy returns the value that was added to the "updated_by" field in this mutation.
+func (m *SystemPromptRuntimeMutation) AddedUpdatedBy() (r int64, exists bool) {
+	v := m.addupdated_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearUpdatedBy clears the value of the "updated_by" field.
+func (m *SystemPromptRuntimeMutation) ClearUpdatedBy() {
+	m.updated_by = nil
+	m.addupdated_by = nil
+	m.clearedFields[systempromptruntime.FieldUpdatedBy] = struct{}{}
+}
+
+// UpdatedByCleared returns if the "updated_by" field was cleared in this mutation.
+func (m *SystemPromptRuntimeMutation) UpdatedByCleared() bool {
+	_, ok := m.clearedFields[systempromptruntime.FieldUpdatedBy]
+	return ok
+}
+
+// ResetUpdatedBy resets all changes to the "updated_by" field.
+func (m *SystemPromptRuntimeMutation) ResetUpdatedBy() {
+	m.updated_by = nil
+	m.addupdated_by = nil
+	delete(m.clearedFields, systempromptruntime.FieldUpdatedBy)
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *SystemPromptRuntimeMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *SystemPromptRuntimeMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the SystemPromptRuntime entity.
+// If the SystemPromptRuntime object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptRuntimeMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *SystemPromptRuntimeMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// ClearActiveTemplate clears the "active_template" edge to the SystemPromptTemplate entity.
+func (m *SystemPromptRuntimeMutation) ClearActiveTemplate() {
+	m.clearedactive_template = true
+	m.clearedFields[systempromptruntime.FieldActiveTemplateID] = struct{}{}
+}
+
+// ActiveTemplateCleared reports if the "active_template" edge to the SystemPromptTemplate entity was cleared.
+func (m *SystemPromptRuntimeMutation) ActiveTemplateCleared() bool {
+	return m.ActiveTemplateIDCleared() || m.clearedactive_template
+}
+
+// ActiveTemplateIDs returns the "active_template" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// ActiveTemplateID instead. It exists only for internal usage by the builders.
+func (m *SystemPromptRuntimeMutation) ActiveTemplateIDs() (ids []int64) {
+	if id := m.active_template; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetActiveTemplate resets all changes to the "active_template" edge.
+func (m *SystemPromptRuntimeMutation) ResetActiveTemplate() {
+	m.active_template = nil
+	m.clearedactive_template = false
+}
+
+// ClearActiveVersion clears the "active_version" edge to the SystemPromptTemplateVersion entity.
+func (m *SystemPromptRuntimeMutation) ClearActiveVersion() {
+	m.clearedactive_version = true
+	m.clearedFields[systempromptruntime.FieldActiveVersionID] = struct{}{}
+}
+
+// ActiveVersionCleared reports if the "active_version" edge to the SystemPromptTemplateVersion entity was cleared.
+func (m *SystemPromptRuntimeMutation) ActiveVersionCleared() bool {
+	return m.ActiveVersionIDCleared() || m.clearedactive_version
+}
+
+// ActiveVersionIDs returns the "active_version" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// ActiveVersionID instead. It exists only for internal usage by the builders.
+func (m *SystemPromptRuntimeMutation) ActiveVersionIDs() (ids []int64) {
+	if id := m.active_version; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetActiveVersion resets all changes to the "active_version" edge.
+func (m *SystemPromptRuntimeMutation) ResetActiveVersion() {
+	m.active_version = nil
+	m.clearedactive_version = false
+}
+
+// Where appends a list predicates to the SystemPromptRuntimeMutation builder.
+func (m *SystemPromptRuntimeMutation) Where(ps ...predicate.SystemPromptRuntime) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the SystemPromptRuntimeMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *SystemPromptRuntimeMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.SystemPromptRuntime, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *SystemPromptRuntimeMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *SystemPromptRuntimeMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (SystemPromptRuntime).
+func (m *SystemPromptRuntimeMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *SystemPromptRuntimeMutation) Fields() []string {
+	fields := make([]string, 0, 8)
+	if m.enabled != nil {
+		fields = append(fields, systempromptruntime.FieldEnabled)
+	}
+	if m.expose_server_prompt != nil {
+		fields = append(fields, systempromptruntime.FieldExposeServerPrompt)
+	}
+	if m.compact_enabled != nil {
+		fields = append(fields, systempromptruntime.FieldCompactEnabled)
+	}
+	if m.active_template != nil {
+		fields = append(fields, systempromptruntime.FieldActiveTemplateID)
+	}
+	if m.active_version != nil {
+		fields = append(fields, systempromptruntime.FieldActiveVersionID)
+	}
+	if m.revision != nil {
+		fields = append(fields, systempromptruntime.FieldRevision)
+	}
+	if m.updated_by != nil {
+		fields = append(fields, systempromptruntime.FieldUpdatedBy)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, systempromptruntime.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *SystemPromptRuntimeMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case systempromptruntime.FieldEnabled:
+		return m.Enabled()
+	case systempromptruntime.FieldExposeServerPrompt:
+		return m.ExposeServerPrompt()
+	case systempromptruntime.FieldCompactEnabled:
+		return m.CompactEnabled()
+	case systempromptruntime.FieldActiveTemplateID:
+		return m.ActiveTemplateID()
+	case systempromptruntime.FieldActiveVersionID:
+		return m.ActiveVersionID()
+	case systempromptruntime.FieldRevision:
+		return m.Revision()
+	case systempromptruntime.FieldUpdatedBy:
+		return m.UpdatedBy()
+	case systempromptruntime.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *SystemPromptRuntimeMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case systempromptruntime.FieldEnabled:
+		return m.OldEnabled(ctx)
+	case systempromptruntime.FieldExposeServerPrompt:
+		return m.OldExposeServerPrompt(ctx)
+	case systempromptruntime.FieldCompactEnabled:
+		return m.OldCompactEnabled(ctx)
+	case systempromptruntime.FieldActiveTemplateID:
+		return m.OldActiveTemplateID(ctx)
+	case systempromptruntime.FieldActiveVersionID:
+		return m.OldActiveVersionID(ctx)
+	case systempromptruntime.FieldRevision:
+		return m.OldRevision(ctx)
+	case systempromptruntime.FieldUpdatedBy:
+		return m.OldUpdatedBy(ctx)
+	case systempromptruntime.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown SystemPromptRuntime field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *SystemPromptRuntimeMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case systempromptruntime.FieldEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnabled(v)
+		return nil
+	case systempromptruntime.FieldExposeServerPrompt:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExposeServerPrompt(v)
+		return nil
+	case systempromptruntime.FieldCompactEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCompactEnabled(v)
+		return nil
+	case systempromptruntime.FieldActiveTemplateID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetActiveTemplateID(v)
+		return nil
+	case systempromptruntime.FieldActiveVersionID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetActiveVersionID(v)
+		return nil
+	case systempromptruntime.FieldRevision:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRevision(v)
+		return nil
+	case systempromptruntime.FieldUpdatedBy:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedBy(v)
+		return nil
+	case systempromptruntime.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown SystemPromptRuntime field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *SystemPromptRuntimeMutation) AddedFields() []string {
+	var fields []string
+	if m.addrevision != nil {
+		fields = append(fields, systempromptruntime.FieldRevision)
+	}
+	if m.addupdated_by != nil {
+		fields = append(fields, systempromptruntime.FieldUpdatedBy)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *SystemPromptRuntimeMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case systempromptruntime.FieldRevision:
+		return m.AddedRevision()
+	case systempromptruntime.FieldUpdatedBy:
+		return m.AddedUpdatedBy()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *SystemPromptRuntimeMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case systempromptruntime.FieldRevision:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRevision(v)
+		return nil
+	case systempromptruntime.FieldUpdatedBy:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUpdatedBy(v)
+		return nil
+	}
+	return fmt.Errorf("unknown SystemPromptRuntime numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *SystemPromptRuntimeMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(systempromptruntime.FieldActiveTemplateID) {
+		fields = append(fields, systempromptruntime.FieldActiveTemplateID)
+	}
+	if m.FieldCleared(systempromptruntime.FieldActiveVersionID) {
+		fields = append(fields, systempromptruntime.FieldActiveVersionID)
+	}
+	if m.FieldCleared(systempromptruntime.FieldUpdatedBy) {
+		fields = append(fields, systempromptruntime.FieldUpdatedBy)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *SystemPromptRuntimeMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *SystemPromptRuntimeMutation) ClearField(name string) error {
+	switch name {
+	case systempromptruntime.FieldActiveTemplateID:
+		m.ClearActiveTemplateID()
+		return nil
+	case systempromptruntime.FieldActiveVersionID:
+		m.ClearActiveVersionID()
+		return nil
+	case systempromptruntime.FieldUpdatedBy:
+		m.ClearUpdatedBy()
+		return nil
+	}
+	return fmt.Errorf("unknown SystemPromptRuntime nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *SystemPromptRuntimeMutation) ResetField(name string) error {
+	switch name {
+	case systempromptruntime.FieldEnabled:
+		m.ResetEnabled()
+		return nil
+	case systempromptruntime.FieldExposeServerPrompt:
+		m.ResetExposeServerPrompt()
+		return nil
+	case systempromptruntime.FieldCompactEnabled:
+		m.ResetCompactEnabled()
+		return nil
+	case systempromptruntime.FieldActiveTemplateID:
+		m.ResetActiveTemplateID()
+		return nil
+	case systempromptruntime.FieldActiveVersionID:
+		m.ResetActiveVersionID()
+		return nil
+	case systempromptruntime.FieldRevision:
+		m.ResetRevision()
+		return nil
+	case systempromptruntime.FieldUpdatedBy:
+		m.ResetUpdatedBy()
+		return nil
+	case systempromptruntime.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown SystemPromptRuntime field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *SystemPromptRuntimeMutation) AddedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.active_template != nil {
+		edges = append(edges, systempromptruntime.EdgeActiveTemplate)
+	}
+	if m.active_version != nil {
+		edges = append(edges, systempromptruntime.EdgeActiveVersion)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *SystemPromptRuntimeMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case systempromptruntime.EdgeActiveTemplate:
+		if id := m.active_template; id != nil {
+			return []ent.Value{*id}
+		}
+	case systempromptruntime.EdgeActiveVersion:
+		if id := m.active_version; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *SystemPromptRuntimeMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 2)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *SystemPromptRuntimeMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *SystemPromptRuntimeMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.clearedactive_template {
+		edges = append(edges, systempromptruntime.EdgeActiveTemplate)
+	}
+	if m.clearedactive_version {
+		edges = append(edges, systempromptruntime.EdgeActiveVersion)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *SystemPromptRuntimeMutation) EdgeCleared(name string) bool {
+	switch name {
+	case systempromptruntime.EdgeActiveTemplate:
+		return m.clearedactive_template
+	case systempromptruntime.EdgeActiveVersion:
+		return m.clearedactive_version
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *SystemPromptRuntimeMutation) ClearEdge(name string) error {
+	switch name {
+	case systempromptruntime.EdgeActiveTemplate:
+		m.ClearActiveTemplate()
+		return nil
+	case systempromptruntime.EdgeActiveVersion:
+		m.ClearActiveVersion()
+		return nil
+	}
+	return fmt.Errorf("unknown SystemPromptRuntime unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *SystemPromptRuntimeMutation) ResetEdge(name string) error {
+	switch name {
+	case systempromptruntime.EdgeActiveTemplate:
+		m.ResetActiveTemplate()
+		return nil
+	case systempromptruntime.EdgeActiveVersion:
+		m.ResetActiveVersion()
+		return nil
+	}
+	return fmt.Errorf("unknown SystemPromptRuntime edge %s", name)
+}
+
+// SystemPromptTemplateMutation represents an operation that mutates the SystemPromptTemplate nodes in the graph.
+type SystemPromptTemplateMutation struct {
+	config
+	op              Op
+	typ             string
+	id              *int64
+	created_at      *time.Time
+	updated_at      *time.Time
+	deleted_at      *time.Time
+	slug            *string
+	name            *string
+	description     *string
+	is_seed         *bool
+	created_by      *int64
+	addcreated_by   *int64
+	updated_by      *int64
+	addupdated_by   *int64
+	clearedFields   map[string]struct{}
+	versions        map[int64]struct{}
+	removedversions map[int64]struct{}
+	clearedversions bool
+	done            bool
+	oldValue        func(context.Context) (*SystemPromptTemplate, error)
+	predicates      []predicate.SystemPromptTemplate
+}
+
+var _ ent.Mutation = (*SystemPromptTemplateMutation)(nil)
+
+// systemprompttemplateOption allows management of the mutation configuration using functional options.
+type systemprompttemplateOption func(*SystemPromptTemplateMutation)
+
+// newSystemPromptTemplateMutation creates new mutation for the SystemPromptTemplate entity.
+func newSystemPromptTemplateMutation(c config, op Op, opts ...systemprompttemplateOption) *SystemPromptTemplateMutation {
+	m := &SystemPromptTemplateMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeSystemPromptTemplate,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withSystemPromptTemplateID sets the ID field of the mutation.
+func withSystemPromptTemplateID(id int64) systemprompttemplateOption {
+	return func(m *SystemPromptTemplateMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *SystemPromptTemplate
+		)
+		m.oldValue = func(ctx context.Context) (*SystemPromptTemplate, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().SystemPromptTemplate.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withSystemPromptTemplate sets the old SystemPromptTemplate of the mutation.
+func withSystemPromptTemplate(node *SystemPromptTemplate) systemprompttemplateOption {
+	return func(m *SystemPromptTemplateMutation) {
+		m.oldValue = func(context.Context) (*SystemPromptTemplate, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m SystemPromptTemplateMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m SystemPromptTemplateMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *SystemPromptTemplateMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *SystemPromptTemplateMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().SystemPromptTemplate.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *SystemPromptTemplateMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *SystemPromptTemplateMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the SystemPromptTemplate entity.
+// If the SystemPromptTemplate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *SystemPromptTemplateMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *SystemPromptTemplateMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *SystemPromptTemplateMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the SystemPromptTemplate entity.
+// If the SystemPromptTemplate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *SystemPromptTemplateMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (m *SystemPromptTemplateMutation) SetDeletedAt(t time.Time) {
+	m.deleted_at = &t
+}
+
+// DeletedAt returns the value of the "deleted_at" field in the mutation.
+func (m *SystemPromptTemplateMutation) DeletedAt() (r time.Time, exists bool) {
+	v := m.deleted_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDeletedAt returns the old "deleted_at" field's value of the SystemPromptTemplate entity.
+// If the SystemPromptTemplate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateMutation) OldDeletedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDeletedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDeletedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDeletedAt: %w", err)
+	}
+	return oldValue.DeletedAt, nil
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (m *SystemPromptTemplateMutation) ClearDeletedAt() {
+	m.deleted_at = nil
+	m.clearedFields[systemprompttemplate.FieldDeletedAt] = struct{}{}
+}
+
+// DeletedAtCleared returns if the "deleted_at" field was cleared in this mutation.
+func (m *SystemPromptTemplateMutation) DeletedAtCleared() bool {
+	_, ok := m.clearedFields[systemprompttemplate.FieldDeletedAt]
+	return ok
+}
+
+// ResetDeletedAt resets all changes to the "deleted_at" field.
+func (m *SystemPromptTemplateMutation) ResetDeletedAt() {
+	m.deleted_at = nil
+	delete(m.clearedFields, systemprompttemplate.FieldDeletedAt)
+}
+
+// SetSlug sets the "slug" field.
+func (m *SystemPromptTemplateMutation) SetSlug(s string) {
+	m.slug = &s
+}
+
+// Slug returns the value of the "slug" field in the mutation.
+func (m *SystemPromptTemplateMutation) Slug() (r string, exists bool) {
+	v := m.slug
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSlug returns the old "slug" field's value of the SystemPromptTemplate entity.
+// If the SystemPromptTemplate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateMutation) OldSlug(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSlug is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSlug requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSlug: %w", err)
+	}
+	return oldValue.Slug, nil
+}
+
+// ResetSlug resets all changes to the "slug" field.
+func (m *SystemPromptTemplateMutation) ResetSlug() {
+	m.slug = nil
+}
+
+// SetName sets the "name" field.
+func (m *SystemPromptTemplateMutation) SetName(s string) {
+	m.name = &s
+}
+
+// Name returns the value of the "name" field in the mutation.
+func (m *SystemPromptTemplateMutation) Name() (r string, exists bool) {
+	v := m.name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldName returns the old "name" field's value of the SystemPromptTemplate entity.
+// If the SystemPromptTemplate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateMutation) OldName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldName: %w", err)
+	}
+	return oldValue.Name, nil
+}
+
+// ResetName resets all changes to the "name" field.
+func (m *SystemPromptTemplateMutation) ResetName() {
+	m.name = nil
+}
+
+// SetDescription sets the "description" field.
+func (m *SystemPromptTemplateMutation) SetDescription(s string) {
+	m.description = &s
+}
+
+// Description returns the value of the "description" field in the mutation.
+func (m *SystemPromptTemplateMutation) Description() (r string, exists bool) {
+	v := m.description
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDescription returns the old "description" field's value of the SystemPromptTemplate entity.
+// If the SystemPromptTemplate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateMutation) OldDescription(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDescription is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDescription requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDescription: %w", err)
+	}
+	return oldValue.Description, nil
+}
+
+// ResetDescription resets all changes to the "description" field.
+func (m *SystemPromptTemplateMutation) ResetDescription() {
+	m.description = nil
+}
+
+// SetIsSeed sets the "is_seed" field.
+func (m *SystemPromptTemplateMutation) SetIsSeed(b bool) {
+	m.is_seed = &b
+}
+
+// IsSeed returns the value of the "is_seed" field in the mutation.
+func (m *SystemPromptTemplateMutation) IsSeed() (r bool, exists bool) {
+	v := m.is_seed
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIsSeed returns the old "is_seed" field's value of the SystemPromptTemplate entity.
+// If the SystemPromptTemplate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateMutation) OldIsSeed(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIsSeed is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIsSeed requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIsSeed: %w", err)
+	}
+	return oldValue.IsSeed, nil
+}
+
+// ResetIsSeed resets all changes to the "is_seed" field.
+func (m *SystemPromptTemplateMutation) ResetIsSeed() {
+	m.is_seed = nil
+}
+
+// SetCreatedBy sets the "created_by" field.
+func (m *SystemPromptTemplateMutation) SetCreatedBy(i int64) {
+	m.created_by = &i
+	m.addcreated_by = nil
+}
+
+// CreatedBy returns the value of the "created_by" field in the mutation.
+func (m *SystemPromptTemplateMutation) CreatedBy() (r int64, exists bool) {
+	v := m.created_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedBy returns the old "created_by" field's value of the SystemPromptTemplate entity.
+// If the SystemPromptTemplate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateMutation) OldCreatedBy(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedBy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedBy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedBy: %w", err)
+	}
+	return oldValue.CreatedBy, nil
+}
+
+// AddCreatedBy adds i to the "created_by" field.
+func (m *SystemPromptTemplateMutation) AddCreatedBy(i int64) {
+	if m.addcreated_by != nil {
+		*m.addcreated_by += i
+	} else {
+		m.addcreated_by = &i
+	}
+}
+
+// AddedCreatedBy returns the value that was added to the "created_by" field in this mutation.
+func (m *SystemPromptTemplateMutation) AddedCreatedBy() (r int64, exists bool) {
+	v := m.addcreated_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearCreatedBy clears the value of the "created_by" field.
+func (m *SystemPromptTemplateMutation) ClearCreatedBy() {
+	m.created_by = nil
+	m.addcreated_by = nil
+	m.clearedFields[systemprompttemplate.FieldCreatedBy] = struct{}{}
+}
+
+// CreatedByCleared returns if the "created_by" field was cleared in this mutation.
+func (m *SystemPromptTemplateMutation) CreatedByCleared() bool {
+	_, ok := m.clearedFields[systemprompttemplate.FieldCreatedBy]
+	return ok
+}
+
+// ResetCreatedBy resets all changes to the "created_by" field.
+func (m *SystemPromptTemplateMutation) ResetCreatedBy() {
+	m.created_by = nil
+	m.addcreated_by = nil
+	delete(m.clearedFields, systemprompttemplate.FieldCreatedBy)
+}
+
+// SetUpdatedBy sets the "updated_by" field.
+func (m *SystemPromptTemplateMutation) SetUpdatedBy(i int64) {
+	m.updated_by = &i
+	m.addupdated_by = nil
+}
+
+// UpdatedBy returns the value of the "updated_by" field in the mutation.
+func (m *SystemPromptTemplateMutation) UpdatedBy() (r int64, exists bool) {
+	v := m.updated_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedBy returns the old "updated_by" field's value of the SystemPromptTemplate entity.
+// If the SystemPromptTemplate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateMutation) OldUpdatedBy(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedBy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedBy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedBy: %w", err)
+	}
+	return oldValue.UpdatedBy, nil
+}
+
+// AddUpdatedBy adds i to the "updated_by" field.
+func (m *SystemPromptTemplateMutation) AddUpdatedBy(i int64) {
+	if m.addupdated_by != nil {
+		*m.addupdated_by += i
+	} else {
+		m.addupdated_by = &i
+	}
+}
+
+// AddedUpdatedBy returns the value that was added to the "updated_by" field in this mutation.
+func (m *SystemPromptTemplateMutation) AddedUpdatedBy() (r int64, exists bool) {
+	v := m.addupdated_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearUpdatedBy clears the value of the "updated_by" field.
+func (m *SystemPromptTemplateMutation) ClearUpdatedBy() {
+	m.updated_by = nil
+	m.addupdated_by = nil
+	m.clearedFields[systemprompttemplate.FieldUpdatedBy] = struct{}{}
+}
+
+// UpdatedByCleared returns if the "updated_by" field was cleared in this mutation.
+func (m *SystemPromptTemplateMutation) UpdatedByCleared() bool {
+	_, ok := m.clearedFields[systemprompttemplate.FieldUpdatedBy]
+	return ok
+}
+
+// ResetUpdatedBy resets all changes to the "updated_by" field.
+func (m *SystemPromptTemplateMutation) ResetUpdatedBy() {
+	m.updated_by = nil
+	m.addupdated_by = nil
+	delete(m.clearedFields, systemprompttemplate.FieldUpdatedBy)
+}
+
+// AddVersionIDs adds the "versions" edge to the SystemPromptTemplateVersion entity by ids.
+func (m *SystemPromptTemplateMutation) AddVersionIDs(ids ...int64) {
+	if m.versions == nil {
+		m.versions = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.versions[ids[i]] = struct{}{}
+	}
+}
+
+// ClearVersions clears the "versions" edge to the SystemPromptTemplateVersion entity.
+func (m *SystemPromptTemplateMutation) ClearVersions() {
+	m.clearedversions = true
+}
+
+// VersionsCleared reports if the "versions" edge to the SystemPromptTemplateVersion entity was cleared.
+func (m *SystemPromptTemplateMutation) VersionsCleared() bool {
+	return m.clearedversions
+}
+
+// RemoveVersionIDs removes the "versions" edge to the SystemPromptTemplateVersion entity by IDs.
+func (m *SystemPromptTemplateMutation) RemoveVersionIDs(ids ...int64) {
+	if m.removedversions == nil {
+		m.removedversions = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.versions, ids[i])
+		m.removedversions[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedVersions returns the removed IDs of the "versions" edge to the SystemPromptTemplateVersion entity.
+func (m *SystemPromptTemplateMutation) RemovedVersionsIDs() (ids []int64) {
+	for id := range m.removedversions {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// VersionsIDs returns the "versions" edge IDs in the mutation.
+func (m *SystemPromptTemplateMutation) VersionsIDs() (ids []int64) {
+	for id := range m.versions {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetVersions resets all changes to the "versions" edge.
+func (m *SystemPromptTemplateMutation) ResetVersions() {
+	m.versions = nil
+	m.clearedversions = false
+	m.removedversions = nil
+}
+
+// Where appends a list predicates to the SystemPromptTemplateMutation builder.
+func (m *SystemPromptTemplateMutation) Where(ps ...predicate.SystemPromptTemplate) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the SystemPromptTemplateMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *SystemPromptTemplateMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.SystemPromptTemplate, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *SystemPromptTemplateMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *SystemPromptTemplateMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (SystemPromptTemplate).
+func (m *SystemPromptTemplateMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *SystemPromptTemplateMutation) Fields() []string {
+	fields := make([]string, 0, 9)
+	if m.created_at != nil {
+		fields = append(fields, systemprompttemplate.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, systemprompttemplate.FieldUpdatedAt)
+	}
+	if m.deleted_at != nil {
+		fields = append(fields, systemprompttemplate.FieldDeletedAt)
+	}
+	if m.slug != nil {
+		fields = append(fields, systemprompttemplate.FieldSlug)
+	}
+	if m.name != nil {
+		fields = append(fields, systemprompttemplate.FieldName)
+	}
+	if m.description != nil {
+		fields = append(fields, systemprompttemplate.FieldDescription)
+	}
+	if m.is_seed != nil {
+		fields = append(fields, systemprompttemplate.FieldIsSeed)
+	}
+	if m.created_by != nil {
+		fields = append(fields, systemprompttemplate.FieldCreatedBy)
+	}
+	if m.updated_by != nil {
+		fields = append(fields, systemprompttemplate.FieldUpdatedBy)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *SystemPromptTemplateMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case systemprompttemplate.FieldCreatedAt:
+		return m.CreatedAt()
+	case systemprompttemplate.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case systemprompttemplate.FieldDeletedAt:
+		return m.DeletedAt()
+	case systemprompttemplate.FieldSlug:
+		return m.Slug()
+	case systemprompttemplate.FieldName:
+		return m.Name()
+	case systemprompttemplate.FieldDescription:
+		return m.Description()
+	case systemprompttemplate.FieldIsSeed:
+		return m.IsSeed()
+	case systemprompttemplate.FieldCreatedBy:
+		return m.CreatedBy()
+	case systemprompttemplate.FieldUpdatedBy:
+		return m.UpdatedBy()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *SystemPromptTemplateMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case systemprompttemplate.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case systemprompttemplate.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case systemprompttemplate.FieldDeletedAt:
+		return m.OldDeletedAt(ctx)
+	case systemprompttemplate.FieldSlug:
+		return m.OldSlug(ctx)
+	case systemprompttemplate.FieldName:
+		return m.OldName(ctx)
+	case systemprompttemplate.FieldDescription:
+		return m.OldDescription(ctx)
+	case systemprompttemplate.FieldIsSeed:
+		return m.OldIsSeed(ctx)
+	case systemprompttemplate.FieldCreatedBy:
+		return m.OldCreatedBy(ctx)
+	case systemprompttemplate.FieldUpdatedBy:
+		return m.OldUpdatedBy(ctx)
+	}
+	return nil, fmt.Errorf("unknown SystemPromptTemplate field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *SystemPromptTemplateMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case systemprompttemplate.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case systemprompttemplate.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case systemprompttemplate.FieldDeletedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDeletedAt(v)
+		return nil
+	case systemprompttemplate.FieldSlug:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSlug(v)
+		return nil
+	case systemprompttemplate.FieldName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetName(v)
+		return nil
+	case systemprompttemplate.FieldDescription:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDescription(v)
+		return nil
+	case systemprompttemplate.FieldIsSeed:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIsSeed(v)
+		return nil
+	case systemprompttemplate.FieldCreatedBy:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedBy(v)
+		return nil
+	case systemprompttemplate.FieldUpdatedBy:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedBy(v)
+		return nil
+	}
+	return fmt.Errorf("unknown SystemPromptTemplate field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *SystemPromptTemplateMutation) AddedFields() []string {
+	var fields []string
+	if m.addcreated_by != nil {
+		fields = append(fields, systemprompttemplate.FieldCreatedBy)
+	}
+	if m.addupdated_by != nil {
+		fields = append(fields, systemprompttemplate.FieldUpdatedBy)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *SystemPromptTemplateMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case systemprompttemplate.FieldCreatedBy:
+		return m.AddedCreatedBy()
+	case systemprompttemplate.FieldUpdatedBy:
+		return m.AddedUpdatedBy()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *SystemPromptTemplateMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case systemprompttemplate.FieldCreatedBy:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCreatedBy(v)
+		return nil
+	case systemprompttemplate.FieldUpdatedBy:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUpdatedBy(v)
+		return nil
+	}
+	return fmt.Errorf("unknown SystemPromptTemplate numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *SystemPromptTemplateMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(systemprompttemplate.FieldDeletedAt) {
+		fields = append(fields, systemprompttemplate.FieldDeletedAt)
+	}
+	if m.FieldCleared(systemprompttemplate.FieldCreatedBy) {
+		fields = append(fields, systemprompttemplate.FieldCreatedBy)
+	}
+	if m.FieldCleared(systemprompttemplate.FieldUpdatedBy) {
+		fields = append(fields, systemprompttemplate.FieldUpdatedBy)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *SystemPromptTemplateMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *SystemPromptTemplateMutation) ClearField(name string) error {
+	switch name {
+	case systemprompttemplate.FieldDeletedAt:
+		m.ClearDeletedAt()
+		return nil
+	case systemprompttemplate.FieldCreatedBy:
+		m.ClearCreatedBy()
+		return nil
+	case systemprompttemplate.FieldUpdatedBy:
+		m.ClearUpdatedBy()
+		return nil
+	}
+	return fmt.Errorf("unknown SystemPromptTemplate nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *SystemPromptTemplateMutation) ResetField(name string) error {
+	switch name {
+	case systemprompttemplate.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case systemprompttemplate.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case systemprompttemplate.FieldDeletedAt:
+		m.ResetDeletedAt()
+		return nil
+	case systemprompttemplate.FieldSlug:
+		m.ResetSlug()
+		return nil
+	case systemprompttemplate.FieldName:
+		m.ResetName()
+		return nil
+	case systemprompttemplate.FieldDescription:
+		m.ResetDescription()
+		return nil
+	case systemprompttemplate.FieldIsSeed:
+		m.ResetIsSeed()
+		return nil
+	case systemprompttemplate.FieldCreatedBy:
+		m.ResetCreatedBy()
+		return nil
+	case systemprompttemplate.FieldUpdatedBy:
+		m.ResetUpdatedBy()
+		return nil
+	}
+	return fmt.Errorf("unknown SystemPromptTemplate field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *SystemPromptTemplateMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.versions != nil {
+		edges = append(edges, systemprompttemplate.EdgeVersions)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *SystemPromptTemplateMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case systemprompttemplate.EdgeVersions:
+		ids := make([]ent.Value, 0, len(m.versions))
+		for id := range m.versions {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *SystemPromptTemplateMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.removedversions != nil {
+		edges = append(edges, systemprompttemplate.EdgeVersions)
+	}
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *SystemPromptTemplateMutation) RemovedIDs(name string) []ent.Value {
+	switch name {
+	case systemprompttemplate.EdgeVersions:
+		ids := make([]ent.Value, 0, len(m.removedversions))
+		for id := range m.removedversions {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *SystemPromptTemplateMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedversions {
+		edges = append(edges, systemprompttemplate.EdgeVersions)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *SystemPromptTemplateMutation) EdgeCleared(name string) bool {
+	switch name {
+	case systemprompttemplate.EdgeVersions:
+		return m.clearedversions
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *SystemPromptTemplateMutation) ClearEdge(name string) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown SystemPromptTemplate unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *SystemPromptTemplateMutation) ResetEdge(name string) error {
+	switch name {
+	case systemprompttemplate.EdgeVersions:
+		m.ResetVersions()
+		return nil
+	}
+	return fmt.Errorf("unknown SystemPromptTemplate edge %s", name)
+}
+
+// SystemPromptTemplateVersionMutation represents an operation that mutates the SystemPromptTemplateVersion nodes in the graph.
+type SystemPromptTemplateVersionMutation struct {
+	config
+	op              Op
+	typ             string
+	id              *int64
+	version         *int64
+	addversion      *int64
+	body            *string
+	sha256          *string
+	byte_length     *int
+	addbyte_length  *int
+	note            *string
+	created_by      *int64
+	addcreated_by   *int64
+	published_at    *time.Time
+	published_by    *int64
+	addpublished_by *int64
+	created_at      *time.Time
+	clearedFields   map[string]struct{}
+	template        *int64
+	clearedtemplate bool
+	done            bool
+	oldValue        func(context.Context) (*SystemPromptTemplateVersion, error)
+	predicates      []predicate.SystemPromptTemplateVersion
+}
+
+var _ ent.Mutation = (*SystemPromptTemplateVersionMutation)(nil)
+
+// systemprompttemplateversionOption allows management of the mutation configuration using functional options.
+type systemprompttemplateversionOption func(*SystemPromptTemplateVersionMutation)
+
+// newSystemPromptTemplateVersionMutation creates new mutation for the SystemPromptTemplateVersion entity.
+func newSystemPromptTemplateVersionMutation(c config, op Op, opts ...systemprompttemplateversionOption) *SystemPromptTemplateVersionMutation {
+	m := &SystemPromptTemplateVersionMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeSystemPromptTemplateVersion,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withSystemPromptTemplateVersionID sets the ID field of the mutation.
+func withSystemPromptTemplateVersionID(id int64) systemprompttemplateversionOption {
+	return func(m *SystemPromptTemplateVersionMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *SystemPromptTemplateVersion
+		)
+		m.oldValue = func(ctx context.Context) (*SystemPromptTemplateVersion, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().SystemPromptTemplateVersion.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withSystemPromptTemplateVersion sets the old SystemPromptTemplateVersion of the mutation.
+func withSystemPromptTemplateVersion(node *SystemPromptTemplateVersion) systemprompttemplateversionOption {
+	return func(m *SystemPromptTemplateVersionMutation) {
+		m.oldValue = func(context.Context) (*SystemPromptTemplateVersion, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m SystemPromptTemplateVersionMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m SystemPromptTemplateVersionMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *SystemPromptTemplateVersionMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *SystemPromptTemplateVersionMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().SystemPromptTemplateVersion.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetTemplateID sets the "template_id" field.
+func (m *SystemPromptTemplateVersionMutation) SetTemplateID(i int64) {
+	m.template = &i
+}
+
+// TemplateID returns the value of the "template_id" field in the mutation.
+func (m *SystemPromptTemplateVersionMutation) TemplateID() (r int64, exists bool) {
+	v := m.template
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTemplateID returns the old "template_id" field's value of the SystemPromptTemplateVersion entity.
+// If the SystemPromptTemplateVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateVersionMutation) OldTemplateID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTemplateID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTemplateID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTemplateID: %w", err)
+	}
+	return oldValue.TemplateID, nil
+}
+
+// ResetTemplateID resets all changes to the "template_id" field.
+func (m *SystemPromptTemplateVersionMutation) ResetTemplateID() {
+	m.template = nil
+}
+
+// SetVersion sets the "version" field.
+func (m *SystemPromptTemplateVersionMutation) SetVersion(i int64) {
+	m.version = &i
+	m.addversion = nil
+}
+
+// Version returns the value of the "version" field in the mutation.
+func (m *SystemPromptTemplateVersionMutation) Version() (r int64, exists bool) {
+	v := m.version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVersion returns the old "version" field's value of the SystemPromptTemplateVersion entity.
+// If the SystemPromptTemplateVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateVersionMutation) OldVersion(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVersion: %w", err)
+	}
+	return oldValue.Version, nil
+}
+
+// AddVersion adds i to the "version" field.
+func (m *SystemPromptTemplateVersionMutation) AddVersion(i int64) {
+	if m.addversion != nil {
+		*m.addversion += i
+	} else {
+		m.addversion = &i
+	}
+}
+
+// AddedVersion returns the value that was added to the "version" field in this mutation.
+func (m *SystemPromptTemplateVersionMutation) AddedVersion() (r int64, exists bool) {
+	v := m.addversion
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetVersion resets all changes to the "version" field.
+func (m *SystemPromptTemplateVersionMutation) ResetVersion() {
+	m.version = nil
+	m.addversion = nil
+}
+
+// SetBody sets the "body" field.
+func (m *SystemPromptTemplateVersionMutation) SetBody(s string) {
+	m.body = &s
+}
+
+// Body returns the value of the "body" field in the mutation.
+func (m *SystemPromptTemplateVersionMutation) Body() (r string, exists bool) {
+	v := m.body
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBody returns the old "body" field's value of the SystemPromptTemplateVersion entity.
+// If the SystemPromptTemplateVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateVersionMutation) OldBody(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBody is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBody requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBody: %w", err)
+	}
+	return oldValue.Body, nil
+}
+
+// ResetBody resets all changes to the "body" field.
+func (m *SystemPromptTemplateVersionMutation) ResetBody() {
+	m.body = nil
+}
+
+// SetSha256 sets the "sha256" field.
+func (m *SystemPromptTemplateVersionMutation) SetSha256(s string) {
+	m.sha256 = &s
+}
+
+// Sha256 returns the value of the "sha256" field in the mutation.
+func (m *SystemPromptTemplateVersionMutation) Sha256() (r string, exists bool) {
+	v := m.sha256
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSha256 returns the old "sha256" field's value of the SystemPromptTemplateVersion entity.
+// If the SystemPromptTemplateVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateVersionMutation) OldSha256(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSha256 is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSha256 requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSha256: %w", err)
+	}
+	return oldValue.Sha256, nil
+}
+
+// ResetSha256 resets all changes to the "sha256" field.
+func (m *SystemPromptTemplateVersionMutation) ResetSha256() {
+	m.sha256 = nil
+}
+
+// SetByteLength sets the "byte_length" field.
+func (m *SystemPromptTemplateVersionMutation) SetByteLength(i int) {
+	m.byte_length = &i
+	m.addbyte_length = nil
+}
+
+// ByteLength returns the value of the "byte_length" field in the mutation.
+func (m *SystemPromptTemplateVersionMutation) ByteLength() (r int, exists bool) {
+	v := m.byte_length
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldByteLength returns the old "byte_length" field's value of the SystemPromptTemplateVersion entity.
+// If the SystemPromptTemplateVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateVersionMutation) OldByteLength(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldByteLength is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldByteLength requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldByteLength: %w", err)
+	}
+	return oldValue.ByteLength, nil
+}
+
+// AddByteLength adds i to the "byte_length" field.
+func (m *SystemPromptTemplateVersionMutation) AddByteLength(i int) {
+	if m.addbyte_length != nil {
+		*m.addbyte_length += i
+	} else {
+		m.addbyte_length = &i
+	}
+}
+
+// AddedByteLength returns the value that was added to the "byte_length" field in this mutation.
+func (m *SystemPromptTemplateVersionMutation) AddedByteLength() (r int, exists bool) {
+	v := m.addbyte_length
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetByteLength resets all changes to the "byte_length" field.
+func (m *SystemPromptTemplateVersionMutation) ResetByteLength() {
+	m.byte_length = nil
+	m.addbyte_length = nil
+}
+
+// SetNote sets the "note" field.
+func (m *SystemPromptTemplateVersionMutation) SetNote(s string) {
+	m.note = &s
+}
+
+// Note returns the value of the "note" field in the mutation.
+func (m *SystemPromptTemplateVersionMutation) Note() (r string, exists bool) {
+	v := m.note
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldNote returns the old "note" field's value of the SystemPromptTemplateVersion entity.
+// If the SystemPromptTemplateVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateVersionMutation) OldNote(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldNote is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldNote requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldNote: %w", err)
+	}
+	return oldValue.Note, nil
+}
+
+// ResetNote resets all changes to the "note" field.
+func (m *SystemPromptTemplateVersionMutation) ResetNote() {
+	m.note = nil
+}
+
+// SetCreatedBy sets the "created_by" field.
+func (m *SystemPromptTemplateVersionMutation) SetCreatedBy(i int64) {
+	m.created_by = &i
+	m.addcreated_by = nil
+}
+
+// CreatedBy returns the value of the "created_by" field in the mutation.
+func (m *SystemPromptTemplateVersionMutation) CreatedBy() (r int64, exists bool) {
+	v := m.created_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedBy returns the old "created_by" field's value of the SystemPromptTemplateVersion entity.
+// If the SystemPromptTemplateVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateVersionMutation) OldCreatedBy(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedBy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedBy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedBy: %w", err)
+	}
+	return oldValue.CreatedBy, nil
+}
+
+// AddCreatedBy adds i to the "created_by" field.
+func (m *SystemPromptTemplateVersionMutation) AddCreatedBy(i int64) {
+	if m.addcreated_by != nil {
+		*m.addcreated_by += i
+	} else {
+		m.addcreated_by = &i
+	}
+}
+
+// AddedCreatedBy returns the value that was added to the "created_by" field in this mutation.
+func (m *SystemPromptTemplateVersionMutation) AddedCreatedBy() (r int64, exists bool) {
+	v := m.addcreated_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearCreatedBy clears the value of the "created_by" field.
+func (m *SystemPromptTemplateVersionMutation) ClearCreatedBy() {
+	m.created_by = nil
+	m.addcreated_by = nil
+	m.clearedFields[systemprompttemplateversion.FieldCreatedBy] = struct{}{}
+}
+
+// CreatedByCleared returns if the "created_by" field was cleared in this mutation.
+func (m *SystemPromptTemplateVersionMutation) CreatedByCleared() bool {
+	_, ok := m.clearedFields[systemprompttemplateversion.FieldCreatedBy]
+	return ok
+}
+
+// ResetCreatedBy resets all changes to the "created_by" field.
+func (m *SystemPromptTemplateVersionMutation) ResetCreatedBy() {
+	m.created_by = nil
+	m.addcreated_by = nil
+	delete(m.clearedFields, systemprompttemplateversion.FieldCreatedBy)
+}
+
+// SetPublishedAt sets the "published_at" field.
+func (m *SystemPromptTemplateVersionMutation) SetPublishedAt(t time.Time) {
+	m.published_at = &t
+}
+
+// PublishedAt returns the value of the "published_at" field in the mutation.
+func (m *SystemPromptTemplateVersionMutation) PublishedAt() (r time.Time, exists bool) {
+	v := m.published_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPublishedAt returns the old "published_at" field's value of the SystemPromptTemplateVersion entity.
+// If the SystemPromptTemplateVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateVersionMutation) OldPublishedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPublishedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPublishedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPublishedAt: %w", err)
+	}
+	return oldValue.PublishedAt, nil
+}
+
+// ClearPublishedAt clears the value of the "published_at" field.
+func (m *SystemPromptTemplateVersionMutation) ClearPublishedAt() {
+	m.published_at = nil
+	m.clearedFields[systemprompttemplateversion.FieldPublishedAt] = struct{}{}
+}
+
+// PublishedAtCleared returns if the "published_at" field was cleared in this mutation.
+func (m *SystemPromptTemplateVersionMutation) PublishedAtCleared() bool {
+	_, ok := m.clearedFields[systemprompttemplateversion.FieldPublishedAt]
+	return ok
+}
+
+// ResetPublishedAt resets all changes to the "published_at" field.
+func (m *SystemPromptTemplateVersionMutation) ResetPublishedAt() {
+	m.published_at = nil
+	delete(m.clearedFields, systemprompttemplateversion.FieldPublishedAt)
+}
+
+// SetPublishedBy sets the "published_by" field.
+func (m *SystemPromptTemplateVersionMutation) SetPublishedBy(i int64) {
+	m.published_by = &i
+	m.addpublished_by = nil
+}
+
+// PublishedBy returns the value of the "published_by" field in the mutation.
+func (m *SystemPromptTemplateVersionMutation) PublishedBy() (r int64, exists bool) {
+	v := m.published_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPublishedBy returns the old "published_by" field's value of the SystemPromptTemplateVersion entity.
+// If the SystemPromptTemplateVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateVersionMutation) OldPublishedBy(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPublishedBy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPublishedBy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPublishedBy: %w", err)
+	}
+	return oldValue.PublishedBy, nil
+}
+
+// AddPublishedBy adds i to the "published_by" field.
+func (m *SystemPromptTemplateVersionMutation) AddPublishedBy(i int64) {
+	if m.addpublished_by != nil {
+		*m.addpublished_by += i
+	} else {
+		m.addpublished_by = &i
+	}
+}
+
+// AddedPublishedBy returns the value that was added to the "published_by" field in this mutation.
+func (m *SystemPromptTemplateVersionMutation) AddedPublishedBy() (r int64, exists bool) {
+	v := m.addpublished_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearPublishedBy clears the value of the "published_by" field.
+func (m *SystemPromptTemplateVersionMutation) ClearPublishedBy() {
+	m.published_by = nil
+	m.addpublished_by = nil
+	m.clearedFields[systemprompttemplateversion.FieldPublishedBy] = struct{}{}
+}
+
+// PublishedByCleared returns if the "published_by" field was cleared in this mutation.
+func (m *SystemPromptTemplateVersionMutation) PublishedByCleared() bool {
+	_, ok := m.clearedFields[systemprompttemplateversion.FieldPublishedBy]
+	return ok
+}
+
+// ResetPublishedBy resets all changes to the "published_by" field.
+func (m *SystemPromptTemplateVersionMutation) ResetPublishedBy() {
+	m.published_by = nil
+	m.addpublished_by = nil
+	delete(m.clearedFields, systemprompttemplateversion.FieldPublishedBy)
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *SystemPromptTemplateVersionMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *SystemPromptTemplateVersionMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the SystemPromptTemplateVersion entity.
+// If the SystemPromptTemplateVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateVersionMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *SystemPromptTemplateVersionMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// ClearTemplate clears the "template" edge to the SystemPromptTemplate entity.
+func (m *SystemPromptTemplateVersionMutation) ClearTemplate() {
+	m.clearedtemplate = true
+	m.clearedFields[systemprompttemplateversion.FieldTemplateID] = struct{}{}
+}
+
+// TemplateCleared reports if the "template" edge to the SystemPromptTemplate entity was cleared.
+func (m *SystemPromptTemplateVersionMutation) TemplateCleared() bool {
+	return m.clearedtemplate
+}
+
+// TemplateIDs returns the "template" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// TemplateID instead. It exists only for internal usage by the builders.
+func (m *SystemPromptTemplateVersionMutation) TemplateIDs() (ids []int64) {
+	if id := m.template; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetTemplate resets all changes to the "template" edge.
+func (m *SystemPromptTemplateVersionMutation) ResetTemplate() {
+	m.template = nil
+	m.clearedtemplate = false
+}
+
+// Where appends a list predicates to the SystemPromptTemplateVersionMutation builder.
+func (m *SystemPromptTemplateVersionMutation) Where(ps ...predicate.SystemPromptTemplateVersion) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the SystemPromptTemplateVersionMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *SystemPromptTemplateVersionMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.SystemPromptTemplateVersion, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *SystemPromptTemplateVersionMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *SystemPromptTemplateVersionMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (SystemPromptTemplateVersion).
+func (m *SystemPromptTemplateVersionMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *SystemPromptTemplateVersionMutation) Fields() []string {
+	fields := make([]string, 0, 10)
+	if m.template != nil {
+		fields = append(fields, systemprompttemplateversion.FieldTemplateID)
+	}
+	if m.version != nil {
+		fields = append(fields, systemprompttemplateversion.FieldVersion)
+	}
+	if m.body != nil {
+		fields = append(fields, systemprompttemplateversion.FieldBody)
+	}
+	if m.sha256 != nil {
+		fields = append(fields, systemprompttemplateversion.FieldSha256)
+	}
+	if m.byte_length != nil {
+		fields = append(fields, systemprompttemplateversion.FieldByteLength)
+	}
+	if m.note != nil {
+		fields = append(fields, systemprompttemplateversion.FieldNote)
+	}
+	if m.created_by != nil {
+		fields = append(fields, systemprompttemplateversion.FieldCreatedBy)
+	}
+	if m.published_at != nil {
+		fields = append(fields, systemprompttemplateversion.FieldPublishedAt)
+	}
+	if m.published_by != nil {
+		fields = append(fields, systemprompttemplateversion.FieldPublishedBy)
+	}
+	if m.created_at != nil {
+		fields = append(fields, systemprompttemplateversion.FieldCreatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *SystemPromptTemplateVersionMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case systemprompttemplateversion.FieldTemplateID:
+		return m.TemplateID()
+	case systemprompttemplateversion.FieldVersion:
+		return m.Version()
+	case systemprompttemplateversion.FieldBody:
+		return m.Body()
+	case systemprompttemplateversion.FieldSha256:
+		return m.Sha256()
+	case systemprompttemplateversion.FieldByteLength:
+		return m.ByteLength()
+	case systemprompttemplateversion.FieldNote:
+		return m.Note()
+	case systemprompttemplateversion.FieldCreatedBy:
+		return m.CreatedBy()
+	case systemprompttemplateversion.FieldPublishedAt:
+		return m.PublishedAt()
+	case systemprompttemplateversion.FieldPublishedBy:
+		return m.PublishedBy()
+	case systemprompttemplateversion.FieldCreatedAt:
+		return m.CreatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *SystemPromptTemplateVersionMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case systemprompttemplateversion.FieldTemplateID:
+		return m.OldTemplateID(ctx)
+	case systemprompttemplateversion.FieldVersion:
+		return m.OldVersion(ctx)
+	case systemprompttemplateversion.FieldBody:
+		return m.OldBody(ctx)
+	case systemprompttemplateversion.FieldSha256:
+		return m.OldSha256(ctx)
+	case systemprompttemplateversion.FieldByteLength:
+		return m.OldByteLength(ctx)
+	case systemprompttemplateversion.FieldNote:
+		return m.OldNote(ctx)
+	case systemprompttemplateversion.FieldCreatedBy:
+		return m.OldCreatedBy(ctx)
+	case systemprompttemplateversion.FieldPublishedAt:
+		return m.OldPublishedAt(ctx)
+	case systemprompttemplateversion.FieldPublishedBy:
+		return m.OldPublishedBy(ctx)
+	case systemprompttemplateversion.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown SystemPromptTemplateVersion field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *SystemPromptTemplateVersionMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case systemprompttemplateversion.FieldTemplateID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTemplateID(v)
+		return nil
+	case systemprompttemplateversion.FieldVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVersion(v)
+		return nil
+	case systemprompttemplateversion.FieldBody:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBody(v)
+		return nil
+	case systemprompttemplateversion.FieldSha256:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSha256(v)
+		return nil
+	case systemprompttemplateversion.FieldByteLength:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetByteLength(v)
+		return nil
+	case systemprompttemplateversion.FieldNote:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetNote(v)
+		return nil
+	case systemprompttemplateversion.FieldCreatedBy:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedBy(v)
+		return nil
+	case systemprompttemplateversion.FieldPublishedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPublishedAt(v)
+		return nil
+	case systemprompttemplateversion.FieldPublishedBy:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPublishedBy(v)
+		return nil
+	case systemprompttemplateversion.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown SystemPromptTemplateVersion field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *SystemPromptTemplateVersionMutation) AddedFields() []string {
+	var fields []string
+	if m.addversion != nil {
+		fields = append(fields, systemprompttemplateversion.FieldVersion)
+	}
+	if m.addbyte_length != nil {
+		fields = append(fields, systemprompttemplateversion.FieldByteLength)
+	}
+	if m.addcreated_by != nil {
+		fields = append(fields, systemprompttemplateversion.FieldCreatedBy)
+	}
+	if m.addpublished_by != nil {
+		fields = append(fields, systemprompttemplateversion.FieldPublishedBy)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *SystemPromptTemplateVersionMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case systemprompttemplateversion.FieldVersion:
+		return m.AddedVersion()
+	case systemprompttemplateversion.FieldByteLength:
+		return m.AddedByteLength()
+	case systemprompttemplateversion.FieldCreatedBy:
+		return m.AddedCreatedBy()
+	case systemprompttemplateversion.FieldPublishedBy:
+		return m.AddedPublishedBy()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *SystemPromptTemplateVersionMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case systemprompttemplateversion.FieldVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddVersion(v)
+		return nil
+	case systemprompttemplateversion.FieldByteLength:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddByteLength(v)
+		return nil
+	case systemprompttemplateversion.FieldCreatedBy:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCreatedBy(v)
+		return nil
+	case systemprompttemplateversion.FieldPublishedBy:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPublishedBy(v)
+		return nil
+	}
+	return fmt.Errorf("unknown SystemPromptTemplateVersion numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *SystemPromptTemplateVersionMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(systemprompttemplateversion.FieldCreatedBy) {
+		fields = append(fields, systemprompttemplateversion.FieldCreatedBy)
+	}
+	if m.FieldCleared(systemprompttemplateversion.FieldPublishedAt) {
+		fields = append(fields, systemprompttemplateversion.FieldPublishedAt)
+	}
+	if m.FieldCleared(systemprompttemplateversion.FieldPublishedBy) {
+		fields = append(fields, systemprompttemplateversion.FieldPublishedBy)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *SystemPromptTemplateVersionMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *SystemPromptTemplateVersionMutation) ClearField(name string) error {
+	switch name {
+	case systemprompttemplateversion.FieldCreatedBy:
+		m.ClearCreatedBy()
+		return nil
+	case systemprompttemplateversion.FieldPublishedAt:
+		m.ClearPublishedAt()
+		return nil
+	case systemprompttemplateversion.FieldPublishedBy:
+		m.ClearPublishedBy()
+		return nil
+	}
+	return fmt.Errorf("unknown SystemPromptTemplateVersion nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *SystemPromptTemplateVersionMutation) ResetField(name string) error {
+	switch name {
+	case systemprompttemplateversion.FieldTemplateID:
+		m.ResetTemplateID()
+		return nil
+	case systemprompttemplateversion.FieldVersion:
+		m.ResetVersion()
+		return nil
+	case systemprompttemplateversion.FieldBody:
+		m.ResetBody()
+		return nil
+	case systemprompttemplateversion.FieldSha256:
+		m.ResetSha256()
+		return nil
+	case systemprompttemplateversion.FieldByteLength:
+		m.ResetByteLength()
+		return nil
+	case systemprompttemplateversion.FieldNote:
+		m.ResetNote()
+		return nil
+	case systemprompttemplateversion.FieldCreatedBy:
+		m.ResetCreatedBy()
+		return nil
+	case systemprompttemplateversion.FieldPublishedAt:
+		m.ResetPublishedAt()
+		return nil
+	case systemprompttemplateversion.FieldPublishedBy:
+		m.ResetPublishedBy()
+		return nil
+	case systemprompttemplateversion.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown SystemPromptTemplateVersion field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *SystemPromptTemplateVersionMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.template != nil {
+		edges = append(edges, systemprompttemplateversion.EdgeTemplate)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *SystemPromptTemplateVersionMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case systemprompttemplateversion.EdgeTemplate:
+		if id := m.template; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *SystemPromptTemplateVersionMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *SystemPromptTemplateVersionMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *SystemPromptTemplateVersionMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedtemplate {
+		edges = append(edges, systemprompttemplateversion.EdgeTemplate)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *SystemPromptTemplateVersionMutation) EdgeCleared(name string) bool {
+	switch name {
+	case systemprompttemplateversion.EdgeTemplate:
+		return m.clearedtemplate
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *SystemPromptTemplateVersionMutation) ClearEdge(name string) error {
+	switch name {
+	case systemprompttemplateversion.EdgeTemplate:
+		m.ClearTemplate()
+		return nil
+	}
+	return fmt.Errorf("unknown SystemPromptTemplateVersion unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *SystemPromptTemplateVersionMutation) ResetEdge(name string) error {
+	switch name {
+	case systemprompttemplateversion.EdgeTemplate:
+		m.ResetTemplate()
+		return nil
+	}
+	return fmt.Errorf("unknown SystemPromptTemplateVersion edge %s", name)
 }
 
 // TLSFingerprintProfileMutation represents an operation that mutates the TLSFingerprintProfile nodes in the graph.

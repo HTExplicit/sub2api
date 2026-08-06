@@ -396,6 +396,32 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			)
 		}
 		normalized = policyApplied
+		if updatedPromptPayload, application, promptErr := s.applyBusinessSystemPromptForRequest(
+			c, normalized, account, BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c),
+		); promptErr != nil {
+			if errors.Is(promptErr, ErrBusinessSystemPromptUnavailable) {
+				return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(
+					coderws.StatusTryAgainLater,
+					"system_prompt_unavailable",
+					promptErr,
+				)
+			}
+			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(
+				coderws.StatusPolicyViolation,
+				"invalid websocket request payload",
+				promptErr,
+			)
+		} else {
+			normalized = updatedPromptPayload
+			normalized, promptErr = rewriteBusinessSystemPromptCacheKey(normalized, application)
+			if promptErr != nil {
+				return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(
+					coderws.StatusPolicyViolation,
+					"invalid websocket request payload",
+					promptErr,
+				)
+			}
+		}
 		ingressSessionOriginalModel = originalModel
 
 		return openAIWSClientPayload{
@@ -881,6 +907,10 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			if normalized, changed := normalizeCompletedImageGenerationStatus(upstreamMessage); changed {
 				upstreamMessage = normalized
 			}
+			// Rewrite structured instructions before event parsing, diagnostics,
+			// refusal handling, and downstream forwarding so the server-owned
+			// segment cannot leak through native ingress WS frames or logs.
+			upstreamMessage = s.rewriteBusinessSystemPromptJSONForRequest(c, upstreamMessage, BusinessSystemPromptProtocolResponses)
 
 			eventType, eventResponseID, _ := parseOpenAIWSEventEnvelope(upstreamMessage)
 			if responseID == "" && eventResponseID != "" {

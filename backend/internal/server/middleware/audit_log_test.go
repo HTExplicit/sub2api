@@ -146,6 +146,77 @@ func TestPromptAuditMutationAuditRoutesHaveStableActionsAndOmitBodies(t *testing
 	}
 }
 
+func TestSystemPromptAuditRoutesHaveStableActionsAndOmitPromptBodies(t *testing.T) {
+	expectedActions := map[string]string{
+		"POST /api/v1/admin/system-prompts":                                   "admin.system_prompts.create",
+		"PATCH /api/v1/admin/system-prompts/:id":                              "admin.system_prompts.update",
+		"DELETE /api/v1/admin/system-prompts/:id":                             "admin.system_prompts.delete",
+		"POST /api/v1/admin/system-prompts/:id/duplicate":                     "admin.system_prompts.duplicate",
+		"POST /api/v1/admin/system-prompts/:id/versions":                      "admin.system_prompts.version.create",
+		"POST /api/v1/admin/system-prompts/:id/versions/:version_id/publish":  "admin.system_prompts.publish",
+		"POST /api/v1/admin/system-prompts/:id/versions/:version_id/rollback": "admin.system_prompts.rollback",
+		"PUT /api/v1/admin/system-prompts/runtime":                            "admin.system_prompts.runtime.update",
+		"POST /api/v1/admin/system-prompts/preview/merge":                     "admin.system_prompts.preview.merge",
+		"POST /api/v1/admin/system-prompts/preview/upstream":                  "admin.system_prompts.preview.upstream",
+	}
+	for route, action := range expectedActions {
+		require.Equal(t, action, auditActionOverrides[route])
+	}
+	for _, route := range []string{
+		"POST /api/v1/admin/system-prompts",
+		"POST /api/v1/admin/system-prompts/:id/versions",
+		"POST /api/v1/admin/system-prompts/preview/merge",
+		"POST /api/v1/admin/system-prompts/preview/upstream",
+	} {
+		require.Contains(t, auditPromptBodyOmittedRoutes, route)
+	}
+}
+
+func TestSystemPromptAuditNeverPersistsPromptOrPreviewInput(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repository := &auditCaptureRepository{}
+	auditService := service.NewAuditLogService(repository, nil)
+	auditService.Start()
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(ContextKeyUser), AuthSubject{UserID: 77})
+		c.Set(string(ContextKeyUserRole), "admin")
+		c.Next()
+	})
+	router.Use(gin.HandlerFunc(NewAuditLogMiddleware(auditService)))
+	router.POST("/api/v1/admin/system-prompts/preview/upstream", func(c *gin.Context) {
+		SetAuditExtra(c, map[string]any{
+			"template_id": int64(2), "template_version": int64(4),
+			"new_sha256": "0123456789abcdef", "byte_length": 128,
+			"revision": int64(9), "result": "previewed",
+			"raw_prompt": "audit-canary-server-prompt",
+		})
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/admin/system-prompts/preview/upstream", bytes.NewBufferString(
+		`{"server_instructions":"audit-canary-server-prompt","body":{"input":"audit-canary-client-input"}}`,
+	))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	auditService.Stop()
+
+	repository.mu.Lock()
+	logs := append([]*service.AuditLog(nil), repository.logs...)
+	repository.mu.Unlock()
+	require.Len(t, logs, 1)
+	require.Equal(t, "admin.system_prompts.preview.upstream", logs[0].Action)
+	require.Equal(t, "<system prompt body omitted>", logs[0].RequestBody)
+	require.NotContains(t, logs[0].RequestBody, "audit-canary")
+	require.EqualValues(t, 2, logs[0].Extra["template_id"])
+	require.EqualValues(t, 4, logs[0].Extra["template_version"])
+	require.Equal(t, "0123456789abcdef", logs[0].Extra["new_sha256"])
+	require.NotContains(t, logs[0].Extra, "raw_prompt")
+}
+
 func TestPasskeyLoginAuditUsesCanonicalLoginActionAndOmitsCredentialBody(t *testing.T) {
 	route := "POST /api/v1/auth/passkey/login/finish"
 	require.Equal(t, service.AuditActionLogin, auditActionOverrides[route])

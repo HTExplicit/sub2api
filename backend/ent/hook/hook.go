@@ -405,6 +405,42 @@ func (f SubscriptionPlanFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.V
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SubscriptionPlanMutation", m)
 }
 
+// The SystemPromptRuntimeFunc type is an adapter to allow the use of ordinary
+// function as SystemPromptRuntime mutator.
+type SystemPromptRuntimeFunc func(context.Context, *ent.SystemPromptRuntimeMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f SystemPromptRuntimeFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.SystemPromptRuntimeMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SystemPromptRuntimeMutation", m)
+}
+
+// The SystemPromptTemplateFunc type is an adapter to allow the use of ordinary
+// function as SystemPromptTemplate mutator.
+type SystemPromptTemplateFunc func(context.Context, *ent.SystemPromptTemplateMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f SystemPromptTemplateFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.SystemPromptTemplateMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SystemPromptTemplateMutation", m)
+}
+
+// The SystemPromptTemplateVersionFunc type is an adapter to allow the use of ordinary
+// function as SystemPromptTemplateVersion mutator.
+type SystemPromptTemplateVersionFunc func(context.Context, *ent.SystemPromptTemplateVersionMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f SystemPromptTemplateVersionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.SystemPromptTemplateVersionMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SystemPromptTemplateVersionMutation", m)
+}
+
 // The TLSFingerprintProfileFunc type is an adapter to allow the use of ordinary
 // function as TLSFingerprintProfile mutator.
 type TLSFingerprintProfileFunc func(context.Context, *ent.TLSFingerprintProfileMutation) (ent.Value, error)
