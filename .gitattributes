@@ -8,6 +8,10 @@ backend/migrations/*.sql text eol=lf
 # its published SHA-256 and UTF-8 byte-length invariants.
 backend/internal/service/prompts/moxinggang_reverse_skill_system_prompt.txt text eol=lf
 
+# Integrity manifests are byte-for-byte release artifacts. Git must not rewrite
+# them, while text diffs remain enabled for supply-chain review.
+deploy/skill-bundles/**/bundle-manifest.json -text diff
+
 # 前端 源代码文件
 *.ts text eol=lf
 *.tsx text eol=lf
