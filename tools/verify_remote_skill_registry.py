@@ -17,27 +17,30 @@ from verify_business_system_prompt_bundle import VerificationError, verify_bundl
 
 BUNDLE_ID = "codexrip-reverse-skill"
 MANIFEST_NAME = "bundle-manifest.json"
-MANIFEST_SHA256 = "510fed48ae78a2580548d27290259bab1848639538af0dd53acaa3f71c855fea"
-ARCHIVE_SHA256 = "1b676ba6e12ffa7c4d16b95e94f82a8330a3afa34f664aa98c3ac808927a60bd"
-OVERLAY_SHA256 = "1e4145c7c8afad0dc698cf0e5432a25705012752ed676ea51ec9afa303bc6ae3"
+MANIFEST_SHA256 = "07bf0d71dfb687ff3ced0befa39081453c51ce85ae54a02bdb1e1f6fc34d3313"
+ARCHIVE_SHA256 = "c6920445c55f46c2a30e8a2fe398e7c1cf0b22dcbe4c53ed0cfc105d9c8a5f3e"
+OVERLAY_SHA256 = "bab9d1be76ba7b777a78817de25f7a7a8112b7ae472586074e7aa1b065074294"
 SOURCE_COMMIT = "d8bf34540cbc1aa34052e1b142576fc36a1f1437"
-PROMPT_SHA256 = "cbf75cc85cd77860e53d06820e7120802d83c069e9d24b48715711acc15893c6"
-PROMPT_BYTES = 7045
-FILE_COUNT = 538
-TOTAL_BYTES = 7_948_026
+PROMPT_SHA256 = "0b717f086b1bf25e8300e9f26578ee95cf6f74d5601c06b9f9e493aa8939b0a7"
+PROMPT_BYTES = 9587
+FILE_COUNT = 540
+TOTAL_BYTES = 7_949_823
 ARCHIVE_NAME = f"{BUNDLE_ID}-{MANIFEST_SHA256}.zip"
 CHECKSUM_NAME = f"{ARCHIVE_NAME}.sha256"
 DESCRIPTOR_NAME = "seed-descriptor.json"
 BASE_URL = f"https://codexrip.vip/skills/reverse-skill/versions/{MANIFEST_SHA256}"
 DESCRIPTOR_URL = "https://codexrip.vip/skills/reverse-skill/current.json"
 BOOTSTRAPS = {
-    "bootstrap-reverse-skill.ps1": "e3dfee2e99fad9c890295a9de6fd1d2882c428971579049c3038b94d10668edd",
-    "bootstrap-reverse-skill.py": "6bd6f94cb552f979443303c34883b12b475e724dcaf0b77843420f991459cf9c",
+    "bootstrap-reverse-skill.ps1": "8595884159988ff653c1d66be66d25acc62a359009c85a7924a23dbaf45d4246",
+    "bootstrap-reverse-skill.py": "2db6ff2d1a5182b73920aabe701d914cca83643aeab89443c0561b1a67430b42",
+}
+CLIENT_FILES = {
+    "codexrip-client/SKILL.md",
+    "codexrip-client/agents/openai.yaml",
 }
 FORBIDDEN_RUNTIME_BYTES = (
     b"moxinggang.com",
-    b"C:\\Users\\Administrator",
-    "模型港".encode("utf-8"),
+    b"C:\\Users\\Administrator\\AppData\\Local",
 )
 
 
@@ -89,7 +92,7 @@ def verify_descriptor(path: Path, manifest: dict) -> dict:
         "files_base_url": f"{BASE_URL}/",
         "file_count": FILE_COUNT,
         "total_bytes": TOTAL_BYTES,
-        "bootstrap_policy": "download_verify_cache_materialize_only",
+        "bootstrap_policy": "download_verify_native_skill_atomic_replace",
     }
     for key, expected in exact.items():
         if descriptor.get(key) != expected:
@@ -112,6 +115,8 @@ def verify_manifest_contract(manifest: dict) -> set[str]:
     if len(declared) != FILE_COUNT or not all(isinstance(name, str) for name in declared):
         raise VerificationError("manifest contains invalid or duplicate file paths")
     by_path = {entry.get("path"): entry for entry in entries if isinstance(entry, dict)}
+    if not CLIENT_FILES.issubset(declared):
+        raise VerificationError("manifest does not include the native Codex Skill entry files")
     gradle_wrapper = by_path.get("burp-mcp-full/gradlew")
     if not isinstance(gradle_wrapper, dict) or gradle_wrapper.get("kind") != "script":
         raise VerificationError("shebang executables must be classified as scripts")
@@ -140,6 +145,15 @@ def verify_manifest_contract(manifest: dict) -> set[str]:
     missing = runtime_documents - declared
     if missing:
         raise VerificationError("manifest core or route document is not declared")
+    by_route = {route["id"]: route for route in domains}
+    for route_id, required_keywords in {
+        "api-security": {"接口安全", "鉴权"},
+        "js-reverse": {"js逆向", "前端逆向"},
+    }.items():
+        route = by_route.get(route_id)
+        keywords = set(route.get("keywords", [])) if isinstance(route, dict) else set()
+        if not required_keywords.issubset(keywords):
+            raise VerificationError(f"manifest route {route_id} is missing pinned bilingual keywords")
     return runtime_documents
 
 
@@ -203,6 +217,14 @@ def verify_registry(
             raise VerificationError("release ZIP must use the canonical stored representation")
         for name in sorted(runtime_documents):
             require_runtime_text_clean(f"runtime document {name}", archive.read(name))
+        client_skill = archive.read("codexrip-client/SKILL.md")
+        client_openai = archive.read("codexrip-client/agents/openai.yaml")
+        require_runtime_text_clean("native Skill entry", client_skill)
+        require_runtime_text_clean("native Skill metadata", client_openai)
+        if not client_skill.startswith(b"---\nname: codexrip-reverse-skill\n") or b"`bundle/`" not in client_skill:
+            raise VerificationError("native Skill entry does not route into the verified bundle")
+        if b'display_name: "CodexRip Reverse Skill"' not in client_openai or b"$codexrip-reverse-skill" not in client_openai:
+            raise VerificationError("native Skill OpenAI metadata does not match the installed Skill")
 
     return RegistryVerificationResult(
         manifest_sha256=MANIFEST_SHA256,

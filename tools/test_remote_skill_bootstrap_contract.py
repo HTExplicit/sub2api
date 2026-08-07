@@ -1,50 +1,72 @@
 #!/usr/bin/env python3
-"""Run the PowerShell and Python bootstrap lifecycle contract without networking."""
+"""Verify native Codex Skill installation without network access."""
 
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
-import os
 import shutil
 import stat
 import subprocess
 import sys
 import tempfile
-import time
 import zipfile
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BUNDLE_ID = "codexrip-contract-fixture"
+BUNDLE_ID = "codexrip-reverse-skill"
 SOURCE_COMMIT = "1" * 40
-PYTHON_BOOTSTRAP = ROOT / "deploy" / "skill-registry" / "bootstrap" / "6bd6f94cb552f979443303c34883b12b475e724dcaf0b77843420f991459cf9c" / "bootstrap-reverse-skill.py"
-POWERSHELL_BOOTSTRAP = ROOT / "deploy" / "skill-registry" / "bootstrap" / "e3dfee2e99fad9c890295a9de6fd1d2882c428971579049c3038b94d10668edd" / "bootstrap-reverse-skill.ps1"
+SKILL_NAME = "codexrip-reverse-skill"
+PYTHON_BOOTSTRAP = ROOT / "deploy" / "skill-registry" / "bootstrap" / "2db6ff2d1a5182b73920aabe701d914cca83643aeab89443c0561b1a67430b42" / "bootstrap-reverse-skill.py"
+POWERSHELL_BOOTSTRAP = ROOT / "deploy" / "skill-registry" / "bootstrap" / "8595884159988ff653c1d66be66d25acc62a359009c85a7924a23dbaf45d4246" / "bootstrap-reverse-skill.ps1"
 
 
 def sha256(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def build_fixture(root: Path) -> tuple[Path, Path, str]:
+def build_fixture(root: Path) -> tuple[Path, str]:
     files = {
         "RULES.md": b"contract core\n",
-        "routes/sentinel.md": b"contract route\n",
-        "routes/sentinel.py": b"from pathlib import Path\nPath(__file__).with_name('EXECUTED').write_text('ran')\n",
+        "README_AI.md": b"contract readme\n",
+        "skills/SKILL.md": b"---\nname: upstream-router\ndescription: upstream router\n---\n",
+        "skills/MASTER-ROUTING.md": b"contract routing\n",
+        "skills/sentinel/SKILL.md": b"---\nname: sentinel\ndescription: sentinel route\n---\n",
+        "skills/sentinel/sentinel.py": b"from pathlib import Path\nPath(__file__).with_name('EXECUTED').write_text('ran')\n",
+        "codexrip-client/SKILL.md": (
+            b"---\nname: codexrip-reverse-skill\n"
+            b"description: Route reverse engineering, security research, and CTF tasks.\n---\n"
+            b"Read bundle/RULES.md, bundle/README_AI.md, bundle/skills/SKILL.md, "
+            b"and bundle/skills/MASTER-ROUTING.md before selecting a route.\n"
+        ),
+        "codexrip-client/agents/openai.yaml": b"interface:\n  display_name: CodexRip Reverse Skill\n",
     }
     entries = [
-        {"path": name, "sha256": sha256(raw), "byte_length": len(raw), "kind": "script" if name.endswith(".py") else "text", "required": True}
+        {
+            "path": name,
+            "sha256": sha256(raw),
+            "byte_length": len(raw),
+            "kind": "script" if name.endswith(".py") else "text",
+            "required": True,
+        }
         for name, raw in sorted(files.items())
     ]
     manifest = {
         "schema_version": 1,
         "bundle_id": BUNDLE_ID,
         "version": "contract-v1",
-        "core_files": ["RULES.md"],
+        "core_files": ["RULES.md", "README_AI.md", "skills/SKILL.md"],
         "files": entries,
-        "domains": [{"id": "sentinel", "keywords": ["sentinel"], "entry": "routes/sentinel.md", "references": ["routes/sentinel.py"]}],
+        "domains": [
+            {
+                "id": "sentinel",
+                "keywords": ["sentinel", "哨兵"],
+                "entry": "skills/sentinel/SKILL.md",
+                "references": ["skills/sentinel/sentinel.py"],
+            }
+        ],
     }
     manifest_raw = json.dumps(manifest, separators=(",", ":"), sort_keys=True).encode("utf-8")
     manifest_sha = sha256(manifest_raw)
@@ -71,7 +93,7 @@ def build_fixture(root: Path) -> tuple[Path, Path, str]:
     }
     descriptor_path = root / "descriptor.json"
     descriptor_path.write_text(json.dumps(descriptor, separators=(",", ":")), encoding="utf-8")
-    return descriptor_path, archive_path, sha256(files["routes/sentinel.py"])
+    return descriptor_path, manifest_sha
 
 
 def parse_result(completed: subprocess.CompletedProcess[str]) -> dict:
@@ -86,58 +108,84 @@ def parse_result(completed: subprocess.CompletedProcess[str]) -> dict:
     return result
 
 
-def command_for(implementation: str, descriptor: Path, assets: Path, cache: Path, tasks: Path, task_id: str, route: bool) -> list[str]:
+def command_for(implementation: str, descriptor: Path, assets: Path, codex_home: Path) -> list[str]:
     if implementation == "python":
-        command = [sys.executable, str(PYTHON_BOOTSTRAP), "--descriptor-file", str(descriptor), "--asset-root", str(assets), "--cache-root", str(cache), "--task-root", str(tasks), "--task-id", task_id]
-        if route:
-            command += ["--route-id", "sentinel"]
-        return command
+        return [
+            sys.executable,
+            str(PYTHON_BOOTSTRAP),
+            "--descriptor-file",
+            str(descriptor),
+            "--asset-root",
+            str(assets),
+            "--codex-home",
+            str(codex_home),
+        ]
     pwsh = shutil.which("pwsh")
     if not pwsh:
         raise RuntimeError("pwsh 7 is required for the PowerShell bootstrap contract")
-    command = [pwsh, "-NoLogo", "-NoProfile", "-File", str(POWERSHELL_BOOTSTRAP), "-DescriptorFile", str(descriptor), "-AssetRoot", str(assets), "-CacheRoot", str(cache), "-TaskRoot", str(tasks), "-TaskId", task_id]
-    if route:
-        command += ["-RouteId", "sentinel"]
-    return command
+    return [
+        pwsh,
+        "-NoLogo",
+        "-NoProfile",
+        "-File",
+        str(POWERSHELL_BOOTSTRAP),
+        "-DescriptorFile",
+        str(descriptor),
+        "-AssetRoot",
+        str(assets),
+        "-CodexHome",
+        str(codex_home),
+    ]
 
 
 def run_implementation(implementation: str) -> None:
     with tempfile.TemporaryDirectory(prefix=f"codexrip-{implementation}-") as raw_root:
         root = Path(raw_root)
         assets = root / "assets"
-        cache = root / "cache"
-        tasks = root / "tasks"
+        codex_home = root / "codex-home"
         assets.mkdir()
-        descriptor, archive, script_sha = build_fixture(assets)
+        descriptor, manifest_sha = build_fixture(assets)
 
-        first = parse_result(subprocess.run(
-            command_for(implementation, descriptor, assets, cache, tasks, "first", False),
-            text=True, capture_output=True, timeout=60, check=False,
-        ))
-        if first.get("cache_reused") is not False or first.get("materialized_scripts"):
-            raise RuntimeError("first bootstrap run did not create a clean non-route cache")
+        first = parse_result(
+            subprocess.run(
+                command_for(implementation, descriptor, assets, codex_home),
+                text=True,
+                capture_output=True,
+                timeout=60,
+                check=False,
+            )
+        )
+        skill = codex_home / "skills" / SKILL_NAME
+        if Path(first["skill_path"]).resolve() != skill.resolve() or first.get("replaced") is not False:
+            raise RuntimeError("first install returned the wrong native Skill state")
+        if first.get("manifest_sha256") != manifest_sha:
+            raise RuntimeError("first install returned the wrong manifest")
+        if not (skill / "SKILL.md").is_file() or not (skill / "agents" / "openai.yaml").is_file():
+            raise RuntimeError("native Skill entry files are missing")
+        if not (skill / "bundle" / "RULES.md").is_file() or not (skill / "bundle" / "skills" / "sentinel" / "sentinel.py").is_file():
+            raise RuntimeError("complete verified bundle is missing")
+        stale = skill / "STALE"
+        stale.write_text("must be removed", encoding="utf-8")
+        (skill / "bundle" / "RULES.md").write_text("corrupt", encoding="utf-8")
 
-        stale = tasks / "expired-task"
-        stale.mkdir()
-        old = time.time() - 9 * 24 * 60 * 60
-        os.utime(stale, (old, old))
-        archive.unlink()
-
-        second = parse_result(subprocess.run(
-            command_for(implementation, descriptor, assets, cache, tasks, "second", True),
-            text=True, capture_output=True, timeout=60, check=False,
-        ))
-        scripts = second.get("materialized_scripts", [])
-        if second.get("cache_reused") is not True or len(scripts) != 1:
-            raise RuntimeError("second bootstrap run did not reuse cache or materialize the explicit script")
-        script_path = Path(scripts[0])
-        if sha256(script_path.read_bytes()) != script_sha:
-            raise RuntimeError("materialized script digest mismatch")
-        if stale.exists() or list(tasks.rglob("EXECUTED")):
-            raise RuntimeError("task cleanup or script non-execution contract failed")
-        if Path(first["task_path"]) == Path(second["task_path"]):
-            raise RuntimeError("bootstrap reused a task directory")
-        print(f"{implementation} bootstrap contract verified: cache_reused=true scripts_executed=false")
+        second = parse_result(
+            subprocess.run(
+                command_for(implementation, descriptor, assets, codex_home),
+                text=True,
+                capture_output=True,
+                timeout=60,
+                check=False,
+            )
+        )
+        if second.get("replaced") is not True or stale.exists():
+            raise RuntimeError("manual update did not directly replace the old Skill")
+        if (skill / "bundle" / "RULES.md").read_bytes() != b"contract core\n":
+            raise RuntimeError("manual update did not restore verified bytes")
+        if list(root.rglob("EXECUTED")):
+            raise RuntimeError("bundle script executed during installation")
+        if list((codex_home / "skills").glob(f".{SKILL_NAME}-old-*")):
+            raise RuntimeError("installer retained a previous client version")
+        print(f"{implementation} native Skill contract verified: replaced=true scripts_executed=false")
 
 
 def main() -> int:

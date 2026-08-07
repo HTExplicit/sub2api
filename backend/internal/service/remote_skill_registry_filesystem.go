@@ -84,20 +84,11 @@ func (f *RemoteSkillRegistryFilesystem) LoadSeed(ctx context.Context) (RemoteSki
 		return RemoteSkillBundleVersion{}, fmt.Errorf("install release seed package: %w", err)
 	}
 	seedRoot := filepath.Join(f.root, "private", "seed")
-	path := filepath.Join(seedRoot, remoteSkillSeedDescriptorName)
-	raw, err := readRemoteSkillBoundedFile(path, remoteSkillPublicDescriptorLimit)
+	version, err := validateRemoteSkillSeedPackageRoot(seedRoot)
 	if errors.Is(err, os.ErrNotExist) {
 		return RemoteSkillBundleVersion{}, ErrRemoteSkillSeedUnavailable
 	}
 	if err != nil {
-		return RemoteSkillBundleVersion{}, err
-	}
-	var descriptor RemoteSkillPublicDescriptor
-	if err := json.Unmarshal(raw, &descriptor); err != nil {
-		return RemoteSkillBundleVersion{}, fmt.Errorf("%w: invalid seed descriptor", ErrBusinessSystemPromptBundleInvalid)
-	}
-	version := remoteSkillVersionFromDescriptor(descriptor)
-	if err := validateRemoteSkillVersionMetadata(version); err != nil {
 		return RemoteSkillBundleVersion{}, err
 	}
 	if err := f.materializeSeedVersion(ctx, seedRoot, version); err != nil {
@@ -114,16 +105,25 @@ func (f *RemoteSkillRegistryFilesystem) installReleaseSeedPackage(ctx context.Co
 		return err
 	}
 	destination := filepath.Join(f.root, "private", "seed")
-	if _, err := os.Lstat(destination); err == nil {
-		return nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
 	source := filepath.Join(f.releaseRoot, "seed")
 	if _, err := os.Lstat(filepath.Join(source, remoteSkillSeedDescriptorName)); errors.Is(err, os.ErrNotExist) {
 		return nil
 	} else if err != nil {
 		return err
+	}
+	if _, err := validateRemoteSkillSeedPackageRoot(source); err != nil {
+		return fmt.Errorf("validate release seed: %w", err)
+	}
+	sourceDescriptor, err := readRemoteSkillBoundedFile(filepath.Join(source, remoteSkillSeedDescriptorName), remoteSkillPublicDescriptorLimit)
+	if err != nil {
+		return err
+	}
+	if currentDescriptor, currentErr := readRemoteSkillBoundedFile(filepath.Join(destination, remoteSkillSeedDescriptorName), remoteSkillPublicDescriptorLimit); currentErr == nil {
+		if bytes.Equal(currentDescriptor, sourceDescriptor) {
+			return nil
+		}
+	} else if !errors.Is(currentErr, os.ErrNotExist) {
+		return currentErr
 	}
 	parent := filepath.Dir(destination)
 	if err := os.MkdirAll(parent, 0o750); err != nil {
@@ -137,13 +137,71 @@ func (f *RemoteSkillRegistryFilesystem) installReleaseSeedPackage(ctx context.Co
 	if err := copyRemoteSkillTree(source, staging); err != nil {
 		return err
 	}
+	if _, err := validateRemoteSkillSeedPackageRoot(staging); err != nil {
+		return fmt.Errorf("validate staged release seed: %w", err)
+	}
+	if _, err := os.Lstat(destination); errors.Is(err, os.ErrNotExist) {
+		return os.Rename(staging, destination)
+	} else if err != nil {
+		return err
+	}
+	backup, err := os.MkdirTemp(parent, ".seed-old-")
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(backup); err != nil {
+		return err
+	}
+	if err := os.Rename(destination, backup); err != nil {
+		return err
+	}
 	if err := os.Rename(staging, destination); err != nil {
-		if _, statErr := os.Lstat(destination); statErr == nil {
-			return nil
+		if restoreErr := os.Rename(backup, destination); restoreErr != nil {
+			return fmt.Errorf("replace release seed: %v (restore failed: %v)", err, restoreErr)
 		}
 		return err
 	}
+	if err := os.RemoveAll(backup); err != nil {
+		return fmt.Errorf("remove replaced release seed: %w", err)
+	}
 	return nil
+}
+
+func validateRemoteSkillSeedPackageRoot(root string) (RemoteSkillBundleVersion, error) {
+	descriptorRaw, err := readRemoteSkillBoundedFile(filepath.Join(root, remoteSkillSeedDescriptorName), remoteSkillPublicDescriptorLimit)
+	if err != nil {
+		return RemoteSkillBundleVersion{}, err
+	}
+	var descriptor RemoteSkillPublicDescriptor
+	if err := json.Unmarshal(descriptorRaw, &descriptor); err != nil {
+		return RemoteSkillBundleVersion{}, fmt.Errorf("%w: invalid seed descriptor", ErrBusinessSystemPromptBundleInvalid)
+	}
+	version := remoteSkillVersionFromDescriptor(descriptor)
+	if err := validateRemoteSkillVersionMetadata(version); err != nil {
+		return RemoteSkillBundleVersion{}, err
+	}
+	manifestRaw, err := readRemoteSkillBoundedFile(filepath.Join(root, BusinessSystemPromptBundleManifestName), businessSystemPromptBundleMaxManifestBytes)
+	if err != nil || hashBusinessSystemPromptBundleBytes(manifestRaw) != version.ManifestSHA256 {
+		return RemoteSkillBundleVersion{}, fmt.Errorf("%w: seed manifest mismatch", ErrBusinessSystemPromptBundleInvalid)
+	}
+	var manifest BusinessSystemPromptBundleManifest
+	if err := json.Unmarshal(manifestRaw, &manifest); err != nil {
+		return RemoteSkillBundleVersion{}, fmt.Errorf("%w: invalid seed manifest", ErrBusinessSystemPromptBundleInvalid)
+	}
+	archiveRaw, err := readRemoteSkillBoundedFile(filepath.Join(root, remoteSkillArchiveName(version.ManifestSHA256)), remoteSkillArchiveMaxBytes)
+	if err != nil || hashBusinessSystemPromptBundleBytes(archiveRaw) != version.ArchiveSHA256 {
+		return RemoteSkillBundleVersion{}, fmt.Errorf("%w: seed archive mismatch", ErrBusinessSystemPromptBundleInvalid)
+	}
+	files, err := remoteSkillFilesFromArchive(archiveRaw, manifestRaw, manifest)
+	if err != nil {
+		return RemoteSkillBundleVersion{}, err
+	}
+	for _, required := range []string{remoteSkillClientSkillPath, remoteSkillClientOpenAIPath} {
+		if _, ok := files[required]; !ok {
+			return RemoteSkillBundleVersion{}, fmt.Errorf("%w: native Skill entry missing", ErrBusinessSystemPromptBundleInvalid)
+		}
+	}
+	return version, nil
 }
 
 func (f *RemoteSkillRegistryFilesystem) materializeSeedVersion(ctx context.Context, seedRoot string, version RemoteSkillBundleVersion) error {
@@ -333,7 +391,7 @@ func (f *RemoteSkillRegistryFilesystem) Activate(ctx context.Context, snapshot R
 		ArchiveURL:   baseURL + "/" + remoteSkillArchiveName(snapshot.Active.ManifestSHA256),
 		FilesBaseURL: baseURL + "/", CoreFiles: append([]string(nil), manifest.CoreFiles...),
 		FileCount: snapshot.Active.FileCount, TotalBytes: snapshot.Active.TotalBytes,
-		PublishedAt: publishedAt, BootstrapPolicy: "download_verify_cache_materialize_only",
+		PublishedAt: publishedAt, BootstrapPolicy: "download_verify_native_skill_atomic_replace",
 	}
 	raw, err := json.Marshal(descriptor)
 	if err != nil {
@@ -397,6 +455,16 @@ func (f *RemoteSkillRegistryFilesystem) LoadManifest(ctx context.Context, versio
 		return BusinessSystemPromptBundleManifest{}, err
 	}
 	return cloneBusinessSystemPromptBundleManifest(manifest), nil
+}
+
+func (f *RemoteSkillRegistryFilesystem) LoadBundle(ctx context.Context, version RemoteSkillBundleVersion) (*BusinessSystemPromptBundle, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := f.ValidateVersion(ctx, version); err != nil {
+		return nil, err
+	}
+	return loadBusinessSystemPromptBundleIdentity(f.privateVersionRoot(version.ManifestSHA256), version.BundleID, version.ManifestSHA256)
 }
 
 func (f *RemoteSkillRegistryFilesystem) privateVersionRoot(hash string) string {

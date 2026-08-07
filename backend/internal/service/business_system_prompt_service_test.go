@@ -92,7 +92,7 @@ func TestBusinessSystemPromptServiceInitializeSeedsAndLoadsSnapshot(t *testing.T
 	require.True(t, store.seedCalled)
 	require.Equal(t, "codexrip_reverse_skill", store.seed.Slug)
 	require.Equal(t, embeddedBusinessSystemPrompt, store.seed.Body)
-	require.Equal(t, BusinessSystemPromptCompositionRemoteSkill, store.seed.CompositionMode)
+	require.Equal(t, BusinessSystemPromptCompositionCodexSkillHybrid, store.seed.CompositionMode)
 	require.Equal(t, BusinessSystemPromptRemoteSkillBundleID, store.seed.BundleID)
 	require.Empty(t, store.seed.BundleManifestSHA256)
 	got, ok := svc.CurrentSnapshot()
@@ -101,18 +101,28 @@ func TestBusinessSystemPromptServiceInitializeSeedsAndLoadsSnapshot(t *testing.T
 	require.Equal(t, embeddedBusinessSystemPrompt, got.Body)
 }
 
-func TestBusinessSystemPromptServiceRejectsPublishingLegacyOfflineBundle(t *testing.T) {
-	store := &fakeBusinessSystemPromptStore{
-		loaded: BusinessSystemPromptSnapshot{Revision: 1, Body: "seed"},
-		detail: BusinessSystemPromptTemplateDetail{Versions: []BusinessSystemPromptVersion{{
+func TestBusinessSystemPromptServiceRejectsPublishingLegacyCompositions(t *testing.T) {
+	for name, version := range map[string]BusinessSystemPromptVersion{
+		"offline bundle": {
 			ID: 4, CompositionMode: BusinessSystemPromptCompositionOfflineBundle,
 			BundleID: "moxinggang-reverse-skill", BundleManifestSHA256: strings.Repeat("a", 64),
-		}}},
+		},
+		"remote skill": {
+			ID: 4, CompositionMode: BusinessSystemPromptCompositionRemoteSkill,
+			BundleID: BusinessSystemPromptRemoteSkillBundleID,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			store := &fakeBusinessSystemPromptStore{
+				loaded: BusinessSystemPromptSnapshot{Revision: 1, Body: "seed"},
+				detail: BusinessSystemPromptTemplateDetail{Versions: []BusinessSystemPromptVersion{version}},
+			}
+			svc := NewBusinessSystemPromptService(store, nil)
+			require.NoError(t, svc.Initialize(context.Background()))
+			_, err := svc.PublishVersion(context.Background(), 3, 4, 1, 9)
+			require.ErrorIs(t, err, ErrBusinessSystemPromptLegacyComposition)
+		})
 	}
-	svc := NewBusinessSystemPromptService(store, nil)
-	require.NoError(t, svc.Initialize(context.Background()))
-	_, err := svc.PublishVersion(context.Background(), 3, 4, 1, 9)
-	require.ErrorIs(t, err, ErrBusinessSystemPromptLegacyComposition)
 }
 
 func TestBusinessSystemPromptServiceRejectsCreatingOrDuplicatingLegacyOfflineBundle(t *testing.T) {

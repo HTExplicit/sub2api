@@ -61,6 +61,12 @@ var auditExtraAllowedKeys = map[string]struct{}{
 	"template_id": {}, "template_version": {}, "old_sha256": {}, "new_sha256": {},
 	"byte_length": {}, "revision": {}, "expose_server_prompt": {}, "compact_enabled": {},
 	"composition_mode": {}, "bundle_id": {}, "bundle_manifest_sha256": {}, "degraded": {},
+	"bundle_revision": {}, "bundle_archive_sha256": {}, "source_commit": {}, "archive_sha256": {},
+	"file_count": {}, "added_files": {}, "modified_files": {}, "deleted_files": {},
+	"script_changes": {}, "binary_changes": {}, "client_mode": {}, "route_count": {},
+	"document_count": {}, "omitted_document_count": {},
+	"bundle_version_id": {}, "status": {}, "old_manifest_sha256": {}, "new_manifest_sha256": {},
+	"total_bytes": {},
 }
 
 // SetAuditExtra adds allowlisted, scalar details to the current audit entry.

@@ -13,20 +13,18 @@ import (
 )
 
 type fakeRemoteSkillHTTPClient struct {
-	baseZIP      []byte
-	overlayCalls int
+	baseZIP []byte
+	hosts   []string
 }
 
 func (f *fakeRemoteSkillHTTPClient) Do(req *http.Request) (*http.Response, error) {
+	f.hosts = append(f.hosts, req.URL.Hostname())
 	var body []byte
 	switch req.URL.Hostname() {
 	case "api.github.com":
 		body = []byte(`{"sha":"0123456789abcdef0123456789abcdef01234567"}`)
 	case "codeload.github.com":
 		body = f.baseZIP
-	case "moxinggang.com":
-		f.overlayCalls++
-		body = []byte("# 模型港\nREMOTE_ROOT = https://moxinggang.com/skills/security-research/current\nC:\\Users\\Administrator\\AppData\\Local\\模型港\\reverse-skill\n")
 	default:
 		return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header)}, nil
 	}
@@ -36,15 +34,41 @@ func (f *fakeRemoteSkillHTTPClient) Do(req *http.Request) (*http.Response, error
 	}, nil
 }
 
+type fakeRemoteSkillOverlaySource struct {
+	files map[string][]byte
+	calls int
+}
+
+func (f *fakeRemoteSkillOverlaySource) Load(context.Context) (map[string][]byte, error) {
+	f.calls++
+	result := make(map[string][]byte, len(f.files))
+	for name, body := range f.files {
+		result[name] = append([]byte(nil), body...)
+	}
+	return result, nil
+}
+
+func newFakeRemoteSkillOverlaySource() *fakeRemoteSkillOverlaySource {
+	files := make(map[string][]byte, len(remoteSkillOverlayPaths)+2)
+	for _, relative := range remoteSkillOverlayPaths {
+		files["codexrip-overlay/security-research/"+relative] = []byte("# CodexRip\nLOCAL_ROOT = codexrip-overlay/security-research\n")
+	}
+	files[remoteSkillClientSkillPath] = []byte("---\nname: codexrip-reverse-skill\ndescription: reverse and security routing\n---\nRead bundle/RULES.md.\n")
+	files[remoteSkillClientOpenAIPath] = []byte("interface:\n  display_name: CodexRip Reverse Skill\n")
+	return &fakeRemoteSkillOverlaySource{files: files}
+}
+
 func TestRemoteSkillCandidateSourceNormalizesCoreDocumentsAndBuildsVerifiedArchive(t *testing.T) {
 	client := &fakeRemoteSkillHTTPClient{baseZIP: makeRemoteSkillSourceZIP(t, map[string]string{
 		"reverse-skill-commit/README.md":                    "base",
 		"reverse-skill-commit/gradlew":                      "#!/bin/sh\nexit 0\n",
 		"reverse-skill-commit/skills/api-security/SKILL.md": "# API security",
 	})}
-	candidate, err := NewGitHubRemoteSkillCandidateSource(client).Build(context.Background(), nil)
+	overlay := newFakeRemoteSkillOverlaySource()
+	candidate, err := newGitHubRemoteSkillCandidateSource(client, overlay).Build(context.Background(), nil)
 	require.NoError(t, err)
-	require.Equal(t, len(remoteSkillOverlayPaths), client.overlayCalls)
+	require.Equal(t, 1, overlay.calls)
+	require.ElementsMatch(t, []string{"api.github.com", "codeload.github.com"}, client.hosts)
 	require.Equal(t, BusinessSystemPromptRemoteSkillBundleID, candidate.Version.BundleID)
 	require.Equal(t, candidate.Version.ManifestSHA256, hashBusinessSystemPromptBundleBytes(candidate.ManifestBytes))
 	require.Equal(t, candidate.Version.ArchiveSHA256, hashBusinessSystemPromptBundleBytes(candidate.ArchiveBytes))
@@ -67,7 +91,6 @@ func TestRemoteSkillCandidateSourceNormalizesCoreDocumentsAndBuildsVerifiedArchi
 		body := string(candidate.Files[name])
 		require.NotContains(t, strings.ToLower(body), "moxinggang.com")
 		require.NotContains(t, body, `C:\Users\Administrator`)
-		require.NotContains(t, body, "模型港")
 		require.Contains(t, body, "codexrip-overlay/security-research")
 	}
 }
@@ -76,18 +99,30 @@ func TestRemoteSkillCandidateSourceRejectsPathTraversalBeforeOverlayFetch(t *tes
 	client := &fakeRemoteSkillHTTPClient{baseZIP: makeRemoteSkillSourceZIP(t, map[string]string{
 		"reverse-skill-commit/../../escape.txt": "bad",
 	})}
-	_, err := NewGitHubRemoteSkillCandidateSource(client).Build(context.Background(), nil)
+	overlay := newFakeRemoteSkillOverlaySource()
+	_, err := newGitHubRemoteSkillCandidateSource(client, overlay).Build(context.Background(), nil)
 	require.ErrorIs(t, err, ErrBusinessSystemPromptBundleInvalid)
-	require.Zero(t, client.overlayCalls)
+	require.Zero(t, overlay.calls)
 }
 
 func TestRemoteSkillCandidateSourceRejectsNonCanonicalPathBeforeOverlayFetch(t *testing.T) {
 	client := &fakeRemoteSkillHTTPClient{baseZIP: makeRemoteSkillSourceZIP(t, map[string]string{
 		"reverse-skill-commit/nested/../payload.txt": "bad",
 	})}
-	_, err := NewGitHubRemoteSkillCandidateSource(client).Build(context.Background(), nil)
+	overlay := newFakeRemoteSkillOverlaySource()
+	_, err := newGitHubRemoteSkillCandidateSource(client, overlay).Build(context.Background(), nil)
 	require.ErrorIs(t, err, ErrBusinessSystemPromptBundleInvalid)
-	require.Zero(t, client.overlayCalls)
+	require.Zero(t, overlay.calls)
+}
+
+func TestRemoteSkillCandidateSourceRejectsPortableCollisionWithReleaseOverlay(t *testing.T) {
+	client := &fakeRemoteSkillHTTPClient{baseZIP: makeRemoteSkillSourceZIP(t, map[string]string{
+		"reverse-skill-commit/CODEXRIP-OVERLAY/security-research/RULES.md": "conflict",
+	})}
+	overlay := newFakeRemoteSkillOverlaySource()
+	_, err := newGitHubRemoteSkillCandidateSource(client, overlay).Build(context.Background(), nil)
+	require.ErrorIs(t, err, ErrBusinessSystemPromptBundleInvalid)
+	require.Equal(t, 1, overlay.calls)
 }
 
 func makeRemoteSkillSourceZIP(t *testing.T, files map[string]string) []byte {

@@ -193,7 +193,10 @@ func TestSystemPromptAuditNeverPersistsPromptOrPreviewInput(t *testing.T) {
 			"template_id": int64(2), "template_version": int64(4),
 			"new_sha256": "0123456789abcdef", "byte_length": 128,
 			"revision": int64(9), "result": "previewed",
-			"raw_prompt": "audit-canary-server-prompt",
+			"bundle_version_id": int64(12), "status": "active",
+			"old_manifest_sha256": "old-hash", "new_manifest_sha256": "new-hash",
+			"total_bytes": int64(7949823),
+			"raw_prompt":  "audit-canary-server-prompt",
 		})
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
@@ -217,6 +220,11 @@ func TestSystemPromptAuditNeverPersistsPromptOrPreviewInput(t *testing.T) {
 	require.EqualValues(t, 2, logs[0].Extra["template_id"])
 	require.EqualValues(t, 4, logs[0].Extra["template_version"])
 	require.Equal(t, "0123456789abcdef", logs[0].Extra["new_sha256"])
+	require.EqualValues(t, 12, logs[0].Extra["bundle_version_id"])
+	require.Equal(t, "active", logs[0].Extra["status"])
+	require.Equal(t, "old-hash", logs[0].Extra["old_manifest_sha256"])
+	require.Equal(t, "new-hash", logs[0].Extra["new_manifest_sha256"])
+	require.EqualValues(t, 7949823, logs[0].Extra["total_bytes"])
 	require.NotContains(t, logs[0].Extra, "raw_prompt")
 }
 

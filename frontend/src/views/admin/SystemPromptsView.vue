@@ -34,11 +34,11 @@
               <Icon name="exclamationTriangle" size="xs" />
               {{ t('admin.systemPrompts.runtime.degraded') }}
             </span>
-            <span v-if="runtime.composition_mode === 'offline_bundle' && !runtime.bundle_available" data-test="system-prompt-bundle-unavailable" class="inline-flex items-center gap-1.5 rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">
+            <span v-if="runtime.composition_mode === 'codex_skill_hybrid' && !runtime.bundle_available" data-test="system-prompt-bundle-unavailable" class="inline-flex items-center gap-1.5 rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">
               <Icon name="exclamationTriangle" size="xs" />
               {{ t('admin.systemPrompts.runtime.bundleUnavailable') }}
             </span>
-            <span v-else-if="runtime.composition_mode === 'offline_bundle' && runtime.bundle_degraded" data-test="system-prompt-bundle-degraded" class="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+            <span v-else-if="runtime.composition_mode === 'codex_skill_hybrid' && runtime.bundle_degraded" data-test="system-prompt-bundle-degraded" class="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
               <Icon name="exclamationTriangle" size="xs" />
               {{ t('admin.systemPrompts.runtime.bundleDegraded') }}
             </span>
@@ -104,6 +104,35 @@
           <div><span class="text-gray-500 dark:text-dark-400">Manifest</span><span class="ml-2 font-mono" :title="skillRegistry.runtime.active.manifest_sha256">{{ formatShortHash(skillRegistry.runtime.active.manifest_sha256) }}</span></div>
           <div>{{ skillRegistry.runtime.active.file_count }} {{ t('admin.systemPrompts.skillRegistry.files') }} · {{ formatBytes(skillRegistry.runtime.active.total_bytes) }}</div>
           <div>{{ t('admin.systemPrompts.skillRegistry.updated') }} {{ formatDate(skillRegistry.runtime.updated_at) }}</div>
+        </div>
+
+        <div class="mt-4 grid gap-2 border-t border-gray-200 pt-4 text-xs dark:border-dark-700 md:grid-cols-3" data-test="skill-registry-lifecycle">
+          <div class="flex items-center gap-2 text-gray-700 dark:text-dark-200"><span class="font-mono text-gray-400">01</span>{{ t('admin.systemPrompts.skillRegistry.syncCandidate') }}</div>
+          <div class="flex items-center gap-2 text-gray-700 dark:text-dark-200"><span class="font-mono text-gray-400">02</span>{{ t('admin.systemPrompts.skillRegistry.publishServer') }}</div>
+          <div class="flex items-center gap-2 text-gray-700 dark:text-dark-200"><span class="font-mono text-gray-400">03</span>{{ t('admin.systemPrompts.skillRegistry.installLocal') }}</div>
+        </div>
+
+        <div v-if="skillRegistry.client_install" class="mt-4 border-t border-gray-200 pt-4 dark:border-dark-700" data-test="skill-client-install">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.systemPrompts.skillRegistry.clientInstall') }}</h3>
+              <p class="mt-1 font-mono text-xs text-gray-500 dark:text-dark-400">
+                {{ skillRegistry.client_install.skill_name }} · {{ formatShortHash(skillRegistry.client_install.manifest_sha256 || '') }}
+              </p>
+            </div>
+          </div>
+          <div class="mt-3 grid gap-3 lg:grid-cols-2">
+            <div v-for="installer in clientInstallers" :key="installer.id" class="min-w-0 border border-gray-200 bg-gray-50/60 p-3 dark:border-dark-700 dark:bg-dark-800/50">
+              <div class="flex items-center justify-between gap-3">
+                <span class="text-xs font-semibold text-gray-700 dark:text-dark-200">{{ installer.label }}</span>
+                <button type="button" class="btn btn-secondary btn-sm h-8 w-8 p-0" :title="t('admin.systemPrompts.skillRegistry.copyInstall')" :aria-label="t('admin.systemPrompts.skillRegistry.copyInstall')" @click="copyInstallCommand(installer.command)">
+                  <Icon name="copy" size="sm" />
+                </button>
+              </div>
+              <div class="mt-2 break-all font-mono text-[11px] leading-5 text-gray-500 dark:text-dark-400">SHA-256 {{ installer.sha256 }}</div>
+              <code class="mt-2 block max-h-20 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-5 text-gray-700 dark:text-dark-200">{{ installer.command }}</code>
+            </div>
+          </div>
         </div>
 
         <div v-if="skillSyncJob" data-test="skill-registry-job" class="mt-4 flex flex-wrap items-center gap-3 border-l-2 px-3 py-2 text-xs" :class="skillSyncJob.status === 'failed' ? 'border-red-500 bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300' : 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300'">
@@ -247,11 +276,11 @@
           <div v-if="activeTab === 'editor'" class="space-y-4">
             <section data-test="system-prompt-composition" class="flex flex-wrap items-center gap-3 border border-gray-200 bg-gray-50/60 px-4 py-3 text-sm dark:border-dark-700 dark:bg-dark-800/50">
               <span class="text-gray-500 dark:text-dark-400">{{ t('admin.systemPrompts.bundle.compositionMode') }}</span>
-              <span class="badge" :class="compositionMode === 'offline_bundle' ? 'badge-warning' : compositionMode === 'remote_skill' ? 'badge-success' : 'badge-gray'">
+              <span class="badge" :class="isLegacyComposition(compositionMode) ? 'badge-warning' : compositionMode === 'codex_skill_hybrid' ? 'badge-success' : 'badge-gray'">
                 {{ t(`admin.systemPrompts.bundle.${compositionLabelKey(compositionMode)}`) }}
               </span>
-              <span v-if="compositionMode === 'remote_skill'" class="text-xs text-gray-500 dark:text-dark-400">{{ t('admin.systemPrompts.bundle.remoteHint') }}</span>
-              <span v-else-if="compositionMode === 'offline_bundle'" data-test="system-prompt-legacy-readonly" class="text-xs font-medium text-amber-700 dark:text-amber-300">{{ t('admin.systemPrompts.bundle.legacyReadonly') }}</span>
+              <span v-if="compositionMode === 'codex_skill_hybrid'" class="text-xs text-gray-500 dark:text-dark-400">{{ t('admin.systemPrompts.bundle.hybridHint') }}</span>
+              <span v-else-if="isLegacyComposition(compositionMode)" data-test="system-prompt-legacy-readonly" class="text-xs font-medium text-amber-700 dark:text-amber-300">{{ t('admin.systemPrompts.bundle.legacyReadonly') }}</span>
             </section>
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div class="inline-flex border border-gray-200 bg-gray-50 p-1 dark:border-dark-700 dark:bg-dark-800" role="tablist">
@@ -264,7 +293,7 @@
               </div>
               <div class="flex items-center gap-2">
                 <input v-model="note" type="text" class="input w-56 text-sm" :placeholder="t('admin.systemPrompts.editor.notePlaceholder')" :aria-label="t('admin.systemPrompts.editor.note')" />
-                <button type="button" data-test="system-prompt-save-draft" class="btn btn-primary btn-sm" :disabled="savingVersion || !editorDirty || compositionMode === 'offline_bundle'" @click="saveDraft">
+                <button type="button" data-test="system-prompt-save-draft" class="btn btn-primary btn-sm" :disabled="savingVersion || !editorDirty || isLegacyComposition(compositionMode)" @click="saveDraft">
                   <Icon name="check" size="sm" class="mr-1" />
                   {{ savingVersion ? t('common.saving') : t('admin.systemPrompts.actions.saveDraft') }}
                 </button>
@@ -335,6 +364,18 @@
           </div>
 
           <div v-else class="space-y-5">
+            <div class="inline-flex border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-800" data-test="system-prompt-client-mode">
+              <button
+                v-for="mode in clientModes"
+                :key="mode"
+                type="button"
+                class="min-h-8 px-3 text-xs font-medium"
+                :class="previewClientMode === mode ? 'bg-white text-primary-700 shadow-sm dark:bg-dark-900 dark:text-primary-300' : 'text-gray-500 dark:text-dark-400'"
+                @click="previewClientMode = mode"
+              >
+                {{ t(`admin.systemPrompts.preview.clientModes.${mode}`) }}
+              </button>
+            </div>
             <div class="grid gap-5 xl:grid-cols-2">
               <section class="border border-gray-200 dark:border-dark-700">
                 <div class="border-b border-gray-200 px-4 py-3 dark:border-dark-700">
@@ -371,6 +412,16 @@
                 </div>
               </section>
             </div>
+            <div v-if="upstreamPreview" class="grid gap-4 xl:grid-cols-2" data-test="system-prompt-preview-instructions">
+              <section class="min-w-0 border-y border-gray-200 py-3 dark:border-dark-700">
+                <h3 class="mb-2 text-xs font-semibold text-gray-700 dark:text-dark-200">{{ t('admin.systemPrompts.preview.baseInstructions') }}</h3>
+                <pre data-test="system-prompt-preview-base" class="max-h-[280px] overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-gray-700 dark:text-dark-200">{{ upstreamPreview.base_server_instructions }}</pre>
+              </section>
+              <section class="min-w-0 border-y border-gray-200 py-3 dark:border-dark-700">
+                <h3 class="mb-2 text-xs font-semibold text-gray-700 dark:text-dark-200">{{ t('admin.systemPrompts.preview.finalInstructions') }}</h3>
+                <pre data-test="system-prompt-preview-final" class="max-h-[280px] overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-gray-700 dark:text-dark-200">{{ upstreamPreview.final_server_instructions }}</pre>
+              </section>
+            </div>
             <div v-if="upstreamPreview" class="space-y-2 border border-gray-200 px-4 py-3 text-xs text-gray-500 dark:border-dark-700 dark:text-dark-400">
               <div>
                 <span class="font-medium text-gray-700 dark:text-dark-200">{{ t('admin.systemPrompts.preview.application') }}:</span>
@@ -385,6 +436,7 @@
               <div v-if="upstreamPreview.application.route_ids?.length || upstreamPreview.application.document_ids?.length" data-test="system-prompt-preview-routing" class="space-y-1">
                 <div>{{ t('admin.systemPrompts.preview.routes') }}: {{ upstreamPreview.application.route_ids?.join(', ') || '—' }}</div>
                 <div>{{ t('admin.systemPrompts.preview.documents') }}: {{ upstreamPreview.application.document_ids?.join(', ') || '—' }}</div>
+                <div v-if="upstreamPreview.application.omitted_document_ids?.length">{{ t('admin.systemPrompts.preview.omittedDocuments') }}: {{ upstreamPreview.application.omitted_document_ids.join(', ') }}</div>
               </div>
               <div v-if="upstreamPreview.application.degraded" class="text-amber-700 dark:text-amber-300">
                 {{ t('admin.systemPrompts.bundle.degraded') }}<span v-if="upstreamPreview.application.degraded_reason">: {{ upstreamPreview.application.degraded_reason }}</span>
@@ -470,12 +522,14 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import { useAppStore } from '@/stores'
+import { useClipboard } from '@/composables/useClipboard'
 import systemPromptsAPI, {
   type PreviewUpstreamResponse,
   type RemoteSkillBundleVersionDetail,
   type RemoteSkillRegistryResponse,
   type RemoteSkillSyncJob,
   type SystemPromptCompositionMode,
+  type SystemPromptClientMode,
   type SystemPromptRuntime,
   type SystemPromptTemplate,
   type SystemPromptVersion,
@@ -485,6 +539,7 @@ import { extractApiErrorCode, extractApiErrorMessage } from '@/utils/apiError'
 
 const { t, locale } = useI18n()
 const appStore = useAppStore()
+const { copyToClipboard } = useClipboard()
 
 type Tab = 'editor' | 'history' | 'preview'
 type EditorMode = 'raw' | 'markdown'
@@ -532,6 +587,8 @@ const confirmState = ref<ConfirmAction | null>(null)
 
 const previewClientInstructions = ref('')
 const previewProtocol = ref<'responses' | 'chat'>('responses')
+const previewClientMode = ref<SystemPromptClientMode>('codex')
+const clientModes: SystemPromptClientMode[] = ['codex', 'openai_compatible']
 const previewCompact = ref(false)
 const previewBodyText = ref('{\n  "model": "gpt-4o-mini",\n  "input": [{"role": "user", "content": "preview"}]\n}')
 const mergePreview = ref<string | null>(null)
@@ -544,9 +601,17 @@ const selectedVersion = computed(() => detail.value?.versions.find(version => ve
 const latestVersion = computed(() => detail.value?.versions[0] ?? null)
 const runtimeTemplateId = computed(() => runtime.value?.template_id ?? 0)
 const runtimeVersionId = computed(() => runtime.value?.version_id ?? 0)
-const selectedBundleUsable = computed(() => compositionMode.value !== 'offline_bundle')
+const selectedBundleUsable = computed(() => !isLegacyComposition(compositionMode.value))
 const activeSkillVersionId = computed(() => skillRegistry.value?.runtime.active?.id ?? 0)
 const skillSyncInProgress = computed(() => skillSyncJob.value?.status === 'queued' || skillSyncJob.value?.status === 'running')
+const clientInstallers = computed(() => {
+  const metadata = skillRegistry.value?.client_install
+  if (!metadata) return []
+  return [
+    { id: 'powershell', label: 'PowerShell 7', ...metadata.powershell },
+    { id: 'python', label: 'Python 3', ...metadata.python }
+  ]
+})
 const metadataDirty = computed(() => {
   const template = selectedTemplate.value
   return !!template && (metaName.value !== template.name || metaDescription.value !== template.description)
@@ -622,17 +687,27 @@ function setRuntimeDraft(value: SystemPromptRuntime) {
 function normalizeCompositionMode(value: string | undefined): SystemPromptCompositionMode {
   if (value === 'offline_bundle') return 'offline_bundle'
   if (value === 'remote_skill') return 'remote_skill'
+  if (value === 'codex_skill_hybrid') return 'codex_skill_hybrid'
   return 'inline'
 }
 
-function compositionLabelKey(value: string | undefined): 'inline' | 'remote' | 'legacyOffline' {
-  if (value === 'remote_skill') return 'remote'
+function compositionLabelKey(value: string | undefined): 'inline' | 'hybrid' | 'legacyRemote' | 'legacyOffline' {
+  if (value === 'codex_skill_hybrid') return 'hybrid'
+  if (value === 'remote_skill') return 'legacyRemote'
   if (value === 'offline_bundle') return 'legacyOffline'
   return 'inline'
 }
 
+function isLegacyComposition(value: string | undefined): boolean {
+  return value === 'offline_bundle' || value === 'remote_skill'
+}
+
 function isVersionBundleUsable(version: SystemPromptVersion): boolean {
-	return normalizeCompositionMode(version.composition_mode) !== 'offline_bundle'
+	return !isLegacyComposition(normalizeCompositionMode(version.composition_mode))
+}
+
+async function copyInstallCommand(command: string) {
+  await copyToClipboard(command, t('admin.systemPrompts.skillRegistry.installCopied'))
 }
 
 function applyVersionToEditor(version: SystemPromptVersion) {
@@ -728,7 +803,7 @@ async function selectVersion(version: SystemPromptVersion) {
 
 async function saveDraft() {
   if (!detail.value || !runtime.value || !editorDirty.value) return
-  if (compositionMode.value === 'offline_bundle') {
+  if (isLegacyComposition(compositionMode.value)) {
     appStore.showError(t('admin.systemPrompts.errors.legacyReadonly'))
     return
   }
@@ -966,6 +1041,7 @@ async function runMergePreview() {
       composition_mode: compositionMode.value,
       bundle_id: compositionMode.value === 'inline' ? '' : bundleId.value,
       bundle_manifest_sha256: compositionMode.value === 'offline_bundle' ? bundleManifestSHA256.value : '',
+      client_mode: previewClientMode.value,
       body: requestBody
     })
     mergePreview.value = result.instructions
@@ -995,6 +1071,7 @@ async function runUpstreamPreview() {
       bundle_manifest_sha256: compositionMode.value === 'offline_bundle' ? bundleManifestSHA256.value : '',
       protocol: previewProtocol.value,
       compact: previewCompact.value,
+      client_mode: previewClientMode.value,
       body: parsedBody
     })
   } catch (error) {

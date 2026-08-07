@@ -67,7 +67,7 @@ func ValidateBusinessSystemPromptBundleMetadata(metadata BusinessSystemPromptBun
 	if metadata.ByteLength < 1 || metadata.ByteLength > BusinessSystemPromptBundleMaxBytes {
 		return fmt.Errorf("%w: invalid metadata byte length", ErrBusinessSystemPromptBundleInvalid)
 	}
-	if len(metadata.RouteIDs) > BusinessSystemPromptBundleMaxDomains || len(metadata.ReferencePaths) > BusinessSystemPromptBundleMaxReferences || len(metadata.DocumentPaths) > 16 {
+	if len(metadata.RouteIDs) > BusinessSystemPromptHybridMaxDomains || len(metadata.ReferencePaths) > BusinessSystemPromptHybridMaxReferences || len(metadata.DocumentPaths) > BusinessSystemPromptHybridMaxDocuments {
 		return fmt.Errorf("%w: metadata selection exceeds limits", ErrBusinessSystemPromptBundleInvalid)
 	}
 	for _, routeID := range metadata.RouteIDs {
@@ -97,14 +97,18 @@ func (m BusinessSystemPromptBundleMetadata) CacheKey(revision int64) string {
 // adapters. Body is the only field containing prompt text; Metadata is suitable
 // for retries, failover and previous_response_id state.
 type BusinessSystemPromptBundleCompiled struct {
-	Body     string                             `json:"body"`
-	Metadata BusinessSystemPromptBundleMetadata `json:"metadata"`
-	RouteIDs []string                           `json:"route_ids,omitempty"`
+	Body         string                             `json:"body"`
+	Metadata     BusinessSystemPromptBundleMetadata `json:"metadata"`
+	RouteIDs     []string                           `json:"route_ids,omitempty"`
+	OmittedPaths []string                           `json:"omitted_paths,omitempty"`
 }
 
 type BusinessSystemPromptBundleCompiler struct {
-	bundle   *BusinessSystemPromptBundle
-	maxBytes int
+	bundle                *BusinessSystemPromptBundle
+	maxBytes              int
+	maxDomains            int
+	maxReferences         int
+	preserveManifestOrder bool
 }
 
 func NewBusinessSystemPromptBundleCompiler(bundle *BusinessSystemPromptBundle) *BusinessSystemPromptBundleCompiler {
@@ -115,7 +119,18 @@ func NewBusinessSystemPromptBundleCompilerWithLimit(bundle *BusinessSystemPrompt
 	if maxBytes <= 0 {
 		maxBytes = BusinessSystemPromptBundleMaxBytes
 	}
-	return &BusinessSystemPromptBundleCompiler{bundle: bundle, maxBytes: maxBytes}
+	return &BusinessSystemPromptBundleCompiler{
+		bundle: bundle, maxBytes: maxBytes,
+		maxDomains: BusinessSystemPromptBundleMaxDomains, maxReferences: BusinessSystemPromptBundleMaxReferences,
+	}
+}
+
+func NewBusinessSystemPromptHybridCompiler(bundle *BusinessSystemPromptBundle) *BusinessSystemPromptBundleCompiler {
+	return &BusinessSystemPromptBundleCompiler{
+		bundle: bundle, maxBytes: BusinessSystemPromptBundleMaxBytes,
+		maxDomains: BusinessSystemPromptHybridMaxDomains, maxReferences: BusinessSystemPromptHybridMaxReferences,
+		preserveManifestOrder: true,
+	}
 }
 
 func (c *BusinessSystemPromptBundleCompiler) Compile(input BusinessSystemPromptBundleCompileInput) (BusinessSystemPromptBundleCompiled, error) {
@@ -188,7 +203,87 @@ func (c *BusinessSystemPromptBundleCompiler) Compile(input BusinessSystemPromptB
 	metadata.RouteIDs = append([]string(nil), metadata.RouteIDs...)
 	metadata.DocumentPaths = append([]string(nil), metadata.DocumentPaths...)
 	metadata.ReferencePaths = append([]string(nil), metadata.ReferencePaths...)
-	return BusinessSystemPromptBundleCompiled{Body: body, Metadata: metadata, RouteIDs: append([]string(nil), metadata.RouteIDs...)}, nil
+	return BusinessSystemPromptBundleCompiled{
+		Body: body, Metadata: metadata, RouteIDs: append([]string(nil), metadata.RouteIDs...),
+		OmittedPaths: append([]string(nil), omittedOptional...),
+	}, nil
+}
+
+// CompileHybrid preserves the base prompt byte-for-byte. Verified bundle
+// documents are appended only after at least one route matches; route and
+// reference sections are optional so the stable 256 KiB cap omits later
+// manifest-ordered documents instead of failing the request.
+func (c *BusinessSystemPromptBundleCompiler) CompileHybrid(input BusinessSystemPromptBundleCompileInput) (BusinessSystemPromptBundleCompiled, error) {
+	if c == nil || c.bundle == nil {
+		return BusinessSystemPromptBundleCompiled{}, fmt.Errorf("%w: loader is nil", ErrBusinessSystemPromptBundleUnavailable)
+	}
+	if !utf8.ValidString(input.BasePrompt) || strings.ContainsRune(input.BasePrompt, '\x00') || strings.TrimSpace(input.BasePrompt) == "" {
+		return BusinessSystemPromptBundleCompiled{}, fmt.Errorf("%w: invalid base prompt", ErrBusinessSystemPromptInvalid)
+	}
+	baseHash := hashBusinessSystemPromptBundleBytes([]byte(input.BasePrompt))
+	routes, previousDocs, previousOK := c.selectRoutes(input)
+	metadata := BusinessSystemPromptBundleMetadata{
+		BundleID: c.bundle.Manifest.BundleID, ManifestSHA256: c.bundle.ManifestSHA256,
+		BaseSHA256: baseHash, Degraded: c.bundle.Degraded,
+	}
+	for _, route := range routes {
+		metadata.RouteIDs = append(metadata.RouteIDs, route.ID)
+	}
+	if len(routes) == 0 {
+		metadata.EffectiveSHA256 = baseHash
+		metadata.ByteLength = len([]byte(input.BasePrompt))
+		return BusinessSystemPromptBundleCompiled{Body: input.BasePrompt, Metadata: metadata}, nil
+	}
+
+	sections := make([]businessSystemPromptBundleSection, 0, len(c.bundle.Manifest.CoreFiles)+len(routes))
+	for _, corePath := range c.corePaths() {
+		text, err := c.requiredText(corePath)
+		if err != nil {
+			return BusinessSystemPromptBundleCompiled{}, err
+		}
+		sections = append(sections, businessSystemPromptBundleSection{
+			label: "core/" + corePath, body: sanitizeBusinessSystemPromptText(text), mandatory: true, path: corePath,
+		})
+	}
+	for _, route := range routes {
+		text, err := c.requiredText(route.Entry)
+		if err != nil {
+			return BusinessSystemPromptBundleCompiled{}, err
+		}
+		sections = append(sections, businessSystemPromptBundleSection{
+			label: "route/" + route.ID + "/" + route.Entry, body: sanitizeBusinessSystemPromptText(text), path: route.Entry,
+		})
+	}
+	refs := c.selectReferences(routes, input, previousDocs, previousOK)
+	for _, ref := range refs {
+		text, err := c.optionalText(ref)
+		if err != nil {
+			metadata.Degraded = true
+			continue
+		}
+		sections = append(sections, businessSystemPromptBundleSection{
+			label: "reference/" + ref, body: sanitizeBusinessSystemPromptText(text), path: ref,
+		})
+	}
+	body, includedPaths, omittedPaths, err := c.joinHybridSections(input.BasePrompt, sections)
+	if err != nil {
+		return BusinessSystemPromptBundleCompiled{}, err
+	}
+	if len(omittedPaths) > 0 {
+		metadata.Degraded = true
+	}
+	metadata.DocumentPaths = append([]string(nil), includedPaths...)
+	for _, value := range includedPaths {
+		if containsString(refs, value) {
+			metadata.ReferencePaths = append(metadata.ReferencePaths, value)
+		}
+	}
+	metadata.EffectiveSHA256 = hashBusinessSystemPromptBundleBytes([]byte(body))
+	metadata.ByteLength = len([]byte(body))
+	return BusinessSystemPromptBundleCompiled{
+		Body: body, Metadata: metadata, RouteIDs: append([]string(nil), metadata.RouteIDs...),
+		OmittedPaths: append([]string(nil), omittedPaths...),
+	}, nil
 }
 
 type businessSystemPromptBundleSection struct {
@@ -200,6 +295,39 @@ type businessSystemPromptBundleSection struct {
 
 func (c *BusinessSystemPromptBundleCompiler) joinSections(sections []businessSystemPromptBundleSection) (string, []string, []string, error) {
 	parts := []string{businessSystemPromptOfflineHeader}
+	included := make([]string, 0, len(sections))
+	omitted := make([]string, 0)
+	for _, section := range sections {
+		body := strings.TrimSpace(section.body)
+		if body == "" {
+			if section.mandatory {
+				return "", nil, nil, fmt.Errorf("%w: mandatory section %s is empty", ErrBusinessSystemPromptBundleUnavailable, section.label)
+			}
+			if section.path != "" {
+				omitted = append(omitted, section.path)
+			}
+			continue
+		}
+		candidate := strings.Join(append(parts, "["+section.label+"]\n"+body), "\n\n")
+		if len([]byte(candidate)) > c.maxBytes {
+			if section.mandatory {
+				return "", nil, nil, fmt.Errorf("%w: mandatory section %s exceeds %d bytes", ErrBusinessSystemPromptBundleUnavailable, section.label, c.maxBytes)
+			}
+			if section.path != "" {
+				omitted = append(omitted, section.path)
+			}
+			continue
+		}
+		parts = append(parts, "["+section.label+"]\n"+body)
+		if section.path != "" {
+			included = append(included, section.path)
+		}
+	}
+	return strings.Join(parts, "\n\n"), included, omitted, nil
+}
+
+func (c *BusinessSystemPromptBundleCompiler) joinHybridSections(base string, sections []businessSystemPromptBundleSection) (string, []string, []string, error) {
+	parts := []string{base, "[CODEXRIP VERIFIED SKILL DOCUMENTS]\nThe following request-matched documents come from the active, hash-verified server registry snapshot."}
 	included := make([]string, 0, len(sections))
 	omitted := make([]string, 0)
 	for _, section := range sections {
@@ -313,13 +441,20 @@ func (c *BusinessSystemPromptBundleCompiler) selectRoutes(input BusinessSystemPr
 		if scoredDomains[i].score != scoredDomains[j].score {
 			return scoredDomains[i].score > scoredDomains[j].score
 		}
+		if c.preserveManifestOrder {
+			return false
+		}
 		if scoredDomains[i].domain.Priority != scoredDomains[j].domain.Priority {
 			return scoredDomains[i].domain.Priority > scoredDomains[j].domain.Priority
 		}
 		return scoredDomains[i].domain.ID < scoredDomains[j].domain.ID
 	})
-	if len(scoredDomains) > BusinessSystemPromptBundleMaxDomains {
-		scoredDomains = scoredDomains[:BusinessSystemPromptBundleMaxDomains]
+	maximum := c.maxDomains
+	if maximum <= 0 {
+		maximum = BusinessSystemPromptBundleMaxDomains
+	}
+	if len(scoredDomains) > maximum {
+		scoredDomains = scoredDomains[:maximum]
 	}
 	result := make([]BusinessSystemPromptBundleDomain, len(scoredDomains))
 	for i := range scoredDomains {
@@ -330,9 +465,13 @@ func (c *BusinessSystemPromptBundleCompiler) selectRoutes(input BusinessSystemPr
 
 func (c *BusinessSystemPromptBundleCompiler) selectReferences(routes []BusinessSystemPromptBundleDomain, input BusinessSystemPromptBundleCompileInput, previous []string, previousOK bool) []string {
 	if input.Continuation && previousOK && len(previous) > 0 {
-		result := make([]string, 0, BusinessSystemPromptBundleMaxReferences)
+		maximum := c.maxReferences
+		if maximum <= 0 {
+			maximum = BusinessSystemPromptBundleMaxReferences
+		}
+		result := make([]string, 0, maximum)
 		for _, p := range previous {
-			if len(result) >= BusinessSystemPromptBundleMaxReferences {
+			if len(result) >= maximum {
 				break
 			}
 			if !containsString(result, p) {
@@ -341,14 +480,18 @@ func (c *BusinessSystemPromptBundleCompiler) selectReferences(routes []BusinessS
 		}
 		return result
 	}
-	result := make([]string, 0, BusinessSystemPromptBundleMaxReferences)
+	maximum := c.maxReferences
+	if maximum <= 0 {
+		maximum = BusinessSystemPromptBundleMaxReferences
+	}
+	result := make([]string, 0, maximum)
 	for _, route := range routes {
 		for _, ref := range route.References {
 			if containsString(result, ref) {
 				continue
 			}
 			result = append(result, ref)
-			if len(result) >= BusinessSystemPromptBundleMaxReferences {
+			if len(result) >= maximum {
 				return result
 			}
 		}

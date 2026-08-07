@@ -20,8 +20,11 @@ export default {
       inline: 'Prompt body only',
       offline: 'Offline skill bundle',
       remote: 'Remote skill',
+      hybrid: 'Codex / compatible hybrid',
+      legacyRemote: 'Legacy remote skill',
       legacyOffline: 'Legacy offline bundle',
       remoteHint: 'The gateway injects only this body; Codex downloads and verifies the skill from the pinned endpoint.',
+      hybridHint: 'Codex uses the complete local Skill; compatible clients receive verified request-matched documents inline.',
       legacyReadonly: 'Historical versions are read-only and cannot be saved, published, or restored as active.',
       bundle: 'Skill bundle',
       select: 'Select a skill bundle',
@@ -46,6 +49,12 @@ export default {
       scripts: 'Script changes',
       binaries: 'Binary changes',
       publishCandidate: 'Publish candidate',
+      syncCandidate: 'Sync upstream candidate',
+      publishServer: 'Publish server bundle',
+      installLocal: 'Install or manually update local Skill',
+      clientInstall: 'Local Codex Skill',
+      copyInstall: 'Copy fixed-SHA install command',
+      installCopied: 'Install command copied.',
       changeSummary: 'File changes',
       status: { queued: 'Queued', running: 'Syncing', succeeded: 'Candidate ready', failed: 'Sync failed' }
     },
@@ -107,7 +116,14 @@ export default {
       application: 'Application metadata',
       effectiveHash: 'Effective prompt SHA-256',
       routes: 'Matched routes',
-      documents: 'Injected documents'
+      documents: 'Injected documents',
+      omittedDocuments: 'Documents omitted by size cap',
+      baseInstructions: 'High-fidelity base instructions',
+      finalInstructions: 'Final server instructions for this client',
+      clientModes: {
+        codex: 'Codex local Skill',
+        openai_compatible: 'OpenAI-compatible inline'
+      }
     },
     dialogs: {
       createTitle: 'Create template',
@@ -163,7 +179,7 @@ export default {
       unsavedSelection: 'Save or discard the current draft before changing the selection.',
       saveBeforePublish: 'Save the draft before publishing it.',
       bundleUnavailable: 'The selected offline bundle or pinned manifest is unavailable.',
-      legacyReadonly: 'Historical offline_bundle versions are read-only and cannot create a new version.',
+      legacyReadonly: 'Historical remote_skill/offline_bundle versions are read-only and cannot create a new version.',
       skillSync: 'Unable to sync the upstream skill.',
       skillPublish: 'Unable to publish the skill candidate.',
       skillRollback: 'Unable to roll back the Skill Registry.'

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	openaiutil "github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -43,10 +44,15 @@ func (s *OpenAIGatewayService) applyBusinessSystemPrompt(
 	if !ok {
 		return nil, BusinessSystemPromptApplication{}, ErrBusinessSystemPromptUnavailable
 	}
+	if snapshot.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid {
+		if err := s.businessPromptService.prepareBusinessSystemPromptSnapshot(&snapshot); err != nil {
+			return nil, BusinessSystemPromptApplication{}, err
+		}
+	}
 	if snapshot.Enabled && (!compact || snapshot.CompactEnabled) {
 		var err error
 		snapshot, err = s.businessPromptService.compileBusinessSystemPromptSnapshot(
-			snapshot, businessSystemPromptRequestTextFromJSON(body, protocol), false, nil,
+			snapshot, businessSystemPromptRequestTextFromJSON(body, protocol), false, nil, true,
 		)
 		if err != nil {
 			return nil, BusinessSystemPromptApplication{}, err
@@ -76,6 +82,11 @@ func (s *OpenAIGatewayService) businessSystemPromptSnapshotForRequest(
 	snapshot, ok := s.businessPromptService.CurrentSnapshot()
 	if !ok {
 		return BusinessSystemPromptSnapshot{}, true, ErrBusinessSystemPromptUnavailable
+	}
+	if snapshot.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid {
+		if err := s.businessPromptService.prepareBusinessSystemPromptSnapshot(&snapshot); err != nil {
+			return BusinessSystemPromptSnapshot{}, true, err
+		}
 	}
 	if ctx != nil {
 		ctx.Set(businessSystemPromptContextKey(ctx, businessSystemPromptRequestSnapshotKey, ""), snapshot)
@@ -123,11 +134,16 @@ func (s *OpenAIGatewayService) applyBusinessSystemPromptForRequest(
 						Body: state.application.ServerInstructions, SHA256: state.application.SHA256,
 						CompositionMode: state.application.CompositionMode,
 						BundleID:        state.application.BundleID, BundleManifestSHA256: state.application.BundleManifestSHA256,
-						baseSHA256: state.application.BaseSHA256, effectiveSHA256: state.application.EffectiveSHA256,
+						RegistryRevision:       state.application.BundleRevision,
+						RegistryManifestSHA256: state.application.BundleManifestSHA256,
+						RegistryArchiveSHA256:  state.application.BundleArchiveSHA256,
+						RegistrySourceCommit:   state.application.BundleSourceCommit,
+						baseSHA256:             state.application.BaseSHA256, effectiveSHA256: state.application.EffectiveSHA256,
 						effectiveByteLength: state.application.EffectiveByteLength,
 						routeIDs:            append([]string(nil), state.application.RouteIDs...),
 						documentIDs:         append([]string(nil), state.application.DocumentIDs...),
 						referenceIDs:        append([]string(nil), state.application.ReferenceIDs...),
+						omittedDocumentIDs:  append([]string(nil), state.application.OmittedDocumentIDs...),
 					}
 				}
 				updated, application, err := ApplyBusinessSystemPromptToJSON(body, frozen, BusinessSystemPromptTarget{
@@ -163,7 +179,8 @@ func (s *OpenAIGatewayService) applyBusinessSystemPromptForRequest(
 				}
 			}
 		}
-		if snapshot.effectiveSHA256 == "" && snapshot.CompositionMode == BusinessSystemPromptCompositionOfflineBundle {
+		if snapshot.effectiveSHA256 == "" &&
+			(snapshot.CompositionMode == BusinessSystemPromptCompositionOfflineBundle || snapshot.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid) {
 			requestText := businessSystemPromptRequestTextFromJSON(body, protocol)
 			previousResponseID := strings.TrimSpace(gjson.GetBytes(body, "previous_response_id").String())
 			var previousMetadata *BusinessSystemPromptBundleMetadata
@@ -176,6 +193,7 @@ func (s *OpenAIGatewayService) applyBusinessSystemPromptForRequest(
 			}
 			compiled, compileErr := s.businessPromptService.compileBusinessSystemPromptSnapshot(
 				snapshot, requestText, previousResponseID != "" && strings.TrimSpace(requestText) == "", previousMetadata,
+				!isOfficialCodexBusinessSystemPromptRequest(ctx),
 			)
 			if compileErr != nil {
 				return nil, BusinessSystemPromptApplication{}, compileErr
@@ -291,6 +309,16 @@ func businessSystemPromptContextKey(ctx *gin.Context, base, protocol string) str
 	return key
 }
 
+func isOfficialCodexBusinessSystemPromptRequest(ctx *gin.Context) bool {
+	if ctx == nil || ctx.Request == nil {
+		return false
+	}
+	return openaiutil.IsCodexOfficialClientByHeaders(
+		ctx.Request.Header.Get("User-Agent"),
+		ctx.Request.Header.Get("originator"),
+	)
+}
+
 func beginBusinessSystemPromptRequestTurn(ctx *gin.Context) {
 	if ctx == nil {
 		return
@@ -303,7 +331,8 @@ func beginBusinessSystemPromptRequestTurn(ctx *gin.Context) {
 }
 
 func (s *OpenAIGatewayService) storeBusinessSystemPromptResponseRouteMetadata(c *gin.Context, body []byte, application BusinessSystemPromptApplication) {
-	if s == nil || s.businessPromptService == nil || !application.Applied || application.CompositionMode != BusinessSystemPromptCompositionOfflineBundle {
+	if s == nil || s.businessPromptService == nil || !application.Applied ||
+		(application.CompositionMode != BusinessSystemPromptCompositionOfflineBundle && application.CompositionMode != BusinessSystemPromptCompositionCodexSkillHybrid) {
 		return
 	}
 	responseID := ""
@@ -343,7 +372,7 @@ func appendBusinessSystemPromptApplicationToCacheKey(key string, application Bus
 		return key
 	}
 	suffix := ":business-system-prompt:" + strconv.FormatInt(application.Revision, 10) + ":" + strings.TrimSpace(application.SHA256)
-	if application.CompositionMode == BusinessSystemPromptCompositionOfflineBundle && application.BundleManifestSHA256 != "" && application.EffectiveSHA256 != "" {
+	if (application.CompositionMode == BusinessSystemPromptCompositionOfflineBundle || application.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid) && application.BundleManifestSHA256 != "" && application.EffectiveSHA256 != "" {
 		metadata := BusinessSystemPromptBundleMetadata{
 			BundleID: application.BundleID, ManifestSHA256: application.BundleManifestSHA256,
 			BaseSHA256: application.BaseSHA256, EffectiveSHA256: application.EffectiveSHA256,
@@ -354,6 +383,10 @@ func appendBusinessSystemPromptApplicationToCacheKey(key string, application Bus
 			Degraded:       application.Degraded,
 		}
 		suffix = ":" + metadata.CacheKey(application.Revision)
+		if application.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid {
+			suffix += ":bundle-revision:" + strconv.FormatInt(application.BundleRevision, 10) +
+				":" + strings.ToLower(strings.TrimSpace(application.BundleArchiveSHA256))
+		}
 	}
 	if strings.HasSuffix(key, suffix) {
 		return key

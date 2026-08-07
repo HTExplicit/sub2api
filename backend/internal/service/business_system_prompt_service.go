@@ -17,7 +17,7 @@ var (
 	ErrBusinessSystemPromptRevisionConflict  = errors.New("business system prompt revision conflict")
 	ErrBusinessSystemPromptSeedProtected     = errors.New("business system prompt seed is protected")
 	ErrBusinessSystemPromptActive            = errors.New("active business system prompt cannot be deleted")
-	ErrBusinessSystemPromptLegacyComposition = errors.New("legacy offline business system prompt composition is read-only")
+	ErrBusinessSystemPromptLegacyComposition = errors.New("legacy business system prompt composition is read-only")
 )
 
 const businessSystemPromptSeedSlug = "codexrip_reverse_skill"
@@ -137,10 +137,11 @@ type BusinessSystemPromptRouteMetadataStore interface {
 }
 
 type BusinessSystemPromptService struct {
-	store   BusinessSystemPromptStore
-	bus     BusinessSystemPromptRevisionBus
-	route   BusinessSystemPromptRouteMetadataStore
-	bundles *BusinessSystemPromptBundleRegistry
+	store    BusinessSystemPromptStore
+	bus      BusinessSystemPromptRevisionBus
+	route    BusinessSystemPromptRouteMetadataStore
+	bundles  *BusinessSystemPromptBundleRegistry
+	registry *RemoteSkillRegistryService
 
 	snapshot atomic.Pointer[BusinessSystemPromptSnapshot]
 	stateMu  sync.Mutex
@@ -161,6 +162,12 @@ func NewBusinessSystemPromptService(store BusinessSystemPromptStore, bus Busines
 	return service
 }
 
+func (s *BusinessSystemPromptService) SetRemoteSkillRegistryService(registry *RemoteSkillRegistryService) {
+	if s != nil {
+		s.registry = registry
+	}
+}
+
 func (s *BusinessSystemPromptService) loadBusinessSystemPromptBundle(bundleID, manifestSHA256 string) (*BusinessSystemPromptBundle, error) {
 	// A direct path is retained for isolated tests and single-bundle operators.
 	// Production uses the content-addressed registry root so no symlink or
@@ -175,7 +182,8 @@ func (s *BusinessSystemPromptService) loadBusinessSystemPromptBundle(bundleID, m
 }
 
 func (s *BusinessSystemPromptService) StoreResponseRouteMetadata(ctx context.Context, responseID string, application BusinessSystemPromptApplication, ttl time.Duration) error {
-	if s == nil || s.route == nil || !application.Applied || application.CompositionMode != BusinessSystemPromptCompositionOfflineBundle {
+	if s == nil || s.route == nil || !application.Applied ||
+		(application.CompositionMode != BusinessSystemPromptCompositionOfflineBundle && application.CompositionMode != BusinessSystemPromptCompositionCodexSkillHybrid) {
 		return nil
 	}
 	metadata := BusinessSystemPromptBundleMetadata{
@@ -218,11 +226,11 @@ func (s *BusinessSystemPromptService) Initialize(ctx context.Context) error {
 	seed := BusinessSystemPromptSeed{
 		Slug:            businessSystemPromptSeedSlug,
 		Name:            "CodexRip Reverse-Skill System Prompt",
-		Description:     "固定的 CodexRip 远程 Skill 引导提示词；部署后默认关闭。",
+		Description:     "高保真 CodexRip 逆向提示词与本机完整 Skill 混合策略；部署后默认关闭。",
 		Body:            embeddedBusinessSystemPrompt,
 		SHA256:          hash,
 		ByteLength:      byteLength,
-		CompositionMode: BusinessSystemPromptCompositionRemoteSkill,
+		CompositionMode: BusinessSystemPromptCompositionCodexSkillHybrid,
 		BundleID:        BusinessSystemPromptRemoteSkillBundleID,
 	}
 	if err := s.store.EnsureBusinessSystemPromptSeed(ctx, seed); err != nil {
@@ -331,17 +339,52 @@ func (s *BusinessSystemPromptService) prepareBusinessSystemPromptSnapshot(snapsh
 	if err := validateBusinessSystemPromptSnapshot(snapshot); err != nil {
 		return err
 	}
-	if snapshot.CompositionMode != BusinessSystemPromptCompositionOfflineBundle {
+	snapshot.RegistryRevision = 0
+	snapshot.RegistryManifestSHA256 = ""
+	snapshot.RegistryArchiveSHA256 = ""
+	snapshot.RegistrySourceCommit = ""
+	if snapshot.CompositionMode == BusinessSystemPromptCompositionInline {
 		snapshot.requestBundle = nil
 		snapshot.BundleAvailable = false
 		snapshot.BundleDegraded = false
 		snapshot.DegradedReason = ""
 		return nil
 	}
+	if snapshot.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid {
+		snapshot.requestBundle = nil
+		snapshot.BundleAvailable = false
+		snapshot.BundleDegraded = true
+		snapshot.DegradedReason = "registry_unavailable"
+		if s == nil || s.registry == nil {
+			if !snapshot.Enabled {
+				return nil
+			}
+			return fmt.Errorf("%w: skill registry unavailable", ErrBusinessSystemPromptUnavailable)
+		}
+		registrySnapshot, bundle, err := s.registry.ActiveBundle(context.Background())
+		if err != nil || registrySnapshot.Active == nil || bundle == nil {
+			if !snapshot.Enabled {
+				return nil
+			}
+			return fmt.Errorf("%w: active skill registry snapshot unavailable", ErrBusinessSystemPromptUnavailable)
+		}
+		snapshot.requestBundle = bundle
+		snapshot.BundleAvailable = true
+		snapshot.BundleDegraded = registrySnapshot.Degraded || bundle.Degraded
+		snapshot.DegradedReason = registrySnapshot.DegradedReason
+		snapshot.RegistryRevision = registrySnapshot.Revision
+		snapshot.RegistryManifestSHA256 = registrySnapshot.Active.ManifestSHA256
+		snapshot.RegistryArchiveSHA256 = registrySnapshot.Active.ArchiveSHA256
+		snapshot.RegistrySourceCommit = registrySnapshot.Active.SourceCommit
+		if snapshot.BundleDegraded {
+			snapshot.Degraded = true
+		}
+		return nil
+	}
 	snapshot.requestBundle = nil
 	snapshot.BundleAvailable = false
 	snapshot.BundleDegraded = true
-	snapshot.DegradedReason = "legacy_offline_bundle_read_only"
+	snapshot.DegradedReason = "legacy_composition_read_only"
 	snapshot.Degraded = true
 	if !snapshot.Enabled {
 		return nil
@@ -363,7 +406,23 @@ func (s *BusinessSystemPromptService) PrepareBusinessSystemPromptPreviewSnapshot
 	if err := s.prepareBusinessSystemPromptSnapshot(&snapshot); err != nil {
 		return BusinessSystemPromptSnapshot{}, err
 	}
-	return s.compileBusinessSystemPromptSnapshot(snapshot, requestText, false, nil)
+	return s.compileBusinessSystemPromptSnapshot(snapshot, requestText, false, nil, true)
+}
+
+func (s *BusinessSystemPromptService) PrepareBusinessSystemPromptPreviewSnapshotForClient(
+	snapshot BusinessSystemPromptSnapshot,
+	requestText string,
+	clientMode string,
+) (BusinessSystemPromptSnapshot, error) {
+	snapshot.Enabled = true
+	if snapshot.Revision < 1 {
+		snapshot.Revision = 1
+	}
+	if err := s.prepareBusinessSystemPromptSnapshot(&snapshot); err != nil {
+		return BusinessSystemPromptSnapshot{}, err
+	}
+	inlineDocuments := strings.EqualFold(strings.TrimSpace(clientMode), "openai_compatible")
+	return s.compileBusinessSystemPromptSnapshot(snapshot, requestText, false, nil, inlineDocuments)
 }
 
 func (s *BusinessSystemPromptService) compileBusinessSystemPromptSnapshot(
@@ -371,8 +430,41 @@ func (s *BusinessSystemPromptService) compileBusinessSystemPromptSnapshot(
 	requestText string,
 	continuation bool,
 	previous *BusinessSystemPromptBundleMetadata,
+	inlineDocuments bool,
 ) (BusinessSystemPromptSnapshot, error) {
-	if snapshot.CompositionMode != BusinessSystemPromptCompositionOfflineBundle {
+	if snapshot.CompositionMode == BusinessSystemPromptCompositionInline {
+		return snapshot, nil
+	}
+	if snapshot.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid {
+		if snapshot.requestBundle == nil || snapshot.RegistryManifestSHA256 == "" {
+			return BusinessSystemPromptSnapshot{}, fmt.Errorf("%w: active registry bundle unavailable", ErrBusinessSystemPromptUnavailable)
+		}
+		baseHash := hashBusinessSystemPromptBundleBytes([]byte(snapshot.Body))
+		if !inlineDocuments {
+			snapshot.baseSHA256 = baseHash
+			snapshot.effectiveSHA256 = baseHash
+			snapshot.effectiveByteLength = len([]byte(snapshot.Body))
+			snapshot.routeIDs = nil
+			snapshot.documentIDs = nil
+			snapshot.referenceIDs = nil
+			snapshot.omittedDocumentIDs = nil
+			return snapshot, nil
+		}
+		compiled, err := NewBusinessSystemPromptHybridCompiler(snapshot.requestBundle).CompileHybrid(BusinessSystemPromptBundleCompileInput{
+			BasePrompt: snapshot.Body, RequestText: requestText, Continuation: continuation, PreviousMetadata: previous,
+		})
+		if err != nil {
+			return BusinessSystemPromptSnapshot{}, err
+		}
+		snapshot.Body = compiled.Body
+		snapshot.baseSHA256 = compiled.Metadata.BaseSHA256
+		snapshot.effectiveSHA256 = compiled.Metadata.EffectiveSHA256
+		snapshot.effectiveByteLength = compiled.Metadata.ByteLength
+		snapshot.routeIDs = append([]string(nil), compiled.Metadata.RouteIDs...)
+		snapshot.documentIDs = append([]string(nil), compiled.Metadata.DocumentPaths...)
+		snapshot.referenceIDs = append([]string(nil), compiled.Metadata.ReferencePaths...)
+		snapshot.omittedDocumentIDs = append([]string(nil), compiled.OmittedPaths...)
+		snapshot.Degraded = snapshot.Degraded || compiled.Metadata.Degraded
 		return snapshot, nil
 	}
 	return BusinessSystemPromptSnapshot{}, fmt.Errorf("%w: %v", ErrBusinessSystemPromptUnavailable, ErrBusinessSystemPromptLegacyComposition)
@@ -459,7 +551,7 @@ func (s *BusinessSystemPromptService) CreateVersionWithComposition(ctx context.C
 	if s == nil || s.store == nil {
 		return BusinessSystemPromptVersion{}, errors.New("business system prompt store unavailable")
 	}
-	if composition.Mode == BusinessSystemPromptCompositionOfflineBundle {
+	if composition.Mode == BusinessSystemPromptCompositionOfflineBundle || composition.Mode == BusinessSystemPromptCompositionRemoteSkill {
 		return BusinessSystemPromptVersion{}, ErrBusinessSystemPromptLegacyComposition
 	}
 	req.Note = strings.TrimSpace(req.Note)
@@ -537,10 +629,14 @@ func (s *BusinessSystemPromptService) UpdateRuntime(ctx context.Context, update 
 
 func (s *BusinessSystemPromptService) validateBusinessSystemPromptBundleReference(composition BusinessSystemPromptComposition) error {
 	if composition.Mode == BusinessSystemPromptCompositionRemoteSkill {
-		if composition.BundleID != BusinessSystemPromptRemoteSkillBundleID {
-			return fmt.Errorf("%w: unknown remote skill bundle", ErrBusinessSystemPromptInvalid)
+		return ErrBusinessSystemPromptLegacyComposition
+	}
+	if composition.Mode == BusinessSystemPromptCompositionCodexSkillHybrid {
+		if composition.BundleID != BusinessSystemPromptRemoteSkillBundleID || s == nil || s.registry == nil {
+			return fmt.Errorf("%w: active CodexRip registry unavailable", ErrBusinessSystemPromptUnavailable)
 		}
-		return nil
+		_, _, err := s.registry.ActiveBundle(context.Background())
+		return err
 	}
 	if composition.Mode != BusinessSystemPromptCompositionOfflineBundle {
 		return nil
@@ -571,7 +667,7 @@ func (s *BusinessSystemPromptService) validateBusinessSystemPromptPublishTarget(
 		if err != nil {
 			return err
 		}
-		if composition.Mode == BusinessSystemPromptCompositionOfflineBundle {
+		if composition.Mode == BusinessSystemPromptCompositionOfflineBundle || composition.Mode == BusinessSystemPromptCompositionRemoteSkill {
 			return ErrBusinessSystemPromptLegacyComposition
 		}
 		return s.validateBusinessSystemPromptBundleReference(composition)
@@ -674,7 +770,7 @@ func (s *BusinessSystemPromptService) CreateTemplate(ctx context.Context, req Bu
 	if err != nil {
 		return BusinessSystemPromptTemplateDetail{}, err
 	}
-	if composition.Mode == BusinessSystemPromptCompositionOfflineBundle {
+	if composition.Mode == BusinessSystemPromptCompositionOfflineBundle || composition.Mode == BusinessSystemPromptCompositionRemoteSkill {
 		return BusinessSystemPromptTemplateDetail{}, ErrBusinessSystemPromptLegacyComposition
 	}
 	req.CompositionMode = composition.Mode
@@ -716,7 +812,7 @@ func (s *BusinessSystemPromptService) DuplicateTemplate(ctx context.Context, id 
 		if normalizeErr != nil {
 			return BusinessSystemPromptTemplateDetail{}, normalizeErr
 		}
-		if composition.Mode == BusinessSystemPromptCompositionOfflineBundle {
+		if composition.Mode == BusinessSystemPromptCompositionOfflineBundle || composition.Mode == BusinessSystemPromptCompositionRemoteSkill {
 			return BusinessSystemPromptTemplateDetail{}, ErrBusinessSystemPromptLegacyComposition
 		}
 	}

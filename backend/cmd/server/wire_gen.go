@@ -153,7 +153,15 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	grokTokenProvider := service.ProvideGrokTokenProvider(accountRepository, geminiTokenCache, grokOAuthService, oAuthRefreshAPI, tempUnschedCache)
 	businessSystemPromptStore := repository.NewBusinessSystemPromptRepository(db)
 	businessSystemPromptRevisionBus := repository.NewBusinessSystemPromptRevisionBus(redisClient)
-	businessSystemPromptService, err := service.ProvideBusinessSystemPromptService(businessSystemPromptStore, businessSystemPromptRevisionBus)
+	remoteSkillRegistryStore := repository.NewRemoteSkillRegistryRepository(db)
+	remoteSkillRegistryRevisionBus := repository.NewRemoteSkillRegistryRevisionBus(redisClient)
+	remoteSkillRegistryFiles := service.ProvideRemoteSkillRegistryFiles()
+	remoteSkillCandidateSource := service.ProvideRemoteSkillCandidateSource()
+	remoteSkillRegistryService, err := service.ProvideRemoteSkillRegistryService(remoteSkillRegistryStore, remoteSkillRegistryRevisionBus, remoteSkillRegistryFiles, remoteSkillCandidateSource)
+	if err != nil {
+		return nil, err
+	}
+	businessSystemPromptService, err := service.ProvideBusinessSystemPromptService(businessSystemPromptStore, businessSystemPromptRevisionBus, remoteSkillRegistryService)
 	if err != nil {
 		return nil, err
 	}
@@ -278,14 +286,6 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	auditLogRepository := repository.NewAuditLogRepository(db)
 	auditLogService := service.ProvideAuditLogService(auditLogRepository, settingService)
 	auditLogHandler := admin.NewAuditLogHandler(auditLogService, totpService)
-	remoteSkillRegistryStore := repository.NewRemoteSkillRegistryRepository(db)
-	remoteSkillRegistryRevisionBus := repository.NewRemoteSkillRegistryRevisionBus(redisClient)
-	remoteSkillRegistryFiles := service.ProvideRemoteSkillRegistryFiles()
-	remoteSkillCandidateSource := service.ProvideRemoteSkillCandidateSource()
-	remoteSkillRegistryService, err := service.ProvideRemoteSkillRegistryService(remoteSkillRegistryStore, remoteSkillRegistryRevisionBus, remoteSkillRegistryFiles, remoteSkillCandidateSource)
-	if err != nil {
-		return nil, err
-	}
 	systemPromptHandler := admin.NewSystemPromptHandler(businessSystemPromptService, remoteSkillRegistryService)
 	upstreamBillingProbeService := service.ProvideUpstreamBillingProbeService(accountRepository, accountTestService, settingService, leaderLockCache, db)
 	ollamaCloudUsageService := service.ProvideOllamaCloudUsageService(accountRepository, httpUpstream, settingService, secretEncryptor, configConfig, leaderLockCache, db)

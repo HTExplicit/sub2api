@@ -6,9 +6,10 @@ import (
 )
 
 const (
-	BusinessSystemPromptCompositionInline        = "inline"
-	BusinessSystemPromptCompositionOfflineBundle = "offline_bundle"
-	BusinessSystemPromptCompositionRemoteSkill   = "remote_skill"
+	BusinessSystemPromptCompositionInline           = "inline"
+	BusinessSystemPromptCompositionOfflineBundle    = "offline_bundle"
+	BusinessSystemPromptCompositionRemoteSkill      = "remote_skill"
+	BusinessSystemPromptCompositionCodexSkillHybrid = "codex_skill_hybrid"
 
 	BusinessSystemPromptSeedBundleID             = "moxinggang-reverse-skill"
 	BusinessSystemPromptSeedBundleManifestSHA256 = "22c227128165afbbcbda0175eb5e991ddb51d105b7d1e704572c625c64b626d7"
@@ -51,12 +52,12 @@ func NormalizeBusinessSystemPromptComposition(mode, bundleID, manifestSHA256 str
 		if len(manifestSHA256) != 64 || !isLowerHexSHA256(manifestSHA256) {
 			return BusinessSystemPromptComposition{}, fmt.Errorf("%w: invalid bundle manifest sha256", ErrBusinessSystemPromptInvalid)
 		}
-	case BusinessSystemPromptCompositionRemoteSkill:
+	case BusinessSystemPromptCompositionRemoteSkill, BusinessSystemPromptCompositionCodexSkillHybrid:
 		if bundleID != BusinessSystemPromptRemoteSkillBundleID {
-			return BusinessSystemPromptComposition{}, fmt.Errorf("%w: unknown remote skill bundle", ErrBusinessSystemPromptInvalid)
+			return BusinessSystemPromptComposition{}, fmt.Errorf("%w: unknown CodexRip skill bundle", ErrBusinessSystemPromptInvalid)
 		}
 		if manifestSHA256 != "" {
-			return BusinessSystemPromptComposition{}, fmt.Errorf("%w: remote skill composition follows the published registry and cannot pin a manifest", ErrBusinessSystemPromptInvalid)
+			return BusinessSystemPromptComposition{}, fmt.Errorf("%w: registry-backed composition follows the published registry and cannot pin a manifest", ErrBusinessSystemPromptInvalid)
 		}
 	default:
 		return BusinessSystemPromptComposition{}, fmt.Errorf("%w: unsupported composition mode %q", ErrBusinessSystemPromptInvalid, mode)

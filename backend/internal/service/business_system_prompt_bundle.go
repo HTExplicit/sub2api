@@ -27,6 +27,9 @@ const (
 	BusinessSystemPromptBundleMaxBytes         = 256 << 10
 	BusinessSystemPromptBundleMaxDomains       = 2
 	BusinessSystemPromptBundleMaxReferences    = 3
+	BusinessSystemPromptHybridMaxDomains       = 128
+	BusinessSystemPromptHybridMaxReferences    = 512
+	BusinessSystemPromptHybridMaxDocuments     = 1024
 	businessSystemPromptBundleMaxManifestBytes = 4 << 20
 	businessSystemPromptBundleMaxFileBytes     = 64 << 20
 )

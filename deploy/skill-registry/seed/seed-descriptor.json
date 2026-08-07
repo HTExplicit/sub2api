@@ -3,19 +3,19 @@
   "bundle_id": "codexrip-reverse-skill",
   "revision": 1,
   "source_commit": "d8bf34540cbc1aa34052e1b142576fc36a1f1437",
-  "overlay_sha256": "1e4145c7c8afad0dc698cf0e5432a25705012752ed676ea51ec9afa303bc6ae3",
-  "manifest_sha256": "510fed48ae78a2580548d27290259bab1848639538af0dd53acaa3f71c855fea",
-  "archive_sha256": "1b676ba6e12ffa7c4d16b95e94f82a8330a3afa34f664aa98c3ac808927a60bd",
-  "manifest_url": "https://codexrip.vip/skills/reverse-skill/versions/510fed48ae78a2580548d27290259bab1848639538af0dd53acaa3f71c855fea/bundle-manifest.json",
-  "archive_url": "https://codexrip.vip/skills/reverse-skill/versions/510fed48ae78a2580548d27290259bab1848639538af0dd53acaa3f71c855fea/codexrip-reverse-skill-510fed48ae78a2580548d27290259bab1848639538af0dd53acaa3f71c855fea.zip",
-  "files_base_url": "https://codexrip.vip/skills/reverse-skill/versions/510fed48ae78a2580548d27290259bab1848639538af0dd53acaa3f71c855fea/",
+  "overlay_sha256": "bab9d1be76ba7b777a78817de25f7a7a8112b7ae472586074e7aa1b065074294",
+  "manifest_sha256": "07bf0d71dfb687ff3ced0befa39081453c51ce85ae54a02bdb1e1f6fc34d3313",
+  "archive_sha256": "c6920445c55f46c2a30e8a2fe398e7c1cf0b22dcbe4c53ed0cfc105d9c8a5f3e",
+  "manifest_url": "https://codexrip.vip/skills/reverse-skill/versions/07bf0d71dfb687ff3ced0befa39081453c51ce85ae54a02bdb1e1f6fc34d3313/bundle-manifest.json",
+  "archive_url": "https://codexrip.vip/skills/reverse-skill/versions/07bf0d71dfb687ff3ced0befa39081453c51ce85ae54a02bdb1e1f6fc34d3313/codexrip-reverse-skill-07bf0d71dfb687ff3ced0befa39081453c51ce85ae54a02bdb1e1f6fc34d3313.zip",
+  "files_base_url": "https://codexrip.vip/skills/reverse-skill/versions/07bf0d71dfb687ff3ced0befa39081453c51ce85ae54a02bdb1e1f6fc34d3313/",
   "core_files": [
     "codexrip-overlay/security-research/RULES.md",
     "codexrip-overlay/security-research/README_AI.md",
     "codexrip-overlay/security-research/SKILL.md"
   ],
-  "file_count": 538,
-  "total_bytes": 7948026,
+  "file_count": 540,
+  "total_bytes": 7949823,
   "published_at": "2026-08-07T00:00:00Z",
-  "bootstrap_policy": "download_verify_cache_materialize_only"
+  "bootstrap_policy": "download_verify_native_skill_atomic_replace"
 }

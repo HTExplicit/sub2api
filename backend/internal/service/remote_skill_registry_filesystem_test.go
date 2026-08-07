@@ -21,13 +21,22 @@ func TestRemoteSkillRegistryFilesystemInstallsReleaseSeedAndPublicAssets(t *test
 	version, err := files.LoadSeed(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, BusinessSystemPromptRemoteSkillBundleID, version.BundleID)
-	require.Equal(t, "510fed48ae78a2580548d27290259bab1848639538af0dd53acaa3f71c855fea", version.ManifestSHA256)
-	require.Equal(t, "1b676ba6e12ffa7c4d16b95e94f82a8330a3afa34f664aa98c3ac808927a60bd", version.ArchiveSHA256)
+	require.Equal(t, "07bf0d71dfb687ff3ced0befa39081453c51ce85ae54a02bdb1e1f6fc34d3313", version.ManifestSHA256)
+	require.Equal(t, "c6920445c55f46c2a30e8a2fe398e7c1cf0b22dcbe4c53ed0cfc105d9c8a5f3e", version.ArchiveSHA256)
 	require.NoError(t, files.ValidateVersion(context.Background(), version))
 
+	seedRoot := filepath.Join(runtimeRoot, "private", "seed")
+	require.NoError(t, os.WriteFile(filepath.Join(seedRoot, remoteSkillSeedDescriptorName), []byte("{}"), 0o640))
+	require.NoError(t, os.WriteFile(filepath.Join(seedRoot, "STALE"), []byte("old"), 0o640))
+	reloaded, err := files.LoadSeed(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, version.ManifestSHA256, reloaded.ManifestSHA256)
+	_, err = os.Stat(filepath.Join(seedRoot, "STALE"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+
 	for _, hashAndName := range [][2]string{
-		{"e3dfee2e99fad9c890295a9de6fd1d2882c428971579049c3038b94d10668edd", "bootstrap-reverse-skill.ps1"},
-		{"6bd6f94cb552f979443303c34883b12b475e724dcaf0b77843420f991459cf9c", "bootstrap-reverse-skill.py"},
+		{"8595884159988ff653c1d66be66d25acc62a359009c85a7924a23dbaf45d4246", "bootstrap-reverse-skill.ps1"},
+		{"2db6ff2d1a5182b73920aabe701d914cca83643aeab89443c0561b1a67430b42", "bootstrap-reverse-skill.py"},
 	} {
 		_, err := os.Stat(filepath.Join(runtimeRoot, "public", "bootstrap", hashAndName[0], hashAndName[1]))
 		require.NoError(t, err)
@@ -60,8 +69,8 @@ func TestRemoteSkillRegistryFilesystemInstallsReleaseSeedAndPublicAssets(t *test
 		}
 		for _, path := range []string{
 			filepath.Join(runtimeRoot, "public", "reverse-skill", "versions", version.ManifestSHA256),
-			filepath.Join(runtimeRoot, "public", "bootstrap", "e3dfee2e99fad9c890295a9de6fd1d2882c428971579049c3038b94d10668edd"),
-			filepath.Join(runtimeRoot, "public", "bootstrap", "6bd6f94cb552f979443303c34883b12b475e724dcaf0b77843420f991459cf9c"),
+			filepath.Join(runtimeRoot, "public", "bootstrap", "8595884159988ff653c1d66be66d25acc62a359009c85a7924a23dbaf45d4246"),
+			filepath.Join(runtimeRoot, "public", "bootstrap", "2db6ff2d1a5182b73920aabe701d914cca83643aeab89443c0561b1a67430b42"),
 		} {
 			info, err := os.Stat(path)
 			require.NoError(t, err)
