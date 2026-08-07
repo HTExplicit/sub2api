@@ -6,30 +6,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
-
-type fakeBusinessSystemPromptRouteBus struct {
-	metadata map[string]BusinessSystemPromptBundleMetadata
-}
-
-func (b *fakeBusinessSystemPromptRouteBus) Publish(context.Context, int64) error         { return nil }
-func (b *fakeBusinessSystemPromptRouteBus) Subscribe(context.Context, func(int64)) error { return nil }
-func (b *fakeBusinessSystemPromptRouteBus) StoreBusinessSystemPromptRouteMetadata(_ context.Context, responseID string, metadata BusinessSystemPromptBundleMetadata, _ time.Duration) error {
-	if b.metadata == nil {
-		b.metadata = make(map[string]BusinessSystemPromptBundleMetadata)
-	}
-	b.metadata[responseID] = metadata
-	return nil
-}
-func (b *fakeBusinessSystemPromptRouteBus) LoadBusinessSystemPromptRouteMetadata(_ context.Context, responseID string) (BusinessSystemPromptBundleMetadata, bool, error) {
-	metadata, ok := b.metadata[responseID]
-	return metadata, ok, nil
-}
 
 func TestBusinessSystemPromptRemoteSkillUsesFixedBodyAcrossAdapters(t *testing.T) {
 	store := &fakeBusinessSystemPromptStore{loaded: BusinessSystemPromptSnapshot{

@@ -346,7 +346,7 @@ func buildRemoteSkillArchive(manifestBytes []byte, files map[string][]byte) ([]b
 		// Store canonical bytes instead of relying on compressor output that can
 		// change across Go/zlib releases for an otherwise identical manifest.
 		header := &zip.FileHeader{Name: name, Method: zip.Store}
-		header.SetModTime(time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC))
+		header.Modified = time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)
 		header.SetMode(0o644)
 		entry, err := writer.CreateHeader(header)
 		if err != nil {
