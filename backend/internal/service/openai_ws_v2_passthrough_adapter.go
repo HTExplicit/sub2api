@@ -664,13 +664,24 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	hooks *OpenAIWSIngressHooks,
 	wsDecision OpenAIWSProtocolDecision,
 ) error {
+	var firstRetryFailoverErr *UpstreamFailoverError
 	for retryUsed := false; ; retryUsed = true {
 		err := s.proxyResponsesWebSocketV2PassthroughAttempt(
 			ctx, c, clientConn, account, token, firstClientMessage, hooks, wsDecision, retryUsed,
 		)
-		if !errors.Is(err, errOpenAIWSPassthroughRetrySameAccount) || retryUsed {
-			return err
+		if errors.Is(err, errOpenAIWSPassthroughRetrySameAccount) && !retryUsed {
+			_ = errors.As(err, &firstRetryFailoverErr)
+			continue
 		}
+		if retryUsed && firstRetryFailoverErr != nil && err != nil {
+			var currentFailoverErr *UpstreamFailoverError
+			if errors.As(err, &currentFailoverErr) &&
+				(currentFailoverErr.Reason == OpenAITransientTransportFailureReason ||
+					currentFailoverErr.Reason == OpenAIPersistentTransportFailureReason) {
+				return firstRetryFailoverErr
+			}
+		}
+		return err
 	}
 }
 
@@ -1089,7 +1100,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 	if firstWriteErr != nil {
 		wrappedErr := fmt.Errorf("write first upstream websocket request: %w", firstWriteErr)
 		if !transportRetryUsed && !errors.Is(firstWriteErr, context.Canceled) {
-			return fmt.Errorf("%w: %v", errOpenAIWSPassthroughRetrySameAccount, wrappedErr)
+			return fmt.Errorf("%w: %w", errOpenAIWSPassthroughRetrySameAccount, wrappedErr)
 		}
 		return s.handleOpenAIUpstreamTransportError(ctx, c, account, wrappedErr, false)
 	}
@@ -1346,6 +1357,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 	)
 
 	relayErr := relayExit.Err
+	replayableFirstOutputTimeout := false
 	var firstOutputTimeoutErr *openAIWSPassthroughFirstOutputTimeoutError
 	if errors.As(relayErr, &firstOutputTimeoutErr) {
 		deadline := firstOutputTimeoutErr.deadline
@@ -1360,8 +1372,9 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 			"websocket_first_semantic_output",
 			handshakeHeaders,
 		)
-		if turnCount == 0 && !relayExit.WroteDownstream {
+		if turnCount == 0 && relayResult.UpstreamToClientFrames == 0 {
 			relayErr = failoverErr
+			replayableFirstOutputTimeout = true
 		} else {
 			// The handler only retains the initial response.create across
 			// account attempts. Replaying it after a later-turn timeout would
@@ -1388,14 +1401,27 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 			relayErr,
 		)
 	}
+	wroteDownstream := relayExit.WroteDownstream
+	if replayableFirstOutputTimeout {
+		// A timeout close control is not semantic output and must not prevent the
+		// one bounded same-account reconnect or the subsequent account failover.
+		wroteDownstream = false
+	}
 	turnErr := wrapOpenAIWSIngressTurnError(
 		relayExit.Stage,
 		relayErr,
-		relayExit.WroteDownstream,
+		wroteDownstream,
 	)
 	if transportCause, transportFailure := openAIWSIngressTurnTransportCause(turnErr); transportFailure && turnCount == 0 {
 		if !transportRetryUsed {
-			return fmt.Errorf("%w: %v", errOpenAIWSPassthroughRetrySameAccount, transportCause)
+			return fmt.Errorf("%w: %w", errOpenAIWSPassthroughRetrySameAccount, transportCause)
+		}
+		var failoverErr *UpstreamFailoverError
+		if errors.As(transportCause, &failoverErr) {
+			if hooks != nil && hooks.AfterTurn != nil {
+				hooks.AfterTurn(turnCount+1, nil, turnErr)
+			}
+			return turnErr
 		}
 		return s.handleOpenAIUpstreamTransportError(ctx, c, account, transportCause, false)
 	}

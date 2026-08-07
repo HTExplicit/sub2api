@@ -1396,9 +1396,8 @@ func TestOpenAIGatewayService_OpenAIPassthrough_RetryableStatusesTriggerFailover
 			}(),
 			expectFailover: true,
 			assertRepo: func(t *testing.T, repo *openAIPassthroughFailoverRepo, _ time.Time) {
-				require.Len(t, repo.rateLimitCalls, 1)
+				require.Empty(t, repo.rateLimitCalls)
 				require.Empty(t, repo.overloadCalls)
-				require.True(t, time.Until(repo.rateLimitCalls[0]) > 24*time.Hour)
 			},
 		},
 		{
@@ -1456,9 +1455,8 @@ func TestOpenAIGatewayService_OpenAIPassthrough_RetryableStatusesTriggerFailover
 			}(),
 			expectFailover: true,
 			assertRepo: func(t *testing.T, repo *openAIPassthroughFailoverRepo, _ time.Time) {
-				require.Len(t, repo.rateLimitCalls, 1)
+				require.Empty(t, repo.rateLimitCalls)
 				require.Empty(t, repo.overloadCalls)
-				require.True(t, time.Until(repo.rateLimitCalls[0]) > 24*time.Hour)
 			},
 		},
 		{

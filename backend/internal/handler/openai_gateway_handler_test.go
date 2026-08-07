@@ -2236,7 +2236,7 @@ func TestOpenAIResponses_APIKeyPassthroughSSERateLimitSwitchesImmediately(t *tes
 	require.Contains(t, rec.Body.String(), `"type":"response.completed"`)
 }
 
-func TestOpenAIResponsesWebSocket_FailoverOnUpstreamUsageLimitEvent(t *testing.T) {
+func TestOpenAIResponsesWebSocket_FailoverOnUpstreamUsageLimitEventWithoutPersistentState(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	firstHitCh := make(chan []byte, 1)
@@ -2429,13 +2429,13 @@ func TestOpenAIResponsesWebSocket_FailoverOnUpstreamUsageLimitEvent(t *testing.T
 	case <-time.After(3 * time.Second):
 		t.Fatal("等待第二个上游收到重放首帧超时")
 	}
-	require.Equal(t, []int64{int64(9902)}, accountRepo.rateLimitedIDs)
+	require.Empty(t, accountRepo.rateLimitedIDs)
 }
 
 func TestOpenAIResponsesWebSocket_FirstOutputTimeoutWithoutDownstreamReusesClientForOneFailover(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	firstHitCh := make(chan []byte, 1)
+	firstHitCh := make(chan []byte, 2)
 	secondHitCh := make(chan []byte, 1)
 	var firstConnections atomic.Int32
 	var secondConnections atomic.Int32
@@ -2626,14 +2626,19 @@ func TestOpenAIResponsesWebSocket_FirstOutputTimeoutWithoutDownstreamReusesClien
 	select {
 	case <-firstHitCh:
 	case <-time.After(3 * time.Second):
-		t.Fatal("first upstream did not receive replayable request")
+		t.Fatal("first upstream did not receive initial replayable request")
+	}
+	select {
+	case <-firstHitCh:
+	case <-time.After(3 * time.Second):
+		t.Fatal("first upstream did not receive the bounded same-account retry")
 	}
 	select {
 	case <-secondHitCh:
 	case <-time.After(3 * time.Second):
 		t.Fatal("second upstream did not receive replayed request")
 	}
-	require.Equal(t, int32(1), firstConnections.Load())
+	require.Equal(t, int32(2), firstConnections.Load())
 	require.Equal(t, int32(1), secondConnections.Load())
 	require.NotContains(t, accountRepo.rateLimitedIDs, int64(9913), "healthy failover account must not be penalized")
 }

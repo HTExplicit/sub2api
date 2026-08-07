@@ -1246,10 +1246,16 @@ func filterOpenAIAccountsByMinPriority(accounts []*Account) []*Account {
 }
 
 func (s *OpenAIGatewayService) listSchedulableAccounts(ctx context.Context, groupID *int64, platform string) ([]Account, error) {
+	if s == nil {
+		return nil, fmt.Errorf("openai gateway service unavailable")
+	}
 	platform = normalizeOpenAICompatiblePlatform(platform)
 	if s.schedulerSnapshot != nil {
 		accounts, _, err := s.schedulerSnapshot.ListSchedulableAccounts(ctx, groupID, platform, false)
 		return accounts, err
+	}
+	if s.accountRepo == nil {
+		return nil, fmt.Errorf("account repository unavailable")
 	}
 	var accounts []Account
 	var err error
