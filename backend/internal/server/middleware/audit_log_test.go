@@ -148,16 +148,19 @@ func TestPromptAuditMutationAuditRoutesHaveStableActionsAndOmitBodies(t *testing
 
 func TestSystemPromptAuditRoutesHaveStableActionsAndOmitPromptBodies(t *testing.T) {
 	expectedActions := map[string]string{
-		"POST /api/v1/admin/system-prompts":                                   "admin.system_prompts.create",
-		"PATCH /api/v1/admin/system-prompts/:id":                              "admin.system_prompts.update",
-		"DELETE /api/v1/admin/system-prompts/:id":                             "admin.system_prompts.delete",
-		"POST /api/v1/admin/system-prompts/:id/duplicate":                     "admin.system_prompts.duplicate",
-		"POST /api/v1/admin/system-prompts/:id/versions":                      "admin.system_prompts.version.create",
-		"POST /api/v1/admin/system-prompts/:id/versions/:version_id/publish":  "admin.system_prompts.publish",
-		"POST /api/v1/admin/system-prompts/:id/versions/:version_id/rollback": "admin.system_prompts.rollback",
-		"PUT /api/v1/admin/system-prompts/runtime":                            "admin.system_prompts.runtime.update",
-		"POST /api/v1/admin/system-prompts/preview/merge":                     "admin.system_prompts.preview.merge",
-		"POST /api/v1/admin/system-prompts/preview/upstream":                  "admin.system_prompts.preview.upstream",
+		"POST /api/v1/admin/system-prompts":                                                     "admin.system_prompts.create",
+		"PATCH /api/v1/admin/system-prompts/:id":                                                "admin.system_prompts.update",
+		"DELETE /api/v1/admin/system-prompts/:id":                                               "admin.system_prompts.delete",
+		"POST /api/v1/admin/system-prompts/:id/duplicate":                                       "admin.system_prompts.duplicate",
+		"POST /api/v1/admin/system-prompts/:id/versions":                                        "admin.system_prompts.version.create",
+		"POST /api/v1/admin/system-prompts/:id/versions/:version_id/publish":                    "admin.system_prompts.publish",
+		"POST /api/v1/admin/system-prompts/:id/versions/:version_id/rollback":                   "admin.system_prompts.rollback",
+		"PUT /api/v1/admin/system-prompts/runtime":                                              "admin.system_prompts.runtime.update",
+		"POST /api/v1/admin/system-prompts/preview/merge":                                       "admin.system_prompts.preview.merge",
+		"POST /api/v1/admin/system-prompts/preview/upstream":                                    "admin.system_prompts.preview.upstream",
+		"POST /api/v1/admin/system-prompts/skill-registry/syncs":                                "admin.system_prompts.skill_registry.syncs.create",
+		"POST /api/v1/admin/system-prompts/skill-registry/versions/:bundle_version_id/publish":  "admin.system_prompts.skill_registry.publish",
+		"POST /api/v1/admin/system-prompts/skill-registry/versions/:bundle_version_id/rollback": "admin.system_prompts.skill_registry.rollback",
 	}
 	for route, action := range expectedActions {
 		require.Equal(t, action, auditActionOverrides[route])

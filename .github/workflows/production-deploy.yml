@@ -47,20 +47,45 @@ jobs:
           tag_commit=$(git rev-list -n 1 "$RELEASE_TAG")
           git merge-base --is-ancestor "$tag_commit" origin/main
           git checkout --detach "$tag_commit"
-          bundle_asset=$(python3 -c 'import sys; sys.path.insert(0, "tools"); import verify_business_system_prompt_bundle as v; print(v.ASSET_NAME)')
-          bundle_checksum_asset=$(python3 -c 'import sys; sys.path.insert(0, "tools"); import verify_business_system_prompt_bundle as v; print(v.CHECKSUM_NAME)')
-          [[ "$bundle_asset" =~ ^moxinggang-reverse-skill-[0-9a-f]{64}\.zip$ ]]
-          [[ "$bundle_checksum_asset" == "${bundle_asset}.sha256" ]]
-          bundle_download_dir="$RUNNER_TEMP/sub2api-bundle-${RELEASE_TAG}"
-          install -d -m 700 "$bundle_download_dir"
+          registry_manifest_sha=$(python3 -c 'import sys; sys.path.insert(0, "tools"); import verify_remote_skill_registry as v; print(v.MANIFEST_SHA256)')
+          registry_archive=$(python3 -c 'import sys; sys.path.insert(0, "tools"); import verify_remote_skill_registry as v; print(v.ARCHIVE_NAME)')
+          registry_checksum=$(python3 -c 'import sys; sys.path.insert(0, "tools"); import verify_remote_skill_registry as v; print(v.CHECKSUM_NAME)')
+          powershell_bootstrap_sha=$(python3 -c 'import sys; sys.path.insert(0, "tools"); import verify_remote_skill_registry as v; print(v.BOOTSTRAPS["bootstrap-reverse-skill.ps1"])')
+          python_bootstrap_sha=$(python3 -c 'import sys; sys.path.insert(0, "tools"); import verify_remote_skill_registry as v; print(v.BOOTSTRAPS["bootstrap-reverse-skill.py"])')
+          [[ "$registry_manifest_sha" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$registry_archive" == "codexrip-reverse-skill-${registry_manifest_sha}.zip" ]]
+          [[ "$registry_checksum" == "${registry_archive}.sha256" ]]
+          registry_download_dir="$RUNNER_TEMP/sub2api-skill-registry-${RELEASE_TAG}"
+          bootstrap_root="$registry_download_dir/bootstrap"
+          install -d -m 700 "$registry_download_dir" \
+            "$bootstrap_root/$powershell_bootstrap_sha" \
+            "$bootstrap_root/$python_bootstrap_sha"
           gh release download "$RELEASE_TAG" \
-            --dir "$bundle_download_dir" \
-            --pattern "$bundle_asset" \
-            --pattern "$bundle_checksum_asset"
-          python3 tools/verify_business_system_prompt_bundle.py \
-            --zip "$bundle_download_dir/$bundle_asset" \
-            --manifest deploy/skill-bundles/moxinggang-reverse-skill/bundle-manifest.json \
-            --checksum "$bundle_download_dir/$bundle_checksum_asset"
+            --dir "$registry_download_dir" \
+            --pattern seed-descriptor.json \
+            --pattern bundle-manifest.json \
+            --pattern "$registry_archive" \
+            --pattern "$registry_checksum" \
+            --pattern bootstrap-reverse-skill.ps1 \
+            --pattern bootstrap-reverse-skill.py
+          cmp "$registry_download_dir/seed-descriptor.json" deploy/skill-registry/seed/seed-descriptor.json
+          cmp "$registry_download_dir/bundle-manifest.json" deploy/skill-registry/seed/bundle-manifest.json
+          cmp "$registry_download_dir/$registry_archive" "deploy/skill-registry/seed/$registry_archive"
+          cmp "$registry_download_dir/$registry_checksum" "deploy/skill-registry/seed/$registry_checksum"
+          cmp "$registry_download_dir/bootstrap-reverse-skill.ps1" \
+            "deploy/skill-registry/bootstrap/$powershell_bootstrap_sha/bootstrap-reverse-skill.ps1"
+          cmp "$registry_download_dir/bootstrap-reverse-skill.py" \
+            "deploy/skill-registry/bootstrap/$python_bootstrap_sha/bootstrap-reverse-skill.py"
+          cp "$registry_download_dir/bootstrap-reverse-skill.ps1" \
+            "$bootstrap_root/$powershell_bootstrap_sha/bootstrap-reverse-skill.ps1"
+          cp "$registry_download_dir/bootstrap-reverse-skill.py" \
+            "$bootstrap_root/$python_bootstrap_sha/bootstrap-reverse-skill.py"
+          python3 tools/verify_remote_skill_registry.py \
+            --zip "$registry_download_dir/$registry_archive" \
+            --manifest "$registry_download_dir/bundle-manifest.json" \
+            --checksum "$registry_download_dir/$registry_checksum" \
+            --descriptor "$registry_download_dir/seed-descriptor.json" \
+            --bootstrap-root "$bootstrap_root"
           version="${RELEASE_TAG#v}"
           image="ghcr.io/htexplicit/sub2api:${version}"
           digest=$(docker buildx imagetools inspect "$image" | awk '$1 == "Digest:" {print $2; exit}')

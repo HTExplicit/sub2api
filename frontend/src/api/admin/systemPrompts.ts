@@ -1,6 +1,6 @@
 import { apiClient } from '../client'
 
-export type SystemPromptCompositionMode = 'inline' | 'offline_bundle'
+export type SystemPromptCompositionMode = 'inline' | 'offline_bundle' | 'remote_skill'
 
 export interface SystemPromptRuntime {
   enabled: boolean
@@ -88,6 +88,55 @@ export interface SystemPromptBundleDetail extends SystemPromptBundleSummary {
   routes: SystemPromptBundleRoute[]
 }
 
+export interface RemoteSkillBundleVersion {
+  id: number
+  bundle_id: string
+  source_commit: string
+  overlay_sha256: string
+  manifest_sha256: string
+  archive_sha256: string
+  file_count: number
+  total_bytes: number
+  added_files: number
+  modified_files: number
+  deleted_files: number
+  script_changes: number
+  binary_changes: number
+  created_by?: number
+  published_at?: string
+  published_by?: number
+  created_at: string
+}
+
+export interface RemoteSkillBundleVersionDetail extends RemoteSkillBundleVersion {
+  verified: boolean
+}
+
+export interface RemoteSkillRegistrySnapshot {
+  revision: number
+  active?: RemoteSkillBundleVersion
+  degraded: boolean
+  degraded_reason?: string
+  updated_at: string
+}
+
+export interface RemoteSkillRegistryResponse {
+  runtime: RemoteSkillRegistrySnapshot
+  versions: RemoteSkillBundleVersion[]
+}
+
+export interface RemoteSkillSyncJob {
+  id: number
+  status: 'queued' | 'running' | 'succeeded' | 'failed'
+  progress_stage: string
+  source_commit?: string
+  candidate_bundle_version_id?: number
+  error_code?: string
+  created_at: string
+  started_at?: string
+  completed_at?: string
+}
+
 export interface SystemPromptListResponse {
   templates: SystemPromptTemplate[]
   runtime: SystemPromptRuntime
@@ -155,6 +204,41 @@ export async function listBundles(): Promise<SystemPromptBundleSummary[]> {
 export async function getBundle(bundleId: string): Promise<SystemPromptBundleDetail> {
   const { data } = await apiClient.get<SystemPromptBundleDetail>(
     `/admin/system-prompts/bundles/${encodeURIComponent(bundleId)}`
+  )
+  return data
+}
+
+export async function getSkillRegistry(): Promise<RemoteSkillRegistryResponse> {
+  const { data } = await apiClient.get<RemoteSkillRegistryResponse>('/admin/system-prompts/skill-registry')
+  return data
+}
+
+export async function getSkillVersion(id: number): Promise<RemoteSkillBundleVersionDetail> {
+  const { data } = await apiClient.get<RemoteSkillBundleVersionDetail>(`/admin/system-prompts/skill-registry/versions/${id}`)
+  return data
+}
+
+export async function startSkillSync(expectedRevision: number): Promise<RemoteSkillSyncJob> {
+  const { data } = await apiClient.post<RemoteSkillSyncJob>('/admin/system-prompts/skill-registry/syncs', {
+    expected_revision: expectedRevision
+  })
+  return data
+}
+
+export async function getSkillSync(id: number): Promise<RemoteSkillSyncJob> {
+  const { data } = await apiClient.get<RemoteSkillSyncJob>(`/admin/system-prompts/skill-registry/syncs/${id}`)
+  return data
+}
+
+export async function publishSkillVersion(
+  id: number,
+  expectedRevision: number,
+  rollback = false
+): Promise<RemoteSkillRegistrySnapshot> {
+  const action = rollback ? 'rollback' : 'publish'
+  const { data } = await apiClient.post<RemoteSkillRegistrySnapshot>(
+    `/admin/system-prompts/skill-registry/versions/${id}/${action}`,
+    { expected_revision: expectedRevision }
   )
   return data
 }
@@ -262,6 +346,11 @@ export const systemPromptsAPI = {
   listVersions,
   listBundles,
   getBundle,
+  getSkillRegistry,
+  getSkillVersion,
+  startSkillSync,
+  getSkillSync,
+  publishSkillVersion,
   create,
   updateMetadata,
   saveDraft,

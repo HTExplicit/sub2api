@@ -50,6 +50,27 @@ func ProvideBusinessSystemPromptService(
 	return svc, nil
 }
 
+func ProvideRemoteSkillRegistryFiles() RemoteSkillRegistryFiles {
+	return NewRemoteSkillRegistryFilesystem("")
+}
+
+func ProvideRemoteSkillCandidateSource() RemoteSkillCandidateSource {
+	return NewGitHubRemoteSkillCandidateSource(nil)
+}
+
+func ProvideRemoteSkillRegistryService(
+	store RemoteSkillRegistryStore,
+	bus RemoteSkillRegistryRevisionBus,
+	files RemoteSkillRegistryFiles,
+	source RemoteSkillCandidateSource,
+) (*RemoteSkillRegistryService, error) {
+	svc := NewRemoteSkillRegistryService(store, bus, files, source)
+	if err := svc.Start(context.Background()); err != nil {
+		return nil, err
+	}
+	return svc, nil
+}
+
 // ProvideOpenAIGatewayService keeps the existing constructor signature used by
 // tests while wiring the optional global business prompt policy into the
 // production gateway instance.
@@ -805,6 +826,9 @@ var ProviderSet = wire.NewSet(
 	NewAdminService,
 	NewGatewayService,
 	ProvideBusinessSystemPromptService,
+	ProvideRemoteSkillRegistryFiles,
+	ProvideRemoteSkillCandidateSource,
+	ProvideRemoteSkillRegistryService,
 	ProvideOpenAIGatewayService,
 	ProvideImageStorageSettingService,
 	ProvideImageTaskService,

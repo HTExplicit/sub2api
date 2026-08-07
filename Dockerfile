@@ -145,9 +145,12 @@ WORKDIR /app
 # Copy binary/resources with ownership to avoid extra full-layer chown copy
 COPY --from=backend-builder --chown=sub2api:sub2api /app/sub2api /app/sub2api
 COPY --from=backend-builder --chown=sub2api:sub2api /app/backend/resources /app/resources
+COPY --chown=sub2api:sub2api deploy/skill-registry /app/skill-registry-release
 
-# Create data directory
-RUN mkdir -p /app/data && chown sub2api:sub2api /app/data
+# Create writable runtime directories. The release registry above remains an
+# image-owned source used to seed /app/skill-registry at startup.
+RUN mkdir -p /app/data /app/skill-registry && \
+    chown sub2api:sub2api /app/data /app/skill-registry
 
 # Copy entrypoint script (fixes volume permissions then drops to sub2api)
 COPY deploy/docker-entrypoint.sh /app/docker-entrypoint.sh

@@ -6,42 +6,17 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
 
-type fakeBusinessSystemPromptRouteBus struct {
-	metadata map[string]BusinessSystemPromptBundleMetadata
-}
-
-func (b *fakeBusinessSystemPromptRouteBus) Publish(context.Context, int64) error         { return nil }
-func (b *fakeBusinessSystemPromptRouteBus) Subscribe(context.Context, func(int64)) error { return nil }
-func (b *fakeBusinessSystemPromptRouteBus) StoreBusinessSystemPromptRouteMetadata(_ context.Context, responseID string, metadata BusinessSystemPromptBundleMetadata, _ time.Duration) error {
-	if b.metadata == nil {
-		b.metadata = make(map[string]BusinessSystemPromptBundleMetadata)
-	}
-	b.metadata[responseID] = metadata
-	return nil
-}
-func (b *fakeBusinessSystemPromptRouteBus) LoadBusinessSystemPromptRouteMetadata(_ context.Context, responseID string) (BusinessSystemPromptBundleMetadata, bool, error) {
-	metadata, ok := b.metadata[responseID]
-	return metadata, ok, nil
-}
-
-func TestBusinessSystemPromptOfflineBundleCompilesOnceAcrossAdapters(t *testing.T) {
-	root := t.TempDir()
-	writeBundleFixture(t, root)
-	bundle, err := LoadBusinessSystemPromptBundle(root)
-	require.NoError(t, err)
-	t.Setenv(BusinessSystemPromptBundlePathEnv, root)
-
+func TestBusinessSystemPromptRemoteSkillUsesFixedBodyAcrossAdapters(t *testing.T) {
 	store := &fakeBusinessSystemPromptStore{loaded: BusinessSystemPromptSnapshot{
 		Revision: 11, Enabled: true, Body: embeddedBusinessSystemPrompt,
-		CompositionMode: BusinessSystemPromptCompositionOfflineBundle,
-		BundleID:        bundle.Manifest.BundleID, BundleManifestSHA256: bundle.ManifestSHA256,
+		CompositionMode: BusinessSystemPromptCompositionRemoteSkill,
+		BundleID:        BusinessSystemPromptRemoteSkillBundleID,
 	}}
 	policy := NewBusinessSystemPromptService(store, nil)
 	require.NoError(t, policy.Initialize(context.Background()))
@@ -59,18 +34,19 @@ func TestBusinessSystemPromptOfflineBundleCompilesOnceAcrossAdapters(t *testing.
 	)
 	require.NoError(t, err)
 	require.True(t, application.Applied)
-	require.Equal(t, bundle.Manifest.BundleID, application.BundleID)
-	require.Equal(t, bundle.ManifestSHA256, application.BundleManifestSHA256)
-	require.Equal(t, []string{"api-security"}, application.RouteIDs)
+	require.Equal(t, BusinessSystemPromptRemoteSkillBundleID, application.BundleID)
+	require.Empty(t, application.BundleManifestSHA256)
+	require.Empty(t, application.RouteIDs)
 	require.NotEmpty(t, application.BaseSHA256)
 	require.NotEmpty(t, application.EffectiveSHA256)
-	require.NotEqual(t, application.BaseSHA256, application.EffectiveSHA256)
+	require.Equal(t, application.BaseSHA256, application.EffectiveSHA256)
+	require.Equal(t, embeddedBusinessSystemPrompt, application.ServerInstructions)
 	require.NotContains(t, application.ServerInstructions, "moxinggang.com")
 	require.NotContains(t, application.ServerInstructions, `C:\Users\Administrator`)
 	require.Equal(t, application.ServerInstructions, gjson.GetBytes(responsesBody, "instructions").String())
 
 	// A transformed fallback body can contain different task words, but the
-	// request-scoped compilation decision must remain byte-for-byte identical.
+	// request-scoped fixed prompt must remain byte-for-byte identical.
 	chatBody, fallbackApplication, err := gateway.applyBusinessSystemPromptForRequest(
 		c,
 		[]byte(`{"model":"gpt-5","messages":[{"role":"user","content":"malware reverse engineering"}]}`),
@@ -80,11 +56,10 @@ func TestBusinessSystemPromptOfflineBundleCompilesOnceAcrossAdapters(t *testing.
 	)
 	require.NoError(t, err)
 	require.Equal(t, application.EffectiveSHA256, fallbackApplication.EffectiveSHA256)
-	require.Equal(t, application.RouteIDs, fallbackApplication.RouteIDs)
+	require.Equal(t, embeddedBusinessSystemPrompt, fallbackApplication.ServerInstructions)
 	require.True(t, chatBodyHasSystemPrompt(chatBody, application.ServerInstructions))
 
 	cacheKey := appendBusinessSystemPromptApplicationToCacheKey("client-key", application)
-	require.Contains(t, cacheKey, application.BundleManifestSHA256)
 	require.Contains(t, cacheKey, application.EffectiveSHA256)
 	require.Equal(t, cacheKey, appendBusinessSystemPromptApplicationToCacheKey(cacheKey, application))
 }
@@ -160,18 +135,12 @@ func TestBusinessSystemPromptRequestTextExtractionUsesLatestUserContent(t *testi
 	}
 }
 
-func TestBusinessSystemPromptWSTurnsCompileOnceAndContinuationInheritsRoute(t *testing.T) {
-	root := t.TempDir()
-	writeBundleFixture(t, root)
-	bundle, err := LoadBusinessSystemPromptBundle(root)
-	require.NoError(t, err)
-	t.Setenv(BusinessSystemPromptBundlePathEnv, root)
-	bus := &fakeBusinessSystemPromptRouteBus{}
+func TestBusinessSystemPromptWSTurnsReuseFixedRemoteSkillBody(t *testing.T) {
 	policy := NewBusinessSystemPromptService(&fakeBusinessSystemPromptStore{loaded: BusinessSystemPromptSnapshot{
 		Revision: 8, Enabled: true, Body: embeddedBusinessSystemPrompt,
-		CompositionMode: BusinessSystemPromptCompositionOfflineBundle,
-		BundleID:        bundle.Manifest.BundleID, BundleManifestSHA256: bundle.ManifestSHA256,
-	}}, bus)
+		CompositionMode: BusinessSystemPromptCompositionRemoteSkill,
+		BundleID:        BusinessSystemPromptRemoteSkillBundleID,
+	}}, nil)
 	require.NoError(t, policy.Initialize(context.Background()))
 	gateway := &OpenAIGatewayService{businessPromptService: policy}
 
@@ -185,23 +154,22 @@ func TestBusinessSystemPromptWSTurnsCompileOnceAndContinuationInheritsRoute(t *t
 		[]byte(`{"type":"response.create","input":[{"role":"user","content":"audit OAuth API"}]}`),
 		account, BusinessSystemPromptProtocolResponses, false)
 	require.NoError(t, err)
-	require.Equal(t, []string{"api-security"}, first.RouteIDs)
-	gateway.rewriteBusinessSystemPromptJSONForRequest(c,
-		[]byte(`{"type":"response.completed","response":{"id":"resp_route_1"}}`),
-		BusinessSystemPromptProtocolResponses)
-	require.Contains(t, bus.metadata, "resp_route_1")
+	require.Empty(t, first.RouteIDs)
+	require.Equal(t, embeddedBusinessSystemPrompt, first.ServerInstructions)
 
 	beginBusinessSystemPromptRequestTurn(c)
 	_, continued, err := gateway.applyBusinessSystemPromptForRequest(c,
 		[]byte(`{"type":"response.create","previous_response_id":"resp_route_1","input":[]}`),
 		account, BusinessSystemPromptProtocolResponses, false)
 	require.NoError(t, err)
-	require.Equal(t, first.RouteIDs, continued.RouteIDs)
+	require.Equal(t, first.EffectiveSHA256, continued.EffectiveSHA256)
+	require.Equal(t, embeddedBusinessSystemPrompt, continued.ServerInstructions)
 
 	beginBusinessSystemPromptRequestTurn(c)
 	_, next, err := gateway.applyBusinessSystemPromptForRequest(c,
 		[]byte(`{"type":"response.create","previous_response_id":"resp_route_1","input":[{"role":"user","content":"analyze this malware"}]}`),
 		account, BusinessSystemPromptProtocolResponses, false)
 	require.NoError(t, err)
-	require.Equal(t, []string{"malware-analysis"}, next.RouteIDs)
+	require.Equal(t, first.EffectiveSHA256, next.EffectiveSHA256)
+	require.Equal(t, embeddedBusinessSystemPrompt, next.ServerInstructions)
 }

@@ -31,7 +31,7 @@ var (
 	ErrBusinessSystemPromptUnavailable = errors.New("business system prompt unavailable")
 )
 
-//go:embed prompts/moxinggang_reverse_skill_system_prompt.txt
+//go:embed prompts/codexrip_reverse_skill_system_prompt.txt
 var embeddedBusinessSystemPrompt string
 
 type BusinessSystemPromptSnapshot struct {

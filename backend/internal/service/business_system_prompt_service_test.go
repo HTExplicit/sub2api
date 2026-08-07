@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -17,6 +18,7 @@ type fakeBusinessSystemPromptStore struct {
 	publishErr       error
 	createdVersion   BusinessSystemPromptVersion
 	createVersionErr error
+	detail           BusinessSystemPromptTemplateDetail
 	bus              *fakeBusinessSystemPromptBus
 }
 
@@ -38,7 +40,7 @@ func (f *fakeBusinessSystemPromptStore) ListBusinessSystemPromptTemplates(contex
 }
 
 func (f *fakeBusinessSystemPromptStore) GetBusinessSystemPromptTemplate(context.Context, int64) (BusinessSystemPromptTemplateDetail, error) {
-	return BusinessSystemPromptTemplateDetail{}, nil
+	return f.detail, nil
 }
 
 func (f *fakeBusinessSystemPromptStore) CreateBusinessSystemPromptTemplate(context.Context, BusinessSystemPromptTemplateCreate, int64, int64) (BusinessSystemPromptTemplateDetail, error) {
@@ -88,12 +90,47 @@ func TestBusinessSystemPromptServiceInitializeSeedsAndLoadsSnapshot(t *testing.T
 	svc := NewBusinessSystemPromptService(store, nil)
 	require.NoError(t, svc.Initialize(context.Background()))
 	require.True(t, store.seedCalled)
-	require.Equal(t, "moxinggang_reverse_skill", store.seed.Slug)
+	require.Equal(t, "codexrip_reverse_skill", store.seed.Slug)
 	require.Equal(t, embeddedBusinessSystemPrompt, store.seed.Body)
+	require.Equal(t, BusinessSystemPromptCompositionRemoteSkill, store.seed.CompositionMode)
+	require.Equal(t, BusinessSystemPromptRemoteSkillBundleID, store.seed.BundleID)
+	require.Empty(t, store.seed.BundleManifestSHA256)
 	got, ok := svc.CurrentSnapshot()
 	require.True(t, ok)
 	require.Equal(t, int64(1), got.Revision)
 	require.Equal(t, embeddedBusinessSystemPrompt, got.Body)
+}
+
+func TestBusinessSystemPromptServiceRejectsPublishingLegacyOfflineBundle(t *testing.T) {
+	store := &fakeBusinessSystemPromptStore{
+		loaded: BusinessSystemPromptSnapshot{Revision: 1, Body: "seed"},
+		detail: BusinessSystemPromptTemplateDetail{Versions: []BusinessSystemPromptVersion{{
+			ID: 4, CompositionMode: BusinessSystemPromptCompositionOfflineBundle,
+			BundleID: "moxinggang-reverse-skill", BundleManifestSHA256: strings.Repeat("a", 64),
+		}}},
+	}
+	svc := NewBusinessSystemPromptService(store, nil)
+	require.NoError(t, svc.Initialize(context.Background()))
+	_, err := svc.PublishVersion(context.Background(), 3, 4, 1, 9)
+	require.ErrorIs(t, err, ErrBusinessSystemPromptLegacyComposition)
+}
+
+func TestBusinessSystemPromptServiceRejectsCreatingOrDuplicatingLegacyOfflineBundle(t *testing.T) {
+	store := &fakeBusinessSystemPromptStore{detail: BusinessSystemPromptTemplateDetail{Versions: []BusinessSystemPromptVersion{{
+		ID: 4, Body: "legacy", CompositionMode: BusinessSystemPromptCompositionOfflineBundle,
+		BundleID: BusinessSystemPromptSeedBundleID, BundleManifestSHA256: BusinessSystemPromptSeedBundleManifestSHA256,
+	}}}}
+	svc := NewBusinessSystemPromptService(store, nil)
+
+	_, err := svc.CreateTemplate(context.Background(), BusinessSystemPromptTemplateCreate{
+		Slug: "legacy-copy", Name: "Legacy copy", Body: "legacy",
+		CompositionMode: BusinessSystemPromptCompositionOfflineBundle,
+		BundleID:        BusinessSystemPromptSeedBundleID, BundleManifestSHA256: BusinessSystemPromptSeedBundleManifestSHA256,
+	}, 9, 1)
+	require.ErrorIs(t, err, ErrBusinessSystemPromptLegacyComposition)
+
+	_, err = svc.DuplicateTemplate(context.Background(), 3, "legacy-copy", "Legacy copy", 9, 1)
+	require.ErrorIs(t, err, ErrBusinessSystemPromptLegacyComposition)
 }
 
 func TestBusinessSystemPromptServicePublishInstallsSnapshotAndBroadcastsRevision(t *testing.T) {

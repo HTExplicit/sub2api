@@ -28,6 +28,14 @@ describe('System Prompts API', () => {
     client.get.mockResolvedValue({ data: { bundle_id: 'moxinggang-reverse-skill' } })
     await systemPromptsAPI.getBundle('moxinggang-reverse-skill')
     expect(client.get).toHaveBeenCalledWith('/admin/system-prompts/bundles/moxinggang-reverse-skill')
+
+    client.get.mockResolvedValue({ data: { runtime: {}, versions: [] } })
+    await systemPromptsAPI.getSkillRegistry()
+    expect(client.get).toHaveBeenCalledWith('/admin/system-prompts/skill-registry')
+
+    client.get.mockResolvedValue({ data: { id: 4, verified: true } })
+    await systemPromptsAPI.getSkillVersion(4)
+    expect(client.get).toHaveBeenCalledWith('/admin/system-prompts/skill-registry/versions/4')
   })
 
   it('passes expected revision on every catalog mutation', async () => {
@@ -43,12 +51,12 @@ describe('System Prompts API', () => {
 
     await systemPromptsAPI.saveDraft(12, {
       body: 'draft', note: '', expected_latest_version: 3, expected_revision: 7,
-      composition_mode: 'offline_bundle', bundle_id: 'moxinggang-reverse-skill',
-      bundle_manifest_sha256: 'b'.repeat(64),
+      composition_mode: 'remote_skill', bundle_id: 'codexrip-reverse-skill',
+      bundle_manifest_sha256: '',
     })
     expect(client.post).toHaveBeenCalledWith('/admin/system-prompts/12/versions', expect.objectContaining({
-      expected_latest_version: 3, expected_revision: 7, composition_mode: 'offline_bundle',
-      bundle_id: 'moxinggang-reverse-skill', bundle_manifest_sha256: 'b'.repeat(64),
+      expected_latest_version: 3, expected_revision: 7, composition_mode: 'remote_skill',
+      bundle_id: 'codexrip-reverse-skill', bundle_manifest_sha256: '',
     }))
 
     await systemPromptsAPI.duplicate(12, { slug: 'custom-copy', name: 'Copy', expected_revision: 7 })
@@ -69,5 +77,19 @@ describe('System Prompts API', () => {
 
     await systemPromptsAPI.updateRuntime({ expected_revision: 9, enabled: true, expose_server_prompt: false, compact_enabled: true })
     expect(client.put).toHaveBeenCalledWith('/admin/system-prompts/runtime', expect.objectContaining({ expected_revision: 9, enabled: true }))
+  })
+
+  it('uses the independent skill registry revision for sync and publication', async () => {
+    client.post.mockResolvedValue({ data: {} })
+    client.get.mockResolvedValue({ data: {} })
+
+    await systemPromptsAPI.startSkillSync(3)
+    expect(client.post).toHaveBeenCalledWith('/admin/system-prompts/skill-registry/syncs', { expected_revision: 3 })
+    await systemPromptsAPI.getSkillSync(8)
+    expect(client.get).toHaveBeenCalledWith('/admin/system-prompts/skill-registry/syncs/8')
+    await systemPromptsAPI.publishSkillVersion(12, 3)
+    expect(client.post).toHaveBeenCalledWith('/admin/system-prompts/skill-registry/versions/12/publish', { expected_revision: 3 })
+    await systemPromptsAPI.publishSkillVersion(9, 4, true)
+    expect(client.post).toHaveBeenCalledWith('/admin/system-prompts/skill-registry/versions/9/rollback', { expected_revision: 4 })
   })
 })

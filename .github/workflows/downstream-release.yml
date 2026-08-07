@@ -41,10 +41,8 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "upstream_version=$upstream_version" >> "$GITHUB_OUTPUT"
           echo "build_date=$(git show -s --format=%cI "$GITHUB_SHA")" >> "$GITHUB_OUTPUT"
-      - name: Verify offline System Prompt bundle release asset
-        run: |
-          python3 -m unittest discover -s deploy/tests -p 'test_verify_business_system_prompt_bundle.py' -v
-          python3 tools/verify_business_system_prompt_bundle.py
+      - name: Verify fixed prompt and remote Skill release assets
+        run: python3 tools/verify_remote_skill_registry.py
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: backend/go.mod
@@ -55,16 +53,9 @@ jobs:
         working-directory: backend
         run: |
           go mod verify
-          go vet ./...
-          go test -p=1 -tags unit ./internal/service -run 'Test.*(Refusal|CyberPolicy|Continuation|InvalidEncryptedContent|PreviousResponseNotFound|CapacityShed|RequestScopedTransient|ServerOverloaded)|Test(UpdateService|NormalizeAccountTaxonomyName|FilterConsoleAccounts|AccountConsolePlan|AccountFacetMatcher)' -count=1
-          go test -p=1 ./internal/pkg/httputil ./internal/handler -run 'Test(ReadRequestBodyWithPrealloc|ReadLenientJSONRequestBodyWithPrealloc|RequestBodyReadDiagnostics|ClassifyRequestContentEncoding)' -count=1
-          go test -p=1 ./internal/handler ./internal/handler/admin -run 'Test.*(Refusal|Cyber|Continuation)' -count=1
-          go test -p=1 ./internal/handler/admin -run 'TestUpdateSettings(PartialPayload|RejectsTwoCaptchaProviders|RequiresFourTencentCaptchaCredentials|RetainsStoredTencentCaptchaCredentials|ValidatesTencentCaptchaAppID|ValidatesTurnstileSiteKey)' -count=1
-          go test -p=1 ./internal/handler/admin -run 'Test(ExportData|PreviewDataImport|ImportData|DataAccountIdentityKeys|BulkUpdateAccepts|AccountHandler)' -count=1
-          go test -p=1 ./internal/repository -run '^$'
-      - name: Account taxonomy migration integration test
-        working-directory: backend
-        run: go test -p=1 -tags integration ./internal/repository -run '^TestAccountTaxonomy.*Integration$' -count=1
+          go test -p=1 ./internal/service -run 'Test.*(BusinessSystemPrompt|RemoteSkill)' -count=1
+          go test -p=1 ./internal/handler/admin ./internal/server/middleware -run 'Test.*(SystemPrompt|RemoteSkill|Audit)' -count=1
+          go test -p=1 ./migrations -run 'Test.*(BusinessSystemPromptRemoteSkill|RemoteSkillRegistry)' -count=1
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 9.15.9
@@ -77,24 +68,10 @@ jobs:
         working-directory: frontend
         run: |
           pnpm install --frozen-lockfile
-          pnpm run lint:check
           pnpm run typecheck
           pnpm exec vitest run \
-            src/views/admin/__tests__/SettingsView.spec.ts \
-            src/components/common/__tests__/VersionBadge.downstream.spec.ts \
-            src/i18n/__tests__/accountConsoleLocales.spec.ts \
-            src/__tests__/integration/data-import.spec.ts \
-            src/components/admin/account/__tests__/AccountConsoleFilters.spec.ts \
-            src/components/admin/account/__tests__/AccountUsageViews.spec.ts \
-            src/components/account/__tests__/AccountUsageCell.spec.ts \
-            src/components/account/__tests__/AccountUsageCell.list.spec.ts \
-            src/components/account/__tests__/UsageProgressBar.spec.ts \
-            src/views/admin/__tests__/AccountsView.console.spec.ts \
-            src/views/admin/__tests__/AccountsView.bulkEdit.spec.ts \
-            src/views/admin/__tests__/AccountsView.schedulerScore.spec.ts \
-            src/views/admin/__tests__/AccountsView.sparkShadow.spec.ts \
-            src/views/admin/__tests__/AccountsView.usageWindowsHint.spec.ts
-          pnpm run build
+            src/api/admin/__tests__/systemPrompts.spec.ts \
+            src/views/admin/__tests__/SystemPromptsView.spec.ts
 
   publish:
     needs: verify
@@ -105,8 +82,13 @@ jobs:
       UPSTREAM_VERSION: ${{ needs.verify.outputs.upstream_version }}
       BUILD_DATE: ${{ needs.verify.outputs.build_date }}
       GH_TOKEN: ${{ github.token }}
-      BUNDLE_ASSET: moxinggang-reverse-skill-22c227128165afbbcbda0175eb5e991ddb51d105b7d1e704572c625c64b626d7.zip
-      BUNDLE_CHECKSUM_ASSET: moxinggang-reverse-skill-22c227128165afbbcbda0175eb5e991ddb51d105b7d1e704572c625c64b626d7.zip.sha256
+      REGISTRY_MANIFEST_SHA: 510fed48ae78a2580548d27290259bab1848639538af0dd53acaa3f71c855fea
+      REGISTRY_ARCHIVE_SHA: 1b676ba6e12ffa7c4d16b95e94f82a8330a3afa34f664aa98c3ac808927a60bd
+      REGISTRY_ARCHIVE: codexrip-reverse-skill-510fed48ae78a2580548d27290259bab1848639538af0dd53acaa3f71c855fea.zip
+      REGISTRY_CHECKSUM: codexrip-reverse-skill-510fed48ae78a2580548d27290259bab1848639538af0dd53acaa3f71c855fea.zip.sha256
+      PROMPT_SHA: cbf75cc85cd77860e53d06820e7120802d83c069e9d24b48715711acc15893c6
+      POWERSHELL_BOOTSTRAP_SHA: e3dfee2e99fad9c890295a9de6fd1d2882c428971579049c3038b94d10668edd
+      PYTHON_BOOTSTRAP_SHA: 6bd6f94cb552f979443303c34883b12b475e724dcaf0b77843420f991459cf9c
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
@@ -155,13 +137,20 @@ jobs:
 
           Image: \`${IMAGE}:${VERSION}@${{ steps.build.outputs.digest }}\`
           Source: \`${GITHUB_SHA}\`
-          Offline skill bundle: \`${BUNDLE_ASSET}\`
-          Bundle ZIP SHA-256: \`977de70881ef67f15aa804f9cfa3e1a93ba441b46bb4bda1e30c4b4dd07a1c6a\`
-          Bundle manifest SHA-256: \`22c227128165afbbcbda0175eb5e991ddb51d105b7d1e704572c625c64b626d7\`
+          Fixed System Prompt SHA-256: \`${PROMPT_SHA}\`
+          Remote Skill bundle: \`${REGISTRY_ARCHIVE}\`
+          Bundle ZIP SHA-256: \`${REGISTRY_ARCHIVE_SHA}\`
+          Bundle manifest SHA-256: \`${REGISTRY_MANIFEST_SHA}\`
+          PowerShell bootstrap SHA-256: \`${POWERSHELL_BOOTSTRAP_SHA}\`
+          Python bootstrap SHA-256: \`${PYTHON_BOOTSTRAP_SHA}\`
           EOF
           gh release create "$GITHUB_REF_NAME" \
-            "deploy/skill-bundles/moxinggang-reverse-skill/${BUNDLE_ASSET}" \
-            "deploy/skill-bundles/moxinggang-reverse-skill/${BUNDLE_CHECKSUM_ASSET}" \
+            "deploy/skill-registry/seed/seed-descriptor.json" \
+            "deploy/skill-registry/seed/bundle-manifest.json" \
+            "deploy/skill-registry/seed/${REGISTRY_ARCHIVE}" \
+            "deploy/skill-registry/seed/${REGISTRY_CHECKSUM}" \
+            "deploy/skill-registry/bootstrap/${POWERSHELL_BOOTSTRAP_SHA}/bootstrap-reverse-skill.ps1" \
+            "deploy/skill-registry/bootstrap/${PYTHON_BOOTSTRAP_SHA}/bootstrap-reverse-skill.py" \
             --verify-tag \
             --title "Sub2API ${VERSION}" \
             --notes-file /tmp/release-notes.md

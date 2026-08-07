@@ -17,11 +17,12 @@ import (
 // SystemPromptHandler exposes the independent business System Prompt catalog
 // and singleton runtime policy to ordinary authenticated administrators.
 type SystemPromptHandler struct {
-	service *service.BusinessSystemPromptService
+	service       *service.BusinessSystemPromptService
+	skillRegistry *service.RemoteSkillRegistryService
 }
 
-func NewSystemPromptHandler(promptService *service.BusinessSystemPromptService) *SystemPromptHandler {
-	return &SystemPromptHandler{service: promptService}
+func NewSystemPromptHandler(promptService *service.BusinessSystemPromptService, skillRegistry *service.RemoteSkillRegistryService) *SystemPromptHandler {
+	return &SystemPromptHandler{service: promptService, skillRegistry: skillRegistry}
 }
 
 type systemPromptRuntimeResponse struct {
@@ -142,13 +143,142 @@ func writeBusinessSystemPromptError(c *gin.Context, err error) {
 		response.ErrorWithDetails(c, http.StatusServiceUnavailable, "system_prompt_unavailable", "system_prompt_unavailable", nil)
 	case errors.Is(err, service.ErrBusinessSystemPromptTemplateNotFound), errors.Is(err, service.ErrBusinessSystemPromptVersionNotFound):
 		response.NotFound(c, "System prompt template or version not found")
+	case errors.Is(err, service.ErrRemoteSkillVersionNotFound), errors.Is(err, service.ErrRemoteSkillSyncNotFound):
+		response.NotFound(c, "Remote skill version or sync job not found")
 	case errors.Is(err, service.ErrBusinessSystemPromptSeedProtected), errors.Is(err, service.ErrBusinessSystemPromptActive):
 		response.ErrorWithDetails(c, http.StatusConflict, err.Error(), "system_prompt_delete_protected", nil)
+	case errors.Is(err, service.ErrBusinessSystemPromptLegacyComposition):
+		response.ErrorWithDetails(c, http.StatusConflict, err.Error(), "system_prompt_legacy_composition", nil)
 	case errors.Is(err, service.ErrBusinessSystemPromptInvalid):
 		response.BadRequest(c, err.Error())
 	default:
 		response.ErrorFrom(c, err)
 	}
+}
+
+func (h *SystemPromptHandler) SkillRegistry(c *gin.Context) {
+	if h.skillRegistry == nil {
+		writeBusinessSystemPromptError(c, service.ErrBusinessSystemPromptUnavailable)
+		return
+	}
+	versions, err := h.skillRegistry.ListVersions(c.Request.Context())
+	if err != nil {
+		writeBusinessSystemPromptError(c, err)
+		return
+	}
+	response.Success(c, gin.H{"runtime": h.skillRegistry.CurrentSnapshot(), "versions": versions})
+}
+
+func (h *SystemPromptHandler) SkillVersions(c *gin.Context) {
+	if h.skillRegistry == nil {
+		writeBusinessSystemPromptError(c, service.ErrBusinessSystemPromptUnavailable)
+		return
+	}
+	versions, err := h.skillRegistry.ListVersions(c.Request.Context())
+	if err != nil {
+		writeBusinessSystemPromptError(c, err)
+		return
+	}
+	response.Success(c, versions)
+}
+
+func (h *SystemPromptHandler) SkillVersion(c *gin.Context) {
+	id, ok := parsePositiveID(c, "bundle_version_id")
+	if !ok {
+		return
+	}
+	version, err := h.skillRegistry.InspectVersion(c.Request.Context(), id)
+	if err != nil {
+		writeBusinessSystemPromptError(c, err)
+		return
+	}
+	response.Success(c, version)
+}
+
+func (h *SystemPromptHandler) StartSkillSync(c *gin.Context) {
+	actorID, ok := h.actorID(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		ExpectedRevision int64 `json:"expected_revision" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	job, err := h.skillRegistry.StartSync(c.Request.Context(), actorID, req.ExpectedRevision)
+	if err != nil {
+		writeBusinessSystemPromptError(c, err)
+		return
+	}
+	middleware.SetAuditExtra(c, map[string]any{
+		"revision": req.ExpectedRevision, "status": job.Status, "result": "sync_queued",
+	})
+	response.Accepted(c, job)
+}
+
+func (h *SystemPromptHandler) SkillSync(c *gin.Context) {
+	id, ok := parsePositiveID(c, "sync_id")
+	if !ok {
+		return
+	}
+	job, err := h.skillRegistry.GetSyncJob(c.Request.Context(), id)
+	if err != nil {
+		writeBusinessSystemPromptError(c, err)
+		return
+	}
+	response.Success(c, job)
+}
+
+func (h *SystemPromptHandler) PublishSkillVersion(c *gin.Context) {
+	h.publishSkillVersion(c, "published")
+}
+
+func (h *SystemPromptHandler) RollbackSkillVersion(c *gin.Context) {
+	h.publishSkillVersion(c, "rolled_back")
+}
+
+func (h *SystemPromptHandler) publishSkillVersion(c *gin.Context, result string) {
+	actorID, ok := h.actorID(c)
+	if !ok {
+		return
+	}
+	versionID, ok := parsePositiveID(c, "bundle_version_id")
+	if !ok {
+		return
+	}
+	var req struct {
+		ExpectedRevision int64 `json:"expected_revision" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	old := h.skillRegistry.CurrentSnapshot()
+	snapshot, err := h.skillRegistry.PublishVersion(c.Request.Context(), versionID, req.ExpectedRevision, actorID)
+	if err != nil {
+		writeBusinessSystemPromptError(c, err)
+		return
+	}
+	extra := map[string]any{
+		"bundle_version_id": versionID, "revision": snapshot.Revision,
+		"status": "active", "result": result, "degraded": snapshot.Degraded,
+	}
+	if old.Active != nil {
+		extra["old_manifest_sha256"] = old.Active.ManifestSHA256
+	}
+	if snapshot.Active != nil {
+		extra["source_commit"] = snapshot.Active.SourceCommit
+		extra["new_manifest_sha256"] = snapshot.Active.ManifestSHA256
+		extra["archive_sha256"] = snapshot.Active.ArchiveSHA256
+		extra["file_count"] = snapshot.Active.FileCount
+		extra["total_bytes"] = snapshot.Active.TotalBytes
+		extra["script_changes"] = snapshot.Active.ScriptChanges
+		extra["binary_changes"] = snapshot.Active.BinaryChanges
+	}
+	middleware.SetAuditExtra(c, extra)
+	response.Success(c, snapshot)
 }
 
 func parsePositiveID(c *gin.Context, name string) (int64, bool) {

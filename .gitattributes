@@ -6,11 +6,19 @@ backend/migrations/*.sql text eol=lf
 
 # Embedded system prompt seed must retain the exact LF byte sequence used for
 # its published SHA-256 and UTF-8 byte-length invariants.
-backend/internal/service/prompts/moxinggang_reverse_skill_system_prompt.txt text eol=lf
+backend/internal/service/prompts/*.txt text eol=lf
 
 # Integrity manifests are byte-for-byte release artifacts. Git must not rewrite
 # them, while text diffs remain enabled for supply-chain review.
 deploy/skill-bundles/**/bundle-manifest.json -text diff
+
+# Remote Skill registry assets are content-addressed. Keep all textual release
+# bytes stable on Windows/macOS/Linux and never apply text filters to ZIPs.
+deploy/skill-registry/bootstrap/**/*.ps1 text eol=lf
+deploy/skill-registry/bootstrap/**/*.py text eol=lf
+deploy/skill-registry/seed/*.json text eol=lf
+deploy/skill-registry/seed/*.sha256 text eol=lf
+deploy/skill-registry/seed/*.zip binary
 
 # 前端 源代码文件
 *.ts text eol=lf

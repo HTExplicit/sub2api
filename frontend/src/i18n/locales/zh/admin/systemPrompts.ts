@@ -19,6 +19,10 @@ export default {
       compositionMode: '组合模式',
       inline: '仅提示词正文',
       offline: '离线技能包',
+      remote: '远程 Skill',
+      legacyOffline: '历史离线技能包',
+      remoteHint: '网关只注入当前正文；Codex 客户端按固定地址下载并校验 Skill。',
+      legacyReadonly: '历史版本仅可查看，不能保存、发布或回滚到活动状态。',
       bundle: '技能包',
       select: '选择技能包',
       available: '可用',
@@ -26,6 +30,24 @@ export default {
       degraded: '降级',
       documents: '个文档',
       routes: '条路由'
+    },
+    skillRegistry: {
+      title: 'Skill Registry',
+      description: '固定同步上游 main 与白名单 overlay；同步只生成候选，发布后才切换公开 current。',
+      active: '已有活动版本',
+      noActive: '无活动版本',
+      sync: '一键同步上游 Skill',
+      commit: '源提交',
+      files: '个文件',
+      updated: '更新于',
+      candidate: '待发布候选',
+      verified: '校验通过',
+      unverified: '校验失败',
+      scripts: '脚本变化',
+      binaries: '二进制变化',
+      publishCandidate: '发布候选',
+      changeSummary: '文件变化',
+      status: { queued: '排队中', running: '同步中', succeeded: '候选已就绪', failed: '同步失败' }
     },
     templates: {
       title: '模板',
@@ -102,6 +124,10 @@ export default {
       publishMessage: '发布会切换全局活动模板并递增运行时 revision。',
       rollbackTitle: '回滚到这个版本？',
       rollbackMessage: '回滚是显式且原子的，选中的不可变版本会成为活动版本。',
+      skillPublishTitle: '发布这个 Skill 候选？',
+      skillPublishMessage: '发布会递增独立的 Skill revision 并原子切换公开 descriptor。',
+      skillRollbackTitle: '回滚到这个 Skill 版本？',
+      skillRollbackMessage: '回滚只切换 Skill Registry，不修改业务提示词开关或正文。',
       deleteTitle: '删除这个模板？',
       deleteMessage: '模板会被软删除；种子模板和活动模板受保护。'
     },
@@ -113,7 +139,10 @@ export default {
       duplicated: '模板已复制。',
       published: '版本已发布。',
       rolledBack: '版本已回滚。',
-      deleted: '模板已删除。'
+      deleted: '模板已删除。',
+      skillCandidateReady: '上游 Skill 候选已生成并校验。',
+      skillPublished: 'Skill 候选已发布。',
+      skillRolledBack: 'Skill Registry 已回滚。'
     },
     errors: {
       load: '无法加载系统提示词运行状态。',
@@ -133,7 +162,11 @@ export default {
       conflict: '服务端 revision 已变化，请重新加载后再写入。',
       unsavedSelection: '切换选择前请先保存或放弃当前草稿。',
       saveBeforePublish: '请先保存草稿，再发布它。',
-      bundleUnavailable: '所选离线技能包或固定 manifest 不可用。'
+      bundleUnavailable: '所选离线技能包或固定 manifest 不可用。',
+      legacyReadonly: '历史 offline_bundle 版本为只读，不能创建新版本。',
+      skillSync: '无法同步上游 Skill。',
+      skillPublish: '无法发布 Skill 候选。',
+      skillRollback: '无法回滚 Skill Registry。'
     }
   }
 }
