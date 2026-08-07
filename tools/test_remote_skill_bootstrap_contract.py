@@ -156,7 +156,7 @@ def run_implementation(implementation: str) -> None:
             )
         )
         skill = codex_home / "skills" / SKILL_NAME
-        if Path(first["skill_path"]) != skill.resolve() or first.get("replaced") is not False:
+        if Path(first["skill_path"]).resolve() != skill.resolve() or first.get("replaced") is not False:
             raise RuntimeError("first install returned the wrong native Skill state")
         if first.get("manifest_sha256") != manifest_sha:
             raise RuntimeError("first install returned the wrong manifest")
