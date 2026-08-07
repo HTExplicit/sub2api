@@ -59,6 +59,37 @@ func TestClassifyOpenAIWSAcquireError(t *testing.T) {
 	})
 }
 
+func TestOpenAIWSInitialDialFailover(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		wantRetry  bool
+		wantStatus int
+		wantReason GatewayFailureReason
+	}{
+		{name: "auth switches immediately", err: &openAIWSDialError{StatusCode: http.StatusUnauthorized}, wantStatus: http.StatusUnauthorized},
+		{name: "rate limit switches immediately", err: &openAIWSDialError{StatusCode: http.StatusTooManyRequests}, wantStatus: http.StatusTooManyRequests},
+		{name: "server failure retries once", err: &openAIWSDialError{StatusCode: http.StatusBadGateway}, wantRetry: true, wantStatus: http.StatusBadGateway},
+		{name: "network failure retries once", err: &openAIWSDialError{Err: errors.New("no such host")}, wantRetry: true, wantStatus: http.StatusBadGateway, wantReason: OpenAIPersistentTransportFailureReason},
+		{name: "ordinary client rejection stays terminal", err: &openAIWSDialError{StatusCode: http.StatusBadRequest}},
+		{name: "local pool pressure stays local", err: errOpenAIWSConnQueueFull},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			retry, failoverErr := openAIWSInitialDialFailover(tt.err)
+			require.Equal(t, tt.wantRetry, retry)
+			if tt.wantStatus == 0 {
+				require.Nil(t, failoverErr)
+				return
+			}
+			require.NotNil(t, failoverErr)
+			require.Equal(t, tt.wantStatus, failoverErr.StatusCode)
+			require.Equal(t, tt.wantReason, failoverErr.Reason)
+		})
+	}
+}
+
 func TestClassifyOpenAIWSDialError(t *testing.T) {
 	t.Run("handshake_not_finished", func(t *testing.T) {
 		err := &openAIWSDialError{

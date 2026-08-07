@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,35 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
+
+func TestForwardEmbeddings_TransportFailureReturnsReplayableFailoverWithoutWritingResponse(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	reqBody := []byte(`{"model":"text-embedding-3-small","input":"hello"}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/embeddings", bytes.NewReader(reqBody))
+	transportErr := errors.New("connection reset by peer")
+	svc := &OpenAIGatewayService{
+		cfg:          &config.Config{},
+		httpUpstream: &httpUpstreamRecorder{err: transportErr},
+	}
+	account := &Account{
+		ID:          41,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test"},
+	}
+
+	result, err := svc.ForwardEmbeddings(context.Background(), c, account, reqBody, "")
+
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, OpenAITransientTransportFailureReason, failoverErr.Reason)
+	require.False(t, c.Writer.Written())
+	require.Zero(t, rec.Body.Len())
+}
 
 func TestBuildOpenAIEmbeddingsURL(t *testing.T) {
 	t.Parallel()

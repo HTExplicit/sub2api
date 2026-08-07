@@ -109,9 +109,11 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 	sessionHash := h.gatewayService.GenerateSessionHashWithFallback(c, nil, searchID)
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
+	retryState := newOpenAIFailoverRetryState()
 	var lastFailoverErr *service.UpstreamFailoverError
 	switchCount := 0
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
+	var sameAccountRetrySelection *service.AccountSelectionResult
 	routingStart := time.Now()
 
 	// 分组利润控制：alpha search 文本入口请求级装门并固定 pricingAt
@@ -120,20 +122,28 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 	c.Request = c.Request.WithContext(asPricingCtx)
 
 	for {
-		selection, _, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
-			c.Request.Context(),
-			apiKey.GroupID,
-			"",
-			sessionHash,
-			requestedModel,
-			failedAccountIDs,
-			service.OpenAIUpstreamTransportHTTPSSE,
-			service.OpenAIEndpointCapabilityAlphaSearch,
-			false,
-			false,
-			false,
-			service.PlatformOpenAI,
-		)
+		retryingSameAccount := sameAccountRetrySelection != nil
+		var selection *service.AccountSelectionResult
+		var err error
+		if retryingSameAccount {
+			selection, err = h.gatewayService.ReacquireOpenAISameAccountSelection(c.Request.Context(), sameAccountRetrySelection)
+			sameAccountRetrySelection = nil
+		} else {
+			selection, _, err = h.gatewayService.SelectAccountWithSchedulerForCapability(
+				c.Request.Context(),
+				apiKey.GroupID,
+				"",
+				sessionHash,
+				requestedModel,
+				failedAccountIDs,
+				service.OpenAIUpstreamTransportHTTPSSE,
+				service.OpenAIEndpointCapabilityAlphaSearch,
+				false,
+				false,
+				false,
+				service.PlatformOpenAI,
+			)
+		}
 		if err != nil || selection == nil || selection.Account == nil {
 			if failoverClientGone(c) {
 				reqLog.Info("openai_alpha_search.account_select_aborted_client_disconnected", zap.Error(err))
@@ -156,8 +166,15 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 		}
 
 		account := selection.Account
+		defer h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 		setOpsSelectedAccount(c, account.ID, account.Platform)
-		accountRelease, slotResult := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, false, &streamStarted, reqLog)
+		var accountRelease func()
+		var slotResult openAISlotAcquireResult
+		if retryingSameAccount {
+			accountRelease, slotResult = h.acquireResponsesAccountSlotForSameAccountRetry(c, apiKey.GroupID, sessionHash, selection, false, &streamStarted, reqLog)
+		} else {
+			accountRelease, slotResult = h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, false, &streamStarted, reqLog)
+		}
 		if slotResult == openAISlotAcquireProfitVetoed {
 			// 利润终检否决：排除该账号重新选号；否决次数达上限则按无可用账号终止。
 			if !recordOpenAIProfitVeto(failedAccountIDs, account.ID, &profitVetoCount) {
@@ -167,6 +184,14 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 			continue
 		}
 		if slotResult != openAISlotAcquireOK {
+			if retryingSameAccount && lastFailoverErr != nil && h.failoverAfterSameAccountSlotFailure(
+				c, account, account.GetMappedModel(requestedModel), lastFailoverErr, failedAccountIDs,
+				&switchCount, h.maxAccountSwitches, &oauth429FailoverState, streamStarted,
+				"alpha_search", reqLog, true,
+				func() { h.handleFailoverExhausted(c, lastFailoverErr, streamStarted) },
+			) {
+				continue
+			}
 			return
 		}
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
@@ -182,7 +207,7 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 		service.SetOpsLatencyMs(c, service.OpsResponseLatencyMsKey, time.Since(forwardStart).Milliseconds())
 
 		if err == nil {
-			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(requestedModel), true, nil)
+			h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(requestedModel), true, nil)
 			if result != nil {
 				h.recordAlphaSearchUsage(c, apiKey, account, subscription, channelMapping, requestedModel, body, result, subject.UserID)
 			}
@@ -191,7 +216,7 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 
 		var failoverErr *service.UpstreamFailoverError
 		if !errors.As(err, &failoverErr) {
-			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(requestedModel), false, nil)
+			h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(requestedModel), false, nil)
 			if c.Writer.Size() == writerSizeBeforeForward {
 				h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Upstream request failed")
 			}
@@ -199,7 +224,7 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 			return
 		}
 
-		h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(requestedModel), false, nil)
+		h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(requestedModel), false, nil)
 		if c.Writer.Size() != writerSizeBeforeForward {
 			h.handleFailoverExhausted(c, failoverErr, true)
 			return
@@ -211,7 +236,30 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 			)
 			return
 		}
-		h.gatewayService.RecordOpenAIAccountSwitch()
+		if !failoverErr.ShouldRetryNextAccount() {
+			h.handleFailoverExhausted(c, failoverErr, false)
+			return
+		}
+		switch retryState.Handle(
+			c.Request.Context(),
+			h.gatewayService,
+			account,
+			account.GetMappedModel(requestedModel),
+			failoverErr,
+			true,
+			sameAccountRetryDelay,
+			"alpha_search",
+		) {
+		case openAIFailoverRetrySameAccount:
+			sameAccountRetrySelection = selection
+			lastFailoverErr = failoverErr
+			continue
+		case openAIFailoverRetryCanceled:
+			return
+		case openAIFailoverRetryStop:
+			h.handleFailoverExhausted(c, failoverErr, false)
+			return
+		}
 		failedAccountIDs[account.ID] = struct{}{}
 		lastFailoverErr = failoverErr
 		if switchCount >= h.maxAccountSwitches {
@@ -223,6 +271,7 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 			h.handleFailoverExhausted(c, failoverErr, false)
 			return
 		}
+		h.gatewayService.RecordOpenAIAccountSwitch()
 		reqLog.Warn("openai_alpha_search.upstream_failover_switching",
 			zap.Int64("account_id", account.ID),
 			zap.Int("upstream_status", failoverErr.StatusCode),

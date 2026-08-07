@@ -322,6 +322,15 @@ func TestShouldFailoverOpenAIUpstreamResponseContextWindow502(t *testing.T) {
 	require.True(t, svc.shouldFailoverOpenAIUpstreamResponse(http.StatusBadGateway, "temporary upstream outage", []byte(`{"error":{"message":"temporary upstream outage"}}`)))
 }
 
+func TestOpenAIRequestTimeoutTriggersFailover(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{Type: AccountTypeOAuth}
+
+	require.True(t, svc.shouldFailoverUpstreamError(http.StatusRequestTimeout))
+	require.True(t, svc.shouldFailoverOpenAIUpstreamResponse(http.StatusRequestTimeout, "request timeout", nil))
+	require.True(t, shouldFailoverOpenAIPassthroughResponse(account, http.StatusRequestTimeout, nil))
+}
+
 func TestOpenAIContinuationStateErrorsStopAccountFailover(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	tests := []struct {

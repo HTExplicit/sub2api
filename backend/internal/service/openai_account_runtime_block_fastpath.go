@@ -2,10 +2,12 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -16,7 +18,311 @@ const (
 	openAIOAuth429StormWindow             = 10 * time.Second
 	openAIOAuth429StormThreshold          = 20
 	openAIOAuth429StormMaxAccountSwitches = 1
+	openAIRetryExhaustedTransientCooldown = 10 * time.Second
+	openAIRetryExhaustedAuthCooldown      = 2 * time.Minute
+	openAIRetryExhaustedTransportCooldown = 10 * time.Minute
+	openAIRuntimeBreakerHalfOpenClaimTTL  = 2 * time.Minute
 )
+
+type openAIRuntimeBreakerProbeContextKey struct{}
+
+type openAIRuntimeBreakerProbeDecisionKey struct {
+	accountID int64
+	model     string
+}
+
+type openAIRuntimeBreakerProbeContext struct {
+	mu         sync.Mutex
+	owner      string
+	decisions  map[openAIRuntimeBreakerProbeDecisionKey]bool
+	leaseStore OpenAIRuntimeBreakerLeaseStore
+	claims     map[int64]map[string]struct{}
+}
+
+var openAIRuntimeBreakerProbeSequence atomic.Uint64
+
+func withOpenAIRuntimeBreakerProbeOwner(ctx context.Context, owner string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if existing, _ := ctx.Value(openAIRuntimeBreakerProbeContextKey{}).(*openAIRuntimeBreakerProbeContext); existing != nil {
+		return ctx
+	}
+	owner = strings.TrimSpace(owner)
+	if owner == "" {
+		owner = fmt.Sprintf("%d-%d", time.Now().UnixNano(), openAIRuntimeBreakerProbeSequence.Add(1))
+	}
+	return context.WithValue(ctx, openAIRuntimeBreakerProbeContextKey{}, &openAIRuntimeBreakerProbeContext{
+		owner:     owner,
+		decisions: make(map[openAIRuntimeBreakerProbeDecisionKey]bool),
+		claims:    make(map[int64]map[string]struct{}),
+	})
+}
+
+func ensureOpenAIRuntimeBreakerProbeOwner(ctx context.Context) context.Context {
+	return withOpenAIRuntimeBreakerProbeOwner(ctx, "")
+}
+
+func (p *openAIRuntimeBreakerProbeContext) rememberClaims(accountID int64, models []string, store OpenAIRuntimeBreakerLeaseStore) {
+	if p == nil || accountID <= 0 || len(models) == 0 || store == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.leaseStore == nil {
+		p.leaseStore = store
+	}
+	claims := p.claims[accountID]
+	if claims == nil {
+		claims = make(map[string]struct{}, len(models))
+		p.claims[accountID] = claims
+	}
+	for _, model := range models {
+		claims[normalizeOpenAIAccountModelTransientModel(model)] = struct{}{}
+	}
+}
+
+func (p *openAIRuntimeBreakerProbeContext) claimedModels(accountID int64) []string {
+	if p == nil || accountID <= 0 {
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	claims := p.claims[accountID]
+	if len(claims) == 0 {
+		return nil
+	}
+	models := make([]string, 0, len(claims))
+	for model := range claims {
+		models = append(models, model)
+	}
+	return models
+}
+
+func (p *openAIRuntimeBreakerProbeContext) releaseClaimsExcept(ctx context.Context, selectedAccountID int64) {
+	if p == nil {
+		return
+	}
+	type accountClaims struct {
+		accountID int64
+		models    []string
+	}
+	p.mu.Lock()
+	store := p.leaseStore
+	owner := strings.TrimSpace(p.owner)
+	claims := make([]accountClaims, 0, len(p.claims))
+	for accountID, modelSet := range p.claims {
+		if accountID == selectedAccountID {
+			continue
+		}
+		models := make([]string, 0, len(modelSet))
+		for model := range modelSet {
+			models = append(models, model)
+		}
+		claims = append(claims, accountClaims{accountID: accountID, models: models})
+		delete(p.claims, accountID)
+	}
+	p.mu.Unlock()
+	if store == nil || owner == "" || len(claims) == 0 {
+		return
+	}
+
+	cacheCtx, cancel := openAIAccountStateContext(ctx)
+	defer cancel()
+	for _, claim := range claims {
+		if _, err := store.ReleaseOpenAIRuntimeBreakerProbes(cacheCtx, claim.accountID, claim.models, owner); err != nil {
+			slog.Warn("openai_runtime_breaker_unselected_probe_release_failed", "account_id", claim.accountID, "error", err)
+		}
+	}
+}
+
+// openAIRuntimeBreakerProbeLease keeps a selected half-open Redis claim alive
+// for the duration of a long HTTP stream or WebSocket first turn. Its stop
+// operation is intentionally separate from release: slot cleanup may happen
+// before the final scheduling result is reported, while only the result owner
+// may release a failed probe claim or close a successful breaker.
+type openAIRuntimeBreakerProbeLease struct {
+	store     OpenAIRuntimeBreakerLeaseStore
+	accountID int64
+	models    []string
+	owner     string
+	claimTTL  time.Duration
+	stop      chan struct{}
+	stopOnce  sync.Once
+}
+
+func newOpenAIRuntimeBreakerProbeLease(store OpenAIRuntimeBreakerLeaseStore, accountID int64, models []string, owner string, claimTTL time.Duration) *openAIRuntimeBreakerProbeLease {
+	if store == nil || accountID <= 0 || strings.TrimSpace(owner) == "" || len(models) == 0 {
+		return nil
+	}
+	copyModels := append([]string(nil), models...)
+	return &openAIRuntimeBreakerProbeLease{
+		store:     store,
+		accountID: accountID,
+		models:    copyModels,
+		owner:     strings.TrimSpace(owner),
+		claimTTL:  claimTTL,
+		stop:      make(chan struct{}),
+	}
+}
+
+func (l *openAIRuntimeBreakerProbeLease) renew(ctx context.Context) bool {
+	if l == nil || l.store == nil {
+		return false
+	}
+	cacheCtx, cancel := openAIAccountStateContext(ctx)
+	defer cancel()
+	renewed, err := l.store.RenewOpenAIRuntimeBreakerProbes(cacheCtx, l.accountID, l.models, l.owner, l.claimTTL)
+	if err != nil {
+		slog.Warn("openai_runtime_breaker_lease_renew_failed", "account_id", l.accountID, "error", err)
+		return false
+	}
+	return renewed
+}
+
+func (l *openAIRuntimeBreakerProbeLease) start(ctx context.Context) bool {
+	if l == nil {
+		return false
+	}
+	// Renew synchronously while the selection is promoted. This closes the
+	// claim-expiry race between candidate probing and forwarding immediately.
+	if !l.renew(ctx) {
+		return false
+	}
+	interval := l.claimTTL / 3
+	if interval <= 0 {
+		interval = time.Second
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if !l.renew(ctx) {
+					return
+				}
+			case <-l.stop:
+				return
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return true
+}
+
+func (l *openAIRuntimeBreakerProbeLease) stopRenewal() {
+	if l != nil {
+		l.stopOnce.Do(func() { close(l.stop) })
+	}
+}
+
+func (l *openAIRuntimeBreakerProbeLease) release(ctx context.Context) {
+	if l == nil || l.store == nil {
+		return
+	}
+	l.stopRenewal()
+	cacheCtx, cancel := openAIAccountStateContext(ctx)
+	defer cancel()
+	if released, err := l.store.ReleaseOpenAIRuntimeBreakerProbes(cacheCtx, l.accountID, l.models, l.owner); err != nil {
+		slog.Warn("openai_runtime_breaker_lease_release_failed", "account_id", l.accountID, "error", err)
+	} else if !released {
+		slog.Debug("openai_runtime_breaker_lease_release_not_owner", "account_id", l.accountID)
+	}
+}
+
+func normalizeOpenAIRuntimeBreakerProbeModels(models []string) []string {
+	normalized := make([]string, 0, len(models))
+	seen := make(map[string]struct{}, len(models))
+	for _, model := range models {
+		model = normalizeOpenAIAccountModelTransientModel(model)
+		if _, exists := seen[model]; exists {
+			continue
+		}
+		seen[model] = struct{}{}
+		normalized = append(normalized, model)
+	}
+	return normalized
+}
+
+func (s *OpenAIGatewayService) reacquireOpenAIRuntimeBreakerProbe(
+	ctx context.Context,
+	previous *AccountSelectionResult,
+	selection *AccountSelectionResult,
+) error {
+	if s == nil || previous == nil || selection == nil || selection.Account == nil {
+		return nil
+	}
+	owner := strings.TrimSpace(previous.runtimeBreakerProbeOwner)
+	models := normalizeOpenAIRuntimeBreakerProbeModels(previous.runtimeBreakerProbeModels)
+	selection.runtimeBreakerProbeOwner = owner
+	if owner == "" || len(models) == 0 {
+		return nil
+	}
+
+	var store OpenAIRuntimeBreakerLeaseStore
+	if previous.runtimeBreakerProbeLease != nil {
+		store = previous.runtimeBreakerProbeLease.store
+	}
+	if store == nil {
+		breakerStore, ok := s.openAIRuntimeBreakerStore()
+		if !ok {
+			return fmt.Errorf("openai runtime breaker store is unavailable for same-account retry")
+		}
+		store, ok = breakerStore.(OpenAIRuntimeBreakerLeaseStore)
+		if !ok {
+			return fmt.Errorf("openai runtime breaker lease store is unavailable for same-account retry")
+		}
+	}
+
+	cacheCtx, cancel := openAIAccountStateContext(ctx)
+	allowed, claimedModels, err := store.AllowOpenAIRuntimeBreakerProbes(
+		cacheCtx,
+		selection.Account.ID,
+		models,
+		owner,
+		openAIRuntimeBreakerHalfOpenClaimTTL,
+	)
+	cancel()
+	if err != nil {
+		return fmt.Errorf("reclaim openai runtime breaker probe: %w", err)
+	}
+	if !allowed {
+		return fmt.Errorf("openai runtime breaker probe is no longer owned by this request")
+	}
+	if len(claimedModels) == 0 {
+		return nil
+	}
+
+	lease := newOpenAIRuntimeBreakerProbeLease(
+		store,
+		selection.Account.ID,
+		claimedModels,
+		owner,
+		openAIRuntimeBreakerHalfOpenClaimTTL,
+	)
+	if lease == nil {
+		return fmt.Errorf("create openai runtime breaker probe lease")
+	}
+	originalRelease := selection.ReleaseFunc
+	selection.runtimeBreakerProbeModels = append([]string(nil), claimedModels...)
+	selection.runtimeBreakerProbeLease = lease
+	selection.ReleaseFunc = func() {
+		lease.stopRenewal()
+		if originalRelease != nil {
+			originalRelease()
+		}
+	}
+	if !lease.start(ctx) {
+		selection.runtimeBreakerProbeModels = nil
+		selection.runtimeBreakerProbeLease = nil
+		selection.ReleaseFunc = originalRelease
+		lease.release(ctx)
+		return fmt.Errorf("renew openai runtime breaker probe lease")
+	}
+	return nil
+}
 
 // OpenAIOAuth429FailoverState tracks the request-local follow-up budget after
 // the first Grok OAuth 429. Once that 429 occurs, exactly one different account
@@ -54,6 +360,15 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	// Any non-2xx upstream HTTP response means the model request was actually sent.
 	if s != nil {
 		scheduleOllamaCloudUsageActivity(s.deferredService, account)
+	}
+	if isOpenAIAccount(account) {
+		switch statusCode {
+		case http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests:
+			// Authentication and quota responses are handled exclusively by the
+			// request failover state: no same-account replay, runtime cooldown, then
+			// switch. Do not persist legacy schedulable/error state here.
+			return false
+		}
 	}
 	stateCtx, cancel := openAIAccountStateContext(ctx)
 	defer cancel()
@@ -164,6 +479,88 @@ func (s *OpenAIGatewayService) BlockAccountScheduling(account *Account, until ti
 	mu.Lock()
 	defer mu.Unlock()
 	_, _ = s.blockAccountSchedulingLocked(account, until, reason)
+	blockUntil := until
+	if value, ok := s.openaiAccountRuntimeBlockUntil.Load(account.ID); ok {
+		if current, valid := value.(time.Time); valid && current.After(blockUntil) {
+			blockUntil = current
+		}
+	}
+	s.persistOpenAIRuntimeBreaker(context.Background(), account.ID, "", reason, blockUntil)
+}
+
+func (s *OpenAIGatewayService) openAIRuntimeBreakerStore() (OpenAIRuntimeBreakerStore, bool) {
+	if s == nil || s.cache == nil {
+		return nil, false
+	}
+	store, ok := s.cache.(OpenAIRuntimeBreakerStore)
+	return store, ok && store != nil
+}
+
+func (s *OpenAIGatewayService) persistOpenAIRuntimeBreaker(ctx context.Context, accountID int64, model, reason string, until time.Time) {
+	store, ok := s.openAIRuntimeBreakerStore()
+	if !ok || accountID <= 0 {
+		return
+	}
+	ttl := time.Until(until)
+	if ttl <= 0 {
+		return
+	}
+	cacheCtx, cancel := openAIAccountStateContext(ctx)
+	defer cancel()
+	if err := store.BlockOpenAIRuntimeBreaker(cacheCtx, accountID, model, reason, ttl); err != nil {
+		slog.Warn("openai_runtime_breaker_persist_failed", "account_id", accountID, "model", model, "reason", reason, "error", err)
+	}
+}
+
+func (s *OpenAIGatewayService) clearOpenAIRuntimeBreaker(ctx context.Context, accountID int64, model, owner string) {
+	store, ok := s.openAIRuntimeBreakerStore()
+	owner = strings.TrimSpace(owner)
+	if !ok || accountID <= 0 || owner == "" {
+		return
+	}
+	cacheCtx, cancel := openAIAccountStateContext(ctx)
+	defer cancel()
+	if err := store.ClearOpenAIRuntimeBreaker(cacheCtx, accountID, model, owner); err != nil {
+		slog.Warn("openai_runtime_breaker_clear_failed", "account_id", accountID, "model", model, "error", err)
+	}
+}
+
+func (s *OpenAIGatewayService) clearOpenAIRuntimeBreakerProbeClaims(ctx context.Context, accountID int64, models []string, owner string) {
+	for _, model := range normalizeOpenAIRuntimeBreakerProbeModels(models) {
+		s.clearOpenAIRuntimeBreaker(ctx, accountID, model, owner)
+	}
+}
+
+func (s *OpenAIGatewayService) releaseOpenAIRuntimeBreakerProbe(ctx context.Context, accountID int64, model, owner string) {
+	store, ok := s.openAIRuntimeBreakerStore()
+	leaseStore, supportsLease := store.(OpenAIRuntimeBreakerLeaseStore)
+	owner = strings.TrimSpace(owner)
+	if !ok || !supportsLease || accountID <= 0 || owner == "" {
+		return
+	}
+	models := []string{""}
+	if model = openAIAccountModelTransientModel(model); model != "" {
+		models = append(models, model)
+	}
+	cacheCtx, cancel := openAIAccountStateContext(ctx)
+	defer cancel()
+	if released, err := leaseStore.ReleaseOpenAIRuntimeBreakerProbes(cacheCtx, accountID, models, owner); err != nil {
+		slog.Warn("openai_runtime_breaker_release_failed", "account_id", accountID, "model", model, "error", err)
+	} else if !released {
+		slog.Debug("openai_runtime_breaker_release_not_owner", "account_id", accountID, "model", model)
+	}
+}
+
+func (s *OpenAIGatewayService) clearAllOpenAIRuntimeBreakers(ctx context.Context, accountID int64) {
+	store, ok := s.openAIRuntimeBreakerStore()
+	if !ok || accountID <= 0 {
+		return
+	}
+	cacheCtx, cancel := openAIAccountStateContext(ctx)
+	defer cancel()
+	if err := store.ClearAllOpenAIRuntimeBreakers(cacheCtx, accountID); err != nil {
+		slog.Warn("openai_runtime_breaker_clear_all_failed", "account_id", accountID, "error", err)
+	}
 }
 
 func (s *OpenAIGatewayService) openAIAccountRuntimeBlockLock(accountID int64) *sync.Mutex {
@@ -220,6 +617,29 @@ func (s *OpenAIGatewayService) ClearAccountSchedulingBlock(accountID int64) {
 	defer mu.Unlock()
 	s.openaiAccountRuntimeBlockUntil.Delete(accountID)
 	s.openaiAccountRuntimeBlockGeneration.Store(accountID, s.openaiAccountRuntimeBlockSequence.Add(1))
+	state := s.getOpenAIAccountModelTransientState()
+	if state != nil {
+		state.clearAccount(accountID)
+	}
+	s.clearAllOpenAIRuntimeBreakers(context.Background(), accountID)
+}
+
+func (s *OpenAIGatewayService) clearOpenAIAccountSchedulingBlockScope(accountID int64, owner string) {
+	if s == nil || accountID <= 0 {
+		return
+	}
+	mu := s.openAIAccountRuntimeBlockLock(accountID)
+	mu.Lock()
+	if value, ok := s.openaiAccountRuntimeBlockUntil.Load(accountID); ok {
+		if blockUntil, valid := value.(time.Time); valid && time.Now().Before(blockUntil) {
+			mu.Unlock()
+			return
+		}
+	}
+	s.openaiAccountRuntimeBlockUntil.Delete(accountID)
+	s.openaiAccountRuntimeBlockGeneration.Store(accountID, s.openaiAccountRuntimeBlockSequence.Add(1))
+	mu.Unlock()
+	s.clearOpenAIRuntimeBreaker(context.Background(), accountID, "", owner)
 }
 
 func (s *OpenAIGatewayService) isOpenAIAccountRuntimeBlocked(account *Account) bool {
@@ -282,15 +702,32 @@ func (s *OpenAIGatewayService) recordOpenAIAccountModelTransientFailure(account 
 	if state == nil {
 		return openAIAccountModelTransientDecision{}
 	}
-	return state.recordFailure(account.ID, openAIAccountModelTransientModel(canonicalModel), now)
+	mu := s.openAIAccountRuntimeBlockLock(account.ID)
+	mu.Lock()
+	defer mu.Unlock()
+	model := openAIAccountModelTransientModel(canonicalModel)
+	decision := state.recordFailure(account.ID, model, now)
+	if decision.Cooldown > 0 && !decision.BlockUntil.IsZero() {
+		s.persistOpenAIRuntimeBreaker(context.Background(), account.ID, model, "transient_failures", decision.BlockUntil)
+	}
+	return decision
 }
 
-func (s *OpenAIGatewayService) clearOpenAIAccountModelTransientState(accountID int64, model string) {
+func (s *OpenAIGatewayService) clearOpenAIAccountModelTransientState(accountID int64, model, owner string) {
+	if s == nil || accountID <= 0 {
+		return
+	}
 	state := s.getOpenAIAccountModelTransientState()
 	if state == nil {
 		return
 	}
-	state.recordSuccess(accountID, model)
+	mu := s.openAIAccountRuntimeBlockLock(accountID)
+	mu.Lock()
+	defer mu.Unlock()
+	if !state.recordSuccess(accountID, model) {
+		return
+	}
+	s.clearOpenAIRuntimeBreaker(context.Background(), accountID, model, owner)
 }
 
 func (s *OpenAIGatewayService) isOpenAIAccountModelRuntimeBlocked(account *Account, requestedModel string) bool {
@@ -306,7 +743,141 @@ func (s *OpenAIGatewayService) isOpenAIAccountModelRuntimeBlocked(account *Accou
 }
 
 func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlocked(account *Account, requestedModel string) bool {
-	return s != nil && (s.isOpenAIAccountRuntimeBlocked(account) || s.isOpenAIAccountModelRuntimeBlocked(account, requestedModel))
+	return s.isOpenAIAccountRequestRuntimeBlockedContext(ensureOpenAIRuntimeBreakerProbeOwner(context.Background()), account, requestedModel)
+}
+
+func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlockedContext(ctx context.Context, account *Account, requestedModel string) bool {
+	if s == nil || account == nil {
+		return false
+	}
+	if s.isOpenAIAccountRuntimeBlocked(account) || s.isOpenAIAccountModelRuntimeBlocked(account, requestedModel) {
+		return true
+	}
+	store, ok := s.openAIRuntimeBreakerStore()
+	if !ok {
+		return false
+	}
+	ctx = ensureOpenAIRuntimeBreakerProbeOwner(ctx)
+	probe, _ := ctx.Value(openAIRuntimeBreakerProbeContextKey{}).(*openAIRuntimeBreakerProbeContext)
+	if probe == nil {
+		return false
+	}
+	models := []string{""}
+	if model := openAIAccountModelTransientModel(canonicalOpenAIAccountSchedulingModel(account, requestedModel)); model != "" {
+		models = append(models, model)
+	}
+	if batchStore, supportsBatch := store.(OpenAIRuntimeBreakerBatchProbeStore); supportsBatch {
+		cacheCtx, cancel := openAIAccountStateContext(ctx)
+		allowed, claimedModels, err := batchStore.AllowOpenAIRuntimeBreakerProbes(
+			cacheCtx,
+			account.ID,
+			models,
+			probe.owner,
+			openAIRuntimeBreakerHalfOpenClaimTTL,
+		)
+		cancel()
+		if err != nil {
+			slog.Warn("openai_runtime_breaker_read_failed", "account_id", account.ID, "models", models, "error", err)
+			return false
+		}
+		if allowed && len(claimedModels) > 0 {
+			if leaseStore, supportsLease := store.(OpenAIRuntimeBreakerLeaseStore); supportsLease {
+				probe.rememberClaims(account.ID, claimedModels, leaseStore)
+			}
+		}
+		return !allowed
+	}
+	for _, model := range models {
+		key := openAIRuntimeBreakerProbeDecisionKey{accountID: account.ID, model: model}
+		cacheCtx, cancel := openAIAccountStateContext(ctx)
+		allowed, err := store.AllowOpenAIRuntimeBreakerProbe(cacheCtx, account.ID, model, probe.owner, openAIRuntimeBreakerHalfOpenClaimTTL)
+		cancel()
+		if err != nil {
+			slog.Warn("openai_runtime_breaker_read_failed", "account_id", account.ID, "model", model, "error", err)
+			allowed = true
+		}
+		probe.mu.Lock()
+		probe.decisions[key] = allowed
+		probe.mu.Unlock()
+		if !allowed {
+			return true
+		}
+	}
+	return false
+}
+
+// CooldownOpenAIRetryExhausted is the handler-to-scheduler circuit breaker used
+// after the bounded same-account retry budget is exhausted. It reuses the
+// existing in-memory account/model blockers and never shortens a stronger block.
+func (s *OpenAIGatewayService) CooldownOpenAIRetryExhausted(
+	ctx context.Context,
+	account *Account,
+	canonicalModel string,
+	failoverErr *UpstreamFailoverError,
+) {
+	if s == nil || account == nil || failoverErr == nil || !isOpenAIAccount(account) {
+		return
+	}
+	if failoverErr.RequestScopedTransient || failoverErr.SuppressAccountHealthPenalty ||
+		failoverErr.Scope == GatewayFailureScopeRequest || failoverErr.Scope == GatewayFailureScopeProvider {
+		return
+	}
+
+	now := time.Now()
+	switch failoverErr.StatusCode {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		s.BlockAccountScheduling(account, now.Add(openAIRetryExhaustedAuthCooldown), "retry_exhausted_auth")
+		return
+	case http.StatusTooManyRequests:
+		until := now.Add(openAIOAuth429FallbackCooldown)
+		if resetAt := parseRetryAfterResetTime(failoverErr.ResponseHeaders, now); resetAt != nil && resetAt.After(until) {
+			until = *resetAt
+		}
+		if s.rateLimitService != nil {
+			if resetAt := s.rateLimitService.calculateOpenAI429ResetTime(failoverErr.ResponseHeaders); resetAt != nil && resetAt.After(until) {
+				until = *resetAt
+			}
+		}
+		s.BlockAccountScheduling(account, until, "retry_exhausted_429")
+		return
+	}
+
+	shouldCool := failoverErr.StatusCode == http.StatusRequestTimeout ||
+		failoverErr.StatusCode >= http.StatusInternalServerError ||
+		failoverErr.RetryableOnSameAccount ||
+		failoverErr.Reason == OpenAITransientTransportFailureReason ||
+		failoverErr.Reason == OpenAIPersistentTransportFailureReason
+	if !shouldCool {
+		return
+	}
+	if failoverErr.Reason == OpenAIPersistentTransportFailureReason {
+		until := now.Add(openAIRetryExhaustedTransportCooldown)
+		if resetAt := parseRetryAfterResetTime(failoverErr.ResponseHeaders, now); resetAt != nil && resetAt.After(until) {
+			until = *resetAt
+		}
+		s.BlockAccountScheduling(account, until, "retry_exhausted_transport")
+		return
+	}
+
+	model := strings.TrimSpace(canonicalModel)
+	transientUntil := now.Add(openAIRetryExhaustedTransientCooldown)
+	if resetAt := parseRetryAfterResetTime(failoverErr.ResponseHeaders, now); resetAt != nil && resetAt.After(transientUntil) {
+		transientUntil = *resetAt
+	}
+	if model == "" {
+		s.BlockAccountScheduling(account, transientUntil, "retry_exhausted_transient")
+		return
+	}
+	mu := s.openAIAccountRuntimeBlockLock(account.ID)
+	mu.Lock()
+	decision := s.getOpenAIAccountModelTransientState().block(account.ID, model, now, time.Until(transientUntil))
+	s.persistOpenAIRuntimeBreaker(ctx, account.ID, model, "retry_exhausted_transient", decision.BlockUntil)
+	mu.Unlock()
+	slog.Warn("openai_model_retry_exhausted_cooldown",
+		"account_id", account.ID,
+		"model", openAIAccountModelTransientModel(model),
+		"cooldown_ms", decision.Cooldown.Milliseconds(),
+	)
 }
 
 func (s *OpenAIGatewayService) recordOpenAIOAuth429() {

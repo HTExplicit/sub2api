@@ -86,6 +86,17 @@ func TestHandleOpenAITransientError_CanonicalModelIsNotMappedTwice(t *testing.T)
 
 	require.True(t, svc.isOpenAIAccountModelRuntimeBlocked(account, "public-alias"))
 	svc.ReportOpenAIAccountScheduleResult(account.ID, canonicalModel, true, nil)
+	require.True(t, svc.isOpenAIAccountModelRuntimeBlocked(account, "public-alias"), "a late success must not clear an active cooldown")
+
+	key, ok := openAIAccountModelTransientKey(account.ID, canonicalModel)
+	require.True(t, ok)
+	svc.openaiModelTransient.mu.Lock()
+	entry := svc.openaiModelTransient.entries[key]
+	entry.blockUntil = time.Now().Add(-time.Millisecond)
+	svc.openaiModelTransient.entries[key] = entry
+	svc.openaiModelTransient.mu.Unlock()
+
+	svc.ReportOpenAIAccountScheduleResult(account.ID, canonicalModel, true, nil)
 	require.False(t, svc.isOpenAIAccountModelRuntimeBlocked(account, "public-alias"))
 }
 

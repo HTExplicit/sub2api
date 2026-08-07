@@ -245,8 +245,8 @@ func TestOpenAIGatewayHandlerResponses_FailoverAbortsWhenClientDisconnected(t *t
 }
 
 // TestOpenAIGatewayHandlerResponses_FailoverContinuesForConnectedClient 回归
-// 守卫：客户端在线时 failover 行为不变——切换到账号 2，两个账号都 520 后按
-// 耗尽返回 502。
+// 守卫：客户端在线时，每个账号对 520 只做一次同账号传输重试，再切换到账号 2；
+// 两个账号均耗尽后返回 502。
 func TestOpenAIGatewayHandlerResponses_FailoverContinuesForConnectedClient(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -256,7 +256,7 @@ func TestOpenAIGatewayHandlerResponses_FailoverContinuesForConnectedClient(t *te
 
 	handler.Responses(c)
 
-	require.Equal(t, []int64{1, 2}, upstream.calls(), "在线客户端应正常切换账号")
+	require.Equal(t, []int64{1, 1, 2, 2}, upstream.calls(), "在线客户端应按上限重试并正常切换账号")
 	require.Equal(t, http.StatusBadGateway, rec.Code)
 	require.Equal(t, "upstream_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
 }

@@ -472,6 +472,38 @@ type GatewayCache interface {
 	// DeleteSessionAccountID 删除粘性会话绑定，用于账号不可用时主动清理
 	// Delete sticky session binding, used to proactively clean up when account becomes unavailable
 	DeleteSessionAccountID(ctx context.Context, groupID int64, sessionHash string) error
+	// DeleteSessionAccountIDIfMatches atomically deletes a binding only while it
+	// still points to expectedAccountID. Implementations must not emulate this as
+	// a separate read followed by delete.
+	DeleteSessionAccountIDIfMatches(ctx context.Context, groupID int64, sessionHash string, expectedAccountID int64) (bool, error)
+}
+
+// OpenAIRuntimeBreakerStore is an optional Redis-backed extension implemented
+// by the production GatewayCache. Keeping it separate avoids forcing every
+// lightweight cache mock to implement circuit-breaker persistence.
+type OpenAIRuntimeBreakerStore interface {
+	BlockOpenAIRuntimeBreaker(ctx context.Context, accountID int64, model, reason string, ttl time.Duration) error
+	AllowOpenAIRuntimeBreakerProbe(ctx context.Context, accountID int64, model, owner string, claimTTL time.Duration) (bool, error)
+	// ClearOpenAIRuntimeBreaker closes a half-open breaker only when its active
+	// block has expired and the probe claim belongs to owner. It must not clear a
+	// newer block or another request's claim.
+	ClearOpenAIRuntimeBreaker(ctx context.Context, accountID int64, model, owner string) error
+	ClearAllOpenAIRuntimeBreakers(ctx context.Context, accountID int64) error
+}
+
+// OpenAIRuntimeBreakerBatchProbeStore atomically checks and claims all breaker
+// scopes that apply to one request.
+type OpenAIRuntimeBreakerBatchProbeStore interface {
+	AllowOpenAIRuntimeBreakerProbes(ctx context.Context, accountID int64, models []string, owner string, claimTTL time.Duration) (allowed bool, claimedModels []string, err error)
+}
+
+// OpenAIRuntimeBreakerLeaseStore extends the batch probe store with owner-safe
+// lease lifecycle operations. It remains optional so existing cache adapters
+// keep their single-scope compatibility; the production Redis cache implements it.
+type OpenAIRuntimeBreakerLeaseStore interface {
+	OpenAIRuntimeBreakerBatchProbeStore
+	RenewOpenAIRuntimeBreakerProbes(ctx context.Context, accountID int64, models []string, owner string, claimTTL time.Duration) (bool, error)
+	ReleaseOpenAIRuntimeBreakerProbes(ctx context.Context, accountID int64, models []string, owner string) (bool, error)
 }
 
 // derefGroupID safely dereferences *int64 to int64, returning 0 if nil
@@ -547,6 +579,14 @@ type AccountSelectionResult struct {
 	Acquired    bool
 	ReleaseFunc func()
 	WaitPlan    *AccountWaitPlan // nil means no wait allowed
+	// runtimeBreakerProbeOwner identifies the request that acquired a Redis
+	// half-open probe claim. It is deliberately private so only scheduler
+	// results can authorize a conditional breaker close.
+	runtimeBreakerProbeOwner string
+	// runtimeBreakerProbeModels is the set of Redis scopes claimed for this
+	// account. It is private so only the scheduler can renew or release leases.
+	runtimeBreakerProbeModels []string
+	runtimeBreakerProbeLease  *openAIRuntimeBreakerProbeLease
 	// profitGate 携带本次选号真实生效的利润门（无门为 nil）。门安装在调度栈的
 	// 局部 ctx 上，handler 必须经 ContextWithSelectionProfitGate 重放后才能在
 	// 调度栈之外做抢槽后终检与准入后粘性绑定。

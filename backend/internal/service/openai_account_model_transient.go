@@ -114,14 +114,70 @@ func (s *openAIAccountModelTransientState) recordFailure(accountID int64, model 
 	}
 }
 
-func (s *openAIAccountModelTransientState) recordSuccess(accountID int64, model string) {
+func (s *openAIAccountModelTransientState) recordSuccess(accountID int64, model string) bool {
 	key, ok := openAIAccountModelTransientKey(accountID, model)
 	if s == nil || !ok {
+		return true
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if entry, exists := s.entries[key]; exists && time.Now().Before(entry.blockUntil) {
+		return false
+	}
+	delete(s.entries, key)
+	return true
+}
+
+func (s *openAIAccountModelTransientState) clearAccount(accountID int64) {
+	if s == nil || accountID <= 0 {
 		return
 	}
 	s.mu.Lock()
-	delete(s.entries, key)
+	for key := range s.entries {
+		if key.AccountID == accountID {
+			delete(s.entries, key)
+		}
+	}
 	s.mu.Unlock()
+}
+
+func (s *openAIAccountModelTransientState) block(accountID int64, model string, now time.Time, cooldown time.Duration) openAIAccountModelTransientDecision {
+	key, ok := openAIAccountModelTransientKey(accountID, model)
+	if s == nil || !ok || cooldown <= 0 {
+		return openAIAccountModelTransientDecision{}
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.entries == nil {
+		s.entries = make(map[openAIAccountModelKey]openAIAccountModelTransientEntry)
+	}
+	if s.maxEntries <= 0 {
+		s.maxEntries = openAIModelTransientDefaultMax
+	}
+	entry, exists := s.entries[key]
+	if !exists {
+		s.evictOldestLocked()
+	}
+	entry.failureStreak++
+	if entry.failureStreak < 2 {
+		entry.failureStreak = 2
+	}
+	entry.lastFailure = now
+	entry.lastTouched = now
+	requestedUntil := now.Add(cooldown)
+	if entry.blockUntil.Before(requestedUntil) {
+		entry.blockUntil = requestedUntil
+	}
+	s.entries[key] = entry
+	return openAIAccountModelTransientDecision{
+		FailureStreak: entry.failureStreak,
+		Cooldown:      time.Until(entry.blockUntil),
+		BlockUntil:    entry.blockUntil,
+	}
 }
 
 func (s *openAIAccountModelTransientState) isBlocked(accountID int64, model string, now time.Time) bool {

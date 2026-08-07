@@ -28,6 +28,32 @@ func TestOpenAIWSStateStore_BindGetDeleteResponseAccount(t *testing.T) {
 	require.Zero(t, accountID)
 }
 
+func TestOpenAIWSStateStore_DeleteResponseAccountIfMatchesPreservesConcurrentRebind(t *testing.T) {
+	cache := &stubGatewayCache{}
+	store := NewOpenAIWSStateStore(cache)
+	ctx := context.Background()
+	groupID := int64(7)
+	responseID := "resp_cas_rebind"
+
+	require.NoError(t, store.BindResponseAccount(ctx, groupID, responseID, 101, time.Minute))
+	require.NoError(t, store.BindResponseAccount(ctx, groupID, responseID, 202, time.Minute))
+
+	deleted, err := store.DeleteResponseAccountIfMatches(ctx, groupID, responseID, 101)
+	require.NoError(t, err)
+	require.False(t, deleted, "stale cleanup must not delete a newer response binding")
+
+	accountID, err := store.GetResponseAccount(ctx, groupID, responseID)
+	require.NoError(t, err)
+	require.Equal(t, int64(202), accountID)
+
+	deleted, err = store.DeleteResponseAccountIfMatches(ctx, groupID, responseID, 202)
+	require.NoError(t, err)
+	require.True(t, deleted)
+	accountID, err = store.GetResponseAccount(ctx, groupID, responseID)
+	require.NoError(t, err)
+	require.Zero(t, accountID)
+}
+
 func TestOpenAIWSStateStore_ResponseConnTTL(t *testing.T) {
 	store := NewOpenAIWSStateStore(nil)
 	store.BindResponseConn("resp_conn", "conn_1", 30*time.Millisecond)
@@ -191,6 +217,10 @@ func (c *openAIWSStateStoreTimeoutProbeCache) DeleteSessionAccountID(ctx context
 		c.delDeadlineDelta = time.Until(deadline)
 	}
 	return nil
+}
+
+func (c *openAIWSStateStoreTimeoutProbeCache) DeleteSessionAccountIDIfMatches(ctx context.Context, groupID int64, sessionHash string, _ int64) (bool, error) {
+	return true, c.DeleteSessionAccountID(ctx, groupID, sessionHash)
 }
 
 func TestOpenAIWSStateStore_RedisOpsUseShortTimeout(t *testing.T) {

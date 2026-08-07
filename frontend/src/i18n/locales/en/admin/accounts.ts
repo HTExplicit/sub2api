@@ -911,7 +911,7 @@ export default {
       noProxy: 'No Proxy',
       concurrency: 'Concurrency',
       loadFactor: 'Load Factor',
-      loadFactorHint: 'Higher load factor increases scheduling frequency',
+      loadFactorHint: 'Compatibility field; it does not affect current scheduling. Use priority for tiers and concurrency for account capacity.',
       priority: 'Priority',
       priorityHint: 'Lower value accounts are used first',
       billingRateMultiplier: 'Billing Rate Multiplier',

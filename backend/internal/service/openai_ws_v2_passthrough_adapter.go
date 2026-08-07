@@ -652,6 +652,8 @@ func (c *openAIWSClientFrameConn) Close() error {
 	return nil
 }
 
+var errOpenAIWSPassthroughRetrySameAccount = errors.New("retry passthrough websocket on same account")
+
 func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	ctx context.Context,
 	c *gin.Context,
@@ -661,6 +663,27 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	firstClientMessage []byte,
 	hooks *OpenAIWSIngressHooks,
 	wsDecision OpenAIWSProtocolDecision,
+) error {
+	for retryUsed := false; ; retryUsed = true {
+		err := s.proxyResponsesWebSocketV2PassthroughAttempt(
+			ctx, c, clientConn, account, token, firstClientMessage, hooks, wsDecision, retryUsed,
+		)
+		if !errors.Is(err, errOpenAIWSPassthroughRetrySameAccount) || retryUsed {
+			return err
+		}
+	}
+}
+
+func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
+	ctx context.Context,
+	c *gin.Context,
+	clientConn *coderws.Conn,
+	account *Account,
+	token string,
+	firstClientMessage []byte,
+	hooks *OpenAIWSIngressHooks,
+	wsDecision OpenAIWSProtocolDecision,
+	transportRetryUsed bool,
 ) error {
 	if s == nil {
 		return errors.New("service is nil")
@@ -849,13 +872,13 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 			statusCode,
 			truncateOpenAIWSLogValue(err.Error(), openAIWSLogValueMaxLen),
 		)
-		s.handleOpenAIWSDialTransientFailure(ctx, account, capturedSessionModel, dialErr)
-		if statusCode == http.StatusTooManyRequests {
-			s.persistOpenAIWSRateLimitSignal(ctx, account, handshakeHeaders, nil, "rate_limit_exceeded", "rate_limit_error", strings.TrimSpace(err.Error()))
-			return &UpstreamFailoverError{
-				StatusCode:      http.StatusTooManyRequests,
-				ResponseHeaders: cloneHeader(handshakeHeaders),
+		retrySameAccount, failoverErr := openAIWSInitialDialFailover(dialErr)
+		if failoverErr != nil {
+			if retrySameAccount && !transportRetryUsed {
+				transportRetryUsed = true
+				continue
 			}
+			return failoverErr
 		}
 		return s.mapOpenAIWSPassthroughDialError(err, statusCode, handshakeHeaders)
 	}
@@ -1064,11 +1087,11 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	firstWriteErr := relayUpstreamFrameConn.WriteFrame(firstWriteCtx, coderws.MessageText, firstClientMessage)
 	cancelFirstWrite()
 	if firstWriteErr != nil {
-		return wrapOpenAIWSIngressTurnError(
-			"write_upstream",
-			fmt.Errorf("write first upstream websocket request: %w", firstWriteErr),
-			false,
-		)
+		wrappedErr := fmt.Errorf("write first upstream websocket request: %w", firstWriteErr)
+		if !transportRetryUsed && !errors.Is(firstWriteErr, context.Canceled) {
+			return fmt.Errorf("%w: %v", errOpenAIWSPassthroughRetrySameAccount, wrappedErr)
+		}
+		return s.handleOpenAIUpstreamTransportError(ctx, c, account, wrappedErr, false)
 	}
 	upstreamFirstMessageSent = true
 
@@ -1370,6 +1393,12 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 		relayErr,
 		relayExit.WroteDownstream,
 	)
+	if transportCause, transportFailure := openAIWSIngressTurnTransportCause(turnErr); transportFailure && turnCount == 0 {
+		if !transportRetryUsed {
+			return fmt.Errorf("%w: %v", errOpenAIWSPassthroughRetrySameAccount, transportCause)
+		}
+		return s.handleOpenAIUpstreamTransportError(ctx, c, account, transportCause, false)
+	}
 	if hooks != nil && hooks.AfterTurn != nil {
 		hooks.AfterTurn(turnCount+1, nil, turnErr)
 	}
