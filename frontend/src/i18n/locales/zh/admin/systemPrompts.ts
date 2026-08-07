@@ -20,8 +20,11 @@ export default {
       inline: '仅提示词正文',
       offline: '离线技能包',
       remote: '远程 Skill',
+      hybrid: 'Codex / 兼容客户端混合',
+      legacyRemote: '历史远程 Skill',
       legacyOffline: '历史离线技能包',
       remoteHint: '网关只注入当前正文；Codex 客户端按固定地址下载并校验 Skill。',
+      hybridHint: 'Codex 使用本机完整 Skill；兼容客户端按请求内联已校验的匹配文档。',
       legacyReadonly: '历史版本仅可查看，不能保存、发布或回滚到活动状态。',
       bundle: '技能包',
       select: '选择技能包',
@@ -46,6 +49,12 @@ export default {
       scripts: '脚本变化',
       binaries: '二进制变化',
       publishCandidate: '发布候选',
+      syncCandidate: '同步上游候选',
+      publishServer: '发布服务端 bundle',
+      installLocal: '安装或手动更新本机 Skill',
+      clientInstall: '本机 Codex Skill',
+      copyInstall: '复制固定 SHA 安装命令',
+      installCopied: '安装命令已复制。',
       changeSummary: '文件变化',
       status: { queued: '排队中', running: '同步中', succeeded: '候选已就绪', failed: '同步失败' }
     },
@@ -107,7 +116,14 @@ export default {
       application: '应用元数据',
       effectiveHash: '有效提示词 SHA-256',
       routes: '命中路由',
-      documents: '注入文档'
+      documents: '注入文档',
+      omittedDocuments: '容量限制省略文档',
+      baseInstructions: '高保真基础正文',
+      finalInstructions: '当前客户端最终服务端正文',
+      clientModes: {
+        codex: 'Codex 本机 Skill',
+        openai_compatible: 'OpenAI-compatible 内联'
+      }
     },
     dialogs: {
       createTitle: '创建模板',
@@ -163,7 +179,7 @@ export default {
       unsavedSelection: '切换选择前请先保存或放弃当前草稿。',
       saveBeforePublish: '请先保存草稿，再发布它。',
       bundleUnavailable: '所选离线技能包或固定 manifest 不可用。',
-      legacyReadonly: '历史 offline_bundle 版本为只读，不能创建新版本。',
+      legacyReadonly: '历史 remote_skill/offline_bundle 版本为只读，不能创建新版本。',
       skillSync: '无法同步上游 Skill。',
       skillPublish: '无法发布 Skill 候选。',
       skillRollback: '无法回滚 Skill Registry。'

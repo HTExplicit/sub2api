@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "bundle_id": "codexrip-reverse-skill",
-  "version": "2.8.0+d8bf34540cbc1aa34052e1b142576fc36a1f1437+codexrip.1",
+  "version": "2.8.0+d8bf34540cbc1aa34052e1b142576fc36a1f1437+codexrip.2",
   "core_files": [
     "codexrip-overlay/security-research/RULES.md",
     "codexrip-overlay/security-research/README_AI.md",
@@ -1160,6 +1160,20 @@
       "path": "burp-mcp-full/src/main/resources/META-INF/extensions/burp-extension.properties",
       "sha256": "76710aa756368d35da9ad11a03219751018cacc713e88e85e7a8f6a1385ac92a",
       "byte_length": 79,
+      "kind": "text",
+      "required": true
+    },
+    {
+      "path": "codexrip-client/SKILL.md",
+      "sha256": "6c4fe4547747d48c7554efdb6cadd72ab4674b0117b6d52367ab5fc227d4aa04",
+      "byte_length": 1488,
+      "kind": "text",
+      "required": true
+    },
+    {
+      "path": "codexrip-client/agents/openai.yaml",
+      "sha256": "a5ae3f9955ba1021ba07828e38462cf55182dd201b9c558b2216b4ed411acd9a",
+      "byte_length": 309,
       "kind": "text",
       "required": true
     },
@@ -3786,7 +3800,11 @@
         "jwt",
         "oauth",
         "authentication",
-        "authorization"
+        "authorization",
+        "接口安全",
+        "鉴权",
+        "认证",
+        "越权"
       ],
       "entry": "skills/api-security/SKILL.md",
       "references": [
@@ -3801,7 +3819,9 @@
         "android",
         "smali",
         "frida",
-        "jadx"
+        "jadx",
+        "安卓逆向",
+        "应用逆向"
       ],
       "entry": "skills/apk-reverse/SKILL.md",
       "references": [
@@ -3817,7 +3837,10 @@
         "attack chain",
         "exploit chain",
         "kill chain",
-        "lateral movement"
+        "lateral movement",
+        "攻击链",
+        "利用链",
+        "横向移动"
       ],
       "entry": "skills/attack-chain/SKILL.md",
       "references": [
@@ -3831,7 +3854,9 @@
       "keywords": [
         "binary diff",
         "bindiff",
-        "patch diff"
+        "patch diff",
+        "二进制对比",
+        "补丁对比"
       ],
       "entry": "skills/binary-diff/SKILL.md",
       "references": [
@@ -3844,7 +3869,8 @@
         "browser automation",
         "playwright",
         "selenium",
-        "cdp"
+        "cdp",
+        "浏览器自动化"
       ],
       "entry": "skills/browser-automation/SKILL.md",
       "references": [
@@ -3856,7 +3882,9 @@
       "keywords": [
         "browser extension",
         "chrome extension",
-        "firefox extension"
+        "firefox extension",
+        "浏览器扩展逆向",
+        "插件逆向"
       ],
       "entry": "skills/browser-extension-reverse/SKILL.md",
       "references": [
@@ -3870,7 +3898,9 @@
         "kubernetes",
         "k8s",
         "container",
-        "docker"
+        "docker",
+        "云安全",
+        "容器安全"
       ],
       "entry": "skills/cloud-k8s/SKILL.md",
       "references": [
@@ -3883,7 +3913,9 @@
         "code audit",
         "source audit",
         "sast",
-        "code review"
+        "code review",
+        "代码审计",
+        "源码审计"
       ],
       "entry": "skills/code-audit/SKILL.md",
       "references": [
@@ -3897,7 +3929,9 @@
         "sql",
         "postgresql",
         "mysql",
-        "redis"
+        "redis",
+        "数据库安全",
+        "数据库审计"
       ],
       "entry": "skills/database-security/SKILL.md",
       "references": [
@@ -3921,7 +3955,10 @@
         "forensics",
         "disk image",
         "memory dump",
-        "pcap"
+        "pcap",
+        "数字取证",
+        "内存取证",
+        "流量取证"
       ],
       "entry": "skills/digital-forensics/SKILL.md",
       "references": [
@@ -3947,7 +3984,9 @@
         "dotnet",
         "c#",
         "dnspy",
-        "ilspy"
+        "ilspy",
+        ".net逆向",
+        "c#逆向"
       ],
       "entry": "skills/dotnet-reverse/SKILL.md",
       "references": [
@@ -3962,7 +4001,9 @@
         "edr",
         "endpoint detection",
         "unhook",
-        "telemetry"
+        "telemetry",
+        "edr逆向",
+        "端点检测"
       ],
       "entry": "skills/edr-bypass-re/SKILL.md",
       "references": [
@@ -3978,7 +4019,8 @@
         "smtp",
         "spf",
         "dkim",
-        "dmarc"
+        "dmarc",
+        "邮件安全"
       ],
       "entry": "skills/email-security/SKILL.md",
       "references": [
@@ -3991,7 +4033,10 @@
         "firmware",
         "embedded",
         "binwalk",
-        "uart"
+        "uart",
+        "固件安全",
+        "固件逆向",
+        "嵌入式安全"
       ],
       "entry": "skills/firmware-pentest/SKILL.md",
       "references": [
@@ -4004,7 +4049,9 @@
       "id": "ghidra-reverse",
       "keywords": [
         "ghidra",
-        "decompiler"
+        "decompiler",
+        "ghidra逆向",
+        "反编译器"
       ],
       "entry": "skills/ghidra-reverse/SKILL.md",
       "references": [
@@ -4016,7 +4063,9 @@
       "keywords": [
         "golang binary",
         "go binary",
-        "rust binary"
+        "rust binary",
+        "go逆向",
+        "rust逆向"
       ],
       "entry": "skills/go-rust-reverse/SKILL.md",
       "references": [
@@ -4029,7 +4078,9 @@
         "hardware security",
         "jtag",
         "spi",
-        "side channel"
+        "side channel",
+        "硬件安全",
+        "侧信道"
       ],
       "entry": "skills/hardware-security/SKILL.md",
       "references": [
@@ -4041,7 +4092,9 @@
       "keywords": [
         "ida pro",
         "idapython",
-        "disassembly"
+        "disassembly",
+        "ida逆向",
+        "反汇编"
       ],
       "entry": "skills/ida-reverse/SKILL.md",
       "references": [
@@ -4055,7 +4108,9 @@
         "oidc",
         "identity federation",
         "single sign-on",
-        "sso"
+        "sso",
+        "身份联合",
+        "单点登录"
       ],
       "entry": "skills/identity-federation/SKILL.md",
       "references": [
@@ -4069,7 +4124,11 @@
         "js reverse",
         "web reverse",
         "wasm",
-        "obfuscation"
+        "obfuscation",
+        "js逆向",
+        "网页逆向",
+        "前端逆向",
+        "反混淆"
       ],
       "entry": "skills/js-reverse/SKILL.md",
       "references": [
@@ -4089,7 +4148,11 @@
         "llm security",
         "prompt injection",
         "jailbreak",
-        "agent security"
+        "agent security",
+        "大模型安全",
+        "提示词注入",
+        "越狱",
+        "智能体安全"
       ],
       "entry": "skills/llm-security/SKILL.md",
       "references": [
@@ -4105,7 +4168,9 @@
         "macos",
         "mach-o",
         "objective-c",
-        "swift binary"
+        "swift binary",
+        "macos逆向",
+        "苹果电脑逆向"
       ],
       "entry": "skills/macos-reverse/SKILL.md",
       "references": [
@@ -4119,7 +4184,11 @@
         "ransomware",
         "trojan",
         "sandbox",
-        "yara"
+        "yara",
+        "恶意软件",
+        "恶意样本",
+        "勒索软件",
+        "木马分析"
       ],
       "entry": "skills/malware-analysis/SKILL.md",
       "references": [
@@ -4133,7 +4202,10 @@
       "keywords": [
         "mobile reverse",
         "ios reverse",
-        "android reverse"
+        "android reverse",
+        "移动端逆向",
+        "ios逆向",
+        "安卓逆向"
       ],
       "entry": "skills/mobile-reverse/SKILL.md",
       "references": [
@@ -4148,7 +4220,9 @@
         "ot security",
         "ics",
         "scada",
-        "modbus"
+        "modbus",
+        "工控安全",
+        "工业控制"
       ],
       "entry": "skills/ot-ics/SKILL.md",
       "references": [
@@ -4160,7 +4234,10 @@
       "keywords": [
         "patch diff",
         "cve patch",
-        "vulnerability patch"
+        "vulnerability patch",
+        "补丁分析",
+        "补丁差分",
+        "漏洞补丁"
       ],
       "entry": "skills/patch-diff-exploit/SKILL.md",
       "references": [
@@ -4193,7 +4270,10 @@
         "protocol reverse",
         "packet format",
         "protobuf",
-        "websocket"
+        "websocket",
+        "协议逆向",
+        "协议分析",
+        "数据包格式"
       ],
       "entry": "skills/protocol-reverse/SKILL.md",
       "references": [
@@ -4207,7 +4287,10 @@
         "buffer overflow",
         "rop",
         "heap exploit",
-        "shellcode"
+        "shellcode",
+        "二进制利用",
+        "缓冲区溢出",
+        "堆利用"
       ],
       "entry": "skills/pwn-chain/SKILL.md",
       "references": [
@@ -4221,7 +4304,8 @@
       "keywords": [
         "radare2",
         "r2",
-        "rizin"
+        "rizin",
+        "radare2逆向"
       ],
       "entry": "skills/radare2/SKILL.md",
       "references": [
@@ -4234,7 +4318,10 @@
         "radio",
         "sdr",
         "rf",
-        "signal"
+        "signal",
+        "无线电安全",
+        "软件无线电",
+        "信号分析"
       ],
       "entry": "skills/radio-sdr/SKILL.md",
       "references": [
@@ -4247,7 +4334,11 @@
         "reverse engineering",
         "decompile",
         "disassemble",
-        "binary analysis"
+        "binary analysis",
+        "逆向工程",
+        "反编译",
+        "反汇编",
+        "二进制分析"
       ],
       "entry": "skills/reverse-engineering/SKILL.md",
       "references": [
@@ -4261,7 +4352,9 @@
       "keywords": [
         "supply chain",
         "dependency confusion",
-        "sbom"
+        "sbom",
+        "供应链安全",
+        "依赖混淆"
       ],
       "entry": "skills/supply-chain-security/SKILL.md",
       "references": [
@@ -4274,7 +4367,9 @@
       "keywords": [
         "thick client",
         "desktop client",
-        "windows client"
+        "windows client",
+        "桌面客户端",
+        "胖客户端"
       ],
       "entry": "skills/thick-client/SKILL.md",
       "references": [
@@ -4287,7 +4382,10 @@
         "threat hunting",
         "ioc",
         "sigma",
-        "mitre attack"
+        "mitre attack",
+        "威胁狩猎",
+        "威胁猎杀",
+        "指标分析"
       ],
       "entry": "skills/threat-hunting/SKILL.md",
       "references": [
@@ -4300,7 +4398,9 @@
         "wifi",
         "wireless",
         "802.11",
-        "wpa"
+        "wpa",
+        "无线安全",
+        "wifi安全"
       ],
       "entry": "skills/wifi-wireless/SKILL.md",
       "references": [
@@ -4313,7 +4413,10 @@
         "active directory",
         "windows ad",
         "kerberos",
-        "ldap"
+        "ldap",
+        "域安全",
+        "活动目录",
+        "域渗透"
       ],
       "entry": "skills/windows-ad/SKILL.md",
       "references": [

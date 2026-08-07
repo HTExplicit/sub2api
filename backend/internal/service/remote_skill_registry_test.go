@@ -63,6 +63,7 @@ type fakeRemoteSkillRegistryFiles struct {
 	activateErr error
 	installed   bool
 	activated   RemoteSkillRegistrySnapshot
+	bundle      *BusinessSystemPromptBundle
 }
 
 func (f *fakeRemoteSkillRegistryFiles) LoadSeed(context.Context) (RemoteSkillBundleVersion, error) {
@@ -84,6 +85,9 @@ func (f *fakeRemoteSkillRegistryFiles) Activate(_ context.Context, snapshot Remo
 }
 func (f *fakeRemoteSkillRegistryFiles) LoadManifest(context.Context, RemoteSkillBundleVersion) (BusinessSystemPromptBundleManifest, error) {
 	return BusinessSystemPromptBundleManifest{}, nil
+}
+func (f *fakeRemoteSkillRegistryFiles) LoadBundle(context.Context, RemoteSkillBundleVersion) (*BusinessSystemPromptBundle, error) {
+	return f.bundle, f.validateErr
 }
 
 type fakeRemoteSkillCandidateSource struct {

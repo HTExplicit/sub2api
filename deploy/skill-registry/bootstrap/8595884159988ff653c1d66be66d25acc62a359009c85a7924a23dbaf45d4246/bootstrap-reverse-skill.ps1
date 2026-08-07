@@ -3,24 +3,24 @@ param(
     [string]$DescriptorUrl = 'https://codexrip.vip/skills/reverse-skill/current.json',
     [string]$DescriptorFile,
     [string]$AssetRoot,
-    [string]$CacheRoot,
-    [string]$TaskRoot,
-    [string]$TaskId,
-    [string]$RouteId
+    [string]$CodexHome
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $AllowedHost = 'codexrip.vip'
+$BundleId = 'codexrip-reverse-skill'
+$SkillName = 'codexrip-reverse-skill'
 $ManifestName = 'bundle-manifest.json'
+$ClientSkillPath = 'codexrip-client/SKILL.md'
+$ClientOpenAIPath = 'codexrip-client/agents/openai.yaml'
 $MaxDescriptorBytes = 256KB
 $MaxManifestBytes = 4MB
 $MaxArchiveBytes = 128MB
 $MaxExtractedBytes = 256MB
 $MaxFileBytes = 64MB
 $MaxFiles = 2000
-$TaskMaxAge = [TimeSpan]::FromDays(7)
 
 function Throw-BootstrapError([string]$Message) {
     throw [InvalidOperationException]::new($Message)
@@ -95,16 +95,9 @@ function Read-LocalContractAsset([string]$Root, [string]$Name, [long]$Maximum) {
     return [IO.File]::ReadAllBytes($target)
 }
 
-function Get-DefaultCacheRoot {
-    if ($IsWindows) {
-        $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $HOME 'AppData\Local' }
-        return Join-Path $base 'CodexRip\skills'
-    }
-    if ($IsMacOS) {
-        return Join-Path $HOME 'Library/Caches/CodexRip/skills'
-    }
-    $base = if ($env:XDG_CACHE_HOME) { $env:XDG_CACHE_HOME } else { Join-Path $HOME '.cache' }
-    return Join-Path $base 'codexrip/skills'
+function Get-DefaultCodexHome {
+    if ($env:CODEX_HOME) { return $env:CODEX_HOME }
+    return Join-Path $HOME '.codex'
 }
 
 function Get-PortablePathKey([string]$Value) {
@@ -156,7 +149,7 @@ function Read-Descriptor([byte[]]$Bytes) {
         }
     }
     if ([int]$descriptor.schema_version -ne 1 -or [long]$descriptor.revision -lt 1 -or
-        [string]$descriptor.bundle_id -cnotmatch '^[A-Za-z0-9._-]{1,128}$' -or
+        [string]$descriptor.bundle_id -cne $BundleId -or
         [string]$descriptor.source_commit -cnotmatch '^[0-9a-f]{40}$') {
         Throw-BootstrapError 'descriptor identity is invalid'
     }
@@ -167,6 +160,16 @@ function Read-Descriptor([byte[]]$Bytes) {
     }
     $descriptor.manifest_url = Assert-PublicUrl ([string]$descriptor.manifest_url)
     $descriptor.archive_url = Assert-PublicUrl ([string]$descriptor.archive_url)
+    $prefix = "/skills/reverse-skill/versions/$($descriptor.manifest_sha256)/"
+    $manifestUri = [Uri]$descriptor.manifest_url
+    $archiveUri = [Uri]$descriptor.archive_url
+    $archiveName = "$BundleId-$($descriptor.manifest_sha256).zip"
+    if (-not $manifestUri.AbsolutePath.StartsWith($prefix, [StringComparison]::Ordinal) -or
+        -not $manifestUri.AbsolutePath.EndsWith('/' + $ManifestName, [StringComparison]::Ordinal) -or
+        -not $archiveUri.AbsolutePath.StartsWith($prefix, [StringComparison]::Ordinal) -or
+        -not $archiveUri.AbsolutePath.EndsWith('/' + $archiveName, [StringComparison]::Ordinal)) {
+        Throw-BootstrapError 'descriptor URL is outside the fixed CodexRip registry'
+    }
     return $descriptor
 }
 
@@ -211,6 +214,11 @@ function Read-Manifest([byte[]]$Bytes, [object]$Descriptor) {
             Throw-BootstrapError 'manifest core files are invalid'
         }
     }
+    foreach ($required in @($ClientSkillPath, $ClientOpenAIPath)) {
+        if (-not $byPath.ContainsKey($required) -or [string]$byPath[$required].kind -cne 'text') {
+            Throw-BootstrapError 'native Codex Skill entry is missing'
+        }
+    }
     $routeIds = @{}
     foreach ($route in @($manifest.domains)) {
         $id = [string]$route.id
@@ -242,13 +250,25 @@ function Assert-FileBytes([byte[]]$Bytes, [object]$Entry, [string]$Name) {
     }
 }
 
-function Install-Bundle([byte[]]$ArchiveBytes, [byte[]]$ManifestBytes, [object]$Descriptor, [hashtable]$ManifestState, [string]$Destination) {
+function Install-NativeSkill([byte[]]$ArchiveBytes, [byte[]]$ManifestBytes, [object]$Descriptor, [hashtable]$ManifestState, [string]$ResolvedCodexHome) {
     Add-Type -AssemblyName System.IO.Compression
-    $parent = Split-Path -Parent $Destination
-    $null = New-Item -ItemType Directory -Path $parent -Force
-    $staging = Join-Path $parent ('.install-' + [guid]::NewGuid().ToString('N'))
+    $skillsRoot = Join-Path $ResolvedCodexHome 'skills'
+    $destination = Join-Path $skillsRoot $SkillName
+    $null = New-Item -ItemType Directory -Path $skillsRoot -Force
+    if (Test-Path -LiteralPath $destination) {
+        $targetItem = Get-Item -LiteralPath $destination -Force
+        if (-not $targetItem.PSIsContainer -or ($targetItem.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            Throw-BootstrapError 'native Skill target is not a regular directory'
+        }
+    }
+    $replaced = Test-Path -LiteralPath $destination -PathType Container
+    $staging = Join-Path $skillsRoot ('.' + $SkillName + '-new-' + [guid]::NewGuid().ToString('N'))
+    $backup = Join-Path $skillsRoot ('.' + $SkillName + '-old-' + [guid]::NewGuid().ToString('N'))
     $null = New-Item -ItemType Directory -Path $staging
+    $oldMoved = $false
     try {
+        $bundleRoot = Join-Path $staging 'bundle'
+        $null = New-Item -ItemType Directory -Path $bundleRoot
         $memory = [IO.MemoryStream]::new($ArchiveBytes, $false)
         $archive = [IO.Compression.ZipArchive]::new($memory, [IO.Compression.ZipArchiveMode]::Read, $false)
         try {
@@ -287,91 +307,49 @@ function Install-Bundle([byte[]]$ArchiveBytes, [byte[]]$ManifestBytes, [object]$
                 else {
                     Assert-FileBytes $bytes $ManifestState.ByPath[$entry.FullName] $entry.FullName
                 }
-                $target = Get-NativePath $staging $entry.FullName
+                $target = Get-NativePath $bundleRoot $entry.FullName
                 $null = New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force
                 [IO.File]::WriteAllBytes($target, $bytes)
             }
-            [IO.File]::WriteAllBytes((Join-Path $staging '.bundle.zip'), $ArchiveBytes)
         }
         finally {
             $archive.Dispose()
             $memory.Dispose()
         }
-        try { Move-Item -LiteralPath $staging -Destination $Destination -ErrorAction Stop }
-        catch {
-            if (-not (Test-Path -LiteralPath $Destination -PathType Container)) { throw }
+        [IO.File]::Copy((Get-NativePath $bundleRoot $ClientSkillPath), (Join-Path $staging 'SKILL.md'), $false)
+        $agentsRoot = Join-Path $staging 'agents'
+        $null = New-Item -ItemType Directory -Path $agentsRoot
+        [IO.File]::Copy((Get-NativePath $bundleRoot $ClientOpenAIPath), (Join-Path $agentsRoot 'openai.yaml'), $false)
+        $metadata = [ordered]@{
+            schema_version = 1
+            skill_name = $SkillName
+            bundle_id = $descriptor.bundle_id
+            bundle_revision = [long]$descriptor.revision
+            source_commit = $descriptor.source_commit
+            manifest_sha256 = $descriptor.manifest_sha256
+            archive_sha256 = $descriptor.archive_sha256
+        } | ConvertTo-Json -Compress
+        [IO.File]::WriteAllText((Join-Path $staging '.codexrip-install.json'), $metadata + "`n", [Text.UTF8Encoding]::new($false))
+        if ($replaced) {
+            Move-Item -LiteralPath $destination -Destination $backup -ErrorAction Stop
+            $oldMoved = $true
         }
+        Move-Item -LiteralPath $staging -Destination $destination -ErrorAction Stop
+        if ($oldMoved) { Remove-Item -LiteralPath $backup -Recurse -Force }
+        return @{ Path = [IO.Path]::GetFullPath($destination); Replaced = [bool]$replaced }
+    }
+    catch {
+        if ($oldMoved -and -not (Test-Path -LiteralPath $destination) -and (Test-Path -LiteralPath $backup)) {
+            Move-Item -LiteralPath $backup -Destination $destination -ErrorAction SilentlyContinue
+        }
+        throw
     }
     finally {
         Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
-    }
-}
-
-function Assert-CachedBundle([string]$Root, [byte[]]$ManifestBytes, [object]$Descriptor, [hashtable]$ManifestState) {
-    $rootItem = Get-Item -LiteralPath $Root
-    if (-not $rootItem.PSIsContainer -or ($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
-        Throw-BootstrapError 'cached bundle root is invalid'
-    }
-    $manifestPath = Join-Path $Root $ManifestName
-    if (-not (Test-BytesEqual ([IO.File]::ReadAllBytes($manifestPath)) $ManifestBytes)) {
-        Throw-BootstrapError 'cached manifest mismatch'
-    }
-    $archivePath = Join-Path $Root '.bundle.zip'
-    if (-not (Test-Path -LiteralPath $archivePath -PathType Leaf) -or (Get-FileSha256 $archivePath) -cne $Descriptor.archive_sha256) {
-        Throw-BootstrapError 'cached archive mismatch'
-    }
-    foreach ($name in $ManifestState.ByPath.Keys) {
-        $path = Get-NativePath $Root $name
-        $item = Get-Item -LiteralPath $path
-        if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
-            $item.Length -ne [long]$ManifestState.ByPath[$name].byte_length -or
-            (Get-FileSha256 $path) -cne [string]$ManifestState.ByPath[$name].sha256) {
-            Throw-BootstrapError "cached file verification failed: $name"
+        if ((Test-Path -LiteralPath $destination) -and (Test-Path -LiteralPath $backup)) {
+            Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
-}
-
-function Remove-ExpiredTasks([string]$Root) {
-    if (-not (Test-Path -LiteralPath $Root -PathType Container)) { return }
-    $cutoff = [DateTime]::UtcNow.Subtract($TaskMaxAge)
-    foreach ($item in Get-ChildItem -LiteralPath $Root -Directory -Force) {
-        if (-not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -and $item.LastWriteTimeUtc -lt $cutoff) {
-            Remove-Item -LiteralPath $item.FullName -Recurse -Force -ErrorAction SilentlyContinue
-        }
-    }
-}
-
-function New-TaskMaterialization([string]$BundleRoot, [string]$TasksRoot, [string]$RequestedTaskId, [string]$RequestedRouteId, [hashtable]$ManifestState) {
-    Remove-ExpiredTasks $TasksRoot
-    $null = New-Item -ItemType Directory -Path $TasksRoot -Force
-    $id = if ($RequestedTaskId) { $RequestedTaskId } else { [DateTimeOffset]::UtcNow.ToUnixTimeSeconds().ToString() + '-' + [guid]::NewGuid().ToString('N').Substring(0, 12) }
-    if ($id -cnotmatch '^[A-Za-z0-9._-]{1,128}$') { Throw-BootstrapError 'task id is invalid' }
-    $task = Join-Path $TasksRoot $id
-    $null = New-Item -ItemType Directory -Path $task -ErrorAction Stop
-    $selected = [Collections.Generic.List[string]]::new()
-    foreach ($name in @($ManifestState.Manifest.core_files)) { if (-not $selected.Contains([string]$name)) { $selected.Add([string]$name) } }
-    if ($RequestedRouteId) {
-        $route = @($ManifestState.Manifest.domains) | Where-Object { [string]$_.id -ceq $RequestedRouteId } | Select-Object -First 1
-        if (-not $route) { Throw-BootstrapError 'requested route does not exist' }
-        foreach ($name in @($route.entry) + @($route.references)) { if (-not $selected.Contains([string]$name)) { $selected.Add([string]$name) } }
-    }
-    $copied = [Collections.Generic.List[string]]::new()
-    $scripts = [Collections.Generic.List[string]]::new()
-    foreach ($name in $selected) {
-        $entry = $ManifestState.ByPath[$name]
-        if ([string]$entry.kind -ceq 'script' -and -not $RequestedRouteId) {
-            Throw-BootstrapError 'scripts require an explicit route'
-        }
-        $source = Get-NativePath $BundleRoot $name
-        $bytes = [IO.File]::ReadAllBytes($source)
-        Assert-FileBytes $bytes $entry $name
-        $target = Get-NativePath (Join-Path $task 'bundle') $name
-        $null = New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force
-        [IO.File]::WriteAllBytes($target, $bytes)
-        $copied.Add([IO.Path]::GetFullPath($target))
-        if ([string]$entry.kind -ceq 'script') { $scripts.Add([IO.Path]::GetFullPath($target)) }
-    }
-    return @{ Task = [IO.Path]::GetFullPath($task); Copied = @($copied); Scripts = @($scripts) }
 }
 
 try {
@@ -390,34 +368,25 @@ try {
     }
     else { Invoke-BoundedDownload $descriptor.manifest_url $MaxManifestBytes }
     $manifestState = Read-Manifest $manifestBytes $descriptor
-    $resolvedCacheRoot = [IO.Path]::GetFullPath($(if ($CacheRoot) { $CacheRoot } else { Get-DefaultCacheRoot }))
-    $bundleRoot = Join-Path (Join-Path (Join-Path $resolvedCacheRoot 'bundles') $descriptor.bundle_id) $descriptor.manifest_sha256
-    $cacheReused = Test-Path -LiteralPath $bundleRoot -PathType Container
-    if (-not $cacheReused) {
-        $archiveName = [IO.Path]::GetFileName(([Uri]$descriptor.archive_url).AbsolutePath)
-        $archiveBytes = if ($AssetRoot) {
-            Read-LocalContractAsset $AssetRoot $archiveName $MaxArchiveBytes
-        }
-        else { Invoke-BoundedDownload $descriptor.archive_url $MaxArchiveBytes }
-        if ((Get-BytesSha256 $archiveBytes) -cne $descriptor.archive_sha256) { Throw-BootstrapError 'archive digest is invalid' }
-        Install-Bundle $archiveBytes $manifestBytes $descriptor $manifestState $bundleRoot
+    $archiveName = [IO.Path]::GetFileName(([Uri]$descriptor.archive_url).AbsolutePath)
+    $archiveBytes = if ($AssetRoot) {
+        Read-LocalContractAsset $AssetRoot $archiveName $MaxArchiveBytes
     }
-    Assert-CachedBundle $bundleRoot $manifestBytes $descriptor $manifestState
-    $resolvedTaskRoot = [IO.Path]::GetFullPath($(if ($TaskRoot) { $TaskRoot } else { Join-Path $resolvedCacheRoot 'tasks' }))
-    $materialized = New-TaskMaterialization $bundleRoot $resolvedTaskRoot $TaskId $RouteId $manifestState
+    else { Invoke-BoundedDownload $descriptor.archive_url $MaxArchiveBytes }
+    if ((Get-BytesSha256 $archiveBytes) -cne $descriptor.archive_sha256) { Throw-BootstrapError 'archive digest is invalid' }
+    $resolvedCodexHome = [IO.Path]::GetFullPath($(if ($CodexHome) { $CodexHome } else { Get-DefaultCodexHome }))
+    $installed = Install-NativeSkill $archiveBytes $manifestBytes $descriptor $manifestState $resolvedCodexHome
     [ordered]@{
         status = 'ready'
-        platform = $(if ($IsWindows) { 'windows' } elseif ($IsMacOS) { 'macos' } else { 'linux' })
+        skill_name = $SkillName
+        skill_path = $installed.Path
         bundle_id = $descriptor.bundle_id
         bundle_revision = [long]$descriptor.revision
         manifest_sha256 = $descriptor.manifest_sha256
+        archive_sha256 = $descriptor.archive_sha256
         source_commit = $descriptor.source_commit
-        cache_reused = [bool]$cacheReused
-        cache_path = [IO.Path]::GetFullPath($bundleRoot)
-        manifest_path = [IO.Path]::GetFullPath((Join-Path $bundleRoot $ManifestName))
-        task_path = $materialized.Task
-        materialized_files = $materialized.Copied
-        materialized_scripts = $materialized.Scripts
+        manifest_path = [IO.Path]::GetFullPath((Join-Path (Join-Path $installed.Path 'bundle') $ManifestName))
+        replaced = [bool]$installed.Replaced
         scripts_executed = $false
     } | ConvertTo-Json -Compress -Depth 8
     exit 0

@@ -51,11 +51,11 @@ describe('System Prompts API', () => {
 
     await systemPromptsAPI.saveDraft(12, {
       body: 'draft', note: '', expected_latest_version: 3, expected_revision: 7,
-      composition_mode: 'remote_skill', bundle_id: 'codexrip-reverse-skill',
+      composition_mode: 'codex_skill_hybrid', bundle_id: 'codexrip-reverse-skill',
       bundle_manifest_sha256: '',
     })
     expect(client.post).toHaveBeenCalledWith('/admin/system-prompts/12/versions', expect.objectContaining({
-      expected_latest_version: 3, expected_revision: 7, composition_mode: 'remote_skill',
+      expected_latest_version: 3, expected_revision: 7, composition_mode: 'codex_skill_hybrid',
       bundle_id: 'codexrip-reverse-skill', bundle_manifest_sha256: '',
     }))
 

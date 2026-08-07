@@ -42,8 +42,10 @@ func ProvideUpdateService(cache UpdateCache, githubClient GitHubReleaseClient, b
 func ProvideBusinessSystemPromptService(
 	store BusinessSystemPromptStore,
 	bus BusinessSystemPromptRevisionBus,
+	remoteSkillRegistry *RemoteSkillRegistryService,
 ) (*BusinessSystemPromptService, error) {
 	svc := NewBusinessSystemPromptService(store, bus)
+	svc.SetRemoteSkillRegistryService(remoteSkillRegistry)
 	if err := svc.Start(context.Background()); err != nil {
 		return nil, err
 	}

@@ -35,24 +35,28 @@ var (
 var embeddedBusinessSystemPrompt string
 
 type BusinessSystemPromptSnapshot struct {
-	Enabled              bool      `json:"enabled"`
-	ExposeServerPrompt   bool      `json:"expose_server_prompt"`
-	CompactEnabled       bool      `json:"compact_enabled"`
-	TemplateID           int64     `json:"template_id"`
-	VersionID            int64     `json:"version_id"`
-	TemplateVersion      int64     `json:"template_version"`
-	Revision             int64     `json:"revision"`
-	Body                 string    `json:"body,omitempty"`
-	SHA256               string    `json:"sha256"`
-	ByteLength           int       `json:"byte_length"`
-	CompositionMode      string    `json:"composition_mode"`
-	BundleID             string    `json:"bundle_id,omitempty"`
-	BundleManifestSHA256 string    `json:"bundle_manifest_sha256,omitempty"`
-	BundleAvailable      bool      `json:"bundle_available"`
-	BundleDegraded       bool      `json:"bundle_degraded"`
-	DegradedReason       string    `json:"degraded_reason,omitempty"`
-	Degraded             bool      `json:"degraded"`
-	UpdatedAt            time.Time `json:"updated_at"`
+	Enabled                bool      `json:"enabled"`
+	ExposeServerPrompt     bool      `json:"expose_server_prompt"`
+	CompactEnabled         bool      `json:"compact_enabled"`
+	TemplateID             int64     `json:"template_id"`
+	VersionID              int64     `json:"version_id"`
+	TemplateVersion        int64     `json:"template_version"`
+	Revision               int64     `json:"revision"`
+	Body                   string    `json:"body,omitempty"`
+	SHA256                 string    `json:"sha256"`
+	ByteLength             int       `json:"byte_length"`
+	CompositionMode        string    `json:"composition_mode"`
+	BundleID               string    `json:"bundle_id,omitempty"`
+	BundleManifestSHA256   string    `json:"bundle_manifest_sha256,omitempty"`
+	RegistryRevision       int64     `json:"registry_revision,omitempty"`
+	RegistryManifestSHA256 string    `json:"registry_manifest_sha256,omitempty"`
+	RegistryArchiveSHA256  string    `json:"registry_archive_sha256,omitempty"`
+	RegistrySourceCommit   string    `json:"registry_source_commit,omitempty"`
+	BundleAvailable        bool      `json:"bundle_available"`
+	BundleDegraded         bool      `json:"bundle_degraded"`
+	DegradedReason         string    `json:"degraded_reason,omitempty"`
+	Degraded               bool      `json:"degraded"`
+	UpdatedAt              time.Time `json:"updated_at"`
 
 	// requestBundle and the effective fields are attached to an immutable
 	// request-scoped copy. They are never persisted or returned by the runtime
@@ -64,6 +68,7 @@ type BusinessSystemPromptSnapshot struct {
 	routeIDs            []string                    `json:"-"`
 	documentIDs         []string                    `json:"-"`
 	referenceIDs        []string                    `json:"-"`
+	omittedDocumentIDs  []string                    `json:"-"`
 }
 
 type BusinessSystemPromptTarget struct {
@@ -90,9 +95,13 @@ type BusinessSystemPromptApplication struct {
 	CompositionMode      string   `json:"composition_mode,omitempty"`
 	BundleID             string   `json:"bundle_id,omitempty"`
 	BundleManifestSHA256 string   `json:"bundle_manifest_sha256,omitempty"`
+	BundleRevision       int64    `json:"bundle_revision,omitempty"`
+	BundleArchiveSHA256  string   `json:"bundle_archive_sha256,omitempty"`
+	BundleSourceCommit   string   `json:"bundle_source_commit,omitempty"`
 	RouteIDs             []string `json:"route_ids,omitempty"`
 	DocumentIDs          []string `json:"document_ids,omitempty"`
 	ReferenceIDs         []string `json:"reference_ids,omitempty"`
+	OmittedDocumentIDs   []string `json:"omitted_document_ids,omitempty"`
 	Degraded             bool     `json:"degraded,omitempty"`
 }
 
@@ -136,6 +145,10 @@ func ApplyBusinessSystemPromptToJSON(
 	snapshot BusinessSystemPromptSnapshot,
 	target BusinessSystemPromptTarget,
 ) ([]byte, BusinessSystemPromptApplication, error) {
+	bundleManifestSHA256 := snapshot.BundleManifestSHA256
+	if snapshot.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid {
+		bundleManifestSHA256 = snapshot.RegistryManifestSHA256
+	}
 	application := BusinessSystemPromptApplication{
 		ExposeServerPrompt:   snapshot.ExposeServerPrompt,
 		CompactEnabled:       snapshot.CompactEnabled,
@@ -149,10 +162,14 @@ func ApplyBusinessSystemPromptToJSON(
 		EffectiveByteLength:  snapshot.effectiveByteLength,
 		CompositionMode:      snapshot.CompositionMode,
 		BundleID:             snapshot.BundleID,
-		BundleManifestSHA256: strings.ToLower(strings.TrimSpace(snapshot.BundleManifestSHA256)),
+		BundleManifestSHA256: strings.ToLower(strings.TrimSpace(bundleManifestSHA256)),
+		BundleRevision:       snapshot.RegistryRevision,
+		BundleArchiveSHA256:  strings.ToLower(strings.TrimSpace(snapshot.RegistryArchiveSHA256)),
+		BundleSourceCommit:   strings.ToLower(strings.TrimSpace(snapshot.RegistrySourceCommit)),
 		RouteIDs:             append([]string(nil), snapshot.routeIDs...),
 		DocumentIDs:          append([]string(nil), snapshot.documentIDs...),
 		ReferenceIDs:         append([]string(nil), snapshot.referenceIDs...),
+		OmittedDocumentIDs:   append([]string(nil), snapshot.omittedDocumentIDs...),
 		Degraded:             snapshot.Degraded,
 	}
 	if !snapshot.Enabled || target.Platform != PlatformOpenAI || (target.Compact && !snapshot.CompactEnabled) {

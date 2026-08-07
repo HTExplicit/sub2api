@@ -33,6 +33,111 @@ func newGatewayBusinessSystemPromptPolicy(t *testing.T, expose, compact bool) *B
 	return policy
 }
 
+func newGatewayHybridBusinessSystemPromptPolicy(t *testing.T) *BusinessSystemPromptService {
+	return newGatewayHybridBusinessSystemPromptPolicyWithBody(t, "high-fidelity-base\noriginal whitespace", 7)
+}
+
+func newGatewayHybridBusinessSystemPromptPolicyWithBody(t *testing.T, body string, revision int64) *BusinessSystemPromptService {
+	t.Helper()
+	root := t.TempDir()
+	writeBundleFixture(t, root)
+	bundle, err := LoadBusinessSystemPromptBundle(root)
+	require.NoError(t, err)
+	active := RemoteSkillBundleVersion{
+		ID: 31, BundleID: bundle.Manifest.BundleID, SourceCommit: strings.Repeat("1", 40),
+		ManifestSHA256: bundle.ManifestSHA256, ArchiveSHA256: strings.Repeat("2", 64),
+	}
+	registryStore := &fakeRemoteSkillRegistryStore{snapshot: RemoteSkillRegistrySnapshot{
+		Revision: 11, Active: &active,
+	}}
+	registryFiles := &fakeRemoteSkillRegistryFiles{seedErr: ErrRemoteSkillSeedUnavailable, bundle: bundle}
+	registry := NewRemoteSkillRegistryService(registryStore, nil, registryFiles, &fakeRemoteSkillCandidateSource{})
+	require.NoError(t, registry.Initialize(context.Background()))
+
+	store := &fakeBusinessSystemPromptStore{loaded: BusinessSystemPromptSnapshot{
+		Enabled: true, TemplateID: 10, VersionID: 20, TemplateVersion: 3, Revision: revision,
+		Body:            body,
+		CompositionMode: BusinessSystemPromptCompositionCodexSkillHybrid,
+		BundleID:        BusinessSystemPromptRemoteSkillBundleID,
+	}}
+	policy := NewBusinessSystemPromptService(store, nil)
+	policy.SetRemoteSkillRegistryService(registry)
+	require.NoError(t, policy.Initialize(context.Background()))
+	return policy
+}
+
+func TestBusinessSystemPromptHybridSeparatesOfficialCodexAndCompatibleRouting(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	policy := newGatewayHybridBusinessSystemPromptPolicy(t)
+	svc := &OpenAIGatewayService{businessPromptService: policy}
+	account := businessSystemPromptAPIKeyAccount(true)
+	body := []byte(`{"model":"gpt-5.4","input":"请审计这个接口安全和鉴权流程"}`)
+
+	official, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
+	official.Request.Header.Set("originator", "codex-tui")
+	officialBody, officialApplication, err := svc.applyBusinessSystemPromptForRequest(
+		official, body, account, BusinessSystemPromptProtocolResponses, false,
+	)
+	require.NoError(t, err)
+	require.Equal(t, "high-fidelity-base\noriginal whitespace", gjson.GetBytes(officialBody, "instructions").String())
+	require.Empty(t, officialApplication.RouteIDs)
+	require.Equal(t, int64(11), officialApplication.BundleRevision)
+
+	compatible, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
+	compatible.Request.Header.Set("User-Agent", "compatible-client/1.0")
+	compatibleBody, compatibleApplication, err := svc.applyBusinessSystemPromptForRequest(
+		compatible, body, account, BusinessSystemPromptProtocolResponses, false,
+	)
+	require.NoError(t, err)
+	require.Equal(t, []string{"api-security"}, compatibleApplication.RouteIDs)
+	require.Contains(t, gjson.GetBytes(compatibleBody, "instructions").String(), "[CODEXRIP VERIFIED SKILL DOCUMENTS]")
+	require.Equal(t, int64(11), compatibleApplication.BundleRevision)
+
+	retried, retriedApplication, err := svc.applyBusinessSystemPromptForRequest(
+		compatible, compatibleBody, account, BusinessSystemPromptProtocolResponses, false,
+	)
+	require.NoError(t, err)
+	require.Equal(t, compatibleBody, retried)
+	require.Equal(t, compatibleApplication.EffectiveSHA256, retriedApplication.EffectiveSHA256)
+	require.Equal(t, 1, strings.Count(gjson.GetBytes(retried, "instructions").String(), "[CODEXRIP VERIFIED SKILL DOCUMENTS]"))
+}
+
+func TestBusinessSystemPromptHybridPreviewMatchesAppliedBytes(t *testing.T) {
+	policy := newGatewayHybridBusinessSystemPromptPolicy(t)
+	current, ok := policy.CurrentSnapshot()
+	require.True(t, ok)
+
+	for _, clientMode := range []string{"codex", "openai_compatible"} {
+		t.Run(clientMode, func(t *testing.T) {
+			preview, err := policy.PrepareBusinessSystemPromptPreviewSnapshotForClient(
+				current,
+				"请审计这个接口安全和鉴权流程",
+				clientMode,
+			)
+			require.NoError(t, err)
+
+			updated, application, err := ApplyBusinessSystemPromptToJSON(
+				[]byte(`{"model":"gpt-5.4","input":"preview"}`),
+				preview,
+				BusinessSystemPromptTarget{Platform: PlatformOpenAI, Protocol: BusinessSystemPromptProtocolResponses},
+			)
+			require.NoError(t, err)
+			require.Equal(t, preview.Body, application.ServerInstructions)
+			require.Equal(t, preview.Body, gjson.GetBytes(updated, "instructions").String())
+			require.Equal(t, len([]byte(preview.Body)), application.EffectiveByteLength)
+			require.Equal(t, hashBusinessSystemPromptBundleBytes([]byte(preview.Body)), application.EffectiveSHA256)
+
+			if clientMode == "codex" {
+				require.Empty(t, application.RouteIDs)
+				require.NotContains(t, preview.Body, "[CODEXRIP VERIFIED SKILL DOCUMENTS]")
+				return
+			}
+			require.Equal(t, []string{"api-security"}, application.RouteIDs)
+			require.Contains(t, preview.Body, "[CODEXRIP VERIFIED SKILL DOCUMENTS]")
+		})
+	}
+}
+
 func businessSystemPromptTestConfig() *config.Config {
 	cfg := &config.Config{}
 	cfg.Security.URLAllowlist.Enabled = false

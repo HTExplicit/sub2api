@@ -184,6 +184,62 @@ func TestBusinessSystemPromptBundleCompilerLimitsRoutesAndRetainsPreviousOnConti
 	require.Equal(t, first.Metadata.DocumentPaths, continued.Metadata.DocumentPaths)
 }
 
+func TestBusinessSystemPromptHybridCompilerPreservesBaseAndRoutesChineseWithinCap(t *testing.T) {
+	root := t.TempDir()
+	writeBundleFixture(t, root)
+	bundle, err := LoadBusinessSystemPromptBundle(root)
+	require.NoError(t, err)
+	base := "  high-fidelity base\nwith original whitespace  "
+	compiler := NewBusinessSystemPromptHybridCompiler(bundle)
+
+	unmatched, err := compiler.CompileHybrid(BusinessSystemPromptBundleCompileInput{
+		BasePrompt: base, RequestText: "ordinary weather question",
+	})
+	require.NoError(t, err)
+	require.Equal(t, base, unmatched.Body)
+	require.Equal(t, hashBusinessSystemPromptBundleBytes([]byte(base)), unmatched.Metadata.EffectiveSHA256)
+	require.Empty(t, unmatched.RouteIDs)
+
+	matched, err := compiler.CompileHybrid(BusinessSystemPromptBundleCompileInput{
+		BasePrompt: base, RequestText: "请审计这个接口安全和鉴权流程",
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"api-security"}, matched.RouteIDs)
+	require.True(t, strings.HasPrefix(matched.Body, base+"\n\n"))
+	require.Contains(t, matched.Body, "[CODEXRIP VERIFIED SKILL DOCUMENTS]")
+	require.Contains(t, matched.Body, "api entry")
+	require.LessOrEqual(t, matched.Metadata.ByteLength, BusinessSystemPromptBundleMaxBytes)
+
+	large := strings.Repeat("x", BusinessSystemPromptBundleMaxBytes)
+	require.NoError(t, os.WriteFile(filepath.Join(root, "ref-optional.md"), []byte(large), 0o600))
+	updateFixtureFileHash(t, root, "ref-optional.md", []byte(large))
+	bundle, err = LoadBusinessSystemPromptBundle(root)
+	require.NoError(t, err)
+	matched, err = NewBusinessSystemPromptHybridCompiler(bundle).CompileHybrid(BusinessSystemPromptBundleCompileInput{
+		BasePrompt: base, RequestText: "请审计这个接口安全和鉴权流程",
+	})
+	require.NoError(t, err)
+	require.LessOrEqual(t, matched.Metadata.ByteLength, BusinessSystemPromptBundleMaxBytes)
+	require.Contains(t, matched.OmittedPaths, "ref-optional.md")
+}
+
+func TestBusinessSystemPromptHybridCompilerKeepsManifestOrderForEqualScores(t *testing.T) {
+	root := t.TempDir()
+	writeBundleFixture(t, root)
+	bundle, err := LoadBusinessSystemPromptBundle(root)
+	require.NoError(t, err)
+	bundle.Manifest.Domains = []BusinessSystemPromptBundleDomain{
+		{ID: "z-first", Keywords: []string{"shared"}, Entry: "api.md"},
+		{ID: "a-second", Keywords: []string{"shared"}, Entry: "malware.md"},
+	}
+
+	compiled, err := NewBusinessSystemPromptHybridCompiler(bundle).CompileHybrid(BusinessSystemPromptBundleCompileInput{
+		BasePrompt: "base", RequestText: "shared",
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"z-first", "a-second"}, compiled.RouteIDs)
+}
+
 func TestBusinessSystemPromptBundleCompilerPreservesLegacyBaseProvenanceOffline(t *testing.T) {
 	root := t.TempDir()
 	writeBundleFixture(t, root)
@@ -303,7 +359,7 @@ func writeBundleFixture(t *testing.T, root string) {
 		CoreFiles:     []string{"core.md"},
 		Files:         entries,
 		Domains: []BusinessSystemPromptBundleDomain{
-			{ID: "api-security", Keywords: []string{"api", "http", "authentication", "security"}, Entry: "api.md", References: []string{"ref-auth.md", "ref-http.md", "ref-optional.md"}},
+			{ID: "api-security", Keywords: []string{"api", "http", "authentication", "security", "接口安全", "鉴权"}, Entry: "api.md", References: []string{"ref-auth.md", "ref-http.md", "ref-optional.md"}},
 			{ID: "malware-analysis", Keywords: []string{"malware", "reverse engineering"}, Entry: "malware.md", References: []string{"ref-malware.md"}},
 			{ID: "digital-forensics", Keywords: []string{"forensic"}, Entry: "forensics.md", References: []string{"ref-forensics.md"}},
 		},

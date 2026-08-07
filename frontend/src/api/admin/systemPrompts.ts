@@ -1,6 +1,7 @@
 import { apiClient } from '../client'
 
-export type SystemPromptCompositionMode = 'inline' | 'offline_bundle' | 'remote_skill'
+export type SystemPromptCompositionMode = 'inline' | 'offline_bundle' | 'remote_skill' | 'codex_skill_hybrid'
+export type SystemPromptClientMode = 'codex' | 'openai_compatible'
 
 export interface SystemPromptRuntime {
   enabled: boolean
@@ -16,6 +17,10 @@ export interface SystemPromptRuntime {
   composition_mode: SystemPromptCompositionMode
   bundle_id: string
   bundle_manifest_sha256: string
+  registry_revision?: number
+  registry_manifest_sha256?: string
+  registry_archive_sha256?: string
+  registry_source_commit?: string
   bundle_available: boolean
   bundle_degraded: boolean
   degraded_reason?: string
@@ -110,6 +115,7 @@ export interface RemoteSkillBundleVersion {
 
 export interface RemoteSkillBundleVersionDetail extends RemoteSkillBundleVersion {
   verified: boolean
+  routing_warnings?: string[]
 }
 
 export interface RemoteSkillRegistrySnapshot {
@@ -123,6 +129,22 @@ export interface RemoteSkillRegistrySnapshot {
 export interface RemoteSkillRegistryResponse {
   runtime: RemoteSkillRegistrySnapshot
   versions: RemoteSkillBundleVersion[]
+  client_install: RemoteSkillClientInstall
+}
+
+export interface RemoteSkillClientInstaller {
+  url: string
+  sha256: string
+  command: string
+}
+
+export interface RemoteSkillClientInstall {
+  skill_name: string
+  source_commit?: string
+  manifest_sha256?: string
+  descriptor_url: string
+  powershell: RemoteSkillClientInstaller
+  python: RemoteSkillClientInstaller
 }
 
 export interface RemoteSkillSyncJob {
@@ -162,6 +184,9 @@ export interface CreateSystemPromptRequest {
 
 export interface PreviewUpstreamResponse {
   body: unknown
+  client_mode: SystemPromptClientMode
+  base_server_instructions: string
+  final_server_instructions: string
   application: {
     applied: boolean
     carrier: string
@@ -174,8 +199,12 @@ export interface PreviewUpstreamResponse {
     effective_byte_length?: number
     bundle_id?: string
     bundle_manifest_sha256?: string
+    bundle_revision?: number
+    bundle_archive_sha256?: string
+    bundle_source_commit?: string
     route_ids?: string[]
     document_ids?: string[]
+    omitted_document_ids?: string[]
     degraded?: boolean
     degraded_reason?: string
   }
@@ -320,8 +349,15 @@ export async function previewMerge(payload: {
   bundle_id?: string
   bundle_manifest_sha256?: string
   body?: unknown
-}): Promise<{ instructions: string }> {
-  const { data } = await apiClient.post<{ instructions: string }>('/admin/system-prompts/preview/merge', payload)
+  client_mode: SystemPromptClientMode
+}): Promise<{
+  instructions: string
+  client_mode: SystemPromptClientMode
+  base_server_instructions: string
+  final_server_instructions: string
+  application: PreviewUpstreamResponse['application']
+}> {
+  const { data } = await apiClient.post('/admin/system-prompts/preview/merge', payload)
   return data
 }
 
@@ -335,6 +371,7 @@ export async function previewUpstream(payload: {
   protocol: 'responses' | 'chat'
   compact: boolean
   body: unknown
+  client_mode: SystemPromptClientMode
 }): Promise<PreviewUpstreamResponse> {
   const { data } = await apiClient.post<PreviewUpstreamResponse>('/admin/system-prompts/preview/upstream', payload)
   return data

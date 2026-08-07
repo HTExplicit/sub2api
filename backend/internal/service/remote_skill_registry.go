@@ -10,10 +10,12 @@ import (
 )
 
 const (
-	RemoteSkillSyncStatusQueued    = "queued"
-	RemoteSkillSyncStatusRunning   = "running"
-	RemoteSkillSyncStatusSucceeded = "succeeded"
-	RemoteSkillSyncStatusFailed    = "failed"
+	RemoteSkillSyncStatusQueued          = "queued"
+	RemoteSkillSyncStatusRunning         = "running"
+	RemoteSkillSyncStatusSucceeded       = "succeeded"
+	RemoteSkillSyncStatusFailed          = "failed"
+	RemoteSkillPowerShellBootstrapSHA256 = "8595884159988ff653c1d66be66d25acc62a359009c85a7924a23dbaf45d4246"
+	RemoteSkillPythonBootstrapSHA256     = "2db6ff2d1a5182b73920aabe701d914cca83643aeab89443c0561b1a67430b42"
 )
 
 var (
@@ -44,7 +46,8 @@ type RemoteSkillBundleVersion struct {
 
 type RemoteSkillBundleVersionDetail struct {
 	RemoteSkillBundleVersion
-	Verified bool `json:"verified"`
+	Verified        bool     `json:"verified"`
+	RoutingWarnings []string `json:"routing_warnings,omitempty"`
 }
 
 type RemoteSkillRegistrySnapshot struct {
@@ -53,6 +56,21 @@ type RemoteSkillRegistrySnapshot struct {
 	Degraded       bool                      `json:"degraded"`
 	DegradedReason string                    `json:"degraded_reason,omitempty"`
 	UpdatedAt      time.Time                 `json:"updated_at"`
+}
+
+type RemoteSkillClientInstaller struct {
+	URL     string `json:"url"`
+	SHA256  string `json:"sha256"`
+	Command string `json:"command"`
+}
+
+type RemoteSkillClientInstall struct {
+	SkillName      string                     `json:"skill_name"`
+	SourceCommit   string                     `json:"source_commit,omitempty"`
+	ManifestSHA256 string                     `json:"manifest_sha256,omitempty"`
+	DescriptorURL  string                     `json:"descriptor_url"`
+	PowerShell     RemoteSkillClientInstaller `json:"powershell"`
+	Python         RemoteSkillClientInstaller `json:"python"`
 }
 
 type RemoteSkillSyncJob struct {
@@ -96,6 +114,7 @@ type RemoteSkillRegistryFiles interface {
 	PreparePublic(context.Context, RemoteSkillBundleVersion) error
 	Activate(context.Context, RemoteSkillRegistrySnapshot) error
 	LoadManifest(context.Context, RemoteSkillBundleVersion) (BusinessSystemPromptBundleManifest, error)
+	LoadBundle(context.Context, RemoteSkillBundleVersion) (*BusinessSystemPromptBundle, error)
 }
 
 type RemoteSkillCandidateSource interface {
@@ -114,6 +133,7 @@ type RemoteSkillRegistryService struct {
 	source RemoteSkillCandidateSource
 
 	snapshot atomic.Pointer[RemoteSkillRegistrySnapshot]
+	bundle   atomic.Pointer[BusinessSystemPromptBundle]
 	stateMu  sync.Mutex
 	applyMu  sync.Mutex
 	runMu    sync.Mutex
@@ -212,6 +232,54 @@ func (s *RemoteSkillRegistryService) CurrentSnapshot() RemoteSkillRegistrySnapsh
 		return RemoteSkillRegistrySnapshot{Degraded: true, DegradedReason: "not_loaded"}
 	}
 	return cloneRemoteSkillRegistrySnapshot(*current)
+}
+
+func (s *RemoteSkillRegistryService) ClientInstallMetadata() RemoteSkillClientInstall {
+	powerShellURL := "https://codexrip.vip/skills/bootstrap/" + RemoteSkillPowerShellBootstrapSHA256 + "/bootstrap-reverse-skill.ps1"
+	pythonURL := "https://codexrip.vip/skills/bootstrap/" + RemoteSkillPythonBootstrapSHA256 + "/bootstrap-reverse-skill.py"
+	metadata := RemoteSkillClientInstall{
+		SkillName: "codexrip-reverse-skill", DescriptorURL: "https://codexrip.vip/skills/reverse-skill/current.json",
+		PowerShell: RemoteSkillClientInstaller{
+			URL: powerShellURL, SHA256: RemoteSkillPowerShellBootstrapSHA256,
+			Command: "$u='" + powerShellURL + "';$h='" + RemoteSkillPowerShellBootstrapSHA256 + "';$p=Join-Path ([IO.Path]::GetTempPath()) ('codexrip-'+[guid]::NewGuid().ToString('N')+'.ps1');Invoke-WebRequest -UseBasicParsing $u -OutFile $p;if((Get-FileHash -Algorithm SHA256 $p).Hash.ToLowerInvariant()-ne $h){Remove-Item $p -Force;throw 'bootstrap hash mismatch'};try{& pwsh -NoLogo -NoProfile -File $p}finally{Remove-Item $p -Force -ErrorAction SilentlyContinue}",
+		},
+		Python: RemoteSkillClientInstaller{
+			URL: pythonURL, SHA256: RemoteSkillPythonBootstrapSHA256,
+			Command: "p=$(mktemp); curl -fsSL '" + pythonURL + "' -o \"$p\" && python3 -c 'import hashlib,sys; assert hashlib.sha256(open(sys.argv[1],\"rb\").read()).hexdigest()==sys.argv[2], \"bootstrap hash mismatch\"' \"$p\" '" + RemoteSkillPythonBootstrapSHA256 + "' && python3 \"$p\"; rc=$?; rm -f \"$p\"; exit $rc",
+		},
+	}
+	if snapshot := s.CurrentSnapshot(); snapshot.Active != nil {
+		metadata.SourceCommit = snapshot.Active.SourceCommit
+		metadata.ManifestSHA256 = snapshot.Active.ManifestSHA256
+	}
+	return metadata
+}
+
+// ActiveBundle returns the last verified immutable registry bundle. A
+// degraded snapshot may still be served when it is the last-known-good copy;
+// callers surface the degraded flag without switching to unverified bytes.
+func (s *RemoteSkillRegistryService) ActiveBundle(ctx context.Context) (RemoteSkillRegistrySnapshot, *BusinessSystemPromptBundle, error) {
+	snapshot := s.CurrentSnapshot()
+	if snapshot.Active == nil || s == nil || s.files == nil {
+		return snapshot, nil, fmt.Errorf("%w: no active skill bundle", ErrBusinessSystemPromptBundleUnavailable)
+	}
+	if current := s.bundle.Load(); current != nil && current.ManifestSHA256 == snapshot.Active.ManifestSHA256 {
+		return snapshot, current, nil
+	}
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	if current := s.bundle.Load(); current != nil && current.ManifestSHA256 == snapshot.Active.ManifestSHA256 {
+		return snapshot, current, nil
+	}
+	bundle, err := s.files.LoadBundle(ctx, *snapshot.Active)
+	if err != nil {
+		return snapshot, nil, err
+	}
+	if bundle == nil || bundle.ManifestSHA256 != snapshot.Active.ManifestSHA256 {
+		return snapshot, nil, fmt.Errorf("%w: active bundle identity mismatch", ErrBusinessSystemPromptBundleInvalid)
+	}
+	s.bundle.Store(bundle)
+	return snapshot, bundle, nil
 }
 
 func (s *RemoteSkillRegistryService) Reload(ctx context.Context) error {
@@ -345,7 +413,17 @@ func (s *RemoteSkillRegistryService) InspectVersion(ctx context.Context, id int6
 	if err := s.files.ValidateVersion(ctx, version); err != nil {
 		return RemoteSkillBundleVersionDetail{}, fmt.Errorf("%w: candidate validation failed", ErrBusinessSystemPromptUnavailable)
 	}
-	return RemoteSkillBundleVersionDetail{RemoteSkillBundleVersion: version, Verified: true}, nil
+	manifest, err := s.files.LoadManifest(ctx, version)
+	if err != nil {
+		return RemoteSkillBundleVersionDetail{}, fmt.Errorf("%w: candidate manifest unavailable", ErrBusinessSystemPromptUnavailable)
+	}
+	warnings := make([]string, 0)
+	for _, route := range manifest.Domains {
+		if len(remoteSkillRouteKeywords[route.ID]) == 0 {
+			warnings = append(warnings, "missing_bilingual_mapping:"+route.ID)
+		}
+	}
+	return RemoteSkillBundleVersionDetail{RemoteSkillBundleVersion: version, Verified: true, RoutingWarnings: warnings}, nil
 }
 
 func (s *RemoteSkillRegistryService) GetSyncJob(ctx context.Context, id int64) (RemoteSkillSyncJob, error) {

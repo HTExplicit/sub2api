@@ -12,18 +12,14 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-func TestBusinessSystemPromptRemoteSkillUsesFixedBodyAcrossAdapters(t *testing.T) {
-	store := &fakeBusinessSystemPromptStore{loaded: BusinessSystemPromptSnapshot{
-		Revision: 11, Enabled: true, Body: embeddedBusinessSystemPrompt,
-		CompositionMode: BusinessSystemPromptCompositionRemoteSkill,
-		BundleID:        BusinessSystemPromptRemoteSkillBundleID,
-	}}
-	policy := NewBusinessSystemPromptService(store, nil)
-	require.NoError(t, policy.Initialize(context.Background()))
+func TestBusinessSystemPromptHybridCodexUsesFixedBodyAcrossAdapters(t *testing.T) {
+	policy := newGatewayHybridBusinessSystemPromptPolicyWithBody(t, embeddedBusinessSystemPrompt, 11)
 	gateway := &OpenAIGatewayService{businessPromptService: policy}
 
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("POST", "/v1/responses", nil)
+	c.Request.Header.Set("originator", "codex-tui")
 	account := &Account{Platform: PlatformOpenAI}
 	responsesBody, application, err := gateway.applyBusinessSystemPromptForRequest(
 		c,
@@ -35,7 +31,8 @@ func TestBusinessSystemPromptRemoteSkillUsesFixedBodyAcrossAdapters(t *testing.T
 	require.NoError(t, err)
 	require.True(t, application.Applied)
 	require.Equal(t, BusinessSystemPromptRemoteSkillBundleID, application.BundleID)
-	require.Empty(t, application.BundleManifestSHA256)
+	require.NotEmpty(t, application.BundleManifestSHA256)
+	require.Equal(t, int64(11), application.BundleRevision)
 	require.Empty(t, application.RouteIDs)
 	require.NotEmpty(t, application.BaseSHA256)
 	require.NotEmpty(t, application.EffectiveSHA256)
@@ -135,18 +132,14 @@ func TestBusinessSystemPromptRequestTextExtractionUsesLatestUserContent(t *testi
 	}
 }
 
-func TestBusinessSystemPromptWSTurnsReuseFixedRemoteSkillBody(t *testing.T) {
-	policy := NewBusinessSystemPromptService(&fakeBusinessSystemPromptStore{loaded: BusinessSystemPromptSnapshot{
-		Revision: 8, Enabled: true, Body: embeddedBusinessSystemPrompt,
-		CompositionMode: BusinessSystemPromptCompositionRemoteSkill,
-		BundleID:        BusinessSystemPromptRemoteSkillBundleID,
-	}}, nil)
-	require.NoError(t, policy.Initialize(context.Background()))
+func TestBusinessSystemPromptWSHybridCodexTurnsReuseFixedBody(t *testing.T) {
+	policy := newGatewayHybridBusinessSystemPromptPolicyWithBody(t, embeddedBusinessSystemPrompt, 8)
 	gateway := &OpenAIGatewayService{businessPromptService: policy}
 
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequest("GET", "/v1/responses", nil)
+	c.Request.Header.Set("originator", "codex-tui")
 	account := &Account{Platform: PlatformOpenAI}
 
 	beginBusinessSystemPromptRequestTurn(c)
