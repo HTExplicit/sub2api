@@ -19,6 +19,10 @@ export default {
       compositionMode: 'Composition mode',
       inline: 'Prompt body only',
       offline: 'Offline skill bundle',
+      remote: 'Remote skill',
+      legacyOffline: 'Legacy offline bundle',
+      remoteHint: 'The gateway injects only this body; Codex downloads and verifies the skill from the pinned endpoint.',
+      legacyReadonly: 'Historical versions are read-only and cannot be saved, published, or restored as active.',
       bundle: 'Skill bundle',
       select: 'Select a skill bundle',
       available: 'Available',
@@ -26,6 +30,24 @@ export default {
       degraded: 'Degraded',
       documents: 'documents',
       routes: 'routes'
+    },
+    skillRegistry: {
+      title: 'Skill Registry',
+      description: 'Syncs the fixed upstream main branch and allowlisted overlay. Sync creates a candidate; publish changes current.',
+      active: 'Active version',
+      noActive: 'No active version',
+      sync: 'Sync upstream skill',
+      commit: 'Source commit',
+      files: 'files',
+      updated: 'Updated',
+      candidate: 'Candidate awaiting publish',
+      verified: 'Verified',
+      unverified: 'Unverified',
+      scripts: 'Script changes',
+      binaries: 'Binary changes',
+      publishCandidate: 'Publish candidate',
+      changeSummary: 'File changes',
+      status: { queued: 'Queued', running: 'Syncing', succeeded: 'Candidate ready', failed: 'Sync failed' }
     },
     templates: {
       title: 'Templates',
@@ -102,6 +124,10 @@ export default {
       publishMessage: 'Publishing changes the global active template and increments the runtime revision.',
       rollbackTitle: 'Rollback to this version?',
       rollbackMessage: 'Rollback is explicit and atomic. The selected immutable version will become active.',
+      skillPublishTitle: 'Publish this skill candidate?',
+      skillPublishMessage: 'Publishing increments the independent skill revision and atomically switches the public descriptor.',
+      skillRollbackTitle: 'Rollback to this skill version?',
+      skillRollbackMessage: 'Rollback changes only the Skill Registry, not the business prompt body or switches.',
       deleteTitle: 'Delete this template?',
       deleteMessage: 'The template will be soft-deleted. Seed and active templates are protected.'
     },
@@ -113,7 +139,10 @@ export default {
       duplicated: 'Template duplicated.',
       published: 'Version published.',
       rolledBack: 'Version rolled back.',
-      deleted: 'Template deleted.'
+      deleted: 'Template deleted.',
+      skillCandidateReady: 'The upstream skill candidate was generated and verified.',
+      skillPublished: 'Skill candidate published.',
+      skillRolledBack: 'Skill Registry rolled back.'
     },
     errors: {
       load: 'Unable to load system prompt runtime.',
@@ -133,7 +162,11 @@ export default {
       conflict: 'The server revision changed. Reload before making another write.',
       unsavedSelection: 'Save or discard the current draft before changing the selection.',
       saveBeforePublish: 'Save the draft before publishing it.',
-      bundleUnavailable: 'The selected offline bundle or pinned manifest is unavailable.'
+      bundleUnavailable: 'The selected offline bundle or pinned manifest is unavailable.',
+      legacyReadonly: 'Historical offline_bundle versions are read-only and cannot create a new version.',
+      skillSync: 'Unable to sync the upstream skill.',
+      skillPublish: 'Unable to publish the skill candidate.',
+      skillRollback: 'Unable to roll back the Skill Registry.'
     }
   }
 }

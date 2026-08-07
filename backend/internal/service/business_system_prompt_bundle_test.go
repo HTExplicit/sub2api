@@ -184,19 +184,21 @@ func TestBusinessSystemPromptBundleCompilerLimitsRoutesAndRetainsPreviousOnConti
 	require.Equal(t, first.Metadata.DocumentPaths, continued.Metadata.DocumentPaths)
 }
 
-func TestBusinessSystemPromptBundleCompilerPreservesCapturedSeedProvenanceOffline(t *testing.T) {
+func TestBusinessSystemPromptBundleCompilerPreservesLegacyBaseProvenanceOffline(t *testing.T) {
 	root := t.TempDir()
 	writeBundleFixture(t, root)
 	bundle, err := LoadBusinessSystemPromptBundle(root)
 	require.NoError(t, err)
+	legacyBase := "legacy captured seed"
 	compiled, err := NewBusinessSystemPromptBundleCompiler(bundle).Compile(BusinessSystemPromptBundleCompileInput{
-		BasePrompt:  embeddedBusinessSystemPrompt,
+		BasePrompt:  legacyBase,
 		RequestText: "ordinary weather question",
 	})
 	require.NoError(t, err)
-	require.Equal(t, "c2f0269baffa6a0eb1c9a9e15df815a6582ae6a615bc51d64b7cc5342b5efcb8", compiled.Metadata.BaseSHA256)
+	require.Equal(t, hashBusinessSystemPromptBundleBytes([]byte(legacyBase)), compiled.Metadata.BaseSHA256)
 	require.Empty(t, compiled.RouteIDs)
-	require.Contains(t, compiled.Body, "<SCOPE_LOCK>")
+	require.Contains(t, compiled.Body, "[BUSINESS SYSTEM PROMPT: OFFLINE SKILL BUNDLE]")
+	require.Contains(t, compiled.Body, "[core/core.md]")
 	require.NotContains(t, compiled.Body, `C:\`)
 	require.NotContains(t, compiled.Body, "https://moxinggang.com")
 	require.NotEqual(t, compiled.Metadata.CacheKey(1), compiled.Metadata.CacheKey(2))

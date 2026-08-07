@@ -27,6 +27,10 @@ func TestNormalizeBusinessSystemPromptComposition(t *testing.T) {
 		wantErr    bool
 	}{
 		{name: "empty defaults to inline", wantMode: BusinessSystemPromptCompositionInline},
+		{name: "remote skill keeps fixed bundle identity", mode: " remote_skill ", bundleID: " codexrip-reverse-skill ", wantMode: BusinessSystemPromptCompositionRemoteSkill, wantBundle: BusinessSystemPromptRemoteSkillBundleID},
+		{name: "remote skill requires bundle id", mode: "remote_skill", wantErr: true},
+		{name: "remote skill rejects another bundle id", mode: "remote_skill", bundleID: "another-skill", wantErr: true},
+		{name: "remote skill rejects version pin", mode: "remote_skill", bundleID: "codexrip-reverse-skill", manifest: strings.Repeat("a", 64), wantErr: true},
 		{name: "offline normalizes digest", mode: " offline_bundle ", bundleID: " moxinggang-reverse-skill ", manifest: strings.ToUpper(BusinessSystemPromptSeedBundleManifestSHA256), wantMode: BusinessSystemPromptCompositionOfflineBundle, wantBundle: BusinessSystemPromptSeedBundleID, wantHash: BusinessSystemPromptSeedBundleManifestSHA256},
 		{name: "inline rejects bundle reference", mode: "inline", bundleID: "bundle", manifest: strings.Repeat("a", 64), wantErr: true},
 		{name: "offline requires bundle id", mode: "offline_bundle", manifest: strings.Repeat("a", 64), wantErr: true},

@@ -78,6 +78,79 @@
         </div>
       </section>
 
+      <section v-if="skillRegistry" data-test="skill-registry" class="border-y border-gray-200 bg-white/70 px-4 py-4 dark:border-dark-700 dark:bg-dark-900/60 sm:px-5">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div class="min-w-0">
+            <div class="flex flex-wrap items-center gap-2">
+              <h2 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.systemPrompts.skillRegistry.title') }}</h2>
+              <span class="badge" :class="skillRegistry.runtime.active ? 'badge-success' : 'badge-warning'">
+                {{ skillRegistry.runtime.active ? t('admin.systemPrompts.skillRegistry.active') : t('admin.systemPrompts.skillRegistry.noActive') }}
+              </span>
+              <span v-if="skillRegistry.runtime.degraded" data-test="skill-registry-degraded" class="badge badge-warning">
+                {{ t('admin.systemPrompts.runtime.degraded') }}
+              </span>
+              <span class="font-mono text-xs text-gray-500 dark:text-dark-400">rev {{ skillRegistry.runtime.revision }}</span>
+            </div>
+            <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">{{ t('admin.systemPrompts.skillRegistry.description') }}</p>
+          </div>
+          <button type="button" data-test="skill-registry-sync" class="btn btn-primary btn-sm" :disabled="skillSyncInProgress" @click="startSkillSync">
+            <Icon name="refresh" size="sm" class="mr-1" :class="skillSyncInProgress ? 'animate-spin' : ''" />
+            {{ t('admin.systemPrompts.skillRegistry.sync') }}
+          </button>
+        </div>
+
+        <div v-if="skillRegistry.runtime.active" class="mt-4 grid gap-x-6 gap-y-2 border-t border-gray-200 pt-3 text-xs text-gray-600 dark:border-dark-700 dark:text-dark-300 md:grid-cols-2 xl:grid-cols-4">
+          <div><span class="text-gray-500 dark:text-dark-400">{{ t('admin.systemPrompts.skillRegistry.commit') }}</span><span class="ml-2 font-mono" :title="skillRegistry.runtime.active.source_commit">{{ formatShortHash(skillRegistry.runtime.active.source_commit) }}</span></div>
+          <div><span class="text-gray-500 dark:text-dark-400">Manifest</span><span class="ml-2 font-mono" :title="skillRegistry.runtime.active.manifest_sha256">{{ formatShortHash(skillRegistry.runtime.active.manifest_sha256) }}</span></div>
+          <div>{{ skillRegistry.runtime.active.file_count }} {{ t('admin.systemPrompts.skillRegistry.files') }} · {{ formatBytes(skillRegistry.runtime.active.total_bytes) }}</div>
+          <div>{{ t('admin.systemPrompts.skillRegistry.updated') }} {{ formatDate(skillRegistry.runtime.updated_at) }}</div>
+        </div>
+
+        <div v-if="skillSyncJob" data-test="skill-registry-job" class="mt-4 flex flex-wrap items-center gap-3 border-l-2 px-3 py-2 text-xs" :class="skillSyncJob.status === 'failed' ? 'border-red-500 bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300' : 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300'">
+          <span class="font-semibold">{{ t(`admin.systemPrompts.skillRegistry.status.${skillSyncJob.status}`) }}</span>
+          <span class="font-mono">{{ skillSyncJob.progress_stage }}</span>
+          <span v-if="skillSyncJob.source_commit" class="font-mono">{{ formatShortHash(skillSyncJob.source_commit) }}</span>
+          <span v-if="skillSyncJob.error_code" class="font-mono">{{ skillSyncJob.error_code }}</span>
+        </div>
+
+        <div v-if="skillCandidate" data-test="skill-registry-candidate" class="mt-4 border-t border-gray-200 pt-4 dark:border-dark-700">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div class="flex flex-wrap items-center gap-2">
+                <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.systemPrompts.skillRegistry.candidate') }}</h3>
+                <span class="badge" :class="skillCandidate.verified ? 'badge-success' : 'badge-danger'">{{ skillCandidate.verified ? t('admin.systemPrompts.skillRegistry.verified') : t('admin.systemPrompts.skillRegistry.unverified') }}</span>
+              </div>
+              <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-dark-400">
+                <span class="font-mono" :title="skillCandidate.source_commit">{{ formatShortHash(skillCandidate.source_commit) }}</span>
+                <span>+{{ skillCandidate.added_files }} / ~{{ skillCandidate.modified_files }} / -{{ skillCandidate.deleted_files }}</span>
+                <span>{{ t('admin.systemPrompts.skillRegistry.scripts') }} {{ skillCandidate.script_changes }} · {{ t('admin.systemPrompts.skillRegistry.binaries') }} {{ skillCandidate.binary_changes }}</span>
+                <span>ZIP <span class="font-mono" :title="skillCandidate.archive_sha256">{{ formatShortHash(skillCandidate.archive_sha256) }}</span></span>
+              </div>
+            </div>
+            <button type="button" data-test="skill-registry-publish-candidate" class="btn btn-primary btn-sm" :disabled="publishingSkill || !skillCandidate.verified || skillCandidate.id === activeSkillVersionId" @click="openConfirm({ kind: 'skillPublish', versionId: skillCandidate.id })">
+              <Icon name="upload" size="sm" class="mr-1" />{{ t('admin.systemPrompts.skillRegistry.publishCandidate') }}
+            </button>
+          </div>
+        </div>
+
+        <div v-if="skillRegistry.versions.length" class="mt-4 overflow-x-auto border-t border-gray-200 pt-3 dark:border-dark-700">
+          <table class="min-w-full text-left text-xs">
+            <thead class="text-gray-500 dark:text-dark-400">
+              <tr><th class="py-2 pr-4">{{ t('admin.systemPrompts.skillRegistry.commit') }}</th><th class="py-2 pr-4">Manifest</th><th class="py-2 pr-4">{{ t('admin.systemPrompts.skillRegistry.changeSummary') }}</th><th class="py-2 pr-4">{{ t('admin.systemPrompts.history.created') }}</th><th class="py-2 text-right">{{ t('admin.systemPrompts.history.actions') }}</th></tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100 dark:divide-dark-800">
+              <tr v-for="version in skillRegistry.versions" :key="version.id">
+                <td class="py-2 pr-4 font-mono" :title="version.source_commit">{{ formatShortHash(version.source_commit) }}<span v-if="version.id === activeSkillVersionId" class="ml-2 badge badge-success">{{ t('admin.systemPrompts.history.active') }}</span></td>
+                <td class="py-2 pr-4 font-mono" :title="version.manifest_sha256">{{ formatShortHash(version.manifest_sha256) }}</td>
+                <td class="py-2 pr-4">+{{ version.added_files }} / ~{{ version.modified_files }} / -{{ version.deleted_files }}</td>
+                <td class="py-2 pr-4 whitespace-nowrap">{{ formatDate(version.created_at) }}</td>
+                <td class="py-2 text-right"><button type="button" class="btn btn-secondary btn-sm" :disabled="publishingSkill || version.id === activeSkillVersionId" @click="openConfirm({ kind: 'skillRollback', versionId: version.id })"><Icon name="refresh" size="xs" class="mr-1" />{{ t('admin.systemPrompts.actions.rollback') }}</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <div v-if="conflict" data-test="system-prompt-conflict" class="flex flex-wrap items-center justify-between gap-3 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
         <div class="flex items-center gap-2">
           <Icon name="exclamationTriangle" size="sm" />
@@ -172,33 +245,13 @@
           </div>
 
           <div v-if="activeTab === 'editor'" class="space-y-4">
-            <section class="grid gap-3 border border-gray-200 bg-gray-50/60 p-4 dark:border-dark-700 dark:bg-dark-800/50 lg:grid-cols-[220px_minmax(0,1fr)]">
-              <label class="min-w-0">
-                <span class="input-label">{{ t('admin.systemPrompts.bundle.compositionMode') }}</span>
-                <select v-model="compositionMode" data-test="system-prompt-composition-mode" class="input" @change="onCompositionModeChange">
-                  <option value="inline">{{ t('admin.systemPrompts.bundle.inline') }}</option>
-                  <option value="offline_bundle">{{ t('admin.systemPrompts.bundle.offline') }}</option>
-                </select>
-              </label>
-              <div v-if="compositionMode === 'offline_bundle'" class="min-w-0 space-y-2">
-                <label class="block min-w-0">
-                  <span class="input-label">{{ t('admin.systemPrompts.bundle.bundle') }}</span>
-                  <select v-model="bundleId" data-test="system-prompt-bundle-select" class="input" @change="onBundleChange">
-                    <option value="" disabled>{{ t('admin.systemPrompts.bundle.select') }}</option>
-                    <option v-for="item in bundles" :key="`${item.bundle_id}:${item.manifest_sha256}`" :value="item.bundle_id">
-                      {{ item.name || item.bundle_id }} · {{ item.available ? t('admin.systemPrompts.bundle.available') : t('admin.systemPrompts.bundle.unavailable') }}
-                    </option>
-                  </select>
-                </label>
-                <div class="flex min-w-0 flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-dark-400">
-                  <span :class="selectedBundleUsable ? 'badge badge-success' : 'badge badge-danger'">
-                    {{ selectedBundleUsable ? t('admin.systemPrompts.bundle.available') : t('admin.systemPrompts.bundle.unavailable') }}
-                  </span>
-                  <span v-if="selectedBundleInfo?.degraded" class="badge badge-warning">{{ t('admin.systemPrompts.bundle.degraded') }}</span>
-                  <span class="max-w-full truncate font-mono" :title="bundleManifestSHA256">{{ bundleManifestSHA256 || '—' }}</span>
-                  <span v-if="selectedBundleInfo">{{ selectedBundleInfo.document_count }} {{ t('admin.systemPrompts.bundle.documents') }} · {{ selectedBundleInfo.route_count }} {{ t('admin.systemPrompts.bundle.routes') }} · {{ formatBytes(selectedBundleInfo.total_bytes) }}</span>
-                </div>
-              </div>
+            <section data-test="system-prompt-composition" class="flex flex-wrap items-center gap-3 border border-gray-200 bg-gray-50/60 px-4 py-3 text-sm dark:border-dark-700 dark:bg-dark-800/50">
+              <span class="text-gray-500 dark:text-dark-400">{{ t('admin.systemPrompts.bundle.compositionMode') }}</span>
+              <span class="badge" :class="compositionMode === 'offline_bundle' ? 'badge-warning' : compositionMode === 'remote_skill' ? 'badge-success' : 'badge-gray'">
+                {{ t(`admin.systemPrompts.bundle.${compositionLabelKey(compositionMode)}`) }}
+              </span>
+              <span v-if="compositionMode === 'remote_skill'" class="text-xs text-gray-500 dark:text-dark-400">{{ t('admin.systemPrompts.bundle.remoteHint') }}</span>
+              <span v-else-if="compositionMode === 'offline_bundle'" data-test="system-prompt-legacy-readonly" class="text-xs font-medium text-amber-700 dark:text-amber-300">{{ t('admin.systemPrompts.bundle.legacyReadonly') }}</span>
             </section>
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div class="inline-flex border border-gray-200 bg-gray-50 p-1 dark:border-dark-700 dark:bg-dark-800" role="tablist">
@@ -211,7 +264,7 @@
               </div>
               <div class="flex items-center gap-2">
                 <input v-model="note" type="text" class="input w-56 text-sm" :placeholder="t('admin.systemPrompts.editor.notePlaceholder')" :aria-label="t('admin.systemPrompts.editor.note')" />
-                <button type="button" data-test="system-prompt-save-draft" class="btn btn-primary btn-sm" :disabled="savingVersion || !editorDirty" @click="saveDraft">
+                <button type="button" data-test="system-prompt-save-draft" class="btn btn-primary btn-sm" :disabled="savingVersion || !editorDirty || compositionMode === 'offline_bundle'" @click="saveDraft">
                   <Icon name="check" size="sm" class="mr-1" />
                   {{ savingVersion ? t('common.saving') : t('admin.systemPrompts.actions.saveDraft') }}
                 </button>
@@ -257,7 +310,7 @@
                       <span v-if="version.id === runtimeVersionId" class="ml-2 badge badge-success">{{ t('admin.systemPrompts.history.active') }}</span>
                     </td>
                     <td class="max-w-[220px] px-4 py-3 text-xs text-gray-600 dark:text-dark-300">
-                      <span class="block font-medium">{{ t(`admin.systemPrompts.bundle.${version.composition_mode === 'offline_bundle' ? 'offline' : 'inline'}`) }}</span>
+                      <span class="block font-medium">{{ t(`admin.systemPrompts.bundle.${compositionLabelKey(version.composition_mode)}`) }}</span>
                       <span v-if="version.bundle_id" class="block truncate font-mono text-[11px] text-gray-500 dark:text-dark-400" :title="version.bundle_manifest_sha256">{{ version.bundle_id }}</span>
                     </td>
                     <td class="max-w-[220px] truncate px-4 py-3 font-mono text-xs text-gray-500 dark:text-dark-400" :title="version.sha256">{{ version.sha256 }}</td>
@@ -362,24 +415,6 @@
           <label class="input-label">{{ t('admin.systemPrompts.dialogs.description') }}</label>
           <textarea v-model="createForm.description" rows="2" class="input resize-y"></textarea>
         </div>
-        <div class="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label class="input-label">{{ t('admin.systemPrompts.bundle.compositionMode') }}</label>
-            <select v-model="createForm.composition_mode" class="input" @change="onCreateCompositionModeChange">
-              <option value="inline">{{ t('admin.systemPrompts.bundle.inline') }}</option>
-              <option value="offline_bundle">{{ t('admin.systemPrompts.bundle.offline') }}</option>
-            </select>
-          </div>
-          <div v-if="createForm.composition_mode === 'offline_bundle'">
-            <label class="input-label">{{ t('admin.systemPrompts.bundle.bundle') }}</label>
-            <select v-model="createForm.bundle_id" class="input" required @change="onCreateBundleChange">
-              <option value="" disabled>{{ t('admin.systemPrompts.bundle.select') }}</option>
-              <option v-for="item in bundles" :key="`create:${item.bundle_id}:${item.manifest_sha256}`" :value="item.bundle_id" :disabled="!item.available">
-                {{ item.name || item.bundle_id }} · {{ item.available ? t('admin.systemPrompts.bundle.available') : t('admin.systemPrompts.bundle.unavailable') }}
-              </option>
-            </select>
-          </div>
-        </div>
         <div>
           <label class="input-label">{{ t('admin.systemPrompts.dialogs.body') }}</label>
           <textarea v-model="createForm.body" rows="12" class="input resize-y font-mono text-xs" spellcheck="false" required></textarea>
@@ -425,7 +460,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
@@ -437,8 +472,9 @@ import Toggle from '@/components/common/Toggle.vue'
 import { useAppStore } from '@/stores'
 import systemPromptsAPI, {
   type PreviewUpstreamResponse,
-  type SystemPromptBundleDetail,
-  type SystemPromptBundleSummary,
+  type RemoteSkillBundleVersionDetail,
+  type RemoteSkillRegistryResponse,
+  type RemoteSkillSyncJob,
   type SystemPromptCompositionMode,
   type SystemPromptRuntime,
   type SystemPromptTemplate,
@@ -452,7 +488,7 @@ const appStore = useAppStore()
 
 type Tab = 'editor' | 'history' | 'preview'
 type EditorMode = 'raw' | 'markdown'
-type ConfirmAction = { kind: 'publish' | 'rollback' | 'delete'; versionId?: number }
+type ConfirmAction = { kind: 'publish' | 'rollback' | 'delete' | 'skillPublish' | 'skillRollback'; versionId?: number }
 
 const tabs: Tab[] = ['editor', 'history', 'preview']
 const templates = ref<SystemPromptTemplate[]>([])
@@ -465,8 +501,11 @@ const note = ref('')
 const compositionMode = ref<SystemPromptCompositionMode>('inline')
 const bundleId = ref('')
 const bundleManifestSHA256 = ref('')
-const bundles = ref<SystemPromptBundleSummary[]>([])
-const bundleDetail = ref<SystemPromptBundleDetail | null>(null)
+const skillRegistry = ref<RemoteSkillRegistryResponse | null>(null)
+const skillSyncJob = ref<RemoteSkillSyncJob | null>(null)
+const skillCandidate = ref<RemoteSkillBundleVersionDetail | null>(null)
+const publishingSkill = ref(false)
+let skillSyncTimer: ReturnType<typeof setTimeout> | null = null
 const metaName = ref('')
 const metaDescription = ref('')
 const editorMode = ref<EditorMode>('raw')
@@ -505,17 +544,9 @@ const selectedVersion = computed(() => detail.value?.versions.find(version => ve
 const latestVersion = computed(() => detail.value?.versions[0] ?? null)
 const runtimeTemplateId = computed(() => runtime.value?.template_id ?? 0)
 const runtimeVersionId = computed(() => runtime.value?.version_id ?? 0)
-const selectedBundle = computed(() => bundles.value.find(item => item.bundle_id === bundleId.value) ?? null)
-const selectedBundleInfo = computed<SystemPromptBundleSummary | SystemPromptBundleDetail | null>(() => {
-  const loaded = bundleDetail.value
-  if (loaded?.bundle_id === bundleId.value && loaded.manifest_sha256 === bundleManifestSHA256.value) return loaded
-  return selectedBundle.value
-})
-const selectedBundleUsable = computed(() => {
-  if (compositionMode.value !== 'offline_bundle') return true
-  const selected = selectedBundle.value
-  return !!selected && selected.available && selected.manifest_sha256 === bundleManifestSHA256.value
-})
+const selectedBundleUsable = computed(() => compositionMode.value !== 'offline_bundle')
+const activeSkillVersionId = computed(() => skillRegistry.value?.runtime.active?.id ?? 0)
+const skillSyncInProgress = computed(() => skillSyncJob.value?.status === 'queued' || skillSyncJob.value?.status === 'running')
 const metadataDirty = computed(() => {
   const template = selectedTemplate.value
   return !!template && (metaName.value !== template.name || metaDescription.value !== template.description)
@@ -551,11 +582,15 @@ const prettyUpstream = computed(() => upstreamPreview.value ? JSON.stringify(ups
 const confirmTitle = computed(() => {
   if (confirmState.value?.kind === 'delete') return t('admin.systemPrompts.confirm.deleteTitle')
   if (confirmState.value?.kind === 'rollback') return t('admin.systemPrompts.confirm.rollbackTitle')
+  if (confirmState.value?.kind === 'skillRollback') return t('admin.systemPrompts.confirm.skillRollbackTitle')
+  if (confirmState.value?.kind === 'skillPublish') return t('admin.systemPrompts.confirm.skillPublishTitle')
   return t('admin.systemPrompts.confirm.publishTitle')
 })
 const confirmMessage = computed(() => {
   if (confirmState.value?.kind === 'delete') return t('admin.systemPrompts.confirm.deleteMessage')
   if (confirmState.value?.kind === 'rollback') return t('admin.systemPrompts.confirm.rollbackMessage')
+  if (confirmState.value?.kind === 'skillRollback') return t('admin.systemPrompts.confirm.skillRollbackMessage')
+  if (confirmState.value?.kind === 'skillPublish') return t('admin.systemPrompts.confirm.skillPublishMessage')
   return t('admin.systemPrompts.confirm.publishMessage')
 })
 
@@ -574,6 +609,10 @@ function formatDate(value: string): string {
   }
 }
 
+function formatShortHash(value: string): string {
+  return value ? `${value.slice(0, 10)}…${value.slice(-6)}` : '—'
+}
+
 function setRuntimeDraft(value: SystemPromptRuntime) {
   runtimeDraft.enabled = value.enabled
   runtimeDraft.expose_server_prompt = value.expose_server_prompt
@@ -581,29 +620,19 @@ function setRuntimeDraft(value: SystemPromptRuntime) {
 }
 
 function normalizeCompositionMode(value: string | undefined): SystemPromptCompositionMode {
-  return value === 'offline_bundle' ? 'offline_bundle' : 'inline'
+  if (value === 'offline_bundle') return 'offline_bundle'
+  if (value === 'remote_skill') return 'remote_skill'
+  return 'inline'
+}
+
+function compositionLabelKey(value: string | undefined): 'inline' | 'remote' | 'legacyOffline' {
+  if (value === 'remote_skill') return 'remote'
+  if (value === 'offline_bundle') return 'legacyOffline'
+  return 'inline'
 }
 
 function isVersionBundleUsable(version: SystemPromptVersion): boolean {
-  if (normalizeCompositionMode(version.composition_mode) !== 'offline_bundle') return true
-  return bundles.value.some(item =>
-    item.bundle_id === version.bundle_id &&
-    item.manifest_sha256 === version.bundle_manifest_sha256 &&
-    item.available
-  )
-}
-
-async function loadBundleDetail(id: string) {
-  if (!id) {
-    bundleDetail.value = null
-    return
-  }
-  try {
-    bundleDetail.value = await systemPromptsAPI.getBundle(id)
-  } catch (error) {
-    bundleDetail.value = null
-    handleError(error, t('admin.systemPrompts.errors.loadBundle'))
-  }
+	return normalizeCompositionMode(version.composition_mode) !== 'offline_bundle'
 }
 
 function applyVersionToEditor(version: SystemPromptVersion) {
@@ -613,41 +642,6 @@ function applyVersionToEditor(version: SystemPromptVersion) {
   compositionMode.value = normalizeCompositionMode(version.composition_mode)
   bundleId.value = version.bundle_id || ''
   bundleManifestSHA256.value = version.bundle_manifest_sha256 || ''
-  void loadBundleDetail(compositionMode.value === 'offline_bundle' ? bundleId.value : '')
-}
-
-function onCompositionModeChange() {
-  if (compositionMode.value === 'inline') {
-    bundleId.value = ''
-    bundleManifestSHA256.value = ''
-    bundleDetail.value = null
-    return
-  }
-  const candidate = selectedBundle.value ?? bundles.value.find(item => item.available) ?? bundles.value[0]
-  bundleId.value = candidate?.bundle_id ?? ''
-  bundleManifestSHA256.value = candidate?.manifest_sha256 ?? ''
-  void loadBundleDetail(bundleId.value)
-}
-
-function onBundleChange() {
-  bundleManifestSHA256.value = selectedBundle.value?.manifest_sha256 ?? ''
-  void loadBundleDetail(bundleId.value)
-}
-
-function onCreateCompositionModeChange() {
-  if (createForm.composition_mode === 'inline') {
-    createForm.bundle_id = ''
-    createForm.bundle_manifest_sha256 = ''
-    return
-  }
-  const candidate = bundles.value.find(item => item.available)
-  createForm.bundle_id = candidate?.bundle_id ?? ''
-  createForm.bundle_manifest_sha256 = candidate?.manifest_sha256 ?? ''
-}
-
-function onCreateBundleChange() {
-  const selected = bundles.value.find(item => item.bundle_id === createForm.bundle_id)
-  createForm.bundle_manifest_sha256 = selected?.manifest_sha256 ?? ''
 }
 
 function isConflictError(error: unknown): boolean {
@@ -663,15 +657,12 @@ function handleError(error: unknown, fallback: string) {
 async function loadAll(preferredId: number | null = selectedId.value) {
   loading.value = true
   try {
-    const [result, bundleItems] = await Promise.all([
+    const [result, registry] = await Promise.all([
       systemPromptsAPI.list(),
-      systemPromptsAPI.listBundles().catch(error => {
-        handleError(error, t('admin.systemPrompts.errors.loadBundle'))
-        return [] as SystemPromptBundleSummary[]
-      })
+      systemPromptsAPI.getSkillRegistry()
     ])
     templates.value = result.templates
-    bundles.value = bundleItems
+    skillRegistry.value = registry
     runtime.value = result.runtime
     setRuntimeDraft(result.runtime)
     const nextId = preferredId && result.templates.some(template => template.id === preferredId)
@@ -708,7 +699,6 @@ async function loadDetail(id: number) {
       compositionMode.value = 'inline'
       bundleId.value = ''
       bundleManifestSHA256.value = ''
-      bundleDetail.value = null
     }
     mergePreview.value = null
     upstreamPreview.value = null
@@ -738,13 +728,13 @@ async function selectVersion(version: SystemPromptVersion) {
 
 async function saveDraft() {
   if (!detail.value || !runtime.value || !editorDirty.value) return
+  if (compositionMode.value === 'offline_bundle') {
+    appStore.showError(t('admin.systemPrompts.errors.legacyReadonly'))
+    return
+  }
   const bytes = currentByteLength.value
   if (!body.value.trim() || body.value.includes('\u0000') || bytes > 64 * 1024) {
     appStore.showError(t('admin.systemPrompts.errors.invalidBody'))
-    return
-  }
-  if (!selectedBundleUsable.value) {
-    appStore.showError(t('admin.systemPrompts.errors.bundleUnavailable'))
     return
   }
   savingVersion.value = true
@@ -753,8 +743,8 @@ async function saveDraft() {
       body: body.value,
       note: note.value,
       composition_mode: compositionMode.value,
-      bundle_id: compositionMode.value === 'offline_bundle' ? bundleId.value : '',
-      bundle_manifest_sha256: compositionMode.value === 'offline_bundle' ? bundleManifestSHA256.value : '',
+      bundle_id: compositionMode.value === 'inline' ? '' : bundleId.value,
+      bundle_manifest_sha256: '',
       expected_latest_version: latestVersion.value?.version ?? 0,
       expected_revision: runtime.value.revision
     })
@@ -808,6 +798,68 @@ async function saveRuntime() {
   }
 }
 
+function clearSkillSyncTimer() {
+  if (skillSyncTimer !== null) {
+    clearTimeout(skillSyncTimer)
+    skillSyncTimer = null
+  }
+}
+
+function scheduleSkillSyncPoll() {
+  clearSkillSyncTimer()
+  skillSyncTimer = setTimeout(() => void pollSkillSync(), 1200)
+}
+
+async function pollSkillSync() {
+  if (!skillSyncJob.value) return
+  try {
+    skillSyncJob.value = await systemPromptsAPI.getSkillSync(skillSyncJob.value.id)
+    if (skillSyncInProgress.value) {
+      scheduleSkillSyncPoll()
+      return
+    }
+    if (skillSyncJob.value.status === 'succeeded' && skillSyncJob.value.candidate_bundle_version_id) {
+      const [candidate, registry] = await Promise.all([
+        systemPromptsAPI.getSkillVersion(skillSyncJob.value.candidate_bundle_version_id),
+        systemPromptsAPI.getSkillRegistry()
+      ])
+      skillCandidate.value = candidate
+      skillRegistry.value = registry
+      appStore.showSuccess(t('admin.systemPrompts.messages.skillCandidateReady'))
+      return
+    }
+    appStore.showError(`${t('admin.systemPrompts.errors.skillSync')} (${skillSyncJob.value.error_code || 'sync_failed'})`)
+  } catch (error) {
+    handleError(error, t('admin.systemPrompts.errors.skillSync'))
+  }
+}
+
+async function startSkillSync() {
+  if (!skillRegistry.value || skillSyncInProgress.value) return
+  skillCandidate.value = null
+  try {
+    skillSyncJob.value = await systemPromptsAPI.startSkillSync(skillRegistry.value.runtime.revision)
+    scheduleSkillSyncPoll()
+  } catch (error) {
+    handleError(error, t('admin.systemPrompts.errors.skillSync'))
+  }
+}
+
+async function publishSkillBundle(versionId: number, rollback: boolean) {
+  if (!skillRegistry.value) return
+  publishingSkill.value = true
+  try {
+    await systemPromptsAPI.publishSkillVersion(versionId, skillRegistry.value.runtime.revision, rollback)
+    skillRegistry.value = await systemPromptsAPI.getSkillRegistry()
+    if (skillCandidate.value?.id === versionId) skillCandidate.value = null
+    appStore.showSuccess(rollback ? t('admin.systemPrompts.messages.skillRolledBack') : t('admin.systemPrompts.messages.skillPublished'))
+  } catch (error) {
+    handleError(error, rollback ? t('admin.systemPrompts.errors.skillRollback') : t('admin.systemPrompts.errors.skillPublish'))
+  } finally {
+    publishingSkill.value = false
+  }
+}
+
 function openCreate() {
   Object.assign(createForm, {
     slug: '', name: '', description: '', body: '', note: '',
@@ -818,13 +870,6 @@ function openCreate() {
 
 async function createTemplate() {
   if (!runtime.value) return
-  if (createForm.composition_mode === 'offline_bundle') {
-    const selected = bundles.value.find(item => item.bundle_id === createForm.bundle_id)
-    if (!selected?.available || selected.manifest_sha256 !== createForm.bundle_manifest_sha256) {
-      appStore.showError(t('admin.systemPrompts.errors.bundleUnavailable'))
-      return
-    }
-  }
   creating.value = true
   try {
     const result = await systemPromptsAPI.create({ ...createForm, expected_revision: runtime.value.revision })
@@ -878,6 +923,10 @@ async function confirmAction() {
     await deleteTemplate()
     return
   }
+	if ((action.kind === 'skillPublish' || action.kind === 'skillRollback') && action.versionId) {
+		await publishSkillBundle(action.versionId, action.kind === 'skillRollback')
+		return
+	}
   if (!runtime.value || !selectedTemplate.value || !action.versionId) return
   try {
     runtime.value = await systemPromptsAPI.publish(selectedTemplate.value.id, action.versionId, runtime.value.revision, action.kind === 'rollback')
@@ -915,7 +964,7 @@ async function runMergePreview() {
       client_instructions: previewClientInstructions.value,
       server_instructions: body.value,
       composition_mode: compositionMode.value,
-      bundle_id: compositionMode.value === 'offline_bundle' ? bundleId.value : '',
+      bundle_id: compositionMode.value === 'inline' ? '' : bundleId.value,
       bundle_manifest_sha256: compositionMode.value === 'offline_bundle' ? bundleManifestSHA256.value : '',
       body: requestBody
     })
@@ -942,7 +991,7 @@ async function runUpstreamPreview() {
       version_id: !editorDirty.value ? selectedVersion.value?.id ?? 0 : 0,
       server_instructions: body.value,
       composition_mode: compositionMode.value,
-      bundle_id: compositionMode.value === 'offline_bundle' ? bundleId.value : '',
+      bundle_id: compositionMode.value === 'inline' ? '' : bundleId.value,
       bundle_manifest_sha256: compositionMode.value === 'offline_bundle' ? bundleManifestSHA256.value : '',
       protocol: previewProtocol.value,
       compact: previewCompact.value,
@@ -961,4 +1010,5 @@ async function reloadAfterConflict() {
 }
 
 onMounted(() => loadAll())
+onBeforeUnmount(clearSkillSyncTimer)
 </script>

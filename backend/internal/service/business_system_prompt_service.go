@@ -12,14 +12,15 @@ import (
 )
 
 var (
-	ErrBusinessSystemPromptTemplateNotFound = errors.New("business system prompt template not found")
-	ErrBusinessSystemPromptVersionNotFound  = errors.New("business system prompt version not found")
-	ErrBusinessSystemPromptRevisionConflict = errors.New("business system prompt revision conflict")
-	ErrBusinessSystemPromptSeedProtected    = errors.New("business system prompt seed is protected")
-	ErrBusinessSystemPromptActive           = errors.New("active business system prompt cannot be deleted")
+	ErrBusinessSystemPromptTemplateNotFound  = errors.New("business system prompt template not found")
+	ErrBusinessSystemPromptVersionNotFound   = errors.New("business system prompt version not found")
+	ErrBusinessSystemPromptRevisionConflict  = errors.New("business system prompt revision conflict")
+	ErrBusinessSystemPromptSeedProtected     = errors.New("business system prompt seed is protected")
+	ErrBusinessSystemPromptActive            = errors.New("active business system prompt cannot be deleted")
+	ErrBusinessSystemPromptLegacyComposition = errors.New("legacy offline business system prompt composition is read-only")
 )
 
-const businessSystemPromptSeedSlug = "moxinggang_reverse_skill"
+const businessSystemPromptSeedSlug = "codexrip_reverse_skill"
 
 type BusinessSystemPromptSeed struct {
 	Slug                 string
@@ -215,15 +216,14 @@ func (s *BusinessSystemPromptService) Initialize(ctx context.Context) error {
 		return fmt.Errorf("validate embedded business system prompt: %w", err)
 	}
 	seed := BusinessSystemPromptSeed{
-		Slug:                 businessSystemPromptSeedSlug,
-		Name:                 "模型港 Reverse-Skill System Prompt",
-		Description:          "固定导入的逆向还原 System Prompt；部署后默认关闭。",
-		Body:                 embeddedBusinessSystemPrompt,
-		SHA256:               hash,
-		ByteLength:           byteLength,
-		CompositionMode:      BusinessSystemPromptCompositionOfflineBundle,
-		BundleID:             BusinessSystemPromptSeedBundleID,
-		BundleManifestSHA256: BusinessSystemPromptSeedBundleManifestSHA256,
+		Slug:            businessSystemPromptSeedSlug,
+		Name:            "CodexRip Reverse-Skill System Prompt",
+		Description:     "固定的 CodexRip 远程 Skill 引导提示词；部署后默认关闭。",
+		Body:            embeddedBusinessSystemPrompt,
+		SHA256:          hash,
+		ByteLength:      byteLength,
+		CompositionMode: BusinessSystemPromptCompositionRemoteSkill,
+		BundleID:        BusinessSystemPromptRemoteSkillBundleID,
 	}
 	if err := s.store.EnsureBusinessSystemPromptSeed(ctx, seed); err != nil {
 		return fmt.Errorf("ensure business system prompt seed: %w", err)
@@ -338,29 +338,15 @@ func (s *BusinessSystemPromptService) prepareBusinessSystemPromptSnapshot(snapsh
 		snapshot.DegradedReason = ""
 		return nil
 	}
-
-	bundle, err := s.loadBusinessSystemPromptBundle(snapshot.BundleID, snapshot.BundleManifestSHA256)
-	if err != nil {
-		snapshot.requestBundle = nil
-		snapshot.BundleAvailable = false
-		snapshot.BundleDegraded = true
-		snapshot.DegradedReason = "bundle_unavailable"
-		snapshot.Degraded = true
-		if !snapshot.Enabled {
-			return nil
-		}
-		return fmt.Errorf("%w: offline bundle unavailable: %v", ErrBusinessSystemPromptUnavailable, err)
+	snapshot.requestBundle = nil
+	snapshot.BundleAvailable = false
+	snapshot.BundleDegraded = true
+	snapshot.DegradedReason = "legacy_offline_bundle_read_only"
+	snapshot.Degraded = true
+	if !snapshot.Enabled {
+		return nil
 	}
-	snapshot.requestBundle = bundle
-	snapshot.BundleAvailable = true
-	snapshot.BundleDegraded = bundle.Degraded
-	if bundle.Degraded {
-		snapshot.DegradedReason = "bundle_missing_optional_documents"
-	} else {
-		snapshot.DegradedReason = ""
-	}
-	snapshot.Degraded = snapshot.Degraded || bundle.Degraded
-	return nil
+	return fmt.Errorf("%w: %v", ErrBusinessSystemPromptUnavailable, ErrBusinessSystemPromptLegacyComposition)
 }
 
 // PrepareBusinessSystemPromptPreviewSnapshot verifies the selected immutable
@@ -389,27 +375,7 @@ func (s *BusinessSystemPromptService) compileBusinessSystemPromptSnapshot(
 	if snapshot.CompositionMode != BusinessSystemPromptCompositionOfflineBundle {
 		return snapshot, nil
 	}
-	if snapshot.requestBundle == nil {
-		return BusinessSystemPromptSnapshot{}, fmt.Errorf("%w: offline bundle is not loaded", ErrBusinessSystemPromptUnavailable)
-	}
-	compiled, err := NewBusinessSystemPromptBundleCompiler(snapshot.requestBundle).Compile(BusinessSystemPromptBundleCompileInput{
-		BasePrompt:       snapshot.Body,
-		RequestText:      requestText,
-		Continuation:     continuation,
-		PreviousMetadata: previous,
-	})
-	if err != nil {
-		return BusinessSystemPromptSnapshot{}, fmt.Errorf("%w: compile offline bundle: %v", ErrBusinessSystemPromptUnavailable, err)
-	}
-	snapshot.Body = compiled.Body
-	snapshot.baseSHA256 = compiled.Metadata.BaseSHA256
-	snapshot.effectiveSHA256 = compiled.Metadata.EffectiveSHA256
-	snapshot.effectiveByteLength = compiled.Metadata.ByteLength
-	snapshot.routeIDs = append([]string(nil), compiled.Metadata.RouteIDs...)
-	snapshot.documentIDs = append([]string(nil), compiled.Metadata.DocumentPaths...)
-	snapshot.referenceIDs = append([]string(nil), compiled.Metadata.ReferencePaths...)
-	snapshot.Degraded = snapshot.Degraded || compiled.Metadata.Degraded
-	return snapshot, nil
+	return BusinessSystemPromptSnapshot{}, fmt.Errorf("%w: %v", ErrBusinessSystemPromptUnavailable, ErrBusinessSystemPromptLegacyComposition)
 }
 
 func (s *BusinessSystemPromptService) retainLastGood(err error) error {
@@ -493,6 +459,9 @@ func (s *BusinessSystemPromptService) CreateVersionWithComposition(ctx context.C
 	if s == nil || s.store == nil {
 		return BusinessSystemPromptVersion{}, errors.New("business system prompt store unavailable")
 	}
+	if composition.Mode == BusinessSystemPromptCompositionOfflineBundle {
+		return BusinessSystemPromptVersion{}, ErrBusinessSystemPromptLegacyComposition
+	}
 	req.Note = strings.TrimSpace(req.Note)
 	req.CompositionMode = composition.Mode
 	req.BundleID = composition.BundleID
@@ -504,7 +473,7 @@ func (s *BusinessSystemPromptService) CreateVersionWithComposition(ctx context.C
 		return compositionStore.CreateBusinessSystemPromptVersionWithComposition(ctx, templateID, req, actorID, expectedLatestVersion, expectedRevision)
 	}
 	if composition.Mode != BusinessSystemPromptCompositionInline {
-		return BusinessSystemPromptVersion{}, fmt.Errorf("%w: store does not support offline bundle composition", ErrBusinessSystemPromptUnavailable)
+		return BusinessSystemPromptVersion{}, fmt.Errorf("%w: store does not support composition %q", ErrBusinessSystemPromptUnavailable, composition.Mode)
 	}
 	return s.store.CreateBusinessSystemPromptVersion(ctx, templateID, req.Body, req.Note, actorID, expectedLatestVersion, expectedRevision)
 }
@@ -567,6 +536,12 @@ func (s *BusinessSystemPromptService) UpdateRuntime(ctx context.Context, update 
 }
 
 func (s *BusinessSystemPromptService) validateBusinessSystemPromptBundleReference(composition BusinessSystemPromptComposition) error {
+	if composition.Mode == BusinessSystemPromptCompositionRemoteSkill {
+		if composition.BundleID != BusinessSystemPromptRemoteSkillBundleID {
+			return fmt.Errorf("%w: unknown remote skill bundle", ErrBusinessSystemPromptInvalid)
+		}
+		return nil
+	}
 	if composition.Mode != BusinessSystemPromptCompositionOfflineBundle {
 		return nil
 	}
@@ -595,6 +570,9 @@ func (s *BusinessSystemPromptService) validateBusinessSystemPromptPublishTarget(
 		composition, err := NormalizeBusinessSystemPromptComposition(version.CompositionMode, version.BundleID, version.BundleManifestSHA256)
 		if err != nil {
 			return err
+		}
+		if composition.Mode == BusinessSystemPromptCompositionOfflineBundle {
+			return ErrBusinessSystemPromptLegacyComposition
 		}
 		return s.validateBusinessSystemPromptBundleReference(composition)
 	}
@@ -696,6 +674,9 @@ func (s *BusinessSystemPromptService) CreateTemplate(ctx context.Context, req Bu
 	if err != nil {
 		return BusinessSystemPromptTemplateDetail{}, err
 	}
+	if composition.Mode == BusinessSystemPromptCompositionOfflineBundle {
+		return BusinessSystemPromptTemplateDetail{}, ErrBusinessSystemPromptLegacyComposition
+	}
 	req.CompositionMode = composition.Mode
 	req.BundleID = composition.BundleID
 	req.BundleManifestSHA256 = composition.BundleManifestSHA256
@@ -725,6 +706,19 @@ func (s *BusinessSystemPromptService) DuplicateTemplate(ctx context.Context, id 
 	name = strings.TrimSpace(name)
 	if slug == "" || name == "" {
 		return BusinessSystemPromptTemplateDetail{}, fmt.Errorf("%w: slug and name are required", ErrBusinessSystemPromptInvalid)
+	}
+	detail, err := s.store.GetBusinessSystemPromptTemplate(ctx, id)
+	if err != nil {
+		return BusinessSystemPromptTemplateDetail{}, err
+	}
+	for _, version := range detail.Versions {
+		composition, normalizeErr := NormalizeBusinessSystemPromptComposition(version.CompositionMode, version.BundleID, version.BundleManifestSHA256)
+		if normalizeErr != nil {
+			return BusinessSystemPromptTemplateDetail{}, normalizeErr
+		}
+		if composition.Mode == BusinessSystemPromptCompositionOfflineBundle {
+			return BusinessSystemPromptTemplateDetail{}, ErrBusinessSystemPromptLegacyComposition
+		}
 	}
 	return s.store.DuplicateBusinessSystemPromptTemplate(ctx, id, slug, name, actorID, expectedRevision)
 }

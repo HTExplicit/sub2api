@@ -15,13 +15,38 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-func TestBusinessSystemPromptSeedHasCapturedBytes(t *testing.T) {
+func TestBusinessSystemPromptSeedIsFixedCodexRipRemoteSkillBootstrap(t *testing.T) {
 	seed := embeddedBusinessSystemPrompt
-	require.Equal(t, 7098, len([]byte(seed)))
-	require.Equal(t, 6970, len([]rune(seed)))
 	require.False(t, strings.HasSuffix(seed, "\n"))
-	digest := sha256.Sum256([]byte(seed))
-	require.Equal(t, "C2F0269BAFFA6A0EB1C9A9E15DF815A6582AE6A615BC51D64B7CC5342B5EFCB8", strings.ToUpper(hex.EncodeToString(digest[:])))
+	require.Contains(t, seed, "# CodexRip Reverse-Skill routing")
+	require.Contains(t, seed, "https://codexrip.vip/skills/reverse-skill/current.json")
+	require.Regexp(t, `https://codexrip\.vip/skills/bootstrap/[0-9a-f]{64}/bootstrap-reverse-skill\.ps1`, seed)
+	require.Regexp(t, `https://codexrip\.vip/skills/bootstrap/[0-9a-f]{64}/bootstrap-reverse-skill\.py`, seed)
+	require.Regexp(t, `(?m)^POWERSHELL_BOOTSTRAP_SHA256 = [0-9a-f]{64}$`, seed)
+	require.Regexp(t, `(?m)^PYTHON_BOOTSTRAP_SHA256 = [0-9a-f]{64}$`, seed)
+	require.Contains(t, seed, "skill unavailable")
+	require.Contains(t, seed, "content-addressed")
+	require.Contains(t, seed, "manifest kind is `script`")
+	require.NotContains(t, strings.ToLower(seed), "moxinggang.com")
+	require.NotContains(t, seed, `C:\Users\Administrator`)
+	require.NotContains(t, seed, "模型港")
+}
+
+func TestBusinessSystemPromptSeedBodyIsInjectedByteForByte(t *testing.T) {
+	snapshot := BusinessSystemPromptSnapshot{
+		Enabled: true, Body: embeddedBusinessSystemPrompt, Revision: 1,
+		CompositionMode: BusinessSystemPromptCompositionRemoteSkill,
+		BundleID:        BusinessSystemPromptRemoteSkillBundleID,
+	}
+	body, application, err := ApplyBusinessSystemPromptToJSON(
+		[]byte(`{"model":"gpt-5","input":"hello"}`),
+		snapshot,
+		BusinessSystemPromptTarget{Platform: PlatformOpenAI, Protocol: BusinessSystemPromptProtocolResponses},
+	)
+	require.NoError(t, err)
+	require.True(t, application.Applied)
+	require.Equal(t, embeddedBusinessSystemPrompt, gjson.GetBytes(body, "instructions").String())
+	require.Equal(t, embeddedBusinessSystemPrompt, application.ServerInstructions)
 }
 
 func TestValidateBusinessSystemPromptBodyPreservesWhitespace(t *testing.T) {

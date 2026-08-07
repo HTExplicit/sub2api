@@ -8,9 +8,11 @@ import (
 const (
 	BusinessSystemPromptCompositionInline        = "inline"
 	BusinessSystemPromptCompositionOfflineBundle = "offline_bundle"
+	BusinessSystemPromptCompositionRemoteSkill   = "remote_skill"
 
 	BusinessSystemPromptSeedBundleID             = "moxinggang-reverse-skill"
 	BusinessSystemPromptSeedBundleManifestSHA256 = "22c227128165afbbcbda0175eb5e991ddb51d105b7d1e704572c625c64b626d7"
+	BusinessSystemPromptRemoteSkillBundleID      = "codexrip-reverse-skill"
 )
 
 // BusinessSystemPromptComposition identifies how an immutable template
@@ -48,6 +50,13 @@ func NormalizeBusinessSystemPromptComposition(mode, bundleID, manifestSHA256 str
 		}
 		if len(manifestSHA256) != 64 || !isLowerHexSHA256(manifestSHA256) {
 			return BusinessSystemPromptComposition{}, fmt.Errorf("%w: invalid bundle manifest sha256", ErrBusinessSystemPromptInvalid)
+		}
+	case BusinessSystemPromptCompositionRemoteSkill:
+		if bundleID != BusinessSystemPromptRemoteSkillBundleID {
+			return BusinessSystemPromptComposition{}, fmt.Errorf("%w: unknown remote skill bundle", ErrBusinessSystemPromptInvalid)
+		}
+		if manifestSHA256 != "" {
+			return BusinessSystemPromptComposition{}, fmt.Errorf("%w: remote skill composition follows the published registry and cannot pin a manifest", ErrBusinessSystemPromptInvalid)
 		}
 	default:
 		return BusinessSystemPromptComposition{}, fmt.Errorf("%w: unsupported composition mode %q", ErrBusinessSystemPromptInvalid, mode)
