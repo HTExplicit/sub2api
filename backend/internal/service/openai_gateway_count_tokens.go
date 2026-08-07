@@ -124,17 +124,13 @@ func (s *OpenAIGatewayService) ForwardCountTokensAsAnthropic(
 	}
 	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 	if err != nil {
-		safeErr := sanitizeUpstreamErrorMessage(err.Error())
-		setOpsUpstreamError(c, 0, safeErr, "")
-		writeAnthropicCountTokensError(c, http.StatusBadGateway, "upstream_error", "Upstream request failed")
-		return fmt.Errorf("openai input_tokens upstream request failed: %s", safeErr)
+		return s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		writeAnthropicCountTokensError(c, http.StatusBadGateway, "upstream_error", "Failed to read response")
-		return fmt.Errorf("read input_tokens response: %w", err)
+		return s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
 	}
 
 	if resp.StatusCode >= 400 {
@@ -144,13 +140,24 @@ func (s *OpenAIGatewayService) ForwardCountTokensAsAnthropic(
 			return nil
 		}
 
-		if s.rateLimitService != nil {
-			s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
-		}
-
 		if isOpenAIInputTokensUnsupported(resp.StatusCode, respBody) {
+			if s.rateLimitService != nil {
+				s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
+			}
 			writeAnthropicCountTokensError(c, http.StatusNotFound, "not_found_error", "Token counting is not supported by upstream")
 			return nil
+		}
+		if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody) {
+			shouldDisable := s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, prepared.UpstreamModel)
+			return &UpstreamFailoverError{
+				StatusCode:             resp.StatusCode,
+				ResponseHeaders:        resp.Header.Clone(),
+				ResponseBody:           respBody,
+				RetryableOnSameAccount: !shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
+			}
+		}
+		if s.rateLimitService != nil {
+			s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
 		}
 
 		upstreamDetail := ""
@@ -179,8 +186,15 @@ func (s *OpenAIGatewayService) ForwardCountTokensAsAnthropic(
 
 	inputTokens := gjson.GetBytes(respBody, "input_tokens")
 	if !inputTokens.Exists() {
-		writeAnthropicCountTokensError(c, http.StatusBadGateway, "upstream_error", "Upstream response missing input_tokens")
-		return fmt.Errorf("input_tokens response missing input_tokens field")
+		return &UpstreamFailoverError{
+			StatusCode:        http.StatusBadGateway,
+			ResponseBody:      respBody,
+			ResponseHeaders:   resp.Header.Clone(),
+			NextAccountAction: NextAccountRetry,
+			Reason:            OpenAITransientTransportFailureReason,
+			ClientStatusCode:  http.StatusBadGateway,
+			ClientMessage:     "Upstream response missing input_tokens",
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{

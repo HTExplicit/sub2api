@@ -970,7 +970,7 @@ export default {
       noProxy: '无代理',
       concurrency: '并发数',
       loadFactor: '负载因子',
-      loadFactorHint: '提高负载因子可以提高对账号的调度频率',
+      loadFactorHint: '兼容字段，不影响当前调度；请使用优先级控制调度层级，使用并发数控制账号容量',
       priority: '优先级',
       priorityHint: '优先级越小的账号优先使用',
       billingRateMultiplier: '账号计费倍率',

@@ -84,6 +84,27 @@ func TestSetStickySessionAccountID_DualWriteOldDisabled(t *testing.T) {
 	require.False(t, exists)
 }
 
+func TestDeleteStickySessionAccountIDIfMatches_PreservesConcurrentRebind(t *testing.T) {
+	cache := &stubGatewayCache{sessionBindings: map[string]int64{"openai:new-hash": 22}}
+	svc := &OpenAIGatewayService{cache: cache}
+
+	err := svc.deleteStickySessionAccountIDIfMatches(context.Background(), nil, "new-hash", 11)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(22), cache.sessionBindings["openai:new-hash"])
+}
+
+func TestDeleteStickySessionAccountIDIfMatches_DeletesExpectedBinding(t *testing.T) {
+	cache := &stubGatewayCache{sessionBindings: map[string]int64{"openai:new-hash": 11}}
+	svc := &OpenAIGatewayService{cache: cache}
+
+	err := svc.deleteStickySessionAccountIDIfMatches(context.Background(), nil, "new-hash", 11)
+
+	require.NoError(t, err)
+	_, exists := cache.sessionBindings["openai:new-hash"]
+	require.False(t, exists)
+}
+
 func TestSnapshotOpenAICompatibilityFallbackMetrics(t *testing.T) {
 	before := SnapshotOpenAICompatibilityFallbackMetrics()
 

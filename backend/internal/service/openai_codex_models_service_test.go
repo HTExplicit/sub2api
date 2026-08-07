@@ -1281,7 +1281,7 @@ func newCodexModels401TestService(repo AccountRepository) *OpenAIGatewayService 
 	return s
 }
 
-func TestFetchCodexModelsManifestOAuth401MarksAccountUnschedulable(t *testing.T) {
+func TestFetchCodexModelsManifestOAuth401DefersCooldownToHandler(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"detail":{"message":"invalid token"}}`))
@@ -1300,12 +1300,12 @@ func TestFetchCodexModelsManifestOAuth401MarksAccountUnschedulable(t *testing.T)
 	_, err := s.FetchCodexModelsManifest(context.Background(), account, "0.137.0", "")
 	require.Error(t, err)
 	require.True(t, IsRetryableCodexModelsManifestError(err), "manifest 401 should allow account failover")
-	require.Equal(t, 1, repo.setTempUnschedCalls, "OAuth 401 should temp-unschedule the account")
+	require.Equal(t, 0, repo.setTempUnschedCalls, "manifest service must not persist scheduler state")
 	require.Equal(t, 0, repo.setErrorCalls)
-	require.True(t, s.isOpenAIAccountRuntimeBlocked(account), "account should be runtime-blocked after manifest 401")
+	require.False(t, s.isOpenAIAccountRuntimeBlocked(account), "request handler owns the runtime cooldown")
 }
 
-func TestFetchCodexModelsManifestOAuth401TokenRevokedDisablesAccount(t *testing.T) {
+func TestFetchCodexModelsManifestOAuth401TokenRevokedDoesNotPersistState(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":{"code":"token_revoked","message":"token has been revoked"}}`))
@@ -1324,9 +1324,9 @@ func TestFetchCodexModelsManifestOAuth401TokenRevokedDisablesAccount(t *testing.
 	_, err := s.FetchCodexModelsManifest(context.Background(), account, "0.137.0", "")
 	require.Error(t, err)
 	require.True(t, IsRetryableCodexModelsManifestError(err))
-	require.Equal(t, 1, repo.setErrorCalls, "revoked token should permanently disable the account")
-	require.Contains(t, repo.lastErrorMsg, "Token revoked")
+	require.Equal(t, 0, repo.setErrorCalls, "manifest service must not permanently disable the account")
 	require.Equal(t, 0, repo.setTempUnschedCalls)
+	require.False(t, s.isOpenAIAccountRuntimeBlocked(account), "request handler owns the runtime cooldown")
 }
 
 func TestFetchCodexModelsManifestAgentIdentity401DoesNotDisableAccount(t *testing.T) {

@@ -18,15 +18,16 @@ type openAIRefusalRecoveryWSFrame struct {
 }
 
 type openAIRefusalRecoveryWSOutput struct {
-	matcher       *OpenAIRefusalMatcher
-	state         *openAIRefusalStreamState
-	guardReplay   bool
-	passthrough   bool
-	semanticWrite bool
-	bufferedBytes int
-	buffered      []openAIRefusalRecoveryWSFrame
-	write         openAIRefusalRecoveryWSWriteFunc
-	onBufferLimit func()
+	matcher         *OpenAIRefusalMatcher
+	state           *openAIRefusalStreamState
+	guardReplay     bool
+	passthrough     bool
+	semanticWrite   bool
+	downstreamWrite bool
+	bufferedBytes   int
+	buffered        []openAIRefusalRecoveryWSFrame
+	write           openAIRefusalRecoveryWSWriteFunc
+	onBufferLimit   func()
 }
 
 type openAIRefusalRecoveryWSFrameConn struct {
@@ -103,7 +104,7 @@ func (o *openAIRefusalRecoveryWSOutput) Write(ctx context.Context, messageType c
 				return err
 			}
 			err := o.writeDirect(ctx, messageType, payload)
-			if openAIWSPassthroughIsTerminalOutput(payload) {
+			if err == nil && openAIWSPassthroughIsTerminalOutput(payload) {
 				o.resetTurn()
 			}
 			return err
@@ -131,7 +132,7 @@ func (o *openAIRefusalRecoveryWSOutput) Write(ctx context.Context, messageType c
 		return err
 	}
 	err := o.writeDirect(ctx, messageType, payload)
-	if openAIWSPassthroughIsTerminalOutput(payload) {
+	if err == nil && openAIWSPassthroughIsTerminalOutput(payload) {
 		o.resetTurn()
 	}
 	return err
@@ -141,6 +142,7 @@ func (o *openAIRefusalRecoveryWSOutput) writeDirect(ctx context.Context, message
 	if err := o.write(ctx, messageType, payload); err != nil {
 		return err
 	}
+	o.downstreamWrite = true
 	if messageType == coderws.MessageText {
 		eventType := strings.TrimSpace(gjson.GetBytes(payload, "type").String())
 		if openAIRefusalRecoveryWSSemanticEvent(eventType, payload) {
@@ -179,6 +181,10 @@ func (o *openAIRefusalRecoveryWSOutput) SemanticOutputStarted() bool {
 	return o != nil && o.semanticWrite
 }
 
+func (o *openAIRefusalRecoveryWSOutput) DownstreamOutputStarted() bool {
+	return o != nil && o.downstreamWrite
+}
+
 func (o *openAIRefusalRecoveryWSOutput) WriteRetryableFailure(ctx context.Context, upstreamPayload ...[]byte) error {
 	if o == nil {
 		return nil
@@ -199,6 +205,7 @@ func (o *openAIRefusalRecoveryWSOutput) resetTurn() {
 	o.dropTurnBuffer()
 	o.passthrough = false
 	o.semanticWrite = false
+	o.downstreamWrite = false
 	if o.matcher != nil {
 		o.state = newOpenAIRefusalStreamState(o.matcher)
 	} else {

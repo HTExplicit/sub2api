@@ -1630,7 +1630,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPre
 	require.Equal(t, "world", gjson.Get(secondWrite, "input.1.text").String())
 }
 
-func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPrevResponseStrictDropBeforePreflightPingFailReconnects(t *testing.T) {
+func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPrevResponseStrictDropBeforePreflightPingFailClosesWithoutReplay(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	prevPreflightPingIdle := openAIWSIngressPreflightPingIdle
 	openAIWSIngressPreflightPingIdle = 0
@@ -1757,29 +1757,23 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPre
 	require.Equal(t, "resp_turn_ping_drop_1", gjson.GetBytes(firstTurn, "response.id").String())
 
 	writeMessage(`{"type":"response.create","model":"gpt-5.1","stream":false,"store":false,"previous_response_id":"resp_stale_external","input":[{"type":"input_text","text":"world"}]}`)
-	secondTurn := readMessage()
-	require.Equal(t, "resp_turn_ping_drop_2", gjson.GetBytes(secondTurn, "response.id").String())
-
-	require.NoError(t, clientConn.Close(coderws.StatusNormalClosure, "done"))
 	select {
 	case serverErr := <-serverErrCh:
-		require.NoError(t, serverErr)
+		var closeErr *OpenAIWSClientCloseError
+		require.ErrorAs(t, serverErr, &closeErr)
+		require.Equal(t, coderws.StatusTryAgainLater, closeErr.StatusCode())
+		require.Equal(t, openAIWSNonInitialTurnRetryCloseReason, closeErr.Reason())
 	case <-time.After(5 * time.Second):
-		t.Fatal("等待 ingress websocket 严格降级后预检换连超时")
+		t.Fatal("等待 ingress websocket 第二轮预检失败关闭超时")
 	}
 
-	require.Equal(t, 2, dialer.DialCount(), "严格降级为 full create 后，预检 ping 失败应允许换连")
+	require.Equal(t, 1, dialer.DialCount(), "第二轮预检失败不得换连重放")
 	require.Equal(t, 1, firstConn.WriteCount(), "首连接在预检失败后不应继续发送第二轮")
 	require.GreaterOrEqual(t, firstConn.PingCount(), 1, "第二轮前应执行 preflight ping")
 	secondConn.mu.Lock()
 	secondWrites := append([]map[string]any(nil), secondConn.writes...)
 	secondConn.mu.Unlock()
-	require.Len(t, secondWrites, 1)
-	secondWrite := requestToJSONString(secondWrites[0])
-	require.False(t, gjson.Get(secondWrite, "previous_response_id").Exists(), "严格降级后重试应移除 previous_response_id")
-	require.Equal(t, 2, len(gjson.Get(secondWrite, "input").Array()))
-	require.Equal(t, "hello", gjson.Get(secondWrite, "input.0.text").String())
-	require.Equal(t, "world", gjson.Get(secondWrite, "input.1.text").String())
+	require.Empty(t, secondWrites, "第二轮请求不得发送到新连接")
 }
 
 func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreEnabledSkipsStrictPrevResponseEval(t *testing.T) {
@@ -2714,7 +2708,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledFun
 	require.Equal(t, "resp_auto_prev_ref_1", gjson.Get(requestToJSONString(captureConn.writes[1]), "previous_response_id").String(), "仅有 item_reference 不足以自包含 function_call_output，应回填上一轮响应 ID")
 }
 
-func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PreflightPingFailReconnectsBeforeTurn(t *testing.T) {
+func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PreflightPingFailClosesWithoutReplay(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	prevPreflightPingIdle := openAIWSIngressPreflightPingIdle
 	openAIWSIngressPreflightPingIdle = 0
@@ -2841,22 +2835,26 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PreflightPingFai
 	require.Equal(t, "resp_turn_ping_1", gjson.GetBytes(firstTurn, "response.id").String())
 
 	writeMessage(`{"type":"response.create","model":"gpt-5.1","stream":false,"previous_response_id":"resp_turn_ping_1"}`)
-	secondTurn := readMessage()
-	require.Equal(t, "resp_turn_ping_2", gjson.GetBytes(secondTurn, "response.id").String())
-
-	require.NoError(t, clientConn.Close(coderws.StatusNormalClosure, "done"))
 	select {
 	case serverErr := <-serverErrCh:
-		require.NoError(t, serverErr)
+		require.Error(t, serverErr)
+		var closeErr *OpenAIWSClientCloseError
+		require.ErrorAs(t, serverErr, &closeErr)
+		require.Equal(t, coderws.StatusTryAgainLater, closeErr.StatusCode())
+		require.Equal(t, openAIWSNonInitialTurnRetryCloseReason, closeErr.Reason())
 	case <-time.After(5 * time.Second):
 		t.Fatal("等待 ingress websocket 结束超时")
 	}
-	require.Equal(t, 2, dialer.DialCount(), "第二轮 turn 前 ping 失败应触发换连")
+	require.Equal(t, 1, dialer.DialCount(), "第二轮 turn 前 ping 失败不得触发换连重放")
 	require.Equal(t, 1, firstConn.WriteCount(), "preflight ping 失败后不应继续向旧连接发送第二轮 turn")
 	require.GreaterOrEqual(t, firstConn.PingCount(), 1, "第二轮前应对旧连接执行 preflight ping")
+	secondConn.mu.Lock()
+	secondWrites := append([]map[string]any(nil), secondConn.writes...)
+	secondConn.mu.Unlock()
+	require.Empty(t, secondWrites)
 }
 
-func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledStrictAffinityPreflightPingFailAutoRecoveryReconnects(t *testing.T) {
+func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledStrictAffinityPreflightPingFailClosesWithoutReplay(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	prevPreflightPingIdle := openAIWSIngressPreflightPingIdle
 	openAIWSIngressPreflightPingIdle = 0
@@ -2983,29 +2981,24 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledStr
 	require.Equal(t, "resp_turn_ping_strict_1", gjson.GetBytes(firstTurn, "response.id").String())
 
 	writeMessage(`{"type":"response.create","model":"gpt-5.1","stream":false,"store":false,"previous_response_id":"resp_turn_ping_strict_1","input":[{"type":"input_text","text":"world"}]}`)
-	secondTurn := readMessage()
-	require.Equal(t, "resp_turn_ping_strict_2", gjson.GetBytes(secondTurn, "response.id").String())
-
-	require.NoError(t, clientConn.Close(coderws.StatusNormalClosure, "done"))
 	select {
 	case serverErr := <-serverErrCh:
-		require.NoError(t, serverErr)
+		require.Error(t, serverErr)
+		var closeErr *OpenAIWSClientCloseError
+		require.ErrorAs(t, serverErr, &closeErr)
+		require.Equal(t, coderws.StatusTryAgainLater, closeErr.StatusCode())
+		require.Equal(t, openAIWSNonInitialTurnRetryCloseReason, closeErr.Reason())
 	case <-time.After(5 * time.Second):
-		t.Fatal("等待 ingress websocket 严格亲和自动恢复后结束超时")
+		t.Fatal("等待 ingress websocket 严格亲和关闭超时")
 	}
 
-	require.Equal(t, 2, dialer.DialCount(), "严格亲和 preflight ping 失败后应自动降级并换连重放")
+	require.Equal(t, 1, dialer.DialCount(), "严格亲和第二轮 preflight ping 失败后不得换连重放")
 	require.Equal(t, 1, firstConn.WriteCount(), "preflight ping 失败后不应继续在旧连接写第二轮")
 	require.GreaterOrEqual(t, firstConn.PingCount(), 1, "第二轮前应执行 preflight ping")
 	secondConn.mu.Lock()
 	secondWrites := append([]map[string]any(nil), secondConn.writes...)
 	secondConn.mu.Unlock()
-	require.Len(t, secondWrites, 1)
-	secondWrite := requestToJSONString(secondWrites[0])
-	require.False(t, gjson.Get(secondWrite, "previous_response_id").Exists(), "自动恢复重放应移除 previous_response_id")
-	require.Equal(t, 2, len(gjson.Get(secondWrite, "input").Array()), "自动恢复重放应使用完整 input 上下文")
-	require.Equal(t, "hello", gjson.Get(secondWrite, "input.0.text").String())
-	require.Equal(t, "world", gjson.Get(secondWrite, "input.1.text").String())
+	require.Empty(t, secondWrites)
 }
 
 func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPreflightPingStopsFunctionCallOutputWithContext(t *testing.T) {
@@ -3138,12 +3131,10 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPre
 	select {
 	case serverErr := <-serverErrCh:
 		require.Error(t, serverErr)
-		var failoverErr *UpstreamFailoverError
-		require.ErrorAs(t, serverErr, &failoverErr)
-		require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
-		require.True(t, failoverErr.SuppressAccountHealthPenalty)
-		require.False(t, failoverErr.ShouldRetryNextAccount())
-		require.False(t, failoverErr.ShouldReportAccountScheduleFailure())
+		var closeErr *OpenAIWSClientCloseError
+		require.ErrorAs(t, serverErr, &closeErr)
+		require.Equal(t, coderws.StatusTryAgainLater, closeErr.StatusCode())
+		require.Equal(t, openAIWSNonInitialTurnRetryCloseReason, closeErr.Reason())
 	case <-time.After(5 * time.Second):
 		t.Fatal("等待 ingress websocket function_call_output 续接终止超时")
 	}
@@ -3288,12 +3279,10 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPre
 	select {
 	case serverErr := <-serverErrCh:
 		require.Error(t, serverErr)
-		var failoverErr *UpstreamFailoverError
-		require.ErrorAs(t, serverErr, &failoverErr)
-		require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
-		require.True(t, failoverErr.SuppressAccountHealthPenalty)
-		require.False(t, failoverErr.ShouldRetryNextAccount())
-		require.False(t, failoverErr.ShouldReportAccountScheduleFailure())
+		var closeErr *OpenAIWSClientCloseError
+		require.ErrorAs(t, serverErr, &closeErr)
+		require.Equal(t, coderws.StatusTryAgainLater, closeErr.StatusCode())
+		require.Equal(t, openAIWSNonInitialTurnRetryCloseReason, closeErr.Reason())
 	case <-time.After(5 * time.Second):
 		t.Fatal("等待 ingress websocket 结束超时")
 	}
@@ -3436,12 +3425,10 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPre
 	select {
 	case serverErr := <-serverErrCh:
 		require.Error(t, serverErr)
-		var failoverErr *UpstreamFailoverError
-		require.ErrorAs(t, serverErr, &failoverErr)
-		require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
-		require.True(t, failoverErr.SuppressAccountHealthPenalty)
-		require.False(t, failoverErr.ShouldRetryNextAccount())
-		require.False(t, failoverErr.ShouldReportAccountScheduleFailure())
+		var closeErr *OpenAIWSClientCloseError
+		require.ErrorAs(t, serverErr, &closeErr)
+		require.Equal(t, coderws.StatusTryAgainLater, closeErr.StatusCode())
+		require.Equal(t, openAIWSNonInitialTurnRetryCloseReason, closeErr.Reason())
 	case <-time.After(5 * time.Second):
 		t.Fatal("等待 ingress websocket 结束超时")
 	}
@@ -3453,7 +3440,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPre
 	require.Empty(t, secondWrites, "不能把会触发 No tool call found 的重放请求发到新上游")
 }
 
-func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_WriteFailBeforeDownstreamRetriesOnce(t *testing.T) {
+func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_SecondTurnWriteFailureClosesWithoutReplay(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	cfg := &config.Config{}
@@ -3591,17 +3578,21 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_WriteFailBeforeD
 	require.Equal(t, "resp_turn_write_retry_1", gjson.GetBytes(firstTurn, "response.id").String())
 
 	writeMessage(`{"type":"response.create","model":"gpt-5.1","stream":false,"previous_response_id":"resp_turn_write_retry_1"}`)
-	secondTurn := readMessage()
-	require.Equal(t, "resp_turn_write_retry_2", gjson.GetBytes(secondTurn, "response.id").String())
-
-	require.NoError(t, clientConn.Close(coderws.StatusNormalClosure, "done"))
 	select {
 	case serverErr := <-serverErrCh:
-		require.NoError(t, serverErr)
+		require.Error(t, serverErr)
+		var closeErr *OpenAIWSClientCloseError
+		require.ErrorAs(t, serverErr, &closeErr)
+		require.Equal(t, coderws.StatusTryAgainLater, closeErr.StatusCode())
+		require.Equal(t, openAIWSNonInitialTurnRetryCloseReason, closeErr.Reason())
 	case <-time.After(5 * time.Second):
 		t.Fatal("等待 ingress websocket 结束超时")
 	}
-	require.Equal(t, 2, dialer.DialCount(), "第二轮 turn 上游写失败且未写下游时应自动重试并换连")
+	require.Equal(t, 1, dialer.DialCount(), "第二轮 turn 上游写失败后不得换连重放")
+	secondConn.mu.Lock()
+	secondWrites := append([]map[string]any(nil), secondConn.writes...)
+	secondConn.mu.Unlock()
+	require.Empty(t, secondWrites)
 	hooksMu.Lock()
 	beforeTurn1 := beforeTurnCalls[1]
 	beforeTurn2 := beforeTurnCalls[2]
@@ -3609,12 +3600,12 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_WriteFailBeforeD
 	afterTurn2 := afterTurnCalls[2]
 	hooksMu.Unlock()
 	require.Equal(t, 1, beforeTurn1, "首轮 turn BeforeTurn 应执行一次")
-	require.Equal(t, 1, beforeTurn2, "同一 turn 重试不应重复触发 BeforeTurn")
+	require.Equal(t, 1, beforeTurn2, "第二轮 turn BeforeTurn 应执行一次")
 	require.Equal(t, 1, afterTurn1, "首轮 turn AfterTurn 应执行一次")
-	require.Equal(t, 1, afterTurn2, "第二轮 turn AfterTurn 应执行一次")
+	require.Equal(t, 1, afterTurn2, "第二轮 turn 失败也应执行一次 AfterTurn")
 }
 
-func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PreviousResponseNotFoundRecoversByDroppingPrevID(t *testing.T) {
+func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_SecondTurnPreviousResponseNotFoundReturnsStableErrorWithoutReplay(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	cfg := &config.Config{}
@@ -3738,19 +3729,18 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PreviousResponse
 	require.Equal(t, "resp_turn_prev_recover_1", gjson.GetBytes(firstTurn, "response.id").String())
 
 	writeMessage(`{"type":"response.create","model":"gpt-5.1","stream":false,"previous_response_id":"resp_turn_prev_recover_1"}`)
-	secondTurn := readMessage()
-	require.Equal(t, "response.completed", gjson.GetBytes(secondTurn, "type").String())
-	require.Equal(t, "resp_turn_prev_recover_2", gjson.GetBytes(secondTurn, "response.id").String())
-
-	require.NoError(t, clientConn.Close(coderws.StatusNormalClosure, "done"))
 	select {
 	case serverErr := <-serverErrCh:
-		require.NoError(t, serverErr)
+		var failoverErr *UpstreamFailoverError
+		require.ErrorAs(t, serverErr, &failoverErr)
+		require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
+		require.False(t, failoverErr.ShouldRetryNextAccount())
+		require.False(t, failoverErr.ShouldReportAccountScheduleFailure())
 	case <-time.After(5 * time.Second):
-		t.Fatal("等待 ingress websocket 结束超时")
+		t.Fatal("等待第二轮 previous_response_not_found 稳定终止超时")
 	}
 
-	require.Equal(t, 2, dialer.DialCount(), "previous_response_not_found 恢复应触发换连重试")
+	require.Equal(t, 1, dialer.DialCount(), "第二轮 previous_response_not_found 不得触发换连重试")
 
 	firstConn.mu.Lock()
 	firstWrites := append([]map[string]any(nil), firstConn.writes...)
@@ -3761,20 +3751,36 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PreviousResponse
 	secondConn.mu.Lock()
 	secondWrites := append([]map[string]any(nil), secondConn.writes...)
 	secondConn.mu.Unlock()
-	require.Len(t, secondWrites, 1, "恢复重试应在第二个连接发送一次请求")
-	require.False(t, gjson.Get(requestToJSONString(secondWrites[0]), "previous_response_id").Exists(), "恢复重试应移除 previous_response_id")
+	require.Empty(t, secondWrites, "失败的第二轮不得在新连接重放")
 }
 
 func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ContinuationErrorEventsAreIsolated(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	tests := []struct {
-		name              string
-		request           string
-		upstreamEvents    []string
-		expectedDialCount int
-		expectedCode      string
+		name                   string
+		request                string
+		upstreamEvents         []string
+		expectedDialCount      int
+		expectedCode           string
+		expectPreviousRetained bool
 	}{
+		{
+			name:                   "store disabled strict previous response does not rewrite anchor",
+			request:                `{"type":"response.create","model":"gpt-5.1","stream":false,"store":false,"previous_response_id":"resp_strict_missing","input":[{"type":"input_text","text":"continue"}]}`,
+			upstreamEvents:         []string{`{"type":"error","error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"previous response not found"}}`},
+			expectedDialCount:      0,
+			expectedCode:           "previous_response_not_found",
+			expectPreviousRetained: true,
+		},
+		{
+			name:                   "store disabled strict encrypted state does not rewrite anchor",
+			request:                `{"type":"response.create","model":"gpt-5.1","stream":false,"store":false,"previous_response_id":"resp_strict_encrypted","input":[{"type":"reasoning","encrypted_content":"gAAA"}]}`,
+			upstreamEvents:         []string{`{"type":"error","error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}`},
+			expectedDialCount:      0,
+			expectedCode:           "invalid_encrypted_content",
+			expectPreviousRetained: true,
+		},
 		{
 			name:    "invalid encrypted content retries once then stops without raw downstream event",
 			request: `{"type":"response.create","model":"gpt-5.1","stream":false,"previous_response_id":"resp_invalid_encrypted","input":[{"type":"reasoning","encrypted_content":"gAAA"}]}`,
@@ -3858,6 +3864,8 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ContinuationErro
 				toolCorrector:    NewCodexToolCorrector(),
 				openaiWSPool:     pool,
 			}
+			stateStore := NewOpenAIWSStateStore(svc.cache)
+			svc.openaiWSStateStore = stateStore
 
 			account := &Account{
 				ID:          151,
@@ -3901,6 +3909,24 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ContinuationErro
 				if msgType != coderws.MessageText && msgType != coderws.MessageBinary {
 					serverErrCh <- errors.New("unsupported websocket client message type")
 					return
+				}
+				if tt.expectPreviousRetained {
+					decision := svc.getOpenAIWSProtocolResolver().Resolve(account)
+					headers, _, headerErr := svc.buildOpenAIWSHeaders(
+						r.Context(), ginCtx, account, "sk-test", decision, false, "", "", "",
+					)
+					if headerErr != nil {
+						serverErrCh <- headerErr
+						return
+					}
+					seeded := newOpenAIWSConn("strict_bound_conn", account.ID, captureConns[0], nil)
+					seeded.betaFeatures = normalizeOpenAIWSBetaFeatures(headers)
+					accountPool := pool.getOrCreateAccountPool(account.ID)
+					accountPool.mu.Lock()
+					accountPool.conns[seeded.id] = seeded
+					accountPool.mu.Unlock()
+					previousResponseID := gjson.GetBytes(firstMessage, "previous_response_id").String()
+					stateStore.BindResponseConn(previousResponseID, seeded.id, time.Minute)
 				}
 
 				serverErrCh <- svc.ProxyResponsesWebSocketFromClient(r.Context(), ginCtx, conn, account, "sk-test", firstMessage, nil)
@@ -3947,6 +3973,12 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ContinuationErro
 				captureConn.mu.Unlock()
 				require.Len(t, writes, 1)
 			}
+			if tt.expectPreviousRetained {
+				captureConns[0].mu.Lock()
+				firstWrite := requestToJSONString(captureConns[0].writes[0])
+				captureConns[0].mu.Unlock()
+				require.True(t, gjson.Get(firstWrite, "previous_response_id").Exists(), "严格续链失败不得剥离锚点重放")
+			}
 			if len(captureConns) == 2 {
 				captureConns[0].mu.Lock()
 				firstWrite := requestToJSONString(captureConns[0].writes[0])
@@ -3965,7 +3997,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ContinuationErro
 	}
 }
 
-func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledStrictAffinityPreviousResponseNotFoundLayer2Recovery(t *testing.T) {
+func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledStrictAffinitySecondTurnFailureReturnsStableErrorWithoutReplay(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	cfg := &config.Config{}
@@ -4089,18 +4121,18 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledStr
 	require.Equal(t, "resp_turn_prev_strict_recover_1", gjson.GetBytes(firstTurn, "response.id").String())
 
 	writeMessage(`{"type":"response.create","model":"gpt-5.1","stream":false,"store":false,"prompt_cache_key":"pk_strict_layer2","previous_response_id":"resp_turn_prev_strict_recover_1","input":[{"type":"input_text","text":"world"}]}`)
-	secondTurn := readMessage()
-	require.Equal(t, "resp_turn_prev_strict_recover_2", gjson.GetBytes(secondTurn, "response.id").String())
-
-	require.NoError(t, clientConn.Close(coderws.StatusNormalClosure, "done"))
 	select {
 	case serverErr := <-serverErrCh:
-		require.NoError(t, serverErr)
+		var failoverErr *UpstreamFailoverError
+		require.ErrorAs(t, serverErr, &failoverErr)
+		require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
+		require.False(t, failoverErr.ShouldRetryNextAccount())
+		require.False(t, failoverErr.ShouldReportAccountScheduleFailure())
 	case <-time.After(5 * time.Second):
-		t.Fatal("等待 ingress websocket 严格亲和 Layer2 恢复结束超时")
+		t.Fatal("等待 ingress websocket 严格亲和第二轮失败稳定终止超时")
 	}
 
-	require.Equal(t, 2, dialer.DialCount(), "严格亲和链路命中 previous_response_not_found 应触发 Layer2 恢复重试")
+	require.Equal(t, 1, dialer.DialCount(), "严格亲和第二轮失败不得换连重放")
 
 	firstConn.mu.Lock()
 	firstWrites := append([]map[string]any(nil), firstConn.writes...)
@@ -4111,17 +4143,10 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledStr
 	secondConn.mu.Lock()
 	secondWrites := append([]map[string]any(nil), secondConn.writes...)
 	secondConn.mu.Unlock()
-	require.Len(t, secondWrites, 1, "Layer2 恢复应仅重放一次")
-	secondWrite := requestToJSONString(secondWrites[0])
-	require.False(t, gjson.Get(secondWrite, "previous_response_id").Exists(), "Layer2 恢复重放应移除 previous_response_id")
-	require.True(t, gjson.Get(secondWrite, "store").Exists(), "Layer2 恢复不应改变 store 标志")
-	require.False(t, gjson.Get(secondWrite, "store").Bool())
-	require.Equal(t, 2, len(gjson.Get(secondWrite, "input").Array()), "Layer2 恢复应重放完整 input 上下文")
-	require.Equal(t, "hello", gjson.Get(secondWrite, "input.0.text").String())
-	require.Equal(t, "world", gjson.Get(secondWrite, "input.1.text").String())
+	require.Empty(t, secondWrites, "严格亲和第二轮失败不得发送到新连接")
 }
 
-func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PreviousResponseNotFoundRecoveryRemovesDuplicatePrevID(t *testing.T) {
+func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_SecondTurnDuplicatePreviousResponseFailureReturnsStableErrorWithoutReplay(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	cfg := &config.Config{}
@@ -4244,20 +4269,20 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PreviousResponse
 	firstTurn := readMessage()
 	require.Equal(t, "resp_turn_prev_once_1", gjson.GetBytes(firstTurn, "response.id").String())
 
-	// duplicate previous_response_id: 恢复重试时应删除所有重复键，避免再次 previous_response_not_found。
+	// duplicate previous_response_id 仍不得让第二轮错误跨连接重放。
 	writeMessage(`{"type":"response.create","model":"gpt-5.1","stream":false,"previous_response_id":"resp_turn_prev_once_1","input":[],"previous_response_id":"resp_turn_prev_duplicate"}`)
-	secondTurn := readMessage()
-	require.Equal(t, "resp_turn_prev_once_2", gjson.GetBytes(secondTurn, "response.id").String())
-
-	require.NoError(t, clientConn.Close(coderws.StatusNormalClosure, "done"))
 	select {
 	case serverErr := <-serverErrCh:
-		require.NoError(t, serverErr)
+		var failoverErr *UpstreamFailoverError
+		require.ErrorAs(t, serverErr, &failoverErr)
+		require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
+		require.False(t, failoverErr.ShouldRetryNextAccount())
+		require.False(t, failoverErr.ShouldReportAccountScheduleFailure())
 	case <-time.After(5 * time.Second):
-		t.Fatal("等待 ingress websocket 结束超时")
+		t.Fatal("等待第二轮重复 previous_response_id 失败稳定终止超时")
 	}
 
-	require.Equal(t, 2, dialer.DialCount(), "previous_response_not_found 恢复应只重试一次")
+	require.Equal(t, 1, dialer.DialCount(), "第二轮 previous_response_not_found 不得重拨")
 
 	firstConn.mu.Lock()
 	firstWrites := append([]map[string]any(nil), firstConn.writes...)
@@ -4268,8 +4293,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PreviousResponse
 	secondConn.mu.Lock()
 	secondWrites := append([]map[string]any(nil), secondConn.writes...)
 	secondConn.mu.Unlock()
-	require.Len(t, secondWrites, 1)
-	require.False(t, gjson.Get(requestToJSONString(secondWrites[0]), "previous_response_id").Exists(), "重复键场景恢复重试后不应保留 previous_response_id")
+	require.Empty(t, secondWrites, "重复键场景也不得跨连接重放")
 }
 
 func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_RejectsMessageIDAsPreviousResponseID(t *testing.T) {
@@ -4366,6 +4390,120 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_RejectsMessageID
 	case <-time.After(5 * time.Second):
 		t.Fatal("等待 ingress websocket 结束超时")
 	}
+}
+
+func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_FirstTurnMetadataFailureRetriesWithoutLeak(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 1
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
+	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+
+	firstConn := &openAIWSCaptureConn{events: [][]byte{
+		[]byte(`{"type":"response.created","response":{"id":"resp_attempt_1","model":"gpt-5.1"}}`),
+	}}
+	secondConn := &openAIWSCaptureConn{events: [][]byte{
+		[]byte(`{"type":"response.created","response":{"id":"resp_attempt_2","model":"gpt-5.1"}}`),
+		[]byte(`{"type":"response.output_text.delta","response_id":"resp_attempt_2","delta":"ok"}`),
+		[]byte(`{"type":"response.completed","response":{"id":"resp_attempt_2","model":"gpt-5.1","usage":{"input_tokens":1,"output_tokens":1}}}`),
+	}}
+	dialer := &openAIWSQueueDialer{conns: []openAIWSClientConn{firstConn, secondConn}}
+	pool := newOpenAIWSConnPool(cfg)
+	pool.setClientDialerForTest(dialer)
+
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     &httpUpstreamRecorder{},
+		cache:            &stubGatewayCache{},
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+		openaiWSPool:     pool,
+	}
+	account := &Account{
+		ID:          121,
+		Name:        "openai-ingress-first-turn-retry",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test"},
+		Extra:       map[string]any{"responses_websockets_v2_enabled": true},
+	}
+
+	serverErrCh := make(chan error, 1)
+	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := coderws.Accept(w, r, &coderws.AcceptOptions{CompressionMode: coderws.CompressionContextTakeover})
+		if err != nil {
+			serverErrCh <- err
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
+
+		rec := httptest.NewRecorder()
+		ginCtx, _ := gin.CreateTestContext(rec)
+		ginCtx.Request = r.Clone(r.Context())
+		ginCtx.Request.Header = ginCtx.Request.Header.Clone()
+		ginCtx.Request.Header.Set("User-Agent", "unit-test-agent/1.0")
+
+		readCtx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+		msgType, firstMessage, readErr := conn.Read(readCtx)
+		cancel()
+		if readErr != nil {
+			serverErrCh <- readErr
+			return
+		}
+		if msgType != coderws.MessageText && msgType != coderws.MessageBinary {
+			serverErrCh <- errors.New("unsupported websocket client message type")
+			return
+		}
+		serverErrCh <- svc.ProxyResponsesWebSocketFromClient(r.Context(), ginCtx, conn, account, "sk-test", firstMessage, nil)
+	}))
+	defer wsServer.Close()
+
+	dialCtx, cancelDial := context.WithTimeout(context.Background(), 3*time.Second)
+	clientConn, _, err := coderws.Dial(dialCtx, "ws"+strings.TrimPrefix(wsServer.URL, "http"), nil)
+	cancelDial()
+	require.NoError(t, err)
+
+	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
+	require.NoError(t, clientConn.Write(writeCtx, coderws.MessageText,
+		[]byte(`{"type":"response.create","model":"gpt-5.1","stream":true,"input":"hello"}`)))
+	cancelWrite()
+
+	readEvent := func() []byte {
+		readCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		msgType, payload, readErr := clientConn.Read(readCtx)
+		require.NoError(t, readErr)
+		require.Equal(t, coderws.MessageText, msgType)
+		return payload
+	}
+	created := readEvent()
+	require.Equal(t, "response.created", gjson.GetBytes(created, "type").String())
+	require.Equal(t, "resp_attempt_2", gjson.GetBytes(created, "response.id").String(), "失败尝试的元数据不得泄露给客户端")
+	require.Equal(t, "response.output_text.delta", gjson.GetBytes(readEvent(), "type").String())
+	require.Equal(t, "response.completed", gjson.GetBytes(readEvent(), "type").String())
+	require.NoError(t, clientConn.Close(coderws.StatusNormalClosure, "done"))
+
+	select {
+	case serverErr := <-serverErrCh:
+		require.NoError(t, serverErr)
+	case <-time.After(5 * time.Second):
+		t.Fatal("等待 ingress websocket 结束超时")
+	}
+	require.Equal(t, 2, dialer.DialCount(), "首轮零语义输出失败后应只重连一次")
 }
 
 type openAIWSQueueDialer struct {

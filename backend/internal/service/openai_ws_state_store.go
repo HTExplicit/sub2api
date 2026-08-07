@@ -49,6 +49,7 @@ type OpenAIWSStateStore interface {
 	BindResponseAccount(ctx context.Context, groupID int64, responseID string, accountID int64, ttl time.Duration) error
 	GetResponseAccount(ctx context.Context, groupID int64, responseID string) (int64, error)
 	DeleteResponseAccount(ctx context.Context, groupID int64, responseID string) error
+	DeleteResponseAccountIfMatches(ctx context.Context, groupID int64, responseID string, expectedAccountID int64) (bool, error)
 
 	BindResponseConn(responseID, connID string, ttl time.Duration)
 	GetResponseConn(responseID string) (string, bool)
@@ -164,6 +165,42 @@ func (s *defaultOpenAIWSStateStore) DeleteResponseAccount(ctx context.Context, g
 	cacheCtx, cancel := withOpenAIWSStateStoreRedisTimeout(ctx)
 	defer cancel()
 	return s.cache.DeleteSessionAccountID(cacheCtx, groupID, openAIWSResponseAccountCacheKey(id))
+}
+
+// DeleteResponseAccountIfMatches removes a stale response binding from each
+// backing layer only while that layer still points at expectedAccountID.
+func (s *defaultOpenAIWSStateStore) DeleteResponseAccountIfMatches(
+	ctx context.Context,
+	groupID int64,
+	responseID string,
+	expectedAccountID int64,
+) (bool, error) {
+	id := normalizeOpenAIWSResponseID(responseID)
+	if id == "" || expectedAccountID <= 0 {
+		return false, nil
+	}
+
+	mapKey := openAIWSResponseAccountMapKey(groupID, id)
+	localDeleted := false
+	s.responseToAccountMu.Lock()
+	if binding, ok := s.responseToAccount[mapKey]; ok && binding.accountID == expectedAccountID {
+		delete(s.responseToAccount, mapKey)
+		localDeleted = true
+	}
+	s.responseToAccountMu.Unlock()
+
+	if s.cache == nil {
+		return localDeleted, nil
+	}
+	cacheCtx, cancel := withOpenAIWSStateStoreRedisTimeout(ctx)
+	defer cancel()
+	redisDeleted, err := s.cache.DeleteSessionAccountIDIfMatches(
+		cacheCtx,
+		groupID,
+		openAIWSResponseAccountCacheKey(id),
+		expectedAccountID,
+	)
+	return localDeleted || redisDeleted, err
 }
 
 func (s *defaultOpenAIWSStateStore) BindResponseConn(responseID, connID string, ttl time.Duration) {

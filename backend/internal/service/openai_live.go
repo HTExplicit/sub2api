@@ -144,6 +144,10 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 	}
 
 	excluded := make(map[int64]struct{})
+	scheduleModel := strings.TrimSpace(gjson.GetBytes(request.Session, "model").String())
+	if scheduleModel == "" {
+		scheduleModel = "gpt-live"
+	}
 	// Live 按通话时长计费，不属于 token 利润门的语义范围：显式豁免，避免
 	// 防御性装门按文本 D 过滤 Live 账号池且门与计费时刻不同源。
 	ctx = WithOpenAIProfitControlSuppressed(ctx)
@@ -169,8 +173,11 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 			return nil, selectErr
 		}
 		if selection == nil || selection.Account == nil || !selection.Acquired {
-			if selection != nil && selection.ReleaseFunc != nil {
-				selection.ReleaseFunc()
+			if selection != nil {
+				s.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
+				if selection.ReleaseFunc != nil {
+					selection.ReleaseFunc()
+				}
 			}
 			return nil, ErrLiveConcurrencyFull
 		}
@@ -188,6 +195,7 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 			true,
 		)
 		if acquireErr != nil || !acquired {
+			s.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 			selection.ReleaseFunc()
 			if acquireErr != nil {
 				return nil, acquireErr
@@ -196,22 +204,23 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 		}
 
 		created, createErr := s.createUpstreamLiveCall(ctx, account, request, attestation)
-		selection.ReleaseFunc()
 		if createErr != nil {
 			s.releaseLiveLease(account.ID, identity.UserID, identity.APIKeyID, leaseID)
 			if !s.shouldFailoverLiveCreateError(createErr) {
+				s.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
+				selection.ReleaseFunc()
 				return nil, createErr
 			}
+			s.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(scheduleModel), false, nil)
+			selection.ReleaseFunc()
 			excluded[account.ID] = struct{}{}
 			lastErr = createErr
 			continue
 		}
+		s.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(scheduleModel), true, nil)
+		selection.ReleaseFunc()
 
 		now := time.Now()
-		model := strings.TrimSpace(gjson.GetBytes(request.Session, "model").String())
-		if model == "" {
-			model = "gpt-live"
-		}
 		record := &LiveCallRecord{
 			CallID:                created.CallID,
 			CallHash:              hashLiveCallID(created.CallID),
@@ -221,7 +230,7 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 			GroupID:               liveGroupID(identity.GroupID),
 			SubscriptionID:        liveGroupID(identity.SubscriptionID),
 			LeaseID:               leaseID,
-			Model:                 model,
+			Model:                 scheduleModel,
 			CreatedAt:             now,
 			ExpiresAt:             now.Add(s.liveMaxSessionDuration()),
 			Controller:            LiveControllerPending,

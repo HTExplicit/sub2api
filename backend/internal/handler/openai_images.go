@@ -150,23 +150,36 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	switchCount := 0
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
-	sameAccountRetryCount := make(map[int64]int)
+	retryState := newOpenAIFailoverRetryState()
 	var lastFailoverErr *service.UpstreamFailoverError
 	stopJSONKeepalive := func() {}
 	jsonKeepaliveStarted := false
 	defer func() { stopJSONKeepalive() }()
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
+	var sameAccountRetrySelection *service.AccountSelectionResult
 
 	for {
 		reqLog.Debug("openai.images.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
-		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForImages(
-			requestCtx,
-			apiKey.GroupID,
-			sessionHash,
-			routingModel,
-			failedAccountIDs,
-			parsed.RequiredCapability,
+		retryingSameAccount := sameAccountRetrySelection != nil
+		var (
+			selection        *service.AccountSelectionResult
+			scheduleDecision service.OpenAIAccountScheduleDecision
+			err              error
 		)
+		if retryingSameAccount {
+			selection, err = h.gatewayService.ReacquireOpenAISameAccountSelection(requestCtx, sameAccountRetrySelection)
+			sameAccountRetrySelection = nil
+			scheduleDecision.Layer = "same_account_retry"
+		} else {
+			selection, scheduleDecision, err = h.gatewayService.SelectAccountWithSchedulerForImages(
+				requestCtx,
+				apiKey.GroupID,
+				sessionHash,
+				routingModel,
+				failedAccountIDs,
+				parsed.RequiredCapability,
+			)
+		}
 		if err != nil {
 			if failoverClientGone(c) {
 				reqLog.Info("openai.images.account_select_aborted_client_disconnected", zap.Error(err))
@@ -176,6 +189,10 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				zap.Error(err),
 				zap.Int("excluded_account_count", len(failedAccountIDs)),
 			)
+			if retryingSameAccount && lastFailoverErr != nil {
+				h.handleFailoverExhausted(c, lastFailoverErr, streamStarted)
+				return
+			}
 			if len(failedAccountIDs) == 0 {
 				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, clientRequestModel, routingModel, service.PlatformOpenAI)
 				if !cls.ModelNotFound {
@@ -218,11 +235,18 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		)
 
 		account := selection.Account
+		defer h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		reqLog.Debug("openai.images.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		accountReleaseFunc, slotResult := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, parsed.Stream, &streamStarted, reqLog)
+		var accountReleaseFunc func()
+		var slotResult openAISlotAcquireResult
+		if retryingSameAccount {
+			accountReleaseFunc, slotResult = h.acquireResponsesAccountSlotForSameAccountRetry(c, apiKey.GroupID, sessionHash, selection, parsed.Stream, &streamStarted, reqLog)
+		} else {
+			accountReleaseFunc, slotResult = h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, parsed.Stream, &streamStarted, reqLog)
+		}
 		if slotResult == openAISlotAcquireProfitVetoed {
 			// Images 调度不装利润门，此分支实际不可达；防御性排除重选并受同一否决上限约束。
 			if !recordOpenAIProfitVeto(failedAccountIDs, account.ID, &profitVetoCount) {
@@ -232,6 +256,14 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			continue
 		}
 		if slotResult != openAISlotAcquireOK {
+			if retryingSameAccount && lastFailoverErr != nil && h.failoverAfterSameAccountSlotFailure(
+				c, account, account.GetMappedModel(requestModel), lastFailoverErr, failedAccountIDs,
+				&switchCount, maxAccountSwitches, &oauth429FailoverState, streamStarted,
+				"images", reqLog, true,
+				func() { h.handleFailoverExhausted(c, lastFailoverErr, streamStarted) },
+			) {
+				continue
+			}
 			return
 		}
 
@@ -271,7 +303,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				var imageUpstreamErr *service.OpenAIImagesUpstreamError
 				if errors.As(err, &imageUpstreamErr) {
 					retryableServerError := service.IsOpenAIImagesRetryableUpstreamError(imageUpstreamErr)
-					h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(requestModel), !retryableServerError, nil)
+					h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(requestModel), !retryableServerError, nil)
 					logEvent := "openai.images.upstream_user_error"
 					if retryableServerError {
 						logEvent = "openai.images.upstream_server_error_after_flush"
@@ -287,7 +319,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				}
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
-					h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(requestModel), false, nil)
+					h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(requestModel), false, nil)
 					if service.OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c) != writerSizeBeforeForward {
 						reqLog.Warn("openai.images.upstream_failover_skipped_after_flush",
 							zap.Int64("account_id", account.ID),
@@ -303,25 +335,30 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 						)
 						return
 					}
-					if failoverErr.RetryableOnSameAccount {
-						retryLimit := account.GetPoolModeRetryCount()
-						if sameAccountRetryCount[account.ID] < retryLimit {
-							sameAccountRetryCount[account.ID]++
-							reqLog.Warn("openai.images.pool_mode_same_account_retry",
-								zap.Int64("account_id", account.ID),
-								zap.Int("upstream_status", failoverErr.StatusCode),
-								zap.Int("retry_limit", retryLimit),
-								zap.Int("retry_count", sameAccountRetryCount[account.ID]),
-							)
-							select {
-							case <-requestCtx.Done():
-								return
-							case <-time.After(sameAccountRetryDelay):
-							}
-							continue
-						}
+					if !failoverErr.ShouldRetryNextAccount() {
+						h.handleFailoverExhausted(c, failoverErr, streamStarted)
+						return
 					}
-					h.gatewayService.RecordOpenAIAccountSwitch()
+					switch retryState.Handle(
+						requestCtx,
+						h.gatewayService,
+						account,
+						account.GetMappedModel(requestModel),
+						failoverErr,
+						true,
+						sameAccountRetryDelay,
+						"images",
+					) {
+					case openAIFailoverRetrySameAccount:
+						sameAccountRetrySelection = selection
+						lastFailoverErr = failoverErr
+						continue
+					case openAIFailoverRetryCanceled:
+						return
+					case openAIFailoverRetryStop:
+						h.handleFailoverExhausted(c, failoverErr, streamStarted)
+						return
+					}
 					failedAccountIDs[account.ID] = struct{}{}
 					lastFailoverErr = failoverErr
 					if switchCount >= maxAccountSwitches {
@@ -333,6 +370,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
+					h.gatewayService.RecordOpenAIAccountSwitch()
 					reqLog.Warn("openai.images.upstream_failover_switching",
 						zap.Int64("account_id", account.ID),
 						zap.Int("upstream_status", failoverErr.StatusCode),
@@ -341,7 +379,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 					)
 					continue
 				}
-				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(requestModel), false, nil)
+				h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(requestModel), false, nil)
 				upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 				wroteFallback := false
 				if !upstreamErrorAlreadyCommunicated {
@@ -366,9 +404,9 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			if account.Type == service.AccountTypeOAuth && !account.IsShadow() {
 				h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(c.Request.Context(), account.ID, result.ResponseHeaders)
 			}
-			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(requestModel), true, result.FirstTokenMs)
+			h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(requestModel), true, result.FirstTokenMs)
 		} else {
-			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(requestModel), true, nil)
+			h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(requestModel), true, nil)
 		}
 
 		userAgent := c.GetHeader("User-Agent")

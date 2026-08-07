@@ -69,6 +69,33 @@ func IsRetryableCodexModelsManifestError(err error) bool {
 	return errors.As(err, &upstreamErr) && upstreamErr.retryable
 }
 
+// NormalizeCodexModelsManifestFailoverError adapts the manifest fetcher's
+// private error envelope to the gateway-wide retry/cooldown contract.  It
+// returns nil for client/configuration failures that must remain terminal.
+func NormalizeCodexModelsManifestFailoverError(err error, account *Account) *UpstreamFailoverError {
+	var upstreamErr *codexModelsManifestUpstreamError
+	if !errors.As(err, &upstreamErr) || !upstreamErr.retryable {
+		return nil
+	}
+	statusCode := upstreamErr.statusCode
+	if statusCode <= 0 {
+		statusCode = http.StatusBadGateway
+	}
+	failoverErr := &UpstreamFailoverError{
+		StatusCode:        statusCode,
+		ResponseHeaders:   upstreamErr.headers.Clone(),
+		ResponseBody:      append([]byte(nil), upstreamErr.body...),
+		NextAccountAction: NextAccountRetry,
+	}
+	if upstreamErr.statusCode <= 0 {
+		failoverErr.Reason = OpenAITransientTransportFailureReason
+	}
+	if account != nil && account.IsPoolMode() && account.IsPoolModeRetryableStatus(statusCode) {
+		failoverErr.RetryableOnSameAccount = true
+	}
+	return failoverErr
+}
+
 func isRetryableCodexModelsManifestTransportError(err error) bool {
 	if err == nil || errors.Is(err, context.Canceled) {
 		return false

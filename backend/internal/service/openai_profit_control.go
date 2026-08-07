@@ -63,6 +63,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -279,6 +280,51 @@ func attachSelectionProfitGate(ctx context.Context, sel *AccountSelectionResult)
 	}
 	if gate, ok := ctx.Value(openAIProfitControlGateCtxKey{}).(*openAIProfitControlGate); ok && gate != nil {
 		sel.profitGate = gate
+	}
+	if probe, ok := ctx.Value(openAIRuntimeBreakerProbeContextKey{}).(*openAIRuntimeBreakerProbeContext); ok && probe != nil {
+		selectedAccountID := int64(0)
+		if sel.Account != nil {
+			selectedAccountID = sel.Account.ID
+		}
+		probe.releaseClaimsExcept(ctx, selectedAccountID)
+		sel.runtimeBreakerProbeOwner = strings.TrimSpace(probe.owner)
+		if sel.Account != nil {
+			models := probe.claimedModels(sel.Account.ID)
+			probe.mu.Lock()
+			leaseStore := probe.leaseStore
+			probe.mu.Unlock()
+			if lease := newOpenAIRuntimeBreakerProbeLease(
+				leaseStore,
+				sel.Account.ID,
+				models,
+				sel.runtimeBreakerProbeOwner,
+				openAIRuntimeBreakerHalfOpenClaimTTL,
+			); lease != nil {
+				sel.runtimeBreakerProbeModels = append([]string(nil), models...)
+				sel.runtimeBreakerProbeLease = lease
+				originalRelease := sel.ReleaseFunc
+				sel.ReleaseFunc = func() {
+					lease.stopRenewal()
+					if originalRelease != nil {
+						originalRelease()
+					}
+				}
+				if !lease.start(ctx) {
+					// A claim can be lost between candidate probing and promotion
+					// (for example, a concurrent runtime block). Never forward with
+					// a selection whose request-owned lease was not renewed.
+					lease.release(ctx)
+					sel.runtimeBreakerProbeModels = nil
+					sel.runtimeBreakerProbeLease = nil
+					sel.ReleaseFunc = nil
+					if originalRelease != nil {
+						originalRelease()
+					}
+					probe.releaseClaimsExcept(ctx, 0)
+					return nil
+				}
+			}
+		}
 	}
 	return sel
 }

@@ -5,7 +5,10 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,7 +16,856 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestOpenAI429FastPath_MarksOAuthAccountCoolingDown(t *testing.T) {
+type runtimeBreakerTestEntry struct {
+	blockUntil time.Time
+	reason     string
+	owner      string
+}
+
+type runtimeBreakerTestCache struct {
+	stubGatewayCache
+	mu            sync.Mutex
+	entries       map[string]runtimeBreakerTestEntry
+	renewCalls    int
+	renewFailures int
+}
+
+func runtimeBreakerTestKey(accountID int64, model string) string {
+	return fmt.Sprintf("%d:%s", accountID, normalizeOpenAIAccountModelTransientModel(model))
+}
+
+func (c *runtimeBreakerTestCache) BlockOpenAIRuntimeBreaker(_ context.Context, accountID int64, model, reason string, ttl time.Duration) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.entries == nil {
+		c.entries = make(map[string]runtimeBreakerTestEntry)
+	}
+	key := runtimeBreakerTestKey(accountID, model)
+	entry := c.entries[key]
+	requestedUntil := time.Now().Add(ttl)
+	if entry.blockUntil.Before(requestedUntil) {
+		entry.blockUntil = requestedUntil
+		entry.reason = reason
+	}
+	entry.owner = ""
+	c.entries[key] = entry
+	return nil
+}
+
+func (c *runtimeBreakerTestCache) AllowOpenAIRuntimeBreakerProbe(_ context.Context, accountID int64, model, owner string, _ time.Duration) (bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entry, ok := c.entries[runtimeBreakerTestKey(accountID, model)]
+	if !ok {
+		return true, nil
+	}
+	if time.Now().Before(entry.blockUntil) {
+		return false, nil
+	}
+	if entry.owner == "" {
+		entry.owner = owner
+		c.entries[runtimeBreakerTestKey(accountID, model)] = entry
+		return true, nil
+	}
+	return entry.owner == owner, nil
+}
+
+func (c *runtimeBreakerTestCache) AllowOpenAIRuntimeBreakerProbes(_ context.Context, accountID int64, models []string, owner string, _ time.Duration) (bool, []string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	now := time.Now()
+	for _, model := range models {
+		entry, ok := c.entries[runtimeBreakerTestKey(accountID, model)]
+		if !ok {
+			continue
+		}
+		if now.Before(entry.blockUntil) || (entry.owner != "" && entry.owner != owner) {
+			return false, nil, nil
+		}
+	}
+	claimed := make([]string, 0, len(models))
+	for _, model := range models {
+		key := runtimeBreakerTestKey(accountID, model)
+		entry, ok := c.entries[key]
+		if !ok {
+			continue
+		}
+		entry.owner = owner
+		c.entries[key] = entry
+		claimed = append(claimed, model)
+	}
+	return true, claimed, nil
+}
+
+func (c *runtimeBreakerTestCache) RenewOpenAIRuntimeBreakerProbes(_ context.Context, accountID int64, models []string, owner string, _ time.Duration) (bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.renewCalls++
+	if c.renewFailures > 0 {
+		c.renewFailures--
+		return false, nil
+	}
+	for _, model := range models {
+		entry, ok := c.entries[runtimeBreakerTestKey(accountID, model)]
+		if !ok || entry.owner != owner {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func TestOpenAIRuntimeBreaker_FailedPromotionDoesNotReturnSelection(t *testing.T) {
+	cache := &runtimeBreakerTestCache{
+		entries: map[string]runtimeBreakerTestEntry{
+			runtimeBreakerTestKey(4718, ""):        {blockUntil: time.Now().Add(-time.Second)},
+			runtimeBreakerTestKey(4718, "gpt-5.4"): {blockUntil: time.Now().Add(-time.Second)},
+		},
+		renewFailures: 1,
+	}
+	svc := &OpenAIGatewayService{cache: cache}
+	account := &Account{ID: 4718, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	released := false
+	ctx := withOpenAIRuntimeBreakerProbeOwner(context.Background(), "promotion-owner")
+
+	require.False(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, "gpt-5.4"))
+	selection := attachSelectionProfitGate(ctx, &AccountSelectionResult{
+		Account:     account,
+		Acquired:    true,
+		ReleaseFunc: func() { released = true },
+	})
+
+	require.Nil(t, selection)
+	require.True(t, released, "failed lease promotion must release the acquired account slot")
+	cache.mu.Lock()
+	accountOwner := cache.entries[runtimeBreakerTestKey(account.ID, "")].owner
+	modelOwner := cache.entries[runtimeBreakerTestKey(account.ID, "gpt-5.4")].owner
+	cache.mu.Unlock()
+	require.Empty(t, accountOwner)
+	require.Empty(t, modelOwner)
+}
+
+func (c *runtimeBreakerTestCache) ReleaseOpenAIRuntimeBreakerProbes(_ context.Context, accountID int64, models []string, owner string) (bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, model := range models {
+		entry, ok := c.entries[runtimeBreakerTestKey(accountID, model)]
+		if ok && entry.owner != "" && entry.owner != owner {
+			return false, nil
+		}
+	}
+	released := false
+	for _, model := range models {
+		key := runtimeBreakerTestKey(accountID, model)
+		entry, ok := c.entries[key]
+		if ok && entry.owner == owner {
+			entry.owner = ""
+			c.entries[key] = entry
+			released = true
+		}
+	}
+	return released, nil
+}
+
+func (c *runtimeBreakerTestCache) ClearOpenAIRuntimeBreaker(_ context.Context, accountID int64, model, owner string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	key := runtimeBreakerTestKey(accountID, model)
+	entry, ok := c.entries[key]
+	if ok && !time.Now().Before(entry.blockUntil) && entry.owner == owner {
+		delete(c.entries, key)
+	}
+	return nil
+}
+
+func (c *runtimeBreakerTestCache) ClearAllOpenAIRuntimeBreakers(_ context.Context, accountID int64) error {
+	c.mu.Lock()
+	for key := range c.entries {
+		if strings.HasPrefix(key, fmt.Sprintf("%d:", accountID)) {
+			delete(c.entries, key)
+		}
+	}
+	c.mu.Unlock()
+	return nil
+}
+
+type pausedClearRuntimeBreakerTestCache struct {
+	*runtimeBreakerTestCache
+	started chan struct{}
+	proceed chan struct{}
+}
+
+func (c *pausedClearRuntimeBreakerTestCache) ClearAllOpenAIRuntimeBreakers(ctx context.Context, accountID int64) error {
+	close(c.started)
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-c.proceed:
+		return c.runtimeBreakerTestCache.ClearAllOpenAIRuntimeBreakers(ctx, accountID)
+	}
+}
+
+func TestOpenAIRuntimeBreaker_ClearDoesNotDeleteConcurrentNewBlock(t *testing.T) {
+	baseCache := &runtimeBreakerTestCache{}
+	cache := &pausedClearRuntimeBreakerTestCache{
+		runtimeBreakerTestCache: baseCache,
+		started:                 make(chan struct{}),
+		proceed:                 make(chan struct{}),
+	}
+	svc := &OpenAIGatewayService{cache: cache}
+	account := &Account{ID: 4720, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	svc.BlockAccountScheduling(account, time.Now().Add(time.Minute), "old")
+
+	clearDone := make(chan struct{})
+	go func() {
+		svc.ClearAccountSchedulingBlock(account.ID)
+		close(clearDone)
+	}()
+	select {
+	case <-cache.started:
+	case <-time.After(time.Second):
+		close(cache.proceed)
+		t.Fatal("clear did not reach the Redis boundary")
+	}
+
+	blockDone := make(chan struct{})
+	go func() {
+		svc.BlockAccountScheduling(account, time.Now().Add(2*time.Minute), "new")
+		close(blockDone)
+	}()
+	select {
+	case <-blockDone:
+		close(cache.proceed)
+		t.Fatal("new block must wait until clear has completed")
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(cache.proceed)
+
+	select {
+	case <-clearDone:
+	case <-time.After(time.Second):
+		t.Fatal("clear did not finish")
+	}
+	select {
+	case <-blockDone:
+	case <-time.After(time.Second):
+		t.Fatal("new block did not finish")
+	}
+
+	baseCache.mu.Lock()
+	entry := baseCache.entries[runtimeBreakerTestKey(account.ID, "")]
+	baseCache.mu.Unlock()
+	require.Equal(t, "new", entry.reason)
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+}
+
+func TestOpenAIRuntimeBreaker_PersistsAcrossServiceInstancesAndClaimsHalfOpen(t *testing.T) {
+	cache := &runtimeBreakerTestCache{}
+	account := &Account{ID: 4705, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	first := &OpenAIGatewayService{cache: cache}
+	first.CooldownOpenAIRetryExhausted(context.Background(), account, "gpt-5.4", &UpstreamFailoverError{
+		StatusCode: http.StatusServiceUnavailable,
+	})
+
+	cache.mu.Lock()
+	entry := cache.entries[runtimeBreakerTestKey(account.ID, "gpt-5.4")]
+	cache.mu.Unlock()
+	require.Equal(t, "retry_exhausted_transient", entry.reason)
+	require.True(t, entry.blockUntil.After(time.Now()))
+
+	second := &OpenAIGatewayService{cache: cache}
+	require.True(t, second.isOpenAIAccountRequestRuntimeBlockedContext(
+		withOpenAIRuntimeBreakerProbeOwner(context.Background(), "owner-2"), account, "gpt-5.4",
+	))
+
+	cache.mu.Lock()
+	entry = cache.entries[runtimeBreakerTestKey(account.ID, "gpt-5.4")]
+	entry.blockUntil = time.Now().Add(-time.Second)
+	cache.entries[runtimeBreakerTestKey(account.ID, "gpt-5.4")] = entry
+	cache.mu.Unlock()
+
+	owner1 := withOpenAIRuntimeBreakerProbeOwner(context.Background(), "owner-1")
+	owner2 := withOpenAIRuntimeBreakerProbeOwner(context.Background(), "owner-2")
+	require.False(t, second.isOpenAIAccountRequestRuntimeBlockedContext(owner1, account, "gpt-5.4"))
+	require.True(t, (&OpenAIGatewayService{cache: cache}).isOpenAIAccountRequestRuntimeBlockedContext(owner2, account, "gpt-5.4"))
+	require.False(t, second.isOpenAIAccountRequestRuntimeBlockedContext(owner1, account, "gpt-5.4"))
+
+	second.ReportOpenAIAccountScheduleResultForSelection(
+		&AccountSelectionResult{runtimeBreakerProbeOwner: "stale-owner"},
+		account.ID,
+		"gpt-5.4",
+		true,
+		nil,
+	)
+	require.True(t, (&OpenAIGatewayService{cache: cache}).isOpenAIAccountRequestRuntimeBlockedContext(owner2, account, "gpt-5.4"))
+	second.ReportOpenAIAccountScheduleResultForSelection(
+		&AccountSelectionResult{runtimeBreakerProbeOwner: "owner-1"},
+		account.ID,
+		"gpt-5.4",
+		true,
+		nil,
+	)
+	owner3 := withOpenAIRuntimeBreakerProbeOwner(context.Background(), "owner-3")
+	require.False(t, (&OpenAIGatewayService{cache: cache}).isOpenAIAccountRequestRuntimeBlockedContext(owner3, account, "gpt-5.4"))
+}
+
+func TestOpenAIRuntimeBreaker_RechecksRedisAfterAnAllowedDecision(t *testing.T) {
+	cache := &runtimeBreakerTestCache{}
+	svc := &OpenAIGatewayService{cache: cache}
+	account := &Account{ID: 4708, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	ctx := withOpenAIRuntimeBreakerProbeOwner(context.Background(), "owner-1")
+
+	require.False(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, "gpt-5.4"))
+	require.NoError(t, cache.BlockOpenAIRuntimeBreaker(
+		context.Background(),
+		account.ID,
+		"",
+		"concurrent_failure",
+		time.Minute,
+	))
+
+	require.True(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, "gpt-5.4"),
+		"an allowed decision must not hide a breaker opened later in the same request")
+}
+
+func TestOpenAIRuntimeBreaker_DoesNotPartiallyClaimAccountWhenModelScopeIsBlocked(t *testing.T) {
+	cache := &runtimeBreakerTestCache{entries: map[string]runtimeBreakerTestEntry{
+		runtimeBreakerTestKey(4709, ""): {
+			blockUntil: time.Now().Add(-time.Second),
+		},
+		runtimeBreakerTestKey(4709, "gpt-5.4"): {
+			blockUntil: time.Now().Add(time.Minute),
+		},
+	}}
+	svc := &OpenAIGatewayService{cache: cache}
+	account := &Account{ID: 4709, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	require.True(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(
+		withOpenAIRuntimeBreakerProbeOwner(context.Background(), "owner-1"),
+		account,
+		"gpt-5.4",
+	))
+
+	cache.mu.Lock()
+	accountScope := cache.entries[runtimeBreakerTestKey(account.ID, "")]
+	cache.mu.Unlock()
+	require.Empty(t, accountScope.owner,
+		"denying the model scope must atomically roll back the earlier account claim")
+}
+
+func TestOpenAIStrictContinuation_RuntimeBlockStopsFallbackAndPreservesResponseBinding(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(47)
+	bound := Account{
+		ID:          4712,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Priority:    1,
+		Extra: map[string]any{
+			"openai_apikey_responses_websockets_v2_enabled": true,
+		},
+	}
+	fallback := bound
+	fallback.ID = 4713
+	fallback.Priority = 100
+	cache := &runtimeBreakerTestCache{}
+	store := NewOpenAIWSStateStore(cache)
+	svc := &OpenAIGatewayService{
+		accountRepo:        stubOpenAIAccountRepo{accounts: []Account{bound, fallback}},
+		cache:              cache,
+		cfg:                newOpenAIWSV2TestConfig(),
+		concurrencyService: NewConcurrencyService(stubConcurrencyCache{}),
+		openaiWSStateStore: store,
+	}
+	require.NoError(t, store.BindResponseAccount(ctx, groupID, "resp_runtime_open", bound.ID, time.Hour))
+	svc.BlockAccountScheduling(&bound, time.Now().Add(time.Minute), "test_runtime_open")
+
+	selection, _, err := svc.SelectAccountWithSchedulerForCapability(
+		ctx,
+		&groupID,
+		"resp_runtime_open",
+		"",
+		"gpt-5.4",
+		nil,
+		OpenAIUpstreamTransportResponsesWebsocketV2,
+		OpenAIEndpointCapabilityChatCompletions,
+		false,
+		false,
+		true,
+	)
+	require.Nil(t, selection)
+	var continuationErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &continuationErr)
+	require.True(t, continuationErr.IsOpenAIContinuationStateUnavailable())
+	require.False(t, continuationErr.ShouldRetryNextAccount())
+
+	accountID, getErr := store.GetResponseAccount(ctx, groupID, "resp_runtime_open")
+	require.NoError(t, getErr)
+	require.Equal(t, bound.ID, accountID, "runtime cooldown must preserve the strict continuation anchor")
+}
+
+func TestOpenAIStrictContinuation_MissingBindingDoesNotFallBackToAnotherAccount(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(4711)
+	bound := Account{
+		ID:          4716,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Priority:    1,
+		Extra: map[string]any{
+			"openai_apikey_responses_websockets_v2_enabled": true,
+		},
+	}
+	fallback := bound
+	fallback.ID = 4717
+	fallback.Priority = 100
+	cache := &runtimeBreakerTestCache{}
+	svc := &OpenAIGatewayService{
+		accountRepo:        stubOpenAIAccountRepo{accounts: []Account{bound, fallback}},
+		cache:              cache,
+		cfg:                newOpenAIWSV2TestConfig(),
+		concurrencyService: NewConcurrencyService(stubConcurrencyCache{}),
+		openaiWSStateStore: NewOpenAIWSStateStore(cache),
+	}
+
+	selection, _, err := svc.SelectAccountWithSchedulerForCapability(
+		ctx,
+		&groupID,
+		"resp_missing_binding",
+		"",
+		"gpt-5.4",
+		nil,
+		OpenAIUpstreamTransportResponsesWebsocketV2,
+		OpenAIEndpointCapabilityChatCompletions,
+		false,
+		false,
+		true,
+	)
+	require.Nil(t, selection)
+	var continuationErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &continuationErr)
+	require.True(t, continuationErr.IsOpenAIContinuationStateUnavailable())
+	require.False(t, continuationErr.ShouldRetryNextAccount())
+}
+
+func TestOpenAIStrictContinuation_HalfOpenProbeBusyStopsFallbackAndPreservesResponseBinding(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(48)
+	bound := Account{
+		ID:          4714,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Priority:    1,
+		Extra: map[string]any{
+			"openai_apikey_responses_websockets_v2_enabled": true,
+		},
+	}
+	fallback := bound
+	fallback.ID = 4715
+	fallback.Priority = 100
+	cache := &runtimeBreakerTestCache{entries: map[string]runtimeBreakerTestEntry{
+		runtimeBreakerTestKey(bound.ID, ""): {
+			blockUntil: time.Now().Add(-time.Second),
+			owner:      "other-request",
+		},
+	}}
+	store := NewOpenAIWSStateStore(cache)
+	svc := &OpenAIGatewayService{
+		accountRepo:        stubOpenAIAccountRepo{accounts: []Account{bound, fallback}},
+		cache:              cache,
+		cfg:                newOpenAIWSV2TestConfig(),
+		concurrencyService: NewConcurrencyService(stubConcurrencyCache{}),
+		openaiWSStateStore: store,
+	}
+	require.NoError(t, store.BindResponseAccount(ctx, groupID, "resp_probe_busy", bound.ID, time.Hour))
+	require.NoError(t, cache.SetSessionAccountID(ctx, groupID, "strict-session", bound.ID, time.Hour))
+
+	selection, _, err := svc.SelectAccountWithSchedulerForCapability(
+		ctx,
+		&groupID,
+		"resp_probe_busy",
+		"strict-session",
+		"gpt-5.4",
+		nil,
+		OpenAIUpstreamTransportResponsesWebsocketV2,
+		OpenAIEndpointCapabilityChatCompletions,
+		false,
+		false,
+		true,
+	)
+	require.Nil(t, selection)
+	var continuationErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &continuationErr)
+	require.True(t, continuationErr.IsOpenAIContinuationStateUnavailable())
+	require.False(t, continuationErr.ShouldRetryNextAccount())
+
+	accountID, getErr := store.GetResponseAccount(ctx, groupID, "resp_probe_busy")
+	require.NoError(t, getErr)
+	require.Equal(t, bound.ID, accountID, "another request's half-open probe must not clear the strict anchor")
+	stickyAccountID, stickyErr := cache.GetSessionAccountID(ctx, groupID, "strict-session")
+	require.NoError(t, stickyErr)
+	require.Equal(t, bound.ID, stickyAccountID, "probe busy must not delete the existing session sticky binding")
+}
+
+func TestOpenAIRuntimeBreaker_OrdinarySessionStickyProbeBusyPreservesBinding(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(49)
+	bound := Account{
+		ID:          4718,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Priority:    1,
+		Extra: map[string]any{
+			"openai_apikey_responses_websockets_v2_enabled": true,
+		},
+	}
+	fallback := bound
+	fallback.ID = 4719
+	fallback.Priority = 100
+	cache := &runtimeBreakerTestCache{entries: map[string]runtimeBreakerTestEntry{
+		runtimeBreakerTestKey(bound.ID, ""): {
+			blockUntil: time.Now().Add(-time.Second),
+			owner:      "other-request",
+		},
+	}}
+	svc := &OpenAIGatewayService{
+		accountRepo:        stubOpenAIAccountRepo{accounts: []Account{bound, fallback}},
+		cache:              cache,
+		cfg:                newOpenAIWSV2TestConfig(),
+		concurrencyService: NewConcurrencyService(stubConcurrencyCache{}),
+	}
+	require.NoError(t, cache.SetSessionAccountID(ctx, groupID, "ordinary-session", bound.ID, time.Hour))
+
+	selection, _, err := svc.SelectAccountWithSchedulerForCapability(
+		ctx,
+		&groupID,
+		"",
+		"ordinary-session",
+		"gpt-5.4",
+		nil,
+		OpenAIUpstreamTransportResponsesWebsocketV2,
+		OpenAIEndpointCapabilityChatCompletions,
+		false,
+		false,
+		true,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.Equal(t, fallback.ID, selection.Account.ID)
+	if selection.ReleaseFunc != nil {
+		selection.ReleaseFunc()
+	}
+	stickyAccountID, stickyErr := cache.GetSessionAccountID(ctx, groupID, "ordinary-session")
+	require.NoError(t, stickyErr)
+	require.Equal(t, bound.ID, stickyAccountID)
+}
+
+func TestOpenAIRuntimeBreaker_FailedSelectionReleasesItsProbeClaims(t *testing.T) {
+	cache := &runtimeBreakerTestCache{entries: map[string]runtimeBreakerTestEntry{
+		runtimeBreakerTestKey(4710, ""): {
+			blockUntil: time.Now().Add(-time.Second),
+			owner:      "owner-1",
+		},
+		runtimeBreakerTestKey(4710, "gpt-5.4"): {
+			blockUntil: time.Now().Add(-time.Second),
+			owner:      "owner-1",
+		},
+	}}
+	svc := &OpenAIGatewayService{cache: cache}
+	selection := &AccountSelectionResult{runtimeBreakerProbeOwner: "owner-1"}
+	account := &Account{ID: 4710, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	svc.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, "gpt-5.4", false, nil)
+
+	cache.mu.Lock()
+	accountScope := cache.entries[runtimeBreakerTestKey(account.ID, "")]
+	modelScope := cache.entries[runtimeBreakerTestKey(account.ID, "gpt-5.4")]
+	cache.mu.Unlock()
+	require.Empty(t, accountScope.owner)
+	require.Empty(t, modelScope.owner)
+}
+
+func TestOpenAIRuntimeBreaker_SelectedHalfOpenClaimStartsRenewableLease(t *testing.T) {
+	cache := &runtimeBreakerTestCache{entries: map[string]runtimeBreakerTestEntry{
+		runtimeBreakerTestKey(4711, ""): {
+			blockUntil: time.Now().Add(-time.Second),
+		},
+		runtimeBreakerTestKey(4711, "gpt-5.4"): {
+			blockUntil: time.Now().Add(-time.Second),
+		},
+	}}
+	svc := &OpenAIGatewayService{cache: cache}
+	account := &Account{ID: 4711, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	ctx, cancel := context.WithCancel(withOpenAIRuntimeBreakerProbeOwner(context.Background(), "owner-1"))
+	defer cancel()
+
+	require.False(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, "gpt-5.4"))
+	selection := attachSelectionProfitGate(ctx, &AccountSelectionResult{
+		Account:     account,
+		Acquired:    true,
+		ReleaseFunc: func() {},
+	})
+	require.NotNil(t, selection)
+	defer selection.ReleaseFunc()
+
+	cache.mu.Lock()
+	renewCalls := cache.renewCalls
+	cache.mu.Unlock()
+	require.Equal(t, 1, renewCalls,
+		"promoting a claimed account to the selected lease must renew Redis ownership immediately")
+}
+
+func TestOpenAIRuntimeBreaker_SameAccountRetryReclaimsReleasedProbeLease(t *testing.T) {
+	cache := &runtimeBreakerTestCache{entries: map[string]runtimeBreakerTestEntry{
+		runtimeBreakerTestKey(4712, ""): {
+			blockUntil: time.Now().Add(-time.Second),
+		},
+		runtimeBreakerTestKey(4712, "gpt-5.4"): {
+			blockUntil: time.Now().Add(-time.Second),
+		},
+	}}
+	svc := &OpenAIGatewayService{cache: cache}
+	account := &Account{
+		ID:          4712,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+	}
+	ctx, cancel := context.WithCancel(withOpenAIRuntimeBreakerProbeOwner(context.Background(), "owner-1"))
+	defer cancel()
+
+	require.False(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, "gpt-5.4"))
+	first := attachSelectionProfitGate(ctx, &AccountSelectionResult{
+		Account:     account,
+		Acquired:    true,
+		ReleaseFunc: func() {},
+	})
+	require.NotNil(t, first.runtimeBreakerProbeLease)
+	svc.ReportOpenAIAccountScheduleResultForSelection(first, account.ID, "gpt-5.4", false, nil)
+
+	retry, err := svc.ReacquireOpenAISameAccountSelection(context.Background(), first)
+	require.NoError(t, err)
+	require.NotNil(t, retry)
+	require.NotNil(t, retry.runtimeBreakerProbeLease)
+	require.ElementsMatch(t, []string{"", "gpt-5.4"}, retry.runtimeBreakerProbeModels)
+	cache.mu.Lock()
+	accountOwner := cache.entries[runtimeBreakerTestKey(account.ID, "")].owner
+	modelOwner := cache.entries[runtimeBreakerTestKey(account.ID, "gpt-5.4")].owner
+	cache.mu.Unlock()
+	require.Equal(t, "owner-1", accountOwner)
+	require.Equal(t, "owner-1", modelOwner)
+
+	svc.ReportOpenAIAccountScheduleResultForSelection(retry, account.ID, "gpt-5.4", true, nil)
+	cache.mu.Lock()
+	_, accountExists := cache.entries[runtimeBreakerTestKey(account.ID, "")]
+	_, modelExists := cache.entries[runtimeBreakerTestKey(account.ID, "gpt-5.4")]
+	cache.mu.Unlock()
+	require.False(t, accountExists)
+	require.False(t, modelExists)
+}
+
+func TestOpenAIRuntimeBreaker_SelectedAccountReleasesOtherCandidateClaims(t *testing.T) {
+	cache := &runtimeBreakerTestCache{entries: map[string]runtimeBreakerTestEntry{
+		runtimeBreakerTestKey(4713, ""):        {blockUntil: time.Now().Add(-time.Second)},
+		runtimeBreakerTestKey(4713, "gpt-5.4"): {blockUntil: time.Now().Add(-time.Second)},
+		runtimeBreakerTestKey(4714, ""):        {blockUntil: time.Now().Add(-time.Second)},
+		runtimeBreakerTestKey(4714, "gpt-5.4"): {blockUntil: time.Now().Add(-time.Second)},
+	}}
+	svc := &OpenAIGatewayService{cache: cache}
+	first := &Account{ID: 4713, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	selected := &Account{ID: 4714, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	ctx, cancel := context.WithCancel(withOpenAIRuntimeBreakerProbeOwner(context.Background(), "owner-1"))
+	defer cancel()
+
+	require.False(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(ctx, first, "gpt-5.4"))
+	require.False(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(ctx, selected, "gpt-5.4"))
+	selection := attachSelectionProfitGate(ctx, &AccountSelectionResult{
+		Account:     selected,
+		Acquired:    true,
+		ReleaseFunc: func() {},
+	})
+	require.NotNil(t, selection)
+	defer selection.ReleaseFunc()
+
+	cache.mu.Lock()
+	firstAccountOwner := cache.entries[runtimeBreakerTestKey(first.ID, "")].owner
+	firstModelOwner := cache.entries[runtimeBreakerTestKey(first.ID, "gpt-5.4")].owner
+	selectedAccountOwner := cache.entries[runtimeBreakerTestKey(selected.ID, "")].owner
+	selectedModelOwner := cache.entries[runtimeBreakerTestKey(selected.ID, "gpt-5.4")].owner
+	cache.mu.Unlock()
+	require.Empty(t, firstAccountOwner)
+	require.Empty(t, firstModelOwner)
+	require.Equal(t, "owner-1", selectedAccountOwner)
+	require.Equal(t, "owner-1", selectedModelOwner)
+}
+
+func TestOpenAIRuntimeBreaker_NoSelectionReleasesAllCandidateClaims(t *testing.T) {
+	groupID := int64(4715)
+	cache := &runtimeBreakerTestCache{entries: map[string]runtimeBreakerTestEntry{
+		runtimeBreakerTestKey(4715, ""):        {blockUntil: time.Now().Add(-time.Second)},
+		runtimeBreakerTestKey(4715, "gpt-5.4"): {blockUntil: time.Now().Add(-time.Second)},
+	}}
+	account := Account{
+		ID:          4715,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		GroupIDs:    []int64{groupID},
+	}
+	svc := &OpenAIGatewayService{
+		accountRepo:      schedulerTestOpenAIAccountRepo{accounts: []Account{account}},
+		cache:            cache,
+		cfg:              &config.Config{},
+		rateLimitService: newOpenAIAdvancedSchedulerRateLimitService("true"),
+	}
+
+	selection, _, err := svc.SelectAccountWithSchedulerForCapability(
+		context.Background(),
+		&groupID,
+		"",
+		"",
+		"gpt-5.4",
+		nil,
+		OpenAIUpstreamTransportAny,
+		OpenAIEndpointCapability("unsupported-for-test"),
+		false,
+		false,
+		false,
+	)
+	require.Error(t, err)
+	require.Nil(t, selection)
+
+	cache.mu.Lock()
+	accountOwner := cache.entries[runtimeBreakerTestKey(account.ID, "")].owner
+	modelOwner := cache.entries[runtimeBreakerTestKey(account.ID, "gpt-5.4")].owner
+	cache.mu.Unlock()
+	require.Empty(t, accountOwner)
+	require.Empty(t, modelOwner)
+}
+
+func TestOpenAIRuntimeBreaker_SchedulerSelectionOwnsRenewableLease(t *testing.T) {
+	groupID := int64(4716)
+	cache := &runtimeBreakerTestCache{entries: map[string]runtimeBreakerTestEntry{
+		runtimeBreakerTestKey(4716, ""):        {blockUntil: time.Now().Add(-time.Second)},
+		runtimeBreakerTestKey(4716, "gpt-5.4"): {blockUntil: time.Now().Add(-time.Second)},
+	}}
+	account := Account{
+		ID:          4716,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		GroupIDs:    []int64{groupID},
+	}
+	svc := &OpenAIGatewayService{
+		accountRepo:      schedulerTestOpenAIAccountRepo{accounts: []Account{account}},
+		cache:            cache,
+		cfg:              &config.Config{},
+		rateLimitService: newOpenAIAdvancedSchedulerRateLimitService("true"),
+	}
+
+	selection, _, err := svc.SelectAccountWithScheduler(
+		context.Background(),
+		&groupID,
+		"",
+		"",
+		"gpt-5.4",
+		nil,
+		OpenAIUpstreamTransportAny,
+		false,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.runtimeBreakerProbeLease)
+	require.ElementsMatch(t, []string{"", "gpt-5.4"}, selection.runtimeBreakerProbeModels)
+	cache.mu.Lock()
+	renewCalls := cache.renewCalls
+	accountOwner := cache.entries[runtimeBreakerTestKey(account.ID, "")].owner
+	modelOwner := cache.entries[runtimeBreakerTestKey(account.ID, "gpt-5.4")].owner
+	cache.mu.Unlock()
+	require.Equal(t, 1, renewCalls)
+	require.NotEmpty(t, accountOwner)
+	require.Equal(t, accountOwner, modelOwner)
+
+	svc.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, "gpt-5.4", true, nil)
+}
+
+func TestOpenAIRuntimeBreaker_SuccessClearsSelectionClaimScopesWhenModelChanges(t *testing.T) {
+	cache := &runtimeBreakerTestCache{entries: map[string]runtimeBreakerTestEntry{
+		runtimeBreakerTestKey(4717, ""):        {blockUntil: time.Now().Add(-time.Second)},
+		runtimeBreakerTestKey(4717, "gpt-5.4"): {blockUntil: time.Now().Add(-time.Second)},
+	}}
+	svc := &OpenAIGatewayService{cache: cache}
+	account := &Account{ID: 4717, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	ctx, cancel := context.WithCancel(withOpenAIRuntimeBreakerProbeOwner(context.Background(), "owner-1"))
+	defer cancel()
+
+	require.False(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, "gpt-5.4"))
+	selection := attachSelectionProfitGate(ctx, &AccountSelectionResult{
+		Account:     account,
+		Acquired:    true,
+		ReleaseFunc: func() {},
+	})
+	require.NotNil(t, selection.runtimeBreakerProbeLease)
+
+	svc.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, "gpt-5.5", true, nil)
+	cache.mu.Lock()
+	_, accountExists := cache.entries[runtimeBreakerTestKey(account.ID, "")]
+	_, originalModelExists := cache.entries[runtimeBreakerTestKey(account.ID, "gpt-5.4")]
+	cache.mu.Unlock()
+	require.False(t, accountExists)
+	require.False(t, originalModelExists, "success must close the exact model scope claimed during scheduling")
+}
+
+func TestOpenAIRuntimeBreaker_LateSuccessDoesNotClearActiveCooldown(t *testing.T) {
+	cache := &runtimeBreakerTestCache{}
+	svc := &OpenAIGatewayService{cache: cache}
+	account := &Account{ID: 4706, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	svc.BlockAccountScheduling(account, time.Now().Add(time.Minute), "concurrent_failure")
+	svc.ReportOpenAIAccountScheduleResult(account.ID, "gpt-5.4", true, nil)
+
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	cache.mu.Lock()
+	_, exists := cache.entries[runtimeBreakerTestKey(account.ID, "")]
+	cache.mu.Unlock()
+	require.True(t, exists)
+}
+
+func TestOpenAIRuntimeBreaker_LateSuccessDoesNotClearActiveModelCooldown(t *testing.T) {
+	cache := &runtimeBreakerTestCache{}
+	svc := &OpenAIGatewayService{cache: cache}
+	account := &Account{ID: 4707, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	svc.CooldownOpenAIRetryExhausted(context.Background(), account, "gpt-5.4", &UpstreamFailoverError{
+		StatusCode: http.StatusServiceUnavailable,
+	})
+	svc.ReportOpenAIAccountScheduleResult(account.ID, "gpt-5.4", true, nil)
+
+	require.True(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.4"))
+	cache.mu.Lock()
+	_, exists := cache.entries[runtimeBreakerTestKey(account.ID, "gpt-5.4")]
+	cache.mu.Unlock()
+	require.True(t, exists)
+}
+
+func TestOpenAI429LegacySideEffects_DoNotPersistOrDuplicateRuntimeCooldown(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	account := &Account{ID: 42, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 	apiKeyAccount := &Account{ID: 43, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
@@ -23,7 +875,7 @@ func TestOpenAI429FastPath_MarksOAuthAccountCoolingDown(t *testing.T) {
 
 	require.False(t, shouldDisable)
 	require.False(t, apiKeyShouldDisable)
-	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
 	require.False(t, svc.isOpenAIAccountRuntimeBlocked(apiKeyAccount))
 }
 
@@ -171,6 +1023,82 @@ func TestOpenAIPoolModeRetryable5xx_DoesNotCreateModelTransientBlock(t *testing.
 	require.False(t, gateway.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.4"))
 }
 
+func TestCooldownOpenAIRetryExhausted_AccountAndModelScopes(t *testing.T) {
+	t.Run("API key 429 uses account cooldown", func(t *testing.T) {
+		svc := &OpenAIGatewayService{}
+		account := &Account{ID: 4701, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+		svc.CooldownOpenAIRetryExhausted(context.Background(), account, "gpt-5.4", &UpstreamFailoverError{
+			StatusCode:      http.StatusTooManyRequests,
+			ResponseHeaders: http.Header{"Retry-After": []string{"45"}},
+		})
+
+		require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	})
+
+	t.Run("503 uses immediate model cooldown", func(t *testing.T) {
+		svc := &OpenAIGatewayService{}
+		account := &Account{ID: 4702, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+		svc.CooldownOpenAIRetryExhausted(context.Background(), account, "gpt-5.4", &UpstreamFailoverError{
+			StatusCode: http.StatusServiceUnavailable,
+		})
+
+		require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+		require.True(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.4"))
+		require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.5"))
+	})
+
+	t.Run("503 honors Retry-After for model cooldown", func(t *testing.T) {
+		svc := &OpenAIGatewayService{}
+		account := &Account{ID: 4706, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+		now := time.Now()
+
+		svc.CooldownOpenAIRetryExhausted(context.Background(), account, "gpt-5.4", &UpstreamFailoverError{
+			StatusCode:      http.StatusServiceUnavailable,
+			ResponseHeaders: http.Header{"Retry-After": []string{"45"}},
+		})
+
+		state := svc.getOpenAIAccountModelTransientState()
+		state.mu.Lock()
+		entry := state.entries[openAIAccountModelKey{AccountID: account.ID, Model: "gpt-5.4"}]
+		state.mu.Unlock()
+		require.Greater(t, entry.blockUntil.Sub(now), 35*time.Second)
+	})
+
+	t.Run("request scoped failure does not cool account", func(t *testing.T) {
+		svc := &OpenAIGatewayService{}
+		account := &Account{ID: 4703, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+		svc.CooldownOpenAIRetryExhausted(context.Background(), account, "gpt-5.4", &UpstreamFailoverError{
+			StatusCode:             http.StatusServiceUnavailable,
+			RequestScopedTransient: true,
+			Scope:                  GatewayFailureScopeRequest,
+		})
+
+		require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+		require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.4"))
+	})
+}
+
+func TestCooldownOpenAIRetryExhausted_DoesNotShortenExistingBlock(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 4704, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	wantMinimum := time.Now().Add(30 * time.Minute)
+	svc.BlockAccountScheduling(account, time.Now().Add(time.Hour), "existing")
+
+	svc.CooldownOpenAIRetryExhausted(context.Background(), account, "gpt-5.4", &UpstreamFailoverError{
+		StatusCode:      http.StatusTooManyRequests,
+		ResponseHeaders: http.Header{"Retry-After": []string{"1"}},
+	})
+
+	value, ok := svc.openaiAccountRuntimeBlockUntil.Load(account.ID)
+	require.True(t, ok)
+	until, ok := value.(time.Time)
+	require.True(t, ok)
+	require.True(t, until.After(wantMinimum))
+}
+
 func TestOpenAIPoolModeNonRetryable5xx_StillCreatesModelTransientBlock(t *testing.T) {
 	repo := &errorPolicyRepoStub{}
 	rateLimitService := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
@@ -292,63 +1220,25 @@ func TestOpenAIModelTempUnschedulable_WriteFailureDoesNotRuntimeBlockWholeAccoun
 	require.Len(t, repo.modelRateLimitCalls, 1)
 }
 
-func TestOpenAIOAuth429_MatchingModelTempRuleAvoidsAccountRuntimeBlock(t *testing.T) {
-	repo := &modelNotFoundAccountRepoStub{}
-	svc := &OpenAIGatewayService{
-		rateLimitService: &RateLimitService{accountRepo: repo},
+func TestOpenAIAuthAndQuotaErrorsSkipLegacySchedulingState(t *testing.T) {
+	for _, statusCode := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests} {
+		t.Run(http.StatusText(statusCode), func(t *testing.T) {
+			repo := &modelNotFoundAccountRepoStub{}
+			svc := &OpenAIGatewayService{rateLimitService: &RateLimitService{accountRepo: repo}}
+			account := openAIModelNotFoundTempAccount()
+			account.Type = AccountTypeOAuth
+
+			shouldDisable := svc.handleOpenAIAccountUpstreamError(
+				context.Background(), account, statusCode, http.Header{},
+				[]byte(`{"error":{"message":"credential or quota failure"}}`), "gpt-5.4",
+			)
+
+			require.False(t, shouldDisable)
+			require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+			require.Zero(t, repo.tempCalls)
+			require.Empty(t, repo.modelRateLimitCalls)
+		})
 	}
-	account := openAIModelNotFoundTempAccount()
-	account.Type = AccountTypeOAuth
-	account.Credentials["temp_unschedulable_rules"] = []any{
-		map[string]any{
-			"error_code":       float64(http.StatusTooManyRequests),
-			"keywords":         []any{"model quota"},
-			"duration_minutes": float64(10),
-		},
-	}
-
-	shouldDisable := svc.handleOpenAIAccountUpstreamError(
-		context.Background(),
-		account,
-		http.StatusTooManyRequests,
-		http.Header{},
-		[]byte(`{"error":{"message":"model quota exhausted"}}`),
-		"gpt-5.4",
-	)
-
-	require.True(t, shouldDisable)
-	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
-	require.Len(t, repo.modelRateLimitCalls, 1)
-	require.Equal(t, "gpt-5.4", repo.modelRateLimitCalls[0].scope)
-}
-
-func TestOpenAIOAuth429_NonmatchingModelTempRuleKeepsAccountRuntimeBlock(t *testing.T) {
-	repo := &modelNotFoundAccountRepoStub{}
-	svc := &OpenAIGatewayService{
-		rateLimitService: &RateLimitService{accountRepo: repo},
-	}
-	account := openAIModelNotFoundTempAccount()
-	account.Type = AccountTypeOAuth
-	account.Credentials["temp_unschedulable_rules"] = []any{
-		map[string]any{
-			"error_code":       float64(http.StatusTooManyRequests),
-			"keywords":         []any{"different marker"},
-			"duration_minutes": float64(10),
-		},
-	}
-
-	shouldDisable := svc.handleOpenAIAccountUpstreamError(
-		context.Background(),
-		account,
-		http.StatusTooManyRequests,
-		http.Header{},
-		[]byte(`{"error":{"message":"global rate limit"}}`),
-		"gpt-5.4",
-	)
-
-	require.False(t, shouldDisable)
-	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
-	require.Empty(t, repo.modelRateLimitCalls)
 }
 
 func TestOpenAITempUnschedulable_UnknownModelKeepsAccountRuntimeBlock(t *testing.T) {

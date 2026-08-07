@@ -641,6 +641,13 @@ func (c *stubGatewayCache) DeleteSessionAccountID(ctx context.Context, groupID i
 	return nil
 }
 
+func (c *stubGatewayCache) DeleteSessionAccountIDIfMatches(ctx context.Context, groupID int64, sessionHash string, expectedAccountID int64) (bool, error) {
+	if c.sessionBindings == nil || c.sessionBindings[sessionHash] != expectedAccountID {
+		return false, nil
+	}
+	return true, c.DeleteSessionAccountID(ctx, groupID, sessionHash)
+}
+
 func TestOpenAISelectAccountWithLoadAwareness_FiltersUnschedulable(t *testing.T) {
 	now := time.Now()
 	resetAt := now.Add(10 * time.Minute)
@@ -1232,7 +1239,7 @@ func TestOpenAISelectAccountWithLoadAwareness_AllFullWaitPlan(t *testing.T) {
 	cache := &stubGatewayCache{}
 	concurrencyCache := stubConcurrencyCache{
 		loadMap: map[int64]*AccountLoadInfo{
-			1: {AccountID: 1, LoadRate: 100},
+			1: {AccountID: 1, CurrentConcurrency: 1, LoadRate: 100},
 		},
 	}
 
@@ -1290,7 +1297,7 @@ func TestOpenAISelectAccountWithLoadAwareness_MissingLoadInfo(t *testing.T) {
 	cache := &stubGatewayCache{}
 	concurrencyCache := stubConcurrencyCache{
 		loadMap: map[int64]*AccountLoadInfo{
-			1: {AccountID: 1, LoadRate: 50},
+			1: {AccountID: 1, CurrentConcurrency: 1, LoadRate: 50},
 		},
 		skipDefaultLoad: true,
 	}

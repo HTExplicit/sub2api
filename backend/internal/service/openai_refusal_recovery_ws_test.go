@@ -242,6 +242,29 @@ func TestOpenAIRefusalRecoveryWSOutputWritesRetryableFailureWithoutBufferedFrame
 	require.False(t, output.SemanticOutputStarted())
 }
 
+func TestOpenAIRefusalRecoveryWSOutputTracksActualDownstreamWrites(t *testing.T) {
+	var written [][]byte
+	output := newOpenAIRefusalRecoveryWSOutput(nil, true, func(_ context.Context, _ coderws.MessageType, payload []byte) error {
+		written = append(written, append([]byte(nil), payload...))
+		return nil
+	}, nil)
+
+	require.NoError(t, output.Write(context.Background(), coderws.MessageText,
+		[]byte(`{"type":"response.created","response":{"id":"resp_buffered"}}`)))
+	require.Empty(t, written)
+	require.False(t, output.DownstreamOutputStarted(), "缓冲元数据不应被视为已写入客户端")
+
+	require.NoError(t, output.Write(context.Background(), coderws.MessageText,
+		[]byte(`{"type":"response.output_text.delta","delta":"hello"}`)))
+	require.Len(t, written, 2, "首个语义事件应先冲刷元数据，再写语义事件")
+	require.True(t, output.DownstreamOutputStarted())
+	require.True(t, output.SemanticOutputStarted())
+
+	output.DropTurn()
+	require.False(t, output.DownstreamOutputStarted())
+	require.False(t, output.SemanticOutputStarted())
+}
+
 func TestOpenAIRefusalRecoveryWSOutputSanitizesRetryableFailureAndPreservesUsage(t *testing.T) {
 	var written [][]byte
 	output := newOpenAIRefusalRecoveryWSOutput(nil, true, func(_ context.Context, _ coderws.MessageType, payload []byte) error {

@@ -88,7 +88,7 @@ func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_QuotaAutoPausedM
 	require.Equal(t, account.ID, boundAccountID)
 }
 
-func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_RateLimitedMiss(t *testing.T) {
+func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_RateLimitedMissPreservesBinding(t *testing.T) {
 	ctx := context.Background()
 	groupID := int64(23)
 	rateLimitedUntil := time.Now().Add(30 * time.Minute)
@@ -122,10 +122,10 @@ func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_RateLimitedMiss(
 	require.Nil(t, selection, "限额中的账号不应继续命中 previous_response_id 粘连")
 	boundAccountID, getErr := store.GetResponseAccount(ctx, groupID, "resp_prev_rl")
 	require.NoError(t, getErr)
-	require.Zero(t, boundAccountID)
+	require.Equal(t, account.ID, boundAccountID)
 }
 
-func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_DBRuntimeRecheckRateLimitedMiss(t *testing.T) {
+func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_DBRuntimeRecheckRateLimitedMissPreservesBinding(t *testing.T) {
 	ctx := context.Background()
 	groupID := int64(24)
 	rateLimitedUntil := time.Now().Add(30 * time.Minute)
@@ -174,7 +174,7 @@ func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_DBRuntimeRecheck
 	require.Nil(t, selection, "DB 中已限流的账号不应继续命中 previous_response_id 粘连")
 	boundAccountID, getErr := store.GetResponseAccount(ctx, groupID, "resp_prev_db_rl")
 	require.NoError(t, getErr)
-	require.Zero(t, boundAccountID)
+	require.Equal(t, dbAccount.ID, boundAccountID)
 }
 
 func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_Excluded(t *testing.T) {

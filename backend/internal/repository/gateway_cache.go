@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -15,6 +16,8 @@ import (
 
 const stickySessionPrefix = "sticky_session:"
 const liveCallPrefix = "live:call:"
+const openAIRuntimeBreakerPrefix = "openai_runtime_breaker:"
+const openAIRuntimeBreakerHalfOpenRetention = 5 * time.Minute
 
 type gatewayCache struct {
 	rdb *redis.Client
@@ -64,9 +67,417 @@ func (c *gatewayCache) DeleteSessionAccountID(ctx context.Context, groupID int64
 	return c.rdb.Del(ctx, key).Err()
 }
 
+var deleteSessionAccountIDIfMatchesScript = redis.NewScript(`
+	if redis.call('GET', KEYS[1]) ~= ARGV[1] then
+		return 0
+	end
+	return redis.call('DEL', KEYS[1])
+`)
+
+// DeleteSessionAccountIDIfMatches removes a stale sticky binding only when it
+// still points at the account that the scheduler just rejected. This prevents
+// a concurrent successful rebind from being deleted by an older request.
+func (c *gatewayCache) DeleteSessionAccountIDIfMatches(ctx context.Context, groupID int64, sessionHash string, expectedAccountID int64) (bool, error) {
+	key := buildSessionKey(groupID, sessionHash)
+	deleted, err := deleteSessionAccountIDIfMatchesScript.Run(
+		ctx,
+		c.rdb,
+		[]string{key},
+		strconv.FormatInt(expectedAccountID, 10),
+	).Int()
+	return deleted == 1, err
+}
+
 // Compile-time assertion: gatewayCache must implement CyberSessionBlockStore.
 var _ service.CyberSessionBlockStore = (*gatewayCache)(nil)
 var _ service.LiveCallStore = (*gatewayCache)(nil)
+var _ service.OpenAIRuntimeBreakerStore = (*gatewayCache)(nil)
+var _ service.OpenAIRuntimeBreakerLeaseStore = (*gatewayCache)(nil)
+
+func openAIRuntimeBreakerScope(model string) string {
+	model = strings.ToLower(strings.TrimSpace(model))
+	if model == "" {
+		return "account"
+	}
+	sum := sha256.Sum256([]byte(model))
+	return hex.EncodeToString(sum[:16])
+}
+
+func openAIRuntimeBreakerBaseKey(accountID int64, model string) string {
+	return fmt.Sprintf("%s%d:%s", openAIRuntimeBreakerPrefix, accountID, openAIRuntimeBreakerScope(model))
+}
+
+func openAIRuntimeBreakerBlockKey(accountID int64, model string) string {
+	return openAIRuntimeBreakerBaseKey(accountID, model) + ":block"
+}
+
+func openAIRuntimeBreakerMarkerKey(accountID int64, model string) string {
+	return openAIRuntimeBreakerBaseKey(accountID, model) + ":marker"
+}
+
+func openAIRuntimeBreakerClaimKey(accountID int64, model string) string {
+	return openAIRuntimeBreakerBaseKey(accountID, model) + ":claim"
+}
+
+func openAIRuntimeBreakerIndexKey(accountID int64) string {
+	return fmt.Sprintf("%s%d:index", openAIRuntimeBreakerPrefix, accountID)
+}
+
+var blockOpenAIRuntimeBreakerScript = redis.NewScript(`
+	local requested = tonumber(ARGV[2])
+	local retention = tonumber(ARGV[3])
+	local current = redis.call('PTTL', KEYS[1])
+	local effective = requested
+	if current < requested then
+		redis.call('SET', KEYS[1], ARGV[1], 'PX', requested)
+	else
+		effective = current
+	end
+	local marker_ttl = effective + retention
+	local marker_current = redis.call('PTTL', KEYS[2])
+	if marker_current < marker_ttl then
+		redis.call('SET', KEYS[2], ARGV[1], 'PX', marker_ttl)
+	end
+	redis.call('DEL', KEYS[3])
+	redis.call('SADD', KEYS[4], ARGV[4])
+	local index_current = redis.call('PTTL', KEYS[4])
+	if index_current < marker_ttl then
+		redis.call('PEXPIRE', KEYS[4], marker_ttl)
+	end
+	return effective
+`)
+
+func (c *gatewayCache) BlockOpenAIRuntimeBreaker(ctx context.Context, accountID int64, model, reason string, ttl time.Duration) error {
+	if accountID <= 0 || ttl <= 0 {
+		return nil
+	}
+	baseKey := openAIRuntimeBreakerBaseKey(accountID, model)
+	ttlMillis := ttl.Milliseconds()
+	if ttlMillis <= 0 {
+		ttlMillis = 1
+	}
+	return blockOpenAIRuntimeBreakerScript.Run(
+		ctx,
+		c.rdb,
+		[]string{baseKey + ":block", baseKey + ":marker", baseKey + ":claim", openAIRuntimeBreakerIndexKey(accountID)},
+		reason,
+		ttlMillis,
+		openAIRuntimeBreakerHalfOpenRetention.Milliseconds(),
+		baseKey,
+	).Err()
+}
+
+var allowOpenAIRuntimeBreakerProbeScript = redis.NewScript(`
+	if redis.call('EXISTS', KEYS[1]) == 1 then
+		return 0
+	end
+	if redis.call('EXISTS', KEYS[2]) == 0 then
+		return 1
+	end
+	local current = redis.call('GET', KEYS[3])
+	if current == ARGV[1] then
+		return 1
+	end
+	if current ~= false then
+		return 0
+	end
+	if redis.call('SET', KEYS[3], ARGV[1], 'NX', 'PX', ARGV[2]) then
+		return 1
+	end
+	return 0
+`)
+
+func (c *gatewayCache) AllowOpenAIRuntimeBreakerProbe(ctx context.Context, accountID int64, model, owner string, claimTTL time.Duration) (bool, error) {
+	if accountID <= 0 {
+		return true, nil
+	}
+	if strings.TrimSpace(owner) == "" {
+		return false, fmt.Errorf("openai runtime breaker probe owner is required")
+	}
+	claimMillis := claimTTL.Milliseconds()
+	if claimMillis <= 0 {
+		claimMillis = 1
+	}
+	baseKey := openAIRuntimeBreakerBaseKey(accountID, model)
+	allowed, err := allowOpenAIRuntimeBreakerProbeScript.Run(
+		ctx,
+		c.rdb,
+		[]string{baseKey + ":block", baseKey + ":marker", baseKey + ":claim"},
+		owner,
+		claimMillis,
+	).Int()
+	return allowed == 1, err
+}
+
+var allowOpenAIRuntimeBreakerProbesScript = redis.NewScript(`
+	local owner = ARGV[1]
+	local claim_ttl = tonumber(ARGV[2])
+	local scope_count = tonumber(ARGV[3])
+	for index = 1, scope_count do
+		local offset = (index - 1) * 3
+		if redis.call('EXISTS', KEYS[offset + 1]) == 1 then
+			return {0}
+		end
+		if redis.call('EXISTS', KEYS[offset + 2]) == 1 then
+			local current = redis.call('GET', KEYS[offset + 3])
+			if current ~= false and current ~= owner then
+				return {0}
+			end
+		end
+	end
+
+	local result = {1}
+	for index = 1, scope_count do
+		local offset = (index - 1) * 3
+		if redis.call('EXISTS', KEYS[offset + 2]) == 1 then
+			local current = redis.call('GET', KEYS[offset + 3])
+			if current == owner then
+				local current_ttl = redis.call('PTTL', KEYS[offset + 3])
+				if current_ttl < claim_ttl then
+					redis.call('PEXPIRE', KEYS[offset + 3], claim_ttl)
+				end
+			elseif not redis.call('SET', KEYS[offset + 3], owner, 'NX', 'PX', claim_ttl) then
+				return {0}
+			end
+			table.insert(result, index)
+		end
+	end
+	return result
+`)
+
+func normalizeOpenAIRuntimeBreakerModels(models []string) []string {
+	if len(models) == 0 {
+		return nil
+	}
+	normalized := make([]string, 0, len(models))
+	seen := make(map[string]struct{}, len(models))
+	for _, model := range models {
+		model = strings.ToLower(strings.TrimSpace(model))
+		if _, exists := seen[model]; exists {
+			continue
+		}
+		seen[model] = struct{}{}
+		normalized = append(normalized, model)
+	}
+	return normalized
+}
+
+func openAIRuntimeBreakerScopeKeys(accountID int64, models []string) ([]string, []string) {
+	models = normalizeOpenAIRuntimeBreakerModels(models)
+	keys := make([]string, 0, len(models)*3)
+	for _, model := range models {
+		baseKey := openAIRuntimeBreakerBaseKey(accountID, model)
+		keys = append(keys, baseKey+":block", baseKey+":marker", baseKey+":claim")
+	}
+	return models, keys
+}
+
+func redisScriptInteger(value any) (int64, bool) {
+	switch typed := value.(type) {
+	case int64:
+		return typed, true
+	case int:
+		return int64(typed), true
+	case string:
+		parsed, err := strconv.ParseInt(typed, 10, 64)
+		return parsed, err == nil
+	case []byte:
+		parsed, err := strconv.ParseInt(string(typed), 10, 64)
+		return parsed, err == nil
+	default:
+		return 0, false
+	}
+}
+
+func (c *gatewayCache) AllowOpenAIRuntimeBreakerProbes(ctx context.Context, accountID int64, models []string, owner string, claimTTL time.Duration) (bool, []string, error) {
+	if accountID <= 0 {
+		return true, nil, nil
+	}
+	owner = strings.TrimSpace(owner)
+	if owner == "" {
+		return false, nil, fmt.Errorf("openai runtime breaker probe owner is required")
+	}
+	models, keys := openAIRuntimeBreakerScopeKeys(accountID, models)
+	if len(models) == 0 {
+		return true, nil, nil
+	}
+	claimMillis := claimTTL.Milliseconds()
+	if claimMillis <= 0 {
+		claimMillis = 1
+	}
+	values, err := allowOpenAIRuntimeBreakerProbesScript.Run(
+		ctx,
+		c.rdb,
+		keys,
+		owner,
+		claimMillis,
+		len(models),
+	).Slice()
+	if err != nil {
+		return false, nil, err
+	}
+	decision, ok := redisScriptInteger(values[0])
+	if !ok || decision != 1 {
+		return false, nil, nil
+	}
+	claimed := make([]string, 0, len(values)-1)
+	for _, value := range values[1:] {
+		index, valid := redisScriptInteger(value)
+		if !valid || index <= 0 || index > int64(len(models)) {
+			return false, nil, fmt.Errorf("invalid openai runtime breaker scope index %v", value)
+		}
+		claimed = append(claimed, models[index-1])
+	}
+	return true, claimed, nil
+}
+
+var renewOpenAIRuntimeBreakerProbesScript = redis.NewScript(`
+	local owner = ARGV[1]
+	local claim_ttl = tonumber(ARGV[2])
+	local marker_ttl = tonumber(ARGV[3])
+	local scope_count = tonumber(ARGV[4])
+	local index_key = KEYS[scope_count * 3 + 1]
+	for index = 1, scope_count do
+		local offset = (index - 1) * 3
+		local block_exists = redis.call('EXISTS', KEYS[offset + 1]) == 1
+		local marker_exists = redis.call('EXISTS', KEYS[offset + 2]) == 1
+		local current = redis.call('GET', KEYS[offset + 3])
+		if block_exists then
+			return 0
+		end
+		if not marker_exists or current ~= owner then
+			return 0
+		end
+	end
+
+	for index = 1, scope_count do
+		local offset = (index - 1) * 3
+		if redis.call('EXISTS', KEYS[offset + 2]) == 1 and redis.call('GET', KEYS[offset + 3]) == owner then
+			local claim_current = redis.call('PTTL', KEYS[offset + 3])
+			if claim_current < claim_ttl then
+				redis.call('PEXPIRE', KEYS[offset + 3], claim_ttl)
+			end
+			local marker_current = redis.call('PTTL', KEYS[offset + 2])
+			if marker_current < marker_ttl then
+				redis.call('PEXPIRE', KEYS[offset + 2], marker_ttl)
+			end
+			redis.call('SADD', index_key, ARGV[4 + index])
+		end
+	end
+	local index_current = redis.call('PTTL', index_key)
+	if index_current < marker_ttl then
+		redis.call('PEXPIRE', index_key, marker_ttl)
+	end
+	return 1
+`)
+
+func (c *gatewayCache) RenewOpenAIRuntimeBreakerProbes(ctx context.Context, accountID int64, models []string, owner string, claimTTL time.Duration) (bool, error) {
+	if accountID <= 0 {
+		return true, nil
+	}
+	owner = strings.TrimSpace(owner)
+	if owner == "" {
+		return false, fmt.Errorf("openai runtime breaker probe owner is required")
+	}
+	models, keys := openAIRuntimeBreakerScopeKeys(accountID, models)
+	if len(models) == 0 {
+		return true, nil
+	}
+	claimMillis := claimTTL.Milliseconds()
+	if claimMillis <= 0 {
+		claimMillis = 1
+	}
+	markerMillis := claimMillis + openAIRuntimeBreakerHalfOpenRetention.Milliseconds()
+	args := make([]any, 0, 4+len(models))
+	args = append(args, owner, claimMillis, markerMillis, len(models))
+	for _, model := range models {
+		args = append(args, openAIRuntimeBreakerBaseKey(accountID, model))
+	}
+	renewed, err := renewOpenAIRuntimeBreakerProbesScript.Run(ctx, c.rdb, append(keys, openAIRuntimeBreakerIndexKey(accountID)), args...).Int()
+	return renewed == 1, err
+}
+
+var releaseOpenAIRuntimeBreakerProbesScript = redis.NewScript(`
+	local owner = ARGV[1]
+	local scope_count = tonumber(ARGV[2])
+	for index = 1, scope_count do
+		local current = redis.call('GET', KEYS[(index - 1) * 3 + 3])
+		if current ~= false and current ~= owner then
+			return 0
+		end
+	end
+	local released = 0
+	for index = 1, scope_count do
+		local claim_key = KEYS[(index - 1) * 3 + 3]
+		if redis.call('GET', claim_key) == owner then
+			redis.call('DEL', claim_key)
+			released = released + 1
+		end
+	end
+	return released > 0 and 1 or 0
+`)
+
+func (c *gatewayCache) ReleaseOpenAIRuntimeBreakerProbes(ctx context.Context, accountID int64, models []string, owner string) (bool, error) {
+	if accountID <= 0 {
+		return true, nil
+	}
+	owner = strings.TrimSpace(owner)
+	if owner == "" {
+		return false, fmt.Errorf("openai runtime breaker probe owner is required")
+	}
+	models, keys := openAIRuntimeBreakerScopeKeys(accountID, models)
+	if len(models) == 0 {
+		return true, nil
+	}
+	released, err := releaseOpenAIRuntimeBreakerProbesScript.Run(ctx, c.rdb, keys, owner, len(models)).Int()
+	return released == 1, err
+}
+
+var clearOpenAIRuntimeBreakerScript = redis.NewScript(`
+	if redis.call('EXISTS', KEYS[1]) == 1 then
+		return 0
+	end
+	if redis.call('EXISTS', KEYS[2]) == 0 or redis.call('GET', KEYS[3]) ~= ARGV[1] then
+		return 0
+	end
+	redis.call('DEL', KEYS[2], KEYS[3])
+	redis.call('SREM', KEYS[4], ARGV[2])
+	return 1
+`)
+
+func (c *gatewayCache) ClearOpenAIRuntimeBreaker(ctx context.Context, accountID int64, model, owner string) error {
+	if accountID <= 0 {
+		return nil
+	}
+	owner = strings.TrimSpace(owner)
+	if owner == "" {
+		return nil
+	}
+	baseKey := openAIRuntimeBreakerBaseKey(accountID, model)
+	return clearOpenAIRuntimeBreakerScript.Run(
+		ctx,
+		c.rdb,
+		[]string{baseKey + ":block", baseKey + ":marker", baseKey + ":claim", openAIRuntimeBreakerIndexKey(accountID)},
+		owner,
+		baseKey,
+	).Err()
+}
+
+var clearAllOpenAIRuntimeBreakersScript = redis.NewScript(`
+	local members = redis.call('SMEMBERS', KEYS[1])
+	for _, base in ipairs(members) do
+		redis.call('DEL', base .. ':block', base .. ':marker', base .. ':claim')
+	end
+	redis.call('DEL', KEYS[1])
+	return #members
+`)
+
+func (c *gatewayCache) ClearAllOpenAIRuntimeBreakers(ctx context.Context, accountID int64) error {
+	if accountID <= 0 {
+		return nil
+	}
+	return clearAllOpenAIRuntimeBreakersScript.Run(ctx, c.rdb, []string{openAIRuntimeBreakerIndexKey(accountID)}).Err()
+}
 
 const cyberSessionBlockPrefix = "cyber_session_block:"
 

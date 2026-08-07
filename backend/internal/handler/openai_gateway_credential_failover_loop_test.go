@@ -39,6 +39,51 @@ type grokCredentialHandlerRepo struct {
 	missingOnGet   map[int64]bool
 }
 
+type grokCredentialHandlerGatewayCacheKey struct {
+	groupID     int64
+	sessionHash string
+}
+
+type grokCredentialHandlerGatewayCache struct {
+	mu       sync.Mutex
+	sessions map[grokCredentialHandlerGatewayCacheKey]int64
+}
+
+func (c *grokCredentialHandlerGatewayCache) GetSessionAccountID(_ context.Context, groupID int64, sessionHash string) (int64, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.sessions[grokCredentialHandlerGatewayCacheKey{groupID: groupID, sessionHash: sessionHash}], nil
+}
+
+func (c *grokCredentialHandlerGatewayCache) SetSessionAccountID(_ context.Context, groupID int64, sessionHash string, accountID int64, _ time.Duration) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.sessions[grokCredentialHandlerGatewayCacheKey{groupID: groupID, sessionHash: sessionHash}] = accountID
+	return nil
+}
+
+func (c *grokCredentialHandlerGatewayCache) RefreshSessionTTL(_ context.Context, _ int64, _ string, _ time.Duration) error {
+	return nil
+}
+
+func (c *grokCredentialHandlerGatewayCache) DeleteSessionAccountID(_ context.Context, groupID int64, sessionHash string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.sessions, grokCredentialHandlerGatewayCacheKey{groupID: groupID, sessionHash: sessionHash})
+	return nil
+}
+
+func (c *grokCredentialHandlerGatewayCache) DeleteSessionAccountIDIfMatches(_ context.Context, groupID int64, sessionHash string, accountID int64) (bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	key := grokCredentialHandlerGatewayCacheKey{groupID: groupID, sessionHash: sessionHash}
+	if c.sessions[key] != accountID {
+		return false, nil
+	}
+	delete(c.sessions, key)
+	return true, nil
+}
+
 func (r *grokCredentialHandlerRepo) ListSchedulableByPlatform(_ context.Context, platform string) ([]service.Account, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -312,14 +357,16 @@ func (r *grokCredentialHandlerRefresher) Refresh(ctx context.Context, _ *service
 
 type grokCredentialHandlerUpstream struct {
 	service.HTTPUpstream
-	mu            sync.Mutex
-	hits          []int64
-	requestURLs   []string
-	authorization []string
-	failAccountID int64
-	rateLimitIDs  map[int64]bool
-	failureStatus map[int64]int
-	cancelRequest context.CancelFunc
+	mu                sync.Mutex
+	hits              []int64
+	requestURLs       []string
+	authorization     []string
+	failAccountID     int64
+	rateLimitIDs      map[int64]bool
+	failureStatus     map[int64]int
+	transportOnce     bool
+	transportFailures int
+	cancelRequest     context.CancelFunc
 }
 
 func (u *grokCredentialHandlerUpstream) Do(req *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
@@ -331,11 +378,22 @@ func (u *grokCredentialHandlerUpstream) Do(req *http.Request, _ string, accountI
 	u.hits = append(u.hits, accountID)
 	u.requestURLs = append(u.requestURLs, req.URL.String())
 	u.authorization = append(u.authorization, req.Header.Get("Authorization"))
+	call := len(u.hits)
 	failAccountID := u.failAccountID
 	rateLimited := u.rateLimitIDs[accountID]
 	failureStatus := u.failureStatus[accountID]
+	transportOnce := u.transportOnce
 	cancelRequest := u.cancelRequest
 	u.mu.Unlock()
+	if transportOnce {
+		transportFailures := u.transportFailures
+		if transportFailures <= 0 {
+			transportFailures = 1
+		}
+		if call <= transportFailures {
+			return nil, errors.New("temporary upstream reset")
+		}
+	}
 	if rateLimited {
 		return &http.Response{
 			StatusCode: http.StatusTooManyRequests,
@@ -623,7 +681,7 @@ func TestResponsesGrok402FailoverCooldown(t *testing.T) {
 func TestResponsesGrok429FailoverHandlesMixedStatuses(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	t.Run("429 then 500 stops after the bounded followup", func(t *testing.T) {
+	t.Run("429 then OAuth 500 stops after the bounded followup", func(t *testing.T) {
 		_, _, upstream, router, cleanup := newGrokCredentialFailoverHandler(t, "mixed_429_500")
 		defer cleanup()
 		recorder := httptest.NewRecorder()
@@ -632,7 +690,7 @@ func TestResponsesGrok429FailoverHandlesMixedStatuses(t *testing.T) {
 
 		router.ServeHTTP(recorder, req)
 
-		require.Equal(t, http.StatusBadGateway, recorder.Code, recorder.Body.String())
+		require.Equal(t, http.StatusServiceUnavailable, recorder.Code, recorder.Body.String())
 		require.Equal(t, []int64{801, 802}, upstream.accountHits())
 		require.NotContains(t, recorder.Body.String(), "upstream unavailable")
 	})
@@ -660,7 +718,7 @@ func TestResponsesGrok429FailoverHandlesMixedStatuses(t *testing.T) {
 		router.ServeHTTP(recorder, req)
 
 		require.Equal(t, http.StatusBadGateway, recorder.Code, recorder.Body.String())
-		require.Equal(t, []int64{801, 802}, upstream.accountHits())
+		require.Equal(t, []int64{801, 802, 802}, upstream.accountHits())
 	})
 }
 
@@ -693,6 +751,76 @@ func TestGrokMedia429FailoverIsBounded(t *testing.T) {
 		require.Equal(t, []int64{801, 802}, upstream.accountHits())
 		require.NotContains(t, recorder.Body.String(), "rate limited")
 	})
+}
+
+func TestGrokMediaTransientTransportRetriesExactSameAccount(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	_, _, upstream, router, cleanup := newGrokCredentialFailoverHandler(t, "first_transport")
+	defer cleanup()
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/openai/v1/videos/generations", bytes.NewBufferString(`{"model":"grok-imagine-video","prompt":"waves"}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(recorder, req)
+
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	require.Equal(t, []int64{801, 801}, upstream.accountHits())
+}
+
+func TestGrokMediaTransientTransportRetriesAtMostOnceBeforeSwitching(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	_, _, upstream, router, cleanup := newGrokCredentialFailoverHandler(t, "first_transport")
+	defer cleanup()
+	upstream.transportFailures = 2
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/openai/v1/videos/generations", bytes.NewBufferString(`{"model":"grok-imagine-video","prompt":"waves"}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(recorder, req)
+
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	require.Equal(t, []int64{801, 801, 802}, upstream.accountHits())
+}
+
+func TestGrokMediaAuthenticationAndRateLimitFailuresSwitchImmediately(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			_, _, upstream, router, cleanup := newGrokCredentialFailoverHandler(t, "first_transport")
+			defer cleanup()
+			upstream.transportOnce = false
+			if status == http.StatusTooManyRequests {
+				upstream.rateLimitIDs = map[int64]bool{801: true}
+			} else {
+				upstream.failureStatus = map[int64]int{801: status}
+			}
+			recorder := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/openai/v1/videos/generations", bytes.NewBufferString(`{"model":"grok-imagine-video","prompt":"waves"}`))
+			req.Header.Set("Content-Type", "application/json")
+
+			router.ServeHTTP(recorder, req)
+
+			require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+			require.Equal(t, []int64{801, 802}, upstream.accountHits())
+		})
+	}
+}
+
+func TestGrokVideoLookupTransientTransportDoesNotReplayOrSwitch(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h, _, upstream, router, cleanup := newGrokCredentialFailoverHandler(t, "first_transport")
+	defer cleanup()
+	groupID := int64(901)
+	require.NoError(t, h.gatewayService.BindGrokMediaVideoRequestAccount(
+		context.Background(), &groupID, "request-1", 903, 902, 801,
+	))
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/openai/v1/videos/request-1", nil)
+
+	router.ServeHTTP(recorder, req)
+
+	require.Equal(t, http.StatusBadGateway, recorder.Code, recorder.Body.String())
+	require.Equal(t, []int64{801}, upstream.accountHits())
 }
 
 func TestGrokOAuthCredentialFailoverAcrossHTTPHandlers(t *testing.T) {
@@ -862,7 +990,7 @@ func newGrokCredentialFailoverHandler(t *testing.T, mode string) (*OpenAIGateway
 			Extra: map[string]any{service.GrokMediaEligibleExtraKey: true},
 		},
 	}
-	if mode == "postmap_cancel" || mode == "first_402" || mode == "first_429" || mode == "all_429" || mode == "mixed_429_500" || mode == "mixed_500_429" || mode == "oauth_429_apikey_500" {
+	if mode == "postmap_cancel" || mode == "first_402" || mode == "first_429" || mode == "first_transport" || mode == "all_429" || mode == "mixed_429_500" || mode == "mixed_500_429" || mode == "oauth_429_apikey_500" {
 		accounts[0].Credentials["expires_at"] = time.Now().Add(2 * time.Hour).UTC().Format(time.RFC3339)
 	}
 	if mode == "all_429" || mode == "mixed_429_500" || mode == "mixed_500_429" || mode == "oauth_429_apikey_500" {
@@ -909,6 +1037,8 @@ func newGrokCredentialFailoverHandler(t *testing.T, mode string) (*OpenAIGateway
 		upstream.failAccountID = 801
 	case "first_429":
 		upstream.rateLimitIDs = map[int64]bool{801: true}
+	case "first_transport":
+		upstream.transportOnce = true
 	case "all_429":
 		upstream.rateLimitIDs = map[int64]bool{801: true, 802: true}
 	case "mixed_429_500":
@@ -924,8 +1054,9 @@ func newGrokCredentialFailoverHandler(t *testing.T, mode string) (*OpenAIGateway
 	cfg := &config.Config{RunMode: config.RunModeSimple}
 	cfg.Gateway.MaxAccountSwitches = 3
 	billingCache := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
+	gatewayCache := &grokCredentialHandlerGatewayCache{sessions: make(map[grokCredentialHandlerGatewayCacheKey]int64)}
 	gateway := service.NewOpenAIGatewayService(
-		repo, nil, nil, nil, nil, nil, nil, cfg, nil, nil,
+		repo, nil, nil, nil, nil, nil, gatewayCache, cfg, nil, nil,
 		service.NewBillingService(cfg, nil), nil, billingCache, upstream,
 		&service.DeferredService{}, nil, provider, nil, nil, nil, nil, nil,
 	)
