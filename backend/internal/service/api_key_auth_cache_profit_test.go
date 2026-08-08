@@ -1,16 +1,13 @@
 package service
 
-// 投影漏列回归（service 半程）：认证快照 build → L2 JSON 序列化
-// → 反序列化 → 还原 apiKey.Group → 请求 ctx → 利润门解析，全链路保真。
-// repository 半程（真实 GetByKeyForAuth 投影）见
-// internal/repository/api_key_repo_profit_projection_integration_test.go。
+// Historical profit-control fields remain in the cache schema for backward
+// compatibility, but new snapshots materialize them as dormant zero values.
 
 import (
 	"context"
 	"encoding/json"
 	"testing"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/stretchr/testify/require"
 )
 
@@ -44,9 +41,7 @@ func profitAuthTestAPIKey() *APIKey {
 	}
 }
 
-// 快照构建 → L2 JSON 往返 → 还原 → 装门：利润字段必须全程保真，阈值与
-// 计费同源（0.06 × (1−0.25) = 0.045）。
-func TestAPIKeyAuthSnapshotProfitControlRoundtrip(t *testing.T) {
+func TestAPIKeyAuthSnapshotDormantProfitControlRoundtrip(t *testing.T) {
 	svc := &APIKeyService{}
 	apiKey := profitAuthTestAPIKey()
 
@@ -66,17 +61,10 @@ func TestAPIKeyAuthSnapshotProfitControlRoundtrip(t *testing.T) {
 	require.True(t, used)
 	require.NotNil(t, materialized.Group)
 	require.True(t, materialized.Group.Hydrated)
-	require.True(t, materialized.Group.ProfitControlEnabled)
-	require.InDelta(t, 0.2, materialized.Group.ProfitMinMargin, 1e-12)
-	require.InDelta(t, 0.05, materialized.Group.ProfitSafetyBuffer, 1e-12)
+	require.False(t, materialized.Group.ProfitControlEnabled)
+	require.Zero(t, materialized.Group.ProfitMinMargin)
+	require.Zero(t, materialized.Group.ProfitSafetyBuffer)
 	require.InDelta(t, 0.06, materialized.Group.RateMultiplier, 1e-12)
-
-	// 中间件语义：materialized.Group 进请求 ctx → 门必须按快照配置装上。
-	ctx := context.WithValue(context.Background(), ctxkey.Group, materialized.Group)
-	gwSvc := &OpenAIGatewayService{}
-	gate := gwSvc.resolveOpenAIProfitControlGate(ctx, materialized.GroupID)
-	require.NotNil(t, gate, "还原后的认证分组必须能装门（投影漏列时本断言最先失败）")
-	require.InDelta(t, 0.06*(1-0.25), gate.threshold, 1e-12)
 }
 
 // 旧版本快照（v16 及更早，无利润字段保真保证）必须被淘汰回源，不得复用。

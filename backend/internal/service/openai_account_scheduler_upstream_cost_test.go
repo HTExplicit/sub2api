@@ -547,7 +547,7 @@ func TestOpenAISchedulingRatePlacesOAuthAtConfiguredReference(t *testing.T) {
 	require.Greater(t, factors[oauth.ID], factors[expensive.ID])
 }
 
-func TestOpenAIGatewayServiceLegacySchedulingIgnoresConfiguredOAuthCostReference(t *testing.T) {
+func TestOpenAIGatewayServiceLegacyLowRatePriorityUsesConfiguredOAuthReference(t *testing.T) {
 	resetOpenAIAdvancedSchedulerSettingCacheForTest()
 	defer resetOpenAIAdvancedSchedulerSettingCacheForTest()
 
@@ -560,11 +560,7 @@ func TestOpenAIGatewayServiceLegacySchedulingIgnoresConfiguredOAuthCostReference
 		account.Schedulable = true
 		account.Concurrency = 1
 	}
-	cheap.Priority, oauth.Priority, expensive.Priority = 0, 0, 0
-	cheapUsed := now.Add(-time.Hour)
-	oauthUsed := now.Add(-3 * time.Hour)
-	expensiveUsed := now.Add(-2 * time.Hour)
-	cheap.LastUsedAt, oauth.LastUsedAt, expensive.LastUsedAt = &cheapUsed, &oauthUsed, &expensiveUsed
+	cheap.Priority, oauth.Priority, expensive.Priority = 20, 10, 0
 
 	settings := &openAIAdvancedSchedulerSettingRepoStub{values: map[string]string{
 		openAIAdvancedSchedulerSettingKey:              "false",
@@ -582,11 +578,11 @@ func TestOpenAIGatewayServiceLegacySchedulingIgnoresConfiguredOAuthCostReference
 
 	first, _, err := svc.SelectAccountWithScheduler(context.Background(), &groupID, "", "", "gpt-test", nil, OpenAIUpstreamTransportAny, false)
 	require.NoError(t, err)
-	require.Equal(t, oauth.ID, first.Account.ID)
+	require.Equal(t, cheap.ID, first.Account.ID)
 
-	second, _, err := svc.SelectAccountWithScheduler(context.Background(), &groupID, "", "", "gpt-test", map[int64]struct{}{oauth.ID: {}}, OpenAIUpstreamTransportAny, false)
+	second, _, err := svc.SelectAccountWithScheduler(context.Background(), &groupID, "", "", "gpt-test", map[int64]struct{}{cheap.ID: {}}, OpenAIUpstreamTransportAny, false)
 	require.NoError(t, err)
-	require.Equal(t, expensive.ID, second.Account.ID)
+	require.Equal(t, oauth.ID, second.Account.ID)
 }
 
 func TestOpenAIModelsSelectionIgnoresTokenCostSignal(t *testing.T) {
@@ -618,15 +614,12 @@ func TestOpenAIModelsSelectionIgnoresTokenCostSignal(t *testing.T) {
 	require.Equal(t, expensive.ID, account.ID)
 }
 
-func TestOpenAIGatewayServiceLegacySchedulingIgnoresLowRateSwitch(t *testing.T) {
+func TestOpenAIGatewayServiceLegacyLowRatePriorityIsIndependentFromAdvancedScheduler(t *testing.T) {
 	now := time.Now()
 	cheap := upstreamCostTestAccount(1, UpstreamBillingProbeStatusOK, 0.03, now.Add(-time.Minute), 30*time.Minute)
-	cheap.Status, cheap.Schedulable, cheap.Concurrency, cheap.Priority = StatusActive, true, 2, 0
+	cheap.Status, cheap.Schedulable, cheap.Concurrency, cheap.Priority = StatusActive, true, 1, 10
 	expensive := upstreamCostTestAccount(2, UpstreamBillingProbeStatusOK, 0.8, now.Add(-time.Minute), 30*time.Minute)
-	expensive.Status, expensive.Schedulable, expensive.Concurrency, expensive.Priority = StatusActive, true, 2, 0
-	cheapUsed := now.Add(-time.Hour)
-	expensiveUsed := now.Add(-2 * time.Hour)
-	cheap.LastUsedAt, expensive.LastUsedAt = &cheapUsed, &expensiveUsed
+	expensive.Status, expensive.Schedulable, expensive.Concurrency, expensive.Priority = StatusActive, true, 1, 0
 	accounts := []Account{*cheap, *expensive}
 	groupID := int64(1)
 
@@ -637,10 +630,10 @@ func TestOpenAIGatewayServiceLegacySchedulingIgnoresLowRateSwitch(t *testing.T) 
 		loadErr   error
 		wantID    int64
 	}{
-		{name: "switch off", loadBatch: true, wantID: 2},
-		{name: "switch on with load batch", enabled: true, loadBatch: true, wantID: 2},
-		{name: "switch on with load batch disabled", enabled: true, wantID: 2},
-		{name: "switch on with load lookup failure", enabled: true, loadBatch: true, loadErr: errors.New("load unavailable"), wantID: 2},
+		{name: "switch off keeps priority first", loadBatch: true, wantID: 2},
+		{name: "load batch", enabled: true, loadBatch: true, wantID: 1},
+		{name: "load batch disabled", enabled: true, wantID: 1},
+		{name: "load lookup failure", enabled: true, loadBatch: true, loadErr: errors.New("load unavailable"), wantID: 1},
 	}
 
 	for _, tt := range tests {
@@ -660,8 +653,8 @@ func TestOpenAIGatewayServiceLegacySchedulingIgnoresLowRateSwitch(t *testing.T) 
 				concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{
 					loadBatchErr: tt.loadErr,
 					loadMap: map[int64]*AccountLoadInfo{
-						1: {AccountID: 1, CurrentConcurrency: 1, LoadRate: 1},
-						2: {AccountID: 2, CurrentConcurrency: 0, LoadRate: 99},
+						1: {AccountID: 1, LoadRate: 90},
+						2: {AccountID: 2, LoadRate: 10},
 					},
 				}),
 			}
@@ -768,7 +761,7 @@ func TestOpenAIFreshUpstreamBillingRateUsesFreshCachedSuccessOnly(t *testing.T) 
 	}
 }
 
-func TestBuildOpenAISelectionOrderAlwaysIncludesSameTierOverflow(t *testing.T) {
+func TestBuildOpenAISelectionOrderIncludesOverflowOnlyForCostScheduling(t *testing.T) {
 	scheduler := &defaultOpenAIAccountScheduler{}
 	candidates := []openAIAccountCandidateScore{
 		{account: &Account{ID: 1}, loadInfo: &AccountLoadInfo{}, score: 3},
@@ -776,15 +769,11 @@ func TestBuildOpenAISelectionOrderAlwaysIncludesSameTierOverflow(t *testing.T) {
 		{account: &Account{ID: 3}, loadInfo: &AccountLoadInfo{}, score: 1},
 	}
 
-	strict := scheduler.buildOpenAISelectionOrder(OpenAIAccountScheduleRequest{}, openAIAccountLoadPlan{
+	legacy := scheduler.buildOpenAISelectionOrder(OpenAIAccountScheduleRequest{}, openAIAccountLoadPlan{
 		candidates: candidates,
 		topK:       1,
 	})
-	require.Equal(t, []int64{1, 2, 3}, []int64{
-		strict[0].account.ID,
-		strict[1].account.ID,
-		strict[2].account.ID,
-	})
+	require.Len(t, legacy, 1)
 
 	costAware := scheduler.buildOpenAISelectionOrder(OpenAIAccountScheduleRequest{}, openAIAccountLoadPlan{
 		candidates:              candidates,

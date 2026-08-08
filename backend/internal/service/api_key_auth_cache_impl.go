@@ -420,9 +420,9 @@ func (s *APIKeyService) snapshotFromAPIKey(ctx context.Context, apiKey *APIKey) 
 			PeakStart:                       apiKey.Group.PeakStart,
 			PeakEnd:                         apiKey.Group.PeakEnd,
 			PeakRateMultiplier:              apiKey.Group.PeakRateMultiplier,
-			ProfitControlEnabled:            apiKey.Group.ProfitControlEnabled,
-			ProfitMinMargin:                 apiKey.Group.ProfitMinMargin,
-			ProfitSafetyBuffer:              apiKey.Group.ProfitSafetyBuffer,
+			ProfitControlEnabled:            false,
+			ProfitMinMargin:                 0,
+			ProfitSafetyBuffer:              0,
 		}
 	}
 	return snapshot
@@ -510,9 +510,9 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 			PeakStart:                       snapshot.Group.PeakStart,
 			PeakEnd:                         snapshot.Group.PeakEnd,
 			PeakRateMultiplier:              snapshot.Group.PeakRateMultiplier,
-			ProfitControlEnabled:            snapshot.Group.ProfitControlEnabled,
-			ProfitMinMargin:                 snapshot.Group.ProfitMinMargin,
-			ProfitSafetyBuffer:              snapshot.Group.ProfitSafetyBuffer,
+			ProfitControlEnabled:            false,
+			ProfitMinMargin:                 0,
+			ProfitSafetyBuffer:              0,
 		}
 	}
 	s.compileAPIKeyIPRules(apiKey)

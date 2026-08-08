@@ -88,6 +88,10 @@ const (
 
 type openAIProfitControlGateCtxKey struct{}
 
+// Profit-control records remain for migration compatibility only. There is no
+// supported runtime path that can enable the admission gate.
+var profitControlRuntimeEnabled = false
+
 // openAIProfitControlSuppressCtxKey 标记本请求显式跳过利润门（独立图片/视频
 // 端点、Grok 媒体、count_tokens、live 等利润门范围外流量）。所有装门点看到该
 // 标记后一律不装门，防止 service 层防御性装门把边界外流量重新拉回利润过滤。
@@ -193,6 +197,10 @@ func OpenAIPricingAtFromContext(ctx context.Context) time.Time {
 // （门不存在，全部否决点自动放行，既有行为零变化）。ctx 已有同分组门时直接
 // 复用：同一请求的全部 failover 重入共享同一阈值。
 func (s *OpenAIGatewayService) withOpenAIProfitControlGate(ctx context.Context, groupID *int64) context.Context {
+	if !profitControlRuntimeEnabled {
+		return ctx
+	}
+
 	if _, suppressed := ctx.Value(openAIProfitControlSuppressCtxKey{}).(struct{}); suppressed {
 		return ctx
 	}
@@ -216,6 +224,10 @@ func (s *OpenAIGatewayService) withOpenAIProfitControlGate(ctx context.Context, 
 }
 
 func (s *OpenAIGatewayService) resolveOpenAIProfitControlGate(ctx context.Context, groupID *int64) *openAIProfitControlGate {
+	if !profitControlRuntimeEnabled {
+		return nil
+	}
+
 	if s == nil || groupID == nil || *groupID <= 0 {
 		return nil
 	}

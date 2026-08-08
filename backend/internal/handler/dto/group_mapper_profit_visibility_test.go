@@ -60,11 +60,12 @@ func TestGroupFromServiceOmitsProfitControl(t *testing.T) {
 	}
 }
 
-// TestGroupFromServiceAdminIncludesProfitControl 钉死管理端仍能读写利润控制配置。
-func TestGroupFromServiceAdminIncludesProfitControl(t *testing.T) {
+// TestGroupFromServiceAdminReturnsDormantProfitControlFields keeps the legacy
+// response shape without exposing dormant stored values.
+func TestGroupFromServiceAdminReturnsDormantProfitControlFields(t *testing.T) {
 	admin := GroupFromServiceAdmin(profitControlServiceGroup())
-	if admin.ProfitControlEnabled != true || admin.ProfitMinMargin != 0.3 || admin.ProfitSafetyBuffer != 0.05 {
-		t.Fatalf("管理员 DTO 未透传利润控制配置: %+v", admin)
+	if admin.ProfitControlEnabled || admin.ProfitMinMargin != 0 || admin.ProfitSafetyBuffer != 0 {
+		t.Fatalf("管理员 DTO 必须把休眠利润字段固定为零值: %+v", admin)
 	}
 	fields := marshalToMap(t, admin)
 	for _, f := range profitControlJSONFields {
