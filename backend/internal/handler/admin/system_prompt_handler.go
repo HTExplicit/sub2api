@@ -82,6 +82,30 @@ type systemPromptVersionRequest struct {
 	ExpectedRevision      int64  `json:"expected_revision"`
 }
 
+type systemPromptSourceSyncRequest struct {
+	ExpectedLatestVersion int64 `json:"expected_latest_version" binding:"required"`
+	ExpectedRevision      int64 `json:"expected_revision" binding:"required"`
+}
+
+type systemPromptSourceSyncVersionResponse struct {
+	ID                   int64  `json:"id"`
+	TemplateID           int64  `json:"template_id"`
+	Version              int64  `json:"version"`
+	SHA256               string `json:"sha256"`
+	ByteLength           int    `json:"byte_length"`
+	SourceRepository     string `json:"source_repository,omitempty"`
+	SourceCommit         string `json:"source_commit,omitempty"`
+	SourceVersion        string `json:"source_version,omitempty"`
+	SourceArtifact       string `json:"source_artifact,omitempty"`
+	SourceArtifactSHA256 string `json:"source_artifact_sha256,omitempty"`
+	SourceLicenseSHA256  string `json:"source_license_sha256,omitempty"`
+}
+
+type systemPromptSourceSyncResponse struct {
+	Status  service.BusinessSystemPromptSourceSyncStatus `json:"status"`
+	Version *systemPromptSourceSyncVersionResponse       `json:"version,omitempty"`
+}
+
 type systemPromptRuntimeRequest struct {
 	ExpectedRevision   int64 `json:"expected_revision" binding:"required"`
 	Enabled            bool  `json:"enabled"`
@@ -150,6 +174,14 @@ func writeBusinessSystemPromptError(c *gin.Context, err error) {
 		response.ErrorWithDetails(c, http.StatusConflict, "system_prompt_revision_conflict", "system_prompt_revision_conflict", nil)
 	case errors.Is(err, service.ErrBusinessSystemPromptUnavailable):
 		response.ErrorWithDetails(c, http.StatusServiceUnavailable, "system_prompt_unavailable", "system_prompt_unavailable", nil)
+	case errors.Is(err, service.ErrBusinessSystemPromptSourceUnavailable):
+		response.ErrorWithDetails(c, http.StatusServiceUnavailable, "system_prompt_source_unavailable", "system_prompt_source_unavailable", nil)
+	case errors.Is(err, service.ErrBusinessSystemPromptSourceInvalid):
+		response.ErrorWithDetails(c, http.StatusUnprocessableEntity, "system_prompt_source_invalid", "system_prompt_source_invalid", nil)
+	case errors.Is(err, service.ErrBusinessSystemPromptSourceLicenseChanged):
+		response.ErrorWithDetails(c, http.StatusUnprocessableEntity, "system_prompt_source_license_changed", "system_prompt_source_license_changed", nil)
+	case errors.Is(err, service.ErrBusinessSystemPromptSourceNotManaged):
+		response.ErrorWithDetails(c, http.StatusConflict, "system_prompt_source_not_managed", "system_prompt_source_not_managed", nil)
 	case errors.Is(err, service.ErrBusinessSystemPromptTemplateNotFound), errors.Is(err, service.ErrBusinessSystemPromptVersionNotFound):
 		response.NotFound(c, "System prompt template or version not found")
 	case errors.Is(err, service.ErrRemoteSkillVersionNotFound), errors.Is(err, service.ErrRemoteSkillSyncNotFound):
@@ -440,6 +472,47 @@ func (h *SystemPromptHandler) SaveVersion(c *gin.Context) {
 		"revision":               req.ExpectedRevision, "result": "draft_saved",
 	})
 	response.Created(c, version)
+}
+
+func (h *SystemPromptHandler) SyncManagedSource(c *gin.Context) {
+	actorID, ok := h.actorID(c)
+	if !ok {
+		return
+	}
+	templateID, ok := parsePositiveID(c, "id")
+	if !ok {
+		return
+	}
+	var req systemPromptSourceSyncRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	result, err := h.service.SyncManagedSource(c.Request.Context(), templateID, actorID, req.ExpectedLatestVersion, req.ExpectedRevision)
+	if err != nil {
+		writeBusinessSystemPromptError(c, err)
+		return
+	}
+	audit := map[string]any{
+		"template_id": templateID, "expected_latest_version": req.ExpectedLatestVersion,
+		"revision": req.ExpectedRevision, "status": result.Status,
+	}
+	output := systemPromptSourceSyncResponse{Status: result.Status}
+	if result.Version != nil {
+		version := result.Version
+		output.Version = &systemPromptSourceSyncVersionResponse{
+			ID: version.ID, TemplateID: version.TemplateID, Version: version.Version,
+			SHA256: version.SHA256, ByteLength: version.ByteLength,
+			SourceRepository: version.SourceRepository, SourceCommit: version.SourceCommit,
+			SourceVersion: version.SourceVersion, SourceArtifact: version.SourceArtifact,
+			SourceArtifactSHA256: version.SourceArtifactSHA256, SourceLicenseSHA256: version.SourceLicenseSHA256,
+		}
+		audit["template_version"] = version.Version
+		audit["source_commit"] = version.SourceCommit
+		audit["source_artifact_sha256"] = version.SourceArtifactSHA256
+	}
+	middleware.SetAuditExtra(c, audit)
+	response.Success(c, output)
 }
 
 func (h *SystemPromptHandler) Publish(c *gin.Context) {

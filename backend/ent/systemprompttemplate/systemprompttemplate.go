@@ -29,6 +29,8 @@ const (
 	FieldDescription = "description"
 	// FieldIsSeed holds the string denoting the is_seed field in the database.
 	FieldIsSeed = "is_seed"
+	// FieldManagedSource holds the string denoting the managed_source field in the database.
+	FieldManagedSource = "managed_source"
 	// FieldCreatedBy holds the string denoting the created_by field in the database.
 	FieldCreatedBy = "created_by"
 	// FieldUpdatedBy holds the string denoting the updated_by field in the database.
@@ -56,6 +58,7 @@ var Columns = []string{
 	FieldName,
 	FieldDescription,
 	FieldIsSeed,
+	FieldManagedSource,
 	FieldCreatedBy,
 	FieldUpdatedBy,
 }
@@ -92,6 +95,8 @@ var (
 	DefaultDescription string
 	// DefaultIsSeed holds the default value on creation for the "is_seed" field.
 	DefaultIsSeed bool
+	// ManagedSourceValidator is a validator for the "managed_source" field. It is called by the builders before save.
+	ManagedSourceValidator func(string) error
 )
 
 // OrderOption defines the ordering options for the SystemPromptTemplate queries.
@@ -135,6 +140,11 @@ func ByDescription(opts ...sql.OrderTermOption) OrderOption {
 // ByIsSeed orders the results by the is_seed field.
 func ByIsSeed(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldIsSeed, opts...).ToFunc()
+}
+
+// ByManagedSource orders the results by the managed_source field.
+func ByManagedSource(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldManagedSource, opts...).ToFunc()
 }
 
 // ByCreatedBy orders the results by the created_by field.

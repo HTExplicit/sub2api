@@ -109,6 +109,90 @@ func (_c *SystemPromptTemplateVersionCreate) SetNillableNote(v *string) *SystemP
 	return _c
 }
 
+// SetSourceRepository sets the "source_repository" field.
+func (_c *SystemPromptTemplateVersionCreate) SetSourceRepository(v string) *SystemPromptTemplateVersionCreate {
+	_c.mutation.SetSourceRepository(v)
+	return _c
+}
+
+// SetNillableSourceRepository sets the "source_repository" field if the given value is not nil.
+func (_c *SystemPromptTemplateVersionCreate) SetNillableSourceRepository(v *string) *SystemPromptTemplateVersionCreate {
+	if v != nil {
+		_c.SetSourceRepository(*v)
+	}
+	return _c
+}
+
+// SetSourceCommit sets the "source_commit" field.
+func (_c *SystemPromptTemplateVersionCreate) SetSourceCommit(v string) *SystemPromptTemplateVersionCreate {
+	_c.mutation.SetSourceCommit(v)
+	return _c
+}
+
+// SetNillableSourceCommit sets the "source_commit" field if the given value is not nil.
+func (_c *SystemPromptTemplateVersionCreate) SetNillableSourceCommit(v *string) *SystemPromptTemplateVersionCreate {
+	if v != nil {
+		_c.SetSourceCommit(*v)
+	}
+	return _c
+}
+
+// SetSourceVersion sets the "source_version" field.
+func (_c *SystemPromptTemplateVersionCreate) SetSourceVersion(v string) *SystemPromptTemplateVersionCreate {
+	_c.mutation.SetSourceVersion(v)
+	return _c
+}
+
+// SetNillableSourceVersion sets the "source_version" field if the given value is not nil.
+func (_c *SystemPromptTemplateVersionCreate) SetNillableSourceVersion(v *string) *SystemPromptTemplateVersionCreate {
+	if v != nil {
+		_c.SetSourceVersion(*v)
+	}
+	return _c
+}
+
+// SetSourceArtifact sets the "source_artifact" field.
+func (_c *SystemPromptTemplateVersionCreate) SetSourceArtifact(v string) *SystemPromptTemplateVersionCreate {
+	_c.mutation.SetSourceArtifact(v)
+	return _c
+}
+
+// SetNillableSourceArtifact sets the "source_artifact" field if the given value is not nil.
+func (_c *SystemPromptTemplateVersionCreate) SetNillableSourceArtifact(v *string) *SystemPromptTemplateVersionCreate {
+	if v != nil {
+		_c.SetSourceArtifact(*v)
+	}
+	return _c
+}
+
+// SetSourceArtifactSha256 sets the "source_artifact_sha256" field.
+func (_c *SystemPromptTemplateVersionCreate) SetSourceArtifactSha256(v string) *SystemPromptTemplateVersionCreate {
+	_c.mutation.SetSourceArtifactSha256(v)
+	return _c
+}
+
+// SetNillableSourceArtifactSha256 sets the "source_artifact_sha256" field if the given value is not nil.
+func (_c *SystemPromptTemplateVersionCreate) SetNillableSourceArtifactSha256(v *string) *SystemPromptTemplateVersionCreate {
+	if v != nil {
+		_c.SetSourceArtifactSha256(*v)
+	}
+	return _c
+}
+
+// SetSourceLicenseSha256 sets the "source_license_sha256" field.
+func (_c *SystemPromptTemplateVersionCreate) SetSourceLicenseSha256(v string) *SystemPromptTemplateVersionCreate {
+	_c.mutation.SetSourceLicenseSha256(v)
+	return _c
+}
+
+// SetNillableSourceLicenseSha256 sets the "source_license_sha256" field if the given value is not nil.
+func (_c *SystemPromptTemplateVersionCreate) SetNillableSourceLicenseSha256(v *string) *SystemPromptTemplateVersionCreate {
+	if v != nil {
+		_c.SetSourceLicenseSha256(*v)
+	}
+	return _c
+}
+
 // SetCreatedBy sets the "created_by" field.
 func (_c *SystemPromptTemplateVersionCreate) SetCreatedBy(v int64) *SystemPromptTemplateVersionCreate {
 	_c.mutation.SetCreatedBy(v)
@@ -277,6 +361,36 @@ func (_c *SystemPromptTemplateVersionCreate) check() error {
 			return &ValidationError{Name: "note", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.note": %w`, err)}
 		}
 	}
+	if v, ok := _c.mutation.SourceRepository(); ok {
+		if err := systemprompttemplateversion.SourceRepositoryValidator(v); err != nil {
+			return &ValidationError{Name: "source_repository", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.source_repository": %w`, err)}
+		}
+	}
+	if v, ok := _c.mutation.SourceCommit(); ok {
+		if err := systemprompttemplateversion.SourceCommitValidator(v); err != nil {
+			return &ValidationError{Name: "source_commit", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.source_commit": %w`, err)}
+		}
+	}
+	if v, ok := _c.mutation.SourceVersion(); ok {
+		if err := systemprompttemplateversion.SourceVersionValidator(v); err != nil {
+			return &ValidationError{Name: "source_version", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.source_version": %w`, err)}
+		}
+	}
+	if v, ok := _c.mutation.SourceArtifact(); ok {
+		if err := systemprompttemplateversion.SourceArtifactValidator(v); err != nil {
+			return &ValidationError{Name: "source_artifact", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.source_artifact": %w`, err)}
+		}
+	}
+	if v, ok := _c.mutation.SourceArtifactSha256(); ok {
+		if err := systemprompttemplateversion.SourceArtifactSha256Validator(v); err != nil {
+			return &ValidationError{Name: "source_artifact_sha256", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.source_artifact_sha256": %w`, err)}
+		}
+	}
+	if v, ok := _c.mutation.SourceLicenseSha256(); ok {
+		if err := systemprompttemplateversion.SourceLicenseSha256Validator(v); err != nil {
+			return &ValidationError{Name: "source_license_sha256", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.source_license_sha256": %w`, err)}
+		}
+	}
 	if _, ok := _c.mutation.CreatedAt(); !ok {
 		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "SystemPromptTemplateVersion.created_at"`)}
 	}
@@ -341,6 +455,30 @@ func (_c *SystemPromptTemplateVersionCreate) createSpec() (*SystemPromptTemplate
 	if value, ok := _c.mutation.Note(); ok {
 		_spec.SetField(systemprompttemplateversion.FieldNote, field.TypeString, value)
 		_node.Note = value
+	}
+	if value, ok := _c.mutation.SourceRepository(); ok {
+		_spec.SetField(systemprompttemplateversion.FieldSourceRepository, field.TypeString, value)
+		_node.SourceRepository = &value
+	}
+	if value, ok := _c.mutation.SourceCommit(); ok {
+		_spec.SetField(systemprompttemplateversion.FieldSourceCommit, field.TypeString, value)
+		_node.SourceCommit = &value
+	}
+	if value, ok := _c.mutation.SourceVersion(); ok {
+		_spec.SetField(systemprompttemplateversion.FieldSourceVersion, field.TypeString, value)
+		_node.SourceVersion = &value
+	}
+	if value, ok := _c.mutation.SourceArtifact(); ok {
+		_spec.SetField(systemprompttemplateversion.FieldSourceArtifact, field.TypeString, value)
+		_node.SourceArtifact = &value
+	}
+	if value, ok := _c.mutation.SourceArtifactSha256(); ok {
+		_spec.SetField(systemprompttemplateversion.FieldSourceArtifactSha256, field.TypeString, value)
+		_node.SourceArtifactSha256 = &value
+	}
+	if value, ok := _c.mutation.SourceLicenseSha256(); ok {
+		_spec.SetField(systemprompttemplateversion.FieldSourceLicenseSha256, field.TypeString, value)
+		_node.SourceLicenseSha256 = &value
 	}
 	if value, ok := _c.mutation.CreatedBy(); ok {
 		_spec.SetField(systemprompttemplateversion.FieldCreatedBy, field.TypeInt64, value)
@@ -556,6 +694,114 @@ func (u *SystemPromptTemplateVersionUpsert) SetNote(v string) *SystemPromptTempl
 // UpdateNote sets the "note" field to the value that was provided on create.
 func (u *SystemPromptTemplateVersionUpsert) UpdateNote() *SystemPromptTemplateVersionUpsert {
 	u.SetExcluded(systemprompttemplateversion.FieldNote)
+	return u
+}
+
+// SetSourceRepository sets the "source_repository" field.
+func (u *SystemPromptTemplateVersionUpsert) SetSourceRepository(v string) *SystemPromptTemplateVersionUpsert {
+	u.Set(systemprompttemplateversion.FieldSourceRepository, v)
+	return u
+}
+
+// UpdateSourceRepository sets the "source_repository" field to the value that was provided on create.
+func (u *SystemPromptTemplateVersionUpsert) UpdateSourceRepository() *SystemPromptTemplateVersionUpsert {
+	u.SetExcluded(systemprompttemplateversion.FieldSourceRepository)
+	return u
+}
+
+// ClearSourceRepository clears the value of the "source_repository" field.
+func (u *SystemPromptTemplateVersionUpsert) ClearSourceRepository() *SystemPromptTemplateVersionUpsert {
+	u.SetNull(systemprompttemplateversion.FieldSourceRepository)
+	return u
+}
+
+// SetSourceCommit sets the "source_commit" field.
+func (u *SystemPromptTemplateVersionUpsert) SetSourceCommit(v string) *SystemPromptTemplateVersionUpsert {
+	u.Set(systemprompttemplateversion.FieldSourceCommit, v)
+	return u
+}
+
+// UpdateSourceCommit sets the "source_commit" field to the value that was provided on create.
+func (u *SystemPromptTemplateVersionUpsert) UpdateSourceCommit() *SystemPromptTemplateVersionUpsert {
+	u.SetExcluded(systemprompttemplateversion.FieldSourceCommit)
+	return u
+}
+
+// ClearSourceCommit clears the value of the "source_commit" field.
+func (u *SystemPromptTemplateVersionUpsert) ClearSourceCommit() *SystemPromptTemplateVersionUpsert {
+	u.SetNull(systemprompttemplateversion.FieldSourceCommit)
+	return u
+}
+
+// SetSourceVersion sets the "source_version" field.
+func (u *SystemPromptTemplateVersionUpsert) SetSourceVersion(v string) *SystemPromptTemplateVersionUpsert {
+	u.Set(systemprompttemplateversion.FieldSourceVersion, v)
+	return u
+}
+
+// UpdateSourceVersion sets the "source_version" field to the value that was provided on create.
+func (u *SystemPromptTemplateVersionUpsert) UpdateSourceVersion() *SystemPromptTemplateVersionUpsert {
+	u.SetExcluded(systemprompttemplateversion.FieldSourceVersion)
+	return u
+}
+
+// ClearSourceVersion clears the value of the "source_version" field.
+func (u *SystemPromptTemplateVersionUpsert) ClearSourceVersion() *SystemPromptTemplateVersionUpsert {
+	u.SetNull(systemprompttemplateversion.FieldSourceVersion)
+	return u
+}
+
+// SetSourceArtifact sets the "source_artifact" field.
+func (u *SystemPromptTemplateVersionUpsert) SetSourceArtifact(v string) *SystemPromptTemplateVersionUpsert {
+	u.Set(systemprompttemplateversion.FieldSourceArtifact, v)
+	return u
+}
+
+// UpdateSourceArtifact sets the "source_artifact" field to the value that was provided on create.
+func (u *SystemPromptTemplateVersionUpsert) UpdateSourceArtifact() *SystemPromptTemplateVersionUpsert {
+	u.SetExcluded(systemprompttemplateversion.FieldSourceArtifact)
+	return u
+}
+
+// ClearSourceArtifact clears the value of the "source_artifact" field.
+func (u *SystemPromptTemplateVersionUpsert) ClearSourceArtifact() *SystemPromptTemplateVersionUpsert {
+	u.SetNull(systemprompttemplateversion.FieldSourceArtifact)
+	return u
+}
+
+// SetSourceArtifactSha256 sets the "source_artifact_sha256" field.
+func (u *SystemPromptTemplateVersionUpsert) SetSourceArtifactSha256(v string) *SystemPromptTemplateVersionUpsert {
+	u.Set(systemprompttemplateversion.FieldSourceArtifactSha256, v)
+	return u
+}
+
+// UpdateSourceArtifactSha256 sets the "source_artifact_sha256" field to the value that was provided on create.
+func (u *SystemPromptTemplateVersionUpsert) UpdateSourceArtifactSha256() *SystemPromptTemplateVersionUpsert {
+	u.SetExcluded(systemprompttemplateversion.FieldSourceArtifactSha256)
+	return u
+}
+
+// ClearSourceArtifactSha256 clears the value of the "source_artifact_sha256" field.
+func (u *SystemPromptTemplateVersionUpsert) ClearSourceArtifactSha256() *SystemPromptTemplateVersionUpsert {
+	u.SetNull(systemprompttemplateversion.FieldSourceArtifactSha256)
+	return u
+}
+
+// SetSourceLicenseSha256 sets the "source_license_sha256" field.
+func (u *SystemPromptTemplateVersionUpsert) SetSourceLicenseSha256(v string) *SystemPromptTemplateVersionUpsert {
+	u.Set(systemprompttemplateversion.FieldSourceLicenseSha256, v)
+	return u
+}
+
+// UpdateSourceLicenseSha256 sets the "source_license_sha256" field to the value that was provided on create.
+func (u *SystemPromptTemplateVersionUpsert) UpdateSourceLicenseSha256() *SystemPromptTemplateVersionUpsert {
+	u.SetExcluded(systemprompttemplateversion.FieldSourceLicenseSha256)
+	return u
+}
+
+// ClearSourceLicenseSha256 clears the value of the "source_license_sha256" field.
+func (u *SystemPromptTemplateVersionUpsert) ClearSourceLicenseSha256() *SystemPromptTemplateVersionUpsert {
+	u.SetNull(systemprompttemplateversion.FieldSourceLicenseSha256)
 	return u
 }
 
@@ -821,6 +1067,132 @@ func (u *SystemPromptTemplateVersionUpsertOne) SetNote(v string) *SystemPromptTe
 func (u *SystemPromptTemplateVersionUpsertOne) UpdateNote() *SystemPromptTemplateVersionUpsertOne {
 	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
 		s.UpdateNote()
+	})
+}
+
+// SetSourceRepository sets the "source_repository" field.
+func (u *SystemPromptTemplateVersionUpsertOne) SetSourceRepository(v string) *SystemPromptTemplateVersionUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.SetSourceRepository(v)
+	})
+}
+
+// UpdateSourceRepository sets the "source_repository" field to the value that was provided on create.
+func (u *SystemPromptTemplateVersionUpsertOne) UpdateSourceRepository() *SystemPromptTemplateVersionUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.UpdateSourceRepository()
+	})
+}
+
+// ClearSourceRepository clears the value of the "source_repository" field.
+func (u *SystemPromptTemplateVersionUpsertOne) ClearSourceRepository() *SystemPromptTemplateVersionUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.ClearSourceRepository()
+	})
+}
+
+// SetSourceCommit sets the "source_commit" field.
+func (u *SystemPromptTemplateVersionUpsertOne) SetSourceCommit(v string) *SystemPromptTemplateVersionUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.SetSourceCommit(v)
+	})
+}
+
+// UpdateSourceCommit sets the "source_commit" field to the value that was provided on create.
+func (u *SystemPromptTemplateVersionUpsertOne) UpdateSourceCommit() *SystemPromptTemplateVersionUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.UpdateSourceCommit()
+	})
+}
+
+// ClearSourceCommit clears the value of the "source_commit" field.
+func (u *SystemPromptTemplateVersionUpsertOne) ClearSourceCommit() *SystemPromptTemplateVersionUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.ClearSourceCommit()
+	})
+}
+
+// SetSourceVersion sets the "source_version" field.
+func (u *SystemPromptTemplateVersionUpsertOne) SetSourceVersion(v string) *SystemPromptTemplateVersionUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.SetSourceVersion(v)
+	})
+}
+
+// UpdateSourceVersion sets the "source_version" field to the value that was provided on create.
+func (u *SystemPromptTemplateVersionUpsertOne) UpdateSourceVersion() *SystemPromptTemplateVersionUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.UpdateSourceVersion()
+	})
+}
+
+// ClearSourceVersion clears the value of the "source_version" field.
+func (u *SystemPromptTemplateVersionUpsertOne) ClearSourceVersion() *SystemPromptTemplateVersionUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.ClearSourceVersion()
+	})
+}
+
+// SetSourceArtifact sets the "source_artifact" field.
+func (u *SystemPromptTemplateVersionUpsertOne) SetSourceArtifact(v string) *SystemPromptTemplateVersionUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.SetSourceArtifact(v)
+	})
+}
+
+// UpdateSourceArtifact sets the "source_artifact" field to the value that was provided on create.
+func (u *SystemPromptTemplateVersionUpsertOne) UpdateSourceArtifact() *SystemPromptTemplateVersionUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.UpdateSourceArtifact()
+	})
+}
+
+// ClearSourceArtifact clears the value of the "source_artifact" field.
+func (u *SystemPromptTemplateVersionUpsertOne) ClearSourceArtifact() *SystemPromptTemplateVersionUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.ClearSourceArtifact()
+	})
+}
+
+// SetSourceArtifactSha256 sets the "source_artifact_sha256" field.
+func (u *SystemPromptTemplateVersionUpsertOne) SetSourceArtifactSha256(v string) *SystemPromptTemplateVersionUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.SetSourceArtifactSha256(v)
+	})
+}
+
+// UpdateSourceArtifactSha256 sets the "source_artifact_sha256" field to the value that was provided on create.
+func (u *SystemPromptTemplateVersionUpsertOne) UpdateSourceArtifactSha256() *SystemPromptTemplateVersionUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.UpdateSourceArtifactSha256()
+	})
+}
+
+// ClearSourceArtifactSha256 clears the value of the "source_artifact_sha256" field.
+func (u *SystemPromptTemplateVersionUpsertOne) ClearSourceArtifactSha256() *SystemPromptTemplateVersionUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.ClearSourceArtifactSha256()
+	})
+}
+
+// SetSourceLicenseSha256 sets the "source_license_sha256" field.
+func (u *SystemPromptTemplateVersionUpsertOne) SetSourceLicenseSha256(v string) *SystemPromptTemplateVersionUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.SetSourceLicenseSha256(v)
+	})
+}
+
+// UpdateSourceLicenseSha256 sets the "source_license_sha256" field to the value that was provided on create.
+func (u *SystemPromptTemplateVersionUpsertOne) UpdateSourceLicenseSha256() *SystemPromptTemplateVersionUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.UpdateSourceLicenseSha256()
+	})
+}
+
+// ClearSourceLicenseSha256 clears the value of the "source_license_sha256" field.
+func (u *SystemPromptTemplateVersionUpsertOne) ClearSourceLicenseSha256() *SystemPromptTemplateVersionUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.ClearSourceLicenseSha256()
 	})
 }
 
@@ -1263,6 +1635,132 @@ func (u *SystemPromptTemplateVersionUpsertBulk) SetNote(v string) *SystemPromptT
 func (u *SystemPromptTemplateVersionUpsertBulk) UpdateNote() *SystemPromptTemplateVersionUpsertBulk {
 	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
 		s.UpdateNote()
+	})
+}
+
+// SetSourceRepository sets the "source_repository" field.
+func (u *SystemPromptTemplateVersionUpsertBulk) SetSourceRepository(v string) *SystemPromptTemplateVersionUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.SetSourceRepository(v)
+	})
+}
+
+// UpdateSourceRepository sets the "source_repository" field to the value that was provided on create.
+func (u *SystemPromptTemplateVersionUpsertBulk) UpdateSourceRepository() *SystemPromptTemplateVersionUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.UpdateSourceRepository()
+	})
+}
+
+// ClearSourceRepository clears the value of the "source_repository" field.
+func (u *SystemPromptTemplateVersionUpsertBulk) ClearSourceRepository() *SystemPromptTemplateVersionUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.ClearSourceRepository()
+	})
+}
+
+// SetSourceCommit sets the "source_commit" field.
+func (u *SystemPromptTemplateVersionUpsertBulk) SetSourceCommit(v string) *SystemPromptTemplateVersionUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.SetSourceCommit(v)
+	})
+}
+
+// UpdateSourceCommit sets the "source_commit" field to the value that was provided on create.
+func (u *SystemPromptTemplateVersionUpsertBulk) UpdateSourceCommit() *SystemPromptTemplateVersionUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.UpdateSourceCommit()
+	})
+}
+
+// ClearSourceCommit clears the value of the "source_commit" field.
+func (u *SystemPromptTemplateVersionUpsertBulk) ClearSourceCommit() *SystemPromptTemplateVersionUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.ClearSourceCommit()
+	})
+}
+
+// SetSourceVersion sets the "source_version" field.
+func (u *SystemPromptTemplateVersionUpsertBulk) SetSourceVersion(v string) *SystemPromptTemplateVersionUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.SetSourceVersion(v)
+	})
+}
+
+// UpdateSourceVersion sets the "source_version" field to the value that was provided on create.
+func (u *SystemPromptTemplateVersionUpsertBulk) UpdateSourceVersion() *SystemPromptTemplateVersionUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.UpdateSourceVersion()
+	})
+}
+
+// ClearSourceVersion clears the value of the "source_version" field.
+func (u *SystemPromptTemplateVersionUpsertBulk) ClearSourceVersion() *SystemPromptTemplateVersionUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.ClearSourceVersion()
+	})
+}
+
+// SetSourceArtifact sets the "source_artifact" field.
+func (u *SystemPromptTemplateVersionUpsertBulk) SetSourceArtifact(v string) *SystemPromptTemplateVersionUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.SetSourceArtifact(v)
+	})
+}
+
+// UpdateSourceArtifact sets the "source_artifact" field to the value that was provided on create.
+func (u *SystemPromptTemplateVersionUpsertBulk) UpdateSourceArtifact() *SystemPromptTemplateVersionUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.UpdateSourceArtifact()
+	})
+}
+
+// ClearSourceArtifact clears the value of the "source_artifact" field.
+func (u *SystemPromptTemplateVersionUpsertBulk) ClearSourceArtifact() *SystemPromptTemplateVersionUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.ClearSourceArtifact()
+	})
+}
+
+// SetSourceArtifactSha256 sets the "source_artifact_sha256" field.
+func (u *SystemPromptTemplateVersionUpsertBulk) SetSourceArtifactSha256(v string) *SystemPromptTemplateVersionUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.SetSourceArtifactSha256(v)
+	})
+}
+
+// UpdateSourceArtifactSha256 sets the "source_artifact_sha256" field to the value that was provided on create.
+func (u *SystemPromptTemplateVersionUpsertBulk) UpdateSourceArtifactSha256() *SystemPromptTemplateVersionUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.UpdateSourceArtifactSha256()
+	})
+}
+
+// ClearSourceArtifactSha256 clears the value of the "source_artifact_sha256" field.
+func (u *SystemPromptTemplateVersionUpsertBulk) ClearSourceArtifactSha256() *SystemPromptTemplateVersionUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.ClearSourceArtifactSha256()
+	})
+}
+
+// SetSourceLicenseSha256 sets the "source_license_sha256" field.
+func (u *SystemPromptTemplateVersionUpsertBulk) SetSourceLicenseSha256(v string) *SystemPromptTemplateVersionUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.SetSourceLicenseSha256(v)
+	})
+}
+
+// UpdateSourceLicenseSha256 sets the "source_license_sha256" field to the value that was provided on create.
+func (u *SystemPromptTemplateVersionUpsertBulk) UpdateSourceLicenseSha256() *SystemPromptTemplateVersionUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.UpdateSourceLicenseSha256()
+	})
+}
+
+// ClearSourceLicenseSha256 clears the value of the "source_license_sha256" field.
+func (u *SystemPromptTemplateVersionUpsertBulk) ClearSourceLicenseSha256() *SystemPromptTemplateVersionUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateVersionUpsert) {
+		s.ClearSourceLicenseSha256()
 	})
 }
 

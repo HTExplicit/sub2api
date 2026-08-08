@@ -43809,6 +43809,7 @@ type SystemPromptTemplateMutation struct {
 	name            *string
 	description     *string
 	is_seed         *bool
+	managed_source  *string
 	created_by      *int64
 	addcreated_by   *int64
 	updated_by      *int64
@@ -44185,6 +44186,55 @@ func (m *SystemPromptTemplateMutation) ResetIsSeed() {
 	m.is_seed = nil
 }
 
+// SetManagedSource sets the "managed_source" field.
+func (m *SystemPromptTemplateMutation) SetManagedSource(s string) {
+	m.managed_source = &s
+}
+
+// ManagedSource returns the value of the "managed_source" field in the mutation.
+func (m *SystemPromptTemplateMutation) ManagedSource() (r string, exists bool) {
+	v := m.managed_source
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldManagedSource returns the old "managed_source" field's value of the SystemPromptTemplate entity.
+// If the SystemPromptTemplate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateMutation) OldManagedSource(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldManagedSource is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldManagedSource requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldManagedSource: %w", err)
+	}
+	return oldValue.ManagedSource, nil
+}
+
+// ClearManagedSource clears the value of the "managed_source" field.
+func (m *SystemPromptTemplateMutation) ClearManagedSource() {
+	m.managed_source = nil
+	m.clearedFields[systemprompttemplate.FieldManagedSource] = struct{}{}
+}
+
+// ManagedSourceCleared returns if the "managed_source" field was cleared in this mutation.
+func (m *SystemPromptTemplateMutation) ManagedSourceCleared() bool {
+	_, ok := m.clearedFields[systemprompttemplate.FieldManagedSource]
+	return ok
+}
+
+// ResetManagedSource resets all changes to the "managed_source" field.
+func (m *SystemPromptTemplateMutation) ResetManagedSource() {
+	m.managed_source = nil
+	delete(m.clearedFields, systemprompttemplate.FieldManagedSource)
+}
+
 // SetCreatedBy sets the "created_by" field.
 func (m *SystemPromptTemplateMutation) SetCreatedBy(i int64) {
 	m.created_by = &i
@@ -44413,7 +44463,7 @@ func (m *SystemPromptTemplateMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SystemPromptTemplateMutation) Fields() []string {
-	fields := make([]string, 0, 9)
+	fields := make([]string, 0, 10)
 	if m.created_at != nil {
 		fields = append(fields, systemprompttemplate.FieldCreatedAt)
 	}
@@ -44434,6 +44484,9 @@ func (m *SystemPromptTemplateMutation) Fields() []string {
 	}
 	if m.is_seed != nil {
 		fields = append(fields, systemprompttemplate.FieldIsSeed)
+	}
+	if m.managed_source != nil {
+		fields = append(fields, systemprompttemplate.FieldManagedSource)
 	}
 	if m.created_by != nil {
 		fields = append(fields, systemprompttemplate.FieldCreatedBy)
@@ -44463,6 +44516,8 @@ func (m *SystemPromptTemplateMutation) Field(name string) (ent.Value, bool) {
 		return m.Description()
 	case systemprompttemplate.FieldIsSeed:
 		return m.IsSeed()
+	case systemprompttemplate.FieldManagedSource:
+		return m.ManagedSource()
 	case systemprompttemplate.FieldCreatedBy:
 		return m.CreatedBy()
 	case systemprompttemplate.FieldUpdatedBy:
@@ -44490,6 +44545,8 @@ func (m *SystemPromptTemplateMutation) OldField(ctx context.Context, name string
 		return m.OldDescription(ctx)
 	case systemprompttemplate.FieldIsSeed:
 		return m.OldIsSeed(ctx)
+	case systemprompttemplate.FieldManagedSource:
+		return m.OldManagedSource(ctx)
 	case systemprompttemplate.FieldCreatedBy:
 		return m.OldCreatedBy(ctx)
 	case systemprompttemplate.FieldUpdatedBy:
@@ -44551,6 +44608,13 @@ func (m *SystemPromptTemplateMutation) SetField(name string, value ent.Value) er
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetIsSeed(v)
+		return nil
+	case systemprompttemplate.FieldManagedSource:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetManagedSource(v)
 		return nil
 	case systemprompttemplate.FieldCreatedBy:
 		v, ok := value.(int64)
@@ -44626,6 +44690,9 @@ func (m *SystemPromptTemplateMutation) ClearedFields() []string {
 	if m.FieldCleared(systemprompttemplate.FieldDeletedAt) {
 		fields = append(fields, systemprompttemplate.FieldDeletedAt)
 	}
+	if m.FieldCleared(systemprompttemplate.FieldManagedSource) {
+		fields = append(fields, systemprompttemplate.FieldManagedSource)
+	}
 	if m.FieldCleared(systemprompttemplate.FieldCreatedBy) {
 		fields = append(fields, systemprompttemplate.FieldCreatedBy)
 	}
@@ -44648,6 +44715,9 @@ func (m *SystemPromptTemplateMutation) ClearField(name string) error {
 	switch name {
 	case systemprompttemplate.FieldDeletedAt:
 		m.ClearDeletedAt()
+		return nil
+	case systemprompttemplate.FieldManagedSource:
+		m.ClearManagedSource()
 		return nil
 	case systemprompttemplate.FieldCreatedBy:
 		m.ClearCreatedBy()
@@ -44683,6 +44753,9 @@ func (m *SystemPromptTemplateMutation) ResetField(name string) error {
 		return nil
 	case systemprompttemplate.FieldIsSeed:
 		m.ResetIsSeed()
+		return nil
+	case systemprompttemplate.FieldManagedSource:
+		m.ResetManagedSource()
 		return nil
 	case systemprompttemplate.FieldCreatedBy:
 		m.ResetCreatedBy()
@@ -44794,6 +44867,12 @@ type SystemPromptTemplateVersionMutation struct {
 	bundle_id              *string
 	bundle_manifest_sha256 *string
 	note                   *string
+	source_repository      *string
+	source_commit          *string
+	source_version         *string
+	source_artifact        *string
+	source_artifact_sha256 *string
+	source_license_sha256  *string
 	created_by             *int64
 	addcreated_by          *int64
 	published_at           *time.Time
@@ -45296,6 +45375,300 @@ func (m *SystemPromptTemplateVersionMutation) ResetNote() {
 	m.note = nil
 }
 
+// SetSourceRepository sets the "source_repository" field.
+func (m *SystemPromptTemplateVersionMutation) SetSourceRepository(s string) {
+	m.source_repository = &s
+}
+
+// SourceRepository returns the value of the "source_repository" field in the mutation.
+func (m *SystemPromptTemplateVersionMutation) SourceRepository() (r string, exists bool) {
+	v := m.source_repository
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSourceRepository returns the old "source_repository" field's value of the SystemPromptTemplateVersion entity.
+// If the SystemPromptTemplateVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateVersionMutation) OldSourceRepository(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSourceRepository is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSourceRepository requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSourceRepository: %w", err)
+	}
+	return oldValue.SourceRepository, nil
+}
+
+// ClearSourceRepository clears the value of the "source_repository" field.
+func (m *SystemPromptTemplateVersionMutation) ClearSourceRepository() {
+	m.source_repository = nil
+	m.clearedFields[systemprompttemplateversion.FieldSourceRepository] = struct{}{}
+}
+
+// SourceRepositoryCleared returns if the "source_repository" field was cleared in this mutation.
+func (m *SystemPromptTemplateVersionMutation) SourceRepositoryCleared() bool {
+	_, ok := m.clearedFields[systemprompttemplateversion.FieldSourceRepository]
+	return ok
+}
+
+// ResetSourceRepository resets all changes to the "source_repository" field.
+func (m *SystemPromptTemplateVersionMutation) ResetSourceRepository() {
+	m.source_repository = nil
+	delete(m.clearedFields, systemprompttemplateversion.FieldSourceRepository)
+}
+
+// SetSourceCommit sets the "source_commit" field.
+func (m *SystemPromptTemplateVersionMutation) SetSourceCommit(s string) {
+	m.source_commit = &s
+}
+
+// SourceCommit returns the value of the "source_commit" field in the mutation.
+func (m *SystemPromptTemplateVersionMutation) SourceCommit() (r string, exists bool) {
+	v := m.source_commit
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSourceCommit returns the old "source_commit" field's value of the SystemPromptTemplateVersion entity.
+// If the SystemPromptTemplateVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateVersionMutation) OldSourceCommit(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSourceCommit is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSourceCommit requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSourceCommit: %w", err)
+	}
+	return oldValue.SourceCommit, nil
+}
+
+// ClearSourceCommit clears the value of the "source_commit" field.
+func (m *SystemPromptTemplateVersionMutation) ClearSourceCommit() {
+	m.source_commit = nil
+	m.clearedFields[systemprompttemplateversion.FieldSourceCommit] = struct{}{}
+}
+
+// SourceCommitCleared returns if the "source_commit" field was cleared in this mutation.
+func (m *SystemPromptTemplateVersionMutation) SourceCommitCleared() bool {
+	_, ok := m.clearedFields[systemprompttemplateversion.FieldSourceCommit]
+	return ok
+}
+
+// ResetSourceCommit resets all changes to the "source_commit" field.
+func (m *SystemPromptTemplateVersionMutation) ResetSourceCommit() {
+	m.source_commit = nil
+	delete(m.clearedFields, systemprompttemplateversion.FieldSourceCommit)
+}
+
+// SetSourceVersion sets the "source_version" field.
+func (m *SystemPromptTemplateVersionMutation) SetSourceVersion(s string) {
+	m.source_version = &s
+}
+
+// SourceVersion returns the value of the "source_version" field in the mutation.
+func (m *SystemPromptTemplateVersionMutation) SourceVersion() (r string, exists bool) {
+	v := m.source_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSourceVersion returns the old "source_version" field's value of the SystemPromptTemplateVersion entity.
+// If the SystemPromptTemplateVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateVersionMutation) OldSourceVersion(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSourceVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSourceVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSourceVersion: %w", err)
+	}
+	return oldValue.SourceVersion, nil
+}
+
+// ClearSourceVersion clears the value of the "source_version" field.
+func (m *SystemPromptTemplateVersionMutation) ClearSourceVersion() {
+	m.source_version = nil
+	m.clearedFields[systemprompttemplateversion.FieldSourceVersion] = struct{}{}
+}
+
+// SourceVersionCleared returns if the "source_version" field was cleared in this mutation.
+func (m *SystemPromptTemplateVersionMutation) SourceVersionCleared() bool {
+	_, ok := m.clearedFields[systemprompttemplateversion.FieldSourceVersion]
+	return ok
+}
+
+// ResetSourceVersion resets all changes to the "source_version" field.
+func (m *SystemPromptTemplateVersionMutation) ResetSourceVersion() {
+	m.source_version = nil
+	delete(m.clearedFields, systemprompttemplateversion.FieldSourceVersion)
+}
+
+// SetSourceArtifact sets the "source_artifact" field.
+func (m *SystemPromptTemplateVersionMutation) SetSourceArtifact(s string) {
+	m.source_artifact = &s
+}
+
+// SourceArtifact returns the value of the "source_artifact" field in the mutation.
+func (m *SystemPromptTemplateVersionMutation) SourceArtifact() (r string, exists bool) {
+	v := m.source_artifact
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSourceArtifact returns the old "source_artifact" field's value of the SystemPromptTemplateVersion entity.
+// If the SystemPromptTemplateVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateVersionMutation) OldSourceArtifact(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSourceArtifact is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSourceArtifact requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSourceArtifact: %w", err)
+	}
+	return oldValue.SourceArtifact, nil
+}
+
+// ClearSourceArtifact clears the value of the "source_artifact" field.
+func (m *SystemPromptTemplateVersionMutation) ClearSourceArtifact() {
+	m.source_artifact = nil
+	m.clearedFields[systemprompttemplateversion.FieldSourceArtifact] = struct{}{}
+}
+
+// SourceArtifactCleared returns if the "source_artifact" field was cleared in this mutation.
+func (m *SystemPromptTemplateVersionMutation) SourceArtifactCleared() bool {
+	_, ok := m.clearedFields[systemprompttemplateversion.FieldSourceArtifact]
+	return ok
+}
+
+// ResetSourceArtifact resets all changes to the "source_artifact" field.
+func (m *SystemPromptTemplateVersionMutation) ResetSourceArtifact() {
+	m.source_artifact = nil
+	delete(m.clearedFields, systemprompttemplateversion.FieldSourceArtifact)
+}
+
+// SetSourceArtifactSha256 sets the "source_artifact_sha256" field.
+func (m *SystemPromptTemplateVersionMutation) SetSourceArtifactSha256(s string) {
+	m.source_artifact_sha256 = &s
+}
+
+// SourceArtifactSha256 returns the value of the "source_artifact_sha256" field in the mutation.
+func (m *SystemPromptTemplateVersionMutation) SourceArtifactSha256() (r string, exists bool) {
+	v := m.source_artifact_sha256
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSourceArtifactSha256 returns the old "source_artifact_sha256" field's value of the SystemPromptTemplateVersion entity.
+// If the SystemPromptTemplateVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateVersionMutation) OldSourceArtifactSha256(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSourceArtifactSha256 is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSourceArtifactSha256 requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSourceArtifactSha256: %w", err)
+	}
+	return oldValue.SourceArtifactSha256, nil
+}
+
+// ClearSourceArtifactSha256 clears the value of the "source_artifact_sha256" field.
+func (m *SystemPromptTemplateVersionMutation) ClearSourceArtifactSha256() {
+	m.source_artifact_sha256 = nil
+	m.clearedFields[systemprompttemplateversion.FieldSourceArtifactSha256] = struct{}{}
+}
+
+// SourceArtifactSha256Cleared returns if the "source_artifact_sha256" field was cleared in this mutation.
+func (m *SystemPromptTemplateVersionMutation) SourceArtifactSha256Cleared() bool {
+	_, ok := m.clearedFields[systemprompttemplateversion.FieldSourceArtifactSha256]
+	return ok
+}
+
+// ResetSourceArtifactSha256 resets all changes to the "source_artifact_sha256" field.
+func (m *SystemPromptTemplateVersionMutation) ResetSourceArtifactSha256() {
+	m.source_artifact_sha256 = nil
+	delete(m.clearedFields, systemprompttemplateversion.FieldSourceArtifactSha256)
+}
+
+// SetSourceLicenseSha256 sets the "source_license_sha256" field.
+func (m *SystemPromptTemplateVersionMutation) SetSourceLicenseSha256(s string) {
+	m.source_license_sha256 = &s
+}
+
+// SourceLicenseSha256 returns the value of the "source_license_sha256" field in the mutation.
+func (m *SystemPromptTemplateVersionMutation) SourceLicenseSha256() (r string, exists bool) {
+	v := m.source_license_sha256
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSourceLicenseSha256 returns the old "source_license_sha256" field's value of the SystemPromptTemplateVersion entity.
+// If the SystemPromptTemplateVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SystemPromptTemplateVersionMutation) OldSourceLicenseSha256(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSourceLicenseSha256 is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSourceLicenseSha256 requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSourceLicenseSha256: %w", err)
+	}
+	return oldValue.SourceLicenseSha256, nil
+}
+
+// ClearSourceLicenseSha256 clears the value of the "source_license_sha256" field.
+func (m *SystemPromptTemplateVersionMutation) ClearSourceLicenseSha256() {
+	m.source_license_sha256 = nil
+	m.clearedFields[systemprompttemplateversion.FieldSourceLicenseSha256] = struct{}{}
+}
+
+// SourceLicenseSha256Cleared returns if the "source_license_sha256" field was cleared in this mutation.
+func (m *SystemPromptTemplateVersionMutation) SourceLicenseSha256Cleared() bool {
+	_, ok := m.clearedFields[systemprompttemplateversion.FieldSourceLicenseSha256]
+	return ok
+}
+
+// ResetSourceLicenseSha256 resets all changes to the "source_license_sha256" field.
+func (m *SystemPromptTemplateVersionMutation) ResetSourceLicenseSha256() {
+	m.source_license_sha256 = nil
+	delete(m.clearedFields, systemprompttemplateversion.FieldSourceLicenseSha256)
+}
+
 // SetCreatedBy sets the "created_by" field.
 func (m *SystemPromptTemplateVersionMutation) SetCreatedBy(i int64) {
 	m.created_by = &i
@@ -45582,7 +45955,7 @@ func (m *SystemPromptTemplateVersionMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SystemPromptTemplateVersionMutation) Fields() []string {
-	fields := make([]string, 0, 13)
+	fields := make([]string, 0, 19)
 	if m.template != nil {
 		fields = append(fields, systemprompttemplateversion.FieldTemplateID)
 	}
@@ -45609,6 +45982,24 @@ func (m *SystemPromptTemplateVersionMutation) Fields() []string {
 	}
 	if m.note != nil {
 		fields = append(fields, systemprompttemplateversion.FieldNote)
+	}
+	if m.source_repository != nil {
+		fields = append(fields, systemprompttemplateversion.FieldSourceRepository)
+	}
+	if m.source_commit != nil {
+		fields = append(fields, systemprompttemplateversion.FieldSourceCommit)
+	}
+	if m.source_version != nil {
+		fields = append(fields, systemprompttemplateversion.FieldSourceVersion)
+	}
+	if m.source_artifact != nil {
+		fields = append(fields, systemprompttemplateversion.FieldSourceArtifact)
+	}
+	if m.source_artifact_sha256 != nil {
+		fields = append(fields, systemprompttemplateversion.FieldSourceArtifactSha256)
+	}
+	if m.source_license_sha256 != nil {
+		fields = append(fields, systemprompttemplateversion.FieldSourceLicenseSha256)
 	}
 	if m.created_by != nil {
 		fields = append(fields, systemprompttemplateversion.FieldCreatedBy)
@@ -45648,6 +46039,18 @@ func (m *SystemPromptTemplateVersionMutation) Field(name string) (ent.Value, boo
 		return m.BundleManifestSha256()
 	case systemprompttemplateversion.FieldNote:
 		return m.Note()
+	case systemprompttemplateversion.FieldSourceRepository:
+		return m.SourceRepository()
+	case systemprompttemplateversion.FieldSourceCommit:
+		return m.SourceCommit()
+	case systemprompttemplateversion.FieldSourceVersion:
+		return m.SourceVersion()
+	case systemprompttemplateversion.FieldSourceArtifact:
+		return m.SourceArtifact()
+	case systemprompttemplateversion.FieldSourceArtifactSha256:
+		return m.SourceArtifactSha256()
+	case systemprompttemplateversion.FieldSourceLicenseSha256:
+		return m.SourceLicenseSha256()
 	case systemprompttemplateversion.FieldCreatedBy:
 		return m.CreatedBy()
 	case systemprompttemplateversion.FieldPublishedAt:
@@ -45683,6 +46086,18 @@ func (m *SystemPromptTemplateVersionMutation) OldField(ctx context.Context, name
 		return m.OldBundleManifestSha256(ctx)
 	case systemprompttemplateversion.FieldNote:
 		return m.OldNote(ctx)
+	case systemprompttemplateversion.FieldSourceRepository:
+		return m.OldSourceRepository(ctx)
+	case systemprompttemplateversion.FieldSourceCommit:
+		return m.OldSourceCommit(ctx)
+	case systemprompttemplateversion.FieldSourceVersion:
+		return m.OldSourceVersion(ctx)
+	case systemprompttemplateversion.FieldSourceArtifact:
+		return m.OldSourceArtifact(ctx)
+	case systemprompttemplateversion.FieldSourceArtifactSha256:
+		return m.OldSourceArtifactSha256(ctx)
+	case systemprompttemplateversion.FieldSourceLicenseSha256:
+		return m.OldSourceLicenseSha256(ctx)
 	case systemprompttemplateversion.FieldCreatedBy:
 		return m.OldCreatedBy(ctx)
 	case systemprompttemplateversion.FieldPublishedAt:
@@ -45762,6 +46177,48 @@ func (m *SystemPromptTemplateVersionMutation) SetField(name string, value ent.Va
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetNote(v)
+		return nil
+	case systemprompttemplateversion.FieldSourceRepository:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSourceRepository(v)
+		return nil
+	case systemprompttemplateversion.FieldSourceCommit:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSourceCommit(v)
+		return nil
+	case systemprompttemplateversion.FieldSourceVersion:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSourceVersion(v)
+		return nil
+	case systemprompttemplateversion.FieldSourceArtifact:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSourceArtifact(v)
+		return nil
+	case systemprompttemplateversion.FieldSourceArtifactSha256:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSourceArtifactSha256(v)
+		return nil
+	case systemprompttemplateversion.FieldSourceLicenseSha256:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSourceLicenseSha256(v)
 		return nil
 	case systemprompttemplateversion.FieldCreatedBy:
 		v, ok := value.(int64)
@@ -45878,6 +46335,24 @@ func (m *SystemPromptTemplateVersionMutation) ClearedFields() []string {
 	if m.FieldCleared(systemprompttemplateversion.FieldBundleManifestSha256) {
 		fields = append(fields, systemprompttemplateversion.FieldBundleManifestSha256)
 	}
+	if m.FieldCleared(systemprompttemplateversion.FieldSourceRepository) {
+		fields = append(fields, systemprompttemplateversion.FieldSourceRepository)
+	}
+	if m.FieldCleared(systemprompttemplateversion.FieldSourceCommit) {
+		fields = append(fields, systemprompttemplateversion.FieldSourceCommit)
+	}
+	if m.FieldCleared(systemprompttemplateversion.FieldSourceVersion) {
+		fields = append(fields, systemprompttemplateversion.FieldSourceVersion)
+	}
+	if m.FieldCleared(systemprompttemplateversion.FieldSourceArtifact) {
+		fields = append(fields, systemprompttemplateversion.FieldSourceArtifact)
+	}
+	if m.FieldCleared(systemprompttemplateversion.FieldSourceArtifactSha256) {
+		fields = append(fields, systemprompttemplateversion.FieldSourceArtifactSha256)
+	}
+	if m.FieldCleared(systemprompttemplateversion.FieldSourceLicenseSha256) {
+		fields = append(fields, systemprompttemplateversion.FieldSourceLicenseSha256)
+	}
 	if m.FieldCleared(systemprompttemplateversion.FieldCreatedBy) {
 		fields = append(fields, systemprompttemplateversion.FieldCreatedBy)
 	}
@@ -45906,6 +46381,24 @@ func (m *SystemPromptTemplateVersionMutation) ClearField(name string) error {
 		return nil
 	case systemprompttemplateversion.FieldBundleManifestSha256:
 		m.ClearBundleManifestSha256()
+		return nil
+	case systemprompttemplateversion.FieldSourceRepository:
+		m.ClearSourceRepository()
+		return nil
+	case systemprompttemplateversion.FieldSourceCommit:
+		m.ClearSourceCommit()
+		return nil
+	case systemprompttemplateversion.FieldSourceVersion:
+		m.ClearSourceVersion()
+		return nil
+	case systemprompttemplateversion.FieldSourceArtifact:
+		m.ClearSourceArtifact()
+		return nil
+	case systemprompttemplateversion.FieldSourceArtifactSha256:
+		m.ClearSourceArtifactSha256()
+		return nil
+	case systemprompttemplateversion.FieldSourceLicenseSha256:
+		m.ClearSourceLicenseSha256()
 		return nil
 	case systemprompttemplateversion.FieldCreatedBy:
 		m.ClearCreatedBy()
@@ -45950,6 +46443,24 @@ func (m *SystemPromptTemplateVersionMutation) ResetField(name string) error {
 		return nil
 	case systemprompttemplateversion.FieldNote:
 		m.ResetNote()
+		return nil
+	case systemprompttemplateversion.FieldSourceRepository:
+		m.ResetSourceRepository()
+		return nil
+	case systemprompttemplateversion.FieldSourceCommit:
+		m.ResetSourceCommit()
+		return nil
+	case systemprompttemplateversion.FieldSourceVersion:
+		m.ResetSourceVersion()
+		return nil
+	case systemprompttemplateversion.FieldSourceArtifact:
+		m.ResetSourceArtifact()
+		return nil
+	case systemprompttemplateversion.FieldSourceArtifactSha256:
+		m.ResetSourceArtifactSha256()
+		return nil
+	case systemprompttemplateversion.FieldSourceLicenseSha256:
+		m.ResetSourceLicenseSha256()
 		return nil
 	case systemprompttemplateversion.FieldCreatedBy:
 		m.ResetCreatedBy()

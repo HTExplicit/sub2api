@@ -22,12 +22,19 @@ describe('System Prompts integration surface', () => {
     expect(sidebar).toContain("t('nav.systemPrompts')")
   })
 
-  it('keeps locale trees symmetric and exposes draft, publish, rollback, preview, and runtime controls', () => {
+  it('keeps locale trees symmetric and separates the focused page from advanced controls', () => {
     expect(Object.keys(zh.admin.systemPrompts)).toEqual(Object.keys(en.admin.systemPrompts))
     const view = read('../SystemPromptsView.vue')
-    for (const marker of ['saveDraft', 'publish', 'rollback', 'previewMerge', 'previewUpstream', 'compact_enabled', 'expose_server_prompt']) {
+    for (const marker of ['saveVersion', 'setCurrent', 'rollback', 'syncManagedSource', 'SystemPromptAdvancedDrawer']) {
       expect(view).toContain(marker)
     }
-    expect(view).toContain('DOMPurify.sanitize')
+    expect(view).not.toContain('previewMerge')
+    expect(view).not.toContain('previewUpstream')
+    expect(view).not.toContain('DOMPurify')
+
+    const drawer = read('../../../components/admin/systemPrompt/SystemPromptAdvancedDrawer.vue')
+    expect(drawer).toContain('compact_enabled')
+    expect(drawer).toContain('expose_server_prompt')
+    expect(drawer).toContain('data-test="system-prompt-advanced-drawer"')
   })
 })

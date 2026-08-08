@@ -33,6 +33,7 @@ export interface SystemPromptTemplate {
   name: string
   description: string
   is_seed: boolean
+  managed_source?: string
   created_by?: number
   updated_by?: number
   created_at: string
@@ -55,6 +56,12 @@ export interface SystemPromptVersion {
   published_by?: number
   created_at: string
   is_active: boolean
+  source_repository?: string
+  source_commit?: string
+  source_version?: string
+  source_artifact?: string
+  source_artifact_sha256?: string
+  source_license_sha256?: string
 }
 
 export interface SystemPromptBundleDocument {
@@ -133,9 +140,14 @@ export interface RemoteSkillRegistryResponse {
 }
 
 export interface RemoteSkillClientInstaller {
-  url: string
-  sha256: string
-  command: string
+  strategy: string
+  repository_url: string
+  repository_ref: string
+  repository_commit: string
+  bootstrap_path: string
+  bootstrap_sha256: string
+  acquire_command: string
+  execute_command: string
 }
 
 export interface RemoteSkillClientInstall {
@@ -157,6 +169,27 @@ export interface RemoteSkillSyncJob {
   created_at: string
   started_at?: string
   completed_at?: string
+}
+
+export type ManagedSourceSyncStatus = 'up_to_date' | 'no_prompt_change' | 'candidate_created'
+
+export interface ManagedSourceSyncVersion {
+  id: number
+  template_id: number
+  version: number
+  sha256: string
+  byte_length: number
+  source_repository?: string
+  source_commit?: string
+  source_version?: string
+  source_artifact?: string
+  source_artifact_sha256?: string
+  source_license_sha256?: string
+}
+
+export interface ManagedSourceSyncResponse {
+  status: ManagedSourceSyncStatus
+  version?: ManagedSourceSyncVersion
 }
 
 export interface SystemPromptListResponse {
@@ -301,6 +334,17 @@ export async function saveDraft(
   return data
 }
 
+export async function syncManagedSource(
+  id: number,
+  payload: { expected_latest_version: number; expected_revision: number }
+): Promise<ManagedSourceSyncResponse> {
+  const { data } = await apiClient.post<ManagedSourceSyncResponse>(
+    `/admin/system-prompts/${id}/upstream-sync`,
+    payload
+  )
+  return data
+}
+
 export async function publish(
   id: number,
   versionId: number,
@@ -391,6 +435,7 @@ export const systemPromptsAPI = {
   create,
   updateMetadata,
   saveDraft,
+  syncManagedSource,
   publish,
   updateRuntime,
   duplicate,

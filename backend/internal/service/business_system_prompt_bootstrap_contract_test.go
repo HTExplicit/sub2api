@@ -16,8 +16,8 @@ func TestBusinessSystemPromptBootstrapsAreContentAddressedAndPinnedByPrompt(t *t
 	require.NoError(t, err)
 
 	labels := map[string]string{
-		"bootstrap-reverse-skill.ps1": "POWERSHELL_BOOTSTRAP_SHA256",
-		"bootstrap-reverse-skill.py":  "PYTHON_BOOTSTRAP_SHA256",
+		"bootstrap-reverse-skill.ps1": "POWERSHELL_BOOTSTRAP",
+		"bootstrap-reverse-skill.py":  "PYTHON_BOOTSTRAP",
 	}
 	seen := map[string]bool{}
 	contentAddressed := 0
@@ -39,8 +39,8 @@ func TestBusinessSystemPromptBootstrapsAreContentAddressedAndPinnedByPrompt(t *t
 		digest := sha256.Sum256(raw)
 		hash := hex.EncodeToString(digest[:])
 		require.Equal(t, entry.Name(), hash)
-		require.Contains(t, embeddedBusinessSystemPrompt, "https://codexrip.vip/skills/bootstrap/"+hash+"/"+name)
-		require.Contains(t, embeddedBusinessSystemPrompt, label+" = "+hash)
+		require.Contains(t, embeddedBusinessSystemPrompt, label+"_PATH = deploy/skill-registry/bootstrap/"+hash+"/"+name)
+		require.Contains(t, embeddedBusinessSystemPrompt, label+"_SHA256 = "+hash)
 		seen[filepath.Ext(name)] = true
 	}
 	require.Equal(t, 2, contentAddressed)

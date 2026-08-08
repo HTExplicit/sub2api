@@ -18,33 +18,49 @@ var (
 	ErrBusinessSystemPromptSeedProtected     = errors.New("business system prompt seed is protected")
 	ErrBusinessSystemPromptActive            = errors.New("active business system prompt cannot be deleted")
 	ErrBusinessSystemPromptLegacyComposition = errors.New("legacy business system prompt composition is read-only")
+	ErrBusinessSystemPromptSourceNotManaged  = errors.New("business system prompt template is not managed by this source")
 )
 
-const businessSystemPromptSeedSlug = "codexrip_reverse_skill"
+const (
+	businessSystemPromptSeedSlug = "codexrip_reverse_skill"
+	gpt56InstructPromptSeedSlug  = "gpt_5_6_instruct"
+	businessSystemPromptV7SHA256 = "0b717f086b1bf25e8300e9f26578ee95cf6f74d5601c06b9f9e493aa8939b0a7"
+)
 
 type BusinessSystemPromptSeed struct {
 	Slug                 string
 	Name                 string
 	Description          string
+	ManagedSource        string
 	Body                 string
+	Note                 string
 	SHA256               string
 	ByteLength           int
 	CompositionMode      string
 	BundleID             string
 	BundleManifestSHA256 string
+	SourceRepository     string
+	SourceCommit         string
+	SourceVersion        string
+	SourceArtifact       string
+	SourceArtifactSHA256 string
+	SourceLicenseSHA256  string
+	UpgradeExistingSeed  bool
+	AutoActivateFromSHA  []string
 }
 
 type BusinessSystemPromptTemplate struct {
-	ID          int64      `json:"id"`
-	Slug        string     `json:"slug"`
-	Name        string     `json:"name"`
-	Description string     `json:"description"`
-	IsSeed      bool       `json:"is_seed"`
-	DeletedAt   *time.Time `json:"deleted_at,omitempty"`
-	CreatedBy   *int64     `json:"created_by,omitempty"`
-	UpdatedBy   *int64     `json:"updated_by,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	ID            int64      `json:"id"`
+	Slug          string     `json:"slug"`
+	Name          string     `json:"name"`
+	Description   string     `json:"description"`
+	IsSeed        bool       `json:"is_seed"`
+	ManagedSource string     `json:"managed_source,omitempty"`
+	DeletedAt     *time.Time `json:"deleted_at,omitempty"`
+	CreatedBy     *int64     `json:"created_by,omitempty"`
+	UpdatedBy     *int64     `json:"updated_by,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 type BusinessSystemPromptVersion struct {
@@ -58,6 +74,12 @@ type BusinessSystemPromptVersion struct {
 	BundleID             string     `json:"bundle_id,omitempty"`
 	BundleManifestSHA256 string     `json:"bundle_manifest_sha256,omitempty"`
 	Note                 string     `json:"note"`
+	SourceRepository     string     `json:"source_repository,omitempty"`
+	SourceCommit         string     `json:"source_commit,omitempty"`
+	SourceVersion        string     `json:"source_version,omitempty"`
+	SourceArtifact       string     `json:"source_artifact,omitempty"`
+	SourceArtifactSHA256 string     `json:"source_artifact_sha256,omitempty"`
+	SourceLicenseSHA256  string     `json:"source_license_sha256,omitempty"`
 	CreatedBy            *int64     `json:"created_by,omitempty"`
 	PublishedAt          *time.Time `json:"published_at,omitempty"`
 	PublishedBy          *int64     `json:"published_by,omitempty"`
@@ -126,6 +148,23 @@ type BusinessSystemPromptCompositionStore interface {
 	CreateBusinessSystemPromptVersionWithComposition(context.Context, int64, BusinessSystemPromptVersionCreate, int64, int64, int64) (BusinessSystemPromptVersion, error)
 }
 
+type BusinessSystemPromptSourceSyncStatus string
+
+const (
+	BusinessSystemPromptSourceSyncUpToDate         BusinessSystemPromptSourceSyncStatus = "up_to_date"
+	BusinessSystemPromptSourceSyncNoPromptChange   BusinessSystemPromptSourceSyncStatus = "no_prompt_change"
+	BusinessSystemPromptSourceSyncCandidateCreated BusinessSystemPromptSourceSyncStatus = "candidate_created"
+)
+
+type BusinessSystemPromptSourceSyncResult struct {
+	Status  BusinessSystemPromptSourceSyncStatus `json:"status"`
+	Version *BusinessSystemPromptVersion         `json:"version,omitempty"`
+}
+
+type BusinessSystemPromptSourceStore interface {
+	SyncBusinessSystemPromptSourceVersion(context.Context, int64, BusinessSystemPromptSourceCandidate, int64, int64, int64) (BusinessSystemPromptSourceSyncResult, error)
+}
+
 type BusinessSystemPromptRevisionBus interface {
 	Publish(context.Context, int64) error
 	Subscribe(context.Context, func(int64)) error
@@ -142,6 +181,7 @@ type BusinessSystemPromptService struct {
 	route    BusinessSystemPromptRouteMetadataStore
 	bundles  *BusinessSystemPromptBundleRegistry
 	registry *RemoteSkillRegistryService
+	source   BusinessSystemPromptSource
 
 	snapshot atomic.Pointer[BusinessSystemPromptSnapshot]
 	stateMu  sync.Mutex
@@ -155,6 +195,7 @@ func NewBusinessSystemPromptService(store BusinessSystemPromptStore, bus Busines
 	service := &BusinessSystemPromptService{
 		store: store, bus: bus,
 		bundles: NewBusinessSystemPromptBundleRegistry(DefaultBusinessSystemPromptBundleRoot()),
+		source:  NewGitHubGPT56PromptSource(nil),
 	}
 	if routeStore, ok := bus.(BusinessSystemPromptRouteMetadataStore); ok {
 		service.route = routeStore
@@ -162,10 +203,42 @@ func NewBusinessSystemPromptService(store BusinessSystemPromptStore, bus Busines
 	return service
 }
 
+func (s *BusinessSystemPromptService) SetBusinessSystemPromptSource(source BusinessSystemPromptSource) {
+	if s != nil {
+		s.source = source
+	}
+}
+
 func (s *BusinessSystemPromptService) SetRemoteSkillRegistryService(registry *RemoteSkillRegistryService) {
 	if s != nil {
 		s.registry = registry
 	}
+}
+
+func (s *BusinessSystemPromptService) SyncManagedSource(
+	ctx context.Context,
+	templateID, actorID, expectedLatestVersion, expectedRevision int64,
+) (BusinessSystemPromptSourceSyncResult, error) {
+	if s == nil || s.store == nil || s.source == nil {
+		return BusinessSystemPromptSourceSyncResult{}, ErrBusinessSystemPromptSourceUnavailable
+	}
+	if templateID <= 0 || actorID <= 0 || expectedLatestVersion <= 0 || expectedRevision <= 0 {
+		return BusinessSystemPromptSourceSyncResult{}, ErrBusinessSystemPromptRevisionConflict
+	}
+	sourceStore, ok := s.store.(BusinessSystemPromptSourceStore)
+	if !ok {
+		return BusinessSystemPromptSourceSyncResult{}, ErrBusinessSystemPromptSourceUnavailable
+	}
+	candidate, err := s.source.Fetch(ctx)
+	if err != nil {
+		return BusinessSystemPromptSourceSyncResult{}, err
+	}
+	if err := ValidateBusinessSystemPromptSourceCandidate(candidate); err != nil {
+		return BusinessSystemPromptSourceSyncResult{}, err
+	}
+	return sourceStore.SyncBusinessSystemPromptSourceVersion(
+		ctx, templateID, candidate, actorID, expectedLatestVersion, expectedRevision,
+	)
 }
 
 func (s *BusinessSystemPromptService) loadBusinessSystemPromptBundle(bundleID, manifestSHA256 string) (*BusinessSystemPromptBundle, error) {
@@ -219,22 +292,44 @@ func (s *BusinessSystemPromptService) Initialize(ctx context.Context) error {
 	if s == nil || s.store == nil {
 		return errors.New("business system prompt store unavailable")
 	}
-	hash, byteLength, err := ValidateBusinessSystemPromptBody(embeddedBusinessSystemPrompt)
-	if err != nil {
-		return fmt.Errorf("validate embedded business system prompt: %w", err)
+	seeds := []BusinessSystemPromptSeed{
+		{
+			Slug:                businessSystemPromptSeedSlug,
+			Name:                "CodexRip Reverse-Skill System Prompt",
+			Description:         "高保真 CodexRip 逆向提示词与本机完整 Skill 混合策略。",
+			Body:                embeddedBusinessSystemPrompt,
+			Note:                "captured reverse-engineered seed",
+			CompositionMode:     BusinessSystemPromptCompositionCodexSkillHybrid,
+			BundleID:            BusinessSystemPromptRemoteSkillBundleID,
+			UpgradeExistingSeed: true,
+			AutoActivateFromSHA: []string{businessSystemPromptV7SHA256},
+		},
+		{
+			Slug:                 gpt56InstructPromptSeedSlug,
+			Name:                 "GPT-5.6 Instruct v45",
+			Description:          "MDX-Tom/gpt-5.6-instruct 的内置可选提示词。",
+			ManagedSource:        BusinessSystemPromptManagedSourceGPT56,
+			Body:                 embeddedGPT56InstructPrompt,
+			Note:                 "Imported from MDX-Tom/gpt-5.6-instruct v45",
+			CompositionMode:      BusinessSystemPromptCompositionInline,
+			SourceRepository:     gpt56PromptRepository,
+			SourceCommit:         "77e7a649903f9556f2d7bfa0223fa99e123aad52",
+			SourceVersion:        "v45",
+			SourceArtifact:       "gpt-5.6-sol-unrestricted-v45.zip",
+			SourceArtifactSHA256: "c86c2c6d20a4d1155d87422f485eb37b77539132270918c002b5d8237a5adf54",
+			SourceLicenseSHA256:  GPT56PromptLicenseSHA256,
+		},
 	}
-	seed := BusinessSystemPromptSeed{
-		Slug:            businessSystemPromptSeedSlug,
-		Name:            "CodexRip Reverse-Skill System Prompt",
-		Description:     "高保真 CodexRip 逆向提示词与本机完整 Skill 混合策略；部署后默认关闭。",
-		Body:            embeddedBusinessSystemPrompt,
-		SHA256:          hash,
-		ByteLength:      byteLength,
-		CompositionMode: BusinessSystemPromptCompositionCodexSkillHybrid,
-		BundleID:        BusinessSystemPromptRemoteSkillBundleID,
-	}
-	if err := s.store.EnsureBusinessSystemPromptSeed(ctx, seed); err != nil {
-		return fmt.Errorf("ensure business system prompt seed: %w", err)
+	for i := range seeds {
+		hash, byteLength, err := ValidateBusinessSystemPromptBody(seeds[i].Body)
+		if err != nil {
+			return fmt.Errorf("validate embedded business system prompt %q: %w", seeds[i].Slug, err)
+		}
+		seeds[i].SHA256 = hash
+		seeds[i].ByteLength = byteLength
+		if err := s.store.EnsureBusinessSystemPromptSeed(ctx, seeds[i]); err != nil {
+			return fmt.Errorf("ensure business system prompt seed %q: %w", seeds[i].Slug, err)
+		}
 	}
 	return s.Reload(ctx)
 }

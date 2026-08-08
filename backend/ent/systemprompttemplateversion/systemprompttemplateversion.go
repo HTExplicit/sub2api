@@ -32,6 +32,18 @@ const (
 	FieldBundleManifestSha256 = "bundle_manifest_sha256"
 	// FieldNote holds the string denoting the note field in the database.
 	FieldNote = "note"
+	// FieldSourceRepository holds the string denoting the source_repository field in the database.
+	FieldSourceRepository = "source_repository"
+	// FieldSourceCommit holds the string denoting the source_commit field in the database.
+	FieldSourceCommit = "source_commit"
+	// FieldSourceVersion holds the string denoting the source_version field in the database.
+	FieldSourceVersion = "source_version"
+	// FieldSourceArtifact holds the string denoting the source_artifact field in the database.
+	FieldSourceArtifact = "source_artifact"
+	// FieldSourceArtifactSha256 holds the string denoting the source_artifact_sha256 field in the database.
+	FieldSourceArtifactSha256 = "source_artifact_sha256"
+	// FieldSourceLicenseSha256 holds the string denoting the source_license_sha256 field in the database.
+	FieldSourceLicenseSha256 = "source_license_sha256"
 	// FieldCreatedBy holds the string denoting the created_by field in the database.
 	FieldCreatedBy = "created_by"
 	// FieldPublishedAt holds the string denoting the published_at field in the database.
@@ -65,6 +77,12 @@ var Columns = []string{
 	FieldBundleID,
 	FieldBundleManifestSha256,
 	FieldNote,
+	FieldSourceRepository,
+	FieldSourceCommit,
+	FieldSourceVersion,
+	FieldSourceArtifact,
+	FieldSourceArtifactSha256,
+	FieldSourceLicenseSha256,
 	FieldCreatedBy,
 	FieldPublishedAt,
 	FieldPublishedBy,
@@ -100,6 +118,18 @@ var (
 	DefaultNote string
 	// NoteValidator is a validator for the "note" field. It is called by the builders before save.
 	NoteValidator func(string) error
+	// SourceRepositoryValidator is a validator for the "source_repository" field. It is called by the builders before save.
+	SourceRepositoryValidator func(string) error
+	// SourceCommitValidator is a validator for the "source_commit" field. It is called by the builders before save.
+	SourceCommitValidator func(string) error
+	// SourceVersionValidator is a validator for the "source_version" field. It is called by the builders before save.
+	SourceVersionValidator func(string) error
+	// SourceArtifactValidator is a validator for the "source_artifact" field. It is called by the builders before save.
+	SourceArtifactValidator func(string) error
+	// SourceArtifactSha256Validator is a validator for the "source_artifact_sha256" field. It is called by the builders before save.
+	SourceArtifactSha256Validator func(string) error
+	// SourceLicenseSha256Validator is a validator for the "source_license_sha256" field. It is called by the builders before save.
+	SourceLicenseSha256Validator func(string) error
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 )
@@ -155,6 +185,36 @@ func ByBundleManifestSha256(opts ...sql.OrderTermOption) OrderOption {
 // ByNote orders the results by the note field.
 func ByNote(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldNote, opts...).ToFunc()
+}
+
+// BySourceRepository orders the results by the source_repository field.
+func BySourceRepository(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSourceRepository, opts...).ToFunc()
+}
+
+// BySourceCommit orders the results by the source_commit field.
+func BySourceCommit(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSourceCommit, opts...).ToFunc()
+}
+
+// BySourceVersion orders the results by the source_version field.
+func BySourceVersion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSourceVersion, opts...).ToFunc()
+}
+
+// BySourceArtifact orders the results by the source_artifact field.
+func BySourceArtifact(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSourceArtifact, opts...).ToFunc()
+}
+
+// BySourceArtifactSha256 orders the results by the source_artifact_sha256 field.
+func BySourceArtifactSha256(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSourceArtifactSha256, opts...).ToFunc()
+}
+
+// BySourceLicenseSha256 orders the results by the source_license_sha256 field.
+func BySourceLicenseSha256(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSourceLicenseSha256, opts...).ToFunc()
 }
 
 // ByCreatedBy orders the results by the created_by field.

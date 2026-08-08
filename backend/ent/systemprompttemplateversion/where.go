@@ -100,6 +100,36 @@ func Note(v string) predicate.SystemPromptTemplateVersion {
 	return predicate.SystemPromptTemplateVersion(sql.FieldEQ(FieldNote, v))
 }
 
+// SourceRepository applies equality check predicate on the "source_repository" field. It's identical to SourceRepositoryEQ.
+func SourceRepository(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldEQ(FieldSourceRepository, v))
+}
+
+// SourceCommit applies equality check predicate on the "source_commit" field. It's identical to SourceCommitEQ.
+func SourceCommit(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldEQ(FieldSourceCommit, v))
+}
+
+// SourceVersion applies equality check predicate on the "source_version" field. It's identical to SourceVersionEQ.
+func SourceVersion(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldEQ(FieldSourceVersion, v))
+}
+
+// SourceArtifact applies equality check predicate on the "source_artifact" field. It's identical to SourceArtifactEQ.
+func SourceArtifact(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldEQ(FieldSourceArtifact, v))
+}
+
+// SourceArtifactSha256 applies equality check predicate on the "source_artifact_sha256" field. It's identical to SourceArtifactSha256EQ.
+func SourceArtifactSha256(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldEQ(FieldSourceArtifactSha256, v))
+}
+
+// SourceLicenseSha256 applies equality check predicate on the "source_license_sha256" field. It's identical to SourceLicenseSha256EQ.
+func SourceLicenseSha256(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldEQ(FieldSourceLicenseSha256, v))
+}
+
 // CreatedBy applies equality check predicate on the "created_by" field. It's identical to CreatedByEQ.
 func CreatedBy(v int64) predicate.SystemPromptTemplateVersion {
 	return predicate.SystemPromptTemplateVersion(sql.FieldEQ(FieldCreatedBy, v))
@@ -628,6 +658,456 @@ func NoteEqualFold(v string) predicate.SystemPromptTemplateVersion {
 // NoteContainsFold applies the ContainsFold predicate on the "note" field.
 func NoteContainsFold(v string) predicate.SystemPromptTemplateVersion {
 	return predicate.SystemPromptTemplateVersion(sql.FieldContainsFold(FieldNote, v))
+}
+
+// SourceRepositoryEQ applies the EQ predicate on the "source_repository" field.
+func SourceRepositoryEQ(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldEQ(FieldSourceRepository, v))
+}
+
+// SourceRepositoryNEQ applies the NEQ predicate on the "source_repository" field.
+func SourceRepositoryNEQ(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldNEQ(FieldSourceRepository, v))
+}
+
+// SourceRepositoryIn applies the In predicate on the "source_repository" field.
+func SourceRepositoryIn(vs ...string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldIn(FieldSourceRepository, vs...))
+}
+
+// SourceRepositoryNotIn applies the NotIn predicate on the "source_repository" field.
+func SourceRepositoryNotIn(vs ...string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldNotIn(FieldSourceRepository, vs...))
+}
+
+// SourceRepositoryGT applies the GT predicate on the "source_repository" field.
+func SourceRepositoryGT(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldGT(FieldSourceRepository, v))
+}
+
+// SourceRepositoryGTE applies the GTE predicate on the "source_repository" field.
+func SourceRepositoryGTE(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldGTE(FieldSourceRepository, v))
+}
+
+// SourceRepositoryLT applies the LT predicate on the "source_repository" field.
+func SourceRepositoryLT(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldLT(FieldSourceRepository, v))
+}
+
+// SourceRepositoryLTE applies the LTE predicate on the "source_repository" field.
+func SourceRepositoryLTE(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldLTE(FieldSourceRepository, v))
+}
+
+// SourceRepositoryContains applies the Contains predicate on the "source_repository" field.
+func SourceRepositoryContains(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldContains(FieldSourceRepository, v))
+}
+
+// SourceRepositoryHasPrefix applies the HasPrefix predicate on the "source_repository" field.
+func SourceRepositoryHasPrefix(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldHasPrefix(FieldSourceRepository, v))
+}
+
+// SourceRepositoryHasSuffix applies the HasSuffix predicate on the "source_repository" field.
+func SourceRepositoryHasSuffix(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldHasSuffix(FieldSourceRepository, v))
+}
+
+// SourceRepositoryIsNil applies the IsNil predicate on the "source_repository" field.
+func SourceRepositoryIsNil() predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldIsNull(FieldSourceRepository))
+}
+
+// SourceRepositoryNotNil applies the NotNil predicate on the "source_repository" field.
+func SourceRepositoryNotNil() predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldNotNull(FieldSourceRepository))
+}
+
+// SourceRepositoryEqualFold applies the EqualFold predicate on the "source_repository" field.
+func SourceRepositoryEqualFold(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldEqualFold(FieldSourceRepository, v))
+}
+
+// SourceRepositoryContainsFold applies the ContainsFold predicate on the "source_repository" field.
+func SourceRepositoryContainsFold(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldContainsFold(FieldSourceRepository, v))
+}
+
+// SourceCommitEQ applies the EQ predicate on the "source_commit" field.
+func SourceCommitEQ(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldEQ(FieldSourceCommit, v))
+}
+
+// SourceCommitNEQ applies the NEQ predicate on the "source_commit" field.
+func SourceCommitNEQ(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldNEQ(FieldSourceCommit, v))
+}
+
+// SourceCommitIn applies the In predicate on the "source_commit" field.
+func SourceCommitIn(vs ...string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldIn(FieldSourceCommit, vs...))
+}
+
+// SourceCommitNotIn applies the NotIn predicate on the "source_commit" field.
+func SourceCommitNotIn(vs ...string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldNotIn(FieldSourceCommit, vs...))
+}
+
+// SourceCommitGT applies the GT predicate on the "source_commit" field.
+func SourceCommitGT(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldGT(FieldSourceCommit, v))
+}
+
+// SourceCommitGTE applies the GTE predicate on the "source_commit" field.
+func SourceCommitGTE(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldGTE(FieldSourceCommit, v))
+}
+
+// SourceCommitLT applies the LT predicate on the "source_commit" field.
+func SourceCommitLT(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldLT(FieldSourceCommit, v))
+}
+
+// SourceCommitLTE applies the LTE predicate on the "source_commit" field.
+func SourceCommitLTE(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldLTE(FieldSourceCommit, v))
+}
+
+// SourceCommitContains applies the Contains predicate on the "source_commit" field.
+func SourceCommitContains(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldContains(FieldSourceCommit, v))
+}
+
+// SourceCommitHasPrefix applies the HasPrefix predicate on the "source_commit" field.
+func SourceCommitHasPrefix(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldHasPrefix(FieldSourceCommit, v))
+}
+
+// SourceCommitHasSuffix applies the HasSuffix predicate on the "source_commit" field.
+func SourceCommitHasSuffix(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldHasSuffix(FieldSourceCommit, v))
+}
+
+// SourceCommitIsNil applies the IsNil predicate on the "source_commit" field.
+func SourceCommitIsNil() predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldIsNull(FieldSourceCommit))
+}
+
+// SourceCommitNotNil applies the NotNil predicate on the "source_commit" field.
+func SourceCommitNotNil() predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldNotNull(FieldSourceCommit))
+}
+
+// SourceCommitEqualFold applies the EqualFold predicate on the "source_commit" field.
+func SourceCommitEqualFold(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldEqualFold(FieldSourceCommit, v))
+}
+
+// SourceCommitContainsFold applies the ContainsFold predicate on the "source_commit" field.
+func SourceCommitContainsFold(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldContainsFold(FieldSourceCommit, v))
+}
+
+// SourceVersionEQ applies the EQ predicate on the "source_version" field.
+func SourceVersionEQ(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldEQ(FieldSourceVersion, v))
+}
+
+// SourceVersionNEQ applies the NEQ predicate on the "source_version" field.
+func SourceVersionNEQ(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldNEQ(FieldSourceVersion, v))
+}
+
+// SourceVersionIn applies the In predicate on the "source_version" field.
+func SourceVersionIn(vs ...string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldIn(FieldSourceVersion, vs...))
+}
+
+// SourceVersionNotIn applies the NotIn predicate on the "source_version" field.
+func SourceVersionNotIn(vs ...string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldNotIn(FieldSourceVersion, vs...))
+}
+
+// SourceVersionGT applies the GT predicate on the "source_version" field.
+func SourceVersionGT(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldGT(FieldSourceVersion, v))
+}
+
+// SourceVersionGTE applies the GTE predicate on the "source_version" field.
+func SourceVersionGTE(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldGTE(FieldSourceVersion, v))
+}
+
+// SourceVersionLT applies the LT predicate on the "source_version" field.
+func SourceVersionLT(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldLT(FieldSourceVersion, v))
+}
+
+// SourceVersionLTE applies the LTE predicate on the "source_version" field.
+func SourceVersionLTE(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldLTE(FieldSourceVersion, v))
+}
+
+// SourceVersionContains applies the Contains predicate on the "source_version" field.
+func SourceVersionContains(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldContains(FieldSourceVersion, v))
+}
+
+// SourceVersionHasPrefix applies the HasPrefix predicate on the "source_version" field.
+func SourceVersionHasPrefix(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldHasPrefix(FieldSourceVersion, v))
+}
+
+// SourceVersionHasSuffix applies the HasSuffix predicate on the "source_version" field.
+func SourceVersionHasSuffix(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldHasSuffix(FieldSourceVersion, v))
+}
+
+// SourceVersionIsNil applies the IsNil predicate on the "source_version" field.
+func SourceVersionIsNil() predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldIsNull(FieldSourceVersion))
+}
+
+// SourceVersionNotNil applies the NotNil predicate on the "source_version" field.
+func SourceVersionNotNil() predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldNotNull(FieldSourceVersion))
+}
+
+// SourceVersionEqualFold applies the EqualFold predicate on the "source_version" field.
+func SourceVersionEqualFold(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldEqualFold(FieldSourceVersion, v))
+}
+
+// SourceVersionContainsFold applies the ContainsFold predicate on the "source_version" field.
+func SourceVersionContainsFold(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldContainsFold(FieldSourceVersion, v))
+}
+
+// SourceArtifactEQ applies the EQ predicate on the "source_artifact" field.
+func SourceArtifactEQ(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldEQ(FieldSourceArtifact, v))
+}
+
+// SourceArtifactNEQ applies the NEQ predicate on the "source_artifact" field.
+func SourceArtifactNEQ(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldNEQ(FieldSourceArtifact, v))
+}
+
+// SourceArtifactIn applies the In predicate on the "source_artifact" field.
+func SourceArtifactIn(vs ...string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldIn(FieldSourceArtifact, vs...))
+}
+
+// SourceArtifactNotIn applies the NotIn predicate on the "source_artifact" field.
+func SourceArtifactNotIn(vs ...string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldNotIn(FieldSourceArtifact, vs...))
+}
+
+// SourceArtifactGT applies the GT predicate on the "source_artifact" field.
+func SourceArtifactGT(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldGT(FieldSourceArtifact, v))
+}
+
+// SourceArtifactGTE applies the GTE predicate on the "source_artifact" field.
+func SourceArtifactGTE(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldGTE(FieldSourceArtifact, v))
+}
+
+// SourceArtifactLT applies the LT predicate on the "source_artifact" field.
+func SourceArtifactLT(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldLT(FieldSourceArtifact, v))
+}
+
+// SourceArtifactLTE applies the LTE predicate on the "source_artifact" field.
+func SourceArtifactLTE(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldLTE(FieldSourceArtifact, v))
+}
+
+// SourceArtifactContains applies the Contains predicate on the "source_artifact" field.
+func SourceArtifactContains(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldContains(FieldSourceArtifact, v))
+}
+
+// SourceArtifactHasPrefix applies the HasPrefix predicate on the "source_artifact" field.
+func SourceArtifactHasPrefix(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldHasPrefix(FieldSourceArtifact, v))
+}
+
+// SourceArtifactHasSuffix applies the HasSuffix predicate on the "source_artifact" field.
+func SourceArtifactHasSuffix(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldHasSuffix(FieldSourceArtifact, v))
+}
+
+// SourceArtifactIsNil applies the IsNil predicate on the "source_artifact" field.
+func SourceArtifactIsNil() predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldIsNull(FieldSourceArtifact))
+}
+
+// SourceArtifactNotNil applies the NotNil predicate on the "source_artifact" field.
+func SourceArtifactNotNil() predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldNotNull(FieldSourceArtifact))
+}
+
+// SourceArtifactEqualFold applies the EqualFold predicate on the "source_artifact" field.
+func SourceArtifactEqualFold(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldEqualFold(FieldSourceArtifact, v))
+}
+
+// SourceArtifactContainsFold applies the ContainsFold predicate on the "source_artifact" field.
+func SourceArtifactContainsFold(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldContainsFold(FieldSourceArtifact, v))
+}
+
+// SourceArtifactSha256EQ applies the EQ predicate on the "source_artifact_sha256" field.
+func SourceArtifactSha256EQ(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldEQ(FieldSourceArtifactSha256, v))
+}
+
+// SourceArtifactSha256NEQ applies the NEQ predicate on the "source_artifact_sha256" field.
+func SourceArtifactSha256NEQ(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldNEQ(FieldSourceArtifactSha256, v))
+}
+
+// SourceArtifactSha256In applies the In predicate on the "source_artifact_sha256" field.
+func SourceArtifactSha256In(vs ...string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldIn(FieldSourceArtifactSha256, vs...))
+}
+
+// SourceArtifactSha256NotIn applies the NotIn predicate on the "source_artifact_sha256" field.
+func SourceArtifactSha256NotIn(vs ...string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldNotIn(FieldSourceArtifactSha256, vs...))
+}
+
+// SourceArtifactSha256GT applies the GT predicate on the "source_artifact_sha256" field.
+func SourceArtifactSha256GT(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldGT(FieldSourceArtifactSha256, v))
+}
+
+// SourceArtifactSha256GTE applies the GTE predicate on the "source_artifact_sha256" field.
+func SourceArtifactSha256GTE(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldGTE(FieldSourceArtifactSha256, v))
+}
+
+// SourceArtifactSha256LT applies the LT predicate on the "source_artifact_sha256" field.
+func SourceArtifactSha256LT(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldLT(FieldSourceArtifactSha256, v))
+}
+
+// SourceArtifactSha256LTE applies the LTE predicate on the "source_artifact_sha256" field.
+func SourceArtifactSha256LTE(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldLTE(FieldSourceArtifactSha256, v))
+}
+
+// SourceArtifactSha256Contains applies the Contains predicate on the "source_artifact_sha256" field.
+func SourceArtifactSha256Contains(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldContains(FieldSourceArtifactSha256, v))
+}
+
+// SourceArtifactSha256HasPrefix applies the HasPrefix predicate on the "source_artifact_sha256" field.
+func SourceArtifactSha256HasPrefix(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldHasPrefix(FieldSourceArtifactSha256, v))
+}
+
+// SourceArtifactSha256HasSuffix applies the HasSuffix predicate on the "source_artifact_sha256" field.
+func SourceArtifactSha256HasSuffix(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldHasSuffix(FieldSourceArtifactSha256, v))
+}
+
+// SourceArtifactSha256IsNil applies the IsNil predicate on the "source_artifact_sha256" field.
+func SourceArtifactSha256IsNil() predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldIsNull(FieldSourceArtifactSha256))
+}
+
+// SourceArtifactSha256NotNil applies the NotNil predicate on the "source_artifact_sha256" field.
+func SourceArtifactSha256NotNil() predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldNotNull(FieldSourceArtifactSha256))
+}
+
+// SourceArtifactSha256EqualFold applies the EqualFold predicate on the "source_artifact_sha256" field.
+func SourceArtifactSha256EqualFold(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldEqualFold(FieldSourceArtifactSha256, v))
+}
+
+// SourceArtifactSha256ContainsFold applies the ContainsFold predicate on the "source_artifact_sha256" field.
+func SourceArtifactSha256ContainsFold(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldContainsFold(FieldSourceArtifactSha256, v))
+}
+
+// SourceLicenseSha256EQ applies the EQ predicate on the "source_license_sha256" field.
+func SourceLicenseSha256EQ(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldEQ(FieldSourceLicenseSha256, v))
+}
+
+// SourceLicenseSha256NEQ applies the NEQ predicate on the "source_license_sha256" field.
+func SourceLicenseSha256NEQ(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldNEQ(FieldSourceLicenseSha256, v))
+}
+
+// SourceLicenseSha256In applies the In predicate on the "source_license_sha256" field.
+func SourceLicenseSha256In(vs ...string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldIn(FieldSourceLicenseSha256, vs...))
+}
+
+// SourceLicenseSha256NotIn applies the NotIn predicate on the "source_license_sha256" field.
+func SourceLicenseSha256NotIn(vs ...string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldNotIn(FieldSourceLicenseSha256, vs...))
+}
+
+// SourceLicenseSha256GT applies the GT predicate on the "source_license_sha256" field.
+func SourceLicenseSha256GT(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldGT(FieldSourceLicenseSha256, v))
+}
+
+// SourceLicenseSha256GTE applies the GTE predicate on the "source_license_sha256" field.
+func SourceLicenseSha256GTE(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldGTE(FieldSourceLicenseSha256, v))
+}
+
+// SourceLicenseSha256LT applies the LT predicate on the "source_license_sha256" field.
+func SourceLicenseSha256LT(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldLT(FieldSourceLicenseSha256, v))
+}
+
+// SourceLicenseSha256LTE applies the LTE predicate on the "source_license_sha256" field.
+func SourceLicenseSha256LTE(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldLTE(FieldSourceLicenseSha256, v))
+}
+
+// SourceLicenseSha256Contains applies the Contains predicate on the "source_license_sha256" field.
+func SourceLicenseSha256Contains(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldContains(FieldSourceLicenseSha256, v))
+}
+
+// SourceLicenseSha256HasPrefix applies the HasPrefix predicate on the "source_license_sha256" field.
+func SourceLicenseSha256HasPrefix(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldHasPrefix(FieldSourceLicenseSha256, v))
+}
+
+// SourceLicenseSha256HasSuffix applies the HasSuffix predicate on the "source_license_sha256" field.
+func SourceLicenseSha256HasSuffix(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldHasSuffix(FieldSourceLicenseSha256, v))
+}
+
+// SourceLicenseSha256IsNil applies the IsNil predicate on the "source_license_sha256" field.
+func SourceLicenseSha256IsNil() predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldIsNull(FieldSourceLicenseSha256))
+}
+
+// SourceLicenseSha256NotNil applies the NotNil predicate on the "source_license_sha256" field.
+func SourceLicenseSha256NotNil() predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldNotNull(FieldSourceLicenseSha256))
+}
+
+// SourceLicenseSha256EqualFold applies the EqualFold predicate on the "source_license_sha256" field.
+func SourceLicenseSha256EqualFold(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldEqualFold(FieldSourceLicenseSha256, v))
+}
+
+// SourceLicenseSha256ContainsFold applies the ContainsFold predicate on the "source_license_sha256" field.
+func SourceLicenseSha256ContainsFold(v string) predicate.SystemPromptTemplateVersion {
+	return predicate.SystemPromptTemplateVersion(sql.FieldContainsFold(FieldSourceLicenseSha256, v))
 }
 
 // CreatedByEQ applies the EQ predicate on the "created_by" field.

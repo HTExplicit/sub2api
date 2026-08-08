@@ -30,6 +30,7 @@ func (SystemPromptTemplate) Fields() []ent.Field {
 		field.String("name").MaxLen(200).NotEmpty(),
 		field.String("description").SchemaType(map[string]string{dialect.Postgres: "text"}).Default(""),
 		field.Bool("is_seed").Default(false),
+		field.String("managed_source").MaxLen(100).Optional().Nillable(),
 		field.Int64("created_by").Optional().Nillable(),
 		field.Int64("updated_by").Optional().Nillable(),
 	}

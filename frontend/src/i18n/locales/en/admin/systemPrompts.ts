@@ -70,6 +70,11 @@ export default {
       create: 'Create template',
       saveRuntime: 'Save switches',
       saveMetadata: 'Save metadata',
+      saveVersion: 'Save as new version',
+      setCurrent: 'Set as current',
+      editMetadata: 'Edit details',
+      more: 'More actions',
+      details: 'View source details',
       saveDraft: 'Save draft',
       publish: 'Publish',
       rollback: 'Rollback',
@@ -96,6 +101,8 @@ export default {
     },
     history: {
       version: 'Version',
+      status: 'Status',
+      candidate: 'Candidate',
       source: 'Composition',
       hash: 'SHA-256',
       size: 'Size',
@@ -127,6 +134,7 @@ export default {
     },
     dialogs: {
       createTitle: 'Create template',
+      metadataTitle: 'Template details',
       duplicateTitle: 'Duplicate template',
       slug: 'Slug',
       name: 'Name',
@@ -148,6 +156,7 @@ export default {
       deleteMessage: 'The template will be soft-deleted. Seed and active templates are protected.'
     },
     messages: {
+      versionSaved: 'New prompt version saved.',
       draftSaved: 'Draft version saved.',
       metadataSaved: 'Template metadata saved.',
       runtimeSaved: 'Runtime switches saved.',
@@ -158,13 +167,15 @@ export default {
       deleted: 'Template deleted.',
       skillCandidateReady: 'The upstream skill candidate was generated and verified.',
       skillPublished: 'Skill candidate published.',
-      skillRolledBack: 'Skill Registry rolled back.'
+      skillRolledBack: 'Skill Registry rolled back.',
+      sourceCandidateCreated: 'A new inactive source candidate is ready.'
     },
     errors: {
       load: 'Unable to load system prompt runtime.',
       loadDetail: 'Unable to load the selected template.',
       loadBundle: 'Unable to load the offline skill bundle details.',
       saveDraft: 'Unable to save the draft.',
+      saveVersion: 'Unable to save the new version.',
       saveMetadata: 'Unable to save template metadata.',
       saveRuntime: 'Unable to save runtime switches.',
       create: 'Unable to create the template.',
@@ -182,7 +193,32 @@ export default {
       legacyReadonly: 'Historical remote_skill/offline_bundle versions are read-only and cannot create a new version.',
       skillSync: 'Unable to sync the upstream skill.',
       skillPublish: 'Unable to publish the skill candidate.',
-      skillRollback: 'Unable to roll back the Skill Registry.'
+      skillRollback: 'Unable to roll back the Skill Registry.',
+      skillLoad: 'Unable to load Skill details.',
+      sourceSync: 'Unable to sync the managed prompt source.'
+    },
+    advanced: {
+      title: 'Advanced settings',
+      runtime: 'Runtime settings',
+      skill: 'Skill',
+      source: 'Prompt source',
+      revision: 'Revision',
+      skillUnavailable: 'Skill details are unavailable.',
+      installPlatform: 'Install platform',
+      copyAcquire: 'Copy acquire step',
+      copyExecute: 'Copy execute step',
+      acquireCopied: 'Acquire step copied.',
+      executeCopied: 'Execute step copied.'
+    },
+    source: {
+      sync: 'Check upstream',
+      inline: 'Inline content',
+      repository: 'Repository',
+      version: 'Version',
+      commit: 'Commit',
+      artifact: 'Artifact',
+      candidatePending: 'Inactive candidate pending',
+      status: { up_to_date: 'Already current.', no_prompt_change: 'Source changed without prompt changes.', candidate_created: 'Inactive candidate created.' }
     }
   }
 }

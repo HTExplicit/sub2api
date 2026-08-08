@@ -1683,6 +1683,7 @@ var (
 		{Name: "name", Type: field.TypeString, Size: 200},
 		{Name: "description", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "is_seed", Type: field.TypeBool, Default: false},
+		{Name: "managed_source", Type: field.TypeString, Nullable: true, Size: 100},
 		{Name: "created_by", Type: field.TypeInt64, Nullable: true},
 		{Name: "updated_by", Type: field.TypeInt64, Nullable: true},
 	}
@@ -1703,6 +1704,12 @@ var (
 		{Name: "bundle_id", Type: field.TypeString, Nullable: true, Size: 128},
 		{Name: "bundle_manifest_sha256", Type: field.TypeString, Nullable: true, Size: 64},
 		{Name: "note", Type: field.TypeString, Size: 500, Default: ""},
+		{Name: "source_repository", Type: field.TypeString, Nullable: true, Size: 200},
+		{Name: "source_commit", Type: field.TypeString, Nullable: true, Size: 40},
+		{Name: "source_version", Type: field.TypeString, Nullable: true, Size: 32},
+		{Name: "source_artifact", Type: field.TypeString, Nullable: true, Size: 255},
+		{Name: "source_artifact_sha256", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "source_license_sha256", Type: field.TypeString, Nullable: true, Size: 64},
 		{Name: "created_by", Type: field.TypeInt64, Nullable: true},
 		{Name: "published_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "published_by", Type: field.TypeInt64, Nullable: true},
@@ -1717,7 +1724,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "system_prompt_template_versions_system_prompt_templates_versions",
-				Columns:    []*schema.Column{SystemPromptTemplateVersionsColumns[13]},
+				Columns:    []*schema.Column{SystemPromptTemplateVersionsColumns[19]},
 				RefColumns: []*schema.Column{SystemPromptTemplatesColumns[0]},
 				OnDelete:   schema.Restrict,
 			},
@@ -1726,7 +1733,7 @@ var (
 			{
 				Name:    "systemprompttemplateversion_template_id_version",
 				Unique:  true,
-				Columns: []*schema.Column{SystemPromptTemplateVersionsColumns[13], SystemPromptTemplateVersionsColumns[1]},
+				Columns: []*schema.Column{SystemPromptTemplateVersionsColumns[19], SystemPromptTemplateVersionsColumns[1]},
 			},
 		},
 	}

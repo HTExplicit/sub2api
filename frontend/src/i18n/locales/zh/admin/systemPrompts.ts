@@ -70,6 +70,11 @@ export default {
       create: '创建模板',
       saveRuntime: '保存开关',
       saveMetadata: '保存元数据',
+      saveVersion: '保存为新版本',
+      setCurrent: '设为当前',
+      editMetadata: '编辑详情',
+      more: '更多操作',
+      details: '查看来源详情',
       saveDraft: '保存草稿',
       publish: '发布',
       rollback: '回滚',
@@ -96,6 +101,8 @@ export default {
     },
     history: {
       version: '版本',
+      status: '状态',
+      candidate: '候选',
       source: '组合来源',
       hash: 'SHA-256',
       size: '大小',
@@ -127,6 +134,7 @@ export default {
     },
     dialogs: {
       createTitle: '创建模板',
+      metadataTitle: '模板详情',
       duplicateTitle: '复制模板',
       slug: 'Slug',
       name: '名称',
@@ -148,6 +156,7 @@ export default {
       deleteMessage: '模板会被软删除；种子模板和活动模板受保护。'
     },
     messages: {
+      versionSaved: '新提示词版本已保存。',
       draftSaved: '草稿版本已保存。',
       metadataSaved: '模板元数据已保存。',
       runtimeSaved: '运行时开关已保存。',
@@ -158,13 +167,15 @@ export default {
       deleted: '模板已删除。',
       skillCandidateReady: '上游 Skill 候选已生成并校验。',
       skillPublished: 'Skill 候选已发布。',
-      skillRolledBack: 'Skill Registry 已回滚。'
+      skillRolledBack: 'Skill Registry 已回滚。',
+      sourceCandidateCreated: '新的非活动来源候选已就绪。'
     },
     errors: {
       load: '无法加载系统提示词运行状态。',
       loadDetail: '无法加载所选模板。',
       loadBundle: '无法加载离线技能包详情。',
       saveDraft: '无法保存草稿。',
+      saveVersion: '无法保存新版本。',
       saveMetadata: '无法保存模板元数据。',
       saveRuntime: '无法保存运行时开关。',
       create: '无法创建模板。',
@@ -182,7 +193,32 @@ export default {
       legacyReadonly: '历史 remote_skill/offline_bundle 版本为只读，不能创建新版本。',
       skillSync: '无法同步上游 Skill。',
       skillPublish: '无法发布 Skill 候选。',
-      skillRollback: '无法回滚 Skill Registry。'
+      skillRollback: '无法回滚 Skill Registry。',
+      skillLoad: '无法加载 Skill 详情。',
+      sourceSync: '无法同步托管提示词来源。'
+    },
+    advanced: {
+      title: '高级设置',
+      runtime: '运行设置',
+      skill: 'Skill',
+      source: '提示词来源',
+      revision: 'Revision',
+      skillUnavailable: 'Skill 详情不可用。',
+      installPlatform: '安装平台',
+      copyAcquire: '复制获取步骤',
+      copyExecute: '复制执行步骤',
+      acquireCopied: '获取步骤已复制。',
+      executeCopied: '执行步骤已复制。'
+    },
+    source: {
+      sync: '检查上游',
+      inline: '内联正文',
+      repository: '仓库',
+      version: '版本',
+      commit: '提交',
+      artifact: '制品',
+      candidatePending: '非活动候选待确认',
+      status: { up_to_date: '已是最新。', no_prompt_change: '来源有变化但正文未变。', candidate_created: '已创建非活动候选。' }
     }
   }
 }
