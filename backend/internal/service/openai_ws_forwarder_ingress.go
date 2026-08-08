@@ -93,11 +93,6 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			if wsDecision.Transport != OpenAIUpstreamTransportResponsesWebsocketV2 {
 				return fmt.Errorf("websocket ingress requires ws_v2 transport, got=%s", wsDecision.Transport)
 			}
-			// 注意：透传 relay 只回调 hooks.AfterTurn，没有 turn 起始回调，
-			// 因此下面这条路径永远不会触发 hooks.BeforeTurn——分组利润控制的
-			// turn 级复核与 turn 级 pricingAt 冻结都不覆盖透传 ingress，
-			// 只有建连时的准入门生效。handler 侧据此把 turn 定价留作零值，
-			// 由 RecordUsage 回退到记录时刻（见 openAIWSTurnPricing 注释）。
 			return s.proxyResponsesWebSocketV2Passthrough(
 				ctx,
 				c,
@@ -875,6 +870,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	}
 
 	sendAndRelay := func(turn int, lease *openAIWSConnLease, payload []byte, payloadBytes int, originalModel string, imageBillingModel string, imageSizeTier string, imageInputSize string) (*OpenAIForwardResult, error) {
+		responseModelObserver := &upstreamResponseModelObserver{}
 		if lease == nil {
 			return nil, errors.New("upstream websocket lease is nil")
 		}
@@ -955,6 +951,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			upstreamMessage = s.rewriteBusinessSystemPromptJSONForRequest(c, upstreamMessage, BusinessSystemPromptProtocolResponses)
 
 			eventType, eventResponseID, _ := parseOpenAIWSEventEnvelope(upstreamMessage)
+			responseModelObserver.ObserveOpenAI(upstreamMessage, eventType)
 			if responseID == "" && eventResponseID != "" {
 				responseID = eventResponseID
 			}
@@ -1180,18 +1177,20 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				}
 				imageCount := imageCounter.Count()
 				result := &OpenAIForwardResult{
-					RequestID:             responseID,
-					Usage:                 usage,
-					Model:                 originalModel,
-					UpstreamModel:         mappedModel,
-					ServiceTier:           extractOpenAIServiceTierFromBody(payload),
-					ReasoningEffort:       ApplyThinkingEnabledFallback(extractOpenAIReasoningEffortFromBody(payload, mappedModel, originalModel), payload, mappedModel),
-					Stream:                reqStream,
-					OpenAIWSMode:          true,
-					UpstreamTerminalEvent: terminalEvent,
-					ResponseHeaders:       lease.HandshakeHeaders(),
-					Duration:              time.Since(turnStart),
-					FirstTokenMs:          firstTokenMs,
+					RequestID:                     responseID,
+					Usage:                         usage,
+					Model:                         originalModel,
+					UpstreamModel:                 mappedModel,
+					UpstreamResponseModel:         responseModelObserver.Model(),
+					UpstreamResponseModelConflict: responseModelObserver.Conflict(),
+					ServiceTier:                   extractOpenAIServiceTierFromBody(payload),
+					ReasoningEffort:               ApplyThinkingEnabledFallback(extractOpenAIReasoningEffortFromBody(payload, mappedModel, originalModel), payload, mappedModel),
+					Stream:                        reqStream,
+					OpenAIWSMode:                  true,
+					UpstreamTerminalEvent:         terminalEvent,
+					ResponseHeaders:               lease.HandshakeHeaders(),
+					Duration:                      time.Since(turnStart),
+					FirstTokenMs:                  firstTokenMs,
 				}
 				if replayInput := replayCollector.Items(); len(replayInput) > 0 {
 					result.wsReplayInput = replayInput

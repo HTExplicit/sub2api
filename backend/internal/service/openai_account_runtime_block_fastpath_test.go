@@ -128,7 +128,7 @@ func TestOpenAIRuntimeBreaker_FailedPromotionDoesNotReturnSelection(t *testing.T
 	ctx := withOpenAIRuntimeBreakerProbeOwner(context.Background(), "promotion-owner")
 
 	require.False(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, "gpt-5.4"))
-	selection := attachSelectionProfitGate(ctx, &AccountSelectionResult{
+	selection := attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
 		Account:     account,
 		Acquired:    true,
 		ReleaseFunc: func() { released = true },
@@ -611,7 +611,7 @@ func TestOpenAIRuntimeBreaker_SelectedHalfOpenClaimStartsRenewableLease(t *testi
 	defer cancel()
 
 	require.False(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, "gpt-5.4"))
-	selection := attachSelectionProfitGate(ctx, &AccountSelectionResult{
+	selection := attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
 		Account:     account,
 		Acquired:    true,
 		ReleaseFunc: func() {},
@@ -648,7 +648,7 @@ func TestOpenAIRuntimeBreaker_SameAccountRetryReclaimsReleasedProbeLease(t *test
 	defer cancel()
 
 	require.False(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, "gpt-5.4"))
-	first := attachSelectionProfitGate(ctx, &AccountSelectionResult{
+	first := attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
 		Account:     account,
 		Acquired:    true,
 		ReleaseFunc: func() {},
@@ -692,7 +692,7 @@ func TestOpenAIRuntimeBreaker_SelectedAccountReleasesOtherCandidateClaims(t *tes
 
 	require.False(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(ctx, first, "gpt-5.4"))
 	require.False(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(ctx, selected, "gpt-5.4"))
-	selection := attachSelectionProfitGate(ctx, &AccountSelectionResult{
+	selection := attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
 		Account:     selected,
 		Acquired:    true,
 		ReleaseFunc: func() {},
@@ -817,7 +817,7 @@ func TestOpenAIRuntimeBreaker_SuccessClearsSelectionClaimScopesWhenModelChanges(
 	defer cancel()
 
 	require.False(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, "gpt-5.4"))
-	selection := attachSelectionProfitGate(ctx, &AccountSelectionResult{
+	selection := attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
 		Account:     account,
 		Acquired:    true,
 		ReleaseFunc: func() {},

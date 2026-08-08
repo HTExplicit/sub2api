@@ -220,6 +220,7 @@ export interface PublicSettings {
   turnstile_enabled: boolean
   tencent_captcha_enabled?: boolean
   tencent_captcha_app_id?: string
+  tencent_captcha_region?: string
   passkey_enabled?: boolean
   turnstile_site_key: string
   aliyun_captcha_enabled?: boolean
@@ -589,8 +590,7 @@ export interface Group {
 }
 
 export interface AdminGroup extends Group {
-  // 分组利润控制（openai/anthropic/gemini/grok/antigravity 分组可启用；margin/buffer 为小数存储）。
-  // 仅管理员可见：与 rate_multiplier 相乘即可反推上游成本上限，不得下放到 Group。
+  // Deprecated read-only compatibility fields. The server always returns 0/false.
   profit_control_enabled: boolean
   profit_min_margin: number
   profit_safety_buffer: number
@@ -770,10 +770,6 @@ export interface CreateGroupRequest {
   peak_start?: string
   peak_end?: string
   peak_rate_multiplier?: number
-  // 分组利润控制（五个 token 平台；margin/buffer 为小数）
-  profit_control_enabled?: boolean
-  profit_min_margin?: number
-  profit_safety_buffer?: number
   claude_code_only?: boolean
   fallback_group_id?: number | null
   fallback_group_id_on_invalid_request?: number | null
@@ -825,10 +821,6 @@ export interface UpdateGroupRequest {
   peak_start?: string
   peak_end?: string
   peak_rate_multiplier?: number
-  // 分组利润控制（五个 token 平台；margin/buffer 为小数）
-  profit_control_enabled?: boolean
-  profit_min_margin?: number
-  profit_safety_buffer?: number
   claude_code_only?: boolean
   fallback_group_id?: number | null
   fallback_group_id_on_invalid_request?: number | null
@@ -1832,6 +1824,8 @@ export interface UsageLogAccountSummary {
 
 export interface AdminUsageLog extends UsageLog {
   upstream_model?: string | null
+  upstream_response_model?: string | null
+  upstream_model_mismatch?: boolean | null
   model_mapping_chain?: string | null
 
   // 账号计费倍率（仅管理员可见）

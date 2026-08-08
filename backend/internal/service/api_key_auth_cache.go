@@ -115,13 +115,9 @@ type APIKeyAuthGroupSnapshot struct {
 	PeakEnd            string  `json:"peak_end"`
 	PeakRateMultiplier float64 `json:"peak_rate_multiplier"`
 
-	// 分组利润控制：调度准入门在直连热路径上读的就是这份快照——门解析
-	// （resolveOpenAIProfitControlGate / resolveProfitControlGroup）优先取
-	// 认证中间件放入 ctx 的 Group，而它正是本快照物化出来的对象，生产绝大
-	// 多数流量走的都是这条路；只有 composite/模型路由等被调度分组与认证分组
-	// 不一致时才回源 schedulerSnapshot。
-	// 因此这三个字段与 GetByKeyForAuth 的投影都不得删减：漏掉任何一个，
-	// 门会拿到零值 ProfitControlEnabled=false 而静默失效（有集成测试兜底）。
+	// Historical fields remain in the cache schema so old entries and dormant
+	// database values can be decoded. Materialization always returns disabled
+	// zero values and no request path consumes these fields.
 	ProfitControlEnabled bool    `json:"profit_control_enabled"`
 	ProfitMinMargin      float64 `json:"profit_min_margin"`
 	ProfitSafetyBuffer   float64 `json:"profit_safety_buffer"`

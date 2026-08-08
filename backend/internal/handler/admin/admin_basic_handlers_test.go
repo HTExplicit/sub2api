@@ -266,6 +266,44 @@ func TestGroupHandlerEndpoints(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 }
 
+func TestGroupHandlerRejectsLegacyProfitControlWrites(t *testing.T) {
+	router, _ := setupAdminRouter()
+	tests := []struct {
+		method string
+		path   string
+		body   map[string]any
+	}{
+		{
+			method: http.MethodPost,
+			path:   "/api/v1/admin/groups",
+			body: map[string]any{
+				"name": "legacy-profit-create", "platform": "openai", "profit_control_enabled": false,
+			},
+		},
+		{
+			method: http.MethodPut,
+			path:   "/api/v1/admin/groups/2",
+			body:   map[string]any{"name": "legacy-profit-update", "profit_min_margin": 0},
+		},
+		{
+			method: http.MethodPut,
+			path:   "/api/v1/admin/groups/2",
+			body:   map[string]any{"name": "legacy-profit-null", "profit_safety_buffer": nil},
+		},
+	}
+
+	for _, tt := range tests {
+		payload, err := json.Marshal(tt.body)
+		require.NoError(t, err)
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(tt.method, tt.path, bytes.NewReader(payload))
+		req.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusBadRequest, rec.Code)
+		require.Contains(t, rec.Body.String(), "利润控制不再支持")
+	}
+}
+
 func TestProxyHandlerEndpoints(t *testing.T) {
 	router, _ := setupAdminRouter()
 
