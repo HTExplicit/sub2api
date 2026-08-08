@@ -444,14 +444,17 @@ var allowedHeaders = map[string]bool{
 	"x-client-request-id":                       true,
 }
 
+// ErrStickySessionNotFound lets cache implementations report a missing
+// binding without exposing their storage driver's sentinel error.
+var ErrStickySessionNotFound = errors.New("sticky session not found")
+
 // GatewayCache 定义网关服务的缓存操作接口。
 // 提供粘性会话（Sticky Session）的存储、查询、刷新和删除功能。
 //
 // GatewayCache defines cache operations for gateway service.
 // Provides sticky session storage, retrieval, refresh and deletion capabilities.
 type GatewayCache interface {
-	// GetSessionAccountID 获取粘性会话绑定的账号 ID
-	// Get the account ID bound to a sticky session
+	// GetSessionAccountID returns ErrStickySessionNotFound when no binding exists.
 	GetSessionAccountID(ctx context.Context, groupID int64, sessionHash string) (int64, error)
 	// SetSessionAccountID 设置粘性会话与账号的绑定关系
 	// Set the binding between sticky session and account
