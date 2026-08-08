@@ -16,65 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// attachSelectionRuntimeBreakerProbe promotes the request-local half-open
-// runtime-breaker claims into the selected account lease. Profit-control state
-// is intentionally not involved: group profit control is historical schema
-// compatibility only.
-func attachSelectionRuntimeBreakerProbe(ctx context.Context, sel *AccountSelectionResult) *AccountSelectionResult {
-	if sel == nil {
-		return nil
-	}
-	probe, ok := ctx.Value(openAIRuntimeBreakerProbeContextKey{}).(*openAIRuntimeBreakerProbeContext)
-	if !ok || probe == nil {
-		return sel
-	}
-	selectedAccountID := int64(0)
-	if sel.Account != nil {
-		selectedAccountID = sel.Account.ID
-	}
-	probe.releaseClaimsExcept(ctx, selectedAccountID)
-	sel.runtimeBreakerProbeOwner = strings.TrimSpace(probe.owner)
-	if sel.Account == nil {
-		return sel
-	}
-	models := probe.claimedModels(sel.Account.ID)
-	probe.mu.Lock()
-	leaseStore := probe.leaseStore
-	probe.mu.Unlock()
-	lease := newOpenAIRuntimeBreakerProbeLease(
-		leaseStore,
-		sel.Account.ID,
-		models,
-		sel.runtimeBreakerProbeOwner,
-		openAIRuntimeBreakerHalfOpenClaimTTL,
-	)
-	if lease == nil {
-		return sel
-	}
-	sel.runtimeBreakerProbeModels = append([]string(nil), models...)
-	sel.runtimeBreakerProbeLease = lease
-	originalRelease := sel.ReleaseFunc
-	sel.ReleaseFunc = func() {
-		lease.stopRenewal()
-		if originalRelease != nil {
-			originalRelease()
-		}
-	}
-	if lease.start(ctx) {
-		return sel
-	}
-
-	lease.release(ctx)
-	sel.runtimeBreakerProbeModels = nil
-	sel.runtimeBreakerProbeLease = nil
-	sel.ReleaseFunc = nil
-	if originalRelease != nil {
-		originalRelease()
-	}
-	probe.releaseClaimsExcept(ctx, 0)
-	return nil
-}
-
 type runtimeBreakerTestEntry struct {
 	blockUntil time.Time
 	reason     string

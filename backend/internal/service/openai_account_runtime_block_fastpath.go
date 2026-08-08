@@ -136,6 +136,68 @@ func (p *openAIRuntimeBreakerProbeContext) releaseClaimsExcept(ctx context.Conte
 	}
 }
 
+// attachSelectionRuntimeBreakerProbe promotes the selected half-open claim to
+// a renewable request-owned lease and releases claims for unselected accounts.
+func attachSelectionRuntimeBreakerProbe(ctx context.Context, selection *AccountSelectionResult) *AccountSelectionResult {
+	if selection == nil {
+		return nil
+	}
+	probe, ok := ctx.Value(openAIRuntimeBreakerProbeContextKey{}).(*openAIRuntimeBreakerProbeContext)
+	if !ok || probe == nil {
+		return selection
+	}
+
+	selectedAccountID := int64(0)
+	if selection.Account != nil {
+		selectedAccountID = selection.Account.ID
+	}
+	probe.releaseClaimsExcept(ctx, selectedAccountID)
+	selection.runtimeBreakerProbeOwner = strings.TrimSpace(probe.owner)
+	if selection.Account == nil {
+		return selection
+	}
+
+	models := probe.claimedModels(selection.Account.ID)
+	probe.mu.Lock()
+	leaseStore := probe.leaseStore
+	probe.mu.Unlock()
+	lease := newOpenAIRuntimeBreakerProbeLease(
+		leaseStore,
+		selection.Account.ID,
+		models,
+		selection.runtimeBreakerProbeOwner,
+		openAIRuntimeBreakerHalfOpenClaimTTL,
+	)
+	if lease == nil {
+		return selection
+	}
+
+	selection.runtimeBreakerProbeModels = append([]string(nil), models...)
+	selection.runtimeBreakerProbeLease = lease
+	originalRelease := selection.ReleaseFunc
+	selection.ReleaseFunc = func() {
+		lease.stopRenewal()
+		if originalRelease != nil {
+			originalRelease()
+		}
+	}
+	if lease.start(ctx) {
+		return selection
+	}
+
+	// The claim can be lost between candidate probing and promotion. Do not
+	// forward a selection whose request-owned lease could not be renewed.
+	lease.release(ctx)
+	selection.runtimeBreakerProbeModels = nil
+	selection.runtimeBreakerProbeLease = nil
+	selection.ReleaseFunc = nil
+	if originalRelease != nil {
+		originalRelease()
+	}
+	probe.releaseClaimsExcept(ctx, 0)
+	return nil
+}
+
 // openAIRuntimeBreakerProbeLease keeps a selected half-open Redis claim alive
 // for the duration of a long HTTP stream or WebSocket first turn. Its stop
 // operation is intentionally separate from release: slot cleanup may happen
