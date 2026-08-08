@@ -75,9 +75,13 @@ func TestMain(m *testing.M) {
 	}
 	defer func() { _ = pgContainer.Terminate(ctx) }()
 
+	redisImage := strings.TrimSpace(os.Getenv("SUB2API_TEST_REDIS_IMAGE"))
+	if redisImage == "" {
+		redisImage = redisImageTag
+	}
 	redisContainer, err := tcredis.Run(
 		ctx,
-		redisImageTag,
+		redisImage,
 	)
 	if err != nil {
 		log.Printf("failed to start redis container: %v", err)
