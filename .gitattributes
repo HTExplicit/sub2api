@@ -7,6 +7,7 @@ backend/migrations/*.sql text eol=lf
 # Embedded system prompt seed must retain the exact LF byte sequence used for
 # its published SHA-256 and UTF-8 byte-length invariants.
 backend/internal/service/prompts/*.txt text eol=lf
+backend/internal/service/prompts/*.md text eol=lf
 
 # Integrity manifests are byte-for-byte release artifacts. Git must not rewrite
 # them, while text diffs remain enabled for supply-chain review.

@@ -3,10 +3,51 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestRemoteSkillClientInstallUsesPinnedTwoStageGitAcquisition(t *testing.T) {
+	metadata := (&RemoteSkillRegistryService{}).ClientInstallMetadata()
+
+	require.Equal(t, "codexrip-reverse-skill", metadata.SkillName)
+	require.Equal(t, "https://codexrip.vip/skills/reverse-skill/current.json", metadata.DescriptorURL)
+	for name, installer := range map[string]RemoteSkillClientInstaller{
+		"powershell": metadata.PowerShell,
+		"python":     metadata.Python,
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, "verified_git_sparse_checkout", installer.Strategy)
+			require.Equal(t, "https://github.com/HTExplicit/sub2api.git", installer.RepositoryURL)
+			require.Equal(t, "v0.1.171-codexrip.7", installer.RepositoryRef)
+			require.Equal(t, "176dad47dd049b34d45a032d889a0dc11405a39e", installer.RepositoryCommit)
+			require.Contains(t, installer.BootstrapPath, installer.BootstrapSHA256)
+			require.Contains(t, installer.AcquireCommand, installer.RepositoryURL)
+			require.Contains(t, installer.AcquireCommand, installer.RepositoryRef)
+			require.Contains(t, installer.AcquireCommand, installer.RepositoryCommit)
+			require.Contains(t, installer.AcquireCommand, installer.BootstrapPath)
+			require.Contains(t, installer.AcquireCommand, installer.BootstrapSHA256)
+			require.Contains(t, installer.ExecuteCommand, installer.BootstrapPath)
+			require.Contains(t, installer.ExecuteCommand, installer.BootstrapSHA256)
+			require.Contains(t, installer.ExecuteCommand, metadata.DescriptorURL)
+			require.NotContains(t, installer.ExecuteCommand, "& pwsh")
+			require.NotContains(t, strings.ToLower(installer.AcquireCommand), "invoke-webrequest")
+			require.NotContains(t, strings.ToLower(installer.AcquireCommand), "curl")
+			require.NotContains(t, strings.ToLower(installer.AcquireCommand), "http://")
+			require.NotContains(t, strings.ToLower(installer.AcquireCommand), "remove-item")
+			require.NotContains(t, strings.ToLower(installer.AcquireCommand), "rm -rf")
+			if name == "powershell" {
+				require.Contains(t, installer.AcquireCommand, "GetTempPath")
+				require.Contains(t, installer.AcquireCommand, "temporary checkout path rejected")
+				require.Contains(t, installer.AcquireCommand, "NewGuid")
+			} else {
+				require.Contains(t, installer.AcquireCommand, "mktemp -d")
+			}
+		})
+	}
+}
 
 type fakeRemoteSkillRegistryStore struct {
 	snapshot   RemoteSkillRegistrySnapshot

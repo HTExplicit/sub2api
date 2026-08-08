@@ -2071,6 +2071,10 @@ func init() {
 	systemprompttemplateDescIsSeed := systemprompttemplateFields[3].Descriptor()
 	// systemprompttemplate.DefaultIsSeed holds the default value on creation for the is_seed field.
 	systemprompttemplate.DefaultIsSeed = systemprompttemplateDescIsSeed.Default.(bool)
+	// systemprompttemplateDescManagedSource is the schema descriptor for managed_source field.
+	systemprompttemplateDescManagedSource := systemprompttemplateFields[4].Descriptor()
+	// systemprompttemplate.ManagedSourceValidator is a validator for the "managed_source" field. It is called by the builders before save.
+	systemprompttemplate.ManagedSourceValidator = systemprompttemplateDescManagedSource.Validators[0].(func(string) error)
 	systemprompttemplateversionFields := schema.SystemPromptTemplateVersion{}.Fields()
 	_ = systemprompttemplateversionFields
 	// systemprompttemplateversionDescBody is the schema descriptor for body field.
@@ -2134,8 +2138,32 @@ func init() {
 	systemprompttemplateversion.DefaultNote = systemprompttemplateversionDescNote.Default.(string)
 	// systemprompttemplateversion.NoteValidator is a validator for the "note" field. It is called by the builders before save.
 	systemprompttemplateversion.NoteValidator = systemprompttemplateversionDescNote.Validators[0].(func(string) error)
+	// systemprompttemplateversionDescSourceRepository is the schema descriptor for source_repository field.
+	systemprompttemplateversionDescSourceRepository := systemprompttemplateversionFields[9].Descriptor()
+	// systemprompttemplateversion.SourceRepositoryValidator is a validator for the "source_repository" field. It is called by the builders before save.
+	systemprompttemplateversion.SourceRepositoryValidator = systemprompttemplateversionDescSourceRepository.Validators[0].(func(string) error)
+	// systemprompttemplateversionDescSourceCommit is the schema descriptor for source_commit field.
+	systemprompttemplateversionDescSourceCommit := systemprompttemplateversionFields[10].Descriptor()
+	// systemprompttemplateversion.SourceCommitValidator is a validator for the "source_commit" field. It is called by the builders before save.
+	systemprompttemplateversion.SourceCommitValidator = systemprompttemplateversionDescSourceCommit.Validators[0].(func(string) error)
+	// systemprompttemplateversionDescSourceVersion is the schema descriptor for source_version field.
+	systemprompttemplateversionDescSourceVersion := systemprompttemplateversionFields[11].Descriptor()
+	// systemprompttemplateversion.SourceVersionValidator is a validator for the "source_version" field. It is called by the builders before save.
+	systemprompttemplateversion.SourceVersionValidator = systemprompttemplateversionDescSourceVersion.Validators[0].(func(string) error)
+	// systemprompttemplateversionDescSourceArtifact is the schema descriptor for source_artifact field.
+	systemprompttemplateversionDescSourceArtifact := systemprompttemplateversionFields[12].Descriptor()
+	// systemprompttemplateversion.SourceArtifactValidator is a validator for the "source_artifact" field. It is called by the builders before save.
+	systemprompttemplateversion.SourceArtifactValidator = systemprompttemplateversionDescSourceArtifact.Validators[0].(func(string) error)
+	// systemprompttemplateversionDescSourceArtifactSha256 is the schema descriptor for source_artifact_sha256 field.
+	systemprompttemplateversionDescSourceArtifactSha256 := systemprompttemplateversionFields[13].Descriptor()
+	// systemprompttemplateversion.SourceArtifactSha256Validator is a validator for the "source_artifact_sha256" field. It is called by the builders before save.
+	systemprompttemplateversion.SourceArtifactSha256Validator = systemprompttemplateversionDescSourceArtifactSha256.Validators[0].(func(string) error)
+	// systemprompttemplateversionDescSourceLicenseSha256 is the schema descriptor for source_license_sha256 field.
+	systemprompttemplateversionDescSourceLicenseSha256 := systemprompttemplateversionFields[14].Descriptor()
+	// systemprompttemplateversion.SourceLicenseSha256Validator is a validator for the "source_license_sha256" field. It is called by the builders before save.
+	systemprompttemplateversion.SourceLicenseSha256Validator = systemprompttemplateversionDescSourceLicenseSha256.Validators[0].(func(string) error)
 	// systemprompttemplateversionDescCreatedAt is the schema descriptor for created_at field.
-	systemprompttemplateversionDescCreatedAt := systemprompttemplateversionFields[12].Descriptor()
+	systemprompttemplateversionDescCreatedAt := systemprompttemplateversionFields[18].Descriptor()
 	// systemprompttemplateversion.DefaultCreatedAt holds the default value on creation for the created_at field.
 	systemprompttemplateversion.DefaultCreatedAt = systemprompttemplateversionDescCreatedAt.Default.(func() time.Time)
 	tlsfingerprintprofileMixin := schema.TLSFingerprintProfile{}.Mixin()

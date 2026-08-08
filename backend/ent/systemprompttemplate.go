@@ -31,6 +31,8 @@ type SystemPromptTemplate struct {
 	Description string `json:"description,omitempty"`
 	// IsSeed holds the value of the "is_seed" field.
 	IsSeed bool `json:"is_seed,omitempty"`
+	// ManagedSource holds the value of the "managed_source" field.
+	ManagedSource *string `json:"managed_source,omitempty"`
 	// CreatedBy holds the value of the "created_by" field.
 	CreatedBy *int64 `json:"created_by,omitempty"`
 	// UpdatedBy holds the value of the "updated_by" field.
@@ -68,7 +70,7 @@ func (*SystemPromptTemplate) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case systemprompttemplate.FieldID, systemprompttemplate.FieldCreatedBy, systemprompttemplate.FieldUpdatedBy:
 			values[i] = new(sql.NullInt64)
-		case systemprompttemplate.FieldSlug, systemprompttemplate.FieldName, systemprompttemplate.FieldDescription:
+		case systemprompttemplate.FieldSlug, systemprompttemplate.FieldName, systemprompttemplate.FieldDescription, systemprompttemplate.FieldManagedSource:
 			values[i] = new(sql.NullString)
 		case systemprompttemplate.FieldCreatedAt, systemprompttemplate.FieldUpdatedAt, systemprompttemplate.FieldDeletedAt:
 			values[i] = new(sql.NullTime)
@@ -135,6 +137,13 @@ func (_m *SystemPromptTemplate) assignValues(columns []string, values []any) err
 				return fmt.Errorf("unexpected type %T for field is_seed", values[i])
 			} else if value.Valid {
 				_m.IsSeed = value.Bool
+			}
+		case systemprompttemplate.FieldManagedSource:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field managed_source", values[i])
+			} else if value.Valid {
+				_m.ManagedSource = new(string)
+				*_m.ManagedSource = value.String
 			}
 		case systemprompttemplate.FieldCreatedBy:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -213,6 +222,11 @@ func (_m *SystemPromptTemplate) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("is_seed=")
 	builder.WriteString(fmt.Sprintf("%v", _m.IsSeed))
+	builder.WriteString(", ")
+	if v := _m.ManagedSource; v != nil {
+		builder.WriteString("managed_source=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
 	if v := _m.CreatedBy; v != nil {
 		builder.WriteString("created_by=")

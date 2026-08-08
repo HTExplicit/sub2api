@@ -149,6 +149,7 @@ func registerSystemPromptRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		prompts.DELETE("/:id", h.Admin.SystemPrompt.Delete)
 		prompts.POST("/:id/duplicate", h.Admin.SystemPrompt.Duplicate)
 		prompts.POST("/:id/versions", h.Admin.SystemPrompt.SaveVersion)
+		prompts.POST("/:id/upstream-sync", h.Admin.SystemPrompt.SyncManagedSource)
 		prompts.POST("/:id/versions/:version_id/publish", h.Admin.SystemPrompt.Publish)
 		prompts.POST("/:id/versions/:version_id/rollback", h.Admin.SystemPrompt.Rollback)
 	}

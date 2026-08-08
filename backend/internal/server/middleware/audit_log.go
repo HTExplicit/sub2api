@@ -165,6 +165,7 @@ var auditActionOverrides = map[string]string{
 	"DELETE /api/v1/admin/system-prompts/:id":                                               "admin.system_prompts.delete",
 	"POST /api/v1/admin/system-prompts/:id/duplicate":                                       "admin.system_prompts.duplicate",
 	"POST /api/v1/admin/system-prompts/:id/versions":                                        "admin.system_prompts.version.create",
+	"POST /api/v1/admin/system-prompts/:id/upstream-sync":                                   "admin.system_prompts.upstream_sync",
 	"POST /api/v1/admin/system-prompts/:id/versions/:version_id/publish":                    "admin.system_prompts.publish",
 	"POST /api/v1/admin/system-prompts/:id/versions/:version_id/rollback":                   "admin.system_prompts.rollback",
 	"PUT /api/v1/admin/system-prompts/runtime":                                              "admin.system_prompts.runtime.update",

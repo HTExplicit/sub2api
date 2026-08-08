@@ -592,8 +592,7 @@ const routes: RouteRecordRaw[] = [
       requiresAuth: true,
       requiresAdmin: true,
       title: 'Business System Prompts',
-      titleKey: 'admin.systemPrompts.title',
-      descriptionKey: 'admin.systemPrompts.description'
+      titleKey: 'admin.systemPrompts.title'
     }
   },
   {

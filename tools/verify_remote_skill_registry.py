@@ -21,8 +21,8 @@ MANIFEST_SHA256 = "07bf0d71dfb687ff3ced0befa39081453c51ce85ae54a02bdb1e1f6fc34d3
 ARCHIVE_SHA256 = "c6920445c55f46c2a30e8a2fe398e7c1cf0b22dcbe4c53ed0cfc105d9c8a5f3e"
 OVERLAY_SHA256 = "bab9d1be76ba7b777a78817de25f7a7a8112b7ae472586074e7aa1b065074294"
 SOURCE_COMMIT = "d8bf34540cbc1aa34052e1b142576fc36a1f1437"
-PROMPT_SHA256 = "0b717f086b1bf25e8300e9f26578ee95cf6f74d5601c06b9f9e493aa8939b0a7"
-PROMPT_BYTES = 9587
+PROMPT_SHA256 = "9143d8a97727030192a62fb19f732b0823dec9ffe83081ef5ae27fdb1edfea04"
+PROMPT_BYTES = 10190
 FILE_COUNT = 540
 TOTAL_BYTES = 7_949_823
 ARCHIVE_NAME = f"{BUNDLE_ID}-{MANIFEST_SHA256}.zip"
@@ -30,6 +30,9 @@ CHECKSUM_NAME = f"{ARCHIVE_NAME}.sha256"
 DESCRIPTOR_NAME = "seed-descriptor.json"
 BASE_URL = f"https://codexrip.vip/skills/reverse-skill/versions/{MANIFEST_SHA256}"
 DESCRIPTOR_URL = "https://codexrip.vip/skills/reverse-skill/current.json"
+BOOTSTRAP_REPOSITORY_URL = "https://github.com/HTExplicit/sub2api.git"
+BOOTSTRAP_REPOSITORY_REF = "v0.1.171-codexrip.7"
+BOOTSTRAP_REPOSITORY_COMMIT = "176dad47dd049b34d45a032d889a0dc11405a39e"
 BOOTSTRAPS = {
     "bootstrap-reverse-skill.ps1": "8595884159988ff653c1d66be66d25acc62a359009c85a7924a23dbaf45d4246",
     "bootstrap-reverse-skill.py": "2db6ff2d1a5182b73920aabe701d914cca83643aeab89443c0561b1a67430b42",
@@ -158,6 +161,11 @@ def verify_manifest_contract(manifest: dict) -> set[str]:
 
 
 def verify_bootstraps(root: Path, prompt: bytes) -> int:
+    for value in (BOOTSTRAP_REPOSITORY_URL, BOOTSTRAP_REPOSITORY_REF, BOOTSTRAP_REPOSITORY_COMMIT):
+        if value.encode("ascii") not in prompt:
+            raise VerificationError("fixed prompt does not pin the bootstrap repository identity")
+    if b"https://codexrip.vip/skills/bootstrap/" in prompt:
+        raise VerificationError("fixed prompt must not acquire a bootstrap script directly")
     found: dict[str, str] = {}
     try:
         directories = [item for item in root.iterdir() if item.is_dir() and any(item.iterdir())]
@@ -171,8 +179,8 @@ def verify_bootstraps(root: Path, prompt: bytes) -> int:
         digest = sha256(raw)
         if digest != directory.name or digest != BOOTSTRAPS[children[0].name]:
             raise VerificationError("bootstrap path or pinned SHA-256 does not match its bytes")
-        url = f"https://codexrip.vip/skills/bootstrap/{digest}/{children[0].name}".encode("ascii")
-        if url not in prompt or digest.encode("ascii") not in prompt:
+        repository_path = f"deploy/skill-registry/bootstrap/{digest}/{children[0].name}".encode("ascii")
+        if repository_path not in prompt or digest.encode("ascii") not in prompt:
             raise VerificationError("fixed prompt does not pin a release bootstrap")
         found[children[0].name] = digest
     if found != BOOTSTRAPS:
@@ -189,7 +197,10 @@ def verify_registry(
     bootstrap_root: Path,
     prompt_path: Path,
 ) -> RegistryVerificationResult:
-    prompt = prompt_path.read_bytes()
+    prompt_source = prompt_path.read_bytes()
+    # business_system_prompt_policy.go embeds the tracked LF source and removes
+    # exactly one trailing LF so runtime bytes keep the published identity.
+    prompt = prompt_source[:-1] if prompt_source.endswith(b"\n") else prompt_source
     if len(prompt) != PROMPT_BYTES or sha256(prompt) != PROMPT_SHA256 or prompt.endswith((b"\r", b"\n")):
         raise VerificationError("fixed system prompt bytes do not match the pinned release")
     require_runtime_text_clean("fixed system prompt", prompt)

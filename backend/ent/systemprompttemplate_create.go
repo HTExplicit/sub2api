@@ -105,6 +105,20 @@ func (_c *SystemPromptTemplateCreate) SetNillableIsSeed(v *bool) *SystemPromptTe
 	return _c
 }
 
+// SetManagedSource sets the "managed_source" field.
+func (_c *SystemPromptTemplateCreate) SetManagedSource(v string) *SystemPromptTemplateCreate {
+	_c.mutation.SetManagedSource(v)
+	return _c
+}
+
+// SetNillableManagedSource sets the "managed_source" field if the given value is not nil.
+func (_c *SystemPromptTemplateCreate) SetNillableManagedSource(v *string) *SystemPromptTemplateCreate {
+	if v != nil {
+		_c.SetManagedSource(*v)
+	}
+	return _c
+}
+
 // SetCreatedBy sets the "created_by" field.
 func (_c *SystemPromptTemplateCreate) SetCreatedBy(v int64) *SystemPromptTemplateCreate {
 	_c.mutation.SetCreatedBy(v)
@@ -240,6 +254,11 @@ func (_c *SystemPromptTemplateCreate) check() error {
 	if _, ok := _c.mutation.IsSeed(); !ok {
 		return &ValidationError{Name: "is_seed", err: errors.New(`ent: missing required field "SystemPromptTemplate.is_seed"`)}
 	}
+	if v, ok := _c.mutation.ManagedSource(); ok {
+		if err := systemprompttemplate.ManagedSourceValidator(v); err != nil {
+			return &ValidationError{Name: "managed_source", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplate.managed_source": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -294,6 +313,10 @@ func (_c *SystemPromptTemplateCreate) createSpec() (*SystemPromptTemplate, *sqlg
 	if value, ok := _c.mutation.IsSeed(); ok {
 		_spec.SetField(systemprompttemplate.FieldIsSeed, field.TypeBool, value)
 		_node.IsSeed = value
+	}
+	if value, ok := _c.mutation.ManagedSource(); ok {
+		_spec.SetField(systemprompttemplate.FieldManagedSource, field.TypeString, value)
+		_node.ManagedSource = &value
 	}
 	if value, ok := _c.mutation.CreatedBy(); ok {
 		_spec.SetField(systemprompttemplate.FieldCreatedBy, field.TypeInt64, value)
@@ -446,6 +469,24 @@ func (u *SystemPromptTemplateUpsert) SetIsSeed(v bool) *SystemPromptTemplateUpse
 // UpdateIsSeed sets the "is_seed" field to the value that was provided on create.
 func (u *SystemPromptTemplateUpsert) UpdateIsSeed() *SystemPromptTemplateUpsert {
 	u.SetExcluded(systemprompttemplate.FieldIsSeed)
+	return u
+}
+
+// SetManagedSource sets the "managed_source" field.
+func (u *SystemPromptTemplateUpsert) SetManagedSource(v string) *SystemPromptTemplateUpsert {
+	u.Set(systemprompttemplate.FieldManagedSource, v)
+	return u
+}
+
+// UpdateManagedSource sets the "managed_source" field to the value that was provided on create.
+func (u *SystemPromptTemplateUpsert) UpdateManagedSource() *SystemPromptTemplateUpsert {
+	u.SetExcluded(systemprompttemplate.FieldManagedSource)
+	return u
+}
+
+// ClearManagedSource clears the value of the "managed_source" field.
+func (u *SystemPromptTemplateUpsert) ClearManagedSource() *SystemPromptTemplateUpsert {
+	u.SetNull(systemprompttemplate.FieldManagedSource)
 	return u
 }
 
@@ -630,6 +671,27 @@ func (u *SystemPromptTemplateUpsertOne) SetIsSeed(v bool) *SystemPromptTemplateU
 func (u *SystemPromptTemplateUpsertOne) UpdateIsSeed() *SystemPromptTemplateUpsertOne {
 	return u.Update(func(s *SystemPromptTemplateUpsert) {
 		s.UpdateIsSeed()
+	})
+}
+
+// SetManagedSource sets the "managed_source" field.
+func (u *SystemPromptTemplateUpsertOne) SetManagedSource(v string) *SystemPromptTemplateUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateUpsert) {
+		s.SetManagedSource(v)
+	})
+}
+
+// UpdateManagedSource sets the "managed_source" field to the value that was provided on create.
+func (u *SystemPromptTemplateUpsertOne) UpdateManagedSource() *SystemPromptTemplateUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateUpsert) {
+		s.UpdateManagedSource()
+	})
+}
+
+// ClearManagedSource clears the value of the "managed_source" field.
+func (u *SystemPromptTemplateUpsertOne) ClearManagedSource() *SystemPromptTemplateUpsertOne {
+	return u.Update(func(s *SystemPromptTemplateUpsert) {
+		s.ClearManagedSource()
 	})
 }
 
@@ -988,6 +1050,27 @@ func (u *SystemPromptTemplateUpsertBulk) SetIsSeed(v bool) *SystemPromptTemplate
 func (u *SystemPromptTemplateUpsertBulk) UpdateIsSeed() *SystemPromptTemplateUpsertBulk {
 	return u.Update(func(s *SystemPromptTemplateUpsert) {
 		s.UpdateIsSeed()
+	})
+}
+
+// SetManagedSource sets the "managed_source" field.
+func (u *SystemPromptTemplateUpsertBulk) SetManagedSource(v string) *SystemPromptTemplateUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateUpsert) {
+		s.SetManagedSource(v)
+	})
+}
+
+// UpdateManagedSource sets the "managed_source" field to the value that was provided on create.
+func (u *SystemPromptTemplateUpsertBulk) UpdateManagedSource() *SystemPromptTemplateUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateUpsert) {
+		s.UpdateManagedSource()
+	})
+}
+
+// ClearManagedSource clears the value of the "managed_source" field.
+func (u *SystemPromptTemplateUpsertBulk) ClearManagedSource() *SystemPromptTemplateUpsertBulk {
+	return u.Update(func(s *SystemPromptTemplateUpsert) {
+		s.ClearManagedSource()
 	})
 }
 

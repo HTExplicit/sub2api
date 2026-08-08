@@ -39,6 +39,19 @@ func (r *businessSystemPromptRepository) EnsureBusinessSystemPromptSeed(ctx cont
 	if seed.ByteLength > 0 && seed.ByteLength != byteLength {
 		return fmt.Errorf("seed byte length mismatch")
 	}
+	if seed.ManagedSource != "" || seed.SourceRepository != "" || seed.SourceCommit != "" ||
+		seed.SourceVersion != "" || seed.SourceArtifact != "" || seed.SourceArtifactSHA256 != "" ||
+		seed.SourceLicenseSHA256 != "" {
+		if err := service.ValidateBusinessSystemPromptSourceCandidate(service.BusinessSystemPromptSourceCandidate{
+			ManagedSource: seed.ManagedSource, SourceRepository: seed.SourceRepository,
+			SourceCommit: seed.SourceCommit, SourceVersion: seed.SourceVersion,
+			SourceArtifact: seed.SourceArtifact, SourceArtifactSHA256: seed.SourceArtifactSHA256,
+			SourceLicenseSHA256: seed.SourceLicenseSHA256,
+			Body:                seed.Body, SHA256: hash, ByteLength: byteLength,
+		}); err != nil {
+			return err
+		}
+	}
 	composition, err := service.NormalizeBusinessSystemPromptComposition(seed.CompositionMode, seed.BundleID, seed.BundleManifestSHA256)
 	if err != nil {
 		return err
@@ -57,14 +70,17 @@ func (r *businessSystemPromptRepository) EnsureBusinessSystemPromptSeed(ctx cont
 
 	var templateID int64
 	err = tx.QueryRowContext(ctx, `
-		INSERT INTO system_prompt_templates (slug, name, description, is_seed)
-		VALUES ($1, $2, $3, TRUE)
+		INSERT INTO system_prompt_templates (slug, name, description, is_seed, managed_source)
+		VALUES ($1, $2, $3, TRUE, $4)
 		ON CONFLICT (slug) DO NOTHING
-		RETURNING id`, seed.Slug, seed.Name, seed.Description).Scan(&templateID)
+		RETURNING id`, seed.Slug, seed.Name, seed.Description, nullableString(seed.ManagedSource)).Scan(&templateID)
 	if errors.Is(err, sql.ErrNoRows) {
-		// A pre-existing slug belongs to administrators. Never add versions,
-		// replace metadata, change seed protection, or activate it implicitly.
-		return tx.Commit()
+		if !seed.UpgradeExistingSeed {
+			// A pre-existing slug belongs to administrators unless the caller
+			// explicitly identifies a protected built-in seed upgrade.
+			return tx.Commit()
+		}
+		return ensureExistingBusinessSystemPromptSeed(ctx, tx, seed, hash, byteLength, composition)
 	}
 	if err != nil {
 		return fmt.Errorf("insert system prompt seed template: %w", err)
@@ -73,10 +89,13 @@ func (r *businessSystemPromptRepository) EnsureBusinessSystemPromptSeed(ctx cont
 	var versionID int64
 	if err := tx.QueryRowContext(ctx, `
 		INSERT INTO system_prompt_template_versions
-		(template_id, version, body, sha256, byte_length, composition_mode, bundle_id, bundle_manifest_sha256, note)
-		VALUES ($1, 1, $2, $3, $4, $5, $6, $7, $8)
+		(template_id, version, body, sha256, byte_length, composition_mode, bundle_id, bundle_manifest_sha256, note,
+		 source_repository, source_commit, source_version, source_artifact, source_artifact_sha256, source_license_sha256)
+		VALUES ($1, 1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		RETURNING id`, templateID, seed.Body, hash, byteLength, composition.Mode,
-		nullableString(composition.BundleID), nullableString(composition.BundleManifestSHA256), "captured reverse-engineered seed").Scan(&versionID); err != nil {
+		nullableString(composition.BundleID), nullableString(composition.BundleManifestSHA256), seed.Note,
+		nullableString(seed.SourceRepository), nullableString(seed.SourceCommit), nullableString(seed.SourceVersion),
+		nullableString(seed.SourceArtifact), nullableString(seed.SourceArtifactSHA256), nullableString(seed.SourceLicenseSHA256)).Scan(&versionID); err != nil {
 		return fmt.Errorf("insert system prompt seed version: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -89,6 +108,96 @@ func (r *businessSystemPromptRepository) EnsureBusinessSystemPromptSeed(ctx cont
 		return fmt.Errorf("commit system prompt seed: %w", err)
 	}
 	return nil
+}
+
+func ensureExistingBusinessSystemPromptSeed(
+	ctx context.Context,
+	tx *sql.Tx,
+	seed service.BusinessSystemPromptSeed,
+	hash string,
+	byteLength int,
+	composition service.BusinessSystemPromptComposition,
+) error {
+	var templateID int64
+	var isSeed bool
+	var managedSource sql.NullString
+	if err := tx.QueryRowContext(ctx, `
+		SELECT id, is_seed, managed_source
+		FROM system_prompt_templates
+		WHERE slug = $1 AND deleted_at IS NULL
+		FOR UPDATE`, seed.Slug).Scan(&templateID, &isSeed, &managedSource); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return service.ErrBusinessSystemPromptRevisionConflict
+		}
+		return err
+	}
+	if !isSeed || nullableStringValue(managedSource) != seed.ManagedSource {
+		return tx.Commit()
+	}
+
+	var existingVersionID int64
+	err := tx.QueryRowContext(ctx, `
+		SELECT id FROM system_prompt_template_versions
+		WHERE template_id = $1 AND sha256 = $2 AND byte_length = $3
+		ORDER BY version DESC LIMIT 1`, templateID, hash, byteLength).Scan(&existingVersionID)
+	if err == nil {
+		return tx.Commit()
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+
+	var latestVersion int64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE(MAX(version), 0)
+		FROM system_prompt_template_versions
+		WHERE template_id = $1`, templateID).Scan(&latestVersion); err != nil {
+		return err
+	}
+	var activeTemplateID, activeVersionID sql.NullInt64
+	var activeSHA sql.NullString
+	if err := tx.QueryRowContext(ctx, `
+		SELECT r.active_template_id, r.active_version_id, v.sha256
+		FROM system_prompt_runtime r
+		LEFT JOIN system_prompt_template_versions v ON v.id = r.active_version_id
+		WHERE r.id = 1
+		FOR UPDATE OF r`).Scan(&activeTemplateID, &activeVersionID, &activeSHA); err != nil {
+		return err
+	}
+
+	var versionID int64
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO system_prompt_template_versions
+		(template_id, version, body, sha256, byte_length, composition_mode, bundle_id, bundle_manifest_sha256, note,
+		 source_repository, source_commit, source_version, source_artifact, source_artifact_sha256, source_license_sha256)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		RETURNING id`, templateID, latestVersion+1, seed.Body, hash, byteLength, composition.Mode,
+		nullableString(composition.BundleID), nullableString(composition.BundleManifestSHA256), seed.Note,
+		nullableString(seed.SourceRepository), nullableString(seed.SourceCommit), nullableString(seed.SourceVersion),
+		nullableString(seed.SourceArtifact), nullableString(seed.SourceArtifactSHA256), nullableString(seed.SourceLicenseSHA256)).Scan(&versionID); err != nil {
+		return translateBusinessSystemPromptWriteError(err)
+	}
+
+	if activeTemplateID.Valid && activeVersionID.Valid && activeTemplateID.Int64 == templateID && activeSHA.Valid &&
+		containsBusinessSystemPromptSHA(seed.AutoActivateFromSHA, activeSHA.String) {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE system_prompt_runtime
+			SET active_version_id = $1, revision = revision + 1, updated_at = NOW()
+			WHERE id = 1 AND active_template_id = $2 AND active_version_id = $3`,
+			versionID, templateID, activeVersionID.Int64); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func containsBusinessSystemPromptSHA(allowed []string, value string) bool {
+	for _, candidate := range allowed {
+		if strings.EqualFold(strings.TrimSpace(candidate), strings.TrimSpace(value)) {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *businessSystemPromptRepository) LoadBusinessSystemPrompt(ctx context.Context) (service.BusinessSystemPromptSnapshot, error) {
@@ -155,7 +264,7 @@ func loadBusinessSystemPromptSnapshot(ctx context.Context, q businessSystemPromp
 
 func (r *businessSystemPromptRepository) ListBusinessSystemPromptTemplates(ctx context.Context) ([]service.BusinessSystemPromptTemplate, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, slug, name, description, is_seed, deleted_at,
+		SELECT id, slug, name, description, is_seed, managed_source, deleted_at,
 		       created_by, updated_by, created_at, updated_at
 		FROM system_prompt_templates
 		WHERE deleted_at IS NULL
@@ -253,7 +362,7 @@ func (r *businessSystemPromptRepository) UpdateBusinessSystemPromptTemplate(ctx 
 		SET name = COALESCE($2, name), description = COALESCE($3, description),
 		    updated_by = $4, updated_at = NOW()
 		WHERE id = $1 AND deleted_at IS NULL
-		RETURNING id, slug, name, description, is_seed, deleted_at,
+		RETURNING id, slug, name, description, is_seed, managed_source, deleted_at,
 		          created_by, updated_by, created_at, updated_at`, id, name, description, nullableActor(actorID))
 	template, err := scanBusinessSystemPromptTemplate(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -322,27 +431,143 @@ func (r *businessSystemPromptRepository) CreateBusinessSystemPromptVersionWithCo
 	var version service.BusinessSystemPromptVersion
 	var createdBy sql.NullInt64
 	var bundleID, bundleManifestSHA256 sql.NullString
+	var sourceRepository, sourceCommit, sourceVersion, sourceArtifact sql.NullString
+	var sourceArtifactSHA256, sourceLicenseSHA256 sql.NullString
 	if err := tx.QueryRowContext(ctx, `
 		INSERT INTO system_prompt_template_versions
 		(template_id, version, body, sha256, byte_length, composition_mode, bundle_id, bundle_manifest_sha256, note, created_by)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id, template_id, version, body, sha256, byte_length,
 		          composition_mode, bundle_id, bundle_manifest_sha256, note,
+		          source_repository, source_commit, source_version, source_artifact,
+		          source_artifact_sha256, source_license_sha256,
 		          created_by, published_at, published_by, created_at`,
 		templateID, latest+1, req.Body, hash, byteLength, composition.Mode,
 		nullableString(composition.BundleID), nullableString(composition.BundleManifestSHA256), req.Note, nullableActor(actorID)).Scan(
 		&version.ID, &version.TemplateID, &version.Version, &version.Body, &version.SHA256,
 		&version.ByteLength, &version.CompositionMode, &bundleID, &bundleManifestSHA256,
-		&version.Note, &createdBy, &version.PublishedAt, &version.PublishedBy, &version.CreatedAt); err != nil {
+		&version.Note, &sourceRepository, &sourceCommit, &sourceVersion, &sourceArtifact,
+		&sourceArtifactSHA256, &sourceLicenseSHA256,
+		&createdBy, &version.PublishedAt, &version.PublishedBy, &version.CreatedAt); err != nil {
 		return service.BusinessSystemPromptVersion{}, translateBusinessSystemPromptWriteError(err)
 	}
 	version.CreatedBy = nullableInt64Value(createdBy)
 	version.BundleID = nullableStringValue(bundleID)
 	version.BundleManifestSHA256 = nullableStringValue(bundleManifestSHA256)
+	version.SourceRepository = nullableStringValue(sourceRepository)
+	version.SourceCommit = nullableStringValue(sourceCommit)
+	version.SourceVersion = nullableStringValue(sourceVersion)
+	version.SourceArtifact = nullableStringValue(sourceArtifact)
+	version.SourceArtifactSHA256 = nullableStringValue(sourceArtifactSHA256)
+	version.SourceLicenseSHA256 = nullableStringValue(sourceLicenseSHA256)
 	if err := tx.Commit(); err != nil {
 		return service.BusinessSystemPromptVersion{}, err
 	}
 	return version, nil
+}
+
+func (r *businessSystemPromptRepository) SyncBusinessSystemPromptSourceVersion(
+	ctx context.Context,
+	templateID int64,
+	candidate service.BusinessSystemPromptSourceCandidate,
+	actorID, expectedLatestVersion, expectedRevision int64,
+) (service.BusinessSystemPromptSourceSyncResult, error) {
+	if err := service.ValidateBusinessSystemPromptSourceCandidate(candidate); err != nil {
+		return service.BusinessSystemPromptSourceSyncResult{}, err
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return service.BusinessSystemPromptSourceSyncResult{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := lockBusinessSystemPromptRuntimeRevision(ctx, tx, expectedRevision); err != nil {
+		return service.BusinessSystemPromptSourceSyncResult{}, err
+	}
+	var managedSource sql.NullString
+	if err := tx.QueryRowContext(ctx, `
+		SELECT managed_source FROM system_prompt_templates
+		WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`, templateID).Scan(&managedSource); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return service.BusinessSystemPromptSourceSyncResult{}, service.ErrBusinessSystemPromptTemplateNotFound
+		}
+		return service.BusinessSystemPromptSourceSyncResult{}, err
+	}
+	if !managedSource.Valid || managedSource.String != candidate.ManagedSource {
+		return service.BusinessSystemPromptSourceSyncResult{}, service.ErrBusinessSystemPromptSourceNotManaged
+	}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT version, sha256, source_repository, source_commit, source_artifact_sha256
+		FROM system_prompt_template_versions
+		WHERE template_id = $1 ORDER BY version DESC`, templateID)
+	if err != nil {
+		return service.BusinessSystemPromptSourceSyncResult{}, err
+	}
+	var latest int64
+	upToDate := false
+	noPromptChange := false
+	for rows.Next() {
+		var version int64
+		var sha string
+		var repository, commit, artifactSHA sql.NullString
+		if err := rows.Scan(&version, &sha, &repository, &commit, &artifactSHA); err != nil {
+			_ = rows.Close()
+			return service.BusinessSystemPromptSourceSyncResult{}, err
+		}
+		if version > latest {
+			latest = version
+		}
+		if repository.Valid && commit.Valid && artifactSHA.Valid &&
+			repository.String == candidate.SourceRepository && commit.String == candidate.SourceCommit &&
+			artifactSHA.String == candidate.SourceArtifactSHA256 {
+			upToDate = true
+		}
+		if strings.EqualFold(sha, candidate.SHA256) {
+			noPromptChange = true
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return service.BusinessSystemPromptSourceSyncResult{}, err
+	}
+	if err := rows.Err(); err != nil {
+		return service.BusinessSystemPromptSourceSyncResult{}, err
+	}
+	if expectedLatestVersion < 1 || latest != expectedLatestVersion {
+		return service.BusinessSystemPromptSourceSyncResult{}, service.ErrBusinessSystemPromptRevisionConflict
+	}
+	if upToDate || noPromptChange {
+		status := service.BusinessSystemPromptSourceSyncNoPromptChange
+		if upToDate {
+			status = service.BusinessSystemPromptSourceSyncUpToDate
+		}
+		if err := tx.Commit(); err != nil {
+			return service.BusinessSystemPromptSourceSyncResult{}, err
+		}
+		return service.BusinessSystemPromptSourceSyncResult{Status: status}, nil
+	}
+	note := fmt.Sprintf("Synced from %s %s", candidate.SourceRepository, candidate.SourceVersion)
+	version, err := scanBusinessSystemPromptVersion(tx.QueryRowContext(ctx, `
+		INSERT INTO system_prompt_template_versions
+		(template_id, version, body, sha256, byte_length, composition_mode, note, created_by,
+		 source_repository, source_commit, source_version, source_artifact, source_artifact_sha256, source_license_sha256)
+		VALUES ($1, $2, $3, $4, $5, 'inline', $6, $7, $8, $9, $10, $11, $12, $13)
+		RETURNING id, template_id, version, body, sha256, byte_length,
+		          composition_mode, bundle_id, bundle_manifest_sha256, note,
+		          source_repository, source_commit, source_version, source_artifact,
+		          source_artifact_sha256, source_license_sha256,
+		          created_by, published_at, published_by, created_at`,
+		templateID, latest+1, candidate.Body, candidate.SHA256, candidate.ByteLength,
+		note, nullableActor(actorID), candidate.SourceRepository, candidate.SourceCommit,
+		candidate.SourceVersion, candidate.SourceArtifact, candidate.SourceArtifactSHA256,
+		candidate.SourceLicenseSHA256))
+	if err != nil {
+		return service.BusinessSystemPromptSourceSyncResult{}, translateBusinessSystemPromptWriteError(err)
+	}
+	if err := tx.Commit(); err != nil {
+		return service.BusinessSystemPromptSourceSyncResult{}, err
+	}
+	return service.BusinessSystemPromptSourceSyncResult{
+		Status: service.BusinessSystemPromptSourceSyncCandidateCreated, Version: &version,
+	}, nil
 }
 
 func (r *businessSystemPromptRepository) DuplicateBusinessSystemPromptTemplate(ctx context.Context, sourceID int64, slug, name string, actorID, expectedRevision int64) (service.BusinessSystemPromptTemplateDetail, error) {
@@ -562,7 +787,7 @@ func validateStoredBusinessSystemPromptVersion(body, expectedHash string, expect
 
 func queryBusinessSystemPromptTemplate(ctx context.Context, q businessSystemPromptQueryer, id int64) (service.BusinessSystemPromptTemplate, error) {
 	row := q.QueryRowContext(ctx, `
-		SELECT id, slug, name, description, is_seed, deleted_at,
+		SELECT id, slug, name, description, is_seed, managed_source, deleted_at,
 		       created_by, updated_by, created_at, updated_at
 		FROM system_prompt_templates WHERE id = $1 AND deleted_at IS NULL`, id)
 	template, err := scanBusinessSystemPromptTemplate(row)
@@ -576,6 +801,8 @@ func queryBusinessSystemPromptVersions(ctx context.Context, q businessSystemProm
 	rows, err := q.QueryContext(ctx, `
 		SELECT id, template_id, version, body, sha256, byte_length,
 		       composition_mode, bundle_id, bundle_manifest_sha256, note,
+		       source_repository, source_commit, source_version, source_artifact,
+		       source_artifact_sha256, source_license_sha256,
 		       created_by, published_at, published_by, created_at
 		FROM system_prompt_template_versions
 		WHERE template_id = $1 ORDER BY version DESC`, templateID)
@@ -601,9 +828,10 @@ type businessSystemPromptScanner interface {
 func scanBusinessSystemPromptTemplate(scanner businessSystemPromptScanner) (service.BusinessSystemPromptTemplate, error) {
 	var template service.BusinessSystemPromptTemplate
 	var deletedAt sql.NullTime
+	var managedSource sql.NullString
 	var createdByID, updatedByID sql.NullInt64
 	err := scanner.Scan(&template.ID, &template.Slug, &template.Name, &template.Description, &template.IsSeed,
-		&deletedAt, &createdByID, &updatedByID, &template.CreatedAt, &template.UpdatedAt)
+		&managedSource, &deletedAt, &createdByID, &updatedByID, &template.CreatedAt, &template.UpdatedAt)
 	if err != nil {
 		return service.BusinessSystemPromptTemplate{}, err
 	}
@@ -612,6 +840,7 @@ func scanBusinessSystemPromptTemplate(scanner businessSystemPromptScanner) (serv
 	}
 	template.CreatedBy = nullableInt64Value(createdByID)
 	template.UpdatedBy = nullableInt64Value(updatedByID)
+	template.ManagedSource = nullableStringValue(managedSource)
 	return template, nil
 }
 
@@ -619,9 +848,13 @@ func scanBusinessSystemPromptVersion(scanner businessSystemPromptScanner) (servi
 	var version service.BusinessSystemPromptVersion
 	var createdBy, publishedBy sql.NullInt64
 	var bundleID, bundleManifestSHA256 sql.NullString
+	var sourceRepository, sourceCommit, sourceVersion, sourceArtifact sql.NullString
+	var sourceArtifactSHA256, sourceLicenseSHA256 sql.NullString
 	err := scanner.Scan(&version.ID, &version.TemplateID, &version.Version, &version.Body, &version.SHA256,
 		&version.ByteLength, &version.CompositionMode, &bundleID, &bundleManifestSHA256,
-		&version.Note, &createdBy, &version.PublishedAt, &publishedBy, &version.CreatedAt)
+		&version.Note, &sourceRepository, &sourceCommit, &sourceVersion, &sourceArtifact,
+		&sourceArtifactSHA256, &sourceLicenseSHA256,
+		&createdBy, &version.PublishedAt, &publishedBy, &version.CreatedAt)
 	if err != nil {
 		return service.BusinessSystemPromptVersion{}, err
 	}
@@ -629,6 +862,12 @@ func scanBusinessSystemPromptVersion(scanner businessSystemPromptScanner) (servi
 	version.PublishedBy = nullableInt64Value(publishedBy)
 	version.BundleID = nullableStringValue(bundleID)
 	version.BundleManifestSHA256 = nullableStringValue(bundleManifestSHA256)
+	version.SourceRepository = nullableStringValue(sourceRepository)
+	version.SourceCommit = nullableStringValue(sourceCommit)
+	version.SourceVersion = nullableStringValue(sourceVersion)
+	version.SourceArtifact = nullableStringValue(sourceArtifact)
+	version.SourceArtifactSHA256 = nullableStringValue(sourceArtifactSHA256)
+	version.SourceLicenseSHA256 = nullableStringValue(sourceLicenseSHA256)
 	return version, nil
 }
 

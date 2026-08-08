@@ -32,7 +32,12 @@ var (
 )
 
 //go:embed prompts/codexrip_reverse_skill_system_prompt.txt
-var embeddedBusinessSystemPrompt string
+var embeddedBusinessSystemPromptRaw string
+
+var embeddedBusinessSystemPrompt = strings.TrimSuffix(embeddedBusinessSystemPromptRaw, "\n")
+
+//go:embed prompts/gpt_5_6_instruct_v45.md
+var embeddedGPT56InstructPrompt string
 
 type BusinessSystemPromptSnapshot struct {
 	Enabled                bool      `json:"enabled"`

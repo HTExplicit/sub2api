@@ -36,6 +36,18 @@ type SystemPromptTemplateVersion struct {
 	BundleManifestSha256 *string `json:"bundle_manifest_sha256,omitempty"`
 	// Note holds the value of the "note" field.
 	Note string `json:"note,omitempty"`
+	// SourceRepository holds the value of the "source_repository" field.
+	SourceRepository *string `json:"source_repository,omitempty"`
+	// SourceCommit holds the value of the "source_commit" field.
+	SourceCommit *string `json:"source_commit,omitempty"`
+	// SourceVersion holds the value of the "source_version" field.
+	SourceVersion *string `json:"source_version,omitempty"`
+	// SourceArtifact holds the value of the "source_artifact" field.
+	SourceArtifact *string `json:"source_artifact,omitempty"`
+	// SourceArtifactSha256 holds the value of the "source_artifact_sha256" field.
+	SourceArtifactSha256 *string `json:"source_artifact_sha256,omitempty"`
+	// SourceLicenseSha256 holds the value of the "source_license_sha256" field.
+	SourceLicenseSha256 *string `json:"source_license_sha256,omitempty"`
 	// CreatedBy holds the value of the "created_by" field.
 	CreatedBy *int64 `json:"created_by,omitempty"`
 	// PublishedAt holds the value of the "published_at" field.
@@ -77,7 +89,7 @@ func (*SystemPromptTemplateVersion) scanValues(columns []string) ([]any, error) 
 		switch columns[i] {
 		case systemprompttemplateversion.FieldID, systemprompttemplateversion.FieldTemplateID, systemprompttemplateversion.FieldVersion, systemprompttemplateversion.FieldByteLength, systemprompttemplateversion.FieldCreatedBy, systemprompttemplateversion.FieldPublishedBy:
 			values[i] = new(sql.NullInt64)
-		case systemprompttemplateversion.FieldBody, systemprompttemplateversion.FieldSha256, systemprompttemplateversion.FieldCompositionMode, systemprompttemplateversion.FieldBundleID, systemprompttemplateversion.FieldBundleManifestSha256, systemprompttemplateversion.FieldNote:
+		case systemprompttemplateversion.FieldBody, systemprompttemplateversion.FieldSha256, systemprompttemplateversion.FieldCompositionMode, systemprompttemplateversion.FieldBundleID, systemprompttemplateversion.FieldBundleManifestSha256, systemprompttemplateversion.FieldNote, systemprompttemplateversion.FieldSourceRepository, systemprompttemplateversion.FieldSourceCommit, systemprompttemplateversion.FieldSourceVersion, systemprompttemplateversion.FieldSourceArtifact, systemprompttemplateversion.FieldSourceArtifactSha256, systemprompttemplateversion.FieldSourceLicenseSha256:
 			values[i] = new(sql.NullString)
 		case systemprompttemplateversion.FieldPublishedAt, systemprompttemplateversion.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
@@ -157,6 +169,48 @@ func (_m *SystemPromptTemplateVersion) assignValues(columns []string, values []a
 				return fmt.Errorf("unexpected type %T for field note", values[i])
 			} else if value.Valid {
 				_m.Note = value.String
+			}
+		case systemprompttemplateversion.FieldSourceRepository:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field source_repository", values[i])
+			} else if value.Valid {
+				_m.SourceRepository = new(string)
+				*_m.SourceRepository = value.String
+			}
+		case systemprompttemplateversion.FieldSourceCommit:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field source_commit", values[i])
+			} else if value.Valid {
+				_m.SourceCommit = new(string)
+				*_m.SourceCommit = value.String
+			}
+		case systemprompttemplateversion.FieldSourceVersion:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field source_version", values[i])
+			} else if value.Valid {
+				_m.SourceVersion = new(string)
+				*_m.SourceVersion = value.String
+			}
+		case systemprompttemplateversion.FieldSourceArtifact:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field source_artifact", values[i])
+			} else if value.Valid {
+				_m.SourceArtifact = new(string)
+				*_m.SourceArtifact = value.String
+			}
+		case systemprompttemplateversion.FieldSourceArtifactSha256:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field source_artifact_sha256", values[i])
+			} else if value.Valid {
+				_m.SourceArtifactSha256 = new(string)
+				*_m.SourceArtifactSha256 = value.String
+			}
+		case systemprompttemplateversion.FieldSourceLicenseSha256:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field source_license_sha256", values[i])
+			} else if value.Valid {
+				_m.SourceLicenseSha256 = new(string)
+				*_m.SourceLicenseSha256 = value.String
 			}
 		case systemprompttemplateversion.FieldCreatedBy:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -256,6 +310,36 @@ func (_m *SystemPromptTemplateVersion) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("note=")
 	builder.WriteString(_m.Note)
+	builder.WriteString(", ")
+	if v := _m.SourceRepository; v != nil {
+		builder.WriteString("source_repository=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.SourceCommit; v != nil {
+		builder.WriteString("source_commit=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.SourceVersion; v != nil {
+		builder.WriteString("source_version=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.SourceArtifact; v != nil {
+		builder.WriteString("source_artifact=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.SourceArtifactSha256; v != nil {
+		builder.WriteString("source_artifact_sha256=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.SourceLicenseSha256; v != nil {
+		builder.WriteString("source_license_sha256=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
 	if v := _m.CreatedBy; v != nil {
 		builder.WriteString("created_by=")

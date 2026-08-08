@@ -181,6 +181,126 @@ func (_u *SystemPromptTemplateVersionUpdate) SetNillableNote(v *string) *SystemP
 	return _u
 }
 
+// SetSourceRepository sets the "source_repository" field.
+func (_u *SystemPromptTemplateVersionUpdate) SetSourceRepository(v string) *SystemPromptTemplateVersionUpdate {
+	_u.mutation.SetSourceRepository(v)
+	return _u
+}
+
+// SetNillableSourceRepository sets the "source_repository" field if the given value is not nil.
+func (_u *SystemPromptTemplateVersionUpdate) SetNillableSourceRepository(v *string) *SystemPromptTemplateVersionUpdate {
+	if v != nil {
+		_u.SetSourceRepository(*v)
+	}
+	return _u
+}
+
+// ClearSourceRepository clears the value of the "source_repository" field.
+func (_u *SystemPromptTemplateVersionUpdate) ClearSourceRepository() *SystemPromptTemplateVersionUpdate {
+	_u.mutation.ClearSourceRepository()
+	return _u
+}
+
+// SetSourceCommit sets the "source_commit" field.
+func (_u *SystemPromptTemplateVersionUpdate) SetSourceCommit(v string) *SystemPromptTemplateVersionUpdate {
+	_u.mutation.SetSourceCommit(v)
+	return _u
+}
+
+// SetNillableSourceCommit sets the "source_commit" field if the given value is not nil.
+func (_u *SystemPromptTemplateVersionUpdate) SetNillableSourceCommit(v *string) *SystemPromptTemplateVersionUpdate {
+	if v != nil {
+		_u.SetSourceCommit(*v)
+	}
+	return _u
+}
+
+// ClearSourceCommit clears the value of the "source_commit" field.
+func (_u *SystemPromptTemplateVersionUpdate) ClearSourceCommit() *SystemPromptTemplateVersionUpdate {
+	_u.mutation.ClearSourceCommit()
+	return _u
+}
+
+// SetSourceVersion sets the "source_version" field.
+func (_u *SystemPromptTemplateVersionUpdate) SetSourceVersion(v string) *SystemPromptTemplateVersionUpdate {
+	_u.mutation.SetSourceVersion(v)
+	return _u
+}
+
+// SetNillableSourceVersion sets the "source_version" field if the given value is not nil.
+func (_u *SystemPromptTemplateVersionUpdate) SetNillableSourceVersion(v *string) *SystemPromptTemplateVersionUpdate {
+	if v != nil {
+		_u.SetSourceVersion(*v)
+	}
+	return _u
+}
+
+// ClearSourceVersion clears the value of the "source_version" field.
+func (_u *SystemPromptTemplateVersionUpdate) ClearSourceVersion() *SystemPromptTemplateVersionUpdate {
+	_u.mutation.ClearSourceVersion()
+	return _u
+}
+
+// SetSourceArtifact sets the "source_artifact" field.
+func (_u *SystemPromptTemplateVersionUpdate) SetSourceArtifact(v string) *SystemPromptTemplateVersionUpdate {
+	_u.mutation.SetSourceArtifact(v)
+	return _u
+}
+
+// SetNillableSourceArtifact sets the "source_artifact" field if the given value is not nil.
+func (_u *SystemPromptTemplateVersionUpdate) SetNillableSourceArtifact(v *string) *SystemPromptTemplateVersionUpdate {
+	if v != nil {
+		_u.SetSourceArtifact(*v)
+	}
+	return _u
+}
+
+// ClearSourceArtifact clears the value of the "source_artifact" field.
+func (_u *SystemPromptTemplateVersionUpdate) ClearSourceArtifact() *SystemPromptTemplateVersionUpdate {
+	_u.mutation.ClearSourceArtifact()
+	return _u
+}
+
+// SetSourceArtifactSha256 sets the "source_artifact_sha256" field.
+func (_u *SystemPromptTemplateVersionUpdate) SetSourceArtifactSha256(v string) *SystemPromptTemplateVersionUpdate {
+	_u.mutation.SetSourceArtifactSha256(v)
+	return _u
+}
+
+// SetNillableSourceArtifactSha256 sets the "source_artifact_sha256" field if the given value is not nil.
+func (_u *SystemPromptTemplateVersionUpdate) SetNillableSourceArtifactSha256(v *string) *SystemPromptTemplateVersionUpdate {
+	if v != nil {
+		_u.SetSourceArtifactSha256(*v)
+	}
+	return _u
+}
+
+// ClearSourceArtifactSha256 clears the value of the "source_artifact_sha256" field.
+func (_u *SystemPromptTemplateVersionUpdate) ClearSourceArtifactSha256() *SystemPromptTemplateVersionUpdate {
+	_u.mutation.ClearSourceArtifactSha256()
+	return _u
+}
+
+// SetSourceLicenseSha256 sets the "source_license_sha256" field.
+func (_u *SystemPromptTemplateVersionUpdate) SetSourceLicenseSha256(v string) *SystemPromptTemplateVersionUpdate {
+	_u.mutation.SetSourceLicenseSha256(v)
+	return _u
+}
+
+// SetNillableSourceLicenseSha256 sets the "source_license_sha256" field if the given value is not nil.
+func (_u *SystemPromptTemplateVersionUpdate) SetNillableSourceLicenseSha256(v *string) *SystemPromptTemplateVersionUpdate {
+	if v != nil {
+		_u.SetSourceLicenseSha256(*v)
+	}
+	return _u
+}
+
+// ClearSourceLicenseSha256 clears the value of the "source_license_sha256" field.
+func (_u *SystemPromptTemplateVersionUpdate) ClearSourceLicenseSha256() *SystemPromptTemplateVersionUpdate {
+	_u.mutation.ClearSourceLicenseSha256()
+	return _u
+}
+
 // SetCreatedBy sets the "created_by" field.
 func (_u *SystemPromptTemplateVersionUpdate) SetCreatedBy(v int64) *SystemPromptTemplateVersionUpdate {
 	_u.mutation.ResetCreatedBy()
@@ -335,6 +455,36 @@ func (_u *SystemPromptTemplateVersionUpdate) check() error {
 			return &ValidationError{Name: "note", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.note": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.SourceRepository(); ok {
+		if err := systemprompttemplateversion.SourceRepositoryValidator(v); err != nil {
+			return &ValidationError{Name: "source_repository", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.source_repository": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.SourceCommit(); ok {
+		if err := systemprompttemplateversion.SourceCommitValidator(v); err != nil {
+			return &ValidationError{Name: "source_commit", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.source_commit": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.SourceVersion(); ok {
+		if err := systemprompttemplateversion.SourceVersionValidator(v); err != nil {
+			return &ValidationError{Name: "source_version", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.source_version": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.SourceArtifact(); ok {
+		if err := systemprompttemplateversion.SourceArtifactValidator(v); err != nil {
+			return &ValidationError{Name: "source_artifact", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.source_artifact": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.SourceArtifactSha256(); ok {
+		if err := systemprompttemplateversion.SourceArtifactSha256Validator(v); err != nil {
+			return &ValidationError{Name: "source_artifact_sha256", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.source_artifact_sha256": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.SourceLicenseSha256(); ok {
+		if err := systemprompttemplateversion.SourceLicenseSha256Validator(v); err != nil {
+			return &ValidationError{Name: "source_license_sha256", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.source_license_sha256": %w`, err)}
+		}
+	}
 	if _u.mutation.TemplateCleared() && len(_u.mutation.TemplateIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "SystemPromptTemplateVersion.template"`)
 	}
@@ -388,6 +538,42 @@ func (_u *SystemPromptTemplateVersionUpdate) sqlSave(ctx context.Context) (_node
 	}
 	if value, ok := _u.mutation.Note(); ok {
 		_spec.SetField(systemprompttemplateversion.FieldNote, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.SourceRepository(); ok {
+		_spec.SetField(systemprompttemplateversion.FieldSourceRepository, field.TypeString, value)
+	}
+	if _u.mutation.SourceRepositoryCleared() {
+		_spec.ClearField(systemprompttemplateversion.FieldSourceRepository, field.TypeString)
+	}
+	if value, ok := _u.mutation.SourceCommit(); ok {
+		_spec.SetField(systemprompttemplateversion.FieldSourceCommit, field.TypeString, value)
+	}
+	if _u.mutation.SourceCommitCleared() {
+		_spec.ClearField(systemprompttemplateversion.FieldSourceCommit, field.TypeString)
+	}
+	if value, ok := _u.mutation.SourceVersion(); ok {
+		_spec.SetField(systemprompttemplateversion.FieldSourceVersion, field.TypeString, value)
+	}
+	if _u.mutation.SourceVersionCleared() {
+		_spec.ClearField(systemprompttemplateversion.FieldSourceVersion, field.TypeString)
+	}
+	if value, ok := _u.mutation.SourceArtifact(); ok {
+		_spec.SetField(systemprompttemplateversion.FieldSourceArtifact, field.TypeString, value)
+	}
+	if _u.mutation.SourceArtifactCleared() {
+		_spec.ClearField(systemprompttemplateversion.FieldSourceArtifact, field.TypeString)
+	}
+	if value, ok := _u.mutation.SourceArtifactSha256(); ok {
+		_spec.SetField(systemprompttemplateversion.FieldSourceArtifactSha256, field.TypeString, value)
+	}
+	if _u.mutation.SourceArtifactSha256Cleared() {
+		_spec.ClearField(systemprompttemplateversion.FieldSourceArtifactSha256, field.TypeString)
+	}
+	if value, ok := _u.mutation.SourceLicenseSha256(); ok {
+		_spec.SetField(systemprompttemplateversion.FieldSourceLicenseSha256, field.TypeString, value)
+	}
+	if _u.mutation.SourceLicenseSha256Cleared() {
+		_spec.ClearField(systemprompttemplateversion.FieldSourceLicenseSha256, field.TypeString)
 	}
 	if value, ok := _u.mutation.CreatedBy(); ok {
 		_spec.SetField(systemprompttemplateversion.FieldCreatedBy, field.TypeInt64, value)
@@ -614,6 +800,126 @@ func (_u *SystemPromptTemplateVersionUpdateOne) SetNillableNote(v *string) *Syst
 	return _u
 }
 
+// SetSourceRepository sets the "source_repository" field.
+func (_u *SystemPromptTemplateVersionUpdateOne) SetSourceRepository(v string) *SystemPromptTemplateVersionUpdateOne {
+	_u.mutation.SetSourceRepository(v)
+	return _u
+}
+
+// SetNillableSourceRepository sets the "source_repository" field if the given value is not nil.
+func (_u *SystemPromptTemplateVersionUpdateOne) SetNillableSourceRepository(v *string) *SystemPromptTemplateVersionUpdateOne {
+	if v != nil {
+		_u.SetSourceRepository(*v)
+	}
+	return _u
+}
+
+// ClearSourceRepository clears the value of the "source_repository" field.
+func (_u *SystemPromptTemplateVersionUpdateOne) ClearSourceRepository() *SystemPromptTemplateVersionUpdateOne {
+	_u.mutation.ClearSourceRepository()
+	return _u
+}
+
+// SetSourceCommit sets the "source_commit" field.
+func (_u *SystemPromptTemplateVersionUpdateOne) SetSourceCommit(v string) *SystemPromptTemplateVersionUpdateOne {
+	_u.mutation.SetSourceCommit(v)
+	return _u
+}
+
+// SetNillableSourceCommit sets the "source_commit" field if the given value is not nil.
+func (_u *SystemPromptTemplateVersionUpdateOne) SetNillableSourceCommit(v *string) *SystemPromptTemplateVersionUpdateOne {
+	if v != nil {
+		_u.SetSourceCommit(*v)
+	}
+	return _u
+}
+
+// ClearSourceCommit clears the value of the "source_commit" field.
+func (_u *SystemPromptTemplateVersionUpdateOne) ClearSourceCommit() *SystemPromptTemplateVersionUpdateOne {
+	_u.mutation.ClearSourceCommit()
+	return _u
+}
+
+// SetSourceVersion sets the "source_version" field.
+func (_u *SystemPromptTemplateVersionUpdateOne) SetSourceVersion(v string) *SystemPromptTemplateVersionUpdateOne {
+	_u.mutation.SetSourceVersion(v)
+	return _u
+}
+
+// SetNillableSourceVersion sets the "source_version" field if the given value is not nil.
+func (_u *SystemPromptTemplateVersionUpdateOne) SetNillableSourceVersion(v *string) *SystemPromptTemplateVersionUpdateOne {
+	if v != nil {
+		_u.SetSourceVersion(*v)
+	}
+	return _u
+}
+
+// ClearSourceVersion clears the value of the "source_version" field.
+func (_u *SystemPromptTemplateVersionUpdateOne) ClearSourceVersion() *SystemPromptTemplateVersionUpdateOne {
+	_u.mutation.ClearSourceVersion()
+	return _u
+}
+
+// SetSourceArtifact sets the "source_artifact" field.
+func (_u *SystemPromptTemplateVersionUpdateOne) SetSourceArtifact(v string) *SystemPromptTemplateVersionUpdateOne {
+	_u.mutation.SetSourceArtifact(v)
+	return _u
+}
+
+// SetNillableSourceArtifact sets the "source_artifact" field if the given value is not nil.
+func (_u *SystemPromptTemplateVersionUpdateOne) SetNillableSourceArtifact(v *string) *SystemPromptTemplateVersionUpdateOne {
+	if v != nil {
+		_u.SetSourceArtifact(*v)
+	}
+	return _u
+}
+
+// ClearSourceArtifact clears the value of the "source_artifact" field.
+func (_u *SystemPromptTemplateVersionUpdateOne) ClearSourceArtifact() *SystemPromptTemplateVersionUpdateOne {
+	_u.mutation.ClearSourceArtifact()
+	return _u
+}
+
+// SetSourceArtifactSha256 sets the "source_artifact_sha256" field.
+func (_u *SystemPromptTemplateVersionUpdateOne) SetSourceArtifactSha256(v string) *SystemPromptTemplateVersionUpdateOne {
+	_u.mutation.SetSourceArtifactSha256(v)
+	return _u
+}
+
+// SetNillableSourceArtifactSha256 sets the "source_artifact_sha256" field if the given value is not nil.
+func (_u *SystemPromptTemplateVersionUpdateOne) SetNillableSourceArtifactSha256(v *string) *SystemPromptTemplateVersionUpdateOne {
+	if v != nil {
+		_u.SetSourceArtifactSha256(*v)
+	}
+	return _u
+}
+
+// ClearSourceArtifactSha256 clears the value of the "source_artifact_sha256" field.
+func (_u *SystemPromptTemplateVersionUpdateOne) ClearSourceArtifactSha256() *SystemPromptTemplateVersionUpdateOne {
+	_u.mutation.ClearSourceArtifactSha256()
+	return _u
+}
+
+// SetSourceLicenseSha256 sets the "source_license_sha256" field.
+func (_u *SystemPromptTemplateVersionUpdateOne) SetSourceLicenseSha256(v string) *SystemPromptTemplateVersionUpdateOne {
+	_u.mutation.SetSourceLicenseSha256(v)
+	return _u
+}
+
+// SetNillableSourceLicenseSha256 sets the "source_license_sha256" field if the given value is not nil.
+func (_u *SystemPromptTemplateVersionUpdateOne) SetNillableSourceLicenseSha256(v *string) *SystemPromptTemplateVersionUpdateOne {
+	if v != nil {
+		_u.SetSourceLicenseSha256(*v)
+	}
+	return _u
+}
+
+// ClearSourceLicenseSha256 clears the value of the "source_license_sha256" field.
+func (_u *SystemPromptTemplateVersionUpdateOne) ClearSourceLicenseSha256() *SystemPromptTemplateVersionUpdateOne {
+	_u.mutation.ClearSourceLicenseSha256()
+	return _u
+}
+
 // SetCreatedBy sets the "created_by" field.
 func (_u *SystemPromptTemplateVersionUpdateOne) SetCreatedBy(v int64) *SystemPromptTemplateVersionUpdateOne {
 	_u.mutation.ResetCreatedBy()
@@ -781,6 +1087,36 @@ func (_u *SystemPromptTemplateVersionUpdateOne) check() error {
 			return &ValidationError{Name: "note", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.note": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.SourceRepository(); ok {
+		if err := systemprompttemplateversion.SourceRepositoryValidator(v); err != nil {
+			return &ValidationError{Name: "source_repository", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.source_repository": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.SourceCommit(); ok {
+		if err := systemprompttemplateversion.SourceCommitValidator(v); err != nil {
+			return &ValidationError{Name: "source_commit", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.source_commit": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.SourceVersion(); ok {
+		if err := systemprompttemplateversion.SourceVersionValidator(v); err != nil {
+			return &ValidationError{Name: "source_version", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.source_version": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.SourceArtifact(); ok {
+		if err := systemprompttemplateversion.SourceArtifactValidator(v); err != nil {
+			return &ValidationError{Name: "source_artifact", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.source_artifact": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.SourceArtifactSha256(); ok {
+		if err := systemprompttemplateversion.SourceArtifactSha256Validator(v); err != nil {
+			return &ValidationError{Name: "source_artifact_sha256", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.source_artifact_sha256": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.SourceLicenseSha256(); ok {
+		if err := systemprompttemplateversion.SourceLicenseSha256Validator(v); err != nil {
+			return &ValidationError{Name: "source_license_sha256", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplateVersion.source_license_sha256": %w`, err)}
+		}
+	}
 	if _u.mutation.TemplateCleared() && len(_u.mutation.TemplateIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "SystemPromptTemplateVersion.template"`)
 	}
@@ -851,6 +1187,42 @@ func (_u *SystemPromptTemplateVersionUpdateOne) sqlSave(ctx context.Context) (_n
 	}
 	if value, ok := _u.mutation.Note(); ok {
 		_spec.SetField(systemprompttemplateversion.FieldNote, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.SourceRepository(); ok {
+		_spec.SetField(systemprompttemplateversion.FieldSourceRepository, field.TypeString, value)
+	}
+	if _u.mutation.SourceRepositoryCleared() {
+		_spec.ClearField(systemprompttemplateversion.FieldSourceRepository, field.TypeString)
+	}
+	if value, ok := _u.mutation.SourceCommit(); ok {
+		_spec.SetField(systemprompttemplateversion.FieldSourceCommit, field.TypeString, value)
+	}
+	if _u.mutation.SourceCommitCleared() {
+		_spec.ClearField(systemprompttemplateversion.FieldSourceCommit, field.TypeString)
+	}
+	if value, ok := _u.mutation.SourceVersion(); ok {
+		_spec.SetField(systemprompttemplateversion.FieldSourceVersion, field.TypeString, value)
+	}
+	if _u.mutation.SourceVersionCleared() {
+		_spec.ClearField(systemprompttemplateversion.FieldSourceVersion, field.TypeString)
+	}
+	if value, ok := _u.mutation.SourceArtifact(); ok {
+		_spec.SetField(systemprompttemplateversion.FieldSourceArtifact, field.TypeString, value)
+	}
+	if _u.mutation.SourceArtifactCleared() {
+		_spec.ClearField(systemprompttemplateversion.FieldSourceArtifact, field.TypeString)
+	}
+	if value, ok := _u.mutation.SourceArtifactSha256(); ok {
+		_spec.SetField(systemprompttemplateversion.FieldSourceArtifactSha256, field.TypeString, value)
+	}
+	if _u.mutation.SourceArtifactSha256Cleared() {
+		_spec.ClearField(systemprompttemplateversion.FieldSourceArtifactSha256, field.TypeString)
+	}
+	if value, ok := _u.mutation.SourceLicenseSha256(); ok {
+		_spec.SetField(systemprompttemplateversion.FieldSourceLicenseSha256, field.TypeString, value)
+	}
+	if _u.mutation.SourceLicenseSha256Cleared() {
+		_spec.ClearField(systemprompttemplateversion.FieldSourceLicenseSha256, field.TypeString)
 	}
 	if value, ok := _u.mutation.CreatedBy(); ok {
 		_spec.SetField(systemprompttemplateversion.FieldCreatedBy, field.TypeInt64, value)

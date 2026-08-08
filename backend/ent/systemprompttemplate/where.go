@@ -90,6 +90,11 @@ func IsSeed(v bool) predicate.SystemPromptTemplate {
 	return predicate.SystemPromptTemplate(sql.FieldEQ(FieldIsSeed, v))
 }
 
+// ManagedSource applies equality check predicate on the "managed_source" field. It's identical to ManagedSourceEQ.
+func ManagedSource(v string) predicate.SystemPromptTemplate {
+	return predicate.SystemPromptTemplate(sql.FieldEQ(FieldManagedSource, v))
+}
+
 // CreatedBy applies equality check predicate on the "created_by" field. It's identical to CreatedByEQ.
 func CreatedBy(v int64) predicate.SystemPromptTemplate {
 	return predicate.SystemPromptTemplate(sql.FieldEQ(FieldCreatedBy, v))
@@ -433,6 +438,81 @@ func IsSeedEQ(v bool) predicate.SystemPromptTemplate {
 // IsSeedNEQ applies the NEQ predicate on the "is_seed" field.
 func IsSeedNEQ(v bool) predicate.SystemPromptTemplate {
 	return predicate.SystemPromptTemplate(sql.FieldNEQ(FieldIsSeed, v))
+}
+
+// ManagedSourceEQ applies the EQ predicate on the "managed_source" field.
+func ManagedSourceEQ(v string) predicate.SystemPromptTemplate {
+	return predicate.SystemPromptTemplate(sql.FieldEQ(FieldManagedSource, v))
+}
+
+// ManagedSourceNEQ applies the NEQ predicate on the "managed_source" field.
+func ManagedSourceNEQ(v string) predicate.SystemPromptTemplate {
+	return predicate.SystemPromptTemplate(sql.FieldNEQ(FieldManagedSource, v))
+}
+
+// ManagedSourceIn applies the In predicate on the "managed_source" field.
+func ManagedSourceIn(vs ...string) predicate.SystemPromptTemplate {
+	return predicate.SystemPromptTemplate(sql.FieldIn(FieldManagedSource, vs...))
+}
+
+// ManagedSourceNotIn applies the NotIn predicate on the "managed_source" field.
+func ManagedSourceNotIn(vs ...string) predicate.SystemPromptTemplate {
+	return predicate.SystemPromptTemplate(sql.FieldNotIn(FieldManagedSource, vs...))
+}
+
+// ManagedSourceGT applies the GT predicate on the "managed_source" field.
+func ManagedSourceGT(v string) predicate.SystemPromptTemplate {
+	return predicate.SystemPromptTemplate(sql.FieldGT(FieldManagedSource, v))
+}
+
+// ManagedSourceGTE applies the GTE predicate on the "managed_source" field.
+func ManagedSourceGTE(v string) predicate.SystemPromptTemplate {
+	return predicate.SystemPromptTemplate(sql.FieldGTE(FieldManagedSource, v))
+}
+
+// ManagedSourceLT applies the LT predicate on the "managed_source" field.
+func ManagedSourceLT(v string) predicate.SystemPromptTemplate {
+	return predicate.SystemPromptTemplate(sql.FieldLT(FieldManagedSource, v))
+}
+
+// ManagedSourceLTE applies the LTE predicate on the "managed_source" field.
+func ManagedSourceLTE(v string) predicate.SystemPromptTemplate {
+	return predicate.SystemPromptTemplate(sql.FieldLTE(FieldManagedSource, v))
+}
+
+// ManagedSourceContains applies the Contains predicate on the "managed_source" field.
+func ManagedSourceContains(v string) predicate.SystemPromptTemplate {
+	return predicate.SystemPromptTemplate(sql.FieldContains(FieldManagedSource, v))
+}
+
+// ManagedSourceHasPrefix applies the HasPrefix predicate on the "managed_source" field.
+func ManagedSourceHasPrefix(v string) predicate.SystemPromptTemplate {
+	return predicate.SystemPromptTemplate(sql.FieldHasPrefix(FieldManagedSource, v))
+}
+
+// ManagedSourceHasSuffix applies the HasSuffix predicate on the "managed_source" field.
+func ManagedSourceHasSuffix(v string) predicate.SystemPromptTemplate {
+	return predicate.SystemPromptTemplate(sql.FieldHasSuffix(FieldManagedSource, v))
+}
+
+// ManagedSourceIsNil applies the IsNil predicate on the "managed_source" field.
+func ManagedSourceIsNil() predicate.SystemPromptTemplate {
+	return predicate.SystemPromptTemplate(sql.FieldIsNull(FieldManagedSource))
+}
+
+// ManagedSourceNotNil applies the NotNil predicate on the "managed_source" field.
+func ManagedSourceNotNil() predicate.SystemPromptTemplate {
+	return predicate.SystemPromptTemplate(sql.FieldNotNull(FieldManagedSource))
+}
+
+// ManagedSourceEqualFold applies the EqualFold predicate on the "managed_source" field.
+func ManagedSourceEqualFold(v string) predicate.SystemPromptTemplate {
+	return predicate.SystemPromptTemplate(sql.FieldEqualFold(FieldManagedSource, v))
+}
+
+// ManagedSourceContainsFold applies the ContainsFold predicate on the "managed_source" field.
+func ManagedSourceContainsFold(v string) predicate.SystemPromptTemplate {
+	return predicate.SystemPromptTemplate(sql.FieldContainsFold(FieldManagedSource, v))
 }
 
 // CreatedByEQ applies the EQ predicate on the "created_by" field.

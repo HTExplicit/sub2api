@@ -27,6 +27,22 @@ func TestWriteBusinessSystemPromptErrorUsesStableProtocolCodes(t *testing.T) {
 			err: service.ErrBusinessSystemPromptUnavailable, wantStatus: http.StatusServiceUnavailable,
 			wantReason: "system_prompt_unavailable",
 		},
+		"source unavailable": {
+			err: service.ErrBusinessSystemPromptSourceUnavailable, wantStatus: http.StatusServiceUnavailable,
+			wantReason: "system_prompt_source_unavailable",
+		},
+		"source invalid": {
+			err: service.ErrBusinessSystemPromptSourceInvalid, wantStatus: http.StatusUnprocessableEntity,
+			wantReason: "system_prompt_source_invalid",
+		},
+		"license changed": {
+			err: service.ErrBusinessSystemPromptSourceLicenseChanged, wantStatus: http.StatusUnprocessableEntity,
+			wantReason: "system_prompt_source_license_changed",
+		},
+		"source not managed": {
+			err: service.ErrBusinessSystemPromptSourceNotManaged, wantStatus: http.StatusConflict,
+			wantReason: "system_prompt_source_not_managed",
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()

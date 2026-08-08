@@ -111,6 +111,26 @@ func (_u *SystemPromptTemplateUpdate) SetNillableIsSeed(v *bool) *SystemPromptTe
 	return _u
 }
 
+// SetManagedSource sets the "managed_source" field.
+func (_u *SystemPromptTemplateUpdate) SetManagedSource(v string) *SystemPromptTemplateUpdate {
+	_u.mutation.SetManagedSource(v)
+	return _u
+}
+
+// SetNillableManagedSource sets the "managed_source" field if the given value is not nil.
+func (_u *SystemPromptTemplateUpdate) SetNillableManagedSource(v *string) *SystemPromptTemplateUpdate {
+	if v != nil {
+		_u.SetManagedSource(*v)
+	}
+	return _u
+}
+
+// ClearManagedSource clears the value of the "managed_source" field.
+func (_u *SystemPromptTemplateUpdate) ClearManagedSource() *SystemPromptTemplateUpdate {
+	_u.mutation.ClearManagedSource()
+	return _u
+}
+
 // SetCreatedBy sets the "created_by" field.
 func (_u *SystemPromptTemplateUpdate) SetCreatedBy(v int64) *SystemPromptTemplateUpdate {
 	_u.mutation.ResetCreatedBy()
@@ -260,6 +280,11 @@ func (_u *SystemPromptTemplateUpdate) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplate.name": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.ManagedSource(); ok {
+		if err := systemprompttemplate.ManagedSourceValidator(v); err != nil {
+			return &ValidationError{Name: "managed_source", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplate.managed_source": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -295,6 +320,12 @@ func (_u *SystemPromptTemplateUpdate) sqlSave(ctx context.Context) (_node int, e
 	}
 	if value, ok := _u.mutation.IsSeed(); ok {
 		_spec.SetField(systemprompttemplate.FieldIsSeed, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.ManagedSource(); ok {
+		_spec.SetField(systemprompttemplate.FieldManagedSource, field.TypeString, value)
+	}
+	if _u.mutation.ManagedSourceCleared() {
+		_spec.ClearField(systemprompttemplate.FieldManagedSource, field.TypeString)
 	}
 	if value, ok := _u.mutation.CreatedBy(); ok {
 		_spec.SetField(systemprompttemplate.FieldCreatedBy, field.TypeInt64, value)
@@ -461,6 +492,26 @@ func (_u *SystemPromptTemplateUpdateOne) SetNillableIsSeed(v *bool) *SystemPromp
 	return _u
 }
 
+// SetManagedSource sets the "managed_source" field.
+func (_u *SystemPromptTemplateUpdateOne) SetManagedSource(v string) *SystemPromptTemplateUpdateOne {
+	_u.mutation.SetManagedSource(v)
+	return _u
+}
+
+// SetNillableManagedSource sets the "managed_source" field if the given value is not nil.
+func (_u *SystemPromptTemplateUpdateOne) SetNillableManagedSource(v *string) *SystemPromptTemplateUpdateOne {
+	if v != nil {
+		_u.SetManagedSource(*v)
+	}
+	return _u
+}
+
+// ClearManagedSource clears the value of the "managed_source" field.
+func (_u *SystemPromptTemplateUpdateOne) ClearManagedSource() *SystemPromptTemplateUpdateOne {
+	_u.mutation.ClearManagedSource()
+	return _u
+}
+
 // SetCreatedBy sets the "created_by" field.
 func (_u *SystemPromptTemplateUpdateOne) SetCreatedBy(v int64) *SystemPromptTemplateUpdateOne {
 	_u.mutation.ResetCreatedBy()
@@ -623,6 +674,11 @@ func (_u *SystemPromptTemplateUpdateOne) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplate.name": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.ManagedSource(); ok {
+		if err := systemprompttemplate.ManagedSourceValidator(v); err != nil {
+			return &ValidationError{Name: "managed_source", err: fmt.Errorf(`ent: validator failed for field "SystemPromptTemplate.managed_source": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -675,6 +731,12 @@ func (_u *SystemPromptTemplateUpdateOne) sqlSave(ctx context.Context) (_node *Sy
 	}
 	if value, ok := _u.mutation.IsSeed(); ok {
 		_spec.SetField(systemprompttemplate.FieldIsSeed, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.ManagedSource(); ok {
+		_spec.SetField(systemprompttemplate.FieldManagedSource, field.TypeString, value)
+	}
+	if _u.mutation.ManagedSourceCleared() {
+		_spec.ClearField(systemprompttemplate.FieldManagedSource, field.TypeString)
 	}
 	if value, ok := _u.mutation.CreatedBy(); ok {
 		_spec.SetField(systemprompttemplate.FieldCreatedBy, field.TypeInt64, value)

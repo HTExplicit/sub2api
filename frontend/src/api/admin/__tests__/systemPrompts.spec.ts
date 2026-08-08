@@ -79,6 +79,17 @@ describe('System Prompts API', () => {
     expect(client.put).toHaveBeenCalledWith('/admin/system-prompts/runtime', expect.objectContaining({ expected_revision: 9, enabled: true }))
   })
 
+  it('syncs a managed prompt source without activating the candidate', async () => {
+    client.post.mockResolvedValue({ data: { status: 'candidate_created', version: { id: 44 } } })
+
+    await systemPromptsAPI.syncManagedSource(12, { expected_latest_version: 3, expected_revision: 7 })
+
+    expect(client.post).toHaveBeenCalledWith('/admin/system-prompts/12/upstream-sync', {
+      expected_latest_version: 3,
+      expected_revision: 7,
+    })
+  })
+
   it('uses the independent skill registry revision for sync and publication', async () => {
     client.post.mockResolvedValue({ data: {} })
     client.get.mockResolvedValue({ data: {} })
