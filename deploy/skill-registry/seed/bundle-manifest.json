@@ -3664,8 +3664,8 @@
     },
     {
       "path": "skills/scripts/master-route.ps1",
-      "sha256": "37ed1a374f927679375f28a19ea01a6bb06d06d75fa57e0928c0ef0ac17eb7db",
-      "byte_length": 8112,
+      "sha256": "e2fddc82a2155c4d453af69816c1902bd2bbfece706943c6b6e923e8490cfbb9",
+      "byte_length": 8121,
       "kind": "script",
       "required": true
     },

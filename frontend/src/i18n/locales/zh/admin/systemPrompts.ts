@@ -36,7 +36,7 @@ export default {
     },
     skillRegistry: {
       title: 'Skill Registry',
-      description: '固定同步上游 main 与白名单 overlay；同步只生成候选，发布后才切换公开 current。',
+      description: '同步已审查的上游提交与原生路由文件；同步只生成候选，发布后才切换公开 current。',
       active: '已有活动版本',
       noActive: '无活动版本',
       sync: '一键同步上游 Skill',
@@ -205,10 +205,10 @@ export default {
       revision: 'Revision',
       skillUnavailable: 'Skill 详情不可用。',
       installPlatform: '安装平台',
-      copyAcquire: '复制获取步骤',
-      copyExecute: '复制执行步骤',
-      acquireCopied: '获取步骤已复制。',
-      executeCopied: '执行步骤已复制。'
+      copyAcquire: '复制获取命令',
+      copyExecute: '复制执行命令',
+      acquireCopied: '获取命令已复制。',
+      executeCopied: '执行命令已复制。'
     },
     source: {
       sync: '检查上游',

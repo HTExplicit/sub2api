@@ -47,13 +47,27 @@ func TestBusinessSystemPromptBundleLoaderRejectsTraversalAndSymlink(t *testing.T
 }
 
 func TestBusinessSystemPromptBundlePathNormalizationRejectsPlatformAliases(t *testing.T) {
-	for _, value := range []string{"../escape", `dir\\escape`, "file.md:stream", "NUL", "dir/COM1.txt", "trailing. ", "/absolute"} {
+	for _, value := range []string{"../escape", `dir\\escape`, "file.md:stream", "file?.md", "NUL", "dir/COM1.txt", "trailing. ", "/absolute"} {
 		t.Run(value, func(t *testing.T) {
 			_, err := normalizeBundleRelativePath(value)
 			require.Error(t, err)
 		})
 	}
 	require.Equal(t, "skills/api-security/SKILL.md", mustNormalizeBundlePath(t, "skills/api-security/SKILL.md"))
+}
+
+func TestBusinessSystemPromptBundleManifestKeepsLegacyOfflineArtifactReadable(t *testing.T) {
+	manifestPath := filepath.Join("..", "..", "..", "deploy", "skill-bundles", "moxinggang-reverse-skill", businessSystemPromptBundleManifestName)
+	raw, err := os.ReadFile(manifestPath)
+	require.NoError(t, err)
+	var manifest BusinessSystemPromptBundleManifest
+	require.NoError(t, json.Unmarshal(raw, &manifest))
+	require.NoError(t, validateBusinessSystemPromptBundleManifest(manifest))
+	require.Equal(t, []string{
+		"moxinggang-overlay/security-research/RULES.md",
+		"moxinggang-overlay/security-research/README_AI.md",
+		"moxinggang-overlay/security-research/SKILL.md",
+	}, manifest.CoreFiles)
 }
 
 func mustNormalizeBundlePath(t *testing.T, value string) string {

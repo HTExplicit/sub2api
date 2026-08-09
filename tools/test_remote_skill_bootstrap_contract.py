@@ -5,12 +5,15 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import shutil
 import stat
 import subprocess
 import sys
 import tempfile
+import urllib.error
+import urllib.request
 import zipfile
 from pathlib import Path
 
@@ -19,15 +22,26 @@ ROOT = Path(__file__).resolve().parents[1]
 BUNDLE_ID = "codexrip-reverse-skill"
 SOURCE_COMMIT = "1" * 40
 SKILL_NAME = "codexrip-reverse-skill"
-PYTHON_BOOTSTRAP = ROOT / "deploy" / "skill-registry" / "bootstrap" / "2db6ff2d1a5182b73920aabe701d914cca83643aeab89443c0561b1a67430b42" / "bootstrap-reverse-skill.py"
-POWERSHELL_BOOTSTRAP = ROOT / "deploy" / "skill-registry" / "bootstrap" / "8595884159988ff653c1d66be66d25acc62a359009c85a7924a23dbaf45d4246" / "bootstrap-reverse-skill.ps1"
+PYTHON_BOOTSTRAP = ROOT / "deploy" / "skill-registry" / "bootstrap" / "353878272c8972c00817cc7171d7a4a087b4203fa2758b7ba1d040ededde7dc9" / "bootstrap-reverse-skill.py"
+POWERSHELL_BOOTSTRAP = ROOT / "deploy" / "skill-registry" / "bootstrap" / "2199e8c4e8a09278c9b79e17b05e5457308db0a7d593e0f933ad6bd0712845f9" / "bootstrap-reverse-skill.ps1"
 
 
 def sha256(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def build_fixture(root: Path) -> tuple[Path, str]:
+def build_fixture(
+    root: Path,
+    path_overrides: dict[str, str] | None = None,
+    omit_files: set[str] | None = None,
+    core_files: list[str] | None = None,
+) -> tuple[Path, str]:
+    path_overrides = path_overrides or {}
+    omit_files = omit_files or set()
+
+    def output_path(name: str) -> str:
+        return path_overrides.get(name, name)
+
     files = {
         "RULES.md": b"contract core\n",
         "README_AI.md": b"contract readme\n",
@@ -43,9 +57,10 @@ def build_fixture(root: Path) -> tuple[Path, str]:
         ),
         "codexrip-client/agents/openai.yaml": b"interface:\n  display_name: CodexRip Reverse Skill\n",
     }
+    files = {name: raw for name, raw in files.items() if name not in omit_files}
     entries = [
         {
-            "path": name,
+            "path": output_path(name),
             "sha256": sha256(raw),
             "byte_length": len(raw),
             "kind": "script" if name.endswith(".py") else "text",
@@ -57,14 +72,14 @@ def build_fixture(root: Path) -> tuple[Path, str]:
         "schema_version": 1,
         "bundle_id": BUNDLE_ID,
         "version": "contract-v1",
-        "core_files": ["RULES.md", "README_AI.md", "skills/SKILL.md"],
+        "core_files": core_files if core_files is not None else ["RULES.md", "README_AI.md", "skills/SKILL.md"],
         "files": entries,
         "domains": [
             {
                 "id": "sentinel",
                 "keywords": ["sentinel", "哨兵"],
                 "entry": "skills/sentinel/SKILL.md",
-                "references": ["skills/sentinel/sentinel.py"],
+                "references": [output_path("skills/sentinel/sentinel.py")],
             }
         ],
     }
@@ -73,7 +88,7 @@ def build_fixture(root: Path) -> tuple[Path, str]:
     archive_name = f"{BUNDLE_ID}-{manifest_sha}.zip"
     archive_path = root / archive_name
     with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for name, raw in [("bundle-manifest.json", manifest_raw), *sorted(files.items())]:
+        for name, raw in [("bundle-manifest.json", manifest_raw), *((output_path(name), raw) for name, raw in sorted(files.items()))]:
             info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             info.create_system = 3
@@ -90,6 +105,7 @@ def build_fixture(root: Path) -> tuple[Path, str]:
         "archive_sha256": archive_sha,
         "manifest_url": f"https://codexrip.vip/skills/reverse-skill/versions/{manifest_sha}/bundle-manifest.json",
         "archive_url": f"https://codexrip.vip/skills/reverse-skill/versions/{manifest_sha}/{archive_name}",
+        "core_files": core_files if core_files is not None else ["RULES.md", "README_AI.md", "skills/SKILL.md"],
     }
     descriptor_path = root / "descriptor.json"
     descriptor_path.write_text(json.dumps(descriptor, separators=(",", ":")), encoding="utf-8")
@@ -136,6 +152,62 @@ def command_for(implementation: str, descriptor: Path, assets: Path, codex_home:
         "-CodexHome",
         str(codex_home),
     ]
+
+
+def verify_bootstrap_transport_and_commit_guards() -> None:
+    powershell_text = POWERSHELL_BOOTSTRAP.read_text(encoding="utf-8")
+    if "-MaximumRedirection 0" not in powershell_text or "-MaximumRedirection 3" in powershell_text:
+        raise RuntimeError("PowerShell bootstrap permits automatic redirects")
+    if "$uri.Query" not in powershell_text:
+        raise RuntimeError("PowerShell bootstrap permits URL queries")
+    if "catch { Write-Verbose 'previous Skill cleanup deferred after a successful atomic install' }" not in powershell_text:
+        raise RuntimeError("PowerShell bootstrap does not make old-tree cleanup best effort")
+
+    python_text = PYTHON_BOOTSTRAP.read_text(encoding="utf-8")
+    if "build_opener(NoRedirect())" not in python_text or "class NoRedirect" not in python_text:
+        raise RuntimeError("Python bootstrap does not disable automatic redirects")
+    if "shutil.rmtree(backup, ignore_errors=True)" not in python_text:
+        raise RuntimeError("Python bootstrap does not make old-tree cleanup best effort")
+
+    # Loading the content-addressed source must not add __pycache__ beside it.
+    sys.dont_write_bytecode = True
+    spec = importlib.util.spec_from_file_location("codexrip_bootstrap_contract", PYTHON_BOOTSTRAP)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Python bootstrap module could not be loaded")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    original_build_opener = module.urllib.request.build_opener
+
+    class RedirectProbe:
+        def __init__(self, handlers):
+            self.handlers = handlers
+
+        def open(self, request, timeout):
+            redirect_handler = next(
+                handler for handler in self.handlers if isinstance(handler, urllib.request.HTTPRedirectHandler)
+            )
+            redirected = redirect_handler.redirect_request(
+                request,
+                None,
+                302,
+                "Found",
+                {},
+                "https://outside.example/skill.py",
+            )
+            if redirected is not None:
+                raise AssertionError("Python bootstrap followed an external redirect")
+            raise urllib.error.HTTPError(request.full_url, 302, "redirect rejected", {}, None)
+
+    module.urllib.request.build_opener = lambda *handlers: RedirectProbe(handlers)
+    try:
+        try:
+            module.download("https://codexrip.vip/skills/bootstrap/test.py", 1024)
+        except module.BootstrapError:
+            pass
+        else:
+            raise RuntimeError("Python bootstrap accepted a redirect response")
+    finally:
+        module.urllib.request.build_opener = original_build_opener
 
 
 def corrupt_update_archive(assets: Path, descriptor_path: Path) -> None:
@@ -223,13 +295,70 @@ def run_implementation(implementation: str) -> None:
         print(f"{implementation} native Skill contract verified: replaced=true scripts_executed=false")
 
 
+def run_rejects_nonportable_manifest_path(implementation: str) -> None:
+    invalid_paths = (
+        "skills/sentinel/file:ads",
+        "skills/sentinel/file?.txt",
+        "skills/sentinel/trailing. ",
+        "skills/sentinel/COM1.txt",
+    )
+    for invalid_path in invalid_paths:
+        with tempfile.TemporaryDirectory(prefix=f"codexrip-{implementation}-path-") as raw_root:
+            root = Path(raw_root)
+            assets = root / "assets"
+            codex_home = root / "codex-home"
+            assets.mkdir()
+            descriptor, _ = build_fixture(
+                assets,
+                {"skills/sentinel/sentinel.py": invalid_path},
+            )
+            completed = subprocess.run(
+                command_for(implementation, descriptor, assets, codex_home),
+                text=True,
+                capture_output=True,
+                timeout=60,
+                check=False,
+            )
+            if completed.returncode == 0:
+                raise RuntimeError(f"{implementation} bootstrap accepted non-portable path {invalid_path}")
+            if (codex_home / "skills" / SKILL_NAME).exists():
+                raise RuntimeError(f"{implementation} bootstrap installed a rejected manifest {invalid_path}")
+
+
+def run_rejects_missing_core(implementation: str) -> None:
+    with tempfile.TemporaryDirectory(prefix=f"codexrip-{implementation}-core-") as raw_root:
+        root = Path(raw_root)
+        assets = root / "assets"
+        codex_home = root / "codex-home"
+        assets.mkdir()
+        descriptor, _ = build_fixture(
+            assets,
+            omit_files={"RULES.md", "README_AI.md", "skills/SKILL.md"},
+            core_files=[],
+        )
+        completed = subprocess.run(
+            command_for(implementation, descriptor, assets, codex_home),
+            text=True,
+            capture_output=True,
+            timeout=60,
+            check=False,
+        )
+        if completed.returncode == 0:
+            raise RuntimeError(f"{implementation} bootstrap accepted a manifest without native core files")
+        if (codex_home / "skills" / SKILL_NAME).exists():
+            raise RuntimeError(f"{implementation} bootstrap installed a manifest without native core files")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--implementation", choices=("python", "powershell", "all"), default="all")
     args = parser.parse_args()
+    verify_bootstrap_transport_and_commit_guards()
     implementations = ("python", "powershell") if args.implementation == "all" else (args.implementation,)
     for implementation in implementations:
         run_implementation(implementation)
+        run_rejects_nonportable_manifest_path(implementation)
+        run_rejects_missing_core(implementation)
     return 0
 
 

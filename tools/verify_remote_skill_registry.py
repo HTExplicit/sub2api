@@ -19,22 +19,22 @@ from verify_business_system_prompt_bundle import VerificationError, verify_bundl
 
 BUNDLE_ID = "codexrip-reverse-skill"
 MANIFEST_NAME = "bundle-manifest.json"
-MANIFEST_SHA256 = "03aee1ca551820d5975502ae11cc30ae2f8a5b9b275406a2f7ad10867775da3b"
-ARCHIVE_SHA256 = "0e9358d6d4b6bd2a36e371bbebc9b5a6948da8188964dd3fc89c4a945bcd585b"
+MANIFEST_SHA256 = "8c72ca9a3fbccb1af90152ab4ed00f3369bd4cc9c84c279a3f3e4208492e69bd"
+ARCHIVE_SHA256 = "30d2b2d152a5456b7abcded6c2c823ec21b08113d5c15f4913802afb6742d20b"
 OVERLAY_SHA256 = "c71df9943ba6f5d5d9409947267cbe7c19761d2382fce1be133f2223ba591898"
 SOURCE_COMMIT = "a5d8c9233b98c52df387d5b1a0ef669fcaa51374"
 PROMPT_SHA256 = "5813c55c0763e1472becec874232f3daafb28a69107b94ca8284daf44fceb2a0"
 PROMPT_BYTES = 9034
 FILE_COUNT = 545
-TOTAL_BYTES = 7_925_267
+TOTAL_BYTES = 7_925_276
 ARCHIVE_NAME = f"{BUNDLE_ID}-{MANIFEST_SHA256}.zip"
 CHECKSUM_NAME = f"{ARCHIVE_NAME}.sha256"
 DESCRIPTOR_NAME = "seed-descriptor.json"
 BASE_URL = f"https://codexrip.vip/skills/reverse-skill/versions/{MANIFEST_SHA256}"
 DESCRIPTOR_URL = "https://codexrip.vip/skills/reverse-skill/current.json"
 BOOTSTRAPS = {
-    "bootstrap-reverse-skill.ps1": "8595884159988ff653c1d66be66d25acc62a359009c85a7924a23dbaf45d4246",
-    "bootstrap-reverse-skill.py": "2db6ff2d1a5182b73920aabe701d914cca83643aeab89443c0561b1a67430b42",
+    "bootstrap-reverse-skill.ps1": "2199e8c4e8a09278c9b79e17b05e5457308db0a7d593e0f933ad6bd0712845f9",
+    "bootstrap-reverse-skill.py": "353878272c8972c00817cc7171d7a4a087b4203fa2758b7ba1d040ededde7dc9",
 }
 DESCRIPTOR_BOOTSTRAPS = {
     "powershell": {
@@ -64,6 +64,7 @@ FORBIDDEN_RUNTIME_BYTES = (
     b"SOURCE-MANIFEST.json",
     b"inline-system-instructions.txt",
     b"codexrip-overlay/security-research",
+    b"moxinggang-overlay/security-research",
     b"REMOTE_ROOT",
     b"github.com/HTExplicit/sub2api",
     b"verified_git_sparse_checkout",
@@ -99,6 +100,8 @@ def document_urls(raw: bytes) -> list[str]:
 def contains_remote_skill_acquisition(raw: bytes) -> bool:
     text = raw.decode("utf-8").casefold().replace("\r\n", "\n")
     for line in text.split("\n"):
+        if "git pull" in line:
+            return True
         if "git clone" in line and "github.com/zhaoxuya520/reverse-skill" in line:
             return True
         package_document = any(
@@ -113,6 +116,14 @@ def contains_remote_skill_acquisition(raw: bytes) -> bool:
         if package_document and acquisition and remote:
             return True
     return False
+
+
+def is_legacy_overlay_path(value: str) -> bool:
+    value = value.casefold()
+    return any(
+        value == prefix or value.startswith(prefix + "/")
+        for prefix in ("codexrip-overlay/security-research", "moxinggang-overlay/security-research")
+    )
 
 
 def require_codexrip_url(value: object, label: str) -> None:
@@ -189,7 +200,7 @@ def verify_manifest_contract(manifest: dict) -> set[str]:
     by_path = {entry.get("path"): entry for entry in entries if isinstance(entry, dict)}
     if not CLIENT_FILES.issubset(declared):
         raise VerificationError("manifest does not include the native Codex Skill entry files")
-    if any(isinstance(name, str) and name.startswith("codexrip-overlay/security-research/") for name in declared):
+    if any(isinstance(name, str) and is_legacy_overlay_path(name) for name in declared):
         raise VerificationError("manifest still contains the legacy security-research overlay")
     gradle_wrapper = by_path.get("burp-mcp-full/gradlew")
     if not isinstance(gradle_wrapper, dict) or gradle_wrapper.get("kind") != "script":

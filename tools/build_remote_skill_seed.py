@@ -30,12 +30,12 @@ MAX_TOTAL_BYTES = 256 << 20
 MAX_FILE_COUNT = 2000
 BOOTSTRAPS = {
     "powershell": {
-        "url": "https://codexrip.vip/skills/bootstrap/8595884159988ff653c1d66be66d25acc62a359009c85a7924a23dbaf45d4246/bootstrap-reverse-skill.ps1",
-        "sha256": "8595884159988ff653c1d66be66d25acc62a359009c85a7924a23dbaf45d4246",
+        "url": "https://codexrip.vip/skills/bootstrap/2199e8c4e8a09278c9b79e17b05e5457308db0a7d593e0f933ad6bd0712845f9/bootstrap-reverse-skill.ps1",
+        "sha256": "2199e8c4e8a09278c9b79e17b05e5457308db0a7d593e0f933ad6bd0712845f9",
     },
     "python": {
-        "url": "https://codexrip.vip/skills/bootstrap/2db6ff2d1a5182b73920aabe701d914cca83643aeab89443c0561b1a67430b42/bootstrap-reverse-skill.py",
-        "sha256": "2db6ff2d1a5182b73920aabe701d914cca83643aeab89443c0561b1a67430b42",
+        "url": "https://codexrip.vip/skills/bootstrap/353878272c8972c00817cc7171d7a4a087b4203fa2758b7ba1d040ededde7dc9/bootstrap-reverse-skill.py",
+        "sha256": "353878272c8972c00817cc7171d7a4a087b4203fa2758b7ba1d040ededde7dc9",
     },
 }
 
@@ -89,11 +89,25 @@ EXCLUDED_SOURCE_NAMES = {
 FORBIDDEN_SKILL_SOURCE = (
     b"moxinggang.com",
     b"codexrip-overlay/security-research",
+    b"moxinggang-overlay/security-research",
     b"REMOTE_ROOT",
     b"C:\\Users\\Administrator\\AppData\\Local",
     "\u6a21\u578b\u6e2f".encode("utf-8"),
 )
 LOCAL_PACKAGE_CONTRACT_LINE = b"# Package root: verified installed bundle/"
+UPSTREAM_CLONE_COMMAND = b"git clone https://github.com/zhaoxuya520/reverse-skill.git"
+ROUTER_RECOVERY_LINE = b"    Write-Host 'Restore skills/config/routing.json (git checkout / git pull) and retry.' -ForegroundColor Yellow"
+LOCAL_RECOVERY_LINE = b"    Write-Host 'Restore skills/config/routing.json from the verified installed bundle and retry.' -ForegroundColor Yellow"
+APPROVED_PACKAGE_CONTRACT_REWRITES = {
+    "README.md": ((UPSTREAM_CLONE_COMMAND + b"\n", LOCAL_PACKAGE_CONTRACT_LINE + b"\n"),),
+    "README_zh.md": ((UPSTREAM_CLONE_COMMAND + b"\n", LOCAL_PACKAGE_CONTRACT_LINE + b"\n"),),
+    "docs/RELEASE_NOTES_v1.0.0.md": (
+        (UPSTREAM_CLONE_COMMAND + b"\ncd reverse-skill\n", LOCAL_PACKAGE_CONTRACT_LINE + b"\n"),
+    ),
+    "skills/scripts/master-route.ps1": (
+        (ROUTER_RECOVERY_LINE + b"\r\n", LOCAL_RECOVERY_LINE + b"\r\n"),
+    ),
+}
 HTTP_URL_PATTERN = re.compile(rb"https?://[^\s<>\"'`]+", re.IGNORECASE)
 
 ROUTE_KEYWORDS = {
@@ -164,16 +178,30 @@ def file_kind(name: str, data: bytes) -> str:
     return "text"
 
 
-def rewrite_package_contract(data: bytes) -> bytes:
-    clone = b"git clone https://github.com/zhaoxuya520/reverse-skill.git"
-    data = data.replace(clone + b"\r\ncd reverse-skill", LOCAL_PACKAGE_CONTRACT_LINE)
-    data = data.replace(clone + b"\ncd reverse-skill", LOCAL_PACKAGE_CONTRACT_LINE)
-    return data.replace(clone, LOCAL_PACKAGE_CONTRACT_LINE)
+def rewrite_package_contract(name: str, data: bytes) -> bytes:
+    result = data
+    for source, replacement in APPROVED_PACKAGE_CONTRACT_REWRITES.get(name, ()):
+        if result.count(source) != 1:
+            raise ValueError(f"reviewed package contract changed: {name}")
+        result = result.replace(source, replacement, 1)
+    if contains_remote_skill_acquisition(result):
+        raise ValueError(f"source contains remote Skill acquisition instructions: {name}")
+    return result
+
+
+def is_legacy_overlay_path(value: str) -> bool:
+    value = value.casefold()
+    return any(
+        value == prefix or value.startswith(prefix + "/")
+        for prefix in ("codexrip-overlay/security-research", "moxinggang-overlay/security-research")
+    )
 
 
 def contains_remote_skill_acquisition(data: bytes) -> bool:
     text = data.decode("utf-8").casefold().replace("\r\n", "\n")
     for line in text.split("\n"):
+        if "git pull" in line:
+            return True
         if "git clone" in line and "github.com/zhaoxuya520/reverse-skill" in line:
             return True
         package_document = any(
@@ -231,6 +259,8 @@ def extract_source(raw: bytes) -> dict[str, bytes]:
                 raise ValueError(f"upstream ZIP contains a non-regular file: {relative}")
             if PurePosixPath(relative).name in EXCLUDED_SOURCE_NAMES:
                 continue
+            if is_legacy_overlay_path(relative):
+                raise ValueError(f"legacy overlay source path rejected: {relative}")
             key = portable_key(relative)
             if relative in files or key in portable:
                 raise ValueError(f"upstream ZIP contains a portable path collision: {relative}")
@@ -240,7 +270,7 @@ def extract_source(raw: bytes) -> dict[str, bytes]:
             if len(data) != info.file_size:
                 raise ValueError(f"upstream file length mismatch: {relative}")
             if file_kind(relative, data) != "binary":
-                data = rewrite_package_contract(data)
+                data = rewrite_package_contract(relative, data)
             files[relative] = data
             portable.add(key)
             total += len(data)

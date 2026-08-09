@@ -53,8 +53,8 @@ const skillRegistry = () => ({
   versions: [],
   client_install: {
     skill_name: 'codexrip-reverse-skill', descriptor_url: 'https://codexrip.vip/skills/reverse-skill/current.json',
-    powershell: { strategy: 'verified_git_sparse_checkout', repository_url: 'https://github.com/HTExplicit/sub2api.git', repository_ref: 'v0.1.171-codexrip.7', repository_commit: '1'.repeat(40), bootstrap_path: 'deploy/skill-registry/bootstrap/powershell.ps1', bootstrap_sha256: '8'.repeat(64), acquire_command: 'acquire powershell', execute_command: 'execute powershell' },
-    python: { strategy: 'verified_git_sparse_checkout', repository_url: 'https://github.com/HTExplicit/sub2api.git', repository_ref: 'v0.1.171-codexrip.7', repository_commit: '1'.repeat(40), bootstrap_path: 'deploy/skill-registry/bootstrap/python.py', bootstrap_sha256: '2'.repeat(64), acquire_command: 'acquire python', execute_command: 'execute python' },
+    powershell: { strategy: 'verified_https_content_addressed', bootstrap_url: 'https://codexrip.vip/skills/bootstrap/2199e8c4e8a09278c9b79e17b05e5457308db0a7d593e0f933ad6bd0712845f9/bootstrap-reverse-skill.ps1', bootstrap_sha256: '2199e8c4e8a09278c9b79e17b05e5457308db0a7d593e0f933ad6bd0712845f9', acquire_command: 'Invoke-WebRequest https://codexrip.vip/skills/bootstrap/2199e8c4e8a09278c9b79e17b05e5457308db0a7d593e0f933ad6bd0712845f9/bootstrap-reverse-skill.ps1', execute_command: 'execute powershell' },
+    python: { strategy: 'verified_https_content_addressed', bootstrap_url: 'https://codexrip.vip/skills/bootstrap/353878272c8972c00817cc7171d7a4a087b4203fa2758b7ba1d040ededde7dc9/bootstrap-reverse-skill.py', bootstrap_sha256: '353878272c8972c00817cc7171d7a4a087b4203fa2758b7ba1d040ededde7dc9', acquire_command: 'urllib https://codexrip.vip/skills/bootstrap/353878272c8972c00817cc7171d7a4a087b4203fa2758b7ba1d040ededde7dc9/bootstrap-reverse-skill.py', execute_command: 'execute python' },
   },
 })
 
@@ -117,6 +117,25 @@ describe('SystemPromptsView', () => {
     expect(wrapper.get('[data-test="system-prompt-advanced-drawer"]').exists()).toBe(true)
     await wrapper.get('[data-test="system-prompt-advanced-drawer"]').trigger('keydown', { key: 'Escape' })
     expect(wrapper.find('[data-test="system-prompt-advanced-drawer"]').exists()).toBe(false)
+  })
+
+  it('keeps the client installer content-addressed and exposes both stages', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-test="system-prompt-open-advanced"]').trigger('click')
+    await flushPromises()
+
+    const drawer = wrapper.get('[data-test="system-prompt-advanced-drawer"]')
+    expect(drawer.text()).toContain('https://codexrip.vip/skills/bootstrap/2199e8c4e8a09278c9b79e17b05e5457308db0a7d593e0f933ad6bd0712845f9/bootstrap-reverse-skill.ps1')
+    expect(drawer.text()).toContain('2199e8c4e8a09278c9b79e17b05e5457308db0a7d593e0f933ad6bd0712845f9')
+    expect(drawer.text()).not.toMatch(/github\.com|repository_url|bootstrap_path/i)
+
+    await drawer.get('[data-test="system-prompt-copy-acquire"]').trigger('click')
+    expect(mocks.copyToClipboard).toHaveBeenCalledWith(expect.stringContaining('codexrip.vip'), expect.stringContaining('acquireCopied'))
+
+    await drawer.get('[aria-label="admin.systemPrompts.advanced.installPlatform"]').setValue('python')
+    await drawer.get('[data-test="system-prompt-copy-execute"]').trigger('click')
+    expect(mocks.copyToClipboard).toHaveBeenCalledWith('execute python', expect.stringContaining('executeCopied'))
   })
 
   it('loads the selected template from the mobile selector', async () => {

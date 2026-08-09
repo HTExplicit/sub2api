@@ -341,8 +341,8 @@ func normalizeBundleRelativePath(value string) (string, error) {
 		return "", errors.New("empty, NUL, or backslash path")
 	}
 	for _, r := range value {
-		if r < 0x20 || r == ':' {
-			return "", errors.New("control character or colon path")
+		if r < 0x20 || strings.ContainsRune(`<>:"|?*`, r) {
+			return "", errors.New("invalid path character")
 		}
 	}
 	if strings.HasPrefix(value, "/") || filepath.IsAbs(filepath.FromSlash(value)) {

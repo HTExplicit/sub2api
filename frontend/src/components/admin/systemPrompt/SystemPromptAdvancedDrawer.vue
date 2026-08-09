@@ -91,6 +91,10 @@
                     <option value="python">Python 3</option>
                   </select>
                 </div>
+                <div v-if="selectedInstaller" class="mb-2 space-y-1 text-[11px] text-gray-500 dark:text-dark-400" data-test="system-prompt-installer-metadata">
+                  <div class="break-all font-mono">{{ selectedInstaller.bootstrap_url }}</div>
+                  <div class="break-all font-mono">{{ selectedInstaller.bootstrap_sha256 }}</div>
+                </div>
                 <div class="grid grid-cols-2 gap-2">
                   <button type="button" class="btn btn-secondary btn-sm" data-test="system-prompt-copy-acquire" @click="emit('copy-install', selectedInstaller?.acquire_command || '', 'acquire')">
                     <Icon name="copy" size="xs" class="mr-1" />{{ t('admin.systemPrompts.advanced.copyAcquire') }}

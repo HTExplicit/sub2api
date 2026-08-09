@@ -21,8 +21,8 @@ func TestRemoteSkillRegistryFilesystemInstallsReleaseSeedAndPublicAssets(t *test
 	version, err := files.LoadSeed(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, BusinessSystemPromptRemoteSkillBundleID, version.BundleID)
-	require.Equal(t, "03aee1ca551820d5975502ae11cc30ae2f8a5b9b275406a2f7ad10867775da3b", version.ManifestSHA256)
-	require.Equal(t, "0e9358d6d4b6bd2a36e371bbebc9b5a6948da8188964dd3fc89c4a945bcd585b", version.ArchiveSHA256)
+	require.Equal(t, "8c72ca9a3fbccb1af90152ab4ed00f3369bd4cc9c84c279a3f3e4208492e69bd", version.ManifestSHA256)
+	require.Equal(t, "30d2b2d152a5456b7abcded6c2c823ec21b08113d5c15f4913802afb6742d20b", version.ArchiveSHA256)
 	require.NoError(t, files.ValidateVersion(context.Background(), version))
 
 	seedRoot := filepath.Join(runtimeRoot, "private", "seed")
@@ -35,8 +35,8 @@ func TestRemoteSkillRegistryFilesystemInstallsReleaseSeedAndPublicAssets(t *test
 	require.ErrorIs(t, err, os.ErrNotExist)
 
 	for _, hashAndName := range [][2]string{
-		{"8595884159988ff653c1d66be66d25acc62a359009c85a7924a23dbaf45d4246", "bootstrap-reverse-skill.ps1"},
-		{"2db6ff2d1a5182b73920aabe701d914cca83643aeab89443c0561b1a67430b42", "bootstrap-reverse-skill.py"},
+		{"2199e8c4e8a09278c9b79e17b05e5457308db0a7d593e0f933ad6bd0712845f9", "bootstrap-reverse-skill.ps1"},
+		{"353878272c8972c00817cc7171d7a4a087b4203fa2758b7ba1d040ededde7dc9", "bootstrap-reverse-skill.py"},
 	} {
 		_, err := os.Stat(filepath.Join(runtimeRoot, "public", "bootstrap", hashAndName[0], hashAndName[1]))
 		require.NoError(t, err)
@@ -73,12 +73,31 @@ func TestRemoteSkillRegistryFilesystemInstallsReleaseSeedAndPublicAssets(t *test
 		}
 		for _, path := range []string{
 			filepath.Join(runtimeRoot, "public", "reverse-skill", "versions", version.ManifestSHA256),
-			filepath.Join(runtimeRoot, "public", "bootstrap", "8595884159988ff653c1d66be66d25acc62a359009c85a7924a23dbaf45d4246"),
-			filepath.Join(runtimeRoot, "public", "bootstrap", "2db6ff2d1a5182b73920aabe701d914cca83643aeab89443c0561b1a67430b42"),
+			filepath.Join(runtimeRoot, "public", "bootstrap", "2199e8c4e8a09278c9b79e17b05e5457308db0a7d593e0f933ad6bd0712845f9"),
+			filepath.Join(runtimeRoot, "public", "bootstrap", "353878272c8972c00817cc7171d7a4a087b4203fa2758b7ba1d040ededde7dc9"),
 		} {
 			info, err := os.Stat(path)
 			require.NoError(t, err)
 			require.NotZero(t, info.Mode().Perm()&0o001, "host Nginx must be able to traverse %s", path)
 		}
 	}
+}
+
+func TestValidateRemoteSkillPublicBootstrapsKeepsSchemaOneLegacyDescriptorsReadable(t *testing.T) {
+	require.NoError(t, validateRemoteSkillPublicBootstraps(RemoteSkillPublicBootstraps{}))
+	partial := RemoteSkillPublicBootstraps{PowerShell: remoteSkillPublicBootstraps().PowerShell}
+	require.ErrorIs(t, validateRemoteSkillPublicBootstraps(partial), ErrBusinessSystemPromptBundleInvalid)
+	require.NoError(t, validateRemoteSkillPublicBootstraps(remoteSkillPublicBootstraps()))
+}
+
+func TestLegacyRemoteSkillOverlayPathGuardIsRemoteSpecificAndCaseInsensitive(t *testing.T) {
+	for _, path := range []string{
+		"codexrip-overlay/security-research",
+		"CodexRip-Overlay/Security-Research/SKILL.md",
+		"moxinggang-overlay/security-research",
+		"MoxingGang-Overlay/Security-Research/SKILL.md",
+	} {
+		require.True(t, isLegacyRemoteSkillOverlayPath(path), path)
+	}
+	require.False(t, isLegacyRemoteSkillOverlayPath("skills/security-research/SKILL.md"))
 }

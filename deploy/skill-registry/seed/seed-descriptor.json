@@ -4,28 +4,28 @@
   "revision": 1,
   "source_commit": "a5d8c9233b98c52df387d5b1a0ef669fcaa51374",
   "overlay_sha256": "c71df9943ba6f5d5d9409947267cbe7c19761d2382fce1be133f2223ba591898",
-  "manifest_sha256": "03aee1ca551820d5975502ae11cc30ae2f8a5b9b275406a2f7ad10867775da3b",
-  "archive_sha256": "0e9358d6d4b6bd2a36e371bbebc9b5a6948da8188964dd3fc89c4a945bcd585b",
-  "manifest_url": "https://codexrip.vip/skills/reverse-skill/versions/03aee1ca551820d5975502ae11cc30ae2f8a5b9b275406a2f7ad10867775da3b/bundle-manifest.json",
-  "archive_url": "https://codexrip.vip/skills/reverse-skill/versions/03aee1ca551820d5975502ae11cc30ae2f8a5b9b275406a2f7ad10867775da3b/codexrip-reverse-skill-03aee1ca551820d5975502ae11cc30ae2f8a5b9b275406a2f7ad10867775da3b.zip",
-  "files_base_url": "https://codexrip.vip/skills/reverse-skill/versions/03aee1ca551820d5975502ae11cc30ae2f8a5b9b275406a2f7ad10867775da3b/",
+  "manifest_sha256": "8c72ca9a3fbccb1af90152ab4ed00f3369bd4cc9c84c279a3f3e4208492e69bd",
+  "archive_sha256": "30d2b2d152a5456b7abcded6c2c823ec21b08113d5c15f4913802afb6742d20b",
+  "manifest_url": "https://codexrip.vip/skills/reverse-skill/versions/8c72ca9a3fbccb1af90152ab4ed00f3369bd4cc9c84c279a3f3e4208492e69bd/bundle-manifest.json",
+  "archive_url": "https://codexrip.vip/skills/reverse-skill/versions/8c72ca9a3fbccb1af90152ab4ed00f3369bd4cc9c84c279a3f3e4208492e69bd/codexrip-reverse-skill-8c72ca9a3fbccb1af90152ab4ed00f3369bd4cc9c84c279a3f3e4208492e69bd.zip",
+  "files_base_url": "https://codexrip.vip/skills/reverse-skill/versions/8c72ca9a3fbccb1af90152ab4ed00f3369bd4cc9c84c279a3f3e4208492e69bd/",
   "core_files": [
     "RULES.md",
     "README_AI.md",
     "skills/SKILL.md"
   ],
   "file_count": 545,
-  "total_bytes": 7925267,
+  "total_bytes": 7925276,
   "published_at": "2026-08-09T00:00:00Z",
   "bootstrap_policy": "download_verify_native_skill_atomic_replace",
   "bootstraps": {
     "powershell": {
-      "url": "https://codexrip.vip/skills/bootstrap/8595884159988ff653c1d66be66d25acc62a359009c85a7924a23dbaf45d4246/bootstrap-reverse-skill.ps1",
-      "sha256": "8595884159988ff653c1d66be66d25acc62a359009c85a7924a23dbaf45d4246"
+      "url": "https://codexrip.vip/skills/bootstrap/2199e8c4e8a09278c9b79e17b05e5457308db0a7d593e0f933ad6bd0712845f9/bootstrap-reverse-skill.ps1",
+      "sha256": "2199e8c4e8a09278c9b79e17b05e5457308db0a7d593e0f933ad6bd0712845f9"
     },
     "python": {
-      "url": "https://codexrip.vip/skills/bootstrap/2db6ff2d1a5182b73920aabe701d914cca83643aeab89443c0561b1a67430b42/bootstrap-reverse-skill.py",
-      "sha256": "2db6ff2d1a5182b73920aabe701d914cca83643aeab89443c0561b1a67430b42"
+      "url": "https://codexrip.vip/skills/bootstrap/353878272c8972c00817cc7171d7a4a087b4203fa2758b7ba1d040ededde7dc9/bootstrap-reverse-skill.py",
+      "sha256": "353878272c8972c00817cc7171d7a4a087b4203fa2758b7ba1d040ededde7dc9"
     }
   }
 }

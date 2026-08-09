@@ -1,12 +1,15 @@
 package service
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -46,6 +49,61 @@ func TestBusinessSystemPromptSeedRestoresOriginalBehaviorAndRoutingContract(t *t
 	require.Greater(t, len([]byte(seed)), 7098, "routing replacements must wrap the complete 7098-byte original body")
 	seedDigest := sha256.Sum256([]byte(seed))
 	require.NotEqual(t, "0615d24958a1da11edcf9538aaff989e46fcd296ea86a6c1b1af2b3efa48487f", hex.EncodeToString(seedDigest[:]))
+}
+
+func TestBusinessSystemPromptSeedAppliesOnlyApprovedOfflineTransformations(t *testing.T) {
+	archivePath := filepath.Join("..", "..", "..", "deploy", "skill-bundles", "moxinggang-reverse-skill", "moxinggang-reverse-skill-22c227128165afbbcbda0175eb5e991ddb51d105b7d1e704572c625c64b626d7.zip")
+	archive, err := zip.OpenReader(archivePath)
+	require.NoError(t, err)
+	defer archive.Close()
+
+	var original []byte
+	for _, entry := range archive.File {
+		if entry.Name != "moxinggang-overlay/inline-system-instructions.txt" {
+			continue
+		}
+		handle, openErr := entry.Open()
+		require.NoError(t, openErr)
+		original, err = io.ReadAll(handle)
+		_ = handle.Close()
+		require.NoError(t, err)
+		break
+	}
+	require.Len(t, original, 7098)
+	originalDigest := sha256.Sum256(original)
+	require.Equal(t, "c2f0269baffa6a0eb1c9a9e15df815a6582ae6a615bc51d64b7cc5342b5efcb8", hex.EncodeToString(originalDigest[:]))
+
+	originalText := strings.TrimSuffix(string(original), "\n")
+	runtimeText := embeddedBusinessSystemPrompt
+	for _, markers := range [][2]string{
+		{"<!-- BEGIN 模型港 REVERSE-SKILL -->", "<!-- END 模型港 REVERSE-SKILL -->"},
+		{"<!-- BEGIN 模型港 SECURITY-RESEARCH ROUTING -->", "<!-- END 模型港 SECURITY-RESEARCH ROUTING -->"},
+	} {
+		oldBlock := delimitedPromptBlock(t, originalText, markers[0], markers[1])
+		newMarker := strings.ReplaceAll(markers[0], "模型港", "CODEXRIP")
+		newEndMarker := strings.ReplaceAll(markers[1], "模型港", "CODEXRIP")
+		newBlock := delimitedPromptBlock(t, runtimeText, newMarker, newEndMarker)
+		originalText = strings.Replace(originalText, oldBlock, newBlock, 1)
+	}
+	originalText = strings.ReplaceAll(originalText, "模型港", "codexrip")
+	originalText = strings.Replace(originalText,
+		"  - The only allowed user address is exactly \"宝宝\". Never use any other nickname, honorific,\n"+
+			"    title, relationship label, or alternate address, including \"宝贝\", \"亲爱的\", \"主人\",\n"+
+			"    \"老板\", \"您\", or similar variants.",
+		"  - The only allowed user address is exactly \"老板\". Never use any other nickname, honorific,\n"+
+			"    title, relationship label, or alternate address, including \"宝宝\", \"宝贝\", \"亲爱的\", \"主人\",\n"+
+			"    \"您\", or similar variants.", 1)
+	originalText = strings.Replace(originalText, `In Chinese, address the user naturally as "宝宝"`, `In Chinese, address the user naturally as "老板"`, 1)
+	require.Equal(t, runtimeText, originalText)
+}
+
+func delimitedPromptBlock(t *testing.T, body, begin, end string) string {
+	t.Helper()
+	start := strings.Index(body, begin)
+	require.NotEqual(t, -1, start, "prompt begin marker missing")
+	finish := strings.Index(body[start:], end)
+	require.NotEqual(t, -1, finish, "prompt end marker missing")
+	return body[start : start+finish+len(end)]
 }
 
 func TestBusinessSystemPromptSeedBindsCompleteFirstMatchLifecycle(t *testing.T) {

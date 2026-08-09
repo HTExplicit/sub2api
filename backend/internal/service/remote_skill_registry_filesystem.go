@@ -511,6 +511,9 @@ func validateRemoteSkillCandidate(candidate RemoteSkillCandidate) error {
 		return fmt.Errorf("%w: candidate file set mismatch", ErrBusinessSystemPromptBundleInvalid)
 	}
 	for _, entry := range candidate.Manifest.Files {
+		if isLegacyRemoteSkillOverlayPath(entry.Path) {
+			return fmt.Errorf("%w: legacy overlay path rejected", ErrBusinessSystemPromptBundleInvalid)
+		}
 		data, ok := candidate.Files[entry.Path]
 		if !ok || len(data) != entry.ByteLength || !equalHexDigest(entry.SHA256, data) {
 			return fmt.Errorf("%w: candidate file mismatch", ErrBusinessSystemPromptBundleInvalid)
@@ -540,6 +543,9 @@ func validateRemoteSkillVersionRoot(root string, version RemoteSkillBundleVersio
 	}
 	var total int64
 	for _, entry := range bundle.Manifest.Files {
+		if isLegacyRemoteSkillOverlayPath(entry.Path) {
+			return fmt.Errorf("%w: legacy overlay path rejected", ErrBusinessSystemPromptBundleInvalid)
+		}
 		total += int64(entry.ByteLength)
 	}
 	if total != version.TotalBytes {
@@ -557,6 +563,16 @@ func validateRemoteSkillVersionRoot(root string, version RemoteSkillBundleVersio
 		return fmt.Errorf("%w: archive digest mismatch", ErrBusinessSystemPromptBundleInvalid)
 	}
 	return verifyRemoteSkillArchive(archiveBytes, manifestBytes, bundle.Manifest)
+}
+
+func isLegacyRemoteSkillOverlayPath(value string) bool {
+	value = strings.ToLower(value)
+	for _, prefix := range []string{"codexrip-overlay/security-research", "moxinggang-overlay/security-research"} {
+		if value == prefix || strings.HasPrefix(value, prefix+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func writeRemoteSkillCandidate(root string, candidate RemoteSkillCandidate) error {
@@ -792,6 +808,10 @@ func remoteSkillPublicBootstraps() RemoteSkillPublicBootstraps {
 }
 
 func validateRemoteSkillPublicBootstraps(value RemoteSkillPublicBootstraps) error {
+	if value == (RemoteSkillPublicBootstraps{}) {
+		// Schema 1 descriptors published before bootstraps remain readable for rollback.
+		return nil
+	}
 	expected := remoteSkillPublicBootstraps()
 	if value != expected {
 		return fmt.Errorf("%w: bootstrap metadata is not content addressed", ErrBusinessSystemPromptBundleInvalid)

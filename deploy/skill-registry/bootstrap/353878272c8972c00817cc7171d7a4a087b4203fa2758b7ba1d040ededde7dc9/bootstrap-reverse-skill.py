@@ -23,6 +23,8 @@ SKILL_NAME = "codexrip-reverse-skill"
 MANIFEST_NAME = "bundle-manifest.json"
 CLIENT_SKILL = "codexrip-client/SKILL.md"
 CLIENT_OPENAI = "codexrip-client/agents/openai.yaml"
+REQUIRED_CORE = ("RULES.md", "README_AI.md", "skills/SKILL.md")
+LEGACY_OVERLAY_PREFIXES = ("codexrip-overlay/security-research", "moxinggang-overlay/security-research")
 MAX_DESCRIPTOR_BYTES = 256 << 10
 MAX_MANIFEST_BYTES = 4 << 20
 MAX_ARCHIVE_BYTES = 128 << 20
@@ -30,6 +32,8 @@ MAX_FILE_BYTES = 64 << 20
 MAX_TOTAL_BYTES = 256 << 20
 MAX_FILE_COUNT = 2000
 HEX = frozenset("0123456789abcdef")
+WINDOWS_INVALID_CHARS = frozenset('<>:"|?*')
+WINDOWS_RESERVED_NAMES = frozenset({"CON", "PRN", "AUX", "NUL", *{f"COM{i}" for i in range(1, 10)}, *{f"LPT{i}" for i in range(1, 10)}})
 
 
 class BootstrapError(RuntimeError):
@@ -52,11 +56,23 @@ def safe_relative(value: object) -> str:
         raise BootstrapError("manifest path is invalid")
     if str(parsed) != value:
         raise BootstrapError("manifest path is not canonical")
+    for segment in value.split("/"):
+        if (
+            segment.rstrip(" .") != segment
+            or any(ord(char) < 0x20 or char in WINDOWS_INVALID_CHARS for char in segment)
+            or segment.split(".", 1)[0].upper() in WINDOWS_RESERVED_NAMES
+        ):
+            raise BootstrapError("manifest path is not portable")
     return value
 
 
 def portable_key(value: str) -> str:
     return "/".join(part.rstrip(" .").lower() for part in value.split("/"))
+
+
+def is_legacy_overlay_path(value: str) -> bool:
+    lowered = value.casefold()
+    return any(lowered == prefix or lowered.startswith(prefix + "/") for prefix in LEGACY_OVERLAY_PREFIXES)
 
 
 def require_codexrip_url(value: object, expected_suffix: str, manifest_sha: str) -> str:
@@ -85,7 +101,12 @@ def download(url: str, maximum: int) -> bytes:
         raise BootstrapError("download host is not allowed")
     request = urllib.request.Request(url, headers={"User-Agent": "CodexRip-Skill-Installer/2"})
     try:
-        with urllib.request.urlopen(request, timeout=45) as response:
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, req, fp, code, msg, headers, newurl):
+                return None
+
+        opener = urllib.request.build_opener(NoRedirect())
+        with opener.open(request, timeout=45) as response:
             final = urllib.parse.urlparse(response.geturl())
             if final.scheme != "https" or final.hostname != "codexrip.vip":
                 raise BootstrapError("download redirect host is not allowed")
@@ -144,6 +165,7 @@ def validate_descriptor(value: dict) -> dict:
     manifest_sha = value.get("manifest_sha256")
     archive_sha = value.get("archive_sha256")
     source_commit = value.get("source_commit")
+    core_files = value.get("core_files")
     if (
         value.get("schema_version") != 1
         or value.get("bundle_id") != BUNDLE_ID
@@ -152,6 +174,7 @@ def validate_descriptor(value: dict) -> dict:
         or not is_hex(source_commit, 40)
         or not is_hex(manifest_sha, 64)
         or not is_hex(archive_sha, 64)
+        or core_files != list(REQUIRED_CORE)
     ):
         raise BootstrapError("descriptor metadata is invalid")
     manifest_url = require_codexrip_url(value.get("manifest_url"), "/bundle-manifest.json", manifest_sha)
@@ -187,6 +210,8 @@ def validate_manifest(value: dict, descriptor: dict) -> tuple[dict[str, dict], i
         if not isinstance(item, dict):
             raise BootstrapError("manifest file entry is invalid")
         name = safe_relative(item.get("path"))
+        if is_legacy_overlay_path(name):
+            raise BootstrapError("legacy overlay path is not allowed")
         key = portable_key(name)
         length = item.get("byte_length")
         kind = item.get("kind", "text")
@@ -205,17 +230,26 @@ def validate_manifest(value: dict, descriptor: dict) -> tuple[dict[str, dict], i
         total += length
     if total <= 0 or total > MAX_TOTAL_BYTES:
         raise BootstrapError("manifest total size is invalid")
-    for name in core:
-        if safe_relative(name) not in declared:
-            raise BootstrapError("manifest core file is undeclared")
+    if tuple(core) != REQUIRED_CORE:
+        raise BootstrapError("manifest core files are invalid")
+    for name in REQUIRED_CORE:
+        if name not in declared or declared[name].get("kind", "text") != "text":
+            raise BootstrapError("manifest core file is invalid")
+    if not domains:
+        raise BootstrapError("manifest routes are missing")
+    route_ids: set[str] = set()
     for domain in domains:
-        if not isinstance(domain, dict) or not isinstance(domain.get("id"), str):
+        route_id = domain.get("id") if isinstance(domain, dict) else None
+        if not isinstance(route_id, str) or not route_id or route_id in route_ids:
             raise BootstrapError("manifest route is invalid")
+        route_ids.add(route_id)
         if safe_relative(domain.get("entry")) not in declared:
             raise BootstrapError("manifest route entry is undeclared")
         refs = domain.get("references", [])
         keywords = domain.get("keywords", [])
         if not isinstance(refs, list) or not isinstance(keywords, list):
+            raise BootstrapError("manifest route is invalid")
+        if not all(isinstance(keyword, str) for keyword in keywords):
             raise BootstrapError("manifest route is invalid")
         for name in refs:
             if safe_relative(name) not in declared:
@@ -307,7 +341,8 @@ def install_skill(descriptor: dict, manifest_raw: bytes, manifest: dict, declare
             old_moved = True
         os.replace(staging, target)
         if old_moved:
-            shutil.rmtree(backup)
+            # The new verified tree is already committed; cleanup is best effort.
+            shutil.rmtree(backup, ignore_errors=True)
         return target.resolve(), replaced
     except Exception:
         if old_moved and not target.exists() and backup.exists():

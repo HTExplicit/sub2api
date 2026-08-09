@@ -35,11 +35,34 @@ const (
 	remoteSkillClientSkillPath          = "codexrip-client/SKILL.md"
 	remoteSkillClientOpenAIPath         = "codexrip-client/agents/openai.yaml"
 	remoteSkillLocalPackageContractLine = "# Package root: verified installed bundle/"
+	remoteSkillUpstreamCloneCommand     = "git clone https://github.com/zhaoxuya520/reverse-skill.git"
+	remoteSkillRouterRecoveryLine       = "    Write-Host 'Restore skills/config/routing.json (git checkout / git pull) and retry.' -ForegroundColor Yellow"
+	remoteSkillLocalRecoveryLine        = "    Write-Host 'Restore skills/config/routing.json from the verified installed bundle and retry.' -ForegroundColor Yellow"
 )
 
 var remoteSkillExcludedSourcePaths = map[string]struct{}{
 	"README_RECONSTRUCTED.md": {},
 	"SOURCE-MANIFEST.json":    {},
+}
+
+type remoteSkillReviewedRewrite struct {
+	Source      string
+	Replacement string
+}
+
+var remoteSkillApprovedPackageContractRewrites = map[string][]remoteSkillReviewedRewrite{
+	"README.md": {{
+		Source: remoteSkillUpstreamCloneCommand + "\n", Replacement: remoteSkillLocalPackageContractLine + "\n",
+	}},
+	"README_zh.md": {{
+		Source: remoteSkillUpstreamCloneCommand + "\n", Replacement: remoteSkillLocalPackageContractLine + "\n",
+	}},
+	"docs/RELEASE_NOTES_v1.0.0.md": {{
+		Source: remoteSkillUpstreamCloneCommand + "\ncd reverse-skill\n", Replacement: remoteSkillLocalPackageContractLine + "\n",
+	}},
+	"skills/scripts/master-route.ps1": {{
+		Source: remoteSkillRouterRecoveryLine + "\r\n", Replacement: remoteSkillLocalRecoveryLine + "\r\n",
+	}},
 }
 
 var remoteSkillRequiredLocalCoreReferences = []string{
@@ -73,6 +96,7 @@ var remoteSkillForbiddenClientReferences = []string{
 	`c:\users\administrator`,
 	"remote_root",
 	"codexrip-overlay/security-research",
+	"moxinggang-overlay/security-research",
 	"raw.githubusercontent.com",
 	"codeload.github.com",
 	"github.com/zhaoxuya520/reverse-skill",
@@ -354,6 +378,7 @@ func validateRemoteSkillPinnedSource(files map[string][]byte, pin remoteSkillSou
 			`c:\users\administrator\appdata\local`,
 			"c:/users/administrator/appdata/local",
 			"codexrip-overlay/security-research",
+			"moxinggang-overlay/security-research",
 			"remote_root",
 		} {
 			if strings.Contains(lower, forbidden) {
@@ -369,6 +394,9 @@ func validateRemoteSkillPinnedSource(files map[string][]byte, pin remoteSkillSou
 
 func remoteSkillSourceContainsRemoteAcquisition(lower string) bool {
 	for _, line := range strings.Split(strings.ReplaceAll(lower, "\r\n", "\n"), "\n") {
+		if strings.Contains(line, "git pull") {
+			return true
+		}
 		if strings.Contains(line, "git clone") && strings.Contains(line, "github.com/zhaoxuya520/reverse-skill") {
 			return true
 		}
@@ -388,11 +416,19 @@ func remoteSkillSourceContainsRemoteAcquisition(lower string) bool {
 	return false
 }
 
-func rewriteRemoteSkillPackageContract(raw []byte) []byte {
-	const clone = "git clone https://github.com/zhaoxuya520/reverse-skill.git"
-	result := bytes.ReplaceAll(raw, []byte(clone+"\r\ncd reverse-skill"), []byte(remoteSkillLocalPackageContractLine))
-	result = bytes.ReplaceAll(result, []byte(clone+"\ncd reverse-skill"), []byte(remoteSkillLocalPackageContractLine))
-	return bytes.ReplaceAll(result, []byte(clone), []byte(remoteSkillLocalPackageContractLine))
+func rewriteRemoteSkillPackageContract(bundlePath string, raw []byte) ([]byte, error) {
+	result := append([]byte(nil), raw...)
+	for _, rewrite := range remoteSkillApprovedPackageContractRewrites[bundlePath] {
+		source := []byte(rewrite.Source)
+		if bytes.Count(result, source) != 1 {
+			return nil, fmt.Errorf("%w: reviewed package contract changed", ErrBusinessSystemPromptBundleInvalid)
+		}
+		result = bytes.Replace(result, source, []byte(rewrite.Replacement), 1)
+	}
+	if remoteSkillSourceContainsRemoteAcquisition(strings.ToLower(string(result))) {
+		return nil, fmt.Errorf("%w: source contains remote Skill acquisition instructions", ErrBusinessSystemPromptBundleInvalid)
+	}
+	return result, nil
 }
 
 func extractRemoteSkillBaseArchive(raw []byte, expectedRoot string) (map[string][]byte, error) {
@@ -429,6 +465,9 @@ func extractRemoteSkillBaseArchive(raw []byte, expectedRoot string) (map[string]
 		if _, excluded := remoteSkillExcludedSourcePaths[relative]; excluded || path.Base(relative) == "inline-system-instructions.txt" {
 			continue
 		}
+		if isLegacyRemoteSkillOverlayPath(relative) {
+			return nil, fmt.Errorf("%w: legacy overlay source path rejected", ErrBusinessSystemPromptBundleInvalid)
+		}
 		normalized, err := normalizeBundleRelativePath(relative)
 		if err != nil || normalized != relative || relative == BusinessSystemPromptBundleManifestName {
 			return nil, fmt.Errorf("%w: source ZIP path rejected", ErrBusinessSystemPromptBundleInvalid)
@@ -453,7 +492,10 @@ func extractRemoteSkillBaseArchive(raw []byte, expectedRoot string) (map[string]
 			return nil, fmt.Errorf("%w: source file read failed", ErrBusinessSystemPromptBundleInvalid)
 		}
 		if remoteSkillFileKind(relative, data) != "binary" {
-			data = rewriteRemoteSkillPackageContract(data)
+			data, err = rewriteRemoteSkillPackageContract(relative, data)
+			if err != nil {
+				return nil, err
+			}
 		}
 		files[relative] = data
 		portable[key] = struct{}{}
