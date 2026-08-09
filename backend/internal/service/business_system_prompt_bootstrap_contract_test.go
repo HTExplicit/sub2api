@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestBusinessSystemPromptBootstrapsAreContentAddressedAndPinnedByPrompt(t *testing.T) {
+func TestBusinessSystemPromptBootstrapsAreContentAddressedAndAbsentFromPrompt(t *testing.T) {
 	root := filepath.Join("..", "..", "..", "deploy", "skill-registry", "bootstrap")
 	entries, err := os.ReadDir(root)
 	require.NoError(t, err)
@@ -32,15 +32,15 @@ func TestBusinessSystemPromptBootstrapsAreContentAddressedAndPinnedByPrompt(t *t
 		require.Regexp(t, `^[0-9a-f]{64}$`, entry.Name())
 		require.Len(t, files, 1)
 		name := files[0].Name()
-		label, ok := labels[name]
+		_, ok := labels[name]
 		require.True(t, ok)
 		raw, err := os.ReadFile(filepath.Join(root, entry.Name(), name))
 		require.NoError(t, err)
 		digest := sha256.Sum256(raw)
 		hash := hex.EncodeToString(digest[:])
 		require.Equal(t, entry.Name(), hash)
-		require.Contains(t, embeddedBusinessSystemPrompt, label+"_PATH = deploy/skill-registry/bootstrap/"+hash+"/"+name)
-		require.Contains(t, embeddedBusinessSystemPrompt, label+"_SHA256 = "+hash)
+		require.NotContains(t, embeddedBusinessSystemPrompt, hash)
+		require.NotContains(t, embeddedBusinessSystemPrompt, name)
 		seen[filepath.Ext(name)] = true
 	}
 	require.Equal(t, 2, contentAddressed)

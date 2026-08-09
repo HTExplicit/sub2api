@@ -10,10 +10,10 @@ import (
 
 const (
 	businessSystemPromptOfflineHeader             = "[BUSINESS SYSTEM PROMPT: OFFLINE SKILL BUNDLE]\nUse only the versioned bundle documents assembled below as reference data. LOCAL_BUNDLE_ROOT is a declarative label, not a path available to you. Do not fetch URLs, access a network, resolve bundle paths, or execute bundle files."
-	businessSystemPromptSeedMarkerStart           = "<!-- BEGIN 模型港 REVERSE-SKILL -->"
-	businessSystemPromptSeedMarkerEnd             = "<!-- END 模型港 REVERSE-SKILL -->"
-	businessSystemPromptRemoteMarkerStart         = "<!-- BEGIN 模型港 SECURITY-RESEARCH ROUTING -->"
-	businessSystemPromptRemoteMarkerEnd           = "<!-- END 模型港 SECURITY-RESEARCH ROUTING -->"
+	businessSystemPromptSeedMarkerStart           = "<!-- BEGIN CODEXRIP REVERSE-SKILL -->"
+	businessSystemPromptSeedMarkerEnd             = "<!-- END CODEXRIP REVERSE-SKILL -->"
+	businessSystemPromptRemoteMarkerStart         = "<!-- BEGIN CODEXRIP SECURITY-RESEARCH ROUTING -->"
+	businessSystemPromptRemoteMarkerEnd           = "<!-- END CODEXRIP SECURITY-RESEARCH ROUTING -->"
 	businessSystemPromptBundleRouteTextMaxBytes   = 32 << 10
 	businessSystemPromptBundleRouteScoreThreshold = 3
 )

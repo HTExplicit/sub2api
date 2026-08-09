@@ -1,16 +1,12 @@
 package service
 
 import (
-	"archive/zip"
 	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"io"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -23,85 +19,16 @@ func TestBusinessSystemPromptSeedPreservesCapturedBehaviorBody(t *testing.T) {
 	seed := embeddedBusinessSystemPrompt
 	require.False(t, strings.HasSuffix(seed, "\n"))
 	require.Contains(t, seed, "<!-- BEGIN CODEXRIP REVERSE-SKILL -->")
-	require.Contains(t, seed, "<!-- BEGIN CODEXRIP SECURITY-RESEARCH ROUTING -->")
 	require.Contains(t, seed, "`codexrip-reverse-skill`")
-	require.Contains(t, seed, "https://codexrip.vip/skills/reverse-skill/current.json")
-	require.Contains(t, seed, "https://github.com/HTExplicit/sub2api.git")
-	require.Contains(t, seed, "v0.1.171-codexrip.7")
-	require.Contains(t, seed, "176dad47dd049b34d45a032d889a0dc11405a39e")
-	require.Regexp(t, `(?m)^POWERSHELL_BOOTSTRAP_PATH = deploy/skill-registry/bootstrap/[0-9a-f]{64}/bootstrap-reverse-skill\.ps1$`, seed)
-	require.Regexp(t, `(?m)^PYTHON_BOOTSTRAP_PATH = deploy/skill-registry/bootstrap/[0-9a-f]{64}/bootstrap-reverse-skill\.py$`, seed)
-	require.Regexp(t, `(?m)^POWERSHELL_BOOTSTRAP_SHA256 = [0-9a-f]{64}$`, seed)
-	require.Regexp(t, `(?m)^PYTHON_BOOTSTRAP_SHA256 = [0-9a-f]{64}$`, seed)
-	require.Contains(t, seed, "separate tool call")
-	require.NotContains(t, seed, "Download exactly one fixed bootstrap URL")
-	require.NotContains(t, seed, "POWERSHELL_BOOTSTRAP_URL")
-	require.NotContains(t, seed, "PYTHON_BOOTSTRAP_URL")
-	require.NotContains(t, seed, "Invoke-WebRequest")
-	require.NotRegexp(t, `(?i)(curl|wget)[^\n]*bootstrap`, seed)
 	require.Contains(t, seed, "skill unavailable")
-	require.NotContains(t, strings.ToLower(seed), "moxinggang.com")
-	require.NotContains(t, seed, `C:\Users\Administrator`)
-	require.Len(t, []byte(seed), 10190)
-	seedDigest := sha256.Sum256([]byte(seed))
-	require.Equal(t, "9143d8a97727030192a62fb19f732b0823dec9ffe83081ef5ae27fdb1edfea04", hex.EncodeToString(seedDigest[:]))
-
-	original := readCapturedBusinessSystemPrompt(t)
-	require.Len(t, []rune(original), 6970)
-	require.Len(t, []byte(original), 7098)
-	digest := sha256.Sum256([]byte(original))
-	require.Equal(t, "c2f0269baffa6a0eb1c9a9e15df815a6582ae6a615bc51d64b7cc5342b5efcb8", hex.EncodeToString(digest[:]))
-	require.Equal(t, capturedPromptBehaviorBody(t, original), codexRipPromptBehaviorBody(t, seed))
-	require.Len(t, []rune(codexRipPromptBehaviorBody(t, seed)), 5930)
-}
-
-func readCapturedBusinessSystemPrompt(t *testing.T) string {
-	t.Helper()
-	archivePath := filepath.Join("..", "..", "..", "deploy", "skill-bundles", BusinessSystemPromptSeedBundleID,
-		BusinessSystemPromptSeedBundleID+"-"+BusinessSystemPromptSeedBundleManifestSHA256+".zip")
-	archive, err := zip.OpenReader(archivePath)
-	require.NoError(t, err)
-	defer func() { require.NoError(t, archive.Close()) }()
-	for _, entry := range archive.File {
-		if entry.Name != "moxinggang-overlay/inline-system-instructions.txt" {
-			continue
-		}
-		stream, err := entry.Open()
-		require.NoError(t, err)
-		raw, err := io.ReadAll(stream)
-		require.NoError(t, err)
-		require.NoError(t, stream.Close())
-		return string(raw)
+	for _, forbidden := range []string{"https://codexrip.vip/skills/reverse-skill/current.json", "https://github.com/HTExplicit/sub2api.git", "DESCRIPTOR_URL", "REPOSITORY_URL", "REPOSITORY_COMMIT", "POWERSHELL_BOOTSTRAP", "PYTHON_BOOTSTRAP", "模型港", "宝宝", "moxinggang.com", `C:\Users\Administrator`} {
+		require.NotContains(t, seed, forbidden)
 	}
-	_, err = os.Stat(archivePath)
-	require.NoError(t, err)
-	t.Fatal("captured prompt missing from pinned bundle")
-	return ""
-}
-
-func capturedPromptBehaviorBody(t *testing.T, body string) string {
-	t.Helper()
-	return promptBetweenMarkers(t, body,
-		"<!-- END 模型港 REVERSE-SKILL -->",
-		"<!-- BEGIN 模型港 SECURITY-RESEARCH ROUTING -->",
-	)
-}
-
-func codexRipPromptBehaviorBody(t *testing.T, body string) string {
-	t.Helper()
-	return promptBetweenMarkers(t, body,
-		"<!-- END CODEXRIP REVERSE-SKILL -->",
-		"<!-- BEGIN CODEXRIP SECURITY-RESEARCH ROUTING -->",
-	)
-}
-
-func promptBetweenMarkers(t *testing.T, body, startMarker, endMarker string) string {
-	t.Helper()
-	start := strings.Index(body, startMarker)
-	end := strings.Index(body, endMarker)
-	require.GreaterOrEqual(t, start, 0)
-	require.Greater(t, end, start)
-	return body[start+len(startMarker) : end]
+	require.Contains(t, seed, "name \"codexrip\"")
+	require.Contains(t, seed, "exactly \"老板\"")
+	require.Len(t, []byte(seed), 6784)
+	seedDigest := sha256.Sum256([]byte(seed))
+	require.Equal(t, "0615d24958a1da11edcf9538aaff989e46fcd296ea86a6c1b1af2b3efa48487f", hex.EncodeToString(seedDigest[:]))
 }
 
 func TestBusinessSystemPromptSeedBodyIsInjectedByteForByte(t *testing.T) {

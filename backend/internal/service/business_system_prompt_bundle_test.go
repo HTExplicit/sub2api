@@ -139,7 +139,7 @@ func TestBusinessSystemPromptBundleCompilerRoutesDeterministicallyAndStripsNetwo
 	bundle, err := LoadBusinessSystemPromptBundle(root)
 	require.NoError(t, err)
 	compiler := NewBusinessSystemPromptBundleCompiler(bundle)
-	base := "<!-- BEGIN 模型港 REVERSE-SKILL -->\nC:\\Users\\Administrator\\AppData\\Local\\模型港\\reverse-skill\\RULES.md\n<!-- END 模型港 REVERSE-SKILL -->\nCore seed at C:\\Program Files\\Reverse Tool\\tool.exe with https://example.test/reference and https:\\/\\/escaped.example.test/reference\n<!-- BEGIN 模型港 SECURITY-RESEARCH ROUTING -->\nREMOTE_ROOT = https://moxinggang.com/skills/security-research/current\n<!-- END 模型港 SECURITY-RESEARCH ROUTING -->"
+	base := "<!-- BEGIN CODEXRIP REVERSE-SKILL -->\nC:\\Users\\Administrator\\AppData\\Local\\codexrip\\reverse-skill\\RULES.md\n<!-- END CODEXRIP REVERSE-SKILL -->\nCore seed at C:\\Program Files\\Reverse Tool\\tool.exe with https://example.test/reference and https:\\/\\/escaped.example.test/reference\n<!-- BEGIN CODEXRIP SECURITY-RESEARCH ROUTING -->\nREMOTE_ROOT = https://codexrip.vip/skills/security-research/current\n<!-- END CODEXRIP SECURITY-RESEARCH ROUTING -->"
 	compiled, err := compiler.Compile(BusinessSystemPromptBundleCompileInput{BasePrompt: base, RequestText: "Please audit this HTTP API authentication flow"})
 	require.NoError(t, err)
 	require.Equal(t, []string{"api-security"}, compiled.RouteIDs)
