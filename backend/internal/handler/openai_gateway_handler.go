@@ -675,10 +675,13 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						forwardBody = repairedBody
 						clearCyberPolicyTurnState(c)
 						reqLog.Info("openai.refusal_prompt_retrying", zap.Int64("account_id", account.ID))
+						h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 						continue
 					}
 					if failoverErr.ShouldReportAccountScheduleFailure() {
 						h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(reqModel), false, nil)
+					} else {
+						h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 					}
 					if !failoverErr.ShouldRetryNextAccount() {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
@@ -747,6 +750,8 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				}
 				if !cyberAttempt {
 					h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(reqModel), false, nil)
+				} else {
+					h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 				}
 				upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 				wroteFallback := false
@@ -1259,6 +1264,8 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					}
 					if failoverErr.ShouldReportAccountScheduleFailure() {
 						h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(currentRoutingModel), false, nil)
+					} else {
+						h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 					}
 					if !failoverErr.ShouldRetryNextAccount() {
 						h.handleAnthropicFailoverExhausted(c, failoverErr, streamStarted)

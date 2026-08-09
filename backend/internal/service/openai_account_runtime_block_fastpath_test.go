@@ -677,6 +677,33 @@ func TestOpenAIRuntimeBreaker_SameAccountRetryReclaimsReleasedProbeLease(t *test
 	require.False(t, modelExists)
 }
 
+func TestOpenAIRuntimeBreaker_SuppressedRetryReleasesSelectionClaim(t *testing.T) {
+	cache := &runtimeBreakerTestCache{entries: map[string]runtimeBreakerTestEntry{
+		runtimeBreakerTestKey(4718, ""):        {blockUntil: time.Now().Add(-time.Second)},
+		runtimeBreakerTestKey(4718, "gpt-5.4"): {blockUntil: time.Now().Add(-time.Second)},
+	}}
+	svc := &OpenAIGatewayService{cache: cache}
+	account := &Account{ID: 4718, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	ctx := withOpenAIRuntimeBreakerProbeOwner(context.Background(), "owner-1")
+
+	require.False(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, "gpt-5.4"))
+	selection := attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
+		Account:     account,
+		Acquired:    true,
+		ReleaseFunc: func() {},
+	})
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.runtimeBreakerProbeLease)
+
+	svc.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
+	cache.mu.Lock()
+	accountOwner := cache.entries[runtimeBreakerTestKey(account.ID, "")].owner
+	modelOwner := cache.entries[runtimeBreakerTestKey(account.ID, "gpt-5.4")].owner
+	cache.mu.Unlock()
+	require.Empty(t, accountOwner)
+	require.Empty(t, modelOwner)
+}
+
 func TestOpenAIRuntimeBreaker_SelectedAccountReleasesOtherCandidateClaims(t *testing.T) {
 	cache := &runtimeBreakerTestCache{entries: map[string]runtimeBreakerTestEntry{
 		runtimeBreakerTestKey(4713, ""):        {blockUntil: time.Now().Add(-time.Second)},
