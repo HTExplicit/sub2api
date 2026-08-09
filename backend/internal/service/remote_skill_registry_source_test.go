@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -106,6 +107,14 @@ func TestRemoteSkillClientDocumentRequiresLocalOnlyLifecycleContract(t *testing.
 			require.ErrorIs(t, err, ErrBusinessSystemPromptBundleInvalid)
 		})
 	}
+}
+
+func TestReleaseSeedNativeSkillDocumentMatchesRuntimeLifecycleContract(t *testing.T) {
+	releaseRoot := filepath.Join("..", "..", "..", "deploy", "skill-registry")
+	files, err := (&releaseRemoteSkillClientSource{releaseRoot: releaseRoot}).Load(context.Background())
+	require.NoError(t, err)
+	require.NoError(t, validateRemoteSkillClientDocument(remoteSkillClientSkillPath, files[remoteSkillClientSkillPath]))
+	require.NoError(t, validateRemoteSkillClientDocument(remoteSkillClientOpenAIPath, files[remoteSkillClientOpenAIPath]))
 }
 
 func TestRemoteSkillCandidateUsesPinnedNativeCorePaths(t *testing.T) {
