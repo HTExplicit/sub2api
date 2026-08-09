@@ -322,6 +322,9 @@ func TestRemoteSkillCandidateSourceNormalizesCoreDocumentsAndBuildsVerifiedArchi
 	require.Equal(t, candidate.Version.ManifestSHA256, hashBusinessSystemPromptBundleBytes(candidate.ManifestBytes))
 	require.Equal(t, candidate.Version.ArchiveSHA256, hashBusinessSystemPromptBundleBytes(candidate.ArchiveBytes))
 	require.NoError(t, verifyRemoteSkillArchive(candidate.ArchiveBytes, candidate.ManifestBytes, candidate.Manifest))
+	// Native PowerShell and Python installers require an explicit empty list;
+	// an omitted/null references field is not a portable manifest contract.
+	require.Contains(t, string(candidate.ManifestBytes), `"references": []`)
 	archive, err := zip.NewReader(bytes.NewReader(candidate.ArchiveBytes), int64(len(candidate.ArchiveBytes)))
 	require.NoError(t, err)
 	for _, entry := range archive.File {
