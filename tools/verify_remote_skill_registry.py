@@ -17,14 +17,14 @@ from verify_business_system_prompt_bundle import VerificationError, verify_bundl
 
 BUNDLE_ID = "codexrip-reverse-skill"
 MANIFEST_NAME = "bundle-manifest.json"
-MANIFEST_SHA256 = "33f081a5bd9f2499dc818f53e3ed069dd0d30ebefe6f7cc47022840553aecb27"
-ARCHIVE_SHA256 = "5079f7b7b863765f07158edc8ef0d42726fb5e8470eb78cf81fd5b7f6b8d8d0c"
-OVERLAY_SHA256 = "39f5188da11f5798bf0b6431545a4153c6e42c12bf81840e71eb5ddd30c6cf35"
-SOURCE_COMMIT = "d8bf34540cbc1aa34052e1b142576fc36a1f1437"
-PROMPT_SHA256 = "0615d24958a1da11edcf9538aaff989e46fcd296ea86a6c1b1af2b3efa48487f"
-PROMPT_BYTES = 6784
-FILE_COUNT = 537
-TOTAL_BYTES = 7_940_352
+MANIFEST_SHA256 = "68ef7d1da27e4dd9c523c34ff71adfcd218232613051a1722759708897fef1b3"
+ARCHIVE_SHA256 = "b5e682af9d8fcd31f7cd216679b5ffe67896e3faaeda28b80230829fbd3295e4"
+OVERLAY_SHA256 = "c71df9943ba6f5d5d9409947267cbe7c19761d2382fce1be133f2223ba591898"
+SOURCE_COMMIT = "a5d8c9233b98c52df387d5b1a0ef669fcaa51374"
+PROMPT_SHA256 = "5813c55c0763e1472becec874232f3daafb28a69107b94ca8284daf44fceb2a0"
+PROMPT_BYTES = 9034
+FILE_COUNT = 545
+TOTAL_BYTES = 7_925_332
 ARCHIVE_NAME = f"{BUNDLE_ID}-{MANIFEST_SHA256}.zip"
 CHECKSUM_NAME = f"{ARCHIVE_NAME}.sha256"
 DESCRIPTOR_NAME = "seed-descriptor.json"
@@ -41,14 +41,21 @@ CLIENT_FILES = {
     "codexrip-client/SKILL.md",
     "codexrip-client/agents/openai.yaml",
 }
+CORE_FILES = ["RULES.md", "README_AI.md", "skills/SKILL.md"]
+CORE_SHA256 = {
+    "RULES.md": "2d86efa38f8a8b9ef23fa71edcae35cf111a8fef9027a8893ff66e7e4086afa0",
+    "README_AI.md": "d79c9b34beba0160c1a290763ce40ddf9f4027d2086f575a1b396188ddef87c9",
+    "skills/SKILL.md": "2c7994642ae2cd97a15fffc0d6e119e07e83582ca70cc9a7a5d212aa9a947a56",
+}
 FORBIDDEN_RUNTIME_BYTES = (
     b"moxinggang.com",
     b"C:\\Users\\Administrator\\AppData\\Local",
     "模型港".encode("utf-8"),
-    "宝宝".encode("utf-8"),
     b"README_RECONSTRUCTED.md",
     b"SOURCE-MANIFEST.json",
     b"inline-system-instructions.txt",
+    b"codexrip-overlay/security-research",
+    b"REMOTE_ROOT",
 )
 
 
@@ -125,6 +132,8 @@ def verify_manifest_contract(manifest: dict) -> set[str]:
     by_path = {entry.get("path"): entry for entry in entries if isinstance(entry, dict)}
     if not CLIENT_FILES.issubset(declared):
         raise VerificationError("manifest does not include the native Codex Skill entry files")
+    if any(isinstance(name, str) and name.startswith("codexrip-overlay/security-research/") for name in declared):
+        raise VerificationError("manifest still contains the legacy security-research overlay")
     gradle_wrapper = by_path.get("burp-mcp-full/gradlew")
     if not isinstance(gradle_wrapper, dict) or gradle_wrapper.get("kind") != "script":
         raise VerificationError("shebang executables must be classified as scripts")
@@ -133,8 +142,8 @@ def verify_manifest_contract(manifest: dict) -> set[str]:
         raise VerificationError("manifest total byte length does not match the pinned release")
     runtime_documents: set[str] = set()
     core = manifest.get("core_files")
-    if not isinstance(core, list) or not core:
-        raise VerificationError("manifest core_files are missing")
+    if core != CORE_FILES:
+        raise VerificationError("manifest core_files do not use the pinned upstream-native paths")
     runtime_documents.update(core)
     domains = manifest.get("domains")
     if not isinstance(domains, list) or not domains:
@@ -206,6 +215,9 @@ def verify_registry(
     if len(prompt) != PROMPT_BYTES or sha256(prompt) != PROMPT_SHA256 or prompt.endswith((b"\r", b"\n")):
         raise VerificationError("fixed system prompt bytes do not match the pinned release")
     require_runtime_text_clean("fixed system prompt", prompt)
+    prompt_text = prompt.decode("utf-8")
+    if prompt_text.count("宝宝") != 1 or 'The only allowed user address is exactly "老板".' not in prompt_text:
+        raise VerificationError("fixed system prompt does not preserve the original address restriction")
     if DESCRIPTOR_URL.encode("ascii") in prompt:
         raise VerificationError("fixed system prompt must not reference the public descriptor")
     for forbidden in (b"DESCRIPTOR_URL", b"REPOSITORY_URL", b"REPOSITORY_COMMIT", b"POWERSHELL_BOOTSTRAP", b"PYTHON_BOOTSTRAP"):
@@ -235,13 +247,22 @@ def verify_registry(
         if any(Path(entry.filename).name in forbidden_names for entry in archive.infolist()):
             raise VerificationError("release ZIP contains a removed provenance or captured-prompt file")
         for name in sorted(runtime_documents):
-            require_runtime_text_clean(f"runtime document {name}", archive.read(name))
+            raw = archive.read(name)
+            require_runtime_text_clean(f"runtime document {name}", raw)
+            if name in CORE_SHA256 and sha256(raw) != CORE_SHA256[name]:
+                raise VerificationError(f"runtime core file does not match pinned upstream bytes: {name}")
         client_skill = archive.read("codexrip-client/SKILL.md")
         client_openai = archive.read("codexrip-client/agents/openai.yaml")
         require_runtime_text_clean("native Skill entry", client_skill)
         require_runtime_text_clean("native Skill metadata", client_openai)
-        if not client_skill.startswith(b"---\nname: codexrip-reverse-skill\n") or b"`bundle/`" not in client_skill:
+        if not client_skill.startswith(b"---\nname: codexrip-reverse-skill\n") or any(
+            value not in client_skill
+            for value in (b"bundle/RULES.md", b"bundle/README_AI.md", b"bundle/skills/SKILL.md")
+        ):
             raise VerificationError("native Skill entry does not route into the verified bundle")
+        without_allowed_origin = client_skill.replace(b"https://codexrip.vip", b"")
+        if b"https://" in without_allowed_origin or b"http://" in without_allowed_origin:
+            raise VerificationError("native Skill entry contains a foreign acquisition source")
         if b'display_name: "CodexRip Reverse Skill"' not in client_openai or b"$codexrip-reverse-skill" not in client_openai:
             raise VerificationError("native Skill OpenAI metadata does not match the installed Skill")
 

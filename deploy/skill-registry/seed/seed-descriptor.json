@@ -2,20 +2,20 @@
   "schema_version": 1,
   "bundle_id": "codexrip-reverse-skill",
   "revision": 1,
-  "source_commit": "d8bf34540cbc1aa34052e1b142576fc36a1f1437",
-  "overlay_sha256": "39f5188da11f5798bf0b6431545a4153c6e42c12bf81840e71eb5ddd30c6cf35",
-  "manifest_sha256": "33f081a5bd9f2499dc818f53e3ed069dd0d30ebefe6f7cc47022840553aecb27",
-  "archive_sha256": "5079f7b7b863765f07158edc8ef0d42726fb5e8470eb78cf81fd5b7f6b8d8d0c",
-  "manifest_url": "https://codexrip.vip/skills/reverse-skill/versions/33f081a5bd9f2499dc818f53e3ed069dd0d30ebefe6f7cc47022840553aecb27/bundle-manifest.json",
-  "archive_url": "https://codexrip.vip/skills/reverse-skill/versions/33f081a5bd9f2499dc818f53e3ed069dd0d30ebefe6f7cc47022840553aecb27/codexrip-reverse-skill-33f081a5bd9f2499dc818f53e3ed069dd0d30ebefe6f7cc47022840553aecb27.zip",
-  "files_base_url": "https://codexrip.vip/skills/reverse-skill/versions/33f081a5bd9f2499dc818f53e3ed069dd0d30ebefe6f7cc47022840553aecb27/",
+  "source_commit": "a5d8c9233b98c52df387d5b1a0ef669fcaa51374",
+  "overlay_sha256": "c71df9943ba6f5d5d9409947267cbe7c19761d2382fce1be133f2223ba591898",
+  "manifest_sha256": "68ef7d1da27e4dd9c523c34ff71adfcd218232613051a1722759708897fef1b3",
+  "archive_sha256": "b5e682af9d8fcd31f7cd216679b5ffe67896e3faaeda28b80230829fbd3295e4",
+  "manifest_url": "https://codexrip.vip/skills/reverse-skill/versions/68ef7d1da27e4dd9c523c34ff71adfcd218232613051a1722759708897fef1b3/bundle-manifest.json",
+  "archive_url": "https://codexrip.vip/skills/reverse-skill/versions/68ef7d1da27e4dd9c523c34ff71adfcd218232613051a1722759708897fef1b3/codexrip-reverse-skill-68ef7d1da27e4dd9c523c34ff71adfcd218232613051a1722759708897fef1b3.zip",
+  "files_base_url": "https://codexrip.vip/skills/reverse-skill/versions/68ef7d1da27e4dd9c523c34ff71adfcd218232613051a1722759708897fef1b3/",
   "core_files": [
-    "codexrip-overlay/security-research/RULES.md",
-    "codexrip-overlay/security-research/README_AI.md",
-    "codexrip-overlay/security-research/SKILL.md"
+    "RULES.md",
+    "README_AI.md",
+    "skills/SKILL.md"
   ],
-  "file_count": 537,
-  "total_bytes": 7940352,
-  "published_at": "2026-08-07T00:00:00Z",
+  "file_count": 545,
+  "total_bytes": 7925332,
+  "published_at": "2026-08-09T00:00:00Z",
   "bootstrap_policy": "download_verify_native_skill_atomic_replace"
 }

@@ -25,40 +25,35 @@ import (
 const (
 	remoteSkillGitHubCommitURL  = "https://api.github.com/repos/zhaoxuya520/reverse-skill/commits/main"
 	remoteSkillGitHubZipPrefix  = "https://codeload.github.com/zhaoxuya520/reverse-skill/zip/"
+	remoteSkillPinnedCommit     = "a5d8c9233b98c52df387d5b1a0ef669fcaa51374"
 	remoteSkillSyncTimeout      = 2 * time.Minute
 	remoteSkillSourceMaxBytes   = 128 << 20
-	remoteSkillOverlayMaxBytes  = 2 << 20
+	remoteSkillClientMaxBytes   = 256 << 10
 	remoteSkillMaxFileCount     = 2000
 	remoteSkillMaxTotalBytes    = 256 << 20
 	remoteSkillClientSkillPath  = "codexrip-client/SKILL.md"
 	remoteSkillClientOpenAIPath = "codexrip-client/agents/openai.yaml"
 )
 
-var remoteSkillOverlayPaths = []string{
-	"RULES.md",
-	"README_AI.md",
-	"SKILL.md",
-	"references/precedent-auth.md",
-	"references/experience-index.md",
-	"references/routing.md",
-	"skills/sec-ai-security/INSTRUCTIONS.md",
-	"references/ctf/ai-ml/index.md",
-	"references/ai-security.md",
-	"references/ctf/ai-ml/llm-attacks.md",
-	"skills/sec-ai-security/references/llm-deep/prompt-injection-methodology.md",
-	"skills/sec-ai-security/references/llm-deep/_llm-security-workflow.md",
-	"references/scope-and-evidence.md",
-	"references/environment-and-resources.md",
-	"skills/sec-ai-security/references/llm-deep/owasp-llm-top10.md",
-	"skills/sec-ai-security/references/llm-deep/agent-security-testing.md",
-	"skills/sec-ai-security/references/llm-deep/agent-obedience-engineering.md",
+var remoteSkillExcludedSourcePaths = map[string]struct{}{
+	"README_RECONSTRUCTED.md": {},
+	"SOURCE-MANIFEST.json":    {},
 }
 
-var remoteSkillExcludedSourcePaths = map[string]struct{}{
-	"README_RECONSTRUCTED.md":                           {},
-	"SOURCE-MANIFEST.json":                              {},
-	"moxinggang-overlay/inline-system-instructions.txt": {},
-	"codexrip-overlay/inline-system-instructions.txt":   {},
+var remoteSkillRequiredLocalCoreReferences = []string{
+	"bundle/RULES.md",
+	"bundle/README_AI.md",
+	"bundle/skills/SKILL.md",
+}
+
+var remoteSkillForbiddenClientReferences = []string{
+	"moxinggang.com",
+	`c:\users\administrator`,
+	"remote_root",
+	"codexrip-overlay/security-research",
+	"raw.githubusercontent.com",
+	"codeload.github.com",
+	"github.com/zhaoxuya520/reverse-skill",
 }
 
 type RemoteSkillHTTPDoer interface {
@@ -66,34 +61,34 @@ type RemoteSkillHTTPDoer interface {
 }
 
 type GitHubRemoteSkillCandidateSource struct {
-	client  RemoteSkillHTTPDoer
-	overlay RemoteSkillOverlaySource
+	client       RemoteSkillHTTPDoer
+	clientSource RemoteSkillClientSource
 }
 
-type RemoteSkillOverlaySource interface {
+type RemoteSkillClientSource interface {
 	Load(context.Context) (map[string][]byte, error)
 }
 
-type releaseRemoteSkillOverlaySource struct {
+type releaseRemoteSkillClientSource struct {
 	releaseRoot string
 }
 
 func NewGitHubRemoteSkillCandidateSource(client RemoteSkillHTTPDoer) *GitHubRemoteSkillCandidateSource {
-	return newGitHubRemoteSkillCandidateSource(client, &releaseRemoteSkillOverlaySource{})
+	return newGitHubRemoteSkillCandidateSource(client, &releaseRemoteSkillClientSource{})
 }
 
-func newGitHubRemoteSkillCandidateSource(client RemoteSkillHTTPDoer, overlay RemoteSkillOverlaySource) *GitHubRemoteSkillCandidateSource {
+func newGitHubRemoteSkillCandidateSource(client RemoteSkillHTTPDoer, clientSource RemoteSkillClientSource) *GitHubRemoteSkillCandidateSource {
 	if client == nil {
 		client = newRemoteSkillHTTPClient()
 	}
-	if overlay == nil {
-		overlay = &releaseRemoteSkillOverlaySource{}
+	if clientSource == nil {
+		clientSource = &releaseRemoteSkillClientSource{}
 	}
-	return &GitHubRemoteSkillCandidateSource{client: client, overlay: overlay}
+	return &GitHubRemoteSkillCandidateSource{client: client, clientSource: clientSource}
 }
 
 func (s *GitHubRemoteSkillCandidateSource) Build(ctx context.Context, active *BusinessSystemPromptBundleManifest) (RemoteSkillCandidate, error) {
-	if s == nil || s.client == nil || s.overlay == nil {
+	if s == nil || s.client == nil || s.clientSource == nil {
 		return RemoteSkillCandidate{}, fmt.Errorf("%w: sync HTTP client unavailable", ErrBusinessSystemPromptBundleUnavailable)
 	}
 	ctx, cancel := context.WithTimeout(ctx, remoteSkillSyncTimeout)
@@ -110,58 +105,85 @@ func (s *GitHubRemoteSkillCandidateSource) Build(ctx context.Context, active *Bu
 	if err != nil {
 		return RemoteSkillCandidate{}, err
 	}
-	fixedFiles, err := s.overlay.Load(ctx)
+	fixedFiles, err := s.clientSource.Load(ctx)
 	if err != nil {
 		return RemoteSkillCandidate{}, err
 	}
-	wanted := remoteSkillFixedReleasePaths()
+	wanted := remoteSkillFixedClientPaths()
 	if len(fixedFiles) != len(wanted) {
-		return RemoteSkillCandidate{}, fmt.Errorf("%w: release overlay file count mismatch", ErrBusinessSystemPromptBundleInvalid)
+		return RemoteSkillCandidate{}, fmt.Errorf("%w: release client file count mismatch", ErrBusinessSystemPromptBundleInvalid)
 	}
-	overlayHashes := make(map[string]string, len(fixedFiles))
+	clientHashes := make(map[string]string, len(fixedFiles))
 	for bundlePath, raw := range fixedFiles {
 		if _, ok := wanted[bundlePath]; !ok {
-			return RemoteSkillCandidate{}, fmt.Errorf("%w: release overlay path rejected", ErrBusinessSystemPromptBundleInvalid)
+			return RemoteSkillCandidate{}, fmt.Errorf("%w: release client path rejected", ErrBusinessSystemPromptBundleInvalid)
 		}
-		if !utf8.Valid(raw) || bytes.IndexByte(raw, 0) >= 0 || len(bytes.TrimSpace(raw)) == 0 {
-			return RemoteSkillCandidate{}, fmt.Errorf("%w: overlay document invalid", ErrBusinessSystemPromptBundleInvalid)
-		}
-		if len(raw) > remoteSkillOverlayMaxBytes {
-			return RemoteSkillCandidate{}, fmt.Errorf("%w: release overlay document exceeds limit", ErrBusinessSystemPromptBundleInvalid)
-		}
-		if bytes.Contains(bytes.ToLower(raw), []byte("moxinggang.com")) || bytes.Contains(raw, []byte(`C:\Users\Administrator`)) {
-			return RemoteSkillCandidate{}, fmt.Errorf("%w: release overlay contains a legacy runtime reference", ErrBusinessSystemPromptBundleInvalid)
+		if err := validateRemoteSkillClientDocument(bundlePath, raw); err != nil {
+			return RemoteSkillCandidate{}, err
 		}
 		if _, exists := files[bundlePath]; exists {
-			return RemoteSkillCandidate{}, fmt.Errorf("%w: overlay path conflict", ErrBusinessSystemPromptBundleInvalid)
+			return RemoteSkillCandidate{}, fmt.Errorf("%w: release client path conflict", ErrBusinessSystemPromptBundleInvalid)
 		}
 		files[bundlePath] = append([]byte(nil), raw...)
-		overlayHashes[bundlePath] = hashBusinessSystemPromptBundleBytes(raw)
+		clientHashes[bundlePath] = hashBusinessSystemPromptBundleBytes(raw)
 	}
-	overlaySHA := hashRemoteSkillOverlaySet(overlayHashes)
-	metadata, err := json.Marshal(struct {
-		SchemaVersion int               `json:"schema_version"`
-		Source        string            `json:"source"`
-		Files         map[string]string `json:"files"`
-	}{SchemaVersion: 1, Source: "release_pinned_security_research_overlay", Files: overlayHashes})
-	if err != nil {
-		return RemoteSkillCandidate{}, err
-	}
-	files["codexrip-overlay/sync-metadata.json"] = metadata
-	return buildRemoteSkillCandidate(commit, overlaySHA, files, active)
+	return buildRemoteSkillCandidate(commit, hashRemoteSkillClientSet(clientHashes), files, active)
 }
 
-func remoteSkillFixedReleasePaths() map[string]struct{} {
-	paths := make(map[string]struct{}, len(remoteSkillOverlayPaths)+2)
-	for _, relative := range remoteSkillOverlayPaths {
-		paths["codexrip-overlay/security-research/"+relative] = struct{}{}
+func validateRemoteSkillClientDocument(bundlePath string, raw []byte) error {
+	if !utf8.Valid(raw) || bytes.IndexByte(raw, 0) >= 0 || len(bytes.TrimSpace(raw)) == 0 || len(raw) > remoteSkillClientMaxBytes {
+		return fmt.Errorf("%w: release client document invalid", ErrBusinessSystemPromptBundleInvalid)
 	}
-	paths[remoteSkillClientSkillPath] = struct{}{}
-	paths[remoteSkillClientOpenAIPath] = struct{}{}
-	return paths
+	lower := strings.ToLower(string(raw))
+	for _, forbidden := range remoteSkillForbiddenClientReferences {
+		if strings.Contains(lower, forbidden) {
+			return fmt.Errorf("%w: release client contains a forbidden acquisition reference", ErrBusinessSystemPromptBundleInvalid)
+		}
+	}
+	withoutRegistryURL := strings.ReplaceAll(lower, "https://codexrip.vip", "")
+	if strings.Contains(withoutRegistryURL, "https://") || strings.Contains(withoutRegistryURL, "http://") {
+		return fmt.Errorf("%w: release client contains an external runtime URL", ErrBusinessSystemPromptBundleInvalid)
+	}
+	if bundlePath != remoteSkillClientSkillPath {
+		return nil
+	}
+	if strings.Count(lower, "https://codexrip.vip") != 1 {
+		return fmt.Errorf("%w: release client registry URL invalid", ErrBusinessSystemPromptBundleInvalid)
+	}
+	lastCoreReference := -1
+	for _, reference := range remoteSkillRequiredLocalCoreReferences {
+		index := strings.Index(string(raw), reference)
+		if strings.Count(string(raw), reference) != 1 || index <= lastCoreReference {
+			return fmt.Errorf("%w: release client local core sequence invalid", ErrBusinessSystemPromptBundleInvalid)
+		}
+		lastCoreReference = index
+	}
+	for _, required := range []string{
+		"reverse engineering",
+		"security research",
+		"ctf",
+		"first matching task in each conversation",
+		"exactly one version check",
+		"report the failed stage",
+		"continue only when the existing local installation verifies successfully",
+		"later matching tasks in the same conversation do not repeat",
+		"never load skill content remotely at runtime",
+	} {
+		if !strings.Contains(lower, required) {
+			return fmt.Errorf("%w: release client lifecycle contract incomplete", ErrBusinessSystemPromptBundleInvalid)
+		}
+	}
+	return nil
 }
 
-func (s *releaseRemoteSkillOverlaySource) Load(ctx context.Context) (map[string][]byte, error) {
+func remoteSkillFixedClientPaths() map[string]struct{} {
+	return map[string]struct{}{
+		remoteSkillClientSkillPath:  {},
+		remoteSkillClientOpenAIPath: {},
+	}
+}
+
+func (s *releaseRemoteSkillClientSource) Load(ctx context.Context) (map[string][]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -175,11 +197,11 @@ func (s *releaseRemoteSkillOverlaySource) Load(ctx context.Context) (map[string]
 	seedRoot := filepath.Join(filepath.Clean(releaseRoot), "seed")
 	descriptorRaw, err := readRemoteSkillBoundedFile(filepath.Join(seedRoot, remoteSkillSeedDescriptorName), remoteSkillPublicDescriptorLimit)
 	if err != nil {
-		return nil, fmt.Errorf("%w: read release overlay descriptor", ErrBusinessSystemPromptBundleUnavailable)
+		return nil, fmt.Errorf("%w: read release client descriptor", ErrBusinessSystemPromptBundleUnavailable)
 	}
 	var descriptor RemoteSkillPublicDescriptor
 	if err := json.Unmarshal(descriptorRaw, &descriptor); err != nil {
-		return nil, fmt.Errorf("%w: invalid release overlay descriptor", ErrBusinessSystemPromptBundleInvalid)
+		return nil, fmt.Errorf("%w: invalid release client descriptor", ErrBusinessSystemPromptBundleInvalid)
 	}
 	version := remoteSkillVersionFromDescriptor(descriptor)
 	if err := validateRemoteSkillVersionMetadata(version); err != nil {
@@ -187,30 +209,25 @@ func (s *releaseRemoteSkillOverlaySource) Load(ctx context.Context) (map[string]
 	}
 	manifestRaw, err := readRemoteSkillBoundedFile(filepath.Join(seedRoot, BusinessSystemPromptBundleManifestName), businessSystemPromptBundleMaxManifestBytes)
 	if err != nil || hashBusinessSystemPromptBundleBytes(manifestRaw) != version.ManifestSHA256 {
-		return nil, fmt.Errorf("%w: release overlay manifest mismatch", ErrBusinessSystemPromptBundleInvalid)
+		return nil, fmt.Errorf("%w: release client manifest mismatch", ErrBusinessSystemPromptBundleInvalid)
 	}
 	var manifest BusinessSystemPromptBundleManifest
 	if err := json.Unmarshal(manifestRaw, &manifest); err != nil {
-		return nil, fmt.Errorf("%w: invalid release overlay manifest", ErrBusinessSystemPromptBundleInvalid)
+		return nil, fmt.Errorf("%w: invalid release client manifest", ErrBusinessSystemPromptBundleInvalid)
 	}
 	archiveRaw, err := readRemoteSkillBoundedFile(filepath.Join(seedRoot, remoteSkillArchiveName(version.ManifestSHA256)), remoteSkillArchiveMaxBytes)
 	if err != nil || hashBusinessSystemPromptBundleBytes(archiveRaw) != version.ArchiveSHA256 {
-		return nil, fmt.Errorf("%w: release overlay archive mismatch", ErrBusinessSystemPromptBundleInvalid)
+		return nil, fmt.Errorf("%w: release client archive mismatch", ErrBusinessSystemPromptBundleInvalid)
 	}
 	allFiles, err := remoteSkillFilesFromArchive(archiveRaw, manifestRaw, manifest)
 	if err != nil {
 		return nil, err
 	}
-	result := make(map[string][]byte, len(remoteSkillFixedReleasePaths()))
-	var total int
-	for name := range remoteSkillFixedReleasePaths() {
+	result := make(map[string][]byte, len(remoteSkillFixedClientPaths()))
+	for name := range remoteSkillFixedClientPaths() {
 		raw, ok := allFiles[name]
 		if !ok {
-			return nil, fmt.Errorf("%w: release overlay file missing", ErrBusinessSystemPromptBundleInvalid)
-		}
-		total += len(raw)
-		if len(raw) > remoteSkillOverlayMaxBytes || total > remoteSkillOverlayMaxBytes {
-			return nil, fmt.Errorf("%w: release overlay exceeds limit", ErrBusinessSystemPromptBundleInvalid)
+			return nil, fmt.Errorf("%w: release client file missing", ErrBusinessSystemPromptBundleInvalid)
 		}
 		result[name] = append([]byte(nil), raw...)
 	}
@@ -231,6 +248,9 @@ func (s *GitHubRemoteSkillCandidateSource) resolveCommit(ctx context.Context) (s
 	commit := strings.ToLower(strings.TrimSpace(payload.SHA))
 	if len(commit) != 40 || !isLowerHexSHA256(commit+strings.Repeat("0", 24)) {
 		return "", fmt.Errorf("%w: invalid source commit", ErrBusinessSystemPromptBundleInvalid)
+	}
+	if commit != remoteSkillPinnedCommit {
+		return "", fmt.Errorf("%w: upstream commit is not the pinned candidate", ErrBusinessSystemPromptBundleInvalid)
 	}
 	return commit, nil
 }
@@ -323,7 +343,7 @@ func extractRemoteSkillBaseArchive(raw []byte) (map[string][]byte, error) {
 			return nil, fmt.Errorf("%w: source ZIP contains a link or special file", ErrBusinessSystemPromptBundleInvalid)
 		}
 		relative := strings.Join(parts[1:], "/")
-		if _, excluded := remoteSkillExcludedSourcePaths[relative]; excluded {
+		if _, excluded := remoteSkillExcludedSourcePaths[relative]; excluded || path.Base(relative) == "inline-system-instructions.txt" {
 			continue
 		}
 		normalized, err := normalizeBundleRelativePath(relative)
@@ -352,7 +372,7 @@ func extractRemoteSkillBaseArchive(raw []byte) (map[string][]byte, error) {
 		files[relative] = data
 		portable[key] = struct{}{}
 		total += int64(len(data))
-		if len(files) > remoteSkillMaxFileCount-len(remoteSkillFixedReleasePaths())-1 || total > remoteSkillMaxTotalBytes {
+		if len(files) > remoteSkillMaxFileCount-len(remoteSkillFixedClientPaths()) || total > remoteSkillMaxTotalBytes {
 			return nil, fmt.Errorf("%w: source archive limits exceeded", ErrBusinessSystemPromptBundleInvalid)
 		}
 	}
@@ -362,7 +382,7 @@ func extractRemoteSkillBaseArchive(raw []byte) (map[string][]byte, error) {
 	return files, nil
 }
 
-func hashRemoteSkillOverlaySet(entries map[string]string) string {
+func hashRemoteSkillClientSet(entries map[string]string) string {
 	names := make([]string, 0, len(entries))
 	for name := range entries {
 		names = append(names, name)
@@ -378,7 +398,7 @@ func hashRemoteSkillOverlaySet(entries map[string]string) string {
 	return hex.EncodeToString(hash.Sum(nil))
 }
 
-func buildRemoteSkillCandidate(commit, overlaySHA string, files map[string][]byte, active *BusinessSystemPromptBundleManifest) (RemoteSkillCandidate, error) {
+func buildRemoteSkillCandidate(commit, clientSHA string, files map[string][]byte, active *BusinessSystemPromptBundleManifest) (RemoteSkillCandidate, error) {
 	if len(files) == 0 || len(files) > remoteSkillMaxFileCount {
 		return RemoteSkillCandidate{}, fmt.Errorf("%w: candidate file count invalid", ErrBusinessSystemPromptBundleInvalid)
 	}
@@ -409,9 +429,9 @@ func buildRemoteSkillCandidate(commit, overlaySHA string, files map[string][]byt
 	manifest := BusinessSystemPromptBundleManifest{
 		SchemaVersion: 1, BundleID: BusinessSystemPromptRemoteSkillBundleID,
 		Version: commit, CoreFiles: []string{
-			"codexrip-overlay/security-research/RULES.md",
-			"codexrip-overlay/security-research/README_AI.md",
-			"codexrip-overlay/security-research/SKILL.md",
+			"RULES.md",
+			"README_AI.md",
+			"skills/SKILL.md",
 		},
 		Files: entries, Domains: buildRemoteSkillRoutes(files),
 	}
@@ -429,7 +449,7 @@ func buildRemoteSkillCandidate(commit, overlaySHA string, files map[string][]byt
 	}
 	version := RemoteSkillBundleVersion{
 		BundleID: BusinessSystemPromptRemoteSkillBundleID, SourceCommit: commit,
-		OverlaySHA256: overlaySHA, ManifestSHA256: manifestSHA,
+		OverlaySHA256: clientSHA, ManifestSHA256: manifestSHA,
 		ArchiveSHA256: hashBusinessSystemPromptBundleBytes(archiveBytes),
 		FileCount:     len(entries), TotalBytes: total,
 	}

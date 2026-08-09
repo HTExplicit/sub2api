@@ -1,45 +1,59 @@
 {
   "schema_version": 1,
   "bundle_id": "codexrip-reverse-skill",
-  "version": "2.8.0+d8bf34540cbc1aa34052e1b142576fc36a1f1437+codexrip.2",
+  "version": "3.0.0+a5d8c9233b98c52df387d5b1a0ef669fcaa51374+codexrip.3",
   "core_files": [
-    "codexrip-overlay/security-research/RULES.md",
-    "codexrip-overlay/security-research/README_AI.md",
-    "codexrip-overlay/security-research/SKILL.md"
+    "RULES.md",
+    "README_AI.md",
+    "skills/SKILL.md"
   ],
   "files": [
     {
       "path": ".gitattributes",
-      "sha256": "de926fb1f43e6fdb3da2be870997d311e00d90ac70b325d4b730d0127e050b27",
-      "byte_length": 358,
+      "sha256": "e45c8af67839fc8ab6c81ca616718a70fb7175ad5dae7a22a3067f9ffd321e0b",
+      "byte_length": 340,
       "kind": "text",
       "required": true
     },
     {
       "path": ".github/FUNDING.yml",
-      "sha256": "ffb02daa0493b9162fadad2795db2f482aa7b16add0b37f1bb33e46d6ff54bb9",
-      "byte_length": 60,
+      "sha256": "c64978a5a54c7240d0666e01bc6896ce38b5f4c0a929216191fa96f23b4fe61b",
+      "byte_length": 64,
       "kind": "text",
       "required": true
     },
     {
       "path": ".github/workflows/auto-merge-journal.yml",
-      "sha256": "f6b3c58852db021c931fec276e5ebf44b8ce9b101a661a0ea30d96dba8e53444",
-      "byte_length": 7456,
+      "sha256": "58b02c9a49781ca7acbb3bc5541f4f915fc2d5a4ea321cda788334a9d4760fbc",
+      "byte_length": 7503,
+      "kind": "text",
+      "required": true
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "cb9f95dbc2362a303fdbb72c4a56aa6d0c5361f15181c428c4f37470f6b19559",
+      "byte_length": 4818,
       "kind": "text",
       "required": true
     },
     {
       "path": ".gitignore",
-      "sha256": "51bbf43614bdc6c9613c99c8f441f70cd0b8469ed49ef44488ef2f8c51e43a51",
-      "byte_length": 1256,
+      "sha256": "d82b5a0b64a0dc72e5b3c46a65b6a460d745f4aaf7567c66e46aadb78e5bda52",
+      "byte_length": 1025,
+      "kind": "text",
+      "required": true
+    },
+    {
+      "path": "AGENTS.md",
+      "sha256": "b0ec2d229e2829537714af69ccb79662851acb8ae5452744b8f8b8508294fbb3",
+      "byte_length": 2026,
       "kind": "text",
       "required": true
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "09ec311fc7c1d1925aeb84bdc2f4e7134f3f4bb85a7f383f3d650b1607df895f",
-      "byte_length": 3944,
+      "sha256": "ec13d1aae3822b396c99c53b439849ed6345e3d9ae2dcb64cdf3f895a12de49e",
+      "byte_length": 8524,
       "kind": "text",
       "required": true
     },
@@ -52,8 +66,8 @@
     },
     {
       "path": "CTF-Sandbox-Orchestrator/LICENSE",
-      "sha256": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
-      "byte_length": 35823,
+      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+      "byte_length": 35149,
       "kind": "text",
       "required": true
     },
@@ -1004,8 +1018,8 @@
     },
     {
       "path": "LICENSE",
-      "sha256": "76c19981c8abef6fe96b021ba64bd22d68363f93f0b389a46378a0678ebcc460",
-      "byte_length": 1087,
+      "sha256": "20876806ebaaae11d53fe07e221a4de4e67a017b6c91bb02d62df906213d2f60",
+      "byte_length": 1067,
       "kind": "text",
       "required": true
     },
@@ -1018,43 +1032,43 @@
     },
     {
       "path": "README.md",
-      "sha256": "e610f03837c1435323afbf4900d3b79a4fd8238e6a880ac8319dbbc19cfbd7d8",
-      "byte_length": 10468,
+      "sha256": "4d48feccc66fda44178f6d38522765811438783c5d601b2c780dd029e109ea0e",
+      "byte_length": 13686,
       "kind": "text",
       "required": true
     },
     {
       "path": "README_AI.md",
-      "sha256": "65b61ca9b1a4be3ed3f8de87a93a8b1986131aedc50f5ae890a901473713f1ba",
-      "byte_length": 24929,
+      "sha256": "d79c9b34beba0160c1a290763ce40ddf9f4027d2086f575a1b396188ddef87c9",
+      "byte_length": 25379,
       "kind": "text",
       "required": true
     },
     {
       "path": "README_zh.md",
-      "sha256": "14c91d6f4fa67f4ecfc053ee4ea2bcd83df22201d70614e3b13a8f689c8abd9b",
-      "byte_length": 10238,
+      "sha256": "60bf37d254b3ad021042600bc8695421a0b226eceee74c49622ba679038e91ad",
+      "byte_length": 12817,
       "kind": "text",
       "required": true
     },
     {
       "path": "RULES.md",
-      "sha256": "b20b5b908795d26b2fa49d7a531c8cc71b0e85aee3a0e9e2d3f6571fcc314da9",
-      "byte_length": 23934,
+      "sha256": "2d86efa38f8a8b9ef23fa71edcae35cf111a8fef9027a8893ff66e7e4086afa0",
+      "byte_length": 23093,
       "kind": "text",
       "required": true
     },
     {
       "path": "RULES_zh.md",
-      "sha256": "c32b81ce20a477f239ee2976c1ec6d237bc88619afd9755d3a325a7b7d17063f",
-      "byte_length": 33777,
+      "sha256": "1d451c57c041d9f6213600a260578cded7fa5472efa0a22ef59488f1f4332b8a",
+      "byte_length": 32691,
       "kind": "text",
       "required": true
     },
     {
       "path": "VERSION",
-      "sha256": "4ca8bbd3c595ee306226c6996b32b8d47a900217c55a7ed0cfc868ee444f34f1",
-      "byte_length": 7,
+      "sha256": "7fbd210ebec11f65a97190ef900795c4b8da3805af3f5a1b8d1d272556b292ca",
+      "byte_length": 5,
       "kind": "text",
       "required": true
     },
@@ -1074,8 +1088,8 @@
     },
     {
       "path": "burp-mcp-full/build.gradle",
-      "sha256": "36d5ed733c5badcc6de6eb8f9790f2dd32265971b38e9149ed2fe7b9266701bc",
-      "byte_length": 839,
+      "sha256": "4658b8325a15132dc4e3fa1bc76d77fd1c4bf419fe2f4d13118f668e11ed54f7",
+      "byte_length": 804,
       "kind": "text",
       "required": true
     },
@@ -1095,15 +1109,15 @@
     },
     {
       "path": "burp-mcp-full/gradle/wrapper/gradle-wrapper.properties",
-      "sha256": "0bd878c7ca27287c8c6c499797abfe33e560fef1b058b63583cee6ad0d5b0a7d",
-      "byte_length": 257,
+      "sha256": "712d9bc912d4b0d42b0faf8c6afeed13ae31ced75ca28463b1dfc4ced1a4bc9a",
+      "byte_length": 250,
       "kind": "text",
       "required": true
     },
     {
       "path": "burp-mcp-full/gradlew",
-      "sha256": "1ce03a421a975125820e1e4b7230f6a151617255b39cf84758505c7e67b316fa",
-      "byte_length": 9014,
+      "sha256": "a3648413b47ef77af21d5ebc36c687c7d103aaef3e17f33de7d4f080a6f300a3",
+      "byte_length": 8762,
       "kind": "script",
       "required": true
     },
@@ -1116,15 +1130,15 @@
     },
     {
       "path": "burp-mcp-full/mcp-bridge.js",
-      "sha256": "8f381caa4c585980a94937e89e167e2a2040ccaf16bb26e0173148a6bac24d5f",
-      "byte_length": 18474,
+      "sha256": "e1af116aa5dfdec446d09d8fb23faa0f2f6482506374038a78e00780622a3987",
+      "byte_length": 18704,
       "kind": "script",
       "required": true
     },
     {
       "path": "burp-mcp-full/settings.gradle",
-      "sha256": "69b5e8f37f49b0a392bdf29d896d0907ea6601d3966de7368404a2b05054baa6",
-      "byte_length": 36,
+      "sha256": "3fad09d6a4aa957f0ed10371a081823f64cca494ceb80dea7f3ab136181f0859",
+      "byte_length": 35,
       "kind": "text",
       "required": true
     },
@@ -1137,176 +1151,43 @@
     },
     {
       "path": "burp-mcp-full/src/main/java/com/burpmcp/McpHttpServer.java",
-      "sha256": "5fda381afbbc259a9253aba910ce837950a9aede56dfe899a52c733c46a89d2f",
-      "byte_length": 110992,
+      "sha256": "1480375db21e6a9c022cff257ff043612804b5983611773016e5bf09c7f7c06b",
+      "byte_length": 112540,
       "kind": "text",
       "required": true
     },
     {
       "path": "burp-mcp-full/src/main/resources/META-INF/extensions/burp-extension.properties",
-      "sha256": "76710aa756368d35da9ad11a03219751018cacc713e88e85e7a8f6a1385ac92a",
-      "byte_length": 79,
+      "sha256": "5923b807f390f822dd50071d256aca2ad9c2ebabf919019f4e04dd6bd0b45e2e",
+      "byte_length": 77,
       "kind": "text",
       "required": true
     },
     {
+      "path": "burp-mcp-full/test/mcp-bridge.test.js",
+      "sha256": "7f67800b67c3491709a64a8a65b32ff4854d11cf62c2b21b64c7591a4946bced",
+      "byte_length": 4177,
+      "kind": "script",
+      "required": true
+    },
+    {
       "path": "codexrip-client/SKILL.md",
-      "sha256": "c5b42ca3d63fded1a8dbb2145f1cd0a7eaf3a0bf47d1f0d95eb3bb0f05270094",
-      "byte_length": 1744,
+      "sha256": "fed9c9144987a4a72b66d06d3440c216de462028a333d630cdc039e96cc4a85a",
+      "byte_length": 1161,
       "kind": "text",
       "required": true
     },
     {
       "path": "codexrip-client/agents/openai.yaml",
-      "sha256": "dc8e0d72a8e2464aa569d349639a7a050f8a4adcb273a8883cb02a6adac67857",
-      "byte_length": 326,
+      "sha256": "f4eb414b02ef998e022edb831e21549e97993d156d833d18cffdd0aca76eb6fc",
+      "byte_length": 303,
       "kind": "text",
-      "required": true
-    },
-    {
-      "path": "codexrip-overlay/README.md",
-      "sha256": "6a1ff147a3f7663b8263aec6bb71f1a2d139774597f288b154ee7089526cf8ab",
-      "byte_length": 718,
-      "kind": "text",
-      "required": true
-    },
-    {
-      "path": "codexrip-overlay/context-manifest.json",
-      "sha256": "527737efec34375e7468425b798d4a75c945ddc834990ca8040cf00020202fdb",
-      "byte_length": 6844,
-      "kind": "text",
-      "required": true
-    },
-    {
-      "path": "codexrip-overlay/security-research/README_AI.md",
-      "sha256": "c31dbcc2e43b58bcee4b2b3e9b2b3a394b564e109fd6f42e0107058f12dce68f",
-      "byte_length": 24129,
-      "kind": "text",
-      "required": true
-    },
-    {
-      "path": "codexrip-overlay/security-research/RULES.md",
-      "sha256": "0cdadb16cc739106e86419143fd1790a38ceb126ee7aee1068b4187f910c4e07",
-      "byte_length": 22857,
-      "kind": "text",
-      "required": true
-    },
-    {
-      "path": "codexrip-overlay/security-research/SKILL.md",
-      "sha256": "3feaef9e81824e3bf989506e893eb7682fb1e1db07e51562bbe78c9fc7bc6abe",
-      "byte_length": 33090,
-      "kind": "text",
-      "required": true
-    },
-    {
-      "path": "codexrip-overlay/security-research/references/ai-security.md",
-      "sha256": "f7995b2e0f89f909eba9c0189a9c4e1e1c8c0c2e8ef7b04362b440992d3327da",
-      "byte_length": 20963,
-      "kind": "text",
-      "required": true
-    },
-    {
-      "path": "codexrip-overlay/security-research/references/ctf/ai-ml/index.md",
-      "sha256": "47101a556ff95b637cb07bf811f219684471adf9ef93166373960a04b27a2bf8",
-      "byte_length": 6878,
-      "kind": "text",
-      "required": true
-    },
-    {
-      "path": "codexrip-overlay/security-research/references/ctf/ai-ml/llm-attacks.md",
-      "sha256": "8338d986970f4d5d928f957cf52cba309a1a39cab971314c0d8c76bd31cca3f6",
-      "byte_length": 20471,
-      "kind": "text",
-      "required": true
-    },
-    {
-      "path": "codexrip-overlay/security-research/references/environment-and-resources.md",
-      "sha256": "f26b01cb7f1dd8452856bddcb888174d5cbb8b4a7a9ce95ddb40c0edd94d2d33",
-      "byte_length": 8075,
-      "kind": "text",
-      "required": true
-    },
-    {
-      "path": "codexrip-overlay/security-research/references/experience-index.md",
-      "sha256": "bbb1806f58732b9599aab60f51af1383ad21101e9c70acf7c65423913ea0ec67",
-      "byte_length": 8360,
-      "kind": "text",
-      "required": true
-    },
-    {
-      "path": "codexrip-overlay/security-research/references/precedent-auth.md",
-      "sha256": "d5f976b2a7ce4d4653b179531e423e88c6734d02586f44f575cdd4a9b4434b7b",
-      "byte_length": 3286,
-      "kind": "text",
-      "required": true
-    },
-    {
-      "path": "codexrip-overlay/security-research/references/routing.md",
-      "sha256": "11c63aa3171a8cbb5b2c0d272609ddec93390f9b1665a330768738500fe06f8b",
-      "byte_length": 16866,
-      "kind": "text",
-      "required": true
-    },
-    {
-      "path": "codexrip-overlay/security-research/references/scope-and-evidence.md",
-      "sha256": "67356970f6303c06a7e6609d4d1ddd82b7883b1c6aecdc7f78993e0dc123698c",
-      "byte_length": 6633,
-      "kind": "text",
-      "required": true
-    },
-    {
-      "path": "codexrip-overlay/security-research/skills/sec-ai-security/INSTRUCTIONS.md",
-      "sha256": "911bbb67e4d2580deb63a0686185d8ecd93b287c3b5ae9954ff4a2790b6638fb",
-      "byte_length": 2655,
-      "kind": "text",
-      "required": true
-    },
-    {
-      "path": "codexrip-overlay/security-research/skills/sec-ai-security/references/llm-deep/_llm-security-workflow.md",
-      "sha256": "57a9bbb4bea851dc1d82f55fdb7a8857ef57ee1abc697d7955bbe9d65825ed2b",
-      "byte_length": 5459,
-      "kind": "text",
-      "required": true
-    },
-    {
-      "path": "codexrip-overlay/security-research/skills/sec-ai-security/references/llm-deep/agent-obedience-engineering.md",
-      "sha256": "ec3809feec98b64e5f8c15971bfe1477fa5b62c750f0c62911d83c3910cf1014",
-      "byte_length": 11224,
-      "kind": "text",
-      "required": true
-    },
-    {
-      "path": "codexrip-overlay/security-research/skills/sec-ai-security/references/llm-deep/agent-security-testing.md",
-      "sha256": "bb63477f428acc9bf69233d5389b81bb995b04d83788c85a9e723cb65c5ddcc8",
-      "byte_length": 4600,
-      "kind": "text",
-      "required": true
-    },
-    {
-      "path": "codexrip-overlay/security-research/skills/sec-ai-security/references/llm-deep/owasp-llm-top10.md",
-      "sha256": "377bcf373c2f07916af795c2b3237e7522b22d476ff48355a9a201b914b19377",
-      "byte_length": 2948,
-      "kind": "text",
-      "required": true
-    },
-    {
-      "path": "codexrip-overlay/security-research/skills/sec-ai-security/references/llm-deep/prompt-injection-methodology.md",
-      "sha256": "4a99d68823dd4403bcc9810dd04111bbac111411cbc02bee666102b0f3104b3f",
-      "byte_length": 3464,
-      "kind": "text",
-      "required": true
-    },
-    {
-      "path": "codexrip-overlay/sync-latest.ps1",
-      "sha256": "9d0cb459b2e19876638f9c4ad11f797b2f4db0ed00f43c62784eda1781f8e0dc",
-      "byte_length": 2740,
-      "kind": "script",
       "required": true
     },
     {
       "path": "docs/ARCHITECTURE.md",
-      "sha256": "a7d9f3a1a935cd34d44fd30bd52c476d7de89e0507fb03ba46e625367edf834c",
-      "byte_length": 7976,
+      "sha256": "4e17341b8281902fed3b610822c825f9a4c236655310a9f98b8fee323f7b32ad",
+      "byte_length": 8121,
       "kind": "text",
       "required": true
     },
@@ -1326,8 +1207,8 @@
     },
     {
       "path": "docs/PACKAGE-SECURITY-AUDIT.md",
-      "sha256": "0c4ca5428d9ab6cc981648e14060dcaa97b4d2a11e1b296e2b9220f823edd133",
-      "byte_length": 5463,
+      "sha256": "14063ce6835588738b07a7faddd0be20a325132d0220b39a52c1d6bcfcd1cdbd",
+      "byte_length": 6094,
       "kind": "text",
       "required": true
     },
@@ -1347,8 +1228,8 @@
     },
     {
       "path": "docs/assets/star-history.svg",
-      "sha256": "08fa3cb40c7fdc92ae3be0a3d583546fe59c857a1cd50c0ad59bb1fecb70d3f8",
-      "byte_length": 2984,
+      "sha256": "ecde289eb05e62254916cd3c81b51b5ce5080bc10bc85530989c99ee9aea788b",
+      "byte_length": 2962,
       "kind": "text",
       "required": true
     },
@@ -1363,6 +1244,62 @@
       "path": "docs/platforms/macos.md",
       "sha256": "63b5e860c909f02508be443739d9a88b8889a804d26a98235c71644f3d057f4c",
       "byte_length": 6374,
+      "kind": "text",
+      "required": true
+    },
+    {
+      "path": "docs/reviews/2026-08-08-pr-43-37-36-23-integration-review.md",
+      "sha256": "5467052affdbefe45e12bbf32e9bcf3bd0fcb736f44a043243b226e6317b2004",
+      "byte_length": 5412,
+      "kind": "text",
+      "required": true
+    },
+    {
+      "path": "docs/reviews/2026-08-08-pr-value-review.md",
+      "sha256": "36043e9f1122b2fd091216e05ce5aad647838c8735feb58106fba83660c2af75",
+      "byte_length": 2464,
+      "kind": "text",
+      "required": true
+    },
+    {
+      "path": "examples/ctf-demo/README.md",
+      "sha256": "ee4d6aaa94cd8281ff2489fa6b7c00006735473de7f3c8dcf9c6a67bb4e1edd0",
+      "byte_length": 1507,
+      "kind": "text",
+      "required": true
+    },
+    {
+      "path": "examples/ctf-demo/evidence/E-001-E-003.md",
+      "sha256": "f78e8268767335e18b16d7545d983137894d1382ddbcad899e7934ec7bd225f9",
+      "byte_length": 1248,
+      "kind": "text",
+      "required": true
+    },
+    {
+      "path": "examples/ctf-demo/report/report.md",
+      "sha256": "49c075d60c99cf8b194711670b249bd30ca34fffc0ad522b806162f978e3a456",
+      "byte_length": 1350,
+      "kind": "text",
+      "required": true
+    },
+    {
+      "path": "examples/ctf-demo/scope.md",
+      "sha256": "44f5c42b2d61650c342847f6a2f7a5813ac2d36a58911efad9ab0cfcfccebe7c",
+      "byte_length": 1491,
+      "kind": "text",
+      "required": true
+    },
+    {
+      "path": "examples/ctf-demo/timeline.md",
+      "sha256": "9929a585f59f2d8b1e55dbdf2bfb53ae10f348e20c34d5228932f1de3a564305",
+      "byte_length": 1531,
+      "kind": "text",
+      "required": true
+    },
+    {
+      "path": "examples/ctf-demo/workitems.md",
+      "sha256": "2ee745196dfae0deecb469ceffea2c0eaf1c07cbe1ccdb150eb2af7af498b050",
+      "byte_length": 1000,
       "kind": "text",
       "required": true
     },
@@ -1389,15 +1326,15 @@
     },
     {
       "path": "kali/scripts/bootstrap-manifest.json",
-      "sha256": "301afbe87bf0863c5a1caf025244065370d42d7bf76276869cd570dc73e707a0",
-      "byte_length": 18954,
+      "sha256": "726ba252c2539b8b10b43b09cbc72119022b0976f4a6ef1916517fc9ee85e2de",
+      "byte_length": 19462,
       "kind": "text",
       "required": true
     },
     {
       "path": "kali/scripts/bootstrap-reverse.sh",
-      "sha256": "c0c8952eaebcc9d629db8a1d904d8a216f3584dfbe7a1a6fd4a6f4b23555937d",
-      "byte_length": 23383,
+      "sha256": "8b350da228cf32cdf311b4d650c7e1aba62e34c0e792415a8e16e3e143fa3ae6",
+      "byte_length": 25803,
       "kind": "script",
       "required": true
     },
@@ -1417,8 +1354,8 @@
     },
     {
       "path": "kali/scripts/quick-setup.sh",
-      "sha256": "c4623d48a1691bf6625b87dcbf0356d40a02e88ef8c5f7442b4025d881cf469b",
-      "byte_length": 9259,
+      "sha256": "a283f872229a91c36b7e575448171d9646d6140e9f411627cd8e323fc5de581a",
+      "byte_length": 9438,
       "kind": "script",
       "required": true
     },
@@ -1458,16 +1395,23 @@
       "required": true
     },
     {
+      "path": "skills/INDEX.md",
+      "sha256": "73cbf0ed0da52a04651ff29255a88680563ca59da398a3ca41d460674f686816",
+      "byte_length": 10748,
+      "kind": "text",
+      "required": true
+    },
+    {
       "path": "skills/MASTER-ROUTING.md",
-      "sha256": "4f2099d74d6088b77d2978292bd141d0eb65024f8419948c3341b7c79cdc029f",
-      "byte_length": 5480,
+      "sha256": "6355cc238bf50330a0eaad4ef505ab2d0d70cae9dd550504b74e39ef464ba770",
+      "byte_length": 5687,
       "kind": "text",
       "required": true
     },
     {
       "path": "skills/SKILL.md",
-      "sha256": "bfa33a5e66323debb995d36af2e2f16c44b664872305d5e93a5f8372695d2953",
-      "byte_length": 12326,
+      "sha256": "2c7994642ae2cd97a15fffc0d6e119e07e83582ca70cc9a7a5d212aa9a947a56",
+      "byte_length": 12459,
       "kind": "text",
       "required": true
     },
@@ -1543,8 +1487,8 @@
     },
     {
       "path": "skills/apk-reverse/scripts/frida-run.ps1",
-      "sha256": "30e35115424b8a3de5789f96d90aa397eaba518906c394a61a72ad74d150a43e",
-      "byte_length": 4427,
+      "sha256": "542ac92bd97be53184479b87d62f927047dae5b60d6c2fcfd8e76d57130ea24d",
+      "byte_length": 4172,
       "kind": "script",
       "required": true
     },
@@ -1654,6 +1598,27 @@
       "required": true
     },
     {
+      "path": "skills/case-review/SKILL.md",
+      "sha256": "da9ca51e03f1b1fe3728e74cf97515c1c51b21ed96a98b834d6b3c35558a3b58",
+      "byte_length": 6881,
+      "kind": "text",
+      "required": true
+    },
+    {
+      "path": "skills/case-review/scripts/review_case.py",
+      "sha256": "bb2ed6e639c4119beb638953880e0aaa85fbc4c51b13913c5139c8b0c51f7516",
+      "byte_length": 20450,
+      "kind": "script",
+      "required": true
+    },
+    {
+      "path": "skills/case-review/tests/test_review_case.py",
+      "sha256": "0cd21ce02f5d32834aa57d0203c1a47cb7c5360a7b7a13185d579bde36178d84",
+      "byte_length": 6924,
+      "kind": "script",
+      "required": true
+    },
+    {
       "path": "skills/cloud-k8s/SKILL.md",
       "sha256": "86fdb2c06275b3acf501ec438a8d00f1737f5f831942e80b841bec007a5d5585",
       "byte_length": 2815,
@@ -1678,6 +1643,13 @@
       "path": "skills/code-audit/references/sast-review-checklist.md",
       "sha256": "3d603986a782f6ebdcb899d32bce2e668d06c19745df7a45e8fa5ccee6cf7d09",
       "byte_length": 312,
+      "kind": "text",
+      "required": true
+    },
+    {
+      "path": "skills/config/routing.json",
+      "sha256": "ecba6057857e939d731400124bdcbffbbf29aa8d0d62df8da503759e0ccee0f9",
+      "byte_length": 13830,
       "kind": "text",
       "required": true
     },
@@ -1913,9 +1885,51 @@
       "required": true
     },
     {
+      "path": "skills/field-journal/2026-07-20_reverse-toolchain-windows-bootstrap.md",
+      "sha256": "5797223b53e7ab1862b550f08435ba43fd624dec80fa38dc32283192a31f3a8f",
+      "byte_length": 4112,
+      "kind": "text",
+      "required": true
+    },
+    {
+      "path": "skills/field-journal/2026-07-22_electron-bytenode-privileged-update-chain.md",
+      "sha256": "8fdfbb32083674a50a539afde744890963c0f9753eb5d100d5c17ea64e88aca8",
+      "byte_length": 6934,
+      "kind": "text",
+      "required": true
+    },
+    {
+      "path": "skills/field-journal/2026-08-01_nextjs-cdk-contract-faithful-local-reconstruction.md",
+      "sha256": "2976ca53d52aba355a18e0994a1089ec7d7fba042697c4f76fc73e6136818248",
+      "byte_length": 7919,
+      "kind": "text",
+      "required": true
+    },
+    {
       "path": "skills/field-journal/2026-08-01_pentest-encryption-oracle-public-template-sql-admin-takeover.md",
       "sha256": "b442e31c2605ce768fbd84e5be85cf9040233f465d0ce7557cec848d39a12ad0",
       "byte_length": 8361,
+      "kind": "text",
+      "required": true
+    },
+    {
+      "path": "skills/field-journal/2026-08-06_cortex-m-msc-firmware-self-keyed-rotate-xor.md",
+      "sha256": "15deea9d9029948d0001058771e29dafa16eff609cd05e4d4cdd2de710f8abca",
+      "byte_length": 4944,
+      "kind": "text",
+      "required": true
+    },
+    {
+      "path": "skills/field-journal/2026-08-08_client-neutral-structured-routing-pr-integration.md",
+      "sha256": "df6fbb0487e09afeba5419d2952ce1708a1e2a61bafcb452521c0283fa0ecb85",
+      "byte_length": 4291,
+      "kind": "text",
+      "required": true
+    },
+    {
+      "path": "skills/field-journal/2026-08-08_pr-value-triage-and-safe-integration.md",
+      "sha256": "15b9c8ee8c5e270852dc3965dfef087bd08ef16f200a79c7ffbe75f86f381669",
+      "byte_length": 1731,
       "kind": "text",
       "required": true
     },
@@ -1928,8 +1942,8 @@
     },
     {
       "path": "skills/field-journal/_index.md",
-      "sha256": "341dfe6dac81974148d97c0caca5bd373a1e3824537cecd28ea9dc81fee421c8",
-      "byte_length": 3481,
+      "sha256": "93de8f435aac495759a42b7fdb865067a11c6dc70f2f16858066e10074f589a7",
+      "byte_length": 4922,
       "kind": "text",
       "required": true
     },
@@ -2180,7 +2194,7 @@
     },
     {
       "path": "skills/ida-reverse/scripts/start.ps1",
-      "sha256": "1480ace6c532f6a03c99966e70045a0f67c66d89e24169ed2cb512fff2e57f40",
+      "sha256": "cd2cc4d7b33a9acc645fb3dcf08a9bd2654cb4eef4d6402b20a1a2d7c7169611",
       "byte_length": 6357,
       "kind": "script",
       "required": true
@@ -2404,22 +2418,22 @@
     },
     {
       "path": "skills/ops/README.md",
-      "sha256": "ff35dd799b657eb22aea798c775f3f836b79d14592e8581ed2163b45059c6411",
-      "byte_length": 1194,
+      "sha256": "ee4917b76c75d85a7592c1f13b732a0bd3eeee0afd10ec833b69822e1acea931",
+      "byte_length": 1359,
       "kind": "text",
       "required": true
     },
     {
       "path": "skills/ops/evidence-finding-path.md",
-      "sha256": "e8e84d8f3cd483966d6a81e7abe7e35adaf295327c5430dc719272649ecd7d02",
-      "byte_length": 3185,
+      "sha256": "25592db06d49621bf55dc09927d968860ed2cdd487c9f84dbb11b39047b8561f",
+      "byte_length": 3704,
       "kind": "text",
       "required": true
     },
     {
       "path": "skills/ops/role-map.md",
-      "sha256": "dc2cdc9d51807a70c1a0af47105f59c1479094b57c49a290c358e99b478f9690",
-      "byte_length": 3156,
+      "sha256": "cc7f37a596f4fc839de7ba5aaca31e3edc639714c7a2bc80b1aad1fa98d297e2",
+      "byte_length": 3110,
       "kind": "text",
       "required": true
     },
@@ -2614,15 +2628,15 @@
     },
     {
       "path": "skills/pentest-tools/src-hunter/.gitignore",
-      "sha256": "cd0529ad2d292643b31f03a13a8bd89badaaefa760e30026dcc8db5a3c6e5769",
-      "byte_length": 181,
+      "sha256": "0df5a67344714a94ff6cd961b24374d5e1547e833c5d00a4e23a48cb0acaceec",
+      "byte_length": 164,
       "kind": "text",
       "required": true
     },
     {
       "path": "skills/pentest-tools/src-hunter/LICENSE",
-      "sha256": "132f0004024468fd6a7ef5c9e906087194d897cbf096a0ea282a0d180ff7a5fd",
-      "byte_length": 1088,
+      "sha256": "5b02fedc65e661a7818e303a1e4680927ed5afa636c491b3bdf7d33f41f9f908",
+      "byte_length": 1067,
       "kind": "text",
       "required": true
     },
@@ -2936,8 +2950,8 @@
     },
     {
       "path": "skills/pentest-tools/src-hunter/references/payloader/by-category/web/文件漏洞.md",
-      "sha256": "e587f4bfc2bf8afdbabab36161713e0456823be553949fbcadc1c43fbebc91e0",
-      "byte_length": 47962,
+      "sha256": "0236fc2822eaeb293c320045989f7d8468640fd0e22576c1c07e07217ef40121",
+      "byte_length": 47961,
       "kind": "text",
       "required": true
     },
@@ -2971,8 +2985,8 @@
     },
     {
       "path": "skills/pentest-tools/src-hunter/references/payloader/by-category/web/请求走私.md",
-      "sha256": "ef44b0f7fdb1489b5cbf3c9f62e9fed4b5cd8da177181e6466e810d86df315ee",
-      "byte_length": 22515,
+      "sha256": "c5b9c665f23e3a2f2dcd5f78f81595774406f1ecdb5d041599db2842f1e63c84",
+      "byte_length": 22425,
       "kind": "text",
       "required": true
     },
@@ -3125,8 +3139,8 @@
     },
     {
       "path": "skills/pentest-tools/src-hunter/references/playbooks/dos.md",
-      "sha256": "5d9b54c6d753055fd203ccc502df3b78b204455da0bc232f955ae84203f9e664",
-      "byte_length": 29261,
+      "sha256": "41ef3b79b715c834e6c72fafd1bbf6f64a67de4b38a725d70176a0bfb9fee0e7",
+      "byte_length": 27740,
       "kind": "text",
       "required": true
     },
@@ -3146,8 +3160,8 @@
     },
     {
       "path": "skills/pentest-tools/src-hunter/references/playbooks/http-smuggling.md",
-      "sha256": "bae967f59d22ccb06f2d0094961b48b0d7258e05010fc051c76ac0f301ec745e",
-      "byte_length": 21696,
+      "sha256": "82ff4bf6104fb3cb4628c33a6ec57e49d2dcb5c00024507675b1bfcd03ffa692",
+      "byte_length": 21608,
       "kind": "text",
       "required": true
     },
@@ -3167,15 +3181,15 @@
     },
     {
       "path": "skills/pentest-tools/src-hunter/references/playbooks/llm-prompt-injection.md",
-      "sha256": "063082cfa2c8195eb545486a82eb8a100b4a236fa2fb81f11e60af192384e617",
-      "byte_length": 56473,
+      "sha256": "5a7c5062f0e277eae08a1303857601ea66e5c4d0481cd3e3b8681a6655f67eb9",
+      "byte_length": 56485,
       "kind": "text",
       "required": true
     },
     {
       "path": "skills/pentest-tools/src-hunter/references/playbooks/logic-flaws.md",
-      "sha256": "ddf5c43fed0d04058e71b663683860dd4b11fa2983230ca6025b374b0d631e13",
-      "byte_length": 52043,
+      "sha256": "867dad673cfb3ba8b036fdddee2a963dce76ec0337dec185edda1b845aa1a300",
+      "byte_length": 51491,
       "kind": "text",
       "required": true
     },
@@ -3202,8 +3216,8 @@
     },
     {
       "path": "skills/pentest-tools/src-hunter/references/playbooks/race-conditions.md",
-      "sha256": "7436049e4d5b106a7a8c176bfc0619f1a447764b99d5bc73b021a254dbf63988",
-      "byte_length": 7308,
+      "sha256": "8868b0e42f5429ebd76886d255a588046376e91b250832e68517052a5335baaf",
+      "byte_length": 7076,
       "kind": "text",
       "required": true
     },
@@ -3384,8 +3398,8 @@
     },
     {
       "path": "skills/references/domain-coverage-map.md",
-      "sha256": "a4909558608f62f0e5031e4e58c98da4063012ed3e402e7a56d73b534d9a2b8b",
-      "byte_length": 2844,
+      "sha256": "ce5773bb4ed40f3004aa9de69c686bc94c20553f2a81a3abff52e5d28c406d85",
+      "byte_length": 2847,
       "kind": "text",
       "required": true
     },
@@ -3412,8 +3426,8 @@
     },
     {
       "path": "skills/reverse-engineering/crypto-decode-tools.md",
-      "sha256": "e03aeade2b81f2afb2f0d2141f3c693f7f0acaf79c7f9e78180de37a9114ed6f",
-      "byte_length": 6964,
+      "sha256": "1c2ce07acdbdbdd66fd45b6b1313d247c0885c7368570698064c56dc8e7735a3",
+      "byte_length": 6974,
       "kind": "text",
       "required": true
     },
@@ -3538,8 +3552,8 @@
     },
     {
       "path": "skills/reverse-engineering/tools-advanced.md",
-      "sha256": "848c172f222fec082214d26737238395d4831a1f0ea2d034fbb1cda2615d8645",
-      "byte_length": 26512,
+      "sha256": "948f9a19fda1b922ddf526b74ffca50c441aca5b0c1dd777fab9c70f6f42e770",
+      "byte_length": 26514,
       "kind": "text",
       "required": true
     },
@@ -3559,36 +3573,36 @@
     },
     {
       "path": "skills/routing.md",
-      "sha256": "29d397aa5f99d0eb079b80400a08a54d724221c33c5b7d46dd02db54e36bd2e0",
-      "byte_length": 26599,
+      "sha256": "a014c1171d5c5a28215494e95801ea2340edccfb419f09fdfa67d43572bd372e",
+      "byte_length": 26925,
       "kind": "text",
       "required": true
     },
     {
       "path": "skills/routing_zh.md",
-      "sha256": "85ce047e2ff7e9eff272fe9bc1d85cb0613683407dda2be03c7ce8727d76e1fe",
-      "byte_length": 29293,
+      "sha256": "51526dfaaf5fc9931545438ffed7e6a3da40ce196e3a07ab1695991d8a91434c",
+      "byte_length": 29589,
       "kind": "text",
       "required": true
     },
     {
       "path": "skills/scripts/append-evidence.ps1",
-      "sha256": "fde23824fbd0abeac2432fff4547facda7cfa732c24843cb0d6796227a4214e3",
-      "byte_length": 5590,
+      "sha256": "9de59a5dd1f8352dd796cf540b0ade851d13a017918df57f0173d44d6dbe58cb",
+      "byte_length": 6829,
       "kind": "script",
       "required": true
     },
     {
       "path": "skills/scripts/bootstrap-manifest.json",
-      "sha256": "4dc4cca26766a151b0bda1dea2d91aec4e9de8db349043e6a159906b6a664638",
-      "byte_length": 10937,
+      "sha256": "ca157c8055c8fc69c5e5b26c178434e60407e0824003962d94215418b10fc968",
+      "byte_length": 11487,
       "kind": "text",
       "required": true
     },
     {
       "path": "skills/scripts/bootstrap-reverse.ps1",
-      "sha256": "e85f2ce06f6909a5b76280f438010715ca2e519bd2854f3ab07e03c2ece5a8cc",
-      "byte_length": 41756,
+      "sha256": "db30e3688be3c5634d16c62edb3fed18326b787ac84b23bf3486bfae70e66649",
+      "byte_length": 45274,
       "kind": "script",
       "required": true
     },
@@ -3601,15 +3615,36 @@
     },
     {
       "path": "skills/scripts/case-guard.ps1",
-      "sha256": "93bc818d406a108923313aaad331e6a88e854612763608d00c2cf75de5b19735",
-      "byte_length": 3266,
+      "sha256": "910c86b9fe0b32fd9834fc4499b854752989d3dc6cf5e9142e374a448c00d9ff",
+      "byte_length": 4044,
+      "kind": "script",
+      "required": true
+    },
+    {
+      "path": "skills/scripts/case-guard.sh",
+      "sha256": "eb658a1b6ffd42571a3e9ecbd8bc74987cffdf2d3ab31c2f2a0a5574767bd05c",
+      "byte_length": 3593,
       "kind": "script",
       "required": true
     },
     {
       "path": "skills/scripts/case-init.ps1",
-      "sha256": "6e5ea9e3d2a74c838ece4d4958bc7086b8cbc2f6bc9d32c6f944123d3b276df8",
-      "byte_length": 11461,
+      "sha256": "0a7946d57a8e60940520a4f86653726e2d0920d2fe044d8b0b5a28cf3e0c94dd",
+      "byte_length": 12276,
+      "kind": "script",
+      "required": true
+    },
+    {
+      "path": "skills/scripts/case-init.sh",
+      "sha256": "35c10250df7c3d7fc3ef8ce1ff9c1bfcd1e9ec9d80ea5abd58db99eecf1bbe62",
+      "byte_length": 11823,
+      "kind": "script",
+      "required": true
+    },
+    {
+      "path": "skills/scripts/extract-summaries.ps1",
+      "sha256": "72c36b382c6b616a2fe21724553ffb4249416adde2ebe6eba188948ec390cc0d",
+      "byte_length": 5722,
       "kind": "script",
       "required": true
     },
@@ -3629,15 +3664,22 @@
     },
     {
       "path": "skills/scripts/master-route.ps1",
-      "sha256": "590a1602b733403aeba56f24bff0fb0269a08eb3c8a82bba745d0ee79dd073dd",
-      "byte_length": 13934,
+      "sha256": "37ed1a374f927679375f28a19ea01a6bb06d06d75fa57e0928c0ef0ac17eb7db",
+      "byte_length": 8112,
+      "kind": "script",
+      "required": true
+    },
+    {
+      "path": "skills/scripts/master-route.sh",
+      "sha256": "68842e67c0cf3effe0ed70bad2e792f23f8601a31bbda62e7fcaf26bf977f4ad",
+      "byte_length": 5406,
       "kind": "script",
       "required": true
     },
     {
       "path": "skills/scripts/refresh-tool-index.ps1",
-      "sha256": "a4a3ac5ab26d02ade57771ab47aaec86f0c1a0822131c746899e6417f050dbba",
-      "byte_length": 8406,
+      "sha256": "f1fb4bf5fcdd41c430bc61dd5b52655f72af22c44de6b0308ab2139bcbcc0c9f",
+      "byte_length": 7789,
       "kind": "script",
       "required": true
     },
@@ -3650,15 +3692,22 @@
     },
     {
       "path": "skills/scripts/smoke.ps1",
-      "sha256": "23be1e1892b47a8b9ddfd094d789085a92078f8451bcd723ca70577ff7474da9",
-      "byte_length": 5892,
+      "sha256": "c4ec06275aabda803ef18f8f6e7147d660215ed9b4cff49a0d1b43d5e0ff7710",
+      "byte_length": 5811,
       "kind": "script",
       "required": true
     },
     {
       "path": "skills/scripts/test-p0-friction.ps1",
-      "sha256": "d4da2dc6d909276ffc470bfa38736cf704d1e6253c4d68d47232c13cc990f2b6",
-      "byte_length": 18217,
+      "sha256": "9f408785eb2ef07d8a7d407c1b91d7b8cf89542cf5e0d7beef2129cd686c3110",
+      "byte_length": 21390,
+      "kind": "script",
+      "required": true
+    },
+    {
+      "path": "skills/scripts/test-routing.ps1",
+      "sha256": "4dcb646955aad20980657fe30e676d94843efc26948af74e1e22cfc6baf83bbf",
+      "byte_length": 3794,
       "kind": "script",
       "required": true
     },
@@ -3671,15 +3720,15 @@
     },
     {
       "path": "skills/scripts/update-star-history.ps1",
-      "sha256": "7d04eb289c89ab20f3054114658b6f6c44a1ba30d074078a066ad8d0034e1805",
-      "byte_length": 5694,
+      "sha256": "ed0906d86ee7570151a2816c6ad1e72bb031f23b60868dee92d81bbfb210c619",
+      "byte_length": 5697,
       "kind": "script",
       "required": true
     },
     {
       "path": "skills/scripts/verify-routing-coherence.ps1",
-      "sha256": "748d4f2fa1b0687f3fdae606ef07f50a6e4390b4ceba657b1bc6d2f149befb5a",
-      "byte_length": 17670,
+      "sha256": "f9769e230fb6080a7ef3cd8c0bbee7133ccacc290ac48531d6294a2a04f7980b",
+      "byte_length": 23269,
       "kind": "script",
       "required": true
     },
@@ -3701,6 +3750,13 @@
       "path": "skills/supply-chain-security/references/sbom-sca-methodology.md",
       "sha256": "97c54111804c7539f1ddb5e9c06cd0fc6287c825a5dfb5abce3416d951ee8722",
       "byte_length": 2046,
+      "kind": "text",
+      "required": true
+    },
+    {
+      "path": "skills/tests/routing-benchmark.json",
+      "sha256": "457bdac274629f9c4584aee04e88d8c03c04c8904d05f23b9d0247116aa3afd3",
+      "byte_length": 28990,
       "kind": "text",
       "required": true
     },
@@ -3734,8 +3790,8 @@
     },
     {
       "path": "skills/tool-index.md.template",
-      "sha256": "7eac7d329c9ced15a7c6e4eb311f9d4caeed746379b54460f2e12dbdb392bc02",
-      "byte_length": 2828,
+      "sha256": "efb663bea93b5ba30f95e3c37be4824e1db89141fcbe5b1e4a16f6b694294e8b",
+      "byte_length": 2764,
       "kind": "text",
       "required": true
     },
@@ -3772,14 +3828,8 @@
     {
       "id": "api-security",
       "keywords": [
-        "api",
-        "http",
-        "rest",
-        "graphql",
-        "jwt",
-        "oauth",
-        "authentication",
-        "authorization",
+        "api-security",
+        "api security",
         "接口安全",
         "鉴权",
         "认证",
@@ -3794,11 +3844,8 @@
     {
       "id": "apk-reverse",
       "keywords": [
-        "apk",
-        "android",
-        "smali",
-        "frida",
-        "jadx",
+        "apk-reverse",
+        "apk reverse",
         "安卓逆向",
         "应用逆向"
       ],
@@ -3813,10 +3860,8 @@
     {
       "id": "attack-chain",
       "keywords": [
+        "attack-chain",
         "attack chain",
-        "exploit chain",
-        "kill chain",
-        "lateral movement",
         "攻击链",
         "利用链",
         "横向移动"
@@ -3831,9 +3876,8 @@
     {
       "id": "binary-diff",
       "keywords": [
+        "binary-diff",
         "binary diff",
-        "bindiff",
-        "patch diff",
         "二进制对比",
         "补丁对比"
       ],
@@ -3845,10 +3889,8 @@
     {
       "id": "browser-automation",
       "keywords": [
+        "browser-automation",
         "browser automation",
-        "playwright",
-        "selenium",
-        "cdp",
         "浏览器自动化"
       ],
       "entry": "skills/browser-automation/SKILL.md",
@@ -3859,9 +3901,8 @@
     {
       "id": "browser-extension-reverse",
       "keywords": [
-        "browser extension",
-        "chrome extension",
-        "firefox extension",
+        "browser-extension-reverse",
+        "browser extension reverse",
         "浏览器扩展逆向",
         "插件逆向"
       ],
@@ -3871,13 +3912,19 @@
       ]
     },
     {
+      "id": "case-review",
+      "keywords": [
+        "case-review",
+        "case review"
+      ],
+      "entry": "skills/case-review/SKILL.md",
+      "references": []
+    },
+    {
       "id": "cloud-k8s",
       "keywords": [
-        "cloud",
-        "kubernetes",
-        "k8s",
-        "container",
-        "docker",
+        "cloud-k8s",
+        "cloud k8s",
         "云安全",
         "容器安全"
       ],
@@ -3889,10 +3936,8 @@
     {
       "id": "code-audit",
       "keywords": [
+        "code-audit",
         "code audit",
-        "source audit",
-        "sast",
-        "code review",
         "代码审计",
         "源码审计"
       ],
@@ -3904,11 +3949,8 @@
     {
       "id": "database-security",
       "keywords": [
-        "database",
-        "sql",
-        "postgresql",
-        "mysql",
-        "redis",
+        "database-security",
+        "database security",
         "数据库安全",
         "数据库审计"
       ],
@@ -3931,10 +3973,8 @@
     {
       "id": "digital-forensics",
       "keywords": [
-        "forensics",
-        "disk image",
-        "memory dump",
-        "pcap",
+        "digital-forensics",
+        "digital forensics",
         "数字取证",
         "内存取证",
         "流量取证"
@@ -3959,13 +3999,8 @@
     {
       "id": "dotnet-reverse",
       "keywords": [
-        ".net",
-        "dotnet",
-        "c#",
-        "dnspy",
-        "ilspy",
-        ".net逆向",
-        "c#逆向"
+        "dotnet-reverse",
+        "dotnet reverse"
       ],
       "entry": "skills/dotnet-reverse/SKILL.md",
       "references": [
@@ -3977,12 +4012,8 @@
     {
       "id": "edr-bypass-re",
       "keywords": [
-        "edr",
-        "endpoint detection",
-        "unhook",
-        "telemetry",
-        "edr逆向",
-        "端点检测"
+        "edr-bypass-re",
+        "edr bypass re"
       ],
       "entry": "skills/edr-bypass-re/SKILL.md",
       "references": [
@@ -3994,12 +4025,8 @@
     {
       "id": "email-security",
       "keywords": [
-        "email security",
-        "smtp",
-        "spf",
-        "dkim",
-        "dmarc",
-        "邮件安全"
+        "email-security",
+        "email security"
       ],
       "entry": "skills/email-security/SKILL.md",
       "references": [
@@ -4009,13 +4036,8 @@
     {
       "id": "firmware-pentest",
       "keywords": [
-        "firmware",
-        "embedded",
-        "binwalk",
-        "uart",
-        "固件安全",
-        "固件逆向",
-        "嵌入式安全"
+        "firmware-pentest",
+        "firmware pentest"
       ],
       "entry": "skills/firmware-pentest/SKILL.md",
       "references": [
@@ -4027,10 +4049,8 @@
     {
       "id": "ghidra-reverse",
       "keywords": [
-        "ghidra",
-        "decompiler",
-        "ghidra逆向",
-        "反编译器"
+        "ghidra-reverse",
+        "ghidra reverse"
       ],
       "entry": "skills/ghidra-reverse/SKILL.md",
       "references": [
@@ -4040,11 +4060,8 @@
     {
       "id": "go-rust-reverse",
       "keywords": [
-        "golang binary",
-        "go binary",
-        "rust binary",
-        "go逆向",
-        "rust逆向"
+        "go-rust-reverse",
+        "go rust reverse"
       ],
       "entry": "skills/go-rust-reverse/SKILL.md",
       "references": [
@@ -4054,12 +4071,8 @@
     {
       "id": "hardware-security",
       "keywords": [
-        "hardware security",
-        "jtag",
-        "spi",
-        "side channel",
-        "硬件安全",
-        "侧信道"
+        "hardware-security",
+        "hardware security"
       ],
       "entry": "skills/hardware-security/SKILL.md",
       "references": [
@@ -4069,11 +4082,8 @@
     {
       "id": "ida-reverse",
       "keywords": [
-        "ida pro",
-        "idapython",
-        "disassembly",
-        "ida逆向",
-        "反汇编"
+        "ida-reverse",
+        "ida reverse"
       ],
       "entry": "skills/ida-reverse/SKILL.md",
       "references": [
@@ -4083,13 +4093,8 @@
     {
       "id": "identity-federation",
       "keywords": [
-        "saml",
-        "oidc",
-        "identity federation",
-        "single sign-on",
-        "sso",
-        "身份联合",
-        "单点登录"
+        "identity-federation",
+        "identity federation"
       ],
       "entry": "skills/identity-federation/SKILL.md",
       "references": [
@@ -4099,11 +4104,8 @@
     {
       "id": "js-reverse",
       "keywords": [
-        "javascript reverse",
+        "js-reverse",
         "js reverse",
-        "web reverse",
-        "wasm",
-        "obfuscation",
         "js逆向",
         "网页逆向",
         "前端逆向",
@@ -4124,10 +4126,8 @@
     {
       "id": "llm-security",
       "keywords": [
+        "llm-security",
         "llm security",
-        "prompt injection",
-        "jailbreak",
-        "agent security",
         "大模型安全",
         "提示词注入",
         "越狱",
@@ -4144,12 +4144,8 @@
     {
       "id": "macos-reverse",
       "keywords": [
-        "macos",
-        "mach-o",
-        "objective-c",
-        "swift binary",
-        "macos逆向",
-        "苹果电脑逆向"
+        "macos-reverse",
+        "macos reverse"
       ],
       "entry": "skills/macos-reverse/SKILL.md",
       "references": [
@@ -4159,15 +4155,11 @@
     {
       "id": "malware-analysis",
       "keywords": [
-        "malware",
-        "ransomware",
-        "trojan",
-        "sandbox",
-        "yara",
+        "malware-analysis",
+        "malware analysis",
         "恶意软件",
         "恶意样本",
-        "勒索软件",
-        "木马分析"
+        "勒索软件"
       ],
       "entry": "skills/malware-analysis/SKILL.md",
       "references": [
@@ -4179,9 +4171,8 @@
     {
       "id": "mobile-reverse",
       "keywords": [
+        "mobile-reverse",
         "mobile reverse",
-        "ios reverse",
-        "android reverse",
         "移动端逆向",
         "ios逆向",
         "安卓逆向"
@@ -4196,12 +4187,8 @@
     {
       "id": "ot-ics",
       "keywords": [
-        "ot security",
-        "ics",
-        "scada",
-        "modbus",
-        "工控安全",
-        "工业控制"
+        "ot-ics",
+        "ot ics"
       ],
       "entry": "skills/ot-ics/SKILL.md",
       "references": [
@@ -4211,12 +4198,8 @@
     {
       "id": "patch-diff-exploit",
       "keywords": [
-        "patch diff",
-        "cve patch",
-        "vulnerability patch",
-        "补丁分析",
-        "补丁差分",
-        "漏洞补丁"
+        "patch-diff-exploit",
+        "patch diff exploit"
       ],
       "entry": "skills/patch-diff-exploit/SKILL.md",
       "references": [
@@ -4246,10 +4229,8 @@
     {
       "id": "protocol-reverse",
       "keywords": [
+        "protocol-reverse",
         "protocol reverse",
-        "packet format",
-        "protobuf",
-        "websocket",
         "协议逆向",
         "协议分析",
         "数据包格式"
@@ -4262,11 +4243,8 @@
     {
       "id": "pwn-chain",
       "keywords": [
-        "pwn",
-        "buffer overflow",
-        "rop",
-        "heap exploit",
-        "shellcode",
+        "pwn-chain",
+        "pwn chain",
         "二进制利用",
         "缓冲区溢出",
         "堆利用"
@@ -4281,10 +4259,7 @@
     {
       "id": "radare2",
       "keywords": [
-        "radare2",
-        "r2",
-        "rizin",
-        "radare2逆向"
+        "radare2"
       ],
       "entry": "skills/radare2/SKILL.md",
       "references": [
@@ -4294,13 +4269,8 @@
     {
       "id": "radio-sdr",
       "keywords": [
-        "radio",
-        "sdr",
-        "rf",
-        "signal",
-        "无线电安全",
-        "软件无线电",
-        "信号分析"
+        "radio-sdr",
+        "radio sdr"
       ],
       "entry": "skills/radio-sdr/SKILL.md",
       "references": [
@@ -4310,10 +4280,8 @@
     {
       "id": "reverse-engineering",
       "keywords": [
+        "reverse-engineering",
         "reverse engineering",
-        "decompile",
-        "disassemble",
-        "binary analysis",
         "逆向工程",
         "反编译",
         "反汇编",
@@ -4329,11 +4297,8 @@
     {
       "id": "supply-chain-security",
       "keywords": [
-        "supply chain",
-        "dependency confusion",
-        "sbom",
-        "供应链安全",
-        "依赖混淆"
+        "supply-chain-security",
+        "supply chain security"
       ],
       "entry": "skills/supply-chain-security/SKILL.md",
       "references": [
@@ -4344,11 +4309,8 @@
     {
       "id": "thick-client",
       "keywords": [
-        "thick client",
-        "desktop client",
-        "windows client",
-        "桌面客户端",
-        "胖客户端"
+        "thick-client",
+        "thick client"
       ],
       "entry": "skills/thick-client/SKILL.md",
       "references": [
@@ -4358,12 +4320,9 @@
     {
       "id": "threat-hunting",
       "keywords": [
+        "threat-hunting",
         "threat hunting",
-        "ioc",
-        "sigma",
-        "mitre attack",
         "威胁狩猎",
-        "威胁猎杀",
         "指标分析"
       ],
       "entry": "skills/threat-hunting/SKILL.md",
@@ -4374,12 +4333,8 @@
     {
       "id": "wifi-wireless",
       "keywords": [
-        "wifi",
-        "wireless",
-        "802.11",
-        "wpa",
-        "无线安全",
-        "wifi安全"
+        "wifi-wireless",
+        "wifi wireless"
       ],
       "entry": "skills/wifi-wireless/SKILL.md",
       "references": [
@@ -4389,13 +4344,8 @@
     {
       "id": "windows-ad",
       "keywords": [
-        "active directory",
-        "windows ad",
-        "kerberos",
-        "ldap",
-        "域安全",
-        "活动目录",
-        "域渗透"
+        "windows-ad",
+        "windows ad"
       ],
       "entry": "skills/windows-ad/SKILL.md",
       "references": [
