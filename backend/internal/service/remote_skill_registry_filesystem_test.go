@@ -21,8 +21,8 @@ func TestRemoteSkillRegistryFilesystemInstallsReleaseSeedAndPublicAssets(t *test
 	version, err := files.LoadSeed(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, BusinessSystemPromptRemoteSkillBundleID, version.BundleID)
-	require.Equal(t, "832f82015ee32b2be7b6b2c6dc443bd0c274e44b9f2698e828e4b49d986efd46", version.ManifestSHA256)
-	require.Equal(t, "b6ce741cd17810620280225714e33ed03609f77c52caf28ac2518f9eeb9e1c3f", version.ArchiveSHA256)
+	require.Equal(t, "098c056d0884602c60b4bcaa2af6b12c52a13718d0fc2a4af40b18497b0c75ac", version.ManifestSHA256)
+	require.Equal(t, "fca0bef795880515c4d9f40322c8f99564c9371bbd01144ab73d7656ccfe8d33", version.ArchiveSHA256)
 	require.NoError(t, files.ValidateVersion(context.Background(), version))
 
 	seedRoot := filepath.Join(runtimeRoot, "private", "seed")
