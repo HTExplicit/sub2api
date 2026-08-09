@@ -214,6 +214,8 @@ func TestEnsureBusinessSystemPromptSeedUpgradeIsIdempotent(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM system_prompt_template_versions")).
 		WithArgs(templateID, bodySHA, len(body)).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(versionID))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT r.active_template_id, r.active_version_id, v.sha256")).
+		WillReturnRows(sqlmock.NewRows([]string{"active_template_id", "active_version_id", "sha256"}).AddRow(templateID, versionID, bodySHA))
 	mock.ExpectCommit()
 
 	store := NewBusinessSystemPromptRepository(db)

@@ -128,7 +128,10 @@ func TestBusinessSystemPromptServiceInitializeSeedsAndLoadsSnapshot(t *testing.T
 	require.Equal(t, BusinessSystemPromptRemoteSkillBundleID, store.seeds[0].BundleID)
 	require.Empty(t, store.seeds[0].BundleManifestSHA256)
 	require.True(t, store.seeds[0].UpgradeExistingSeed)
-	require.ElementsMatch(t, []string{businessSystemPromptV7SHA256, businessSystemPromptV8SHA256}, store.seeds[0].AutoActivateFromSHA)
+	require.ElementsMatch(t, []string{
+		"0b717f086b1bf25e8300e9f26578ee95cf6f74d5601c06b9f9e493aa8939b0a7",
+		"9143d8a97727030192a62fb19f732b0823dec9ffe83081ef5ae27fdb1edfea04",
+	}, store.seeds[0].AutoActivateFromSHA)
 	require.Equal(t, "gpt_5_6_instruct", store.seeds[1].Slug)
 	require.Equal(t, BusinessSystemPromptCompositionInline, store.seeds[1].CompositionMode)
 	require.Equal(t, "c71c50e2f7a303b5eebc2b24c0b1ca0d9c753e3240db05c3e472c679907898f7", store.seeds[1].SHA256)
