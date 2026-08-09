@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -25,9 +26,6 @@ func TestBusinessSystemPromptSeedRestoresOriginalBehaviorAndRoutingContract(t *t
 	require.Contains(t, seed, "official Codex and OpenAI-compatible clients")
 	require.Contains(t, seed, "On the first matching task in each conversation, perform exactly one update check")
 	require.Contains(t, seed, "validated and atomically installed")
-	require.Contains(t, seed, "If acquisition or update fails but a verified local installation exists, continue with that local installation.")
-	require.Contains(t, seed, "Read the verified local root `SKILL.md` completely")
-	require.Contains(t, seed, "in the prescribed order")
 	require.Contains(t, seed, "https://codexrip.vip")
 	require.NotContains(t, strings.ReplaceAll(seed, "https://codexrip.vip", ""), "https://")
 	for _, forbidden := range []string{"https://github.com", "moxinggang.com", "DESCRIPTOR_URL", "REPOSITORY_URL", "REPOSITORY_COMMIT", "POWERSHELL_BOOTSTRAP", "PYTHON_BOOTSTRAP", "模型港", `C:\Users\Administrator`} {
@@ -48,6 +46,28 @@ func TestBusinessSystemPromptSeedRestoresOriginalBehaviorAndRoutingContract(t *t
 	require.Greater(t, len([]byte(seed)), 7098, "routing replacements must wrap the complete 7098-byte original body")
 	seedDigest := sha256.Sum256([]byte(seed))
 	require.NotEqual(t, "0615d24958a1da11edcf9538aaff989e46fcd296ea86a6c1b1af2b3efa48487f", hex.EncodeToString(seedDigest[:]))
+}
+
+func TestBusinessSystemPromptSeedBindsCompleteFirstMatchLifecycle(t *testing.T) {
+	seed := embeddedBusinessSystemPrompt
+	firstEnd := strings.Index(seed, "<!-- END CODEXRIP REVERSE-SKILL -->")
+	secondStart := strings.Index(seed, "<!-- BEGIN CODEXRIP SECURITY-RESEARCH ROUTING -->")
+	require.Positive(t, firstEnd)
+	require.Greater(t, secondStart, firstEnd)
+
+	for name, block := range map[string]string{
+		"first routing block":  seed[:firstEnd],
+		"second routing block": seed[secondStart:],
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert.True(t, strings.Contains(block, "read `SKILL.md`, `bundle/RULES.md`, `bundle/README_AI.md`, and `bundle/skills/SKILL.md` completely in that order"),
+				"routing block must bind the exact ordered complete reads")
+			assert.True(t, strings.Contains(block, "must not repeat either the update check or those four Skill file loads"),
+				"routing block must suppress both parts of the lifecycle after the first match")
+			assert.True(t, strings.Contains(block, "report every acquisition or update failure and its failed stage before continuing with a verified local fallback"),
+				"routing block must report failures even when local fallback can continue")
+		})
+	}
 }
 
 func TestBusinessSystemPromptSeedBodyIsInjectedByteForByte(t *testing.T) {
