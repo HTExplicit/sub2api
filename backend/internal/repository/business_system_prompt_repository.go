@@ -141,6 +141,9 @@ func ensureExistingBusinessSystemPromptSeed(
 		WHERE template_id = $1 AND sha256 = $2 AND byte_length = $3
 		ORDER BY version DESC LIMIT 1`, templateID, hash, byteLength).Scan(&existingVersionID)
 	if err == nil {
+		if err := activateExistingBusinessSystemPromptSeedCandidate(ctx, tx, seed, templateID, existingVersionID); err != nil {
+			return err
+		}
 		return tx.Commit()
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
@@ -189,6 +192,39 @@ func ensureExistingBusinessSystemPromptSeed(
 		}
 	}
 	return tx.Commit()
+}
+
+func activateExistingBusinessSystemPromptSeedCandidate(
+	ctx context.Context,
+	tx *sql.Tx,
+	seed service.BusinessSystemPromptSeed,
+	templateID int64,
+	candidateVersionID int64,
+) error {
+	if len(seed.AutoActivateFromSHA) == 0 {
+		return nil
+	}
+	var activeTemplateID, activeVersionID sql.NullInt64
+	var activeSHA sql.NullString
+	if err := tx.QueryRowContext(ctx, `
+		SELECT r.active_template_id, r.active_version_id, v.sha256
+		FROM system_prompt_runtime r
+		LEFT JOIN system_prompt_template_versions v ON v.id = r.active_version_id
+		WHERE r.id = 1
+		FOR UPDATE OF r`).Scan(&activeTemplateID, &activeVersionID, &activeSHA); err != nil {
+		return err
+	}
+	if !activeTemplateID.Valid || !activeVersionID.Valid || activeTemplateID.Int64 != templateID ||
+		activeVersionID.Int64 == candidateVersionID || !activeSHA.Valid ||
+		!containsBusinessSystemPromptSHA(seed.AutoActivateFromSHA, activeSHA.String) {
+		return nil
+	}
+	_, err := tx.ExecContext(ctx, `
+		UPDATE system_prompt_runtime
+		SET active_version_id = $1, revision = revision + 1, updated_at = NOW()
+		WHERE id = 1 AND active_template_id = $2 AND active_version_id = $3`,
+		candidateVersionID, templateID, activeVersionID.Int64)
+	return err
 }
 
 func containsBusinessSystemPromptSHA(allowed []string, value string) bool {
