@@ -7,6 +7,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import stat
 import urllib.parse
 import urllib.request
@@ -92,26 +93,46 @@ FORBIDDEN_SKILL_SOURCE = (
     b"C:\\Users\\Administrator\\AppData\\Local",
     "\u6a21\u578b\u6e2f".encode("utf-8"),
 )
+LOCAL_PACKAGE_CONTRACT_LINE = b"# Package root: verified installed bundle/"
+HTTP_URL_PATTERN = re.compile(rb"https?://[^\s<>\"'`]+", re.IGNORECASE)
 
 ROUTE_KEYWORDS = {
-    "api-security": ["\u63a5\u53e3\u5b89\u5168", "\u9274\u6743", "\u8ba4\u8bc1", "\u8d8a\u6743"],
-    "apk-reverse": ["\u5b89\u5353\u9006\u5411", "\u5e94\u7528\u9006\u5411"],
-    "attack-chain": ["\u653b\u51fb\u94fe", "\u5229\u7528\u94fe", "\u6a2a\u5411\u79fb\u52a8"],
-    "binary-diff": ["\u4e8c\u8fdb\u5236\u5bf9\u6bd4", "\u8865\u4e01\u5bf9\u6bd4"],
-    "browser-automation": ["\u6d4f\u89c8\u5668\u81ea\u52a8\u5316"],
-    "browser-extension-reverse": ["\u6d4f\u89c8\u5668\u6269\u5c55\u9006\u5411", "\u63d2\u4ef6\u9006\u5411"],
-    "cloud-k8s": ["\u4e91\u5b89\u5168", "\u5bb9\u5668\u5b89\u5168"],
-    "code-audit": ["\u4ee3\u7801\u5ba1\u8ba1", "\u6e90\u7801\u5ba1\u8ba1"],
-    "database-security": ["\u6570\u636e\u5e93\u5b89\u5168", "\u6570\u636e\u5e93\u5ba1\u8ba1"],
-    "digital-forensics": ["\u6570\u5b57\u53d6\u8bc1", "\u5185\u5b58\u53d6\u8bc1", "\u6d41\u91cf\u53d6\u8bc1"],
-    "js-reverse": ["js\u9006\u5411", "\u7f51\u9875\u9006\u5411", "\u524d\u7aef\u9006\u5411", "\u53cd\u6df7\u6dc6"],
-    "llm-security": ["\u5927\u6a21\u578b\u5b89\u5168", "\u63d0\u793a\u8bcd\u6ce8\u5165", "\u8d8a\u72f1", "\u667a\u80fd\u4f53\u5b89\u5168"],
-    "malware-analysis": ["\u6076\u610f\u8f6f\u4ef6", "\u6076\u610f\u6837\u672c", "\u52d2\u7d22\u8f6f\u4ef6"],
-    "mobile-reverse": ["\u79fb\u52a8\u7aef\u9006\u5411", "ios\u9006\u5411", "\u5b89\u5353\u9006\u5411"],
-    "protocol-reverse": ["\u534f\u8bae\u9006\u5411", "\u534f\u8bae\u5206\u6790", "\u6570\u636e\u5305\u683c\u5f0f"],
-    "pwn-chain": ["\u4e8c\u8fdb\u5236\u5229\u7528", "\u7f13\u51b2\u533a\u6ea2\u51fa", "\u5806\u5229\u7528"],
-    "reverse-engineering": ["\u9006\u5411\u5de5\u7a0b", "\u53cd\u7f16\u8bd1", "\u53cd\u6c47\u7f16", "\u4e8c\u8fdb\u5236\u5206\u6790"],
-    "threat-hunting": ["\u5a01\u80c1\u72e9\u730e", "\u6307\u6807\u5206\u6790"],
+    "api-security": ["api", "http", "rest", "graphql", "jwt", "oauth", "authentication", "authorization", "\u63a5\u53e3\u5b89\u5168", "\u9274\u6743", "\u8ba4\u8bc1", "\u8d8a\u6743"],
+    "apk-reverse": ["apk", "android", "smali", "frida", "jadx", "\u5b89\u5353\u9006\u5411", "\u5e94\u7528\u9006\u5411"],
+    "attack-chain": ["attack chain", "exploit chain", "kill chain", "lateral movement", "\u653b\u51fb\u94fe", "\u5229\u7528\u94fe", "\u6a2a\u5411\u79fb\u52a8"],
+    "binary-diff": ["binary diff", "bindiff", "patch diff", "\u4e8c\u8fdb\u5236\u5bf9\u6bd4", "\u8865\u4e01\u5bf9\u6bd4"],
+    "browser-automation": ["browser automation", "playwright", "selenium", "cdp", "\u6d4f\u89c8\u5668\u81ea\u52a8\u5316"],
+    "browser-extension-reverse": ["browser extension", "chrome extension", "firefox extension", "\u6d4f\u89c8\u5668\u6269\u5c55\u9006\u5411", "\u63d2\u4ef6\u9006\u5411"],
+    "cloud-k8s": ["cloud", "kubernetes", "k8s", "container", "docker", "\u4e91\u5b89\u5168", "\u5bb9\u5668\u5b89\u5168"],
+    "code-audit": ["code audit", "source audit", "sast", "code review", "\u4ee3\u7801\u5ba1\u8ba1", "\u6e90\u7801\u5ba1\u8ba1"],
+    "database-security": ["database", "sql", "postgresql", "mysql", "redis", "\u6570\u636e\u5e93\u5b89\u5168", "\u6570\u636e\u5e93\u5ba1\u8ba1"],
+    "digital-forensics": ["forensics", "disk image", "memory dump", "pcap", "\u6570\u5b57\u53d6\u8bc1", "\u5185\u5b58\u53d6\u8bc1", "\u6d41\u91cf\u53d6\u8bc1"],
+    "dotnet-reverse": [".net", "dotnet", "c#", "dnspy", "ilspy", ".net\u9006\u5411", "c#\u9006\u5411"],
+    "edr-bypass-re": ["edr", "endpoint detection", "unhook", "telemetry", "edr\u9006\u5411", "\u7aef\u70b9\u68c0\u6d4b"],
+    "email-security": ["email security", "smtp", "spf", "dkim", "dmarc", "\u90ae\u4ef6\u5b89\u5168"],
+    "firmware-pentest": ["firmware", "embedded", "binwalk", "uart", "\u56fa\u4ef6\u5b89\u5168", "\u56fa\u4ef6\u9006\u5411", "\u5d4c\u5165\u5f0f\u5b89\u5168"],
+    "ghidra-reverse": ["ghidra", "decompiler", "ghidra\u9006\u5411", "\u53cd\u7f16\u8bd1\u5668"],
+    "go-rust-reverse": ["golang binary", "go binary", "rust binary", "go\u9006\u5411", "rust\u9006\u5411"],
+    "hardware-security": ["hardware security", "jtag", "spi", "side channel", "\u786c\u4ef6\u5b89\u5168", "\u4fa7\u4fe1\u9053"],
+    "ida-reverse": ["ida pro", "idapython", "disassembly", "ida\u9006\u5411", "\u53cd\u6c47\u7f16"],
+    "identity-federation": ["saml", "oidc", "identity federation", "single sign-on", "sso", "\u8eab\u4efd\u8054\u5408", "\u5355\u70b9\u767b\u5f55"],
+    "js-reverse": ["javascript reverse", "js reverse", "web reverse", "wasm", "obfuscation", "js\u9006\u5411", "\u7f51\u9875\u9006\u5411", "\u524d\u7aef\u9006\u5411", "\u53cd\u6df7\u6dc6"],
+    "llm-security": ["llm security", "prompt injection", "jailbreak", "agent security", "\u5927\u6a21\u578b\u5b89\u5168", "\u63d0\u793a\u8bcd\u6ce8\u5165", "\u8d8a\u72f1", "\u667a\u80fd\u4f53\u5b89\u5168"],
+    "macos-reverse": ["macos", "mach-o", "objective-c", "swift binary", "macos\u9006\u5411", "\u82f9\u679c\u7535\u8111\u9006\u5411"],
+    "malware-analysis": ["malware", "ransomware", "trojan", "sandbox", "yara", "\u6076\u610f\u8f6f\u4ef6", "\u6076\u610f\u6837\u672c", "\u52d2\u7d22\u8f6f\u4ef6", "\u6728\u9a6c\u5206\u6790"],
+    "mobile-reverse": ["mobile reverse", "ios reverse", "android reverse", "\u79fb\u52a8\u7aef\u9006\u5411", "ios\u9006\u5411", "\u5b89\u5353\u9006\u5411"],
+    "ot-ics": ["ot security", "ics", "scada", "modbus", "\u5de5\u63a7\u5b89\u5168", "\u5de5\u4e1a\u63a7\u5236"],
+    "patch-diff-exploit": ["patch diff", "cve patch", "vulnerability patch", "\u8865\u4e01\u5206\u6790", "\u8865\u4e01\u5dee\u5206", "\u6f0f\u6d1e\u8865\u4e01"],
+    "protocol-reverse": ["protocol reverse", "packet format", "protobuf", "websocket", "\u534f\u8bae\u9006\u5411", "\u534f\u8bae\u5206\u6790", "\u6570\u636e\u5305\u683c\u5f0f"],
+    "pwn-chain": ["pwn", "buffer overflow", "rop", "heap exploit", "shellcode", "\u4e8c\u8fdb\u5236\u5229\u7528", "\u7f13\u51b2\u533a\u6ea2\u51fa", "\u5806\u5229\u7528"],
+    "radare2": ["radare2", "r2", "rizin", "radare2\u9006\u5411"],
+    "radio-sdr": ["radio", "sdr", "rf", "signal", "\u65e0\u7ebf\u7535\u5b89\u5168", "\u8f6f\u4ef6\u65e0\u7ebf\u7535", "\u4fe1\u53f7\u5206\u6790"],
+    "reverse-engineering": ["reverse engineering", "decompile", "disassemble", "binary analysis", "\u9006\u5411\u5de5\u7a0b", "\u53cd\u7f16\u8bd1", "\u53cd\u6c47\u7f16", "\u4e8c\u8fdb\u5236\u5206\u6790"],
+    "supply-chain-security": ["supply chain", "dependency confusion", "sbom", "\u4f9b\u5e94\u94fe\u5b89\u5168", "\u4f9d\u8d56\u6df7\u6dc6"],
+    "thick-client": ["thick client", "desktop client", "windows client", "\u684c\u9762\u5ba2\u6237\u7aef", "\u80d6\u5ba2\u6237\u7aef"],
+    "threat-hunting": ["threat hunting", "ioc", "sigma", "mitre attack", "\u5a01\u80c1\u72e9\u730e", "\u5a01\u80c1\u730e\u6740", "\u6307\u6807\u5206\u6790"],
+    "wifi-wireless": ["wifi", "wireless", "802.11", "wpa", "\u65e0\u7ebf\u5b89\u5168", "wifi\u5b89\u5168"],
+    "windows-ad": ["active directory", "windows ad", "kerberos", "ldap", "\u57df\u5b89\u5168", "\u6d3b\u52a8\u76ee\u5f55", "\u57df\u6e17\u900f"],
 }
 
 
@@ -141,6 +162,36 @@ def file_kind(name: str, data: bytes) -> str:
     except UnicodeDecodeError:
         return "binary"
     return "text"
+
+
+def rewrite_package_contract(data: bytes) -> bytes:
+    clone = b"git clone https://github.com/zhaoxuya520/reverse-skill.git"
+    data = data.replace(clone + b"\r\ncd reverse-skill", LOCAL_PACKAGE_CONTRACT_LINE)
+    data = data.replace(clone + b"\ncd reverse-skill", LOCAL_PACKAGE_CONTRACT_LINE)
+    return data.replace(clone, LOCAL_PACKAGE_CONTRACT_LINE)
+
+
+def contains_remote_skill_acquisition(data: bytes) -> bool:
+    text = data.decode("utf-8").casefold().replace("\r\n", "\n")
+    for line in text.split("\n"):
+        if "git clone" in line and "github.com/zhaoxuya520/reverse-skill" in line:
+            return True
+        package_document = any(
+            marker in line
+            for marker in ("skill.md", "rules.md", "readme_ai.md", "reverse-skill.git", "reverse-skill/zip")
+        )
+        acquisition = any(
+            marker in line
+            for marker in ("git clone", "curl ", "wget ", "invoke-webrequest", "download ", "fetch ", "load ")
+        )
+        remote = any(marker in line for marker in ("http://", "https://", "github", "remote"))
+        if package_document and acquisition and remote:
+            return True
+    return False
+
+
+def document_urls(data: bytes) -> list[str]:
+    return [match.rstrip(b".,;:!?)]}").decode("ascii") for match in HTTP_URL_PATTERN.findall(data)]
 
 
 def read_source_archive() -> bytes:
@@ -188,6 +239,8 @@ def extract_source(raw: bytes) -> dict[str, bytes]:
             data = archive.read(info)
             if len(data) != info.file_size:
                 raise ValueError(f"upstream file length mismatch: {relative}")
+            if file_kind(relative, data) != "binary":
+                data = rewrite_package_contract(data)
             files[relative] = data
             portable.add(key)
             total += len(data)
@@ -203,14 +256,19 @@ def verify_native_contract(files: dict[str, bytes]) -> None:
         raw = files.get(name)
         if raw is None or sha256(raw) != expected:
             raise ValueError(f"pinned upstream core file mismatch: {name}")
+    for name, raw in files.items():
+        if file_kind(name, raw) == "binary":
+            continue
         lowered = raw.lower()
         if any(value.lower() in lowered for value in FORBIDDEN_SKILL_SOURCE):
-            raise ValueError(f"upstream core contains a forbidden Skill source: {name}")
+            raise ValueError(f"upstream runtime document contains a forbidden Skill source: {name}")
+        if contains_remote_skill_acquisition(raw):
+            raise ValueError(f"upstream runtime document contains remote Skill acquisition: {name}")
     root = CLIENT_FILES["codexrip-client/SKILL.md"]
     lowered = root.lower()
     if any(value.lower() in lowered for value in FORBIDDEN_SKILL_SOURCE):
         raise ValueError("native Skill entry contains a forbidden Skill source")
-    if lowered.count(b"https://") != 1 or b"https://codexrip.vip" not in lowered:
+    if document_urls(root) != ["https://codexrip.vip"]:
         raise ValueError("native Skill acquisition source is not fixed")
     for required in (b"bundle/RULES.md", b"bundle/README_AI.md", b"bundle/skills/SKILL.md"):
         if required not in root:
@@ -228,6 +286,43 @@ def stable_unique(values: list[str]) -> list[str]:
     return result
 
 
+def frontmatter_keywords(route_id: str, raw: bytes) -> list[str]:
+    keywords = [route_id, route_id.replace("-", " ")]
+    try:
+        text = raw.decode("utf-8").replace("\r\n", "\n")
+    except UnicodeDecodeError:
+        return keywords
+    if not text.startswith("---\n") or "\n---\n" not in text[4:]:
+        return keywords
+    frontmatter = text[4:].split("\n---\n", 1)[0]
+    lines = frontmatter.splitlines()
+    name = ""
+    description = ""
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if line.startswith("name:"):
+            name = line.split(":", 1)[1].strip().strip("\"'")
+        elif line.startswith("description:"):
+            value = line.split(":", 1)[1].strip()
+            if value in ("|", ">", "|-", ">-"):
+                block: list[str] = []
+                index += 1
+                while index < len(lines) and (not lines[index] or lines[index][0].isspace()):
+                    block.append(lines[index].strip())
+                    index += 1
+                description = "\n".join(block)
+                continue
+            description = value.strip("\"'")
+        index += 1
+    keywords.append(name)
+    for token in re.split(r"[,.;:/\\|()\[\]{}\n\r\t\u3001\u3002\uff0c\uff1b\uff1a]+", description):
+        token = token.strip()
+        if 2 <= len(token) <= 48:
+            keywords.append(token)
+    return keywords
+
+
 def build_routes(files: dict[str, bytes]) -> list[dict]:
     route_ids = sorted({
         parts[1]
@@ -242,7 +337,10 @@ def build_routes(files: dict[str, bytes]) -> list[dict]:
         )[:8]
         routes.append({
             "id": route_id,
-            "keywords": stable_unique([route_id, route_id.replace("-", " "), *ROUTE_KEYWORDS.get(route_id, [])]),
+            "keywords": stable_unique([
+                *frontmatter_keywords(route_id, files[f"skills/{route_id}/SKILL.md"]),
+                *ROUTE_KEYWORDS.get(route_id, []),
+            ]),
             "entry": f"skills/{route_id}/SKILL.md",
             "references": references,
         })

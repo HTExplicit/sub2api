@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import zipfile
 from pathlib import Path
 
 
@@ -38,6 +39,24 @@ def main() -> int:
     for path in EXPECTED_CORE:
         if path not in paths:
             raise AssertionError(f"native core file is missing: {path}")
+    by_route = {route.get("id"): set(route.get("keywords", [])) for route in manifest.get("domains", [])}
+    expected_routes = {
+        "ida-reverse": {"ida pro", "idapython"},
+        "dotnet-reverse": {".net", "dnspy"},
+        "ghidra-reverse": {"ghidra", "decompiler"},
+        "firmware-pentest": {"firmware", "binwalk"},
+        "identity-federation": {"saml", "oidc", "sso"},
+    }
+    for route, keywords in expected_routes.items():
+        actual = {value.casefold() for value in by_route.get(route, set())}
+        if not keywords.issubset(actual):
+            raise AssertionError(f"seed route lost compatibility keywords: {route}")
+    archive_path = SEED / f"codexrip-reverse-skill-{descriptor['manifest_sha256']}.zip"
+    with zipfile.ZipFile(archive_path) as archive:
+        for name in archive.namelist():
+            raw = archive.read(name).lower()
+            if b"git clone https://github.com/zhaoxuya520/reverse-skill" in raw:
+                raise AssertionError(f"runtime document retains GitHub Skill acquisition: {name}")
     return 0
 
 

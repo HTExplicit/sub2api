@@ -6,7 +6,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
+import urllib.parse
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,14 +19,14 @@ from verify_business_system_prompt_bundle import VerificationError, verify_bundl
 
 BUNDLE_ID = "codexrip-reverse-skill"
 MANIFEST_NAME = "bundle-manifest.json"
-MANIFEST_SHA256 = "68ef7d1da27e4dd9c523c34ff71adfcd218232613051a1722759708897fef1b3"
-ARCHIVE_SHA256 = "b5e682af9d8fcd31f7cd216679b5ffe67896e3faaeda28b80230829fbd3295e4"
+MANIFEST_SHA256 = "03aee1ca551820d5975502ae11cc30ae2f8a5b9b275406a2f7ad10867775da3b"
+ARCHIVE_SHA256 = "0e9358d6d4b6bd2a36e371bbebc9b5a6948da8188964dd3fc89c4a945bcd585b"
 OVERLAY_SHA256 = "c71df9943ba6f5d5d9409947267cbe7c19761d2382fce1be133f2223ba591898"
 SOURCE_COMMIT = "a5d8c9233b98c52df387d5b1a0ef669fcaa51374"
 PROMPT_SHA256 = "5813c55c0763e1472becec874232f3daafb28a69107b94ca8284daf44fceb2a0"
 PROMPT_BYTES = 9034
 FILE_COUNT = 545
-TOTAL_BYTES = 7_925_332
+TOTAL_BYTES = 7_925_267
 ARCHIVE_NAME = f"{BUNDLE_ID}-{MANIFEST_SHA256}.zip"
 CHECKSUM_NAME = f"{ARCHIVE_NAME}.sha256"
 DESCRIPTOR_NAME = "seed-descriptor.json"
@@ -66,6 +68,7 @@ FORBIDDEN_RUNTIME_BYTES = (
     b"github.com/HTExplicit/sub2api",
     b"verified_git_sparse_checkout",
 )
+HTTP_URL_PATTERN = re.compile(rb"https?://[^\s<>\"'`]+", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -87,6 +90,45 @@ def require_runtime_text_clean(label: str, raw: bytes) -> None:
     for forbidden in FORBIDDEN_RUNTIME_BYTES:
         if forbidden.lower() in lowered:
             raise VerificationError(f"{label} contains a forbidden legacy runtime reference")
+
+
+def document_urls(raw: bytes) -> list[str]:
+    return [match.rstrip(b".,;:!?)]}").decode("ascii") for match in HTTP_URL_PATTERN.findall(raw)]
+
+
+def contains_remote_skill_acquisition(raw: bytes) -> bool:
+    text = raw.decode("utf-8").casefold().replace("\r\n", "\n")
+    for line in text.split("\n"):
+        if "git clone" in line and "github.com/zhaoxuya520/reverse-skill" in line:
+            return True
+        package_document = any(
+            marker in line
+            for marker in ("skill.md", "rules.md", "readme_ai.md", "reverse-skill.git", "reverse-skill/zip")
+        )
+        acquisition = any(
+            marker in line
+            for marker in ("git clone", "curl ", "wget ", "invoke-webrequest", "download ", "fetch ", "load ")
+        )
+        remote = any(marker in line for marker in ("http://", "https://", "github", "remote"))
+        if package_document and acquisition and remote:
+            return True
+    return False
+
+
+def require_codexrip_url(value: object, label: str) -> None:
+    if not isinstance(value, str):
+        raise VerificationError(f"{label} is not a URL")
+    parsed = urllib.parse.urlsplit(value)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "codexrip.vip"
+        or parsed.port not in (None, 443)
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise VerificationError(f"{label} is outside codexrip.vip")
 
 
 def load_json_object(path: Path, label: str) -> tuple[bytes, dict]:
@@ -122,6 +164,11 @@ def verify_descriptor(path: Path, manifest: dict) -> dict:
     for key, expected in exact.items():
         if descriptor.get(key) != expected:
             raise VerificationError(f"descriptor {key} does not match the pinned release")
+    for key in ("manifest_url", "archive_url", "files_base_url"):
+        require_codexrip_url(descriptor.get(key), f"descriptor {key}")
+    for platform in DESCRIPTOR_BOOTSTRAPS:
+        bootstrap = descriptor.get("bootstraps", {}).get(platform, {})
+        require_codexrip_url(bootstrap.get("url"), f"descriptor bootstrap {platform}")
     if descriptor.get("core_files") != manifest.get("core_files"):
         raise VerificationError("descriptor core_files do not match the manifest")
     published_at = descriptor.get("published_at")
@@ -150,7 +197,11 @@ def verify_manifest_contract(manifest: dict) -> set[str]:
     total = sum(entry.get("byte_length", -1) for entry in entries if isinstance(entry, dict))
     if total != TOTAL_BYTES:
         raise VerificationError("manifest total byte length does not match the pinned release")
-    runtime_documents: set[str] = set()
+    runtime_documents = {
+        entry["path"]
+        for entry in entries
+        if isinstance(entry, dict) and entry.get("kind", "text") in {"text", "script"}
+    }
     core = manifest.get("core_files")
     if core != CORE_FILES:
         raise VerificationError("manifest core_files do not use the pinned upstream-native paths")
@@ -176,9 +227,14 @@ def verify_manifest_contract(manifest: dict) -> set[str]:
     for route_id, required_keywords in {
         "api-security": {"接口安全", "鉴权"},
         "js-reverse": {"js逆向", "前端逆向"},
+        "ida-reverse": {"ida pro", "idapython"},
+        "dotnet-reverse": {".net", "dnspy"},
+        "ghidra-reverse": {"ghidra", "decompiler"},
+        "firmware-pentest": {"firmware", "binwalk"},
+        "identity-federation": {"saml", "oidc", "sso"},
     }.items():
         route = by_route.get(route_id)
-        keywords = set(route.get("keywords", [])) if isinstance(route, dict) else set()
+        keywords = {value.casefold() for value in route.get("keywords", [])} if isinstance(route, dict) else set()
         if not required_keywords.issubset(keywords):
             raise VerificationError(f"manifest route {route_id} is missing pinned bilingual keywords")
     return runtime_documents
@@ -256,6 +312,8 @@ def verify_registry(
         for name in sorted(runtime_documents):
             raw = archive.read(name)
             require_runtime_text_clean(f"runtime document {name}", raw)
+            if contains_remote_skill_acquisition(raw):
+                raise VerificationError(f"runtime document contains remote Skill acquisition instructions: {name}")
             if name in CORE_SHA256 and sha256(raw) != CORE_SHA256[name]:
                 raise VerificationError(f"runtime core file does not match pinned upstream bytes: {name}")
         client_skill = archive.read("codexrip-client/SKILL.md")
@@ -267,8 +325,7 @@ def verify_registry(
             for value in (b"bundle/RULES.md", b"bundle/README_AI.md", b"bundle/skills/SKILL.md")
         ):
             raise VerificationError("native Skill entry does not route into the verified bundle")
-        without_allowed_origin = client_skill.replace(b"https://codexrip.vip", b"")
-        if b"https://" in without_allowed_origin or b"http://" in without_allowed_origin:
+        if document_urls(client_skill) != ["https://codexrip.vip"]:
             raise VerificationError("native Skill entry contains a foreign acquisition source")
         if b'display_name: "CodexRip Reverse Skill"' not in client_openai or b"$codexrip-reverse-skill" not in client_openai:
             raise VerificationError("native Skill OpenAI metadata does not match the installed Skill")

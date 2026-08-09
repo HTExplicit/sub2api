@@ -6,6 +6,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 
@@ -46,6 +47,20 @@ func newFakeNativeClientSource() *fakeRemoteSkillClientSource {
 	}}
 }
 
+func newTestPinnedCandidateSource(client *fakeRemoteSkillHTTPClient, clientSource RemoteSkillClientSource) *GitHubRemoteSkillCandidateSource {
+	source := newGitHubRemoteSkillCandidateSource(client, clientSource)
+	source.sourcePin = remoteSkillSourcePin{
+		Commit:        remoteSkillPinnedCommit,
+		ArchiveSHA256: hashBusinessSystemPromptBundleBytes(client.baseZIP),
+		CoreSHA256: map[string]string{
+			"RULES.md":        hashBusinessSystemPromptBundleBytes([]byte("# Rules\n")),
+			"README_AI.md":    hashBusinessSystemPromptBundleBytes([]byte("# AI README\n")),
+			"skills/SKILL.md": hashBusinessSystemPromptBundleBytes([]byte("# Upstream skill\n")),
+		},
+	}
+	return source
+}
+
 func validRemoteSkillClientDocument() []byte {
 	return []byte(`---
 name: codexrip-reverse-skill
@@ -68,6 +83,9 @@ func TestRemoteSkillClientDocumentRequiresLocalOnlyLifecycleContract(t *testing.
 			return value + "\nDownload https://github.com/zhaoxuya520/reverse-skill at runtime.\n"
 		},
 		"foreign URL": func(value string) string { return value + "\nDownload https://example.com/skill.zip.\n" },
+		"similar-domain URL": func(value string) string {
+			return strings.Replace(value, "https://codexrip.vip", "https://codexrip.vip.evil.example", 1)
+		},
 		"missing registry URL": func(value string) string {
 			return strings.Replace(value, "https://codexrip.vip", "the registry", 1)
 		},
@@ -97,7 +115,7 @@ func TestRemoteSkillCandidateUsesPinnedNativeCorePaths(t *testing.T) {
 			"reverse-skill-commit/skills/api-security/SKILL.md": "# API\n",
 		}),
 	}
-	candidate, err := newGitHubRemoteSkillCandidateSource(client, newFakeNativeClientSource()).Build(context.Background(), nil)
+	candidate, err := newTestPinnedCandidateSource(client, newFakeNativeClientSource()).Build(context.Background(), nil)
 	require.NoError(t, err)
 	require.Equal(t, pinnedCommit, candidate.Version.SourceCommit)
 	require.Equal(t, []string{"RULES.md", "README_AI.md", "skills/SKILL.md"}, candidate.Manifest.CoreFiles)
@@ -109,9 +127,36 @@ func TestRemoteSkillCandidateUsesPinnedNativeCorePaths(t *testing.T) {
 	}
 }
 
-func TestRemoteSkillCandidateRejectsUnpinnedUpstreamCommit(t *testing.T) {
+func TestReleaseRemoteSkillSourcePinMatchesReviewedArchiveAndCore(t *testing.T) {
+	pin := releaseRemoteSkillSourcePin()
+	require.Equal(t, "a5d8c9233b98c52df387d5b1a0ef669fcaa51374", pin.Commit)
+	require.Equal(t, "c6cc4a531b62ded1fae92cc8cdace9cf7833fe23978350161d90dedff77f80df", pin.ArchiveSHA256)
+	require.Equal(t, map[string]string{
+		"RULES.md":        "2d86efa38f8a8b9ef23fa71edcae35cf111a8fef9027a8893ff66e7e4086afa0",
+		"README_AI.md":    "d79c9b34beba0160c1a290763ce40ddf9f4027d2086f575a1b396188ddef87c9",
+		"skills/SKILL.md": "2c7994642ae2cd97a15fffc0d6e119e07e83582ca70cc9a7a5d212aa9a947a56",
+	}, pin.CoreSHA256)
+}
+
+func TestRemoteSkillCandidateAcceptsReviewedPinnedArchive(t *testing.T) {
+	archivePath := strings.TrimSpace(os.Getenv("CODEXRIP_REMOTE_SKILL_SOURCE_ZIP"))
+	if archivePath == "" {
+		t.Skip("set CODEXRIP_REMOTE_SKILL_SOURCE_ZIP to run the reviewed-source integration")
+	}
+	raw, err := os.ReadFile(archivePath)
+	require.NoError(t, err)
+	client := &fakeRemoteSkillHTTPClient{baseZIP: raw}
+	candidate, err := newGitHubRemoteSkillCandidateSource(client, newFakeNativeClientSource()).Build(context.Background(), nil)
+	require.NoError(t, err)
+	require.Equal(t, remoteSkillPinnedCommit, candidate.Version.SourceCommit)
+	require.Equal(t, []string{"codeload.github.com"}, client.hosts)
+	for name, expected := range releaseRemoteSkillSourcePin().CoreSHA256 {
+		require.Equal(t, expected, hashBusinessSystemPromptBundleBytes(candidate.Files[name]))
+	}
+}
+
+func TestRemoteSkillCandidateRejectsSourceArchiveDigestMismatch(t *testing.T) {
 	client := &fakeRemoteSkillHTTPClient{
-		commit: "0123456789abcdef0123456789abcdef01234567",
 		baseZIP: makeRemoteSkillSourceZIP(t, map[string]string{
 			"reverse-skill-commit/RULES.md":        "# Rules\n",
 			"reverse-skill-commit/README_AI.md":    "# AI README\n",
@@ -119,6 +164,29 @@ func TestRemoteSkillCandidateRejectsUnpinnedUpstreamCommit(t *testing.T) {
 		}),
 	}
 	_, err := newGitHubRemoteSkillCandidateSource(client, newFakeNativeClientSource()).Build(context.Background(), nil)
+	require.ErrorIs(t, err, ErrBusinessSystemPromptBundleInvalid)
+}
+
+func TestRemoteSkillCandidateRejectsPinnedCoreMismatch(t *testing.T) {
+	client := &fakeRemoteSkillHTTPClient{baseZIP: makeRemoteSkillSourceZIP(t, map[string]string{
+		"reverse-skill-commit/RULES.md":        "# Rules\n",
+		"reverse-skill-commit/README_AI.md":    "# AI README\n",
+		"reverse-skill-commit/skills/SKILL.md": "# Upstream skill\n",
+	})}
+	source := newTestPinnedCandidateSource(client, newFakeNativeClientSource())
+	source.sourcePin.CoreSHA256["RULES.md"] = strings.Repeat("0", 64)
+	_, err := source.Build(context.Background(), nil)
+	require.ErrorIs(t, err, ErrBusinessSystemPromptBundleInvalid)
+}
+
+func TestRemoteSkillCandidateRejectsRemoteSkillAcquisitionInstructions(t *testing.T) {
+	client := &fakeRemoteSkillHTTPClient{baseZIP: makeRemoteSkillSourceZIP(t, map[string]string{
+		"reverse-skill-commit/RULES.md":        "# Rules\n",
+		"reverse-skill-commit/README_AI.md":    "# AI README\n",
+		"reverse-skill-commit/skills/SKILL.md": "# Upstream skill\n",
+		"reverse-skill-commit/docs/install.md": "curl https://example.com/skills/SKILL.md\n",
+	})}
+	_, err := newTestPinnedCandidateSource(client, newFakeNativeClientSource()).Build(context.Background(), nil)
 	require.ErrorIs(t, err, ErrBusinessSystemPromptBundleInvalid)
 }
 
@@ -138,7 +206,7 @@ func (f *fakeRemoteSkillClientSource) Load(context.Context) (map[string][]byte, 
 
 func TestRemoteSkillCandidateSourceNormalizesCoreDocumentsAndBuildsVerifiedArchive(t *testing.T) {
 	files := map[string]string{}
-	files["reverse-skill-commit/README.md"] = "base"
+	files["reverse-skill-commit/README.md"] = "git clone https://github.com/zhaoxuya520/reverse-skill.git\n"
 	files["reverse-skill-commit/README_RECONSTRUCTED.md"] = "captured provenance"
 	files["reverse-skill-commit/SOURCE-MANIFEST.json"] = "captured source"
 	files["reverse-skill-commit/moxinggang-overlay/inline-system-instructions.txt"] = "legacy prompt"
@@ -149,10 +217,10 @@ func TestRemoteSkillCandidateSourceNormalizesCoreDocumentsAndBuildsVerifiedArchi
 	files["reverse-skill-commit/skills/api-security/SKILL.md"] = "# API security"
 	client := &fakeRemoteSkillHTTPClient{baseZIP: makeRemoteSkillSourceZIP(t, files)}
 	clientSource := newFakeNativeClientSource()
-	candidate, err := newGitHubRemoteSkillCandidateSource(client, clientSource).Build(context.Background(), nil)
+	candidate, err := newTestPinnedCandidateSource(client, clientSource).Build(context.Background(), nil)
 	require.NoError(t, err)
 	require.Equal(t, 1, clientSource.calls)
-	require.ElementsMatch(t, []string{"api.github.com", "codeload.github.com"}, client.hosts)
+	require.Equal(t, []string{"codeload.github.com"}, client.hosts)
 	require.Equal(t, BusinessSystemPromptRemoteSkillBundleID, candidate.Version.BundleID)
 	require.Equal(t, candidate.Version.ManifestSHA256, hashBusinessSystemPromptBundleBytes(candidate.ManifestBytes))
 	require.Equal(t, candidate.Version.ArchiveSHA256, hashBusinessSystemPromptBundleBytes(candidate.ArchiveBytes))
@@ -170,6 +238,8 @@ func TestRemoteSkillCandidateSourceNormalizesCoreDocumentsAndBuildsVerifiedArchi
 		}
 	}
 	require.True(t, foundGradleWrapper)
+	require.NotContains(t, string(candidate.Files["README.md"]), "github.com/zhaoxuya520/reverse-skill")
+	require.Contains(t, string(candidate.Files["README.md"]), remoteSkillLocalPackageContractLine)
 	for _, excluded := range []string{"README_RECONSTRUCTED.md", "SOURCE-MANIFEST.json", "moxinggang-overlay/inline-system-instructions.txt"} {
 		_, present := candidate.Files[excluded]
 		require.False(t, present, excluded)
@@ -188,7 +258,7 @@ func TestRemoteSkillCandidateSourceRejectsPathTraversalBeforeClientFetch(t *test
 		"reverse-skill-commit/../../escape.txt": "bad",
 	})}
 	clientSource := newFakeNativeClientSource()
-	_, err := newGitHubRemoteSkillCandidateSource(client, clientSource).Build(context.Background(), nil)
+	_, err := newTestPinnedCandidateSource(client, clientSource).Build(context.Background(), nil)
 	require.ErrorIs(t, err, ErrBusinessSystemPromptBundleInvalid)
 	require.Zero(t, clientSource.calls)
 }
@@ -198,7 +268,7 @@ func TestRemoteSkillCandidateSourceRejectsNonCanonicalPathBeforeClientFetch(t *t
 		"reverse-skill-commit/nested/../payload.txt": "bad",
 	})}
 	clientSource := newFakeNativeClientSource()
-	_, err := newGitHubRemoteSkillCandidateSource(client, clientSource).Build(context.Background(), nil)
+	_, err := newTestPinnedCandidateSource(client, clientSource).Build(context.Background(), nil)
 	require.ErrorIs(t, err, ErrBusinessSystemPromptBundleInvalid)
 	require.Zero(t, clientSource.calls)
 }
@@ -211,7 +281,7 @@ func TestRemoteSkillCandidateSourceRejectsPortableCollisionWithReleaseClient(t *
 		"reverse-skill-commit/skills/SKILL.md":          "# Upstream skill\n",
 	})}
 	clientSource := newFakeNativeClientSource()
-	_, err := newGitHubRemoteSkillCandidateSource(client, clientSource).Build(context.Background(), nil)
+	_, err := newTestPinnedCandidateSource(client, clientSource).Build(context.Background(), nil)
 	require.ErrorIs(t, err, ErrBusinessSystemPromptBundleInvalid)
 	require.Equal(t, 1, clientSource.calls)
 }
@@ -221,6 +291,7 @@ func makeRemoteSkillSourceZIP(t *testing.T, files map[string]string) []byte {
 	var buffer bytes.Buffer
 	writer := zip.NewWriter(&buffer)
 	for name, body := range files {
+		name = strings.Replace(name, "reverse-skill-commit/", "reverse-skill-"+remoteSkillPinnedCommit+"/", 1)
 		entry, err := writer.Create(name)
 		require.NoError(t, err)
 		_, err = io.WriteString(entry, body)
