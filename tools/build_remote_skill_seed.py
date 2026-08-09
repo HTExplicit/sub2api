@@ -27,6 +27,16 @@ MAX_SOURCE_BYTES = 128 << 20
 MAX_FILE_BYTES = 64 << 20
 MAX_TOTAL_BYTES = 256 << 20
 MAX_FILE_COUNT = 2000
+BOOTSTRAPS = {
+    "powershell": {
+        "url": "https://codexrip.vip/skills/bootstrap/8595884159988ff653c1d66be66d25acc62a359009c85a7924a23dbaf45d4246/bootstrap-reverse-skill.ps1",
+        "sha256": "8595884159988ff653c1d66be66d25acc62a359009c85a7924a23dbaf45d4246",
+    },
+    "python": {
+        "url": "https://codexrip.vip/skills/bootstrap/2db6ff2d1a5182b73920aabe701d914cca83643aeab89443c0561b1a67430b42/bootstrap-reverse-skill.py",
+        "sha256": "2db6ff2d1a5182b73920aabe701d914cca83643aeab89443c0561b1a67430b42",
+    },
+}
 
 CORE_FILES = ["RULES.md", "README_AI.md", "skills/SKILL.md"]
 CORE_SHA256 = {
@@ -312,6 +322,7 @@ def main() -> None:
         "total_bytes": total_bytes,
         "published_at": datetime(2026, 8, 9, tzinfo=timezone.utc).isoformat().replace("+00:00", "Z"),
         "bootstrap_policy": "download_verify_native_skill_atomic_replace",
+        "bootstraps": BOOTSTRAPS,
     }
 
     OUTPUT.mkdir(parents=True, exist_ok=True)

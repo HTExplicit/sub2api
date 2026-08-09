@@ -56,6 +56,10 @@ func TestRemoteSkillRegistryFilesystemInstallsReleaseSeedAndPublicAssets(t *test
 	require.Equal(t, baseURL, descriptor.FilesBaseURL)
 	require.Equal(t, baseURL+BusinessSystemPromptBundleManifestName, descriptor.ManifestURL)
 	require.Equal(t, baseURL+remoteSkillArchiveName(version.ManifestSHA256), descriptor.ArchiveURL)
+	require.Equal(t, RemoteSkillPowerShellBootstrapURL, descriptor.Bootstraps.PowerShell.URL)
+	require.Equal(t, RemoteSkillPowerShellBootstrapSHA256, descriptor.Bootstraps.PowerShell.SHA256)
+	require.Equal(t, RemoteSkillPythonBootstrapURL, descriptor.Bootstraps.Python.URL)
+	require.Equal(t, RemoteSkillPythonBootstrapSHA256, descriptor.Bootstraps.Python.SHA256)
 	require.NotContains(t, strings.ToLower(string(raw)), "moxinggang")
 	require.NotContains(t, string(raw), `C:\Users\Administrator`)
 	if runtime.GOOS != "windows" {

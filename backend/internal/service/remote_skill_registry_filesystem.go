@@ -27,21 +27,32 @@ const (
 )
 
 type RemoteSkillPublicDescriptor struct {
-	SchemaVersion   int       `json:"schema_version"`
-	BundleID        string    `json:"bundle_id"`
-	Revision        int64     `json:"revision"`
-	SourceCommit    string    `json:"source_commit"`
-	OverlaySHA256   string    `json:"overlay_sha256"`
-	ManifestSHA256  string    `json:"manifest_sha256"`
-	ArchiveSHA256   string    `json:"archive_sha256"`
-	ManifestURL     string    `json:"manifest_url"`
-	ArchiveURL      string    `json:"archive_url"`
-	FilesBaseURL    string    `json:"files_base_url"`
-	CoreFiles       []string  `json:"core_files"`
-	FileCount       int       `json:"file_count"`
-	TotalBytes      int64     `json:"total_bytes"`
-	PublishedAt     time.Time `json:"published_at"`
-	BootstrapPolicy string    `json:"bootstrap_policy"`
+	SchemaVersion   int                         `json:"schema_version"`
+	BundleID        string                      `json:"bundle_id"`
+	Revision        int64                       `json:"revision"`
+	SourceCommit    string                      `json:"source_commit"`
+	OverlaySHA256   string                      `json:"overlay_sha256"`
+	ManifestSHA256  string                      `json:"manifest_sha256"`
+	ArchiveSHA256   string                      `json:"archive_sha256"`
+	ManifestURL     string                      `json:"manifest_url"`
+	ArchiveURL      string                      `json:"archive_url"`
+	FilesBaseURL    string                      `json:"files_base_url"`
+	CoreFiles       []string                    `json:"core_files"`
+	FileCount       int                         `json:"file_count"`
+	TotalBytes      int64                       `json:"total_bytes"`
+	PublishedAt     time.Time                   `json:"published_at"`
+	BootstrapPolicy string                      `json:"bootstrap_policy"`
+	Bootstraps      RemoteSkillPublicBootstraps `json:"bootstraps"`
+}
+
+type RemoteSkillPublicBootstrap struct {
+	URL    string `json:"url"`
+	SHA256 string `json:"sha256"`
+}
+
+type RemoteSkillPublicBootstraps struct {
+	PowerShell RemoteSkillPublicBootstrap `json:"powershell"`
+	Python     RemoteSkillPublicBootstrap `json:"python"`
 }
 
 type RemoteSkillRegistryFilesystem struct {
@@ -178,6 +189,9 @@ func validateRemoteSkillSeedPackageRoot(root string) (RemoteSkillBundleVersion, 
 	}
 	version := remoteSkillVersionFromDescriptor(descriptor)
 	if err := validateRemoteSkillVersionMetadata(version); err != nil {
+		return RemoteSkillBundleVersion{}, err
+	}
+	if err := validateRemoteSkillPublicBootstraps(descriptor.Bootstraps); err != nil {
 		return RemoteSkillBundleVersion{}, err
 	}
 	manifestRaw, err := readRemoteSkillBoundedFile(filepath.Join(root, BusinessSystemPromptBundleManifestName), businessSystemPromptBundleMaxManifestBytes)
@@ -392,6 +406,7 @@ func (f *RemoteSkillRegistryFilesystem) Activate(ctx context.Context, snapshot R
 		FilesBaseURL: baseURL + "/", CoreFiles: append([]string(nil), manifest.CoreFiles...),
 		FileCount: snapshot.Active.FileCount, TotalBytes: snapshot.Active.TotalBytes,
 		PublishedAt: publishedAt, BootstrapPolicy: "download_verify_native_skill_atomic_replace",
+		Bootstraps: remoteSkillPublicBootstraps(),
 	}
 	raw, err := json.Marshal(descriptor)
 	if err != nil {
@@ -767,6 +782,21 @@ func remoteSkillVersionFromDescriptor(descriptor RemoteSkillPublicDescriptor) Re
 		ArchiveSHA256: strings.ToLower(descriptor.ArchiveSHA256), FileCount: descriptor.FileCount,
 		TotalBytes: descriptor.TotalBytes, PublishedAt: &descriptor.PublishedAt,
 	}
+}
+
+func remoteSkillPublicBootstraps() RemoteSkillPublicBootstraps {
+	return RemoteSkillPublicBootstraps{
+		PowerShell: RemoteSkillPublicBootstrap{URL: RemoteSkillPowerShellBootstrapURL, SHA256: RemoteSkillPowerShellBootstrapSHA256},
+		Python:     RemoteSkillPublicBootstrap{URL: RemoteSkillPythonBootstrapURL, SHA256: RemoteSkillPythonBootstrapSHA256},
+	}
+}
+
+func validateRemoteSkillPublicBootstraps(value RemoteSkillPublicBootstraps) error {
+	expected := remoteSkillPublicBootstraps()
+	if value != expected {
+		return fmt.Errorf("%w: bootstrap metadata is not content addressed", ErrBusinessSystemPromptBundleInvalid)
+	}
+	return nil
 }
 
 func portableRemoteSkillPathKey(value string) string {

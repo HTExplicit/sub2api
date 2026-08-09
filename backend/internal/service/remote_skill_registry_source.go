@@ -203,6 +203,9 @@ func (s *releaseRemoteSkillClientSource) Load(ctx context.Context) (map[string][
 	if err := json.Unmarshal(descriptorRaw, &descriptor); err != nil {
 		return nil, fmt.Errorf("%w: invalid release client descriptor", ErrBusinessSystemPromptBundleInvalid)
 	}
+	if err := validateRemoteSkillPublicBootstraps(descriptor.Bootstraps); err != nil {
+		return nil, err
+	}
 	version := remoteSkillVersionFromDescriptor(descriptor)
 	if err := validateRemoteSkillVersionMetadata(version); err != nil {
 		return nil, err

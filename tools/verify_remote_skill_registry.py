@@ -30,12 +30,19 @@ CHECKSUM_NAME = f"{ARCHIVE_NAME}.sha256"
 DESCRIPTOR_NAME = "seed-descriptor.json"
 BASE_URL = f"https://codexrip.vip/skills/reverse-skill/versions/{MANIFEST_SHA256}"
 DESCRIPTOR_URL = "https://codexrip.vip/skills/reverse-skill/current.json"
-BOOTSTRAP_REPOSITORY_URL = "https://github.com/HTExplicit/sub2api.git"
-BOOTSTRAP_REPOSITORY_REF = "v0.1.171-codexrip.7"
-BOOTSTRAP_REPOSITORY_COMMIT = "176dad47dd049b34d45a032d889a0dc11405a39e"
 BOOTSTRAPS = {
     "bootstrap-reverse-skill.ps1": "8595884159988ff653c1d66be66d25acc62a359009c85a7924a23dbaf45d4246",
     "bootstrap-reverse-skill.py": "2db6ff2d1a5182b73920aabe701d914cca83643aeab89443c0561b1a67430b42",
+}
+DESCRIPTOR_BOOTSTRAPS = {
+    "powershell": {
+        "url": f"https://codexrip.vip/skills/bootstrap/{BOOTSTRAPS['bootstrap-reverse-skill.ps1']}/bootstrap-reverse-skill.ps1",
+        "sha256": BOOTSTRAPS["bootstrap-reverse-skill.ps1"],
+    },
+    "python": {
+        "url": f"https://codexrip.vip/skills/bootstrap/{BOOTSTRAPS['bootstrap-reverse-skill.py']}/bootstrap-reverse-skill.py",
+        "sha256": BOOTSTRAPS["bootstrap-reverse-skill.py"],
+    },
 }
 CLIENT_FILES = {
     "codexrip-client/SKILL.md",
@@ -56,6 +63,8 @@ FORBIDDEN_RUNTIME_BYTES = (
     b"inline-system-instructions.txt",
     b"codexrip-overlay/security-research",
     b"REMOTE_ROOT",
+    b"github.com/HTExplicit/sub2api",
+    b"verified_git_sparse_checkout",
 )
 
 
@@ -108,6 +117,7 @@ def verify_descriptor(path: Path, manifest: dict) -> dict:
         "file_count": FILE_COUNT,
         "total_bytes": TOTAL_BYTES,
         "bootstrap_policy": "download_verify_native_skill_atomic_replace",
+        "bootstraps": DESCRIPTOR_BOOTSTRAPS,
     }
     for key, expected in exact.items():
         if descriptor.get(key) != expected:
@@ -175,9 +185,6 @@ def verify_manifest_contract(manifest: dict) -> set[str]:
 
 
 def verify_bootstraps(root: Path, prompt: bytes) -> int:
-    for value in (BOOTSTRAP_REPOSITORY_URL, BOOTSTRAP_REPOSITORY_REF, BOOTSTRAP_REPOSITORY_COMMIT):
-        if value.encode("ascii") in prompt:
-            raise VerificationError("fixed prompt must not expose bootstrap repository identity")
     found: dict[str, str] = {}
     try:
         directories = [item for item in root.iterdir() if item.is_dir() and any(item.iterdir())]

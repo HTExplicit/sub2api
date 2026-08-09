@@ -138,6 +138,23 @@ def command_for(implementation: str, descriptor: Path, assets: Path, codex_home:
     ]
 
 
+def corrupt_update_archive(assets: Path, descriptor_path: Path) -> None:
+    descriptor = json.loads(descriptor_path.read_text(encoding="utf-8"))
+    archive_path = assets / Path(descriptor["archive_url"]).name
+    with zipfile.ZipFile(archive_path, "r") as archive:
+        contents = {info.filename: archive.read(info.filename) for info in archive.infolist()}
+    contents["RULES.md"] = b"tampered update\n"
+    with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for name, raw in sorted(contents.items()):
+            info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.create_system = 3
+            info.external_attr = (stat.S_IFREG | 0o644) << 16
+            archive.writestr(info, raw)
+    descriptor["archive_sha256"] = sha256(archive_path.read_bytes())
+    descriptor_path.write_text(json.dumps(descriptor, separators=(",", ":")), encoding="utf-8")
+
+
 def run_implementation(implementation: str) -> None:
     with tempfile.TemporaryDirectory(prefix=f"codexrip-{implementation}-") as raw_root:
         root = Path(raw_root)
@@ -185,6 +202,24 @@ def run_implementation(implementation: str) -> None:
             raise RuntimeError("bundle script executed during installation")
         if list((codex_home / "skills").glob(f".{SKILL_NAME}-old-*")):
             raise RuntimeError("installer retained a previous client version")
+        preserved = skill / "PRESERVED"
+        preserved.write_text("old install must survive", encoding="utf-8")
+        corrupt_update_archive(assets, descriptor)
+        failed = subprocess.run(
+            command_for(implementation, descriptor, assets, codex_home),
+            text=True,
+            capture_output=True,
+            timeout=60,
+            check=False,
+        )
+        if failed.returncode == 0:
+            raise RuntimeError("corrupt update unexpectedly succeeded")
+        if not preserved.is_file() or (skill / "bundle" / "RULES.md").read_bytes() != b"contract core\n":
+            raise RuntimeError("corrupt update did not preserve the old Skill")
+        if list(root.rglob("EXECUTED")):
+            raise RuntimeError("bundle script executed during failed installation")
+        if list((codex_home / "skills").glob(f".{SKILL_NAME}-old-*")):
+            raise RuntimeError("failed update retained a previous-version staging directory")
         print(f"{implementation} native Skill contract verified: replaced=true scripts_executed=false")
 
 
