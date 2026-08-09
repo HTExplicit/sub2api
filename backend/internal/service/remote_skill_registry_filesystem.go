@@ -541,11 +541,10 @@ func validateRemoteSkillVersionRoot(root string, version RemoteSkillBundleVersio
 	if len(bundle.Manifest.Files) != version.FileCount {
 		return fmt.Errorf("%w: file count mismatch", ErrBusinessSystemPromptBundleInvalid)
 	}
+	// Installed versions are immutable and may predate the native route layout.
+	// New candidates are rejected before installation by validateRemoteSkillCandidate.
 	var total int64
 	for _, entry := range bundle.Manifest.Files {
-		if isLegacyRemoteSkillOverlayPath(entry.Path) {
-			return fmt.Errorf("%w: legacy overlay path rejected", ErrBusinessSystemPromptBundleInvalid)
-		}
 		total += int64(entry.ByteLength)
 	}
 	if total != version.TotalBytes {

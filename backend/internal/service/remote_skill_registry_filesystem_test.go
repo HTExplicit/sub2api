@@ -83,6 +83,67 @@ func TestRemoteSkillRegistryFilesystemInstallsReleaseSeedAndPublicAssets(t *test
 	}
 }
 
+func TestRemoteSkillRegistryInitializeKeepsHistoricalOverlayActiveDuringNativeSeedUpgrade(t *testing.T) {
+	releaseRoot := filepath.Join("..", "..", "..", "deploy", "skill-registry")
+	runtimeRoot := t.TempDir()
+	files := NewRemoteSkillRegistryFilesystemWithReleaseRoot(runtimeRoot, releaseRoot)
+	legacyFiles := map[string][]byte{
+		"codexrip-overlay/security-research/RULES.md":     []byte("legacy rules\n"),
+		"codexrip-overlay/security-research/README_AI.md": []byte("legacy readme\n"),
+		"codexrip-overlay/security-research/SKILL.md":     []byte("legacy skill\n"),
+	}
+	entries := make([]BusinessSystemPromptBundleFile, 0, len(legacyFiles))
+	var total int64
+	for _, name := range sortedRemoteSkillFileNames(legacyFiles) {
+		raw := legacyFiles[name]
+		entries = append(entries, BusinessSystemPromptBundleFile{
+			Path: name, SHA256: hashBusinessSystemPromptBundleBytes(raw), ByteLength: len(raw), Kind: "text", Required: true,
+		})
+		total += int64(len(raw))
+	}
+	manifest := BusinessSystemPromptBundleManifest{
+		SchemaVersion: 1,
+		BundleID:      BusinessSystemPromptRemoteSkillBundleID,
+		Version:       "historical-revision-2",
+		CoreFiles: []string{
+			"codexrip-overlay/security-research/RULES.md",
+			"codexrip-overlay/security-research/README_AI.md",
+			"codexrip-overlay/security-research/SKILL.md",
+		},
+		Files: entries,
+	}
+	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
+	require.NoError(t, err)
+	archiveBytes, err := buildRemoteSkillArchive(manifestBytes, legacyFiles)
+	require.NoError(t, err)
+	legacyVersion := RemoteSkillBundleVersion{
+		BundleID:       BusinessSystemPromptRemoteSkillBundleID,
+		SourceCommit:   strings.Repeat("1", 40),
+		OverlaySHA256:  strings.Repeat("2", 64),
+		ManifestSHA256: hashBusinessSystemPromptBundleBytes(manifestBytes),
+		ArchiveSHA256:  hashBusinessSystemPromptBundleBytes(archiveBytes),
+		FileCount:      len(entries),
+		TotalBytes:     total,
+	}
+	legacyRoot := files.privateVersionRoot(legacyVersion.ManifestSHA256)
+	require.NoError(t, os.MkdirAll(legacyRoot, 0o750))
+	require.NoError(t, writeRemoteSkillCandidate(legacyRoot, RemoteSkillCandidate{
+		Version: legacyVersion, Manifest: manifest, ManifestBytes: manifestBytes, ArchiveBytes: archiveBytes, Files: legacyFiles,
+	}))
+
+	store := &fakeRemoteSkillRegistryStore{snapshot: RemoteSkillRegistrySnapshot{
+		Revision:  2,
+		Active:    &legacyVersion,
+		UpdatedAt: time.Date(2026, 8, 9, 0, 0, 0, 0, time.UTC),
+	}}
+	svc := NewRemoteSkillRegistryService(store, nil, files, nil)
+	require.NoError(t, svc.Initialize(context.Background()))
+	require.NotEqual(t, legacyVersion.ManifestSHA256, store.ensureSeed.ManifestSHA256)
+	require.Equal(t, int64(2), svc.CurrentSnapshot().Revision)
+	require.Equal(t, legacyVersion.ManifestSHA256, svc.CurrentSnapshot().Active.ManifestSHA256)
+	require.False(t, svc.CurrentSnapshot().Degraded)
+}
+
 func TestValidateRemoteSkillPublicBootstrapsKeepsSchemaOneLegacyDescriptorsReadable(t *testing.T) {
 	require.NoError(t, validateRemoteSkillPublicBootstraps(RemoteSkillPublicBootstraps{}))
 	partial := RemoteSkillPublicBootstraps{PowerShell: remoteSkillPublicBootstraps().PowerShell}
