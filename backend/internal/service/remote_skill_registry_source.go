@@ -566,7 +566,7 @@ func buildRemoteSkillCandidate(commit, clientSHA string, files map[string][]byte
 	if err := validateBusinessSystemPromptBundleManifest(manifest); err != nil {
 		return RemoteSkillCandidate{}, err
 	}
-	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
+	manifestBytes, err := marshalRemoteSkillManifest(manifest)
 	if err != nil {
 		return RemoteSkillCandidate{}, err
 	}
@@ -587,6 +587,31 @@ func buildRemoteSkillCandidate(commit, clientSHA string, files map[string][]byte
 		return RemoteSkillCandidate{}, err
 	}
 	return candidate, nil
+}
+
+// Keep empty reference lists explicit in the wire manifest. The native
+// installers consume the JSON directly and distinguish [] from an omitted
+// field; the generic manifest type intentionally uses omitempty for legacy
+// offline bundles, so this normalization stays remote-candidate specific.
+func marshalRemoteSkillManifest(manifest BusinessSystemPromptBundleManifest) ([]byte, error) {
+	raw, err := json.Marshal(manifest)
+	if err != nil {
+		return nil, err
+	}
+	var value map[string]any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil, err
+	}
+	if domains, ok := value["domains"].([]any); ok {
+		for _, item := range domains {
+			if domain, ok := item.(map[string]any); ok {
+				if _, exists := domain["references"]; !exists {
+					domain["references"] = []any{}
+				}
+			}
+		}
+	}
+	return json.MarshalIndent(value, "", "  ")
 }
 
 func buildRemoteSkillArchive(manifestBytes []byte, files map[string][]byte) ([]byte, error) {
