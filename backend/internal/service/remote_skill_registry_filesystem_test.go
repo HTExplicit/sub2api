@@ -83,6 +83,42 @@ func TestRemoteSkillRegistryFilesystemInstallsReleaseSeedAndPublicAssets(t *test
 	}
 }
 
+func TestRemoteSkillRegistryFilesystemRejectsUnexpectedReleaseBootstrapPairs(t *testing.T) {
+	releaseBootstrapRoot := filepath.Join("..", "..", "..", "deploy", "skill-registry", "bootstrap")
+	powershellRaw, err := os.ReadFile(filepath.Join(releaseBootstrapRoot, RemoteSkillPowerShellBootstrapSHA256, "bootstrap-reverse-skill.ps1"))
+	require.NoError(t, err)
+	pythonRaw, err := os.ReadFile(filepath.Join(releaseBootstrapRoot, RemoteSkillPythonBootstrapSHA256, "bootstrap-reverse-skill.py"))
+	require.NoError(t, err)
+
+	tests := map[string]map[string]struct {
+		name string
+		raw  []byte
+	}{
+		"hash paired with the wrong language": {
+			RemoteSkillPowerShellBootstrapSHA256: {name: "bootstrap-reverse-skill.ps1", raw: powershellRaw},
+			RemoteSkillPythonBootstrapSHA256:     {name: "bootstrap-reverse-skill.ps1", raw: pythonRaw},
+		},
+		"duplicate language with self addressed bytes": {
+			RemoteSkillPowerShellBootstrapSHA256: {name: "bootstrap-reverse-skill.ps1", raw: powershellRaw},
+			hashBusinessSystemPromptBundleBytes([]byte("Write-Host 'unexpected'\n")): {
+				name: "bootstrap-reverse-skill.ps1", raw: []byte("Write-Host 'unexpected'\n"),
+			},
+		},
+	}
+	for name, assets := range tests {
+		t.Run(name, func(t *testing.T) {
+			releaseRoot := t.TempDir()
+			for hash, asset := range assets {
+				directory := filepath.Join(releaseRoot, "bootstrap", hash)
+				require.NoError(t, os.MkdirAll(directory, 0o750))
+				require.NoError(t, os.WriteFile(filepath.Join(directory, asset.name), asset.raw, 0o640))
+			}
+			files := NewRemoteSkillRegistryFilesystemWithReleaseRoot(t.TempDir(), releaseRoot)
+			require.ErrorIs(t, files.installReleaseBootstraps(context.Background()), ErrBusinessSystemPromptBundleInvalid)
+		})
+	}
+}
+
 func TestRemoteSkillRegistryInitializeKeepsHistoricalOverlayActiveDuringNativeSeedUpgrade(t *testing.T) {
 	releaseRoot := filepath.Join("..", "..", "..", "deploy", "skill-registry")
 	runtimeRoot := t.TempDir()

@@ -260,20 +260,27 @@ func (f *RemoteSkillRegistryFilesystem) installReleaseBootstraps(ctx context.Con
 	if err != nil {
 		return err
 	}
-	installed := 0
+	expected := map[string]string{
+		RemoteSkillPowerShellBootstrapSHA256: "bootstrap-reverse-skill.ps1",
+		RemoteSkillPythonBootstrapSHA256:     "bootstrap-reverse-skill.py",
+	}
+	if len(entries) != len(expected) {
+		return fmt.Errorf("%w: release bootstrap set mismatch", ErrBusinessSystemPromptBundleInvalid)
+	}
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			return fmt.Errorf("%w: bootstrap root contains a file", ErrBusinessSystemPromptBundleInvalid)
+		}
+		expectedName, ok := expected[entry.Name()]
+		if !ok {
+			return fmt.Errorf("%w: release bootstrap digest rejected", ErrBusinessSystemPromptBundleInvalid)
 		}
 		directory := filepath.Join(sourceRoot, entry.Name())
 		files, err := os.ReadDir(directory)
 		if err != nil {
 			return err
 		}
-		if len(files) == 0 {
-			continue
-		}
-		if len(files) != 1 || files[0].IsDir() || (files[0].Name() != "bootstrap-reverse-skill.ps1" && files[0].Name() != "bootstrap-reverse-skill.py") {
+		if len(files) != 1 || files[0].IsDir() || files[0].Name() != expectedName {
 			return fmt.Errorf("%w: bootstrap directory shape invalid", ErrBusinessSystemPromptBundleInvalid)
 		}
 		raw, err := readRemoteSkillBoundedFile(filepath.Join(directory, files[0].Name()), 1<<20)
@@ -287,10 +294,6 @@ func (f *RemoteSkillRegistryFilesystem) installReleaseBootstraps(ctx context.Con
 		if err := installRemoteSkillBootstrap(directory, destination, entry.Name(), files[0].Name()); err != nil {
 			return err
 		}
-		installed++
-	}
-	if installed != 2 {
-		return fmt.Errorf("%w: release must contain exactly two bootstraps", ErrBusinessSystemPromptBundleInvalid)
 	}
 	return nil
 }

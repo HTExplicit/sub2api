@@ -298,14 +298,27 @@ func remoteSkillPythonInstaller() RemoteSkillClientInstaller {
 	acquire := fmt.Sprintf(`url='%s'
 hash='%s'
 temp="${TMPDIR:-/tmp}"
-root="$temp/codexrip-reverse-skill-bootstrap-$hash"
+uid="$(id -u)"
+root="$temp/codexrip-reverse-skill-bootstrap-$uid-$hash"
 path="$root/bootstrap-reverse-skill.py"
-python3 - "$url" "$hash" "$temp" "$path" <<'PY'
-import hashlib, os, pathlib, sys, tempfile, urllib.error, urllib.parse, urllib.request
-url, expected, temp_root, target = sys.argv[1:]
+python3 - "$url" "$hash" "$temp" "$root" "$path" <<'PY'
+import hashlib, os, pathlib, stat, sys, tempfile, urllib.error, urllib.parse, urllib.request
+url, expected, temp_root, root, target = sys.argv[1:]
 parsed = urllib.parse.urlparse(url)
 if parsed.scheme != "https" or parsed.hostname != "codexrip.vip" or parsed.port not in (None, 443) or parsed.username or parsed.password or parsed.query or parsed.fragment:
     raise SystemExit("bootstrap URL rejected")
+temp_root = os.path.realpath(temp_root)
+root = os.path.abspath(root)
+target = os.path.abspath(target)
+if os.path.commonpath((temp_root, root)) != temp_root or os.path.dirname(target) != root:
+    raise SystemExit("bootstrap directory rejected")
+try:
+    os.mkdir(root, 0o700)
+except FileExistsError:
+    pass
+root_info = os.stat(root, follow_symlinks=False)
+if not stat.S_ISDIR(root_info.st_mode) or root_info.st_uid != os.geteuid() or stat.S_IMODE(root_info.st_mode) != 0o700:
+    raise SystemExit("bootstrap directory rejected")
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -323,21 +336,18 @@ except urllib.error.HTTPError as exc:
     raise SystemExit("bootstrap download rejected") from exc
 if not raw or len(raw) > 1048576 or hashlib.sha256(raw).hexdigest() != expected:
     raise SystemExit("bootstrap hash mismatch")
-temp_root = os.path.realpath(temp_root)
-root = os.path.dirname(target)
-if os.path.islink(root):
-    raise SystemExit("bootstrap directory rejected")
-os.makedirs(root, mode=0o700, exist_ok=True)
-root = os.path.realpath(root)
-if os.path.commonpath((temp_root, root)) != temp_root:
-    raise SystemExit("bootstrap directory rejected")
 fd, staging = tempfile.mkstemp(prefix=".download-", dir=root)
 try:
     with os.fdopen(fd, "wb") as handle:
+        os.fchmod(handle.fileno(), 0o600)
         handle.write(raw)
         handle.flush()
         os.fsync(handle.fileno())
     os.replace(staging, target)
+    target_info = os.stat(target, follow_symlinks=False)
+    if not stat.S_ISREG(target_info.st_mode) or target_info.st_uid != os.geteuid() or stat.S_IMODE(target_info.st_mode) != 0o600:
+        os.unlink(target)
+        raise SystemExit("bootstrap target rejected")
 finally:
     if os.path.exists(staging):
         os.unlink(staging)
@@ -346,11 +356,48 @@ PY`, RemoteSkillPythonBootstrapURL, RemoteSkillPythonBootstrapSHA256)
 	execute := fmt.Sprintf(`hash='%s'
 descriptor='%s'
 temp="${TMPDIR:-/tmp}"
-root="$temp/codexrip-reverse-skill-bootstrap-$hash"
+uid="$(id -u)"
+root="$temp/codexrip-reverse-skill-bootstrap-$uid-$hash"
 path="$root/bootstrap-reverse-skill.py"
-test -f "$path" && test ! -L "$path" || exit 1
-python3 -c 'import hashlib,sys; assert hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest()==sys.argv[2]' "$path" "$hash" || exit 1
-result="$(python3 "$path" --descriptor-url "$descriptor")" || exit 1
+result="$(python3 - "$path" "$hash" "$descriptor" "$temp" "$root" <<'PY'
+import hashlib, os, stat, sys
+target, expected, descriptor, temp_root, root = sys.argv[1:]
+temp_root = os.path.realpath(temp_root)
+root = os.path.abspath(root)
+target = os.path.abspath(target)
+if os.path.commonpath((temp_root, root)) != temp_root or os.path.dirname(target) != root:
+    raise SystemExit("bootstrap directory rejected")
+root_info = os.stat(root, follow_symlinks=False)
+if not stat.S_ISDIR(root_info.st_mode) or root_info.st_uid != os.geteuid() or stat.S_IMODE(root_info.st_mode) != 0o700:
+    raise SystemExit("bootstrap directory rejected")
+fd = os.open(target, os.O_RDONLY | os.O_NOFOLLOW)
+try:
+    target_info = os.fstat(fd)
+    if (
+        not stat.S_ISREG(target_info.st_mode)
+        or target_info.st_uid != os.geteuid()
+        or stat.S_IMODE(target_info.st_mode) != 0o600
+        or target_info.st_nlink != 1
+        or target_info.st_size <= 0
+        or target_info.st_size > 1048576
+    ):
+        raise SystemExit("bootstrap target rejected")
+    with os.fdopen(os.dup(fd), "rb") as handle:
+        raw = handle.read(1048577)
+    if len(raw) != target_info.st_size or hashlib.sha256(raw).hexdigest() != expected:
+        raise SystemExit("bootstrap hash mismatch")
+    sys.argv = [target, "--descriptor-url", descriptor]
+    namespace = {
+        "__name__": "__main__",
+        "__file__": target,
+        "__package__": None,
+        "__builtins__": __builtins__,
+    }
+    exec(compile(raw, target, "exec"), namespace, namespace)
+finally:
+    os.close(fd)
+PY
+)" || exit 1
 python3 -c 'import json,sys; value=json.loads(sys.argv[1]); assert value.get("status")=="ready" and value.get("scripts_executed") is False; print(json.dumps(value,separators=(",",":"),ensure_ascii=False))' "$result"`, RemoteSkillPythonBootstrapSHA256, RemoteSkillDescriptorURL)
 	return remoteSkillClientInstaller(RemoteSkillPythonBootstrapURL, RemoteSkillPythonBootstrapSHA256, acquire, execute)
 }

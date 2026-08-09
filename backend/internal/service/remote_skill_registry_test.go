@@ -60,7 +60,15 @@ func TestRemoteSkillClientInstallUsesContentAddressedHTTPSAcquisition(t *testing
 				require.Contains(t, installer.ExecuteCommand, "Get-FileHash")
 			} else {
 				require.Contains(t, installer.AcquireCommand, "geturl")
-				require.Contains(t, installer.ExecuteCommand, "hashlib.sha256")
+				for _, command := range []string{installer.AcquireCommand, installer.ExecuteCommand} {
+					require.Contains(t, command, "os.geteuid()")
+					require.Contains(t, command, "stat.S_IMODE")
+					require.Contains(t, command, "0o700")
+				}
+				require.Contains(t, installer.ExecuteCommand, "os.O_NOFOLLOW")
+				require.Contains(t, installer.ExecuteCommand, "os.fstat")
+				require.Contains(t, installer.ExecuteCommand, "exec(compile(raw")
+				require.NotContains(t, installer.ExecuteCommand, `python3 "$path"`)
 			}
 		})
 	}
