@@ -131,6 +131,7 @@ func TestBusinessSystemPromptServiceInitializeSeedsAndLoadsSnapshot(t *testing.T
 	require.ElementsMatch(t, []string{
 		"0b717f086b1bf25e8300e9f26578ee95cf6f74d5601c06b9f9e493aa8939b0a7",
 		"9143d8a97727030192a62fb19f732b0823dec9ffe83081ef5ae27fdb1edfea04",
+		"0615d24958a1da11edcf9538aaff989e46fcd296ea86a6c1b1af2b3efa48487f",
 	}, store.seeds[0].AutoActivateFromSHA)
 	require.Equal(t, "gpt_5_6_instruct", store.seeds[1].Slug)
 	require.Equal(t, BusinessSystemPromptCompositionInline, store.seeds[1].CompositionMode)
