@@ -2,48 +2,73 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-func TestRemoteSkillClientInstallUsesPinnedTwoStageGitAcquisition(t *testing.T) {
+func TestRemoteSkillClientInstallUsesContentAddressedHTTPSAcquisition(t *testing.T) {
 	metadata := (&RemoteSkillRegistryService{}).ClientInstallMetadata()
 
 	require.Equal(t, "codexrip-reverse-skill", metadata.SkillName)
 	require.Equal(t, "https://codexrip.vip/skills/reverse-skill/current.json", metadata.DescriptorURL)
-	for name, installer := range map[string]RemoteSkillClientInstaller{
-		"powershell": metadata.PowerShell,
-		"python":     metadata.Python,
+	raw, err := json.Marshal(metadata)
+	require.NoError(t, err)
+	for _, forbidden := range []string{"repository_url", "repository_ref", "repository_commit", "bootstrap_path", "github.com"} {
+		require.NotContains(t, strings.ToLower(string(raw)), forbidden)
+	}
+
+	for name, expected := range map[string]struct {
+		installer RemoteSkillClientInstaller
+		filename  string
+	}{
+		"powershell": {metadata.PowerShell, "bootstrap-reverse-skill.ps1"},
+		"python":     {metadata.Python, "bootstrap-reverse-skill.py"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			require.Equal(t, "verified_git_sparse_checkout", installer.Strategy)
-			require.Equal(t, "https://github.com/HTExplicit/sub2api.git", installer.RepositoryURL)
-			require.Equal(t, "v0.1.171-codexrip.7", installer.RepositoryRef)
-			require.Equal(t, "176dad47dd049b34d45a032d889a0dc11405a39e", installer.RepositoryCommit)
-			require.Contains(t, installer.BootstrapPath, installer.BootstrapSHA256)
-			require.Contains(t, installer.AcquireCommand, installer.RepositoryURL)
-			require.Contains(t, installer.AcquireCommand, installer.RepositoryRef)
-			require.Contains(t, installer.AcquireCommand, installer.RepositoryCommit)
-			require.Contains(t, installer.AcquireCommand, installer.BootstrapPath)
+			installer := expected.installer
+			require.Equal(t, "verified_https_content_addressed", installer.Strategy)
+			parsed, err := url.Parse(installer.BootstrapURL)
+			require.NoError(t, err)
+			require.Equal(t, "https", parsed.Scheme)
+			require.Equal(t, "codexrip.vip", parsed.Hostname())
+			require.Equal(t, expected.filename, parsed.Path[strings.LastIndex(parsed.Path, "/")+1:])
+			require.Contains(t, parsed.Path, installer.BootstrapSHA256)
+			require.Contains(t, installer.AcquireCommand, installer.BootstrapURL)
 			require.Contains(t, installer.AcquireCommand, installer.BootstrapSHA256)
-			require.Contains(t, installer.ExecuteCommand, installer.BootstrapPath)
 			require.Contains(t, installer.ExecuteCommand, installer.BootstrapSHA256)
 			require.Contains(t, installer.ExecuteCommand, metadata.DescriptorURL)
-			require.NotContains(t, installer.ExecuteCommand, "& pwsh")
-			require.NotContains(t, strings.ToLower(installer.AcquireCommand), "invoke-webrequest")
-			require.NotContains(t, strings.ToLower(installer.AcquireCommand), "curl")
-			require.NotContains(t, strings.ToLower(installer.AcquireCommand), "http://")
-			require.NotContains(t, strings.ToLower(installer.AcquireCommand), "remove-item")
-			require.NotContains(t, strings.ToLower(installer.AcquireCommand), "rm -rf")
+			for _, command := range []string{installer.AcquireCommand, installer.ExecuteCommand} {
+				lower := strings.ToLower(command)
+				require.NotContains(t, lower, "github.com")
+				require.NotContains(t, lower, "git clone")
+				require.NotContains(t, lower, "http://")
+				require.NotContains(t, lower, "curl ")
+				require.NotContains(t, lower, "wget ")
+				require.NotContains(t, lower, "invoke-expression")
+				require.NotContains(t, lower, "| sh")
+				require.NotContains(t, lower, "| bash")
+				require.NotContains(t, lower, "| pwsh")
+			}
 			if name == "powershell" {
 				require.Contains(t, installer.AcquireCommand, "GetTempPath")
-				require.Contains(t, installer.AcquireCommand, "temporary checkout path rejected")
-				require.Contains(t, installer.AcquireCommand, "NewGuid")
+				require.Contains(t, installer.AcquireCommand, "RequestUri")
+				require.Contains(t, installer.ExecuteCommand, "Get-FileHash")
 			} else {
-				require.Contains(t, installer.AcquireCommand, "mktemp -d")
+				require.Contains(t, installer.AcquireCommand, "geturl")
+				for _, command := range []string{installer.AcquireCommand, installer.ExecuteCommand} {
+					require.Contains(t, command, "os.geteuid()")
+					require.Contains(t, command, "stat.S_IMODE")
+					require.Contains(t, command, "0o700")
+				}
+				require.Contains(t, installer.ExecuteCommand, "os.O_NOFOLLOW")
+				require.Contains(t, installer.ExecuteCommand, "os.fstat")
+				require.Contains(t, installer.ExecuteCommand, "exec(compile(raw")
+				require.NotContains(t, installer.ExecuteCommand, `python3 "$path"`)
 			}
 		})
 	}

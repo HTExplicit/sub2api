@@ -15,6 +15,8 @@ $SkillName = 'codexrip-reverse-skill'
 $ManifestName = 'bundle-manifest.json'
 $ClientSkillPath = 'codexrip-client/SKILL.md'
 $ClientOpenAIPath = 'codexrip-client/agents/openai.yaml'
+$RequiredCorePaths = @('RULES.md', 'README_AI.md', 'skills/SKILL.md')
+$LegacyOverlayPrefixes = @('codexrip-overlay/security-research', 'moxinggang-overlay/security-research')
 $MaxDescriptorBytes = 256KB
 $MaxManifestBytes = 4MB
 $MaxArchiveBytes = 128MB
@@ -58,7 +60,7 @@ function Assert-PublicUrl([string]$Value) {
     $uri = $null
     if (-not [Uri]::TryCreate($Value, [UriKind]::Absolute, [ref]$uri) -or
         $uri.Scheme -cne 'https' -or $uri.Host -cne $AllowedHost -or
-        -not $uri.IsDefaultPort -or $uri.UserInfo -or $uri.Fragment) {
+        -not $uri.IsDefaultPort -or $uri.UserInfo -or $uri.Query -or $uri.Fragment) {
         Throw-BootstrapError 'descriptor references an untrusted URL'
     }
     return $uri.AbsoluteUri
@@ -68,7 +70,7 @@ function Invoke-BoundedDownload([string]$Url, [long]$Maximum) {
     $trusted = Assert-PublicUrl $Url
     $temp = Join-Path ([IO.Path]::GetTempPath()) ('codexrip-download-' + [guid]::NewGuid().ToString('N'))
     try {
-        $response = Invoke-WebRequest -Uri $trusted -MaximumRedirection 3 -TimeoutSec 30 -OutFile $temp -PassThru -UseBasicParsing
+        $response = Invoke-WebRequest -Uri $trusted -MaximumRedirection 0 -TimeoutSec 30 -OutFile $temp -PassThru -UseBasicParsing
         $finalUri = $response.BaseResponse.RequestMessage.RequestUri.AbsoluteUri
         $null = Assert-PublicUrl $finalUri
         $item = Get-Item -LiteralPath $temp
@@ -119,13 +121,30 @@ function Assert-RelativePath([object]$InputValue) {
         Throw-BootstrapError 'invalid bundle path'
     }
     $value = [string]$InputValue
+    $segments = $value.Split('/')
     if (-not $value -or $value.Contains([char]0) -or $value.Contains('\') -or $value.StartsWith('/') -or
-        $value.Split('/') -contains '..' -or $value.Split('/') -contains '.' -or $value.Split('/') -contains '' -or
-        $value.Split('/')[0].Contains(':')) {
+        $segments -contains '..' -or $segments -contains '.' -or $segments -contains '') {
         Throw-BootstrapError "unsafe bundle path: $value"
+    }
+    $reserved = @('CON', 'PRN', 'AUX', 'NUL', 'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9', 'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9')
+    foreach ($segment in $segments) {
+        if ($segment -match '[\x00-\x1F<>:"|?*]' -or $segment.TrimEnd(' ', '.') -cne $segment -or
+            $reserved -contains $segment.Split('.')[0].ToUpperInvariant()) {
+            Throw-BootstrapError "non-portable bundle path: $value"
+        }
     }
     $null = Get-PortablePathKey $value
     return $value
+}
+
+function Test-LegacyOverlayPath([string]$Value) {
+    $lower = $Value.ToLowerInvariant()
+    foreach ($prefix in $LegacyOverlayPrefixes) {
+        if ($lower -ceq $prefix -or $lower.StartsWith($prefix + '/', [StringComparison]::Ordinal)) {
+            return $true
+        }
+    }
+    return $false
 }
 
 function ConvertFrom-StrictJson([byte[]]$Bytes, [string]$Label) {
@@ -143,7 +162,7 @@ function Read-Descriptor([byte[]]$Bytes) {
         Throw-BootstrapError 'descriptor exceeds size limit'
     }
     $descriptor = ConvertFrom-StrictJson $Bytes 'descriptor'
-    foreach ($name in @('schema_version', 'bundle_id', 'revision', 'source_commit', 'manifest_sha256', 'archive_sha256', 'manifest_url', 'archive_url')) {
+    foreach ($name in @('schema_version', 'bundle_id', 'revision', 'source_commit', 'manifest_sha256', 'archive_sha256', 'manifest_url', 'archive_url', 'core_files')) {
         if (-not ($descriptor.PSObject.Properties.Name -contains $name)) {
             Throw-BootstrapError 'descriptor is incomplete'
         }
@@ -152,6 +171,15 @@ function Read-Descriptor([byte[]]$Bytes) {
         [string]$descriptor.bundle_id -cne $BundleId -or
         [string]$descriptor.source_commit -cnotmatch '^[0-9a-f]{40}$') {
         Throw-BootstrapError 'descriptor identity is invalid'
+    }
+    $descriptorCore = @($descriptor.core_files | ForEach-Object { [string]$_ })
+    if ($descriptorCore.Count -ne $RequiredCorePaths.Count) {
+        Throw-BootstrapError 'descriptor core files are invalid'
+    }
+    for ($index = 0; $index -lt $RequiredCorePaths.Count; $index++) {
+        if ($descriptorCore[$index] -cne $RequiredCorePaths[$index]) {
+            Throw-BootstrapError 'descriptor core files are invalid'
+        }
     }
     $descriptor.manifest_sha256 = ([string]$descriptor.manifest_sha256).ToLowerInvariant()
     $descriptor.archive_sha256 = ([string]$descriptor.archive_sha256).ToLowerInvariant()
@@ -190,6 +218,9 @@ function Read-Manifest([byte[]]$Bytes, [object]$Descriptor) {
     [long]$total = 0
     foreach ($entry in $files) {
         $path = Assert-RelativePath $entry.path
+        if (Test-LegacyOverlayPath $path) {
+            Throw-BootstrapError 'legacy overlay path is not allowed'
+        }
         $key = Get-PortablePathKey $path
         $digest = ([string]$entry.sha256).ToLowerInvariant()
         $length = [long]$entry.byte_length
@@ -208,9 +239,13 @@ function Read-Manifest([byte[]]$Bytes, [object]$Descriptor) {
             Throw-BootstrapError 'manifest extracted size exceeds limit'
         }
     }
-    foreach ($pathValue in @($manifest.core_files)) {
-        $path = Assert-RelativePath $pathValue
-        if (-not $byPath.ContainsKey($path)) {
+    $corePaths = @($manifest.core_files | ForEach-Object { [string]$_ })
+    if ($corePaths.Count -ne $RequiredCorePaths.Count) {
+        Throw-BootstrapError 'manifest core files are invalid'
+    }
+    for ($index = 0; $index -lt $RequiredCorePaths.Count; $index++) {
+        if ($corePaths[$index] -cne $RequiredCorePaths[$index] -or -not $byPath.ContainsKey($RequiredCorePaths[$index]) -or
+            [string]$byPath[$RequiredCorePaths[$index]].kind -cne 'text') {
             Throw-BootstrapError 'manifest core files are invalid'
         }
     }
@@ -219,13 +254,22 @@ function Read-Manifest([byte[]]$Bytes, [object]$Descriptor) {
             Throw-BootstrapError 'native Codex Skill entry is missing'
         }
     }
+    $routes = @($manifest.domains)
+    if ($routes.Count -lt 1) {
+        Throw-BootstrapError 'manifest routes are missing'
+    }
     $routeIds = @{}
-    foreach ($route in @($manifest.domains)) {
+    foreach ($route in $routes) {
         $id = [string]$route.id
         if (-not $id -or $routeIds.ContainsKey($id)) {
             Throw-BootstrapError 'manifest route is invalid'
         }
         $routeIds[$id] = $true
+        foreach ($keyword in @($route.keywords)) {
+            if ($keyword -isnot [string]) {
+                Throw-BootstrapError 'manifest route is invalid'
+            }
+        }
         foreach ($pathValue in @($route.entry) + @($route.references)) {
             $path = Assert-RelativePath $pathValue
             if (-not $byPath.ContainsKey($path)) {
@@ -335,7 +379,10 @@ function Install-NativeSkill([byte[]]$ArchiveBytes, [byte[]]$ManifestBytes, [obj
             $oldMoved = $true
         }
         Move-Item -LiteralPath $staging -Destination $destination -ErrorAction Stop
-        if ($oldMoved) { Remove-Item -LiteralPath $backup -Recurse -Force }
+        if ($oldMoved) {
+            try { Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction Stop }
+            catch { Write-Verbose 'previous Skill cleanup deferred after a successful atomic install' }
+        }
         return @{ Path = [IO.Path]::GetFullPath($destination); Replaced = [bool]$replaced }
     }
     catch {

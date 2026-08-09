@@ -141,10 +141,7 @@ export interface RemoteSkillRegistryResponse {
 
 export interface RemoteSkillClientInstaller {
   strategy: string
-  repository_url: string
-  repository_ref: string
-  repository_commit: string
-  bootstrap_path: string
+  bootstrap_url: string
   bootstrap_sha256: string
   acquire_command: string
   execute_command: string

@@ -14,14 +14,11 @@ const (
 	RemoteSkillSyncStatusRunning         = "running"
 	RemoteSkillSyncStatusSucceeded       = "succeeded"
 	RemoteSkillSyncStatusFailed          = "failed"
-	RemoteSkillInstallStrategy           = "verified_git_sparse_checkout"
-	RemoteSkillRepositoryURL             = "https://github.com/HTExplicit/sub2api.git"
-	RemoteSkillRepositoryRef             = "v0.1.171-codexrip.7"
-	RemoteSkillRepositoryCommit          = "176dad47dd049b34d45a032d889a0dc11405a39e"
-	RemoteSkillPowerShellBootstrapSHA256 = "8595884159988ff653c1d66be66d25acc62a359009c85a7924a23dbaf45d4246"
-	RemoteSkillPythonBootstrapSHA256     = "2db6ff2d1a5182b73920aabe701d914cca83643aeab89443c0561b1a67430b42"
-	RemoteSkillPowerShellBootstrapPath   = "deploy/skill-registry/bootstrap/" + RemoteSkillPowerShellBootstrapSHA256 + "/bootstrap-reverse-skill.ps1"
-	RemoteSkillPythonBootstrapPath       = "deploy/skill-registry/bootstrap/" + RemoteSkillPythonBootstrapSHA256 + "/bootstrap-reverse-skill.py"
+	RemoteSkillInstallStrategy           = "verified_https_content_addressed"
+	RemoteSkillPowerShellBootstrapSHA256 = "2199e8c4e8a09278c9b79e17b05e5457308db0a7d593e0f933ad6bd0712845f9"
+	RemoteSkillPythonBootstrapSHA256     = "353878272c8972c00817cc7171d7a4a087b4203fa2758b7ba1d040ededde7dc9"
+	RemoteSkillPowerShellBootstrapURL    = "https://codexrip.vip/skills/bootstrap/" + RemoteSkillPowerShellBootstrapSHA256 + "/bootstrap-reverse-skill.ps1"
+	RemoteSkillPythonBootstrapURL        = "https://codexrip.vip/skills/bootstrap/" + RemoteSkillPythonBootstrapSHA256 + "/bootstrap-reverse-skill.py"
 	RemoteSkillDescriptorURL             = "https://codexrip.vip/skills/reverse-skill/current.json"
 )
 
@@ -66,14 +63,11 @@ type RemoteSkillRegistrySnapshot struct {
 }
 
 type RemoteSkillClientInstaller struct {
-	Strategy         string `json:"strategy"`
-	RepositoryURL    string `json:"repository_url"`
-	RepositoryRef    string `json:"repository_ref"`
-	RepositoryCommit string `json:"repository_commit"`
-	BootstrapPath    string `json:"bootstrap_path"`
-	BootstrapSHA256  string `json:"bootstrap_sha256"`
-	AcquireCommand   string `json:"acquire_command"`
-	ExecuteCommand   string `json:"execute_command"`
+	Strategy        string `json:"strategy"`
+	BootstrapURL    string `json:"bootstrap_url"`
+	BootstrapSHA256 string `json:"bootstrap_sha256"`
+	AcquireCommand  string `json:"acquire_command"`
+	ExecuteCommand  string `json:"execute_command"`
 }
 
 type RemoteSkillClientInstall struct {
@@ -261,107 +255,160 @@ func (s *RemoteSkillRegistryService) ClientInstallMetadata() RemoteSkillClientIn
 }
 
 func remoteSkillPowerShellInstaller() RemoteSkillClientInstaller {
-	acquire := fmt.Sprintf(`$repo='%s'
-$ref='%s'
-$commit='%s'
-$relative='%s'
+	acquire := fmt.Sprintf(`$url='%s'
 $hash='%s'
-$prefix='codexrip-reverse-skill-bootstrap-'
 $temp=[IO.Path]::GetFullPath([IO.Path]::GetTempPath())
-$root=[IO.Path]::GetFullPath((Join-Path $temp ($prefix+[guid]::NewGuid().ToString('N'))))
-if($root -eq $temp -or -not $root.StartsWith($temp,[StringComparison]::OrdinalIgnoreCase)){throw 'temporary checkout path rejected'}
-git clone --filter=blob:none --no-checkout --depth 1 --branch $ref $repo $root
-if($LASTEXITCODE -ne 0){throw 'git clone failed'}
-if((git -C $root remote get-url origin).Trim() -cne $repo){throw 'repository URL mismatch'}
-if((git -C $root rev-list -n 1 "refs/tags/$ref").Trim() -cne $commit){throw 'repository ref mismatch'}
-git -C $root sparse-checkout init --no-cone
-if($LASTEXITCODE -ne 0){throw 'sparse checkout init failed'}
-git -C $root sparse-checkout set $relative
-if($LASTEXITCODE -ne 0){throw 'sparse checkout path failed'}
-git -C $root checkout --detach $commit
-if($LASTEXITCODE -ne 0 -or (git -C $root rev-parse HEAD).Trim() -cne $commit){throw 'repository commit mismatch'}
-$path=Join-Path $root $relative
-if(-not (Test-Path -LiteralPath $path -PathType Leaf)){throw 'bootstrap path missing'}
-if((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hash){throw 'bootstrap hash mismatch'}
-$pointer=Join-Path $temp 'codexrip-reverse-skill-bootstrap-current.txt'
-Set-Content -LiteralPath $pointer -Value $root -Encoding ascii -NoNewline
-$path`, RemoteSkillRepositoryURL, RemoteSkillRepositoryRef, RemoteSkillRepositoryCommit, RemoteSkillPowerShellBootstrapPath, RemoteSkillPowerShellBootstrapSHA256)
-	execute := fmt.Sprintf(`$repo='%s'
-$ref='%s'
-$commit='%s'
-$relative='%s'
-$hash='%s'
+$root=[IO.Path]::GetFullPath((Join-Path $temp ('codexrip-reverse-skill-bootstrap-'+$hash)))
+if($root -eq $temp -or -not $root.StartsWith($temp,[StringComparison]::OrdinalIgnoreCase)){throw 'bootstrap directory rejected'}
+$null=New-Item -ItemType Directory -Path $root -Force
+$rootItem=Get-Item -LiteralPath $root -Force
+if(-not $rootItem.PSIsContainer -or ($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'bootstrap directory rejected'}
+$path=Join-Path $root 'bootstrap-reverse-skill.ps1'
+$download=Join-Path $root ('.download-'+[guid]::NewGuid().ToString('N'))
+try{
+  $response=Invoke-WebRequest -Uri $url -MaximumRedirection 0 -TimeoutSec 30 -OutFile $download -PassThru -UseBasicParsing
+  $final=$response.BaseResponse.RequestMessage.RequestUri
+  if($final.Scheme -cne 'https' -or $final.Host -cne 'codexrip.vip' -or -not $final.IsDefaultPort -or $final.UserInfo -or $final.Query -or $final.Fragment){throw 'bootstrap final URL rejected'}
+  $item=Get-Item -LiteralPath $download -Force
+  if($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $item.Length -le 0 -or $item.Length -gt 1MB){throw 'bootstrap download rejected'}
+  if((Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hash){throw 'bootstrap hash mismatch'}
+  Move-Item -LiteralPath $download -Destination $path -Force
+}finally{
+  Remove-Item -LiteralPath $download -Force -ErrorAction SilentlyContinue
+}
+$path`, RemoteSkillPowerShellBootstrapURL, RemoteSkillPowerShellBootstrapSHA256)
+	execute := fmt.Sprintf(`$hash='%s'
 $descriptor='%s'
-$prefix='codexrip-reverse-skill-bootstrap-'
 $temp=[IO.Path]::GetFullPath([IO.Path]::GetTempPath())
-$pointer=Join-Path $temp 'codexrip-reverse-skill-bootstrap-current.txt'
-if(-not (Test-Path -LiteralPath $pointer -PathType Leaf)){throw 'verified checkout pointer missing'}
-$root=[IO.Path]::GetFullPath((Get-Content -LiteralPath $pointer -Raw).Trim())
-if($root -eq $temp -or -not $root.StartsWith($temp,[StringComparison]::OrdinalIgnoreCase) -or -not [IO.Path]::GetFileName($root).StartsWith($prefix,[StringComparison]::Ordinal)){throw 'temporary checkout path rejected'}
-$path=[IO.Path]::GetFullPath((Join-Path $root $relative))
-$expected=[IO.Path]::GetFullPath((Join-Path $root $relative))
-if($path -cne $expected -or -not (Test-Path -LiteralPath $path -PathType Leaf)){throw 'bootstrap path mismatch'}
-if((git -C $root remote get-url origin).Trim() -cne $repo -or (git -C $root rev-list -n 1 "refs/tags/$ref").Trim() -cne $commit -or (git -C $root rev-parse HEAD).Trim() -cne $commit){throw 'repository verification failed'}
+$root=[IO.Path]::GetFullPath((Join-Path $temp ('codexrip-reverse-skill-bootstrap-'+$hash)))
+$path=[IO.Path]::GetFullPath((Join-Path $root 'bootstrap-reverse-skill.ps1'))
+if($root -eq $temp -or -not $root.StartsWith($temp,[StringComparison]::OrdinalIgnoreCase) -or -not (Test-Path -LiteralPath $path -PathType Leaf)){throw 'bootstrap path rejected'}
+$item=Get-Item -LiteralPath $path -Force
+if($item.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'bootstrap path rejected'}
 if((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hash){throw 'bootstrap hash mismatch'}
 $output=@(& $path -DescriptorUrl $descriptor)
 if($LASTEXITCODE -ne 0){throw 'bootstrap execution failed'}
 $result=$output[-1] | ConvertFrom-Json
 if($result.status -cne 'ready' -or $result.scripts_executed -ne $false){throw 'bootstrap result rejected'}
-$result | ConvertTo-Json -Compress -Depth 8`, RemoteSkillRepositoryURL, RemoteSkillRepositoryRef, RemoteSkillRepositoryCommit, RemoteSkillPowerShellBootstrapPath, RemoteSkillPowerShellBootstrapSHA256, RemoteSkillDescriptorURL)
-	return remoteSkillClientInstaller(RemoteSkillPowerShellBootstrapPath, RemoteSkillPowerShellBootstrapSHA256, acquire, execute)
+$result | ConvertTo-Json -Compress -Depth 8`, RemoteSkillPowerShellBootstrapSHA256, RemoteSkillDescriptorURL)
+	return remoteSkillClientInstaller(RemoteSkillPowerShellBootstrapURL, RemoteSkillPowerShellBootstrapSHA256, acquire, execute)
 }
 
 func remoteSkillPythonInstaller() RemoteSkillClientInstaller {
-	acquire := fmt.Sprintf(`repo='%s'
-ref='%s'
-commit='%s'
-relative='%s'
+	acquire := fmt.Sprintf(`url='%s'
 hash='%s'
 temp="${TMPDIR:-/tmp}"
-root="$(mktemp -d "$temp/codexrip-reverse-skill-bootstrap-XXXXXXXX")" || exit 1
-git clone --filter=blob:none --no-checkout --depth 1 --branch "$ref" "$repo" "$root" || exit 1
-test "$(git -C "$root" remote get-url origin)" = "$repo" || exit 1
-test "$(git -C "$root" rev-list -n 1 "refs/tags/$ref")" = "$commit" || exit 1
-git -C "$root" sparse-checkout init --no-cone || exit 1
-git -C "$root" sparse-checkout set "$relative" || exit 1
-git -C "$root" checkout --detach "$commit" || exit 1
-test "$(git -C "$root" rev-parse HEAD)" = "$commit" || exit 1
-path="$root/$relative"
-test -f "$path" || exit 1
-python3 -c 'import hashlib,sys; assert hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest()==sys.argv[2]' "$path" "$hash" || exit 1
-printf '%%s' "$root" > "$temp/codexrip-reverse-skill-bootstrap-current.txt"
-printf '%%s\n' "$path"`, RemoteSkillRepositoryURL, RemoteSkillRepositoryRef, RemoteSkillRepositoryCommit, RemoteSkillPythonBootstrapPath, RemoteSkillPythonBootstrapSHA256)
-	execute := fmt.Sprintf(`repo='%s'
-ref='%s'
-commit='%s'
-relative='%s'
-hash='%s'
+uid="$(id -u)"
+root="$temp/codexrip-reverse-skill-bootstrap-$uid-$hash"
+path="$root/bootstrap-reverse-skill.py"
+python3 - "$url" "$hash" "$temp" "$root" "$path" <<'PY'
+import hashlib, os, pathlib, stat, sys, tempfile, urllib.error, urllib.parse, urllib.request
+url, expected, temp_root, root, target = sys.argv[1:]
+parsed = urllib.parse.urlparse(url)
+if parsed.scheme != "https" or parsed.hostname != "codexrip.vip" or parsed.port not in (None, 443) or parsed.username or parsed.password or parsed.query or parsed.fragment:
+    raise SystemExit("bootstrap URL rejected")
+temp_root = os.path.realpath(temp_root)
+root = os.path.abspath(root)
+target = os.path.abspath(target)
+if os.path.commonpath((temp_root, root)) != temp_root or os.path.dirname(target) != root:
+    raise SystemExit("bootstrap directory rejected")
+try:
+    os.mkdir(root, 0o700)
+except FileExistsError:
+    pass
+root_info = os.stat(root, follow_symlinks=False)
+if not stat.S_ISDIR(root_info.st_mode) or root_info.st_uid != os.geteuid() or stat.S_IMODE(root_info.st_mode) != 0o700:
+    raise SystemExit("bootstrap directory rejected")
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+request = urllib.request.Request(url, headers={"User-Agent": "CodexRip-Bootstrap-Acquirer/1"})
+try:
+    with urllib.request.build_opener(NoRedirect).open(request, timeout=30) as response:
+        final = urllib.parse.urlparse(response.geturl())
+        if final.scheme != "https" or final.hostname != "codexrip.vip" or final.port not in (None, 443):
+            raise SystemExit("bootstrap final URL rejected")
+        declared = response.headers.get("Content-Length")
+        if declared and int(declared) > 1048576:
+            raise SystemExit("bootstrap download rejected")
+        raw = response.read(1048577)
+except urllib.error.HTTPError as exc:
+    raise SystemExit("bootstrap download rejected") from exc
+if not raw or len(raw) > 1048576 or hashlib.sha256(raw).hexdigest() != expected:
+    raise SystemExit("bootstrap hash mismatch")
+fd, staging = tempfile.mkstemp(prefix=".download-", dir=root)
+try:
+    with os.fdopen(fd, "wb") as handle:
+        os.fchmod(handle.fileno(), 0o600)
+        handle.write(raw)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(staging, target)
+    target_info = os.stat(target, follow_symlinks=False)
+    if not stat.S_ISREG(target_info.st_mode) or target_info.st_uid != os.geteuid() or stat.S_IMODE(target_info.st_mode) != 0o600:
+        os.unlink(target)
+        raise SystemExit("bootstrap target rejected")
+finally:
+    if os.path.exists(staging):
+        os.unlink(staging)
+print(pathlib.Path(target).resolve())
+PY`, RemoteSkillPythonBootstrapURL, RemoteSkillPythonBootstrapSHA256)
+	execute := fmt.Sprintf(`hash='%s'
 descriptor='%s'
-temp="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "${TMPDIR:-/tmp}")" || exit 1
-root="$(cat "$temp/codexrip-reverse-skill-bootstrap-current.txt")" || exit 1
-root="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$root")" || exit 1
-case "$root" in "$temp"/codexrip-reverse-skill-bootstrap-*) ;; *) exit 1 ;; esac
-path="$root/$relative"
-test -f "$path" || exit 1
-test "$(git -C "$root" remote get-url origin)" = "$repo" || exit 1
-test "$(git -C "$root" rev-list -n 1 "refs/tags/$ref")" = "$commit" || exit 1
-test "$(git -C "$root" rev-parse HEAD)" = "$commit" || exit 1
-python3 -c 'import hashlib,sys; assert hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest()==sys.argv[2]' "$path" "$hash" || exit 1
-result="$(python3 "$path" --descriptor-url "$descriptor")" || exit 1
-printf '%%s\n' "$result" | python3 -c 'import json,sys; value=json.load(sys.stdin); assert value.get("status")=="ready" and value.get("scripts_executed") is False; print(json.dumps(value,separators=(",",":"),ensure_ascii=False))'`, RemoteSkillRepositoryURL, RemoteSkillRepositoryRef, RemoteSkillRepositoryCommit, RemoteSkillPythonBootstrapPath, RemoteSkillPythonBootstrapSHA256, RemoteSkillDescriptorURL)
-	return remoteSkillClientInstaller(RemoteSkillPythonBootstrapPath, RemoteSkillPythonBootstrapSHA256, acquire, execute)
+temp="${TMPDIR:-/tmp}"
+uid="$(id -u)"
+root="$temp/codexrip-reverse-skill-bootstrap-$uid-$hash"
+path="$root/bootstrap-reverse-skill.py"
+result="$(python3 - "$path" "$hash" "$descriptor" "$temp" "$root" <<'PY'
+import hashlib, os, stat, sys
+target, expected, descriptor, temp_root, root = sys.argv[1:]
+temp_root = os.path.realpath(temp_root)
+root = os.path.abspath(root)
+target = os.path.abspath(target)
+if os.path.commonpath((temp_root, root)) != temp_root or os.path.dirname(target) != root:
+    raise SystemExit("bootstrap directory rejected")
+root_info = os.stat(root, follow_symlinks=False)
+if not stat.S_ISDIR(root_info.st_mode) or root_info.st_uid != os.geteuid() or stat.S_IMODE(root_info.st_mode) != 0o700:
+    raise SystemExit("bootstrap directory rejected")
+fd = os.open(target, os.O_RDONLY | os.O_NOFOLLOW)
+try:
+    target_info = os.fstat(fd)
+    if (
+        not stat.S_ISREG(target_info.st_mode)
+        or target_info.st_uid != os.geteuid()
+        or stat.S_IMODE(target_info.st_mode) != 0o600
+        or target_info.st_nlink != 1
+        or target_info.st_size <= 0
+        or target_info.st_size > 1048576
+    ):
+        raise SystemExit("bootstrap target rejected")
+    with os.fdopen(os.dup(fd), "rb") as handle:
+        raw = handle.read(1048577)
+    if len(raw) != target_info.st_size or hashlib.sha256(raw).hexdigest() != expected:
+        raise SystemExit("bootstrap hash mismatch")
+    sys.argv = [target, "--descriptor-url", descriptor]
+    namespace = {
+        "__name__": "__main__",
+        "__file__": target,
+        "__package__": None,
+        "__builtins__": __builtins__,
+    }
+    exec(compile(raw, target, "exec"), namespace, namespace)
+finally:
+    os.close(fd)
+PY
+)" || exit 1
+python3 -c 'import json,sys; value=json.loads(sys.argv[1]); assert value.get("status")=="ready" and value.get("scripts_executed") is False; print(json.dumps(value,separators=(",",":"),ensure_ascii=False))' "$result"`, RemoteSkillPythonBootstrapSHA256, RemoteSkillDescriptorURL)
+	return remoteSkillClientInstaller(RemoteSkillPythonBootstrapURL, RemoteSkillPythonBootstrapSHA256, acquire, execute)
 }
 
-func remoteSkillClientInstaller(path, hash, acquire, execute string) RemoteSkillClientInstaller {
+func remoteSkillClientInstaller(bootstrapURL, hash, acquire, execute string) RemoteSkillClientInstaller {
 	return RemoteSkillClientInstaller{
-		Strategy:         RemoteSkillInstallStrategy,
-		RepositoryURL:    RemoteSkillRepositoryURL,
-		RepositoryRef:    RemoteSkillRepositoryRef,
-		RepositoryCommit: RemoteSkillRepositoryCommit,
-		BootstrapPath:    path,
-		BootstrapSHA256:  hash,
-		AcquireCommand:   acquire,
-		ExecuteCommand:   execute,
+		Strategy:        RemoteSkillInstallStrategy,
+		BootstrapURL:    bootstrapURL,
+		BootstrapSHA256: hash,
+		AcquireCommand:  acquire,
+		ExecuteCommand:  execute,
 	}
 }
 

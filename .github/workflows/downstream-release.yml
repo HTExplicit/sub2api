@@ -83,13 +83,13 @@ jobs:
       UPSTREAM_VERSION: ${{ needs.verify.outputs.upstream_version }}
       BUILD_DATE: ${{ needs.verify.outputs.build_date }}
       GH_TOKEN: ${{ github.token }}
-      REGISTRY_MANIFEST_SHA: 33f081a5bd9f2499dc818f53e3ed069dd0d30ebefe6f7cc47022840553aecb27
-      REGISTRY_ARCHIVE_SHA: 5079f7b7b863765f07158edc8ef0d42726fb5e8470eb78cf81fd5b7f6b8d8d0c
-      REGISTRY_ARCHIVE: codexrip-reverse-skill-33f081a5bd9f2499dc818f53e3ed069dd0d30ebefe6f7cc47022840553aecb27.zip
-      REGISTRY_CHECKSUM: codexrip-reverse-skill-33f081a5bd9f2499dc818f53e3ed069dd0d30ebefe6f7cc47022840553aecb27.zip.sha256
-      PROMPT_SHA: 0615d24958a1da11edcf9538aaff989e46fcd296ea86a6c1b1af2b3efa48487f
-      POWERSHELL_BOOTSTRAP_SHA: 8595884159988ff653c1d66be66d25acc62a359009c85a7924a23dbaf45d4246
-      PYTHON_BOOTSTRAP_SHA: 2db6ff2d1a5182b73920aabe701d914cca83643aeab89443c0561b1a67430b42
+      REGISTRY_MANIFEST_SHA: 8c72ca9a3fbccb1af90152ab4ed00f3369bd4cc9c84c279a3f3e4208492e69bd
+      REGISTRY_ARCHIVE_SHA: 30d2b2d152a5456b7abcded6c2c823ec21b08113d5c15f4913802afb6742d20b
+      REGISTRY_ARCHIVE: codexrip-reverse-skill-8c72ca9a3fbccb1af90152ab4ed00f3369bd4cc9c84c279a3f3e4208492e69bd.zip
+      REGISTRY_CHECKSUM: codexrip-reverse-skill-8c72ca9a3fbccb1af90152ab4ed00f3369bd4cc9c84c279a3f3e4208492e69bd.zip.sha256
+      PROMPT_SHA: 5813c55c0763e1472becec874232f3daafb28a69107b94ca8284daf44fceb2a0
+      POWERSHELL_BOOTSTRAP_SHA: 2199e8c4e8a09278c9b79e17b05e5457308db0a7d593e0f933ad6bd0712845f9
+      PYTHON_BOOTSTRAP_SHA: 353878272c8972c00817cc7171d7a4a087b4203fa2758b7ba1d040ededde7dc9
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3

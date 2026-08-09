@@ -6,7 +6,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
+import urllib.parse
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,39 +19,57 @@ from verify_business_system_prompt_bundle import VerificationError, verify_bundl
 
 BUNDLE_ID = "codexrip-reverse-skill"
 MANIFEST_NAME = "bundle-manifest.json"
-MANIFEST_SHA256 = "33f081a5bd9f2499dc818f53e3ed069dd0d30ebefe6f7cc47022840553aecb27"
-ARCHIVE_SHA256 = "5079f7b7b863765f07158edc8ef0d42726fb5e8470eb78cf81fd5b7f6b8d8d0c"
-OVERLAY_SHA256 = "39f5188da11f5798bf0b6431545a4153c6e42c12bf81840e71eb5ddd30c6cf35"
-SOURCE_COMMIT = "d8bf34540cbc1aa34052e1b142576fc36a1f1437"
-PROMPT_SHA256 = "0615d24958a1da11edcf9538aaff989e46fcd296ea86a6c1b1af2b3efa48487f"
-PROMPT_BYTES = 6784
-FILE_COUNT = 537
-TOTAL_BYTES = 7_940_352
+MANIFEST_SHA256 = "8c72ca9a3fbccb1af90152ab4ed00f3369bd4cc9c84c279a3f3e4208492e69bd"
+ARCHIVE_SHA256 = "30d2b2d152a5456b7abcded6c2c823ec21b08113d5c15f4913802afb6742d20b"
+OVERLAY_SHA256 = "c71df9943ba6f5d5d9409947267cbe7c19761d2382fce1be133f2223ba591898"
+SOURCE_COMMIT = "a5d8c9233b98c52df387d5b1a0ef669fcaa51374"
+PROMPT_SHA256 = "5813c55c0763e1472becec874232f3daafb28a69107b94ca8284daf44fceb2a0"
+PROMPT_BYTES = 9034
+FILE_COUNT = 545
+TOTAL_BYTES = 7_925_276
 ARCHIVE_NAME = f"{BUNDLE_ID}-{MANIFEST_SHA256}.zip"
 CHECKSUM_NAME = f"{ARCHIVE_NAME}.sha256"
 DESCRIPTOR_NAME = "seed-descriptor.json"
 BASE_URL = f"https://codexrip.vip/skills/reverse-skill/versions/{MANIFEST_SHA256}"
 DESCRIPTOR_URL = "https://codexrip.vip/skills/reverse-skill/current.json"
-BOOTSTRAP_REPOSITORY_URL = "https://github.com/HTExplicit/sub2api.git"
-BOOTSTRAP_REPOSITORY_REF = "v0.1.171-codexrip.7"
-BOOTSTRAP_REPOSITORY_COMMIT = "176dad47dd049b34d45a032d889a0dc11405a39e"
 BOOTSTRAPS = {
-    "bootstrap-reverse-skill.ps1": "8595884159988ff653c1d66be66d25acc62a359009c85a7924a23dbaf45d4246",
-    "bootstrap-reverse-skill.py": "2db6ff2d1a5182b73920aabe701d914cca83643aeab89443c0561b1a67430b42",
+    "bootstrap-reverse-skill.ps1": "2199e8c4e8a09278c9b79e17b05e5457308db0a7d593e0f933ad6bd0712845f9",
+    "bootstrap-reverse-skill.py": "353878272c8972c00817cc7171d7a4a087b4203fa2758b7ba1d040ededde7dc9",
+}
+DESCRIPTOR_BOOTSTRAPS = {
+    "powershell": {
+        "url": f"https://codexrip.vip/skills/bootstrap/{BOOTSTRAPS['bootstrap-reverse-skill.ps1']}/bootstrap-reverse-skill.ps1",
+        "sha256": BOOTSTRAPS["bootstrap-reverse-skill.ps1"],
+    },
+    "python": {
+        "url": f"https://codexrip.vip/skills/bootstrap/{BOOTSTRAPS['bootstrap-reverse-skill.py']}/bootstrap-reverse-skill.py",
+        "sha256": BOOTSTRAPS["bootstrap-reverse-skill.py"],
+    },
 }
 CLIENT_FILES = {
     "codexrip-client/SKILL.md",
     "codexrip-client/agents/openai.yaml",
 }
+CORE_FILES = ["RULES.md", "README_AI.md", "skills/SKILL.md"]
+CORE_SHA256 = {
+    "RULES.md": "2d86efa38f8a8b9ef23fa71edcae35cf111a8fef9027a8893ff66e7e4086afa0",
+    "README_AI.md": "d79c9b34beba0160c1a290763ce40ddf9f4027d2086f575a1b396188ddef87c9",
+    "skills/SKILL.md": "2c7994642ae2cd97a15fffc0d6e119e07e83582ca70cc9a7a5d212aa9a947a56",
+}
 FORBIDDEN_RUNTIME_BYTES = (
     b"moxinggang.com",
     b"C:\\Users\\Administrator\\AppData\\Local",
     "模型港".encode("utf-8"),
-    "宝宝".encode("utf-8"),
     b"README_RECONSTRUCTED.md",
     b"SOURCE-MANIFEST.json",
     b"inline-system-instructions.txt",
+    b"codexrip-overlay/security-research",
+    b"moxinggang-overlay/security-research",
+    b"REMOTE_ROOT",
+    b"github.com/HTExplicit/sub2api",
+    b"verified_git_sparse_checkout",
 )
+HTTP_URL_PATTERN = re.compile(rb"https?://[^\s<>\"'`]+", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -71,6 +91,55 @@ def require_runtime_text_clean(label: str, raw: bytes) -> None:
     for forbidden in FORBIDDEN_RUNTIME_BYTES:
         if forbidden.lower() in lowered:
             raise VerificationError(f"{label} contains a forbidden legacy runtime reference")
+
+
+def document_urls(raw: bytes) -> list[str]:
+    return [match.rstrip(b".,;:!?)]}").decode("ascii") for match in HTTP_URL_PATTERN.findall(raw)]
+
+
+def contains_remote_skill_acquisition(raw: bytes) -> bool:
+    text = raw.decode("utf-8").casefold().replace("\r\n", "\n")
+    for line in text.split("\n"):
+        if "git pull" in line:
+            return True
+        if "git clone" in line and "github.com/zhaoxuya520/reverse-skill" in line:
+            return True
+        package_document = any(
+            marker in line
+            for marker in ("skill.md", "rules.md", "readme_ai.md", "reverse-skill.git", "reverse-skill/zip")
+        )
+        acquisition = any(
+            marker in line
+            for marker in ("git clone", "curl ", "wget ", "invoke-webrequest", "download ", "fetch ", "load ")
+        )
+        remote = any(marker in line for marker in ("http://", "https://", "github", "remote"))
+        if package_document and acquisition and remote:
+            return True
+    return False
+
+
+def is_legacy_overlay_path(value: str) -> bool:
+    value = value.casefold()
+    return any(
+        value == prefix or value.startswith(prefix + "/")
+        for prefix in ("codexrip-overlay/security-research", "moxinggang-overlay/security-research")
+    )
+
+
+def require_codexrip_url(value: object, label: str) -> None:
+    if not isinstance(value, str):
+        raise VerificationError(f"{label} is not a URL")
+    parsed = urllib.parse.urlsplit(value)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "codexrip.vip"
+        or parsed.port not in (None, 443)
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise VerificationError(f"{label} is outside codexrip.vip")
 
 
 def load_json_object(path: Path, label: str) -> tuple[bytes, dict]:
@@ -101,10 +170,16 @@ def verify_descriptor(path: Path, manifest: dict) -> dict:
         "file_count": FILE_COUNT,
         "total_bytes": TOTAL_BYTES,
         "bootstrap_policy": "download_verify_native_skill_atomic_replace",
+        "bootstraps": DESCRIPTOR_BOOTSTRAPS,
     }
     for key, expected in exact.items():
         if descriptor.get(key) != expected:
             raise VerificationError(f"descriptor {key} does not match the pinned release")
+    for key in ("manifest_url", "archive_url", "files_base_url"):
+        require_codexrip_url(descriptor.get(key), f"descriptor {key}")
+    for platform in DESCRIPTOR_BOOTSTRAPS:
+        bootstrap = descriptor.get("bootstraps", {}).get(platform, {})
+        require_codexrip_url(bootstrap.get("url"), f"descriptor bootstrap {platform}")
     if descriptor.get("core_files") != manifest.get("core_files"):
         raise VerificationError("descriptor core_files do not match the manifest")
     published_at = descriptor.get("published_at")
@@ -125,16 +200,22 @@ def verify_manifest_contract(manifest: dict) -> set[str]:
     by_path = {entry.get("path"): entry for entry in entries if isinstance(entry, dict)}
     if not CLIENT_FILES.issubset(declared):
         raise VerificationError("manifest does not include the native Codex Skill entry files")
+    if any(isinstance(name, str) and is_legacy_overlay_path(name) for name in declared):
+        raise VerificationError("manifest still contains the legacy security-research overlay")
     gradle_wrapper = by_path.get("burp-mcp-full/gradlew")
     if not isinstance(gradle_wrapper, dict) or gradle_wrapper.get("kind") != "script":
         raise VerificationError("shebang executables must be classified as scripts")
     total = sum(entry.get("byte_length", -1) for entry in entries if isinstance(entry, dict))
     if total != TOTAL_BYTES:
         raise VerificationError("manifest total byte length does not match the pinned release")
-    runtime_documents: set[str] = set()
+    runtime_documents = {
+        entry["path"]
+        for entry in entries
+        if isinstance(entry, dict) and entry.get("kind", "text") in {"text", "script"}
+    }
     core = manifest.get("core_files")
-    if not isinstance(core, list) or not core:
-        raise VerificationError("manifest core_files are missing")
+    if core != CORE_FILES:
+        raise VerificationError("manifest core_files do not use the pinned upstream-native paths")
     runtime_documents.update(core)
     domains = manifest.get("domains")
     if not isinstance(domains, list) or not domains:
@@ -157,18 +238,20 @@ def verify_manifest_contract(manifest: dict) -> set[str]:
     for route_id, required_keywords in {
         "api-security": {"接口安全", "鉴权"},
         "js-reverse": {"js逆向", "前端逆向"},
+        "ida-reverse": {"ida pro", "idapython"},
+        "dotnet-reverse": {".net", "dnspy"},
+        "ghidra-reverse": {"ghidra", "decompiler"},
+        "firmware-pentest": {"firmware", "binwalk"},
+        "identity-federation": {"saml", "oidc", "sso"},
     }.items():
         route = by_route.get(route_id)
-        keywords = set(route.get("keywords", [])) if isinstance(route, dict) else set()
+        keywords = {value.casefold() for value in route.get("keywords", [])} if isinstance(route, dict) else set()
         if not required_keywords.issubset(keywords):
             raise VerificationError(f"manifest route {route_id} is missing pinned bilingual keywords")
     return runtime_documents
 
 
 def verify_bootstraps(root: Path, prompt: bytes) -> int:
-    for value in (BOOTSTRAP_REPOSITORY_URL, BOOTSTRAP_REPOSITORY_REF, BOOTSTRAP_REPOSITORY_COMMIT):
-        if value.encode("ascii") in prompt:
-            raise VerificationError("fixed prompt must not expose bootstrap repository identity")
     found: dict[str, str] = {}
     try:
         directories = [item for item in root.iterdir() if item.is_dir() and any(item.iterdir())]
@@ -206,6 +289,9 @@ def verify_registry(
     if len(prompt) != PROMPT_BYTES or sha256(prompt) != PROMPT_SHA256 or prompt.endswith((b"\r", b"\n")):
         raise VerificationError("fixed system prompt bytes do not match the pinned release")
     require_runtime_text_clean("fixed system prompt", prompt)
+    prompt_text = prompt.decode("utf-8")
+    if prompt_text.count("宝宝") != 1 or 'The only allowed user address is exactly "老板".' not in prompt_text:
+        raise VerificationError("fixed system prompt does not preserve the original address restriction")
     if DESCRIPTOR_URL.encode("ascii") in prompt:
         raise VerificationError("fixed system prompt must not reference the public descriptor")
     for forbidden in (b"DESCRIPTOR_URL", b"REPOSITORY_URL", b"REPOSITORY_COMMIT", b"POWERSHELL_BOOTSTRAP", b"PYTHON_BOOTSTRAP"):
@@ -235,13 +321,23 @@ def verify_registry(
         if any(Path(entry.filename).name in forbidden_names for entry in archive.infolist()):
             raise VerificationError("release ZIP contains a removed provenance or captured-prompt file")
         for name in sorted(runtime_documents):
-            require_runtime_text_clean(f"runtime document {name}", archive.read(name))
+            raw = archive.read(name)
+            require_runtime_text_clean(f"runtime document {name}", raw)
+            if contains_remote_skill_acquisition(raw):
+                raise VerificationError(f"runtime document contains remote Skill acquisition instructions: {name}")
+            if name in CORE_SHA256 and sha256(raw) != CORE_SHA256[name]:
+                raise VerificationError(f"runtime core file does not match pinned upstream bytes: {name}")
         client_skill = archive.read("codexrip-client/SKILL.md")
         client_openai = archive.read("codexrip-client/agents/openai.yaml")
         require_runtime_text_clean("native Skill entry", client_skill)
         require_runtime_text_clean("native Skill metadata", client_openai)
-        if not client_skill.startswith(b"---\nname: codexrip-reverse-skill\n") or b"`bundle/`" not in client_skill:
+        if not client_skill.startswith(b"---\nname: codexrip-reverse-skill\n") or any(
+            value not in client_skill
+            for value in (b"bundle/RULES.md", b"bundle/README_AI.md", b"bundle/skills/SKILL.md")
+        ):
             raise VerificationError("native Skill entry does not route into the verified bundle")
+        if document_urls(client_skill) != ["https://codexrip.vip"]:
+            raise VerificationError("native Skill entry contains a foreign acquisition source")
         if b'display_name: "CodexRip Reverse Skill"' not in client_openai or b"$codexrip-reverse-skill" not in client_openai:
             raise VerificationError("native Skill OpenAI metadata does not match the installed Skill")
 

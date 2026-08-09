@@ -36,7 +36,7 @@ export default {
     },
     skillRegistry: {
       title: 'Skill Registry',
-      description: 'Syncs the fixed upstream main branch and allowlisted overlay. Sync creates a candidate; publish changes current.',
+      description: 'Syncs the reviewed upstream commit and native route files. Sync creates a candidate; publish changes current.',
       active: 'Active version',
       noActive: 'No active version',
       sync: 'Sync upstream skill',
@@ -205,10 +205,10 @@ export default {
       revision: 'Revision',
       skillUnavailable: 'Skill details are unavailable.',
       installPlatform: 'Install platform',
-      copyAcquire: 'Copy acquire step',
-      copyExecute: 'Copy execute step',
-      acquireCopied: 'Acquire step copied.',
-      executeCopied: 'Execute step copied.'
+      copyAcquire: 'Copy get command',
+      copyExecute: 'Copy execute command',
+      acquireCopied: 'Get command copied.',
+      executeCopied: 'Execute command copied.'
     },
     source: {
       sync: 'Check upstream',

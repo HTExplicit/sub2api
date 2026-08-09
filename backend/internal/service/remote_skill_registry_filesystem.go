@@ -27,21 +27,32 @@ const (
 )
 
 type RemoteSkillPublicDescriptor struct {
-	SchemaVersion   int       `json:"schema_version"`
-	BundleID        string    `json:"bundle_id"`
-	Revision        int64     `json:"revision"`
-	SourceCommit    string    `json:"source_commit"`
-	OverlaySHA256   string    `json:"overlay_sha256"`
-	ManifestSHA256  string    `json:"manifest_sha256"`
-	ArchiveSHA256   string    `json:"archive_sha256"`
-	ManifestURL     string    `json:"manifest_url"`
-	ArchiveURL      string    `json:"archive_url"`
-	FilesBaseURL    string    `json:"files_base_url"`
-	CoreFiles       []string  `json:"core_files"`
-	FileCount       int       `json:"file_count"`
-	TotalBytes      int64     `json:"total_bytes"`
-	PublishedAt     time.Time `json:"published_at"`
-	BootstrapPolicy string    `json:"bootstrap_policy"`
+	SchemaVersion   int                         `json:"schema_version"`
+	BundleID        string                      `json:"bundle_id"`
+	Revision        int64                       `json:"revision"`
+	SourceCommit    string                      `json:"source_commit"`
+	OverlaySHA256   string                      `json:"overlay_sha256"`
+	ManifestSHA256  string                      `json:"manifest_sha256"`
+	ArchiveSHA256   string                      `json:"archive_sha256"`
+	ManifestURL     string                      `json:"manifest_url"`
+	ArchiveURL      string                      `json:"archive_url"`
+	FilesBaseURL    string                      `json:"files_base_url"`
+	CoreFiles       []string                    `json:"core_files"`
+	FileCount       int                         `json:"file_count"`
+	TotalBytes      int64                       `json:"total_bytes"`
+	PublishedAt     time.Time                   `json:"published_at"`
+	BootstrapPolicy string                      `json:"bootstrap_policy"`
+	Bootstraps      RemoteSkillPublicBootstraps `json:"bootstraps"`
+}
+
+type RemoteSkillPublicBootstrap struct {
+	URL    string `json:"url"`
+	SHA256 string `json:"sha256"`
+}
+
+type RemoteSkillPublicBootstraps struct {
+	PowerShell RemoteSkillPublicBootstrap `json:"powershell"`
+	Python     RemoteSkillPublicBootstrap `json:"python"`
 }
 
 type RemoteSkillRegistryFilesystem struct {
@@ -180,6 +191,9 @@ func validateRemoteSkillSeedPackageRoot(root string) (RemoteSkillBundleVersion, 
 	if err := validateRemoteSkillVersionMetadata(version); err != nil {
 		return RemoteSkillBundleVersion{}, err
 	}
+	if err := validateRemoteSkillPublicBootstraps(descriptor.Bootstraps); err != nil {
+		return RemoteSkillBundleVersion{}, err
+	}
 	manifestRaw, err := readRemoteSkillBoundedFile(filepath.Join(root, BusinessSystemPromptBundleManifestName), businessSystemPromptBundleMaxManifestBytes)
 	if err != nil || hashBusinessSystemPromptBundleBytes(manifestRaw) != version.ManifestSHA256 {
 		return RemoteSkillBundleVersion{}, fmt.Errorf("%w: seed manifest mismatch", ErrBusinessSystemPromptBundleInvalid)
@@ -246,20 +260,27 @@ func (f *RemoteSkillRegistryFilesystem) installReleaseBootstraps(ctx context.Con
 	if err != nil {
 		return err
 	}
-	installed := 0
+	expected := map[string]string{
+		RemoteSkillPowerShellBootstrapSHA256: "bootstrap-reverse-skill.ps1",
+		RemoteSkillPythonBootstrapSHA256:     "bootstrap-reverse-skill.py",
+	}
+	if len(entries) != len(expected) {
+		return fmt.Errorf("%w: release bootstrap set mismatch", ErrBusinessSystemPromptBundleInvalid)
+	}
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			return fmt.Errorf("%w: bootstrap root contains a file", ErrBusinessSystemPromptBundleInvalid)
+		}
+		expectedName, ok := expected[entry.Name()]
+		if !ok {
+			return fmt.Errorf("%w: release bootstrap digest rejected", ErrBusinessSystemPromptBundleInvalid)
 		}
 		directory := filepath.Join(sourceRoot, entry.Name())
 		files, err := os.ReadDir(directory)
 		if err != nil {
 			return err
 		}
-		if len(files) == 0 {
-			continue
-		}
-		if len(files) != 1 || files[0].IsDir() || (files[0].Name() != "bootstrap-reverse-skill.ps1" && files[0].Name() != "bootstrap-reverse-skill.py") {
+		if len(files) != 1 || files[0].IsDir() || files[0].Name() != expectedName {
 			return fmt.Errorf("%w: bootstrap directory shape invalid", ErrBusinessSystemPromptBundleInvalid)
 		}
 		raw, err := readRemoteSkillBoundedFile(filepath.Join(directory, files[0].Name()), 1<<20)
@@ -273,10 +294,6 @@ func (f *RemoteSkillRegistryFilesystem) installReleaseBootstraps(ctx context.Con
 		if err := installRemoteSkillBootstrap(directory, destination, entry.Name(), files[0].Name()); err != nil {
 			return err
 		}
-		installed++
-	}
-	if installed != 2 {
-		return fmt.Errorf("%w: release must contain exactly two bootstraps", ErrBusinessSystemPromptBundleInvalid)
 	}
 	return nil
 }
@@ -392,6 +409,7 @@ func (f *RemoteSkillRegistryFilesystem) Activate(ctx context.Context, snapshot R
 		FilesBaseURL: baseURL + "/", CoreFiles: append([]string(nil), manifest.CoreFiles...),
 		FileCount: snapshot.Active.FileCount, TotalBytes: snapshot.Active.TotalBytes,
 		PublishedAt: publishedAt, BootstrapPolicy: "download_verify_native_skill_atomic_replace",
+		Bootstraps: remoteSkillPublicBootstraps(),
 	}
 	raw, err := json.Marshal(descriptor)
 	if err != nil {
@@ -496,6 +514,9 @@ func validateRemoteSkillCandidate(candidate RemoteSkillCandidate) error {
 		return fmt.Errorf("%w: candidate file set mismatch", ErrBusinessSystemPromptBundleInvalid)
 	}
 	for _, entry := range candidate.Manifest.Files {
+		if isLegacyRemoteSkillOverlayPath(entry.Path) {
+			return fmt.Errorf("%w: legacy overlay path rejected", ErrBusinessSystemPromptBundleInvalid)
+		}
 		data, ok := candidate.Files[entry.Path]
 		if !ok || len(data) != entry.ByteLength || !equalHexDigest(entry.SHA256, data) {
 			return fmt.Errorf("%w: candidate file mismatch", ErrBusinessSystemPromptBundleInvalid)
@@ -523,6 +544,8 @@ func validateRemoteSkillVersionRoot(root string, version RemoteSkillBundleVersio
 	if len(bundle.Manifest.Files) != version.FileCount {
 		return fmt.Errorf("%w: file count mismatch", ErrBusinessSystemPromptBundleInvalid)
 	}
+	// Installed versions are immutable and may predate the native route layout.
+	// New candidates are rejected before installation by validateRemoteSkillCandidate.
 	var total int64
 	for _, entry := range bundle.Manifest.Files {
 		total += int64(entry.ByteLength)
@@ -542,6 +565,16 @@ func validateRemoteSkillVersionRoot(root string, version RemoteSkillBundleVersio
 		return fmt.Errorf("%w: archive digest mismatch", ErrBusinessSystemPromptBundleInvalid)
 	}
 	return verifyRemoteSkillArchive(archiveBytes, manifestBytes, bundle.Manifest)
+}
+
+func isLegacyRemoteSkillOverlayPath(value string) bool {
+	value = strings.ToLower(value)
+	for _, prefix := range []string{"codexrip-overlay/security-research", "moxinggang-overlay/security-research"} {
+		if value == prefix || strings.HasPrefix(value, prefix+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func writeRemoteSkillCandidate(root string, candidate RemoteSkillCandidate) error {
@@ -767,6 +800,25 @@ func remoteSkillVersionFromDescriptor(descriptor RemoteSkillPublicDescriptor) Re
 		ArchiveSHA256: strings.ToLower(descriptor.ArchiveSHA256), FileCount: descriptor.FileCount,
 		TotalBytes: descriptor.TotalBytes, PublishedAt: &descriptor.PublishedAt,
 	}
+}
+
+func remoteSkillPublicBootstraps() RemoteSkillPublicBootstraps {
+	return RemoteSkillPublicBootstraps{
+		PowerShell: RemoteSkillPublicBootstrap{URL: RemoteSkillPowerShellBootstrapURL, SHA256: RemoteSkillPowerShellBootstrapSHA256},
+		Python:     RemoteSkillPublicBootstrap{URL: RemoteSkillPythonBootstrapURL, SHA256: RemoteSkillPythonBootstrapSHA256},
+	}
+}
+
+func validateRemoteSkillPublicBootstraps(value RemoteSkillPublicBootstraps) error {
+	if value == (RemoteSkillPublicBootstraps{}) {
+		// Schema 1 descriptors published before bootstraps remain readable for rollback.
+		return nil
+	}
+	expected := remoteSkillPublicBootstraps()
+	if value != expected {
+		return fmt.Errorf("%w: bootstrap metadata is not content addressed", ErrBusinessSystemPromptBundleInvalid)
+	}
+	return nil
 }
 
 func portableRemoteSkillPathKey(value string) string {
