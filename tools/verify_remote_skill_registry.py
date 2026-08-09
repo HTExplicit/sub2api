@@ -19,14 +19,14 @@ from verify_business_system_prompt_bundle import VerificationError, verify_bundl
 
 BUNDLE_ID = "codexrip-reverse-skill"
 MANIFEST_NAME = "bundle-manifest.json"
-MANIFEST_SHA256 = "8c72ca9a3fbccb1af90152ab4ed00f3369bd4cc9c84c279a3f3e4208492e69bd"
-ARCHIVE_SHA256 = "30d2b2d152a5456b7abcded6c2c823ec21b08113d5c15f4913802afb6742d20b"
-OVERLAY_SHA256 = "c71df9943ba6f5d5d9409947267cbe7c19761d2382fce1be133f2223ba591898"
+MANIFEST_SHA256 = "832f82015ee32b2be7b6b2c6dc443bd0c274e44b9f2698e828e4b49d986efd46"
+ARCHIVE_SHA256 = "b6ce741cd17810620280225714e33ed03609f77c52caf28ac2518f9eeb9e1c3f"
+OVERLAY_SHA256 = "8b0ce0d2512a3cb87014ca3d7cd00fcaca0baa7362d427c9a2a2ee5d4d09816a"
 SOURCE_COMMIT = "a5d8c9233b98c52df387d5b1a0ef669fcaa51374"
-PROMPT_SHA256 = "5813c55c0763e1472becec874232f3daafb28a69107b94ca8284daf44fceb2a0"
-PROMPT_BYTES = 9034
+PROMPT_SHA256 = "59b81b0d72fa7f90083f9aabd0d25194e79dcad66caa4790792ae2866a7fa1bb"
+PROMPT_BYTES = 9587
 FILE_COUNT = 545
-TOTAL_BYTES = 7_925_276
+TOTAL_BYTES = 7_925_444
 ARCHIVE_NAME = f"{BUNDLE_ID}-{MANIFEST_SHA256}.zip"
 CHECKSUM_NAME = f"{ARCHIVE_NAME}.sha256"
 DESCRIPTOR_NAME = "seed-descriptor.json"
@@ -292,8 +292,8 @@ def verify_registry(
     prompt_text = prompt.decode("utf-8")
     if prompt_text.count("宝宝") != 1 or 'The only allowed user address is exactly "老板".' not in prompt_text:
         raise VerificationError("fixed system prompt does not preserve the original address restriction")
-    if DESCRIPTOR_URL.encode("ascii") in prompt:
-        raise VerificationError("fixed system prompt must not reference the public descriptor")
+    if DESCRIPTOR_URL.encode("ascii") not in prompt:
+        raise VerificationError("fixed system prompt must name the public descriptor endpoint")
     for forbidden in (b"DESCRIPTOR_URL", b"REPOSITORY_URL", b"REPOSITORY_COMMIT", b"POWERSHELL_BOOTSTRAP", b"PYTHON_BOOTSTRAP"):
         if forbidden in prompt:
             raise VerificationError("fixed system prompt exposes a supply-chain coordinate")
@@ -336,7 +336,7 @@ def verify_registry(
             for value in (b"bundle/RULES.md", b"bundle/README_AI.md", b"bundle/skills/SKILL.md")
         ):
             raise VerificationError("native Skill entry does not route into the verified bundle")
-        if document_urls(client_skill) != ["https://codexrip.vip"]:
+        if document_urls(client_skill) != ["https://codexrip.vip/skills/reverse-skill/current.json"]:
             raise VerificationError("native Skill entry contains a foreign acquisition source")
         if b'display_name: "CodexRip Reverse Skill"' not in client_openai or b"$codexrip-reverse-skill" not in client_openai:
             raise VerificationError("native Skill OpenAI metadata does not match the installed Skill")
