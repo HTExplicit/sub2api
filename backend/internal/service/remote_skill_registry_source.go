@@ -55,10 +55,10 @@ var remoteSkillOverlayPaths = []string{
 }
 
 var remoteSkillExcludedSourcePaths = map[string]struct{}{
-	"README_RECONSTRUCTED.md":                            {},
-	"SOURCE-MANIFEST.json":                               {},
-	"moxinggang-overlay/inline-system-instructions.txt":  {},
-	"codexrip-overlay/inline-system-instructions.txt":    {},
+	"README_RECONSTRUCTED.md":                           {},
+	"SOURCE-MANIFEST.json":                              {},
+	"moxinggang-overlay/inline-system-instructions.txt": {},
+	"codexrip-overlay/inline-system-instructions.txt":   {},
 }
 
 type RemoteSkillHTTPDoer interface {
