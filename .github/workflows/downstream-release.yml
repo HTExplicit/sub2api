@@ -83,11 +83,11 @@ jobs:
       UPSTREAM_VERSION: ${{ needs.verify.outputs.upstream_version }}
       BUILD_DATE: ${{ needs.verify.outputs.build_date }}
       GH_TOKEN: ${{ github.token }}
-      REGISTRY_MANIFEST_SHA: 8c72ca9a3fbccb1af90152ab4ed00f3369bd4cc9c84c279a3f3e4208492e69bd
-      REGISTRY_ARCHIVE_SHA: 30d2b2d152a5456b7abcded6c2c823ec21b08113d5c15f4913802afb6742d20b
-      REGISTRY_ARCHIVE: codexrip-reverse-skill-8c72ca9a3fbccb1af90152ab4ed00f3369bd4cc9c84c279a3f3e4208492e69bd.zip
-      REGISTRY_CHECKSUM: codexrip-reverse-skill-8c72ca9a3fbccb1af90152ab4ed00f3369bd4cc9c84c279a3f3e4208492e69bd.zip.sha256
-      PROMPT_SHA: 5813c55c0763e1472becec874232f3daafb28a69107b94ca8284daf44fceb2a0
+      REGISTRY_MANIFEST_SHA: 832f82015ee32b2be7b6b2c6dc443bd0c274e44b9f2698e828e4b49d986efd46
+      REGISTRY_ARCHIVE_SHA: b6ce741cd17810620280225714e33ed03609f77c52caf28ac2518f9eeb9e1c3f
+      REGISTRY_ARCHIVE: codexrip-reverse-skill-832f82015ee32b2be7b6b2c6dc443bd0c274e44b9f2698e828e4b49d986efd46.zip
+      REGISTRY_CHECKSUM: codexrip-reverse-skill-832f82015ee32b2be7b6b2c6dc443bd0c274e44b9f2698e828e4b49d986efd46.zip.sha256
+      PROMPT_SHA: 59b81b0d72fa7f90083f9aabd0d25194e79dcad66caa4790792ae2866a7fa1bb
       POWERSHELL_BOOTSTRAP_SHA: 2199e8c4e8a09278c9b79e17b05e5457308db0a7d593e0f933ad6bd0712845f9
       PYTHON_BOOTSTRAP_SHA: 353878272c8972c00817cc7171d7a4a087b4203fa2758b7ba1d040ededde7dc9
     steps:
