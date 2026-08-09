@@ -193,6 +193,47 @@ func TestEnsureBusinessSystemPromptSeedActivatesExistingCandidateFromKnownActive
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestEnsureBusinessSystemPromptSeedActivatesExistingCandidateFromCodexripRelease5(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	body := "complete codexrip prompt candidate"
+	digest := sha256.Sum256([]byte(body))
+	bodySHA := hex.EncodeToString(digest[:])
+	templateID, oldVersionID, candidateVersionID := int64(3), int64(16), int64(17)
+	oldSHA := "5813c55c0763e1472becec874232f3daafb28a69107b94ca8284daf44fceb2a0"
+
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO system_prompt_runtime")).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO system_prompt_templates")).
+		WithArgs("codexrip_reverse_skill", "CodexRip", "", nil).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, is_seed, managed_source")).
+		WithArgs("codexrip_reverse_skill").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "is_seed", "managed_source"}).AddRow(templateID, true, nil))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM system_prompt_template_versions")).
+		WithArgs(templateID, bodySHA, len(body)).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(candidateVersionID))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT r.active_template_id, r.active_version_id, v.sha256")).
+		WillReturnRows(sqlmock.NewRows([]string{"active_template_id", "active_version_id", "sha256"}).AddRow(templateID, oldVersionID, oldSHA))
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE system_prompt_runtime")).
+		WithArgs(candidateVersionID, templateID, oldVersionID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	store := NewBusinessSystemPromptRepository(db)
+	err = store.EnsureBusinessSystemPromptSeed(context.Background(), service.BusinessSystemPromptSeed{
+		Slug: "codexrip_reverse_skill", Name: "CodexRip", Body: body,
+		CompositionMode:     service.BusinessSystemPromptCompositionCodexSkillHybrid,
+		BundleID:            service.BusinessSystemPromptRemoteSkillBundleID,
+		UpgradeExistingSeed: true, AutoActivateFromSHA: []string{oldSHA},
+	})
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestEnsureBusinessSystemPromptSeedUpgradeIsIdempotent(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
