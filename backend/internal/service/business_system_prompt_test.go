@@ -55,7 +55,7 @@ func TestBusinessSystemPromptSeedAppliesOnlyApprovedOfflineTransformations(t *te
 	archivePath := filepath.Join("..", "..", "..", "deploy", "skill-bundles", "moxinggang-reverse-skill", "moxinggang-reverse-skill-22c227128165afbbcbda0175eb5e991ddb51d105b7d1e704572c625c64b626d7.zip")
 	archive, err := zip.OpenReader(archivePath)
 	require.NoError(t, err)
-	defer archive.Close()
+	t.Cleanup(func() { require.NoError(t, archive.Close()) })
 
 	var original []byte
 	for _, entry := range archive.File {
