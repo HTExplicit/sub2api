@@ -25,6 +25,7 @@ const (
 	businessSystemPromptSeedSlug = "codexrip_reverse_skill"
 	gpt56InstructPromptSeedSlug  = "gpt_5_6_instruct"
 	businessSystemPromptV7SHA256 = "0b717f086b1bf25e8300e9f26578ee95cf6f74d5601c06b9f9e493aa8939b0a7"
+	businessSystemPromptV8SHA256 = "0615d24958a1da11edcf9538aaff989e46fcd296ea86a6c1b1af2b3efa48487f"
 )
 
 type BusinessSystemPromptSeed struct {
@@ -302,7 +303,7 @@ func (s *BusinessSystemPromptService) Initialize(ctx context.Context) error {
 			CompositionMode:     BusinessSystemPromptCompositionCodexSkillHybrid,
 			BundleID:            BusinessSystemPromptRemoteSkillBundleID,
 			UpgradeExistingSeed: true,
-			AutoActivateFromSHA: []string{businessSystemPromptV7SHA256},
+			AutoActivateFromSHA: []string{businessSystemPromptV7SHA256, businessSystemPromptV8SHA256},
 		},
 		{
 			Slug:                 gpt56InstructPromptSeedSlug,
@@ -810,8 +811,8 @@ func (s *BusinessSystemPromptService) GetBundle(bundleID string) (BusinessSystem
 
 func (s *BusinessSystemPromptService) inspectBusinessSystemPromptSeedBundle() BusinessSystemPromptBundleDetail {
 	detail := BusinessSystemPromptBundleDetail{BusinessSystemPromptBundleSummary: BusinessSystemPromptBundleSummary{
-		BundleID: BusinessSystemPromptSeedBundleID, Name: "模型港 Reverse-Skill",
-		Description:    "Pinned, read-only reconstructed reverse-skill package.",
+		BundleID: BusinessSystemPromptSeedBundleID, Name: "codexrip Reverse-Skill",
+		Description:    "Content-addressed, read-only codexrip reverse-skill package.",
 		ManifestSHA256: BusinessSystemPromptSeedBundleManifestSHA256,
 	}}
 	bundle, err := s.loadBusinessSystemPromptBundle(BusinessSystemPromptSeedBundleID, BusinessSystemPromptSeedBundleManifestSHA256)

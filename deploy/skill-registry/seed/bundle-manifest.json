@@ -1031,13 +1031,6 @@
       "required": true
     },
     {
-      "path": "README_RECONSTRUCTED.md",
-      "sha256": "63c38048a2e78f521f21ae105456ab264a4152ca26159d338cb046ee5d6b30f4",
-      "byte_length": 1657,
-      "kind": "text",
-      "required": true
-    },
-    {
       "path": "README_zh.md",
       "sha256": "14c91d6f4fa67f4ecfc053ee4ea2bcd83df22201d70614e3b13a8f689c8abd9b",
       "byte_length": 10238,
@@ -1055,13 +1048,6 @@
       "path": "RULES_zh.md",
       "sha256": "c32b81ce20a477f239ee2976c1ec6d237bc88619afd9755d3a325a7b7d17063f",
       "byte_length": 33777,
-      "kind": "text",
-      "required": true
-    },
-    {
-      "path": "SOURCE-MANIFEST.json",
-      "sha256": "77ecbb29b31e5cea434d034d2315ec8d14328f754e0bb01c4c20c2d26571d0fe",
-      "byte_length": 1097,
       "kind": "text",
       "required": true
     },
@@ -1165,15 +1151,15 @@
     },
     {
       "path": "codexrip-client/SKILL.md",
-      "sha256": "6c4fe4547747d48c7554efdb6cadd72ab4674b0117b6d52367ab5fc227d4aa04",
-      "byte_length": 1488,
+      "sha256": "c5b42ca3d63fded1a8dbb2145f1cd0a7eaf3a0bf47d1f0d95eb3bb0f05270094",
+      "byte_length": 1744,
       "kind": "text",
       "required": true
     },
     {
       "path": "codexrip-client/agents/openai.yaml",
-      "sha256": "a5ae3f9955ba1021ba07828e38462cf55182dd201b9c558b2216b4ed411acd9a",
-      "byte_length": 309,
+      "sha256": "dc8e0d72a8e2464aa569d349639a7a050f8a4adcb273a8883cb02a6adac67857",
+      "byte_length": 326,
       "kind": "text",
       "required": true
     },
@@ -1188,13 +1174,6 @@
       "path": "codexrip-overlay/context-manifest.json",
       "sha256": "527737efec34375e7468425b798d4a75c945ddc834990ca8040cf00020202fdb",
       "byte_length": 6844,
-      "kind": "text",
-      "required": true
-    },
-    {
-      "path": "codexrip-overlay/inline-system-instructions.txt",
-      "sha256": "25f5db8a624086604b1cb2e718e8007cd137d62ec948658d16dda3d1ad027f2a",
-      "byte_length": 6990,
       "kind": "text",
       "required": true
     },

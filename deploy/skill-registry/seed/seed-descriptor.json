@@ -3,19 +3,19 @@
   "bundle_id": "codexrip-reverse-skill",
   "revision": 1,
   "source_commit": "d8bf34540cbc1aa34052e1b142576fc36a1f1437",
-  "overlay_sha256": "bab9d1be76ba7b777a78817de25f7a7a8112b7ae472586074e7aa1b065074294",
-  "manifest_sha256": "07bf0d71dfb687ff3ced0befa39081453c51ce85ae54a02bdb1e1f6fc34d3313",
-  "archive_sha256": "c6920445c55f46c2a30e8a2fe398e7c1cf0b22dcbe4c53ed0cfc105d9c8a5f3e",
-  "manifest_url": "https://codexrip.vip/skills/reverse-skill/versions/07bf0d71dfb687ff3ced0befa39081453c51ce85ae54a02bdb1e1f6fc34d3313/bundle-manifest.json",
-  "archive_url": "https://codexrip.vip/skills/reverse-skill/versions/07bf0d71dfb687ff3ced0befa39081453c51ce85ae54a02bdb1e1f6fc34d3313/codexrip-reverse-skill-07bf0d71dfb687ff3ced0befa39081453c51ce85ae54a02bdb1e1f6fc34d3313.zip",
-  "files_base_url": "https://codexrip.vip/skills/reverse-skill/versions/07bf0d71dfb687ff3ced0befa39081453c51ce85ae54a02bdb1e1f6fc34d3313/",
+  "overlay_sha256": "39f5188da11f5798bf0b6431545a4153c6e42c12bf81840e71eb5ddd30c6cf35",
+  "manifest_sha256": "33f081a5bd9f2499dc818f53e3ed069dd0d30ebefe6f7cc47022840553aecb27",
+  "archive_sha256": "5079f7b7b863765f07158edc8ef0d42726fb5e8470eb78cf81fd5b7f6b8d8d0c",
+  "manifest_url": "https://codexrip.vip/skills/reverse-skill/versions/33f081a5bd9f2499dc818f53e3ed069dd0d30ebefe6f7cc47022840553aecb27/bundle-manifest.json",
+  "archive_url": "https://codexrip.vip/skills/reverse-skill/versions/33f081a5bd9f2499dc818f53e3ed069dd0d30ebefe6f7cc47022840553aecb27/codexrip-reverse-skill-33f081a5bd9f2499dc818f53e3ed069dd0d30ebefe6f7cc47022840553aecb27.zip",
+  "files_base_url": "https://codexrip.vip/skills/reverse-skill/versions/33f081a5bd9f2499dc818f53e3ed069dd0d30ebefe6f7cc47022840553aecb27/",
   "core_files": [
     "codexrip-overlay/security-research/RULES.md",
     "codexrip-overlay/security-research/README_AI.md",
     "codexrip-overlay/security-research/SKILL.md"
   ],
-  "file_count": 540,
-  "total_bytes": 7949823,
+  "file_count": 537,
+  "total_bytes": 7940352,
   "published_at": "2026-08-07T00:00:00Z",
   "bootstrap_policy": "download_verify_native_skill_atomic_replace"
 }

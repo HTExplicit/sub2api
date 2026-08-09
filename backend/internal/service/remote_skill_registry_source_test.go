@@ -59,11 +59,14 @@ func newFakeRemoteSkillOverlaySource() *fakeRemoteSkillOverlaySource {
 }
 
 func TestRemoteSkillCandidateSourceNormalizesCoreDocumentsAndBuildsVerifiedArchive(t *testing.T) {
-	client := &fakeRemoteSkillHTTPClient{baseZIP: makeRemoteSkillSourceZIP(t, map[string]string{
-		"reverse-skill-commit/README.md":                    "base",
-		"reverse-skill-commit/gradlew":                      "#!/bin/sh\nexit 0\n",
-		"reverse-skill-commit/skills/api-security/SKILL.md": "# API security",
-	})}
+	files := map[string]string{}
+	files["reverse-skill-commit/README.md"] = "base"
+	files["reverse-skill-commit/README_RECONSTRUCTED.md"] = "captured provenance"
+	files["reverse-skill-commit/SOURCE-MANIFEST.json"] = "captured source"
+	files["reverse-skill-commit/moxinggang-overlay/inline-system-instructions.txt"] = "legacy prompt"
+	files["reverse-skill-commit/gradlew"] = "#!/bin/sh\nexit 0\n"
+	files["reverse-skill-commit/skills/api-security/SKILL.md"] = "# API security"
+	client := &fakeRemoteSkillHTTPClient{baseZIP: makeRemoteSkillSourceZIP(t, files)}
 	overlay := newFakeRemoteSkillOverlaySource()
 	candidate, err := newGitHubRemoteSkillCandidateSource(client, overlay).Build(context.Background(), nil)
 	require.NoError(t, err)
@@ -86,6 +89,10 @@ func TestRemoteSkillCandidateSourceNormalizesCoreDocumentsAndBuildsVerifiedArchi
 		}
 	}
 	require.True(t, foundGradleWrapper)
+	for _, excluded := range []string{"README_RECONSTRUCTED.md", "SOURCE-MANIFEST.json", "moxinggang-overlay/inline-system-instructions.txt"} {
+		_, present := candidate.Files[excluded]
+		require.False(t, present, excluded)
+	}
 
 	for _, name := range candidate.Manifest.CoreFiles {
 		body := string(candidate.Files[name])

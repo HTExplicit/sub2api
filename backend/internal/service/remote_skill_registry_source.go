@@ -54,6 +54,13 @@ var remoteSkillOverlayPaths = []string{
 	"skills/sec-ai-security/references/llm-deep/agent-obedience-engineering.md",
 }
 
+var remoteSkillExcludedSourcePaths = map[string]struct{}{
+	"README_RECONSTRUCTED.md":                           {},
+	"SOURCE-MANIFEST.json":                              {},
+	"moxinggang-overlay/inline-system-instructions.txt": {},
+	"codexrip-overlay/inline-system-instructions.txt":   {},
+}
+
 type RemoteSkillHTTPDoer interface {
 	Do(*http.Request) (*http.Response, error)
 }
@@ -316,6 +323,9 @@ func extractRemoteSkillBaseArchive(raw []byte) (map[string][]byte, error) {
 			return nil, fmt.Errorf("%w: source ZIP contains a link or special file", ErrBusinessSystemPromptBundleInvalid)
 		}
 		relative := strings.Join(parts[1:], "/")
+		if _, excluded := remoteSkillExcludedSourcePaths[relative]; excluded {
+			continue
+		}
 		normalized, err := normalizeBundleRelativePath(relative)
 		if err != nil || normalized != relative || relative == BusinessSystemPromptBundleManifestName {
 			return nil, fmt.Errorf("%w: source ZIP path rejected", ErrBusinessSystemPromptBundleInvalid)

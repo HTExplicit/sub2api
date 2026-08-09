@@ -17,14 +17,14 @@ from verify_business_system_prompt_bundle import VerificationError, verify_bundl
 
 BUNDLE_ID = "codexrip-reverse-skill"
 MANIFEST_NAME = "bundle-manifest.json"
-MANIFEST_SHA256 = "07bf0d71dfb687ff3ced0befa39081453c51ce85ae54a02bdb1e1f6fc34d3313"
-ARCHIVE_SHA256 = "c6920445c55f46c2a30e8a2fe398e7c1cf0b22dcbe4c53ed0cfc105d9c8a5f3e"
-OVERLAY_SHA256 = "bab9d1be76ba7b777a78817de25f7a7a8112b7ae472586074e7aa1b065074294"
+MANIFEST_SHA256 = "33f081a5bd9f2499dc818f53e3ed069dd0d30ebefe6f7cc47022840553aecb27"
+ARCHIVE_SHA256 = "5079f7b7b863765f07158edc8ef0d42726fb5e8470eb78cf81fd5b7f6b8d8d0c"
+OVERLAY_SHA256 = "39f5188da11f5798bf0b6431545a4153c6e42c12bf81840e71eb5ddd30c6cf35"
 SOURCE_COMMIT = "d8bf34540cbc1aa34052e1b142576fc36a1f1437"
-PROMPT_SHA256 = "9143d8a97727030192a62fb19f732b0823dec9ffe83081ef5ae27fdb1edfea04"
-PROMPT_BYTES = 10190
-FILE_COUNT = 540
-TOTAL_BYTES = 7_949_823
+PROMPT_SHA256 = "0615d24958a1da11edcf9538aaff989e46fcd296ea86a6c1b1af2b3efa48487f"
+PROMPT_BYTES = 6784
+FILE_COUNT = 537
+TOTAL_BYTES = 7_940_352
 ARCHIVE_NAME = f"{BUNDLE_ID}-{MANIFEST_SHA256}.zip"
 CHECKSUM_NAME = f"{ARCHIVE_NAME}.sha256"
 DESCRIPTOR_NAME = "seed-descriptor.json"
@@ -44,6 +44,11 @@ CLIENT_FILES = {
 FORBIDDEN_RUNTIME_BYTES = (
     b"moxinggang.com",
     b"C:\\Users\\Administrator\\AppData\\Local",
+    "模型港".encode("utf-8"),
+    "宝宝".encode("utf-8"),
+    b"README_RECONSTRUCTED.md",
+    b"SOURCE-MANIFEST.json",
+    b"inline-system-instructions.txt",
 )
 
 
@@ -162,10 +167,8 @@ def verify_manifest_contract(manifest: dict) -> set[str]:
 
 def verify_bootstraps(root: Path, prompt: bytes) -> int:
     for value in (BOOTSTRAP_REPOSITORY_URL, BOOTSTRAP_REPOSITORY_REF, BOOTSTRAP_REPOSITORY_COMMIT):
-        if value.encode("ascii") not in prompt:
-            raise VerificationError("fixed prompt does not pin the bootstrap repository identity")
-    if b"https://codexrip.vip/skills/bootstrap/" in prompt:
-        raise VerificationError("fixed prompt must not acquire a bootstrap script directly")
+        if value.encode("ascii") in prompt:
+            raise VerificationError("fixed prompt must not expose bootstrap repository identity")
     found: dict[str, str] = {}
     try:
         directories = [item for item in root.iterdir() if item.is_dir() and any(item.iterdir())]
@@ -179,9 +182,8 @@ def verify_bootstraps(root: Path, prompt: bytes) -> int:
         digest = sha256(raw)
         if digest != directory.name or digest != BOOTSTRAPS[children[0].name]:
             raise VerificationError("bootstrap path or pinned SHA-256 does not match its bytes")
-        repository_path = f"deploy/skill-registry/bootstrap/{digest}/{children[0].name}".encode("ascii")
-        if repository_path not in prompt or digest.encode("ascii") not in prompt:
-            raise VerificationError("fixed prompt does not pin a release bootstrap")
+        if digest.encode("ascii") in prompt or children[0].name.encode("ascii") in prompt:
+            raise VerificationError("fixed prompt must not expose release bootstrap coordinates")
         found[children[0].name] = digest
     if found != BOOTSTRAPS:
         raise VerificationError("release must contain exactly the pinned PowerShell and Python bootstraps")
@@ -204,8 +206,11 @@ def verify_registry(
     if len(prompt) != PROMPT_BYTES or sha256(prompt) != PROMPT_SHA256 or prompt.endswith((b"\r", b"\n")):
         raise VerificationError("fixed system prompt bytes do not match the pinned release")
     require_runtime_text_clean("fixed system prompt", prompt)
-    if DESCRIPTOR_URL.encode("ascii") not in prompt:
-        raise VerificationError("fixed system prompt does not reference the public descriptor")
+    if DESCRIPTOR_URL.encode("ascii") in prompt:
+        raise VerificationError("fixed system prompt must not reference the public descriptor")
+    for forbidden in (b"DESCRIPTOR_URL", b"REPOSITORY_URL", b"REPOSITORY_COMMIT", b"POWERSHELL_BOOTSTRAP", b"PYTHON_BOOTSTRAP"):
+        if forbidden in prompt:
+            raise VerificationError("fixed system prompt exposes a supply-chain coordinate")
 
     verify_bundle(
         zip_path=archive_path,
@@ -226,6 +231,9 @@ def verify_registry(
     with zipfile.ZipFile(archive_path) as archive:
         if any(entry.compress_type != zipfile.ZIP_STORED for entry in archive.infolist()):
             raise VerificationError("release ZIP must use the canonical stored representation")
+        forbidden_names = {"README_RECONSTRUCTED.md", "SOURCE-MANIFEST.json", "inline-system-instructions.txt"}
+        if any(Path(entry.filename).name in forbidden_names for entry in archive.infolist()):
+            raise VerificationError("release ZIP contains a removed provenance or captured-prompt file")
         for name in sorted(runtime_documents):
             require_runtime_text_clean(f"runtime document {name}", archive.read(name))
         client_skill = archive.read("codexrip-client/SKILL.md")
