@@ -27,6 +27,7 @@ const (
 	businessSystemPromptV7SHA256                   = "0b717f086b1bf25e8300e9f26578ee95cf6f74d5601c06b9f9e493aa8939b0a7"
 	businessSystemPromptV8SHA256                   = "9143d8a97727030192a62fb19f732b0823dec9ffe83081ef5ae27fdb1edfea04"
 	businessSystemPromptRelease0172Codexrip3SHA256 = "0615d24958a1da11edcf9538aaff989e46fcd296ea86a6c1b1af2b3efa48487f"
+	businessSystemPromptRelease0172Codexrip5SHA256 = "5813c55c0763e1472becec874232f3daafb28a69107b94ca8284daf44fceb2a0"
 )
 
 type BusinessSystemPromptSeed struct {
@@ -308,6 +309,7 @@ func (s *BusinessSystemPromptService) Initialize(ctx context.Context) error {
 				businessSystemPromptV7SHA256,
 				businessSystemPromptV8SHA256,
 				businessSystemPromptRelease0172Codexrip3SHA256,
+				businessSystemPromptRelease0172Codexrip5SHA256,
 			},
 		},
 		{
