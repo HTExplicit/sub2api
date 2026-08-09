@@ -30,6 +30,7 @@ func TestBusinessSystemPromptSeedRestoresOriginalBehaviorAndRoutingContract(t *t
 	require.Contains(t, seed, "On the first matching task in each conversation, perform exactly one update check")
 	require.Contains(t, seed, "validated and atomically installed")
 	require.Contains(t, seed, "https://codexrip.vip")
+	require.Contains(t, seed, "https://codexrip.vip/skills/reverse-skill/current.json")
 	require.NotContains(t, strings.ReplaceAll(seed, "https://codexrip.vip", ""), "https://")
 	for _, forbidden := range []string{"https://github.com", "moxinggang.com", "DESCRIPTOR_URL", "REPOSITORY_URL", "REPOSITORY_COMMIT", "POWERSHELL_BOOTSTRAP", "PYTHON_BOOTSTRAP", "模型港", `C:\Users\Administrator`} {
 		require.NotContains(t, seed, forbidden)

@@ -201,7 +201,7 @@ func validateRemoteSkillClientDocument(bundlePath string, raw []byte) error {
 		}
 		return nil
 	}
-	if len(urls) != 1 || urls[0] != "https://codexrip.vip" {
+	if len(urls) != 1 || urls[0] != RemoteSkillDescriptorURL {
 		return fmt.Errorf("%w: release client registry URL invalid", ErrBusinessSystemPromptBundleInvalid)
 	}
 	lastCoreReference := -1
@@ -218,6 +218,11 @@ func validateRemoteSkillClientDocument(bundlePath string, raw []byte) error {
 		"ctf",
 		"first matching task in each conversation",
 		"exactly one version check",
+		"current.json",
+		"bootstraps.powershell",
+		"bootstraps.python",
+		"sha-256",
+		"codex_home",
 		"report the failed stage",
 		"continue only when the existing local installation verifies successfully",
 		"later matching tasks in the same conversation do not repeat",

@@ -1172,8 +1172,8 @@
     },
     {
       "path": "codexrip-client/SKILL.md",
-      "sha256": "fed9c9144987a4a72b66d06d3440c216de462028a333d630cdc039e96cc4a85a",
-      "byte_length": 1161,
+      "sha256": "882f725a40fc07d03feeb0de9558da5f30c7487d0347cf2a502cfcebe4f43e24",
+      "byte_length": 1329,
       "kind": "text",
       "required": true
     },
