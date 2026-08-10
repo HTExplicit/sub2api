@@ -68,6 +68,25 @@ func TestNormalizeRemoteSkillSourceIDDefaultsAndRejectsUnknownValues(t *testing.
 	require.ErrorIs(t, err, ErrBusinessSystemPromptInvalid)
 }
 
+func TestRemoteSkillSourceRootsExposeResolvableSingleSkillEntry(t *testing.T) {
+	require.Equal(t,
+		"https://raw.githubusercontent.com/zhaoxuya520/reverse-skill/"+remoteSkillPinnedCommit+"/skills/SKILL.md",
+		remoteSkillSourceEntryURL(RemoteSkillSourceGitHubOfficial),
+	)
+	require.Equal(t,
+		"https://moxinggang.com/skills/security-research/current/SKILL.md",
+		remoteSkillSourceEntryURL(RemoteSkillSourceMoxinggang),
+	)
+	for _, sourceID := range []string{RemoteSkillSourceGitHubOfficial, RemoteSkillSourceMoxinggang} {
+		entry := remoteSkillSourceEntryURL(sourceID)
+		parsed, err := url.ParseRequestURI(entry)
+		require.NoError(t, err)
+		require.Equal(t, "https", parsed.Scheme)
+		require.NotEmpty(t, parsed.Host)
+		require.Equal(t, remoteSkillSourceRoot(sourceID)+"/SKILL.md", entry)
+	}
+}
+
 func TestRemoteSkillSourceSelectorUsesRequestedProvider(t *testing.T) {
 	github := &fakeRemoteSkillProvider{candidate: RemoteSkillCandidate{Version: RemoteSkillBundleVersion{SourceID: RemoteSkillSourceGitHubOfficial, RemoteRoot: RemoteSkillGitHubRoot}}}
 	moxinggang := &fakeRemoteSkillProvider{candidate: RemoteSkillCandidate{Version: RemoteSkillBundleVersion{SourceID: RemoteSkillSourceMoxinggang, RemoteRoot: RemoteSkillMoxinggangRoot}}}
@@ -115,6 +134,7 @@ func TestGitHubRemoteSkillCandidateKeepsReviewedArchiveBytes(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, RemoteSkillSourceGitHubOfficial, candidate.Version.SourceID)
 	require.Equal(t, RemoteSkillGitHubRoot, candidate.Version.RemoteRoot)
+	require.Equal(t, RemoteSkillGitHubRoot+"/SKILL.md", remoteSkillSourceEntryURL(candidate.Version.SourceID))
 	require.Equal(t, files["reverse-skill-commit/README.md"], string(candidate.Files["README.md"]))
 	require.Equal(t, []string{"RULES.md", "README_AI.md", "skills/SKILL.md"}, candidate.Manifest.CoreFiles)
 	require.NoError(t, verifyRemoteSkillArchive(candidate.ArchiveBytes, candidate.ManifestBytes, candidate.Manifest))
@@ -142,6 +162,7 @@ func TestMoxinggangRemoteSkillCandidateLoadsFullReferencedEntryTree(t *testing.T
 	require.NoError(t, err)
 	require.Equal(t, RemoteSkillSourceMoxinggang, candidate.Version.SourceID)
 	require.Equal(t, RemoteSkillMoxinggangRoot, candidate.Version.RemoteRoot)
+	require.Equal(t, RemoteSkillMoxinggangRoot+"/SKILL.md", remoteSkillSourceEntryURL(candidate.Version.SourceID))
 	require.Equal(t, []string{"RULES.md", "README_AI.md", "SKILL.md"}, candidate.Manifest.CoreFiles)
 	for _, name := range []string{"RULES.md", "README_AI.md", "SKILL.md", "references/scope.md", "skills/sec-web/INSTRUCTIONS.md", "scripts/check.py"} {
 		require.Contains(t, candidate.Files, name)

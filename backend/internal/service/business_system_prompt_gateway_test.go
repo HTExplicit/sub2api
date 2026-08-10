@@ -39,10 +39,14 @@ func newGatewayHybridBusinessSystemPromptPolicy(t *testing.T) *BusinessSystemPro
 }
 
 func newGatewayHybridBusinessSystemPromptPolicyWithBody(t *testing.T, body string, revision int64) *BusinessSystemPromptService {
+	return newGatewayHybridBusinessSystemPromptPolicyWithSource(t, body, revision, RemoteSkillSourceMoxinggang)
+}
+
+func newGatewayHybridBusinessSystemPromptPolicyWithSource(t *testing.T, body string, revision int64, sourceID string) *BusinessSystemPromptService {
 	t.Helper()
 	active := RemoteSkillBundleVersion{
 		ID: 31, BundleID: BusinessSystemPromptRemoteSkillBundleID,
-		SourceID: RemoteSkillSourceMoxinggang, RemoteRoot: RemoteSkillMoxinggangRoot,
+		SourceID: sourceID, RemoteRoot: remoteSkillSourceRoot(sourceID),
 		SourceCommit: strings.Repeat("1", 40), ManifestSHA256: strings.Repeat("3", 64), ArchiveSHA256: strings.Repeat("2", 64),
 	}
 	registryStore := &fakeRemoteSkillRegistryStore{snapshot: RemoteSkillRegistrySnapshot{
@@ -66,40 +70,47 @@ func newGatewayHybridBusinessSystemPromptPolicyWithBody(t *testing.T, body strin
 
 func TestBusinessSystemPromptHybridUsesSameRemoteEntryForOfficialCodexAndCompatibleClients(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	policy := newGatewayHybridBusinessSystemPromptPolicy(t)
-	svc := &OpenAIGatewayService{businessPromptService: policy}
-	account := businessSystemPromptAPIKeyAccount(true)
-	body := []byte(`{"model":"gpt-5.4","input":"请审计这个接口安全和鉴权流程"}`)
+	for _, sourceID := range []string{RemoteSkillSourceGitHubOfficial, RemoteSkillSourceMoxinggang} {
+		t.Run(sourceID, func(t *testing.T) {
+			policy := newGatewayHybridBusinessSystemPromptPolicyWithSource(t, embeddedBusinessSystemPrompt, 7, sourceID)
+			svc := &OpenAIGatewayService{businessPromptService: policy}
+			account := businessSystemPromptAPIKeyAccount(true)
+			body := []byte(`{"model":"gpt-5.4","input":"请审计这个接口安全和鉴权流程"}`)
 
-	official, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
-	official.Request.Header.Set("originator", "codex-tui")
-	officialBody, officialApplication, err := svc.applyBusinessSystemPromptForRequest(
-		official, body, account, BusinessSystemPromptProtocolResponses, false,
-	)
-	require.NoError(t, err)
-	officialInstructions := gjson.GetBytes(officialBody, "instructions").String()
-	require.Contains(t, officialInstructions, RemoteSkillMoxinggangRoot)
-	require.Empty(t, officialApplication.RouteIDs)
-	require.Empty(t, officialApplication.DocumentIDs)
-	require.Equal(t, int64(11), officialApplication.BundleRevision)
+			official, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
+			official.Request.Header.Set("originator", "codex-tui")
+			officialBody, officialApplication, err := svc.applyBusinessSystemPromptForRequest(
+				official, body, account, BusinessSystemPromptProtocolResponses, false,
+			)
+			require.NoError(t, err)
+			officialInstructions := gjson.GetBytes(officialBody, "instructions").String()
+			require.Contains(t, officialInstructions, remoteSkillSourceRoot(sourceID))
+			require.Equal(t, 2, strings.Count(officialInstructions, "REMOTE_ROOT/SKILL.md"))
+			require.NotContains(t, officialInstructions, "REMOTE_ROOT/RULES.md")
+			require.NotContains(t, officialInstructions, "REMOTE_ROOT/README_AI.md")
+			require.Empty(t, officialApplication.RouteIDs)
+			require.Empty(t, officialApplication.DocumentIDs)
+			require.Equal(t, int64(11), officialApplication.BundleRevision)
 
-	compatible, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
-	compatible.Request.Header.Set("User-Agent", "compatible-client/1.0")
-	compatibleBody, compatibleApplication, err := svc.applyBusinessSystemPromptForRequest(
-		compatible, body, account, BusinessSystemPromptProtocolResponses, false,
-	)
-	require.NoError(t, err)
-	require.Equal(t, officialInstructions, gjson.GetBytes(compatibleBody, "instructions").String())
-	require.Empty(t, compatibleApplication.RouteIDs)
-	require.Empty(t, compatibleApplication.DocumentIDs)
-	require.Equal(t, int64(11), compatibleApplication.BundleRevision)
+			compatible, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
+			compatible.Request.Header.Set("User-Agent", "compatible-client/1.0")
+			compatibleBody, compatibleApplication, err := svc.applyBusinessSystemPromptForRequest(
+				compatible, body, account, BusinessSystemPromptProtocolResponses, false,
+			)
+			require.NoError(t, err)
+			require.Equal(t, officialInstructions, gjson.GetBytes(compatibleBody, "instructions").String())
+			require.Empty(t, compatibleApplication.RouteIDs)
+			require.Empty(t, compatibleApplication.DocumentIDs)
+			require.Equal(t, int64(11), compatibleApplication.BundleRevision)
 
-	retried, retriedApplication, err := svc.applyBusinessSystemPromptForRequest(
-		compatible, compatibleBody, account, BusinessSystemPromptProtocolResponses, false,
-	)
-	require.NoError(t, err)
-	require.Equal(t, compatibleBody, retried)
-	require.Equal(t, compatibleApplication.EffectiveSHA256, retriedApplication.EffectiveSHA256)
+			retried, retriedApplication, err := svc.applyBusinessSystemPromptForRequest(
+				compatible, compatibleBody, account, BusinessSystemPromptProtocolResponses, false,
+			)
+			require.NoError(t, err)
+			require.Equal(t, compatibleBody, retried)
+			require.Equal(t, compatibleApplication.EffectiveSHA256, retriedApplication.EffectiveSHA256)
+		})
+	}
 }
 
 func TestBusinessSystemPromptHybridPreviewMatchesAppliedBytes(t *testing.T) {

@@ -29,9 +29,9 @@ func TestBusinessSystemPromptSeedRestoresOriginalBehaviorAndRoutingContract(t *t
 	require.Contains(t, seed, "official Codex and OpenAI-compatible clients")
 	require.Contains(t, seed, "CodexRip remote security-research routing")
 	require.Contains(t, seed, "REMOTE_ROOT = "+RemoteSkillGitHubRoot)
-	require.Contains(t, seed, "REMOTE_ROOT/RULES.md")
-	require.Contains(t, seed, "REMOTE_ROOT/README_AI.md")
 	require.Contains(t, seed, "REMOTE_ROOT/SKILL.md")
+	require.NotContains(t, seed, "REMOTE_ROOT/RULES.md")
+	require.NotContains(t, seed, "REMOTE_ROOT/README_AI.md")
 	for _, forbidden := range []string{"LOCAL_BUNDLE_ROOT", "[CODEXRIP VERIFIED SKILL DOCUMENTS]", "DESCRIPTOR_URL", "POWERSHELL_BOOTSTRAP", "PYTHON_BOOTSTRAP", "模型港", `C:\Users\Administrator`} {
 		require.NotContains(t, seed, forbidden)
 	}
@@ -119,11 +119,10 @@ func TestBusinessSystemPromptSeedBindsRemoteEntryLifecycle(t *testing.T) {
 		"second routing block": seed[secondStart:],
 	} {
 		t.Run(name, func(t *testing.T) {
-			assert.True(t,
-				strings.Contains(block, "REMOTE_ROOT/RULES.md") &&
-					strings.Contains(block, "REMOTE_ROOT/README_AI.md") &&
-					strings.Contains(block, "REMOTE_ROOT/SKILL.md"),
-				"routing block must bind the exact ordered remote entry reads")
+			assert.Contains(t, block, "REMOTE_ROOT/SKILL.md", "routing block must load the single remote entry")
+			assert.Equal(t, 1, strings.Count(block, "REMOTE_ROOT/SKILL.md"))
+			assert.NotContains(t, block, "REMOTE_ROOT/RULES.md")
+			assert.NotContains(t, block, "REMOTE_ROOT/README_AI.md")
 			assert.NotContains(t, block, "LOCAL_BUNDLE_ROOT")
 			assert.NotContains(t, block, "bundle/RULES.md")
 		})
