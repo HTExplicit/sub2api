@@ -446,6 +446,8 @@ func (s *BusinessSystemPromptService) prepareBusinessSystemPromptSnapshot(snapsh
 	snapshot.RegistryManifestSHA256 = ""
 	snapshot.RegistryArchiveSHA256 = ""
 	snapshot.RegistrySourceCommit = ""
+	snapshot.RegistrySourceID = ""
+	snapshot.RegistryRemoteRoot = ""
 	if snapshot.CompositionMode == BusinessSystemPromptCompositionInline {
 		snapshot.requestBundle = nil
 		snapshot.BundleAvailable = false
@@ -456,29 +458,27 @@ func (s *BusinessSystemPromptService) prepareBusinessSystemPromptSnapshot(snapsh
 	if snapshot.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid {
 		snapshot.requestBundle = nil
 		snapshot.BundleAvailable = false
-		snapshot.BundleDegraded = true
-		snapshot.DegradedReason = "registry_unavailable"
+		snapshot.BundleDegraded = false
+		snapshot.DegradedReason = ""
 		if s == nil || s.registry == nil {
-			if !snapshot.Enabled {
-				return nil
-			}
-			return fmt.Errorf("%w: skill registry unavailable", ErrBusinessSystemPromptUnavailable)
+			return nil
 		}
-		registrySnapshot, bundle, err := s.registry.ActiveBundle(context.Background())
-		if err != nil || registrySnapshot.Active == nil || bundle == nil {
-			if !snapshot.Enabled {
-				return nil
-			}
-			return fmt.Errorf("%w: active skill registry snapshot unavailable", ErrBusinessSystemPromptUnavailable)
+		registrySnapshot := s.registry.CurrentSnapshot()
+		if registrySnapshot.Active == nil {
+			snapshot.BundleDegraded = registrySnapshot.Degraded
+			snapshot.DegradedReason = registrySnapshot.DegradedReason
+			snapshot.Degraded = snapshot.Degraded || registrySnapshot.Degraded
+			return nil
 		}
-		snapshot.requestBundle = bundle
 		snapshot.BundleAvailable = true
-		snapshot.BundleDegraded = registrySnapshot.Degraded || bundle.Degraded
+		snapshot.BundleDegraded = registrySnapshot.Degraded
 		snapshot.DegradedReason = registrySnapshot.DegradedReason
 		snapshot.RegistryRevision = registrySnapshot.Revision
 		snapshot.RegistryManifestSHA256 = registrySnapshot.Active.ManifestSHA256
 		snapshot.RegistryArchiveSHA256 = registrySnapshot.Active.ArchiveSHA256
 		snapshot.RegistrySourceCommit = registrySnapshot.Active.SourceCommit
+		snapshot.RegistrySourceID = registrySnapshot.Active.SourceID
+		snapshot.RegistryRemoteRoot = registrySnapshot.Active.RemoteRoot
 		if snapshot.BundleDegraded {
 			snapshot.Degraded = true
 		}
@@ -524,8 +524,7 @@ func (s *BusinessSystemPromptService) PrepareBusinessSystemPromptPreviewSnapshot
 	if err := s.prepareBusinessSystemPromptSnapshot(&snapshot); err != nil {
 		return BusinessSystemPromptSnapshot{}, err
 	}
-	inlineDocuments := strings.EqualFold(strings.TrimSpace(clientMode), "openai_compatible")
-	return s.compileBusinessSystemPromptSnapshot(snapshot, requestText, false, nil, inlineDocuments)
+	return s.compileBusinessSystemPromptSnapshot(snapshot, requestText, false, nil, false)
 }
 
 func (s *BusinessSystemPromptService) compileBusinessSystemPromptSnapshot(
@@ -539,38 +538,28 @@ func (s *BusinessSystemPromptService) compileBusinessSystemPromptSnapshot(
 		return snapshot, nil
 	}
 	if snapshot.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid {
-		if snapshot.requestBundle == nil || snapshot.RegistryManifestSHA256 == "" {
-			return BusinessSystemPromptSnapshot{}, fmt.Errorf("%w: active registry bundle unavailable", ErrBusinessSystemPromptUnavailable)
-		}
+		snapshot.Body = applyRemoteSkillRoot(snapshot.Body, snapshot.RegistryRemoteRoot)
 		baseHash := hashBusinessSystemPromptBundleBytes([]byte(snapshot.Body))
-		if !inlineDocuments {
-			snapshot.baseSHA256 = baseHash
-			snapshot.effectiveSHA256 = baseHash
-			snapshot.effectiveByteLength = len([]byte(snapshot.Body))
-			snapshot.routeIDs = nil
-			snapshot.documentIDs = nil
-			snapshot.referenceIDs = nil
-			snapshot.omittedDocumentIDs = nil
-			return snapshot, nil
-		}
-		compiled, err := NewBusinessSystemPromptHybridCompiler(snapshot.requestBundle).CompileHybrid(BusinessSystemPromptBundleCompileInput{
-			BasePrompt: snapshot.Body, RequestText: requestText, Continuation: continuation, PreviousMetadata: previous,
-		})
-		if err != nil {
-			return BusinessSystemPromptSnapshot{}, err
-		}
-		snapshot.Body = compiled.Body
-		snapshot.baseSHA256 = compiled.Metadata.BaseSHA256
-		snapshot.effectiveSHA256 = compiled.Metadata.EffectiveSHA256
-		snapshot.effectiveByteLength = compiled.Metadata.ByteLength
-		snapshot.routeIDs = append([]string(nil), compiled.Metadata.RouteIDs...)
-		snapshot.documentIDs = append([]string(nil), compiled.Metadata.DocumentPaths...)
-		snapshot.referenceIDs = append([]string(nil), compiled.Metadata.ReferencePaths...)
-		snapshot.omittedDocumentIDs = append([]string(nil), compiled.OmittedPaths...)
-		snapshot.Degraded = snapshot.Degraded || compiled.Metadata.Degraded
+		snapshot.baseSHA256 = baseHash
+		snapshot.effectiveSHA256 = baseHash
+		snapshot.effectiveByteLength = len([]byte(snapshot.Body))
+		snapshot.routeIDs = nil
+		snapshot.documentIDs = nil
+		snapshot.referenceIDs = nil
+		snapshot.omittedDocumentIDs = nil
 		return snapshot, nil
 	}
 	return BusinessSystemPromptSnapshot{}, fmt.Errorf("%w: %v", ErrBusinessSystemPromptUnavailable, ErrBusinessSystemPromptLegacyComposition)
+}
+
+func applyRemoteSkillRoot(body, remoteRoot string) string {
+	remoteRoot = strings.TrimSpace(remoteRoot)
+	if remoteRoot == "" {
+		return body
+	}
+	body = strings.ReplaceAll(body, RemoteSkillGitHubRoot, remoteRoot)
+	body = strings.ReplaceAll(body, RemoteSkillMoxinggangRoot, remoteRoot)
+	return body
 }
 
 func (s *BusinessSystemPromptService) retainLastGood(err error) error {

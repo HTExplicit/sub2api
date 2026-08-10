@@ -42,6 +42,8 @@ type systemPromptRuntimeResponse struct {
 	RegistryManifestSHA256 string    `json:"registry_manifest_sha256,omitempty"`
 	RegistryArchiveSHA256  string    `json:"registry_archive_sha256,omitempty"`
 	RegistrySourceCommit   string    `json:"registry_source_commit,omitempty"`
+	RegistrySourceID       string    `json:"registry_source_id,omitempty"`
+	RegistryRemoteRoot     string    `json:"registry_remote_root,omitempty"`
 	BundleAvailable        bool      `json:"bundle_available"`
 	BundleDegraded         bool      `json:"bundle_degraded"`
 	DegradedReason         string    `json:"degraded_reason,omitempty"`
@@ -160,6 +162,8 @@ func businessSystemPromptRuntimeResponse(snapshot service.BusinessSystemPromptSn
 		RegistryManifestSHA256: snapshot.RegistryManifestSHA256,
 		RegistryArchiveSHA256:  snapshot.RegistryArchiveSHA256,
 		RegistrySourceCommit:   snapshot.RegistrySourceCommit,
+		RegistrySourceID:       snapshot.RegistrySourceID,
+		RegistryRemoteRoot:     snapshot.RegistryRemoteRoot,
 		BundleAvailable:        snapshot.BundleAvailable,
 		BundleDegraded:         snapshot.BundleDegraded,
 		DegradedReason:         snapshot.DegradedReason,
@@ -245,19 +249,20 @@ func (h *SystemPromptHandler) StartSkillSync(c *gin.Context) {
 		return
 	}
 	var req struct {
-		ExpectedRevision int64 `json:"expected_revision" binding:"required"`
+		SourceID         string `json:"source_id"`
+		ExpectedRevision int64  `json:"expected_revision" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-	job, err := h.skillRegistry.StartSync(c.Request.Context(), actorID, req.ExpectedRevision)
+	job, err := h.skillRegistry.StartSync(c.Request.Context(), req.SourceID, actorID, req.ExpectedRevision)
 	if err != nil {
 		writeBusinessSystemPromptError(c, err)
 		return
 	}
 	middleware.SetAuditExtra(c, map[string]any{
-		"revision": req.ExpectedRevision, "status": job.Status, "result": "sync_queued",
+		"source_id": job.SourceID, "revision": req.ExpectedRevision, "status": job.Status, "result": "sync_queued",
 	})
 	response.Accepted(c, job)
 }
@@ -313,6 +318,7 @@ func (h *SystemPromptHandler) publishSkillVersion(c *gin.Context, result string)
 		extra["old_manifest_sha256"] = old.Active.ManifestSHA256
 	}
 	if snapshot.Active != nil {
+		extra["source_id"] = snapshot.Active.SourceID
 		extra["source_commit"] = snapshot.Active.SourceCommit
 		extra["new_manifest_sha256"] = snapshot.Active.ManifestSHA256
 		extra["archive_sha256"] = snapshot.Active.ArchiveSHA256

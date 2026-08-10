@@ -57,6 +57,8 @@ type BusinessSystemPromptSnapshot struct {
 	RegistryManifestSHA256 string    `json:"registry_manifest_sha256,omitempty"`
 	RegistryArchiveSHA256  string    `json:"registry_archive_sha256,omitempty"`
 	RegistrySourceCommit   string    `json:"registry_source_commit,omitempty"`
+	RegistrySourceID       string    `json:"registry_source_id,omitempty"`
+	RegistryRemoteRoot     string    `json:"registry_remote_root,omitempty"`
 	BundleAvailable        bool      `json:"bundle_available"`
 	BundleDegraded         bool      `json:"bundle_degraded"`
 	DegradedReason         string    `json:"degraded_reason,omitempty"`
@@ -103,6 +105,8 @@ type BusinessSystemPromptApplication struct {
 	BundleRevision       int64    `json:"bundle_revision,omitempty"`
 	BundleArchiveSHA256  string   `json:"bundle_archive_sha256,omitempty"`
 	BundleSourceCommit   string   `json:"bundle_source_commit,omitempty"`
+	BundleSourceID       string   `json:"bundle_source_id,omitempty"`
+	BundleRemoteRoot     string   `json:"bundle_remote_root,omitempty"`
 	RouteIDs             []string `json:"route_ids,omitempty"`
 	DocumentIDs          []string `json:"document_ids,omitempty"`
 	ReferenceIDs         []string `json:"reference_ids,omitempty"`
@@ -171,6 +175,8 @@ func ApplyBusinessSystemPromptToJSON(
 		BundleRevision:       snapshot.RegistryRevision,
 		BundleArchiveSHA256:  strings.ToLower(strings.TrimSpace(snapshot.RegistryArchiveSHA256)),
 		BundleSourceCommit:   strings.ToLower(strings.TrimSpace(snapshot.RegistrySourceCommit)),
+		BundleSourceID:       snapshot.RegistrySourceID,
+		BundleRemoteRoot:     snapshot.RegistryRemoteRoot,
 		RouteIDs:             append([]string(nil), snapshot.routeIDs...),
 		DocumentIDs:          append([]string(nil), snapshot.documentIDs...),
 		ReferenceIDs:         append([]string(nil), snapshot.referenceIDs...),

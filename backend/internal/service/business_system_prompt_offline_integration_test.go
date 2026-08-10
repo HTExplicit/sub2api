@@ -37,8 +37,9 @@ func TestBusinessSystemPromptHybridCodexUsesFixedBodyAcrossAdapters(t *testing.T
 	require.NotEmpty(t, application.BaseSHA256)
 	require.NotEmpty(t, application.EffectiveSHA256)
 	require.Equal(t, application.BaseSHA256, application.EffectiveSHA256)
-	require.Equal(t, embeddedBusinessSystemPrompt, application.ServerInstructions)
-	require.NotContains(t, application.ServerInstructions, "moxinggang.com")
+	expectedPrompt := applyRemoteSkillRoot(embeddedBusinessSystemPrompt, RemoteSkillMoxinggangRoot)
+	require.Equal(t, expectedPrompt, application.ServerInstructions)
+	require.Contains(t, application.ServerInstructions, RemoteSkillMoxinggangRoot)
 	require.NotContains(t, application.ServerInstructions, `C:\Users\Administrator`)
 	require.Equal(t, application.ServerInstructions, gjson.GetBytes(responsesBody, "instructions").String())
 
@@ -53,7 +54,7 @@ func TestBusinessSystemPromptHybridCodexUsesFixedBodyAcrossAdapters(t *testing.T
 	)
 	require.NoError(t, err)
 	require.Equal(t, application.EffectiveSHA256, fallbackApplication.EffectiveSHA256)
-	require.Equal(t, embeddedBusinessSystemPrompt, fallbackApplication.ServerInstructions)
+	require.Equal(t, expectedPrompt, fallbackApplication.ServerInstructions)
 	require.True(t, chatBodyHasSystemPrompt(chatBody, application.ServerInstructions))
 
 	cacheKey := appendBusinessSystemPromptApplicationToCacheKey("client-key", application)
@@ -135,6 +136,7 @@ func TestBusinessSystemPromptRequestTextExtractionUsesLatestUserContent(t *testi
 func TestBusinessSystemPromptWSHybridCodexTurnsReuseFixedBody(t *testing.T) {
 	policy := newGatewayHybridBusinessSystemPromptPolicyWithBody(t, embeddedBusinessSystemPrompt, 8)
 	gateway := &OpenAIGatewayService{businessPromptService: policy}
+	expectedPrompt := applyRemoteSkillRoot(embeddedBusinessSystemPrompt, RemoteSkillMoxinggangRoot)
 
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
@@ -148,7 +150,7 @@ func TestBusinessSystemPromptWSHybridCodexTurnsReuseFixedBody(t *testing.T) {
 		account, BusinessSystemPromptProtocolResponses, false)
 	require.NoError(t, err)
 	require.Empty(t, first.RouteIDs)
-	require.Equal(t, embeddedBusinessSystemPrompt, first.ServerInstructions)
+	require.Equal(t, expectedPrompt, first.ServerInstructions)
 
 	beginBusinessSystemPromptRequestTurn(c)
 	_, continued, err := gateway.applyBusinessSystemPromptForRequest(c,
@@ -156,7 +158,7 @@ func TestBusinessSystemPromptWSHybridCodexTurnsReuseFixedBody(t *testing.T) {
 		account, BusinessSystemPromptProtocolResponses, false)
 	require.NoError(t, err)
 	require.Equal(t, first.EffectiveSHA256, continued.EffectiveSHA256)
-	require.Equal(t, embeddedBusinessSystemPrompt, continued.ServerInstructions)
+	require.Equal(t, expectedPrompt, continued.ServerInstructions)
 
 	beginBusinessSystemPromptRequestTurn(c)
 	_, next, err := gateway.applyBusinessSystemPromptForRequest(c,
@@ -164,5 +166,5 @@ func TestBusinessSystemPromptWSHybridCodexTurnsReuseFixedBody(t *testing.T) {
 		account, BusinessSystemPromptProtocolResponses, false)
 	require.NoError(t, err)
 	require.Equal(t, first.EffectiveSHA256, next.EffectiveSHA256)
-	require.Equal(t, embeddedBusinessSystemPrompt, next.ServerInstructions)
+	require.Equal(t, expectedPrompt, next.ServerInstructions)
 }

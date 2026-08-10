@@ -57,7 +57,7 @@ func ProvideRemoteSkillRegistryFiles() RemoteSkillRegistryFiles {
 }
 
 func ProvideRemoteSkillCandidateSource() RemoteSkillCandidateSource {
-	return NewGitHubRemoteSkillCandidateSource(nil)
+	return NewRemoteSkillCandidateSourceSelector(nil)
 }
 
 func ProvideRemoteSkillRegistryService(

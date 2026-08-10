@@ -138,6 +138,8 @@ func (s *OpenAIGatewayService) applyBusinessSystemPromptForRequest(
 						RegistryManifestSHA256: state.application.BundleManifestSHA256,
 						RegistryArchiveSHA256:  state.application.BundleArchiveSHA256,
 						RegistrySourceCommit:   state.application.BundleSourceCommit,
+						RegistrySourceID:       state.application.BundleSourceID,
+						RegistryRemoteRoot:     state.application.BundleRemoteRoot,
 						baseSHA256:             state.application.BaseSHA256, effectiveSHA256: state.application.EffectiveSHA256,
 						effectiveByteLength: state.application.EffectiveByteLength,
 						routeIDs:            append([]string(nil), state.application.RouteIDs...),

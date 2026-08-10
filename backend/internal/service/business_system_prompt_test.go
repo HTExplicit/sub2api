@@ -24,15 +24,15 @@ func TestBusinessSystemPromptSeedRestoresOriginalBehaviorAndRoutingContract(t *t
 	require.False(t, strings.HasSuffix(seed, "\n"))
 	require.Contains(t, seed, "<!-- BEGIN CODEXRIP REVERSE-SKILL -->")
 	require.Contains(t, seed, "<!-- BEGIN CODEXRIP SECURITY-RESEARCH ROUTING -->")
-	require.Contains(t, seed, "`codexrip-reverse-skill`")
+	require.Contains(t, seed, "CodexRip remote reverse-skill routing")
 	require.Contains(t, seed, "For reverse engineering, security research, and CTF tasks")
 	require.Contains(t, seed, "official Codex and OpenAI-compatible clients")
-	require.Contains(t, seed, "On the first matching task in each conversation, perform exactly one update check")
-	require.Contains(t, seed, "validated and atomically installed")
-	require.Contains(t, seed, "https://codexrip.vip")
-	require.Contains(t, seed, "https://codexrip.vip/skills/reverse-skill/current.json")
-	require.NotContains(t, strings.ReplaceAll(seed, "https://codexrip.vip", ""), "https://")
-	for _, forbidden := range []string{"https://github.com", "moxinggang.com", "DESCRIPTOR_URL", "REPOSITORY_URL", "REPOSITORY_COMMIT", "POWERSHELL_BOOTSTRAP", "PYTHON_BOOTSTRAP", "模型港", `C:\Users\Administrator`} {
+	require.Contains(t, seed, "CodexRip remote security-research routing")
+	require.Contains(t, seed, "REMOTE_ROOT = "+RemoteSkillGitHubRoot)
+	require.Contains(t, seed, "REMOTE_ROOT/RULES.md")
+	require.Contains(t, seed, "REMOTE_ROOT/README_AI.md")
+	require.Contains(t, seed, "REMOTE_ROOT/SKILL.md")
+	for _, forbidden := range []string{"LOCAL_BUNDLE_ROOT", "[CODEXRIP VERIFIED SKILL DOCUMENTS]", "DESCRIPTOR_URL", "POWERSHELL_BOOTSTRAP", "PYTHON_BOOTSTRAP", "模型港", `C:\Users\Administrator`} {
 		require.NotContains(t, seed, forbidden)
 	}
 	require.Contains(t, seed, "You are codexrip, a friendly and highly capable senior technical-engineering assistant.")
@@ -52,7 +52,7 @@ func TestBusinessSystemPromptSeedRestoresOriginalBehaviorAndRoutingContract(t *t
 	require.NotEqual(t, "0615d24958a1da11edcf9538aaff989e46fcd296ea86a6c1b1af2b3efa48487f", hex.EncodeToString(seedDigest[:]))
 }
 
-func TestBusinessSystemPromptSeedAppliesOnlyApprovedOfflineTransformations(t *testing.T) {
+func TestBusinessSystemPromptSeedAppliesOnlyApprovedIdentityAndRemoteEntryTransformations(t *testing.T) {
 	archivePath := filepath.Join("..", "..", "..", "deploy", "skill-bundles", "moxinggang-reverse-skill", "moxinggang-reverse-skill-22c227128165afbbcbda0175eb5e991ddb51d105b7d1e704572c625c64b626d7.zip")
 	archive, err := zip.OpenReader(archivePath)
 	require.NoError(t, err)
@@ -107,7 +107,7 @@ func delimitedPromptBlock(t *testing.T, body, begin, end string) string {
 	return body[start : start+finish+len(end)]
 }
 
-func TestBusinessSystemPromptSeedBindsCompleteFirstMatchLifecycle(t *testing.T) {
+func TestBusinessSystemPromptSeedBindsRemoteEntryLifecycle(t *testing.T) {
 	seed := embeddedBusinessSystemPrompt
 	firstEnd := strings.Index(seed, "<!-- END CODEXRIP REVERSE-SKILL -->")
 	secondStart := strings.Index(seed, "<!-- BEGIN CODEXRIP SECURITY-RESEARCH ROUTING -->")
@@ -119,12 +119,13 @@ func TestBusinessSystemPromptSeedBindsCompleteFirstMatchLifecycle(t *testing.T) 
 		"second routing block": seed[secondStart:],
 	} {
 		t.Run(name, func(t *testing.T) {
-			assert.True(t, strings.Contains(block, "read `SKILL.md`, `bundle/RULES.md`, `bundle/README_AI.md`, and `bundle/skills/SKILL.md` completely in that order"),
-				"routing block must bind the exact ordered complete reads")
-			assert.True(t, strings.Contains(block, "must not repeat either the update check or those four Skill file loads"),
-				"routing block must suppress both parts of the lifecycle after the first match")
-			assert.True(t, strings.Contains(block, "report every acquisition or update failure and its failed stage before continuing with a verified local fallback"),
-				"routing block must report failures even when local fallback can continue")
+			assert.True(t,
+				strings.Contains(block, "REMOTE_ROOT/RULES.md") &&
+					strings.Contains(block, "REMOTE_ROOT/README_AI.md") &&
+					strings.Contains(block, "REMOTE_ROOT/SKILL.md"),
+				"routing block must bind the exact ordered remote entry reads")
+			assert.NotContains(t, block, "LOCAL_BUNDLE_ROOT")
+			assert.NotContains(t, block, "bundle/RULES.md")
 		})
 	}
 }

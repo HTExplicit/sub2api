@@ -83,7 +83,11 @@ func (r *remoteSkillRegistryRepository) GetRemoteSkillVersion(ctx context.Contex
 	return version, err
 }
 
-func (r *remoteSkillRegistryRepository) CreateRemoteSkillSyncJob(ctx context.Context, actorID, expectedRevision int64) (service.RemoteSkillSyncJob, error) {
+func (r *remoteSkillRegistryRepository) CreateRemoteSkillSyncJob(ctx context.Context, sourceID string, actorID, expectedRevision int64) (service.RemoteSkillSyncJob, error) {
+	sourceID, err := service.NormalizeRemoteSkillSourceID(sourceID)
+	if err != nil {
+		return service.RemoteSkillSyncJob{}, err
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return service.RemoteSkillSyncJob{}, err
@@ -95,10 +99,10 @@ func (r *remoteSkillRegistryRepository) CreateRemoteSkillSyncJob(ctx context.Con
 	var job service.RemoteSkillSyncJob
 	var createdBy sql.NullInt64
 	if err := tx.QueryRowContext(ctx, `
-		INSERT INTO system_prompt_skill_sync_jobs (status, progress_stage, created_by)
-		VALUES ('queued', 'queued', $1)
-		RETURNING id, status, progress_stage, created_by, created_at`, nullableActor(actorID)).Scan(
-		&job.ID, &job.Status, &job.ProgressStage, &createdBy, &job.CreatedAt); err != nil {
+		INSERT INTO system_prompt_skill_sync_jobs (source_id, status, progress_stage, created_by)
+		VALUES ($1, 'queued', 'queued', $2)
+		RETURNING id, source_id, status, progress_stage, created_by, created_at`, sourceID, nullableActor(actorID)).Scan(
+		&job.ID, &job.SourceID, &job.Status, &job.ProgressStage, &createdBy, &job.CreatedAt); err != nil {
 		return service.RemoteSkillSyncJob{}, err
 	}
 	job.CreatedBy = nullableRemoteSkillInt64(createdBy)
@@ -129,8 +133,8 @@ func (r *remoteSkillRegistryRepository) CompleteRemoteSkillSyncJob(ctx context.C
 		return service.RemoteSkillSyncJob{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	var status string
-	if err := tx.QueryRowContext(ctx, `SELECT status FROM system_prompt_skill_sync_jobs WHERE id = $1 FOR UPDATE`, id).Scan(&status); err != nil {
+	var status, sourceID string
+	if err := tx.QueryRowContext(ctx, `SELECT status, source_id FROM system_prompt_skill_sync_jobs WHERE id = $1 FOR UPDATE`, id).Scan(&status, &sourceID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return service.RemoteSkillSyncJob{}, service.ErrRemoteSkillSyncNotFound
 		}
@@ -138,6 +142,9 @@ func (r *remoteSkillRegistryRepository) CompleteRemoteSkillSyncJob(ctx context.C
 	}
 	if status != service.RemoteSkillSyncStatusQueued && status != service.RemoteSkillSyncStatusRunning {
 		return service.RemoteSkillSyncJob{}, service.ErrBusinessSystemPromptRevisionConflict
+	}
+	if version.SourceID != sourceID || version.RemoteRoot == "" {
+		return service.RemoteSkillSyncJob{}, service.ErrBusinessSystemPromptInvalid
 	}
 	versionID, err := insertOrValidateRemoteSkillVersion(ctx, tx, version)
 	if err != nil {
@@ -177,10 +184,10 @@ func (r *remoteSkillRegistryRepository) GetRemoteSkillSyncJob(ctx context.Contex
 	var candidateID, createdBy sql.NullInt64
 	var startedAt, completedAt sql.NullTime
 	err := r.db.QueryRowContext(ctx, `
-		SELECT id, status, progress_stage, source_commit, candidate_bundle_version_id,
+		SELECT id, source_id, status, progress_stage, source_commit, candidate_bundle_version_id,
 		       error_code, created_by, created_at, started_at, completed_at
 		FROM system_prompt_skill_sync_jobs WHERE id = $1`, id).Scan(
-		&job.ID, &job.Status, &job.ProgressStage, &sourceCommit, &candidateID,
+		&job.ID, &job.SourceID, &job.Status, &job.ProgressStage, &sourceCommit, &candidateID,
 		&errorCode, &createdBy, &job.CreatedAt, &startedAt, &completedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return service.RemoteSkillSyncJob{}, service.ErrRemoteSkillSyncNotFound
@@ -237,7 +244,7 @@ func (r *remoteSkillRegistryRepository) PublishRemoteSkillVersion(ctx context.Co
 }
 
 const remoteSkillVersionSelect = `
-	SELECT v.id, v.bundle_id, v.source_commit, v.overlay_sha256,
+	SELECT v.id, v.bundle_id, v.source_id, v.remote_root, v.source_commit, v.overlay_sha256,
 	       v.manifest_sha256, v.archive_sha256, v.file_count, v.total_bytes,
 	       v.added_files, v.modified_files, v.deleted_files,
 	       v.script_changes, v.binary_changes, v.created_by,
@@ -253,7 +260,7 @@ func scanRemoteSkillVersion(row remoteSkillRowScanner) (service.RemoteSkillBundl
 	var createdBy, publishedBy sql.NullInt64
 	var publishedAt sql.NullTime
 	err := row.Scan(
-		&version.ID, &version.BundleID, &version.SourceCommit, &version.OverlaySHA256,
+		&version.ID, &version.BundleID, &version.SourceID, &version.RemoteRoot, &version.SourceCommit, &version.OverlaySHA256,
 		&version.ManifestSHA256, &version.ArchiveSHA256, &version.FileCount, &version.TotalBytes,
 		&version.AddedFiles, &version.ModifiedFiles, &version.DeletedFiles,
 		&version.ScriptChanges, &version.BinaryChanges, &createdBy,
@@ -285,6 +292,8 @@ func loadRemoteSkillRegistrySnapshot(ctx context.Context, q businessSystemPrompt
 		return service.RemoteSkillRegistrySnapshot{}, err
 	}
 	snapshot.Active = &version
+	snapshot.SourceID = version.SourceID
+	snapshot.RemoteRoot = version.RemoteRoot
 	return snapshot, nil
 }
 
@@ -292,13 +301,13 @@ func insertOrValidateRemoteSkillVersion(ctx context.Context, tx *sql.Tx, version
 	var id int64
 	err := tx.QueryRowContext(ctx, `
 		INSERT INTO system_prompt_skill_bundle_versions
-		(bundle_id, source_commit, overlay_sha256, manifest_sha256, archive_sha256,
+		(bundle_id, source_id, remote_root, source_commit, overlay_sha256, manifest_sha256, archive_sha256,
 		 file_count, total_bytes, added_files, modified_files, deleted_files,
 		 script_changes, binary_changes, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 		ON CONFLICT (manifest_sha256) DO NOTHING
 		RETURNING id`,
-		version.BundleID, version.SourceCommit, version.OverlaySHA256, version.ManifestSHA256,
+		version.BundleID, version.SourceID, version.RemoteRoot, version.SourceCommit, version.OverlaySHA256, version.ManifestSHA256,
 		version.ArchiveSHA256, version.FileCount, version.TotalBytes, version.AddedFiles,
 		version.ModifiedFiles, version.DeletedFiles, version.ScriptChanges, version.BinaryChanges,
 		nullableActor(version.CreatedBy)).Scan(&id)
@@ -312,7 +321,7 @@ func insertOrValidateRemoteSkillVersion(ctx context.Context, tx *sql.Tx, version
 	if err != nil {
 		return 0, err
 	}
-	if existing.BundleID != version.BundleID || existing.SourceCommit != version.SourceCommit ||
+	if existing.BundleID != version.BundleID || existing.SourceID != version.SourceID || existing.RemoteRoot != version.RemoteRoot || existing.SourceCommit != version.SourceCommit ||
 		existing.OverlaySHA256 != version.OverlaySHA256 || existing.ArchiveSHA256 != version.ArchiveSHA256 ||
 		existing.FileCount != version.FileCount || existing.TotalBytes != version.TotalBytes {
 		return 0, fmt.Errorf("%w: existing manifest metadata mismatch", service.ErrBusinessSystemPromptUnavailable)
