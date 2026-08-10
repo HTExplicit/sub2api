@@ -1,19 +1,11 @@
 package service
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
-
-func TestBusinessSystemPromptSeedBundleManifestMatchesPinnedDigest(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "deploy", "skill-bundles", BusinessSystemPromptSeedBundleID, BusinessSystemPromptBundleManifestName))
-	require.NoError(t, err)
-	require.Equal(t, BusinessSystemPromptSeedBundleManifestSHA256, hashBusinessSystemPromptBundleBytes(raw))
-}
 
 func TestNormalizeBusinessSystemPromptComposition(t *testing.T) {
 	tests := []struct {
@@ -32,7 +24,7 @@ func TestNormalizeBusinessSystemPromptComposition(t *testing.T) {
 		{name: "codex skill hybrid rejects another bundle id", mode: "codex_skill_hybrid", bundleID: "another-skill", wantErr: true},
 		{name: "codex skill hybrid follows active registry", mode: "codex_skill_hybrid", bundleID: "codexrip-reverse-skill", manifest: strings.Repeat("a", 64), wantErr: true},
 		{name: "remote skill removed", mode: "remote_skill", bundleID: "codexrip-reverse-skill", wantErr: true},
-		{name: "offline bundle removed", mode: "offline_bundle", bundleID: "moxinggang-reverse-skill", manifest: strings.ToUpper(BusinessSystemPromptSeedBundleManifestSHA256), wantErr: true},
+		{name: "offline bundle removed", mode: "offline_bundle", bundleID: "moxinggang-reverse-skill", manifest: strings.Repeat("a", 64), wantErr: true},
 		{name: "inline rejects bundle reference", mode: "inline", bundleID: "bundle", manifest: strings.Repeat("a", 64), wantErr: true},
 		{name: "unknown mode rejected", mode: "network", wantErr: true},
 	}

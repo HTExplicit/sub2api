@@ -1,30 +1,19 @@
 #!/usr/bin/env python3
-"""Verify the pinned offline business System Prompt skill-bundle release asset."""
+"""Verify a content-addressed bundle manifest, archive, and file set."""
 
 from __future__ import annotations
 
-import argparse
 import hashlib
 import json
 import re
 import stat
-import sys
 import unicodedata
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable, Optional
 
-
-BUNDLE_ID = "moxinggang-reverse-skill"
 MANIFEST_NAME = "bundle-manifest.json"
-MANIFEST_SHA256 = "22c227128165afbbcbda0175eb5e991ddb51d105b7d1e704572c625c64b626d7"
-ZIP_SHA256 = "977de70881ef67f15aa804f9cfa3e1a93ba441b46bb4bda1e30c4b4dd07a1c6a"
-ASSET_NAME = f"{BUNDLE_ID}-{MANIFEST_SHA256}.zip"
-CHECKSUM_NAME = f"{ASSET_NAME}.sha256"
-EXPECTED_MANIFEST_FILE_COUNT = 538
-EXPECTED_ZIP_ENTRY_COUNT = EXPECTED_MANIFEST_FILE_COUNT + 1
-
 _DIGEST_RE = re.compile(r"[0-9a-f]{64}")
 _WINDOWS_INVALID_CHARS = frozenset('<>:"|?*')
 _WINDOWS_RESERVED_NAMES = {
@@ -291,44 +280,3 @@ def verify_bundle(
         file_count=len(files),
         entry_count=expected_zip_entry_count,
     )
-
-
-def _default_bundle_dir() -> Path:
-    return Path(__file__).resolve().parents[1] / "deploy" / "skill-bundles" / BUNDLE_ID
-
-
-def main(argv: Optional[list[str]] = None) -> int:
-    bundle_dir = _default_bundle_dir()
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--zip", dest="zip_path", type=Path, default=bundle_dir / ASSET_NAME)
-    parser.add_argument("--manifest", dest="manifest_path", type=Path, default=bundle_dir / MANIFEST_NAME)
-    parser.add_argument("--checksum", dest="checksum_path", type=Path, default=bundle_dir / CHECKSUM_NAME)
-    args = parser.parse_args(argv)
-
-    try:
-        result = verify_bundle(
-            zip_path=args.zip_path,
-            manifest_path=args.manifest_path,
-            expected_zip_sha256=ZIP_SHA256,
-            expected_manifest_sha256=MANIFEST_SHA256,
-            expected_manifest_file_count=EXPECTED_MANIFEST_FILE_COUNT,
-            expected_zip_entry_count=EXPECTED_ZIP_ENTRY_COUNT,
-            expected_bundle_id=BUNDLE_ID,
-            checksum_path=args.checksum_path,
-        )
-    except VerificationError as exc:
-        print(f"bundle verification failed: {exc}", file=sys.stderr)
-        return 1
-
-    print(
-        "bundle verified: "
-        f"bundle_id={result.bundle_id} "
-        f"zip_sha256={result.zip_sha256} "
-        f"manifest_sha256={result.manifest_sha256} "
-        f"files={result.file_count} entries={result.entry_count}"
-    )
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

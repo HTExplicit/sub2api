@@ -216,14 +216,14 @@ func TestBusinessSystemPromptServiceRejectsPublishingLegacyCompositions(t *testi
 func TestBusinessSystemPromptServiceRejectsCreatingOrDuplicatingLegacyOfflineBundle(t *testing.T) {
 	store := &fakeBusinessSystemPromptStore{detail: BusinessSystemPromptTemplateDetail{Versions: []BusinessSystemPromptVersion{{
 		ID: 4, Body: "legacy", CompositionMode: "offline_bundle",
-		BundleID: BusinessSystemPromptSeedBundleID, BundleManifestSHA256: BusinessSystemPromptSeedBundleManifestSHA256,
+		BundleID: "moxinggang-reverse-skill", BundleManifestSHA256: strings.Repeat("a", 64),
 	}}}}
 	svc := NewBusinessSystemPromptService(store, nil)
 
 	_, err := svc.CreateTemplate(context.Background(), BusinessSystemPromptTemplateCreate{
 		Slug: "legacy-copy", Name: "Legacy copy", Body: "legacy",
 		CompositionMode: "offline_bundle",
-		BundleID:        BusinessSystemPromptSeedBundleID, BundleManifestSHA256: BusinessSystemPromptSeedBundleManifestSHA256,
+		BundleID:        "moxinggang-reverse-skill", BundleManifestSHA256: strings.Repeat("a", 64),
 	}, 9, 1)
 	require.ErrorIs(t, err, ErrBusinessSystemPromptInvalid)
 

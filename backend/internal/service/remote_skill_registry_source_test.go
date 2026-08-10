@@ -87,12 +87,6 @@ func TestRemoteSkillSourceRootsExposeResolvableSingleSkillEntry(t *testing.T) {
 	}
 }
 
-func TestRemoteSkillPublishedRootsAreContentAddressed(t *testing.T) {
-	manifest := strings.Repeat("a", 64)
-	require.Equal(t, RemoteSkillPublishedVersionsRoot+manifest+"/skills", remoteSkillPublishedRoot(RemoteSkillSourceGitHubOfficial, manifest))
-	require.Equal(t, RemoteSkillPublishedVersionsRoot+manifest, remoteSkillPublishedRoot(RemoteSkillSourceMoxinggang, manifest))
-}
-
 func TestRemoteSkillSourceSelectorUsesRequestedProvider(t *testing.T) {
 	github := &fakeRemoteSkillProvider{candidate: RemoteSkillCandidate{Version: RemoteSkillBundleVersion{SourceID: RemoteSkillSourceGitHubOfficial, RemoteRoot: RemoteSkillGitHubRoot}}}
 	moxinggang := &fakeRemoteSkillProvider{candidate: RemoteSkillCandidate{Version: RemoteSkillBundleVersion{SourceID: RemoteSkillSourceMoxinggang, RemoteRoot: RemoteSkillMoxinggangRoot}}}

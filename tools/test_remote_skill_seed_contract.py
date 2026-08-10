@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression contract for the native upstream Skill seed."""
+"""Regression contract for the published remote Skill seed and entry prompt."""
 
 from __future__ import annotations
 
@@ -8,111 +8,141 @@ import zipfile
 from pathlib import Path
 
 from build_remote_skill_seed import (
-    FORBIDDEN_SKILL_SOURCE,
-    LOCAL_PACKAGE_CONTRACT_LINE,
-    LOCAL_RECOVERY_LINE,
-    ROUTER_RECOVERY_LINE,
-    UPSTREAM_CLONE_COMMAND,
+    BOOTSTRAPS,
+    REMOTE_ROOT,
+    SOURCE_COMMIT,
+    SOURCE_ID,
     contains_remote_skill_acquisition,
     is_legacy_overlay_path,
-    rewrite_package_contract,
 )
 from verify_remote_skill_registry import (
-    FORBIDDEN_RUNTIME_BYTES,
-    contains_remote_skill_acquisition as verifier_contains_remote_skill_acquisition,
+    MOXINGGANG_ROOT,
+    VerificationError,
+    document_urls,
     is_legacy_overlay_path as verifier_is_legacy_overlay_path,
+    validate_source_root,
+    verify_native_skill_contract,
 )
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SEED = ROOT / "deploy" / "skill-registry" / "seed"
+PROMPT = ROOT / "backend" / "internal" / "service" / "prompts" / "codexrip_reverse_skill_system_prompt.txt"
 EXPECTED_CORE = ["RULES.md", "README_AI.md", "skills/SKILL.md"]
-PINNED_COMMIT = "a5d8c9233b98c52df387d5b1a0ef669fcaa51374"
-EXPECTED_BOOTSTRAPS = {
-    "powershell": {
-        "url": "https://codexrip.vip/skills/bootstrap/2199e8c4e8a09278c9b79e17b05e5457308db0a7d593e0f933ad6bd0712845f9/bootstrap-reverse-skill.ps1",
-        "sha256": "2199e8c4e8a09278c9b79e17b05e5457308db0a7d593e0f933ad6bd0712845f9",
-    },
-    "python": {
-        "url": "https://codexrip.vip/skills/bootstrap/353878272c8972c00817cc7171d7a4a087b4203fa2758b7ba1d040ededde7dc9/bootstrap-reverse-skill.py",
-        "sha256": "353878272c8972c00817cc7171d7a4a087b4203fa2758b7ba1d040ededde7dc9",
-    },
-}
+
+
+def expect_source_root_rejected(source_id: str, remote_root: str, source_commit: str) -> None:
+    try:
+        validate_source_root(source_id, remote_root, source_commit)
+    except VerificationError:
+        return
+    raise AssertionError(f"unsafe source root accepted: {remote_root}")
 
 
 def main() -> int:
-    legacy_overlay_marker = b"moxinggang-overlay/security-research"
-    if legacy_overlay_marker not in FORBIDDEN_SKILL_SOURCE or legacy_overlay_marker not in FORBIDDEN_RUNTIME_BYTES:
-        raise AssertionError("legacy overlay text guard is inactive")
-    rewritten = rewrite_package_contract("README.md", UPSTREAM_CLONE_COMMAND + b"\n")
-    if UPSTREAM_CLONE_COMMAND in rewritten or LOCAL_PACKAGE_CONTRACT_LINE not in rewritten:
-        raise AssertionError("reviewed package acquisition was not deterministically rewritten")
-    rewritten_route = rewrite_package_contract(
-        "skills/scripts/master-route.ps1", ROUTER_RECOVERY_LINE + b"\r\n"
-    )
-    if ROUTER_RECOVERY_LINE in rewritten_route or LOCAL_RECOVERY_LINE not in rewritten_route:
-        raise AssertionError("reviewed router recovery instruction was not rewritten locally")
-    for path, raw in (
-        ("docs/install.md", UPSTREAM_CLONE_COMMAND + b"\n"),
-        ("README.md", UPSTREAM_CLONE_COMMAND + b"\n" + UPSTREAM_CLONE_COMMAND + b"\n"),
-        ("README.md", UPSTREAM_CLONE_COMMAND + b" --branch attacker\n"),
-        ("README.md", UPSTREAM_CLONE_COMMAND + b" && echo attacker\n"),
+    validate_source_root(SOURCE_ID, REMOTE_ROOT, SOURCE_COMMIT)
+    validate_source_root("moxinggang", MOXINGGANG_ROOT, "1" * 40)
+    for source_id, remote_root, source_commit in (
+        ("github_official", REMOTE_ROOT + "?ref=mutable", SOURCE_COMMIT),
+        ("github_official", REMOTE_ROOT.replace("raw.githubusercontent.com", "github.example"), SOURCE_COMMIT),
+        ("github_official", REMOTE_ROOT.replace(SOURCE_COMMIT, "a" * 40), SOURCE_COMMIT),
+        ("moxinggang", MOXINGGANG_ROOT + "/../escape", "1" * 40),
+        ("moxinggang", MOXINGGANG_ROOT.replace("moxinggang.com", "user@moxinggang.com"), "1" * 40),
+        ("moxinggang", MOXINGGANG_ROOT, ""),
+        ("moxinggang", MOXINGGANG_ROOT, "not-a-commit"),
+        ("moxinggang", MOXINGGANG_ROOT, "../escape"),
+        ("moxinggang", MOXINGGANG_ROOT, "A" * 40),
+        ("unknown", REMOTE_ROOT, SOURCE_COMMIT),
     ):
-        try:
-            rewrite_package_contract(path, raw)
-        except ValueError:
-            pass
-        else:
-            raise AssertionError("unreviewed package acquisition rewrite was accepted")
-    for path in (
-        "codexrip-overlay/security-research/SKILL.md",
-        "CodexRip-Overlay/Security-Research/SKILL.md",
-        "MoxingGang-Overlay/Security-Research/SKILL.md",
-    ):
-        if not is_legacy_overlay_path(path):
-            raise AssertionError("legacy overlay path guard is inactive")
-        if not verifier_is_legacy_overlay_path(path):
-            raise AssertionError("verifier legacy overlay path guard is inactive")
-    if not contains_remote_skill_acquisition(b"Run git pull and retry.\n"):
-        raise AssertionError("git pull acquisition guard is inactive")
-    if not verifier_contains_remote_skill_acquisition(b"Run git pull and retry.\n"):
-        raise AssertionError("verifier git pull acquisition guard is inactive")
+        expect_source_root_rejected(source_id, remote_root, source_commit)
 
     descriptor = json.loads((SEED / "seed-descriptor.json").read_text(encoding="utf-8"))
     manifest = json.loads((SEED / "bundle-manifest.json").read_text(encoding="utf-8"))
-    if descriptor.get("source_commit") != PINNED_COMMIT:
-        raise AssertionError("seed descriptor is not pinned to the latest upstream commit")
-    if descriptor.get("schema_version") != 1 or descriptor.get("bootstraps") != EXPECTED_BOOTSTRAPS:
+    if descriptor.get("source_id") != SOURCE_ID:
+        raise AssertionError("seed descriptor source_id is not the GitHub default")
+    if descriptor.get("source_commit") != SOURCE_COMMIT or descriptor.get("remote_root") != REMOTE_ROOT:
+        raise AssertionError("seed descriptor provenance is not pinned")
+    if descriptor.get("schema_version") != 1 or descriptor.get("bootstraps") != BOOTSTRAPS:
         raise AssertionError("seed descriptor does not publish content-addressed bootstrap metadata")
     if manifest.get("core_files") != EXPECTED_CORE:
-        raise AssertionError("seed manifest still uses the legacy overlay core paths")
+        raise AssertionError("seed manifest core paths changed")
+
     paths = {entry.get("path") for entry in manifest.get("files", [])}
     if any(isinstance(path, str) and is_legacy_overlay_path(path) for path in paths):
         raise AssertionError("legacy security-research overlay remains in the seed")
-    for path in EXPECTED_CORE:
+    if any(isinstance(path, str) and verifier_is_legacy_overlay_path(path) for path in paths):
+        raise AssertionError("formal verifier missed a legacy overlay path")
+    for path in [*EXPECTED_CORE, "codexrip-client/SKILL.md", "codexrip-client/agents/openai.yaml"]:
         if path not in paths:
-            raise AssertionError(f"native core file is missing: {path}")
+            raise AssertionError(f"required seed file is missing: {path}")
+
+    prompt = PROMPT.read_bytes()
+    if prompt.endswith(b"\n"):
+        prompt = prompt[:-1]
+    if document_urls(prompt) != [REMOTE_ROOT]:
+        raise AssertionError("base prompt does not use the single pinned GitHub root")
+    if prompt.count(b"REMOTE_ROOT/SKILL.md") != 1:
+        raise AssertionError("base prompt does not contain exactly one remote Skill entry")
+    for forbidden in (
+        b"LOCAL_BUNDLE_ROOT",
+        b"[CODEXRIP VERIFIED SKILL DOCUMENTS]",
+        b"[BUSINESS SYSTEM PROMPT: OFFLINE SKILL BUNDLE]",
+    ):
+        if forbidden in prompt:
+            raise AssertionError("base prompt contains an offline wrapper")
+
+    archive_path = SEED / f"codexrip-reverse-skill-{descriptor['manifest_sha256']}.zip"
+    kinds = {entry.get("path"): entry.get("kind", "text") for entry in manifest.get("files", [])}
+    with zipfile.ZipFile(archive_path) as archive:
+        client_skill = archive.read("codexrip-client/SKILL.md")
+        verify_native_skill_contract(client_skill, descriptor)
+        for source, replacement in (
+            (b"Perform exactly one version check through", b"Perform a version check through"),
+            (b"verify its URL bytes against its SHA-256", b"download its URL bytes"),
+            (b"existing local installation verifies successfully", b"existing local installation exists"),
+            (b"do not repeat the version check or those three reads", b"may repeat the version check"),
+        ):
+            try:
+                verify_native_skill_contract(client_skill.replace(source, replacement, 1), descriptor)
+            except VerificationError:
+                pass
+            else:
+                raise AssertionError("native Skill lifecycle mutation was accepted")
+        reordered = client_skill.replace(b"bundle/RULES.md", b"bundle/TEMP.md", 1)
+        reordered = reordered.replace(b"bundle/README_AI.md", b"bundle/RULES.md", 1)
+        reordered = reordered.replace(b"bundle/TEMP.md", b"bundle/README_AI.md", 1)
+        try:
+            verify_native_skill_contract(reordered, descriptor)
+        except VerificationError:
+            pass
+        else:
+            raise AssertionError("native Skill core read reordering was accepted")
+        non_atomic = dict(descriptor)
+        non_atomic["bootstrap_policy"] = "download_only"
+        try:
+            verify_native_skill_contract(client_skill, non_atomic)
+        except VerificationError:
+            pass
+        else:
+            raise AssertionError("non-atomic native Skill policy was accepted")
+        for name in archive.namelist():
+            if name == "bundle-manifest.json" or kinds.get(name) == "binary":
+                continue
+            raw = archive.read(name)
+            if name != "codexrip-client/SKILL.md" and contains_remote_skill_acquisition(raw):
+                raise AssertionError(f"runtime document retains remote acquisition: {name}")
+
     by_route = {route.get("id"): set(route.get("keywords", [])) for route in manifest.get("domains", [])}
-    expected_routes = {
+    for route, keywords in {
         "ida-reverse": {"ida pro", "idapython"},
         "dotnet-reverse": {".net", "dnspy"},
         "ghidra-reverse": {"ghidra", "decompiler"},
         "firmware-pentest": {"firmware", "binwalk"},
         "identity-federation": {"saml", "oidc", "sso"},
-    }
-    for route, keywords in expected_routes.items():
+    }.items():
         actual = {value.casefold() for value in by_route.get(route, set())}
         if not keywords.issubset(actual):
             raise AssertionError(f"seed route lost compatibility keywords: {route}")
-    archive_path = SEED / f"codexrip-reverse-skill-{descriptor['manifest_sha256']}.zip"
-    with zipfile.ZipFile(archive_path) as archive:
-        for name in archive.namelist():
-            raw = archive.read(name).lower()
-            if b"git clone https://github.com/zhaoxuya520/reverse-skill" in raw or b"git pull" in raw:
-                raise AssertionError(f"runtime document retains GitHub Skill acquisition: {name}")
-        route = archive.read("skills/scripts/master-route.ps1")
-        if LOCAL_RECOVERY_LINE not in route or ROUTER_RECOVERY_LINE in route:
-            raise AssertionError("runtime router does not use the local recovery contract")
     return 0
 
 

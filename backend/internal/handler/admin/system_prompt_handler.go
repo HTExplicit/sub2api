@@ -687,10 +687,6 @@ func (h *SystemPromptHandler) PreviewMerge(c *gin.Context) {
 		"bundle_id": composition.BundleID, "bundle_manifest_sha256": composition.BundleManifestSHA256,
 		"result": "previewed",
 	})
-	requestText := service.BusinessSystemPromptRequestText(req.Body, service.BusinessSystemPromptProtocolResponses)
-	if requestText == "" {
-		requestText = service.BusinessSystemPromptRequestText(req.Body, service.BusinessSystemPromptProtocolChat)
-	}
 	clientMode, err := normalizeSystemPromptPreviewClientMode(req.ClientMode)
 	if err != nil {
 		writeBusinessSystemPromptError(c, err)
@@ -699,7 +695,7 @@ func (h *SystemPromptHandler) PreviewMerge(c *gin.Context) {
 	prepared, err := h.service.PrepareBusinessSystemPromptPreviewSnapshotForClient(service.BusinessSystemPromptSnapshot{
 		Enabled: true, Revision: 1, Body: server, SHA256: hash, ByteLength: byteLength,
 		CompositionMode: composition.Mode, BundleID: composition.BundleID, BundleManifestSHA256: composition.BundleManifestSHA256,
-	}, requestText, clientMode)
+	}, "", clientMode)
 	if err != nil {
 		writeBusinessSystemPromptError(c, err)
 		return
@@ -715,8 +711,7 @@ func (h *SystemPromptHandler) PreviewMerge(c *gin.Context) {
 		"new_sha256": hash, "byte_length": byteLength, "composition_mode": composition.Mode,
 		"bundle_id": composition.BundleID, "bundle_revision": application.BundleRevision,
 		"bundle_manifest_sha256": application.BundleManifestSHA256, "client_mode": clientMode,
-		"route_count": len(application.RouteIDs), "document_count": len(application.DocumentIDs),
-		"omitted_document_count": len(application.OmittedDocumentIDs), "result": "previewed",
+		"result": "previewed",
 	})
 	response.Success(c, gin.H{
 		"instructions": service.MergeBusinessSystemPromptInstructions(req.ClientInstructions, prepared.Body),
@@ -778,7 +773,7 @@ func (h *SystemPromptHandler) PreviewUpstream(c *gin.Context) {
 		Enabled: true, CompactEnabled: true, TemplateID: req.TemplateID, VersionID: versionID, TemplateVersion: templateVersion,
 		Revision: 1, Body: server, SHA256: hash, ByteLength: byteLength,
 		CompositionMode: composition.Mode, BundleID: composition.BundleID, BundleManifestSHA256: composition.BundleManifestSHA256,
-	}, service.BusinessSystemPromptRequestText(req.Body, protocol), clientMode)
+	}, "", clientMode)
 	if err != nil {
 		writeBusinessSystemPromptError(c, err)
 		return
@@ -799,8 +794,7 @@ func (h *SystemPromptHandler) PreviewUpstream(c *gin.Context) {
 		"new_sha256": hash, "byte_length": byteLength, "composition_mode": composition.Mode,
 		"bundle_id": composition.BundleID, "bundle_revision": application.BundleRevision,
 		"bundle_manifest_sha256": application.BundleManifestSHA256, "client_mode": clientMode,
-		"route_count": len(application.RouteIDs), "document_count": len(application.DocumentIDs),
-		"omitted_document_count": len(application.OmittedDocumentIDs), "result": "previewed",
+		"result": "previewed",
 	})
 	response.Success(c, gin.H{
 		"body": decoded, "application": application, "client_mode": clientMode,

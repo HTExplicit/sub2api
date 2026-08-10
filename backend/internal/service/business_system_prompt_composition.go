@@ -9,9 +9,7 @@ const (
 	BusinessSystemPromptCompositionInline           = "inline"
 	BusinessSystemPromptCompositionCodexSkillHybrid = "codex_skill_hybrid"
 
-	BusinessSystemPromptSeedBundleID             = "moxinggang-reverse-skill"
-	BusinessSystemPromptSeedBundleManifestSHA256 = "22c227128165afbbcbda0175eb5e991ddb51d105b7d1e704572c625c64b626d7"
-	BusinessSystemPromptRemoteSkillBundleID      = "codexrip-reverse-skill"
+	BusinessSystemPromptRemoteSkillBundleID = "codexrip-reverse-skill"
 )
 
 // BusinessSystemPromptComposition identifies how an immutable template

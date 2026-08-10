@@ -206,9 +206,6 @@ export interface PreviewUpstreamResponse {
     bundle_revision?: number
     bundle_archive_sha256?: string
     bundle_source_commit?: string
-    route_ids?: string[]
-    document_ids?: string[]
-    omitted_document_ids?: string[]
     degraded?: boolean
     degraded_reason?: string
   }

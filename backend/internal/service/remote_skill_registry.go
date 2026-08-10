@@ -17,7 +17,6 @@ const (
 	RemoteSkillMoxinggangRoot            = "https://moxinggang.com" + RemoteSkillMoxinggangPath
 	RemoteSkillGitHubRawRoot             = "https://raw.githubusercontent.com/zhaoxuya520/reverse-skill/"
 	RemoteSkillGitHubRoot                = RemoteSkillGitHubRawRoot + remoteSkillPinnedCommit + "/skills"
-	RemoteSkillPublishedVersionsRoot     = "https://codexrip.vip/skills/reverse-skill/versions/"
 	RemoteSkillSyncStatusQueued          = "queued"
 	RemoteSkillSyncStatusRunning         = "running"
 	RemoteSkillSyncStatusSucceeded       = "succeeded"
@@ -171,14 +170,6 @@ func remoteSkillVersionSourceRoot(sourceID, sourceCommit string) string {
 		return RemoteSkillGitHubRawRoot + strings.ToLower(strings.TrimSpace(sourceCommit)) + "/skills"
 	}
 	return remoteSkillSourceRoot(sourceID)
-}
-
-func remoteSkillPublishedRoot(sourceID, manifestSHA256 string) string {
-	root := RemoteSkillPublishedVersionsRoot + strings.ToLower(strings.TrimSpace(manifestSHA256))
-	if sourceID == RemoteSkillSourceGitHubOfficial {
-		return root + "/skills"
-	}
-	return root
 }
 
 func normalizeRemoteSkillVersionSource(version *RemoteSkillBundleVersion) {

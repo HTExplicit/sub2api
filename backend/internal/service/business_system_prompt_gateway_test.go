@@ -84,14 +84,11 @@ func TestBusinessSystemPromptHybridUsesSameRemoteEntryForOfficialCodexAndCompati
 			)
 			require.NoError(t, err)
 			officialInstructions := gjson.GetBytes(officialBody, "instructions").String()
-			publishedRoot := remoteSkillPublishedRoot(sourceID, strings.Repeat("3", 64))
+			publishedRoot := remoteSkillSourceRoot(sourceID)
 			require.Contains(t, officialInstructions, publishedRoot)
-			require.NotContains(t, officialInstructions, remoteSkillSourceRoot(sourceID))
 			require.Equal(t, 1, strings.Count(officialInstructions, "REMOTE_ROOT/SKILL.md"))
 			require.NotContains(t, officialInstructions, "REMOTE_ROOT/RULES.md")
 			require.NotContains(t, officialInstructions, "REMOTE_ROOT/README_AI.md")
-			require.Empty(t, officialApplication.RouteIDs)
-			require.Empty(t, officialApplication.DocumentIDs)
 			require.Equal(t, int64(11), officialApplication.BundleRevision)
 
 			compatible, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
@@ -101,8 +98,6 @@ func TestBusinessSystemPromptHybridUsesSameRemoteEntryForOfficialCodexAndCompati
 			)
 			require.NoError(t, err)
 			require.Equal(t, officialInstructions, gjson.GetBytes(compatibleBody, "instructions").String())
-			require.Empty(t, compatibleApplication.RouteIDs)
-			require.Empty(t, compatibleApplication.DocumentIDs)
 			require.Equal(t, int64(11), compatibleApplication.BundleRevision)
 
 			retried, retriedApplication, err := svc.applyBusinessSystemPromptForRequest(
@@ -140,9 +135,7 @@ func TestBusinessSystemPromptHybridPreviewMatchesAppliedBytes(t *testing.T) {
 			require.Equal(t, len([]byte(preview.Body)), application.EffectiveByteLength)
 			require.Equal(t, hashBusinessSystemPromptBundleBytes([]byte(preview.Body)), application.EffectiveSHA256)
 
-			require.Empty(t, application.RouteIDs)
-			require.Empty(t, application.DocumentIDs)
-			require.Contains(t, preview.Body, remoteSkillPublishedRoot(RemoteSkillSourceMoxinggang, strings.Repeat("3", 64)))
+			require.Contains(t, preview.Body, RemoteSkillMoxinggangRoot)
 		})
 	}
 }
@@ -159,11 +152,9 @@ func TestBusinessSystemPromptHybridUsesBaseEntryWhenRegistryHasNoVerifiedCache(t
 	preview, err := policy.PrepareBusinessSystemPromptPreviewSnapshotForClient(store.loaded, "security review", "openai_compatible")
 	require.NoError(t, err)
 	require.Equal(t, embeddedBusinessSystemPrompt, preview.Body)
-	require.Empty(t, preview.routeIDs)
-	require.Empty(t, preview.documentIDs)
 }
 
-func TestBusinessSystemPromptHybridKeepsVerifiedCachedRootAfterRegistryReloadFailure(t *testing.T) {
+func TestBusinessSystemPromptHybridKeepsPublishedSourceRootAfterRegistryReloadFailure(t *testing.T) {
 	policy := newGatewayHybridBusinessSystemPromptPolicyWithBody(t, embeddedBusinessSystemPrompt, 7)
 	registry := policy.registry
 	store := registry.store.(*fakeRemoteSkillRegistryStore)
@@ -174,8 +165,7 @@ func TestBusinessSystemPromptHybridKeepsVerifiedCachedRootAfterRegistryReloadFai
 	require.True(t, ok)
 	preview, err := policy.PrepareBusinessSystemPromptPreviewSnapshotForClient(current, "security review", "codex")
 	require.NoError(t, err)
-	require.Contains(t, preview.Body, remoteSkillPublishedRoot(RemoteSkillSourceMoxinggang, strings.Repeat("3", 64)))
-	require.NotContains(t, preview.Body, RemoteSkillMoxinggangRoot)
+	require.Contains(t, preview.Body, RemoteSkillMoxinggangRoot)
 	require.True(t, preview.Degraded)
 	require.NotContains(t, preview.Body, "registry unavailable")
 }

@@ -2,15 +2,11 @@ package service
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
-	openaiutil "github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -21,7 +17,6 @@ const (
 	businessSystemPromptRequestSnapshotKey    = "openai_business_system_prompt_snapshot"
 	businessSystemPromptRequestCompiledKey    = "openai_business_system_prompt_compiled_snapshot"
 	businessSystemPromptRequestTurnKey        = "openai_business_system_prompt_turn"
-	businessSystemPromptResponseRouteTTL      = time.Hour
 )
 
 type businessSystemPromptRequestState struct {
@@ -51,9 +46,7 @@ func (s *OpenAIGatewayService) applyBusinessSystemPrompt(
 	}
 	if snapshot.Enabled && (!compact || snapshot.CompactEnabled) {
 		var err error
-		snapshot, err = s.businessPromptService.compileBusinessSystemPromptSnapshot(
-			snapshot, businessSystemPromptRequestTextFromJSON(body, protocol), false, nil, true,
-		)
+		snapshot, err = s.businessPromptService.compileBusinessSystemPromptSnapshot(snapshot)
 		if err != nil {
 			return nil, BusinessSystemPromptApplication{}, err
 		}
@@ -142,10 +135,6 @@ func (s *OpenAIGatewayService) applyBusinessSystemPromptForRequest(
 						RegistryRemoteRoot:     state.application.BundleRemoteRoot,
 						baseSHA256:             state.application.BaseSHA256, effectiveSHA256: state.application.EffectiveSHA256,
 						effectiveByteLength: state.application.EffectiveByteLength,
-						routeIDs:            append([]string(nil), state.application.RouteIDs...),
-						documentIDs:         append([]string(nil), state.application.DocumentIDs...),
-						referenceIDs:        append([]string(nil), state.application.ReferenceIDs...),
-						omittedDocumentIDs:  append([]string(nil), state.application.OmittedDocumentIDs...),
 					}
 				}
 				updated, application, err := ApplyBusinessSystemPromptToJSON(body, frozen, BusinessSystemPromptTarget{
@@ -183,20 +172,7 @@ func (s *OpenAIGatewayService) applyBusinessSystemPromptForRequest(
 		}
 		if snapshot.effectiveSHA256 == "" &&
 			snapshot.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid {
-			requestText := businessSystemPromptRequestTextFromJSON(body, protocol)
-			previousResponseID := strings.TrimSpace(gjson.GetBytes(body, "previous_response_id").String())
-			var previousMetadata *BusinessSystemPromptBundleMetadata
-			if previousResponseID != "" && strings.TrimSpace(requestText) == "" {
-				loadCtx := context.Background()
-				if ctx != nil && ctx.Request != nil {
-					loadCtx = ctx.Request.Context()
-				}
-				previousMetadata, _ = s.businessPromptService.LoadResponseRouteMetadata(loadCtx, previousResponseID)
-			}
-			compiled, compileErr := s.businessPromptService.compileBusinessSystemPromptSnapshot(
-				snapshot, requestText, previousResponseID != "" && strings.TrimSpace(requestText) == "", previousMetadata,
-				!isOfficialCodexBusinessSystemPromptRequest(ctx),
-			)
+			compiled, compileErr := s.businessPromptService.compileBusinessSystemPromptSnapshot(snapshot)
 			if compileErr != nil {
 				return nil, BusinessSystemPromptApplication{}, compileErr
 			}
@@ -269,7 +245,6 @@ func (s *OpenAIGatewayService) rewriteBusinessSystemPromptJSONForRequest(c *gin.
 	if !ok {
 		return body
 	}
-	s.storeBusinessSystemPromptResponseRouteMetadata(c, body, application)
 	rewritten, err := RewriteBusinessSystemPromptResponseJSON(body, application, application.ExposeServerPrompt)
 	if err != nil {
 		return body
@@ -287,7 +262,6 @@ func (s *OpenAIGatewayService) rewriteBusinessSystemPromptSSEForRequest(c *gin.C
 	if !ok {
 		return body
 	}
-	s.storeBusinessSystemPromptSSERouteMetadata(c, body, application)
 	rewritten, err := RewriteBusinessSystemPromptSSE(body, application, application.ExposeServerPrompt)
 	if err != nil {
 		return body
@@ -311,16 +285,6 @@ func businessSystemPromptContextKey(ctx *gin.Context, base, protocol string) str
 	return key
 }
 
-func isOfficialCodexBusinessSystemPromptRequest(ctx *gin.Context) bool {
-	if ctx == nil || ctx.Request == nil {
-		return false
-	}
-	return openaiutil.IsCodexOfficialClientByHeaders(
-		ctx.Request.Header.Get("User-Agent"),
-		ctx.Request.Header.Get("originator"),
-	)
-}
-
 func beginBusinessSystemPromptRequestTurn(ctx *gin.Context) {
 	if ctx == nil {
 		return
@@ -332,42 +296,6 @@ func beginBusinessSystemPromptRequestTurn(ctx *gin.Context) {
 	ctx.Set(businessSystemPromptRequestTurnKey, turn+1)
 }
 
-func (s *OpenAIGatewayService) storeBusinessSystemPromptResponseRouteMetadata(c *gin.Context, body []byte, application BusinessSystemPromptApplication) {
-	if s == nil || s.businessPromptService == nil || !application.Applied ||
-		application.CompositionMode != BusinessSystemPromptCompositionCodexSkillHybrid {
-		return
-	}
-	responseID := ""
-	for _, path := range []string{"response.id", "id", "response_id"} {
-		if value := strings.TrimSpace(gjson.GetBytes(body, path).String()); value != "" {
-			responseID = value
-			break
-		}
-	}
-	if responseID == "" {
-		return
-	}
-	ctx := context.Background()
-	if c != nil && c.Request != nil {
-		ctx = c.Request.Context()
-	}
-	_ = s.businessPromptService.StoreResponseRouteMetadata(ctx, responseID, application, businessSystemPromptResponseRouteTTL)
-}
-
-func (s *OpenAIGatewayService) storeBusinessSystemPromptSSERouteMetadata(c *gin.Context, body []byte, application BusinessSystemPromptApplication) {
-	for _, rawLine := range bytes.Split(body, []byte("\n")) {
-		line := bytes.TrimSuffix(rawLine, []byte("\r"))
-		if !bytes.HasPrefix(line, []byte("data:")) {
-			continue
-		}
-		payload := bytes.TrimSpace(line[len("data:"):])
-		if len(payload) == 0 || bytes.Equal(payload, []byte("[DONE]")) || !json.Valid(payload) {
-			continue
-		}
-		s.storeBusinessSystemPromptResponseRouteMetadata(c, payload, application)
-	}
-}
-
 func appendBusinessSystemPromptApplicationToCacheKey(key string, application BusinessSystemPromptApplication) string {
 	key = strings.TrimSpace(key)
 	if key == "" || !application.Applied || application.Revision < 1 || strings.TrimSpace(application.SHA256) == "" {
@@ -375,89 +303,18 @@ func appendBusinessSystemPromptApplicationToCacheKey(key string, application Bus
 	}
 	suffix := ":business-system-prompt:" + strconv.FormatInt(application.Revision, 10) + ":" + strings.TrimSpace(application.SHA256)
 	if application.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid && application.BundleManifestSHA256 != "" && application.EffectiveSHA256 != "" {
-		metadata := BusinessSystemPromptBundleMetadata{
-			BundleID: application.BundleID, ManifestSHA256: application.BundleManifestSHA256,
-			BaseSHA256: application.BaseSHA256, EffectiveSHA256: application.EffectiveSHA256,
-			ByteLength:     application.EffectiveByteLength,
-			RouteIDs:       append([]string(nil), application.RouteIDs...),
-			DocumentPaths:  append([]string(nil), application.DocumentIDs...),
-			ReferencePaths: append([]string(nil), application.ReferenceIDs...),
-			Degraded:       application.Degraded,
-		}
-		suffix = ":" + metadata.CacheKey(application.Revision)
-		if application.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid {
-			suffix += ":bundle-revision:" + strconv.FormatInt(application.BundleRevision, 10) +
-				":" + strings.ToLower(strings.TrimSpace(application.BundleArchiveSHA256))
-		}
+		suffix = ":business-system-prompt:" + strconv.FormatInt(application.Revision, 10) +
+			":" + strings.TrimSpace(application.BundleID) +
+			":" + strings.ToLower(strings.TrimSpace(application.BundleManifestSHA256)) +
+			":" + strings.ToLower(strings.TrimSpace(application.BaseSHA256)) +
+			":" + strings.ToLower(strings.TrimSpace(application.EffectiveSHA256)) +
+			":bundle-revision:" + strconv.FormatInt(application.BundleRevision, 10) +
+			":" + strings.ToLower(strings.TrimSpace(application.BundleArchiveSHA256))
 	}
 	if strings.HasSuffix(key, suffix) {
 		return key
 	}
 	return key + suffix
-}
-
-func businessSystemPromptRequestTextFromJSON(body []byte, protocol string) string {
-	if !gjson.ValidBytes(body) {
-		return ""
-	}
-	var items gjson.Result
-	switch protocol {
-	case BusinessSystemPromptProtocolResponses:
-		input := gjson.GetBytes(body, "input")
-		if input.Type == gjson.String {
-			return strings.TrimSpace(input.String())
-		}
-		items = input
-	case BusinessSystemPromptProtocolChat:
-		items = gjson.GetBytes(body, "messages")
-	default:
-		return ""
-	}
-	if !items.IsArray() {
-		return ""
-	}
-	values := items.Array()
-	for i := len(values) - 1; i >= 0; i-- {
-		role := strings.ToLower(strings.TrimSpace(values[i].Get("role").String()))
-		if role != "user" {
-			continue
-		}
-		if text := strings.TrimSpace(businessSystemPromptContentText(values[i].Get("content"))); text != "" {
-			return text
-		}
-	}
-	return ""
-}
-
-// BusinessSystemPromptRequestText extracts only the latest user-authored text
-// used by deterministic offline routing. It never includes system/developer or
-// assistant content.
-func BusinessSystemPromptRequestText(body []byte, protocol string) string {
-	return businessSystemPromptRequestTextFromJSON(body, protocol)
-}
-
-func businessSystemPromptContentText(content gjson.Result) string {
-	if content.Type == gjson.String {
-		return content.String()
-	}
-	if !content.IsArray() {
-		return ""
-	}
-	parts := make([]string, 0, len(content.Array()))
-	for _, part := range content.Array() {
-		partType := strings.ToLower(strings.TrimSpace(part.Get("type").String()))
-		if partType != "" && partType != "text" && partType != "input_text" {
-			continue
-		}
-		text := strings.TrimSpace(part.Get("text").String())
-		if text == "" {
-			text = strings.TrimSpace(part.Get("content").String())
-		}
-		if text != "" {
-			parts = append(parts, text)
-		}
-	}
-	return strings.Join(parts, "\n")
 }
 
 func rewriteBusinessSystemPromptCacheKey(body []byte, application BusinessSystemPromptApplication) ([]byte, error) {

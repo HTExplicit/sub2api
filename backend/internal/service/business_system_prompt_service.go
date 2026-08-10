@@ -170,15 +170,9 @@ type BusinessSystemPromptRevisionBus interface {
 	Subscribe(context.Context, func(int64)) error
 }
 
-type BusinessSystemPromptRouteMetadataStore interface {
-	StoreBusinessSystemPromptRouteMetadata(context.Context, string, BusinessSystemPromptBundleMetadata, time.Duration) error
-	LoadBusinessSystemPromptRouteMetadata(context.Context, string) (BusinessSystemPromptBundleMetadata, bool, error)
-}
-
 type BusinessSystemPromptService struct {
 	store    BusinessSystemPromptStore
 	bus      BusinessSystemPromptRevisionBus
-	route    BusinessSystemPromptRouteMetadataStore
 	registry *RemoteSkillRegistryService
 	source   BusinessSystemPromptSource
 
@@ -191,14 +185,10 @@ type BusinessSystemPromptService struct {
 }
 
 func NewBusinessSystemPromptService(store BusinessSystemPromptStore, bus BusinessSystemPromptRevisionBus) *BusinessSystemPromptService {
-	service := &BusinessSystemPromptService{
+	return &BusinessSystemPromptService{
 		store: store, bus: bus,
 		source: NewGitHubGPT56PromptSource(nil),
 	}
-	if routeStore, ok := bus.(BusinessSystemPromptRouteMetadataStore); ok {
-		service.route = routeStore
-	}
-	return service
 }
 
 func (s *BusinessSystemPromptService) SetBusinessSystemPromptSource(source BusinessSystemPromptSource) {
@@ -237,40 +227,6 @@ func (s *BusinessSystemPromptService) SyncManagedSource(
 	return sourceStore.SyncBusinessSystemPromptSourceVersion(
 		ctx, templateID, candidate, actorID, expectedLatestVersion, expectedRevision,
 	)
-}
-
-func (s *BusinessSystemPromptService) StoreResponseRouteMetadata(ctx context.Context, responseID string, application BusinessSystemPromptApplication, ttl time.Duration) error {
-	if s == nil || s.route == nil || !application.Applied ||
-		application.CompositionMode != BusinessSystemPromptCompositionCodexSkillHybrid {
-		return nil
-	}
-	metadata := BusinessSystemPromptBundleMetadata{
-		BundleID: application.BundleID, ManifestSHA256: application.BundleManifestSHA256,
-		BaseSHA256: application.BaseSHA256, EffectiveSHA256: application.EffectiveSHA256,
-		ByteLength:     application.EffectiveByteLength,
-		RouteIDs:       append([]string(nil), application.RouteIDs...),
-		DocumentPaths:  append([]string(nil), application.DocumentIDs...),
-		ReferencePaths: append([]string(nil), application.ReferenceIDs...),
-		Degraded:       application.Degraded,
-	}
-	if err := ValidateBusinessSystemPromptBundleMetadata(metadata); err != nil {
-		return err
-	}
-	return s.route.StoreBusinessSystemPromptRouteMetadata(ctx, responseID, metadata, ttl)
-}
-
-func (s *BusinessSystemPromptService) LoadResponseRouteMetadata(ctx context.Context, responseID string) (*BusinessSystemPromptBundleMetadata, error) {
-	if s == nil || s.route == nil || strings.TrimSpace(responseID) == "" {
-		return nil, nil
-	}
-	metadata, found, err := s.route.LoadBusinessSystemPromptRouteMetadata(ctx, responseID)
-	if err != nil || !found {
-		return nil, err
-	}
-	if err := ValidateBusinessSystemPromptBundleMetadata(metadata); err != nil {
-		return nil, err
-	}
-	return &metadata, nil
 }
 
 func (s *BusinessSystemPromptService) Initialize(ctx context.Context) error {
@@ -431,14 +387,12 @@ func (s *BusinessSystemPromptService) prepareBusinessSystemPromptSnapshot(snapsh
 	snapshot.RegistrySourceID = ""
 	snapshot.RegistryRemoteRoot = ""
 	if snapshot.CompositionMode == BusinessSystemPromptCompositionInline {
-		snapshot.requestBundle = nil
 		snapshot.BundleAvailable = false
 		snapshot.BundleDegraded = false
 		snapshot.DegradedReason = ""
 		return nil
 	}
 	if snapshot.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid {
-		snapshot.requestBundle = nil
 		snapshot.BundleAvailable = false
 		snapshot.BundleDegraded = false
 		snapshot.DegradedReason = ""
@@ -460,16 +414,12 @@ func (s *BusinessSystemPromptService) prepareBusinessSystemPromptSnapshot(snapsh
 		snapshot.RegistryArchiveSHA256 = registrySnapshot.Active.ArchiveSHA256
 		snapshot.RegistrySourceCommit = registrySnapshot.Active.SourceCommit
 		snapshot.RegistrySourceID = registrySnapshot.Active.SourceID
-		snapshot.RegistryRemoteRoot = remoteSkillPublishedRoot(
-			registrySnapshot.Active.SourceID,
-			registrySnapshot.Active.ManifestSHA256,
-		)
+		snapshot.RegistryRemoteRoot = registrySnapshot.Active.RemoteRoot
 		if snapshot.BundleDegraded {
 			snapshot.Degraded = true
 		}
 		return nil
 	}
-	snapshot.requestBundle = nil
 	snapshot.BundleAvailable = false
 	snapshot.BundleDegraded = true
 	snapshot.DegradedReason = "unsupported_composition"
@@ -481,11 +431,10 @@ func (s *BusinessSystemPromptService) prepareBusinessSystemPromptSnapshot(snapsh
 }
 
 // PrepareBusinessSystemPromptPreviewSnapshot verifies the selected immutable
-// version and performs the same deterministic offline compilation used by live
-// requests. It never mutates the installed runtime snapshot.
+// version and applies the same published remote root used by live requests.
 func (s *BusinessSystemPromptService) PrepareBusinessSystemPromptPreviewSnapshot(
 	snapshot BusinessSystemPromptSnapshot,
-	requestText string,
+	_ string,
 ) (BusinessSystemPromptSnapshot, error) {
 	snapshot.Enabled = true
 	if snapshot.Revision < 1 {
@@ -494,13 +443,13 @@ func (s *BusinessSystemPromptService) PrepareBusinessSystemPromptPreviewSnapshot
 	if err := s.prepareBusinessSystemPromptSnapshot(&snapshot); err != nil {
 		return BusinessSystemPromptSnapshot{}, err
 	}
-	return s.compileBusinessSystemPromptSnapshot(snapshot, requestText, false, nil, true)
+	return s.compileBusinessSystemPromptSnapshot(snapshot)
 }
 
 func (s *BusinessSystemPromptService) PrepareBusinessSystemPromptPreviewSnapshotForClient(
 	snapshot BusinessSystemPromptSnapshot,
-	requestText string,
-	clientMode string,
+	_ string,
+	_ string,
 ) (BusinessSystemPromptSnapshot, error) {
 	snapshot.Enabled = true
 	if snapshot.Revision < 1 {
@@ -509,15 +458,11 @@ func (s *BusinessSystemPromptService) PrepareBusinessSystemPromptPreviewSnapshot
 	if err := s.prepareBusinessSystemPromptSnapshot(&snapshot); err != nil {
 		return BusinessSystemPromptSnapshot{}, err
 	}
-	return s.compileBusinessSystemPromptSnapshot(snapshot, requestText, false, nil, false)
+	return s.compileBusinessSystemPromptSnapshot(snapshot)
 }
 
 func (s *BusinessSystemPromptService) compileBusinessSystemPromptSnapshot(
 	snapshot BusinessSystemPromptSnapshot,
-	requestText string,
-	continuation bool,
-	previous *BusinessSystemPromptBundleMetadata,
-	inlineDocuments bool,
 ) (BusinessSystemPromptSnapshot, error) {
 	if snapshot.CompositionMode == BusinessSystemPromptCompositionInline {
 		return snapshot, nil
@@ -528,10 +473,6 @@ func (s *BusinessSystemPromptService) compileBusinessSystemPromptSnapshot(
 		snapshot.baseSHA256 = baseHash
 		snapshot.effectiveSHA256 = baseHash
 		snapshot.effectiveByteLength = len([]byte(snapshot.Body))
-		snapshot.routeIDs = nil
-		snapshot.documentIDs = nil
-		snapshot.referenceIDs = nil
-		snapshot.omittedDocumentIDs = nil
 		return snapshot, nil
 	}
 	return BusinessSystemPromptSnapshot{}, fmt.Errorf("%w: unsupported composition", ErrBusinessSystemPromptUnavailable)
