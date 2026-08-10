@@ -157,6 +157,7 @@ func TestBusinessSystemPromptHybridUsesBaseEntryWhenRegistryHasNoVerifiedCache(t
 func TestBusinessSystemPromptHybridKeepsPublishedSourceRootAfterRegistryReloadFailure(t *testing.T) {
 	policy := newGatewayHybridBusinessSystemPromptPolicyWithBody(t, embeddedBusinessSystemPrompt, 7)
 	registry := policy.registry
+	t.Cleanup(registry.Stop)
 	store := registry.store.(*fakeRemoteSkillRegistryStore)
 	store.loadErr = errors.New("remote unavailable")
 	require.Error(t, registry.Reload(context.Background()))

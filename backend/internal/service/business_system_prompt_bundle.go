@@ -283,14 +283,6 @@ func (b *BusinessSystemPromptBundle) ReadText(rel string) (string, error) {
 	return string(data), nil
 }
 
-func (b *BusinessSystemPromptBundle) file(rel string) (BusinessSystemPromptBundleFile, bool) {
-	if b == nil {
-		return BusinessSystemPromptBundleFile{}, false
-	}
-	entry, ok := b.fileEntries[rel]
-	return entry, ok
-}
-
 func normalizeBundleRelativePath(value string) (string, error) {
 	if value == "" || strings.ContainsRune(value, '\x00') || strings.ContainsRune(value, '\\') {
 		return "", errors.New("empty, NUL, or backslash path")
