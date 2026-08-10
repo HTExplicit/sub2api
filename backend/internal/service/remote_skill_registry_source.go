@@ -284,7 +284,7 @@ func (s *GitHubRemoteSkillCandidateSource) download(ctx context.Context, rawURL 
 		return nil, fmt.Errorf("%w: source request failed", ErrBusinessSystemPromptBundleUnavailable)
 	}
 	defer func() { _ = response.Body.Close() }()
-	if response.Request == nil || response.Request.URL == nil || response.Request.URL.Scheme != "https" || response.Request.URL.Hostname() != expectedHost || response.Request.URL.Port() != "" || response.Request.URL.Path != parsed.Path || response.Request.URL.RawQuery != "" || response.Request.URL.Fragment != "" {
+	if response.Request == nil || response.Request.URL == nil || response.Request.URL.Scheme != "https" || response.Request.URL.Hostname() != expectedHost || response.Request.URL.Port() != "" || response.Request.URL.User != nil || response.Request.URL.RawPath != "" || response.Request.URL.Path != parsed.Path || response.Request.URL.RawQuery != "" || response.Request.URL.Fragment != "" {
 		return nil, fmt.Errorf("%w: source final URL rejected", ErrBusinessSystemPromptBundleInvalid)
 	}
 	if response.StatusCode != http.StatusOK {
@@ -312,7 +312,7 @@ func newRemoteSkillHTTPClient() *http.Client {
 			}
 			switch req.URL.Hostname() {
 			case "codeload.github.com":
-				if !strings.HasPrefix(req.URL.Path, "/zhaoxuya520/reverse-skill/zip/") || req.URL.RawQuery != "" || req.URL.Fragment != "" {
+				if req.URL.User != nil || req.URL.RawPath != "" || !strings.HasPrefix(req.URL.Path, "/zhaoxuya520/reverse-skill/zip/") || req.URL.RawQuery != "" || req.URL.Fragment != "" {
 					return errorsNewRemoteSkillRedirect()
 				}
 			case "moxinggang.com":

@@ -23,13 +23,14 @@ func TestBusinessSystemPromptSeedRestoresOriginalBehaviorAndRoutingContract(t *t
 	seed := embeddedBusinessSystemPrompt
 	require.False(t, strings.HasSuffix(seed, "\n"))
 	require.Contains(t, seed, "<!-- BEGIN CODEXRIP REVERSE-SKILL -->")
-	require.Contains(t, seed, "<!-- BEGIN CODEXRIP SECURITY-RESEARCH ROUTING -->")
+	require.NotContains(t, seed, "<!-- BEGIN CODEXRIP SECURITY-RESEARCH ROUTING -->")
 	require.Contains(t, seed, "CodexRip remote reverse-skill routing")
 	require.Contains(t, seed, "For reverse engineering, security research, and CTF tasks")
 	require.Contains(t, seed, "official Codex and OpenAI-compatible clients")
-	require.Contains(t, seed, "CodexRip remote security-research routing")
 	require.Contains(t, seed, "REMOTE_ROOT = "+RemoteSkillGitHubRoot)
 	require.Contains(t, seed, "REMOTE_ROOT/SKILL.md")
+	require.Equal(t, 1, strings.Count(seed, "REMOTE_ROOT/SKILL.md"))
+	require.Contains(t, seed, "Resolve every relative path in `SKILL.md` against `REMOTE_ROOT`")
 	require.NotContains(t, seed, "REMOTE_ROOT/RULES.md")
 	require.NotContains(t, seed, "REMOTE_ROOT/README_AI.md")
 	for _, forbidden := range []string{"LOCAL_BUNDLE_ROOT", "[CODEXRIP VERIFIED SKILL DOCUMENTS]", "DESCRIPTOR_URL", "POWERSHELL_BOOTSTRAP", "PYTHON_BOOTSTRAP", "模型港", `C:\Users\Administrator`} {
@@ -47,7 +48,7 @@ func TestBusinessSystemPromptSeedRestoresOriginalBehaviorAndRoutingContract(t *t
 	require.Contains(t, seed, "The only allowed user address is exactly \"老板\".")
 	require.Contains(t, seed, "In Chinese, address the user naturally as \"老板\"")
 	require.NotEqual(t, 6784, len([]byte(seed)), "the narrowed .3 prompt must not remain active")
-	require.Greater(t, len([]byte(seed)), 7098, "routing replacements must wrap the complete 7098-byte original body")
+	require.Greater(t, len([]byte(seed)), 6500, "single-entry routing must preserve the complete core behavior contract")
 	seedDigest := sha256.Sum256([]byte(seed))
 	require.NotEqual(t, "0615d24958a1da11edcf9538aaff989e46fcd296ea86a6c1b1af2b3efa48487f", hex.EncodeToString(seedDigest[:]))
 }
@@ -76,16 +77,12 @@ func TestBusinessSystemPromptSeedAppliesOnlyApprovedIdentityAndRemoteEntryTransf
 
 	originalText := strings.TrimSuffix(string(original), "\n")
 	runtimeText := embeddedBusinessSystemPrompt
-	for _, markers := range [][2]string{
-		{"<!-- BEGIN 模型港 REVERSE-SKILL -->", "<!-- END 模型港 REVERSE-SKILL -->"},
-		{"<!-- BEGIN 模型港 SECURITY-RESEARCH ROUTING -->", "<!-- END 模型港 SECURITY-RESEARCH ROUTING -->"},
-	} {
-		oldBlock := delimitedPromptBlock(t, originalText, markers[0], markers[1])
-		newMarker := strings.ReplaceAll(markers[0], "模型港", "CODEXRIP")
-		newEndMarker := strings.ReplaceAll(markers[1], "模型港", "CODEXRIP")
-		newBlock := delimitedPromptBlock(t, runtimeText, newMarker, newEndMarker)
-		originalText = strings.Replace(originalText, oldBlock, newBlock, 1)
-	}
+	oldFirstBlock := delimitedPromptBlock(t, originalText, "<!-- BEGIN 模型港 REVERSE-SKILL -->", "<!-- END 模型港 REVERSE-SKILL -->")
+	newFirstBlock := delimitedPromptBlock(t, runtimeText, "<!-- BEGIN CODEXRIP REVERSE-SKILL -->", "<!-- END CODEXRIP REVERSE-SKILL -->")
+	originalText = strings.Replace(originalText, oldFirstBlock, newFirstBlock, 1)
+	oldSecondBlock := delimitedPromptBlock(t, originalText, "<!-- BEGIN 模型港 SECURITY-RESEARCH ROUTING -->", "<!-- END 模型港 SECURITY-RESEARCH ROUTING -->")
+	originalText = strings.Replace(originalText, "\n"+oldSecondBlock, "", 1)
+	originalText = strings.TrimSuffix(originalText, "\n")
 	originalText = strings.ReplaceAll(originalText, "模型港", "codexrip")
 	originalText = strings.Replace(originalText,
 		"  - The only allowed user address is exactly \"宝宝\". Never use any other nickname, honorific,\n"+
@@ -110,23 +107,13 @@ func delimitedPromptBlock(t *testing.T, body, begin, end string) string {
 func TestBusinessSystemPromptSeedBindsRemoteEntryLifecycle(t *testing.T) {
 	seed := embeddedBusinessSystemPrompt
 	firstEnd := strings.Index(seed, "<!-- END CODEXRIP REVERSE-SKILL -->")
-	secondStart := strings.Index(seed, "<!-- BEGIN CODEXRIP SECURITY-RESEARCH ROUTING -->")
 	require.Positive(t, firstEnd)
-	require.Greater(t, secondStart, firstEnd)
-
-	for name, block := range map[string]string{
-		"first routing block":  seed[:firstEnd],
-		"second routing block": seed[secondStart:],
-	} {
-		t.Run(name, func(t *testing.T) {
-			assert.Contains(t, block, "REMOTE_ROOT/SKILL.md", "routing block must load the single remote entry")
-			assert.Equal(t, 1, strings.Count(block, "REMOTE_ROOT/SKILL.md"))
-			assert.NotContains(t, block, "REMOTE_ROOT/RULES.md")
-			assert.NotContains(t, block, "REMOTE_ROOT/README_AI.md")
-			assert.NotContains(t, block, "LOCAL_BUNDLE_ROOT")
-			assert.NotContains(t, block, "bundle/RULES.md")
-		})
-	}
+	assert.Contains(t, seed[:firstEnd], "REMOTE_ROOT/SKILL.md", "routing block must load the single remote entry")
+	assert.Equal(t, 1, strings.Count(seed, "REMOTE_ROOT/SKILL.md"))
+	assert.NotContains(t, seed, "REMOTE_ROOT/RULES.md")
+	assert.NotContains(t, seed, "REMOTE_ROOT/README_AI.md")
+	assert.NotContains(t, seed, "LOCAL_BUNDLE_ROOT")
+	assert.NotContains(t, seed, "bundle/RULES.md")
 }
 
 func TestBusinessSystemPromptSeedBodyIsInjectedByteForByte(t *testing.T) {

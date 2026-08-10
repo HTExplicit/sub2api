@@ -87,6 +87,12 @@ func TestRemoteSkillSourceRootsExposeResolvableSingleSkillEntry(t *testing.T) {
 	}
 }
 
+func TestRemoteSkillPublishedRootsAreContentAddressed(t *testing.T) {
+	manifest := strings.Repeat("a", 64)
+	require.Equal(t, RemoteSkillPublishedVersionsRoot+manifest+"/skills", remoteSkillPublishedRoot(RemoteSkillSourceGitHubOfficial, manifest))
+	require.Equal(t, RemoteSkillPublishedVersionsRoot+manifest, remoteSkillPublishedRoot(RemoteSkillSourceMoxinggang, manifest))
+}
+
 func TestRemoteSkillSourceSelectorUsesRequestedProvider(t *testing.T) {
 	github := &fakeRemoteSkillProvider{candidate: RemoteSkillCandidate{Version: RemoteSkillBundleVersion{SourceID: RemoteSkillSourceGitHubOfficial, RemoteRoot: RemoteSkillGitHubRoot}}}
 	moxinggang := &fakeRemoteSkillProvider{candidate: RemoteSkillCandidate{Version: RemoteSkillBundleVersion{SourceID: RemoteSkillSourceMoxinggang, RemoteRoot: RemoteSkillMoxinggangRoot}}}
@@ -200,6 +206,15 @@ func TestRemoteSkillSourceHTTPClientRejectsCrossHostRedirect(t *testing.T) {
 	request, err := http.NewRequest(http.MethodGet, "https://example.com/skills/security-research/current/SKILL.md", nil)
 	require.NoError(t, err)
 	err = client.CheckRedirect(request, []*http.Request{{URL: &url.URL{Scheme: "https", Host: "moxinggang.com", Path: RemoteSkillMoxinggangPath + "/SKILL.md"}}})
+	require.ErrorIs(t, err, ErrBusinessSystemPromptBundleInvalid)
+}
+
+func TestRemoteSkillSourceHTTPClientRejectsEncodedGitHubRedirect(t *testing.T) {
+	client := newRemoteSkillHTTPClient()
+	request, err := http.NewRequest(http.MethodGet, remoteSkillGitHubZipPrefix+remoteSkillPinnedCommit, nil)
+	require.NoError(t, err)
+	request.URL.RawPath = "/zhaoxuya520/reverse-skill/zip/%2e%2e/escape"
+	err = client.CheckRedirect(request, []*http.Request{{URL: &url.URL{Scheme: "https", Host: "codeload.github.com", Path: "/zhaoxuya520/reverse-skill/zip/old"}}})
 	require.ErrorIs(t, err, ErrBusinessSystemPromptBundleInvalid)
 }
 

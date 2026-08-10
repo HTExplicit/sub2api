@@ -16,6 +16,7 @@ const (
 	RemoteSkillMoxinggangPath            = "/skills/security-research/current"
 	RemoteSkillMoxinggangRoot            = "https://moxinggang.com" + RemoteSkillMoxinggangPath
 	RemoteSkillGitHubRoot                = "https://raw.githubusercontent.com/zhaoxuya520/reverse-skill/" + remoteSkillPinnedCommit + "/skills"
+	RemoteSkillPublishedVersionsRoot     = "https://codexrip.vip/skills/reverse-skill/versions/"
 	RemoteSkillSyncStatusQueued          = "queued"
 	RemoteSkillSyncStatusRunning         = "running"
 	RemoteSkillSyncStatusSucceeded       = "succeeded"
@@ -162,6 +163,14 @@ func remoteSkillSourceRoot(sourceID string) string {
 
 func remoteSkillSourceEntryURL(sourceID string) string {
 	return remoteSkillSourceRoot(sourceID) + "/SKILL.md"
+}
+
+func remoteSkillPublishedRoot(sourceID, manifestSHA256 string) string {
+	root := RemoteSkillPublishedVersionsRoot + strings.ToLower(strings.TrimSpace(manifestSHA256))
+	if sourceID == RemoteSkillSourceGitHubOfficial {
+		return root + "/skills"
+	}
+	return root
 }
 
 func normalizeRemoteSkillVersionSource(version *RemoteSkillBundleVersion) {

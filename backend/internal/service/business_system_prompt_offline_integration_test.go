@@ -37,9 +37,11 @@ func TestBusinessSystemPromptHybridCodexUsesFixedBodyAcrossAdapters(t *testing.T
 	require.NotEmpty(t, application.BaseSHA256)
 	require.NotEmpty(t, application.EffectiveSHA256)
 	require.Equal(t, application.BaseSHA256, application.EffectiveSHA256)
-	expectedPrompt := applyRemoteSkillRoot(embeddedBusinessSystemPrompt, RemoteSkillMoxinggangRoot)
+	publishedRoot := remoteSkillPublishedRoot(RemoteSkillSourceMoxinggang, strings.Repeat("3", 64))
+	expectedPrompt := applyRemoteSkillRoot(embeddedBusinessSystemPrompt, publishedRoot)
 	require.Equal(t, expectedPrompt, application.ServerInstructions)
-	require.Contains(t, application.ServerInstructions, RemoteSkillMoxinggangRoot)
+	require.Contains(t, application.ServerInstructions, publishedRoot)
+	require.NotContains(t, application.ServerInstructions, RemoteSkillMoxinggangRoot)
 	require.NotContains(t, application.ServerInstructions, `C:\Users\Administrator`)
 	require.Equal(t, application.ServerInstructions, gjson.GetBytes(responsesBody, "instructions").String())
 
@@ -136,7 +138,10 @@ func TestBusinessSystemPromptRequestTextExtractionUsesLatestUserContent(t *testi
 func TestBusinessSystemPromptWSHybridCodexTurnsReuseFixedBody(t *testing.T) {
 	policy := newGatewayHybridBusinessSystemPromptPolicyWithBody(t, embeddedBusinessSystemPrompt, 8)
 	gateway := &OpenAIGatewayService{businessPromptService: policy}
-	expectedPrompt := applyRemoteSkillRoot(embeddedBusinessSystemPrompt, RemoteSkillMoxinggangRoot)
+	expectedPrompt := applyRemoteSkillRoot(
+		embeddedBusinessSystemPrompt,
+		remoteSkillPublishedRoot(RemoteSkillSourceMoxinggang, strings.Repeat("3", 64)),
+	)
 
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())

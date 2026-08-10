@@ -478,7 +478,10 @@ func (s *BusinessSystemPromptService) prepareBusinessSystemPromptSnapshot(snapsh
 		snapshot.RegistryArchiveSHA256 = registrySnapshot.Active.ArchiveSHA256
 		snapshot.RegistrySourceCommit = registrySnapshot.Active.SourceCommit
 		snapshot.RegistrySourceID = registrySnapshot.Active.SourceID
-		snapshot.RegistryRemoteRoot = registrySnapshot.Active.RemoteRoot
+		snapshot.RegistryRemoteRoot = remoteSkillPublishedRoot(
+			registrySnapshot.Active.SourceID,
+			registrySnapshot.Active.ManifestSHA256,
+		)
 		if snapshot.BundleDegraded {
 			snapshot.Degraded = true
 		}

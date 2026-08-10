@@ -84,8 +84,10 @@ func TestBusinessSystemPromptHybridUsesSameRemoteEntryForOfficialCodexAndCompati
 			)
 			require.NoError(t, err)
 			officialInstructions := gjson.GetBytes(officialBody, "instructions").String()
-			require.Contains(t, officialInstructions, remoteSkillSourceRoot(sourceID))
-			require.Equal(t, 2, strings.Count(officialInstructions, "REMOTE_ROOT/SKILL.md"))
+			publishedRoot := remoteSkillPublishedRoot(sourceID, strings.Repeat("3", 64))
+			require.Contains(t, officialInstructions, publishedRoot)
+			require.NotContains(t, officialInstructions, remoteSkillSourceRoot(sourceID))
+			require.Equal(t, 1, strings.Count(officialInstructions, "REMOTE_ROOT/SKILL.md"))
 			require.NotContains(t, officialInstructions, "REMOTE_ROOT/RULES.md")
 			require.NotContains(t, officialInstructions, "REMOTE_ROOT/README_AI.md")
 			require.Empty(t, officialApplication.RouteIDs)
@@ -140,7 +142,7 @@ func TestBusinessSystemPromptHybridPreviewMatchesAppliedBytes(t *testing.T) {
 
 			require.Empty(t, application.RouteIDs)
 			require.Empty(t, application.DocumentIDs)
-			require.Contains(t, preview.Body, RemoteSkillMoxinggangRoot)
+			require.Contains(t, preview.Body, remoteSkillPublishedRoot(RemoteSkillSourceMoxinggang, strings.Repeat("3", 64)))
 		})
 	}
 }
@@ -172,7 +174,8 @@ func TestBusinessSystemPromptHybridKeepsVerifiedCachedRootAfterRegistryReloadFai
 	require.True(t, ok)
 	preview, err := policy.PrepareBusinessSystemPromptPreviewSnapshotForClient(current, "security review", "codex")
 	require.NoError(t, err)
-	require.Contains(t, preview.Body, RemoteSkillMoxinggangRoot)
+	require.Contains(t, preview.Body, remoteSkillPublishedRoot(RemoteSkillSourceMoxinggang, strings.Repeat("3", 64)))
+	require.NotContains(t, preview.Body, RemoteSkillMoxinggangRoot)
 	require.True(t, preview.Degraded)
 	require.NotContains(t, preview.Body, "registry unavailable")
 }
