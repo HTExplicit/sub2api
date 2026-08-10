@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -59,5 +60,82 @@ func TestRemoteSkillRegistryRepositoryLoadsPublishedSourceMetadata(t *testing.T)
 	require.Equal(t, service.RemoteSkillMoxinggangRoot, snapshot.RemoteRoot)
 	require.NotNil(t, snapshot.Active)
 	require.Equal(t, service.RemoteSkillSourceMoxinggang, snapshot.Active.SourceID)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestRemoteSkillRegistryRepositoryReusesManifestOnlyWithinSameSource(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	createdAt := time.Now().UTC()
+	version := service.RemoteSkillBundleVersion{
+		ID: 17, BundleID: service.BusinessSystemPromptRemoteSkillBundleID,
+		SourceID: service.RemoteSkillSourceMoxinggang, RemoteRoot: service.RemoteSkillMoxinggangRoot,
+		SourceCommit: strings.Repeat("1", 40), OverlaySHA256: strings.Repeat("2", 64),
+		ManifestSHA256: strings.Repeat("3", 64), ArchiveSHA256: strings.Repeat("4", 64),
+		FileCount: 6, TotalBytes: 1200, CreatedBy: 42, CreatedAt: createdAt,
+	}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("INSERT INTO system_prompt_skill_bundle_versions.*ON CONFLICT \\(source_id, manifest_sha256\\) DO NOTHING").
+		WithArgs(
+			version.BundleID, version.SourceID, version.RemoteRoot, version.SourceCommit,
+			version.OverlaySHA256, version.ManifestSHA256, version.ArchiveSHA256,
+			version.FileCount, version.TotalBytes, 0, 0, 0, 0, 0, int64(42),
+		).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectQuery("WHERE v.source_id = \\$1 AND v.manifest_sha256 = \\$2").
+		WithArgs(version.SourceID, version.ManifestSHA256).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "bundle_id", "source_id", "remote_root", "source_commit", "overlay_sha256", "manifest_sha256", "archive_sha256",
+			"file_count", "total_bytes", "added_files", "modified_files", "deleted_files", "script_changes", "binary_changes",
+			"created_by", "published_at", "published_by", "created_at",
+		}).AddRow(
+			version.ID, version.BundleID, version.SourceID, version.RemoteRoot, version.SourceCommit,
+			version.OverlaySHA256, version.ManifestSHA256, version.ArchiveSHA256,
+			version.FileCount, version.TotalBytes, 0, 0, 0, 0, 0,
+			version.CreatedBy, nil, nil, version.CreatedAt,
+		))
+	mock.ExpectRollback()
+
+	tx, err := db.Begin()
+	require.NoError(t, err)
+	id, err := insertOrValidateRemoteSkillVersion(context.Background(), tx, version)
+	require.NoError(t, err)
+	require.Equal(t, version.ID, id)
+	require.NoError(t, tx.Rollback())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestRemoteSkillRegistryRepositoryInsertsSameManifestForAnotherSource(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	version := service.RemoteSkillBundleVersion{
+		BundleID: service.BusinessSystemPromptRemoteSkillBundleID,
+		SourceID: service.RemoteSkillSourceMoxinggang, RemoteRoot: service.RemoteSkillMoxinggangRoot,
+		SourceCommit: strings.Repeat("1", 40), OverlaySHA256: strings.Repeat("2", 64),
+		ManifestSHA256: strings.Repeat("3", 64), ArchiveSHA256: strings.Repeat("4", 64),
+		FileCount: 6, TotalBytes: 1200, CreatedBy: 42,
+	}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("INSERT INTO system_prompt_skill_bundle_versions.*ON CONFLICT \\(source_id, manifest_sha256\\) DO NOTHING").
+		WithArgs(
+			version.BundleID, version.SourceID, version.RemoteRoot, version.SourceCommit,
+			version.OverlaySHA256, version.ManifestSHA256, version.ArchiveSHA256,
+			version.FileCount, version.TotalBytes, 0, 0, 0, 0, 0, int64(42),
+		).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(18)))
+	mock.ExpectRollback()
+
+	tx, err := db.Begin()
+	require.NoError(t, err)
+	id, err := insertOrValidateRemoteSkillVersion(context.Background(), tx, version)
+	require.NoError(t, err)
+	require.Equal(t, int64(18), id)
+	require.NoError(t, tx.Rollback())
 	require.NoError(t, mock.ExpectationsWereMet())
 }

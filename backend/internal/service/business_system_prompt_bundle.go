@@ -195,43 +195,6 @@ func LoadBusinessSystemPromptBundle(root string) (*BusinessSystemPromptBundle, e
 	return bundle, nil
 }
 
-type BusinessSystemPromptBundleSummary struct {
-	BundleID       string    `json:"bundle_id"`
-	Name           string    `json:"name,omitempty"`
-	Version        string    `json:"version,omitempty"`
-	Description    string    `json:"description,omitempty"`
-	ManifestSHA256 string    `json:"manifest_sha256"`
-	Available      bool      `json:"available"`
-	Degraded       bool      `json:"degraded"`
-	DegradedReason string    `json:"degraded_reason,omitempty"`
-	DocumentCount  int       `json:"document_count"`
-	RouteCount     int       `json:"route_count"`
-	TotalBytes     int64     `json:"total_bytes"`
-	LoadedAt       time.Time `json:"loaded_at,omitempty"`
-}
-
-type BusinessSystemPromptBundleDocument struct {
-	Path       string `json:"path"`
-	SHA256     string `json:"sha256"`
-	ByteLength int    `json:"byte_length"`
-	Kind       string `json:"kind"`
-	Required   bool   `json:"required"`
-}
-
-type BusinessSystemPromptBundleRoute struct {
-	ID         string   `json:"id"`
-	Keywords   []string `json:"keywords"`
-	Entry      string   `json:"entry"`
-	References []string `json:"references,omitempty"`
-	Priority   int      `json:"priority,omitempty"`
-}
-
-type BusinessSystemPromptBundleDetail struct {
-	BusinessSystemPromptBundleSummary
-	Documents []BusinessSystemPromptBundleDocument `json:"documents"`
-	Routes    []BusinessSystemPromptBundleRoute    `json:"routes"`
-}
-
 func validateBusinessSystemPromptBundleManifest(manifest BusinessSystemPromptBundleManifest) error {
 	if manifest.SchemaVersion != 1 {
 		return fmt.Errorf("%w: unsupported schema version %d", ErrBusinessSystemPromptBundleInvalid, manifest.SchemaVersion)

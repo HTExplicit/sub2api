@@ -488,8 +488,8 @@ func buildRemoteSkillCandidate(sourceID, remoteRoot, commit, sourceSHA string, c
 
 // Keep empty reference lists explicit in the wire manifest. The native
 // installers consume the JSON directly and distinguish [] from an omitted
-// field; the generic manifest type intentionally uses omitempty for legacy
-// offline bundles, so this normalization stays remote-candidate specific.
+// field; the generic manifest type intentionally uses omitempty, so this
+// normalization stays remote-candidate specific.
 func marshalRemoteSkillManifest(manifest BusinessSystemPromptBundleManifest) ([]byte, error) {
 	raw, err := json.Marshal(manifest)
 	if err != nil {

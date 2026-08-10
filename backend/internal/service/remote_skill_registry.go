@@ -15,7 +15,8 @@ const (
 	RemoteSkillSourceMoxinggang          = "moxinggang"
 	RemoteSkillMoxinggangPath            = "/skills/security-research/current"
 	RemoteSkillMoxinggangRoot            = "https://moxinggang.com" + RemoteSkillMoxinggangPath
-	RemoteSkillGitHubRoot                = "https://raw.githubusercontent.com/zhaoxuya520/reverse-skill/" + remoteSkillPinnedCommit + "/skills"
+	RemoteSkillGitHubRawRoot             = "https://raw.githubusercontent.com/zhaoxuya520/reverse-skill/"
+	RemoteSkillGitHubRoot                = RemoteSkillGitHubRawRoot + remoteSkillPinnedCommit + "/skills"
 	RemoteSkillPublishedVersionsRoot     = "https://codexrip.vip/skills/reverse-skill/versions/"
 	RemoteSkillSyncStatusQueued          = "queued"
 	RemoteSkillSyncStatusRunning         = "running"
@@ -165,6 +166,13 @@ func remoteSkillSourceEntryURL(sourceID string) string {
 	return remoteSkillSourceRoot(sourceID) + "/SKILL.md"
 }
 
+func remoteSkillVersionSourceRoot(sourceID, sourceCommit string) string {
+	if sourceID == RemoteSkillSourceGitHubOfficial {
+		return RemoteSkillGitHubRawRoot + strings.ToLower(strings.TrimSpace(sourceCommit)) + "/skills"
+	}
+	return remoteSkillSourceRoot(sourceID)
+}
+
 func remoteSkillPublishedRoot(sourceID, manifestSHA256 string) string {
 	root := RemoteSkillPublishedVersionsRoot + strings.ToLower(strings.TrimSpace(manifestSHA256))
 	if sourceID == RemoteSkillSourceGitHubOfficial {
@@ -181,7 +189,7 @@ func normalizeRemoteSkillVersionSource(version *RemoteSkillBundleVersion) {
 		version.SourceID = RemoteSkillSourceGitHubOfficial
 	}
 	if strings.TrimSpace(version.RemoteRoot) == "" {
-		version.RemoteRoot = remoteSkillSourceRoot(version.SourceID)
+		version.RemoteRoot = remoteSkillVersionSourceRoot(version.SourceID, version.SourceCommit)
 	}
 }
 
@@ -226,7 +234,7 @@ func (s *RemoteSkillRegistryService) Initialize(ctx context.Context) error {
 			seed.SourceID = RemoteSkillSourceGitHubOfficial
 		}
 		if seed.RemoteRoot == "" {
-			seed.RemoteRoot = remoteSkillSourceRoot(seed.SourceID)
+			seed.RemoteRoot = remoteSkillVersionSourceRoot(seed.SourceID, seed.SourceCommit)
 		}
 		if err := s.store.EnsureRemoteSkillSeed(ctx, seed); err != nil {
 			return fmt.Errorf("ensure remote skill seed: %w", err)

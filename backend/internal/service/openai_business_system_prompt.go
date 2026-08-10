@@ -182,7 +182,7 @@ func (s *OpenAIGatewayService) applyBusinessSystemPromptForRequest(
 			}
 		}
 		if snapshot.effectiveSHA256 == "" &&
-			(snapshot.CompositionMode == BusinessSystemPromptCompositionOfflineBundle || snapshot.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid) {
+			snapshot.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid {
 			requestText := businessSystemPromptRequestTextFromJSON(body, protocol)
 			previousResponseID := strings.TrimSpace(gjson.GetBytes(body, "previous_response_id").String())
 			var previousMetadata *BusinessSystemPromptBundleMetadata
@@ -334,7 +334,7 @@ func beginBusinessSystemPromptRequestTurn(ctx *gin.Context) {
 
 func (s *OpenAIGatewayService) storeBusinessSystemPromptResponseRouteMetadata(c *gin.Context, body []byte, application BusinessSystemPromptApplication) {
 	if s == nil || s.businessPromptService == nil || !application.Applied ||
-		(application.CompositionMode != BusinessSystemPromptCompositionOfflineBundle && application.CompositionMode != BusinessSystemPromptCompositionCodexSkillHybrid) {
+		application.CompositionMode != BusinessSystemPromptCompositionCodexSkillHybrid {
 		return
 	}
 	responseID := ""
@@ -374,7 +374,7 @@ func appendBusinessSystemPromptApplicationToCacheKey(key string, application Bus
 		return key
 	}
 	suffix := ":business-system-prompt:" + strconv.FormatInt(application.Revision, 10) + ":" + strings.TrimSpace(application.SHA256)
-	if (application.CompositionMode == BusinessSystemPromptCompositionOfflineBundle || application.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid) && application.BundleManifestSHA256 != "" && application.EffectiveSHA256 != "" {
+	if application.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid && application.BundleManifestSHA256 != "" && application.EffectiveSHA256 != "" {
 		metadata := BusinessSystemPromptBundleMetadata{
 			BundleID: application.BundleID, ManifestSHA256: application.BundleManifestSHA256,
 			BaseSHA256: application.BaseSHA256, EffectiveSHA256: application.EffectiveSHA256,

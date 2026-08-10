@@ -7,8 +7,6 @@ import (
 
 const (
 	BusinessSystemPromptCompositionInline           = "inline"
-	BusinessSystemPromptCompositionOfflineBundle    = "offline_bundle"
-	BusinessSystemPromptCompositionRemoteSkill      = "remote_skill"
 	BusinessSystemPromptCompositionCodexSkillHybrid = "codex_skill_hybrid"
 
 	BusinessSystemPromptSeedBundleID             = "moxinggang-reverse-skill"
@@ -45,14 +43,7 @@ func NormalizeBusinessSystemPromptComposition(mode, bundleID, manifestSHA256 str
 		if bundleID != "" || manifestSHA256 != "" {
 			return BusinessSystemPromptComposition{}, fmt.Errorf("%w: inline composition cannot reference a bundle", ErrBusinessSystemPromptInvalid)
 		}
-	case BusinessSystemPromptCompositionOfflineBundle:
-		if !isValidBusinessSystemPromptBundleID(bundleID) {
-			return BusinessSystemPromptComposition{}, fmt.Errorf("%w: invalid bundle id", ErrBusinessSystemPromptInvalid)
-		}
-		if len(manifestSHA256) != 64 || !isLowerHexSHA256(manifestSHA256) {
-			return BusinessSystemPromptComposition{}, fmt.Errorf("%w: invalid bundle manifest sha256", ErrBusinessSystemPromptInvalid)
-		}
-	case BusinessSystemPromptCompositionRemoteSkill, BusinessSystemPromptCompositionCodexSkillHybrid:
+	case BusinessSystemPromptCompositionCodexSkillHybrid:
 		if bundleID != BusinessSystemPromptRemoteSkillBundleID {
 			return BusinessSystemPromptComposition{}, fmt.Errorf("%w: unknown CodexRip skill bundle", ErrBusinessSystemPromptInvalid)
 		}
@@ -63,19 +54,6 @@ func NormalizeBusinessSystemPromptComposition(mode, bundleID, manifestSHA256 str
 		return BusinessSystemPromptComposition{}, fmt.Errorf("%w: unsupported composition mode %q", ErrBusinessSystemPromptInvalid, mode)
 	}
 	return composition, nil
-}
-
-func isValidBusinessSystemPromptBundleID(value string) bool {
-	if value == "" || len(value) > 128 {
-		return false
-	}
-	for _, r := range value {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
-			continue
-		}
-		return false
-	}
-	return true
 }
 
 func isLowerHexSHA256(value string) bool {

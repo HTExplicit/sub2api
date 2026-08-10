@@ -305,7 +305,7 @@ func insertOrValidateRemoteSkillVersion(ctx context.Context, tx *sql.Tx, version
 		 file_count, total_bytes, added_files, modified_files, deleted_files,
 		 script_changes, binary_changes, created_by)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-		ON CONFLICT (manifest_sha256) DO NOTHING
+		ON CONFLICT (source_id, manifest_sha256) DO NOTHING
 		RETURNING id`,
 		version.BundleID, version.SourceID, version.RemoteRoot, version.SourceCommit, version.OverlaySHA256, version.ManifestSHA256,
 		version.ArchiveSHA256, version.FileCount, version.TotalBytes, version.AddedFiles,
@@ -317,7 +317,12 @@ func insertOrValidateRemoteSkillVersion(ctx context.Context, tx *sql.Tx, version
 	if !errors.Is(err, sql.ErrNoRows) {
 		return 0, err
 	}
-	existing, err := scanRemoteSkillVersion(tx.QueryRowContext(ctx, remoteSkillVersionSelect+` WHERE v.manifest_sha256 = $1`, version.ManifestSHA256))
+	existing, err := scanRemoteSkillVersion(tx.QueryRowContext(
+		ctx,
+		remoteSkillVersionSelect+` WHERE v.source_id = $1 AND v.manifest_sha256 = $2`,
+		version.SourceID,
+		version.ManifestSHA256,
+	))
 	if err != nil {
 		return 0, err
 	}

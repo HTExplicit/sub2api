@@ -532,7 +532,7 @@ func validateRemoteSkillCandidate(candidate RemoteSkillCandidate) error {
 
 func validateRemoteSkillVersionMetadata(version RemoteSkillBundleVersion) error {
 	sourceID, err := NormalizeRemoteSkillSourceID(version.SourceID)
-	if err != nil || sourceID != version.SourceID || version.RemoteRoot != remoteSkillSourceRoot(sourceID) ||
+	if err != nil || sourceID != version.SourceID || version.RemoteRoot != remoteSkillVersionSourceRoot(sourceID, version.SourceCommit) ||
 		version.BundleID != BusinessSystemPromptRemoteSkillBundleID || len(version.SourceCommit) != 40 || !isLowerHexSHA256(version.SourceCommit+strings.Repeat("0", 24)) ||
 		len(version.OverlaySHA256) != 64 || !isLowerHexSHA256(version.OverlaySHA256) ||
 		len(version.ManifestSHA256) != 64 || !isLowerHexSHA256(version.ManifestSHA256) ||
@@ -807,7 +807,7 @@ func remoteSkillVersionFromDescriptor(descriptor RemoteSkillPublicDescriptor) Re
 	}
 	remoteRoot := strings.TrimSpace(descriptor.RemoteRoot)
 	if remoteRoot == "" && sourceID != "" {
-		remoteRoot = remoteSkillSourceRoot(sourceID)
+		remoteRoot = remoteSkillVersionSourceRoot(sourceID, descriptor.SourceCommit)
 	}
 	return RemoteSkillBundleVersion{
 		BundleID: descriptor.BundleID, SourceID: sourceID, RemoteRoot: remoteRoot, SourceCommit: strings.ToLower(descriptor.SourceCommit),

@@ -69,7 +69,7 @@ func TestBusinessSystemPromptOfflineBundleMissingIsDegradedWhileDisabled(t *test
 	t.Setenv(BusinessSystemPromptBundlePathEnv, missing)
 	store := &fakeBusinessSystemPromptStore{loaded: BusinessSystemPromptSnapshot{
 		Revision: 4, Enabled: false, Body: embeddedBusinessSystemPrompt,
-		CompositionMode:      BusinessSystemPromptCompositionOfflineBundle,
+		CompositionMode:      "offline_bundle",
 		BundleID:             BusinessSystemPromptSeedBundleID,
 		BundleManifestSHA256: strings.Repeat("a", 64),
 	}}
@@ -93,7 +93,7 @@ func TestBusinessSystemPromptOfflineBundleMissingIsUnavailableWhenEnabled(t *tes
 	t.Setenv(BusinessSystemPromptBundlePathEnv, missing)
 	store := &fakeBusinessSystemPromptStore{loaded: BusinessSystemPromptSnapshot{
 		Revision: 4, Enabled: true, Body: embeddedBusinessSystemPrompt,
-		CompositionMode:      BusinessSystemPromptCompositionOfflineBundle,
+		CompositionMode:      "offline_bundle",
 		BundleID:             BusinessSystemPromptSeedBundleID,
 		BundleManifestSHA256: strings.Repeat("a", 64),
 	}}

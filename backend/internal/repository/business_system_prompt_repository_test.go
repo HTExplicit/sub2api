@@ -22,7 +22,7 @@ func TestBusinessSystemPromptRepositoryLoadsActiveSnapshot(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT r.enabled")).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"enabled", "expose_server_prompt", "compact_enabled", "active_template_id", "active_version_id", "revision", "template_version", "body", "sha256", "byte_length", "composition_mode", "bundle_id", "bundle_manifest_sha256", "updated_at",
-		}).AddRow(true, false, false, int64(3), int64(8), int64(4), int64(2), "body", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", 4, service.BusinessSystemPromptCompositionOfflineBundle, service.BusinessSystemPromptSeedBundleID, service.BusinessSystemPromptSeedBundleManifestSHA256, time.Date(2026, 8, 6, 1, 2, 3, 0, time.UTC)))
+		}).AddRow(true, false, false, int64(3), int64(8), int64(4), int64(2), "body", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", 4, service.BusinessSystemPromptCompositionCodexSkillHybrid, service.BusinessSystemPromptRemoteSkillBundleID, nil, time.Date(2026, 8, 6, 1, 2, 3, 0, time.UTC)))
 
 	store := NewBusinessSystemPromptRepository(db)
 	snapshot, err := store.LoadBusinessSystemPrompt(context.Background())
@@ -31,9 +31,9 @@ func TestBusinessSystemPromptRepositoryLoadsActiveSnapshot(t *testing.T) {
 	require.Equal(t, int64(4), snapshot.Revision)
 	require.Equal(t, int64(2), snapshot.TemplateVersion)
 	require.Equal(t, "body", snapshot.Body)
-	require.Equal(t, service.BusinessSystemPromptCompositionOfflineBundle, snapshot.CompositionMode)
-	require.Equal(t, service.BusinessSystemPromptSeedBundleID, snapshot.BundleID)
-	require.Equal(t, service.BusinessSystemPromptSeedBundleManifestSHA256, snapshot.BundleManifestSHA256)
+	require.Equal(t, service.BusinessSystemPromptCompositionCodexSkillHybrid, snapshot.CompositionMode)
+	require.Equal(t, service.BusinessSystemPromptRemoteSkillBundleID, snapshot.BundleID)
+	require.Empty(t, snapshot.BundleManifestSHA256)
 	require.Equal(t, time.Date(2026, 8, 6, 1, 2, 3, 0, time.UTC), snapshot.UpdatedAt)
 	require.NoError(t, mock.ExpectationsWereMet())
 }

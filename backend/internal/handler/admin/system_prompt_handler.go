@@ -192,8 +192,6 @@ func writeBusinessSystemPromptError(c *gin.Context, err error) {
 		response.NotFound(c, "Remote skill version or sync job not found")
 	case errors.Is(err, service.ErrBusinessSystemPromptSeedProtected), errors.Is(err, service.ErrBusinessSystemPromptActive):
 		response.ErrorWithDetails(c, http.StatusConflict, err.Error(), "system_prompt_delete_protected", nil)
-	case errors.Is(err, service.ErrBusinessSystemPromptLegacyComposition):
-		response.ErrorWithDetails(c, http.StatusConflict, err.Error(), "system_prompt_legacy_composition", nil)
 	case errors.Is(err, service.ErrBusinessSystemPromptInvalid):
 		response.BadRequest(c, err.Error())
 	default:
@@ -652,19 +650,6 @@ func (h *SystemPromptHandler) UpdateRuntime(c *gin.Context) {
 		"result": "runtime_updated",
 	})
 	response.Success(c, businessSystemPromptRuntimeResponse(snapshot))
-}
-
-func (h *SystemPromptHandler) Bundles(c *gin.Context) {
-	response.Success(c, h.service.ListBundles())
-}
-
-func (h *SystemPromptHandler) Bundle(c *gin.Context) {
-	detail, err := h.service.GetBundle(c.Param("bundle_id"))
-	if err != nil {
-		writeBusinessSystemPromptError(c, err)
-		return
-	}
-	response.Success(c, detail)
 }
 
 func (h *SystemPromptHandler) PreviewMerge(c *gin.Context) {

@@ -130,8 +130,6 @@ var auditSensitiveReads = map[string]string{
 	"GET /api/v1/admin/system-prompts":                                            "admin.system_prompts.list",
 	"GET /api/v1/admin/system-prompts/:id":                                        "admin.system_prompts.read",
 	"GET /api/v1/admin/system-prompts/:id/versions":                               "admin.system_prompts.versions.list",
-	"GET /api/v1/admin/system-prompts/bundles":                                    "admin.system_prompts.bundles.list",
-	"GET /api/v1/admin/system-prompts/bundles/:bundle_id":                         "admin.system_prompts.bundles.read",
 	"GET /api/v1/admin/system-prompts/skill-registry":                             "admin.system_prompts.skill_registry.read",
 	"GET /api/v1/admin/system-prompts/skill-registry/versions":                    "admin.system_prompts.skill_registry.versions.list",
 	"GET /api/v1/admin/system-prompts/skill-registry/versions/:bundle_version_id": "admin.system_prompts.skill_registry.versions.read",
