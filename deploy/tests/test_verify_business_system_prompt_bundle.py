@@ -16,12 +16,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
 from verify_business_system_prompt_bundle import (  # noqa: E402
-    ASSET_NAME,
-    CHECKSUM_NAME,
-    EXPECTED_MANIFEST_FILE_COUNT,
-    EXPECTED_ZIP_ENTRY_COUNT,
-    MANIFEST_SHA256,
-    ZIP_SHA256,
     VerificationError,
     verify_bundle,
 )
@@ -189,23 +183,6 @@ class VerifyBusinessSystemPromptBundleTests(unittest.TestCase):
                     expected_zip_entry_count=2,
                     expected_bundle_id="other-bundle",
                 )
-
-    def test_checked_in_release_asset_matches_fixed_contract(self) -> None:
-        bundle_dir = REPO_ROOT / "deploy" / "skill-bundles" / "moxinggang-reverse-skill"
-        result = verify_bundle(
-            zip_path=bundle_dir / ASSET_NAME,
-            manifest_path=bundle_dir / "bundle-manifest.json",
-            expected_zip_sha256=ZIP_SHA256,
-            expected_manifest_sha256=MANIFEST_SHA256,
-            expected_manifest_file_count=EXPECTED_MANIFEST_FILE_COUNT,
-            expected_zip_entry_count=EXPECTED_ZIP_ENTRY_COUNT,
-            expected_bundle_id="moxinggang-reverse-skill",
-            checksum_path=bundle_dir / CHECKSUM_NAME,
-        )
-
-        self.assertEqual(result.file_count, 538)
-        self.assertEqual(result.entry_count, 539)
-
 
 if __name__ == "__main__":
     unittest.main()

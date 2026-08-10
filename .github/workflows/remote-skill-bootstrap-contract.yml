@@ -5,6 +5,8 @@ on:
     paths:
       - 'backend/internal/service/prompts/codexrip_reverse_skill_system_prompt.txt'
       - 'deploy/skill-registry/**'
+      - 'tools/build_remote_skill_seed.py'
+      - 'tools/test_remote_skill_seed_contract.py'
       - 'tools/test_remote_skill_bootstrap_contract.py'
       - 'tools/verify_remote_skill_registry.py'
       - '.github/workflows/remote-skill-bootstrap-contract.yml'
@@ -13,6 +15,8 @@ on:
     paths:
       - 'backend/internal/service/prompts/codexrip_reverse_skill_system_prompt.txt'
       - 'deploy/skill-registry/**'
+      - 'tools/build_remote_skill_seed.py'
+      - 'tools/test_remote_skill_seed_contract.py'
       - 'tools/test_remote_skill_bootstrap_contract.py'
       - 'tools/verify_remote_skill_registry.py'
       - '.github/workflows/remote-skill-bootstrap-contract.yml'
@@ -33,6 +37,9 @@ jobs:
       - name: Verify release registry
         shell: pwsh
         run: python tools/verify_remote_skill_registry.py
+      - name: Verify seed and prompt contract
+        shell: pwsh
+        run: python tools/test_remote_skill_seed_contract.py
       - name: Verify PowerShell and Python bootstrap lifecycle
         shell: pwsh
         run: python tools/test_remote_skill_bootstrap_contract.py

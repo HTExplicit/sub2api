@@ -18,13 +18,16 @@ from verify_business_system_prompt_bundle import VerificationError, verify_bundl
 
 
 BUNDLE_ID = "codexrip-reverse-skill"
+SOURCE_ID = "github_official"
 MANIFEST_NAME = "bundle-manifest.json"
 MANIFEST_SHA256 = "098c056d0884602c60b4bcaa2af6b12c52a13718d0fc2a4af40b18497b0c75ac"
 ARCHIVE_SHA256 = "fca0bef795880515c4d9f40322c8f99564c9371bbd01144ab73d7656ccfe8d33"
 OVERLAY_SHA256 = "afe2adb1a4f71a66106d6c8f6f5b44b0655ec3f2eb9f3936d0bac5af22cf6429"
 SOURCE_COMMIT = "a5d8c9233b98c52df387d5b1a0ef669fcaa51374"
-PROMPT_SHA256 = "59b81b0d72fa7f90083f9aabd0d25194e79dcad66caa4790792ae2866a7fa1bb"
-PROMPT_BYTES = 9587
+REMOTE_ROOT = f"https://raw.githubusercontent.com/zhaoxuya520/reverse-skill/{SOURCE_COMMIT}/skills"
+MOXINGGANG_ROOT = "https://moxinggang.com/skills/security-research/current"
+PROMPT_SHA256 = "2107e252ef417561baa4c5349f0c34d4e767ad422dfc463b2eac07bf7bbcc931"
+PROMPT_BYTES = 6724
 FILE_COUNT = 545
 TOTAL_BYTES = 7_925_493
 ARCHIVE_NAME = f"{BUNDLE_ID}-{MANIFEST_SHA256}.zip"
@@ -65,7 +68,6 @@ FORBIDDEN_RUNTIME_BYTES = (
     b"inline-system-instructions.txt",
     b"codexrip-overlay/security-research",
     b"moxinggang-overlay/security-research",
-    b"REMOTE_ROOT",
     b"github.com/HTExplicit/sub2api",
     b"verified_git_sparse_checkout",
 )
@@ -142,6 +144,63 @@ def require_codexrip_url(value: object, label: str) -> None:
         raise VerificationError(f"{label} is outside codexrip.vip")
 
 
+def validate_source_root(source_id: object, remote_root: object, source_commit: object) -> None:
+    if source_id not in {"github_official", "moxinggang"}:
+        raise VerificationError("descriptor source_id is not approved")
+    if not isinstance(remote_root, str) or not isinstance(source_commit, str):
+        raise VerificationError("descriptor source provenance is incomplete")
+    if re.fullmatch(r"[0-9a-f]{40}", source_commit) is None:
+        raise VerificationError("descriptor source_commit is not a lowercase Git commit")
+    parsed = urllib.parse.urlsplit(remote_root)
+    if (
+        parsed.scheme != "https"
+        or parsed.port not in (None, 443)
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise VerificationError("descriptor remote_root is not canonical HTTPS")
+    if source_id == "github_official":
+        expected = f"https://raw.githubusercontent.com/zhaoxuya520/reverse-skill/{source_commit}/skills"
+        if remote_root != expected:
+            raise VerificationError("descriptor GitHub source root does not match its commit")
+        return
+    if remote_root != MOXINGGANG_ROOT:
+        raise VerificationError("descriptor Model Gang source root is not fixed")
+
+
+def verify_native_skill_contract(raw: bytes, descriptor: dict) -> None:
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise VerificationError("native Skill entry is not UTF-8") from exc
+    if document_urls(raw) != [DESCRIPTOR_URL]:
+        raise VerificationError("native Skill entry contains a foreign acquisition source")
+    for marker in (
+        "On the first matching task in each conversation:",
+        "Perform exactly one version check through",
+        "`bootstraps.powershell` or `bootstraps.python`",
+        "verify its URL bytes against its SHA-256",
+        "execute the verified bootstrap with `CODEX_HOME`",
+        "If acquisition or update fails, report the failed stage",
+        "existing local installation verifies successfully",
+        "Otherwise report `skill unavailable`",
+        "Later matching tasks in the same conversation do not repeat the version check or those three reads.",
+        "never load Skill content remotely at runtime.",
+    ):
+        if text.count(marker) != 1:
+            raise VerificationError(f"native Skill lifecycle marker changed: {marker}")
+    read_markers = ("bundle/RULES.md", "bundle/README_AI.md", "bundle/skills/SKILL.md")
+    positions = [text.find(marker) for marker in read_markers]
+    if any(position < 0 for position in positions) or positions != sorted(positions) or len(set(positions)) != len(positions):
+        raise VerificationError("native Skill local core read order changed")
+    if descriptor.get("bootstrap_policy") != "download_verify_native_skill_atomic_replace":
+        raise VerificationError("native Skill descriptor does not require atomic verified installation")
+    if descriptor.get("bootstraps") != DESCRIPTOR_BOOTSTRAPS:
+        raise VerificationError("native Skill descriptor bootstrap selection changed")
+
+
 def load_json_object(path: Path, label: str) -> tuple[bytes, dict]:
     try:
         raw = path.read_bytes()
@@ -160,7 +219,9 @@ def verify_descriptor(path: Path, manifest: dict) -> dict:
         "schema_version": 1,
         "bundle_id": BUNDLE_ID,
         "revision": 1,
+        "source_id": SOURCE_ID,
         "source_commit": SOURCE_COMMIT,
+        "remote_root": REMOTE_ROOT,
         "overlay_sha256": OVERLAY_SHA256,
         "manifest_sha256": MANIFEST_SHA256,
         "archive_sha256": ARCHIVE_SHA256,
@@ -177,6 +238,11 @@ def verify_descriptor(path: Path, manifest: dict) -> dict:
             raise VerificationError(f"descriptor {key} does not match the pinned release")
     for key in ("manifest_url", "archive_url", "files_base_url"):
         require_codexrip_url(descriptor.get(key), f"descriptor {key}")
+    validate_source_root(
+        descriptor.get("source_id"),
+        descriptor.get("remote_root"),
+        descriptor.get("source_commit"),
+    )
     for platform in DESCRIPTOR_BOOTSTRAPS:
         bootstrap = descriptor.get("bootstraps", {}).get(platform, {})
         require_codexrip_url(bootstrap.get("url"), f"descriptor bootstrap {platform}")
@@ -292,8 +358,17 @@ def verify_registry(
     prompt_text = prompt.decode("utf-8")
     if prompt_text.count("宝宝") != 1 or 'The only allowed user address is exactly "老板".' not in prompt_text:
         raise VerificationError("fixed system prompt does not preserve the original address restriction")
-    if DESCRIPTOR_URL.encode("ascii") not in prompt:
-        raise VerificationError("fixed system prompt must name the public descriptor endpoint")
+    if document_urls(prompt) != [REMOTE_ROOT]:
+        raise VerificationError("fixed system prompt does not contain the single pinned remote root")
+    if prompt.count(b"REMOTE_ROOT/SKILL.md") != 1:
+        raise VerificationError("fixed system prompt must contain exactly one remote Skill entry")
+    for forbidden in (
+        b"LOCAL_BUNDLE_ROOT",
+        b"[CODEXRIP VERIFIED SKILL DOCUMENTS]",
+        b"[BUSINESS SYSTEM PROMPT: OFFLINE SKILL BUNDLE]",
+    ):
+        if forbidden in prompt:
+            raise VerificationError("fixed system prompt contains an offline wrapper or fallback")
     for forbidden in (b"DESCRIPTOR_URL", b"REPOSITORY_URL", b"REPOSITORY_COMMIT", b"POWERSHELL_BOOTSTRAP", b"PYTHON_BOOTSTRAP"):
         if forbidden in prompt:
             raise VerificationError("fixed system prompt exposes a supply-chain coordinate")
@@ -311,7 +386,7 @@ def verify_registry(
     manifest_raw, manifest = load_json_object(manifest_path, "manifest")
     require_runtime_text_clean("manifest", manifest_raw)
     runtime_documents = verify_manifest_contract(manifest)
-    verify_descriptor(descriptor_path, manifest)
+    descriptor = verify_descriptor(descriptor_path, manifest)
     bootstrap_count = verify_bootstraps(bootstrap_root, prompt)
 
     with zipfile.ZipFile(archive_path) as archive:
@@ -331,13 +406,9 @@ def verify_registry(
         client_openai = archive.read("codexrip-client/agents/openai.yaml")
         require_runtime_text_clean("native Skill entry", client_skill)
         require_runtime_text_clean("native Skill metadata", client_openai)
-        if not client_skill.startswith(b"---\nname: codexrip-reverse-skill\n") or any(
-            value not in client_skill
-            for value in (b"bundle/RULES.md", b"bundle/README_AI.md", b"bundle/skills/SKILL.md")
-        ):
+        if not client_skill.startswith(b"---\nname: codexrip-reverse-skill\n"):
             raise VerificationError("native Skill entry does not route into the verified bundle")
-        if document_urls(client_skill) != ["https://codexrip.vip/skills/reverse-skill/current.json"]:
-            raise VerificationError("native Skill entry contains a foreign acquisition source")
+        verify_native_skill_contract(client_skill, descriptor)
         if b'display_name: "CodexRip Reverse Skill"' not in client_openai or b"$codexrip-reverse-skill" not in client_openai:
             raise VerificationError("native Skill OpenAI metadata does not match the installed Skill")
 

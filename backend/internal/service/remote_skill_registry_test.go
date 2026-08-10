@@ -15,6 +15,8 @@ func TestRemoteSkillClientInstallUsesContentAddressedHTTPSAcquisition(t *testing
 	metadata := (&RemoteSkillRegistryService{}).ClientInstallMetadata()
 
 	require.Equal(t, "codexrip-reverse-skill", metadata.SkillName)
+	require.Equal(t, RemoteSkillSourceGitHubOfficial, metadata.SourceID)
+	require.Equal(t, RemoteSkillGitHubRoot, metadata.RemoteRoot)
 	require.Equal(t, "https://codexrip.vip/skills/reverse-skill/current.json", metadata.DescriptorURL)
 	raw, err := json.Marshal(metadata)
 	require.NoError(t, err)
@@ -75,15 +77,16 @@ func TestRemoteSkillClientInstallUsesContentAddressedHTTPSAcquisition(t *testing
 }
 
 type fakeRemoteSkillRegistryStore struct {
-	snapshot   RemoteSkillRegistrySnapshot
-	loadErr    error
-	job        RemoteSkillSyncJob
-	completed  RemoteSkillBundleVersion
-	published  RemoteSkillRegistrySnapshot
-	publishErr error
-	failedCode string
-	ensureSeed RemoteSkillBundleVersion
-	stage      string
+	snapshot        RemoteSkillRegistrySnapshot
+	loadErr         error
+	job             RemoteSkillSyncJob
+	completed       RemoteSkillBundleVersion
+	published       RemoteSkillRegistrySnapshot
+	publishErr      error
+	failedCode      string
+	ensureSeed      RemoteSkillBundleVersion
+	stage           string
+	createdSourceID string
 }
 
 func (f *fakeRemoteSkillRegistryStore) EnsureRemoteSkillSeed(_ context.Context, version RemoteSkillBundleVersion) error {
@@ -99,7 +102,8 @@ func (f *fakeRemoteSkillRegistryStore) ListRemoteSkillVersions(context.Context) 
 func (f *fakeRemoteSkillRegistryStore) GetRemoteSkillVersion(context.Context, int64) (RemoteSkillBundleVersion, error) {
 	return f.completed, nil
 }
-func (f *fakeRemoteSkillRegistryStore) CreateRemoteSkillSyncJob(context.Context, int64, int64) (RemoteSkillSyncJob, error) {
+func (f *fakeRemoteSkillRegistryStore) CreateRemoteSkillSyncJob(_ context.Context, sourceID string, _ int64, _ int64) (RemoteSkillSyncJob, error) {
+	f.createdSourceID = sourceID
 	return f.job, nil
 }
 func (f *fakeRemoteSkillRegistryStore) UpdateRemoteSkillSyncJobStage(_ context.Context, _ int64, stage string) error {
@@ -159,32 +163,73 @@ func (f *fakeRemoteSkillRegistryFiles) LoadBundle(context.Context, RemoteSkillBu
 type fakeRemoteSkillCandidateSource struct {
 	candidate RemoteSkillCandidate
 	err       error
+	sourceID  string
 }
 
-func (f *fakeRemoteSkillCandidateSource) Build(context.Context, *BusinessSystemPromptBundleManifest) (RemoteSkillCandidate, error) {
+func (f *fakeRemoteSkillCandidateSource) Build(_ context.Context, sourceID string, _ *BusinessSystemPromptBundleManifest) (RemoteSkillCandidate, error) {
+	f.sourceID = sourceID
 	return f.candidate, f.err
 }
 
 func TestRemoteSkillRegistrySyncCreatesCandidateWithoutPublishing(t *testing.T) {
 	store := &fakeRemoteSkillRegistryStore{
-		snapshot: RemoteSkillRegistrySnapshot{Revision: 7, Active: &RemoteSkillBundleVersion{ID: 1, ManifestSHA256: "old"}},
-		job:      RemoteSkillSyncJob{ID: 9, Status: RemoteSkillSyncStatusQueued},
+		snapshot: RemoteSkillRegistrySnapshot{Revision: 7, Active: &RemoteSkillBundleVersion{ID: 1, SourceID: RemoteSkillSourceGitHubOfficial, RemoteRoot: RemoteSkillGitHubRoot, ManifestSHA256: "old"}},
+		job:      RemoteSkillSyncJob{ID: 9, Status: RemoteSkillSyncStatusQueued, SourceID: RemoteSkillSourceMoxinggang},
 	}
 	files := &fakeRemoteSkillRegistryFiles{seedErr: ErrRemoteSkillSeedUnavailable}
 	source := &fakeRemoteSkillCandidateSource{candidate: RemoteSkillCandidate{Version: RemoteSkillBundleVersion{
-		BundleID: BusinessSystemPromptRemoteSkillBundleID, ManifestSHA256: "new", ArchiveSHA256: "archive",
+		BundleID: BusinessSystemPromptRemoteSkillBundleID, SourceID: RemoteSkillSourceMoxinggang, RemoteRoot: RemoteSkillMoxinggangRoot, ManifestSHA256: "new", ArchiveSHA256: "archive",
 	}}}
 	svc := NewRemoteSkillRegistryService(store, nil, files, source)
 	require.NoError(t, svc.Initialize(context.Background()))
 	svc.runSyncJob(context.Background(), store.job)
 
 	require.True(t, files.installed)
+	require.Equal(t, RemoteSkillSourceMoxinggang, source.sourceID)
 	require.Equal(t, "new", store.completed.ManifestSHA256)
 	current := svc.CurrentSnapshot()
 	require.Equal(t, int64(7), current.Revision)
 	require.Equal(t, "old", current.Active.ManifestSHA256)
+	require.Equal(t, RemoteSkillSourceGitHubOfficial, current.Active.SourceID)
 	require.NotNil(t, files.activated.Active)
 	require.Equal(t, "old", files.activated.Active.ManifestSHA256)
+}
+
+func TestRemoteSkillRegistryStartSyncDefaultsSourceAndQueuesRequestedSource(t *testing.T) {
+	store := &fakeRemoteSkillRegistryStore{
+		snapshot: RemoteSkillRegistrySnapshot{Revision: 7},
+		job:      RemoteSkillSyncJob{ID: 9, Status: RemoteSkillSyncStatusQueued},
+	}
+	svc := NewRemoteSkillRegistryService(store, nil, &fakeRemoteSkillRegistryFiles{seedErr: ErrRemoteSkillSeedUnavailable}, &fakeRemoteSkillCandidateSource{})
+	require.NoError(t, svc.Start(context.Background()))
+	t.Cleanup(svc.Stop)
+
+	job, err := svc.StartSync(context.Background(), "", 42, 7)
+	require.NoError(t, err)
+	require.Equal(t, int64(9), job.ID)
+	require.Equal(t, RemoteSkillSourceGitHubOfficial, store.createdSourceID)
+}
+
+func TestRemoteSkillRegistryClientMetadataChangesOnlyAfterPublish(t *testing.T) {
+	github := RemoteSkillBundleVersion{ID: 1, SourceID: RemoteSkillSourceGitHubOfficial, RemoteRoot: RemoteSkillGitHubRoot, ManifestSHA256: "old"}
+	moxinggang := RemoteSkillBundleVersion{ID: 2, SourceID: RemoteSkillSourceMoxinggang, RemoteRoot: RemoteSkillMoxinggangRoot, ManifestSHA256: "new"}
+	store := &fakeRemoteSkillRegistryStore{
+		snapshot:  RemoteSkillRegistrySnapshot{Revision: 3, Active: &github},
+		completed: moxinggang,
+		published: RemoteSkillRegistrySnapshot{Revision: 4, Active: &moxinggang},
+	}
+	svc := NewRemoteSkillRegistryService(store, nil, &fakeRemoteSkillRegistryFiles{seedErr: ErrRemoteSkillSeedUnavailable}, &fakeRemoteSkillCandidateSource{})
+	require.NoError(t, svc.Initialize(context.Background()))
+
+	before := svc.ClientInstallMetadata()
+	require.Equal(t, RemoteSkillSourceGitHubOfficial, before.SourceID)
+	require.Equal(t, RemoteSkillGitHubRoot, before.RemoteRoot)
+
+	_, err := svc.PublishVersion(context.Background(), 2, 3, 8)
+	require.NoError(t, err)
+	after := svc.ClientInstallMetadata()
+	require.Equal(t, RemoteSkillSourceMoxinggang, after.SourceID)
+	require.Equal(t, RemoteSkillMoxinggangRoot, after.RemoteRoot)
 }
 
 func TestRemoteSkillRegistryPublishHonorsCASConflict(t *testing.T) {

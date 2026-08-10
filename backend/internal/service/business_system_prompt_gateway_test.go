@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -34,23 +35,24 @@ func newGatewayBusinessSystemPromptPolicy(t *testing.T, expose, compact bool) *B
 }
 
 func newGatewayHybridBusinessSystemPromptPolicy(t *testing.T) *BusinessSystemPromptService {
-	return newGatewayHybridBusinessSystemPromptPolicyWithBody(t, "high-fidelity-base\noriginal whitespace", 7)
+	return newGatewayHybridBusinessSystemPromptPolicyWithBody(t, embeddedBusinessSystemPrompt, 7)
 }
 
 func newGatewayHybridBusinessSystemPromptPolicyWithBody(t *testing.T, body string, revision int64) *BusinessSystemPromptService {
+	return newGatewayHybridBusinessSystemPromptPolicyWithSource(t, body, revision, RemoteSkillSourceMoxinggang)
+}
+
+func newGatewayHybridBusinessSystemPromptPolicyWithSource(t *testing.T, body string, revision int64, sourceID string) *BusinessSystemPromptService {
 	t.Helper()
-	root := t.TempDir()
-	writeBundleFixture(t, root)
-	bundle, err := LoadBusinessSystemPromptBundle(root)
-	require.NoError(t, err)
 	active := RemoteSkillBundleVersion{
-		ID: 31, BundleID: bundle.Manifest.BundleID, SourceCommit: strings.Repeat("1", 40),
-		ManifestSHA256: bundle.ManifestSHA256, ArchiveSHA256: strings.Repeat("2", 64),
+		ID: 31, BundleID: BusinessSystemPromptRemoteSkillBundleID,
+		SourceID: sourceID, RemoteRoot: remoteSkillSourceRoot(sourceID),
+		SourceCommit: strings.Repeat("1", 40), ManifestSHA256: strings.Repeat("3", 64), ArchiveSHA256: strings.Repeat("2", 64),
 	}
 	registryStore := &fakeRemoteSkillRegistryStore{snapshot: RemoteSkillRegistrySnapshot{
 		Revision: 11, Active: &active,
 	}}
-	registryFiles := &fakeRemoteSkillRegistryFiles{seedErr: ErrRemoteSkillSeedUnavailable, bundle: bundle}
+	registryFiles := &fakeRemoteSkillRegistryFiles{seedErr: ErrRemoteSkillSeedUnavailable}
 	registry := NewRemoteSkillRegistryService(registryStore, nil, registryFiles, &fakeRemoteSkillCandidateSource{})
 	require.NoError(t, registry.Initialize(context.Background()))
 
@@ -66,40 +68,46 @@ func newGatewayHybridBusinessSystemPromptPolicyWithBody(t *testing.T, body strin
 	return policy
 }
 
-func TestBusinessSystemPromptHybridSeparatesOfficialCodexAndCompatibleRouting(t *testing.T) {
+func TestBusinessSystemPromptHybridUsesSameRemoteEntryForOfficialCodexAndCompatibleClients(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	policy := newGatewayHybridBusinessSystemPromptPolicy(t)
-	svc := &OpenAIGatewayService{businessPromptService: policy}
-	account := businessSystemPromptAPIKeyAccount(true)
-	body := []byte(`{"model":"gpt-5.4","input":"请审计这个接口安全和鉴权流程"}`)
+	for _, sourceID := range []string{RemoteSkillSourceGitHubOfficial, RemoteSkillSourceMoxinggang} {
+		t.Run(sourceID, func(t *testing.T) {
+			policy := newGatewayHybridBusinessSystemPromptPolicyWithSource(t, embeddedBusinessSystemPrompt, 7, sourceID)
+			svc := &OpenAIGatewayService{businessPromptService: policy}
+			account := businessSystemPromptAPIKeyAccount(true)
+			body := []byte(`{"model":"gpt-5.4","input":"请审计这个接口安全和鉴权流程"}`)
 
-	official, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
-	official.Request.Header.Set("originator", "codex-tui")
-	officialBody, officialApplication, err := svc.applyBusinessSystemPromptForRequest(
-		official, body, account, BusinessSystemPromptProtocolResponses, false,
-	)
-	require.NoError(t, err)
-	require.Equal(t, "high-fidelity-base\noriginal whitespace", gjson.GetBytes(officialBody, "instructions").String())
-	require.Empty(t, officialApplication.RouteIDs)
-	require.Equal(t, int64(11), officialApplication.BundleRevision)
+			official, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
+			official.Request.Header.Set("originator", "codex-tui")
+			officialBody, officialApplication, err := svc.applyBusinessSystemPromptForRequest(
+				official, body, account, BusinessSystemPromptProtocolResponses, false,
+			)
+			require.NoError(t, err)
+			officialInstructions := gjson.GetBytes(officialBody, "instructions").String()
+			publishedRoot := remoteSkillSourceRoot(sourceID)
+			require.Contains(t, officialInstructions, publishedRoot)
+			require.Equal(t, 1, strings.Count(officialInstructions, "REMOTE_ROOT/SKILL.md"))
+			require.NotContains(t, officialInstructions, "REMOTE_ROOT/RULES.md")
+			require.NotContains(t, officialInstructions, "REMOTE_ROOT/README_AI.md")
+			require.Equal(t, int64(11), officialApplication.BundleRevision)
 
-	compatible, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
-	compatible.Request.Header.Set("User-Agent", "compatible-client/1.0")
-	compatibleBody, compatibleApplication, err := svc.applyBusinessSystemPromptForRequest(
-		compatible, body, account, BusinessSystemPromptProtocolResponses, false,
-	)
-	require.NoError(t, err)
-	require.Equal(t, []string{"api-security"}, compatibleApplication.RouteIDs)
-	require.Contains(t, gjson.GetBytes(compatibleBody, "instructions").String(), "[CODEXRIP VERIFIED SKILL DOCUMENTS]")
-	require.Equal(t, int64(11), compatibleApplication.BundleRevision)
+			compatible, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
+			compatible.Request.Header.Set("User-Agent", "compatible-client/1.0")
+			compatibleBody, compatibleApplication, err := svc.applyBusinessSystemPromptForRequest(
+				compatible, body, account, BusinessSystemPromptProtocolResponses, false,
+			)
+			require.NoError(t, err)
+			require.Equal(t, officialInstructions, gjson.GetBytes(compatibleBody, "instructions").String())
+			require.Equal(t, int64(11), compatibleApplication.BundleRevision)
 
-	retried, retriedApplication, err := svc.applyBusinessSystemPromptForRequest(
-		compatible, compatibleBody, account, BusinessSystemPromptProtocolResponses, false,
-	)
-	require.NoError(t, err)
-	require.Equal(t, compatibleBody, retried)
-	require.Equal(t, compatibleApplication.EffectiveSHA256, retriedApplication.EffectiveSHA256)
-	require.Equal(t, 1, strings.Count(gjson.GetBytes(retried, "instructions").String(), "[CODEXRIP VERIFIED SKILL DOCUMENTS]"))
+			retried, retriedApplication, err := svc.applyBusinessSystemPromptForRequest(
+				compatible, compatibleBody, account, BusinessSystemPromptProtocolResponses, false,
+			)
+			require.NoError(t, err)
+			require.Equal(t, compatibleBody, retried)
+			require.Equal(t, compatibleApplication.EffectiveSHA256, retriedApplication.EffectiveSHA256)
+		})
+	}
 }
 
 func TestBusinessSystemPromptHybridPreviewMatchesAppliedBytes(t *testing.T) {
@@ -127,15 +135,41 @@ func TestBusinessSystemPromptHybridPreviewMatchesAppliedBytes(t *testing.T) {
 			require.Equal(t, len([]byte(preview.Body)), application.EffectiveByteLength)
 			require.Equal(t, hashBusinessSystemPromptBundleBytes([]byte(preview.Body)), application.EffectiveSHA256)
 
-			if clientMode == "codex" {
-				require.Empty(t, application.RouteIDs)
-				require.NotContains(t, preview.Body, "[CODEXRIP VERIFIED SKILL DOCUMENTS]")
-				return
-			}
-			require.Equal(t, []string{"api-security"}, application.RouteIDs)
-			require.Contains(t, preview.Body, "[CODEXRIP VERIFIED SKILL DOCUMENTS]")
+			require.Contains(t, preview.Body, RemoteSkillMoxinggangRoot)
 		})
 	}
+}
+
+func TestBusinessSystemPromptHybridUsesBaseEntryWhenRegistryHasNoVerifiedCache(t *testing.T) {
+	store := &fakeBusinessSystemPromptStore{loaded: BusinessSystemPromptSnapshot{
+		Enabled: true, TemplateID: 10, VersionID: 20, TemplateVersion: 3, Revision: 7,
+		Body: embeddedBusinessSystemPrompt, CompositionMode: BusinessSystemPromptCompositionCodexSkillHybrid,
+		BundleID: BusinessSystemPromptRemoteSkillBundleID,
+	}}
+	policy := NewBusinessSystemPromptService(store, nil)
+	require.NoError(t, policy.Initialize(context.Background()))
+
+	preview, err := policy.PrepareBusinessSystemPromptPreviewSnapshotForClient(store.loaded, "security review", "openai_compatible")
+	require.NoError(t, err)
+	require.Equal(t, embeddedBusinessSystemPrompt, preview.Body)
+}
+
+func TestBusinessSystemPromptHybridKeepsPublishedSourceRootAfterRegistryReloadFailure(t *testing.T) {
+	policy := newGatewayHybridBusinessSystemPromptPolicyWithBody(t, embeddedBusinessSystemPrompt, 7)
+	registry := policy.registry
+	t.Cleanup(registry.Stop)
+	store, ok := registry.store.(*fakeRemoteSkillRegistryStore)
+	require.True(t, ok)
+	store.loadErr = errors.New("remote unavailable")
+	require.Error(t, registry.Reload(context.Background()))
+
+	current, ok := policy.CurrentSnapshot()
+	require.True(t, ok)
+	preview, err := policy.PrepareBusinessSystemPromptPreviewSnapshotForClient(current, "security review", "codex")
+	require.NoError(t, err)
+	require.Contains(t, preview.Body, RemoteSkillMoxinggangRoot)
+	require.True(t, preview.Degraded)
+	require.NotContains(t, preview.Body, "registry unavailable")
 }
 
 func businessSystemPromptTestConfig() *config.Config {

@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -24,54 +23,16 @@ import (
 )
 
 const (
-	remoteSkillGitHubZipPrefix          = "https://codeload.github.com/zhaoxuya520/reverse-skill/zip/"
-	remoteSkillPinnedCommit             = "a5d8c9233b98c52df387d5b1a0ef669fcaa51374"
-	remoteSkillPinnedSourceArchiveSHA   = "c6cc4a531b62ded1fae92cc8cdace9cf7833fe23978350161d90dedff77f80df"
-	remoteSkillSyncTimeout              = 2 * time.Minute
-	remoteSkillSourceMaxBytes           = 128 << 20
-	remoteSkillClientMaxBytes           = 256 << 10
-	remoteSkillMaxFileCount             = 2000
-	remoteSkillMaxTotalBytes            = 256 << 20
-	remoteSkillClientSkillPath          = "codexrip-client/SKILL.md"
-	remoteSkillClientOpenAIPath         = "codexrip-client/agents/openai.yaml"
-	remoteSkillLocalPackageContractLine = "# Package root: verified installed bundle/"
-	remoteSkillUpstreamCloneCommand     = "git clone https://github.com/zhaoxuya520/reverse-skill.git"
-	remoteSkillRouterRecoveryLine       = "    Write-Host 'Restore skills/config/routing.json (git checkout / git pull) and retry.' -ForegroundColor Yellow"
-	remoteSkillLocalRecoveryLine        = "    Write-Host 'Restore skills/config/routing.json from the verified installed bundle and retry.' -ForegroundColor Yellow"
+	remoteSkillGitHubZipPrefix        = "https://codeload.github.com/zhaoxuya520/reverse-skill/zip/"
+	remoteSkillPinnedCommit           = "a5d8c9233b98c52df387d5b1a0ef669fcaa51374"
+	remoteSkillPinnedSourceArchiveSHA = "c6cc4a531b62ded1fae92cc8cdace9cf7833fe23978350161d90dedff77f80df"
+	remoteSkillSyncTimeout            = 2 * time.Minute
+	remoteSkillSourceMaxBytes         = 128 << 20
+	remoteSkillMaxFileCount           = 2000
+	remoteSkillMaxTotalBytes          = 256 << 20
 )
 
-var remoteSkillExcludedSourcePaths = map[string]struct{}{
-	"README_RECONSTRUCTED.md": {},
-	"SOURCE-MANIFEST.json":    {},
-}
-
-type remoteSkillReviewedRewrite struct {
-	Source      string
-	Replacement string
-}
-
-var remoteSkillApprovedPackageContractRewrites = map[string][]remoteSkillReviewedRewrite{
-	"README.md": {{
-		Source: remoteSkillUpstreamCloneCommand + "\n", Replacement: remoteSkillLocalPackageContractLine + "\n",
-	}},
-	"README_zh.md": {{
-		Source: remoteSkillUpstreamCloneCommand + "\n", Replacement: remoteSkillLocalPackageContractLine + "\n",
-	}},
-	"docs/RELEASE_NOTES_v1.0.0.md": {{
-		Source: remoteSkillUpstreamCloneCommand + "\ncd reverse-skill\n", Replacement: remoteSkillLocalPackageContractLine + "\n",
-	}},
-	"skills/scripts/master-route.ps1": {{
-		Source: remoteSkillRouterRecoveryLine + "\r\n", Replacement: remoteSkillLocalRecoveryLine + "\r\n",
-	}},
-}
-
-var remoteSkillRequiredLocalCoreReferences = []string{
-	"bundle/RULES.md",
-	"bundle/README_AI.md",
-	"bundle/skills/SKILL.md",
-}
-
-var remoteSkillHTTPURLPattern = regexp.MustCompile(`(?i)https?://[^\s<>"'` + "`" + `]+`)
+var remoteSkillMoxinggangReferencePattern = regexp.MustCompile(`(?i)(?:REMOTE_ROOT|https://moxinggang\.com/skills/security-research/current)/([a-z0-9][a-z0-9._/-]*)`)
 
 type remoteSkillSourcePin struct {
 	Commit        string
@@ -91,51 +52,77 @@ func releaseRemoteSkillSourcePin() remoteSkillSourcePin {
 	}
 }
 
-var remoteSkillForbiddenClientReferences = []string{
-	"moxinggang.com",
-	`c:\users\administrator`,
-	"remote_root",
-	"codexrip-overlay/security-research",
-	"moxinggang-overlay/security-research",
-	"raw.githubusercontent.com",
-	"codeload.github.com",
-	"github.com/zhaoxuya520/reverse-skill",
-}
-
 type RemoteSkillHTTPDoer interface {
 	Do(*http.Request) (*http.Response, error)
 }
 
 type GitHubRemoteSkillCandidateSource struct {
-	client       RemoteSkillHTTPDoer
-	clientSource RemoteSkillClientSource
-	sourcePin    remoteSkillSourcePin
+	client    RemoteSkillHTTPDoer
+	sourcePin remoteSkillSourcePin
 }
 
-type RemoteSkillClientSource interface {
-	Load(context.Context) (map[string][]byte, error)
+type MoxinggangRemoteSkillCandidateSource struct {
+	client RemoteSkillHTTPDoer
 }
 
-type releaseRemoteSkillClientSource struct {
-	releaseRoot string
+type remoteSkillProvider interface {
+	Build(context.Context, *BusinessSystemPromptBundleManifest) (RemoteSkillCandidate, error)
+}
+
+type remoteSkillCandidateSourceSelector struct {
+	providers map[string]remoteSkillProvider
 }
 
 func NewGitHubRemoteSkillCandidateSource(client RemoteSkillHTTPDoer) *GitHubRemoteSkillCandidateSource {
-	return newGitHubRemoteSkillCandidateSource(client, &releaseRemoteSkillClientSource{})
-}
-
-func newGitHubRemoteSkillCandidateSource(client RemoteSkillHTTPDoer, clientSource RemoteSkillClientSource) *GitHubRemoteSkillCandidateSource {
 	if client == nil {
 		client = newRemoteSkillHTTPClient()
 	}
-	if clientSource == nil {
-		clientSource = &releaseRemoteSkillClientSource{}
+	return &GitHubRemoteSkillCandidateSource{client: client, sourcePin: releaseRemoteSkillSourcePin()}
+}
+
+func NewMoxinggangRemoteSkillCandidateSource(client RemoteSkillHTTPDoer) *MoxinggangRemoteSkillCandidateSource {
+	if client == nil {
+		client = newRemoteSkillHTTPClient()
 	}
-	return &GitHubRemoteSkillCandidateSource{client: client, clientSource: clientSource, sourcePin: releaseRemoteSkillSourcePin()}
+	return &MoxinggangRemoteSkillCandidateSource{client: client}
+}
+
+func newRemoteSkillCandidateSourceSelector(providers map[string]remoteSkillProvider) *remoteSkillCandidateSourceSelector {
+	cloned := make(map[string]remoteSkillProvider, len(providers))
+	for sourceID, provider := range providers {
+		cloned[sourceID] = provider
+	}
+	return &remoteSkillCandidateSourceSelector{providers: cloned}
+}
+
+func NewRemoteSkillCandidateSourceSelector(client RemoteSkillHTTPDoer) RemoteSkillCandidateSource {
+	return newRemoteSkillCandidateSourceSelector(map[string]remoteSkillProvider{
+		RemoteSkillSourceGitHubOfficial: NewGitHubRemoteSkillCandidateSource(client),
+		RemoteSkillSourceMoxinggang:     NewMoxinggangRemoteSkillCandidateSource(client),
+	})
+}
+
+func (s *remoteSkillCandidateSourceSelector) Build(ctx context.Context, sourceID string, active *BusinessSystemPromptBundleManifest) (RemoteSkillCandidate, error) {
+	sourceID, err := NormalizeRemoteSkillSourceID(sourceID)
+	if err != nil {
+		return RemoteSkillCandidate{}, err
+	}
+	provider := s.providers[sourceID]
+	if provider == nil {
+		return RemoteSkillCandidate{}, fmt.Errorf("%w: remote skill source unavailable", ErrBusinessSystemPromptBundleUnavailable)
+	}
+	candidate, err := provider.Build(ctx, active)
+	if err != nil {
+		return RemoteSkillCandidate{}, err
+	}
+	if candidate.Version.SourceID != sourceID || candidate.Version.RemoteRoot != remoteSkillSourceRoot(sourceID) {
+		return RemoteSkillCandidate{}, fmt.Errorf("%w: source identity mismatch", ErrBusinessSystemPromptBundleInvalid)
+	}
+	return candidate, nil
 }
 
 func (s *GitHubRemoteSkillCandidateSource) Build(ctx context.Context, active *BusinessSystemPromptBundleManifest) (RemoteSkillCandidate, error) {
-	if s == nil || s.client == nil || s.clientSource == nil {
+	if s == nil || s.client == nil {
 		return RemoteSkillCandidate{}, fmt.Errorf("%w: sync HTTP client unavailable", ErrBusinessSystemPromptBundleUnavailable)
 	}
 	ctx, cancel := context.WithTimeout(ctx, remoteSkillSyncTimeout)
@@ -159,150 +146,126 @@ func (s *GitHubRemoteSkillCandidateSource) Build(ctx context.Context, active *Bu
 	if err := validateRemoteSkillPinnedSource(files, pin); err != nil {
 		return RemoteSkillCandidate{}, err
 	}
-	fixedFiles, err := s.clientSource.Load(ctx)
-	if err != nil {
-		return RemoteSkillCandidate{}, err
+	return buildRemoteSkillCandidate(RemoteSkillSourceGitHubOfficial, RemoteSkillGitHubRoot, commit, pin.ArchiveSHA256, []string{
+		"RULES.md", "README_AI.md", "skills/SKILL.md",
+	}, files, active)
+}
+
+func (s *MoxinggangRemoteSkillCandidateSource) Build(ctx context.Context, active *BusinessSystemPromptBundleManifest) (RemoteSkillCandidate, error) {
+	if s == nil || s.client == nil {
+		return RemoteSkillCandidate{}, fmt.Errorf("%w: sync HTTP client unavailable", ErrBusinessSystemPromptBundleUnavailable)
 	}
-	wanted := remoteSkillFixedClientPaths()
-	if len(fixedFiles) != len(wanted) {
-		return RemoteSkillCandidate{}, fmt.Errorf("%w: release client file count mismatch", ErrBusinessSystemPromptBundleInvalid)
-	}
-	clientHashes := make(map[string]string, len(fixedFiles))
-	for bundlePath, raw := range fixedFiles {
-		if _, ok := wanted[bundlePath]; !ok {
-			return RemoteSkillCandidate{}, fmt.Errorf("%w: release client path rejected", ErrBusinessSystemPromptBundleInvalid)
+	ctx, cancel := context.WithTimeout(ctx, remoteSkillSyncTimeout)
+	defer cancel()
+	coreFiles := []string{"RULES.md", "README_AI.md", "SKILL.md"}
+	queue := append([]string(nil), coreFiles...)
+	seen := make(map[string]struct{})
+	files := make(map[string][]byte)
+	var total int64
+	for len(queue) > 0 {
+		name := queue[0]
+		queue = queue[1:]
+		if _, ok := seen[name]; ok {
+			continue
 		}
-		if err := validateRemoteSkillClientDocument(bundlePath, raw); err != nil {
+		seen[name] = struct{}{}
+		if len(seen) > remoteSkillMaxFileCount {
+			return RemoteSkillCandidate{}, fmt.Errorf("%w: remote entry tree exceeds file limit", ErrBusinessSystemPromptBundleInvalid)
+		}
+		raw, err := s.downloadEntry(ctx, name)
+		if err != nil {
 			return RemoteSkillCandidate{}, err
 		}
-		if _, exists := files[bundlePath]; exists {
-			return RemoteSkillCandidate{}, fmt.Errorf("%w: release client path conflict", ErrBusinessSystemPromptBundleInvalid)
+		total += int64(len(raw))
+		if total > remoteSkillMaxTotalBytes {
+			return RemoteSkillCandidate{}, fmt.Errorf("%w: remote entry tree exceeds size limit", ErrBusinessSystemPromptBundleInvalid)
 		}
-		files[bundlePath] = append([]byte(nil), raw...)
-		clientHashes[bundlePath] = hashBusinessSystemPromptBundleBytes(raw)
+		files[name] = raw
+		if remoteSkillFileKind(name, raw) == "binary" {
+			continue
+		}
+		queue = append(queue, remoteSkillMoxinggangReferences(raw)...)
 	}
-	return buildRemoteSkillCandidate(commit, hashRemoteSkillClientSet(clientHashes), files, active)
+	hashes := make(map[string]string, len(files))
+	for name, raw := range files {
+		hashes[name] = hashBusinessSystemPromptBundleBytes(raw)
+	}
+	sourceSHA := hashRemoteSkillFileSet(hashes)
+	return buildRemoteSkillCandidate(RemoteSkillSourceMoxinggang, RemoteSkillMoxinggangRoot, sourceSHA[:40], sourceSHA, coreFiles, files, active)
 }
 
-func validateRemoteSkillClientDocument(bundlePath string, raw []byte) error {
-	if !utf8.Valid(raw) || bytes.IndexByte(raw, 0) >= 0 || len(bytes.TrimSpace(raw)) == 0 || len(raw) > remoteSkillClientMaxBytes {
-		return fmt.Errorf("%w: release client document invalid", ErrBusinessSystemPromptBundleInvalid)
+func (s *MoxinggangRemoteSkillCandidateSource) downloadEntry(ctx context.Context, name string) ([]byte, error) {
+	normalized, err := normalizeBundleRelativePath(name)
+	if err != nil || normalized != name {
+		return nil, fmt.Errorf("%w: remote entry path rejected", ErrBusinessSystemPromptBundleInvalid)
 	}
-	lower := strings.ToLower(string(raw))
-	for _, forbidden := range remoteSkillForbiddenClientReferences {
-		if strings.Contains(lower, forbidden) {
-			return fmt.Errorf("%w: release client contains a forbidden acquisition reference", ErrBusinessSystemPromptBundleInvalid)
-		}
+	rawURL := RemoteSkillMoxinggangRoot + "/" + name
+	parsed, err := url.Parse(rawURL)
+	if err != nil || !validMoxinggangRemoteSkillURL(parsed) {
+		return nil, fmt.Errorf("%w: remote entry URL rejected", ErrBusinessSystemPromptBundleInvalid)
 	}
-	urls := remoteSkillDocumentURLs(string(raw))
-	if bundlePath != remoteSkillClientSkillPath {
-		if len(urls) != 0 {
-			return fmt.Errorf("%w: release client contains an external runtime URL", ErrBusinessSystemPromptBundleInvalid)
-		}
-		return nil
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, err
 	}
-	if len(urls) != 1 || urls[0] != RemoteSkillDescriptorURL {
-		return fmt.Errorf("%w: release client registry URL invalid", ErrBusinessSystemPromptBundleInvalid)
+	req.Header.Set("Accept", "text/markdown, text/plain;q=0.9, application/octet-stream;q=0.8")
+	req.Header.Set("User-Agent", "Sub2API-CodexRip-Skill-Sync/1")
+	response, err := s.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%w: source request failed", ErrBusinessSystemPromptBundleUnavailable)
 	}
-	lastCoreReference := -1
-	for _, reference := range remoteSkillRequiredLocalCoreReferences {
-		index := strings.Index(string(raw), reference)
-		if strings.Count(string(raw), reference) != 1 || index <= lastCoreReference {
-			return fmt.Errorf("%w: release client local core sequence invalid", ErrBusinessSystemPromptBundleInvalid)
-		}
-		lastCoreReference = index
+	defer func() { _ = response.Body.Close() }()
+	if response.Request == nil || response.Request.URL == nil || !validMoxinggangRemoteSkillURL(response.Request.URL) || response.Request.URL.Path != parsed.Path {
+		return nil, fmt.Errorf("%w: source final URL rejected", ErrBusinessSystemPromptBundleInvalid)
 	}
-	for _, required := range []string{
-		"reverse engineering",
-		"security research",
-		"ctf",
-		"first matching task in each conversation",
-		"exactly one version check",
-		"current.json",
-		"bootstraps.powershell",
-		"bootstraps.python",
-		"sha-256",
-		"codex_home",
-		"report the failed stage",
-		"continue only when the existing local installation verifies successfully",
-		"later matching tasks in the same conversation do not repeat",
-		"never load skill content remotely at runtime",
-	} {
-		if !strings.Contains(lower, required) {
-			return fmt.Errorf("%w: release client lifecycle contract incomplete", ErrBusinessSystemPromptBundleInvalid)
-		}
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%w: source returned status %d", ErrBusinessSystemPromptBundleUnavailable, response.StatusCode)
 	}
-	return nil
+	if response.ContentLength > businessSystemPromptBundleMaxFileBytes {
+		return nil, fmt.Errorf("%w: source response exceeds limit", ErrBusinessSystemPromptBundleInvalid)
+	}
+	raw, err := io.ReadAll(io.LimitReader(response.Body, businessSystemPromptBundleMaxFileBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("%w: source read failed", ErrBusinessSystemPromptBundleUnavailable)
+	}
+	if len(raw) == 0 || len(raw) > businessSystemPromptBundleMaxFileBytes {
+		return nil, fmt.Errorf("%w: source response exceeds limit", ErrBusinessSystemPromptBundleInvalid)
+	}
+	return raw, nil
 }
 
-func remoteSkillDocumentURLs(value string) []string {
-	matches := remoteSkillHTTPURLPattern.FindAllString(value, -1)
-	result := make([]string, 0, len(matches))
-	for _, match := range matches {
-		result = append(result, strings.TrimRight(match, ".,;:!?)]}"))
+func validMoxinggangRemoteSkillURL(parsed *url.URL) bool {
+	if parsed == nil || parsed.Scheme != "https" || parsed.Hostname() != "moxinggang.com" || parsed.Port() != "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.RawPath != "" {
+		return false
 	}
+	if parsed.Path != path.Clean(parsed.Path) || !strings.HasPrefix(parsed.Path, RemoteSkillMoxinggangPath+"/") {
+		return false
+	}
+	relative := strings.TrimPrefix(parsed.Path, RemoteSkillMoxinggangPath+"/")
+	normalized, err := normalizeBundleRelativePath(relative)
+	return err == nil && normalized == relative
+}
+
+func remoteSkillMoxinggangReferences(raw []byte) []string {
+	seen := make(map[string]struct{})
+	result := make([]string, 0)
+	for _, match := range remoteSkillMoxinggangReferencePattern.FindAllSubmatch(raw, -1) {
+		name := strings.TrimRight(string(match[1]), ".,;:!?)]}`'\"")
+		if strings.HasSuffix(name, "/") {
+			continue
+		}
+		normalized, err := normalizeBundleRelativePath(name)
+		if err != nil || normalized != name {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		result = append(result, name)
+	}
+	sort.Strings(result)
 	return result
-}
-
-func remoteSkillFixedClientPaths() map[string]struct{} {
-	return map[string]struct{}{
-		remoteSkillClientSkillPath:  {},
-		remoteSkillClientOpenAIPath: {},
-	}
-}
-
-func (s *releaseRemoteSkillClientSource) Load(ctx context.Context) (map[string][]byte, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	releaseRoot := strings.TrimSpace(s.releaseRoot)
-	if releaseRoot == "" {
-		releaseRoot = strings.TrimSpace(os.Getenv(RemoteSkillRegistryReleaseEnv))
-	}
-	if releaseRoot == "" {
-		releaseRoot = RemoteSkillRegistryReleaseRoot
-	}
-	seedRoot := filepath.Join(filepath.Clean(releaseRoot), "seed")
-	descriptorRaw, err := readRemoteSkillBoundedFile(filepath.Join(seedRoot, remoteSkillSeedDescriptorName), remoteSkillPublicDescriptorLimit)
-	if err != nil {
-		return nil, fmt.Errorf("%w: read release client descriptor", ErrBusinessSystemPromptBundleUnavailable)
-	}
-	var descriptor RemoteSkillPublicDescriptor
-	if err := json.Unmarshal(descriptorRaw, &descriptor); err != nil {
-		return nil, fmt.Errorf("%w: invalid release client descriptor", ErrBusinessSystemPromptBundleInvalid)
-	}
-	if err := validateRemoteSkillPublicBootstraps(descriptor.Bootstraps); err != nil {
-		return nil, err
-	}
-	version := remoteSkillVersionFromDescriptor(descriptor)
-	if err := validateRemoteSkillVersionMetadata(version); err != nil {
-		return nil, err
-	}
-	manifestRaw, err := readRemoteSkillBoundedFile(filepath.Join(seedRoot, BusinessSystemPromptBundleManifestName), businessSystemPromptBundleMaxManifestBytes)
-	if err != nil || hashBusinessSystemPromptBundleBytes(manifestRaw) != version.ManifestSHA256 {
-		return nil, fmt.Errorf("%w: release client manifest mismatch", ErrBusinessSystemPromptBundleInvalid)
-	}
-	var manifest BusinessSystemPromptBundleManifest
-	if err := json.Unmarshal(manifestRaw, &manifest); err != nil {
-		return nil, fmt.Errorf("%w: invalid release client manifest", ErrBusinessSystemPromptBundleInvalid)
-	}
-	archiveRaw, err := readRemoteSkillBoundedFile(filepath.Join(seedRoot, remoteSkillArchiveName(version.ManifestSHA256)), remoteSkillArchiveMaxBytes)
-	if err != nil || hashBusinessSystemPromptBundleBytes(archiveRaw) != version.ArchiveSHA256 {
-		return nil, fmt.Errorf("%w: release client archive mismatch", ErrBusinessSystemPromptBundleInvalid)
-	}
-	allFiles, err := remoteSkillFilesFromArchive(archiveRaw, manifestRaw, manifest)
-	if err != nil {
-		return nil, err
-	}
-	result := make(map[string][]byte, len(remoteSkillFixedClientPaths()))
-	for name := range remoteSkillFixedClientPaths() {
-		raw, ok := allFiles[name]
-		if !ok {
-			return nil, fmt.Errorf("%w: release client file missing", ErrBusinessSystemPromptBundleInvalid)
-		}
-		result[name] = append([]byte(nil), raw...)
-	}
-	return result, nil
 }
 
 func (s *GitHubRemoteSkillCandidateSource) download(ctx context.Context, rawURL string, maximum int64, expectedHost string) ([]byte, error) {
@@ -321,7 +284,7 @@ func (s *GitHubRemoteSkillCandidateSource) download(ctx context.Context, rawURL 
 		return nil, fmt.Errorf("%w: source request failed", ErrBusinessSystemPromptBundleUnavailable)
 	}
 	defer func() { _ = response.Body.Close() }()
-	if response.Request == nil || response.Request.URL == nil || response.Request.URL.Scheme != "https" || response.Request.URL.Hostname() != expectedHost || response.Request.URL.Port() != "" {
+	if response.Request == nil || response.Request.URL == nil || response.Request.URL.Scheme != "https" || response.Request.URL.Hostname() != expectedHost || response.Request.URL.Port() != "" || response.Request.URL.User != nil || response.Request.URL.RawPath != "" || response.Request.URL.Path != parsed.Path || response.Request.URL.RawQuery != "" || response.Request.URL.Fragment != "" {
 		return nil, fmt.Errorf("%w: source final URL rejected", ErrBusinessSystemPromptBundleInvalid)
 	}
 	if response.StatusCode != http.StatusOK {
@@ -341,16 +304,22 @@ func (s *GitHubRemoteSkillCandidateSource) download(ctx context.Context, rawURL 
 }
 
 func newRemoteSkillHTTPClient() *http.Client {
-	allowed := map[string]struct{}{
-		"codeload.github.com": {},
-	}
 	return &http.Client{
 		Timeout: 45 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 3 || req.URL.Scheme != "https" {
+			if len(via) == 0 || len(via) >= 3 || req.URL.Scheme != "https" || req.URL.Hostname() != via[0].URL.Hostname() {
 				return errorsNewRemoteSkillRedirect()
 			}
-			if _, ok := allowed[req.URL.Hostname()]; !ok {
+			switch req.URL.Hostname() {
+			case "codeload.github.com":
+				if req.URL.User != nil || req.URL.RawPath != "" || !strings.HasPrefix(req.URL.Path, "/zhaoxuya520/reverse-skill/zip/") || req.URL.RawQuery != "" || req.URL.Fragment != "" {
+					return errorsNewRemoteSkillRedirect()
+				}
+			case "moxinggang.com":
+				if !validMoxinggangRemoteSkillURL(req.URL) {
+					return errorsNewRemoteSkillRedirect()
+				}
+			default:
 				return errorsNewRemoteSkillRedirect()
 			}
 			return nil
@@ -372,68 +341,7 @@ func validateRemoteSkillPinnedSource(files map[string][]byte, pin remoteSkillSou
 			return fmt.Errorf("%w: pinned source core mismatch", ErrBusinessSystemPromptBundleInvalid)
 		}
 	}
-	for name, raw := range files {
-		if remoteSkillFileKind(name, raw) == "binary" {
-			continue
-		}
-		lower := strings.ToLower(string(raw))
-		for _, forbidden := range []string{
-			"moxinggang.com",
-			"模型港",
-			`c:\users\administrator\appdata\local`,
-			"c:/users/administrator/appdata/local",
-			"codexrip-overlay/security-research",
-			"moxinggang-overlay/security-research",
-			"remote_root",
-		} {
-			if strings.Contains(lower, forbidden) {
-				return fmt.Errorf("%w: pinned source contains a forbidden runtime reference", ErrBusinessSystemPromptBundleInvalid)
-			}
-		}
-		if remoteSkillSourceContainsRemoteAcquisition(lower) {
-			return fmt.Errorf("%w: pinned source contains remote Skill acquisition instructions", ErrBusinessSystemPromptBundleInvalid)
-		}
-	}
 	return nil
-}
-
-func remoteSkillSourceContainsRemoteAcquisition(lower string) bool {
-	for _, line := range strings.Split(strings.ReplaceAll(lower, "\r\n", "\n"), "\n") {
-		if strings.Contains(line, "git pull") {
-			return true
-		}
-		if strings.Contains(line, "git clone") && strings.Contains(line, "github.com/zhaoxuya520/reverse-skill") {
-			return true
-		}
-		mentionsPackageDocument := false
-		for _, marker := range []string{"skill.md", "rules.md", "readme_ai.md", "reverse-skill.git", "reverse-skill/zip"} {
-			mentionsPackageDocument = mentionsPackageDocument || strings.Contains(line, marker)
-		}
-		mentionsAcquisition := false
-		for _, marker := range []string{"git clone", "curl ", "wget ", "invoke-webrequest", "download ", "fetch ", "load "} {
-			mentionsAcquisition = mentionsAcquisition || strings.Contains(line, marker)
-		}
-		mentionsRemote := strings.Contains(line, "http://") || strings.Contains(line, "https://") || strings.Contains(line, "github") || strings.Contains(line, "remote")
-		if mentionsPackageDocument && mentionsAcquisition && mentionsRemote {
-			return true
-		}
-	}
-	return false
-}
-
-func rewriteRemoteSkillPackageContract(bundlePath string, raw []byte) ([]byte, error) {
-	result := append([]byte(nil), raw...)
-	for _, rewrite := range remoteSkillApprovedPackageContractRewrites[bundlePath] {
-		source := []byte(rewrite.Source)
-		if bytes.Count(result, source) != 1 {
-			return nil, fmt.Errorf("%w: reviewed package contract changed", ErrBusinessSystemPromptBundleInvalid)
-		}
-		result = bytes.Replace(result, source, []byte(rewrite.Replacement), 1)
-	}
-	if remoteSkillSourceContainsRemoteAcquisition(strings.ToLower(string(result))) {
-		return nil, fmt.Errorf("%w: source contains remote Skill acquisition instructions", ErrBusinessSystemPromptBundleInvalid)
-	}
-	return result, nil
 }
 
 func extractRemoteSkillBaseArchive(raw []byte, expectedRoot string) (map[string][]byte, error) {
@@ -467,12 +375,6 @@ func extractRemoteSkillBaseArchive(raw []byte, expectedRoot string) (map[string]
 			return nil, fmt.Errorf("%w: source ZIP contains a link or special file", ErrBusinessSystemPromptBundleInvalid)
 		}
 		relative := strings.Join(parts[1:], "/")
-		if _, excluded := remoteSkillExcludedSourcePaths[relative]; excluded || path.Base(relative) == "inline-system-instructions.txt" {
-			continue
-		}
-		if isLegacyRemoteSkillOverlayPath(relative) {
-			return nil, fmt.Errorf("%w: legacy overlay source path rejected", ErrBusinessSystemPromptBundleInvalid)
-		}
 		normalized, err := normalizeBundleRelativePath(relative)
 		if err != nil || normalized != relative || relative == BusinessSystemPromptBundleManifestName {
 			return nil, fmt.Errorf("%w: source ZIP path rejected", ErrBusinessSystemPromptBundleInvalid)
@@ -496,16 +398,10 @@ func extractRemoteSkillBaseArchive(raw []byte, expectedRoot string) (map[string]
 		if readErr != nil || closeErr != nil || len(data) > businessSystemPromptBundleMaxFileBytes {
 			return nil, fmt.Errorf("%w: source file read failed", ErrBusinessSystemPromptBundleInvalid)
 		}
-		if remoteSkillFileKind(relative, data) != "binary" {
-			data, err = rewriteRemoteSkillPackageContract(relative, data)
-			if err != nil {
-				return nil, err
-			}
-		}
 		files[relative] = data
 		portable[key] = struct{}{}
 		total += int64(len(data))
-		if len(files) > remoteSkillMaxFileCount-len(remoteSkillFixedClientPaths()) || total > remoteSkillMaxTotalBytes {
+		if len(files) > remoteSkillMaxFileCount || total > remoteSkillMaxTotalBytes {
 			return nil, fmt.Errorf("%w: source archive limits exceeded", ErrBusinessSystemPromptBundleInvalid)
 		}
 	}
@@ -515,7 +411,7 @@ func extractRemoteSkillBaseArchive(raw []byte, expectedRoot string) (map[string]
 	return files, nil
 }
 
-func hashRemoteSkillClientSet(entries map[string]string) string {
+func hashRemoteSkillFileSet(entries map[string]string) string {
 	names := make([]string, 0, len(entries))
 	for name := range entries {
 		names = append(names, name)
@@ -531,7 +427,7 @@ func hashRemoteSkillClientSet(entries map[string]string) string {
 	return hex.EncodeToString(hash.Sum(nil))
 }
 
-func buildRemoteSkillCandidate(commit, clientSHA string, files map[string][]byte, active *BusinessSystemPromptBundleManifest) (RemoteSkillCandidate, error) {
+func buildRemoteSkillCandidate(sourceID, remoteRoot, commit, sourceSHA string, coreFiles []string, files map[string][]byte, active *BusinessSystemPromptBundleManifest) (RemoteSkillCandidate, error) {
 	if len(files) == 0 || len(files) > remoteSkillMaxFileCount {
 		return RemoteSkillCandidate{}, fmt.Errorf("%w: candidate file count invalid", ErrBusinessSystemPromptBundleInvalid)
 	}
@@ -561,11 +457,7 @@ func buildRemoteSkillCandidate(commit, clientSHA string, files map[string][]byte
 	}
 	manifest := BusinessSystemPromptBundleManifest{
 		SchemaVersion: 1, BundleID: BusinessSystemPromptRemoteSkillBundleID,
-		Version: commit, CoreFiles: []string{
-			"RULES.md",
-			"README_AI.md",
-			"skills/SKILL.md",
-		},
+		Version: commit, CoreFiles: append([]string(nil), coreFiles...),
 		Files: entries, Domains: buildRemoteSkillRoutes(files),
 	}
 	if err := validateBusinessSystemPromptBundleManifest(manifest); err != nil {
@@ -581,8 +473,8 @@ func buildRemoteSkillCandidate(commit, clientSHA string, files map[string][]byte
 		return RemoteSkillCandidate{}, err
 	}
 	version := RemoteSkillBundleVersion{
-		BundleID: BusinessSystemPromptRemoteSkillBundleID, SourceCommit: commit,
-		OverlaySHA256: clientSHA, ManifestSHA256: manifestSHA,
+		BundleID: BusinessSystemPromptRemoteSkillBundleID, SourceID: sourceID, RemoteRoot: remoteRoot, SourceCommit: commit,
+		OverlaySHA256: sourceSHA, ManifestSHA256: manifestSHA,
 		ArchiveSHA256: hashBusinessSystemPromptBundleBytes(archiveBytes),
 		FileCount:     len(entries), TotalBytes: total,
 	}
@@ -596,8 +488,8 @@ func buildRemoteSkillCandidate(commit, clientSHA string, files map[string][]byte
 
 // Keep empty reference lists explicit in the wire manifest. The native
 // installers consume the JSON directly and distinguish [] from an omitted
-// field; the generic manifest type intentionally uses omitempty for legacy
-// offline bundles, so this normalization stays remote-candidate specific.
+// field; the generic manifest type intentionally uses omitempty, so this
+// normalization stays remote-candidate specific.
 func marshalRemoteSkillManifest(manifest BusinessSystemPromptBundleManifest) ([]byte, error) {
 	raw, err := json.Marshal(manifest)
 	if err != nil {

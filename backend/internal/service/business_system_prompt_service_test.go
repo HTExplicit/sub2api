@@ -192,11 +192,11 @@ func TestBusinessSystemPromptServiceSyncManagedSourceCreatesCandidateWithoutChan
 func TestBusinessSystemPromptServiceRejectsPublishingLegacyCompositions(t *testing.T) {
 	for name, version := range map[string]BusinessSystemPromptVersion{
 		"offline bundle": {
-			ID: 4, CompositionMode: BusinessSystemPromptCompositionOfflineBundle,
+			ID: 4, CompositionMode: "offline_bundle",
 			BundleID: "moxinggang-reverse-skill", BundleManifestSHA256: strings.Repeat("a", 64),
 		},
 		"remote skill": {
-			ID: 4, CompositionMode: BusinessSystemPromptCompositionRemoteSkill,
+			ID: 4, CompositionMode: "remote_skill",
 			BundleID: BusinessSystemPromptRemoteSkillBundleID,
 		},
 	} {
@@ -208,27 +208,27 @@ func TestBusinessSystemPromptServiceRejectsPublishingLegacyCompositions(t *testi
 			svc := NewBusinessSystemPromptService(store, nil)
 			require.NoError(t, svc.Initialize(context.Background()))
 			_, err := svc.PublishVersion(context.Background(), 3, 4, 1, 9)
-			require.ErrorIs(t, err, ErrBusinessSystemPromptLegacyComposition)
+			require.ErrorIs(t, err, ErrBusinessSystemPromptInvalid)
 		})
 	}
 }
 
 func TestBusinessSystemPromptServiceRejectsCreatingOrDuplicatingLegacyOfflineBundle(t *testing.T) {
 	store := &fakeBusinessSystemPromptStore{detail: BusinessSystemPromptTemplateDetail{Versions: []BusinessSystemPromptVersion{{
-		ID: 4, Body: "legacy", CompositionMode: BusinessSystemPromptCompositionOfflineBundle,
-		BundleID: BusinessSystemPromptSeedBundleID, BundleManifestSHA256: BusinessSystemPromptSeedBundleManifestSHA256,
+		ID: 4, Body: "legacy", CompositionMode: "offline_bundle",
+		BundleID: "moxinggang-reverse-skill", BundleManifestSHA256: strings.Repeat("a", 64),
 	}}}}
 	svc := NewBusinessSystemPromptService(store, nil)
 
 	_, err := svc.CreateTemplate(context.Background(), BusinessSystemPromptTemplateCreate{
 		Slug: "legacy-copy", Name: "Legacy copy", Body: "legacy",
-		CompositionMode: BusinessSystemPromptCompositionOfflineBundle,
-		BundleID:        BusinessSystemPromptSeedBundleID, BundleManifestSHA256: BusinessSystemPromptSeedBundleManifestSHA256,
+		CompositionMode: "offline_bundle",
+		BundleID:        "moxinggang-reverse-skill", BundleManifestSHA256: strings.Repeat("a", 64),
 	}, 9, 1)
-	require.ErrorIs(t, err, ErrBusinessSystemPromptLegacyComposition)
+	require.ErrorIs(t, err, ErrBusinessSystemPromptInvalid)
 
 	_, err = svc.DuplicateTemplate(context.Background(), 3, "legacy-copy", "Legacy copy", 9, 1)
-	require.ErrorIs(t, err, ErrBusinessSystemPromptLegacyComposition)
+	require.ErrorIs(t, err, ErrBusinessSystemPromptInvalid)
 }
 
 func TestBusinessSystemPromptServicePublishInstallsSnapshotAndBroadcastsRevision(t *testing.T) {

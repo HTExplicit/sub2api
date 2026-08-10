@@ -42,6 +42,8 @@ type systemPromptRuntimeResponse struct {
 	RegistryManifestSHA256 string    `json:"registry_manifest_sha256,omitempty"`
 	RegistryArchiveSHA256  string    `json:"registry_archive_sha256,omitempty"`
 	RegistrySourceCommit   string    `json:"registry_source_commit,omitempty"`
+	RegistrySourceID       string    `json:"registry_source_id,omitempty"`
+	RegistryRemoteRoot     string    `json:"registry_remote_root,omitempty"`
 	BundleAvailable        bool      `json:"bundle_available"`
 	BundleDegraded         bool      `json:"bundle_degraded"`
 	DegradedReason         string    `json:"degraded_reason,omitempty"`
@@ -160,6 +162,8 @@ func businessSystemPromptRuntimeResponse(snapshot service.BusinessSystemPromptSn
 		RegistryManifestSHA256: snapshot.RegistryManifestSHA256,
 		RegistryArchiveSHA256:  snapshot.RegistryArchiveSHA256,
 		RegistrySourceCommit:   snapshot.RegistrySourceCommit,
+		RegistrySourceID:       snapshot.RegistrySourceID,
+		RegistryRemoteRoot:     snapshot.RegistryRemoteRoot,
 		BundleAvailable:        snapshot.BundleAvailable,
 		BundleDegraded:         snapshot.BundleDegraded,
 		DegradedReason:         snapshot.DegradedReason,
@@ -188,8 +192,6 @@ func writeBusinessSystemPromptError(c *gin.Context, err error) {
 		response.NotFound(c, "Remote skill version or sync job not found")
 	case errors.Is(err, service.ErrBusinessSystemPromptSeedProtected), errors.Is(err, service.ErrBusinessSystemPromptActive):
 		response.ErrorWithDetails(c, http.StatusConflict, err.Error(), "system_prompt_delete_protected", nil)
-	case errors.Is(err, service.ErrBusinessSystemPromptLegacyComposition):
-		response.ErrorWithDetails(c, http.StatusConflict, err.Error(), "system_prompt_legacy_composition", nil)
 	case errors.Is(err, service.ErrBusinessSystemPromptInvalid):
 		response.BadRequest(c, err.Error())
 	default:
@@ -245,19 +247,20 @@ func (h *SystemPromptHandler) StartSkillSync(c *gin.Context) {
 		return
 	}
 	var req struct {
-		ExpectedRevision int64 `json:"expected_revision" binding:"required"`
+		SourceID         string `json:"source_id"`
+		ExpectedRevision int64  `json:"expected_revision" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-	job, err := h.skillRegistry.StartSync(c.Request.Context(), actorID, req.ExpectedRevision)
+	job, err := h.skillRegistry.StartSync(c.Request.Context(), req.SourceID, actorID, req.ExpectedRevision)
 	if err != nil {
 		writeBusinessSystemPromptError(c, err)
 		return
 	}
 	middleware.SetAuditExtra(c, map[string]any{
-		"revision": req.ExpectedRevision, "status": job.Status, "result": "sync_queued",
+		"source_id": job.SourceID, "revision": req.ExpectedRevision, "status": job.Status, "result": "sync_queued",
 	})
 	response.Accepted(c, job)
 }
@@ -313,6 +316,7 @@ func (h *SystemPromptHandler) publishSkillVersion(c *gin.Context, result string)
 		extra["old_manifest_sha256"] = old.Active.ManifestSHA256
 	}
 	if snapshot.Active != nil {
+		extra["source_id"] = snapshot.Active.SourceID
 		extra["source_commit"] = snapshot.Active.SourceCommit
 		extra["new_manifest_sha256"] = snapshot.Active.ManifestSHA256
 		extra["archive_sha256"] = snapshot.Active.ArchiveSHA256
@@ -648,19 +652,6 @@ func (h *SystemPromptHandler) UpdateRuntime(c *gin.Context) {
 	response.Success(c, businessSystemPromptRuntimeResponse(snapshot))
 }
 
-func (h *SystemPromptHandler) Bundles(c *gin.Context) {
-	response.Success(c, h.service.ListBundles())
-}
-
-func (h *SystemPromptHandler) Bundle(c *gin.Context) {
-	detail, err := h.service.GetBundle(c.Param("bundle_id"))
-	if err != nil {
-		writeBusinessSystemPromptError(c, err)
-		return
-	}
-	response.Success(c, detail)
-}
-
 func (h *SystemPromptHandler) PreviewMerge(c *gin.Context) {
 	var req systemPromptPreviewRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -696,10 +687,6 @@ func (h *SystemPromptHandler) PreviewMerge(c *gin.Context) {
 		"bundle_id": composition.BundleID, "bundle_manifest_sha256": composition.BundleManifestSHA256,
 		"result": "previewed",
 	})
-	requestText := service.BusinessSystemPromptRequestText(req.Body, service.BusinessSystemPromptProtocolResponses)
-	if requestText == "" {
-		requestText = service.BusinessSystemPromptRequestText(req.Body, service.BusinessSystemPromptProtocolChat)
-	}
 	clientMode, err := normalizeSystemPromptPreviewClientMode(req.ClientMode)
 	if err != nil {
 		writeBusinessSystemPromptError(c, err)
@@ -708,7 +695,7 @@ func (h *SystemPromptHandler) PreviewMerge(c *gin.Context) {
 	prepared, err := h.service.PrepareBusinessSystemPromptPreviewSnapshotForClient(service.BusinessSystemPromptSnapshot{
 		Enabled: true, Revision: 1, Body: server, SHA256: hash, ByteLength: byteLength,
 		CompositionMode: composition.Mode, BundleID: composition.BundleID, BundleManifestSHA256: composition.BundleManifestSHA256,
-	}, requestText, clientMode)
+	}, "", clientMode)
 	if err != nil {
 		writeBusinessSystemPromptError(c, err)
 		return
@@ -724,8 +711,7 @@ func (h *SystemPromptHandler) PreviewMerge(c *gin.Context) {
 		"new_sha256": hash, "byte_length": byteLength, "composition_mode": composition.Mode,
 		"bundle_id": composition.BundleID, "bundle_revision": application.BundleRevision,
 		"bundle_manifest_sha256": application.BundleManifestSHA256, "client_mode": clientMode,
-		"route_count": len(application.RouteIDs), "document_count": len(application.DocumentIDs),
-		"omitted_document_count": len(application.OmittedDocumentIDs), "result": "previewed",
+		"result": "previewed",
 	})
 	response.Success(c, gin.H{
 		"instructions": service.MergeBusinessSystemPromptInstructions(req.ClientInstructions, prepared.Body),
@@ -787,7 +773,7 @@ func (h *SystemPromptHandler) PreviewUpstream(c *gin.Context) {
 		Enabled: true, CompactEnabled: true, TemplateID: req.TemplateID, VersionID: versionID, TemplateVersion: templateVersion,
 		Revision: 1, Body: server, SHA256: hash, ByteLength: byteLength,
 		CompositionMode: composition.Mode, BundleID: composition.BundleID, BundleManifestSHA256: composition.BundleManifestSHA256,
-	}, service.BusinessSystemPromptRequestText(req.Body, protocol), clientMode)
+	}, "", clientMode)
 	if err != nil {
 		writeBusinessSystemPromptError(c, err)
 		return
@@ -808,8 +794,7 @@ func (h *SystemPromptHandler) PreviewUpstream(c *gin.Context) {
 		"new_sha256": hash, "byte_length": byteLength, "composition_mode": composition.Mode,
 		"bundle_id": composition.BundleID, "bundle_revision": application.BundleRevision,
 		"bundle_manifest_sha256": application.BundleManifestSHA256, "client_mode": clientMode,
-		"route_count": len(application.RouteIDs), "document_count": len(application.DocumentIDs),
-		"omitted_document_count": len(application.OmittedDocumentIDs), "result": "previewed",
+		"result": "previewed",
 	})
 	response.Success(c, gin.H{
 		"body": decoded, "application": application, "client_mode": clientMode,

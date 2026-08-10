@@ -13,7 +13,7 @@
             <span>{{ runtimeDraft.enabled ? t('admin.systemPrompts.runtime.active') : t('admin.systemPrompts.runtime.disabled') }}</span>
             <Toggle :model-value="runtimeDraft.enabled" :aria-label="t('admin.systemPrompts.runtime.enabled')" @update:model-value="toggleGlobalEnabled" />
           </label>
-          <button type="button" class="icon-button" data-test="system-prompt-refresh" :title="t('common.refresh')" :disabled="loading" @click="loadAll()">
+          <button type="button" class="icon-button" data-test="system-prompt-refresh" :title="t('admin.systemPrompts.common.refresh')" :disabled="loading" @click="loadAll()">
             <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
           </button>
           <button type="button" class="icon-button" data-test="system-prompt-open-advanced" :title="t('admin.systemPrompts.advanced.title')" @click="openAdvanced">
@@ -35,7 +35,7 @@
         <div class="flex min-w-0 items-center gap-2 xl:hidden">
           <label class="sr-only" for="system-prompt-mobile-template">{{ t('admin.systemPrompts.templates.title') }}</label>
           <select id="system-prompt-mobile-template" :value="selectedId ?? ''" data-test="system-prompt-mobile-template" class="input min-w-0 flex-1" @change="selectTemplateFromMobile">
-            <option v-for="template in templates" :key="template.id" :value="template.id">{{ template.name }}</option>
+            <option v-for="template in templates" :key="template.id" :value="template.id">{{ templateDisplayName(template) }}</option>
           </select>
           <button type="button" class="icon-button shrink-0" data-test="system-prompt-mobile-create" :title="t('admin.systemPrompts.actions.create')" @click="openCreate">
             <Icon name="plus" size="sm" />
@@ -61,7 +61,7 @@
                 @click="selectTemplate(template.id)"
               >
                 <Icon name="document" size="sm" class="shrink-0 text-gray-400" />
-                <span class="min-w-0 flex-1 truncate text-sm font-medium text-gray-900 dark:text-white" :title="template.name">{{ template.name }}</span>
+                <span class="min-w-0 flex-1 truncate text-sm font-medium text-gray-900 dark:text-white" :title="templateDisplayName(template)">{{ templateDisplayName(template) }}</span>
                 <span v-if="runtimeTemplateId === template.id" class="badge badge-success shrink-0">{{ t('admin.systemPrompts.history.active') }}</span>
               </button>
               <div v-if="!templates.length" class="px-3 py-8 text-center text-sm text-gray-500 dark:text-dark-400">{{ t('admin.systemPrompts.templates.empty') }}</div>
@@ -71,7 +71,7 @@
           <section v-if="detail" class="min-w-0">
             <header class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 pb-3 dark:border-dark-700">
               <div class="flex min-w-0 items-center gap-2">
-                <h2 class="truncate text-lg font-semibold text-gray-900 dark:text-white" :title="detail.template.name">{{ detail.template.name }}</h2>
+                <h2 class="truncate text-lg font-semibold text-gray-900 dark:text-white" :title="templateDisplayName(detail.template)">{{ templateDisplayName(detail.template) }}</h2>
                 <span v-if="runtimeTemplateId === detail.template.id" class="badge badge-success shrink-0">{{ t('admin.systemPrompts.editor.activeTemplate') }}</span>
               </div>
               <div class="relative flex items-center gap-1">
@@ -98,16 +98,15 @@
             </div>
 
             <div v-if="activeTab === 'editor'" class="space-y-3 pt-4">
-              <div v-if="isLegacyComposition(compositionMode)" class="border-l-2 border-amber-500 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">{{ t('admin.systemPrompts.errors.legacyReadonly') }}</div>
               <textarea v-model="body" data-test="system-prompt-body" class="min-h-[430px] w-full resize-y border border-gray-200 bg-white p-4 font-mono text-[13px] leading-6 text-gray-900 outline-none transition-colors focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-100" spellcheck="false" :aria-label="t('admin.systemPrompts.editor.body')"></textarea>
               <div class="flex flex-wrap items-center justify-between gap-3">
                 <input v-model="note" type="text" class="input w-full text-sm sm:min-w-0 sm:flex-1" :placeholder="t('admin.systemPrompts.editor.notePlaceholder')" :aria-label="t('admin.systemPrompts.editor.note')" />
                 <div class="flex w-full items-center justify-end gap-2 sm:w-auto sm:shrink-0">
-                  <button type="button" data-test="system-prompt-save-version" class="btn btn-primary btn-sm" :disabled="savingVersion || !editorDirty || isLegacyComposition(compositionMode)" @click="saveVersion">
-                    <Icon name="check" size="sm" class="mr-1" />{{ savingVersion ? t('common.saving') : t('admin.systemPrompts.actions.saveVersion') }}
+                  <button type="button" data-test="system-prompt-save-version" class="btn btn-primary btn-sm" :disabled="savingVersion || !editorDirty" @click="saveVersion">
+                    <Icon name="check" size="sm" class="mr-1" />{{ savingVersion ? t('admin.systemPrompts.common.saving') : t('admin.systemPrompts.actions.saveVersion') }}
                   </button>
                   <button type="button" data-test="system-prompt-set-current" class="btn btn-secondary btn-sm" :disabled="!selectedVersion || selectedVersion.id === runtimeVersionId || editorDirty || publishingPrompt" @click="openConfirm({ kind: 'publish', versionId: selectedVersion?.id })">
-                    <Icon name="upload" size="sm" class="mr-1" />{{ publishingPrompt ? t('common.saving') : t('admin.systemPrompts.actions.setCurrent') }}
+                    <Icon name="upload" size="sm" class="mr-1" />{{ publishingPrompt ? t('admin.systemPrompts.common.saving') : t('admin.systemPrompts.actions.setCurrent') }}
                   </button>
                 </div>
               </div>
@@ -151,7 +150,9 @@
       :skill-candidate="skillCandidate"
       :skill-syncing="skillSyncInProgress"
       :publishing-skill="publishingSkill"
+      :selected-skill-source="selectedSkillSource"
       :source-template="selectedTemplate"
+      :source-template-display-name="selectedTemplate ? templateDisplayName(selectedTemplate) : ''"
       :source-version="selectedVersion"
       :source-sync-status="sourceSyncStatus"
       :source-candidate="sourceCandidate"
@@ -161,7 +162,7 @@
       @save-runtime="saveRuntime"
       @sync-skill="startSkillSync"
       @publish-skill="publishSkillBundle"
-      @copy-install="copyInstallCommand"
+      @skill-source-change="selectedSkillSource = $event"
       @sync-source="syncManagedSource"
     />
 
@@ -169,7 +170,7 @@
       <form class="space-y-4" @submit.prevent="saveMetadata">
         <div><label class="input-label">{{ t('admin.systemPrompts.editor.name') }}</label><input v-model.trim="metaName" class="input" required /></div>
         <div><label class="input-label">{{ t('admin.systemPrompts.editor.description') }}</label><textarea v-model="metaDescription" rows="3" class="input resize-y"></textarea></div>
-        <div class="flex justify-end gap-2 border-t border-gray-200 pt-4 dark:border-dark-700"><button type="button" class="btn btn-secondary" @click="showMetadataDialog = false">{{ t('common.cancel') }}</button><button type="submit" class="btn btn-primary" :disabled="savingMetadata">{{ savingMetadata ? t('common.saving') : t('admin.systemPrompts.actions.saveMetadata') }}</button></div>
+        <div class="flex justify-end gap-2 border-t border-gray-200 pt-4 dark:border-dark-700"><button type="button" class="btn btn-secondary" @click="showMetadataDialog = false">{{ t('admin.systemPrompts.common.cancel') }}</button><button type="submit" class="btn btn-primary" :disabled="savingMetadata">{{ savingMetadata ? t('admin.systemPrompts.common.saving') : t('admin.systemPrompts.actions.saveMetadata') }}</button></div>
       </form>
     </BaseDialog>
 
@@ -179,7 +180,7 @@
         <div><label class="input-label">{{ t('admin.systemPrompts.dialogs.description') }}</label><textarea v-model="createForm.description" rows="2" class="input resize-y"></textarea></div>
         <div><label class="input-label">{{ t('admin.systemPrompts.dialogs.body') }}</label><textarea v-model="createForm.body" rows="12" class="input resize-y font-mono text-xs" spellcheck="false" required></textarea></div>
         <div><label class="input-label">{{ t('admin.systemPrompts.dialogs.note') }}</label><input v-model="createForm.note" class="input" /></div>
-        <div class="flex justify-end gap-2 border-t border-gray-200 pt-4 dark:border-dark-700"><button type="button" class="btn btn-secondary" @click="showCreateDialog = false">{{ t('common.cancel') }}</button><button type="submit" class="btn btn-primary" :disabled="creating"><Icon name="plus" size="sm" class="mr-1" />{{ creating ? t('common.saving') : t('admin.systemPrompts.actions.create') }}</button></div>
+        <div class="flex justify-end gap-2 border-t border-gray-200 pt-4 dark:border-dark-700"><button type="button" class="btn btn-secondary" @click="showCreateDialog = false">{{ t('admin.systemPrompts.common.cancel') }}</button><button type="submit" class="btn btn-primary" :disabled="creating"><Icon name="plus" size="sm" class="mr-1" />{{ creating ? t('admin.systemPrompts.common.saving') : t('admin.systemPrompts.actions.create') }}</button></div>
       </form>
     </BaseDialog>
 
@@ -194,7 +195,7 @@
       <form class="space-y-4" @submit.prevent="duplicateTemplate">
         <div><label class="input-label">{{ t('admin.systemPrompts.dialogs.slug') }}</label><input v-model.trim="duplicateForm.slug" class="input" required /></div>
         <div><label class="input-label">{{ t('admin.systemPrompts.dialogs.name') }}</label><input v-model.trim="duplicateForm.name" class="input" required /></div>
-        <div class="flex justify-end gap-2 border-t border-gray-200 pt-4 dark:border-dark-700"><button type="button" class="btn btn-secondary" @click="showDuplicateDialog = false">{{ t('common.cancel') }}</button><button type="submit" class="btn btn-primary" :disabled="duplicating">{{ duplicating ? t('common.saving') : t('admin.systemPrompts.actions.duplicate') }}</button></div>
+        <div class="flex justify-end gap-2 border-t border-gray-200 pt-4 dark:border-dark-700"><button type="button" class="btn btn-secondary" @click="showDuplicateDialog = false">{{ t('admin.systemPrompts.common.cancel') }}</button><button type="submit" class="btn btn-primary" :disabled="duplicating">{{ duplicating ? t('admin.systemPrompts.common.saving') : t('admin.systemPrompts.actions.duplicate') }}</button></div>
       </form>
     </BaseDialog>
 
@@ -219,12 +220,12 @@ import Icon from '@/components/icons/Icon.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import SystemPromptAdvancedDrawer from '@/components/admin/systemPrompt/SystemPromptAdvancedDrawer.vue'
 import { useAppStore } from '@/stores'
-import { useClipboard } from '@/composables/useClipboard'
 import systemPromptsAPI, {
   type ManagedSourceSyncStatus,
   type ManagedSourceSyncVersion,
   type RemoteSkillBundleVersionDetail,
   type RemoteSkillRegistryResponse,
+  type RemoteSkillSourceID,
   type RemoteSkillSyncJob,
   type SystemPromptCompositionMode,
   type SystemPromptRuntime,
@@ -236,7 +237,6 @@ import { extractApiErrorCode, extractApiErrorMessage } from '@/utils/apiError'
 
 const { t, locale } = useI18n()
 const appStore = useAppStore()
-const { copyToClipboard } = useClipboard()
 
 type Tab = 'editor' | 'history'
 type ConfirmAction = { kind: 'publish' | 'rollback' | 'delete'; versionId?: number }
@@ -278,6 +278,7 @@ const skillRegistry = ref<RemoteSkillRegistryResponse | null>(null)
 const skillLoading = ref(false)
 const skillSyncJob = ref<RemoteSkillSyncJob | null>(null)
 const skillCandidate = ref<RemoteSkillBundleVersionDetail | null>(null)
+const selectedSkillSource = ref<RemoteSkillSourceID>('github_official')
 const publishingSkill = ref(false)
 const sourceSyncing = ref(false)
 const sourceSyncStatus = ref<ManagedSourceSyncStatus | null>(null)
@@ -318,20 +319,17 @@ function setRuntimeDraft(value: SystemPromptRuntime) {
   runtimeDraft.compact_enabled = value.compact_enabled
 }
 
-function normalizeCompositionMode(value: string | undefined): SystemPromptCompositionMode {
-  if (value === 'offline_bundle' || value === 'remote_skill' || value === 'codex_skill_hybrid') return value
-  return 'inline'
-}
-
-function isLegacyComposition(value: string | undefined) {
-  return value === 'offline_bundle' || value === 'remote_skill'
+function templateDisplayName(template: SystemPromptTemplate) {
+  if (template.slug === 'codexrip_reverse_skill') return t('admin.systemPrompts.templates.codexripReverseSkill')
+  if (template.slug === 'gpt_5_6_instruct') return t('admin.systemPrompts.templates.gpt56Instruct')
+  return template.name
 }
 
 function applyVersionToEditor(version: SystemPromptVersion) {
   selectedVersionId.value = version.id
   body.value = version.body
   note.value = version.note
-  compositionMode.value = normalizeCompositionMode(version.composition_mode)
+  compositionMode.value = version.composition_mode
   bundleId.value = version.bundle_id || ''
   bundleManifestSHA256.value = version.bundle_manifest_sha256 || ''
 }
@@ -400,7 +398,6 @@ function selectVersion(version: SystemPromptVersion) {
 
 async function saveVersion() {
   if (!detail.value || !runtime.value || !editorDirty.value) return
-  if (isLegacyComposition(compositionMode.value)) { appStore.showError(t('admin.systemPrompts.errors.legacyReadonly')); return }
   const bytes = new TextEncoder().encode(body.value).length
   if (!body.value.trim() || body.value.includes('\u0000') || bytes > 64 * 1024) { appStore.showError(t('admin.systemPrompts.errors.invalidBody')); return }
   savingVersion.value = true
@@ -467,7 +464,7 @@ async function pollSkillSync() {
 async function startSkillSync() {
   if (!skillRegistry.value || skillSyncInProgress.value) return
   skillCandidate.value = null
-  try { skillSyncJob.value = await systemPromptsAPI.startSkillSync(skillRegistry.value.runtime.revision); scheduleSkillSyncPoll() } catch (error) { handleError(error, t('admin.systemPrompts.errors.skillSync')) }
+  try { skillSyncJob.value = await systemPromptsAPI.startSkillSync(selectedSkillSource.value, skillRegistry.value.runtime.revision); scheduleSkillSyncPoll() } catch (error) { handleError(error, t('admin.systemPrompts.errors.skillSync')) }
 }
 
 async function publishSkillBundle(versionId: number, rollback: boolean) {
@@ -492,11 +489,6 @@ async function syncManagedSource() {
     if (result.status === 'candidate_created') appStore.showSuccess(t('admin.systemPrompts.messages.sourceCandidateCreated'))
     else appStore.showSuccess(t(`admin.systemPrompts.source.status.${result.status}`))
   } catch (error) { handleError(error, t('admin.systemPrompts.errors.sourceSync')) } finally { sourceSyncing.value = false }
-}
-
-async function copyInstallCommand(command: string, stage: 'acquire' | 'execute') {
-  if (!command) return
-  await copyToClipboard(command, t(`admin.systemPrompts.advanced.${stage}Copied`))
 }
 
 function openMetadata() { templateMenuOpen.value = false; showMetadataDialog.value = true }

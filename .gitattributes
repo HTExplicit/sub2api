@@ -9,10 +9,6 @@ backend/migrations/*.sql text eol=lf
 backend/internal/service/prompts/*.txt text eol=lf
 backend/internal/service/prompts/*.md text eol=lf
 
-# Integrity manifests are byte-for-byte release artifacts. Git must not rewrite
-# them, while text diffs remain enabled for supply-chain review.
-deploy/skill-bundles/**/bundle-manifest.json -text diff
-
 # Remote Skill registry assets are content-addressed. Keep all textual release
 # bytes stable on Windows/macOS/Linux and never apply text filters to ZIPs.
 deploy/skill-registry/bootstrap/**/*.ps1 text eol=lf

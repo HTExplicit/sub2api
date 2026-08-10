@@ -55,7 +55,7 @@ jobs:
           go mod verify
           go test -p=1 ./internal/service -run 'Test.*(BusinessSystemPrompt|RemoteSkill|GPT56)' -count=1
           go test -p=1 ./internal/handler/admin ./internal/server/middleware -run 'Test.*(SystemPrompt|RemoteSkill|Audit)' -count=1
-          go test -p=1 ./migrations -run 'Test.*(BusinessSystemPromptRemoteSkill|BusinessSystemPromptCodexSkillHybrid|BusinessSystemPromptManagedSource|RemoteSkillRegistry)' -count=1
+          go test -p=1 ./migrations -run 'Test.*(BusinessSystemPromptRemoteSkill|BusinessSystemPromptCodexSkillHybrid|BusinessSystemPromptManagedSource|RemoteSkillRegistry|RemoteSkillSources)' -count=1
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 9.15.9
@@ -72,7 +72,8 @@ jobs:
           pnpm exec vitest run \
             src/api/admin/__tests__/systemPrompts.spec.ts \
             src/views/admin/__tests__/SystemPromptsView.spec.ts \
-            src/views/admin/__tests__/systemPromptsIntegrationSurface.spec.ts
+            src/views/admin/__tests__/systemPromptsIntegrationSurface.spec.ts \
+            src/router/__tests__/title.spec.ts
 
   publish:
     needs: verify
@@ -87,7 +88,7 @@ jobs:
       REGISTRY_ARCHIVE_SHA: fca0bef795880515c4d9f40322c8f99564c9371bbd01144ab73d7656ccfe8d33
       REGISTRY_ARCHIVE: codexrip-reverse-skill-098c056d0884602c60b4bcaa2af6b12c52a13718d0fc2a4af40b18497b0c75ac.zip
       REGISTRY_CHECKSUM: codexrip-reverse-skill-098c056d0884602c60b4bcaa2af6b12c52a13718d0fc2a4af40b18497b0c75ac.zip.sha256
-      PROMPT_SHA: 59b81b0d72fa7f90083f9aabd0d25194e79dcad66caa4790792ae2866a7fa1bb
+      PROMPT_SHA: 2107e252ef417561baa4c5349f0c34d4e767ad422dfc463b2eac07bf7bbcc931
       POWERSHELL_BOOTSTRAP_SHA: 2199e8c4e8a09278c9b79e17b05e5457308db0a7d593e0f933ad6bd0712845f9
       PYTHON_BOOTSTRAP_SHA: 353878272c8972c00817cc7171d7a4a087b4203fa2758b7ba1d040ededde7dc9
     steps:

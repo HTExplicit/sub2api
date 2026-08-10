@@ -591,8 +591,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: true,
-      title: 'Business System Prompts',
-      titleKey: 'admin.systemPrompts.title'
+      title: '系统提示词'
     }
   },
   {

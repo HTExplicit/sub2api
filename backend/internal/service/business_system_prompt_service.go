@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -12,13 +11,12 @@ import (
 )
 
 var (
-	ErrBusinessSystemPromptTemplateNotFound  = errors.New("business system prompt template not found")
-	ErrBusinessSystemPromptVersionNotFound   = errors.New("business system prompt version not found")
-	ErrBusinessSystemPromptRevisionConflict  = errors.New("business system prompt revision conflict")
-	ErrBusinessSystemPromptSeedProtected     = errors.New("business system prompt seed is protected")
-	ErrBusinessSystemPromptActive            = errors.New("active business system prompt cannot be deleted")
-	ErrBusinessSystemPromptLegacyComposition = errors.New("legacy business system prompt composition is read-only")
-	ErrBusinessSystemPromptSourceNotManaged  = errors.New("business system prompt template is not managed by this source")
+	ErrBusinessSystemPromptTemplateNotFound = errors.New("business system prompt template not found")
+	ErrBusinessSystemPromptVersionNotFound  = errors.New("business system prompt version not found")
+	ErrBusinessSystemPromptRevisionConflict = errors.New("business system prompt revision conflict")
+	ErrBusinessSystemPromptSeedProtected    = errors.New("business system prompt seed is protected")
+	ErrBusinessSystemPromptActive           = errors.New("active business system prompt cannot be deleted")
+	ErrBusinessSystemPromptSourceNotManaged = errors.New("business system prompt template is not managed by this source")
 )
 
 const (
@@ -144,9 +142,8 @@ type BusinessSystemPromptStore interface {
 	UpdateBusinessSystemPromptRuntime(context.Context, BusinessSystemPromptRuntimeUpdate) (BusinessSystemPromptSnapshot, error)
 }
 
-// BusinessSystemPromptCompositionStore is implemented by stores that can
-// persist content-addressed offline bundle references. It is separate from the
-// legacy store method so existing integrations remain source compatible.
+// BusinessSystemPromptCompositionStore is implemented by stores that persist
+// the validated composition metadata alongside immutable prompt versions.
 type BusinessSystemPromptCompositionStore interface {
 	CreateBusinessSystemPromptVersionWithComposition(context.Context, int64, BusinessSystemPromptVersionCreate, int64, int64, int64) (BusinessSystemPromptVersion, error)
 }
@@ -173,16 +170,9 @@ type BusinessSystemPromptRevisionBus interface {
 	Subscribe(context.Context, func(int64)) error
 }
 
-type BusinessSystemPromptRouteMetadataStore interface {
-	StoreBusinessSystemPromptRouteMetadata(context.Context, string, BusinessSystemPromptBundleMetadata, time.Duration) error
-	LoadBusinessSystemPromptRouteMetadata(context.Context, string) (BusinessSystemPromptBundleMetadata, bool, error)
-}
-
 type BusinessSystemPromptService struct {
 	store    BusinessSystemPromptStore
 	bus      BusinessSystemPromptRevisionBus
-	route    BusinessSystemPromptRouteMetadataStore
-	bundles  *BusinessSystemPromptBundleRegistry
 	registry *RemoteSkillRegistryService
 	source   BusinessSystemPromptSource
 
@@ -195,15 +185,10 @@ type BusinessSystemPromptService struct {
 }
 
 func NewBusinessSystemPromptService(store BusinessSystemPromptStore, bus BusinessSystemPromptRevisionBus) *BusinessSystemPromptService {
-	service := &BusinessSystemPromptService{
+	return &BusinessSystemPromptService{
 		store: store, bus: bus,
-		bundles: NewBusinessSystemPromptBundleRegistry(DefaultBusinessSystemPromptBundleRoot()),
-		source:  NewGitHubGPT56PromptSource(nil),
+		source: NewGitHubGPT56PromptSource(nil),
 	}
-	if routeStore, ok := bus.(BusinessSystemPromptRouteMetadataStore); ok {
-		service.route = routeStore
-	}
-	return service
 }
 
 func (s *BusinessSystemPromptService) SetBusinessSystemPromptSource(source BusinessSystemPromptSource) {
@@ -242,53 +227,6 @@ func (s *BusinessSystemPromptService) SyncManagedSource(
 	return sourceStore.SyncBusinessSystemPromptSourceVersion(
 		ctx, templateID, candidate, actorID, expectedLatestVersion, expectedRevision,
 	)
-}
-
-func (s *BusinessSystemPromptService) loadBusinessSystemPromptBundle(bundleID, manifestSHA256 string) (*BusinessSystemPromptBundle, error) {
-	// A direct path is retained for isolated tests and single-bundle operators.
-	// Production uses the content-addressed registry root so no symlink or
-	// mutable "current" directory participates in validation.
-	if directPath := strings.TrimSpace(os.Getenv(BusinessSystemPromptBundlePathEnv)); directPath != "" {
-		return loadBusinessSystemPromptBundleIdentity(directPath, bundleID, manifestSHA256)
-	}
-	if s == nil || s.bundles == nil {
-		return nil, fmt.Errorf("%w: bundle registry unavailable", ErrBusinessSystemPromptBundleUnavailable)
-	}
-	return s.bundles.Load(bundleID, manifestSHA256)
-}
-
-func (s *BusinessSystemPromptService) StoreResponseRouteMetadata(ctx context.Context, responseID string, application BusinessSystemPromptApplication, ttl time.Duration) error {
-	if s == nil || s.route == nil || !application.Applied ||
-		(application.CompositionMode != BusinessSystemPromptCompositionOfflineBundle && application.CompositionMode != BusinessSystemPromptCompositionCodexSkillHybrid) {
-		return nil
-	}
-	metadata := BusinessSystemPromptBundleMetadata{
-		BundleID: application.BundleID, ManifestSHA256: application.BundleManifestSHA256,
-		BaseSHA256: application.BaseSHA256, EffectiveSHA256: application.EffectiveSHA256,
-		ByteLength:     application.EffectiveByteLength,
-		RouteIDs:       append([]string(nil), application.RouteIDs...),
-		DocumentPaths:  append([]string(nil), application.DocumentIDs...),
-		ReferencePaths: append([]string(nil), application.ReferenceIDs...),
-		Degraded:       application.Degraded,
-	}
-	if err := ValidateBusinessSystemPromptBundleMetadata(metadata); err != nil {
-		return err
-	}
-	return s.route.StoreBusinessSystemPromptRouteMetadata(ctx, responseID, metadata, ttl)
-}
-
-func (s *BusinessSystemPromptService) LoadResponseRouteMetadata(ctx context.Context, responseID string) (*BusinessSystemPromptBundleMetadata, error) {
-	if s == nil || s.route == nil || strings.TrimSpace(responseID) == "" {
-		return nil, nil
-	}
-	metadata, found, err := s.route.LoadBusinessSystemPromptRouteMetadata(ctx, responseID)
-	if err != nil || !found {
-		return nil, err
-	}
-	if err := ValidateBusinessSystemPromptBundleMetadata(metadata); err != nil {
-		return nil, err
-	}
-	return &metadata, nil
 }
 
 func (s *BusinessSystemPromptService) Initialize(ctx context.Context) error {
@@ -446,61 +384,57 @@ func (s *BusinessSystemPromptService) prepareBusinessSystemPromptSnapshot(snapsh
 	snapshot.RegistryManifestSHA256 = ""
 	snapshot.RegistryArchiveSHA256 = ""
 	snapshot.RegistrySourceCommit = ""
+	snapshot.RegistrySourceID = ""
+	snapshot.RegistryRemoteRoot = ""
 	if snapshot.CompositionMode == BusinessSystemPromptCompositionInline {
-		snapshot.requestBundle = nil
 		snapshot.BundleAvailable = false
 		snapshot.BundleDegraded = false
 		snapshot.DegradedReason = ""
 		return nil
 	}
 	if snapshot.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid {
-		snapshot.requestBundle = nil
 		snapshot.BundleAvailable = false
-		snapshot.BundleDegraded = true
-		snapshot.DegradedReason = "registry_unavailable"
+		snapshot.BundleDegraded = false
+		snapshot.DegradedReason = ""
 		if s == nil || s.registry == nil {
-			if !snapshot.Enabled {
-				return nil
-			}
-			return fmt.Errorf("%w: skill registry unavailable", ErrBusinessSystemPromptUnavailable)
+			return nil
 		}
-		registrySnapshot, bundle, err := s.registry.ActiveBundle(context.Background())
-		if err != nil || registrySnapshot.Active == nil || bundle == nil {
-			if !snapshot.Enabled {
-				return nil
-			}
-			return fmt.Errorf("%w: active skill registry snapshot unavailable", ErrBusinessSystemPromptUnavailable)
+		registrySnapshot := s.registry.CurrentSnapshot()
+		if registrySnapshot.Active == nil {
+			snapshot.BundleDegraded = registrySnapshot.Degraded
+			snapshot.DegradedReason = registrySnapshot.DegradedReason
+			snapshot.Degraded = snapshot.Degraded || registrySnapshot.Degraded
+			return nil
 		}
-		snapshot.requestBundle = bundle
 		snapshot.BundleAvailable = true
-		snapshot.BundleDegraded = registrySnapshot.Degraded || bundle.Degraded
+		snapshot.BundleDegraded = registrySnapshot.Degraded
 		snapshot.DegradedReason = registrySnapshot.DegradedReason
 		snapshot.RegistryRevision = registrySnapshot.Revision
 		snapshot.RegistryManifestSHA256 = registrySnapshot.Active.ManifestSHA256
 		snapshot.RegistryArchiveSHA256 = registrySnapshot.Active.ArchiveSHA256
 		snapshot.RegistrySourceCommit = registrySnapshot.Active.SourceCommit
+		snapshot.RegistrySourceID = registrySnapshot.Active.SourceID
+		snapshot.RegistryRemoteRoot = registrySnapshot.Active.RemoteRoot
 		if snapshot.BundleDegraded {
 			snapshot.Degraded = true
 		}
 		return nil
 	}
-	snapshot.requestBundle = nil
 	snapshot.BundleAvailable = false
 	snapshot.BundleDegraded = true
-	snapshot.DegradedReason = "legacy_composition_read_only"
+	snapshot.DegradedReason = "unsupported_composition"
 	snapshot.Degraded = true
 	if !snapshot.Enabled {
 		return nil
 	}
-	return fmt.Errorf("%w: %v", ErrBusinessSystemPromptUnavailable, ErrBusinessSystemPromptLegacyComposition)
+	return fmt.Errorf("%w: unsupported composition", ErrBusinessSystemPromptUnavailable)
 }
 
 // PrepareBusinessSystemPromptPreviewSnapshot verifies the selected immutable
-// version and performs the same deterministic offline compilation used by live
-// requests. It never mutates the installed runtime snapshot.
+// version and applies the same published remote root used by live requests.
 func (s *BusinessSystemPromptService) PrepareBusinessSystemPromptPreviewSnapshot(
 	snapshot BusinessSystemPromptSnapshot,
-	requestText string,
+	_ string,
 ) (BusinessSystemPromptSnapshot, error) {
 	snapshot.Enabled = true
 	if snapshot.Revision < 1 {
@@ -509,13 +443,13 @@ func (s *BusinessSystemPromptService) PrepareBusinessSystemPromptPreviewSnapshot
 	if err := s.prepareBusinessSystemPromptSnapshot(&snapshot); err != nil {
 		return BusinessSystemPromptSnapshot{}, err
 	}
-	return s.compileBusinessSystemPromptSnapshot(snapshot, requestText, false, nil, true)
+	return s.compileBusinessSystemPromptSnapshot(snapshot)
 }
 
 func (s *BusinessSystemPromptService) PrepareBusinessSystemPromptPreviewSnapshotForClient(
 	snapshot BusinessSystemPromptSnapshot,
-	requestText string,
-	clientMode string,
+	_ string,
+	_ string,
 ) (BusinessSystemPromptSnapshot, error) {
 	snapshot.Enabled = true
 	if snapshot.Revision < 1 {
@@ -524,53 +458,34 @@ func (s *BusinessSystemPromptService) PrepareBusinessSystemPromptPreviewSnapshot
 	if err := s.prepareBusinessSystemPromptSnapshot(&snapshot); err != nil {
 		return BusinessSystemPromptSnapshot{}, err
 	}
-	inlineDocuments := strings.EqualFold(strings.TrimSpace(clientMode), "openai_compatible")
-	return s.compileBusinessSystemPromptSnapshot(snapshot, requestText, false, nil, inlineDocuments)
+	return s.compileBusinessSystemPromptSnapshot(snapshot)
 }
 
 func (s *BusinessSystemPromptService) compileBusinessSystemPromptSnapshot(
 	snapshot BusinessSystemPromptSnapshot,
-	requestText string,
-	continuation bool,
-	previous *BusinessSystemPromptBundleMetadata,
-	inlineDocuments bool,
 ) (BusinessSystemPromptSnapshot, error) {
 	if snapshot.CompositionMode == BusinessSystemPromptCompositionInline {
 		return snapshot, nil
 	}
 	if snapshot.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid {
-		if snapshot.requestBundle == nil || snapshot.RegistryManifestSHA256 == "" {
-			return BusinessSystemPromptSnapshot{}, fmt.Errorf("%w: active registry bundle unavailable", ErrBusinessSystemPromptUnavailable)
-		}
+		snapshot.Body = applyRemoteSkillRoot(snapshot.Body, snapshot.RegistryRemoteRoot)
 		baseHash := hashBusinessSystemPromptBundleBytes([]byte(snapshot.Body))
-		if !inlineDocuments {
-			snapshot.baseSHA256 = baseHash
-			snapshot.effectiveSHA256 = baseHash
-			snapshot.effectiveByteLength = len([]byte(snapshot.Body))
-			snapshot.routeIDs = nil
-			snapshot.documentIDs = nil
-			snapshot.referenceIDs = nil
-			snapshot.omittedDocumentIDs = nil
-			return snapshot, nil
-		}
-		compiled, err := NewBusinessSystemPromptHybridCompiler(snapshot.requestBundle).CompileHybrid(BusinessSystemPromptBundleCompileInput{
-			BasePrompt: snapshot.Body, RequestText: requestText, Continuation: continuation, PreviousMetadata: previous,
-		})
-		if err != nil {
-			return BusinessSystemPromptSnapshot{}, err
-		}
-		snapshot.Body = compiled.Body
-		snapshot.baseSHA256 = compiled.Metadata.BaseSHA256
-		snapshot.effectiveSHA256 = compiled.Metadata.EffectiveSHA256
-		snapshot.effectiveByteLength = compiled.Metadata.ByteLength
-		snapshot.routeIDs = append([]string(nil), compiled.Metadata.RouteIDs...)
-		snapshot.documentIDs = append([]string(nil), compiled.Metadata.DocumentPaths...)
-		snapshot.referenceIDs = append([]string(nil), compiled.Metadata.ReferencePaths...)
-		snapshot.omittedDocumentIDs = append([]string(nil), compiled.OmittedPaths...)
-		snapshot.Degraded = snapshot.Degraded || compiled.Metadata.Degraded
+		snapshot.baseSHA256 = baseHash
+		snapshot.effectiveSHA256 = baseHash
+		snapshot.effectiveByteLength = len([]byte(snapshot.Body))
 		return snapshot, nil
 	}
-	return BusinessSystemPromptSnapshot{}, fmt.Errorf("%w: %v", ErrBusinessSystemPromptUnavailable, ErrBusinessSystemPromptLegacyComposition)
+	return BusinessSystemPromptSnapshot{}, fmt.Errorf("%w: unsupported composition", ErrBusinessSystemPromptUnavailable)
+}
+
+func applyRemoteSkillRoot(body, remoteRoot string) string {
+	remoteRoot = strings.TrimSpace(remoteRoot)
+	if remoteRoot == "" {
+		return body
+	}
+	body = strings.ReplaceAll(body, RemoteSkillGitHubRoot, remoteRoot)
+	body = strings.ReplaceAll(body, RemoteSkillMoxinggangRoot, remoteRoot)
+	return body
 }
 
 func (s *BusinessSystemPromptService) retainLastGood(err error) error {
@@ -654,9 +569,6 @@ func (s *BusinessSystemPromptService) CreateVersionWithComposition(ctx context.C
 	if s == nil || s.store == nil {
 		return BusinessSystemPromptVersion{}, errors.New("business system prompt store unavailable")
 	}
-	if composition.Mode == BusinessSystemPromptCompositionOfflineBundle || composition.Mode == BusinessSystemPromptCompositionRemoteSkill {
-		return BusinessSystemPromptVersion{}, ErrBusinessSystemPromptLegacyComposition
-	}
 	req.Note = strings.TrimSpace(req.Note)
 	req.CompositionMode = composition.Mode
 	req.BundleID = composition.BundleID
@@ -731,22 +643,12 @@ func (s *BusinessSystemPromptService) UpdateRuntime(ctx context.Context, update 
 }
 
 func (s *BusinessSystemPromptService) validateBusinessSystemPromptBundleReference(composition BusinessSystemPromptComposition) error {
-	if composition.Mode == BusinessSystemPromptCompositionRemoteSkill {
-		return ErrBusinessSystemPromptLegacyComposition
-	}
 	if composition.Mode == BusinessSystemPromptCompositionCodexSkillHybrid {
 		if composition.BundleID != BusinessSystemPromptRemoteSkillBundleID || s == nil || s.registry == nil {
 			return fmt.Errorf("%w: active CodexRip registry unavailable", ErrBusinessSystemPromptUnavailable)
 		}
 		_, _, err := s.registry.ActiveBundle(context.Background())
 		return err
-	}
-	if composition.Mode != BusinessSystemPromptCompositionOfflineBundle {
-		return nil
-	}
-	_, err := s.loadBusinessSystemPromptBundle(composition.BundleID, composition.BundleManifestSHA256)
-	if err != nil {
-		return fmt.Errorf("%w: offline bundle unavailable: %v", ErrBusinessSystemPromptUnavailable, err)
 	}
 	return nil
 }
@@ -769,9 +671,6 @@ func (s *BusinessSystemPromptService) validateBusinessSystemPromptPublishTarget(
 		composition, err := NormalizeBusinessSystemPromptComposition(version.CompositionMode, version.BundleID, version.BundleManifestSHA256)
 		if err != nil {
 			return err
-		}
-		if composition.Mode == BusinessSystemPromptCompositionOfflineBundle || composition.Mode == BusinessSystemPromptCompositionRemoteSkill {
-			return ErrBusinessSystemPromptLegacyComposition
 		}
 		return s.validateBusinessSystemPromptBundleReference(composition)
 	}
@@ -804,57 +703,6 @@ func (s *BusinessSystemPromptService) ListTemplates(ctx context.Context) ([]Busi
 	return s.store.ListBusinessSystemPromptTemplates(ctx)
 }
 
-func (s *BusinessSystemPromptService) ListBundles() []BusinessSystemPromptBundleSummary {
-	detail := s.inspectBusinessSystemPromptSeedBundle()
-	return []BusinessSystemPromptBundleSummary{detail.BusinessSystemPromptBundleSummary}
-}
-
-func (s *BusinessSystemPromptService) GetBundle(bundleID string) (BusinessSystemPromptBundleDetail, error) {
-	if strings.TrimSpace(bundleID) != BusinessSystemPromptSeedBundleID {
-		return BusinessSystemPromptBundleDetail{}, ErrBusinessSystemPromptVersionNotFound
-	}
-	return s.inspectBusinessSystemPromptSeedBundle(), nil
-}
-
-func (s *BusinessSystemPromptService) inspectBusinessSystemPromptSeedBundle() BusinessSystemPromptBundleDetail {
-	detail := BusinessSystemPromptBundleDetail{BusinessSystemPromptBundleSummary: BusinessSystemPromptBundleSummary{
-		BundleID: BusinessSystemPromptSeedBundleID, Name: "codexrip Reverse-Skill",
-		Description:    "Content-addressed, read-only codexrip reverse-skill package.",
-		ManifestSHA256: BusinessSystemPromptSeedBundleManifestSHA256,
-	}}
-	bundle, err := s.loadBusinessSystemPromptBundle(BusinessSystemPromptSeedBundleID, BusinessSystemPromptSeedBundleManifestSHA256)
-	if err != nil {
-		detail.Degraded = true
-		detail.DegradedReason = "bundle_unavailable"
-		return detail
-	}
-	detail.Available = true
-	detail.Degraded = bundle.Degraded
-	if bundle.Degraded {
-		detail.DegradedReason = "bundle_missing_optional_documents"
-	}
-	detail.Version = bundle.Manifest.Version
-	detail.DocumentCount = len(bundle.Manifest.Files)
-	detail.RouteCount = len(bundle.Manifest.Domains)
-	detail.LoadedAt = bundle.LoadedAt
-	detail.Documents = make([]BusinessSystemPromptBundleDocument, 0, len(bundle.Manifest.Files))
-	for _, document := range bundle.Manifest.Files {
-		detail.TotalBytes += int64(document.ByteLength)
-		detail.Documents = append(detail.Documents, BusinessSystemPromptBundleDocument{
-			Path: document.Path, SHA256: strings.ToLower(document.SHA256), ByteLength: document.ByteLength,
-			Kind: bundleFileKind(document), Required: document.Required,
-		})
-	}
-	detail.Routes = make([]BusinessSystemPromptBundleRoute, 0, len(bundle.Manifest.Domains))
-	for _, route := range bundle.Manifest.Domains {
-		detail.Routes = append(detail.Routes, BusinessSystemPromptBundleRoute{
-			ID: route.ID, Keywords: append([]string(nil), route.Keywords...), Entry: route.Entry,
-			References: append([]string(nil), route.References...), Priority: route.Priority,
-		})
-	}
-	return detail
-}
-
 func (s *BusinessSystemPromptService) GetTemplate(ctx context.Context, id int64) (BusinessSystemPromptTemplateDetail, error) {
 	return s.store.GetBusinessSystemPromptTemplate(ctx, id)
 }
@@ -872,9 +720,6 @@ func (s *BusinessSystemPromptService) CreateTemplate(ctx context.Context, req Bu
 	composition, err := NormalizeBusinessSystemPromptComposition(req.CompositionMode, req.BundleID, req.BundleManifestSHA256)
 	if err != nil {
 		return BusinessSystemPromptTemplateDetail{}, err
-	}
-	if composition.Mode == BusinessSystemPromptCompositionOfflineBundle || composition.Mode == BusinessSystemPromptCompositionRemoteSkill {
-		return BusinessSystemPromptTemplateDetail{}, ErrBusinessSystemPromptLegacyComposition
 	}
 	req.CompositionMode = composition.Mode
 	req.BundleID = composition.BundleID
@@ -911,12 +756,9 @@ func (s *BusinessSystemPromptService) DuplicateTemplate(ctx context.Context, id 
 		return BusinessSystemPromptTemplateDetail{}, err
 	}
 	for _, version := range detail.Versions {
-		composition, normalizeErr := NormalizeBusinessSystemPromptComposition(version.CompositionMode, version.BundleID, version.BundleManifestSHA256)
+		_, normalizeErr := NormalizeBusinessSystemPromptComposition(version.CompositionMode, version.BundleID, version.BundleManifestSHA256)
 		if normalizeErr != nil {
 			return BusinessSystemPromptTemplateDetail{}, normalizeErr
-		}
-		if composition.Mode == BusinessSystemPromptCompositionOfflineBundle || composition.Mode == BusinessSystemPromptCompositionRemoteSkill {
-			return BusinessSystemPromptTemplateDetail{}, ErrBusinessSystemPromptLegacyComposition
 		}
 	}
 	return s.store.DuplicateBusinessSystemPromptTemplate(ctx, id, slug, name, actorID, expectedRevision)

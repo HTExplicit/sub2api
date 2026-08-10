@@ -16,20 +16,11 @@ import (
 )
 
 const (
-	// BusinessSystemPromptBundlePathEnv is the only runtime configuration used
-	// to locate the external skill bundle. The loader never fetches a URL.
-	BusinessSystemPromptBundlePathEnv = "SUB2API_SYSTEM_PROMPT_BUNDLE_PATH"
 	// BusinessSystemPromptBundleManifestName is intentionally fixed so a mount
 	// cannot select an arbitrary file as executable configuration.
 	BusinessSystemPromptBundleManifestName     = "bundle-manifest.json"
 	businessSystemPromptBundleManifestName     = BusinessSystemPromptBundleManifestName
-	BusinessSystemPromptBundleDefaultPath      = "/app/skill-bundles/moxinggang-reverse-skill/22c227128165afbbcbda0175eb5e991ddb51d105b7d1e704572c625c64b626d7"
 	BusinessSystemPromptBundleMaxBytes         = 256 << 10
-	BusinessSystemPromptBundleMaxDomains       = 2
-	BusinessSystemPromptBundleMaxReferences    = 3
-	BusinessSystemPromptHybridMaxDomains       = 128
-	BusinessSystemPromptHybridMaxReferences    = 512
-	BusinessSystemPromptHybridMaxDocuments     = 1024
 	businessSystemPromptBundleMaxManifestBytes = 4 << 20
 	businessSystemPromptBundleMaxFileBytes     = 64 << 20
 )
@@ -89,21 +80,8 @@ type BusinessSystemPromptBundle struct {
 	fileEntries     map[string]BusinessSystemPromptBundleFile
 }
 
-// DefaultBusinessSystemPromptBundlePath returns the configured external path.
-// An empty or whitespace-only environment value deliberately falls back to the
-// fixed deployment location. No URL is accepted here.
-func DefaultBusinessSystemPromptBundlePath() string {
-	for _, key := range []string{BusinessSystemPromptBundlePathEnv, "SUB2API_BUSINESS_SYSTEM_PROMPT_BUNDLE_PATH"} {
-		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-			return value
-		}
-	}
-	return BusinessSystemPromptBundleDefaultPath
-}
-
-// LoadBusinessSystemPromptBundle reads and verifies a bundle from disk. It is
-// deliberately synchronous and offline: there is no HTTP client, shell, or
-// script execution in this code path.
+// LoadBusinessSystemPromptBundle reads and verifies a content-addressed bundle
+// from disk without executing bundle files.
 func LoadBusinessSystemPromptBundle(root string) (*BusinessSystemPromptBundle, error) {
 	root = strings.TrimSpace(root)
 	if root == "" || strings.ContainsRune(root, '\x00') {
@@ -195,41 +173,18 @@ func LoadBusinessSystemPromptBundle(root string) (*BusinessSystemPromptBundle, e
 	return bundle, nil
 }
 
-type BusinessSystemPromptBundleSummary struct {
-	BundleID       string    `json:"bundle_id"`
-	Name           string    `json:"name,omitempty"`
-	Version        string    `json:"version,omitempty"`
-	Description    string    `json:"description,omitempty"`
-	ManifestSHA256 string    `json:"manifest_sha256"`
-	Available      bool      `json:"available"`
-	Degraded       bool      `json:"degraded"`
-	DegradedReason string    `json:"degraded_reason,omitempty"`
-	DocumentCount  int       `json:"document_count"`
-	RouteCount     int       `json:"route_count"`
-	TotalBytes     int64     `json:"total_bytes"`
-	LoadedAt       time.Time `json:"loaded_at,omitempty"`
-}
-
-type BusinessSystemPromptBundleDocument struct {
-	Path       string `json:"path"`
-	SHA256     string `json:"sha256"`
-	ByteLength int    `json:"byte_length"`
-	Kind       string `json:"kind"`
-	Required   bool   `json:"required"`
-}
-
-type BusinessSystemPromptBundleRoute struct {
-	ID         string   `json:"id"`
-	Keywords   []string `json:"keywords"`
-	Entry      string   `json:"entry"`
-	References []string `json:"references,omitempty"`
-	Priority   int      `json:"priority,omitempty"`
-}
-
-type BusinessSystemPromptBundleDetail struct {
-	BusinessSystemPromptBundleSummary
-	Documents []BusinessSystemPromptBundleDocument `json:"documents"`
-	Routes    []BusinessSystemPromptBundleRoute    `json:"routes"`
+func loadBusinessSystemPromptBundleIdentity(root, expectedBundleID, expectedManifestSHA256 string) (*BusinessSystemPromptBundle, error) {
+	bundle, err := LoadBusinessSystemPromptBundle(root)
+	if err != nil {
+		return nil, err
+	}
+	if bundle.Manifest.BundleID != strings.TrimSpace(expectedBundleID) {
+		return nil, fmt.Errorf("%w: bundle id mismatch", ErrBusinessSystemPromptBundleInvalid)
+	}
+	if !strings.EqualFold(bundle.ManifestSHA256, strings.TrimSpace(expectedManifestSHA256)) {
+		return nil, fmt.Errorf("%w: manifest sha256 mismatch", ErrBusinessSystemPromptBundleInvalid)
+	}
+	return bundle, nil
 }
 
 func validateBusinessSystemPromptBundleManifest(manifest BusinessSystemPromptBundleManifest) error {
@@ -326,14 +281,6 @@ func (b *BusinessSystemPromptBundle) ReadText(rel string) (string, error) {
 		return "", fmt.Errorf("%w: optional file %q is unavailable", ErrBusinessSystemPromptBundleUnavailable, rel)
 	}
 	return string(data), nil
-}
-
-func (b *BusinessSystemPromptBundle) file(rel string) (BusinessSystemPromptBundleFile, bool) {
-	if b == nil {
-		return BusinessSystemPromptBundleFile{}, false
-	}
-	entry, ok := b.fileEntries[rel]
-	return entry, ok
 }
 
 func normalizeBundleRelativePath(value string) (string, error) {

@@ -18,7 +18,9 @@ from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[1]
 BUNDLE_ID = "codexrip-reverse-skill"
+SOURCE_ID = "github_official"
 SOURCE_COMMIT = "a5d8c9233b98c52df387d5b1a0ef669fcaa51374"
+REMOTE_ROOT = f"https://raw.githubusercontent.com/zhaoxuya520/reverse-skill/{SOURCE_COMMIT}/skills"
 SOURCE_URL = f"https://codeload.github.com/zhaoxuya520/reverse-skill/zip/{SOURCE_COMMIT}"
 SOURCE_ARCHIVE_SHA256 = "c6cc4a531b62ded1fae92cc8cdace9cf7833fe23978350161d90dedff77f80df"
 SOURCE_ARCHIVE_ENV = "CODEXRIP_REMOTE_SKILL_SOURCE_ZIP"
@@ -438,7 +440,9 @@ def main() -> None:
         "schema_version": 1,
         "bundle_id": BUNDLE_ID,
         "revision": 1,
+        "source_id": SOURCE_ID,
         "source_commit": SOURCE_COMMIT,
+        "remote_root": REMOTE_ROOT,
         "overlay_sha256": hash_client_set(files),
         "manifest_sha256": manifest_sha,
         "archive_sha256": archive_sha,

@@ -24,12 +24,16 @@ const (
 	remoteSkillSeedDescriptorName    = "seed-descriptor.json"
 	remoteSkillPublicDescriptorLimit = 256 << 10
 	remoteSkillArchiveMaxBytes       = 128 << 20
+	remoteSkillClientSkillPath       = "codexrip-client/SKILL.md"
+	remoteSkillClientOpenAIPath      = "codexrip-client/agents/openai.yaml"
 )
 
 type RemoteSkillPublicDescriptor struct {
 	SchemaVersion   int                         `json:"schema_version"`
 	BundleID        string                      `json:"bundle_id"`
 	Revision        int64                       `json:"revision"`
+	SourceID        string                      `json:"source_id"`
+	RemoteRoot      string                      `json:"remote_root"`
 	SourceCommit    string                      `json:"source_commit"`
 	OverlaySHA256   string                      `json:"overlay_sha256"`
 	ManifestSHA256  string                      `json:"manifest_sha256"`
@@ -402,6 +406,7 @@ func (f *RemoteSkillRegistryFilesystem) Activate(ctx context.Context, snapshot R
 	baseURL := "https://codexrip.vip/skills/reverse-skill/versions/" + snapshot.Active.ManifestSHA256
 	descriptor := RemoteSkillPublicDescriptor{
 		SchemaVersion: 1, BundleID: snapshot.Active.BundleID, Revision: snapshot.Revision,
+		SourceID: snapshot.Active.SourceID, RemoteRoot: snapshot.Active.RemoteRoot,
 		SourceCommit: snapshot.Active.SourceCommit, OverlaySHA256: snapshot.Active.OverlaySHA256,
 		ManifestSHA256: snapshot.Active.ManifestSHA256, ArchiveSHA256: snapshot.Active.ArchiveSHA256,
 		ManifestURL:  baseURL + "/" + BusinessSystemPromptBundleManifestName,
@@ -526,7 +531,9 @@ func validateRemoteSkillCandidate(candidate RemoteSkillCandidate) error {
 }
 
 func validateRemoteSkillVersionMetadata(version RemoteSkillBundleVersion) error {
-	if version.BundleID != BusinessSystemPromptRemoteSkillBundleID || len(version.SourceCommit) != 40 || !isLowerHexSHA256(version.SourceCommit+strings.Repeat("0", 24)) ||
+	sourceID, err := NormalizeRemoteSkillSourceID(version.SourceID)
+	if err != nil || sourceID != version.SourceID || version.RemoteRoot != remoteSkillVersionSourceRoot(sourceID, version.SourceCommit) ||
+		version.BundleID != BusinessSystemPromptRemoteSkillBundleID || len(version.SourceCommit) != 40 || !isLowerHexSHA256(version.SourceCommit+strings.Repeat("0", 24)) ||
 		len(version.OverlaySHA256) != 64 || !isLowerHexSHA256(version.OverlaySHA256) ||
 		len(version.ManifestSHA256) != 64 || !isLowerHexSHA256(version.ManifestSHA256) ||
 		len(version.ArchiveSHA256) != 64 || !isLowerHexSHA256(version.ArchiveSHA256) ||
@@ -794,8 +801,16 @@ func remoteSkillArchiveName(manifestHash string) string {
 }
 
 func remoteSkillVersionFromDescriptor(descriptor RemoteSkillPublicDescriptor) RemoteSkillBundleVersion {
+	sourceID, err := NormalizeRemoteSkillSourceID(descriptor.SourceID)
+	if err != nil {
+		sourceID = strings.ToLower(strings.TrimSpace(descriptor.SourceID))
+	}
+	remoteRoot := strings.TrimSpace(descriptor.RemoteRoot)
+	if remoteRoot == "" && sourceID != "" {
+		remoteRoot = remoteSkillVersionSourceRoot(sourceID, descriptor.SourceCommit)
+	}
 	return RemoteSkillBundleVersion{
-		BundleID: descriptor.BundleID, SourceCommit: strings.ToLower(descriptor.SourceCommit),
+		BundleID: descriptor.BundleID, SourceID: sourceID, RemoteRoot: remoteRoot, SourceCommit: strings.ToLower(descriptor.SourceCommit),
 		OverlaySHA256: strings.ToLower(descriptor.OverlaySHA256), ManifestSHA256: strings.ToLower(descriptor.ManifestSHA256),
 		ArchiveSHA256: strings.ToLower(descriptor.ArchiveSHA256), FileCount: descriptor.FileCount,
 		TotalBytes: descriptor.TotalBytes, PublishedAt: &descriptor.PublishedAt,

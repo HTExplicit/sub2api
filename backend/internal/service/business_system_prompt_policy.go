@@ -57,23 +57,19 @@ type BusinessSystemPromptSnapshot struct {
 	RegistryManifestSHA256 string    `json:"registry_manifest_sha256,omitempty"`
 	RegistryArchiveSHA256  string    `json:"registry_archive_sha256,omitempty"`
 	RegistrySourceCommit   string    `json:"registry_source_commit,omitempty"`
+	RegistrySourceID       string    `json:"registry_source_id,omitempty"`
+	RegistryRemoteRoot     string    `json:"registry_remote_root,omitempty"`
 	BundleAvailable        bool      `json:"bundle_available"`
 	BundleDegraded         bool      `json:"bundle_degraded"`
 	DegradedReason         string    `json:"degraded_reason,omitempty"`
 	Degraded               bool      `json:"degraded"`
 	UpdatedAt              time.Time `json:"updated_at"`
 
-	// requestBundle and the effective fields are attached to an immutable
-	// request-scoped copy. They are never persisted or returned by the runtime
-	// API, which continues to expose the active version's original hash/length.
-	requestBundle       *BusinessSystemPromptBundle `json:"-"`
-	baseSHA256          string                      `json:"-"`
-	effectiveSHA256     string                      `json:"-"`
-	effectiveByteLength int                         `json:"-"`
-	routeIDs            []string                    `json:"-"`
-	documentIDs         []string                    `json:"-"`
-	referenceIDs        []string                    `json:"-"`
-	omittedDocumentIDs  []string                    `json:"-"`
+	// Effective fields are attached to an immutable request-scoped copy. They
+	// are never persisted or returned by the runtime API.
+	baseSHA256          string `json:"-"`
+	effectiveSHA256     string `json:"-"`
+	effectiveByteLength int    `json:"-"`
 }
 
 type BusinessSystemPromptTarget struct {
@@ -83,31 +79,29 @@ type BusinessSystemPromptTarget struct {
 }
 
 type BusinessSystemPromptApplication struct {
-	Applied              bool     `json:"applied"`
-	Carrier              string   `json:"carrier"`
-	ClientInstructions   string   `json:"client_instructions"`
-	ServerInstructions   string   `json:"server_instructions"`
-	ExposeServerPrompt   bool     `json:"expose_server_prompt"`
-	CompactEnabled       bool     `json:"compact_enabled"`
-	TemplateID           int64    `json:"template_id"`
-	VersionID            int64    `json:"version_id"`
-	TemplateVersion      int64    `json:"template_version"`
-	Revision             int64    `json:"revision"`
-	SHA256               string   `json:"sha256"`
-	BaseSHA256           string   `json:"base_sha256,omitempty"`
-	EffectiveSHA256      string   `json:"effective_sha256,omitempty"`
-	EffectiveByteLength  int      `json:"effective_byte_length,omitempty"`
-	CompositionMode      string   `json:"composition_mode,omitempty"`
-	BundleID             string   `json:"bundle_id,omitempty"`
-	BundleManifestSHA256 string   `json:"bundle_manifest_sha256,omitempty"`
-	BundleRevision       int64    `json:"bundle_revision,omitempty"`
-	BundleArchiveSHA256  string   `json:"bundle_archive_sha256,omitempty"`
-	BundleSourceCommit   string   `json:"bundle_source_commit,omitempty"`
-	RouteIDs             []string `json:"route_ids,omitempty"`
-	DocumentIDs          []string `json:"document_ids,omitempty"`
-	ReferenceIDs         []string `json:"reference_ids,omitempty"`
-	OmittedDocumentIDs   []string `json:"omitted_document_ids,omitempty"`
-	Degraded             bool     `json:"degraded,omitempty"`
+	Applied              bool   `json:"applied"`
+	Carrier              string `json:"carrier"`
+	ClientInstructions   string `json:"client_instructions"`
+	ServerInstructions   string `json:"server_instructions"`
+	ExposeServerPrompt   bool   `json:"expose_server_prompt"`
+	CompactEnabled       bool   `json:"compact_enabled"`
+	TemplateID           int64  `json:"template_id"`
+	VersionID            int64  `json:"version_id"`
+	TemplateVersion      int64  `json:"template_version"`
+	Revision             int64  `json:"revision"`
+	SHA256               string `json:"sha256"`
+	BaseSHA256           string `json:"base_sha256,omitempty"`
+	EffectiveSHA256      string `json:"effective_sha256,omitempty"`
+	EffectiveByteLength  int    `json:"effective_byte_length,omitempty"`
+	CompositionMode      string `json:"composition_mode,omitempty"`
+	BundleID             string `json:"bundle_id,omitempty"`
+	BundleManifestSHA256 string `json:"bundle_manifest_sha256,omitempty"`
+	BundleRevision       int64  `json:"bundle_revision,omitempty"`
+	BundleArchiveSHA256  string `json:"bundle_archive_sha256,omitempty"`
+	BundleSourceCommit   string `json:"bundle_source_commit,omitempty"`
+	BundleSourceID       string `json:"bundle_source_id,omitempty"`
+	BundleRemoteRoot     string `json:"bundle_remote_root,omitempty"`
+	Degraded             bool   `json:"degraded,omitempty"`
 }
 
 func ValidateBusinessSystemPromptBody(body string) (string, int, error) {
@@ -171,10 +165,8 @@ func ApplyBusinessSystemPromptToJSON(
 		BundleRevision:       snapshot.RegistryRevision,
 		BundleArchiveSHA256:  strings.ToLower(strings.TrimSpace(snapshot.RegistryArchiveSHA256)),
 		BundleSourceCommit:   strings.ToLower(strings.TrimSpace(snapshot.RegistrySourceCommit)),
-		RouteIDs:             append([]string(nil), snapshot.routeIDs...),
-		DocumentIDs:          append([]string(nil), snapshot.documentIDs...),
-		ReferenceIDs:         append([]string(nil), snapshot.referenceIDs...),
-		OmittedDocumentIDs:   append([]string(nil), snapshot.omittedDocumentIDs...),
+		BundleSourceID:       snapshot.RegistrySourceID,
+		BundleRemoteRoot:     snapshot.RegistryRemoteRoot,
 		Degraded:             snapshot.Degraded,
 	}
 	if !snapshot.Enabled || target.Platform != PlatformOpenAI || (target.Compact && !snapshot.CompactEnabled) {

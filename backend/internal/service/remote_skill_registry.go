@@ -4,12 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
 const (
+	RemoteSkillSourceGitHubOfficial      = "github_official"
+	RemoteSkillSourceMoxinggang          = "moxinggang"
+	RemoteSkillMoxinggangPath            = "/skills/security-research/current"
+	RemoteSkillMoxinggangRoot            = "https://moxinggang.com" + RemoteSkillMoxinggangPath
+	RemoteSkillGitHubRawRoot             = "https://raw.githubusercontent.com/zhaoxuya520/reverse-skill/"
+	RemoteSkillGitHubRoot                = RemoteSkillGitHubRawRoot + remoteSkillPinnedCommit + "/skills"
 	RemoteSkillSyncStatusQueued          = "queued"
 	RemoteSkillSyncStatusRunning         = "running"
 	RemoteSkillSyncStatusSucceeded       = "succeeded"
@@ -31,6 +38,8 @@ var (
 type RemoteSkillBundleVersion struct {
 	ID             int64      `json:"id"`
 	BundleID       string     `json:"bundle_id"`
+	SourceID       string     `json:"source_id"`
+	RemoteRoot     string     `json:"remote_root"`
 	SourceCommit   string     `json:"source_commit"`
 	OverlaySHA256  string     `json:"overlay_sha256"`
 	ManifestSHA256 string     `json:"manifest_sha256"`
@@ -56,6 +65,8 @@ type RemoteSkillBundleVersionDetail struct {
 
 type RemoteSkillRegistrySnapshot struct {
 	Revision       int64                     `json:"revision"`
+	SourceID       string                    `json:"source_id,omitempty"`
+	RemoteRoot     string                    `json:"remote_root,omitempty"`
 	Active         *RemoteSkillBundleVersion `json:"active,omitempty"`
 	Degraded       bool                      `json:"degraded"`
 	DegradedReason string                    `json:"degraded_reason,omitempty"`
@@ -72,6 +83,8 @@ type RemoteSkillClientInstaller struct {
 
 type RemoteSkillClientInstall struct {
 	SkillName      string                     `json:"skill_name"`
+	SourceID       string                     `json:"source_id"`
+	RemoteRoot     string                     `json:"remote_root"`
 	SourceCommit   string                     `json:"source_commit,omitempty"`
 	ManifestSHA256 string                     `json:"manifest_sha256,omitempty"`
 	DescriptorURL  string                     `json:"descriptor_url"`
@@ -81,6 +94,7 @@ type RemoteSkillClientInstall struct {
 
 type RemoteSkillSyncJob struct {
 	ID                       int64      `json:"id"`
+	SourceID                 string     `json:"source_id"`
 	Status                   string     `json:"status"`
 	ProgressStage            string     `json:"progress_stage"`
 	SourceCommit             string     `json:"source_commit,omitempty"`
@@ -105,7 +119,7 @@ type RemoteSkillRegistryStore interface {
 	LoadRemoteSkillSnapshot(context.Context) (RemoteSkillRegistrySnapshot, error)
 	ListRemoteSkillVersions(context.Context) ([]RemoteSkillBundleVersion, error)
 	GetRemoteSkillVersion(context.Context, int64) (RemoteSkillBundleVersion, error)
-	CreateRemoteSkillSyncJob(context.Context, int64, int64) (RemoteSkillSyncJob, error)
+	CreateRemoteSkillSyncJob(context.Context, string, int64, int64) (RemoteSkillSyncJob, error)
 	UpdateRemoteSkillSyncJobStage(context.Context, int64, string) error
 	CompleteRemoteSkillSyncJob(context.Context, int64, RemoteSkillBundleVersion) (RemoteSkillSyncJob, error)
 	FailRemoteSkillSyncJob(context.Context, int64, string) error
@@ -124,7 +138,50 @@ type RemoteSkillRegistryFiles interface {
 }
 
 type RemoteSkillCandidateSource interface {
-	Build(context.Context, *BusinessSystemPromptBundleManifest) (RemoteSkillCandidate, error)
+	Build(context.Context, string, *BusinessSystemPromptBundleManifest) (RemoteSkillCandidate, error)
+}
+
+func NormalizeRemoteSkillSourceID(value string) (string, error) {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return RemoteSkillSourceGitHubOfficial, nil
+	}
+	switch value {
+	case RemoteSkillSourceGitHubOfficial, RemoteSkillSourceMoxinggang:
+		return value, nil
+	default:
+		return "", fmt.Errorf("%w: unknown remote skill source", ErrBusinessSystemPromptInvalid)
+	}
+}
+
+func remoteSkillSourceRoot(sourceID string) string {
+	if sourceID == RemoteSkillSourceMoxinggang {
+		return RemoteSkillMoxinggangRoot
+	}
+	return RemoteSkillGitHubRoot
+}
+
+func remoteSkillSourceEntryURL(sourceID string) string {
+	return remoteSkillSourceRoot(sourceID) + "/SKILL.md"
+}
+
+func remoteSkillVersionSourceRoot(sourceID, sourceCommit string) string {
+	if sourceID == RemoteSkillSourceGitHubOfficial {
+		return RemoteSkillGitHubRawRoot + strings.ToLower(strings.TrimSpace(sourceCommit)) + "/skills"
+	}
+	return remoteSkillSourceRoot(sourceID)
+}
+
+func normalizeRemoteSkillVersionSource(version *RemoteSkillBundleVersion) {
+	if version == nil {
+		return
+	}
+	if strings.TrimSpace(version.SourceID) == "" {
+		version.SourceID = RemoteSkillSourceGitHubOfficial
+	}
+	if strings.TrimSpace(version.RemoteRoot) == "" {
+		version.RemoteRoot = remoteSkillVersionSourceRoot(version.SourceID, version.SourceCommit)
+	}
 }
 
 type RemoteSkillRegistryRevisionBus interface {
@@ -164,6 +221,12 @@ func (s *RemoteSkillRegistryService) Initialize(ctx context.Context) error {
 	}
 	seed, err := s.files.LoadSeed(ctx)
 	if err == nil {
+		if seed.SourceID == "" {
+			seed.SourceID = RemoteSkillSourceGitHubOfficial
+		}
+		if seed.RemoteRoot == "" {
+			seed.RemoteRoot = remoteSkillVersionSourceRoot(seed.SourceID, seed.SourceCommit)
+		}
 		if err := s.store.EnsureRemoteSkillSeed(ctx, seed); err != nil {
 			return fmt.Errorf("ensure remote skill seed: %w", err)
 		}
@@ -243,11 +306,15 @@ func (s *RemoteSkillRegistryService) CurrentSnapshot() RemoteSkillRegistrySnapsh
 func (s *RemoteSkillRegistryService) ClientInstallMetadata() RemoteSkillClientInstall {
 	metadata := RemoteSkillClientInstall{
 		SkillName:     "codexrip-reverse-skill",
+		SourceID:      RemoteSkillSourceGitHubOfficial,
+		RemoteRoot:    RemoteSkillGitHubRoot,
 		DescriptorURL: RemoteSkillDescriptorURL,
 		PowerShell:    remoteSkillPowerShellInstaller(),
 		Python:        remoteSkillPythonInstaller(),
 	}
 	if snapshot := s.CurrentSnapshot(); snapshot.Active != nil {
+		metadata.SourceID = snapshot.Active.SourceID
+		metadata.RemoteRoot = snapshot.Active.RemoteRoot
 		metadata.SourceCommit = snapshot.Active.SourceCommit
 		metadata.ManifestSHA256 = snapshot.Active.ManifestSHA256
 	}
@@ -452,6 +519,9 @@ func (s *RemoteSkillRegistryService) Reload(ctx context.Context) error {
 		s.installSnapshot(loaded)
 		return nil
 	}
+	normalizeRemoteSkillVersionSource(loaded.Active)
+	loaded.SourceID = loaded.Active.SourceID
+	loaded.RemoteRoot = loaded.Active.RemoteRoot
 	if err := s.files.ValidateVersion(ctx, *loaded.Active); err != nil {
 		return s.retainLastKnownGood(fmt.Errorf("validate active remote skill: %w", err))
 	}
@@ -467,11 +537,15 @@ func (s *RemoteSkillRegistryService) Reload(ctx context.Context) error {
 	return nil
 }
 
-func (s *RemoteSkillRegistryService) StartSync(ctx context.Context, actorID, expectedRevision int64) (RemoteSkillSyncJob, error) {
+func (s *RemoteSkillRegistryService) StartSync(ctx context.Context, sourceID string, actorID, expectedRevision int64) (RemoteSkillSyncJob, error) {
 	if s == nil || s.store == nil || s.source == nil {
 		return RemoteSkillSyncJob{}, errors.New("remote skill sync unavailable")
 	}
-	job, err := s.store.CreateRemoteSkillSyncJob(ctx, actorID, expectedRevision)
+	sourceID, err := NormalizeRemoteSkillSourceID(sourceID)
+	if err != nil {
+		return RemoteSkillSyncJob{}, err
+	}
+	job, err := s.store.CreateRemoteSkillSyncJob(ctx, sourceID, actorID, expectedRevision)
 	if err != nil {
 		return RemoteSkillSyncJob{}, err
 	}
@@ -503,9 +577,13 @@ func (s *RemoteSkillRegistryService) runSyncJob(ctx context.Context, job RemoteS
 			activeManifest = &manifest
 		}
 	}
-	candidate, err := s.source.Build(ctx, activeManifest)
+	candidate, err := s.source.Build(ctx, job.SourceID, activeManifest)
 	if err != nil {
 		_ = s.store.FailRemoteSkillSyncJob(ctx, job.ID, remoteSkillSyncErrorCode(err))
+		return
+	}
+	if candidate.Version.SourceID != job.SourceID || candidate.Version.RemoteRoot != remoteSkillSourceRoot(job.SourceID) {
+		_ = s.store.FailRemoteSkillSyncJob(ctx, job.ID, "bundle_invalid")
 		return
 	}
 	if err := s.store.UpdateRemoteSkillSyncJobStage(ctx, job.ID, "verifying_candidate"); err != nil {
@@ -595,6 +673,10 @@ func (s *RemoteSkillRegistryService) installSnapshot(snapshot RemoteSkillRegistr
 		return
 	}
 	cloned := cloneRemoteSkillRegistrySnapshot(snapshot)
+	if cloned.Active != nil {
+		cloned.SourceID = cloned.Active.SourceID
+		cloned.RemoteRoot = cloned.Active.RemoteRoot
+	}
 	s.snapshot.Store(&cloned)
 }
 
