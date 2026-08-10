@@ -16,14 +16,16 @@ describe('System Prompts integration surface', () => {
     const route = router.slice(start, router.indexOf("path: '/admin/risk-control'", start))
     expect(route).toContain('requiresAuth: true')
     expect(route).toContain('requiresAdmin: true')
+    expect(route).toContain("title: '系统提示词'")
+    expect(route).not.toContain('titleKey:')
 
     const sidebar = read('../../../components/layout/AppSidebar.vue')
     expect(sidebar).toContain("path: '/admin/system-prompts'")
     expect(sidebar).toContain("t('nav.systemPrompts')")
   })
 
-  it('keeps locale trees symmetric and separates the focused page from advanced controls', () => {
-    expect(Object.keys(zh.admin.systemPrompts)).toEqual(Object.keys(en.admin.systemPrompts))
+  it('keeps the page Chinese under the English locale and removes legacy surfaces', () => {
+    expect(en.admin.systemPrompts).toEqual(zh.admin.systemPrompts)
     const view = read('../SystemPromptsView.vue')
     for (const marker of ['saveVersion', 'setCurrent', 'rollback', 'syncManagedSource', 'SystemPromptAdvancedDrawer']) {
       expect(view).toContain(marker)
@@ -31,10 +33,15 @@ describe('System Prompts integration surface', () => {
     expect(view).not.toContain('previewMerge')
     expect(view).not.toContain('previewUpstream')
     expect(view).not.toContain('DOMPurify')
+    expect(view).not.toContain('isLegacyComposition')
+    expect(view).not.toContain('copyInstallCommand')
 
     const drawer = read('../../../components/admin/systemPrompt/SystemPromptAdvancedDrawer.vue')
     expect(drawer).toContain('compact_enabled')
     expect(drawer).toContain('expose_server_prompt')
     expect(drawer).toContain('data-test="system-prompt-advanced-drawer"')
+    expect(drawer).toContain('data-test="system-prompt-skill-source"')
+    expect(drawer).not.toContain('system-prompt-copy-acquire')
+    expect(drawer).not.toContain('system-prompt-copy-execute')
   })
 })

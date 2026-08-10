@@ -21,9 +21,9 @@
         <header class="flex items-center gap-3 border-b border-gray-200 px-4 py-4 dark:border-dark-700 sm:px-5">
           <div class="min-w-0 flex-1">
             <h2 class="truncate text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.systemPrompts.advanced.title') }}</h2>
-            <p class="mt-0.5 truncate text-xs text-gray-500 dark:text-dark-300">{{ sourceTemplate?.name || t('admin.systemPrompts.title') }}</p>
+            <p class="mt-0.5 truncate text-xs text-gray-500 dark:text-dark-300">{{ sourceTemplateDisplayName || t('admin.systemPrompts.title') }}</p>
           </div>
-          <button type="button" class="icon-button" :title="t('common.close')" @click="emit('close')">
+          <button type="button" class="icon-button" :title="t('admin.systemPrompts.common.close')" @click="emit('close')">
             <Icon name="x" size="sm" />
           </button>
         </header>
@@ -33,7 +33,7 @@
             <div class="mb-3 flex items-center justify-between gap-3">
               <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-dark-300">{{ t('admin.systemPrompts.advanced.runtime') }}</h3>
               <button type="button" class="btn btn-primary btn-sm" :disabled="savingRuntime || !runtimeDirty" @click="emit('save-runtime')">
-                <Icon name="check" size="xs" class="mr-1" />{{ savingRuntime ? t('common.saving') : t('admin.systemPrompts.actions.saveRuntime') }}
+                <Icon name="check" size="xs" class="mr-1" />{{ savingRuntime ? t('admin.systemPrompts.common.saving') : t('admin.systemPrompts.actions.saveRuntime') }}
               </button>
             </div>
             <div class="divide-y divide-gray-100 border-y border-gray-100 dark:divide-dark-700 dark:border-dark-700">
@@ -57,14 +57,20 @@
           </section>
 
           <section class="border-b border-gray-100 px-4 py-4 dark:border-dark-700 sm:px-5">
-            <div class="mb-3 flex items-center justify-between gap-3">
+            <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
               <div class="flex items-center gap-2">
                 <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-dark-300">{{ t('admin.systemPrompts.advanced.skill') }}</h3>
-                <span v-if="skillLoading" class="text-xs text-gray-400">{{ t('common.loading') }}</span>
+                <span v-if="skillLoading" class="text-xs text-gray-400">{{ t('admin.systemPrompts.common.loading') }}</span>
               </div>
-              <button v-if="skillRegistry" type="button" data-test="system-prompt-skill-sync" class="btn btn-secondary btn-sm" :disabled="skillSyncing" @click="emit('sync-skill')">
-                <Icon name="refresh" size="xs" class="mr-1" :class="skillSyncing ? 'animate-spin' : ''" />{{ t('admin.systemPrompts.skillRegistry.sync') }}
-              </button>
+              <div class="flex items-center gap-2">
+                <select :value="selectedSkillSource" data-test="system-prompt-skill-source" class="input h-8 w-auto py-1 text-xs" :aria-label="t('admin.systemPrompts.skillRegistry.source')" @change="changeSkillSource">
+                  <option value="github_official">GitHub 官方</option>
+                  <option value="moxinggang">模型港</option>
+                </select>
+                <button v-if="skillRegistry" type="button" data-test="system-prompt-skill-sync" class="btn btn-secondary btn-sm" :disabled="skillSyncing" @click="emit('sync-skill')">
+                  <Icon name="refresh" size="xs" class="mr-1" :class="skillSyncing ? 'animate-spin' : ''" />{{ t('admin.systemPrompts.skillRegistry.syncCandidate') }}
+                </button>
+              </div>
             </div>
 
             <div v-if="!skillRegistry && !skillLoading" class="text-sm text-gray-500 dark:text-dark-400">{{ t('admin.systemPrompts.advanced.skillUnavailable') }}</div>
@@ -73,45 +79,34 @@
                 <span :class="skillRegistry.runtime.active ? 'badge-success' : 'badge-warning'" class="badge">{{ skillRegistry.runtime.active ? t('admin.systemPrompts.skillRegistry.active') : t('admin.systemPrompts.skillRegistry.noActive') }}</span>
                 <span class="text-xs text-gray-500 dark:text-dark-400">{{ t('admin.systemPrompts.advanced.revision') }} {{ skillRegistry.runtime.revision }}</span>
               </div>
-              <div v-if="skillRegistry.runtime.active" class="text-xs text-gray-500 dark:text-dark-400">
-                {{ t('admin.systemPrompts.skillRegistry.commit') }} <span class="font-mono">{{ shortHash(skillRegistry.runtime.active.source_commit) }}</span>
+              <div v-if="skillRegistry.runtime.active" class="grid gap-1 border-y border-gray-100 py-3 text-xs text-gray-500 dark:border-dark-700 dark:text-dark-400" data-test="system-prompt-skill-active">
+                <div>{{ t('admin.systemPrompts.skillRegistry.activeSource') }} <span class="font-medium text-gray-800 dark:text-dark-100">{{ sourceLabel(skillRegistry.runtime.active.source_id) }}</span></div>
+                <div>{{ t('admin.systemPrompts.skillRegistry.commit') }} <span class="break-all font-mono">{{ skillRegistry.runtime.active.source_commit }}</span></div>
+                <div>{{ t('admin.systemPrompts.skillRegistry.manifest') }} <span class="break-all font-mono">{{ skillRegistry.runtime.active.manifest_sha256 }}</span></div>
+                <div>{{ t('admin.systemPrompts.skillRegistry.archive') }} <span class="break-all font-mono">{{ skillRegistry.runtime.active.archive_sha256 }}</span></div>
+                <div v-if="skillRegistry.runtime.degraded" class="text-amber-700 dark:text-amber-300">{{ skillRegistry.runtime.degraded_reason || t('admin.systemPrompts.runtime.degraded') }}</div>
               </div>
               <div v-if="skillSyncJob" class="border-l-2 border-primary-500 px-3 py-2 text-xs text-gray-600 dark:text-dark-300" data-test="system-prompt-skill-job">
-                {{ t(`admin.systemPrompts.skillRegistry.status.${skillSyncJob.status}`) }}<span v-if="skillSyncJob.error_code"> · {{ skillSyncJob.error_code }}</span>
+                {{ sourceLabel(skillSyncJob.source_id) }} · {{ t(`admin.systemPrompts.skillRegistry.status.${skillSyncJob.status}`) }}<span v-if="skillSyncJob.error_code"> · {{ skillSyncJob.error_code }}</span>
               </div>
               <div v-if="skillCandidate" class="flex flex-wrap items-center justify-between gap-3 border border-amber-200 bg-amber-50 px-3 py-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200" data-test="system-prompt-skill-candidate">
-                <span>{{ t('admin.systemPrompts.skillRegistry.candidate') }}</span>
-                <button type="button" class="btn btn-primary btn-sm" :disabled="publishingSkill || !skillCandidate.verified" @click="emit('publish-skill', skillCandidate.id, false)">{{ t('admin.systemPrompts.skillRegistry.publishCandidate') }}</button>
-              </div>
-              <div class="border-t border-gray-100 pt-3 dark:border-dark-700">
-                <div class="mb-2 flex items-center justify-between gap-2">
-                  <span class="text-xs font-medium text-gray-700 dark:text-dark-200">{{ t('admin.systemPrompts.skillRegistry.clientInstall') }}</span>
-                  <select v-model="installPlatform" class="input h-8 w-auto py-1 text-xs" :aria-label="t('admin.systemPrompts.advanced.installPlatform')">
-                    <option value="powershell">PowerShell 7</option>
-                    <option value="python">Python 3</option>
-                  </select>
+                <div class="grid gap-1">
+                  <span>{{ t('admin.systemPrompts.skillRegistry.candidateSource') }} {{ sourceLabel(skillCandidate.source_id) }}</span>
+                  <span>{{ t('admin.systemPrompts.skillRegistry.commit') }} <span class="break-all font-mono">{{ skillCandidate.source_commit }}</span></span>
+                  <span>{{ t('admin.systemPrompts.skillRegistry.manifest') }} <span class="break-all font-mono">{{ skillCandidate.manifest_sha256 }}</span></span>
+                  <span>{{ t('admin.systemPrompts.skillRegistry.archive') }} <span class="break-all font-mono">{{ skillCandidate.archive_sha256 }}</span></span>
                 </div>
-                <div v-if="selectedInstaller" class="mb-2 space-y-1 text-[11px] text-gray-500 dark:text-dark-400" data-test="system-prompt-installer-metadata">
-                  <div class="break-all font-mono">{{ selectedInstaller.bootstrap_url }}</div>
-                  <div class="break-all font-mono">{{ selectedInstaller.bootstrap_sha256 }}</div>
-                </div>
-                <div class="grid grid-cols-2 gap-2">
-                  <button type="button" class="btn btn-secondary btn-sm" data-test="system-prompt-copy-acquire" @click="emit('copy-install', selectedInstaller?.acquire_command || '', 'acquire')">
-                    <Icon name="copy" size="xs" class="mr-1" />{{ t('admin.systemPrompts.advanced.copyAcquire') }}
-                  </button>
-                  <button type="button" class="btn btn-secondary btn-sm" data-test="system-prompt-copy-execute" @click="emit('copy-install', selectedInstaller?.execute_command || '', 'execute')">
-                    <Icon name="copy" size="xs" class="mr-1" />{{ t('admin.systemPrompts.advanced.copyExecute') }}
-                  </button>
-                </div>
+                <button type="button" data-test="system-prompt-skill-publish-candidate" class="btn btn-primary btn-sm" :disabled="publishingSkill || !skillCandidate.verified" @click="emit('publish-skill', skillCandidate.id, false)">{{ t('admin.systemPrompts.skillRegistry.publishCandidate') }}</button>
               </div>
               <div v-if="skillRegistry.versions.length" class="overflow-x-auto border-t border-gray-100 pt-3 dark:border-dark-700">
                 <table class="min-w-full text-left text-xs">
-                  <thead class="text-gray-500 dark:text-dark-400"><tr><th class="py-2 pr-3">{{ t('admin.systemPrompts.history.version') }}</th><th class="py-2 pr-3">{{ t('admin.systemPrompts.history.status') }}</th><th class="py-2 text-right">{{ t('admin.systemPrompts.history.actions') }}</th></tr></thead>
+                  <thead class="text-gray-500 dark:text-dark-400"><tr><th class="py-2 pr-3">{{ t('admin.systemPrompts.skillRegistry.source') }}</th><th class="py-2 pr-3">{{ t('admin.systemPrompts.skillRegistry.commit') }}</th><th class="py-2 pr-3">{{ t('admin.systemPrompts.history.status') }}</th><th class="py-2 text-right">{{ t('admin.systemPrompts.history.actions') }}</th></tr></thead>
                   <tbody class="divide-y divide-gray-100 dark:divide-dark-800">
                     <tr v-for="item in skillRegistry.versions" :key="item.id">
+                      <td class="py-2 pr-3">{{ sourceLabel(item.source_id) }}</td>
                       <td class="py-2 pr-3 font-mono">{{ shortHash(item.source_commit) }}</td>
                       <td class="py-2 pr-3">{{ item.id === skillRegistry.runtime.active?.id ? t('admin.systemPrompts.history.active') : t('admin.systemPrompts.history.candidate') }}</td>
-                      <td class="py-2 text-right"><button type="button" class="btn btn-secondary btn-sm" :disabled="publishingSkill || item.id === skillRegistry.runtime.active?.id" @click="emit('publish-skill', item.id, true)"><Icon name="refresh" size="xs" /></button></td>
+                      <td class="py-2 text-right"><button type="button" class="btn btn-secondary btn-sm" :title="t('admin.systemPrompts.actions.rollback')" :disabled="publishingSkill || item.id === skillRegistry.runtime.active?.id" @click="emit('publish-skill', item.id, true)"><Icon name="refresh" size="xs" /></button></td>
                     </tr>
                   </tbody>
                 </table>
@@ -142,7 +137,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import Toggle from '@/components/common/Toggle.vue'
@@ -150,8 +145,8 @@ import type {
   ManagedSourceSyncStatus,
   ManagedSourceSyncVersion,
   RemoteSkillBundleVersionDetail,
-  RemoteSkillClientInstaller,
   RemoteSkillRegistryResponse,
+  RemoteSkillSourceID,
   RemoteSkillSyncJob,
   SystemPromptRuntime,
   SystemPromptTemplate,
@@ -170,7 +165,9 @@ const props = defineProps<{
   skillCandidate: RemoteSkillBundleVersionDetail | null
   skillSyncing: boolean
   publishingSkill: boolean
+  selectedSkillSource: RemoteSkillSourceID
   sourceTemplate: SystemPromptTemplate | null
+  sourceTemplateDisplayName: string
   sourceVersion: SystemPromptVersion | null
   sourceSyncStatus: ManagedSourceSyncStatus | null
   sourceCandidate: ManagedSourceSyncVersion | null
@@ -183,13 +180,19 @@ const emit = defineEmits<{
   (event: 'save-runtime'): void
   (event: 'sync-skill'): void
   (event: 'publish-skill', id: number, rollback: boolean): void
-  (event: 'copy-install', command: string, stage: 'acquire' | 'execute'): void
+  (event: 'skill-source-change', sourceID: RemoteSkillSourceID): void
   (event: 'sync-source'): void
 }>()
 
 const { t } = useI18n()
-const installPlatform = ref<'powershell' | 'python'>('powershell')
-const selectedInstaller = computed<RemoteSkillClientInstaller | undefined>(() => props.skillRegistry?.client_install?.[installPlatform.value])
+
+function changeSkillSource(event: Event) {
+  emit('skill-source-change', (event.target as HTMLSelectElement).value as RemoteSkillSourceID)
+}
+
+function sourceLabel(sourceID: RemoteSkillSourceID | undefined) {
+  return sourceID === 'moxinggang' ? '模型港' : 'GitHub 官方'
+}
 
 function shortHash(value: string) {
   return value ? `${value.slice(0, 8)}…${value.slice(-6)}` : '—'

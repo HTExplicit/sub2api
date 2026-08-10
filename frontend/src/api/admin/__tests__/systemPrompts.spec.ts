@@ -21,13 +21,8 @@ describe('System Prompts API', () => {
     await systemPromptsAPI.listVersions(12)
     expect(client.get).toHaveBeenCalledWith('/admin/system-prompts/12/versions')
 
-    client.get.mockResolvedValue({ data: [] })
-    await systemPromptsAPI.listBundles()
-    expect(client.get).toHaveBeenCalledWith('/admin/system-prompts/bundles')
-
-    client.get.mockResolvedValue({ data: { bundle_id: 'moxinggang-reverse-skill' } })
-    await systemPromptsAPI.getBundle('moxinggang-reverse-skill')
-    expect(client.get).toHaveBeenCalledWith('/admin/system-prompts/bundles/moxinggang-reverse-skill')
+    expect(systemPromptsAPI).not.toHaveProperty('listBundles')
+    expect(systemPromptsAPI).not.toHaveProperty('getBundle')
 
     client.get.mockResolvedValue({ data: { runtime: {}, versions: [] } })
     await systemPromptsAPI.getSkillRegistry()
@@ -94,8 +89,11 @@ describe('System Prompts API', () => {
     client.post.mockResolvedValue({ data: {} })
     client.get.mockResolvedValue({ data: {} })
 
-    await systemPromptsAPI.startSkillSync(3)
-    expect(client.post).toHaveBeenCalledWith('/admin/system-prompts/skill-registry/syncs', { expected_revision: 3 })
+    await systemPromptsAPI.startSkillSync('moxinggang', 3)
+    expect(client.post).toHaveBeenCalledWith('/admin/system-prompts/skill-registry/syncs', {
+      source_id: 'moxinggang',
+      expected_revision: 3,
+    })
     await systemPromptsAPI.getSkillSync(8)
     expect(client.get).toHaveBeenCalledWith('/admin/system-prompts/skill-registry/syncs/8')
     await systemPromptsAPI.publishSkillVersion(12, 3)
