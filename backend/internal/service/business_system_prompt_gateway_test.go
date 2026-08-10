@@ -158,7 +158,8 @@ func TestBusinessSystemPromptHybridKeepsPublishedSourceRootAfterRegistryReloadFa
 	policy := newGatewayHybridBusinessSystemPromptPolicyWithBody(t, embeddedBusinessSystemPrompt, 7)
 	registry := policy.registry
 	t.Cleanup(registry.Stop)
-	store := registry.store.(*fakeRemoteSkillRegistryStore)
+	store, ok := registry.store.(*fakeRemoteSkillRegistryStore)
+	require.True(t, ok)
 	store.loadErr = errors.New("remote unavailable")
 	require.Error(t, registry.Reload(context.Background()))
 
