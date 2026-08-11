@@ -54,7 +54,8 @@ jobs:
           git checkout --detach "$tag_commit"
           version="${RELEASE_TAG#v}"
           image="ghcr.io/htexplicit/sub2api:${version}"
-          digest=$(docker buildx imagetools inspect "$image" | awk '$1 == "Digest:" {print $2; exit}')
+          inspect=$(docker buildx imagetools inspect "$image")
+          digest=$(awk '$1 == "Digest:" && digest == "" {digest=$2} END {if (digest == "") exit 1; print digest}' <<<"$inspect")
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
           echo "image_ref=${image}@${digest}" >> "$GITHUB_OUTPUT"
           echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
