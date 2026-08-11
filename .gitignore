@@ -123,6 +123,8 @@ CLAUDE.md
 scripts
 !backend/scripts/
 !backend/scripts/resolve-version.sh
+!backend/internal/service/remote_skill_seed/tree/scripts/
+!backend/internal/service/remote_skill_seed/tree/scripts/**
 .code-review-state
 #openspec/
 code-reviews/
