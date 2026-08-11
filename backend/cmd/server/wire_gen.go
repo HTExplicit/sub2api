@@ -161,7 +161,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	if err != nil {
 		return nil, err
 	}
-	businessSystemPromptService, err := service.ProvideBusinessSystemPromptService(businessSystemPromptStore, businessSystemPromptRevisionBus, remoteSkillRegistryService)
+	businessSystemPromptService, err := service.ProvideBusinessSystemPromptService(businessSystemPromptStore, businessSystemPromptRevisionBus, remoteSkillRegistryService, remoteSkillRegistryRevisionBus)
 	if err != nil {
 		return nil, err
 	}

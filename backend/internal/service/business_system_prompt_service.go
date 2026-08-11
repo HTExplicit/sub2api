@@ -171,10 +171,11 @@ type BusinessSystemPromptRevisionBus interface {
 }
 
 type BusinessSystemPromptService struct {
-	store    BusinessSystemPromptStore
-	bus      BusinessSystemPromptRevisionBus
-	registry *RemoteSkillRegistryService
-	source   BusinessSystemPromptSource
+	store       BusinessSystemPromptStore
+	bus         BusinessSystemPromptRevisionBus
+	registry    *RemoteSkillRegistryService
+	registryBus RemoteSkillRegistryRevisionBus
+	source      BusinessSystemPromptSource
 
 	snapshot atomic.Pointer[BusinessSystemPromptSnapshot]
 	stateMu  sync.Mutex
@@ -200,6 +201,12 @@ func (s *BusinessSystemPromptService) SetBusinessSystemPromptSource(source Busin
 func (s *BusinessSystemPromptService) SetRemoteSkillRegistryService(registry *RemoteSkillRegistryService) {
 	if s != nil {
 		s.registry = registry
+	}
+}
+
+func (s *BusinessSystemPromptService) SetRemoteSkillRegistryRevisionBus(bus RemoteSkillRegistryRevisionBus) {
+	if s != nil {
+		s.registryBus = bus
 	}
 }
 
@@ -321,7 +328,41 @@ func (s *BusinessSystemPromptService) Start(ctx context.Context) error {
 			}
 		}()
 	}
+	if s.registryBus != nil {
+		go func() {
+			for runCtx.Err() == nil {
+				err := s.registryBus.Subscribe(runCtx, func(_ int64, _ string) {
+					if err := s.reloadForRemoteSkillRevision(runCtx); err != nil {
+						_ = s.retainLastGood(fmt.Errorf("reload after remote Skill revision: %w", err))
+					}
+				})
+				if runCtx.Err() != nil {
+					return
+				}
+				if err == nil {
+					err = errors.New("remote Skill revision subscription ended")
+				}
+				_ = s.retainLastGood(fmt.Errorf("remote Skill revision subscription: %w", err))
+				timer := time.NewTimer(time.Second)
+				select {
+				case <-runCtx.Done():
+					timer.Stop()
+					return
+				case <-timer.C:
+				}
+			}
+		}()
+	}
 	return nil
+}
+
+func (s *BusinessSystemPromptService) reloadForRemoteSkillRevision(ctx context.Context) error {
+	if s.registry != nil {
+		if err := s.registry.Reload(ctx); err != nil {
+			return err
+		}
+	}
+	return s.Reload(ctx)
 }
 
 func (s *BusinessSystemPromptService) Stop() {
