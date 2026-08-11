@@ -1,0 +1,149 @@
+name: Legacy GHCR Cleanup
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type DELETE_LEGACY_GHCR to remove the retired .3-.9 package versions'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: legacy-ghcr-cleanup
+  cancel-in-progress: false
+
+jobs:
+  delete-retired-versions:
+    if: ${{ github.ref == 'refs/heads/main' && inputs.confirmation == 'DELETE_LEGACY_GHCR' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PACKAGE_API: https://api.github.com/users/HTExplicit/packages/container/sub2api/versions
+    steps:
+      - name: Validate and delete retired package versions
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          target_tags=(
+            0.1.172-codexrip.3
+            0.1.172-codexrip.4
+            0.1.172-codexrip.5
+            0.1.172-codexrip.6
+            0.1.172-codexrip.7
+            0.1.172-codexrip.8
+            0.1.172-codexrip.9
+          )
+          protected_tags=(
+            0.1.172-codexrip.10
+            0.1.172-codexrip.11
+            0.1.172-codexrip.12
+          )
+
+          fetch_versions() {
+            local pages
+            pages="$(gh api --paginate --slurp "${PACKAGE_API}?per_page=100")"
+            jq -c 'add // []' <<<"$pages"
+          }
+
+          find_tag_versions() {
+            local versions=$1
+            local tag=$2
+            jq -c --arg tag "$tag" \
+              '[.[] | select(((.metadata.container.tags // []) | index($tag)) != null)]' \
+              <<<"$versions"
+          }
+
+          require_single_tag_version() {
+            local versions=$1
+            local tag=$2
+            local matches count tags_json expected_tags id digest
+            matches="$(find_tag_versions "$versions" "$tag")"
+            count="$(jq 'length' <<<"$matches")"
+            if [[ "$count" != 1 ]]; then
+              echo "expected exactly one package version for tag $tag; found $count" >&2
+              return 1
+            fi
+            tags_json="$(jq -c '.[0].metadata.container.tags // [] | sort' <<<"$matches")"
+            expected_tags="$(jq -cn --arg tag "$tag" '[$tag]')"
+            if [[ "$tags_json" != "$expected_tags" ]]; then
+              echo "refusing a multi-tag package version for $tag: $tags_json" >&2
+              return 1
+            fi
+            id="$(jq -r '.[0].id | tostring' <<<"$matches")"
+            digest="$(jq -r '.[0].name // empty' <<<"$matches")"
+            if [[ ! "$id" =~ ^[0-9]+$ || -z "$digest" ]]; then
+              echo "package version for $tag has no stable ID/digest" >&2
+              return 1
+            fi
+            printf '%s\t%s\t%s\n' "$tag" "$id" "$digest"
+          }
+
+          if [[ "$GITHUB_REF" != refs/heads/main ]]; then
+            echo 'cleanup must run from main' >&2
+            exit 1
+          fi
+
+          versions_before="$(fetch_versions)"
+          declare -A protected_ids=()
+          declare -A protected_digests=()
+          declare -A protected_rows=()
+          for tag in "${protected_tags[@]}"; do
+            row="$(require_single_tag_version "$versions_before" "$tag")"
+            IFS=$'\t' read -r row_tag row_id row_digest <<<"$row"
+            protected_ids["$row_id"]="$row_tag"
+            protected_digests["$row_digest"]="$row_tag"
+            protected_rows["$row_tag"]="$row_id|$row_digest"
+            echo "protected tag=$row_tag version_id=$row_id digest=$row_digest"
+          done
+
+          declare -A target_ids=()
+          target_count=0
+          for tag in "${target_tags[@]}"; do
+            row="$(require_single_tag_version "$versions_before" "$tag")"
+            IFS=$'\t' read -r row_tag row_id row_digest <<<"$row"
+            if [[ -n "${protected_ids[$row_id]+set}" || -n "${protected_digests[$row_digest]+set}" ]]; then
+              echo "refusing to delete protected version for $row_tag" >&2
+              exit 1
+            fi
+            target_ids["$row_tag"]="$row_id"
+            target_count=$((target_count + 1))
+            echo "validated target tag=$row_tag version_id=$row_id digest=$row_digest"
+          done
+          if [[ "$target_count" != 7 ]]; then
+            echo "expected seven retired package versions; found $target_count" >&2
+            exit 1
+          fi
+
+          for tag in "${target_tags[@]}"; do
+            version_id="${target_ids[$tag]}"
+            gh api --method DELETE "${PACKAGE_API}/${version_id}" >/dev/null
+            echo "deleted tag=$tag version_id=$version_id"
+          done
+
+          versions_after="$(fetch_versions)"
+          for tag in "${target_tags[@]}"; do
+            count="$(jq -r --arg tag "$tag" '[.[] | select(((.metadata.container.tags // []) | index($tag)) != null)] | length' <<<"$versions_after")"
+            if [[ "$count" != 0 ]]; then
+              echo "retired tag still exists after deletion: $tag" >&2
+              exit 1
+            fi
+          done
+
+          for tag in "${protected_tags[@]}"; do
+            row="$(require_single_tag_version "$versions_after" "$tag")"
+            IFS=$'\t' read -r row_tag row_id row_digest <<<"$row"
+            expected="${protected_rows[$row_tag]}"
+            if [[ "$row_id|$row_digest" != "$expected" ]]; then
+              echo "protected version changed for $row_tag" >&2
+              exit 1
+            fi
+            echo "protected unchanged tag=$row_tag version_id=$row_id digest=$row_digest"
+          done
+
+          echo "GHCR_LEGACY_CLEANUP_OK deleted=7 protected=3"
