@@ -127,6 +127,33 @@ CREATE INDEX IF NOT EXISTS idx_system_prompt_skill_paired_content
 CREATE INDEX IF NOT EXISTS idx_system_prompt_skill_prompt_versions_created
     ON system_prompt_skill_prompt_versions(created_at DESC, id DESC);
 
+DO $remote_skill_bundle_sequence$
+DECLARE
+    sequence_name TEXT;
+    sequence_value BIGINT;
+    sequence_called BOOLEAN;
+    maximum_id BIGINT;
+BEGIN
+    sequence_name := pg_get_serial_sequence('system_prompt_skill_bundle_versions', 'id');
+    IF sequence_name IS NULL THEN
+        RAISE EXCEPTION 'system prompt skill bundle version sequence is missing';
+    END IF;
+
+    SELECT COALESCE(MAX(id), 0)
+    INTO maximum_id
+    FROM system_prompt_skill_bundle_versions;
+
+    EXECUTE format('SELECT last_value, is_called FROM %s', sequence_name::regclass)
+    INTO sequence_value, sequence_called;
+
+    IF maximum_id > sequence_value THEN
+        PERFORM setval(sequence_name::regclass, maximum_id, TRUE);
+    ELSIF maximum_id > 0 AND NOT sequence_called THEN
+        PERFORM setval(sequence_name::regclass, sequence_value, TRUE);
+    END IF;
+END;
+$remote_skill_bundle_sequence$;
+
 CREATE OR REPLACE FUNCTION protect_system_prompt_skill_prompt_version()
 RETURNS TRIGGER
 LANGUAGE plpgsql

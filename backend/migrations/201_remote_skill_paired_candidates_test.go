@@ -30,6 +30,9 @@ func TestRemoteSkillPairedCandidatesMigrationUsesOnlyFixedMoxinggangSource(t *te
 		"system prompt skill prompt version is immutable",
 		"managed_source = 'remote_skill_registry'",
 		"unexpected managed source on remote skill prompt",
+		"pg_get_serial_sequence('system_prompt_skill_bundle_versions', 'id')",
+		"maximum_id > sequence_value",
+		"setval(sequence_name::regclass, maximum_id, true)",
 	} {
 		require.Contains(t, sql, fragment)
 	}
