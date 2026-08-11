@@ -20,13 +20,8 @@ var (
 )
 
 const (
-	businessSystemPromptSeedSlug                   = "codexrip_reverse_skill"
-	BusinessSystemPromptManagedSourceRemoteSkill   = "remote_skill_registry"
-	gpt56InstructPromptSeedSlug                    = "gpt_5_6_instruct"
-	businessSystemPromptV7SHA256                   = "0b717f086b1bf25e8300e9f26578ee95cf6f74d5601c06b9f9e493aa8939b0a7"
-	businessSystemPromptV8SHA256                   = "9143d8a97727030192a62fb19f732b0823dec9ffe83081ef5ae27fdb1edfea04"
-	businessSystemPromptRelease0172Codexrip3SHA256 = "0615d24958a1da11edcf9538aaff989e46fcd296ea86a6c1b1af2b3efa48487f"
-	businessSystemPromptRelease0172Codexrip5SHA256 = "5813c55c0763e1472becec874232f3daafb28a69107b94ca8284daf44fceb2a0"
+	BusinessSystemPromptManagedSourceRemoteSkill = "remote_skill_registry"
+	gpt56InstructPromptSeedSlug                  = "gpt_5_6_instruct"
 )
 
 type BusinessSystemPromptSeed struct {
@@ -245,23 +240,6 @@ func (s *BusinessSystemPromptService) Initialize(ctx context.Context) error {
 		return errors.New("business system prompt store unavailable")
 	}
 	seeds := []BusinessSystemPromptSeed{
-		{
-			Slug:                businessSystemPromptSeedSlug,
-			Name:                "Security Research Remote Skill Prompt",
-			Description:         "ModelGang current security-research Skill tree with the paired managed prompt.",
-			ManagedSource:       BusinessSystemPromptManagedSourceRemoteSkill,
-			Body:                embeddedBusinessSystemPrompt,
-			Note:                "captured reverse-engineered seed",
-			CompositionMode:     BusinessSystemPromptCompositionCodexSkillHybrid,
-			BundleID:            BusinessSystemPromptRemoteSkillBundleID,
-			UpgradeExistingSeed: true,
-			AutoActivateFromSHA: []string{
-				businessSystemPromptV7SHA256,
-				businessSystemPromptV8SHA256,
-				businessSystemPromptRelease0172Codexrip3SHA256,
-				businessSystemPromptRelease0172Codexrip5SHA256,
-			},
-		},
 		{
 			Slug:                 gpt56InstructPromptSeedSlug,
 			Name:                 "GPT-5.6 Instruct v45",

@@ -14,6 +14,7 @@ type fakeBusinessSystemPromptStore struct {
 	seedCalled       bool
 	seed             BusinessSystemPromptSeed
 	seeds            []BusinessSystemPromptSeed
+	rejectRemoteSeed bool
 	loaded           BusinessSystemPromptSnapshot
 	loadErr          error
 	published        BusinessSystemPromptSnapshot
@@ -33,6 +34,9 @@ type fakeBusinessSystemPromptStore struct {
 }
 
 func (f *fakeBusinessSystemPromptStore) EnsureBusinessSystemPromptSeed(_ context.Context, seed BusinessSystemPromptSeed) error {
+	if f.rejectRemoteSeed && seed.ManagedSource == BusinessSystemPromptManagedSourceRemoteSkill {
+		return errors.New("source provenance rejected")
+	}
 	f.seedCalled = true
 	f.seed = seed
 	f.seeds = append(f.seeds, seed)
@@ -195,38 +199,26 @@ func TestBusinessSystemPromptServiceReloadsRuntimeMetadataOnRemoteSkillRevision(
 	require.Equal(t, newCandidate.Prompt.EffectiveSHA256, updated.RegistryPromptEffectiveSHA256)
 }
 
-func TestBusinessSystemPromptServiceInitializeSeedsAndLoadsSnapshot(t *testing.T) {
+func TestBusinessSystemPromptServiceInitializeSeedsOnlyGenericManagedPromptAndLoadsSnapshot(t *testing.T) {
 	store := &fakeBusinessSystemPromptStore{
-		loaded: BusinessSystemPromptSnapshot{Revision: 1, Body: embeddedBusinessSystemPrompt},
+		loaded:           BusinessSystemPromptSnapshot{Revision: 1, Body: embeddedBusinessSystemPrompt},
+		rejectRemoteSeed: true,
 	}
 	svc := NewBusinessSystemPromptService(store, nil)
 	require.NoError(t, svc.Initialize(context.Background()))
 	require.True(t, store.seedCalled)
-	require.Len(t, store.seeds, 2)
-	require.Equal(t, "codexrip_reverse_skill", store.seeds[0].Slug)
-	require.Equal(t, embeddedBusinessSystemPrompt, store.seeds[0].Body)
-	require.Equal(t, BusinessSystemPromptCompositionCodexSkillHybrid, store.seeds[0].CompositionMode)
-	require.Equal(t, BusinessSystemPromptRemoteSkillBundleID, store.seeds[0].BundleID)
-	require.Equal(t, BusinessSystemPromptManagedSourceRemoteSkill, store.seeds[0].ManagedSource)
-	require.Empty(t, store.seeds[0].BundleManifestSHA256)
-	require.True(t, store.seeds[0].UpgradeExistingSeed)
-	require.ElementsMatch(t, []string{
-		"0b717f086b1bf25e8300e9f26578ee95cf6f74d5601c06b9f9e493aa8939b0a7",
-		"9143d8a97727030192a62fb19f732b0823dec9ffe83081ef5ae27fdb1edfea04",
-		"0615d24958a1da11edcf9538aaff989e46fcd296ea86a6c1b1af2b3efa48487f",
-		"5813c55c0763e1472becec874232f3daafb28a69107b94ca8284daf44fceb2a0",
-	}, store.seeds[0].AutoActivateFromSHA)
-	require.Equal(t, "gpt_5_6_instruct", store.seeds[1].Slug)
-	require.Equal(t, BusinessSystemPromptCompositionInline, store.seeds[1].CompositionMode)
-	require.Equal(t, "c71c50e2f7a303b5eebc2b24c0b1ca0d9c753e3240db05c3e472c679907898f7", store.seeds[1].SHA256)
-	require.Equal(t, 5170, store.seeds[1].ByteLength)
-	require.Equal(t, BusinessSystemPromptManagedSourceGPT56, store.seeds[1].ManagedSource)
-	require.Equal(t, "MDX-Tom/gpt-5.6-instruct", store.seeds[1].SourceRepository)
-	require.Equal(t, "77e7a649903f9556f2d7bfa0223fa99e123aad52", store.seeds[1].SourceCommit)
-	require.Equal(t, "v45", store.seeds[1].SourceVersion)
-	require.Equal(t, "gpt-5.6-sol-unrestricted-v45.zip", store.seeds[1].SourceArtifact)
-	require.Equal(t, "c86c2c6d20a4d1155d87422f485eb37b77539132270918c002b5d8237a5adf54", store.seeds[1].SourceArtifactSHA256)
-	require.Equal(t, GPT56PromptLicenseSHA256, store.seeds[1].SourceLicenseSHA256)
+	require.Len(t, store.seeds, 1)
+	require.Equal(t, "gpt_5_6_instruct", store.seeds[0].Slug)
+	require.Equal(t, BusinessSystemPromptCompositionInline, store.seeds[0].CompositionMode)
+	require.Equal(t, "c71c50e2f7a303b5eebc2b24c0b1ca0d9c753e3240db05c3e472c679907898f7", store.seeds[0].SHA256)
+	require.Equal(t, 5170, store.seeds[0].ByteLength)
+	require.Equal(t, BusinessSystemPromptManagedSourceGPT56, store.seeds[0].ManagedSource)
+	require.Equal(t, "MDX-Tom/gpt-5.6-instruct", store.seeds[0].SourceRepository)
+	require.Equal(t, "77e7a649903f9556f2d7bfa0223fa99e123aad52", store.seeds[0].SourceCommit)
+	require.Equal(t, "v45", store.seeds[0].SourceVersion)
+	require.Equal(t, "gpt-5.6-sol-unrestricted-v45.zip", store.seeds[0].SourceArtifact)
+	require.Equal(t, "c86c2c6d20a4d1155d87422f485eb37b77539132270918c002b5d8237a5adf54", store.seeds[0].SourceArtifactSHA256)
+	require.Equal(t, GPT56PromptLicenseSHA256, store.seeds[0].SourceLicenseSHA256)
 	got, ok := svc.CurrentSnapshot()
 	require.True(t, ok)
 	require.Equal(t, int64(1), got.Revision)
