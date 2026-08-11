@@ -32,12 +32,12 @@ func (r *remoteSkillRegistryRepository) EnsureRemoteSkillSeed(ctx context.Contex
 	if err := tx.QueryRowContext(ctx, `SELECT active_bundle_version_id FROM system_prompt_skill_runtime WHERE id = 1 FOR UPDATE`).Scan(&activeID); err != nil {
 		return err
 	}
-	if activeID.Valid {
-		return tx.Commit()
-	}
 	versionID, err := insertOrValidateRemoteSkillVersion(ctx, tx, version)
 	if err != nil {
 		return err
+	}
+	if activeID.Valid {
+		return tx.Commit()
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE system_prompt_skill_bundle_versions

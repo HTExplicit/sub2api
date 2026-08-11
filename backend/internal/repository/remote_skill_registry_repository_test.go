@@ -12,6 +12,41 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestEnsureRemoteSkillSeedRegistersCandidateWithoutReplacingActiveVersion(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	seed := service.RemoteSkillBundleVersion{
+		BundleID:       service.BusinessSystemPromptRemoteSkillBundleID,
+		SourceID:       service.RemoteSkillSourceGitHubOfficial,
+		RemoteRoot:     "https://raw.githubusercontent.com/example/reverse-skill/1111111111111111111111111111111111111111/skills",
+		SourceCommit:   strings.Repeat("1", 40),
+		OverlaySHA256:  strings.Repeat("2", 64),
+		ManifestSHA256: strings.Repeat("3", 64),
+		ArchiveSHA256:  strings.Repeat("4", 64),
+		FileCount:      545,
+		TotalBytes:     7925493,
+	}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT active_bundle_version_id FROM system_prompt_skill_runtime WHERE id = 1 FOR UPDATE")).
+		WillReturnRows(sqlmock.NewRows([]string{"active_bundle_version_id"}).AddRow(int64(6)))
+	mock.ExpectQuery("INSERT INTO system_prompt_skill_bundle_versions.*ON CONFLICT \\(source_id, manifest_sha256\\) DO NOTHING").
+		WithArgs(
+			seed.BundleID, seed.SourceID, seed.RemoteRoot, seed.SourceCommit,
+			seed.OverlaySHA256, seed.ManifestSHA256, seed.ArchiveSHA256,
+			seed.FileCount, seed.TotalBytes, 0, 0, 0, 0, 0, nil,
+		).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(7)))
+	mock.ExpectCommit()
+
+	store := NewRemoteSkillRegistryRepository(db)
+	err = store.EnsureRemoteSkillSeed(context.Background(), seed)
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestRemoteSkillRegistryRepositoryCreatesSourceBoundSyncJob(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
