@@ -127,13 +127,15 @@ func (s *OpenAIGatewayService) applyBusinessSystemPromptForRequest(
 						Body: state.application.ServerInstructions, SHA256: state.application.SHA256,
 						CompositionMode: state.application.CompositionMode,
 						BundleID:        state.application.BundleID, BundleManifestSHA256: state.application.BundleManifestSHA256,
-						RegistryRevision:       state.application.BundleRevision,
-						RegistryManifestSHA256: state.application.BundleManifestSHA256,
-						RegistryArchiveSHA256:  state.application.BundleArchiveSHA256,
-						RegistrySourceCommit:   state.application.BundleSourceCommit,
-						RegistrySourceID:       state.application.BundleSourceID,
-						RegistryRemoteRoot:     state.application.BundleRemoteRoot,
-						baseSHA256:             state.application.BaseSHA256, effectiveSHA256: state.application.EffectiveSHA256,
+						RegistryRevision:              state.application.BundleRevision,
+						RegistryRawTreeSHA256:         state.application.BundleRawTreeSHA256,
+						RegistryEffectiveTreeSHA256:   state.application.BundleEffectiveTreeSHA256,
+						RegistryPromptRawSHA256:       state.application.BundlePromptRawSHA256,
+						RegistryPromptEffectiveSHA256: state.application.BundlePromptEffectiveSHA256,
+						RegistryUpstreamSourceID:      state.application.BundleUpstreamSourceID,
+						RegistryUpstreamRoot:          state.application.BundleUpstreamRoot,
+						RegistryPublicRoot:            state.application.BundlePublicRoot,
+						baseSHA256:                    state.application.BaseSHA256, effectiveSHA256: state.application.EffectiveSHA256,
 						effectiveByteLength: state.application.EffectiveByteLength,
 					}
 				}
@@ -302,14 +304,14 @@ func appendBusinessSystemPromptApplicationToCacheKey(key string, application Bus
 		return key
 	}
 	suffix := ":business-system-prompt:" + strconv.FormatInt(application.Revision, 10) + ":" + strings.TrimSpace(application.SHA256)
-	if application.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid && application.BundleManifestSHA256 != "" && application.EffectiveSHA256 != "" {
+	if application.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid && application.BundleEffectiveTreeSHA256 != "" && application.EffectiveSHA256 != "" {
 		suffix = ":business-system-prompt:" + strconv.FormatInt(application.Revision, 10) +
 			":" + strings.TrimSpace(application.BundleID) +
-			":" + strings.ToLower(strings.TrimSpace(application.BundleManifestSHA256)) +
+			":" + strings.ToLower(strings.TrimSpace(application.BundleEffectiveTreeSHA256)) +
 			":" + strings.ToLower(strings.TrimSpace(application.BaseSHA256)) +
 			":" + strings.ToLower(strings.TrimSpace(application.EffectiveSHA256)) +
 			":bundle-revision:" + strconv.FormatInt(application.BundleRevision, 10) +
-			":" + strings.ToLower(strings.TrimSpace(application.BundleArchiveSHA256))
+			":" + strings.ToLower(strings.TrimSpace(application.BundlePromptEffectiveSHA256))
 	}
 	if strings.HasSuffix(key, suffix) {
 		return key

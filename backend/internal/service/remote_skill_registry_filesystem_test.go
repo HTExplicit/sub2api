@@ -1,200 +1,239 @@
 package service
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
-	"runtime"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
 
-func TestRemoteSkillRegistryFilesystemInstallsReleaseSeedAndPublicAssets(t *testing.T) {
-	releaseRoot := filepath.Join("..", "..", "..", "deploy", "skill-registry")
-	runtimeRoot := t.TempDir()
-	files := NewRemoteSkillRegistryFilesystemWithReleaseRoot(runtimeRoot, releaseRoot)
-
-	version, err := files.LoadSeed(context.Background())
+func TestRemoteSkillFilesystemSeedContainsExactCurrentModelGangTreeAndApprovedPrompt(t *testing.T) {
+	files := NewRemoteSkillRegistryFilesystem(t.TempDir())
+	seed, err := files.LoadSeed(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, BusinessSystemPromptRemoteSkillBundleID, version.BundleID)
-	require.Equal(t, "098c056d0884602c60b4bcaa2af6b12c52a13718d0fc2a4af40b18497b0c75ac", version.ManifestSHA256)
-	require.Equal(t, "fca0bef795880515c4d9f40322c8f99564c9371bbd01144ab73d7656ccfe8d33", version.ArchiveSHA256)
-	require.NoError(t, files.ValidateVersion(context.Background(), version))
-
-	seedRoot := filepath.Join(runtimeRoot, "private", "seed")
-	require.NoError(t, os.WriteFile(filepath.Join(seedRoot, remoteSkillSeedDescriptorName), []byte("{}"), 0o640))
-	require.NoError(t, os.WriteFile(filepath.Join(seedRoot, "STALE"), []byte("old"), 0o640))
-	reloaded, err := files.LoadSeed(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, version.ManifestSHA256, reloaded.ManifestSHA256)
-	_, err = os.Stat(filepath.Join(seedRoot, "STALE"))
-	require.ErrorIs(t, err, os.ErrNotExist)
-
-	for _, hashAndName := range [][2]string{
-		{"2199e8c4e8a09278c9b79e17b05e5457308db0a7d593e0f933ad6bd0712845f9", "bootstrap-reverse-skill.ps1"},
-		{"353878272c8972c00817cc7171d7a4a087b4203fa2758b7ba1d040ededde7dc9", "bootstrap-reverse-skill.py"},
-	} {
-		_, err := os.Stat(filepath.Join(runtimeRoot, "public", "bootstrap", hashAndName[0], hashAndName[1]))
-		require.NoError(t, err)
+	require.Equal(t, remoteSkillExpectedFiles, seed.Version.FileCount)
+	require.Len(t, seed.RawFiles, remoteSkillExpectedFiles)
+	require.Len(t, seed.EffectiveFiles, remoteSkillExpectedFiles)
+	require.Len(t, seed.FileChanges, remoteSkillExpectedFiles)
+	require.Equal(t, "74bd491260aaa23c45b82bd522b32c6b6dea7d5e76a2d8e3ab3607c6f1ab4e58", seed.Prompt.RawSHA256)
+	require.Contains(t, seed.Prompt.EffectiveBody, RemoteSkillPublicRoot)
+	require.NotContains(t, seed.Prompt.EffectiveBody, "you are codexrip")
+	require.Contains(t, seed.Prompt.EffectiveBody, "宝宝")
+	for _, core := range []string{"RULES.md", "README_AI.md", "SKILL.md"} {
+		require.NotEmpty(t, seed.RawFiles[core])
 	}
-
-	now := time.Date(2026, 8, 7, 0, 0, 0, 0, time.UTC)
-	version.PublishedAt = &now
-	snapshot := RemoteSkillRegistrySnapshot{Revision: 1, Active: &version, UpdatedAt: now}
-	require.NoError(t, files.PreparePublic(context.Background(), version))
-	require.NoError(t, files.Activate(context.Background(), snapshot))
-
-	raw, err := os.ReadFile(filepath.Join(runtimeRoot, "public", "reverse-skill", "current.json"))
-	require.NoError(t, err)
-	var descriptor RemoteSkillPublicDescriptor
-	require.NoError(t, json.Unmarshal(raw, &descriptor))
-	baseURL := "https://codexrip.vip/skills/reverse-skill/versions/" + version.ManifestSHA256 + "/"
-	require.Equal(t, baseURL, descriptor.FilesBaseURL)
-	require.Equal(t, baseURL+BusinessSystemPromptBundleManifestName, descriptor.ManifestURL)
-	require.Equal(t, baseURL+remoteSkillArchiveName(version.ManifestSHA256), descriptor.ArchiveURL)
-	require.Equal(t, RemoteSkillPowerShellBootstrapURL, descriptor.Bootstraps.PowerShell.URL)
-	require.Equal(t, RemoteSkillPowerShellBootstrapSHA256, descriptor.Bootstraps.PowerShell.SHA256)
-	require.Equal(t, RemoteSkillPythonBootstrapURL, descriptor.Bootstraps.Python.URL)
-	require.Equal(t, RemoteSkillPythonBootstrapSHA256, descriptor.Bootstraps.Python.SHA256)
-	require.NotContains(t, strings.ToLower(string(raw)), "moxinggang")
-	require.NotContains(t, string(raw), `C:\Users\Administrator`)
-	if runtime.GOOS != "windows" {
-		for _, path := range []string{
-			filepath.Join(runtimeRoot, "public", "reverse-skill", "current.json"),
-			filepath.Join(runtimeRoot, "public", "reverse-skill", "versions", version.ManifestSHA256, BusinessSystemPromptBundleManifestName),
-		} {
-			info, err := os.Stat(path)
-			require.NoError(t, err)
-			require.NotZero(t, info.Mode().Perm()&0o004, "host Nginx must be able to read %s", path)
-		}
-		for _, path := range []string{
-			filepath.Join(runtimeRoot, "public", "reverse-skill", "versions", version.ManifestSHA256),
-			filepath.Join(runtimeRoot, "public", "bootstrap", "2199e8c4e8a09278c9b79e17b05e5457308db0a7d593e0f933ad6bd0712845f9"),
-			filepath.Join(runtimeRoot, "public", "bootstrap", "353878272c8972c00817cc7171d7a4a087b4203fa2758b7ba1d040ededde7dc9"),
-		} {
-			info, err := os.Stat(path)
-			require.NoError(t, err)
-			require.NotZero(t, info.Mode().Perm()&0o001, "host Nginx must be able to traverse %s", path)
-		}
+	changes := make(map[string]RemoteSkillFileChange, len(seed.FileChanges))
+	for _, change := range seed.FileChanges {
+		changes[change.Path] = change
+	}
+	for name, raw := range seed.RawFiles {
+		effective, ok := seed.EffectiveFiles[name]
+		require.True(t, ok, "path=%s", name)
+		change, ok := changes[name]
+		require.True(t, ok, "path=%s", name)
+		require.Equal(t, "added", change.Change, "path=%s", name)
+		require.Equal(t, hashBusinessSystemPromptBundleBytes(raw), change.RawSHA256, "path=%s", name)
+		require.Equal(t, hashBusinessSystemPromptBundleBytes(effective), change.EffectiveSHA256, "path=%s", name)
+		require.Equal(t, rewriteRemoteSkillPublishedFiles(map[string][]byte{name: raw})[name], effective, "path=%s", name)
 	}
 }
 
-func TestRemoteSkillRegistryFilesystemRejectsUnexpectedReleaseBootstrapPairs(t *testing.T) {
-	releaseBootstrapRoot := filepath.Join("..", "..", "..", "deploy", "skill-registry", "bootstrap")
-	powershellRaw, err := os.ReadFile(filepath.Join(releaseBootstrapRoot, RemoteSkillPowerShellBootstrapSHA256, "bootstrap-reverse-skill.ps1"))
+func TestRemoteSkillFilesystemRoundTripsImmutablePairedCandidate(t *testing.T) {
+	root := t.TempDir()
+	files := NewRemoteSkillRegistryFilesystem(root)
+	seed, err := files.LoadSeed(context.Background())
 	require.NoError(t, err)
-	pythonRaw, err := os.ReadFile(filepath.Join(releaseBootstrapRoot, RemoteSkillPythonBootstrapSHA256, "bootstrap-reverse-skill.py"))
+	seed.Version.ID = 7
+	seed.Version.PromptVersionID = 9
+	seed.Prompt.ID = 9
+	require.NoError(t, files.InstallCandidate(context.Background(), seed))
+
+	loaded, err := files.LoadCandidate(context.Background(), seed.Version, seed.Prompt, seed.FileChanges)
+	require.NoError(t, err)
+	require.Equal(t, seed.Version.RawTreeSHA256, loaded.Version.RawTreeSHA256)
+	require.Equal(t, seed.Prompt.EffectiveSHA256, loaded.Prompt.EffectiveSHA256)
+	require.Equal(t, seed.EffectiveFiles["SKILL.md"], loaded.EffectiveFiles["SKILL.md"])
+
+	path := filepath.Join(files.candidateRoot(seed.Version.EffectiveTreeSHA256, seed.Prompt.EffectiveSHA256), remoteSkillEffectiveDirectory, "SKILL.md")
+	require.NoError(t, os.WriteFile(path, []byte("tampered"), 0o640))
+	_, err = files.LoadCandidate(context.Background(), seed.Version, seed.Prompt, seed.FileChanges)
+	require.ErrorIs(t, err, ErrBusinessSystemPromptBundleInvalid)
+}
+
+func TestRemoteSkillFilesystemRejectsCandidateMetadataAndDeterministicRewriteDrift(t *testing.T) {
+	files := NewRemoteSkillRegistryFilesystem(t.TempDir())
+	seed, err := files.LoadSeed(context.Background())
 	require.NoError(t, err)
 
-	tests := map[string]map[string]struct {
-		name string
-		raw  []byte
-	}{
-		"hash paired with the wrong language": {
-			RemoteSkillPowerShellBootstrapSHA256: {name: "bootstrap-reverse-skill.ps1", raw: powershellRaw},
-			RemoteSkillPythonBootstrapSHA256:     {name: "bootstrap-reverse-skill.ps1", raw: pythonRaw},
+	tests := map[string]func(*RemoteSkillCandidate){
+		"path traversal": func(candidate *RemoteSkillCandidate) {
+			removed := removeRemoteSkillTestFile(candidate.RawFiles)
+			delete(candidate.EffectiveFiles, removed)
+			candidate.RawFiles["../../escaped.md"] = []byte("escaped")
+			candidate.EffectiveFiles = rewriteRemoteSkillPublishedFiles(candidate.RawFiles)
+			refreshRemoteSkillCandidateTestMetadata(candidate)
 		},
-		"duplicate language with self addressed bytes": {
-			RemoteSkillPowerShellBootstrapSHA256: {name: "bootstrap-reverse-skill.ps1", raw: powershellRaw},
-			hashBusinessSystemPromptBundleBytes([]byte("Write-Host 'unexpected'\n")): {
-				name: "bootstrap-reverse-skill.ps1", raw: []byte("Write-Host 'unexpected'\n"),
-			},
+		"portable duplicate": func(candidate *RemoteSkillCandidate) {
+			removed := removeRemoteSkillTestFile(candidate.RawFiles)
+			delete(candidate.EffectiveFiles, removed)
+			candidate.RawFiles["skill.md"] = bytes.Clone(candidate.RawFiles["SKILL.md"])
+			candidate.EffectiveFiles = rewriteRemoteSkillPublishedFiles(candidate.RawFiles)
+			refreshRemoteSkillCandidateTestMetadata(candidate)
+		},
+		"published tree rewrite": func(candidate *RemoteSkillCandidate) {
+			candidate.EffectiveFiles["SKILL.md"] = append(bytes.Clone(candidate.EffectiveFiles["SKILL.md"]), []byte("\nchanged")...)
+			refreshRemoteSkillCandidateTestMetadata(candidate)
+		},
+		"raw byte total": func(candidate *RemoteSkillCandidate) {
+			candidate.Version.RawTotalBytes++
+		},
+		"file change counters": func(candidate *RemoteSkillCandidate) {
+			candidate.Version.AddedFiles++
+		},
+		"prompt rewrite": func(candidate *RemoteSkillCandidate) {
+			candidate.Prompt.EffectiveBody = candidate.Prompt.RawBody
+			candidate.Prompt.EffectiveSHA256 = candidate.Prompt.RawSHA256
+			candidate.Prompt.Diff = ""
 		},
 	}
-	for name, assets := range tests {
+
+	for name, mutate := range tests {
 		t.Run(name, func(t *testing.T) {
-			releaseRoot := t.TempDir()
-			for hash, asset := range assets {
-				directory := filepath.Join(releaseRoot, "bootstrap", hash)
-				require.NoError(t, os.MkdirAll(directory, 0o750))
-				require.NoError(t, os.WriteFile(filepath.Join(directory, asset.name), asset.raw, 0o640))
+			candidate := cloneRemoteSkillCandidateForTest(seed)
+			mutate(&candidate)
+			err := validatePairedRemoteSkillCandidate(candidate, false)
+			require.ErrorIs(t, err, ErrBusinessSystemPromptBundleInvalid)
+		})
+	}
+}
+
+func TestRemoteSkillFilesystemSharesContentAcrossDistinctCandidateAudits(t *testing.T) {
+	files := NewRemoteSkillRegistryFilesystem(t.TempDir())
+	seed, err := files.LoadSeed(context.Background())
+	require.NoError(t, err)
+	seed.Version.ID = 1
+	seed.Version.PromptVersionID = 1
+	seed.Prompt.ID = 1
+	require.NoError(t, files.InstallCandidate(context.Background(), seed))
+
+	second := cloneRemoteSkillCandidateForTest(seed)
+	second.Version.ID = 2
+	second.Version.FetchedAt = second.Version.FetchedAt.Add(time.Minute)
+	second.Version.CreatedBy = 42
+	second.Version.AddedFiles = 0
+	second.Version.ModifiedFiles = 0
+	second.Version.DeletedFiles = 0
+	second.Version.ScriptChanges = 0
+	second.Version.BinaryChanges = 0
+	second.FileChanges = []RemoteSkillFileChange{}
+	require.NoError(t, files.InstallCandidate(context.Background(), second))
+
+	loadedSeed, err := files.LoadCandidate(context.Background(), seed.Version, seed.Prompt, seed.FileChanges)
+	require.NoError(t, err)
+	loadedSecond, err := files.LoadCandidate(context.Background(), second.Version, second.Prompt, second.FileChanges)
+	require.NoError(t, err)
+	require.Equal(t, seed.Version.FetchedAt, loadedSeed.Version.FetchedAt)
+	require.Equal(t, second.Version.FetchedAt, loadedSecond.Version.FetchedAt)
+	require.Empty(t, loadedSecond.FileChanges)
+	require.Equal(t, seed.Version.EffectiveTreeSHA256, second.Version.EffectiveTreeSHA256)
+}
+
+func TestRemoteSkillFilesystemRejectsLinkedMetadataAndPromptFiles(t *testing.T) {
+	for _, name := range []string{remoteSkillCandidateMetadataFile, remoteSkillEffectivePromptFile} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			files := NewRemoteSkillRegistryFilesystem(root)
+			seed, err := files.LoadSeed(context.Background())
+			require.NoError(t, err)
+			seed.Version.ID = 7
+			seed.Version.PromptVersionID = 9
+			seed.Prompt.ID = 9
+			require.NoError(t, files.InstallCandidate(context.Background(), seed))
+
+			candidateRoot := files.candidateRoot(seed.Version.EffectiveTreeSHA256, seed.Prompt.EffectiveSHA256)
+			target := filepath.Join(candidateRoot, name)
+			linkedTarget := filepath.Join(candidateRoot, remoteSkillRawPromptFile)
+			require.NoError(t, os.Remove(target))
+			if err := os.Symlink(linkedTarget, target); err != nil {
+				t.Skipf("symbolic links are unavailable: %v", err)
 			}
-			files := NewRemoteSkillRegistryFilesystemWithReleaseRoot(t.TempDir(), releaseRoot)
-			require.ErrorIs(t, files.installReleaseBootstraps(context.Background()), ErrBusinessSystemPromptBundleInvalid)
+			_, err = files.LoadCandidate(context.Background(), seed.Version, seed.Prompt, seed.FileChanges)
+			require.ErrorIs(t, err, ErrBusinessSystemPromptBundleInvalid)
 		})
 	}
 }
 
-func TestRemoteSkillRegistryInitializeKeepsHistoricalOverlayActiveDuringNativeSeedUpgrade(t *testing.T) {
-	releaseRoot := filepath.Join("..", "..", "..", "deploy", "skill-registry")
-	runtimeRoot := t.TempDir()
-	files := NewRemoteSkillRegistryFilesystemWithReleaseRoot(runtimeRoot, releaseRoot)
-	legacyFiles := map[string][]byte{
-		"codexrip-overlay/security-research/RULES.md":     []byte("legacy rules\n"),
-		"codexrip-overlay/security-research/README_AI.md": []byte("legacy readme\n"),
-		"codexrip-overlay/security-research/SKILL.md":     []byte("legacy skill\n"),
-	}
-	entries := make([]BusinessSystemPromptBundleFile, 0, len(legacyFiles))
-	var total int64
-	for _, name := range sortedRemoteSkillFileNames(legacyFiles) {
-		raw := legacyFiles[name]
-		entries = append(entries, BusinessSystemPromptBundleFile{
-			Path: name, SHA256: hashBusinessSystemPromptBundleBytes(raw), ByteLength: len(raw), Kind: "text", Required: true,
-		})
-		total += int64(len(raw))
-	}
-	manifest := BusinessSystemPromptBundleManifest{
-		SchemaVersion: 1,
-		BundleID:      BusinessSystemPromptRemoteSkillBundleID,
-		Version:       "historical-revision-2",
-		CoreFiles: []string{
-			"codexrip-overlay/security-research/RULES.md",
-			"codexrip-overlay/security-research/README_AI.md",
-			"codexrip-overlay/security-research/SKILL.md",
-		},
-		Files: entries,
-	}
-	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
+func TestRemoteSkillFilesystemLegacyCleanupLeavesPairedCandidates(t *testing.T) {
+	root := t.TempDir()
+	files := NewRemoteSkillRegistryFilesystem(root)
+	seed, err := files.LoadSeed(context.Background())
 	require.NoError(t, err)
-	archiveBytes, err := buildRemoteSkillArchive(manifestBytes, legacyFiles)
-	require.NoError(t, err)
-	legacyVersion := RemoteSkillBundleVersion{
-		BundleID:       BusinessSystemPromptRemoteSkillBundleID,
-		SourceCommit:   strings.Repeat("1", 40),
-		OverlaySHA256:  strings.Repeat("2", 64),
-		ManifestSHA256: hashBusinessSystemPromptBundleBytes(manifestBytes),
-		ArchiveSHA256:  hashBusinessSystemPromptBundleBytes(archiveBytes),
-		FileCount:      len(entries),
-		TotalBytes:     total,
+	require.NoError(t, files.InstallCandidate(context.Background(), seed))
+	for _, name := range []string{"private/seed", "private/versions", "public/reverse-skill", "public/bootstrap", "public/versions", "staging/incomplete"} {
+		require.NoError(t, os.MkdirAll(filepath.Join(root, filepath.FromSlash(name)), 0o750))
 	}
-	legacyRoot := files.privateVersionRoot(legacyVersion.ManifestSHA256)
-	require.NoError(t, os.MkdirAll(legacyRoot, 0o750))
-	require.NoError(t, writeRemoteSkillCandidate(legacyRoot, RemoteSkillCandidate{
-		Version: legacyVersion, Manifest: manifest, ManifestBytes: manifestBytes, ArchiveBytes: archiveBytes, Files: legacyFiles,
-	}))
-
-	store := &fakeRemoteSkillRegistryStore{snapshot: RemoteSkillRegistrySnapshot{
-		Revision:  2,
-		Active:    &legacyVersion,
-		UpdatedAt: time.Date(2026, 8, 9, 0, 0, 0, 0, time.UTC),
-	}}
-	svc := NewRemoteSkillRegistryService(store, nil, files, nil)
-	require.NoError(t, svc.Initialize(context.Background()))
-	require.NotEqual(t, legacyVersion.ManifestSHA256, store.ensureSeed.ManifestSHA256)
-	require.Equal(t, int64(2), svc.CurrentSnapshot().Revision)
-	require.Equal(t, legacyVersion.ManifestSHA256, svc.CurrentSnapshot().Active.ManifestSHA256)
-	require.False(t, svc.CurrentSnapshot().Degraded)
+	require.NoError(t, files.CleanupLegacy(context.Background()))
+	for _, name := range []string{"private", "public", "staging"} {
+		_, err := os.Stat(filepath.Join(root, filepath.FromSlash(name)))
+		require.ErrorIs(t, err, os.ErrNotExist)
+	}
+	_, err = os.Stat(files.candidateRoot(seed.Version.EffectiveTreeSHA256, seed.Prompt.EffectiveSHA256))
+	require.NoError(t, err)
 }
 
-func TestValidateRemoteSkillPublicBootstrapsKeepsSchemaOneLegacyDescriptorsReadable(t *testing.T) {
-	require.NoError(t, validateRemoteSkillPublicBootstraps(RemoteSkillPublicBootstraps{}))
-	partial := RemoteSkillPublicBootstraps{PowerShell: remoteSkillPublicBootstraps().PowerShell}
-	require.ErrorIs(t, validateRemoteSkillPublicBootstraps(partial), ErrBusinessSystemPromptBundleInvalid)
-	require.NoError(t, validateRemoteSkillPublicBootstraps(remoteSkillPublicBootstraps()))
+func cloneRemoteSkillCandidateForTest(candidate RemoteSkillCandidate) RemoteSkillCandidate {
+	candidate.RawFiles = cloneRemoteSkillFiles(candidate.RawFiles)
+	candidate.EffectiveFiles = cloneRemoteSkillFiles(candidate.EffectiveFiles)
+	candidate.FileChanges = append([]RemoteSkillFileChange(nil), candidate.FileChanges...)
+	return candidate
 }
 
-func TestLegacyRemoteSkillOverlayPathGuardIsRemoteSpecificAndCaseInsensitive(t *testing.T) {
-	for _, path := range []string{
-		"codexrip-overlay/security-research",
-		"CodexRip-Overlay/Security-Research/SKILL.md",
-		"moxinggang-overlay/security-research",
-		"MoxingGang-Overlay/Security-Research/SKILL.md",
-	} {
-		require.True(t, isLegacyRemoteSkillOverlayPath(path), path)
+func removeRemoteSkillTestFile(files map[string][]byte) string {
+	for name := range files {
+		if name != "RULES.md" && name != "README_AI.md" && name != "SKILL.md" {
+			delete(files, name)
+			return name
+		}
 	}
-	require.False(t, isLegacyRemoteSkillOverlayPath("skills/security-research/SKILL.md"))
+	return ""
+}
+
+func refreshRemoteSkillCandidateTestMetadata(candidate *RemoteSkillCandidate) {
+	candidate.Version.FileCount = len(candidate.RawFiles)
+	candidate.Version.RawTotalBytes = 0
+	candidate.Version.EffectiveTotalBytes = 0
+	for _, body := range candidate.RawFiles {
+		candidate.Version.RawTotalBytes += int64(len(body))
+	}
+	for _, body := range candidate.EffectiveFiles {
+		candidate.Version.EffectiveTotalBytes += int64(len(body))
+	}
+	candidate.Version.RawTreeSHA256 = remoteSkillFileTreeSHA256(candidate.RawFiles)
+	candidate.Version.EffectiveTreeSHA256 = remoteSkillFileTreeSHA256(candidate.EffectiveFiles)
+	candidate.Version.AddedFiles = 0
+	candidate.Version.ModifiedFiles = 0
+	candidate.Version.DeletedFiles = 0
+	candidate.Version.ScriptChanges = 0
+	candidate.Version.BinaryChanges = 0
+	candidate.FileChanges = remoteSkillFileChanges(nil, *candidate)
+	for _, change := range candidate.FileChanges {
+		switch change.Change {
+		case "added":
+			candidate.Version.AddedFiles++
+		case "modified":
+			candidate.Version.ModifiedFiles++
+		case "deleted":
+			candidate.Version.DeletedFiles++
+		}
+		if change.Kind == "script" {
+			candidate.Version.ScriptChanges++
+		}
+		if change.Kind == "binary" {
+			candidate.Version.BinaryChanges++
+		}
+	}
 }

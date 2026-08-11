@@ -75,10 +75,10 @@
                 <span v-if="runtimeTemplateId === detail.template.id" class="badge badge-success shrink-0">{{ t('admin.systemPrompts.editor.activeTemplate') }}</span>
               </div>
               <div class="relative flex items-center gap-1">
-                <button type="button" class="icon-button" data-test="system-prompt-edit-metadata" :title="t('admin.systemPrompts.actions.editMetadata')" @click="openMetadata">
+                <button v-if="!isRemoteSkillManaged" type="button" class="icon-button" data-test="system-prompt-edit-metadata" :title="t('admin.systemPrompts.actions.editMetadata')" @click="openMetadata">
                   <Icon name="edit" size="sm" />
                 </button>
-                <button type="button" class="icon-button" data-test="system-prompt-template-menu" :title="t('admin.systemPrompts.actions.more')" @click="templateMenuOpen = !templateMenuOpen">
+                <button v-if="!isRemoteSkillManaged" type="button" class="icon-button" data-test="system-prompt-template-menu" :title="t('admin.systemPrompts.actions.more')" @click="templateMenuOpen = !templateMenuOpen">
                   <Icon name="more" size="sm" />
                 </button>
                 <div v-if="templateMenuOpen" class="absolute right-0 top-10 z-10 w-40 border border-gray-200 bg-white py-1 shadow-lg dark:border-dark-700 dark:bg-dark-800">
@@ -98,10 +98,10 @@
             </div>
 
             <div v-if="activeTab === 'editor'" class="space-y-3 pt-4">
-              <textarea v-model="body" data-test="system-prompt-body" class="min-h-[430px] w-full resize-y border border-gray-200 bg-white p-4 font-mono text-[13px] leading-6 text-gray-900 outline-none transition-colors focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-100" spellcheck="false" :aria-label="t('admin.systemPrompts.editor.body')"></textarea>
+              <textarea v-model="body" data-test="system-prompt-body" class="min-h-[430px] w-full resize-y border border-gray-200 bg-white p-4 font-mono text-[13px] leading-6 text-gray-900 outline-none transition-colors focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 disabled:cursor-not-allowed disabled:bg-gray-50 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-100 dark:disabled:bg-dark-950" spellcheck="false" :disabled="isRemoteSkillManaged" :aria-label="t('admin.systemPrompts.editor.body')"></textarea>
               <div class="flex flex-wrap items-center justify-between gap-3">
-                <input v-model="note" type="text" class="input w-full text-sm sm:min-w-0 sm:flex-1" :placeholder="t('admin.systemPrompts.editor.notePlaceholder')" :aria-label="t('admin.systemPrompts.editor.note')" />
-                <div class="flex w-full items-center justify-end gap-2 sm:w-auto sm:shrink-0">
+                <input v-model="note" type="text" class="input w-full text-sm sm:min-w-0 sm:flex-1" :disabled="isRemoteSkillManaged" :placeholder="t('admin.systemPrompts.editor.notePlaceholder')" :aria-label="t('admin.systemPrompts.editor.note')" />
+                <div v-if="!isRemoteSkillManaged" class="flex w-full items-center justify-end gap-2 sm:w-auto sm:shrink-0">
                   <button type="button" data-test="system-prompt-save-version" class="btn btn-primary btn-sm" :disabled="savingVersion || !editorDirty" @click="saveVersion">
                     <Icon name="check" size="sm" class="mr-1" />{{ savingVersion ? t('admin.systemPrompts.common.saving') : t('admin.systemPrompts.actions.saveVersion') }}
                   </button>
@@ -123,7 +123,7 @@
                       <td class="whitespace-nowrap px-3 py-3 text-gray-500 dark:text-dark-400">{{ formatDate(version.created_at) }}</td>
                       <td class="whitespace-nowrap px-3 py-3 text-right">
                         <button type="button" class="icon-button mr-1" :title="t('admin.systemPrompts.actions.details')" @click="versionDetails = version"><Icon name="infoCircle" size="sm" /></button>
-                        <button type="button" class="btn btn-secondary btn-sm" :disabled="version.id === runtimeVersionId || publishingPrompt || editorDirty" @click="openConfirm({ kind: 'rollback', versionId: version.id })"><Icon name="refresh" size="xs" class="mr-1" />{{ t('admin.systemPrompts.actions.rollback') }}</button>
+                        <button v-if="!isRemoteSkillManaged" type="button" class="btn btn-secondary btn-sm" :disabled="version.id === runtimeVersionId || publishingPrompt || editorDirty" @click="openConfirm({ kind: 'rollback', versionId: version.id })"><Icon name="refresh" size="xs" class="mr-1" />{{ t('admin.systemPrompts.actions.rollback') }}</button>
                       </td>
                     </tr>
                     <tr v-if="!detail.versions.length"><td colspan="4" class="px-3 py-10 text-center text-sm text-gray-500 dark:text-dark-400">{{ t('admin.systemPrompts.history.empty') }}</td></tr>
@@ -150,7 +150,6 @@
       :skill-candidate="skillCandidate"
       :skill-syncing="skillSyncInProgress"
       :publishing-skill="publishingSkill"
-      :selected-skill-source="selectedSkillSource"
       :source-template="selectedTemplate"
       :source-template-display-name="selectedTemplate ? templateDisplayName(selectedTemplate) : ''"
       :source-version="selectedVersion"
@@ -162,7 +161,6 @@
       @save-runtime="saveRuntime"
       @sync-skill="startSkillSync"
       @publish-skill="publishSkillBundle"
-      @skill-source-change="selectedSkillSource = $event"
       @sync-source="syncManagedSource"
     />
 
@@ -225,7 +223,6 @@ import systemPromptsAPI, {
   type ManagedSourceSyncVersion,
   type RemoteSkillBundleVersionDetail,
   type RemoteSkillRegistryResponse,
-  type RemoteSkillSourceID,
   type RemoteSkillSyncJob,
   type SystemPromptCompositionMode,
   type SystemPromptRuntime,
@@ -278,7 +275,6 @@ const skillRegistry = ref<RemoteSkillRegistryResponse | null>(null)
 const skillLoading = ref(false)
 const skillSyncJob = ref<RemoteSkillSyncJob | null>(null)
 const skillCandidate = ref<RemoteSkillBundleVersionDetail | null>(null)
-const selectedSkillSource = ref<RemoteSkillSourceID>('github_official')
 const publishingSkill = ref(false)
 const sourceSyncing = ref(false)
 const sourceSyncStatus = ref<ManagedSourceSyncStatus | null>(null)
@@ -286,6 +282,7 @@ const sourceCandidate = ref<ManagedSourceSyncVersion | null>(null)
 let skillSyncTimer: ReturnType<typeof setTimeout> | null = null
 
 const selectedTemplate = computed(() => detail.value?.template ?? null)
+const isRemoteSkillManaged = computed(() => selectedTemplate.value?.managed_source === 'remote_skill_registry')
 const selectedVersion = computed(() => detail.value?.versions.find(item => item.id === selectedVersionId.value) ?? null)
 const latestVersion = computed(() => detail.value?.versions[0] ?? null)
 const runtimeTemplateId = computed(() => runtime.value?.template_id ?? 0)
@@ -461,10 +458,10 @@ async function pollSkillSync() {
   } catch (error) { handleError(error, t('admin.systemPrompts.errors.skillSync')) }
 }
 
-async function startSkillSync() {
+async function startSkillSync(promptCapture?: File) {
   if (!skillRegistry.value || skillSyncInProgress.value) return
   skillCandidate.value = null
-  try { skillSyncJob.value = await systemPromptsAPI.startSkillSync(selectedSkillSource.value, skillRegistry.value.runtime.revision); scheduleSkillSyncPoll() } catch (error) { handleError(error, t('admin.systemPrompts.errors.skillSync')) }
+  try { skillSyncJob.value = await systemPromptsAPI.startSkillSync(skillRegistry.value.runtime.revision, promptCapture); scheduleSkillSyncPoll() } catch (error) { handleError(error, t('admin.systemPrompts.errors.skillSync')) }
 }
 
 async function publishSkillBundle(versionId: number, rollback: boolean) {

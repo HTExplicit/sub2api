@@ -9,13 +9,12 @@ backend/migrations/*.sql text eol=lf
 backend/internal/service/prompts/*.txt text eol=lf
 backend/internal/service/prompts/*.md text eol=lf
 
-# Remote Skill registry assets are content-addressed. Keep all textual release
-# bytes stable on Windows/macOS/Linux and never apply text filters to ZIPs.
-deploy/skill-registry/bootstrap/**/*.ps1 text eol=lf
-deploy/skill-registry/bootstrap/**/*.py text eol=lf
-deploy/skill-registry/seed/*.json text eol=lf
-deploy/skill-registry/seed/*.sha256 text eol=lf
-deploy/skill-registry/seed/*.zip binary
+# The approved ModelGang seed is embedded in the application. Keep its textual
+# bytes stable so the raw/effective tree hashes are cross-platform.
+backend/internal/service/remote_skill_seed/tree/**/*.md text eol=lf -whitespace
+backend/internal/service/remote_skill_seed/tree/**/*.json text eol=lf -whitespace
+backend/internal/service/remote_skill_seed/tree/**/*.py text eol=lf -whitespace
+backend/internal/service/remote_skill_seed/tree/**/*.ps1 text eol=lf -whitespace
 
 # 前端 源代码文件
 *.ts text eol=lf

@@ -2,7 +2,7 @@ import { apiClient } from '../client'
 
 export type SystemPromptCompositionMode = 'inline' | 'codex_skill_hybrid'
 export type SystemPromptClientMode = 'codex' | 'openai_compatible'
-export type RemoteSkillSourceID = 'github_official' | 'moxinggang'
+export type RemoteSkillSourceID = 'moxinggang'
 
 export interface SystemPromptRuntime {
   enabled: boolean
@@ -19,11 +19,13 @@ export interface SystemPromptRuntime {
   bundle_id: string
   bundle_manifest_sha256: string
   registry_revision?: number
-  registry_manifest_sha256?: string
-  registry_archive_sha256?: string
-  registry_source_commit?: string
-  registry_source_id?: RemoteSkillSourceID
-  registry_remote_root?: string
+  registry_raw_tree_sha256?: string
+  registry_effective_tree_sha256?: string
+  registry_prompt_raw_sha256?: string
+  registry_prompt_effective_sha256?: string
+  registry_upstream_source_id?: RemoteSkillSourceID
+  registry_upstream_root?: string
+  registry_public_root?: string
   bundle_available: boolean
   bundle_degraded: boolean
   degraded_reason?: string
@@ -69,36 +71,55 @@ export interface SystemPromptVersion {
 
 export interface RemoteSkillBundleVersion {
   id: number
-  bundle_id: string
-  source_id: RemoteSkillSourceID
-  remote_root: string
-  source_commit: string
-  overlay_sha256: string
-  manifest_sha256: string
-  archive_sha256: string
+  upstream_source_id: RemoteSkillSourceID
+  upstream_root: string
+  public_root: string
+  raw_tree_sha256: string
+  effective_tree_sha256: string
+  prompt_version_id: number
   file_count: number
-  total_bytes: number
+  raw_total_bytes: number
+  effective_total_bytes: number
   added_files: number
   modified_files: number
   deleted_files: number
   script_changes: number
   binary_changes: number
+  fetched_at: string
   created_by?: number
   published_at?: string
   published_by?: number
   created_at: string
 }
 
+export interface RemoteSkillPromptVersion {
+  id: number
+  raw_sha256: string
+  effective_sha256: string
+  diff: string
+  created_by?: number
+  created_at: string
+}
+
+export interface RemoteSkillFileChange {
+  path: string
+  change: 'added' | 'modified' | 'deleted'
+  kind: string
+  raw_sha256?: string
+  effective_sha256?: string
+  previous_effective_sha256?: string
+}
+
 export interface RemoteSkillBundleVersionDetail extends RemoteSkillBundleVersion {
+  prompt: RemoteSkillPromptVersion
+  file_changes: RemoteSkillFileChange[]
   verified: boolean
-  routing_warnings?: string[]
 }
 
 export interface RemoteSkillRegistrySnapshot {
   revision: number
   active?: RemoteSkillBundleVersion
-  source_id?: RemoteSkillSourceID
-  remote_root?: string
+  active_prompt?: RemoteSkillPromptVersion
   degraded: boolean
   degraded_reason?: string
   updated_at: string
@@ -107,35 +128,19 @@ export interface RemoteSkillRegistrySnapshot {
 export interface RemoteSkillRegistryResponse {
   runtime: RemoteSkillRegistrySnapshot
   versions: RemoteSkillBundleVersion[]
-  client_install: RemoteSkillClientInstall
-}
-
-export interface RemoteSkillClientInstaller {
-  strategy: string
-  bootstrap_url: string
-  bootstrap_sha256: string
-  acquire_command: string
-  execute_command: string
-}
-
-export interface RemoteSkillClientInstall {
-  skill_name: string
-  source_id: RemoteSkillSourceID
-  remote_root: string
-  source_commit?: string
-  manifest_sha256?: string
-  descriptor_url: string
-  powershell: RemoteSkillClientInstaller
-  python: RemoteSkillClientInstaller
+  source: {
+    upstream_source_id: RemoteSkillSourceID
+    upstream_root: string
+    public_root: string
+  }
 }
 
 export interface RemoteSkillSyncJob {
   id: number
-  source_id: RemoteSkillSourceID
   status: 'queued' | 'running' | 'succeeded' | 'failed'
   progress_stage: string
-  source_commit?: string
   candidate_bundle_version_id?: number
+  prompt_capture_provided: boolean
   error_code?: string
   created_at: string
   started_at?: string
@@ -204,8 +209,13 @@ export interface PreviewUpstreamResponse {
     bundle_id?: string
     bundle_manifest_sha256?: string
     bundle_revision?: number
-    bundle_archive_sha256?: string
-    bundle_source_commit?: string
+    bundle_raw_tree_sha256?: string
+    bundle_effective_tree_sha256?: string
+    bundle_prompt_raw_sha256?: string
+    bundle_prompt_effective_sha256?: string
+    bundle_upstream_source_id?: string
+    bundle_upstream_root?: string
+    bundle_public_root?: string
     degraded?: boolean
     degraded_reason?: string
   }
@@ -237,13 +247,13 @@ export async function getSkillVersion(id: number): Promise<RemoteSkillBundleVers
 }
 
 export async function startSkillSync(
-  sourceID: RemoteSkillSourceID,
-  expectedRevision: number
+  expectedRevision: number,
+  promptCapture?: File
 ): Promise<RemoteSkillSyncJob> {
-  const { data } = await apiClient.post<RemoteSkillSyncJob>('/admin/system-prompts/skill-registry/syncs', {
-    source_id: sourceID,
-    expected_revision: expectedRevision
-  })
+  const form = new FormData()
+  form.append('expected_revision', String(expectedRevision))
+  if (promptCapture) form.append('prompt_capture', promptCapture)
+  const { data } = await apiClient.post<RemoteSkillSyncJob>('/admin/system-prompts/skill-registry/syncs', form)
   return data
 }
 

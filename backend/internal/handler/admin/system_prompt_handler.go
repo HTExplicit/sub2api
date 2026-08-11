@@ -3,10 +3,12 @@ package admin
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -26,29 +28,31 @@ func NewSystemPromptHandler(promptService *service.BusinessSystemPromptService, 
 }
 
 type systemPromptRuntimeResponse struct {
-	Enabled                bool      `json:"enabled"`
-	ExposeServerPrompt     bool      `json:"expose_server_prompt"`
-	CompactEnabled         bool      `json:"compact_enabled"`
-	TemplateID             int64     `json:"template_id"`
-	VersionID              int64     `json:"version_id"`
-	TemplateVersion        int64     `json:"template_version"`
-	Revision               int64     `json:"revision"`
-	SHA256                 string    `json:"sha256"`
-	ByteLength             int       `json:"byte_length"`
-	CompositionMode        string    `json:"composition_mode"`
-	BundleID               string    `json:"bundle_id,omitempty"`
-	BundleManifestSHA256   string    `json:"bundle_manifest_sha256,omitempty"`
-	RegistryRevision       int64     `json:"registry_revision,omitempty"`
-	RegistryManifestSHA256 string    `json:"registry_manifest_sha256,omitempty"`
-	RegistryArchiveSHA256  string    `json:"registry_archive_sha256,omitempty"`
-	RegistrySourceCommit   string    `json:"registry_source_commit,omitempty"`
-	RegistrySourceID       string    `json:"registry_source_id,omitempty"`
-	RegistryRemoteRoot     string    `json:"registry_remote_root,omitempty"`
-	BundleAvailable        bool      `json:"bundle_available"`
-	BundleDegraded         bool      `json:"bundle_degraded"`
-	DegradedReason         string    `json:"degraded_reason,omitempty"`
-	Degraded               bool      `json:"degraded"`
-	UpdatedAt              time.Time `json:"updated_at"`
+	Enabled                       bool      `json:"enabled"`
+	ExposeServerPrompt            bool      `json:"expose_server_prompt"`
+	CompactEnabled                bool      `json:"compact_enabled"`
+	TemplateID                    int64     `json:"template_id"`
+	VersionID                     int64     `json:"version_id"`
+	TemplateVersion               int64     `json:"template_version"`
+	Revision                      int64     `json:"revision"`
+	SHA256                        string    `json:"sha256"`
+	ByteLength                    int       `json:"byte_length"`
+	CompositionMode               string    `json:"composition_mode"`
+	BundleID                      string    `json:"bundle_id,omitempty"`
+	BundleManifestSHA256          string    `json:"bundle_manifest_sha256,omitempty"`
+	RegistryRevision              int64     `json:"registry_revision,omitempty"`
+	RegistryRawTreeSHA256         string    `json:"registry_raw_tree_sha256,omitempty"`
+	RegistryEffectiveTreeSHA256   string    `json:"registry_effective_tree_sha256,omitempty"`
+	RegistryPromptRawSHA256       string    `json:"registry_prompt_raw_sha256,omitempty"`
+	RegistryPromptEffectiveSHA256 string    `json:"registry_prompt_effective_sha256,omitempty"`
+	RegistryUpstreamSourceID      string    `json:"registry_upstream_source_id,omitempty"`
+	RegistryUpstreamRoot          string    `json:"registry_upstream_root,omitempty"`
+	RegistryPublicRoot            string    `json:"registry_public_root,omitempty"`
+	BundleAvailable               bool      `json:"bundle_available"`
+	BundleDegraded                bool      `json:"bundle_degraded"`
+	DegradedReason                string    `json:"degraded_reason,omitempty"`
+	Degraded                      bool      `json:"degraded"`
+	UpdatedAt                     time.Time `json:"updated_at"`
 }
 
 type systemPromptEnvelope struct {
@@ -146,29 +150,31 @@ func (h *SystemPromptHandler) actorID(c *gin.Context) (int64, bool) {
 
 func businessSystemPromptRuntimeResponse(snapshot service.BusinessSystemPromptSnapshot) systemPromptRuntimeResponse {
 	return systemPromptRuntimeResponse{
-		Enabled:                snapshot.Enabled,
-		ExposeServerPrompt:     snapshot.ExposeServerPrompt,
-		CompactEnabled:         snapshot.CompactEnabled,
-		TemplateID:             snapshot.TemplateID,
-		VersionID:              snapshot.VersionID,
-		TemplateVersion:        snapshot.TemplateVersion,
-		Revision:               snapshot.Revision,
-		SHA256:                 strings.ToLower(snapshot.SHA256),
-		ByteLength:             snapshot.ByteLength,
-		CompositionMode:        snapshot.CompositionMode,
-		BundleID:               snapshot.BundleID,
-		BundleManifestSHA256:   snapshot.BundleManifestSHA256,
-		RegistryRevision:       snapshot.RegistryRevision,
-		RegistryManifestSHA256: snapshot.RegistryManifestSHA256,
-		RegistryArchiveSHA256:  snapshot.RegistryArchiveSHA256,
-		RegistrySourceCommit:   snapshot.RegistrySourceCommit,
-		RegistrySourceID:       snapshot.RegistrySourceID,
-		RegistryRemoteRoot:     snapshot.RegistryRemoteRoot,
-		BundleAvailable:        snapshot.BundleAvailable,
-		BundleDegraded:         snapshot.BundleDegraded,
-		DegradedReason:         snapshot.DegradedReason,
-		Degraded:               snapshot.Degraded,
-		UpdatedAt:              snapshot.UpdatedAt,
+		Enabled:                       snapshot.Enabled,
+		ExposeServerPrompt:            snapshot.ExposeServerPrompt,
+		CompactEnabled:                snapshot.CompactEnabled,
+		TemplateID:                    snapshot.TemplateID,
+		VersionID:                     snapshot.VersionID,
+		TemplateVersion:               snapshot.TemplateVersion,
+		Revision:                      snapshot.Revision,
+		SHA256:                        strings.ToLower(snapshot.SHA256),
+		ByteLength:                    snapshot.ByteLength,
+		CompositionMode:               snapshot.CompositionMode,
+		BundleID:                      snapshot.BundleID,
+		BundleManifestSHA256:          snapshot.BundleManifestSHA256,
+		RegistryRevision:              snapshot.RegistryRevision,
+		RegistryRawTreeSHA256:         snapshot.RegistryRawTreeSHA256,
+		RegistryEffectiveTreeSHA256:   snapshot.RegistryEffectiveTreeSHA256,
+		RegistryPromptRawSHA256:       snapshot.RegistryPromptRawSHA256,
+		RegistryPromptEffectiveSHA256: snapshot.RegistryPromptEffectiveSHA256,
+		RegistryUpstreamSourceID:      snapshot.RegistryUpstreamSourceID,
+		RegistryUpstreamRoot:          snapshot.RegistryUpstreamRoot,
+		RegistryPublicRoot:            snapshot.RegistryPublicRoot,
+		BundleAvailable:               snapshot.BundleAvailable,
+		BundleDegraded:                snapshot.BundleDegraded,
+		DegradedReason:                snapshot.DegradedReason,
+		Degraded:                      snapshot.Degraded,
+		UpdatedAt:                     snapshot.UpdatedAt,
 	}
 }
 
@@ -186,6 +192,10 @@ func writeBusinessSystemPromptError(c *gin.Context, err error) {
 		response.ErrorWithDetails(c, http.StatusUnprocessableEntity, "system_prompt_source_license_changed", "system_prompt_source_license_changed", nil)
 	case errors.Is(err, service.ErrBusinessSystemPromptSourceNotManaged):
 		response.ErrorWithDetails(c, http.StatusConflict, "system_prompt_source_not_managed", "system_prompt_source_not_managed", nil)
+	case errors.Is(err, service.ErrBusinessSystemPromptBundleInvalid):
+		response.ErrorWithDetails(c, http.StatusUnprocessableEntity, "remote_skill_candidate_invalid", "remote_skill_candidate_invalid", nil)
+	case errors.Is(err, service.ErrBusinessSystemPromptBundleUnavailable):
+		response.ErrorWithDetails(c, http.StatusServiceUnavailable, "remote_skill_source_unavailable", "remote_skill_source_unavailable", nil)
 	case errors.Is(err, service.ErrBusinessSystemPromptTemplateNotFound), errors.Is(err, service.ErrBusinessSystemPromptVersionNotFound):
 		response.NotFound(c, "System prompt template or version not found")
 	case errors.Is(err, service.ErrRemoteSkillVersionNotFound), errors.Is(err, service.ErrRemoteSkillSyncNotFound):
@@ -211,7 +221,11 @@ func (h *SystemPromptHandler) SkillRegistry(c *gin.Context) {
 	}
 	response.Success(c, gin.H{
 		"runtime": h.skillRegistry.CurrentSnapshot(), "versions": versions,
-		"client_install": h.skillRegistry.ClientInstallMetadata(),
+		"source": gin.H{
+			"upstream_source_id": service.RemoteSkillUpstreamSourceID,
+			"upstream_root":      service.RemoteSkillUpstreamRoot,
+			"public_root":        service.RemoteSkillPublicRoot,
+		},
 	})
 }
 
@@ -246,23 +260,76 @@ func (h *SystemPromptHandler) StartSkillSync(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var req struct {
-		SourceID         string `json:"source_id"`
-		ExpectedRevision int64  `json:"expected_revision" binding:"required"`
+	if h.skillRegistry == nil {
+		writeBusinessSystemPromptError(c, service.ErrBusinessSystemPromptUnavailable)
+		return
 	}
-	if err := c.ShouldBindJSON(&req); err != nil {
+	expectedRevision, promptCapture, err := parseRemoteSkillSyncMultipart(c)
+	if err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-	job, err := h.skillRegistry.StartSync(c.Request.Context(), req.SourceID, actorID, req.ExpectedRevision)
+	job, err := h.skillRegistry.StartSync(c.Request.Context(), promptCapture, actorID, expectedRevision)
 	if err != nil {
 		writeBusinessSystemPromptError(c, err)
 		return
 	}
 	middleware.SetAuditExtra(c, map[string]any{
-		"source_id": job.SourceID, "revision": req.ExpectedRevision, "status": job.Status, "result": "sync_queued",
+		"upstream_source_id": service.RemoteSkillUpstreamSourceID,
+		"revision":           expectedRevision,
+		"prompt_uploaded":    job.PromptCaptureProvided,
+		"status":             job.Status,
+		"result":             "sync_queued",
 	})
 	response.Accepted(c, job)
+}
+
+func parseRemoteSkillSyncMultipart(c *gin.Context) (int64, []byte, error) {
+	if c.ContentType() != "multipart/form-data" {
+		return 0, nil, errors.New("multipart/form-data is required")
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, int64(service.BusinessSystemPromptMaxBytes+(1<<20)))
+	if err := c.Request.ParseMultipartForm(1 << 20); err != nil {
+		return 0, nil, err
+	}
+	if c.Request.MultipartForm == nil {
+		return 0, nil, errors.New("multipart form is required")
+	}
+	defer func() { _ = c.Request.MultipartForm.RemoveAll() }()
+	revisions := c.Request.MultipartForm.Value["expected_revision"]
+	if len(revisions) != 1 {
+		return 0, nil, errors.New("expected_revision must appear exactly once")
+	}
+	expectedRevision, err := strconv.ParseInt(strings.TrimSpace(revisions[0]), 10, 64)
+	if err != nil || expectedRevision < 1 {
+		return 0, nil, errors.New("expected_revision must be a positive integer")
+	}
+	files := c.Request.MultipartForm.File["prompt_capture"]
+	if len(files) > 1 {
+		return 0, nil, errors.New("prompt_capture must appear at most once")
+	}
+	if len(files) == 0 {
+		return expectedRevision, nil, nil
+	}
+	if files[0].Size <= 0 || files[0].Size > int64(service.BusinessSystemPromptMaxBytes) {
+		return 0, nil, errors.New("prompt_capture size is invalid")
+	}
+	stream, err := files[0].Open()
+	if err != nil {
+		return 0, nil, err
+	}
+	promptCapture, readErr := io.ReadAll(io.LimitReader(stream, int64(service.BusinessSystemPromptMaxBytes)+1))
+	closeErr := stream.Close()
+	if readErr != nil {
+		return 0, nil, readErr
+	}
+	if closeErr != nil {
+		return 0, nil, closeErr
+	}
+	if len(promptCapture) == 0 || len(promptCapture) > service.BusinessSystemPromptMaxBytes || !utf8.Valid(promptCapture) {
+		return 0, nil, errors.New("prompt_capture must be non-empty UTF-8 within the size limit")
+	}
+	return expectedRevision, promptCapture, nil
 }
 
 func (h *SystemPromptHandler) SkillSync(c *gin.Context) {
@@ -313,17 +380,23 @@ func (h *SystemPromptHandler) publishSkillVersion(c *gin.Context, result string)
 		"status": "active", "result": result, "degraded": snapshot.Degraded,
 	}
 	if old.Active != nil {
-		extra["old_manifest_sha256"] = old.Active.ManifestSHA256
+		extra["old_effective_tree_sha256"] = old.Active.EffectiveTreeSHA256
 	}
 	if snapshot.Active != nil {
-		extra["source_id"] = snapshot.Active.SourceID
-		extra["source_commit"] = snapshot.Active.SourceCommit
-		extra["new_manifest_sha256"] = snapshot.Active.ManifestSHA256
-		extra["archive_sha256"] = snapshot.Active.ArchiveSHA256
+		extra["upstream_source_id"] = snapshot.Active.UpstreamSourceID
+		extra["upstream_root"] = snapshot.Active.UpstreamRoot
+		extra["public_root"] = snapshot.Active.PublicRoot
+		extra["raw_tree_sha256"] = snapshot.Active.RawTreeSHA256
+		extra["effective_tree_sha256"] = snapshot.Active.EffectiveTreeSHA256
 		extra["file_count"] = snapshot.Active.FileCount
-		extra["total_bytes"] = snapshot.Active.TotalBytes
+		extra["raw_total_bytes"] = snapshot.Active.RawTotalBytes
+		extra["effective_total_bytes"] = snapshot.Active.EffectiveTotalBytes
 		extra["script_changes"] = snapshot.Active.ScriptChanges
 		extra["binary_changes"] = snapshot.Active.BinaryChanges
+	}
+	if snapshot.ActivePrompt != nil {
+		extra["prompt_raw_sha256"] = snapshot.ActivePrompt.RawSHA256
+		extra["prompt_effective_sha256"] = snapshot.ActivePrompt.EffectiveSHA256
 	}
 	middleware.SetAuditExtra(c, extra)
 	response.Success(c, snapshot)

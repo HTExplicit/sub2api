@@ -41,8 +41,6 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "upstream_version=$upstream_version" >> "$GITHUB_OUTPUT"
           echo "build_date=$(git show -s --format=%cI "$GITHUB_SHA")" >> "$GITHUB_OUTPUT"
-      - name: Verify fixed prompt and remote Skill release assets
-        run: python3 tools/verify_remote_skill_registry.py
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: backend/go.mod
@@ -55,7 +53,7 @@ jobs:
           go mod verify
           go test -p=1 ./internal/service -run 'Test.*(BusinessSystemPrompt|RemoteSkill|GPT56)' -count=1
           go test -p=1 ./internal/handler/admin ./internal/server/middleware -run 'Test.*(SystemPrompt|RemoteSkill|Audit)' -count=1
-          go test -p=1 ./migrations -run 'Test.*(BusinessSystemPromptRemoteSkill|BusinessSystemPromptCodexSkillHybrid|BusinessSystemPromptManagedSource|RemoteSkillRegistry|RemoteSkillSources)' -count=1
+          go test -p=1 ./migrations -run 'Test.*(BusinessSystemPromptRemoteSkill|BusinessSystemPromptCodexSkillHybrid|BusinessSystemPromptManagedSource|RemoteSkillRegistry|RemoteSkillPaired)' -count=1
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 9.15.9
@@ -84,13 +82,7 @@ jobs:
       UPSTREAM_VERSION: ${{ needs.verify.outputs.upstream_version }}
       BUILD_DATE: ${{ needs.verify.outputs.build_date }}
       GH_TOKEN: ${{ github.token }}
-      REGISTRY_MANIFEST_SHA: 098c056d0884602c60b4bcaa2af6b12c52a13718d0fc2a4af40b18497b0c75ac
-      REGISTRY_ARCHIVE_SHA: fca0bef795880515c4d9f40322c8f99564c9371bbd01144ab73d7656ccfe8d33
-      REGISTRY_ARCHIVE: codexrip-reverse-skill-098c056d0884602c60b4bcaa2af6b12c52a13718d0fc2a4af40b18497b0c75ac.zip
-      REGISTRY_CHECKSUM: codexrip-reverse-skill-098c056d0884602c60b4bcaa2af6b12c52a13718d0fc2a4af40b18497b0c75ac.zip.sha256
-      PROMPT_SHA: 2107e252ef417561baa4c5349f0c34d4e767ad422dfc463b2eac07bf7bbcc931
-      POWERSHELL_BOOTSTRAP_SHA: 2199e8c4e8a09278c9b79e17b05e5457308db0a7d593e0f933ad6bd0712845f9
-      PYTHON_BOOTSTRAP_SHA: 353878272c8972c00817cc7171d7a4a087b4203fa2758b7ba1d040ededde7dc9
+      PROMPT_SHA: 74bd491260aaa23c45b82bd522b32c6b6dea7d5e76a2d8e3ab3607c6f1ab4e58
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
@@ -140,19 +132,9 @@ jobs:
           Image: \`${IMAGE}:${VERSION}@${{ steps.build.outputs.digest }}\`
           Source: \`${GITHUB_SHA}\`
           Fixed System Prompt SHA-256: \`${PROMPT_SHA}\`
-          Remote Skill bundle: \`${REGISTRY_ARCHIVE}\`
-          Bundle ZIP SHA-256: \`${REGISTRY_ARCHIVE_SHA}\`
-          Bundle manifest SHA-256: \`${REGISTRY_MANIFEST_SHA}\`
-          PowerShell bootstrap SHA-256: \`${POWERSHELL_BOOTSTRAP_SHA}\`
-          Python bootstrap SHA-256: \`${PYTHON_BOOTSTRAP_SHA}\`
+          Remote Skill source: \`moxinggang\` (paired tree and prompt are activated by the application migration gate)
           EOF
           gh release create "$GITHUB_REF_NAME" \
-            "deploy/skill-registry/seed/seed-descriptor.json" \
-            "deploy/skill-registry/seed/bundle-manifest.json" \
-            "deploy/skill-registry/seed/${REGISTRY_ARCHIVE}" \
-            "deploy/skill-registry/seed/${REGISTRY_CHECKSUM}" \
-            "deploy/skill-registry/bootstrap/${POWERSHELL_BOOTSTRAP_SHA}/bootstrap-reverse-skill.ps1" \
-            "deploy/skill-registry/bootstrap/${PYTHON_BOOTSTRAP_SHA}/bootstrap-reverse-skill.py" \
             --verify-tag \
             --title "Sub2API ${VERSION}" \
             --notes-file /tmp/release-notes.md

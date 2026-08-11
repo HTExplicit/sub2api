@@ -21,6 +21,7 @@ var (
 
 const (
 	businessSystemPromptSeedSlug                   = "codexrip_reverse_skill"
+	BusinessSystemPromptManagedSourceRemoteSkill   = "remote_skill_registry"
 	gpt56InstructPromptSeedSlug                    = "gpt_5_6_instruct"
 	businessSystemPromptV7SHA256                   = "0b717f086b1bf25e8300e9f26578ee95cf6f74d5601c06b9f9e493aa8939b0a7"
 	businessSystemPromptV8SHA256                   = "9143d8a97727030192a62fb19f732b0823dec9ffe83081ef5ae27fdb1edfea04"
@@ -220,6 +221,9 @@ func (s *BusinessSystemPromptService) SyncManagedSource(
 	if templateID <= 0 || actorID <= 0 || expectedLatestVersion <= 0 || expectedRevision <= 0 {
 		return BusinessSystemPromptSourceSyncResult{}, ErrBusinessSystemPromptRevisionConflict
 	}
+	if err := s.rejectRemoteSkillManagedTemplate(ctx, templateID); err != nil {
+		return BusinessSystemPromptSourceSyncResult{}, err
+	}
 	sourceStore, ok := s.store.(BusinessSystemPromptSourceStore)
 	if !ok {
 		return BusinessSystemPromptSourceSyncResult{}, ErrBusinessSystemPromptSourceUnavailable
@@ -243,8 +247,9 @@ func (s *BusinessSystemPromptService) Initialize(ctx context.Context) error {
 	seeds := []BusinessSystemPromptSeed{
 		{
 			Slug:                businessSystemPromptSeedSlug,
-			Name:                "CodexRip Reverse-Skill System Prompt",
-			Description:         "高保真 CodexRip 逆向提示词与本机完整 Skill 混合策略。",
+			Name:                "Security Research Remote Skill Prompt",
+			Description:         "ModelGang current security-research Skill tree with the paired managed prompt.",
+			ManagedSource:       BusinessSystemPromptManagedSourceRemoteSkill,
 			Body:                embeddedBusinessSystemPrompt,
 			Note:                "captured reverse-engineered seed",
 			CompositionMode:     BusinessSystemPromptCompositionCodexSkillHybrid,
@@ -422,11 +427,13 @@ func (s *BusinessSystemPromptService) prepareBusinessSystemPromptSnapshot(snapsh
 		return err
 	}
 	snapshot.RegistryRevision = 0
-	snapshot.RegistryManifestSHA256 = ""
-	snapshot.RegistryArchiveSHA256 = ""
-	snapshot.RegistrySourceCommit = ""
-	snapshot.RegistrySourceID = ""
-	snapshot.RegistryRemoteRoot = ""
+	snapshot.RegistryRawTreeSHA256 = ""
+	snapshot.RegistryEffectiveTreeSHA256 = ""
+	snapshot.RegistryPromptRawSHA256 = ""
+	snapshot.RegistryPromptEffectiveSHA256 = ""
+	snapshot.RegistryUpstreamSourceID = ""
+	snapshot.RegistryUpstreamRoot = ""
+	snapshot.RegistryPublicRoot = ""
 	if snapshot.CompositionMode == BusinessSystemPromptCompositionInline {
 		snapshot.BundleAvailable = false
 		snapshot.BundleDegraded = false
@@ -450,12 +457,20 @@ func (s *BusinessSystemPromptService) prepareBusinessSystemPromptSnapshot(snapsh
 		snapshot.BundleAvailable = true
 		snapshot.BundleDegraded = registrySnapshot.Degraded
 		snapshot.DegradedReason = registrySnapshot.DegradedReason
+		if registrySnapshot.ActivePrompt == nil || registrySnapshot.Active.PromptVersionID != registrySnapshot.ActivePrompt.ID {
+			snapshot.BundleDegraded = true
+			snapshot.DegradedReason = "paired_prompt_unavailable"
+			snapshot.Degraded = true
+			return nil
+		}
 		snapshot.RegistryRevision = registrySnapshot.Revision
-		snapshot.RegistryManifestSHA256 = registrySnapshot.Active.ManifestSHA256
-		snapshot.RegistryArchiveSHA256 = registrySnapshot.Active.ArchiveSHA256
-		snapshot.RegistrySourceCommit = registrySnapshot.Active.SourceCommit
-		snapshot.RegistrySourceID = registrySnapshot.Active.SourceID
-		snapshot.RegistryRemoteRoot = registrySnapshot.Active.RemoteRoot
+		snapshot.RegistryRawTreeSHA256 = registrySnapshot.Active.RawTreeSHA256
+		snapshot.RegistryEffectiveTreeSHA256 = registrySnapshot.Active.EffectiveTreeSHA256
+		snapshot.RegistryPromptRawSHA256 = registrySnapshot.ActivePrompt.RawSHA256
+		snapshot.RegistryPromptEffectiveSHA256 = registrySnapshot.ActivePrompt.EffectiveSHA256
+		snapshot.RegistryUpstreamSourceID = registrySnapshot.Active.UpstreamSourceID
+		snapshot.RegistryUpstreamRoot = registrySnapshot.Active.UpstreamRoot
+		snapshot.RegistryPublicRoot = registrySnapshot.Active.PublicRoot
 		if snapshot.BundleDegraded {
 			snapshot.Degraded = true
 		}
@@ -509,24 +524,28 @@ func (s *BusinessSystemPromptService) compileBusinessSystemPromptSnapshot(
 		return snapshot, nil
 	}
 	if snapshot.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid {
-		snapshot.Body = applyRemoteSkillRoot(snapshot.Body, snapshot.RegistryRemoteRoot)
-		baseHash := hashBusinessSystemPromptBundleBytes([]byte(snapshot.Body))
-		snapshot.baseSHA256 = baseHash
-		snapshot.effectiveSHA256 = baseHash
-		snapshot.effectiveByteLength = len([]byte(snapshot.Body))
+		if s == nil || s.registry == nil {
+			return BusinessSystemPromptSnapshot{}, fmt.Errorf("%w: paired registry unavailable", ErrBusinessSystemPromptUnavailable)
+		}
+		publication, err := s.registry.ActivePublication(context.Background())
+		if err != nil {
+			return BusinessSystemPromptSnapshot{}, err
+		}
+		snapshot.Body = publication.EffectivePromptBody
+		snapshot.RegistryRevision = publication.Revision
+		snapshot.RegistryRawTreeSHA256 = publication.Version.RawTreeSHA256
+		snapshot.RegistryEffectiveTreeSHA256 = publication.Version.EffectiveTreeSHA256
+		snapshot.RegistryPromptRawSHA256 = publication.Prompt.RawSHA256
+		snapshot.RegistryPromptEffectiveSHA256 = publication.Prompt.EffectiveSHA256
+		snapshot.RegistryUpstreamSourceID = publication.Version.UpstreamSourceID
+		snapshot.RegistryUpstreamRoot = publication.Version.UpstreamRoot
+		snapshot.RegistryPublicRoot = publication.Version.PublicRoot
+		snapshot.baseSHA256 = publication.Prompt.RawSHA256
+		snapshot.effectiveSHA256 = publication.Prompt.EffectiveSHA256
+		snapshot.effectiveByteLength = len([]byte(publication.EffectivePromptBody))
 		return snapshot, nil
 	}
 	return BusinessSystemPromptSnapshot{}, fmt.Errorf("%w: unsupported composition", ErrBusinessSystemPromptUnavailable)
-}
-
-func applyRemoteSkillRoot(body, remoteRoot string) string {
-	remoteRoot = strings.TrimSpace(remoteRoot)
-	if remoteRoot == "" {
-		return body
-	}
-	body = strings.ReplaceAll(body, RemoteSkillGitHubRoot, remoteRoot)
-	body = strings.ReplaceAll(body, RemoteSkillMoxinggangRoot, remoteRoot)
-	return body
 }
 
 func (s *BusinessSystemPromptService) retainLastGood(err error) error {
@@ -600,6 +619,9 @@ func (s *BusinessSystemPromptService) CreateVersion(ctx context.Context, templat
 }
 
 func (s *BusinessSystemPromptService) CreateVersionWithComposition(ctx context.Context, templateID int64, req BusinessSystemPromptVersionCreate, actorID, expectedLatestVersion, expectedRevision int64) (BusinessSystemPromptVersion, error) {
+	if err := s.rejectRemoteSkillManagedTemplate(ctx, templateID); err != nil {
+		return BusinessSystemPromptVersion{}, err
+	}
 	if _, _, err := ValidateBusinessSystemPromptBody(req.Body); err != nil {
 		return BusinessSystemPromptVersion{}, err
 	}
@@ -688,7 +710,7 @@ func (s *BusinessSystemPromptService) validateBusinessSystemPromptBundleReferenc
 		if composition.BundleID != BusinessSystemPromptRemoteSkillBundleID || s == nil || s.registry == nil {
 			return fmt.Errorf("%w: active CodexRip registry unavailable", ErrBusinessSystemPromptUnavailable)
 		}
-		_, _, err := s.registry.ActiveBundle(context.Background())
+		_, err := s.registry.ActivePublication(context.Background())
 		return err
 	}
 	return nil
@@ -698,6 +720,9 @@ func (s *BusinessSystemPromptService) validateBusinessSystemPromptPublishTarget(
 	detail, err := s.store.GetBusinessSystemPromptTemplate(ctx, templateID)
 	if err != nil {
 		return err
+	}
+	if detail.Template.ManagedSource == BusinessSystemPromptManagedSourceRemoteSkill {
+		return ErrBusinessSystemPromptSourceNotManaged
 	}
 	if len(detail.Versions) == 0 {
 		// Compatibility for lightweight legacy stores used by embedders. The
@@ -772,6 +797,9 @@ func (s *BusinessSystemPromptService) CreateTemplate(ctx context.Context, req Bu
 }
 
 func (s *BusinessSystemPromptService) UpdateTemplate(ctx context.Context, id int64, req BusinessSystemPromptTemplateUpdate, actorID, expectedRevision int64) (BusinessSystemPromptTemplate, error) {
+	if err := s.rejectRemoteSkillManagedTemplate(ctx, id); err != nil {
+		return BusinessSystemPromptTemplate{}, err
+	}
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
@@ -796,6 +824,9 @@ func (s *BusinessSystemPromptService) DuplicateTemplate(ctx context.Context, id 
 	if err != nil {
 		return BusinessSystemPromptTemplateDetail{}, err
 	}
+	if detail.Template.ManagedSource == BusinessSystemPromptManagedSourceRemoteSkill {
+		return BusinessSystemPromptTemplateDetail{}, ErrBusinessSystemPromptSourceNotManaged
+	}
 	for _, version := range detail.Versions {
 		_, normalizeErr := NormalizeBusinessSystemPromptComposition(version.CompositionMode, version.BundleID, version.BundleManifestSHA256)
 		if normalizeErr != nil {
@@ -806,5 +837,22 @@ func (s *BusinessSystemPromptService) DuplicateTemplate(ctx context.Context, id 
 }
 
 func (s *BusinessSystemPromptService) DeleteTemplate(ctx context.Context, id, actorID, expectedRevision int64) error {
+	if err := s.rejectRemoteSkillManagedTemplate(ctx, id); err != nil {
+		return err
+	}
 	return s.store.SoftDeleteBusinessSystemPromptTemplate(ctx, id, actorID, expectedRevision)
+}
+
+func (s *BusinessSystemPromptService) rejectRemoteSkillManagedTemplate(ctx context.Context, templateID int64) error {
+	if s == nil || s.store == nil || templateID <= 0 {
+		return nil
+	}
+	detail, err := s.store.GetBusinessSystemPromptTemplate(ctx, templateID)
+	if err != nil {
+		return err
+	}
+	if detail.Template.ManagedSource == BusinessSystemPromptManagedSourceRemoteSkill {
+		return ErrBusinessSystemPromptSourceNotManaged
+	}
+	return nil
 }

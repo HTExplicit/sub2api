@@ -1,34 +1,42 @@
 //go:build integration
 
-package migrations
+package migrations_test
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	_ "github.com/lib/pq"
 	"github.com/stretchr/testify/require"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
+
+	"github.com/Wei-Shaw/sub2api/internal/repository"
+	"github.com/Wei-Shaw/sub2api/internal/service"
+	dbmigrations "github.com/Wei-Shaw/sub2api/migrations"
 )
 
-const canonicalRemoteSkillPromptSHA256 = "2107e252ef417561baa4c5349f0c34d4e767ad422dfc463b2eac07bf7bbcc931"
-
-var remoteSkillMigrationSchemaSequence uint64
+var remoteSkillMigrationDSN string
 var remoteSkillMigrationDB *sql.DB
+var remoteSkillMigrationSchemaSequence uint64
 
 func TestMain(m *testing.M) {
 	ctx := context.Background()
-	dsn := strings.TrimSpace(os.Getenv("SUB2API_MIGRATION_TEST_DSN"))
+	remoteSkillMigrationDSN = strings.TrimSpace(os.Getenv("SUB2API_MIGRATION_TEST_DSN"))
 	var container *tcpostgres.PostgresContainer
 	var err error
-	if dsn == "" {
+	if remoteSkillMigrationDSN == "" {
+		if runtime.GOOS == "windows" {
+			fmt.Fprintln(os.Stderr, "remote-skill migration integration tests require SUB2API_MIGRATION_TEST_DSN on Windows")
+			os.Exit(0)
+		}
 		container, err = tcpostgres.Run(
 			ctx,
 			"postgres:18.1-alpine3.23",
@@ -38,11 +46,11 @@ func TestMain(m *testing.M) {
 			tcpostgres.BasicWaitStrategies(),
 		)
 		if err == nil {
-			dsn, err = container.ConnectionString(ctx, "sslmode=disable", "TimeZone=UTC")
+			remoteSkillMigrationDSN, err = container.ConnectionString(ctx, "sslmode=disable", "TimeZone=UTC")
 		}
 	}
 	if err == nil {
-		remoteSkillMigrationDB, err = sql.Open("postgres", dsn)
+		remoteSkillMigrationDB, err = sql.Open("postgres", remoteSkillMigrationDSN)
 	}
 	if err == nil {
 		err = remoteSkillMigrationDB.PingContext(ctx)
@@ -63,240 +71,297 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func TestRemoteSkillSourcesMigrationMigratesExactLegacyRuntime(t *testing.T) {
+func TestRemoteSkillPairedMigrationAndStartupRemoveEightGitHubVersions(t *testing.T) {
 	ctx := context.Background()
-	tx := remoteSkillMigrationTestTx(t)
-	createRemoteSkillMigrationFixture(t, tx)
+	db, schema := remoteSkillMigrationTestDatabase(t)
+	require.NoError(t, execRemoteSkillSQL(ctx, db, remoteSkillPost200FixtureSQL))
+	require.NoError(t, insertEightLegacyRemoteSkillVersions(ctx, db))
 
-	canonicalBody := canonicalRemoteSkillPromptBody(t)
-	legacyBody := "legacy remote prompt"
-	inlineBody := "inline prompt"
-	insertPromptTemplate(t, tx, 1, "codexrip_reverse_skill", true)
-	insertPromptVersion(t, tx, 1, 1, 1, legacyBody, "remote_skill", "codexrip-reverse-skill", nil)
-	insertPromptVersion(t, tx, 2, 1, 2, canonicalBody, "codex_skill_hybrid", "codexrip-reverse-skill", nil)
-	insertPromptVersion(t, tx, 3, 1, 3, inlineBody, "inline", "", nil)
-	insertPromptTemplate(t, tx, 2, "legacy_orphan", false)
-	insertPromptVersion(t, tx, 4, 2, 1, legacyBody, "offline_bundle", "moxinggang-reverse-skill", stringPointer(strings.Repeat("9", 64)))
-
-	_, err := tx.ExecContext(ctx, `INSERT INTO system_prompt_runtime
-		(id, active_template_id, active_version_id, revision, updated_at)
-		VALUES (1, 1, 1, 7, NOW())`)
+	migrationSQL, err := dbmigrations.FS.ReadFile("201_remote_skill_paired_candidates.sql")
 	require.NoError(t, err)
-	insertRemoteSkillVersionFixture(t, tx, 10, strings.Repeat("1", 40), strings.Repeat("3", 64))
-	_, err = tx.ExecContext(ctx, `INSERT INTO system_prompt_skill_runtime
-		(id, active_bundle_version_id, revision) VALUES (1, 10, 4)`)
-	require.NoError(t, err)
-	_, err = tx.ExecContext(ctx, `INSERT INTO system_prompt_skill_sync_jobs
-		(id, status, progress_stage, candidate_bundle_version_id) VALUES (20, 'succeeded', 'candidate_ready', 10)`)
-	require.NoError(t, err)
+	require.NoError(t, execRemoteSkillSQL(ctx, db, string(migrationSQL)))
 
-	_, err = tx.ExecContext(ctx, remoteSkillSourcesMigrationSQL(t))
-	require.NoError(t, err)
+	var managedSource string
+	require.NoError(t, db.QueryRowContext(ctx, `
+		SELECT managed_source FROM system_prompt_templates
+		WHERE slug = 'codexrip_reverse_skill'`).Scan(&managedSource))
+	require.Equal(t, service.BusinessSystemPromptManagedSourceRemoteSkill, managedSource)
 
-	var activeVersionID, revision int64
-	require.NoError(t, tx.QueryRowContext(ctx, `SELECT active_version_id, revision FROM system_prompt_runtime WHERE id = 1`).Scan(&activeVersionID, &revision))
-	require.Equal(t, int64(2), activeVersionID)
-	require.Equal(t, int64(8), revision)
+	for _, column := range []string{
+		"bundle_id", "source_id", "remote_root", "source_commit", "overlay_sha256",
+		"manifest_sha256", "archive_sha256", "total_bytes",
+	} {
+		assertRemoteSkillColumnMissing(t, ctx, db, schema, "system_prompt_skill_bundle_versions", column)
+	}
+	for _, column := range []string{"source_id", "source_commit"} {
+		assertRemoteSkillColumnMissing(t, ctx, db, schema, "system_prompt_skill_sync_jobs", column)
+	}
 
-	var legacyCount, retainedCount, orphanCount int
-	require.NoError(t, tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM system_prompt_template_versions WHERE composition_mode IN ('remote_skill', 'offline_bundle')`).Scan(&legacyCount))
-	require.NoError(t, tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM system_prompt_template_versions WHERE id IN (2, 3)`).Scan(&retainedCount))
-	require.NoError(t, tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM system_prompt_templates WHERE id = 2`).Scan(&orphanCount))
-	require.Zero(t, legacyCount)
-	require.Equal(t, 2, retainedCount)
-	require.Zero(t, orphanCount)
+	registryRoot := t.TempDir()
+	for _, name := range []string{
+		"private/seed/legacy.txt",
+		"private/versions/legacy.txt",
+		"public/reverse-skill/current.json",
+		"public/bootstrap/legacy.ps1",
+		"public/versions/legacy.zip",
+		"staging/incomplete/partial.txt",
+	} {
+		path := filepath.Join(registryRoot, filepath.FromSlash(name))
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o750))
+		require.NoError(t, os.WriteFile(path, []byte("legacy"), 0o640))
+	}
 
-	var versionCount, jobCount int
-	var versionSource, versionRoot, jobSource string
-	require.NoError(t, tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM system_prompt_skill_bundle_versions`).Scan(&versionCount))
-	require.NoError(t, tx.QueryRowContext(ctx, `SELECT source_id, remote_root FROM system_prompt_skill_bundle_versions WHERE id = 10`).Scan(&versionSource, &versionRoot))
-	require.NoError(t, tx.QueryRowContext(ctx, `SELECT COUNT(*), MIN(source_id) FROM system_prompt_skill_sync_jobs WHERE id = 20`).Scan(&jobCount, &jobSource))
+	registryFiles := service.NewRemoteSkillRegistryFilesystem(registryRoot)
+	registryStore := repository.NewRemoteSkillRegistryRepository(db)
+	registryService := service.NewRemoteSkillRegistryService(registryStore, nil, registryFiles, nil)
+	require.NoError(t, registryService.Initialize(ctx))
+
+	snapshot := registryService.CurrentSnapshot()
+	require.NotNil(t, snapshot.Active)
+	require.NotNil(t, snapshot.ActivePrompt)
+	require.Equal(t, int64(5), snapshot.Revision)
+	require.Equal(t, service.RemoteSkillUpstreamSourceID, snapshot.Active.UpstreamSourceID)
+	require.Equal(t, service.RemoteSkillUpstreamRoot, snapshot.Active.UpstreamRoot)
+	require.Equal(t, service.RemoteSkillPublicRoot, snapshot.Active.PublicRoot)
+	require.Equal(t, 73, snapshot.Active.FileCount)
+	require.Equal(t, snapshot.Active.PromptVersionID, snapshot.ActivePrompt.ID)
+
+	var versionCount, promptCount, jobCount, legacyCount int
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM system_prompt_skill_bundle_versions`).Scan(&versionCount))
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM system_prompt_skill_prompt_versions`).Scan(&promptCount))
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM system_prompt_skill_sync_jobs`).Scan(&jobCount))
+	require.NoError(t, db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM system_prompt_skill_bundle_versions
+		WHERE upstream_source_id IS DISTINCT FROM $1 OR upstream_root IS DISTINCT FROM $2
+		   OR public_root IS DISTINCT FROM $3 OR prompt_version_id IS NULL`,
+		service.RemoteSkillUpstreamSourceID, service.RemoteSkillUpstreamRoot, service.RemoteSkillPublicRoot).Scan(&legacyCount))
 	require.Equal(t, 1, versionCount)
-	require.Equal(t, "github_official", versionSource)
-	require.Equal(t, "https://raw.githubusercontent.com/zhaoxuya520/reverse-skill/"+strings.Repeat("1", 40)+"/skills", versionRoot)
-	require.Equal(t, 1, jobCount)
-	require.Equal(t, "github_official", jobSource)
+	require.Equal(t, 1, promptCount)
+	require.Zero(t, jobCount)
+	require.Zero(t, legacyCount)
 
-	insertRemoteSkillVersionWithSourceFixture(t, tx, 11, "moxinggang", "https://moxinggang.com/skills/security-research/current", strings.Repeat("2", 40), strings.Repeat("3", 64))
-	require.NoError(t, tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM system_prompt_skill_bundle_versions WHERE manifest_sha256 = $1`, strings.Repeat("3", 64)).Scan(&versionCount))
+	// Startup is idempotent, while a later no-change sync remains a distinct
+	// audit candidate that shares the same immutable content directory.
+	require.NoError(t, registryService.Initialize(ctx))
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM system_prompt_skill_bundle_versions`).Scan(&versionCount))
+	require.Equal(t, 1, versionCount)
+	second, err := registryFiles.LoadSeed(ctx)
+	require.NoError(t, err)
+	second.Version.FetchedAt = snapshot.Active.FetchedAt.Add(time.Minute).UTC()
+	second.Version.AddedFiles = 0
+	second.Version.ModifiedFiles = 0
+	second.Version.DeletedFiles = 0
+	second.Version.ScriptChanges = 0
+	second.Version.BinaryChanges = 0
+	second.FileChanges = []service.RemoteSkillFileChange{}
+	require.NoError(t, registryFiles.InstallCandidate(ctx, second))
+	job, err := registryStore.CreateRemoteSkillSyncJob(ctx, 0, snapshot.Revision, false)
+	require.NoError(t, err)
+	job, err = registryStore.CompleteRemoteSkillSyncJob(ctx, job.ID, second)
+	require.NoError(t, err)
+	require.NotEqual(t, snapshot.Active.ID, job.CandidateBundleVersionID)
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM system_prompt_skill_bundle_versions`).Scan(&versionCount))
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM system_prompt_skill_prompt_versions`).Scan(&promptCount))
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM system_prompt_skill_sync_jobs`).Scan(&jobCount))
 	require.Equal(t, 2, versionCount)
+	require.Equal(t, 1, promptCount)
+	require.Equal(t, 1, jobCount)
 
-	assertPromptVersionDeleteProtected(t, tx, 3)
-}
-
-func TestRemoteSkillSourcesMigrationRejectsMissingOrAmbiguousReplacement(t *testing.T) {
-	for _, candidateCount := range []int{0, 2} {
-		name := "missing"
-		if candidateCount == 2 {
-			name = "ambiguous"
-		}
-		t.Run(name, func(t *testing.T) {
-			ctx := context.Background()
-			tx := remoteSkillMigrationTestTx(t)
-			createRemoteSkillMigrationFixture(t, tx)
-			insertPromptTemplate(t, tx, 1, "codexrip_reverse_skill", true)
-			insertPromptVersion(t, tx, 1, 1, 1, "legacy remote prompt", "remote_skill", "codexrip-reverse-skill", nil)
-			for index := 0; index < candidateCount; index++ {
-				insertPromptVersion(t, tx, int64(index+2), 1, int64(index+2), canonicalRemoteSkillPromptBody(t), "codex_skill_hybrid", "codexrip-reverse-skill", nil)
-			}
-			_, err := tx.ExecContext(ctx, `INSERT INTO system_prompt_runtime
-				(id, active_template_id, active_version_id, revision, updated_at)
-				VALUES (1, 1, 1, 3, NOW())`)
-			require.NoError(t, err)
-			insertRemoteSkillVersionFixture(t, tx, 10, strings.Repeat("1", 40), strings.Repeat("3", 64))
-			_, err = tx.ExecContext(ctx, `INSERT INTO system_prompt_skill_runtime
-				(id, active_bundle_version_id, revision) VALUES (1, 10, 4)`)
-			require.NoError(t, err)
-
-			require.NoError(t, execMigrationFixtureSQL(t, tx, "SAVEPOINT before_migration"))
-			_, err = tx.ExecContext(ctx, remoteSkillSourcesMigrationSQL(t))
-			require.ErrorContains(t, err, "unable to migrate active legacy system prompt")
-			require.NoError(t, execMigrationFixtureSQL(t, tx, "ROLLBACK TO SAVEPOINT before_migration"))
-
-			var versionCount, activeVersionID, revision int
-			require.NoError(t, tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM system_prompt_template_versions`).Scan(&versionCount))
-			require.NoError(t, tx.QueryRowContext(ctx, `SELECT active_version_id, revision FROM system_prompt_runtime WHERE id = 1`).Scan(&activeVersionID, &revision))
-			require.Equal(t, candidateCount+1, versionCount)
-			require.Equal(t, 1, activeVersionID)
-			require.Equal(t, 3, revision)
-			assertPromptVersionDeleteProtected(t, tx, 1)
-		})
+	for _, name := range []string{"private", "public", "staging"} {
+		_, err := os.Stat(filepath.Join(registryRoot, filepath.FromSlash(name)))
+		require.ErrorIs(t, err, os.ErrNotExist)
 	}
-}
-
-func createRemoteSkillMigrationFixture(t *testing.T, tx *sql.Tx) {
-	t.Helper()
-	schema := `
-		CREATE TABLE system_prompt_templates (
-			id BIGINT PRIMARY KEY, slug VARCHAR(100) NOT NULL UNIQUE, name VARCHAR(200) NOT NULL,
-			description TEXT NOT NULL DEFAULT '', is_seed BOOLEAN NOT NULL DEFAULT FALSE,
-			deleted_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-		);
-		CREATE TABLE system_prompt_template_versions (
-			id BIGINT PRIMARY KEY, template_id BIGINT NOT NULL, version BIGINT NOT NULL,
-			body TEXT NOT NULL, sha256 CHAR(64) NOT NULL, byte_length INTEGER NOT NULL,
-			composition_mode VARCHAR(32) NOT NULL, bundle_id VARCHAR(128), bundle_manifest_sha256 CHAR(64),
-			CONSTRAINT system_prompt_template_versions_composition CHECK (composition_mode IN ('inline', 'offline_bundle', 'remote_skill', 'codex_skill_hybrid'))
-		);
-		CREATE TABLE system_prompt_runtime (
-			id SMALLINT PRIMARY KEY, active_template_id BIGINT, active_version_id BIGINT,
-			revision BIGINT NOT NULL, updated_at TIMESTAMPTZ NOT NULL
-		);
-		CREATE TABLE system_prompt_skill_bundle_versions (
-			id BIGINT PRIMARY KEY, bundle_id VARCHAR(128) NOT NULL, source_commit CHAR(40) NOT NULL,
-			overlay_sha256 CHAR(64) NOT NULL, manifest_sha256 CHAR(64) NOT NULL UNIQUE,
-			archive_sha256 CHAR(64) NOT NULL, file_count INTEGER NOT NULL, total_bytes BIGINT NOT NULL,
-			added_files INTEGER NOT NULL DEFAULT 0, modified_files INTEGER NOT NULL DEFAULT 0,
-			deleted_files INTEGER NOT NULL DEFAULT 0, script_changes INTEGER NOT NULL DEFAULT 0,
-			binary_changes INTEGER NOT NULL DEFAULT 0, created_by BIGINT, published_at TIMESTAMPTZ,
-			published_by BIGINT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-		);
-		CREATE TABLE system_prompt_skill_runtime (
-			id SMALLINT PRIMARY KEY, active_bundle_version_id BIGINT, revision BIGINT NOT NULL
-		);
-		CREATE TABLE system_prompt_skill_sync_jobs (
-			id BIGINT PRIMARY KEY, status VARCHAR(16) NOT NULL, progress_stage VARCHAR(64) NOT NULL,
-			source_commit CHAR(40), candidate_bundle_version_id BIGINT, error_code VARCHAR(100)
-		);
-		CREATE FUNCTION prevent_system_prompt_version_delete()
-		RETURNS TRIGGER LANGUAGE plpgsql AS $$
-		BEGIN
-			RAISE EXCEPTION 'system prompt versions cannot be deleted';
-		END;
-		$$;
-		CREATE TRIGGER trg_prevent_system_prompt_version_delete
-		BEFORE DELETE ON system_prompt_template_versions
-		FOR EACH ROW EXECUTE FUNCTION prevent_system_prompt_version_delete();`
-	require.NoError(t, execMigrationFixtureSQL(t, tx, schema))
-}
-
-func insertPromptTemplate(t *testing.T, tx *sql.Tx, id int64, slug string, seed bool) {
-	t.Helper()
-	_, err := tx.Exec(`INSERT INTO system_prompt_templates (id, slug, name, is_seed) VALUES ($1, $2, $2, $3)`, id, slug, seed)
+	pairedEntries, err := os.ReadDir(filepath.Join(registryRoot, "paired"))
 	require.NoError(t, err)
+	require.Len(t, pairedEntries, 1)
 }
 
-func insertPromptVersion(t *testing.T, tx *sql.Tx, id, templateID, version int64, body, mode, bundleID string, manifest *string) {
+func remoteSkillMigrationTestDatabase(t *testing.T) (*sql.DB, string) {
 	t.Helper()
-	digest := sha256.Sum256([]byte(body))
-	var bundle any
-	if bundleID != "" {
-		bundle = bundleID
-	}
-	_, err := tx.Exec(`INSERT INTO system_prompt_template_versions
-		(id, template_id, version, body, sha256, byte_length, composition_mode, bundle_id, bundle_manifest_sha256)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-		id, templateID, version, body, hex.EncodeToString(digest[:]), len([]byte(body)), mode, bundle, manifest)
+	require.NotNil(t, remoteSkillMigrationDB)
+	schema := fmt.Sprintf("remote_skill_paired_%d", atomic.AddUint64(&remoteSkillMigrationSchemaSequence, 1))
+	_, err := remoteSkillMigrationDB.ExecContext(context.Background(), "CREATE SCHEMA "+schema)
 	require.NoError(t, err)
-}
 
-func insertRemoteSkillVersionFixture(t *testing.T, tx *sql.Tx, id int64, commit, manifest string) {
-	t.Helper()
-	_, err := tx.Exec(`INSERT INTO system_prompt_skill_bundle_versions
-		(id, bundle_id, source_commit, overlay_sha256, manifest_sha256, archive_sha256, file_count, total_bytes)
-		VALUES ($1, 'codexrip-reverse-skill', $2, $3, $4, $5, 6, 1200)`,
-		id, commit, strings.Repeat("2", 64), manifest, strings.Repeat("4", 64))
+	db, err := sql.Open("postgres", remoteSkillMigrationDSN)
 	require.NoError(t, err)
-}
-
-func insertRemoteSkillVersionWithSourceFixture(t *testing.T, tx *sql.Tx, id int64, sourceID, remoteRoot, commit, manifest string) {
-	t.Helper()
-	_, err := tx.Exec(`INSERT INTO system_prompt_skill_bundle_versions
-		(id, bundle_id, source_id, remote_root, source_commit, overlay_sha256, manifest_sha256, archive_sha256, file_count, total_bytes)
-		VALUES ($1, 'codexrip-reverse-skill', $2, $3, $4, $5, $6, $7, 6, 1200)`,
-		id, sourceID, remoteRoot, commit, strings.Repeat("5", 64), manifest, strings.Repeat("6", 64))
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	require.NoError(t, db.PingContext(context.Background()))
+	_, err = db.ExecContext(context.Background(), "SET search_path TO "+schema+", public")
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = db.Close()
+		_, _ = remoteSkillMigrationDB.ExecContext(context.Background(), "DROP SCHEMA IF EXISTS "+schema+" CASCADE")
+	})
+	return db, schema
 }
 
-func canonicalRemoteSkillPromptBody(t *testing.T) string {
-	t.Helper()
-	raw, err := os.ReadFile("../internal/service/prompts/codexrip_reverse_skill_system_prompt.txt")
-	require.NoError(t, err)
-	body := strings.TrimSuffix(string(raw), "\n")
-	digest := sha256.Sum256([]byte(body))
-	require.Equal(t, canonicalRemoteSkillPromptSHA256, hex.EncodeToString(digest[:]))
-	require.Len(t, []byte(body), 6724)
-	return body
-}
+func insertEightLegacyRemoteSkillVersions(ctx context.Context, db *sql.DB) error {
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO system_prompt_templates
+			(id, slug, name, description, is_seed, managed_source)
+		VALUES
+			(1, 'codexrip_reverse_skill', 'Legacy remote skill', 'legacy', TRUE, NULL);
 
-func remoteSkillSourcesMigrationSQL(t *testing.T) string {
-	t.Helper()
-	raw, err := FS.ReadFile("200_remote_skill_sources_and_legacy_cleanup.sql")
-	require.NoError(t, err)
-	return string(raw)
-}
+		INSERT INTO system_prompt_skill_bundle_versions
+			(id, bundle_id, source_id, remote_root, source_commit, overlay_sha256,
+			 manifest_sha256, archive_sha256, file_count, total_bytes, created_at)
+		SELECT
+			value,
+			'codexrip-reverse-skill',
+			'github_official',
+			'https://raw.githubusercontent.com/zhaoxuya520/reverse-skill/' || LPAD(value::text, 40, '0') || '/skills',
+			LPAD(value::text, 40, '0'),
+			LPAD((value + 10)::text, 64, '0'),
+			LPAD((value + 20)::text, 64, '0'),
+			LPAD((value + 30)::text, 64, '0'),
+			545,
+			1048576,
+			NOW() - make_interval(days => 9 - value)
+		FROM generate_series(1, 8) AS value;
 
-func assertPromptVersionDeleteProtected(t *testing.T, tx *sql.Tx, versionID int64) {
-	t.Helper()
-	require.NoError(t, execMigrationFixtureSQL(t, tx, "SAVEPOINT delete_protection"))
-	_, err := tx.Exec(`DELETE FROM system_prompt_template_versions WHERE id = $1`, versionID)
-	require.ErrorContains(t, err, "system prompt versions cannot be deleted")
-	require.NoError(t, execMigrationFixtureSQL(t, tx, "ROLLBACK TO SAVEPOINT delete_protection"))
-}
+		INSERT INTO system_prompt_skill_runtime
+			(id, active_bundle_version_id, revision, updated_at)
+		VALUES (1, 8, 4, NOW());
 
-func execMigrationFixtureSQL(t *testing.T, tx *sql.Tx, query string) error {
-	t.Helper()
-	_, err := tx.ExecContext(context.Background(), query)
+		INSERT INTO system_prompt_skill_sync_jobs
+			(id, status, progress_stage, source_id, source_commit,
+			 candidate_bundle_version_id, created_at, completed_at)
+		SELECT value, 'succeeded', 'candidate_ready', 'github_official',
+		       LPAD(value::text, 40, '0'), value, NOW() - INTERVAL '1 day', NOW()
+		FROM generate_series(1, 8) AS value;
+	`)
 	return err
 }
 
-func stringPointer(value string) *string {
-	return &value
-}
-
-func remoteSkillMigrationTestTx(t *testing.T) *sql.Tx {
+func assertRemoteSkillColumnMissing(t *testing.T, ctx context.Context, db *sql.DB, schema, table, column string) {
 	t.Helper()
-	require.NotNil(t, remoteSkillMigrationDB)
-	_, err := remoteSkillMigrationDB.ExecContext(context.Background(), "CREATE EXTENSION IF NOT EXISTS pgcrypto")
-	require.NoError(t, err)
-
-	tx, err := remoteSkillMigrationDB.BeginTx(context.Background(), nil)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = tx.Rollback() })
-	schema := fmt.Sprintf("remote_skill_migration_%d", atomic.AddUint64(&remoteSkillMigrationSchemaSequence, 1))
-	_, err = tx.ExecContext(context.Background(), "CREATE SCHEMA "+schema)
-	require.NoError(t, err)
-	_, err = tx.ExecContext(context.Background(), "SET LOCAL search_path TO "+schema+", public")
-	require.NoError(t, err)
-	return tx
+	var count int
+	require.NoError(t, db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM information_schema.columns
+		WHERE table_schema = $1 AND table_name = $2 AND column_name = $3`,
+		schema, table, column).Scan(&count))
+	require.Zero(t, count, "%s.%s must be removed", table, column)
 }
+
+func execRemoteSkillSQL(ctx context.Context, db *sql.DB, query string) error {
+	_, err := db.ExecContext(ctx, query)
+	return err
+}
+
+const remoteSkillPost200FixtureSQL = `
+CREATE TABLE system_prompt_templates (
+    id BIGSERIAL PRIMARY KEY,
+    slug VARCHAR(100) NOT NULL UNIQUE,
+    name VARCHAR(200) NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    is_seed BOOLEAN NOT NULL DEFAULT FALSE,
+    managed_source VARCHAR(100),
+    deleted_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE OR REPLACE FUNCTION protect_system_prompt_template_managed_source()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    IF OLD.managed_source IS DISTINCT FROM NEW.managed_source THEN
+        RAISE EXCEPTION 'system prompt managed source is immutable';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+CREATE TRIGGER trg_protect_system_prompt_template_managed_source
+BEFORE UPDATE ON system_prompt_templates
+FOR EACH ROW EXECUTE FUNCTION protect_system_prompt_template_managed_source();
+
+CREATE TABLE system_prompt_skill_bundle_versions (
+    id BIGSERIAL PRIMARY KEY,
+    bundle_id VARCHAR(128) NOT NULL,
+    source_id VARCHAR(32) NOT NULL DEFAULT 'github_official',
+    remote_root TEXT NOT NULL,
+    source_commit CHAR(40) NOT NULL,
+    overlay_sha256 CHAR(64) NOT NULL,
+    manifest_sha256 CHAR(64) NOT NULL,
+    archive_sha256 CHAR(64) NOT NULL,
+    file_count INTEGER NOT NULL CHECK (file_count > 0 AND file_count <= 2000),
+    total_bytes BIGINT NOT NULL CHECK (total_bytes > 0 AND total_bytes <= 268435456),
+    added_files INTEGER NOT NULL DEFAULT 0 CHECK (added_files >= 0),
+    modified_files INTEGER NOT NULL DEFAULT 0 CHECK (modified_files >= 0),
+    deleted_files INTEGER NOT NULL DEFAULT 0 CHECK (deleted_files >= 0),
+    script_changes INTEGER NOT NULL DEFAULT 0 CHECK (script_changes >= 0),
+    binary_changes INTEGER NOT NULL DEFAULT 0 CHECK (binary_changes >= 0),
+    created_by BIGINT,
+    published_at TIMESTAMPTZ,
+    published_by BIGINT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT system_prompt_skill_bundle_id CHECK (bundle_id = 'codexrip-reverse-skill'),
+    CONSTRAINT system_prompt_skill_source_commit_hex CHECK (source_commit ~ '^[0-9a-f]{40}$'),
+    CONSTRAINT system_prompt_skill_overlay_sha256_hex CHECK (overlay_sha256 ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT system_prompt_skill_manifest_sha256_hex CHECK (manifest_sha256 ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT system_prompt_skill_archive_sha256_hex CHECK (archive_sha256 ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT system_prompt_skill_source_manifest_unique UNIQUE (source_id, manifest_sha256),
+    CONSTRAINT system_prompt_skill_source_identity CHECK (
+        source_id = 'github_official' AND
+        remote_root = 'https://raw.githubusercontent.com/zhaoxuya520/reverse-skill/' || source_commit || '/skills'
+    )
+);
+
+CREATE TABLE system_prompt_skill_runtime (
+    id SMALLINT PRIMARY KEY DEFAULT 1,
+    active_bundle_version_id BIGINT REFERENCES system_prompt_skill_bundle_versions(id) ON DELETE RESTRICT,
+    revision BIGINT NOT NULL DEFAULT 1 CHECK (revision > 0),
+    updated_by BIGINT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (id = 1)
+);
+
+CREATE TABLE system_prompt_skill_sync_jobs (
+    id BIGSERIAL PRIMARY KEY,
+    status VARCHAR(16) NOT NULL DEFAULT 'queued',
+    progress_stage VARCHAR(64) NOT NULL DEFAULT 'queued',
+    source_id VARCHAR(32) NOT NULL DEFAULT 'github_official',
+    source_commit CHAR(40),
+    candidate_bundle_version_id BIGINT REFERENCES system_prompt_skill_bundle_versions(id) ON DELETE RESTRICT,
+    error_code VARCHAR(100),
+    created_by BIGINT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    CONSTRAINT system_prompt_skill_sync_status CHECK (status IN ('queued', 'running', 'succeeded', 'failed')),
+    CONSTRAINT system_prompt_skill_sync_source_commit_hex CHECK (source_commit IS NULL OR source_commit ~ '^[0-9a-f]{40}$'),
+    CONSTRAINT system_prompt_skill_sync_source_id CHECK (source_id IN ('github_official', 'moxinggang'))
+);
+
+CREATE OR REPLACE FUNCTION protect_system_prompt_skill_bundle_version()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    IF OLD.bundle_id IS DISTINCT FROM NEW.bundle_id
+       OR OLD.source_id IS DISTINCT FROM NEW.source_id
+       OR OLD.remote_root IS DISTINCT FROM NEW.remote_root
+       OR OLD.source_commit IS DISTINCT FROM NEW.source_commit
+       OR OLD.overlay_sha256 IS DISTINCT FROM NEW.overlay_sha256
+       OR OLD.manifest_sha256 IS DISTINCT FROM NEW.manifest_sha256
+       OR OLD.archive_sha256 IS DISTINCT FROM NEW.archive_sha256
+       OR OLD.file_count IS DISTINCT FROM NEW.file_count
+       OR OLD.total_bytes IS DISTINCT FROM NEW.total_bytes THEN
+        RAISE EXCEPTION 'system prompt skill bundle version is immutable';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+CREATE TRIGGER trg_protect_system_prompt_skill_bundle_version
+BEFORE UPDATE ON system_prompt_skill_bundle_versions
+FOR EACH ROW EXECUTE FUNCTION protect_system_prompt_skill_bundle_version();
+
+CREATE OR REPLACE FUNCTION prevent_system_prompt_skill_bundle_version_delete()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'system prompt skill bundle versions cannot be deleted';
+END;
+$$;
+CREATE TRIGGER trg_prevent_system_prompt_skill_bundle_version_delete
+BEFORE DELETE ON system_prompt_skill_bundle_versions
+FOR EACH ROW EXECUTE FUNCTION prevent_system_prompt_skill_bundle_version_delete();
+`

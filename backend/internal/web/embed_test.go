@@ -689,6 +689,16 @@ func TestEmbeddedFrontendBypassesBareVideoAPIRoutes(t *testing.T) {
 	}
 }
 
+func TestEmbeddedFrontendBypassesRemoteSkillRoutes(t *testing.T) {
+	for _, path := range []string{
+		"/skills/security-research/current/SKILL.md",
+		"/skills/reverse-skill/current.json",
+		"/skills/bootstrap/legacy.py",
+	} {
+		require.True(t, shouldBypassEmbeddedFrontend(path), "path=%s", path)
+	}
+}
+
 func TestNewFrontendServer(t *testing.T) {
 	t.Run("creates_server_successfully", func(t *testing.T) {
 		provider := &mockSettingsProvider{

@@ -106,11 +106,9 @@ WORKDIR /app
 # Copy binary and runtime fallback resources from builder
 COPY --from=backend-builder /app/sub2api /app/sub2api
 COPY --from=backend-builder --chown=sub2api:sub2api /app/backend/resources /app/resources
-COPY --chown=sub2api:sub2api deploy/skill-registry /app/skill-registry-release
 COPY --chown=sub2api:sub2api THIRD_PARTY_NOTICES.md /app/THIRD_PARTY_NOTICES.md
 
-# Create writable runtime directories. The release registry above remains an
-# image-owned source used to seed /app/skill-registry at startup.
+# Create the writable paired registry directory used by the runtime snapshot.
 RUN mkdir -p /app/data /app/skill-registry && \
     chown sub2api:sub2api /app/sub2api /app/data /app/skill-registry
 

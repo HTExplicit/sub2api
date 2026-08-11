@@ -32,11 +32,14 @@ func TestBusinessSystemPromptHybridCodexUsesFixedBodyAcrossAdapters(t *testing.T
 	require.Equal(t, int64(11), application.BundleRevision)
 	require.NotEmpty(t, application.BaseSHA256)
 	require.NotEmpty(t, application.EffectiveSHA256)
-	require.Equal(t, application.BaseSHA256, application.EffectiveSHA256)
-	sourceRoot := RemoteSkillMoxinggangRoot
-	expectedPrompt := applyRemoteSkillRoot(embeddedBusinessSystemPrompt, sourceRoot)
+	capture, err := buildRemoteSkillPromptCapture([]byte(embeddedBusinessSystemPrompt))
+	require.NoError(t, err)
+	expectedPrompt := string(capture.EffectiveBody)
+	require.Equal(t, capture.RawSHA256, application.BaseSHA256)
+	require.Equal(t, capture.EffectiveSHA256, application.EffectiveSHA256)
+	require.NotEqual(t, application.BaseSHA256, application.EffectiveSHA256)
 	require.Equal(t, expectedPrompt, application.ServerInstructions)
-	require.Contains(t, application.ServerInstructions, sourceRoot)
+	require.Contains(t, application.ServerInstructions, RemoteSkillPublicRoot)
 	require.NotContains(t, application.ServerInstructions, `C:\Users\Administrator`)
 	require.Equal(t, application.ServerInstructions, gjson.GetBytes(responsesBody, "instructions").String())
 
@@ -62,10 +65,9 @@ func TestBusinessSystemPromptHybridCodexUsesFixedBodyAcrossAdapters(t *testing.T
 func TestBusinessSystemPromptWSHybridCodexTurnsReuseFixedBody(t *testing.T) {
 	policy := newGatewayHybridBusinessSystemPromptPolicyWithBody(t, embeddedBusinessSystemPrompt, 8)
 	gateway := &OpenAIGatewayService{businessPromptService: policy}
-	expectedPrompt := applyRemoteSkillRoot(
-		embeddedBusinessSystemPrompt,
-		RemoteSkillMoxinggangRoot,
-	)
+	capture, err := buildRemoteSkillPromptCapture([]byte(embeddedBusinessSystemPrompt))
+	require.NoError(t, err)
+	expectedPrompt := string(capture.EffectiveBody)
 
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
