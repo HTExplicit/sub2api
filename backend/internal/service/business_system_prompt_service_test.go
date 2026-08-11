@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -96,6 +97,10 @@ type fakeBusinessSystemPromptBus struct {
 	publishErr error
 }
 
+type fakeBusinessSystemPromptRemoteSkillBus struct {
+	subscribers chan func(int64, string)
+}
+
 type fakeBusinessSystemPromptSource struct {
 	candidate BusinessSystemPromptSourceCandidate
 	err       error
@@ -113,6 +118,63 @@ func (b *fakeBusinessSystemPromptBus) Publish(_ context.Context, revision int64)
 }
 
 func (b *fakeBusinessSystemPromptBus) Subscribe(context.Context, func(int64)) error { return nil }
+
+func (b *fakeBusinessSystemPromptRemoteSkillBus) Publish(context.Context, int64, string) error {
+	return nil
+}
+
+func (b *fakeBusinessSystemPromptRemoteSkillBus) Subscribe(ctx context.Context, handler func(int64, string)) error {
+	b.subscribers <- handler
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func TestBusinessSystemPromptServiceReloadsRuntimeMetadataOnRemoteSkillRevision(t *testing.T) {
+	oldVersion := RemoteSkillBundleVersion{
+		ID: 6, BundleID: BusinessSystemPromptRemoteSkillBundleID,
+		SourceID: RemoteSkillSourceGitHubOfficial, RemoteRoot: RemoteSkillGitHubRoot,
+		SourceCommit: strings.Repeat("1", 40), ManifestSHA256: strings.Repeat("2", 64), ArchiveSHA256: strings.Repeat("3", 64),
+	}
+	newVersion := oldVersion
+	newVersion.ID = 8
+	newVersion.ManifestSHA256 = strings.Repeat("4", 64)
+	newVersion.ArchiveSHA256 = strings.Repeat("5", 64)
+
+	registryStore := &fakeRemoteSkillRegistryStore{snapshot: RemoteSkillRegistrySnapshot{Revision: 6, Active: &oldVersion}}
+	registryFiles := &fakeRemoteSkillRegistryFiles{seedErr: ErrRemoteSkillSeedUnavailable}
+	registry := NewRemoteSkillRegistryService(registryStore, nil, registryFiles, &fakeRemoteSkillCandidateSource{})
+	require.NoError(t, registry.Initialize(context.Background()))
+	store := &fakeBusinessSystemPromptStore{loaded: BusinessSystemPromptSnapshot{
+		Enabled: true, TemplateID: 10, VersionID: 20, TemplateVersion: 6, Revision: 37,
+		Body: embeddedBusinessSystemPrompt, CompositionMode: BusinessSystemPromptCompositionCodexSkillHybrid,
+		BundleID: BusinessSystemPromptRemoteSkillBundleID,
+	}}
+	remoteBus := &fakeBusinessSystemPromptRemoteSkillBus{subscribers: make(chan func(int64, string), 1)}
+	svc := NewBusinessSystemPromptService(store, nil)
+	svc.SetRemoteSkillRegistryService(registry)
+	svc.SetRemoteSkillRegistryRevisionBus(remoteBus)
+	require.NoError(t, svc.Start(context.Background()))
+	defer svc.Stop()
+
+	initial, ok := svc.CurrentSnapshot()
+	require.True(t, ok)
+	require.Equal(t, oldVersion.ManifestSHA256, initial.RegistryManifestSHA256)
+
+	var notify func(int64, string)
+	select {
+	case notify = <-remoteBus.subscribers:
+	case <-time.After(time.Second):
+		t.Fatal("remote Skill revision subscriber was not started")
+	}
+	registryStore.snapshot = RemoteSkillRegistrySnapshot{Revision: 7, Active: &newVersion}
+	notify(7, newVersion.ManifestSHA256)
+
+	updated, ok := svc.CurrentSnapshot()
+	require.True(t, ok)
+	require.Equal(t, int64(7), updated.RegistryRevision)
+	require.Equal(t, newVersion.ManifestSHA256, updated.RegistryManifestSHA256)
+	require.Equal(t, newVersion.ArchiveSHA256, updated.RegistryArchiveSHA256)
+}
 
 func TestBusinessSystemPromptServiceInitializeSeedsAndLoadsSnapshot(t *testing.T) {
 	store := &fakeBusinessSystemPromptStore{

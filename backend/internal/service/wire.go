@@ -43,9 +43,11 @@ func ProvideBusinessSystemPromptService(
 	store BusinessSystemPromptStore,
 	bus BusinessSystemPromptRevisionBus,
 	remoteSkillRegistry *RemoteSkillRegistryService,
+	remoteSkillRegistryBus RemoteSkillRegistryRevisionBus,
 ) (*BusinessSystemPromptService, error) {
 	svc := NewBusinessSystemPromptService(store, bus)
 	svc.SetRemoteSkillRegistryService(remoteSkillRegistry)
+	svc.SetRemoteSkillRegistryRevisionBus(remoteSkillRegistryBus)
 	if err := svc.Start(context.Background()); err != nil {
 		return nil, err
 	}
