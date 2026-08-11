@@ -169,7 +169,8 @@ func TestRemoteSkillRegistrySyncCreatesCandidateWithoutPublishingAndReusesPrompt
 	active := testRemoteSkillCandidate(t, 1, 1, "old")
 	svc, store, _ := testRemoteSkillRegistry(t, active)
 	candidate := testRemoteSkillCandidate(t, 2, 2, "new")
-	source := svc.source.(*fakeRemoteSkillCandidateSource)
+	source, ok := svc.source.(*fakeRemoteSkillCandidateSource)
+	require.True(t, ok)
 	source.candidate = candidate
 	svc.runSyncJob(context.Background(), RemoteSkillSyncJob{ID: 9, CreatedBy: 42}, RemoteSkillPromptCapture{
 		RawBody: []byte(active.Prompt.RawBody), EffectiveBody: []byte(active.Prompt.EffectiveBody), RawSHA256: active.Prompt.RawSHA256, EffectiveSHA256: active.Prompt.EffectiveSHA256,
@@ -196,7 +197,8 @@ func TestRemoteSkillRegistryPromptUploadIsValidatedBeforeSyncJobCreation(t *test
 func TestRemoteSkillRegistrySyncFailureDoesNotSwitchActivePair(t *testing.T) {
 	active := testRemoteSkillCandidate(t, 1, 1, "active")
 	svc, store, _ := testRemoteSkillRegistry(t, active)
-	source := svc.source.(*fakeRemoteSkillCandidateSource)
+	source, ok := svc.source.(*fakeRemoteSkillCandidateSource)
+	require.True(t, ok)
 	source.err = ErrBusinessSystemPromptBundleUnavailable
 
 	svc.runSyncJob(context.Background(), RemoteSkillSyncJob{ID: 9, CreatedBy: 42}, RemoteSkillPromptCapture{
