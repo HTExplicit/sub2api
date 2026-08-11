@@ -173,20 +173,6 @@ func LoadBusinessSystemPromptBundle(root string) (*BusinessSystemPromptBundle, e
 	return bundle, nil
 }
 
-func loadBusinessSystemPromptBundleIdentity(root, expectedBundleID, expectedManifestSHA256 string) (*BusinessSystemPromptBundle, error) {
-	bundle, err := LoadBusinessSystemPromptBundle(root)
-	if err != nil {
-		return nil, err
-	}
-	if bundle.Manifest.BundleID != strings.TrimSpace(expectedBundleID) {
-		return nil, fmt.Errorf("%w: bundle id mismatch", ErrBusinessSystemPromptBundleInvalid)
-	}
-	if !strings.EqualFold(bundle.ManifestSHA256, strings.TrimSpace(expectedManifestSHA256)) {
-		return nil, fmt.Errorf("%w: manifest sha256 mismatch", ErrBusinessSystemPromptBundleInvalid)
-	}
-	return bundle, nil
-}
-
 func validateBusinessSystemPromptBundleManifest(manifest BusinessSystemPromptBundleManifest) error {
 	if manifest.SchemaVersion != 1 {
 		return fmt.Errorf("%w: unsupported schema version %d", ErrBusinessSystemPromptBundleInvalid, manifest.SchemaVersion)

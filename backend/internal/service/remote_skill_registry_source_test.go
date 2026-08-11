@@ -1,7 +1,6 @@
 package service
 
 import (
-	"archive/zip"
 	"bytes"
 	"context"
 	"errors"
@@ -10,16 +9,25 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
 
 type fakeRemoteSkillHTTPClient struct {
-	baseZIP   []byte
-	responses map[string]string
-	finalURLs map[string]string
-	requests  []string
-	err       error
+	responses     map[string][]byte
+	finalURLs     map[string]string
+	status        map[string]int
+	contentLength map[string]int64
+	requests      []string
+	err           error
+}
+
+type blockingRemoteSkillHTTPClient struct{}
+
+func (blockingRemoteSkillHTTPClient) Do(req *http.Request) (*http.Response, error) {
+	<-req.Context().Done()
+	return nil, req.Context().Err()
 }
 
 func (f *fakeRemoteSkillHTTPClient) Do(req *http.Request) (*http.Response, error) {
@@ -27,18 +35,14 @@ func (f *fakeRemoteSkillHTTPClient) Do(req *http.Request) (*http.Response, error
 		return nil, f.err
 	}
 	f.requests = append(f.requests, req.URL.String())
-	var body []byte
-	switch req.URL.Hostname() {
-	case "codeload.github.com":
-		body = f.baseZIP
-	case "moxinggang.com":
-		value, ok := f.responses[req.URL.Path]
-		if !ok {
-			return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header), Request: req}, nil
+	body, ok := f.responses[req.URL.Path]
+	status := f.status[req.URL.Path]
+	if status == 0 {
+		if ok {
+			status = http.StatusOK
+		} else {
+			status = http.StatusNotFound
 		}
-		body = []byte(value)
-	default:
-		return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header), Request: req}, nil
 	}
 	finalRequest := req
 	if raw := f.finalURLs[req.URL.Path]; raw != "" {
@@ -49,186 +53,109 @@ func (f *fakeRemoteSkillHTTPClient) Do(req *http.Request) (*http.Response, error
 		finalRequest = req.Clone(req.Context())
 		finalRequest.URL = parsed
 	}
+	length := int64(len(body))
+	if declared, exists := f.contentLength[req.URL.Path]; exists {
+		length = declared
+	}
 	return &http.Response{
-		StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body)),
-		ContentLength: int64(len(body)), Header: make(http.Header), Request: finalRequest,
+		StatusCode: status, Body: io.NopCloser(bytes.NewReader(body)), ContentLength: length,
+		Header: make(http.Header), Request: finalRequest,
 	}, nil
 }
 
-func TestNormalizeRemoteSkillSourceIDDefaultsAndRejectsUnknownValues(t *testing.T) {
-	for _, value := range []string{"", "  ", " GITHUB_OFFICIAL "} {
-		got, err := NormalizeRemoteSkillSourceID(value)
-		require.NoError(t, err)
-		require.Equal(t, RemoteSkillSourceGitHubOfficial, got)
-	}
-	got, err := NormalizeRemoteSkillSourceID(" MOXINGGANG ")
+func modelGangSeedResponses(t *testing.T) map[string][]byte {
+	t.Helper()
+	files, err := readRemoteSkillTreeFS(remoteSkillSeedFS, "remote_skill_seed/tree")
 	require.NoError(t, err)
-	require.Equal(t, RemoteSkillSourceMoxinggang, got)
-	_, err = NormalizeRemoteSkillSourceID("other")
-	require.ErrorIs(t, err, ErrBusinessSystemPromptInvalid)
-}
-
-func TestRemoteSkillSourceRootsExposeResolvableSingleSkillEntry(t *testing.T) {
-	require.Equal(t,
-		"https://raw.githubusercontent.com/zhaoxuya520/reverse-skill/"+remoteSkillPinnedCommit+"/skills/SKILL.md",
-		remoteSkillSourceEntryURL(RemoteSkillSourceGitHubOfficial),
-	)
-	require.Equal(t,
-		"https://moxinggang.com/skills/security-research/current/SKILL.md",
-		remoteSkillSourceEntryURL(RemoteSkillSourceMoxinggang),
-	)
-	for _, sourceID := range []string{RemoteSkillSourceGitHubOfficial, RemoteSkillSourceMoxinggang} {
-		entry := remoteSkillSourceEntryURL(sourceID)
-		parsed, err := url.ParseRequestURI(entry)
-		require.NoError(t, err)
-		require.Equal(t, "https", parsed.Scheme)
-		require.NotEmpty(t, parsed.Host)
-		require.Equal(t, remoteSkillSourceRoot(sourceID)+"/SKILL.md", entry)
+	responses := make(map[string][]byte, len(files))
+	for name, body := range files {
+		responses[RemoteSkillMoxinggangPath+"/"+name] = body
 	}
+	return responses
 }
 
-func TestRemoteSkillSourceSelectorUsesRequestedProvider(t *testing.T) {
-	github := &fakeRemoteSkillProvider{candidate: RemoteSkillCandidate{Version: RemoteSkillBundleVersion{SourceID: RemoteSkillSourceGitHubOfficial, RemoteRoot: RemoteSkillGitHubRoot}}}
-	moxinggang := &fakeRemoteSkillProvider{candidate: RemoteSkillCandidate{Version: RemoteSkillBundleVersion{SourceID: RemoteSkillSourceMoxinggang, RemoteRoot: RemoteSkillMoxinggangRoot}}}
-	selector := newRemoteSkillCandidateSourceSelector(map[string]remoteSkillProvider{
-		RemoteSkillSourceGitHubOfficial: github,
-		RemoteSkillSourceMoxinggang:     moxinggang,
-	})
-
-	candidate, err := selector.Build(context.Background(), RemoteSkillSourceMoxinggang, nil)
+func TestMoxinggangRemoteSkillSourceFetchesFixedApprovedTreeAndBuildsPairedCandidate(t *testing.T) {
+	client := &fakeRemoteSkillHTTPClient{responses: modelGangSeedResponses(t), finalURLs: map[string]string{}, status: map[string]int{}, contentLength: map[string]int64{}}
+	source := NewMoxinggangRemoteSkillCandidateSource(client)
+	source.now = func() time.Time { return time.Date(2026, 8, 11, 1, 2, 3, 0, time.UTC) }
+	prompt, err := buildRemoteSkillPromptCapture([]byte(modelGangPromptCaptureFixture))
 	require.NoError(t, err)
-	require.Equal(t, RemoteSkillSourceMoxinggang, candidate.Version.SourceID)
-	require.Equal(t, 0, github.calls)
-	require.Equal(t, 1, moxinggang.calls)
-}
 
-type fakeRemoteSkillProvider struct {
-	candidate RemoteSkillCandidate
-	err       error
-	calls     int
-}
+	candidate, err := source.Build(context.Background(), prompt, nil)
+	require.NoError(t, err)
+	require.Equal(t, remoteSkillExpectedFiles, candidate.Version.FileCount)
+	require.Len(t, client.requests, remoteSkillExpectedFiles)
+	require.Equal(t, RemoteSkillUpstreamSourceID, candidate.Version.UpstreamSourceID)
+	require.Equal(t, RemoteSkillUpstreamRoot, candidate.Version.UpstreamRoot)
+	require.Equal(t, RemoteSkillPublicRoot, candidate.Version.PublicRoot)
+	require.Equal(t, prompt.RawSHA256, candidate.Prompt.RawSHA256)
+	require.Equal(t, prompt.EffectiveSHA256, candidate.Prompt.EffectiveSHA256)
+	require.NotEqual(t, candidate.Version.RawTreeSHA256, candidate.Version.EffectiveTreeSHA256)
+	require.Contains(t, string(candidate.RawFiles["SKILL.md"]), RemoteSkillUpstreamRoot)
+	require.NotContains(t, string(candidate.EffectiveFiles["SKILL.md"]), RemoteSkillUpstreamRoot)
+	require.Contains(t, string(candidate.EffectiveFiles["SKILL.md"]), RemoteSkillPublicRoot)
 
-func (f *fakeRemoteSkillProvider) Build(context.Context, *BusinessSystemPromptBundleManifest) (RemoteSkillCandidate, error) {
-	f.calls++
-	return f.candidate, f.err
-}
-
-func TestGitHubRemoteSkillCandidateKeepsReviewedArchiveBytes(t *testing.T) {
-	files := map[string]string{
-		"reverse-skill-commit/RULES.md":        "# Rules\n",
-		"reverse-skill-commit/README_AI.md":    "# AI README\n",
-		"reverse-skill-commit/skills/SKILL.md": "# Upstream skill\n",
-		"reverse-skill-commit/README.md":       "git clone https://github.com/zhaoxuya520/reverse-skill.git\n",
+	foundGitHubLink := false
+	for name, raw := range candidate.RawFiles {
+		if strings.Contains(string(raw), "https://github.com/") {
+			foundGitHubLink = true
+			require.Contains(t, string(candidate.EffectiveFiles[name]), "https://github.com/")
+		}
 	}
-	client := &fakeRemoteSkillHTTPClient{baseZIP: makeRemoteSkillSourceZIP(t, files)}
-	source := NewGitHubRemoteSkillCandidateSource(client)
-	source.sourcePin = remoteSkillSourcePin{
-		Commit: remoteSkillPinnedCommit, ArchiveSHA256: hashBusinessSystemPromptBundleBytes(client.baseZIP),
-		CoreSHA256: map[string]string{
-			"RULES.md": hashBusinessSystemPromptBundleBytes([]byte("# Rules\n")), "README_AI.md": hashBusinessSystemPromptBundleBytes([]byte("# AI README\n")),
-			"skills/SKILL.md": hashBusinessSystemPromptBundleBytes([]byte("# Upstream skill\n")),
+	require.True(t, foundGitHubLink)
+}
+
+func TestMoxinggangRemoteSkillSourceRejectsRedirectMissingPartialAndTransportFailure(t *testing.T) {
+	prompt, err := buildRemoteSkillPromptCapture([]byte(modelGangPromptCaptureFixture))
+	require.NoError(t, err)
+	tests := map[string]func(*fakeRemoteSkillHTTPClient){
+		"cross-domain redirect": func(client *fakeRemoteSkillHTTPClient) {
+			client.finalURLs[RemoteSkillMoxinggangPath+"/RULES.md"] = "https://example.com/RULES.md"
+		},
+		"same-domain redirect": func(client *fakeRemoteSkillHTTPClient) {
+			client.finalURLs[RemoteSkillMoxinggangPath+"/RULES.md"] = RemoteSkillUpstreamRoot + "/README_AI.md"
+		},
+		"missing file": func(client *fakeRemoteSkillHTTPClient) {
+			delete(client.responses, RemoteSkillMoxinggangPath+"/RULES.md")
+		},
+		"partial response": func(client *fakeRemoteSkillHTTPClient) {
+			client.contentLength[RemoteSkillMoxinggangPath+"/RULES.md"] = int64(len(client.responses[RemoteSkillMoxinggangPath+"/RULES.md"]) + 1)
+		},
+		"oversized response": func(client *fakeRemoteSkillHTTPClient) {
+			client.contentLength[RemoteSkillMoxinggangPath+"/RULES.md"] = businessSystemPromptBundleMaxFileBytes + 1
+		},
+		"transport failure": func(client *fakeRemoteSkillHTTPClient) {
+			client.err = errors.New("network down")
 		},
 	}
-
-	candidate, err := source.Build(context.Background(), nil)
-	require.NoError(t, err)
-	require.Equal(t, RemoteSkillSourceGitHubOfficial, candidate.Version.SourceID)
-	require.Equal(t, RemoteSkillGitHubRoot, candidate.Version.RemoteRoot)
-	require.Equal(t, RemoteSkillGitHubRoot+"/SKILL.md", remoteSkillSourceEntryURL(candidate.Version.SourceID))
-	require.Equal(t, files["reverse-skill-commit/README.md"], string(candidate.Files["README.md"]))
-	require.Equal(t, []string{"RULES.md", "README_AI.md", "skills/SKILL.md"}, candidate.Manifest.CoreFiles)
-	require.NoError(t, verifyRemoteSkillArchive(candidate.ArchiveBytes, candidate.ManifestBytes, candidate.Manifest))
-}
-
-func TestGitHubRemoteSkillCandidateRejectsArchiveDigestMismatch(t *testing.T) {
-	client := &fakeRemoteSkillHTTPClient{baseZIP: makeRemoteSkillSourceZIP(t, map[string]string{
-		"reverse-skill-commit/RULES.md": "# Rules\n", "reverse-skill-commit/README_AI.md": "# AI\n", "reverse-skill-commit/skills/SKILL.md": "# Skill\n",
-	})}
-	_, err := NewGitHubRemoteSkillCandidateSource(client).Build(context.Background(), nil)
-	require.ErrorIs(t, err, ErrBusinessSystemPromptBundleInvalid)
-}
-
-func TestMoxinggangRemoteSkillCandidateLoadsFullReferencedEntryTree(t *testing.T) {
-	client := &fakeRemoteSkillHTTPClient{responses: map[string]string{
-		RemoteSkillMoxinggangPath + "/RULES.md":                       "# Rules\nRead REMOTE_ROOT/references/scope.md.\n",
-		RemoteSkillMoxinggangPath + "/README_AI.md":                   "# AI\n",
-		RemoteSkillMoxinggangPath + "/SKILL.md":                       "# Skill\nRead REMOTE_ROOT/skills/sec-web/INSTRUCTIONS.md.\n",
-		RemoteSkillMoxinggangPath + "/references/scope.md":            "# Scope\nRead https://moxinggang.com/skills/security-research/current/scripts/check.py.\n",
-		RemoteSkillMoxinggangPath + "/skills/sec-web/INSTRUCTIONS.md": "# Web\n",
-		RemoteSkillMoxinggangPath + "/scripts/check.py":               "#!/usr/bin/env python3\n",
-	}}
-
-	candidate, err := NewMoxinggangRemoteSkillCandidateSource(client).Build(context.Background(), nil)
-	require.NoError(t, err)
-	require.Equal(t, RemoteSkillSourceMoxinggang, candidate.Version.SourceID)
-	require.Equal(t, RemoteSkillMoxinggangRoot, candidate.Version.RemoteRoot)
-	require.Equal(t, RemoteSkillMoxinggangRoot+"/SKILL.md", remoteSkillSourceEntryURL(candidate.Version.SourceID))
-	require.Equal(t, []string{"RULES.md", "README_AI.md", "SKILL.md"}, candidate.Manifest.CoreFiles)
-	for _, name := range []string{"RULES.md", "README_AI.md", "SKILL.md", "references/scope.md", "skills/sec-web/INSTRUCTIONS.md", "scripts/check.py"} {
-		require.Contains(t, candidate.Files, name)
-	}
-	require.Len(t, client.requests, 6)
-	require.NoError(t, verifyRemoteSkillArchive(candidate.ArchiveBytes, candidate.ManifestBytes, candidate.Manifest))
-}
-
-func TestMoxinggangRemoteSkillCandidateRejectsCrossHostOrPathRedirects(t *testing.T) {
-	for name, finalURL := range map[string]string{
-		"cross host":   "https://example.com/skills/security-research/current/RULES.md",
-		"outside root": "https://moxinggang.com/skills/other/RULES.md",
-		"query":        "https://moxinggang.com/skills/security-research/current/RULES.md?v=1",
-	} {
+	for name, mutate := range tests {
 		t.Run(name, func(t *testing.T) {
-			client := &fakeRemoteSkillHTTPClient{
-				responses: map[string]string{RemoteSkillMoxinggangPath + "/RULES.md": "# Rules\n"},
-				finalURLs: map[string]string{RemoteSkillMoxinggangPath + "/RULES.md": finalURL},
-			}
-			_, err := NewMoxinggangRemoteSkillCandidateSource(client).Build(context.Background(), nil)
-			require.ErrorIs(t, err, ErrBusinessSystemPromptBundleInvalid)
+			client := &fakeRemoteSkillHTTPClient{responses: modelGangSeedResponses(t), finalURLs: map[string]string{}, status: map[string]int{}, contentLength: map[string]int64{}}
+			mutate(client)
+			_, err := NewMoxinggangRemoteSkillCandidateSource(client).Build(context.Background(), prompt, nil)
+			require.Error(t, err)
 		})
 	}
 }
 
-func TestMoxinggangRemoteSkillCandidateRejectsRemoteFailure(t *testing.T) {
-	client := &fakeRemoteSkillHTTPClient{err: errors.New("offline")}
-	_, err := NewMoxinggangRemoteSkillCandidateSource(client).Build(context.Background(), nil)
-	require.ErrorIs(t, err, ErrBusinessSystemPromptBundleUnavailable)
-}
-
-func TestRemoteSkillSourceHTTPClientRejectsCrossHostRedirect(t *testing.T) {
-	client := newRemoteSkillHTTPClient()
-	require.NotNil(t, client.CheckRedirect)
-	request, err := http.NewRequest(http.MethodGet, "https://example.com/skills/security-research/current/SKILL.md", nil)
+func TestMoxinggangRemoteSkillSourceRejectsUnapprovedSameRootReference(t *testing.T) {
+	prompt, err := buildRemoteSkillPromptCapture([]byte(modelGangPromptCaptureFixture))
 	require.NoError(t, err)
-	err = client.CheckRedirect(request, []*http.Request{{URL: &url.URL{Scheme: "https", Host: "moxinggang.com", Path: RemoteSkillMoxinggangPath + "/SKILL.md"}}})
+	responses := modelGangSeedResponses(t)
+	rulesPath := RemoteSkillMoxinggangPath + "/RULES.md"
+	responses[rulesPath] = append(bytes.Clone(responses[rulesPath]), []byte("\n"+RemoteSkillUpstreamRoot+"/unapproved.md\n")...)
+	client := &fakeRemoteSkillHTTPClient{responses: responses, finalURLs: map[string]string{}, status: map[string]int{}, contentLength: map[string]int64{}}
+
+	_, err = NewMoxinggangRemoteSkillCandidateSource(client).Build(context.Background(), prompt, nil)
 	require.ErrorIs(t, err, ErrBusinessSystemPromptBundleInvalid)
 }
 
-func TestRemoteSkillSourceHTTPClientRejectsEncodedGitHubRedirect(t *testing.T) {
-	client := newRemoteSkillHTTPClient()
-	request, err := http.NewRequest(http.MethodGet, remoteSkillGitHubZipPrefix+remoteSkillPinnedCommit, nil)
+func TestMoxinggangRemoteSkillSourceHonorsCallerTimeout(t *testing.T) {
+	prompt, err := buildRemoteSkillPromptCapture([]byte(modelGangPromptCaptureFixture))
 	require.NoError(t, err)
-	request.URL.RawPath = "/zhaoxuya520/reverse-skill/zip/%2e%2e/escape"
-	err = client.CheckRedirect(request, []*http.Request{{URL: &url.URL{Scheme: "https", Host: "codeload.github.com", Path: "/zhaoxuya520/reverse-skill/zip/old"}}})
-	require.ErrorIs(t, err, ErrBusinessSystemPromptBundleInvalid)
-}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
 
-func TestExtractRemoteSkillBaseArchiveRejectsPathTraversal(t *testing.T) {
-	raw := makeRemoteSkillSourceZIP(t, map[string]string{"reverse-skill-commit/../../escape.txt": "bad"})
-	_, err := extractRemoteSkillBaseArchive(raw, "reverse-skill-"+remoteSkillPinnedCommit)
-	require.ErrorIs(t, err, ErrBusinessSystemPromptBundleInvalid)
-}
-
-func makeRemoteSkillSourceZIP(t *testing.T, files map[string]string) []byte {
-	t.Helper()
-	var buffer bytes.Buffer
-	writer := zip.NewWriter(&buffer)
-	for name, body := range files {
-		name = strings.Replace(name, "reverse-skill-commit/", "reverse-skill-"+remoteSkillPinnedCommit+"/", 1)
-		entry, err := writer.Create(name)
-		require.NoError(t, err)
-		_, err = io.WriteString(entry, body)
-		require.NoError(t, err)
-	}
-	require.NoError(t, writer.Close())
-	return buffer.Bytes()
+	_, err = NewMoxinggangRemoteSkillCandidateSource(blockingRemoteSkillHTTPClient{}).Build(ctx, prompt, nil)
+	require.Error(t, err)
 }

@@ -29,14 +29,16 @@ const runtime = () => ({
   template_id: 1, version_id: 10, template_version: 1, revision: 5,
   sha256: 'a'.repeat(64), byte_length: 4, degraded: false,
   composition_mode: 'codex_skill_hybrid', bundle_id: 'codexrip-reverse-skill',
-  bundle_manifest_sha256: '', registry_revision: 3, registry_manifest_sha256: '3'.repeat(64),
-  registry_archive_sha256: '4'.repeat(64), registry_source_commit: '1'.repeat(40),
-  registry_source_id: 'github_official', registry_remote_root: 'https://raw.githubusercontent.com/example/skills',
+  bundle_manifest_sha256: '', registry_revision: 3, registry_raw_tree_sha256: '1'.repeat(64),
+  registry_effective_tree_sha256: '2'.repeat(64), registry_prompt_raw_sha256: '3'.repeat(64),
+  registry_prompt_effective_sha256: '4'.repeat(64), registry_upstream_source_id: 'moxinggang',
+  registry_upstream_root: 'https://moxinggang.com/skills/security-research/current',
+  registry_public_root: 'https://codexrip.vip/skills/security-research/current',
   bundle_available: true, bundle_degraded: false, updated_at: '2026-08-06T00:00:00Z',
 })
 const codexTemplate = () => ({
   id: 1, slug: 'codexrip_reverse_skill', name: 'CodexRip', description: 'hidden description',
-  is_seed: true, managed_source: '', created_at: '2026-08-06T00:00:00Z', updated_at: '2026-08-06T00:00:00Z',
+  is_seed: true, managed_source: 'remote_skill_registry', created_at: '2026-08-06T00:00:00Z', updated_at: '2026-08-06T00:00:00Z',
 })
 const gptTemplate = () => ({
   id: 2, slug: 'gpt_5_6_instruct', name: 'GPT-5.6 Instruct', description: 'hidden source description',
@@ -52,16 +54,13 @@ const version = (templateId = 1) => ({
   created_at: '2026-08-06T00:00:00Z', is_active: templateId === 1,
 })
 const skillRegistry = () => {
-  const active = { id: 30, bundle_id: 'codexrip-reverse-skill', source_id: 'github_official', remote_root: 'https://raw.githubusercontent.com/example/skills', source_commit: '1'.repeat(40), overlay_sha256: '2'.repeat(64), manifest_sha256: '3'.repeat(64), archive_sha256: '4'.repeat(64), file_count: 2, total_bytes: 30, added_files: 0, modified_files: 0, deleted_files: 0, script_changes: 0, binary_changes: 0, created_at: '2026-08-06T00:00:00Z' }
-  const previous = { ...active, id: 29, source_id: 'moxinggang', remote_root: 'https://moxinggang.com/skills/security-research/current', source_commit: '9'.repeat(40) }
+  const activePrompt = { id: 40, raw_sha256: '3'.repeat(64), effective_sha256: '4'.repeat(64), diff: 'routing diff', created_at: '2026-08-11T00:00:00Z' }
+  const active = { id: 30, upstream_source_id: 'moxinggang', upstream_root: 'https://moxinggang.com/skills/security-research/current', public_root: 'https://codexrip.vip/skills/security-research/current', raw_tree_sha256: '1'.repeat(64), effective_tree_sha256: '2'.repeat(64), prompt_version_id: 40, file_count: 73, raw_total_bytes: 3000, effective_total_bytes: 3100, added_files: 0, modified_files: 0, deleted_files: 0, script_changes: 0, binary_changes: 0, fetched_at: '2026-08-11T00:00:00Z', created_at: '2026-08-11T00:00:00Z' }
+  const previous = { ...active, id: 29, effective_tree_sha256: '9'.repeat(64) }
   return {
-    runtime: { revision: 3, source_id: 'github_official', remote_root: 'https://raw.githubusercontent.com/example/skills', active, degraded: false, updated_at: '2026-08-06T00:00:00Z' },
+    runtime: { revision: 3, active, active_prompt: activePrompt, degraded: false, updated_at: '2026-08-11T00:00:00Z' },
     versions: [active, previous],
-    client_install: {
-      skill_name: 'codexrip-reverse-skill', source_id: 'github_official', remote_root: 'https://raw.githubusercontent.com/example/skills', descriptor_url: 'https://codexrip.vip/skills/reverse-skill/current.json',
-      powershell: { strategy: 'verified_https_content_addressed', bootstrap_url: 'https://codexrip.vip/skills/bootstrap/2199e8c4e8a09278c9b79e17b05e5457308db0a7d593e0f933ad6bd0712845f9/bootstrap-reverse-skill.ps1', bootstrap_sha256: '2199e8c4e8a09278c9b79e17b05e5457308db0a7d593e0f933ad6bd0712845f9', acquire_command: 'Invoke-WebRequest https://codexrip.vip/skills/bootstrap/2199e8c4e8a09278c9b79e17b05e5457308db0a7d593e0f933ad6bd0712845f9/bootstrap-reverse-skill.ps1', execute_command: 'execute powershell' },
-      python: { strategy: 'verified_https_content_addressed', bootstrap_url: 'https://codexrip.vip/skills/bootstrap/353878272c8972c00817cc7171d7a4a087b4203fa2758b7ba1d040ededde7dc9/bootstrap-reverse-skill.py', bootstrap_sha256: '353878272c8972c00817cc7171d7a4a087b4203fa2758b7ba1d040ededde7dc9', acquire_command: 'urllib https://codexrip.vip/skills/bootstrap/353878272c8972c00817cc7171d7a4a087b4203fa2758b7ba1d040ededde7dc9/bootstrap-reverse-skill.py', execute_command: 'execute python' },
-    },
+    source: { upstream_source_id: 'moxinggang', upstream_root: 'https://moxinggang.com/skills/security-research/current', public_root: 'https://codexrip.vip/skills/security-research/current' },
   }
 }
 
@@ -95,7 +94,7 @@ describe('SystemPromptsView', () => {
     mocks.list.mockResolvedValue({ templates: [codexTemplate(), gptTemplate()], runtime: runtime() })
     mocks.get.mockImplementation(async (id: number) => ({ template: id === 2 ? gptTemplate() : codexTemplate(), versions: [version(id)], runtime: runtime() }))
     mocks.getSkillRegistry.mockResolvedValue(skillRegistry())
-    mocks.startSkillSync.mockResolvedValue({ id: 8, source_id: 'github_official', status: 'queued', progress_stage: 'queued', created_at: '2026-08-06T00:00:00Z' })
+    mocks.startSkillSync.mockResolvedValue({ id: 8, status: 'queued', progress_stage: 'queued', prompt_capture_provided: false, created_at: '2026-08-11T00:00:00Z' })
     mocks.saveDraft.mockResolvedValue({ ...version(), id: 11, version: 2, body: 'draft', note: 'seed', is_active: false })
     mocks.publish.mockResolvedValue({ ...runtime(), version_id: 11, template_version: 2, revision: 6 })
   })
@@ -112,11 +111,14 @@ describe('SystemPromptsView', () => {
     expect(wrapper.get('[data-test="system-prompt-tab-editor"]').exists()).toBe(true)
     expect(wrapper.get('[data-test="system-prompt-tab-history"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('系统提示词')
-    expect(wrapper.text()).toContain('CodexRip 逆向安全提示词')
+    expect(wrapper.text()).toContain('安全研究远程 Skill 提示词')
     expect(wrapper.text()).not.toContain('Business System Prompts')
     expect(wrapper.text()).not.toContain('Templates')
-    expect(wrapper.get('[data-test="system-prompt-save-version"]').text()).toContain('保存为新版本')
-    expect(wrapper.get('[data-test="system-prompt-set-current"]').text()).toContain('设为当前')
+    expect(wrapper.get('[data-test="system-prompt-body"]').element).toHaveProperty('disabled', true)
+    expect(wrapper.find('[data-test="system-prompt-save-version"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="system-prompt-set-current"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="system-prompt-edit-metadata"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="system-prompt-template-menu"]').exists()).toBe(false)
   })
 
   it('loads the advanced drawer lazily and closes it with Escape', async () => {
@@ -131,52 +133,55 @@ describe('SystemPromptsView', () => {
     expect(wrapper.find('[data-test="system-prompt-advanced-drawer"]').exists()).toBe(false)
   })
 
-  it('defaults source sync to GitHub and posts the selected source without publishing', async () => {
+  it('uses the fixed ModelGang source and creates a candidate without publishing', async () => {
     const wrapper = mountView()
     await flushPromises()
     await wrapper.get('[data-test="system-prompt-open-advanced"]').trigger('click')
     await flushPromises()
 
     const drawer = wrapper.get('[data-test="system-prompt-advanced-drawer"]')
-    const selector = drawer.get('[data-test="system-prompt-skill-source"]')
-    expect((selector.element as HTMLSelectElement).value).toBe('github_official')
-    expect(selector.findAll('option').map(option => option.text())).toEqual(['GitHub 官方', '模型港'])
-    expect(drawer.text()).toContain('当前来源')
-    expect(drawer.text()).toContain('GitHub 官方')
-    expect(drawer.find('[data-test="system-prompt-copy-acquire"]').exists()).toBe(false)
-    expect(drawer.find('[data-test="system-prompt-copy-execute"]').exists()).toBe(false)
+    const source = drawer.get('[data-test="system-prompt-skill-source"]')
+    expect(source.text()).toContain('https://moxinggang.com/skills/security-research/current')
+    expect(source.text()).toContain('https://codexrip.vip/skills/security-research/current')
+    expect(drawer.text()).toContain('模型港固定来源')
+    expect(drawer.find('select').exists()).toBe(false)
+    expect(drawer.text()).not.toContain('GitHub 官方')
     expect(drawer.text()).not.toContain('bootstrap-reverse-skill')
     expect(drawer.get('[title="回滚"]').exists()).toBe(true)
 
-    await selector.setValue('moxinggang')
     await drawer.get('[data-test="system-prompt-skill-sync"]').trigger('click')
     await flushPromises()
-    expect(mocks.startSkillSync).toHaveBeenCalledWith('moxinggang', 3)
+    expect(mocks.startSkillSync).toHaveBeenCalledWith(3, undefined)
     expect(mocks.publishSkillVersion).not.toHaveBeenCalled()
   })
 
   it('keeps a synced source candidate inactive until its publish action is explicit', async () => {
     const candidate = {
-      ...skillRegistry().runtime.active,
+      ...skillRegistry().runtime.active!,
       id: 31,
-      source_id: 'moxinggang',
-      remote_root: 'https://moxinggang.com/skills/security-research/current',
-      source_commit: '5'.repeat(40),
-      manifest_sha256: '6'.repeat(64),
-      archive_sha256: '7'.repeat(64),
+      raw_tree_sha256: '5'.repeat(64),
+      effective_tree_sha256: '6'.repeat(64),
+      prompt_version_id: 41,
+      prompt: {
+        id: 41,
+        raw_sha256: '7'.repeat(64),
+        effective_sha256: '8'.repeat(64),
+        diff: '--- raw\n+++ effective\n@@ routing\n-old\n+new',
+        created_at: '2026-08-11T00:00:00Z',
+      },
+      file_changes: [{ path: 'SKILL.md', change: 'modified', kind: 'text' }],
+      modified_files: 1,
       verified: true,
     }
-    mocks.startSkillSync.mockResolvedValue({ id: 9, source_id: 'moxinggang', status: 'queued', progress_stage: 'queued', created_at: '2026-08-06T00:00:00Z' })
-    mocks.getSkillSync.mockResolvedValue({ id: 9, source_id: 'moxinggang', status: 'succeeded', progress_stage: 'verified', candidate_bundle_version_id: 31, created_at: '2026-08-06T00:00:00Z' })
+    mocks.startSkillSync.mockResolvedValue({ id: 9, status: 'queued', progress_stage: 'queued', prompt_capture_provided: false, created_at: '2026-08-11T00:00:00Z' })
+    mocks.getSkillSync.mockResolvedValue({ id: 9, status: 'succeeded', progress_stage: 'verified', prompt_capture_provided: false, candidate_bundle_version_id: 31, created_at: '2026-08-11T00:00:00Z' })
     mocks.getSkillVersion.mockResolvedValue(candidate)
-    mocks.publishSkillVersion.mockResolvedValue({ ...skillRegistry().runtime, source_id: 'moxinggang', active: candidate, revision: 4 })
+    mocks.publishSkillVersion.mockResolvedValue({ ...skillRegistry().runtime, active: candidate, active_prompt: candidate.prompt, revision: 4 })
 
     const wrapper = mountView()
     await flushPromises()
     await wrapper.get('[data-test="system-prompt-open-advanced"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-test="system-prompt-skill-source"]').setValue('moxinggang')
-
     vi.useFakeTimers()
     try {
       await wrapper.get('[data-test="system-prompt-skill-sync"]').trigger('click')
@@ -184,12 +189,21 @@ describe('SystemPromptsView', () => {
       await flushPromises()
 
       const candidatePanel = wrapper.get('[data-test="system-prompt-skill-candidate"]')
-      expect(candidatePanel.text()).toContain('候选来源 模型港')
-      expect(candidatePanel.text()).toContain('清单哈希')
-      expect(candidatePanel.text()).toContain('归档哈希')
+	  expect(candidatePanel.text()).toContain('原始树哈希')
+      expect(candidatePanel.text()).toContain('有效树哈希')
+	  expect(candidatePanel.text()).toContain('原始提示词哈希')
+      expect(candidatePanel.text()).toContain('有效提示词哈希')
+	  expect(candidatePanel.text()).toContain('抓取时间')
+      expect(candidatePanel.text()).toContain('提示词精确差异')
+      expect(candidatePanel.get('[data-test="system-prompt-skill-prompt-diff"]').text()).toContain('@@ routing')
+      expect(candidatePanel.text()).toContain('SKILL.md')
       expect(mocks.publishSkillVersion).not.toHaveBeenCalled()
 
       await candidatePanel.get('[data-test="system-prompt-skill-publish-candidate"]').trigger('click')
+      await flushPromises()
+      expect(mocks.publishSkillVersion).not.toHaveBeenCalled()
+      expect(wrapper.get('[data-test="system-prompt-skill-confirm"]').exists()).toBe(true)
+      await wrapper.get('[data-test="system-prompt-skill-confirm-action"]').trigger('click')
       await flushPromises()
       expect(mocks.publishSkillVersion).toHaveBeenCalledWith(31, 3, false)
     } finally {
@@ -216,18 +230,22 @@ describe('SystemPromptsView', () => {
   })
 
   it('saves a new version separately from setting it current', async () => {
+    mocks.saveDraft.mockResolvedValue({ ...version(2), id: 21, version: 2, body: 'draft', note: 'seed', is_active: false })
+    mocks.publish.mockResolvedValue({ ...runtime(), template_id: 2, version_id: 21, template_version: 2, revision: 6 })
     const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-test="system-prompt-template-2"]').trigger('click')
     await flushPromises()
     await wrapper.get('[data-test="system-prompt-body"]').setValue('draft')
     await wrapper.get('[data-test="system-prompt-save-version"]').trigger('click')
     await flushPromises()
 
-    expect(mocks.saveDraft).toHaveBeenCalledWith(1, expect.objectContaining({ body: 'draft', expected_latest_version: 1, expected_revision: 5 }))
+    expect(mocks.saveDraft).toHaveBeenCalledWith(2, expect.objectContaining({ body: 'draft', expected_latest_version: 1, expected_revision: 5 }))
     expect(mocks.publish).not.toHaveBeenCalled()
     await wrapper.get('[data-test="system-prompt-set-current"]').trigger('click')
     await wrapper.get('[data-test="confirm-action"]').trigger('click')
     await flushPromises()
-    expect(mocks.publish).toHaveBeenCalledWith(1, 11, 5, false)
+    expect(mocks.publish).toHaveBeenCalledWith(2, 21, 5, false)
   })
 
   it('creates an inactive managed-source candidate without activating it', async () => {

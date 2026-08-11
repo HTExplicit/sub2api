@@ -1,19 +1,13 @@
 package service
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-func TestRemoteSkillVersionFromDescriptorUsesHistoricalGitHubCommitRoot(t *testing.T) {
-	commit := strings.Repeat("a", 40)
-	version := remoteSkillVersionFromDescriptor(RemoteSkillPublicDescriptor{
-		SourceID:     RemoteSkillSourceGitHubOfficial,
-		SourceCommit: commit,
-	})
-
-	require.Equal(t, remoteSkillVersionSourceRoot(RemoteSkillSourceGitHubOfficial, commit), version.RemoteRoot)
-	require.NotEqual(t, RemoteSkillGitHubRoot, version.RemoteRoot)
+func TestRemoteSkillSourceContractHasOneUpstreamAndNoCommitProvider(t *testing.T) {
+	require.Equal(t, "moxinggang", RemoteSkillUpstreamSourceID)
+	require.Equal(t, "https://moxinggang.com/skills/security-research/current", RemoteSkillUpstreamRoot)
+	require.Equal(t, "https://codexrip.vip/skills/security-research/current", RemoteSkillPublicRoot)
 }

@@ -13,19 +13,29 @@ export default {
     skillRegistry: {
       active: '已有活动版本',
       noActive: '无活动版本',
-      source: '来源',
-      activeSource: '当前来源',
-      candidateSource: '候选来源',
-      commit: '源提交',
-      manifest: '清单哈希',
-      archive: '归档哈希',
+      modelGang: '模型港固定来源',
+      upstreamRoot: '上游根地址',
+      publicRoot: '公开根地址',
+      rawTree: '原始树哈希',
+      effectiveTree: '有效树哈希',
+      rawPrompt: '原始提示词哈希',
+      effectivePrompt: '有效提示词哈希',
+      files: '文件',
+      changes: '文件变化',
+      scripts: '脚本变化',
+	  fetchedAt: '抓取时间',
+	  operator: '操作者',
+      promptCapture: '提示词捕获件（可选）',
+      captureIncluded: '已使用上传捕获件',
+      promptDiff: '提示词精确差异',
+      fileDiff: '逐文件差异',
       publishCandidate: '发布候选',
       syncCandidate: '同步候选',
       status: { queued: '排队中', running: '同步中', succeeded: '候选已就绪', failed: '同步失败' }
     },
     templates: {
       title: '模板',
-      codexripReverseSkill: 'CodexRip 逆向安全提示词',
+      codexripReverseSkill: '安全研究远程 Skill 提示词',
       gpt56Instruct: 'GPT-5.6 指令提示词',
       empty: '暂无模板。',
       select: '选择模板查看版本。'
@@ -43,7 +53,8 @@ export default {
       rollback: '回滚',
       duplicate: '复制',
       delete: '删除',
-      reload: '重新加载服务端状态'
+      reload: '重新加载服务端状态',
+      confirm: '确认'
     },
     editor: {
       name: '模板名称',
@@ -80,7 +91,9 @@ export default {
       rollbackTitle: '回滚到这个版本？',
       rollbackMessage: '选中的不可变版本会成为活动版本。',
       deleteTitle: '删除这个模板？',
-      deleteMessage: '模板会被软删除；种子模板和活动模板受保护。'
+      deleteMessage: '模板会被软删除；种子模板和活动模板受保护。',
+      skillPublishMessage: '确认同时发布这个 Skill 树与配对提示词？',
+      skillRollbackMessage: '确认把活动 Skill 树与配对提示词一起回滚到这个版本？'
     },
     messages: {
       versionSaved: '新提示词版本已保存。',

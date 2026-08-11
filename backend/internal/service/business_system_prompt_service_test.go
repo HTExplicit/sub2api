@@ -130,18 +130,25 @@ func (b *fakeBusinessSystemPromptRemoteSkillBus) Subscribe(ctx context.Context, 
 }
 
 func TestBusinessSystemPromptServiceReloadsRuntimeMetadataOnRemoteSkillRevision(t *testing.T) {
-	oldVersion := RemoteSkillBundleVersion{
-		ID: 6, BundleID: BusinessSystemPromptRemoteSkillBundleID,
-		SourceID: RemoteSkillSourceGitHubOfficial, RemoteRoot: RemoteSkillGitHubRoot,
-		SourceCommit: strings.Repeat("1", 40), ManifestSHA256: strings.Repeat("2", 64), ArchiveSHA256: strings.Repeat("3", 64),
+	oldCandidate := testRemoteSkillCandidate(t, 6, 16, "old-tree")
+	newCandidate := testRemoteSkillCandidate(t, 8, 18, "new-tree")
+	registryStore := &fakeRemoteSkillRegistryStore{
+		snapshot: RemoteSkillRegistrySnapshot{
+			Revision: 6, Active: &oldCandidate.Version, ActivePrompt: &oldCandidate.Prompt,
+		},
+		detail: RemoteSkillBundleVersionDetail{
+			RemoteSkillBundleVersion: oldCandidate.Version,
+			Prompt:                   oldCandidate.Prompt,
+			FileChanges:              oldCandidate.FileChanges,
+		},
 	}
-	newVersion := oldVersion
-	newVersion.ID = 8
-	newVersion.ManifestSHA256 = strings.Repeat("4", 64)
-	newVersion.ArchiveSHA256 = strings.Repeat("5", 64)
-
-	registryStore := &fakeRemoteSkillRegistryStore{snapshot: RemoteSkillRegistrySnapshot{Revision: 6, Active: &oldVersion}}
-	registryFiles := &fakeRemoteSkillRegistryFiles{seedErr: ErrRemoteSkillSeedUnavailable}
+	registryFiles := &fakeRemoteSkillRegistryFiles{
+		seed: oldCandidate,
+		candidates: map[int64]RemoteSkillCandidate{
+			oldCandidate.Version.ID: oldCandidate,
+			newCandidate.Version.ID: newCandidate,
+		},
+	}
 	registry := NewRemoteSkillRegistryService(registryStore, nil, registryFiles, &fakeRemoteSkillCandidateSource{})
 	require.NoError(t, registry.Initialize(context.Background()))
 	store := &fakeBusinessSystemPromptStore{loaded: BusinessSystemPromptSnapshot{
@@ -158,7 +165,10 @@ func TestBusinessSystemPromptServiceReloadsRuntimeMetadataOnRemoteSkillRevision(
 
 	initial, ok := svc.CurrentSnapshot()
 	require.True(t, ok)
-	require.Equal(t, oldVersion.ManifestSHA256, initial.RegistryManifestSHA256)
+	require.Equal(t, oldCandidate.Version.RawTreeSHA256, initial.RegistryRawTreeSHA256)
+	require.Equal(t, oldCandidate.Version.EffectiveTreeSHA256, initial.RegistryEffectiveTreeSHA256)
+	require.Equal(t, oldCandidate.Prompt.RawSHA256, initial.RegistryPromptRawSHA256)
+	require.Equal(t, oldCandidate.Prompt.EffectiveSHA256, initial.RegistryPromptEffectiveSHA256)
 
 	var notify func(int64, string)
 	select {
@@ -166,14 +176,23 @@ func TestBusinessSystemPromptServiceReloadsRuntimeMetadataOnRemoteSkillRevision(
 	case <-time.After(time.Second):
 		t.Fatal("remote Skill revision subscriber was not started")
 	}
-	registryStore.snapshot = RemoteSkillRegistrySnapshot{Revision: 7, Active: &newVersion}
-	notify(7, newVersion.ManifestSHA256)
+	registryStore.snapshot = RemoteSkillRegistrySnapshot{
+		Revision: 7, Active: &newCandidate.Version, ActivePrompt: &newCandidate.Prompt,
+	}
+	registryStore.detail = RemoteSkillBundleVersionDetail{
+		RemoteSkillBundleVersion: newCandidate.Version,
+		Prompt:                   newCandidate.Prompt,
+		FileChanges:              newCandidate.FileChanges,
+	}
+	notify(7, newCandidate.Version.EffectiveTreeSHA256)
 
 	updated, ok := svc.CurrentSnapshot()
 	require.True(t, ok)
 	require.Equal(t, int64(7), updated.RegistryRevision)
-	require.Equal(t, newVersion.ManifestSHA256, updated.RegistryManifestSHA256)
-	require.Equal(t, newVersion.ArchiveSHA256, updated.RegistryArchiveSHA256)
+	require.Equal(t, newCandidate.Version.RawTreeSHA256, updated.RegistryRawTreeSHA256)
+	require.Equal(t, newCandidate.Version.EffectiveTreeSHA256, updated.RegistryEffectiveTreeSHA256)
+	require.Equal(t, newCandidate.Prompt.RawSHA256, updated.RegistryPromptRawSHA256)
+	require.Equal(t, newCandidate.Prompt.EffectiveSHA256, updated.RegistryPromptEffectiveSHA256)
 }
 
 func TestBusinessSystemPromptServiceInitializeSeedsAndLoadsSnapshot(t *testing.T) {
@@ -188,6 +207,7 @@ func TestBusinessSystemPromptServiceInitializeSeedsAndLoadsSnapshot(t *testing.T
 	require.Equal(t, embeddedBusinessSystemPrompt, store.seeds[0].Body)
 	require.Equal(t, BusinessSystemPromptCompositionCodexSkillHybrid, store.seeds[0].CompositionMode)
 	require.Equal(t, BusinessSystemPromptRemoteSkillBundleID, store.seeds[0].BundleID)
+	require.Equal(t, BusinessSystemPromptManagedSourceRemoteSkill, store.seeds[0].ManagedSource)
 	require.Empty(t, store.seeds[0].BundleManifestSHA256)
 	require.True(t, store.seeds[0].UpgradeExistingSeed)
 	require.ElementsMatch(t, []string{
@@ -211,6 +231,26 @@ func TestBusinessSystemPromptServiceInitializeSeedsAndLoadsSnapshot(t *testing.T
 	require.True(t, ok)
 	require.Equal(t, int64(1), got.Revision)
 	require.Equal(t, embeddedBusinessSystemPrompt, got.Body)
+}
+
+func TestBusinessSystemPromptServiceLocksRemoteSkillManagedTemplate(t *testing.T) {
+	store := &fakeBusinessSystemPromptStore{detail: BusinessSystemPromptTemplateDetail{
+		Template: BusinessSystemPromptTemplate{ID: 3, ManagedSource: BusinessSystemPromptManagedSourceRemoteSkill},
+		Versions: []BusinessSystemPromptVersion{{ID: 4, CompositionMode: BusinessSystemPromptCompositionCodexSkillHybrid, BundleID: BusinessSystemPromptRemoteSkillBundleID}},
+	}}
+	svc := NewBusinessSystemPromptService(store, nil)
+
+	_, err := svc.CreateVersion(context.Background(), 3, "replacement", "", 9, 1, 1)
+	require.ErrorIs(t, err, ErrBusinessSystemPromptSourceNotManaged)
+	_, err = svc.PublishVersion(context.Background(), 3, 4, 1, 9)
+	require.ErrorIs(t, err, ErrBusinessSystemPromptSourceNotManaged)
+	_, err = svc.UpdateTemplate(context.Background(), 3, BusinessSystemPromptTemplateUpdate{}, 9, 1)
+	require.ErrorIs(t, err, ErrBusinessSystemPromptSourceNotManaged)
+	_, err = svc.DuplicateTemplate(context.Background(), 3, "copy", "Copy", 9, 1)
+	require.ErrorIs(t, err, ErrBusinessSystemPromptSourceNotManaged)
+	require.ErrorIs(t, svc.DeleteTemplate(context.Background(), 3, 9, 1), ErrBusinessSystemPromptSourceNotManaged)
+	_, err = svc.SyncManagedSource(context.Background(), 3, 9, 1, 1)
+	require.ErrorIs(t, err, ErrBusinessSystemPromptSourceNotManaged)
 }
 
 func TestBusinessSystemPromptServiceSyncManagedSourceCreatesCandidateWithoutChangingRuntime(t *testing.T) {

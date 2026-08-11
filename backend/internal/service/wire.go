@@ -59,7 +59,7 @@ func ProvideRemoteSkillRegistryFiles() RemoteSkillRegistryFiles {
 }
 
 func ProvideRemoteSkillCandidateSource() RemoteSkillCandidateSource {
-	return NewRemoteSkillCandidateSourceSelector(nil)
+	return NewMoxinggangRemoteSkillCandidateSource(nil)
 }
 
 func ProvideRemoteSkillRegistryService(

@@ -30,8 +30,8 @@ services:
     volumes:
       # Data persistence (config.yaml will be auto-generated here)
       - sub2api_data:/app/data
-      # Writable content-addressed Skill Registry. Nginx must expose only its
-      # public/ subtree; private and staging content remain container-only.
+      # Writable immutable prompt/tree publication pairs. Public Skill files
+      # are served by Sub2API; Nginx never reads this mount directly.
       - ${SUB2API_REMOTE_SKILL_REGISTRY_HOST_PATH:-./skill-registry-data}:/app/skill-registry
       # Optional: Mount custom config.yaml (uncomment and create the file first)
       # Copy config.example.yaml to config.yaml, modify it, then uncomment:

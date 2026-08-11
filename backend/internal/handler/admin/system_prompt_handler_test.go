@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -16,40 +17,61 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-func TestStartSkillSyncPassesRequestedSourceID(t *testing.T) {
+func TestStartSkillSyncAcceptsMultipartPromptCaptureForFixedSource(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	store := &serviceTestRemoteSkillStore{
-		snapshot: service.RemoteSkillRegistrySnapshot{Revision: 7},
-		job:      service.RemoteSkillSyncJob{ID: 9, Status: service.RemoteSkillSyncStatusQueued},
-	}
-	registry := service.NewRemoteSkillRegistryService(store, nil, &serviceTestRemoteSkillFiles{}, &serviceTestRemoteSkillSource{})
+	files := service.NewRemoteSkillRegistryFilesystem(t.TempDir())
+	seed, err := files.LoadSeed(context.Background())
+	require.NoError(t, err)
+	store := &serviceTestRemoteSkillStore{job: service.RemoteSkillSyncJob{ID: 9, Status: service.RemoteSkillSyncStatusQueued}}
+	registry := service.NewRemoteSkillRegistryService(store, nil, files, &serviceTestRemoteSkillSource{})
 	require.NoError(t, registry.Start(context.Background()))
 	t.Cleanup(registry.Stop)
 	handler := NewSystemPromptHandler(nil, registry)
 
+	var requestBody bytes.Buffer
+	writer := multipart.NewWriter(&requestBody)
+	require.NoError(t, writer.WriteField("expected_revision", "7"))
+	part, err := writer.CreateFormFile("prompt_capture", "capture.txt")
+	require.NoError(t, err)
+	_, err = part.Write([]byte(seed.Prompt.RawBody))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
-	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/system-prompts/skill-registry/sync", bytes.NewBufferString(`{"source_id":"moxinggang","expected_revision":7}`))
-	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/system-prompts/skill-registry/syncs", &requestBody)
+	ctx.Request.Header.Set("Content-Type", writer.FormDataContentType())
 	ctx.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 42})
 	handler.StartSkillSync(ctx)
 
 	require.Equal(t, http.StatusAccepted, recorder.Code)
-	require.Equal(t, service.RemoteSkillSourceMoxinggang, store.sourceID)
 	require.Equal(t, int64(42), store.actorID)
 	require.Equal(t, int64(7), store.expectedRevision)
+	require.True(t, store.promptProvided)
 }
 
 type serviceTestRemoteSkillStore struct {
 	snapshot         service.RemoteSkillRegistrySnapshot
+	detail           service.RemoteSkillBundleVersionDetail
 	job              service.RemoteSkillSyncJob
-	sourceID         string
 	actorID          int64
 	expectedRevision int64
+	promptProvided   bool
 }
 
-func (s *serviceTestRemoteSkillStore) EnsureRemoteSkillSeed(context.Context, service.RemoteSkillBundleVersion) error {
-	return nil
+func (s *serviceTestRemoteSkillStore) EnsureRemoteSkillSeed(_ context.Context, candidate service.RemoteSkillCandidate) (service.RemoteSkillRegistrySnapshot, error) {
+	candidate.Version.ID = 1
+	candidate.Prompt.ID = 1
+	candidate.Version.PromptVersionID = 1
+	s.detail = service.RemoteSkillBundleVersionDetail{
+		RemoteSkillBundleVersion: candidate.Version,
+		Prompt:                   candidate.Prompt,
+		FileChanges:              candidate.FileChanges,
+	}
+	s.snapshot = service.RemoteSkillRegistrySnapshot{
+		Revision: 7, Active: &candidate.Version, ActivePrompt: &candidate.Prompt, UpdatedAt: time.Now().UTC(),
+	}
+	return s.snapshot, nil
 }
 func (s *serviceTestRemoteSkillStore) LoadRemoteSkillSnapshot(context.Context) (service.RemoteSkillRegistrySnapshot, error) {
 	return s.snapshot, nil
@@ -57,18 +79,17 @@ func (s *serviceTestRemoteSkillStore) LoadRemoteSkillSnapshot(context.Context) (
 func (s *serviceTestRemoteSkillStore) ListRemoteSkillVersions(context.Context) ([]service.RemoteSkillBundleVersion, error) {
 	return nil, nil
 }
-func (s *serviceTestRemoteSkillStore) GetRemoteSkillVersion(context.Context, int64) (service.RemoteSkillBundleVersion, error) {
-	return service.RemoteSkillBundleVersion{}, nil
+func (s *serviceTestRemoteSkillStore) GetRemoteSkillVersion(context.Context, int64) (service.RemoteSkillBundleVersionDetail, error) {
+	return s.detail, nil
 }
-func (s *serviceTestRemoteSkillStore) CreateRemoteSkillSyncJob(_ context.Context, sourceID string, actorID, expectedRevision int64) (service.RemoteSkillSyncJob, error) {
-	s.sourceID, s.actorID, s.expectedRevision = sourceID, actorID, expectedRevision
-	s.job.SourceID = sourceID
+func (s *serviceTestRemoteSkillStore) CreateRemoteSkillSyncJob(_ context.Context, actorID, expectedRevision int64, promptProvided bool) (service.RemoteSkillSyncJob, error) {
+	s.actorID, s.expectedRevision, s.promptProvided = actorID, expectedRevision, promptProvided
 	return s.job, nil
 }
 func (s *serviceTestRemoteSkillStore) UpdateRemoteSkillSyncJobStage(context.Context, int64, string) error {
 	return nil
 }
-func (s *serviceTestRemoteSkillStore) CompleteRemoteSkillSyncJob(context.Context, int64, service.RemoteSkillBundleVersion) (service.RemoteSkillSyncJob, error) {
+func (s *serviceTestRemoteSkillStore) CompleteRemoteSkillSyncJob(context.Context, int64, service.RemoteSkillCandidate) (service.RemoteSkillSyncJob, error) {
 	return s.job, nil
 }
 func (s *serviceTestRemoteSkillStore) FailRemoteSkillSyncJob(context.Context, int64, string) error {
@@ -80,34 +101,13 @@ func (s *serviceTestRemoteSkillStore) GetRemoteSkillSyncJob(context.Context, int
 func (s *serviceTestRemoteSkillStore) PublishRemoteSkillVersion(context.Context, int64, int64, int64) (service.RemoteSkillRegistrySnapshot, error) {
 	return s.snapshot, nil
 }
-
-type serviceTestRemoteSkillFiles struct{}
-
-func (*serviceTestRemoteSkillFiles) LoadSeed(context.Context) (service.RemoteSkillBundleVersion, error) {
-	return service.RemoteSkillBundleVersion{}, service.ErrRemoteSkillSeedUnavailable
-}
-func (*serviceTestRemoteSkillFiles) InstallCandidate(context.Context, service.RemoteSkillCandidate) error {
+func (s *serviceTestRemoteSkillStore) CleanupLegacyRemoteSkillData(context.Context) error {
 	return nil
-}
-func (*serviceTestRemoteSkillFiles) ValidateVersion(context.Context, service.RemoteSkillBundleVersion) error {
-	return nil
-}
-func (*serviceTestRemoteSkillFiles) PreparePublic(context.Context, service.RemoteSkillBundleVersion) error {
-	return nil
-}
-func (*serviceTestRemoteSkillFiles) Activate(context.Context, service.RemoteSkillRegistrySnapshot) error {
-	return nil
-}
-func (*serviceTestRemoteSkillFiles) LoadManifest(context.Context, service.RemoteSkillBundleVersion) (service.BusinessSystemPromptBundleManifest, error) {
-	return service.BusinessSystemPromptBundleManifest{}, nil
-}
-func (*serviceTestRemoteSkillFiles) LoadBundle(context.Context, service.RemoteSkillBundleVersion) (*service.BusinessSystemPromptBundle, error) {
-	return nil, nil
 }
 
 type serviceTestRemoteSkillSource struct{}
 
-func (*serviceTestRemoteSkillSource) Build(context.Context, string, *service.BusinessSystemPromptBundleManifest) (service.RemoteSkillCandidate, error) {
+func (*serviceTestRemoteSkillSource) Build(context.Context, service.RemoteSkillPromptCapture, *service.RemoteSkillCandidate) (service.RemoteSkillCandidate, error) {
 	return service.RemoteSkillCandidate{}, errors.New("stop after handler contract")
 }
 

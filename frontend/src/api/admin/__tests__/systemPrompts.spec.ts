@@ -89,11 +89,13 @@ describe('System Prompts API', () => {
     client.post.mockResolvedValue({ data: {} })
     client.get.mockResolvedValue({ data: {} })
 
-    await systemPromptsAPI.startSkillSync('moxinggang', 3)
-    expect(client.post).toHaveBeenCalledWith('/admin/system-prompts/skill-registry/syncs', {
-      source_id: 'moxinggang',
-      expected_revision: 3,
-    })
+    const promptCapture = new File(['capture'], 'capture.txt', { type: 'text/plain' })
+    await systemPromptsAPI.startSkillSync(3, promptCapture)
+    expect(client.post).toHaveBeenCalledTimes(1)
+    const syncForm = client.post.mock.calls[0][1] as FormData
+    expect(client.post.mock.calls[0][0]).toBe('/admin/system-prompts/skill-registry/syncs')
+    expect(syncForm.get('expected_revision')).toBe('3')
+    expect(syncForm.get('prompt_capture')).toBe(promptCapture)
     await systemPromptsAPI.getSkillSync(8)
     expect(client.get).toHaveBeenCalledWith('/admin/system-prompts/skill-registry/syncs/8')
     await systemPromptsAPI.publishSkillVersion(12, 3)

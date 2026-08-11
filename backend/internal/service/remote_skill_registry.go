@@ -11,94 +11,89 @@ import (
 )
 
 const (
-	RemoteSkillSourceGitHubOfficial      = "github_official"
-	RemoteSkillSourceMoxinggang          = "moxinggang"
-	RemoteSkillMoxinggangPath            = "/skills/security-research/current"
-	RemoteSkillMoxinggangRoot            = "https://moxinggang.com" + RemoteSkillMoxinggangPath
-	RemoteSkillGitHubRawRoot             = "https://raw.githubusercontent.com/zhaoxuya520/reverse-skill/"
-	RemoteSkillGitHubRoot                = RemoteSkillGitHubRawRoot + remoteSkillPinnedCommit + "/skills"
-	RemoteSkillSyncStatusQueued          = "queued"
-	RemoteSkillSyncStatusRunning         = "running"
-	RemoteSkillSyncStatusSucceeded       = "succeeded"
-	RemoteSkillSyncStatusFailed          = "failed"
-	RemoteSkillInstallStrategy           = "verified_https_content_addressed"
-	RemoteSkillPowerShellBootstrapSHA256 = "2199e8c4e8a09278c9b79e17b05e5457308db0a7d593e0f933ad6bd0712845f9"
-	RemoteSkillPythonBootstrapSHA256     = "353878272c8972c00817cc7171d7a4a087b4203fa2758b7ba1d040ededde7dc9"
-	RemoteSkillPowerShellBootstrapURL    = "https://codexrip.vip/skills/bootstrap/" + RemoteSkillPowerShellBootstrapSHA256 + "/bootstrap-reverse-skill.ps1"
-	RemoteSkillPythonBootstrapURL        = "https://codexrip.vip/skills/bootstrap/" + RemoteSkillPythonBootstrapSHA256 + "/bootstrap-reverse-skill.py"
-	RemoteSkillDescriptorURL             = "https://codexrip.vip/skills/reverse-skill/current.json"
+	RemoteSkillUpstreamSourceID = "moxinggang"
+	RemoteSkillUpstreamRoot     = "https://moxinggang.com/skills/security-research/current"
+	RemoteSkillMoxinggangPath   = "/skills/security-research/current"
+	RemoteSkillMoxinggangRoot   = RemoteSkillUpstreamRoot
+	RemoteSkillSourceMoxinggang = RemoteSkillUpstreamSourceID
+
+	RemoteSkillSyncStatusQueued    = "queued"
+	RemoteSkillSyncStatusRunning   = "running"
+	RemoteSkillSyncStatusSucceeded = "succeeded"
+	RemoteSkillSyncStatusFailed    = "failed"
 )
 
 var (
 	ErrRemoteSkillSeedUnavailable = errors.New("remote skill seed unavailable")
-	ErrRemoteSkillVersionNotFound = errors.New("remote skill bundle version not found")
+	ErrRemoteSkillVersionNotFound = errors.New("remote skill candidate not found")
 	ErrRemoteSkillSyncNotFound    = errors.New("remote skill sync job not found")
 )
 
+type RemoteSkillFileChange struct {
+	Path                    string `json:"path"`
+	Change                  string `json:"change"`
+	Kind                    string `json:"kind"`
+	RawSHA256               string `json:"raw_sha256,omitempty"`
+	EffectiveSHA256         string `json:"effective_sha256,omitempty"`
+	PreviousEffectiveSHA256 string `json:"previous_effective_sha256,omitempty"`
+}
+
+type RemoteSkillPromptVersion struct {
+	ID              int64     `json:"id"`
+	RawSHA256       string    `json:"raw_sha256"`
+	EffectiveSHA256 string    `json:"effective_sha256"`
+	Diff            string    `json:"diff"`
+	CreatedBy       int64     `json:"created_by,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+	RawBody         string    `json:"-"`
+	EffectiveBody   string    `json:"-"`
+}
+
 type RemoteSkillBundleVersion struct {
-	ID             int64      `json:"id"`
-	BundleID       string     `json:"bundle_id"`
-	SourceID       string     `json:"source_id"`
-	RemoteRoot     string     `json:"remote_root"`
-	SourceCommit   string     `json:"source_commit"`
-	OverlaySHA256  string     `json:"overlay_sha256"`
-	ManifestSHA256 string     `json:"manifest_sha256"`
-	ArchiveSHA256  string     `json:"archive_sha256"`
-	FileCount      int        `json:"file_count"`
-	TotalBytes     int64      `json:"total_bytes"`
-	AddedFiles     int        `json:"added_files"`
-	ModifiedFiles  int        `json:"modified_files"`
-	DeletedFiles   int        `json:"deleted_files"`
-	ScriptChanges  int        `json:"script_changes"`
-	BinaryChanges  int        `json:"binary_changes"`
-	CreatedBy      int64      `json:"created_by,omitempty"`
-	PublishedAt    *time.Time `json:"published_at,omitempty"`
-	PublishedBy    int64      `json:"published_by,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
+	ID                  int64      `json:"id"`
+	UpstreamSourceID    string     `json:"upstream_source_id"`
+	UpstreamRoot        string     `json:"upstream_root"`
+	PublicRoot          string     `json:"public_root"`
+	RawTreeSHA256       string     `json:"raw_tree_sha256"`
+	EffectiveTreeSHA256 string     `json:"effective_tree_sha256"`
+	PromptVersionID     int64      `json:"prompt_version_id"`
+	FileCount           int        `json:"file_count"`
+	RawTotalBytes       int64      `json:"raw_total_bytes"`
+	EffectiveTotalBytes int64      `json:"effective_total_bytes"`
+	AddedFiles          int        `json:"added_files"`
+	ModifiedFiles       int        `json:"modified_files"`
+	DeletedFiles        int        `json:"deleted_files"`
+	ScriptChanges       int        `json:"script_changes"`
+	BinaryChanges       int        `json:"binary_changes"`
+	FetchedAt           time.Time  `json:"fetched_at"`
+	CreatedBy           int64      `json:"created_by,omitempty"`
+	PublishedAt         *time.Time `json:"published_at,omitempty"`
+	PublishedBy         int64      `json:"published_by,omitempty"`
+	CreatedAt           time.Time  `json:"created_at"`
 }
 
 type RemoteSkillBundleVersionDetail struct {
 	RemoteSkillBundleVersion
-	Verified        bool     `json:"verified"`
-	RoutingWarnings []string `json:"routing_warnings,omitempty"`
+	Prompt      RemoteSkillPromptVersion `json:"prompt"`
+	FileChanges []RemoteSkillFileChange  `json:"file_changes"`
+	Verified    bool                     `json:"verified"`
 }
 
 type RemoteSkillRegistrySnapshot struct {
 	Revision       int64                     `json:"revision"`
-	SourceID       string                    `json:"source_id,omitempty"`
-	RemoteRoot     string                    `json:"remote_root,omitempty"`
 	Active         *RemoteSkillBundleVersion `json:"active,omitempty"`
+	ActivePrompt   *RemoteSkillPromptVersion `json:"active_prompt,omitempty"`
 	Degraded       bool                      `json:"degraded"`
 	DegradedReason string                    `json:"degraded_reason,omitempty"`
 	UpdatedAt      time.Time                 `json:"updated_at"`
 }
 
-type RemoteSkillClientInstaller struct {
-	Strategy        string `json:"strategy"`
-	BootstrapURL    string `json:"bootstrap_url"`
-	BootstrapSHA256 string `json:"bootstrap_sha256"`
-	AcquireCommand  string `json:"acquire_command"`
-	ExecuteCommand  string `json:"execute_command"`
-}
-
-type RemoteSkillClientInstall struct {
-	SkillName      string                     `json:"skill_name"`
-	SourceID       string                     `json:"source_id"`
-	RemoteRoot     string                     `json:"remote_root"`
-	SourceCommit   string                     `json:"source_commit,omitempty"`
-	ManifestSHA256 string                     `json:"manifest_sha256,omitempty"`
-	DescriptorURL  string                     `json:"descriptor_url"`
-	PowerShell     RemoteSkillClientInstaller `json:"powershell"`
-	Python         RemoteSkillClientInstaller `json:"python"`
-}
-
 type RemoteSkillSyncJob struct {
 	ID                       int64      `json:"id"`
-	SourceID                 string     `json:"source_id"`
 	Status                   string     `json:"status"`
 	ProgressStage            string     `json:"progress_stage"`
-	SourceCommit             string     `json:"source_commit,omitempty"`
 	CandidateBundleVersionID int64      `json:"candidate_bundle_version_id,omitempty"`
+	PromptCaptureProvided    bool       `json:"prompt_capture_provided"`
 	ErrorCode                string     `json:"error_code,omitempty"`
 	CreatedBy                int64      `json:"created_by,omitempty"`
 	CreatedAt                time.Time  `json:"created_at"`
@@ -107,81 +102,36 @@ type RemoteSkillSyncJob struct {
 }
 
 type RemoteSkillCandidate struct {
-	Version       RemoteSkillBundleVersion
-	Manifest      BusinessSystemPromptBundleManifest
-	ManifestBytes []byte
-	ArchiveBytes  []byte
-	Files         map[string][]byte
+	Version        RemoteSkillBundleVersion
+	Prompt         RemoteSkillPromptVersion
+	RawFiles       map[string][]byte
+	EffectiveFiles map[string][]byte
+	FileChanges    []RemoteSkillFileChange
 }
 
 type RemoteSkillRegistryStore interface {
-	EnsureRemoteSkillSeed(context.Context, RemoteSkillBundleVersion) error
+	EnsureRemoteSkillSeed(context.Context, RemoteSkillCandidate) (RemoteSkillRegistrySnapshot, error)
 	LoadRemoteSkillSnapshot(context.Context) (RemoteSkillRegistrySnapshot, error)
 	ListRemoteSkillVersions(context.Context) ([]RemoteSkillBundleVersion, error)
-	GetRemoteSkillVersion(context.Context, int64) (RemoteSkillBundleVersion, error)
-	CreateRemoteSkillSyncJob(context.Context, string, int64, int64) (RemoteSkillSyncJob, error)
+	GetRemoteSkillVersion(context.Context, int64) (RemoteSkillBundleVersionDetail, error)
+	CreateRemoteSkillSyncJob(context.Context, int64, int64, bool) (RemoteSkillSyncJob, error)
 	UpdateRemoteSkillSyncJobStage(context.Context, int64, string) error
-	CompleteRemoteSkillSyncJob(context.Context, int64, RemoteSkillBundleVersion) (RemoteSkillSyncJob, error)
+	CompleteRemoteSkillSyncJob(context.Context, int64, RemoteSkillCandidate) (RemoteSkillSyncJob, error)
 	FailRemoteSkillSyncJob(context.Context, int64, string) error
 	GetRemoteSkillSyncJob(context.Context, int64) (RemoteSkillSyncJob, error)
 	PublishRemoteSkillVersion(context.Context, int64, int64, int64) (RemoteSkillRegistrySnapshot, error)
+	CleanupLegacyRemoteSkillData(context.Context) error
 }
 
 type RemoteSkillRegistryFiles interface {
-	LoadSeed(context.Context) (RemoteSkillBundleVersion, error)
+	LoadSeed(context.Context) (RemoteSkillCandidate, error)
 	InstallCandidate(context.Context, RemoteSkillCandidate) error
-	ValidateVersion(context.Context, RemoteSkillBundleVersion) error
-	PreparePublic(context.Context, RemoteSkillBundleVersion) error
-	Activate(context.Context, RemoteSkillRegistrySnapshot) error
-	LoadManifest(context.Context, RemoteSkillBundleVersion) (BusinessSystemPromptBundleManifest, error)
-	LoadBundle(context.Context, RemoteSkillBundleVersion) (*BusinessSystemPromptBundle, error)
+	LoadCandidate(context.Context, RemoteSkillBundleVersion, RemoteSkillPromptVersion, []RemoteSkillFileChange) (RemoteSkillCandidate, error)
+	CleanupLegacy(context.Context) error
 }
 
 type RemoteSkillCandidateSource interface {
-	Build(context.Context, string, *BusinessSystemPromptBundleManifest) (RemoteSkillCandidate, error)
-}
-
-func NormalizeRemoteSkillSourceID(value string) (string, error) {
-	value = strings.ToLower(strings.TrimSpace(value))
-	if value == "" {
-		return RemoteSkillSourceGitHubOfficial, nil
-	}
-	switch value {
-	case RemoteSkillSourceGitHubOfficial, RemoteSkillSourceMoxinggang:
-		return value, nil
-	default:
-		return "", fmt.Errorf("%w: unknown remote skill source", ErrBusinessSystemPromptInvalid)
-	}
-}
-
-func remoteSkillSourceRoot(sourceID string) string {
-	if sourceID == RemoteSkillSourceMoxinggang {
-		return RemoteSkillMoxinggangRoot
-	}
-	return RemoteSkillGitHubRoot
-}
-
-func remoteSkillSourceEntryURL(sourceID string) string {
-	return remoteSkillSourceRoot(sourceID) + "/SKILL.md"
-}
-
-func remoteSkillVersionSourceRoot(sourceID, sourceCommit string) string {
-	if sourceID == RemoteSkillSourceGitHubOfficial {
-		return RemoteSkillGitHubRawRoot + strings.ToLower(strings.TrimSpace(sourceCommit)) + "/skills"
-	}
-	return remoteSkillSourceRoot(sourceID)
-}
-
-func normalizeRemoteSkillVersionSource(version *RemoteSkillBundleVersion) {
-	if version == nil {
-		return
-	}
-	if strings.TrimSpace(version.SourceID) == "" {
-		version.SourceID = RemoteSkillSourceGitHubOfficial
-	}
-	if strings.TrimSpace(version.RemoteRoot) == "" {
-		version.RemoteRoot = remoteSkillVersionSourceRoot(version.SourceID, version.SourceCommit)
-	}
+	Build(context.Context, RemoteSkillPromptCapture, *RemoteSkillCandidate) (RemoteSkillCandidate, error)
 }
 
 type RemoteSkillRegistryRevisionBus interface {
@@ -195,15 +145,15 @@ type RemoteSkillRegistryService struct {
 	files  RemoteSkillRegistryFiles
 	source RemoteSkillCandidateSource
 
-	snapshot atomic.Pointer[RemoteSkillRegistrySnapshot]
-	bundle   atomic.Pointer[BusinessSystemPromptBundle]
-	stateMu  sync.Mutex
-	applyMu  sync.Mutex
-	runMu    sync.Mutex
-	runCtx   context.Context
-	cancel   context.CancelFunc
-	started  bool
-	wg       sync.WaitGroup
+	snapshot    atomic.Pointer[RemoteSkillRegistrySnapshot]
+	publication atomic.Pointer[RemoteSkillPublication]
+	stateMu     sync.Mutex
+	applyMu     sync.Mutex
+	runMu       sync.Mutex
+	runCtx      context.Context
+	cancel      context.CancelFunc
+	started     bool
+	wg          sync.WaitGroup
 }
 
 func NewRemoteSkillRegistryService(
@@ -220,20 +170,25 @@ func (s *RemoteSkillRegistryService) Initialize(ctx context.Context) error {
 		return errors.New("remote skill registry unavailable")
 	}
 	seed, err := s.files.LoadSeed(ctx)
-	if err == nil {
-		if seed.SourceID == "" {
-			seed.SourceID = RemoteSkillSourceGitHubOfficial
-		}
-		if seed.RemoteRoot == "" {
-			seed.RemoteRoot = remoteSkillVersionSourceRoot(seed.SourceID, seed.SourceCommit)
-		}
-		if err := s.store.EnsureRemoteSkillSeed(ctx, seed); err != nil {
-			return fmt.Errorf("ensure remote skill seed: %w", err)
-		}
-	} else if !errors.Is(err, ErrRemoteSkillSeedUnavailable) {
-		return fmt.Errorf("load remote skill seed: %w", err)
+	if err != nil {
+		return fmt.Errorf("load paired remote skill seed: %w", err)
 	}
-	return s.Reload(ctx)
+	if err := s.files.InstallCandidate(ctx, seed); err != nil {
+		return fmt.Errorf("install paired remote skill seed: %w", err)
+	}
+	if _, err := s.store.EnsureRemoteSkillSeed(ctx, seed); err != nil {
+		return fmt.Errorf("ensure paired remote skill seed: %w", err)
+	}
+	if err := s.Reload(ctx); err != nil {
+		return err
+	}
+	if err := s.store.CleanupLegacyRemoteSkillData(ctx); err != nil {
+		return fmt.Errorf("remove legacy remote skill database state: %w", err)
+	}
+	if err := s.files.CleanupLegacy(ctx); err != nil {
+		return fmt.Errorf("remove legacy remote skill files: %w", err)
+	}
+	return nil
 }
 
 func (s *RemoteSkillRegistryService) Start(ctx context.Context) error {
@@ -251,30 +206,31 @@ func (s *RemoteSkillRegistryService) Start(ctx context.Context) error {
 	s.started = true
 	if s.bus != nil {
 		s.wg.Add(1)
-		go func() {
-			defer s.wg.Done()
-			for runCtx.Err() == nil {
-				_ = s.bus.Subscribe(runCtx, func(revision int64, _ string) {
-					current := s.CurrentSnapshot()
-					if revision == 0 || revision > current.Revision {
-						_ = s.Reload(runCtx)
-					}
-				})
-				if runCtx.Err() != nil {
-					return
-				}
-				s.markDegraded("revision_subscription_failed")
-				timer := time.NewTimer(time.Second)
-				select {
-				case <-runCtx.Done():
-					timer.Stop()
-					return
-				case <-timer.C:
-				}
-			}
-		}()
+		go s.subscribeRevisions(runCtx)
 	}
 	return nil
+}
+
+func (s *RemoteSkillRegistryService) subscribeRevisions(ctx context.Context) {
+	defer s.wg.Done()
+	for ctx.Err() == nil {
+		_ = s.bus.Subscribe(ctx, func(revision int64, _ string) {
+			if current := s.CurrentSnapshot(); revision == 0 || revision > current.Revision {
+				_ = s.Reload(ctx)
+			}
+		})
+		if ctx.Err() != nil {
+			return
+		}
+		s.markDegraded("revision_subscription_failed")
+		timer := time.NewTimer(time.Second)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+	}
 }
 
 func (s *RemoteSkillRegistryService) Stop() {
@@ -303,249 +259,55 @@ func (s *RemoteSkillRegistryService) CurrentSnapshot() RemoteSkillRegistrySnapsh
 	return cloneRemoteSkillRegistrySnapshot(*current)
 }
 
-func (s *RemoteSkillRegistryService) ClientInstallMetadata() RemoteSkillClientInstall {
-	metadata := RemoteSkillClientInstall{
-		SkillName:     "codexrip-reverse-skill",
-		SourceID:      RemoteSkillSourceGitHubOfficial,
-		RemoteRoot:    RemoteSkillGitHubRoot,
-		DescriptorURL: RemoteSkillDescriptorURL,
-		PowerShell:    remoteSkillPowerShellInstaller(),
-		Python:        remoteSkillPythonInstaller(),
-	}
-	if snapshot := s.CurrentSnapshot(); snapshot.Active != nil {
-		metadata.SourceID = snapshot.Active.SourceID
-		metadata.RemoteRoot = snapshot.Active.RemoteRoot
-		metadata.SourceCommit = snapshot.Active.SourceCommit
-		metadata.ManifestSHA256 = snapshot.Active.ManifestSHA256
-	}
-	return metadata
-}
-
-func remoteSkillPowerShellInstaller() RemoteSkillClientInstaller {
-	acquire := fmt.Sprintf(`$url='%s'
-$hash='%s'
-$temp=[IO.Path]::GetFullPath([IO.Path]::GetTempPath())
-$root=[IO.Path]::GetFullPath((Join-Path $temp ('codexrip-reverse-skill-bootstrap-'+$hash)))
-if($root -eq $temp -or -not $root.StartsWith($temp,[StringComparison]::OrdinalIgnoreCase)){throw 'bootstrap directory rejected'}
-$null=New-Item -ItemType Directory -Path $root -Force
-$rootItem=Get-Item -LiteralPath $root -Force
-if(-not $rootItem.PSIsContainer -or ($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'bootstrap directory rejected'}
-$path=Join-Path $root 'bootstrap-reverse-skill.ps1'
-$download=Join-Path $root ('.download-'+[guid]::NewGuid().ToString('N'))
-try{
-  $response=Invoke-WebRequest -Uri $url -MaximumRedirection 0 -TimeoutSec 30 -OutFile $download -PassThru -UseBasicParsing
-  $final=$response.BaseResponse.RequestMessage.RequestUri
-  if($final.Scheme -cne 'https' -or $final.Host -cne 'codexrip.vip' -or -not $final.IsDefaultPort -or $final.UserInfo -or $final.Query -or $final.Fragment){throw 'bootstrap final URL rejected'}
-  $item=Get-Item -LiteralPath $download -Force
-  if($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $item.Length -le 0 -or $item.Length -gt 1MB){throw 'bootstrap download rejected'}
-  if((Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hash){throw 'bootstrap hash mismatch'}
-  Move-Item -LiteralPath $download -Destination $path -Force
-}finally{
-  Remove-Item -LiteralPath $download -Force -ErrorAction SilentlyContinue
-}
-$path`, RemoteSkillPowerShellBootstrapURL, RemoteSkillPowerShellBootstrapSHA256)
-	execute := fmt.Sprintf(`$hash='%s'
-$descriptor='%s'
-$temp=[IO.Path]::GetFullPath([IO.Path]::GetTempPath())
-$root=[IO.Path]::GetFullPath((Join-Path $temp ('codexrip-reverse-skill-bootstrap-'+$hash)))
-$path=[IO.Path]::GetFullPath((Join-Path $root 'bootstrap-reverse-skill.ps1'))
-if($root -eq $temp -or -not $root.StartsWith($temp,[StringComparison]::OrdinalIgnoreCase) -or -not (Test-Path -LiteralPath $path -PathType Leaf)){throw 'bootstrap path rejected'}
-$item=Get-Item -LiteralPath $path -Force
-if($item.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'bootstrap path rejected'}
-if((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hash){throw 'bootstrap hash mismatch'}
-$output=@(& $path -DescriptorUrl $descriptor)
-if($LASTEXITCODE -ne 0){throw 'bootstrap execution failed'}
-$result=$output[-1] | ConvertFrom-Json
-if($result.status -cne 'ready' -or $result.scripts_executed -ne $false){throw 'bootstrap result rejected'}
-$result | ConvertTo-Json -Compress -Depth 8`, RemoteSkillPowerShellBootstrapSHA256, RemoteSkillDescriptorURL)
-	return remoteSkillClientInstaller(RemoteSkillPowerShellBootstrapURL, RemoteSkillPowerShellBootstrapSHA256, acquire, execute)
-}
-
-func remoteSkillPythonInstaller() RemoteSkillClientInstaller {
-	acquire := fmt.Sprintf(`url='%s'
-hash='%s'
-temp="${TMPDIR:-/tmp}"
-uid="$(id -u)"
-root="$temp/codexrip-reverse-skill-bootstrap-$uid-$hash"
-path="$root/bootstrap-reverse-skill.py"
-python3 - "$url" "$hash" "$temp" "$root" "$path" <<'PY'
-import hashlib, os, pathlib, stat, sys, tempfile, urllib.error, urllib.parse, urllib.request
-url, expected, temp_root, root, target = sys.argv[1:]
-parsed = urllib.parse.urlparse(url)
-if parsed.scheme != "https" or parsed.hostname != "codexrip.vip" or parsed.port not in (None, 443) or parsed.username or parsed.password or parsed.query or parsed.fragment:
-    raise SystemExit("bootstrap URL rejected")
-temp_root = os.path.realpath(temp_root)
-root = os.path.abspath(root)
-target = os.path.abspath(target)
-if os.path.commonpath((temp_root, root)) != temp_root or os.path.dirname(target) != root:
-    raise SystemExit("bootstrap directory rejected")
-try:
-    os.mkdir(root, 0o700)
-except FileExistsError:
-    pass
-root_info = os.stat(root, follow_symlinks=False)
-if not stat.S_ISDIR(root_info.st_mode) or root_info.st_uid != os.geteuid() or stat.S_IMODE(root_info.st_mode) != 0o700:
-    raise SystemExit("bootstrap directory rejected")
-class NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        return None
-request = urllib.request.Request(url, headers={"User-Agent": "CodexRip-Bootstrap-Acquirer/1"})
-try:
-    with urllib.request.build_opener(NoRedirect).open(request, timeout=30) as response:
-        final = urllib.parse.urlparse(response.geturl())
-        if final.scheme != "https" or final.hostname != "codexrip.vip" or final.port not in (None, 443):
-            raise SystemExit("bootstrap final URL rejected")
-        declared = response.headers.get("Content-Length")
-        if declared and int(declared) > 1048576:
-            raise SystemExit("bootstrap download rejected")
-        raw = response.read(1048577)
-except urllib.error.HTTPError as exc:
-    raise SystemExit("bootstrap download rejected") from exc
-if not raw or len(raw) > 1048576 or hashlib.sha256(raw).hexdigest() != expected:
-    raise SystemExit("bootstrap hash mismatch")
-fd, staging = tempfile.mkstemp(prefix=".download-", dir=root)
-try:
-    with os.fdopen(fd, "wb") as handle:
-        os.fchmod(handle.fileno(), 0o600)
-        handle.write(raw)
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(staging, target)
-    target_info = os.stat(target, follow_symlinks=False)
-    if not stat.S_ISREG(target_info.st_mode) or target_info.st_uid != os.geteuid() or stat.S_IMODE(target_info.st_mode) != 0o600:
-        os.unlink(target)
-        raise SystemExit("bootstrap target rejected")
-finally:
-    if os.path.exists(staging):
-        os.unlink(staging)
-print(pathlib.Path(target).resolve())
-PY`, RemoteSkillPythonBootstrapURL, RemoteSkillPythonBootstrapSHA256)
-	execute := fmt.Sprintf(`hash='%s'
-descriptor='%s'
-temp="${TMPDIR:-/tmp}"
-uid="$(id -u)"
-root="$temp/codexrip-reverse-skill-bootstrap-$uid-$hash"
-path="$root/bootstrap-reverse-skill.py"
-result="$(python3 - "$path" "$hash" "$descriptor" "$temp" "$root" <<'PY'
-import hashlib, os, stat, sys
-target, expected, descriptor, temp_root, root = sys.argv[1:]
-temp_root = os.path.realpath(temp_root)
-root = os.path.abspath(root)
-target = os.path.abspath(target)
-if os.path.commonpath((temp_root, root)) != temp_root or os.path.dirname(target) != root:
-    raise SystemExit("bootstrap directory rejected")
-root_info = os.stat(root, follow_symlinks=False)
-if not stat.S_ISDIR(root_info.st_mode) or root_info.st_uid != os.geteuid() or stat.S_IMODE(root_info.st_mode) != 0o700:
-    raise SystemExit("bootstrap directory rejected")
-fd = os.open(target, os.O_RDONLY | os.O_NOFOLLOW)
-try:
-    target_info = os.fstat(fd)
-    if (
-        not stat.S_ISREG(target_info.st_mode)
-        or target_info.st_uid != os.geteuid()
-        or stat.S_IMODE(target_info.st_mode) != 0o600
-        or target_info.st_nlink != 1
-        or target_info.st_size <= 0
-        or target_info.st_size > 1048576
-    ):
-        raise SystemExit("bootstrap target rejected")
-    with os.fdopen(os.dup(fd), "rb") as handle:
-        raw = handle.read(1048577)
-    if len(raw) != target_info.st_size or hashlib.sha256(raw).hexdigest() != expected:
-        raise SystemExit("bootstrap hash mismatch")
-    sys.argv = [target, "--descriptor-url", descriptor]
-    namespace = {
-        "__name__": "__main__",
-        "__file__": target,
-        "__package__": None,
-        "__builtins__": __builtins__,
-    }
-    exec(compile(raw, target, "exec"), namespace, namespace)
-finally:
-    os.close(fd)
-PY
-)" || exit 1
-python3 -c 'import json,sys; value=json.loads(sys.argv[1]); assert value.get("status")=="ready" and value.get("scripts_executed") is False; print(json.dumps(value,separators=(",",":"),ensure_ascii=False))' "$result"`, RemoteSkillPythonBootstrapSHA256, RemoteSkillDescriptorURL)
-	return remoteSkillClientInstaller(RemoteSkillPythonBootstrapURL, RemoteSkillPythonBootstrapSHA256, acquire, execute)
-}
-
-func remoteSkillClientInstaller(bootstrapURL, hash, acquire, execute string) RemoteSkillClientInstaller {
-	return RemoteSkillClientInstaller{
-		Strategy:        RemoteSkillInstallStrategy,
-		BootstrapURL:    bootstrapURL,
-		BootstrapSHA256: hash,
-		AcquireCommand:  acquire,
-		ExecuteCommand:  execute,
-	}
-}
-
-// ActiveBundle returns the last verified immutable registry bundle. A
-// degraded snapshot may still be served when it is the last-known-good copy;
-// callers surface the degraded flag without switching to unverified bytes.
-func (s *RemoteSkillRegistryService) ActiveBundle(ctx context.Context) (RemoteSkillRegistrySnapshot, *BusinessSystemPromptBundle, error) {
-	snapshot := s.CurrentSnapshot()
-	if snapshot.Active == nil || s == nil || s.files == nil {
-		return snapshot, nil, fmt.Errorf("%w: no active skill bundle", ErrBusinessSystemPromptBundleUnavailable)
-	}
-	if current := s.bundle.Load(); current != nil && current.ManifestSHA256 == snapshot.Active.ManifestSHA256 {
-		return snapshot, current, nil
-	}
-	s.stateMu.Lock()
-	defer s.stateMu.Unlock()
-	if current := s.bundle.Load(); current != nil && current.ManifestSHA256 == snapshot.Active.ManifestSHA256 {
-		return snapshot, current, nil
-	}
-	bundle, err := s.files.LoadBundle(ctx, *snapshot.Active)
-	if err != nil {
-		return snapshot, nil, err
-	}
-	if bundle == nil || bundle.ManifestSHA256 != snapshot.Active.ManifestSHA256 {
-		return snapshot, nil, fmt.Errorf("%w: active bundle identity mismatch", ErrBusinessSystemPromptBundleInvalid)
-	}
-	s.bundle.Store(bundle)
-	return snapshot, bundle, nil
-}
-
 func (s *RemoteSkillRegistryService) Reload(ctx context.Context) error {
 	s.applyMu.Lock()
 	defer s.applyMu.Unlock()
-	loaded, err := s.store.LoadRemoteSkillSnapshot(ctx)
+	snapshot, err := s.store.LoadRemoteSkillSnapshot(ctx)
 	if err != nil {
 		return s.retainLastKnownGood(err)
 	}
-	if loaded.Active == nil {
-		loaded.Degraded = true
-		loaded.DegradedReason = "no_active_bundle"
-		s.installSnapshot(loaded)
-		return nil
+	if err := s.loadAndInstallSnapshot(ctx, snapshot); err != nil {
+		return s.retainLastKnownGood(err)
 	}
-	normalizeRemoteSkillVersionSource(loaded.Active)
-	loaded.SourceID = loaded.Active.SourceID
-	loaded.RemoteRoot = loaded.Active.RemoteRoot
-	if err := s.files.ValidateVersion(ctx, *loaded.Active); err != nil {
-		return s.retainLastKnownGood(fmt.Errorf("validate active remote skill: %w", err))
-	}
-	if err := s.files.PreparePublic(ctx, *loaded.Active); err != nil {
-		return s.retainLastKnownGood(fmt.Errorf("prepare public remote skill: %w", err))
-	}
-	if err := s.files.Activate(ctx, loaded); err != nil {
-		return s.retainLastKnownGood(fmt.Errorf("activate public remote skill descriptor: %w", err))
-	}
-	loaded.Degraded = false
-	loaded.DegradedReason = ""
-	s.installSnapshot(loaded)
 	return nil
 }
 
-func (s *RemoteSkillRegistryService) StartSync(ctx context.Context, sourceID string, actorID, expectedRevision int64) (RemoteSkillSyncJob, error) {
+func (s *RemoteSkillRegistryService) loadAndInstallSnapshot(ctx context.Context, snapshot RemoteSkillRegistrySnapshot) error {
+	if snapshot.Active == nil || snapshot.ActivePrompt == nil || snapshot.Active.PromptVersionID != snapshot.ActivePrompt.ID {
+		return fmt.Errorf("%w: active candidate and prompt are not paired", ErrBusinessSystemPromptBundleUnavailable)
+	}
+	detail, err := s.store.GetRemoteSkillVersion(ctx, snapshot.Active.ID)
+	if err != nil {
+		return err
+	}
+	if detail.Prompt.ID != snapshot.ActivePrompt.ID {
+		return fmt.Errorf("%w: active prompt identity mismatch", ErrBusinessSystemPromptBundleInvalid)
+	}
+	candidate, err := s.files.LoadCandidate(ctx, detail.RemoteSkillBundleVersion, detail.Prompt, detail.FileChanges)
+	if err != nil {
+		return err
+	}
+	publication, err := remoteSkillPublicationFromCandidate(snapshot.Revision, candidate)
+	if err != nil {
+		return err
+	}
+	snapshot.Active = &candidate.Version
+	snapshot.ActivePrompt = &candidate.Prompt
+	snapshot.Degraded = false
+	snapshot.DegradedReason = ""
+	s.installPairedSnapshot(snapshot, publication)
+	return nil
+}
+
+func (s *RemoteSkillRegistryService) StartSync(ctx context.Context, promptCapture []byte, actorID, expectedRevision int64) (RemoteSkillSyncJob, error) {
 	if s == nil || s.store == nil || s.source == nil {
 		return RemoteSkillSyncJob{}, errors.New("remote skill sync unavailable")
 	}
-	sourceID, err := NormalizeRemoteSkillSourceID(sourceID)
+	capture, provided, err := s.resolvePromptCapture(promptCapture)
 	if err != nil {
 		return RemoteSkillSyncJob{}, err
 	}
-	job, err := s.store.CreateRemoteSkillSyncJob(ctx, sourceID, actorID, expectedRevision)
+	job, err := s.store.CreateRemoteSkillSyncJob(ctx, actorID, expectedRevision, provided)
 	if err != nil {
 		return RemoteSkillSyncJob{}, err
 	}
@@ -560,42 +322,49 @@ func (s *RemoteSkillRegistryService) StartSync(ctx context.Context, sourceID str
 	s.runMu.Unlock()
 	go func() {
 		defer s.wg.Done()
-		s.runSyncJob(runCtx, job)
+		s.runSyncJob(runCtx, job, capture)
 	}()
 	return job, nil
 }
 
-func (s *RemoteSkillRegistryService) runSyncJob(ctx context.Context, job RemoteSkillSyncJob) {
+func (s *RemoteSkillRegistryService) resolvePromptCapture(raw []byte) (RemoteSkillPromptCapture, bool, error) {
+	if len(raw) > 0 {
+		capture, err := buildRemoteSkillPromptCapture(raw)
+		return capture, true, err
+	}
+	publication := s.publication.Load()
+	if publication == nil || strings.TrimSpace(publication.RawPromptBody) == "" {
+		return RemoteSkillPromptCapture{}, false, fmt.Errorf("%w: active prompt capture unavailable", ErrBusinessSystemPromptUnavailable)
+	}
+	capture, err := buildRemoteSkillPromptCapture([]byte(publication.RawPromptBody))
+	return capture, false, err
+}
+
+func (s *RemoteSkillRegistryService) runSyncJob(ctx context.Context, job RemoteSkillSyncJob, prompt RemoteSkillPromptCapture) {
 	if err := s.store.UpdateRemoteSkillSyncJobStage(ctx, job.ID, "fetching_source"); err != nil {
 		_ = s.store.FailRemoteSkillSyncJob(ctx, job.ID, "storage_error")
 		return
 	}
-	var activeManifest *BusinessSystemPromptBundleManifest
-	current := s.CurrentSnapshot()
-	if current.Active != nil {
-		if manifest, err := s.files.LoadManifest(ctx, *current.Active); err == nil {
-			activeManifest = &manifest
-		}
+	var active *RemoteSkillCandidate
+	if publication := s.publication.Load(); publication != nil {
+		active = remoteSkillCandidateFromPublication(*publication)
 	}
-	candidate, err := s.source.Build(ctx, job.SourceID, activeManifest)
+	candidate, err := s.source.Build(ctx, prompt, active)
 	if err != nil {
 		_ = s.store.FailRemoteSkillSyncJob(ctx, job.ID, remoteSkillSyncErrorCode(err))
-		return
-	}
-	if candidate.Version.SourceID != job.SourceID || candidate.Version.RemoteRoot != remoteSkillSourceRoot(job.SourceID) {
-		_ = s.store.FailRemoteSkillSyncJob(ctx, job.ID, "bundle_invalid")
 		return
 	}
 	if err := s.store.UpdateRemoteSkillSyncJobStage(ctx, job.ID, "verifying_candidate"); err != nil {
 		_ = s.store.FailRemoteSkillSyncJob(ctx, job.ID, "storage_error")
 		return
 	}
+	candidate.Version.CreatedBy = job.CreatedBy
+	candidate.Prompt.CreatedBy = job.CreatedBy
 	if err := s.files.InstallCandidate(ctx, candidate); err != nil {
 		_ = s.store.FailRemoteSkillSyncJob(ctx, job.ID, remoteSkillSyncErrorCode(err))
 		return
 	}
-	candidate.Version.CreatedBy = job.CreatedBy
-	if _, err := s.store.CompleteRemoteSkillSyncJob(ctx, job.ID, candidate.Version); err != nil {
+	if _, err := s.store.CompleteRemoteSkillSyncJob(ctx, job.ID, candidate); err != nil {
 		_ = s.store.FailRemoteSkillSyncJob(ctx, job.ID, "storage_error")
 	}
 }
@@ -603,30 +372,34 @@ func (s *RemoteSkillRegistryService) runSyncJob(ctx context.Context, job RemoteS
 func (s *RemoteSkillRegistryService) PublishVersion(ctx context.Context, versionID, expectedRevision, actorID int64) (RemoteSkillRegistrySnapshot, error) {
 	s.applyMu.Lock()
 	defer s.applyMu.Unlock()
-	version, err := s.store.GetRemoteSkillVersion(ctx, versionID)
+	detail, err := s.store.GetRemoteSkillVersion(ctx, versionID)
 	if err != nil {
 		return RemoteSkillRegistrySnapshot{}, err
 	}
-	if err := s.files.ValidateVersion(ctx, version); err != nil {
-		return RemoteSkillRegistrySnapshot{}, fmt.Errorf("%w: candidate validation failed", ErrBusinessSystemPromptUnavailable)
+	candidate, err := s.files.LoadCandidate(ctx, detail.RemoteSkillBundleVersion, detail.Prompt, detail.FileChanges)
+	if err != nil {
+		return RemoteSkillRegistrySnapshot{}, fmt.Errorf("%w: paired candidate validation failed", ErrBusinessSystemPromptUnavailable)
 	}
-	if err := s.files.PreparePublic(ctx, version); err != nil {
-		return RemoteSkillRegistrySnapshot{}, fmt.Errorf("%w: public skill preparation failed", ErrBusinessSystemPromptUnavailable)
+	// Validate and materialize the paired public snapshot before the database
+	// CAS.  A post-CAS conversion failure would otherwise leave the database
+	// pointing at a pair that the gateway cannot serve.
+	publication, err := remoteSkillPublicationFromCandidate(expectedRevision+1, candidate)
+	if err != nil {
+		return RemoteSkillRegistrySnapshot{}, fmt.Errorf("%w: paired candidate validation failed", ErrBusinessSystemPromptUnavailable)
 	}
 	snapshot, err := s.store.PublishRemoteSkillVersion(ctx, versionID, expectedRevision, actorID)
 	if err != nil {
 		return RemoteSkillRegistrySnapshot{}, err
 	}
-	if err := s.files.Activate(ctx, snapshot); err != nil {
-		_ = s.retainLastKnownGood(err)
-		return RemoteSkillRegistrySnapshot{}, fmt.Errorf("%w: public descriptor activation failed", ErrBusinessSystemPromptUnavailable)
-	}
-	s.installSnapshot(snapshot)
-	if s.bus != nil && snapshot.Active != nil {
-		if err := s.bus.Publish(ctx, snapshot.Revision, snapshot.Active.ManifestSHA256); err != nil {
+	publication.Revision = snapshot.Revision
+	snapshot.Active = &candidate.Version
+	snapshot.ActivePrompt = &candidate.Prompt
+	s.installPairedSnapshot(snapshot, publication)
+	if s.bus != nil {
+		if err := s.bus.Publish(ctx, snapshot.Revision, candidate.Version.EffectiveTreeSHA256); err != nil {
 			snapshot.Degraded = true
 			snapshot.DegradedReason = "revision_broadcast_failed"
-			s.installSnapshot(snapshot)
+			s.installPairedSnapshot(snapshot, publication)
 		}
 	}
 	return snapshot, nil
@@ -637,47 +410,36 @@ func (s *RemoteSkillRegistryService) ListVersions(ctx context.Context) ([]Remote
 }
 
 func (s *RemoteSkillRegistryService) GetVersion(ctx context.Context, id int64) (RemoteSkillBundleVersion, error) {
-	return s.store.GetRemoteSkillVersion(ctx, id)
+	detail, err := s.store.GetRemoteSkillVersion(ctx, id)
+	return detail.RemoteSkillBundleVersion, err
 }
 
 func (s *RemoteSkillRegistryService) InspectVersion(ctx context.Context, id int64) (RemoteSkillBundleVersionDetail, error) {
-	version, err := s.store.GetRemoteSkillVersion(ctx, id)
+	detail, err := s.store.GetRemoteSkillVersion(ctx, id)
 	if err != nil {
 		return RemoteSkillBundleVersionDetail{}, err
 	}
-	if err := s.files.ValidateVersion(ctx, version); err != nil {
-		return RemoteSkillBundleVersionDetail{}, fmt.Errorf("%w: candidate validation failed", ErrBusinessSystemPromptUnavailable)
+	if _, err := s.files.LoadCandidate(ctx, detail.RemoteSkillBundleVersion, detail.Prompt, detail.FileChanges); err != nil {
+		return RemoteSkillBundleVersionDetail{}, fmt.Errorf("%w: paired candidate validation failed", ErrBusinessSystemPromptUnavailable)
 	}
-	manifest, err := s.files.LoadManifest(ctx, version)
-	if err != nil {
-		return RemoteSkillBundleVersionDetail{}, fmt.Errorf("%w: candidate manifest unavailable", ErrBusinessSystemPromptUnavailable)
-	}
-	warnings := make([]string, 0)
-	for _, route := range manifest.Domains {
-		if len(remoteSkillRouteKeywords[route.ID]) == 0 {
-			warnings = append(warnings, "missing_bilingual_mapping:"+route.ID)
-		}
-	}
-	return RemoteSkillBundleVersionDetail{RemoteSkillBundleVersion: version, Verified: true, RoutingWarnings: warnings}, nil
+	detail.Verified = true
+	return detail, nil
 }
 
 func (s *RemoteSkillRegistryService) GetSyncJob(ctx context.Context, id int64) (RemoteSkillSyncJob, error) {
 	return s.store.GetRemoteSkillSyncJob(ctx, id)
 }
 
-func (s *RemoteSkillRegistryService) installSnapshot(snapshot RemoteSkillRegistrySnapshot) {
+func (s *RemoteSkillRegistryService) installPairedSnapshot(snapshot RemoteSkillRegistrySnapshot, publication RemoteSkillPublication) {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
-	current := s.snapshot.Load()
-	if current != nil && current.Revision > snapshot.Revision {
+	if current := s.snapshot.Load(); current != nil && current.Revision > snapshot.Revision {
 		return
 	}
-	cloned := cloneRemoteSkillRegistrySnapshot(snapshot)
-	if cloned.Active != nil {
-		cloned.SourceID = cloned.Active.SourceID
-		cloned.RemoteRoot = cloned.Active.RemoteRoot
-	}
-	s.snapshot.Store(&cloned)
+	clonedSnapshot := cloneRemoteSkillRegistrySnapshot(snapshot)
+	clonedPublication := cloneRemoteSkillPublication(publication)
+	s.publication.Store(&clonedPublication)
+	s.snapshot.Store(&clonedSnapshot)
 }
 
 func (s *RemoteSkillRegistryService) retainLastKnownGood(err error) error {
@@ -701,6 +463,10 @@ func cloneRemoteSkillRegistrySnapshot(snapshot RemoteSkillRegistrySnapshot) Remo
 		active := *snapshot.Active
 		snapshot.Active = &active
 	}
+	if snapshot.ActivePrompt != nil {
+		prompt := *snapshot.ActivePrompt
+		snapshot.ActivePrompt = &prompt
+	}
 	return snapshot
 }
 
@@ -708,8 +474,10 @@ func remoteSkillSyncErrorCode(err error) string {
 	switch {
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
 		return "sync_timeout"
+	case errors.Is(err, ErrBusinessSystemPromptInvalid):
+		return "prompt_invalid"
 	case errors.Is(err, ErrBusinessSystemPromptBundleInvalid):
-		return "bundle_invalid"
+		return "candidate_invalid"
 	case errors.Is(err, ErrBusinessSystemPromptBundleUnavailable):
 		return "source_unavailable"
 	default:
