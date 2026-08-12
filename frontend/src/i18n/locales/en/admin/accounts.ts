@@ -116,6 +116,8 @@ export default {
       routingAndScheduling: 'Request Routing & Scheduling',
       detailsAndTime: 'Details & Time',
       detailsTitle: 'Account Details',
+      cindyDeviceId: 'Cindy Device ID',
+      cindyDeviceIdSource: 'Device ID Source',
       directConnection: 'Direct',
       rateLimitResetAt: 'Rate Limit Reset',
       todayRequestsShort: '{count} requests today',
