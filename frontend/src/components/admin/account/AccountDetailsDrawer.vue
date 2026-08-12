@@ -170,6 +170,12 @@
               <dd class="text-right text-gray-800 dark:text-gray-100">{{ expiresAt }}</dd>
               <dt class="text-gray-500 dark:text-dark-300">{{ t('admin.accounts.rateLimitResetAt') }}</dt>
               <dd class="text-right text-gray-800 dark:text-gray-100">{{ formatValue(account.rate_limit_reset_at) }}</dd>
+              <template v-if="account.extra?.cindy_device_id">
+                <dt class="text-gray-500 dark:text-dark-300">{{ t('admin.accounts.cindyDeviceId') }}</dt>
+                <dd class="break-all text-right font-mono text-gray-800 dark:text-gray-100" data-test="cindy-device-id">{{ account.extra.cindy_device_id }}</dd>
+                <dt class="text-gray-500 dark:text-dark-300">{{ t('admin.accounts.cindyDeviceIdSource') }}</dt>
+                <dd class="break-all text-right text-gray-800 dark:text-gray-100" data-test="cindy-device-id-source">{{ account.extra.cindy_device_id_source || '-' }}</dd>
+              </template>
             </dl>
             <div class="mt-4 border-t border-gray-100 pt-3 dark:border-dark-700">
               <div class="text-xs font-medium text-gray-500 dark:text-dark-300">{{ t('admin.accounts.notes') }}</div>

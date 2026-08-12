@@ -71,4 +71,29 @@ describe('AccountDetailsDrawer', () => {
 
     expect(wrapper.emitted<Account[]>('updated')).toEqual([[updatedAccount]])
   })
+
+  it('shows the masked Cindy device identity and source', () => {
+	const cindyAccount = {
+	  ...account,
+	  type: 'apikey',
+	  extra: {
+		cindy_device_id: 'aaaaaaaa...aaaaaaaa',
+		cindy_device_id_source: 'registration-record'
+	  }
+	} as Account
+	const wrapper = shallowMount(AccountDetailsDrawer, {
+	  props: {
+		account: cindyAccount,
+		folders: [],
+		tags: [],
+		todayStats: null,
+		todayStatsLoading: false,
+		manualRefreshToken: 0
+	  },
+	  global: { stubs: { Teleport: true, Transition: false } }
+	})
+
+	expect(wrapper.get('[data-test="cindy-device-id"]').text()).toBe('aaaaaaaa...aaaaaaaa')
+	expect(wrapper.get('[data-test="cindy-device-id-source"]').text()).toBe('registration-record')
+  })
 })

@@ -322,6 +322,12 @@ func (s *adminServiceImpl) DuplicateAccount(ctx context.Context, id int64, actor
 	if err != nil {
 		return nil, fmt.Errorf("normalize duplicate account extra: %w", err)
 	}
+	delete(accountExtra, CindyDeviceIDExtraKey)
+	delete(accountExtra, CindyDeviceIDSourceExtraKey)
+	accountExtra, err = NormalizeCindyDeviceIdentityExtra(input.Platform, input.Type, input.Credentials, accountExtra, nil)
+	if err != nil {
+		return nil, fmt.Errorf("normalize duplicate Cindy identity: %w", err)
+	}
 	if err := NormalizeHeaderOverrideCredentials(input.Credentials); err != nil {
 		return nil, err
 	}
@@ -536,6 +542,10 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 	if err != nil {
 		return nil, err
 	}
+	accountExtra, err = NormalizeCindyDeviceIdentityExtra(input.Platform, input.Type, input.Credentials, accountExtra, nil)
+	if err != nil {
+		return nil, err
+	}
 
 	// 绑定分组
 	groupIDs := input.GroupIDs
@@ -613,6 +623,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	if err != nil {
 		return nil, err
 	}
+	currentCindyExtra := maps.Clone(account.Extra)
 	var normalizedExtra map[string]any
 	if input.Extra != nil {
 		normalizedExtra, err = normalizeOpenAILongContextBillingUpdateExtra(account, input)
@@ -734,6 +745,10 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		}
 		ComputeQuotaResetAt(account.Extra)
 		NormalizeFixedQuotaWindows(account.Extra)
+	}
+	account.Extra, err = NormalizeCindyDeviceIdentityExtra(account.Platform, account.Type, account.Credentials, account.Extra, currentCindyExtra)
+	if err != nil {
+		return nil, err
 	}
 	if requestedRateSyncEnabledUpdate != nil && *requestedRateSyncEnabledUpdate {
 		if requestedProbeEnabledUpdate != nil && !*requestedProbeEnabledUpdate {

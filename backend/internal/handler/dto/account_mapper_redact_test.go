@@ -100,3 +100,24 @@ func TestAccountFromServiceShallow_NilCredentialsOmitsStatus(t *testing.T) {
 	require.Nil(t, got.Credentials)
 	require.Nil(t, got.CredentialsStatus)
 }
+
+func TestAccountFromServiceShallow_MasksCindyDeviceIdentity(t *testing.T) {
+	deviceID := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	src := &service.Account{
+		ID: 10, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
+		Credentials: map[string]any{"base_url": "https://api.laxarouter.ai", "api_key": "secret-key"},
+		Extra: map[string]any{
+			service.CindyDeviceIDExtraKey:       deviceID,
+			service.CindyDeviceIDSourceExtraKey: "registration-record",
+		},
+	}
+
+	got := AccountFromServiceShallow(src)
+	require.Equal(t, "aaaaaaaa...aaaaaaaa", got.Extra[service.CindyDeviceIDExtraKey])
+	require.Equal(t, "registration-record", got.Extra[service.CindyDeviceIDSourceExtraKey])
+
+	raw, err := json.Marshal(got)
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), deviceID)
+	require.Equal(t, deviceID, src.Extra[service.CindyDeviceIDExtraKey], "service object must not be mutated")
+}

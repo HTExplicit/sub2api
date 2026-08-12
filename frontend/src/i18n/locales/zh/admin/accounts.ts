@@ -116,6 +116,8 @@ export default {
       routingAndScheduling: '请求路由与调度',
       detailsAndTime: '详情与时间',
       detailsTitle: '账号详情',
+      cindyDeviceId: 'Cindy 设备码',
+      cindyDeviceIdSource: '设备码来源',
       directConnection: '直连',
       rateLimitResetAt: '限流重置',
       todayRequestsShort: '今日 {count} 次请求',

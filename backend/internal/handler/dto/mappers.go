@@ -429,6 +429,11 @@ func redactAccountManagedExtra(extra map[string]any) map[string]any {
 			service.OllamaCloudUsageAutoRefreshExtraKey,
 			service.OllamaCloudUsageSnapshotExtraKey:
 			continue
+		case service.CindyDeviceIDExtraKey:
+			deviceID, _ := value.(string)
+			if masked := service.MaskCindyDeviceID(deviceID); masked != "" {
+				redacted[key] = masked
+			}
 		default:
 			redacted[key] = value
 		}
