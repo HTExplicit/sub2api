@@ -243,6 +243,9 @@ func mustCreateAccount(t *testing.T, client *dbent.Client, a *service.Account) *
 	if a.QuotaDimension != "" {
 		create.SetQuotaDimension(dbaccount.QuotaDimension(a.QuotaDimension))
 	}
+	if a.CindyBalanceInsufficientAt != nil {
+		create.SetCindyBalanceInsufficientAt(*a.CindyBalanceInsufficientAt)
+	}
 
 	created, err := create.Save(ctx)
 	require.NoError(t, err, "create account")

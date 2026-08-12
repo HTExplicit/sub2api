@@ -175,6 +175,34 @@
             {{ t('admin.accounts.listPendingSyncAction') }}
           </button>
         </div>
+        <div class="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-3 dark:border-dark-700">
+          <div class="inline-flex rounded-md border border-gray-200 bg-gray-50 p-1 dark:border-dark-700 dark:bg-dark-900" data-test="cindy-account-view">
+            <button
+              v-for="option in cindyViewOptions"
+              :key="option.value"
+              type="button"
+              class="rounded px-3 py-1.5 text-sm font-medium transition-colors"
+              :class="cindyView === option.value
+                ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-700 dark:text-white'
+                : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'"
+              @click="handleCindyViewChange(option.value)"
+            >
+              {{ option.label }}
+              <span class="ml-1 text-xs text-gray-400">{{ option.count }}</span>
+            </button>
+          </div>
+          <button
+            v-if="cindyView !== 'all'"
+            type="button"
+            class="btn btn-danger"
+            data-test="delete-cindy-insufficient"
+            :disabled="cindyDeleteCandidateCount === null || cindyDeleteCandidateCount === 0 || cindyDeleteLoading"
+            @click="openCindyInsufficientDelete"
+          >
+            <Icon name="trash" size="sm" />
+            {{ t('admin.accounts.cindy.deleteInsufficient') }}
+          </button>
+        </div>
       </template>
       <template #table>
         <div class="flex h-full min-h-0 min-w-0 flex-1 flex-col">
@@ -541,7 +569,7 @@
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
     <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
     <ScheduledTestsPanel :show="showSchedulePanel" :account-id="scheduleAcc?.id ?? null" :model-options="scheduleModelOptions" @close="closeSchedulePanel" />
-    <AccountActionMenu :show="menu.show" :account="menu.acc" :position="menu.pos" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" />
+    <AccountActionMenu :show="menu.show" :account="menu.acc" :position="menu.pos" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @recover-cindy-balance="handleRecoverCindyBalance" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" />
     <SyncFromCrsModal :show="showSync" @close="showSync = false" @synced="reload" />
     <ImportDataModal
       :show="showImportData"
@@ -565,6 +593,16 @@
     />
     <TempUnschedStatusModal :show="showTempUnsched" :account="tempUnschedAcc" @close="showTempUnsched = false" @reset="handleTempUnschedReset" />
     <ConfirmDialog :show="showDeleteDialog" :title="t('admin.accounts.deleteAccount')" :message="t('admin.accounts.deleteConfirm', { name: deletingAcc?.name })" :confirm-text="t('common.delete')" :cancel-text="t('common.cancel')" :danger="true" @confirm="confirmDelete" @cancel="showDeleteDialog = false" />
+    <ConfirmDialog
+      :show="showCindyDeleteDialog"
+      :title="t('admin.accounts.cindy.deleteInsufficient')"
+      :message="t('admin.accounts.cindy.deleteConfirm', { count: cindyDeletePreview?.count ?? 0 })"
+      :confirm-text="t('common.delete')"
+      :cancel-text="t('common.cancel')"
+      :danger="true"
+      @confirm="confirmCindyInsufficientDelete"
+      @cancel="closeCindyDeleteDialog"
+    />
     <ConfirmDialog :show="showCreateShadowDialog" :title="t('admin.accounts.createSparkShadow')" :message="t('admin.accounts.createSparkShadowConfirm', { name: creatingShadowAcc?.name })" @confirm="confirmCreateSparkShadow" @cancel="showCreateShadowDialog = false" />
     <ConfirmDialog :show="showExportDataDialog" :title="t('admin.accounts.dataExport')" :message="t('admin.accounts.dataExportConfirmMessage')" :confirm-text="t('admin.accounts.dataExportConfirm')" :cancel-text="t('common.cancel')" @confirm="handleExportData" @cancel="showExportDataDialog = false">
       <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
@@ -614,7 +652,7 @@ import { routeLocationKey, routerKey, type RouteLocationNormalizedLoaded, type R
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { adminAPI } from '@/api/admin'
-import type { AccountListFilters } from '@/api/admin/accounts'
+import type { AccountListFilters, CindyInsufficientDeletePreview } from '@/api/admin/accounts'
 import { useTableLoader } from '@/composables/useTableLoader'
 import { useSwipeSelect, type SwipeSelectVirtualContext } from '@/composables/useSwipeSelect'
 import { useTableSelection } from '@/composables/useTableSelection'
@@ -730,6 +768,13 @@ const facetsError = ref<unknown>(null)
 let facetsRequestSequence = 0
 let taxonomyRequestSequence = 0
 const activeFolder = ref(queryString('folder'))
+type CindyAccountView = 'all' | 'cindy' | 'insufficient'
+const initialCindyView = (): CindyAccountView => {
+  if (queryString('cindy_balance_status') === 'insufficient') return 'insufficient'
+  if (queryString('cindy_only') === 'true') return 'cindy'
+  return 'all'
+}
+const cindyView = ref<CindyAccountView>(initialCindyView())
 const showTaxonomyManager = ref(false)
 const detailsAccount = ref<Account | null>(null)
 const consoleFilters = ref<AccountConsoleFilterState>({
@@ -751,6 +796,13 @@ const finiteFacetCount = (value: unknown): number | undefined => {
   const count = Number(value)
   return Number.isFinite(count) && count >= 0 ? count : undefined
 }
+const cindyTotal = computed(() => finiteFacetCount(facets.value?.cindy_total) ?? 0)
+const cindyInsufficientCount = computed(() => finiteFacetCount(facets.value?.cindy_insufficient_count) ?? 0)
+const cindyViewOptions = computed<Array<{ value: CindyAccountView; label: string; count: number | string }>>(() => [
+  { value: 'all', label: t('admin.accounts.cindy.allAccounts'), count: finiteFacetCount(facets.value?.total) ?? '-' },
+  { value: 'cindy', label: t('admin.accounts.cindy.accounts'), count: cindyTotal.value },
+  { value: 'insufficient', label: t('admin.accounts.cindy.insufficient'), count: cindyInsufficientCount.value }
+])
 const folderNavigationTotal = computed(() => finiteFacetCount(facets.value?.total))
 const folderNavigationUncategorized = computed(() => finiteFacetCount(facets.value?.uncategorized_count))
 const accountTableRef = ref<HTMLElement | null>(null)
@@ -797,6 +849,10 @@ const showBulkTaxonomy = ref(false)
 const bulkTaxonomyTarget = ref<AccountBulkTaxonomyTarget | null>(null)
 const showTempUnsched = ref(false)
 const showDeleteDialog = ref(false)
+const showCindyDeleteDialog = ref(false)
+const cindyDeletePreview = ref<CindyInsufficientDeletePreview | null>(null)
+const cindyDeleteCandidateCount = ref<number | null>(null)
+const cindyDeleteLoading = ref(false)
 const showCreateShadowDialog = ref(false)
 const showReAuth = ref(false)
 const showTest = ref(false)
@@ -1212,6 +1268,8 @@ const buildConsoleRouteQuery = (): Record<string, string> => {
   if (activeFolder.value) query.folder = activeFolder.value
   if (state.group) query.group = state.group
   if (state.privacy_mode) query.privacy_mode = state.privacy_mode
+  if (cindyView.value !== 'all') query.cindy_only = 'true'
+  if (cindyView.value === 'insufficient') query.cindy_balance_status = 'insufficient'
   if (sortState.sort_by !== 'name' || sortState.sort_order !== 'asc') query.sort_by = sortState.sort_by
   if (sortState.sort_order !== 'asc') query.sort_order = sortState.sort_order
   if (pagination.page > 1) query.page = String(pagination.page)
@@ -1233,6 +1291,7 @@ const syncConsoleRoute = (mode: 'push' | 'replace' = 'push') => {
 
 const applyConsoleRouteState = () => {
   activeFolder.value = queryString('folder')
+  cindyView.value = initialCindyView()
   consoleFilters.value = {
     ...consoleFilters.value,
     platforms: queryList('platforms'),
@@ -1264,6 +1323,8 @@ const buildConsoleAPIParams = (includeFolder = true) => {
     account_ids: state.account_ids.length ? state.account_ids.join(',') : undefined,
     group: state.group || undefined,
     privacy_mode: state.privacy_mode || undefined,
+    cindy_only: cindyView.value !== 'all' ? 'true' : undefined,
+    cindy_balance_status: cindyView.value === 'insufficient' ? 'insufficient' as const : undefined,
     search: state.search.trim() || undefined,
     sort_by: sortState.sort_by,
     sort_order: sortState.sort_order
@@ -1274,7 +1335,8 @@ const syncConsoleParams = () => {
   const requestParams = params as Record<string, unknown>
   for (const key of [
     'platform', 'type', 'status', 'platforms', 'types', 'statuses', 'plans', 'proxies',
-    'folder', 'folders', 'tags', 'account_ids', 'group', 'privacy_mode', 'search'
+    'folder', 'folders', 'tags', 'account_ids', 'group', 'privacy_mode', 'search',
+    'cindy_only', 'cindy_balance_status'
   ]) {
     delete requestParams[key]
   }
@@ -1298,6 +1360,26 @@ const loadFacets = async () => {
     }
   } finally {
     if (requestSequence === facetsRequestSequence) facetsLoading.value = false
+  }
+}
+
+let cindyDeleteCandidateRequestSequence = 0
+const loadCindyDeleteCandidateCount = async () => {
+  const requestSequence = ++cindyDeleteCandidateRequestSequence
+  if (cindyView.value === 'all') {
+    cindyDeleteCandidateCount.value = null
+    return
+  }
+  cindyDeleteCandidateCount.value = null
+  try {
+    const preview = await adminAPI.accounts.previewCindyInsufficientDeletion()
+    if (requestSequence === cindyDeleteCandidateRequestSequence) {
+      cindyDeleteCandidateCount.value = preview.count
+    }
+  } catch (error) {
+    if (requestSequence === cindyDeleteCandidateRequestSequence) {
+      console.error('Failed to load Cindy deletion candidate count:', error)
+    }
   }
 }
 
@@ -1337,6 +1419,16 @@ const handleConsoleFiltersChanged = () => {
   syncConsoleParams()
   debouncedReload()
   void loadFacets()
+}
+
+const handleCindyViewChange = (view: CindyAccountView) => {
+  if (cindyView.value === view) return
+  cindyView.value = view
+  pagination.page = 1
+  clearSelection()
+  syncConsoleRoute()
+  syncConsoleParams()
+  void Promise.all([load(), loadFacets(), loadCindyDeleteCandidateCount()])
 }
 
 const handleFolderSelect = (folder: string) => {
@@ -1542,6 +1634,7 @@ const isAnyModalOpen = computed(() => {
     showBulkEdit.value ||
     showTempUnsched.value ||
     showDeleteDialog.value ||
+    showCindyDeleteDialog.value ||
     showReAuth.value ||
     showTest.value ||
     showStats.value ||
@@ -1573,6 +1666,7 @@ const shouldReplaceAutoRefreshRow = (current: Account, next: Account) => {
     current.rate_limit_reset_at !== next.rate_limit_reset_at ||
     current.overload_until !== next.overload_until ||
     current.temp_unschedulable_until !== next.temp_unschedulable_until ||
+    current.cindy_balance_insufficient !== next.cindy_balance_insufficient ||
     buildOpenAIUsageRefreshKey(current) !== buildOpenAIUsageRefreshKey(next)
   )
 }
@@ -2428,6 +2522,73 @@ const handleAccountUpdated = (updatedAccount: Account) => {
   patchAccountInList(updatedAccount)
   enterAutoRefreshSilentWindow()
 }
+const closeCindyDeleteDialog = () => {
+  if (cindyDeleteLoading.value) return
+  showCindyDeleteDialog.value = false
+  cindyDeletePreview.value = null
+}
+const openCindyInsufficientDelete = async () => {
+  if (cindyDeleteLoading.value) return
+  cindyDeleteLoading.value = true
+  try {
+    const preview = await adminAPI.accounts.previewCindyInsufficientDeletion()
+    cindyDeleteCandidateCount.value = preview.count
+    if (preview.count === 0) {
+      appStore.showInfo(t('admin.accounts.cindy.noInsufficient'))
+      await loadFacets()
+      return
+    }
+    cindyDeletePreview.value = preview
+    showCindyDeleteDialog.value = true
+  } catch (error) {
+    console.error('Failed to preview Cindy insufficient account deletion:', error)
+    appStore.showError(extractApiErrorMessage(error, t('admin.accounts.cindy.previewFailed')))
+  } finally {
+    cindyDeleteLoading.value = false
+  }
+}
+const confirmCindyInsufficientDelete = async () => {
+  const preview = cindyDeletePreview.value
+  if (!preview || cindyDeleteLoading.value) return
+  cindyDeleteLoading.value = true
+  try {
+    const result = await adminAPI.accounts.deleteCindyInsufficient(preview)
+    showCindyDeleteDialog.value = false
+    cindyDeletePreview.value = null
+    pagination.page = 1
+    clearSelection()
+    syncConsoleRoute('replace')
+    syncConsoleParams()
+    await Promise.all([reload(), loadFacets(), loadTaxonomy(), loadCindyDeleteCandidateCount()])
+    appStore.showSuccess(t('admin.accounts.cindy.deleteSuccess', { count: result.deleted_count }))
+  } catch (error: any) {
+    showCindyDeleteDialog.value = false
+    cindyDeletePreview.value = null
+    if (error?.response?.status === 409) {
+      pagination.page = 1
+      syncConsoleRoute('replace')
+      syncConsoleParams()
+      await Promise.all([reload(), loadFacets(), loadCindyDeleteCandidateCount()])
+      appStore.showWarning(t('admin.accounts.cindy.candidatesChanged'))
+    } else {
+      console.error('Failed to delete Cindy insufficient accounts:', error)
+      appStore.showError(extractApiErrorMessage(error, t('admin.accounts.cindy.deleteFailed')))
+    }
+  } finally {
+    cindyDeleteLoading.value = false
+  }
+}
+const handleRecoverCindyBalance = async (account: Account) => {
+  try {
+    const updated = await adminAPI.accounts.clearCindyBalanceInsufficient(account.id)
+    handleAccountUpdated(updated)
+    await Promise.all([reload(), loadFacets(), loadCindyDeleteCandidateCount()])
+    appStore.showSuccess(t('admin.accounts.cindy.recoverSuccess'))
+  } catch (error) {
+    console.error('Failed to clear Cindy insufficient balance marker:', error)
+    appStore.showError(extractApiErrorMessage(error, t('admin.accounts.cindy.recoverFailed')))
+  }
+}
 const handleTaxonomyAccountUpdated = async (updatedAccount: Account) => {
   handleAccountUpdated(updatedAccount)
   await Promise.all([loadFacets(), loadTaxonomy()])
@@ -2687,7 +2848,7 @@ const handleClickOutside = (event: MouseEvent) => {
 }
 
 onMounted(async () => {
-  await Promise.all([load(), loadFacets(), loadTaxonomy()])
+  await Promise.all([load(), loadFacets(), loadTaxonomy(), loadCindyDeleteCandidateCount()])
   loadUpstreamBillingProbeGlobalState()
   try {
     const [p, g] = await Promise.all([adminAPI.proxies.getAll(), adminAPI.groups.getAll()])

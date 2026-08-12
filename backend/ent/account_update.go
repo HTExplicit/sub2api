@@ -392,6 +392,26 @@ func (_u *AccountUpdate) SetNillableSchedulable(v *bool) *AccountUpdate {
 	return _u
 }
 
+// SetCindyBalanceInsufficientAt sets the "cindy_balance_insufficient_at" field.
+func (_u *AccountUpdate) SetCindyBalanceInsufficientAt(v time.Time) *AccountUpdate {
+	_u.mutation.SetCindyBalanceInsufficientAt(v)
+	return _u
+}
+
+// SetNillableCindyBalanceInsufficientAt sets the "cindy_balance_insufficient_at" field if the given value is not nil.
+func (_u *AccountUpdate) SetNillableCindyBalanceInsufficientAt(v *time.Time) *AccountUpdate {
+	if v != nil {
+		_u.SetCindyBalanceInsufficientAt(*v)
+	}
+	return _u
+}
+
+// ClearCindyBalanceInsufficientAt clears the value of the "cindy_balance_insufficient_at" field.
+func (_u *AccountUpdate) ClearCindyBalanceInsufficientAt() *AccountUpdate {
+	_u.mutation.ClearCindyBalanceInsufficientAt()
+	return _u
+}
+
 // SetRateLimitedAt sets the "rate_limited_at" field.
 func (_u *AccountUpdate) SetRateLimitedAt(v time.Time) *AccountUpdate {
 	_u.mutation.SetRateLimitedAt(v)
@@ -963,6 +983,12 @@ func (_u *AccountUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.Schedulable(); ok {
 		_spec.SetField(account.FieldSchedulable, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.CindyBalanceInsufficientAt(); ok {
+		_spec.SetField(account.FieldCindyBalanceInsufficientAt, field.TypeTime, value)
+	}
+	if _u.mutation.CindyBalanceInsufficientAtCleared() {
+		_spec.ClearField(account.FieldCindyBalanceInsufficientAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.RateLimitedAt(); ok {
 		_spec.SetField(account.FieldRateLimitedAt, field.TypeTime, value)
@@ -1685,6 +1711,26 @@ func (_u *AccountUpdateOne) SetNillableSchedulable(v *bool) *AccountUpdateOne {
 	return _u
 }
 
+// SetCindyBalanceInsufficientAt sets the "cindy_balance_insufficient_at" field.
+func (_u *AccountUpdateOne) SetCindyBalanceInsufficientAt(v time.Time) *AccountUpdateOne {
+	_u.mutation.SetCindyBalanceInsufficientAt(v)
+	return _u
+}
+
+// SetNillableCindyBalanceInsufficientAt sets the "cindy_balance_insufficient_at" field if the given value is not nil.
+func (_u *AccountUpdateOne) SetNillableCindyBalanceInsufficientAt(v *time.Time) *AccountUpdateOne {
+	if v != nil {
+		_u.SetCindyBalanceInsufficientAt(*v)
+	}
+	return _u
+}
+
+// ClearCindyBalanceInsufficientAt clears the value of the "cindy_balance_insufficient_at" field.
+func (_u *AccountUpdateOne) ClearCindyBalanceInsufficientAt() *AccountUpdateOne {
+	_u.mutation.ClearCindyBalanceInsufficientAt()
+	return _u
+}
+
 // SetRateLimitedAt sets the "rate_limited_at" field.
 func (_u *AccountUpdateOne) SetRateLimitedAt(v time.Time) *AccountUpdateOne {
 	_u.mutation.SetRateLimitedAt(v)
@@ -2286,6 +2332,12 @@ func (_u *AccountUpdateOne) sqlSave(ctx context.Context) (_node *Account, err er
 	}
 	if value, ok := _u.mutation.Schedulable(); ok {
 		_spec.SetField(account.FieldSchedulable, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.CindyBalanceInsufficientAt(); ok {
+		_spec.SetField(account.FieldCindyBalanceInsufficientAt, field.TypeTime, value)
+	}
+	if _u.mutation.CindyBalanceInsufficientAtCleared() {
+		_spec.ClearField(account.FieldCindyBalanceInsufficientAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.RateLimitedAt(); ok {
 		_spec.SetField(account.FieldRateLimitedAt, field.TypeTime, value)

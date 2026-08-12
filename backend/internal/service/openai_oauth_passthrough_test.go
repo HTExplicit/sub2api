@@ -231,6 +231,7 @@ type openAIPassthroughFailoverRepo struct {
 	stubOpenAIAccountRepo
 	rateLimitCalls []time.Time
 	overloadCalls  []time.Time
+	cindyMarkCalls int
 }
 
 func (r *openAIPassthroughFailoverRepo) SetRateLimited(_ context.Context, _ int64, resetAt time.Time) error {
@@ -241,6 +242,23 @@ func (r *openAIPassthroughFailoverRepo) SetRateLimited(_ context.Context, _ int6
 func (r *openAIPassthroughFailoverRepo) SetOverloaded(_ context.Context, _ int64, until time.Time) error {
 	r.overloadCalls = append(r.overloadCalls, until)
 	return nil
+}
+
+func (r *openAIPassthroughFailoverRepo) MarkCindyBalanceInsufficient(context.Context, int64, time.Time) (bool, error) {
+	r.cindyMarkCalls++
+	return true, nil
+}
+
+func (r *openAIPassthroughFailoverRepo) ClearCindyBalanceInsufficient(context.Context, int64) (bool, error) {
+	return false, nil
+}
+
+func (r *openAIPassthroughFailoverRepo) PreviewCindyInsufficientDeletion(context.Context) (*CindyInsufficientDeletePreview, error) {
+	return &CindyInsufficientDeletePreview{}, nil
+}
+
+func (r *openAIPassthroughFailoverRepo) DeleteCindyInsufficient(context.Context, int, string) (*CindyInsufficientDeleteResult, error) {
+	return &CindyInsufficientDeleteResult{}, nil
 }
 
 var structuredLogCaptureMu sync.Mutex
@@ -1384,9 +1402,34 @@ func TestOpenAIGatewayService_OpenAIPassthrough_RetryableStatusesTriggerFailover
 		accountType    string
 		statusCode     int
 		body           string
+		stream         bool
+		cindy          bool
 		expectFailover bool
 		assertRepo     func(t *testing.T, repo *openAIPassthroughFailoverRepo, start time.Time)
 	}{
+		{
+			name:           "cindy_402_non_stream",
+			accountType:    AccountTypeAPIKey,
+			statusCode:     http.StatusPaymentRequired,
+			body:           `{"error":{"message":"payment required"}}`,
+			cindy:          true,
+			expectFailover: true,
+			assertRepo: func(t *testing.T, repo *openAIPassthroughFailoverRepo, _ time.Time) {
+				require.Equal(t, 1, repo.cindyMarkCalls)
+			},
+		},
+		{
+			name:           "cindy_402_stream",
+			accountType:    AccountTypeAPIKey,
+			statusCode:     http.StatusPaymentRequired,
+			body:           `{"error":{"message":"payment required"}}`,
+			stream:         true,
+			cindy:          true,
+			expectFailover: true,
+			assertRepo: func(t *testing.T, repo *openAIPassthroughFailoverRepo, _ time.Time) {
+				require.Equal(t, 1, repo.cindyMarkCalls)
+			},
+		},
 		{
 			name:        "oauth_429_rate_limit",
 			accountType: AccountTypeOAuth,
@@ -1505,8 +1548,15 @@ func TestOpenAIGatewayService_OpenAIPassthrough_RetryableStatusesTriggerFailover
 			}
 
 			account := newAccount(tc.accountType)
+			if tc.cindy {
+				account.Credentials = cindyCredentials()
+			}
+			requestBody := originalBody
+			if tc.stream {
+				requestBody = []byte(`{"model":"gpt-5.2","stream":true,"instructions":"local-test-instructions","input":[{"type":"text","text":"hi"}]}`)
+			}
 			start := time.Now()
-			_, err := svc.Forward(context.Background(), c, account, originalBody)
+			_, err := svc.Forward(context.Background(), c, account, requestBody)
 			require.Error(t, err)
 
 			var failoverErr *UpstreamFailoverError

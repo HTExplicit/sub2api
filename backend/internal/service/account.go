@@ -45,6 +45,8 @@ type Account struct {
 	UpdatedAt          time.Time
 
 	Schedulable bool
+	// CindyBalanceInsufficientAt is set only after an exact Cindy account returns HTTP 402.
+	CindyBalanceInsufficientAt *time.Time
 
 	RateLimitedAt    *time.Time
 	RateLimitResetAt *time.Time
@@ -200,6 +202,9 @@ func (a *Account) EffectiveLoadFactor() int {
 
 func (a *Account) IsSchedulable() bool {
 	if !a.IsActive() || !a.Schedulable {
+		return false
+	}
+	if a.CindyBalanceInsufficientAt != nil {
 		return false
 	}
 	now := time.Now()

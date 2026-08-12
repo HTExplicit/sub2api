@@ -101,7 +101,7 @@ func TestAccountFacetsUsesStableSnakeCaseTaxonomyDTO(t *testing.T) {
 	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	adminSvc := newAccountTaxonomyHandlerStub()
 	adminSvc.facets = &service.AccountConsoleFacets{
-		Total: 4, UncategorizedCount: 1,
+		Total: 4, UncategorizedCount: 1, CindyTotal: 3, CindyInsufficient: 2,
 		Platforms: []service.AccountFacetOption{{Value: "openai", Label: "OpenAI", Count: 4}},
 		Folders:   []service.AccountManagementFolder{{ID: 7, Name: "Production", SortOrder: 2, AccountCount: 3, CreatedAt: now, UpdatedAt: now}},
 		Tags:      []service.AccountManagementTag{{ID: 9, Name: "Paid", SortOrder: 1, AccountCount: 2, CreatedAt: now, UpdatedAt: now}},
@@ -136,6 +136,8 @@ func TestAccountFacetsUsesStableSnakeCaseTaxonomyDTO(t *testing.T) {
 	}
 	require.Equal(t, float64(4), data["total"])
 	require.Equal(t, float64(1), data["uncategorized_count"])
+	require.Equal(t, float64(3), data["cindy_total"])
+	require.Equal(t, float64(2), data["cindy_insufficient_count"])
 }
 
 func TestBulkAccountTaxonomyMapsFilteredTarget(t *testing.T) {

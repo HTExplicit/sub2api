@@ -53,6 +53,8 @@ export interface AccountListFilters {
   privacy_mode?: string
   lite?: string
   include_scheduler_score?: string
+  cindy_only?: string
+  cindy_balance_status?: 'insufficient'
   sort_by?: string
   sort_order?: 'asc' | 'desc'
 }
@@ -832,6 +834,33 @@ export async function batchDelete(accountIds: number[]): Promise<BatchOperationR
   return data
 }
 
+export interface CindyInsufficientDeletePreview {
+  count: number
+  fingerprint: string
+}
+
+export interface CindyInsufficientDeleteResult {
+  deleted_count: number
+}
+
+export async function previewCindyInsufficientDeletion(): Promise<CindyInsufficientDeletePreview> {
+  const { data } = await apiClient.get<CindyInsufficientDeletePreview>('/admin/accounts/cindy/insufficient-delete-preview')
+  return data
+}
+
+export async function deleteCindyInsufficient(preview: CindyInsufficientDeletePreview): Promise<CindyInsufficientDeleteResult> {
+  const { data } = await apiClient.post<CindyInsufficientDeleteResult>('/admin/accounts/cindy/delete-insufficient', {
+    expected_count: preview.count,
+    fingerprint: preview.fingerprint
+  })
+  return data
+}
+
+export async function clearCindyBalanceInsufficient(accountId: number): Promise<Account> {
+  const { data } = await apiClient.post<Account>(`/admin/accounts/${accountId}/cindy-balance/recover`)
+  return data
+}
+
 /**
  * Batch clear account errors
  * @param accountIds - Array of account IDs
@@ -1116,6 +1145,9 @@ export const accountsAPI = {
   createOpenAICodexPAT,
   getAntigravityDefaultModelMapping,
   batchDelete,
+  previewCindyInsufficientDeletion,
+  deleteCindyInsufficient,
+  clearCindyBalanceInsufficient,
   batchClearError,
   batchRefresh,
   setPrivacy,

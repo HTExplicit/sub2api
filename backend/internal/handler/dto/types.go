@@ -214,7 +214,9 @@ type Account struct {
 	CreatedAt               time.Time                      `json:"created_at"`
 	UpdatedAt               time.Time                      `json:"updated_at"`
 
-	Schedulable bool `json:"schedulable"`
+	Schedulable              bool `json:"schedulable"`
+	IsCindy                  bool `json:"is_cindy"`
+	CindyBalanceInsufficient bool `json:"cindy_balance_insufficient"`
 
 	RateLimitedAt    *time.Time `json:"rate_limited_at"`
 	RateLimitResetAt *time.Time `json:"rate_limit_reset_at"`
@@ -335,6 +337,8 @@ type AccountConsoleFacets struct {
 	Proxies            []AccountFacetOption      `json:"proxies"`
 	Folders            []AccountManagementFolder `json:"folders"`
 	Tags               []AccountManagementTag    `json:"tags"`
+	CindyTotal         int                       `json:"cindy_total"`
+	CindyInsufficient  int                       `json:"cindy_insufficient_count"`
 }
 
 type AccountFacetOption struct {
