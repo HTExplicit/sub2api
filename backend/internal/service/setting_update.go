@@ -444,6 +444,8 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	}
 	updates[SettingKeyOpenAIRefusalRecoveryEnabled] = strconv.FormatBool(settings.OpenAIRefusalRecoveryEnabled)
 	updates[SettingKeyOpenAICyberFailoverEnabled] = strconv.FormatBool(settings.OpenAICyberFailoverEnabled)
+	updates[SettingKeyOpenAIAPIKeyAlphaSearchResponsesBridgeEnabled] = strconv.FormatBool(settings.OpenAIAPIKeyAlphaSearchResponsesBridgeEnabled)
+	updates[SettingKeyOpenAIAPIKeyPromptCacheKeyNormalizationEnabled] = strconv.FormatBool(settings.OpenAIAPIKeyPromptCacheKeyNormalizationEnabled)
 	updates[SettingKeyOpenAIRefusalRewriteEnabled] = strconv.FormatBool(settings.OpenAIRefusalRewriteEnabled)
 	refusalKeywordsJSON, err := json.Marshal(settings.OpenAIRefusalKeywords)
 	if err != nil {
@@ -617,11 +619,13 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 	s.openAIRefusalRecoverySF.Forget("openai_refusal_recovery")
 	s.openAIRefusalRecoveryCache.Store(&cachedOpenAIRefusalRecoveryRuntime{
 		runtime: buildOpenAIRefusalRecoveryRuntime(map[string]string{
-			SettingKeyOpenAIRefusalRecoveryEnabled: strconv.FormatBool(settings.OpenAIRefusalRecoveryEnabled),
-			SettingKeyOpenAICyberFailoverEnabled:   strconv.FormatBool(settings.OpenAICyberFailoverEnabled),
-			SettingKeyOpenAIRefusalRewriteEnabled:  strconv.FormatBool(settings.OpenAIRefusalRewriteEnabled),
-			SettingKeyOpenAIRefusalKeywords:        string(keywordsJSON),
-			SettingKeyOpenAIRefusalReplacement:     settings.OpenAIRefusalReplacement,
+			SettingKeyOpenAIRefusalRecoveryEnabled:                   strconv.FormatBool(settings.OpenAIRefusalRecoveryEnabled),
+			SettingKeyOpenAICyberFailoverEnabled:                     strconv.FormatBool(settings.OpenAICyberFailoverEnabled),
+			SettingKeyOpenAIAPIKeyAlphaSearchResponsesBridgeEnabled:  strconv.FormatBool(settings.OpenAIAPIKeyAlphaSearchResponsesBridgeEnabled),
+			SettingKeyOpenAIAPIKeyPromptCacheKeyNormalizationEnabled: strconv.FormatBool(settings.OpenAIAPIKeyPromptCacheKeyNormalizationEnabled),
+			SettingKeyOpenAIRefusalRewriteEnabled:                    strconv.FormatBool(settings.OpenAIRefusalRewriteEnabled),
+			SettingKeyOpenAIRefusalKeywords:                          string(keywordsJSON),
+			SettingKeyOpenAIRefusalReplacement:                       settings.OpenAIRefusalReplacement,
 		}),
 		expiresAt: time.Now().Add(openAIRefusalRecoveryCacheTTL).UnixNano(),
 	})

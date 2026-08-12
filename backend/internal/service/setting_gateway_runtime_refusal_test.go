@@ -133,16 +133,28 @@ func (r *openAIRefusalRuntimeRepo) calls() (int, int) {
 
 func openAIRefusalRuntimeValues(rewrite bool) map[string]string {
 	values := map[string]string{
-		SettingKeyOpenAIRefusalRecoveryEnabled: "true",
-		SettingKeyOpenAICyberFailoverEnabled:   "true",
-		SettingKeyOpenAIRefusalRewriteEnabled:  "false",
-		SettingKeyOpenAIRefusalKeywords:        `["cannot"]`,
-		SettingKeyOpenAIRefusalReplacement:     "continue current task",
+		SettingKeyOpenAIRefusalRecoveryEnabled:                   "true",
+		SettingKeyOpenAICyberFailoverEnabled:                     "true",
+		SettingKeyOpenAIAPIKeyAlphaSearchResponsesBridgeEnabled:  "true",
+		SettingKeyOpenAIAPIKeyPromptCacheKeyNormalizationEnabled: "true",
+		SettingKeyOpenAIRefusalRewriteEnabled:                    "false",
+		SettingKeyOpenAIRefusalKeywords:                          `["cannot"]`,
+		SettingKeyOpenAIRefusalReplacement:                       "continue current task",
 	}
 	if rewrite {
 		values[SettingKeyOpenAIRefusalRewriteEnabled] = "true"
 	}
 	return values
+}
+
+func TestOpenAIRefusalRuntimeLoadsAPIKeyCompatibilitySwitches(t *testing.T) {
+	repo := &openAIRefusalRuntimeRepo{values: openAIRefusalRuntimeValues(false)}
+	svc := &SettingService{settingRepo: repo}
+
+	runtime := svc.GetOpenAIRefusalRecoveryRuntime(context.Background())
+
+	require.True(t, runtime.APIKeyAlphaSearchResponsesBridge)
+	require.True(t, runtime.APIKeyPromptCacheKeyNormalization)
 }
 
 func expireOpenAIRefusalRuntimeCache(t *testing.T, svc *SettingService) {

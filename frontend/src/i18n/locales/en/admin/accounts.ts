@@ -642,6 +642,15 @@ export default {
         responsesModeForceChatCompletions: 'Force Chat Completions',
         responsesModeTextDisabledHint:
           'Not applicable when the Responses / Chat Completions endpoint is not enabled.',
+        alphaSearchMode: 'Alpha Search mode',
+        alphaSearchModeDesc: 'OpenAI API keys only. Bridge mode also requires the global admin switch; disabled accounts are excluded from search scheduling.',
+        alphaSearchModeDirect: 'Direct /v1/alpha/search',
+        alphaSearchModeResponsesWebSearch: 'Responses Web Search bridge',
+        alphaSearchModeDisabled: 'Disable search',
+        promptCacheKeyMode: 'Prompt cache key mode',
+        promptCacheKeyModeDesc: 'OpenAI API keys only. SHA-256 mode also requires the global admin switch and only rewrites values longer than 64 characters.',
+        promptCacheKeyModePassthrough: 'Pass through',
+        promptCacheKeyModeSHA25664: 'SHA-256 (64 characters)',
         endpointCapabilities: 'Endpoint capabilities',
         endpointCapabilitiesDesc:
           'Used by account routing. The text endpoint follows the Responses API support setting above and is shown as Responses, Chat Completions, or auto mode; Embeddings independently controls /v1/embeddings.',

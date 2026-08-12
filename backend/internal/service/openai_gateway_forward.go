@@ -57,6 +57,21 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if toolSchemaSanitized {
 		body = sanitizedToolBody
 	}
+	compatRuntime := OpenAIRefusalRecoveryRuntime{}
+	if s.settingService != nil {
+		compatRuntime = s.settingService.GetOpenAIRefusalRecoveryRuntime(ctx)
+	}
+	normalizedCacheBody, cacheKeyNormalized, cacheKeyErr := normalizeOpenAIAPIKeyPromptCacheKey(
+		body,
+		account,
+		compatRuntime.APIKeyPromptCacheKeyNormalization,
+	)
+	if cacheKeyErr != nil {
+		return nil, fmt.Errorf("normalize OpenAI API key prompt_cache_key: %w", cacheKeyErr)
+	}
+	if cacheKeyNormalized {
+		body = normalizedCacheBody
+	}
 	if account.IsOpenAIOAuth() && isOpenAIResponsesLiteHeader(c.GetHeader(responsesLiteHeader)) {
 		liteBody, changed, liteErr := normalizeOpenAIResponsesLiteToolsPayload(body)
 		if liteErr != nil {
@@ -874,6 +889,18 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		return true, nil
 	}
 	for {
+		finalCacheBody, finalCacheChanged, finalCacheErr := normalizeOpenAIAPIKeyPromptCacheKey(
+			body,
+			account,
+			compatRuntime.APIKeyPromptCacheKeyNormalization,
+		)
+		if finalCacheErr != nil {
+			return nil, fmt.Errorf("normalize final OpenAI API key prompt_cache_key: %w", finalCacheErr)
+		}
+		if finalCacheChanged {
+			body = finalCacheBody
+			promptCacheKey = gjson.GetBytes(body, "prompt_cache_key").String()
+		}
 		// Build upstream request
 		upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
 		var headerGuard *openAIFirstOutputHeaderGuard

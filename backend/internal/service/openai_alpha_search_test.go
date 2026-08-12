@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
@@ -170,6 +171,47 @@ func TestForwardAlphaSearchPATUsesResponsesWebSearchFallback(t *testing.T) {
 	require.Contains(t, gjson.GetBytes(upstream.lastBody, "input.0.content.0.text").String(), `"search_query"`)
 }
 
+func TestForwardAlphaSearchAPIKeyResponsesBridgeUsesConfiguredBaseURL(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"id":"search-session","model":"gpt-5.6-sol","commands":{"search_query":[{"q":"news"}]}}`)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/alpha/search", bytes.NewReader(body))
+	c.Request.Header.Set("User-Agent", "codex-test")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(alphaSearchResponsesSSE("search result"))),
+	}}
+	settings := &SettingService{}
+	settings.openAIRefusalRecoveryCache.Store(&cachedOpenAIRefusalRecoveryRuntime{
+		runtime:   OpenAIRefusalRecoveryRuntime{APIKeyAlphaSearchResponsesBridge: true},
+		expiresAt: time.Now().Add(time.Minute).UnixNano(),
+	})
+	service := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream, settingService: settings}
+	account := &Account{
+		ID:          47,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://cindy.example/gateway/v1"},
+		Extra:       map[string]any{"openai_alpha_search_mode": OpenAIAlphaSearchModeResponsesWebSearch},
+	}
+
+	result, err := service.ForwardAlphaSearch(context.Background(), c, account, body)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 1, result.WebSearchCalls)
+	require.Equal(t, "https://cindy.example/gateway/v1/responses", upstream.lastReq.URL.String())
+	require.Equal(t, "Bearer sk-test", upstream.lastReq.Header.Get("Authorization"))
+	require.Equal(t, "text/event-stream", upstream.lastReq.Header.Get("Accept"))
+	require.Empty(t, upstream.lastReq.Header.Get("OpenAI-Beta"))
+	require.Empty(t, upstream.lastReq.Header.Get("ChatGPT-Account-ID"))
+	require.Equal(t, http.StatusOK, recorder.Code)
+}
+
 func TestForwardAlphaSearchPATBackfillsMissingChatGPTAccountMetadata(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{"id":"search-session","model":"gpt-5.6-sol","commands":{"search_query":[{"q":"OpenAI news"}]}}`)
@@ -250,6 +292,7 @@ func TestForwardAlphaSearchAPIKeyMapsModelAndPassesThroughError(t *testing.T) {
 		ID:       7,
 		Platform: PlatformOpenAI,
 		Type:     AccountTypeAPIKey,
+		Extra:    map[string]any{"openai_alpha_search_mode": OpenAIAlphaSearchModeResponsesWebSearch},
 		Credentials: map[string]any{
 			"api_key":  "sk-test",
 			"base_url": "https://compat.example/v4",

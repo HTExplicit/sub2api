@@ -989,6 +989,37 @@
         </div>
       </div>
 
+      <div v-if="allOpenAIAPIKey" class="space-y-4 border-t border-gray-200 pt-4 dark:border-dark-600">
+        <div class="flex items-center justify-between gap-4">
+          <div class="flex-1 pr-4">
+            <label class="input-label mb-0">{{ t('admin.accounts.openai.alphaSearchMode') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.openai.alphaSearchModeDesc') }}
+            </p>
+          </div>
+          <input v-model="enableOpenAIAlphaSearchMode" type="checkbox" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+        </div>
+        <Select
+          v-model="openAIAlphaSearchMode"
+          :options="openAIAlphaSearchModeOptions"
+          :class="!enableOpenAIAlphaSearchMode && 'pointer-events-none opacity-50'"
+        />
+        <div class="flex items-center justify-between gap-4 border-t border-gray-100 pt-4 dark:border-dark-700">
+          <div class="flex-1 pr-4">
+            <label class="input-label mb-0">{{ t('admin.accounts.openai.promptCacheKeyMode') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.openai.promptCacheKeyModeDesc') }}
+            </p>
+          </div>
+          <input v-model="enableOpenAIPromptCacheKeyMode" type="checkbox" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+        </div>
+        <Select
+          v-model="openAIPromptCacheKeyMode"
+          :options="openAIPromptCacheKeyModeOptions"
+          :class="!enableOpenAIPromptCacheKeyMode && 'pointer-events-none opacity-50'"
+        />
+      </div>
+
       <!-- OpenAI Compact mode -->
       <div v-if="allOpenAIPassthroughCapable" class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <div class="mb-3 flex items-center justify-between">
@@ -1303,7 +1334,7 @@ import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
-import type { Proxy as ProxyConfig, AdminGroup, AccountPlatform, AccountType, OpenAICompactMode } from '@/types'
+import type { Proxy as ProxyConfig, AdminGroup, AccountPlatform, AccountType, OpenAICompactMode, OpenAIAlphaSearchMode, OpenAIPromptCacheKeyMode } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Select from '@/components/common/Select.vue'
@@ -1484,6 +1515,8 @@ const enableCodexCLIOnly = ref(false)
 const enableCodexCLIOnlyAppServer = ref(false)
 const enableOpenAICompactMode = ref(false)
 const enableOpenAICompactModelMapping = ref(false)
+const enableOpenAIAlphaSearchMode = ref(false)
+const enableOpenAIPromptCacheKeyMode = ref(false)
 const enableRpmLimit = ref(false)
 
 // State - field values
@@ -1517,6 +1550,8 @@ const codexCLIOnlyEnabled = ref(false)
 const codexCLIOnlyAppServerEnabled = ref(false)
 const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openAICompactModelMappings = ref<ModelMapping[]>([])
+const openAIAlphaSearchMode = ref<OpenAIAlphaSearchMode>('direct')
+const openAIPromptCacheKeyMode = ref<OpenAIPromptCacheKeyMode>('passthrough')
 const rpmLimitEnabled = ref(false)
 const bulkBaseRpm = ref<number | null>(null)
 const bulkRpmStrategy = ref<'tiered' | 'sticky_exempt'>('tiered')
@@ -1564,6 +1599,15 @@ const openAICompactModeOptions = computed(() => [
   { value: 'auto', label: t('admin.accounts.openai.compactModeAuto') },
   { value: 'force_on', label: t('admin.accounts.openai.compactModeForceOn') },
   { value: 'force_off', label: t('admin.accounts.openai.compactModeForceOff') }
+])
+const openAIAlphaSearchModeOptions = computed(() => [
+  { value: 'direct', label: t('admin.accounts.openai.alphaSearchModeDirect') },
+  { value: 'responses_web_search', label: t('admin.accounts.openai.alphaSearchModeResponsesWebSearch') },
+  { value: 'disabled', label: t('admin.accounts.openai.alphaSearchModeDisabled') }
+])
+const openAIPromptCacheKeyModeOptions = computed(() => [
+  { value: 'passthrough', label: t('admin.accounts.openai.promptCacheKeyModePassthrough') },
+  { value: 'sha256_64', label: t('admin.accounts.openai.promptCacheKeyModeSHA25664') }
 ])
 const openAIWSModeConcurrencyHintKey = computed(() =>
   resolveOpenAIWSModeConcurrencyHintKey(openaiOAuthResponsesWebSocketV2Mode.value)
@@ -1805,6 +1849,14 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     extra.openai_compact_mode = openAICompactMode.value
   }
 
+  if (enableOpenAIAlphaSearchMode.value) {
+    ensureExtra().openai_alpha_search_mode = openAIAlphaSearchMode.value
+  }
+
+  if (enableOpenAIPromptCacheKeyMode.value) {
+    ensureExtra().openai_prompt_cache_key_mode = openAIPromptCacheKeyMode.value
+  }
+
   if (enableOpenAICompactModelMapping.value) {
     credentials.compact_model_mapping = buildOpenAICompactModelMapping() ?? {}
     credentialsChanged = true
@@ -1912,6 +1964,8 @@ const handleSubmit = async () => {
     enableCodexCLIOnlyAppServer.value ||
     enableOpenAICompactMode.value ||
     enableOpenAICompactModelMapping.value ||
+    enableOpenAIAlphaSearchMode.value ||
+    enableOpenAIPromptCacheKeyMode.value ||
     enableRpmLimit.value ||
     userMsgQueueMode.value !== null
 
@@ -2046,6 +2100,8 @@ watch(
       enableCodexCLIOnlyAppServer.value = false
       enableOpenAICompactMode.value = false
       enableOpenAICompactModelMapping.value = false
+      enableOpenAIAlphaSearchMode.value = false
+      enableOpenAIPromptCacheKeyMode.value = false
       enableRpmLimit.value = false
 
       // Reset all values
@@ -2074,6 +2130,8 @@ watch(
       codexCLIOnlyAppServerEnabled.value = false
       openAICompactMode.value = 'auto'
       openAICompactModelMappings.value = []
+      openAIAlphaSearchMode.value = 'direct'
+      openAIPromptCacheKeyMode.value = 'passthrough'
       rpmLimitEnabled.value = false
       bulkBaseRpm.value = null
       bulkRpmStrategy.value = 'tiered'

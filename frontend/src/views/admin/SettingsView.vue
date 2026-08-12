@@ -6983,6 +6983,30 @@
               <div class="flex items-center justify-between gap-4">
                 <div class="min-w-0">
                   <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {{ t('admin.settings.features.riskControl.apiKeyCompatibility.alphaSearchBridge') }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('admin.settings.features.riskControl.apiKeyCompatibility.alphaSearchBridgeHint') }}
+                  </p>
+                </div>
+                <Toggle v-model="form.openai_apikey_alpha_search_responses_bridge_enabled" />
+              </div>
+
+              <div class="flex items-center justify-between gap-4 border-t border-gray-100 pt-5 dark:border-dark-700">
+                <div class="min-w-0">
+                  <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {{ t('admin.settings.features.riskControl.apiKeyCompatibility.promptCacheKeyNormalization') }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('admin.settings.features.riskControl.apiKeyCompatibility.promptCacheKeyNormalizationHint') }}
+                  </p>
+                </div>
+                <Toggle v-model="form.openai_apikey_prompt_cache_key_normalization_enabled" />
+              </div>
+
+              <div class="flex items-center justify-between gap-4">
+                <div class="min-w-0">
+                  <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
                     {{ t('admin.settings.features.riskControl.refusalRecovery.cyberFailover') }}
                   </label>
                   <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
@@ -9397,6 +9421,8 @@ const form = reactive<SettingsForm>({
   cyber_session_block_ttl_seconds: 3600,
   openai_refusal_recovery_enabled: false,
   openai_cyber_failover_enabled: false,
+  openai_apikey_alpha_search_responses_bridge_enabled: false,
+  openai_apikey_prompt_cache_key_normalization_enabled: false,
   openai_refusal_rewrite_enabled: false,
   openai_refusal_keywords: [...DEFAULT_OPENAI_REFUSAL_KEYWORDS],
   openai_refusal_replacement: "",
@@ -11344,6 +11370,10 @@ async function saveSettings() {
         Number(form.cyber_session_block_ttl_seconds) || 3600,
       openai_refusal_recovery_enabled: form.openai_refusal_recovery_enabled,
       openai_cyber_failover_enabled: form.openai_cyber_failover_enabled,
+      openai_apikey_alpha_search_responses_bridge_enabled:
+        form.openai_apikey_alpha_search_responses_bridge_enabled,
+      openai_apikey_prompt_cache_key_normalization_enabled:
+        form.openai_apikey_prompt_cache_key_normalization_enabled,
       openai_refusal_rewrite_enabled: form.openai_refusal_rewrite_enabled,
       openai_refusal_keywords: [...form.openai_refusal_keywords],
       openai_refusal_replacement: form.openai_refusal_replacement,

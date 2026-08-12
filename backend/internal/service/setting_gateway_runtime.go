@@ -143,10 +143,12 @@ const openAIQuotaAutoPauseSettingsDBTimeout = 5 * time.Second
 const openAIQuotaAutoPauseSettingsRefreshKey = "openai_quota_auto_pause_settings"
 
 type OpenAIRefusalRecoveryRuntime struct {
-	Enabled       bool
-	CyberFailover bool
-	Rewrite       bool
-	Matcher       *OpenAIRefusalMatcher
+	Enabled                           bool
+	CyberFailover                     bool
+	APIKeyAlphaSearchResponsesBridge  bool
+	APIKeyPromptCacheKeyNormalization bool
+	Rewrite                           bool
+	Matcher                           *OpenAIRefusalMatcher
 }
 
 type cachedOpenAIRefusalRecoveryRuntime struct {
@@ -217,6 +219,8 @@ func (s *SettingService) GetOpenAIRefusalRecoveryRuntime(ctx context.Context) Op
 		values, err := s.settingRepo.GetMultiple(dbCtx, []string{
 			SettingKeyOpenAIRefusalRecoveryEnabled,
 			SettingKeyOpenAICyberFailoverEnabled,
+			SettingKeyOpenAIAPIKeyAlphaSearchResponsesBridgeEnabled,
+			SettingKeyOpenAIAPIKeyPromptCacheKeyNormalizationEnabled,
 			SettingKeyOpenAIRefusalRewriteEnabled,
 			SettingKeyOpenAIRefusalKeywords,
 			SettingKeyOpenAIRefusalReplacement,
@@ -243,9 +247,11 @@ func (s *SettingService) GetOpenAIRefusalRecoveryRuntime(ctx context.Context) Op
 
 func buildOpenAIRefusalRecoveryRuntime(values map[string]string) OpenAIRefusalRecoveryRuntime {
 	runtime := OpenAIRefusalRecoveryRuntime{
-		Enabled:       values[SettingKeyOpenAIRefusalRecoveryEnabled] == "true",
-		CyberFailover: values[SettingKeyOpenAICyberFailoverEnabled] == "true",
-		Rewrite:       values[SettingKeyOpenAIRefusalRewriteEnabled] == "true",
+		Enabled:                           values[SettingKeyOpenAIRefusalRecoveryEnabled] == "true",
+		CyberFailover:                     values[SettingKeyOpenAICyberFailoverEnabled] == "true",
+		APIKeyAlphaSearchResponsesBridge:  values[SettingKeyOpenAIAPIKeyAlphaSearchResponsesBridgeEnabled] == "true",
+		APIKeyPromptCacheKeyNormalization: values[SettingKeyOpenAIAPIKeyPromptCacheKeyNormalizationEnabled] == "true",
+		Rewrite:                           values[SettingKeyOpenAIRefusalRewriteEnabled] == "true",
 	}
 	if !runtime.Enabled || !runtime.Rewrite {
 		return runtime

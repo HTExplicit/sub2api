@@ -267,6 +267,8 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		CyberSessionBlockTTLSeconds:                            settings.CyberSessionBlockTTLSeconds,
 		OpenAIRefusalRecoveryEnabled:                           settings.OpenAIRefusalRecoveryEnabled,
 		OpenAICyberFailoverEnabled:                             settings.OpenAICyberFailoverEnabled,
+		OpenAIAPIKeyAlphaSearchResponsesBridgeEnabled:          settings.OpenAIAPIKeyAlphaSearchResponsesBridgeEnabled,
+		OpenAIAPIKeyPromptCacheKeyNormalizationEnabled:         settings.OpenAIAPIKeyPromptCacheKeyNormalizationEnabled,
 		OpenAIRefusalRewriteEnabled:                            settings.OpenAIRefusalRewriteEnabled,
 		OpenAIRefusalKeywords:                                  append([]string(nil), settings.OpenAIRefusalKeywords...),
 		OpenAIRefusalReplacement:                               settings.OpenAIRefusalReplacement,
