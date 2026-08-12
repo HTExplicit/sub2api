@@ -44,8 +44,10 @@ func TestNormalizeCindyDeviceIdentityExtraGeneratesUniqueStoreOnlyIdentity(t *te
 	second, err := NormalizeCindyDeviceIdentityExtra(PlatformOpenAI, AccountTypeAPIKey, cindyCredentials(), nil, nil)
 	require.NoError(t, err)
 
-	firstID := first[CindyDeviceIDExtraKey].(string)
-	secondID := second[CindyDeviceIDExtraKey].(string)
+	firstID, firstOK := first[CindyDeviceIDExtraKey].(string)
+	secondID, secondOK := second[CindyDeviceIDExtraKey].(string)
+	require.True(t, firstOK)
+	require.True(t, secondOK)
 	require.Len(t, firstID, 64)
 	require.True(t, ValidCindyDeviceID(firstID))
 	require.NotEqual(t, firstID, secondID)
