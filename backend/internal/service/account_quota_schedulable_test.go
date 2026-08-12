@@ -18,6 +18,16 @@ func TestAccountIsSchedulable_QuotaExceeded(t *testing.T) {
 		want    bool
 	}{
 		{
+			name: "Cindy balance marker overrides active schedulable status",
+			account: &Account{
+				Status:                     StatusActive,
+				Schedulable:                true,
+				Type:                       AccountTypeAPIKey,
+				CindyBalanceInsufficientAt: &now,
+			},
+			want: false,
+		},
+		{
 			name: "apikey daily quota exceeded",
 			account: &Account{
 				Status:      StatusActive,

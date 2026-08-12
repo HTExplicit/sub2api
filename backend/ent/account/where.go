@@ -155,6 +155,11 @@ func Schedulable(v bool) predicate.Account {
 	return predicate.Account(sql.FieldEQ(FieldSchedulable, v))
 }
 
+// CindyBalanceInsufficientAt applies equality check predicate on the "cindy_balance_insufficient_at" field. It's identical to CindyBalanceInsufficientAtEQ.
+func CindyBalanceInsufficientAt(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldCindyBalanceInsufficientAt, v))
+}
+
 // RateLimitedAt applies equality check predicate on the "rate_limited_at" field. It's identical to RateLimitedAtEQ.
 func RateLimitedAt(v time.Time) predicate.Account {
 	return predicate.Account(sql.FieldEQ(FieldRateLimitedAt, v))
@@ -1138,6 +1143,56 @@ func SchedulableEQ(v bool) predicate.Account {
 // SchedulableNEQ applies the NEQ predicate on the "schedulable" field.
 func SchedulableNEQ(v bool) predicate.Account {
 	return predicate.Account(sql.FieldNEQ(FieldSchedulable, v))
+}
+
+// CindyBalanceInsufficientAtEQ applies the EQ predicate on the "cindy_balance_insufficient_at" field.
+func CindyBalanceInsufficientAtEQ(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldCindyBalanceInsufficientAt, v))
+}
+
+// CindyBalanceInsufficientAtNEQ applies the NEQ predicate on the "cindy_balance_insufficient_at" field.
+func CindyBalanceInsufficientAtNEQ(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldNEQ(FieldCindyBalanceInsufficientAt, v))
+}
+
+// CindyBalanceInsufficientAtIn applies the In predicate on the "cindy_balance_insufficient_at" field.
+func CindyBalanceInsufficientAtIn(vs ...time.Time) predicate.Account {
+	return predicate.Account(sql.FieldIn(FieldCindyBalanceInsufficientAt, vs...))
+}
+
+// CindyBalanceInsufficientAtNotIn applies the NotIn predicate on the "cindy_balance_insufficient_at" field.
+func CindyBalanceInsufficientAtNotIn(vs ...time.Time) predicate.Account {
+	return predicate.Account(sql.FieldNotIn(FieldCindyBalanceInsufficientAt, vs...))
+}
+
+// CindyBalanceInsufficientAtGT applies the GT predicate on the "cindy_balance_insufficient_at" field.
+func CindyBalanceInsufficientAtGT(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldGT(FieldCindyBalanceInsufficientAt, v))
+}
+
+// CindyBalanceInsufficientAtGTE applies the GTE predicate on the "cindy_balance_insufficient_at" field.
+func CindyBalanceInsufficientAtGTE(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldGTE(FieldCindyBalanceInsufficientAt, v))
+}
+
+// CindyBalanceInsufficientAtLT applies the LT predicate on the "cindy_balance_insufficient_at" field.
+func CindyBalanceInsufficientAtLT(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldLT(FieldCindyBalanceInsufficientAt, v))
+}
+
+// CindyBalanceInsufficientAtLTE applies the LTE predicate on the "cindy_balance_insufficient_at" field.
+func CindyBalanceInsufficientAtLTE(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldLTE(FieldCindyBalanceInsufficientAt, v))
+}
+
+// CindyBalanceInsufficientAtIsNil applies the IsNil predicate on the "cindy_balance_insufficient_at" field.
+func CindyBalanceInsufficientAtIsNil() predicate.Account {
+	return predicate.Account(sql.FieldIsNull(FieldCindyBalanceInsufficientAt))
+}
+
+// CindyBalanceInsufficientAtNotNil applies the NotNil predicate on the "cindy_balance_insufficient_at" field.
+func CindyBalanceInsufficientAtNotNil() predicate.Account {
+	return predicate.Account(sql.FieldNotNull(FieldCindyBalanceInsufficientAt))
 }
 
 // RateLimitedAtEQ applies the EQ predicate on the "rate_limited_at" field.

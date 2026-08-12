@@ -151,6 +151,11 @@ func (Account) Fields() []ent.Field {
 		// false 表示账户暂时不参与请求分配（如正在刷新 token）
 		field.Bool("schedulable").
 			Default(true),
+		field.Time("cindy_balance_insufficient_at").
+			Optional().
+			Nillable().
+			Comment("Upstream 402 observed for a Cindy account; NULL means no known balance exhaustion.").
+			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
 
 		// rate_limited_at: 触发速率限制的时间
 		// 当收到 429 错误时记录

@@ -566,6 +566,10 @@ func shouldFailoverOpenAIPassthroughResponse(account *Account, statusCode int, r
 	if isOpenAIRequestBodyTooLargeError(statusCode, "", responseBody) {
 		return true
 	}
+	if statusCode == http.StatusPaymentRequired && account != nil &&
+		IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		return true
+	}
 	switch statusCode {
 	case http.StatusRequestTimeout, http.StatusTooManyRequests, 529:
 		return true

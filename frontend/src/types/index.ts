@@ -1120,6 +1120,8 @@ export interface Account {
 
   // Rate limit & scheduling fields
   schedulable: boolean
+  is_cindy?: boolean
+  cindy_balance_insufficient?: boolean
   rate_limited_at: string | null
   rate_limit_reset_at: string | null
   overload_until: string | null
@@ -1229,6 +1231,8 @@ export interface AccountConsoleFacets {
   proxies: AccountFacetOption[]
   folders: AccountManagementFolder[]
   tags: AccountManagementTag[]
+  cindy_total?: number
+  cindy_insufficient_count?: number
 }
 
 export interface AccountBulkTaxonomyTargetFilters {

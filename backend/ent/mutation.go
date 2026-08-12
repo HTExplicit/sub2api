@@ -2294,65 +2294,66 @@ func (m *APIKeyMutation) ResetEdge(name string) error {
 // AccountMutation represents an operation that mutates the Account nodes in the graph.
 type AccountMutation struct {
 	config
-	op                          Op
-	typ                         string
-	id                          *int64
-	created_at                  *time.Time
-	updated_at                  *time.Time
-	deleted_at                  *time.Time
-	name                        *string
-	notes                       *string
-	platform                    *string
-	_type                       *string
-	credentials                 *map[string]interface{}
-	extra                       *map[string]interface{}
-	proxy_fallback_origin_id    *int64
-	addproxy_fallback_origin_id *int64
-	concurrency                 *int
-	addconcurrency              *int
-	load_factor                 *int
-	addload_factor              *int
-	priority                    *int
-	addpriority                 *int
-	rate_multiplier             *float64
-	addrate_multiplier          *float64
-	status                      *string
-	error_message               *string
-	last_used_at                *time.Time
-	expires_at                  *time.Time
-	auto_pause_on_expired       *bool
-	schedulable                 *bool
-	rate_limited_at             *time.Time
-	rate_limit_reset_at         *time.Time
-	overload_until              *time.Time
-	temp_unschedulable_until    *time.Time
-	temp_unschedulable_reason   *string
-	session_window_start        *time.Time
-	session_window_end          *time.Time
-	session_window_status       *string
-	quota_dimension             *account.QuotaDimension
-	clearedFields               map[string]struct{}
-	groups                      map[int64]struct{}
-	removedgroups               map[int64]struct{}
-	clearedgroups               bool
-	management_folder           *int64
-	clearedmanagement_folder    bool
-	tags                        map[int64]struct{}
-	removedtags                 map[int64]struct{}
-	clearedtags                 bool
-	proxy                       *int64
-	clearedproxy                bool
-	parent                      *int64
-	clearedparent               bool
-	children                    map[int64]struct{}
-	removedchildren             map[int64]struct{}
-	clearedchildren             bool
-	usage_logs                  map[int64]struct{}
-	removedusage_logs           map[int64]struct{}
-	clearedusage_logs           bool
-	done                        bool
-	oldValue                    func(context.Context) (*Account, error)
-	predicates                  []predicate.Account
+	op                            Op
+	typ                           string
+	id                            *int64
+	created_at                    *time.Time
+	updated_at                    *time.Time
+	deleted_at                    *time.Time
+	name                          *string
+	notes                         *string
+	platform                      *string
+	_type                         *string
+	credentials                   *map[string]interface{}
+	extra                         *map[string]interface{}
+	proxy_fallback_origin_id      *int64
+	addproxy_fallback_origin_id   *int64
+	concurrency                   *int
+	addconcurrency                *int
+	load_factor                   *int
+	addload_factor                *int
+	priority                      *int
+	addpriority                   *int
+	rate_multiplier               *float64
+	addrate_multiplier            *float64
+	status                        *string
+	error_message                 *string
+	last_used_at                  *time.Time
+	expires_at                    *time.Time
+	auto_pause_on_expired         *bool
+	schedulable                   *bool
+	cindy_balance_insufficient_at *time.Time
+	rate_limited_at               *time.Time
+	rate_limit_reset_at           *time.Time
+	overload_until                *time.Time
+	temp_unschedulable_until      *time.Time
+	temp_unschedulable_reason     *string
+	session_window_start          *time.Time
+	session_window_end            *time.Time
+	session_window_status         *string
+	quota_dimension               *account.QuotaDimension
+	clearedFields                 map[string]struct{}
+	groups                        map[int64]struct{}
+	removedgroups                 map[int64]struct{}
+	clearedgroups                 bool
+	management_folder             *int64
+	clearedmanagement_folder      bool
+	tags                          map[int64]struct{}
+	removedtags                   map[int64]struct{}
+	clearedtags                   bool
+	proxy                         *int64
+	clearedproxy                  bool
+	parent                        *int64
+	clearedparent                 bool
+	children                      map[int64]struct{}
+	removedchildren               map[int64]struct{}
+	clearedchildren               bool
+	usage_logs                    map[int64]struct{}
+	removedusage_logs             map[int64]struct{}
+	clearedusage_logs             bool
+	done                          bool
+	oldValue                      func(context.Context) (*Account, error)
+	predicates                    []predicate.Account
 }
 
 var _ ent.Mutation = (*AccountMutation)(nil)
@@ -3464,6 +3465,55 @@ func (m *AccountMutation) ResetSchedulable() {
 	m.schedulable = nil
 }
 
+// SetCindyBalanceInsufficientAt sets the "cindy_balance_insufficient_at" field.
+func (m *AccountMutation) SetCindyBalanceInsufficientAt(t time.Time) {
+	m.cindy_balance_insufficient_at = &t
+}
+
+// CindyBalanceInsufficientAt returns the value of the "cindy_balance_insufficient_at" field in the mutation.
+func (m *AccountMutation) CindyBalanceInsufficientAt() (r time.Time, exists bool) {
+	v := m.cindy_balance_insufficient_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCindyBalanceInsufficientAt returns the old "cindy_balance_insufficient_at" field's value of the Account entity.
+// If the Account object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountMutation) OldCindyBalanceInsufficientAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCindyBalanceInsufficientAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCindyBalanceInsufficientAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCindyBalanceInsufficientAt: %w", err)
+	}
+	return oldValue.CindyBalanceInsufficientAt, nil
+}
+
+// ClearCindyBalanceInsufficientAt clears the value of the "cindy_balance_insufficient_at" field.
+func (m *AccountMutation) ClearCindyBalanceInsufficientAt() {
+	m.cindy_balance_insufficient_at = nil
+	m.clearedFields[account.FieldCindyBalanceInsufficientAt] = struct{}{}
+}
+
+// CindyBalanceInsufficientAtCleared returns if the "cindy_balance_insufficient_at" field was cleared in this mutation.
+func (m *AccountMutation) CindyBalanceInsufficientAtCleared() bool {
+	_, ok := m.clearedFields[account.FieldCindyBalanceInsufficientAt]
+	return ok
+}
+
+// ResetCindyBalanceInsufficientAt resets all changes to the "cindy_balance_insufficient_at" field.
+func (m *AccountMutation) ResetCindyBalanceInsufficientAt() {
+	m.cindy_balance_insufficient_at = nil
+	delete(m.clearedFields, account.FieldCindyBalanceInsufficientAt)
+}
+
 // SetRateLimitedAt sets the "rate_limited_at" field.
 func (m *AccountMutation) SetRateLimitedAt(t time.Time) {
 	m.rate_limited_at = &t
@@ -4285,7 +4335,7 @@ func (m *AccountMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *AccountMutation) Fields() []string {
-	fields := make([]string, 0, 32)
+	fields := make([]string, 0, 33)
 	if m.created_at != nil {
 		fields = append(fields, account.FieldCreatedAt)
 	}
@@ -4351,6 +4401,9 @@ func (m *AccountMutation) Fields() []string {
 	}
 	if m.schedulable != nil {
 		fields = append(fields, account.FieldSchedulable)
+	}
+	if m.cindy_balance_insufficient_at != nil {
+		fields = append(fields, account.FieldCindyBalanceInsufficientAt)
 	}
 	if m.rate_limited_at != nil {
 		fields = append(fields, account.FieldRateLimitedAt)
@@ -4434,6 +4487,8 @@ func (m *AccountMutation) Field(name string) (ent.Value, bool) {
 		return m.AutoPauseOnExpired()
 	case account.FieldSchedulable:
 		return m.Schedulable()
+	case account.FieldCindyBalanceInsufficientAt:
+		return m.CindyBalanceInsufficientAt()
 	case account.FieldRateLimitedAt:
 		return m.RateLimitedAt()
 	case account.FieldRateLimitResetAt:
@@ -4507,6 +4562,8 @@ func (m *AccountMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldAutoPauseOnExpired(ctx)
 	case account.FieldSchedulable:
 		return m.OldSchedulable(ctx)
+	case account.FieldCindyBalanceInsufficientAt:
+		return m.OldCindyBalanceInsufficientAt(ctx)
 	case account.FieldRateLimitedAt:
 		return m.OldRateLimitedAt(ctx)
 	case account.FieldRateLimitResetAt:
@@ -4689,6 +4746,13 @@ func (m *AccountMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetSchedulable(v)
+		return nil
+	case account.FieldCindyBalanceInsufficientAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCindyBalanceInsufficientAt(v)
 		return nil
 	case account.FieldRateLimitedAt:
 		v, ok := value.(time.Time)
@@ -4880,6 +4944,9 @@ func (m *AccountMutation) ClearedFields() []string {
 	if m.FieldCleared(account.FieldExpiresAt) {
 		fields = append(fields, account.FieldExpiresAt)
 	}
+	if m.FieldCleared(account.FieldCindyBalanceInsufficientAt) {
+		fields = append(fields, account.FieldCindyBalanceInsufficientAt)
+	}
 	if m.FieldCleared(account.FieldRateLimitedAt) {
 		fields = append(fields, account.FieldRateLimitedAt)
 	}
@@ -4947,6 +5014,9 @@ func (m *AccountMutation) ClearField(name string) error {
 		return nil
 	case account.FieldExpiresAt:
 		m.ClearExpiresAt()
+		return nil
+	case account.FieldCindyBalanceInsufficientAt:
+		m.ClearCindyBalanceInsufficientAt()
 		return nil
 	case account.FieldRateLimitedAt:
 		m.ClearRateLimitedAt()
@@ -5048,6 +5118,9 @@ func (m *AccountMutation) ResetField(name string) error {
 		return nil
 	case account.FieldSchedulable:
 		m.ResetSchedulable()
+		return nil
+	case account.FieldCindyBalanceInsufficientAt:
+		m.ResetCindyBalanceInsufficientAt()
 		return nil
 	case account.FieldRateLimitedAt:
 		m.ResetRateLimitedAt()

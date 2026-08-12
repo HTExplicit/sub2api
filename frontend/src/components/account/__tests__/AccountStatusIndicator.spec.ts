@@ -51,6 +51,23 @@ function makeAccount(overrides: Partial<Account>): Account {
 }
 
 describe('AccountStatusIndicator', () => {
+  it('Cindy 余额不足标记优先于普通限流状态', () => {
+    const wrapper = mount(AccountStatusIndicator, {
+      props: {
+        account: makeAccount({
+          platform: 'openai',
+          type: 'apikey',
+          cindy_balance_insufficient: true,
+          rate_limit_reset_at: '2099-07-11T13:00:00Z'
+        })
+      },
+      global: { stubs: { Icon: true } }
+    })
+
+    expect(wrapper.find('.badge-danger').text()).toBe('admin.accounts.cindy.insufficient')
+    expect(wrapper.find('.badge-warning').exists()).toBe(false)
+  })
+
   it('Claude 5 模型限流时显示 Opus 和 Sonnet 的短别名', () => {
     const wrapper = mount(AccountStatusIndicator, {
       props: {

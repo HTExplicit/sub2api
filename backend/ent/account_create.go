@@ -295,6 +295,20 @@ func (_c *AccountCreate) SetNillableSchedulable(v *bool) *AccountCreate {
 	return _c
 }
 
+// SetCindyBalanceInsufficientAt sets the "cindy_balance_insufficient_at" field.
+func (_c *AccountCreate) SetCindyBalanceInsufficientAt(v time.Time) *AccountCreate {
+	_c.mutation.SetCindyBalanceInsufficientAt(v)
+	return _c
+}
+
+// SetNillableCindyBalanceInsufficientAt sets the "cindy_balance_insufficient_at" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableCindyBalanceInsufficientAt(v *time.Time) *AccountCreate {
+	if v != nil {
+		_c.SetCindyBalanceInsufficientAt(*v)
+	}
+	return _c
+}
+
 // SetRateLimitedAt sets the "rate_limited_at" field.
 func (_c *AccountCreate) SetRateLimitedAt(v time.Time) *AccountCreate {
 	_c.mutation.SetRateLimitedAt(v)
@@ -800,6 +814,10 @@ func (_c *AccountCreate) createSpec() (*Account, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Schedulable(); ok {
 		_spec.SetField(account.FieldSchedulable, field.TypeBool, value)
 		_node.Schedulable = value
+	}
+	if value, ok := _c.mutation.CindyBalanceInsufficientAt(); ok {
+		_spec.SetField(account.FieldCindyBalanceInsufficientAt, field.TypeTime, value)
+		_node.CindyBalanceInsufficientAt = &value
 	}
 	if value, ok := _c.mutation.RateLimitedAt(); ok {
 		_spec.SetField(account.FieldRateLimitedAt, field.TypeTime, value)
@@ -1345,6 +1363,24 @@ func (u *AccountUpsert) SetSchedulable(v bool) *AccountUpsert {
 // UpdateSchedulable sets the "schedulable" field to the value that was provided on create.
 func (u *AccountUpsert) UpdateSchedulable() *AccountUpsert {
 	u.SetExcluded(account.FieldSchedulable)
+	return u
+}
+
+// SetCindyBalanceInsufficientAt sets the "cindy_balance_insufficient_at" field.
+func (u *AccountUpsert) SetCindyBalanceInsufficientAt(v time.Time) *AccountUpsert {
+	u.Set(account.FieldCindyBalanceInsufficientAt, v)
+	return u
+}
+
+// UpdateCindyBalanceInsufficientAt sets the "cindy_balance_insufficient_at" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateCindyBalanceInsufficientAt() *AccountUpsert {
+	u.SetExcluded(account.FieldCindyBalanceInsufficientAt)
+	return u
+}
+
+// ClearCindyBalanceInsufficientAt clears the value of the "cindy_balance_insufficient_at" field.
+func (u *AccountUpsert) ClearCindyBalanceInsufficientAt() *AccountUpsert {
+	u.SetNull(account.FieldCindyBalanceInsufficientAt)
 	return u
 }
 
@@ -1956,6 +1992,27 @@ func (u *AccountUpsertOne) SetSchedulable(v bool) *AccountUpsertOne {
 func (u *AccountUpsertOne) UpdateSchedulable() *AccountUpsertOne {
 	return u.Update(func(s *AccountUpsert) {
 		s.UpdateSchedulable()
+	})
+}
+
+// SetCindyBalanceInsufficientAt sets the "cindy_balance_insufficient_at" field.
+func (u *AccountUpsertOne) SetCindyBalanceInsufficientAt(v time.Time) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetCindyBalanceInsufficientAt(v)
+	})
+}
+
+// UpdateCindyBalanceInsufficientAt sets the "cindy_balance_insufficient_at" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateCindyBalanceInsufficientAt() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateCindyBalanceInsufficientAt()
+	})
+}
+
+// ClearCindyBalanceInsufficientAt clears the value of the "cindy_balance_insufficient_at" field.
+func (u *AccountUpsertOne) ClearCindyBalanceInsufficientAt() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearCindyBalanceInsufficientAt()
 	})
 }
 
@@ -2762,6 +2819,27 @@ func (u *AccountUpsertBulk) SetSchedulable(v bool) *AccountUpsertBulk {
 func (u *AccountUpsertBulk) UpdateSchedulable() *AccountUpsertBulk {
 	return u.Update(func(s *AccountUpsert) {
 		s.UpdateSchedulable()
+	})
+}
+
+// SetCindyBalanceInsufficientAt sets the "cindy_balance_insufficient_at" field.
+func (u *AccountUpsertBulk) SetCindyBalanceInsufficientAt(v time.Time) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetCindyBalanceInsufficientAt(v)
+	})
+}
+
+// UpdateCindyBalanceInsufficientAt sets the "cindy_balance_insufficient_at" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateCindyBalanceInsufficientAt() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateCindyBalanceInsufficientAt()
+	})
+}
+
+// ClearCindyBalanceInsufficientAt clears the value of the "cindy_balance_insufficient_at" field.
+func (u *AccountUpsertBulk) ClearCindyBalanceInsufficientAt() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearCindyBalanceInsufficientAt()
 	})
 }
 

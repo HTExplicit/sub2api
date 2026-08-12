@@ -538,6 +538,18 @@ func (s *stubAdminService) SetAccountSchedulable(ctx context.Context, id int64, 
 	return &account, nil
 }
 
+func (s *stubAdminService) ClearCindyBalanceInsufficient(ctx context.Context, id int64) (*service.Account, error) {
+	return s.GetAccount(ctx, id)
+}
+
+func (s *stubAdminService) PreviewCindyInsufficientDeletion(context.Context) (*service.CindyInsufficientDeletePreview, error) {
+	return &service.CindyInsufficientDeletePreview{}, nil
+}
+
+func (s *stubAdminService) DeleteCindyInsufficient(context.Context, int, string) (*service.CindyInsufficientDeleteResult, error) {
+	return &service.CindyInsufficientDeleteResult{}, nil
+}
+
 func (s *stubAdminService) BulkUpdateAccounts(ctx context.Context, input *service.BulkUpdateAccountsInput) (*service.BulkUpdateAccountsResult, error) {
 	s.lastBulkUpdateAccountInput = input
 	if s.bulkUpdateAccountErr != nil {

@@ -11,6 +11,10 @@ const {
   listTags,
   getBatchTodayStats,
   getUpstreamBillingProbeSettings,
+  previewCindyInsufficientDeletion,
+  deleteCindyInsufficient,
+  clearCindyBalanceInsufficient,
+  showSuccess,
   getAllProxies,
   getAllGroups
 } = vi.hoisted(() => ({
@@ -21,6 +25,10 @@ const {
   listTags: vi.fn(),
   getBatchTodayStats: vi.fn(),
   getUpstreamBillingProbeSettings: vi.fn(),
+  previewCindyInsufficientDeletion: vi.fn(),
+  deleteCindyInsufficient: vi.fn(),
+  clearCindyBalanceInsufficient: vi.fn(),
+  showSuccess: vi.fn(),
   getAllProxies: vi.fn(),
   getAllGroups: vi.fn()
 }))
@@ -35,6 +43,9 @@ vi.mock('@/api/admin', () => ({
       listTags,
       getBatchTodayStats,
       getUpstreamBillingProbeSettings,
+      previewCindyInsufficientDeletion,
+      deleteCindyInsufficient,
+      clearCindyBalanceInsufficient,
       delete: vi.fn(),
       batchClearError: vi.fn(),
       batchRefresh: vi.fn(),
@@ -49,7 +60,7 @@ vi.mock('@/api/admin', () => ({
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
     showError: vi.fn(),
-    showSuccess: vi.fn(),
+    showSuccess,
     showInfo: vi.fn(),
     showWarning: vi.fn()
   })
@@ -169,7 +180,12 @@ const commonStubs = {
   AccountDetailsDrawer: DetailsDrawerStub,
   EditAccountModal: { props: ['show', 'account'], template: '<div data-test="edit-modal" :data-show="String(show)" :data-id="account?.id || 0"></div>' },
   Pagination: true,
-  ConfirmDialog: true,
+  ConfirmDialog: {
+    name: 'ConfirmDialog',
+    props: ['show', 'title', 'message'],
+    emits: ['confirm', 'cancel'],
+    template: '<div v-if="show" data-test="confirm-dialog"><span>{{ message }}</span><button data-test="confirm-dialog-submit" @click="$emit(\'confirm\')">confirm</button></div>'
+  },
   ReAuthAccountModal: true,
   AccountTestModal: true,
   AccountStatsModal: true,
@@ -205,6 +221,10 @@ describe('admin AccountsView Cockpit console', () => {
     listTags.mockReset().mockResolvedValue([])
     getBatchTodayStats.mockReset().mockResolvedValue({ stats: {} })
     getUpstreamBillingProbeSettings.mockReset().mockResolvedValue({ enabled: true, interval_minutes: 30 })
+    previewCindyInsufficientDeletion.mockReset().mockResolvedValue({ count: 2, fingerprint: 'fingerprint-2' })
+    deleteCindyInsufficient.mockReset().mockResolvedValue({ deleted_count: 2 })
+    clearCindyBalanceInsufficient.mockReset().mockResolvedValue({ ...account, cindy_balance_insufficient: false })
+    showSuccess.mockReset()
     getAllProxies.mockReset().mockResolvedValue([])
     getAllGroups.mockReset().mockResolvedValue([])
   })
@@ -371,5 +391,76 @@ describe('admin AccountsView Cockpit console', () => {
       expect(listAccounts).toHaveBeenLastCalledWith(2, 50, expect.objectContaining({ folder: '7', statuses: 'active' }), expect.any(Object))
     })
     wrapper.unmount()
+  })
+
+  it('switches Cindy quick views and persists their API filters', async () => {
+    getFacets.mockResolvedValue({
+      total: 10, uncategorized_count: 10, cindy_total: 4, cindy_insufficient_count: 2,
+      platforms: [], types: [], statuses: [], plans: [], proxies: [], folders: [], tags: []
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    const viewButtons = wrapper.get('[data-test="cindy-account-view"]').findAll('button')
+    expect(viewButtons).toHaveLength(3)
+    expect(wrapper.get('[data-test="cindy-account-view"]').text()).toContain('admin.accounts.cindy.insufficient')
+
+    await viewButtons[1].trigger('click')
+    await flushPromises()
+    expect(listAccounts.mock.calls.some(call => call[2]?.cindy_only === 'true' && call[2]?.cindy_balance_status === undefined)).toBe(true)
+
+    await wrapper.get('[data-test="cindy-account-view"]').findAll('button')[2].trigger('click')
+    await flushPromises()
+    expect(listAccounts.mock.calls.some(call => call[2]?.cindy_only === 'true' && call[2]?.cindy_balance_status === 'insufficient')).toBe(true)
+  })
+
+  it('deletes Cindy insufficient accounts only with the server preview fingerprint', async () => {
+    getFacets.mockResolvedValue({
+      total: 10, uncategorized_count: 10, cindy_total: 4, cindy_insufficient_count: 2,
+      platforms: [], types: [], statuses: [], plans: [], proxies: [], folders: [], tags: []
+    })
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-test="cindy-account-view"]').findAll('button')[1].trigger('click')
+    await flushPromises()
+
+    const deleteButton = wrapper.get('[data-test="delete-cindy-insufficient"]')
+    expect(deleteButton.attributes('disabled')).toBeUndefined()
+    previewCindyInsufficientDeletion.mockClear()
+    await deleteButton.trigger('click')
+    await flushPromises()
+    expect(previewCindyInsufficientDeletion).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-test="confirm-dialog"]').exists()).toBe(true)
+
+    await wrapper.get('[data-test="confirm-dialog-submit"]').trigger('click')
+    await flushPromises()
+    expect(deleteCindyInsufficient).toHaveBeenCalledWith({ count: 2, fingerprint: 'fingerprint-2' })
+    expect(showSuccess).toHaveBeenCalled()
+  })
+
+  it('disables Cindy cleanup when the server preview has no deletable candidates', async () => {
+    getFacets.mockResolvedValue({
+      total: 10, uncategorized_count: 10, cindy_total: 4, cindy_insufficient_count: 2,
+      platforms: [], types: [], statuses: [], plans: [], proxies: [], folders: [], tags: []
+    })
+    previewCindyInsufficientDeletion.mockResolvedValue({ count: 0, fingerprint: 'empty' })
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-test="cindy-account-view"]').findAll('button')[1].trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="delete-cindy-insufficient"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('manual Cindy recovery calls the dedicated endpoint and refreshes the filtered list', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    wrapper.findComponent({ name: 'AccountActionMenu' }).vm.$emit('recover-cindy-balance', { ...account, cindy_balance_insufficient: true })
+    await flushPromises()
+
+    expect(clearCindyBalanceInsufficient).toHaveBeenCalledWith(account.id)
+    expect(showSuccess).toHaveBeenCalled()
+    expect(listAccounts.mock.calls.length).toBeGreaterThan(1)
   })
 })

@@ -863,6 +863,7 @@ func (r *accountRepository) accountListFilteredQuery(platform, accountType, stat
 			q = q.Where(
 				dbaccount.StatusEQ(status),
 				dbaccount.SchedulableEQ(true),
+				dbaccount.CindyBalanceInsufficientAtIsNil(),
 				dbaccount.Or(
 					dbaccount.RateLimitResetAtIsNil(),
 					dbaccount.RateLimitResetAtLTE(time.Now()),
@@ -1837,6 +1838,7 @@ func (r *accountRepository) schedulableAccountsQuery(now time.Time) *dbent.Accou
 		Where(
 			dbaccount.StatusEQ(service.StatusActive),
 			dbaccount.SchedulableEQ(true),
+			dbaccount.CindyBalanceInsufficientAtIsNil(),
 			tempUnschedulablePredicate(),
 			notExpiredPredicate(now),
 			dbaccount.Or(dbaccount.OverloadUntilIsNil(), dbaccount.OverloadUntilLTE(now)),
@@ -1895,6 +1897,7 @@ func (r *accountRepository) ListSchedulableCapacityByGroupIDs(ctx context.Contex
 			AND a.deleted_at IS NULL
 			AND a.status = $2
 			AND a.schedulable = TRUE
+			AND a.cindy_balance_insufficient_at IS NULL
 			AND (a.temp_unschedulable_until IS NULL OR a.temp_unschedulable_until <= $3)
 			AND (a.expires_at IS NULL OR a.expires_at > $3 OR a.auto_pause_on_expired = FALSE)
 			AND (a.overload_until IS NULL OR a.overload_until <= $3)
@@ -1943,6 +1946,7 @@ func (r *accountRepository) ListSchedulableByPlatform(ctx context.Context, platf
 			dbaccount.PlatformEQ(platform),
 			dbaccount.StatusEQ(service.StatusActive),
 			dbaccount.SchedulableEQ(true),
+			dbaccount.CindyBalanceInsufficientAtIsNil(),
 			tempUnschedulablePredicate(),
 			notExpiredPredicate(now),
 			dbaccount.Or(dbaccount.OverloadUntilIsNil(), dbaccount.OverloadUntilLTE(now)),
@@ -1977,6 +1981,7 @@ func (r *accountRepository) ListSchedulableByPlatforms(ctx context.Context, plat
 			dbaccount.PlatformIn(platforms...),
 			dbaccount.StatusEQ(service.StatusActive),
 			dbaccount.SchedulableEQ(true),
+			dbaccount.CindyBalanceInsufficientAtIsNil(),
 			tempUnschedulablePredicate(),
 			notExpiredPredicate(now),
 			dbaccount.Or(dbaccount.OverloadUntilIsNil(), dbaccount.OverloadUntilLTE(now)),
@@ -1997,6 +2002,7 @@ func (r *accountRepository) ListSchedulableUngroupedByPlatform(ctx context.Conte
 			dbaccount.PlatformEQ(platform),
 			dbaccount.StatusEQ(service.StatusActive),
 			dbaccount.SchedulableEQ(true),
+			dbaccount.CindyBalanceInsufficientAtIsNil(),
 			dbaccount.Not(dbaccount.HasAccountGroups()),
 			tempUnschedulablePredicate(),
 			notExpiredPredicate(now),
@@ -2021,6 +2027,7 @@ func (r *accountRepository) ListSchedulableUngroupedByPlatforms(ctx context.Cont
 			dbaccount.PlatformIn(platforms...),
 			dbaccount.StatusEQ(service.StatusActive),
 			dbaccount.SchedulableEQ(true),
+			dbaccount.CindyBalanceInsufficientAtIsNil(),
 			dbaccount.Not(dbaccount.HasAccountGroups()),
 			tempUnschedulablePredicate(),
 			notExpiredPredicate(now),
@@ -2072,6 +2079,7 @@ func (r *accountRepository) ListModelAvailabilityCandidates(
 	preds := []dbpredicate.Account{
 		dbaccount.StatusEQ(service.StatusActive),
 		dbaccount.SchedulableEQ(true),
+		dbaccount.CindyBalanceInsufficientAtIsNil(),
 		dbaccount.PlatformIn(platforms...),
 	}
 	if !includeGrouped {
@@ -2991,7 +2999,10 @@ func (r *accountRepository) queryAccountsByGroup(ctx context.Context, groupID in
 		preds = append(preds, dbaccount.PlatformIn(opts.platforms...))
 	}
 	if opts.schedulable {
-		preds = append(preds, dbaccount.SchedulableEQ(true))
+		preds = append(preds,
+			dbaccount.SchedulableEQ(true),
+			dbaccount.CindyBalanceInsufficientAtIsNil(),
+		)
 		if !opts.ignoreTransientState {
 			now := time.Now()
 			preds = append(preds,
@@ -3293,38 +3304,39 @@ func accountEntityToService(m *dbent.Account) *service.Account {
 	rateMultiplier := m.RateMultiplier
 
 	return &service.Account{
-		ID:                      m.ID,
-		Name:                    m.Name,
-		Notes:                   m.Notes,
-		Platform:                m.Platform,
-		Type:                    m.Type,
-		Credentials:             copyJSONMap(m.Credentials),
-		Extra:                   copyJSONMap(m.Extra),
-		ProxyID:                 m.ProxyID,
-		ProxyFallbackOriginID:   m.ProxyFallbackOriginID,
-		ManagementFolderID:      m.ManagementFolderID,
-		Concurrency:             m.Concurrency,
-		Priority:                m.Priority,
-		RateMultiplier:          &rateMultiplier,
-		LoadFactor:              m.LoadFactor,
-		Status:                  m.Status,
-		ErrorMessage:            derefString(m.ErrorMessage),
-		LastUsedAt:              m.LastUsedAt,
-		ExpiresAt:               m.ExpiresAt,
-		AutoPauseOnExpired:      m.AutoPauseOnExpired,
-		CreatedAt:               m.CreatedAt,
-		UpdatedAt:               m.UpdatedAt,
-		Schedulable:             m.Schedulable,
-		RateLimitedAt:           m.RateLimitedAt,
-		RateLimitResetAt:        m.RateLimitResetAt,
-		OverloadUntil:           m.OverloadUntil,
-		TempUnschedulableUntil:  m.TempUnschedulableUntil,
-		TempUnschedulableReason: derefString(m.TempUnschedulableReason),
-		SessionWindowStart:      m.SessionWindowStart,
-		SessionWindowEnd:        m.SessionWindowEnd,
-		SessionWindowStatus:     derefString(m.SessionWindowStatus),
-		ParentAccountID:         m.ParentAccountID,
-		QuotaDimension:          string(m.QuotaDimension),
+		ID:                         m.ID,
+		Name:                       m.Name,
+		Notes:                      m.Notes,
+		Platform:                   m.Platform,
+		Type:                       m.Type,
+		Credentials:                copyJSONMap(m.Credentials),
+		Extra:                      copyJSONMap(m.Extra),
+		ProxyID:                    m.ProxyID,
+		ProxyFallbackOriginID:      m.ProxyFallbackOriginID,
+		ManagementFolderID:         m.ManagementFolderID,
+		Concurrency:                m.Concurrency,
+		Priority:                   m.Priority,
+		RateMultiplier:             &rateMultiplier,
+		LoadFactor:                 m.LoadFactor,
+		Status:                     m.Status,
+		ErrorMessage:               derefString(m.ErrorMessage),
+		LastUsedAt:                 m.LastUsedAt,
+		ExpiresAt:                  m.ExpiresAt,
+		AutoPauseOnExpired:         m.AutoPauseOnExpired,
+		CreatedAt:                  m.CreatedAt,
+		UpdatedAt:                  m.UpdatedAt,
+		Schedulable:                m.Schedulable,
+		CindyBalanceInsufficientAt: m.CindyBalanceInsufficientAt,
+		RateLimitedAt:              m.RateLimitedAt,
+		RateLimitResetAt:           m.RateLimitResetAt,
+		OverloadUntil:              m.OverloadUntil,
+		TempUnschedulableUntil:     m.TempUnschedulableUntil,
+		TempUnschedulableReason:    derefString(m.TempUnschedulableReason),
+		SessionWindowStart:         m.SessionWindowStart,
+		SessionWindowEnd:           m.SessionWindowEnd,
+		SessionWindowStatus:        derefString(m.SessionWindowStatus),
+		ParentAccountID:            m.ParentAccountID,
+		QuotaDimension:             string(m.QuotaDimension),
 	}
 }
 

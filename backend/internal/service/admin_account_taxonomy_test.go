@@ -40,6 +40,23 @@ func TestFilterConsoleAccountsCombinesDerivedStatusAndPlanAcrossFullSet(t *testi
 	require.Equal(t, int64(3), filtered[0].ID)
 }
 
+func TestFilterConsoleAccountsCindyQuickViewsUseStrictIdentity(t *testing.T) {
+	markedAt := time.Now()
+	accounts := []*Account{
+		{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Credentials: cindyCredentials()},
+		{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Credentials: cindyCredentials(), CindyBalanceInsufficientAt: &markedAt},
+		{ID: 3, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Credentials: map[string]any{"base_url": "https://api.laxarouter.ai/v1"}, CindyBalanceInsufficientAt: &markedAt},
+		{ID: 4, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true, Credentials: cindyCredentials(), CindyBalanceInsufficientAt: &markedAt},
+	}
+
+	cindy := filterConsoleAccounts(accounts, AccountConsoleFilters{CindyOnly: true})
+	require.Equal(t, []int64{1, 2}, accountIDsForFacetTest(cindy))
+	insufficient := filterConsoleAccounts(accounts, AccountConsoleFilters{CindyOnly: true, CindyBalanceStatus: "insufficient"})
+	require.Equal(t, []int64{2}, accountIDsForFacetTest(insufficient))
+	unschedulable := filterConsoleAccounts(accounts, AccountConsoleFilters{Statuses: []string{"unschedulable"}})
+	require.Equal(t, []int64{2, 3, 4}, accountIDsForFacetTest(unschedulable))
+}
+
 func TestAccountConsolePlanUsesProviderBillingSnapshotAndFacetCounts(t *testing.T) {
 	account := &Account{
 		Platform:    PlatformGrok,

@@ -49,6 +49,28 @@ const getBodyText = () => document.body.textContent ?? ''
 const getBodyButtons = () => Array.from(document.body.querySelectorAll('button'))
 
 describe('AccountActionMenu — spark shadow 按钮可见性', () => {
+  it('仅已标记账号显示 Cindy 恢复入口并发送专用事件', async () => {
+    const account = makeAccount({ cindy_balance_insufficient: true })
+    const wrapper = mount(AccountActionMenu, {
+      props: { show: true, account, position },
+      attachTo: document.body,
+    })
+
+    const recoverButton = getBodyButtons().find(b => b.textContent?.includes('admin.accounts.cindy.recover'))
+    expect(recoverButton).toBeDefined()
+    recoverButton!.click()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('recover-cindy-balance')?.[0]?.[0]).toMatchObject({ id: account.id })
+    wrapper.unmount()
+
+    const unmarked = mount(AccountActionMenu, {
+      props: { show: true, account: makeAccount({ cindy_balance_insufficient: false }), position },
+      attachTo: document.body,
+    })
+    expect(getBodyText()).not.toContain('admin.accounts.cindy.recover')
+    unmarked.unmount()
+  })
+
   it('普通账号显示「复制账号」按钮', () => {
     const account = makeAccount({ platform: 'anthropic', type: 'apikey', parent_account_id: null })
     const wrapper = mount(AccountActionMenu, {

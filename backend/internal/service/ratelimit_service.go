@@ -178,6 +178,9 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, requestedModel ...string) (shouldDisable bool) {
 	ctx = withTempUnschedulableModel(ctx, requestedModel)
 	customErrorCodesEnabled := account.IsCustomErrorCodesEnabled()
+	if statusCode == http.StatusPaymentRequired && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		return s.handleCindyBalanceInsufficient(ctx, account)
+	}
 
 	// 池模式默认不标记本地账号状态；但管理员显式配置的临时不可调度规则优先。
 	// 401 保留现有认证错误语义，不在这里改变池模式的认证处理。
@@ -395,6 +398,35 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 	}
 
 	return shouldDisable
+}
+
+func (s *RateLimitService) handleCindyBalanceInsufficient(ctx context.Context, account *Account) bool {
+	if account == nil {
+		return true
+	}
+	// Block immediately even if persistence is briefly unavailable. A zero deadline
+	// is the existing runtime-blocker convention for an indefinite block.
+	s.notifyAccountSchedulingBlocked(account, time.Time{}, "cindy_balance_insufficient")
+	repo, ok := s.accountRepo.(CindyBalanceAccountRepository)
+	if !ok {
+		slog.Error("cindy_balance_repository_unavailable", "account_id", account.ID)
+		return true
+	}
+	stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+	defer cancel()
+	observedAt := time.Now().UTC()
+	changed, err := repo.MarkCindyBalanceInsufficient(stateCtx, account.ID, observedAt)
+	if err != nil {
+		slog.Error("cindy_balance_insufficient_mark_failed", "account_id", account.ID, "error", err)
+		return true
+	}
+	if account.CindyBalanceInsufficientAt == nil {
+		account.CindyBalanceInsufficientAt = &observedAt
+	}
+	if changed {
+		slog.Warn("cindy_balance_insufficient_marked", "account_id", account.ID)
+	}
+	return true
 }
 
 // PreCheckUsage proactively checks local quota before dispatching a request.
