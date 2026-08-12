@@ -47,9 +47,13 @@ func TestCindyInsufficientDeleteIsProtectedAndRejectsStalePreview(t *testing.T) 
 	nonCindy := createAccount("non-cindy", map[string]any{"base_url": "https://api.laxarouter.ai/v1"}, service.StatusActive, true)
 	unmarkedCindy := createAccount("unmarked", cindyCredentials, service.StatusActive, false)
 	createdAccountIDs := []int64{eligibleOne.ID, manualDisabled.ID, manualPaused.ID, nonCindy.ID, unmarkedCindy.ID}
+	var outboxEventID int64
 
 	group := mustCreateGroup(t, client, &service.Group{Name: namePrefix + "-group", Platform: service.PlatformOpenAI, RateMultiplier: 1})
 	t.Cleanup(func() {
+		if outboxEventID != 0 {
+			_, _ = integrationDB.ExecContext(context.Background(), `DELETE FROM scheduler_outbox WHERE id = $1`, outboxEventID)
+		}
 		_, _ = client.Account.Delete().Where(dbaccount.IDIn(createdAccountIDs...)).Exec(mixins.SkipSoftDelete(context.Background()))
 		_, _ = client.Group.Delete().Where(dbgroup.IDEQ(group.ID)).Exec(mixins.SkipSoftDelete(context.Background()))
 	})
@@ -100,9 +104,9 @@ func TestCindyInsufficientDeleteIsProtectedAndRejectsStalePreview(t *testing.T) 
 
 	var payloadRaw []byte
 	require.NoError(t, integrationDB.QueryRowContext(ctx, `
-		SELECT payload FROM scheduler_outbox
+		SELECT id, payload FROM scheduler_outbox
 		WHERE id > $1 AND event_type = $2
-		ORDER BY id DESC LIMIT 1`, outboxBefore, service.SchedulerOutboxEventAccountBulkChanged).Scan(&payloadRaw))
+		ORDER BY id DESC LIMIT 1`, outboxBefore, service.SchedulerOutboxEventAccountBulkChanged).Scan(&outboxEventID, &payloadRaw))
 	var payload struct {
 		AccountIDs []int64 `json:"account_ids"`
 		GroupIDs   []int64 `json:"group_ids"`

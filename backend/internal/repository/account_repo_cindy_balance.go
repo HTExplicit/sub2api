@@ -211,7 +211,7 @@ func (r *accountRepository) DeleteCindyInsufficient(ctx context.Context, expecte
 		return nil, err
 	}
 	if deleted != len(ids) {
-		return nil, fmt.Errorf("Cindy account delete count mismatch: expected %d, deleted %d", len(ids), deleted)
+		return nil, fmt.Errorf("cindy account delete count mismatch: expected %d, deleted %d", len(ids), deleted)
 	}
 	payload := map[string]any{"account_ids": ids, "group_ids": groupIDs}
 	if err := enqueueSchedulerOutbox(ctx, tx.Client(), service.SchedulerOutboxEventAccountBulkChanged, nil, nil, payload); err != nil {

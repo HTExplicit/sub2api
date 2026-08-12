@@ -8,7 +8,7 @@ import (
 func (s *adminServiceImpl) cindyBalanceRepo() (CindyBalanceAccountRepository, error) {
 	repo, ok := s.accountRepo.(CindyBalanceAccountRepository)
 	if !ok {
-		return nil, errors.New("Cindy balance account repository is not configured")
+		return nil, errors.New("cindy balance account repository is not configured")
 	}
 	return repo, nil
 }
