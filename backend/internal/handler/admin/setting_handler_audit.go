@@ -601,6 +601,12 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.OpenAICyberFailoverEnabled != after.OpenAICyberFailoverEnabled {
 		changed = append(changed, "openai_cyber_failover_enabled")
 	}
+	if before.OpenAIAPIKeyAlphaSearchResponsesBridgeEnabled != after.OpenAIAPIKeyAlphaSearchResponsesBridgeEnabled {
+		changed = append(changed, service.SettingKeyOpenAIAPIKeyAlphaSearchResponsesBridgeEnabled)
+	}
+	if before.OpenAIAPIKeyPromptCacheKeyNormalizationEnabled != after.OpenAIAPIKeyPromptCacheKeyNormalizationEnabled {
+		changed = append(changed, service.SettingKeyOpenAIAPIKeyPromptCacheKeyNormalizationEnabled)
+	}
 	if before.OpenAIRefusalRewriteEnabled != after.OpenAIRefusalRewriteEnabled {
 		changed = append(changed, "openai_refusal_rewrite_enabled")
 	}

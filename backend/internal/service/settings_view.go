@@ -164,24 +164,26 @@ type SystemSettings struct {
 	CustomMenuItems             string // JSON array of custom menu items
 	CustomEndpoints             string // JSON array of custom endpoints
 
-	DefaultConcurrency           int
-	DefaultBalance               float64
-	RiskControlEnabled           bool
-	CyberSessionBlockEnabled     bool
-	CyberSessionBlockTTLSeconds  int
-	OpenAIRefusalRecoveryEnabled bool
-	OpenAICyberFailoverEnabled   bool
-	OpenAIRefusalRewriteEnabled  bool
-	OpenAIRefusalKeywords        []string
-	OpenAIRefusalReplacement     string
-	AffiliateEnabled             bool
-	AffiliateRebateRate          float64
-	AffiliateRebateFreezeHours   int
-	AffiliateRebateDurationDays  int
-	AffiliateRebatePerInviteeCap float64
-	AdminRechargeRebateEnabled   bool
-	DefaultUserRPMLimit          int
-	DefaultSubscriptions         []DefaultSubscriptionSetting
+	DefaultConcurrency                             int
+	DefaultBalance                                 float64
+	RiskControlEnabled                             bool
+	CyberSessionBlockEnabled                       bool
+	CyberSessionBlockTTLSeconds                    int
+	OpenAIRefusalRecoveryEnabled                   bool
+	OpenAICyberFailoverEnabled                     bool
+	OpenAIAPIKeyAlphaSearchResponsesBridgeEnabled  bool
+	OpenAIAPIKeyPromptCacheKeyNormalizationEnabled bool
+	OpenAIRefusalRewriteEnabled                    bool
+	OpenAIRefusalKeywords                          []string
+	OpenAIRefusalReplacement                       string
+	AffiliateEnabled                               bool
+	AffiliateRebateRate                            float64
+	AffiliateRebateFreezeHours                     int
+	AffiliateRebateDurationDays                    int
+	AffiliateRebatePerInviteeCap                   float64
+	AdminRechargeRebateEnabled                     bool
+	DefaultUserRPMLimit                            int
+	DefaultSubscriptions                           []DefaultSubscriptionSetting
 
 	// Model fallback configuration
 	EnableModelFallback      bool   `json:"enable_model_fallback"`

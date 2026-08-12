@@ -638,6 +638,8 @@ export interface SystemSettings {
   cyber_session_block_ttl_seconds: number;
   openai_refusal_recovery_enabled: boolean;
   openai_cyber_failover_enabled: boolean;
+  openai_apikey_alpha_search_responses_bridge_enabled: boolean;
+  openai_apikey_prompt_cache_key_normalization_enabled: boolean;
   openai_refusal_rewrite_enabled: boolean;
   openai_refusal_keywords: string[];
   openai_refusal_replacement: string;
@@ -946,6 +948,8 @@ export interface UpdateSettingsRequest {
   cyber_session_block_ttl_seconds?: number;
   openai_refusal_recovery_enabled?: boolean;
   openai_cyber_failover_enabled?: boolean;
+  openai_apikey_alpha_search_responses_bridge_enabled?: boolean;
+  openai_apikey_prompt_cache_key_normalization_enabled?: boolean;
   openai_refusal_rewrite_enabled?: boolean;
   openai_refusal_keywords?: string[];
   openai_refusal_replacement?: string;

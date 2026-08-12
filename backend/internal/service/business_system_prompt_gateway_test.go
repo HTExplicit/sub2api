@@ -235,6 +235,32 @@ func TestBusinessSystemPromptNativeResponsesAppliesForAPIKeyAndOAuth(t *testing.
 	}
 }
 
+func TestBusinessSystemPromptAPIKeyPromptCacheKeyIsNormalizedAfterPromptRewrite(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"gpt-5.4","stream":false,"instructions":"client","prompt_cache_key":"` + strings.Repeat("k", 50) + `","input":[]}`)
+	c, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
+	upstream := businessSystemPromptErrorUpstream()
+	settings := &SettingService{}
+	settings.openAIRefusalRecoveryCache.Store(&cachedOpenAIRefusalRecoveryRuntime{
+		runtime:   OpenAIRefusalRecoveryRuntime{APIKeyPromptCacheKeyNormalization: true},
+		expiresAt: time.Now().Add(time.Minute).UnixNano(),
+	})
+	account := businessSystemPromptAPIKeyAccount(true)
+	account.Extra["openai_prompt_cache_key_mode"] = OpenAIPromptCacheKeyModeSHA25664
+	svc := &OpenAIGatewayService{
+		cfg:                   businessSystemPromptTestConfig(),
+		httpUpstream:          upstream,
+		businessPromptService: newGatewayBusinessSystemPromptPolicy(t, false, false),
+		settingService:        settings,
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Len(t, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String(), 64)
+}
+
 func TestBusinessSystemPromptUpstreamErrorIsSanitizedBeforeInspection(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := newBusinessSystemPromptGinContext("/v1/responses", nil)

@@ -1500,6 +1500,9 @@ func (a *Account) SupportsOpenAIEndpointCapability(capability OpenAIEndpointCapa
 		// 配置集校验。
 		capability = OpenAIEndpointCapabilityChatCompletions
 	case OpenAIEndpointCapabilityAlphaSearch:
+		if a.IsOpenAIApiKey() && a.GetOpenAIAlphaSearchMode() == OpenAIAlphaSearchModeDisabled {
+			return false
+		}
 		// alpha/search 的转发按账号类型分流：OAuth/PAT 走
 		// chatgpt.com/backend-api/codex/alpha/search，API key 走
 		// {base_url}/v1/alpha/search（见 openAIAlphaSearchURL），两类账号

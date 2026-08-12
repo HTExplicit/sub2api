@@ -49,6 +49,12 @@ export default {
           cyberSessionBlock: 'cyber 会话自动屏蔽',
           cyberSessionBlockHint: '开启后,被上游网络安全策略(cyber_policy)拦截的会话将在 TTL 内被本地屏蔽,不再发往上游。仅屏蔽该会话,不影响同 Key 其他会话。',
           cyberSessionBlockTTL: '屏蔽时长(秒)',
+          apiKeyCompatibility: {
+            alphaSearchBridge: 'API Key Alpha Search 桥接',
+            alphaSearchBridgeHint: '全局总开关。仅账号显式选择 Responses Web Search 时，将 /v1/alpha/search 桥接到该账号 Base URL 的 /v1/responses。默认关闭。',
+            promptCacheKeyNormalization: 'API Key Prompt Cache Key 归一化',
+            promptCacheKeyNormalizationHint: '全局总开关。仅账号显式选择 SHA-256 模式时，将超过 64 字符的 prompt_cache_key 转为确定性的 64 位十六进制值。默认关闭。',
+          },
           refusalRecovery: {
             title: 'OpenAI 拒答恢复',
             description: '仅处理 Codex Responses HTTP 与 WebSocket。关闭后保留关键词与替换内容，但不执行拒答恢复。',

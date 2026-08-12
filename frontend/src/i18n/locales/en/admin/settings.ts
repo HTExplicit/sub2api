@@ -49,6 +49,12 @@ export default {
           cyberSessionBlock: 'Cyber session auto-block',
           cyberSessionBlockHint: 'When enabled, sessions hit by upstream cyber_policy are blocked locally for the TTL and no longer forwarded. Only the offending session is blocked; other sessions on the same key are unaffected.',
           cyberSessionBlockTTL: 'Block TTL (seconds)',
+          apiKeyCompatibility: {
+            alphaSearchBridge: 'API key Alpha Search bridge',
+            alphaSearchBridgeHint: 'Global master switch. Only accounts explicitly set to Responses Web Search bridge /v1/alpha/search to /v1/responses on their own Base URL. Disabled by default.',
+            promptCacheKeyNormalization: 'API key prompt cache key normalization',
+            promptCacheKeyNormalizationHint: 'Global master switch. Only accounts explicitly set to SHA-256 normalize prompt_cache_key values longer than 64 characters to deterministic 64-character hexadecimal values. Disabled by default.',
+          },
           refusalRecovery: {
             title: 'OpenAI Refusal Recovery',
             description: 'Applies only to Codex Responses over HTTP and WebSocket. Turning it off preserves keywords and replacement content without running refusal recovery.',

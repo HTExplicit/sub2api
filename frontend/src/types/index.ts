@@ -1423,6 +1423,8 @@ export interface CodexUsageSnapshot {
 
 export type OpenAICompactMode = 'auto' | 'force_on' | 'force_off'
 export type OpenAIResponsesMode = 'auto' | 'force_responses' | 'force_chat_completions'
+export type OpenAIAlphaSearchMode = 'direct' | 'responses_web_search' | 'disabled'
+export type OpenAIPromptCacheKeyMode = 'passthrough' | 'sha256_64'
 export type OpenAIEndpointCapability = 'chat_completions' | 'embeddings'
 
 export interface OpenAICompactState {
@@ -1436,6 +1438,8 @@ export interface OpenAICompactState {
 export interface OpenAIResponsesState {
   openai_responses_mode?: OpenAIResponsesMode
   openai_responses_supported?: boolean
+  openai_alpha_search_mode?: OpenAIAlphaSearchMode
+  openai_prompt_cache_key_mode?: OpenAIPromptCacheKeyMode
 }
 
 export interface CreateAccountRequest {
