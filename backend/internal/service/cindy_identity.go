@@ -14,6 +14,9 @@ import (
 const (
 	CindyDeviceIDExtraKey       = "cindy_device_id"
 	CindyDeviceIDSourceExtraKey = "cindy_device_id_source"
+	CindyResponsesModeExtraKey  = "openai_responses_mode"
+	CindyAlphaSearchExtraKey    = "openai_alpha_search_mode"
+	CindyPromptCacheExtraKey    = "openai_prompt_cache_key_mode"
 	cindyAPIHost                = "api.laxarouter.ai"
 )
 
@@ -168,7 +171,21 @@ func NormalizeCindyDeviceIdentityExtra(
 
 	normalized[CindyDeviceIDExtraKey] = deviceID
 	normalized[CindyDeviceIDSourceExtraKey] = source
+	setCindyDefault(normalized, current, CindyResponsesModeExtraKey, "force_responses")
+	setCindyDefault(normalized, current, CindyAlphaSearchExtraKey, OpenAIAlphaSearchModeResponsesWebSearch)
+	setCindyDefault(normalized, current, CindyPromptCacheExtraKey, OpenAIPromptCacheKeyModeSHA25664)
 	return normalized, nil
+}
+
+func setCindyDefault(normalized, current map[string]any, key string, fallback any) {
+	if _, present := normalized[key]; present {
+		return
+	}
+	if value, present := current[key]; present {
+		normalized[key] = value
+		return
+	}
+	normalized[key] = fallback
 }
 
 func MaskCindyDeviceID(value string) string {

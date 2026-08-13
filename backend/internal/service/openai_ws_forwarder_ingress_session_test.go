@@ -3913,14 +3913,14 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ContinuationErro
 				if tt.expectPreviousRetained {
 					decision := svc.getOpenAIWSProtocolResolver().Resolve(account)
 					headers, _, headerErr := svc.buildOpenAIWSHeaders(
-						r.Context(), ginCtx, account, "sk-test", decision, false, "", "", "",
+						r.Context(), ginCtx, account, "sk-test", decision, false, "", "", "", "", "",
 					)
 					if headerErr != nil {
 						serverErrCh <- headerErr
 						return
 					}
 					seeded := newOpenAIWSConn("strict_bound_conn", account.ID, captureConns[0], nil)
-					seeded.betaFeatures = normalizeOpenAIWSBetaFeatures(headers)
+					seeded.handshakeCompatibility = normalizeOpenAIWSHandshakeCompatibility(headers)
 					accountPool := pool.getOrCreateAccountPool(account.ID)
 					accountPool.mu.Lock()
 					accountPool.conns[seeded.id] = seeded

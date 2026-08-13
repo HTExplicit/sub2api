@@ -245,8 +245,8 @@ func TestOpenAIGatewayHandlerResponses_FailoverAbortsWhenClientDisconnected(t *t
 }
 
 // TestOpenAIGatewayHandlerResponses_FailoverContinuesForConnectedClient 回归
-// 守卫：客户端在线时，每个账号对 520 只做一次同账号传输重试，再切换到账号 2；
-// 两个账号均耗尽后返回 502。
+// 守卫：客户端在线时，每个 OAuth 账号对 520 只做一次同账号传输重试，
+// 再切换到账号 2；两个账号均耗尽后返回 502。
 func TestOpenAIGatewayHandlerResponses_FailoverContinuesForConnectedClient(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

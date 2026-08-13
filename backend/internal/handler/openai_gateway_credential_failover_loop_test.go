@@ -84,6 +84,22 @@ func (c *grokCredentialHandlerGatewayCache) DeleteSessionAccountIDIfMatches(_ co
 	return true, nil
 }
 
+func (c *grokCredentialHandlerGatewayCache) ClaimGrokVideoBilled(_ context.Context, _ string, _ time.Duration) (bool, error) {
+	return true, nil
+}
+
+func (c *grokCredentialHandlerGatewayCache) SetGrokVideoPendingBilling(_ context.Context, _ string, _ []byte, _ time.Duration) error {
+	return nil
+}
+
+func (c *grokCredentialHandlerGatewayCache) GetGrokVideoPendingBilling(_ context.Context, _ string) ([]byte, error) {
+	return nil, nil
+}
+
+func (c *grokCredentialHandlerGatewayCache) ReleaseGrokVideoBilled(_ context.Context, _ string) error {
+	return nil
+}
+
 func (r *grokCredentialHandlerRepo) ListSchedulableByPlatform(_ context.Context, platform string) ([]service.Account, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -718,7 +734,7 @@ func TestResponsesGrok429FailoverHandlesMixedStatuses(t *testing.T) {
 		router.ServeHTTP(recorder, req)
 
 		require.Equal(t, http.StatusBadGateway, recorder.Code, recorder.Body.String())
-		require.Equal(t, []int64{801, 802, 802}, upstream.accountHits())
+		require.Equal(t, []int64{801, 802}, upstream.accountHits())
 	})
 }
 

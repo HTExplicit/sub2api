@@ -316,6 +316,33 @@ describe('EditAccountModal', () => {
     authIsSimpleMode.value = true
   })
 
+  it('uses Cindy dropdown defaults only for strict Cindy API-key accounts', () => {
+    const cindy = buildAccount()
+    cindy.credentials.base_url = 'https://api.laxarouter.ai'
+    cindy.extra = {}
+    const cindyWrapper = mountModal(cindy)
+    const cindyAlpha = cindyWrapper.get<HTMLSelectElement>('[data-testid="openai-alpha-search-mode-select"]')
+    const cindyCache = cindyWrapper.get<HTMLSelectElement>(
+      '[data-testid="openai-prompt-cache-key-mode-select"]'
+    )
+    expect(cindyAlpha.element.value).toBe('responses_web_search')
+    expect(cindyAlpha.element.options[0].value).toBe('responses_web_search')
+    expect(cindyCache.element.value).toBe('sha256_64')
+    expect(cindyCache.element.options[0].value).toBe('sha256_64')
+
+    const ordinaryWrapper = mountModal(buildAccount())
+    const ordinaryAlpha = ordinaryWrapper.get<HTMLSelectElement>(
+      '[data-testid="openai-alpha-search-mode-select"]'
+    )
+    const ordinaryCache = ordinaryWrapper.get<HTMLSelectElement>(
+      '[data-testid="openai-prompt-cache-key-mode-select"]'
+    )
+    expect(ordinaryAlpha.element.value).toBe('direct')
+    expect(ordinaryAlpha.element.options[0].value).toBe('direct')
+    expect(ordinaryCache.element.value).toBe('passthrough')
+    expect(ordinaryCache.element.options[0].value).toBe('passthrough')
+  })
+
   it('reopening the same account rehydrates the OpenAI whitelist from props', async () => {
     const account = buildAccount()
     updateAccountMock.mockReset()

@@ -295,9 +295,10 @@ func (s *openAIAccountRuntimeStats) size() int {
 }
 
 type defaultOpenAIAccountScheduler struct {
-	service *OpenAIGatewayService
-	metrics openAIAccountSchedulerMetrics
-	stats   *openAIAccountRuntimeStats
+	service                *OpenAIGatewayService
+	metrics                openAIAccountSchedulerMetrics
+	stats                  *openAIAccountRuntimeStats
+	grokFreeQuotaGateCache sync.Map // key: int64(accountID), value: grokFreeQuotaGateCacheEntry
 }
 
 type openAISelectionProbeBudget struct {
@@ -419,7 +420,7 @@ func (s *defaultOpenAIAccountScheduler) Select(
 			decision.SelectedAccountID = selection.Account.ID
 			decision.SelectedAccountType = selection.Account.Type
 			if req.SessionHash != "" {
-				_ = s.service.BindStickySession(ctx, req.GroupID, req.SessionHash, selection.Account.ID)
+				_ = s.service.bindOpenAIStickySessionDuringSelection(ctx, req.GroupID, req.SessionHash, selection.Account.ID)
 			}
 			return selection, decision, nil
 		}
@@ -515,6 +516,23 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		_ = s.service.deleteStickySessionAccountIDIfMatches(ctx, req.GroupID, sessionHash, accountID)
 		return nil, false, nil
 	}
+	// Free-tier soft gate: sticky session must not pin an over-quota free OAuth account.
+	// Admin QueryQuota / import probes do not use this path.
+	if account != nil && len(s.filterGrokFreeQuotaAccounts(ctx, []Account{*account})) == 0 {
+		_ = s.service.deleteStickySessionAccountIDIfMatches(ctx, req.GroupID, sessionHash, account.ID)
+		return nil, false, nil
+	}
+	// Team+model cool: sticky must not pin a sibling under the same team 429 window.
+	now := time.Now()
+	upstreamModel := canonicalOpenAIAccountSchedulingModel(account, req.RequestedModel)
+	if account != nil && isGrokTeamModelRateLimited(account, upstreamModel, now) {
+		_ = s.service.deleteStickySessionAccountIDIfMatches(ctx, req.GroupID, sessionHash, account.ID)
+		return nil, false, nil
+	}
+	if account != nil && isGrokModelQuotaBlocked(account.ID, upstreamModel, now) {
+		_ = s.service.deleteStickySessionAccountIDIfMatches(ctx, req.GroupID, sessionHash, account.ID)
+		return nil, false, nil
+	}
 	escapeCfg := s.service.openAIStickyEscapeConfig()
 	if reason, errorRate, ttft, shouldEscape := s.shouldEscapeStickyAccount(accountID, escapeCfg); shouldEscape {
 		slog.Info("sticky_escape_triggered",
@@ -528,11 +546,11 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	result, acquireErr := s.service.tryAcquireAccountSlot(ctx, accountID, account.Concurrency)
 	if acquireErr == nil && result != nil && result.Acquired {
 		_ = s.service.refreshStickySessionTTL(ctx, req.GroupID, sessionHash, s.service.openAIWSSessionStickyTTL())
-		return attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
+		return attachSelectionProfitGate(ctx, attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
 			Account:     account,
 			Acquired:    true,
 			ReleaseFunc: result.ReleaseFunc,
-		}), false, nil
+		})), false, nil
 	}
 
 	cfg := s.service.schedulingConfig()
@@ -548,7 +566,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 			)
 			return nil, true, nil
 		}
-		return attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
+		return attachSelectionProfitGate(ctx, attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
 			Account: account,
 			WaitPlan: &AccountWaitPlan{
 				AccountID:      accountID,
@@ -556,7 +574,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 				Timeout:        cfg.StickySessionWaitTimeout,
 				MaxWaiting:     cfg.StickySessionMaxWaiting,
 			},
-		}), false, nil
+		})), false, nil
 	}
 	return nil, false, nil
 }
@@ -1183,16 +1201,16 @@ func (s *defaultOpenAIAccountScheduler) tryAcquireOpenAISelectionOrderWithBudget
 				continue
 			}
 		}
-		selection := attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
+		selection := attachSelectionProfitGate(ctx, attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
 			Account:     fresh,
 			Acquired:    true,
 			ReleaseFunc: result.ReleaseFunc,
-		})
+		}))
 		if selection == nil {
 			continue
 		}
 		if req.SessionHash != "" && !req.PreserveStickyBinding {
-			_ = s.service.BindStickySession(ctx, req.GroupID, req.SessionHash, fresh.ID)
+			_ = s.service.bindOpenAIStickySessionDuringSelection(ctx, req.GroupID, req.SessionHash, fresh.ID)
 		}
 		return selection, compactBlocked, nil
 	}
@@ -1261,23 +1279,35 @@ func (s *defaultOpenAIAccountScheduler) tryFallbackToWeightedSticky(
 		if req.RequireCompact && openAICompactSupportTier(account) == 0 {
 			continue
 		}
+		// Keep weighted sticky fallback subject to the same free-tier gate as the
+		// normal and sticky selection paths. Otherwise an over-quota free account
+		// could be reintroduced after the primary candidate pass.
+		if len(s.filterGrokFreeQuotaAccounts(ctx, []Account{*account})) == 0 {
+			continue
+		}
+		upstreamModel := canonicalOpenAIAccountSchedulingModel(account, req.RequestedModel)
+		now := time.Now()
+		if isGrokTeamModelRateLimited(account, upstreamModel, now) ||
+			isGrokModelQuotaBlocked(account.ID, upstreamModel, now) {
+			continue
+		}
 		result, acquireErr := s.service.tryAcquireAccountSlot(ctx, account.ID, account.Concurrency)
 		if acquireErr != nil {
 			return nil, acquireErr
 		}
 		if result != nil && result.Acquired {
 			if req.SessionHash != "" && !req.PreserveStickyBinding {
-				_ = s.service.BindStickySession(ctx, req.GroupID, req.SessionHash, account.ID)
+				_ = s.service.bindOpenAIStickySessionDuringSelection(ctx, req.GroupID, req.SessionHash, account.ID)
 			}
-			return attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
+			return attachSelectionProfitGate(ctx, attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
 				Account:     account,
 				Acquired:    true,
 				ReleaseFunc: result.ReleaseFunc,
-			}), nil
+			})), nil
 		}
 		if s.service.concurrencyService != nil {
 			cfg := s.service.schedulingConfig()
-			return attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
+			return attachSelectionProfitGate(ctx, attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
 				Account: account,
 				WaitPlan: &AccountWaitPlan{
 					AccountID:      account.ID,
@@ -1285,7 +1315,7 @@ func (s *defaultOpenAIAccountScheduler) tryFallbackToWeightedSticky(
 					Timeout:        cfg.StickySessionWaitTimeout,
 					MaxWaiting:     cfg.StickySessionMaxWaiting,
 				},
-			}), nil
+			})), nil
 		}
 	}
 	return nil, nil
@@ -1349,6 +1379,28 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 	}
 	if len(accounts) == 0 {
 		return nil, 0, 0, 0, noAvailableOpenAISelectionError(req.RequestedModel, false, openAISelectionFilterStats{}.summary(""))
+	}
+	// Local free-tier soft gate on the Grok scheduling path only (not admin probe).
+	accounts = s.filterGrokFreeQuotaAccounts(ctx, accounts)
+	if len(accounts) == 0 {
+		return nil, 0, 0, 0, noAvailableOpenAISelectionError(req.RequestedModel, false, openAISelectionFilterStats{}.summary("grok_free_quota_soft_gate"))
+	}
+	// Team+model rate-limit cool: siblings of a 429'd team skip the hot model.
+	if req.Platform == PlatformGrok {
+		now := time.Now()
+		filtered := filterGrokTeamModelRateLimitedAccounts(accounts, req.RequestedModel, now)
+		if len(filtered) == 0 && len(accounts) > 0 {
+			return nil, 0, 0, 0, noAvailableOpenAISelectionError(req.RequestedModel, false, openAISelectionFilterStats{}.summary("grok_team_model_rate_limit"))
+		}
+		if filtered != nil {
+			accounts = filtered
+		}
+		// Per-account model free-usage soft-block (other models stay eligible).
+		modelFiltered := filterGrokModelQuotaBlockedAccounts(accounts, req.RequestedModel, now)
+		if len(modelFiltered) == 0 && len(accounts) > 0 {
+			return nil, 0, 0, 0, noAvailableOpenAISelectionError(req.RequestedModel, false, openAISelectionFilterStats{}.summary("grok_model_quota_block"))
+		}
+		accounts = modelFiltered
 	}
 
 	// require_privacy_set: 获取分组信息
@@ -1642,7 +1694,7 @@ func (s *defaultOpenAIAccountScheduler) finishLoadBalanceSelectionFallback(
 				compactBlocked = true
 				continue
 			}
-			return attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
+			return attachSelectionProfitGate(ctx, attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
 				Account: fresh,
 				WaitPlan: &AccountWaitPlan{
 					AccountID:      fresh.ID,
@@ -1650,7 +1702,7 @@ func (s *defaultOpenAIAccountScheduler) finishLoadBalanceSelectionFallback(
 					Timeout:        cfg.FallbackWaitTimeout,
 					MaxWaiting:     cfg.FallbackMaxWaiting,
 				},
-			}), candidateCount, topK, loadSkew, nil
+			})), candidateCount, topK, loadSkew, nil
 		}
 	}
 
@@ -1731,6 +1783,9 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleReason(ctx con
 	}
 	if !accountSupportsOpenAICapabilities(account, req.RequiredCapability, req.RequiredImageCapability) {
 		return false, "capability_mismatch"
+	}
+	if vetoed, reason := openAIProfitControlVetoReason(ctx, account); vetoed {
+		return false, reason
 	}
 	return true, ""
 }
@@ -2205,6 +2260,9 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 	useUpstreamTokenCost bool,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
 	ctx = s.withOpenAIQuotaAutoPauseContext(ctx)
+	if requiredImageCapability == "" && requiredCapability != OpenAIEndpointCapabilityResponses {
+		ctx = s.withOpenAIProfitControlGate(ctx, groupID)
+	}
 	platform = normalizeOpenAICompatiblePlatform(platform)
 	decision := OpenAIAccountScheduleDecision{}
 	if strings.TrimSpace(previousResponseID) != "" && openAIContinuationCapability(requiredCapability) &&
@@ -2228,7 +2286,7 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 			decision.SelectedAccountID = selection.Account.ID
 			decision.SelectedAccountType = selection.Account.Type
 			if sessionHash != "" {
-				_ = s.BindStickySession(ctx, groupID, sessionHash, selection.Account.ID)
+				_ = s.bindOpenAIStickySessionDuringSelection(ctx, groupID, sessionHash, selection.Account.ID)
 			}
 			return selection, decision, nil
 		}
@@ -2387,6 +2445,9 @@ func (s *OpenAIGatewayService) ReleaseOpenAIRuntimeBreakerProbeForSelection(sele
 	if selection == nil {
 		return
 	}
+	if !selection.runtimeBreakerProbeEnded.CompareAndSwap(false, true) {
+		return
+	}
 	if selection.runtimeBreakerProbeLease != nil {
 		selection.runtimeBreakerProbeLease.release(context.Background())
 		return
@@ -2415,7 +2476,8 @@ func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResultForSelection(sel
 			selection.runtimeBreakerProbeLease.stopRenewal()
 		}
 	}
-	if !success {
+	endProbe := selection != nil && selection.runtimeBreakerProbeEnded.CompareAndSwap(false, true)
+	if !success && endProbe {
 		if selection != nil && selection.runtimeBreakerProbeLease != nil {
 			selection.runtimeBreakerProbeLease.release(context.Background())
 		} else {
@@ -2423,9 +2485,20 @@ func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResultForSelection(sel
 		}
 	}
 	s.reportOpenAIAccountScheduleResult(owner, accountID, model, success, firstTokenMs)
-	if success && selection != nil {
+	if success && endProbe {
 		s.clearOpenAIRuntimeBreakerProbeClaims(context.Background(), accountID, selection.runtimeBreakerProbeModels, owner)
 	}
+}
+
+// ReportOpenAIAccountSameAccountRetry records the failed attempt without
+// ending the selection's half-open probe. Ownership transfers to the exact
+// same-account selection and is finalized only by success, rotation, or stop.
+func (s *OpenAIGatewayService) ReportOpenAIAccountSameAccountRetry(selection *AccountSelectionResult, accountID int64, model string) {
+	owner := ""
+	if selection != nil {
+		owner = strings.TrimSpace(selection.runtimeBreakerProbeOwner)
+	}
+	s.reportOpenAIAccountScheduleResult(owner, accountID, model, false, nil)
 }
 
 func (s *OpenAIGatewayService) reportOpenAIAccountScheduleResult(owner string, accountID int64, model string, success bool, firstTokenMs *int) {

@@ -107,6 +107,7 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 
 	searchID := strings.TrimSpace(gjson.GetBytes(body, "id").String())
 	sessionHash := h.gatewayService.GenerateSessionHashWithFallback(c, nil, searchID)
+	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
 	retryState := newOpenAIFailoverRetryState()
 	var lastFailoverErr *service.UpstreamFailoverError
@@ -114,6 +115,11 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 	var sameAccountRetrySelection *service.AccountSelectionResult
 	routingStart := time.Now()
+
+	// 分组利润控制：alpha search 文本入口请求级装门并固定 pricingAt
+	//（记录路径经 service.OpenAIPricingAtFromContext 从请求 ctx 回读）。
+	asPricingCtx, _ := h.gatewayService.WithOpenAIRequestPricingContext(c.Request.Context(), apiKey.GroupID)
+	c.Request = c.Request.WithContext(asPricingCtx)
 
 	for {
 		retryingSameAccount := sameAccountRetrySelection != nil
@@ -160,7 +166,6 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 		}
 
 		account := selection.Account
-		defer h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 		var accountRelease func()
 		var slotResult openAISlotAcquireResult
@@ -168,6 +173,14 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 			accountRelease, slotResult = h.acquireResponsesAccountSlotForSameAccountRetry(c, apiKey.GroupID, sessionHash, selection, false, &streamStarted, reqLog)
 		} else {
 			accountRelease, slotResult = h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, false, &streamStarted, reqLog)
+		}
+		if slotResult == openAISlotAcquireProfitVetoed {
+			// 利润终检否决：排除该账号重新选号；否决次数达上限则按无可用账号终止。
+			if !recordOpenAIProfitVeto(failedAccountIDs, account.ID, &profitVetoCount) {
+				h.handleOpenAIProfitVetoExhausted(c, streamStarted, reqLog, profitVetoCount)
+				return
+			}
+			continue
 		}
 		if slotResult != openAISlotAcquireOK {
 			if retryingSameAccount && lastFailoverErr != nil && h.failoverAfterSameAccountSlotFailure(
@@ -210,12 +223,13 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 			return
 		}
 
-		h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(requestedModel), false, nil)
 		if c.Writer.Size() != writerSizeBeforeForward {
+			finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(requestedModel), failoverErr, openAIFailoverRetryStop)
 			h.handleFailoverExhausted(c, failoverErr, true)
 			return
 		}
 		if failoverClientGone(c) {
+			h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 			reqLog.Info("openai_alpha_search.failover_aborted_client_disconnected",
 				zap.Int64("account_id", account.ID),
 				zap.Int("upstream_status", failoverErr.StatusCode),
@@ -223,10 +237,11 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 			return
 		}
 		if !failoverErr.ShouldRetryNextAccount() {
+			finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(requestedModel), failoverErr, openAIFailoverRetryStop)
 			h.handleFailoverExhausted(c, failoverErr, false)
 			return
 		}
-		switch retryState.Handle(
+		retryAction := retryState.Handle(
 			c.Request.Context(),
 			h.gatewayService,
 			account,
@@ -235,7 +250,9 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 			true,
 			sameAccountRetryDelay,
 			"alpha_search",
-		) {
+		)
+		finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(requestedModel), failoverErr, retryAction)
+		switch retryAction {
 		case openAIFailoverRetrySameAccount:
 			sameAccountRetrySelection = selection
 			lastFailoverErr = failoverErr
@@ -304,6 +321,7 @@ func (h *OpenAIGatewayHandler) recordAlphaSearchUsage(
 			QuotaPlatform:      quotaPlatform,
 			SessionID:          sessionID,
 			ChannelUsageFields: channelMapping.ToUsageFields(requestedModel, result.UpstreamModel),
+			PricingAt:          service.OpenAIPricingAtFromContext(c.Request.Context()),
 		}); err != nil {
 			logger.L().With(
 				zap.String("component", "handler.openai_gateway.alpha_search"),

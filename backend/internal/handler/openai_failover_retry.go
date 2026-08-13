@@ -106,19 +106,25 @@ func newOpenAIFailoverRetryState() *openAIFailoverRetryState {
 	return &openAIFailoverRetryState{sameAccountRetryCount: make(map[int64]int)}
 }
 
-// openAISameAccountRetryLimit is the shared safety policy for the OpenAI-style
-// handlers. Authentication and quota failures must immediately rotate away;
-// transient request/transport/server failures may consume at most one replay.
+// openAISameAccountRetryLimit keeps the official bounded transient retry for
+// OAuth-style accounts. API keys use only their explicit pool-mode policy.
 func openAISameAccountRetryLimit(account *service.Account, failoverErr *service.UpstreamFailoverError, allowTransportRetry bool) int {
 	if account == nil || failoverErr == nil || !failoverErr.ShouldRetryNextAccount() {
 		return 0
+	}
+	if account.Type == service.AccountTypeAPIKey {
+		if !account.IsPoolMode() || failoverErr.StatusCode <= 0 ||
+			!account.IsPoolModeRetryableStatus(failoverErr.StatusCode) ||
+			!failoverErr.RetryableOnSameAccount {
+			return 0
+		}
+		return account.GetPoolModeRetryCount()
 	}
 
 	switch failoverErr.StatusCode {
 	case http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests:
 		return 0
 	}
-
 	switch failoverErr.Reason {
 	case service.OpenAIPersistentTransportFailureReason, service.OpenAITransientTransportFailureReason:
 		if allowTransportRetry {
@@ -126,11 +132,34 @@ func openAISameAccountRetryLimit(account *service.Account, failoverErr *service.
 		}
 		return 0
 	}
-
 	if failoverErr.StatusCode == http.StatusRequestTimeout || failoverErr.StatusCode >= http.StatusInternalServerError {
 		return 1
 	}
 	return 0
+}
+
+func finalizeOpenAIFailoverSelection(
+	gateway *service.OpenAIGatewayService,
+	selection *service.AccountSelectionResult,
+	account *service.Account,
+	model string,
+	failoverErr *service.UpstreamFailoverError,
+	action openAIFailoverRetryAction,
+) {
+	if gateway == nil || selection == nil || account == nil || failoverErr == nil {
+		return
+	}
+	if action == openAIFailoverRetrySameAccount {
+		if failoverErr.ShouldReportAccountScheduleFailure() {
+			gateway.ReportOpenAIAccountSameAccountRetry(selection, account.ID, model)
+		}
+		return
+	}
+	if failoverErr.ShouldReportAccountScheduleFailure() {
+		gateway.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, model, false, nil)
+		return
+	}
+	gateway.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 }
 
 func (s *openAIFailoverRetryState) Handle(
@@ -163,6 +192,9 @@ func (s *openAIFailoverRetryState) Handle(
 	retryLimit := openAISameAccountRetryLimit(account, failoverErr, allowTransportRetry)
 	if s.sameAccountRetryCount[accountID] < retryLimit {
 		s.sameAccountRetryCount[accountID]++
+		if retryDelay > 0 {
+			retryDelay = sameAccountRetryDelayFor(failoverErr, s.sameAccountRetryCount[accountID])
+		}
 		logger.FromContext(ctx).Warn("openai.same_account_retry",
 			zap.String("scope", logScope),
 			zap.Int64("account_id", accountID),

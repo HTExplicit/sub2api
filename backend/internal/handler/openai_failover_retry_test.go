@@ -45,15 +45,14 @@ func TestOpenAISameAccountRetryLimit(t *testing.T) {
 		allowTransport bool
 		want           int
 	}{
-		{name: "401 never retries", failoverErr: &service.UpstreamFailoverError{StatusCode: http.StatusUnauthorized, RetryableOnSameAccount: true}, want: 0},
-		{name: "403 never retries", failoverErr: &service.UpstreamFailoverError{StatusCode: http.StatusForbidden, RetryableOnSameAccount: true}, want: 0},
-		{name: "429 never retries", failoverErr: &service.UpstreamFailoverError{StatusCode: http.StatusTooManyRequests, RetryableOnSameAccount: true}, want: 0},
-		{name: "408 capped at one", failoverErr: &service.UpstreamFailoverError{StatusCode: http.StatusRequestTimeout}, want: 1},
-		{name: "500 capped at one", failoverErr: &service.UpstreamFailoverError{StatusCode: http.StatusInternalServerError}, want: 1},
-		{name: "503 capped at one", failoverErr: &service.UpstreamFailoverError{StatusCode: http.StatusServiceUnavailable, RetryableOnSameAccount: true}, want: 1},
-		{name: "transient transport text endpoint", failoverErr: &service.UpstreamFailoverError{StatusCode: http.StatusBadGateway, Reason: service.OpenAITransientTransportFailureReason}, allowTransport: true, want: 1},
-		{name: "transient transport media endpoint retries once", failoverErr: &service.UpstreamFailoverError{StatusCode: http.StatusBadGateway, Reason: service.OpenAITransientTransportFailureReason}, allowTransport: true, want: 1},
-		{name: "persistent transport retries once", failoverErr: &service.UpstreamFailoverError{StatusCode: http.StatusBadGateway, Reason: service.OpenAIPersistentTransportFailureReason}, allowTransport: true, want: 1},
+		{name: "default 401 uses configured count", failoverErr: &service.UpstreamFailoverError{StatusCode: http.StatusUnauthorized, RetryableOnSameAccount: true}, want: 10},
+		{name: "default 403 uses configured count", failoverErr: &service.UpstreamFailoverError{StatusCode: http.StatusForbidden, RetryableOnSameAccount: true}, want: 10},
+		{name: "default 429 uses configured count", failoverErr: &service.UpstreamFailoverError{StatusCode: http.StatusTooManyRequests, RetryableOnSameAccount: true}, want: 10},
+		{name: "408 outside configured list", failoverErr: &service.UpstreamFailoverError{StatusCode: http.StatusRequestTimeout, RetryableOnSameAccount: true}, want: 0},
+		{name: "500 outside configured list", failoverErr: &service.UpstreamFailoverError{StatusCode: http.StatusInternalServerError, RetryableOnSameAccount: true}, want: 0},
+		{name: "503 outside configured list", failoverErr: &service.UpstreamFailoverError{StatusCode: http.StatusServiceUnavailable, RetryableOnSameAccount: true}, want: 0},
+		{name: "transient transport is not an implicit replay", failoverErr: &service.UpstreamFailoverError{StatusCode: http.StatusBadGateway, Reason: service.OpenAITransientTransportFailureReason, RetryableOnSameAccount: true}, allowTransport: true, want: 0},
+		{name: "persistent transport is not an implicit replay", failoverErr: &service.UpstreamFailoverError{StatusCode: http.StatusBadGateway, Reason: service.OpenAIPersistentTransportFailureReason, RetryableOnSameAccount: true}, allowTransport: true, want: 0},
 		{name: "generic retryable 400 still switches immediately", failoverErr: &service.UpstreamFailoverError{StatusCode: http.StatusBadRequest, RetryableOnSameAccount: true}, want: 0},
 		{name: "non retryable 400", failoverErr: &service.UpstreamFailoverError{StatusCode: http.StatusBadRequest}, want: 0},
 		{name: "stop action", failoverErr: &service.UpstreamFailoverError{StatusCode: http.StatusServiceUnavailable, NextAccountAction: service.NextAccountStop}, want: 0},
@@ -66,30 +65,59 @@ func TestOpenAISameAccountRetryLimit(t *testing.T) {
 	}
 }
 
-func TestOpenAISameAccountRetryLimit_StandardTransientDoesNotRequirePoolMode(t *testing.T) {
+func TestOpenAISameAccountRetryLimit_RequiresPoolModeAndExplicitStatus(t *testing.T) {
 	account := &service.Account{ID: 41002, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey}
-	require.Equal(t, 1, openAISameAccountRetryLimit(
+	require.Zero(t, openAISameAccountRetryLimit(
 		account,
-		&service.UpstreamFailoverError{StatusCode: http.StatusServiceUnavailable},
+		&service.UpstreamFailoverError{StatusCode: http.StatusServiceUnavailable, RetryableOnSameAccount: true},
 		true,
 	))
-	require.Equal(t, 1, openAISameAccountRetryLimit(
+
+	account = openAIRetryTestAccount(4)
+	account.Credentials["pool_mode_retry_status_codes"] = []any{float64(http.StatusServiceUnavailable)}
+	require.Equal(t, 4, openAISameAccountRetryLimit(
 		account,
-		&service.UpstreamFailoverError{
-			StatusCode: http.StatusBadGateway,
-			Reason:     service.OpenAITransientTransportFailureReason,
-		},
+		&service.UpstreamFailoverError{StatusCode: http.StatusServiceUnavailable, RetryableOnSameAccount: true},
 		true,
 	))
 }
 
-func TestOpenAIFailoverRetryState_RetriesOnceThenCoolsAndSwitches(t *testing.T) {
+func TestOpenAISameAccountRetryLimit_OAuthKeepsBoundedTransientRetry(t *testing.T) {
+	account := &service.Account{ID: 41003, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth}
+	require.Equal(t, 1, openAISameAccountRetryLimit(
+		account,
+		&service.UpstreamFailoverError{StatusCode: http.StatusServiceUnavailable},
+		false,
+	))
+	require.Equal(t, 1, openAISameAccountRetryLimit(
+		account,
+		&service.UpstreamFailoverError{StatusCode: http.StatusBadGateway, Reason: service.OpenAITransientTransportFailureReason},
+		true,
+	))
+	require.Zero(t, openAISameAccountRetryLimit(
+		account,
+		&service.UpstreamFailoverError{StatusCode: http.StatusBadGateway, Reason: service.OpenAITransientTransportFailureReason},
+		false,
+	))
+	require.Zero(t, openAISameAccountRetryLimit(
+		account,
+		&service.UpstreamFailoverError{StatusCode: http.StatusTooManyRequests},
+		true,
+	))
+}
+
+func TestOpenAIFailoverRetryState_UsesConfiguredBudgetThenCoolsAndSwitches(t *testing.T) {
 	state := newOpenAIFailoverRetryState()
-	account := openAIRetryTestAccount(10)
-	failoverErr := &service.UpstreamFailoverError{StatusCode: http.StatusBadGateway}
+	account := openAIRetryTestAccount(2)
+	account.Credentials["pool_mode_retry_status_codes"] = []any{float64(http.StatusServiceUnavailable)}
+	failoverErr := &service.UpstreamFailoverError{StatusCode: http.StatusServiceUnavailable, RetryableOnSameAccount: true}
 	cooldown := &openAIRetryCooldownRecorder{}
 
 	action := state.Handle(context.Background(), cooldown, account, "gpt-5.1", failoverErr, true, 0, "test")
+	require.Equal(t, openAIFailoverRetrySameAccount, action)
+	require.Zero(t, cooldown.calls)
+
+	action = state.Handle(context.Background(), cooldown, account, "gpt-5.1", failoverErr, true, 0, "test")
 	require.Equal(t, openAIFailoverRetrySameAccount, action)
 	require.Zero(t, cooldown.calls)
 
@@ -98,15 +126,15 @@ func TestOpenAIFailoverRetryState_RetriesOnceThenCoolsAndSwitches(t *testing.T) 
 	require.Equal(t, 1, cooldown.calls)
 }
 
-func TestOpenAIFailoverRetryState_AuthFailureCoolsWithoutSameAccountRetry(t *testing.T) {
+func TestOpenAIFailoverRetryState_DefaultAuthStatusUsesPoolBudget(t *testing.T) {
 	state := newOpenAIFailoverRetryState()
-	account := openAIRetryTestAccount(10)
+	account := openAIRetryTestAccount(1)
 	failoverErr := &service.UpstreamFailoverError{StatusCode: http.StatusTooManyRequests, RetryableOnSameAccount: true}
 	cooldown := &openAIRetryCooldownRecorder{}
 
 	action := state.Handle(context.Background(), cooldown, account, "gpt-5.1", failoverErr, true, 0, "test")
-	require.Equal(t, openAIFailoverRetrySwitchAccount, action)
-	require.Equal(t, 1, cooldown.calls)
+	require.Equal(t, openAIFailoverRetrySameAccount, action)
+	require.Zero(t, cooldown.calls)
 }
 
 func TestOpenAIResponseHasSemanticWriteIgnoresKeepaliveOnly(t *testing.T) {

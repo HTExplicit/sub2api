@@ -107,6 +107,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 		return
 	}
 
+	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
 	retryState := newOpenAIFailoverRetryState()
 	var lastFailoverErr *service.UpstreamFailoverError
@@ -118,6 +119,10 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 		maxAccountSwitches = 3
 	}
 	routingStart := time.Now()
+
+	// 分组利润控制：embeddings 文本入口请求级装门并固定 pricingAt。
+	embPricingCtx, pricingAt := h.gatewayService.WithOpenAIRequestPricingContext(c.Request.Context(), apiKey.GroupID)
+	c.Request = c.Request.WithContext(embPricingCtx)
 
 	for {
 		retryingSameAccount := sameAccountRetrySelection != nil
@@ -174,7 +179,6 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 			return
 		}
 		account := selection.Account
-		defer h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
 		var accountReleaseFunc func()
@@ -183,6 +187,14 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 			accountReleaseFunc, slotResult = h.acquireResponsesAccountSlotForSameAccountRetry(c, apiKey.GroupID, "", selection, false, &streamStarted, reqLog)
 		} else {
 			accountReleaseFunc, slotResult = h.acquireResponsesAccountSlot(c, apiKey.GroupID, "", selection, false, &streamStarted, reqLog)
+		}
+		if slotResult == openAISlotAcquireProfitVetoed {
+			// 利润终检否决：排除该账号重新选号；否决次数达上限则按无可用账号终止。
+			if !recordOpenAIProfitVeto(failedAccountIDs, account.ID, &profitVetoCount) {
+				h.handleOpenAIProfitVetoExhausted(c, streamStarted, reqLog, profitVetoCount)
+				return
+			}
+			continue
 		}
 		if slotResult != openAISlotAcquireOK {
 			if retryingSameAccount && lastFailoverErr != nil && h.failoverAfterSameAccountSlotFailure(
@@ -225,11 +237,12 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
 				if c.Writer.Size() != writerSizeBeforeForward {
+					finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(reqModel), failoverErr, openAIFailoverRetryStop)
 					h.handleFailoverExhausted(c, failoverErr, true)
 					return
 				}
-				h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(reqModel), false, nil)
 				if failoverClientGone(c) {
+					h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 					reqLog.Info("openai_embeddings.failover_aborted_client_disconnected",
 						zap.Int64("account_id", account.ID),
 						zap.Int("upstream_status", failoverErr.StatusCode),
@@ -237,10 +250,11 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 					return
 				}
 				if !failoverErr.ShouldRetryNextAccount() {
+					finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(reqModel), failoverErr, openAIFailoverRetryStop)
 					h.handleFailoverExhausted(c, failoverErr, false)
 					return
 				}
-				switch retryState.Handle(
+				retryAction := retryState.Handle(
 					c.Request.Context(),
 					h.gatewayService,
 					account,
@@ -249,7 +263,9 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 					true,
 					sameAccountRetryDelay,
 					"embeddings",
-				) {
+				)
+				finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(reqModel), failoverErr, retryAction)
+				switch retryAction {
 				case openAIFailoverRetrySameAccount:
 					sameAccountRetrySelection = selection
 					lastFailoverErr = failoverErr
@@ -314,6 +330,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 				QuotaPlatform:      quotaPlatform,
 				SessionID:          sessionID,
 				ChannelUsageFields: clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel),
+				PricingAt:          pricingAt,
 			}); err != nil {
 				logger.L().With(
 					zap.String("component", "handler.openai_gateway.embeddings"),

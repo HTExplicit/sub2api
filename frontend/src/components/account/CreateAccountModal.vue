@@ -3003,6 +3003,24 @@
         </div>
       </div>
 
+      <!-- Codex 指纹收敛模式（仅 OpenAI OAuth） -->
+      <div
+        v-if="form.platform === 'openai' && accountCategory === 'oauth-based'"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="flex items-center justify-between gap-4">
+          <div class="min-w-0">
+            <label class="input-label mb-0">{{ t('admin.accounts.openai.codexFingerprintMode') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.openai.codexFingerprintModeDesc') }}
+            </p>
+          </div>
+          <div class="w-52 flex-shrink-0">
+            <Select v-model="codexFingerprintMode" data-testid="create-codex-fingerprint-mode-select" :options="codexFingerprintModeOptions" />
+          </div>
+        </div>
+      </div>
+
       <!-- OpenAI Compact 能力配置 -->
       <div
         v-if="form.platform === 'openai' && (accountCategory === 'oauth-based' || accountCategory === 'apikey')"
@@ -3078,7 +3096,11 @@
             </p>
           </div>
           <div class="w-56">
-            <Select v-model="openAIAlphaSearchMode" :options="openAIAlphaSearchModeOptions" />
+            <Select
+              v-model="openAIAlphaSearchMode"
+              :options="openAIAlphaSearchModeOptions"
+              data-testid="openai-alpha-search-mode-select"
+            />
           </div>
         </div>
         <div class="flex items-center justify-between gap-4">
@@ -3089,7 +3111,11 @@
             </p>
           </div>
           <div class="w-56">
-            <Select v-model="openAIPromptCacheKeyMode" :options="openAIPromptCacheKeyModeOptions" />
+            <Select
+              v-model="openAIPromptCacheKeyMode"
+              :options="openAIPromptCacheKeyModeOptions"
+              data-testid="openai-prompt-cache-key-mode-select"
+            />
           </div>
         </div>
         <div>
@@ -3234,6 +3260,7 @@
         :show-agent-identity-option="form.platform === 'openai'"
         :show-codex-pat-option="form.platform === 'openai'"
         :show-sso-option="form.platform === 'grok'"
+        :show-email-password-option="false"
         :show-manual-option="true"
         :initial-input-method="'manual'"
         :platform="form.platform"
@@ -3246,6 +3273,7 @@
         @import-codex-session="handleOpenAIImportCodexSession"
         @import-codex-pat="handleOpenAIImportCodexPAT"
         @import-sso="handleGrokImportSSO"
+        @authorize-password="handleGrokAuthorizePassword"
       />
 
     </div>
@@ -3336,8 +3364,8 @@
   <BaseDialog
     :show="showGeminiHelpDialog"
     :title="t('admin.accounts.gemini.helpDialog.title')"
+    width="wide"
     @close="showGeminiHelpDialog = false"
-    max-width="max-w-3xl"
   >
     <div class="space-y-6">
       <!-- Setup Guide Section -->
@@ -3624,6 +3652,7 @@ import {
 } from '@/components/account/credentialsBuilder'
 import { formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
+import { CINDY_OPENAI_DEFAULTS, cindyFirst, isCindyOpenAIAPIKeyAccount } from '@/utils/cindyOpenAIDefaults'
 import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
 import {
   OPENAI_WS_MODE_CTX_POOL,
@@ -3860,6 +3889,14 @@ const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const codexCLIOnlyEnabled = ref(false)
 const codexCLIOnlyAppServerEnabled = ref(false)
+type CodexFingerprintMode = 'off' | 'device' | 'session' | 'full'
+const codexFingerprintMode = ref<CodexFingerprintMode>('session')
+const codexFingerprintModeOptions = computed(() => [
+  { value: 'off' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintOff') },
+  { value: 'device' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintDevice') },
+  { value: 'session' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintSession') },
+  { value: 'full' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintFull') },
+])
 type AnthropicAPIKeyAuthScheme = 'x_api_key' | 'authorization_bearer'
 const anthropicPassthroughEnabled = ref(false)
 const anthropicAPIKeyAuthScheme = ref<AnthropicAPIKeyAuthScheme>('x_api_key')
@@ -3917,6 +3954,20 @@ const getAntigravityModelMappingKey = createStableObjectKeyResolver<ModelMapping
 const getTempUnschedRuleKey = createStableObjectKeyResolver<TempUnschedRuleForm>('create-temp-unsched-rule')
 const geminiOAuthType = ref<'code_assist' | 'google_one' | 'ai_studio'>('google_one')
 const geminiAIStudioOAuthEnabled = ref(false)
+const form = reactive({
+  name: '',
+  notes: '',
+  platform: 'anthropic' as AccountPlatform,
+  type: 'oauth' as AccountType, // Will be 'oauth', 'setup-token', or 'apikey'
+  credentials: {} as Record<string, unknown>,
+  proxy_id: null as number | null,
+  concurrency: 10,
+  load_factor: null as number | null,
+  priority: 1,
+  rate_multiplier: 1,
+  group_ids: [] as number[],
+  expires_at: null as number | null
+})
 const openAICompactModeOptions = computed(() => [
   { value: 'auto', label: t('admin.accounts.openai.compactModeAuto') },
   { value: 'force_on', label: t('admin.accounts.openai.compactModeForceOn') },
@@ -3927,15 +3978,42 @@ const openAIResponsesModeOptions = computed(() => [
   { value: 'force_responses', label: t('admin.accounts.openai.responsesModeForceResponses') },
   { value: 'force_chat_completions', label: t('admin.accounts.openai.responsesModeForceChatCompletions') }
 ])
-const openAIAlphaSearchModeOptions = computed(() => [
-  { value: 'direct', label: t('admin.accounts.openai.alphaSearchModeDirect') },
-  { value: 'responses_web_search', label: t('admin.accounts.openai.alphaSearchModeResponsesWebSearch') },
-  { value: 'disabled', label: t('admin.accounts.openai.alphaSearchModeDisabled') }
-])
-const openAIPromptCacheKeyModeOptions = computed(() => [
-  { value: 'passthrough', label: t('admin.accounts.openai.promptCacheKeyModePassthrough') },
-  { value: 'sha256_64', label: t('admin.accounts.openai.promptCacheKeyModeSHA25664') }
-])
+const isCindyOpenAIAccount = computed(() =>
+  isCindyOpenAIAPIKeyAccount({
+    platform: form.platform,
+    type: accountCategory.value === 'apikey' ? 'apikey' : form.type,
+    credentials: { base_url: apiKeyBaseUrl.value }
+  })
+)
+watch(isCindyOpenAIAccount, enabled => {
+  if (!enabled) return
+  if (openAIResponsesMode.value === 'auto') openAIResponsesMode.value = CINDY_OPENAI_DEFAULTS.responsesMode
+  if (openAIAlphaSearchMode.value === 'direct') openAIAlphaSearchMode.value = CINDY_OPENAI_DEFAULTS.alphaSearchMode
+  if (openAIPromptCacheKeyMode.value === 'passthrough') {
+    openAIPromptCacheKeyMode.value = CINDY_OPENAI_DEFAULTS.promptCacheKeyMode
+  }
+})
+const openAIAlphaSearchModeOptions = computed(() =>
+  cindyFirst(
+    [
+      { value: 'direct', label: t('admin.accounts.openai.alphaSearchModeDirect') },
+      { value: 'responses_web_search', label: t('admin.accounts.openai.alphaSearchModeResponsesWebSearch') },
+      { value: 'disabled', label: t('admin.accounts.openai.alphaSearchModeDisabled') }
+    ],
+    isCindyOpenAIAccount.value,
+    CINDY_OPENAI_DEFAULTS.alphaSearchMode
+  )
+)
+const openAIPromptCacheKeyModeOptions = computed(() =>
+  cindyFirst(
+    [
+      { value: 'passthrough', label: t('admin.accounts.openai.promptCacheKeyModePassthrough') },
+      { value: 'sha256_64', label: t('admin.accounts.openai.promptCacheKeyModeSHA25664') }
+    ],
+    isCindyOpenAIAccount.value,
+    CINDY_OPENAI_DEFAULTS.promptCacheKeyMode
+  )
+)
 const openAITextEndpointCapabilityLabel = computed(() => {
   if (openAIResponsesMode.value === 'force_responses') {
     return t('admin.accounts.openai.capabilityResponses')
@@ -4137,21 +4215,6 @@ const tempUnschedPresets = computed(() => [
     }
   }
 ])
-
-const form = reactive({
-  name: '',
-  notes: '',
-  platform: 'anthropic' as AccountPlatform,
-  type: 'oauth' as AccountType, // Will be 'oauth', 'setup-token', or 'apikey'
-  credentials: {} as Record<string, unknown>,
-  proxy_id: null as number | null,
-  concurrency: 10,
-  load_factor: null as number | null,
-  priority: 1,
-  rate_multiplier: 1,
-  group_ids: [] as number[],
-  expires_at: null as number | null
-})
 
 // Helper to check if current type needs OAuth flow
 const isOAuthFlow = computed(() => {
@@ -4750,6 +4813,7 @@ const resetForm = () => {
   openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
   codexCLIOnlyEnabled.value = false
   codexCLIOnlyAppServerEnabled.value = false
+  codexFingerprintMode.value = 'session'
   anthropicPassthroughEnabled.value = false
   anthropicAPIKeyAuthScheme.value = 'x_api_key'
   webSearchEmulationMode.value = 'default'
@@ -4847,6 +4911,11 @@ const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknow
     extra.codex_cli_only_allow_app_server = true
   } else {
     delete extra.codex_cli_only_allow_app_server
+  }
+  if (codexFingerprintMode.value !== 'session') {
+    extra.codex_fingerprint_mode = codexFingerprintMode.value
+  } else {
+    delete extra.codex_fingerprint_mode
   }
   if (openAICompactMode.value !== 'auto') {
     extra.openai_compact_mode = openAICompactMode.value
@@ -5516,6 +5585,116 @@ const handleGrokImportSSO = async (ssoInput: string) => {
   } catch (error: any) {
     grokOAuth.error.value = error.response?.data?.detail || error.message || t('admin.accounts.oauth.grok.failedToConvertSSO')
     appStore.showError(grokOAuth.error.value)
+  } finally {
+    grokOAuth.loading.value = false
+  }
+}
+
+/**
+ * Grok password login: each line is email----password.
+ * Password is only used for the authorize API call; buildCredentials never stores it.
+ */
+const handleGrokAuthorizePassword = async (emailPasswordInput: string) => {
+  if (!emailPasswordInput.trim()) return
+  if (!validateGrokOAuthUpstreamConfig()) return
+
+  const lines = emailPasswordInput
+    .split('\n')
+    // Keep the password portion byte-for-byte; trim is only for determining
+    // whether this textarea line is blank.
+    .filter((line) => line.trim() && line.includes('----'))
+
+  if (lines.length === 0) {
+    grokOAuth.error.value = t(
+      'admin.accounts.oauth.grok.pleaseEnterPassword',
+      'Please enter email----password (one per line)'
+    )
+    return
+  }
+
+  grokOAuth.loading.value = true
+  grokOAuth.error.value = ''
+
+  let successCount = 0
+  let failedCount = 0
+  const errors: string[] = []
+
+  try {
+    for (let i = 0; i < lines.length; i++) {
+      try {
+        const tokenInfo = await grokOAuth.authorizePassword(lines[i], form.proxy_id)
+        if (!tokenInfo) {
+          failedCount++
+          errors.push(`#${i + 1}: ${grokOAuth.error.value || 'Authorization failed'}`)
+          grokOAuth.error.value = ''
+          continue
+        }
+
+        const credentials = grokOAuth.buildCredentials(tokenInfo)
+        applyGrokOAuthUpstreamConfig(credentials)
+        const extra = grokOAuth.buildExtraInfo(tokenInfo)
+        const accountName =
+          lines.length > 1
+            ? `${form.name || tokenInfo.email || 'Grok OAuth Account'} #${i + 1}`
+            : form.name || tokenInfo.email || 'Grok OAuth Account'
+
+        const modelMapping = buildModelMappingObject(
+          modelRestrictionMode.value,
+          allowedModels.value,
+          modelMappings.value
+        )
+        if (modelMapping) {
+          credentials.model_mapping = modelMapping
+        }
+        if (!applyTempUnschedConfig(credentials)) {
+          return
+        }
+
+        await adminAPI.accounts.create({
+          name: accountName,
+          notes: form.notes,
+          platform: 'grok',
+          type: 'oauth',
+          credentials,
+          extra,
+          proxy_id: form.proxy_id,
+          concurrency: form.concurrency,
+          load_factor: form.load_factor ?? undefined,
+          priority: form.priority,
+          rate_multiplier: form.rate_multiplier,
+          group_ids: form.group_ids,
+          expires_at: form.expires_at,
+          auto_pause_on_expired: autoPauseOnExpired.value
+        })
+        successCount++
+      } catch (error: any) {
+        failedCount++
+        const errMsg = error.response?.data?.detail || error.message || 'Unknown error'
+        errors.push(`#${i + 1}: ${errMsg}`)
+      }
+    }
+
+    if (successCount > 0 && failedCount === 0) {
+      appStore.showSuccess(
+        lines.length > 1
+          ? t('admin.accounts.oauth.batchSuccess', { count: successCount })
+          : t('admin.accounts.accountCreated')
+      )
+      emit('created')
+      handleClose()
+    } else if (successCount > 0) {
+      appStore.showWarning(
+        t('admin.accounts.oauth.batchPartialSuccess', {
+          success: successCount,
+          failed: failedCount
+        })
+      )
+      grokOAuth.error.value = errors.join('\n')
+      emit('created')
+    } else {
+      grokOAuth.error.value = errors.join('\n')
+      appStore.showError(t('admin.accounts.oauth.batchFailed'))
+    }
   } finally {
     grokOAuth.loading.value = false
   }
