@@ -141,9 +141,10 @@ func validateRemoteSkillMarkdownClosure(name, content string, files map[string][
 			marker = trimmed[:3]
 		}
 		if marker != "" {
-			if fence == "" {
+			switch fence {
+			case "":
 				fence = marker
-			} else if fence == marker {
+			case marker:
 				fence = ""
 			}
 			continue
