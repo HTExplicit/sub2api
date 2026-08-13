@@ -269,7 +269,7 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, requestedModel ...string) (shouldDisable bool) {
 	ctx = withTempUnschedulableModel(ctx, requestedModel)
 	customErrorCodesEnabled := account.IsCustomErrorCodesEnabled()
-	if statusCode == http.StatusPaymentRequired && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+	if IsCindyBalanceInsufficientResponse(account, statusCode, responseBody) {
 		return s.handleCindyBalanceInsufficient(ctx, account)
 	}
 

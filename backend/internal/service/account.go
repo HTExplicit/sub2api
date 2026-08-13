@@ -46,7 +46,7 @@ type Account struct {
 	UpdatedAt          time.Time
 
 	Schedulable bool
-	// CindyBalanceInsufficientAt is set only after an exact Cindy account returns HTTP 402.
+	// CindyBalanceInsufficientAt is set after recognized Cindy budget exhaustion.
 	CindyBalanceInsufficientAt *time.Time
 
 	RateLimitedAt    *time.Time

@@ -428,6 +428,7 @@ func isOpenAIAccount(account *Account) bool {
 // handleOpenAIAccountUpstreamError expects canonicalModel to be the model used
 // for scheduling after applying account mapping exactly once.
 func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, canonicalModel ...string) bool {
+	cindyBalanceInsufficient := IsCindyBalanceInsufficientResponse(account, statusCode, responseBody)
 	if account != nil && account.Platform == PlatformGrok && isGrokContentPolicyRejection(statusCode, responseBody) {
 		return false
 	}
@@ -441,11 +442,23 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 			// Authentication and quota responses are handled exclusively by the
 			// request failover state: no same-account replay, runtime cooldown, then
 			// switch. Do not persist legacy schedulable/error state here.
-			return false
+			if !cindyBalanceInsufficient {
+				return false
+			}
 		}
 	}
 	stateCtx, cancel := openAIAccountStateContext(ctx)
 	defer cancel()
+	if cindyBalanceInsufficient {
+		if s == nil || s.rateLimitService == nil {
+			return false
+		}
+		shouldDisable := s.rateLimitService.HandleUpstreamError(stateCtx, account, statusCode, headers, responseBody)
+		if shouldDisable {
+			s.BlockAccountScheduling(account, time.Time{}, "cindy_balance_insufficient")
+		}
+		return shouldDisable
+	}
 
 	if account != nil && account.Platform == PlatformOpenAI && isOpenAIContextWindowError("", responseBody) {
 		return false

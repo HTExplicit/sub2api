@@ -81,6 +81,28 @@ func TestRateLimitServiceCindy402MarksBeforePoolModeSkip(t *testing.T) {
 	}
 }
 
+func TestRateLimitServiceCindyBudget429MarksBeforePoolModeSkip(t *testing.T) {
+	for _, poolMode := range []bool{false, true} {
+		t.Run(map[bool]string{false: "normal", true: "pool"}[poolMode], func(t *testing.T) {
+			repo := &cindyRateLimitAccountRepoStub{}
+			blocker := &runtimeBlockRecorder{}
+			svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+			svc.SetAccountRuntimeBlocker(blocker)
+			account := newCindyRateLimitAccount(8102, poolMode)
+			body := []byte(`{"error":{"type":"budget_exceeded","message":"ExceededBudget: user over budget"}}`)
+
+			shouldDisable := svc.HandleUpstreamError(context.Background(), account, http.StatusTooManyRequests, http.Header{}, body)
+
+			require.True(t, shouldDisable)
+			require.Equal(t, 1, repo.markCalls)
+			require.Equal(t, 1, repo.markChanged)
+			require.Zero(t, repo.setErrorCalls)
+			require.NotNil(t, account.CindyBalanceInsufficientAt)
+			require.Equal(t, "cindy_balance_insufficient", blocker.reasons[0])
+		})
+	}
+}
+
 func TestRateLimitServiceCindyBalanceMarkerDoesNotMatchOtherErrors(t *testing.T) {
 	t.Run("non_cindy_402_keeps_existing_behavior", func(t *testing.T) {
 		repo := &cindyRateLimitAccountRepoStub{}
@@ -101,29 +123,72 @@ func TestRateLimitServiceCindyBalanceMarkerDoesNotMatchOtherErrors(t *testing.T)
 		require.Zero(t, repo.markCalls)
 		require.Nil(t, account.CindyBalanceInsufficientAt)
 	})
+
+	t.Run("ordinary_cindy_429_is_not_marked", func(t *testing.T) {
+		repo := &cindyRateLimitAccountRepoStub{}
+		svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+		account := newCindyRateLimitAccount(8203, true)
+
+		require.False(t, svc.HandleUpstreamError(
+			context.Background(), account, http.StatusTooManyRequests, http.Header{},
+			[]byte(`{"error":{"type":"rate_limit_error","message":"too many requests"}}`),
+		))
+		require.Zero(t, repo.markCalls)
+		require.Nil(t, account.CindyBalanceInsufficientAt)
+	})
 }
 
-func TestRateLimitServiceCindy402ConcurrentMarkIsIdempotent(t *testing.T) {
+func TestRateLimitServiceCindyBalanceConcurrentMarkIsIdempotent(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+		body   []byte
+	}{
+		{name: "402", status: http.StatusPaymentRequired},
+		{name: "budget 429", status: http.StatusTooManyRequests, body: []byte(`{"error":{"type":"budget_exceeded"}}`)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &cindyRateLimitAccountRepoStub{}
+			svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+
+			const requests = 24
+			var wg sync.WaitGroup
+			results := make(chan bool, requests)
+			for i := 0; i < requests; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					account := newCindyRateLimitAccount(8301, true)
+					results <- svc.HandleUpstreamError(context.Background(), account, tt.status, http.Header{}, tt.body)
+				}()
+			}
+			wg.Wait()
+			close(results)
+			for shouldDisable := range results {
+				require.True(t, shouldDisable)
+			}
+
+			require.Equal(t, requests, repo.markCalls)
+			require.Equal(t, 1, repo.markChanged)
+		})
+	}
+}
+
+func TestOpenAIGatewayCindyBudget429MarksAndBlocksImmediately(t *testing.T) {
 	repo := &cindyRateLimitAccountRepoStub{}
-	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	rateLimitService := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	gateway := &OpenAIGatewayService{rateLimitService: rateLimitService}
+	rateLimitService.SetAccountRuntimeBlocker(gateway)
+	account := newCindyRateLimitAccount(8401, true)
+	body := []byte(`{"error":{"type":"budget_exceeded","message":"ExceededBudget: user over budget"}}`)
 
-	const requests = 24
-	var wg sync.WaitGroup
-	results := make(chan bool, requests)
-	for i := 0; i < requests; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			account := newCindyRateLimitAccount(8301, true)
-			results <- svc.HandleUpstreamError(context.Background(), account, http.StatusPaymentRequired, http.Header{}, nil)
-		}()
-	}
-	wg.Wait()
-	close(results)
-	for shouldDisable := range results {
-		require.True(t, shouldDisable)
-	}
+	shouldDisable := gateway.handleOpenAIAccountUpstreamError(
+		context.Background(), account, http.StatusTooManyRequests, http.Header{}, body, "gpt-5.6-sol",
+	)
 
-	require.Equal(t, requests, repo.markCalls)
-	require.Equal(t, 1, repo.markChanged)
+	require.True(t, shouldDisable)
+	require.Equal(t, 1, repo.markCalls)
+	require.NotNil(t, account.CindyBalanceInsufficientAt)
+	require.True(t, gateway.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.6-sol"))
 }

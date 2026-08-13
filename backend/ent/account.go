@@ -64,7 +64,7 @@ type Account struct {
 	AutoPauseOnExpired bool `json:"auto_pause_on_expired,omitempty"`
 	// Schedulable holds the value of the "schedulable" field.
 	Schedulable bool `json:"schedulable,omitempty"`
-	// Upstream 402 observed for a Cindy account; NULL means no known balance exhaustion.
+	// Recognized Cindy budget exhaustion; NULL means no known balance exhaustion.
 	CindyBalanceInsufficientAt *time.Time `json:"cindy_balance_insufficient_at,omitempty"`
 	// RateLimitedAt holds the value of the "rate_limited_at" field.
 	RateLimitedAt *time.Time `json:"rate_limited_at,omitempty"`

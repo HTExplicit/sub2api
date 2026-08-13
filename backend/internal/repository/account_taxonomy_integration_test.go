@@ -41,7 +41,7 @@ func newAccountTaxonomyIntegrationAdmin(t *testing.T, prefix string) (*dbent.Cli
 	repo := newAccountRepositoryWithSQL(client, integrationDB, nil)
 	base := service.NewAdminService(
 		nil, nil, repo, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		client, nil, nil, nil, nil, nil, nil, nil, nil,
+		client, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
 	admin, ok := base.(accountTaxonomyIntegrationAdmin)
 	require.True(t, ok, "admin service must expose account console operations")

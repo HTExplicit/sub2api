@@ -775,7 +775,8 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 			c.Request = c.Request.WithContext(markAgentIdentityTaskRecoveryTried(ctx))
 			return s.testOpenAIAccountConnection(c, account, modelID, prompt, mode)
 		}
-		if resp.StatusCode == http.StatusTooManyRequests {
+		cindyBalanceInsufficient := s.markCindyBalanceInsufficientFromTest(ctx, account, resp.StatusCode, body)
+		if resp.StatusCode == http.StatusTooManyRequests && !cindyBalanceInsufficient {
 			s.reconcileOpenAI429State(ctx, account, resp.Header, body)
 		}
 		// 401 Unauthorized: 标记账号为永久错误
@@ -969,6 +970,7 @@ func (s *AccountTestService) observeGrokTestResponse(ctx context.Context, accoun
 		resp.Body = io.NopCloser(bytes.NewReader(responseBody))
 	}
 	snapshot := parseGrokQuotaSnapshot(resp.Header, resp.StatusCode, now)
+	stampGrokQuotaSnapshotForPlan(account, snapshot, grokRequestedModelFromCtx(ctx))
 	if snapshot != nil && s.accountRepo != nil {
 		resetAt, limited := grokRateLimitResetAtForAccount(account, snapshot, now)
 		if limited {
@@ -1073,7 +1075,7 @@ func (s *AccountTestService) testGrokResponsesConnection(c *gin.Context, ctx con
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	s.observeGrokTestResponse(ctx, account, resp)
+	s.observeGrokTestResponse(withGrokTeamRateLimitModel(ctx, testModelID), account, resp)
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -1421,7 +1423,7 @@ User query:
 		return s.sendErrorAndEnd(c, fmt.Sprintf("standalone web_search probe failed: %s", err.Error()))
 	}
 	defer func() { _ = resp.Body.Close() }()
-	s.observeGrokTestResponse(ctx, account, resp)
+	s.observeGrokTestResponse(withGrokTeamRateLimitModel(ctx, grokDefaultResponsesModel), account, resp)
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
@@ -1962,7 +1964,8 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		if resp.StatusCode == http.StatusTooManyRequests {
+		cindyBalanceInsufficient := s.markCindyBalanceInsufficientFromTest(ctx, account, resp.StatusCode, body)
+		if resp.StatusCode == http.StatusTooManyRequests && !cindyBalanceInsufficient {
 			s.reconcileOpenAI429State(ctx, account, resp.Header, body)
 		}
 		if resp.StatusCode == http.StatusUnauthorized && s.accountRepo != nil {
@@ -2092,6 +2095,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 		return s.testOpenAICompactConnection(c, account, testModelID)
 	}
 
+	cindyBalanceInsufficient := s.markCindyBalanceInsufficientFromTest(ctx, account, resp.StatusCode, body)
 	if s.accountRepo != nil {
 		updates := buildOpenAICompactProbeExtraUpdates(resp, body, nil, time.Now())
 		if codexUpdates, err := extractOpenAICodexProbeUpdates(resp); err == nil && len(codexUpdates) > 0 {
@@ -2102,7 +2106,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 			mergeAccountExtra(account, updates)
 		}
 		// 探测如返回 429,主动同步限流状态,避免后续短时间内继续选中。
-		if resp.StatusCode == http.StatusTooManyRequests {
+		if resp.StatusCode == http.StatusTooManyRequests && !cindyBalanceInsufficient {
 			s.reconcileOpenAI429State(ctx, account, resp.Header, body)
 		}
 	}
@@ -2153,6 +2157,33 @@ func (s *AccountTestService) reconcileOpenAI429State(ctx context.Context, accoun
 		account.Status = StatusActive
 		account.ErrorMessage = ""
 	}
+}
+
+func (s *AccountTestService) markCindyBalanceInsufficientFromTest(ctx context.Context, account *Account, statusCode int, body []byte) bool {
+	if !IsCindyBalanceInsufficientResponse(account, statusCode, body) {
+		return false
+	}
+	repo, ok := s.accountRepo.(CindyBalanceAccountRepository)
+	if !ok {
+		log.Printf("cindy balance repository unavailable during account test: account_id=%d", account.ID)
+		return true
+	}
+
+	stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+	defer cancel()
+	observedAt := time.Now().UTC()
+	changed, err := repo.MarkCindyBalanceInsufficient(stateCtx, account.ID, observedAt)
+	if err != nil {
+		log.Printf("failed to mark Cindy balance insufficient during account test: account_id=%d error=%v", account.ID, err)
+		return true
+	}
+	if account.CindyBalanceInsufficientAt == nil {
+		account.CindyBalanceInsufficientAt = &observedAt
+	}
+	if changed {
+		log.Printf("marked Cindy balance insufficient during account test: account_id=%d", account.ID)
+	}
+	return true
 }
 
 // testGeminiAccountConnection tests a Gemini account's connection
@@ -2850,6 +2881,7 @@ func (s *AccountTestService) testOpenAIImageAPIKey(c *gin.Context, ctx context.C
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		s.markCindyBalanceInsufficientFromTest(ctx, account, resp.StatusCode, body)
 		return s.sendErrorAndEnd(c, fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(body)))
 	}
 
