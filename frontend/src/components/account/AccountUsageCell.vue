@@ -428,7 +428,7 @@
       </div>
       <div v-else-if="isForbidden" class="space-y-1">
         <span class="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
-          {{ grokEntitlementLabel || t('admin.accounts.forbidden') }}
+          {{ usageInfo?.grok_entitlement_status || t('admin.accounts.forbidden') }}
         </span>
       </div>
       <div v-else-if="usageInfo" class="space-y-1">
@@ -448,66 +448,76 @@
             <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800" :title="t('usage.accountBilled')">
               A ${{ formatWindowCost(grokLocalUsage) }}
             </span>
-            <span
-              v-if="grokLocalUsage.user_cost != null"
-              class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800"
-              :title="t('usage.userBilled')"
-            >
-              U ${{ formatWindowUserCost(grokLocalUsage) }}
-            </span>
           </div>
         </div>
-        <UsageProgressBar
-          v-if="grokWeeklyBillingBar"
-          :density="usageBarDensity"
-          label="7d"
-          :utilization="grokWeeklyBillingBar.utilization"
-          :resets-at="grokWeeklyBillingBar.resetsAt"
-          :show-now-when-idle="true"
-          color="indigo"
-        />
-        <UsageProgressBar
-          v-if="!grokWeeklyBillingBar && !grokIsFree && grokRequestQuotaBar"
-          :density="usageBarDensity"
-          :label="t('admin.accounts.usageWindow.grokRequests')"
-          :utilization="grokRequestQuotaBar.utilization"
-          :resets-at="grokRequestQuotaBar.resetsAt"
-          :remaining-capacity="true"
-          color="indigo"
-        />
-        <UsageProgressBar
-          v-if="!grokWeeklyBillingBar && !grokIsFree && grokTokenQuotaBar"
-          :density="usageBarDensity"
-          :label="t('admin.accounts.usageWindow.grokTokens')"
-          :utilization="grokTokenQuotaBar.utilization"
-          :resets-at="grokTokenQuotaBar.resetsAt"
-          :remaining-capacity="true"
-          color="emerald"
-        />
-        <UsageProgressBar
-          v-if="grokFreeTokenBar"
-          :density="usageBarDensity"
-          label="24h"
-          :title="t('admin.accounts.usageWindow.grokFreeQuota24hHint', { limit: formatCompactNumber(grokFreeTokenBar.limit) })"
-          :utilization="grokFreeTokenBar.utilization"
-          :show-now-when-idle="true"
-          color="emerald"
-        />
+        <!-- Free: only rolling 24h soft-gate bar. Paid: 7d + 30d + prepaid money. -->
+        <template v-if="grokIsFree">
+          <UsageProgressBar
+            v-if="grokFreeTokenBar"
+            :density="usageBarDensity"
+            label="24h"
+            :title="t('admin.accounts.usageWindow.grokFreeQuota24hHint', { limit: formatCompactNumber(grokFreeTokenBar.limit) })"
+            :utilization="grokFreeTokenBar.utilization"
+            :show-now-when-idle="true"
+            color="emerald"
+          />
+          <div v-else-if="grokQuotaUnknown" class="text-[10px] text-gray-500 dark:text-gray-400">
+            {{ grokQuotaUnknownLabel }}
+          </div>
+        </template>
+        <template v-else>
+          <UsageProgressBar
+            v-if="grokWeeklyBillingBar"
+            :density="usageBarDensity"
+            label="7d"
+            :utilization="grokWeeklyBillingBar.utilization"
+            :resets-at="grokWeeklyBillingBar.resetsAt"
+            :show-now-when-idle="true"
+            color="indigo"
+          />
+          <UsageProgressBar
+            v-if="grokMonthlyBillingBar"
+            :density="usageBarDensity"
+            label="30d"
+            :utilization="grokMonthlyBillingBar.utilization"
+            :resets-at="grokMonthlyBillingBar.resetsAt"
+            :show-now-when-idle="true"
+            color="indigo"
+          />
+          <div
+            v-if="grokPrepaidMoneyLine"
+            class="flex flex-wrap items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400"
+          >
+            <span
+              class="rounded bg-emerald-50 px-1 py-0.5 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+              :title="t('admin.accounts.usageWindow.grokPrepaid')"
+            >
+              {{ t('admin.accounts.usageWindow.grokPrepaid') }} ${{ grokPrepaidMoneyLine.prepaid }}
+            </span>
+            <span :title="t('admin.accounts.usageWindow.grokMonthlyLimit')">
+              {{ t('admin.accounts.usageWindow.grokUsed') }}
+              {{ grokPrepaidMoneyLine.used }}/{{ grokPrepaidMoneyLine.limit }}
+            </span>
+          </div>
+          <div v-if="grokQuotaUnknown" class="text-[10px] text-gray-500 dark:text-gray-400">
+            {{ grokQuotaUnknownLabel }}
+          </div>
+        </template>
+        <div v-if="usageInfo.error" class="truncate text-xs text-amber-600 dark:text-amber-400 max-w-[200px]" :title="usageInfo.error">
+          {{ usageErrorLabel }}
+        </div>
         <div v-if="grokRetryAfterLabel" class="text-[10px] text-amber-600 dark:text-amber-400">
           {{ t('admin.accounts.usageWindow.grokRetryAfter', { time: grokRetryAfterLabel }) }}
-        </div>
-        <div v-if="grokQuotaUnknown" class="text-[10px] text-gray-500 dark:text-gray-400">
-          {{ grokQuotaUnknownLabel }}
-        </div>
-        <div v-else-if="usageInfo.error" class="truncate text-xs text-amber-600 dark:text-amber-400 max-w-[200px]" :title="usageInfo.error">
-          {{ usageErrorLabel }}
         </div>
         <div v-if="grokQuotaStatusLine" class="text-[10px] text-gray-500 dark:text-gray-400">
           {{ grokQuotaStatusLine }}
         </div>
         <GrokQuotaProbeCell v-if="canInteract" :account="account" @probed="handleGrokProbed" />
       </div>
-      <div v-else class="text-xs text-gray-400">{{ emptyUsageText }}</div>
+      <div v-else class="space-y-1">
+        <div class="text-xs text-gray-400">{{ emptyUsageText }}</div>
+        <GrokQuotaProbeCell v-if="canInteract" :account="account" compact @probed="handleGrokProbed" />
+      </div>
     </template>
 
     <!-- Gemini platform: show quota + local usage window -->
@@ -822,6 +832,10 @@ const props = withDefaults(
     statusNow?: number
     variant?: UsageVariant
     readOnly?: boolean
+    batchedUsage?: AccountUsageInfo | null
+    batchedUsageError?: string | null
+    batchedUsageLoading?: boolean
+    requestBatchedUsage?: ((account: Account, options?: { force?: boolean }) => void) | null
   }>(),
   {
     todayStats: null,
@@ -831,12 +845,17 @@ const props = withDefaults(
     manualRefreshToken: 0,
     statusNow: Date.now(),
     variant: 'detail',
-    readOnly: false
+    readOnly: false,
+    batchedUsage: null,
+    batchedUsageError: null,
+    batchedUsageLoading: false,
+    requestBatchedUsage: null
   }
 )
 
 const emit = defineEmits<{
   'account-updated': [account: Account]
+  'usage-loaded': [usage: AccountUsageInfo]
 }>()
 
 const { t } = useI18n()
@@ -850,6 +869,9 @@ const activeQueryLoading = ref(false)
 const error = ref<string | null>(null)
 const usageInfo = ref<AccountUsageInfo | null>(null)
 const usageLastSuccessAt = ref<number | null>(null)
+watch(usageInfo, (usage) => {
+  if (usage) emit('usage-loaded', usage)
+})
 const suppressOpenAIUsageRefreshUntil = ref(0)
 const rootRef = ref<HTMLElement | null>(null)
 const isDesktopViewport = ref(
@@ -893,6 +915,8 @@ const shouldFetchUsage = computed(() => {
   }
   return false
 })
+
+const isBatchManaged = computed(() => typeof props.requestBatchedUsage === 'function')
 
 const showGeminiTodayStats = computed(() => {
   return props.account.platform === 'gemini' &&
@@ -1276,6 +1300,63 @@ const grokWeeklyBillingBar = computed((): GrokQuotaBarInfo | null => {
     resetsAt: billing.period_end || null
   }
 })
+// Monthly used/limit % from billing probe (used_percent or derived from cents).
+const grokMonthlyBillingBar = computed((): GrokQuotaBarInfo | null => {
+  const billing = grokBilling.value
+  if (!billing) return null
+  let utilization: number | null = null
+  if (billing.used_percent != null && Number.isFinite(billing.used_percent)) {
+    utilization = billing.used_percent
+  } else if (
+    billing.monthly_limit_cents != null &&
+    billing.monthly_limit_cents > 0 &&
+    billing.used_cents != null
+  ) {
+    utilization = (billing.used_cents / billing.monthly_limit_cents) * 100
+  }
+  if (utilization == null) return null
+  // Avoid duplicating the weekly bar when period_type is weekly-only without monthly.
+  if (billing.period_type?.toLowerCase() === 'weekly' && billing.monthly_limit_cents == null) {
+    return null
+  }
+  return {
+    utilization: Math.min(100, Math.max(0, utilization)),
+    resetsAt: billing.billing_period_end || billing.period_end || null
+  }
+})
+const formatGrokMoney = (value?: number | null) => {
+  if (value == null || Number.isNaN(value)) return '0'
+  if (value >= 1000) return formatCompactNumber(value)
+  if (value >= 100) return value.toFixed(0)
+  if (value >= 10) return value.toFixed(1)
+  return value.toFixed(2)
+}
+// Prepaid money line for paid Grok: show when prepaid_balance is present.
+// Monthly used/limit numbers are optional context; primary progress is the 30d bar.
+const grokPrepaidMoneyLine = computed(() => {
+  const billing = grokBilling.value
+  if (!billing) return null
+  const prepaid = billing.prepaid_balance
+  // "只针对预付": only render when prepaid field exists (including $0.00).
+  if (prepaid == null || !Number.isFinite(prepaid)) return null
+  const used =
+    billing.monthly_used != null
+      ? billing.monthly_used
+      : billing.used_cents != null
+        ? billing.used_cents / 100
+        : 0
+  const limit =
+    billing.monthly_limit != null
+      ? billing.monthly_limit
+      : billing.monthly_limit_cents != null
+        ? billing.monthly_limit_cents / 100
+        : 0
+  return {
+    prepaid: formatGrokMoney(prepaid),
+    used: formatGrokMoney(used),
+    limit: formatGrokMoney(limit)
+  }
+})
 const grokPlanLabelIsFree = (value: string) => value.includes('free') || value.includes('basic')
 const grokPlanLabelIsPaid = (value: string) => {
   return value !== '' && !grokPlanLabelIsFree(value) && !value.includes('unknown')
@@ -1318,7 +1399,12 @@ const grokFreeTokenBar = computed(() => {
 })
 const grokQuotaUnknown = computed(() => {
   if (props.account.platform !== 'grok') return false
-  if (grokBilling.value || grokFreeTokenBar.value || grokRequestQuotaBar.value || grokTokenQuotaBar.value) return false
+  if (grokIsFree.value) {
+    return !grokFreeTokenBar.value
+  }
+  if (grokWeeklyBillingBar.value || grokMonthlyBillingBar.value || grokPrepaidMoneyLine.value) {
+    return false
+  }
   return usageInfo.value?.grok_quota_snapshot_state !== 'observed'
 })
 const grokQuotaUnknownLabel = computed(() => {
@@ -1334,18 +1420,14 @@ const grokQuotaStatusLine = computed(() => {
     parts.push(t('admin.accounts.usageWindow.grokLastStatus', { status }))
   }
   if (usageInfo.value?.grok_last_quota_probe_at) {
-    parts.push(
-      t('admin.accounts.usageWindow.grokLastProbe', {
-        time: formatRelativeTime(usageInfo.value.grok_last_quota_probe_at)
-      })
-    )
+    parts.push(t('admin.accounts.usageWindow.grokLastProbe', {
+      time: formatRelativeTime(usageInfo.value.grok_last_quota_probe_at)
+    }))
   }
   if (usageInfo.value?.grok_last_headers_seen_at) {
-    parts.push(
-      t('admin.accounts.usageWindow.grokLastHeadersSeen', {
-        time: formatRelativeTime(usageInfo.value.grok_last_headers_seen_at)
-      })
-    )
+    parts.push(t('admin.accounts.usageWindow.grokLastHeadersSeen', {
+      time: formatRelativeTime(usageInfo.value.grok_last_headers_seen_at)
+    }))
   }
   return parts.length > 0 ? parts.join(' | ') : null
 })
@@ -1364,7 +1446,6 @@ const grokRetryAfterLabel = computed(() => {
 const formatWindowRequests = (stats: WindowStats) => formatCompactNumber(stats.requests, { allowBillions: false })
 const formatWindowTokens = (stats: WindowStats) => formatCompactNumber(stats.tokens)
 const formatWindowCost = (stats: WindowStats) => stats.cost.toFixed(2)
-const formatWindowUserCost = (stats: WindowStats) => (stats.user_cost ?? 0).toFixed(2)
 
 // 账户类型显示标签
 const antigravityTierLabel = computed(() => {
@@ -1486,12 +1567,28 @@ const markUsageRequestFailed = () => {
   error.value = t('admin.accounts.usageFetchFailed')
 }
 
+const requestParentBatchUsage = (options?: { force?: boolean }) => {
+  if (!isBatchManaged.value || !shouldFetchUsage.value) return
+  props.requestBatchedUsage?.(props.account, options)
+}
+
+const syncManagedUsageState = () => {
+  if (!isBatchManaged.value) return
+  usageInfo.value = props.batchedUsage ?? null
+  error.value = props.batchedUsageError ?? null
+  loading.value = props.batchedUsageLoading === true
+}
+
 const loadUsage = async (options?: {
   source?: 'passive' | 'active'
   bypassCache?: boolean
   force?: boolean
 }) => {
   if (!shouldFetchUsage.value) return
+  if (isBatchManaged.value) {
+    requestParentBatchUsage({ force: options?.force === true || options?.bypassCache === true })
+    return
+  }
 
   // An expired value is still useful while a refresh is running or failing.
   const cached = _usageCache.get(props.account.id)
@@ -1587,6 +1684,10 @@ const loadActiveUsage = async () => {
 }
 
 const handleGrokProbed = (result: GrokQuotaProbeResult) => {
+  if (isBatchManaged.value) {
+    requestParentBatchUsage({ force: true })
+    return
+  }
   const current = usageInfo.value
   if (!current) return
   const snapshot = result.snapshot
@@ -1996,16 +2097,59 @@ onMounted(() => {
     }
   }
 
+  if (isBatchManaged.value) {
+    syncManagedUsageState()
+    requestParentBatchUsage()
+    return
+  }
+
   if (!shouldAutoLoadUsageOnMount.value) return
   const source = isAnthropicOAuthOrSetupToken.value ? 'passive' : undefined
   requestAutoLoad(source)
 })
+
+watch(
+  () => [props.batchedUsage, props.batchedUsageError, props.batchedUsageLoading, isBatchManaged.value] as const,
+  () => {
+    syncManagedUsageState()
+  },
+  { immediate: true, deep: true }
+)
+
+watch(isBatchManaged, (managed, wasManaged) => {
+  if (managed && !wasManaged) {
+    syncManagedUsageState()
+    requestParentBatchUsage()
+  }
+})
+
+watch(
+  () => [props.account.id, props.account.platform, props.account.type, isBatchManaged.value] as const,
+  ([accountID, platform, accountType, managed], [previousAccountID, previousPlatform, previousAccountType]) => {
+    if (
+      accountID === previousAccountID &&
+      platform === previousPlatform &&
+      accountType === previousAccountType
+    ) {
+      return
+    }
+    if (!managed || !shouldFetchUsage.value) return
+    syncManagedUsageState()
+    requestParentBatchUsage()
+  },
+  { flush: 'post' }
+)
 
 watch(openAIUsageRefreshKey, (nextKey, prevKey) => {
   if (!prevKey || nextKey === prevKey) return
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return
   if (Date.now() < suppressOpenAIUsageRefreshUntil.value) {
     suppressOpenAIUsageRefreshUntil.value = 0
+    return
+  }
+
+  if (isBatchManaged.value) {
+    requestParentBatchUsage({ force: true })
     return
   }
 
@@ -2019,7 +2163,13 @@ watch(
     if (nextToken === prevToken) return
     if (!shouldFetchUsage.value) return
 
-    loadUsage({ bypassCache: true, force: true }).catch((e) => {
+    if (isBatchManaged.value) {
+      requestParentBatchUsage({ force: true })
+      return
+    }
+
+    const source = isAnthropicOAuthOrSetupToken.value ? 'passive' : undefined
+    loadUsage({ source, bypassCache: true, force: true }).catch((e) => {
       console.error('Failed to refresh usage after manual refresh:', e)
     })
   }
