@@ -274,7 +274,6 @@ describe('admin AccountsView — 账号行展示', () => {
 
   afterEach(() => {
     vi.useRealTimers()
-    vi.restoreAllMocks()
     vi.unstubAllGlobals()
   })
 
@@ -550,7 +549,7 @@ describe('admin AccountsView — 账号行展示', () => {
 
   it('replaces a Grok row when auto refresh returns a changed canonical usage snapshot', async () => {
     vi.useFakeTimers()
-    vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+    const hiddenSpy = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
     localStorage.setItem('account-auto-refresh', JSON.stringify({ enabled: true, interval_seconds: 5 }))
 
     const initialAccount = {
@@ -581,5 +580,6 @@ describe('admin AccountsView — 账号行展示', () => {
     expect(listWithEtag).toHaveBeenCalledTimes(1)
     expect(wrapper.findComponent(PlatformTypeBadge).props('planType')).toBe('SuperGrok')
     wrapper.unmount()
+    hiddenSpy.mockRestore()
   })
 })

@@ -155,6 +155,13 @@ const TaxonomyManagerStub = {
   template: '<div data-test="taxonomy-folder-count">{{ folders[0]?.account_count ?? -1 }}</div>'
 }
 
+const AccountTestModalStub = {
+  name: 'AccountTestModal',
+  props: ['show', 'account'],
+  emits: ['close'],
+  template: '<button data-test="close-account-test" @click="$emit(\'close\')">close</button>'
+}
+
 const commonStubs = {
   AppLayout: { template: '<div><slot /></div>' },
   TablePageLayout: { template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>' },
@@ -187,7 +194,7 @@ const commonStubs = {
     template: '<div v-if="show" data-test="confirm-dialog"><span>{{ message }}</span><button data-test="confirm-dialog-submit" @click="$emit(\'confirm\')">confirm</button></div>'
   },
   ReAuthAccountModal: true,
-  AccountTestModal: true,
+  AccountTestModal: AccountTestModalStub,
   AccountStatsModal: true,
   ScheduledTestsPanel: true,
   SyncFromCrsModal: true,
@@ -462,5 +469,22 @@ describe('admin AccountsView Cockpit console', () => {
     expect(clearCindyBalanceInsufficient).toHaveBeenCalledWith(account.id)
     expect(showSuccess).toHaveBeenCalled()
     expect(listAccounts.mock.calls.length).toBeGreaterThan(1)
+  })
+
+  it('refreshes accounts, Cindy facets, and delete candidates when account testing closes', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-test="cindy-account-view"]').findAll('button')[1].trigger('click')
+    await flushPromises()
+    listAccounts.mockClear()
+    getFacets.mockClear()
+    previewCindyInsufficientDeletion.mockClear()
+
+    await wrapper.get('[data-test="close-account-test"]').trigger('click')
+    await flushPromises()
+
+    expect(listAccounts).toHaveBeenCalled()
+    expect(getFacets).toHaveBeenCalled()
+    expect(previewCindyInsufficientDeletion).toHaveBeenCalled()
   })
 })

@@ -82,6 +82,31 @@ func TestOpenAISameAccountRetryLimit_RequiresPoolModeAndExplicitStatus(t *testin
 	))
 }
 
+func TestOpenAISameAccountRetryLimit_CindyBudget429AlwaysSwitchesAccount(t *testing.T) {
+	account := openAIRetryTestAccount(10)
+	account.Credentials["base_url"] = "https://api.laxarouter.ai"
+	account.Credentials["api_key"] = "test-key"
+
+	require.Zero(t, openAISameAccountRetryLimit(
+		account,
+		&service.UpstreamFailoverError{
+			StatusCode:             http.StatusTooManyRequests,
+			ResponseBody:           []byte(`{"error":{"type":"budget_exceeded"}}`),
+			RetryableOnSameAccount: true,
+		},
+		true,
+	))
+	require.Equal(t, 10, openAISameAccountRetryLimit(
+		account,
+		&service.UpstreamFailoverError{
+			StatusCode:             http.StatusTooManyRequests,
+			ResponseBody:           []byte(`{"error":{"type":"rate_limit_error"}}`),
+			RetryableOnSameAccount: true,
+		},
+		true,
+	))
+}
+
 func TestOpenAISameAccountRetryLimit_OAuthKeepsBoundedTransientRetry(t *testing.T) {
 	account := &service.Account{ID: 41003, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth}
 	require.Equal(t, 1, openAISameAccountRetryLimit(

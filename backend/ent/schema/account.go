@@ -154,7 +154,7 @@ func (Account) Fields() []ent.Field {
 		field.Time("cindy_balance_insufficient_at").
 			Optional().
 			Nillable().
-			Comment("Upstream 402 observed for a Cindy account; NULL means no known balance exhaustion.").
+			Comment("Recognized Cindy budget exhaustion; NULL means no known balance exhaustion.").
 			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
 
 		// rate_limited_at: 触发速率限制的时间

@@ -73,6 +73,30 @@ type openAIAccountTestRepo struct {
 	setErrorMsg        string
 }
 
+type cindyAccountTestRepo struct {
+	openAIAccountTestRepo
+	markCalls int
+	markedIDs []int64
+}
+
+func (r *cindyAccountTestRepo) MarkCindyBalanceInsufficient(_ context.Context, accountID int64, _ time.Time) (bool, error) {
+	r.markCalls++
+	r.markedIDs = append(r.markedIDs, accountID)
+	return r.markCalls == 1, nil
+}
+
+func (r *cindyAccountTestRepo) ClearCindyBalanceInsufficient(context.Context, int64) (bool, error) {
+	return false, nil
+}
+
+func (r *cindyAccountTestRepo) PreviewCindyInsufficientDeletion(context.Context) (*CindyInsufficientDeletePreview, error) {
+	return &CindyInsufficientDeletePreview{}, nil
+}
+
+func (r *cindyAccountTestRepo) DeleteCindyInsufficient(context.Context, int, string) (*CindyInsufficientDeleteResult, error) {
+	return &CindyInsufficientDeleteResult{}, nil
+}
+
 func (r *openAIAccountTestRepo) UpdateExtra(_ context.Context, _ int64, updates map[string]any) error {
 	r.updatedExtra = updates
 	return nil
@@ -99,6 +123,99 @@ func (r *openAIAccountTestRepo) SetError(_ context.Context, id int64, errorMsg s
 	r.setErrorID = id
 	r.setErrorMsg = errorMsg
 	return nil
+}
+
+func TestAccountTestService_CindyBudget429MarksAcrossAPIKeyTestPaths(t *testing.T) {
+	const responseBody = `{"error":{"message":"ExceededBudget: User=aigw:v1:cindy over budget. Spend=3.0786495, Budget=3.0","type":"budget_exceeded","code":"429"}}`
+
+	tests := []struct {
+		name string
+		run  func(*AccountTestService, *gin.Context, *Account) error
+	}{
+		{
+			name: "responses",
+			run: func(svc *AccountTestService, c *gin.Context, account *Account) error {
+				return svc.testOpenAIAccountConnection(c, account, "gpt-5.6-sol", "hi", AccountTestModeDefault)
+			},
+		},
+		{
+			name: "chat completions",
+			run: func(svc *AccountTestService, c *gin.Context, account *Account) error {
+				return svc.testOpenAIChatCompletionsConnection(c, account, "gpt-5.6-sol", "hi", "https://api.laxarouter.ai", "test-key")
+			},
+		},
+		{
+			name: "compact",
+			run: func(svc *AccountTestService, c *gin.Context, account *Account) error {
+				return svc.testOpenAICompactConnection(c, account, "gpt-5.6-sol")
+			},
+		},
+		{
+			name: "images",
+			run: func(svc *AccountTestService, c *gin.Context, account *Account) error {
+				return svc.testOpenAIImageAPIKey(c, c.Request.Context(), account, "gpt-image-2", "test")
+			},
+		},
+	}
+
+	for index, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, recorder := newTestContext()
+			repo := &cindyAccountTestRepo{}
+			upstream := &queuedHTTPUpstream{responses: []*http.Response{newJSONResponse(http.StatusTooManyRequests, responseBody)}}
+			svc := &AccountTestService{
+				accountRepo:  repo,
+				httpUpstream: upstream,
+				cfg:          &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}},
+			}
+			account := &Account{
+				ID:          int64(8600 + index),
+				Platform:    PlatformOpenAI,
+				Type:        AccountTypeAPIKey,
+				Status:      StatusActive,
+				Schedulable: true,
+				Concurrency: 1,
+				Credentials: cindyCredentials(),
+				Extra:       map[string]any{"use_responses_api": true},
+			}
+
+			err := tt.run(svc, c, account)
+
+			require.Error(t, err)
+			require.Equal(t, 1, repo.markCalls)
+			require.Equal(t, []int64{account.ID}, repo.markedIDs)
+			require.NotNil(t, account.CindyBalanceInsufficientAt)
+			require.Contains(t, recorder.Body.String(), "returned 429")
+		})
+	}
+}
+
+func TestAccountTestService_OrdinaryCindy429DoesNotMarkBalanceInsufficient(t *testing.T) {
+	c, _ := newTestContext()
+	repo := &cindyAccountTestRepo{}
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{newJSONResponse(
+		http.StatusTooManyRequests,
+		`{"error":{"type":"rate_limit_error","message":"too many requests"}}`,
+	)}}
+	svc := &AccountTestService{
+		accountRepo:  repo,
+		httpUpstream: upstream,
+		cfg:          &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}},
+	}
+	account := &Account{
+		ID:          8699,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: cindyCredentials(),
+		Extra:       map[string]any{"use_responses_api": true},
+	}
+
+	err := svc.testOpenAIAccountConnection(c, account, "gpt-5.6-sol", "hi", AccountTestModeDefault)
+
+	require.Error(t, err)
+	require.Zero(t, repo.markCalls)
+	require.Nil(t, account.CindyBalanceInsufficientAt)
 }
 
 func TestAccountTestService_OpenAISuccessPersistsSnapshotFromHeaders(t *testing.T) {
