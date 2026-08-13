@@ -594,6 +594,7 @@ type AccountSelectionResult struct {
 	// account. It is private so only the scheduler can renew or release leases.
 	runtimeBreakerProbeModels []string
 	runtimeBreakerProbeLease  *openAIRuntimeBreakerProbeLease
+	runtimeBreakerProbeEnded  atomic.Bool
 	// profitGate carries the gate applied during selection so post-acquire
 	// eligibility checks use the same pricing decision.
 	profitGate *openAIProfitControlGate

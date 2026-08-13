@@ -593,7 +593,6 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			zap.Bool("cross_type_fallback", scheduleDecision.CrossTypeFallback),
 		)
 		account := selection.Account
-		defer h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		reqLog.Debug("openai.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
 		setOpsSelectedAccount(c, account.ID, account.Platform)
@@ -671,6 +670,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
 					if failoverClientGone(c) {
+						h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 						reqLog.Info("openai.failover_aborted_client_disconnected",
 							zap.Int64("account_id", account.ID),
 							zap.Int("upstream_status", failoverErr.StatusCode),
@@ -678,6 +678,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						return
 					}
 					if !openAIForwardMayFailover(c, writerSizeBeforeForward, failoverErr) {
+						finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(reqModel), failoverErr, openAIFailoverRetryStop)
 						h.handleFailoverExhausted(c, failoverErr, true)
 						return
 					}
@@ -696,16 +697,12 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 						continue
 					}
-					if failoverErr.ShouldReportAccountScheduleFailure() {
-						h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(reqModel), false, nil)
-					} else {
-						h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
-					}
 					if !failoverErr.ShouldRetryNextAccount() {
+						finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(reqModel), failoverErr, openAIFailoverRetryStop)
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
-					switch retryState.Handle(
+					retryAction := retryState.Handle(
 						c.Request.Context(),
 						h.gatewayService,
 						account,
@@ -714,7 +711,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						true,
 						sameAccountRetryDelay,
 						"responses",
-					) {
+					)
+					finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(reqModel), failoverErr, retryAction)
+					switch retryAction {
 					case openAIFailoverRetrySameAccount:
 						sameAccountRetrySelection = selection
 						lastFailoverErr = failoverErr
@@ -1210,7 +1209,6 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			return
 		}
 		account := selection.Account
-		defer h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		reqLog.Debug("openai_messages.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
 		_ = scheduleDecision
@@ -1285,6 +1283,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
 					if failoverClientGone(c) {
+						h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 						reqLog.Info("openai_messages.failover_aborted_client_disconnected",
 							zap.Int64("account_id", account.ID),
 							zap.Int("upstream_status", failoverErr.StatusCode),
@@ -1292,19 +1291,16 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 						return
 					}
 					if c.Writer.Size() != writerSizeBeforeForward {
+						finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(currentRoutingModel), failoverErr, openAIFailoverRetryStop)
 						h.handleAnthropicFailoverExhausted(c, failoverErr, true)
 						return
 					}
-					if failoverErr.ShouldReportAccountScheduleFailure() {
-						h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(currentRoutingModel), false, nil)
-					} else {
-						h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
-					}
 					if !failoverErr.ShouldRetryNextAccount() {
+						finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(currentRoutingModel), failoverErr, openAIFailoverRetryStop)
 						h.handleAnthropicFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
-					switch retryState.Handle(
+					retryAction := retryState.Handle(
 						c.Request.Context(),
 						h.gatewayService,
 						account,
@@ -1313,7 +1309,9 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 						true,
 						sameAccountRetryDelay,
 						"messages",
-					) {
+					)
+					finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(currentRoutingModel), failoverErr, retryAction)
+					switch retryAction {
 					case openAIFailoverRetrySameAccount:
 						sameAccountRetrySelection = selection
 						lastFailoverErr = failoverErr

@@ -432,6 +432,7 @@ func (s *OpenAIGatewayService) SelectAccountByPreviousResponseID(
 	excludedIDs map[int64]struct{},
 	requireCompact bool,
 ) (*AccountSelectionResult, error) {
+	ctx = s.withOpenAIProfitControlGate(ctx, groupID)
 	return s.selectAccountByPreviousResponseIDForCapability(ctx, groupID, previousResponseID, requestedModel, excludedIDs, "", requireCompact)
 }
 
@@ -488,16 +489,16 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapabilityWit
 			responseID,
 			store.BindResponseAccount(ctx, derefGroupID(groupID), responseID, accountID, s.openAIWSResponseStickyTTL()),
 		)
-		return attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
+		return attachSelectionProfitGate(ctx, attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
 			Account:     account,
 			Acquired:    true,
 			ReleaseFunc: result.ReleaseFunc,
-		}), nil
+		})), nil
 	}
 
 	cfg := s.schedulingConfig()
 	if s.concurrencyService != nil {
-		return attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
+		return attachSelectionProfitGate(ctx, attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{
 			Account: account,
 			WaitPlan: &AccountWaitPlan{
 				AccountID:      accountID,
@@ -505,7 +506,7 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapabilityWit
 				Timeout:        cfg.StickySessionWaitTimeout,
 				MaxWaiting:     cfg.StickySessionMaxWaiting,
 			},
-		}), nil
+		})), nil
 	}
 	return nil, nil
 }
@@ -594,6 +595,9 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 	if paused, _ := shouldAutoPauseOpenAIAccountByQuota(ctx, account); paused {
 		return miss(false, false)
 	}
+	if vetoed, _ := openAIProfitControlVetoReason(ctx, account); vetoed {
+		return miss(false, false)
+	}
 	if s.schedulerSnapshot != nil && s.accountRepo != nil {
 		latest, latestErr := s.accountRepo.GetByID(ctx, account.ID)
 		if latestErr != nil || latest == nil {
@@ -615,6 +619,9 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 			return miss(false, false)
 		}
 		if paused, _ := shouldAutoPauseOpenAIAccountByQuota(ctx, latest); paused {
+			return miss(false, false)
+		}
+		if vetoed, _ := openAIProfitControlVetoReason(ctx, latest); vetoed {
 			return miss(false, false)
 		}
 		account = latest

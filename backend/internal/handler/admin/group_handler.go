@@ -118,9 +118,9 @@ type CreateGroupRequest struct {
 	PeakStart                       string                        `json:"peak_start"`
 	PeakEnd                         string                        `json:"peak_end"`
 	PeakRateMultiplier              *float64                      `json:"peak_rate_multiplier"`
-	ProfitControlEnabled            bool                          `json:"profit_control_enabled"`
-	ProfitMinMargin                 *float64                      `json:"profit_min_margin"`
-	ProfitSafetyBuffer              *float64                      `json:"profit_safety_buffer"`
+	ProfitControlEnabled            json.RawMessage               `json:"profit_control_enabled"`
+	ProfitMinMargin                 json.RawMessage               `json:"profit_min_margin"`
+	ProfitSafetyBuffer              json.RawMessage               `json:"profit_safety_buffer"`
 	ImagePrice1K                    *float64                      `json:"image_price_1k"`
 	ImagePrice2K                    *float64                      `json:"image_price_2k"`
 	ImagePrice4K                    *float64                      `json:"image_price_4k"`
@@ -185,9 +185,9 @@ type UpdateGroupRequest struct {
 	PeakStart                       *string                       `json:"peak_start"`
 	PeakEnd                         *string                       `json:"peak_end"`
 	PeakRateMultiplier              *float64                      `json:"peak_rate_multiplier"`
-	ProfitControlEnabled            *bool                         `json:"profit_control_enabled"`
-	ProfitMinMargin                 *float64                      `json:"profit_min_margin"`
-	ProfitSafetyBuffer              *float64                      `json:"profit_safety_buffer"`
+	ProfitControlEnabled            json.RawMessage               `json:"profit_control_enabled"`
+	ProfitMinMargin                 json.RawMessage               `json:"profit_min_margin"`
+	ProfitSafetyBuffer              json.RawMessage               `json:"profit_safety_buffer"`
 	ImagePrice1K                    *float64                      `json:"image_price_1k"`
 	ImagePrice2K                    *float64                      `json:"image_price_2k"`
 	ImagePrice4K                    *float64                      `json:"image_price_4k"`
@@ -491,8 +491,8 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		return
 	}
 
-	if err := service.ValidateProfitControlConfig(service.NormalizeGroupPlatform(req.Platform), req.ProfitControlEnabled, float64ValueOrDefault(req.ProfitMinMargin, 0), float64ValueOrDefault(req.ProfitSafetyBuffer, 0)); err != nil {
-		response.BadRequest(c, err.Error())
+	if len(req.ProfitControlEnabled) > 0 || len(req.ProfitMinMargin) > 0 || len(req.ProfitSafetyBuffer) > 0 {
+		response.BadRequest(c, "利润控制不再支持")
 		return
 	}
 
@@ -518,9 +518,6 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		PeakStart:                       req.PeakStart,
 		PeakEnd:                         req.PeakEnd,
 		PeakRateMultiplier:              req.PeakRateMultiplier,
-		ProfitControlEnabled:            req.ProfitControlEnabled,
-		ProfitMinMargin:                 req.ProfitMinMargin,
-		ProfitSafetyBuffer:              req.ProfitSafetyBuffer,
 		ImagePrice1K:                    req.ImagePrice1K,
 		ImagePrice2K:                    req.ImagePrice2K,
 		ImagePrice4K:                    req.ImagePrice4K,
@@ -621,6 +618,10 @@ func (h *GroupHandler) Update(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	if len(req.ProfitControlEnabled) > 0 || len(req.ProfitMinMargin) > 0 || len(req.ProfitSafetyBuffer) > 0 {
+		response.BadRequest(c, "利润控制不再支持")
+		return
+	}
 	group, err := h.adminService.UpdateGroup(c.Request.Context(), groupID, &service.UpdateGroupInput{
 		Name:                            req.Name,
 		Description:                     req.Description,
@@ -644,9 +645,6 @@ func (h *GroupHandler) Update(c *gin.Context) {
 		PeakStart:                       req.PeakStart,
 		PeakEnd:                         req.PeakEnd,
 		PeakRateMultiplier:              req.PeakRateMultiplier,
-		ProfitControlEnabled:            req.ProfitControlEnabled,
-		ProfitMinMargin:                 req.ProfitMinMargin,
-		ProfitSafetyBuffer:              req.ProfitSafetyBuffer,
 		ImagePrice1K:                    req.ImagePrice1K,
 		ImagePrice2K:                    req.ImagePrice2K,
 		ImagePrice4K:                    req.ImagePrice4K,

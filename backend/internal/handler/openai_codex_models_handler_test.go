@@ -129,10 +129,7 @@ func TestCodexModelsFailsOverFromRetryableUpstreamStatus(t *testing.T) {
 			handler, upstream, groupID := newCodexModelsFailoverTestHandler(status)
 			recorder := performCodexModelsRequest(t, handler, groupID)
 
-			want := []int64{1, 1, 2}
-			if status == http.StatusTooManyRequests {
-				want = []int64{1, 2}
-			}
+			want := []int64{1, 2}
 			if got := upstream.calls(); !equalInt64Slices(got, want) {
 				t.Fatalf("upstream account calls: got %v, want %v", got, want)
 			}
@@ -155,7 +152,7 @@ func TestCodexModelsFailsOverFromUpstreamTransportError(t *testing.T) {
 	}
 	recorder := performCodexModelsRequest(t, handler, groupID)
 
-	if got, want := upstream.calls(), []int64{1, 1, 2}; !equalInt64Slices(got, want) {
+	if got, want := upstream.calls(), []int64{1, 2}; !equalInt64Slices(got, want) {
 		t.Fatalf("upstream account calls: got %v, want %v", got, want)
 	}
 	if recorder.Code != http.StatusOK {
@@ -168,7 +165,7 @@ func TestCodexModelsFailsOverFromInvalidManifestEnvelope(t *testing.T) {
 	upstream.firstBody = `{"object":"list","data":[]}`
 	recorder := performCodexModelsRequest(t, handler, groupID)
 
-	if got, want := upstream.calls(), []int64{1, 1, 2}; !equalInt64Slices(got, want) {
+	if got, want := upstream.calls(), []int64{1, 2}; !equalInt64Slices(got, want) {
 		t.Fatalf("upstream account calls: got %v, want %v", got, want)
 	}
 	if recorder.Code != http.StatusOK {
@@ -223,7 +220,7 @@ func TestCodexModelsReturnsLastUpstreamErrorWhenAccountsAreExhausted(t *testing.
 	}
 	recorder := performCodexModelsRequest(t, handler, groupID)
 
-	if got, want := upstream.calls(), []int64{1, 1, 2, 2}; !equalInt64Slices(got, want) {
+	if got, want := upstream.calls(), []int64{1, 2}; !equalInt64Slices(got, want) {
 		t.Fatalf("upstream account calls: got %v, want %v", got, want)
 	}
 	if recorder.Code != http.StatusBadGateway {
@@ -244,7 +241,7 @@ func TestCodexModelsHonorsAccountSwitchLimit(t *testing.T) {
 	}
 	recorder := performCodexModelsRequest(t, handler, groupID)
 
-	if got, want := upstream.calls(), []int64{1, 1, 2, 2, 3, 3}; !equalInt64Slices(got, want) {
+	if got, want := upstream.calls(), []int64{1, 2, 3}; !equalInt64Slices(got, want) {
 		t.Fatalf("upstream account calls: got %v, want %v", got, want)
 	}
 	if recorder.Code != http.StatusBadGateway {

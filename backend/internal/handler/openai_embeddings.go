@@ -179,7 +179,6 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 			return
 		}
 		account := selection.Account
-		defer h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
 		var accountReleaseFunc func()
@@ -238,11 +237,12 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
 				if c.Writer.Size() != writerSizeBeforeForward {
+					finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(reqModel), failoverErr, openAIFailoverRetryStop)
 					h.handleFailoverExhausted(c, failoverErr, true)
 					return
 				}
-				h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(reqModel), false, nil)
 				if failoverClientGone(c) {
+					h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 					reqLog.Info("openai_embeddings.failover_aborted_client_disconnected",
 						zap.Int64("account_id", account.ID),
 						zap.Int("upstream_status", failoverErr.StatusCode),
@@ -250,10 +250,11 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 					return
 				}
 				if !failoverErr.ShouldRetryNextAccount() {
+					finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(reqModel), failoverErr, openAIFailoverRetryStop)
 					h.handleFailoverExhausted(c, failoverErr, false)
 					return
 				}
-				switch retryState.Handle(
+				retryAction := retryState.Handle(
 					c.Request.Context(),
 					h.gatewayService,
 					account,
@@ -262,7 +263,9 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 					true,
 					sameAccountRetryDelay,
 					"embeddings",
-				) {
+				)
+				finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(reqModel), failoverErr, retryAction)
+				switch retryAction {
 				case openAIFailoverRetrySameAccount:
 					sameAccountRetrySelection = selection
 					lastFailoverErr = failoverErr

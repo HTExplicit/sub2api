@@ -166,7 +166,7 @@ func TestEmbeddingsRetriesPoolFailureOnExactSameAccount(t *testing.T) {
 	require.Equal(t, []int64{1, 1}, upstream.calls())
 }
 
-func TestImagesRetriesTransientTransportOnExactSameAccount(t *testing.T) {
+func TestImagesTransportFailureSwitchesAccountWithoutImplicitReplay(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	upstream := &replayableEndpointFailoverUpstream{
 		firstError:  errors.New("temporary upstream reset"),
@@ -177,11 +177,11 @@ func TestImagesRetriesTransientTransportOnExactSameAccount(t *testing.T) {
 
 	h.Images(c)
 
-	require.Equal(t, []int64{1, 1}, upstream.calls())
+	require.Equal(t, []int64{1, 2}, upstream.calls())
 	require.Equal(t, http.StatusOK, recorder.Code)
 }
 
-func TestImagesRetriesTransientTransportAtMostOnceBeforeSwitching(t *testing.T) {
+func TestImagesRepeatedTransportFailuresDoNotReplaySameAccount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	upstream := &replayableEndpointFailoverUpstream{
 		firstError:  errors.New("temporary upstream reset"),
@@ -193,11 +193,11 @@ func TestImagesRetriesTransientTransportAtMostOnceBeforeSwitching(t *testing.T) 
 
 	h.Images(c)
 
-	require.Equal(t, []int64{1, 1, 2}, upstream.calls())
-	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Equal(t, []int64{1, 2}, upstream.calls())
+	require.Equal(t, http.StatusBadGateway, recorder.Code)
 }
 
-func TestImagesAuthenticationAndRateLimitFailuresSwitchImmediately(t *testing.T) {
+func TestImagesAuthenticationAndRateLimitFailuresSwitchAccounts(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests} {
 		t.Run(http.StatusText(status), func(t *testing.T) {

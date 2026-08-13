@@ -296,7 +296,6 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		)
 
 		account := selection.Account
-		defer h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 		if endpoint.IsGenerationRequest() {
 			eligible, eligibilityReason, eligibilityErr := h.ensureGrokMediaAccountEligibility(requestCtx, account)
 			if !eligible {
@@ -371,28 +370,29 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
 				if failoverClientGone(c) {
+					h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 					reqLog.Info("grok_media.failover_aborted_client_disconnected",
 						zap.Int64("account_id", account.ID),
 						zap.Int("upstream_status", failoverErr.StatusCode),
 					)
 					return
 				}
-				if failoverErr.ShouldReportAccountScheduleFailure() {
-					h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, grokMediaScheduleModel(account, routingModel, nil), false, nil)
-				}
 				if c.Writer.Size() != writerSizeBeforeForward {
+					finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, grokMediaScheduleModel(account, routingModel, nil), failoverErr, openAIFailoverRetryStop)
 					h.handleFailoverExhausted(c, failoverErr, true)
 					return
 				}
 				if !failoverErr.ShouldRetryNextAccount() {
+					finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, grokMediaScheduleModel(account, routingModel, nil), failoverErr, openAIFailoverRetryStop)
 					h.handleFailoverExhausted(c, failoverErr, false)
 					return
 				}
 				if endpoint.IsVideoLookupRequest() {
+					finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, grokMediaScheduleModel(account, routingModel, nil), failoverErr, openAIFailoverRetryStop)
 					h.handleFailoverExhausted(c, failoverErr, false)
 					return
 				}
-				switch retryState.Handle(
+				retryAction := retryState.Handle(
 					requestCtx,
 					h.gatewayService,
 					account,
@@ -401,7 +401,9 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 					true,
 					sameAccountRetryDelay,
 					"grok_media",
-				) {
+				)
+				finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, grokMediaScheduleModel(account, routingModel, nil), failoverErr, retryAction)
+				switch retryAction {
 				case openAIFailoverRetrySameAccount:
 					sameAccountRetrySelection = selection
 					lastFailoverErr = failoverErr

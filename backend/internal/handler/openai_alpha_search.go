@@ -166,7 +166,6 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 		}
 
 		account := selection.Account
-		defer h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 		var accountRelease func()
 		var slotResult openAISlotAcquireResult
@@ -224,12 +223,13 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 			return
 		}
 
-		h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(requestedModel), false, nil)
 		if c.Writer.Size() != writerSizeBeforeForward {
+			finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(requestedModel), failoverErr, openAIFailoverRetryStop)
 			h.handleFailoverExhausted(c, failoverErr, true)
 			return
 		}
 		if failoverClientGone(c) {
+			h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 			reqLog.Info("openai_alpha_search.failover_aborted_client_disconnected",
 				zap.Int64("account_id", account.ID),
 				zap.Int("upstream_status", failoverErr.StatusCode),
@@ -237,10 +237,11 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 			return
 		}
 		if !failoverErr.ShouldRetryNextAccount() {
+			finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(requestedModel), failoverErr, openAIFailoverRetryStop)
 			h.handleFailoverExhausted(c, failoverErr, false)
 			return
 		}
-		switch retryState.Handle(
+		retryAction := retryState.Handle(
 			c.Request.Context(),
 			h.gatewayService,
 			account,
@@ -249,7 +250,9 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 			true,
 			sameAccountRetryDelay,
 			"alpha_search",
-		) {
+		)
+		finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(requestedModel), failoverErr, retryAction)
+		switch retryAction {
 		case openAIFailoverRetrySameAccount:
 			sameAccountRetrySelection = selection
 			lastFailoverErr = failoverErr

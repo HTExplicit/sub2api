@@ -527,8 +527,9 @@ func TestOpenAIGatewayService_Forward_ModelCapacityErrorTriggersFailoverAndSameA
 		Type:        AccountTypeAPIKey,
 		Concurrency: 1,
 		Credentials: map[string]any{
-			"api_key":   "sk-test",
-			"pool_mode": true,
+			"api_key":                      "sk-test",
+			"pool_mode":                    true,
+			"pool_mode_retry_status_codes": []any{float64(http.StatusBadRequest)},
 		},
 		Status:         StatusActive,
 		Schedulable:    true,

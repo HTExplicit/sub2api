@@ -85,7 +85,6 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 			return
 		}
 		account := selection.Account
-		defer h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 		// 让 ops 错误日志携带实际选中的上游账号，便于定位失效账号（#4544）。
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 		var accountReleaseFunc func()
@@ -115,14 +114,16 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 		}
 		if err != nil {
 			if c.Request.Context().Err() != nil {
+				h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 				return
 			}
 			failoverErr := service.NormalizeCodexModelsManifestFailoverError(err, account)
 			if failoverErr != nil {
-				h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, "", false, nil)
 				lastUpstreamErr = err
 				lastFailoverErr = failoverErr
-				switch retryState.Handle(c.Request.Context(), h.gatewayService, account, "", failoverErr, true, sameAccountRetryDelay, "codex_models") {
+				retryAction := retryState.Handle(c.Request.Context(), h.gatewayService, account, "", failoverErr, true, sameAccountRetryDelay, "codex_models")
+				finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, "", failoverErr, retryAction)
+				switch retryAction {
 				case openAIFailoverRetrySameAccount:
 					sameAccountRetrySelection = selection
 					continue

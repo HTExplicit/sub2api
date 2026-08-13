@@ -235,7 +235,6 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		)
 
 		account := selection.Account
-		defer h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		reqLog.Debug("openai.images.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
 		setOpsSelectedAccount(c, account.ID, account.Platform)
@@ -319,8 +318,8 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				}
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
-					h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(requestModel), false, nil)
 					if service.OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c) != writerSizeBeforeForward {
+						finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(requestModel), failoverErr, openAIFailoverRetryStop)
 						reqLog.Warn("openai.images.upstream_failover_skipped_after_flush",
 							zap.Int64("account_id", account.ID),
 							zap.Int("upstream_status", failoverErr.StatusCode),
@@ -329,6 +328,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 						return
 					}
 					if failoverClientGone(c) {
+						h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 						reqLog.Info("openai.images.failover_aborted_client_disconnected",
 							zap.Int64("account_id", account.ID),
 							zap.Int("upstream_status", failoverErr.StatusCode),
@@ -336,10 +336,11 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 						return
 					}
 					if !failoverErr.ShouldRetryNextAccount() {
+						finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(requestModel), failoverErr, openAIFailoverRetryStop)
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
-					switch retryState.Handle(
+					retryAction := retryState.Handle(
 						requestCtx,
 						h.gatewayService,
 						account,
@@ -348,7 +349,9 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 						true,
 						sameAccountRetryDelay,
 						"images",
-					) {
+					)
+					finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(requestModel), failoverErr, retryAction)
+					switch retryAction {
 					case openAIFailoverRetrySameAccount:
 						sameAccountRetrySelection = selection
 						lastFailoverErr = failoverErr

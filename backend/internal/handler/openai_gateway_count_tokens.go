@@ -208,7 +208,6 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 		}
 
 		account := selection.Account
-		defer h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 		// CountTokens has an Anthropic response contract; acquire silently and let
 		// this handler render any slot error in the correct envelope.
@@ -246,14 +245,16 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 			h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(currentRoutingModel), false, nil)
 			return
 		}
-		h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(currentRoutingModel), false, nil)
 		if !failoverErr.ShouldRetryNextAccount() {
+			finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(currentRoutingModel), failoverErr, openAIFailoverRetryStop)
 			writeCountTokensFailoverError(c, failoverErr, attemptErr)
 			return
 		}
 		lastUpstreamErr = attemptErr
 		lastFailoverErr = failoverErr
-		switch retryState.Handle(c.Request.Context(), h.gatewayService, account, account.GetMappedModel(currentRoutingModel), failoverErr, true, sameAccountRetryDelay, "count_tokens") {
+		retryAction := retryState.Handle(c.Request.Context(), h.gatewayService, account, account.GetMappedModel(currentRoutingModel), failoverErr, true, sameAccountRetryDelay, "count_tokens")
+		finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(currentRoutingModel), failoverErr, retryAction)
+		switch retryAction {
 		case openAIFailoverRetrySameAccount:
 			sameAccountRetrySelection = selection
 			continue
