@@ -39,6 +39,10 @@ func (a *Account) GetOpenAIPromptCacheKeyMode() string {
 	if a.GetExtraString("openai_prompt_cache_key_mode") == OpenAIPromptCacheKeyModeSHA25664 {
 		return OpenAIPromptCacheKeyModeSHA25664
 	}
+	if _, present := a.Extra["openai_prompt_cache_key_mode"]; !present &&
+		IsCindyAPIKeyAccount(a.Platform, a.Type, a.Credentials) {
+		return OpenAIPromptCacheKeyModeSHA25664
+	}
 	return OpenAIPromptCacheKeyModePassthrough
 }
 

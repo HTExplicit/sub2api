@@ -176,7 +176,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     createOpenAICodexPATMock.mockReset().mockResolvedValue({})
   })
 
-  it('selects native Cindy modes and keeps the standard OpenAI option order', async () => {
+  it('selects Cindy-safe modes and keeps the standard OpenAI option order', async () => {
     const wrapper = mountModal()
     await selectButtonByText(wrapper, 'OpenAI')
     await selectButtonByText(wrapper, 'API Key')
@@ -196,7 +196,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(alpha.element.value).toBe('direct')
     expect(alpha.element.options[0].value).toBe('direct')
     expect(alpha.element.options[1].value).toBe('responses_web_search')
-    expect(cache.element.value).toBe('passthrough')
+    expect(cache.element.value).toBe('sha256_64')
     expect(cache.element.options[0].value).toBe('passthrough')
     expect(cache.element.options[1].value).toBe('sha256_64')
   })
