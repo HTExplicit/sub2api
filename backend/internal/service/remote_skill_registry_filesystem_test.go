@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -61,6 +62,42 @@ func TestRemoteSkillFilesystemRoundTripsImmutablePairedCandidate(t *testing.T) {
 	path := filepath.Join(files.candidateRoot(seed.Version.EffectiveTreeSHA256, seed.Prompt.EffectiveSHA256), remoteSkillEffectiveDirectory, "SKILL.md")
 	require.NoError(t, os.WriteFile(path, []byte("tampered"), 0o640))
 	_, err = files.LoadCandidate(context.Background(), seed.Version, seed.Prompt, seed.FileChanges)
+	require.ErrorIs(t, err, ErrBusinessSystemPromptBundleInvalid)
+}
+
+func TestRemoteSkillFilesystemLoadsImmutableHistoricalPromptPair(t *testing.T) {
+	files := NewRemoteSkillRegistryFilesystem(t.TempDir())
+	seed, err := files.LoadSeed(context.Background())
+	require.NoError(t, err)
+
+	historicalPrompt := historicalRemoteSkillPromptCaptureForTest(t)
+	historical, err := buildPairedRemoteSkillCandidate(
+		seed.RawFiles,
+		seed.EffectiveFiles,
+		historicalPrompt,
+		nil,
+		seed.Version.FetchedAt,
+	)
+	require.NoError(t, err)
+	historical.Version.ID = 12
+	historical.Version.PromptVersionID = 1
+	historical.Prompt.ID = 1
+
+	require.ErrorIs(t, validatePairedRemoteSkillCandidate(historical, true), ErrBusinessSystemPromptBundleInvalid)
+	require.NoError(t, validateStoredPairedRemoteSkillCandidate(historical, true))
+	writeRemoteSkillCandidateFixture(t, files, historical)
+
+	loaded, err := files.LoadCandidate(context.Background(), historical.Version, historical.Prompt, historical.FileChanges)
+	require.NoError(t, err)
+	require.Equal(t, "de259ce1b269f926e33232ff2ed628965d47c0d97d3a7c964d05b1e5d62c7c38", loaded.Prompt.EffectiveSHA256)
+	require.Equal(t, historical.Prompt.EffectiveBody, loaded.Prompt.EffectiveBody)
+
+	diffPath := filepath.Join(
+		files.candidateRoot(historical.Version.EffectiveTreeSHA256, historical.Prompt.EffectiveSHA256),
+		remoteSkillPromptDiffFile,
+	)
+	require.NoError(t, os.WriteFile(diffPath, []byte("tampered"), 0o640))
+	_, err = files.LoadCandidate(context.Background(), historical.Version, historical.Prompt, historical.FileChanges)
 	require.ErrorIs(t, err, ErrBusinessSystemPromptBundleInvalid)
 }
 
@@ -190,6 +227,70 @@ func cloneRemoteSkillCandidateForTest(candidate RemoteSkillCandidate) RemoteSkil
 	candidate.EffectiveFiles = cloneRemoteSkillFiles(candidate.EffectiveFiles)
 	candidate.FileChanges = append([]RemoteSkillFileChange(nil), candidate.FileChanges...)
 	return candidate
+}
+
+func historicalRemoteSkillPromptCaptureForTest(t *testing.T) RemoteSkillPromptCapture {
+	t.Helper()
+	routingBlock := `<!-- BEGIN  REVERSE-SKILL -->
+#  Codex reverse-skill routing
+For reverse engineering, security research, and CTF tasks, use this remote Skill root:
+
+` + "```text" + `
+REMOTE_ROOT = https://codexrip.vip/skills/security-research/current
+` + "```" + `
+
+Fetch Skill content only from ` + "`REMOTE_ROOT`" + `. Do not install a local copy or use another Skill content source.
+<!-- END  REVERSE-SKILL -->`
+	securityResearchRoutingBlock := `<!-- BEGIN  SECURITY-RESEARCH ROUTING -->
+
+#  Codex security-research routing
+
+For reverse engineering, security research, and CTF tasks, fetch and read these cloud files first, in order:
+
+` + "```text" + `
+REMOTE_ROOT = https://codexrip.vip/skills/security-research/current
+` + "```" + `
+
+1. ` + "`REMOTE_ROOT/RULES.md`" + `
+2. ` + "`REMOTE_ROOT/README_AI.md`" + `
+3. ` + "`REMOTE_ROOT/SKILL.md`" + `
+
+Resolve every relative path in those files against ` + "`REMOTE_ROOT`" + ` and fetch supporting files only from that same root.
+
+<!-- END  SECURITY-RESEARCH ROUTING -->`
+	raw := []byte(embeddedBusinessSystemPrompt)
+	effective, err := rewriteRemoteSkillPromptBlocks(raw, routingBlock, securityResearchRoutingBlock)
+	require.NoError(t, err)
+	diff, err := remoteSkillPromptUnifiedDiff(raw, effective)
+	require.NoError(t, err)
+	capture := RemoteSkillPromptCapture{
+		RawBody:         bytes.Clone(raw),
+		EffectiveBody:   effective,
+		RawSHA256:       hashBusinessSystemPromptBundleBytes(raw),
+		EffectiveSHA256: hashBusinessSystemPromptBundleBytes(effective),
+		Diff:            diff,
+	}
+	require.Equal(t, "74bd491260aaa23c45b82bd522b32c6b6dea7d5e76a2d8e3ab3607c6f1ab4e58", capture.RawSHA256)
+	require.Equal(t, "de259ce1b269f926e33232ff2ed628965d47c0d97d3a7c964d05b1e5d62c7c38", capture.EffectiveSHA256)
+	return capture
+}
+
+func writeRemoteSkillCandidateFixture(t *testing.T, files *RemoteSkillRegistryFilesystem, candidate RemoteSkillCandidate) {
+	t.Helper()
+	root := files.candidateRoot(candidate.Version.EffectiveTreeSHA256, candidate.Prompt.EffectiveSHA256)
+	require.NoError(t, os.MkdirAll(root, 0o750))
+	metadata := remoteSkillCandidateMetadata{
+		Version: remoteSkillContentVersionMetadataFrom(candidate.Version),
+		Prompt:  remoteSkillContentPromptMetadataFrom(candidate.Prompt),
+	}
+	metadataRaw, err := json.MarshalIndent(metadata, "", "  ")
+	require.NoError(t, err)
+	require.NoError(t, writeRemoteSkillRegularFile(filepath.Join(root, remoteSkillCandidateMetadataFile), metadataRaw, 0o640))
+	require.NoError(t, writeRemoteSkillTree(filepath.Join(root, remoteSkillRawTreeDirectory), candidate.RawFiles))
+	require.NoError(t, writeRemoteSkillTree(filepath.Join(root, remoteSkillEffectiveDirectory), candidate.EffectiveFiles))
+	require.NoError(t, writeRemoteSkillRegularFile(filepath.Join(root, remoteSkillRawPromptFile), []byte(candidate.Prompt.RawBody), 0o640))
+	require.NoError(t, writeRemoteSkillRegularFile(filepath.Join(root, remoteSkillEffectivePromptFile), []byte(candidate.Prompt.EffectiveBody), 0o640))
+	require.NoError(t, writeRemoteSkillRegularFile(filepath.Join(root, remoteSkillPromptDiffFile), []byte(candidate.Prompt.Diff), 0o640))
 }
 
 func removeRemoteSkillTestFile(files map[string][]byte) string {
