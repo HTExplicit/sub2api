@@ -2788,7 +2788,7 @@ import {
 } from '@/components/account/credentialsBuilder'
 import { formatDateTime, formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
-import { CINDY_OPENAI_DEFAULTS, cindyFirst, isCindyOpenAIAPIKeyAccount } from '@/utils/cindyOpenAIDefaults'
+import { CINDY_OPENAI_DEFAULTS, isCindyOpenAIAPIKeyAccount } from '@/utils/cindyOpenAIDefaults'
 import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
 import {
   OPENAI_WS_MODE_CTX_POOL,
@@ -3152,28 +3152,15 @@ const openAIResponsesModeOptions = computed(() => [
   { value: 'force_responses', label: t('admin.accounts.openai.responsesModeForceResponses') },
   { value: 'force_chat_completions', label: t('admin.accounts.openai.responsesModeForceChatCompletions') }
 ])
-const isCindyOpenAIAccount = computed(() => isCindyOpenAIAPIKeyAccount(props.account))
-const openAIAlphaSearchModeOptions = computed(() =>
-  cindyFirst(
-    [
-      { value: 'direct', label: t('admin.accounts.openai.alphaSearchModeDirect') },
-      { value: 'responses_web_search', label: t('admin.accounts.openai.alphaSearchModeResponsesWebSearch') },
-      { value: 'disabled', label: t('admin.accounts.openai.alphaSearchModeDisabled') }
-    ],
-    isCindyOpenAIAccount.value,
-    CINDY_OPENAI_DEFAULTS.alphaSearchMode
-  )
-)
-const openAIPromptCacheKeyModeOptions = computed(() =>
-  cindyFirst(
-    [
-      { value: 'passthrough', label: t('admin.accounts.openai.promptCacheKeyModePassthrough') },
-      { value: 'sha256_64', label: t('admin.accounts.openai.promptCacheKeyModeSHA25664') }
-    ],
-    isCindyOpenAIAccount.value,
-    CINDY_OPENAI_DEFAULTS.promptCacheKeyMode
-  )
-)
+const openAIAlphaSearchModeOptions = computed(() => [
+  { value: 'direct', label: t('admin.accounts.openai.alphaSearchModeDirect') },
+  { value: 'responses_web_search', label: t('admin.accounts.openai.alphaSearchModeResponsesWebSearch') },
+  { value: 'disabled', label: t('admin.accounts.openai.alphaSearchModeDisabled') }
+])
+const openAIPromptCacheKeyModeOptions = computed(() => [
+  { value: 'passthrough', label: t('admin.accounts.openai.promptCacheKeyModePassthrough') },
+  { value: 'sha256_64', label: t('admin.accounts.openai.promptCacheKeyModeSHA25664') }
+])
 const openAITextEndpointCapabilityLabel = computed(() => {
   if (openAIResponsesMode.value === 'force_responses') {
     return t('admin.accounts.openai.capabilityResponses')

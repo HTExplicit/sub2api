@@ -51,9 +51,10 @@ jobs:
         working-directory: backend
         run: |
           go mod verify
-          go test -p=1 ./internal/service -run 'Test.*(BusinessSystemPrompt|RemoteSkill|GPT56)' -count=1
+          go test -p=1 ./internal/service -run 'Test.*(BusinessSystemPrompt|RemoteSkill|GPT56|Cindy|CompatibilityModes)' -count=1
           go test -p=1 ./internal/handler/admin ./internal/server/middleware -run 'Test.*(SystemPrompt|RemoteSkill|Audit)' -count=1
-          go test -p=1 ./migrations -run 'Test.*(BusinessSystemPromptRemoteSkill|BusinessSystemPromptCodexSkillHybrid|BusinessSystemPromptManagedSource|RemoteSkillRegistry|RemoteSkillPaired)' -count=1
+          go test -p=1 ./migrations -run 'Test.*(BusinessSystemPromptRemoteSkill|BusinessSystemPromptCodexSkillHybrid|BusinessSystemPromptManagedSource|RemoteSkillRegistry|RemoteSkillPaired|Migration207)' -count=1
+          go test -p=1 -tags integration ./migrations -run '^TestCindyOpenAIDefaultsMigrationIsStrictAndIdempotent$' -count=1
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 9.15.9
@@ -69,6 +70,10 @@ jobs:
           pnpm run typecheck
           pnpm exec vitest run \
             src/api/admin/__tests__/systemPrompts.spec.ts \
+            src/utils/__tests__/cindyOpenAIDefaults.spec.ts \
+            src/components/account/__tests__/CreateAccountModal.spec.ts \
+            src/components/account/__tests__/EditAccountModal.spec.ts \
+            src/components/account/__tests__/BulkEditAccountModal.spec.ts \
             src/views/admin/__tests__/SystemPromptsView.spec.ts \
             src/views/admin/__tests__/systemPromptsIntegrationSurface.spec.ts \
             src/router/__tests__/title.spec.ts

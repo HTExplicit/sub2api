@@ -28,10 +28,6 @@ func (a *Account) GetOpenAIAlphaSearchMode() string {
 	case OpenAIAlphaSearchModeDisabled:
 		return OpenAIAlphaSearchModeDisabled
 	default:
-		if _, present := a.Extra["openai_alpha_search_mode"]; !present &&
-			IsCindyAPIKeyAccount(a.Platform, a.Type, a.Credentials) {
-			return OpenAIAlphaSearchModeResponsesWebSearch
-		}
 		return OpenAIAlphaSearchModeDirect
 	}
 }
@@ -41,10 +37,6 @@ func (a *Account) GetOpenAIPromptCacheKeyMode() string {
 		return OpenAIPromptCacheKeyModePassthrough
 	}
 	if a.GetExtraString("openai_prompt_cache_key_mode") == OpenAIPromptCacheKeyModeSHA25664 {
-		return OpenAIPromptCacheKeyModeSHA25664
-	}
-	if _, present := a.Extra["openai_prompt_cache_key_mode"]; !present &&
-		IsCindyAPIKeyAccount(a.Platform, a.Type, a.Credentials) {
 		return OpenAIPromptCacheKeyModeSHA25664
 	}
 	return OpenAIPromptCacheKeyModePassthrough

@@ -316,7 +316,7 @@ describe('EditAccountModal', () => {
     authIsSimpleMode.value = true
   })
 
-  it('uses Cindy dropdown defaults only for strict Cindy API-key accounts', () => {
+  it('uses native Cindy defaults with the standard OpenAI option order', () => {
     const cindy = buildAccount()
     cindy.credentials.base_url = 'https://api.laxarouter.ai'
     cindy.extra = {}
@@ -325,10 +325,10 @@ describe('EditAccountModal', () => {
     const cindyCache = cindyWrapper.get<HTMLSelectElement>(
       '[data-testid="openai-prompt-cache-key-mode-select"]'
     )
-    expect(cindyAlpha.element.value).toBe('responses_web_search')
-    expect(cindyAlpha.element.options[0].value).toBe('responses_web_search')
-    expect(cindyCache.element.value).toBe('sha256_64')
-    expect(cindyCache.element.options[0].value).toBe('sha256_64')
+    expect(cindyAlpha.element.value).toBe('direct')
+    expect(cindyAlpha.element.options[0].value).toBe('direct')
+    expect(cindyCache.element.value).toBe('passthrough')
+    expect(cindyCache.element.options[0].value).toBe('passthrough')
 
     const ordinaryWrapper = mountModal(buildAccount())
     const ordinaryAlpha = ordinaryWrapper.get<HTMLSelectElement>(
@@ -341,6 +341,25 @@ describe('EditAccountModal', () => {
     expect(ordinaryAlpha.element.options[0].value).toBe('direct')
     expect(ordinaryCache.element.value).toBe('passthrough')
     expect(ordinaryCache.element.options[0].value).toBe('passthrough')
+  })
+
+  it('preserves an explicit Cindy bridge and SHA-256 selection without reordering options', () => {
+    const cindy = buildAccount()
+    cindy.credentials.base_url = 'https://api.laxarouter.ai'
+    cindy.extra = {
+      openai_responses_mode: 'force_responses',
+      openai_alpha_search_mode: 'responses_web_search',
+      openai_prompt_cache_key_mode: 'sha256_64'
+    }
+
+    const wrapper = mountModal(cindy)
+    const alpha = wrapper.get<HTMLSelectElement>('[data-testid="openai-alpha-search-mode-select"]')
+    const cache = wrapper.get<HTMLSelectElement>('[data-testid="openai-prompt-cache-key-mode-select"]')
+
+    expect(alpha.element.value).toBe('responses_web_search')
+    expect(alpha.element.options[0].value).toBe('direct')
+    expect(cache.element.value).toBe('sha256_64')
+    expect(cache.element.options[0].value).toBe('passthrough')
   })
 
   it('reopening the same account rehydrates the OpenAI whitelist from props', async () => {

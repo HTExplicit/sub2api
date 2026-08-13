@@ -74,7 +74,7 @@ func TestOpenAIAlphaSearchModeDisabledExcludesOnlyExplicitAPIKeyAccount(t *testi
 	require.True(t, oauth.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityAlphaSearch))
 }
 
-func TestCindyMissingCompatibilityModesUseCindyDefaults(t *testing.T) {
+func TestMissingCompatibilityModesUseNativeDefaultsForCindyAndOrdinaryAccounts(t *testing.T) {
 	cindy := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: cindyCredentials()}
 	ordinary := &Account{
 		Platform:    PlatformOpenAI,
@@ -82,8 +82,41 @@ func TestCindyMissingCompatibilityModesUseCindyDefaults(t *testing.T) {
 		Credentials: map[string]any{"base_url": "https://api.openai.com"},
 	}
 
-	require.Equal(t, OpenAIAlphaSearchModeResponsesWebSearch, cindy.GetOpenAIAlphaSearchMode())
-	require.Equal(t, OpenAIPromptCacheKeyModeSHA25664, cindy.GetOpenAIPromptCacheKeyMode())
+	require.Equal(t, OpenAIAlphaSearchModeDirect, cindy.GetOpenAIAlphaSearchMode())
+	require.Equal(t, OpenAIPromptCacheKeyModePassthrough, cindy.GetOpenAIPromptCacheKeyMode())
 	require.Equal(t, OpenAIAlphaSearchModeDirect, ordinary.GetOpenAIAlphaSearchMode())
 	require.Equal(t, OpenAIPromptCacheKeyModePassthrough, ordinary.GetOpenAIPromptCacheKeyMode())
+}
+
+func TestCindyExplicitCompatibilityModesRemainAvailable(t *testing.T) {
+	cindy := &Account{
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Credentials: cindyCredentials(),
+		Extra: map[string]any{
+			"openai_alpha_search_mode":     OpenAIAlphaSearchModeResponsesWebSearch,
+			"openai_prompt_cache_key_mode": OpenAIPromptCacheKeyModeSHA25664,
+		},
+	}
+
+	require.Equal(t, OpenAIAlphaSearchModeResponsesWebSearch, cindy.GetOpenAIAlphaSearchMode())
+	require.Equal(t, OpenAIPromptCacheKeyModeSHA25664, cindy.GetOpenAIPromptCacheKeyMode())
+}
+
+func TestCindyNativePromptCacheModePassesLongKeyThroughWhenGlobalGateIsEnabled(t *testing.T) {
+	longKey := strings.Repeat("cindy-cache-", 8)
+	body := []byte(`{"prompt_cache_key":"` + longKey + `","input":[]}`)
+	cindy := &Account{
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Credentials: cindyCredentials(),
+		Extra: map[string]any{
+			"openai_prompt_cache_key_mode": OpenAIPromptCacheKeyModePassthrough,
+		},
+	}
+
+	unchanged, changed, err := normalizeOpenAIAPIKeyPromptCacheKey(body, cindy, true)
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Equal(t, body, unchanged)
 }
