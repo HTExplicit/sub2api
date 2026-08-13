@@ -73,3 +73,17 @@ func TestOpenAIAlphaSearchModeDisabledExcludesOnlyExplicitAPIKeyAccount(t *testi
 	require.True(t, direct.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityAlphaSearch))
 	require.True(t, oauth.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityAlphaSearch))
 }
+
+func TestCindyMissingCompatibilityModesUseCindyDefaults(t *testing.T) {
+	cindy := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: cindyCredentials()}
+	ordinary := &Account{
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"base_url": "https://api.openai.com"},
+	}
+
+	require.Equal(t, OpenAIAlphaSearchModeResponsesWebSearch, cindy.GetOpenAIAlphaSearchMode())
+	require.Equal(t, OpenAIPromptCacheKeyModeSHA25664, cindy.GetOpenAIPromptCacheKeyMode())
+	require.Equal(t, OpenAIAlphaSearchModeDirect, ordinary.GetOpenAIAlphaSearchMode())
+	require.Equal(t, OpenAIPromptCacheKeyModePassthrough, ordinary.GetOpenAIPromptCacheKeyMode())
+}

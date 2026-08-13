@@ -1704,7 +1704,11 @@
             </p>
           </div>
           <div class="w-56">
-            <Select v-model="openAIAlphaSearchMode" :options="openAIAlphaSearchModeOptions" />
+            <Select
+              v-model="openAIAlphaSearchMode"
+              :options="openAIAlphaSearchModeOptions"
+              data-testid="openai-alpha-search-mode-select"
+            />
           </div>
         </div>
         <div class="flex items-center justify-between gap-4">
@@ -1715,7 +1719,11 @@
             </p>
           </div>
           <div class="w-56">
-            <Select v-model="openAIPromptCacheKeyMode" :options="openAIPromptCacheKeyModeOptions" />
+            <Select
+              v-model="openAIPromptCacheKeyMode"
+              :options="openAIPromptCacheKeyModeOptions"
+              data-testid="openai-prompt-cache-key-mode-select"
+            />
           </div>
         </div>
         <div>
@@ -2780,6 +2788,7 @@ import {
 } from '@/components/account/credentialsBuilder'
 import { formatDateTime, formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
+import { CINDY_OPENAI_DEFAULTS, cindyFirst, isCindyOpenAIAPIKeyAccount } from '@/utils/cindyOpenAIDefaults'
 import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
 import {
   OPENAI_WS_MODE_CTX_POOL,
@@ -3143,15 +3152,28 @@ const openAIResponsesModeOptions = computed(() => [
   { value: 'force_responses', label: t('admin.accounts.openai.responsesModeForceResponses') },
   { value: 'force_chat_completions', label: t('admin.accounts.openai.responsesModeForceChatCompletions') }
 ])
-const openAIAlphaSearchModeOptions = computed(() => [
-  { value: 'direct', label: t('admin.accounts.openai.alphaSearchModeDirect') },
-  { value: 'responses_web_search', label: t('admin.accounts.openai.alphaSearchModeResponsesWebSearch') },
-  { value: 'disabled', label: t('admin.accounts.openai.alphaSearchModeDisabled') }
-])
-const openAIPromptCacheKeyModeOptions = computed(() => [
-  { value: 'passthrough', label: t('admin.accounts.openai.promptCacheKeyModePassthrough') },
-  { value: 'sha256_64', label: t('admin.accounts.openai.promptCacheKeyModeSHA25664') }
-])
+const isCindyOpenAIAccount = computed(() => isCindyOpenAIAPIKeyAccount(props.account))
+const openAIAlphaSearchModeOptions = computed(() =>
+  cindyFirst(
+    [
+      { value: 'direct', label: t('admin.accounts.openai.alphaSearchModeDirect') },
+      { value: 'responses_web_search', label: t('admin.accounts.openai.alphaSearchModeResponsesWebSearch') },
+      { value: 'disabled', label: t('admin.accounts.openai.alphaSearchModeDisabled') }
+    ],
+    isCindyOpenAIAccount.value,
+    CINDY_OPENAI_DEFAULTS.alphaSearchMode
+  )
+)
+const openAIPromptCacheKeyModeOptions = computed(() =>
+  cindyFirst(
+    [
+      { value: 'passthrough', label: t('admin.accounts.openai.promptCacheKeyModePassthrough') },
+      { value: 'sha256_64', label: t('admin.accounts.openai.promptCacheKeyModeSHA25664') }
+    ],
+    isCindyOpenAIAccount.value,
+    CINDY_OPENAI_DEFAULTS.promptCacheKeyMode
+  )
+)
 const openAITextEndpointCapabilityLabel = computed(() => {
   if (openAIResponsesMode.value === 'force_responses') {
     return t('admin.accounts.openai.capabilityResponses')
@@ -3494,9 +3516,16 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       : ''
     openAICompactMode.value = (extra?.openai_compact_mode as OpenAICompactMode) || 'auto'
     if (newAccount.type === 'apikey') {
-      openAIResponsesMode.value = normalizeOpenAIResponsesMode(extra?.openai_responses_mode)
-      openAIAlphaSearchMode.value = (extra?.openai_alpha_search_mode as OpenAIAlphaSearchMode) || 'direct'
-      openAIPromptCacheKeyMode.value = (extra?.openai_prompt_cache_key_mode as OpenAIPromptCacheKeyMode) || 'passthrough'
+      const cindy = isCindyOpenAIAPIKeyAccount(newAccount)
+      openAIResponsesMode.value = normalizeOpenAIResponsesMode(
+        extra?.openai_responses_mode ?? (cindy ? CINDY_OPENAI_DEFAULTS.responsesMode : undefined)
+      )
+      openAIAlphaSearchMode.value =
+        (extra?.openai_alpha_search_mode as OpenAIAlphaSearchMode) ||
+        (cindy ? CINDY_OPENAI_DEFAULTS.alphaSearchMode : 'direct')
+      openAIPromptCacheKeyMode.value =
+        (extra?.openai_prompt_cache_key_mode as OpenAIPromptCacheKeyMode) ||
+        (cindy ? CINDY_OPENAI_DEFAULTS.promptCacheKeyMode : 'passthrough')
       openAIEndpointCapabilities.value = readOpenAIEndpointCapabilities(
         newAccount.credentials as Record<string, unknown> | undefined
       )

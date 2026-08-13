@@ -35,7 +35,25 @@ func TestNormalizeCindyDeviceIdentityExtraPreservesInput(t *testing.T) {
 	require.Equal(t, deviceID, got[CindyDeviceIDExtraKey])
 	require.Equal(t, "registration-record", got[CindyDeviceIDSourceExtraKey])
 	require.Equal(t, "kept", got["ordinary"])
+	require.Equal(t, "force_responses", got[CindyResponsesModeExtraKey])
+	require.Equal(t, OpenAIAlphaSearchModeResponsesWebSearch, got[CindyAlphaSearchExtraKey])
+	require.Equal(t, OpenAIPromptCacheKeyModeSHA25664, got[CindyPromptCacheExtraKey])
 	require.Equal(t, deviceID, requested[CindyDeviceIDExtraKey], "input map must not be mutated")
+}
+
+func TestNormalizeCindyDeviceIdentityExtraPreservesExplicitCompatibilityModes(t *testing.T) {
+	requested := map[string]any{
+		CindyResponsesModeExtraKey: "force_chat_completions",
+		CindyAlphaSearchExtraKey:   OpenAIAlphaSearchModeDisabled,
+		CindyPromptCacheExtraKey:   OpenAIPromptCacheKeyModePassthrough,
+	}
+	got, err := NormalizeCindyDeviceIdentityExtra(
+		PlatformOpenAI, AccountTypeAPIKey, cindyCredentials(), requested, nil,
+	)
+	require.NoError(t, err)
+	require.Equal(t, requested[CindyResponsesModeExtraKey], got[CindyResponsesModeExtraKey])
+	require.Equal(t, requested[CindyAlphaSearchExtraKey], got[CindyAlphaSearchExtraKey])
+	require.Equal(t, requested[CindyPromptCacheExtraKey], got[CindyPromptCacheExtraKey])
 }
 
 func TestNormalizeCindyDeviceIdentityExtraGeneratesUniqueStoreOnlyIdentity(t *testing.T) {

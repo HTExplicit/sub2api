@@ -3096,7 +3096,11 @@
             </p>
           </div>
           <div class="w-56">
-            <Select v-model="openAIAlphaSearchMode" :options="openAIAlphaSearchModeOptions" />
+            <Select
+              v-model="openAIAlphaSearchMode"
+              :options="openAIAlphaSearchModeOptions"
+              data-testid="openai-alpha-search-mode-select"
+            />
           </div>
         </div>
         <div class="flex items-center justify-between gap-4">
@@ -3107,7 +3111,11 @@
             </p>
           </div>
           <div class="w-56">
-            <Select v-model="openAIPromptCacheKeyMode" :options="openAIPromptCacheKeyModeOptions" />
+            <Select
+              v-model="openAIPromptCacheKeyMode"
+              :options="openAIPromptCacheKeyModeOptions"
+              data-testid="openai-prompt-cache-key-mode-select"
+            />
           </div>
         </div>
         <div>
@@ -3644,6 +3652,7 @@ import {
 } from '@/components/account/credentialsBuilder'
 import { formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
+import { CINDY_OPENAI_DEFAULTS, cindyFirst, isCindyOpenAIAPIKeyAccount } from '@/utils/cindyOpenAIDefaults'
 import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
 import {
   OPENAI_WS_MODE_CTX_POOL,
@@ -3945,6 +3954,20 @@ const getAntigravityModelMappingKey = createStableObjectKeyResolver<ModelMapping
 const getTempUnschedRuleKey = createStableObjectKeyResolver<TempUnschedRuleForm>('create-temp-unsched-rule')
 const geminiOAuthType = ref<'code_assist' | 'google_one' | 'ai_studio'>('google_one')
 const geminiAIStudioOAuthEnabled = ref(false)
+const form = reactive({
+  name: '',
+  notes: '',
+  platform: 'anthropic' as AccountPlatform,
+  type: 'oauth' as AccountType, // Will be 'oauth', 'setup-token', or 'apikey'
+  credentials: {} as Record<string, unknown>,
+  proxy_id: null as number | null,
+  concurrency: 10,
+  load_factor: null as number | null,
+  priority: 1,
+  rate_multiplier: 1,
+  group_ids: [] as number[],
+  expires_at: null as number | null
+})
 const openAICompactModeOptions = computed(() => [
   { value: 'auto', label: t('admin.accounts.openai.compactModeAuto') },
   { value: 'force_on', label: t('admin.accounts.openai.compactModeForceOn') },
@@ -3955,15 +3978,42 @@ const openAIResponsesModeOptions = computed(() => [
   { value: 'force_responses', label: t('admin.accounts.openai.responsesModeForceResponses') },
   { value: 'force_chat_completions', label: t('admin.accounts.openai.responsesModeForceChatCompletions') }
 ])
-const openAIAlphaSearchModeOptions = computed(() => [
-  { value: 'direct', label: t('admin.accounts.openai.alphaSearchModeDirect') },
-  { value: 'responses_web_search', label: t('admin.accounts.openai.alphaSearchModeResponsesWebSearch') },
-  { value: 'disabled', label: t('admin.accounts.openai.alphaSearchModeDisabled') }
-])
-const openAIPromptCacheKeyModeOptions = computed(() => [
-  { value: 'passthrough', label: t('admin.accounts.openai.promptCacheKeyModePassthrough') },
-  { value: 'sha256_64', label: t('admin.accounts.openai.promptCacheKeyModeSHA25664') }
-])
+const isCindyOpenAIAccount = computed(() =>
+  isCindyOpenAIAPIKeyAccount({
+    platform: form.platform,
+    type: accountCategory.value === 'apikey' ? 'apikey' : form.type,
+    credentials: { base_url: apiKeyBaseUrl.value }
+  })
+)
+watch(isCindyOpenAIAccount, enabled => {
+  if (!enabled) return
+  if (openAIResponsesMode.value === 'auto') openAIResponsesMode.value = CINDY_OPENAI_DEFAULTS.responsesMode
+  if (openAIAlphaSearchMode.value === 'direct') openAIAlphaSearchMode.value = CINDY_OPENAI_DEFAULTS.alphaSearchMode
+  if (openAIPromptCacheKeyMode.value === 'passthrough') {
+    openAIPromptCacheKeyMode.value = CINDY_OPENAI_DEFAULTS.promptCacheKeyMode
+  }
+})
+const openAIAlphaSearchModeOptions = computed(() =>
+  cindyFirst(
+    [
+      { value: 'direct', label: t('admin.accounts.openai.alphaSearchModeDirect') },
+      { value: 'responses_web_search', label: t('admin.accounts.openai.alphaSearchModeResponsesWebSearch') },
+      { value: 'disabled', label: t('admin.accounts.openai.alphaSearchModeDisabled') }
+    ],
+    isCindyOpenAIAccount.value,
+    CINDY_OPENAI_DEFAULTS.alphaSearchMode
+  )
+)
+const openAIPromptCacheKeyModeOptions = computed(() =>
+  cindyFirst(
+    [
+      { value: 'passthrough', label: t('admin.accounts.openai.promptCacheKeyModePassthrough') },
+      { value: 'sha256_64', label: t('admin.accounts.openai.promptCacheKeyModeSHA25664') }
+    ],
+    isCindyOpenAIAccount.value,
+    CINDY_OPENAI_DEFAULTS.promptCacheKeyMode
+  )
+)
 const openAITextEndpointCapabilityLabel = computed(() => {
   if (openAIResponsesMode.value === 'force_responses') {
     return t('admin.accounts.openai.capabilityResponses')
@@ -4165,21 +4215,6 @@ const tempUnschedPresets = computed(() => [
     }
   }
 ])
-
-const form = reactive({
-  name: '',
-  notes: '',
-  platform: 'anthropic' as AccountPlatform,
-  type: 'oauth' as AccountType, // Will be 'oauth', 'setup-token', or 'apikey'
-  credentials: {} as Record<string, unknown>,
-  proxy_id: null as number | null,
-  concurrency: 10,
-  load_factor: null as number | null,
-  priority: 1,
-  rate_multiplier: 1,
-  group_ids: [] as number[],
-  expires_at: null as number | null
-})
 
 // Helper to check if current type needs OAuth flow
 const isOAuthFlow = computed(() => {
