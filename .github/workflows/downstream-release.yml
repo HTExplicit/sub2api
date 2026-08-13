@@ -51,7 +51,7 @@ jobs:
         working-directory: backend
         run: |
           go mod verify
-          go test -p=1 ./internal/service -run 'Test.*(BusinessSystemPrompt|RemoteSkill|GPT56|Cindy|CompatibilityModes)' -count=1
+          go test -p=1 -tags unit ./internal/service ./internal/handler -run 'Test.*(BusinessSystemPrompt|RemoteSkill|GPT56|Cindy|CompatibilityModes|AlphaSearch)' -count=1
           go test -p=1 ./internal/handler/admin ./internal/server/middleware -run 'Test.*(SystemPrompt|RemoteSkill|Audit)' -count=1
           go test -p=1 ./migrations -run 'Test.*(BusinessSystemPromptRemoteSkill|BusinessSystemPromptCodexSkillHybrid|BusinessSystemPromptManagedSource|RemoteSkillRegistry|RemoteSkillPaired|Migration207|Migration208|Migration209)' -count=1
           go test -p=1 -tags integration ./migrations -run '^TestCindy(OpenAIDefaults|PromptCacheHash|AlphaSearchBridge)MigrationIsStrictAndIdempotent$' -count=1
