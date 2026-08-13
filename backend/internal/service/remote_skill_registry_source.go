@@ -12,16 +12,18 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
+
+	"golang.org/x/sync/errgroup"
 )
 
 const (
-	remoteSkillSyncTimeout   = 2 * time.Minute
+	remoteSkillSyncTimeout   = 5 * time.Minute
+	remoteSkillSyncWorkers   = 8
 	remoteSkillMaxFileCount  = 2000
 	remoteSkillMaxTotalBytes = 256 << 20
-	remoteSkillExpectedFiles = 73
-	remoteSkillCoreFileCount = 3
 )
 
 type RemoteSkillHTTPDoer interface {
@@ -51,29 +53,49 @@ func (s *MoxinggangRemoteSkillCandidateSource) Build(
 	if prompt.RawSHA256 == "" || prompt.EffectiveSHA256 == "" {
 		return RemoteSkillCandidate{}, fmt.Errorf("%w: prompt capture is required", ErrBusinessSystemPromptInvalid)
 	}
-	paths, err := remoteSkillSeedPaths()
+	manifest, err := loadRemoteSkillManifest()
 	if err != nil {
 		return RemoteSkillCandidate{}, err
 	}
-	if len(paths) != remoteSkillExpectedFiles {
-		return RemoteSkillCandidate{}, fmt.Errorf("%w: approved upstream path set changed", ErrBusinessSystemPromptBundleInvalid)
-	}
 	ctx, cancel := context.WithTimeout(ctx, remoteSkillSyncTimeout)
 	defer cancel()
-	rawFiles := make(map[string][]byte, len(paths))
-	var total int64
-	for _, name := range paths {
-		raw, err := s.downloadEntry(ctx, name)
+	rawFiles := make(map[string][]byte, len(manifest.Files))
+	upstreamEntries := make([]remoteSkillManifestEntry, 0, manifest.UpstreamFileCount)
+	for _, entry := range manifest.Files {
+		if entry.SourceKind == "upstream" {
+			upstreamEntries = append(upstreamEntries, entry)
+			continue
+		}
+		body, err := loadRemoteSkillPinnedAsset(entry)
 		if err != nil {
 			return RemoteSkillCandidate{}, err
 		}
-		total += int64(len(raw))
-		if total > remoteSkillMaxTotalBytes {
-			return RemoteSkillCandidate{}, fmt.Errorf("%w: upstream tree exceeds size limit", ErrBusinessSystemPromptBundleInvalid)
-		}
-		rawFiles[name] = raw
+		rawFiles[entry.Path] = body
 	}
-	if err := validateRemoteSkillTreeShape(rawFiles, paths); err != nil {
+
+	var rawFilesMu sync.Mutex
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.SetLimit(remoteSkillSyncWorkers)
+	for _, manifestEntry := range upstreamEntries {
+		entry := manifestEntry
+		group.Go(func() error {
+			body, err := s.downloadEntry(groupCtx, entry.Path)
+			if err != nil {
+				return err
+			}
+			if !remoteSkillManifestEntryMatches(entry, body) {
+				return fmt.Errorf("%w: upstream content does not match manifest", ErrBusinessSystemPromptBundleInvalid)
+			}
+			rawFilesMu.Lock()
+			rawFiles[entry.Path] = body
+			rawFilesMu.Unlock()
+			return nil
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return RemoteSkillCandidate{}, err
+	}
+	if err := validateCurrentRemoteSkillTree(rawFiles); err != nil {
 		return RemoteSkillCandidate{}, err
 	}
 	effectiveFiles := rewriteRemoteSkillPublishedFiles(rawFiles)
@@ -89,7 +111,7 @@ func (s *MoxinggangRemoteSkillCandidateSource) downloadEntry(ctx context.Context
 	if err != nil || normalized != name {
 		return nil, fmt.Errorf("%w: upstream path rejected", ErrBusinessSystemPromptBundleInvalid)
 	}
-	rawURL := RemoteSkillUpstreamRoot + "/" + name
+	rawURL := remoteSkillUpstreamEntryURL(name)
 	parsed, err := url.Parse(rawURL)
 	if err != nil || !validMoxinggangRemoteSkillURL(parsed) {
 		return nil, fmt.Errorf("%w: upstream URL rejected", ErrBusinessSystemPromptBundleInvalid)
@@ -99,7 +121,7 @@ func (s *MoxinggangRemoteSkillCandidateSource) downloadEntry(ctx context.Context
 		return nil, err
 	}
 	req.Header.Set("Accept", "text/markdown, text/plain;q=0.9, application/octet-stream;q=0.8")
-	req.Header.Set("User-Agent", "Sub2API-Remote-Skill-Sync/2")
+	req.Header.Set("User-Agent", "Sub2API-Remote-Skill-Sync/3")
 	response, err := s.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("%w: upstream request failed", ErrBusinessSystemPromptBundleUnavailable)
@@ -128,7 +150,7 @@ func (s *MoxinggangRemoteSkillCandidateSource) downloadEntry(ctx context.Context
 }
 
 func validMoxinggangRemoteSkillURL(parsed *url.URL) bool {
-	if parsed == nil || parsed.Scheme != "https" || parsed.Hostname() != "moxinggang.com" || parsed.Port() != "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.RawPath != "" {
+	if parsed == nil || parsed.Scheme != "https" || parsed.Hostname() != "moxinggang.com" || parsed.Port() != "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return false
 	}
 	if parsed.Path != path.Clean(parsed.Path) || !strings.HasPrefix(parsed.Path, RemoteSkillMoxinggangPath+"/") {
@@ -137,6 +159,14 @@ func validMoxinggangRemoteSkillURL(parsed *url.URL) bool {
 	relative := strings.TrimPrefix(parsed.Path, RemoteSkillMoxinggangPath+"/")
 	normalized, err := normalizeBundleRelativePath(relative)
 	return err == nil && normalized == relative
+}
+
+func remoteSkillUpstreamEntryURL(name string) string {
+	parts := strings.Split(name, "/")
+	for index := range parts {
+		parts[index] = url.PathEscape(parts[index])
+	}
+	return RemoteSkillUpstreamRoot + "/" + strings.Join(parts, "/")
 }
 
 func newRemoteSkillHTTPClient() *http.Client {
@@ -265,41 +295,6 @@ func remoteSkillFileChanges(active *RemoteSkillCandidate, candidate RemoteSkillC
 	return changes
 }
 
-func validateRemoteSkillTreeShape(files map[string][]byte, approved []string) error {
-	if len(files) != len(approved) || len(files) != remoteSkillExpectedFiles {
-		return fmt.Errorf("%w: upstream tree shape changed", ErrBusinessSystemPromptBundleInvalid)
-	}
-	approvedSet := make(map[string]struct{}, len(approved))
-	portable := make(map[string]string, len(approved))
-	for _, name := range approved {
-		approvedSet[name] = struct{}{}
-		key := portableRemoteSkillPathKey(name)
-		if previous, exists := portable[key]; exists && previous != name {
-			return fmt.Errorf("%w: portable path collision", ErrBusinessSystemPromptBundleInvalid)
-		}
-		portable[key] = name
-		if _, ok := files[name]; !ok {
-			return fmt.Errorf("%w: approved upstream file missing", ErrBusinessSystemPromptBundleInvalid)
-		}
-	}
-	for _, core := range []string{"RULES.md", "README_AI.md", "SKILL.md"} {
-		if _, ok := files[core]; !ok {
-			return fmt.Errorf("%w: upstream entry file missing", ErrBusinessSystemPromptBundleInvalid)
-		}
-	}
-	for _, raw := range files {
-		if !utf8.Valid(raw) {
-			continue
-		}
-		for _, reference := range remoteSkillMoxinggangReferences(raw) {
-			if _, ok := approvedSet[reference]; !ok {
-				return fmt.Errorf("%w: upstream introduced an unapproved reference", ErrBusinessSystemPromptBundleInvalid)
-			}
-		}
-	}
-	return nil
-}
-
 func remoteSkillMoxinggangReferences(raw []byte) []string {
 	const marker = "https://moxinggang.com/skills/security-research/current/"
 	seen := make(map[string]struct{})
@@ -358,8 +353,4 @@ func remoteSkillFileKind(name string, data []byte) string {
 		return "binary"
 	}
 	return "text"
-}
-
-func portableRemoteSkillPathKey(name string) string {
-	return strings.ToLower(strings.ReplaceAll(name, "\\", "/"))
 }

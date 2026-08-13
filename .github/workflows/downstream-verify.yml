@@ -35,16 +35,32 @@ jobs:
       - name: OpenAI probe ownership race tests
         working-directory: backend
         run: go test -race -tags unit ./internal/service -run 'TestOpenAIRuntimeBreaker_(APIKeySameAccountRetryDoesNotUseRedisLease|OAuthSameAccountRetryTransfersProbeUntilFinalFailure|SuppressedRetryReleasesSelectionClaim)' -count=1
+      - name: Remote Skill concurrency race tests
+        working-directory: backend
+        run: go test -race ./internal/service -run 'TestMoxinggangRemoteSkillSource(UsesBoundedConcurrencyAndCanonicalUnicodeURLs|FetchesFixedApprovedTreeAndBuildsPairedCandidate)|TestRemoteSkillRegistryKeepsHistorical73ActiveThrough458SeedSyncPublishAndRollback' -count=1
       - name: Request body recovery tests
         working-directory: backend
         run: go test -p=1 ./internal/pkg/httputil ./internal/handler -run 'Test(ReadRequestBodyWithPrealloc|ReadLenientJSONRequestBodyWithPrealloc|RequestBodyReadDiagnostics|ClassifyRequestContentEncoding)' -count=1
       - name: Handler tests
         working-directory: backend
         run: |
-          go test -p=1 -tags unit ./internal/handler ./internal/handler/admin -run 'Test.*(Refusal|Cyber|Continuation|AlphaSearch)' -count=1
+          go test -p=1 -tags unit ./internal/handler ./internal/handler/admin -run 'Test.*(Refusal|Cyber|Continuation|AlphaSearch|RemoteSkill)' -count=1
           go test -p=1 ./internal/handler/admin -run 'TestUpdateSettings(PartialPayload|RejectsTwoCaptchaProviders|RequiresFourTencentCaptchaCredentials|RetainsStoredTencentCaptchaCredentials|ValidatesTencentCaptchaAppID|ValidatesTurnstileSiteKey)' -count=1
           go test -p=1 ./internal/handler/admin -run 'Test(ExportData|PreviewDataImport|ImportData|DataAccountIdentityKeys|BulkUpdateAccepts|AccountHandler)' -count=1
           go test -p=1 ./internal/repository -run '^$'
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Complete remote Skill closure
+        run: |
+          python -m pip install 'PyYAML==6.0.2'
+          candidate=$(mktemp -d)/security-research
+          mkdir -p "$candidate"
+          cp -a backend/internal/service/remote_skill_seed/tree/. "$candidate/"
+          install -D -m 0644 \
+            backend/internal/service/remote_skill_seed/pinned/waf-bypass.md \
+            "$candidate/skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/waf-bypass.md"
+          python "$candidate/scripts/validate_skill.py" "$candidate" --require-evals --json
       - name: Account taxonomy migration integration test
         working-directory: backend
         run: go test -p=1 -tags integration ./internal/repository -run '^TestAccountTaxonomy.*Integration$' -count=1
@@ -92,6 +108,7 @@ jobs:
             src/components/account/__tests__/CreateAccountModal.spec.ts \
             src/components/account/__tests__/EditAccountModal.spec.ts \
             src/components/account/__tests__/BulkEditAccountModal.spec.ts \
+            src/views/admin/__tests__/SystemPromptsView.spec.ts \
             src/views/admin/__tests__/AccountsView.console.spec.ts \
             src/views/admin/__tests__/AccountsView.bulkEdit.spec.ts \
             src/views/admin/__tests__/AccountsView.schedulerScore.spec.ts \

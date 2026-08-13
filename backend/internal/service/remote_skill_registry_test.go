@@ -186,6 +186,52 @@ func TestRemoteSkillRegistrySyncCreatesCandidateWithoutPublishingAndReusesPrompt
 	require.Equal(t, int64(1), svc.CurrentSnapshot().Active.ID)
 }
 
+func TestRemoteSkillRegistryKeepsHistorical73ActiveThrough458SeedSyncPublishAndRollback(t *testing.T) {
+	seed, err := NewRemoteSkillRegistryFilesystem(t.TempDir()).LoadSeed(context.Background())
+	require.NoError(t, err)
+	seed.Version.ID = 2
+	seed.Version.PromptVersionID = 9
+	seed.Prompt.ID = 9
+	historical := historical73RemoteSkillCandidateForTest(t, seed)
+	historical.Version.ID = 1
+	historical.Version.PromptVersionID = 9
+	historical.Prompt.ID = 9
+
+	store := &fakeRemoteSkillRegistryStore{
+		snapshot: RemoteSkillRegistrySnapshot{Revision: 7, Active: &historical.Version, ActivePrompt: &historical.Prompt, UpdatedAt: time.Now().UTC()},
+		detail:   RemoteSkillBundleVersionDetail{RemoteSkillBundleVersion: historical.Version, Prompt: historical.Prompt, FileChanges: historical.FileChanges},
+		job:      RemoteSkillSyncJob{ID: 9, Status: RemoteSkillSyncStatusQueued},
+	}
+	files := &fakeRemoteSkillRegistryFiles{seed: seed, candidates: map[int64]RemoteSkillCandidate{1: historical, 2: seed}}
+	source := &fakeRemoteSkillCandidateSource{candidate: seed}
+	svc := NewRemoteSkillRegistryService(store, nil, files, source)
+	require.NoError(t, svc.Initialize(context.Background()))
+	require.Equal(t, remoteSkillExpectedFiles, store.ensureSeed.Version.FileCount)
+	require.Equal(t, 73, svc.CurrentSnapshot().Active.FileCount)
+
+	svc.runSyncJob(context.Background(), RemoteSkillSyncJob{ID: 9, CreatedBy: 42}, RemoteSkillPromptCapture{
+		RawBody: []byte(historical.Prompt.RawBody), EffectiveBody: []byte(historical.Prompt.EffectiveBody),
+		RawSHA256: historical.Prompt.RawSHA256, EffectiveSHA256: historical.Prompt.EffectiveSHA256, Diff: historical.Prompt.Diff,
+	})
+	require.NotNil(t, source.active)
+	require.Equal(t, 73, source.active.Version.FileCount)
+	require.Equal(t, remoteSkillExpectedFiles, store.completed.Version.FileCount)
+	require.Equal(t, 73, svc.CurrentSnapshot().Active.FileCount)
+
+	store.detail = RemoteSkillBundleVersionDetail{RemoteSkillBundleVersion: seed.Version, Prompt: seed.Prompt, FileChanges: seed.FileChanges}
+	store.published = RemoteSkillRegistrySnapshot{Revision: 8, Active: &seed.Version, ActivePrompt: &seed.Prompt, UpdatedAt: time.Now().UTC()}
+	published, err := svc.PublishVersion(context.Background(), 2, 7, 42)
+	require.NoError(t, err)
+	require.Equal(t, remoteSkillExpectedFiles, published.Active.FileCount)
+
+	store.detail = RemoteSkillBundleVersionDetail{RemoteSkillBundleVersion: historical.Version, Prompt: historical.Prompt, FileChanges: historical.FileChanges}
+	store.published = RemoteSkillRegistrySnapshot{Revision: 9, Active: &historical.Version, ActivePrompt: &historical.Prompt, UpdatedAt: time.Now().UTC()}
+	rolledBack, err := svc.PublishVersion(context.Background(), 1, 8, 42)
+	require.NoError(t, err)
+	require.Equal(t, 73, rolledBack.Active.FileCount)
+	require.Equal(t, int64(9), svc.CurrentSnapshot().Revision)
+}
+
 func TestRemoteSkillRegistryPromptUploadIsValidatedBeforeSyncJobCreation(t *testing.T) {
 	active := testRemoteSkillCandidate(t, 1, 1, "old")
 	svc, store, _ := testRemoteSkillRegistry(t, active)

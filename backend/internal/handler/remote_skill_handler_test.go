@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -15,6 +17,26 @@ type fakeRemoteSkillPublicReader struct {
 	file      service.RemoteSkillPublicFile
 	err       error
 	requested string
+}
+
+func TestRemoteSkillHandlerServesPercentEncodedUnicodePath(t *testing.T) {
+	body := []byte("# Unicode path\n")
+	reader := &fakeRemoteSkillPublicReader{file: service.RemoteSkillPublicFile{
+		Body: body, ETag: `"unicode"`, ContentType: "text/markdown; charset=utf-8",
+	}}
+	router := newRemoteSkillPublicTestRouter(reader)
+	name := "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/web/认证漏洞.md"
+	parts := strings.Split(name, "/")
+	for index := range parts {
+		parts[index] = url.PathEscape(parts[index])
+	}
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/skills/security-research/current/"+strings.Join(parts, "/"), nil)
+	router.ServeHTTP(response, request)
+	require.Equal(t, http.StatusOK, response.Code)
+	require.Equal(t, name, reader.requested)
+	require.Equal(t, body, response.Body.Bytes())
 }
 
 func (f *fakeRemoteSkillPublicReader) LoadPublishedFile(_ context.Context, name string) (service.RemoteSkillPublicFile, error) {

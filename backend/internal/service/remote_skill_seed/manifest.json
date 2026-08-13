@@ -1,0 +1,2765 @@
+{
+  "schema_version": 1,
+  "bundle_id": "security-research",
+  "upstream_source_id": "moxinggang",
+  "upstream_root": "https://moxinggang.com/skills/security-research/current",
+  "expected_file_count": 458,
+  "upstream_file_count": 457,
+  "pinned_file_count": 1,
+  "files": [
+    {
+      "path": "agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 292,
+      "sha256": "3751a157acabd3aa3a1a0edc6d55703c10bf2d44d3398f5a9cbe5c7c28668b5a"
+    },
+    {
+      "path": "assets/templates/cloud-handoff-prompt.md",
+      "source_kind": "upstream",
+      "byte_length": 3325,
+      "sha256": "20ea98217f3901ed59b89843adc15da12d6fc95b8ec1ecf1edc56c3b6243425d"
+    },
+    {
+      "path": "assets/templates/ctf-writeup.md",
+      "source_kind": "upstream",
+      "byte_length": 2721,
+      "sha256": "8720f4c679e24173cbaab6def4f4fbccdf771fcf781ac380eeb9e0ba1b0e0acd"
+    },
+    {
+      "path": "assets/templates/mission-state.md",
+      "source_kind": "upstream",
+      "byte_length": 775,
+      "sha256": "919107f7cc0ecd1e3c515de16fc43df6a7d26b3763f1dba7ee9e6f027d5336c9"
+    },
+    {
+      "path": "assets/templates/research-result.json",
+      "source_kind": "upstream",
+      "byte_length": 1027,
+      "sha256": "cd47943778cf9eb32d993ddc9870e9b00477f1ff3ce17bb1fce4b2546daf1b02"
+    },
+    {
+      "path": "assets/templates/writeups-index.md",
+      "source_kind": "upstream",
+      "byte_length": 1185,
+      "sha256": "1e44bd5e8ae2dd69a614149de17a46426627cca8fbf5808569edd5bcfb8ce64a"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "source_kind": "upstream",
+      "byte_length": 16908,
+      "sha256": "9f2ccd12fc1ca9c2f342e18ac544bc83a78bdf2cff244c38cad5424d505cbdab"
+    },
+    {
+      "path": "ctf-orchestrator/competition-ad-certificate-abuse/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 394,
+      "sha256": "a4e4e06bb8c806628c091fb84359d8bf4a27d1d2dfdfc1c45d824951c8865495"
+    },
+    {
+      "path": "ctf-orchestrator/competition-ad-certificate-abuse/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3279,
+      "sha256": "acb228fae7ec89a9fb5656f5f6209e98309d0b06e204625fe52d46c5421ce96f"
+    },
+    {
+      "path": "ctf-orchestrator/competition-ad-certificate-abuse/references/ad-certificate-abuse.md",
+      "source_kind": "upstream",
+      "byte_length": 1154,
+      "sha256": "687b8c2dc614f7361ee7eb8ce78e05d7a66758c05478dd1664580f4f53899551"
+    },
+    {
+      "path": "ctf-orchestrator/competition-agent-cloud/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 379,
+      "sha256": "50f6fb10a25e596bdb0f30b8f63a0998676fa96aff0fa6bf5f75cb627e76ec23"
+    },
+    {
+      "path": "ctf-orchestrator/competition-agent-cloud/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 4009,
+      "sha256": "9e56a603f14f2d6d9264bf77da408697deec9e152e5ccd6c391dc14440ff5032"
+    },
+    {
+      "path": "ctf-orchestrator/competition-agent-cloud/references/agent-cloud.md",
+      "source_kind": "upstream",
+      "byte_length": 1085,
+      "sha256": "274d751dfcb7f23b7f96e3abb2da3e8894705e8bffe54caa60fda8b30b758e4f"
+    },
+    {
+      "path": "ctf-orchestrator/competition-android-hooking/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 388,
+      "sha256": "0a1192e647429bc6d4321156517d572a18f6318b5ef908fb654ebfb7bb9368ed"
+    },
+    {
+      "path": "ctf-orchestrator/competition-android-hooking/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3178,
+      "sha256": "01ed954e9b6fcdc9a2e78de49fd8b7f52614a36c251851cfef97df20272af712"
+    },
+    {
+      "path": "ctf-orchestrator/competition-android-hooking/references/android-hooking.md",
+      "source_kind": "upstream",
+      "byte_length": 1064,
+      "sha256": "441087c0d70cc1ece641ec3b1ff71f1bba154ae876065149e1b37cb40d43e713"
+    },
+    {
+      "path": "ctf-orchestrator/competition-browser-persistence/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 407,
+      "sha256": "209fd7516099ce85e3889e3d943529e1ac6ab79197319ad421399f922f72004d"
+    },
+    {
+      "path": "ctf-orchestrator/competition-browser-persistence/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3167,
+      "sha256": "48282126789e97818c374d9479d831aa70d8825701e4bae16ded574631da1097"
+    },
+    {
+      "path": "ctf-orchestrator/competition-browser-persistence/references/browser-persistence.md",
+      "source_kind": "upstream",
+      "byte_length": 1125,
+      "sha256": "b96d918b0e256ebdb71b83e43de89a3fa04d5d99f3400975a7fb1542452b289c"
+    },
+    {
+      "path": "ctf-orchestrator/competition-bundle-sourcemap-recovery/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 420,
+      "sha256": "0103052395bf3cf7cef8c60d142b1d3bf656741f3569dd34a16067c7df3a6ef7"
+    },
+    {
+      "path": "ctf-orchestrator/competition-bundle-sourcemap-recovery/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3204,
+      "sha256": "8f89baa5ea28f37f3920fe3e152f4b1d7d27d1442d97e57e0f6f7ffc836825ce"
+    },
+    {
+      "path": "ctf-orchestrator/competition-bundle-sourcemap-recovery/references/bundle-sourcemap-recovery.md",
+      "source_kind": "upstream",
+      "byte_length": 1086,
+      "sha256": "04035d3da0766bd14fb63b641881e7fd886c379b3d6ddf1da0b22ad6c63ec513"
+    },
+    {
+      "path": "ctf-orchestrator/competition-cloud-metadata-path/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 391,
+      "sha256": "9adb7a1c062e1ab3d7529daa71047fe2e271142b17205b985fbbee91049f337d"
+    },
+    {
+      "path": "ctf-orchestrator/competition-cloud-metadata-path/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3428,
+      "sha256": "5f15e808652caad49611a7b75a6efbd9bccdf430c187f5dbf57a85b7954d4053"
+    },
+    {
+      "path": "ctf-orchestrator/competition-cloud-metadata-path/references/cloud-metadata-path.md",
+      "source_kind": "upstream",
+      "byte_length": 1195,
+      "sha256": "bd5f588230051b93c2803796d9b1d6dca2196660adfacc3839972bf628fe300a"
+    },
+    {
+      "path": "ctf-orchestrator/competition-container-runtime/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 409,
+      "sha256": "f09ac7be4c655f63c93a71a4e355b20f6f80585197d018eb3771c21a1ce267d1"
+    },
+    {
+      "path": "ctf-orchestrator/competition-container-runtime/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3398,
+      "sha256": "87412c06f8caa85ed2bf8d53a00d356f9bd1813144df9b2ec499652066775c7b"
+    },
+    {
+      "path": "ctf-orchestrator/competition-container-runtime/references/container-runtime.md",
+      "source_kind": "upstream",
+      "byte_length": 1111,
+      "sha256": "9ab4224c6faff3e0c346ff5c4baea7ddcb8be511a9b31413f5e7f2a6143d5a5d"
+    },
+    {
+      "path": "ctf-orchestrator/competition-crypto-mobile/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 376,
+      "sha256": "16a00a541f6b2807276214287dd1805ed533647bbee008a171ae5a1f26b41752"
+    },
+    {
+      "path": "ctf-orchestrator/competition-crypto-mobile/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 2854,
+      "sha256": "7d78f7d1dc176aafe9ccdc0e127e5189bd963593f4434a2da2f4b61aaec4c311"
+    },
+    {
+      "path": "ctf-orchestrator/competition-crypto-mobile/references/crypto-mobile.md",
+      "source_kind": "upstream",
+      "byte_length": 932,
+      "sha256": "c51bf4746d07e1cbb23280be89044baebdbd9a07a17bcef87b008b4e88d92e0b"
+    },
+    {
+      "path": "ctf-orchestrator/competition-custom-protocol-replay/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 397,
+      "sha256": "d152127029dccec675a3b6da0d8285dc0c4d9a72345f7d3f25b2548f4392c515"
+    },
+    {
+      "path": "ctf-orchestrator/competition-custom-protocol-replay/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3045,
+      "sha256": "b4ffc7e7812293d8eb0f14ed04490a1fdb2f3eae8bfdb0a589a70b12a423f0f3"
+    },
+    {
+      "path": "ctf-orchestrator/competition-custom-protocol-replay/references/custom-protocol-replay.md",
+      "source_kind": "upstream",
+      "byte_length": 1090,
+      "sha256": "0c43b793655555ff87409ce196369744db33d7a250c4188ad315338e1c26761c"
+    },
+    {
+      "path": "ctf-orchestrator/competition-dpapi-credential-chain/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 406,
+      "sha256": "eba7bf6a2c25b9f9d5d4bb2a5a3b61b49c6e5fbd367c3c1881691449eb97864a"
+    },
+    {
+      "path": "ctf-orchestrator/competition-dpapi-credential-chain/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3419,
+      "sha256": "029cf3988446e8d6dfde30516924ae910e4e8e0c667845d82b1ae2a2d507d7d2"
+    },
+    {
+      "path": "ctf-orchestrator/competition-dpapi-credential-chain/references/dpapi-credential-chain.md",
+      "source_kind": "upstream",
+      "byte_length": 1120,
+      "sha256": "13b35d81191a72a4c6c5f94e5d911dc40fe83f4cab7e77f0c21a4a54ea6e322e"
+    },
+    {
+      "path": "ctf-orchestrator/competition-file-parser-chain/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 410,
+      "sha256": "b0239aebdac57003aa2b9e75891893996e3cc38eead5395f5fbf5f8a592a2195"
+    },
+    {
+      "path": "ctf-orchestrator/competition-file-parser-chain/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3163,
+      "sha256": "ac09fa9241fde21453174b9a3bd6f917c024b8523663ed24cdb4a90692fa0a6c"
+    },
+    {
+      "path": "ctf-orchestrator/competition-file-parser-chain/references/file-parser-chain.md",
+      "source_kind": "upstream",
+      "byte_length": 1074,
+      "sha256": "bad1ef728c08ef6abe0e44eae668de58a20e9c1c6cb970ab16212ec9d45d4baf"
+    },
+    {
+      "path": "ctf-orchestrator/competition-firmware-layout/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 402,
+      "sha256": "6524b9bb3dd9397822480d491f1648f5a8dd9502f1bd03a701b795f0b001a6d6"
+    },
+    {
+      "path": "ctf-orchestrator/competition-firmware-layout/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3289,
+      "sha256": "32e17b49d0f3bd17832124d3f60f5ec00b56bb423e732e28dac2ea61a6714d2e"
+    },
+    {
+      "path": "ctf-orchestrator/competition-firmware-layout/references/firmware-layout.md",
+      "source_kind": "upstream",
+      "byte_length": 1089,
+      "sha256": "0c6cf03d2f73161f4e6a0a7c6a2f83b9eaf335e3b4c47dad316f813390a04308"
+    },
+    {
+      "path": "ctf-orchestrator/competition-forensic-timeline/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 394,
+      "sha256": "7eacb09ed7a132d259c7110c9e85699a91ec0932b3d8e169561fcfbcf82dd6c4"
+    },
+    {
+      "path": "ctf-orchestrator/competition-forensic-timeline/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3289,
+      "sha256": "552d9c4759b724618f9333a2cf7c686759b39ac6a3b856bb3f417760ab8de617"
+    },
+    {
+      "path": "ctf-orchestrator/competition-forensic-timeline/references/forensic-timeline.md",
+      "source_kind": "upstream",
+      "byte_length": 1300,
+      "sha256": "6ec45b6ef81e147f2b4da90fbe27a894a70ea1b1c6a13201f5894082bc42728a"
+    },
+    {
+      "path": "ctf-orchestrator/competition-graphql-rpc-drift/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 388,
+      "sha256": "2d442eb419c5ca445cc0203d341e53941cfc40c34d1024e96699cb4c450379d8"
+    },
+    {
+      "path": "ctf-orchestrator/competition-graphql-rpc-drift/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3300,
+      "sha256": "a6e8e2d54d79f065d13940b888d379aa31ee2b2470d459f4c1ab4f57763a47d5"
+    },
+    {
+      "path": "ctf-orchestrator/competition-graphql-rpc-drift/references/graphql-rpc-drift.md",
+      "source_kind": "upstream",
+      "byte_length": 1095,
+      "sha256": "c41eaf9034b47dcd028efc5b1a8e72b5f418f756e911fa7b253e9b08e05465ab"
+    },
+    {
+      "path": "ctf-orchestrator/competition-identity-windows/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 387,
+      "sha256": "c3b07747d3cda874cd6f6c1b968cec5345c62c7908e3a2837c0e604d3d7e6dfa"
+    },
+    {
+      "path": "ctf-orchestrator/competition-identity-windows/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3993,
+      "sha256": "deec978f35c404f4b10b0cc4dcc274a48a7c2a75f73925043fc8454c32b2a6fd"
+    },
+    {
+      "path": "ctf-orchestrator/competition-identity-windows/references/identity-windows.md",
+      "source_kind": "upstream",
+      "byte_length": 1247,
+      "sha256": "cfcb3e6237d860d2f8698daf47865bdab103ff2824109b0dad6c34bd298222f3"
+    },
+    {
+      "path": "ctf-orchestrator/competition-ios-runtime/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 392,
+      "sha256": "357acac7e122c279144480f3099826dce1109f26973620bae1ca6db2bb1815a2"
+    },
+    {
+      "path": "ctf-orchestrator/competition-ios-runtime/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3322,
+      "sha256": "11a041d6729a0733fb9813ecbc0753c87c2bf65b07cac6e3b6917a568d020156"
+    },
+    {
+      "path": "ctf-orchestrator/competition-ios-runtime/references/ios-runtime.md",
+      "source_kind": "upstream",
+      "byte_length": 1187,
+      "sha256": "9d5ba37db8bbc8e448630b374805799a47730ae70172dd04c31bccdd585865b7"
+    },
+    {
+      "path": "ctf-orchestrator/competition-jwt-claim-confusion/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 410,
+      "sha256": "566dea9ca92499f95a75b2cbb265dad1e4828c275f0a16024fedbaa4fbb8d6e6"
+    },
+    {
+      "path": "ctf-orchestrator/competition-jwt-claim-confusion/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3069,
+      "sha256": "f470a0467fdfe41accc0941d76976fb2d0f00ac21d29d49c049daf9d9274c7a5"
+    },
+    {
+      "path": "ctf-orchestrator/competition-jwt-claim-confusion/references/jwt-claim-confusion.md",
+      "source_kind": "upstream",
+      "byte_length": 1074,
+      "sha256": "c80472b8347e1ccc557be259a4f682c4489970ed332972634276bf98e7f5fa04"
+    },
+    {
+      "path": "ctf-orchestrator/competition-k8s-control-plane/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 404,
+      "sha256": "20783e1b97cae5043720322387c08316154ebed745069ac74503e7a2dc3e131f"
+    },
+    {
+      "path": "ctf-orchestrator/competition-k8s-control-plane/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3438,
+      "sha256": "18fa637d99266cd4776bd254d31b51c078d3fa5b4251cbf5baa9f6b4fdd7a262"
+    },
+    {
+      "path": "ctf-orchestrator/competition-k8s-control-plane/references/k8s-control-plane.md",
+      "source_kind": "upstream",
+      "byte_length": 1111,
+      "sha256": "71c64dacaf86790ee76afbf270c7d80759414b8b96d2eb8424a01475117f5e64"
+    },
+    {
+      "path": "ctf-orchestrator/competition-kerberos-delegation/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 363,
+      "sha256": "43300fd6466c0886d579cc29e6e1fcf5a03a1f27ac52aedf154cf7c91b2cb100"
+    },
+    {
+      "path": "ctf-orchestrator/competition-kerberos-delegation/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 2852,
+      "sha256": "245321129a7f642dd0aae880f66d5c4e30578bae14e60c90128f5741e01b306a"
+    },
+    {
+      "path": "ctf-orchestrator/competition-kerberos-delegation/references/kerberos-delegation.md",
+      "source_kind": "upstream",
+      "byte_length": 792,
+      "sha256": "03f88165e94569a8da3220b0ed16081c7ddfa5746b7f3d9930c2d8795338af85"
+    },
+    {
+      "path": "ctf-orchestrator/competition-kernel-container-escape/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 379,
+      "sha256": "2da8fd7a98da92e772cc19fd0bc419e640a4d1adc216207560f4f8e3c6f4e44f"
+    },
+    {
+      "path": "ctf-orchestrator/competition-kernel-container-escape/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3008,
+      "sha256": "c6e840b0365ea1aa895a14bab60a6c62cd5a8e157152097fb981582b6a722c9f"
+    },
+    {
+      "path": "ctf-orchestrator/competition-kernel-container-escape/references/kernel-container-escape.md",
+      "source_kind": "upstream",
+      "byte_length": 987,
+      "sha256": "ea5c9073be68ee362ca1915f47baf178e828f1653402c36f4b1b5d384de7b30a"
+    },
+    {
+      "path": "ctf-orchestrator/competition-linux-credential-pivot/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 373,
+      "sha256": "b03abb23d14dd7cb4b12112c755e2b8caa177c95e52e75d72d14084cb015da46"
+    },
+    {
+      "path": "ctf-orchestrator/competition-linux-credential-pivot/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 2851,
+      "sha256": "f00c32a3361cf34ce93a095cab5b416ddbcc7bf97d4a868c5bc57cd4db8eb125"
+    },
+    {
+      "path": "ctf-orchestrator/competition-linux-credential-pivot/references/linux-credential-pivot.md",
+      "source_kind": "upstream",
+      "byte_length": 928,
+      "sha256": "cedfda5f0074368a797bed81bef74ea577b1d7b628effc17ff70a3e2719e1225"
+    },
+    {
+      "path": "ctf-orchestrator/competition-lsass-ticket-material/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 415,
+      "sha256": "a4c65cb272e52c8cd85281dc9dee1d1ebc1f848d7ab916e138b78736cfbbb57e"
+    },
+    {
+      "path": "ctf-orchestrator/competition-lsass-ticket-material/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3502,
+      "sha256": "32ef1100a9c89d0914b0c31836d89250b9cc18dc39fccbb933cadf97aec334fb"
+    },
+    {
+      "path": "ctf-orchestrator/competition-lsass-ticket-material/references/lsass-ticket-material.md",
+      "source_kind": "upstream",
+      "byte_length": 1100,
+      "sha256": "0b0e953f5931fbd23f12de510a941f40f8f344ba752076f8d7871cc72b24a506"
+    },
+    {
+      "path": "ctf-orchestrator/competition-mailbox-abuse/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 386,
+      "sha256": "086a013faa3e39a0bfcf480b0628d4b76c419765f1defff6f7afd9119e07eb81"
+    },
+    {
+      "path": "ctf-orchestrator/competition-mailbox-abuse/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3346,
+      "sha256": "e83476c6a9882ddd0258e9d6bd217d8770a901b264f2f7b20195ace6a5f3df7a"
+    },
+    {
+      "path": "ctf-orchestrator/competition-mailbox-abuse/references/mailbox-abuse.md",
+      "source_kind": "upstream",
+      "byte_length": 1078,
+      "sha256": "30d018bd5bd3f7909aa1db1b47337efbfa7752360fa15de5e14bf428d02a2a4c"
+    },
+    {
+      "path": "ctf-orchestrator/competition-malware-config/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 376,
+      "sha256": "f207996104cb9eaaf5f929389066ee8988d17bcf5c2edbdd4a26e55af68ac94b"
+    },
+    {
+      "path": "ctf-orchestrator/competition-malware-config/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 2800,
+      "sha256": "e8ece81ac60bdf17b7fca392b39af7d17af34d74d00ef94af4b2d10504607853"
+    },
+    {
+      "path": "ctf-orchestrator/competition-malware-config/references/malware-config.md",
+      "source_kind": "upstream",
+      "byte_length": 1215,
+      "sha256": "b73441fcb3655d94727d47f8792e88ce106d8ece3f60b7eab620e2abedc7b5a9"
+    },
+    {
+      "path": "ctf-orchestrator/competition-oauth-oidc-chain/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 390,
+      "sha256": "f5cb1a34cc521789ee3120d80f09a42dab4f0abbf8cde8440814b7e20948d804"
+    },
+    {
+      "path": "ctf-orchestrator/competition-oauth-oidc-chain/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3283,
+      "sha256": "47d4f2a26bee83c212b84295d4719a273b6e9a06773fe0510269a19569617878"
+    },
+    {
+      "path": "ctf-orchestrator/competition-oauth-oidc-chain/references/oauth-oidc-chain.md",
+      "source_kind": "upstream",
+      "byte_length": 1070,
+      "sha256": "8e88d765b550272fd34b48a664107c32351684a5efbdb7b8d180c0acf82454de"
+    },
+    {
+      "path": "ctf-orchestrator/competition-pcap-protocol/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 404,
+      "sha256": "d49e1ed4809d99ccb2128aee4a4334682652f1610c742953e9c5d0b32d107085"
+    },
+    {
+      "path": "ctf-orchestrator/competition-pcap-protocol/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3479,
+      "sha256": "18285bb445a87a31548e482b74a6251b0136af68c68d65842cd4314fec5c893f"
+    },
+    {
+      "path": "ctf-orchestrator/competition-pcap-protocol/references/pcap-protocol.md",
+      "source_kind": "upstream",
+      "byte_length": 1126,
+      "sha256": "2d9508c75c3be8ca4e8c64102ef78a68ab8fb1d5f553fe9cd3af847f65778b70"
+    },
+    {
+      "path": "ctf-orchestrator/competition-prompt-injection/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 366,
+      "sha256": "b06769d6a3b87c7a9fb5f6b1899c5696237606512516a93b38bcdef67d1100a9"
+    },
+    {
+      "path": "ctf-orchestrator/competition-prompt-injection/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 2531,
+      "sha256": "7c0344fa94d35679dfe0dd3513f72b95994a7044fd39b0c407e89c836425c443"
+    },
+    {
+      "path": "ctf-orchestrator/competition-prompt-injection/references/prompt-injection.md",
+      "source_kind": "upstream",
+      "byte_length": 996,
+      "sha256": "eb69544636fafb10c519c7f157711b53ea083a1d39ca74a189884da3122ba6fc"
+    },
+    {
+      "path": "ctf-orchestrator/competition-queue-worker-drift/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 402,
+      "sha256": "976477cfcf50c3653b16f91a601d6f2dcc21a668e749afab6753de4df2d9438c"
+    },
+    {
+      "path": "ctf-orchestrator/competition-queue-worker-drift/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3046,
+      "sha256": "e39356ec96f379846ffc8f816f437a86bc69c3172b03607a76c9fdf788c013d5"
+    },
+    {
+      "path": "ctf-orchestrator/competition-queue-worker-drift/references/queue-worker-drift.md",
+      "source_kind": "upstream",
+      "byte_length": 1100,
+      "sha256": "c462d0852e8c86a6227b6336750c6aabf934c450e43a629eec06c369be3b630c"
+    },
+    {
+      "path": "ctf-orchestrator/competition-race-condition-state-drift/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 375,
+      "sha256": "39359988f9c00e3ad3bf9bb5fc73726ec6030e324f8c4e926e1aa61e352e2487"
+    },
+    {
+      "path": "ctf-orchestrator/competition-race-condition-state-drift/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 2747,
+      "sha256": "94338b6e63548f232041f59594e78e9d079a05710bda594fb1e07dd9b078167b"
+    },
+    {
+      "path": "ctf-orchestrator/competition-race-condition-state-drift/references/race-condition-state-drift.md",
+      "source_kind": "upstream",
+      "byte_length": 944,
+      "sha256": "7ed7c1d0d0bfb27f3e412da279d397a5ebbcd6c0fc23136c5814560c874e7e95"
+    },
+    {
+      "path": "ctf-orchestrator/competition-relay-coercion-chain/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 379,
+      "sha256": "726b75fc9e6f03c73489b0a43ff960f5f99a147eb8d875820d5020aeee4be9a8"
+    },
+    {
+      "path": "ctf-orchestrator/competition-relay-coercion-chain/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3102,
+      "sha256": "0902a70e320e4f4864b679f2a17836085218cc12d3cf5ca0dfb1cf1fb72c7ae3"
+    },
+    {
+      "path": "ctf-orchestrator/competition-relay-coercion-chain/references/relay-coercion-chain.md",
+      "source_kind": "upstream",
+      "byte_length": 946,
+      "sha256": "7d89cb8b12b3960c2f2b3b41a7f0182704d75ff63456e859c8a6f515075c81f2"
+    },
+    {
+      "path": "ctf-orchestrator/competition-request-normalization-smuggling/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 400,
+      "sha256": "7780b9f59233e91b7e2ae80483de178dc51914b47a3820515ffeef1e3439d219"
+    },
+    {
+      "path": "ctf-orchestrator/competition-request-normalization-smuggling/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 2879,
+      "sha256": "9b9dd18133e28ebc1ae7399fa20361a976f1d6e51bd808e3eda62e6f2a14dc63"
+    },
+    {
+      "path": "ctf-orchestrator/competition-request-normalization-smuggling/references/request-normalization-smuggling.md",
+      "source_kind": "upstream",
+      "byte_length": 958,
+      "sha256": "8e4b3695b62b557eb1f291cbffa162963a93487dab1524f7ba9938af9aff3eaa"
+    },
+    {
+      "path": "ctf-orchestrator/competition-reverse-pwn/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 370,
+      "sha256": "bbd61de5eb7b49b4717fc0a30580967725f2b739e5c913ac415a44ee714ac64f"
+    },
+    {
+      "path": "ctf-orchestrator/competition-reverse-pwn/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3867,
+      "sha256": "c8f622721f626346dec67fd1f25c41527f0a51f226c7ad71ed9d3ac1184fc5a8"
+    },
+    {
+      "path": "ctf-orchestrator/competition-reverse-pwn/references/reverse-pwn.md",
+      "source_kind": "upstream",
+      "byte_length": 1010,
+      "sha256": "685f29cbb658b59b00a1d88da34603e9bb08f2ae71ee8fd4e91adf681287a063"
+    },
+    {
+      "path": "ctf-orchestrator/competition-runtime-routing/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 376,
+      "sha256": "21619695f8f85ba918479de71c6b78d4b0950429a73620e18371df1ab530f606"
+    },
+    {
+      "path": "ctf-orchestrator/competition-runtime-routing/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3369,
+      "sha256": "2d49d8e943f328fea03d4b72215b64422480f8b22d9d0376bfb424f307e196bc"
+    },
+    {
+      "path": "ctf-orchestrator/competition-runtime-routing/references/runtime-routing.md",
+      "source_kind": "upstream",
+      "byte_length": 984,
+      "sha256": "66998afcefb124d90ec87f41391ed91414b1a84500bac27a092dba8e758e260e"
+    },
+    {
+      "path": "ctf-orchestrator/competition-ssrf-metadata-pivot/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 372,
+      "sha256": "2e7c364a9e0c68c9e30db95d8b227f553eb18df4b1893e4b17e360a57b90f883"
+    },
+    {
+      "path": "ctf-orchestrator/competition-ssrf-metadata-pivot/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3020,
+      "sha256": "e54eea6f95f4e4fa7a4dd3e4e93889864cd067b48a48b4ed5f28ab9614894677"
+    },
+    {
+      "path": "ctf-orchestrator/competition-ssrf-metadata-pivot/references/ssrf-metadata-pivot.md",
+      "source_kind": "upstream",
+      "byte_length": 1026,
+      "sha256": "8f0a79320f038ee6f9d36b232d3817adfff81abbf66a7c78a6674d4739581a3a"
+    },
+    {
+      "path": "ctf-orchestrator/competition-stego-media/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 385,
+      "sha256": "6c7cde8d5ef2043d5d400e2882995fd35847656330598eab57645e4ae0255e9b"
+    },
+    {
+      "path": "ctf-orchestrator/competition-stego-media/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 2998,
+      "sha256": "34c6ec0ebc773d9404dfe06c7ad018c68f807babd004bc4ecb9cb3e0e21ba192"
+    },
+    {
+      "path": "ctf-orchestrator/competition-stego-media/references/stego-media.md",
+      "source_kind": "upstream",
+      "byte_length": 1080,
+      "sha256": "08d6885eba31ae679949bb19964ac59718eedb181c4aafc81b328b06425e3185"
+    },
+    {
+      "path": "ctf-orchestrator/competition-supply-chain/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 385,
+      "sha256": "b388b4b7833e3f32aeeb407a44dfa2543c3d123654ca86f1cea6bce5960fcf73"
+    },
+    {
+      "path": "ctf-orchestrator/competition-supply-chain/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 2648,
+      "sha256": "9db0fa1c57f973c8c9d86a5ce2f509be5edb578d11114ffd667bde9df8bea339"
+    },
+    {
+      "path": "ctf-orchestrator/competition-supply-chain/references/supply-chain.md",
+      "source_kind": "upstream",
+      "byte_length": 754,
+      "sha256": "cb541142f9ca72a197a79b68d762982c86ef0c0f8c7d0a1b53112d2ee3a23443"
+    },
+    {
+      "path": "ctf-orchestrator/competition-template-render-path/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 415,
+      "sha256": "e360a9bcf82c273442a1cd2f5d765d9b6d37e9a4a74232e08cb2ccba90c984ed"
+    },
+    {
+      "path": "ctf-orchestrator/competition-template-render-path/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3405,
+      "sha256": "0bf311c5e7e599dcb7542459dd21447e122362226dda278cc458be308be6a14b"
+    },
+    {
+      "path": "ctf-orchestrator/competition-template-render-path/references/template-render-path.md",
+      "source_kind": "upstream",
+      "byte_length": 1099,
+      "sha256": "d95701386cbd8ef13bc56c52f19d68847d4f85e1d098f9e43b95d9d2e4566a0a"
+    },
+    {
+      "path": "ctf-orchestrator/competition-web-runtime/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 369,
+      "sha256": "97eebb89b20b2ac34a7572760243f1ebd31e64c089ae661304a22e9d2369a531"
+    },
+    {
+      "path": "ctf-orchestrator/competition-web-runtime/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 5114,
+      "sha256": "a448411bf12ea91802457a3dd000e8ea98e9a78d28f116160b1929b3612cde87"
+    },
+    {
+      "path": "ctf-orchestrator/competition-web-runtime/references/cookie-hmac-key-reuse-auth-bypass.md",
+      "source_kind": "upstream",
+      "byte_length": 4323,
+      "sha256": "3892e1326fcade84799f68fdd2896b97f79faf77389cc6eb4633026b0c8ed657"
+    },
+    {
+      "path": "ctf-orchestrator/competition-web-runtime/references/routing-runtime.md",
+      "source_kind": "upstream",
+      "byte_length": 1132,
+      "sha256": "7cc714c7fb0ccf8d2f495943c98725d15f35d8f274a2556cab5fdb34bf42b375"
+    },
+    {
+      "path": "ctf-orchestrator/competition-websocket-runtime/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 389,
+      "sha256": "a83e4923843d907a0be06b14af0536e27b3e27bb7c1d622e3bda2b9239b952de"
+    },
+    {
+      "path": "ctf-orchestrator/competition-websocket-runtime/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3063,
+      "sha256": "8237cae908ea7f950215620bc82700124cc3a2ace0d8c3bc1a40f39963ffd193"
+    },
+    {
+      "path": "ctf-orchestrator/competition-websocket-runtime/references/websocket-runtime.md",
+      "source_kind": "upstream",
+      "byte_length": 989,
+      "sha256": "b36c5aeee41f7ed980b8acd32af880a38e638208bb499d91908741644b4c3ded"
+    },
+    {
+      "path": "ctf-orchestrator/competition-windows-pivot/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 386,
+      "sha256": "eec4a90f92ba12d7c21f273b6a4247ee7b9f6675cf7004ab3e7b5c9d14228a37"
+    },
+    {
+      "path": "ctf-orchestrator/competition-windows-pivot/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3408,
+      "sha256": "70d5f5d5901813a3d16959748c4ffe4f6d8acc8e4c0d49d4d17fd8c3a1d3644d"
+    },
+    {
+      "path": "ctf-orchestrator/competition-windows-pivot/references/windows-pivot.md",
+      "source_kind": "upstream",
+      "byte_length": 791,
+      "sha256": "a7988e8958234dc901186ef9511173974618edc371ccbe7ccd3b6cf55ad0a39c"
+    },
+    {
+      "path": "ctf-orchestrator/ctf-sandbox-orchestrator/agents/openai.yaml",
+      "source_kind": "upstream",
+      "byte_length": 350,
+      "sha256": "d73c58bfd20f872291e891202e285fec672f39502cbe3f54e13ce7c28fe99a06"
+    },
+    {
+      "path": "ctf-orchestrator/ctf-sandbox-orchestrator/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 7394,
+      "sha256": "21efe5bbfeaa93548f68ff43f990efe9f726688d2e882e38f3cb4241df35693e"
+    },
+    {
+      "path": "ctf-orchestrator/ctf-sandbox-orchestrator/references/agent-cloud.md",
+      "source_kind": "upstream",
+      "byte_length": 1669,
+      "sha256": "ebb881be0a38b3e08199b636c4426bb2bea0b16712420a26d5f7915627a113c4"
+    },
+    {
+      "path": "ctf-orchestrator/ctf-sandbox-orchestrator/references/crypto-mobile.md",
+      "source_kind": "upstream",
+      "byte_length": 1666,
+      "sha256": "a7e25d36c0cf65ed1f2961572699f132124e7a4e0510ee96d4308565518d8dd9"
+    },
+    {
+      "path": "ctf-orchestrator/ctf-sandbox-orchestrator/references/ctf-resources-digest.md",
+      "source_kind": "upstream",
+      "byte_length": 4812,
+      "sha256": "a3a3eb3437c5898ec4aef23f1ecbcb14d8bc81f69a4b9936ee8241507462dfda"
+    },
+    {
+      "path": "ctf-orchestrator/ctf-sandbox-orchestrator/references/identity-windows.md",
+      "source_kind": "upstream",
+      "byte_length": 1868,
+      "sha256": "049e9d8d4751c4321023258a45b661210cbe3e37cf3c68b134a18392d0e4c076"
+    },
+    {
+      "path": "ctf-orchestrator/ctf-sandbox-orchestrator/references/reporting.md",
+      "source_kind": "upstream",
+      "byte_length": 1608,
+      "sha256": "753581067b0de2d4909417dec6361501866162b09a654ad3d5c1bccb3d433807"
+    },
+    {
+      "path": "ctf-orchestrator/ctf-sandbox-orchestrator/references/reverse-native.md",
+      "source_kind": "upstream",
+      "byte_length": 1753,
+      "sha256": "bd825c6fa1b3c22d47d43a3dacf5bea4aec6845714ba80d5758a920e93a92088"
+    },
+    {
+      "path": "ctf-orchestrator/ctf-sandbox-orchestrator/references/router-matrix.md",
+      "source_kind": "upstream",
+      "byte_length": 5657,
+      "sha256": "752685cc62e5da870ed46a9dcc3b4529436aad6541e0742172e14cf8857100bb"
+    },
+    {
+      "path": "ctf-orchestrator/ctf-sandbox-orchestrator/references/web-api.md",
+      "source_kind": "upstream",
+      "byte_length": 1649,
+      "sha256": "ec6a87f178660da60e09d7623adc9df3f7f734b91d925137ffd8bacf30329644"
+    },
+    {
+      "path": "ctf-orchestrator/LICENSE",
+      "source_kind": "upstream",
+      "byte_length": 35149,
+      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    },
+    {
+      "path": "ctf-orchestrator/README.md",
+      "source_kind": "upstream",
+      "byte_length": 3195,
+      "sha256": "3d265ba90d507206cb0ded913b5ff4ed5d69000aa17c124a22340aedd42fed20"
+    },
+    {
+      "path": "evals/evals.json",
+      "source_kind": "upstream",
+      "byte_length": 11137,
+      "sha256": "b8e8609aea6e4c052c82cc8b4c68287d63b8d05aacbcd3fc8ef9d5eacfcd0232"
+    },
+    {
+      "path": "evals/files/decoy-flags.txt",
+      "source_kind": "upstream",
+      "byte_length": 295,
+      "sha256": "7027272d525cc8bae55f87e3082f2e3683a5aadddacd7a72a700f209a49be69c"
+    },
+    {
+      "path": "evals/files/redaction-sample.har",
+      "source_kind": "upstream",
+      "byte_length": 1011,
+      "sha256": "3dd1949e7797bc1f000377027eefd6fe3400d8b48560557ac482964c83d61cf6"
+    },
+    {
+      "path": "evals/files/runtime-conflict/capture-summary.json",
+      "source_kind": "upstream",
+      "byte_length": 321,
+      "sha256": "2a1aee387297d640f3bb26eb4abc496c4b5d2d87c9608e509e41acc2b0482de1"
+    },
+    {
+      "path": "evals/files/runtime-conflict/source-note.md",
+      "source_kind": "upstream",
+      "byte_length": 195,
+      "sha256": "3729550b5e975e194ebcad4062bc4460c2e4972c157347d24af27370ec79e4f8"
+    },
+    {
+      "path": "evals/files/safe_handler.py",
+      "source_kind": "upstream",
+      "byte_length": 130,
+      "sha256": "3b6a4ef569ff0a14510faed8b070516dcab1988902eaeb54728b6a58a6712871"
+    },
+    {
+      "path": "evals/files/untrusted-agent-document.txt",
+      "source_kind": "upstream",
+      "byte_length": 398,
+      "sha256": "ba0c5dc42e17dcc2088a3321c912daee01438946c96ba8f9ac098a1b3794b175"
+    },
+    {
+      "path": "evals/trigger-evals.json",
+      "source_kind": "upstream",
+      "byte_length": 5619,
+      "sha256": "1ebc26eadb3afed477de9e3f14124b8dfe6a558834617ff69de85ed88fb46d37"
+    },
+    {
+      "path": "LICENSE",
+      "source_kind": "upstream",
+      "byte_length": 1056,
+      "sha256": "1126322e2cc8d165adc4c792eeb195717de2bcc7b39be1ce77959d78e87ef685"
+    },
+    {
+      "path": "NOTICE.md",
+      "source_kind": "upstream",
+      "byte_length": 2307,
+      "sha256": "e244fe46060540e2ad16dd91224e16fbeaa0330a1163638d94313aa02ac3584a"
+    },
+    {
+      "path": "README_AI.md",
+      "source_kind": "upstream",
+      "byte_length": 806,
+      "sha256": "c44004f211b294c64d1f37f1f2b8fe3c60f29ef66dff9fdae1236ab9d180b039"
+    },
+    {
+      "path": "references/ai-security.md",
+      "source_kind": "upstream",
+      "byte_length": 20963,
+      "sha256": "f7995b2e0f89f909eba9c0189a9c4e1e1c8c0c2e8ef7b04362b440992d3327da"
+    },
+    {
+      "path": "references/ctf/ai-ml/adversarial-ml.md",
+      "source_kind": "upstream",
+      "byte_length": 25943,
+      "sha256": "f40e626221fcfc5461968f7e1c25180bf830b0ea8c71c5834eb0a10f8554aa2c"
+    },
+    {
+      "path": "references/ctf/ai-ml/index.md",
+      "source_kind": "upstream",
+      "byte_length": 6878,
+      "sha256": "47101a556ff95b637cb07bf811f219684471adf9ef93166373960a04b27a2bf8"
+    },
+    {
+      "path": "references/ctf/ai-ml/llm-attacks.md",
+      "source_kind": "upstream",
+      "byte_length": 20471,
+      "sha256": "8338d986970f4d5d928f957cf52cba309a1a39cab971314c0d8c76bd31cca3f6"
+    },
+    {
+      "path": "references/ctf/ai-ml/model-attacks.md",
+      "source_kind": "upstream",
+      "byte_length": 17983,
+      "sha256": "f7393fd2397d515ff5a41f0f2c604d4572cffcc3392bb706f749b6e811eadebf"
+    },
+    {
+      "path": "references/ctf/crypto/advanced-math.md",
+      "source_kind": "upstream",
+      "byte_length": 28754,
+      "sha256": "2bfe59c99c102eb424ad2e1dc3e4718b900d0abbc2595b294eb7d246fa89cc05"
+    },
+    {
+      "path": "references/ctf/crypto/classic-ciphers.md",
+      "source_kind": "upstream",
+      "byte_length": 29119,
+      "sha256": "9942b88579c0e78e4c3d94d761e477cb97aac9bb76b61dd9e3cf770fa0b9bc95"
+    },
+    {
+      "path": "references/ctf/crypto/ecc-attacks.md",
+      "source_kind": "upstream",
+      "byte_length": 14571,
+      "sha256": "616da05046e5b348211e6cdc9553fa5a0c509a2ed4f34e22dd7505b5c0e1878c"
+    },
+    {
+      "path": "references/ctf/crypto/exotic-crypto-2.md",
+      "source_kind": "upstream",
+      "byte_length": 18553,
+      "sha256": "2a28b2a7725c36ce8fbf5e4e42137d95ff7a13e886110101f785804719a012e0"
+    },
+    {
+      "path": "references/ctf/crypto/exotic-crypto.md",
+      "source_kind": "upstream",
+      "byte_length": 24610,
+      "sha256": "09da72b07a6aaf3ee72854263df4fcff89b06e10a4216d7d00b34655506c251f"
+    },
+    {
+      "path": "references/ctf/crypto/historical.md",
+      "source_kind": "upstream",
+      "byte_length": 4613,
+      "sha256": "feb06b3ac5a981082b9a20223f02db21d93a100df39b7b5dba4b578677cbef52"
+    },
+    {
+      "path": "references/ctf/crypto/index.md",
+      "source_kind": "upstream",
+      "byte_length": 38748,
+      "sha256": "60126e1a61ae2e5d54a86b0401b1f21dd0401fad50815424a873039f9a33bfcd"
+    },
+    {
+      "path": "references/ctf/crypto/lattice-and-lwe.md",
+      "source_kind": "upstream",
+      "byte_length": 16292,
+      "sha256": "3dd0feadef36f111a8713914a6713263b440928595157ad0bc336d6c88e7d7a1"
+    },
+    {
+      "path": "references/ctf/crypto/modern-ciphers-2.md",
+      "source_kind": "upstream",
+      "byte_length": 29460,
+      "sha256": "2b6a7cceaf45a9b32b68a49e4fd9169174c5a60eb97723285744e7512d243004"
+    },
+    {
+      "path": "references/ctf/crypto/modern-ciphers-3.md",
+      "source_kind": "upstream",
+      "byte_length": 14651,
+      "sha256": "912fef597388b426f74c78dfe1335c5e1ffdbaacd5a59f6cb383b05af374c06c"
+    },
+    {
+      "path": "references/ctf/crypto/modern-ciphers.md",
+      "source_kind": "upstream",
+      "byte_length": 32711,
+      "sha256": "393db921d566a693a901530018eed2770696d6c965241b72392436c9c48bcfb3"
+    },
+    {
+      "path": "references/ctf/crypto/prng-attacks.md",
+      "source_kind": "upstream",
+      "byte_length": 12462,
+      "sha256": "0ff096a8f662cd9e4108c583b26cc5396a97f30220a7b6b67fb3f1f91ded214d"
+    },
+    {
+      "path": "references/ctf/crypto/prng.md",
+      "source_kind": "upstream",
+      "byte_length": 25400,
+      "sha256": "f28a60327da64dc7a2972af743fce5a45508fbf1a258b24d3da7c1d9aabb160c"
+    },
+    {
+      "path": "references/ctf/crypto/rsa-attacks-2.md",
+      "source_kind": "upstream",
+      "byte_length": 36670,
+      "sha256": "edeb806bdd6537b9c0f4cbda544716016e6cb0900887084131590d6233b10507"
+    },
+    {
+      "path": "references/ctf/crypto/rsa-attacks.md",
+      "source_kind": "upstream",
+      "byte_length": 18920,
+      "sha256": "05df863ec256b2841a1852fd277d14519832d6d5d3edb0124f797e732efe7ffd"
+    },
+    {
+      "path": "references/ctf/crypto/stream-ciphers.md",
+      "source_kind": "upstream",
+      "byte_length": 18180,
+      "sha256": "63638591c8e9113324b1e6fbe689e98a15c5e7de309cef170739659b513a44f6"
+    },
+    {
+      "path": "references/ctf/crypto/zkp-and-advanced.md",
+      "source_kind": "upstream",
+      "byte_length": 20338,
+      "sha256": "a75350ff2548b769761f9c71bf159a287257ca327ca2b77ce1a8e7aecc4dcfd6"
+    },
+    {
+      "path": "references/ctf/forensics/3d-printing.md",
+      "source_kind": "upstream",
+      "byte_length": 4210,
+      "sha256": "692cbb9502427693aab97be70a06cb84b7db7c777e9f37d9554dd9ffa595d3f8"
+    },
+    {
+      "path": "references/ctf/forensics/disk-advanced.md",
+      "source_kind": "upstream",
+      "byte_length": 21034,
+      "sha256": "3ac76f151c22a99ed59acf82681d49c1a3b024e612e05701e26c58edce1f2018"
+    },
+    {
+      "path": "references/ctf/forensics/disk-and-memory.md",
+      "source_kind": "upstream",
+      "byte_length": 20086,
+      "sha256": "1c239b45e22c191754bcd3dd79ba2c0a9699f3bf6a72be1526d7c40744694ecb"
+    },
+    {
+      "path": "references/ctf/forensics/disk-recovery.md",
+      "source_kind": "upstream",
+      "byte_length": 31594,
+      "sha256": "5ec827477b486c3ebe07e07cd49b01c7806330486f6f025696527691e4763c6c"
+    },
+    {
+      "path": "references/ctf/forensics/index.md",
+      "source_kind": "upstream",
+      "byte_length": 36432,
+      "sha256": "fdc6536bc24b506c4612c9a8f0c423293074d7c8ea02765cd312d1e132415035"
+    },
+    {
+      "path": "references/ctf/forensics/linux-forensics.md",
+      "source_kind": "upstream",
+      "byte_length": 18983,
+      "sha256": "ecd6108d6fe44dd83530f3d7fed7ccf7d2e5703ae48c4f06fc4e65e43e081798"
+    },
+    {
+      "path": "references/ctf/forensics/network-advanced.md",
+      "source_kind": "upstream",
+      "byte_length": 26373,
+      "sha256": "643807da97c3e4bf68cf5e8719c3adddde8426ef8c86342a23f033bbf2032bbe"
+    },
+    {
+      "path": "references/ctf/forensics/network.md",
+      "source_kind": "upstream",
+      "byte_length": 22311,
+      "sha256": "3a3f98f07821a70e7ab516ca2b76f2f35f2ac37043ec31a2e0eda64b22481a9f"
+    },
+    {
+      "path": "references/ctf/forensics/peripheral-capture.md",
+      "source_kind": "upstream",
+      "byte_length": 12369,
+      "sha256": "377fcfa7f219586494616670d18f681354afc0fa21410b6dbe1378bd0fce1c6f"
+    },
+    {
+      "path": "references/ctf/forensics/signals-and-hardware.md",
+      "source_kind": "upstream",
+      "byte_length": 29146,
+      "sha256": "3bb2bcf6346a5bd2ad0d2bce67d22668f8d402f966a25be2016edcb915becd64"
+    },
+    {
+      "path": "references/ctf/forensics/steganography.md",
+      "source_kind": "upstream",
+      "byte_length": 30660,
+      "sha256": "2774d7a8e9333b8e52c02eb5d47e027d54a6db54107543f011c55cea20354114"
+    },
+    {
+      "path": "references/ctf/forensics/stego-advanced-2.md",
+      "source_kind": "upstream",
+      "byte_length": 20921,
+      "sha256": "14d28c569fe3325b978d4007bc5eeb678d0b8750f98e10f8f0584dae051f64de"
+    },
+    {
+      "path": "references/ctf/forensics/stego-advanced.md",
+      "source_kind": "upstream",
+      "byte_length": 19975,
+      "sha256": "4ca43f439d9acb71f607535e1e91fd411384adf5153f87d76cf440e4a545f794"
+    },
+    {
+      "path": "references/ctf/forensics/stego-image.md",
+      "source_kind": "upstream",
+      "byte_length": 30398,
+      "sha256": "8b12770c2be57443e854345d55e47663fee8de70f5ded751759414a107c30f49"
+    },
+    {
+      "path": "references/ctf/forensics/windows.md",
+      "source_kind": "upstream",
+      "byte_length": 22479,
+      "sha256": "c23e7de4e511aa106059e6e00019ff4f264e1893a78839613ab477fc3cee2ace"
+    },
+    {
+      "path": "references/ctf/malware/c2-and-protocols.md",
+      "source_kind": "upstream",
+      "byte_length": 10734,
+      "sha256": "73a5d74a76fbca0bfa8807cfbe18d859ddbad0d3bbdf1203439f06c44869e846"
+    },
+    {
+      "path": "references/ctf/malware/index.md",
+      "source_kind": "upstream",
+      "byte_length": 8001,
+      "sha256": "bca718d98d45c56fb48dc925311c813bc3f4c94d5d0737b80f40ae2f6b55a625"
+    },
+    {
+      "path": "references/ctf/malware/pe-and-dotnet.md",
+      "source_kind": "upstream",
+      "byte_length": 3041,
+      "sha256": "6f6f17a5ec07c57c82e0919998261c15229051401594602b39c6ae47a349e6b4"
+    },
+    {
+      "path": "references/ctf/malware/scripts-and-obfuscation.md",
+      "source_kind": "upstream",
+      "byte_length": 15770,
+      "sha256": "b322c9dbdde173b70eee07c8f482b2940ffc8ff4131948daac20a75629577dd5"
+    },
+    {
+      "path": "references/ctf/misc/bashjails.md",
+      "source_kind": "upstream",
+      "byte_length": 13965,
+      "sha256": "efd81ae50cbbb82356ec6b09a2920bb5b04e1c7f85dcb0c6787ba7166fdeded8"
+    },
+    {
+      "path": "references/ctf/misc/ctfd-navigation.md",
+      "source_kind": "upstream",
+      "byte_length": 14795,
+      "sha256": "04b31fe69a64bd4543b3441160ded9921f6ac55c51931ece38b3f54f6d4eacbf"
+    },
+    {
+      "path": "references/ctf/misc/dns.md",
+      "source_kind": "upstream",
+      "byte_length": 9698,
+      "sha256": "04be1c7d9ce7560fb861d3a17b227997c6919614e65101994ef5615d756ba8c4"
+    },
+    {
+      "path": "references/ctf/misc/encodings-advanced.md",
+      "source_kind": "upstream",
+      "byte_length": 19845,
+      "sha256": "5c2b2e3ddb6421b0246d3aea8a03aba1a5900ec3208863969cc94b0b285b5beb"
+    },
+    {
+      "path": "references/ctf/misc/encodings.md",
+      "source_kind": "upstream",
+      "byte_length": 15646,
+      "sha256": "2d3a79409a4ca99de17710facb5a240431e616aa4ca052513a5ea5efba27b7e7"
+    },
+    {
+      "path": "references/ctf/misc/games-and-vms-2.md",
+      "source_kind": "upstream",
+      "byte_length": 10488,
+      "sha256": "9475ab08dd561a8d3db502ba0d5ebf650d612a1dd287706e72d45675baf73477"
+    },
+    {
+      "path": "references/ctf/misc/games-and-vms-3.md",
+      "source_kind": "upstream",
+      "byte_length": 32416,
+      "sha256": "399b8ea917f7bb0616f768689b11d8cea03de201e956ed2a6479cb72b0d67d7b"
+    },
+    {
+      "path": "references/ctf/misc/games-and-vms-4.md",
+      "source_kind": "upstream",
+      "byte_length": 11466,
+      "sha256": "290523ba755d0440bed56095c361b279ccdc221ee8844c18f154962cc07581b0"
+    },
+    {
+      "path": "references/ctf/misc/games-and-vms.md",
+      "source_kind": "upstream",
+      "byte_length": 21085,
+      "sha256": "874dffbe3584051b7244a4f2827631dc1a6e9ab40feac65401d6b0172b8745aa"
+    },
+    {
+      "path": "references/ctf/misc/index.md",
+      "source_kind": "upstream",
+      "byte_length": 25924,
+      "sha256": "81be18a7798ee636d2ceacabeab1432d0ebeb6246863102cc81f14e3dcd0a927"
+    },
+    {
+      "path": "references/ctf/misc/linux-privesc.md",
+      "source_kind": "upstream",
+      "byte_length": 18452,
+      "sha256": "d7550c94cd9330cd052f947dea15c65bb29dfe3dbd01fcfb52b44e1a3035b83e"
+    },
+    {
+      "path": "references/ctf/misc/pyjails.md",
+      "source_kind": "upstream",
+      "byte_length": 24827,
+      "sha256": "77e7cbb9d415584075ff5aa4a37381921c9c0fb82fc592f168ebe9921f7917ed"
+    },
+    {
+      "path": "references/ctf/misc/rf-sdr.md",
+      "source_kind": "upstream",
+      "byte_length": 3994,
+      "sha256": "ea61aa6d6eeba16923b6482df80c43ace8352179854ce4292b9246853af5bc04"
+    },
+    {
+      "path": "references/ctf/osint/geolocation-and-media.md",
+      "source_kind": "upstream",
+      "byte_length": 22796,
+      "sha256": "506ac15a6f395f50b5919db213cc8208ddc63513a8b225c9adadb937393e499a"
+    },
+    {
+      "path": "references/ctf/osint/index.md",
+      "source_kind": "upstream",
+      "byte_length": 9090,
+      "sha256": "8019ea42d983fb324205ceac8a8aa4bad5d9c74b5db8d28da72b87fbe2965c65"
+    },
+    {
+      "path": "references/ctf/osint/social-media.md",
+      "source_kind": "upstream",
+      "byte_length": 13905,
+      "sha256": "ed1b1936c2e1a12ab66a1e07b2c3fb3c869b1fe5924cc7b30cf95b0f682a14e0"
+    },
+    {
+      "path": "references/ctf/osint/web-and-dns.md",
+      "source_kind": "upstream",
+      "byte_length": 14443,
+      "sha256": "9c33b7a0988d184d070ee6add4416a0ef87cee4e27489b4fb6be2bd5f09191cf"
+    },
+    {
+      "path": "references/ctf/pwn/advanced-exploits-2.md",
+      "source_kind": "upstream",
+      "byte_length": 30287,
+      "sha256": "dcc7b0e171fd1ee60a49fc8563e6d0096bbe93cda4199ec5ff29e3fd7e433678"
+    },
+    {
+      "path": "references/ctf/pwn/advanced-exploits-3.md",
+      "source_kind": "upstream",
+      "byte_length": 33229,
+      "sha256": "0a378aa4bcdd24e895c0994996d8e2fc37d7de6774306906e25d9f865b5a49aa"
+    },
+    {
+      "path": "references/ctf/pwn/advanced-exploits-4.md",
+      "source_kind": "upstream",
+      "byte_length": 31214,
+      "sha256": "3b0c77247da9e7aeb1566f9dc5ef892cb180934ab4e60d7e5a4255e92d09f6b5"
+    },
+    {
+      "path": "references/ctf/pwn/advanced-exploits-5.md",
+      "source_kind": "upstream",
+      "byte_length": 6291,
+      "sha256": "fe5b9e44cb22a99963b43a575527ba05e643ff64a6e0e424358d24ca6a376f98"
+    },
+    {
+      "path": "references/ctf/pwn/advanced-exploits.md",
+      "source_kind": "upstream",
+      "byte_length": 35834,
+      "sha256": "4e2733869d6651932fe96248b2d1240be79f919458c5e9b0b24c3600ed4c19be"
+    },
+    {
+      "path": "references/ctf/pwn/advanced.md",
+      "source_kind": "upstream",
+      "byte_length": 14624,
+      "sha256": "5e9bf0274def31a7288d0d2aaa0e1ffa66fb0d03dc53a124a96b60dcbb030328"
+    },
+    {
+      "path": "references/ctf/pwn/field-notes.md",
+      "source_kind": "upstream",
+      "byte_length": 26333,
+      "sha256": "af59441e6d2652a46ddcfff6624b4317478e18bfe484e09bbc0b7b81415e9c2c"
+    },
+    {
+      "path": "references/ctf/pwn/format-string.md",
+      "source_kind": "upstream",
+      "byte_length": 33125,
+      "sha256": "d01c7fe4096a3a8f40471cb6a83a054f9bc774ce2e547129de2d801a103b5340"
+    },
+    {
+      "path": "references/ctf/pwn/heap-fsop.md",
+      "source_kind": "upstream",
+      "byte_length": 15194,
+      "sha256": "a8ee87cb638a4fdab8c73c870ab70e6c141b5a8c047302c0503a8e844e565e96"
+    },
+    {
+      "path": "references/ctf/pwn/heap-techniques-2.md",
+      "source_kind": "upstream",
+      "byte_length": 20242,
+      "sha256": "85a2c63701ae27c5e2c46d70d1476d2391edc0e7fa62a5aa1be294531a866b1f"
+    },
+    {
+      "path": "references/ctf/pwn/heap-techniques.md",
+      "source_kind": "upstream",
+      "byte_length": 24908,
+      "sha256": "09f9c5953fb01cf88fa0dba127dd927c0caab2ed2d6f6a1e9bb4bf6ed68f968b"
+    },
+    {
+      "path": "references/ctf/pwn/index.md",
+      "source_kind": "upstream",
+      "byte_length": 18633,
+      "sha256": "3b4e4d615108673e9ecb4ac2b8c072bfd7526e70d7cfcc476173ac9df0b856dd"
+    },
+    {
+      "path": "references/ctf/pwn/kernel-bypass.md",
+      "source_kind": "upstream",
+      "byte_length": 15313,
+      "sha256": "693e1c7a9f246dbc98f464cb34ff3cfa019822e5e9289c9c8dec730e4035e451"
+    },
+    {
+      "path": "references/ctf/pwn/kernel-techniques.md",
+      "source_kind": "upstream",
+      "byte_length": 19054,
+      "sha256": "bed9e9a2ffe3d04dc32062ce7ea556e6f21c2434bb594d2f3f2f4c920d78d0f0"
+    },
+    {
+      "path": "references/ctf/pwn/kernel.md",
+      "source_kind": "upstream",
+      "byte_length": 28699,
+      "sha256": "ed2570aa9a0181d39c5d5e9711aa07ecbc1b4826ac38bb88f956195175353ca2"
+    },
+    {
+      "path": "references/ctf/pwn/overflow-basics.md",
+      "source_kind": "upstream",
+      "byte_length": 26821,
+      "sha256": "43ca77cb31ba787b428d821e923d48d151bc160e3aeddbc76c090978265920f7"
+    },
+    {
+      "path": "references/ctf/pwn/rop-advanced.md",
+      "source_kind": "upstream",
+      "byte_length": 32959,
+      "sha256": "ecda7954b4ba9eaed98850e10b2ff3ab4eb0da42cc06768b790a7bc2a7592e4a"
+    },
+    {
+      "path": "references/ctf/pwn/rop-and-shellcode.md",
+      "source_kind": "upstream",
+      "byte_length": 28791,
+      "sha256": "61a2454a91764d97b64d58f27c7b8212b8ac008c8a7e01df1b5cabc6b106c869"
+    },
+    {
+      "path": "references/ctf/pwn/sandbox-escape.md",
+      "source_kind": "upstream",
+      "byte_length": 15428,
+      "sha256": "ac0f98f63ef9c9f736f219a59f28a54ace9d605c73bde43f6750cda0c7f6dcfd"
+    },
+    {
+      "path": "references/ctf/reverse/anti-analysis-ctf.md",
+      "source_kind": "upstream",
+      "byte_length": 10958,
+      "sha256": "765391aea65cc073bf805622c5b6e77b18f130501865f73e4592224087bdc22c"
+    },
+    {
+      "path": "references/ctf/reverse/anti-analysis.md",
+      "source_kind": "upstream",
+      "byte_length": 23818,
+      "sha256": "5df2569a02d060bd3066d5ececbaac7953317c264657b873f38722e40cf01f7b"
+    },
+    {
+      "path": "references/ctf/reverse/field-notes.md",
+      "source_kind": "upstream",
+      "byte_length": 32687,
+      "sha256": "ae8a4da20206d5e7b1b8c10f3c53386f00d6557eb07c907ce7c0421aef738178"
+    },
+    {
+      "path": "references/ctf/reverse/index.md",
+      "source_kind": "upstream",
+      "byte_length": 12509,
+      "sha256": "83e8fbe500d832902040216ada2424a7e960ec229ad472083b964650ef8dab80"
+    },
+    {
+      "path": "references/ctf/reverse/languages-compiled.md",
+      "source_kind": "upstream",
+      "byte_length": 27264,
+      "sha256": "9916d12612f4acd34a4b0c84b3334f68759de7398a9e159045ff5fab601eaf1c"
+    },
+    {
+      "path": "references/ctf/reverse/languages-platforms.md",
+      "source_kind": "upstream",
+      "byte_length": 28990,
+      "sha256": "98ee43b6c250c4c189bcabbc4408a0c63cdd9b3541308019db1078e7ea436b93"
+    },
+    {
+      "path": "references/ctf/reverse/languages.md",
+      "source_kind": "upstream",
+      "byte_length": 23468,
+      "sha256": "f065b7bbab7f269c0b1c4238cdf6424134930f32904ab480319c2d7f58a2deaa"
+    },
+    {
+      "path": "references/ctf/reverse/patterns-ctf-2.md",
+      "source_kind": "upstream",
+      "byte_length": 19276,
+      "sha256": "8f5d39380a11b26cfba08f72e796c284464931eac33c761b2608557706d2735c"
+    },
+    {
+      "path": "references/ctf/reverse/patterns-ctf-3.md",
+      "source_kind": "upstream",
+      "byte_length": 38811,
+      "sha256": "a877bf89d5610f81112cdd02dd56260e82371ea4ec612b580bae68df95b96083"
+    },
+    {
+      "path": "references/ctf/reverse/patterns-ctf.md",
+      "source_kind": "upstream",
+      "byte_length": 30764,
+      "sha256": "fdc7f03538336bba962ccb84ad51af3d208e8ebe53536f97cae2080eece9ced1"
+    },
+    {
+      "path": "references/ctf/reverse/patterns-runtime.md",
+      "source_kind": "upstream",
+      "byte_length": 12280,
+      "sha256": "d48ba0d017493db44417cb4cffb128286d77dc032d4038b45ff07addf51c8495"
+    },
+    {
+      "path": "references/ctf/reverse/patterns.md",
+      "source_kind": "upstream",
+      "byte_length": 20387,
+      "sha256": "d6c3ce394122c47a77e95b3147e1c559d95030516c46cf36bf2e6b384e249314"
+    },
+    {
+      "path": "references/ctf/reverse/platforms-hardware.md",
+      "source_kind": "upstream",
+      "byte_length": 16239,
+      "sha256": "f2548b021226489270e669ad99f0a4d10fbd0df59d7a3d2fe85de01a42366e36"
+    },
+    {
+      "path": "references/ctf/reverse/platforms.md",
+      "source_kind": "upstream",
+      "byte_length": 23005,
+      "sha256": "e7592cabda16bfce9ab57c8f1f57bcc03ac1d68a725fe420643d8d3c54ca64f3"
+    },
+    {
+      "path": "references/ctf/reverse/tools-advanced-2.md",
+      "source_kind": "upstream",
+      "byte_length": 14829,
+      "sha256": "2e7bcf73790eaa0f2fdaa289155704bfdb0ca899e617267811b04cd62b307eea"
+    },
+    {
+      "path": "references/ctf/reverse/tools-advanced.md",
+      "source_kind": "upstream",
+      "byte_length": 12375,
+      "sha256": "8ac3db030d0d6daf366de53005d12d9720b952ae8aa6216c97926111d8fa0b36"
+    },
+    {
+      "path": "references/ctf/reverse/tools-dynamic.md",
+      "source_kind": "upstream",
+      "byte_length": 24249,
+      "sha256": "f999c7279538fc22ae746483cf95770b3d4c72508a13ea48572e8ccd077ffe6e"
+    },
+    {
+      "path": "references/ctf/reverse/tools-emulation.md",
+      "source_kind": "upstream",
+      "byte_length": 12985,
+      "sha256": "8eec4b79a61f5f32211d09fb8537b663e637281be4060012a980609cc85afb80"
+    },
+    {
+      "path": "references/ctf/reverse/tools.md",
+      "source_kind": "upstream",
+      "byte_length": 15891,
+      "sha256": "3934f59cf3bd15cbc4050a3fc1f41dd750d4fe8f9f455c42daa0e1d2a5380c01"
+    },
+    {
+      "path": "references/ctf/web/auth-and-access-2.md",
+      "source_kind": "upstream",
+      "byte_length": 5200,
+      "sha256": "24e93275084ccaeea6210542b6209c44577049133c3232b8ea929feb7812252e"
+    },
+    {
+      "path": "references/ctf/web/auth-and-access.md",
+      "source_kind": "upstream",
+      "byte_length": 35533,
+      "sha256": "a7595a88837c016003ed0d6524eaa235fe4b17a78e732cdcf71263b5a7b5d85f"
+    },
+    {
+      "path": "references/ctf/web/auth-infra.md",
+      "source_kind": "upstream",
+      "byte_length": 14428,
+      "sha256": "27967432f88e0c159c0e1faef372a75117c4c9a56d81372c4b0c6a1b2df7a7a8"
+    },
+    {
+      "path": "references/ctf/web/auth-jwt.md",
+      "source_kind": "upstream",
+      "byte_length": 8918,
+      "sha256": "2e3d1b74646356830354f0023b43f60cb9777347c50c6d1ee7b2b5664e98d9cd"
+    },
+    {
+      "path": "references/ctf/web/client-side-advanced.md",
+      "source_kind": "upstream",
+      "byte_length": 37895,
+      "sha256": "d6dc8885a8d4aa436e1d07a44438df0744c7c119ffe7ea2c46e4246c9e94d479"
+    },
+    {
+      "path": "references/ctf/web/client-side.md",
+      "source_kind": "upstream",
+      "byte_length": 22068,
+      "sha256": "0d7aa7b2c7b3eca7c4e1fffb71b4bbae107ca5523b6c4e447570154a29b501c5"
+    },
+    {
+      "path": "references/ctf/web/cves.md",
+      "source_kind": "upstream",
+      "byte_length": 16014,
+      "sha256": "64aeeaa1cff5c9709e159e1e2e6b1aa8ed42d557903660911eafee1131dfefa1"
+    },
+    {
+      "path": "references/ctf/web/field-notes.md",
+      "source_kind": "upstream",
+      "byte_length": 35879,
+      "sha256": "c37710ebc89fb9140016908e26a57fd7732e1bcd8756c677b8b64b085da417a0"
+    },
+    {
+      "path": "references/ctf/web/index.md",
+      "source_kind": "upstream",
+      "byte_length": 10195,
+      "sha256": "7ee21582174a2ed4d172e28b1c6e0964473e6cbdbca2844574efe511e255a844"
+    },
+    {
+      "path": "references/ctf/web/node-and-prototype.md",
+      "source_kind": "upstream",
+      "byte_length": 6842,
+      "sha256": "6f11446630103706b35d05270a16653a57cc1ce3f906df630674653a79f6d976"
+    },
+    {
+      "path": "references/ctf/web/server-side-2.md",
+      "source_kind": "upstream",
+      "byte_length": 15855,
+      "sha256": "ce0eb122074072478a42105c81d4f6df2b67e2ebd65f6b184924a633795dc42f"
+    },
+    {
+      "path": "references/ctf/web/server-side-advanced-2.md",
+      "source_kind": "upstream",
+      "byte_length": 26297,
+      "sha256": "0089fc8baaec73144eda29d52a4e35945d8d76ea33f8befd26238528f25edc4a"
+    },
+    {
+      "path": "references/ctf/web/server-side-advanced-3.md",
+      "source_kind": "upstream",
+      "byte_length": 7099,
+      "sha256": "c123ef5df7196da750f9eb2538c406eab03933732ae7dccb657a24710f12e867"
+    },
+    {
+      "path": "references/ctf/web/server-side-advanced-4.md",
+      "source_kind": "upstream",
+      "byte_length": 22250,
+      "sha256": "11aa3d4ac279117dcc9b0b97a741a98dc365b37e68ed276afe7d288dfe8225ff"
+    },
+    {
+      "path": "references/ctf/web/server-side-advanced.md",
+      "source_kind": "upstream",
+      "byte_length": 16184,
+      "sha256": "a91041527bc3c9b03f8089cfd65fb45b943a1271c8491876953d16dc61e616cd"
+    },
+    {
+      "path": "references/ctf/web/server-side-deser.md",
+      "source_kind": "upstream",
+      "byte_length": 10004,
+      "sha256": "0f745bb77d4d9ef785c36639c52ee63d8444030573c1ae41104ad244310c9541"
+    },
+    {
+      "path": "references/ctf/web/server-side-exec-2.md",
+      "source_kind": "upstream",
+      "byte_length": 39536,
+      "sha256": "ece194a62fa077c933cc6cc83b46dc143eb1b97b4de22f7db80e8d70b7abe3d7"
+    },
+    {
+      "path": "references/ctf/web/server-side-exec.md",
+      "source_kind": "upstream",
+      "byte_length": 21998,
+      "sha256": "b95360a2a18b0f484d0d18ad31c703a11ded5a2f049e6e3a521579298f9c83b0"
+    },
+    {
+      "path": "references/ctf/web/server-side.md",
+      "source_kind": "upstream",
+      "byte_length": 30125,
+      "sha256": "2fb3a9245a5dc3b317f3e96b0c21a23c4717dc12c95e7cf6e185bb1e7b4a7b98"
+    },
+    {
+      "path": "references/ctf/web/sql-injection.md",
+      "source_kind": "upstream",
+      "byte_length": 38723,
+      "sha256": "7c9857aa0e2bcf21f765f4314821b1cc5e1c51cbe816c168b9741608eb1e7ae2"
+    },
+    {
+      "path": "references/ctf/web/web3.md",
+      "source_kind": "upstream",
+      "byte_length": 15870,
+      "sha256": "feb9fd8a498a14c413a7673c7d9dad8c690866096053f28d5a6b7315f9b9a0dd"
+    },
+    {
+      "path": "references/ctf/writeup/index.md",
+      "source_kind": "upstream",
+      "byte_length": 19169,
+      "sha256": "ac9d66743c538d06f66e1d7b69f337e7e6c5dd6fb784ea5fdf240c85bbb740c5"
+    },
+    {
+      "path": "references/environment-and-resources.md",
+      "source_kind": "upstream",
+      "byte_length": 8086,
+      "sha256": "c02dd1abb745948677b2ffe11f970c965710dfaed57b0f43cd7425224c5f417d"
+    },
+    {
+      "path": "references/evidence-workflow.md",
+      "source_kind": "upstream",
+      "byte_length": 9991,
+      "sha256": "596ea35da3dc050a0eca0a64e2c2226a6d16123a7986f458ecfa73d5891135c0"
+    },
+    {
+      "path": "references/experience-index.md",
+      "source_kind": "upstream",
+      "byte_length": 8618,
+      "sha256": "50b4edad6d638ab8e460b0e1171ec125d72ddb9dd8e2d600dcb7aa5f1454ba0a"
+    },
+    {
+      "path": "references/experience/deobfuscation.md",
+      "source_kind": "upstream",
+      "byte_length": 3100,
+      "sha256": "a92aa27774f3f29c35158be0e692969dac7dc8a13d1cfe4d20817bc55d3c70e3"
+    },
+    {
+      "path": "references/experience/pitfalls.md",
+      "source_kind": "upstream",
+      "byte_length": 2981,
+      "sha256": "7152cb31aafc671c2afa981644116597a5bf2498897c12b09694f7e826365660"
+    },
+    {
+      "path": "references/experience/reverse-unpacking.md",
+      "source_kind": "upstream",
+      "byte_length": 3023,
+      "sha256": "81c7c7b59cb8d069afc2bd7b53910e98e99e56f8bf4bfec336866a0b13a42278"
+    },
+    {
+      "path": "references/experience/web-captcha.md",
+      "source_kind": "upstream",
+      "byte_length": 4410,
+      "sha256": "af2f4c590f823a3cdd0bf7c8e54cf6313e799392480db64b51f0b7775ecd203e"
+    },
+    {
+      "path": "references/field-journal-template.md",
+      "source_kind": "upstream",
+      "byte_length": 1897,
+      "sha256": "daeb7ac142013b0294ae29143b4044b9327d808d5a0b366d8945368413fa27ad"
+    },
+    {
+      "path": "references/malware.md",
+      "source_kind": "upstream",
+      "byte_length": 8702,
+      "sha256": "73d8fcd1f0d401bb3a34cfb6617db4735c88fa7eb942b1678962b4b0a9502ba8"
+    },
+    {
+      "path": "references/pentest.md",
+      "source_kind": "upstream",
+      "byte_length": 6926,
+      "sha256": "47723794a9f44fb6ce8481fa363259cc000dd7eda503b7e5e67997955c381717"
+    },
+    {
+      "path": "references/precedent-auth.md",
+      "source_kind": "upstream",
+      "byte_length": 3286,
+      "sha256": "d5f976b2a7ce4d4653b179531e423e88c6734d02586f44f575cdd4a9b4434b7b"
+    },
+    {
+      "path": "references/progressive-reasoning.md",
+      "source_kind": "upstream",
+      "byte_length": 10887,
+      "sha256": "5f4f459affb5fcf5920988401cc41c9d21e368d17cf98eead5ff5466e3b3c36b"
+    },
+    {
+      "path": "references/reporting.md",
+      "source_kind": "upstream",
+      "byte_length": 12399,
+      "sha256": "0173fff97b8206bc50c238811393ca12ee955aa3299c6cf7f4c3e8003bbd3603"
+    },
+    {
+      "path": "references/reverse.md",
+      "source_kind": "upstream",
+      "byte_length": 7758,
+      "sha256": "2f451caa519cd7d3c48dfbd1f6b6e77c1fbe321a904c0ec7b888c5ff3b9518ec"
+    },
+    {
+      "path": "references/routing.md",
+      "source_kind": "upstream",
+      "byte_length": 17603,
+      "sha256": "b48ae7dc2d53b56f2fc9edcc603517a97b367abfa983ebdeb7f602f367a10bde"
+    },
+    {
+      "path": "references/scanner.md",
+      "source_kind": "upstream",
+      "byte_length": 19482,
+      "sha256": "faaa59b16275c1a2c428ccc884917964476a47fa0896f2d525c731a2cc9eaefa"
+    },
+    {
+      "path": "references/scope-and-evidence.md",
+      "source_kind": "upstream",
+      "byte_length": 6633,
+      "sha256": "67356970f6303c06a7e6609d4d1ddd82b7883b1c6aecdc7f78993e0dc123698c"
+    },
+    {
+      "path": "references/source-provenance.md",
+      "source_kind": "upstream",
+      "byte_length": 4562,
+      "sha256": "8136214c96536fcb8f3f681a9a03320b2971eb2e718ac556e96ece60e3ac8299"
+    },
+    {
+      "path": "references/tools.md",
+      "source_kind": "upstream",
+      "byte_length": 5754,
+      "sha256": "a1d9c29c28910c6896875ffc18520bc414b2c33f63d88c3c4222d7b5691ee2bc"
+    },
+    {
+      "path": "RULES.md",
+      "source_kind": "upstream",
+      "byte_length": 1177,
+      "sha256": "3c46aa5bc6a2035da2befe239ba178101d014804c356e4dde99b367c75ff50b9"
+    },
+    {
+      "path": "schemas/research-result.schema.json",
+      "source_kind": "upstream",
+      "byte_length": 6117,
+      "sha256": "be46b9fb4e9c8d5fe68542b1f24bfd388de527c69afd44b29090208936742ff3"
+    },
+    {
+      "path": "scripts/env_probe.py",
+      "source_kind": "upstream",
+      "byte_length": 8704,
+      "sha256": "df698eaaa11b5611fb5d76f9032f83a0d58f9fc4d816ced6e6b1f499356a6b06"
+    },
+    {
+      "path": "scripts/reusable/artifact_inventory.py",
+      "source_kind": "upstream",
+      "byte_length": 9635,
+      "sha256": "b3c2a54d2502ca3456f32cb694de1e432f6ad780b866a550782dbfcd4ca1b504"
+    },
+    {
+      "path": "scripts/reusable/har_summary.py",
+      "source_kind": "upstream",
+      "byte_length": 10435,
+      "sha256": "3615a9dd56a23a4fcf28b9548aa858639e2a0e9863cea9d83e6f72a7eb6bef22"
+    },
+    {
+      "path": "scripts/reusable/new-experience-entry.ps1",
+      "source_kind": "upstream",
+      "byte_length": 1681,
+      "sha256": "5a221ef2a6b4d5d9bb0d8335609d176e81264779758704a9335fc51a06fc1d68"
+    },
+    {
+      "path": "scripts/reusable/new_experience_entry.py",
+      "source_kind": "upstream",
+      "byte_length": 5255,
+      "sha256": "ca0f4e4dcc962c1559b249ad3c5e9d345404d1c26657cbe747d4815eaa2781c9"
+    },
+    {
+      "path": "scripts/reusable/pack_cloud_handoff.py",
+      "source_kind": "upstream",
+      "byte_length": 3536,
+      "sha256": "c95e753daa08cd4a4ed3d15f2ca004ff996de2a1acac05a4da4e8fe325d42aa2"
+    },
+    {
+      "path": "scripts/reusable/pe_entropy_triage.py",
+      "source_kind": "upstream",
+      "byte_length": 11879,
+      "sha256": "c5b998cede6d56df3405cee7329f80f2e005c04b617431d6082c18e1a62a455a"
+    },
+    {
+      "path": "scripts/reusable/route_task.py",
+      "source_kind": "upstream",
+      "byte_length": 14660,
+      "sha256": "f8a5e07760c3fa809129b7aef11bc9becacc6bfc13ed577170f02558eba88e43"
+    },
+    {
+      "path": "scripts/reusable/scaffold_project.py",
+      "source_kind": "upstream",
+      "byte_length": 4020,
+      "sha256": "b66468afc63d5b2970a5575f9b8eb5e8393a586c5c612bfe628c55b1d6bb234d"
+    },
+    {
+      "path": "scripts/validate_result.py",
+      "source_kind": "upstream",
+      "byte_length": 11171,
+      "sha256": "569afa060994bb3947329d2958689904e73a16c1086450ed4add7d19ed067d88"
+    },
+    {
+      "path": "scripts/validate_skill.py",
+      "source_kind": "upstream",
+      "byte_length": 17821,
+      "sha256": "57fa42bd5c50cf4afd3135e18058f4ecad326e4c3742ff37f1d00af4f11ceebb"
+    },
+    {
+      "path": "SKILL.md",
+      "source_kind": "upstream",
+      "byte_length": 33122,
+      "sha256": "37d7ab7bfa5f644ffacafe41d66f53fdb65ebaa216e5ffc60c09cfe8469d1143"
+    },
+    {
+      "path": "skills/sec-ai-security/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 2655,
+      "sha256": "911bbb67e4d2580deb63a0686185d8ecd93b287c3b5ae9954ff4a2790b6638fb"
+    },
+    {
+      "path": "skills/sec-ai-security/references/llm-deep/_llm-security-workflow.md",
+      "source_kind": "upstream",
+      "byte_length": 5459,
+      "sha256": "57a9bbb4bea851dc1d82f55fdb7a8857ef57ee1abc697d7955bbe9d65825ed2b"
+    },
+    {
+      "path": "skills/sec-ai-security/references/llm-deep/agent-obedience-engineering.md",
+      "source_kind": "upstream",
+      "byte_length": 11224,
+      "sha256": "ec3809feec98b64e5f8c15971bfe1477fa5b62c750f0c62911d83c3910cf1014"
+    },
+    {
+      "path": "skills/sec-ai-security/references/llm-deep/agent-security-testing.md",
+      "source_kind": "upstream",
+      "byte_length": 4600,
+      "sha256": "bb63477f428acc9bf69233d5389b81bb995b04d83788c85a9e723cb65c5ddcc8"
+    },
+    {
+      "path": "skills/sec-ai-security/references/llm-deep/owasp-llm-top10.md",
+      "source_kind": "upstream",
+      "byte_length": 2948,
+      "sha256": "377bcf373c2f07916af795c2b3237e7522b22d476ff48355a9a201b914b19377"
+    },
+    {
+      "path": "skills/sec-ai-security/references/llm-deep/prompt-injection-methodology.md",
+      "source_kind": "upstream",
+      "byte_length": 3464,
+      "sha256": "4a99d68823dd4403bcc9810dd04111bbac111411cbc02bee666102b0f3104b3f"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3226,
+      "sha256": "0c1c206f604021d3346759c8d04d2dcf47547f32f93f98eb0b9923d2a40d15e2"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 11866,
+      "sha256": "ebbcdce08f521c591ffb56e0504f941b276a2d747336416e7fcf089e5790dc54"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/payloads/README.md",
+      "source_kind": "upstream",
+      "byte_length": 1088,
+      "sha256": "44aacce292577dac49f7ef7ed26f095f0dd768d57d268e101d7389f7e132592b"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/references/ai-pentest-agents.md",
+      "source_kind": "upstream",
+      "byte_length": 6171,
+      "sha256": "84b2913a52354265b91e92aa7097a8c7c1b8aa0512f485daa1960cec78990921"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/references/ai-pentesting-landscape-2026.md",
+      "source_kind": "upstream",
+      "byte_length": 3536,
+      "sha256": "d0425e6680f1cd8ab0c028cb62f4d1df5f8787d40756ed6f719a7de18a43d131"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/references/automation-loop-pattern.md",
+      "source_kind": "upstream",
+      "byte_length": 5346,
+      "sha256": "256f99caa7b65efb6246e5286ccc2425e957e4bfd323fb59c4b30b114dc4283e"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/references/awesome-pentest-digest.md",
+      "source_kind": "upstream",
+      "byte_length": 6090,
+      "sha256": "7d11cc879edb426cded0ab75c59942ae8049809de5ae6e909927fa9d3f4aad5b"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/references/burpsuite-mcp-guide.md",
+      "source_kind": "upstream",
+      "byte_length": 23878,
+      "sha256": "4996f37145a99998ddca54e684397948d5c0d6089632636e61ce52f813ee9a33"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/references/kali-mcp-ecosystem.md",
+      "source_kind": "upstream",
+      "byte_length": 4527,
+      "sha256": "7b20dc3ba37aaa642231c9dee7a0afa3c4347cecb7336dfdfa0b4e97123e1650"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/references/msf-protocol.md",
+      "source_kind": "upstream",
+      "byte_length": 6061,
+      "sha256": "622a3f054f0e69869ef7b0e6f047c066155c90a13ff94ac9af30264cb20dcc96"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/references/network-attack-defense.md",
+      "source_kind": "upstream",
+      "byte_length": 10119,
+      "sha256": "3bccbb98b195bc0b5a1dd92869af65660b4dd2d493e30c432381b9831dc71f8c"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/references/nuclei-guide-2026.md",
+      "source_kind": "upstream",
+      "byte_length": 4070,
+      "sha256": "479d866711e880dd66460369f010baeee0a8caaceb71d18fcb7f2ebff171c333"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/references/pentest-ai-agents-matrix.md",
+      "source_kind": "upstream",
+      "byte_length": 5080,
+      "sha256": "6eb9dcfdfc115a9c087b64750b3b956d4883d043b4f3317d50a85e8f096c39ef"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/references/pentest-loop.md",
+      "source_kind": "upstream",
+      "byte_length": 6719,
+      "sha256": "dcbaccf3318fd968058639b2de4f435a5b9e8f1878b0b819c0f7dfe359aa1af6"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/references/web-attack-cheatsheet.md",
+      "source_kind": "upstream",
+      "byte_length": 7700,
+      "sha256": "fc8decb8ae27d5dfbb510109c22cdea9c2e02b438177d476d847ec11849f3e53"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/.claude-plugin/marketplace.json",
+      "source_kind": "upstream",
+      "byte_length": 1068,
+      "sha256": "83044119a36c5d7369a2d56778ef73c5890e4dd0699083c696c1b8da09d6eb65"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/.gitignore",
+      "source_kind": "upstream",
+      "byte_length": 164,
+      "sha256": "0df5a67344714a94ff6cd961b24374d5e1547e833c5d00a4e23a48cb0acaceec"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 11814,
+      "sha256": "408de8c535bc5645bf022724e9571862bbb1f68074393bc1c95e119b908ab0e1"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/LICENSE",
+      "source_kind": "upstream",
+      "byte_length": 1067,
+      "sha256": "5b02fedc65e661a7818e303a1e4680927ed5afa636c491b3bdf7d33f41f9f908"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/README.en.md",
+      "source_kind": "upstream",
+      "byte_length": 6292,
+      "sha256": "acaffdea03855d5bb8313bb55d16019d7b8decd81f28e59b7fa08f5a5327dba6"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/README.md",
+      "source_kind": "upstream",
+      "byte_length": 6373,
+      "sha256": "fcb508ea86de61ebc9afb2f9bb508b1531971331be52a0f04b80d0e2931566fd"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/dictionaries/00-index.md",
+      "source_kind": "upstream",
+      "byte_length": 2288,
+      "sha256": "b6237b3f65ff4b43c97a7df12d5ea30f8c8f49c7429f9fbafa0f5b982fecb586"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/dictionaries/chinese-srcfingerprints.md",
+      "source_kind": "upstream",
+      "byte_length": 14875,
+      "sha256": "b029599c86b9a69c93eae8cd97bb8217a95ce10267bcb273fbf48b92827e79b6"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/dictionaries/default-credentials-cn.md",
+      "source_kind": "upstream",
+      "byte_length": 10137,
+      "sha256": "65cbf20d7613944358e365152b3bc40cd8c8a0256411c9e464717ad4146e5d9f"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/industry/00-index.md",
+      "source_kind": "upstream",
+      "byte_length": 2763,
+      "sha256": "b5df0cf51d43570e24bf69ee9ac417137134cb2144d2344cf57a1e1caeff82bd"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/industry/banking-finance.md",
+      "source_kind": "upstream",
+      "byte_length": 14934,
+      "sha256": "6a362481f7074c71c487ac436108cf58ed7564ea3ff10519154bc6cd032afbd7"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/industry/telecom-isp.md",
+      "source_kind": "upstream",
+      "byte_length": 11793,
+      "sha256": "4142907b7d8999ecef1abd42044fa00b5bdf133c337c97cead31eb00499a733d"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/methodology/00-index.md",
+      "source_kind": "upstream",
+      "byte_length": 2942,
+      "sha256": "28fbb4b5d9ac798f104ef9e4dd0366f830de59d45afa9229bed4dd59a1c6b71a"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/methodology/01-attack-priority.md",
+      "source_kind": "upstream",
+      "byte_length": 6628,
+      "sha256": "a79cece936041a110da6c8fb613ffbb1f6571861c2ee70528c2fb83d8f27145f"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/methodology/02-bypass-toolkit.md",
+      "source_kind": "upstream",
+      "byte_length": 11617,
+      "sha256": "195e0147d816b80fa81ccd46942e79dbda1b463c442ece03143af30f0004dc55"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/methodology/03-evidence-discipline.md",
+      "source_kind": "upstream",
+      "byte_length": 7548,
+      "sha256": "a132926f8529c1de23ff7bcf797a357c48b4edd515cc6067a7383e72038e767d"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/methodology/04-control-gap-hunting.md",
+      "source_kind": "upstream",
+      "byte_length": 9332,
+      "sha256": "d6674c1c586e1352849bf7be7d1cd58fd43873f9bf6601961001918dc1acc9b8"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/methodology/05-srctimebox-priority.md",
+      "source_kind": "upstream",
+      "byte_length": 7914,
+      "sha256": "d305fabc822db4948280eb2e8874041acd0ad3e6b75df162768907a7db705d12"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/intranet/adcs攻击.md",
+      "source_kind": "upstream",
+      "byte_length": 6300,
+      "sha256": "49764e95a2e121899961b1915794f9264d095343b471bca97d5317d020ed0020"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/intranet/exchange攻击.md",
+      "source_kind": "upstream",
+      "byte_length": 5659,
+      "sha256": "cf4caee522f21c3ba61b32d5d6f12194238bf52b8b17ae339eb2c83adcbb626b"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/intranet/sharepoint攻击.md",
+      "source_kind": "upstream",
+      "byte_length": 2538,
+      "sha256": "7b70d23bb9f9513f01d168fa32a3905c064f82479c22a586f4c01693693efeeb"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/intranet/信息收集.md",
+      "source_kind": "upstream",
+      "byte_length": 21992,
+      "sha256": "5acfd461329ca663c7ce13e21f7ba842a628baeb9ab228ed32f3087dd07c716e"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/intranet/免杀与规避.md",
+      "source_kind": "upstream",
+      "byte_length": 18728,
+      "sha256": "2485e619ad92861fd0b5679cb7379b3080940aacac7faa370c80792d92dd970b"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/intranet/凭证窃取.md",
+      "source_kind": "upstream",
+      "byte_length": 34990,
+      "sha256": "1342b24a3495cacb5a5b52cdcb651d57ca63acae27d308ced93e116957589d14"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/intranet/域渗透攻击.md",
+      "source_kind": "upstream",
+      "byte_length": 18402,
+      "sha256": "d17eca3e9f70bd57f5b402b354c3fa7f0f819c45cad5172900d85ce3de9fac53"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/intranet/权限提升.md",
+      "source_kind": "upstream",
+      "byte_length": 21645,
+      "sha256": "35b9e8b08920b1bc3bdc10383d30d486da23ac32c6041bc8ee38cfad2f07bf8b"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/intranet/权限维持.md",
+      "source_kind": "upstream",
+      "byte_length": 13966,
+      "sha256": "b7e706d1fd458c22ecda66b0a864c756c14668f6e447e4278ee93f404723309b"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/intranet/横向移动.md",
+      "source_kind": "upstream",
+      "byte_length": 21333,
+      "sha256": "f5a021ef61469f424a1a7657f74cb5769040fa00fd83420d2cafdc961bb1b96a"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/intranet/隧道代理.md",
+      "source_kind": "upstream",
+      "byte_length": 12848,
+      "sha256": "f6d800b30cc8082bdd0229823cbd993ea52740dfeed622753fd31798537ccfa7"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/web/ai安全.md",
+      "source_kind": "upstream",
+      "byte_length": 32146,
+      "sha256": "f46fe80c1d6bad523eab76a3617513d6805f29e590945bfe32ff00b5f1c4f205"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/web/api安全.md",
+      "source_kind": "upstream",
+      "byte_length": 46143,
+      "sha256": "7e6f3250a870cc70a92ac487d1dde3ffdfbe843f9ed6aaaefd1dcec5f9bc2bbd"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/web/csrf跨站请求伪造.md",
+      "source_kind": "upstream",
+      "byte_length": 24175,
+      "sha256": "902e611ac1e94675d16d9504942ded4d4ffac5e0b38c91aa64f2f6e68dcdb136"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/web/jwt安全.md",
+      "source_kind": "upstream",
+      "byte_length": 20046,
+      "sha256": "ca8a4e5c96b617bf63d679aaf2173efe81c3b93e554e5f4dae69d8cf61fba93b"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/web/lfi-rfi文件包含.md",
+      "source_kind": "upstream",
+      "byte_length": 35915,
+      "sha256": "8f3027b8f0e4f804883199186af7beb9c9e5c27fd511094ec1bbe4b00c0e9da5"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/web/rce远程代码执行.md",
+      "source_kind": "upstream",
+      "byte_length": 38561,
+      "sha256": "3c3f90ed64fce28b1a4c1447cc06488d0f4fd79235e466a9f1a77fd07732f19a"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/web/sql-nosql注入.md",
+      "source_kind": "upstream",
+      "byte_length": 63081,
+      "sha256": "54c8bc04c2e76f4387a284b28ee6ecbeee15f4fd93a2d762af0974197dc444bd"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/web/ssrf服务端请求伪造.md",
+      "source_kind": "upstream",
+      "byte_length": 37718,
+      "sha256": "cb1d17bd8a8e7d55b64d1c6fa42c9cbf61d709f14666241d5045e97cdb793d4a"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/web/ssti模板注入.md",
+      "source_kind": "upstream",
+      "byte_length": 32069,
+      "sha256": "87795a61c8b447afb6149dca45d8b4e03611a08628c3ab6544e298be550a7413"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/web/websocket安全.md",
+      "source_kind": "upstream",
+      "byte_length": 20566,
+      "sha256": "d09ac8509f7860073fe077090024a6d48341a1b4db56050df428f8902beede48"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/web/xss跨站脚本.md",
+      "source_kind": "upstream",
+      "byte_length": 44495,
+      "sha256": "2e1ec33087f87e6f953be9cd4e349e7dd04c4f519bce5fa6edf028bf50db79e2"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/web/xxe实体注入.md",
+      "source_kind": "upstream",
+      "byte_length": 24876,
+      "sha256": "15033e2cfc27f9e13e519bd919b887cc942b6ad306794ccf5f3409786aba9163"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/web/业务逻辑漏洞.md",
+      "source_kind": "upstream",
+      "byte_length": 25356,
+      "sha256": "4979c6c25cfc88ce0a1f742a275d852a1c7231a922a67018a99be2d6fca423db"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/web/云安全漏洞.md",
+      "source_kind": "upstream",
+      "byte_length": 26941,
+      "sha256": "06227cb4d026e2c2df16d2bb010349180cc69e2f68f9646edacdc935b18a8723"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/web/供应链攻击.md",
+      "source_kind": "upstream",
+      "byte_length": 17846,
+      "sha256": "f7acc4df83c0b406475c343df09324834dcbeb86589269b1d4517275f7fd3dc6"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/web/原型链污染.md",
+      "source_kind": "upstream",
+      "byte_length": 19091,
+      "sha256": "8d74c1d9dbb503deb2af11a4eec5f55083ff35e51c2eec1a7d8d32e276fc4631"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/web/开放重定向.md",
+      "source_kind": "upstream",
+      "byte_length": 13962,
+      "sha256": "da3ba98d03006743f88d94aef8abb630b2f2049937c1ce9ce2a1413ec1680453"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/web/文件漏洞.md",
+      "source_kind": "upstream",
+      "byte_length": 47961,
+      "sha256": "0236fc2822eaeb293c320045989f7d8468640fd0e22576c1c07e07217ef40121"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/web/框架漏洞.md",
+      "source_kind": "upstream",
+      "byte_length": 68771,
+      "sha256": "27c4743dc671f2ae9441d87f809a64f8978cfdaeeaa940f632c23937160f1c3c"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/web/点击劫持.md",
+      "source_kind": "upstream",
+      "byte_length": 14007,
+      "sha256": "449736c9a519b0949861d2be912192875f0afc9a350bbe5e8fa041e7619ea862"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/web/缓存与cdn安全.md",
+      "source_kind": "upstream",
+      "byte_length": 17318,
+      "sha256": "e6bf45fb9851dfcaba9aa8417cbabddf0f771aeee265c38a8de96a409303b67c"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/web/认证漏洞.md",
+      "source_kind": "upstream",
+      "byte_length": 65060,
+      "sha256": "b7f77de2c38ee4d1b376351a5d8373f76aca74dcafa16c3a6b3c4ccad460b0c4"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/by-category/web/请求走私.md",
+      "source_kind": "upstream",
+      "byte_length": 22425,
+      "sha256": "c5b9c665f23e3a2f2dcd5f78f81595774406f1ecdb5d041599db2842f1e63c84"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/index.md",
+      "source_kind": "upstream",
+      "byte_length": 4913,
+      "sha256": "ea1fcf00ae8500d3772e9eec064337e2ca3fadb457d2ee17645132527f7b3bc7"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/raw/navigation.json",
+      "source_kind": "upstream",
+      "byte_length": 156130,
+      "sha256": "ffcb11d359554d2e8dd6f35d5121cf52ef4d26f0484fb9d5f30ff1058cd63971"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/raw/tools.json",
+      "source_kind": "upstream",
+      "byte_length": 173565,
+      "sha256": "4cec9f217c270c13aa341ab73d4a74b63ba685bb8a5437c7e6533663d55041e0"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/raw/web.json",
+      "source_kind": "upstream",
+      "byte_length": 1147930,
+      "sha256": "25c5dcb30505f7ff7417d6bee274419fc8730855f33af1c35a89118c02d8de21"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/tools/web渗透.md",
+      "source_kind": "upstream",
+      "byte_length": 12908,
+      "sha256": "39a2bbbfca07402744b4fa5ccb68ee925bc3e7bbe805dadedc09b17bac454489"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/tools/windows渗透.md",
+      "source_kind": "upstream",
+      "byte_length": 2084,
+      "sha256": "6bebbdfb5877ff550d2786f276ce8de29bc1bfef8c0a017d25bb3b193193e8a9"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/tools/信息收集.md",
+      "source_kind": "upstream",
+      "byte_length": 15474,
+      "sha256": "c038c60912649e4a71e76f34168e744bcfe7ba50fc72f0475dc66afc3775bfaf"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/tools/内网渗透.md",
+      "source_kind": "upstream",
+      "byte_length": 15296,
+      "sha256": "91b16a15984e7595ac1ae0281d7061638f54b2f272341f9041bc182832d88369"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/tools/凭证窃取.md",
+      "source_kind": "upstream",
+      "byte_length": 2757,
+      "sha256": "e9b7796010790258e403e3f034918dcfd67fa86e83843b56c0f69b668d2f402d"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/tools/域渗透.md",
+      "source_kind": "upstream",
+      "byte_length": 883,
+      "sha256": "8da38326c4a4cfc5d451141ec68242e067199366010e135101caaf65f6ce461d"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/tools/密码攻击.md",
+      "source_kind": "upstream",
+      "byte_length": 9355,
+      "sha256": "d2586e92d896fcd39fb70f4c317b643bbcccc9243d485094481dfbc9e7ab9cd3"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/tools/权限提升.md",
+      "source_kind": "upstream",
+      "byte_length": 2148,
+      "sha256": "758c0337ef26cb7df26f16023b29c6c54498e5a36cbf190a3d9fdf3a06cb724e"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/tools/漏洞利用.md",
+      "source_kind": "upstream",
+      "byte_length": 9572,
+      "sha256": "f5e490d5f35ce24a68f284e2cb4db3fee75dffb9b39d4ee6d3ba368f43706ae5"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/tools/系统命令.md",
+      "source_kind": "upstream",
+      "byte_length": 7906,
+      "sha256": "5da09ab4d320b19fc3c7f2137753ceb7791b81f70f7e391313ddbb644bc86b27"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/tools/红队工具.md",
+      "source_kind": "upstream",
+      "byte_length": 799,
+      "sha256": "d50bc7bbaf879cdad7f96619e1c178b2dab3f4af0cc42b77afb4d05dadc2c07e"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/tools/编码解码.md",
+      "source_kind": "upstream",
+      "byte_length": 4673,
+      "sha256": "b9da8bd5126c5f681ad7aaa7446b826c5405dfb15fe0a464a4985ae534e05ed1"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/tools/隧道代理.md",
+      "source_kind": "upstream",
+      "byte_length": 1122,
+      "sha256": "cf2842df7b97c820a513c27f5cb7f2b99c2376b376364cd4398ca699f586101d"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/waf-bypass.md",
+      "source_kind": "pinned",
+      "embedded_path": "pinned/waf-bypass.md",
+      "byte_length": 173699,
+      "sha256": "0273517455962bb9908264f82e4708b31d541c91c2ec715e8032d6c1376728b5",
+      "provenance": {
+        "source_commit": "d8bf34540cbc1aa34052e1b142576fc36a1f1437",
+        "historical_manifest_sha256": "07bf0d71dfb687ff3ced0befa39081453c51ce85ae54a02bdb1e1f6fc34d3313",
+        "historical_archive_sha256": "c6920445c55f46c2a30e8a2fe398e7c1cf0b22dcbe4c53ed0cfc105d9c8a5f3e"
+      }
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/playbooks/00-index.md",
+      "source_kind": "upstream",
+      "byte_length": 2733,
+      "sha256": "7dff850138018018b112518a447a089d75e2eb7a37c08c94680a78b7eb76afed"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/playbooks/api-rest.md",
+      "source_kind": "upstream",
+      "byte_length": 46247,
+      "sha256": "559270ce29945cb1b3c536291c3a7e8936d2e3483e0728b1349ad33fbb21916d"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/playbooks/arbitrary-x-authz.md",
+      "source_kind": "upstream",
+      "byte_length": 20645,
+      "sha256": "acbb62c6c1d993f1a628d88deb04c11dc384127aed6f190043f3bc0f9aacdfab"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/playbooks/dos.md",
+      "source_kind": "upstream",
+      "byte_length": 29273,
+      "sha256": "2781bd6bf3c1eff6681329ef89e012d977065570711904715902c69e6c522bc1"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/playbooks/file-upload.md",
+      "source_kind": "upstream",
+      "byte_length": 45395,
+      "sha256": "babfafeacae9c1ac38ae81053a7654ed136941d34313750fc2b5e94f50cb9c62"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/playbooks/graphql.md",
+      "source_kind": "upstream",
+      "byte_length": 5579,
+      "sha256": "7a7dab374f1c308ae2246de7e7f126c7dfb03a4aea1ba5e3ab57b9712d367b0d"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/playbooks/http-smuggling.md",
+      "source_kind": "upstream",
+      "byte_length": 21608,
+      "sha256": "82ff4bf6104fb3cb4628c33a6ec57e49d2dcb5c00024507675b1bfcd03ffa692"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/playbooks/info-disclosure.md",
+      "source_kind": "upstream",
+      "byte_length": 16309,
+      "sha256": "357adaaf6a090473ac21a971fbb76f976a915e6a3c6925303a79ce1b39c984ad"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/playbooks/intranet-postexp.md",
+      "source_kind": "upstream",
+      "byte_length": 110128,
+      "sha256": "73d9532614a19f9a76d2087dca92cd67731bc8788779c0588c3a727b57ef4931"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/playbooks/llm-prompt-injection.md",
+      "source_kind": "upstream",
+      "byte_length": 56473,
+      "sha256": "063082cfa2c8195eb545486a82eb8a100b4a236fa2fb81f11e60af192384e617"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/playbooks/logic-flaws.md",
+      "source_kind": "upstream",
+      "byte_length": 52043,
+      "sha256": "ddf5c43fed0d04058e71b663683860dd4b11fa2983230ca6025b374b0d631e13"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/playbooks/mobile.md",
+      "source_kind": "upstream",
+      "byte_length": 13868,
+      "sha256": "a56cd6ecd0472f0c1689c299f21ae056ae0c27a32b6cbde0a854f2e45ac3588e"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/playbooks/oauth-saml-jwt.md",
+      "source_kind": "upstream",
+      "byte_length": 79055,
+      "sha256": "74f0f1b756d3cb414af042a13a93969851c1e6acd5ce821d36f84bfd043a5cdd"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/playbooks/path-traversal.md",
+      "source_kind": "upstream",
+      "byte_length": 32685,
+      "sha256": "f98da7c3f908dc4320193b728319bbd59528b87899ab785400d70378660e72e0"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/playbooks/race-conditions.md",
+      "source_kind": "upstream",
+      "byte_length": 7308,
+      "sha256": "7436049e4d5b106a7a8c176bfc0619f1a447764b99d5bc73b021a254dbf63988"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/playbooks/rce.md",
+      "source_kind": "upstream",
+      "byte_length": 123372,
+      "sha256": "7d096c7ad9567e3485bf1720fd7ad17a9a53096a8970de4fdb8d8000df09ed8a"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/playbooks/sqli.md",
+      "source_kind": "upstream",
+      "byte_length": 45461,
+      "sha256": "ce3de87afb9969dc0db0891e03a305c2d3e6ac7bd3ce5a75db1f676de6bdf8dd"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/playbooks/ssrf-cache-host.md",
+      "source_kind": "upstream",
+      "byte_length": 63015,
+      "sha256": "e8db89cf04375decd7c108b96a83e99aca488b92e336d82ec1c676c6eec50f03"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/playbooks/unauth-access.md",
+      "source_kind": "upstream",
+      "byte_length": 14277,
+      "sha256": "bb5b99cdbb790a1aa4f3fd5f2105c91f69b6c88c9629e037a554113716325069"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/playbooks/xss.md",
+      "source_kind": "upstream",
+      "byte_length": 30690,
+      "sha256": "c1ed31e52c5354225efbce0d0a04d2882f78c8d3780c3a70a57759d3db5d9352"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/templates/report-submission.md",
+      "source_kind": "upstream",
+      "byte_length": 9822,
+      "sha256": "c8d5e2e23f326afc23d4bebe59ec8f37df2f07c24178beac8a432f184c340a4f"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/src-hunter/references/tools/mcp-jshook.md",
+      "source_kind": "upstream",
+      "byte_length": 16085,
+      "sha256": "7d4e9a5b263456c74a93352ae5a358d7e3b2069c6a2a77ba06c3cc65c3a03196"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/templates/findings.md",
+      "source_kind": "upstream",
+      "byte_length": 328,
+      "sha256": "02b399601d0b0aaf4410f551af26178a9c639d2b3c45e75a97a630e7c21459ca"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/templates/progress.md",
+      "source_kind": "upstream",
+      "byte_length": 242,
+      "sha256": "87bfc12dc4c4b9f5e9d87e1996d69bb706c7298402b9e6378e9f7128ed877aea"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/templates/rules.md",
+      "source_kind": "upstream",
+      "byte_length": 722,
+      "sha256": "fb3c9f1e8c8495c6cab57a2646c259051203356739bd0fc2ce6f6675918a41e6"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/templates/scope.md",
+      "source_kind": "upstream",
+      "byte_length": 422,
+      "sha256": "98209d49af001151050594dcbb069b7c9d7612e5ae3227d9aca4d66e7c4db1fe"
+    },
+    {
+      "path": "skills/sec-assessment-tooling/pentest-tools/templates/task_plan.md",
+      "source_kind": "upstream",
+      "byte_length": 543,
+      "sha256": "0d8eb4de9040534f3be9a39f37d7915d627bc2dc17f243402dbd9803fb8303d3"
+    },
+    {
+      "path": "skills/sec-attack-chain/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 18884,
+      "sha256": "a351e9c100dc5582c63e4a7806079d06aebaf573ca67345807f97903481cb35e"
+    },
+    {
+      "path": "skills/sec-attack-chain/references/attack-playbooks.md",
+      "source_kind": "upstream",
+      "byte_length": 3674,
+      "sha256": "0b9e70f95716ad170df35de90e00bee91b467cff8f07bdbaafe5d65dc7368f7a"
+    },
+    {
+      "path": "skills/sec-attack-chain/references/evasion-cheatsheet.md",
+      "source_kind": "upstream",
+      "byte_length": 4554,
+      "sha256": "d39e5acad16732f5e9f4436c37afc2f3882aded82664694cffd60cc15eb4d247"
+    },
+    {
+      "path": "skills/sec-crypto/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 2116,
+      "sha256": "f348cea79834acb0c927d7b10bd1fc8295eae62a380096d9fd1254d9bce4a348"
+    },
+    {
+      "path": "skills/sec-edr-bypass/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 10063,
+      "sha256": "41c591a41701b63ad9607206c1cdbc91d7ecc3caadb101f5705043460aa744f2"
+    },
+    {
+      "path": "skills/sec-edr-bypass/references/hook-survey.md",
+      "source_kind": "upstream",
+      "byte_length": 9594,
+      "sha256": "2f1774bb16ff99d55cc5c36d17ff79d84ba3b004b4b88e68383116b98daae73f"
+    },
+    {
+      "path": "skills/sec-edr-bypass/references/telemetry-blinding.md",
+      "source_kind": "upstream",
+      "byte_length": 12695,
+      "sha256": "7cccbcd5fa6fafdbf611070164788c2455976b2adda0e4f178b407e5bef7105f"
+    },
+    {
+      "path": "skills/sec-edr-bypass/references/unhook-techniques.md",
+      "source_kind": "upstream",
+      "byte_length": 11100,
+      "sha256": "96b9d4576ac05f66d3f5bb9b6033c7017c6038d431fe4ba45d9ab67622c27d3c"
+    },
+    {
+      "path": "skills/sec-firmware/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 12883,
+      "sha256": "f127e89d51f1f9a29d4cde2c81de28c54e26102f60ce690a5b7c4d06e32a9760"
+    },
+    {
+      "path": "skills/sec-firmware/references/emba-automated-analysis.md",
+      "source_kind": "upstream",
+      "byte_length": 6483,
+      "sha256": "fa4a933cb9920b259d4399cd9aa3dac569ca8b818291c179e5854803f0cc08f9"
+    },
+    {
+      "path": "skills/sec-firmware/references/emulation-and-fuzz.md",
+      "source_kind": "upstream",
+      "byte_length": 8770,
+      "sha256": "e5760bb6c7b48fb561226163f6642c528afed3ba79ee62f412e3482bff4447c3"
+    },
+    {
+      "path": "skills/sec-firmware/references/extraction-methodology.md",
+      "source_kind": "upstream",
+      "byte_length": 6933,
+      "sha256": "218610a581207c91d49b4cfb8280ae0b4fb8c1e33fa945b87f9c679e0daac61b"
+    },
+    {
+      "path": "skills/sec-forensics-dfir/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 2107,
+      "sha256": "9c65e5c26b9f7524bdc362bf222c9764f8c2cd8a5003cb68a7537b6701a31c31"
+    },
+    {
+      "path": "skills/sec-malware/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 2542,
+      "sha256": "357ac271319ac2c6743be25706881258b20eaee4cce9d0fa4978f522f39e43fc"
+    },
+    {
+      "path": "skills/sec-malware/references/malware-deep/_malware-workflow.md",
+      "source_kind": "upstream",
+      "byte_length": 7891,
+      "sha256": "0d8a961418ef53f7e00788a4097f96ea1d332c0ce96cf027fba4a7195ffecc05"
+    },
+    {
+      "path": "skills/sec-malware/references/malware-deep/anti-analysis-techniques.md",
+      "source_kind": "upstream",
+      "byte_length": 5387,
+      "sha256": "4589bc802dc323d7fc29e47be23331337ae70563886e560985d7530120d68c61"
+    },
+    {
+      "path": "skills/sec-malware/references/malware-deep/sandbox-orchestration.md",
+      "source_kind": "upstream",
+      "byte_length": 5239,
+      "sha256": "679fe226a69e03633b33840dc0b035917c3a800b3b8282ec31c067ba124f658a"
+    },
+    {
+      "path": "skills/sec-malware/references/malware-deep/yara-sigma-rules.md",
+      "source_kind": "upstream",
+      "byte_length": 6464,
+      "sha256": "5369e6177e14518b8752696028fe869baa1b8ae96dbc7dc7d88b65a6ac4a1a76"
+    },
+    {
+      "path": "skills/sec-misc/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 1615,
+      "sha256": "d3d4404ab1e17bf9317b404a9f363fbe3622f607a3c23452e7336a98be3433f1"
+    },
+    {
+      "path": "skills/sec-osint/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 1679,
+      "sha256": "ce1baec698eecc93c7a13762a73ffb65c13a37c380f4a3c52072e61b1ba27255"
+    },
+    {
+      "path": "skills/sec-patch-diff/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 13080,
+      "sha256": "aa8a0ae1b9aa3f48d976be89948b17e1d6458943b87f8429c5596abff3ef45ca"
+    },
+    {
+      "path": "skills/sec-patch-diff/references/diff-tools-comparison.md",
+      "source_kind": "upstream",
+      "byte_length": 8482,
+      "sha256": "e72cbaa32d76283f5739238e3b66e7b143194b940f44be146ad7624c335ac0cd"
+    },
+    {
+      "path": "skills/sec-patch-diff/references/patch-tuesday-workflow.md",
+      "source_kind": "upstream",
+      "byte_length": 8958,
+      "sha256": "3b28067b8f25fe7f59bba843f35ad4917ab00d2b02efd25af716c2064f0338f9"
+    },
+    {
+      "path": "skills/sec-patch-diff/references/root-cause-and-poc.md",
+      "source_kind": "upstream",
+      "byte_length": 5263,
+      "sha256": "9fee53c914412252e4a61c8183a0471c0451be062f984df559ee25af183ccf5a"
+    },
+    {
+      "path": "skills/sec-pwn-chain/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 10102,
+      "sha256": "664ec0a5176a10038c955db99f7467e7433dc90ff93d7d5f19e614c7e150c664"
+    },
+    {
+      "path": "skills/sec-pwn-chain/references/heap-pwn.md",
+      "source_kind": "upstream",
+      "byte_length": 9193,
+      "sha256": "61ff066fffe69d7a3bb828fae6899a636d5a05cfe0874c56fa178a5018ebda0a"
+    },
+    {
+      "path": "skills/sec-pwn-chain/references/kernel-pwn.md",
+      "source_kind": "upstream",
+      "byte_length": 12241,
+      "sha256": "cbb8cfa41ca06e8b616e252c0078692d88c09e6f3c7da05833ee633159a83524"
+    },
+    {
+      "path": "skills/sec-pwn-chain/references/stack-pwn.md",
+      "source_kind": "upstream",
+      "byte_length": 8823,
+      "sha256": "a342605f4c10048d62a9ff25321453d26a3ce397b7c10adde00964881a4cabcd"
+    },
+    {
+      "path": "skills/sec-pwn-native/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 3215,
+      "sha256": "5dd5e208dbc0010748b59d5294982c5b47548152c6f8c01dfbe18a253ad7776c"
+    },
+    {
+      "path": "skills/sec-reporting/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 5761,
+      "sha256": "e44f403e3bafc70ceaef2076f88485ad415cf2e8c12f32cf3ceddbdbbeb780ba"
+    },
+    {
+      "path": "skills/sec-reverse/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 2453,
+      "sha256": "754b4eebd986e0b58fde94792212e79246ee3d9e5ed32b8696f1f6b7e5ba40f9"
+    },
+    {
+      "path": "skills/sec-supply-chain/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 5888,
+      "sha256": "a9fdb434355d5f516a82d75930ae358e84749f160fcf5feae7f6d11d7a7eb0a8"
+    },
+    {
+      "path": "skills/sec-supply-chain/references/cicd-pipeline-security.md",
+      "source_kind": "upstream",
+      "byte_length": 3489,
+      "sha256": "6e8dbec4e75b25b293aa20cd3e2b910cf268b8d4f3975aef0d3960addfccf518"
+    },
+    {
+      "path": "skills/sec-supply-chain/references/sbom-sca-methodology.md",
+      "source_kind": "upstream",
+      "byte_length": 2046,
+      "sha256": "97c54111804c7539f1ddb5e9c06cd0fc6287c825a5dfb5abce3416d951ee8722"
+    },
+    {
+      "path": "skills/sec-web-api/INSTRUCTIONS.md",
+      "source_kind": "upstream",
+      "byte_length": 2894,
+      "sha256": "e31503fd185dec91f442a6f9012e47471352d111466c1876424df99d3f2545b0"
+    },
+    {
+      "path": "skills/sec-web-api/references/api-deep/_api-security-workflow.md",
+      "source_kind": "upstream",
+      "byte_length": 5799,
+      "sha256": "2f77f6c0962085b890cf56c5398b4b00422af26e64f0975959d5fcbf691f8f96"
+    },
+    {
+      "path": "skills/sec-web-api/references/api-deep/jwt-oauth-testing.md",
+      "source_kind": "upstream",
+      "byte_length": 2943,
+      "sha256": "b9408e4026cbce626f340e4036dee66a1c8122a29473adbfffd1de65774b722f"
+    },
+    {
+      "path": "skills/sec-web-api/references/api-deep/rest-graphql-testing.md",
+      "source_kind": "upstream",
+      "byte_length": 3296,
+      "sha256": "0bb12f409e74104f89f96f53c57ca246677c447fe33e7ff887f0bae6dba8f7ea"
+    }
+  ]
+}

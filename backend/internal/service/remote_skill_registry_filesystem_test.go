@@ -21,6 +21,11 @@ func TestRemoteSkillFilesystemSeedContainsExactCurrentModelGangTreeAndApprovedPr
 	require.Len(t, seed.EffectiveFiles, remoteSkillExpectedFiles)
 	require.Len(t, seed.FileChanges, remoteSkillExpectedFiles)
 	require.Equal(t, "74bd491260aaa23c45b82bd522b32c6b6dea7d5e76a2d8e3ab3607c6f1ab4e58", seed.Prompt.RawSHA256)
+	require.Equal(t, "53611ff9c5213a32f6441431296e55a6538dfe661f223d645cd6f483c941b610", seed.Prompt.EffectiveSHA256)
+	require.Equal(t, "5bd6df3cfa226c2d6c354dfb83dba8bb1036e0f3042e42590e6d0196a667ca71", seed.Version.RawTreeSHA256)
+	require.Equal(t, "42f6b73618ec7c5a6f4d0794171e36db68068acd0fff3c861da24b11b65e7671", seed.Version.EffectiveTreeSHA256)
+	require.Equal(t, int64(7_093_862), seed.Version.RawTotalBytes)
+	require.Equal(t, int64(7_093_856), seed.Version.EffectiveTotalBytes)
 	require.Contains(t, seed.Prompt.EffectiveBody, RemoteSkillPublicRoot)
 	require.NotContains(t, seed.Prompt.EffectiveBody, "you are codexrip")
 	require.Contains(t, seed.Prompt.EffectiveBody, "宝宝")
@@ -41,6 +46,47 @@ func TestRemoteSkillFilesystemSeedContainsExactCurrentModelGangTreeAndApprovedPr
 		require.Equal(t, hashBusinessSystemPromptBundleBytes(effective), change.EffectiveSHA256, "path=%s", name)
 		require.Equal(t, rewriteRemoteSkillPublishedFiles(map[string][]byte{name: raw})[name], effective, "path=%s", name)
 	}
+}
+
+func TestRemoteSkillFilesystemLoadsSelfConsistentHistorical73FilePair(t *testing.T) {
+	files := NewRemoteSkillRegistryFilesystem(t.TempDir())
+	seed, err := files.LoadSeed(context.Background())
+	require.NoError(t, err)
+	historical := historical73RemoteSkillCandidateForTest(t, seed)
+	require.Equal(t, 73, historical.Version.FileCount)
+	historical.Version.ID = 73
+	historical.Version.PromptVersionID = 9
+	historical.Prompt.ID = 9
+
+	require.ErrorIs(t, validatePairedRemoteSkillCandidate(historical, true), ErrBusinessSystemPromptBundleInvalid)
+	require.NoError(t, validateStoredPairedRemoteSkillCandidate(historical, true))
+	writeRemoteSkillCandidateFixture(t, files, historical)
+	loaded, err := files.LoadCandidate(context.Background(), historical.Version, historical.Prompt, historical.FileChanges)
+	require.NoError(t, err)
+	require.Equal(t, 73, loaded.Version.FileCount)
+}
+
+func historical73RemoteSkillCandidateForTest(t *testing.T, seed RemoteSkillCandidate) RemoteSkillCandidate {
+	t.Helper()
+	names := make([]string, 0, len(seed.RawFiles))
+	for name := range seed.RawFiles {
+		if name != "RULES.md" && name != "README_AI.md" && name != "SKILL.md" {
+			names = append(names, name)
+		}
+	}
+	sortRemoteSkillPaths(names)
+	names = append([]string{"RULES.md", "README_AI.md", "SKILL.md"}, names[:70]...)
+	rawFiles := make(map[string][]byte, 73)
+	for _, name := range names {
+		rawFiles[name] = bytes.Clone(seed.RawFiles[name])
+	}
+	prompt := RemoteSkillPromptCapture{
+		RawBody: []byte(seed.Prompt.RawBody), EffectiveBody: []byte(seed.Prompt.EffectiveBody),
+		RawSHA256: seed.Prompt.RawSHA256, EffectiveSHA256: seed.Prompt.EffectiveSHA256, Diff: seed.Prompt.Diff,
+	}
+	historical, err := buildPairedRemoteSkillCandidate(rawFiles, rewriteRemoteSkillPublishedFiles(rawFiles), prompt, nil, seed.Version.FetchedAt)
+	require.NoError(t, err)
+	return historical
 }
 
 func TestRemoteSkillFilesystemRoundTripsImmutablePairedCandidate(t *testing.T) {

@@ -123,7 +123,7 @@ func TestRemoteSkillPairedMigrationAndStartupRemoveEightGitHubVersions(t *testin
 	require.Equal(t, service.RemoteSkillUpstreamSourceID, snapshot.Active.UpstreamSourceID)
 	require.Equal(t, service.RemoteSkillUpstreamRoot, snapshot.Active.UpstreamRoot)
 	require.Equal(t, service.RemoteSkillPublicRoot, snapshot.Active.PublicRoot)
-	require.Equal(t, 73, snapshot.Active.FileCount)
+	require.Equal(t, 458, snapshot.Active.FileCount)
 	require.Equal(t, snapshot.Active.PromptVersionID, snapshot.ActivePrompt.ID)
 
 	var versionCount, promptCount, jobCount, legacyCount int

@@ -10,7 +10,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 )
@@ -27,7 +26,7 @@ const (
 	remoteSkillSeedFetchedAt         = "2026-08-11T00:00:00Z"
 )
 
-//go:embed all:remote_skill_seed/tree
+//go:embed remote_skill_seed/manifest.json all:remote_skill_seed/tree all:remote_skill_seed/pinned
 var remoteSkillSeedFS embed.FS
 
 type remoteSkillCandidateMetadata struct {
@@ -73,15 +72,11 @@ func (f *RemoteSkillRegistryFilesystem) LoadSeed(ctx context.Context) (RemoteSki
 	if err := ctx.Err(); err != nil {
 		return RemoteSkillCandidate{}, err
 	}
-	rawFiles, err := readRemoteSkillTreeFS(remoteSkillSeedFS, "remote_skill_seed/tree")
+	_, rawFiles, err := loadRemoteSkillSeedFiles()
 	if err != nil {
 		return RemoteSkillCandidate{}, err
 	}
-	paths, err := remoteSkillSeedPaths()
-	if err != nil {
-		return RemoteSkillCandidate{}, err
-	}
-	if err := validateRemoteSkillTreeShape(rawFiles, paths); err != nil {
+	if err := validateCurrentRemoteSkillTree(rawFiles); err != nil {
 		return RemoteSkillCandidate{}, err
 	}
 	prompt, err := buildRemoteSkillPromptCapture([]byte(embeddedBusinessSystemPrompt))
@@ -93,34 +88,6 @@ func (f *RemoteSkillRegistryFilesystem) LoadSeed(ctx context.Context) (RemoteSki
 		return RemoteSkillCandidate{}, err
 	}
 	return buildPairedRemoteSkillCandidate(rawFiles, rewriteRemoteSkillPublishedFiles(rawFiles), prompt, nil, fetchedAt)
-}
-
-func remoteSkillSeedPaths() ([]string, error) {
-	files := make([]string, 0, remoteSkillExpectedFiles)
-	err := fs.WalkDir(remoteSkillSeedFS, "remote_skill_seed/tree", func(name string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		relative := strings.TrimPrefix(strings.TrimPrefix(name, "remote_skill_seed/tree"), "/")
-		normalized, normalizeErr := normalizeBundleRelativePath(relative)
-		if normalizeErr != nil || normalized != relative {
-			return fmt.Errorf("%w: embedded seed path rejected", ErrBusinessSystemPromptBundleInvalid)
-		}
-		files = append(files, relative)
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	sortRemoteSkillPaths(files)
-	return files, nil
-}
-
-func sortRemoteSkillPaths(paths []string) {
-	sort.Strings(paths)
 }
 
 func readRemoteSkillTreeFS(tree fs.FS, root string) (map[string][]byte, error) {
@@ -274,14 +241,14 @@ func (f *RemoteSkillRegistryFilesystem) loadCandidateRoot(
 }
 
 func validatePairedRemoteSkillCandidate(candidate RemoteSkillCandidate, requireIDs bool) error {
-	return validatePairedRemoteSkillCandidatePolicy(candidate, requireIDs, true)
+	return validatePairedRemoteSkillCandidatePolicy(candidate, requireIDs, true, true)
 }
 
 func validateStoredPairedRemoteSkillCandidate(candidate RemoteSkillCandidate, requireIDs bool) error {
-	return validatePairedRemoteSkillCandidatePolicy(candidate, requireIDs, false)
+	return validatePairedRemoteSkillCandidatePolicy(candidate, requireIDs, false, false)
 }
 
-func validatePairedRemoteSkillCandidatePolicy(candidate RemoteSkillCandidate, requireIDs, requireCurrentPromptRewrite bool) error {
+func validatePairedRemoteSkillCandidatePolicy(candidate RemoteSkillCandidate, requireIDs, requireCurrentTree, requireCurrentPromptRewrite bool) error {
 	version := candidate.Version
 	prompt := candidate.Prompt
 	if version.UpstreamSourceID != RemoteSkillUpstreamSourceID || version.UpstreamRoot != RemoteSkillUpstreamRoot || version.PublicRoot != RemoteSkillPublicRoot ||
@@ -293,11 +260,11 @@ func validatePairedRemoteSkillCandidatePolicy(candidate RemoteSkillCandidate, re
 	if (requireIDs && !idsPresent) || (idsPresent && (version.ID < 1 || prompt.ID < 1 || version.PromptVersionID != prompt.ID)) {
 		return fmt.Errorf("%w: paired candidate database identity missing", ErrBusinessSystemPromptBundleInvalid)
 	}
-	approved, err := remoteSkillSeedPaths()
-	if err != nil {
-		return err
-	}
-	if err := validateRemoteSkillTreeShape(candidate.RawFiles, approved); err != nil {
+	if requireCurrentTree {
+		if err := validateCurrentRemoteSkillTree(candidate.RawFiles); err != nil {
+			return err
+		}
+	} else if err := validateGenericRemoteSkillTree(candidate.RawFiles); err != nil {
 		return err
 	}
 	expectedEffective := rewriteRemoteSkillPublishedFiles(candidate.RawFiles)
@@ -315,7 +282,7 @@ func validatePairedRemoteSkillCandidatePolicy(candidate RemoteSkillCandidate, re
 		rawTotal += int64(len(rawBody))
 		effectiveTotal += int64(len(effectiveBody))
 	}
-	if version.FileCount != remoteSkillExpectedFiles || version.FileCount != len(candidate.RawFiles) ||
+	if version.FileCount != len(candidate.RawFiles) ||
 		version.RawTotalBytes != rawTotal || version.EffectiveTotalBytes != effectiveTotal ||
 		rawTotal > remoteSkillMaxTotalBytes || effectiveTotal > remoteSkillMaxTotalBytes ||
 		version.RawTreeSHA256 != remoteSkillFileTreeSHA256(candidate.RawFiles) ||
