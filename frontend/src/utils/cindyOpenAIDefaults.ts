@@ -1,7 +1,7 @@
 export const CINDY_OPENAI_DEFAULTS = {
   responsesMode: 'force_responses',
-  alphaSearchMode: 'responses_web_search',
-  promptCacheKeyMode: 'sha256_64'
+  alphaSearchMode: 'direct',
+  promptCacheKeyMode: 'passthrough'
 } as const
 
 export interface CindyAccountLike {
@@ -32,13 +32,4 @@ export function isCindyOpenAIAPIKeyAccount(account: CindyAccountLike | null | un
   } catch {
     return false
   }
-}
-
-export function cindyFirst<T extends { value: string }>(
-  options: T[],
-  isCindy: boolean,
-  preferred: string
-): T[] {
-  if (!isCindy) return options
-  return [...options].sort((left, right) => Number(right.value === preferred) - Number(left.value === preferred))
 }

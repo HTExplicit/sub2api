@@ -84,6 +84,22 @@ const OAuthAuthorizationFlowStub = defineComponent({
   `,
 })
 
+const SelectStub = defineComponent({
+  props: ['modelValue', 'options'],
+  emits: ['update:modelValue'],
+  template: `
+    <select
+      v-bind="$attrs"
+      :value="modelValue"
+      @change="$emit('update:modelValue', $event.target.value)"
+    >
+      <option v-for="option in options" :key="option.value" :value="option.value">
+        {{ option.label }}
+      </option>
+    </select>
+  `,
+})
+
 function mountModal() {
   return mount(CreateAccountModal, {
     props: { show: true, proxies: [], groups: [] },
@@ -92,7 +108,7 @@ function mountModal() {
         BaseDialog: BaseDialogStub,
         OAuthAuthorizationFlow: OAuthAuthorizationFlowStub,
         ConfirmDialog: true,
-        Select: true,
+        Select: SelectStub,
         Icon: true,
         PlatformIcon: true,
         ProxySelector: true,
@@ -158,6 +174,31 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
       warnings: [],
     })
     createOpenAICodexPATMock.mockReset().mockResolvedValue({})
+  })
+
+  it('selects native Cindy modes and keeps the standard OpenAI option order', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'API Key')
+
+    const baseUrl = wrapper
+      .findAll<HTMLInputElement>('input')
+      .find((candidate) => candidate.attributes('placeholder') === 'https://api.openai.com')
+    expect(baseUrl).toBeDefined()
+    await baseUrl?.setValue('https://api.laxarouter.ai')
+    await flushPromises()
+
+    const responses = wrapper.get<HTMLSelectElement>('[data-testid="openai-responses-mode-select"]')
+    const alpha = wrapper.get<HTMLSelectElement>('[data-testid="openai-alpha-search-mode-select"]')
+    const cache = wrapper.get<HTMLSelectElement>('[data-testid="openai-prompt-cache-key-mode-select"]')
+
+    expect(responses.element.value).toBe('force_responses')
+    expect(alpha.element.value).toBe('direct')
+    expect(alpha.element.options[0].value).toBe('direct')
+    expect(alpha.element.options[1].value).toBe('responses_web_search')
+    expect(cache.element.value).toBe('passthrough')
+    expect(cache.element.options[0].value).toBe('passthrough')
+    expect(cache.element.options[1].value).toBe('sha256_64')
   })
 
   it('sends false explicitly for normal OpenAI account creation by default', async () => {

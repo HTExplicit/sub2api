@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -24,10 +23,13 @@ func TestBusinessSystemPromptSeedRestoresOriginalBehaviorAndRoutingContract(t *t
 	require.False(t, strings.HasSuffix(seed, "\n"))
 	require.Contains(t, effective, remoteSkillRoutingBegin)
 	require.Contains(t, effective, remoteSkillSecurityResearchRoutingBegin)
-	require.Contains(t, effective, "For reverse engineering, security research, and CTF tasks")
-	require.Contains(t, effective, "REMOTE_ROOT/RULES.md")
-	require.Contains(t, effective, "REMOTE_ROOT/README_AI.md")
-	require.Contains(t, effective, "REMOTE_ROOT/SKILL.md")
+	require.Contains(t, effective, "eligibility decision only")
+	require.Contains(t, effective, "must perform zero I/O")
+	require.Contains(t, effective, RemoteSkillPublicRoot+"/RULES.md")
+	require.Contains(t, effective, RemoteSkillPublicRoot+"/README_AI.md")
+	require.Contains(t, effective, RemoteSkillPublicRoot+"/SKILL.md")
+	require.Contains(t, effective, "Use direct raw HTTP GET requests")
+	require.Contains(t, effective, "at most one entry-loading pass")
 	require.Contains(t, effective, "You are , a friendly and highly capable senior technical-engineering assistant.")
 	require.Contains(t, effective, "The only allowed user address is exactly \"宝宝\".")
 	for _, forbidden := range []string{"You are codexrip", `name "codexrip"`, "LOCAL_BUNDLE_ROOT", "[CODEXRIP VERIFIED SKILL DOCUMENTS]", "DESCRIPTOR_URL", "POWERSHELL_BOOTSTRAP", "PYTHON_BOOTSTRAP", `C:\Users\Administrator`} {
@@ -52,12 +54,24 @@ func TestBusinessSystemPromptSeedBindsRemoteEntryLifecycle(t *testing.T) {
 	effective := string(capture.EffectiveBody)
 	firstEnd := strings.Index(effective, remoteSkillRoutingEnd)
 	require.Positive(t, firstEnd)
-	assert.Contains(t, effective[:firstEnd], "REMOTE_ROOT", "first routing block must declare the remote root")
-	assert.Equal(t, 1, strings.Count(effective, "REMOTE_ROOT/RULES.md"))
-	assert.Equal(t, 1, strings.Count(effective, "REMOTE_ROOT/README_AI.md"))
-	assert.Equal(t, 1, strings.Count(effective, "REMOTE_ROOT/SKILL.md"))
-	assert.NotContains(t, effective, "LOCAL_BUNDLE_ROOT")
-	assert.NotContains(t, effective, "bundle/RULES.md")
+	first := effective[:firstEnd]
+	require.Contains(t, first, "zero I/O")
+	require.NotContains(t, first, RemoteSkillPublicRoot)
+	require.NotContains(t, first, ".md")
+
+	previous := -1
+	for _, entryURL := range []string{
+		RemoteSkillPublicRoot + "/RULES.md",
+		RemoteSkillPublicRoot + "/README_AI.md",
+		RemoteSkillPublicRoot + "/SKILL.md",
+	} {
+		require.Equal(t, 1, strings.Count(effective, entryURL))
+		index := strings.Index(effective, entryURL)
+		require.Greater(t, index, previous)
+		previous = index
+	}
+	require.NotContains(t, effective, "LOCAL_BUNDLE_ROOT")
+	require.NotContains(t, effective, "bundle/RULES.md")
 }
 
 func TestBusinessSystemPromptSeedBodyIsInjectedByteForByte(t *testing.T) {

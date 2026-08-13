@@ -212,6 +212,44 @@ func TestForwardAlphaSearchAPIKeyResponsesBridgeUsesConfiguredBaseURL(t *testing
 	require.Equal(t, http.StatusOK, recorder.Code)
 }
 
+func TestForwardAlphaSearchCindyNativeModeBypassesEnabledResponsesBridge(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"id":"search-session","model":"gpt-5.6-sol","commands":{"search_query":[{"q":"news"}]}}`)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/alpha/search", bytes.NewReader(body))
+	c.Request.Header.Set("User-Agent", "codex-test")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"output":"search result"}`)),
+	}}
+	settings := &SettingService{}
+	settings.openAIRefusalRecoveryCache.Store(&cachedOpenAIRefusalRecoveryRuntime{
+		runtime:   OpenAIRefusalRecoveryRuntime{APIKeyAlphaSearchResponsesBridge: true},
+		expiresAt: time.Now().Add(time.Minute).UnixNano(),
+	})
+	service := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream, settingService: settings}
+	account := &Account{
+		ID:          48,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://api.laxarouter.ai"},
+		Extra:       map[string]any{"openai_alpha_search_mode": OpenAIAlphaSearchModeDirect},
+	}
+
+	result, err := service.ForwardAlphaSearch(context.Background(), c, account, body)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Empty(t, result.UpstreamEndpoint)
+	require.Equal(t, "https://api.laxarouter.ai/v1/alpha/search", upstream.lastReq.URL.String())
+	require.Equal(t, "application/json", upstream.lastReq.Header.Get("Accept"))
+	require.Equal(t, http.StatusOK, recorder.Code)
+}
+
 func TestForwardAlphaSearchPATBackfillsMissingChatGPTAccountMetadata(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{"id":"search-session","model":"gpt-5.6-sol","commands":{"search_query":[{"q":"OpenAI news"}]}}`)

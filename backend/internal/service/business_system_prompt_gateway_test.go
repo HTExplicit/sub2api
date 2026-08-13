@@ -87,9 +87,9 @@ func TestBusinessSystemPromptHybridUsesSamePairedPublicationForOfficialCodexAndC
 	require.NoError(t, err)
 	officialInstructions := gjson.GetBytes(officialBody, "instructions").String()
 	require.Contains(t, officialInstructions, RemoteSkillPublicRoot)
-	require.Equal(t, 1, strings.Count(officialInstructions, "REMOTE_ROOT/RULES.md"))
-	require.Equal(t, 1, strings.Count(officialInstructions, "REMOTE_ROOT/README_AI.md"))
-	require.Equal(t, 1, strings.Count(officialInstructions, "REMOTE_ROOT/SKILL.md"))
+	require.Equal(t, 1, strings.Count(officialInstructions, RemoteSkillPublicRoot+"/RULES.md"))
+	require.Equal(t, 1, strings.Count(officialInstructions, RemoteSkillPublicRoot+"/README_AI.md"))
+	require.Equal(t, 1, strings.Count(officialInstructions, RemoteSkillPublicRoot+"/SKILL.md"))
 	require.Equal(t, int64(11), officialApplication.BundleRevision)
 
 	compatible, _ := newBusinessSystemPromptGinContext("/v1/responses", body)

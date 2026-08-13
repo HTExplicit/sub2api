@@ -93,6 +93,26 @@ describe('BulkEditAccountModal', () => {
     } as any)
   })
 
+  it('uses native OpenAI defaults and standard option order for bulk editing', () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['apikey']
+    })
+    const alpha = wrapper.get<HTMLSelectElement>(
+      '[data-testid="bulk-edit-openai-alpha-search-mode-select"]'
+    )
+    const cache = wrapper.get<HTMLSelectElement>(
+      '[data-testid="bulk-edit-openai-prompt-cache-key-mode-select"]'
+    )
+
+    expect(alpha.element.value).toBe('direct')
+    expect(alpha.element.options[0].value).toBe('direct')
+    expect(alpha.element.options[1].value).toBe('responses_web_search')
+    expect(cache.element.value).toBe('passthrough')
+    expect(cache.element.options[0].value).toBe('passthrough')
+    expect(cache.element.options[1].value).toBe('sha256_64')
+  })
+
   it('批量修改倍率时提示自动同步账号需要先关闭同步', async () => {
     const wrapper = mountModal()
 

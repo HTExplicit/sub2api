@@ -1019,6 +1019,7 @@
         </div>
         <Select
           v-model="openAIAlphaSearchMode"
+          data-testid="bulk-edit-openai-alpha-search-mode-select"
           :options="openAIAlphaSearchModeOptions"
           :class="!enableOpenAIAlphaSearchMode && 'pointer-events-none opacity-50'"
         />
@@ -1033,6 +1034,7 @@
         </div>
         <Select
           v-model="openAIPromptCacheKeyMode"
+          data-testid="bulk-edit-openai-prompt-cache-key-mode-select"
           :options="openAIPromptCacheKeyModeOptions"
           :class="!enableOpenAIPromptCacheKeyMode && 'pointer-events-none opacity-50'"
         />

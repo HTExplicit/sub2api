@@ -172,8 +172,8 @@ func NormalizeCindyDeviceIdentityExtra(
 	normalized[CindyDeviceIDExtraKey] = deviceID
 	normalized[CindyDeviceIDSourceExtraKey] = source
 	setCindyDefault(normalized, current, CindyResponsesModeExtraKey, "force_responses")
-	setCindyDefault(normalized, current, CindyAlphaSearchExtraKey, OpenAIAlphaSearchModeResponsesWebSearch)
-	setCindyDefault(normalized, current, CindyPromptCacheExtraKey, OpenAIPromptCacheKeyModeSHA25664)
+	setCindyDefault(normalized, current, CindyAlphaSearchExtraKey, OpenAIAlphaSearchModeDirect)
+	setCindyDefault(normalized, current, CindyPromptCacheExtraKey, OpenAIPromptCacheKeyModePassthrough)
 	return normalized, nil
 }
 

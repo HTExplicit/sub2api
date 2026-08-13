@@ -20,6 +20,7 @@ func TestEmbeddedRemoteSkillPromptMatchesApprovedNoBrandCapture(t *testing.T) {
 
 	capture, err := buildRemoteSkillPromptCapture([]byte(embeddedBusinessSystemPrompt))
 	require.NoError(t, err)
+	require.Equal(t, "53611ff9c5213a32f6441431296e55a6538dfe661f223d645cd6f483c941b610", capture.EffectiveSHA256)
 	rawFirst, err := locateUniqueRemoteSkillPromptBlock(capture.RawBody, remoteSkillRoutingBegin, remoteSkillRoutingEnd)
 	require.NoError(t, err)
 	rawSecond, err := locateUniqueRemoteSkillPromptBlock(capture.RawBody, remoteSkillSecurityResearchRoutingBegin, remoteSkillSecurityResearchRoutingEnd)
@@ -76,6 +77,73 @@ func TestBuildRemoteSkillPromptCaptureRewritesOnlyTwoUniqueRoutingBlocks(t *test
 	require.Contains(t, string(capture.EffectiveBody), "You are ,")
 	require.Contains(t, string(capture.EffectiveBody), "宝宝")
 	require.NotContains(t, strings.ToLower(string(capture.EffectiveBody)), "you are codexrip")
+}
+
+func TestRemoteSkillEligibilityGatePerformsNoEntryIOAndExcludesOrdinaryWork(t *testing.T) {
+	capture, err := buildRemoteSkillPromptCapture([]byte(embeddedBusinessSystemPrompt))
+	require.NoError(t, err)
+	block, err := locateUniqueRemoteSkillPromptBlock(
+		capture.EffectiveBody,
+		remoteSkillRoutingBegin,
+		remoteSkillRoutingEnd,
+	)
+	require.NoError(t, err)
+	gate := string(capture.EffectiveBody[block.begin:block.end])
+	lowerGate := strings.ToLower(gate)
+
+	require.Contains(t, gate, "zero I/O")
+	require.Contains(t, lowerGate, "eligibility decision only")
+	require.Contains(t, lowerGate, "ordinary performance")
+	require.Contains(t, lowerGate, "network-path or api integration")
+	require.Contains(t, lowerGate, "service operations")
+	require.Contains(t, lowerGate, "frontend, ui, product")
+	require.Contains(t, lowerGate, "maintenance, debugging, or explanation of this skill")
+	require.NotContains(t, gate, RemoteSkillPublicRoot)
+	require.NotContains(t, gate, "RULES.md")
+	require.NotContains(t, gate, "README_AI.md")
+	require.NotContains(t, gate, "SKILL.md")
+	require.NotContains(t, gate, "REMOTE_ROOT")
+	require.NotContains(t, gate, "HTTP GET")
+}
+
+func TestRemoteSkillEntryLoaderUsesOneOrderedBoundedRawHTTPPass(t *testing.T) {
+	capture, err := buildRemoteSkillPromptCapture([]byte(embeddedBusinessSystemPrompt))
+	require.NoError(t, err)
+	block, err := locateUniqueRemoteSkillPromptBlock(
+		capture.EffectiveBody,
+		remoteSkillSecurityResearchRoutingBegin,
+		remoteSkillSecurityResearchRoutingEnd,
+	)
+	require.NoError(t, err)
+	loader := string(capture.EffectiveBody[block.begin:block.end])
+	lowerLoader := strings.ToLower(loader)
+
+	urls := []string{
+		RemoteSkillPublicRoot + "/RULES.md",
+		RemoteSkillPublicRoot + "/README_AI.md",
+		RemoteSkillPublicRoot + "/SKILL.md",
+	}
+	previous := -1
+	for _, entryURL := range urls {
+		require.Equal(t, 1, strings.Count(loader, entryURL), entryURL)
+		index := strings.Index(loader, entryURL)
+		require.Greater(t, index, previous, entryURL)
+		previous = index
+	}
+
+	require.Contains(t, loader, "direct raw HTTP GET")
+	require.Contains(t, lowerLoader, "hosted web search")
+	require.Contains(t, lowerLoader, "non-empty body")
+	require.Contains(t, lowerLoader, "valid utf-8")
+	require.Contains(t, lowerLoader, "at most once with a different raw http client")
+	require.Contains(t, lowerLoader, "do not restart the loading pass")
+	require.Contains(t, lowerLoader, "do not refetch files that already succeeded")
+	require.Contains(t, lowerLoader, "at most one entry-loading pass")
+	require.Contains(t, lowerLoader, "follow-up turns in the same task must reuse")
+	require.Contains(t, lowerLoader, "local, installed, bundled, or same-name skill")
+	require.Contains(t, lowerLoader, "another origin")
+	require.NotContains(t, loader, RemoteSkillMoxinggangRoot)
+	require.NotContains(t, lowerLoader, "raw.githubusercontent.com")
 }
 
 func TestBuildRemoteSkillPromptCaptureRejectsMalformedCaptures(t *testing.T) {
