@@ -38,10 +38,10 @@ describe('Cindy OpenAI defaults', () => {
     ).toBe(false)
   })
 
-  it('uses direct alpha search and a Cindy-safe cache key while keeping forced Responses', () => {
+  it('uses the proven Responses web-search bridge with a Cindy-safe cache key', () => {
     expect(CINDY_OPENAI_DEFAULTS).toEqual({
       responsesMode: 'force_responses',
-      alphaSearchMode: 'direct',
+      alphaSearchMode: 'responses_web_search',
       promptCacheKeyMode: 'sha256_64'
     })
   })

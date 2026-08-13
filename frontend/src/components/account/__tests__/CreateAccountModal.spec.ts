@@ -193,9 +193,10 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     const cache = wrapper.get<HTMLSelectElement>('[data-testid="openai-prompt-cache-key-mode-select"]')
 
     expect(responses.element.value).toBe('force_responses')
-    expect(alpha.element.value).toBe('direct')
+    expect(alpha.element.value).toBe('responses_web_search')
     expect(alpha.element.options[0].value).toBe('direct')
     expect(alpha.element.options[1].value).toBe('responses_web_search')
+    expect(alpha.element.options[2].value).toBe('disabled')
     expect(cache.element.value).toBe('sha256_64')
     expect(cache.element.options[0].value).toBe('passthrough')
     expect(cache.element.options[1].value).toBe('sha256_64')

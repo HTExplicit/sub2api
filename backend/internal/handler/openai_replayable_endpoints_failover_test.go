@@ -4,6 +4,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -26,13 +27,19 @@ type replayableEndpointFailoverUpstream struct {
 	firstError  error
 	errorCalls  int
 	firstStatus int
+	firstBody   string
 	successBody string
 	successCode int
+	successType string
+	paths       []string
 }
 
-func (u *replayableEndpointFailoverUpstream) Do(_ *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
+func (u *replayableEndpointFailoverUpstream) Do(req *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
 	u.mu.Lock()
 	u.accountIDs = append(u.accountIDs, accountID)
+	if req != nil && req.URL != nil {
+		u.paths = append(u.paths, req.URL.Path)
+	}
 	call := len(u.accountIDs)
 	u.mu.Unlock()
 	if u.firstError != nil {
@@ -49,19 +56,27 @@ func (u *replayableEndpointFailoverUpstream) Do(_ *http.Request, _ string, accou
 		if status == 0 {
 			status = http.StatusServiceUnavailable
 		}
+		body := u.firstBody
+		if body == "" {
+			body = `{"error":{"message":"temporary"}}`
+		}
 		return &http.Response{
 			StatusCode: status,
 			Header:     http.Header{"Content-Type": []string{"application/json"}},
-			Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"temporary"}}`)),
+			Body:       io.NopCloser(strings.NewReader(body)),
 		}, nil
 	}
 	code := u.successCode
 	if code == 0 {
 		code = http.StatusOK
 	}
+	contentType := u.successType
+	if contentType == "" {
+		contentType = "application/json"
+	}
 	return &http.Response{
 		StatusCode: code,
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Header:     http.Header{"Content-Type": []string{contentType}},
 		Body:       io.NopCloser(strings.NewReader(u.successBody)),
 	}, nil
 }
@@ -70,6 +85,50 @@ func (u *replayableEndpointFailoverUpstream) calls() []int64 {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	return append([]int64(nil), u.accountIDs...)
+}
+
+func (u *replayableEndpointFailoverUpstream) requestPaths() []string {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return append([]string(nil), u.paths...)
+}
+
+type replayableEndpointSettingRepo struct {
+	values map[string]string
+}
+
+func (r replayableEndpointSettingRepo) Get(_ context.Context, key string) (*service.Setting, error) {
+	return nil, nil
+}
+
+func (r replayableEndpointSettingRepo) GetValue(_ context.Context, key string) (string, error) {
+	return r.values[key], nil
+}
+
+func (r replayableEndpointSettingRepo) Set(_ context.Context, key, value string) error {
+	return nil
+}
+
+func (r replayableEndpointSettingRepo) GetMultiple(_ context.Context, keys []string) (map[string]string, error) {
+	values := make(map[string]string, len(keys))
+	for _, key := range keys {
+		if value, ok := r.values[key]; ok {
+			values[key] = value
+		}
+	}
+	return values, nil
+}
+
+func (r replayableEndpointSettingRepo) SetMultiple(_ context.Context, settings map[string]string) error {
+	return nil
+}
+
+func (r replayableEndpointSettingRepo) GetAll(_ context.Context) (map[string]string, error) {
+	return r.GetMultiple(context.Background(), []string{service.SettingKeyOpenAIAPIKeyAlphaSearchResponsesBridgeEnabled})
+}
+
+func (r replayableEndpointSettingRepo) Delete(_ context.Context, key string) error {
+	return nil
 }
 
 func newReplayableEndpointFailoverHandler(t *testing.T, upstream service.HTTPUpstream) (*OpenAIGatewayHandler, int64) {
@@ -92,6 +151,9 @@ func newReplayableEndpointFailoverHandler(t *testing.T, upstream service.HTTPUps
 				"pool_mode_retry_count":        10,
 				"pool_mode_retry_status_codes": []any{float64(http.StatusServiceUnavailable)},
 			},
+			Extra: map[string]any{
+				"openai_alpha_search_mode": service.OpenAIAlphaSearchModeResponsesWebSearch,
+			},
 		},
 		{
 			ID:          2,
@@ -103,14 +165,20 @@ func newReplayableEndpointFailoverHandler(t *testing.T, upstream service.HTTPUps
 			Priority:    1,
 			GroupIDs:    []int64{groupID},
 			Credentials: map[string]any{"api_key": "sk-2", "base_url": "https://upstream-2.example/v1"},
+			Extra: map[string]any{
+				"openai_alpha_search_mode": service.OpenAIAlphaSearchModeResponsesWebSearch,
+			},
 		},
 	}
 	cfg := &config.Config{RunMode: config.RunModeSimple}
+	settingService := service.NewSettingService(replayableEndpointSettingRepo{values: map[string]string{
+		service.SettingKeyOpenAIAPIKeyAlphaSearchResponsesBridgeEnabled: "true",
+	}}, cfg)
 	gatewayService := service.NewOpenAIGatewayService(
 		openAIImagesFailoverAccountRepo{accounts: accounts},
 		nil, nil, nil, nil, nil, nil, cfg, nil, nil, nil, nil, nil,
 		upstream,
-		nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, settingService, nil,
 	)
 	billingService := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
 	t.Cleanup(billingService.Stop)
@@ -153,6 +221,32 @@ func TestAlphaSearchRetriesPoolFailureOnExactSameAccount(t *testing.T) {
 	h.AlphaSearch(c)
 
 	require.Equal(t, []int64{1, 1}, upstream.calls())
+}
+
+func TestAlphaSearchResponsesBridgeToolFailureSwitchesAccountAndSucceeds(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	successSSE := "event: response.output_item.done\n" +
+		`data: {"type":"response.output_item.done","item":{"type":"web_search_call","id":"ws_1","status":"completed"}}` + "\n\n" +
+		"event: response.output_text.delta\n" +
+		`data: {"type":"response.output_text.delta","delta":"search result"}` + "\n\n"
+	upstream := &replayableEndpointFailoverUpstream{
+		firstStatus: http.StatusBadRequest,
+		firstBody:   `{"error":{"type":"invalid_request_error","message":"This upstream tool is unavailable"}}`,
+		successBody: successSSE,
+		successType: "text/event-stream",
+	}
+	h, groupID := newReplayableEndpointFailoverHandler(t, upstream)
+	c, recorder := newReplayableEndpointContext(t, groupID, http.MethodPost, "/v1/alpha/search", []byte(
+		`{"model":"gpt-5.1","commands":{"search_query":[{"q":"latest news"}]}}`,
+	))
+
+	h.AlphaSearch(c)
+
+	require.Equal(t, []int64{1, 2}, upstream.calls())
+	require.Equal(t, []string{"/v1/responses", "/v1/responses"}, upstream.requestPaths())
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.JSONEq(t, `{"output":"search result"}`, recorder.Body.String())
+	require.Equal(t, EndpointResponses, GetUpstreamEndpoint(c, service.PlatformOpenAI))
 }
 
 func TestEmbeddingsRetriesPoolFailureOnExactSameAccount(t *testing.T) {

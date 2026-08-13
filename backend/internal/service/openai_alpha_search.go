@@ -19,6 +19,10 @@ import (
 const (
 	chatgptCodexAlphaSearchURL   = "https://chatgpt.com/backend-api/codex/alpha/search"
 	openAIPlatformAlphaSearchURL = "https://api.openai.com/v1/alpha/search"
+
+	OpenAIAlphaSearchBridgeUnavailableCode          = "web_search_unavailable"
+	OpenAIAlphaSearchBridgeUnavailableClientMessage = "Web search is temporarily unavailable"
+	openAIAlphaSearchBridgeUnavailableReason        = GatewayFailureReason("openai_alpha_search_bridge_unavailable")
 )
 
 // ForwardAlphaSearch proxies Codex standalone web search without binding the
@@ -174,15 +178,31 @@ func (s *OpenAIGatewayService) forwardAlphaSearchViaResponsesWebSearch(
 
 	if resp.StatusCode >= http.StatusBadRequest {
 		upstreamMessage := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(respBody)))
-		if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMessage, respBody) {
+		bridgeCapabilityError := isOpenAIAlphaSearchBridgeCapabilityError(
+			resp.StatusCode,
+			upstreamMessage,
+			respBody,
+		)
+		if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMessage, respBody) ||
+			bridgeCapabilityError {
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
 			// Responses bridge is an optional tool adapter. Any failure is scoped to
 			// this bridge request and must not mutate the model account's health.
-			return nil, &UpstreamFailoverError{
-				StatusCode:             resp.StatusCode,
-				ResponseBody:           respBody,
-				RetryableOnSameAccount: account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
+			failoverErr := &UpstreamFailoverError{
+				StatusCode:                   resp.StatusCode,
+				ResponseBody:                 respBody,
+				ResponseHeaders:              resp.Header.Clone(),
+				RetryableOnSameAccount:       account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
+				Scope:                        GatewayFailureScopeAccount,
+				NextAccountAction:            NextAccountRetry,
+				SuppressAccountHealthPenalty: true,
 			}
+			if bridgeCapabilityError {
+				failoverErr.Reason = openAIAlphaSearchBridgeUnavailableReason
+				failoverErr.ClientStatusCode = http.StatusServiceUnavailable
+				failoverErr.ClientMessage = OpenAIAlphaSearchBridgeUnavailableClientMessage
+			}
+			return nil, failoverErr
 		}
 	}
 
@@ -199,9 +219,16 @@ func (s *OpenAIGatewayService) forwardAlphaSearchViaResponsesWebSearch(
 	if !account.IsShadow() {
 		s.UpdateCodexUsageSnapshotFromHeaders(ctx, account.ID, resp.Header)
 	}
-	alphaRespBody, err := openAIAlphaSearchResponseFromResponsesSSE(respBody)
+	alphaRespBody, hasSearchEvidence, err := openAIAlphaSearchResponseFromResponsesSSE(respBody)
 	if err != nil {
 		return nil, err
+	}
+	if account.IsOpenAIApiKey() && !hasSearchEvidence {
+		return nil, NewOpenAIAlphaSearchBridgeUnavailableError(
+			http.StatusBadGateway,
+			resp.Header,
+			nil,
+		)
 	}
 	c.Data(http.StatusOK, "application/json", alphaRespBody)
 	return &OpenAIForwardResult{
@@ -557,23 +584,25 @@ func shouldApplyOpenAIAlphaSearchAccountErrorSideEffects(statusCode int) bool {
 	}
 }
 
-func openAIAlphaSearchResponseFromResponsesSSE(body []byte) ([]byte, error) {
-	output, results := parseOpenAIResponsesSSEForAlphaSearch(body)
+func openAIAlphaSearchResponseFromResponsesSSE(body []byte) ([]byte, bool, error) {
+	output, results, hasWebSearchCall := parseOpenAIResponsesSSEForAlphaSearch(body)
 	resp := map[string]any{
 		"output": output,
 	}
 	if len(results) > 0 {
 		resp["results"] = results
 	}
-	return json.Marshal(resp)
+	encoded, err := json.Marshal(resp)
+	return encoded, hasWebSearchCall || len(results) > 0, err
 }
 
-func parseOpenAIResponsesSSEForAlphaSearch(body []byte) (string, []any) {
+func parseOpenAIResponsesSSEForAlphaSearch(body []byte) (string, []any, bool) {
 	text := strings.ReplaceAll(string(body), "\r\n", "\n")
 	var output strings.Builder
 	var completedResponse any
 	results := make([]any, 0)
 	seenURLs := make(map[string]struct{})
+	hasWebSearchCall := false
 
 	for _, block := range strings.Split(text, "\n\n") {
 		data := openAIAlphaSearchSSEData(block)
@@ -590,15 +619,80 @@ func parseOpenAIResponsesSSEForAlphaSearch(body []byte) (string, []any) {
 		if event["type"] == "response.completed" {
 			completedResponse = event["response"]
 		}
+		if containsOpenAIAlphaSearchWebSearchCall(event) {
+			hasWebSearchCall = true
+		}
 		collectOpenAIAlphaSearchURLCitations(event, &results, seenURLs)
 	}
 
 	out := output.String()
 	if strings.TrimSpace(out) == "" && completedResponse != nil {
 		out = extractOpenAIResponsesCompletedText(completedResponse)
+		if containsOpenAIAlphaSearchWebSearchCall(completedResponse) {
+			hasWebSearchCall = true
+		}
 		collectOpenAIAlphaSearchURLCitations(completedResponse, &results, seenURLs)
 	}
-	return out, results
+	return out, results, hasWebSearchCall
+}
+
+func containsOpenAIAlphaSearchWebSearchCall(value any) bool {
+	switch typed := value.(type) {
+	case map[string]any:
+		itemType, _ := typed["type"].(string)
+		if itemType == "web_search_call" || strings.HasPrefix(itemType, "response.web_search_call.") {
+			return true
+		}
+		for _, child := range typed {
+			if containsOpenAIAlphaSearchWebSearchCall(child) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if containsOpenAIAlphaSearchWebSearchCall(child) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isOpenAIAlphaSearchBridgeCapabilityError(statusCode int, upstreamMessage string, upstreamBody []byte) bool {
+	if statusCode != http.StatusBadRequest {
+		return false
+	}
+	errorType := strings.ToLower(strings.TrimSpace(gjson.GetBytes(upstreamBody, "error.type").String()))
+	if errorType != "invalid_request_error" {
+		return false
+	}
+	message := strings.ToLower(strings.TrimSpace(upstreamMessage))
+	if message == "" {
+		message = strings.ToLower(strings.TrimSpace(gjson.GetBytes(upstreamBody, "error.message").String()))
+	}
+	return strings.Contains(message, "tool")
+}
+
+func NewOpenAIAlphaSearchBridgeUnavailableError(
+	statusCode int,
+	responseHeaders http.Header,
+	responseBody []byte,
+) *UpstreamFailoverError {
+	return &UpstreamFailoverError{
+		StatusCode:                   statusCode,
+		ResponseBody:                 responseBody,
+		ResponseHeaders:              responseHeaders.Clone(),
+		Scope:                        GatewayFailureScopeAccount,
+		Reason:                       openAIAlphaSearchBridgeUnavailableReason,
+		NextAccountAction:            NextAccountRetry,
+		ClientStatusCode:             http.StatusServiceUnavailable,
+		ClientMessage:                OpenAIAlphaSearchBridgeUnavailableClientMessage,
+		SuppressAccountHealthPenalty: true,
+	}
+}
+
+func (e *UpstreamFailoverError) IsOpenAIAlphaSearchBridgeUnavailable() bool {
+	return e != nil && e.Reason == openAIAlphaSearchBridgeUnavailableReason
 }
 
 func openAIAlphaSearchSSEData(block string) string {

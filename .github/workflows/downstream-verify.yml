@@ -31,7 +31,7 @@ jobs:
           cache-dependency-path: backend/go.sum
       - name: Service tests
         working-directory: backend
-        run: go test -p=1 -tags unit ./internal/service -run 'Test.*(Refusal|CyberPolicy|Continuation|InvalidEncryptedContent|PreviousResponseNotFound|CapacityShed|RequestScopedTransient|ServerOverloaded|BusinessSystemPrompt|RemoteSkill|Cindy|CompatibilityModes)|Test(UpdateService|NormalizeAccountTaxonomyName|FilterConsoleAccounts|AccountConsolePlan|AccountFacetMatcher)' -count=1
+        run: go test -p=1 -tags unit ./internal/service -run 'Test.*(Refusal|CyberPolicy|Continuation|InvalidEncryptedContent|PreviousResponseNotFound|CapacityShed|RequestScopedTransient|ServerOverloaded|BusinessSystemPrompt|RemoteSkill|Cindy|CompatibilityModes|AlphaSearch)|Test(UpdateService|NormalizeAccountTaxonomyName|FilterConsoleAccounts|AccountConsolePlan|AccountFacetMatcher)' -count=1
       - name: OpenAI probe ownership race tests
         working-directory: backend
         run: go test -race -tags unit ./internal/service -run 'TestOpenAIRuntimeBreaker_(APIKeySameAccountRetryDoesNotUseRedisLease|OAuthSameAccountRetryTransfersProbeUntilFinalFailure|SuppressedRetryReleasesSelectionClaim)' -count=1
@@ -41,7 +41,7 @@ jobs:
       - name: Handler tests
         working-directory: backend
         run: |
-          go test -p=1 ./internal/handler ./internal/handler/admin -run 'Test.*(Refusal|Cyber|Continuation)' -count=1
+          go test -p=1 -tags unit ./internal/handler ./internal/handler/admin -run 'Test.*(Refusal|Cyber|Continuation|AlphaSearch)' -count=1
           go test -p=1 ./internal/handler/admin -run 'TestUpdateSettings(PartialPayload|RejectsTwoCaptchaProviders|RequiresFourTencentCaptchaCredentials|RetainsStoredTencentCaptchaCredentials|ValidatesTencentCaptchaAppID|ValidatesTurnstileSiteKey)' -count=1
           go test -p=1 ./internal/handler/admin -run 'Test(ExportData|PreviewDataImport|ImportData|DataAccountIdentityKeys|BulkUpdateAccepts|AccountHandler)' -count=1
           go test -p=1 ./internal/repository -run '^$'
@@ -51,8 +51,8 @@ jobs:
       - name: Cindy defaults migration tests
         working-directory: backend
         run: |
-          go test -p=1 ./migrations -run '^TestMigration20(7RestoresOnlyCindyNativeOpenAIModes|8UsesCindyPromptCacheHashOnly)$' -count=1
-          go test -p=1 -tags integration ./migrations -run '^TestCindy(OpenAIDefaults|PromptCacheHash)MigrationIsStrictAndIdempotent$' -count=1
+          go test -p=1 ./migrations -run '^TestMigration20(7RestoresOnlyCindyNativeOpenAIModes|8UsesCindyPromptCacheHashOnly|9RestoresOnlyCindyAlphaSearchBridge)$' -count=1
+          go test -p=1 -tags integration ./migrations -run '^TestCindy(OpenAIDefaults|PromptCacheHash|AlphaSearchBridge)MigrationIsStrictAndIdempotent$' -count=1
 
   frontend:
     name: Downstream frontend

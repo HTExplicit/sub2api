@@ -36,7 +36,7 @@ func TestNormalizeCindyDeviceIdentityExtraPreservesInput(t *testing.T) {
 	require.Equal(t, "registration-record", got[CindyDeviceIDSourceExtraKey])
 	require.Equal(t, "kept", got["ordinary"])
 	require.Equal(t, "force_responses", got[CindyResponsesModeExtraKey])
-	require.Equal(t, OpenAIAlphaSearchModeDirect, got[CindyAlphaSearchExtraKey])
+	require.Equal(t, OpenAIAlphaSearchModeResponsesWebSearch, got[CindyAlphaSearchExtraKey])
 	require.Equal(t, OpenAIPromptCacheKeyModeSHA25664, got[CindyPromptCacheExtraKey])
 	require.Equal(t, deviceID, requested[CindyDeviceIDExtraKey], "input map must not be mutated")
 }

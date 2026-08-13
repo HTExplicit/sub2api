@@ -82,7 +82,8 @@ func TestMissingCompatibilityModesUseCindySafeCacheAndOrdinaryNativeDefaults(t *
 		Credentials: map[string]any{"base_url": "https://api.openai.com"},
 	}
 
-	require.Equal(t, OpenAIAlphaSearchModeDirect, cindy.GetOpenAIAlphaSearchMode())
+	require.Equal(t, OpenAIAlphaSearchModeResponsesWebSearch, cindy.GetOpenAIAlphaSearchMode())
+	require.True(t, cindy.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityAlphaSearch))
 	require.Equal(t, OpenAIPromptCacheKeyModeSHA25664, cindy.GetOpenAIPromptCacheKeyMode())
 	require.Equal(t, OpenAIAlphaSearchModeDirect, ordinary.GetOpenAIAlphaSearchMode())
 	require.Equal(t, OpenAIPromptCacheKeyModePassthrough, ordinary.GetOpenAIPromptCacheKeyMode())
@@ -101,6 +102,10 @@ func TestCindyExplicitCompatibilityModesRemainAvailable(t *testing.T) {
 
 	require.Equal(t, OpenAIAlphaSearchModeResponsesWebSearch, cindy.GetOpenAIAlphaSearchMode())
 	require.Equal(t, OpenAIPromptCacheKeyModeSHA25664, cindy.GetOpenAIPromptCacheKeyMode())
+
+	cindy.Extra["openai_alpha_search_mode"] = OpenAIAlphaSearchModeDirect
+	require.Equal(t, OpenAIAlphaSearchModeDirect, cindy.GetOpenAIAlphaSearchMode())
+	require.True(t, cindy.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityAlphaSearch))
 }
 
 func TestCindyDefaultPromptCacheModeHashesAzureRejectedLongKeyWhenGlobalGateIsEnabled(t *testing.T) {
