@@ -1,6 +1,6 @@
 export const CINDY_OPENAI_DEFAULTS = {
   responsesMode: 'force_responses',
-  alphaSearchMode: 'direct',
+  alphaSearchMode: 'responses_web_search',
   promptCacheKeyMode: 'sha256_64'
 } as const
 

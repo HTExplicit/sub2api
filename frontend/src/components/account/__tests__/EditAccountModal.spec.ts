@@ -325,8 +325,10 @@ describe('EditAccountModal', () => {
     const cindyCache = cindyWrapper.get<HTMLSelectElement>(
       '[data-testid="openai-prompt-cache-key-mode-select"]'
     )
-    expect(cindyAlpha.element.value).toBe('direct')
+    expect(cindyAlpha.element.value).toBe('responses_web_search')
     expect(cindyAlpha.element.options[0].value).toBe('direct')
+    expect(cindyAlpha.element.options[1].value).toBe('responses_web_search')
+    expect(cindyAlpha.element.options[2].value).toBe('disabled')
     expect(cindyCache.element.value).toBe('sha256_64')
     expect(cindyCache.element.options[0].value).toBe('passthrough')
 

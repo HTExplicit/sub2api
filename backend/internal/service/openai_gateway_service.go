@@ -310,9 +310,9 @@ func SetActualOpenAIUpstreamEndpoint(c *gin.Context, endpoint string) {
 	if c == nil {
 		return
 	}
-	if endpoint = strings.TrimSpace(endpoint); endpoint != "" {
-		c.Set(openAIUpstreamEndpointContextKey, endpoint)
-	}
+	// The handler clears this value before each account attempt so an endpoint
+	// selected by a failed bridge attempt cannot leak into the next route.
+	c.Set(openAIUpstreamEndpointContextKey, strings.TrimSpace(endpoint))
 }
 
 // GetActualOpenAIUpstreamEndpoint returns the endpoint recorded by the latest

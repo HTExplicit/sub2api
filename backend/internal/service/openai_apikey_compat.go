@@ -23,11 +23,17 @@ func (a *Account) GetOpenAIAlphaSearchMode() string {
 		return OpenAIAlphaSearchModeDirect
 	}
 	switch a.GetExtraString("openai_alpha_search_mode") {
+	case OpenAIAlphaSearchModeDirect:
+		return OpenAIAlphaSearchModeDirect
 	case OpenAIAlphaSearchModeResponsesWebSearch:
 		return OpenAIAlphaSearchModeResponsesWebSearch
 	case OpenAIAlphaSearchModeDisabled:
 		return OpenAIAlphaSearchModeDisabled
 	default:
+		if _, present := a.Extra["openai_alpha_search_mode"]; !present &&
+			IsCindyAPIKeyAccount(a.Platform, a.Type, a.Credentials) {
+			return OpenAIAlphaSearchModeResponsesWebSearch
+		}
 		return OpenAIAlphaSearchModeDirect
 	}
 }

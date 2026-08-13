@@ -197,12 +197,17 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 		writerSizeBeforeForward := c.Writer.Size()
 		forwardStart := time.Now()
 		var result *service.OpenAIForwardResult
+		service.SetActualOpenAIUpstreamEndpoint(c, "")
+		setActualUpstreamEndpoint(c, "")
 		result, err = func() (*service.OpenAIForwardResult, error) {
 			if accountRelease != nil {
 				defer accountRelease()
 			}
 			return h.gatewayService.ForwardAlphaSearch(c.Request.Context(), c, account, forwardBody)
 		}()
+		if endpoint := service.GetActualOpenAIUpstreamEndpoint(c); endpoint != "" {
+			setActualUpstreamEndpoint(c, endpoint)
+		}
 		service.SetOpsLatencyMs(c, service.OpsResponseLatencyMsKey, time.Since(forwardStart).Milliseconds())
 
 		if err == nil {
@@ -302,7 +307,7 @@ func (h *OpenAIGatewayHandler) recordAlphaSearchUsage(
 	sessionID := service.ExtractClientSessionID(c)
 	requestPayloadHash := service.HashUsageRequestPayload(body)
 	inboundEndpoint := GetInboundEndpoint(c)
-	upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
+	upstreamEndpoint := resolveOpenAIAlphaSearchUpstreamEndpoint(c, account, result)
 	quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 
 	h.submitMandatoryUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
@@ -333,4 +338,21 @@ func (h *OpenAIGatewayHandler) recordAlphaSearchUsage(
 			).Error("openai_alpha_search.record_usage_failed", zap.Error(err))
 		}
 	})
+}
+
+func resolveOpenAIAlphaSearchUpstreamEndpoint(
+	c *gin.Context,
+	account *service.Account,
+	result *service.OpenAIForwardResult,
+) string {
+	if result != nil {
+		if endpoint := strings.TrimSpace(result.UpstreamEndpoint); endpoint != "" {
+			return endpoint
+		}
+	}
+	platform := service.PlatformOpenAI
+	if account != nil {
+		platform = account.Platform
+	}
+	return GetUpstreamEndpoint(c, platform)
 }

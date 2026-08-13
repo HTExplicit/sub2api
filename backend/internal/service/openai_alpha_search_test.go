@@ -212,6 +212,139 @@ func TestForwardAlphaSearchAPIKeyResponsesBridgeUsesConfiguredBaseURL(t *testing
 	require.Equal(t, http.StatusOK, recorder.Code)
 }
 
+func TestForwardAlphaSearchAPIKeyResponsesBridgeToolErrorFailsOverWithoutAccountPenalty(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"id":"search-session","model":"gpt-5.6-sol","commands":{"search_query":[{"q":"news"}]}}`)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/alpha/search", bytes.NewReader(body))
+
+	upstreamBody := []byte(`{"error":{"type":"invalid_request_error","message":"This upstream tool is unavailable"}}`)
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(bytes.NewReader(upstreamBody)),
+	}}
+	settings := &SettingService{}
+	settings.openAIRefusalRecoveryCache.Store(&cachedOpenAIRefusalRecoveryRuntime{
+		runtime:   OpenAIRefusalRecoveryRuntime{APIKeyAlphaSearchResponsesBridge: true},
+		expiresAt: time.Now().Add(time.Minute).UnixNano(),
+	})
+	service := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream, settingService: settings}
+	account := &Account{
+		ID:          49,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://api.laxarouter.ai"},
+		Extra:       map[string]any{"openai_alpha_search_mode": OpenAIAlphaSearchModeResponsesWebSearch},
+	}
+
+	result, err := service.ForwardAlphaSearch(context.Background(), c, account, body)
+
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.True(t, failoverErr.IsOpenAIAlphaSearchBridgeUnavailable())
+	require.True(t, failoverErr.ShouldRetryNextAccount())
+	require.True(t, failoverErr.SuppressAccountHealthPenalty)
+	require.Equal(t, GatewayFailureScopeAccount, failoverErr.Scope)
+	require.Equal(t, http.StatusServiceUnavailable, failoverErr.ClientStatusCode)
+	require.Equal(t, OpenAIAlphaSearchBridgeUnavailableClientMessage, failoverErr.ClientMessage)
+	require.False(t, c.Writer.Written())
+	require.Equal(t, "https://api.laxarouter.ai/v1/responses", upstream.lastReq.URL.String())
+}
+
+func TestForwardAlphaSearchAPIKeyResponsesBridgeGenericBadRequestDoesNotFanOut(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"id":"search-session","model":"gpt-5.6-sol","settings":{"search_context_size":"invalid"}}`)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/alpha/search", bytes.NewReader(body))
+
+	upstreamBody := `{"error":{"type":"invalid_request_error","message":"Invalid search context size"}}`
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(upstreamBody)),
+	}}
+	settings := &SettingService{}
+	settings.openAIRefusalRecoveryCache.Store(&cachedOpenAIRefusalRecoveryRuntime{
+		runtime:   OpenAIRefusalRecoveryRuntime{APIKeyAlphaSearchResponsesBridge: true},
+		expiresAt: time.Now().Add(time.Minute).UnixNano(),
+	})
+	service := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream, settingService: settings}
+	account := &Account{
+		ID:          50,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://api.laxarouter.ai"},
+		Extra:       map[string]any{"openai_alpha_search_mode": OpenAIAlphaSearchModeResponsesWebSearch},
+	}
+
+	result, err := service.ForwardAlphaSearch(context.Background(), c, account, body)
+
+	require.NoError(t, err)
+	require.Nil(t, result)
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	require.JSONEq(t, upstreamBody, recorder.Body.String())
+}
+
+func TestForwardAlphaSearchAPIKeyResponsesBridgeRejectsTextWithoutSearchEvidence(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"id":"search-session","model":"gpt-5.6-sol","commands":{"search_query":[{"q":"news"}]}}`)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/alpha/search", bytes.NewReader(body))
+
+	textOnlySSE := "event: response.output_text.delta\n" +
+		`data: {"type":"response.output_text.delta","delta":"not searched"}` + "\n\n" +
+		"event: response.completed\n" +
+		`data: {"type":"response.completed","response":{"output":[{"type":"message","content":[{"type":"output_text","text":"not searched"}]}]}}` + "\n\n"
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(textOnlySSE)),
+	}}
+	settings := &SettingService{}
+	settings.openAIRefusalRecoveryCache.Store(&cachedOpenAIRefusalRecoveryRuntime{
+		runtime:   OpenAIRefusalRecoveryRuntime{APIKeyAlphaSearchResponsesBridge: true},
+		expiresAt: time.Now().Add(time.Minute).UnixNano(),
+	})
+	service := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream, settingService: settings}
+	account := &Account{
+		ID:          51,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://api.laxarouter.ai"},
+		Extra:       map[string]any{"openai_alpha_search_mode": OpenAIAlphaSearchModeResponsesWebSearch},
+	}
+
+	result, err := service.ForwardAlphaSearch(context.Background(), c, account, body)
+
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.True(t, failoverErr.IsOpenAIAlphaSearchBridgeUnavailable())
+	require.True(t, failoverErr.SuppressAccountHealthPenalty)
+	require.False(t, c.Writer.Written())
+}
+
+func TestOpenAIAlphaSearchResponseAcceptsWebSearchCallWithoutCitation(t *testing.T) {
+	sse := "event: response.output_item.done\n" +
+		`data: {"type":"response.output_item.done","item":{"type":"web_search_call","id":"ws_1","status":"completed"}}` + "\n\n" +
+		"event: response.output_text.delta\n" +
+		`data: {"type":"response.output_text.delta","delta":"searched"}` + "\n\n"
+
+	body, hasSearchEvidence, err := openAIAlphaSearchResponseFromResponsesSSE([]byte(sse))
+
+	require.NoError(t, err)
+	require.True(t, hasSearchEvidence)
+	require.JSONEq(t, `{"output":"searched"}`, string(body))
+}
+
 func TestForwardAlphaSearchCindyNativeModeBypassesEnabledResponsesBridge(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{"id":"search-session","model":"gpt-5.6-sol","commands":{"search_query":[{"q":"news"}]}}`)

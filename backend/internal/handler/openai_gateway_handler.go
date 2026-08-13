@@ -2826,6 +2826,28 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 		)
 		return
 	}
+	if failoverErr.IsOpenAIAlphaSearchBridgeUnavailable() {
+		statusCode := failoverErr.ClientStatusCode
+		if statusCode <= 0 {
+			statusCode = http.StatusServiceUnavailable
+		}
+		message := failoverErr.ClientMessage
+		if message == "" {
+			message = service.OpenAIAlphaSearchBridgeUnavailableClientMessage
+		}
+		service.SetOpsUpstreamError(c, failoverErr.StatusCode, message, "")
+		h.handleStreamingAwareErrorWithDetails(
+			c,
+			statusCode,
+			"server_error",
+			service.OpenAIAlphaSearchBridgeUnavailableCode,
+			message,
+			streamStarted,
+			false,
+			true,
+		)
+		return
+	}
 	if failoverErr.IsOpenAIOpaqueStreamPreflight() {
 		// Only the service-classified code-less compatibility 400 needs an
 		// in-band pre-first-byte terminal.  Do not apply this to normal 429/4xx
