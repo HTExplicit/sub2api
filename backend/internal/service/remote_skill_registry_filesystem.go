@@ -267,13 +267,21 @@ func (f *RemoteSkillRegistryFilesystem) loadCandidateRoot(
 		return RemoteSkillCandidate{}, err
 	}
 	candidate := RemoteSkillCandidate{Version: version, Prompt: prompt, RawFiles: rawFiles, EffectiveFiles: effectiveFiles, FileChanges: changes}
-	if err := validatePairedRemoteSkillCandidate(candidate, requireIDs); err != nil {
+	if err := validateStoredPairedRemoteSkillCandidate(candidate, requireIDs); err != nil {
 		return RemoteSkillCandidate{}, err
 	}
 	return candidate, nil
 }
 
 func validatePairedRemoteSkillCandidate(candidate RemoteSkillCandidate, requireIDs bool) error {
+	return validatePairedRemoteSkillCandidatePolicy(candidate, requireIDs, true)
+}
+
+func validateStoredPairedRemoteSkillCandidate(candidate RemoteSkillCandidate, requireIDs bool) error {
+	return validatePairedRemoteSkillCandidatePolicy(candidate, requireIDs, false)
+}
+
+func validatePairedRemoteSkillCandidatePolicy(candidate RemoteSkillCandidate, requireIDs, requireCurrentPromptRewrite bool) error {
 	version := candidate.Version
 	prompt := candidate.Prompt
 	if version.UpstreamSourceID != RemoteSkillUpstreamSourceID || version.UpstreamRoot != RemoteSkillUpstreamRoot || version.PublicRoot != RemoteSkillPublicRoot ||
@@ -314,11 +322,27 @@ func validatePairedRemoteSkillCandidate(candidate RemoteSkillCandidate, requireI
 		version.EffectiveTreeSHA256 != remoteSkillFileTreeSHA256(candidate.EffectiveFiles) {
 		return fmt.Errorf("%w: paired candidate tree identity mismatch", ErrBusinessSystemPromptBundleInvalid)
 	}
-	expectedPrompt, err := buildRemoteSkillPromptCapture([]byte(prompt.RawBody))
-	if err != nil || prompt.RawSHA256 != expectedPrompt.RawSHA256 ||
-		prompt.EffectiveSHA256 != expectedPrompt.EffectiveSHA256 ||
-		prompt.EffectiveBody != string(expectedPrompt.EffectiveBody) || prompt.Diff != expectedPrompt.Diff {
-		return fmt.Errorf("%w: paired candidate deterministic prompt rewrite mismatch", ErrBusinessSystemPromptBundleInvalid)
+	if hashBusinessSystemPromptBundleBytes([]byte(prompt.RawBody)) != prompt.RawSHA256 ||
+		hashBusinessSystemPromptBundleBytes([]byte(prompt.EffectiveBody)) != prompt.EffectiveSHA256 {
+		return fmt.Errorf("%w: paired candidate prompt body hash mismatch", ErrBusinessSystemPromptBundleInvalid)
+	}
+	if _, _, err := ValidateBusinessSystemPromptBody(prompt.RawBody); err != nil {
+		return fmt.Errorf("%w: paired candidate raw prompt invalid", ErrBusinessSystemPromptBundleInvalid)
+	}
+	if _, _, err := ValidateBusinessSystemPromptBody(prompt.EffectiveBody); err != nil {
+		return fmt.Errorf("%w: paired candidate effective prompt invalid", ErrBusinessSystemPromptBundleInvalid)
+	}
+	expectedDiff, err := remoteSkillPromptUnifiedDiff([]byte(prompt.RawBody), []byte(prompt.EffectiveBody))
+	if err != nil || prompt.Diff != expectedDiff {
+		return fmt.Errorf("%w: paired candidate prompt diff mismatch", ErrBusinessSystemPromptBundleInvalid)
+	}
+	if requireCurrentPromptRewrite {
+		expectedPrompt, rewriteErr := buildRemoteSkillPromptCapture([]byte(prompt.RawBody))
+		if rewriteErr != nil || prompt.RawSHA256 != expectedPrompt.RawSHA256 ||
+			prompt.EffectiveSHA256 != expectedPrompt.EffectiveSHA256 ||
+			prompt.EffectiveBody != string(expectedPrompt.EffectiveBody) || prompt.Diff != expectedPrompt.Diff {
+			return fmt.Errorf("%w: paired candidate deterministic prompt rewrite mismatch", ErrBusinessSystemPromptBundleInvalid)
+		}
 	}
 	if err := validateRemoteSkillFileChanges(candidate); err != nil {
 		return err

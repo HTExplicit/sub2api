@@ -72,37 +72,17 @@ func buildRemoteSkillPromptCapture(raw []byte) (RemoteSkillPromptCapture, error)
 	if _, _, err := ValidateBusinessSystemPromptBody(string(raw)); err != nil {
 		return RemoteSkillPromptCapture{}, err
 	}
-	first, err := locateUniqueRemoteSkillPromptBlock(raw, remoteSkillRoutingBegin, remoteSkillRoutingEnd)
+	effective, err := rewriteRemoteSkillPromptBlocks(raw, remoteSkillRoutingBlock, remoteSkillSecurityResearchRoutingBlock)
 	if err != nil {
 		return RemoteSkillPromptCapture{}, err
 	}
-	second, err := locateUniqueRemoteSkillPromptBlock(raw, remoteSkillSecurityResearchRoutingBegin, remoteSkillSecurityResearchRoutingEnd)
-	if err != nil {
-		return RemoteSkillPromptCapture{}, err
-	}
-	if first.end > second.begin {
-		return RemoteSkillPromptCapture{}, fmt.Errorf("%w: prompt routing blocks overlap or are out of order", ErrBusinessSystemPromptInvalid)
-	}
-
-	effective := make([]byte, 0, len(raw)+len(remoteSkillRoutingBlock)+len(remoteSkillSecurityResearchRoutingBlock))
-	effective = append(effective, raw[:first.begin]...)
-	effective = append(effective, remoteSkillRoutingBlock...)
-	effective = append(effective, raw[first.end:second.begin]...)
-	effective = append(effective, remoteSkillSecurityResearchRoutingBlock...)
-	effective = append(effective, raw[second.end:]...)
 	if _, _, err := ValidateBusinessSystemPromptBody(string(effective)); err != nil {
 		return RemoteSkillPromptCapture{}, err
 	}
 
-	diff, err := difflib.GetUnifiedDiffString(difflib.UnifiedDiff{
-		A:        difflib.SplitLines(string(raw)),
-		B:        difflib.SplitLines(string(effective)),
-		FromFile: "prompt_capture",
-		ToFile:   "effective_prompt",
-		Context:  3,
-	})
+	diff, err := remoteSkillPromptUnifiedDiff(raw, effective)
 	if err != nil {
-		return RemoteSkillPromptCapture{}, fmt.Errorf("%w: prompt diff failed", ErrBusinessSystemPromptInvalid)
+		return RemoteSkillPromptCapture{}, err
 	}
 	return RemoteSkillPromptCapture{
 		RawBody:         bytes.Clone(raw),
@@ -111,6 +91,42 @@ func buildRemoteSkillPromptCapture(raw []byte) (RemoteSkillPromptCapture, error)
 		EffectiveSHA256: hashBusinessSystemPromptBundleBytes(effective),
 		Diff:            diff,
 	}, nil
+}
+
+func rewriteRemoteSkillPromptBlocks(raw []byte, routingBlock, securityResearchRoutingBlock string) ([]byte, error) {
+	first, err := locateUniqueRemoteSkillPromptBlock(raw, remoteSkillRoutingBegin, remoteSkillRoutingEnd)
+	if err != nil {
+		return nil, err
+	}
+	second, err := locateUniqueRemoteSkillPromptBlock(raw, remoteSkillSecurityResearchRoutingBegin, remoteSkillSecurityResearchRoutingEnd)
+	if err != nil {
+		return nil, err
+	}
+	if first.end > second.begin {
+		return nil, fmt.Errorf("%w: prompt routing blocks overlap or are out of order", ErrBusinessSystemPromptInvalid)
+	}
+
+	effective := make([]byte, 0, len(raw)+len(routingBlock)+len(securityResearchRoutingBlock))
+	effective = append(effective, raw[:first.begin]...)
+	effective = append(effective, routingBlock...)
+	effective = append(effective, raw[first.end:second.begin]...)
+	effective = append(effective, securityResearchRoutingBlock...)
+	effective = append(effective, raw[second.end:]...)
+	return effective, nil
+}
+
+func remoteSkillPromptUnifiedDiff(raw, effective []byte) (string, error) {
+	diff, err := difflib.GetUnifiedDiffString(difflib.UnifiedDiff{
+		A:        difflib.SplitLines(string(raw)),
+		B:        difflib.SplitLines(string(effective)),
+		FromFile: "prompt_capture",
+		ToFile:   "effective_prompt",
+		Context:  3,
+	})
+	if err != nil {
+		return "", fmt.Errorf("%w: prompt diff failed", ErrBusinessSystemPromptInvalid)
+	}
+	return diff, nil
 }
 
 func locateUniqueRemoteSkillPromptBlock(raw []byte, beginMarker, endMarker string) (remoteSkillPromptBlock, error) {
