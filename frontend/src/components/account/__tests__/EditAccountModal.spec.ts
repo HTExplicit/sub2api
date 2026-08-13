@@ -316,7 +316,7 @@ describe('EditAccountModal', () => {
     authIsSimpleMode.value = true
   })
 
-  it('uses native Cindy defaults with the standard OpenAI option order', () => {
+  it('uses Cindy-safe defaults with the standard OpenAI option order', () => {
     const cindy = buildAccount()
     cindy.credentials.base_url = 'https://api.laxarouter.ai'
     cindy.extra = {}
@@ -327,7 +327,7 @@ describe('EditAccountModal', () => {
     )
     expect(cindyAlpha.element.value).toBe('direct')
     expect(cindyAlpha.element.options[0].value).toBe('direct')
-    expect(cindyCache.element.value).toBe('passthrough')
+    expect(cindyCache.element.value).toBe('sha256_64')
     expect(cindyCache.element.options[0].value).toBe('passthrough')
 
     const ordinaryWrapper = mountModal(buildAccount())

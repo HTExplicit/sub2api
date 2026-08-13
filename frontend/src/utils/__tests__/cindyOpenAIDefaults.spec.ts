@@ -38,11 +38,11 @@ describe('Cindy OpenAI defaults', () => {
     ).toBe(false)
   })
 
-  it('uses the native OpenAI modes while keeping forced Responses', () => {
+  it('uses direct alpha search and a Cindy-safe cache key while keeping forced Responses', () => {
     expect(CINDY_OPENAI_DEFAULTS).toEqual({
       responsesMode: 'force_responses',
       alphaSearchMode: 'direct',
-      promptCacheKeyMode: 'passthrough'
+      promptCacheKeyMode: 'sha256_64'
     })
   })
 })

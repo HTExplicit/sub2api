@@ -74,7 +74,7 @@ func TestOpenAIAlphaSearchModeDisabledExcludesOnlyExplicitAPIKeyAccount(t *testi
 	require.True(t, oauth.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityAlphaSearch))
 }
 
-func TestMissingCompatibilityModesUseNativeDefaultsForCindyAndOrdinaryAccounts(t *testing.T) {
+func TestMissingCompatibilityModesUseCindySafeCacheAndOrdinaryNativeDefaults(t *testing.T) {
 	cindy := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: cindyCredentials()}
 	ordinary := &Account{
 		Platform:    PlatformOpenAI,
@@ -83,7 +83,7 @@ func TestMissingCompatibilityModesUseNativeDefaultsForCindyAndOrdinaryAccounts(t
 	}
 
 	require.Equal(t, OpenAIAlphaSearchModeDirect, cindy.GetOpenAIAlphaSearchMode())
-	require.Equal(t, OpenAIPromptCacheKeyModePassthrough, cindy.GetOpenAIPromptCacheKeyMode())
+	require.Equal(t, OpenAIPromptCacheKeyModeSHA25664, cindy.GetOpenAIPromptCacheKeyMode())
 	require.Equal(t, OpenAIAlphaSearchModeDirect, ordinary.GetOpenAIAlphaSearchMode())
 	require.Equal(t, OpenAIPromptCacheKeyModePassthrough, ordinary.GetOpenAIPromptCacheKeyMode())
 }
@@ -103,8 +103,25 @@ func TestCindyExplicitCompatibilityModesRemainAvailable(t *testing.T) {
 	require.Equal(t, OpenAIPromptCacheKeyModeSHA25664, cindy.GetOpenAIPromptCacheKeyMode())
 }
 
-func TestCindyNativePromptCacheModePassesLongKeyThroughWhenGlobalGateIsEnabled(t *testing.T) {
-	longKey := strings.Repeat("cindy-cache-", 8)
+func TestCindyDefaultPromptCacheModeHashesAzureRejectedLongKeyWhenGlobalGateIsEnabled(t *testing.T) {
+	longKey := strings.Repeat("x", 363)
+	body := []byte(`{"prompt_cache_key":"` + longKey + `","input":[]}`)
+	cindy := &Account{
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Credentials: cindyCredentials(),
+	}
+
+	normalized, changed, err := normalizeOpenAIAPIKeyPromptCacheKey(body, cindy, true)
+	require.NoError(t, err)
+	require.True(t, changed)
+	digest := sha256.Sum256([]byte(longKey))
+	require.Equal(t, hex.EncodeToString(digest[:]), gjson.GetBytes(normalized, "prompt_cache_key").String())
+	require.Len(t, gjson.GetBytes(normalized, "prompt_cache_key").String(), 64)
+}
+
+func TestCindyExplicitPromptCachePassthroughRemainsAvailable(t *testing.T) {
+	longKey := strings.Repeat("x", 363)
 	body := []byte(`{"prompt_cache_key":"` + longKey + `","input":[]}`)
 	cindy := &Account{
 		Platform:    PlatformOpenAI,
@@ -114,7 +131,7 @@ func TestCindyNativePromptCacheModePassesLongKeyThroughWhenGlobalGateIsEnabled(t
 			"openai_prompt_cache_key_mode": OpenAIPromptCacheKeyModePassthrough,
 		},
 	}
-
+	require.Equal(t, OpenAIPromptCacheKeyModePassthrough, cindy.GetOpenAIPromptCacheKeyMode())
 	unchanged, changed, err := normalizeOpenAIAPIKeyPromptCacheKey(body, cindy, true)
 	require.NoError(t, err)
 	require.False(t, changed)

@@ -1,7 +1,7 @@
 export const CINDY_OPENAI_DEFAULTS = {
   responsesMode: 'force_responses',
   alphaSearchMode: 'direct',
-  promptCacheKeyMode: 'passthrough'
+  promptCacheKeyMode: 'sha256_64'
 } as const
 
 export interface CindyAccountLike {
