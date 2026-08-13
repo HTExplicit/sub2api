@@ -55,7 +55,7 @@ const version = (templateId = 1) => ({
 })
 const skillRegistry = () => {
   const activePrompt = { id: 40, raw_sha256: '3'.repeat(64), effective_sha256: '4'.repeat(64), diff: 'routing diff', created_at: '2026-08-11T00:00:00Z' }
-  const active = { id: 30, upstream_source_id: 'moxinggang', upstream_root: 'https://moxinggang.com/skills/security-research/current', public_root: 'https://codexrip.vip/skills/security-research/current', raw_tree_sha256: '1'.repeat(64), effective_tree_sha256: '2'.repeat(64), prompt_version_id: 40, file_count: 73, raw_total_bytes: 3000, effective_total_bytes: 3100, added_files: 0, modified_files: 0, deleted_files: 0, script_changes: 0, binary_changes: 0, fetched_at: '2026-08-11T00:00:00Z', created_at: '2026-08-11T00:00:00Z' }
+  const active = { id: 30, upstream_source_id: 'moxinggang', upstream_root: 'https://moxinggang.com/skills/security-research/current', public_root: 'https://codexrip.vip/skills/security-research/current', raw_tree_sha256: '1'.repeat(64), effective_tree_sha256: '2'.repeat(64), prompt_version_id: 40, file_count: 458, raw_total_bytes: 3000, effective_total_bytes: 3100, added_files: 0, modified_files: 0, deleted_files: 0, script_changes: 0, binary_changes: 0, fetched_at: '2026-08-11T00:00:00Z', created_at: '2026-08-11T00:00:00Z' }
   const previous = { ...active, id: 29, effective_tree_sha256: '9'.repeat(64) }
   return {
     runtime: { revision: 3, active, active_prompt: activePrompt, degraded: false, updated_at: '2026-08-11T00:00:00Z' },

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 )
 
 type fakeRemoteSkillHTTPClient struct {
+	mu            sync.Mutex
 	responses     map[string][]byte
 	finalURLs     map[string]string
 	status        map[string]int
@@ -31,10 +33,13 @@ func (blockingRemoteSkillHTTPClient) Do(req *http.Request) (*http.Response, erro
 }
 
 func (f *fakeRemoteSkillHTTPClient) Do(req *http.Request) (*http.Response, error) {
-	if f.err != nil {
-		return nil, f.err
-	}
+	f.mu.Lock()
 	f.requests = append(f.requests, req.URL.String())
+	err := f.err
+	f.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
 	body, ok := f.responses[req.URL.Path]
 	status := f.status[req.URL.Path]
 	if status == 0 {
@@ -63,6 +68,23 @@ func (f *fakeRemoteSkillHTTPClient) Do(req *http.Request) (*http.Response, error
 	}, nil
 }
 
+func (f *fakeRemoteSkillHTTPClient) requestCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.requests)
+}
+
+func (f *fakeRemoteSkillHTTPClient) requested(rawURL string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, request := range f.requests {
+		if request == rawURL {
+			return true
+		}
+	}
+	return false
+}
+
 func modelGangSeedResponses(t *testing.T) map[string][]byte {
 	t.Helper()
 	files, err := readRemoteSkillTreeFS(remoteSkillSeedFS, "remote_skill_seed/tree")
@@ -84,7 +106,9 @@ func TestMoxinggangRemoteSkillSourceFetchesFixedApprovedTreeAndBuildsPairedCandi
 	candidate, err := source.Build(context.Background(), prompt, nil)
 	require.NoError(t, err)
 	require.Equal(t, remoteSkillExpectedFiles, candidate.Version.FileCount)
-	require.Len(t, client.requests, remoteSkillExpectedFiles)
+	require.Equal(t, remoteSkillExpectedUpstreamFiles, client.requestCount())
+	require.NotEmpty(t, candidate.RawFiles[remoteSkillPinnedWAFPath])
+	require.False(t, client.requested(remoteSkillUpstreamEntryURL(remoteSkillPinnedWAFPath)))
 	require.Equal(t, RemoteSkillUpstreamSourceID, candidate.Version.UpstreamSourceID)
 	require.Equal(t, RemoteSkillUpstreamRoot, candidate.Version.UpstreamRoot)
 	require.Equal(t, RemoteSkillPublicRoot, candidate.Version.PublicRoot)
@@ -117,6 +141,9 @@ func TestMoxinggangRemoteSkillSourceRejectsRedirectMissingPartialAndTransportFai
 		},
 		"missing file": func(client *fakeRemoteSkillHTTPClient) {
 			delete(client.responses, RemoteSkillMoxinggangPath+"/RULES.md")
+		},
+		"empty body": func(client *fakeRemoteSkillHTTPClient) {
+			client.responses[RemoteSkillMoxinggangPath+"/RULES.md"] = []byte{}
 		},
 		"partial response": func(client *fakeRemoteSkillHTTPClient) {
 			client.contentLength[RemoteSkillMoxinggangPath+"/RULES.md"] = int64(len(client.responses[RemoteSkillMoxinggangPath+"/RULES.md"]) + 1)

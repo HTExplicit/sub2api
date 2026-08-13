@@ -1,13 +1,22 @@
 param(
-    [string]$OutputRoot = (Join-Path $PSScriptRoot '..\backend\internal\service\remote_skill_seed\tree')
+    [Parameter(Mandatory = $true)]
+    [string]$OutputRoot
 )
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
 $upstreamRoot = 'https://moxinggang.com/skills/security-research/current'
-$expectedCount = 73
-$maximumFileBytes = 8MB
-$output = [IO.Path]::GetFullPath($OutputRoot)
+$expectedFiles = 458
+$expectedUpstreamFiles = 457
+$expectedPinnedFiles = 1
+$maximumFileBytes = 64MB
+$deadline = [DateTimeOffset]::UtcNow.AddMinutes(5)
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$seedRoot = Join-Path $repository 'backend\internal\service\remote_skill_seed'
+$manifestPath = Join-Path $seedRoot 'manifest.json'
+$output = [IO.Path]::GetFullPath($OutputRoot)
+
 if (-not $output.StartsWith($repository + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
     throw 'Output root must stay inside the repository'
 }
@@ -15,128 +24,121 @@ if (Test-Path -LiteralPath $output) {
     throw 'Output root already exists'
 }
 
-$handler = [Net.Http.HttpClientHandler]::new()
-$handler.AllowAutoRedirect = $false
-$client = [Net.Http.HttpClient]::new($handler)
-$client.Timeout = [TimeSpan]::FromSeconds(45)
-$client.DefaultRequestHeaders.UserAgent.ParseAdd('Sub2API-Remote-Skill-Seed/2')
-$queue = [Collections.Generic.Queue[string]]::new()
-@(
-    'assets/templates/cloud-handoff-prompt.md',
-    'assets/templates/ctf-writeup.md',
-    'assets/templates/mission-state.md',
-    'assets/templates/research-result.json',
-    'assets/templates/writeups-index.md',
-    'ctf-orchestrator/ctf-sandbox-orchestrator/INSTRUCTIONS.md',
-    'ctf-orchestrator/ctf-sandbox-orchestrator/references/router-matrix.md',
-    'NOTICE.md',
-    'README_AI.md',
-    'references/ai-security.md',
-    'references/ctf/ai-ml/index.md',
-    'references/ctf/ai-ml/llm-attacks.md',
-    'references/ctf/crypto/index.md',
-    'references/ctf/forensics/index.md',
-    'references/ctf/malware/index.md',
-    'references/ctf/misc/index.md',
-    'references/ctf/osint/index.md',
-    'references/ctf/pwn/index.md',
-    'references/ctf/reverse/index.md',
-    'references/ctf/web/index.md',
-    'references/ctf/writeup/index.md',
-    'references/environment-and-resources.md',
-    'references/evidence-workflow.md',
-    'references/experience-index.md',
-    'references/field-journal-template.md',
-    'references/malware.md',
-    'references/pentest.md',
-    'references/precedent-auth.md',
-    'references/progressive-reasoning.md',
-    'references/reporting.md',
-    'references/reverse.md',
-    'references/routing.md',
-    'references/scanner.md',
-    'references/scope-and-evidence.md',
-    'references/source-provenance.md',
-    'references/tools.md',
-    'RULES.md',
-    'schemas/research-result.schema.json',
-    'scripts/env_probe.py',
-    'scripts/reusable/artifact_inventory.py',
-    'scripts/reusable/har_summary.py',
-    'scripts/reusable/new_experience_entry.py',
-    'scripts/reusable/new-experience-entry.ps1',
-    'scripts/reusable/pack_cloud_handoff.py',
-    'scripts/reusable/pe_entropy_triage.py',
-    'scripts/reusable/route_task.py',
-    'scripts/reusable/scaffold_project.py',
-    'scripts/validate_result.py',
-    'scripts/validate_skill.py',
-    'SKILL.md',
-    'skills/sec-ai-security/INSTRUCTIONS.md',
-    'skills/sec-ai-security/references/llm-deep/_llm-security-workflow.md',
-    'skills/sec-ai-security/references/llm-deep/agent-obedience-engineering.md',
-    'skills/sec-ai-security/references/llm-deep/agent-security-testing.md',
-    'skills/sec-ai-security/references/llm-deep/owasp-llm-top10.md',
-    'skills/sec-ai-security/references/llm-deep/prompt-injection-methodology.md',
-    'skills/sec-assessment-tooling/INSTRUCTIONS.md',
-    'skills/sec-assessment-tooling/pentest-tools/INSTRUCTIONS.md',
-    'skills/sec-attack-chain/INSTRUCTIONS.md',
-    'skills/sec-crypto/INSTRUCTIONS.md',
-    'skills/sec-edr-bypass/INSTRUCTIONS.md',
-    'skills/sec-firmware/INSTRUCTIONS.md',
-    'skills/sec-forensics-dfir/INSTRUCTIONS.md',
-    'skills/sec-malware/INSTRUCTIONS.md',
-    'skills/sec-misc/INSTRUCTIONS.md',
-    'skills/sec-osint/INSTRUCTIONS.md',
-    'skills/sec-patch-diff/INSTRUCTIONS.md',
-    'skills/sec-pwn-chain/INSTRUCTIONS.md',
-    'skills/sec-pwn-native/INSTRUCTIONS.md',
-    'skills/sec-reporting/INSTRUCTIONS.md',
-    'skills/sec-reverse/INSTRUCTIONS.md',
-    'skills/sec-supply-chain/INSTRUCTIONS.md',
-    'skills/sec-web-api/INSTRUCTIONS.md'
-) | ForEach-Object { $queue.Enqueue($_) }
-$files = [Collections.Generic.Dictionary[string, byte[]]]::new([StringComparer]::Ordinal)
+$manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding utf8 | ConvertFrom-Json
+if ($manifest.schema_version -ne 1 -or $manifest.bundle_id -ne 'security-research' -or
+    $manifest.upstream_source_id -ne 'moxinggang' -or $manifest.upstream_root -ne $upstreamRoot -or
+    $manifest.expected_file_count -ne $expectedFiles -or $manifest.upstream_file_count -ne $expectedUpstreamFiles -or
+    $manifest.pinned_file_count -ne $expectedPinnedFiles -or @($manifest.files).Count -ne $expectedFiles) {
+    throw 'Remote Skill manifest identity mismatch'
+}
 
-try {
-    while ($queue.Count -gt 0) {
-        $name = $queue.Dequeue()
-        if ($files.ContainsKey($name)) { continue }
-        if ($name -notmatch '^[A-Za-z0-9][A-Za-z0-9._/-]*$' -or $name.Contains('..') -or $name.Contains('\') -or $name.StartsWith('/')) {
-            throw "Rejected upstream path: $name"
-        }
-        $uri = [Uri]("$upstreamRoot/$name")
-        $response = $client.GetAsync($uri).GetAwaiter().GetResult()
+$seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+foreach ($entry in $manifest.files) {
+    $name = [string]$entry.path
+    if ([string]::IsNullOrWhiteSpace($name) -or $name -ne $name.Normalize([Text.NormalizationForm]::FormC) -or
+        $name.Contains('\') -or $name.StartsWith('/') -or $name.Contains('//') -or
+        @($name.Split('/')) -contains '..' -or -not $seen.Add($name) -or
+        [int64]$entry.byte_length -lt 1 -or [int64]$entry.byte_length -gt $maximumFileBytes -or
+        [string]$entry.sha256 -notmatch '^[0-9a-f]{64}$') {
+        throw "Remote Skill manifest entry rejected: $name"
+    }
+}
+
+$upstreamEntries = @($manifest.files | Where-Object source_kind -eq 'upstream')
+$pinnedEntries = @($manifest.files | Where-Object source_kind -eq 'pinned')
+if ($upstreamEntries.Count -ne $expectedUpstreamFiles -or $pinnedEntries.Count -ne $expectedPinnedFiles) {
+    throw 'Remote Skill manifest source counts mismatch'
+}
+
+$downloaded = @($upstreamEntries | ForEach-Object -Parallel {
+    $entry = $_
+    $remaining = $using:deadline - [DateTimeOffset]::UtcNow
+    if ($remaining -le [TimeSpan]::Zero) {
+        throw 'Remote Skill sync exceeded the five minute deadline'
+    }
+    $handler = [Net.Http.HttpClientHandler]::new()
+    $handler.AllowAutoRedirect = $false
+    $client = [Net.Http.HttpClient]::new($handler)
+    $client.Timeout = $remaining
+    try {
+        $encoded = (([string]$entry.path -split '/') | ForEach-Object { [Uri]::EscapeDataString($_) }) -join '/'
+        $uri = "$using:upstreamRoot/$encoded"
+        $request = [Net.Http.HttpRequestMessage]::new([Net.Http.HttpMethod]::Get, $uri)
+        $request.Headers.Accept.ParseAdd('text/markdown, text/plain;q=0.9, application/octet-stream;q=0.8')
+        $request.Headers.UserAgent.ParseAdd('Sub2API-Remote-Skill-Seed/3')
+        $response = $client.Send($request, [Net.Http.HttpCompletionOption]::ResponseHeadersRead)
         try {
             if ([int]$response.StatusCode -ne 200) {
-                throw "Upstream returned $([int]$response.StatusCode) for $name"
+                throw "Upstream returned $([int]$response.StatusCode) for $($entry.path)"
             }
-            if ($response.Headers.Location) {
-                throw "Upstream redirect rejected for $name"
+            if ($response.RequestMessage.RequestUri.AbsoluteUri -ne $uri) {
+                throw "Upstream redirect rejected for $($entry.path)"
             }
             $body = $response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
-            if ($body.Length -eq 0 -or $body.Length -gt $maximumFileBytes) {
-                throw "Upstream file size rejected for $name"
+            $declaredLength = $response.Content.Headers.ContentLength
+            if ($body.Length -ne [int]$entry.byte_length -or $body.Length -gt $using:maximumFileBytes -or
+                ($null -ne $declaredLength -and $declaredLength -ne $body.Length)) {
+                throw "Upstream length mismatch for $($entry.path)"
             }
-            $files.Add($name, $body)
+            [void][Text.UTF8Encoding]::new($false, $true).GetString($body)
+            $sha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($body)).ToLowerInvariant()
+            if ($sha256 -ne [string]$entry.sha256) {
+                throw "Upstream SHA-256 mismatch for $($entry.path)"
+            }
+            [pscustomobject]@{ Path = [string]$entry.path; Body = [Convert]::ToBase64String($body) }
         } finally {
             $response.Dispose()
+            $request.Dispose()
         }
+    } finally {
+        $client.Dispose()
+        $handler.Dispose()
     }
+} -ThrottleLimit 8)
 
-    if ($files.Count -ne $expectedCount) {
-        throw "Expected $expectedCount files, discovered $($files.Count)"
+if ($downloaded.Count -ne $expectedUpstreamFiles -or [DateTimeOffset]::UtcNow -gt $deadline) {
+    throw "Expected $expectedUpstreamFiles upstream files; received $($downloaded.Count) within the deadline"
+}
+
+$files = [Collections.Generic.Dictionary[string, byte[]]]::new([StringComparer]::Ordinal)
+foreach ($entry in $downloaded) {
+    if ($files.ContainsKey([string]$entry.Path)) { throw "Duplicate upstream response: $($entry.Path)" }
+    $files.Add([string]$entry.Path, [Convert]::FromBase64String([string]$entry.Body))
+}
+foreach ($entry in $pinnedEntries) {
+    if ([string]$entry.path -ne 'skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/waf-bypass.md' -or
+        [string]$entry.embedded_path -ne 'pinned/waf-bypass.md') {
+        throw 'Pinned asset identity mismatch'
     }
+    $source = [IO.Path]::GetFullPath((Join-Path $seedRoot ([string]$entry.embedded_path)))
+    if (-not $source.StartsWith($seedRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Pinned asset escaped the seed root'
+    }
+    $body = [IO.File]::ReadAllBytes($source)
+    $sha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($body)).ToLowerInvariant()
+    if ($body.Length -ne [int]$entry.byte_length -or $sha256 -ne [string]$entry.sha256) {
+        throw 'Pinned asset content mismatch'
+    }
+    [void][Text.UTF8Encoding]::new($false, $true).GetString($body)
+    $files.Add([string]$entry.path, $body)
+}
+if ($files.Count -ne $expectedFiles) { throw "Expected $expectedFiles complete files; received $($files.Count)" }
+
+$parent = [IO.Path]::GetDirectoryName($output)
+[IO.Directory]::CreateDirectory($parent) | Out-Null
+$staging = Join-Path $parent ('.remote-skill-' + [Guid]::NewGuid().ToString('N'))
+try {
+    [IO.Directory]::CreateDirectory($staging) | Out-Null
     foreach ($entry in $files.GetEnumerator()) {
-        $destination = [IO.Path]::GetFullPath((Join-Path $output $entry.Key))
-        if (-not $destination.StartsWith($output + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+        $destination = [IO.Path]::GetFullPath((Join-Path $staging $entry.Key))
+        if (-not $destination.StartsWith($staging + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
             throw "Destination escaped output root: $($entry.Key)"
         }
         [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($destination)) | Out-Null
         [IO.File]::WriteAllBytes($destination, $entry.Value)
     }
-    [pscustomobject]@{ Files = $files.Count; OutputRoot = $output }
+    Move-Item -LiteralPath $staging -Destination $output
+    [pscustomobject]@{ Files = $files.Count; UpstreamFiles = $downloaded.Count; PinnedFiles = $pinnedEntries.Count; OutputRoot = $output }
 } finally {
-    $client.Dispose()
-    $handler.Dispose()
+    if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
 }
