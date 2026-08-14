@@ -92,24 +92,35 @@
             <div class="flex items-center justify-between gap-3 border-b border-gray-200 dark:border-dark-700" role="tablist">
               <div class="flex items-center gap-1">
                 <button type="button" role="tab" data-test="system-prompt-tab-editor" :aria-selected="activeTab === 'editor'" class="border-b-2 px-3 py-2 text-sm font-medium" :class="activeTab === 'editor' ? 'border-primary-500 text-primary-600 dark:text-primary-300' : 'border-transparent text-gray-500 dark:text-dark-400'" @click="activeTab = 'editor'">{{ t('admin.systemPrompts.tabs.editor') }}</button>
-                <button type="button" role="tab" data-test="system-prompt-tab-history" :aria-selected="activeTab === 'history'" class="border-b-2 px-3 py-2 text-sm font-medium" :class="activeTab === 'history' ? 'border-primary-500 text-primary-600 dark:text-primary-300' : 'border-transparent text-gray-500 dark:text-dark-400'" @click="activeTab = 'history'">{{ t('admin.systemPrompts.tabs.history') }}</button>
+                <button v-if="!isRemoteSkillManaged" type="button" role="tab" data-test="system-prompt-tab-history" :aria-selected="activeTab === 'history'" class="border-b-2 px-3 py-2 text-sm font-medium" :class="activeTab === 'history' ? 'border-primary-500 text-primary-600 dark:text-primary-300' : 'border-transparent text-gray-500 dark:text-dark-400'" @click="activeTab = 'history'">{{ t('admin.systemPrompts.tabs.history') }}</button>
               </div>
-              <span v-if="selectedVersion" class="shrink-0 px-2 text-xs text-gray-500 dark:text-dark-400">v{{ selectedVersion.version }}<span v-if="editorDirty" class="ml-2 badge badge-warning">{{ t('admin.systemPrompts.editor.unsaved') }}</span></span>
+              <span v-if="selectedVersion && !isRemoteSkillManaged" class="shrink-0 px-2 text-xs text-gray-500 dark:text-dark-400">v{{ selectedVersion.version }}<span v-if="editorDirty" class="ml-2 badge badge-warning">{{ t('admin.systemPrompts.editor.unsaved') }}</span></span>
             </div>
 
             <div v-if="activeTab === 'editor'" class="space-y-3 pt-4">
-              <textarea v-model="body" data-test="system-prompt-body" class="min-h-[430px] w-full resize-y border border-gray-200 bg-white p-4 font-mono text-[13px] leading-6 text-gray-900 outline-none transition-colors focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 disabled:cursor-not-allowed disabled:bg-gray-50 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-100 dark:disabled:bg-dark-950" spellcheck="false" :disabled="isRemoteSkillManaged" :aria-label="t('admin.systemPrompts.editor.body')"></textarea>
-              <div class="flex flex-wrap items-center justify-between gap-3">
-                <input v-model="note" type="text" class="input w-full text-sm sm:min-w-0 sm:flex-1" :disabled="isRemoteSkillManaged" :placeholder="t('admin.systemPrompts.editor.notePlaceholder')" :aria-label="t('admin.systemPrompts.editor.note')" />
-                <div v-if="!isRemoteSkillManaged" class="flex w-full items-center justify-end gap-2 sm:w-auto sm:shrink-0">
-                  <button type="button" data-test="system-prompt-save-version" class="btn btn-primary btn-sm" :disabled="savingVersion || !editorDirty" @click="saveVersion">
-                    <Icon name="check" size="sm" class="mr-1" />{{ savingVersion ? t('admin.systemPrompts.common.saving') : t('admin.systemPrompts.actions.saveVersion') }}
-                  </button>
-                  <button type="button" data-test="system-prompt-set-current" class="btn btn-secondary btn-sm" :disabled="!selectedVersion || selectedVersion.id === runtimeVersionId || editorDirty || publishingPrompt" @click="openConfirm({ kind: 'publish', versionId: selectedVersion?.id })">
-                    <Icon name="upload" size="sm" class="mr-1" />{{ publishingPrompt ? t('admin.systemPrompts.common.saving') : t('admin.systemPrompts.actions.setCurrent') }}
-                  </button>
+              <template v-if="isRemoteSkillManaged">
+                <div class="inline-flex border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-800" role="group" :aria-label="t('admin.systemPrompts.editor.managedBody')">
+                  <button type="button" data-test="system-prompt-managed-effective" class="px-3 py-1.5 text-sm font-medium transition-colors" :aria-pressed="managedPromptView === 'effective'" :class="managedPromptView === 'effective' ? 'bg-white text-primary-600 shadow-sm dark:bg-dark-900 dark:text-primary-300' : 'text-gray-500 hover:text-gray-900 dark:text-dark-400 dark:hover:text-white'" @click="managedPromptView = 'effective'">{{ t('admin.systemPrompts.editor.effectiveBody') }}</button>
+                  <button type="button" data-test="system-prompt-managed-raw" class="px-3 py-1.5 text-sm font-medium transition-colors" :aria-pressed="managedPromptView === 'raw'" :class="managedPromptView === 'raw' ? 'bg-white text-primary-600 shadow-sm dark:bg-dark-900 dark:text-primary-300' : 'text-gray-500 hover:text-gray-900 dark:text-dark-400 dark:hover:text-white'" @click="managedPromptView = 'raw'">{{ t('admin.systemPrompts.editor.rawBody') }}</button>
                 </div>
-              </div>
+                <div v-if="managedPromptLoading" data-test="system-prompt-managed-loading" class="flex min-h-[430px] items-center justify-center border border-gray-200 bg-gray-50 text-sm text-gray-500 dark:border-dark-700 dark:bg-dark-950 dark:text-dark-400">{{ t('admin.systemPrompts.editor.managedBodyLoading') }}</div>
+                <div v-else-if="managedPromptUnavailable" data-test="system-prompt-managed-unavailable" class="flex min-h-[430px] items-center justify-center border border-red-200 bg-red-50 px-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-900/20 dark:text-red-300">{{ t('admin.systemPrompts.editor.managedBodyUnavailable') }}</div>
+                <textarea v-else :value="managedPromptBody" readonly data-test="system-prompt-body" class="min-h-[430px] w-full resize-y border border-gray-200 bg-white p-4 font-mono text-[13px] leading-6 text-gray-900 outline-none transition-colors focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-100" spellcheck="false" :aria-label="t('admin.systemPrompts.editor.managedBody')"></textarea>
+              </template>
+              <template v-else>
+                <textarea v-model="body" data-test="system-prompt-body" class="min-h-[430px] w-full resize-y border border-gray-200 bg-white p-4 font-mono text-[13px] leading-6 text-gray-900 outline-none transition-colors focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-100" spellcheck="false" :aria-label="t('admin.systemPrompts.editor.body')"></textarea>
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                  <input v-model="note" type="text" class="input w-full text-sm sm:min-w-0 sm:flex-1" :placeholder="t('admin.systemPrompts.editor.notePlaceholder')" :aria-label="t('admin.systemPrompts.editor.note')" />
+                  <div class="flex w-full items-center justify-end gap-2 sm:w-auto sm:shrink-0">
+                    <button type="button" data-test="system-prompt-save-version" class="btn btn-primary btn-sm" :disabled="savingVersion || !editorDirty" @click="saveVersion">
+                      <Icon name="check" size="sm" class="mr-1" />{{ savingVersion ? t('admin.systemPrompts.common.saving') : t('admin.systemPrompts.actions.saveVersion') }}
+                    </button>
+                    <button type="button" data-test="system-prompt-set-current" class="btn btn-secondary btn-sm" :disabled="!selectedVersion || selectedVersion.id === runtimeVersionId || editorDirty || publishingPrompt" @click="openConfirm({ kind: 'publish', versionId: selectedVersion?.id })">
+                      <Icon name="upload" size="sm" class="mr-1" />{{ publishingPrompt ? t('admin.systemPrompts.common.saving') : t('admin.systemPrompts.actions.setCurrent') }}
+                    </button>
+                  </div>
+                </div>
+              </template>
             </div>
 
             <div v-else class="overflow-hidden border border-gray-200 dark:border-dark-700">
@@ -236,6 +247,7 @@ const { t, locale } = useI18n()
 const appStore = useAppStore()
 
 type Tab = 'editor' | 'history'
+type ManagedPromptView = 'effective' | 'raw'
 type ConfirmAction = { kind: 'publish' | 'rollback' | 'delete'; versionId?: number }
 
 const templates = ref<SystemPromptTemplate[]>([])
@@ -273,6 +285,10 @@ const duplicateForm = reactive({ slug: '', name: '' })
 
 const skillRegistry = ref<RemoteSkillRegistryResponse | null>(null)
 const skillLoading = ref(false)
+const activeSkillVersion = ref<RemoteSkillBundleVersionDetail | null>(null)
+const managedPromptView = ref<ManagedPromptView>('effective')
+const managedPromptLoading = ref(false)
+const managedPromptUnavailable = ref(false)
 const skillSyncJob = ref<RemoteSkillSyncJob | null>(null)
 const skillCandidate = ref<RemoteSkillBundleVersionDetail | null>(null)
 const publishingSkill = ref(false)
@@ -288,8 +304,15 @@ const latestVersion = computed(() => detail.value?.versions[0] ?? null)
 const runtimeTemplateId = computed(() => runtime.value?.template_id ?? 0)
 const runtimeVersionId = computed(() => runtime.value?.version_id ?? 0)
 const editorDirty = computed(() => {
+  if (isRemoteSkillManaged.value) return false
   const version = selectedVersion.value
   return !!version && (body.value !== version.body || note.value !== version.note)
+})
+const managedPromptBody = computed(() => {
+  if (!activeSkillVersion.value) return ''
+  return managedPromptView.value === 'effective'
+    ? activeSkillVersion.value.prompt.effective_body
+    : activeSkillVersion.value.prompt.raw_body
 })
 const runtimeDirty = computed(() => !!runtime.value && (runtimeDraft.enabled !== runtime.value.enabled || runtimeDraft.expose_server_prompt !== runtime.value.expose_server_prompt || runtimeDraft.compact_enabled !== runtime.value.compact_enabled))
 const skillSyncInProgress = computed(() => skillSyncJob.value?.status === 'queued' || skillSyncJob.value?.status === 'running')
@@ -372,6 +395,8 @@ async function loadDetail(id: number) {
     sourceSyncStatus.value = null
     sourceCandidate.value = null
     activeTab.value = 'editor'
+    if (result.template.managed_source === 'remote_skill_registry') await loadManagedPrompt(true)
+    else resetManagedPrompt()
   } catch (error) { handleError(error, t('admin.systemPrompts.errors.loadDetail')) }
 }
 
@@ -432,10 +457,44 @@ function openAdvanced() {
   void loadSkillRegistry()
 }
 
-async function loadSkillRegistry() {
-  if (skillRegistry.value || skillLoading.value) return
+async function fetchSkillRegistry(force = false) {
+  if (!force && skillRegistry.value) return skillRegistry.value
   skillLoading.value = true
-  try { skillRegistry.value = await systemPromptsAPI.getSkillRegistry() } catch (error) { handleError(error, t('admin.systemPrompts.errors.skillLoad')) } finally { skillLoading.value = false }
+  try {
+    const result = await systemPromptsAPI.getSkillRegistry()
+    skillRegistry.value = result
+    return result
+  } finally { skillLoading.value = false }
+}
+
+async function loadSkillRegistry() {
+  try { await fetchSkillRegistry() } catch (error) { handleError(error, t('admin.systemPrompts.errors.skillLoad')) }
+}
+
+function resetManagedPrompt() {
+  activeSkillVersion.value = null
+  managedPromptView.value = 'effective'
+  managedPromptLoading.value = false
+  managedPromptUnavailable.value = false
+}
+
+async function loadManagedPrompt(forceRegistry = false) {
+  activeSkillVersion.value = null
+  managedPromptView.value = 'effective'
+  managedPromptUnavailable.value = false
+  managedPromptLoading.value = true
+  try {
+    const registry = await fetchSkillRegistry(forceRegistry)
+    const activeID = registry.runtime.active?.id
+    if (!activeID) throw new Error('active remote skill version is unavailable')
+    const version = await systemPromptsAPI.getSkillVersion(activeID)
+    if (version.id !== activeID || typeof version.prompt.raw_body !== 'string' || typeof version.prompt.effective_body !== 'string') {
+      throw new Error('active remote skill prompt detail is invalid')
+    }
+    activeSkillVersion.value = version
+  } catch {
+    managedPromptUnavailable.value = true
+  } finally { managedPromptLoading.value = false }
 }
 
 function clearSkillSyncTimer() {
@@ -469,7 +528,8 @@ async function publishSkillBundle(versionId: number, rollback: boolean) {
   publishingSkill.value = true
   try {
     await systemPromptsAPI.publishSkillVersion(versionId, skillRegistry.value.runtime.revision, rollback)
-    skillRegistry.value = await systemPromptsAPI.getSkillRegistry()
+    if (isRemoteSkillManaged.value) await loadManagedPrompt(true)
+    else await fetchSkillRegistry(true)
     skillCandidate.value = null
     appStore.showSuccess(rollback ? t('admin.systemPrompts.messages.skillRolledBack') : t('admin.systemPrompts.messages.skillPublished'))
   } catch (error) { handleError(error, rollback ? t('admin.systemPrompts.errors.skillRollback') : t('admin.systemPrompts.errors.skillPublish')) } finally { publishingSkill.value = false }

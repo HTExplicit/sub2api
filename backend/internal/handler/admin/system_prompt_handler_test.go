@@ -50,6 +50,39 @@ func TestStartSkillSyncAcceptsMultipartPromptCaptureForFixedSource(t *testing.T)
 	require.True(t, store.promptProvided)
 }
 
+func TestSkillVersionDetailIncludesBodiesWithoutLeakingIntoRegistrySummary(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	files := service.NewRemoteSkillRegistryFilesystem(t.TempDir())
+	seed, err := files.LoadSeed(context.Background())
+	require.NoError(t, err)
+	store := &serviceTestRemoteSkillStore{}
+	registry := service.NewRemoteSkillRegistryService(store, nil, files, &serviceTestRemoteSkillSource{})
+	require.NoError(t, registry.Start(context.Background()))
+	t.Cleanup(registry.Stop)
+	handler := NewSystemPromptHandler(nil, registry)
+
+	detailRecorder := httptest.NewRecorder()
+	detailContext, _ := gin.CreateTestContext(detailRecorder)
+	detailContext.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/system-prompts/skill-registry/versions/1", nil)
+	detailContext.Params = gin.Params{{Key: "bundle_version_id", Value: "1"}}
+	handler.SkillVersion(detailContext)
+
+	require.Equal(t, http.StatusOK, detailRecorder.Code)
+	require.Equal(t, seed.Prompt.RawBody, gjson.Get(detailRecorder.Body.String(), "data.prompt.raw_body").String())
+	require.Equal(t, seed.Prompt.EffectiveBody, gjson.Get(detailRecorder.Body.String(), "data.prompt.effective_body").String())
+	require.Equal(t, seed.Prompt.RawSHA256, gjson.Get(detailRecorder.Body.String(), "data.prompt.raw_sha256").String())
+	require.Equal(t, seed.Prompt.EffectiveSHA256, gjson.Get(detailRecorder.Body.String(), "data.prompt.effective_sha256").String())
+
+	summaryRecorder := httptest.NewRecorder()
+	summaryContext, _ := gin.CreateTestContext(summaryRecorder)
+	summaryContext.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/system-prompts/skill-registry", nil)
+	handler.SkillRegistry(summaryContext)
+
+	require.Equal(t, http.StatusOK, summaryRecorder.Code)
+	require.False(t, gjson.Get(summaryRecorder.Body.String(), "data.runtime.active_prompt.raw_body").Exists())
+	require.False(t, gjson.Get(summaryRecorder.Body.String(), "data.runtime.active_prompt.effective_body").Exists())
+}
+
 type serviceTestRemoteSkillStore struct {
 	snapshot         service.RemoteSkillRegistrySnapshot
 	detail           service.RemoteSkillBundleVersionDetail

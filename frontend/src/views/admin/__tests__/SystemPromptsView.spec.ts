@@ -63,6 +63,16 @@ const skillRegistry = () => {
     source: { upstream_source_id: 'moxinggang', upstream_root: 'https://moxinggang.com/skills/security-research/current', public_root: 'https://codexrip.vip/skills/security-research/current' },
   }
 }
+const skillVersionDetail = () => ({
+  ...skillRegistry().runtime.active!,
+  prompt: {
+    ...skillRegistry().runtime.active_prompt!,
+    raw_body: 'model-gang raw body',
+    effective_body: 'server effective body',
+  },
+  file_changes: [],
+  verified: true,
+})
 
 const ToggleStub = defineComponent({
   props: ['modelValue'], emits: ['update:modelValue'],
@@ -94,34 +104,75 @@ describe('SystemPromptsView', () => {
     mocks.list.mockResolvedValue({ templates: [codexTemplate(), gptTemplate()], runtime: runtime() })
     mocks.get.mockImplementation(async (id: number) => ({ template: id === 2 ? gptTemplate() : codexTemplate(), versions: [version(id)], runtime: runtime() }))
     mocks.getSkillRegistry.mockResolvedValue(skillRegistry())
+    mocks.getSkillVersion.mockResolvedValue(skillVersionDetail())
     mocks.startSkillSync.mockResolvedValue({ id: 8, status: 'queued', progress_stage: 'queued', prompt_capture_provided: false, created_at: '2026-08-11T00:00:00Z' })
     mocks.saveDraft.mockResolvedValue({ ...version(), id: 11, version: 2, body: 'draft', note: 'seed', is_active: false })
     mocks.publish.mockResolvedValue({ ...runtime(), version_id: 11, template_version: 2, revision: 6 })
   })
 
-  it('keeps the main page focused on templates, editor, and history', async () => {
+  it('shows the active effective managed body without legacy history', async () => {
     const wrapper = mountView()
     await flushPromises()
 
-    expect(mocks.getSkillRegistry).not.toHaveBeenCalled()
+    expect(mocks.getSkillRegistry).toHaveBeenCalledTimes(1)
+    expect(mocks.getSkillVersion).toHaveBeenCalledWith(30)
     expect(wrapper.find('[data-test="system-prompt-page-description"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="system-prompt-tab-preview"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="skill-registry-lifecycle"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('SHA-256')
     expect(wrapper.get('[data-test="system-prompt-tab-editor"]').exists()).toBe(true)
-    expect(wrapper.get('[data-test="system-prompt-tab-history"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('系统提示词')
     expect(wrapper.text()).toContain('安全研究远程 Skill 提示词')
     expect(wrapper.text()).not.toContain('Business System Prompts')
     expect(wrapper.text()).not.toContain('Templates')
-    expect(wrapper.get('[data-test="system-prompt-body"]').element).toHaveProperty('disabled', true)
+    expect(wrapper.find('[data-test="system-prompt-tab-history"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="system-prompt-body"]').element).toHaveProperty('readOnly', true)
+    expect(wrapper.get('[data-test="system-prompt-body"]').element).toHaveProperty('disabled', false)
+    expect(wrapper.get('[data-test="system-prompt-body"]').element).toHaveProperty('value', 'server effective body')
+    expect(wrapper.get('[data-test="system-prompt-body"]').element).not.toHaveProperty('value', 'seed')
     expect(wrapper.find('[data-test="system-prompt-save-version"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="system-prompt-set-current"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="system-prompt-edit-metadata"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="system-prompt-template-menu"]').exists()).toBe(false)
   })
 
-  it('loads the advanced drawer lazily and closes it with Escape', async () => {
+  it('switches between effective and raw managed bodies', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="system-prompt-body"]').element).toHaveProperty('value', 'server effective body')
+    await wrapper.get('[data-test="system-prompt-managed-raw"]').trigger('click')
+    expect(wrapper.get('[data-test="system-prompt-body"]').element).toHaveProperty('value', 'model-gang raw body')
+    await wrapper.get('[data-test="system-prompt-managed-effective"]').trigger('click')
+    expect(wrapper.get('[data-test="system-prompt-body"]').element).toHaveProperty('value', 'server effective body')
+  })
+
+  it('refreshes the active managed body', async () => {
+    mocks.getSkillVersion
+      .mockResolvedValueOnce(skillVersionDetail())
+      .mockResolvedValueOnce({
+        ...skillVersionDetail(),
+        prompt: { ...skillVersionDetail().prompt, effective_body: 'refreshed effective body' },
+      })
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-test="system-prompt-refresh"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="system-prompt-body"]').element).toHaveProperty('value', 'refreshed effective body')
+  })
+
+  it('shows managed body unavailability without falling back to the legacy template', async () => {
+    mocks.getSkillVersion.mockRejectedValue(new Error('detail unavailable'))
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="system-prompt-managed-unavailable"]').text()).toContain('活动版本正文不可用')
+    expect(wrapper.find('[data-test="system-prompt-body"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('seed')
+  })
+
+  it('reuses the loaded registry in the advanced drawer and closes it with Escape', async () => {
     const wrapper = mountView()
     await flushPromises()
     await wrapper.get('[data-test="system-prompt-open-advanced"]').trigger('click')
@@ -167,6 +218,8 @@ describe('SystemPromptsView', () => {
         raw_sha256: '7'.repeat(64),
         effective_sha256: '8'.repeat(64),
         diff: '--- raw\n+++ effective\n@@ routing\n-old\n+new',
+        raw_body: 'candidate raw body',
+        effective_body: 'candidate effective body',
         created_at: '2026-08-11T00:00:00Z',
       },
       file_changes: [{ path: 'SKILL.md', change: 'modified', kind: 'text' }],
@@ -175,7 +228,14 @@ describe('SystemPromptsView', () => {
     }
     mocks.startSkillSync.mockResolvedValue({ id: 9, status: 'queued', progress_stage: 'queued', prompt_capture_provided: false, created_at: '2026-08-11T00:00:00Z' })
     mocks.getSkillSync.mockResolvedValue({ id: 9, status: 'succeeded', progress_stage: 'verified', prompt_capture_provided: false, candidate_bundle_version_id: 31, created_at: '2026-08-11T00:00:00Z' })
-    mocks.getSkillVersion.mockResolvedValue(candidate)
+    const publishedRegistry = skillRegistry()
+    publishedRegistry.runtime = { ...publishedRegistry.runtime, active: candidate, active_prompt: candidate.prompt, revision: 4 }
+    publishedRegistry.versions = [candidate, ...publishedRegistry.versions]
+    mocks.getSkillRegistry
+      .mockResolvedValueOnce(skillRegistry())
+      .mockResolvedValueOnce(skillRegistry())
+      .mockResolvedValue(publishedRegistry)
+    mocks.getSkillVersion.mockImplementation(async (id: number) => id === 30 ? skillVersionDetail() : candidate)
     mocks.publishSkillVersion.mockResolvedValue({ ...skillRegistry().runtime, active: candidate, active_prompt: candidate.prompt, revision: 4 })
 
     const wrapper = mountView()
@@ -206,6 +266,7 @@ describe('SystemPromptsView', () => {
       await wrapper.get('[data-test="system-prompt-skill-confirm-action"]').trigger('click')
       await flushPromises()
       expect(mocks.publishSkillVersion).toHaveBeenCalledWith(31, 3, false)
+      expect(wrapper.get('[data-test="system-prompt-body"]').element).toHaveProperty('value', 'candidate effective body')
     } finally {
       vi.useRealTimers()
     }
@@ -219,6 +280,8 @@ describe('SystemPromptsView', () => {
 
     expect(mocks.get).toHaveBeenLastCalledWith(2)
     expect(wrapper.get('[data-test="system-prompt-body"]').element).toHaveProperty('value', 'seed')
+    expect(wrapper.get('[data-test="system-prompt-body"]').element).toHaveProperty('readOnly', false)
+    expect(wrapper.get('[data-test="system-prompt-tab-history"]').exists()).toBe(true)
   })
 
   it('keeps template creation reachable beside the mobile selector', async () => {

@@ -62,6 +62,11 @@ export default {
       activeTemplate: '当前模板',
       unsaved: '未保存',
       body: '提示词正文',
+      managedBody: '受管提示词正文',
+      effectiveBody: '有效正文',
+      rawBody: '原始正文',
+      managedBodyLoading: '正在加载活动版本正文…',
+      managedBodyUnavailable: '活动版本正文不可用。',
       note: '版本备注',
       notePlaceholder: '这次草稿改了什么？'
     },
