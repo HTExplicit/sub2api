@@ -626,6 +626,12 @@ func shouldFailoverOpenAIPassthroughResponse(account *Account, statusCode int, r
 	if IsCindyBalanceInsufficientResponse(account, statusCode, responseBody) {
 		return true
 	}
+	// A generic Cindy 402 is request-retryable but is not evidence of account
+	// balance exhaustion. Keep failover separate from persistent account state.
+	if statusCode == http.StatusPaymentRequired && account != nil &&
+		IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		return true
+	}
 	if statusCode == http.StatusForbidden && account != nil &&
 		IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		if hit, _, _ := detectOpenAICyberPolicy(responseBody); hit {

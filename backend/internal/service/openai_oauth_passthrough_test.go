@@ -1415,7 +1415,9 @@ func TestOpenAIGatewayService_OpenAIPassthrough_RetryableStatusesTriggerFailover
 			cindy:          true,
 			expectFailover: true,
 			assertRepo: func(t *testing.T, repo *openAIPassthroughFailoverRepo, _ time.Time) {
-				require.Equal(t, 1, repo.cindyMarkCalls)
+				require.Zero(t, repo.cindyMarkCalls)
+				require.Empty(t, repo.rateLimitCalls)
+				require.Empty(t, repo.overloadCalls)
 			},
 		},
 		{
@@ -1427,7 +1429,9 @@ func TestOpenAIGatewayService_OpenAIPassthrough_RetryableStatusesTriggerFailover
 			cindy:          true,
 			expectFailover: true,
 			assertRepo: func(t *testing.T, repo *openAIPassthroughFailoverRepo, _ time.Time) {
-				require.Equal(t, 1, repo.cindyMarkCalls)
+				require.Zero(t, repo.cindyMarkCalls)
+				require.Empty(t, repo.rateLimitCalls)
+				require.Empty(t, repo.overloadCalls)
 			},
 		},
 		{

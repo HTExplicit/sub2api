@@ -21,7 +21,7 @@ func TestRemoteSkillFilesystemSeedContainsExactCurrentModelGangTreeAndApprovedPr
 	require.Len(t, seed.EffectiveFiles, remoteSkillExpectedFiles)
 	require.Len(t, seed.FileChanges, remoteSkillExpectedFiles)
 	require.Equal(t, "c01ea5ce364caf52e28e214162fd36e6d733280aae0bf94fed7ac2ebe8bbb621", seed.Prompt.RawSHA256)
-	require.Equal(t, "8c070a149e5ba45ded47707abcb2172c30d6fbcd17548cc6029ab4405d13197a", seed.Prompt.EffectiveSHA256)
+	require.Equal(t, "c56ef682bfae6b0c640148d56ec0a626e3a5cb1f35996caebf3a9c9d6da9c520", seed.Prompt.EffectiveSHA256)
 	require.Equal(t, "5bd6df3cfa226c2d6c354dfb83dba8bb1036e0f3042e42590e6d0196a667ca71", seed.Version.RawTreeSHA256)
 	require.Equal(t, "42f6b73618ec7c5a6f4d0794171e36db68068acd0fff3c861da24b11b65e7671", seed.Version.EffectiveTreeSHA256)
 	require.Equal(t, int64(7_093_862), seed.Version.RawTotalBytes)

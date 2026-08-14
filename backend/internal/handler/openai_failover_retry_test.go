@@ -91,7 +91,7 @@ func TestOpenAISameAccountRetryLimit_CindyBudget429AlwaysSwitchesAccount(t *test
 		account,
 		&service.UpstreamFailoverError{
 			StatusCode:             http.StatusTooManyRequests,
-			ResponseBody:           []byte(`{"error":{"type":"budget_exceeded"}}`),
+			ResponseBody:           []byte(`{"error":{"message":"ExceededBudget: User=aigw:v1:cindy:fixture-account over budget. Spend=3.0533505, Budget=3.0","type":"budget_exceeded","param":null,"code":"429"}}`),
 			RetryableOnSameAccount: true,
 		},
 		true,

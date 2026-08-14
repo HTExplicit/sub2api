@@ -20,13 +20,15 @@ func TestEmbeddedRemoteSkillPromptMatchesApprovedNoBrandCapture(t *testing.T) {
 
 	capture, err := buildRemoteSkillPromptCapture([]byte(embeddedBusinessSystemPrompt))
 	require.NoError(t, err)
-	require.Equal(t, "8c070a149e5ba45ded47707abcb2172c30d6fbcd17548cc6029ab4405d13197a", capture.EffectiveSHA256)
+	require.Equal(t, "c56ef682bfae6b0c640148d56ec0a626e3a5cb1f35996caebf3a9c9d6da9c520", capture.EffectiveSHA256)
+	require.Equal(t, 6616, len(capture.EffectiveBody))
 	rawBlock, err := locateUniqueRemoteSkillPromptBlock(capture.RawBody, remoteSkillSecurityResearchRoutingBegin, remoteSkillSecurityResearchRoutingEnd)
 	require.NoError(t, err)
 	effectiveBlock, err := locateUniqueRemoteSkillPromptBlock(capture.EffectiveBody, remoteSkillSecurityResearchRoutingBegin, remoteSkillSecurityResearchRoutingEnd)
 	require.NoError(t, err)
 	require.Equal(t, capture.RawBody[:rawBlock.begin], capture.EffectiveBody[:effectiveBlock.begin])
 	require.Equal(t, capture.RawBody[rawBlock.end:], capture.EffectiveBody[effectiveBlock.end:])
+	require.Equal(t, capture.RawBody, bytes.Replace(capture.EffectiveBody, []byte(RemoteSkillPublicRoot), []byte(RemoteSkillMoxinggangRoot), 1))
 }
 
 const modelGangPromptCaptureFixture = `You are , a friendly and highly capable senior technical-engineering assistant.
@@ -49,13 +51,11 @@ These files are loaded from the same GitHub repository on demand.
 
 <!-- END  SECURITY-RESEARCH ROUTING -->`
 
-func TestBuildRemoteSkillPromptCaptureRewritesOnlyUniqueRoutingBlock(t *testing.T) {
+func TestBuildRemoteSkillPromptCaptureRewritesOnlyRemoteRoot(t *testing.T) {
 	capture, err := buildRemoteSkillPromptCapture([]byte(modelGangPromptCaptureFixture))
 	require.NoError(t, err)
 
-	want := "You are , a friendly and highly capable senior technical-engineering assistant.\n" +
-		"The only allowed user address is exactly \"宝宝\".\n" +
-		remoteSkillSecurityResearchRoutingBlock
+	want := strings.Replace(modelGangPromptCaptureFixture, RemoteSkillMoxinggangRoot, RemoteSkillPublicRoot, 1)
 	require.Equal(t, want, string(capture.EffectiveBody))
 	require.Equal(t, modelGangPromptCaptureFixture, string(capture.RawBody))
 	require.Len(t, capture.RawSHA256, 64)
@@ -67,7 +67,7 @@ func TestBuildRemoteSkillPromptCaptureRewritesOnlyUniqueRoutingBlock(t *testing.
 	require.NotContains(t, strings.ToLower(string(capture.EffectiveBody)), "you are codexrip")
 }
 
-func TestRemoteSkillEntryLoaderUsesOneOrderedBoundedRawHTTPPass(t *testing.T) {
+func TestRemoteSkillPromptPreservesOriginalRoutingBytesOutsideRoot(t *testing.T) {
 	capture, err := buildRemoteSkillPromptCapture([]byte(embeddedBusinessSystemPrompt))
 	require.NoError(t, err)
 	block, err := locateUniqueRemoteSkillPromptBlock(
@@ -76,37 +76,24 @@ func TestRemoteSkillEntryLoaderUsesOneOrderedBoundedRawHTTPPass(t *testing.T) {
 		remoteSkillSecurityResearchRoutingEnd,
 	)
 	require.NoError(t, err)
-	loader := string(capture.EffectiveBody[block.begin:block.end])
-	lowerLoader := strings.ToLower(loader)
+	routing := string(capture.EffectiveBody[block.begin:block.end])
 
-	urls := []string{
-		RemoteSkillPublicRoot + "/RULES.md",
-		RemoteSkillPublicRoot + "/README_AI.md",
-		RemoteSkillPublicRoot + "/SKILL.md",
-	}
+	require.Equal(t, 1, strings.Count(routing, "REMOTE_ROOT = "+RemoteSkillPublicRoot))
+	entries := []string{"`REMOTE_ROOT/RULES.md`", "`REMOTE_ROOT/README_AI.md`", "`REMOTE_ROOT/SKILL.md`"}
 	previous := -1
-	for _, entryURL := range urls {
-		require.Equal(t, 1, strings.Count(loader, entryURL), entryURL)
-		index := strings.Index(loader, entryURL)
-		require.Greater(t, index, previous, entryURL)
+	for _, entry := range entries {
+		require.Equal(t, 1, strings.Count(routing, entry), entry)
+		index := strings.Index(routing, entry)
+		require.Greater(t, index, previous, entry)
 		previous = index
 	}
 
-	require.Contains(t, loader, "direct raw HTTP GET")
-	require.Contains(t, lowerLoader, "one tool-call round")
-	require.Contains(t, lowerLoader, "do not inspect or follow instructions")
-	require.Contains(t, lowerLoader, "hosted web search")
-	require.Contains(t, lowerLoader, "non-empty body")
-	require.Contains(t, lowerLoader, "valid utf-8")
-	require.Contains(t, lowerLoader, "at most once with a different raw http client")
-	require.Contains(t, lowerLoader, "do not restart the loading pass")
-	require.Contains(t, lowerLoader, "do not refetch files that already succeeded")
-	require.Contains(t, lowerLoader, "at most one successful entry-loading pass")
-	require.Contains(t, lowerLoader, "follow-up turns in the same task must reuse")
-	require.Contains(t, lowerLoader, "local, installed, bundled, or same-name skill")
-	require.Contains(t, lowerLoader, "another origin")
-	require.NotContains(t, loader, RemoteSkillMoxinggangRoot)
-	require.NotContains(t, lowerLoader, "raw.githubusercontent.com")
+	require.Contains(t, routing, "fetch and read these cloud files first, in order")
+	require.Contains(t, routing, "After loading `SKILL.md`, follow its `REMOTE_ROOT` path-resolution contract")
+	require.NotContains(t, routing, RemoteSkillMoxinggangRoot)
+	require.NotContains(t, routing, "direct raw HTTP GET")
+	require.NotContains(t, routing, "one tool-call round")
+	require.Equal(t, capture.RawBody, bytes.Replace(capture.EffectiveBody, []byte(RemoteSkillPublicRoot), []byte(RemoteSkillMoxinggangRoot), 1))
 }
 
 func TestBuildRemoteSkillPromptCaptureRejectsMalformedCaptures(t *testing.T) {

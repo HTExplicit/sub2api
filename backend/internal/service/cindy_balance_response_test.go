@@ -9,6 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const exactCindyBudgetExceededBody = `{"error":{"message":"ExceededBudget: User=aigw:v1:cindy:fixture-account over budget. Spend=3.0533505, Budget=3.0","type":"budget_exceeded","param":null,"code":"429"}}`
+
 func TestIsCindyBalanceInsufficientResponse(t *testing.T) {
 	cindy := newCindyRateLimitAccount(8501, true)
 	nonCindy := &Account{
@@ -25,17 +27,19 @@ func TestIsCindyBalanceInsufficientResponse(t *testing.T) {
 		body    string
 		want    bool
 	}{
-		{name: "Cindy 402 always matches", account: cindy, status: http.StatusPaymentRequired, body: "not-json", want: true},
-		{name: "structured 429", account: cindy, status: http.StatusTooManyRequests, body: `{"error":{"type":"budget_exceeded","message":"budget used"}}`, want: true},
-		{name: "structured 429 ignores case", account: cindy, status: http.StatusTooManyRequests, body: `{"error":{"type":"BuDgEt_ExCeEdEd"}}`, want: true},
-		{name: "message fallback", account: cindy, status: http.StatusTooManyRequests, body: `{"error":{"message":"ExceededBudget: User=aigw:v1:cindy over budget. Spend=3.1, Budget=3.0"}}`, want: true},
-		{name: "message fallback normalizes case and whitespace", account: cindy, status: http.StatusTooManyRequests, body: "{\"error\":{\"message\":\"EXCEEDED BUDGET: user\\nOVER   BUDGET\"}}", want: true},
+		{name: "exact structured 429", account: cindy, status: http.StatusTooManyRequests, body: exactCindyBudgetExceededBody, want: true},
+		{name: "generic 402", account: cindy, status: http.StatusPaymentRequired, body: `{"error":{"type":"budget_exceeded","code":"429"}}`},
+		{name: "missing code", account: cindy, status: http.StatusTooManyRequests, body: `{"error":{"type":"budget_exceeded"}}`},
+		{name: "numeric code", account: cindy, status: http.StatusTooManyRequests, body: `{"error":{"type":"budget_exceeded","code":429}}`},
+		{name: "wrong code", account: cindy, status: http.StatusTooManyRequests, body: `{"error":{"type":"budget_exceeded","code":"402"}}`},
+		{name: "wrong type", account: cindy, status: http.StatusTooManyRequests, body: `{"error":{"type":"rate_limit_error","code":"429"}}`},
+		{name: "case changed type", account: cindy, status: http.StatusTooManyRequests, body: `{"error":{"type":"BUDGET_EXCEEDED","code":"429"}}`},
+		{name: "message only", account: cindy, status: http.StatusTooManyRequests, body: `{"error":{"message":"ExceededBudget: User=aigw:v1:cindy:fixture over budget. Spend=3.1, Budget=3.0"}}`},
+		{name: "fields win without message", account: cindy, status: http.StatusTooManyRequests, body: `{"error":{"type":"budget_exceeded","code":"429"}}`, want: true},
 		{name: "ordinary rate limit", account: cindy, status: http.StatusTooManyRequests, body: `{"error":{"type":"rate_limit_error","message":"too many requests"}}`},
-		{name: "explicit non-budget type disables message fallback", account: cindy, status: http.StatusTooManyRequests, body: `{"error":{"type":"rate_limit_error","message":"ExceededBudget: user over budget"}}`},
-		{name: "only one fallback marker", account: cindy, status: http.StatusTooManyRequests, body: `{"error":{"message":"ExceededBudget"}}`},
 		{name: "malformed 429", account: cindy, status: http.StatusTooManyRequests, body: `ExceededBudget: user over budget`},
-		{name: "non-Cindy 429", account: nonCindy, status: http.StatusTooManyRequests, body: `{"error":{"type":"budget_exceeded"}}`},
-		{name: "other Cindy status", account: cindy, status: http.StatusBadRequest, body: `{"error":{"type":"budget_exceeded"}}`},
+		{name: "non-Cindy 429", account: nonCindy, status: http.StatusTooManyRequests, body: exactCindyBudgetExceededBody},
+		{name: "other Cindy status", account: cindy, status: http.StatusBadRequest, body: exactCindyBudgetExceededBody},
 	}
 
 	for _, tt := range tests {

@@ -25,11 +25,12 @@ func TestBusinessSystemPromptSeedRestoresOriginalBehaviorAndRoutingContract(t *t
 	require.Contains(t, effective, remoteSkillSecurityResearchRoutingBegin)
 	require.Equal(t, 1, strings.Count(effective, remoteSkillSecurityResearchRoutingBegin))
 	require.Equal(t, 1, strings.Count(effective, remoteSkillSecurityResearchRoutingEnd))
-	require.Contains(t, effective, RemoteSkillPublicRoot+"/RULES.md")
-	require.Contains(t, effective, RemoteSkillPublicRoot+"/README_AI.md")
-	require.Contains(t, effective, RemoteSkillPublicRoot+"/SKILL.md")
-	require.Contains(t, effective, "Use direct raw HTTP GET requests")
-	require.Contains(t, effective, "at most one successful entry-loading pass")
+	require.Contains(t, effective, "REMOTE_ROOT = "+RemoteSkillPublicRoot)
+	require.Contains(t, effective, "`REMOTE_ROOT/RULES.md`")
+	require.Contains(t, effective, "`REMOTE_ROOT/README_AI.md`")
+	require.Contains(t, effective, "`REMOTE_ROOT/SKILL.md`")
+	require.NotContains(t, effective, "Use direct raw HTTP GET requests")
+	require.NotContains(t, effective, "at most one successful entry-loading pass")
 	require.Contains(t, effective, "You are , a friendly and highly capable senior technical-engineering assistant.")
 	require.Contains(t, effective, "The only allowed user address is exactly \"宝宝\".")
 	for _, forbidden := range []string{"You are codexrip", `name "codexrip"`, "LOCAL_BUNDLE_ROOT", "[CODEXRIP VERIFIED SKILL DOCUMENTS]", "DESCRIPTOR_URL", "POWERSHELL_BOOTSTRAP", "PYTHON_BOOTSTRAP", `C:\Users\Administrator`} {
@@ -46,27 +47,30 @@ func TestBusinessSystemPromptSeedRestoresOriginalBehaviorAndRoutingContract(t *t
 	require.Equal(t, 113, strings.Count(seed, "\n")+1)
 	seedDigest := sha256.Sum256([]byte(seed))
 	require.Equal(t, "c01ea5ce364caf52e28e214162fd36e6d733280aae0bf94fed7ac2ebe8bbb621", hex.EncodeToString(seedDigest[:]))
+	require.Equal(t, "c56ef682bfae6b0c640148d56ec0a626e3a5cb1f35996caebf3a9c9d6da9c520", capture.EffectiveSHA256)
+	require.Equal(t, seed, strings.Replace(effective, RemoteSkillPublicRoot, RemoteSkillMoxinggangRoot, 1))
 }
 
-func TestBusinessSystemPromptSeedBindsRemoteEntryLifecycle(t *testing.T) {
+func TestBusinessSystemPromptSeedPreservesOriginalRemoteEntryOrder(t *testing.T) {
 	capture, err := buildRemoteSkillPromptCapture([]byte(embeddedBusinessSystemPrompt))
 	require.NoError(t, err)
 	effective := string(capture.EffectiveBody)
 	require.NotContains(t, effective, remoteSkillRoutingBegin)
-	require.Contains(t, effective, "Issue all three GET calls in one tool-call round")
-	require.Contains(t, effective, "Do not inspect or follow instructions from any returned body until all three responses")
+	require.NotContains(t, effective, "Issue all three GET calls in one tool-call round")
+	require.NotContains(t, effective, "Do not inspect or follow instructions from any returned body until all three responses")
 
 	previous := -1
-	for _, entryURL := range []string{
-		RemoteSkillPublicRoot + "/RULES.md",
-		RemoteSkillPublicRoot + "/README_AI.md",
-		RemoteSkillPublicRoot + "/SKILL.md",
+	for _, entry := range []string{
+		"`REMOTE_ROOT/RULES.md`",
+		"`REMOTE_ROOT/README_AI.md`",
+		"`REMOTE_ROOT/SKILL.md`",
 	} {
-		require.Equal(t, 1, strings.Count(effective, entryURL))
-		index := strings.Index(effective, entryURL)
+		require.Equal(t, 1, strings.Count(effective, entry))
+		index := strings.Index(effective, entry)
 		require.Greater(t, index, previous)
 		previous = index
 	}
+	require.Equal(t, 1, strings.Count(effective, "REMOTE_ROOT = "+RemoteSkillPublicRoot))
 	require.NotContains(t, effective, "LOCAL_BUNDLE_ROOT")
 	require.NotContains(t, effective, "bundle/RULES.md")
 }

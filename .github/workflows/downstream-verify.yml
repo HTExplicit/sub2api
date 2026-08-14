@@ -70,8 +70,8 @@ jobs:
       - name: Cindy defaults migration tests
         working-directory: backend
         run: |
-          go test -p=1 ./migrations -run '^TestMigration20(7RestoresOnlyCindyNativeOpenAIModes|8UsesCindyPromptCacheHashOnly|9RestoresOnlyCindyAlphaSearchBridge)$' -count=1
-          go test -p=1 -tags integration ./migrations -run '^TestCindy(OpenAIDefaults|PromptCacheHash|AlphaSearchBridge)MigrationIsStrictAndIdempotent$' -count=1
+          go test -p=1 ./migrations -run '^TestMigration(207RestoresOnlyCindyNativeOpenAIModes|208UsesCindyPromptCacheHashOnly|209RestoresOnlyCindyAlphaSearchBridge|210ResetsOnlyLegacyCindyBalanceMarkers)$' -count=1
+          go test -p=1 -tags integration ./migrations -run '^TestCindy(OpenAIDefaults|PromptCacheHash|AlphaSearchBridge|BalanceMarkerReset)MigrationIsStrictAndIdempotent$' -count=1
 
   frontend:
     name: Downstream frontend
