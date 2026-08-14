@@ -44,7 +44,8 @@ func TestCindyBalanceMarkerResetMigrationIsStrictAndIdempotent(t *testing.T) {
 			account_id BIGINT,
 			status_code INT,
 			upstream_status_code INT,
-			upstream_error_detail TEXT,
+			provider_error_type VARCHAR(64),
+			provider_error_code VARCHAR(64),
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);
 		INSERT INTO accounts (
@@ -69,12 +70,12 @@ func TestCindyBalanceMarkerResetMigrationIsStrictAndIdempotent(t *testing.T) {
 
 		INSERT INTO ops_error_logs (
 			account_id, status_code, upstream_status_code,
-			upstream_error_detail, created_at
+			provider_error_type, provider_error_code, created_at
 		)
-		SELECT id, 429, 429, '{"error":{"type":"budget_exceeded"}}', cindy_balance_insufficient_at
+		SELECT id, 429, 429, 'budget_exceeded', NULL, cindy_balance_insufficient_at
 		FROM accounts WHERE name = 'cindy-active'
 		UNION ALL
-		SELECT id, 429, 429, '{"error":{"type":"budget_exceeded","code":"429"}}', cindy_balance_insufficient_at
+		SELECT id, 429, 429, 'budget_exceeded', '429', cindy_balance_insufficient_at
 		FROM accounts WHERE name = 'cindy-deleted';
 	`))
 
