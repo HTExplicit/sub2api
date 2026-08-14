@@ -155,6 +155,7 @@ func TestCindyHTTPToWSV2ContinuationReusesOneConnectionAcrossIndependentHTTPRequ
 	require.NoError(t, err)
 	require.Equal(t, "resp_cindy_tool", firstResult.RequestID)
 	require.True(t, firstResult.OpenAIWSMode)
+	require.False(t, firstResult.Stream)
 
 	secondContext := cindyHTTPToWSV2TestContext("/v1/responses")
 	secondBody := []byte(`{"model":"gpt-5.4","stream":false,"previous_response_id":"resp_cindy_tool","input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`)
@@ -162,12 +163,15 @@ func TestCindyHTTPToWSV2ContinuationReusesOneConnectionAcrossIndependentHTTPRequ
 	require.NoError(t, err)
 	require.Equal(t, "resp_cindy_done", secondResult.RequestID)
 	require.True(t, secondResult.OpenAIWSMode)
+	require.False(t, secondResult.Stream)
 	require.Equal(t, 1, dialer.DialCount())
 
 	captureConn.mu.Lock()
 	writes := append([]map[string]any(nil), captureConn.writes...)
 	captureConn.mu.Unlock()
 	require.Len(t, writes, 2)
+	require.Equal(t, true, writes[0]["stream"])
+	require.Equal(t, true, writes[1]["stream"])
 	require.Empty(t, openAIWSPayloadString(writes[0], "previous_response_id"))
 	require.Equal(t, "resp_cindy_tool", openAIWSPayloadString(writes[1], "previous_response_id"))
 	require.True(t, HasFunctionCallOutput(writes[1]))
