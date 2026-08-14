@@ -131,6 +131,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			preferredConnID = connID
 		}
 	}
+	if decision.Reason == openAICindyHTTPToWSV2Reason && previousResponseID != "" && preferredConnID == "" {
+		return nil, NewOpenAIContinuationStateUnavailableError(http.StatusServiceUnavailable, nil, nil)
+	}
 	storeDisabled := s.isOpenAIWSStoreDisabledInRequest(reqBody, account)
 	if stateStore != nil && storeDisabled && previousResponseID == "" && sessionHash != "" {
 		if connID, ok := stateStore.GetSessionConn(groupID, sessionHash); ok {
@@ -216,7 +219,13 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			}
 			return nil, &agentIdentityTaskRecoveredError{}
 		}
-		s.handleOpenAIWSDialTransientFailure(ctx, account, mappedModel, err)
+		// Cindy's HTTP -> WSv2 bridge classifies and records the first-turn
+		// handshake exactly once in the outer failover boundary. Continuations
+		// are request-scoped and must not mutate account health when affinity is
+		// unavailable.
+		if decision.Reason != openAICindyHTTPToWSV2Reason {
+			s.handleOpenAIWSDialTransientFailure(ctx, account, mappedModel, err)
+		}
 		dialStatus, dialClass, dialCloseStatus, dialCloseReason, dialRespServer, dialRespVia, dialRespCFRay, dialRespReqID := summarizeOpenAIWSDialError(err)
 		logOpenAIWSModeInfo(
 			"acquire_fail account_id=%d account_type=%s transport=%s reason=%s dial_status=%d dial_class=%s dial_close_status=%s dial_close_reason=%s dial_resp_server=%s dial_resp_via=%s dial_resp_cf_ray=%s dial_resp_x_request_id=%s cause=%s preferred_conn_id=%s force_new_conn=%v ws_host=%s ws_path=%s proxy_enabled=%v",
@@ -269,11 +278,10 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	)
 	if previousResponseID != "" {
 		logOpenAIWSModeInfo(
-			"continuation_probe account_id=%d account_type=%s conn_id=%s previous_response_id=%s previous_response_id_kind=%s preferred_conn_id=%s conn_reused=%v store_disabled=%v session_hash=%s header_session_id=%s header_conversation_id=%s session_id_source=%s conversation_id_source=%s has_turn_state=%v turn_state_len=%d has_prompt_cache_key=%v",
+			"continuation_probe account_id=%d account_type=%s conn_id=%s previous_response_id_present=true previous_response_id_kind=%s preferred_conn_id=%s conn_reused=%v store_disabled=%v session_hash=%s header_session_id=%s header_conversation_id=%s session_id_source=%s conversation_id_source=%s has_turn_state=%v turn_state_len=%d has_prompt_cache_key=%v",
 			account.ID,
 			account.Type,
 			truncateOpenAIWSLogValue(connID, openAIWSIDValueMaxLen),
-			truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen),
 			normalizeOpenAIWSLogValue(previousResponseIDKind),
 			truncateOpenAIWSLogValue(preferredConnID, openAIWSIDValueMaxLen),
 			lease.Reused(),
@@ -341,12 +349,12 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	}
 	if debugEnabled {
 		logOpenAIWSModeDebug(
-			"write_request_sent account_id=%d conn_id=%s stream=%v payload_bytes=%d previous_response_id=%s",
+			"write_request_sent account_id=%d conn_id=%s stream=%v payload_bytes=%d previous_response_id_present=%v",
 			account.ID,
 			connID,
 			reqStream,
 			resolvePayloadBytes(),
-			truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen),
+			previousResponseID != "",
 		)
 	}
 
@@ -601,7 +609,19 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		}
 		imageCounter.AddSSEData(message)
 
+		cindyHTTPToWSV2FirstTurn := decision.Reason == openAICindyHTTPToWSV2Reason &&
+			previousResponseID == "" && !wroteDownstream
 		if eventType == "response.failed" {
+			if cindyHTTPToWSV2FirstTurn {
+				if failoverErr, ok := s.cindyHTTPToWSV2FirstTurnEventFailover(
+					ctx, c, account, mappedModel, lease.HandshakeHeaders(), message,
+				); ok {
+					if refusalOutput != nil {
+						refusalOutput.DropTurn()
+					}
+					return nil, failoverErr
+				}
+			}
 			if hit, code, msg := detectOpenAICyberPolicy(message); hit {
 				MarkOpsCyberPolicy(c, CyberPolicyMark{
 					Code:           code,
@@ -629,6 +649,16 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		}
 
 		if eventType == "error" {
+			if cindyHTTPToWSV2FirstTurn {
+				if failoverErr, ok := s.cindyHTTPToWSV2FirstTurnEventFailover(
+					ctx, c, account, mappedModel, lease.HandshakeHeaders(), message,
+				); ok {
+					if refusalOutput != nil {
+						refusalOutput.DropTurn()
+					}
+					return nil, failoverErr
+				}
+			}
 			s.handleOpenAIWSErrorEventTransientFailure(ctx, account, mappedModel, lease.HandshakeHeaders(), message)
 			errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(message)
 			s.persistOpenAIWSRateLimitSignal(ctx, account, lease.HandshakeHeaders(), message, errCodeRaw, errTypeRaw, errMsgRaw)
@@ -651,13 +681,14 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			)
 			if fallbackReason == "previous_response_not_found" {
 				logOpenAIWSModeInfo(
-					"previous_response_not_found_diag account_id=%d account_type=%s conn_id=%s previous_response_id=%s previous_response_id_kind=%s response_id=%s event_idx=%d req_stream=%v store_disabled=%v conn_reused=%v session_hash=%s header_session_id=%s header_conversation_id=%s session_id_source=%s conversation_id_source=%s has_turn_state=%v turn_state_len=%d has_prompt_cache_key=%v err_code=%s err_type=%s err_message=%s",
+					"previous_response_not_found_diag account_id=%d account_type=%s conn_id=%s previous_response_id_present=%v previous_response_id_kind=%s response_id_present=%v response_id_kind=%s event_idx=%d req_stream=%v store_disabled=%v conn_reused=%v session_hash=%s header_session_id=%s header_conversation_id=%s session_id_source=%s conversation_id_source=%s has_turn_state=%v turn_state_len=%d has_prompt_cache_key=%v err_code=%s err_type=%s err_message=%s",
 					account.ID,
 					account.Type,
 					connID,
-					truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen),
+					previousResponseID != "",
 					normalizeOpenAIWSLogValue(previousResponseIDKind),
-					truncateOpenAIWSLogValue(responseID, openAIWSIDValueMaxLen),
+					responseID != "",
+					normalizeOpenAIWSLogValue(ClassifyOpenAIPreviousResponseIDKind(responseID)),
 					eventCount,
 					reqStream,
 					storeDisabled,
@@ -796,10 +827,11 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		firstTokenMsValue = *firstTokenMs
 	}
 	logOpenAIWSModeDebug(
-		"completed account_id=%d conn_id=%s response_id=%s stream=%v duration_ms=%d events=%d token_events=%d terminal_events=%d buffered_events=%d buffered_flushed=%d first_event=%s last_event=%s first_token_ms=%d wrote_downstream=%v client_disconnected=%v",
+		"completed account_id=%d conn_id=%s response_id_present=%v response_id_kind=%s stream=%v duration_ms=%d events=%d token_events=%d terminal_events=%d buffered_events=%d buffered_flushed=%d first_event=%s last_event=%s first_token_ms=%d wrote_downstream=%v client_disconnected=%v",
 		account.ID,
 		connID,
-		truncateOpenAIWSLogValue(strings.TrimSpace(responseID), openAIWSIDValueMaxLen),
+		strings.TrimSpace(responseID) != "",
+		normalizeOpenAIWSLogValue(ClassifyOpenAIPreviousResponseIDKind(responseID)),
 		reqStream,
 		time.Since(startTime).Milliseconds(),
 		eventCount,

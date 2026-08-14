@@ -717,7 +717,7 @@ func TestOpenAIGatewayService_Forward_ResponseFailedInvalidEncryptedContentRetri
 	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
 	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
 
-	body := []byte(`{"model":"gpt-5","stream":false,"previous_response_id":"resp_stale","input":[{"type":"reasoning","encrypted_content":"gAAA","summary":[{"type":"summary_text","text":"keep"}]},{"type":"message","content":"hi"}]}`)
+	body := []byte(`{"model":"gpt-5","stream":false,"input":[{"type":"reasoning","encrypted_content":"gAAA","summary":[{"type":"summary_text","text":"keep"}]},{"type":"message","content":"hi"}]}`)
 	result, err := svc.Forward(context.Background(), c, account, body)
 
 	require.NoError(t, err)
@@ -764,7 +764,7 @@ func TestOpenAIGatewayService_Forward_StreamingResponseFailedInvalidEncryptedCon
 	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
 	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
 
-	body := []byte(`{"model":"gpt-5","stream":true,"previous_response_id":"resp_stale","input":[{"type":"reasoning","encrypted_content":"gAAA"},{"type":"message","content":"hi"}]}`)
+	body := []byte(`{"model":"gpt-5","stream":true,"input":[{"type":"reasoning","encrypted_content":"gAAA"},{"type":"message","content":"hi"}]}`)
 	result, err := svc.Forward(context.Background(), c, account, body)
 
 	require.NoError(t, err)

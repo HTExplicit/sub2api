@@ -38,6 +38,9 @@ jobs:
       - name: Remote Skill concurrency race tests
         working-directory: backend
         run: go test -race ./internal/service -run 'TestMoxinggangRemoteSkillSource(UsesBoundedConcurrencyAndCanonicalUnicodeURLs|FetchesFixedApprovedTreeAndBuildsPairedCandidate)|TestRemoteSkillRegistryKeepsHistorical73ActiveThrough458SeedSyncPublishAndRollback' -count=1
+      - name: Cindy HTTP to WebSocket v2 continuation race test
+        working-directory: backend
+        run: go test -race ./internal/service -run '^TestCindyHTTPToWSV2ContinuationReusesOneConnectionAcrossIndependentHTTPRequests$' -count=1
       - name: Request body recovery tests
         working-directory: backend
         run: go test -p=1 ./internal/pkg/httputil ./internal/handler -run 'Test(ReadRequestBodyWithPrealloc|ReadLenientJSONRequestBodyWithPrealloc|RequestBodyReadDiagnostics|ClassifyRequestContentEncoding)' -count=1

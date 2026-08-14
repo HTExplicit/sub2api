@@ -521,7 +521,8 @@ func logOpenAIWSBindResponseAccountWarn(groupID, accountID int64, responseID str
 		"openai.ws_bind_response_account_failed",
 		zap.Int64("group_id", groupID),
 		zap.Int64("account_id", accountID),
-		zap.String("response_id", truncateOpenAIWSLogValue(responseID, openAIWSIDValueMaxLen)),
+		zap.Bool("response_id_present", strings.TrimSpace(responseID) != ""),
+		zap.String("response_id_kind", normalizeOpenAIWSLogValue(ClassifyOpenAIPreviousResponseIDKind(responseID))),
 		zap.Error(err),
 	)
 }

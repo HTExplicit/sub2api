@@ -343,6 +343,9 @@ gateway:
     # 按账号类型细分开关
     oauth_enabled: true
     apikey_enabled: true
+    # 严格 Cindy API Key + 官方 Codex + 普通 HTTP /v1/responses 改走 WSv2 上游（默认关闭）
+    # 环境变量：GATEWAY_OPENAI_WS_CINDY_HTTP_TO_WSV2_ENABLED=true
+    cindy_http_to_wsv2_enabled: false
     # 全局强制 HTTP（紧急回滚开关）
     force_http: false
     # 允许在 WSv2 下按策略恢复 store=true（默认 false）

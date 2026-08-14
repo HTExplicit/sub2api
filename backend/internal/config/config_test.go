@@ -404,6 +404,9 @@ func TestLoadDefaultOpenAIWSConfig(t *testing.T) {
 	if !cfg.Gateway.OpenAIWS.Enabled {
 		t.Fatalf("Gateway.OpenAIWS.Enabled = false, want true")
 	}
+	if cfg.Gateway.OpenAIWS.CindyHTTPToWSV2Enabled {
+		t.Fatalf("Gateway.OpenAIWS.CindyHTTPToWSV2Enabled = true, want false")
+	}
 	if !cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 {
 		t.Fatalf("Gateway.OpenAIWS.ResponsesWebsocketsV2 = false, want true")
 	}
@@ -519,6 +522,15 @@ func TestLoadOpenAIWSClientFirstMessageTimeoutFromEnv(t *testing.T) {
 	cfg, err := Load()
 	require.NoError(t, err)
 	require.Equal(t, 120, cfg.Gateway.OpenAIWS.ClientFirstMessageTimeoutSeconds)
+}
+
+func TestLoadOpenAIWSCindyHTTPToWSV2FromEnv(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("GATEWAY_OPENAI_WS_CINDY_HTTP_TO_WSV2_ENABLED", "true")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.True(t, cfg.Gateway.OpenAIWS.CindyHTTPToWSV2Enabled)
 }
 
 func TestLoadDefaultOpenAICompactModel(t *testing.T) {

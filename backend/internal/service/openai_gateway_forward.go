@@ -86,9 +86,21 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		}
 	}
 	wsDecision := s.getOpenAIWSProtocolResolver().Resolve(account)
-	// 仅允许 WS 入站请求走 WS 上游，避免出现 HTTP -> WS 协议混用。
-	wsDecision = resolveOpenAIWSDecisionByClientTransport(wsDecision, GetOpenAIClientTransport(c))
-	passthroughEnabled := account.IsOpenAIPassthroughEnabled()
+	cindyHTTPToWSV2 := false
+	if bridgeDecision, eligible := s.resolveCindyHTTPToWSV2Decision(c, account); eligible {
+		wsDecision = bridgeDecision
+		cindyHTTPToWSV2 = true
+		markOpenAICindyHTTPToWSV2Required(c)
+	} else if isOpenAICindyHTTPToWSV2Required(c) {
+		// Once a request has entered the strict Cindy bridge, account failover may
+		// only select another bridge-eligible Cindy account. Exclude incompatible
+		// candidates without sending or attributing a health failure to them.
+		return nil, newOpenAICindyHTTPToWSV2AccountRequiredError()
+	} else {
+		// 普通账号仍只允许 WS 入站走 WS 上游。Cindy 的 HTTP -> WSv2 是独立、严格受控的例外。
+		wsDecision = resolveOpenAIWSDecisionByClientTransport(wsDecision, GetOpenAIClientTransport(c))
+	}
+	passthroughEnabled := account.IsOpenAIPassthroughEnabled() && !cindyHTTPToWSV2
 	compactPath := isOpenAIResponsesCompactPath(c)
 	if shouldFlattenOpenAIResponsesNamespaces(account, wsDecision.Transport, passthroughEnabled, compactPath) {
 		body, err = flattenOpenAIResponsesNamespaces(c, body)
@@ -116,7 +128,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 	originalBody := body
 	requestView := newOpenAIRequestView(body)
-	reqModel, reqStream, promptCacheKey := requestView.Model, requestView.Stream, requestView.PromptCacheKey
+	reqModel, reqStream := requestView.Model, requestView.Stream
 	originalModel := reqModel
 
 	if account.Platform == PlatformGrok {
@@ -135,7 +147,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			body = sanitizedBody
 			originalBody = sanitizedBody
 			requestView = newOpenAIRequestView(sanitizedBody)
-			reqModel, reqStream, promptCacheKey = requestView.Model, requestView.Stream, requestView.PromptCacheKey
+			reqModel, reqStream = requestView.Model, requestView.Stream
 			originalModel = reqModel
 		}
 	}
@@ -450,9 +462,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if codexResult.NormalizedModel != "" {
 			upstreamModel = codexResult.NormalizedModel
 		}
-		if codexResult.PromptCacheKey != "" {
-			promptCacheKey = codexResult.PromptCacheKey
-		}
 	}
 
 	if !SupportsVerbosity(upstreamModel) && gjson.GetBytes(body, "text.verbosity").Exists() {
@@ -503,7 +512,17 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 		}
 	}
-	if wsDecision.Transport != OpenAIUpstreamTransportResponsesWebsocketV2 && gjson.GetBytes(body, "previous_response_id").Exists() {
+	previousResponseResult := gjson.GetBytes(body, "previous_response_id")
+	if wsDecision.Transport != OpenAIUpstreamTransportResponsesWebsocketV2 && previousResponseResult.Exists() {
+		if strings.TrimSpace(previousResponseResult.String()) != "" &&
+			GetOpenAIClientTransport(c) == OpenAIClientTransportHTTP {
+			MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalFeatureGate)
+			c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
+				"type":    "invalid_request_error",
+				"message": "previous_response_id is only supported on Responses WebSocket v2",
+			}})
+			return nil, errors.New("previous_response_id requires OpenAI Responses WebSocket v2")
+		}
 		markPatchDelete("previous_response_id")
 	}
 	if openAIRequestBodyMayContainEmptyBase64InputImage(body) {
@@ -568,9 +587,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	// Business System Prompt is deliberately the final service-owned prompt
 	// layer. All legacy Codex/image/compat transforms above run first, so the
 	// feature can be disabled without changing their request bytes.
-	if updatedBody, application, promptErr := s.applyBusinessSystemPromptForRequest(
+	updatedBody, promptApplication, promptErr := s.applyBusinessSystemPromptForRequest(
 		c, body, account, BusinessSystemPromptProtocolResponses, compactPath,
-	); promptErr != nil {
+	)
+	if promptErr != nil {
 		if errors.Is(promptErr, ErrBusinessSystemPromptUnavailable) {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{
 				"type": "system_prompt_unavailable", "code": "system_prompt_unavailable",
@@ -580,9 +600,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		return nil, promptErr
 	} else {
 		body = updatedBody
-		if application.Applied {
-			promptCacheKey = appendBusinessSystemPromptApplicationToCacheKey(promptCacheKey, application)
-			body, promptErr = rewriteBusinessSystemPromptCacheKey(body, application)
+		if promptApplication.Applied {
+			body, promptErr = rewriteBusinessSystemPromptCacheKey(body, promptApplication)
 			if promptErr != nil {
 				return nil, promptErr
 			}
@@ -590,6 +609,21 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			reqBody = nil
 		}
 	}
+	finalCacheBody, finalCacheChanged, finalCacheErr := normalizeOpenAIAPIKeyPromptCacheKey(
+		body,
+		account,
+		compatRuntime.APIKeyPromptCacheKeyNormalization,
+	)
+	if finalCacheErr != nil {
+		return nil, fmt.Errorf("normalize final OpenAI API key prompt_cache_key: %w", finalCacheErr)
+	}
+	if finalCacheChanged {
+		body = finalCacheBody
+		requestView = newOpenAIRequestView(body)
+		reqBody = nil
+	}
+	promptCacheKey := strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
+	logBusinessSystemPromptObservation(ctx, c, promptApplication, wsDecision.Transport, wsDecision.Reason)
 	imageBillingModel := ""
 	imageSizeTier := ""
 	imageInputSize := ""
@@ -625,6 +659,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			return nil, err
 		}
 		_, hasPreviousResponseID := wsReqBody["previous_response_id"]
+		strictCindyContinuation := cindyHTTPToWSV2 && hasPreviousResponseID
 		logOpenAIWSModeDebug(
 			"forward_start account_id=%d account_type=%s model=%s stream=%v has_previous_response_id=%v",
 			account.ID,
@@ -634,6 +669,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			hasPreviousResponseID,
 		)
 		maxAttempts := openAIWSReconnectRetryLimit + 1
+		if cindyHTTPToWSV2 {
+			maxAttempts = 1
+		}
 		wsAttempts := 0
 		var wsResult *OpenAIForwardResult
 		var wsErr error
@@ -665,10 +703,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			delete(wsReqBody, "previous_response_id")
 			wsPrevResponseRecoveryTried = true
 			logOpenAIWSModeInfo(
-				"reconnect_prev_response_recovery account_id=%d attempt=%d action=drop_previous_response_id retry=1 previous_response_id=%s previous_response_id_kind=%s",
+				"reconnect_prev_response_recovery account_id=%d attempt=%d action=drop_previous_response_id retry=1 previous_response_id_present=true previous_response_id_kind=%s",
 				account.ID,
 				attempt,
-				truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen),
 				normalizeOpenAIWSLogValue(ClassifyOpenAIPreviousResponseIDKind(previousResponseID)),
 			)
 			return true
@@ -701,11 +738,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 			wsInvalidEncryptedContentRecoveryTried = true
 			logOpenAIWSModeInfo(
-				"reconnect_invalid_encrypted_content_recovery account_id=%d attempt=%d action=drop_encrypted_reasoning_items retry=1 previous_response_id_present=%v previous_response_id=%s previous_response_id_kind=%s has_function_call_output=%v dropped_previous_response_id=%v",
+				"reconnect_invalid_encrypted_content_recovery account_id=%d attempt=%d action=drop_encrypted_reasoning_items retry=1 previous_response_id_present=%v previous_response_id_kind=%s has_function_call_output=%v dropped_previous_response_id=%v",
 				account.ID,
 				attempt,
 				previousResponseID != "",
-				truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen),
 				normalizeOpenAIWSLogValue(ClassifyOpenAIPreviousResponseIDKind(previousResponseID)),
 				hasFunctionCallOutput,
 				previousResponseID != "" && !hasFunctionCallOutput,
@@ -739,6 +775,13 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			if c != nil && c.Writer != nil && c.Writer.Written() {
 				break
 			}
+			if cindyHTTPToWSV2 && !hasPreviousResponseID {
+				if failoverErr, ok := s.cindyHTTPToWSV2FirstTurnFailover(
+					ctx, c, account, upstreamModel, wsErr,
+				); ok {
+					return nil, failoverErr
+				}
+			}
 			var taskRecoveredErr *agentIdentityTaskRecoveredError
 			if errors.As(wsErr, &taskRecoveredErr) {
 				continue
@@ -750,10 +793,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 			// previous_response_not_found 说明续链锚点不可用：
 			// 对非 function_call_output 场景，允许一次“去掉 previous_response_id 后重放”。
-			if reason == "previous_response_not_found" && recoverPrevResponseNotFound(attempt) {
+			if !strictCindyContinuation && reason == "previous_response_not_found" && recoverPrevResponseNotFound(attempt) {
 				continue
 			}
-			if reason == "invalid_encrypted_content" && recoverInvalidEncryptedContent(attempt) {
+			if !strictCindyContinuation && reason == "invalid_encrypted_content" && recoverInvalidEncryptedContent(attempt) {
 				continue
 			}
 			if retryable && attempt < maxAttempts {
@@ -843,6 +886,16 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				wsResult.BillingModel = imageBillingModel
 			}
 			return wsResult, nil
+		}
+		if strictCindyContinuation {
+			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+				Platform:           account.Platform,
+				AccountID:          account.ID,
+				UpstreamStatusCode: http.StatusServiceUnavailable,
+				Kind:               "continuation_state",
+				Message:            OpenAIContinuationStateUnavailableClientMessage,
+			})
+			return nil, NewOpenAIContinuationStateUnavailableError(http.StatusServiceUnavailable, nil, nil)
 		}
 		continuationReason, _ := classifyOpenAIWSReconnectReason(wsErr)
 		switch strings.TrimPrefix(continuationReason, "prewarm_") {
@@ -1044,6 +1097,16 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				// single protocol-valid response.failed event for stream:true clients.
 				return nil, newOpenAIOpaqueStreamPreflightError(resp.StatusCode, resp.Header, respBody)
 			}
+			if resp.StatusCode == http.StatusForbidden &&
+				IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+				if hit, _, _ := detectOpenAICyberPolicy(respBody); hit {
+					markOpenAICyberPolicyFromResponse(c, resp.StatusCode, respBody)
+					if s.openAIRefusalRecoveryRuntime(ctx).CyberFailoverEnabled() {
+						return nil, NewOpenAICyberFailoverError(respBody, resp.Header)
+					}
+					return s.handleErrorResponse(ctx, resp, c, account, body, billingModel)
+				}
+			}
 			if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody) {
 				upstreamDetail := ""
 				if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
@@ -1065,13 +1128,18 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				})
 
 				shouldDisable := s.handleFailoverSideEffects(ctx, resp, account, respBody, upstreamModel)
-				return nil, newOpenAIUpstreamFailoverError(
+				failoverErr := newOpenAIUpstreamFailoverError(
 					resp.StatusCode,
 					resp.Header,
 					respBody,
 					upstreamMsg,
 					!shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
 				)
+				if resp.StatusCode == http.StatusForbidden &&
+					IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+					failoverErr = sanitizeOpenAICindyFailoverError(failoverErr)
+				}
+				return nil, failoverErr
 			}
 			return s.handleErrorResponse(ctx, resp, c, account, body, billingModel)
 		}

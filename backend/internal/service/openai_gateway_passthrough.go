@@ -112,9 +112,10 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 
 	// Keep the business policy as the final prompt-owning layer. In particular,
 	// it must not satisfy or bypass the legacy OAuth passthrough preflight above.
-	if updatedPromptBody, application, promptErr := s.applyBusinessSystemPromptForRequest(
+	updatedPromptBody, promptApplication, promptErr := s.applyBusinessSystemPromptForRequest(
 		c, body, account, BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c),
-	); promptErr != nil {
+	)
+	if promptErr != nil {
 		if errors.Is(promptErr, ErrBusinessSystemPromptUnavailable) {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{
 				"type": "system_prompt_unavailable", "code": "system_prompt_unavailable",
@@ -124,11 +125,33 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		return nil, promptErr
 	} else {
 		body = updatedPromptBody
-		body, promptErr = rewriteBusinessSystemPromptCacheKey(body, application)
+		body, promptErr = rewriteBusinessSystemPromptCacheKey(body, promptApplication)
 		if promptErr != nil {
 			return nil, promptErr
 		}
 	}
+	cacheKeyNormalizationEnabled := false
+	if s.settingService != nil {
+		cacheKeyNormalizationEnabled = s.settingService.GetOpenAIRefusalRecoveryRuntime(ctx).APIKeyPromptCacheKeyNormalization
+	}
+	finalCacheBody, finalCacheChanged, finalCacheErr := normalizeOpenAIAPIKeyPromptCacheKey(
+		body,
+		account,
+		cacheKeyNormalizationEnabled,
+	)
+	if finalCacheErr != nil {
+		return nil, fmt.Errorf("normalize final passthrough OpenAI API key prompt_cache_key: %w", finalCacheErr)
+	}
+	if finalCacheChanged {
+		body = finalCacheBody
+	}
+	logBusinessSystemPromptObservation(
+		ctx,
+		c,
+		promptApplication,
+		OpenAIUpstreamTransportHTTPSSE,
+		"account_passthrough",
+	)
 
 	apiKey := getAPIKeyFromContext(c)
 	// 同一 attempt 的最终 model/body 只判定一次，权限检查与后续图片状态设置共用该结果。
@@ -603,6 +626,13 @@ func shouldFailoverOpenAIPassthroughResponse(account *Account, statusCode int, r
 	if IsCindyBalanceInsufficientResponse(account, statusCode, responseBody) {
 		return true
 	}
+	if statusCode == http.StatusForbidden && account != nil &&
+		IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		if hit, _, _ := detectOpenAICyberPolicy(responseBody); hit {
+			return false
+		}
+		return true
+	}
 	if account != nil && account.IsPoolMode() && account.IsPoolModeRetryableStatus(statusCode) {
 		return true
 	}
@@ -736,13 +766,18 @@ func (s *OpenAIGatewayService) handleFailoverErrorResponsePassthrough(
 		Detail:               upstreamDetail,
 		UpstreamResponseBody: upstreamDetail,
 	})
-	return newOpenAIUpstreamFailoverError(
+	failoverErr := newOpenAIUpstreamFailoverError(
 		resp.StatusCode,
 		resp.Header,
 		body,
 		upstreamMsg,
 		!shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
 	)
+	if resp.StatusCode == http.StatusForbidden && account != nil &&
+		IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		failoverErr = sanitizeOpenAICindyFailoverError(failoverErr)
+	}
+	return failoverErr
 }
 
 func (s *OpenAIGatewayService) handleErrorResponsePassthrough(

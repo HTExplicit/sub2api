@@ -386,11 +386,13 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "previous_response_id must be a response.id (resp_*), not a message id")
 			return
 		}
-		reqLog.Warn("openai.request_validation_failed",
-			zap.String("reason", "previous_response_id_requires_wsv2"),
-		)
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "previous_response_id is only supported on Responses WebSocket v2")
-		return
+		if previousResponseIDKind != service.OpenAIPreviousResponseIDKindResponseID {
+			reqLog.Warn("openai.request_validation_failed",
+				zap.String("reason", "previous_response_id_invalid_format"),
+			)
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "previous_response_id must be a response.id (resp_*)")
+			return
+		}
 	}
 
 	setOpsRequestContext(c, reqModel, reqStream)
