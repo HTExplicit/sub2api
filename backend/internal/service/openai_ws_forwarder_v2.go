@@ -64,6 +64,12 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	)
 
 	payload := s.buildOpenAIWSCreatePayload(reqBody, account)
+	// The WSv2 protocol only emits streaming response events. Cindy's bridge
+	// may receive a non-streaming HTTP request, so keep reqStream unchanged for
+	// downstream JSON aggregation while forcing the upstream WS payload to stream.
+	if decision.Reason == openAICindyHTTPToWSV2Reason {
+		payload["stream"] = true
+	}
 	payloadStrategy, removedKeys := applyOpenAIWSRetryPayloadStrategy(payload, attempt)
 	previousResponseID := openAIWSPayloadString(payload, "previous_response_id")
 	previousResponseIDKind := ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
