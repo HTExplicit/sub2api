@@ -126,7 +126,7 @@ func (r *openAIAccountTestRepo) SetError(_ context.Context, id int64, errorMsg s
 }
 
 func TestAccountTestService_CindyBudget429MarksAcrossAPIKeyTestPaths(t *testing.T) {
-	const responseBody = `{"error":{"message":"ExceededBudget: User=aigw:v1:cindy over budget. Spend=3.0786495, Budget=3.0","type":"budget_exceeded","code":"429"}}`
+	const responseBody = exactCindyBudgetExceededBody
 
 	tests := []struct {
 		name string

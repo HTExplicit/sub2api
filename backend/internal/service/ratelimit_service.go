@@ -272,6 +272,14 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 	if IsCindyBalanceInsufficientResponse(account, statusCode, responseBody) {
 		return s.handleCindyBalanceInsufficient(ctx, account)
 	}
+	// Cindy reports actual budget exhaustion as the structured 429 handled
+	// above. Its generic 402 responses must not persist an account-level balance
+	// or authentication failure; the current request can still fail over.
+	if statusCode == http.StatusPaymentRequired &&
+		IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		slog.Info("cindy_402_account_state_skipped", "account_id", account.ID)
+		return false
+	}
 
 	// 池模式默认不标记本地账号状态；但管理员显式配置的临时不可调度规则优先。
 	// 401 保留现有认证错误语义，不在这里改变池模式的认证处理。

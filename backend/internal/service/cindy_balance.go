@@ -40,28 +40,20 @@ type CindyBalanceAccountRepository interface {
 	DeleteCindyInsufficient(ctx context.Context, expectedCount int, fingerprint string) (*CindyInsufficientDeleteResult, error)
 }
 
-// IsCindyBalanceInsufficientResponse classifies only responses from the exact
-// Cindy API-key gateway. A regular 429 must retain the normal rate-limit path.
+// IsCindyBalanceInsufficientResponse trusts only Cindy's structured budget
+// fields. Generic 402, ordinary 429, and message text retain their normal path.
 func IsCindyBalanceInsufficientResponse(account *Account, statusCode int, responseBody []byte) bool {
 	if account == nil || !IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		return false
-	}
-	if statusCode == http.StatusPaymentRequired {
-		return true
 	}
 	if statusCode != http.StatusTooManyRequests || !gjson.ValidBytes(responseBody) {
 		return false
 	}
 
-	errorTypeResult := gjson.GetBytes(responseBody, "error.type")
-	errorType := strings.TrimSpace(errorTypeResult.String())
-	if errorTypeResult.Exists() && errorType != "" {
-		return strings.EqualFold(errorType, "budget_exceeded")
-	}
-
-	message := strings.ToLower(strings.Join(strings.Fields(extractUpstreamErrorMessage(responseBody)), " "))
-	compactMessage := strings.NewReplacer(" ", "", "_", "", "-", "").Replace(message)
-	return strings.Contains(compactMessage, "exceededbudget") && strings.Contains(message, "over budget")
+	errorType := gjson.GetBytes(responseBody, "error.type")
+	errorCode := gjson.GetBytes(responseBody, "error.code")
+	return errorType.Type == gjson.String && errorType.Str == "budget_exceeded" &&
+		errorCode.Type == gjson.String && errorCode.Str == strconv.Itoa(http.StatusTooManyRequests)
 }
 
 func CindyInsufficientAccountFingerprint(accountIDs []int64) string {
