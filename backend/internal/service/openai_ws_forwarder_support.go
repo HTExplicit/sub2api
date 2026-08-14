@@ -53,10 +53,10 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 	}
 	if strings.TrimSpace(previousResponseID) != "" {
 		logOpenAIWSModeInfo(
-			"prewarm_skip account_id=%d conn_id=%s reason=has_previous_response_id previous_response_id=%s",
+			"prewarm_skip account_id=%d conn_id=%s reason=has_previous_response_id previous_response_id_present=true previous_response_id_kind=%s",
 			account.ID,
 			connID,
-			truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen),
+			normalizeOpenAIWSLogValue(ClassifyOpenAIPreviousResponseIDKind(previousResponseID)),
 		)
 		return nil
 	}
@@ -169,10 +169,11 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 		stateStore.BindResponseConn(prewarmResponseID, lease.ConnID(), ttl)
 	}
 	logOpenAIWSModeInfo(
-		"prewarm_done account_id=%d conn_id=%s response_id=%s events=%d terminal_events=%d duration_ms=%d",
+		"prewarm_done account_id=%d conn_id=%s response_id_present=%v response_id_kind=%s events=%d terminal_events=%d duration_ms=%d",
 		account.ID,
 		connID,
-		truncateOpenAIWSLogValue(prewarmResponseID, openAIWSIDValueMaxLen),
+		strings.TrimSpace(prewarmResponseID) != "",
+		normalizeOpenAIWSLogValue(ClassifyOpenAIPreviousResponseIDKind(prewarmResponseID)),
 		prewarmEventCount,
 		prewarmTerminalCount,
 		time.Since(prewarmStart).Milliseconds(),
@@ -221,7 +222,7 @@ func normalizeOpenAIWSTerminalEvent(eventType string) string {
 	}
 }
 
-func openAIWSPayloadTransientStatus(payload []byte) int {
+func openAIWSPayloadStatus(payload []byte) int {
 	if len(payload) == 0 {
 		return 0
 	}
@@ -235,11 +236,8 @@ func openAIWSPayloadTransientStatus(payload []byte) int {
 	if status == 0 {
 		status = int(gjson.GetBytes(payload, "error.status").Int())
 	}
-	if shouldCooldownOpenAITransientUpstreamError(status, payload) {
-		return status
-	}
 	if status != 0 {
-		return 0
+		return status
 	}
 	code := strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, "response.error.code").String()))
 	errType := strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, "response.error.type").String()))
@@ -250,6 +248,10 @@ func openAIWSPayloadTransientStatus(payload []byte) int {
 		errType = strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, "error.type").String()))
 	}
 	switch {
+	case strings.Contains(code, "rate_limit"), strings.Contains(errType, "rate_limit"):
+		return http.StatusTooManyRequests
+	case strings.Contains(code, "forbidden"), strings.Contains(errType, "forbidden"):
+		return http.StatusForbidden
 	case code == "server_is_overloaded", code == "slow_down":
 		return http.StatusServiceUnavailable
 	case strings.Contains(code, "server_error"),
@@ -262,6 +264,14 @@ func openAIWSPayloadTransientStatus(payload []byte) int {
 	default:
 		return 0
 	}
+}
+
+func openAIWSPayloadTransientStatus(payload []byte) int {
+	status := openAIWSPayloadStatus(payload)
+	if shouldCooldownOpenAITransientUpstreamError(status, payload) {
+		return status
+	}
+	return 0
 }
 
 func (s *OpenAIGatewayService) handleOpenAIWSTerminalTransientFailure(ctx context.Context, account *Account, canonicalModel string, headers http.Header, payload []byte) string {
@@ -568,9 +578,10 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 	if err != nil || account == nil {
 		return miss(true, false)
 	}
-	// 非 WSv2 场景（如 force_http/全局关闭）不应使用 previous_response_id 粘连，
-	// 以保持“回滚到 HTTP”后的历史行为一致性。
-	if s.getOpenAIWSProtocolResolver().Resolve(account).Transport != OpenAIUpstreamTransportResponsesWebsocketV2 {
+	// 普通 WSv2 与严格 Cindy HTTP -> WSv2 桥接都可以使用 previous_response_id 粘连。
+	// force_http、全局关闭和账号级强制 HTTP 仍会让桥接资格失败。
+	if s.getOpenAIWSProtocolResolver().Resolve(account).Transport != OpenAIUpstreamTransportResponsesWebsocketV2 &&
+		!s.cindyHTTPToWSV2ConfigEligible(account) {
 		return miss(false, false)
 	}
 	if !account.IsOpenAI() || !account.IsActive() || !account.Schedulable {
@@ -605,6 +616,10 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 		}
 		if !latest.IsOpenAI() || !latest.IsActive() || !latest.Schedulable {
 			return miss(true, false)
+		}
+		if s.getOpenAIWSProtocolResolver().Resolve(latest).Transport != OpenAIUpstreamTransportResponsesWebsocketV2 &&
+			!s.cindyHTTPToWSV2ConfigEligible(latest) {
+			return miss(false, false)
 		}
 		if shouldClearStickySession(latest, requestedModel) || !latest.IsSchedulable() {
 			return miss(false, false)

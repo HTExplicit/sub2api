@@ -436,6 +436,22 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	if s != nil {
 		scheduleOllamaCloudUsageActivity(s.deferredService, account)
 	}
+	if statusCode == http.StatusForbidden && account != nil &&
+		IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		if hit, _, _ := detectOpenAICyberPolicy(responseBody); hit {
+			return false
+		}
+		if s == nil || s.rateLimitService == nil {
+			return false
+		}
+		stateCtx, cancel := openAIAccountStateContext(ctx)
+		defer cancel()
+		// handleOpenAI403 owns the exact 10-minute cooldown / 3-strike disable
+		// policy and deliberately ignores HTML/WAF bodies. Call it directly so
+		// pool-mode compatibility cannot bypass Cindy's evidence-based 403 policy.
+		upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(responseBody)))
+		return s.rateLimitService.handleOpenAI403(stateCtx, account, upstreamMsg, responseBody)
+	}
 	if isOpenAIAccount(account) {
 		switch statusCode {
 		case http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests:

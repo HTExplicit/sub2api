@@ -8,6 +8,7 @@ backend/migrations/*.sql text eol=lf
 # its published SHA-256 and UTF-8 byte-length invariants.
 backend/internal/service/prompts/*.txt text eol=lf
 backend/internal/service/prompts/*.md text eol=lf
+backend/internal/service/testdata/codexrip_reverse_skill_system_prompt_legacy_dual_marker.txt text eol=lf
 
 # The approved ModelGang seed is UTF-8 text, including extensionless and
 # Unicode-named files. Keep every embedded byte sequence stable cross-platform.

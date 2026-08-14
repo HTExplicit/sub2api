@@ -20,8 +20,8 @@ func TestRemoteSkillFilesystemSeedContainsExactCurrentModelGangTreeAndApprovedPr
 	require.Len(t, seed.RawFiles, remoteSkillExpectedFiles)
 	require.Len(t, seed.EffectiveFiles, remoteSkillExpectedFiles)
 	require.Len(t, seed.FileChanges, remoteSkillExpectedFiles)
-	require.Equal(t, "74bd491260aaa23c45b82bd522b32c6b6dea7d5e76a2d8e3ab3607c6f1ab4e58", seed.Prompt.RawSHA256)
-	require.Equal(t, "53611ff9c5213a32f6441431296e55a6538dfe661f223d645cd6f483c941b610", seed.Prompt.EffectiveSHA256)
+	require.Equal(t, "c01ea5ce364caf52e28e214162fd36e6d733280aae0bf94fed7ac2ebe8bbb621", seed.Prompt.RawSHA256)
+	require.Equal(t, "8c070a149e5ba45ded47707abcb2172c30d6fbcd17548cc6029ab4405d13197a", seed.Prompt.EffectiveSHA256)
 	require.Equal(t, "5bd6df3cfa226c2d6c354dfb83dba8bb1036e0f3042e42590e6d0196a667ca71", seed.Version.RawTreeSHA256)
 	require.Equal(t, "42f6b73618ec7c5a6f4d0794171e36db68068acd0fff3c861da24b11b65e7671", seed.Version.EffectiveTreeSHA256)
 	require.Equal(t, int64(7_093_862), seed.Version.RawTotalBytes)
@@ -304,7 +304,8 @@ REMOTE_ROOT = https://codexrip.vip/skills/security-research/current
 Resolve every relative path in those files against ` + "`REMOTE_ROOT`" + ` and fetch supporting files only from that same root.
 
 <!-- END  SECURITY-RESEARCH ROUTING -->`
-	raw := []byte(embeddedBusinessSystemPrompt)
+	raw, readErr := os.ReadFile(filepath.Join("testdata", "codexrip_reverse_skill_system_prompt_legacy_dual_marker.txt"))
+	require.NoError(t, readErr)
 	effective, err := rewriteRemoteSkillPromptBlocks(raw, routingBlock, securityResearchRoutingBlock)
 	require.NoError(t, err)
 	diff, err := remoteSkillPromptUnifiedDiff(raw, effective)

@@ -13,6 +13,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -237,7 +238,7 @@ func TestBusinessSystemPromptNativeResponsesAppliesForAPIKeyAndOAuth(t *testing.
 
 func TestBusinessSystemPromptAPIKeyPromptCacheKeyIsNormalizedAfterPromptRewrite(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	body := []byte(`{"model":"gpt-5.4","stream":false,"instructions":"client","prompt_cache_key":"` + strings.Repeat("k", 50) + `","input":[]}`)
+	body := []byte(`{"model":"gpt-5.4","stream":false,"instructions":"client","prompt_cache_key":"` + strings.Repeat("k", 363) + `","input":[]}`)
 	c, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
 	upstream := businessSystemPromptErrorUpstream()
 	settings := &SettingService{}
@@ -258,7 +259,99 @@ func TestBusinessSystemPromptAPIKeyPromptCacheKeyIsNormalizedAfterPromptRewrite(
 
 	require.Error(t, err)
 	require.Nil(t, result)
-	require.Len(t, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String(), 64)
+	require.Regexp(t, `^[0-9a-f]{64}$`, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
+}
+
+func TestBusinessSystemPromptPassthroughPromptCacheKeyIsNormalizedAfterPromptRewrite(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"gpt-5.4","stream":false,"instructions":"client","prompt_cache_key":"` + strings.Repeat("p", 363) + `","input":[]}`)
+	c, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
+	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+	upstream := businessSystemPromptErrorUpstream()
+	settings := &SettingService{}
+	settings.openAIRefusalRecoveryCache.Store(&cachedOpenAIRefusalRecoveryRuntime{
+		runtime:   OpenAIRefusalRecoveryRuntime{APIKeyPromptCacheKeyNormalization: true},
+		expiresAt: time.Now().Add(time.Minute).UnixNano(),
+	})
+	account := businessSystemPromptAPIKeyAccount(true)
+	account.Extra["openai_prompt_cache_key_mode"] = OpenAIPromptCacheKeyModeSHA25664
+	svc := &OpenAIGatewayService{
+		cfg:                   businessSystemPromptTestConfig(),
+		httpUpstream:          upstream,
+		businessPromptService: newGatewayBusinessSystemPromptPolicy(t, false, false),
+		settingService:        settings,
+	}
+
+	result, err := svc.forwardOpenAIPassthrough(
+		context.Background(), c, account, body, body, "gpt-5.4", false, nil, false, time.Now(),
+	)
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Regexp(t, `^[0-9a-f]{64}$`, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
+}
+
+func TestBusinessSystemPromptWSV2PromptCacheKeyIsNormalizedAfterPromptRewrite(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	received := make(chan []byte, 1)
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade websocket: %v", err)
+			return
+		}
+		defer conn.Close()
+		_, payload, err := conn.ReadMessage()
+		if err != nil {
+			t.Errorf("read websocket request: %v", err)
+			return
+		}
+		received <- payload
+		err = conn.WriteJSON(map[string]any{
+			"type": "response.completed",
+			"response": map[string]any{
+				"id": "resp_cache_key", "model": "gpt-5.4", "status": "completed", "output": []any{},
+				"usage": map[string]any{"input_tokens": 1, "output_tokens": 1},
+			},
+		})
+		if err != nil {
+			t.Errorf("write websocket response: %v", err)
+		}
+	}))
+	defer wsServer.Close()
+
+	body := []byte(`{"model":"gpt-5.4","stream":false,"instructions":"client","prompt_cache_key":"` + strings.Repeat("w", 363) + `","input":[]}`)
+	c, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
+	SetOpenAIClientTransport(c, OpenAIClientTransportWS)
+	c.Request.Header.Set("User-Agent", "unit-test-agent/1.0")
+	settings := &SettingService{}
+	settings.openAIRefusalRecoveryCache.Store(&cachedOpenAIRefusalRecoveryRuntime{
+		runtime:   OpenAIRefusalRecoveryRuntime{APIKeyPromptCacheKeyNormalization: true},
+		expiresAt: time.Now().Add(time.Minute).UnixNano(),
+	})
+	cfg := businessSystemPromptTestConfig()
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+	account := businessSystemPromptAPIKeyAccount(true)
+	account.Credentials["base_url"] = wsServer.URL
+	account.Extra["responses_websockets_v2_enabled"] = true
+	account.Extra["openai_prompt_cache_key_mode"] = OpenAIPromptCacheKeyModeSHA25664
+	svc := &OpenAIGatewayService{
+		cfg: cfg, businessPromptService: newGatewayBusinessSystemPromptPolicy(t, false, false),
+		settingService: settings, openaiWSResolver: NewOpenAIWSProtocolResolver(cfg), toolCorrector: NewCodexToolCorrector(),
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	payload := <-received
+	require.Regexp(t, `^[0-9a-f]{64}$`, gjson.GetBytes(payload, "prompt_cache_key").String())
 }
 
 func TestBusinessSystemPromptUpstreamErrorIsSanitizedBeforeInspection(t *testing.T) {

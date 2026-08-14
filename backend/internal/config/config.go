@@ -1157,6 +1157,9 @@ type GatewayOpenAIWSConfig struct {
 	OAuthEnabled bool `mapstructure:"oauth_enabled"`
 	// APIKeyEnabled: 是否允许 OpenAI API Key 账号使用 WS
 	APIKeyEnabled bool `mapstructure:"apikey_enabled"`
+	// CindyHTTPToWSV2Enabled: 允许严格 Cindy API Key 的官方 Codex HTTP /responses 请求走 WSv2 上游。
+	// 这是独立的出站桥接开关，不改变账号已有的 WS ingress mode。
+	CindyHTTPToWSV2Enabled bool `mapstructure:"cindy_http_to_wsv2_enabled"`
 	// ForceHTTP: 全局强制 HTTP（用于紧急回滚）
 	ForceHTTP bool `mapstructure:"force_http"`
 	// AllowStoreRecovery: 允许在 WSv2 下按策略恢复 store=true（默认 false）
@@ -2284,6 +2287,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_ws.max_ingress_connections_per_api_key", 64)
 	viper.SetDefault("gateway.openai_ws.oauth_enabled", true)
 	viper.SetDefault("gateway.openai_ws.apikey_enabled", true)
+	viper.SetDefault("gateway.openai_ws.cindy_http_to_wsv2_enabled", false)
 	viper.SetDefault("gateway.openai_ws.force_http", false)
 	viper.SetDefault("gateway.openai_ws.allow_store_recovery", false)
 	viper.SetDefault("gateway.openai_ws.ingress_previous_response_recovery_enabled", true)
