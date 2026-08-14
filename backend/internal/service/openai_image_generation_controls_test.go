@@ -136,6 +136,32 @@ func TestOpenAIGatewayServiceForward_CodexImageInjectionRespectsGroupCapability(
 	}
 }
 
+func TestOpenAIGatewayServiceForward_StrictCindySkipsGlobalCodexImageInjection(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"resp_cindy","model":"gpt-5.6-sol","usage":{"input_tokens":1,"output_tokens":1}}`)),
+		},
+	}
+	svc := newOpenAIImageGenerationControlTestService(upstream)
+	svc.cfg.Gateway.CodexImageGenerationBridgeEnabled = true
+	c, _ := newOpenAIImageGenerationControlTestContext(true, "codex_cli_rs/0.146.0")
+	account := newOpenAIImageGenerationControlTestAccount()
+	account.Credentials["base_url"] = "https://api.laxarouter.ai"
+
+	result, err := svc.Forward(context.Background(), c, account, []byte(`{"model":"gpt-5.6-sol","input":"write code","stream":false}`))
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, upstream.lastReq)
+	require.False(t, gjson.GetBytes(upstream.lastBody, `tools.#(type=="image_generation")`).Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "tool_choice").Exists())
+	require.NotContains(t, gjson.GetBytes(upstream.lastBody, "instructions").String(), codexImageGenerationBridgeMarker)
+}
+
 func TestOpenAIBuildUpstreamRequestOpenAIPassthroughForwardsResponsesLiteHeader(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := newOpenAIImageGenerationControlTestContext(true, "codex_cli_rs/0.98.0")
@@ -468,6 +494,43 @@ func TestOpenAIGatewayService_CodexImageGenerationBridgeOverridePrecedence(t *te
 			global: true,
 			account: &Account{
 				Platform: PlatformOpenAI,
+			},
+			want: true,
+		},
+		{
+			name:   "strict Cindy does not inherit enabled global",
+			global: true,
+			account: &Account{
+				Platform:    PlatformOpenAI,
+				Type:        AccountTypeAPIKey,
+				Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"},
+			},
+			want: false,
+		},
+		{
+			name:   "channel true explicitly enables strict Cindy",
+			global: false,
+			channel: &Channel{ID: 1, Status: StatusActive, FeaturesConfig: map[string]any{
+				featureKeyCodexImageGenerationBridge: map[string]any{PlatformOpenAI: true},
+			}},
+			account: &Account{
+				Platform:    PlatformOpenAI,
+				Type:        AccountTypeAPIKey,
+				Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"},
+			},
+			want: true,
+		},
+		{
+			name:   "account true explicitly enables strict Cindy",
+			global: false,
+			channel: &Channel{ID: 1, Status: StatusActive, FeaturesConfig: map[string]any{
+				featureKeyCodexImageGenerationBridge: map[string]any{PlatformOpenAI: false},
+			}},
+			account: &Account{
+				Platform:    PlatformOpenAI,
+				Type:        AccountTypeAPIKey,
+				Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"},
+				Extra:       map[string]any{featureKeyCodexImageGenerationBridge: true},
 			},
 			want: true,
 		},
