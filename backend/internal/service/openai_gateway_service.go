@@ -591,6 +591,13 @@ func (s *OpenAIGatewayService) isCodexImageGenerationBridgeEnabled(ctx context.C
 			return *override
 		}
 	}
+	// Cindy's Azure-compatible endpoint rejects an automatically injected
+	// image_generation tool unless a separate deployment header is configured.
+	// Keep explicit account/channel overrides authoritative, but do not inherit
+	// the global injection default for strict Cindy accounts.
+	if account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		return false
+	}
 	return s != nil && s.cfg != nil && s.cfg.Gateway.CodexImageGenerationBridgeEnabled
 }
 
