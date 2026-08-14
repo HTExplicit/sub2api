@@ -3,6 +3,7 @@ package middleware
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -226,6 +227,42 @@ func TestSystemPromptAuditNeverPersistsPromptOrPreviewInput(t *testing.T) {
 	require.Equal(t, "new-hash", logs[0].Extra["new_manifest_sha256"])
 	require.EqualValues(t, 7949823, logs[0].Extra["total_bytes"])
 	require.NotContains(t, logs[0].Extra, "raw_prompt")
+}
+
+func TestRemoteSkillPromptDetailAuditDoesNotPersistResponseBodies(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repository := &auditCaptureRepository{}
+	auditService := service.NewAuditLogService(repository, nil)
+	auditService.Start()
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(ContextKeyUser), AuthSubject{UserID: 77})
+		c.Set(string(ContextKeyUserRole), "admin")
+		c.Next()
+	})
+	router.Use(gin.HandlerFunc(NewAuditLogMiddleware(auditService)))
+	router.GET("/api/v1/admin/system-prompts/skill-registry/versions/:bundle_version_id", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"prompt": gin.H{
+			"raw_body":       "audit-canary-raw-prompt",
+			"effective_body": "audit-canary-effective-prompt",
+		}})
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/admin/system-prompts/skill-registry/versions/12", nil)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	auditService.Stop()
+
+	repository.mu.Lock()
+	logs := append([]*service.AuditLog(nil), repository.logs...)
+	repository.mu.Unlock()
+	require.Len(t, logs, 1)
+	require.Equal(t, "admin.system_prompts.skill_registry.versions.read", logs[0].Action)
+	encoded, err := json.Marshal(logs[0])
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), "audit-canary")
 }
 
 func TestPasskeyLoginAuditUsesCanonicalLoginActionAndOmitsCredentialBody(t *testing.T) {

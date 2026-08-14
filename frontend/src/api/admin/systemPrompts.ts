@@ -101,6 +101,11 @@ export interface RemoteSkillPromptVersion {
   created_at: string
 }
 
+export interface RemoteSkillPromptVersionDetail extends RemoteSkillPromptVersion {
+  raw_body: string
+  effective_body: string
+}
+
 export interface RemoteSkillFileChange {
   path: string
   change: 'added' | 'modified' | 'deleted'
@@ -111,7 +116,7 @@ export interface RemoteSkillFileChange {
 }
 
 export interface RemoteSkillBundleVersionDetail extends RemoteSkillBundleVersion {
-  prompt: RemoteSkillPromptVersion
+  prompt: RemoteSkillPromptVersionDetail
   file_changes: RemoteSkillFileChange[]
   verified: boolean
 }

@@ -112,6 +112,19 @@ type systemPromptSourceSyncResponse struct {
 	Version *systemPromptSourceSyncVersionResponse       `json:"version,omitempty"`
 }
 
+type remoteSkillPromptVersionDetailResponse struct {
+	service.RemoteSkillPromptVersion
+	RawBody       string `json:"raw_body"`
+	EffectiveBody string `json:"effective_body"`
+}
+
+type remoteSkillBundleVersionDetailResponse struct {
+	service.RemoteSkillBundleVersion
+	Prompt      remoteSkillPromptVersionDetailResponse `json:"prompt"`
+	FileChanges []service.RemoteSkillFileChange        `json:"file_changes"`
+	Verified    bool                                   `json:"verified"`
+}
+
 type systemPromptRuntimeRequest struct {
 	ExpectedRevision   int64 `json:"expected_revision" binding:"required"`
 	Enabled            bool  `json:"enabled"`
@@ -175,6 +188,19 @@ func businessSystemPromptRuntimeResponse(snapshot service.BusinessSystemPromptSn
 		DegradedReason:                snapshot.DegradedReason,
 		Degraded:                      snapshot.Degraded,
 		UpdatedAt:                     snapshot.UpdatedAt,
+	}
+}
+
+func remoteSkillVersionDetailResponse(detail service.RemoteSkillBundleVersionDetail) remoteSkillBundleVersionDetailResponse {
+	return remoteSkillBundleVersionDetailResponse{
+		RemoteSkillBundleVersion: detail.RemoteSkillBundleVersion,
+		Prompt: remoteSkillPromptVersionDetailResponse{
+			RemoteSkillPromptVersion: detail.Prompt,
+			RawBody:                  detail.Prompt.RawBody,
+			EffectiveBody:            detail.Prompt.EffectiveBody,
+		},
+		FileChanges: detail.FileChanges,
+		Verified:    detail.Verified,
 	}
 }
 
@@ -252,7 +278,7 @@ func (h *SystemPromptHandler) SkillVersion(c *gin.Context) {
 		writeBusinessSystemPromptError(c, err)
 		return
 	}
-	response.Success(c, version)
+	response.Success(c, remoteSkillVersionDetailResponse(version))
 }
 
 func (h *SystemPromptHandler) StartSkillSync(c *gin.Context) {
