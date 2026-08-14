@@ -128,7 +128,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 	originalBody := body
 	requestView := newOpenAIRequestView(body)
-	reqModel, reqStream, promptCacheKey := requestView.Model, requestView.Stream, requestView.PromptCacheKey
+	reqModel, reqStream := requestView.Model, requestView.Stream
 	originalModel := reqModel
 
 	if account.Platform == PlatformGrok {
@@ -147,7 +147,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			body = sanitizedBody
 			originalBody = sanitizedBody
 			requestView = newOpenAIRequestView(sanitizedBody)
-			reqModel, reqStream, promptCacheKey = requestView.Model, requestView.Stream, requestView.PromptCacheKey
+			reqModel, reqStream = requestView.Model, requestView.Stream
 			originalModel = reqModel
 		}
 	}
@@ -462,9 +462,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if codexResult.NormalizedModel != "" {
 			upstreamModel = codexResult.NormalizedModel
 		}
-		if codexResult.PromptCacheKey != "" {
-			promptCacheKey = codexResult.PromptCacheKey
-		}
 	}
 
 	if !SupportsVerbosity(upstreamModel) && gjson.GetBytes(body, "text.verbosity").Exists() {
@@ -625,7 +622,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		requestView = newOpenAIRequestView(body)
 		reqBody = nil
 	}
-	promptCacheKey = strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
+	promptCacheKey := strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
 	logBusinessSystemPromptObservation(ctx, c, promptApplication, wsDecision.Transport, wsDecision.Reason)
 	imageBillingModel := ""
 	imageSizeTier := ""
