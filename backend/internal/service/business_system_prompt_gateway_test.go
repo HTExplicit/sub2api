@@ -301,7 +301,11 @@ func TestBusinessSystemPromptWSV2PromptCacheKeyIsNormalizedAfterPromptRewrite(t 
 			t.Errorf("upgrade websocket: %v", err)
 			return
 		}
-		defer conn.Close()
+		defer func() {
+			if closeErr := conn.Close(); closeErr != nil {
+				t.Errorf("close websocket: %v", closeErr)
+			}
+		}()
 		_, payload, err := conn.ReadMessage()
 		if err != nil {
 			t.Errorf("read websocket request: %v", err)

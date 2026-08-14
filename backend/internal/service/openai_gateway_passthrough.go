@@ -112,10 +112,10 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 
 	// Keep the business policy as the final prompt-owning layer. In particular,
 	// it must not satisfy or bypass the legacy OAuth passthrough preflight above.
-	promptApplication := BusinessSystemPromptApplication{}
-	if updatedPromptBody, application, promptErr := s.applyBusinessSystemPromptForRequest(
+	updatedPromptBody, promptApplication, promptErr := s.applyBusinessSystemPromptForRequest(
 		c, body, account, BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c),
-	); promptErr != nil {
+	)
+	if promptErr != nil {
 		if errors.Is(promptErr, ErrBusinessSystemPromptUnavailable) {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{
 				"type": "system_prompt_unavailable", "code": "system_prompt_unavailable",
@@ -124,9 +124,8 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		}
 		return nil, promptErr
 	} else {
-		promptApplication = application
 		body = updatedPromptBody
-		body, promptErr = rewriteBusinessSystemPromptCacheKey(body, application)
+		body, promptErr = rewriteBusinessSystemPromptCacheKey(body, promptApplication)
 		if promptErr != nil {
 			return nil, promptErr
 		}

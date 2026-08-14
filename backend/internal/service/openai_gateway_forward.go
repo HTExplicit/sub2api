@@ -590,10 +590,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	// Business System Prompt is deliberately the final service-owned prompt
 	// layer. All legacy Codex/image/compat transforms above run first, so the
 	// feature can be disabled without changing their request bytes.
-	promptApplication := BusinessSystemPromptApplication{}
-	if updatedBody, application, promptErr := s.applyBusinessSystemPromptForRequest(
+	updatedBody, promptApplication, promptErr := s.applyBusinessSystemPromptForRequest(
 		c, body, account, BusinessSystemPromptProtocolResponses, compactPath,
-	); promptErr != nil {
+	)
+	if promptErr != nil {
 		if errors.Is(promptErr, ErrBusinessSystemPromptUnavailable) {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{
 				"type": "system_prompt_unavailable", "code": "system_prompt_unavailable",
@@ -602,11 +602,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		}
 		return nil, promptErr
 	} else {
-		promptApplication = application
 		body = updatedBody
-		if application.Applied {
-			promptCacheKey = appendBusinessSystemPromptApplicationToCacheKey(promptCacheKey, application)
-			body, promptErr = rewriteBusinessSystemPromptCacheKey(body, application)
+		if promptApplication.Applied {
+			body, promptErr = rewriteBusinessSystemPromptCacheKey(body, promptApplication)
 			if promptErr != nil {
 				return nil, promptErr
 			}
