@@ -49,8 +49,8 @@ func TestForwardCindyAnthropicMessagesHTTP200ErrorFailsOverBeforeWrite(t *testin
 	require.True(t, failoverErr.CindyBalanceInsufficient)
 	require.False(t, failoverErr.RetryableOnSameAccount)
 	require.NotContains(t, string(failoverErr.ResponseBody), "budget_exceeded")
-	require.Equal(t, 1, repo.markCalls)
-	require.NotNil(t, account.CindyBalanceInsufficientAt)
+	require.Equal(t, 0, repo.markCalls, "the first exact signal must wait for independent confirmation")
+	require.Nil(t, account.CindyBalanceInsufficientAt)
 	require.False(t, c.Writer.Written())
 	require.Empty(t, recorder.Body.String())
 }
@@ -95,7 +95,7 @@ func TestForwardCindyAnthropicMessagesHTTP200ErrorAfterOutputDropsRawPayload(t *
 	require.NotContains(t, recorder.Body.String(), "budget_exceeded")
 	require.NotContains(t, recorder.Body.String(), "sensitive upstream detail")
 	require.NotContains(t, string(failoverErr.ResponseBody), "budget_exceeded")
-	require.Equal(t, 1, repo.markCalls)
+	require.Equal(t, 0, repo.markCalls, "the first exact signal must not persist a permanent marker")
 }
 
 func TestForwardCindyAnthropicMessagesExact429PrecedesPoolRetry(t *testing.T) {
@@ -131,8 +131,8 @@ func TestForwardCindyAnthropicMessagesExact429PrecedesPoolRetry(t *testing.T) {
 	require.True(t, failoverErr.CindyBalanceInsufficient)
 	require.False(t, failoverErr.RetryableOnSameAccount)
 	require.Equal(t, 1, upstream.calls, "exact budget exhaustion must not enter the pool retry loop")
-	require.Equal(t, 1, repo.markCalls)
-	require.True(t, runtimeBlocker.isOpenAIAccountRuntimeBlocked(account))
+	require.Equal(t, 0, repo.markCalls, "the first exact signal must wait for independent confirmation")
+	require.False(t, runtimeBlocker.isOpenAIAccountRuntimeBlocked(account))
 }
 
 func TestForwardCindyAnthropicMessagesHTTP200JSONErrorFailsOverBeforeWrite(t *testing.T) {
@@ -167,8 +167,8 @@ func TestForwardCindyAnthropicMessagesHTTP200JSONErrorFailsOverBeforeWrite(t *te
 	require.False(t, failoverErr.RetryableOnSameAccount)
 	require.False(t, c.Writer.Written())
 	require.Empty(t, recorder.Body.String())
-	require.Equal(t, 1, repo.markCalls)
-	require.True(t, runtimeBlocker.isOpenAIAccountRuntimeBlocked(account))
+	require.Equal(t, 0, repo.markCalls, "the first exact signal must wait for independent confirmation")
+	require.False(t, runtimeBlocker.isOpenAIAccountRuntimeBlocked(account))
 }
 
 func TestCindyAnthropicPassthroughBuffersPreambleAndSuppressesIdlePingUntilClassification(t *testing.T) {
@@ -208,7 +208,7 @@ func TestCindyAnthropicPassthroughBuffersPreambleAndSuppressesIdlePingUntilClass
 	require.ErrorAs(t, err, &failoverErr)
 	require.True(t, failoverErr.CindyBalanceInsufficient)
 	require.Empty(t, recorder.Body.String(), "Cindy preamble and local ping must remain replay-safe before an exact balance event")
-	require.Equal(t, 1, repo.markCalls)
+	require.Equal(t, 0, repo.markCalls, "the first exact signal must not persist a permanent marker")
 }
 
 func TestCindyBalanceRollbackPreservesImmediateTransportPreambles(t *testing.T) {

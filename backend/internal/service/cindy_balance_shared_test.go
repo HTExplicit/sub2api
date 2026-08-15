@@ -40,6 +40,16 @@ func (r *cindyRateLimitAccountRepoStub) MarkCindyBalanceInsufficient(context.Con
 	return true, nil
 }
 
+func (r *cindyRateLimitAccountRepoStub) MarkCindyBalanceInsufficientIfCredentialsMatch(
+	ctx context.Context,
+	accountID int64,
+	observedAt time.Time,
+	_ string,
+) (bool, bool, error) {
+	changed, err := r.MarkCindyBalanceInsufficient(ctx, accountID, observedAt)
+	return changed, true, err
+}
+
 func (r *cindyRateLimitAccountRepoStub) ClearCindyBalanceInsufficient(context.Context, int64) (bool, error) {
 	return false, nil
 }

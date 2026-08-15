@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -54,15 +55,29 @@ type CindyBalanceAccountRepository interface {
 	DeleteCindyInsufficient(ctx context.Context, expectedCount int, fingerprint string) (*CindyInsufficientDeleteResult, error)
 }
 
+// CindyBalanceConditionalAccountRepository prevents a confirmation made with
+// an old API-key snapshot from marking a newly rotated credential. Production
+// compares the opaque fingerprint while holding the existing account row lock.
+type CindyBalanceConditionalAccountRepository interface {
+	MarkCindyBalanceInsufficientIfCredentialsMatch(
+		ctx context.Context,
+		accountID int64,
+		observedAt time.Time,
+		credentialsFingerprint string,
+	) (changed bool, credentialsMatch bool, err error)
+}
+
 // CindyBalancePendingStore preserves an exact Cindy budget signal while the
 // database marker is being committed. Production implements this with Redis
 // and no TTL so a process restart cannot make an exhausted account schedulable.
 // It is intentionally separate from GatewayCache to keep lightweight tests and
 // alternate cache adapters source-compatible.
 type CindyBalancePendingStore interface {
-	MarkCindyBalancePending(ctx context.Context, accountID int64) error
+	MarkCindyBalancePending(ctx context.Context, accountID int64, credentialsFingerprint string) error
+	GetCindyBalancePendingFingerprint(ctx context.Context, accountID int64) (string, error)
 	HasCindyBalancePendingBatch(ctx context.Context, accountIDs []int64) (map[int64]bool, error)
 	ClearCindyBalancePending(ctx context.Context, accountID int64) error
+	ClearCindyBalancePendingIfFingerprintMatches(ctx context.Context, accountID int64, credentialsFingerprint string) error
 }
 
 type cindyBalancePendingSnapshotState uint8
@@ -70,6 +85,7 @@ type cindyBalancePendingSnapshotState uint8
 const (
 	cindyBalancePendingSnapshotClear cindyBalancePendingSnapshotState = iota + 1
 	cindyBalancePendingSnapshotBlocked
+	cindyBalancePendingSnapshotValidatedBlocked
 	cindyBalancePendingSnapshotReadFailed
 )
 
@@ -155,13 +171,24 @@ func (s *cindyBalancePendingSnapshot) record(accountIDs []int64, pending map[int
 	}
 }
 
+func (s *cindyBalancePendingSnapshot) recordState(accountID int64, state cindyBalancePendingSnapshotState) {
+	if s == nil || accountID <= 0 {
+		return
+	}
+	s.mu.Lock()
+	s.states[accountID] = state
+	s.mu.Unlock()
+}
+
 type cindyBalancePersistTask struct {
-	accountID    int64
-	observedAt   time.Time
-	generation   uint64
-	attempt      int
-	nextAt       time.Time
-	inFlightDone chan struct{}
+	accountID              int64
+	observedAt             time.Time
+	credentialsFingerprint string
+	runtimeBlock           cindyBalanceRuntimeBlockToken
+	generation             uint64
+	attempt                int
+	nextAt                 time.Time
+	inFlightDone           chan struct{}
 }
 
 var cindyBalancePersistenceBackoffs = [...]time.Duration{
@@ -172,8 +199,17 @@ var cindyBalancePersistenceBackoffs = [...]time.Duration{
 	10 * time.Minute,
 }
 
-func (s *RateLimitService) scheduleCindyBalancePersistenceRetry(account *Account, observedAt time.Time) {
+func (s *RateLimitService) scheduleCindyBalancePersistenceRetry(
+	account *Account,
+	observedAt time.Time,
+	credentialsFingerprint string,
+	runtimeBlock cindyBalanceRuntimeBlockToken,
+) {
 	if s == nil || account == nil || account.ID <= 0 {
+		return
+	}
+	credentialsFingerprint = NormalizeCindyCredentialsFingerprint(credentialsFingerprint)
+	if credentialsFingerprint == "" {
 		return
 	}
 	s.cindyBalancePersistMu.Lock()
@@ -184,14 +220,24 @@ func (s *RateLimitService) scheduleCindyBalancePersistenceRetry(account *Account
 	if s.cindyBalancePersistEpochs == nil {
 		s.cindyBalancePersistEpochs = make(map[int64]uint64)
 	}
-	if _, exists := s.cindyBalancePersistTasks[account.ID]; !exists {
+	existing := s.cindyBalancePersistTasks[account.ID]
+	var replacedInFlight <-chan struct{}
+	if existing == nil || existing.credentialsFingerprint != credentialsFingerprint {
+		if existing != nil {
+			replacedInFlight = existing.inFlightDone
+			if !runtimeBlock.changed && existing.runtimeBlock.changed {
+				runtimeBlock = existing.runtimeBlock
+			}
+		}
 		generation := s.cindyBalancePersistEpochs[account.ID] + 1
 		s.cindyBalancePersistEpochs[account.ID] = generation
 		s.cindyBalancePersistTasks[account.ID] = &cindyBalancePersistTask{
-			accountID:  account.ID,
-			observedAt: observedAt,
-			generation: generation,
-			nextAt:     time.Now().Add(cindyBalancePersistenceBackoffs[0]),
+			accountID:              account.ID,
+			observedAt:             observedAt,
+			credentialsFingerprint: credentialsFingerprint,
+			runtimeBlock:           runtimeBlock,
+			generation:             generation,
+			nextAt:                 time.Now().Add(cindyBalancePersistenceBackoffs[0]),
 		}
 	}
 	start := !s.cindyBalancePersistRunning
@@ -200,6 +246,14 @@ func (s *RateLimitService) scheduleCindyBalancePersistenceRetry(account *Account
 	}
 	wake := s.cindyBalancePersistWake
 	s.cindyBalancePersistMu.Unlock()
+	if replacedInFlight != nil {
+		<-replacedInFlight
+	}
+	if existing != nil && existing.credentialsFingerprint != credentialsFingerprint && s.cindyBalancePendingStore != nil {
+		stateCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		_ = s.cindyBalancePendingStore.MarkCindyBalancePending(stateCtx, account.ID, credentialsFingerprint)
+		cancel()
+	}
 	select {
 	case wake <- struct{}{}:
 	default:
@@ -207,6 +261,41 @@ func (s *RateLimitService) scheduleCindyBalancePersistenceRetry(account *Account
 	if start {
 		go s.runCindyBalancePersistenceRetries()
 	}
+}
+
+func (s *RateLimitService) supersedeCindyBalancePersistenceRetry(
+	accountID int64,
+	runtimeBlock cindyBalanceRuntimeBlockToken,
+) cindyBalanceRuntimeBlockToken {
+	if s == nil || accountID <= 0 {
+		return runtimeBlock
+	}
+	s.cindyBalancePersistMu.Lock()
+	if s.cindyBalancePersistEpochs == nil {
+		s.cindyBalancePersistEpochs = make(map[int64]uint64)
+	}
+	existing := s.cindyBalancePersistTasks[accountID]
+	var inFlightDone <-chan struct{}
+	if existing != nil {
+		s.cindyBalancePersistEpochs[accountID]++
+		delete(s.cindyBalancePersistTasks, accountID)
+		inFlightDone = existing.inFlightDone
+		if !runtimeBlock.changed && existing.runtimeBlock.changed {
+			runtimeBlock = existing.runtimeBlock
+		}
+	}
+	wake := s.cindyBalancePersistWake
+	s.cindyBalancePersistMu.Unlock()
+	if wake != nil {
+		select {
+		case wake <- struct{}{}:
+		default:
+		}
+	}
+	if inFlightDone != nil {
+		<-inFlightDone
+	}
+	return runtimeBlock
 }
 
 func (s *RateLimitService) runCindyBalancePersistenceRetries() {
@@ -311,26 +400,35 @@ func (s *RateLimitService) runCindyBalancePersistenceTask(task *cindyBalancePers
 	// transient Redis failure from the original request before touching DB.
 	if store := s.cindyBalancePendingStore; store != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		err := store.MarkCindyBalancePending(ctx, task.accountID)
+		err := store.MarkCindyBalancePending(ctx, task.accountID, task.credentialsFingerprint)
 		cancel()
 		if err != nil {
-			slog.Error("cindy_balance_pending_retry_failed", "account_id", task.accountID, "error", err)
+			slog.Error("cindy_balance_pending_retry_failed")
 		}
 	}
 	if !s.isCurrentCindyBalancePersistenceTask(task) {
 		return
 	}
 
-	repo, ok := s.accountRepo.(CindyBalanceAccountRepository)
+	repo, ok := s.accountRepo.(CindyBalanceConditionalAccountRepository)
 	if !ok {
-		s.rescheduleCindyBalancePersistenceRetry(task, "repository unavailable")
+		s.rescheduleCindyBalancePersistenceRetry(task)
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	changed, err := repo.MarkCindyBalanceInsufficient(ctx, task.accountID, task.observedAt)
+	changed, credentialsMatch, err := repo.MarkCindyBalanceInsufficientIfCredentialsMatch(
+		ctx,
+		task.accountID,
+		task.observedAt,
+		task.credentialsFingerprint,
+	)
 	cancel()
 	if err != nil {
-		s.rescheduleCindyBalancePersistenceRetry(task, err.Error())
+		s.rescheduleCindyBalancePersistenceRetry(task)
+		return
+	}
+	if !credentialsMatch {
+		s.discardCindyBalancePersistenceTask(task)
 		return
 	}
 	if !s.isCurrentCindyBalancePersistenceTask(task) {
@@ -338,8 +436,12 @@ func (s *RateLimitService) runCindyBalancePersistenceTask(task *cindyBalancePers
 		// final state after a write that raced with cancellation.
 		return
 	}
-	if err := s.clearCindyBalancePending(context.Background(), task.accountID); err != nil {
-		slog.Error("cindy_balance_pending_clear_after_retry_failed", "account_id", task.accountID, "error", err)
+	if err := s.clearCindyBalancePendingIfFingerprintMatches(
+		context.Background(),
+		task.accountID,
+		task.credentialsFingerprint,
+	); err != nil {
+		slog.Error("cindy_balance_pending_clear_after_retry_failed")
 	}
 	s.cindyBalancePersistMu.Lock()
 	if s.cindyBalancePersistTasks[task.accountID] == task &&
@@ -348,8 +450,31 @@ func (s *RateLimitService) runCindyBalancePersistenceTask(task *cindyBalancePers
 	}
 	s.cindyBalancePersistMu.Unlock()
 	if changed {
-		slog.Warn("cindy_balance_insufficient_marked_after_retry", "account_id", task.accountID)
+		slog.Warn("cindy_balance_insufficient_marked_after_retry")
 	}
+}
+
+func (s *RateLimitService) discardCindyBalancePersistenceTask(task *cindyBalancePersistTask) {
+	if s == nil || task == nil {
+		return
+	}
+	s.cindyBalancePersistMu.Lock()
+	current := false
+	if s.cindyBalancePersistTasks[task.accountID] == task &&
+		s.cindyBalancePersistEpochs[task.accountID] == task.generation {
+		delete(s.cindyBalancePersistTasks, task.accountID)
+		current = true
+	}
+	s.cindyBalancePersistMu.Unlock()
+	if !current {
+		return
+	}
+	_ = s.clearCindyBalancePendingIfFingerprintMatches(
+		context.Background(),
+		task.accountID,
+		task.credentialsFingerprint,
+	)
+	s.clearCindyBalanceRuntimeBlock(task.accountID, task.runtimeBlock)
 }
 
 // CancelCindyBalancePersistenceRetry is the linearization point for explicit
@@ -384,7 +509,7 @@ func (s *RateLimitService) CancelCindyBalancePersistenceRetry(accountID int64) {
 	}
 }
 
-func (s *RateLimitService) rescheduleCindyBalancePersistenceRetry(task *cindyBalancePersistTask, reason string) {
+func (s *RateLimitService) rescheduleCindyBalancePersistenceRetry(task *cindyBalancePersistTask) {
 	if s == nil || task == nil {
 		return
 	}
@@ -399,7 +524,7 @@ func (s *RateLimitService) rescheduleCindyBalancePersistenceRetry(task *cindyBal
 		current.nextAt = time.Now().Add(cindyBalancePersistenceBackoffs[index])
 	}
 	s.cindyBalancePersistMu.Unlock()
-	slog.Warn("cindy_balance_insufficient_retry_failed", "account_id", task.accountID, "reason", reason)
+	slog.Warn("cindy_balance_insufficient_retry_failed")
 }
 
 // IsCindyBalanceInsufficientResponse trusts only Cindy's structured budget
@@ -549,4 +674,47 @@ func CindyInsufficientAccountFingerprint(accountIDs []int64) string {
 
 func NormalizeCindyInsufficientFingerprint(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
+}
+
+// CindyAccountIdentityFingerprint produces a deterministic, domain-separated
+// digest of the platform, account type, and complete JSON credential object.
+// Callers may persist the digest, but must never log or persist the raw
+// identity snapshot.
+func CindyAccountIdentityFingerprint(platform, accountType string, credentials map[string]any) (string, error) {
+	payload := struct {
+		Platform    string         `json:"platform"`
+		AccountType string         `json:"account_type"`
+		Credentials map[string]any `json:"credentials"`
+	}{
+		Platform:    platform,
+		AccountType: accountType,
+		Credentials: credentials,
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	hash := sha256.New()
+	_, _ = hash.Write([]byte("cindy-account-identity:v2\n"))
+	_, _ = hash.Write(raw)
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+// CindyCredentialsFingerprint returns the identity fingerprint for a strict
+// Cindy OpenAI API-key account. It is kept for cache fixtures and adapters
+// that already operate exclusively inside that identity boundary.
+func CindyCredentialsFingerprint(credentials map[string]any) (string, error) {
+	return CindyAccountIdentityFingerprint(PlatformOpenAI, AccountTypeAPIKey, credentials)
+}
+
+// NormalizeCindyCredentialsFingerprint accepts only a canonical SHA-256 hex digest.
+func NormalizeCindyCredentialsFingerprint(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if len(value) != sha256.Size*2 {
+		return ""
+	}
+	if _, err := hex.DecodeString(value); err != nil {
+		return ""
+	}
+	return value
 }

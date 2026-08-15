@@ -454,7 +454,13 @@ func (r *accountRepository) updateLockedAccount(
 	explicitRateSyncEnabled *bool,
 	explicitRateMultiplier *float64,
 ) (*dbent.Account, error) {
-	extra, err := lockAndMergeAccountProbeExtra(ctx, client, account, explicitProbeEnabled, explicitRateSyncEnabled)
+	extra, credentialGenerationChanged, err := lockAndMergeAccountProbeExtra(
+		ctx,
+		client,
+		account,
+		explicitProbeEnabled,
+		explicitRateSyncEnabled,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -464,7 +470,6 @@ func (r *accountRepository) updateLockedAccount(
 	if account.Status == service.StatusError {
 		schedulable = false
 	}
-
 	builder := client.Account.UpdateOneID(account.ID).
 		SetName(account.Name).
 		SetNillableNotes(account.Notes).
@@ -478,6 +483,10 @@ func (r *accountRepository) updateLockedAccount(
 		SetErrorMessage(account.ErrorMessage).
 		SetSchedulable(schedulable).
 		SetAutoPauseOnExpired(account.AutoPauseOnExpired)
+	if credentialGenerationChanged {
+		builder.ClearCindyBalanceInsufficientAt()
+		account.CindyBalanceInsufficientAt = nil
+	}
 
 	if explicitRateMultiplier != nil {
 		builder.SetRateMultiplier(*explicitRateMultiplier)
@@ -549,10 +558,10 @@ func lockAndMergeAccountProbeExtra(
 	account *service.Account,
 	explicitProbeEnabled *bool,
 	explicitRateSyncEnabled *bool,
-) (map[string]any, error) {
+) (map[string]any, bool, error) {
 	credentials, err := json.Marshal(normalizeJSONMap(account.Credentials))
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	var proxyID any
 	if account.ProxyID != nil {
@@ -564,6 +573,9 @@ func lockAndMergeAccountProbeExtra(
 			AND type = $3
 			AND credentials = $4::jsonb
 			AND proxy_id IS NOT DISTINCT FROM $5,
+			platform = $2
+			AND type = $3
+			AND credentials = $4::jsonb,
 			COALESCE(
 				platform IN ('openai', 'anthropic')
 				AND $2 IN ('openai', 'anthropic')
@@ -586,29 +598,31 @@ func lockAndMergeAccountProbeExtra(
 		FOR NO KEY UPDATE
 	`, account.ID, account.Platform, account.Type, string(credentials), proxyID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		if err := rows.Err(); err != nil {
-			return nil, err
+			return nil, false, err
 		}
-		return nil, service.ErrAccountNotFound
+		return nil, false, service.ErrAccountNotFound
 	}
 
 	var (
-		identityUnchanged            bool
-		ollamaGroupIdentityUnchanged bool
-		ollamaProxyIdentityUnchanged bool
-		currentEnabled               []byte
-		currentRateSyncEnabled       []byte
-		currentSnapshot              []byte
-		currentOllamaSession         []byte
-		currentOllamaAutoRefresh     []byte
-		currentOllamaSnapshot        []byte
+		identityUnchanged             bool
+		credentialGenerationUnchanged bool
+		ollamaGroupIdentityUnchanged  bool
+		ollamaProxyIdentityUnchanged  bool
+		currentEnabled                []byte
+		currentRateSyncEnabled        []byte
+		currentSnapshot               []byte
+		currentOllamaSession          []byte
+		currentOllamaAutoRefresh      []byte
+		currentOllamaSnapshot         []byte
 	)
 	if err := rows.Scan(
 		&identityUnchanged,
+		&credentialGenerationUnchanged,
 		&ollamaGroupIdentityUnchanged,
 		&ollamaProxyIdentityUnchanged,
 		&currentEnabled,
@@ -618,10 +632,10 @@ func lockAndMergeAccountProbeExtra(
 		&currentOllamaAutoRefresh,
 		&currentOllamaSnapshot,
 	); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	extra := copyJSONMap(normalizeJSONMap(account.Extra))
@@ -640,7 +654,7 @@ func lockAndMergeAccountProbeExtra(
 	probeEnabledPresent := false
 	if probeAccount {
 		if enabled, ok, err := decodeAccountExtraJSON(currentEnabled); err != nil {
-			return nil, err
+			return nil, false, err
 		} else if value, isBool := enabled.(bool); ok && isBool {
 			probeEnabled = value
 			probeEnabledPresent = true
@@ -654,7 +668,7 @@ func lockAndMergeAccountProbeExtra(
 	rateSyncEnabledPresent := false
 	if probeAccount {
 		if enabled, ok, err := decodeAccountExtraJSON(currentRateSyncEnabled); err != nil {
-			return nil, err
+			return nil, false, err
 		} else if value, isBool := enabled.(bool); ok && isBool {
 			rateSyncEnabled = value
 			rateSyncEnabledPresent = true
@@ -684,7 +698,7 @@ func lockAndMergeAccountProbeExtra(
 	probeExplicitlyDisabled := probeEnabledPresent && !probeEnabled
 	if identityUnchanged && !probeExplicitlyDisabled {
 		if snapshot, ok, err := decodeAccountExtraJSON(currentSnapshot); err != nil {
-			return nil, err
+			return nil, false, err
 		} else if ok {
 			extra[service.UpstreamBillingProbeExtraKey] = snapshot
 		}
@@ -696,20 +710,20 @@ func lockAndMergeAccountProbeExtra(
 			service.OllamaCloudUsageAutoRefreshExtraKey: currentOllamaAutoRefresh,
 		} {
 			if value, ok, err := decodeAccountExtraJSON(raw); err != nil {
-				return nil, err
+				return nil, false, err
 			} else if ok {
 				extra[key] = value
 			}
 		}
 		if ollamaProxyIdentityUnchanged {
 			if snapshot, ok, err := decodeAccountExtraJSON(currentOllamaSnapshot); err != nil {
-				return nil, err
+				return nil, false, err
 			} else if ok {
 				extra[service.OllamaCloudUsageSnapshotExtraKey] = snapshot
 			}
 		}
 	}
-	return extra, nil
+	return extra, !credentialGenerationUnchanged, nil
 }
 
 func decodeAccountExtraJSON(raw []byte) (any, bool, error) {
@@ -750,6 +764,10 @@ func (r *accountRepository) UpdateCredentials(ctx context.Context, id int64, cre
 		UPDATE accounts
 		SET
 			credentials = $1::jsonb,
+			cindy_balance_insufficient_at = CASE
+				WHEN credentials IS DISTINCT FROM $1::jsonb THEN NULL
+				ELSE cindy_balance_insufficient_at
+			END,
 			extra = CASE
 				-- 凭证整体未变化 ⇒ Ollama 组身份必然未变化；顶层 DISTINCT 守卫防止
 				-- 非 Ollama 账号的无变化持久化误清探测快照或重写 NULL extra。
@@ -2861,7 +2879,12 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 			return 0, err
 		}
 		credentialPlaceholder = "$" + itoa(idx)
-		setClauses = append(setClauses, "credentials = COALESCE(credentials, '{}'::jsonb) || "+credentialPlaceholder+"::jsonb")
+		mergedCredentials := "COALESCE(credentials, '{}'::jsonb) || " + credentialPlaceholder + "::jsonb"
+		setClauses = append(setClauses,
+			"credentials = "+mergedCredentials,
+			"cindy_balance_insufficient_at = CASE WHEN credentials IS DISTINCT FROM "+mergedCredentials+
+				" THEN NULL ELSE cindy_balance_insufficient_at END",
+		)
 		args = append(args, payload)
 		idx++
 	}
@@ -2986,7 +3009,7 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 		}
 	}
 	if rows > 0 && contextTx == nil {
-		shouldSync := false
+		shouldSync := len(updates.Credentials) > 0
 		if updates.Status != nil && (*updates.Status == service.StatusError || *updates.Status == service.StatusDisabled) {
 			shouldSync = true
 		}

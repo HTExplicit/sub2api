@@ -13,18 +13,22 @@ import (
 
 type cindyFeaturePendingStore struct {
 	*stubGatewayCache
-	pending map[int64]bool
+	pending map[int64]string
 }
 
-func (s *cindyFeaturePendingStore) MarkCindyBalancePending(_ context.Context, accountID int64) error {
-	s.pending[accountID] = true
+func (s *cindyFeaturePendingStore) MarkCindyBalancePending(_ context.Context, accountID int64, fingerprint string) error {
+	s.pending[accountID] = fingerprint
 	return nil
+}
+
+func (s *cindyFeaturePendingStore) GetCindyBalancePendingFingerprint(_ context.Context, accountID int64) (string, error) {
+	return s.pending[accountID], nil
 }
 
 func (s *cindyFeaturePendingStore) HasCindyBalancePendingBatch(_ context.Context, accountIDs []int64) (map[int64]bool, error) {
 	result := make(map[int64]bool, len(accountIDs))
 	for _, accountID := range accountIDs {
-		if s.pending[accountID] {
+		if s.pending[accountID] != "" {
 			result[accountID] = true
 		}
 	}
@@ -33,6 +37,17 @@ func (s *cindyFeaturePendingStore) HasCindyBalancePendingBatch(_ context.Context
 
 func (s *cindyFeaturePendingStore) ClearCindyBalancePending(_ context.Context, accountID int64) error {
 	delete(s.pending, accountID)
+	return nil
+}
+
+func (s *cindyFeaturePendingStore) ClearCindyBalancePendingIfFingerprintMatches(
+	_ context.Context,
+	accountID int64,
+	fingerprint string,
+) error {
+	if s.pending[accountID] == fingerprint {
+		delete(s.pending, accountID)
+	}
 	return nil
 }
 
@@ -183,9 +198,13 @@ func TestCindyRolloutFlagHelper(t *testing.T) {
 			t.Fatal("existing DB balance marker became schedulable")
 		}
 		account.CindyBalanceInsufficientAt = nil
+		fingerprint, err := CindyAccountIdentityFingerprint(account.Platform, account.Type, account.Credentials)
+		if err != nil {
+			t.Fatalf("fingerprint current Cindy account: %v", err)
+		}
 		store := &cindyFeaturePendingStore{
 			stubGatewayCache: &stubGatewayCache{},
-			pending:          map[int64]bool{account.ID: true},
+			pending:          map[int64]string{account.ID: fingerprint},
 		}
 		gateway = &OpenAIGatewayService{cache: store}
 		if !gateway.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.6-luna") {

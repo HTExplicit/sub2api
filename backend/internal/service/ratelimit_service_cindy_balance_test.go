@@ -65,7 +65,7 @@ func TestHandleUpstreamErrorHTTP400EventShapeDoesNotMarkCindyBalance(t *testing.
 	}
 }
 
-func TestRateLimitServiceCindyBudget429MarksBeforePoolModeSkip(t *testing.T) {
+func TestRateLimitServiceCindyBudget429RequiresConfirmationBeforePoolModeSkip(t *testing.T) {
 	for _, poolMode := range []bool{false, true} {
 		t.Run(map[bool]string{false: "normal", true: "pool"}[poolMode], func(t *testing.T) {
 			repo := &cindyRateLimitAccountRepoStub{}
@@ -78,11 +78,11 @@ func TestRateLimitServiceCindyBudget429MarksBeforePoolModeSkip(t *testing.T) {
 			shouldDisable := svc.HandleUpstreamError(context.Background(), account, http.StatusTooManyRequests, http.Header{}, body)
 
 			require.True(t, shouldDisable)
-			require.Equal(t, 1, repo.markCalls)
-			require.Equal(t, 1, repo.markChanged)
+			require.Zero(t, repo.markCalls)
+			require.Zero(t, repo.markChanged)
 			require.Zero(t, repo.setErrorCalls)
-			require.NotNil(t, account.CindyBalanceInsufficientAt)
-			require.Equal(t, "cindy_balance_insufficient", blocker.reasons[0])
+			require.Nil(t, account.CindyBalanceInsufficientAt)
+			require.Empty(t, blocker.reasons)
 		})
 	}
 }
@@ -135,7 +135,7 @@ func TestRateLimitServiceCindyBalanceMarkerDoesNotMatchOtherErrors(t *testing.T)
 	})
 }
 
-func TestRateLimitServiceCindyBalanceConcurrentMarkIsIdempotent(t *testing.T) {
+func TestRateLimitServiceConcurrentCindySignalsDoNotPersistBeforeConfirmation(t *testing.T) {
 	repo := &cindyRateLimitAccountRepoStub{}
 	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
 
@@ -156,11 +156,11 @@ func TestRateLimitServiceCindyBalanceConcurrentMarkIsIdempotent(t *testing.T) {
 		require.True(t, shouldDisable)
 	}
 
-	require.Equal(t, requests, repo.markCalls)
-	require.Equal(t, 1, repo.markChanged)
+	require.Zero(t, repo.markCalls)
+	require.Zero(t, repo.markChanged)
 }
 
-func TestOpenAIGatewayCindyBudget429MarksAndBlocksImmediately(t *testing.T) {
+func TestOpenAIGatewayCindyBudget429FailsOverWithoutImmediatePermanentBlock(t *testing.T) {
 	repo := &cindyRateLimitAccountRepoStub{}
 	rateLimitService := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
 	gateway := &OpenAIGatewayService{rateLimitService: rateLimitService}
@@ -173,12 +173,12 @@ func TestOpenAIGatewayCindyBudget429MarksAndBlocksImmediately(t *testing.T) {
 	)
 
 	require.True(t, shouldDisable)
-	require.Equal(t, 1, repo.markCalls)
-	require.NotNil(t, account.CindyBalanceInsufficientAt)
-	require.True(t, gateway.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.6-sol"))
+	require.Zero(t, repo.markCalls)
+	require.Nil(t, account.CindyBalanceInsufficientAt)
+	require.False(t, gateway.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.6-sol"))
 }
 
-func TestOpenAIGatewayCindyTerminalEventsMarkAndBlock(t *testing.T) {
+func TestOpenAIGatewayCindyTerminalEventsFailOverWithoutImmediatePermanentBlock(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		body string
@@ -198,14 +198,14 @@ func TestOpenAIGatewayCindyTerminalEventsMarkAndBlock(t *testing.T) {
 			)
 
 			require.True(t, recognized)
-			require.Equal(t, 1, repo.markCalls)
-			require.NotNil(t, account.CindyBalanceInsufficientAt)
-			require.True(t, gateway.isOpenAIAccountRequestRuntimeBlocked(account, "openai/gpt-5.6-luna"))
+			require.Zero(t, repo.markCalls)
+			require.Nil(t, account.CindyBalanceInsufficientAt)
+			require.False(t, gateway.isOpenAIAccountRequestRuntimeBlocked(account, "openai/gpt-5.6-luna"))
 		})
 	}
 }
 
-func TestOpenAIGatewayCindyWSTerminalEventsUseCentralHandler(t *testing.T) {
+func TestOpenAIGatewayCindyWSTerminalEventsUseProvisionalCentralHandler(t *testing.T) {
 	tests := []struct {
 		name   string
 		body   string
@@ -236,9 +236,9 @@ func TestOpenAIGatewayCindyWSTerminalEventsUseCentralHandler(t *testing.T) {
 
 			tc.handle(gateway, account, []byte(tc.body))
 
-			require.Equal(t, 1, repo.markCalls)
-			require.NotNil(t, account.CindyBalanceInsufficientAt)
-			require.True(t, gateway.isOpenAIAccountRuntimeBlocked(account))
+			require.Zero(t, repo.markCalls)
+			require.Nil(t, account.CindyBalanceInsufficientAt)
+			require.False(t, gateway.isOpenAIAccountRuntimeBlocked(account))
 		})
 	}
 }
@@ -266,21 +266,18 @@ func TestOpenAIGatewayCindyImagesTerminalFailureForcesAccountSwitch(t *testing.T
 	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
 	require.True(t, failoverErr.CindyBalanceInsufficient)
 	require.False(t, failoverErr.RetryableOnSameAccount)
-	require.Equal(t, 1, repo.markCalls)
-	require.True(t, gateway.isOpenAIAccountRuntimeBlocked(account))
+	require.Zero(t, repo.markCalls)
+	require.False(t, gateway.isOpenAIAccountRuntimeBlocked(account))
 }
 
-func TestOpenAIGatewayCindyPersistenceFailureRemainsIndefinitelyBlocked(t *testing.T) {
+func TestConfirmedCindyBalancePersistenceFailureRemainsIndefinitelyBlocked(t *testing.T) {
 	repo := &cindyRateLimitAccountRepoStub{markErr: errors.New("database unavailable"), markFailures: 1}
 	rateLimitService := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
 	gateway := &OpenAIGatewayService{rateLimitService: rateLimitService}
 	rateLimitService.SetAccountRuntimeBlocker(gateway)
 	account := newCindyRateLimitAccount(8452, true)
 
-	require.True(t, gateway.handleCindyBalanceTerminalEvent(
-		context.Background(), account, http.Header{},
-		[]byte(`{"type":"response.failed","response":{"error":{"type":"budget_exceeded","code":"429"}}}`),
-	))
+	require.True(t, rateLimitService.handleCindyBalanceInsufficient(context.Background(), account))
 	value, ok := gateway.openaiAccountRuntimeBlockUntil.Load(account.ID)
 	require.True(t, ok)
 	until, ok := value.(time.Time)
@@ -314,7 +311,7 @@ func TestOpenAIGatewayCindyIndefiniteBlockDominatesLaterCooldown(t *testing.T) {
 	require.True(t, gateway.isOpenAIAccountRuntimeBlocked(account))
 }
 
-func TestAccountTestServiceCindyBalanceUsesGatewayCentralHandler(t *testing.T) {
+func TestAccountTestServiceCindyBalanceUsesGatewayConfirmationPath(t *testing.T) {
 	repo := &cindyRateLimitAccountRepoStub{}
 	rateLimitService := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
 	gateway := &OpenAIGatewayService{rateLimitService: rateLimitService}
@@ -329,12 +326,12 @@ func TestAccountTestServiceCindyBalanceUsesGatewayCentralHandler(t *testing.T) {
 		context.Background(), account, http.StatusOK,
 		[]byte(`{"type":"error","error":{"type":"budget_exceeded","code":"429"}}`),
 	))
-	require.Equal(t, 1, repo.markCalls)
-	require.NotNil(t, account.CindyBalanceInsufficientAt)
-	require.True(t, gateway.isOpenAIAccountRuntimeBlocked(account))
+	require.Zero(t, repo.markCalls)
+	require.Nil(t, account.CindyBalanceInsufficientAt)
+	require.False(t, gateway.isOpenAIAccountRuntimeBlocked(account))
 }
 
-func TestAccountTestServiceCindyChatStreamMarksInBandError(t *testing.T) {
+func TestAccountTestServiceCindyChatStreamDefersInBandMarkerUntilConfirmation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
@@ -350,9 +347,9 @@ func TestAccountTestServiceCindyChatStreamMarksInBandError(t *testing.T) {
 	err := accountTest.processOpenAIChatCompletionsStream(c, c.Request.Context(), account, strings.NewReader(body))
 
 	require.Error(t, err)
-	require.Equal(t, 1, repo.markCalls)
-	require.NotNil(t, account.CindyBalanceInsufficientAt)
-	require.True(t, gateway.isOpenAIAccountRuntimeBlocked(account))
+	require.Zero(t, repo.markCalls)
+	require.Nil(t, account.CindyBalanceInsufficientAt)
+	require.False(t, gateway.isOpenAIAccountRuntimeBlocked(account))
 }
 
 func TestOpenAIGatewayCindyHTTP429PrecedesErrorPolicies(t *testing.T) {
@@ -408,8 +405,8 @@ func TestOpenAIGatewayCindyHTTP429PrecedesErrorPolicies(t *testing.T) {
 			require.True(t, failoverErr.CindyBalanceInsufficient)
 			require.False(t, failoverErr.RetryableOnSameAccount)
 			require.False(t, c.Writer.Written(), "classification must happen before response rewriting")
-			require.Equal(t, 1, repo.markCalls)
-			require.True(t, gateway.isOpenAIAccountRuntimeBlocked(account))
+			require.Zero(t, repo.markCalls)
+			require.False(t, gateway.isOpenAIAccountRuntimeBlocked(account))
 		})
 	}
 }
@@ -466,8 +463,8 @@ func TestOpenAIGatewayCindyAlphaSearchBalancePrecedesHealthSuppression(t *testin
 				"budget exhaustion must not be rewritten as a health-suppressed search capability failure")
 			require.False(t, failoverErr.RetryableOnSameAccount)
 			require.False(t, c.Writer.Written())
-			require.Equal(t, 1, repo.markCalls)
-			require.True(t, gateway.isOpenAIAccountRuntimeBlocked(account))
+			require.Zero(t, repo.markCalls)
+			require.False(t, gateway.isOpenAIAccountRuntimeBlocked(account))
 		})
 	}
 }
@@ -490,8 +487,8 @@ func TestOpenAIGatewayCindyStreamFailoverIsNeverSameAccountRetryable(t *testing.
 	require.True(t, failoverErr.CindyBalanceInsufficient)
 	require.False(t, failoverErr.RetryableOnSameAccount)
 	require.NotContains(t, string(failoverErr.ResponseBody), "budget_exceeded")
-	require.Equal(t, 1, repo.markCalls)
-	require.True(t, gateway.isOpenAIAccountRuntimeBlocked(account))
+	require.Zero(t, repo.markCalls)
+	require.False(t, gateway.isOpenAIAccountRuntimeBlocked(account))
 }
 
 func TestOpenAIGatewayCindyPassthroughStreamBalanceFailsOverBeforeWrite(t *testing.T) {
@@ -539,8 +536,8 @@ func TestOpenAIGatewayCindyPassthroughStreamBalanceFailsOverBeforeWrite(t *testi
 			require.NotContains(t, string(failoverErr.ResponseBody), "budget_exceeded")
 			require.False(t, c.Writer.Written(), "preamble events must remain buffered so the handler can switch accounts")
 			require.Empty(t, recorder.Body.String())
-			require.Equal(t, 1, repo.markCalls)
-			require.True(t, gateway.isOpenAIAccountRuntimeBlocked(account))
+			require.Zero(t, repo.markCalls)
+			require.False(t, gateway.isOpenAIAccountRuntimeBlocked(account))
 		})
 	}
 }
@@ -577,7 +574,7 @@ func TestOpenAIGatewayCindyPassthroughStreamBalanceAfterOutputDropsRawPayload(t 
 	require.NotContains(t, recorder.Body.String(), "budget_exceeded")
 	require.NotContains(t, recorder.Body.String(), "sensitive upstream detail")
 	require.NotContains(t, string(failoverErr.ResponseBody), "budget_exceeded")
-	require.Equal(t, 1, repo.markCalls)
+	require.Zero(t, repo.markCalls)
 }
 
 func TestOpenAIGatewayCindyMainResponsesBalancePrecedesPassthroughAndWrite(t *testing.T) {
@@ -617,7 +614,7 @@ func TestOpenAIGatewayCindyMainResponsesBalancePrecedesPassthroughAndWrite(t *te
 		require.NotContains(t, string(failoverErr.ResponseBody), "budget_exceeded")
 		require.False(t, c.Writer.Written(), "Cindy classification must win before the passthrough rule commits JSON")
 		require.Empty(t, recorder.Body.String())
-		require.Equal(t, 1, repo.markCalls)
+		require.Zero(t, repo.markCalls)
 	}
 }
 
@@ -657,7 +654,7 @@ func TestOpenAIGatewayCindyMainResponsesBalanceAfterOutputDropsRawPayload(t *tes
 	require.Contains(t, recorder.Body.String(), `"delta":"ok"`)
 	require.NotContains(t, recorder.Body.String(), "budget_exceeded")
 	require.NotContains(t, recorder.Body.String(), "sensitive upstream detail")
-	require.Equal(t, 1, repo.markCalls)
+	require.Zero(t, repo.markCalls)
 }
 
 func TestOpenAIGatewayCindyConvertedMessagesBalanceAfterOutputDropsRawPayload(t *testing.T) {
@@ -700,7 +697,7 @@ func TestOpenAIGatewayCindyConvertedMessagesBalanceAfterOutputDropsRawPayload(t 
 	require.NotContains(t, recorder.Body.String(), "budget_exceeded")
 	require.NotContains(t, recorder.Body.String(), "sensitive upstream detail")
 	require.NotContains(t, string(failoverErr.ResponseBody), "budget_exceeded")
-	require.Equal(t, 1, repo.markCalls)
+	require.Zero(t, repo.markCalls)
 }
 
 func TestOpenAIGatewayCindyImagesStreamBalanceIsSanitizedBeforeAndAfterOutput(t *testing.T) {
@@ -752,12 +749,12 @@ func TestOpenAIGatewayCindyImagesStreamBalanceIsSanitizedBeforeAndAfterOutput(t 
 			}
 			require.NotContains(t, recorder.Body.String(), "budget_exceeded")
 			require.NotContains(t, recorder.Body.String(), "sensitive upstream detail")
-			require.Equal(t, 1, repo.markCalls)
+			require.Zero(t, repo.markCalls)
 		})
 	}
 }
 
-func TestOpenAIGatewayCindyChatBridgeMarksBareErrorEvent(t *testing.T) {
+func TestOpenAIGatewayCindyChatBridgeDefersBareErrorMarkerUntilConfirmation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	requestBody := []byte(`{"model":"gpt-5.6-luna","messages":[{"role":"user","content":"hi"}],"stream":false}`)
 	recorder := httptest.NewRecorder()
@@ -790,8 +787,8 @@ func TestOpenAIGatewayCindyChatBridgeMarksBareErrorEvent(t *testing.T) {
 	require.True(t, failoverErr.CindyBalanceInsufficient)
 	require.False(t, failoverErr.RetryableOnSameAccount)
 	require.False(t, c.Writer.Written())
-	require.Equal(t, 1, repo.markCalls)
-	require.True(t, gateway.isOpenAIAccountRuntimeBlocked(account))
+	require.Zero(t, repo.markCalls)
+	require.False(t, gateway.isOpenAIAccountRuntimeBlocked(account))
 }
 
 func TestOpenAIGatewayCindyNonStreamingResponsesFailureFailsOverBeforeWrite(t *testing.T) {
@@ -840,8 +837,8 @@ func TestOpenAIGatewayCindyNonStreamingResponsesFailureFailsOverBeforeWrite(t *t
 			require.True(t, failoverErr.CindyBalanceInsufficient)
 			require.False(t, failoverErr.RetryableOnSameAccount)
 			require.False(t, c.Writer.Written())
-			require.Equal(t, 1, repo.markCalls)
-			require.True(t, gateway.isOpenAIAccountRuntimeBlocked(account))
+			require.Zero(t, repo.markCalls)
+			require.False(t, gateway.isOpenAIAccountRuntimeBlocked(account))
 		})
 	}
 }
@@ -891,8 +888,8 @@ func TestOpenAIGatewayCindyNonStreamingPassthroughClassifiesJSONAndSSEError(t *t
 			require.NotContains(t, string(failoverErr.ResponseBody), "budget_exceeded")
 			require.False(t, c.Writer.Written())
 			require.Empty(t, recorder.Body.String())
-			require.Equal(t, 1, repo.markCalls)
-			require.True(t, gateway.isOpenAIAccountRuntimeBlocked(account))
+			require.Zero(t, repo.markCalls)
+			require.False(t, gateway.isOpenAIAccountRuntimeBlocked(account))
 		})
 	}
 }

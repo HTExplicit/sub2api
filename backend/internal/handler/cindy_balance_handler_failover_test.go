@@ -271,7 +271,7 @@ func requireCindyHandlerFailover(t *testing.T, repo *cindyHandlerFailoverAccount
 	t.Helper()
 	require.Equal(t, []int64{cindyHandlerExhaustedAccountID, cindyHandlerHealthyAccountID}, upstream.calls())
 	marked, listSnapshots := repo.snapshot()
-	require.Equal(t, []int64{cindyHandlerExhaustedAccountID}, marked, "only A must be durably marked")
+	require.Empty(t, marked, "one request-level signal must not create a durable balance marker")
 	require.GreaterOrEqual(t, len(listSnapshots), 2, "failover must perform a fresh account selection")
 	for _, ids := range listSnapshots {
 		require.Equal(t, []int64{cindyHandlerExhaustedAccountID, cindyHandlerHealthyAccountID}, ids,

@@ -51,35 +51,72 @@ func isCindyCandidate(account *dbAccountCandidate) bool {
 }
 
 func (r *accountRepository) MarkCindyBalanceInsufficient(ctx context.Context, accountID int64, observedAt time.Time) (bool, error) {
+	changed, _, err := r.markCindyBalanceInsufficient(ctx, accountID, observedAt, "", false)
+	return changed, err
+}
+
+func (r *accountRepository) MarkCindyBalanceInsufficientIfCredentialsMatch(
+	ctx context.Context,
+	accountID int64,
+	observedAt time.Time,
+	credentialsFingerprint string,
+) (bool, bool, error) {
+	return r.markCindyBalanceInsufficient(ctx, accountID, observedAt, credentialsFingerprint, true)
+}
+
+func (r *accountRepository) markCindyBalanceInsufficient(
+	ctx context.Context,
+	accountID int64,
+	observedAt time.Time,
+	credentialsFingerprint string,
+	requireCredentialsMatch bool,
+) (bool, bool, error) {
 	tx, err := r.client.Tx(ctx)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
 	txRepo := &accountRepository{client: tx.Client(), sql: tx.Client(), schedulerCache: r.schedulerCache}
 	account, err := txRepo.lockCindyAccount(ctx, accountID)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	if !isCindyCandidate(account) {
-		return false, service.ErrCindyAccountRequired
+		if requireCredentialsMatch {
+			return false, false, nil
+		}
+		return false, false, service.ErrCindyAccountRequired
+	}
+	if requireCredentialsMatch {
+		expected := service.NormalizeCindyCredentialsFingerprint(credentialsFingerprint)
+		actual, fingerprintErr := service.CindyAccountIdentityFingerprint(
+			account.Platform,
+			account.Type,
+			account.Credentials,
+		)
+		if fingerprintErr != nil {
+			return false, false, fingerprintErr
+		}
+		if expected == "" || actual != expected {
+			return false, false, nil
+		}
 	}
 	if account.MarkedAt != nil {
-		return false, nil
+		return false, true, nil
 	}
 	if _, err := tx.Client().Account.UpdateOneID(accountID).
 		SetCindyBalanceInsufficientAt(observedAt.UTC()).
 		Save(ctx); err != nil {
-		return false, err
+		return false, true, err
 	}
 	if err := enqueueSchedulerOutbox(ctx, tx.Client(), service.SchedulerOutboxEventAccountChanged, &accountID, nil, nil); err != nil {
-		return false, err
+		return false, true, err
 	}
 	if err := tx.Commit(); err != nil {
-		return false, err
+		return false, true, err
 	}
 	r.syncSchedulerAccountSnapshot(ctx, accountID)
-	return true, nil
+	return true, true, nil
 }
 
 func (r *accountRepository) ClearCindyBalanceInsufficient(ctx context.Context, accountID int64) (bool, error) {

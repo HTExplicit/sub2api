@@ -17,7 +17,7 @@ import (
 const stickySessionPrefix = "sticky_session:"
 const liveCallPrefix = "live:call:"
 const openAIRuntimeBreakerPrefix = "openai_runtime_breaker:"
-const cindyBalancePendingPrefix = "cindy_balance_pending:"
+const cindyBalancePendingPrefix = "cindy_balance_pending:v2:"
 const openAIRuntimeBreakerHalfOpenRetention = 5 * time.Minute
 
 type gatewayCache struct {
@@ -162,16 +162,41 @@ func cindyBalancePendingKey(accountID int64) string {
 	return cindyBalancePendingPrefix + strconv.FormatInt(accountID, 10)
 }
 
-func (c *gatewayCache) MarkCindyBalancePending(ctx context.Context, accountID int64) error {
+func (c *gatewayCache) MarkCindyBalancePending(ctx context.Context, accountID int64, credentialsFingerprint string) error {
 	if c == nil || c.rdb == nil {
 		return errors.New("gateway cache unavailable")
 	}
 	if accountID <= 0 {
 		return errors.New("invalid Cindy balance pending account")
 	}
+	credentialsFingerprint = service.NormalizeCindyCredentialsFingerprint(credentialsFingerprint)
+	if credentialsFingerprint == "" {
+		return errors.New("invalid Cindy balance credential fingerprint")
+	}
 	// A pending exact budget signal must survive process restarts and must not
 	// expire before the corresponding database marker is committed.
-	return c.rdb.Set(ctx, cindyBalancePendingKey(accountID), "1", 0).Err()
+	return c.rdb.Set(ctx, cindyBalancePendingKey(accountID), credentialsFingerprint, 0).Err()
+}
+
+func (c *gatewayCache) GetCindyBalancePendingFingerprint(ctx context.Context, accountID int64) (string, error) {
+	if c == nil || c.rdb == nil {
+		return "", errors.New("gateway cache unavailable")
+	}
+	if accountID <= 0 {
+		return "", errors.New("invalid Cindy balance pending account")
+	}
+	value, err := c.rdb.Get(ctx, cindyBalancePendingKey(accountID)).Result()
+	if errors.Is(err, redis.Nil) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	value = service.NormalizeCindyCredentialsFingerprint(value)
+	if value == "" {
+		return "", errors.New("invalid Cindy balance pending fingerprint")
+	}
+	return value, nil
 }
 
 func (c *gatewayCache) HasCindyBalancePendingBatch(ctx context.Context, accountIDs []int64) (map[int64]bool, error) {
@@ -209,6 +234,36 @@ func (c *gatewayCache) ClearCindyBalancePending(ctx context.Context, accountID i
 		return errors.New("invalid Cindy balance pending account")
 	}
 	return c.rdb.Del(ctx, cindyBalancePendingKey(accountID)).Err()
+}
+
+var clearCindyBalancePendingIfFingerprintMatchesScript = redis.NewScript(`
+	if redis.call('GET', KEYS[1]) ~= ARGV[1] then
+		return 0
+	end
+	return redis.call('DEL', KEYS[1])
+`)
+
+func (c *gatewayCache) ClearCindyBalancePendingIfFingerprintMatches(
+	ctx context.Context,
+	accountID int64,
+	credentialsFingerprint string,
+) error {
+	if c == nil || c.rdb == nil {
+		return errors.New("gateway cache unavailable")
+	}
+	if accountID <= 0 {
+		return errors.New("invalid Cindy balance pending account")
+	}
+	credentialsFingerprint = service.NormalizeCindyCredentialsFingerprint(credentialsFingerprint)
+	if credentialsFingerprint == "" {
+		return errors.New("invalid Cindy balance credential fingerprint")
+	}
+	return clearCindyBalancePendingIfFingerprintMatchesScript.Run(
+		ctx,
+		c.rdb,
+		[]string{cindyBalancePendingKey(accountID)},
+		credentialsFingerprint,
+	).Err()
 }
 
 func openAIRuntimeBreakerScope(model string) string {

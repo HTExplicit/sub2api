@@ -4,15 +4,25 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+func newCindyBalanceProbeResponse(status int, contentType, body string) *http.Response {
+	return &http.Response{
+		StatusCode: status,
+		Header:     http.Header{"Content-Type": []string{contentType}},
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+}
 
 func TestProbeCindyBalanceRecognizesHTTPAndInBandExhaustion(t *testing.T) {
 	for _, tc := range []struct {
@@ -29,13 +39,13 @@ func TestProbeCindyBalanceRecognizesHTTPAndInBandExhaustion(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := &cindyRateLimitAccountRepoStub{}
 			rateLimitService := NewRateLimitService(repo, nil, nil, nil, nil)
+			upstream := &httpUpstreamRecorder{responses: []*http.Response{
+				newCindyBalanceProbeResponse(tc.status, "application/json", tc.body),
+				newCindyBalanceProbeResponse(tc.status, "application/json", tc.body),
+			}}
 			gateway := &OpenAIGatewayService{
 				rateLimitService: rateLimitService,
-				httpUpstream: &httpUpstreamRecorder{resp: &http.Response{
-					StatusCode: tc.status,
-					Header:     make(http.Header),
-					Body:       io.NopCloser(strings.NewReader(tc.body)),
-				}},
+				httpUpstream:     upstream,
 			}
 			rateLimitService.SetAccountRuntimeBlocker(gateway)
 			account := newCindyRateLimitAccount(8551, true)
@@ -43,8 +53,118 @@ func TestProbeCindyBalanceRecognizesHTTPAndInBandExhaustion(t *testing.T) {
 			require.Equal(t, cindyBalanceRecheckExhausted, gateway.probeCindyBalance(context.Background(), account))
 			require.Equal(t, 1, repo.markCalls)
 			require.True(t, gateway.isOpenAIAccountRuntimeBlocked(account))
+			require.Len(t, upstream.bodies, len(cindyBalanceRecheckModels))
 		})
 	}
+}
+
+func TestProbeCindyBalanceDoesNotPersistWhenSecondControlModelSucceeds(t *testing.T) {
+	const completed = `{"id":"resp_probe","object":"response","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"OK"}]}],"usage":{"input_tokens":3,"output_tokens":1,"total_tokens":4}}`
+	repo := &cindyRateLimitAccountRepoStub{}
+	rateLimitService := NewRateLimitService(repo, nil, nil, nil, nil)
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		newCindyBalanceProbeResponse(http.StatusTooManyRequests, "application/json", exactCindyBudgetExceededBody),
+		newCindyBalanceProbeResponse(http.StatusOK, "application/json", completed),
+	}}
+	gateway := &OpenAIGatewayService{rateLimitService: rateLimitService, httpUpstream: upstream}
+	rateLimitService.SetAccountRuntimeBlocker(gateway)
+	account := newCindyRateLimitAccount(8555, true)
+
+	require.Equal(t, cindyBalanceRecheckSuccess, gateway.probeCindyBalance(context.Background(), account))
+	require.Zero(t, repo.markCalls)
+	require.Nil(t, account.CindyBalanceInsufficientAt)
+	require.False(t, gateway.isOpenAIAccountRuntimeBlocked(account))
+	require.Len(t, upstream.bodies, len(cindyBalanceRecheckModels))
+	models := make([]string, 0, len(upstream.bodies))
+	for _, body := range upstream.bodies {
+		var request struct {
+			Model string `json:"model"`
+		}
+		require.NoError(t, json.Unmarshal(body, &request))
+		models = append(models, request.Model)
+	}
+	require.Equal(t, cindyBalanceRecheckModels[:], models)
+}
+
+func TestProbeCindyBalanceRequiresSecondControlModelExactExhaustion(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		second      *http.Response
+		wantOutcome cindyBalanceRecheckOutcome
+	}{
+		{
+			name:        "ordinary error",
+			second:      newCindyBalanceProbeResponse(http.StatusBadRequest, "application/json", "{\"error\":{\"type\":\"invalid_request_error\"}}"),
+			wantOutcome: cindyBalanceRecheckOther,
+		},
+		{
+			name:        "invalid success",
+			second:      newCindyBalanceProbeResponse(http.StatusOK, "application/json", `{}`),
+			wantOutcome: cindyBalanceRecheckOther,
+		},
+		{
+			name:        "server failure",
+			second:      newCindyBalanceProbeResponse(http.StatusServiceUnavailable, "application/json", `{}`),
+			wantOutcome: cindyBalanceRecheckServerFailure,
+		},
+		{
+			name: "network read failure",
+			second: &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       passthroughErrReadCloser{err: io.ErrUnexpectedEOF},
+			},
+			wantOutcome: cindyBalanceRecheckNetworkFailure,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &cindyRateLimitAccountRepoStub{}
+			store := newCindyBalancePendingStoreStub()
+			rateLimit := NewRateLimitService(repo, nil, nil, nil, nil)
+			rateLimit.SetCindyBalancePendingStore(store)
+			gateway := &OpenAIGatewayService{
+				cache:            store,
+				rateLimitService: rateLimit,
+				httpUpstream: &httpUpstreamRecorder{responses: []*http.Response{
+					newCindyBalanceProbeResponse(http.StatusTooManyRequests, "application/json", exactCindyBudgetExceededBody),
+					tc.second,
+				}},
+			}
+			rateLimit.SetAccountRuntimeBlocker(gateway)
+			account := newCindyRateLimitAccount(8558, true)
+
+			require.Equal(t, tc.wantOutcome, gateway.probeCindyBalance(context.Background(), account))
+			require.Zero(t, repo.markCalls)
+			require.Nil(t, account.CindyBalanceInsufficientAt)
+			require.False(t, store.isPending(account.ID))
+			require.False(t, gateway.isOpenAIAccountRuntimeBlocked(account))
+		})
+	}
+}
+
+func TestExactCindyBudgetSignalSchedulesConfirmationWithoutImmediateMarker(t *testing.T) {
+	const completed = `{"id":"resp_probe","object":"response","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"OK"}]}],"usage":{"input_tokens":3,"output_tokens":1,"total_tokens":4}}`
+	repo := &cindyRateLimitAccountRepoStub{}
+	rateLimitService := NewRateLimitService(repo, nil, nil, nil, nil)
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		newCindyBalanceProbeResponse(http.StatusOK, "application/json", completed),
+	}}
+	gateway := &OpenAIGatewayService{rateLimitService: rateLimitService, httpUpstream: upstream}
+	rateLimitService.SetAccountRuntimeBlocker(gateway)
+	account := newCindyRateLimitAccount(8556, true)
+
+	require.True(t, gateway.handleOpenAIAccountUpstreamError(
+		context.Background(), account, http.StatusTooManyRequests, http.Header{},
+		[]byte(exactCindyBudgetExceededBody), "openai/gpt-5.6-sol",
+	))
+	require.Zero(t, repo.markCalls, "the triggering event must not write the durable marker")
+	require.Nil(t, account.CindyBalanceInsufficientAt)
+	require.False(t, gateway.isOpenAIAccountRuntimeBlocked(account))
+	require.Eventually(t, func() bool {
+		return gateway.cindyBalanceRecheck != nil && gateway.cindyBalanceRecheck.pending.Load() == 0
+	}, time.Second, time.Millisecond)
+	require.Zero(t, repo.markCalls)
+	require.Len(t, upstream.bodies, 1)
 }
 
 func TestProbeCindyBalanceRejectsTerminalShapesOutsideHTTP200(t *testing.T) {
@@ -117,6 +237,38 @@ func TestProbeCindyBalanceRequiresProtocolValidCompletedResponse(t *testing.T) {
 	}
 }
 
+func TestProbeCindyBalanceRejectsConflictingOrDuplicateSSETerminals(t *testing.T) {
+	completed := `{"type":"response.completed","response":{"id":"resp_probe","object":"response","status":"completed","output":[{"type":"message"}],"usage":{"input_tokens":1,"output_tokens":1}}}`
+	exhausted := `{"type":"response.failed","response":{"error":{"type":"budget_exceeded","code":"429"}}}`
+	for _, tc := range []struct {
+		name   string
+		events []string
+	}{
+		{name: "exhausted then completed", events: []string{exhausted, completed}},
+		{name: "completed then exhausted", events: []string{completed, exhausted}},
+		{name: "duplicate exhausted", events: []string{exhausted, exhausted}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var body strings.Builder
+			for _, event := range tc.events {
+				body.WriteString("data: ")
+				body.WriteString(event)
+				body.WriteString("\n\n")
+			}
+			gateway := &OpenAIGatewayService{httpUpstream: &httpUpstreamRecorder{resp: newCindyBalanceProbeResponse(
+				http.StatusOK,
+				"text/event-stream",
+				body.String(),
+			)}}
+			require.Equal(t, cindyBalanceRecheckOther, gateway.probeCindyBalanceModel(
+				context.Background(),
+				newCindyRateLimitAccount(8557, true),
+				cindyBalanceRecheckModels[0],
+			))
+		})
+	}
+}
+
 func TestCindyBalanceRecheckMalformedHTTP200UsesFailureBackoff(t *testing.T) {
 	now := time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)
 	gateway := &OpenAIGatewayService{
@@ -161,6 +313,160 @@ func TestCindyBalanceRecheckCoordinatorSingleflightAndSuccessCooldown(t *testing
 	require.False(t, coordinator.schedule(account), "success must cool rechecks for 24h")
 	now = now.Add(cindyBalanceRecheckSuccessCooldown + time.Second)
 	require.True(t, coordinator.schedule(account))
+}
+
+func TestCindyBalanceExactConfirmationBypassesSuccessCooldownOnly(t *testing.T) {
+	now := time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)
+	var calls atomic.Int32
+	coordinator := newCindyBalanceRecheckCoordinator(func(context.Context, *Account) cindyBalanceRecheckOutcome {
+		calls.Add(1)
+		return cindyBalanceRecheckSuccess
+	})
+	coordinator.now = func() time.Time { return now }
+	account := newCindyRateLimitAccount(8602, true)
+
+	require.True(t, coordinator.schedule(account))
+	require.Eventually(t, func() bool { return coordinator.pending.Load() == 0 }, time.Second, time.Millisecond)
+	require.Equal(t, int32(1), calls.Load())
+	require.False(t, coordinator.schedule(account), "ambiguous rechecks must honor the 24h success cooldown")
+	require.True(t, coordinator.scheduleExact(account), "an exact signal must bypass a prior ambiguous cooldown")
+	require.Eventually(t, func() bool { return coordinator.pending.Load() == 0 }, time.Second, time.Millisecond)
+	require.Equal(t, int32(2), calls.Load())
+}
+
+func TestCindyBalanceExactConfirmationPreservesSingleflightAndBreaker(t *testing.T) {
+	now := time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)
+	release := make(chan struct{})
+	started := make(chan struct{}, 1)
+	coordinator := newCindyBalanceRecheckCoordinator(func(context.Context, *Account) cindyBalanceRecheckOutcome {
+		started <- struct{}{}
+		<-release
+		return cindyBalanceRecheckNetworkFailure
+	})
+	coordinator.now = func() time.Time { return now }
+	account := newCindyRateLimitAccount(8603, true)
+
+	require.True(t, coordinator.scheduleExact(account))
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("initial recheck did not start")
+	}
+	require.False(t, coordinator.scheduleExact(account), "concurrent exact signals must coalesce")
+	close(release)
+	require.Eventually(t, func() bool { return coordinator.pending.Load() == 0 }, time.Second, time.Millisecond)
+	require.False(t, coordinator.scheduleExact(account), "exact confirmation must not bypass the global network breaker")
+}
+
+func TestCindyBalanceExactConfirmationQueuesBehindAmbiguousInFlight(t *testing.T) {
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	var calls atomic.Int32
+	coordinator := newCindyBalanceRecheckCoordinator(func(context.Context, *Account) cindyBalanceRecheckOutcome {
+		call := calls.Add(1)
+		if call == 1 {
+			close(firstStarted)
+			<-releaseFirst
+		}
+		return cindyBalanceRecheckSuccess
+	})
+	account := newCindyRateLimitAccount(8604, true)
+
+	require.True(t, coordinator.schedule(account))
+	select {
+	case <-firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("ambiguous recheck did not start")
+	}
+	require.True(t, coordinator.scheduleExact(account), "the first exact signal must queue one priority follow-up")
+	require.False(t, coordinator.scheduleExact(account), "additional exact signals must coalesce into the queued follow-up")
+	close(releaseFirst)
+	require.Eventually(t, func() bool {
+		return calls.Load() == 2 && coordinator.pending.Load() == 0
+	}, time.Second, time.Millisecond)
+}
+
+func TestCindyBalanceQueuedExactIsDiscardedAfterInFlightConfirmation(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var calls atomic.Int32
+	coordinator := newCindyBalanceRecheckCoordinator(func(context.Context, *Account) cindyBalanceRecheckOutcome {
+		calls.Add(1)
+		close(started)
+		<-release
+		return cindyBalanceRecheckExhausted
+	})
+	account := newCindyRateLimitAccount(8605, true)
+
+	require.True(t, coordinator.schedule(account))
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("ambiguous recheck did not start")
+	}
+	require.True(t, coordinator.scheduleExact(account))
+	close(release)
+	require.Eventually(t, func() bool { return coordinator.pending.Load() == 0 }, time.Second, time.Millisecond)
+	require.Equal(t, int32(1), calls.Load(), "an already confirmed marker must not trigger another paid dual probe")
+}
+
+func TestCindyBalanceExactRotationQueuesNewCredentialGeneration(t *testing.T) {
+	oldAccount := newCindyRateLimitAccount(8606, true)
+	oldAccount.Credentials["api_key"] = "old-key"
+	newAccount := *oldAccount
+	newAccount.Credentials = map[string]any{
+		"api_key":  "new-key",
+		"base_url": oldAccount.Credentials["base_url"],
+	}
+	currentFingerprint, err := CindyAccountIdentityFingerprint(
+		newAccount.Platform,
+		newAccount.Type,
+		newAccount.Credentials,
+	)
+	require.NoError(t, err)
+
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	var calls atomic.Int32
+	var marks atomic.Int32
+	var keysMu sync.Mutex
+	keys := make([]string, 0, 2)
+	coordinator := newCindyBalanceRecheckCoordinator(func(_ context.Context, account *Account) cindyBalanceRecheckOutcome {
+		call := calls.Add(1)
+		keysMu.Lock()
+		keys = append(keys, account.GetOpenAIApiKey())
+		keysMu.Unlock()
+		if call == 1 {
+			close(firstStarted)
+			<-releaseFirst
+		}
+		fingerprint, fingerprintErr := CindyAccountIdentityFingerprint(
+			account.Platform,
+			account.Type,
+			account.Credentials,
+		)
+		if fingerprintErr == nil && fingerprint == currentFingerprint {
+			marks.Add(1)
+		}
+		return cindyBalanceRecheckExhausted
+	})
+
+	require.True(t, coordinator.scheduleExact(oldAccount))
+	select {
+	case <-firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("old credential confirmation did not start")
+	}
+	require.True(t, coordinator.scheduleExact(&newAccount), "new credential generation must queue")
+	require.False(t, coordinator.scheduleExact(&newAccount), "same new generation must coalesce")
+	close(releaseFirst)
+	require.Eventually(t, func() bool {
+		return calls.Load() == 2 && coordinator.pending.Load() == 0
+	}, time.Second, time.Millisecond)
+	require.Equal(t, int32(1), marks.Load(), "only the current credential generation may mark")
+	keysMu.Lock()
+	require.Equal(t, []string{"old-key", "new-key"}, keys)
+	keysMu.Unlock()
 }
 
 func TestCindyBalanceRecheckCoordinatorBoundsConcurrencyAndBatch(t *testing.T) {

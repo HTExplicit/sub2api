@@ -2182,26 +2182,10 @@ func (s *AccountTestService) markCindyBalanceInsufficientFromTest(ctx context.Co
 		}
 		return true
 	}
-	repo, ok := s.accountRepo.(CindyBalanceAccountRepository)
-	if !ok {
-		log.Printf("cindy balance repository unavailable during account test: account_id=%d", account.ID)
-		return true
-	}
-
-	stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
-	defer cancel()
-	observedAt := time.Now().UTC()
-	changed, err := repo.MarkCindyBalanceInsufficient(stateCtx, account.ID, observedAt)
-	if err != nil {
-		log.Printf("failed to mark Cindy balance insufficient during account test: account_id=%d error=%v", account.ID, err)
-		return true
-	}
-	if account.CindyBalanceInsufficientAt == nil {
-		account.CindyBalanceInsufficientAt = &observedAt
-	}
-	if changed {
-		log.Printf("marked Cindy balance insufficient during account test: account_id=%d", account.ID)
-	}
+	// A manually initiated connection test has the same evidence boundary as a
+	// normal request. Without the gateway confirmer it must not turn one event
+	// into a permanent account marker.
+	log.Printf("Cindy budget signal observed during account test; confirmation unavailable")
 	return true
 }
 

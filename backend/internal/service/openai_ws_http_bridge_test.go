@@ -287,7 +287,7 @@ func TestProxyOpenAIWSHTTPBridgeTurnCindyBalanceWriteOrdering(t *testing.T) {
 				require.NotContains(t, string(written), "budget_exceeded")
 				require.NotContains(t, string(written), "sensitive upstream detail")
 			}
-			require.Equal(t, 1, repo.markCalls)
+			require.Equal(t, 0, repo.markCalls, "the first exact signal must wait for independent confirmation")
 		})
 	}
 }

@@ -16,14 +16,15 @@ import (
 
 type cindyBalancePendingStoreStub struct {
 	*stubGatewayCache
-	mu        sync.Mutex
-	pending   map[int64]bool
-	markErr   error
-	hasErr    error
-	hasErrs   []error
-	clearErr  error
-	hasCalls  int
-	lastBatch int
+	mu           sync.Mutex
+	pending      map[int64]bool
+	fingerprints map[int64]string
+	markErr      error
+	hasErr       error
+	hasErrs      []error
+	clearErr     error
+	hasCalls     int
+	lastBatch    int
 }
 
 type cindyPendingOrderRepo struct {
@@ -41,6 +42,59 @@ type cindyRecoveryRetryRepo struct {
 	firstMarkErr error
 	retryStarted chan struct{}
 	retryRelease chan struct{}
+}
+
+type cindyCredentialGuardRepo struct {
+	cindyRateLimitAccountRepoStub
+	guardMu            sync.Mutex
+	currentCredentials map[string]any
+	currentIsCindy     bool
+	remainingErrors    int
+	conditionalCalls   int
+	conditionalMarked  bool
+}
+
+func (r *cindyCredentialGuardRepo) MarkCindyBalanceInsufficientIfCredentialsMatch(
+	_ context.Context,
+	_ int64,
+	_ time.Time,
+	credentialsFingerprint string,
+) (bool, bool, error) {
+	r.guardMu.Lock()
+	defer r.guardMu.Unlock()
+	r.conditionalCalls++
+	if r.remainingErrors > 0 {
+		r.remainingErrors--
+		return false, true, errors.New("database unavailable")
+	}
+	if !r.currentIsCindy {
+		return false, false, nil
+	}
+	currentFingerprint, err := CindyCredentialsFingerprint(r.currentCredentials)
+	if err != nil {
+		return false, false, err
+	}
+	if currentFingerprint != credentialsFingerprint {
+		return false, false, nil
+	}
+	if r.conditionalMarked {
+		return false, true, nil
+	}
+	r.conditionalMarked = true
+	return true, true, nil
+}
+
+func (r *cindyCredentialGuardRepo) setCurrent(credentials map[string]any, isCindy bool) {
+	r.guardMu.Lock()
+	r.currentCredentials = credentials
+	r.currentIsCindy = isCindy
+	r.guardMu.Unlock()
+}
+
+func (r *cindyCredentialGuardRepo) state() (calls int, marked bool) {
+	r.guardMu.Lock()
+	defer r.guardMu.Unlock()
+	return r.conditionalCalls, r.conditionalMarked
 }
 
 func (r *cindyRecoveryRetryRepo) GetByID(_ context.Context, _ int64) (*Account, error) {
@@ -76,6 +130,16 @@ func (r *cindyRecoveryRetryRepo) MarkCindyBalanceInsufficient(_ context.Context,
 	return changed, nil
 }
 
+func (r *cindyRecoveryRetryRepo) MarkCindyBalanceInsufficientIfCredentialsMatch(
+	ctx context.Context,
+	accountID int64,
+	observedAt time.Time,
+	_ string,
+) (bool, bool, error) {
+	changed, err := r.MarkCindyBalanceInsufficient(ctx, accountID, observedAt)
+	return changed, true, err
+}
+
 func (r *cindyRecoveryRetryRepo) ClearCindyBalanceInsufficient(_ context.Context, _ int64) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -104,21 +168,39 @@ func (r *cindyPendingOrderRepo) MarkCindyBalanceInsufficient(ctx context.Context
 	return r.cindyRateLimitAccountRepoStub.MarkCindyBalanceInsufficient(ctx, accountID, observedAt)
 }
 
+func (r *cindyPendingOrderRepo) MarkCindyBalanceInsufficientIfCredentialsMatch(
+	ctx context.Context,
+	accountID int64,
+	observedAt time.Time,
+	_ string,
+) (bool, bool, error) {
+	changed, err := r.MarkCindyBalanceInsufficient(ctx, accountID, observedAt)
+	return changed, true, err
+}
+
 func newCindyBalancePendingStoreStub() *cindyBalancePendingStoreStub {
 	return &cindyBalancePendingStoreStub{
 		stubGatewayCache: &stubGatewayCache{},
 		pending:          make(map[int64]bool),
+		fingerprints:     make(map[int64]string),
 	}
 }
 
-func (s *cindyBalancePendingStoreStub) MarkCindyBalancePending(_ context.Context, accountID int64) error {
+func (s *cindyBalancePendingStoreStub) MarkCindyBalancePending(_ context.Context, accountID int64, credentialsFingerprint string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.markErr != nil {
 		return s.markErr
 	}
 	s.pending[accountID] = true
+	s.fingerprints[accountID] = credentialsFingerprint
 	return nil
+}
+
+func (s *cindyBalancePendingStoreStub) GetCindyBalancePendingFingerprint(_ context.Context, accountID int64) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.fingerprints[accountID], nil
 }
 
 func (s *cindyBalancePendingStoreStub) HasCindyBalancePendingBatch(_ context.Context, accountIDs []int64) (map[int64]bool, error) {
@@ -152,6 +234,24 @@ func (s *cindyBalancePendingStoreStub) ClearCindyBalancePending(_ context.Contex
 		return s.clearErr
 	}
 	delete(s.pending, accountID)
+	delete(s.fingerprints, accountID)
+	return nil
+}
+
+func (s *cindyBalancePendingStoreStub) ClearCindyBalancePendingIfFingerprintMatches(
+	_ context.Context,
+	accountID int64,
+	credentialsFingerprint string,
+) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.clearErr != nil {
+		return s.clearErr
+	}
+	if s.fingerprints[accountID] == credentialsFingerprint {
+		delete(s.pending, accountID)
+		delete(s.fingerprints, accountID)
+	}
 	return nil
 }
 
@@ -170,10 +270,7 @@ func TestCindyBalancePendingSurvivesGatewayServiceRebuild(t *testing.T) {
 	rateLimit.SetAccountRuntimeBlocker(first)
 	account := newCindyRateLimitAccount(99101, true)
 
-	require.True(t, first.handleOpenAIAccountUpstreamError(
-		context.Background(), account, http.StatusTooManyRequests, http.Header{},
-		[]byte(exactCindyBudgetExceededBody), "gpt-5.6-luna",
-	))
+	require.True(t, rateLimit.handleCindyBalanceInsufficient(context.Background(), account))
 	require.True(t, store.isPending(account.ID))
 
 	// This instance has no local sentinel and models a fresh process. The shared
@@ -191,10 +288,7 @@ func TestCindyBalanceDatabaseSuccessClearsPendingMarker(t *testing.T) {
 	rateLimit.SetAccountRuntimeBlocker(gateway)
 	account := newCindyRateLimitAccount(99102, true)
 
-	require.True(t, gateway.handleOpenAIAccountUpstreamError(
-		context.Background(), account, http.StatusTooManyRequests, http.Header{},
-		[]byte(exactCindyBudgetExceededBody), "gpt-5.6-luna",
-	))
+	require.True(t, rateLimit.handleCindyBalanceInsufficient(context.Background(), account))
 	require.NotNil(t, account.CindyBalanceInsufficientAt)
 	require.False(t, store.isPending(account.ID))
 }
@@ -208,12 +302,182 @@ func TestCindyBalancePendingIsDurableBeforeDatabaseWrite(t *testing.T) {
 	rateLimit.SetAccountRuntimeBlocker(gateway)
 	account := newCindyRateLimitAccount(99107, true)
 
-	require.True(t, gateway.handleOpenAIAccountUpstreamError(
-		context.Background(), account, http.StatusTooManyRequests, http.Header{},
-		[]byte(exactCindyBudgetExceededBody), "gpt-5.6-luna",
-	))
+	require.True(t, rateLimit.handleCindyBalanceInsufficient(context.Background(), account))
 	require.True(t, repo.pendingAtMark)
 	require.False(t, store.isPending(account.ID), "DB success must clear the transitional marker")
+}
+
+func TestConfirmedCindyBalanceDoesNotCrossCredentialRotation(t *testing.T) {
+	oldCredentials := cindyCredentials()
+	oldCredentials["api_key"] = "old-fixture-key"
+	newCredentials := cindyCredentials()
+	newCredentials["api_key"] = "new-fixture-key"
+	repo := &cindyCredentialGuardRepo{currentCredentials: newCredentials, currentIsCindy: true}
+	store := newCindyBalancePendingStoreStub()
+	rateLimit := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	rateLimit.SetCindyBalancePendingStore(store)
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		newCindyBalanceProbeResponse(http.StatusTooManyRequests, "application/json", exactCindyBudgetExceededBody),
+		newCindyBalanceProbeResponse(http.StatusTooManyRequests, "application/json", exactCindyBudgetExceededBody),
+	}}
+	gateway := &OpenAIGatewayService{cache: store, rateLimitService: rateLimit, httpUpstream: upstream}
+	rateLimit.SetAccountRuntimeBlocker(gateway)
+	account := newCindyRateLimitAccount(99110, true)
+	account.Credentials = oldCredentials
+
+	require.Equal(t, cindyBalanceRecheckExhausted, gateway.probeCindyBalance(context.Background(), account))
+	calls, marked := repo.state()
+	require.Equal(t, 1, calls)
+	require.False(t, marked)
+	require.Nil(t, account.CindyBalanceInsufficientAt)
+	require.False(t, store.isPending(account.ID))
+	require.False(t, gateway.isOpenAIAccountRuntimeBlocked(account))
+}
+
+func TestCindyBalanceRuntimeBlockDoesNotCrossCredentialRotationAfterMark(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(*Account)
+	}{
+		{name: "api key", mutate: func(account *Account) {
+			account.Credentials = cindyCredentials()
+			account.Credentials["api_key"] = "new-fixture-key"
+		}},
+		{name: "account type", mutate: func(account *Account) { account.Type = AccountTypeOAuth }},
+		{name: "platform", mutate: func(account *Account) { account.Platform = PlatformAnthropic }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			credentials := cindyCredentials()
+			credentials["api_key"] = "old-fixture-key"
+			repo := &cindyCredentialGuardRepo{currentCredentials: credentials, currentIsCindy: true}
+			store := newCindyBalancePendingStoreStub()
+			rateLimit := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+			rateLimit.SetCindyBalancePendingStore(store)
+			gateway := &OpenAIGatewayService{cache: store, rateLimitService: rateLimit}
+			rateLimit.SetAccountRuntimeBlocker(gateway)
+			account := newCindyRateLimitAccount(99114, true)
+			account.Credentials = credentials
+
+			require.True(t, rateLimit.handleCindyBalanceInsufficient(context.Background(), account))
+			require.True(t, gateway.isOpenAIAccountRuntimeBlocked(account))
+
+			tc.mutate(account)
+			account.CindyBalanceInsufficientAt = nil
+			require.False(t, gateway.isOpenAIAccountRuntimeBlocked(account))
+		})
+	}
+}
+
+func TestOpenAIRuntimeFiniteBlockDoesNotCrossPlatformChange(t *testing.T) {
+	gateway := &OpenAIGatewayService{}
+	account := newCindyRateLimitAccount(99115, true)
+	gateway.BlockAccountScheduling(account, time.Now().Add(time.Hour), "rate_limit")
+	require.True(t, gateway.isOpenAIAccountRuntimeBlocked(account))
+
+	account.Platform = PlatformAnthropic
+	require.False(t, gateway.isOpenAIAccountRuntimeBlocked(account))
+}
+
+func TestCindyBalancePersistenceRetryDropsRotatedOrNonCindyCredential(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		current        map[string]any
+		currentIsCindy bool
+	}{
+		{name: "rotated key", current: func() map[string]any {
+			credentials := cindyCredentials()
+			credentials["api_key"] = "new-fixture-key"
+			return credentials
+		}(), currentIsCindy: true},
+		{name: "moved off Cindy", current: map[string]any{"base_url": "https://api.openai.com", "api_key": "new-fixture-key"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			oldCredentials := cindyCredentials()
+			oldCredentials["api_key"] = "old-fixture-key"
+			repo := &cindyCredentialGuardRepo{
+				currentCredentials: oldCredentials,
+				currentIsCindy:     true,
+				remainingErrors:    1,
+			}
+			store := newCindyBalancePendingStoreStub()
+			rateLimit := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+			rateLimit.SetCindyBalancePendingStore(store)
+			gateway := &OpenAIGatewayService{cache: store, rateLimitService: rateLimit}
+			rateLimit.SetAccountRuntimeBlocker(gateway)
+			account := newCindyRateLimitAccount(99111, true)
+			account.Credentials = oldCredentials
+
+			require.True(t, rateLimit.handleCindyBalanceInsufficient(context.Background(), account))
+			rateLimit.cindyBalancePersistMu.Lock()
+			task := rateLimit.cindyBalancePersistTasks[account.ID]
+			if task != nil {
+				task.nextAt = time.Now().Add(time.Hour)
+			}
+			rateLimit.cindyBalancePersistMu.Unlock()
+			require.NotNil(t, task)
+			repo.setCurrent(tc.current, tc.currentIsCindy)
+
+			rateLimit.runCindyBalancePersistenceTask(task)
+
+			_, marked := repo.state()
+			require.False(t, marked)
+			require.False(t, store.isPending(account.ID))
+			require.False(t, gateway.isOpenAIAccountRuntimeBlocked(account))
+			rateLimit.cindyBalancePersistMu.Lock()
+			require.Nil(t, rateLimit.cindyBalancePersistTasks[account.ID])
+			rateLimit.cindyBalancePersistMu.Unlock()
+		})
+	}
+}
+
+func TestCindyBalancePersistenceRetryReplacesOlderCredentialGeneration(t *testing.T) {
+	oldCredentials := cindyCredentials()
+	oldCredentials["api_key"] = "old-fixture-key"
+	newCredentials := cindyCredentials()
+	newCredentials["api_key"] = "new-fixture-key"
+	thirdCredentials := cindyCredentials()
+	thirdCredentials["api_key"] = "third-fixture-key"
+	repo := &cindyCredentialGuardRepo{
+		currentCredentials: oldCredentials,
+		currentIsCindy:     true,
+		remainingErrors:    2,
+	}
+	store := newCindyBalancePendingStoreStub()
+	rateLimit := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	rateLimit.SetCindyBalancePendingStore(store)
+	gateway := &OpenAIGatewayService{cache: store, rateLimitService: rateLimit}
+	rateLimit.SetAccountRuntimeBlocker(gateway)
+	account := newCindyRateLimitAccount(99112, true)
+	account.Credentials = oldCredentials
+
+	require.True(t, rateLimit.handleCindyBalanceInsufficient(context.Background(), account))
+	rateLimit.cindyBalancePersistMu.Lock()
+	oldTask := rateLimit.cindyBalancePersistTasks[account.ID]
+	oldTask.nextAt = time.Now().Add(time.Hour)
+	rateLimit.cindyBalancePersistMu.Unlock()
+	require.NotNil(t, oldTask)
+
+	account.Credentials = newCredentials
+	repo.setCurrent(newCredentials, true)
+	require.True(t, rateLimit.handleCindyBalanceInsufficient(context.Background(), account))
+	rateLimit.cindyBalancePersistMu.Lock()
+	newTask := rateLimit.cindyBalancePersistTasks[account.ID]
+	newTask.nextAt = time.Now().Add(time.Hour)
+	rateLimit.cindyBalancePersistMu.Unlock()
+	require.NotNil(t, newTask)
+	require.NotSame(t, oldTask, newTask)
+	require.NotEqual(t, oldTask.credentialsFingerprint, newTask.credentialsFingerprint)
+	require.True(t, newTask.runtimeBlock.changed, "the new retry generation must inherit ownership of the existing sentinel")
+	require.Equal(t, newTask.credentialsFingerprint, store.fingerprints[account.ID])
+
+	rateLimit.runCindyBalancePersistenceTask(oldTask)
+	require.True(t, store.isPending(account.ID), "a stale retry must not clear the newer pending generation")
+	require.True(t, gateway.isOpenAIAccountRuntimeBlocked(account))
+
+	repo.setCurrent(thirdCredentials, true)
+	rateLimit.runCindyBalancePersistenceTask(newTask)
+	require.False(t, store.isPending(account.ID))
+	require.False(t, gateway.isOpenAIAccountRuntimeBlocked(account))
 }
 
 func TestCindyBalancePendingReadErrorFailsClosedOnlyForStrictCindy(t *testing.T) {
@@ -238,6 +502,37 @@ func TestCindyBalancePendingReadErrorFailsClosedOnlyForStrictCindy(t *testing.T)
 	store.mu.Unlock()
 }
 
+func TestCindyBalancePendingFromRotatedCredentialDoesNotBlockCurrentKey(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		clearErr error
+	}{
+		{name: "stale key deleted"},
+		{name: "delete failure still does not block current key", clearErr: errors.New("redis unavailable")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newCindyBalancePendingStoreStub()
+			store.clearErr = tc.clearErr
+			account := newCindyRateLimitAccount(99113, true)
+			oldCredentials := cindyCredentials()
+			oldCredentials["api_key"] = "old-fixture-key"
+			oldFingerprint, err := CindyCredentialsFingerprint(oldCredentials)
+			require.NoError(t, err)
+			account.Credentials["api_key"] = "new-fixture-key"
+			store.pending[account.ID] = true
+			store.fingerprints[account.ID] = oldFingerprint
+			gateway := &OpenAIGatewayService{cache: store}
+
+			require.False(t, gateway.isCindyBalancePendingBlocked(context.Background(), account))
+			if tc.clearErr == nil {
+				require.False(t, store.isPending(account.ID))
+			} else {
+				require.True(t, store.isPending(account.ID), "failed cleanup may leave evidence but must not poison this request snapshot")
+			}
+		})
+	}
+}
+
 func TestCindyBalancePendingTwoThousandCandidatesUseOneBatchSnapshot(t *testing.T) {
 	store := newCindyBalancePendingStoreStub()
 	gateway := &OpenAIGatewayService{cache: store}
@@ -246,6 +541,9 @@ func TestCindyBalancePendingTwoThousandCandidatesUseOneBatchSnapshot(t *testing.
 		accounts[i] = *newCindyRateLimitAccount(int64(100000+i), true)
 	}
 	store.pending[accounts[777].ID] = true
+	fingerprint, err := CindyCredentialsFingerprint(accounts[777].Credentials)
+	require.NoError(t, err)
+	store.fingerprints[accounts[777].ID] = fingerprint
 
 	ctx := gateway.withCindyBalancePendingSnapshot(context.Background(), accounts)
 	blocked := 0
@@ -303,6 +601,9 @@ func TestAdvancedSchedulerTwoThousandCindyCandidatesUsesOnePendingBatch(t *testi
 		accounts[i].Concurrency = 1
 	}
 	store.pending[accounts[777].ID] = true
+	fingerprint, err := CindyCredentialsFingerprint(accounts[777].Credentials)
+	require.NoError(t, err)
+	store.fingerprints[accounts[777].ID] = fingerprint
 	svc := &OpenAIGatewayService{
 		accountRepo: schedulerTestOpenAIAccountRepo{accounts: accounts},
 		cache:       store,
@@ -410,10 +711,7 @@ func TestCindyBalanceBothDurableWritesFailKeepsLocalSentinel(t *testing.T) {
 	rateLimit.SetAccountRuntimeBlocker(gateway)
 	account := newCindyRateLimitAccount(99105, true)
 
-	require.True(t, gateway.handleOpenAIAccountUpstreamError(
-		context.Background(), account, http.StatusTooManyRequests, http.Header{},
-		[]byte(exactCindyBudgetExceededBody), "gpt-5.6-luna",
-	))
+	require.True(t, rateLimit.handleCindyBalanceInsufficient(context.Background(), account))
 	value, ok := gateway.openaiAccountRuntimeBlockUntil.Load(account.ID)
 	require.True(t, ok)
 	until, ok := value.(time.Time)
@@ -466,10 +764,7 @@ func newCindyRecoveryRetryFixture(t *testing.T, accountID int64) (*cindyRecovery
 	rateLimit.SetAccountRuntimeBlocker(gateway)
 	account, err := repo.GetByID(context.Background(), accountID)
 	require.NoError(t, err)
-	require.True(t, gateway.handleOpenAIAccountUpstreamError(
-		context.Background(), account, http.StatusTooManyRequests, http.Header{},
-		[]byte(exactCindyBudgetExceededBody), "gpt-5.6-luna",
-	))
+	require.True(t, rateLimit.handleCindyBalanceInsufficient(context.Background(), account))
 	require.True(t, store.isPending(accountID))
 	require.True(t, gateway.isOpenAIAccountRuntimeBlocked(account))
 
