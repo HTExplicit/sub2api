@@ -471,7 +471,7 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 			return false
 		}
 		shouldDisable := s.rateLimitService.HandleUpstreamError(stateCtx, account, statusCode, headers, responseBody)
-		if shouldDisable {
+		if shouldDisable && account.CindyBalanceInsufficientAt != nil {
 			s.BlockAccountScheduling(account, time.Time{}, "cindy_balance_insufficient")
 		}
 		return shouldDisable
@@ -603,6 +603,10 @@ func (s *OpenAIGatewayService) BlockAccountScheduling(account *Account, until ti
 	if s == nil || !isOpenAIAccount(account) {
 		return
 	}
+	if until.IsZero() && reason == "cindy_balance_insufficient" {
+		_ = s.blockCindyBalanceScheduling(account)
+		return
+	}
 	mu := s.openAIAccountRuntimeBlockLock(account.ID)
 	mu.Lock()
 	defer mu.Unlock()
@@ -616,6 +620,69 @@ func (s *OpenAIGatewayService) BlockAccountScheduling(account *Account, until ti
 	if account.Type != AccountTypeAPIKey {
 		s.persistOpenAIRuntimeBreaker(context.Background(), account.ID, "", reason, blockUntil)
 	}
+}
+
+func (s *OpenAIGatewayService) blockCindyBalanceScheduling(account *Account) cindyBalanceRuntimeBlockToken {
+	if s == nil || account == nil ||
+		!IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		return cindyBalanceRuntimeBlockToken{}
+	}
+	fingerprint, err := CindyAccountIdentityFingerprint(account.Platform, account.Type, account.Credentials)
+	if err != nil {
+		return cindyBalanceRuntimeBlockToken{}
+	}
+	mu := s.openAIAccountRuntimeBlockLock(account.ID)
+	mu.Lock()
+	defer mu.Unlock()
+	token := cindyBalanceRuntimeBlockToken{}
+	if previous, ok := s.openaiAccountRuntimeBlockUntil.Load(account.ID); ok {
+		if previousUntil, valid := previous.(time.Time); valid {
+			if previousUntil.IsZero() {
+				storedFingerprint, _ := s.cindyBalanceRuntimeBlockFingerprint.Load(account.ID)
+				if storedFingerprint != fingerprint {
+					token.generation = s.openaiAccountRuntimeBlockSequence.Add(1)
+					token.changed = true
+					s.openaiAccountRuntimeBlockGeneration.Store(account.ID, token.generation)
+					s.cindyBalanceRuntimeBlockFingerprint.Store(account.ID, fingerprint)
+					return token
+				}
+				return token
+			}
+			token.hadPrevious = true
+			token.previous = previousUntil
+		}
+	}
+	token.generation, token.changed = s.blockAccountSchedulingLocked(account, time.Time{}, "cindy_balance_insufficient")
+	if token.changed {
+		s.cindyBalanceRuntimeBlockFingerprint.Store(account.ID, fingerprint)
+	}
+	return token
+}
+
+func (s *OpenAIGatewayService) clearCindyBalanceSchedulingBlock(accountID int64, token cindyBalanceRuntimeBlockToken) {
+	if s == nil || accountID <= 0 || !token.changed {
+		return
+	}
+	mu := s.openAIAccountRuntimeBlockLock(accountID)
+	mu.Lock()
+	defer mu.Unlock()
+	generationValue, ok := s.openaiAccountRuntimeBlockGeneration.Load(accountID)
+	currentGeneration, valid := generationValue.(uint64)
+	if !ok || !valid || currentGeneration != token.generation {
+		return
+	}
+	currentValue, ok := s.openaiAccountRuntimeBlockUntil.Load(accountID)
+	current, valid := currentValue.(time.Time)
+	if !ok || !valid || !current.IsZero() {
+		return
+	}
+	if token.hadPrevious && token.previous.After(time.Now()) {
+		s.openaiAccountRuntimeBlockUntil.Store(accountID, token.previous)
+	} else {
+		s.openaiAccountRuntimeBlockUntil.Delete(accountID)
+	}
+	s.cindyBalanceRuntimeBlockFingerprint.Delete(accountID)
+	s.openaiAccountRuntimeBlockGeneration.Store(accountID, s.openaiAccountRuntimeBlockSequence.Add(1))
 }
 
 func (s *OpenAIGatewayService) openAIRuntimeBreakerStore() (OpenAIRuntimeBreakerStore, bool) {
@@ -701,10 +768,47 @@ func (s *OpenAIGatewayService) isCindyBalancePendingBlocked(ctx context.Context,
 	if state == cindyBalancePendingSnapshotReadFailed {
 		return true
 	}
+	if state == cindyBalancePendingSnapshotValidatedBlocked {
+		return true
+	}
+	store, ok := s.cindyBalancePendingStore()
+	if !ok {
+		snapshot.recordState(account.ID, cindyBalancePendingSnapshotReadFailed)
+		return true
+	}
+	stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+	pendingFingerprint, pendingErr := store.GetCindyBalancePendingFingerprint(stateCtx, account.ID)
+	cancel()
+	currentFingerprint, fingerprintErr := CindyAccountIdentityFingerprint(
+		account.Platform,
+		account.Type,
+		account.Credentials,
+	)
+	if pendingErr != nil || fingerprintErr != nil {
+		snapshot.recordState(account.ID, cindyBalancePendingSnapshotReadFailed)
+		return true
+	}
+	if pendingFingerprint == "" {
+		snapshot.recordState(account.ID, cindyBalancePendingSnapshotClear)
+		return false
+	}
+	if pendingFingerprint != currentFingerprint {
+		clearCtx, clearCancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+		_ = store.ClearCindyBalancePendingIfFingerprintMatches(clearCtx, account.ID, pendingFingerprint)
+		clearCancel()
+		snapshot.recordState(account.ID, cindyBalancePendingSnapshotClear)
+		return false
+	}
+	snapshot.recordState(account.ID, cindyBalancePendingSnapshotValidatedBlocked)
 	// Rebuild the in-memory DB retry after a service/process restart. The
 	// request-scoped snapshot remains authoritative for the whole selection.
 	if account.CindyBalanceInsufficientAt == nil && s.rateLimitService != nil {
-		s.rateLimitService.scheduleCindyBalancePersistenceRetry(account, time.Now().UTC())
+		s.rateLimitService.scheduleCindyBalancePersistenceRetry(
+			account,
+			time.Now().UTC(),
+			pendingFingerprint,
+			cindyBalanceRuntimeBlockToken{},
+		)
 	}
 	return true
 }
@@ -832,6 +936,7 @@ func (s *OpenAIGatewayService) ClearAccountSchedulingBlock(accountID int64) {
 	mu.Lock()
 	defer mu.Unlock()
 	s.openaiAccountRuntimeBlockUntil.Delete(accountID)
+	s.cindyBalanceRuntimeBlockFingerprint.Delete(accountID)
 	s.openaiAccountRuntimeBlockGeneration.Store(accountID, s.openaiAccountRuntimeBlockSequence.Add(1))
 	state := s.getOpenAIAccountModelTransientState()
 	if state != nil {
@@ -853,28 +958,61 @@ func (s *OpenAIGatewayService) clearOpenAIAccountSchedulingBlockScope(accountID 
 		}
 	}
 	s.openaiAccountRuntimeBlockUntil.Delete(accountID)
+	s.cindyBalanceRuntimeBlockFingerprint.Delete(accountID)
 	s.openaiAccountRuntimeBlockGeneration.Store(accountID, s.openaiAccountRuntimeBlockSequence.Add(1))
 	mu.Unlock()
 	s.clearOpenAIRuntimeBreaker(context.Background(), accountID, "", owner)
 }
 
 func (s *OpenAIGatewayService) isOpenAIAccountRuntimeBlocked(account *Account) bool {
-	if s == nil || !isOpenAIAccount(account) {
+	if s == nil || account == nil || account.ID <= 0 {
 		return false
 	}
+	isOpenAI := isOpenAIAccount(account)
 	mu := s.openAIAccountRuntimeBlockLock(account.ID)
 	mu.Lock()
 	value, ok := s.openaiAccountRuntimeBlockUntil.Load(account.ID)
+	if !isOpenAI {
+		if ok {
+			cooldownUntil, valid := value.(time.Time)
+			_, fingerprintLoaded := s.cindyBalanceRuntimeBlockFingerprint.Load(account.ID)
+			if valid && cooldownUntil.IsZero() && fingerprintLoaded {
+				s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
+				s.cindyBalanceRuntimeBlockFingerprint.Delete(account.ID)
+				s.openaiAccountRuntimeBlockGeneration.Store(account.ID, s.openaiAccountRuntimeBlockSequence.Add(1))
+			}
+		}
+		mu.Unlock()
+		return false
+	}
 	if ok {
 		cooldownUntil, valid := value.(time.Time)
 		if !valid {
 			s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
+			s.cindyBalanceRuntimeBlockFingerprint.Delete(account.ID)
 			s.openaiAccountRuntimeBlockGeneration.Store(account.ID, s.openaiAccountRuntimeBlockSequence.Add(1))
-		} else if cooldownUntil.IsZero() || time.Now().Before(cooldownUntil) {
+		} else if cooldownUntil.IsZero() {
+			storedFingerprint, fingerprintLoaded := s.cindyBalanceRuntimeBlockFingerprint.Load(account.ID)
+			currentFingerprint, fingerprintErr := CindyAccountIdentityFingerprint(
+				account.Platform,
+				account.Type,
+				account.Credentials,
+			)
+			if fingerprintLoaded && fingerprintErr == nil && storedFingerprint != currentFingerprint {
+				s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
+				s.cindyBalanceRuntimeBlockFingerprint.Delete(account.ID)
+				s.openaiAccountRuntimeBlockGeneration.Store(account.ID, s.openaiAccountRuntimeBlockSequence.Add(1))
+				mu.Unlock()
+				return false
+			}
+			mu.Unlock()
+			return true
+		} else if time.Now().Before(cooldownUntil) {
 			mu.Unlock()
 			return true
 		} else {
 			s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
+			s.cindyBalanceRuntimeBlockFingerprint.Delete(account.ID)
 			s.openaiAccountRuntimeBlockGeneration.Store(account.ID, s.openaiAccountRuntimeBlockSequence.Add(1))
 		}
 	}

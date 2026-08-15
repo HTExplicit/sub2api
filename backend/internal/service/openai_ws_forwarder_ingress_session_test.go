@@ -235,7 +235,7 @@ func TestOpenAIWSIngressCindyBalanceTerminalWriteOrdering(t *testing.T) {
 				require.NotContains(t, string(payload), "budget_exceeded")
 				require.NotContains(t, string(payload), "sensitive upstream detail")
 			}
-			require.Equal(t, 1, repo.markCalls)
+			require.Equal(t, 0, repo.markCalls, "the first exact signal must wait for independent confirmation")
 		})
 	}
 }

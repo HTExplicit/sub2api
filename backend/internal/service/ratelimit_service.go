@@ -45,6 +45,18 @@ type AccountRuntimeBlocker interface {
 	ClearAccountSchedulingBlock(accountID int64)
 }
 
+type cindyBalanceRuntimeBlockToken struct {
+	generation  uint64
+	changed     bool
+	hadPrevious bool
+	previous    time.Time
+}
+
+type cindyBalanceOwnedRuntimeBlocker interface {
+	blockCindyBalanceScheduling(account *Account) cindyBalanceRuntimeBlockToken
+	clearCindyBalanceSchedulingBlock(accountID int64, token cindyBalanceRuntimeBlockToken)
+}
+
 // SuccessfulTestRecoveryResult 表示测试成功后恢复了哪些运行时状态。
 type SuccessfulTestRecoveryResult struct {
 	ClearedError     bool
@@ -128,13 +140,21 @@ func (s *RateLimitService) SetCindyBalancePendingStore(store CindyBalancePending
 	s.cindyBalancePendingStore = store
 }
 
-func (s *RateLimitService) clearCindyBalancePending(ctx context.Context, accountID int64) error {
+func (s *RateLimitService) clearCindyBalancePendingIfFingerprintMatches(
+	ctx context.Context,
+	accountID int64,
+	credentialsFingerprint string,
+) error {
 	if s == nil || s.cindyBalancePendingStore == nil || accountID <= 0 {
 		return nil
 	}
 	stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	defer cancel()
-	return s.cindyBalancePendingStore.ClearCindyBalancePending(stateCtx, accountID)
+	return s.cindyBalancePendingStore.ClearCindyBalancePendingIfFingerprintMatches(
+		stateCtx,
+		accountID,
+		credentialsFingerprint,
+	)
 }
 
 func (s *RateLimitService) IsOpenAIAdvancedSchedulerStickyWeightedEnabled(ctx context.Context) bool {
@@ -157,6 +177,26 @@ func (s *RateLimitService) notifyAccountSchedulingBlockCleared(accountID int64) 
 		return
 	}
 	s.runtimeBlocker.ClearAccountSchedulingBlock(accountID)
+}
+
+func (s *RateLimitService) blockCindyBalanceRuntime(account *Account) cindyBalanceRuntimeBlockToken {
+	if s == nil || account == nil || s.runtimeBlocker == nil {
+		return cindyBalanceRuntimeBlockToken{}
+	}
+	if blocker, ok := s.runtimeBlocker.(cindyBalanceOwnedRuntimeBlocker); ok {
+		return blocker.blockCindyBalanceScheduling(account)
+	}
+	s.notifyAccountSchedulingBlocked(account, time.Time{}, "cindy_balance_insufficient")
+	return cindyBalanceRuntimeBlockToken{}
+}
+
+func (s *RateLimitService) clearCindyBalanceRuntimeBlock(accountID int64, token cindyBalanceRuntimeBlockToken) {
+	if s == nil || s.runtimeBlocker == nil || !token.changed {
+		return
+	}
+	if blocker, ok := s.runtimeBlocker.(cindyBalanceOwnedRuntimeBlocker); ok {
+		blocker.clearCindyBalanceSchedulingBlock(accountID, token)
+	}
 }
 
 // ApplyAccountSchedulingThreshold evaluates admin-configured per-platform
@@ -291,7 +331,11 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 	ctx = withTempUnschedulableModel(ctx, requestedModel)
 	customErrorCodesEnabled := account.IsCustomErrorCodesEnabled()
 	if ClassifyCindyBalanceInsufficient(account, statusCode, responseBody) != CindyBalanceSignalNone {
-		return s.handleCindyBalanceInsufficient(ctx, account)
+		// An exact event is authoritative for request-level failover, but not for
+		// permanent account exclusion. Confirm it against independent control
+		// models before the durable marker is written.
+		s.scheduleExactCindyBalanceConfirmation(account)
+		return true
 	}
 	// Cindy reports actual budget exhaustion as the structured 429 handled
 	// above. Its generic 402 responses must not persist an account-level balance
@@ -524,13 +568,33 @@ func (s *RateLimitService) handleCindyBalanceInsufficient(ctx context.Context, a
 	if account == nil {
 		return true
 	}
+	credentialsFingerprint, err := CindyAccountIdentityFingerprint(
+		account.Platform,
+		account.Type,
+		account.Credentials,
+	)
+	if err != nil {
+		return true
+	}
+	return s.handleCindyBalanceInsufficientForCredentials(ctx, account, credentialsFingerprint)
+}
+
+func (s *RateLimitService) handleCindyBalanceInsufficientForCredentials(
+	ctx context.Context,
+	account *Account,
+	credentialsFingerprint string,
+) bool {
+	if account == nil || NormalizeCindyCredentialsFingerprint(credentialsFingerprint) == "" {
+		return true
+	}
 	// Block immediately even if persistence is briefly unavailable. A zero deadline
 	// is the existing runtime-blocker convention for an indefinite block.
-	s.notifyAccountSchedulingBlocked(account, time.Time{}, "cindy_balance_insufficient")
+	runtimeBlock := s.blockCindyBalanceRuntime(account)
+	runtimeBlock = s.supersedeCindyBalancePersistenceRetry(account.ID, runtimeBlock)
 	pendingDurable := false
 	if store := s.cindyBalancePendingStore; store != nil {
 		stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
-		err := store.MarkCindyBalancePending(stateCtx, account.ID)
+		err := store.MarkCindyBalancePending(stateCtx, account.ID, credentialsFingerprint)
 		cancel()
 		if err != nil {
 			slog.Error("cindy_balance_pending_mark_failed", "account_id", account.ID, "error", err)
@@ -538,22 +602,32 @@ func (s *RateLimitService) handleCindyBalanceInsufficient(ctx context.Context, a
 			pendingDurable = true
 		}
 	}
-	repo, ok := s.accountRepo.(CindyBalanceAccountRepository)
+	repo, ok := s.accountRepo.(CindyBalanceConditionalAccountRepository)
 	if !ok {
 		slog.Error("cindy_balance_repository_unavailable", "account_id", account.ID, "pending_durable", pendingDurable)
-		s.scheduleCindyBalancePersistenceRetry(account, time.Now().UTC())
+		s.scheduleCindyBalancePersistenceRetry(account, time.Now().UTC(), credentialsFingerprint, runtimeBlock)
 		return true
 	}
 	stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	defer cancel()
 	observedAt := time.Now().UTC()
-	changed, err := repo.MarkCindyBalanceInsufficient(stateCtx, account.ID, observedAt)
+	changed, credentialsMatch, err := repo.MarkCindyBalanceInsufficientIfCredentialsMatch(
+		stateCtx,
+		account.ID,
+		observedAt,
+		credentialsFingerprint,
+	)
 	if err != nil {
 		slog.Error("cindy_balance_insufficient_mark_failed", "account_id", account.ID, "pending_durable", pendingDurable, "error", err)
 		if !pendingDurable {
 			slog.Error("cindy_balance_durable_persistence_unavailable", "account_id", account.ID)
 		}
-		s.scheduleCindyBalancePersistenceRetry(account, observedAt)
+		s.scheduleCindyBalancePersistenceRetry(account, observedAt, credentialsFingerprint, runtimeBlock)
+		return true
+	}
+	if !credentialsMatch {
+		_ = s.clearCindyBalancePendingIfFingerprintMatches(ctx, account.ID, credentialsFingerprint)
+		s.clearCindyBalanceRuntimeBlock(account.ID, runtimeBlock)
 		return true
 	}
 	if account.CindyBalanceInsufficientAt == nil {
@@ -562,7 +636,7 @@ func (s *RateLimitService) handleCindyBalanceInsufficient(ctx context.Context, a
 	if changed {
 		slog.Warn("cindy_balance_insufficient_marked", "account_id", account.ID)
 	}
-	if err := s.clearCindyBalancePending(ctx, account.ID); err != nil {
+	if err := s.clearCindyBalancePendingIfFingerprintMatches(ctx, account.ID, credentialsFingerprint); err != nil {
 		// The DB marker is durable, so retaining a stale pending marker is safe:
 		// schedulers remain fail-closed until a later retry or manual recovery.
 		slog.Error("cindy_balance_pending_clear_after_mark_failed", "account_id", account.ID, "error", err)

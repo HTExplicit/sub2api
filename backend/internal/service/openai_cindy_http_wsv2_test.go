@@ -363,7 +363,7 @@ func TestCindyWSV2BalanceTerminalWriteOrdering(t *testing.T) {
 			}
 			require.NotContains(t, recorder.Body.String(), "budget_exceeded")
 			require.NotContains(t, recorder.Body.String(), "sensitive upstream detail")
-			require.Equal(t, 1, repo.markCalls)
+			require.Equal(t, 0, repo.markCalls, "the first exact signal must wait for independent confirmation")
 		})
 	}
 }

@@ -95,7 +95,7 @@ func TestForwardCindyAnthropicCountTokensRejectsUnverifiedMessagesModel(t *testi
 	require.ErrorContains(t, err, "not verified for native Messages")
 }
 
-func TestForwardCindyAnthropicCountTokensBudgetErrorIsMarkedAndSanitizedForFailover(t *testing.T) {
+func TestForwardCindyAnthropicCountTokensBudgetErrorIsSanitizedForFailoverWithoutImmediateMarker(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", nil)
@@ -120,7 +120,7 @@ func TestForwardCindyAnthropicCountTokensBudgetErrorIsMarkedAndSanitizedForFailo
 	require.True(t, errors.As(err, &failoverErr))
 	require.True(t, failoverErr.CindyBalanceInsufficient)
 	require.True(t, failoverErr.ShouldRetryNextAccount())
-	require.True(t, repo.marked)
+	require.False(t, repo.marked, "the first exact signal must wait for independent confirmation")
 	require.Empty(t, recorder.Body.String(), "failover must occur before a client response is written")
 	require.NotContains(t, string(failoverErr.ResponseBody), "budget_exceeded")
 	require.NotContains(t, string(failoverErr.ResponseBody), "sensitive upstream budget detail")

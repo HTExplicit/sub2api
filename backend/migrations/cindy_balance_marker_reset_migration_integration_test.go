@@ -218,6 +218,75 @@ func TestCindyBalanceMarkerRestoreMigrationIsStrictAndIdempotent(t *testing.T) {
 	require.Equal(t, beforeRecovered.RowVersion, readCindyBalanceResetSnapshot(t, ctx, db, "exact-recovered").RowVersion)
 }
 
+func TestCindyBalanceConfirmationResetMigrationIsStrictAndIdempotent(t *testing.T) {
+	ctx := context.Background()
+	db, _ := remoteSkillMigrationTestDatabase(t)
+	require.NoError(t, execRemoteSkillSQL(ctx, db, `
+		CREATE TABLE accounts (
+			id BIGSERIAL PRIMARY KEY,
+			name TEXT NOT NULL UNIQUE,
+			platform TEXT NOT NULL,
+			type TEXT NOT NULL,
+			credentials JSONB NOT NULL DEFAULT '{}',
+			extra JSONB NOT NULL DEFAULT '{}',
+			status TEXT NOT NULL DEFAULT 'active',
+			schedulable BOOLEAN NOT NULL DEFAULT TRUE,
+			cindy_balance_insufficient_at TIMESTAMPTZ,
+			deleted_at TIMESTAMPTZ
+		);
+		INSERT INTO accounts (
+			name, platform, type, credentials, extra, status, schedulable,
+			cindy_balance_insufficient_at, deleted_at
+		) VALUES
+			('cindy-active', 'openai', 'apikey',
+			 '{"base_url":"  HTTPS://API.LAXAROUTER.AI/  ","api_key":"fixture"}',
+			 '{"ordinary":"kept"}', 'disabled', FALSE, NOW(), NULL),
+			('cindy-deleted', 'openai', 'apikey',
+			 '{"base_url":"https://api.laxarouter.ai"}',
+			 '{"ordinary":true}', 'error', TRUE, NOW(), NOW()),
+			('cindy-unmarked', 'openai', 'apikey',
+			 '{"base_url":"https://api.laxarouter.ai"}',
+			 '{"ordinary":"untouched"}', 'active', TRUE, NULL, NULL),
+			('ordinary', 'openai', 'apikey',
+			 '{"base_url":"https://api.openai.com"}', '{}', 'active', TRUE, NOW(), NULL),
+			('cindy-path', 'openai', 'apikey',
+			 '{"base_url":"https://api.laxarouter.ai/v1"}', '{}', 'active', TRUE, NOW(), NULL),
+			('cindy-oauth', 'openai', 'oauth',
+			 '{"base_url":"https://api.laxarouter.ai"}', '{}', 'active', TRUE, NOW(), NULL);
+	`))
+
+	beforeUnmarked := readCindyBalanceResetSnapshot(t, ctx, db, "cindy-unmarked")
+	migration, err := dbmigrations.FS.ReadFile("213_codexrip_reset_unconfirmed_cindy_balance_markers.sql")
+	require.NoError(t, err)
+	require.NoError(t, execRemoteSkillSQL(ctx, db, string(migration)))
+
+	for _, name := range []string{"cindy-active", "cindy-deleted"} {
+		require.False(t, readCindyBalanceResetSnapshot(t, ctx, db, name).Marked, name)
+	}
+	active := readCindyBalanceResetSnapshot(t, ctx, db, "cindy-active")
+	require.JSONEq(t, `{"base_url":"  HTTPS://API.LAXAROUTER.AI/  ","api_key":"fixture"}`, string(active.Credentials))
+	require.JSONEq(t, `{"ordinary":"kept"}`, string(active.Extra))
+	require.Equal(t, "disabled", active.Status)
+	require.False(t, active.Schedulable)
+	deleted := readCindyBalanceResetSnapshot(t, ctx, db, "cindy-deleted")
+	require.Equal(t, "error", deleted.Status)
+	require.True(t, deleted.Schedulable)
+	require.True(t, deleted.Deleted)
+
+	for _, name := range []string{"ordinary", "cindy-path", "cindy-oauth"} {
+		require.True(t, readCindyBalanceResetSnapshot(t, ctx, db, name).Marked, name)
+	}
+	unmarked := readCindyBalanceResetSnapshot(t, ctx, db, "cindy-unmarked")
+	require.False(t, unmarked.Marked)
+	require.Equal(t, beforeUnmarked.RowVersion, unmarked.RowVersion)
+
+	activeVersion := active.RowVersion
+	deletedVersion := deleted.RowVersion
+	require.NoError(t, execRemoteSkillSQL(ctx, db, string(migration)))
+	require.Equal(t, activeVersion, readCindyBalanceResetSnapshot(t, ctx, db, "cindy-active").RowVersion)
+	require.Equal(t, deletedVersion, readCindyBalanceResetSnapshot(t, ctx, db, "cindy-deleted").RowVersion)
+}
+
 func readCindyBalanceResetSnapshot(
 	t *testing.T,
 	ctx context.Context,

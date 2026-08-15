@@ -839,6 +839,112 @@ func (s *AccountRepoSuite) TestBulkUpdate_SyncSchedulerSnapshotOnDisabled() {
 	s.Require().Contains(ids, account2.ID)
 }
 
+func (s *AccountRepoSuite) TestBulkUpdate_SyncSchedulerSnapshotOnCredentialChange() {
+	account := mustCreateAccount(s.T(), s.client, &service.Account{
+		Name:        "bulk-credential",
+		Platform:    service.PlatformOpenAI,
+		Type:        service.AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "old"},
+		Status:      service.StatusActive,
+		Schedulable: true,
+	})
+	cacheRecorder := &schedulerCacheRecorder{}
+	s.repo.schedulerCache = cacheRecorder
+
+	rows, err := s.repo.BulkUpdate(s.ctx, []int64{account.ID}, service.AccountBulkUpdate{
+		Credentials: map[string]any{"api_key": "new"},
+	})
+	s.Require().NoError(err)
+	s.Require().Equal(int64(1), rows)
+	s.Require().Len(cacheRecorder.setAccounts, 1)
+	s.Require().Equal(account.ID, cacheRecorder.setAccounts[0].ID)
+	s.Require().Equal("new", cacheRecorder.setAccounts[0].Credentials["api_key"])
+}
+
+func (s *AccountRepoSuite) TestCindyMarkerResetsOnlyWhenAccountIdentityChanges() {
+	markedAt := time.Now().UTC()
+	newMarkedAccount := func(name string) *service.Account {
+		return mustCreateAccount(s.T(), s.client, &service.Account{
+			Name:                       name,
+			Platform:                   service.PlatformOpenAI,
+			Type:                       service.AccountTypeAPIKey,
+			Credentials:                map[string]any{"api_key": "old", "base_url": "https://api.laxarouter.ai"},
+			Status:                     service.StatusActive,
+			Schedulable:                true,
+			CindyBalanceInsufficientAt: &markedAt,
+		})
+	}
+	assertStoredAndCachedMarker := func(accountID int64, cache *schedulerCacheRecorder, wantMarked bool) {
+		stored, err := s.repo.GetByID(s.ctx, accountID)
+		s.Require().NoError(err)
+		if wantMarked {
+			s.Require().NotNil(stored.CindyBalanceInsufficientAt)
+		} else {
+			s.Require().Nil(stored.CindyBalanceInsufficientAt)
+		}
+		s.Require().NotEmpty(cache.setAccounts)
+		cached := cache.setAccounts[len(cache.setAccounts)-1]
+		if wantMarked {
+			s.Require().NotNil(cached.CindyBalanceInsufficientAt)
+		} else {
+			s.Require().Nil(cached.CindyBalanceInsufficientAt)
+		}
+	}
+
+	for _, tc := range []struct {
+		name   string
+		mutate func(*service.Account)
+	}{
+		{name: "platform", mutate: func(account *service.Account) { account.Platform = service.PlatformAnthropic }},
+		{name: "type", mutate: func(account *service.Account) { account.Type = service.AccountTypeOAuth }},
+		{name: "credentials", mutate: func(account *service.Account) { account.Credentials["api_key"] = "new" }},
+	} {
+		s.Run("full update clears marker on "+tc.name+" change", func() {
+			account := newMarkedAccount("full-update-" + tc.name)
+			cache := &schedulerCacheRecorder{}
+			s.repo.schedulerCache = cache
+			tc.mutate(account)
+			s.Require().NoError(s.repo.Update(s.ctx, account))
+			assertStoredAndCachedMarker(account.ID, cache, false)
+		})
+	}
+
+	unchangedFull := newMarkedAccount("full-update-unchanged")
+	unchangedFull.Name = "full-update-unchanged-renamed"
+	fullCache := &schedulerCacheRecorder{}
+	s.repo.schedulerCache = fullCache
+	s.Require().NoError(s.repo.Update(s.ctx, unchangedFull))
+	assertStoredAndCachedMarker(unchangedFull.ID, fullCache, true)
+
+	credentialsAccount := newMarkedAccount("credentials-update")
+	credentialsCache := &schedulerCacheRecorder{}
+	s.repo.schedulerCache = credentialsCache
+	s.Require().NoError(s.repo.UpdateCredentials(s.ctx, credentialsAccount.ID, credentialsAccount.Credentials))
+	assertStoredAndCachedMarker(credentialsAccount.ID, credentialsCache, true)
+	credentialsCache.setAccounts = nil
+	s.Require().NoError(s.repo.UpdateCredentials(s.ctx, credentialsAccount.ID, map[string]any{
+		"api_key": "new", "base_url": "https://api.laxarouter.ai",
+	}))
+	assertStoredAndCachedMarker(credentialsAccount.ID, credentialsCache, false)
+
+	bulkAccount := newMarkedAccount("bulk-credentials-update")
+	bulkCache := &schedulerCacheRecorder{}
+	s.repo.schedulerCache = bulkCache
+	rows, err := s.repo.BulkUpdate(s.ctx, []int64{bulkAccount.ID}, service.AccountBulkUpdate{
+		Credentials: map[string]any{"api_key": "old"},
+	})
+	s.Require().NoError(err)
+	s.Require().Equal(int64(1), rows)
+	assertStoredAndCachedMarker(bulkAccount.ID, bulkCache, true)
+	bulkCache.setAccounts = nil
+	rows, err = s.repo.BulkUpdate(s.ctx, []int64{bulkAccount.ID}, service.AccountBulkUpdate{
+		Credentials: map[string]any{"api_key": "new"},
+	})
+	s.Require().NoError(err)
+	s.Require().Equal(int64(1), rows)
+	assertStoredAndCachedMarker(bulkAccount.ID, bulkCache, false)
+}
+
 // --- SetOverloaded / SetRateLimited / ClearRateLimit ---
 
 func (s *AccountRepoSuite) TestSetOverloaded() {
