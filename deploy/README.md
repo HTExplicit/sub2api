@@ -168,6 +168,31 @@ or a durable pending marker. Catalog rollback restores the legacy generic
 routing path; it is not a traffic kill switch. The image flag is additionally
 dependent on the catalog flag.
 
+The protected production workflow exposes the three values as typed boolean
+inputs. A balance-only release is dispatched with:
+
+```bash
+gh workflow run production-deploy.yml \
+  --repo HTExplicit/sub2api \
+  --ref main \
+  -f release_tag=vX.Y.Z-codexrip.N \
+  -f confirmation=DEPLOY \
+  -f cindy_balance_detection=true \
+  -f cindy_capability_catalog=false \
+  -f cindy_image_studio=false
+```
+
+The workflow rejects `cindy_image_studio=true` unless
+`cindy_capability_catalog=true`. It resolves the release to an immutable digest
+and sends only `deploy <immutable-ref> cindy=<balance>,<catalog>,<image>` to the
+restricted host command. The host persists the tuple in
+`/opt/sub2api/docker-compose.cindy-rollout.yml`; a tuple-only change for the
+same digest recreates only `sub2api`, with the prior override included in the
+checksum-verified rollback set.
+During the guard-first migration window, the host also accepts the old workflow's
+exact `deploy <immutable-ref>` form and maps it to `cindy=true,false,false`.
+This workflow always emits the explicit tuple.
+
 **Verify `users.allowed_groups` → `user_allowed_groups` backfill**
 
 During the incremental GORM→Ent migration, `users.allowed_groups` (legacy `BIGINT[]`) is being replaced by a normalized join table `user_allowed_groups(user_id, group_id)`.

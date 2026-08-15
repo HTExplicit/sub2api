@@ -60,3 +60,16 @@ The production workflow is manual and protected by the `production` environment.
 only an existing custom release tag, resolves the public GHCR digest, and connects with a
 restricted SSH key whose forced command can only invoke the Sub2API updater. Secrets and
 server-specific identifiers are stored in the environment, not in this repository.
+
+The workflow also requires three typed boolean rollout inputs, in dependency order: Cindy
+balance detection, capability catalog, and Image Studio. Image Studio cannot be enabled while
+the catalog is disabled. After resolution, the workflow sends exactly
+`deploy <immutable-ref> cindy=<balance>,<catalog>,<image>` to the forced command. The host
+updater persists those values in one fixed Compose override; changing only the tuple for the
+same digest backs up and checksum-verifies the prior state, recreates only `sub2api`, and
+restores the prior override and process flags if any gate fails.
+
+During the guard-first migration window, the host also accepts the legacy workflow's exact
+`deploy <immutable-ref>` command and maps it only to `cindy=true,false,false`. This workflow
+never emits that legacy form; the compatibility prevents an outage between guard installation
+and workflow merge without accepting optional shell arguments.
