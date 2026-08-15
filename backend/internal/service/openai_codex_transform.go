@@ -12,7 +12,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 )
 
-var ErrCindyResponsesImageToolModelNotFound = errors.New("Cindy Responses image tool model is not verified")
+var ErrCindyResponsesImageToolModelNotFound = errors.New("cindy Responses image tool model is not verified")
 
 var codexModelMap = map[string]string{
 	"gpt-5.6-sol":          "gpt-5.6-sol",

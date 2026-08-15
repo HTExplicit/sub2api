@@ -1476,7 +1476,7 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 							buildOpenAIImagesStreamErrorBody("Temporary upstream failure"),
 						)
 					}
-					processDataErr = errors.New("Cindy balance exhausted after downstream output")
+					processDataErr = errors.New("cindy balance exhausted after downstream output")
 				}
 				processDataDone = true
 				return

@@ -1231,7 +1231,9 @@ func TestNormalizeOpenAIResponsesImageOnlyModelWithModel_UsesOriginalBeforeCindy
 	require.Equal(t, openAIImagesResponsesMainModel, reqBody["model"])
 	tools, ok := reqBody["tools"].([]any)
 	require.True(t, ok)
-	require.Equal(t, "gpt-image-2", tools[0].(map[string]any)["model"])
+	tool, ok := tools[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "gpt-image-2", tool["model"])
 }
 
 func TestNormalizeOpenAIResponsesImageOnlyModel_UsesLegacyControllerExceptExactCindyMapping(t *testing.T) {
@@ -1280,9 +1282,14 @@ func TestMapCindyOpenAIResponsesImageModels_MapsControllerAndNestedTool(t *testi
 
 	require.True(t, mapCindyOpenAIResponsesImageModels(reqBody, cindy))
 	require.Equal(t, "openai/gpt-5.6-luna", reqBody["model"])
-	tools := reqBody["tools"].([]any)
-	require.Equal(t, "openai/gpt-image-2", tools[0].(map[string]any)["model"])
-	require.Equal(t, "keep-me", tools[1].(map[string]any)["name"])
+	tools, ok := reqBody["tools"].([]any)
+	require.True(t, ok)
+	imageTool, ok := tools[0].(map[string]any)
+	require.True(t, ok)
+	functionTool, ok := tools[1].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "openai/gpt-image-2", imageTool["model"])
+	require.Equal(t, "keep-me", functionTool["name"])
 
 	ordinary := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.openai.com"}}
 	require.False(t, mapCindyOpenAIResponsesImageModels(reqBody, ordinary))

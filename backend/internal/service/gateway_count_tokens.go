@@ -31,11 +31,11 @@ func (s *GatewayService) ForwardCindyAnthropicCountTokens(
 	}
 	requestedModel = strings.TrimSpace(requestedModel)
 	if !CindyModelSupportsEndpoint(requestedModel, CindyEndpointMessages) {
-		return fmt.Errorf("Cindy model %q is not verified for native Messages", requestedModel)
+		return fmt.Errorf("cindy model %q is not verified for native Messages", requestedModel)
 	}
 	upstreamModel, ok := CindyMappedUpstreamModel(requestedModel)
 	if !ok {
-		return fmt.Errorf("Cindy model %q is not in the fixed catalogue", requestedModel)
+		return fmt.Errorf("cindy model %q is not in the fixed catalogue", requestedModel)
 	}
 	if !gjson.ValidBytes(body) {
 		return errors.New("invalid Anthropic count_tokens request body")

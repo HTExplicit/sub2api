@@ -1054,7 +1054,6 @@ func TestOpenAIPoolModeTempRule_StopsSameAccountRetryAndIsolatesBlockToModel(t *
 		account,
 		resp,
 		body,
-		"Service temporarily unavailable",
 		"gpt-5.4",
 	)
 

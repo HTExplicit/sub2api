@@ -985,7 +985,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					return nil, NewOpenAIWSClientCloseError(
 						coderws.StatusTryAgainLater,
 						"Temporary upstream failure; please retry",
-						errors.New("Cindy balance exhausted after downstream output"),
+						errors.New("cindy balance exhausted after downstream output"),
 					)
 				}
 			}

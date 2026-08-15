@@ -263,7 +263,7 @@ func (s *OpenAIGatewayService) buildCindyAlphaSearchMessagesRequest(
 ) (*http.Request, error) {
 	baseURL := account.GetOpenAIBaseURL()
 	if baseURL == "" {
-		return nil, fmt.Errorf("Cindy base URL is required")
+		return nil, fmt.Errorf("cindy base URL is required")
 	}
 	validatedURL, err := s.validateUpstreamBaseURL(baseURL)
 	if err != nil {
@@ -337,10 +337,10 @@ func parseCindyAlphaSearchMessagesResponse(body []byte) (*cindyAlphaSearchNative
 	searchRequests := gjson.GetBytes(body, "usage.server_tool_use.web_search_requests")
 	searchRequestCount := int(searchRequests.Int())
 	if searchRequests.Type != gjson.Number || searchRequestCount < 1 || float64(searchRequestCount) != searchRequests.Float() {
-		return nil, fmt.Errorf("Cindy native web search response has no billable search usage")
+		return nil, fmt.Errorf("cindy native web search response has no billable search usage")
 	}
 	if !hasToolResult && !hasValidCitation {
-		return nil, fmt.Errorf("Cindy native web search response has no search evidence")
+		return nil, fmt.Errorf("cindy native web search response has no search evidence")
 	}
 
 	alphaResponse := map[string]any{"output": output.String()}

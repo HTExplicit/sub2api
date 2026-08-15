@@ -575,7 +575,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 						emitStreamMessage(OpenAIWSRetryableFailureEvent(), true)
 					}
 				}
-				return nil, errors.New("Cindy balance exhausted after downstream output")
+				return nil, errors.New("cindy balance exhausted after downstream output")
 			}
 		}
 		if normalized, changed := normalizeCompletedImageGenerationStatus(message); changed {

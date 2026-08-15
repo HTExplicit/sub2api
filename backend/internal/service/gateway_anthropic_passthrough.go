@@ -50,11 +50,11 @@ func (s *GatewayService) ForwardCindyAnthropicMessages(
 	}
 	requestedModel = strings.TrimSpace(requestedModel)
 	if !CindyModelSupportsEndpoint(requestedModel, CindyEndpointMessages) {
-		return nil, fmt.Errorf("Cindy model %q is not verified for native Messages", requestedModel)
+		return nil, fmt.Errorf("cindy model %q is not verified for native Messages", requestedModel)
 	}
 	upstreamModel, ok := CindyMappedUpstreamModel(requestedModel)
 	if !ok {
-		return nil, fmt.Errorf("Cindy model %q is not in the fixed catalogue", requestedModel)
+		return nil, fmt.Errorf("cindy model %q is not in the fixed catalogue", requestedModel)
 	}
 	if !gjson.ValidBytes(body) {
 		return nil, errors.New("invalid Anthropic Messages request body")

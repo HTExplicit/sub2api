@@ -505,6 +505,10 @@ func TestAdminRecoveryCancelsQueuedCindyBalancePersistence(t *testing.T) {
 	const accountID = int64(99108)
 	repo, store, rateLimit, gateway := newCindyRecoveryRetryFixture(t, accountID)
 	task := capturedCindyRecoveryTask(t, rateLimit, accountID)
+	rateLimit.cindyBalancePersistMu.Lock()
+	inFlightDone := task.inFlightDone
+	rateLimit.cindyBalancePersistMu.Unlock()
+	require.Nil(t, inFlightDone, "queued task must not register an in-flight barrier")
 	admin := &adminServiceImpl{accountRepo: repo, runtimeBlocker: gateway}
 
 	updated, err := admin.ClearCindyBalanceInsufficient(context.Background(), accountID)
@@ -543,6 +547,10 @@ func TestAdminRecoveryWaitsForInFlightCindyBalancePersistence(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("persistence retry did not enter the database write")
 	}
+	rateLimit.cindyBalancePersistMu.Lock()
+	inFlightDone := task.inFlightDone
+	rateLimit.cindyBalancePersistMu.Unlock()
+	require.NotNil(t, inFlightDone, "started retry must publish its recovery barrier")
 
 	admin := &adminServiceImpl{accountRepo: repo, runtimeBlocker: gateway}
 	type recoveryResult struct {
@@ -566,6 +574,10 @@ func TestAdminRecoveryWaitsForInFlightCindyBalancePersistence(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("in-flight persistence did not exit")
 	}
+	rateLimit.cindyBalancePersistMu.Lock()
+	inFlightDone = task.inFlightDone
+	rateLimit.cindyBalancePersistMu.Unlock()
+	require.Nil(t, inFlightDone, "completed retry must release its recovery barrier")
 	var result recoveryResult
 	select {
 	case result = <-recoveryDone:

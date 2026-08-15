@@ -366,16 +366,13 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			)
 		}
 		if cindyBalanceInsufficient {
-			pendingClientMessages = pendingClientMessages[:0]
 			failoverErr := newCindyBalanceTerminalFailover(resp.Header)
 			if turn == 1 && !semanticOutputStarted {
 				return nil, failoverErr
 			}
 			if !clientDisconnected {
 				if err := writeClientMessage(OpenAIWSRetryableFailureEvent()); err != nil {
-					if isOpenAIWSClientDisconnectError(err) {
-						clientDisconnected = true
-					} else {
+					if !isOpenAIWSClientDisconnectError(err) {
 						return nil, wrapOpenAIWSIngressTurnError(
 							"write_client",
 							fmt.Errorf("write sanitized Cindy balance failure: %w", err),
@@ -384,7 +381,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 					}
 				}
 			}
-			return resultWithUsage(), errors.New("Cindy balance exhausted after downstream output")
+			return resultWithUsage(), errors.New("cindy balance exhausted after downstream output")
 		}
 		upstreamMessage := rawUpstreamMessage
 		if normalized, changed := normalizeCompletedImageGenerationStatus(upstreamMessage); changed {

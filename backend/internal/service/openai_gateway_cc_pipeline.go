@@ -96,7 +96,6 @@ func (s *OpenAIGatewayService) failoverOpenAIUpstreamHTTPError(
 	account *Account,
 	resp *http.Response,
 	respBody []byte,
-	upstreamMsg string,
 	upstreamModel string,
 ) *UpstreamFailoverError {
 	classificationBody := respBody
@@ -112,7 +111,7 @@ func (s *OpenAIGatewayService) failoverOpenAIUpstreamHTTPError(
 		_ = resp.Body.Close()
 	}
 	resp.Body = io.NopCloser(bytes.NewReader(respBody))
-	upstreamMsg = sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(respBody)))
+	upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(respBody)))
 	shouldFailover := s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody)
 	tempUnscheduled := false
 	if c != nil && account != nil && account.Platform != PlatformGrok && !shouldFailover && !IsResponseCommitted(c) && s.rateLimitService != nil {

@@ -156,12 +156,12 @@ func (s *cindyBalancePendingSnapshot) record(accountIDs []int64, pending map[int
 }
 
 type cindyBalancePersistTask struct {
-	accountID  int64
-	observedAt time.Time
-	generation uint64
-	attempt    int
-	nextAt     time.Time
-	operation  sync.Mutex
+	accountID    int64
+	observedAt   time.Time
+	generation   uint64
+	attempt      int
+	nextAt       time.Time
+	inFlightDone chan struct{}
 }
 
 var cindyBalancePersistenceBackoffs = [...]time.Duration{
@@ -265,19 +265,47 @@ func (s *RateLimitService) isCurrentCindyBalancePersistenceTask(task *cindyBalan
 		s.cindyBalancePersistEpochs[task.accountID] == task.generation
 }
 
+func (s *RateLimitService) beginCindyBalancePersistenceTask(task *cindyBalancePersistTask) (chan struct{}, bool) {
+	if s == nil || task == nil {
+		return nil, false
+	}
+	s.cindyBalancePersistMu.Lock()
+	defer s.cindyBalancePersistMu.Unlock()
+	if s.cindyBalancePersistTasks[task.accountID] != task ||
+		s.cindyBalancePersistEpochs[task.accountID] != task.generation ||
+		task.inFlightDone != nil {
+		return nil, false
+	}
+	done := make(chan struct{})
+	task.inFlightDone = done
+	return done, true
+}
+
+func (s *RateLimitService) finishCindyBalancePersistenceTask(task *cindyBalancePersistTask, done chan struct{}) {
+	if s == nil || task == nil || done == nil {
+		return
+	}
+	s.cindyBalancePersistMu.Lock()
+	if task.inFlightDone == done {
+		task.inFlightDone = nil
+		close(done)
+	}
+	s.cindyBalancePersistMu.Unlock()
+}
+
 // runCindyBalancePersistenceTask serializes retry side effects with explicit
 // admin recovery. The generation check rejects a queued/extracted stale task;
-// the operation lock is the barrier that makes recovery wait for a task which
+// the per-generation completion channel makes recovery wait for a task which
 // already entered Redis/DB I/O before clearing the durable and local state.
 func (s *RateLimitService) runCindyBalancePersistenceTask(task *cindyBalancePersistTask) {
 	if s == nil || task == nil {
 		return
 	}
-	task.operation.Lock()
-	defer task.operation.Unlock()
-	if !s.isCurrentCindyBalancePersistenceTask(task) {
+	done, ok := s.beginCindyBalancePersistenceTask(task)
+	if !ok {
 		return
 	}
+	defer s.finishCindyBalancePersistenceTask(task, done)
 
 	// Re-establish the durable guard on every retry. This also repairs a
 	// transient Redis failure from the original request before touching DB.
@@ -326,7 +354,7 @@ func (s *RateLimitService) runCindyBalancePersistenceTask(task *cindyBalancePers
 
 // CancelCindyBalancePersistenceRetry is the linearization point for explicit
 // recovery. Incrementing the epoch is a tombstone for queued/extracted work;
-// waiting on operation guarantees any already-started writes finish before the
+// waiting on the completion channel guarantees already-started writes finish before the
 // caller clears the DB marker, durable pending marker, and local block.
 func (s *RateLimitService) CancelCindyBalancePersistenceRetry(accountID int64) {
 	if s == nil || accountID <= 0 {
@@ -338,6 +366,10 @@ func (s *RateLimitService) CancelCindyBalancePersistenceRetry(accountID int64) {
 	}
 	s.cindyBalancePersistEpochs[accountID]++
 	task := s.cindyBalancePersistTasks[accountID]
+	var inFlightDone <-chan struct{}
+	if task != nil {
+		inFlightDone = task.inFlightDone
+	}
 	delete(s.cindyBalancePersistTasks, accountID)
 	wake := s.cindyBalancePersistWake
 	s.cindyBalancePersistMu.Unlock()
@@ -347,9 +379,8 @@ func (s *RateLimitService) CancelCindyBalancePersistenceRetry(accountID int64) {
 		default:
 		}
 	}
-	if task != nil {
-		task.operation.Lock()
-		task.operation.Unlock()
+	if inFlightDone != nil {
+		<-inFlightDone
 	}
 }
 
