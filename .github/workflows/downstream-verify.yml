@@ -41,6 +41,9 @@ jobs:
       - name: Cindy HTTP to WebSocket v2 continuation race test
         working-directory: backend
         run: go test -race ./internal/service -run '^TestCindyHTTPToWSV2ContinuationReusesOneConnectionAcrossIndependentHTTPRequests$' -count=1
+      - name: Cindy balance confirmation race tests
+        working-directory: backend
+        run: go test -race -tags unit ./internal/service -run '^TestCindyBalance(ExactConfirmationQueuesBehindAmbiguousInFlight|ExactRotationQueuesNewCredentialGeneration|PersistenceRetryReplacesOlderCredentialGeneration)$' -count=1
       - name: Request body recovery tests
         working-directory: backend
         run: go test -p=1 ./internal/pkg/httputil ./internal/handler -run 'Test(ReadRequestBodyWithPrealloc|ReadLenientJSONRequestBodyWithPrealloc|RequestBodyReadDiagnostics|ClassifyRequestContentEncoding)' -count=1
@@ -70,8 +73,8 @@ jobs:
       - name: Cindy defaults migration tests
         working-directory: backend
         run: |
-          go test -p=1 ./migrations -run '^TestMigration(207RestoresOnlyCindyNativeOpenAIModes|208UsesCindyPromptCacheHashOnly|209RestoresOnlyCindyAlphaSearchBridge|210ResetsOnlyLegacyCindyBalanceMarkers|211RestoresOnlyExactUnresolvedCindyBudgetMarkers)$' -count=1
-          go test -p=1 -tags integration ./migrations -run '^TestCindy(OpenAIDefaults|PromptCacheHash|AlphaSearchBridge|BalanceMarkerReset|BalanceMarkerRestore)MigrationIsStrictAndIdempotent$' -count=1
+          go test -p=1 ./migrations -run '^TestMigration(207RestoresOnlyCindyNativeOpenAIModes|208UsesCindyPromptCacheHashOnly|209RestoresOnlyCindyAlphaSearchBridge|210ResetsOnlyLegacyCindyBalanceMarkers|211RestoresOnlyExactUnresolvedCindyBudgetMarkers|213ResetsOnlyStrictCindyBalanceMarkers)$' -count=1
+          go test -p=1 -tags integration ./migrations -run '^TestCindy(OpenAIDefaults|PromptCacheHash|AlphaSearchBridge|BalanceMarkerReset|BalanceMarkerRestore|BalanceConfirmationReset)MigrationIsStrictAndIdempotent$' -count=1
 
   frontend:
     name: Downstream frontend
