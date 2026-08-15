@@ -93,6 +93,153 @@ func TestOpenAIWSDownstreamWriteContext_CancellationOwnership(t *testing.T) {
 	})
 }
 
+func TestOpenAIWSIngressCindyBalanceTerminalWriteOrdering(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name         string
+		events       [][]byte
+		wantFailover bool
+		wantFirst    string
+	}{
+		{
+			name: "response_failed_before_output",
+			events: [][]byte{
+				[]byte(`{"type":"response.failed","response":{"error":{"type":"budget_exceeded","code":"429","message":"sensitive upstream detail"}}}`),
+			},
+			wantFailover: true,
+		},
+		{
+			name: "bare_error_before_output",
+			events: [][]byte{
+				[]byte(`{"type":"error","error":{"type":"budget_exceeded","code":"429","message":"sensitive upstream detail"}}`),
+			},
+			wantFailover: true,
+		},
+		{
+			name: "response_failed_after_output",
+			events: [][]byte{
+				[]byte(`{"type":"response.output_text.delta","delta":"ok"}`),
+				[]byte(`{"type":"response.failed","response":{"error":{"type":"budget_exceeded","code":"429","message":"sensitive upstream detail"}}}`),
+			},
+			wantFirst: "response.output_text.delta",
+		},
+	}
+	for index, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.Config{}
+			cfg.Gateway.OpenAIWS.Enabled = true
+			cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+			cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+			cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 1
+			cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+			cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
+			cfg.Gateway.OpenAIWS.QueueLimitPerConn = 4
+			cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+			cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+			cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+			captureConn := &openAIWSCaptureConn{events: tt.events}
+			pool := newOpenAIWSConnPool(cfg)
+			pool.setClientDialerForTest(&openAIWSCaptureDialer{conn: captureConn})
+			t.Cleanup(pool.Close)
+			repo := &cindyRateLimitAccountRepoStub{}
+			rateLimitService := NewRateLimitService(repo, nil, cfg, nil, nil)
+			gateway := &OpenAIGatewayService{
+				cfg:              cfg,
+				httpUpstream:     &httpUpstreamRecorder{},
+				cache:            &stubGatewayCache{},
+				openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+				toolCorrector:    NewCodexToolCorrector(),
+				openaiWSPool:     pool,
+				rateLimitService: rateLimitService,
+			}
+			rateLimitService.SetAccountRuntimeBlocker(gateway)
+			account := newCindyRateLimitAccount(int64(8530+index), true)
+			account.Extra = map[string]any{"responses_websockets_v2_enabled": true}
+
+			serverErrCh := make(chan error, 1)
+			wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				conn, err := coderws.Accept(w, r, &coderws.AcceptOptions{CompressionMode: coderws.CompressionContextTakeover})
+				if err != nil {
+					serverErrCh <- err
+					return
+				}
+				defer func() { _ = conn.CloseNow() }()
+				recorder := httptest.NewRecorder()
+				ginCtx, _ := gin.CreateTestContext(recorder)
+				ginCtx.Request = r.Clone(r.Context())
+				ginCtx.Request.Header.Set("User-Agent", "codex_cli_rs/0.146.0")
+				readCtx, cancelRead := context.WithTimeout(r.Context(), 3*time.Second)
+				_, firstMessage, readErr := conn.Read(readCtx)
+				cancelRead()
+				if readErr != nil {
+					serverErrCh <- readErr
+					return
+				}
+				serverErrCh <- gateway.ProxyResponsesWebSocketFromClient(
+					r.Context(), ginCtx, conn, account, "sk-test", firstMessage, nil,
+				)
+			}))
+			defer wsServer.Close()
+
+			dialCtx, cancelDial := context.WithTimeout(context.Background(), 3*time.Second)
+			clientConn, _, err := coderws.Dial(dialCtx, "ws"+strings.TrimPrefix(wsServer.URL, "http"), nil)
+			cancelDial()
+			require.NoError(t, err)
+			defer func() { _ = clientConn.CloseNow() }()
+			writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
+			err = clientConn.Write(writeCtx, coderws.MessageText, []byte(
+				`{"type":"response.create","model":"gpt-5.6-luna","stream":true,"input":"hi"}`,
+			))
+			cancelWrite()
+			require.NoError(t, err)
+
+			clientPayloads := make([][]byte, 0, 2)
+			if tt.wantFirst != "" {
+				readCtx, cancelRead := context.WithTimeout(context.Background(), 3*time.Second)
+				_, payload, readErr := clientConn.Read(readCtx)
+				cancelRead()
+				require.NoError(t, readErr)
+				clientPayloads = append(clientPayloads, payload)
+				require.Equal(t, tt.wantFirst, gjson.GetBytes(payload, "type").String())
+
+				readCtx, cancelRead = context.WithTimeout(context.Background(), 3*time.Second)
+				_, payload, readErr = clientConn.Read(readCtx)
+				cancelRead()
+				require.NoError(t, readErr)
+				clientPayloads = append(clientPayloads, payload)
+				require.Contains(t, string(payload), "upstream_retry_exhausted")
+			} else {
+				readCtx, cancelRead := context.WithTimeout(context.Background(), 3*time.Second)
+				_, payload, readErr := clientConn.Read(readCtx)
+				cancelRead()
+				require.Error(t, readErr, "pre-output balance failure must close without a downstream payload")
+				require.Empty(t, payload)
+			}
+
+			var serverErr error
+			select {
+			case serverErr = <-serverErrCh:
+			case <-time.After(5 * time.Second):
+				t.Fatal("waiting for ingress websocket result timed out")
+			}
+			var failoverErr *UpstreamFailoverError
+			if tt.wantFailover {
+				require.ErrorAs(t, serverErr, &failoverErr)
+				require.True(t, failoverErr.CindyBalanceInsufficient)
+				require.False(t, failoverErr.RetryableOnSameAccount)
+			} else {
+				require.Error(t, serverErr)
+				require.False(t, errors.As(serverErr, &failoverErr), "downstream output makes account replay unsafe")
+			}
+			for _, payload := range clientPayloads {
+				require.NotContains(t, string(payload), "budget_exceeded")
+				require.NotContains(t, string(payload), "sensitive upstream detail")
+			}
+			require.Equal(t, 1, repo.markCalls)
+		})
+	}
+}
+
 func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_KeepLeaseAcrossTurns(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

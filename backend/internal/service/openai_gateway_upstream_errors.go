@@ -535,6 +535,36 @@ func (s *OpenAIGatewayService) readUpstreamErrorBody(resp *http.Response) []byte
 	return body
 }
 
+// handleCindyBalanceHTTPFailover consumes Cindy's exact structured HTTP 429
+// before any generic retry, recovery, rewriting, or account-health policy can
+// reinterpret it. The permanent runtime block is installed synchronously; DB
+// persistence retries remain owned by RateLimitService.
+func (s *OpenAIGatewayService) handleCindyBalanceHTTPFailover(
+	ctx context.Context,
+	account *Account,
+	statusCode int,
+	headers http.Header,
+	body []byte,
+	canonicalModel ...string,
+) (*UpstreamFailoverError, bool) {
+	if ClassifyCindyBalanceInsufficient(account, statusCode, body) != CindyBalanceSignalHTTP429 {
+		return nil, false
+	}
+
+	s.handleOpenAIAccountUpstreamError(ctx, account, statusCode, headers, body, canonicalModel...)
+	failoverErr := newOpenAIUpstreamFailoverError(
+		statusCode,
+		headers,
+		body,
+		"Cindy balance exhausted",
+		false,
+	)
+	failoverErr.Scope = GatewayFailureScopeAccount
+	failoverErr.NextAccountAction = NextAccountRetry
+	failoverErr.CindyBalanceInsufficient = true
+	return sanitizeOpenAICindyFailoverError(failoverErr), true
+}
+
 func (s *OpenAIGatewayService) handleFailoverSideEffects(ctx context.Context, resp *http.Response, account *Account, responseBody []byte, canonicalModel ...string) bool {
 	if len(canonicalModel) > 0 {
 		return s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, responseBody, canonicalModel[0])
@@ -551,6 +581,9 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 	requestedModel ...string,
 ) (*OpenAIForwardResult, error) {
 	body := s.readUpstreamErrorBody(resp)
+	if failoverErr, ok := s.handleCindyBalanceHTTPFailover(ctx, account, resp.StatusCode, resp.Header, body, requestedModel...); ok {
+		return nil, failoverErr
+	}
 	body = s.redactAgentIdentitySensitiveBody(ctx, account, body)
 	body = s.rewriteBusinessSystemPromptJSONForRequest(c, body, BusinessSystemPromptProtocolResponses)
 
@@ -797,6 +830,11 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 	requestedModel ...string,
 ) (*OpenAIForwardResult, error) {
 	body := s.readUpstreamErrorBody(resp)
+	if failoverErr, ok := s.handleCindyBalanceHTTPFailover(
+		c.Request.Context(), account, resp.StatusCode, resp.Header, body, requestedModel...,
+	); ok {
+		return nil, failoverErr
+	}
 	body = s.redactAgentIdentitySensitiveBody(context.Background(), account, body)
 	body = s.rewriteBusinessSystemPromptJSONForAnyRequest(c, body)
 

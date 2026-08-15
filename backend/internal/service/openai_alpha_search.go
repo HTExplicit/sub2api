@@ -40,6 +40,11 @@ func (s *OpenAIGatewayService) ForwardAlphaSearch(ctx context.Context, c *gin.Co
 	if modelResult.Type != gjson.String || requestedModel == "" {
 		return nil, fmt.Errorf("model is required")
 	}
+	strictCindy := CindyCapabilityCatalogFeatureEnabled() &&
+		IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+	if strictCindy && requestedModel != CindyWebSearchModel {
+		return nil, NewOpenAIAlphaSearchBridgeUnavailableError(http.StatusNotFound, nil, nil)
+	}
 
 	upstreamModel := normalizeOpenAIModelForUpstream(account, account.GetMappedModel(requestedModel))
 	if upstreamModel != "" && upstreamModel != requestedModel {
@@ -59,6 +64,11 @@ func (s *OpenAIGatewayService) ForwardAlphaSearch(ctx context.Context, c *gin.Co
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
+	}
+	if strictCindy {
+		return s.forwardCindyAlphaSearchViaNativeMessages(
+			ctx, c, account, body, token, proxyURL, requestedModel, upstreamModel,
+		)
 	}
 	if err := s.ensureOpenAIAlphaSearchAuthMetadata(ctx, account, token, proxyURL); err != nil {
 		return nil, err
@@ -94,6 +104,9 @@ func (s *OpenAIGatewayService) ForwardAlphaSearch(ctx context.Context, c *gin.Co
 	respBody, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 	if err != nil {
 		return nil, fmt.Errorf("read alpha search response: %w", err)
+	}
+	if s.handleCindyAlphaSearchBalance(ctx, account, resp, respBody, upstreamModel) {
+		return nil, newCindyAlphaSearchBalanceFailover(resp, respBody)
 	}
 
 	if resp.StatusCode >= http.StatusBadRequest {
@@ -140,6 +153,277 @@ func (s *OpenAIGatewayService) ForwardAlphaSearch(ctx context.Context, c *gin.Co
 	}, nil
 }
 
+type cindyAlphaSearchNativeResponse struct {
+	Body                  []byte
+	Usage                 OpenAIUsage
+	WebSearchCalls        int
+	ResponseID            string
+	UpstreamResponseModel string
+}
+
+func (s *OpenAIGatewayService) forwardCindyAlphaSearchViaNativeMessages(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	alphaBody []byte,
+	token string,
+	proxyURL string,
+	requestedModel string,
+	upstreamModel string,
+) (*OpenAIForwardResult, error) {
+	requestBody, err := buildCindyAlphaSearchMessagesBody(alphaBody)
+	if err != nil {
+		return nil, err
+	}
+	req, err := s.buildCindyAlphaSearchMessagesRequest(ctx, account, requestBody, token)
+	if err != nil {
+		return nil, err
+	}
+	SetActualOpenAIUpstreamEndpoint(c, "/v1/messages")
+
+	upstreamStart := time.Now()
+	resp, err := s.httpUpstream.Do(req, proxyURL, account.ID, account.Concurrency)
+	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
+	if err != nil {
+		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, true)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	respBody, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
+	if err != nil {
+		return nil, fmt.Errorf("read Cindy native web search response: %w", err)
+	}
+	// Exact balance exhaustion must be classified before bridge validation so
+	// it persists the durable account exclusion instead of becoming a harmless
+	// search-capability miss.
+	if s.handleCindyAlphaSearchBalance(ctx, account, resp, respBody, upstreamModel) {
+		return nil, newCindyAlphaSearchBalanceFailover(resp, respBody)
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, NewOpenAIAlphaSearchBridgeUnavailableError(resp.StatusCode, resp.Header, respBody)
+	}
+
+	parsed, err := parseCindyAlphaSearchMessagesResponse(respBody)
+	if err != nil || parsed.WebSearchCalls < 1 {
+		return nil, NewOpenAIAlphaSearchBridgeUnavailableError(http.StatusBadGateway, resp.Header, nil)
+	}
+	if !account.IsShadow() {
+		s.UpdateCodexUsageSnapshotFromHeaders(ctx, account.ID, resp.Header)
+	}
+	writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	c.Data(http.StatusOK, "application/json", parsed.Body)
+
+	requestID := strings.TrimSpace(resp.Header.Get("x-request-id"))
+	if requestID == "" {
+		requestID = parsed.ResponseID
+	}
+	return &OpenAIForwardResult{
+		RequestID:                    requestID,
+		ResponseID:                   parsed.ResponseID,
+		Usage:                        parsed.Usage,
+		UsageInputTokensExcludeCache: true,
+		Model:                        requestedModel,
+		BillingModel:                 upstreamModel,
+		UpstreamModel:                upstreamModel,
+		UpstreamResponseModel:        parsed.UpstreamResponseModel,
+		UpstreamEndpoint:             "/v1/messages",
+		ResponseHeaders:              resp.Header.Clone(),
+		Duration:                     time.Since(upstreamStart),
+		WebSearchCalls:               parsed.WebSearchCalls,
+	}, nil
+}
+
+func buildCindyAlphaSearchMessagesBody(alphaBody []byte) ([]byte, error) {
+	payload := map[string]any{
+		"model":      CindyWebSearchModel,
+		"max_tokens": 256,
+		"stream":     false,
+		"messages": []any{
+			map[string]any{
+				"role":    "user",
+				"content": openAIAlphaSearchResponsesWebSearchPrompt(alphaBody),
+			},
+		},
+		"tools": []any{
+			map[string]any{
+				"type":     "web_search_20250305",
+				"name":     "web_search",
+				"max_uses": 1,
+			},
+		},
+	}
+	return json.Marshal(payload)
+}
+
+func (s *OpenAIGatewayService) buildCindyAlphaSearchMessagesRequest(
+	ctx context.Context,
+	account *Account,
+	body []byte,
+	token string,
+) (*http.Request, error) {
+	baseURL := account.GetOpenAIBaseURL()
+	if baseURL == "" {
+		return nil, fmt.Errorf("Cindy base URL is required")
+	}
+	validatedURL, err := s.validateUpstreamBaseURL(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		buildOpenAIEndpointURL(validatedURL, "/v1/messages"),
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
+	authHeaders, err := s.buildOpenAIAuthenticationHeaders(ctx, account, token)
+	if err != nil {
+		return nil, fmt.Errorf("build Cindy native Messages authentication headers: %w", err)
+	}
+	for key, values := range authHeaders {
+		for _, value := range values {
+			req.Header.Add(key, value)
+		}
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("anthropic-version", "2023-06-01")
+	account.ApplyHeaderOverrides(req.Header)
+	return req, nil
+}
+
+func parseCindyAlphaSearchMessagesResponse(body []byte) (*cindyAlphaSearchNativeResponse, error) {
+	var response struct {
+		ID      string            `json:"id"`
+		Model   string            `json:"model"`
+		Content []json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("decode Cindy native web search response: %w", err)
+	}
+
+	var output strings.Builder
+	results := make([]any, 0)
+	seenURLs := make(map[string]struct{})
+	hasToolResult := false
+	hasValidCitation := false
+	for _, rawBlock := range response.Content {
+		var block map[string]any
+		if err := json.Unmarshal(rawBlock, &block); err != nil {
+			continue
+		}
+		switch blockType, _ := block["type"].(string); blockType {
+		case "text":
+			if text, _ := block["text"].(string); text != "" {
+				_, _ = output.WriteString(text)
+			}
+			citations, _ := block["citations"].([]any)
+			for _, rawCitation := range citations {
+				citation, _ := rawCitation.(map[string]any)
+				if appendCindyAlphaSearchResult(citation, &results, seenURLs) {
+					hasValidCitation = true
+				}
+			}
+		case "web_search_tool_result":
+			if collectCindyAlphaSearchToolResults(block["content"], &results, seenURLs) {
+				hasToolResult = true
+			}
+		}
+	}
+
+	searchRequests := gjson.GetBytes(body, "usage.server_tool_use.web_search_requests")
+	searchRequestCount := int(searchRequests.Int())
+	if searchRequests.Type != gjson.Number || searchRequestCount < 1 || float64(searchRequestCount) != searchRequests.Float() {
+		return nil, fmt.Errorf("Cindy native web search response has no billable search usage")
+	}
+	if !hasToolResult && !hasValidCitation {
+		return nil, fmt.Errorf("Cindy native web search response has no search evidence")
+	}
+
+	alphaResponse := map[string]any{"output": output.String()}
+	if len(results) > 0 {
+		alphaResponse["results"] = results
+	}
+	encoded, err := json.Marshal(alphaResponse)
+	if err != nil {
+		return nil, err
+	}
+	claudeUsage := parseClaudeUsageFromResponseBody(body)
+	return &cindyAlphaSearchNativeResponse{
+		Body: encoded,
+		Usage: OpenAIUsage{
+			InputTokens:              claudeUsage.InputTokens,
+			OutputTokens:             claudeUsage.OutputTokens,
+			CacheCreationInputTokens: claudeUsage.CacheCreationInputTokens,
+			CacheReadInputTokens:     claudeUsage.CacheReadInputTokens,
+			CacheCreation5mTokens:    claudeUsage.CacheCreation5mTokens,
+			CacheCreation1hTokens:    claudeUsage.CacheCreation1hTokens,
+			ImageOutputTokens:        claudeUsage.ImageOutputTokens,
+		},
+		WebSearchCalls:        searchRequestCount,
+		ResponseID:            strings.TrimSpace(response.ID),
+		UpstreamResponseModel: strings.TrimSpace(response.Model),
+	}, nil
+}
+
+func collectCindyAlphaSearchToolResults(value any, results *[]any, seenURLs map[string]struct{}) bool {
+	hasValidResult := false
+	switch typed := value.(type) {
+	case map[string]any:
+		if typed["type"] == "web_search_result" {
+			hasValidResult = appendCindyAlphaSearchResult(typed, results, seenURLs)
+		}
+		for _, child := range typed {
+			if collectCindyAlphaSearchToolResults(child, results, seenURLs) {
+				hasValidResult = true
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if collectCindyAlphaSearchToolResults(child, results, seenURLs) {
+				hasValidResult = true
+			}
+		}
+	}
+	return hasValidResult
+}
+
+func appendCindyAlphaSearchResult(value map[string]any, results *[]any, seenURLs map[string]struct{}) bool {
+	if value == nil {
+		return false
+	}
+	rawURL, _ := value["url"].(string)
+	rawURL = strings.TrimSpace(rawURL)
+	if !validOpenAIAlphaSearchHTTPURL(rawURL) {
+		return false
+	}
+	if _, exists := seenURLs[rawURL]; exists {
+		return true
+	}
+	seenURLs[rawURL] = struct{}{}
+	result := map[string]any{
+		"type":   "text_result",
+		"ref_id": fmt.Sprintf("turn0search%d", len(*results)),
+		"url":    rawURL,
+	}
+	if title, _ := value["title"].(string); strings.TrimSpace(title) != "" {
+		result["title"] = strings.TrimSpace(title)
+	}
+	*results = append(*results, result)
+	return true
+}
+
+func validOpenAIAlphaSearchHTTPURL(value string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	return parsed.Scheme == "http" || parsed.Scheme == "https"
+}
+
 func (s *OpenAIGatewayService) forwardAlphaSearchViaResponsesWebSearch(
 	ctx context.Context,
 	c *gin.Context,
@@ -174,6 +458,9 @@ func (s *OpenAIGatewayService) forwardAlphaSearchViaResponsesWebSearch(
 	respBody, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 	if err != nil {
 		return nil, fmt.Errorf("read alpha search responses fallback response: %w", err)
+	}
+	if s.handleCindyAlphaSearchBalance(ctx, account, resp, respBody, upstreamModel) {
+		return nil, newCindyAlphaSearchBalanceFailover(resp, respBody)
 	}
 
 	if resp.StatusCode >= http.StatusBadRequest {
@@ -240,6 +527,52 @@ func (s *OpenAIGatewayService) forwardAlphaSearchViaResponsesWebSearch(
 		Duration:         time.Since(upstreamStart),
 		WebSearchCalls:   1,
 	}, nil
+}
+
+func (s *OpenAIGatewayService) handleCindyAlphaSearchBalance(
+	ctx context.Context,
+	account *Account,
+	resp *http.Response,
+	body []byte,
+	upstreamModel string,
+) bool {
+	if resp == nil {
+		return false
+	}
+	if ClassifyCindyBalanceInsufficient(account, resp.StatusCode, body) == CindyBalanceSignalHTTP429 {
+		s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, body, upstreamModel)
+		return true
+	}
+
+	recognized := false
+	forEachOpenAISSEDataPayload(string(body), func(payload []byte) {
+		if recognized {
+			return
+		}
+		if s.handleCindyBalanceHTTPResponseTerminalEvent(ctx, account, resp.StatusCode, resp.Header, payload, upstreamModel) {
+			recognized = true
+		}
+	})
+	if recognized {
+		return true
+	}
+	return s.handleCindyBalanceHTTPResponseTerminalEvent(ctx, account, resp.StatusCode, resp.Header, body, upstreamModel)
+}
+
+func newCindyAlphaSearchBalanceFailover(resp *http.Response, body []byte) *UpstreamFailoverError {
+	var headers http.Header
+	if resp != nil {
+		headers = resp.Header.Clone()
+	}
+	return sanitizeOpenAICindyFailoverError(&UpstreamFailoverError{
+		StatusCode:               http.StatusTooManyRequests,
+		ResponseBody:             append([]byte(nil), body...),
+		ResponseHeaders:          headers,
+		RetryableOnSameAccount:   false,
+		Scope:                    GatewayFailureScopeAccount,
+		NextAccountAction:        NextAccountRetry,
+		CindyBalanceInsufficient: true,
+	})
 }
 
 func (s *OpenAIGatewayService) buildOpenAIAlphaSearchResponsesWebSearchRequest(ctx context.Context, c *gin.Context, account *Account, alphaBody []byte, body []byte, token string) (*http.Request, error) {

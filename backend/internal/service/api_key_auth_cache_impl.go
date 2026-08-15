@@ -14,7 +14,7 @@ import (
 	"github.com/dgraph-io/ristretto"
 )
 
-const apiKeyAuthSnapshotVersion = 19 // v19: group search/audio/video_model_prices billing fields (force refresh of pre-fix snapshots)
+const apiKeyAuthSnapshotVersion = 20 // v20: materialized strict Cindy group identity
 
 type apiKeyAuthCacheConfig struct {
 	l1Size        int
@@ -383,6 +383,8 @@ func (s *APIKeyService) snapshotFromAPIKey(ctx context.Context, apiKey *APIKey) 
 			Platform:                        apiKey.Group.Platform,
 			IsExclusive:                     apiKey.Group.IsExclusive,
 			Status:                          apiKey.Group.Status,
+			StrictCindyKnown:                apiKey.Group.StrictCindyKnown,
+			StrictCindy:                     apiKey.Group.StrictCindy,
 			SubscriptionType:                apiKey.Group.SubscriptionType,
 			RateMultiplier:                  apiKey.Group.RateMultiplier,
 			DailyLimitUSD:                   apiKey.Group.DailyLimitUSD,
@@ -478,6 +480,8 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 			IsExclusive:                     snapshot.Group.IsExclusive,
 			Status:                          snapshot.Group.Status,
 			Hydrated:                        true,
+			StrictCindyKnown:                snapshot.Group.StrictCindyKnown,
+			StrictCindy:                     snapshot.Group.StrictCindy,
 			SubscriptionType:                snapshot.Group.SubscriptionType,
 			RateMultiplier:                  snapshot.Group.RateMultiplier,
 			DailyLimitUSD:                   snapshot.Group.DailyLimitUSD,

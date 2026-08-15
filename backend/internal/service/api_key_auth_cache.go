@@ -61,6 +61,8 @@ type APIKeyAuthGroupSnapshot struct {
 	Platform                        string                        `json:"platform"`
 	IsExclusive                     bool                          `json:"is_exclusive"`
 	Status                          string                        `json:"status"`
+	StrictCindyKnown                bool                          `json:"strict_cindy_known"`
+	StrictCindy                     bool                          `json:"strict_cindy"`
 	SubscriptionType                string                        `json:"subscription_type"`
 	RateMultiplier                  float64                       `json:"rate_multiplier"`
 	DailyLimitUSD                   *float64                      `json:"daily_limit_usd,omitempty"`

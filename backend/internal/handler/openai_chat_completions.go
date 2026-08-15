@@ -80,6 +80,15 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
 		return
 	}
+	strictCindyAllowed, err := h.strictCindyModelAllowed(c, apiKey, reqModel, service.CindyEndpointChatCompletions)
+	if err != nil {
+		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
+		return
+	}
+	if !strictCindyAllowed {
+		h.errorResponse(c, http.StatusNotFound, "model_not_found", "Model is not supported on the Chat Completions endpoint")
+		return
+	}
 	if cappedBody, changed := applyOpenAIReasoningEffortPolicyForRequest(c, apiKey, body); changed {
 		body = cappedBody
 	}

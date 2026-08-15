@@ -2,11 +2,13 @@ package service
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	coderws "github.com/coder/websocket"
@@ -261,6 +263,107 @@ func TestCindyHTTPToWSV2FirstTurnTerminalEventFailoverClassification(t *testing.
 			require.ErrorAs(t, classified, &failoverErr)
 			require.Equal(t, tc.wantStatus, failoverErr.StatusCode)
 			require.JSONEq(t, string(openAITransportFailoverBody), string(failoverErr.ResponseBody))
+		})
+	}
+}
+
+func TestCindyWSV2BalanceTerminalWriteOrdering(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name         string
+		reason       string
+		events       [][]byte
+		wantFailover bool
+		wantOutput   bool
+	}{
+		{
+			name: "ordinary_response_failed_before_output",
+			events: [][]byte{
+				[]byte(`{"type":"response.failed","response":{"error":{"type":"budget_exceeded","code":"429","message":"sensitive upstream detail"}}}`),
+			},
+			wantFailover: true,
+		},
+		{
+			name: "ordinary_bare_error_before_output",
+			events: [][]byte{
+				[]byte(`{"type":"error","error":{"type":"budget_exceeded","code":"429","message":"sensitive upstream detail"}}`),
+			},
+			wantFailover: true,
+		},
+		{
+			name: "ordinary_after_output",
+			events: [][]byte{
+				[]byte(`{"type":"response.output_text.delta","delta":"ok"}`),
+				[]byte(`{"type":"response.failed","response":{"error":{"type":"budget_exceeded","code":"429","message":"sensitive upstream detail"}}}`),
+			},
+			wantOutput: true,
+		},
+		{
+			name:   "http_to_wsv2_after_output",
+			reason: openAICindyHTTPToWSV2Reason,
+			events: [][]byte{
+				[]byte(`{"type":"response.output_text.delta","delta":"ok"}`),
+				[]byte(`{"type":"error","error":{"type":"budget_exceeded","code":"429","message":"sensitive upstream detail"}}`),
+			},
+			wantOutput: true,
+		},
+	}
+	for index, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := cindyHTTPToWSV2TestService().cfg
+			cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 1
+			cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+			cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
+			cfg.Gateway.OpenAIWS.QueueLimitPerConn = 4
+			cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+			cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+			captureConn := &openAIWSCaptureConn{events: tt.events}
+			pool := newOpenAIWSConnPool(cfg)
+			pool.setClientDialerForTest(&openAIWSCaptureDialer{conn: captureConn})
+			t.Cleanup(pool.Close)
+			repo := &cindyRateLimitAccountRepoStub{}
+			rateLimitService := NewRateLimitService(repo, nil, cfg, nil, nil)
+			gateway := &OpenAIGatewayService{
+				cfg:              cfg,
+				openaiWSPool:     pool,
+				toolCorrector:    NewCodexToolCorrector(),
+				rateLimitService: rateLimitService,
+			}
+			rateLimitService.SetAccountRuntimeBlocker(gateway)
+			account := cindyHTTPToWSV2TestAccount()
+			account.ID = int64(8520 + index)
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+			c.Request.Header.Set("User-Agent", "codex_cli_rs/0.146.0")
+			decision := OpenAIWSProtocolDecision{
+				Transport: OpenAIUpstreamTransportResponsesWebsocketV2,
+				Reason:    tt.reason,
+			}
+
+			_, err := gateway.forwardOpenAIWSV2(
+				context.Background(), c, account,
+				map[string]any{"model": "openai/gpt-5.6-luna", "stream": true, "input": "hi"},
+				"sk-test", decision, true, true,
+				"gpt-5.6-luna", "openai/gpt-5.6-luna", time.Now(), 0, "", new(bool),
+			)
+
+			var failoverErr *UpstreamFailoverError
+			if tt.wantFailover {
+				require.ErrorAs(t, err, &failoverErr)
+				require.True(t, failoverErr.CindyBalanceInsufficient)
+				require.False(t, failoverErr.RetryableOnSameAccount)
+				require.Empty(t, recorder.Body.String())
+			} else {
+				require.Error(t, err)
+				require.False(t, errors.As(err, &failoverErr), "output already sent must not trigger account replay")
+				require.True(t, tt.wantOutput)
+				require.Contains(t, recorder.Body.String(), `"delta":"ok"`)
+				require.Contains(t, recorder.Body.String(), "upstream_retry_exhausted")
+			}
+			require.NotContains(t, recorder.Body.String(), "budget_exceeded")
+			require.NotContains(t, recorder.Body.String(), "sensitive upstream detail")
+			require.Equal(t, 1, repo.markCalls)
 		})
 	}
 }

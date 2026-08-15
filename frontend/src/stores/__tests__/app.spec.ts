@@ -393,6 +393,17 @@ describe('useAppStore', () => {
       consoleError.mockRestore()
     })
 
+    it('无缓存对象的公共设置 fallback 默认关闭 Image Studio', async () => {
+      const store = useAppStore()
+      store.publicSettingsLoaded = true
+      store.cachedPublicSettings = null
+
+      const settings = await store.fetchPublicSettings()
+
+      expect(settings?.image_studio_enabled).toBe(false)
+      expect(getPublicSettings).not.toHaveBeenCalled()
+    })
+
     it('从 window.__APP_CONFIG__ 初始化', () => {
       const windowAny = window as any
       windowAny.__APP_CONFIG__ = {

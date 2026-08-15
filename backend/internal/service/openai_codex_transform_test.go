@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestApplyCodexOAuthTransform_ToolContinuationPreservesInput(t *testing.T) {
@@ -1218,6 +1219,197 @@ func TestNormalizeOpenAIResponsesImageOnlyModel_PreservesExistingImageTool(t *te
 	tool, ok := tools[0].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "gpt-image-1.5", tool["model"])
+}
+
+func TestNormalizeOpenAIResponsesImageOnlyModelWithModel_UsesOriginalBeforeCindyMapping(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "openai/gpt-image-2",
+		"input": "draw a cat",
+	}
+
+	require.True(t, normalizeOpenAIResponsesImageOnlyModelWithModel(reqBody, "gpt-image-2"))
+	require.Equal(t, openAIImagesResponsesMainModel, reqBody["model"])
+	tools, ok := reqBody["tools"].([]any)
+	require.True(t, ok)
+	require.Equal(t, "gpt-image-2", tools[0].(map[string]any)["model"])
+}
+
+func TestNormalizeOpenAIResponsesImageOnlyModel_UsesLegacyControllerExceptExactCindyMapping(t *testing.T) {
+	ordinaryBody := map[string]any{"model": "gpt-image-2", "input": "draw"}
+	require.True(t, normalizeOpenAIResponsesImageOnlyModel(ordinaryBody))
+	require.Equal(t, "gpt-5.4-mini", ordinaryBody["model"])
+
+	ordinary := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"base_url": "https://api.openai.com",
+		},
+	}
+	require.False(t, mapCindyOpenAIResponsesImageModels(ordinaryBody, ordinary))
+	require.Equal(t, "gpt-5.4-mini", ordinaryBody["model"])
+
+	cindyBody := map[string]any{"model": "gpt-image-2", "input": "draw"}
+	require.True(t, normalizeOpenAIResponsesImageOnlyModel(cindyBody))
+	cindy := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"base_url": "https://api.laxarouter.ai",
+		},
+	}
+	require.True(t, mapCindyOpenAIResponsesImageModels(cindyBody, cindy))
+	require.Equal(t, "openai/gpt-5.6-luna", cindyBody["model"])
+}
+
+func TestMapCindyOpenAIResponsesImageModels_MapsControllerAndNestedTool(t *testing.T) {
+	cindy := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"base_url": "https://api.laxarouter.ai",
+		},
+	}
+	reqBody := map[string]any{
+		"model": "gpt-5.6-luna",
+		"tools": []any{
+			map[string]any{"type": "image_generation", "model": "gpt-image-2"},
+			map[string]any{"type": "function", "name": "keep-me"},
+		},
+	}
+
+	require.True(t, mapCindyOpenAIResponsesImageModels(reqBody, cindy))
+	require.Equal(t, "openai/gpt-5.6-luna", reqBody["model"])
+	tools := reqBody["tools"].([]any)
+	require.Equal(t, "openai/gpt-image-2", tools[0].(map[string]any)["model"])
+	require.Equal(t, "keep-me", tools[1].(map[string]any)["name"])
+
+	ordinary := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.openai.com"}}
+	require.False(t, mapCindyOpenAIResponsesImageModels(reqBody, ordinary))
+}
+
+func TestResolveCindyResponsesImageTools_ValidatesAndMapsBeforeSelection(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		body      string
+		wantModel string
+		wantErr   string
+		modelErr  bool
+		unchanged bool
+	}{
+		{
+			name:      "empty model selects verified GPT default",
+			body:      `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation"}]}`,
+			wantModel: "openai/gpt-image-2",
+		},
+		{
+			name:      "public GPT ID maps with verified controls",
+			body:      `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"gpt-image-2","size":"1024x1024","quality":"low","n":1}]}`,
+			wantModel: "openai/gpt-image-2",
+		},
+		{
+			name:    "GPT rejects a second output",
+			body:    `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"gpt-image-2","n":2}]}`,
+			wantErr: "between 1 and 1",
+		},
+		{
+			name:      "full Gemini ID remains stable",
+			body:      `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"google/gemini-3-pro-image","size":"1024x1024","quality":"low","n":1}]}`,
+			wantModel: "google/gemini-3-pro-image",
+			unchanged: true,
+		},
+		{
+			name:     "unknown image ID fails closed",
+			body:     `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"gpt-image-1"}]}`,
+			modelErr: true,
+		},
+		{
+			name:     "text model cannot be used as image tool",
+			body:     `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"gpt-5.6-luna"}]}`,
+			modelErr: true,
+		},
+		{
+			name:    "Gemini rejects a second output",
+			body:    `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"gemini-3-pro-image","n":2}]}`,
+			wantErr: "between 1 and 1",
+		},
+		{
+			name:    "unverified quality fails closed",
+			body:    `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"gpt-image-2","quality":"high"}]}`,
+			wantErr: "quality is not verified",
+		},
+		{
+			name:    "unverified output format fails closed",
+			body:    `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"gpt-image-2","output_format":"png"}]}`,
+			wantErr: "output_format is not verified",
+		},
+		{
+			name:      "non image tools remain byte stable",
+			body:      `{"model":"gpt-5.6-luna", "tools":[{"type":"function","name":"lookup"}]}`,
+			unchanged: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			resolved, err := ResolveCindyResponsesImageTools([]byte(test.body))
+			if test.modelErr {
+				require.ErrorIs(t, err, ErrCindyResponsesImageToolModelNotFound)
+				return
+			}
+			if test.wantErr != "" {
+				require.ErrorContains(t, err, test.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			if test.unchanged {
+				require.Equal(t, test.body, string(resolved))
+			}
+			if test.wantModel != "" {
+				require.Equal(t, test.wantModel, gjson.GetBytes(resolved, "tools.0.model").String())
+			}
+		})
+	}
+}
+
+func TestResolveCindyResponsesImageTools_TopLevelLiveIDNormalizesAndValidatesControls(t *testing.T) {
+	t.Parallel()
+
+	resolved, err := ResolveCindyResponsesImageTools([]byte(
+		`{"model":"openai/gpt-image-2","input":"draw","size":"1024x1024","quality":"low","n":1}`,
+	))
+	require.NoError(t, err)
+	require.Equal(t, "gpt-image-2", gjson.GetBytes(resolved, "model").String())
+
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "size",
+			body: `{"model":"openai/gpt-image-2","input":"draw","size":"1536x1024","quality":"low","n":1}`,
+			want: "request.size is not verified",
+		},
+		{
+			name: "quality",
+			body: `{"model":"openai/gpt-image-2","input":"draw","size":"1024x1024","quality":"high","n":1}`,
+			want: "request.quality is not verified",
+		},
+		{
+			name: "count",
+			body: `{"model":"openai/gpt-image-2","input":"draw","size":"1024x1024","quality":"low","n":2}`,
+			want: "request.n must be between 1 and 1",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := ResolveCindyResponsesImageTools([]byte(test.body))
+			require.ErrorContains(t, err, test.want)
+		})
+	}
 }
 
 func TestValidateOpenAIResponsesImageModel_RejectsImageOnlyModel(t *testing.T) {

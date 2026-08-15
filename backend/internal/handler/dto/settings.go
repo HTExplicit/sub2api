@@ -423,6 +423,7 @@ type PublicSettings struct {
 	ChannelMonitorHideThroughput         bool   `json:"channel_monitor_hide_throughput"`
 
 	AvailableChannelsEnabled bool `json:"available_channels_enabled"`
+	ImageStudioEnabled       bool `json:"image_studio_enabled"`
 
 	ModelPlazaEnabled     bool `json:"model_plaza_enabled"`
 	ModelPlazaRequireAuth bool `json:"model_plaza_require_auth"`

@@ -17,6 +17,7 @@ import (
 const stickySessionPrefix = "sticky_session:"
 const liveCallPrefix = "live:call:"
 const openAIRuntimeBreakerPrefix = "openai_runtime_breaker:"
+const cindyBalancePendingPrefix = "cindy_balance_pending:"
 const openAIRuntimeBreakerHalfOpenRetention = 5 * time.Minute
 
 type gatewayCache struct {
@@ -155,6 +156,60 @@ var _ service.CyberSessionBlockStore = (*gatewayCache)(nil)
 var _ service.LiveCallStore = (*gatewayCache)(nil)
 var _ service.OpenAIRuntimeBreakerStore = (*gatewayCache)(nil)
 var _ service.OpenAIRuntimeBreakerLeaseStore = (*gatewayCache)(nil)
+var _ service.CindyBalancePendingStore = (*gatewayCache)(nil)
+
+func cindyBalancePendingKey(accountID int64) string {
+	return cindyBalancePendingPrefix + strconv.FormatInt(accountID, 10)
+}
+
+func (c *gatewayCache) MarkCindyBalancePending(ctx context.Context, accountID int64) error {
+	if c == nil || c.rdb == nil {
+		return errors.New("gateway cache unavailable")
+	}
+	if accountID <= 0 {
+		return errors.New("invalid Cindy balance pending account")
+	}
+	// A pending exact budget signal must survive process restarts and must not
+	// expire before the corresponding database marker is committed.
+	return c.rdb.Set(ctx, cindyBalancePendingKey(accountID), "1", 0).Err()
+}
+
+func (c *gatewayCache) HasCindyBalancePendingBatch(ctx context.Context, accountIDs []int64) (map[int64]bool, error) {
+	if c == nil || c.rdb == nil {
+		return nil, errors.New("gateway cache unavailable")
+	}
+	if len(accountIDs) == 0 {
+		return map[int64]bool{}, nil
+	}
+	keys := make([]string, len(accountIDs))
+	for i, accountID := range accountIDs {
+		if accountID <= 0 {
+			return nil, errors.New("invalid Cindy balance pending account")
+		}
+		keys[i] = cindyBalancePendingKey(accountID)
+	}
+	values, err := c.rdb.MGet(ctx, keys...).Result()
+	if err != nil {
+		return nil, err
+	}
+	pending := make(map[int64]bool, len(accountIDs))
+	for i, value := range values {
+		if value != nil {
+			pending[accountIDs[i]] = true
+		}
+	}
+	return pending, nil
+}
+
+func (c *gatewayCache) ClearCindyBalancePending(ctx context.Context, accountID int64) error {
+	if c == nil || c.rdb == nil {
+		return errors.New("gateway cache unavailable")
+	}
+	if accountID <= 0 {
+		return errors.New("invalid Cindy balance pending account")
+	}
+	return c.rdb.Del(ctx, cindyBalancePendingKey(accountID)).Err()
+}
 
 func openAIRuntimeBreakerScope(model string) string {
 	model = strings.ToLower(strings.TrimSpace(model))

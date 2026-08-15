@@ -282,7 +282,10 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 	upstreamTerminalEvent := ""
 	sawDone := false
 	wroteDownstream := false
+	semanticOutputStarted := false
 	clientDisconnected := false
+	pendingClientMessages := make([][]byte, 0, 4)
+	bufferCindyPreamble := cindyBalanceReplayBufferEnabled(account)
 	mappedModel := ""
 	needModelReplace := false
 	var mappedModelBytes []byte
@@ -353,7 +356,37 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			continue
 		}
 
-		upstreamMessage := []byte(trimmedData)
+		rawUpstreamMessage := []byte(trimmedData)
+		rawEventType, _, _ := parseOpenAIWSEventEnvelope(rawUpstreamMessage)
+		cindyBalanceInsufficient := false
+		if rawEventType == "error" || rawEventType == "response.failed" {
+			cindyBalanceInsufficient = s.handleCindyBalanceTerminalEvent(
+				ctx, account, resp.Header, rawUpstreamMessage,
+				canonicalOpenAIAccountSchedulingModel(account, originalModel),
+			)
+		}
+		if cindyBalanceInsufficient {
+			pendingClientMessages = pendingClientMessages[:0]
+			failoverErr := newCindyBalanceTerminalFailover(resp.Header)
+			if turn == 1 && !semanticOutputStarted {
+				return nil, failoverErr
+			}
+			if !clientDisconnected {
+				if err := writeClientMessage(OpenAIWSRetryableFailureEvent()); err != nil {
+					if isOpenAIWSClientDisconnectError(err) {
+						clientDisconnected = true
+					} else {
+						return nil, wrapOpenAIWSIngressTurnError(
+							"write_client",
+							fmt.Errorf("write sanitized Cindy balance failure: %w", err),
+							wroteDownstream,
+						)
+					}
+				}
+			}
+			return resultWithUsage(), errors.New("Cindy balance exhausted after downstream output")
+		}
+		upstreamMessage := rawUpstreamMessage
 		if normalized, changed := normalizeCompletedImageGenerationStatus(upstreamMessage); changed {
 			upstreamMessage = normalized
 		}
@@ -399,6 +432,9 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 				errMessage = "upstream error event"
 			}
 			statusCode := openAIWSErrorHTTPStatusFromRaw(errCodeRaw, errTypeRaw)
+			if cindyBalanceInsufficient {
+				statusCode = http.StatusTooManyRequests
+			}
 			shouldFailover := s.shouldFailoverOpenAIUpstreamResponse(statusCode, errMessage, upstreamMessage)
 			if account.Platform == PlatformGrok {
 				// SSE error events do not carry an HTTP status. The local status
@@ -411,7 +447,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 					shouldFailover = s.shouldFailoverGrokUpstreamError(statusCode, upstreamMessage)
 					s.handleGrokAccountUpstreamError(ctx, account, statusCode, resp.Header, upstreamMessage)
 				}
-			} else if shouldFailover {
+			} else if shouldFailover && !cindyBalanceInsufficient {
 				accountStatus := statusCode
 				if transientStatus := openAIWSPayloadTransientStatus(upstreamMessage); transientStatus != 0 {
 					accountStatus = transientStatus
@@ -436,26 +472,41 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			}
 		}
 		if !clientDisconnected {
-			if err := writeClientMessage(clientMessage); err != nil {
-				if isOpenAIWSClientDisconnectError(err) {
-					clientDisconnected = true
-					closeStatus, closeReason := summarizeOpenAIWSReadCloseError(err)
-					logOpenAIWSModeInfo(
-						"ingress_ws_http_bridge_client_disconnected_drain account_id=%d turn=%d close_status=%s close_reason=%s",
-						account.ID,
-						turn,
-						closeStatus,
-						truncateOpenAIWSLogValue(closeReason, openAIWSHeaderValueMaxLen),
-					)
-				} else {
-					return nil, wrapOpenAIWSIngressTurnError(
-						"write_client",
-						fmt.Errorf("write client websocket event: %w", err),
-						wroteDownstream,
-					)
+			startsSemanticOutput := openAIWSPassthroughStartsSemanticOutput(clientMessage) &&
+				!isOpenAIWSTerminalEvent(eventType)
+			writeCurrentEvent := !bufferCindyPreamble || semanticOutputStarted || startsSemanticOutput ||
+				isOpenAIWSTerminalEvent(eventType) || eventType == "error"
+			if !writeCurrentEvent {
+				pendingClientMessages = append(pendingClientMessages, append([]byte(nil), clientMessage...))
+				continue
+			}
+			messages := append(pendingClientMessages, clientMessage)
+			pendingClientMessages = pendingClientMessages[:0]
+			for _, downstreamMessage := range messages {
+				if err := writeClientMessage(downstreamMessage); err != nil {
+					if isOpenAIWSClientDisconnectError(err) {
+						clientDisconnected = true
+						closeStatus, closeReason := summarizeOpenAIWSReadCloseError(err)
+						logOpenAIWSModeInfo(
+							"ingress_ws_http_bridge_client_disconnected_drain account_id=%d turn=%d close_status=%s close_reason=%s",
+							account.ID,
+							turn,
+							closeStatus,
+							truncateOpenAIWSLogValue(closeReason, openAIWSHeaderValueMaxLen),
+						)
+						break
+					} else {
+						return nil, wrapOpenAIWSIngressTurnError(
+							"write_client",
+							fmt.Errorf("write client websocket event: %w", err),
+							wroteDownstream,
+						)
+					}
 				}
-			} else {
 				wroteDownstream = true
+			}
+			if startsSemanticOutput && !clientDisconnected {
+				semanticOutputStarted = true
 			}
 		}
 
@@ -463,7 +514,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			return resultWithUsage(), upstreamEventErr
 		}
 		if isOpenAIWSTerminalEvent(eventType) {
-			upstreamTerminalEvent = s.handleOpenAIWSTerminalTransientFailure(ctx, account, canonicalOpenAIAccountSchedulingModel(account, originalModel), resp.Header, upstreamMessage)
+			upstreamTerminalEvent = s.handleOpenAIWSTerminalTransientFailure(ctx, account, canonicalOpenAIAccountSchedulingModel(account, originalModel), resp.Header, rawUpstreamMessage)
 			terminalEventCount++
 			firstTokenMsValue := -1
 			if firstTokenMs != nil {

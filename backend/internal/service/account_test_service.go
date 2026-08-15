@@ -146,6 +146,7 @@ type AccountTestService struct {
 	cfg                       *config.Config
 	settingService            *SettingService
 	tlsFPProfileService       *TLSFingerprintProfileService
+	openAIGatewayService      *OpenAIGatewayService
 	agentIdentityTaskMu       sync.Mutex
 	agentIdentityWS           agentIdentityWSConnectionInvalidator
 	// grokWSDialer is optional; realtime account tests use the default OpenAI-style
@@ -603,10 +604,16 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	ctx := c.Request.Context()
 	mode = normalizeAccountTestMode(mode)
 
-	// Default to openai.DefaultTestModel for OpenAI testing
+	// Cindy has no gpt-5.4 data-plane model. Select its public Luna ID before
+	// normal model resolution so the wire request uses openai/gpt-5.6-luna.
+	// All other OpenAI accounts retain the package default.
 	testModelID := modelID
 	if testModelID == "" {
-		testModelID = openai.DefaultTestModel
+		if CindyCapabilityCatalogFeatureEnabled() && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+			testModelID = CindyDefaultTestModel
+		} else {
+			testModelID = openai.DefaultTestModel
+		}
 	}
 
 	// Align test routing with gateway behavior: OpenAI accounts apply normal
@@ -766,6 +773,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		cindyBalanceInsufficient := s.markCindyBalanceInsufficientFromTest(ctx, account, resp.StatusCode, body)
 		body = redactAgentIdentitySensitiveBodyForAccount(ctx, s.accountRepo, credentialAccount, body)
 		if !agentIdentityTaskRecoveryWasTried(ctx) && credentialAccount.IsOpenAIAgentIdentity() && isAgentIdentityTaskInvalidHTTPResponse(resp.StatusCode, body) {
 			expectedTaskID := credentialAccount.GetCredential("task_id")
@@ -775,7 +783,6 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 			c.Request = c.Request.WithContext(markAgentIdentityTaskRecoveryTried(ctx))
 			return s.testOpenAIAccountConnection(c, account, modelID, prompt, mode)
 		}
-		cindyBalanceInsufficient := s.markCindyBalanceInsufficientFromTest(ctx, account, resp.StatusCode, body)
 		if resp.StatusCode == http.StatusTooManyRequests && !cindyBalanceInsufficient {
 			s.reconcileOpenAI429State(ctx, account, resp.Header, body)
 		}
@@ -788,7 +795,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	}
 
 	// Process SSE stream
-	return s.processOpenAIStream(c, resp.Body)
+	return s.processOpenAIStream(c, ctx, account, resp.Body)
 }
 
 // testGrokAccountConnection routes Grok admin connectivity tests by explicit mode first,
@@ -1082,7 +1089,7 @@ func (s *AccountTestService) testGrokResponsesConnection(c *gin.Context, ctx con
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Grok Responses API returned %d: %s", resp.StatusCode, string(body)))
 	}
 
-	return s.processOpenAIStream(c, resp.Body)
+	return s.processOpenAIStream(c, ctx, account, resp.Body)
 }
 
 func (s *AccountTestService) testGrokImageGeneration(c *gin.Context, ctx context.Context, account *Account, authToken, modelID, prompt, imageDataURL string) error {
@@ -1975,7 +1982,7 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Chat Completions API (/v1/chat/completions) returned %d: %s", resp.StatusCode, string(body)))
 	}
 
-	return s.processOpenAIChatCompletionsStream(c, resp.Body)
+	return s.processOpenAIChatCompletionsStream(c, ctx, account, resp.Body)
 }
 
 // testOpenAICompactConnection probes /responses/compact and persists the
@@ -2085,6 +2092,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	cindyBalanceInsufficient := s.markCindyBalanceInsufficientFromTest(ctx, account, resp.StatusCode, body)
 	body = redactAgentIdentitySensitiveBodyForAccount(ctx, s.accountRepo, credentialAccount, body)
 	if !agentIdentityTaskRecoveryWasTried(ctx) && credentialAccount.IsOpenAIAgentIdentity() && isAgentIdentityTaskInvalidHTTPResponse(resp.StatusCode, body) {
 		expectedTaskID := credentialAccount.GetCredential("task_id")
@@ -2095,7 +2103,6 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 		return s.testOpenAICompactConnection(c, account, testModelID)
 	}
 
-	cindyBalanceInsufficient := s.markCindyBalanceInsufficientFromTest(ctx, account, resp.StatusCode, body)
 	if s.accountRepo != nil {
 		updates := buildOpenAICompactProbeExtraUpdates(resp, body, nil, time.Now())
 		if codexUpdates, err := extractOpenAICodexProbeUpdates(resp); err == nil && len(codexUpdates) > 0 {
@@ -2160,8 +2167,20 @@ func (s *AccountTestService) reconcileOpenAI429State(ctx context.Context, accoun
 }
 
 func (s *AccountTestService) markCindyBalanceInsufficientFromTest(ctx context.Context, account *Account, statusCode int, body []byte) bool {
-	if !IsCindyBalanceInsufficientResponse(account, statusCode, body) {
+	signal := ClassifyCindyBalanceInsufficient(account, statusCode, body)
+	if signal == CindyBalanceSignalNone {
+		if IsAmbiguousCindyBalanceTerminalEvent(account, body) && s.openAIGatewayService != nil {
+			s.openAIGatewayService.scheduleAmbiguousCindyBalanceRecheck(account)
+		}
 		return false
+	}
+	if gateway := s.openAIGatewayService; gateway != nil && gateway.rateLimitService != nil {
+		if signal == CindyBalanceSignalHTTP429 {
+			gateway.handleOpenAIAccountUpstreamError(ctx, account, statusCode, nil, body)
+		} else {
+			gateway.handleCindyBalanceTerminalEvent(ctx, account, nil, body)
+		}
+		return true
 	}
 	repo, ok := s.accountRepo.(CindyBalanceAccountRepository)
 	if !ok {
@@ -2675,7 +2694,7 @@ func (s *AccountTestService) processClaudeStream(c *gin.Context, body io.Reader)
 
 // processOpenAIChatCompletionsStream processes SSE chunks from the
 // OpenAI-compatible Chat Completions API.
-func (s *AccountTestService) processOpenAIChatCompletionsStream(c *gin.Context, body io.Reader) error {
+func (s *AccountTestService) processOpenAIChatCompletionsStream(c *gin.Context, ctx context.Context, account *Account, body io.Reader) error {
 	reader := bufio.NewReader(body)
 	seenJSON := false
 	seenFinish := false
@@ -2714,6 +2733,9 @@ func (s *AccountTestService) processOpenAIChatCompletionsStream(c *gin.Context, 
 			return s.sendErrorAndEnd(c, "Invalid Chat Completions response from /v1/chat/completions: expected JSON data")
 		}
 		seenJSON = true
+		if eventType, _ := data["type"].(string); eventType == "error" || eventType == "response.failed" {
+			s.markCindyBalanceInsufficientFromTest(ctx, account, http.StatusOK, []byte(jsonStr))
+		}
 
 		if errData, ok := data["error"].(map[string]any); ok {
 			errorMsg := "Chat Completions API (/v1/chat/completions) returned an error"
@@ -2750,7 +2772,7 @@ func (s *AccountTestService) processOpenAIChatCompletionsStream(c *gin.Context, 
 }
 
 // processOpenAIStream processes the SSE stream from OpenAI Responses API
-func (s *AccountTestService) processOpenAIStream(c *gin.Context, body io.Reader) error {
+func (s *AccountTestService) processOpenAIStream(c *gin.Context, ctx context.Context, account *Account, body io.Reader) error {
 	reader := bufio.NewReader(body)
 	seenCompleted := false
 
@@ -2798,6 +2820,7 @@ func (s *AccountTestService) processOpenAIStream(c *gin.Context, body io.Reader)
 			s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
 			return nil
 		case "response.failed":
+			s.markCindyBalanceInsufficientFromTest(ctx, account, http.StatusOK, []byte(jsonStr))
 			errorMsg := "OpenAI response failed"
 			if responseData, ok := data["response"].(map[string]any); ok {
 				if errData, ok := responseData["error"].(map[string]any); ok {
@@ -2808,6 +2831,7 @@ func (s *AccountTestService) processOpenAIStream(c *gin.Context, body io.Reader)
 			}
 			return s.sendErrorAndEnd(c, errorMsg)
 		case "error":
+			s.markCindyBalanceInsufficientFromTest(ctx, account, http.StatusOK, []byte(jsonStr))
 			errorMsg := "Unknown error"
 			if errData, ok := data["error"].(map[string]any); ok {
 				if msg, ok := errData["message"].(string); ok {

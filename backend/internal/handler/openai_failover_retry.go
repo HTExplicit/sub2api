@@ -112,7 +112,7 @@ func openAISameAccountRetryLimit(account *service.Account, failoverErr *service.
 	if account == nil || failoverErr == nil || !failoverErr.ShouldRetryNextAccount() {
 		return 0
 	}
-	if service.IsCindyBalanceInsufficientResponse(account, failoverErr.StatusCode, failoverErr.ResponseBody) {
+	if failoverErr.CindyBalanceInsufficient || service.IsCindyBalanceInsufficientResponse(account, failoverErr.StatusCode, failoverErr.ResponseBody) {
 		return 0
 	}
 	if account.Type == service.AccountTypeAPIKey {

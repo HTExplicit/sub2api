@@ -287,6 +287,13 @@ retryUpstream:
 		probeBody := s.readUpstreamErrorBody(resp)
 		_ = resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(probeBody))
+		reqModel, _, _ := extractOpenAIRequestMetaFromBody(body)
+		canonicalModel := canonicalOpenAIAccountSchedulingModel(account, reqModel)
+		if failoverErr, ok := s.handleCindyBalanceHTTPFailover(
+			ctx, account, resp.StatusCode, resp.Header, probeBody, canonicalModel,
+		); ok {
+			return nil, failoverErr
+		}
 
 		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(probeBody))
 		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
@@ -362,7 +369,7 @@ retryUpstream:
 		imageCount = result.imageCount
 		imageOutputSizes = result.imageOutputSizes
 	} else {
-		result, err := s.handleNonStreamingResponsePassthrough(ctx, resp, c, reqModel, upstreamPassthroughModel)
+		result, err := s.handleNonStreamingResponsePassthrough(ctx, resp, c, reqModel, upstreamPassthroughModel, account)
 		if err != nil {
 			var failoverErr *UpstreamFailoverError
 			if errors.As(err, &failoverErr) && !openAIStreamClientOutputStarted(c, false) {
@@ -1288,13 +1295,24 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 	upstreamRequestID string,
 	payload []byte,
 	message string,
+	responseStatus int,
 	responseHeaders ...http.Header,
 ) *UpstreamFailoverError {
+	canonicalModel := ""
+	if account != nil {
+		canonicalModel = canonicalOpenAIAccountSchedulingModel(account, gjson.GetBytes(payload, "response.model").String())
+	}
+	cindyBalanceInsufficient := s.handleCindyBalanceHTTPResponseTerminalEvent(
+		context.Background(), account, responseStatus, firstOpenAIResponseHeader(responseHeaders), payload, canonicalModel,
+	)
 	message = sanitizeUpstreamErrorMessage(strings.TrimSpace(message))
 	if message == "" {
 		message = "OpenAI stream disconnected before completion"
 	}
 	statusCode := openAIStreamFailureStatus(payload, message)
+	if cindyBalanceInsufficient {
+		statusCode = http.StatusTooManyRequests
+	}
 	var headers http.Header
 	if len(responseHeaders) > 0 && responseHeaders[0] != nil {
 		headers = responseHeaders[0].Clone()
@@ -1313,13 +1331,29 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 			"message": message,
 		},
 	})
-	return &UpstreamFailoverError{
-		StatusCode:             statusCode,
-		ResponseBody:           body,
-		ResponseHeaders:        headers,
-		RetryableOnSameAccount: openAIStreamFailedEventRetryableOnSameAccount(account, payload, message),
-		RequestScopedTransient: isOpenAIUpstreamCapacityShedEvent(payload),
+	retryableOnSameAccount := openAIStreamFailedEventRetryableOnSameAccount(account, payload, message)
+	if cindyBalanceInsufficient {
+		retryableOnSameAccount = false
 	}
+	failoverErr := &UpstreamFailoverError{
+		StatusCode:               statusCode,
+		ResponseBody:             body,
+		ResponseHeaders:          headers,
+		RetryableOnSameAccount:   retryableOnSameAccount,
+		RequestScopedTransient:   isOpenAIUpstreamCapacityShedEvent(payload),
+		CindyBalanceInsufficient: cindyBalanceInsufficient,
+	}
+	if cindyBalanceInsufficient {
+		return sanitizeOpenAICindyFailoverError(failoverErr)
+	}
+	return failoverErr
+}
+
+func firstOpenAIResponseHeader(headers []http.Header) http.Header {
+	if len(headers) == 0 {
+		return nil
+	}
+	return headers[0]
 }
 
 func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
@@ -1432,7 +1466,20 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			logger.FromContext(ctx).Warn("openai.refusal_recovery_buffer_limit", zap.String("transport", "sse"))
 		}
 		if data, ok := extractOpenAISSEDataLine(line); ok {
-			dataBytes := []byte(data)
+			rawDataBytes := []byte(data)
+			upstreamEventType := strings.TrimSpace(gjson.GetBytes(rawDataBytes, "type").String())
+			if upstreamEventType == "response.failed" || upstreamEventType == "error" {
+				if s.handleCindyBalanceHTTPResponseTerminalEvent(ctx, account, resp.StatusCode, resp.Header, rawDataBytes, mappedModel) {
+					// Classification must happen on the untouched event. Never pass the raw
+					// budget payload through error rules, namespace restoration, or the
+					// client stream. The handler can switch accounts while pendingLines are
+					// still uncommitted; if semantic output already started it appends one
+					// generic response.failed terminal event instead.
+					s.parseSSEUsageBytes(rawDataBytes, usage)
+					return resultWithUsage(), newCindyBalanceTerminalFailover(resp.Header)
+				}
+			}
+			dataBytes := rawDataBytes
 			if rewritten := s.rewriteBusinessSystemPromptJSONForRequest(c, dataBytes, BusinessSystemPromptProtocolResponses); !bytes.Equal(rewritten, dataBytes) {
 				dataBytes = rewritten
 				data = string(rewritten)
@@ -1517,7 +1564,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 					}
 					if openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
 						return resultWithUsage(),
-							s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, failedMessage, resp.Header)
+							s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, failedMessage, resp.StatusCode, resp.Header)
 					}
 				}
 				forceFlushFailedEvent = true
@@ -1680,7 +1727,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				msg += ": " + errText
 			}
 			return resultWithUsage(),
-				s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, nil, msg)
+				s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, nil, msg, resp.StatusCode)
 		}
 		if clientDisconnected {
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete after disconnect: %w", err)
@@ -1705,7 +1752,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		).Info("OpenAI passthrough 上游流在未收到 [DONE] 时结束，疑似断流")
 		if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
 			return resultWithUsage(),
-				s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, nil, "OpenAI stream ended before a terminal event")
+				s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, nil, "OpenAI stream ended before a terminal event", resp.StatusCode)
 		}
 		s.recordOpenAIProxyStreamDisconnect(account, errors.New("stream ended before terminal event"), upstreamRequestID)
 		return resultWithUsage(), errors.New("stream usage incomplete: missing terminal event")
@@ -1723,6 +1770,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	c *gin.Context,
 	originalModel string,
 	mappedModel string,
+	accounts ...*Account,
 ) (*openaiNonStreamingResultPassthrough, error) {
 	body, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 	if err != nil {
@@ -1736,6 +1784,18 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 		observeOpenAISSEBody(observer, string(body))
 	} else {
 		observer.ObserveOpenAI(body, strings.TrimSpace(gjson.GetBytes(body, "type").String()))
+	}
+	if len(accounts) > 0 && accounts[0] != nil {
+		cindyBalanceInsufficient := s.handleCindyBalanceHTTPResponseTerminalEvent(ctx, accounts[0], resp.StatusCode, resp.Header, body, mappedModel)
+		forEachOpenAISSEDataPayload(string(body), func(payload []byte) {
+			if !cindyBalanceInsufficient &&
+				s.handleCindyBalanceHTTPResponseTerminalEvent(ctx, accounts[0], resp.StatusCode, resp.Header, payload, mappedModel) {
+				cindyBalanceInsufficient = true
+			}
+		})
+		if cindyBalanceInsufficient {
+			return nil, newCindyBalanceTerminalFailover(resp.Header)
+		}
 	}
 	body = s.rewriteBusinessSystemPromptJSONForRequest(c, body, BusinessSystemPromptProtocolResponses)
 

@@ -536,7 +536,17 @@ func resolveModelsListCacheTTL(cfg *config.Config) time.Duration {
 }
 
 func modelsListCacheKey(groupID *int64, platform string) string {
-	return fmt.Sprintf("%d|%s", derefGroupID(groupID), strings.TrimSpace(platform))
+	platform = strings.TrimSpace(platform)
+	key := fmt.Sprintf("%d|%s", derefGroupID(groupID), platform)
+	if platform == PlatformOpenAI {
+		key = fmt.Sprintf("%s|cindy-catalog:%t:%s|image-studio:%t",
+			key,
+			CindyCapabilityCatalogFeatureEnabled(),
+			CindyCapabilityCatalogVersion,
+			CindyImageStudioFeatureEnabled(),
+		)
+	}
+	return key
 }
 
 func prefetchedStickyGroupIDFromContext(ctx context.Context) (int64, bool) {
@@ -700,6 +710,7 @@ type UpstreamFailoverError struct {
 	ClientStatusCode             int
 	ClientMessage                string
 	SuppressAccountHealthPenalty bool
+	CindyBalanceInsufficient     bool // raw budget payload was consumed and sanitized before crossing the handler boundary
 }
 
 func (e *UpstreamFailoverError) Error() string {
@@ -1402,22 +1413,37 @@ func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64,
 		accounts = filtered
 	}
 
-	// Collect unique models from all accounts
+	// Collect unique models from all accounts. Cindy accounts contribute only
+	// verified public catalog IDs; their account mappings may contain live IDs,
+	// compatibility aliases, or candidates that are intentionally not public.
 	modelSet := make(map[string]struct{})
-	hasAnyMapping := false
+	hasAnyDeclaredModel := false
+	cindyCatalogEnabled := CindyCapabilityCatalogFeatureEnabled()
+	var cindyPublicModels []string
+	if cindyCatalogEnabled {
+		cindyPublicModels = CindyPublicModelIDs()
+	}
 
 	for _, acc := range accounts {
+		if cindyCatalogEnabled &&
+			IsCindyAPIKeyAccount(acc.Platform, acc.Type, acc.Credentials) {
+			for _, model := range cindyPublicModels {
+				hasAnyDeclaredModel = true
+				modelSet[model] = struct{}{}
+			}
+			continue
+		}
 		mapping := acc.GetModelMapping()
 		if len(mapping) > 0 {
-			hasAnyMapping = true
+			hasAnyDeclaredModel = true
 			for model := range mapping {
 				modelSet[model] = struct{}{}
 			}
 		}
 	}
 
-	// If no account has model_mapping, return nil (use default)
-	if !hasAnyMapping {
+	// If no account declares any model, return nil (use the platform default).
+	if !hasAnyDeclaredModel {
 		if s.modelsListCache != nil {
 			s.modelsListCache.Set(cacheKey, []string(nil), s.modelsListCacheTTL)
 			modelsListCacheStoreTotal.Add(1)
@@ -1481,8 +1507,8 @@ func (s *GatewayService) InvalidateAvailableModelsCache(groupID *int64, platform
 
 	targetGroup := derefGroupID(groupID)
 	for key := range s.modelsListCache.Items() {
-		parts := strings.SplitN(key, "|", 2)
-		if len(parts) != 2 {
+		parts := strings.SplitN(key, "|", 3)
+		if len(parts) < 2 {
 			continue
 		}
 		groupPart, parseErr := strconv.ParseInt(parts[0], 10, 64)

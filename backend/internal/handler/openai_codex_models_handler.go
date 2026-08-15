@@ -32,12 +32,38 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Codex models manifest is only available for OpenAI groups")
 		return
 	}
+	cindyScope, err := h.gatewayService.ResolveCindyCodexModelsScope(c.Request.Context(), apiKey.Group)
+	if err != nil {
+		h.errorResponse(c, http.StatusServiceUnavailable, "upstream_error", "Cindy Codex models catalog is temporarily unavailable")
+		return
+	}
+	if cindyScope.CatalogOnly {
+		manifest, buildErr := service.BuildCindyCodexModelsManifest(c.GetHeader("If-None-Match"))
+		if buildErr != nil {
+			h.errorResponse(c, http.StatusInternalServerError, "upstream_error", "Failed to build Codex models manifest")
+			return
+		}
+		writeCodexModelsManifest(c, manifest)
+		return
+	}
 
 	maxAccountSwitches := h.maxAccountSwitches
 	if maxAccountSwitches <= 0 {
 		maxAccountSwitches = 3
 	}
 	failedAccountIDs := make(map[int64]struct{})
+	for _, accountID := range cindyScope.ExcludedAccountIDs {
+		failedAccountIDs[accountID] = struct{}{}
+	}
+	mixedOrdinaryIndex := 0
+	advanceMixedOrdinaryAccount := func() bool {
+		if !cindyScope.MergeCatalog || mixedOrdinaryIndex+1 >= len(cindyScope.OrdinaryAccountIDs) {
+			return false
+		}
+		mixedOrdinaryIndex++
+		delete(failedAccountIDs, cindyScope.OrdinaryAccountIDs[mixedOrdinaryIndex])
+		return true
+	}
 	switchCount := 0
 	var lastUpstreamErr error
 	var lastFailoverErr *service.UpstreamFailoverError
@@ -65,6 +91,9 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 				h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 				return
 			}
+			if lastUpstreamErr == nil && advanceMixedOrdinaryAccount() {
+				continue
+			}
 			if retryingSameAccount && lastUpstreamErr != nil {
 				h.errorResponse(c, infraerrors.Code(lastUpstreamErr), "upstream_error", infraerrors.Message(lastUpstreamErr))
 				return
@@ -77,6 +106,9 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 			return
 		}
 		if selection == nil || selection.Account == nil {
+			if advanceMixedOrdinaryAccount() {
+				continue
+			}
 			if lastUpstreamErr != nil {
 				h.errorResponse(c, infraerrors.Code(lastUpstreamErr), "upstream_error", infraerrors.Message(lastUpstreamErr))
 			} else {
@@ -85,6 +117,12 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 			return
 		}
 		account := selection.Account
+		if cindyScope.MergeCatalog && len(cindyScope.OrdinaryAccountIDs) > 0 &&
+			account.ID != cindyScope.OrdinaryAccountIDs[mixedOrdinaryIndex] {
+			failedAccountIDs[account.ID] = struct{}{}
+			h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
+			continue
+		}
 		// 让 ops 错误日志携带实际选中的上游账号，便于定位失效账号（#4544）。
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 		var accountReleaseFunc func()
@@ -103,12 +141,20 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 					h.errorResponse(c, infraerrors.Code(lastUpstreamErr), "upstream_error", infraerrors.Message(lastUpstreamErr))
 				},
 			) {
+				advanceMixedOrdinaryAccount()
 				continue
 			}
 			return
 		}
 
-		manifest, err := h.gatewayService.FetchCodexModelsManifest(c.Request.Context(), account, c.Query("client_version"), c.GetHeader("If-None-Match"))
+		ifNoneMatch := c.GetHeader("If-None-Match")
+		upstreamIfNoneMatch := ifNoneMatch
+		if cindyScope.MergeCatalog {
+			// The client ETag represents the merged body, not the ordinary
+			// upstream body. Fetch a complete ordinary manifest before merging.
+			upstreamIfNoneMatch = ""
+		}
+		manifest, err := h.gatewayService.FetchCodexModelsManifest(c.Request.Context(), account, c.Query("client_version"), upstreamIfNoneMatch)
 		if accountReleaseFunc != nil {
 			accountReleaseFunc()
 		}
@@ -144,25 +190,38 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 					return
 				}
 				h.gatewayService.RecordOpenAIAccountSwitch()
+				advanceMixedOrdinaryAccount()
 				continue
 			}
 			h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 			h.errorResponse(c, infraerrors.Code(err), "upstream_error", infraerrors.Message(err))
 			return
 		}
+		if cindyScope.MergeCatalog {
+			manifest, err = service.MergeCindyCodexModelsManifest(manifest, ifNoneMatch)
+			if err != nil {
+				h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
+				h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Failed to merge Codex models manifest")
+				return
+			}
+		}
 		h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, "", true, nil)
 		if c.Request.Context().Err() != nil {
 			return
 		}
 
-		if manifest.ETag != "" {
-			c.Header("ETag", manifest.ETag)
-		}
-		if manifest.NotModified {
-			c.Status(http.StatusNotModified)
-			return
-		}
-		c.Data(http.StatusOK, "application/json", manifest.Body)
+		writeCodexModelsManifest(c, manifest)
 		return
 	}
+}
+
+func writeCodexModelsManifest(c *gin.Context, manifest *service.CodexModelsManifest) {
+	if manifest.ETag != "" {
+		c.Header("ETag", manifest.ETag)
+	}
+	if manifest.NotModified {
+		c.Status(http.StatusNotModified)
+		return
+	}
+	c.Data(http.StatusOK, "application/json", manifest.Body)
 }

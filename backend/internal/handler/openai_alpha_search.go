@@ -34,6 +34,11 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Codex alpha search is only available for OpenAI groups")
 		return
 	}
+	strictCindySearch, err := h.gatewayService.ClassifyStrictCindyGroup(c.Request.Context(), apiKey.Group)
+	if err != nil {
+		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
+		return
+	}
 	subject, ok := middleware2.GetAuthSubjectFromContext(c)
 	if !ok {
 		h.errorResponse(c, http.StatusInternalServerError, "api_error", "User context not found")
@@ -75,6 +80,10 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 		return
 	}
 	requestedModel := strings.TrimSpace(modelResult.String())
+	if strictCindySearch && !service.CindyModelSupportsEndpoint(requestedModel, service.CindyEndpointAlphaSearch) {
+		h.errorResponse(c, http.StatusNotFound, "model_not_found", "Model is not supported on the alpha search endpoint")
+		return
+	}
 	reqLog = reqLog.With(zap.String("model", requestedModel))
 	setOpsRequestContext(c, requestedModel, false)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeSync))

@@ -25,6 +25,7 @@ const appStore = vi.hoisted(() => ({
   cachedPublicSettings: null as null | {
     payment_enabled?: boolean
     risk_control_enabled?: boolean
+    image_studio_enabled?: boolean
     custom_menu_items?: []
   },
   fetchPublicSettings: vi.fn(),
@@ -154,6 +155,47 @@ describe('feature route guard', () => {
     expect(next).toHaveBeenCalledWith()
   })
 
+  it('hides and blocks image studio when the public-settings request fails', async () => {
+    appStore.fetchPublicSettings.mockResolvedValue(null)
+    const { FeatureFlags, isFeatureFlagEnabled } = await import('@/utils/featureFlags')
+
+    expect(isFeatureFlagEnabled(FeatureFlags.imageStudio)).toBe(false)
+    const { navigation, next } = runGuard({ requiresImageStudio: true }, '/image-studio')
+    await navigation
+
+    expect(appStore.fetchPublicSettings).toHaveBeenCalledTimes(1)
+    expect(appStore.publicSettingsLoaded).toBe(false)
+    expect(isFeatureFlagEnabled(FeatureFlags.imageStudio)).toBe(false)
+    expect(next).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it('hides and blocks image studio for an old SSR snapshot without the flag', async () => {
+    appStore.publicSettingsLoaded = true
+    appStore.cachedPublicSettings = { payment_enabled: true }
+    const { FeatureFlags, isFeatureFlagEnabled } = await import('@/utils/featureFlags')
+
+    expect(isFeatureFlagEnabled(FeatureFlags.imageStudio)).toBe(false)
+    const { navigation, next } = runGuard({ requiresImageStudio: true }, '/image-studio')
+    await navigation
+
+    expect(appStore.fetchPublicSettings).not.toHaveBeenCalled()
+    expect(next).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it('allows image studio only after settings explicitly enable it', async () => {
+    appStore.publicSettingsLoaded = true
+    appStore.cachedPublicSettings = { image_studio_enabled: true }
+
+    const { navigation, next } = runGuard({ requiresImageStudio: true }, '/image-studio')
+    await navigation
+
+    expect(appStore.fetchPublicSettings).not.toHaveBeenCalled()
+    expect(next).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith()
+  })
+
   it.each([
     ['payment', { requiresPayment: true }, { payment_enabled: false }, '/dashboard'],
     [
@@ -162,6 +204,7 @@ describe('feature route guard', () => {
       { risk_control_enabled: false },
       '/admin/settings',
     ],
+    ['image studio', { requiresImageStudio: true }, { image_studio_enabled: false }, '/dashboard'],
   ])('redirects when loaded settings explicitly disable %s', async (_name, meta, settings, target) => {
     authStore.isAdmin = meta.requiresRiskControl === true
     appStore.cachedPublicSettings = settings

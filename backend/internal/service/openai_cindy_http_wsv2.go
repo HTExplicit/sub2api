@@ -160,6 +160,9 @@ func (s *OpenAIGatewayService) cindyHTTPToWSV2FirstTurnEventFailover(
 	if account == nil {
 		return nil, false
 	}
+	if failoverErr, ok := s.cindyBalanceTerminalFailover(ctx, account, headers, payload, canonicalModel); ok {
+		return failoverErr, true
+	}
 	statusCode := openAIWSPayloadStatus(payload)
 	if statusCode != http.StatusForbidden && statusCode != http.StatusTooManyRequests &&
 		statusCode < http.StatusInternalServerError {

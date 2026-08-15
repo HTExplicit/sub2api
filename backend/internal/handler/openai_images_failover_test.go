@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -35,6 +36,10 @@ func (r openAIImagesFailoverAccountRepo) GetByID(_ context.Context, id int64) (*
 		}
 	}
 	return nil, service.ErrNoAvailableAccounts
+}
+
+func (r openAIImagesFailoverAccountRepo) ListByGroup(_ context.Context, _ int64) ([]service.Account, error) {
+	return append([]service.Account(nil), r.accounts...), nil
 }
 
 func (r openAIImagesFailoverAccountRepo) ListSchedulableByGroupIDAndPlatform(_ context.Context, _ int64, platform string) ([]service.Account, error) {
@@ -63,6 +68,86 @@ type openAIImagesFailoverHTTPUpstream struct {
 	service.HTTPUpstream
 	mu         sync.Mutex
 	accountIDs []int64
+}
+
+type cindyNativeImagesBudgetRepo struct {
+	openAIImagesFailoverAccountRepo
+	service.CindyBalanceAccountRepository
+	mu        sync.Mutex
+	markedIDs []int64
+}
+
+func (r *cindyNativeImagesBudgetRepo) MarkCindyBalanceInsufficient(_ context.Context, accountID int64, _ time.Time) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.markedIDs = append(r.markedIDs, accountID)
+	return true, nil
+}
+
+func (r *cindyNativeImagesBudgetRepo) marked() []int64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]int64(nil), r.markedIDs...)
+}
+
+type cindyNativeImagesBudgetUpstream struct {
+	service.HTTPUpstream
+	mu               sync.Mutex
+	accountIDs       []int64
+	exhaustedAccount int64
+}
+
+type cindyNativeImagesHTTP201Upstream struct {
+	service.HTTPUpstream
+	mu         sync.Mutex
+	accountIDs []int64
+}
+
+func (u *cindyNativeImagesBudgetUpstream) Do(_ *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
+	u.mu.Lock()
+	u.accountIDs = append(u.accountIDs, accountID)
+	u.mu.Unlock()
+	if accountID == u.exhaustedAccount {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(bytes.NewBufferString(
+				`{"type":"error","error":{"type":"budget_exceeded","code":"429","message":"sensitive upstream budget detail"}}`,
+			)),
+		}, nil
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body: io.NopCloser(bytes.NewBufferString(
+			`{"created":1,"data":[{"b64_json":"aW1hZ2U="}],"usage":{"input_tokens":1,"output_tokens":1}}`,
+		)),
+	}, nil
+}
+
+func (u *cindyNativeImagesBudgetUpstream) calls() []int64 {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return append([]int64(nil), u.accountIDs...)
+}
+
+func (u *cindyNativeImagesHTTP201Upstream) Do(_ *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
+	u.mu.Lock()
+	u.accountIDs = append(u.accountIDs, accountID)
+	u.mu.Unlock()
+	return &http.Response{
+		StatusCode: http.StatusCreated,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body: io.NopCloser(bytes.NewBufferString(
+			`{"type":"error","error":{"type":"budget_exceeded","code":"429","message":"ordinary 201 body"}}`,
+		)),
+	}, nil
+}
+
+func (u *cindyNativeImagesHTTP201Upstream) calls() []int64 {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return append([]int64(nil), u.accountIDs...)
 }
 
 func (u *openAIImagesFailoverHTTPUpstream) Do(_ *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
@@ -202,4 +287,123 @@ func TestOpenAIGatewayHandlerImages_ServerErrorFailsOverAndReturnsClearErrorWhen
 	for _, event := range events[1:] {
 		require.Equal(t, "failover", event.Kind)
 	}
+}
+
+func TestCindyNativeImagesHTTP200BudgetJSONFailsOverBeforeWrite(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	groupID := int64(3131)
+	exhaustedAccountID := int64(11)
+	accounts := []service.Account{
+		{
+			ID: exhaustedAccountID, Name: "cindy-image-exhausted", Platform: service.PlatformOpenAI,
+			Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
+			Priority: 0, Credentials: map[string]any{"api_key": "sk-cindy-a", "base_url": "https://api.laxarouter.ai"},
+		},
+		{
+			ID: 12, Name: "cindy-image-healthy", Platform: service.PlatformOpenAI,
+			Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
+			Priority: 1, Credentials: map[string]any{"api_key": "sk-cindy-b", "base_url": "https://api.laxarouter.ai"},
+		},
+	}
+	repo := &cindyNativeImagesBudgetRepo{openAIImagesFailoverAccountRepo: openAIImagesFailoverAccountRepo{accounts: accounts}}
+	upstream := &cindyNativeImagesBudgetUpstream{exhaustedAccount: exhaustedAccountID}
+	cfg := &config.Config{RunMode: config.RunModeSimple}
+	cfg.Default.RateMultiplier = 1
+	cfg.Security.URLAllowlist.Enabled = false
+	rateLimitService := service.NewRateLimitService(repo, nil, cfg, nil, nil)
+	gatewayService := service.NewOpenAIGatewayService(
+		repo, nil, nil, nil, nil, nil, nil, cfg, nil, nil, nil, rateLimitService, nil,
+		upstream, nil, nil, nil, nil, nil, nil, nil, nil,
+	)
+	billingCache := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
+	t.Cleanup(billingCache.Stop)
+	handler := NewOpenAIGatewayHandler(
+		gatewayService, service.NewConcurrencyService(nil), billingCache,
+		service.NewAPIKeyService(nil, nil, nil, nil, nil, nil, cfg),
+		nil, nil, nil, nil, cfg,
+	)
+	handler.maxAccountSwitches = 2
+
+	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","n":1,"size":"1024x1024","quality":"low","response_format":"b64_json"}`)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+		ID: 100, GroupID: &groupID, Status: service.StatusActive,
+		User: &service.User{ID: 101, Status: service.StatusActive},
+		Group: &service.Group{
+			ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive,
+			StrictCindyKnown: true, StrictCindy: true, AllowImageGeneration: true, RateMultiplier: 1,
+		},
+	})
+	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 101})
+
+	handler.Images(c)
+
+	require.Equal(t, []int64{exhaustedAccountID, 12}, upstream.calls())
+	require.Equal(t, []int64{exhaustedAccountID}, repo.marked())
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	require.Equal(t, "aW1hZ2U=", gjson.GetBytes(recorder.Body.Bytes(), "data.0.b64_json").String())
+	require.NotContains(t, recorder.Body.String(), "budget_exceeded")
+	require.NotContains(t, recorder.Body.String(), "sensitive upstream budget detail")
+}
+
+func TestCindyNativeImagesHTTP201BudgetEventShapeDoesNotMarkOrFailover(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	groupID := int64(3132)
+	firstAccountID := int64(21)
+	accounts := []service.Account{
+		{
+			ID: firstAccountID, Name: "cindy-image-first", Platform: service.PlatformOpenAI,
+			Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
+			Priority: 0, Credentials: map[string]any{"api_key": "sk-cindy-a", "base_url": "https://api.laxarouter.ai"},
+		},
+		{
+			ID: 22, Name: "cindy-image-second", Platform: service.PlatformOpenAI,
+			Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
+			Priority: 1, Credentials: map[string]any{"api_key": "sk-cindy-b", "base_url": "https://api.laxarouter.ai"},
+		},
+	}
+	repo := &cindyNativeImagesBudgetRepo{openAIImagesFailoverAccountRepo: openAIImagesFailoverAccountRepo{accounts: accounts}}
+	upstream := &cindyNativeImagesHTTP201Upstream{}
+	cfg := &config.Config{RunMode: config.RunModeSimple}
+	cfg.Default.RateMultiplier = 1
+	cfg.Security.URLAllowlist.Enabled = false
+	rateLimitService := service.NewRateLimitService(repo, nil, cfg, nil, nil)
+	gatewayService := service.NewOpenAIGatewayService(
+		repo, nil, nil, nil, nil, nil, nil, cfg, nil, nil, nil, rateLimitService, nil,
+		upstream, nil, nil, nil, nil, nil, nil, nil, nil,
+	)
+	billingCache := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
+	t.Cleanup(billingCache.Stop)
+	handler := NewOpenAIGatewayHandler(
+		gatewayService, service.NewConcurrencyService(nil), billingCache,
+		service.NewAPIKeyService(nil, nil, nil, nil, nil, nil, cfg),
+		nil, nil, nil, nil, cfg,
+	)
+	handler.maxAccountSwitches = 2
+
+	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","n":1,"size":"1024x1024","quality":"low","response_format":"b64_json"}`)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+		ID: 102, GroupID: &groupID, Status: service.StatusActive,
+		User: &service.User{ID: 103, Status: service.StatusActive},
+		Group: &service.Group{
+			ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive,
+			StrictCindyKnown: true, StrictCindy: true, AllowImageGeneration: true, RateMultiplier: 1,
+		},
+	})
+	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 103})
+
+	handler.Images(c)
+
+	require.Equal(t, []int64{firstAccountID}, upstream.calls())
+	require.Empty(t, repo.marked())
+	require.Equal(t, http.StatusCreated, recorder.Code, recorder.Body.String())
+	require.Equal(t, "error", gjson.GetBytes(recorder.Body.Bytes(), "type").String())
+	require.Equal(t, "ordinary 201 body", gjson.GetBytes(recorder.Body.Bytes(), "error.message").String())
 }

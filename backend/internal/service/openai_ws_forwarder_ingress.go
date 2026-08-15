@@ -960,6 +960,35 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					downstreamOutputStarted(),
 				)
 			}
+			rawUpstreamMessage := append([]byte(nil), upstreamMessage...)
+			rawEventType, _, _ := parseOpenAIWSEventEnvelope(rawUpstreamMessage)
+			if rawEventType == "error" || rawEventType == "response.failed" {
+				canonicalModel := canonicalOpenAIAccountSchedulingModel(account, originalModel)
+				if failoverErr, ok := s.cindyBalanceTerminalFailover(
+					ctx, account, lease.HandshakeHeaders(), rawUpstreamMessage, canonicalModel,
+				); ok {
+					lease.MarkBroken()
+					replaySafe := turn == 1 && !downstreamOutputStarted()
+					if refusalOutput != nil {
+						refusalOutput.DropTurn()
+					}
+					if replaySafe {
+						return nil, failoverErr
+					}
+					if !clientDisconnected {
+						if refusalOutput != nil {
+							_ = refusalOutput.WriteRetryableFailure(ctx)
+						} else {
+							_ = rawWriteClientMessage(OpenAIWSRetryableFailureEvent())
+						}
+					}
+					return nil, NewOpenAIWSClientCloseError(
+						coderws.StatusTryAgainLater,
+						"Temporary upstream failure; please retry",
+						errors.New("Cindy balance exhausted after downstream output"),
+					)
+				}
+			}
 			if normalized, changed := normalizeCompletedImageGenerationStatus(upstreamMessage); changed {
 				upstreamMessage = normalized
 			}

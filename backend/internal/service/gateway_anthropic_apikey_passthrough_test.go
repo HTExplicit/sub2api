@@ -26,6 +26,7 @@ type anthropicHTTPUpstreamRecorder struct {
 	lastBody []byte
 	resp     *http.Response
 	err      error
+	calls    int
 }
 
 func newAnthropicAPIKeyAccountForTest() *Account {
@@ -48,6 +49,7 @@ func newAnthropicAPIKeyAccountForTest() *Account {
 }
 
 func (u *anthropicHTTPUpstreamRecorder) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
+	u.calls++
 	u.lastReq = req
 	if req != nil && req.Body != nil {
 		b, _ := io.ReadAll(req.Body)

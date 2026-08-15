@@ -1074,14 +1074,37 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	apiKey, _ := middleware2.GetAPIKeyFromContext(c)
 
 	var groupID *int64
+	var authenticatedGroup *service.Group
 	var platform string
 
 	if apiKey != nil && apiKey.Group != nil {
+		authenticatedGroup = apiKey.Group
 		groupID = &apiKey.Group.ID
 		platform = apiKey.Group.Platform
 	}
 	if forcedPlatform, ok := middleware2.GetForcePlatformFromContext(c); ok && strings.TrimSpace(forcedPlatform) != "" {
 		platform = forcedPlatform
+	}
+
+	// Strict Cindy groups use the versioned capability catalogue rather than
+	// account model_mapping keys. Compatibility aliases and unverified
+	// candidates are intentionally absent from the public list.
+	strictCindy := false
+	if platform == service.PlatformOpenAI {
+		var err error
+		strictCindy, err = h.gatewayService.ClassifyStrictCindyGroup(c.Request.Context(), authenticatedGroup)
+		if err != nil {
+			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
+			return
+		}
+	}
+	if strictCindy {
+		availableModels := service.CindyPublicModelIDs()
+		if apiKey != nil && apiKey.Group != nil && apiKey.Group.CustomModelsListEnabled() {
+			availableModels = filterModelsByCustomList(availableModels, availableModels, apiKey.Group.ModelsListConfig.Models)
+		}
+		writeOpenAIModelsList(c, availableModels)
+		return
 	}
 
 	if platform == service.PlatformComposite {
@@ -1137,6 +1160,76 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"object": "list",
 		"data":   claude.DefaultModels,
+	})
+}
+
+type cindyCapabilityResponse struct {
+	Object            string                           `json:"object"`
+	ID                string                           `json:"id"`
+	Kind              service.CindyModelKind           `json:"kind"`
+	InputModalities   []string                         `json:"input_modalities"`
+	OutputModalities  []string                         `json:"output_modalities"`
+	Endpoints         []service.CindyEndpoint          `json:"endpoints"`
+	ClientSurfaces    []string                         `json:"client_surfaces"`
+	MaxInputTokens    int                              `json:"max_input_tokens,omitempty"`
+	MaxOutputTokens   int                              `json:"max_output_tokens,omitempty"`
+	PricingSource     string                           `json:"pricing_source,omitempty"`
+	ExplicitZeroPrice bool                             `json:"explicit_zero_price,omitempty"`
+	Controls          *service.CindyCapabilityControls `json:"controls,omitempty"`
+}
+
+// ModelCapabilities returns the verified, client-facing Cindy capability
+// contract. Internal live IDs and registry IDs are deliberately omitted.
+func (h *GatewayHandler) ModelCapabilities(c *gin.Context) {
+	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
+	if !ok || apiKey == nil || apiKey.Group == nil {
+		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")
+		return
+	}
+	if apiKey.Group.Platform != service.PlatformOpenAI {
+		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Model capabilities are not available for this group")
+		return
+	}
+	strictCindy, err := h.gatewayService.ClassifyStrictCindyGroup(c.Request.Context(), apiKey.Group)
+	if err != nil {
+		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
+		return
+	}
+	hasCindyCapability := strictCindy
+	if !hasCindyCapability {
+		hasCindyCapability, err = h.gatewayService.HasSchedulableCindyAccount(c.Request.Context(), apiKey.Group)
+		if err != nil {
+			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
+			return
+		}
+	}
+	if !hasCindyCapability {
+		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Model capabilities are not available for this group")
+		return
+	}
+
+	capabilities := service.CindyVerifiedCapabilities()
+	data := make([]cindyCapabilityResponse, 0, len(capabilities))
+	for _, capability := range capabilities {
+		data = append(data, cindyCapabilityResponse{
+			Object:            "model_capability",
+			ID:                capability.PublicID,
+			Kind:              capability.Kind,
+			InputModalities:   capability.InputModalities,
+			OutputModalities:  capability.OutputModalities,
+			Endpoints:         capability.VerifiedEndpoints,
+			ClientSurfaces:    capability.ClientSurfaces,
+			MaxInputTokens:    capability.MaxInputTokens,
+			MaxOutputTokens:   capability.MaxOutputTokens,
+			PricingSource:     capability.PricingSource,
+			ExplicitZeroPrice: capability.ExplicitZeroPrice,
+			Controls:          capability.Controls,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"object":          "list",
+		"catalog_version": service.CindyCapabilityCatalogVersion,
+		"data":            data,
 	})
 }
 
@@ -1766,6 +1859,12 @@ func (h *GatewayHandler) handleConcurrencyError(c *gin.Context, err error, slotT
 }
 
 func (h *GatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError, platform string, streamStarted bool) {
+	if failoverErr.CindyBalanceInsufficient {
+		status, errType, message := h.mapUpstreamError(http.StatusTooManyRequests)
+		service.SetOpsUpstreamError(c, http.StatusTooManyRequests, message, "")
+		h.handleStreamingAwareError(c, status, errType, message, streamStarted)
+		return
+	}
 	statusCode := failoverErr.StatusCode
 	responseBody := failoverErr.ResponseBody
 	if service.IsOpenAISilentRefusalErrorBody(responseBody) {

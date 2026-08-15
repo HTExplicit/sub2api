@@ -554,6 +554,30 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			setOpsUpstreamError(c, 0, sanitizeUpstreamErrorMessage(readErr.Error()), "")
 			return nil, fmt.Errorf("openai ws read event: %w", readErr)
 		}
+		rawUpstreamMessage := append([]byte(nil), message...)
+		rawEventType, _, _ := parseOpenAIWSEventEnvelope(rawUpstreamMessage)
+		if rawEventType == "error" || rawEventType == "response.failed" {
+			if failoverErr, ok := s.cindyBalanceTerminalFailover(
+				ctx, account, lease.HandshakeHeaders(), rawUpstreamMessage, mappedModel,
+			); ok {
+				lease.MarkBroken()
+				bufferedStreamEvents = bufferedStreamEvents[:0]
+				if refusalOutput != nil {
+					refusalOutput.DropTurn()
+				}
+				if !wroteDownstream {
+					return nil, failoverErr
+				}
+				if reqStream && !clientDisconnected {
+					if refusalOutput != nil {
+						_ = refusalOutput.WriteRetryableFailure(ctx)
+					} else {
+						emitStreamMessage(OpenAIWSRetryableFailureEvent(), true)
+					}
+				}
+				return nil, errors.New("Cindy balance exhausted after downstream output")
+			}
+		}
 		if normalized, changed := normalizeCompletedImageGenerationStatus(message); changed {
 			message = normalized
 		}
