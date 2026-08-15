@@ -11,6 +11,21 @@ on:
         description: 'Type DEPLOY to continue to the production approval gate'
         required: true
         type: string
+      cindy_balance_detection:
+        description: 'Enable exact Cindy balance classification and rechecks'
+        required: true
+        default: true
+        type: boolean
+      cindy_capability_catalog:
+        description: 'Enable the verified Cindy model and protocol catalog'
+        required: true
+        default: false
+        type: boolean
+      cindy_image_studio:
+        description: 'Enable verified Cindy image capabilities and Image Studio'
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -25,6 +40,7 @@ jobs:
     outputs:
       image_ref: ${{ steps.resolve.outputs.image_ref }}
       release_tag: ${{ steps.resolve.outputs.release_tag }}
+      cindy_rollout: ${{ steps.resolve.outputs.cindy_rollout }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -37,11 +53,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag }}
           CONFIRMATION: ${{ inputs.confirmation }}
+          CINDY_BALANCE_DETECTION: ${{ inputs.cindy_balance_detection }}
+          CINDY_CAPABILITY_CATALOG: ${{ inputs.cindy_capability_catalog }}
+          CINDY_IMAGE_STUDIO: ${{ inputs.cindy_image_studio }}
         shell: bash
         run: |
           set -euo pipefail
           [[ "$CONFIRMATION" == DEPLOY ]]
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-codexrip\.[1-9][0-9]*$ ]]
+          for flag in "$CINDY_BALANCE_DETECTION" "$CINDY_CAPABILITY_CATALOG" "$CINDY_IMAGE_STUDIO"; do
+            [[ "$flag" == true || "$flag" == false ]]
+          done
+          if [[ "$CINDY_IMAGE_STUDIO" == true && "$CINDY_CAPABILITY_CATALOG" != true ]]; then
+            echo 'Cindy Image Studio requires the Cindy capability catalog' >&2
+            exit 1
+          fi
           gh release view "$RELEASE_TAG" --json tagName --jq '.tagName' | grep -Fxq "$RELEASE_TAG"
           if gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' |
             grep -Eq '^(seed-descriptor\.json|bundle-manifest\.json|codexrip-reverse-skill-.*\.zip(\.sha256)?|bootstrap-reverse-skill\.(ps1|py))$'; then
@@ -59,6 +85,7 @@ jobs:
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
           echo "image_ref=${image}@${digest}" >> "$GITHUB_OUTPUT"
           echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "cindy_rollout=cindy=${CINDY_BALANCE_DETECTION},${CINDY_CAPABILITY_CATALOG},${CINDY_IMAGE_STUDIO}" >> "$GITHUB_OUTPUT"
 
   deploy:
     needs: resolve
@@ -84,10 +111,17 @@ jobs:
           VPS_PORT: ${{ secrets.VPS_PORT }}
           VPS_USER: ${{ secrets.VPS_USER }}
           IMAGE_REF: ${{ needs.resolve.outputs.image_ref }}
+          CINDY_ROLLOUT: ${{ needs.resolve.outputs.cindy_rollout }}
         shell: bash
         run: |
           set -euo pipefail
           [[ "$VPS_PORT" =~ ^[0-9]+$ ]]
+          [[ "$IMAGE_REF" =~ ^ghcr\.io/htexplicit/sub2api:[0-9]+\.[0-9]+\.[0-9]+-codexrip\.[1-9][0-9]*@sha256:[0-9a-f]{64}$ ]]
+          [[ "$CINDY_ROLLOUT" =~ ^cindy=(true|false),(true|false),(true|false)$ ]]
+          if [[ "${BASH_REMATCH[3]}" == true && "${BASH_REMATCH[2]}" != true ]]; then
+            echo 'Cindy Image Studio requires the Cindy capability catalog' >&2
+            exit 1
+          fi
           ssh \
             -F /dev/null \
             -i ~/.ssh/sub2api_deploy \
@@ -97,7 +131,7 @@ jobs:
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             -p "$VPS_PORT" \
             "${VPS_USER}@${VPS_HOST}" \
-            "deploy ${IMAGE_REF}"
+            "deploy ${IMAGE_REF} ${CINDY_ROLLOUT}"
       - name: Verify public health
         env:
           PUBLIC_HEALTH_URL: ${{ secrets.PUBLIC_HEALTH_URL }}
