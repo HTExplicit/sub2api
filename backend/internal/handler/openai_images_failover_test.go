@@ -92,9 +92,24 @@ func (r *cindyNativeImagesBudgetRepo) marked() []int64 {
 
 type cindyNativeImagesBudgetUpstream struct {
 	service.HTTPUpstream
-	mu               sync.Mutex
-	accountIDs       []int64
-	exhaustedAccount int64
+	mu                  sync.Mutex
+	imageAccountIDs     []int64
+	probeAccountIDs     []int64
+	exhaustedAccount    int64
+	probeResponseClosed chan struct{}
+	probeCloseOnce      sync.Once
+}
+
+type cindyProbeNotifyReadCloser struct {
+	io.ReadCloser
+	done chan struct{}
+	once *sync.Once
+}
+
+func (r *cindyProbeNotifyReadCloser) Close() error {
+	err := r.ReadCloser.Close()
+	r.once.Do(func() { close(r.done) })
+	return err
 }
 
 type cindyNativeImagesHTTP201Upstream struct {
@@ -103,10 +118,28 @@ type cindyNativeImagesHTTP201Upstream struct {
 	accountIDs []int64
 }
 
-func (u *cindyNativeImagesBudgetUpstream) Do(_ *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
+func (u *cindyNativeImagesBudgetUpstream) Do(req *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
 	u.mu.Lock()
-	u.accountIDs = append(u.accountIDs, accountID)
+	if req.URL.Path == "/v1/responses" {
+		u.probeAccountIDs = append(u.probeAccountIDs, accountID)
+	} else {
+		u.imageAccountIDs = append(u.imageAccountIDs, accountID)
+	}
 	u.mu.Unlock()
+	if req.URL.Path == "/v1/responses" {
+		body := io.NopCloser(bytes.NewBufferString(
+			`{"id":"resp_probe","object":"response","status":"completed","output":[{"type":"message"}],"usage":{"input_tokens":1,"output_tokens":1}}`,
+		))
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: &cindyProbeNotifyReadCloser{
+				ReadCloser: body,
+				done:       u.probeResponseClosed,
+				once:       &u.probeCloseOnce,
+			},
+		}, nil
+	}
 	if accountID == u.exhaustedAccount {
 		return &http.Response{
 			StatusCode: http.StatusOK,
@@ -125,10 +158,16 @@ func (u *cindyNativeImagesBudgetUpstream) Do(_ *http.Request, _ string, accountI
 	}, nil
 }
 
-func (u *cindyNativeImagesBudgetUpstream) calls() []int64 {
+func (u *cindyNativeImagesBudgetUpstream) imageCalls() []int64 {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	return append([]int64(nil), u.accountIDs...)
+	return append([]int64(nil), u.imageAccountIDs...)
+}
+
+func (u *cindyNativeImagesBudgetUpstream) probeCalls() []int64 {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return append([]int64(nil), u.probeAccountIDs...)
 }
 
 func (u *cindyNativeImagesHTTP201Upstream) Do(_ *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
@@ -306,7 +345,10 @@ func TestCindyNativeImagesHTTP200BudgetJSONFailsOverBeforeWrite(t *testing.T) {
 		},
 	}
 	repo := &cindyNativeImagesBudgetRepo{openAIImagesFailoverAccountRepo: openAIImagesFailoverAccountRepo{accounts: accounts}}
-	upstream := &cindyNativeImagesBudgetUpstream{exhaustedAccount: exhaustedAccountID}
+	upstream := &cindyNativeImagesBudgetUpstream{
+		exhaustedAccount:    exhaustedAccountID,
+		probeResponseClosed: make(chan struct{}),
+	}
 	cfg := &config.Config{RunMode: config.RunModeSimple}
 	cfg.Default.RateMultiplier = 1
 	cfg.Security.URLAllowlist.Enabled = false
@@ -341,8 +383,14 @@ func TestCindyNativeImagesHTTP200BudgetJSONFailsOverBeforeWrite(t *testing.T) {
 
 	handler.Images(c)
 
-	require.Equal(t, []int64{exhaustedAccountID, 12}, upstream.calls())
-	require.Equal(t, []int64{exhaustedAccountID}, repo.marked())
+	select {
+	case <-upstream.probeResponseClosed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Cindy balance confirmation probe did not finish")
+	}
+	require.Equal(t, []int64{exhaustedAccountID, 12}, upstream.imageCalls())
+	require.Equal(t, []int64{exhaustedAccountID}, upstream.probeCalls())
+	require.Empty(t, repo.marked(), "one exact request signal must not permanently mark the account")
 	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 	require.Equal(t, "aW1hZ2U=", gjson.GetBytes(recorder.Body.Bytes(), "data.0.b64_json").String())
 	require.NotContains(t, recorder.Body.String(), "budget_exceeded")

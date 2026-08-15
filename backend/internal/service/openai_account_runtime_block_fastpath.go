@@ -745,7 +745,7 @@ func (s *OpenAIGatewayService) withCindyBalancePendingSnapshot(ctx context.Conte
 	cancel()
 	snapshot.record(accountIDs, pending, err)
 	if err != nil {
-		slog.Error("cindy_balance_pending_batch_read_failed_closed", "account_count", len(accountIDs), "error", err)
+		slog.Error("cindy_balance_pending_batch_read_failed_closed", "account_count", len(accountIDs))
 	}
 	return ctx
 }

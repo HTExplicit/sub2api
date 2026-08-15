@@ -255,7 +255,7 @@ func (s *OpenAIGatewayService) scheduleCindyBalanceRecheck(account *Account, exa
 		}
 	}
 	if scheduled {
-		slog.Info("cindy_balance_recheck_scheduled", "account_id", account.ID)
+		slog.Info("cindy_balance_recheck_scheduled", "exact_priority", exact)
 	}
 }
 

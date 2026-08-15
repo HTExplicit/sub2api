@@ -597,14 +597,14 @@ func (s *RateLimitService) handleCindyBalanceInsufficientForCredentials(
 		err := store.MarkCindyBalancePending(stateCtx, account.ID, credentialsFingerprint)
 		cancel()
 		if err != nil {
-			slog.Error("cindy_balance_pending_mark_failed", "account_id", account.ID, "error", err)
+			slog.Error("cindy_balance_pending_mark_failed")
 		} else {
 			pendingDurable = true
 		}
 	}
 	repo, ok := s.accountRepo.(CindyBalanceConditionalAccountRepository)
 	if !ok {
-		slog.Error("cindy_balance_repository_unavailable", "account_id", account.ID, "pending_durable", pendingDurable)
+		slog.Error("cindy_balance_repository_unavailable", "pending_durable", pendingDurable)
 		s.scheduleCindyBalancePersistenceRetry(account, time.Now().UTC(), credentialsFingerprint, runtimeBlock)
 		return true
 	}
@@ -618,9 +618,9 @@ func (s *RateLimitService) handleCindyBalanceInsufficientForCredentials(
 		credentialsFingerprint,
 	)
 	if err != nil {
-		slog.Error("cindy_balance_insufficient_mark_failed", "account_id", account.ID, "pending_durable", pendingDurable, "error", err)
+		slog.Error("cindy_balance_insufficient_mark_failed", "pending_durable", pendingDurable)
 		if !pendingDurable {
-			slog.Error("cindy_balance_durable_persistence_unavailable", "account_id", account.ID)
+			slog.Error("cindy_balance_durable_persistence_unavailable")
 		}
 		s.scheduleCindyBalancePersistenceRetry(account, observedAt, credentialsFingerprint, runtimeBlock)
 		return true
@@ -634,12 +634,12 @@ func (s *RateLimitService) handleCindyBalanceInsufficientForCredentials(
 		account.CindyBalanceInsufficientAt = &observedAt
 	}
 	if changed {
-		slog.Warn("cindy_balance_insufficient_marked", "account_id", account.ID)
+		slog.Warn("cindy_balance_insufficient_marked")
 	}
 	if err := s.clearCindyBalancePendingIfFingerprintMatches(ctx, account.ID, credentialsFingerprint); err != nil {
 		// The DB marker is durable, so retaining a stale pending marker is safe:
 		// schedulers remain fail-closed until a later retry or manual recovery.
-		slog.Error("cindy_balance_pending_clear_after_mark_failed", "account_id", account.ID, "error", err)
+		slog.Error("cindy_balance_pending_clear_after_mark_failed")
 	}
 	return true
 }

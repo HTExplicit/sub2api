@@ -403,7 +403,7 @@ func (s *RateLimitService) runCindyBalancePersistenceTask(task *cindyBalancePers
 		err := store.MarkCindyBalancePending(ctx, task.accountID, task.credentialsFingerprint)
 		cancel()
 		if err != nil {
-			slog.Error("cindy_balance_pending_retry_failed", "account_id", task.accountID, "error", err)
+			slog.Error("cindy_balance_pending_retry_failed")
 		}
 	}
 	if !s.isCurrentCindyBalancePersistenceTask(task) {
@@ -412,7 +412,7 @@ func (s *RateLimitService) runCindyBalancePersistenceTask(task *cindyBalancePers
 
 	repo, ok := s.accountRepo.(CindyBalanceConditionalAccountRepository)
 	if !ok {
-		s.rescheduleCindyBalancePersistenceRetry(task, "repository unavailable")
+		s.rescheduleCindyBalancePersistenceRetry(task)
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -424,7 +424,7 @@ func (s *RateLimitService) runCindyBalancePersistenceTask(task *cindyBalancePers
 	)
 	cancel()
 	if err != nil {
-		s.rescheduleCindyBalancePersistenceRetry(task, err.Error())
+		s.rescheduleCindyBalancePersistenceRetry(task)
 		return
 	}
 	if !credentialsMatch {
@@ -441,7 +441,7 @@ func (s *RateLimitService) runCindyBalancePersistenceTask(task *cindyBalancePers
 		task.accountID,
 		task.credentialsFingerprint,
 	); err != nil {
-		slog.Error("cindy_balance_pending_clear_after_retry_failed", "account_id", task.accountID, "error", err)
+		slog.Error("cindy_balance_pending_clear_after_retry_failed")
 	}
 	s.cindyBalancePersistMu.Lock()
 	if s.cindyBalancePersistTasks[task.accountID] == task &&
@@ -450,7 +450,7 @@ func (s *RateLimitService) runCindyBalancePersistenceTask(task *cindyBalancePers
 	}
 	s.cindyBalancePersistMu.Unlock()
 	if changed {
-		slog.Warn("cindy_balance_insufficient_marked_after_retry", "account_id", task.accountID)
+		slog.Warn("cindy_balance_insufficient_marked_after_retry")
 	}
 }
 
@@ -509,7 +509,7 @@ func (s *RateLimitService) CancelCindyBalancePersistenceRetry(accountID int64) {
 	}
 }
 
-func (s *RateLimitService) rescheduleCindyBalancePersistenceRetry(task *cindyBalancePersistTask, reason string) {
+func (s *RateLimitService) rescheduleCindyBalancePersistenceRetry(task *cindyBalancePersistTask) {
 	if s == nil || task == nil {
 		return
 	}
@@ -524,7 +524,7 @@ func (s *RateLimitService) rescheduleCindyBalancePersistenceRetry(task *cindyBal
 		current.nextAt = time.Now().Add(cindyBalancePersistenceBackoffs[index])
 	}
 	s.cindyBalancePersistMu.Unlock()
-	slog.Warn("cindy_balance_insufficient_retry_failed", "account_id", task.accountID, "reason", reason)
+	slog.Warn("cindy_balance_insufficient_retry_failed")
 }
 
 // IsCindyBalanceInsufficientResponse trusts only Cindy's structured budget
