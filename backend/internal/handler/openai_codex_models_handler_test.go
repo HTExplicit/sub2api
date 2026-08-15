@@ -2,12 +2,16 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -36,12 +40,18 @@ func (r codexModelsFailoverAccountRepo) GetByID(_ context.Context, id int64) (*s
 func (r codexModelsFailoverAccountRepo) ListSchedulableByPlatform(_ context.Context, platform string) ([]service.Account, error) {
 	accounts := make([]service.Account, 0, len(r.accounts))
 	for _, account := range r.accounts {
-		if account.Platform == platform {
+		if account.Platform == platform && account.IsSchedulable() {
 			accounts = append(accounts, account)
 		}
 	}
 	return accounts, nil
 }
+
+func (r codexModelsFailoverAccountRepo) ListSchedulableByGroupIDAndPlatform(ctx context.Context, _ int64, platform string) ([]service.Account, error) {
+	return r.ListSchedulableByPlatform(ctx, platform)
+}
+
+func (r codexModelsFailoverAccountRepo) CindyCodexModelsAccountReaderMarker() {}
 
 type codexModelsFailoverHTTPUpstream struct {
 	service.HTTPUpstream
@@ -51,12 +61,21 @@ type codexModelsFailoverHTTPUpstream struct {
 	firstStatus int
 	firstBody   string
 	statuses    map[int64]int
+	bodies      map[int64]string
 }
 
 func (u *codexModelsFailoverHTTPUpstream) Do(_ *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
 	u.mu.Lock()
 	u.accountIDs = append(u.accountIDs, accountID)
 	u.mu.Unlock()
+	if body, ok := u.bodies[accountID]; ok {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(body)),
+		}, nil
+	}
 
 	status, hasStatus := u.statuses[accountID]
 	if accountID == 1 || hasStatus {
@@ -113,6 +132,252 @@ func TestCodexModelsCanceledRequestDoesNotWriteResponse(t *testing.T) {
 
 	if c.Writer.Written() {
 		t.Fatalf("canceled request wrote an HTTP response: status=%d body=%q", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestCodexModelsStrictCindyProjectsVerifiedPublicCatalog(t *testing.T) {
+	if !runCodexCatalogEnabledHandlerTest(t) {
+		return
+	}
+	gin.SetMode(gin.TestMode)
+	groupID := int64(43)
+	accounts := []service.Account{{
+		ID: 1, Name: "cindy", Platform: service.PlatformOpenAI,
+		Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
+		Priority: 0, Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-cindy",
+			"base_url": "https://api.laxarouter.ai",
+		},
+	}}
+	upstream := &codexModelsFailoverHTTPUpstream{firstBody: `{"models":[{"slug":"must-not-be-fetched"}]}`}
+	cfg := &config.Config{RunMode: config.RunModeSimple}
+	gatewayService := service.NewOpenAIGatewayService(
+		codexModelsFailoverAccountRepo{accounts: accounts},
+		nil, nil, nil, nil, nil, nil, cfg, nil, nil, nil, nil, nil,
+		upstream,
+		nil, nil, nil, nil, nil, nil, nil, nil,
+	)
+	handler := &OpenAIGatewayHandler{gatewayService: gatewayService, maxAccountSwitches: 3}
+	group := &service.Group{
+		ID: groupID, Platform: service.PlatformOpenAI,
+		StrictCindyKnown: true, StrictCindy: true,
+	}
+	recorder := performCodexModelsRequestForGroup(t, handler, group)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if got := upstream.calls(); len(got) != 0 {
+		t.Fatalf("strict Cindy manifest must be local; upstream calls=%v", got)
+	}
+	slugs := decodeCodexModelSlugs(t, recorder.Body.Bytes())
+	if got, want := strings.Join(slugs, ","), strings.Join(service.CindyCodexPublicModelIDs(), ","); got != want {
+		t.Fatalf("strict Cindy slugs: got %v, want %v", slugs, service.CindyCodexPublicModelIDs())
+	}
+	assertCodexManifestOmitsNonResponsesCindyIDs(t, recorder.Body.String())
+}
+
+func TestCodexModelsMixedGroupDeterministicallyUnionsOrdinaryAndVerifiedCindyResponses(t *testing.T) {
+	if !runCodexCatalogEnabledHandlerTest(t) {
+		return
+	}
+	gin.SetMode(gin.TestMode)
+	groupID := int64(44)
+	accounts := []service.Account{
+		{
+			ID: 1, Name: "cindy", Platform: service.PlatformOpenAI,
+			Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
+			Priority: 0, Concurrency: 1,
+			Credentials: map[string]any{
+				"api_key":  "sk-cindy",
+				"base_url": "https://api.laxarouter.ai",
+			},
+		},
+		{
+			ID: 3, Name: "ordinary-later-id", Platform: service.PlatformOpenAI,
+			Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
+			Priority: 1, Concurrency: 1,
+			Credentials: map[string]any{
+				"api_key":  "sk-ordinary-3",
+				"base_url": "https://ordinary-3.example/v1",
+			},
+		},
+		{
+			ID: 2, Name: "ordinary", Platform: service.PlatformOpenAI,
+			Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
+			Priority: 1, Concurrency: 1,
+			Credentials: map[string]any{
+				"api_key":  "sk-ordinary",
+				"base_url": "https://ordinary.example/v1",
+			},
+		},
+	}
+	const ordinaryBody = `{"models":[` +
+		`{"slug":"ordinary-model","display_name":"Ordinary"},` +
+		`{"slug":"openai/gpt-5.6-sol"},` +
+		`{"slug":"gpt-5.4"},` +
+		`{"slug":"gpt-5.4-mini"},` +
+		`{"slug":"deepseek/deepseek-v4-pro"},` +
+		`{"slug":"anthropic/claude-opus-5"},` +
+		`{"slug":"x-ai/grok-4.6"},` +
+		`{"slug":"google/gemini-3-pro-image"},` +
+		`{"slug":"openai/gpt-image-2"}` +
+		`]}`
+	upstream := &codexModelsFailoverHTTPUpstream{bodies: map[int64]string{
+		2: ordinaryBody,
+		3: `{"models":[{"slug":"random-ordinary-manifest"}]}`,
+	}}
+	cfg := &config.Config{RunMode: config.RunModeSimple}
+	gatewayService := service.NewOpenAIGatewayService(
+		codexModelsFailoverAccountRepo{accounts: accounts},
+		nil, nil, nil, nil, nil, nil, cfg, nil, nil, nil, nil, nil,
+		upstream,
+		nil, nil, nil, nil, nil, nil, nil, nil,
+	)
+	handler := &OpenAIGatewayHandler{gatewayService: gatewayService, maxAccountSwitches: 3}
+	group := &service.Group{
+		ID: groupID, Platform: service.PlatformOpenAI,
+		StrictCindyKnown: true, StrictCindy: false,
+	}
+	first := performCodexModelsRequestForGroup(t, handler, group)
+	second := performCodexModelsRequestForGroup(t, handler, group)
+	if first.Code != http.StatusOK || second.Code != http.StatusOK {
+		t.Fatalf("mixed statuses: first=%d second=%d; first body=%s second body=%s", first.Code, second.Code, first.Body.String(), second.Body.String())
+	}
+	if first.Body.String() != second.Body.String() {
+		t.Fatalf("mixed manifest changed across identical requests: first=%s second=%s", first.Body.String(), second.Body.String())
+	}
+	if got := upstream.calls(); !equalInt64Slices(got, []int64{2}) {
+		t.Fatalf("mixed manifest must fetch only the ordinary account: got calls %v, want [2]", got)
+	}
+
+	slugs := decodeCodexModelSlugs(t, first.Body.Bytes())
+	ordinarySlugs := []string{
+		"ordinary-model",
+		"openai/gpt-5.6-sol",
+		"gpt-5.4",
+		"gpt-5.4-mini",
+		"deepseek/deepseek-v4-pro",
+		"anthropic/claude-opus-5",
+		"x-ai/grok-4.6",
+		"google/gemini-3-pro-image",
+		"openai/gpt-image-2",
+	}
+	want := append(append([]string(nil), ordinarySlugs...), service.CindyCodexPublicModelIDs()...)
+	sort.Strings(slugs)
+	sort.Strings(want)
+	if got, expected := strings.Join(slugs, ","), strings.Join(want, ","); got != expected {
+		t.Fatalf("mixed slugs: got %v, want %v", slugs, want)
+	}
+	for _, slug := range ordinarySlugs {
+		if !strings.Contains(first.Body.String(), `"`+slug+`"`) {
+			t.Fatalf("mixed manifest dropped ordinary slug %q: %s", slug, first.Body.String())
+		}
+	}
+}
+
+func TestCodexModelsCatalogEnabledNonCindyPreservesLegacyManifest(t *testing.T) {
+	if !runCodexCatalogEnabledHandlerTest(t) {
+		return
+	}
+	gin.SetMode(gin.TestMode)
+	groupID := int64(45)
+	account := service.Account{
+		ID: 1, Name: "ordinary", Platform: service.PlatformOpenAI,
+		Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-ordinary",
+			"base_url": "https://ordinary.example/v1",
+		},
+	}
+	const legacyBody = `{"models":[{"slug":"openai/gpt-5.6-sol"},{"slug":"gpt-5.4"},{"slug":"deepseek/deepseek-v4-pro"}],"metadata":{"legacy":true}}`
+	upstream := &codexModelsFailoverHTTPUpstream{firstBody: legacyBody}
+	gatewayService := service.NewOpenAIGatewayService(
+		codexModelsFailoverAccountRepo{accounts: []service.Account{account}},
+		nil, nil, nil, nil, nil, nil, &config.Config{RunMode: config.RunModeSimple}, nil, nil, nil, nil, nil,
+		upstream,
+		nil, nil, nil, nil, nil, nil, nil, nil,
+	)
+	handler := &OpenAIGatewayHandler{gatewayService: gatewayService, maxAccountSwitches: 3}
+	recorder := performCodexModelsRequestForGroup(t, handler, &service.Group{
+		ID: groupID, Platform: service.PlatformOpenAI,
+		StrictCindyKnown: true, StrictCindy: false,
+	})
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if got := upstream.calls(); !equalInt64Slices(got, []int64{1}) {
+		t.Fatalf("ordinary upstream calls: got %v, want [1]", got)
+	}
+	if got := recorder.Body.String(); got != legacyBody {
+		t.Fatalf("catalog-enabled ordinary manifest changed: got %s, want %s", got, legacyBody)
+	}
+}
+
+const codexCatalogEnabledHandlerTestHelperEnv = "SUB2API_CODEX_MODELS_HANDLER_CATALOG_TEST_HELPER"
+
+func runCodexCatalogEnabledHandlerTest(t *testing.T) bool {
+	t.Helper()
+	if os.Getenv(codexCatalogEnabledHandlerTestHelperEnv) == "1" {
+		return true
+	}
+	environment := make([]string, 0, len(os.Environ())+3)
+	for _, entry := range os.Environ() {
+		name := strings.SplitN(entry, "=", 2)[0]
+		if strings.EqualFold(name, service.CindyCapabilityCatalogEnabledEnv) ||
+			strings.EqualFold(name, service.CindyImageStudioEnabledEnv) ||
+			strings.EqualFold(name, codexCatalogEnabledHandlerTestHelperEnv) {
+			continue
+		}
+		environment = append(environment, entry)
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$")
+	cmd.Env = append(environment,
+		service.CindyCapabilityCatalogEnabledEnv+"=true",
+		service.CindyImageStudioEnabledEnv+"=true",
+		codexCatalogEnabledHandlerTestHelperEnv+"=1",
+	)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("isolated catalog-enabled %s failed: %v\n%s", t.Name(), err, output)
+	}
+	return false
+}
+
+func decodeCodexModelSlugs(t *testing.T, body []byte) []string {
+	t.Helper()
+	var manifest struct {
+		Models []struct {
+			Slug string `json:"slug"`
+		} `json:"models"`
+	}
+	if err := json.Unmarshal(body, &manifest); err != nil {
+		t.Fatalf("decode Codex manifest: %v", err)
+	}
+	slugs := make([]string, 0, len(manifest.Models))
+	for _, model := range manifest.Models {
+		slugs = append(slugs, model.Slug)
+	}
+	return slugs
+}
+
+func assertCodexManifestOmitsNonResponsesCindyIDs(t *testing.T, body string) {
+	t.Helper()
+	for _, forbidden := range []string{
+		"openai/gpt-5.6-sol",
+		"gpt-5.4",
+		"gpt-5.4-mini",
+		"deepseek-v4-pro",
+		"seed-2.1-pro",
+		"claude-opus-5",
+		"grok-4.6",
+		"gemini-3-pro-image",
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("Codex manifest leaked forbidden ID %q: %s", forbidden, body)
+		}
 	}
 }
 
@@ -289,12 +554,17 @@ func newCodexModelsFailoverTestHandlerWithAccountCount(firstStatus, accountCount
 
 func performCodexModelsRequest(t *testing.T, handler *OpenAIGatewayHandler, groupID int64) *httptest.ResponseRecorder {
 	t.Helper()
+	return performCodexModelsRequestForGroup(t, handler, &service.Group{ID: groupID, Platform: service.PlatformOpenAI})
+}
+
+func performCodexModelsRequestForGroup(t *testing.T, handler *OpenAIGatewayHandler, group *service.Group) *httptest.ResponseRecorder {
+	t.Helper()
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models?client_version=0.144.0", nil)
 	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
-		GroupID: &groupID,
-		Group:   &service.Group{ID: groupID, Platform: service.PlatformOpenAI},
+		GroupID: &group.ID,
+		Group:   group,
 	})
 
 	handler.CodexModels(c)

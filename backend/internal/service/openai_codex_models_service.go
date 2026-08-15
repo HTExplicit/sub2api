@@ -177,6 +177,10 @@ type codexModelsManifestRequest struct {
 	credentialAccount   *Account
 	accountConcurrency  int
 	useAPIKeyUpstream   bool
+	cindyCatalogEnabled bool
+	cindyCatalogVersion string
+	cindyImageEnabled   bool
+	projectCindyCatalog bool
 }
 
 type codexModelsManifestCacheEntry struct {
@@ -350,6 +354,11 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 		credentialAccount:   credAccount,
 		accountConcurrency:  account.Concurrency,
 		useAPIKeyUpstream:   useAPIKeyUpstream,
+		cindyCatalogEnabled: CindyCapabilityCatalogFeatureEnabled(),
+		cindyCatalogVersion: CindyCapabilityCatalogVersion,
+		cindyImageEnabled:   CindyImageStudioFeatureEnabled(),
+		projectCindyCatalog: CindyCapabilityCatalogFeatureEnabled() &&
+			IsCindyAPIKeyAccount(credAccount.Platform, credAccount.Type, credAccount.Credentials),
 	}
 	if useAPIKeyUpstream {
 		return s.fetchCachedAPIKeyCodexModelsManifest(ctx, request, ifNoneMatch)
@@ -546,6 +555,20 @@ func (s *OpenAIGatewayService) fetchCodexModelsManifestUpstream(ctx context.Cont
 			retryable: true,
 		}
 	}
+	if request.projectCindyCatalog {
+		body, err = projectCindyCodexModelsManifest(body)
+		if err != nil {
+			return nil, &codexModelsManifestUpstreamError{
+				err: infraerrors.Newf(
+					http.StatusBadGateway,
+					"OPENAI_CODEX_MODELS_UPSTREAM_INVALID_MANIFEST",
+					"codex models manifest upstream could not be projected onto the Cindy catalog: %v",
+					err,
+				),
+				retryable: true,
+			}
+		}
+	}
 	if request.useAPIKeyUpstream {
 		body, err = adjustAPIKeyCodexModelsManifest(body)
 		if err != nil {
@@ -569,6 +592,157 @@ func (s *OpenAIGatewayService) fetchCodexModelsManifestUpstream(ctx context.Cont
 		}
 	}
 	return manifest, nil
+}
+
+// projectCindyCodexModelsManifest preserves usable upstream metadata while
+// replacing exact live IDs and hidden compatibility aliases with stable Cindy
+// public IDs. Only Responses-verified text models and the explicit image bridge
+// are eligible for the Codex surface.
+func projectCindyCodexModelsManifest(body []byte) ([]byte, error) {
+	return rewriteCindyCodexModelsManifest(body)
+}
+
+// BuildCindyCodexModelsManifest builds the deterministic local manifest used
+// by strict Cindy groups. It never fetches Cindy's upstream /models response,
+// so live IDs, hidden 5.4 aliases, and unverified candidates cannot leak.
+func BuildCindyCodexModelsManifest(ifNoneMatch string) (*CodexModelsManifest, error) {
+	type codexModel struct {
+		Slug string `json:"slug"`
+	}
+	models := make([]codexModel, 0, len(cindyCapabilityCatalog))
+	for _, modelID := range CindyCodexPublicModelIDs() {
+		models = append(models, codexModel{Slug: modelID})
+	}
+	body, err := json.Marshal(map[string]any{"models": models})
+	if err != nil {
+		return nil, fmt.Errorf("encode local Cindy Codex models manifest: %w", err)
+	}
+	manifest := &CodexModelsManifest{Body: body, ETag: codexModelsManifestBodyETag(body)}
+	return codexModelsManifestForClient(manifest, ifNoneMatch), nil
+}
+
+// MergeCindyCodexModelsManifest combines an ordinary account's legacy Codex
+// manifest with every verified Cindy Codex model. All ordinary entries and
+// metadata are preserved without Cindy reinterpretation, even when an
+// ordinary slug happens to match a known Cindy ID or compatibility alias.
+func MergeCindyCodexModelsManifest(manifest *CodexModelsManifest, ifNoneMatch string) (*CodexModelsManifest, error) {
+	if manifest == nil {
+		return nil, errors.New("ordinary Codex models manifest is required")
+	}
+	body, err := mergeCindyCodexModelsManifest(manifest.Body)
+	if err != nil {
+		return nil, err
+	}
+	merged := &CodexModelsManifest{
+		Body:         body,
+		ETag:         codexModelsManifestBodyETag(body),
+		upstreamETag: manifest.upstreamETag,
+	}
+	return codexModelsManifestForClient(merged, ifNoneMatch), nil
+}
+
+func rewriteCindyCodexModelsManifest(body []byte) ([]byte, error) {
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil, fmt.Errorf("decode JSON object: %w", err)
+	}
+	var models []json.RawMessage
+	if err := json.Unmarshal(envelope["models"], &models); err != nil {
+		return nil, fmt.Errorf("decode top-level models array: %w", err)
+	}
+
+	projected := make([]json.RawMessage, 0, len(models))
+	seen := make(map[string]struct{}, len(models))
+	for _, rawModel := range models {
+		var model map[string]json.RawMessage
+		if err := json.Unmarshal(rawModel, &model); err != nil || model == nil {
+			continue
+		}
+		var slug string
+		if err := json.Unmarshal(model["slug"], &slug); err != nil {
+			continue
+		}
+		capability, knownCindy := resolveKnownCindyCapability(strings.TrimSpace(slug))
+		if !knownCindy {
+			continue
+		}
+		if !cindyCapabilitySupportsCodexModels(capability) {
+			continue
+		}
+		if _, duplicate := seen[capability.PublicID]; duplicate {
+			continue
+		}
+		seen[capability.PublicID] = struct{}{}
+		publicSlug, err := json.Marshal(capability.PublicID)
+		if err != nil {
+			return nil, fmt.Errorf("encode public model ID %q: %w", capability.PublicID, err)
+		}
+		model["slug"] = publicSlug
+		projectedModel, err := json.Marshal(model)
+		if err != nil {
+			return nil, fmt.Errorf("encode projected model %q: %w", capability.PublicID, err)
+		}
+		projected = append(projected, projectedModel)
+	}
+
+	projectedModels, err := json.Marshal(projected)
+	if err != nil {
+		return nil, fmt.Errorf("encode projected models array: %w", err)
+	}
+	envelope["models"] = projectedModels
+	projectedBody, err := json.Marshal(envelope)
+	if err != nil {
+		return nil, fmt.Errorf("encode projected manifest: %w", err)
+	}
+	return projectedBody, nil
+}
+
+func mergeCindyCodexModelsManifest(body []byte) ([]byte, error) {
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil, fmt.Errorf("decode JSON object: %w", err)
+	}
+	var models []json.RawMessage
+	if err := json.Unmarshal(envelope["models"], &models); err != nil {
+		return nil, fmt.Errorf("decode top-level models array: %w", err)
+	}
+
+	// The ordinary manifest is an independent provider contract. Preserve its
+	// entries without semantic rewriting, including IDs that happen
+	// to match a Cindy live ID, hidden alias, or unverified candidate. Catalog
+	// verification constrains only exact Cindy sources.
+	merged := append([]json.RawMessage(nil), models...)
+	seenExactSlugs := make(map[string]struct{}, len(models))
+	for _, rawModel := range models {
+		var model struct {
+			Slug string `json:"slug"`
+		}
+		if err := json.Unmarshal(rawModel, &model); err == nil && model.Slug != "" {
+			seenExactSlugs[model.Slug] = struct{}{}
+		}
+	}
+	for _, publicID := range CindyCodexPublicModelIDs() {
+		if _, duplicate := seenExactSlugs[publicID]; duplicate {
+			continue
+		}
+		encoded, err := json.Marshal(map[string]string{"slug": publicID})
+		if err != nil {
+			return nil, fmt.Errorf("encode catalog model %q: %w", publicID, err)
+		}
+		merged = append(merged, encoded)
+		seenExactSlugs[publicID] = struct{}{}
+	}
+
+	mergedModels, err := json.Marshal(merged)
+	if err != nil {
+		return nil, fmt.Errorf("encode merged models array: %w", err)
+	}
+	envelope["models"] = mergedModels
+	mergedBody, err := json.Marshal(envelope)
+	if err != nil {
+		return nil, fmt.Errorf("encode merged manifest: %w", err)
+	}
+	return mergedBody, nil
 }
 
 func codexModelsManifestBodyETag(body []byte) string {
@@ -708,7 +882,18 @@ func validateCodexModelsManifestEnvelope(body []byte) error {
 
 func buildCodexModelsManifestCacheKey(request codexModelsManifestRequest) string {
 	hasher := sha256.New()
-	_, _ = fmt.Fprintf(hasher, "%d\n%d\n%s\n%s\n", request.accountID, request.credentialAccountID, request.proxyURL, request.url)
+	_, _ = fmt.Fprintf(
+		hasher,
+		"%d\n%d\n%s\n%s\ncindy-catalog:%t:%s\nimage-studio:%t\nproject-cindy:%t\n",
+		request.accountID,
+		request.credentialAccountID,
+		request.proxyURL,
+		request.url,
+		request.cindyCatalogEnabled,
+		request.cindyCatalogVersion,
+		request.cindyImageEnabled,
+		request.projectCindyCatalog,
+	)
 	headerNames := make([]string, 0, len(request.headers))
 	for name := range request.headers {
 		headerNames = append(headerNames, name)

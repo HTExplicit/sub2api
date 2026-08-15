@@ -157,6 +157,13 @@ func (r *OpenAIImagesRequest) IsEdits() bool {
 	return r != nil && r.Endpoint == openAIImagesEditsEndpoint
 }
 
+func (r *OpenAIImagesRequest) InputImageCount() int {
+	if r == nil || !r.IsEdits() {
+		return 0
+	}
+	return len(r.InputImageURLs) + len(r.Uploads)
+}
+
 func (r *OpenAIImagesRequest) StickySessionSeed() string {
 	if r == nil {
 		return ""
@@ -458,6 +465,12 @@ func isOpenAIImageGenerationModel(model string) bool {
 	return IsGPTImageGenerationModel(model) || isGrokImageGenerationModel(model)
 }
 
+// IsNativeOpenAIImagesModel reports whether the existing OpenAI/Grok image
+// implementation accepts model without the strict Cindy catalogue resolver.
+func IsNativeOpenAIImagesModel(model string) bool {
+	return isOpenAIImageGenerationModel(model)
+}
+
 // IsGPTImageGenerationModel identifies the GPT native image-generation model family.
 func IsGPTImageGenerationModel(model string) bool {
 	model = strings.ToLower(strings.TrimSpace(model))
@@ -476,10 +489,91 @@ func validateOpenAIImagesModel(model string) error {
 	if isOpenAIImageGenerationModel(model) {
 		return nil
 	}
+	if capability, ok := ResolveCindyCapability(model); ok && capability.Kind == CindyModelKindImage {
+		return nil
+	}
 	if model == "" {
 		return fmt.Errorf("images endpoint requires an image model")
 	}
 	return fmt.Errorf("images endpoint requires an image model, got %q", model)
+}
+
+func validateOpenAIImagesUpstreamModel(account *Account, requestModel, upstreamModel string) error {
+	if isOpenAIImageGenerationModel(upstreamModel) {
+		return nil
+	}
+	if account == nil || !IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		return fmt.Errorf("images endpoint requires an image model, got %q", strings.TrimSpace(upstreamModel))
+	}
+
+	capability, ok := ResolveCindyCapability(requestModel)
+	if !ok || capability.Kind != CindyModelKindImage || capability.LiveUpstreamID != strings.TrimSpace(upstreamModel) {
+		return fmt.Errorf("images endpoint requires an image model, got %q", strings.TrimSpace(upstreamModel))
+	}
+	return nil
+}
+
+// ValidateCindyImageRequest enforces the exact image controls verified on the
+// Cindy data plane. Parameters omitted from the capability document remain
+// unavailable instead of being inferred from another provider or endpoint.
+func ValidateCindyImageRequest(model string, req *OpenAIImagesRequest) error {
+	if req == nil {
+		return fmt.Errorf("image request is required")
+	}
+	capability, ok := ResolveCindyCapability(model)
+	if !ok || capability.Kind != CindyModelKindImage || capability.Controls == nil {
+		return fmt.Errorf("model %q has no verified Cindy image capability", strings.TrimSpace(model))
+	}
+
+	endpoint := CindyEndpointImagesGenerate
+	controls := capability.Controls.Generation
+	if req.IsEdits() {
+		endpoint = CindyEndpointImagesEdit
+		controls = capability.Controls.Edit
+	}
+	if !CindyModelSupportsEndpoint(model, endpoint) || controls == nil {
+		return fmt.Errorf("model %q is not verified for %s", capability.PublicID, endpoint)
+	}
+	if req.Stream {
+		return fmt.Errorf("stream is not verified for model %q on %s", capability.PublicID, endpoint)
+	}
+	if controls.MaxOutputCount <= 0 || req.N <= 0 || req.N > controls.MaxOutputCount {
+		return fmt.Errorf("n must be between 1 and %d for model %q on %s", controls.MaxOutputCount, capability.PublicID, endpoint)
+	}
+	if !cindyImageControlAllows(controls.Sizes, req.Size) {
+		return fmt.Errorf("size %q is not verified for model %q on %s", strings.TrimSpace(req.Size), capability.PublicID, endpoint)
+	}
+	if !cindyImageControlAllows(controls.Qualities, req.Quality) {
+		return fmt.Errorf("quality %q is not verified for model %q on %s", strings.TrimSpace(req.Quality), capability.PublicID, endpoint)
+	}
+	if req.ResponseFormat != "" && !strings.EqualFold(strings.TrimSpace(req.ResponseFormat), "b64_json") {
+		return fmt.Errorf("response_format must be b64_json for model %q", capability.PublicID)
+	}
+	if req.Background != "" || req.OutputFormat != "" || req.Moderation != "" || req.InputFidelity != "" || req.Style != "" || req.OutputCompression != nil || req.PartialImages != nil {
+		return fmt.Errorf("request contains an unverified image control for model %q on %s", capability.PublicID, endpoint)
+	}
+	if req.IsEdits() {
+		if !controls.SupportsReferenceImage || req.InputImageCount() == 0 {
+			return fmt.Errorf("a reference image is required for model %q on %s", capability.PublicID, endpoint)
+		}
+		if req.HasMask && !controls.SupportsMask {
+			return fmt.Errorf("mask is not verified for model %q on %s", capability.PublicID, endpoint)
+		}
+	}
+	return nil
+}
+
+func cindyImageControlAllows(allowed []string, value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" || len(allowed) == 0 {
+		return false
+	}
+	for _, candidate := range allowed {
+		if strings.EqualFold(strings.TrimSpace(candidate), value) {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeOpenAIImagesEndpointPath(path string) string {
@@ -586,7 +680,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 		return nil, err
 	}
 	upstreamModel := account.GetMappedModel(requestModel)
-	if err := validateOpenAIImagesModel(upstreamModel); err != nil {
+	if err := validateOpenAIImagesUpstreamModel(account, requestModel, upstreamModel); err != nil {
 		return nil, err
 	}
 	logger.LegacyPrintf(
@@ -631,6 +725,11 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 	if resp.StatusCode >= 400 {
 		respBody := s.readUpstreamErrorBody(resp)
 		_ = resp.Body.Close()
+		if failoverErr, ok := s.handleCindyBalanceHTTPFailover(
+			upstreamCtx, account, resp.StatusCode, resp.Header, respBody, upstreamModel,
+		); ok {
+			return nil, failoverErr
+		}
 		respBody = s.redactAgentIdentitySensitiveBody(upstreamCtx, account, respBody)
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
 		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
@@ -675,6 +774,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 					Duration:         time.Since(startTime),
 					FirstTokenMs:     ttft,
 					ImageCount:       streamCount,
+					ImageInputCount:  parsed.InputImageCount(),
 					ImageSize:        parsed.SizeTier,
 					ImageInputSize:   parsed.Size,
 					ImageOutputSizes: streamSizes,
@@ -696,12 +796,15 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 			Duration:         time.Since(startTime),
 			FirstTokenMs:     firstTokenMs,
 			ImageCount:       imageCount,
+			ImageInputCount:  parsed.InputImageCount(),
 			ImageSize:        parsed.SizeTier,
 			ImageInputSize:   parsed.Size,
 			ImageOutputSizes: imageOutputSizes,
 		}, nil
 	} else {
-		nonStreamUsage, nonStreamCount, nonStreamSizes, err := s.handleOpenAIImagesNonStreamingResponse(resp, c)
+		nonStreamUsage, nonStreamCount, nonStreamSizes, err := s.handleOpenAIImagesNonStreamingResponse(
+			upstreamCtx, resp, c, account, upstreamModel,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -719,6 +822,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 			Duration:         time.Since(startTime),
 			FirstTokenMs:     firstTokenMs,
 			ImageCount:       imageCount,
+			ImageInputCount:  parsed.InputImageCount(),
 			ImageSize:        parsed.SizeTier,
 			ImageInputSize:   parsed.Size,
 			ImageOutputSizes: nonStreamSizes,
@@ -872,10 +976,35 @@ func cloneMultipartHeader(src textproto.MIMEHeader) textproto.MIMEHeader {
 	return dst
 }
 
-func (s *OpenAIGatewayService) handleOpenAIImagesNonStreamingResponse(resp *http.Response, c *gin.Context) (OpenAIUsage, int, []string, error) {
+func (s *OpenAIGatewayService) handleOpenAIImagesNonStreamingResponse(
+	ctx context.Context,
+	resp *http.Response,
+	c *gin.Context,
+	account *Account,
+	upstreamModel string,
+) (OpenAIUsage, int, []string, error) {
 	body, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 	if err != nil {
 		return OpenAIUsage{}, 0, nil, err
+	}
+	if resp.StatusCode == http.StatusOK {
+		if failoverErr, ok := s.cindyBalanceTerminalFailover(ctx, account, resp.Header, body, upstreamModel); ok {
+			return OpenAIUsage{}, 0, nil, failoverErr
+		}
+		var sseFailoverErr *UpstreamFailoverError
+		if isEventStreamResponse(resp.Header) {
+			forEachOpenAISSEDataPayload(string(body), func(payload []byte) {
+				if sseFailoverErr != nil {
+					return
+				}
+				if failoverErr, ok := s.cindyBalanceTerminalFailover(ctx, account, resp.Header, payload, upstreamModel); ok {
+					sseFailoverErr = failoverErr
+				}
+			})
+		}
+		if sseFailoverErr != nil {
+			return OpenAIUsage{}, 0, nil, sseFailoverErr
+		}
 	}
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	contentType := "application/json"

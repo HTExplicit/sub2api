@@ -114,6 +114,8 @@ const openAILongContextBillingEnabledKey = "openai_long_context_billing_enabled"
 
 const (
 	OpenAIEndpointCapabilityChatCompletions OpenAIEndpointCapability = "chat_completions"
+	OpenAIEndpointCapabilityMessages        OpenAIEndpointCapability = "messages"
+	OpenAIEndpointCapabilityCountTokens     OpenAIEndpointCapability = "count_tokens"
 	OpenAIEndpointCapabilityEmbeddings      OpenAIEndpointCapability = "embeddings"
 	OpenAIEndpointCapabilityAlphaSearch     OpenAIEndpointCapability = "alpha_search"
 	OpenAIEndpointCapabilityLive            OpenAIEndpointCapability = "live"
@@ -829,6 +831,13 @@ func resolveRequestedModelInMapping(mapping map[string]string, requestedModel st
 // 请求卡死在该账号上、无法 failover 到真正支持该模型的 API Key 账号（#3662）。
 // 未知/自定义别名仍保持允许（兼容渠道级映射），见 isOpenAIOAuthServableModel。
 func (a *Account) IsModelSupported(requestedModel string) bool {
+	// Cindy's fixed catalogue is authoritative for strict Cindy accounts. This
+	// keeps stale per-account model_mapping JSON from advertising unsupported
+	// models while allowing newly verified catalogue entries without rewriting
+	// thousands of account rows.
+	if CindyCapabilityCatalogFeatureEnabled() && a != nil && IsCindyAPIKeyAccount(a.Platform, a.Type, a.Credentials) {
+		return CindyModelHasVerifiedEndpoint(requestedModel)
+	}
 	// 透传模式仅替换认证、模型语义完全交由上游决定，因此放行所有模型。
 	// 该短路必须在 model_mapping 判定之前：账号从"白名单模式"切换到透传后，
 	// credentials 里常残留旧的非空 model_mapping，若不在此放行，透传账号会被
@@ -860,6 +869,14 @@ func (a *Account) GetMappedModel(requestedModel string) string {
 // ResolveMappedModel 获取映射后的模型名，并返回是否命中了账号级映射。
 // matched=true 表示命中了精确映射或通配符映射，即使映射结果与原模型名相同。
 func (a *Account) ResolveMappedModel(requestedModel string) (mappedModel string, matched bool) {
+	// Resolve the strict Cindy catalogue before account-level mappings. Public
+	// aliases, full live IDs and compatibility aliases therefore share one
+	// deterministic upstream spelling across every protocol and transport.
+	if CindyCapabilityCatalogFeatureEnabled() && a != nil && IsCindyAPIKeyAccount(a.Platform, a.Type, a.Credentials) {
+		if mappedModel, ok := CindyMappedUpstreamModel(requestedModel); ok {
+			return mappedModel, true
+		}
+	}
 	mapping := a.GetModelMapping()
 	if len(mapping) == 0 {
 		return requestedModel, false
@@ -1500,7 +1517,7 @@ func (a *Account) SupportsOpenAIEndpointCapability(capability OpenAIEndpointCapa
 	}
 	if a.IsGrok() {
 		switch capability {
-		case OpenAIEndpointCapabilityChatCompletions:
+		case OpenAIEndpointCapabilityChatCompletions, OpenAIEndpointCapabilityMessages:
 			return true
 		case OpenAIEndpointCapabilityGrokMediaGeneration:
 			eligible, reason := a.GrokMediaGenerationEligibility()
@@ -1515,6 +1532,17 @@ func (a *Account) SupportsOpenAIEndpointCapability(capability OpenAIEndpointCapa
 	}
 	switch capability {
 	case OpenAIEndpointCapabilityChatCompletions:
+	case OpenAIEndpointCapabilityCountTokens:
+		// Ordinary OpenAI-compatible accounts retain the existing Anthropic-to-
+		// Responses input_tokens bridge. Cindy is independently catalog-gated by
+		// the scheduler before this compatibility fallback.
+		capability = OpenAIEndpointCapabilityChatCompletions
+	case OpenAIEndpointCapabilityMessages:
+		// /v1/messages is an inbound protocol capability. Ordinary OpenAI-
+		// compatible accounts still use the established chat/Responses adapter,
+		// so existing chat_completions capability declarations remain valid. The
+		// strict Cindy model-by-endpoint gate is applied by the scheduler.
+		capability = OpenAIEndpointCapabilityChatCompletions
 	case OpenAIEndpointCapabilityLive:
 		return a.Platform == PlatformOpenAI &&
 			a.Type == AccountTypeOAuth &&

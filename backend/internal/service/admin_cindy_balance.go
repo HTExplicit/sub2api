@@ -25,8 +25,25 @@ func (s *adminServiceImpl) ClearCindyBalanceInsufficient(ctx context.Context, id
 	if err != nil {
 		return nil, err
 	}
+	if retryCanceler, ok := s.runtimeBlocker.(interface {
+		CancelCindyBalancePersistenceRetry(int64)
+	}); ok {
+		// Cancel and drain stale persistence work before clearing any state. A
+		// queued or already-running retry must not recreate the marker after the
+		// explicit recovery has returned successfully.
+		retryCanceler.CancelCindyBalancePersistenceRetry(id)
+	}
 	if _, err := repo.ClearCindyBalanceInsufficient(ctx, id); err != nil {
 		return nil, err
+	}
+	if pendingClearer, ok := s.runtimeBlocker.(interface {
+		ClearCindyBalancePending(context.Context, int64) error
+	}); ok {
+		if err := pendingClearer.ClearCindyBalancePending(ctx, id); err != nil {
+			// Keep the local indefinite block in place. A retry can clear the
+			// durable marker without accidentally rescheduling this account.
+			return nil, err
+		}
 	}
 	if s.runtimeBlocker != nil {
 		s.runtimeBlocker.ClearAccountSchedulingBlock(id)

@@ -80,6 +80,12 @@ func openaiResponsesProbePayload(modelID string) []byte {
 // 的上游模型(值),按字典序取首个具体(非通配符)模型以保证可复现;无映射时回退
 // DefaultTestModel(适配 OpenAI 官方 APIKey 账号)。
 func selectResponsesProbeModel(account *Account) string {
+	if CindyCapabilityCatalogFeatureEnabled() && account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		if upstream, ok := CindyMappedUpstreamModel(CindyDefaultTestModel); ok {
+			return upstream
+		}
+		return CindyDefaultTestModel
+	}
 	mapping := account.GetModelMapping()
 	candidates := make([]string, 0, len(mapping))
 	for _, upstream := range mapping {

@@ -37,6 +37,7 @@ type OpenAIImagesUpstreamError struct {
 	Message           string
 	Param             string
 	UpstreamRequestID string
+	rawPayload        []byte
 }
 
 func (e *OpenAIImagesUpstreamError) Error() string {
@@ -593,20 +594,25 @@ func openAIImagesUpstreamErrorFromSSEPayload(payload []byte) *OpenAIImagesUpstre
 	if !gjson.ValidBytes(payload) {
 		return nil
 	}
+	var upstreamErr *OpenAIImagesUpstreamError
 	switch gjson.GetBytes(payload, "type").String() {
 	case "error":
-		return openAIImagesUpstreamErrorFromGJSON(gjson.GetBytes(payload, "error"), "")
+		upstreamErr = openAIImagesUpstreamErrorFromGJSON(gjson.GetBytes(payload, "error"), "")
 	case "response.failed":
 		response := gjson.GetBytes(payload, "response")
-		return openAIImagesUpstreamErrorFromGJSON(response.Get("error"), response.Get("id").String())
+		upstreamErr = openAIImagesUpstreamErrorFromGJSON(response.Get("error"), response.Get("id").String())
 	case "response.incomplete":
 		// 上游在生成预算内未产出图片（超时/被截断），返回 response.incomplete 而非 error。
 		// 旧逻辑识别不到，统一报成模糊的 "upstream did not return image output" + 502，
 		// 且不触发 failover。这里把它显式建模为可重试的上游错误，使其能换账号重试。
-		return openAIImagesIncompleteUpstreamError(gjson.GetBytes(payload, "response"))
+		upstreamErr = openAIImagesIncompleteUpstreamError(gjson.GetBytes(payload, "response"))
 	default:
 		return nil
 	}
+	if upstreamErr != nil {
+		upstreamErr.rawPayload = append([]byte(nil), payload...)
+	}
+	return upstreamErr
 }
 
 // extractOpenAIImagesModelRefusal 从上游 SSE 响应体提取「模型未出图、改用文字拒绝」
@@ -829,6 +835,11 @@ func (s *OpenAIGatewayService) handleOpenAIImagesErrorResponse(
 	requestedModel ...string,
 ) (*OpenAIForwardResult, error) {
 	body := s.readUpstreamErrorBody(resp)
+	if failoverErr, ok := s.handleCindyBalanceHTTPFailover(
+		ctx, account, resp.StatusCode, resp.Header, body, requestedModel...,
+	); ok {
+		return nil, failoverErr
+	}
 
 	upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(body)))
 	upstreamDetail := ""
@@ -1309,6 +1320,7 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthNonStreamingResponse(
 func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 	resp *http.Response,
 	c *gin.Context,
+	account *Account,
 	startTime time.Time,
 	responseFormat string,
 	streamPrefix string,
@@ -1451,6 +1463,24 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 			imageOutputSizes = openAIResponsesImageResultSizes(finalResults)
 			processDataDone = true
 		case "error", "response.failed":
+			if failoverErr, ok := s.cindyBalanceHTTPResponseTerminalFailover(
+				c.Request.Context(), account, resp.StatusCode, resp.Header, dataBytes, fallbackModel,
+			); ok {
+				responseWritten := OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c) != writerSizeBeforeResponse
+				if !responseWritten {
+					processDataErr = failoverErr
+				} else {
+					if !clientDisconnected {
+						s.tryWriteOpenAIImagesStreamEvent(
+							c, flusher, &clientDisconnected, &lastDownstreamWriteAt, "error",
+							buildOpenAIImagesStreamErrorBody("Temporary upstream failure"),
+						)
+					}
+					processDataErr = errors.New("cindy balance exhausted after downstream output")
+				}
+				processDataDone = true
+				return
+			}
 			if upstreamErr := openAIImagesUpstreamErrorFromSSEPayload(dataBytes); upstreamErr != nil {
 				retryable := IsOpenAIImagesRetryableUpstreamError(upstreamErr)
 				if !clientDisconnected && (!retryable || c.Writer.Size() != writerSizeBeforeResponse) {
@@ -1726,6 +1756,11 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 	if resp.StatusCode >= 400 {
 		respBody := s.readUpstreamErrorBody(resp)
 		_ = resp.Body.Close()
+		if failoverErr, ok := s.handleCindyBalanceHTTPFailover(
+			upstreamCtx, account, resp.StatusCode, resp.Header, respBody, requestModel,
+		); ok {
+			return nil, failoverErr
+		}
 		respBody = s.redactAgentIdentitySensitiveBody(upstreamCtx, account, respBody)
 		if !agentIdentityTaskRecoveryWasTried(ctx) && s.isAgentIdentityAccount(ctx, account) && isAgentIdentityTaskInvalidHTTPResponse(resp.StatusCode, respBody) {
 			expectedTaskID := account.GetCredential("task_id")
@@ -1770,7 +1805,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 	// keepalive 心跳字节，避免 failover 第 2 轮起把上一轮心跳残留误判为已写响应。
 	writerSizeBeforeResponse := OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c)
 	if parsed.Stream {
-		usage, imageCount, imageOutputSizes, firstTokenMs, err = s.handleOpenAIImagesOAuthStreamingResponse(resp, c, startTime, parsed.ResponseFormat, openAIImagesStreamPrefix(parsed), requestModel)
+		usage, imageCount, imageOutputSizes, firstTokenMs, err = s.handleOpenAIImagesOAuthStreamingResponse(resp, c, account, startTime, parsed.ResponseFormat, openAIImagesStreamPrefix(parsed), requestModel)
 		if err != nil {
 			if imageCount > 0 {
 				return &OpenAIForwardResult{
@@ -1783,6 +1818,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 					Duration:         time.Since(startTime),
 					FirstTokenMs:     firstTokenMs,
 					ImageCount:       imageCount,
+					ImageInputCount:  parsed.InputImageCount(),
 					ImageSize:        parsed.SizeTier,
 					ImageInputSize:   parsed.Size,
 					ImageOutputSizes: imageOutputSizes,
@@ -1827,6 +1863,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 		Duration:         time.Since(startTime),
 		FirstTokenMs:     firstTokenMs,
 		ImageCount:       imageCount,
+		ImageInputCount:  parsed.InputImageCount(),
 		ImageSize:        parsed.SizeTier,
 		ImageInputSize:   parsed.Size,
 		ImageOutputSizes: imageOutputSizes,
@@ -1876,8 +1913,16 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthResponseError(
 	if !errors.As(err, &upstreamErr) {
 		return err
 	}
+	cindyBalanceInsufficient := false
+	if len(upstreamErr.rawPayload) > 0 {
+		var eventHeaders http.Header
+		if resp != nil {
+			eventHeaders = resp.Header
+		}
+		cindyBalanceInsufficient = s.handleCindyBalanceTerminalEvent(ctx, account, eventHeaders, upstreamErr.rawPayload, requestedModel)
+	}
 
-	retryable := IsOpenAIImagesRetryableUpstreamError(upstreamErr)
+	retryable := cindyBalanceInsufficient || IsOpenAIImagesRetryableUpstreamError(upstreamErr)
 	kind := "http_error"
 	if retryable {
 		kind = "failover"
@@ -1910,11 +1955,24 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthResponseError(
 	}
 
 	responseBody := openAIImagesUpstreamErrorResponseBody(upstreamErr)
-	shouldDisable := s.handleOpenAIAccountUpstreamError(ctx, account, upstreamErr.StatusCode, headers, responseBody, requestedModel)
-	return &UpstreamFailoverError{
-		StatusCode:             upstreamErr.StatusCode,
-		ResponseBody:           responseBody,
-		ResponseHeaders:        headers,
-		RetryableOnSameAccount: !shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(upstreamErr.StatusCode),
+	statusCode := upstreamErr.StatusCode
+	shouldDisable := false
+	if cindyBalanceInsufficient {
+		statusCode = http.StatusTooManyRequests
+		shouldDisable = true
+	} else {
+		shouldDisable = s.handleOpenAIAccountUpstreamError(ctx, account, statusCode, headers, responseBody, requestedModel)
 	}
+	failoverErr := &UpstreamFailoverError{
+		StatusCode:               statusCode,
+		ResponseBody:             responseBody,
+		ResponseHeaders:          headers,
+		RetryableOnSameAccount:   !shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(statusCode),
+		CindyBalanceInsufficient: cindyBalanceInsufficient,
+	}
+	if cindyBalanceInsufficient {
+		failoverErr.RetryableOnSameAccount = false
+		return sanitizeOpenAICindyFailoverError(failoverErr)
+	}
+	return failoverErr
 }

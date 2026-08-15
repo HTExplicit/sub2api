@@ -742,13 +742,24 @@ func TestGrokQuotaServiceQueryQuotaFreeFallsBackToGrok45(t *testing.T) {
 	require.True(t, result.HeadersObserved)
 
 	requests, bodies := upstream.snapshot()
-	require.Len(t, requests, 3)
+	billingCalls := 0
 	responseCalls := 0
 	for i, req := range requests {
-		if req.URL.Path != "/v1/responses" {
+		switch req.URL.Path {
+		case "/v1/billing":
+			billingCalls++
+			continue
+		case "/v1/models":
+			// A successful quota query schedules an independent best-effort model
+			// refresh. It may reach this recorder before or after the snapshot.
+			require.Equal(t, http.MethodGet, req.Method)
+			continue
+		case "/v1/responses":
+			responseCalls++
+		default:
+			require.Failf(t, "unexpected upstream request", "path=%q", req.URL.Path)
 			continue
 		}
-		responseCalls++
 		require.Equal(t, http.MethodPost, req.Method)
 		require.Equal(t, "application/json, text/event-stream", req.Header.Get("Accept"))
 		require.Equal(t, "grok-4.5", gjson.GetBytes(bodies[i], "model").String())
@@ -757,6 +768,7 @@ func TestGrokQuotaServiceQueryQuotaFreeFallsBackToGrok45(t *testing.T) {
 		require.False(t, gjson.GetBytes(bodies[i], "max_output_tokens").Exists())
 		require.False(t, gjson.GetBytes(bodies[i], "store").Exists())
 	}
+	require.Equal(t, 2, billingCalls)
 	require.Equal(t, 1, responseCalls)
 }
 

@@ -275,7 +275,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				message = "OpenAI first-output staging limit exceeded"
 			}
 			logger.LegacyPrintf("service.openai_gateway", "%s: account=%d model=%s error=%v", message, account.ID, originalModel, err)
-			failoverErr := s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, nil, message)
+			failoverErr := s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, nil, message, resp.StatusCode)
 			failoverErr.SafeToFailoverAfterWrite = true
 			streamEarlyErr = failoverErr
 			_ = resp.Body.Close()
@@ -384,6 +384,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				upstreamRequestID,
 				nil,
 				"OpenAI stream ended before a terminal event",
+				resp.StatusCode,
 			)
 		}
 		flushPending("Client disconnected during final flush, returning collected usage")
@@ -407,6 +408,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			failoverErr := s.newOpenAIStreamFailoverError(
 				c, account, false, upstreamRequestID, nil,
 				"OpenAI SSE line exceeds guarded first-output limit",
+				resp.StatusCode,
 			)
 			failoverErr.SafeToFailoverAfterWrite = true
 			return resultWithUsage(), failoverErr, true
@@ -416,6 +418,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			failoverErr := s.newOpenAIStreamFailoverError(
 				c, account, false, upstreamRequestID, nil,
 				"OpenAI SSE line exceeds guarded first-output limit",
+				resp.StatusCode,
 			)
 			failoverErr.SafeToFailoverAfterWrite = true
 			return resultWithUsage(), failoverErr, true
@@ -446,7 +449,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			if errText := strings.TrimSpace(scanErr.Error()); errText != "" {
 				msg += ": " + errText
 			}
-			return resultWithUsage(), s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, nil, msg), true
+			return resultWithUsage(), s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, nil, msg, resp.StatusCode), true
 		}
 		// 客户端已断开时，上游出错仅影响体验，不影响计费；返回已收集 usage
 		if clientDisconnected {
@@ -469,7 +472,20 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		}
 		// Extract data from SSE line (supports both "data: " and "data:" formats)
 		if data, ok := extractOpenAISSEDataLine(line); ok {
-			dataBytes := []byte(data)
+			rawData := data
+			rawDataBytes := []byte(rawData)
+			rawEventType := strings.TrimSpace(gjson.GetBytes(rawDataBytes, "type").String())
+			if rawEventType == "response.failed" || rawEventType == "error" {
+				if failoverErr, ok := s.cindyBalanceHTTPResponseTerminalFailover(
+					ctx, account, resp.StatusCode, resp.Header, rawDataBytes, mappedModel,
+				); ok {
+					s.parseSSEUsageBytes(rawDataBytes, usage)
+					sawFailedEvent = true
+					streamEarlyErr = failoverErr
+					return
+				}
+			}
+			dataBytes := rawDataBytes
 			if rewritten := s.rewriteBusinessSystemPromptJSONForRequest(c, dataBytes, BusinessSystemPromptProtocolResponses); !bytes.Equal(rewritten, dataBytes) {
 				dataBytes = rewritten
 				data = string(rewritten)
@@ -479,7 +495,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			eventType := strings.TrimSpace(eventTypeRaw)
 			observer.ObserveOpenAI(dataBytes, eventTypeRaw)
 			// 初始上游 data 的 type 只解析一次：原始值保持终止事件的精确匹配，规范化值供后续分支复用。
-			if openAIStreamEventIsTerminalWithType(data, eventTypeRaw) {
+			if openAIStreamEventIsTerminalWithType(rawData, rawEventType) {
 				sawTerminalEvent = true
 			}
 			if responseID == "" {
@@ -540,7 +556,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 					}
 					if openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
 						sawFailedEvent = true
-						streamEarlyErr = s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, dataBytes, failedMessage, resp.Header)
+						streamEarlyErr = s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, dataBytes, failedMessage, resp.StatusCode, resp.Header)
 						return
 					}
 				}
@@ -1392,6 +1408,19 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 		observeOpenAISSEBody(observer, string(body))
 	} else {
 		observer.ObserveOpenAI(body, strings.TrimSpace(gjson.GetBytes(body, "type").String()))
+	}
+	// Classify the untouched upstream payload before any response rewriting.
+	// A non-stream request may still receive a JSON or SSE terminal event with
+	// HTTP 200.
+	cindyBalanceInsufficient := s.handleCindyBalanceHTTPResponseTerminalEvent(ctx, account, resp.StatusCode, resp.Header, body, mappedModel)
+	forEachOpenAISSEDataPayload(string(body), func(payload []byte) {
+		if !cindyBalanceInsufficient &&
+			s.handleCindyBalanceHTTPResponseTerminalEvent(ctx, account, resp.StatusCode, resp.Header, payload, mappedModel) {
+			cindyBalanceInsufficient = true
+		}
+	})
+	if cindyBalanceInsufficient {
+		return nil, newCindyBalanceTerminalFailover(resp.Header)
 	}
 	body = s.rewriteBusinessSystemPromptJSONForRequest(c, body, BusinessSystemPromptProtocolResponses)
 

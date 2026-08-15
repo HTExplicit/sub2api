@@ -84,6 +84,29 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
 		return
 	}
+	strictCindy, err := h.gatewayService.ClassifyStrictCindyGroup(c.Request.Context(), apiKey.Group)
+	if err != nil {
+		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
+		return
+	}
+	cindyEndpoint := service.CindyEndpointImagesGenerate
+	if parsed.IsEdits() {
+		cindyEndpoint = service.CindyEndpointImagesEdit
+	}
+	if strictCindy {
+		if !service.CindyModelSupportsEndpoint(requestModel, cindyEndpoint) {
+			h.errorResponse(c, http.StatusNotFound, "model_not_found", "Model is not supported on this Images endpoint")
+			return
+		}
+		if err := service.ValidateCindyImageRequest(requestModel, parsed); err != nil {
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+			return
+		}
+	} else if !service.IsNativeOpenAIImagesModel(requestModel) &&
+		!service.CindyModelSupportsEndpoint(requestModel, cindyEndpoint) {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "images endpoint requires an image model")
+		return
+	}
 
 	reqLog = reqLog.With(
 		zap.String("model", clientRequestModel),
@@ -178,6 +201,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				routingModel,
 				failedAccountIDs,
 				parsed.RequiredCapability,
+				cindyEndpoint,
 			)
 		}
 		if err != nil {
@@ -235,6 +259,23 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		)
 
 		account := selection.Account
+		if service.CindyCapabilityCatalogFeatureEnabled() &&
+			service.IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+			if !service.CindyModelSupportsEndpoint(requestModel, cindyEndpoint) {
+				if selection.ReleaseFunc != nil {
+					selection.ReleaseFunc()
+				}
+				h.errorResponse(c, http.StatusNotFound, "model_not_found", "Model is not supported on this Images endpoint")
+				return
+			}
+			if err := service.ValidateCindyImageRequest(requestModel, parsed); err != nil {
+				if selection.ReleaseFunc != nil {
+					selection.ReleaseFunc()
+				}
+				h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+				return
+			}
+		}
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		reqLog.Debug("openai.images.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
 		setOpsSelectedAccount(c, account.ID, account.Platform)

@@ -1120,6 +1120,28 @@ func (r *accountRepository) ListByGroup(ctx context.Context, groupID int64) ([]s
 	return accounts, nil
 }
 
+// ClassifyStrictCindyGroup evaluates the routing identity with one aggregate
+// query when an authentication snapshot is first materialized or when a
+// legacy caller has no marker. Hydrating ListByGroup can deserialize thousands
+// of accounts plus related entities, while this gate only needs to know
+// whether at least one active account exists and every active member has the
+// exact Cindy API-key identity.
+func (r *accountRepository) ClassifyStrictCindyGroup(ctx context.Context, groupID int64) (bool, error) {
+	if r == nil {
+		return false, errors.New("account repository SQL executor is unavailable")
+	}
+	return classifyStrictCindyGroupWithSQL(ctx, r.sql, groupID)
+}
+
+// CindyGroupIdentityReaderMarker attests that ListByGroup returns complete
+// active group membership without filtering transient scheduling state.
+func (r *accountRepository) CindyGroupIdentityReaderMarker() {}
+
+// CindyCodexModelsAccountReaderMarker attests that the concrete repository
+// implements both schedulable OpenAI account queries used by deterministic
+// mixed-group Codex model discovery.
+func (r *accountRepository) CindyCodexModelsAccountReaderMarker() {}
+
 func (r *accountRepository) ListActive(ctx context.Context) ([]service.Account, error) {
 	accounts, err := r.client.Account.Query().
 		Where(dbaccount.StatusEQ(service.StatusActive)).

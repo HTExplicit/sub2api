@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/gin-gonic/gin"
@@ -216,6 +217,58 @@ func TestAccountTestService_OrdinaryCindy429DoesNotMarkBalanceInsufficient(t *te
 	require.Error(t, err)
 	require.Zero(t, repo.markCalls)
 	require.Nil(t, account.CindyBalanceInsufficientAt)
+}
+
+func TestAccountTestService_CindyEmptyModelUsesLuna(t *testing.T) {
+	c, _ := newTestContext()
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{newJSONResponse(
+		http.StatusOK,
+		"data: {\"type\":\"response.completed\"}\n\n",
+	)}}
+	svc := &AccountTestService{
+		httpUpstream: upstream,
+		cfg:          &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}},
+	}
+	account := &Account{
+		ID:          8700,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: cindyCredentials(),
+		Extra:       map[string]any{"use_responses_api": true},
+	}
+
+	require.NoError(t, svc.testOpenAIAccountConnection(c, account, "", "hi", AccountTestModeDefault))
+	require.Len(t, upstream.requests, 1)
+	requestBody, err := io.ReadAll(upstream.requests[0].Body)
+	require.NoError(t, err)
+	require.Equal(t, "openai/gpt-5.6-luna", gjson.GetBytes(requestBody, "model").String())
+}
+
+func TestAccountTestService_NonCindyEmptyModelKeepsOpenAIDefault(t *testing.T) {
+	c, _ := newTestContext()
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{newJSONResponse(
+		http.StatusOK,
+		"data: {\"type\":\"response.completed\"}\n\n",
+	)}}
+	svc := &AccountTestService{
+		httpUpstream: upstream,
+		cfg:          &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}},
+	}
+	account := &Account{
+		ID:          8701,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "test-key", "base_url": "https://api.openai.com"},
+		Extra:       map[string]any{"use_responses_api": true},
+	}
+
+	require.NoError(t, svc.testOpenAIAccountConnection(c, account, "", "hi", AccountTestModeDefault))
+	require.Len(t, upstream.requests, 1)
+	requestBody, err := io.ReadAll(upstream.requests[0].Body)
+	require.NoError(t, err)
+	require.Equal(t, openai.DefaultTestModel, gjson.GetBytes(requestBody, "model").String())
 }
 
 func TestAccountTestService_OpenAISuccessPersistsSnapshotFromHeaders(t *testing.T) {

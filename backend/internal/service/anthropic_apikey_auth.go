@@ -29,6 +29,13 @@ func (a *Account) GetAnthropicAPIKeyAuthScheme() string {
 }
 
 func setAnthropicAPIKeyAuthHeader(header http.Header, account *Account, token string) {
+	// Cindy's native Messages data plane uses Bearer authentication even though
+	// the local account type is an API key. Keep the exception exact so ordinary
+	// Anthropic-compatible API key accounts retain x-api-key semantics.
+	if account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		header.Set("Authorization", "Bearer "+token)
+		return
+	}
 	if account.GetAnthropicAPIKeyAuthScheme() == AnthropicAPIKeyAuthSchemeAuthorizationBearer {
 		header.Set("Authorization", "Bearer "+token)
 		return

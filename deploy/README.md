@@ -152,6 +152,22 @@ When using Docker Compose with `AUTO_SETUP=true`:
 - `schema_migrations` tracks applied migrations (filename + checksum).
 - Migrations are forward-only; rollback requires a DB backup restore or a manual compensating SQL script.
 
+### Cindy staged rollout
+
+Three immutable process flags allow the Cindy changes to be enabled or rolled
+back independently while rebuilding only the Sub2API service:
+
+| Variable | Scope | Recommended first deployment |
+|----------|-------|------------------------------|
+| `GATEWAY_CINDY_BALANCE_DETECTION_ENABLED` | New exact balance classification and rechecks | `true` |
+| `GATEWAY_CINDY_CAPABILITY_CATALOG_ENABLED` | Catalog, aliases, protocol gates, and capability API | `false`; enable after the balance phase |
+| `GATEWAY_CINDY_IMAGE_STUDIO_ENABLED` | Cindy image capabilities and `/image-studio` | `false` until the strengthened A/B/C codec probe passes |
+
+Disabling balance detection does not clear an existing database balance marker
+or a durable pending marker. Catalog rollback restores the legacy generic
+routing path; it is not a traffic kill switch. The image flag is additionally
+dependent on the catalog flag.
+
 **Verify `users.allowed_groups` → `user_allowed_groups` backfill**
 
 During the incremental GORM→Ent migration, `users.allowed_groups` (legacy `BIGINT[]`) is being replaced by a normalized join table `user_allowed_groups(user_id, group_id)`.

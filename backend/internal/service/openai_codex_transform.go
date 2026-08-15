@@ -4,11 +4,15 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 )
+
+var ErrCindyResponsesImageToolModelNotFound = errors.New("cindy Responses image tool model is not verified")
 
 var codexModelMap = map[string]string{
 	"gpt-5.6-sol":          "gpt-5.6-sol",
@@ -988,10 +992,14 @@ func validateOpenAIResponsesImageModel(reqBody map[string]any, model string) err
 }
 
 func normalizeOpenAIResponsesImageOnlyModel(reqBody map[string]any) bool {
+	return normalizeOpenAIResponsesImageOnlyModelWithModel(reqBody, firstNonEmptyString(reqBody["model"]))
+}
+
+func normalizeOpenAIResponsesImageOnlyModelWithModel(reqBody map[string]any, requestedModel string) bool {
 	if len(reqBody) == 0 {
 		return false
 	}
-	imageModel := strings.TrimSpace(firstNonEmptyString(reqBody["model"]))
+	imageModel := strings.TrimSpace(requestedModel)
 	if !isOpenAIImageGenerationModel(imageModel) {
 		return false
 	}
@@ -1061,6 +1069,148 @@ func normalizeOpenAIResponsesImageOnlyModel(reqBody map[string]any) bool {
 	}
 	reqBody["model"] = openAIImagesResponsesMainModel
 	return modified
+}
+
+func mapCindyOpenAIResponsesImageModels(reqBody map[string]any, account *Account) bool {
+	if len(reqBody) == 0 || account == nil || !IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		return false
+	}
+
+	modified := false
+	if controllerModel := strings.TrimSpace(firstNonEmptyString(reqBody["model"])); controllerModel != "" {
+		if mapped, ok := CindyMappedUpstreamModel(controllerModel); ok && mapped != controllerModel {
+			reqBody["model"] = mapped
+			modified = true
+		}
+	}
+
+	tools, _ := reqBody["tools"].([]any)
+	for _, rawTool := range tools {
+		tool, ok := rawTool.(map[string]any)
+		if !ok || strings.TrimSpace(firstNonEmptyString(tool["type"])) != "image_generation" {
+			continue
+		}
+		model := strings.TrimSpace(firstNonEmptyString(tool["model"]))
+		if model == "" {
+			continue
+		}
+		capability, ok := ResolveCindyCapability(model)
+		if !ok || capability.Kind != CindyModelKindImage || capability.LiveUpstreamID == model {
+			continue
+		}
+		tool["model"] = capability.LiveUpstreamID
+		modified = true
+	}
+	return modified
+}
+
+// ResolveCindyResponsesImageTools validates and resolves Cindy's top-level
+// image bridge and every nested image_generation tool. Strict groups call it
+// before selection; mixed groups call it again after selecting a Cindy account.
+// Omitting the tool model selects the one verified default.
+func ResolveCindyResponsesImageTools(body []byte) ([]byte, error) {
+	var request map[string]any
+	if err := json.Unmarshal(body, &request); err != nil {
+		return nil, fmt.Errorf("decode Responses image tools: %w", err)
+	}
+	changed := false
+	topLevelModel := strings.TrimSpace(firstNonEmptyString(request["model"]))
+	if CindyModelSupportsResponsesImageBridge(topLevelModel) {
+		capability, _ := ResolveCindyCapability(topLevelModel)
+		if capability.Controls == nil || capability.Controls.Generation == nil {
+			return nil, fmt.Errorf("%w: %q", ErrCindyResponsesImageToolModelNotFound, topLevelModel)
+		}
+		if err := validateCindyResponsesImageToolControls("request", capability.PublicID, capability.Controls.Generation, request); err != nil {
+			return nil, err
+		}
+		if topLevelModel != capability.PublicID {
+			request["model"] = capability.PublicID
+			changed = true
+		}
+	}
+	tools, ok := request["tools"].([]any)
+	if !ok {
+		if changed {
+			resolvedBody, err := json.Marshal(request)
+			if err != nil {
+				return nil, fmt.Errorf("encode Responses image tools: %w", err)
+			}
+			return resolvedBody, nil
+		}
+		return body, nil
+	}
+
+	for index, rawTool := range tools {
+		tool, ok := rawTool.(map[string]any)
+		if !ok || strings.TrimSpace(firstNonEmptyString(tool["type"])) != "image_generation" {
+			continue
+		}
+
+		model := ""
+		if rawModel, exists := tool["model"]; exists && rawModel != nil {
+			modelValue, isString := rawModel.(string)
+			if !isString {
+				return nil, fmt.Errorf("tools[%d].model must be a string", index)
+			}
+			model = strings.TrimSpace(modelValue)
+		}
+		if model == "" {
+			model = "gpt-image-2"
+		}
+
+		capability, resolved := ResolveCindyCapability(model)
+		if !resolved || capability.Kind != CindyModelKindImage ||
+			!CindyModelSupportsEndpoint(model, CindyEndpointImagesGenerate) ||
+			capability.Controls == nil || capability.Controls.Generation == nil {
+			return nil, fmt.Errorf("%w: %q", ErrCindyResponsesImageToolModelNotFound, model)
+		}
+		controls := capability.Controls.Generation
+		if err := validateCindyResponsesImageToolControls(fmt.Sprintf("tools[%d]", index), capability.PublicID, controls, tool); err != nil {
+			return nil, err
+		}
+		if current, _ := tool["model"].(string); current != capability.LiveUpstreamID {
+			tool["model"] = capability.LiveUpstreamID
+			changed = true
+		}
+	}
+	if !changed {
+		return body, nil
+	}
+	resolvedBody, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("encode Responses image tools: %w", err)
+	}
+	return resolvedBody, nil
+}
+
+func validateCindyResponsesImageToolControls(location, model string, controls *CindyImageRequestControls, tool map[string]any) error {
+	if rawSize, exists := tool["size"]; exists {
+		size, ok := rawSize.(string)
+		if !ok || !cindyImageControlAllows(controls.Sizes, size) {
+			return fmt.Errorf("%s.size is not verified for model %q", location, model)
+		}
+	}
+	if rawQuality, exists := tool["quality"]; exists {
+		quality, ok := rawQuality.(string)
+		if !ok || !cindyImageControlAllows(controls.Qualities, quality) {
+			return fmt.Errorf("%s.quality is not verified for model %q", location, model)
+		}
+	}
+	if rawCount, exists := tool["n"]; exists {
+		count, ok := rawCount.(float64)
+		if !ok || count != math.Trunc(count) || count < 1 || count > float64(controls.MaxOutputCount) {
+			return fmt.Errorf("%s.n must be between 1 and %d for model %q", location, controls.MaxOutputCount, model)
+		}
+	}
+	for _, key := range []string{
+		"background", "output_format", "output_compression", "moderation",
+		"style", "partial_images", "input_fidelity", "mask", "image",
+	} {
+		if _, exists := tool[key]; exists {
+			return fmt.Errorf("%s.%s is not verified for model %q", location, key, model)
+		}
+	}
+	return nil
 }
 
 func normalizeOpenAIModelForUpstream(account *Account, model string) string {

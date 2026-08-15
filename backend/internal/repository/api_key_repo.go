@@ -234,7 +234,19 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 		}
 		return nil, err
 	}
-	return apiKeyEntityToService(m), nil
+	apiKey := apiKeyEntityToService(m)
+	if apiKey.GroupID != nil && apiKey.Group != nil {
+		apiKey.Group.StrictCindyKnown = true
+		apiKey.Group.StrictCindy = false
+		if apiKey.Group.Platform == service.PlatformOpenAI {
+			strictCindy, classifyErr := classifyStrictCindyGroupWithSQL(ctx, r.sql, *apiKey.GroupID)
+			if classifyErr != nil {
+				return nil, fmt.Errorf("classify API key group identity: %w", classifyErr)
+			}
+			apiKey.Group.StrictCindy = strictCindy
+		}
+	}
+	return apiKey, nil
 }
 
 func (r *apiKeyRepository) Update(ctx context.Context, key *service.APIKey, fields service.APIKeyUpdateFields) error {

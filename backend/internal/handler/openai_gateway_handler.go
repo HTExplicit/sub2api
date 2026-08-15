@@ -30,19 +30,59 @@ import (
 
 // OpenAIGatewayHandler handles OpenAI API gateway requests
 type OpenAIGatewayHandler struct {
-	gatewayService             *service.OpenAIGatewayService
-	billingCacheService        *service.BillingCacheService
-	apiKeyService              *service.APIKeyService
-	usageRecordWorkerPool      *service.UsageRecordWorkerPool
-	errorPassthroughService    *service.ErrorPassthroughService
-	contentModerationService   *service.ContentModerationService
-	securityAuditCoordinator   *securityaudit.Coordinator
-	grokMediaEligibilityProber grokMediaEligibilityProber
-	opsService                 *service.OpsService
-	concurrencyHelper          *ConcurrencyHelper
-	imageLimiter               *imageConcurrencyLimiter
-	maxAccountSwitches         int
-	cfg                        *config.Config
+	gatewayService                *service.OpenAIGatewayService
+	nativeAnthropicGatewayService *service.GatewayService
+	billingCacheService           *service.BillingCacheService
+	apiKeyService                 *service.APIKeyService
+	usageRecordWorkerPool         *service.UsageRecordWorkerPool
+	errorPassthroughService       *service.ErrorPassthroughService
+	contentModerationService      *service.ContentModerationService
+	securityAuditCoordinator      *securityaudit.Coordinator
+	grokMediaEligibilityProber    grokMediaEligibilityProber
+	opsService                    *service.OpsService
+	concurrencyHelper             *ConcurrencyHelper
+	imageLimiter                  *imageConcurrencyLimiter
+	maxAccountSwitches            int
+	cfg                           *config.Config
+}
+
+// SetNativeAnthropicGatewayService attaches the shared Anthropic passthrough
+// runtime. Production wiring sets it once; the setter keeps existing focused
+// handler tests source-compatible.
+func (h *OpenAIGatewayHandler) SetNativeAnthropicGatewayService(gateway *service.GatewayService) {
+	if h != nil {
+		h.nativeAnthropicGatewayService = gateway
+	}
+}
+
+func openAIForwardResultFromNativeAnthropic(result *service.ForwardResult) *service.OpenAIForwardResult {
+	if result == nil {
+		return nil
+	}
+	return &service.OpenAIForwardResult{
+		RequestID: result.RequestID,
+		Usage: service.OpenAIUsage{
+			InputTokens:              result.Usage.InputTokens,
+			OutputTokens:             result.Usage.OutputTokens,
+			CacheCreationInputTokens: result.Usage.CacheCreationInputTokens,
+			CacheReadInputTokens:     result.Usage.CacheReadInputTokens,
+			CacheCreation5mTokens:    result.Usage.CacheCreation5mTokens,
+			CacheCreation1hTokens:    result.Usage.CacheCreation1hTokens,
+			ImageOutputTokens:        result.Usage.ImageOutputTokens,
+		},
+		UsageInputTokensExcludeCache:  true,
+		Model:                         result.Model,
+		BillingModel:                  result.UpstreamModel,
+		UpstreamModel:                 result.UpstreamModel,
+		UpstreamResponseModel:         result.UpstreamResponseModel,
+		UpstreamResponseModelConflict: result.UpstreamResponseModelConflict,
+		UpstreamEndpoint:              "/v1/messages",
+		Stream:                        result.Stream,
+		Duration:                      result.Duration,
+		FirstTokenMs:                  result.FirstTokenMs,
+		ClientDisconnect:              result.ClientDisconnect,
+		ReasoningEffort:               result.ReasoningEffort,
+	}
 }
 
 type openAIWSTurnChannelMappingSnapshot struct {
@@ -134,6 +174,13 @@ func resolveOpenAIMessagesDispatchMappedModel(apiKey *service.APIKey, requestedM
 	return strings.TrimSpace(apiKey.Group.ResolveMessagesDispatchModel(requestedModel))
 }
 
+func openAIMessagesForwardModelForAccount(account *service.Account, nativeModel, legacyMappedModel string) string {
+	if service.CindyCapabilityCatalogFeatureEnabled() && account != nil && service.IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		return strings.TrimSpace(nativeModel)
+	}
+	return strings.TrimSpace(legacyMappedModel)
+}
+
 type openAIModelBodyReplaceFunc func([]byte, string) []byte
 
 func openAIModelMappedBody(body []byte, mapped bool, mappedModel string, replace openAIModelBodyReplaceFunc) []byte {
@@ -223,6 +270,43 @@ func allowOpenAICompatibleMessagesDispatch(apiKey *service.APIKey) bool {
 
 func openAICompatibleTextTargetAllowed(c *gin.Context, apiKey *service.APIKey, model string) bool {
 	return compositeTargetPlatformAllowed(c, apiKey, model, service.PlatformOpenAI, service.PlatformGrok)
+}
+
+func (h *OpenAIGatewayHandler) strictCindyModelAllowed(c *gin.Context, apiKey *service.APIKey, model string, endpoint service.CindyEndpoint) (bool, error) {
+	if h == nil || h.gatewayService == nil || apiKey == nil {
+		return true, nil
+	}
+	strictCindy, err := h.gatewayService.ClassifyStrictCindyGroup(c.Request.Context(), apiKey.Group)
+	if err != nil {
+		return false, err
+	}
+	if !strictCindy {
+		return true, nil
+	}
+	return service.CindyModelSupportsEndpoint(model, endpoint), nil
+}
+
+func strictCindyResponsesImageBridgeAllowed(model string, body []byte) bool {
+	// This is the one image-only Responses model that the local bridge rewrites
+	// to the verified Luna controller plus a nested gpt-image-2 tool. The fixed
+	// catalogue resolver admits the public and exact live spelling only.
+	_ = body
+	return service.CindyModelSupportsResponsesImageBridge(model)
+}
+
+func resolveStrictCindyResponsesImageTools(strict bool, body []byte) ([]byte, error) {
+	if !strict || !service.CindyImageStudioFeatureEnabled() {
+		return body, nil
+	}
+	return service.ResolveCindyResponsesImageTools(body)
+}
+
+func resolveSelectedCindyResponsesImageTools(account *service.Account, body []byte) ([]byte, error) {
+	if !service.CindyImageStudioFeatureEnabled() || account == nil ||
+		!service.IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		return body, nil
+	}
+	return service.ResolveCindyResponsesImageTools(body)
 }
 
 // NewOpenAIGatewayHandler creates a new OpenAIGatewayHandler
@@ -352,6 +436,25 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	ensureCompositeTargetPlatform(c, apiKey, reqModel)
 	if !compositeTargetPlatformAllowed(c, apiKey, reqModel, service.PlatformOpenAI, service.PlatformGrok) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
+		return
+	}
+	strictCindy, err := h.gatewayService.ClassifyStrictCindyGroup(c.Request.Context(), apiKey.Group)
+	if err != nil {
+		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
+		return
+	}
+	if strictCindy && !service.CindyModelSupportsEndpoint(reqModel, service.CindyEndpointResponses) &&
+		!strictCindyResponsesImageBridgeAllowed(reqModel, body) {
+		h.errorResponse(c, http.StatusNotFound, "model_not_found", "Model is not supported on the Responses endpoint")
+		return
+	}
+	body, err = resolveStrictCindyResponsesImageTools(strictCindy, body)
+	if err != nil {
+		if errors.Is(err, service.ErrCindyResponsesImageToolModelNotFound) {
+			h.errorResponse(c, http.StatusNotFound, "model_not_found", "Image tool model is not supported on the Responses endpoint")
+		} else {
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+		}
 		return
 	}
 	if cappedBody, changed := applyOpenAIReasoningEffortPolicyForRequest(c, apiKey, body); changed {
@@ -637,6 +740,23 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		// 从不可变的 canonical forwardBody 派生本次尝试 body 并整块剔除上游私有的加密
 		// reasoning item（含耦合的 id/summary），避免非透传上游 400 拒绝 Kiro reasoning 形态。
 		attemptBody := h.deriveOpenAIForwardAttemptBody(reqLog, forwardBody, account, &passthroughFailoverState)
+		attemptBody, err = resolveSelectedCindyResponsesImageTools(account, attemptBody)
+		if err != nil {
+			if accountReleaseFunc != nil {
+				accountReleaseFunc()
+				accountReleaseFunc = nil
+			} else if selection.ReleaseFunc != nil {
+				selection.ReleaseFunc()
+			}
+			selection.ReleaseFunc = nil
+			h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
+			if errors.Is(err, service.ErrCindyResponsesImageToolModelNotFound) {
+				h.handleStreamingAwareError(c, http.StatusNotFound, "model_not_found", "Image tool model is not supported on the Responses endpoint", streamStarted)
+			} else {
+				h.handleStreamingAwareError(c, http.StatusBadRequest, "invalid_request_error", err.Error(), streamStarted)
+			}
+			return
+		}
 		result, err := func() (*service.OpenAIForwardResult, error) {
 			defer func() {
 				if accountReleaseFunc != nil {
@@ -1023,8 +1143,14 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		zap.Any("group_id", apiKey.GroupID),
 	)
 
-	// 检查分组是否允许 /v1/messages 调度
-	if !allowOpenAICompatibleMessagesDispatch(apiKey) {
+	strictCindyMessages, err := h.gatewayService.ClassifyStrictCindyGroup(c.Request.Context(), apiKey.Group)
+	if err != nil {
+		h.anthropicErrorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
+		return
+	}
+	// Strict Cindy groups always expose their verified native Messages surface;
+	// the legacy OpenAI conversion flag remains authoritative elsewhere.
+	if !strictCindyMessages && !allowOpenAICompatibleMessagesDispatch(apiKey) {
 		h.anthropicErrorResponse(c, http.StatusForbidden, "permission_error",
 			"This group does not allow /v1/messages dispatch")
 		return
@@ -1065,9 +1191,19 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
 		return
 	}
+	if strictCindyMessages && !service.CindyModelSupportsEndpoint(reqModel, service.CindyEndpointMessages) {
+		h.anthropicErrorResponse(c, http.StatusNotFound, "not_found_error", "Model is not supported on the Messages endpoint")
+		return
+	}
 	bindOpenAIReasoningEffortPolicyForMessagesRequest(c, apiKey, body)
 	routingModel := service.NormalizeOpenAICompatRequestedModel(reqModel)
 	preferredMappedModel := resolveOpenAIMessagesDispatchMappedModel(apiKey, reqModel)
+	if strictCindyMessages {
+		// Cindy's Messages surface is native. Do not apply the legacy Claude-to-
+		// GPT family dispatch defaults that exist for OpenAI Responses bridging.
+		routingModel = reqModel
+		preferredMappedModel = ""
+	}
 	reqStream := gjson.GetBytes(body, "stream").Bool()
 
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
@@ -1133,6 +1269,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 
 	// 分组利润控制：Messages 文本入口同样请求级装门并固定 pricingAt。
 	msgPricingCtx, pricingAt := h.gatewayService.WithOpenAIRequestPricingContext(c.Request.Context(), apiKey.GroupID)
+	msgPricingCtx = service.WithOpenAICindyRequestedModel(msgPricingCtx, routingModel)
 	c.Request = c.Request.WithContext(msgPricingCtx)
 
 	for {
@@ -1163,7 +1300,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 				currentRoutingModel,
 				failedAccountIDs,
 				service.OpenAIUpstreamTransportAny,
-				service.OpenAIEndpointCapabilityChatCompletions,
+				service.OpenAIEndpointCapabilityMessages,
 				false,
 				false,
 				true,
@@ -1211,6 +1348,8 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			return
 		}
 		account := selection.Account
+		cindyMessagesAccount := service.CindyCapabilityCatalogFeatureEnabled() &&
+			service.IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		reqLog.Debug("openai_messages.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
 		_ = scheduleDecision
@@ -1250,6 +1389,13 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		defaultMappedModel := strings.TrimSpace(effectiveMappedModel)
 		// 应用渠道模型映射到请求体
 		forwardBody := mappedBodyForMessages(channelMappingMsg.Mapped, channelMappingMsg.MappedModel)
+		nativeMessagesModel := openAIMessagesForwardModelForAccount(account, routingModel, currentRoutingModel)
+		if cindyMessagesAccount {
+			// Mixed groups must dispatch by the selected account, not by whether the
+			// whole group is Cindy-only. The scheduler has already verified this
+			// model on Cindy's native Messages endpoint.
+			forwardBody = service.ReplaceModelInBody(body, nativeMessagesModel)
+		}
 		writerSizeBeforeForward := c.Writer.Size()
 		result, err := func() (*service.OpenAIForwardResult, error) {
 			defer func() {
@@ -1257,6 +1403,15 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					accountReleaseFunc()
 				}
 			}()
+			if cindyMessagesAccount {
+				if h.nativeAnthropicGatewayService == nil {
+					return nil, errors.New("native Anthropic gateway service is not configured")
+				}
+				nativeResult, nativeErr := h.nativeAnthropicGatewayService.ForwardCindyAnthropicMessages(
+					c.Request.Context(), c, account, forwardBody, nativeMessagesModel,
+				)
+				return openAIForwardResultFromNativeAnthropic(nativeResult), nativeErr
+			}
 			return h.gatewayService.ForwardAsAnthropic(c.Request.Context(), c, account, forwardBody, promptCacheKey, defaultMappedModel)
 		}()
 		cyberBlockKeyMsg := ""
@@ -2878,6 +3033,12 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 	if failoverErr.IsCredentialFailure() {
 		status, message := credentialFailoverClientResponse(failoverErr)
 		h.handleStreamingAwareError(c, status, "upstream_error", message, streamStarted)
+		return
+	}
+	if failoverErr.CindyBalanceInsufficient {
+		status, errType, message := h.mapUpstreamError(http.StatusTooManyRequests)
+		service.SetOpsUpstreamError(c, http.StatusTooManyRequests, message, "")
+		h.handleStreamingAwareError(c, status, errType, message, streamStarted)
 		return
 	}
 	statusCode := failoverErr.StatusCode

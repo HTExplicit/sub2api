@@ -19,6 +19,7 @@ func TestGatewayRoutesCodexModelsManifestPathIsRegistered(t *testing.T) {
 
 	require.NotEmpty(t, registered["/backend-api/codex/models"], "GET /backend-api/codex/models should be registered")
 	require.NotEmpty(t, registered["/v1/models"], "GET /v1/models should be registered")
+	require.NotEmpty(t, registered["/v1/models/capabilities"], "GET /v1/models/capabilities should be registered")
 	require.NotEmpty(t, registered["/models"], "GET /models should be registered")
 	require.Equal(t, registered["/v1/models"], registered["/models"], "root alias should use the same platform-aware handler")
 }

@@ -96,6 +96,16 @@ func TestOpenAISameAccountRetryLimit_CindyBudget429AlwaysSwitchesAccount(t *test
 		},
 		true,
 	))
+	require.Zero(t, openAISameAccountRetryLimit(
+		account,
+		&service.UpstreamFailoverError{
+			StatusCode:               http.StatusTooManyRequests,
+			ResponseBody:             []byte(`{"error":{"type":"rate_limit_error"}}`),
+			RetryableOnSameAccount:   true,
+			CindyBalanceInsufficient: true,
+		},
+		true,
+	), "sanitized in-band budget errors must still switch accounts")
 	require.Equal(t, 10, openAISameAccountRetryLimit(
 		account,
 		&service.UpstreamFailoverError{

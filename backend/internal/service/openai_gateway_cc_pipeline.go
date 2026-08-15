@@ -63,13 +63,24 @@ func (s *OpenAIGatewayService) newStreamHeaderWriter(c *gin.Context, upstream ht
 	}
 }
 
-// readOpenAIUpstreamError 读取上游错误体，在任何解析或记录之前移除不可暴露的
-// 结构化业务提示字段，并把 resp.Body 回卷为可重读的副本。
+type rewoundOpenAIUpstreamErrorBody struct {
+	*bytes.Reader
+	raw []byte
+}
+
+func (b *rewoundOpenAIUpstreamErrorBody) Close() error { return nil }
+
+// readOpenAIUpstreamError keeps the exact wire bytes available to the Cindy
+// classifier while every other inspector and downstream reader sees only the
+// business-prompt-sanitized body.
 func (s *OpenAIGatewayService) readOpenAIUpstreamError(resp *http.Response, c *gin.Context) ([]byte, string) {
-	respBody := s.readUpstreamErrorBody(resp)
-	respBody = s.rewriteBusinessSystemPromptJSONForAnyRequest(c, respBody)
+	rawBody := s.readUpstreamErrorBody(resp)
+	respBody := s.rewriteBusinessSystemPromptJSONForAnyRequest(c, rawBody)
 	_ = resp.Body.Close()
-	resp.Body = io.NopCloser(bytes.NewReader(respBody))
+	resp.Body = &rewoundOpenAIUpstreamErrorBody{
+		Reader: bytes.NewReader(respBody),
+		raw:    append([]byte(nil), rawBody...),
+	}
 
 	upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 	upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
@@ -85,9 +96,22 @@ func (s *OpenAIGatewayService) failoverOpenAIUpstreamHTTPError(
 	account *Account,
 	resp *http.Response,
 	respBody []byte,
-	upstreamMsg string,
 	upstreamModel string,
 ) *UpstreamFailoverError {
+	classificationBody := respBody
+	if rewound, ok := resp.Body.(*rewoundOpenAIUpstreamErrorBody); ok && len(rewound.raw) > 0 {
+		classificationBody = rewound.raw
+	}
+	if failoverErr, ok := s.handleCindyBalanceHTTPFailover(
+		ctx, account, resp.StatusCode, resp.Header, classificationBody, upstreamModel,
+	); ok {
+		return failoverErr
+	}
+	if resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(respBody))
+	upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(respBody)))
 	shouldFailover := s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody)
 	tempUnscheduled := false
 	if c != nil && account != nil && account.Platform != PlatformGrok && !shouldFailover && !IsResponseCommitted(c) && s.rateLimitService != nil {

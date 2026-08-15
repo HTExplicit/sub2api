@@ -500,7 +500,8 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		_ = s.service.deleteStickySessionAccountIDIfMatches(ctx, req.GroupID, sessionHash, accountID)
 		return nil, false, nil
 	}
-	if shouldClearStickySession(account, req.RequestedModel) || account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() || !account.IsSchedulable() {
+	accountRequestedModel := openAIRequestedModelForAccount(ctx, account, req.RequestedModel)
+	if shouldClearStickySession(account, accountRequestedModel) || account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() || !account.IsSchedulable() {
 		_ = s.service.deleteStickySessionAccountIDIfMatches(ctx, req.GroupID, sessionHash, accountID)
 		return nil, false, nil
 	}
@@ -524,7 +525,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	}
 	// Team+model cool: sticky must not pin a sibling under the same team 429 window.
 	now := time.Now()
-	upstreamModel := canonicalOpenAIAccountSchedulingModel(account, req.RequestedModel)
+	upstreamModel := canonicalOpenAIAccountSchedulingModel(account, accountRequestedModel)
 	if account != nil && isGrokTeamModelRateLimited(account, upstreamModel, now) {
 		_ = s.service.deleteStickySessionAccountIDIfMatches(ctx, req.GroupID, sessionHash, account.ID)
 		return nil, false, nil
@@ -1285,7 +1286,7 @@ func (s *defaultOpenAIAccountScheduler) tryFallbackToWeightedSticky(
 		if len(s.filterGrokFreeQuotaAccounts(ctx, []Account{*account})) == 0 {
 			continue
 		}
-		upstreamModel := canonicalOpenAIAccountSchedulingModel(account, req.RequestedModel)
+		upstreamModel := canonicalOpenAIAccountSchedulingModel(account, openAIRequestedModelForAccount(ctx, account, req.RequestedModel))
 		now := time.Now()
 		if isGrokTeamModelRateLimited(account, upstreamModel, now) ||
 			isGrokModelQuotaBlocked(account.ID, upstreamModel, now) {
@@ -1380,6 +1381,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 	if len(accounts) == 0 {
 		return nil, 0, 0, 0, noAvailableOpenAISelectionError(req.RequestedModel, false, openAISelectionFilterStats{}.summary(""))
 	}
+	ctx = s.service.withCindyBalancePendingSnapshot(ctx, accounts)
 	// Local free-tier soft gate on the Grok scheduling path only (not admin probe).
 	accounts = s.filterGrokFreeQuotaAccounts(ctx, accounts)
 	if len(accounts) == 0 {
@@ -1428,7 +1430,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			filterStats.exclude("platform_mismatch")
 			continue
 		}
-		if s.service.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, req.RequestedModel) {
+		if s.service.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, openAIRequestedModelForAccount(ctx, account, req.RequestedModel)) {
 			filterStats.exclude("runtime_blocked")
 			continue
 		}
@@ -1748,7 +1750,8 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleReason(ctx con
 	if account == nil {
 		return false, "account_nil"
 	}
-	if s != nil && s.service != nil && s.service.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, req.RequestedModel) {
+	requestedModel := openAIRequestedModelForAccount(ctx, account, req.RequestedModel)
+	if s != nil && s.service != nil && s.service.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, requestedModel) {
 		return false, "runtime_blocked"
 	}
 	if s != nil && s.service != nil && s.service.isOpenAIProxyStreamQuarantined(ctx, account) {
@@ -1773,15 +1776,15 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleReason(ctx con
 	}) {
 		return false, "shadow_parent_unhealthy"
 	}
-	if req.RequestedModel != "" && !account.IsModelSupported(req.RequestedModel) {
+	if requestedModel != "" && !account.IsModelSupported(requestedModel) {
 		return false, "model_not_supported"
 	}
 	if req.GroupID != nil && s != nil && s.service != nil &&
 		s.service.needsUpstreamChannelRestrictionCheck(ctx, req.GroupID) &&
-		s.service.isUpstreamModelRestrictedByChannel(ctx, *req.GroupID, account, req.RequestedModel, req.RequireCompact) {
+		s.service.isUpstreamModelRestrictedByChannel(ctx, *req.GroupID, account, requestedModel, req.RequireCompact) {
 		return false, "channel_upstream_restricted"
 	}
-	if !accountSupportsOpenAICapabilities(account, req.RequiredCapability, req.RequiredImageCapability) {
+	if !accountSupportsOpenAICapabilities(ctx, account, requestedModel, req.RequiredCapability, req.RequiredImageCapability) {
 		return false, "capability_mismatch"
 	}
 	if vetoed, reason := openAIProfitControlVetoReason(ctx, account); vetoed {
@@ -2179,8 +2182,10 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
 	requestedModel string,
 	excludedIDs map[int64]struct{},
 	requiredCapability OpenAIImagesCapability,
+	cindyEndpoint CindyEndpoint,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
 	ctx = ensureOpenAIRuntimeBreakerProbeOwner(ctx)
+	ctx = withOpenAICindyImageEndpoint(ctx, cindyEndpoint)
 	selection, decision, err := s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, "", requiredCapability, false, PlatformOpenAI, false, false)
 	if err == nil && selection != nil && selection.Account != nil {
 		return selection, decision, nil
@@ -2214,6 +2219,7 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 	previousResponseCanMove bool,
 	useUpstreamTokenCost bool,
 ) (selection *AccountSelectionResult, decision OpenAIAccountScheduleDecision, err error) {
+	ctx = ensureCindyBalancePendingSnapshotContext(ctx)
 	ctx = ensureOpenAIRuntimeBreakerProbeOwner(ctx)
 	probe, _ := ctx.Value(openAIRuntimeBreakerProbeContextKey{}).(*openAIRuntimeBreakerProbeContext)
 	defer func() {
@@ -2305,7 +2311,8 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 				if selection == nil || selection.Account == nil {
 					return selection, decision, nil
 				}
-				if accountSupportsOpenAICapabilities(selection.Account, requiredCapability, requiredImageCapability) {
+				selectionModel := openAIRequestedModelForAccount(ctx, selection.Account, requestedModel)
+				if accountSupportsOpenAICapabilities(ctx, selection.Account, selectionModel, requiredCapability, requiredImageCapability) {
 					return selection, decision, nil
 				}
 				if selection.ReleaseFunc != nil {
@@ -2330,8 +2337,9 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 			if selection == nil || selection.Account == nil {
 				return selection, decision, nil
 			}
+			selectionModel := openAIRequestedModelForAccount(ctx, selection.Account, requestedModel)
 			if s.isOpenAIAccountTransportCompatible(selection.Account, requiredTransport) &&
-				accountSupportsOpenAICapabilities(selection.Account, requiredCapability, requiredImageCapability) {
+				accountSupportsOpenAICapabilities(ctx, selection.Account, selectionModel, requiredCapability, requiredImageCapability) {
 				return selection, decision, nil
 			}
 			if selection.ReleaseFunc != nil {
@@ -2396,12 +2404,74 @@ func openAIContinuationCapability(capability OpenAIEndpointCapability) bool {
 	}
 }
 
-func accountSupportsOpenAICapabilities(account *Account, requiredCapability OpenAIEndpointCapability, requiredImageCapability OpenAIImagesCapability) bool {
+type openAICindyImageEndpointContextKey struct{}
+
+func withOpenAICindyImageEndpoint(ctx context.Context, endpoint CindyEndpoint) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	switch endpoint {
+	case CindyEndpointImagesGenerate, CindyEndpointImagesEdit:
+		return context.WithValue(ctx, openAICindyImageEndpointContextKey{}, endpoint)
+	default:
+		return ctx
+	}
+}
+
+func openAICindyImageEndpoint(ctx context.Context) (CindyEndpoint, bool) {
+	if ctx == nil {
+		return "", false
+	}
+	endpoint, ok := ctx.Value(openAICindyImageEndpointContextKey{}).(CindyEndpoint)
+	return endpoint, ok && (endpoint == CindyEndpointImagesGenerate || endpoint == CindyEndpointImagesEdit)
+}
+
+func accountSupportsOpenAICapabilities(ctx context.Context, account *Account, requestedModel string, requiredCapability OpenAIEndpointCapability, requiredImageCapability OpenAIImagesCapability) bool {
 	if account == nil {
 		return false
 	}
+	isCindy := IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+	cindyCatalogEnabled := CindyCapabilityCatalogFeatureEnabled()
+	if isCindy && cindyCatalogEnabled && strings.TrimSpace(requestedModel) != "" {
+		endpoint, mapped := cindyEndpointForOpenAICapability(requiredCapability)
+		if requiredCapability != "" && (!mapped || !cindyModelSupportsOpenAIEndpoint(requestedModel, endpoint)) {
+			return false
+		}
+	}
+	if imageEndpoint, ok := openAICindyImageEndpoint(ctx); ok {
+		if isCindy && cindyCatalogEnabled && !CindyModelSupportsEndpoint(requestedModel, imageEndpoint) {
+			return false
+		}
+		if !isCindy && !IsNativeOpenAIImagesModel(requestedModel) {
+			return false
+		}
+	}
 	return account.SupportsOpenAIEndpointCapability(requiredCapability) &&
 		account.SupportsOpenAIImageCapability(requiredImageCapability)
+}
+
+func cindyEndpointForOpenAICapability(capability OpenAIEndpointCapability) (CindyEndpoint, bool) {
+	switch capability {
+	case OpenAIEndpointCapabilityChatCompletions:
+		return CindyEndpointChatCompletions, true
+	case OpenAIEndpointCapabilityMessages:
+		return CindyEndpointMessages, true
+	case OpenAIEndpointCapabilityCountTokens:
+		return CindyEndpointCountTokens, true
+	case OpenAIEndpointCapabilityResponses:
+		return CindyEndpointResponses, true
+	case OpenAIEndpointCapabilityAlphaSearch:
+		return CindyEndpointAlphaSearch, true
+	default:
+		return "", false
+	}
+}
+
+func cindyModelSupportsOpenAIEndpoint(model string, endpoint CindyEndpoint) bool {
+	if CindyModelSupportsEndpoint(model, endpoint) {
+		return true
+	}
+	return endpoint == CindyEndpointResponses && CindyModelSupportsResponsesImageBridge(model)
 }
 
 func cloneExcludedAccountIDs(excludedIDs map[int64]struct{}) map[int64]struct{} {

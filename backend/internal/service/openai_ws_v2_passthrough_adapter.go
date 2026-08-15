@@ -1090,14 +1090,18 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 	}
 	var relayClientConn openaiwsv2.FrameConn = policyClientConn
 	var refusalOutput *openAIRefusalRecoveryWSOutput
-	if refusalRuntime.CyberFailoverEnabled() || refusalRuntime.RewriteEnabled() {
-		matcher := (*OpenAIRefusalMatcher)(nil)
-		if refusalRuntime.RewriteEnabled() {
-			matcher = refusalRuntime.Matcher
-		}
+	matcher := (*OpenAIRefusalMatcher)(nil)
+	if refusalRuntime.RewriteEnabled() {
+		matcher = refusalRuntime.Matcher
+	}
+	strictCindy := cindyBalanceReplayBufferEnabled(account)
+	if refusalRuntime.CyberFailoverEnabled() || refusalRuntime.RewriteEnabled() || strictCindy {
+		// Cindy holds metadata-only preamble frames until semantic output so a
+		// first-turn budget terminal remains replay-safe. Ordinary passthrough
+		// accounts retain their legacy immediate preamble and timeout semantics.
 		refusalOutput = newOpenAIRefusalRecoveryWSOutput(
 			matcher,
-			refusalRuntime.CyberFailoverEnabled(),
+			refusalRuntime.CyberFailoverEnabled() || strictCindy,
 			policyClientConn.WriteFrame,
 			func() {
 				logOpenAIWSV2Passthrough("refusal_recovery_buffer_limit account_id=%d transport=websocket", account.ID)
@@ -1224,6 +1228,27 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 					return nil
 				}
 				eventType, _, _ := parseOpenAIWSEventEnvelope(payload)
+				if eventType == "error" || eventType == "response.failed" {
+					if failoverErr, ok := s.cindyBalanceTerminalFailover(
+						ctx, account, handshakeHeaders, payload, capturedSessionModel,
+					); ok {
+						replaySafe := completedTurns.Load() == 0 && (refusalOutput == nil || !refusalOutput.SemanticOutputStarted())
+						if refusalOutput != nil {
+							refusalOutput.DropTurn()
+						}
+						if replaySafe {
+							return failoverErr
+						}
+						if refusalOutput != nil {
+							_ = refusalOutput.WriteRetryableFailure(ctx)
+						}
+						return NewOpenAIWSClientCloseError(
+							coderws.StatusTryAgainLater,
+							"Temporary upstream failure; please retry",
+							errors.New("cindy balance exhausted after downstream output"),
+						)
+					}
+				}
 				if eventType == "response.failed" {
 					if continuationErr := openAIContinuationStateErrorFromFailedEvent(http.StatusOK, handshakeHeaders, payload); continuationErr != nil {
 						return continuationErr

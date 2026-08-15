@@ -1,0 +1,119 @@
+package service
+
+import (
+	"fmt"
+	"math"
+)
+
+// calculateCindyCatalogTextCost prices strict Cindy token usage from the
+// versioned capability catalog. The catalog records standard, non-batch rates,
+// so upstream service-tier labels must not synthesize an unverified discount or
+// surcharge here.
+func calculateCindyCatalogTextCost(
+	billingService *BillingService,
+	model string,
+	tokens UsageTokens,
+	rateMultiplier float64,
+	longContextBillingEnabled bool,
+) (*CostBreakdown, error) {
+	if billingService == nil {
+		return nil, fmt.Errorf("%w for strict Cindy text model %q: billing service is unavailable", ErrModelPricingUnavailable, model)
+	}
+
+	pricing, ok := CindyTextPricingForModel(model)
+	if !ok {
+		if CindyModelUsesExplicitZeroPrice(model) {
+			return &CostBreakdown{BillingMode: string(BillingModeToken)}, nil
+		}
+		return nil, fmt.Errorf("%w for strict Cindy text model %q", ErrModelPricingUnavailable, model)
+	}
+
+	modelPricing, err := cindyTextPricingAsModelPricing(model, pricing)
+	if err != nil {
+		return nil, err
+	}
+	cost := billingService.computeTokenBreakdown(modelPricing, tokens, rateMultiplier, "", longContextBillingEnabled)
+	cost.BillingMode = string(BillingModeToken)
+	return cost, nil
+}
+
+func cindyTextPricingAsModelPricing(model string, pricing CindyTextPricing) (*ModelPricing, error) {
+	if pricing.InputCostPerToken < 0 || pricing.OutputCostPerToken < 0 ||
+		pricing.CacheReadInputTokenCost < 0 || pricing.CacheCreationInputTokenCost < 0 ||
+		pricing.CacheCreationInputTokenCostAbove1hr < 0 {
+		return nil, fmt.Errorf("%w for strict Cindy text model %q: catalog contains a negative price", ErrModelPricingUnavailable, model)
+	}
+	if pricing.InputCostPerToken == 0 && pricing.OutputCostPerToken == 0 {
+		return nil, fmt.Errorf("%w for strict Cindy text model %q: catalog token prices are empty", ErrModelPricingUnavailable, model)
+	}
+
+	converted := &ModelPricing{
+		InputPricePerToken:         pricing.InputCostPerToken,
+		OutputPricePerToken:        pricing.OutputCostPerToken,
+		CacheReadPricePerToken:     pricing.CacheReadInputTokenCost,
+		CacheCreationPricePerToken: pricing.CacheCreationInputTokenCost,
+		CacheCreationPriceExplicit: true,
+	}
+	if pricing.CacheCreationInputTokenCostAbove1hr > 0 {
+		if pricing.CacheCreationInputTokenCost <= 0 {
+			return nil, fmt.Errorf("%w for strict Cindy text model %q: 1h cache price has no 5m base price", ErrModelPricingUnavailable, model)
+		}
+		converted.SupportsCacheBreakdown = true
+		converted.CacheCreation5mPrice = pricing.CacheCreationInputTokenCost
+		converted.CacheCreation1hPrice = pricing.CacheCreationInputTokenCostAbove1hr
+	}
+
+	if pricing.LongContextInputTokenThreshold <= 0 {
+		if pricing.LongContextInputCostPerToken != 0 || pricing.LongContextOutputCostPerToken != 0 ||
+			pricing.LongContextCacheReadInputTokenCost != 0 || pricing.LongContextCacheCreationTokenCost != 0 {
+			return nil, fmt.Errorf("%w for strict Cindy text model %q: long-context prices have no threshold", ErrModelPricingUnavailable, model)
+		}
+		return converted, nil
+	}
+	if pricing.InputCostPerToken <= 0 || pricing.OutputCostPerToken <= 0 ||
+		pricing.LongContextInputCostPerToken <= 0 || pricing.LongContextOutputCostPerToken <= 0 {
+		return nil, fmt.Errorf("%w for strict Cindy text model %q: long-context prices are incomplete", ErrModelPricingUnavailable, model)
+	}
+
+	inputMultiplier := pricing.LongContextInputCostPerToken / pricing.InputCostPerToken
+	outputMultiplier := pricing.LongContextOutputCostPerToken / pricing.OutputCostPerToken
+	if inputMultiplier <= 0 || outputMultiplier <= 0 {
+		return nil, fmt.Errorf("%w for strict Cindy text model %q: long-context multipliers are invalid", ErrModelPricingUnavailable, model)
+	}
+	if pricing.CacheReadInputTokenCost > 0 {
+		if pricing.LongContextCacheReadInputTokenCost <= 0 {
+			return nil, fmt.Errorf("%w for strict Cindy text model %q: long-context cache-read price is missing", ErrModelPricingUnavailable, model)
+		}
+		cacheMultiplier := pricing.LongContextCacheReadInputTokenCost / pricing.CacheReadInputTokenCost
+		if !cindyPriceMultipliersEqual(cacheMultiplier, inputMultiplier) {
+			return nil, fmt.Errorf("%w for strict Cindy text model %q: long-context cache-read multiplier cannot be represented", ErrModelPricingUnavailable, model)
+		}
+	} else if pricing.LongContextCacheReadInputTokenCost != 0 {
+		return nil, fmt.Errorf("%w for strict Cindy text model %q: long-context cache-read price has no base price", ErrModelPricingUnavailable, model)
+	}
+	if pricing.CacheCreationInputTokenCost > 0 {
+		if pricing.LongContextCacheCreationTokenCost <= 0 {
+			return nil, fmt.Errorf("%w for strict Cindy text model %q: long-context cache-write price is missing", ErrModelPricingUnavailable, model)
+		}
+		cacheCreationMultiplier := pricing.LongContextCacheCreationTokenCost / pricing.CacheCreationInputTokenCost
+		if !cindyPriceMultipliersEqual(cacheCreationMultiplier, inputMultiplier) {
+			return nil, fmt.Errorf("%w for strict Cindy text model %q: long-context cache-write multiplier cannot be represented", ErrModelPricingUnavailable, model)
+		}
+	} else if pricing.LongContextCacheCreationTokenCost != 0 {
+		return nil, fmt.Errorf("%w for strict Cindy text model %q: long-context cache-write price has no base price", ErrModelPricingUnavailable, model)
+	}
+
+	converted.LongContextInputThreshold = pricing.LongContextInputTokenThreshold
+	converted.LongContextThresholdInclusive = pricing.LongContextThresholdInclusive
+	converted.LongContextInputMultiplier = inputMultiplier
+	converted.LongContextOutputMultiplier = outputMultiplier
+	return converted, nil
+}
+
+func cindyPriceMultipliersEqual(left, right float64) bool {
+	scale := math.Max(math.Abs(left), math.Abs(right))
+	if scale < 1 {
+		scale = 1
+	}
+	return math.Abs(left-right) <= scale*1e-12
+}

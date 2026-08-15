@@ -13,6 +13,7 @@ import (
 
 const (
 	openAIAccountStateUpdateTimeout       = 5 * time.Second
+	cindyBalancePendingReadTimeout        = 500 * time.Millisecond
 	openAIOAuth429FallbackCooldown        = 5 * time.Second
 	openAIStopSchedulingBridgeCooldown    = 2 * time.Minute
 	openAIOAuth429StormWindow             = 10 * time.Second
@@ -428,7 +429,7 @@ func isOpenAIAccount(account *Account) bool {
 // handleOpenAIAccountUpstreamError expects canonicalModel to be the model used
 // for scheduling after applying account mapping exactly once.
 func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, canonicalModel ...string) bool {
-	cindyBalanceInsufficient := IsCindyBalanceInsufficientResponse(account, statusCode, responseBody)
+	cindyBalanceInsufficient := ClassifyCindyBalanceInsufficient(account, statusCode, responseBody) != CindyBalanceSignalNone
 	if account != nil && account.Platform == PlatformGrok && isGrokContentPolicyRejection(statusCode, responseBody) {
 		return false
 	}
@@ -537,6 +538,30 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	return shouldDisable
 }
 
+// handleCindyBalanceTerminalEvent consumes an in-band HTTP-200 SSE/WS event
+// before any generic error rewriting can discard the structured Cindy signal.
+func (s *OpenAIGatewayService) handleCindyBalanceTerminalEvent(ctx context.Context, account *Account, headers http.Header, payload []byte, canonicalModel ...string) bool {
+	if ClassifyCindyBalanceInsufficient(account, http.StatusOK, payload) == CindyBalanceSignalNone {
+		if IsAmbiguousCindyBalanceTerminalEvent(account, payload) {
+			s.scheduleAmbiguousCindyBalanceRecheck(account)
+		}
+		return false
+	}
+	if account != nil && account.CindyBalanceInsufficientAt != nil {
+		s.BlockAccountScheduling(account, time.Time{}, "cindy_balance_insufficient")
+		return true
+	}
+	// Preserve the event's real HTTP-200 transport status for the centralized
+	// classifier. The client-facing failover is still normalized to 429, but
+	// reclassifying response.failed as an HTTP 429 would discard its terminal
+	// event shape and skip durable balance persistence.
+	s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusOK, headers, payload, canonicalModel...)
+	// Classification itself is authoritative. Even a partially constructed
+	// service must emit a no-same-account failover instead of reinterpreting the
+	// event as an ordinary transient error.
+	return true
+}
+
 func shouldCooldownOpenAITransientUpstreamError(statusCode int, responseBody []byte) bool {
 	switch statusCode {
 	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout, 520, 521, 522, 523, 524:
@@ -599,6 +624,89 @@ func (s *OpenAIGatewayService) openAIRuntimeBreakerStore() (OpenAIRuntimeBreaker
 	}
 	store, ok := s.cache.(OpenAIRuntimeBreakerStore)
 	return store, ok && store != nil
+}
+
+func (s *OpenAIGatewayService) cindyBalancePendingStore() (CindyBalancePendingStore, bool) {
+	if s == nil || s.cache == nil {
+		return nil, false
+	}
+	store, ok := s.cache.(CindyBalancePendingStore)
+	return store, ok && store != nil
+}
+
+// ClearCindyBalancePending is used by the explicit admin recovery path. It is
+// deliberately separate from ClearAccountSchedulingBlock: ordinary runtime
+// recovery must never erase a durable Cindy budget signal.
+func (s *OpenAIGatewayService) ClearCindyBalancePending(ctx context.Context, accountID int64) error {
+	store, ok := s.cindyBalancePendingStore()
+	if !ok || accountID <= 0 {
+		return nil
+	}
+	stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+	defer cancel()
+	return store.ClearCindyBalancePending(stateCtx, accountID)
+}
+
+// CancelCindyBalancePersistenceRetry invalidates and drains any stale
+// persistence retry before the admin recovery path clears durable state.
+func (s *OpenAIGatewayService) CancelCindyBalancePersistenceRetry(accountID int64) {
+	if s == nil || s.rateLimitService == nil {
+		return
+	}
+	s.rateLimitService.CancelCindyBalancePersistenceRetry(accountID)
+}
+
+// withCindyBalancePendingSnapshot loads every not-yet-covered strict Cindy
+// account with one Redis MGET and records the result in the request context.
+// Initial filtering, compatibility checks and fresh DB rechecks all reuse it.
+func (s *OpenAIGatewayService) withCindyBalancePendingSnapshot(ctx context.Context, accounts []Account) context.Context {
+	ctx = ensureCindyBalancePendingSnapshotContext(ctx)
+	snapshot := cindyBalancePendingSnapshotFromContext(ctx)
+	accountIDs := snapshot.unknownStrictCindyAccountIDs(accounts)
+	if len(accountIDs) == 0 {
+		return ctx
+	}
+	store, ok := s.cindyBalancePendingStore()
+	if !ok {
+		// The store is an optional extension for alternate/test cache adapters.
+		// Production GatewayCache always implements it.
+		snapshot.record(accountIDs, nil, nil)
+		return ctx
+	}
+	stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cindyBalancePendingReadTimeout)
+	pending, err := store.HasCindyBalancePendingBatch(stateCtx, accountIDs)
+	cancel()
+	snapshot.record(accountIDs, pending, err)
+	if err != nil {
+		slog.Error("cindy_balance_pending_batch_read_failed_closed", "account_count", len(accountIDs), "error", err)
+	}
+	return ctx
+}
+
+func (s *OpenAIGatewayService) isCindyBalancePendingBlocked(ctx context.Context, account *Account) bool {
+	if s == nil || account == nil || !IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		return false
+	}
+	ctx = ensureCindyBalancePendingSnapshotContext(ctx)
+	snapshot := cindyBalancePendingSnapshotFromContext(ctx)
+	state, loaded := snapshot.state(account.ID)
+	if !loaded {
+		ctx = s.withCindyBalancePendingSnapshot(ctx, []Account{*account})
+		snapshot = cindyBalancePendingSnapshotFromContext(ctx)
+		state, loaded = snapshot.state(account.ID)
+	}
+	if !loaded || state == cindyBalancePendingSnapshotClear {
+		return false
+	}
+	if state == cindyBalancePendingSnapshotReadFailed {
+		return true
+	}
+	// Rebuild the in-memory DB retry after a service/process restart. The
+	// request-scoped snapshot remains authoritative for the whole selection.
+	if account.CindyBalanceInsufficientAt == nil && s.rateLimitService != nil {
+		s.rateLimitService.scheduleCindyBalancePersistenceRetry(account, time.Now().UTC())
+	}
+	return true
 }
 
 func (s *OpenAIGatewayService) persistOpenAIRuntimeBreaker(ctx context.Context, accountID int64, model, reason string, until time.Time) {
@@ -678,12 +786,13 @@ func (s *OpenAIGatewayService) openAIAccountRuntimeBlockLock(accountID int64) *s
 	return mu
 }
 
-func (s *OpenAIGatewayService) blockAccountSchedulingLocked(account *Account, until time.Time, _ string) (uint64, bool) {
+func (s *OpenAIGatewayService) blockAccountSchedulingLocked(account *Account, until time.Time, reason string) (uint64, bool) {
 	generation := s.openaiAccountRuntimeBlockSequence.Add(1)
 	s.openaiAccountRuntimeBlockGeneration.Store(account.ID, generation)
 	now := time.Now()
 	blockUntil := until
-	if blockUntil.IsZero() || !blockUntil.After(now) {
+	indefinite := blockUntil.IsZero() && reason == "cindy_balance_insufficient"
+	if !indefinite && (blockUntil.IsZero() || !blockUntil.After(now)) {
 		blockUntil = now.Add(openAIStopSchedulingBridgeCooldown)
 	}
 
@@ -698,13 +807,15 @@ func (s *OpenAIGatewayService) blockAccountSchedulingLocked(account *Account, un
 		}
 
 		currentUntil, ok := current.(time.Time)
-		if !ok || currentUntil.IsZero() {
+		if !ok {
 			if s.openaiAccountRuntimeBlockUntil.CompareAndSwap(account.ID, current, blockUntil) {
 				return generation, true
 			}
 			continue
 		}
-		if !blockUntil.After(currentUntil) {
+		// A stored zero time is the Cindy balance fail-closed sentinel. It must
+		// dominate every later finite cooldown until an explicit clear removes it.
+		if currentUntil.IsZero() || (!blockUntil.IsZero() && !blockUntil.After(currentUntil)) {
 			return generation, false
 		}
 		if s.openaiAccountRuntimeBlockUntil.CompareAndSwap(account.ID, current, blockUntil) {
@@ -736,7 +847,7 @@ func (s *OpenAIGatewayService) clearOpenAIAccountSchedulingBlockScope(accountID 
 	mu := s.openAIAccountRuntimeBlockLock(accountID)
 	mu.Lock()
 	if value, ok := s.openaiAccountRuntimeBlockUntil.Load(accountID); ok {
-		if blockUntil, valid := value.(time.Time); valid && time.Now().Before(blockUntil) {
+		if blockUntil, valid := value.(time.Time); valid && (blockUntil.IsZero() || time.Now().Before(blockUntil)) {
 			mu.Unlock()
 			return
 		}
@@ -753,22 +864,21 @@ func (s *OpenAIGatewayService) isOpenAIAccountRuntimeBlocked(account *Account) b
 	}
 	mu := s.openAIAccountRuntimeBlockLock(account.ID)
 	mu.Lock()
-	defer mu.Unlock()
 	value, ok := s.openaiAccountRuntimeBlockUntil.Load(account.ID)
-	if !ok {
-		return false
+	if ok {
+		cooldownUntil, valid := value.(time.Time)
+		if !valid {
+			s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
+			s.openaiAccountRuntimeBlockGeneration.Store(account.ID, s.openaiAccountRuntimeBlockSequence.Add(1))
+		} else if cooldownUntil.IsZero() || time.Now().Before(cooldownUntil) {
+			mu.Unlock()
+			return true
+		} else {
+			s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
+			s.openaiAccountRuntimeBlockGeneration.Store(account.ID, s.openaiAccountRuntimeBlockSequence.Add(1))
+		}
 	}
-	cooldownUntil, ok := value.(time.Time)
-	if !ok || cooldownUntil.IsZero() {
-		s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
-		s.openaiAccountRuntimeBlockGeneration.Store(account.ID, s.openaiAccountRuntimeBlockSequence.Add(1))
-		return false
-	}
-	if time.Now().Before(cooldownUntil) {
-		return true
-	}
-	s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
-	s.openaiAccountRuntimeBlockGeneration.Store(account.ID, s.openaiAccountRuntimeBlockSequence.Add(1))
+	mu.Unlock()
 	return false
 }
 
@@ -856,6 +966,9 @@ func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlockedContext(ctx c
 		return false
 	}
 	if s.isOpenAIAccountRuntimeBlocked(account) || s.isOpenAIAccountModelRuntimeBlocked(account, requestedModel) {
+		return true
+	}
+	if s.isCindyBalancePendingBlocked(ctx, account) {
 		return true
 	}
 	if account.Type == AccountTypeAPIKey {

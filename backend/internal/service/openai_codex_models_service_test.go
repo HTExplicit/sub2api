@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -9,6 +10,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -499,6 +502,237 @@ func TestFetchCodexModelsManifestAPIKeyConvertsStandardOpenAIModelList(t *testin
 	}
 	require.Equal(t, codexModelsManifestBodyETag(manifest.Body), manifest.ETag)
 	require.Equal(t, `W/"openai-list"`, manifest.upstreamETag)
+}
+
+func TestFetchCodexModelsManifestNonCindyPreservesLiveAliasAndUnverifiedIDs(t *testing.T) {
+	if !runCindyCodexCatalogEnabledTest(t) {
+		return
+	}
+	const upstreamBody = `{"models":[{"slug":"openai/gpt-5.6-sol"},{"slug":"gpt-5.4"},{"slug":"deepseek/deepseek-v4-pro"}]}`
+	upstream := &codexModelsHTTPUpstreamStub{do: func(_ *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(upstreamBody)),
+		}, nil
+	}}
+
+	s := newCodexModelsAPIKeyTestService(upstream)
+	manifest, err := s.FetchCodexModelsManifest(
+		context.Background(),
+		newCodexModelsAPIKeyTestAccount("https://ordinary.example/v1"),
+		"0.144.0",
+		"",
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, upstreamBody, string(manifest.Body))
+}
+
+func TestProjectCindyCodexModelsManifestMapsLiveAndHiddenAliases(t *testing.T) {
+	if !runCindyCodexCatalogEnabledTest(t) {
+		return
+	}
+	body := []byte(`{"models":[` +
+		`{"slug":"openai/gpt-5.6-sol","display_name":"Sol live"},` +
+		`{"slug":"gpt-5.4","display_name":"duplicate alias"},` +
+		`{"slug":"gpt-5.4-mini","use_responses_lite":true},` +
+		`{"slug":"bytedance-seed/seed-2.1-pro"},` +
+		`{"slug":"deepseek/deepseek-v4-pro"},` +
+		`{"slug":"anthropic/claude-opus-5"},` +
+		`{"slug":"x-ai/grok-4.6"},` +
+		`{"slug":"google/gemini-3-pro-image"},` +
+		`{"slug":"openai/gpt-image-2"}` +
+		`],"metadata":{"version":1}}`)
+
+	projected, err := projectCindyCodexModelsManifest(body)
+
+	require.NoError(t, err)
+	require.JSONEq(t, `{"models":[`+
+		`{"display_name":"Sol live","slug":"gpt-5.6-sol"},`+
+		`{"slug":"gpt-5.6-luna","use_responses_lite":true},`+
+		`{"slug":"gpt-image-2"}`+
+		`],"metadata":{"version":1}}`, string(projected))
+	require.NotContains(t, string(projected), "openai/gpt-5.6-sol")
+	require.NotContains(t, string(projected), "gpt-5.4")
+	require.NotContains(t, string(projected), "seed-2.1-pro")
+	require.NotContains(t, string(projected), "deepseek-v4-pro")
+	require.NotContains(t, string(projected), "claude-opus-5")
+	require.NotContains(t, string(projected), "grok-4.6")
+	require.NotContains(t, string(projected), "gemini-3-pro-image")
+}
+
+func TestMergeCindyCodexModelsManifestPreservesOrdinaryKnownModelIDs(t *testing.T) {
+	if !runCindyCodexCatalogEnabledTest(t) {
+		return
+	}
+	body := []byte(`{"models":[` +
+		`{"slug":"ordinary-model","display_name":"Ordinary"},` +
+		`{"slug":"openai/gpt-5.6-sol"},` +
+		`{"slug":"gpt-5.6-sol","display_name":"Ordinary public Sol"},` +
+		`{"slug":"gpt-5.4"},` +
+		`{"slug":"gpt-5.4-mini"},` +
+		`{"slug":"deepseek/deepseek-v4-pro"},` +
+		`{"slug":"anthropic/claude-opus-5"},` +
+		`{"slug":"x-ai/grok-4.6"},` +
+		`{"slug":"google/gemini-3-pro-image"}` +
+		`],"metadata":{"ordinary":true}}`)
+
+	merged, err := MergeCindyCodexModelsManifest(&CodexModelsManifest{Body: body}, "")
+	require.NoError(t, err)
+	require.NotEmpty(t, merged.ETag)
+
+	var envelope struct {
+		Models []struct {
+			Slug string `json:"slug"`
+		} `json:"models"`
+		Metadata map[string]bool `json:"metadata"`
+	}
+	require.NoError(t, json.Unmarshal(merged.Body, &envelope))
+	require.True(t, envelope.Metadata["ordinary"])
+	got := make([]string, 0, len(envelope.Models))
+	for _, model := range envelope.Models {
+		got = append(got, model.Slug)
+	}
+	ordinarySlugs := []string{
+		"ordinary-model",
+		"openai/gpt-5.6-sol",
+		"gpt-5.6-sol",
+		"gpt-5.4",
+		"gpt-5.4-mini",
+		"deepseek/deepseek-v4-pro",
+		"anthropic/claude-opus-5",
+		"x-ai/grok-4.6",
+		"google/gemini-3-pro-image",
+	}
+	want := append([]string(nil), ordinarySlugs...)
+	seen := make(map[string]struct{}, len(want))
+	for _, slug := range want {
+		seen[slug] = struct{}{}
+	}
+	for _, publicID := range CindyCodexPublicModelIDs() {
+		if _, duplicate := seen[publicID]; !duplicate {
+			want = append(want, publicID)
+		}
+	}
+	require.ElementsMatch(t, want, got)
+	exactPublicCount := 0
+	for _, slug := range got {
+		if slug == "gpt-5.6-sol" {
+			exactPublicCount++
+		}
+	}
+	require.Equal(t, 1, exactPublicCount)
+	for _, slug := range ordinarySlugs {
+		require.Contains(t, got, slug)
+	}
+
+	notModified, err := MergeCindyCodexModelsManifest(&CodexModelsManifest{Body: body}, merged.ETag)
+	require.NoError(t, err)
+	require.True(t, notModified.NotModified)
+	require.Equal(t, merged.ETag, notModified.ETag)
+}
+
+func TestFetchCodexModelsManifestCindyRolloutProjection(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		env  []string
+		mode string
+	}{
+		{name: "catalog off preserves legacy IDs", env: []string{CindyCapabilityCatalogEnabledEnv + "=false", CindyImageStudioEnabledEnv + "=true"}, mode: "catalog_off"},
+		{name: "image off omits image IDs", env: []string{CindyCapabilityCatalogEnabledEnv + "=true", CindyImageStudioEnabledEnv + "=false"}, mode: "image_off"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cmd := exec.Command(os.Args[0], "-test.run=^TestFetchCodexModelsManifestCindyRolloutProjectionHelper$")
+			cmd.Env = append(withoutEnvironmentKeys(os.Environ(),
+				CindyCapabilityCatalogEnabledEnv,
+				CindyImageStudioEnabledEnv,
+				"SUB2API_CODEX_MODELS_CINDY_FLAG_HELPER",
+			), append(test.env, "SUB2API_CODEX_MODELS_CINDY_FLAG_HELPER="+test.mode)...)
+			if output, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("isolated %s projection failed: %v\n%s", test.mode, err, output)
+			}
+		})
+	}
+}
+
+const cindyCodexCatalogEnabledTestHelperEnv = "SUB2API_CODEX_MODELS_CATALOG_ENABLED_TEST_HELPER"
+
+func runCindyCodexCatalogEnabledTest(t *testing.T) bool {
+	t.Helper()
+	if os.Getenv(cindyCodexCatalogEnabledTestHelperEnv) == "1" {
+		return true
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$")
+	cmd.Env = append(withoutEnvironmentKeys(os.Environ(),
+		CindyCapabilityCatalogEnabledEnv,
+		CindyImageStudioEnabledEnv,
+		cindyCodexCatalogEnabledTestHelperEnv,
+	),
+		CindyCapabilityCatalogEnabledEnv+"=true",
+		CindyImageStudioEnabledEnv+"=true",
+		cindyCodexCatalogEnabledTestHelperEnv+"=1",
+	)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("isolated catalog-enabled %s failed: %v\n%s", t.Name(), err, output)
+	}
+	return false
+}
+
+func TestFetchCodexModelsManifestCindyRolloutProjectionHelper(t *testing.T) {
+	mode := os.Getenv("SUB2API_CODEX_MODELS_CINDY_FLAG_HELPER")
+	if mode == "" {
+		t.Skip("subprocess helper")
+	}
+	const upstreamBody = `{"models":[{"slug":"openai/gpt-5.6-sol"},{"slug":"gpt-5.4-mini"},{"slug":"deepseek/deepseek-v4-pro"},{"slug":"anthropic/claude-opus-5"},{"slug":"google/gemini-3-pro-image"},{"slug":"openai/gpt-image-2"}]}`
+	upstream := &codexModelsHTTPUpstreamStub{do: func(_ *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(upstreamBody)),
+		}, nil
+	}}
+	account := newCodexModelsAPIKeyTestAccount("https://api.laxarouter.ai")
+	manifest, err := newCodexModelsAPIKeyTestService(upstream).FetchCodexModelsManifest(
+		context.Background(), account, "0.144.0", "",
+	)
+	require.NoError(t, err)
+
+	switch mode {
+	case "catalog_off":
+		require.Equal(t, upstreamBody, string(manifest.Body))
+	case "image_off":
+		require.JSONEq(t, `{"models":[{"slug":"gpt-5.6-sol"},{"slug":"gpt-5.6-luna"}]}`, string(manifest.Body))
+		require.NotContains(t, string(manifest.Body), "gpt-image-2")
+		require.NotContains(t, string(manifest.Body), "deepseek-v4-pro")
+		require.NotContains(t, string(manifest.Body), "claude-opus-5")
+		require.NotContains(t, string(manifest.Body), "gemini-3-pro-image")
+	default:
+		t.Fatalf("unknown helper mode %q", mode)
+	}
+}
+
+func TestBuildCodexModelsManifestCacheKeyIncludesCindyRolloutFlags(t *testing.T) {
+	base := codexModelsManifestRequest{
+		accountID:           1,
+		credentialAccountID: 1,
+		url:                 "https://api.laxarouter.ai/models?client_version=0.144.0",
+		headers:             http.Header{"Authorization": []string{"Bearer test"}},
+	}
+	baseKey := buildCodexModelsManifestCacheKey(base)
+
+	withCatalog := base
+	withCatalog.cindyCatalogEnabled = true
+	withCatalog.cindyCatalogVersion = CindyCapabilityCatalogVersion
+	require.NotEqual(t, baseKey, buildCodexModelsManifestCacheKey(withCatalog))
+
+	withImage := withCatalog
+	withImage.cindyImageEnabled = true
+	require.NotEqual(t, buildCodexModelsManifestCacheKey(withCatalog), buildCodexModelsManifestCacheKey(withImage))
+
+	withProjection := withImage
+	withProjection.projectCindyCatalog = true
+	require.NotEqual(t, buildCodexModelsManifestCacheKey(withImage), buildCodexModelsManifestCacheKey(withProjection))
 }
 
 func TestAdjustAPIKeyCodexModelsManifest(t *testing.T) {

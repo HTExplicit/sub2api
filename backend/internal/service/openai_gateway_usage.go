@@ -142,21 +142,27 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		ApplyOpenAIImageBillingResolution(result)
 	}
 
-	// OpenAI input_tokens 是总输入，包含缓存读取和缓存写入明细。
-	// 将三类 token 拆成互斥桶，避免缓存写入同时按普通输入和 cache_write 重复计费。
-	actualInputTokens := result.Usage.InputTokens - result.Usage.CacheReadInputTokens - result.Usage.CacheCreationInputTokens
+	// OpenAI input_tokens 是总输入，包含缓存读取和缓存写入明细；原生
+	// Anthropic Messages 的 input_tokens 已与两类缓存 token 互斥。按结果上
+	// 的显式语义拆桶，避免任一协议重复计费或重复扣减。
+	actualInputTokens := result.Usage.InputTokens
+	if !result.UsageInputTokensExcludeCache {
+		actualInputTokens -= result.Usage.CacheReadInputTokens + result.Usage.CacheCreationInputTokens
+	}
 	if actualInputTokens < 0 {
 		actualInputTokens = 0
 	}
 
 	// Calculate cost
 	tokens := UsageTokens{
-		InputTokens:         actualInputTokens,
-		ImageInputTokens:    result.Usage.ImageInputTokens,
-		OutputTokens:        result.Usage.OutputTokens,
-		CacheCreationTokens: result.Usage.CacheCreationInputTokens,
-		CacheReadTokens:     result.Usage.CacheReadInputTokens,
-		ImageOutputTokens:   result.Usage.ImageOutputTokens,
+		InputTokens:           actualInputTokens,
+		ImageInputTokens:      result.Usage.ImageInputTokens,
+		OutputTokens:          result.Usage.OutputTokens,
+		CacheCreationTokens:   result.Usage.CacheCreationInputTokens,
+		CacheReadTokens:       result.Usage.CacheReadInputTokens,
+		CacheCreation5mTokens: result.Usage.CacheCreation5mTokens,
+		CacheCreation1hTokens: result.Usage.CacheCreation1hTokens,
+		ImageOutputTokens:     result.Usage.ImageOutputTokens,
 	}
 
 	// Get rate multiplier
@@ -209,6 +215,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		ctx,
 		result,
 		apiKey,
+		account,
 		billingModels,
 		multiplier,
 		imageMultiplier,
@@ -220,6 +227,9 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	)
 	if err != nil {
 		if !isUsagePricingUnavailableError(err) {
+			return err
+		}
+		if CindyCapabilityCatalogFeatureEnabled() && account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 			return err
 		}
 		logger.L().With(
@@ -245,10 +255,10 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		result.ImageCount > 0 || result.VideoCount > 0 || result.WebSearchCalls > 0 ||
 			result.AudioUsage != nil || result.SearchCount > 0,
 	); responseModel != "" && !strings.EqualFold(responseModel, baselineBillingModel) {
-		if identified, responseChannelPriced := s.hasIdentifiedOpenAIResponsePricing(ctx, responseModel, apiKey); identified {
+		if identified, responseChannelPriced := s.hasIdentifiedOpenAIResponsePricing(ctx, responseModel, apiKey, account); identified {
 			responseModels := usageBillingModelCandidates(responseModel)
 			responseCost, responseErr := s.calculateOpenAIRecordUsageCost(
-				ctx, result, apiKey, responseModels, multiplier, imageMultiplier,
+				ctx, result, apiKey, account, responseModels, multiplier, imageMultiplier,
 				videoMultiplier, baseMultiplier, tokens, serviceTier, longContextBillingEnabled,
 			)
 			// 基线定价源以 baselineBillingModel 为准：它正是 calculateOpenAIRecordUsageCost
@@ -327,6 +337,8 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		OutputTokens:          result.Usage.OutputTokens,
 		CacheCreationTokens:   result.Usage.CacheCreationInputTokens,
 		CacheReadTokens:       result.Usage.CacheReadInputTokens,
+		CacheCreation5mTokens: result.Usage.CacheCreation5mTokens,
+		CacheCreation1hTokens: result.Usage.CacheCreation1hTokens,
 		ImageInputTokens:      result.Usage.ImageInputTokens,
 		ImageOutputTokens:     result.Usage.ImageOutputTokens,
 		ImageCount:            result.ImageCount,
@@ -462,13 +474,17 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 // 只接受管理员为该模型显式配置的渠道定价，或价格表中能被确定性识别的条目；
 // 刻意不接受按子串猜出来的系列兜底价，否则上游随便编一个含 "haiku" 的名字就能把
 // 计费拉到最便宜的系列价上。详见 responseModelBillingDeclaration。
-func (s *OpenAIGatewayService) hasIdentifiedOpenAIResponsePricing(ctx context.Context, model string, apiKey *APIKey) (identified bool, channelPriced bool) {
+func (s *OpenAIGatewayService) hasIdentifiedOpenAIResponsePricing(ctx context.Context, model string, apiKey *APIKey, account *Account) (identified bool, channelPriced bool) {
 	model = strings.TrimSpace(model)
 	if model == "" {
 		return false, false
 	}
 	if s.resolveOpenAIChannelPricing(ctx, model, apiKey) != nil {
 		return true, true
+	}
+	if CindyCapabilityCatalogFeatureEnabled() && account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		_, hasCatalogPrice := CindyTextPricingForModel(model)
+		return hasCatalogPrice || CindyModelUsesExplicitZeroPrice(model), false
 	}
 	return s.billingService.HasIdentifiedTokenPricing(model), false
 }
@@ -477,6 +493,7 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 	ctx context.Context,
 	result *OpenAIForwardResult,
 	apiKey *APIKey,
+	account *Account,
 	billingModels []string,
 	multiplier float64,
 	imageMultiplier float64,
@@ -492,7 +509,14 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 		// 分组覆盖价（nil 时默认 0.01 = 官方 $10/1000 次），不参与渠道级模型定价。
 		// 倍率与 image/video 按次口径一致：使用不含高峰因子的基础倍率
 		//（用户专属 > 分组 rate_multiplier > 系统默认），与分组表单的价格预览承诺一致。
-		return s.billingService.CalculateWebSearchCost(result.WebSearchCalls, webSearchPricePerCallFromAPIKey(apiKey), webSearchMultiplier), nil
+		pricePerCall := webSearchPricePerCallFromAPIKey(apiKey)
+		if pricePerCall == nil && CindyCapabilityCatalogFeatureEnabled() && account != nil &&
+			IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
+			CindyModelUsesExplicitZeroPrice(billingModel) {
+			zeroPrice := 0.0
+			pricePerCall = &zeroPrice
+		}
+		return s.billingService.CalculateWebSearchCost(result.WebSearchCalls, pricePerCall, webSearchMultiplier), nil
 	}
 	if isGrokVideoUsageResult(result, billingModels) {
 		if resolved := s.resolveOpenAIChannelPricing(ctx, billingModel, apiKey); resolved == nil || resolved.Mode != BillingModeToken {
@@ -516,7 +540,7 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 	if result != nil && result.ImageCount > 0 {
 		// 渠道定价为 token 计费时走 token 路径，否则走图片计费
 		if resolved := s.resolveOpenAIChannelPricing(ctx, billingModel, apiKey); resolved == nil || resolved.Mode != BillingModeToken {
-			return s.calculateOpenAIImageCost(ctx, billingModel, apiKey, result, imageMultiplier), nil
+			return s.calculateOpenAIImageCost(ctx, billingModel, apiKey, account, result, tokens, imageMultiplier)
 		}
 	}
 
@@ -532,6 +556,7 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 			cost, err := s.calculateOpenAIRecordUsageTokenCost(
 				ctx,
 				apiKey,
+				account,
 				candidate,
 				multiplier,
 				tokens,
@@ -621,12 +646,25 @@ func isUsagePricingUnavailableError(err error) bool {
 func (s *OpenAIGatewayService) calculateOpenAIRecordUsageTokenCost(
 	ctx context.Context,
 	apiKey *APIKey,
+	account *Account,
 	billingModel string,
 	multiplier float64,
 	tokens UsageTokens,
 	serviceTier string,
 	longContextBillingEnabled bool,
 ) (*CostBreakdown, error) {
+	if resolved := s.resolveOpenAIChannelPricing(ctx, billingModel, apiKey); resolved != nil {
+		gid := apiKey.Group.ID
+		return s.billingService.CalculateCostUnified(CostInput{
+			Ctx: ctx, Model: billingModel, GroupID: &gid, Group: apiKey.Group,
+			Tokens: tokens, RequestCount: 1, RateMultiplier: multiplier,
+			ServiceTier: serviceTier, Resolver: s.resolver, Resolved: resolved,
+			LongContextBillingEnabled: &longContextBillingEnabled,
+		})
+	}
+	if CindyCapabilityCatalogFeatureEnabled() && account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		return calculateCindyCatalogTextCost(s.billingService, billingModel, tokens, multiplier, longContextBillingEnabled)
+	}
 	if s.resolver != nil && apiKey.Group != nil {
 		gid := apiKey.Group.ID
 		return s.billingService.CalculateCostUnified(CostInput{
@@ -649,9 +687,11 @@ func (s *OpenAIGatewayService) calculateOpenAIImageCost(
 	ctx context.Context,
 	billingModel string,
 	apiKey *APIKey,
+	account *Account,
 	result *OpenAIForwardResult,
+	tokens UsageTokens,
 	multiplier float64,
-) *CostBreakdown {
+) (*CostBreakdown, error) {
 	sizeTier := NormalizeImageBillingTierOrDefault(result.ImageSize)
 	resolved := s.resolveOpenAIChannelPricing(ctx, billingModel, apiKey)
 	if resolved != nil && resolved.Source == PricingSourceGroup &&
@@ -663,18 +703,18 @@ func (s *OpenAIGatewayService) calculateOpenAIImageCost(
 			RateMultiplier: multiplier, Resolver: s.resolver, Resolved: resolved,
 		})
 		if err == nil {
-			return cost
+			return cost, nil
 		}
 	}
 	groupConfig := imagePriceConfigFromAPIKey(apiKey)
 	if apiKeyHasConfiguredImagePrice(apiKey, sizeTier) {
-		return s.billingService.CalculateImageCost(billingModel, sizeTier, result.ImageCount, groupConfig, multiplier)
+		return s.billingService.CalculateImageCost(billingModel, sizeTier, result.ImageCount, groupConfig, multiplier), nil
 	}
 	if refreshed := s.apiKeyWithFreshGroupMediaPricing(ctx, apiKey); refreshed != apiKey {
 		apiKey = refreshed
 		groupConfig = imagePriceConfigFromAPIKey(apiKey)
 		if apiKeyHasConfiguredImagePrice(apiKey, sizeTier) {
-			return s.billingService.CalculateImageCost(billingModel, sizeTier, result.ImageCount, groupConfig, multiplier)
+			return s.billingService.CalculateImageCost(billingModel, sizeTier, result.ImageCount, groupConfig, multiplier), nil
 		}
 	}
 	if resolved != nil && resolved.Source == PricingSourceChannel &&
@@ -692,12 +732,79 @@ func (s *OpenAIGatewayService) calculateOpenAIImageCost(
 			Resolved:       resolved,
 		})
 		if err == nil {
-			return cost
+			return cost, nil
 		}
 		logger.LegacyPrintf("service.openai_gateway", "Calculate image channel cost failed: %v", err)
 	}
 
-	return s.billingService.CalculateImageCost(billingModel, sizeTier, result.ImageCount, groupConfig, multiplier)
+	if CindyCapabilityCatalogFeatureEnabled() && account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		if pricing, ok := CindyImagePricingForModel(billingModel); ok {
+			return s.calculateCindyCatalogImageCost(billingModel, result, tokens, multiplier, pricing)
+		}
+		if CindyModelUsesExplicitZeroPrice(billingModel) {
+			return &CostBreakdown{BillingMode: string(BillingModeImage)}, nil
+		}
+		return nil, fmt.Errorf("%w for strict Cindy image model: %s", ErrModelPricingUnavailable, billingModel)
+	}
+
+	return s.billingService.CalculateImageCost(billingModel, sizeTier, result.ImageCount, groupConfig, multiplier), nil
+}
+
+func (s *OpenAIGatewayService) calculateCindyCatalogImageCost(
+	billingModel string,
+	result *OpenAIForwardResult,
+	tokens UsageTokens,
+	multiplier float64,
+	pricing CindyImagePricing,
+) (*CostBreakdown, error) {
+	if result == nil || result.ImageCount <= 0 {
+		return &CostBreakdown{BillingMode: string(BillingModeImage)}, nil
+	}
+	outputPricePerImage := pricing.OutputCostPerImage1KOr2K
+	if NormalizeImageBillingTierOrDefault(result.ImageSize) == ImageBillingSize4K {
+		outputPricePerImage = pricing.OutputCostPerImage4K
+	}
+	if tokens.ImageOutputTokens > 0 && pricing.OutputCostPerImageToken <= 0 {
+		return nil, fmt.Errorf("%w for strict Cindy image output tokens: %s", ErrModelPricingUnavailable, billingModel)
+	}
+	if tokens.ImageOutputTokens <= 0 && outputPricePerImage <= 0 {
+		return nil, fmt.Errorf("%w for strict Cindy image output units: %s", ErrModelPricingUnavailable, billingModel)
+	}
+
+	breakdown := s.billingService.computeTokenBreakdown(&ModelPricing{
+		InputPricePerToken:       pricing.InputCostPerToken,
+		ImageInputPricePerToken:  pricing.InputCostPerImageToken,
+		OutputPricePerToken:      pricing.OutputCostPerToken,
+		CacheReadPricePerToken:   pricing.CacheReadInputTokenCost,
+		ImageOutputPricePerToken: pricing.OutputCostPerImageToken,
+		ImageOutputPriceExplicit: true,
+	}, tokens, multiplier, "", false)
+	breakdown.BillingMode = string(BillingModeImage)
+
+	// Some image APIs report only an image count, while others provide image
+	// output tokens. These are alternative meters for the same output and must
+	// never be charged together.
+	if tokens.ImageOutputTokens <= 0 {
+		perImageCost := outputPricePerImage * float64(result.ImageCount)
+		actualMultiplier := multiplier
+		if actualMultiplier < 0 {
+			actualMultiplier = 0
+		}
+		breakdown.ImageOutputCost += perImageCost
+		breakdown.TotalCost += perImageCost
+		breakdown.ActualCost += perImageCost * actualMultiplier
+	}
+	if tokens.ImageInputTokens <= 0 && result.ImageInputCount > 0 && pricing.InputCostPerImage > 0 {
+		perImageInputCost := pricing.InputCostPerImage * float64(result.ImageInputCount)
+		actualMultiplier := multiplier
+		if actualMultiplier < 0 {
+			actualMultiplier = 0
+		}
+		breakdown.ImageInputCost += perImageInputCost
+		breakdown.TotalCost += perImageInputCost
+		breakdown.ActualCost += perImageInputCost * actualMultiplier
+	}
+	return breakdown, nil
 }
 
 func (s *OpenAIGatewayService) calculateOpenAIVideoCost(

@@ -220,6 +220,78 @@ func TestProxyOpenAIWSHTTPBridgeTurnSSEErrorFailoverSafety(t *testing.T) {
 	}
 }
 
+func TestProxyOpenAIWSHTTPBridgeTurnCindyBalanceWriteOrdering(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for index, tc := range []struct {
+		name         string
+		body         string
+		wantFailover bool
+	}{
+		{
+			name: "preamble_then_balance_failure",
+			body: "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\"}}\n\n" +
+				"data: {\"type\":\"response.failed\",\"response\":{\"error\":{\"type\":\"budget_exceeded\",\"code\":\"429\",\"message\":\"sensitive upstream detail\"}}}\n\n",
+			wantFailover: true,
+		},
+		{
+			name: "semantic_output_then_balance_failure",
+			body: "data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n" +
+				"data: {\"type\":\"error\",\"error\":{\"type\":\"budget_exceeded\",\"code\":\"429\",\"message\":\"sensitive upstream detail\"}}\n\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			upstream := &httpUpstreamRecorder{resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+				Body:       io.NopCloser(strings.NewReader(tc.body)),
+			}}
+			repo := &cindyRateLimitAccountRepoStub{}
+			rateLimitService := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+			gateway := &OpenAIGatewayService{
+				cfg:              &config.Config{},
+				httpUpstream:     upstream,
+				toolCorrector:    NewCodexToolCorrector(),
+				rateLimitService: rateLimitService,
+			}
+			rateLimitService.SetAccountRuntimeBlocker(gateway)
+			account := newCindyRateLimitAccount(int64(8540+index), true)
+			account.Concurrency = 1
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
+			payload := []byte(`{"type":"response.create","model":"gpt-5.6-luna","input":"hi"}`)
+			var writes [][]byte
+
+			_, err := gateway.proxyOpenAIWSHTTPBridgeTurn(
+				context.Background(), c, account, "sk-test", payload, len(payload),
+				"gpt-5.6-luna", "", "", "", "", 1,
+				func(message []byte) error {
+					writes = append(writes, append([]byte(nil), message...))
+					return nil
+				},
+			)
+
+			var failoverErr *UpstreamFailoverError
+			if tc.wantFailover {
+				require.ErrorAs(t, err, &failoverErr)
+				require.True(t, failoverErr.CindyBalanceInsufficient)
+				require.Empty(t, writes)
+			} else {
+				require.Error(t, err)
+				require.False(t, errors.As(err, &failoverErr), "semantic output makes account replay unsafe")
+				require.Len(t, writes, 2)
+				require.Equal(t, "response.output_text.delta", gjson.GetBytes(writes[0], "type").String())
+				require.Contains(t, string(writes[1]), "upstream_retry_exhausted")
+			}
+			for _, written := range writes {
+				require.NotContains(t, string(written), "budget_exceeded")
+				require.NotContains(t, string(written), "sensitive upstream detail")
+			}
+			require.Equal(t, 1, repo.markCalls)
+		})
+	}
+}
+
 // 桥接转发 error / response.failed 给 WS 客户端前必须把容量降载码改写为可重试
 // 的 server_error：Codex 对 server_is_overloaded/slow_down 判致命并终止会话。
 // 账号状态判定使用改写前的原始事件，不受影响。

@@ -1,11 +1,14 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,6 +20,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -171,6 +175,45 @@ func TestOpenAIResponsesRequiredCapability(t *testing.T) {
 			require.Equal(t, tt.want, openAIResponsesRequiredCapability(tt.imageIntent, tt.platform))
 		})
 	}
+}
+
+func TestStrictCindyResponsesImageBridgeAllowed_IsExactGPTImageOnly(t *testing.T) {
+	t.Parallel()
+
+	require.True(t, strictCindyResponsesImageBridgeAllowed(
+		"gpt-image-2",
+		[]byte(`{"model":"gpt-image-2","input":"draw"}`),
+	))
+	require.True(t, strictCindyResponsesImageBridgeAllowed(
+		"openai/gpt-image-2",
+		[]byte(`{"model":"openai/gpt-image-2","input":"draw"}`),
+	))
+	require.False(t, strictCindyResponsesImageBridgeAllowed(
+		"gemini-3-pro-image",
+		[]byte(`{"model":"gemini-3-pro-image","input":"draw"}`),
+	))
+	require.False(t, strictCindyResponsesImageBridgeAllowed(
+		"gpt-5.6-luna",
+		[]byte(`{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"gpt-image-2"}],"input":"draw"}`),
+	))
+}
+
+func TestResolveStrictCindyResponsesImageTools_PreservesNonCindyAndGatesStrict(t *testing.T) {
+	t.Parallel()
+	unknown := []byte(`{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"unknown-image"}]}`)
+
+	ordinary, err := resolveStrictCindyResponsesImageTools(false, unknown)
+	require.NoError(t, err)
+	require.Equal(t, unknown, ordinary)
+
+	strict, err := resolveStrictCindyResponsesImageTools(true, []byte(
+		`{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"gpt-image-2","n":1}]}`,
+	))
+	require.NoError(t, err)
+	require.Equal(t, "openai/gpt-image-2", gjson.GetBytes(strict, "tools.0.model").String())
+
+	_, err = resolveStrictCindyResponsesImageTools(true, unknown)
+	require.ErrorIs(t, err, service.ErrCindyResponsesImageToolModelNotFound)
 }
 
 func TestResolveOpenAIMessagesMetadataSession_DoesNotDerivePromptCacheKey(t *testing.T) {
@@ -703,11 +746,12 @@ func TestOpenAIGatewayMessagesDispatchGateAllowsGrokGroups(t *testing.T) {
 				ID:                    groupID,
 				Platform:              service.PlatformOpenAI,
 				AllowMessagesDispatch: false,
+				StrictCindyKnown:      true,
 			},
 		})
 		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 6101, Concurrency: 1})
 
-		h := &OpenAIGatewayHandler{}
+		h := &OpenAIGatewayHandler{gatewayService: &service.OpenAIGatewayService{}}
 		h.Messages(c)
 
 		require.Equal(t, http.StatusForbidden, rec.Code)
@@ -728,17 +772,375 @@ func TestOpenAIGatewayMessagesDispatchGateAllowsGrokGroups(t *testing.T) {
 				ID:                    groupID,
 				Platform:              service.PlatformGrok,
 				AllowMessagesDispatch: false,
+				StrictCindyKnown:      true,
 			},
 		})
 		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 6102, Concurrency: 1})
 
-		h := &OpenAIGatewayHandler{}
+		h := &OpenAIGatewayHandler{gatewayService: &service.OpenAIGatewayService{}}
 		h.Messages(c)
 
 		require.Equal(t, http.StatusServiceUnavailable, rec.Code)
 		require.Equal(t, "api_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
 		require.NotContains(t, rec.Body.String(), "This group does not allow /v1/messages dispatch")
 	})
+}
+
+func TestMessagesMixedGroupCindyUsesClaudeAliasNotLegacyGPTDispatch(t *testing.T) {
+	cindy := &service.Account{
+		Platform: service.PlatformOpenAI,
+		Type:     service.AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"base_url": "https://api.laxarouter.ai",
+		},
+	}
+	ordinary := &service.Account{
+		Platform: service.PlatformOpenAI,
+		Type:     service.AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"base_url": "https://compat.example",
+		},
+	}
+	tests := []struct {
+		name   string
+		native string
+		legacy string
+	}{
+		{name: "Opus", native: "claude-opus-4-6", legacy: "gpt-5.4"},
+		{name: "Sonnet", native: "claude-sonnet-4-5-20250929", legacy: "gpt-5.3-codex"},
+		{name: "Haiku", native: "claude-haiku-4-5-20251001", legacy: "gpt-5.4-mini"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.native, openAIMessagesForwardModelForAccount(cindy, tt.native, tt.legacy))
+			require.Equal(t, tt.legacy, openAIMessagesForwardModelForAccount(ordinary, tt.native, tt.legacy))
+		})
+	}
+}
+
+type cindyNativeMessagesCaptureUpstream struct {
+	service.HTTPUpstream
+	mu        sync.Mutex
+	accountID int64
+	url       string
+	body      []byte
+}
+
+func (u *cindyNativeMessagesCaptureUpstream) Do(req *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
+	return u.capture(req, accountID)
+}
+
+func (u *cindyNativeMessagesCaptureUpstream) DoWithTLS(req *http.Request, _ string, accountID int64, _ int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+	return u.capture(req, accountID)
+}
+
+func (u *cindyNativeMessagesCaptureUpstream) capture(req *http.Request, accountID int64) (*http.Response, error) {
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, err
+	}
+	u.mu.Lock()
+	u.accountID = accountID
+	u.url = req.URL.String()
+	u.body = append([]byte(nil), body...)
+	u.mu.Unlock()
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body: io.NopCloser(strings.NewReader(`{
+			"id":"msg_mixed_cindy",
+			"type":"message",
+			"role":"assistant",
+			"model":"anthropic/claude-opus-5",
+			"content":[{"type":"text","text":"ok"}],
+			"stop_reason":"end_turn",
+			"usage":{"input_tokens":1,"output_tokens":1}
+		}`)),
+	}, nil
+}
+
+func (u *cindyNativeMessagesCaptureUpstream) snapshot() (int64, string, []byte) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.accountID, u.url, append([]byte(nil), u.body...)
+}
+
+func TestMessagesMixedGroupSelectedCindyForwardsNativeClaudeAlias(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	groupID := int64(51040)
+	cindyAccountID := int64(51041)
+	accounts := []service.Account{
+		{
+			ID: cindyAccountID, Name: "cindy", Platform: service.PlatformOpenAI,
+			Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
+			Priority: 0, Concurrency: 0,
+			Credentials: map[string]any{
+				"api_key":  "sk-cindy-test",
+				"base_url": "https://api.laxarouter.ai",
+			},
+		},
+		{
+			ID: 51042, Name: "ordinary", Platform: service.PlatformOpenAI,
+			Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
+			Priority: 100, Concurrency: 0,
+			Credentials: map[string]any{
+				"api_key":  "sk-ordinary-test",
+				"base_url": "https://compat.example",
+			},
+		},
+	}
+	repo := &openAIWSFailoverHandlerAccountRepoStub{accounts: accounts}
+	upstream := &cindyNativeMessagesCaptureUpstream{}
+	cfg := &config.Config{RunMode: config.RunModeSimple}
+	cfg.Default.RateMultiplier = 1
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Priority = 1
+	billingService := service.NewBillingService(cfg, nil)
+	billingCache := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
+	t.Cleanup(billingCache.Stop)
+	concurrencyService := service.NewConcurrencyService(nil)
+	openAIGateway := service.NewOpenAIGatewayService(
+		repo, nil, nil, nil, nil, nil, nil, cfg, nil, concurrencyService,
+		billingService, nil, billingCache, upstream, &service.DeferredService{},
+		nil, nil, nil, nil, nil, nil, nil,
+	)
+	nativeGateway := service.NewGatewayService(
+		repo, nil, nil, nil, nil, nil, nil, nil, cfg, nil, concurrencyService,
+		billingService, nil, billingCache, nil, upstream, &service.DeferredService{},
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+	)
+	h := NewOpenAIGatewayHandler(
+		openAIGateway, concurrencyService, billingCache,
+		service.NewAPIKeyService(nil, nil, nil, nil, nil, nil, cfg),
+		nil, nil, nil, nil, cfg,
+	)
+	h.SetNativeAnthropicGatewayService(nativeGateway)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{
+		"model":"claude-opus-4-6",
+		"max_tokens":16,
+		"stream":false,
+		"messages":[{"role":"user","content":"hello"}]
+	}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	apiKey := &service.APIKey{
+		ID: 51043, GroupID: &groupID, Status: service.StatusActive,
+		User: &service.User{ID: 51044, Status: service.StatusActive},
+		Group: &service.Group{
+			ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive,
+			AllowMessagesDispatch: true, RateMultiplier: 1,
+		},
+	}
+	c.Set(string(middleware.ContextKeyAPIKey), apiKey)
+	c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: apiKey.User.ID, Concurrency: 0})
+
+	h.Messages(c)
+
+	accountID, upstreamURL, upstreamBody := upstream.snapshot()
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	require.Equal(t, cindyAccountID, accountID)
+	require.Equal(t, "https://api.laxarouter.ai/v1/messages", upstreamURL)
+	require.Equal(t, "anthropic/claude-opus-5", gjson.GetBytes(upstreamBody, "model").String())
+	require.NotContains(t, string(upstreamBody), "gpt-5.4")
+}
+
+func TestImagesMixedGroupSelectedCindyRejectsUnverifiedControls(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	groupID := int64(51060)
+	cindyAccountID := int64(51061)
+	repo := &openAIWSFailoverHandlerAccountRepoStub{accounts: []service.Account{{
+		ID: cindyAccountID, Name: "cindy", Platform: service.PlatformOpenAI,
+		Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
+		Concurrency: 0,
+		Credentials: map[string]any{
+			"api_key":  "sk-cindy-test",
+			"base_url": "https://api.laxarouter.ai",
+		},
+	}}}
+	upstream := &cindyNativeMessagesCaptureUpstream{}
+	cfg := &config.Config{RunMode: config.RunModeSimple}
+	cfg.Default.RateMultiplier = 1
+	cfg.Security.URLAllowlist.Enabled = false
+	billingService := service.NewBillingService(cfg, nil)
+	billingCache := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
+	t.Cleanup(billingCache.Stop)
+	concurrencyService := service.NewConcurrencyService(nil)
+	openAIGateway := service.NewOpenAIGatewayService(
+		repo, nil, nil, nil, nil, nil, nil, cfg, nil, concurrencyService,
+		billingService, nil, billingCache, upstream, &service.DeferredService{},
+		nil, nil, nil, nil, nil, nil, nil,
+	)
+	h := NewOpenAIGatewayHandler(
+		openAIGateway, concurrencyService, billingCache,
+		service.NewAPIKeyService(nil, nil, nil, nil, nil, nil, cfg),
+		nil, nil, nil, nil, cfg,
+	)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", strings.NewReader(`{
+		"model":"gpt-image-2",
+		"prompt":"draw",
+		"n":1,
+		"size":"1024x1024",
+		"quality":"high",
+		"response_format":"b64_json"
+	}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	apiKey := &service.APIKey{
+		ID: 51062, GroupID: &groupID, Status: service.StatusActive,
+		User: &service.User{ID: 51063, Status: service.StatusActive},
+		Group: &service.Group{
+			ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive,
+			AllowImageGeneration: true, RateMultiplier: 1,
+		},
+	}
+	c.Set(string(middleware.ContextKeyAPIKey), apiKey)
+	c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: apiKey.User.ID, Concurrency: 0})
+
+	h.Images(c)
+
+	accountID, _, _ := upstream.snapshot()
+	require.Equal(t, http.StatusBadRequest, recorder.Code, recorder.Body.String())
+	require.Equal(t, "invalid_request_error", gjson.GetBytes(recorder.Body.Bytes(), "error.type").String())
+	require.Contains(t, gjson.GetBytes(recorder.Body.Bytes(), "error.message").String(), "quality")
+	require.Zero(t, accountID)
+}
+
+type cindyImagesCaptureUpstream struct {
+	service.HTTPUpstream
+	mu          sync.Mutex
+	accountID   int64
+	url         string
+	contentType string
+	body        []byte
+}
+
+func (u *cindyImagesCaptureUpstream) Do(req *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
+	return u.capture(req, accountID)
+}
+
+func (u *cindyImagesCaptureUpstream) DoWithTLS(req *http.Request, _ string, accountID int64, _ int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+	return u.capture(req, accountID)
+}
+
+func (u *cindyImagesCaptureUpstream) capture(req *http.Request, accountID int64) (*http.Response, error) {
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, err
+	}
+	u.mu.Lock()
+	u.accountID = accountID
+	u.url = req.URL.String()
+	u.contentType = req.Header.Get("Content-Type")
+	u.body = append([]byte(nil), body...)
+	u.mu.Unlock()
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"created":1,"data":[{"b64_json":"aW1hZ2U="}],"usage":{"input_tokens":1,"output_tokens":1}}`)),
+	}, nil
+}
+
+func (u *cindyImagesCaptureUpstream) snapshot() (int64, string, string, []byte) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.accountID, u.url, u.contentType, append([]byte(nil), u.body...)
+}
+
+func TestImagesMixedGroupGeminiEditSelectsCindyAndForwardsLiveModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	groupID := int64(51070)
+	cindyAccountID := int64(51071)
+	repo := &openAIWSFailoverHandlerAccountRepoStub{accounts: []service.Account{
+		{
+			ID: cindyAccountID, Name: "cindy", Platform: service.PlatformOpenAI,
+			Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
+			Concurrency: 0,
+			Credentials: map[string]any{"api_key": "sk-cindy-test", "base_url": "https://api.laxarouter.ai"},
+		},
+		{
+			ID: 51072, Name: "ordinary", Platform: service.PlatformOpenAI,
+			Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
+			Concurrency: 0,
+			Credentials: map[string]any{"api_key": "sk-ordinary-test", "base_url": "https://compat.example"},
+		},
+	}}
+	upstream := &cindyImagesCaptureUpstream{}
+	cfg := &config.Config{RunMode: config.RunModeSimple}
+	cfg.Default.RateMultiplier = 1
+	cfg.Security.URLAllowlist.Enabled = false
+	billingService := service.NewBillingService(cfg, nil)
+	billingCache := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
+	t.Cleanup(billingCache.Stop)
+	concurrencyService := service.NewConcurrencyService(nil)
+	openAIGateway := service.NewOpenAIGatewayService(
+		repo, nil, nil, nil, nil, nil, nil, cfg, nil, concurrencyService,
+		billingService, nil, billingCache, upstream, &service.DeferredService{},
+		nil, nil, nil, nil, nil, nil, nil,
+	)
+	h := NewOpenAIGatewayHandler(
+		openAIGateway, concurrencyService, billingCache,
+		service.NewAPIKeyService(nil, nil, nil, nil, nil, nil, cfg),
+		nil, nil, nil, nil, cfg,
+	)
+
+	var requestBody bytes.Buffer
+	writer := multipart.NewWriter(&requestBody)
+	require.NoError(t, writer.WriteField("model", "gemini-3-pro-image"))
+	require.NoError(t, writer.WriteField("prompt", "edit"))
+	require.NoError(t, writer.WriteField("n", "1"))
+	require.NoError(t, writer.WriteField("size", "1024x1024"))
+	require.NoError(t, writer.WriteField("quality", "low"))
+	require.NoError(t, writer.WriteField("response_format", "b64_json"))
+	imagePart, err := writer.CreateFormFile("image", "source.png")
+	require.NoError(t, err)
+	_, err = imagePart.Write([]byte("test-image"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/edits", bytes.NewReader(requestBody.Bytes()))
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	apiKey := &service.APIKey{
+		ID: 51073, GroupID: &groupID, Status: service.StatusActive,
+		User: &service.User{ID: 51074, Status: service.StatusActive},
+		Group: &service.Group{
+			ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive,
+			AllowImageGeneration: true, RateMultiplier: 1,
+		},
+	}
+	c.Set(string(middleware.ContextKeyAPIKey), apiKey)
+	c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: apiKey.User.ID, Concurrency: 0})
+
+	h.Images(c)
+
+	accountID, upstreamURL, contentType, upstreamBody := upstream.snapshot()
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	require.Equal(t, cindyAccountID, accountID)
+	require.Equal(t, "https://api.laxarouter.ai/v1/images/edits", upstreamURL)
+	mediaType, params, err := mime.ParseMediaType(contentType)
+	require.NoError(t, err)
+	require.Equal(t, "multipart/form-data", mediaType)
+	reader := multipart.NewReader(bytes.NewReader(upstreamBody), params["boundary"])
+	upstreamModel := ""
+	for {
+		part, partErr := reader.NextPart()
+		if partErr == io.EOF {
+			break
+		}
+		require.NoError(t, partErr)
+		if part.FormName() == "model" {
+			value, readErr := io.ReadAll(part)
+			require.NoError(t, readErr)
+			upstreamModel = string(value)
+		}
+		require.NoError(t, part.Close())
+	}
+	require.Equal(t, "google/gemini-3-pro-image", upstreamModel)
 }
 
 func TestOpenAIModelMappedBody(t *testing.T) {

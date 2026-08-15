@@ -226,6 +226,8 @@ type OpenAIUsage struct {
 	OutputTokens             int `json:"output_tokens"`
 	CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
 	CacheReadInputTokens     int `json:"cache_read_input_tokens,omitempty"`
+	CacheCreation5mTokens    int `json:"-"`
+	CacheCreation1hTokens    int `json:"-"`
 	ImageOutputTokens        int `json:"image_output_tokens,omitempty"`
 }
 
@@ -234,7 +236,11 @@ type OpenAIForwardResult struct {
 	RequestID  string
 	ResponseID string
 	Usage      OpenAIUsage
-	Model      string // 原始模型（用于响应和日志显示）
+	// UsageInputTokensExcludeCache marks Anthropic-style usage where
+	// input_tokens is already disjoint from cache read/write tokens. OpenAI
+	// Responses reports a total input count and therefore leaves this false.
+	UsageInputTokensExcludeCache bool
+	Model                        string // 原始模型（用于响应和日志显示）
 	// BillingModel is the model used for cost calculation.
 	// When non-empty, CalculateCost uses this instead of Model.
 	// This is set by the Anthropic Messages conversion path where
@@ -266,6 +272,7 @@ type OpenAIForwardResult struct {
 	FirstTokenMs          *int
 	ClientDisconnect      bool
 	ImageCount            int
+	ImageInputCount       int
 	ImageSize             string
 	ImageInputSize        string
 	ImageOutputSize       string
@@ -437,6 +444,7 @@ type OpenAIGatewayService struct {
 	openaiWSStateStoreOnce         sync.Once
 	openaiSchedulerOnce            sync.Once
 	openaiProxyStreamCircuitOnce   sync.Once
+	cindyBalanceRecheckOnce        sync.Once
 	openaiWSPassthroughDialerOnce  sync.Once
 	openaiModelTransientOnce       sync.Once
 	agentIdentityTaskMu            sync.Mutex
@@ -447,6 +455,7 @@ type OpenAIGatewayService struct {
 	openaiAccountStats             *openAIAccountRuntimeStats
 	openaiModelTransient           *openAIAccountModelTransientState
 	openaiProxyStreamCircuit       *openAIProxyStreamCircuit
+	cindyBalanceRecheck            *cindyBalanceRecheckCoordinator
 	openaiProxyStreamFailOpenLogAt atomic.Int64
 
 	openaiWSFallbackUntil               sync.Map // key: int64(accountID), value: time.Time
@@ -546,6 +555,9 @@ func NewOpenAIGatewayService(
 	}
 	if rateLimitService != nil {
 		rateLimitService.SetAccountRuntimeBlocker(svc)
+		if pendingStore, ok := cache.(CindyBalancePendingStore); ok {
+			rateLimitService.SetCindyBalancePendingStore(pendingStore)
+		}
 	}
 	if openAITokenProvider != nil {
 		openAITokenProvider.SetAccountRuntimeBlocker(svc)
