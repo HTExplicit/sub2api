@@ -106,6 +106,35 @@ func TestCindyGroupSplitPreviewDriftAndAtomicCommit(t *testing.T) {
 	require.Equal(t, service.CindyGroupClassificationPureCindy, preview.Preview.TargetClassification)
 	require.Len(t, preview.Preview.MemberFingerprint, 64)
 
+	// Normal request traffic updates last-used timestamps and generic updated_at
+	// columns, while health/quota processing can also change row status. None of
+	// those writes changes group membership, Cindy classification, membership
+	// priority, or API-key binding, so they must not invalidate the preview.
+	_, err = integrationDB.ExecContext(ctx,
+		"UPDATE accounts SET last_used_at = NOW(), status = $2, updated_at = NOW() WHERE id = $1",
+		cindy.ID,
+		service.StatusError,
+	)
+	require.NoError(t, err)
+	_, err = integrationDB.ExecContext(ctx,
+		"UPDATE api_keys SET last_used_at = NOW(), status = $2, updated_at = NOW() WHERE id = $1",
+		selectedKey.ID,
+		service.StatusDisabled,
+	)
+	require.NoError(t, err)
+	afterRuntimeWrites, err := repo.PreviewCindyGroupSplit(ctx, source.ID, input)
+	require.NoError(t, err)
+	require.Equal(t, preview.Preview.MemberFingerprint, afterRuntimeWrites.Preview.MemberFingerprint)
+	_, err = integrationDB.ExecContext(ctx, "UPDATE accounts SET status = $2, updated_at = NOW() WHERE id = $1", cindy.ID, service.StatusActive)
+	require.NoError(t, err)
+	_, err = integrationDB.ExecContext(ctx, "UPDATE api_keys SET status = $2, updated_at = NOW() WHERE id = $1", selectedKey.ID, service.StatusActive)
+	require.NoError(t, err)
+	_, err = integrationDB.ExecContext(ctx, "UPDATE groups SET updated_at = NOW() WHERE id = $1", source.ID)
+	require.NoError(t, err)
+	afterTimestampOnlyWrites, err := repo.PreviewCindyGroupSplit(ctx, source.ID, input)
+	require.NoError(t, err)
+	require.Equal(t, preview.Preview.MemberFingerprint, afterTimestampOnlyWrites.Preview.MemberFingerprint)
+
 	_, err = integrationDB.ExecContext(ctx,
 		"UPDATE account_groups SET priority = 18 WHERE account_id = $1 AND group_id = $2",
 		cindy.ID,
