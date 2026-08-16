@@ -229,12 +229,15 @@ func TestCindyCompatibilityRoutingTargetsAreNarrow(t *testing.T) {
 	t.Parallel()
 
 	for _, model := range []string{
-		"gpt-5.6-sol",
 		"openai/gpt-5.6-sol",
-		"gpt-5.6-luna",
 		"openai/gpt-5.6-luna",
 	} {
 		require.True(t, CindyCompatibilityRoutingTarget(model), model)
+		_, ok := CindyCompatibilityTextPricingForModel(model)
+		require.True(t, ok, model)
+	}
+	for _, model := range []string{"gpt-5.6-sol", "gpt-5.6-luna"} {
+		require.False(t, CindyCompatibilityRoutingTarget(model), model)
 		_, ok := CindyCompatibilityTextPricingForModel(model)
 		require.True(t, ok, model)
 	}
