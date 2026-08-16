@@ -1191,6 +1191,38 @@ func TestSetOpsEndpointContext_NilContext(t *testing.T) {
 	})
 }
 
+func TestOpsErrorLoggerMiddleware_PersistsLocalErrorClassification(t *testing.T) {
+	setupOpsErrorLogTestQueue(t, 4)
+	gin.SetMode(gin.TestMode)
+
+	ops := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := gin.New()
+	router.Use(OpsErrorLoggerMiddleware(ops))
+	router.GET("/v1/models/capabilities", func(c *gin.Context) {
+		c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+			Group: &service.Group{Platform: service.PlatformOpenAI},
+		})
+		setOpsRequestContext(c, "", false)
+		setOpsEndpointContext(c, "", int16(service.RequestTypeSync))
+		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+		setOpsErrorClassification(c, "model_capabilities/local_feature_gate")
+		c.JSON(http.StatusNotFound, gin.H{"error": gin.H{
+			"type": "not_found_error", "message": "Model capabilities are not available for this group",
+		}})
+	})
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/models/capabilities", nil))
+
+	require.Equal(t, http.StatusNotFound, recorder.Code)
+	job := <-opsErrorLogQueue
+	require.Equal(t, "model_capabilities/local_feature_gate", job.entry.ErrorType)
+	require.Equal(t, "/v1/models/capabilities", job.entry.InboundEndpoint)
+	require.Empty(t, job.entry.UpstreamEndpoint)
+	require.NotNil(t, job.entry.RequestType)
+	require.Equal(t, int16(service.RequestTypeSync), *job.entry.RequestType)
+}
+
 func TestGetOpsAPIKeyFallsBackToOpsFallbackKey(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()

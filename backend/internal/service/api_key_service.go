@@ -576,6 +576,25 @@ func (s *APIKeyService) List(ctx context.Context, userID int64, params paginatio
 	return keys, pagination, nil
 }
 
+// ListAll returns every API key owned by one user after applying the supplied
+// filters. It is intended for bounded management-plane aggregations that must
+// not truncate at a pagination boundary.
+func (s *APIKeyService) ListAll(ctx context.Context, userID int64, filters APIKeyListFilters) ([]APIKey, error) {
+	if s == nil || s.apiKeyRepo == nil {
+		return nil, fmt.Errorf("list all api keys: repository is unavailable")
+	}
+	repo, ok := s.apiKeyRepo.(apiKeyAllByUserIDLister)
+	if !ok {
+		return nil, fmt.Errorf("list all api keys: repository does not support unpaginated API key listing")
+	}
+	keys, err := repo.ListAllByUserID(ctx, userID, filters)
+	if err != nil {
+		return nil, fmt.Errorf("list all api keys: %w", err)
+	}
+	s.fillCurrentConcurrency(ctx, keys)
+	return keys, nil
+}
+
 func (s *APIKeyService) listByCurrentConcurrency(ctx context.Context, userID int64, params pagination.PaginationParams, filters APIKeyListFilters) ([]APIKey, *pagination.PaginationResult, error) {
 	repo, ok := s.apiKeyRepo.(apiKeyAllByUserIDLister)
 	if !ok {

@@ -6,8 +6,7 @@ import { useAuthStore } from '@/stores/auth'
 import type { User } from '@/types'
 
 const mocks = vi.hoisted(() => ({
-  listKeys: vi.fn(),
-  listCapabilities: vi.fn(),
+  listEligibleKeys: vi.fn(),
   validateImage: vi.fn(),
   generate: vi.fn(),
   edit: vi.fn(),
@@ -19,10 +18,9 @@ const mocks = vi.hoisted(() => ({
   showSuccess: vi.fn(),
 }))
 
-vi.mock('@/api', () => ({ keysAPI: { list: mocks.listKeys } }))
 vi.mock('@/api/imageStudio', () => ({
   MAX_IMAGE_BYTES: 20 * 1024 * 1024,
-  listModelCapabilities: mocks.listCapabilities,
+  listEligibleImageStudioKeys: mocks.listEligibleKeys,
   generateImages: mocks.generate,
   editImages: mocks.edit,
   validateImageBlob: mocks.validateImage,
@@ -51,20 +49,10 @@ describe('ImageStudioView', () => {
     useAuthStore().$patch({ user: { id: 42 } as User })
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:preview') })
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
-    mocks.listKeys.mockResolvedValue({
-      page: 1,
-      page_size: 100,
-      pages: 1,
-      total: 2,
-      items: [
-        { id: 1, name: 'Images', key: 'sk-image', status: 'active', group_id: 10, group: { id: 10, name: 'Cindy', allow_image_generation: true } },
-        { id: 2, name: 'Text only', key: 'sk-text', status: 'active', group_id: 20, group: { id: 20, name: 'Text', allow_image_generation: false } },
-      ],
-    })
-    mocks.listCapabilities.mockResolvedValue({
-      object: 'list',
-      catalog_version: 'test',
-      data: [
+    mocks.listEligibleKeys.mockResolvedValue({
+      items: [{
+        api_key: { id: 1, name: 'Images', key: 'sk-image', status: 'active', group_id: 10, group: { id: 10, name: 'Cindy', allow_image_generation: true } },
+        capabilities: [
         {
           id: 'gpt-image-2',
           kind: 'image',
@@ -99,7 +87,8 @@ describe('ImageStudioView', () => {
           },
         },
         { id: 'gpt-5.6-luna', kind: 'text', input_modalities: ['text'], output_modalities: ['text'], endpoints: ['responses'], client_surfaces: ['codex'] },
-      ],
+        ],
+      }],
     })
     mocks.generate.mockImplementation((_apiKey: string, input: { n?: number }) => Promise.resolve(
       Array.from({ length: input.n || 1 }, (_, index) => ({
@@ -128,7 +117,7 @@ describe('ImageStudioView', () => {
     })
   }
 
-  it('uses a responsive stable layout and only offers image-enabled keys', async () => {
+  it('uses a responsive stable layout and only offers server-eligible keys', async () => {
     const wrapper = render()
     await flushPromises()
 
@@ -138,27 +127,20 @@ describe('ImageStudioView', () => {
     expect(options.join(' ')).not.toContain('Text only')
   })
 
-  it('loads every key page before filtering image-enabled keys', async () => {
-    mocks.listKeys
-      .mockResolvedValueOnce({
-        page: 1,
-        page_size: 100,
-        pages: 2,
-        total: 2,
-        items: [{ id: 1, name: 'First', key: 'sk-first', status: 'active', group_id: 10, group: { id: 10, name: 'Cindy', allow_image_generation: true } }],
-      })
-      .mockResolvedValueOnce({
-        page: 2,
-        page_size: 100,
-        pages: 2,
-        total: 2,
-        items: [{ id: 3, name: 'Second', key: 'sk-second', status: 'active', group_id: 10, group: { id: 10, name: 'Cindy', allow_image_generation: true } }],
-      })
+  it('loads eligible keys and their capabilities in one request', async () => {
+    const defaultCapabilities = (await mocks.listEligibleKeys()).items[0].capabilities
+    mocks.listEligibleKeys.mockResolvedValueOnce({
+      items: [
+        { api_key: { id: 1, name: 'First', key: 'sk-first', status: 'active', group_id: 10, group: { id: 10, name: 'Cindy' } }, capabilities: defaultCapabilities },
+        { api_key: { id: 3, name: 'Second', key: 'sk-second', status: 'active', group_id: 10, group: { id: 10, name: 'Cindy' } }, capabilities: defaultCapabilities },
+      ],
+    })
+    mocks.listEligibleKeys.mockClear()
 
     const wrapper = render()
     await flushPromises()
 
-    expect(mocks.listKeys).toHaveBeenCalledTimes(2)
+    expect(mocks.listEligibleKeys).toHaveBeenCalledTimes(1)
     const options = wrapper.get('[data-testid="api-key-select"]').findAll('option').map(option => option.text())
     expect(options).toContain('First · Cindy')
     expect(options).toContain('Second · Cindy')
@@ -170,7 +152,7 @@ describe('ImageStudioView', () => {
     await wrapper.get('[data-testid="api-key-select"]').setValue('1')
     await flushPromises()
 
-    expect(mocks.listCapabilities).toHaveBeenCalledWith('sk-image', expect.any(AbortSignal))
+    expect(mocks.listEligibleKeys).toHaveBeenCalledTimes(1)
     expect(wrapper.get('[data-testid="model-select"]').element.value).toBe('gpt-image-2')
     await wrapper.get('[data-testid="prompt-input"]').setValue('draw a lighthouse')
     await wrapper.get('#image-studio-count').setValue('4')
@@ -218,16 +200,18 @@ describe('ImageStudioView', () => {
 
   it('does not expose stale API keys when a previous user request resolves last', async () => {
     let finishUserA: ((value: unknown) => void) | undefined
-    mocks.listKeys
+    mocks.listEligibleKeys
       .mockReturnValueOnce(new Promise(resolve => {
         finishUserA = resolve
       }))
       .mockResolvedValueOnce({
-        page: 1,
-        page_size: 100,
-        pages: 1,
-        total: 1,
-        items: [{ id: 84, name: 'User B images', key: 'sk-user-b', status: 'active', group_id: 10, group: { id: 10, name: 'Cindy', allow_image_generation: true } }],
+        items: [{
+          api_key: { id: 84, name: 'User B images', key: 'sk-user-b', status: 'active', group_id: 10, group: { id: 10, name: 'Cindy' } },
+          capabilities: [{
+            id: 'gpt-image-2', kind: 'image', input_modalities: ['text'], output_modalities: ['image'],
+            endpoints: ['images.generations'], client_surfaces: ['image_studio'], controls: { generation: { max_output_count: 1 } },
+          }],
+        }],
       })
 
     const wrapper = render()
@@ -236,21 +220,14 @@ describe('ImageStudioView', () => {
     await flushPromises()
 
     finishUserA?.({
-      page: 1,
-      page_size: 100,
-      pages: 1,
-      total: 1,
-      items: [{ id: 42, name: 'User A private key', key: 'sk-user-a', status: 'active', group_id: 10, group: { id: 10, name: 'Cindy', allow_image_generation: true } }],
+      items: [{ api_key: { id: 42, name: 'User A private key', key: 'sk-user-a', status: 'active', group_id: 10, group: { id: 10, name: 'Cindy' } }, capabilities: [] }],
     })
     await flushPromises()
 
     const keyOptions = wrapper.get('[data-testid="api-key-select"]').findAll('option').map(option => option.text())
     expect(keyOptions).toContain('User B images · Cindy')
     expect(keyOptions.join(' ')).not.toContain('User A private key')
-    await wrapper.get('[data-testid="api-key-select"]').setValue('84')
-    await flushPromises()
-    expect(mocks.listCapabilities).toHaveBeenCalledWith('sk-user-b', expect.any(AbortSignal))
-    expect(JSON.stringify(mocks.listCapabilities.mock.calls)).not.toContain('sk-user-a')
+    expect(mocks.listEligibleKeys).toHaveBeenCalledTimes(2)
   })
 
   it('clears prompt, uploads, and an open preview when the authenticated user changes', async () => {
@@ -388,25 +365,26 @@ describe('ImageStudioView', () => {
   })
 
   it('shows a reference input without inventing a mask control', async () => {
-    mocks.listCapabilities.mockResolvedValue({
-      object: 'list',
-      catalog_version: 'test',
-      data: [{
-        id: 'reference-only-image',
-        kind: 'image',
-        input_modalities: ['text', 'image'],
-        output_modalities: ['image'],
-        endpoints: ['images.edits'],
-        client_surfaces: ['image_studio'],
-        controls: {
-          edit: {
-            sizes: ['1024x1024'],
-            qualities: ['low'],
-            max_output_count: 1,
-            supports_reference_image: true,
-            supports_mask: false,
+    mocks.listEligibleKeys.mockResolvedValue({
+      items: [{
+        api_key: { id: 1, name: 'Edit only', key: 'sk-edit', status: 'active', group_id: 10, group: { id: 10, name: 'Cindy' } },
+        capabilities: [{
+          id: 'reference-only-image',
+          kind: 'image',
+          input_modalities: ['text', 'image'],
+          output_modalities: ['image'],
+          endpoints: ['images.edits'],
+          client_surfaces: ['image_studio'],
+          controls: {
+            edit: {
+              sizes: ['1024x1024'],
+              qualities: ['low'],
+              max_output_count: 1,
+              supports_reference_image: true,
+              supports_mask: false,
+            },
           },
-        },
+        }],
       }],
     })
 
@@ -417,6 +395,8 @@ describe('ImageStudioView', () => {
 
     expect(wrapper.find('[data-testid="reference-upload"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="mask-upload"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="mode-generate"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="mode-edit"]').attributes('disabled')).toBeUndefined()
   })
 
   it('recovers after a request error and leaves the form retryable', async () => {

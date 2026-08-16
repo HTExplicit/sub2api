@@ -92,24 +92,10 @@ func (r *cindyNativeImagesBudgetRepo) marked() []int64 {
 
 type cindyNativeImagesBudgetUpstream struct {
 	service.HTTPUpstream
-	mu                  sync.Mutex
-	imageAccountIDs     []int64
-	probeAccountIDs     []int64
-	exhaustedAccount    int64
-	probeResponseClosed chan struct{}
-	probeCloseOnce      sync.Once
-}
-
-type cindyProbeNotifyReadCloser struct {
-	io.ReadCloser
-	done chan struct{}
-	once *sync.Once
-}
-
-func (r *cindyProbeNotifyReadCloser) Close() error {
-	err := r.ReadCloser.Close()
-	r.once.Do(func() { close(r.done) })
-	return err
+	mu               sync.Mutex
+	imageAccountIDs  []int64
+	probeAccountIDs  []int64
+	exhaustedAccount int64
 }
 
 type cindyNativeImagesHTTP201Upstream struct {
@@ -133,11 +119,7 @@ func (u *cindyNativeImagesBudgetUpstream) Do(req *http.Request, _ string, accoun
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"Content-Type": []string{"application/json"}},
-			Body: &cindyProbeNotifyReadCloser{
-				ReadCloser: body,
-				done:       u.probeResponseClosed,
-				once:       &u.probeCloseOnce,
-			},
+			Body:       body,
 		}, nil
 	}
 	if accountID == u.exhaustedAccount {
@@ -345,10 +327,7 @@ func TestCindyNativeImagesHTTP200BudgetJSONFailsOverBeforeWrite(t *testing.T) {
 		},
 	}
 	repo := &cindyNativeImagesBudgetRepo{openAIImagesFailoverAccountRepo: openAIImagesFailoverAccountRepo{accounts: accounts}}
-	upstream := &cindyNativeImagesBudgetUpstream{
-		exhaustedAccount:    exhaustedAccountID,
-		probeResponseClosed: make(chan struct{}),
-	}
+	upstream := &cindyNativeImagesBudgetUpstream{exhaustedAccount: exhaustedAccountID}
 	cfg := &config.Config{RunMode: config.RunModeSimple}
 	cfg.Default.RateMultiplier = 1
 	cfg.Security.URLAllowlist.Enabled = false
@@ -383,13 +362,8 @@ func TestCindyNativeImagesHTTP200BudgetJSONFailsOverBeforeWrite(t *testing.T) {
 
 	handler.Images(c)
 
-	select {
-	case <-upstream.probeResponseClosed:
-	case <-time.After(2 * time.Second):
-		t.Fatal("Cindy balance confirmation probe did not finish")
-	}
 	require.Equal(t, []int64{exhaustedAccountID, 12}, upstream.imageCalls())
-	require.Equal(t, []int64{exhaustedAccountID}, upstream.probeCalls())
+	require.Empty(t, upstream.probeCalls(), "request-time exact signals must not start balance probes")
 	require.Empty(t, repo.marked(), "one exact request signal must not permanently mark the account")
 	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 	require.Equal(t, "aW1hZ2U=", gjson.GetBytes(recorder.Body.Bytes(), "data.0.b64_json").String())

@@ -105,11 +105,3 @@ func TestClassifyCindyBalanceInsufficientRejectsTerminalShapesOutsideHTTP200(t *
 		[]byte(`{"type":"error","error":{"type":"budget_exceeded","code":"429"}}`),
 	), "HTTP 429 top-level exact error retains priority over the event-shape guard")
 }
-
-func TestIsAmbiguousCindyBalanceTerminalEvent(t *testing.T) {
-	cindy := newCindyRateLimitAccount(8521, true)
-	require.True(t, IsAmbiguousCindyBalanceTerminalEvent(cindy, []byte(`{"type":"response.failed","response":{"error":{"message":"request failed"}}}`)))
-	require.True(t, IsAmbiguousCindyBalanceTerminalEvent(cindy, []byte(`{"type":"error","error":{"type":"budget_exceeded","message":"request failed"}}`)))
-	require.False(t, IsAmbiguousCindyBalanceTerminalEvent(cindy, []byte(`{"type":"response.failed","response":{"error":{"type":"rate_limit_error","code":"rate_limit_exceeded"}}}`)))
-	require.False(t, IsAmbiguousCindyBalanceTerminalEvent(cindy, []byte(`{"type":"response.failed","response":{"error":{"type":"budget_exceeded","code":"429"}}}`)))
-}

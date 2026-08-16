@@ -22,7 +22,7 @@ digest=$(awk '$1 == "Digest:" && digest == "" {digest=$2} END {if (digest == "")
 [[ "$digest" == 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' ]] ||
   fail 'digest parser did not preserve the first index digest'
 
-for input in cindy_balance_detection cindy_capability_catalog cindy_image_studio; do
+for input in cindy_balance_detection cindy_capability_catalog image_studio; do
   grep -Fq "      ${input}:" "$WORKFLOW" || fail "missing typed workflow input: $input"
 done
 [[ "$(grep -c '        type: boolean' "$WORKFLOW")" -ge 3 ]] ||
@@ -31,9 +31,9 @@ grep -Fq '        default: true' "$WORKFLOW" ||
   fail 'the balance phase must default on'
 [[ "$(grep -c '        default: false' "$WORKFLOW")" -ge 2 ]] ||
   fail 'catalog and image phases must default off'
-grep -Fq 'Cindy Image Studio requires the Cindy capability catalog' "$WORKFLOW" ||
+grep -Fq 'Image Studio requires the Cindy capability catalog in this release' "$WORKFLOW" ||
   fail 'workflow must reject image rollout without the catalog'
-grep -Fq 'cindy_rollout=cindy=${CINDY_BALANCE_DETECTION},${CINDY_CAPABILITY_CATALOG},${CINDY_IMAGE_STUDIO}' "$WORKFLOW" ||
+grep -Fq 'cindy_rollout=cindy=${CINDY_BALANCE_DETECTION},${CINDY_CAPABILITY_CATALOG},${IMAGE_STUDIO}' "$WORKFLOW" ||
   fail 'resolve must emit a canonical Cindy rollout tuple'
 grep -Fq '"deploy ${IMAGE_REF} ${CINDY_ROLLOUT}"' "$WORKFLOW" ||
   fail 'deployment must pass the canonical rollout tuple to the forced command'

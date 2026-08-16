@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import { h } from 'vue'
 import AccountsView from '../AccountsView.vue'
 
 const {
@@ -72,7 +73,14 @@ vi.mock('@/stores/auth', () => ({
 
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
-  return { ...actual, useI18n: () => ({ t: (key: string) => key }) }
+  return {
+    ...actual,
+    useI18n: () => ({
+      t: (key: string) => key === 'admin.accounts.cindyProbe.itemState.healthy'
+        ? 'Luna available this run'
+        : key
+    })
+  }
 })
 
 const account = {
@@ -89,6 +97,9 @@ const account = {
   extra: {},
   groups: [],
   tags: [],
+  cindy_balance_probe_job_id: 321,
+  cindy_balance_probe_outcome: 'healthy',
+  cindy_balance_probe_checked_at: '2032-08-16T00:02:00Z',
   created_at: '2026-07-29T00:00:00Z',
   updated_at: '2026-07-29T00:00:00Z'
 }
@@ -118,6 +129,7 @@ const DataTableStub = {
       <div v-for="row in data" :key="row.id">
         <button data-test="open-row" @click="$emit('row-click', row)">{{ row.name }}</button>
         <slot name="cell-name" :row="row" :value="row.name" />
+        <slot v-if="columns.some(column => column.key === 'cindy_probe')" name="cell-cindy_probe" :row="row" :value="row.cindy_balance_probe_outcome" />
       </div>
     </div>
   `
@@ -167,12 +179,12 @@ const commonStubs = {
   TablePageLayout: { template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>' },
   DataTable: DataTableStub,
   AccountCompactList: {
-    props: ['accounts', 'todayStats', 'todayStatsLoading', 'todayStatsError', 'manualRefreshToken'],
-    template: '<div data-test="view-compact" :data-refresh-token="String(manualRefreshToken)" :data-requests="String(todayStats[String(accounts[0]?.id)]?.requests ?? -1)">{{ accounts.length }}</div>'
+    props: ['accounts', 'todayStats', 'todayStatsLoading', 'todayStatsError', 'manualRefreshToken', 'showCindyProbe'],
+    template: '<div data-test="view-compact" :data-show-cindy-probe="String(showCindyProbe)" :data-refresh-token="String(manualRefreshToken)" :data-requests="String(todayStats[String(accounts[0]?.id)]?.requests ?? -1)">{{ accounts.length }}</div>'
   },
   AccountCardGrid: {
-    props: ['accounts', 'todayStats', 'todayStatsLoading', 'todayStatsError', 'manualRefreshToken'],
-    template: '<div data-test="view-cards" :data-refresh-token="String(manualRefreshToken)" :data-requests="String(todayStats[String(accounts[0]?.id)]?.requests ?? -1)">{{ accounts.length }}</div>'
+    props: ['accounts', 'todayStats', 'todayStatsLoading', 'todayStatsError', 'manualRefreshToken', 'showCindyProbe'],
+    template: '<div data-test="view-cards" :data-show-cindy-probe="String(showCindyProbe)" :data-refresh-token="String(manualRefreshToken)" :data-requests="String(todayStats[String(accounts[0]?.id)]?.requests ?? -1)">{{ accounts.length }}</div>'
   },
   AccountViewModeSwitcher: ViewModeStub,
   AccountConsoleFilters: { props: ['modelValue'], template: '<div data-test="console-account-ids">{{ modelValue.account_ids.join(\',\') }}</div>' },
@@ -215,7 +227,15 @@ const commonStubs = {
   Icon: true
 }
 
-const mountView = (plugins: any[] = []) => mount(AccountsView, { global: { stubs: commonStubs, plugins } })
+const mountView = (
+  plugins: any[] = [],
+  props: { scope?: 'all' | 'cindy' } = {},
+  slots: Record<string, any> = {},
+) => mount(AccountsView, {
+  props,
+  slots,
+  global: { stubs: commonStubs, plugins }
+})
 
 describe('admin AccountsView Cockpit console', () => {
   beforeEach(() => {
@@ -243,10 +263,12 @@ describe('admin AccountsView Cockpit console', () => {
 
     await wrapper.get('[data-test="mode-compact"]').trigger('click')
     expect(wrapper.find('[data-test="view-compact"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="view-compact"]').attributes('data-show-cindy-probe')).toBe('false')
     expect(localStorage.getItem('account-console-view-mode')).toBe('compact')
 
     await wrapper.get('[data-test="mode-cards"]').trigger('click')
     expect(wrapper.find('[data-test="view-cards"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="view-cards"]').attributes('data-show-cindy-probe')).toBe('false')
     expect(localStorage.getItem('account-console-view-mode')).toBe('cards')
     wrapper.unmount()
 
@@ -419,6 +441,89 @@ describe('admin AccountsView Cockpit console', () => {
     await wrapper.get('[data-test="cindy-account-view"]').findAll('button')[2].trigger('click')
     await flushPromises()
     expect(listAccounts.mock.calls.some(call => call[2]?.cindy_only === 'true' && call[2]?.cindy_balance_status === 'insufficient')).toBe(true)
+  })
+
+  it('forces the dedicated Cindy scope even when the route query tries to disable it', async () => {
+    getFacets.mockResolvedValue({
+      total: 4, uncategorized_count: 4, cindy_total: 4, cindy_insufficient_count: 2,
+      platforms: [], types: [], statuses: [], plans: [], proxies: [], folders: [], tags: []
+    })
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/admin/cindy-accounts', component: { template: '<div />' } }]
+    })
+    await router.push('/admin/cindy-accounts?cindy_only=false')
+    await router.isReady()
+
+    const wrapper = mountView([router], { scope: 'cindy' })
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="cindy-account-view"]').findAll('button')).toHaveLength(2)
+    expect(listAccounts.mock.calls.some(call => call[2]?.cindy_only !== 'true')).toBe(false)
+    expect(getFacets.mock.calls.some(call => call[0]?.cindy_only !== 'true')).toBe(false)
+    expect(router.currentRoute.value.query.cindy_only).toBe('true')
+
+    await router.push('/admin/cindy-accounts?cindy_only=false&cindy_balance_status=insufficient')
+    await flushPromises()
+    expect(listAccounts.mock.calls.at(-1)?.[2]).toEqual(expect.objectContaining({
+      cindy_only: 'true',
+      cindy_balance_status: 'insufficient'
+    }))
+  })
+
+  it('shows recent probe data in every Cindy layout without changing the ordinary account table', async () => {
+    const ordinary = mountView()
+    await flushPromises()
+    expect(ordinary.get('[data-test="view-table"]').attributes('data-columns')).not.toContain('cindy_probe')
+    expect(ordinary.find('[data-test="cindy-probe-summary"]').exists()).toBe(false)
+    ordinary.unmount()
+
+    const cindy = mountView([], { scope: 'cindy' })
+    await flushPromises()
+    expect(cindy.get('[data-test="view-table"]').attributes('data-columns')).toContain('cindy_probe')
+    expect(cindy.get('[data-test="cindy-probe-summary"]').text()).toContain('#321')
+    expect(cindy.get('[data-test="cindy-probe-summary"]').text()).toContain('Luna available this run')
+
+    await cindy.get('[data-test="mode-compact"]').trigger('click')
+    expect(cindy.get('[data-test="view-compact"]').attributes('data-show-cindy-probe')).toBe('true')
+    await cindy.get('[data-test="mode-cards"]').trigger('click')
+    expect(cindy.get('[data-test="view-cards"]').attributes('data-show-cindy-probe')).toBe('true')
+    cindy.unmount()
+  })
+
+  it('exposes selected IDs and exact account filters through the extension slot', async () => {
+    listTags.mockResolvedValueOnce([{ id: 2, name: 'audit', account_count: 1 }])
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/admin/cindy-accounts', component: { template: '<div />' } }]
+    })
+    await router.push('/admin/cindy-accounts?platforms=openai&proxies=direct,3&folder=uncategorized&tags=2&group=ungrouped&privacy_mode=private&cindy_balance_status=insufficient')
+    await router.isReady()
+
+    const wrapper = mountView([router], { scope: 'cindy' }, {
+      'scope-tools': ({ selectedIds, filters }: { selectedIds: number[]; filters: Record<string, unknown> }) => h('div', {
+        'data-test': 'scope-tools-context',
+        'data-selected': selectedIds.join(','),
+        'data-filters': JSON.stringify(filters)
+      })
+    })
+    await flushPromises()
+
+    const context = wrapper.get('[data-test="scope-tools-context"]')
+    expect(JSON.parse(context.attributes('data-filters'))).toEqual(expect.objectContaining({
+      platforms: ['openai'],
+      proxy_ids: [3],
+      include_direct: true,
+      include_uncategorized: true,
+      tag_ids: [2],
+      group_id: -1,
+      privacy_mode: 'private',
+      cindy_balance_status: 'insufficient'
+    }))
+
+    await wrapper.get('[data-test="emit-import-result"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="scope-tools-context"]').attributes('data-selected')).toBe('101,102')
   })
 
   it('deletes Cindy insufficient accounts only with the server preview fingerprint', async () => {

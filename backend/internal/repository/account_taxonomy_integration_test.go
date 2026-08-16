@@ -40,7 +40,7 @@ func newAccountTaxonomyIntegrationAdmin(t *testing.T, prefix string) (*dbent.Cli
 	client := testEntClient(t)
 	repo := newAccountRepositoryWithSQL(client, integrationDB, nil)
 	base := service.NewAdminService(
-		nil, nil, repo, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, repo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		client, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
 	admin, ok := base.(accountTaxonomyIntegrationAdmin)

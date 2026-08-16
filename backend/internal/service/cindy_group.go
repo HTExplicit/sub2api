@@ -122,13 +122,7 @@ func isNilCindyGroupDependency(repo any) bool {
 	}
 }
 
-func classifyAuthenticatedStrictCindyGroup(ctx context.Context, repo any, group *Group) (bool, error) {
-	// Disabling the capability catalogue is the routing rollback switch. Keep
-	// the materialized identity in the auth snapshot, but bypass all strict
-	// catalogue/protocol gates so the request follows the legacy generic path.
-	if !CindyCapabilityCatalogFeatureEnabled() {
-		return false, nil
-	}
+func classifyAuthenticatedCindyIdentityGroup(ctx context.Context, repo any, group *Group) (bool, error) {
 	if group == nil || group.ID <= 0 {
 		return false, nil
 	}
@@ -137,6 +131,16 @@ func classifyAuthenticatedStrictCindyGroup(ctx context.Context, repo any, group 
 	}
 	groupID := group.ID
 	return classifyStrictCindyGroup(ctx, repo, &groupID)
+}
+
+func classifyAuthenticatedStrictCindyGroup(ctx context.Context, repo any, group *Group) (bool, error) {
+	// Disabling the capability catalogue is the routing rollback switch. Keep
+	// the materialized identity in the auth snapshot, but bypass all strict
+	// catalogue/protocol gates so the request follows the legacy generic path.
+	if !CindyCapabilityCatalogFeatureEnabled() {
+		return false, nil
+	}
+	return classifyAuthenticatedCindyIdentityGroup(ctx, repo, group)
 }
 
 func hasSchedulableCindyAccount(ctx context.Context, repo any, group *Group) (bool, error) {
@@ -186,6 +190,16 @@ func (s *OpenAIGatewayService) ClassifyStrictCindyGroup(ctx context.Context, gro
 		return false, errCindyGroupIdentityUnavailable
 	}
 	return classifyAuthenticatedStrictCindyGroup(ctx, s.accountRepo, group)
+}
+
+// ClassifyCindyIdentityGroup returns the exact Cindy identity independently
+// from capability-catalog rollout. Compatibility aliases use it, while
+// catalog and protocol gates keep using ClassifyStrictCindyGroup.
+func (s *OpenAIGatewayService) ClassifyCindyIdentityGroup(ctx context.Context, group *Group) (bool, error) {
+	if s == nil {
+		return false, errCindyGroupIdentityUnavailable
+	}
+	return classifyAuthenticatedCindyIdentityGroup(ctx, s.accountRepo, group)
 }
 
 // ResolveCindyCodexModelsScope determines the catalog policy before account

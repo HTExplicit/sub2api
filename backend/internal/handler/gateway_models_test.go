@@ -227,7 +227,7 @@ func TestGatewayModelCapabilities_StrictCindyHidesInternalIDs(t *testing.T) {
 	require.NotContains(t, byID, "seed-2.1-pro")
 }
 
-func TestGatewayModelCapabilities_MixedGroupIncludesVerifiedCindyCapabilities(t *testing.T) {
+func TestGatewayModelCapabilities_MixedGroupReturnsLocalFeatureGate404(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	groupID := int64(5605)
 	ordinary := service.Account{
@@ -254,28 +254,19 @@ func TestGatewayModelCapabilities_MixedGroupIncludesVerifiedCindyCapabilities(t 
 
 	h.ModelCapabilities(c)
 
-	require.Equal(t, http.StatusOK, rec.Code)
-	var got struct {
-		CatalogVersion string `json:"catalog_version"`
-		Data           []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
-	require.Equal(t, service.CindyCapabilityCatalogVersion, got.CatalogVersion)
-	ids := make([]string, 0, len(got.Data))
-	for _, capability := range got.Data {
-		ids = append(ids, capability.ID)
-	}
-	want := service.CindyVerifiedCapabilities()
-	wantIDs := make([]string, 0, len(want))
-	for _, capability := range want {
-		wantIDs = append(wantIDs, capability.PublicID)
-	}
-	require.Equal(t, wantIDs, ids)
-	require.NotContains(t, ids, "seed-2.1-pro")
-	require.NotContains(t, rec.Body.String(), "live_upstream")
-	require.NotContains(t, rec.Body.String(), "registry_id")
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	require.Contains(t, rec.Body.String(), "Model capabilities are not available for this group")
+	require.True(t, service.HasOpsClientBusinessLimited(c))
+	reason, ok := c.Get(service.OpsClientBusinessLimitedReasonKey)
+	require.True(t, ok)
+	require.Equal(t, service.OpsClientBusinessLimitedReasonLocalFeatureGate, reason)
+	classification, ok := c.Get(opsErrorClassificationKey)
+	require.True(t, ok)
+	require.Equal(t, "model_capabilities/local_feature_gate", classification)
+	requestType, ok := c.Get(opsRequestTypeKey)
+	require.True(t, ok)
+	require.Equal(t, int16(service.RequestTypeSync), requestType)
+	require.Empty(t, GetUpstreamEndpoint(c, service.PlatformOpenAI))
 }
 
 func TestGatewayModelCapabilities_NoCindyReturns404(t *testing.T) {
@@ -307,9 +298,28 @@ func TestGatewayModelCapabilities_NoCindyReturns404(t *testing.T) {
 
 	require.Equal(t, http.StatusNotFound, rec.Code)
 	require.Contains(t, rec.Body.String(), "Model capabilities are not available for this group")
+	require.True(t, service.HasOpsClientBusinessLimited(c))
 }
 
-func TestGatewayModelCapabilities_MixedGroupLookupFailureReturns503(t *testing.T) {
+func TestGatewayModelCapabilities_NonOpenAIGroupReturns404WithoutIdentityLookup(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := newGatewayModelsHandlerForTest(&gatewayModelsAccountRepoStub{err: context.DeadlineExceeded})
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, EndpointModelCapabilities, nil)
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+		Group: &service.Group{ID: 5609, Platform: service.PlatformAnthropic},
+	})
+
+	h.ModelCapabilities(c)
+
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	require.Contains(t, rec.Body.String(), "Model capabilities are not available for this group")
+	require.Empty(t, GetUpstreamEndpoint(c, service.PlatformOpenAI))
+	require.True(t, service.HasOpsClientBusinessLimited(c))
+}
+
+func TestGatewayModelCapabilities_StrictGroupSchedulabilityFailureReturns503(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	groupID := int64(5607)
 	h := newGatewayModelsHandlerForTest(&gatewayModelsAccountRepoStub{schedulableErr: context.DeadlineExceeded})
@@ -320,7 +330,7 @@ func TestGatewayModelCapabilities_MixedGroupLookupFailureReturns503(t *testing.T
 		GroupID: &groupID,
 		Group: &service.Group{
 			ID: groupID, Platform: service.PlatformOpenAI,
-			StrictCindyKnown: true,
+			StrictCindyKnown: true, StrictCindy: true,
 		},
 	})
 
@@ -342,7 +352,7 @@ func TestGatewayModelCapabilities_UnmarkedPromotedNilRepositoryReturns503(t *tes
 		GroupID: &groupID,
 		Group: &service.Group{
 			ID: groupID, Platform: service.PlatformOpenAI,
-			StrictCindyKnown: true,
+			StrictCindyKnown: true, StrictCindy: true,
 		},
 	})
 

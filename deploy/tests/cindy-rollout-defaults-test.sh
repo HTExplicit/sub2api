@@ -14,7 +14,8 @@ assert_line() {
 
 assert_line "deploy/.env.example" "GATEWAY_CINDY_BALANCE_DETECTION_ENABLED=true"
 assert_line "deploy/.env.example" "GATEWAY_CINDY_CAPABILITY_CATALOG_ENABLED=false"
-assert_line "deploy/.env.example" "GATEWAY_CINDY_IMAGE_STUDIO_ENABLED=false"
+assert_line "deploy/.env.example" "GATEWAY_IMAGE_STUDIO_ENABLED=false"
+assert_line "deploy/.env.example" "# GATEWAY_CINDY_IMAGE_STUDIO_ENABLED="
 
 for compose_file in \
   deploy/docker-compose.yml \
@@ -24,7 +25,8 @@ for compose_file in \
 do
   assert_line "$compose_file" '      - GATEWAY_CINDY_BALANCE_DETECTION_ENABLED=${GATEWAY_CINDY_BALANCE_DETECTION_ENABLED:-true}'
   assert_line "$compose_file" '      - GATEWAY_CINDY_CAPABILITY_CATALOG_ENABLED=${GATEWAY_CINDY_CAPABILITY_CATALOG_ENABLED:-false}'
-  assert_line "$compose_file" '      - GATEWAY_CINDY_IMAGE_STUDIO_ENABLED=${GATEWAY_CINDY_IMAGE_STUDIO_ENABLED:-false}'
+  assert_line "$compose_file" '      - GATEWAY_IMAGE_STUDIO_ENABLED=${GATEWAY_IMAGE_STUDIO_ENABLED:-}'
+  assert_line "$compose_file" '      - GATEWAY_CINDY_IMAGE_STUDIO_ENABLED=${GATEWAY_CINDY_IMAGE_STUDIO_ENABLED:-}'
 done
 
-echo "Cindy rollout defaults enable only the balance phase"
+echo "Cindy rollout defaults enable only the balance phase with the generic image flag off"

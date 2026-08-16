@@ -639,13 +639,14 @@ func TestFetchCodexModelsManifestCindyRolloutProjection(t *testing.T) {
 		env  []string
 		mode string
 	}{
-		{name: "catalog off preserves legacy IDs", env: []string{CindyCapabilityCatalogEnabledEnv + "=false", CindyImageStudioEnabledEnv + "=true"}, mode: "catalog_off"},
-		{name: "image off omits image IDs", env: []string{CindyCapabilityCatalogEnabledEnv + "=true", CindyImageStudioEnabledEnv + "=false"}, mode: "image_off"},
+		{name: "catalog off preserves legacy IDs", env: []string{CindyCapabilityCatalogEnabledEnv + "=false", ImageStudioEnabledEnv + "=true"}, mode: "catalog_off"},
+		{name: "image off omits image IDs", env: []string{CindyCapabilityCatalogEnabledEnv + "=true", ImageStudioEnabledEnv + "=false"}, mode: "image_off"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			cmd := exec.Command(os.Args[0], "-test.run=^TestFetchCodexModelsManifestCindyRolloutProjectionHelper$")
 			cmd.Env = append(withoutEnvironmentKeys(os.Environ(),
 				CindyCapabilityCatalogEnabledEnv,
+				ImageStudioEnabledEnv,
 				CindyImageStudioEnabledEnv,
 				"SUB2API_CODEX_MODELS_CINDY_FLAG_HELPER",
 			), append(test.env, "SUB2API_CODEX_MODELS_CINDY_FLAG_HELPER="+test.mode)...)
@@ -666,11 +667,12 @@ func runCindyCodexCatalogEnabledTest(t *testing.T) bool {
 	cmd := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$")
 	cmd.Env = append(withoutEnvironmentKeys(os.Environ(),
 		CindyCapabilityCatalogEnabledEnv,
+		ImageStudioEnabledEnv,
 		CindyImageStudioEnabledEnv,
 		cindyCodexCatalogEnabledTestHelperEnv,
 	),
 		CindyCapabilityCatalogEnabledEnv+"=true",
-		CindyImageStudioEnabledEnv+"=true",
+		ImageStudioEnabledEnv+"=true",
 		cindyCodexCatalogEnabledTestHelperEnv+"=1",
 	)
 	if output, err := cmd.CombinedOutput(); err != nil {

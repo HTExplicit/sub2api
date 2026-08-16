@@ -52,23 +52,23 @@ type BulkAccountTaxonomyResult struct {
 }
 
 type AccountConsoleFilters struct {
-	Platforms            []string
-	Types                []string
-	Statuses             []string
-	Plans                []string
-	ProxyIDs             []int64
-	IncludeDirect        bool
-	FolderIDs            []int64
-	IncludeUncategorized bool
-	TagIDs               []int64
-	AccountIDs           []int64
-	Search               string
-	GroupID              int64
-	PrivacyMode          string
-	CindyOnly            bool
-	CindyBalanceStatus   string
-	SortBy               string
-	SortOrder            string
+	Platforms            []string `json:"platforms,omitempty"`
+	Types                []string `json:"types,omitempty"`
+	Statuses             []string `json:"statuses,omitempty"`
+	Plans                []string `json:"plans,omitempty"`
+	ProxyIDs             []int64  `json:"proxy_ids,omitempty"`
+	IncludeDirect        bool     `json:"include_direct,omitempty"`
+	FolderIDs            []int64  `json:"folder_ids,omitempty"`
+	IncludeUncategorized bool     `json:"include_uncategorized,omitempty"`
+	TagIDs               []int64  `json:"tag_ids,omitempty"`
+	AccountIDs           []int64  `json:"account_ids,omitempty"`
+	Search               string   `json:"search,omitempty"`
+	GroupID              int64    `json:"group_id,omitempty"`
+	PrivacyMode          string   `json:"privacy_mode,omitempty"`
+	CindyOnly            bool     `json:"cindy_only,omitempty"`
+	CindyBalanceStatus   string   `json:"cindy_balance_status,omitempty"`
+	SortBy               string   `json:"sort_by,omitempty"`
+	SortOrder            string   `json:"sort_order,omitempty"`
 }
 
 type AccountFacetOption struct {
@@ -877,6 +877,9 @@ func (s *adminServiceImpl) ListAccountsConsole(ctx context.Context, page, pageSi
 	out := make([]Account, 0, end-start)
 	for _, account := range accounts[start:end] {
 		out = append(out, *account)
+	}
+	if err := s.hydrateCindyBalanceProbeLatestValues(ctx, out); err != nil {
+		return nil, 0, err
 	}
 	return out, total, nil
 }

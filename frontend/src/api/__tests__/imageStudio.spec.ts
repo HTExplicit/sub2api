@@ -2,11 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   editImages,
   generateImages,
+  listEligibleImageStudioKeys,
   listModelCapabilities,
   MAX_IMAGE_BYTES,
 } from '@/api/imageStudio'
 
+const apiGet = vi.hoisted(() => vi.fn())
+
 vi.mock('@/api/client', () => ({
+  apiClient: { get: apiGet },
   buildGatewayUrl: (path: string) => `https://gateway.test${path}`,
 }))
 
@@ -24,6 +28,7 @@ function imageResponse(data: unknown[]): Response {
 describe('imageStudio API', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
+    apiGet.mockReset()
     vi.stubGlobal('createImageBitmap', vi.fn(async () => ({
       width: 1,
       height: 1,
@@ -47,6 +52,39 @@ describe('imageStudio API', () => {
     expect(fetchMock).toHaveBeenCalledWith('https://gateway.test/v1/models/capabilities', expect.objectContaining({
       headers: expect.objectContaining({ Authorization: 'Bearer sk-selected' }),
     }))
+  })
+
+  it('loads eligible keys, unwraps both response shapes, and drops unrelated key metadata', async () => {
+    const serverItem = {
+      api_key: {
+        id: 1,
+        name: 'Images',
+        key: 'sk-image',
+        group_id: 10,
+        group: { id: 10, name: 'Cindy', description: 'must not escape' },
+        user_id: 42,
+        ip_whitelist: ['192.0.2.1'],
+        last_used_ip: '192.0.2.2',
+        quota: 100,
+      },
+      capabilities: [],
+    }
+    const item = {
+      api_key: {
+        id: 1,
+        name: 'Images',
+        key: 'sk-image',
+        group_id: 10,
+        group: { id: 10, name: 'Cindy' },
+      },
+      capabilities: [],
+    }
+    apiGet.mockResolvedValueOnce({ data: { items: [serverItem] } })
+      .mockResolvedValueOnce({ data: { data: { items: [serverItem] } } })
+
+    await expect(listEligibleImageStudioKeys()).resolves.toEqual({ items: [item] })
+    await expect(listEligibleImageStudioKeys()).resolves.toEqual({ items: [item] })
+    expect(apiGet).toHaveBeenNthCalledWith(1, '/image-studio/eligible-keys', { signal: undefined })
   })
 
   it('accepts real minimal PNG, JPEG, and WebP payloads only after browser decoding', async () => {

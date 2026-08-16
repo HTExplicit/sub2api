@@ -96,6 +96,7 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		nil, // promptAudit
 		nil, // businessPrompt
 		nil, // remoteSkillRegistry
+		nil, // cindyBalanceProbe
 	)
 
 	require.NotPanics(t, func() {

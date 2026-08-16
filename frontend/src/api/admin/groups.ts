@@ -13,12 +13,66 @@ import type {
   CompositeRouteDecision,
   CreateGroupRequest,
   UpdateGroupRequest,
-  PaginatedResponse
+  PaginatedResponse,
+  ApiKey
 } from '@/types'
 
 export interface LiveCapability {
   supported: boolean
   reason?: string
+}
+
+export type CindyGroupClassification = 'pure_cindy' | 'mixed' | 'no_cindy'
+export type CindyGroupSourceKeeps = 'cindy' | 'ordinary'
+
+export interface CindyGroupAuditEntry {
+  group_id: number
+  group_name: string
+  status: string
+  classification: CindyGroupClassification
+  cindy_account_count: number
+  ordinary_account_count: number
+  api_key_count: number
+}
+
+export interface CindyGroupAuditSummary {
+  pure_cindy_groups: number
+  mixed_groups: number
+  no_cindy_groups: number
+}
+
+export interface CindyGroupAuditResult {
+  summary: CindyGroupAuditSummary
+  groups: CindyGroupAuditEntry[]
+}
+
+export interface CindyGroupSplitPreviewRequest {
+  source_keeps: CindyGroupSourceKeeps
+  target_name: string
+  api_key_ids: number[]
+}
+
+export interface CindyGroupSplitCommitRequest extends CindyGroupSplitPreviewRequest {
+  member_fingerprint: string
+}
+
+export interface CindyGroupSplitPreview {
+  source_group_id: number
+  source_group_name: string
+  source_keeps: CindyGroupSourceKeeps
+  target_name: string
+  target_classification: CindyGroupClassification
+  member_fingerprint: string
+  cindy_account_count: number
+  ordinary_account_count: number
+  accounts_to_move: number
+  source_api_key_count: number
+  api_keys_to_rebind: number
+  api_keys_remaining: number
+}
+
+export interface CindyGroupSplitResult extends CindyGroupSplitPreview {
+  target_group_id: number
 }
 
 /**
@@ -271,10 +325,40 @@ export async function getGroupApiKeys(
   id: number,
   page: number = 1,
   pageSize: number = 20
-): Promise<PaginatedResponse<any>> {
-  const { data } = await apiClient.get<PaginatedResponse<any>>(`/admin/groups/${id}/api-keys`, {
+): Promise<PaginatedResponse<ApiKey>> {
+  const { data } = await apiClient.get<PaginatedResponse<ApiKey>>(`/admin/groups/${id}/api-keys`, {
     params: { page, page_size: pageSize }
   })
+  return data
+}
+
+/** Return anonymous Cindy membership counts for every OpenAI group. */
+export async function auditCindyGroups(): Promise<CindyGroupAuditResult> {
+  const { data } = await apiClient.get<CindyGroupAuditResult>('/admin/cindy/groups/audit')
+  return data
+}
+
+/** Validate a proposed mixed-group split without mutating group membership. */
+export async function previewCindyGroupSplit(
+  id: number,
+  request: CindyGroupSplitPreviewRequest
+): Promise<CindyGroupSplitPreview> {
+  const { data } = await apiClient.post<CindyGroupSplitPreview>(
+    `/admin/cindy/groups/${id}/split-preview`,
+    request
+  )
+  return data
+}
+
+/** Commit a previewed split using the server-issued membership fingerprint. */
+export async function splitCindyGroup(
+  id: number,
+  request: CindyGroupSplitCommitRequest
+): Promise<CindyGroupSplitResult> {
+  const { data } = await apiClient.post<CindyGroupSplitResult>(
+    `/admin/cindy/groups/${id}/split`,
+    request
+  )
   return data
 }
 
@@ -446,18 +530,15 @@ export async function clearGroupRPMOverrides(id: number): Promise<{ message: str
 }
 
 /**
- * Get usage summary (today + cumulative cost) for all groups
- * @param timezone - IANA timezone string (e.g. "Asia/Shanghai")
+ * Get usage summary (today + yesterday + cumulative cost) for all groups
  * @returns Array of group usage summaries
  */
-export async function getUsageSummary(
-  timezone?: string
-): Promise<{ group_id: number; today_cost: number; total_cost: number }[]> {
+export async function getUsageSummary(): Promise<
+  { group_id: number; today_cost: number; yesterday_cost: number; total_cost: number }[]
+> {
   const { data } = await apiClient.get<
-    { group_id: number; today_cost: number; total_cost: number }[]
-  >('/admin/groups/usage-summary', {
-    params: timezone ? { timezone } : undefined
-  })
+    { group_id: number; today_cost: number; yesterday_cost: number; total_cost: number }[]
+  >('/admin/groups/usage-summary')
   return data
 }
 
@@ -488,6 +569,9 @@ export const groupsAPI = {
   toggleStatus,
   getStats,
   getGroupApiKeys,
+  auditCindyGroups,
+  previewCindyGroupSplit,
+  splitCindyGroup,
   listCompositeRoutes,
   createCompositeRoute,
   updateCompositeRoute,

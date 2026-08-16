@@ -1,4 +1,4 @@
-import { buildGatewayUrl } from './client'
+import { apiClient, buildGatewayUrl } from './client'
 
 export type ImageStudioEndpoint = 'images.generations' | 'images.edits' | string
 
@@ -31,6 +31,28 @@ export interface ModelCapabilitiesResponse {
   object: 'list' | string
   catalog_version: string
   data: ModelCapability[]
+}
+
+export interface EligibleImageStudioKeyGroup {
+  id: number
+  name: string
+}
+
+export interface EligibleImageStudioAPIKey {
+  id: number
+  name: string
+  key: string
+  group_id: number
+  group: EligibleImageStudioKeyGroup
+}
+
+export interface EligibleImageStudioKey {
+  api_key: EligibleImageStudioAPIKey
+  capabilities: ModelCapability[]
+}
+
+export interface EligibleImageStudioKeysResponse {
+  items: EligibleImageStudioKey[]
 }
 
 export interface GeneratedImage {
@@ -96,6 +118,58 @@ export async function listModelCapabilities(
   })
   if (!response.ok) throw await gatewayError(response)
   return response.json()
+}
+
+export async function listEligibleImageStudioKeys(
+  signal?: AbortSignal,
+): Promise<EligibleImageStudioKeysResponse> {
+  const response = await apiClient.get<unknown>('/image-studio/eligible-keys', { signal })
+  const body = response.data
+  const payload = isRecord(body) && Array.isArray(body.items)
+    ? body
+    : isRecord(body) && isRecord(body.data)
+      ? body.data
+      : null
+  const items = payload && Array.isArray(payload.items)
+    ? payload.items.map(parseEligibleImageStudioKey).filter((item): item is EligibleImageStudioKey => item !== null)
+    : []
+  return { items }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isPositiveID(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+}
+
+function parseEligibleImageStudioKey(value: unknown): EligibleImageStudioKey | null {
+  if (!isRecord(value) || !isRecord(value.api_key) || !Array.isArray(value.capabilities)) return null
+
+  const apiKey = value.api_key
+  const group = apiKey.group
+  if (
+    !isPositiveID(apiKey.id)
+    || typeof apiKey.name !== 'string'
+    || typeof apiKey.key !== 'string'
+    || !isPositiveID(apiKey.group_id)
+    || !isRecord(group)
+    || !isPositiveID(group.id)
+    || group.id !== apiKey.group_id
+    || typeof group.name !== 'string'
+  ) return null
+
+  return {
+    api_key: {
+      id: apiKey.id,
+      name: apiKey.name,
+      key: apiKey.key,
+      group_id: apiKey.group_id,
+      group: { id: group.id, name: group.name },
+    },
+    capabilities: value.capabilities as ModelCapability[],
+  }
 }
 
 function canonicalImageMimeType(value: string): AllowedImageMimeType {

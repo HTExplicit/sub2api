@@ -51,21 +51,18 @@
               id="image-studio-model"
               v-model="form.model"
               class="input"
-              :disabled="loadingCapabilities || imageModels.length === 0 || submitting"
+              :disabled="loadingKeys || imageModels.length === 0 || submitting"
               data-testid="model-select"
             >
               <option value="">
-                {{ loadingCapabilities ? t('imageStudio.loadingModels') : t('imageStudio.selectModel') }}
+                {{ loadingKeys ? t('imageStudio.loadingModels') : t('imageStudio.selectModel') }}
               </option>
               <option v-for="capability in imageModels" :key="capability.id" :value="capability.id">
                 {{ capability.id }}
               </option>
             </select>
-            <p v-if="capabilityError" class="input-hint text-amber-600 dark:text-amber-400">
-              {{ t('imageStudio.capabilitiesUnavailable') }}
-            </p>
             <p
-              v-else-if="selectedApiKey && !loadingCapabilities && imageModels.length === 0"
+              v-if="selectedApiKey && !loadingKeys && imageModels.length === 0"
               class="input-hint text-amber-600 dark:text-amber-400"
             >
               {{ t('imageStudio.noModels') }}
@@ -290,15 +287,15 @@ import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { keysAPI } from '@/api'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import {
   editImages,
   generateImages,
-  listModelCapabilities,
+  listEligibleImageStudioKeys,
   MAX_IMAGE_BYTES,
   validateImageBlob,
+  type EligibleImageStudioKey,
   type ModelCapability,
 } from '@/api/imageStudio'
 import {
@@ -309,12 +306,10 @@ import {
   type ImageStudioHistoryRecord,
   type ImageStudioMode,
 } from '@/features/image-studio/history'
-import type { ApiKey } from '@/types'
 
 type DisplayHistoryImage = ImageStudioHistoryRecord['images'][number] & { url: string }
 type DisplayHistoryRecord = Omit<ImageStudioHistoryRecord, 'images'> & { images: DisplayHistoryImage[] }
 
-const API_KEY_PAGE_SIZE = 100
 const ALLOWED_UPLOAD_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
 const activeModeClass = 'bg-white text-gray-950 shadow-sm dark:bg-dark-700 dark:text-white'
 const inactiveModeClass = 'text-gray-500 enabled:hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:enabled:hover:text-white'
@@ -366,20 +361,17 @@ const ImageFileField = defineComponent({
 const { t } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
-const apiKeys = ref<ApiKey[]>([])
-const capabilities = ref<ModelCapability[]>([])
+const eligibleKeys = ref<EligibleImageStudioKey[]>([])
 const history = ref<DisplayHistoryRecord[]>([])
 const loadingKeys = ref(false)
-const loadingCapabilities = ref(false)
 const loadingHistory = ref(false)
-const capabilityError = ref(false)
 const submitting = ref(false)
 const sourceFile = ref<File | null>(null)
 const maskFile = ref<File | null>(null)
 const sourcePreviewURL = ref('')
 const maskPreviewURL = ref('')
 const previewURL = ref('')
-let capabilityController: AbortController | null = null
+let eligibleKeysController: AbortController | null = null
 let submissionController: AbortController | null = null
 let keysLoadGeneration = 0
 
@@ -393,10 +385,12 @@ const form = reactive({
   count: 1,
 })
 
-const imageApiKeys = computed(() => apiKeys.value.filter(key =>
-  key.status === 'active' && key.group?.allow_image_generation === true,
-))
-const selectedApiKey = computed(() => imageApiKeys.value.find(key => key.id === Number(form.apiKeyId)) || null)
+const imageApiKeys = computed(() => eligibleKeys.value.map(entry => entry.api_key))
+const selectedEligibleKey = computed(() => eligibleKeys.value.find(
+  entry => entry.api_key.id === Number(form.apiKeyId),
+) || null)
+const selectedApiKey = computed(() => selectedEligibleKey.value?.api_key || null)
+const capabilities = computed<ModelCapability[]>(() => selectedEligibleKey.value?.capabilities || [])
 const historyOwnerKey = computed(() => {
   const userID = Number(authStore.user?.id)
   return Number.isSafeInteger(userID) && userID > 0 ? `user:${userID}` : ''
@@ -407,8 +401,14 @@ const imageModels = computed(() => capabilities.value.filter(capability =>
   (capability.endpoints?.includes('images.generations') || capability.endpoints?.includes('images.edits')),
 ))
 const selectedCapability = computed(() => imageModels.value.find(capability => capability.id === form.model) || null)
-const supportsGeneration = computed(() => selectedCapability.value?.endpoints?.includes('images.generations') === true)
-const supportsEdit = computed(() => selectedCapability.value?.endpoints?.includes('images.edits') === true)
+const supportsGeneration = computed(() =>
+  selectedCapability.value?.endpoints?.includes('images.generations') === true &&
+  selectedCapability.value?.controls?.generation != null,
+)
+const supportsEdit = computed(() =>
+  selectedCapability.value?.endpoints?.includes('images.edits') === true &&
+  selectedCapability.value?.controls?.edit != null,
+)
 const selectedControls = computed(() => form.mode === 'edit'
   ? selectedCapability.value?.controls?.edit
   : selectedCapability.value?.controls?.generation)
@@ -540,66 +540,29 @@ async function loadKeys(): Promise<void> {
   const ownerKey = historyOwnerKey.value
   const generation = ++keysLoadGeneration
   if (!ownerKey) {
-    apiKeys.value = []
+    eligibleKeys.value = []
     loadingKeys.value = false
     return
   }
+  eligibleKeysController?.abort()
+  const controller = new AbortController()
+  eligibleKeysController = controller
+  eligibleKeys.value = []
+  form.apiKeyId = 0
+  form.model = ''
   loadingKeys.value = true
   try {
-    const loadedKeys: ApiKey[] = []
-    let page = 1
-    while (true) {
-      const response = await keysAPI.list(page, API_KEY_PAGE_SIZE, {
-        status: 'active',
-        sort_by: 'created_at',
-        sort_order: 'desc',
-      })
-      if (generation !== keysLoadGeneration || ownerKey !== historyOwnerKey.value) return
-      const pageItems = response.items || []
-      loadedKeys.push(...pageItems)
-
-      const declaredPages = Number(response.pages)
-      const hasDeclaredPages = Number.isFinite(declaredPages) && declaredPages > 0
-      if (pageItems.length === 0 || (hasDeclaredPages && page >= declaredPages) || (!hasDeclaredPages && pageItems.length < API_KEY_PAGE_SIZE)) {
-        break
-      }
-      page += 1
-    }
+    const response = await listEligibleImageStudioKeys(controller.signal)
+    if (controller.signal.aborted || generation !== keysLoadGeneration || ownerKey !== historyOwnerKey.value) return
     if (generation === keysLoadGeneration && ownerKey === historyOwnerKey.value) {
-      apiKeys.value = loadedKeys
+      eligibleKeys.value = response.items
     }
   } catch (error) {
-    if (generation !== keysLoadGeneration || ownerKey !== historyOwnerKey.value) return
+    if (controller.signal.aborted || generation !== keysLoadGeneration || ownerKey !== historyOwnerKey.value) return
     appStore.showError(errorMessage(error))
   } finally {
+    if (eligibleKeysController === controller) eligibleKeysController = null
     if (generation === keysLoadGeneration) loadingKeys.value = false
-  }
-}
-
-async function loadCapabilities(): Promise<void> {
-  capabilityController?.abort()
-  capabilities.value = []
-  form.model = ''
-  capabilityError.value = false
-  const key = selectedApiKey.value
-  if (!key) return
-
-  const controller = new AbortController()
-  capabilityController = controller
-  loadingCapabilities.value = true
-  try {
-    const response = await listModelCapabilities(key.key, controller.signal)
-    if (controller.signal.aborted) return
-    capabilities.value = Array.isArray(response.data) ? response.data : []
-    form.model = imageModels.value[0]?.id || ''
-  } catch (error) {
-    if (controller.signal.aborted) return
-    capabilityError.value = true
-  } finally {
-    if (capabilityController === controller) {
-      capabilityController = null
-      loadingCapabilities.value = false
-    }
   }
 }
 
@@ -765,7 +728,9 @@ function formatDate(timestamp: number): string {
   return new Date(timestamp).toLocaleString()
 }
 
-watch(() => form.apiKeyId, () => void loadCapabilities())
+watch(() => form.apiKeyId, () => {
+  form.model = imageModels.value[0]?.id || ''
+})
 watch(selectedCapability, (capability) => {
   if (!capability) return
   if (!supportsGeneration.value && supportsEdit.value) form.mode = 'edit'
@@ -782,11 +747,10 @@ watch(() => form.mode, () => {
 })
 watch(historyOwnerKey, (ownerKey, previousOwnerKey) => {
   if (ownerKey === previousOwnerKey) return
-  capabilityController?.abort()
+  eligibleKeysController?.abort()
   submissionController?.abort()
   keysLoadGeneration += 1
-  apiKeys.value = []
-  capabilities.value = []
+  eligibleKeys.value = []
   form.apiKeyId = 0
   form.model = ''
   resetOwnerScopedForm()
@@ -799,7 +763,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  capabilityController?.abort()
+  eligibleKeysController?.abort()
   submissionController?.abort()
   keysLoadGeneration += 1
   revokeURL(sourcePreviewURL.value)

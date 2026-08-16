@@ -42,6 +42,7 @@ func RegisterAdminRoutes(
 
 		// 账号管理
 		registerAccountRoutes(admin, h, stepUpAuth)
+		registerCindyBalanceProbeRoutes(admin, h)
 
 		// 公告管理
 		registerAnnouncementRoutes(admin, h)
@@ -124,6 +125,21 @@ func RegisterAdminRoutes(
 
 		// 操作审计日志
 		registerAuditLogRoutes(admin, h, stepUpAuth)
+	}
+}
+
+func registerCindyBalanceProbeRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	jobs := admin.Group("/cindy/balance-probe-jobs")
+	{
+		jobs.GET("", h.Admin.CindyBalanceProbe.List)
+		jobs.POST("", h.Admin.CindyBalanceProbe.Create)
+		jobs.POST("/preview", h.Admin.CindyBalanceProbe.Preview)
+		jobs.GET("/:id", h.Admin.CindyBalanceProbe.Get)
+		jobs.GET("/:id/items", h.Admin.CindyBalanceProbe.ListItems)
+		jobs.PATCH("/:id/rate", h.Admin.CindyBalanceProbe.SetRate)
+		jobs.POST("/:id/pause", h.Admin.CindyBalanceProbe.Pause)
+		jobs.POST("/:id/resume", h.Admin.CindyBalanceProbe.Resume)
+		jobs.POST("/:id/cancel", h.Admin.CindyBalanceProbe.Cancel)
 	}
 }
 
@@ -347,6 +363,13 @@ func registerUserManagementRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 }
 
 func registerGroupRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	cindyGroups := admin.Group("/cindy/groups")
+	{
+		cindyGroups.GET("/audit", h.Admin.Group.AuditCindyGroups)
+		cindyGroups.POST("/:id/split-preview", h.Admin.Group.PreviewCindyGroupSplit)
+		cindyGroups.POST("/:id/split", h.Admin.Group.SplitCindyGroup)
+	}
+
 	groups := admin.Group("/groups")
 	{
 		groups.GET("", h.Admin.Group.List)

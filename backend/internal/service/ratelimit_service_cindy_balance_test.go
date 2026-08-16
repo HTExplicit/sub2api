@@ -270,32 +270,6 @@ func TestOpenAIGatewayCindyImagesTerminalFailureForcesAccountSwitch(t *testing.T
 	require.False(t, gateway.isOpenAIAccountRuntimeBlocked(account))
 }
 
-func TestConfirmedCindyBalancePersistenceFailureRemainsIndefinitelyBlocked(t *testing.T) {
-	repo := &cindyRateLimitAccountRepoStub{markErr: errors.New("database unavailable"), markFailures: 1}
-	rateLimitService := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
-	gateway := &OpenAIGatewayService{rateLimitService: rateLimitService}
-	rateLimitService.SetAccountRuntimeBlocker(gateway)
-	account := newCindyRateLimitAccount(8452, true)
-
-	require.True(t, rateLimitService.handleCindyBalanceInsufficient(context.Background(), account))
-	value, ok := gateway.openaiAccountRuntimeBlockUntil.Load(account.ID)
-	require.True(t, ok)
-	until, ok := value.(time.Time)
-	require.True(t, ok)
-	require.True(t, until.IsZero(), "Cindy fail-closed block must use the indefinite sentinel")
-	require.True(t, gateway.isOpenAIAccountRuntimeBlocked(account))
-	require.Nil(t, account.CindyBalanceInsufficientAt)
-	require.Eventually(t, func() bool {
-		repo.mu.Lock()
-		defer repo.mu.Unlock()
-		return repo.markCalls >= 2 && repo.marked
-	}, 3*time.Second, 10*time.Millisecond, "failed persistence must retry until the database marker succeeds")
-	require.True(t, gateway.isOpenAIAccountRuntimeBlocked(account), "runtime block remains fail-closed after persistence")
-
-	gateway.ClearAccountSchedulingBlock(account.ID)
-	require.False(t, gateway.isOpenAIAccountRuntimeBlocked(account))
-}
-
 func TestOpenAIGatewayCindyIndefiniteBlockDominatesLaterCooldown(t *testing.T) {
 	gateway := &OpenAIGatewayService{}
 	account := newCindyRateLimitAccount(8454, true)
@@ -311,7 +285,7 @@ func TestOpenAIGatewayCindyIndefiniteBlockDominatesLaterCooldown(t *testing.T) {
 	require.True(t, gateway.isOpenAIAccountRuntimeBlocked(account))
 }
 
-func TestAccountTestServiceCindyBalanceUsesGatewayConfirmationPath(t *testing.T) {
+func TestAccountTestServiceCindyBalanceDoesNotStartBackgroundProbe(t *testing.T) {
 	repo := &cindyRateLimitAccountRepoStub{}
 	rateLimitService := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
 	gateway := &OpenAIGatewayService{rateLimitService: rateLimitService}
@@ -329,6 +303,21 @@ func TestAccountTestServiceCindyBalanceUsesGatewayConfirmationPath(t *testing.T)
 	require.Zero(t, repo.markCalls)
 	require.Nil(t, account.CindyBalanceInsufficientAt)
 	require.False(t, gateway.isOpenAIAccountRuntimeBlocked(account))
+}
+
+func TestAccountTestServiceAmbiguousCindyEventDoesNotStartBackgroundProbe(t *testing.T) {
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		newCindyBalanceProbeResponse(http.StatusOK, "application/json", `{}`),
+	}}
+	gateway := &OpenAIGatewayService{httpUpstream: upstream}
+	accountTest := &AccountTestService{openAIGatewayService: gateway}
+	account := newCindyRateLimitAccount(8456, true)
+	payload := []byte(`{"type":"response.failed","response":{"error":{"message":"request failed"}}}`)
+
+	require.False(t, accountTest.markCindyBalanceInsufficientFromTest(
+		context.Background(), account, http.StatusOK, payload,
+	))
+	require.Empty(t, upstream.bodies)
 }
 
 func TestAccountTestServiceCindyChatStreamDefersInBandMarkerUntilConfirmation(t *testing.T) {

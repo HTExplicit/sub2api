@@ -222,9 +222,12 @@ type Account struct {
 	CreatedAt               time.Time                      `json:"created_at"`
 	UpdatedAt               time.Time                      `json:"updated_at"`
 
-	Schedulable              bool `json:"schedulable"`
-	IsCindy                  bool `json:"is_cindy"`
-	CindyBalanceInsufficient bool `json:"cindy_balance_insufficient"`
+	Schedulable                bool       `json:"schedulable"`
+	IsCindy                    bool       `json:"is_cindy"`
+	CindyBalanceInsufficient   bool       `json:"cindy_balance_insufficient"`
+	CindyBalanceProbeJobID     *int64     `json:"cindy_balance_probe_job_id"`
+	CindyBalanceProbeOutcome   *string    `json:"cindy_balance_probe_outcome"`
+	CindyBalanceProbeCheckedAt *time.Time `json:"cindy_balance_probe_checked_at"`
 
 	RateLimitedAt    *time.Time `json:"rate_limited_at"`
 	RateLimitResetAt *time.Time `json:"rate_limit_reset_at"`

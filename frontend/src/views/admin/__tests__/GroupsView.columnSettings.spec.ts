@@ -32,6 +32,7 @@ const {
 
 const messages: Record<string, string> = {
   'admin.groups.columnSettings': 'Column Settings',
+  'admin.groups.cindyAudit.open': 'Cindy Group Audit',
   'admin.groups.columns.name': 'Name',
   'admin.groups.columns.id': 'ID',
   'admin.groups.columns.platform': 'Platform',
@@ -43,6 +44,9 @@ const messages: Record<string, string> = {
   'admin.groups.columns.usage': 'Usage',
   'admin.groups.columns.status': 'Status',
   'admin.groups.columns.actions': 'Actions',
+  'admin.groups.usageToday': 'Today',
+  'admin.groups.usageYesterday': 'Yesterday',
+  'admin.groups.usageTotal': 'Total',
 }
 
 vi.mock('@/api/admin', () => ({
@@ -151,6 +155,9 @@ const DataTableStub = {
     <div>
       <div data-test="columns">{{ columns.map((col) => col.key).join(',') }}</div>
       <div data-test="rows">{{ data.map((row) => row.name).join(',') }}</div>
+      <div v-if="data.length" data-test="usage-cell">
+        <slot name="cell-usage" :row="data[0]" />
+      </div>
     </div>
   `,
 }
@@ -180,6 +187,18 @@ const IconStub = {
   template: '<span data-test="icon">{{ name }}</span>',
 }
 
+const CindyGroupAuditDialogStub = {
+  props: ['show'],
+  emits: ['close', 'split'],
+  template: `
+    <div v-if="show" data-test="cindy-group-audit-dialog">
+      <button data-test="cindy-group-audit-split-success" @click="$emit('split', { target_group_id: 12 })">
+        split
+      </button>
+    </div>
+  `,
+}
+
 const mountView = async () => {
   const wrapper = mount(GroupsView, {
     global: {
@@ -197,6 +216,7 @@ const mountView = async () => {
         GroupCapacityBadge: true,
         GroupRateMultipliersModal: true,
         GroupRPMOverridesModal: true,
+        CindyGroupAuditDialog: CindyGroupAuditDialogStub,
         VueDraggable: { template: '<div><slot /></div>' },
       },
     },
@@ -379,10 +399,38 @@ describe('admin GroupsView column settings', () => {
     await openColumnSettings(wrapper)
     await clickColumnToggle(wrapper, 'Usage')
     expect(getUsageSummary).toHaveBeenCalledTimes(1)
+    expect(getUsageSummary).toHaveBeenCalledWith()
     expect(getCapacitySummary).not.toHaveBeenCalled()
 
     await clickColumnToggle(wrapper, 'Capacity')
     expect(getUsageSummary).toHaveBeenCalledTimes(1)
     expect(getCapacitySummary).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders yesterday usage between today and total', async () => {
+    getUsageSummary.mockResolvedValue([
+      { group_id: 1, today_cost: 1.25, yesterday_cost: 2.5, total_cost: 9.75 },
+    ])
+
+    const wrapper = await mountView()
+    const text = wrapper.get('[data-test="usage-cell"]').text()
+
+    expect(text).toContain('Today$1.25')
+    expect(text).toContain('Yesterday$2.50')
+    expect(text).toContain('Total$9.75')
+    expect(text.indexOf('Today')).toBeLessThan(text.indexOf('Yesterday'))
+    expect(text.indexOf('Yesterday')).toBeLessThan(text.indexOf('Total'))
+  })
+
+  it('opens the Cindy audit surface and refreshes the group list after a split', async () => {
+    const wrapper = await mountView()
+    expect(listGroups).toHaveBeenCalledTimes(1)
+
+    await wrapper.get('[data-test="cindy-group-audit-open"]').trigger('click')
+    expect(wrapper.get('[data-test="cindy-group-audit-dialog"]').exists()).toBe(true)
+
+    await wrapper.get('[data-test="cindy-group-audit-split-success"]').trigger('click')
+    await flushPromises()
+    expect(listGroups).toHaveBeenCalledTimes(2)
   })
 })

@@ -16,6 +16,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 const (
@@ -111,6 +112,7 @@ type cindyHandlerFailoverUpstream struct {
 
 	mu              sync.Mutex
 	accountIDs      []int64
+	requestModels   []string
 	exhaustedStatus int
 }
 
@@ -123,8 +125,10 @@ func (u *cindyHandlerFailoverUpstream) DoWithTLS(req *http.Request, _ string, ac
 }
 
 func (u *cindyHandlerFailoverUpstream) respond(req *http.Request, accountID int64) (*http.Response, error) {
+	payload, _ := io.ReadAll(req.Body)
 	u.mu.Lock()
 	u.accountIDs = append(u.accountIDs, accountID)
+	u.requestModels = append(u.requestModels, gjson.GetBytes(payload, "model").String())
 	u.mu.Unlock()
 
 	isMessages := strings.HasSuffix(req.URL.Path, "/v1/messages")
@@ -190,6 +194,12 @@ func (u *cindyHandlerFailoverUpstream) calls() []int64 {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	return append([]int64(nil), u.accountIDs...)
+}
+
+func (u *cindyHandlerFailoverUpstream) models() []string {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return append([]string(nil), u.requestModels...)
 }
 
 func newCindyBalanceFailoverHandler(t *testing.T) (*OpenAIGatewayHandler, *cindyHandlerFailoverAccountRepo, *cindyHandlerFailoverUpstream, int64) {
@@ -270,6 +280,9 @@ func newStrictCindyHandlerContext(t *testing.T, groupID int64, path, body string
 func requireCindyHandlerFailover(t *testing.T, repo *cindyHandlerFailoverAccountRepo, upstream *cindyHandlerFailoverUpstream) {
 	t.Helper()
 	require.Equal(t, []int64{cindyHandlerExhaustedAccountID, cindyHandlerHealthyAccountID}, upstream.calls())
+	require.Never(t, func() bool {
+		return len(upstream.calls()) > 2
+	}, 100*time.Millisecond, 5*time.Millisecond, "request-level failover must not start a background Luna/Terra probe")
 	marked, listSnapshots := repo.snapshot()
 	require.Empty(t, marked, "one request-level signal must not create a durable balance marker")
 	require.GreaterOrEqual(t, len(listSnapshots), 2, "failover must perform a fresh account selection")

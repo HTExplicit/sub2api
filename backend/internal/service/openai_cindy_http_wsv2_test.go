@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -41,6 +42,87 @@ func cindyHTTPToWSV2TestService() *OpenAIGatewayService {
 	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
 	cfg.Gateway.OpenAIWS.CindyHTTPToWSV2Enabled = true
 	return &OpenAIGatewayService{cfg: cfg}
+}
+
+type cindyHTTPToWSV2DialStep struct {
+	conn      openAIWSClientConn
+	handshake http.Header
+}
+
+type cindyHTTPToWSV2SequenceDialer struct {
+	mu      sync.Mutex
+	steps   []cindyHTTPToWSV2DialStep
+	headers []http.Header
+}
+
+func (d *cindyHTTPToWSV2SequenceDialer) Dial(
+	ctx context.Context,
+	wsURL string,
+	headers http.Header,
+	proxyURL string,
+) (openAIWSClientConn, int, http.Header, error) {
+	_ = ctx
+	_ = wsURL
+	_ = proxyURL
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.headers = append(d.headers, cloneHeader(headers))
+	if len(d.steps) == 0 {
+		return nil, 0, nil, errors.New("unexpected Cindy WSv2 dial")
+	}
+	step := d.steps[0]
+	d.steps = d.steps[1:]
+	return step.conn, 0, cloneHeader(step.handshake), nil
+}
+
+func (d *cindyHTTPToWSV2SequenceDialer) capturedHeaders() []http.Header {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	result := make([]http.Header, len(d.headers))
+	for i := range d.headers {
+		result[i] = cloneHeader(d.headers[i])
+	}
+	return result
+}
+
+func newCindyHTTPToWSV2TurnStateTestService(
+	t *testing.T,
+	steps ...cindyHTTPToWSV2DialStep,
+) (*OpenAIGatewayService, *cindyHTTPToWSV2SequenceDialer) {
+	t.Helper()
+	cfg := cindyHTTPToWSV2TestService().cfg
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 1
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 1
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+	dialer := &cindyHTTPToWSV2SequenceDialer{steps: steps}
+	pool := newOpenAIWSConnPool(cfg)
+	pool.setClientDialerForTest(dialer)
+	t.Cleanup(pool.Close)
+	return &OpenAIGatewayService{
+		cfg:              cfg,
+		openaiWSPool:     pool,
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+	}, dialer
+}
+
+func newCindyHTTPToWSV2TurnStateTestContext(
+	sessionID string,
+	apiKeyID int64,
+	groupID int64,
+) (*gin.Context, *httptest.ResponseRecorder) {
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.146.0")
+	c.Request.Header.Set("session_id", sessionID)
+	c.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
+	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+	return c, recorder
 }
 
 func TestResolveCindyHTTPToWSV2DecisionEligible(t *testing.T) {
@@ -265,6 +347,152 @@ func TestCindyHTTPToWSV2FirstTurnTerminalEventFailoverClassification(t *testing.
 			require.JSONEq(t, string(openAITransportFailoverBody), string(failoverErr.ResponseBody))
 		})
 	}
+}
+
+func TestCindyHTTPToWSV2TurnStateStagesUntilOutputAndRecordsFailoverAttempt(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	accountA := cindyHTTPToWSV2TestAccount()
+	accountA.ID = 9101
+	accountB := cindyHTTPToWSV2TestAccount()
+	accountB.ID = 9102
+	dialerSteps := []cindyHTTPToWSV2DialStep{
+		{
+			conn: &openAIWSCaptureConn{events: [][]byte{
+				[]byte(`{"type":"response.failed","response":{"id":"resp_a_failed","status":"failed","error":{"status_code":503,"message":"sensitive A failure"}}}`),
+			}},
+			handshake: http.Header{
+				"X-Codex-Turn-State": []string{"turn-state-A-uncommitted"},
+				"X-Request-Id":       []string{"upstream-attempt-A"},
+			},
+		},
+		{
+			conn: &openAIWSCaptureConn{events: [][]byte{
+				[]byte(`{"type":"response.completed","response":{"id":"resp_b_done","model":"gpt-5.4","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
+			}},
+			handshake: http.Header{"X-Codex-Turn-State": []string{"turn-state-B"}},
+		},
+	}
+	svc, dialer := newCindyHTTPToWSV2TurnStateTestService(t, dialerSteps...)
+	groupID := int64(77)
+	c, recorder := newCindyHTTPToWSV2TurnStateTestContext("session-failover-stage", 7001, groupID)
+	body := []byte(`{"model":"gpt-5.4","stream":true,"input":"hi"}`)
+
+	result, err := svc.Forward(context.Background(), c, accountA, body)
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusServiceUnavailable, failoverErr.StatusCode)
+	require.Empty(t, recorder.Body.String(), "pre-output failure must not commit SSE")
+	require.Empty(t, recorder.Header().Get(openAICodexTurnStateHeader), "failed account state must remain staged")
+
+	sessionHash := svc.GenerateSessionHash(c, nil)
+	store := svc.getOpenAIWSStateStore()
+	_, ok := store.GetSessionTurnState(groupID, sessionHash, accountA.ID)
+	require.False(t, ok, "failed account state must not be persisted")
+
+	rawEvents, ok := c.Get(OpsUpstreamErrorsKey)
+	require.True(t, ok)
+	events, ok := rawEvents.([]*OpsUpstreamErrorEvent)
+	require.True(t, ok)
+	require.Len(t, events, 1)
+	attempt := events[0]
+	require.Equal(t, PlatformOpenAI, attempt.Platform)
+	require.Equal(t, accountA.ID, attempt.AccountID)
+	require.Equal(t, http.StatusServiceUnavailable, attempt.UpstreamStatusCode)
+	require.Equal(t, "upstream-attempt-A", attempt.UpstreamRequestID)
+	require.Equal(t, "failover", attempt.Kind)
+	require.Equal(t, string(GatewayFailureStageInference), attempt.Stage)
+	require.Equal(t, string(GatewayFailureScopeRequest), attempt.Scope)
+	require.Equal(t, string(openAICindyHTTPToWSV2TerminalReason), attempt.Reason)
+	require.Equal(t, "Temporary upstream failure", attempt.Message)
+	require.Empty(t, attempt.AccountName)
+	require.Empty(t, attempt.UpstreamResponseBody)
+	require.Empty(t, attempt.Detail)
+
+	result, err = svc.Forward(context.Background(), c, accountB, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "resp_b_done", result.RequestID)
+	headers := dialer.capturedHeaders()
+	require.Len(t, headers, 2)
+	require.Empty(t, headers[1].Get(openAICodexTurnStateHeader), "B must not receive A's uncommitted state")
+	require.Equal(t, "turn-state-B", recorder.Header().Get(openAICodexTurnStateHeader))
+	state, ok := store.GetSessionTurnState(groupID, sessionHash, accountB.ID)
+	require.True(t, ok)
+	require.Equal(t, "turn-state-B", state)
+	_, ok = store.GetSessionTurnState(groupID, sessionHash, accountA.ID)
+	require.False(t, ok)
+
+	rawOrigin, ok := svc.openaiCodexTurnStateOrigins.Load(openAICodexTurnStateSeed(c))
+	require.True(t, ok)
+	origin, ok := rawOrigin.(openAICodexTurnStateOrigin)
+	require.True(t, ok)
+	require.Equal(t, accountB.ID, origin.accountID)
+}
+
+func TestCindyHTTPToWSV2TurnStateNoStateClearsPriorOwnerAndProvenance(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	completed := func(id string) []byte {
+		return []byte(`{"type":"response.completed","response":{"id":"` + id + `","model":"gpt-5.4","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`)
+	}
+	svc, dialer := newCindyHTTPToWSV2TurnStateTestService(t,
+		cindyHTTPToWSV2DialStep{
+			conn:      &openAIWSCaptureConn{events: [][]byte{completed("resp_owner_a1")}},
+			handshake: http.Header{"X-Codex-Turn-State": []string{"turn-state-A"}},
+		},
+		cindyHTTPToWSV2DialStep{
+			conn: &openAIWSCaptureConn{events: [][]byte{completed("resp_owner_b")}},
+		},
+		cindyHTTPToWSV2DialStep{
+			conn:      &openAIWSCaptureConn{events: [][]byte{completed("resp_owner_a2")}},
+			handshake: http.Header{"X-Codex-Turn-State": []string{"turn-state-A-next"}},
+		},
+	)
+	accountA := cindyHTTPToWSV2TestAccount()
+	accountA.ID = 9201
+	accountB := cindyHTTPToWSV2TestAccount()
+	accountB.ID = 9202
+	groupID := int64(78)
+	body := []byte(`{"model":"gpt-5.4","stream":false,"input":"hi"}`)
+
+	cA1, _ := newCindyHTTPToWSV2TurnStateTestContext("session-owner-reuse", 7002, groupID)
+	resultA1, err := svc.Forward(context.Background(), cA1, accountA, body)
+	require.NoError(t, err)
+	require.NotNil(t, resultA1)
+	store := svc.getOpenAIWSStateStore()
+	sessionHash := svc.GenerateSessionHash(cA1, nil)
+	connIDA1, ok := store.GetResponseConn(resultA1.RequestID)
+	require.True(t, ok)
+	svc.getOpenAIWSConnPool().evictConn(accountA.ID, connIDA1)
+
+	cB, recorderB := newCindyHTTPToWSV2TurnStateTestContext("session-owner-reuse", 7002, groupID)
+	cB.Request.Header.Set(openAICodexTurnStateHeader, "turn-state-A")
+	recorderB.Header().Set(openAICodexTurnStateHeader, "stale-response-state")
+	resultB, err := svc.Forward(context.Background(), cB, accountB, body)
+	require.NoError(t, err)
+	require.NotNil(t, resultB)
+	require.Empty(t, recorderB.Header().Get(openAICodexTurnStateHeader), "a successful no-state handshake must clear a stale response header")
+	_, ok = store.GetSessionTurnState(groupID, sessionHash, accountA.ID)
+	require.False(t, ok, "B's successful no-state turn must invalidate A's stale state")
+	_, ok = store.GetSessionTurnState(groupID, sessionHash, accountB.ID)
+	require.False(t, ok)
+	_, ok = svc.openaiCodexTurnStateOrigins.Load(openAICodexTurnStateSeed(cB))
+	require.False(t, ok, "a successful no-state turn must clear stale provenance")
+	connIDB, ok := store.GetResponseConn(resultB.RequestID)
+	require.True(t, ok)
+	svc.getOpenAIWSConnPool().evictConn(accountB.ID, connIDB)
+
+	cA2, _ := newCindyHTTPToWSV2TurnStateTestContext("session-owner-reuse", 7002, groupID)
+	resultA2, err := svc.Forward(context.Background(), cA2, accountA, body)
+	require.NoError(t, err)
+	require.NotNil(t, resultA2)
+	headers := dialer.capturedHeaders()
+	require.Len(t, headers, 3)
+	require.Empty(t, headers[1].Get(openAICodexTurnStateHeader), "state owned by A must not be injected into B")
+	require.Empty(t, headers[2].Get(openAICodexTurnStateHeader), "A's state must not survive across B's successful no-state turn")
+	state, ok := store.GetSessionTurnState(groupID, sessionHash, accountA.ID)
+	require.True(t, ok)
+	require.Equal(t, "turn-state-A-next", state)
 }
 
 func TestCindyWSV2BalanceTerminalWriteOrdering(t *testing.T) {

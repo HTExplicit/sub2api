@@ -23,6 +23,38 @@ func resetViperWithJWTSecret(t *testing.T) {
 	t.Setenv("JWT_SECRET", strings.Repeat("x", 32))
 }
 
+func TestLoadTimezonePrecedence(t *testing.T) {
+	tests := []struct {
+		name         string
+		fileTimezone string
+		timezoneEnv  string
+		tzEnv        string
+		want         string
+	}{
+		{name: "default", want: "Asia/Shanghai"},
+		{name: "config_file", fileTimezone: "Europe/London", want: "Europe/London"},
+		{name: "timezone_env", fileTimezone: "Europe/London", timezoneEnv: "UTC", want: "UTC"},
+		{name: "tz_env", fileTimezone: "Europe/London", timezoneEnv: "UTC", tzEnv: "America/New_York", want: "America/New_York"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetViperWithJWTSecret(t)
+			t.Setenv("TIMEZONE", tt.timezoneEnv)
+			t.Setenv("TZ", tt.tzEnv)
+			if tt.fileTimezone != "" {
+				configFile := filepath.Join(t.TempDir(), "config.yaml")
+				require.NoError(t, os.WriteFile(configFile, []byte("timezone: "+tt.fileTimezone+"\n"), 0o600))
+				t.Setenv("CONFIG_FILE", configFile)
+			}
+
+			cfg, err := Load()
+			require.NoError(t, err)
+			require.Equal(t, tt.want, cfg.Timezone)
+		})
+	}
+}
+
 func TestLoadServerTimingConfig(t *testing.T) {
 	t.Run("disabled by default", func(t *testing.T) {
 		resetViperWithJWTSecret(t)
@@ -38,6 +70,56 @@ func TestLoadServerTimingConfig(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, cfg.Server.EnableServerTiming)
 	})
+}
+
+func TestResolveImageStudioEnabledFromEnvironment(t *testing.T) {
+	tests := []struct {
+		name       string
+		primary    string
+		legacy     string
+		want       bool
+		wantErrEnv string
+	}{
+		{name: "unset", primary: "", legacy: "", want: false},
+		{name: "primary", primary: "true", legacy: "", want: true},
+		{name: "legacy fallback", primary: "", legacy: "on", want: true},
+		{name: "matching declarations", primary: "false", legacy: "0", want: false},
+		{name: "conflicting declarations", primary: "true", legacy: "false", wantErrEnv: ImageStudioEnabledEnv},
+		{name: "invalid primary", primary: "sometimes", legacy: "", wantErrEnv: ImageStudioEnabledEnv},
+		{name: "invalid legacy", primary: "", legacy: "sometimes", wantErrEnv: LegacyImageStudioEnabledEnv},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(ImageStudioEnabledEnv, tt.primary)
+			t.Setenv(LegacyImageStudioEnabledEnv, tt.legacy)
+			got, err := ResolveImageStudioEnabledFromEnvironment()
+			if tt.wantErrEnv != "" {
+				require.ErrorContains(t, err, tt.wantErrEnv)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestLoadRejectsInvalidImageStudioEnvironment(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv(ImageStudioEnabledEnv, "not-a-boolean")
+	t.Setenv(LegacyImageStudioEnabledEnv, "")
+
+	_, err := LoadForBootstrap()
+	require.ErrorContains(t, err, ImageStudioEnabledEnv+" must be a boolean")
+}
+
+func TestLoadRejectsConflictingImageStudioEnvironment(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv(ImageStudioEnabledEnv, "true")
+	t.Setenv(LegacyImageStudioEnabledEnv, "false")
+
+	_, err := LoadForBootstrap()
+	require.ErrorContains(t, err, ImageStudioEnabledEnv+" conflicts with deprecated "+LegacyImageStudioEnabledEnv)
 }
 
 func TestLoadRedisUsernameFromEnvironment(t *testing.T) {

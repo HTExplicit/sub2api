@@ -29,6 +29,7 @@ const (
 	EndpointVideosExtensions  = "/v1/videos/extensions"
 	EndpointVideos            = "/v1/videos"
 	EndpointGeminiModels      = "/v1beta/models"
+	EndpointModelCapabilities = "/v1/models/capabilities"
 )
 
 const EndpointAntigravityGenerateContent = "/v1internal:streamGenerateContent"
@@ -185,6 +186,12 @@ func DeriveUpstreamEndpoint(inbound, rawRequestPath, platform string) string {
 
 	switch platform {
 	case service.PlatformOpenAI, service.PlatformGrok:
+		// Discovery is served locally and never reaches an upstream Responses
+		// endpoint. Keep operations telemetry explicit instead of attributing a
+		// local capability-gate response to /v1/responses.
+		if inbound == EndpointModelCapabilities {
+			return ""
+		}
 		if inbound == EndpointEmbeddings || inbound == EndpointAlphaSearch || inbound == EndpointImagesGenerations || inbound == EndpointImagesEdits || inbound == EndpointVideosGenerations || inbound == EndpointVideosEdits || inbound == EndpointVideosExtensions || inbound == EndpointVideos {
 			return inbound
 		}

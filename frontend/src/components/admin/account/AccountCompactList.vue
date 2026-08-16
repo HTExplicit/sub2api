@@ -65,6 +65,13 @@
         <AccountCapacityCell :account="account" compact class="mt-1" />
       </div>
 
+      <CindyBalanceProbeSummary
+        v-if="showCindyProbe"
+        :account="account"
+        show-label
+        class="col-start-2 row-start-3 min-w-0 lg:hidden"
+      />
+
       <div class="hidden min-w-0 lg:block">
         <div class="text-[10px] font-medium uppercase text-gray-400">{{ t('admin.accounts.classification') }}</div>
         <div class="flex items-center gap-2">
@@ -74,6 +81,7 @@
         <div class="mt-1 truncate text-xs text-gray-500 dark:text-dark-300">
           <span class="mr-1 text-[10px] font-medium uppercase text-gray-400">{{ t('admin.accounts.routing') }}</span>{{ routeSummary(account) }}
         </div>
+        <CindyBalanceProbeSummary v-if="showCindyProbe" :account="account" show-label class="mt-2" />
       </div>
 
       <div class="col-start-3 row-span-2 row-start-1 flex items-center gap-0.5 self-start lg:col-start-auto lg:row-span-1 lg:row-start-auto lg:self-center" @click.stop>
@@ -95,9 +103,10 @@ import AccountStatusIndicator from '@/components/account/AccountStatusIndicator.
 import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
 import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
 import Icon from '@/components/icons/Icon.vue'
+import CindyBalanceProbeSummary from '@/features/cindy-balance-probe/CindyBalanceProbeSummary.vue'
 import type { Account, WindowStats } from '@/types'
 
-defineProps<{
+withDefaults(defineProps<{
   accounts: Account[]
   loading: boolean
   selectedIds: number[]
@@ -107,7 +116,10 @@ defineProps<{
   todayStatsUpdatedAt: number | null
   manualRefreshToken: number
   statusNow: number
-}>()
+  showCindyProbe?: boolean
+}>(), {
+  showCindyProbe: false,
+})
 
 const emit = defineEmits<{
   rowClick: [account: Account]

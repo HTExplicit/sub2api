@@ -125,6 +125,19 @@ func ProvideOpenAIGatewayService(
 	return svc
 }
 
+// ProvideCindyBalanceProbeService starts the explicit administrator-triggered
+// Cindy balance probe worker. The worker does not create jobs on its own.
+func ProvideCindyBalanceProbeService(
+	repo CindyBalanceProbeRepository,
+	accountRepo AccountRepository,
+	gateway *OpenAIGatewayService,
+	rateLimit *RateLimitService,
+) *CindyBalanceProbeService {
+	svc := NewCindyBalanceProbeService(repo, accountRepo, gateway, rateLimit)
+	svc.Start()
+	return svc
+}
+
 // ProvideEmailQueueService creates EmailQueueService with default worker count
 func ProvideEmailQueueService(emailService *EmailService) *EmailQueueService {
 	return NewEmailQueueService(emailService, 3)
@@ -854,6 +867,7 @@ var ProviderSet = wire.NewSet(
 	ProvideRemoteSkillCandidateSource,
 	ProvideRemoteSkillRegistryService,
 	ProvideOpenAIGatewayService,
+	ProvideCindyBalanceProbeService,
 	ProvideImageStorageSettingService,
 	ProvideImageTaskService,
 	ProvideBatchImageModelPricingResolver,

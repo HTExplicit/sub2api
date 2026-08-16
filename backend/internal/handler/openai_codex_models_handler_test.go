@@ -328,6 +328,7 @@ func runCodexCatalogEnabledHandlerTest(t *testing.T) bool {
 	for _, entry := range os.Environ() {
 		name := strings.SplitN(entry, "=", 2)[0]
 		if strings.EqualFold(name, service.CindyCapabilityCatalogEnabledEnv) ||
+			strings.EqualFold(name, service.ImageStudioEnabledEnv) ||
 			strings.EqualFold(name, service.CindyImageStudioEnabledEnv) ||
 			strings.EqualFold(name, codexCatalogEnabledHandlerTestHelperEnv) {
 			continue
@@ -337,7 +338,7 @@ func runCodexCatalogEnabledHandlerTest(t *testing.T) bool {
 	cmd := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$")
 	cmd.Env = append(environment,
 		service.CindyCapabilityCatalogEnabledEnv+"=true",
-		service.CindyImageStudioEnabledEnv+"=true",
+		service.ImageStudioEnabledEnv+"=true",
 		codexCatalogEnabledHandlerTestHelperEnv+"=1",
 	)
 	if output, err := cmd.CombinedOutput(); err != nil {

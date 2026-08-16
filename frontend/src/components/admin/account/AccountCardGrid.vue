@@ -51,6 +51,10 @@
           <AccountStatusIndicator :account="account" @show-temp-unsched="emit('showTempUnsched', account)" />
         </div>
 
+        <div v-if="showCindyProbe" class="mt-3 min-w-0 border-t border-gray-100 pt-3 dark:border-dark-700">
+          <CindyBalanceProbeSummary :account="account" show-label />
+        </div>
+
         <div class="mt-3 border-t border-gray-100 pt-3 dark:border-dark-700" data-test="account-card-usage">
           <AccountUsageCell
             :account="account"
@@ -100,9 +104,10 @@ import AccountStatusIndicator from '@/components/account/AccountStatusIndicator.
 import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
 import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
 import Icon from '@/components/icons/Icon.vue'
+import CindyBalanceProbeSummary from '@/features/cindy-balance-probe/CindyBalanceProbeSummary.vue'
 import type { Account, WindowStats } from '@/types'
 
-defineProps<{
+withDefaults(defineProps<{
   accounts: Account[]
   loading: boolean
   selectedIds: number[]
@@ -112,7 +117,10 @@ defineProps<{
   todayStatsUpdatedAt: number | null
   manualRefreshToken: number
   statusNow: number
-}>()
+  showCindyProbe?: boolean
+}>(), {
+  showCindyProbe: false,
+})
 
 const emit = defineEmits<{
   rowClick: [account: Account]

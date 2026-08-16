@@ -200,6 +200,69 @@ func TestCindyCapabilityAliasesAreExactAndHidden(t *testing.T) {
 	require.NotContains(t, public, "cindy/web-search")
 }
 
+func TestCindyCompatibilityAliasesAreNarrowAndExact(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]string{
+		"gpt-5.4":      "openai/gpt-5.6-sol",
+		"gpt-5.4-mini": "openai/gpt-5.6-luna",
+	}
+	for requested, want := range tests {
+		got, ok := CindyCompatibilityMappedUpstreamModel(requested)
+		require.True(t, ok, requested)
+		require.Equal(t, want, got, requested)
+	}
+	for _, unsupported := range []string{
+		"gpt-5.4-mini-extra",
+		"GPT-5.4-MINI",
+		" gpt-5.4-mini",
+		"gpt-5.4-mini ",
+		"claude-opus-4-6",
+		"gpt-5.6-luna",
+	} {
+		_, ok := CindyCompatibilityMappedUpstreamModel(unsupported)
+		require.False(t, ok, unsupported)
+	}
+}
+
+func TestCindyCompatibilityRoutingTargetsAreNarrow(t *testing.T) {
+	t.Parallel()
+
+	for _, model := range []string{
+		"gpt-5.6-sol",
+		"openai/gpt-5.6-sol",
+		"gpt-5.6-luna",
+		"openai/gpt-5.6-luna",
+	} {
+		require.True(t, CindyCompatibilityRoutingTarget(model), model)
+		_, ok := CindyCompatibilityTextPricingForModel(model)
+		require.True(t, ok, model)
+	}
+	for _, model := range []string{
+		"gpt-5.4",
+		"gpt-5.4-mini",
+		"openai/gpt-5.6-terra",
+		" gpt-5.6-luna",
+	} {
+		require.False(t, CindyCompatibilityRoutingTarget(model), model)
+	}
+}
+
+func TestCindyImageModelCapabilitiesAreClientSafe(t *testing.T) {
+	t.Parallel()
+
+	capabilities := CindyImageModelCapabilities()
+	require.NotEmpty(t, capabilities)
+	ids := make([]string, 0, len(capabilities))
+	for _, capability := range capabilities {
+		require.Equal(t, "model_capability", capability.Object)
+		require.Equal(t, CindyModelKindImage, capability.Kind)
+		require.NotEmpty(t, capability.Endpoints)
+		ids = append(ids, capability.ID)
+	}
+	require.Equal(t, []string{"gemini-3-pro-image", "gpt-image-2"}, ids)
+}
+
 func TestCindyCodexPublicModelIDsContainOnlyResponsesSurface(t *testing.T) {
 	if !runCindyCodexCatalogEnabledTest(t) {
 		return

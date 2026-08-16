@@ -48,6 +48,47 @@ func (d *openAIWSSingleConnDialer) Dial(
 	return d.conn, 0, nil, nil
 }
 
+type openAIWSIngressDialStep struct {
+	conn      openAIWSClientConn
+	handshake http.Header
+}
+
+type openAIWSIngressSequenceDialer struct {
+	mu      sync.Mutex
+	steps   []openAIWSIngressDialStep
+	headers []http.Header
+}
+
+func (d *openAIWSIngressSequenceDialer) Dial(
+	ctx context.Context,
+	wsURL string,
+	headers http.Header,
+	proxyURL string,
+) (openAIWSClientConn, int, http.Header, error) {
+	_ = ctx
+	_ = wsURL
+	_ = proxyURL
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.headers = append(d.headers, cloneHeader(headers))
+	if len(d.steps) == 0 {
+		return nil, 0, nil, errors.New("unexpected ingress WS dial")
+	}
+	step := d.steps[0]
+	d.steps = d.steps[1:]
+	return step.conn, 0, cloneHeader(step.handshake), nil
+}
+
+func (d *openAIWSIngressSequenceDialer) capturedHeaders() []http.Header {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	result := make([]http.Header, len(d.headers))
+	for i := range d.headers {
+		result[i] = cloneHeader(d.headers[i])
+	}
+	return result
+}
+
 func TestOpenAIWSDownstreamWriteContext_CancellationOwnership(t *testing.T) {
 	t.Run("pre-canceled ordinary context is canceled before return", func(t *testing.T) {
 		controlCtx, cancelControl := context.WithCancelCause(context.Background())
@@ -238,6 +279,123 @@ func TestOpenAIWSIngressCindyBalanceTerminalWriteOrdering(t *testing.T) {
 			require.Equal(t, 0, repo.markCalls, "the first exact signal must wait for independent confirmation")
 		})
 	}
+}
+
+func TestOpenAIWSIngressTurnStateCommitsOnlyAfterDownstreamOutput(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 1
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 1
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+
+	dialer := &openAIWSIngressSequenceDialer{steps: []openAIWSIngressDialStep{
+		{
+			conn:      &openAIWSCaptureConn{},
+			handshake: http.Header{"X-Codex-Turn-State": []string{"turn-state-A-uncommitted"}},
+		},
+		{
+			conn: &openAIWSCaptureConn{events: [][]byte{
+				[]byte(`{"type":"response.completed","response":{"id":"resp_ingress_state_b","model":"gpt-5.4","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
+			}},
+			handshake: http.Header{"X-Codex-Turn-State": []string{"turn-state-B"}},
+		},
+	}}
+	pool := newOpenAIWSConnPool(cfg)
+	pool.setClientDialerForTest(dialer)
+	t.Cleanup(pool.Close)
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		cache:            &stubGatewayCache{},
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+		openaiWSPool:     pool,
+	}
+	account := cindyHTTPToWSV2TestAccount()
+	account.ID = 9301
+	account.Extra = map[string]any{"responses_websockets_v2_enabled": true}
+	groupID := int64(79)
+	apiKeyID := int64(7003)
+	sessionID := "session-ingress-state-stage"
+
+	serverErrCh := make(chan error, 1)
+	sessionHashCh := make(chan string, 1)
+	seedCh := make(chan string, 1)
+	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := coderws.Accept(w, r, &coderws.AcceptOptions{CompressionMode: coderws.CompressionContextTakeover})
+		if err != nil {
+			serverErrCh <- err
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
+
+		recorder := httptest.NewRecorder()
+		ginCtx, _ := gin.CreateTestContext(recorder)
+		ginCtx.Request = r.Clone(r.Context())
+		ginCtx.Request.Header.Set("User-Agent", "codex_cli_rs/0.146.0")
+		ginCtx.Request.Header.Set("session_id", sessionID)
+		ginCtx.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
+
+		readCtx, cancelRead := context.WithTimeout(r.Context(), 3*time.Second)
+		_, firstMessage, readErr := conn.Read(readCtx)
+		cancelRead()
+		if readErr != nil {
+			serverErrCh <- readErr
+			return
+		}
+		sessionHashCh <- svc.GenerateSessionHash(ginCtx, firstMessage)
+		seedCh <- openAICodexTurnStateSeed(ginCtx)
+		serverErrCh <- svc.ProxyResponsesWebSocketFromClient(
+			r.Context(), ginCtx, conn, account, "sk-test", firstMessage, nil,
+		)
+	}))
+	defer wsServer.Close()
+
+	dialCtx, cancelDial := context.WithTimeout(context.Background(), 3*time.Second)
+	clientConn, _, err := coderws.Dial(dialCtx, "ws"+strings.TrimPrefix(wsServer.URL, "http"), nil)
+	cancelDial()
+	require.NoError(t, err)
+
+	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
+	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(
+		`{"type":"response.create","model":"gpt-5.4","stream":true,"input":"hi"}`,
+	))
+	cancelWrite()
+	require.NoError(t, err)
+
+	readCtx, cancelRead := context.WithTimeout(context.Background(), 3*time.Second)
+	_, payload, err := clientConn.Read(readCtx)
+	cancelRead()
+	require.NoError(t, err)
+	require.Equal(t, "response.completed", gjson.GetBytes(payload, "type").String())
+	require.NoError(t, clientConn.CloseNow())
+
+	select {
+	case serverErr := <-serverErrCh:
+		require.NoError(t, serverErr)
+	case <-time.After(5 * time.Second):
+		t.Fatal("waiting for ingress websocket result timed out")
+	}
+
+	headers := dialer.capturedHeaders()
+	require.Len(t, headers, 2)
+	require.Empty(t, headers[1].Get(openAICodexTurnStateHeader), "retry B must not receive A's uncommitted handshake state")
+	sessionHash := <-sessionHashCh
+	state, ok := svc.getOpenAIWSStateStore().GetSessionTurnState(groupID, sessionHash, account.ID)
+	require.True(t, ok)
+	require.Equal(t, "turn-state-B", state)
+	rawOrigin, ok := svc.openaiCodexTurnStateOrigins.Load(<-seedCh)
+	require.True(t, ok)
+	origin, ok := rawOrigin.(openAICodexTurnStateOrigin)
+	require.True(t, ok)
+	require.Equal(t, account.ID, origin.accountID)
 }
 
 func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_KeepLeaseAcrossTurns(t *testing.T) {
@@ -1162,7 +1320,6 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughModeR
 			"openai_apikey_responses_websockets_v2_mode": OpenAIWSIngressModePassthrough,
 		},
 	}
-
 	serverErrCh := make(chan error, 1)
 	resultCh := make(chan *OpenAIForwardResult, 1)
 	hooks := &OpenAIWSIngressHooks{
@@ -1203,7 +1360,6 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughModeR
 			serverErrCh <- errors.New("unsupported websocket client message type")
 			return
 		}
-
 		serverErrCh <- svc.ProxyResponsesWebSocketFromClient(r.Context(), ginCtx, conn, account, "sk-test", firstMessage, hooks)
 	}))
 	defer wsServer.Close()
@@ -1260,7 +1416,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughModeR
 	require.Len(t, upstreamConn.writes, 1, "passthrough 模式应透传首条 response.create")
 }
 
-func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughHeadersUsePromptCacheAndTurnState(t *testing.T) {
+func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughHeadersStripUnprovenTurnState(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	cfg := &config.Config{}
@@ -1384,7 +1540,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughHeade
 	}
 
 	require.Equal(t, isolateOpenAISessionID(0, "pcache_passthrough"), captureDialer.lastHeaders.Get("session_id"))
-	require.Equal(t, "turn-state-1", captureDialer.lastHeaders.Get(openAIWSTurnStateHeader))
+	require.Empty(t, captureDialer.lastHeaders.Get(openAIWSTurnStateHeader), "client turn state without account provenance must fail closed")
 	require.Equal(t, "turn-meta-1", captureDialer.lastHeaders.Get(openAIWSTurnMetadataHeader))
 	require.Len(t, upstreamConn.writes, 1)
 	forwarded := requestToJSONString(upstreamConn.writes[0])
@@ -4799,16 +4955,17 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ClientDisconnect
 	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
 
 	// 多个上游事件：前几个为非 terminal 事件，最后一个为 terminal。
-	// 第一个事件延迟 250ms 让客户端 RST 有时间传播，使 writeClientMessage 可靠失败。
 	captureConn := &openAIWSCaptureConn{
-		readDelays: []time.Duration{250 * time.Millisecond, 0, 0},
 		events: [][]byte{
 			[]byte(`{"type":"response.created","response":{"id":"resp_ingress_disconnect","model":"gpt-5.1"}}`),
 			[]byte(`{"type":"response.output_item.added","response":{"id":"resp_ingress_disconnect"}}`),
 			[]byte(`{"type":"response.completed","response":{"id":"resp_ingress_disconnect","model":"gpt-5.1","usage":{"input_tokens":2,"output_tokens":1}}}`),
 		},
 	}
-	captureDialer := &openAIWSCaptureDialer{conn: captureConn}
+	captureDialer := &openAIWSCaptureDialer{
+		conn:      captureConn,
+		handshake: http.Header{openAIWSTurnStateHeader: []string{"turn-state-B-uncommitted"}},
+	}
 	pool := newOpenAIWSConnPool(cfg)
 	pool.setClientDialerForTest(captureDialer)
 
@@ -4839,9 +4996,17 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ClientDisconnect
 			"responses_websockets_v2_enabled": true,
 		},
 	}
+	stateStore := NewOpenAIWSStateStore(svc.cache)
+	svc.openaiWSStateStore = stateStore
+	const oldAccountID int64 = 114
+	groupID := int64(83)
+	apiKeyID := int64(7004)
+	sessionID := "session-ingress-client-disconnect"
 
 	serverErrCh := make(chan error, 1)
 	resultCh := make(chan *OpenAIForwardResult, 1)
+	sessionHashCh := make(chan string, 1)
+	seedCh := make(chan string, 1)
 	hooks := &OpenAIWSIngressHooks{
 		AfterTurn: func(_ int, result *OpenAIForwardResult, turnErr error) {
 			if turnErr == nil && result != nil {
@@ -4866,7 +5031,9 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ClientDisconnect
 		req := r.Clone(r.Context())
 		req.Header = req.Header.Clone()
 		req.Header.Set("User-Agent", "unit-test-agent/1.0")
+		req.Header.Set("session_id", sessionID)
 		ginCtx.Request = req
+		ginCtx.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
 
 		readCtx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 		msgType, firstMessage, readErr := conn.Read(readCtx)
@@ -4879,8 +5046,21 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ClientDisconnect
 			serverErrCh <- errors.New("unsupported websocket client message type")
 			return
 		}
+		sessionHash := svc.GenerateSessionHash(ginCtx, firstMessage)
+		seed := openAICodexTurnStateSeed(ginCtx)
+		stateStore.BindSessionTurnState(groupID, sessionHash, oldAccountID, "turn-state-A", time.Minute)
+		svc.openaiCodexTurnStateOrigins.Store(seed, openAICodexTurnStateOrigin{
+			accountID: oldAccountID,
+			expiresAt: time.Now().Add(time.Minute),
+		})
+		sessionHashCh <- sessionHash
+		seedCh <- seed
+		// Close the accepted server-side socket before relay so the first
+		// downstream Write deterministically fails. Use an independent control
+		// context so the upstream terminal event is still drained.
+		_ = conn.CloseNow()
 
-		serverErrCh <- svc.ProxyResponsesWebSocketFromClient(r.Context(), ginCtx, conn, account, "sk-test", firstMessage, hooks)
+		serverErrCh <- svc.ProxyResponsesWebSocketFromClient(context.Background(), ginCtx, conn, account, "sk-test", firstMessage, hooks)
 	}))
 	defer wsServer.Close()
 
@@ -4913,4 +5093,16 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ClientDisconnect
 	case <-time.After(2 * time.Second):
 		t.Fatal("未收到断连后的 turn 结果回调")
 	}
+
+	sessionHash := <-sessionHashCh
+	state, ok := stateStore.GetSessionTurnState(groupID, sessionHash, oldAccountID)
+	require.True(t, ok)
+	require.Equal(t, "turn-state-A", state)
+	_, ok = stateStore.GetSessionTurnState(groupID, sessionHash, account.ID)
+	require.False(t, ok, "a terminal event drained after downstream failure must not bind B state")
+	rawOrigin, ok := svc.openaiCodexTurnStateOrigins.Load(<-seedCh)
+	require.True(t, ok)
+	origin, ok := rawOrigin.(openAICodexTurnStateOrigin)
+	require.True(t, ok)
+	require.Equal(t, oldAccountID, origin.accountID)
 }

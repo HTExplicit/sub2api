@@ -127,7 +127,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		attachOpenAILegacySessionHashToGin(c, legacySessionHash)
 	}
 	if turnState == "" && stateStore != nil && sessionHash != "" {
-		if savedTurnState, ok := stateStore.GetSessionTurnState(groupID, sessionHash); ok {
+		if savedTurnState, ok := stateStore.GetSessionTurnState(groupID, sessionHash, account.ID); ok {
 			turnState = savedTurnState
 		}
 	}
@@ -165,6 +165,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	if buildHdrErr != nil {
 		return nil, fmt.Errorf("build ws headers: %w", buildHdrErr)
 	}
+	turnState = strings.TrimSpace(wsHeaders.Get(openAIWSTurnStateHeader))
 	logOpenAIWSModeDebug(
 		"acquire_start account_id=%d account_type=%s transport=%s preferred_conn_id=%s has_previous_response_id=%v session_hash=%s has_turn_state=%v turn_state_len=%d has_turn_metadata=%v turn_metadata_len=%d store_disabled=%v store_disabled_conn_mode=%s retry_last_reason=%s force_new_conn=%v header_user_agent=%s header_openai_beta=%s header_originator=%s header_accept_language=%s header_session_id=%s header_conversation_id=%s session_id_source=%s conversation_id_source=%s has_prompt_cache_key=%v has_chatgpt_account_id=%v has_authorization=%v has_session_id=%v has_conversation_id=%v proxy_enabled=%v",
 		account.ID,
@@ -319,13 +320,25 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		handshakeTurnState != "",
 		len(handshakeTurnState),
 	)
-	if handshakeTurnState != "" {
-		if stateStore != nil && sessionHash != "" {
-			stateStore.BindSessionTurnState(groupID, sessionHash, handshakeTurnState, s.openAIWSSessionStickyTTL())
+	// The handshake state belongs to this account, but the attempt can still
+	// fail before any downstream output. Commit it only with the response.
+	stageHandshakeTurnStateHeader := func() {
+		if c != nil && c.Writer != nil {
+			canonical := http.CanonicalHeaderKey(openAIWSTurnStateHeader)
+			if handshakeTurnState == "" {
+				c.Writer.Header().Del(canonical)
+			} else {
+				c.Writer.Header().Set(canonical, handshakeTurnState)
+			}
 		}
-		if c != nil {
-			c.Header(http.CanonicalHeaderKey(openAIWSTurnStateHeader), handshakeTurnState)
+	}
+	turnStateCommitted := false
+	commitHandshakeTurnState := func() {
+		if turnStateCommitted {
+			return
 		}
+		turnStateCommitted = true
+		s.commitOpenAIWSSessionTurnState(c, account, stateStore, groupID, sessionHash, handshakeTurnState)
 	}
 
 	if err := s.performOpenAIWSGeneratePrewarm(
@@ -424,12 +437,14 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		if clientDisconnected {
 			return
 		}
+		stageHandshakeTurnStateHeader()
 		frame := make([]byte, 0, len(message)+8)
 		frame = append(frame, "data: "...)
 		frame = append(frame, message...)
 		frame = append(frame, '\n', '\n')
-		_, wErr := c.Writer.Write(frame)
-		if wErr == nil {
+		written, wErr := c.Writer.Write(frame)
+		if wErr == nil && written == len(frame) {
+			commitHandshakeTurnState()
 			wroteDownstream = true
 			pendingFlushEvents++
 			flushStreamWriter(forceFlush)
@@ -748,12 +763,17 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				emitStreamMessage(message, true)
 			}
 			if !reqStream {
+				stageHandshakeTurnStateHeader()
+				errorCount := len(c.Errors)
 				c.JSON(statusCode, gin.H{
 					"error": gin.H{
 						"type":    "upstream_error",
 						"message": errMsg,
 					},
 				})
+				if len(c.Errors) == errorCount {
+					commitHandshakeTurnState()
+				}
 			}
 			return nil, fmt.Errorf("openai ws error event: %s", errMsg)
 		}
@@ -839,7 +859,13 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			responseID = strings.TrimSpace(gjson.GetBytes(finalResponse, "id").String())
 		}
 
+		stageHandshakeTurnStateHeader()
+		errorCount := len(c.Errors)
 		c.Data(http.StatusOK, "application/json", finalResponse)
+		if len(c.Errors) != errorCount {
+			return nil, fmt.Errorf("write websocket response to client: %w", c.Errors.Last().Err)
+		}
+		commitHandshakeTurnState()
 	} else {
 		flushStreamWriter(true)
 	}

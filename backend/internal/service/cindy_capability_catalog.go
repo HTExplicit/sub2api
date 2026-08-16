@@ -121,6 +121,24 @@ type CindyCapability struct {
 	PublicModel       bool
 }
 
+// CindyModelCapability is the client-safe projection of one verified Cindy
+// capability. It intentionally excludes live upstream IDs, registry IDs, and
+// account identity.
+type CindyModelCapability struct {
+	Object            string                   `json:"object"`
+	ID                string                   `json:"id"`
+	Kind              CindyModelKind           `json:"kind"`
+	InputModalities   []string                 `json:"input_modalities"`
+	OutputModalities  []string                 `json:"output_modalities"`
+	Endpoints         []CindyEndpoint          `json:"endpoints"`
+	ClientSurfaces    []string                 `json:"client_surfaces"`
+	MaxInputTokens    int                      `json:"max_input_tokens,omitempty"`
+	MaxOutputTokens   int                      `json:"max_output_tokens,omitempty"`
+	PricingSource     string                   `json:"pricing_source,omitempty"`
+	ExplicitZeroPrice bool                     `json:"explicit_zero_price,omitempty"`
+	Controls          *CindyCapabilityControls `json:"controls,omitempty"`
+}
+
 // cindyCapabilityCatalog contains exactly the 23 IDs observed consistently on
 // the 2026-08-15 Cindy data plane. Endpoint verification is deliberately
 // conservative: unprobed combinations remain in the catalogue for explicit
@@ -151,9 +169,12 @@ var cindyCapabilityCatalog = []CindyCapability{
 	{PublicID: "glm-5.3", LiveUpstreamID: "z-ai/glm-5.3", RegistryID: "", Kind: CindyModelKindText, InputModalities: []string{"text"}, OutputModalities: []string{"text"}, PricingSource: "explicit-zero:no-exact-public-usd-price", ExplicitZeroPrice: true, PublicModel: false},
 }
 
+var cindyCompatibilityAliases = map[string]string{
+	"gpt-5.4":      "gpt-5.6-sol",
+	"gpt-5.4-mini": "gpt-5.6-luna",
+}
+
 var cindyHiddenAliases = map[string]string{
-	"gpt-5.4":                    "gpt-5.6-sol",
-	"gpt-5.4-mini":               "gpt-5.6-luna",
 	"claude-opus-4":              "claude-opus-5",
 	"claude-opus-4-20250514":     "claude-opus-5",
 	"claude-opus-4-1-20250805":   "claude-opus-5",
@@ -252,12 +273,67 @@ func resolveKnownCindyCapability(model string) (CindyCapability, bool) {
 	if capability := cindyCapabilityByUpstreamID[model]; capability != nil {
 		return cloneCindyCapability(*capability), true
 	}
+	if publicID, ok := cindyCompatibilityAliases[model]; ok {
+		if capability := cindyCapabilityByPublicID[publicID]; capability != nil {
+			return cloneCindyCapability(*capability), true
+		}
+	}
 	if publicID, ok := cindyHiddenAliases[model]; ok {
 		if capability := cindyCapabilityByPublicID[publicID]; capability != nil {
 			return cloneCindyCapability(*capability), true
 		}
 	}
 	return CindyCapability{}, false
+}
+
+// CindyCompatibilityMappedUpstreamModel resolves only the two exact OpenAI
+// compatibility aliases that must remain callable while the broader Cindy
+// capability catalog is rolled back. The caller is responsible for enforcing
+// exact Cindy account identity before applying the result.
+func CindyCompatibilityMappedUpstreamModel(model string) (string, bool) {
+	publicID, ok := cindyCompatibilityAliases[model]
+	if !ok {
+		return "", false
+	}
+	capability := cindyCapabilityByPublicID[publicID]
+	if capability == nil {
+		return "", false
+	}
+	return capability.LiveUpstreamID, true
+}
+
+// CindyCompatibilityRoutingTarget reports the exact public or live upstream
+// IDs targeted by compatibility aliases. It does not recognize the aliases
+// themselves; group-aware routing must resolve those first.
+func CindyCompatibilityRoutingTarget(model string) bool {
+	for _, publicID := range cindyCompatibilityAliases {
+		capability := cindyCapabilityByPublicID[publicID]
+		if capability != nil && (model == capability.PublicID || model == capability.LiveUpstreamID) {
+			return true
+		}
+	}
+	return false
+}
+
+// CindyCompatibilityTextPricingForModel resolves only the two exact aliases
+// that remain routable when the broader Cindy capability catalog is disabled.
+// Callers must enforce strict Cindy account identity before using this price.
+func CindyCompatibilityTextPricingForModel(model string) (CindyTextPricing, bool) {
+	if publicID, ok := cindyCompatibilityAliases[model]; ok {
+		capability := cindyCapabilityByPublicID[publicID]
+		if capability != nil && capability.TextPricing != nil {
+			return *capability.TextPricing, true
+		}
+		return CindyTextPricing{}, false
+	}
+	for _, publicID := range cindyCompatibilityAliases {
+		capability := cindyCapabilityByPublicID[publicID]
+		if capability != nil && capability.TextPricing != nil &&
+			(model == capability.PublicID || model == capability.LiveUpstreamID) {
+			return *capability.TextPricing, true
+		}
+	}
+	return CindyTextPricing{}, false
 }
 
 func CindyMappedUpstreamModel(model string) (string, bool) {
@@ -398,4 +474,45 @@ func CindyVerifiedCapabilities() []CindyCapability {
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].PublicID < result[j].PublicID })
 	return result
+}
+
+// CindyVerifiedModelCapabilities returns the client-safe projection of every
+// currently enabled, verified Cindy capability.
+func CindyVerifiedModelCapabilities() []CindyModelCapability {
+	capabilities := CindyVerifiedCapabilities()
+	result := make([]CindyModelCapability, 0, len(capabilities))
+	for i := range capabilities {
+		result = append(result, cindyModelCapabilityFromCapability(capabilities[i]))
+	}
+	return result
+}
+
+// CindyImageModelCapabilities returns the fixed client-safe image subset used
+// by Image Studio eligibility responses.
+func CindyImageModelCapabilities() []CindyModelCapability {
+	capabilities := CindyVerifiedCapabilities()
+	result := make([]CindyModelCapability, 0, len(capabilities))
+	for i := range capabilities {
+		if capabilities[i].Kind == CindyModelKindImage {
+			result = append(result, cindyModelCapabilityFromCapability(capabilities[i]))
+		}
+	}
+	return result
+}
+
+func cindyModelCapabilityFromCapability(capability CindyCapability) CindyModelCapability {
+	return CindyModelCapability{
+		Object:            "model_capability",
+		ID:                capability.PublicID,
+		Kind:              capability.Kind,
+		InputModalities:   append([]string(nil), capability.InputModalities...),
+		OutputModalities:  append([]string(nil), capability.OutputModalities...),
+		Endpoints:         append([]CindyEndpoint(nil), capability.VerifiedEndpoints...),
+		ClientSurfaces:    append([]string(nil), capability.ClientSurfaces...),
+		MaxInputTokens:    capability.MaxInputTokens,
+		MaxOutputTokens:   capability.MaxOutputTokens,
+		PricingSource:     capability.PricingSource,
+		ExplicitZeroPrice: capability.ExplicitZeroPrice,
+		Controls:          cloneCindyCapability(capability).Controls,
+	}
 }

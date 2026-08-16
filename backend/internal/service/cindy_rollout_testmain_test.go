@@ -26,6 +26,7 @@ func shouldReexecServiceTestsWithCindyFeatures() bool {
 	for _, name := range []string{
 		CindyBalanceDetectionEnabledEnv,
 		CindyCapabilityCatalogEnabledEnv,
+		ImageStudioEnabledEnv,
 		CindyImageStudioEnabledEnv,
 	} {
 		if _, configured := os.LookupEnv(name); configured {
@@ -51,7 +52,7 @@ func reexecServiceTestsWithCindyFeatures() int {
 	cmd.Env = append(os.Environ(),
 		CindyBalanceDetectionEnabledEnv+"=true",
 		CindyCapabilityCatalogEnabledEnv+"=true",
-		CindyImageStudioEnabledEnv+"=true",
+		ImageStudioEnabledEnv+"=true",
 		cindyFeatureOnTestMainEnv+"=1",
 	)
 	cmd.Stdout = os.Stdout
