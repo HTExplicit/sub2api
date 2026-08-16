@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -18,20 +19,13 @@ import (
 )
 
 type cindyGroupSplitMember struct {
-	accountID   int64
-	priority    int
-	platform    string
-	accountType string
-	baseURL     string
-	status      string
-	updatedAt   time.Time
-	isCindy     bool
+	accountID int64
+	priority  int
+	isCindy   bool
 }
 
 type cindyGroupSplitAPIKey struct {
-	id        int64
-	status    string
-	updatedAt time.Time
+	id int64
 }
 
 type cindyGroupSplitSnapshotData struct {
@@ -315,7 +309,10 @@ func loadCindyGroupSplitSnapshot(
 		APIKeysToRebind:      int64(len(input.APIKeyIDs)),
 		APIKeysRemaining:     int64(len(apiKeys) - len(input.APIKeyIDs)),
 	}
-	preview.MemberFingerprint = cindyGroupSplitFingerprint(source, members, apiKeys, input)
+	preview.MemberFingerprint, err = cindyGroupSplitFingerprint(source, members, apiKeys, input)
+	if err != nil {
+		return nil, err
+	}
 	return &cindyGroupSplitSnapshotData{
 		public: service.CindyGroupSplitRepositorySnapshot{
 			SourceGroup: source,
@@ -350,11 +347,6 @@ func loadCindyGroupSplitMembers(ctx context.Context, exec sqlExecutor, groupID i
 		SELECT
 			a.id,
 			ag.priority,
-			a.platform,
-			a.type,
-			COALESCE(a.credentials ->> 'base_url', ''),
-			a.status,
-			a.updated_at,
 			CASE WHEN
 				a.platform = $2
 				AND a.type = $3
@@ -386,11 +378,6 @@ func loadCindyGroupSplitMembers(ctx context.Context, exec sqlExecutor, groupID i
 		if err := rows.Scan(
 			&member.accountID,
 			&member.priority,
-			&member.platform,
-			&member.accountType,
-			&member.baseURL,
-			&member.status,
-			&member.updatedAt,
 			&member.isCindy,
 		); err != nil {
 			return nil, fmt.Errorf("scan Cindy split member: %w", err)
@@ -405,7 +392,7 @@ func loadCindyGroupSplitMembers(ctx context.Context, exec sqlExecutor, groupID i
 
 func loadCindyGroupSplitAPIKeys(ctx context.Context, exec sqlExecutor, groupID int64, lockRows bool) ([]cindyGroupSplitAPIKey, error) {
 	query := `
-		SELECT k.id, k.status, k.updated_at
+		SELECT k.id
 		FROM api_keys k
 		WHERE k.group_id = $1 AND k.deleted_at IS NULL
 		ORDER BY k.id ASC
@@ -422,7 +409,7 @@ func loadCindyGroupSplitAPIKeys(ctx context.Context, exec sqlExecutor, groupID i
 	keys := make([]cindyGroupSplitAPIKey, 0)
 	for rows.Next() {
 		var key cindyGroupSplitAPIKey
-		if err := rows.Scan(&key.id, &key.status, &key.updatedAt); err != nil {
+		if err := rows.Scan(&key.id); err != nil {
 			return nil, fmt.Errorf("scan Cindy split API key: %w", err)
 		}
 		keys = append(keys, key)
@@ -468,34 +455,31 @@ func cindyGroupAccountsToMove(members []cindyGroupSplitMember, sourceKeeps strin
 	return ids
 }
 
-func cindyGroupSplitFingerprint(source *service.Group, members []cindyGroupSplitMember, keys []cindyGroupSplitAPIKey, input service.CindyGroupSplitInput) string {
-	fields := make([]string, 0, 16+len(members)*8+len(keys)*3+len(input.APIKeyIDs))
+// cindyGroupSplitFingerprint covers only state that can change the split's
+// writes. Request-time account/key status and timestamp churn is deliberately
+// excluded; strict identity changes are represented by the derived isCindy bit.
+func cindyGroupSplitFingerprint(source *service.Group, members []cindyGroupSplitMember, keys []cindyGroupSplitAPIKey, input service.CindyGroupSplitInput) (string, error) {
+	targetPolicy, err := json.Marshal(service.BuildCindySplitTargetGroup(source, input.TargetName))
+	if err != nil {
+		return "", fmt.Errorf("marshal Cindy split target policy: %w", err)
+	}
+	fields := make([]string, 0, 12+len(members)*3+len(keys)+len(input.APIKeyIDs))
 	appendField := func(value string) {
 		fields = append(fields, strconv.Itoa(len(value)), value)
 	}
-	appendField("cindy-group-split-v1")
+	appendField("cindy-group-split-v2")
 	appendField(strconv.FormatInt(source.ID, 10))
-	appendField(source.Name)
-	appendField(source.Status)
-	appendField(source.Platform)
-	appendField(source.UpdatedAt.UTC().Format(time.RFC3339Nano))
+	appendField(string(targetPolicy))
 	appendField(input.SourceKeeps)
 	appendField(input.TargetName)
 
 	for _, member := range members {
 		appendField(strconv.FormatInt(member.accountID, 10))
 		appendField(strconv.Itoa(member.priority))
-		appendField(member.platform)
-		appendField(member.accountType)
-		appendField(strings.ToLower(strings.TrimSpace(member.baseURL)))
-		appendField(member.status)
-		appendField(member.updatedAt.UTC().Format(time.RFC3339Nano))
 		appendField(strconv.FormatBool(member.isCindy))
 	}
 	for _, key := range keys {
 		appendField(strconv.FormatInt(key.id, 10))
-		appendField(key.status)
-		appendField(key.updatedAt.UTC().Format(time.RFC3339Nano))
 	}
 	selected := append([]int64(nil), input.APIKeyIDs...)
 	sort.Slice(selected, func(i, j int) bool { return selected[i] < selected[j] })
@@ -503,5 +487,5 @@ func cindyGroupSplitFingerprint(source *service.Group, members []cindyGroupSplit
 		appendField(strconv.FormatInt(id, 10))
 	}
 	digest := sha256.Sum256([]byte(strings.Join(fields, "\x1f")))
-	return fmt.Sprintf("%x", digest)
+	return fmt.Sprintf("%x", digest), nil
 }

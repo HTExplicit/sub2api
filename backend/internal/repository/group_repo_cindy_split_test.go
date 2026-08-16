@@ -67,7 +67,7 @@ func TestGroupRepositoryAuditCindyGroupsUsesStrictIdentityAndAnonymousCounts(t *
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestCindyGroupSplitFingerprintTracksMemberAndAPIKeyDrift(t *testing.T) {
+func TestCindyGroupSplitFingerprintTracksSemanticDrift(t *testing.T) {
 	now := time.Date(2026, 8, 16, 1, 2, 3, 0, time.UTC)
 	source := &service.Group{
 		ID:        9,
@@ -77,30 +77,47 @@ func TestCindyGroupSplitFingerprintTracksMemberAndAPIKeyDrift(t *testing.T) {
 		UpdatedAt: now,
 	}
 	members := []cindyGroupSplitMember{{
-		accountID:   11,
-		priority:    5,
-		platform:    service.PlatformOpenAI,
-		accountType: service.AccountTypeAPIKey,
-		baseURL:     "https://api.laxarouter.ai",
-		status:      service.StatusActive,
-		updatedAt:   now,
-		isCindy:     true,
+		accountID: 11,
+		priority:  5,
+		isCindy:   true,
 	}}
-	keys := []cindyGroupSplitAPIKey{{id: 21, status: service.StatusActive, updatedAt: now}}
+	keys := []cindyGroupSplitAPIKey{{id: 21}}
 	input := service.CindyGroupSplitInput{
 		SourceKeeps: service.CindyGroupSourceKeepsCindy,
 		TargetName:  "ordinary",
 		APIKeyIDs:   []int64{21},
 	}
 
-	baseline := cindyGroupSplitFingerprint(source, members, keys, input)
+	baseline, err := cindyGroupSplitFingerprint(source, members, keys, input)
+	require.NoError(t, err)
 	require.Len(t, baseline, 64)
 
 	changedMembers := append([]cindyGroupSplitMember(nil), members...)
 	changedMembers[0].priority++
-	require.NotEqual(t, baseline, cindyGroupSplitFingerprint(source, changedMembers, keys, input))
+	changedFingerprint, err := cindyGroupSplitFingerprint(source, changedMembers, keys, input)
+	require.NoError(t, err)
+	require.NotEqual(t, baseline, changedFingerprint)
+
+	changedMembers = append([]cindyGroupSplitMember(nil), members...)
+	changedMembers[0].isCindy = false
+	changedFingerprint, err = cindyGroupSplitFingerprint(source, changedMembers, keys, input)
+	require.NoError(t, err)
+	require.NotEqual(t, baseline, changedFingerprint)
 
 	changedKeys := append([]cindyGroupSplitAPIKey(nil), keys...)
-	changedKeys[0].status = service.StatusDisabled
-	require.NotEqual(t, baseline, cindyGroupSplitFingerprint(source, members, changedKeys, input))
+	changedKeys[0].id++
+	changedFingerprint, err = cindyGroupSplitFingerprint(source, members, changedKeys, input)
+	require.NoError(t, err)
+	require.NotEqual(t, baseline, changedFingerprint)
+
+	changedSource := *source
+	changedSource.UpdatedAt = changedSource.UpdatedAt.Add(time.Second)
+	changedFingerprint, err = cindyGroupSplitFingerprint(&changedSource, members, keys, input)
+	require.NoError(t, err)
+	require.Equal(t, baseline, changedFingerprint, "generic row timestamps are not target policy")
+
+	changedSource.RateMultiplier++
+	changedFingerprint, err = cindyGroupSplitFingerprint(&changedSource, members, keys, input)
+	require.NoError(t, err)
+	require.NotEqual(t, baseline, changedFingerprint)
 }
