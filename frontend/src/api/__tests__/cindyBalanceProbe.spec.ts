@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   cancelCindyBalanceProbe,
+  canonicalizeCindyBalanceProbeScope,
   createCindyBalanceProbe,
   getCindyBalanceProbeJob,
   listCindyBalanceProbeItems,
@@ -68,5 +69,18 @@ describe('Cindy balance probe admin API', () => {
     expect(mocks.post).toHaveBeenNthCalledWith(1, `${base}/7/pause`)
     expect(mocks.post).toHaveBeenNthCalledWith(2, `${base}/7/resume`)
     expect(mocks.post).toHaveBeenNthCalledWith(3, `${base}/7/cancel`)
+  })
+
+  it('canonicalizes selected scopes from current and legacy preview responses', () => {
+    expect(canonicalizeCindyBalanceProbeScope({
+      mode: 'selected',
+      account_ids: [10, 9, 10],
+      filters: { account_ids: [99] },
+    })).toEqual({ mode: 'selected', account_ids: [9, 10] })
+
+    expect(canonicalizeCindyBalanceProbeScope({
+      mode: 'selected',
+      filters: { account_ids: [10, 9, 10] },
+    })).toEqual({ mode: 'selected', account_ids: [9, 10] })
   })
 })

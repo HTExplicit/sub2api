@@ -50,8 +50,9 @@ var (
 )
 
 type CindyBalanceProbeScope struct {
-	Mode    string                `json:"mode"`
-	Filters AccountConsoleFilters `json:"filters,omitempty"`
+	Mode       string                `json:"mode"`
+	AccountIDs []int64               `json:"account_ids,omitempty"`
+	Filters    AccountConsoleFilters `json:"filters,omitempty"`
 }
 
 type CindyBalanceProbeCandidate struct {
@@ -190,6 +191,7 @@ type CindyBalanceProbeRepository interface {
 }
 
 func BuildCindyBalanceProbePreview(scope CindyBalanceProbeScope, accounts []Account, rateRPS float64) (*CindyBalanceProbePreview, error) {
+	scope = CanonicalizeCindyBalanceProbeScope(scope)
 	if rateRPS == 0 {
 		rateRPS = CindyBalanceProbeDefaultRateRPS
 	}
@@ -245,10 +247,14 @@ func BuildCindyBalanceProbePreviewFromSnapshot(
 	rateRPS float64,
 	now time.Time,
 ) (*CindyBalanceProbePreview, error) {
+	scope = CanonicalizeCindyBalanceProbeScope(scope)
 	if now.IsZero() {
 		now = time.Now()
 	}
 	filters := scope.Filters
+	if scope.Mode == "selected" {
+		filters.AccountIDs = append([]int64(nil), scope.AccountIDs...)
+	}
 	matcher := newAccountFacetMatcher(filters)
 	accountIDs := int64FilterSet(filters.AccountIDs)
 	restrictAccountIDs := len(filters.AccountIDs) > 0
@@ -322,6 +328,7 @@ func validateCindyBalanceProbeRate(rateRPS float64) error {
 }
 
 func EncodeCindyBalanceProbeScope(scope CindyBalanceProbeScope) []byte {
+	scope = CanonicalizeCindyBalanceProbeScope(scope)
 	data, _ := json.Marshal(scope)
 	return data
 }
@@ -329,6 +336,36 @@ func EncodeCindyBalanceProbeScope(scope CindyBalanceProbeScope) []byte {
 func DecodeCindyBalanceProbeScope(data []byte) CindyBalanceProbeScope {
 	var scope CindyBalanceProbeScope
 	_ = json.Unmarshal(data, &scope)
+	return CanonicalizeCindyBalanceProbeScope(scope)
+}
+
+// CanonicalizeCindyBalanceProbeScope keeps selected account IDs at the public
+// top-level field while accepting scopes persisted by the earlier nested
+// filters.account_ids representation.
+func CanonicalizeCindyBalanceProbeScope(scope CindyBalanceProbeScope) CindyBalanceProbeScope {
+	scope.Mode = strings.ToLower(strings.TrimSpace(scope.Mode))
+	if scope.Mode != "selected" {
+		return scope
+	}
+	accountIDs := scope.AccountIDs
+	if len(accountIDs) == 0 {
+		accountIDs = scope.Filters.AccountIDs
+	}
+	seen := make(map[int64]struct{}, len(accountIDs))
+	canonicalIDs := make([]int64, 0, len(accountIDs))
+	for _, accountID := range accountIDs {
+		if accountID <= 0 {
+			continue
+		}
+		if _, exists := seen[accountID]; exists {
+			continue
+		}
+		seen[accountID] = struct{}{}
+		canonicalIDs = append(canonicalIDs, accountID)
+	}
+	sort.Slice(canonicalIDs, func(i, j int) bool { return canonicalIDs[i] < canonicalIDs[j] })
+	scope.AccountIDs = canonicalIDs
+	scope.Filters.AccountIDs = nil
 	return scope
 }
 

@@ -3,6 +3,7 @@ package admin
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -22,6 +23,37 @@ type cindyBalanceProbeListRepositoryStub struct {
 type cindyBalanceProbeCreateRepositoryStub struct {
 	service.CindyBalanceProbeRepository
 	createCalls int
+}
+
+type cindyBalanceProbeRoundTripRepositoryStub struct {
+	service.CindyBalanceProbeRepository
+	createdScope service.CindyBalanceProbeScope
+}
+
+func (s *cindyBalanceProbeRoundTripRepositoryStub) Preview(
+	_ context.Context,
+	scope service.CindyBalanceProbeScope,
+	rateRPS float64,
+) (*service.CindyBalanceProbePreview, error) {
+	return &service.CindyBalanceProbePreview{
+		Scope: scope, CandidateCount: 2, CandidateFingerprint: strings.Repeat("b", 64),
+		MinimumCalls: 2, MaximumCalls: 4, RateRPS: rateRPS,
+	}, nil
+}
+
+func (s *cindyBalanceProbeRoundTripRepositoryStub) CreateJob(
+	_ context.Context,
+	_ *int64,
+	scope service.CindyBalanceProbeScope,
+	rateRPS float64,
+	expectedCount int,
+	expectedFingerprint string,
+) (*service.CindyBalanceProbeJob, error) {
+	s.createdScope = scope
+	return &service.CindyBalanceProbeJob{
+		ID: 31, Status: "queued", Scope: scope, RateRPS: rateRPS,
+		CandidateCount: expectedCount, CandidateFingerprint: expectedFingerprint,
+	}, nil
 }
 
 func (s *cindyBalanceProbeCreateRepositoryStub) CreateJob(
@@ -83,4 +115,52 @@ func TestCindyBalanceProbeHandlerCreateReturnsConflictOnTransactionalCandidateDr
 	require.Equal(t, http.StatusConflict, recorder.Code, recorder.Body.String())
 	require.Contains(t, recorder.Body.String(), "CINDY_BALANCE_PROBE_CANDIDATES_CHANGED")
 	require.Equal(t, 1, repo.createCalls)
+}
+
+func TestCindyBalanceProbeHandlerSelectedPreviewCreateRoundTripCanonicalizesLegacyScope(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &cindyBalanceProbeRoundTripRepositoryStub{}
+	probeService := service.NewCindyBalanceProbeService(repo, nil, nil, nil)
+	t.Cleanup(probeService.Stop)
+	handler := NewCindyBalanceProbeHandler(probeService)
+	router := gin.New()
+	router.POST("/admin/cindy/balance-probe-jobs/preview", handler.Preview)
+	router.POST("/admin/cindy/balance-probe-jobs", func(c *gin.Context) {
+		c.Set(string(servermiddleware.ContextKeyUser), servermiddleware.AuthSubject{UserID: 77})
+		handler.Create(c)
+	})
+
+	previewRecorder := httptest.NewRecorder()
+	router.ServeHTTP(
+		previewRecorder,
+		httptest.NewRequest(
+			http.MethodPost,
+			"/admin/cindy/balance-probe-jobs/preview",
+			bytes.NewBufferString(`{"scope":{"mode":"selected","filters":{"account_ids":[19,17,19]}} ,"rate_rps":0.5}`),
+		),
+	)
+	require.Equal(t, http.StatusOK, previewRecorder.Code, previewRecorder.Body.String())
+
+	var previewEnvelope struct {
+		Data service.CindyBalanceProbePreview `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(previewRecorder.Body.Bytes(), &previewEnvelope))
+	require.Equal(t, []int64{17, 19}, previewEnvelope.Data.Scope.AccountIDs)
+	require.Empty(t, previewEnvelope.Data.Scope.Filters.AccountIDs)
+
+	createBody, err := json.Marshal(map[string]any{
+		"scope":                 previewEnvelope.Data.Scope,
+		"rate_rps":              previewEnvelope.Data.RateRPS,
+		"expected_count":        previewEnvelope.Data.CandidateCount,
+		"candidate_fingerprint": previewEnvelope.Data.CandidateFingerprint,
+	})
+	require.NoError(t, err)
+	createRecorder := httptest.NewRecorder()
+	router.ServeHTTP(
+		createRecorder,
+		httptest.NewRequest(http.MethodPost, "/admin/cindy/balance-probe-jobs", bytes.NewReader(createBody)),
+	)
+	require.Equal(t, http.StatusCreated, createRecorder.Code, createRecorder.Body.String())
+	require.Equal(t, []int64{17, 19}, repo.createdScope.AccountIDs)
+	require.Empty(t, repo.createdScope.Filters.AccountIDs)
 }

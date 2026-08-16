@@ -199,10 +199,19 @@ func normalizeCindyBalanceProbeScope(scopeRequest cindyBalanceProbeScopeRequest)
 		filters.CindyOnly = true
 		mode = "filter"
 	case "selected":
-		if len(scopeRequest.AccountIDs) == 0 {
+		accountIDs := scopeRequest.AccountIDs
+		if len(accountIDs) == 0 {
+			accountIDs = scopeRequest.Filters.AccountIDs
+		}
+		scope := service.CanonicalizeCindyBalanceProbeScope(service.CindyBalanceProbeScope{
+			Mode:       mode,
+			AccountIDs: append([]int64(nil), accountIDs...),
+			Filters:    filters,
+		})
+		if len(scope.AccountIDs) == 0 {
 			return service.CindyBalanceProbeScope{}, infraerrors.BadRequest("CINDY_BALANCE_PROBE_SELECTION_EMPTY", "select at least one Cindy account")
 		}
-		filters.AccountIDs = append([]int64(nil), scopeRequest.AccountIDs...)
+		return scope, nil
 	default:
 		return service.CindyBalanceProbeScope{}, infraerrors.BadRequest("CINDY_BALANCE_PROBE_SCOPE_INVALID", "scope mode must be all, filter, or selected")
 	}

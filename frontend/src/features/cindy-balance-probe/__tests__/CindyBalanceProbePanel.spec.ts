@@ -18,19 +18,23 @@ const mocks = vi.hoisted(() => ({
   showSuccess: vi.fn(),
 }))
 
-vi.mock('@/api/admin/cindyBalanceProbe', () => ({
-  cindyBalanceProbeAPI: {
-    preview: mocks.preview,
-    create: mocks.create,
-    list: mocks.list,
-    get: mocks.get,
-    listItems: mocks.listItems,
-    setRate: mocks.setRate,
-    pause: mocks.pause,
-    resume: mocks.resume,
-    cancel: mocks.cancel,
-  },
-}))
+vi.mock('@/api/admin/cindyBalanceProbe', async () => {
+  const actual = await vi.importActual<typeof import('@/api/admin/cindyBalanceProbe')>('@/api/admin/cindyBalanceProbe')
+  return {
+    ...actual,
+    cindyBalanceProbeAPI: {
+      preview: mocks.preview,
+      create: mocks.create,
+      list: mocks.list,
+      get: mocks.get,
+      listItems: mocks.listItems,
+      setRate: mocks.setRate,
+      pause: mocks.pause,
+      resume: mocks.resume,
+      cancel: mocks.cancel,
+    },
+  }
+})
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({ showError: mocks.showError, showSuccess: mocks.showSuccess }),
@@ -66,7 +70,11 @@ const runningJob = {
 }
 
 const preview = {
-  scope: { mode: 'selected', account_ids: [9, 10] },
+  scope: {
+    mode: 'selected',
+    account_ids: [9, 10],
+    filters: { account_ids: [], sort_by: 'name', sort_order: 'asc' },
+  },
   candidate_count: 2,
   marked_count: 1,
   unmarked_count: 1,
@@ -137,11 +145,30 @@ describe('CindyBalanceProbePanel', () => {
     await wrapper.get('[data-test="cindy-probe-create"]').trigger('click')
     await flushPromises()
     expect(mocks.create).toHaveBeenCalledWith({
-      scope: preview.scope,
+      scope: { mode: 'selected', account_ids: [9, 10] },
       rate_rps: 0.5,
       expected_count: 2,
       candidate_fingerprint: 'preview-fingerprint',
     })
+  })
+
+  it('canonicalizes a legacy nested selected preview before create', async () => {
+    mocks.preview.mockResolvedValue({
+      ...preview,
+      scope: { mode: 'selected', filters: { account_ids: [10, 9, 10] } },
+    })
+    const wrapper = render()
+    await flushPromises()
+
+    await wrapper.get('[data-test="cindy-probe-scope-selected"]').trigger('click')
+    await wrapper.get('[data-test="cindy-probe-preview"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="cindy-probe-create"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
+      scope: { mode: 'selected', account_ids: [9, 10] },
+    }))
   })
 
   it('passes the exact current account filters to preview', async () => {

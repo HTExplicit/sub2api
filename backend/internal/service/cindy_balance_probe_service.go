@@ -69,7 +69,7 @@ func (s *CindyBalanceProbeService) Preview(
 	if s == nil || s.repo == nil {
 		return nil, ErrCindyBalanceProbeChanged
 	}
-	return s.repo.Preview(ctx, scope, rateRPS)
+	return s.repo.Preview(ctx, CanonicalizeCindyBalanceProbeScope(scope), rateRPS)
 }
 
 func (s *CindyBalanceProbeService) CreateJob(
@@ -89,6 +89,7 @@ func (s *CindyBalanceProbeService) CreateJob(
 	if err := validateCindyBalanceProbeRate(rateRPS); err != nil {
 		return nil, err
 	}
+	scope = CanonicalizeCindyBalanceProbeScope(scope)
 	job, err := s.repo.CreateJob(
 		ctx,
 		requestedBy,

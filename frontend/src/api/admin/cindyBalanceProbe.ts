@@ -124,6 +124,15 @@ export interface CindyBalanceProbeJobList {
   total: number
 }
 
+export function canonicalizeCindyBalanceProbeScope(scope: CindyBalanceProbeScope): CindyBalanceProbeScope {
+  if (scope.mode !== 'selected') return scope
+
+  const sourceIDs = scope.account_ids?.length ? scope.account_ids : scope.filters?.account_ids || []
+  const accountIDs = [...new Set(sourceIDs.filter((accountID) => Number.isSafeInteger(accountID) && accountID > 0))]
+    .sort((left, right) => left - right)
+  return { mode: 'selected', account_ids: accountIDs }
+}
+
 export async function previewCindyBalanceProbe(
   request: CindyBalanceProbePreviewRequest,
 ): Promise<CindyBalanceProbePreview> {
