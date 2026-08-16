@@ -116,20 +116,33 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 	require.Empty(t, GetUpstreamEndpoint(c, service.PlatformOpenAI))
 
 	for _, tc := range []struct {
-		name     string
-		request  string
-		expected string
-		strict   bool
-		ordinary bool
+		name         string
+		request      string
+		expected     string
+		strict       bool
+		ordinary     bool
+		modelMapping map[string]any
 	}{
 		{name: "strict_sol_alias", request: "gpt-5.4", expected: "openai/gpt-5.6-sol", strict: true},
 		{name: "strict_luna_alias", request: "gpt-5.4-mini", expected: "openai/gpt-5.6-luna", strict: true},
+		{
+			name: "configured_stable_sol", request: "gpt-5.6-sol", expected: "openai/gpt-5.6-sol",
+			modelMapping: map[string]any{"gpt-5.6-sol": "openai/gpt-5.6-sol"},
+		},
+		{
+			name: "configured_stable_luna", request: "gpt-5.6-luna", expected: "openai/gpt-5.6-luna",
+			modelMapping: map[string]any{"gpt-5.6-luna": "openai/gpt-5.6-luna"},
+		},
 		{name: "mixed_group_does_not_map", request: "gpt-5.4-mini", expected: "gpt-5.4-mini"},
 		{name: "ordinary_openai_does_not_map", request: "gpt-5.4-mini", expected: "gpt-5.4-mini", ordinary: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h, accountRepo, upstream, handlerGroupID := newCindyBalanceFailoverHandler(t)
 			accountRepo.accounts = accountRepo.accounts[1:]
+			if tc.modelMapping != nil {
+				accountRepo.accounts[0].Credentials["model_mapping"] = tc.modelMapping
+				accountRepo.accounts[0].Extra["openai_passthrough"] = false
+			}
 			if tc.ordinary {
 				accountRepo.accounts[0].Credentials["base_url"] = "https://ordinary.example.invalid"
 			}

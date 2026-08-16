@@ -246,6 +246,8 @@ func TestCindyRolloutFlagHelper(t *testing.T) {
 				"base_url": "https://api.laxarouter.ai",
 				"model_mapping": map[string]any{
 					"legacy-model": "legacy-upstream-model",
+					"gpt-5.6-sol":  "openai/gpt-5.6-sol",
+					"gpt-5.6-luna": "openai/gpt-5.6-luna",
 				},
 			},
 		}
@@ -254,6 +256,17 @@ func TestCindyRolloutFlagHelper(t *testing.T) {
 		}
 		if got := account.GetMappedModel("legacy-model"); got != "legacy-upstream-model" {
 			t.Fatalf("catalog rollback resolved model to %q, want legacy-upstream-model", got)
+		}
+		for requested, want := range map[string]string{
+			"gpt-5.6-sol":  "openai/gpt-5.6-sol",
+			"gpt-5.6-luna": "openai/gpt-5.6-luna",
+		} {
+			if !account.IsModelSupported(requested) {
+				t.Fatalf("catalog rollback rejected configured stable Cindy model %q", requested)
+			}
+			if got := account.GetMappedModel(requested); got != want {
+				t.Fatalf("catalog rollback resolved stable Cindy model %q to %q, want %q", requested, got, want)
+			}
 		}
 		for requested, want := range map[string]string{
 			"gpt-5.4":      "openai/gpt-5.6-sol",

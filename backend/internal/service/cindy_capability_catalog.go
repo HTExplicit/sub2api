@@ -302,13 +302,15 @@ func CindyCompatibilityMappedUpstreamModel(model string) (string, bool) {
 	return capability.LiveUpstreamID, true
 }
 
-// CindyCompatibilityRoutingTarget reports the exact public or live upstream
-// IDs targeted by compatibility aliases. It does not recognize the aliases
-// themselves; group-aware routing must resolve those first.
+// CindyCompatibilityRoutingTarget reports the exact live upstream IDs targeted
+// by compatibility aliases. Public IDs must still pass through the account's
+// configured model mapping; otherwise a catalog-off rollout would send the
+// public slug to Cindy instead of its provider-qualified live ID. The aliases
+// themselves remain group-aware and must be resolved before account selection.
 func CindyCompatibilityRoutingTarget(model string) bool {
 	for _, publicID := range cindyCompatibilityAliases {
 		capability := cindyCapabilityByPublicID[publicID]
-		if capability != nil && (model == capability.PublicID || model == capability.LiveUpstreamID) {
+		if capability != nil && model == capability.LiveUpstreamID {
 			return true
 		}
 	}
