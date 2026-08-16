@@ -1153,6 +1153,39 @@ func TestCooldownOpenAIRetryExhausted_AccountAndModelScopes(t *testing.T) {
 		require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
 		require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.4"))
 	})
+
+	t.Run("Cindy terminal request failure does not cool account", func(t *testing.T) {
+		svc := &OpenAIGatewayService{}
+		account := cindyHTTPToWSV2TestAccount()
+		account.ID = 4707
+
+		svc.CooldownOpenAIRetryExhausted(context.Background(), account, account.GetMappedModel("gpt-5.6-luna"), &UpstreamFailoverError{
+			StatusCode:               http.StatusBadGateway,
+			Scope:                    GatewayFailureScopeRequest,
+			Reason:                   openAICindyHTTPToWSV2TerminalReason,
+			CindyHTTPToWSV2FirstTurn: true,
+		})
+
+		require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+		require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.6-luna"))
+	})
+
+	t.Run("Cindy handshake 502 cools only failed account model", func(t *testing.T) {
+		svc := &OpenAIGatewayService{}
+		account := cindyHTTPToWSV2TestAccount()
+		account.ID = 4708
+
+		svc.CooldownOpenAIRetryExhausted(context.Background(), account, account.GetMappedModel("gpt-5.6-luna"), &UpstreamFailoverError{
+			StatusCode:               http.StatusBadGateway,
+			Scope:                    GatewayFailureScopeAccount,
+			Reason:                   openAICindyHTTPToWSV2FailoverReason,
+			CindyHTTPToWSV2FirstTurn: true,
+		})
+
+		require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+		require.True(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.6-luna"))
+		require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.6-sol"))
+	})
 }
 
 func TestCooldownOpenAIRetryExhausted_DoesNotShortenExistingBlock(t *testing.T) {

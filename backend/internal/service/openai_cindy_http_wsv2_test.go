@@ -281,28 +281,66 @@ func TestCindyHTTPToWSV2FirstTurnHandshakeFailoverClassification(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	svc := cindyHTTPToWSV2TestService()
 	account := cindyHTTPToWSV2TestAccount()
-	for _, statusCode := range []int{http.StatusForbidden, http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusBadGateway} {
-		t.Run(http.StatusText(statusCode), func(t *testing.T) {
+	for _, tc := range []struct {
+		statusCode int
+		wantScope  GatewayFailureScope
+	}{
+		{http.StatusForbidden, GatewayFailureScopeRequest},
+		{http.StatusTooManyRequests, GatewayFailureScopeRequest},
+		{http.StatusRequestTimeout, GatewayFailureScopeAccount},
+		{http.StatusInternalServerError, GatewayFailureScopeAccount},
+		{http.StatusBadGateway, GatewayFailureScopeAccount},
+	} {
+		t.Run(http.StatusText(tc.statusCode), func(t *testing.T) {
 			dialErr := &openAIWSDialError{
-				StatusCode: statusCode,
+				StatusCode: tc.statusCode,
 				ResponseHeaders: http.Header{
 					"X-Request-Id": []string{"request-redacted"},
 				},
 				ResponseBody: []byte(`{"error":{"message":"temporary failure"}}`),
 			}
+			c := cindyHTTPToWSV2TestContext("/v1/responses")
 
 			classified, ok := svc.cindyHTTPToWSV2FirstTurnFailover(
-				context.Background(), cindyHTTPToWSV2TestContext("/v1/responses"), account, "gpt-5.4", dialErr,
+				context.Background(), c, account, "gpt-5.4", dialErr,
 			)
 
 			require.True(t, ok)
 			var failoverErr *UpstreamFailoverError
 			require.ErrorAs(t, classified, &failoverErr)
-			require.Equal(t, statusCode, failoverErr.StatusCode)
+			require.Equal(t, tc.statusCode, failoverErr.StatusCode)
 			require.False(t, failoverErr.RetryableOnSameAccount)
+			require.Equal(t, GatewayFailureStageInference, failoverErr.Stage)
+			require.Equal(t, tc.wantScope, failoverErr.Scope)
+			require.NotEmpty(t, failoverErr.Reason)
+			require.True(t, failoverErr.CindyHTTPToWSV2FirstTurn)
 			require.JSONEq(t, string(openAITransportFailoverBody), string(failoverErr.ResponseBody))
+
+			rawEvents, exists := c.Get(OpsUpstreamErrorsKey)
+			require.True(t, exists)
+			events, ok := rawEvents.([]*OpsUpstreamErrorEvent)
+			require.True(t, ok)
+			require.Len(t, events, 1)
+			require.Equal(t, "failover", events[0].Kind)
+			require.Equal(t, string(GatewayFailureStageInference), events[0].Stage)
+			require.Equal(t, string(tc.wantScope), events[0].Scope)
+			require.Equal(t, string(failoverErr.Reason), events[0].Reason)
+			require.Equal(t, "request-redacted", events[0].UpstreamRequestID)
 		})
 	}
+
+	t.Run("transport_without_http_status", func(t *testing.T) {
+		classified, ok := svc.cindyHTTPToWSV2FirstTurnFailover(
+			context.Background(), cindyHTTPToWSV2TestContext("/v1/responses"), account, "gpt-5.4",
+			&openAIWSDialError{Err: errors.New("connection refused")},
+		)
+		require.True(t, ok)
+		var failoverErr *UpstreamFailoverError
+		require.ErrorAs(t, classified, &failoverErr)
+		require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
+		require.Equal(t, GatewayFailureScopeAccount, failoverErr.Scope)
+		require.True(t, failoverErr.CindyHTTPToWSV2FirstTurn)
+	})
 
 	htmlErr := &openAIWSDialError{StatusCode: http.StatusForbidden, ResponseBody: []byte("<!doctype html><html><body>Forbidden</body></html>")}
 	classified, ok := svc.cindyHTTPToWSV2FirstTurnFailover(
@@ -312,6 +350,7 @@ func TestCindyHTTPToWSV2FirstTurnHandshakeFailoverClassification(t *testing.T) {
 	var htmlFailover *UpstreamFailoverError
 	require.ErrorAs(t, classified, &htmlFailover)
 	require.True(t, htmlFailover.SuppressAccountHealthPenalty)
+	require.Equal(t, GatewayFailureScopeRequest, htmlFailover.Scope)
 	require.JSONEq(t, string(openAITransportFailoverBody), string(htmlFailover.ResponseBody))
 
 	classified, ok = svc.cindyHTTPToWSV2FirstTurnFailover(
@@ -322,6 +361,8 @@ func TestCindyHTTPToWSV2FirstTurnHandshakeFailoverClassification(t *testing.T) {
 	var closeFailover *UpstreamFailoverError
 	require.ErrorAs(t, classified, &closeFailover)
 	require.Equal(t, http.StatusServiceUnavailable, closeFailover.StatusCode)
+	require.Equal(t, GatewayFailureScopeRequest, closeFailover.Scope)
+	require.True(t, closeFailover.CindyHTTPToWSV2FirstTurn)
 }
 
 func TestCindyHTTPToWSV2FirstTurnTerminalEventFailoverClassification(t *testing.T) {
@@ -344,9 +385,31 @@ func TestCindyHTTPToWSV2FirstTurnTerminalEventFailoverClassification(t *testing.
 			var failoverErr *UpstreamFailoverError
 			require.ErrorAs(t, classified, &failoverErr)
 			require.Equal(t, tc.wantStatus, failoverErr.StatusCode)
+			require.Equal(t, GatewayFailureScopeRequest, failoverErr.Scope)
 			require.JSONEq(t, string(openAITransportFailoverBody), string(failoverErr.ResponseBody))
 		})
 	}
+}
+
+func TestCindyHTTPToWSV2RequestScopedTerminalDoesNotCoolAccountModel(t *testing.T) {
+	svc := cindyHTTPToWSV2TestService()
+	svc.rateLimitService = NewRateLimitService(nil, nil, &config.Config{}, nil, nil)
+	account := cindyHTTPToWSV2TestAccount()
+	account.ID = 4709
+	const model = "openai/gpt-5.6-luna"
+	payload := []byte(`{"type":"error","error":{"status":503,"message":"unavailable"}}`)
+
+	for range 2 {
+		classified, ok := svc.cindyHTTPToWSV2FirstTurnEventFailover(
+			context.Background(), nil, account, model, http.Header{}, payload,
+		)
+		require.True(t, ok)
+		var failoverErr *UpstreamFailoverError
+		require.ErrorAs(t, classified, &failoverErr)
+		require.Equal(t, GatewayFailureScopeRequest, failoverErr.Scope)
+	}
+
+	require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, model))
 }
 
 func TestCindyHTTPToWSV2TurnStateStagesUntilOutputAndRecordsFailoverAttempt(t *testing.T) {
@@ -382,6 +445,8 @@ func TestCindyHTTPToWSV2TurnStateStagesUntilOutputAndRecordsFailoverAttempt(t *t
 	var failoverErr *UpstreamFailoverError
 	require.ErrorAs(t, err, &failoverErr)
 	require.Equal(t, http.StatusServiceUnavailable, failoverErr.StatusCode)
+	require.Equal(t, GatewayFailureScopeRequest, failoverErr.Scope)
+	require.True(t, failoverErr.CindyHTTPToWSV2FirstTurn)
 	require.Empty(t, recorder.Body.String(), "pre-output failure must not commit SSE")
 	require.Empty(t, recorder.Header().Get(openAICodexTurnStateHeader), "failed account state must remain staged")
 

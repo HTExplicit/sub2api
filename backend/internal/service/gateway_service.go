@@ -711,6 +711,7 @@ type UpstreamFailoverError struct {
 	ClientMessage                string
 	SuppressAccountHealthPenalty bool
 	CindyBalanceInsufficient     bool // raw budget payload was consumed and sanitized before crossing the handler boundary
+	CindyHTTPToWSV2FirstTurn     bool // strict Cindy HTTP->WSv2 first-turn failure; permits compare-and-delete of this account's sticky binding
 }
 
 func (e *UpstreamFailoverError) Error() string {

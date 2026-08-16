@@ -33,10 +33,152 @@ func newSchedulerCacheUnitWithRedis(t *testing.T) (*schedulerCache, *miniredis.M
 	return cache, mr
 }
 
+func TestSchedulerCacheIgnoresLegacyMetadataGeneration(t *testing.T) {
+	ctx := context.Background()
+	cache, _ := newSchedulerCacheUnitWithRedis(t)
+	bucket := service.SchedulerBucket{GroupID: 91, Platform: service.PlatformOpenAI, Mode: service.SchedulerModeSingle}
+	account := service.Account{
+		ID:       9101,
+		Platform: service.PlatformOpenAI,
+		Type:     service.AccountTypeAPIKey,
+		Status:   service.StatusActive,
+		Credentials: map[string]any{
+			"api_key":  "test-only-key",
+			"base_url": "https://api.laxarouter.ai",
+		},
+	}
+	legacy := buildSchedulerMetadataAccount(account)
+	delete(legacy.Credentials, "base_url")
+	delete(legacy.Credentials, "openai_capabilities")
+	legacyJSON, err := json.Marshal(legacy)
+	require.NoError(t, err)
+
+	const legacyVersion = "1"
+	require.NoError(t, cache.rdb.Set(ctx, schedulerBucketKey(schedulerLegacyReadyPrefix, bucket), "1", 0).Err())
+	require.NoError(t, cache.rdb.Set(ctx, schedulerBucketKey("sched:active:", bucket), legacyVersion, 0).Err())
+	require.NoError(t, cache.rdb.ZAdd(ctx, fmt.Sprintf("sched:%d:%s:%s:v%s", bucket.GroupID, bucket.Platform, bucket.Mode, legacyVersion), redis.Z{
+		Score:  0,
+		Member: strconv.FormatInt(account.ID, 10),
+	}).Err())
+	require.NoError(t, cache.rdb.Set(ctx, schedulerLegacyAccountMetaKey(strconv.FormatInt(account.ID, 10)), legacyJSON, 0).Err())
+
+	legacySnapshot, hit, err := cache.GetSnapshot(ctx, bucket)
+	require.NoError(t, err)
+	require.False(t, hit)
+	require.Nil(t, legacySnapshot)
+
+	token, err := cache.CaptureBucketWriteToken(ctx, bucket)
+	require.NoError(t, err)
+	require.NoError(t, cache.SetSnapshot(ctx, bucket, token, []service.Account{account}))
+
+	currentSnapshot, hit, err := cache.GetSnapshot(ctx, bucket)
+	require.NoError(t, err)
+	require.True(t, hit)
+	require.Len(t, currentSnapshot, 1)
+	require.True(t, service.IsCindyAPIKeyAccount(
+		currentSnapshot[0].Platform,
+		currentSnapshot[0].Type,
+		currentSnapshot[0].Credentials,
+	))
+}
+
+func TestSchedulerCacheMetadataGenerationCleansLegacyCredentialCopies(t *testing.T) {
+	ctx := context.Background()
+	cache := newSchedulerCacheUnit(t)
+	const accountID int64 = 9102
+	id := strconv.FormatInt(accountID, 10)
+	legacyMetaKey := "sched:meta:" + id
+
+	require.NoError(t, cache.rdb.Set(ctx, legacyMetaKey, `{"credentials":{"api_key":"retired-key"}}`, 0).Err())
+	require.NoError(t, cache.SetAccount(ctx, &service.Account{
+		ID:          accountID,
+		Platform:    service.PlatformOpenAI,
+		Type:        service.AccountTypeAPIKey,
+		Status:      service.StatusActive,
+		Schedulable: true,
+		Credentials: map[string]any{"api_key": "rotated-key"},
+	}))
+
+	_, err := cache.rdb.Get(ctx, legacyMetaKey).Result()
+	require.ErrorIs(t, err, redis.Nil, "credential rotation must remove the legacy metadata copy")
+	require.True(t, cache.rdb.Exists(ctx, schedulerAccountMetaKey(id)).Val() > 0)
+
+	require.NoError(t, cache.rdb.Set(ctx, legacyMetaKey, `{"credentials":{"api_key":"retired-key"}}`, 0).Err())
+	require.NoError(t, cache.DeleteAccount(ctx, accountID))
+	require.Zero(t, cache.rdb.Exists(ctx,
+		schedulerAccountKey(id),
+		schedulerAccountMetaKey(id),
+		legacyMetaKey,
+		schedulerLastUsedKey(id),
+	).Val(), "account deletion must remove both metadata generations")
+}
+
+func TestSchedulerCacheV2ActivationKeepsLegacyReaderGenerationConsistent(t *testing.T) {
+	ctx := context.Background()
+	cache := newSchedulerCacheUnit(t)
+	bucket := service.SchedulerBucket{GroupID: 92, Platform: service.PlatformOpenAI, Mode: service.SchedulerModeSingle}
+	legacyAccount := service.Account{
+		ID:          9201,
+		Platform:    service.PlatformOpenAI,
+		Type:        service.AccountTypeAPIKey,
+		Status:      service.StatusActive,
+		Schedulable: true,
+		Credentials: map[string]any{"api_key": "legacy-key"},
+	}
+	currentAccount := service.Account{
+		ID:          9202,
+		Platform:    service.PlatformOpenAI,
+		Type:        service.AccountTypeAPIKey,
+		Status:      service.StatusActive,
+		Schedulable: true,
+		Credentials: map[string]any{
+			"api_key":  "current-key",
+			"base_url": "https://api.laxarouter.ai",
+		},
+	}
+	legacyPayload, err := json.Marshal(buildSchedulerMetadataAccount(legacyAccount))
+	require.NoError(t, err)
+	staleCurrent := buildSchedulerMetadataAccount(currentAccount)
+	delete(staleCurrent.Credentials, "base_url")
+	staleCurrentPayload, err := json.Marshal(staleCurrent)
+	require.NoError(t, err)
+
+	const legacyVersion = "41"
+	legacyReadyKey := schedulerBucketKey("sched:ready:", bucket)
+	legacyActiveKey := schedulerBucketKey("sched:active:", bucket)
+	legacySnapshotKey := fmt.Sprintf("sched:%d:%s:%s:v%s", bucket.GroupID, bucket.Platform, bucket.Mode, legacyVersion)
+	require.NoError(t, cache.rdb.Set(ctx, legacyReadyKey, "1", 0).Err())
+	require.NoError(t, cache.rdb.Set(ctx, legacyActiveKey, legacyVersion, 0).Err())
+	require.NoError(t, cache.rdb.Set(ctx, schedulerBucketKey("sched:ver:", bucket), legacyVersion, 0).Err())
+	require.NoError(t, cache.rdb.ZAdd(ctx, legacySnapshotKey, redis.Z{
+		Score:  0,
+		Member: strconv.FormatInt(legacyAccount.ID, 10),
+	}).Err())
+	require.NoError(t, cache.rdb.Set(ctx, "sched:meta:"+strconv.FormatInt(legacyAccount.ID, 10), legacyPayload, 0).Err())
+	require.NoError(t, cache.rdb.Set(ctx, "sched:meta:"+strconv.FormatInt(currentAccount.ID, 10), staleCurrentPayload, 0).Err())
+
+	token, err := cache.CaptureBucketWriteToken(ctx, bucket)
+	require.NoError(t, err)
+	require.NoError(t, cache.SetSnapshot(ctx, bucket, token, []service.Account{currentAccount}))
+
+	_, err = cache.rdb.Get(ctx, legacyReadyKey).Result()
+	require.ErrorIs(t, err, redis.Nil, "v2 activation must force a rolled-back reader through DB fallback")
+	require.Equal(t, legacyVersion, cache.rdb.Get(ctx, legacyActiveKey).Val(),
+		"v2 activation must not point a legacy reader at v2 snapshot members")
+	require.Equal(t, []string{strconv.FormatInt(legacyAccount.ID, 10)}, cache.rdb.ZRange(ctx, legacySnapshotKey, 0, -1).Val())
+
+	currentSnapshot, hit, err := cache.GetSnapshot(ctx, bucket)
+	require.NoError(t, err)
+	require.True(t, hit)
+	require.Len(t, currentSnapshot, 1)
+	require.Equal(t, currentAccount.ID, currentSnapshot[0].ID)
+}
+
 func TestSchedulerCacheWriteAccountIDsSkipsUnencodableTimes(t *testing.T) {
 	ctx := context.Background()
 	cache := newSchedulerCacheUnit(t)
 	invalidTime := time.Date(10000, time.January, 1, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, cache.rdb.Set(ctx, schedulerLegacyAccountMetaKey("112"), `{"credentials":{"api_key":"retired-key"}}`, 0).Err())
 
 	accountIDs, err := cache.writeAccountIDs(ctx, []service.Account{
 		{ID: 111, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey},
@@ -52,6 +194,7 @@ func TestSchedulerCacheWriteAccountIDsSkipsUnencodableTimes(t *testing.T) {
 	invalid, err := cache.GetAccount(ctx, 112)
 	require.NoError(t, err)
 	require.Nil(t, invalid)
+	require.Zero(t, cache.rdb.Exists(ctx, schedulerLegacyAccountMetaKey("112")).Val())
 }
 
 func TestSchedulerCacheSetAccountClearsUnencodablePayload(t *testing.T) {
@@ -60,6 +203,7 @@ func TestSchedulerCacheSetAccountClearsUnencodablePayload(t *testing.T) {
 
 	account := service.Account{ID: 113, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey}
 	require.NoError(t, cache.SetAccount(ctx, &account))
+	require.NoError(t, cache.rdb.Set(ctx, schedulerLegacyAccountMetaKey("113"), `{"credentials":{"api_key":"retired-key"}}`, 0).Err())
 
 	invalidTime := time.Date(10000, time.January, 1, 0, 0, 0, 0, time.UTC)
 	account.ExpiresAt = &invalidTime
@@ -68,6 +212,7 @@ func TestSchedulerCacheSetAccountClearsUnencodablePayload(t *testing.T) {
 	cached, err := cache.GetAccount(ctx, account.ID)
 	require.NoError(t, err)
 	require.Nil(t, cached)
+	require.Zero(t, cache.rdb.Exists(ctx, schedulerLegacyAccountMetaKey("113")).Val())
 }
 
 func TestSchedulerCacheUpdateLastUsedClearsUnencodablePayload(t *testing.T) {
@@ -75,6 +220,7 @@ func TestSchedulerCacheUpdateLastUsedClearsUnencodablePayload(t *testing.T) {
 	cache := newSchedulerCacheUnit(t)
 	account := service.Account{ID: 114, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey}
 	require.NoError(t, cache.SetAccount(ctx, &account))
+	require.NoError(t, cache.rdb.Set(ctx, schedulerLegacyAccountMetaKey("114"), `{"credentials":{"api_key":"retired-key"}}`, 0).Err())
 
 	invalidTime := time.Date(10000, time.January, 1, 0, 0, 0, 0, time.UTC)
 	require.NoError(t, cache.UpdateLastUsed(ctx, map[int64]time.Time{account.ID: invalidTime}))
@@ -82,6 +228,7 @@ func TestSchedulerCacheUpdateLastUsedClearsUnencodablePayload(t *testing.T) {
 	cached, err := cache.GetAccount(ctx, account.ID)
 	require.NoError(t, err)
 	require.Nil(t, cached)
+	require.Zero(t, cache.rdb.Exists(ctx, schedulerLegacyAccountMetaKey("114")).Val())
 }
 
 func TestSchedulerCacheSnapshotAccountIDReusePreservesPayloadAndMembers(t *testing.T) {
@@ -575,6 +722,86 @@ func TestBuildSchedulerMetadataAccount_KeepsSparkShadowRoutingIdentity(t *testin
 	require.Equal(t, map[string]any{"gpt-5.3-codex-spark": "gpt-5.3-codex-spark"}, got.Credentials["model_mapping"])
 	require.Equal(t, map[string]any{"gpt-5.4": "gpt-5.4-openai-compact"}, got.Credentials["compact_model_mapping"])
 	require.Nil(t, got.Credentials["access_token"])
+}
+
+func TestBuildSchedulerMetadataAccount_KeepsCindyRoutingIdentity(t *testing.T) {
+	tests := []struct {
+		name         string
+		accountID    int64
+		capabilities []any
+		extra        map[string]any
+	}{
+		{
+			name:      "production shape defaults to chat support",
+			accountID: 201,
+		},
+		{
+			name:         "explicit chat capability survives projection",
+			accountID:    202,
+			capabilities: []any{"chat_completions"},
+			extra:        map[string]any{"openai_responses_supported": true},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			credentials := map[string]any{
+				"api_key":  "test-key",
+				"base_url": "https://api.laxarouter.ai",
+				"model_mapping": map[string]any{
+					"gpt-5.6-luna": "openai/gpt-5.6-luna",
+				},
+				"header_overrides": map[string]any{"x-secret": "drop-me"},
+				"access_token":     "drop-me",
+				"refresh_token":    "drop-me",
+			}
+			if tc.capabilities != nil {
+				credentials["openai_capabilities"] = tc.capabilities
+			}
+			account := service.Account{
+				ID:          tc.accountID,
+				Platform:    service.PlatformOpenAI,
+				Type:        service.AccountTypeAPIKey,
+				Status:      service.StatusActive,
+				Schedulable: true,
+				Credentials: credentials,
+				Extra:       tc.extra,
+			}
+
+			cache := newSchedulerCacheUnit(t)
+			ctx := context.Background()
+			bucket := service.SchedulerBucket{
+				GroupID:  tc.accountID,
+				Platform: service.PlatformOpenAI,
+				Mode:     service.SchedulerModeSingle,
+			}
+			token, err := cache.CaptureBucketWriteToken(ctx, bucket)
+			require.NoError(t, err)
+			require.NoError(t, cache.SetSnapshot(ctx, bucket, token, []service.Account{account}))
+			snapshot, hit, err := cache.GetSnapshot(ctx, bucket)
+			require.NoError(t, err)
+			require.True(t, hit)
+			require.Len(t, snapshot, 1)
+			got := snapshot[0]
+
+			require.Equal(t, "https://api.laxarouter.ai", got.Credentials["base_url"])
+			if tc.capabilities == nil {
+				require.Nil(t, got.Credentials["openai_capabilities"])
+			} else {
+				require.Equal(t, tc.capabilities, got.Credentials["openai_capabilities"])
+			}
+			require.Nil(t, got.Credentials["header_overrides"])
+			require.Nil(t, got.Credentials["access_token"])
+			require.Nil(t, got.Credentials["refresh_token"])
+			require.True(t, service.IsCindyAPIKeyAccount(got.Platform, got.Type, got.Credentials))
+			require.True(t, got.IsModelSupported("openai/gpt-5.6-luna"),
+				"the production scheduler snapshot must retain strict Cindy live-model routing")
+			require.True(t, got.SupportsOpenAIEndpointCapability(service.OpenAIEndpointCapabilityChatCompletions))
+			if tc.capabilities != nil {
+				require.True(t, got.SupportsOpenAIEndpointCapability(service.OpenAIEndpointCapabilityResponses))
+			}
+		})
+	}
 }
 
 func TestSchedulerCacheBucketRetirementFencesWritersAndReopen(t *testing.T) {

@@ -15,18 +15,20 @@ import (
 )
 
 const (
-	schedulerBucketSetKey          = "sched:buckets"
-	schedulerOutboxWatermarkKey    = "sched:outbox:watermark"
-	schedulerAccountPrefix         = "sched:acc:"
-	schedulerAccountMetaPrefix     = "sched:meta:"
-	schedulerAccountLastUsedPrefix = "sched:acc:last_used:"
-	schedulerActivePrefix          = "sched:active:"
-	schedulerReadyPrefix           = "sched:ready:"
-	schedulerVersionPrefix         = "sched:ver:"
-	schedulerEpochPrefix           = "sched:epoch:"
-	schedulerRetiredPrefix         = "sched:retired:"
-	schedulerSnapshotPrefix        = "sched:"
-	schedulerLockPrefix            = "sched:lock:"
+	schedulerBucketSetKey            = "sched:buckets"
+	schedulerOutboxWatermarkKey      = "sched:outbox:watermark"
+	schedulerAccountPrefix           = "sched:acc:"
+	schedulerAccountMetaPrefix       = "sched:meta:v2:"
+	schedulerLegacyAccountMetaPrefix = "sched:meta:"
+	schedulerAccountLastUsedPrefix   = "sched:acc:last_used:"
+	schedulerActivePrefix            = "sched:active:v2:"
+	schedulerReadyPrefix             = "sched:ready:v2:"
+	schedulerLegacyReadyPrefix       = "sched:ready:"
+	schedulerVersionPrefix           = "sched:ver:v2:"
+	schedulerEpochPrefix             = "sched:epoch:"
+	schedulerRetiredPrefix           = "sched:retired:"
+	schedulerSnapshotPrefix          = "sched:v2:"
+	schedulerLockPrefix              = "sched:lock:"
 
 	defaultSchedulerSnapshotMGetChunkSize  = 128
 	defaultSchedulerSnapshotWriteChunkSize = 256
@@ -119,7 +121,7 @@ local currentActive = redis.call('GET', KEYS[5])
 if currentActive ~= false then
     redis.call('EXPIRE', ARGV[2] .. currentActive, tonumber(ARGV[3]))
 end
-redis.call('DEL', KEYS[4], KEYS[5])
+redis.call('DEL', KEYS[4], KEYS[5], KEYS[6])
 return currentEpoch
 `)
 
@@ -127,6 +129,7 @@ return currentEpoch
 local currentEpochRaw = redis.call('GET', KEYS[1])
 local currentEpoch = tonumber(currentEpochRaw)
 local retiredEpochRaw = redis.call('GET', KEYS[2])
+redis.call('DEL', KEYS[6])
 
 if retiredEpochRaw == false then
     if currentEpochRaw == false then
@@ -170,12 +173,13 @@ return 0
 	// 仅当新版本号 >= 当前激活版本时才切换，防止并发写入导致版本回滚。
 	// 旧快照使用 EXPIRE 设置宽限期而非立即 DEL，避免与 reader 竞态。
 	//
-	// KEYS[1] = activeKey     (sched:active:{bucket})
-	// KEYS[2] = readyKey      (sched:ready:{bucket})
+	// KEYS[1] = activeKey     (sched:active:v2:{bucket})
+	// KEYS[2] = readyKey      (sched:ready:v2:{bucket})
 	// KEYS[3] = bucketSetKey  (sched:buckets)
 	// KEYS[4] = snapshotKey   (新写入的快照 key)
 	// KEYS[5] = epochKey
 	// KEYS[6] = retiredKey
+	// KEYS[7] = legacyReadyKey (sched:ready:{bucket})
 	// ARGV[1] = 新版本号字符串
 	// ARGV[2] = bucket 字符串 (用于 SADD)
 	// ARGV[3] = 快照 key 前缀 (用于构造旧快照 key)
@@ -210,6 +214,7 @@ end
 redis.call('SET', KEYS[1], ARGV[1])
 redis.call('SET', KEYS[2], '1')
 redis.call('SADD', KEYS[3], ARGV[2])
+redis.call('DEL', KEYS[7])
 
 if currentActive ~= false and currentActive ~= ARGV[1] then
 	redis.call('EXPIRE', ARGV[3] .. currentActive, tonumber(ARGV[4]))
@@ -331,6 +336,7 @@ func (c *schedulerCache) RetireBucket(ctx context.Context, bucket service.Schedu
 		schedulerBucketSetKey,
 		schedulerBucketKey(schedulerReadyPrefix, bucket),
 		schedulerBucketKey(schedulerActivePrefix, bucket),
+		schedulerBucketKey(schedulerLegacyReadyPrefix, bucket),
 	}, bucket.String(), snapshotKeyPrefix, snapshotGraceTTLSeconds).Int64()
 	if err != nil {
 		return err
@@ -349,6 +355,7 @@ func (c *schedulerCache) ReopenBucket(ctx context.Context, bucket service.Schedu
 		schedulerBucketSetKey,
 		schedulerBucketKey(schedulerReadyPrefix, bucket),
 		schedulerBucketKey(schedulerActivePrefix, bucket),
+		schedulerBucketKey(schedulerLegacyReadyPrefix, bucket),
 	}, bucket.String(), snapshotKeyPrefix, snapshotGraceTTLSeconds).Int64()
 	if err != nil {
 		return service.SchedulerBucketWriteToken{}, err
@@ -545,6 +552,7 @@ func (c *schedulerCache) activateSnapshotVersion(ctx context.Context, bucket ser
 		snapshotKey,
 		schedulerBucketKey(schedulerEpochPrefix, bucket),
 		schedulerBucketKey(schedulerRetiredPrefix, bucket),
+		schedulerBucketKey(schedulerLegacyReadyPrefix, bucket),
 	}
 	args := []any{version, bucket.String(), snapshotKeyPrefix, snapshotGraceTTLSeconds, token.Epoch}
 
@@ -604,7 +612,13 @@ func (c *schedulerCache) DeleteAccount(ctx context.Context, accountID int64) err
 		return nil
 	}
 	id := strconv.FormatInt(accountID, 10)
-	return c.rdb.Del(ctx, schedulerAccountKey(id), schedulerAccountMetaKey(id), schedulerLastUsedKey(id)).Err()
+	return c.rdb.Del(
+		ctx,
+		schedulerAccountKey(id),
+		schedulerAccountMetaKey(id),
+		schedulerLegacyAccountMetaKey(id),
+		schedulerLastUsedKey(id),
+	).Err()
 }
 
 func (c *schedulerCache) UpdateLastUsed(ctx context.Context, updates map[int64]time.Time) error {
@@ -636,7 +650,13 @@ func (c *schedulerCache) UpdateLastUsed(ctx context.Context, updates map[int64]t
 				"error", err,
 			)
 			idText := strconv.FormatInt(id, 10)
-			pipe.Del(ctx, schedulerAccountKey(idText), schedulerAccountMetaKey(idText), schedulerLastUsedKey(idText))
+			pipe.Del(
+				ctx,
+				schedulerAccountKey(idText),
+				schedulerAccountMetaKey(idText),
+				schedulerLegacyAccountMetaKey(idText),
+				schedulerLastUsedKey(idText),
+			)
 			queued++
 			continue
 		}
@@ -720,6 +740,10 @@ func schedulerAccountMetaKey(id string) string {
 	return schedulerAccountMetaPrefix + id
 }
 
+func schedulerLegacyAccountMetaKey(id string) string {
+	return schedulerLegacyAccountMetaPrefix + id
+}
+
 func schedulerLastUsedKey(id string) string {
 	return schedulerAccountLastUsedPrefix + id
 }
@@ -781,7 +805,10 @@ func (c *schedulerCache) writeAccountIDs(ctx context.Context, accounts []service
 		return nil, nil
 	}
 
-	pipe := c.rdb.Pipeline()
+	// Each chunk must atomically publish the new full/meta payloads and remove
+	// the legacy metadata copy. A regular pipeline may partially execute across
+	// a connection failure, leaving a retired credential readable after rollback.
+	pipe := c.rdb.TxPipeline()
 	accountIDs := make([]int64, 0, len(accounts))
 	pending := 0
 	flush := func() error {
@@ -791,7 +818,7 @@ func (c *schedulerCache) writeAccountIDs(ctx context.Context, accounts []service
 		if _, err := pipe.Exec(ctx); err != nil {
 			return err
 		}
-		pipe = c.rdb.Pipeline()
+		pipe = c.rdb.TxPipeline()
 		pending = 0
 		return nil
 	}
@@ -803,12 +830,32 @@ func (c *schedulerCache) writeAccountIDs(ctx context.Context, accounts []service
 				"account_id", account.ID,
 				"error", err,
 			)
+			if account.ID > 0 {
+				id := strconv.FormatInt(account.ID, 10)
+				pipe.Del(
+					ctx,
+					schedulerAccountKey(id),
+					schedulerAccountMetaKey(id),
+					schedulerLegacyAccountMetaKey(id),
+					schedulerLastUsedKey(id),
+				)
+				pending++
+				if pending >= c.writeChunkSize {
+					if err := flush(); err != nil {
+						return nil, err
+					}
+				}
+			}
 			continue
 		}
 
 		id := strconv.FormatInt(account.ID, 10)
 		pipe.Set(ctx, schedulerAccountKey(id), fullPayload, 0)
 		pipe.Set(ctx, schedulerAccountMetaKey(id), metaPayload, 0)
+		// v2 metadata is generation-isolated. Remove the prior generation in the
+		// same pipeline so credential rotation and rebuilds cannot retain an old
+		// API key indefinitely under sched:meta:<id>.
+		pipe.Del(ctx, schedulerLegacyAccountMetaKey(id))
 		// Keep the hot LastUsedAt side key untouched: a lagging snapshot rebuild
 		// must not overwrite a newer scheduler update.
 		accountIDs = append(accountIDs, account.ID)
@@ -954,7 +1001,19 @@ func filterSchedulerCredentials(credentials map[string]any) map[string]any {
 	if len(credentials) == 0 {
 		return nil
 	}
-	keys := []string{"model_mapping", "compact_model_mapping", "api_key", "project_id", "oauth_type", "plan_type"}
+	keys := []string{
+		"model_mapping",
+		"compact_model_mapping",
+		"api_key",
+		"project_id",
+		"oauth_type",
+		"plan_type",
+		// The scheduler applies provider-specific model and endpoint gates before
+		// reloading the selected account from PostgreSQL. Keep the routing identity
+		// and capability fields required for those gates in its metadata snapshot.
+		"base_url",
+		"openai_capabilities",
+	}
 	filtered := make(map[string]any)
 	for _, key := range keys {
 		if value, ok := credentials[key]; ok && value != nil {

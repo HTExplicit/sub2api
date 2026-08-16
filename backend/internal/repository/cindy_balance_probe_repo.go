@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -555,7 +556,12 @@ func (r *cindyBalanceProbeRepository) ValidateReservationForSend(
 	if reservation.LunaAt != nil {
 		lunaAt = reservation.LunaAt.UTC()
 	}
-	result, err := r.db.ExecContext(ctx, `
+	// The claim token plus the per-item state and request count are the dispatch
+	// epoch. Return the job-wide count and Luna timestamp comparisons from the
+	// same UPDATE snapshot for diagnostics, but do not treat those observational
+	// echoes as authority over an otherwise current reservation.
+	var jobRequestCountMatch, lunaAtMatch bool
+	err = r.db.QueryRowContext(ctx, `
 		UPDATE cindy_balance_probe_items AS i
 		SET updated_at = i.updated_at
 		FROM cindy_balance_probe_jobs AS j
@@ -563,11 +569,9 @@ func (r *cindyBalanceProbeRepository) ValidateReservationForSend(
 		WHERE i.id = $1 AND i.job_id = j.id AND j.id = $2 AND i.account_id = a.id
 		  AND j.lease_token = $3 AND j.lease_until >= NOW()
 		  AND j.status = 'running' AND j.cancel_requested_at IS NULL
-		  AND j.request_count = $4
 		  AND i.state = $5 AND i.account_id = $6
 		  AND i.identity_fingerprint = $7 AND i.account_updated_at = $8
 		  AND i.was_marked = $9 AND i.request_count = $10
-		  AND (($11::timestamptz IS NULL AND i.luna_at IS NULL) OR i.luna_at = $11)
 		  AND a.platform = $12 AND a.type = $13
 		  AND a.status = $14 AND a.schedulable = TRUE AND a.deleted_at IS NULL
 		  AND a.updated_at = $8
@@ -575,24 +579,37 @@ func (r *cindyBalanceProbeRepository) ValidateReservationForSend(
 		  AND a.credentials = $15::jsonb
 		  AND LOWER(BTRIM(a.credentials->>'base_url')) IN
 		      ('https://api.laxarouter.ai', 'https://api.laxarouter.ai/')
+		RETURNING j.request_count = $4,
+		          i.luna_at IS NOT DISTINCT FROM $11::timestamptz
 	`, reservation.ItemID, reservation.JobID, leaseToken, reservation.JobRequestCount,
 		expectedState, reservation.AccountID, reservation.IdentityFingerprint,
 		reservation.AccountUpdatedAt, reservation.WasMarked, reservation.RequestCount, lunaAt,
-		service.PlatformOpenAI, service.AccountTypeAPIKey, service.StatusActive, string(credentialsJSON))
+		service.PlatformOpenAI, service.AccountTypeAPIKey, service.StatusActive, string(credentialsJSON)).
+		Scan(&jobRequestCountMatch, &lunaAtMatch)
+	if errors.Is(err, sql.ErrNoRows) {
+		slog.Warn("cindy_balance_probe_dispatch_authority_rejected", "stage", reservation.Stage)
+		return false, nil
+	}
 	if err != nil {
 		return false, err
 	}
-	changed, err := result.RowsAffected()
-	return changed == 1, err
+	if !jobRequestCountMatch || !lunaAtMatch {
+		slog.Warn("cindy_balance_probe_dispatch_observation_mismatch",
+			"stage", reservation.Stage,
+			"job_request_count_match", jobRequestCountMatch,
+			"luna_at_match", lunaAtMatch,
+		)
+	}
+	return true, nil
 }
 
-func (r *cindyBalanceProbeRepository) CompleteStage(ctx context.Context, reservation *service.CindyBalanceProbeReservation, leaseToken, outcome, finalState string, networkFailure bool) (bool, error) {
+func (r *cindyBalanceProbeRepository) CompleteStage(ctx context.Context, reservation *service.CindyBalanceProbeReservation, leaseToken, outcome, finalState string, networkFailure bool) (bool, bool, error) {
 	if reservation == nil {
-		return false, nil
+		return false, false, nil
 	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
 	currentState := reservation.Stage + "_running"
@@ -613,11 +630,11 @@ func (r *cindyBalanceProbeRepository) CompleteStage(ctx context.Context, reserva
 		  AND i.state = $8
 	`, reservation.ItemID, reservation.JobID, leaseToken, reservation.Stage, finalState, outcome, finished, currentState)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	changed, err := result.RowsAffected()
 	if err != nil || changed != 1 {
-		return false, err
+		return false, false, err
 	}
 	var failures int
 	err = tx.QueryRowContext(ctx, `
@@ -632,12 +649,12 @@ func (r *cindyBalanceProbeRepository) CompleteStage(ctx context.Context, reserva
 		RETURNING consecutive_upstream_failures
 	`, reservation.JobID, leaseToken, networkFailure).Scan(&failures)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	if err = tx.Commit(); err != nil {
-		return false, err
+		return false, false, err
 	}
-	return failures < 3, nil
+	return failures < 3, true, nil
 }
 
 func (r *cindyBalanceProbeRepository) FinalizeExhausted(

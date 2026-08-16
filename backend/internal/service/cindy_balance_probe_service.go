@@ -301,11 +301,13 @@ func (s *CindyBalanceProbeService) waitJob(ctx context.Context, lostLease <-chan
 func (s *CindyBalanceProbeService) executeReservation(ctx context.Context, reservation *CindyBalanceProbeReservation, leaseToken string) bool {
 	account, eligible := s.loadReservationAccount(ctx, reservation)
 	if !eligible {
-		keepRunning, err := s.repo.CompleteStage(ctx, reservation, leaseToken, "stale", "skipped_stale", false)
+		keepRunning, applied, err := s.repo.CompleteStage(ctx, reservation, leaseToken, "stale", "skipped_stale", false)
 		if err != nil {
 			slog.Error("cindy_balance_probe_stale_finalize_failed", "job_id", reservation.JobID, "error", err)
+		} else if !applied {
+			slog.Warn("cindy_balance_probe_stale_finalize_authority_rejected", "stage", reservation.Stage)
 		}
-		return err == nil && keepRunning
+		return err == nil && applied && keepRunning
 	}
 	ready, err := s.repo.ValidateReservationForSend(ctx, reservation, account, leaseToken)
 	if err != nil {
@@ -385,9 +387,17 @@ func (s *CindyBalanceProbeService) completeStage(
 	leaseToken, outcome, state string,
 	networkFailure bool,
 ) bool {
-	keepRunning, err := s.repo.CompleteStage(ctx, reservation, leaseToken, outcome, state, networkFailure)
+	keepRunning, applied, err := s.repo.CompleteStage(ctx, reservation, leaseToken, outcome, state, networkFailure)
 	if err != nil {
 		slog.Error("cindy_balance_probe_complete_failed", "job_id", reservation.JobID, "error", err)
+		return false
+	}
+	if !applied {
+		slog.Warn("cindy_balance_probe_complete_authority_rejected",
+			"stage", reservation.Stage,
+			"outcome", outcome,
+			"target_state", state,
+		)
 		return false
 	}
 	return keepRunning
