@@ -422,6 +422,88 @@ func TestCindyBalanceProbeRepositoryFinalizeExhaustedRejectsExpiredConfirmation(
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestCindyBalanceProbeRepositoryFinalizeExhaustedEnqueuesTypedAccountChange(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	now := time.Date(2026, 8, 17, 4, 0, 0, 0, time.UTC)
+	updatedAt := now.Add(-time.Hour)
+	lunaAt := now.Add(-time.Minute)
+	credentials := map[string]any{
+		"api_key":  "sk-cindy-finalize-fixture",
+		"base_url": "https://api.laxarouter.ai",
+	}
+	fingerprint, err := service.CindyAccountIdentityFingerprint(
+		service.PlatformOpenAI,
+		service.AccountTypeAPIKey,
+		credentials,
+	)
+	require.NoError(t, err)
+	reservation := &service.CindyBalanceProbeReservation{
+		JobID:               7,
+		ItemID:              11,
+		AccountID:           13,
+		Stage:               "terra",
+		IdentityFingerprint: fingerprint,
+		AccountUpdatedAt:    updatedAt,
+	}
+	payload := map[string]any{"source": "cindy_balance_probe", "job_id": reservation.JobID}
+	payloadJSON, err := json.Marshal(payload)
+	require.NoError(t, err)
+	dedupKey := schedulerOutboxDedupKey(
+		service.SchedulerOutboxEventAccountChanged,
+		&reservation.AccountID,
+		nil,
+		payloadJSON,
+	)
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT j\.status, j\.cancel_requested_at, i\.state, i\.luna_at, clock_timestamp\(\)[\s\S]+FOR UPDATE OF j, i`).
+		WithArgs(reservation.JobID, reservation.ItemID, "lease-epoch-1").
+		WillReturnRows(sqlmock.NewRows([]string{"status", "cancel_requested_at", "state", "luna_at", "now"}).
+			AddRow("running", nil, "terra_running", lunaAt, now))
+	mock.ExpectQuery(`SELECT platform, type, status, schedulable, credentials, updated_at,[\s\S]+FROM accounts WHERE id = \$1 FOR UPDATE`).
+		WithArgs(reservation.AccountID).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"platform", "type", "status", "schedulable", "credentials", "updated_at",
+			"cindy_balance_insufficient_at", "deleted_at",
+		}).AddRow(
+			service.PlatformOpenAI,
+			service.AccountTypeAPIKey,
+			service.StatusActive,
+			true,
+			mustMarshalCindyBalanceProbeTestJSON(t, credentials),
+			updatedAt,
+			nil,
+			nil,
+		))
+	mock.ExpectExec(`UPDATE accounts SET cindy_balance_insufficient_at = \$2, updated_at = NOW\(\) WHERE id = \$1`).
+		WithArgs(reservation.AccountID, now).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`INSERT INTO scheduler_outbox \(event_type, account_id, group_id, payload, dedup_key\)[\s\S]+ON CONFLICT \(dedup_key\) WHERE dedup_key IS NOT NULL DO NOTHING`).
+		WithArgs(
+			service.SchedulerOutboxEventAccountChanged,
+			reservation.AccountID,
+			nil,
+			payloadJSON,
+			dedupKey,
+		).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(`UPDATE cindy_balance_probe_items[\s\S]+terra_outcome = CASE WHEN terra_outcome IS NULL THEN \$3 ELSE terra_outcome END[\s\S]+WHERE id = \$1`).
+		WithArgs(reservation.ItemID, "exhausted", "exact").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	state, err := (&cindyBalanceProbeRepository{db: db}).FinalizeExhausted(
+		context.Background(), reservation, "lease-epoch-1", now, 5*time.Minute,
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, "exhausted", state)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestCindyBalanceProbeConfirmationCurrent(t *testing.T) {
 	now := time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
 	tests := []struct {

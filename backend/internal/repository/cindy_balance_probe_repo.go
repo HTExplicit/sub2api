@@ -761,10 +761,17 @@ func (r *cindyBalanceProbeRepository) finalizeAccountMarker(
 		if err != nil {
 			return "", err
 		}
-		if _, err = tx.ExecContext(ctx, `
-			INSERT INTO scheduler_outbox (event_type, account_id, payload)
-			VALUES ($1, $2, jsonb_build_object('source', 'cindy_balance_probe', 'job_id', $3))
-		`, service.SchedulerOutboxEventAccountChanged, reservation.AccountID, reservation.JobID); err != nil {
+		if err = enqueueSchedulerOutbox(
+			ctx,
+			tx,
+			service.SchedulerOutboxEventAccountChanged,
+			&reservation.AccountID,
+			nil,
+			map[string]any{
+				"source": "cindy_balance_probe",
+				"job_id": reservation.JobID,
+			},
+		); err != nil {
 			return "", err
 		}
 	}
