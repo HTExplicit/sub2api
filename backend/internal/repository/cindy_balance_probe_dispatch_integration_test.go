@@ -29,6 +29,10 @@ func TestCindyBalanceProbeTerraDispatchUsesAuthoritativeEpoch(t *testing.T) {
 		Schedulable: true,
 		Credentials: credentials,
 	})
+	// The production worker validates a repository-reloaded account, not the
+	// nanosecond-precision Ent create input that PostgreSQL may round.
+	account, err := NewAccountRepository(client, integrationDB, nil).GetByID(ctx, account.ID)
+	require.NoError(t, err)
 	fingerprint, err := service.CindyAccountIdentityFingerprint(account.Platform, account.Type, account.Credentials)
 	require.NoError(t, err)
 
