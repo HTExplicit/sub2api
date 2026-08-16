@@ -405,8 +405,12 @@ func TestCindyBalanceProbeServiceCreateJobPropagatesAtomicCandidateDrift(t *test
 		Mode: "selected",
 		Filters: AccountConsoleFilters{
 			CindyOnly:  true,
-			AccountIDs: []int64{17},
+			AccountIDs: []int64{19, 17, 19},
 		},
+	}
+	canonicalScope := CindyBalanceProbeScope{
+		Mode: "selected", AccountIDs: []int64{17, 19},
+		Filters: AccountConsoleFilters{CindyOnly: true},
 	}
 	repo := &cindyBalanceProbeCreateRepositoryStub{err: ErrCindyBalanceProbeChanged}
 	svc := NewCindyBalanceProbeService(repo, nil, nil, nil)
@@ -417,8 +421,36 @@ func TestCindyBalanceProbeServiceCreateJobPropagatesAtomicCandidateDrift(t *test
 	require.Nil(t, job)
 	require.ErrorIs(t, err, ErrCindyBalanceProbeChanged)
 	require.Equal(t, 1, repo.createCalls)
-	require.Equal(t, scope, repo.scope)
+	require.Equal(t, canonicalScope, repo.scope)
 	require.Equal(t, 0.5, repo.rateRPS)
 	require.Equal(t, 1, repo.expectedCount)
 	require.Equal(t, fingerprint, repo.expectedFingerprint)
+}
+
+func TestCindyBalanceProbeSelectedScopeCanonicalJSONAndFiltering(t *testing.T) {
+	legacyJSON := []byte(`{"mode":"selected","filters":{"account_ids":[19,17,19],"cindy_only":true}}`)
+	scope := DecodeCindyBalanceProbeScope(legacyJSON)
+
+	require.Equal(t, []int64{17, 19}, scope.AccountIDs)
+	require.Empty(t, scope.Filters.AccountIDs)
+	require.JSONEq(t,
+		`{"mode":"selected","account_ids":[17,19],"filters":{"cindy_only":true}}`,
+		string(EncodeCindyBalanceProbeScope(scope)),
+	)
+
+	account17 := newCindyRateLimitAccount(17, false)
+	account17.UpdatedAt = time.Date(2026, 8, 16, 9, 0, 0, 0, time.UTC)
+	account20 := newCindyRateLimitAccount(20, false)
+	account20.UpdatedAt = account17.UpdatedAt
+	preview, err := BuildCindyBalanceProbePreviewFromSnapshot(
+		scope,
+		[]Account{*account17, *account20},
+		0.5,
+		account17.UpdatedAt,
+	)
+	require.NoError(t, err)
+	require.Equal(t, 1, preview.CandidateCount)
+	require.Equal(t, int64(17), preview.Candidates[0].AccountID)
+	require.Equal(t, []int64{17, 19}, preview.Scope.AccountIDs)
+	require.Empty(t, preview.Scope.Filters.AccountIDs)
 }

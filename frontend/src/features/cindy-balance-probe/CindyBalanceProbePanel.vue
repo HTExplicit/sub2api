@@ -233,6 +233,7 @@ import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import {
   cindyBalanceProbeAPI,
+  canonicalizeCindyBalanceProbeScope,
   type CindyBalanceProbeFilters,
   type CindyBalanceProbeItemPage,
   type CindyBalanceProbeJob,
@@ -352,7 +353,7 @@ async function createJob(): Promise<void> {
   loading.create = true
   try {
     const job = await cindyBalanceProbeAPI.create({
-      scope: preview.value.scope,
+      scope: canonicalizeCindyBalanceProbeScope(preview.value.scope),
       rate_rps: preview.value.rate_rps,
       expected_count: preview.value.candidate_count,
       candidate_fingerprint: preview.value.candidate_fingerprint,
