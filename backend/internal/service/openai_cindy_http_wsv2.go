@@ -78,6 +78,10 @@ func finishOpenAICindyHTTPToWSV2Failover(
 	if reason == "" {
 		reason = openAICindyHTTPToWSV2FailoverReason
 	}
+	failoverErr.Stage = stage
+	failoverErr.Scope = scope
+	failoverErr.Reason = reason
+	failoverErr.CindyHTTPToWSV2FirstTurn = true
 	message := strings.TrimSpace(failoverErr.ClientMessage)
 	if message == "" {
 		message = "Temporary upstream failure"
@@ -169,6 +173,13 @@ func (s *OpenAIGatewayService) cindyHTTPToWSV2FirstTurnFailover(
 	_, failoverErr := openAIWSInitialDialFailover(err)
 	if failoverErr != nil {
 		failoverErr.RetryableOnSameAccount = false
+		if dialErr != nil && (dialErr.StatusCode == 0 || dialErr.StatusCode == http.StatusRequestTimeout ||
+			dialErr.StatusCode >= http.StatusInternalServerError) {
+			// Only a first-turn Cindy dial/handshake transport failure is an
+			// account-scoped signal. Terminal WS events and request/provider
+			// failures must remain request/provider scoped.
+			failoverErr.Scope = GatewayFailureScopeAccount
+		}
 		if dialErr != nil && dialErr.StatusCode > 0 {
 			_ = s.handleOpenAIAccountUpstreamError(
 				ctx, account, dialErr.StatusCode, dialErr.ResponseHeaders, dialErr.ResponseBody, canonicalModel,
@@ -220,7 +231,6 @@ func (s *OpenAIGatewayService) cindyHTTPToWSV2FirstTurnEventFailover(
 		}
 	}
 
-	_ = s.handleOpenAIAccountUpstreamError(ctx, account, statusCode, headers, payload, canonicalModel)
 	failoverErr := newOpenAIUpstreamFailoverError(
 		statusCode,
 		headers,
@@ -231,8 +241,9 @@ func (s *OpenAIGatewayService) cindyHTTPToWSV2FirstTurnEventFailover(
 	failoverErr.Stage = GatewayFailureStageInference
 	failoverErr.Scope = GatewayFailureScopeRequest
 	failoverErr.Reason = openAICindyHTTPToWSV2TerminalReason
-	if statusCode == http.StatusForbidden && isHTMLResponse(payload) {
-		failoverErr.SuppressAccountHealthPenalty = true
-	}
+	// A terminal WS event is scoped to this request/provider response. It may
+	// still switch accounts, but it must not be attributed to the selected
+	// account by either the cooldown path or the adaptive scheduler.
+	failoverErr.SuppressAccountHealthPenalty = true
 	return sanitizeOpenAICindyFailoverError(failoverErr), true
 }

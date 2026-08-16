@@ -256,7 +256,7 @@ func TestCindyBalanceProbeRepositoryReserveNextCapturesDispatchEpoch(t *testing.
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestCindyBalanceProbeRepositoryValidateReservationForSendCAS(t *testing.T) {
+func TestCindyBalanceProbeRepositoryValidateReservationUsesClaimAndItemEpoch(t *testing.T) {
 	now := time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
 	lunaAt := now.Add(-time.Minute)
 	credentials := map[string]any{
@@ -273,9 +273,14 @@ func TestCindyBalanceProbeRepositoryValidateReservationForSendCAS(t *testing.T) 
 	require.NoError(t, err)
 	reservation := &service.CindyBalanceProbeReservation{
 		JobID: 7, ItemID: 11, AccountID: 13, Stage: "terra",
-		LeaseToken: "lease-epoch-1", JobRequestCount: 2, RequestCount: 2,
+		// These observation echoes are deliberately stale. Authorization is bound
+		// to the lease token plus the per-item state and request count below.
+		LeaseToken: "lease-epoch-1", JobRequestCount: -999, RequestCount: 2,
 		IdentityFingerprint: fingerprint, AccountUpdatedAt: now.Add(-time.Hour),
-		LunaAt: &lunaAt,
+		LunaAt: func() *time.Time {
+			drifted := lunaAt.Add(time.Second)
+			return &drifted
+		}(),
 	}
 	account := &service.Account{
 		ID: reservation.AccountID, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
@@ -283,25 +288,35 @@ func TestCindyBalanceProbeRepositoryValidateReservationForSendCAS(t *testing.T) 
 		Credentials: credentials,
 	}
 	tests := []struct {
-		name     string
-		rows     int64
-		expected bool
+		name          string
+		authorized    bool
+		jobEchoMatch  bool
+		lunaEchoMatch bool
+		expected      bool
 	}{
-		{name: "current reservation may send", rows: 1, expected: true},
-		{name: "changed account or reservation may not send", rows: 0, expected: false},
+		{
+			name:       "current authority may send despite stale observation echoes",
+			authorized: true, jobEchoMatch: false, lunaEchoMatch: false, expected: true,
+		},
+		{name: "changed account or reservation may not send", authorized: false, expected: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			db, mock, err := sqlmock.New()
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = db.Close() })
-			mock.ExpectExec(`UPDATE cindy_balance_probe_items AS i[\s\S]+FROM cindy_balance_probe_jobs AS j[\s\S]+JOIN accounts AS a ON a\.id = \$6[\s\S]+i\.account_id = a\.id[\s\S]+j\.lease_token = \$3 AND j\.lease_until >= NOW\(\)[\s\S]+j\.status = 'running' AND j\.cancel_requested_at IS NULL[\s\S]+j\.request_count = \$4[\s\S]+i\.state = \$5[\s\S]+i\.identity_fingerprint = \$7[\s\S]+i\.request_count = \$10[\s\S]+a\.platform = \$12 AND a\.type = \$13[\s\S]+a\.status = \$14 AND a\.schedulable = TRUE AND a\.deleted_at IS NULL[\s\S]+a\.updated_at = \$8[\s\S]+a\.cindy_balance_insufficient_at IS NOT NULL[\s\S]+a\.credentials = \$15::jsonb[\s\S]+a\.credentials->>'base_url'`).
+			expectation := mock.ExpectQuery(`UPDATE cindy_balance_probe_items AS i[\s\S]+FROM cindy_balance_probe_jobs AS j[\s\S]+JOIN accounts AS a ON a\.id = \$6[\s\S]+i\.account_id = a\.id[\s\S]+j\.lease_token = \$3 AND j\.lease_until >= NOW\(\)[\s\S]+j\.status = 'running' AND j\.cancel_requested_at IS NULL[\s\S]+i\.state = \$5[\s\S]+i\.identity_fingerprint = \$7[\s\S]+i\.request_count = \$10[\s\S]+a\.platform = \$12 AND a\.type = \$13[\s\S]+a\.status = \$14 AND a\.schedulable = TRUE AND a\.deleted_at IS NULL[\s\S]+a\.updated_at = \$8[\s\S]+a\.cindy_balance_insufficient_at IS NOT NULL[\s\S]+a\.credentials = \$15::jsonb[\s\S]+a\.credentials->>'base_url'[\s\S]+RETURNING j\.request_count = \$4[\s\S]+i\.luna_at IS NOT DISTINCT FROM \$11::timestamptz`).
 				WithArgs(reservation.ItemID, reservation.JobID, reservation.LeaseToken,
 					reservation.JobRequestCount, "terra_running", reservation.AccountID,
 					reservation.IdentityFingerprint, reservation.AccountUpdatedAt,
-					reservation.WasMarked, reservation.RequestCount, lunaAt.UTC(),
-					service.PlatformOpenAI, service.AccountTypeAPIKey, service.StatusActive, string(credentialsJSON)).
-				WillReturnResult(sqlmock.NewResult(0, tt.rows))
+					reservation.WasMarked, reservation.RequestCount, reservation.LunaAt.UTC(),
+					service.PlatformOpenAI, service.AccountTypeAPIKey, service.StatusActive, string(credentialsJSON))
+			if tt.authorized {
+				expectation.WillReturnRows(sqlmock.NewRows([]string{"job_request_count_match", "luna_at_match"}).
+					AddRow(tt.jobEchoMatch, tt.lunaEchoMatch))
+			} else {
+				expectation.WillReturnRows(sqlmock.NewRows([]string{"job_request_count_match", "luna_at_match"}))
+			}
 
 			ready, err := (&cindyBalanceProbeRepository{db: db}).ValidateReservationForSend(
 				context.Background(), reservation, account, reservation.LeaseToken,
@@ -327,6 +342,59 @@ func TestCindyBalanceProbeRepositoryValidateReservationRejectsOldClaimWithoutWri
 	require.NoError(t, err)
 	require.False(t, ready)
 	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestCindyBalanceProbeRepositoryCompleteStageDistinguishesPauseFromLostAuthority(t *testing.T) {
+	reservation := &service.CindyBalanceProbeReservation{
+		JobID: 7, ItemID: 11, Stage: "terra",
+	}
+	tests := []struct {
+		name            string
+		itemRows        int64
+		failureCount    int
+		wantKeepRunning bool
+		wantApplied     bool
+	}{
+		{name: "lost authority is not applied"},
+		{
+			name:         "third upstream failure is applied before pausing",
+			itemRows:     1,
+			failureCount: 3,
+			wantApplied:  true,
+		},
+		{
+			name:            "ordinary completion remains running",
+			itemRows:        1,
+			failureCount:    1,
+			wantKeepRunning: true,
+			wantApplied:     true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = db.Close() })
+			mock.ExpectBegin()
+			mock.ExpectExec(`UPDATE cindy_balance_probe_items AS i[\s\S]+i\.state = \$8`).
+				WillReturnResult(sqlmock.NewResult(0, tt.itemRows))
+			if tt.itemRows == 0 {
+				mock.ExpectRollback()
+			} else {
+				mock.ExpectQuery(`UPDATE cindy_balance_probe_jobs[\s\S]+RETURNING consecutive_upstream_failures`).
+					WillReturnRows(sqlmock.NewRows([]string{"consecutive_upstream_failures"}).AddRow(tt.failureCount))
+				mock.ExpectCommit()
+			}
+
+			keepRunning, applied, err := (&cindyBalanceProbeRepository{db: db}).CompleteStage(
+				context.Background(), reservation, "lease-epoch-1", "server_error", "inconclusive", true,
+			)
+			require.NoError(t, err)
+			require.Equal(t, tt.wantKeepRunning, keepRunning)
+			require.Equal(t, tt.wantApplied, applied)
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
 }
 
 func TestCindyBalanceProbeRepositoryFinalizeExhaustedRejectsExpiredConfirmation(t *testing.T) {

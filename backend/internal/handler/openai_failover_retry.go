@@ -89,6 +89,29 @@ func openAIResponseHasSemanticWrite(c *gin.Context) bool {
 		service.OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c) >= 0
 }
 
+func (h *OpenAIGatewayHandler) clearCindyHTTPToWSV2StickyBeforeAccountSwitch(
+	c *gin.Context,
+	groupID *int64,
+	sessionHash string,
+	failedAccount *service.Account,
+	failoverErr *service.UpstreamFailoverError,
+	reqLog *zap.Logger,
+) {
+	if h == nil || h.gatewayService == nil || c == nil || c.Request == nil ||
+		failedAccount == nil || failoverErr == nil || !failoverErr.CindyHTTPToWSV2FirstTurn ||
+		openAIResponseHasSemanticWrite(c) {
+		return
+	}
+	if err := h.gatewayService.ClearOpenAIStickySessionAccountIDIfMatches(
+		c.Request.Context(), groupID, sessionHash, failedAccount.ID,
+	); err != nil && reqLog != nil {
+		reqLog.Warn("openai.cindy_http_to_wsv2_sticky_clear_failed",
+			zap.Int64("account_id", failedAccount.ID),
+			zap.Error(err),
+		)
+	}
+}
+
 type openAIFailoverRetryAction uint8
 
 const (
@@ -97,6 +120,12 @@ const (
 	openAIFailoverRetryCanceled
 	openAIFailoverRetryStop
 )
+
+type openAIFailoverSelectionReporter interface {
+	ReportOpenAIAccountSameAccountRetry(selection *service.AccountSelectionResult, accountID int64, model string)
+	ReportOpenAIAccountScheduleResultForSelection(selection *service.AccountSelectionResult, accountID int64, model string, success bool, firstTokenMs *int)
+	ReleaseOpenAIRuntimeBreakerProbeForSelection(selection *service.AccountSelectionResult)
+}
 
 type openAIFailoverRetryState struct {
 	sameAccountRetryCount map[int64]int
@@ -142,7 +171,7 @@ func openAISameAccountRetryLimit(account *service.Account, failoverErr *service.
 }
 
 func finalizeOpenAIFailoverSelection(
-	gateway *service.OpenAIGatewayService,
+	gateway openAIFailoverSelectionReporter,
 	selection *service.AccountSelectionResult,
 	account *service.Account,
 	model string,

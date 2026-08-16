@@ -179,7 +179,7 @@ type CindyBalanceProbeRepository interface {
 	RecoverInterruptedItems(ctx context.Context, jobID int64, leaseToken string) error
 	ReserveNext(ctx context.Context, jobID int64, leaseToken string, now time.Time, confirmationCutoff time.Time) (*CindyBalanceProbeReservation, time.Duration, error)
 	ValidateReservationForSend(ctx context.Context, reservation *CindyBalanceProbeReservation, account *Account, leaseToken string) (bool, error)
-	CompleteStage(ctx context.Context, reservation *CindyBalanceProbeReservation, leaseToken, outcome, finalState string, networkFailure bool) (bool, error)
+	CompleteStage(ctx context.Context, reservation *CindyBalanceProbeReservation, leaseToken, outcome, finalState string, networkFailure bool) (keepRunning bool, applied bool, err error)
 	FinalizeExhausted(ctx context.Context, reservation *CindyBalanceProbeReservation, leaseToken string, observedAt time.Time, confirmationWindow time.Duration) (string, error)
 	FinalizeRecovery(ctx context.Context, reservation *CindyBalanceProbeReservation, leaseToken string, observedAt time.Time) (bool, error)
 	FinishIfDone(ctx context.Context, jobID int64, leaseToken string) (bool, error)

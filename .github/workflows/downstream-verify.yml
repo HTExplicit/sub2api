@@ -47,7 +47,7 @@ jobs:
       - name: Cindy manual balance, split, image, and turn-state tests
         working-directory: backend
         run: |
-          go test -p=1 -tags unit ./internal/repository ./internal/service ./internal/handler ./internal/handler/admin -run 'Test.*(CindyBalanceProbe|CindyGroupSplit|ImageStudioEligibleKeys|CindyCompatibility|TurnStateCommits)' -count=1
+          go test -p=1 -tags unit ./internal/repository ./internal/service ./internal/handler ./internal/handler/admin -run 'Test.*(CindyBalanceProbe|CindyGroupSplit|ImageStudioEligibleKeys|CindyCompatibility|TurnStateCommits|SchedulerCache|KeepsCindyRoutingIdentity)' -count=1
           go test -p=1 -tags unit ./migrations -run 'Test.*(Migration222|Migration223|Migration224)' -count=1
       - name: Request body recovery tests
         working-directory: backend
@@ -75,6 +75,9 @@ jobs:
       - name: Account taxonomy migration integration test
         working-directory: backend
         run: go test -p=1 -tags integration ./internal/repository -run '^TestAccountTaxonomy.*Integration$' -count=1
+      - name: Cindy manual balance dispatch integration test
+        working-directory: backend
+        run: go test -p=1 -tags integration ./internal/repository -run '^TestCindyBalanceProbeTerraDispatchUsesAuthoritativeEpoch$' -count=1
       - name: Cindy defaults migration tests
         working-directory: backend
         run: |

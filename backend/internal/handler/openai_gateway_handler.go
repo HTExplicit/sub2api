@@ -909,6 +909,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
+					h.clearCindyHTTPToWSV2StickyBeforeAccountSwitch(
+						c, apiKey.GroupID, sessionHash, account, failoverErr, reqLog,
+					)
 					h.gatewayService.RecordOpenAIAccountSwitch()
 					failoverSwitchFields := []zap.Field{
 						zap.Int64("account_id", account.ID),

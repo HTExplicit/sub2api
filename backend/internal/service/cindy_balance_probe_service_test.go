@@ -135,9 +135,9 @@ func (s *cindyBalanceProbeDispatchRepositoryStub) CompleteStage(
 	string,
 	string,
 	bool,
-) (bool, error) {
+) (bool, bool, error) {
 	s.completeCalls++
-	return true, nil
+	return true, true, nil
 }
 
 type cindyBalanceProbeAccountRepositoryStub struct {
