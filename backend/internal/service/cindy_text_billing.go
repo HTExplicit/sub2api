@@ -22,6 +22,9 @@ func calculateCindyCatalogTextCost(
 
 	pricing, ok := CindyTextPricingForModel(model)
 	if !ok {
+		pricing, ok = CindyCompatibilityTextPricingForModel(model)
+	}
+	if !ok {
 		if CindyModelUsesExplicitZeroPrice(model) {
 			return &CostBreakdown{BillingMode: string(BillingModeToken)}, nil
 		}

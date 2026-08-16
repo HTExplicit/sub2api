@@ -41,9 +41,14 @@ jobs:
       - name: Cindy HTTP to WebSocket v2 continuation race test
         working-directory: backend
         run: go test -race ./internal/service -run '^TestCindyHTTPToWSV2ContinuationReusesOneConnectionAcrossIndependentHTTPRequests$' -count=1
-      - name: Cindy balance confirmation race tests
+      - name: Cindy manual balance race tests
         working-directory: backend
-        run: go test -race -tags unit ./internal/service -run '^TestCindyBalance(ExactConfirmationQueuesBehindAmbiguousInFlight|ExactRotationQueuesNewCredentialGeneration|PersistenceRetryReplacesOlderCredentialGeneration)$' -count=1
+        run: go test -race -tags unit ./internal/service ./internal/repository -run '^TestCindyBalanceProbe' -count=1
+      - name: Cindy manual balance, split, image, and turn-state tests
+        working-directory: backend
+        run: |
+          go test -p=1 -tags unit ./internal/repository ./internal/service ./internal/handler ./internal/handler/admin -run 'Test.*(CindyBalanceProbe|CindyGroupSplit|ImageStudioEligibleKeys|CindyCompatibility|TurnStateCommits)' -count=1
+          go test -p=1 -tags unit ./migrations -run 'Test.*(Migration222|Migration223|Migration224)' -count=1
       - name: Request body recovery tests
         working-directory: backend
         run: go test -p=1 ./internal/pkg/httputil ./internal/handler -run 'Test(ReadRequestBodyWithPrealloc|ReadLenientJSONRequestBodyWithPrealloc|RequestBodyReadDiagnostics|ClassifyRequestContentEncoding)' -count=1
@@ -116,6 +121,13 @@ jobs:
             src/components/account/__tests__/BulkEditAccountModal.spec.ts \
             src/views/admin/__tests__/SystemPromptsView.spec.ts \
             src/views/admin/__tests__/AccountsView.console.spec.ts \
+            src/api/__tests__/imageStudio.spec.ts \
+            src/api/__tests__/cindyBalanceProbe.spec.ts \
+            src/api/__tests__/admin.groups.cindy-split.spec.ts \
+            src/i18n/__tests__/cindyProbeLocales.spec.ts \
+            src/components/layout/__tests__/AppSidebar.spec.ts \
+            src/views/admin/__tests__/GroupsView.columnSettings.spec.ts \
+            src/views/user/__tests__/ImageStudioView.spec.ts \
             src/views/admin/__tests__/AccountsView.bulkEdit.spec.ts \
             src/views/admin/__tests__/AccountsView.schedulerScore.spec.ts \
             src/views/admin/__tests__/AccountsView.sparkShadow.spec.ts \

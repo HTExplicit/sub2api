@@ -3,12 +3,17 @@ package service
 import (
 	"os"
 	"strings"
+
+	"github.com/Wei-Shaw/sub2api/internal/config"
 )
 
 const (
 	CindyBalanceDetectionEnabledEnv  = "GATEWAY_CINDY_BALANCE_DETECTION_ENABLED"
 	CindyCapabilityCatalogEnabledEnv = "GATEWAY_CINDY_CAPABILITY_CATALOG_ENABLED"
-	CindyImageStudioEnabledEnv       = "GATEWAY_CINDY_IMAGE_STUDIO_ENABLED"
+	ImageStudioEnabledEnv            = config.ImageStudioEnabledEnv
+	// CindyImageStudioEnabledEnv is retained for one release as a fallback
+	// when ImageStudioEnabledEnv is not configured.
+	CindyImageStudioEnabledEnv = config.LegacyImageStudioEnabledEnv
 )
 
 // Cindy rollout flags are immutable process snapshots. Each variable can be
@@ -22,7 +27,12 @@ var cindyRolloutFeatures = struct {
 }{
 	balanceDetection:  envBoolWithDefault(CindyBalanceDetectionEnabledEnv, true),
 	capabilityCatalog: envBoolWithDefault(CindyCapabilityCatalogEnabledEnv, false),
-	imageStudio:       envBoolWithDefault(CindyImageStudioEnabledEnv, false),
+	imageStudio:       imageStudioEnabledFromEnvironment(),
+}
+
+func imageStudioEnabledFromEnvironment() bool {
+	enabled, _ := config.ResolveImageStudioEnabledFromEnvironment()
+	return enabled
 }
 
 func envBoolWithDefault(name string, defaultValue bool) bool {
@@ -48,6 +58,14 @@ func CindyCapabilityCatalogFeatureEnabled() bool {
 	return cindyRolloutFeatures.capabilityCatalog
 }
 
-func CindyImageStudioFeatureEnabled() bool {
+// ImageStudioFeatureEnabled reports whether the generic Image Studio surface
+// is enabled. This release still requires the Cindy capability catalog.
+func ImageStudioFeatureEnabled() bool {
 	return cindyRolloutFeatures.capabilityCatalog && cindyRolloutFeatures.imageStudio
+}
+
+// CindyImageStudioFeatureEnabled is the one-release compatibility name for
+// existing Cindy-specific callers.
+func CindyImageStudioFeatureEnabled() bool {
+	return ImageStudioFeatureEnabled()
 }

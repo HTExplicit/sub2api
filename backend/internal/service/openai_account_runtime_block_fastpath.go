@@ -542,9 +542,6 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 // before any generic error rewriting can discard the structured Cindy signal.
 func (s *OpenAIGatewayService) handleCindyBalanceTerminalEvent(ctx context.Context, account *Account, headers http.Header, payload []byte, canonicalModel ...string) bool {
 	if ClassifyCindyBalanceInsufficient(account, http.StatusOK, payload) == CindyBalanceSignalNone {
-		if IsAmbiguousCindyBalanceTerminalEvent(account, payload) {
-			s.scheduleAmbiguousCindyBalanceRecheck(account)
-		}
 		return false
 	}
 	if account != nil && account.CindyBalanceInsufficientAt != nil {
@@ -604,7 +601,7 @@ func (s *OpenAIGatewayService) BlockAccountScheduling(account *Account, until ti
 		return
 	}
 	if until.IsZero() && reason == "cindy_balance_insufficient" {
-		_ = s.blockCindyBalanceScheduling(account)
+		s.blockCindyBalanceScheduling(account)
 		return
 	}
 	mu := s.openAIAccountRuntimeBlockLock(account.ID)
@@ -622,67 +619,35 @@ func (s *OpenAIGatewayService) BlockAccountScheduling(account *Account, until ti
 	}
 }
 
-func (s *OpenAIGatewayService) blockCindyBalanceScheduling(account *Account) cindyBalanceRuntimeBlockToken {
+func (s *OpenAIGatewayService) blockCindyBalanceScheduling(account *Account) {
 	if s == nil || account == nil ||
 		!IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		return cindyBalanceRuntimeBlockToken{}
+		return
 	}
 	fingerprint, err := CindyAccountIdentityFingerprint(account.Platform, account.Type, account.Credentials)
 	if err != nil {
-		return cindyBalanceRuntimeBlockToken{}
+		return
 	}
 	mu := s.openAIAccountRuntimeBlockLock(account.ID)
 	mu.Lock()
 	defer mu.Unlock()
-	token := cindyBalanceRuntimeBlockToken{}
 	if previous, ok := s.openaiAccountRuntimeBlockUntil.Load(account.ID); ok {
 		if previousUntil, valid := previous.(time.Time); valid {
 			if previousUntil.IsZero() {
 				storedFingerprint, _ := s.cindyBalanceRuntimeBlockFingerprint.Load(account.ID)
 				if storedFingerprint != fingerprint {
-					token.generation = s.openaiAccountRuntimeBlockSequence.Add(1)
-					token.changed = true
-					s.openaiAccountRuntimeBlockGeneration.Store(account.ID, token.generation)
+					generation := s.openaiAccountRuntimeBlockSequence.Add(1)
+					s.openaiAccountRuntimeBlockGeneration.Store(account.ID, generation)
 					s.cindyBalanceRuntimeBlockFingerprint.Store(account.ID, fingerprint)
-					return token
 				}
-				return token
+				return
 			}
-			token.hadPrevious = true
-			token.previous = previousUntil
 		}
 	}
-	token.generation, token.changed = s.blockAccountSchedulingLocked(account, time.Time{}, "cindy_balance_insufficient")
-	if token.changed {
+	_, changed := s.blockAccountSchedulingLocked(account, time.Time{}, "cindy_balance_insufficient")
+	if changed {
 		s.cindyBalanceRuntimeBlockFingerprint.Store(account.ID, fingerprint)
 	}
-	return token
-}
-
-func (s *OpenAIGatewayService) clearCindyBalanceSchedulingBlock(accountID int64, token cindyBalanceRuntimeBlockToken) {
-	if s == nil || accountID <= 0 || !token.changed {
-		return
-	}
-	mu := s.openAIAccountRuntimeBlockLock(accountID)
-	mu.Lock()
-	defer mu.Unlock()
-	generationValue, ok := s.openaiAccountRuntimeBlockGeneration.Load(accountID)
-	currentGeneration, valid := generationValue.(uint64)
-	if !ok || !valid || currentGeneration != token.generation {
-		return
-	}
-	currentValue, ok := s.openaiAccountRuntimeBlockUntil.Load(accountID)
-	current, valid := currentValue.(time.Time)
-	if !ok || !valid || !current.IsZero() {
-		return
-	}
-	if token.hadPrevious && token.previous.After(time.Now()) {
-		s.openaiAccountRuntimeBlockUntil.Store(accountID, token.previous)
-	} else {
-		s.openaiAccountRuntimeBlockUntil.Delete(accountID)
-	}
-	s.cindyBalanceRuntimeBlockFingerprint.Delete(accountID)
-	s.openaiAccountRuntimeBlockGeneration.Store(accountID, s.openaiAccountRuntimeBlockSequence.Add(1))
 }
 
 func (s *OpenAIGatewayService) openAIRuntimeBreakerStore() (OpenAIRuntimeBreakerStore, bool) {
@@ -714,15 +679,6 @@ func (s *OpenAIGatewayService) ClearCindyBalancePending(ctx context.Context, acc
 	return store.ClearCindyBalancePending(stateCtx, accountID)
 }
 
-// CancelCindyBalancePersistenceRetry invalidates and drains any stale
-// persistence retry before the admin recovery path clears durable state.
-func (s *OpenAIGatewayService) CancelCindyBalancePersistenceRetry(accountID int64) {
-	if s == nil || s.rateLimitService == nil {
-		return
-	}
-	s.rateLimitService.CancelCindyBalancePersistenceRetry(accountID)
-}
-
 // withCindyBalancePendingSnapshot loads every not-yet-covered strict Cindy
 // account with one Redis MGET and records the result in the request context.
 // Initial filtering, compatibility checks and fresh DB rechecks all reuse it.
@@ -745,7 +701,7 @@ func (s *OpenAIGatewayService) withCindyBalancePendingSnapshot(ctx context.Conte
 	cancel()
 	snapshot.record(accountIDs, pending, err)
 	if err != nil {
-		slog.Error("cindy_balance_pending_batch_read_failed_closed", "account_count", len(accountIDs))
+		slog.Error("cindy_balance_legacy_pending_batch_read_failed", "account_count", len(accountIDs), "error", err)
 	}
 	return ctx
 }
@@ -753,6 +709,12 @@ func (s *OpenAIGatewayService) withCindyBalancePendingSnapshot(ctx context.Conte
 func (s *OpenAIGatewayService) isCindyBalancePendingBlocked(ctx context.Context, account *Account) bool {
 	if s == nil || account == nil || !IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		return false
+	}
+	// Since v0.1.177 the durable DB marker is the only balance authority. Redis
+	// pending entries are legacy cleanup hints and must never make an unmarked
+	// account unavailable, including when Redis itself is unavailable.
+	if account.CindyBalanceInsufficientAt != nil {
+		return true
 	}
 	ctx = ensureCindyBalancePendingSnapshotContext(ctx)
 	snapshot := cindyBalancePendingSnapshotFromContext(ctx)
@@ -762,55 +724,33 @@ func (s *OpenAIGatewayService) isCindyBalancePendingBlocked(ctx context.Context,
 		snapshot = cindyBalancePendingSnapshotFromContext(ctx)
 		state, loaded = snapshot.state(account.ID)
 	}
-	if !loaded || state == cindyBalancePendingSnapshotClear {
+	if !loaded || state == cindyBalancePendingSnapshotClear || state == cindyBalancePendingSnapshotReadFailed {
 		return false
-	}
-	if state == cindyBalancePendingSnapshotReadFailed {
-		return true
-	}
-	if state == cindyBalancePendingSnapshotValidatedBlocked {
-		return true
 	}
 	store, ok := s.cindyBalancePendingStore()
 	if !ok {
-		snapshot.recordState(account.ID, cindyBalancePendingSnapshotReadFailed)
-		return true
+		snapshot.recordState(account.ID, cindyBalancePendingSnapshotClear)
+		return false
 	}
 	stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	pendingFingerprint, pendingErr := store.GetCindyBalancePendingFingerprint(stateCtx, account.ID)
 	cancel()
-	currentFingerprint, fingerprintErr := CindyAccountIdentityFingerprint(
-		account.Platform,
-		account.Type,
-		account.Credentials,
-	)
-	if pendingErr != nil || fingerprintErr != nil {
-		snapshot.recordState(account.ID, cindyBalancePendingSnapshotReadFailed)
-		return true
+	if pendingErr != nil {
+		slog.Error("cindy_balance_legacy_pending_get_failed", "error", pendingErr)
+		snapshot.recordState(account.ID, cindyBalancePendingSnapshotClear)
+		return false
 	}
 	if pendingFingerprint == "" {
 		snapshot.recordState(account.ID, cindyBalancePendingSnapshotClear)
 		return false
 	}
-	if pendingFingerprint != currentFingerprint {
-		clearCtx, clearCancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
-		_ = store.ClearCindyBalancePendingIfFingerprintMatches(clearCtx, account.ID, pendingFingerprint)
-		clearCancel()
-		snapshot.recordState(account.ID, cindyBalancePendingSnapshotClear)
-		return false
+	clearCtx, clearCancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+	if clearErr := store.ClearCindyBalancePendingIfFingerprintMatches(clearCtx, account.ID, pendingFingerprint); clearErr != nil {
+		slog.Error("cindy_balance_stale_pending_clear_failed", "error", clearErr)
 	}
-	snapshot.recordState(account.ID, cindyBalancePendingSnapshotValidatedBlocked)
-	// Rebuild the in-memory DB retry after a service/process restart. The
-	// request-scoped snapshot remains authoritative for the whole selection.
-	if account.CindyBalanceInsufficientAt == nil && s.rateLimitService != nil {
-		s.rateLimitService.scheduleCindyBalancePersistenceRetry(
-			account,
-			time.Now().UTC(),
-			pendingFingerprint,
-			cindyBalanceRuntimeBlockToken{},
-		)
-	}
-	return true
+	clearCancel()
+	snapshot.recordState(account.ID, cindyBalancePendingSnapshotClear)
+	return false
 }
 
 func (s *OpenAIGatewayService) persistOpenAIRuntimeBreaker(ctx context.Context, accountID int64, model, reason string, until time.Time) {

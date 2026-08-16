@@ -1,5 +1,10 @@
 <template>
   <AppLayout>
+    <slot
+      name="scope-tools"
+      :selected-ids="selIds"
+      :filters="cindyProbeFilters"
+    />
     <TablePageLayout :content-framed="viewMode !== 'cards'">
       <template #filters>
         <div class="flex flex-wrap-reverse items-start justify-between gap-3">
@@ -344,6 +349,9 @@
               </button>
             </div>
           </template>
+          <template #cell-cindy_probe="{ row }">
+            <CindyBalanceProbeSummary :account="row" />
+          </template>
           <template #cell-schedulable="{ row }">
             <button @click.stop="handleToggleSchedulable(row)" :disabled="togglingSchedulable === row.id" class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-dark-800" :class="[row.schedulable ? 'bg-primary-500 hover:bg-primary-600' : 'bg-gray-200 hover:bg-gray-300 dark:bg-dark-600 dark:hover:bg-dark-500']" :title="row.schedulable ? t('admin.accounts.schedulableEnabled') : t('admin.accounts.schedulableDisabled')">
               <span class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out" :class="[row.schedulable ? 'translate-x-4' : 'translate-x-0']" />
@@ -539,6 +547,7 @@
           :today-stats-updated-at="todayStatsUpdatedAt"
           :manual-refresh-token="usageManualRefreshToken"
           :status-now="usageStatusNow"
+          :show-cindy-probe="isCindyScope"
           @row-click="openDetails"
           @toggle="toggleSel"
           @edit="handleEdit"
@@ -556,6 +565,7 @@
           :today-stats-updated-at="todayStatsUpdatedAt"
           :manual-refresh-token="usageManualRefreshToken"
           :status-now="usageStatusNow"
+          :show-cindy-probe="isCindyScope"
           @row-click="openDetails"
           @toggle="toggleSel"
           @edit="handleEdit"
@@ -675,6 +685,7 @@ import AccountBulkActionsBar from '@/components/admin/account/AccountBulkActions
 import AccountActionMenu from '@/components/admin/account/AccountActionMenu.vue'
 import AccountCardGrid from '@/components/admin/account/AccountCardGrid.vue'
 import AccountCompactList from '@/components/admin/account/AccountCompactList.vue'
+import CindyBalanceProbeSummary from '@/features/cindy-balance-probe/CindyBalanceProbeSummary.vue'
 import AccountConsoleFilters from '@/components/admin/account/AccountConsoleFilters.vue'
 import AccountDetailsDrawer from '@/components/admin/account/AccountDetailsDrawer.vue'
 import AccountFolderBar from '@/components/admin/account/AccountFolderBar.vue'
@@ -723,9 +734,16 @@ import type {
   UpstreamBillingProbeSnapshot
 } from '@/types'
 
+const props = withDefaults(defineProps<{
+  scope?: 'all' | 'cindy'
+}>(), {
+  scope: 'all'
+})
+
 const { t } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
+const isCindyScope = computed(() => props.scope === 'cindy')
 const fallbackRoute = reactive({ query: {}, fullPath: '' }) as unknown as RouteLocationNormalizedLoaded
 const fallbackRouter = {
   push: async () => undefined,
@@ -777,6 +795,7 @@ const activeFolder = ref(queryString('folder'))
 type CindyAccountView = 'all' | 'cindy' | 'insufficient'
 const initialCindyView = (): CindyAccountView => {
   if (queryString('cindy_balance_status') === 'insufficient') return 'insufficient'
+  if (isCindyScope.value) return 'cindy'
   if (queryString('cindy_only') === 'true') return 'cindy'
   return 'all'
 }
@@ -804,11 +823,17 @@ const finiteFacetCount = (value: unknown): number | undefined => {
 }
 const cindyTotal = computed(() => finiteFacetCount(facets.value?.cindy_total) ?? 0)
 const cindyInsufficientCount = computed(() => finiteFacetCount(facets.value?.cindy_insufficient_count) ?? 0)
-const cindyViewOptions = computed<Array<{ value: CindyAccountView; label: string; count: number | string }>>(() => [
-  { value: 'all', label: t('admin.accounts.cindy.allAccounts'), count: finiteFacetCount(facets.value?.total) ?? '-' },
-  { value: 'cindy', label: t('admin.accounts.cindy.accounts'), count: cindyTotal.value },
-  { value: 'insufficient', label: t('admin.accounts.cindy.insufficient'), count: cindyInsufficientCount.value }
-])
+const cindyViewOptions = computed<Array<{ value: CindyAccountView; label: string; count: number | string }>>(() => {
+  const scopedOptions: Array<{ value: CindyAccountView; label: string; count: number | string }> = [
+    { value: 'cindy', label: t('admin.accounts.cindy.accounts'), count: cindyTotal.value },
+    { value: 'insufficient', label: t('admin.accounts.cindy.insufficient'), count: cindyInsufficientCount.value }
+  ]
+  if (isCindyScope.value) return scopedOptions
+  return [
+    { value: 'all', label: t('admin.accounts.cindy.allAccounts'), count: finiteFacetCount(facets.value?.total) ?? '-' },
+    ...scopedOptions
+  ]
+})
 const folderNavigationTotal = computed(() => finiteFacetCount(facets.value?.total))
 const folderNavigationUncategorized = computed(() => finiteFacetCount(facets.value?.uncategorized_count))
 const accountTableRef = ref<HTMLElement | null>(null)
@@ -1424,7 +1449,7 @@ const buildConsoleRouteQuery = (): Record<string, string> => {
   if (activeFolder.value) query.folder = activeFolder.value
   if (state.group) query.group = state.group
   if (state.privacy_mode) query.privacy_mode = state.privacy_mode
-  if (cindyView.value !== 'all') query.cindy_only = 'true'
+  if (isCindyScope.value || cindyView.value !== 'all') query.cindy_only = 'true'
   if (cindyView.value === 'insufficient') query.cindy_balance_status = 'insufficient'
   if (sortState.sort_by !== 'name' || sortState.sort_order !== 'asc') query.sort_by = sortState.sort_by
   if (sortState.sort_order !== 'asc') query.sort_order = sortState.sort_order
@@ -1479,13 +1504,43 @@ const buildConsoleAPIParams = (includeFolder = true) => {
     account_ids: state.account_ids.length ? state.account_ids.join(',') : undefined,
     group: state.group || undefined,
     privacy_mode: state.privacy_mode || undefined,
-    cindy_only: cindyView.value !== 'all' ? 'true' : undefined,
+    cindy_only: isCindyScope.value || cindyView.value !== 'all' ? 'true' : undefined,
     cindy_balance_status: cindyView.value === 'insufficient' ? 'insufficient' as const : undefined,
     search: state.search.trim() || undefined,
     sort_by: sortState.sort_by,
     sort_order: sortState.sort_order
   }
 }
+
+const cindyProbeFilters = computed(() => {
+  const state = consoleFilters.value
+  const proxyIDs = state.proxies
+    .filter((value) => value !== 'direct')
+    .map(Number)
+    .filter((value) => Number.isSafeInteger(value) && value > 0)
+  const folderID = Number(activeFolder.value)
+  const numericGroupID = Number(state.group)
+  return {
+    platforms: [...state.platforms],
+    types: [...state.types],
+    statuses: [...state.statuses],
+    plans: [...state.plans],
+    proxy_ids: proxyIDs,
+    include_direct: state.proxies.includes('direct'),
+    folder_ids: Number.isSafeInteger(folderID) && folderID > 0 ? [folderID] : [],
+    include_uncategorized: activeFolder.value === 'uncategorized',
+    tag_ids: [...state.tags],
+    account_ids: [...state.account_ids],
+    search: state.search.trim(),
+    group_id: state.group === ACCOUNT_UNGROUPED_GROUP_QUERY_VALUE
+      ? -1
+      : (Number.isSafeInteger(numericGroupID) && numericGroupID > 0 ? numericGroupID : undefined),
+    privacy_mode: state.privacy_mode || undefined,
+    cindy_balance_status: cindyView.value === 'insufficient' ? 'insufficient' : undefined,
+    sort_by: sortState.sort_by,
+    sort_order: sortState.sort_order
+  }
+})
 
 const syncConsoleParams = () => {
   const requestParams = params as Record<string, unknown>
@@ -1578,6 +1633,7 @@ const handleConsoleFiltersChanged = () => {
 }
 
 const handleCindyViewChange = (view: CindyAccountView) => {
+  if (isCindyScope.value && view === 'all') return
   if (cindyView.value === view) return
   cindyView.value = view
   pagination.page = 1
@@ -1793,6 +1849,7 @@ watch(() => route.fullPath, async () => {
   }
   applyConsoleRouteState()
   syncConsoleParams()
+  if (isCindyScope.value) syncConsoleRoute('replace')
   await Promise.all([load(), loadFacets()])
 })
 
@@ -2245,12 +2302,22 @@ const allColumns = computed(() => {
     { key: 'id', label: t('admin.accounts.columns.id'), sortable: true },
     { key: 'platform_type', label: t('admin.accounts.columns.platformType'), sortable: false },
     { key: 'usage', label: t('admin.accounts.columns.usage'), sortable: false },
-    { key: 'status', label: t('admin.accounts.columns.status'), sortable: true },
+    { key: 'status', label: t('admin.accounts.columns.status'), sortable: true }
+  ]
+  if (isCindyScope.value) {
+    c.push({
+      key: 'cindy_probe',
+      label: t('admin.accounts.columns.recentCindyProbe'),
+      sortable: false,
+      class: 'w-40 min-w-40 max-w-48'
+    })
+  }
+  c.push(
     { key: 'taxonomy_route', label: t('admin.accounts.columns.classificationRoute'), sortable: false },
     { key: 'capacity', label: t('admin.accounts.columns.capacity'), sortable: false },
     { key: 'schedulable', label: t('admin.accounts.columns.schedulable'), sortable: true },
     { key: 'today_stats', label: t('admin.accounts.columns.todayStats'), sortable: false }
-  ]
+  )
   if (!authStore.isSimpleMode) {
     c.push({ key: 'groups', label: t('admin.accounts.columns.groups'), sortable: false })
   }
@@ -3110,7 +3177,6 @@ const handleClickOutside = (event: MouseEvent) => {
 
 onMounted(async () => {
   if (typeof window !== 'undefined') {
-    loadSavedAutoRefresh()
     desktopViewportMediaQuery = window.matchMedia(desktopViewportQuery)
     isDesktopViewport.value = desktopViewportMediaQuery.matches
     desktopViewportListener = (event: MediaQueryListEvent) => {
@@ -3123,6 +3189,7 @@ onMounted(async () => {
     }
   }
 
+  if (isCindyScope.value) syncConsoleRoute('replace')
   await Promise.all([load(), loadFacets(), loadTaxonomy(), loadCindyDeleteCandidateCount()])
   loadUpstreamBillingProbeGlobalState()
   try {

@@ -60,6 +60,16 @@
                 :class="loading ? 'animate-spin' : ''"
               />
             </button>
+            <button
+              type="button"
+              class="btn btn-secondary"
+              :title="t('admin.groups.cindyAudit.open')"
+              data-test="cindy-group-audit-open"
+              @click="showCindyGroupAudit = true"
+            >
+              <Icon name="shield" size="md" class="mr-2" />
+              <span class="hidden sm:inline">{{ t("admin.groups.cindyAudit.open") }}</span>
+            </button>
             <div class="relative" ref="columnDropdownRef">
               <button
                 @click="showColumnDropdown = !showColumnDropdown"
@@ -330,6 +340,16 @@
                 <span class="ml-1 font-medium text-gray-700 dark:text-gray-300"
                   >${{
                     formatCost(usageMap.get(row.id)?.today_cost ?? 0)
+                  }}</span
+                >
+              </div>
+              <div class="text-gray-500 dark:text-gray-400">
+                <span class="text-gray-400 dark:text-gray-500">{{
+                  t("admin.groups.usageYesterday")
+                }}</span>
+                <span class="ml-1 font-medium text-gray-700 dark:text-gray-300"
+                  >${{
+                    formatCost(usageMap.get(row.id)?.yesterday_cost ?? 0)
                   }}</span
                 >
               </div>
@@ -4281,6 +4301,12 @@
       @close="showRPMOverridesModal = false"
       @success="loadGroups"
     />
+
+    <CindyGroupAuditDialog
+      :show="showCindyGroupAudit"
+      @close="showCindyGroupAudit = false"
+      @split="handleCindyGroupSplit"
+    />
   </AppLayout>
 </template>
 
@@ -4314,6 +4340,7 @@ import Icon from "@/components/icons/Icon.vue";
 import GroupRateMultipliersModal from "@/components/admin/group/GroupRateMultipliersModal.vue";
 import GroupRPMOverridesModal from "@/components/admin/group/GroupRPMOverridesModal.vue";
 import GroupCapacityBadge from "@/components/common/GroupCapacityBadge.vue";
+import CindyGroupAuditDialog from "@/features/cindy-group-split/CindyGroupAuditDialog.vue";
 import ReasoningEffortPolicyFields from "@/components/admin/group/ReasoningEffortPolicyFields.vue";
 import PricingEntryCard from "@/components/admin/channel/PricingEntryCard.vue";
 import type { PricingFormEntry } from "@/components/admin/channel/types";
@@ -4787,6 +4814,7 @@ const groups = ref<AdminGroup[]>([]);
 const loading = ref(false);
 type GroupUsageSummary = {
   today_cost: number;
+  yesterday_cost: number;
   total_cost: number;
 };
 
@@ -4846,6 +4874,7 @@ const showRateMultipliersModal = ref(false);
 const rateMultipliersGroup = ref<AdminGroup | null>(null);
 const showRPMOverridesModal = ref(false);
 const rpmOverridesGroup = ref<AdminGroup | null>(null);
+const showCindyGroupAudit = ref(false);
 const sortableGroups = ref<AdminGroup[]>([]);
 type ConcreteGroupPlatform = Exclude<GroupPlatform, "composite">;
 type CompositeRouteFormState = {
@@ -5591,6 +5620,10 @@ const loadGroups = async () => {
   }
 };
 
+const handleCindyGroupSplit = () => {
+  void loadGroups();
+};
+
 const formatCost = (cost: number): string => {
   if (cost >= 1000) return cost.toFixed(0);
   if (cost >= 100) return cost.toFixed(1);
@@ -5624,12 +5657,12 @@ const loadUsageSummary = async () => {
   }
   usageLoading.value = true;
   try {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const data = await adminAPI.groups.getUsageSummary(tz);
+    const data = await adminAPI.groups.getUsageSummary();
     const map = new Map<number, GroupUsageSummary>();
     for (const item of data) {
       map.set(item.group_id, {
         today_cost: item.today_cost,
+        yesterday_cost: item.yesterday_cost,
         total_cost: item.total_cost,
       });
     }

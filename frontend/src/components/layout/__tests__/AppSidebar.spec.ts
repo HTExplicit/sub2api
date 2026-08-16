@@ -53,3 +53,19 @@ describe('AppSidebar header styles', () => {
     expect(sidebarBrandBlockMatch?.[0]).not.toContain('overflow: hidden;')
   })
 })
+
+describe('AppSidebar extensions section', () => {
+  it('keeps downstream tools in a dedicated section', () => {
+    expect(componentSource).toContain("{{ t('nav.extensions') }}")
+    expect(componentSource).toContain("path: '/admin/cindy-accounts'")
+    expect(componentSource).toContain("path: '/image-studio'")
+  })
+
+  it('does not hide Image Studio in simple mode', () => {
+    const imageStudioItem = componentSource.match(/\{ path: '\/image-studio'[^\n]+\}/)?.[0]
+
+    expect(imageStudioItem).toBeDefined()
+    expect(imageStudioItem).toContain('featureFlag: flagImageStudio')
+    expect(imageStudioItem).not.toContain('hideInSimpleMode')
+  })
+})

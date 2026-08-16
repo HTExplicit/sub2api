@@ -31,8 +31,9 @@ const (
 	opsAccountIDKey              = "ops_account_id"
 	opsRoutingCapacityLimitedKey = "ops_routing_capacity_limited"
 
-	opsUpstreamModelKey = "ops_upstream_model"
-	opsRequestTypeKey   = "ops_request_type"
+	opsUpstreamModelKey       = "ops_upstream_model"
+	opsRequestTypeKey         = "ops_request_type"
+	opsErrorClassificationKey = "ops_error_classification"
 
 	// 错误过滤匹配常量 — shouldSkipOpsErrorLog 和错误分类共用
 	opsErrContextCanceled            = "context canceled"
@@ -461,6 +462,30 @@ func setOpsEndpointContext(c *gin.Context, upstreamModel string, requestType int
 		c.Set(opsUpstreamModelKey, upstreamModel)
 	}
 	c.Set(opsRequestTypeKey, requestType)
+}
+
+// setOpsErrorClassification stores a stable local failure classification without
+// changing the client-facing OpenAI error shape.
+func setOpsErrorClassification(c *gin.Context, classification string) {
+	if c == nil {
+		return
+	}
+	if classification = strings.TrimSpace(classification); classification != "" {
+		c.Set(opsErrorClassificationKey, classification)
+	}
+}
+
+func opsErrorClassification(c *gin.Context, fallback string) string {
+	if c != nil {
+		if value, ok := c.Get(opsErrorClassificationKey); ok {
+			if classification, ok := value.(string); ok {
+				if classification = strings.TrimSpace(classification); classification != "" {
+					return classification
+				}
+			}
+		}
+	}
+	return fallback
 }
 
 func setOpsSelectedAccount(c *gin.Context, accountID int64, platform ...string) {
@@ -1012,7 +1037,7 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 			requestID = c.Writer.Header().Get("x-request-id")
 		}
 
-		normalizedType := normalizeOpsErrorType(parsed.ErrorType, parsed.Code)
+		normalizedType := opsErrorClassification(c, normalizeOpsErrorType(parsed.ErrorType, parsed.Code))
 
 		phase, isBusinessLimited, errorOwner, errorSource := classifyOpsErrorLog(c, normalizedType, parsed.Message, parsed.Code, status)
 
@@ -1130,7 +1155,7 @@ func logOpsStreamError(c *gin.Context, ops *service.OpsService, wireStatus int) 
 	if classifyStatus <= 0 {
 		classifyStatus = wireStatus
 	}
-	normalizedType := normalizeOpsErrorType(streamErr.ErrType, streamErr.Code)
+	normalizedType := opsErrorClassification(c, normalizeOpsErrorType(streamErr.ErrType, streamErr.Code))
 	phase, isBusinessLimited, errorOwner, errorSource := classifyOpsErrorLog(c, normalizedType, streamErr.Message, streamErr.Code, classifyStatus)
 	recordedStatus := wireStatus
 	if streamErr.CountTowardsSLA && streamErr.IntendedStatus >= 400 {

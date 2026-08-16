@@ -23,6 +23,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
@@ -1163,31 +1164,29 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	})
 }
 
-type cindyCapabilityResponse struct {
-	Object            string                           `json:"object"`
-	ID                string                           `json:"id"`
-	Kind              service.CindyModelKind           `json:"kind"`
-	InputModalities   []string                         `json:"input_modalities"`
-	OutputModalities  []string                         `json:"output_modalities"`
-	Endpoints         []service.CindyEndpoint          `json:"endpoints"`
-	ClientSurfaces    []string                         `json:"client_surfaces"`
-	MaxInputTokens    int                              `json:"max_input_tokens,omitempty"`
-	MaxOutputTokens   int                              `json:"max_output_tokens,omitempty"`
-	PricingSource     string                           `json:"pricing_source,omitempty"`
-	ExplicitZeroPrice bool                             `json:"explicit_zero_price,omitempty"`
-	Controls          *service.CindyCapabilityControls `json:"controls,omitempty"`
-}
-
 // ModelCapabilities returns the verified, client-facing Cindy capability
 // contract. Internal live IDs and registry IDs are deliberately omitted.
 func (h *GatewayHandler) ModelCapabilities(c *gin.Context) {
+	setOpsRequestContext(c, "", false)
+	setOpsEndpointContext(c, "", int16(service.RequestTypeSync))
+	markLocalGate := func() {
+		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+		setOpsErrorClassification(c, "model_capabilities/local_feature_gate")
+	}
+
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
 	if !ok || apiKey == nil || apiKey.Group == nil {
 		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")
 		return
 	}
 	if apiKey.Group.Platform != service.PlatformOpenAI {
+		markLocalGate()
 		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Model capabilities are not available for this group")
+		return
+	}
+	if !service.CindyCapabilityCatalogFeatureEnabled() {
+		markLocalGate()
+		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Model capability catalog is not enabled")
 		return
 	}
 	strictCindy, err := h.gatewayService.ClassifyStrictCindyGroup(c.Request.Context(), apiKey.Group)
@@ -1195,42 +1194,121 @@ func (h *GatewayHandler) ModelCapabilities(c *gin.Context) {
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
 		return
 	}
-	hasCindyCapability := strictCindy
-	if !hasCindyCapability {
-		hasCindyCapability, err = h.gatewayService.HasSchedulableCindyAccount(c.Request.Context(), apiKey.Group)
-		if err != nil {
-			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
-			return
-		}
+	if !strictCindy {
+		markLocalGate()
+		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Model capabilities are not available for this group")
+		return
 	}
-	if !hasCindyCapability {
+	hasSchedulableCindy, err := h.gatewayService.HasSchedulableCindyAccount(c.Request.Context(), apiKey.Group)
+	if err != nil {
+		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
+		return
+	}
+	if !hasSchedulableCindy {
+		markLocalGate()
 		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Model capabilities are not available for this group")
 		return
 	}
 
-	capabilities := service.CindyVerifiedCapabilities()
-	data := make([]cindyCapabilityResponse, 0, len(capabilities))
-	for _, capability := range capabilities {
-		data = append(data, cindyCapabilityResponse{
-			Object:            "model_capability",
-			ID:                capability.PublicID,
-			Kind:              capability.Kind,
-			InputModalities:   capability.InputModalities,
-			OutputModalities:  capability.OutputModalities,
-			Endpoints:         capability.VerifiedEndpoints,
-			ClientSurfaces:    capability.ClientSurfaces,
-			MaxInputTokens:    capability.MaxInputTokens,
-			MaxOutputTokens:   capability.MaxOutputTokens,
-			PricingSource:     capability.PricingSource,
-			ExplicitZeroPrice: capability.ExplicitZeroPrice,
-			Controls:          capability.Controls,
-		})
-	}
 	c.JSON(http.StatusOK, gin.H{
 		"object":          "list",
 		"catalog_version": service.CindyCapabilityCatalogVersion,
-		"data":            data,
+		"data":            service.CindyVerifiedModelCapabilities(),
 	})
+}
+
+type imageStudioEligibleKeyGroup struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+type imageStudioEligibleAPIKey struct {
+	ID      int64                       `json:"id"`
+	Name    string                      `json:"name"`
+	Key     string                      `json:"key"`
+	GroupID int64                       `json:"group_id"`
+	Group   imageStudioEligibleKeyGroup `json:"group"`
+}
+
+type imageStudioEligibleKeyResponse struct {
+	APIKey       imageStudioEligibleAPIKey      `json:"api_key"`
+	Capabilities []service.CindyModelCapability `json:"capabilities"`
+}
+
+// ImageStudioEligibleKeys returns current-user keys that can route the fixed
+// Cindy image surface. Upstream account identity is never included.
+func (h *GatewayHandler) ImageStudioEligibleKeys(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	items := make([]imageStudioEligibleKeyResponse, 0)
+	if !service.ImageStudioFeatureEnabled() {
+		response.Success(c, gin.H{"items": items})
+		return
+	}
+	if h == nil || h.apiKeyService == nil || h.gatewayService == nil {
+		response.InternalError(c, "Image Studio eligibility is unavailable")
+		return
+	}
+
+	keys, err := h.apiKeyService.ListAll(c.Request.Context(), subject.UserID, service.APIKeyListFilters{Status: service.StatusActive})
+	if err != nil {
+		response.InternalError(c, "Unable to load Image Studio API keys")
+		return
+	}
+	capabilities := service.CindyImageModelCapabilities()
+	if len(capabilities) == 0 {
+		response.Success(c, gin.H{"items": items})
+		return
+	}
+
+	eligibleGroups := make(map[int64]bool)
+	checkedGroups := make(map[int64]struct{})
+	for i := range keys {
+		key := &keys[i]
+		group := key.Group
+		if key.UserID != subject.UserID || !key.IsActive() || key.IsExpired() || key.IsQuotaExhausted() || group == nil || !group.IsActive() || !group.AllowImageGeneration || group.Platform != service.PlatformOpenAI {
+			continue
+		}
+		if _, checked := checkedGroups[group.ID]; !checked {
+			strict, lookupErr := h.gatewayService.ClassifyStrictCindyGroup(c.Request.Context(), group)
+			if lookupErr != nil {
+				response.Error(c, http.StatusServiceUnavailable, "Unable to determine Image Studio eligibility")
+				return
+			}
+			eligible := false
+			if strict {
+				eligible, lookupErr = h.gatewayService.HasSchedulableCindyAccount(c.Request.Context(), group)
+				if lookupErr != nil {
+					response.Error(c, http.StatusServiceUnavailable, "Unable to determine Image Studio eligibility")
+					return
+				}
+			}
+			checkedGroups[group.ID] = struct{}{}
+			eligibleGroups[group.ID] = strict && eligible
+		}
+		if !eligibleGroups[group.ID] {
+			continue
+		}
+		items = append(items, imageStudioEligibleKeyResponse{
+			APIKey: imageStudioEligibleAPIKey{
+				ID:      key.ID,
+				Name:    key.Name,
+				Key:     key.Key,
+				GroupID: group.ID,
+				Group: imageStudioEligibleKeyGroup{
+					ID:   group.ID,
+					Name: group.Name,
+				},
+			},
+			Capabilities: capabilities,
+		})
+	}
+
+	response.Success(c, gin.H{"items": items})
 }
 
 func (h *GatewayHandler) compositeAvailableModels(ctx context.Context, groupID *int64) []string {

@@ -35,6 +35,7 @@ import riskControlAPI from './riskControl'
 import adminComplianceAPI from './compliance'
 import auditAPI from './audit'
 import systemPromptsAPI from './systemPrompts'
+import cindyBalanceProbeAPI from './cindyBalanceProbe'
 
 /**
  * Unified admin API object for convenient access
@@ -71,7 +72,8 @@ export const adminAPI = {
   riskControl: riskControlAPI,
   compliance: adminComplianceAPI,
   audit: auditAPI,
-  systemPrompts: systemPromptsAPI
+  systemPrompts: systemPromptsAPI,
+  cindyBalanceProbe: cindyBalanceProbeAPI
 }
 
 export {
@@ -106,7 +108,8 @@ export {
   riskControlAPI,
   adminComplianceAPI,
   auditAPI,
-  systemPromptsAPI
+  systemPromptsAPI,
+  cindyBalanceProbeAPI
 }
 
 export default adminAPI
@@ -118,6 +121,19 @@ export type { ErrorPassthroughRule, CreateRuleRequest, UpdateRuleRequest } from 
 export type { BackupAgentHealth, DataManagementConfig } from './dataManagement'
 export type { TLSFingerprintProfile, CreateProfileRequest, UpdateProfileRequest } from './tlsFingerprintProfile'
 export type { ContentModerationConfig, ContentModerationLog, ModerationMode } from './riskControl'
+export type {
+  CindyBalanceProbeCounts,
+  CindyBalanceProbeCreateRequest,
+  CindyBalanceProbeFilters,
+  CindyBalanceProbeItem,
+  CindyBalanceProbeItemPage,
+  CindyBalanceProbeJob,
+  CindyBalanceProbeJobList,
+  CindyBalanceProbePreview,
+  CindyBalanceProbePreviewRequest,
+  CindyBalanceProbeScope,
+  CindyBalanceProbeScopeMode
+} from './cindyBalanceProbe'
 export type {
   RemoteSkillBundleVersion,
   RemoteSkillBundleVersionDetail,

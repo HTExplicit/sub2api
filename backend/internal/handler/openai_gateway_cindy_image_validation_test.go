@@ -234,7 +234,7 @@ func TestCindyImageRollbackPreservesLegacyResponsesImageToolRequest(t *testing.T
 			cmd := exec.Command(os.Args[0], "-test.run=^TestCindyImageRollbackValidationHelper$")
 			cmd.Env = append(withoutCindyImageValidationEnv(os.Environ()),
 				service.CindyCapabilityCatalogEnabledEnv+"="+test.catalogEnabled,
-				service.CindyImageStudioEnabledEnv+"="+test.imageEnabled,
+				service.ImageStudioEnabledEnv+"="+test.imageEnabled,
 				cindyImageRollbackValidationHelperEnv+"=1",
 			)
 			if output, err := cmd.CombinedOutput(); err != nil {
@@ -271,6 +271,7 @@ func TestCindyImageRollbackValidationHelper(t *testing.T) {
 func withoutCindyImageValidationEnv(environment []string) []string {
 	blocked := map[string]struct{}{
 		strings.ToUpper(service.CindyCapabilityCatalogEnabledEnv): {},
+		strings.ToUpper(service.ImageStudioEnabledEnv):            {},
 		strings.ToUpper(service.CindyImageStudioEnabledEnv):       {},
 		strings.ToUpper(cindyImageRollbackValidationHelperEnv):    {},
 	}

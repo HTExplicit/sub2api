@@ -8,7 +8,11 @@ vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
   return {
     ...actual,
-    useI18n: () => ({ t: (key: string) => key })
+    useI18n: () => ({
+      t: (key: string) => key === 'admin.accounts.cindyProbe.itemState.healthy'
+        ? 'Luna available this run'
+        : key
+    })
   }
 })
 
@@ -37,7 +41,10 @@ const account: Account = {
   session_window_end: null,
   session_window_status: null,
   groups: [],
-  tags: []
+  tags: [],
+  cindy_balance_probe_job_id: 912,
+  cindy_balance_probe_outcome: 'healthy',
+  cindy_balance_probe_checked_at: '2031-08-16T00:02:00Z'
 }
 
 const stats: Record<string, WindowStats> = {
@@ -116,6 +123,7 @@ describe('account console usage views', () => {
     expect(cell.attributes('data-refresh-token')).toBe('4')
     expect(usage.classes()).toContain('row-start-2')
     expect(usage.get('[data-test="capacity-cell"]').attributes('data-compact')).toBe('true')
+    expect(wrapper.find('[data-test="cindy-probe-summary"]').exists()).toBe(false)
   })
 
   it('places full list usage before taxonomy in cards and forwards refresh state', () => {
@@ -134,5 +142,23 @@ describe('account console usage views', () => {
     expect(
       usage.element.compareDocumentPosition(taxonomy.element) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy()
+    expect(wrapper.find('[data-test="cindy-probe-summary"]').exists()).toBe(false)
+  })
+
+  it('shows the recent Cindy probe in compact and card layouts only when requested', () => {
+    const compact = mount(AccountCompactList, {
+      props: { ...sharedProps, showCindyProbe: true },
+      global: { stubs: globalStubs }
+    })
+    const cards = mount(AccountCardGrid, {
+      props: { ...sharedProps, showCindyProbe: true },
+      global: { stubs: globalStubs }
+    })
+
+    expect(compact.findAll('[data-test="cindy-probe-summary"]')).toHaveLength(2)
+    expect(compact.text()).toContain('#912')
+    expect(compact.text()).toContain('Luna available this run')
+    expect(cards.get('[data-test="cindy-probe-summary"]').text()).toContain('#912')
+    expect(cards.get('[data-test="cindy-probe-summary"]').text()).toContain('Luna available this run')
   })
 })

@@ -14,6 +14,8 @@ import (
 const (
 	openAICindyHTTPToWSV2Reason             = "cindy_http_to_wsv2"
 	openAICindyHTTPToWSV2RequiredContextKey = "openai_cindy_http_to_wsv2_required"
+	openAICindyHTTPToWSV2FailoverReason     = GatewayFailureReason("cindy_http_to_wsv2_first_turn_failover")
+	openAICindyHTTPToWSV2TerminalReason     = GatewayFailureReason("websocket_terminal_failure")
 )
 
 func markOpenAICindyHTTPToWSV2Required(c *gin.Context) {
@@ -54,6 +56,44 @@ func sanitizeOpenAICindyFailoverError(failoverErr *UpstreamFailoverError) *Upstr
 	// through a configured error-passthrough rule.
 	failoverErr.ResponseBody = append([]byte(nil), openAITransportFailoverBody...)
 	return failoverErr
+}
+
+func finishOpenAICindyHTTPToWSV2Failover(
+	c *gin.Context,
+	account *Account,
+	failoverErr *UpstreamFailoverError,
+) (error, bool) {
+	if failoverErr == nil || account == nil {
+		return nil, false
+	}
+	stage := failoverErr.Stage
+	if stage == "" {
+		stage = GatewayFailureStageInference
+	}
+	scope := failoverErr.Scope
+	if scope == "" {
+		scope = GatewayFailureScopeRequest
+	}
+	reason := failoverErr.Reason
+	if reason == "" {
+		reason = openAICindyHTTPToWSV2FailoverReason
+	}
+	message := strings.TrimSpace(failoverErr.ClientMessage)
+	if message == "" {
+		message = "Temporary upstream failure"
+	}
+	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+		Platform:           account.Platform,
+		AccountID:          account.ID,
+		UpstreamStatusCode: failoverErr.StatusCode,
+		UpstreamRequestID:  failoverErr.ResponseHeaders.Get("x-request-id"),
+		Kind:               "failover",
+		Stage:              string(stage),
+		Scope:              string(scope),
+		Reason:             string(reason),
+		Message:            message,
+	})
+	return sanitizeOpenAICindyFailoverError(failoverErr), true
 }
 
 func (s *OpenAIGatewayService) cindyHTTPToWSV2ConfigEligible(account *Account) bool {
@@ -110,7 +150,7 @@ func (s *OpenAIGatewayService) cindyHTTPToWSV2FirstTurnFailover(
 	}
 	var existing *UpstreamFailoverError
 	if errors.As(err, &existing) && existing != nil {
-		return sanitizeOpenAICindyFailoverError(existing), true
+		return finishOpenAICindyHTTPToWSV2Failover(c, account, existing)
 	}
 
 	var dialErr *openAIWSDialError
@@ -118,7 +158,9 @@ func (s *OpenAIGatewayService) cindyHTTPToWSV2FirstTurnFailover(
 		if hit, _, _ := detectOpenAICyberPolicy(dialErr.ResponseBody); hit {
 			markOpenAICyberPolicyFromResponse(c, dialErr.StatusCode, dialErr.ResponseBody)
 			if s.openAIRefusalRecoveryRuntime(ctx).CyberFailoverEnabled() {
-				return NewOpenAICyberFailoverError(dialErr.ResponseBody, dialErr.ResponseHeaders), true
+				return finishOpenAICindyHTTPToWSV2Failover(
+					c, account, NewOpenAICyberFailoverError(dialErr.ResponseBody, dialErr.ResponseHeaders),
+				)
 			}
 			return nil, false
 		}
@@ -135,7 +177,7 @@ func (s *OpenAIGatewayService) cindyHTTPToWSV2FirstTurnFailover(
 				failoverErr.SuppressAccountHealthPenalty = true
 			}
 		}
-		return sanitizeOpenAICindyFailoverError(failoverErr), true
+		return finishOpenAICindyHTTPToWSV2Failover(c, account, failoverErr)
 	}
 
 	reason, retryable := classifyOpenAIWSReconnectReason(err)
@@ -144,7 +186,7 @@ func (s *OpenAIGatewayService) cindyHTTPToWSV2FirstTurnFailover(
 			http.StatusServiceUnavailable, nil, openAITransportFailoverBody, reason, false,
 		)
 		failoverErr.Reason = OpenAITransientTransportFailureReason
-		return failoverErr, true
+		return finishOpenAICindyHTTPToWSV2Failover(c, account, failoverErr)
 	}
 	return nil, false
 }
@@ -186,6 +228,9 @@ func (s *OpenAIGatewayService) cindyHTTPToWSV2FirstTurnEventFailover(
 		"websocket_terminal_failure",
 		false,
 	)
+	failoverErr.Stage = GatewayFailureStageInference
+	failoverErr.Scope = GatewayFailureScopeRequest
+	failoverErr.Reason = openAICindyHTTPToWSV2TerminalReason
 	if statusCode == http.StatusForbidden && isHTMLResponse(payload) {
 		failoverErr.SuppressAccountHealthPenalty = true
 	}

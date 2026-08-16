@@ -258,6 +258,16 @@ func openAIResponsesRequiredCapability(imageIntent bool, platform string) servic
 	return service.OpenAIEndpointCapabilityChatCompletions
 }
 
+// openAIResponsesRequiredCapabilityForRequest returns the endpoint capability
+// required by an image or Responses request. needsResponses includes both the
+// legacy /responses/compact endpoint and native remote compaction v2.
+func openAIResponsesRequiredCapabilityForRequest(imageIntent bool, needsResponses bool, platform string) service.OpenAIEndpointCapability {
+	if needsResponses && platform == service.PlatformOpenAI {
+		return service.OpenAIEndpointCapabilityResponses
+	}
+	return openAIResponsesRequiredCapability(imageIntent, platform)
+}
+
 func allowOpenAICompatibleMessagesDispatch(apiKey *service.APIKey) bool {
 	if apiKey == nil || apiKey.Group == nil {
 		return true
@@ -413,6 +423,13 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	if !ok {
 		return
 	}
+	legacyCompact := service.IsOpenAIResponsesCompactPath(c)
+	nativeV2 := isBareOpenAIResponsesPath(c) && isOpenAIRemoteCompactionV2Request(body)
+	if nativeV2 {
+		// 原生 v2 压缩出站前补注 x-codex-beta-features: remote_compaction_v2，
+		// 与真实 Codex 线型一致（网关链剥头后本级负责恢复，#5586）。
+		service.MarkOpenAINativeCompactionV2(c)
+	}
 	// body-signal compact：上游 unary 等待期间向下游发 SSE 注释行心跳，防止
 	// 反向代理空闲超时掐断长压缩连接（#3887）。首拍延迟一个心跳间隔，快速
 	// 失败仍走 JSON+状态码链路；未标记客户端流式或间隔为 0 时是 no-op。
@@ -438,13 +455,20 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
 		return
 	}
-	strictCindy, err := h.gatewayService.ClassifyStrictCindyGroup(c.Request.Context(), apiKey.Group)
-	if err != nil {
-		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
-		return
+	compatibilityRoutingModel, compatibilityCandidate := service.CindyCompatibilityMappedUpstreamModel(reqModel)
+	catalogEnabled := service.CindyCapabilityCatalogFeatureEnabled()
+	cindyIdentityGroup := false
+	if catalogEnabled || compatibilityCandidate {
+		cindyIdentityGroup, err = h.gatewayService.ClassifyCindyIdentityGroup(c.Request.Context(), apiKey.Group)
+		if err != nil {
+			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
+			return
+		}
 	}
+	strictCindy := cindyIdentityGroup && catalogEnabled
+	compatibilityAlias := compatibilityCandidate && cindyIdentityGroup
 	if strictCindy && !service.CindyModelSupportsEndpoint(reqModel, service.CindyEndpointResponses) &&
-		!strictCindyResponsesImageBridgeAllowed(reqModel, body) {
+		!strictCindyResponsesImageBridgeAllowed(reqModel, body) && !compatibilityAlias {
 		h.errorResponse(c, http.StatusNotFound, "model_not_found", "Model is not supported on the Responses endpoint")
 		return
 	}
@@ -528,8 +552,25 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 
 	// 解析渠道级模型映射
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)
-	forwardBody := openAIModelMappedBody(body, channelMapping.Mapped, channelMapping.MappedModel, h.gatewayService.ReplaceModelInBody)
-	seedOpenAIForwardImageIntentHint(c, channelMapping.Mapped, imageIntent)
+	routingModel := reqModel
+	forwardMapped := channelMapping.Mapped
+	forwardMappedModel := channelMapping.MappedModel
+	if compatibilityAlias {
+		routingModel = compatibilityRoutingModel
+		forwardMapped = true
+		forwardMappedModel = compatibilityRoutingModel
+	}
+	forwardBody := openAIModelMappedBody(body, forwardMapped, forwardMappedModel, h.gatewayService.ReplaceModelInBody)
+	seedOpenAIForwardImageIntentHint(c, forwardMapped, imageIntent)
+	forwardModel := reqModel
+	if forwardMapped {
+		forwardModel = forwardMappedModel
+	}
+	c.Request = c.Request.WithContext(service.WithOpenAIForwardModel(
+		c.Request.Context(),
+		forwardModel,
+		legacyCompact,
+	))
 
 	// 提前校验 function_call_output 是否具备可关联上下文，避免上游 400。
 	if !h.validateFunctionCallOutputRequest(c, body, reqLog) {
@@ -573,7 +614,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	if h.rejectIfCyberSessionBlocked(c, apiKey, sessionHashBody, reqModel, cyberBlockFormatResponses) {
 		return
 	}
-	requireCompact := isOpenAIRemoteCompactPath(c)
+	requireCompact := legacyCompact
 
 	maxAccountSwitches := h.maxAccountSwitches
 	switchCount := 0
@@ -592,7 +633,8 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	// 仅对 OpenAI 平台生效：Grok 生图走独立的 forwardGrokResponses 路径，不应被过滤。
 	// 复用前置权限与并发阶段在未修改 body 上确认的显式生图意图，避免大 tools 请求重复扫描。
 	// 该判断已排除 Codex 被动 image_gen namespace，避免 CC-only 账号被误过滤（#4476）。
-	requiredCapability := openAIResponsesRequiredCapability(imageIntent, requestPlatform)
+	needsResponses := nativeV2 || legacyCompact
+	requiredCapability := openAIResponsesRequiredCapabilityForRequest(imageIntent, needsResponses, requestPlatform)
 
 	// 分组利润控制：请求级装配定价上下文——pricingAt 固定本请求的
 	// D 与计费高峰因子，选号、槽位终检与全部 failover 重入共用同一门与阈值。
@@ -626,7 +668,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				apiKey.GroupID,
 				previousResponseID,
 				sessionHash,
-				reqModel,
+				routingModel,
 				failedAccountIDs,
 				service.OpenAIUpstreamTransportAny,
 				requiredCapability,
@@ -656,12 +698,12 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				return
 			}
 			if len(failedAccountIDs) == 0 {
-				if errors.Is(err, service.ErrNoAvailableCompactAccounts) {
+				if legacyCompact && errors.Is(err, service.ErrNoAvailableCompactAccounts) {
 					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "compact_not_supported", "No available accounts support /responses/compact", streamStarted)
 					return
 				}
-				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, requestPlatform)
+				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, routingModel, reqModel, requestPlatform)
 				if !cls.ModelNotFound {
 					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 				}
@@ -676,7 +718,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			return
 		}
 		if selection == nil || selection.Account == nil {
-			cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, requestPlatform)
+			cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, routingModel, reqModel, requestPlatform)
 			if !cls.ModelNotFound {
 				markOpsRoutingCapacityLimited(c)
 			}
@@ -720,7 +762,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		}
 		if slotResult != openAISlotAcquireOK {
 			if retryingSameAccount && lastFailoverErr != nil && h.failoverAfterSameAccountSlotFailure(
-				c, account, account.GetMappedModel(reqModel), lastFailoverErr, failedAccountIDs,
+				c, account, account.GetMappedModel(routingModel), lastFailoverErr, failedAccountIDs,
 				&switchCount, maxAccountSwitches, &oauth429FailoverState, streamStarted,
 				"responses", reqLog, true,
 				func() { h.handleFailoverExhausted(c, lastFailoverErr, streamStarted) },
@@ -800,7 +842,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						return
 					}
 					if !openAIForwardMayFailover(c, writerSizeBeforeForward, failoverErr) {
-						finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(reqModel), failoverErr, openAIFailoverRetryStop)
+						finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(routingModel), failoverErr, openAIFailoverRetryStop)
 						h.handleFailoverExhausted(c, failoverErr, true)
 						return
 					}
@@ -820,7 +862,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						continue
 					}
 					if !failoverErr.ShouldRetryNextAccount() {
-						finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(reqModel), failoverErr, openAIFailoverRetryStop)
+						finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(routingModel), failoverErr, openAIFailoverRetryStop)
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
@@ -828,13 +870,13 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						c.Request.Context(),
 						h.gatewayService,
 						account,
-						account.GetMappedModel(reqModel),
+						account.GetMappedModel(routingModel),
 						failoverErr,
 						true,
 						sameAccountRetryDelay,
 						"responses",
 					)
-					finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(reqModel), failoverErr, retryAction)
+					finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(routingModel), failoverErr, retryAction)
 					switch retryAction {
 					case openAIFailoverRetrySameAccount:
 						sameAccountRetrySelection = selection
@@ -888,7 +930,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					continue
 				}
 				if !cyberAttempt {
-					h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(reqModel), false, nil)
+					h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(routingModel), false, nil)
 				} else {
 					h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 				}
@@ -916,9 +958,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			if account.Type == service.AccountTypeOAuth && !account.IsShadow() {
 				h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(c.Request.Context(), account.ID, result.ResponseHeaders)
 			}
-			h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(reqModel), openAIForwardSucceededForScheduling(result), result.FirstTokenMs)
+			h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(routingModel), openAIForwardSucceededForScheduling(result), result.FirstTokenMs)
 		} else {
-			h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(reqModel), openAIForwardSucceededForScheduling(result), nil)
+			h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(routingModel), openAIForwardSucceededForScheduling(result), nil)
 		}
 
 		// 捕获请求信息（用于异步记录，避免在 goroutine 中访问 gin.Context）
@@ -969,12 +1011,8 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	}
 }
 
-func isOpenAIRemoteCompactPath(c *gin.Context) bool {
-	if c == nil || c.Request == nil || c.Request.URL == nil {
-		return false
-	}
-	normalizedPath := strings.TrimRight(strings.TrimSpace(c.Request.URL.Path), "/")
-	return strings.HasSuffix(normalizedPath, "/responses/compact")
+func isOpenAILegacyCompactPath(c *gin.Context) bool {
+	return service.IsOpenAIResponsesCompactPath(c)
 }
 
 // isBareOpenAIResponsesPath 仅匹配裸 /responses 端点（无 /compact 等子路径），
@@ -984,32 +1022,27 @@ func isBareOpenAIResponsesPath(c *gin.Context) bool {
 		return false
 	}
 	normalizedPath := strings.TrimRight(strings.TrimSpace(c.Request.URL.Path), "/")
-	return strings.HasSuffix(normalizedPath, "/responses")
-}
-
-func isOpenAIRemoteCompactionV2Request(c *gin.Context, body []byte) bool {
-	stream, valid := parseOpenAICompatibleStream(body)
-	if !valid || !stream || c == nil || c.Request == nil {
+	switch normalizedPath {
+	case EndpointResponses, "/openai/v1/responses", "/responses", "/backend-api/codex/responses":
+		return true
+	default:
 		return false
 	}
-	for _, header := range c.Request.Header.Values("x-codex-beta-features") {
-		for _, feature := range strings.Split(header, ",") {
-			if strings.TrimSpace(feature) == "remote_compaction_v2" {
-				return true
-			}
-		}
-	}
-	return false
+}
+
+func isOpenAIRemoteCompactionV2Request(body []byte) bool {
+	stream, valid := parseOpenAICompatibleStream(body)
+	return valid && stream && service.HasCompactionTriggerInInput(body)
 }
 
 // normalizeOpenAIResponsesCompactRequest keeps Codex remote compaction v2 on
 // its native streaming /responses wire and preserves the legacy body-signal
-// promotion for clients that do not explicitly advertise that protocol.
+// promotion for non-streaming requests.
 // 返回归一化后的 body；ok=false 表示错误响应已写出，调用方应直接 return。
 func (h *OpenAIGatewayHandler) normalizeOpenAIResponsesCompactRequest(c *gin.Context, reqLog *zap.Logger, body []byte) ([]byte, bool) {
-	isCompactRequest := service.IsOpenAIResponsesCompactPathForTest(c)
+	isCompactRequest := isOpenAILegacyCompactPath(c)
 	if !isCompactRequest && isBareOpenAIResponsesPath(c) && service.HasCompactionTriggerInInput(body) {
-		if isOpenAIRemoteCompactionV2Request(c, body) {
+		if isOpenAIRemoteCompactionV2Request(body) {
 			return body, true
 		}
 		c.Request.URL.Path = strings.TrimRight(c.Request.URL.Path, "/") + "/compact"
@@ -1038,7 +1071,7 @@ func (h *OpenAIGatewayHandler) normalizeOpenAIResponsesCompactRequest(c *gin.Con
 }
 
 func (h *OpenAIGatewayHandler) logOpenAIRemoteCompactOutcome(c *gin.Context, startedAt time.Time) {
-	if !isOpenAIRemoteCompactPath(c) {
+	if !isOpenAILegacyCompactPath(c) {
 		return
 	}
 
@@ -2094,6 +2127,15 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "model is required in first response.create payload")
 		return
 	}
+	cindyIdentityGroup, err := h.gatewayService.ClassifyCindyIdentityGroup(ctx, apiKey.Group)
+	if err != nil {
+		closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "unable to determine model availability")
+		return
+	}
+	wsRoutingModel := reqModel
+	if mappedModel, mapped := service.CindyCompatibilityMappedUpstreamModel(reqModel); mapped && cindyIdentityGroup {
+		wsRoutingModel = mappedModel
+	}
 	ensureCompositeTargetPlatform(c, apiKey, reqModel)
 	ctx = c.Request.Context()
 	if apiKey.Group != nil && apiKey.Group.Platform == service.PlatformComposite {
@@ -2143,8 +2185,17 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	}
 	cyberBlockedThisConn := false
 
-	// 解析渠道级模型映射
-	channelMappingWS, _ := h.gatewayService.ResolveChannelMappingAndRestrict(ctx, apiKey.GroupID, reqModel)
+	// 解析渠道级模型映射。严格 Cindy 兼容别名属于基础路由能力，
+	// 优先于管理员渠道映射，且仅在完整分组身份确认后生效。
+	resolveWSChannelMapping := func(model string) service.ChannelMappingResult {
+		mapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(ctx, apiKey.GroupID, model)
+		if mappedModel, mapped := service.CindyCompatibilityMappedUpstreamModel(model); mapped && cindyIdentityGroup {
+			mapping.Mapped = true
+			mapping.MappedModel = mappedModel
+		}
+		return mapping
+	}
+	channelMappingWS := resolveWSChannelMapping(reqModel)
 
 	var currentUserRelease func()
 	var currentAccountRelease func()
@@ -2227,12 +2278,12 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			return false
 		}
 		if failoverErr.ShouldReportAccountScheduleFailure() {
-			h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(reqModel), false, nil)
+			h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(wsRoutingModel), false, nil)
 		} else {
 			h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 		}
 		if failoverErr.ShouldRetryNextAccount() {
-			h.gatewayService.CooldownOpenAIRetryExhausted(ctx, account, account.GetMappedModel(reqModel), failoverErr)
+			h.gatewayService.CooldownOpenAIRetryExhausted(ctx, account, account.GetMappedModel(wsRoutingModel), failoverErr)
 		}
 		releaseAccountSlot()
 		if failoverErr.ShouldRetryNextAccount() && !accountSwitchReplaySafe {
@@ -2309,7 +2360,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			apiKey.GroupID,
 			previousResponseID,
 			sessionHash,
-			reqModel,
+			wsRoutingModel,
 			failedAccountIDs,
 			requiredTransport,
 			requiredCapability,
@@ -2487,7 +2538,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				if model == "" {
 					model = reqModel
 				}
-				mapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(ctx, apiKey.GroupID, model)
+				mapping := resolveWSChannelMapping(model)
 				mappedModelUnchanged := false
 				if previous := turnChannelMapping.Load(); previous != nil && previous.turn < turn {
 					mappedModelUnchanged = strings.TrimSpace(previous.mapping.MappedModel) == strings.TrimSpace(mapping.MappedModel)
@@ -2567,7 +2618,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				if snapshot := turnChannelMapping.Load(); snapshot != nil && snapshot.turn == turn {
 					turnMapping = snapshot.mapping
 				} else {
-					turnMapping, _ = h.gatewayService.ResolveChannelMappingAndRestrict(ctx, apiKey.GroupID, turnRequestedModel)
+					turnMapping = resolveWSChannelMapping(turnRequestedModel)
 				}
 				if turnUpstreamModel == "" {
 					turnUpstreamModel = turnRequestedModel
@@ -2687,7 +2738,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					)
 				} else {
 					if shouldReportOpenAIWSProxyAccountFailure(err) {
-						h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(reqModel), false, nil)
+						h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(wsRoutingModel), false, nil)
 					}
 					reqLog.Warn("openai.websocket_proxy_closed",
 						zap.Int64("account_id", account.ID),
@@ -2718,7 +2769,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			}
 
 			if shouldReportOpenAIWSProxyAccountFailure(err) {
-				h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(reqModel), false, nil)
+				h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(wsRoutingModel), false, nil)
 			}
 			closeStatus, closeReason := summarizeWSCloseErrorForLog(err)
 			proxyFailedFields := []zap.Field{

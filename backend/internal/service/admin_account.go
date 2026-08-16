@@ -29,6 +29,9 @@ func (s *adminServiceImpl) ListAccounts(ctx context.Context, page, pageSize int,
 	if err := s.hydrateAccountTaxonomyValues(ctx, accounts); err != nil {
 		return nil, 0, err
 	}
+	if err := s.hydrateCindyBalanceProbeLatestValues(ctx, accounts); err != nil {
+		return nil, 0, err
+	}
 	return accounts, result.Total, nil
 }
 

@@ -438,10 +438,17 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}, nil
 	}
 
+	var commitIngressTurnState func()
 	rawWriteClientMessage := func(message []byte) error {
 		writeCtx, cancel := newOpenAIWSDownstreamWriteContext(ctx, hooks, s.openAIWSWriteTimeout())
 		defer cancel()
-		return clientConn.Write(writeCtx, coderws.MessageText, message)
+		if writeErr := clientConn.Write(writeCtx, coderws.MessageText, message); writeErr != nil {
+			return writeErr
+		}
+		if commitIngressTurnState != nil {
+			commitIngressTurnState()
+		}
+		return nil
 	}
 	writeClientMessage := rawWriteClientMessage
 	var refusalOutput *openAIRefusalRecoveryWSOutput
@@ -508,7 +515,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	refreshIngressRouteState := func(payload openAIWSClientPayload) {
 		sessionHash = s.GenerateSessionHash(c, payload.rawForHash)
 		if turnState == "" && stateStore != nil && sessionHash != "" {
-			if savedTurnState, ok := stateStore.GetSessionTurnState(groupID, sessionHash); ok {
+			if savedTurnState, ok := stateStore.GetSessionTurnState(groupID, sessionHash, account.ID); ok {
 				turnState = savedTurnState
 			}
 		}
@@ -557,8 +564,12 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					return err
 				}
 			}
-			if turnState != "" && c != nil && c.Request != nil {
-				c.Request.Header.Set(openAIWSTurnStateHeader, turnState)
+			if c != nil && c.Request != nil {
+				if turnState == "" {
+					c.Request.Header.Del(openAIWSTurnStateHeader)
+				} else {
+					c.Request.Header.Set(openAIWSTurnStateHeader, turnState)
+				}
 			}
 			bridgePayloadRaw := currentBridgePayload.payloadRaw
 			bridgePayloadBytes := currentBridgePayload.payloadBytes
@@ -641,12 +652,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				bridgeReplayInput = append(bridgeReplayInput, cloneOpenAIWSRawMessages(result.wsReplayInput)...)
 				bridgeReplayInputExists = true
 			}
-			if bridgeTurnState := strings.TrimSpace(result.ResponseHeaders.Get(openAIWSTurnStateHeader)); bridgeTurnState != "" {
-				turnState = bridgeTurnState
-				if stateStore != nil && sessionHash != "" {
-					stateStore.BindSessionTurnState(groupID, sessionHash, bridgeTurnState, s.openAIWSSessionStickyTTL())
-				}
-			}
+			bridgeTurnState := strings.TrimSpace(result.ResponseHeaders.Get(openAIWSTurnStateHeader))
+			turnState = bridgeTurnState
+			s.commitOpenAIWSSessionTurnState(c, account, stateStore, groupID, sessionHash, bridgeTurnState)
 			responseID := strings.TrimSpace(result.RequestID)
 			if responseID != "" && stateStore != nil {
 				ttl := s.openAIWSResponseStickyTTL()
@@ -715,6 +723,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	if buildHdrErr != nil {
 		return fmt.Errorf("build ws headers: %w", buildHdrErr)
 	}
+	turnState = strings.TrimSpace(wsHeaders.Get(openAIWSTurnStateHeader))
 	baseAcquireReq := openAIWSAcquireRequest{
 		Account: account,
 		WSURL:   wsURL,
@@ -862,18 +871,6 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			return nil, acquireErr
 		}
 		connID := strings.TrimSpace(lease.ConnID())
-		if handshakeTurnState := strings.TrimSpace(lease.HandshakeHeader(openAIWSTurnStateHeader)); handshakeTurnState != "" {
-			turnState = handshakeTurnState
-			if stateStore != nil && sessionHash != "" {
-				stateStore.BindSessionTurnState(groupID, sessionHash, handshakeTurnState, s.openAIWSSessionStickyTTL())
-			}
-			updatedHeaders := cloneHeader(baseAcquireReq.Headers)
-			if updatedHeaders == nil {
-				updatedHeaders = make(http.Header)
-			}
-			updatedHeaders.Set(openAIWSTurnStateHeader, handshakeTurnState)
-			baseAcquireReq.Headers = updatedHeaders
-		}
 		logOpenAIWSModeInfo(
 			"ingress_ws_upstream_connected account_id=%d turn=%d conn_id=%s conn_reused=%v conn_pick_ms=%d queue_wait_ms=%d preferred_conn_id=%s",
 			account.ID,
@@ -892,6 +889,34 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		if lease == nil {
 			return nil, errors.New("upstream websocket lease is nil")
 		}
+		// A handshake state is local to this attempt until a downstream frame is
+		// actually written. Draining an upstream terminal after client disconnect
+		// must not claim that the client received this attempt's state.
+		handshakeTurnState := strings.TrimSpace(lease.HandshakeHeader(openAIWSTurnStateHeader))
+		turnStateCommitted := false
+		commitTurnState := func() {
+			if turnStateCommitted {
+				return
+			}
+			turnStateCommitted = true
+			turnState = handshakeTurnState
+			updatedHeaders := cloneHeader(baseAcquireReq.Headers)
+			if updatedHeaders == nil {
+				updatedHeaders = make(http.Header)
+			}
+			if handshakeTurnState == "" {
+				updatedHeaders.Del(openAIWSTurnStateHeader)
+			} else {
+				updatedHeaders.Set(openAIWSTurnStateHeader, handshakeTurnState)
+			}
+			baseAcquireReq.Headers = updatedHeaders
+			s.commitOpenAIWSSessionTurnState(c, account, stateStore, groupID, sessionHash, handshakeTurnState)
+		}
+		previousCommit := commitIngressTurnState
+		commitIngressTurnState = commitTurnState
+		defer func() {
+			commitIngressTurnState = previousCommit
+		}()
 		turnStart := time.Now()
 		if refusalOutput != nil {
 			refusalOutput.DropTurn()

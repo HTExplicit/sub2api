@@ -538,6 +538,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/cindy-accounts',
+    name: 'AdminCindyAccounts',
+    component: () => import('@/views/admin/CindyAccountsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Cindy Accounts',
+      titleKey: 'admin.accounts.cindyPageTitle',
+      descriptionKey: 'admin.accounts.cindyPageDescription'
+    }
+  },
+  {
     path: '/admin/announcements',
     name: 'AdminAnnouncements',
     component: () => import('@/views/admin/AnnouncementsView.vue'),

@@ -5,12 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/tidwall/gjson"
@@ -49,31 +47,17 @@ const (
 // CindyBalanceAccountRepository is intentionally separate from AccountRepository
 // so focused gateway test doubles do not need to implement administrative cleanup.
 type CindyBalanceAccountRepository interface {
-	MarkCindyBalanceInsufficient(ctx context.Context, accountID int64, observedAt time.Time) (bool, error)
 	ClearCindyBalanceInsufficient(ctx context.Context, accountID int64) (bool, error)
 	PreviewCindyInsufficientDeletion(ctx context.Context) (*CindyInsufficientDeletePreview, error)
 	DeleteCindyInsufficient(ctx context.Context, expectedCount int, fingerprint string) (*CindyInsufficientDeleteResult, error)
 }
 
-// CindyBalanceConditionalAccountRepository prevents a confirmation made with
-// an old API-key snapshot from marking a newly rotated credential. Production
-// compares the opaque fingerprint while holding the existing account row lock.
-type CindyBalanceConditionalAccountRepository interface {
-	MarkCindyBalanceInsufficientIfCredentialsMatch(
-		ctx context.Context,
-		accountID int64,
-		observedAt time.Time,
-		credentialsFingerprint string,
-	) (changed bool, credentialsMatch bool, err error)
-}
-
-// CindyBalancePendingStore preserves an exact Cindy budget signal while the
-// database marker is being committed. Production implements this with Redis
-// and no TTL so a process restart cannot make an exhausted account schedulable.
-// It is intentionally separate from GatewayCache to keep lightweight tests and
-// alternate cache adapters source-compatible.
+// CindyBalancePendingStore exposes the Redis marker used by releases before
+// v0.1.177 while a database marker was being committed. Durable admin probe
+// jobs no longer create this cache authority; they clear matching leftovers
+// after their lease-guarded database transaction. The interface remains for a
+// one-version rolling-upgrade cleanup path and alternate cache adapters.
 type CindyBalancePendingStore interface {
-	MarkCindyBalancePending(ctx context.Context, accountID int64, credentialsFingerprint string) error
 	GetCindyBalancePendingFingerprint(ctx context.Context, accountID int64) (string, error)
 	HasCindyBalancePendingBatch(ctx context.Context, accountIDs []int64) (map[int64]bool, error)
 	ClearCindyBalancePending(ctx context.Context, accountID int64) error
@@ -85,15 +69,13 @@ type cindyBalancePendingSnapshotState uint8
 const (
 	cindyBalancePendingSnapshotClear cindyBalancePendingSnapshotState = iota + 1
 	cindyBalancePendingSnapshotBlocked
-	cindyBalancePendingSnapshotValidatedBlocked
 	cindyBalancePendingSnapshotReadFailed
 )
 
 type cindyBalancePendingSnapshotContextKey struct{}
 
-// cindyBalancePendingSnapshot is request-scoped. Negative results must never
-// escape the request because that could hide a marker created immediately
-// afterwards by another request/process.
+// cindyBalancePendingSnapshot is request-scoped so one request does not repeat
+// best-effort cleanup reads for the same legacy marker.
 type cindyBalancePendingSnapshot struct {
 	mu     sync.RWMutex
 	states map[int64]cindyBalancePendingSnapshotState
@@ -178,353 +160,6 @@ func (s *cindyBalancePendingSnapshot) recordState(accountID int64, state cindyBa
 	s.mu.Lock()
 	s.states[accountID] = state
 	s.mu.Unlock()
-}
-
-type cindyBalancePersistTask struct {
-	accountID              int64
-	observedAt             time.Time
-	credentialsFingerprint string
-	runtimeBlock           cindyBalanceRuntimeBlockToken
-	generation             uint64
-	attempt                int
-	nextAt                 time.Time
-	inFlightDone           chan struct{}
-}
-
-var cindyBalancePersistenceBackoffs = [...]time.Duration{
-	time.Second,
-	5 * time.Second,
-	30 * time.Second,
-	2 * time.Minute,
-	10 * time.Minute,
-}
-
-func (s *RateLimitService) scheduleCindyBalancePersistenceRetry(
-	account *Account,
-	observedAt time.Time,
-	credentialsFingerprint string,
-	runtimeBlock cindyBalanceRuntimeBlockToken,
-) {
-	if s == nil || account == nil || account.ID <= 0 {
-		return
-	}
-	credentialsFingerprint = NormalizeCindyCredentialsFingerprint(credentialsFingerprint)
-	if credentialsFingerprint == "" {
-		return
-	}
-	s.cindyBalancePersistMu.Lock()
-	if s.cindyBalancePersistTasks == nil {
-		s.cindyBalancePersistTasks = make(map[int64]*cindyBalancePersistTask)
-		s.cindyBalancePersistWake = make(chan struct{}, 1)
-	}
-	if s.cindyBalancePersistEpochs == nil {
-		s.cindyBalancePersistEpochs = make(map[int64]uint64)
-	}
-	existing := s.cindyBalancePersistTasks[account.ID]
-	var replacedInFlight <-chan struct{}
-	if existing == nil || existing.credentialsFingerprint != credentialsFingerprint {
-		if existing != nil {
-			replacedInFlight = existing.inFlightDone
-			if !runtimeBlock.changed && existing.runtimeBlock.changed {
-				runtimeBlock = existing.runtimeBlock
-			}
-		}
-		generation := s.cindyBalancePersistEpochs[account.ID] + 1
-		s.cindyBalancePersistEpochs[account.ID] = generation
-		s.cindyBalancePersistTasks[account.ID] = &cindyBalancePersistTask{
-			accountID:              account.ID,
-			observedAt:             observedAt,
-			credentialsFingerprint: credentialsFingerprint,
-			runtimeBlock:           runtimeBlock,
-			generation:             generation,
-			nextAt:                 time.Now().Add(cindyBalancePersistenceBackoffs[0]),
-		}
-	}
-	start := !s.cindyBalancePersistRunning
-	if start {
-		s.cindyBalancePersistRunning = true
-	}
-	wake := s.cindyBalancePersistWake
-	s.cindyBalancePersistMu.Unlock()
-	if replacedInFlight != nil {
-		<-replacedInFlight
-	}
-	if existing != nil && existing.credentialsFingerprint != credentialsFingerprint && s.cindyBalancePendingStore != nil {
-		stateCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		_ = s.cindyBalancePendingStore.MarkCindyBalancePending(stateCtx, account.ID, credentialsFingerprint)
-		cancel()
-	}
-	select {
-	case wake <- struct{}{}:
-	default:
-	}
-	if start {
-		go s.runCindyBalancePersistenceRetries()
-	}
-}
-
-func (s *RateLimitService) supersedeCindyBalancePersistenceRetry(
-	accountID int64,
-	runtimeBlock cindyBalanceRuntimeBlockToken,
-) cindyBalanceRuntimeBlockToken {
-	if s == nil || accountID <= 0 {
-		return runtimeBlock
-	}
-	s.cindyBalancePersistMu.Lock()
-	if s.cindyBalancePersistEpochs == nil {
-		s.cindyBalancePersistEpochs = make(map[int64]uint64)
-	}
-	existing := s.cindyBalancePersistTasks[accountID]
-	var inFlightDone <-chan struct{}
-	if existing != nil {
-		s.cindyBalancePersistEpochs[accountID]++
-		delete(s.cindyBalancePersistTasks, accountID)
-		inFlightDone = existing.inFlightDone
-		if !runtimeBlock.changed && existing.runtimeBlock.changed {
-			runtimeBlock = existing.runtimeBlock
-		}
-	}
-	wake := s.cindyBalancePersistWake
-	s.cindyBalancePersistMu.Unlock()
-	if wake != nil {
-		select {
-		case wake <- struct{}{}:
-		default:
-		}
-	}
-	if inFlightDone != nil {
-		<-inFlightDone
-	}
-	return runtimeBlock
-}
-
-func (s *RateLimitService) runCindyBalancePersistenceRetries() {
-	for {
-		s.cindyBalancePersistMu.Lock()
-		var next *cindyBalancePersistTask
-		for _, task := range s.cindyBalancePersistTasks {
-			if next == nil || task.nextAt.Before(next.nextAt) {
-				next = task
-			}
-		}
-		if next == nil {
-			s.cindyBalancePersistRunning = false
-			s.cindyBalancePersistMu.Unlock()
-			return
-		}
-		wait := time.Until(next.nextAt)
-		wake := s.cindyBalancePersistWake
-		s.cindyBalancePersistMu.Unlock()
-
-		if wait > 0 {
-			timer := time.NewTimer(wait)
-			select {
-			case <-timer.C:
-			case <-wake:
-				if !timer.Stop() {
-					select {
-					case <-timer.C:
-					default:
-					}
-				}
-				continue
-			}
-		}
-
-		s.cindyBalancePersistMu.Lock()
-		task := s.cindyBalancePersistTasks[next.accountID]
-		if task == nil || task != next ||
-			s.cindyBalancePersistEpochs[task.accountID] != task.generation ||
-			time.Now().Before(task.nextAt) {
-			s.cindyBalancePersistMu.Unlock()
-			continue
-		}
-		s.cindyBalancePersistMu.Unlock()
-		s.runCindyBalancePersistenceTask(task)
-	}
-}
-
-func (s *RateLimitService) isCurrentCindyBalancePersistenceTask(task *cindyBalancePersistTask) bool {
-	if s == nil || task == nil {
-		return false
-	}
-	s.cindyBalancePersistMu.Lock()
-	defer s.cindyBalancePersistMu.Unlock()
-	return s.cindyBalancePersistTasks[task.accountID] == task &&
-		s.cindyBalancePersistEpochs[task.accountID] == task.generation
-}
-
-func (s *RateLimitService) beginCindyBalancePersistenceTask(task *cindyBalancePersistTask) (chan struct{}, bool) {
-	if s == nil || task == nil {
-		return nil, false
-	}
-	s.cindyBalancePersistMu.Lock()
-	defer s.cindyBalancePersistMu.Unlock()
-	if s.cindyBalancePersistTasks[task.accountID] != task ||
-		s.cindyBalancePersistEpochs[task.accountID] != task.generation ||
-		task.inFlightDone != nil {
-		return nil, false
-	}
-	done := make(chan struct{})
-	task.inFlightDone = done
-	return done, true
-}
-
-func (s *RateLimitService) finishCindyBalancePersistenceTask(task *cindyBalancePersistTask, done chan struct{}) {
-	if s == nil || task == nil || done == nil {
-		return
-	}
-	s.cindyBalancePersistMu.Lock()
-	if task.inFlightDone == done {
-		task.inFlightDone = nil
-		close(done)
-	}
-	s.cindyBalancePersistMu.Unlock()
-}
-
-// runCindyBalancePersistenceTask serializes retry side effects with explicit
-// admin recovery. The generation check rejects a queued/extracted stale task;
-// the per-generation completion channel makes recovery wait for a task which
-// already entered Redis/DB I/O before clearing the durable and local state.
-func (s *RateLimitService) runCindyBalancePersistenceTask(task *cindyBalancePersistTask) {
-	if s == nil || task == nil {
-		return
-	}
-	done, ok := s.beginCindyBalancePersistenceTask(task)
-	if !ok {
-		return
-	}
-	defer s.finishCindyBalancePersistenceTask(task, done)
-
-	// Re-establish the durable guard on every retry. This also repairs a
-	// transient Redis failure from the original request before touching DB.
-	if store := s.cindyBalancePendingStore; store != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		err := store.MarkCindyBalancePending(ctx, task.accountID, task.credentialsFingerprint)
-		cancel()
-		if err != nil {
-			slog.Error("cindy_balance_pending_retry_failed")
-		}
-	}
-	if !s.isCurrentCindyBalancePersistenceTask(task) {
-		return
-	}
-
-	repo, ok := s.accountRepo.(CindyBalanceConditionalAccountRepository)
-	if !ok {
-		s.rescheduleCindyBalancePersistenceRetry(task)
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	changed, credentialsMatch, err := repo.MarkCindyBalanceInsufficientIfCredentialsMatch(
-		ctx,
-		task.accountID,
-		task.observedAt,
-		task.credentialsFingerprint,
-	)
-	cancel()
-	if err != nil {
-		s.rescheduleCindyBalancePersistenceRetry(task)
-		return
-	}
-	if !credentialsMatch {
-		s.discardCindyBalancePersistenceTask(task)
-		return
-	}
-	if !s.isCurrentCindyBalancePersistenceTask(task) {
-		// Recovery waits on operation before clearing DB/pending, so it owns the
-		// final state after a write that raced with cancellation.
-		return
-	}
-	if err := s.clearCindyBalancePendingIfFingerprintMatches(
-		context.Background(),
-		task.accountID,
-		task.credentialsFingerprint,
-	); err != nil {
-		slog.Error("cindy_balance_pending_clear_after_retry_failed")
-	}
-	s.cindyBalancePersistMu.Lock()
-	if s.cindyBalancePersistTasks[task.accountID] == task &&
-		s.cindyBalancePersistEpochs[task.accountID] == task.generation {
-		delete(s.cindyBalancePersistTasks, task.accountID)
-	}
-	s.cindyBalancePersistMu.Unlock()
-	if changed {
-		slog.Warn("cindy_balance_insufficient_marked_after_retry")
-	}
-}
-
-func (s *RateLimitService) discardCindyBalancePersistenceTask(task *cindyBalancePersistTask) {
-	if s == nil || task == nil {
-		return
-	}
-	s.cindyBalancePersistMu.Lock()
-	current := false
-	if s.cindyBalancePersistTasks[task.accountID] == task &&
-		s.cindyBalancePersistEpochs[task.accountID] == task.generation {
-		delete(s.cindyBalancePersistTasks, task.accountID)
-		current = true
-	}
-	s.cindyBalancePersistMu.Unlock()
-	if !current {
-		return
-	}
-	_ = s.clearCindyBalancePendingIfFingerprintMatches(
-		context.Background(),
-		task.accountID,
-		task.credentialsFingerprint,
-	)
-	s.clearCindyBalanceRuntimeBlock(task.accountID, task.runtimeBlock)
-}
-
-// CancelCindyBalancePersistenceRetry is the linearization point for explicit
-// recovery. Incrementing the epoch is a tombstone for queued/extracted work;
-// waiting on the completion channel guarantees already-started writes finish before the
-// caller clears the DB marker, durable pending marker, and local block.
-func (s *RateLimitService) CancelCindyBalancePersistenceRetry(accountID int64) {
-	if s == nil || accountID <= 0 {
-		return
-	}
-	s.cindyBalancePersistMu.Lock()
-	if s.cindyBalancePersistEpochs == nil {
-		s.cindyBalancePersistEpochs = make(map[int64]uint64)
-	}
-	s.cindyBalancePersistEpochs[accountID]++
-	task := s.cindyBalancePersistTasks[accountID]
-	var inFlightDone <-chan struct{}
-	if task != nil {
-		inFlightDone = task.inFlightDone
-	}
-	delete(s.cindyBalancePersistTasks, accountID)
-	wake := s.cindyBalancePersistWake
-	s.cindyBalancePersistMu.Unlock()
-	if wake != nil {
-		select {
-		case wake <- struct{}{}:
-		default:
-		}
-	}
-	if inFlightDone != nil {
-		<-inFlightDone
-	}
-}
-
-func (s *RateLimitService) rescheduleCindyBalancePersistenceRetry(task *cindyBalancePersistTask) {
-	if s == nil || task == nil {
-		return
-	}
-	s.cindyBalancePersistMu.Lock()
-	current := s.cindyBalancePersistTasks[task.accountID]
-	if current == task && s.cindyBalancePersistEpochs[task.accountID] == task.generation {
-		current.attempt++
-		index := current.attempt
-		if index >= len(cindyBalancePersistenceBackoffs) {
-			index = len(cindyBalancePersistenceBackoffs) - 1
-		}
-		current.nextAt = time.Now().Add(cindyBalancePersistenceBackoffs[index])
-	}
-	s.cindyBalancePersistMu.Unlock()
-	slog.Warn("cindy_balance_insufficient_retry_failed")
 }
 
 // IsCindyBalanceInsufficientResponse trusts only Cindy's structured budget
@@ -632,34 +267,6 @@ func cindyBudgetErrorAtPath(payload []byte, path string) bool {
 func cindyBalanceReplayBufferEnabled(account *Account) bool {
 	return CindyBalanceDetectionFeatureEnabled() && account != nil &&
 		IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
-}
-
-// IsAmbiguousCindyBalanceTerminalEvent reports an in-band Cindy terminal error
-// whose structured type/code pair is incomplete. Complete non-budget pairs are
-// treated as conclusive other errors and never trigger a paid recheck.
-func IsAmbiguousCindyBalanceTerminalEvent(account *Account, payload []byte) bool {
-	if !CindyBalanceDetectionFeatureEnabled() || account == nil || !IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) ||
-		!gjson.ValidBytes(payload) ||
-		ClassifyCindyBalanceInsufficient(account, http.StatusOK, payload) != CindyBalanceSignalNone {
-		return false
-	}
-	eventType := gjson.GetBytes(payload, "type")
-	if eventType.Type != gjson.String {
-		return false
-	}
-	path := ""
-	switch eventType.Str {
-	case "response.failed":
-		path = "response.error"
-	case "error":
-		path = "error"
-	default:
-		return false
-	}
-	errorType := gjson.GetBytes(payload, path+".type")
-	errorCode := gjson.GetBytes(payload, path+".code")
-	return errorType.Type != gjson.String || strings.TrimSpace(errorType.Str) == "" ||
-		errorCode.Type != gjson.String || strings.TrimSpace(errorCode.Str) == ""
 }
 
 func CindyInsufficientAccountFingerprint(accountIDs []int64) string {

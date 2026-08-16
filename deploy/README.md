@@ -159,14 +159,16 @@ back independently while rebuilding only the Sub2API service:
 
 | Variable | Scope | Recommended first deployment |
 |----------|-------|------------------------------|
-| `GATEWAY_CINDY_BALANCE_DETECTION_ENABLED` | New exact balance classification and rechecks | `true` |
-| `GATEWAY_CINDY_CAPABILITY_CATALOG_ENABLED` | Catalog, aliases, protocol gates, and capability API | `false`; enable after the balance phase |
-| `GATEWAY_CINDY_IMAGE_STUDIO_ENABLED` | Cindy image capabilities and `/image-studio` | `false` until the strengthened A/B/C codec probe passes |
+| `GATEWAY_CINDY_BALANCE_DETECTION_ENABLED` | Request-level exact failover and explicit admin balance-probe jobs | `true` |
+| `GATEWAY_CINDY_CAPABILITY_CATALOG_ENABLED` | Catalog, protocol gates, and capability API; the two exact compatibility aliases remain available while disabled | `false`; enable after the balance phase |
+| `GATEWAY_IMAGE_STUDIO_ENABLED` | Image Studio; only Cindy capabilities are registered in this release | `false` until the strengthened A/B/C codec probe passes |
 
-Disabling balance detection does not clear an existing database balance marker
-or a durable pending marker. Catalog rollback restores the legacy generic
-routing path; it is not a traffic kill switch. The image flag is additionally
-dependent on the catalog flag.
+Disabling balance detection does not clear an existing database balance marker.
+Ordinary traffic may fail over on an exact structured signal but never creates
+or clears an account marker; only an administrator-created durable probe job can
+change that state. Catalog rollback disables enumeration and protocol gates, but
+the exact `gpt-5.4` and `gpt-5.4-mini` Cindy compatibility aliases remain active.
+The image flag is additionally dependent on the catalog flag.
 
 The protected production workflow exposes the three values as typed boolean
 inputs. A balance-only release is dispatched with:
@@ -179,10 +181,10 @@ gh workflow run production-deploy.yml \
   -f confirmation=DEPLOY \
   -f cindy_balance_detection=true \
   -f cindy_capability_catalog=false \
-  -f cindy_image_studio=false
+  -f image_studio=false
 ```
 
-The workflow rejects `cindy_image_studio=true` unless
+The workflow rejects `image_studio=true` unless
 `cindy_capability_catalog=true`. It resolves the release to an immutable digest
 and sends only `deploy <immutable-ref> cindy=<balance>,<catalog>,<image>` to the
 restricted host command. The host persists the tuple in
@@ -192,6 +194,11 @@ checksum-verified rollback set.
 During the guard-first migration window, the host also accepts the old workflow's
 exact `deploy <immutable-ref>` form and maps it to `cindy=true,false,false`.
 This workflow always emits the explicit tuple.
+
+`GATEWAY_CINDY_IMAGE_STUDIO_ENABLED` remains a one-release fallback only when
+`GATEWAY_IMAGE_STUDIO_ENABLED` is absent. Do not set both variables; the
+managed deployment guard fails closed if their values conflict and rewrites a
+successful rollout to the generic variable only.
 
 **Verify `users.allowed_groups` → `user_allowed_groups` backfill**
 

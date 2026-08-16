@@ -191,96 +191,34 @@ func TestAccountTestService_CindyBudget429DoesNotPersistWithoutConfirmation(t *t
 	}
 }
 
-func TestAccountTestService_CindyBudget429RequiresBothControlModelsBeforePersistence(t *testing.T) {
-	const validControlResponse = `{"id":"resp_control","object":"response","status":"completed","output":[{"type":"message"}],"usage":{"input_tokens":1,"output_tokens":1}}`
-
-	tests := []struct {
-		name                  string
-		confirmationResponses []*http.Response
-		wantMarkCalls         int
-	}{
-		{
-			name: "both control models return exact budget exhaustion",
-			confirmationResponses: []*http.Response{
-				newJSONResponse(http.StatusTooManyRequests, exactCindyBudgetExceededBody),
-				newJSONResponse(http.StatusTooManyRequests, exactCindyBudgetExceededBody),
-			},
-			wantMarkCalls: 1,
-		},
-		{
-			name: "second control model succeeds",
-			confirmationResponses: []*http.Response{
-				newJSONResponse(http.StatusTooManyRequests, exactCindyBudgetExceededBody),
-				newJSONResponse(http.StatusOK, validControlResponse),
-			},
-		},
+func TestAccountTestService_CindyBudget429DoesNotStartBackgroundProbe(t *testing.T) {
+	c, _ := newTestContext()
+	repo := &cindyRateLimitAccountRepoStub{}
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		newJSONResponse(http.StatusTooManyRequests, exactCindyBudgetExceededBody),
+	}}
+	cfg := &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}}
+	rateLimitService := NewRateLimitService(repo, nil, cfg, nil, nil)
+	gateway := &OpenAIGatewayService{
+		cfg: cfg, httpUpstream: upstream, rateLimitService: rateLimitService,
+	}
+	rateLimitService.SetAccountRuntimeBlocker(gateway)
+	svc := &AccountTestService{
+		accountRepo: repo, httpUpstream: upstream, openAIGatewayService: gateway, cfg: cfg,
+	}
+	account := &Account{
+		ID: 8660, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Status: StatusActive, Schedulable: true, Concurrency: 1,
+		Credentials: cindyCredentials(), Extra: map[string]any{"use_responses_api": true},
 	}
 
-	for index, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c, _ := newTestContext()
-			repo := &cindyRateLimitAccountRepoStub{}
-			upstream := &httpUpstreamRecorder{
-				responses: append([]*http.Response{
-					newJSONResponse(http.StatusTooManyRequests, exactCindyBudgetExceededBody),
-				}, tt.confirmationResponses...),
-			}
-			cfg := &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}}
-			rateLimitService := NewRateLimitService(repo, nil, cfg, nil, nil)
-			gateway := &OpenAIGatewayService{
-				cfg:              cfg,
-				httpUpstream:     upstream,
-				rateLimitService: rateLimitService,
-			}
-			rateLimitService.SetAccountRuntimeBlocker(gateway)
-			svc := &AccountTestService{
-				accountRepo:          repo,
-				httpUpstream:         upstream,
-				openAIGatewayService: gateway,
-				cfg:                  cfg,
-			}
-			account := &Account{
-				ID:          int64(8660 + index),
-				Platform:    PlatformOpenAI,
-				Type:        AccountTypeAPIKey,
-				Status:      StatusActive,
-				Schedulable: true,
-				Concurrency: 1,
-				Credentials: cindyCredentials(),
-				Extra:       map[string]any{"use_responses_api": true},
-			}
+	err := svc.testOpenAIAccountConnection(c, account, "gpt-5.6-sol", "hi", AccountTestModeDefault)
 
-			err := svc.testOpenAIAccountConnection(c, account, "gpt-5.6-sol", "hi", AccountTestModeDefault)
-
-			require.Error(t, err)
-			require.Eventually(t, func() bool {
-				coordinator := gateway.cindyBalanceRecheck
-				if coordinator == nil {
-					return false
-				}
-				coordinator.mu.Lock()
-				state := coordinator.states[account.ID]
-				finished := state != nil && !state.inFlight
-				coordinator.mu.Unlock()
-				return finished && coordinator.pending.Load() == 0
-			}, 2*time.Second, 10*time.Millisecond, "manual exact event must complete the two-model confirmation")
-
-			require.Len(t, upstream.bodies, 3)
-			models := make([]string, 0, len(upstream.bodies))
-			for _, body := range upstream.bodies {
-				models = append(models, gjson.GetBytes(body, "model").String())
-			}
-			require.Equal(t, []string{
-				"openai/gpt-5.6-sol",
-				"openai/gpt-5.6-luna",
-				"openai/gpt-5.6-terra",
-			}, models)
-			repo.mu.Lock()
-			markCalls := repo.markCalls
-			repo.mu.Unlock()
-			require.Equal(t, tt.wantMarkCalls, markCalls)
-		})
-	}
+	require.Error(t, err)
+	require.Len(t, upstream.bodies, 1, "a manual connection test must issue only its requested call")
+	require.Equal(t, "openai/gpt-5.6-sol", gjson.GetBytes(upstream.bodies[0], "model").String())
+	require.Zero(t, repo.markCalls)
+	require.Nil(t, account.CindyBalanceInsufficientAt)
 }
 
 func TestAccountTestService_OrdinaryCindy429DoesNotMarkBalanceInsufficient(t *testing.T) {

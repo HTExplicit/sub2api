@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
@@ -9,16 +10,13 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/config"
 )
 
 type cindyFeaturePendingStore struct {
 	*stubGatewayCache
 	pending map[int64]string
-}
-
-func (s *cindyFeaturePendingStore) MarkCindyBalancePending(_ context.Context, accountID int64, fingerprint string) error {
-	s.pending[accountID] = fingerprint
-	return nil
 }
 
 func (s *cindyFeaturePendingStore) GetCindyBalancePendingFingerprint(_ context.Context, accountID int64) (string, error) {
@@ -58,14 +56,14 @@ func TestCindyRolloutFlagsAreIndependentlyDisableable(t *testing.T) {
 	}{
 		{name: "balance", env: CindyBalanceDetectionEnabledEnv},
 		{name: "catalog", env: CindyCapabilityCatalogEnabledEnv},
-		{name: "image", env: CindyImageStudioEnabledEnv},
+		{name: "image", env: ImageStudioEnabledEnv},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
 			rolloutEnv := []string{
 				CindyBalanceDetectionEnabledEnv + "=true",
 				CindyCapabilityCatalogEnabledEnv + "=true",
-				CindyImageStudioEnabledEnv + "=true",
+				ImageStudioEnabledEnv + "=true",
 			}
 			for index := range rolloutEnv {
 				if strings.HasPrefix(rolloutEnv[index], test.env+"=") {
@@ -76,6 +74,7 @@ func TestCindyRolloutFlagsAreIndependentlyDisableable(t *testing.T) {
 			cmd.Env = append(withoutEnvironmentKeys(os.Environ(),
 				CindyBalanceDetectionEnabledEnv,
 				CindyCapabilityCatalogEnabledEnv,
+				ImageStudioEnabledEnv,
 				CindyImageStudioEnabledEnv,
 				"SUB2API_CINDY_FLAG_HELPER",
 			), append(rolloutEnv, "SUB2API_CINDY_FLAG_HELPER="+test.name)...)
@@ -96,23 +95,32 @@ func TestCindyRolloutFlagDefaultsAndParsing(t *testing.T) {
 		{name: "empty", env: []string{
 			CindyBalanceDetectionEnabledEnv + "=",
 			CindyCapabilityCatalogEnabledEnv + "=",
+			ImageStudioEnabledEnv + "=",
 			CindyImageStudioEnabledEnv + "=",
 		}, expected: "true,false,false"},
-		{name: "invalid", env: []string{
+		{name: "invalid unrelated flags retain defaults", env: []string{
 			CindyBalanceDetectionEnabledEnv + "=invalid",
 			CindyCapabilityCatalogEnabledEnv + "=invalid",
-			CindyImageStudioEnabledEnv + "=invalid",
 		}, expected: "true,false,false"},
 		{name: "explicit true", env: []string{
 			CindyBalanceDetectionEnabledEnv + "=true",
 			CindyCapabilityCatalogEnabledEnv + "=true",
-			CindyImageStudioEnabledEnv + "=true",
+			ImageStudioEnabledEnv + "=true",
 		}, expected: "true,true,true"},
 		{name: "explicit false", env: []string{
 			CindyBalanceDetectionEnabledEnv + "=false",
 			CindyCapabilityCatalogEnabledEnv + "=false",
-			CindyImageStudioEnabledEnv + "=false",
+			ImageStudioEnabledEnv + "=false",
 		}, expected: "false,false,false"},
+		{name: "legacy fallback", env: []string{
+			CindyCapabilityCatalogEnabledEnv + "=true",
+			CindyImageStudioEnabledEnv + "=true",
+		}, expected: "true,true,true"},
+		{name: "matching declarations", env: []string{
+			CindyCapabilityCatalogEnabledEnv + "=true",
+			ImageStudioEnabledEnv + "=true",
+			CindyImageStudioEnabledEnv + "=true",
+		}, expected: "true,true,true"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -120,6 +128,7 @@ func TestCindyRolloutFlagDefaultsAndParsing(t *testing.T) {
 			cmd.Env = append(withoutEnvironmentKeys(os.Environ(),
 				CindyBalanceDetectionEnabledEnv,
 				CindyCapabilityCatalogEnabledEnv,
+				ImageStudioEnabledEnv,
 				CindyImageStudioEnabledEnv,
 				"SUB2API_CINDY_FLAG_PARSE_HELPER",
 			), append(test.env, "SUB2API_CINDY_FLAG_PARSE_HELPER="+test.expected)...)
@@ -179,9 +188,6 @@ func TestCindyRolloutFlagHelper(t *testing.T) {
 				t.Fatalf("disabled balance classifier returned %v", got)
 			}
 		}
-		if IsAmbiguousCindyBalanceTerminalEvent(account, []byte(`{"type":"response.failed","response":{"error":{"message":"request failed"}}}`)) {
-			t.Fatal("disabled balance detection still scheduled an ambiguous recheck")
-		}
 		gateway := &OpenAIGatewayService{}
 		if gateway.handleCindyBalanceTerminalEvent(context.Background(), account, nil, []byte(`{"type":"error","error":{"type":"budget_exceeded","code":"429"}}`)) {
 			t.Fatal("disabled stream classifier still handled an exact budget event")
@@ -190,8 +196,8 @@ func TestCindyRolloutFlagHelper(t *testing.T) {
 			t.Fatal("disabled classifier created a new runtime block")
 		}
 
-		// Rollback disables only new detection. Existing DB and Redis state must
-		// remain fail-closed until explicit administrative recovery.
+		// Rollback disables only new detection. The DB marker remains the sole
+		// balance authority; pre-v0.1.177 Redis pending state is cleanup-only.
 		markedAt := time.Now().UTC()
 		account.CindyBalanceInsufficientAt = &markedAt
 		if account.IsSchedulable() {
@@ -207,8 +213,11 @@ func TestCindyRolloutFlagHelper(t *testing.T) {
 			pending:          map[int64]string{account.ID: fingerprint},
 		}
 		gateway = &OpenAIGatewayService{cache: store}
-		if !gateway.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.6-luna") {
-			t.Fatal("existing durable pending marker was ignored during rollback")
+		if gateway.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.6-luna") {
+			t.Fatal("legacy pending marker overrode the unmarked DB state during rollback")
+		}
+		if store.pending[account.ID] != "" {
+			t.Fatal("legacy pending marker was not cleaned during rollback")
 		}
 	case "catalog":
 		if CindyCapabilityCatalogFeatureEnabled() || CindyImageStudioFeatureEnabled() {
@@ -245,6 +254,54 @@ func TestCindyRolloutFlagHelper(t *testing.T) {
 		}
 		if got := account.GetMappedModel("legacy-model"); got != "legacy-upstream-model" {
 			t.Fatalf("catalog rollback resolved model to %q, want legacy-upstream-model", got)
+		}
+		for requested, want := range map[string]string{
+			"gpt-5.4":      "openai/gpt-5.6-sol",
+			"gpt-5.4-mini": "openai/gpt-5.6-luna",
+		} {
+			mapped, ok := CindyCompatibilityMappedUpstreamModel(requested)
+			if !ok || mapped != want {
+				t.Fatalf("catalog rollback compatibility helper mapped %q to %q, ok=%v, want %q", requested, mapped, ok, want)
+			}
+			if account.IsModelSupported(requested) {
+				t.Fatalf("account layer accepted unresolved Cindy compatibility alias %q", requested)
+			}
+			if got := account.GetMappedModel(requested); got != requested {
+				t.Fatalf("account layer rewrote unresolved alias %q to %q", requested, got)
+			}
+			if !account.IsModelSupported(want) || account.GetMappedModel(want) != want {
+				t.Fatalf("account layer rejected resolved Cindy compatibility target %q", want)
+			}
+		}
+		billingService := NewBillingService(&config.Config{}, nil)
+		cost, err := (&OpenAIGatewayService{billingService: billingService}).calculateOpenAIRecordUsageTokenCost(
+			context.Background(),
+			&APIKey{},
+			account,
+			"gpt-5.4-mini",
+			1,
+			UsageTokens{InputTokens: 100, OutputTokens: 10},
+			"",
+			boolPtr(false),
+		)
+		if err != nil {
+			t.Fatalf("catalog rollback lost Cindy compatibility alias pricing: %v", err)
+		}
+		if got, want := cost.InputCost, 100*0.2e-6; math.Abs(got-want) > 1e-12 {
+			t.Fatalf("catalog rollback alias input cost = %g, want %g", got, want)
+		}
+		if got, want := cost.OutputCost, 10*1.2e-6; math.Abs(got-want) > 1e-12 {
+			t.Fatalf("catalog rollback alias output cost = %g, want %g", got, want)
+		}
+		ordinary := &Account{
+			Platform: PlatformOpenAI,
+			Type:     AccountTypeAPIKey,
+			Credentials: map[string]any{
+				"base_url": "https://ordinary.example.invalid",
+			},
+		}
+		if got := ordinary.GetMappedModel("gpt-5.4-mini"); got != "gpt-5.4-mini" {
+			t.Fatalf("ordinary OpenAI account received Cindy alias mapping %q", got)
 		}
 		for _, capability := range []OpenAIEndpointCapability{
 			OpenAIEndpointCapabilityResponses,

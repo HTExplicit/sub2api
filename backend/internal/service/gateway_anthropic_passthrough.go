@@ -667,9 +667,6 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected},
 						newCindyBalanceTerminalFailover(resp.Header)
 				}
-				if s.rateLimitService != nil && IsAmbiguousCindyBalanceTerminalEvent(account, payload) {
-					s.rateLimitService.scheduleAmbiguousCindyBalanceRecheck(account)
-				}
 				if anthropicPassthroughDataStartsClientOutput(payload) {
 					currentEventStartsOutput = true
 				}
@@ -976,8 +973,6 @@ func (s *GatewayService) handleNonStreamingResponseAnthropicAPIKeyPassthrough(
 			NextAccountAction:        NextAccountRetry,
 			CindyBalanceInsufficient: true,
 		})
-	} else if s.rateLimitService != nil && IsAmbiguousCindyBalanceTerminalEvent(account, body) {
-		s.rateLimitService.scheduleAmbiguousCindyBalanceRecheck(account)
 	}
 
 	if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {

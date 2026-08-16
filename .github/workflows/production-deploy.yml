@@ -12,7 +12,7 @@ on:
         required: true
         type: string
       cindy_balance_detection:
-        description: 'Enable exact Cindy balance classification and rechecks'
+        description: 'Enable exact Cindy failover and explicit admin balance-probe jobs'
         required: true
         default: true
         type: boolean
@@ -21,8 +21,8 @@ on:
         required: true
         default: false
         type: boolean
-      cindy_image_studio:
-        description: 'Enable verified Cindy image capabilities and Image Studio'
+      image_studio:
+        description: 'Enable verified Image Studio capabilities (Cindy-only in this release)'
         required: true
         default: false
         type: boolean
@@ -55,17 +55,17 @@ jobs:
           CONFIRMATION: ${{ inputs.confirmation }}
           CINDY_BALANCE_DETECTION: ${{ inputs.cindy_balance_detection }}
           CINDY_CAPABILITY_CATALOG: ${{ inputs.cindy_capability_catalog }}
-          CINDY_IMAGE_STUDIO: ${{ inputs.cindy_image_studio }}
+          IMAGE_STUDIO: ${{ inputs.image_studio }}
         shell: bash
         run: |
           set -euo pipefail
           [[ "$CONFIRMATION" == DEPLOY ]]
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-codexrip\.[1-9][0-9]*$ ]]
-          for flag in "$CINDY_BALANCE_DETECTION" "$CINDY_CAPABILITY_CATALOG" "$CINDY_IMAGE_STUDIO"; do
+          for flag in "$CINDY_BALANCE_DETECTION" "$CINDY_CAPABILITY_CATALOG" "$IMAGE_STUDIO"; do
             [[ "$flag" == true || "$flag" == false ]]
           done
-          if [[ "$CINDY_IMAGE_STUDIO" == true && "$CINDY_CAPABILITY_CATALOG" != true ]]; then
-            echo 'Cindy Image Studio requires the Cindy capability catalog' >&2
+          if [[ "$IMAGE_STUDIO" == true && "$CINDY_CAPABILITY_CATALOG" != true ]]; then
+            echo 'Image Studio requires the Cindy capability catalog in this release' >&2
             exit 1
           fi
           gh release view "$RELEASE_TAG" --json tagName --jq '.tagName' | grep -Fxq "$RELEASE_TAG"
@@ -85,7 +85,7 @@ jobs:
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
           echo "image_ref=${image}@${digest}" >> "$GITHUB_OUTPUT"
           echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
-          echo "cindy_rollout=cindy=${CINDY_BALANCE_DETECTION},${CINDY_CAPABILITY_CATALOG},${CINDY_IMAGE_STUDIO}" >> "$GITHUB_OUTPUT"
+          echo "cindy_rollout=cindy=${CINDY_BALANCE_DETECTION},${CINDY_CAPABILITY_CATALOG},${IMAGE_STUDIO}" >> "$GITHUB_OUTPUT"
 
   deploy:
     needs: resolve
@@ -119,7 +119,7 @@ jobs:
           [[ "$IMAGE_REF" =~ ^ghcr\.io/htexplicit/sub2api:[0-9]+\.[0-9]+\.[0-9]+-codexrip\.[1-9][0-9]*@sha256:[0-9a-f]{64}$ ]]
           [[ "$CINDY_ROLLOUT" =~ ^cindy=(true|false),(true|false),(true|false)$ ]]
           if [[ "${BASH_REMATCH[3]}" == true && "${BASH_REMATCH[2]}" != true ]]; then
-            echo 'Cindy Image Studio requires the Cindy capability catalog' >&2
+            echo 'Image Studio requires the Cindy capability catalog in this release' >&2
             exit 1
           fi
           ssh \

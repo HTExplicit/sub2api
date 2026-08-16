@@ -1156,6 +1156,9 @@ export interface Account {
   schedulable: boolean
   is_cindy?: boolean
   cindy_balance_insufficient?: boolean
+  cindy_balance_probe_job_id?: number | null
+  cindy_balance_probe_outcome?: string | null
+  cindy_balance_probe_checked_at?: string | null
   rate_limited_at: string | null
   rate_limit_reset_at: string | null
   overload_until: string | null

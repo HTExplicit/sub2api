@@ -649,30 +649,31 @@ var ErrRPMStatusUnavailable = infraerrors.New(http.StatusNotImplemented, "RPM_ST
 
 // adminServiceImpl implements AdminService
 type adminServiceImpl struct {
-	userRepo             UserRepository
-	groupRepo            GroupRepository
-	groupDuplicateRepo   GroupDuplicateRepository
-	accountRepo          AccountRepository
-	accountDuplicateRepo AccountDuplicateRepository
-	accountBillingRepo   AccountBillingSettingsRepository
-	proxyRepo            ProxyRepository
-	apiKeyRepo           APIKeyRepository
-	redeemCodeRepo       RedeemCodeRepository
-	userGroupRateRepo    UserGroupRateRepository
-	userRPMCache         UserRPMCache
-	billingCacheService  *BillingCacheService
-	proxyProber          ProxyExitInfoProber
-	proxyLatencyCache    ProxyLatencyCache
-	authCacheInvalidator APIKeyAuthCacheInvalidator
-	entClient            *dbent.Client // 用于开启数据库事务
-	settingService       *SettingService
-	defaultSubAssigner   DefaultSubscriptionAssigner
-	userSubRepo          UserSubscriptionRepository
-	privacyClientFactory PrivacyClientFactory
-	runtimeBlocker       AccountRuntimeBlocker
-	affiliateService     adminRechargeAffiliateAccruer
-	compositeRouteRepo   CompositeModelRouteRepository
-	compositeResolver    *CompositeRouteResolver
+	userRepo              UserRepository
+	groupRepo             GroupRepository
+	groupDuplicateRepo    GroupDuplicateRepository
+	accountRepo           AccountRepository
+	accountDuplicateRepo  AccountDuplicateRepository
+	accountBillingRepo    AccountBillingSettingsRepository
+	cindyBalanceProbeRepo CindyBalanceProbeRepository
+	proxyRepo             ProxyRepository
+	apiKeyRepo            APIKeyRepository
+	redeemCodeRepo        RedeemCodeRepository
+	userGroupRateRepo     UserGroupRateRepository
+	userRPMCache          UserRPMCache
+	billingCacheService   *BillingCacheService
+	proxyProber           ProxyExitInfoProber
+	proxyLatencyCache     ProxyLatencyCache
+	authCacheInvalidator  APIKeyAuthCacheInvalidator
+	entClient             *dbent.Client // 用于开启数据库事务
+	settingService        *SettingService
+	defaultSubAssigner    DefaultSubscriptionAssigner
+	userSubRepo           UserSubscriptionRepository
+	privacyClientFactory  PrivacyClientFactory
+	runtimeBlocker        AccountRuntimeBlocker
+	affiliateService      adminRechargeAffiliateAccruer
+	compositeRouteRepo    CompositeModelRouteRepository
+	compositeResolver     *CompositeRouteResolver
 	// 分组平台变更后用来失效渠道缓存；可为 nil（缓存会在 TTL 到期后自然重建）
 	channelCacheInvalidator ChannelCacheInvalidator
 }
@@ -696,6 +697,7 @@ func NewAdminService(
 	userRepo UserRepository,
 	groupRepo AdminGroupRepository,
 	accountRepo AdminAccountRepository,
+	cindyBalanceProbeRepo CindyBalanceProbeRepository,
 	proxyRepo ProxyRepository,
 	apiKeyRepo APIKeyRepository,
 	redeemCodeRepo RedeemCodeRepository,
@@ -717,30 +719,31 @@ func NewAdminService(
 	channelCacheInvalidator ChannelCacheInvalidator,
 ) AdminService {
 	return &adminServiceImpl{
-		userRepo:             userRepo,
-		groupRepo:            groupRepo,
-		groupDuplicateRepo:   groupRepo,
-		accountRepo:          accountRepo,
-		accountDuplicateRepo: accountRepo,
-		accountBillingRepo:   accountRepo,
-		proxyRepo:            proxyRepo,
-		apiKeyRepo:           apiKeyRepo,
-		redeemCodeRepo:       redeemCodeRepo,
-		userGroupRateRepo:    userGroupRateRepo,
-		userRPMCache:         userRPMCache,
-		billingCacheService:  billingCacheService,
-		proxyProber:          proxyProber,
-		proxyLatencyCache:    proxyLatencyCache,
-		authCacheInvalidator: authCacheInvalidator,
-		entClient:            entClient,
-		settingService:       settingService,
-		defaultSubAssigner:   defaultSubAssigner,
-		userSubRepo:          userSubRepo,
-		privacyClientFactory: privacyClientFactory,
-		runtimeBlocker:       runtimeBlocker,
-		affiliateService:     affiliateService,
-		compositeRouteRepo:   compositeRouteRepo,
-		compositeResolver:    compositeResolver,
+		userRepo:              userRepo,
+		groupRepo:             groupRepo,
+		groupDuplicateRepo:    groupRepo,
+		accountRepo:           accountRepo,
+		accountDuplicateRepo:  accountRepo,
+		accountBillingRepo:    accountRepo,
+		cindyBalanceProbeRepo: cindyBalanceProbeRepo,
+		proxyRepo:             proxyRepo,
+		apiKeyRepo:            apiKeyRepo,
+		redeemCodeRepo:        redeemCodeRepo,
+		userGroupRateRepo:     userGroupRateRepo,
+		userRPMCache:          userRPMCache,
+		billingCacheService:   billingCacheService,
+		proxyProber:           proxyProber,
+		proxyLatencyCache:     proxyLatencyCache,
+		authCacheInvalidator:  authCacheInvalidator,
+		entClient:             entClient,
+		settingService:        settingService,
+		defaultSubAssigner:    defaultSubAssigner,
+		userSubRepo:           userSubRepo,
+		privacyClientFactory:  privacyClientFactory,
+		runtimeBlocker:        runtimeBlocker,
+		affiliateService:      affiliateService,
+		compositeRouteRepo:    compositeRouteRepo,
+		compositeResolver:     compositeResolver,
 
 		channelCacheInvalidator: channelCacheInvalidator,
 	}

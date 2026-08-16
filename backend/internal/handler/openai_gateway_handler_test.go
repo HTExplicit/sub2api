@@ -2258,6 +2258,7 @@ type openAIResponsesWSUsageLogCase struct {
 	secondPayload             string
 	userAgent                 *string
 	ingressMode               string
+	strictCindyGroup          bool
 	channelMapping            map[string]string
 	billingModelSource        string
 	accountModelMapping       map[string]any
@@ -3598,6 +3599,12 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 		ID:      1801,
 		GroupID: &groupID,
 		User:    &service.User{ID: 1701, Status: service.StatusActive},
+		Group: &service.Group{
+			ID:               groupID,
+			Platform:         service.PlatformOpenAI,
+			StrictCindyKnown: true,
+			StrictCindy:      tc.strictCindyGroup,
+		},
 	}
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
