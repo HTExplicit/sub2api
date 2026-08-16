@@ -113,6 +113,7 @@ type cindyHandlerFailoverUpstream struct {
 	mu              sync.Mutex
 	accountIDs      []int64
 	requestModels   []string
+	requestPaths    []string
 	exhaustedStatus int
 }
 
@@ -129,6 +130,7 @@ func (u *cindyHandlerFailoverUpstream) respond(req *http.Request, accountID int6
 	u.mu.Lock()
 	u.accountIDs = append(u.accountIDs, accountID)
 	u.requestModels = append(u.requestModels, gjson.GetBytes(payload, "model").String())
+	u.requestPaths = append(u.requestPaths, req.URL.Path)
 	u.mu.Unlock()
 
 	isMessages := strings.HasSuffix(req.URL.Path, "/v1/messages")
@@ -200,6 +202,12 @@ func (u *cindyHandlerFailoverUpstream) models() []string {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	return append([]string(nil), u.requestModels...)
+}
+
+func (u *cindyHandlerFailoverUpstream) paths() []string {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return append([]string(nil), u.requestPaths...)
 }
 
 func newCindyBalanceFailoverHandler(t *testing.T) (*OpenAIGatewayHandler, *cindyHandlerFailoverAccountRepo, *cindyHandlerFailoverUpstream, int64) {

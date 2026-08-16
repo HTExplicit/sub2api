@@ -80,6 +80,16 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
 		return
 	}
+	compatibilityRoutingModel, compatibilityCandidate := service.CindyCompatibilityMappedUpstreamModel(reqModel)
+	cindyIdentityGroup := false
+	if compatibilityCandidate {
+		cindyIdentityGroup, err = h.gatewayService.ClassifyCindyIdentityGroup(c.Request.Context(), apiKey.Group)
+		if err != nil {
+			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
+			return
+		}
+	}
+	compatibilityAlias := compatibilityCandidate && cindyIdentityGroup
 	strictCindyAllowed, err := h.strictCindyModelAllowed(c, apiKey, reqModel, service.CindyEndpointChatCompletions)
 	if err != nil {
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
@@ -117,6 +127,14 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 
 	// 解析渠道级模型映射
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)
+	routingModel := reqModel
+	forwardMapped := channelMapping.Mapped
+	forwardMappedModel := channelMapping.MappedModel
+	if compatibilityAlias {
+		routingModel = compatibilityRoutingModel
+		forwardMapped = true
+		forwardMappedModel = compatibilityRoutingModel
+	}
 
 	if h.errorPassthroughService != nil {
 		service.BindErrorPassthroughService(c, h.errorPassthroughService)
@@ -183,7 +201,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 				apiKey.GroupID,
 				"",
 				sessionHash,
-				reqModel,
+				routingModel,
 				failedAccountIDs,
 				service.OpenAIUpstreamTransportAny,
 				service.OpenAIEndpointCapabilityChatCompletions,
@@ -207,7 +225,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 				return
 			}
 			if len(failedAccountIDs) == 0 {
-				cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel)
+				cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, h.gatewayService, apiKey, routingModel, reqModel)
 				if !cls.ModelNotFound {
 					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 				}
@@ -223,7 +241,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			}
 		}
 		if selection == nil || selection.Account == nil {
-			cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel)
+			cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, h.gatewayService, apiKey, routingModel, reqModel)
 			if !cls.ModelNotFound {
 				markOpsRoutingCapacityLimited(c)
 			}
@@ -253,7 +271,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		}
 		if slotResult != openAISlotAcquireOK {
 			if retryingSameAccount && lastFailoverErr != nil && h.failoverAfterSameAccountSlotFailure(
-				c, account, account.GetMappedModel(reqModel), lastFailoverErr, failedAccountIDs,
+				c, account, account.GetMappedModel(routingModel), lastFailoverErr, failedAccountIDs,
 				&switchCount, maxAccountSwitches, &oauth429FailoverState, streamStarted,
 				"chat_completions", reqLog, true,
 				func() { h.handleFailoverExhausted(c, lastFailoverErr, streamStarted) },
@@ -266,10 +284,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
 		forwardStart := time.Now()
 
-		forwardBody := body
-		if channelMapping.Mapped {
-			forwardBody = h.gatewayService.ReplaceModelInBody(body, channelMapping.MappedModel)
-		}
+		forwardBody := openAIModelMappedBody(body, forwardMapped, forwardMappedModel, h.gatewayService.ReplaceModelInBody)
 		writerSizeBeforeForward := c.Writer.Size()
 		result, err := func() (*service.OpenAIForwardResult, error) {
 			defer func() {
@@ -314,12 +329,12 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 						return
 					}
 					if c.Writer.Size() != writerSizeBeforeForward {
-						finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(reqModel), failoverErr, openAIFailoverRetryStop)
+						finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(routingModel), failoverErr, openAIFailoverRetryStop)
 						h.handleFailoverExhausted(c, failoverErr, true)
 						return
 					}
 					if !failoverErr.ShouldRetryNextAccount() {
-						finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(reqModel), failoverErr, openAIFailoverRetryStop)
+						finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(routingModel), failoverErr, openAIFailoverRetryStop)
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
@@ -327,13 +342,13 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 						c.Request.Context(),
 						h.gatewayService,
 						account,
-						account.GetMappedModel(reqModel),
+						account.GetMappedModel(routingModel),
 						failoverErr,
 						true,
 						sameAccountRetryDelay,
 						"chat_completions",
 					)
-					finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(reqModel), failoverErr, retryAction)
+					finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(routingModel), failoverErr, retryAction)
 					switch retryAction {
 					case openAIFailoverRetrySameAccount:
 						sameAccountRetrySelection = selection
@@ -365,7 +380,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 					)
 					continue
 				}
-				h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(reqModel), false, nil)
+				h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(routingModel), false, nil)
 				upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 				wroteFallback := false
 				if !upstreamErrorAlreadyCommunicated {
@@ -384,9 +399,9 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			}
 		}
 		if result != nil {
-			h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(reqModel), true, result.FirstTokenMs)
+			h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(routingModel), true, result.FirstTokenMs)
 		} else {
-			h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(reqModel), true, nil)
+			h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(routingModel), true, nil)
 		}
 
 		userAgent := c.GetHeader("User-Agent")

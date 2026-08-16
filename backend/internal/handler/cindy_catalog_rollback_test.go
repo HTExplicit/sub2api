@@ -161,6 +161,60 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 		})
 	}
 
+	for _, tc := range []struct {
+		name           string
+		strictGroup    bool
+		requestedModel string
+		modelMapping   map[string]any
+		expectedStatus int
+		expectedModels []string
+	}{
+		{
+			name:           "strict_chat_sol_alias",
+			strictGroup:    true,
+			requestedModel: "gpt-5.4",
+			modelMapping:   map[string]any{"gpt-5.6-sol": "openai/gpt-5.6-sol"},
+			expectedStatus: http.StatusOK,
+			expectedModels: []string{"openai/gpt-5.6-sol"},
+		},
+		{
+			name:           "strict_chat_luna_alias",
+			strictGroup:    true,
+			requestedModel: "gpt-5.4-mini",
+			modelMapping:   map[string]any{"gpt-5.6-luna": "openai/gpt-5.6-luna"},
+			expectedStatus: http.StatusOK,
+			expectedModels: []string{"openai/gpt-5.6-luna"},
+		},
+		{
+			name:           "mixed_chat_does_not_map",
+			strictGroup:    false,
+			requestedModel: "gpt-5.4-mini",
+			modelMapping:   map[string]any{"gpt-5.4-mini": "gpt-5.4-mini"},
+			expectedStatus: http.StatusOK,
+			expectedModels: []string{"gpt-5.4-mini"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, accountRepo, upstream, handlerGroupID := newCindyBalanceFailoverHandler(t)
+			accountRepo.accounts = accountRepo.accounts[1:]
+			accountRepo.accounts[0].Credentials["model_mapping"] = tc.modelMapping
+			accountRepo.accounts[0].Extra["openai_passthrough"] = false
+			ctx, recorder := newStrictCindyHandlerContext(t, handlerGroupID, "/v1/chat/completions",
+				`{"model":"`+tc.requestedModel+`","messages":[{"role":"user","content":"hi"}],"max_tokens":16,"stream":false}`)
+			rawAPIKey, exists := ctx.Get(string(middleware2.ContextKeyAPIKey))
+			require.True(t, exists)
+			requestAPIKey, ok := rawAPIKey.(*service.APIKey)
+			require.True(t, ok)
+			requestAPIKey.Group.StrictCindy = tc.strictGroup
+
+			h.ChatCompletions(ctx)
+
+			require.Equal(t, tc.expectedStatus, recorder.Code, recorder.Body.String())
+			require.Equal(t, tc.expectedModels, upstream.models())
+			require.Equal(t, []string{"/v1/responses"}, upstream.paths())
+		})
+	}
+
 	wsResult := runOpenAIResponsesWebSocketUsageLogCase(t, openAIResponsesWSUsageLogCase{
 		firstPayload:     `{"type":"response.create","model":"gpt-5.4-mini","input":"hi","stream":false}`,
 		strictCindyGroup: true,
