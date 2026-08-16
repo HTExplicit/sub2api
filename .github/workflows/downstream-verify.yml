@@ -77,7 +77,7 @@ jobs:
         run: go test -p=1 -tags integration ./internal/repository -run '^TestAccountTaxonomy.*Integration$' -count=1
       - name: Cindy manual balance dispatch integration test
         working-directory: backend
-        run: go test -p=1 -tags integration ./internal/repository -run '^TestCindyBalanceProbeTerraDispatchUsesAuthoritativeEpoch$' -count=1
+        run: go test -p=1 -tags integration ./internal/repository -run '^TestCindyBalanceProbe(TerraDispatchUsesAuthoritativeEpoch|Finalize(ExhaustedCommitsMarkerItemAndOutbox|RecoveryCommitsMarkerItemAndOutbox|RollsBackWhenOutboxInsertFails))$' -count=1
       - name: Cindy defaults migration tests
         working-directory: backend
         run: |
