@@ -102,13 +102,6 @@ func writeOpenAICompactSSEBridgeResult(c *gin.Context, statusCode int, finalResp
 	return true, nil
 }
 
-// writeOpenAICompactSSEFailure 从上游错误 body 提取错误消息后，以
-// response.failed 终止事件回传。仅用于心跳已提交 200、无法再按 HTTP 状态码
-// 回传错误的场景。
-func writeOpenAICompactSSEFailure(c *gin.Context, statusCode int, errorBody []byte) {
-	_ = writeOpenAICompactSSEFailureResult(c, statusCode, errorBody)
-}
-
 func writeOpenAICompactSSEFailureResult(c *gin.Context, statusCode int, errorBody []byte) error {
 	message := ""
 	if len(errorBody) > 0 {

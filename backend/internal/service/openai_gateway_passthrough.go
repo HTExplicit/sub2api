@@ -1407,7 +1407,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	stageOpenAICodexTurnState(&stagedTurnState, resp.Header)
 	// Keep turn-state private until an actual downstream write. Merely receiving
 	// upstream headers must not move provenance to an attempt the client never saw.
-	c.Writer.Header().Del(http.CanonicalHeaderKey(openAICodexTurnStateHeader))
+	c.Writer.Header().Del(openAICodexTurnStateHeader)
 	turnStateHeaderApplied := false
 	prepareTurnStateHeader := func() {
 		if turnStateHeaderApplied || c.Writer.Written() {

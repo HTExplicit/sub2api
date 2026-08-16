@@ -165,7 +165,7 @@ func (s *adminServiceImpl) PreviewCindyGroupSplit(ctx context.Context, groupID i
 		return nil, fmt.Errorf("preview Cindy group split: %w", err)
 	}
 	if snapshot == nil {
-		return nil, errors.New("Cindy group split preview returned no snapshot")
+		return nil, errors.New("cindy group split preview returned no snapshot")
 	}
 	return &snapshot.Preview, nil
 }
@@ -190,7 +190,7 @@ func (s *adminServiceImpl) SplitCindyGroup(ctx context.Context, groupID int64, i
 		return nil, fmt.Errorf("commit Cindy group split: %w", err)
 	}
 	if result == nil {
-		return nil, errors.New("Cindy group split returned no result")
+		return nil, errors.New("cindy group split returned no result")
 	}
 	if s.authCacheInvalidator != nil {
 		s.authCacheInvalidator.InvalidateAuthCacheByGroupID(ctx, groupID)

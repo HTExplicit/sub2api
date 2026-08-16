@@ -137,7 +137,8 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 				`{"model":"`+tc.request+`","input":"hi","stream":true}`)
 			rawAPIKey, exists := ctx.Get(string(middleware2.ContextKeyAPIKey))
 			require.True(t, exists)
-			requestAPIKey := rawAPIKey.(*service.APIKey)
+			requestAPIKey, ok := rawAPIKey.(*service.APIKey)
+			require.True(t, ok)
 			requestAPIKey.Group.StrictCindy = tc.strict
 
 			h.Responses(ctx)

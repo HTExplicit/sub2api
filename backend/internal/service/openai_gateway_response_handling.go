@@ -145,7 +145,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		}
 		// A previous failover attempt may have populated the writer header without
 		// committing it. Empty state on the winning attempt must remove that value.
-		c.Writer.Header().Del(http.CanonicalHeaderKey(openAICodexTurnStateHeader))
+		c.Writer.Header().Del(openAICodexTurnStateHeader)
 		for key, values := range attemptResponseHeaders {
 			for _, value := range values {
 				c.Writer.Header().Add(key, value)
