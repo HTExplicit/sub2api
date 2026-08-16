@@ -194,3 +194,69 @@ func TestCindyHTTPToWSV2StickyClearRequiresFirstTurnWithoutSemanticOutput(t *tes
 
 	require.Equal(t, accountA.ID, cache.accountID(sessionHash))
 }
+
+type cindyFailoverSelectionReporter struct {
+	sameAccountRetries int
+	reportedFailures   int
+	releasedProbes     int
+}
+
+func (r *cindyFailoverSelectionReporter) ReportOpenAIAccountSameAccountRetry(
+	_ *service.AccountSelectionResult, _ int64, _ string,
+) {
+	r.sameAccountRetries++
+}
+
+func (r *cindyFailoverSelectionReporter) ReportOpenAIAccountScheduleResultForSelection(
+	_ *service.AccountSelectionResult, _ int64, _ string, success bool, _ *int,
+) {
+	if !success {
+		r.reportedFailures++
+	}
+}
+
+func (r *cindyFailoverSelectionReporter) ReleaseOpenAIRuntimeBreakerProbeForSelection(
+	_ *service.AccountSelectionResult,
+) {
+	r.releasedProbes++
+}
+
+func TestCindyHTTPToWSV2RequestTerminalReleasesSelectionWithoutSchedulerPenalty(t *testing.T) {
+	accountA := cindyStickyTestAccount(8401)
+	reporter := &cindyFailoverSelectionReporter{}
+
+	selection := &service.AccountSelectionResult{Account: &accountA}
+	finalizeOpenAIFailoverSelection(
+		reporter,
+		selection,
+		&accountA,
+		"openai/gpt-5.6-luna",
+		&service.UpstreamFailoverError{
+			StatusCode:                   http.StatusServiceUnavailable,
+			Stage:                        service.GatewayFailureStageInference,
+			Scope:                        service.GatewayFailureScopeRequest,
+			SuppressAccountHealthPenalty: true,
+		},
+		openAIFailoverRetrySwitchAccount,
+	)
+	require.Zero(t, reporter.reportedFailures)
+	require.Equal(t, 1, reporter.releasedProbes)
+	require.Zero(t, reporter.sameAccountRetries)
+
+	// The negative control proves that this assertion observes scheduler
+	// reporting rather than passing because the reporter is inert.
+	finalizeOpenAIFailoverSelection(
+		reporter,
+		&service.AccountSelectionResult{Account: &accountA},
+		&accountA,
+		"openai/gpt-5.6-luna",
+		&service.UpstreamFailoverError{
+			StatusCode: http.StatusBadGateway,
+			Stage:      service.GatewayFailureStageInference,
+			Scope:      service.GatewayFailureScopeAccount,
+		},
+		openAIFailoverRetrySwitchAccount,
+	)
+	require.Equal(t, 1, reporter.reportedFailures)
+	require.Equal(t, 1, reporter.releasedProbes)
+}

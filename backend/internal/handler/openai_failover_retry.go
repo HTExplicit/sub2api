@@ -121,6 +121,12 @@ const (
 	openAIFailoverRetryStop
 )
 
+type openAIFailoverSelectionReporter interface {
+	ReportOpenAIAccountSameAccountRetry(selection *service.AccountSelectionResult, accountID int64, model string)
+	ReportOpenAIAccountScheduleResultForSelection(selection *service.AccountSelectionResult, accountID int64, model string, success bool, firstTokenMs *int)
+	ReleaseOpenAIRuntimeBreakerProbeForSelection(selection *service.AccountSelectionResult)
+}
+
 type openAIFailoverRetryState struct {
 	sameAccountRetryCount map[int64]int
 }
@@ -165,7 +171,7 @@ func openAISameAccountRetryLimit(account *service.Account, failoverErr *service.
 }
 
 func finalizeOpenAIFailoverSelection(
-	gateway *service.OpenAIGatewayService,
+	gateway openAIFailoverSelectionReporter,
 	selection *service.AccountSelectionResult,
 	account *service.Account,
 	model string,

@@ -241,8 +241,9 @@ func (s *OpenAIGatewayService) cindyHTTPToWSV2FirstTurnEventFailover(
 	failoverErr.Stage = GatewayFailureStageInference
 	failoverErr.Scope = GatewayFailureScopeRequest
 	failoverErr.Reason = openAICindyHTTPToWSV2TerminalReason
-	if statusCode == http.StatusForbidden && isHTMLResponse(payload) {
-		failoverErr.SuppressAccountHealthPenalty = true
-	}
+	// A terminal WS event is scoped to this request/provider response. It may
+	// still switch accounts, but it must not be attributed to the selected
+	// account by either the cooldown path or the adaptive scheduler.
+	failoverErr.SuppressAccountHealthPenalty = true
 	return sanitizeOpenAICindyFailoverError(failoverErr), true
 }
