@@ -325,10 +325,16 @@ func TestFingerprintIDs_HeaderAndBody_TurnID_Consistent(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(embeddedRaw), &bodyMeta))
 	bodyEmbeddedTurnID, ok := bodyMeta["turn_id"].(string)
 	require.True(t, ok, "体内嵌 turn-metadata 应包含 string 类型的 turn_id")
+	headerTurnStartedAt, ok := headerMeta["turn_started_at_unix_ms"].(float64)
+	require.True(t, ok, "头 turn-metadata 应包含 numeric 类型的 turn_started_at_unix_ms")
+	bodyTurnStartedAt, ok := bodyMeta["turn_started_at_unix_ms"].(float64)
+	require.True(t, ok, "体内嵌 turn-metadata 应包含 numeric 类型的 turn_started_at_unix_ms")
 
 	assert.Equal(t, headerTurnID, bodyTurnID, "头和体的 turn_id 必须一致")
 	assert.Equal(t, headerTurnID, bodyEmbeddedTurnID, "头和体内嵌 turn-metadata 的 turn_id 必须一致")
 	assert.Equal(t, ids.turnID, headerTurnID, "所有 turn_id 都应来自同一份 ids")
+	assert.Equal(t, headerTurnStartedAt, bodyTurnStartedAt, "头和体内嵌 turn-metadata 的开始时间必须一致")
+	assert.Equal(t, ids.turnStartedAtUnixMS, int64(headerTurnStartedAt), "所有开始时间都应来自同一份 ids")
 }
 
 // --- applyCodexFingerprintClientMetadata ---
