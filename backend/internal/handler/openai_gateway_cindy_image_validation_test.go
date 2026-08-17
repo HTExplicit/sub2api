@@ -145,6 +145,44 @@ func cindyResponsesImageValidationAccount(cindy bool) service.Account {
 	}
 }
 
+func TestStrictCindyResponsesImageRequestsNormalizeVerifiedWireControls(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name              string
+		body              string
+		wantTopLevelModel string
+	}{
+		{
+			name:              "nested image tool",
+			body:              `{"model":"gpt-5.6-luna","input":"Create a small red square on white.","stream":false,"tools":[{"type":"image_generation","model":"gpt-image-2","size":"1024x1024","quality":"low","n":1}],"tool_choice":{"type":"image_generation"}}`,
+			wantTopLevelModel: "openai/gpt-5.6-luna",
+		},
+		{
+			name:              "top level image bridge",
+			body:              `{"model":"gpt-image-2","input":"Create a small red square on white.","stream":false,"size":"1024x1024","quality":"low","n":1}`,
+			wantTopLevelModel: "openai/gpt-5.6-luna",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			h, upstream, _, groupID := newCindyResponsesImageValidationHandler(t, cindyResponsesImageValidationAccount(true))
+			c, recorder := newCindyResponsesImageValidationContext(t, groupID, true, []byte(test.body))
+
+			h.Responses(c)
+
+			require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+			calls := upstream.snapshot()
+			require.Len(t, calls, 1)
+			require.Equal(t, test.wantTopLevelModel, gjson.GetBytes(calls[0], "model").String())
+			require.Equal(t, "image_generation", gjson.GetBytes(calls[0], "tools.0.type").String())
+			require.False(t, gjson.GetBytes(calls[0], "tools.0.action").Exists())
+			require.Equal(t, "openai/gpt-image-2", gjson.GetBytes(calls[0], "tools.0.model").String())
+			require.False(t, gjson.GetBytes(calls[0], "n").Exists())
+			require.False(t, gjson.GetBytes(calls[0], "tools.0.n").Exists())
+		})
+	}
+}
+
 func TestStrictCindyResponsesTopLevelLiveIDRejectsUnverifiedControls(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	tests := []struct {
