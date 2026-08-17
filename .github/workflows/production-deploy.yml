@@ -129,16 +129,16 @@ jobs:
             [[ "$first" == "$target" ]]
           }
 
-          validate_release_tag "$RELEASE_TAG"
+          validate_release_tag "$RELEASE_TAG" || exit 1
           case "$OPERATION" in
             deploy)
-              [[ "$CONFIRMATION" == DEPLOY ]]
-              [[ -z "$EXPECTED_CURRENT_RELEASE_TAG" ]]
+              [[ "$CONFIRMATION" == DEPLOY ]] || exit 1
+              [[ -z "$EXPECTED_CURRENT_RELEASE_TAG" ]] || exit 1
               ;;
             rollback)
-              [[ "$CONFIRMATION" == ROLLBACK ]]
-              validate_release_tag "$EXPECTED_CURRENT_RELEASE_TAG"
-              version_strictly_less "$RELEASE_TAG" "$EXPECTED_CURRENT_RELEASE_TAG"
+              [[ "$CONFIRMATION" == ROLLBACK ]] || exit 1
+              validate_release_tag "$EXPECTED_CURRENT_RELEASE_TAG" || exit 1
+              version_strictly_less "$RELEASE_TAG" "$EXPECTED_CURRENT_RELEASE_TAG" || exit 1
               ;;
             *)
               echo 'Operation must be deploy or rollback' >&2
@@ -146,18 +146,18 @@ jobs:
               ;;
           esac
           for flag in "$CINDY_BALANCE_DETECTION" "$CINDY_CAPABILITY_CATALOG" "$IMAGE_STUDIO"; do
-            [[ "$flag" == true || "$flag" == false ]]
+            [[ "$flag" == true || "$flag" == false ]] || exit 1
           done
           if [[ "$IMAGE_STUDIO" == true && "$CINDY_CAPABILITY_CATALOG" != true ]]; then
             echo 'Image Studio requires the Cindy capability catalog in this release' >&2
             exit 1
           fi
 
-          image_ref=$(resolve_release_image "$RELEASE_TAG")
+          image_ref=$(resolve_release_image "$RELEASE_TAG") || exit 1
           expected_current_image_ref=''
           if [[ "$OPERATION" == rollback ]]; then
-            expected_current_image_ref=$(resolve_release_image "$EXPECTED_CURRENT_RELEASE_TAG")
-            [[ "$expected_current_image_ref" != "$image_ref" ]]
+            expected_current_image_ref=$(resolve_release_image "$EXPECTED_CURRENT_RELEASE_TAG") || exit 1
+            [[ "$expected_current_image_ref" != "$image_ref" ]] || exit 1
           fi
 
           echo "image_ref=${image_ref}" >> "$GITHUB_OUTPUT"
@@ -196,21 +196,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$VPS_PORT" =~ ^[0-9]+$ ]]
-          [[ "$IMAGE_REF" =~ ^ghcr\.io/htexplicit/sub2api:[0-9]+\.[0-9]+\.[0-9]+-codexrip\.[1-9][0-9]*@sha256:[0-9a-f]{64}$ ]]
-          [[ "$CINDY_ROLLOUT" =~ ^cindy=(true|false),(true|false),(true|false)$ ]]
+          [[ "$VPS_PORT" =~ ^[0-9]+$ ]] || exit 1
+          [[ "$IMAGE_REF" =~ ^ghcr\.io/htexplicit/sub2api:[0-9]+\.[0-9]+\.[0-9]+-codexrip\.[1-9][0-9]*@sha256:[0-9a-f]{64}$ ]] || exit 1
+          [[ "$CINDY_ROLLOUT" =~ ^cindy=(true|false),(true|false),(true|false)$ ]] || exit 1
           if [[ "${BASH_REMATCH[3]}" == true && "${BASH_REMATCH[2]}" != true ]]; then
             echo 'Image Studio requires the Cindy capability catalog in this release' >&2
             exit 1
           fi
           case "$OPERATION" in
             deploy)
-              [[ -z "$EXPECTED_CURRENT_IMAGE_REF" ]]
+              [[ -z "$EXPECTED_CURRENT_IMAGE_REF" ]] || exit 1
               remote_command="deploy ${IMAGE_REF} ${CINDY_ROLLOUT}"
               ;;
             rollback)
-              [[ "$EXPECTED_CURRENT_IMAGE_REF" =~ ^ghcr\.io/htexplicit/sub2api:[0-9]+\.[0-9]+\.[0-9]+-codexrip\.[1-9][0-9]*@sha256:[0-9a-f]{64}$ ]]
-              [[ "$EXPECTED_CURRENT_IMAGE_REF" != "$IMAGE_REF" ]]
+              [[ "$EXPECTED_CURRENT_IMAGE_REF" =~ ^ghcr\.io/htexplicit/sub2api:[0-9]+\.[0-9]+\.[0-9]+-codexrip\.[1-9][0-9]*@sha256:[0-9a-f]{64}$ ]] || exit 1
+              [[ "$EXPECTED_CURRENT_IMAGE_REF" != "$IMAGE_REF" ]] || exit 1
               remote_command="rollback ${IMAGE_REF} from=${EXPECTED_CURRENT_IMAGE_REF} ${CINDY_ROLLOUT}"
               ;;
             *)

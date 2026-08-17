@@ -704,7 +704,7 @@ func (r *cindyBalanceProbeRepository) CompleteStage(
 					accountSnapshot.CindyBalanceInsufficientAt,
 					currentAccount.CindyBalanceInsufficientAt,
 				)
-			if !currentMatches || (!(outcome == "stale" && finalState == "skipped_stale") && !snapshotMatches) {
+			if !currentMatches || (!stale && !snapshotMatches) {
 				stale = true
 			}
 		}

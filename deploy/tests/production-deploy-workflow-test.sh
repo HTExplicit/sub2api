@@ -216,7 +216,7 @@ run_apply() {
     SSH_CAPTURE="$tmpdir/ssh-capture" \
     SSH_CALLS="$tmpdir/ssh-calls" \
     VPS_HOST=production.example.invalid \
-    VPS_PORT=2222 \
+    VPS_PORT="${MOCK_VPS_PORT:-2222}" \
     VPS_USER=deployer \
     OPERATION="$operation" \
     IMAGE_REF="$image_ref" \
@@ -335,6 +335,24 @@ fi
 assert_ssh_not_invoked
 if run_apply rollback "$rollback_target_ref" "$rollback_current_ref" 'cindy=true,false,true'; then
   fail 'rollback accepted Image Studio without the Cindy capability catalog'
+fi
+assert_ssh_not_invoked
+MOCK_VPS_PORT=not-a-port
+if run_apply deploy "$rollback_current_ref" '' 'cindy=true,true,false'; then
+  fail 'deploy accepted a malformed SSH port'
+fi
+unset MOCK_VPS_PORT
+assert_ssh_not_invoked
+if run_apply deploy 'ghcr.io/htexplicit/sub2api:latest' '' 'cindy=true,true,false'; then
+  fail 'deploy accepted a mutable image reference'
+fi
+assert_ssh_not_invoked
+if run_apply deploy "$rollback_current_ref" '' 'cindy=true,false,true'; then
+  fail 'deploy accepted a malformed Cindy rollout'
+fi
+assert_ssh_not_invoked
+if run_apply rollback "$rollback_target_ref" '' 'cindy=true,false,false'; then
+  fail 'rollback accepted an empty expected-current image'
 fi
 assert_ssh_not_invoked
 if run_apply invalid "$rollback_current_ref" '' 'cindy=true,true,false'; then
