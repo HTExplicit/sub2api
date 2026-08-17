@@ -17,7 +17,7 @@ func TestGroupRepositoryAuditCindyGroupsUsesStrictIdentityAndAnonymousCounts(t *
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	mock.ExpectQuery(`(?s)WITH account_counts AS .*WHERE g\.platform = \$1.*ORDER BY g\.sort_order ASC, g\.id ASC`).
+	mock.ExpectQuery(`(?s)WITH account_counts AS .*WHERE g\.platform = \$1\s+AND g\.deleted_at IS NULL.*ORDER BY g\.sort_order ASC, g\.id ASC`).
 		WithArgs(
 			service.PlatformOpenAI,
 			service.PlatformOpenAI,

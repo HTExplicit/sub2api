@@ -29,6 +29,14 @@ func TestCindyGroupSplitPreviewDriftAndAtomicCommit(t *testing.T) {
 		ProfitMinMargin:      0.20,
 		ProfitSafetyBuffer:   0.03,
 	})
+	deletedGroup := mustCreateGroup(t, client, &service.Group{
+		Name:             fmt.Sprintf("cindy-split-deleted-%d", suffix),
+		Platform:         service.PlatformOpenAI,
+		Status:           service.StatusActive,
+		SubscriptionType: service.SubscriptionTypeStandard,
+	})
+	_, err := integrationDB.ExecContext(ctx, "UPDATE groups SET deleted_at = NOW() WHERE id = $1", deletedGroup.ID)
+	require.NoError(t, err)
 	cindy := mustCreateAccount(t, client, &service.Account{
 		Name:     fmt.Sprintf("cindy-split-cindy-%d", suffix),
 		Platform: service.PlatformOpenAI,
@@ -49,7 +57,7 @@ func TestCindyGroupSplitPreviewDriftAndAtomicCommit(t *testing.T) {
 			"base_url": "https://api.openai.com/v1",
 		},
 	})
-	_, err := integrationDB.ExecContext(ctx, `
+	_, err = integrationDB.ExecContext(ctx, `
 		INSERT INTO account_groups (account_id, group_id, priority, created_at)
 		VALUES ($1, $3, 17, NOW()), ($2, $3, 29, NOW())
 	`, cindy.ID, ordinary.ID, source.ID)
@@ -81,12 +89,16 @@ func TestCindyGroupSplitPreviewDriftAndAtomicCommit(t *testing.T) {
 			_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM scheduler_outbox WHERE group_id = $1", targetID)
 		}
 		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM scheduler_outbox WHERE group_id = $1", source.ID)
+		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM groups WHERE id = $1", deletedGroup.ID)
 		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM groups WHERE name IN ($1, $2)", source.Name, targetName)
 		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM users WHERE id = $1", user.ID)
 	})
 
 	audit, err := repo.AuditCindyGroups(ctx)
 	require.NoError(t, err)
+	for _, auditEntry := range audit {
+		require.NotEqual(t, deletedGroup.ID, auditEntry.GroupID, "soft-deleted groups must not be audited")
+	}
 	entry := findCindyAuditEntry(t, audit, source.ID)
 	require.Equal(t, service.CindyGroupClassificationMixed, entry.Classification)
 	require.Equal(t, int64(1), entry.CindyAccountCount)
@@ -175,6 +187,145 @@ func TestCindyGroupSplitPreviewDriftAndAtomicCommit(t *testing.T) {
 	).Scan(&cindyBaseURL, &cindyStatus))
 	require.Equal(t, "https://api.laxarouter.ai", cindyBaseURL)
 	require.Equal(t, service.StatusActive, cindyStatus)
+}
+
+func TestCindyGroupSplitRollsBackAllWritesWhenOutboxInsertFails(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	repo := newGroupRepositoryWithSQL(client, integrationDB)
+	suffix := time.Now().UnixNano()
+
+	source := mustCreateGroup(t, client, &service.Group{
+		Name:             fmt.Sprintf("cindy-split-rollback-source-%d", suffix),
+		Platform:         service.PlatformOpenAI,
+		Status:           service.StatusActive,
+		SubscriptionType: service.SubscriptionTypeStandard,
+	})
+	cindy := mustCreateAccount(t, client, &service.Account{
+		Name:     fmt.Sprintf("cindy-split-rollback-cindy-%d", suffix),
+		Platform: service.PlatformOpenAI,
+		Type:     service.AccountTypeAPIKey,
+		Status:   service.StatusActive,
+		Credentials: map[string]any{
+			"api_key":  "sk-cindy-rollback-test",
+			"base_url": "https://api.laxarouter.ai",
+		},
+	})
+	ordinary := mustCreateAccount(t, client, &service.Account{
+		Name:     fmt.Sprintf("cindy-split-rollback-ordinary-%d", suffix),
+		Platform: service.PlatformOpenAI,
+		Type:     service.AccountTypeAPIKey,
+		Status:   service.StatusActive,
+		Credentials: map[string]any{
+			"api_key":  "sk-ordinary-rollback-test",
+			"base_url": "https://api.openai.com/v1",
+		},
+	})
+	_, err := integrationDB.ExecContext(ctx, `
+		INSERT INTO account_groups (account_id, group_id, priority, created_at)
+		VALUES ($1, $3, 17, NOW()), ($2, $3, 29, NOW())
+	`, cindy.ID, ordinary.ID, source.ID)
+	require.NoError(t, err)
+
+	user := mustCreateUser(t, client, &service.User{
+		Email: fmt.Sprintf("cindy-split-rollback-%d@example.com", suffix),
+	})
+	selectedKey := mustCreateApiKey(t, client, &service.APIKey{
+		UserID:  user.ID,
+		Key:     fmt.Sprintf("sk-cindy-split-rollback-%d", suffix),
+		Name:    "selected",
+		Status:  service.StatusActive,
+		GroupID: &source.ID,
+	})
+
+	targetName := fmt.Sprintf("cindy-split-rollback-target-%d", suffix)
+	functionName := fmt.Sprintf("fail_cindy_split_outbox_%d", suffix)
+	triggerName := fmt.Sprintf("fail_cindy_split_outbox_trigger_%d", suffix)
+	t.Cleanup(func() {
+		_, _ = integrationDB.ExecContext(context.Background(), fmt.Sprintf(
+			"DROP TRIGGER IF EXISTS %s ON scheduler_outbox",
+			triggerName,
+		))
+		_, _ = integrationDB.ExecContext(context.Background(), fmt.Sprintf(
+			"DROP FUNCTION IF EXISTS %s()",
+			functionName,
+		))
+		_, _ = integrationDB.ExecContext(context.Background(), `
+			DELETE FROM scheduler_outbox
+			WHERE group_id = $1
+			   OR group_id IN (SELECT id FROM groups WHERE name = $2)
+			   OR COALESCE(payload, '{}'::jsonb) @>
+			      jsonb_build_object('account_ids', jsonb_build_array($3::bigint))
+			   OR COALESCE(payload, '{}'::jsonb) @>
+			      jsonb_build_object('account_ids', jsonb_build_array($4::bigint))
+		`, source.ID, targetName, cindy.ID, ordinary.ID)
+		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM api_keys WHERE id = $1", selectedKey.ID)
+		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM account_groups WHERE account_id = ANY($1)", pq.Array([]int64{cindy.ID, ordinary.ID}))
+		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM accounts WHERE id = ANY($1)", pq.Array([]int64{cindy.ID, ordinary.ID}))
+		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM groups WHERE name IN ($1, $2)", source.Name, targetName)
+		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM users WHERE id = $1", user.ID)
+	})
+
+	_, err = integrationDB.ExecContext(ctx, fmt.Sprintf(`
+		CREATE FUNCTION %s() RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN
+			IF NEW.group_id IS NOT NULL AND EXISTS (
+				SELECT 1 FROM groups WHERE id = NEW.group_id AND name = '%s'
+			) THEN
+				RAISE EXCEPTION 'forced Cindy split outbox failure';
+			END IF;
+			RETURN NEW;
+		END;
+		$$`, functionName, targetName))
+	require.NoError(t, err)
+	_, err = integrationDB.ExecContext(ctx, fmt.Sprintf(
+		"CREATE TRIGGER %s BEFORE INSERT ON scheduler_outbox FOR EACH ROW EXECUTE FUNCTION %s()",
+		triggerName,
+		functionName,
+	))
+	require.NoError(t, err)
+
+	input := service.CindyGroupSplitInput{
+		SourceKeeps: service.CindyGroupSourceKeepsOrdinary,
+		TargetName:  targetName,
+		APIKeyIDs:   []int64{selectedKey.ID},
+	}
+	preview, err := repo.PreviewCindyGroupSplit(ctx, source.ID, input)
+	require.NoError(t, err)
+	input.MemberFingerprint = preview.Preview.MemberFingerprint
+
+	_, err = repo.CommitCindyGroupSplit(ctx, source.ID, input)
+	require.ErrorContains(t, err, "forced Cindy split outbox failure")
+
+	var targetCount, sourceMemberships, movedMemberships, sourceOutboxEvents int
+	require.NoError(t, integrationDB.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM groups WHERE name = $1",
+		targetName,
+	).Scan(&targetCount))
+	require.NoError(t, integrationDB.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM account_groups WHERE group_id = $1 AND account_id = ANY($2)",
+		source.ID,
+		pq.Array([]int64{cindy.ID, ordinary.ID}),
+	).Scan(&sourceMemberships))
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM account_groups ag
+		JOIN groups g ON g.id = ag.group_id
+		WHERE g.name = $1 AND ag.account_id = $2
+	`, targetName, cindy.ID).Scan(&movedMemberships))
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM scheduler_outbox
+		WHERE group_id = $1
+		   OR COALESCE(payload, '{}'::jsonb) @>
+		      jsonb_build_object('account_ids', jsonb_build_array($2::bigint))
+	`, source.ID, cindy.ID).Scan(&sourceOutboxEvents))
+
+	require.Zero(t, targetCount, "the target group must roll back")
+	require.Equal(t, 2, sourceMemberships, "all source memberships must remain")
+	require.Zero(t, movedMemberships, "no target membership may survive")
+	assertCindySplitKeyGroup(t, ctx, selectedKey.ID, source.ID)
+	require.Zero(t, sourceOutboxEvents, "all split outbox events must roll back")
 }
 
 func findCindyAuditEntry(t *testing.T, entries []service.CindyGroupAuditEntry, groupID int64) service.CindyGroupAuditEntry {

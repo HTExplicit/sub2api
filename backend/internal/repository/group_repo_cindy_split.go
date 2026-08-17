@@ -71,6 +71,7 @@ func (r *groupRepository) AuditCindyGroups(ctx context.Context) ([]service.Cindy
 		LEFT JOIN account_counts ac ON ac.group_id = g.id
 		LEFT JOIN key_counts kc ON kc.group_id = g.id
 		WHERE g.platform = $1
+			AND g.deleted_at IS NULL
 		ORDER BY g.sort_order ASC, g.id ASC
 	`,
 		service.PlatformOpenAI,
