@@ -3,12 +3,25 @@ name: Production Deploy
 on:
   workflow_dispatch:
     inputs:
+      operation:
+        description: 'Deploy a release or roll back from an exact currently running release'
+        required: true
+        default: deploy
+        type: choice
+        options:
+          - deploy
+          - rollback
       release_tag:
-        description: 'Release tag, for example v0.1.168-codexrip.1'
+        description: 'Target release tag, for example v0.1.177-codexrip.7'
         required: true
         type: string
+      expected_current_release_tag:
+        description: 'Rollback only: exact release tag currently running in production'
+        required: false
+        default: ''
+        type: string
       confirmation:
-        description: 'Type DEPLOY to continue to the production approval gate'
+        description: 'Type DEPLOY for deploy or ROLLBACK for rollback'
         required: true
         type: string
       cindy_balance_detection:
@@ -39,7 +52,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       image_ref: ${{ steps.resolve.outputs.image_ref }}
+      expected_current_image_ref: ${{ steps.resolve.outputs.expected_current_image_ref }}
       release_tag: ${{ steps.resolve.outputs.release_tag }}
+      operation: ${{ steps.resolve.outputs.operation }}
       cindy_rollout: ${{ steps.resolve.outputs.cindy_rollout }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -51,7 +66,9 @@ jobs:
         id: resolve
         env:
           GH_TOKEN: ${{ github.token }}
+          OPERATION: ${{ inputs.operation }}
           RELEASE_TAG: ${{ inputs.release_tag }}
+          EXPECTED_CURRENT_RELEASE_TAG: ${{ inputs.expected_current_release_tag }}
           CONFIRMATION: ${{ inputs.confirmation }}
           CINDY_BALANCE_DETECTION: ${{ inputs.cindy_balance_detection }}
           CINDY_CAPABILITY_CATALOG: ${{ inputs.cindy_capability_catalog }}
@@ -59,8 +76,75 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$CONFIRMATION" == DEPLOY ]]
-          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-codexrip\.[1-9][0-9]*$ ]]
+
+          validate_release_tag() {
+            [[ "$1" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-codexrip\.[1-9][0-9]*$ ]]
+          }
+
+          resolve_release_image() {
+            local tag=$1 tag_commit version image inspect digest image_revision release_state release_assets release_body
+            local release_image_ref='' release_source='' release_image_count=0 release_source_count=0 line
+            local image_line_re='^Image: `([^`]+)`$'
+            local source_line_re='^Source: `([0-9a-f]{40})`$'
+            validate_release_tag "$tag" || return 1
+            release_state=$(gh release view "$tag" --json tagName,isDraft,isPrerelease \
+              --jq '[.tagName,.isDraft,.isPrerelease] | @tsv') || return 1
+            [[ "$release_state" == "${tag}"$'\tfalse\tfalse' ]] || return 1
+            release_assets=$(gh release view "$tag" --json assets --jq '.assets[].name') || return 1
+            if grep -Eq '^(seed-descriptor\.json|bundle-manifest\.json|codexrip-reverse-skill-.*\.zip(\.sha256)?|bootstrap-reverse-skill\.(ps1|py))$' <<<"$release_assets"; then
+              echo "Release $tag contains a removed Skill-specific asset" >&2
+              return 1
+            fi
+            git fetch origin "refs/tags/${tag}:refs/tags/${tag}" main || return 1
+            tag_commit=$(git rev-list -n 1 "$tag") || return 1
+            [[ "$tag_commit" =~ ^[0-9a-f]{40}$ ]] || return 1
+            git merge-base --is-ancestor "$tag_commit" origin/main || return 1
+            version="${tag#v}"
+            image="ghcr.io/htexplicit/sub2api:${version}"
+            inspect=$(docker buildx imagetools inspect "$image") || return 1
+            digest=$(awk '$1 == "Digest:" && digest == "" {digest=$2} END {if (digest == "") exit 1; print digest}' <<<"$inspect") || return 1
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+            image_revision=$(docker buildx imagetools inspect "${image}@${digest}" --format '{{ index .Image.Config.Labels "org.opencontainers.image.revision" }}') || return 1
+            [[ "$image_revision" == "$tag_commit" ]] || return 1
+            release_body=$(gh release view "$tag" --json body --jq .body) || return 1
+            while IFS= read -r line; do
+              if [[ "$line" =~ $image_line_re ]]; then
+                release_image_ref=${BASH_REMATCH[1]}
+                ((release_image_count += 1))
+              elif [[ "$line" =~ $source_line_re ]]; then
+                release_source=${BASH_REMATCH[1]}
+                ((release_source_count += 1))
+              fi
+            done <<<"$release_body"
+            [[ "$release_image_count" -eq 1 && "$release_source_count" -eq 1 ]] || return 1
+            [[ "$release_image_ref" == "${image}@${digest}" ]] || return 1
+            [[ "$release_source" == "$tag_commit" ]] || return 1
+            printf '%s@%s\n' "$image" "$digest"
+          }
+
+          version_strictly_less() {
+            local target=$1 current=$2 first
+            [[ "$target" != "$current" ]] || return 1
+            first=$(printf '%s\n%s\n' "$target" "$current" | LC_ALL=C sort -V | head -n 1)
+            [[ "$first" == "$target" ]]
+          }
+
+          validate_release_tag "$RELEASE_TAG"
+          case "$OPERATION" in
+            deploy)
+              [[ "$CONFIRMATION" == DEPLOY ]]
+              [[ -z "$EXPECTED_CURRENT_RELEASE_TAG" ]]
+              ;;
+            rollback)
+              [[ "$CONFIRMATION" == ROLLBACK ]]
+              validate_release_tag "$EXPECTED_CURRENT_RELEASE_TAG"
+              version_strictly_less "$RELEASE_TAG" "$EXPECTED_CURRENT_RELEASE_TAG"
+              ;;
+            *)
+              echo 'Operation must be deploy or rollback' >&2
+              exit 1
+              ;;
+          esac
           for flag in "$CINDY_BALANCE_DETECTION" "$CINDY_CAPABILITY_CATALOG" "$IMAGE_STUDIO"; do
             [[ "$flag" == true || "$flag" == false ]]
           done
@@ -68,23 +152,18 @@ jobs:
             echo 'Image Studio requires the Cindy capability catalog in this release' >&2
             exit 1
           fi
-          gh release view "$RELEASE_TAG" --json tagName --jq '.tagName' | grep -Fxq "$RELEASE_TAG"
-          if gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' |
-            grep -Eq '^(seed-descriptor\.json|bundle-manifest\.json|codexrip-reverse-skill-.*\.zip(\.sha256)?|bootstrap-reverse-skill\.(ps1|py))$'; then
-            echo 'Release contains a removed Skill-specific asset' >&2
-            exit 1
+
+          image_ref=$(resolve_release_image "$RELEASE_TAG")
+          expected_current_image_ref=''
+          if [[ "$OPERATION" == rollback ]]; then
+            expected_current_image_ref=$(resolve_release_image "$EXPECTED_CURRENT_RELEASE_TAG")
+            [[ "$expected_current_image_ref" != "$image_ref" ]]
           fi
-          git fetch origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}" main
-          tag_commit=$(git rev-list -n 1 "$RELEASE_TAG")
-          git merge-base --is-ancestor "$tag_commit" origin/main
-          git checkout --detach "$tag_commit"
-          version="${RELEASE_TAG#v}"
-          image="ghcr.io/htexplicit/sub2api:${version}"
-          inspect=$(docker buildx imagetools inspect "$image")
-          digest=$(awk '$1 == "Digest:" && digest == "" {digest=$2} END {if (digest == "") exit 1; print digest}' <<<"$inspect")
-          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
-          echo "image_ref=${image}@${digest}" >> "$GITHUB_OUTPUT"
+
+          echo "image_ref=${image_ref}" >> "$GITHUB_OUTPUT"
+          echo "expected_current_image_ref=${expected_current_image_ref}" >> "$GITHUB_OUTPUT"
           echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "operation=${OPERATION}" >> "$GITHUB_OUTPUT"
           echo "cindy_rollout=cindy=${CINDY_BALANCE_DETECTION},${CINDY_CAPABILITY_CATALOG},${IMAGE_STUDIO}" >> "$GITHUB_OUTPUT"
 
   deploy:
@@ -105,12 +184,14 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/sub2api_deploy ~/.ssh/known_hosts
           ssh-keygen -y -f ~/.ssh/sub2api_deploy >/dev/null
-      - name: Deploy immutable image
+      - name: Apply immutable release operation
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_PORT: ${{ secrets.VPS_PORT }}
           VPS_USER: ${{ secrets.VPS_USER }}
+          OPERATION: ${{ needs.resolve.outputs.operation }}
           IMAGE_REF: ${{ needs.resolve.outputs.image_ref }}
+          EXPECTED_CURRENT_IMAGE_REF: ${{ needs.resolve.outputs.expected_current_image_ref }}
           CINDY_ROLLOUT: ${{ needs.resolve.outputs.cindy_rollout }}
         shell: bash
         run: |
@@ -122,6 +203,21 @@ jobs:
             echo 'Image Studio requires the Cindy capability catalog in this release' >&2
             exit 1
           fi
+          case "$OPERATION" in
+            deploy)
+              [[ -z "$EXPECTED_CURRENT_IMAGE_REF" ]]
+              remote_command="deploy ${IMAGE_REF} ${CINDY_ROLLOUT}"
+              ;;
+            rollback)
+              [[ "$EXPECTED_CURRENT_IMAGE_REF" =~ ^ghcr\.io/htexplicit/sub2api:[0-9]+\.[0-9]+\.[0-9]+-codexrip\.[1-9][0-9]*@sha256:[0-9a-f]{64}$ ]]
+              [[ "$EXPECTED_CURRENT_IMAGE_REF" != "$IMAGE_REF" ]]
+              remote_command="rollback ${IMAGE_REF} from=${EXPECTED_CURRENT_IMAGE_REF} ${CINDY_ROLLOUT}"
+              ;;
+            *)
+              echo 'Operation must be deploy or rollback' >&2
+              exit 1
+              ;;
+          esac
           ssh \
             -F /dev/null \
             -i ~/.ssh/sub2api_deploy \
@@ -131,7 +227,7 @@ jobs:
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             -p "$VPS_PORT" \
             "${VPS_USER}@${VPS_HOST}" \
-            "deploy ${IMAGE_REF} ${CINDY_ROLLOUT}"
+            "$remote_command"
       - name: Verify public health
         env:
           PUBLIC_HEALTH_URL: ${{ secrets.PUBLIC_HEALTH_URL }}

@@ -177,6 +177,7 @@ inputs. A balance-only release is dispatched with:
 gh workflow run production-deploy.yml \
   --repo HTExplicit/sub2api \
   --ref main \
+  -f operation=deploy \
   -f release_tag=vX.Y.Z-codexrip.N \
   -f confirmation=DEPLOY \
   -f cindy_balance_detection=true \
@@ -185,8 +186,10 @@ gh workflow run production-deploy.yml \
 ```
 
 The workflow rejects `image_studio=true` unless
-`cindy_capability_catalog=true`. It resolves the release to an immutable digest
-and sends only `deploy <immutable-ref> cindy=<balance>,<catalog>,<image>` to the
+`cindy_capability_catalog=true`. It resolves the release to an immutable digest,
+requires the Release body to record that exact image and source commit, and
+requires the immutable image's OCI revision to match the release tag commit.
+It sends only `deploy <immutable-ref> cindy=<balance>,<catalog>,<image>` to the
 restricted host command. The host persists the tuple in
 `/opt/sub2api/docker-compose.cindy-rollout.yml`; a tuple-only change for the
 same digest recreates only `sub2api`, with the prior override included in the
@@ -194,6 +197,29 @@ checksum-verified rollback set.
 During the guard-first migration window, the host also accepts the old workflow's
 exact `deploy <immutable-ref>` form and maps it to `cindy=true,false,false`.
 This workflow always emits the explicit tuple.
+
+An image downgrade uses the same protected `production` Environment and an
+explicit expected-current release rather than the deploy path:
+
+```bash
+gh workflow run production-deploy.yml \
+  --repo HTExplicit/sub2api \
+  --ref main \
+  -f operation=rollback \
+  -f release_tag=v0.1.177-codexrip.6 \
+  -f expected_current_release_tag=v0.1.177-codexrip.7 \
+  -f confirmation=ROLLBACK \
+  -f cindy_balance_detection=true \
+  -f cindy_capability_catalog=false \
+  -f image_studio=false
+```
+
+The resolver requires both Releases, their recorded immutable references, and
+their OCI source revisions to match valid `main` ancestors, and requires
+`CURRENT` to be strictly newer than `TARGET`. The forced command is exactly
+`rollback <target-ref> from=<current-ref> cindy=...`; the
+host rejects it before pulling or mutating state unless the running image is
+byte-for-byte equal to `from=`. Ordinary deploys remain unable to downgrade.
 
 `GATEWAY_CINDY_IMAGE_STUDIO_ENABLED` remains a one-release fallback only when
 `GATEWAY_IMAGE_STUDIO_ENABLED` is absent. Do not set both variables; the
