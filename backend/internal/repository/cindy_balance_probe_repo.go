@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -323,7 +324,7 @@ func (r *cindyBalanceProbeRepository) LatestByAccountIDs(ctx context.Context, ac
 		SELECT DISTINCT ON (account_id)
 		       account_id,
 		       job_id,
-		       COALESCE(NULLIF(final_outcome, ''), state) AS outcome,
+		       state AS outcome,
 		       COALESCE(finished_at, terra_at, luna_at, updated_at) AS checked_at
 		FROM cindy_balance_probe_items
 		WHERE account_id = ANY($1)
@@ -603,8 +604,15 @@ func (r *cindyBalanceProbeRepository) ValidateReservationForSend(
 	return true, nil
 }
 
-func (r *cindyBalanceProbeRepository) CompleteStage(ctx context.Context, reservation *service.CindyBalanceProbeReservation, leaseToken, outcome, finalState string, networkFailure bool) (bool, bool, error) {
-	if reservation == nil {
+func (r *cindyBalanceProbeRepository) CompleteStage(
+	ctx context.Context,
+	reservation *service.CindyBalanceProbeReservation,
+	accountSnapshot *service.Account,
+	leaseToken, outcome, finalState string,
+	networkFailure bool,
+) (bool, bool, error) {
+	if reservation == nil || leaseToken == "" || reservation.LeaseToken != leaseToken ||
+		(reservation.Stage != "luna" && reservation.Stage != "terra") {
 		return false, false, nil
 	}
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -613,22 +621,122 @@ func (r *cindyBalanceProbeRepository) CompleteStage(ctx context.Context, reserva
 	}
 	defer func() { _ = tx.Rollback() }()
 	currentState := reservation.Stage + "_running"
-	finished := finalState != "luna_exact"
+	var itemAccountID int64
+	var itemState, itemFingerprint string
+	var itemUpdatedAt time.Time
+	var itemWasMarked bool
+	var itemRequestCount int
+	err = tx.QueryRowContext(ctx, `
+		SELECT i.account_id, i.state, i.identity_fingerprint,
+		       i.account_updated_at, i.was_marked, i.request_count
+		FROM cindy_balance_probe_jobs AS j
+		JOIN cindy_balance_probe_items AS i ON i.job_id = j.id
+		WHERE j.id = $1 AND i.id = $2 AND j.lease_token = $3
+		  AND j.status = 'running' AND j.cancel_requested_at IS NULL
+		  AND j.lease_until >= clock_timestamp()
+		FOR UPDATE OF j, i
+	`, reservation.JobID, reservation.ItemID, leaseToken).Scan(
+		&itemAccountID,
+		&itemState,
+		&itemFingerprint,
+		&itemUpdatedAt,
+		&itemWasMarked,
+		&itemRequestCount,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, err
+	}
+	if itemAccountID != reservation.AccountID || itemState != currentState ||
+		itemFingerprint != reservation.IdentityFingerprint ||
+		!itemUpdatedAt.UTC().Truncate(time.Microsecond).Equal(
+			reservation.AccountUpdatedAt.UTC().Truncate(time.Microsecond),
+		) || itemWasMarked != reservation.WasMarked || itemRequestCount != reservation.RequestCount {
+		return false, false, nil
+	}
+
+	stale := outcome == "stale" && finalState == "skipped_stale"
+	var platform, accountType, status string
+	var schedulable bool
+	var credentialsJSON []byte
+	var accountUpdatedAt time.Time
+	var markedAt, deletedAt sql.NullTime
+	err = tx.QueryRowContext(ctx, `
+		SELECT platform, type, status, schedulable, credentials, updated_at,
+		       cindy_balance_insufficient_at, deleted_at
+		FROM accounts WHERE id = $1 FOR UPDATE
+	`, reservation.AccountID).Scan(
+		&platform,
+		&accountType,
+		&status,
+		&schedulable,
+		&credentialsJSON,
+		&accountUpdatedAt,
+		&markedAt,
+		&deletedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		stale = true
+	} else if err != nil {
+		return false, false, err
+	} else {
+		credentials := make(map[string]any)
+		if unmarshalErr := json.Unmarshal(credentialsJSON, &credentials); unmarshalErr != nil {
+			stale = true
+		} else {
+			currentAccount := &service.Account{
+				ID:                         reservation.AccountID,
+				Platform:                   platform,
+				Type:                       accountType,
+				Status:                     status,
+				Schedulable:                schedulable,
+				Credentials:                credentials,
+				UpdatedAt:                  accountUpdatedAt,
+				CindyBalanceInsufficientAt: cindyBalanceProbeNullableTimePointer(markedAt),
+			}
+			currentMatches := !deletedAt.Valid &&
+				service.CindyBalanceProbeReservationMatchesAccount(reservation, currentAccount)
+			snapshotMatches := service.CindyBalanceProbeReservationMatchesAccount(reservation, accountSnapshot) &&
+				cindyBalanceProbeCredentialsEqual(accountSnapshot.Credentials, credentials) &&
+				cindyBalanceProbeOptionalTimeEqual(
+					accountSnapshot.CindyBalanceInsufficientAt,
+					currentAccount.CindyBalanceInsufficientAt,
+				)
+			if !currentMatches || (!(outcome == "stale" && finalState == "skipped_stale") && !snapshotMatches) {
+				stale = true
+			}
+		}
+	}
+
+	stageOutcome := outcome
+	state := finalState
+	if stale {
+		stageOutcome = "stale"
+		state = "skipped_stale"
+		networkFailure = false
+	}
+	finished := state != "luna_exact"
+	var finalOutcome any
+	if finished {
+		finalOutcome = stageOutcome
+		if stale {
+			finalOutcome = "skipped_stale"
+		}
+	}
 	result, err := tx.ExecContext(ctx, `
-		UPDATE cindy_balance_probe_items AS i
-		SET state = $5,
-		    luna_outcome = CASE WHEN $4 = 'luna' THEN $6 ELSE luna_outcome END,
+		UPDATE cindy_balance_probe_items
+		SET state = $3,
+		    luna_outcome = CASE WHEN $4 = 'luna' THEN $5 ELSE luna_outcome END,
 		    luna_at = CASE WHEN $4 = 'luna' THEN NOW() ELSE luna_at END,
-		    terra_outcome = CASE WHEN $4 = 'terra' THEN $6 ELSE terra_outcome END,
+		    terra_outcome = CASE WHEN $4 = 'terra' THEN $5 ELSE terra_outcome END,
 		    terra_at = CASE WHEN $4 = 'terra' THEN NOW() ELSE terra_at END,
-		    final_outcome = CASE WHEN $7 THEN $6 ELSE NULL END,
+		    final_outcome = $6,
 		    finished_at = CASE WHEN $7 THEN NOW() ELSE NULL END,
 		    updated_at = NOW()
-		FROM cindy_balance_probe_jobs AS j
-		WHERE i.id = $1 AND i.job_id = j.id AND j.id = $2 AND j.lease_token = $3
-		  AND j.status = 'running' AND j.cancel_requested_at IS NULL AND j.lease_until >= NOW()
-		  AND i.state = $8
-	`, reservation.ItemID, reservation.JobID, leaseToken, reservation.Stage, finalState, outcome, finished, currentState)
+		WHERE id = $1 AND job_id = $2 AND state = $8
+	`, reservation.ItemID, reservation.JobID, state, reservation.Stage, stageOutcome, finalOutcome, finished, currentState)
 	if err != nil {
 		return false, false, err
 	}
@@ -657,6 +765,27 @@ func (r *cindyBalanceProbeRepository) CompleteStage(ctx context.Context, reserva
 	return failures < 3, true, nil
 }
 
+func cindyBalanceProbeCredentialsEqual(left, right map[string]any) bool {
+	leftJSON, leftErr := json.Marshal(left)
+	rightJSON, rightErr := json.Marshal(right)
+	return leftErr == nil && rightErr == nil && bytes.Equal(leftJSON, rightJSON)
+}
+
+func cindyBalanceProbeOptionalTimeEqual(left, right *time.Time) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return left.UTC().Truncate(time.Microsecond).Equal(right.UTC().Truncate(time.Microsecond))
+}
+
+func cindyBalanceProbeNullableTimePointer(value sql.NullTime) *time.Time {
+	if !value.Valid {
+		return nil
+	}
+	result := value.Time
+	return &result
+}
+
 func (r *cindyBalanceProbeRepository) FinalizeExhausted(
 	ctx context.Context,
 	reservation *service.CindyBalanceProbeReservation,
@@ -664,17 +793,24 @@ func (r *cindyBalanceProbeRepository) FinalizeExhausted(
 	observedAt time.Time,
 	confirmationWindow time.Duration,
 ) (string, error) {
-	return r.finalizeAccountMarker(ctx, reservation, leaseToken, observedAt, confirmationWindow, true)
+	return r.finalizeAccountMarker(ctx, reservation, nil, leaseToken, observedAt, confirmationWindow, true)
 }
 
-func (r *cindyBalanceProbeRepository) FinalizeRecovery(ctx context.Context, reservation *service.CindyBalanceProbeReservation, leaseToken string, observedAt time.Time) (bool, error) {
-	state, err := r.finalizeAccountMarker(ctx, reservation, leaseToken, observedAt, 0, false)
+func (r *cindyBalanceProbeRepository) FinalizeRecovery(
+	ctx context.Context,
+	reservation *service.CindyBalanceProbeReservation,
+	accountSnapshot *service.Account,
+	leaseToken string,
+	observedAt time.Time,
+) (bool, error) {
+	state, err := r.finalizeAccountMarker(ctx, reservation, accountSnapshot, leaseToken, observedAt, 0, false)
 	return state == "recovered", err
 }
 
 func (r *cindyBalanceProbeRepository) finalizeAccountMarker(
 	ctx context.Context,
 	reservation *service.CindyBalanceProbeReservation,
+	accountSnapshot *service.Account,
 	leaseToken string,
 	observedAt time.Time,
 	confirmationWindow time.Duration,
@@ -718,6 +854,22 @@ func (r *cindyBalanceProbeRepository) finalizeAccountMarker(
 	if mark && !cindyBalanceProbeConfirmationCurrent(lunaAt, databaseNow, confirmationWindow) {
 		return r.finishConfirmationExpiredTx(ctx, tx, reservation)
 	}
+	resetResult, err := tx.ExecContext(ctx, `
+		UPDATE cindy_balance_probe_jobs
+		SET consecutive_upstream_failures = 0, updated_at = NOW()
+		WHERE id = $1 AND lease_token = $2 AND status = 'running'
+		  AND cancel_requested_at IS NULL AND lease_until >= NOW()
+	`, reservation.JobID, leaseToken)
+	if err != nil {
+		return "", err
+	}
+	resetCount, err := resetResult.RowsAffected()
+	if err != nil {
+		return "", err
+	}
+	if resetCount != 1 {
+		return "", fmt.Errorf("reset Cindy balance probe failure streak: lost job authority")
+	}
 	var platform, accountType, status string
 	var schedulable bool
 	var credentialsJSON []byte
@@ -743,6 +895,13 @@ func (r *cindyBalanceProbeRepository) finalizeAccountMarker(
 		updatedAt.UTC().Equal(reservation.AccountUpdatedAt.UTC()) &&
 		status == service.StatusActive && schedulable && !deletedAt.Valid &&
 		service.IsCindyAPIKeyAccount(platform, accountType, credentials)
+	if !mark {
+		currentMarker := cindyBalanceProbeNullableTimePointer(markedAt)
+		eligible = eligible &&
+			service.CindyBalanceProbeReservationMatchesAccount(reservation, accountSnapshot) &&
+			cindyBalanceProbeCredentialsEqual(accountSnapshot.Credentials, credentials) &&
+			cindyBalanceProbeOptionalTimeEqual(accountSnapshot.CindyBalanceInsufficientAt, currentMarker)
+	}
 	if !eligible {
 		return r.finishStaleTx(ctx, tx, reservation, mark)
 	}

@@ -12,9 +12,10 @@ import (
 
 type cindyBalanceProbeRecoveryRepositoryStub struct {
 	CindyBalanceProbeRepository
-	recovered bool
-	err       error
-	calls     int
+	recovered       bool
+	err             error
+	calls           int
+	accountSnapshot *Account
 }
 
 type cindyBalanceProbeFinalizeRepositoryStub struct {
@@ -131,6 +132,7 @@ func (s *cindyBalanceProbeDispatchRepositoryStub) ValidateReservationForSend(
 func (s *cindyBalanceProbeDispatchRepositoryStub) CompleteStage(
 	context.Context,
 	*CindyBalanceProbeReservation,
+	*Account,
 	string,
 	string,
 	string,
@@ -153,8 +155,15 @@ func (s *cindyBalanceProbeAccountRepositoryStub) GetByID(context.Context, int64)
 	return s.account, nil
 }
 
-func (s *cindyBalanceProbeRecoveryRepositoryStub) FinalizeRecovery(context.Context, *CindyBalanceProbeReservation, string, time.Time) (bool, error) {
+func (s *cindyBalanceProbeRecoveryRepositoryStub) FinalizeRecovery(
+	_ context.Context,
+	_ *CindyBalanceProbeReservation,
+	accountSnapshot *Account,
+	_ string,
+	_ time.Time,
+) (bool, error) {
 	s.calls++
+	s.accountSnapshot = accountSnapshot
 	return s.recovered, s.err
 }
 
@@ -286,14 +295,40 @@ func TestCindyBalanceProbeRecoveryClearFailureCannotReMarkFromOrdinaryRequest(t 
 		JobID: 43, ItemID: 44, AccountID: account.ID, IdentityFingerprint: fingerprint,
 	}
 
-	require.True(t, svc.finalizeRecovery(context.Background(), reservation, "lease-epoch"))
+	require.True(t, svc.finalizeRecovery(context.Background(), reservation, account, "lease-epoch"))
 	require.Equal(t, 1, probeRepo.calls)
+	require.Same(t, account, probeRepo.accountSnapshot)
 	require.False(t, gateway.isOpenAIAccountRuntimeBlocked(account), "the committed DB recovery owns scheduling even when cache cleanup fails")
 	require.False(t, gateway.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.6-luna"))
 	require.NotEmpty(t, store.pending[account.ID], "the fixture must retain the failed cache cleanup evidence")
 	markRepo.mu.Lock()
 	require.Zero(t, markRepo.markCalls, "ordinary requests must never persist a marker from stale cache state")
 	markRepo.mu.Unlock()
+}
+
+func TestCindyBalanceProbeMarkedLunaSuccessFinalizesWithPreSendSnapshot(t *testing.T) {
+	account := newCindyRateLimitAccount(23003, true)
+	fingerprint, err := CindyAccountIdentityFingerprint(account.Platform, account.Type, account.Credentials)
+	require.NoError(t, err)
+	repo := &cindyBalanceProbeRecoveryRepositoryStub{}
+	svc := &CindyBalanceProbeService{
+		repo: repo,
+		now:  func() time.Time { return time.Date(2026, 8, 17, 1, 0, 0, 0, time.UTC) },
+	}
+	reservation := &CindyBalanceProbeReservation{
+		JobID: 45, ItemID: 46, AccountID: account.ID, Stage: "luna",
+		IdentityFingerprint: fingerprint, AccountUpdatedAt: account.UpdatedAt, WasMarked: true,
+	}
+
+	require.True(t, svc.completeReservation(
+		context.Background(),
+		reservation,
+		account,
+		"lease-epoch",
+		cindyBalanceProbeSuccess,
+	))
+	require.Equal(t, 1, repo.calls)
+	require.Same(t, account, repo.accountSnapshot)
 }
 
 func TestCindyBalanceProbeUsesFreshTokenForEveryClaim(t *testing.T) {
@@ -361,6 +396,63 @@ func TestCindyBalanceProbeReservationCASFailureStopsBeforeProbe(t *testing.T) {
 	require.Equal(t, reservation.JobRequestCount, repo.validatedJobEpoch)
 	require.Same(t, account, repo.validatedAccount)
 	require.Zero(t, repo.completeCalls, "lost claims must be recovered by the next epoch")
+}
+
+func TestCindyBalanceProbeReservationMatchesExactAccountGeneration(t *testing.T) {
+	updatedAt := time.Date(2026, 8, 17, 5, 30, 0, 123456000, time.UTC)
+	base := &Account{
+		ID: 13, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Status: StatusActive, Schedulable: true, UpdatedAt: updatedAt,
+		Credentials: map[string]any{
+			"api_key":      "sk-cindy-generation",
+			"base_url":     "https://api.laxarouter.ai",
+			"organization": "original",
+		},
+	}
+	fingerprint, err := CindyAccountIdentityFingerprint(base.Platform, base.Type, base.Credentials)
+	require.NoError(t, err)
+	reservation := &CindyBalanceProbeReservation{
+		AccountID:           base.ID,
+		IdentityFingerprint: fingerprint,
+		AccountUpdatedAt:    updatedAt,
+	}
+
+	clone := func() *Account {
+		copyAccount := *base
+		copyAccount.Credentials = make(map[string]any, len(base.Credentials))
+		for key, value := range base.Credentials {
+			copyAccount.Credentials[key] = value
+		}
+		return &copyAccount
+	}
+	tests := []struct {
+		name   string
+		mutate func(*Account)
+		want   bool
+	}{
+		{name: "exact generation", want: true},
+		{name: "account id drift", mutate: func(account *Account) { account.ID++ }},
+		{name: "complete credential object drift", mutate: func(account *Account) {
+			account.Credentials["organization"] = "replacement"
+		}},
+		{name: "account version drift", mutate: func(account *Account) { account.UpdatedAt = account.UpdatedAt.Add(time.Microsecond) }},
+		{name: "disabled", mutate: func(account *Account) { account.Status = StatusDisabled }},
+		{name: "unschedulable", mutate: func(account *Account) { account.Schedulable = false }},
+		{name: "non Cindy identity", mutate: func(account *Account) { account.Credentials["base_url"] = "https://api.openai.com" }},
+		{name: "marker generation drift", mutate: func(account *Account) {
+			markedAt := updatedAt
+			account.CindyBalanceInsufficientAt = &markedAt
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			account := clone()
+			if tc.mutate != nil {
+				tc.mutate(account)
+			}
+			require.Equal(t, tc.want, CindyBalanceProbeReservationMatchesAccount(reservation, account))
+		})
+	}
 }
 
 func TestCindyBalanceProbeAccountUpdateAfterLoadStopsBeforeProbe(t *testing.T) {

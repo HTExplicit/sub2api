@@ -79,7 +79,7 @@ func TestCindyBalanceProbeTerraDispatchUsesAuthoritativeEpoch(t *testing.T) {
 		AccountUpdatedAt:    account.UpdatedAt,
 		WasMarked:           false,
 	}
-	changed, applied, err := repo.CompleteStage(ctx, lunaReservation, firstLease, "exact", "luna_exact", false)
+	changed, applied, err := repo.CompleteStage(ctx, lunaReservation, account, firstLease, "exact", "luna_exact", false)
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.True(t, applied)

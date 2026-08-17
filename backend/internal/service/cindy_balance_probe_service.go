@@ -301,7 +301,7 @@ func (s *CindyBalanceProbeService) waitJob(ctx context.Context, lostLease <-chan
 func (s *CindyBalanceProbeService) executeReservation(ctx context.Context, reservation *CindyBalanceProbeReservation, leaseToken string) bool {
 	account, eligible := s.loadReservationAccount(ctx, reservation)
 	if !eligible {
-		keepRunning, applied, err := s.repo.CompleteStage(ctx, reservation, leaseToken, "stale", "skipped_stale", false)
+		keepRunning, applied, err := s.repo.CompleteStage(ctx, reservation, account, leaseToken, "stale", "skipped_stale", false)
 		if err != nil {
 			slog.Error("cindy_balance_probe_stale_finalize_failed", "job_id", reservation.JobID, "error", err)
 		} else if !applied {
@@ -334,14 +334,7 @@ func (s *CindyBalanceProbeService) loadReservationAccount(ctx context.Context, r
 		return nil, false
 	}
 	account, err := s.accountRepo.GetByID(ctx, reservation.AccountID)
-	if err != nil || account == nil || account.Status != StatusActive || !account.Schedulable ||
-		!IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		return account, false
-	}
-	fingerprint, err := CindyAccountIdentityFingerprint(account.Platform, account.Type, account.Credentials)
-	if err != nil || fingerprint != reservation.IdentityFingerprint ||
-		!account.UpdatedAt.UTC().Truncate(time.Microsecond).Equal(reservation.AccountUpdatedAt.UTC().Truncate(time.Microsecond)) ||
-		(account.CindyBalanceInsufficientAt != nil) != reservation.WasMarked {
+	if err != nil || !CindyBalanceProbeReservationMatchesAccount(reservation, account) {
 		return account, false
 	}
 	return account, true
@@ -357,37 +350,38 @@ func (s *CindyBalanceProbeService) completeReservation(
 	switch outcome {
 	case cindyBalanceProbeSuccess:
 		if reservation.Stage == "luna" && reservation.WasMarked {
-			return s.finalizeRecovery(ctx, reservation, leaseToken)
+			return s.finalizeRecovery(ctx, reservation, account, leaseToken)
 		}
 		state := "healthy"
 		if reservation.Stage == "terra" {
 			state = "inconclusive"
 		}
-		return s.completeStage(ctx, reservation, leaseToken, "success", state, false)
+		return s.completeStage(ctx, reservation, account, leaseToken, "success", state, false)
 	case cindyBalanceProbeExhausted:
 		if reservation.Stage == "luna" {
 			if reservation.WasMarked {
-				return s.completeStage(ctx, reservation, leaseToken, "exact", "still_exhausted", false)
+				return s.completeStage(ctx, reservation, account, leaseToken, "exact", "still_exhausted", false)
 			}
-			return s.completeStage(ctx, reservation, leaseToken, "exact", "luna_exact", false)
+			return s.completeStage(ctx, reservation, account, leaseToken, "exact", "luna_exact", false)
 		}
 		return s.finalizeExhausted(ctx, reservation, account, leaseToken)
 	case cindyBalanceProbeNetworkFailure:
-		return s.completeStage(ctx, reservation, leaseToken, "network_error", "inconclusive", true)
+		return s.completeStage(ctx, reservation, account, leaseToken, "network_error", "inconclusive", true)
 	case cindyBalanceProbeServerFailure:
-		return s.completeStage(ctx, reservation, leaseToken, "server_error", "inconclusive", true)
+		return s.completeStage(ctx, reservation, account, leaseToken, "server_error", "inconclusive", true)
 	default:
-		return s.completeStage(ctx, reservation, leaseToken, "other_error", "inconclusive", false)
+		return s.completeStage(ctx, reservation, account, leaseToken, "other_error", "inconclusive", false)
 	}
 }
 
 func (s *CindyBalanceProbeService) completeStage(
 	ctx context.Context,
 	reservation *CindyBalanceProbeReservation,
+	accountSnapshot *Account,
 	leaseToken, outcome, state string,
 	networkFailure bool,
 ) bool {
-	keepRunning, applied, err := s.repo.CompleteStage(ctx, reservation, leaseToken, outcome, state, networkFailure)
+	keepRunning, applied, err := s.repo.CompleteStage(ctx, reservation, accountSnapshot, leaseToken, outcome, state, networkFailure)
 	if err != nil {
 		slog.Error("cindy_balance_probe_complete_failed", "job_id", reservation.JobID, "error", err)
 		return false
@@ -403,8 +397,13 @@ func (s *CindyBalanceProbeService) completeStage(
 	return keepRunning
 }
 
-func (s *CindyBalanceProbeService) finalizeRecovery(ctx context.Context, reservation *CindyBalanceProbeReservation, leaseToken string) bool {
-	recovered, err := s.repo.FinalizeRecovery(ctx, reservation, leaseToken, s.now().UTC())
+func (s *CindyBalanceProbeService) finalizeRecovery(
+	ctx context.Context,
+	reservation *CindyBalanceProbeReservation,
+	accountSnapshot *Account,
+	leaseToken string,
+) bool {
+	recovered, err := s.repo.FinalizeRecovery(ctx, reservation, accountSnapshot, leaseToken, s.now().UTC())
 	if err != nil {
 		slog.Error("cindy_balance_probe_recovery_failed", "job_id", reservation.JobID, "error", err)
 		return false
@@ -431,7 +430,7 @@ func (s *CindyBalanceProbeService) finalizeExhausted(
 	leaseToken string,
 ) bool {
 	if account == nil {
-		return s.completeStage(ctx, reservation, leaseToken, "stale", "skipped_stale", false)
+		return s.completeStage(ctx, reservation, nil, leaseToken, "stale", "skipped_stale", false)
 	}
 	state, err := s.repo.FinalizeExhausted(
 		ctx,
