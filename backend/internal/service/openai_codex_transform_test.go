@@ -1201,8 +1201,9 @@ func TestNormalizeOpenAIResponsesImageOnlyModel_PreservesExistingImageTool(t *te
 		"input": "draw a cat",
 		"tools": []any{
 			map[string]any{
-				"type":  "image_generation",
-				"model": "gpt-image-1.5",
+				"type":   "image_generation",
+				"model":  "gpt-image-1.5",
+				"action": "auto",
 			},
 		},
 		"tool_choice": "auto",
@@ -1219,6 +1220,7 @@ func TestNormalizeOpenAIResponsesImageOnlyModel_PreservesExistingImageTool(t *te
 	tool, ok := tools[0].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "gpt-image-1.5", tool["model"])
+	require.Equal(t, "auto", tool["action"])
 }
 
 func TestNormalizeOpenAIResponsesImageOnlyModelWithModel_UsesOriginalBeforeCindyMapping(t *testing.T) {
@@ -1299,22 +1301,28 @@ func TestResolveCindyResponsesImageTools_ValidatesAndMapsBeforeSelection(t *test
 	t.Parallel()
 
 	tests := []struct {
-		name      string
-		body      string
-		wantModel string
-		wantErr   string
-		modelErr  bool
-		unchanged bool
+		name             string
+		body             string
+		wantModel        string
+		wantAction       string
+		wantActionAbsent bool
+		wantCountAbsent  bool
+		wantErr          string
+		modelErr         bool
+		unchanged        bool
 	}{
 		{
-			name:      "empty model selects verified GPT default",
-			body:      `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation"}]}`,
-			wantModel: "openai/gpt-image-2",
+			name:             "empty model selects verified GPT default",
+			body:             `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation"}]}`,
+			wantModel:        "openai/gpt-image-2",
+			wantActionAbsent: true,
 		},
 		{
-			name:      "public GPT ID maps with verified controls",
-			body:      `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"gpt-image-2","size":"1024x1024","quality":"low","n":1}]}`,
-			wantModel: "openai/gpt-image-2",
+			name:             "public GPT ID maps with verified controls",
+			body:             `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"gpt-image-2","size":"1024x1024","quality":"low","n":1}]}`,
+			wantModel:        "openai/gpt-image-2",
+			wantActionAbsent: true,
+			wantCountAbsent:  true,
 		},
 		{
 			name:    "GPT rejects a second output",
@@ -1322,10 +1330,18 @@ func TestResolveCindyResponsesImageTools_ValidatesAndMapsBeforeSelection(t *test
 			wantErr: "between 1 and 1",
 		},
 		{
-			name:      "full Gemini ID remains stable",
-			body:      `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"google/gemini-3-pro-image","size":"1024x1024","quality":"low","n":1}]}`,
-			wantModel: "google/gemini-3-pro-image",
-			unchanged: true,
+			name:             "full Gemini ID removes unsupported count",
+			body:             `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"google/gemini-3-pro-image","size":"1024x1024","quality":"low","n":1}]}`,
+			wantModel:        "google/gemini-3-pro-image",
+			wantActionAbsent: true,
+			wantCountAbsent:  true,
+		},
+		{
+			name:       "explicit action remains stable",
+			body:       `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"openai/gpt-image-2","action":"auto"}]}`,
+			wantModel:  "openai/gpt-image-2",
+			wantAction: "auto",
+			unchanged:  true,
 		},
 		{
 			name:     "unknown image ID fails closed",
@@ -1377,6 +1393,15 @@ func TestResolveCindyResponsesImageTools_ValidatesAndMapsBeforeSelection(t *test
 			if test.wantModel != "" {
 				require.Equal(t, test.wantModel, gjson.GetBytes(resolved, "tools.0.model").String())
 			}
+			if test.wantAction != "" {
+				require.Equal(t, test.wantAction, gjson.GetBytes(resolved, "tools.0.action").String())
+			}
+			if test.wantActionAbsent {
+				require.False(t, gjson.GetBytes(resolved, "tools.0.action").Exists())
+			}
+			if test.wantCountAbsent {
+				require.False(t, gjson.GetBytes(resolved, "tools.0.n").Exists())
+			}
 		})
 	}
 }
@@ -1389,6 +1414,14 @@ func TestResolveCindyResponsesImageTools_TopLevelLiveIDNormalizesAndValidatesCon
 	))
 	require.NoError(t, err)
 	require.Equal(t, "gpt-image-2", gjson.GetBytes(resolved, "model").String())
+	require.False(t, gjson.GetBytes(resolved, "n").Exists())
+
+	resolved, err = ResolveCindyResponsesImageTools([]byte(
+		`{"model":"gpt-image-2","input":"draw","size":"1024x1024","quality":"low","n":1}`,
+	))
+	require.NoError(t, err)
+	require.Equal(t, "gpt-image-2", gjson.GetBytes(resolved, "model").String())
+	require.False(t, gjson.GetBytes(resolved, "n").Exists())
 
 	tests := []struct {
 		name string

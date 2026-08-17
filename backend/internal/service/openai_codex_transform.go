@@ -1108,6 +1108,8 @@ func mapCindyOpenAIResponsesImageModels(reqBody map[string]any, account *Account
 // image bridge and every nested image_generation tool. Strict groups call it
 // before selection; mixed groups call it again after selecting a Cindy account.
 // Omitting the tool model selects the one verified default.
+// The Images-compatible n=1 input is validated, then stripped because the
+// Responses image_generation tool has no output-count field.
 func ResolveCindyResponsesImageTools(body []byte) ([]byte, error) {
 	var request map[string]any
 	if err := json.Unmarshal(body, &request); err != nil {
@@ -1122,6 +1124,10 @@ func ResolveCindyResponsesImageTools(body []byte) ([]byte, error) {
 		}
 		if err := validateCindyResponsesImageToolControls("request", capability.PublicID, capability.Controls.Generation, request); err != nil {
 			return nil, err
+		}
+		if _, exists := request["n"]; exists {
+			delete(request, "n")
+			changed = true
 		}
 		if topLevelModel != capability.PublicID {
 			request["model"] = capability.PublicID
@@ -1167,6 +1173,10 @@ func ResolveCindyResponsesImageTools(body []byte) ([]byte, error) {
 		controls := capability.Controls.Generation
 		if err := validateCindyResponsesImageToolControls(fmt.Sprintf("tools[%d]", index), capability.PublicID, controls, tool); err != nil {
 			return nil, err
+		}
+		if _, exists := tool["n"]; exists {
+			delete(tool, "n")
+			changed = true
 		}
 		if current, _ := tool["model"].(string); current != capability.LiveUpstreamID {
 			tool["model"] = capability.LiveUpstreamID
