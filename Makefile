@@ -11,6 +11,9 @@ FRONTEND_CRITICAL_VITEST := \
 	src/views/user/__tests__/ChannelStatusView.mode.spec.ts \
 	src/components/user/profile/__tests__/ProfileInfoCard.spec.ts \
 	src/views/admin/__tests__/SettingsView.spec.ts \
+	src/components/account/__tests__/EditAccountModal.spec.ts \
+	src/components/account/__tests__/ModelWhitelistSelector.spec.ts \
+	src/composables/__tests__/useModelWhitelist.spec.ts \
 	src/components/layout/__tests__/AppSidebar.simple-mode.spec.ts \
 	src/features/cindy-group-split/__tests__/CindyGroupAuditDialog.spec.ts \
 	src/features/channel-monitor-v2/__tests__/designSystem.structure.spec.ts \

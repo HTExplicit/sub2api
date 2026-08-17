@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 
-const { updateAccountMock, checkMixedChannelRiskMock, authIsSimpleMode } = vi.hoisted(() => ({
+const { updateAccountMock, checkMixedChannelRiskMock, getAvailableModelsMock, authIsSimpleMode } = vi.hoisted(() => ({
   updateAccountMock: vi.fn(),
   checkMixedChannelRiskMock: vi.fn(),
+  getAvailableModelsMock: vi.fn(),
   authIsSimpleMode: { value: true }
 }))
 
@@ -28,7 +29,8 @@ vi.mock('@/api/admin', () => ({
   adminAPI: {
     accounts: {
       update: updateAccountMock,
-      checkMixedChannelRisk: checkMixedChannelRiskMock
+      checkMixedChannelRisk: checkMixedChannelRiskMock,
+      getAvailableModels: getAvailableModelsMock
     },
     settings: {
       getWebSearchEmulationConfig: vi.fn().mockResolvedValue({ enabled: false, providers: [] }),
@@ -73,12 +75,24 @@ const ModelWhitelistSelectorStub = defineComponent({
     modelValue: {
       type: Array,
       default: () => []
+    },
+    models: {
+      type: Array,
+      default: () => []
+    },
+    readonly: {
+      type: Boolean,
+      default: false
     }
   },
   emits: ['update:modelValue'],
   template: `
     <div>
+      <span v-if="readonly" data-testid="managed-model-selector">
+        {{ models.map((model) => model.id).join(',') }}
+      </span>
       <button
+        v-else
         type="button"
         data-testid="rewrite-to-snapshot"
         @click="$emit('update:modelValue', ['gpt-5.2-2025-12-11'])"
@@ -314,6 +328,8 @@ function mountModal(account = buildAccount()) {
 describe('EditAccountModal', () => {
   beforeEach(() => {
     authIsSimpleMode.value = true
+    getAvailableModelsMock.mockReset()
+    getAvailableModelsMock.mockResolvedValue([])
   })
 
   it('uses Cindy-safe defaults with the standard OpenAI option order', () => {
@@ -362,6 +378,172 @@ describe('EditAccountModal', () => {
     expect(alpha.element.options[0].value).toBe('direct')
     expect(cache.element.value).toBe('sha256_64')
     expect(cache.element.options[0].value).toBe('passthrough')
+  })
+
+  it('keeps the Cindy catalog read-only while preserving rollback mappings and custom overrides', async () => {
+    const cindy = buildAccount()
+    cindy.credentials.base_url = 'https://api.laxarouter.ai'
+    cindy.credentials.model_mapping = {
+      'gpt-5.6-luna': 'openai/gpt-5.6-luna',
+      'gpt-5.6-sol': 'openai/gpt-5.6-sol',
+      'gpt-5.6-terra': 'openai/gpt-5.6-terra',
+      'gpt-5.4-mini': 'openai/gpt-5.6-luna',
+      'gpt-5.4': 'custom/gpt-5.4',
+      'customer-latest': 'openai/gpt-5.6-sol'
+    }
+    cindy.extra = {}
+    getAvailableModelsMock.mockResolvedValue([
+      {
+        id: 'gpt-5.6-luna',
+        live_upstream_id: 'openai/gpt-5.6-luna',
+        display_name: 'GPT-5.6 Luna',
+        context_window: 1_050_000,
+        base_context_window: 1_050_000,
+        codex_context_window: 1_050_000,
+        max_output_tokens: 128_000,
+        endpoints: ['responses'],
+        source_revision: 'cindy-v0.1.52',
+        managed: true,
+        verified: true,
+        public_model: true
+      },
+      {
+        id: 'gpt-5.6-sol',
+        live_upstream_id: 'openai/gpt-5.6-sol',
+        display_name: 'GPT-5.6 Sol',
+        context_window: 372_000,
+        base_context_window: 1_050_000,
+        codex_context_window: 372_000,
+        max_output_tokens: 128_000,
+        endpoints: ['responses'],
+        source_revision: 'cindy-v0.1.52',
+        managed: true,
+        verified: true,
+        public_model: true
+      },
+      {
+        id: 'gpt-5.6-terra',
+        live_upstream_id: 'openai/gpt-5.6-terra',
+        display_name: 'GPT-5.6 Terra',
+        context_window: 372_000,
+        base_context_window: 1_050_000,
+        codex_context_window: 372_000,
+        max_output_tokens: 128_000,
+        endpoints: ['responses'],
+        source_revision: 'cindy-v0.1.52',
+        managed: true,
+        verified: true,
+        public_model: true
+      },
+      {
+        id: 'gpt-5.4',
+        live_upstream_id: 'openai/gpt-5.6-sol',
+        display_name: 'GPT-5.4 compatibility alias',
+        context_window: 372_000,
+        base_context_window: 1_050_000,
+        codex_context_window: 372_000,
+        max_output_tokens: 128_000,
+        endpoints: ['responses'],
+        source_revision: 'cindy-v0.1.52',
+        alias_target: 'gpt-5.6-sol',
+        managed: true
+      },
+      {
+        id: 'gpt-5.4-mini',
+        live_upstream_id: 'openai/gpt-5.6-luna',
+        display_name: 'GPT-5.4 Mini compatibility alias',
+        context_window: 1_050_000,
+        base_context_window: 1_050_000,
+        codex_context_window: 1_050_000,
+        max_output_tokens: 128_000,
+        endpoints: ['responses'],
+        source_revision: 'cindy-v0.1.52',
+        alias_target: 'gpt-5.6-luna',
+        managed: true
+      }
+    ])
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(cindy)
+
+    const wrapper = mountModal(cindy)
+    await flushPromises()
+
+    expect(getAvailableModelsMock).toHaveBeenCalledWith(cindy.id)
+    const whitelistTab = wrapper
+      .findAll('button')
+      .find(button => button.text().includes('admin.accounts.modelWhitelist'))
+    expect(whitelistTab).toBeDefined()
+    await whitelistTab!.trigger('click')
+    expect(wrapper.get('[data-testid="managed-model-selector"]').text()).toContain('gpt-5.6-sol')
+    expect(
+      wrapper.findAllComponents(ModelWhitelistSelectorStub).filter(selector => !selector.props('readonly'))
+    ).toHaveLength(0)
+
+    const mappingTab = wrapper
+      .findAll('button')
+      .find(button => button.text().includes('admin.accounts.modelMapping'))
+    expect(mappingTab).toBeDefined()
+    await mappingTab!.trigger('click')
+
+    const managedAlias = wrapper
+      .findAll('[data-testid="cindy-managed-alias"]')
+      .find(alias => alias.text().includes('gpt-5.4-mini'))
+    expect(managedAlias).toBeDefined()
+    expect(managedAlias!.text()).toContain('gpt-5.4-mini')
+    expect(managedAlias!.text()).toContain('openai/gpt-5.6-luna')
+
+    const editableMappingInputs = wrapper
+      .get('[data-testid="editable-model-mappings"]')
+      .findAll<HTMLInputElement>('input')
+    expect(editableMappingInputs.map(input => input.element.value)).toEqual([
+      'gpt-5.4',
+      'custom/gpt-5.4',
+      'customer-latest',
+      'openai/gpt-5.6-sol'
+    ])
+    await editableMappingInputs[1].setValue('custom/gpt-5.4-v2')
+
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.model_mapping).toEqual({
+      'gpt-5.6-luna': 'openai/gpt-5.6-luna',
+      'gpt-5.6-sol': 'openai/gpt-5.6-sol',
+      'gpt-5.6-terra': 'openai/gpt-5.6-terra',
+      'gpt-5.4-mini': 'openai/gpt-5.6-luna',
+      'gpt-5.4': 'custom/gpt-5.4-v2',
+      'customer-latest': 'openai/gpt-5.6-sol'
+    })
+  })
+
+  it('keeps Cindy catalog loading and failure states bounded to the managed projection', async () => {
+    const cindy = buildAccount()
+    cindy.credentials.base_url = 'https://api.laxarouter.ai'
+    cindy.extra = {}
+    let rejectModels: (reason?: unknown) => void = () => undefined
+    getAvailableModelsMock.mockReturnValue(new Promise((_, reject) => {
+      rejectModels = reject
+    }))
+
+    const wrapper = mountModal(cindy)
+    expect(wrapper.text()).toContain('admin.accounts.cindyCatalogLoading')
+    expect(wrapper.get('button[form="edit-account-form"]').attributes('disabled')).toBeDefined()
+
+    rejectModels(new Error('catalog unavailable'))
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.accounts.cindyCatalogLoadFailed')
+    expect(wrapper.get('button[form="edit-account-form"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('[data-testid="model-whitelist-value"]').exists()).toBe(false)
+
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(updateAccountMock.mock.calls.at(-1)?.[1]?.credentials?.model_mapping).toEqual({
+      'gpt-5.2': 'gpt-5.2'
+    })
   })
 
   it('reopening the same account rehydrates the OpenAI whitelist from props', async () => {

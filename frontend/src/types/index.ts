@@ -887,6 +887,23 @@ export interface ClaudeModel {
   created_at: string
 }
 
+export interface AccountAvailableModel extends ClaudeModel {
+  live_upstream_id?: string
+  description?: string
+  context_window?: number
+  base_context_window?: number
+  codex_context_window?: number
+  max_output_tokens?: number
+  reasoning_efforts?: string[]
+  default_reasoning_effort?: string
+  endpoints?: string[]
+  source_revision?: string
+  verified?: boolean
+  alias_target?: string
+  managed?: boolean
+  public_model?: boolean
+}
+
 export interface Proxy {
   id: number
   name: string

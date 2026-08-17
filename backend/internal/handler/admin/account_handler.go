@@ -2667,6 +2667,12 @@ func (h *AccountHandler) SetSchedulable(c *gin.Context) {
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
 }
 
+type cindyAdminAvailableModel struct {
+	service.CindyCatalogModel
+	Type      string `json:"type"`
+	CreatedAt string `json:"created_at"`
+}
+
 // GetAvailableModels handles getting available models for an account
 // GET /api/v1/admin/accounts/:id/models
 func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
@@ -2684,6 +2690,21 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 
 	// Handle OpenAI accounts
 	if account.IsOpenAI() {
+		if service.IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+			catalog := service.CindyCatalogModels()
+			catalog = append(catalog, service.CindyManagedModelMappings()...)
+			models := make([]cindyAdminAvailableModel, 0, len(catalog))
+			for _, model := range catalog {
+				models = append(models, cindyAdminAvailableModel{
+					CindyCatalogModel: model,
+					Type:              "model",
+					CreatedAt:         "",
+				})
+			}
+			response.Success(c, models)
+			return
+		}
+
 		// OpenAI 自动透传会绕过常规模型改写，测试/模型列表也应回落到默认模型集。
 		if account.IsOpenAIPassthroughEnabled() {
 			response.Success(c, openai.DefaultModels)

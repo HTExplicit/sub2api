@@ -562,6 +562,175 @@ func TestProjectCindyCodexModelsManifestMapsLiveAndHiddenAliases(t *testing.T) {
 	require.NotContains(t, string(projected), "gemini-3-pro-image")
 }
 
+func TestBuildCindyCodexModelsManifestMatchesRustV01460ModelInfoContract(t *testing.T) {
+	if !runCindyCodexCatalogEnabledTest(t) {
+		return
+	}
+
+	manifest, err := BuildCindyCodexModelsManifest("")
+	require.NoError(t, err)
+	require.NotEmpty(t, manifest.ETag)
+
+	var envelope struct {
+		Models []map[string]json.RawMessage `json:"models"`
+	}
+	require.NoError(t, json.Unmarshal(manifest.Body, &envelope))
+	require.Len(t, envelope.Models, len(CindyCodexPublicModelIDs()))
+
+	// These are the fields without serde defaults in the official
+	// openai/codex rust-v0.146.0 ModelInfo contract.
+	requiredFields := []string{
+		"slug", "display_name", "description", "default_reasoning_level",
+		"supported_reasoning_levels", "shell_type", "visibility", "supported_in_api",
+		"priority", "additional_speed_tiers", "service_tiers", "default_service_tier",
+		"availability_nux", "upgrade", "base_instructions", "model_messages",
+		"include_skills_usage_instructions", "supports_reasoning_summary_parameter",
+		"default_reasoning_summary", "support_verbosity", "default_verbosity",
+		"apply_patch_tool_type", "web_search_tool_type", "truncation_policy",
+		"supports_parallel_tool_calls", "supports_image_detail_original",
+		"context_window", "max_context_window", "auto_compact_token_limit", "comp_hash",
+		"effective_context_window_percent", "experimental_supported_tools",
+		"input_modalities", "supports_search_tool", "use_responses_lite",
+		"auto_review_model_override", "tool_mode", "multi_agent_version",
+	}
+	bySlug := make(map[string]map[string]json.RawMessage, len(envelope.Models))
+	for _, model := range envelope.Models {
+		for _, field := range requiredFields {
+			_, ok := model[field]
+			require.Truef(t, ok, "missing rust-v0.146.0 ModelInfo field %q in %s", field, model["slug"])
+		}
+		var slug, shellType, visibility string
+		var supportedInAPI, includeSkills, supportsReasoningSummary bool
+		var supportVerbosity, supportsParallel, supportsImageDetail bool
+		var supportsSearch, useResponsesLite bool
+		var priority, effectiveContextPercent int
+		var baseInstructions, defaultReasoningSummary, webSearchToolType string
+		var additionalSpeedTiers, experimentalTools, inputModalities []string
+		var serviceTiers []struct {
+			ID          string `json:"id"`
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		}
+		var description, defaultReasoningLevel *string
+		var supportedReasoningLevels []struct {
+			Effort      string `json:"effort"`
+			Description string `json:"description"`
+		}
+		var contextWindow, maxContextWindow *int
+		require.NoError(t, json.Unmarshal(model["slug"], &slug))
+		require.NoError(t, json.Unmarshal(model["shell_type"], &shellType))
+		require.NoError(t, json.Unmarshal(model["visibility"], &visibility))
+		require.NoError(t, json.Unmarshal(model["supported_in_api"], &supportedInAPI))
+		require.NoError(t, json.Unmarshal(model["priority"], &priority))
+		require.NoError(t, json.Unmarshal(model["description"], &description))
+		require.NoError(t, json.Unmarshal(model["default_reasoning_level"], &defaultReasoningLevel))
+		require.NoError(t, json.Unmarshal(model["supported_reasoning_levels"], &supportedReasoningLevels))
+		require.NoError(t, json.Unmarshal(model["additional_speed_tiers"], &additionalSpeedTiers))
+		require.NoError(t, json.Unmarshal(model["service_tiers"], &serviceTiers))
+		require.NoError(t, json.Unmarshal(model["base_instructions"], &baseInstructions))
+		require.NoError(t, json.Unmarshal(model["include_skills_usage_instructions"], &includeSkills))
+		require.NoError(t, json.Unmarshal(model["supports_reasoning_summary_parameter"], &supportsReasoningSummary))
+		require.NoError(t, json.Unmarshal(model["default_reasoning_summary"], &defaultReasoningSummary))
+		require.NoError(t, json.Unmarshal(model["support_verbosity"], &supportVerbosity))
+		require.NoError(t, json.Unmarshal(model["web_search_tool_type"], &webSearchToolType))
+		require.NoError(t, json.Unmarshal(model["supports_parallel_tool_calls"], &supportsParallel))
+		require.NoError(t, json.Unmarshal(model["supports_image_detail_original"], &supportsImageDetail))
+		require.NoError(t, json.Unmarshal(model["context_window"], &contextWindow))
+		require.NoError(t, json.Unmarshal(model["max_context_window"], &maxContextWindow))
+		require.NoError(t, json.Unmarshal(model["effective_context_window_percent"], &effectiveContextPercent))
+		require.NoError(t, json.Unmarshal(model["experimental_supported_tools"], &experimentalTools))
+		require.NoError(t, json.Unmarshal(model["input_modalities"], &inputModalities))
+		require.NoError(t, json.Unmarshal(model["supports_search_tool"], &supportsSearch))
+		require.NoError(t, json.Unmarshal(model["use_responses_lite"], &useResponsesLite))
+		require.Equal(t, "shell_command", shellType)
+		require.Equal(t, "list", visibility)
+		require.True(t, supportedInAPI)
+		require.Positive(t, priority)
+		require.Empty(t, additionalSpeedTiers)
+		require.Empty(t, serviceTiers)
+		allowedEfforts := []string{"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}
+		if defaultReasoningLevel != nil {
+			require.Contains(t, allowedEfforts, *defaultReasoningLevel)
+		}
+		for _, effort := range supportedReasoningLevels {
+			require.Contains(t, allowedEfforts, effort.Effort)
+			require.NotEmpty(t, effort.Description)
+		}
+		require.NotEmpty(t, baseInstructions)
+		require.False(t, includeSkills)
+		require.True(t, supportsReasoningSummary)
+		require.Equal(t, "auto", defaultReasoningSummary)
+		require.False(t, supportVerbosity)
+		require.Equal(t, "text", webSearchToolType)
+		require.False(t, supportsParallel)
+		require.False(t, supportsImageDetail)
+		require.Equal(t, contextWindow, maxContextWindow)
+		require.Equal(t, 95, effectiveContextPercent)
+		require.Empty(t, experimentalTools)
+		require.NotEmpty(t, inputModalities)
+		for _, modality := range inputModalities {
+			require.Contains(t, []string{"text", "image", "audio"}, modality)
+		}
+		require.False(t, supportsSearch)
+		require.False(t, useResponsesLite)
+		for _, nullField := range []string{
+			"default_service_tier", "availability_nux", "upgrade", "model_messages",
+			"default_verbosity", "apply_patch_tool_type", "auto_compact_token_limit",
+			"comp_hash", "auto_review_model_override", "tool_mode", "multi_agent_version",
+		} {
+			require.JSONEqf(t, "null", string(model[nullField]), "field %s must be explicit null", nullField)
+		}
+		var truncation struct {
+			Mode  string `json:"mode"`
+			Limit int64  `json:"limit"`
+		}
+		require.NoError(t, json.Unmarshal(model["truncation_policy"], &truncation))
+		require.Contains(t, []string{"bytes", "tokens"}, truncation.Mode)
+		require.Positive(t, truncation.Limit)
+		bySlug[slug] = model
+	}
+
+	require.NotContains(t, bySlug, "gpt-5.4")
+	require.NotContains(t, bySlug, "gpt-5.4-mini")
+	require.NotContains(t, bySlug, "openai/gpt-5.6-sol")
+	require.NotContains(t, bySlug, "deepseek-v4-pro")
+
+	assertCodexModel := func(slug string, contextWindow int, defaultEffort string, efforts []string, truncationMode string) {
+		t.Helper()
+		model := bySlug[slug]
+		require.NotNil(t, model)
+		var gotContext, gotMaxContext int
+		var gotDefault string
+		var gotEfforts []struct {
+			Effort      string `json:"effort"`
+			Description string `json:"description"`
+		}
+		require.NoError(t, json.Unmarshal(model["context_window"], &gotContext))
+		require.NoError(t, json.Unmarshal(model["max_context_window"], &gotMaxContext))
+		require.NoError(t, json.Unmarshal(model["default_reasoning_level"], &gotDefault))
+		require.NoError(t, json.Unmarshal(model["supported_reasoning_levels"], &gotEfforts))
+		require.Equal(t, contextWindow, gotContext)
+		require.Equal(t, contextWindow, gotMaxContext)
+		require.NotContains(t, model, "max_output_tokens")
+		require.Equal(t, defaultEffort, gotDefault)
+		gotEffortNames := make([]string, 0, len(gotEfforts))
+		for _, effort := range gotEfforts {
+			require.NotEmpty(t, effort.Description)
+			gotEffortNames = append(gotEffortNames, effort.Effort)
+		}
+		require.Equal(t, efforts, gotEffortNames)
+		var truncation cindyCodexTruncationPolicy
+		require.NoError(t, json.Unmarshal(model["truncation_policy"], &truncation))
+		require.Equal(t, truncationMode, truncation.Mode)
+		require.Equal(t, int64(10000), truncation.Limit)
+	}
+	assertCodexModel("gpt-5.6-luna", 1050000, "high", []string{"low", "medium", "high", "xhigh", "max"}, "tokens")
+	assertCodexModel("gpt-5.6-sol", 372000, "high", []string{"low", "medium", "high", "xhigh", "max", "ultra"}, "tokens")
+	assertCodexModel("gpt-5.6-terra", 372000, "high", []string{"low", "medium", "high", "xhigh", "max", "ultra"}, "tokens")
+	assertCodexModel("grok-4.5", 500000, "high", []string{"low", "medium", "high"}, "bytes")
+	assertCodexModel("glm-5.2", 1000000, "max", []string{"minimal", "high", "max"}, "bytes")
+}
+
 func TestMergeCindyCodexModelsManifestPreservesOrdinaryKnownModelIDs(t *testing.T) {
 	if !runCindyCodexCatalogEnabledTest(t) {
 		return

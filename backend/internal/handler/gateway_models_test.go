@@ -35,6 +35,9 @@ type gatewayModelItemForTest struct {
 	SupportsReasoningEffort bool                                  `json:"supportsReasoningEffort"`
 	ReasoningEffort         string                                `json:"reasoningEffort"`
 	ReasoningEfforts        []gatewayReasoningEffortOptionForTest `json:"reasoningEfforts"`
+	ContextWindow           int                                   `json:"context_window"`
+	MaxInputTokens          int                                   `json:"max_input_tokens"`
+	MaxOutputTokens         int                                   `json:"max_output_tokens"`
 }
 
 type gatewayReasoningEffortOptionForTest struct {
@@ -124,6 +127,36 @@ func TestGatewayModels_StrictCindyUsesVerifiedPublicCatalog(t *testing.T) {
 	require.NotContains(t, modelIDsForTest(got.Data), "openai/gpt-5.6-sol")
 	require.NotContains(t, modelIDsForTest(got.Data), "deepseek-v4-pro")
 	require.NotContains(t, modelIDsForTest(got.Data), "seed-2.1-pro")
+	byID := make(map[string]gatewayModelItemForTest, len(got.Data))
+	for _, model := range got.Data {
+		byID[model.ID] = model
+	}
+	require.Equal(t, 1050000, byID["gpt-5.6-luna"].ContextWindow)
+	require.Equal(t, 1050000, byID["gpt-5.6-luna"].MaxInputTokens)
+	require.Equal(t, 128000, byID["gpt-5.6-luna"].MaxOutputTokens)
+	require.Equal(t, 1050000, byID["gpt-5.6-sol"].ContextWindow)
+	require.Equal(t, 1050000, byID["gpt-5.6-sol"].MaxInputTokens)
+	require.Equal(t, 1050000, byID["gpt-5.6-terra"].ContextWindow)
+	require.Equal(t, 1050000, byID["gpt-5.6-terra"].MaxInputTokens)
+	require.Equal(t, 1000000, byID["claude-opus-4-8"].ContextWindow)
+	require.Equal(t, 1000000, byID["claude-opus-5"].ContextWindow)
+	require.Equal(t, 1000000, byID["claude-sonnet-5"].ContextWindow)
+	require.Equal(t, 262144, byID["hy3"].ContextWindow)
+	require.Equal(t, 500000, byID["grok-4.5"].ContextWindow)
+	require.Equal(t, 1000000, byID["glm-5.2"].ContextWindow)
+}
+
+func TestWriteOpenAIModelsListOmitsCindyMetadataForOrdinaryProviders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	writeOpenAIModelsList(c, []string{"gpt-5.6-sol", "ordinary-model"})
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotContains(t, rec.Body.String(), "context_window")
+	require.NotContains(t, rec.Body.String(), "max_input_tokens")
+	require.NotContains(t, rec.Body.String(), "max_output_tokens")
 }
 
 func TestGatewayModels_MixedGroupMergesOnlyVerifiedPublicCindyModels(t *testing.T) {

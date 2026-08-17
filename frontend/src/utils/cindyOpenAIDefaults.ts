@@ -1,3 +1,5 @@
+import type { AccountAvailableModel } from '@/types'
+
 export const CINDY_OPENAI_DEFAULTS = {
   responsesMode: 'force_responses',
   alphaSearchMode: 'responses_web_search',
@@ -32,4 +34,31 @@ export function isCindyOpenAIAPIKeyAccount(account: CindyAccountLike | null | un
   } catch {
     return false
   }
+}
+
+const CINDY_ACCOUNT_TEST_ENDPOINTS = new Set(['responses', 'images.generations'])
+
+export function filterCindyAccountTestModels(
+  account: CindyAccountLike | null | undefined,
+  models: AccountAvailableModel[]
+): AccountAvailableModel[] {
+  if (!isCindyOpenAIAPIKeyAccount(account)) return models
+
+  return models.filter(model =>
+    model.managed === true &&
+    model.verified === true &&
+    model.endpoints?.some(endpoint => CINDY_ACCOUNT_TEST_ENDPOINTS.has(endpoint)) === true
+  )
+}
+
+export function pickCindyAccountTestDefault(
+  account: CindyAccountLike | null | undefined,
+  models: AccountAvailableModel[]
+): AccountAvailableModel | undefined {
+  if (!isCindyOpenAIAPIKeyAccount(account)) return undefined
+
+  const responsesModels = models.filter(model => model.endpoints?.includes('responses'))
+  return responsesModels.find(model => model.id === 'gpt-5.6-luna') ||
+    responsesModels.find(model => model.id === 'gpt-5.6-sol') ||
+    responsesModels[0]
 }

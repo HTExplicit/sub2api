@@ -21,6 +21,21 @@ type availableModelsAdminService struct {
 	account service.Account
 }
 
+type managedAvailableModel struct {
+	ID                 string   `json:"id"`
+	Type               string   `json:"type"`
+	CreatedAt          string   `json:"created_at"`
+	LiveUpstreamID     string   `json:"live_upstream_id"`
+	ContextWindow      int      `json:"context_window"`
+	BaseContextWindow  int      `json:"base_context_window"`
+	CodexContextWindow int      `json:"codex_context_window"`
+	MaxOutputTokens    int      `json:"max_output_tokens"`
+	Endpoints          []string `json:"endpoints"`
+	SourceRevision     string   `json:"source_revision"`
+	AliasTarget        string   `json:"alias_target"`
+	Managed            bool     `json:"managed"`
+}
+
 func (s *availableModelsAdminService) GetAccount(_ context.Context, id int64) (*service.Account, error) {
 	if s.account.ID == id {
 		acc := s.account
@@ -243,6 +258,66 @@ func TestAccountHandlerGetAvailableModels_OpenAIAPIKeyDefaultsToConcreteGPT56Sol
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.NotEmpty(t, resp.Data)
 	require.Equal(t, "gpt-5.6-sol", resp.Data[0].ID)
+}
+
+func TestAccountHandlerGetAvailableModels_CindyUsesManagedCatalogInsteadOfStoredMapping(t *testing.T) {
+	svc := &availableModelsAdminService{
+		stubAdminService: newStubAdminService(),
+		account: service.Account{
+			ID:       47,
+			Name:     "cindy-openai-apikey",
+			Platform: service.PlatformOpenAI,
+			Type:     service.AccountTypeAPIKey,
+			Status:   service.StatusActive,
+			Credentials: map[string]any{
+				"api_key":  "must-not-leak",
+				"base_url": "https://api.laxarouter.ai",
+				"model_mapping": map[string]any{
+					"legacy-only": "upstream/legacy-only",
+				},
+			},
+		},
+	}
+	router := setupAvailableModelsRouter(svc)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/47/models", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp struct {
+		Data []managedAvailableModel `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Len(t, resp.Data, 25, "23 fixed catalog candidates and two compatibility aliases")
+
+	byID := make(map[string]managedAvailableModel, len(resp.Data))
+	for _, model := range resp.Data {
+		require.True(t, model.Managed)
+		require.Equal(t, "model", model.Type)
+		require.NotEmpty(t, model.SourceRevision)
+		byID[model.ID] = model
+	}
+
+	require.NotContains(t, byID, "legacy-only")
+	sol := byID["gpt-5.6-sol"]
+	require.Equal(t, "openai/gpt-5.6-sol", sol.LiveUpstreamID)
+	require.Equal(t, 372000, sol.ContextWindow)
+	require.Equal(t, 1050000, sol.BaseContextWindow)
+	require.Equal(t, 372000, sol.CodexContextWindow)
+	require.Equal(t, 128000, sol.MaxOutputTokens)
+	require.Contains(t, sol.Endpoints, "responses")
+
+	mini := byID["gpt-5.4-mini"]
+	require.Equal(t, "gpt-5.6-luna", mini.AliasTarget)
+	require.Equal(t, "openai/gpt-5.6-luna", mini.LiveUpstreamID)
+	require.Equal(t, 1050000, mini.ContextWindow)
+	require.Equal(t, 128000, mini.MaxOutputTokens)
+
+	require.NotContains(t, rec.Body.String(), "must-not-leak")
+	require.NotContains(t, rec.Body.String(), "api_key")
+	require.NotContains(t, rec.Body.String(), "credentials")
 }
 
 func TestAccountHandlerGetAvailableModels_OpenAISparkShadowReturnsMappingModels(t *testing.T) {

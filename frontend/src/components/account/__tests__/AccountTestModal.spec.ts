@@ -189,4 +189,42 @@ describe('AccountTestModal', () => {
 
     expect(wrapper.text()).toContain('已通过 /v1/chat/completions 验证')
   })
+
+  it('filters the Cindy management catalog to testable endpoints and defaults to Luna', async () => {
+    getAvailableModelsMock.mockResolvedValue([
+      { id: 'cindy/auto-review', managed: true, verified: true, endpoints: ['cindy.reviews'] },
+      { id: 'candidate-unverified', managed: true, verified: false, endpoints: ['responses'] },
+      { id: 'claude-sonnet-5', managed: true, verified: true, endpoints: ['messages'] },
+      { id: 'gpt-5.6-sol', managed: true, verified: true, endpoints: ['responses'] },
+      { id: 'gpt-5.6-luna', managed: true, verified: true, endpoints: ['responses'] }
+    ])
+    const cindy = {
+      ...buildAccount(),
+      type: 'apikey',
+      credentials: { base_url: 'https://api.laxarouter.ai' }
+    }
+
+    const wrapper = mount(AccountTestModal, {
+      props: {
+        show: false,
+        account: cindy
+      },
+      global: {
+        stubs: {
+          BaseDialog: BaseDialogStub,
+          Select: SelectStub,
+          TextArea: TextAreaStub,
+          Icon: true
+        }
+      }
+    })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    expect((wrapper.vm as any).availableModels.map((item: { id: string }) => item.id)).toEqual([
+      'gpt-5.6-sol',
+      'gpt-5.6-luna'
+    ])
+    expect((wrapper.vm as any).selectedModelId).toBe('gpt-5.6-luna')
+  })
 })
