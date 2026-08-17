@@ -167,6 +167,23 @@ type CindyBalanceProbeReservation struct {
 	LunaAt              *time.Time
 }
 
+// CindyBalanceProbeReservationMatchesAccount verifies that account is the
+// exact active Cindy identity generation reserved by the durable job. The
+// fingerprint covers the complete credential object, not only the API key or
+// base URL.
+func CindyBalanceProbeReservationMatchesAccount(reservation *CindyBalanceProbeReservation, account *Account) bool {
+	if reservation == nil || account == nil || account.ID != reservation.AccountID ||
+		account.Status != StatusActive || !account.Schedulable ||
+		!IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) ||
+		!account.UpdatedAt.UTC().Truncate(time.Microsecond).Equal(
+			reservation.AccountUpdatedAt.UTC().Truncate(time.Microsecond),
+		) || (account.CindyBalanceInsufficientAt != nil) != reservation.WasMarked {
+		return false
+	}
+	fingerprint, err := CindyAccountIdentityFingerprint(account.Platform, account.Type, account.Credentials)
+	return err == nil && fingerprint == reservation.IdentityFingerprint
+}
+
 type CindyBalanceProbeRepository interface {
 	Preview(ctx context.Context, scope CindyBalanceProbeScope, rateRPS float64) (*CindyBalanceProbePreview, error)
 	CreateJob(ctx context.Context, requestedBy *int64, scope CindyBalanceProbeScope, rateRPS float64, expectedCount int, expectedFingerprint string) (*CindyBalanceProbeJob, error)
@@ -179,9 +196,9 @@ type CindyBalanceProbeRepository interface {
 	RecoverInterruptedItems(ctx context.Context, jobID int64, leaseToken string) error
 	ReserveNext(ctx context.Context, jobID int64, leaseToken string, now time.Time, confirmationCutoff time.Time) (*CindyBalanceProbeReservation, time.Duration, error)
 	ValidateReservationForSend(ctx context.Context, reservation *CindyBalanceProbeReservation, account *Account, leaseToken string) (bool, error)
-	CompleteStage(ctx context.Context, reservation *CindyBalanceProbeReservation, leaseToken, outcome, finalState string, networkFailure bool) (keepRunning bool, applied bool, err error)
+	CompleteStage(ctx context.Context, reservation *CindyBalanceProbeReservation, accountSnapshot *Account, leaseToken, outcome, finalState string, networkFailure bool) (keepRunning bool, applied bool, err error)
 	FinalizeExhausted(ctx context.Context, reservation *CindyBalanceProbeReservation, leaseToken string, observedAt time.Time, confirmationWindow time.Duration) (string, error)
-	FinalizeRecovery(ctx context.Context, reservation *CindyBalanceProbeReservation, leaseToken string, observedAt time.Time) (bool, error)
+	FinalizeRecovery(ctx context.Context, reservation *CindyBalanceProbeReservation, accountSnapshot *Account, leaseToken string, observedAt time.Time) (bool, error)
 	FinishIfDone(ctx context.Context, jobID int64, leaseToken string) (bool, error)
 	SetRate(ctx context.Context, jobID int64, rateRPS float64) (*CindyBalanceProbeJob, error)
 	Pause(ctx context.Context, jobID int64) (*CindyBalanceProbeJob, error)

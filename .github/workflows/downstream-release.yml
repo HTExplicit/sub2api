@@ -53,10 +53,10 @@ jobs:
           go mod verify
           go test -p=1 -tags unit ./internal/service ./internal/handler -run 'Test.*(BusinessSystemPrompt|RemoteSkill|GPT56|Cindy|CompatibilityModes|AlphaSearch)' -count=1
           go test -p=1 ./internal/handler/admin ./internal/server/middleware -run 'Test.*(SystemPrompt|RemoteSkill|Audit)' -count=1
-          go test -p=1 -tags unit ./internal/repository ./internal/handler/admin ./internal/handler ./internal/service -run 'Test.*(CindyBalanceProbe|CindyGroupSplit|ImageStudioEligibleKeys|CindyCompatibility|TurnStateCommits|SchedulerCache|KeepsCindyRoutingIdentity)' -count=1
+          go test -p=1 -tags unit ./internal/repository ./internal/handler/admin ./internal/handler ./internal/service -run 'Test.*(CindyBalanceProbe|CindyGroupSplit|ImageStudioEligibleKeys|CindyCompatibility|TurnStateCommits|SchedulerCache|KeepsCindyRoutingIdentity|StrictCindyGroup|MaterializesCindyIdentity|DisabledOrdinaryMember|SkipsCindyAggregate|GatewayModelCapabilities)' -count=1
           go test -p=1 -tags unit ./migrations -run 'Test.*(BusinessSystemPromptRemoteSkill|BusinessSystemPromptCodexSkillHybrid|BusinessSystemPromptManagedSource|RemoteSkillRegistry|RemoteSkillPaired|Migration207|Migration208|Migration209|Migration210|Migration211|Migration213|Migration222|Migration223|Migration224)' -count=1
           go test -p=1 -tags integration ./migrations -run '^TestCindy(OpenAIDefaults|PromptCacheHash|AlphaSearchBridge|BalanceMarkerReset|BalanceMarkerRestore|BalanceConfirmationReset)MigrationIsStrictAndIdempotent$' -count=1
-          go test -p=1 -tags integration ./internal/repository -run '^Test(CindyGroupSplitPreviewDriftAndAtomicCommit|CindyBalanceProbeTerraDispatchUsesAuthoritativeEpoch|CindyBalanceProbeFinalize(ExhaustedCommitsMarkerItemAndOutbox|RecoveryCommitsMarkerItemAndOutbox|RollsBackWhenOutboxInsertFails))$' -count=1
+          go test -p=1 -tags integration ./internal/repository -run '^Test(CindyGroupSplit(PreviewDriftAndAtomicCommit|RollsBackAllWritesWhenOutboxInsertFails)|ClassifyStrictCindyGroupUsesAllNonDeletedMembersAndOpenAIGroup|CindyBalanceProbe)' -count=1
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 9.15.9
@@ -81,8 +81,10 @@ jobs:
             src/api/__tests__/imageStudio.spec.ts \
             src/api/__tests__/cindyBalanceProbe.spec.ts \
             src/api/__tests__/admin.groups.cindy-split.spec.ts \
+            src/features/cindy-group-split/__tests__/CindyGroupAuditDialog.spec.ts \
             src/i18n/__tests__/cindyProbeLocales.spec.ts \
             src/components/layout/__tests__/AppSidebar.spec.ts \
+            src/components/layout/__tests__/AppSidebar.simple-mode.spec.ts \
             src/views/admin/__tests__/AccountsView.console.spec.ts \
             src/views/admin/__tests__/GroupsView.columnSettings.spec.ts \
             src/views/user/__tests__/ImageStudioView.spec.ts \

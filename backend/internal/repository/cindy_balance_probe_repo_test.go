@@ -83,7 +83,7 @@ func TestCindyBalanceProbeRepositoryLatestByAccountIDs(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	now := time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
-	mock.ExpectQuery(`SELECT DISTINCT ON \(account_id\)[\s\S]+COALESCE\(NULLIF\(final_outcome, ''\), state\) AS outcome[\s\S]+WHERE account_id = ANY\(\$1\)[\s\S]+ORDER BY account_id, COALESCE\(finished_at, updated_at\) DESC`).
+	mock.ExpectQuery(`SELECT DISTINCT ON \(account_id\)[\s\S]+state AS outcome[\s\S]+WHERE account_id = ANY\(\$1\)[\s\S]+ORDER BY account_id, COALESCE\(finished_at, updated_at\) DESC`).
 		WithArgs("{11,22}").
 		WillReturnRows(sqlmock.NewRows([]string{"account_id", "job_id", "outcome", "checked_at"}).
 			AddRow(int64(11), int64(101), "healthy", now).
@@ -345,8 +345,28 @@ func TestCindyBalanceProbeRepositoryValidateReservationRejectsOldClaimWithoutWri
 }
 
 func TestCindyBalanceProbeRepositoryCompleteStageDistinguishesPauseFromLostAuthority(t *testing.T) {
+	updatedAt := time.Date(2026, 8, 17, 5, 0, 0, 0, time.UTC)
+	credentials := map[string]any{
+		"api_key":  "sk-cindy-complete-unit",
+		"base_url": "https://api.laxarouter.ai",
+	}
+	fingerprint, err := service.CindyAccountIdentityFingerprint(
+		service.PlatformOpenAI,
+		service.AccountTypeAPIKey,
+		credentials,
+	)
+	require.NoError(t, err)
+	credentialsJSON, err := json.Marshal(credentials)
+	require.NoError(t, err)
 	reservation := &service.CindyBalanceProbeReservation{
-		JobID: 7, ItemID: 11, Stage: "terra",
+		JobID: 7, ItemID: 11, AccountID: 13, Stage: "terra",
+		LeaseToken: "lease-epoch-1", RequestCount: 1,
+		IdentityFingerprint: fingerprint, AccountUpdatedAt: updatedAt,
+	}
+	account := &service.Account{
+		ID: 13, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
+		Status: service.StatusActive, Schedulable: true,
+		Credentials: credentials, UpdatedAt: updatedAt,
 	}
 	tests := []struct {
 		name            string
@@ -376,18 +396,32 @@ func TestCindyBalanceProbeRepositoryCompleteStageDistinguishesPauseFromLostAutho
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = db.Close() })
 			mock.ExpectBegin()
-			mock.ExpectExec(`UPDATE cindy_balance_probe_items AS i[\s\S]+i\.state = \$8`).
-				WillReturnResult(sqlmock.NewResult(0, tt.itemRows))
+			itemLock := mock.ExpectQuery(`SELECT i\.account_id, i\.state, i\.identity_fingerprint,[\s\S]+FOR UPDATE OF j, i`).
+				WithArgs(reservation.JobID, reservation.ItemID, reservation.LeaseToken)
 			if tt.itemRows == 0 {
+				itemLock.WillReturnRows(sqlmock.NewRows([]string{
+					"account_id", "state", "identity_fingerprint", "account_updated_at", "was_marked", "request_count",
+				}))
 				mock.ExpectRollback()
 			} else {
+				itemLock.WillReturnRows(sqlmock.NewRows([]string{
+					"account_id", "state", "identity_fingerprint", "account_updated_at", "was_marked", "request_count",
+				}).AddRow(account.ID, "terra_running", fingerprint, updatedAt, false, 1))
+				mock.ExpectQuery(`SELECT platform, type, status, schedulable, credentials, updated_at,[\s\S]+FROM accounts WHERE id = \$1 FOR UPDATE`).
+					WithArgs(account.ID).
+					WillReturnRows(sqlmock.NewRows([]string{
+						"platform", "type", "status", "schedulable", "credentials", "updated_at",
+						"cindy_balance_insufficient_at", "deleted_at",
+					}).AddRow(account.Platform, account.Type, account.Status, true, credentialsJSON, updatedAt, nil, nil))
+				mock.ExpectExec(`UPDATE cindy_balance_probe_items[\s\S]+WHERE id = \$1 AND job_id = \$2 AND state = \$8`).
+					WillReturnResult(sqlmock.NewResult(0, 1))
 				mock.ExpectQuery(`UPDATE cindy_balance_probe_jobs[\s\S]+RETURNING consecutive_upstream_failures`).
 					WillReturnRows(sqlmock.NewRows([]string{"consecutive_upstream_failures"}).AddRow(tt.failureCount))
 				mock.ExpectCommit()
 			}
 
 			keepRunning, applied, err := (&cindyBalanceProbeRepository{db: db}).CompleteStage(
-				context.Background(), reservation, "lease-epoch-1", "server_error", "inconclusive", true,
+				context.Background(), reservation, account, "lease-epoch-1", "server_error", "inconclusive", true,
 			)
 			require.NoError(t, err)
 			require.Equal(t, tt.wantKeepRunning, keepRunning)
@@ -463,6 +497,9 @@ func TestCindyBalanceProbeRepositoryFinalizeExhaustedEnqueuesTypedAccountChange(
 		WithArgs(reservation.JobID, reservation.ItemID, "lease-epoch-1").
 		WillReturnRows(sqlmock.NewRows([]string{"status", "cancel_requested_at", "state", "luna_at", "now"}).
 			AddRow("running", nil, "terra_running", lunaAt, now))
+	mock.ExpectExec(`UPDATE cindy_balance_probe_jobs[\s\S]+consecutive_upstream_failures = 0[\s\S]+WHERE id = \$1 AND lease_token = \$2`).
+		WithArgs(reservation.JobID, "lease-epoch-1").
+		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectQuery(`SELECT platform, type, status, schedulable, credentials, updated_at,[\s\S]+FROM accounts WHERE id = \$1 FOR UPDATE`).
 		WithArgs(reservation.AccountID).
 		WillReturnRows(sqlmock.NewRows([]string{

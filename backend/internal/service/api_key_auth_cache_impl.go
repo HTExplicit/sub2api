@@ -14,7 +14,7 @@ import (
 	"github.com/dgraph-io/ristretto"
 )
 
-const apiKeyAuthSnapshotVersion = 20 // v20: materialized strict Cindy group identity
+const apiKeyAuthSnapshotVersion = 21 // v21: strict Cindy identity includes every non-deleted member
 
 type apiKeyAuthCacheConfig struct {
 	l1Size        int

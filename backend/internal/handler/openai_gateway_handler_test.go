@@ -2259,6 +2259,7 @@ type openAIResponsesWSUsageLogCase struct {
 	userAgent                 *string
 	ingressMode               string
 	strictCindyGroup          bool
+	groupPlatform             string
 	channelMapping            map[string]string
 	billingModelSource        string
 	accountModelMapping       map[string]any
@@ -3601,7 +3602,7 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 		User:    &service.User{ID: 1701, Status: service.StatusActive},
 		Group: &service.Group{
 			ID:               groupID,
-			Platform:         service.PlatformOpenAI,
+			Platform:         firstNonEmpty(tc.groupPlatform, service.PlatformOpenAI),
 			StrictCindyKnown: true,
 			StrictCindy:      tc.strictCindyGroup,
 		},

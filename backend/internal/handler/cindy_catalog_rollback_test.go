@@ -116,12 +116,13 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 	require.Empty(t, GetUpstreamEndpoint(c, service.PlatformOpenAI))
 
 	for _, tc := range []struct {
-		name         string
-		request      string
-		expected     string
-		strict       bool
-		ordinary     bool
-		modelMapping map[string]any
+		name          string
+		request       string
+		expected      string
+		strict        bool
+		ordinary      bool
+		groupPlatform string
+		modelMapping  map[string]any
 	}{
 		{name: "strict_sol_alias", request: "gpt-5.4", expected: "openai/gpt-5.6-sol", strict: true},
 		{name: "strict_luna_alias", request: "gpt-5.4-mini", expected: "openai/gpt-5.6-luna", strict: true},
@@ -135,6 +136,7 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 		},
 		{name: "mixed_group_does_not_map", request: "gpt-5.4-mini", expected: "gpt-5.4-mini"},
 		{name: "ordinary_openai_does_not_map", request: "gpt-5.4-mini", expected: "gpt-5.4-mini", ordinary: true},
+		{name: "non_openai_stale_marker_does_not_map", request: "gpt-5.4-mini", expected: "gpt-5.4-mini", strict: true, groupPlatform: service.PlatformGemini},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h, accountRepo, upstream, handlerGroupID := newCindyBalanceFailoverHandler(t)
@@ -153,6 +155,9 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 			requestAPIKey, ok := rawAPIKey.(*service.APIKey)
 			require.True(t, ok)
 			requestAPIKey.Group.StrictCindy = tc.strict
+			if tc.groupPlatform != "" {
+				requestAPIKey.Group.Platform = tc.groupPlatform
+			}
 
 			h.Responses(ctx)
 
@@ -164,6 +169,7 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 	for _, tc := range []struct {
 		name           string
 		strictGroup    bool
+		groupPlatform  string
 		requestedModel string
 		modelMapping   map[string]any
 		expectedStatus int
@@ -193,6 +199,15 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 			expectedStatus: http.StatusOK,
 			expectedModels: []string{"gpt-5.4-mini"},
 		},
+		{
+			name:           "non_openai_stale_marker_chat_does_not_map",
+			strictGroup:    true,
+			groupPlatform:  service.PlatformGemini,
+			requestedModel: "gpt-5.4-mini",
+			modelMapping:   map[string]any{"gpt-5.4-mini": "gpt-5.4-mini"},
+			expectedStatus: http.StatusOK,
+			expectedModels: []string{"gpt-5.4-mini"},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h, accountRepo, upstream, handlerGroupID := newCindyBalanceFailoverHandler(t)
@@ -206,6 +221,9 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 			requestAPIKey, ok := rawAPIKey.(*service.APIKey)
 			require.True(t, ok)
 			requestAPIKey.Group.StrictCindy = tc.strictGroup
+			if tc.groupPlatform != "" {
+				requestAPIKey.Group.Platform = tc.groupPlatform
+			}
 
 			h.ChatCompletions(ctx)
 
@@ -222,6 +240,22 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 	require.Equal(t, "openai/gpt-5.6-luna",
 		gjson.GetBytes(wsResult.upstreamFirstPayload, "model").String(),
 		"direct Responses WebSocket ingress must preserve the strict catalog-off alias")
+
+	wsMixed := runOpenAIResponsesWebSocketUsageLogCase(t, openAIResponsesWSUsageLogCase{
+		firstPayload: `{"type":"response.create","model":"gpt-5.4-mini","input":"hi","stream":false}`,
+	})
+	require.Equal(t, "gpt-5.4-mini",
+		gjson.GetBytes(wsMixed.upstreamFirstPayload, "model").String(),
+		"mixed membership must not receive the strict Cindy WebSocket alias")
+
+	wsNonOpenAI := runOpenAIResponsesWebSocketUsageLogCase(t, openAIResponsesWSUsageLogCase{
+		firstPayload:     `{"type":"response.create","model":"gpt-5.4-mini","input":"hi","stream":false}`,
+		strictCindyGroup: true,
+		groupPlatform:    service.PlatformGemini,
+	})
+	require.Equal(t, "gpt-5.4-mini",
+		gjson.GetBytes(wsNonOpenAI.upstreamFirstPayload, "model").String(),
+		"non-OpenAI groups must reject a stale strict Cindy WebSocket marker")
 }
 
 func withoutCindyCatalogHandlerEnv(environment []string) []string {

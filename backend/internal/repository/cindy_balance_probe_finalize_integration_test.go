@@ -62,6 +62,7 @@ func TestCindyBalanceProbeFinalizeRecoveryCommitsMarkerItemAndOutbox(t *testing.
 	recovered, err := repo.FinalizeRecovery(
 		ctx,
 		fixture.reservation,
+		fixture.account,
 		fixture.leaseToken,
 		time.Now().UTC(),
 	)
@@ -85,6 +86,170 @@ func TestCindyBalanceProbeFinalizeRecoveryCommitsMarkerItemAndOutbox(t *testing.
 	require.Equal(t, "recovered", finalOutcome)
 
 	assertCindyBalanceProbeOutboxPayload(t, fixture)
+}
+
+func TestCindyBalanceProbeFinalizeRecoveryRejectsReplacedMarkerGeneration(t *testing.T) {
+	ctx := context.Background()
+	fixture := newCindyBalanceProbeFinalizeFixture(t, true, "luna_running")
+	repo := &cindyBalanceProbeRepository{db: integrationDB}
+	require.NotNil(t, fixture.account.CindyBalanceInsufficientAt)
+	replacementMarker := fixture.account.CindyBalanceInsufficientAt.UTC().Add(time.Second)
+
+	// Simulate an out-of-band marker replacement that deliberately bypasses the
+	// normal account update path and therefore does not change updated_at.
+	_, err := integrationDB.ExecContext(ctx, `
+		UPDATE accounts
+		SET cindy_balance_insufficient_at = $2
+		WHERE id = $1
+	`, fixture.account.ID, replacementMarker)
+	require.NoError(t, err)
+
+	recovered, err := repo.FinalizeRecovery(
+		ctx,
+		fixture.reservation,
+		fixture.account,
+		fixture.leaseToken,
+		time.Now().UTC(),
+	)
+	require.NoError(t, err)
+	require.False(t, recovered)
+
+	var currentMarker time.Time
+	require.NoError(t, integrationDB.QueryRowContext(ctx,
+		`SELECT cindy_balance_insufficient_at FROM accounts WHERE id = $1`,
+		fixture.account.ID,
+	).Scan(&currentMarker))
+	require.True(t, currentMarker.UTC().Equal(replacementMarker), "the stale probe must not clear the replacement marker")
+
+	var itemState, lunaOutcome, finalOutcome string
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `
+		SELECT state, luna_outcome, final_outcome
+		FROM cindy_balance_probe_items WHERE id = $1
+	`, fixture.reservation.ItemID).Scan(&itemState, &lunaOutcome, &finalOutcome))
+	require.Equal(t, "skipped_stale", itemState)
+	require.Equal(t, "stale", lunaOutcome)
+	require.Equal(t, "skipped_stale", finalOutcome)
+}
+
+func TestCindyBalanceProbeFinalizeRecoveryStaleSuccessResetsFailureStreak(t *testing.T) {
+	ctx := context.Background()
+	fixture := newCindyBalanceProbeFinalizeFixture(t, true, "luna_running")
+	repo := &cindyBalanceProbeRepository{db: integrationDB}
+	require.NotNil(t, fixture.account.CindyBalanceInsufficientAt)
+
+	_, err := integrationDB.ExecContext(ctx, `
+		UPDATE cindy_balance_probe_jobs
+		SET consecutive_upstream_failures = 2
+		WHERE id = $1
+	`, fixture.reservation.JobID)
+	require.NoError(t, err)
+	_, err = integrationDB.ExecContext(ctx, `
+		UPDATE accounts
+		SET cindy_balance_insufficient_at = $2
+		WHERE id = $1
+	`, fixture.account.ID, fixture.account.CindyBalanceInsufficientAt.UTC().Add(time.Second))
+	require.NoError(t, err)
+
+	recovered, err := repo.FinalizeRecovery(
+		ctx,
+		fixture.reservation,
+		fixture.account,
+		fixture.leaseToken,
+		time.Now().UTC(),
+	)
+	require.NoError(t, err)
+	require.False(t, recovered)
+
+	var failures int
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `
+		SELECT consecutive_upstream_failures
+		FROM cindy_balance_probe_jobs WHERE id = $1
+	`, fixture.reservation.JobID).Scan(&failures))
+	require.Zero(t, failures, "a valid upstream completion must break the failure streak even when its recovery CAS is stale")
+}
+
+func TestCindyBalanceProbeSuccessfulFinalizersResetFailureStreak(t *testing.T) {
+	for _, testCase := range []struct {
+		name      string
+		marked    bool
+		itemState string
+	}{
+		{name: "recovery", marked: true, itemState: "luna_running"},
+		{name: "double exact exhaustion", marked: false, itemState: "terra_running"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			ctx := context.Background()
+			nextAccount := newCindyBalanceProbeLifecycleAccount(t, "post-finalize-"+testCase.name)
+			fixture := newCindyBalanceProbeFinalizeFixture(t, testCase.marked, testCase.itemState)
+			repo := &cindyBalanceProbeRepository{db: integrationDB}
+
+			_, err := integrationDB.ExecContext(ctx, `
+				UPDATE cindy_balance_probe_jobs
+				SET consecutive_upstream_failures = 2
+				WHERE id = $1
+			`, fixture.reservation.JobID)
+			require.NoError(t, err)
+
+			if testCase.marked {
+				recovered, finalizeErr := repo.FinalizeRecovery(
+					ctx,
+					fixture.reservation,
+					fixture.account,
+					fixture.leaseToken,
+					time.Now().UTC(),
+				)
+				require.NoError(t, finalizeErr)
+				require.True(t, recovered)
+			} else {
+				state, finalizeErr := repo.FinalizeExhausted(
+					ctx,
+					fixture.reservation,
+					fixture.leaseToken,
+					time.Now().UTC(),
+					5*time.Minute,
+				)
+				require.NoError(t, finalizeErr)
+				require.Equal(t, "exhausted", state)
+			}
+
+			var resetFailures int
+			require.NoError(t, integrationDB.QueryRowContext(ctx, `
+				SELECT consecutive_upstream_failures
+				FROM cindy_balance_probe_jobs WHERE id = $1
+			`, fixture.reservation.JobID).Scan(&resetFailures))
+			require.Zero(t, resetFailures, "a successful terminal result must break the upstream failure streak")
+
+			insertCindyBalanceProbeLifecycleItem(t, fixture.reservation.JobID, nextAccount, 2)
+			reservation, delay, reserveErr := repo.ReserveNext(
+				ctx,
+				fixture.reservation.JobID,
+				fixture.leaseToken,
+				time.Now().UTC().Add(3*time.Second),
+				time.Now().UTC().Add(-5*time.Minute),
+			)
+			require.NoError(t, reserveErr)
+			require.Zero(t, delay)
+			require.NotNil(t, reservation)
+
+			keepRunning, applied, completeErr := repo.CompleteStage(
+				ctx,
+				reservation,
+				nextAccount,
+				fixture.leaseToken,
+				"server_error",
+				"inconclusive",
+				true,
+			)
+			require.NoError(t, completeErr)
+			require.True(t, applied)
+			require.True(t, keepRunning, "the next isolated upstream failure must not pause the task")
+
+			job, getErr := repo.GetJob(ctx, fixture.reservation.JobID)
+			require.NoError(t, getErr)
+			require.Equal(t, "running", job.Status)
+			require.Equal(t, 1, job.ConsecutiveFailures)
+		})
+	}
 }
 
 func TestCindyBalanceProbeFinalizeRollsBackWhenOutboxInsertFails(t *testing.T) {

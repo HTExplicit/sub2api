@@ -52,6 +52,10 @@ func (s *imageStudioAccountRepoStub) ListByGroup(_ context.Context, groupID int6
 	return append([]service.Account(nil), s.byGroup[groupID]...), nil
 }
 
+func (s *imageStudioAccountRepoStub) ListCindyGroupIdentityMembers(ctx context.Context, groupID int64) ([]service.Account, error) {
+	return s.ListByGroup(ctx, groupID)
+}
+
 func (s *imageStudioAccountRepoStub) ListSchedulableByGroupID(_ context.Context, groupID int64) ([]service.Account, error) {
 	if s.calls == nil {
 		s.calls = make(map[int64]int)
@@ -89,6 +93,13 @@ func TestImageStudioEligibleKeysReturnsOnlyCurrentUserEligibleKeys(t *testing.T)
 	mixedGroup := &service.Group{
 		ID: 7105, Platform: service.PlatformOpenAI, Status: service.StatusActive, AllowImageGeneration: true,
 	}
+	disabledMixedGroup := &service.Group{
+		ID: 7106, Platform: service.PlatformOpenAI, Status: service.StatusActive, AllowImageGeneration: true,
+	}
+	nonOpenAIGroup := &service.Group{
+		ID: 7107, Platform: service.PlatformGemini, Status: service.StatusActive, AllowImageGeneration: true,
+		StrictCindyKnown: true, StrictCindy: true,
+	}
 	apiKeyRepo := &imageStudioAPIKeyRepoStub{keys: []service.APIKey{
 		{ID: 7201, UserID: userID, Key: "sk-user-image-1", Name: "image-1", Status: service.StatusActive, GroupID: &eligibleGroup.ID, Group: eligibleGroup},
 		{ID: 7202, UserID: userID, Key: "sk-user-image-2", Name: "image-2", Status: service.StatusActive, GroupID: &eligibleGroup.ID, Group: eligibleGroup},
@@ -100,6 +111,8 @@ func TestImageStudioEligibleKeysReturnsOnlyCurrentUserEligibleKeys(t *testing.T)
 		{ID: 7208, UserID: userID, Key: "sk-mixed", Status: service.StatusActive, GroupID: &mixedGroup.ID, Group: mixedGroup},
 		{ID: 7209, UserID: userID, Key: "sk-expired", Status: service.StatusActive, ExpiresAt: timePointerForImageStudioTest(time.Now().Add(-time.Minute)), GroupID: &eligibleGroup.ID, Group: eligibleGroup},
 		{ID: 7210, UserID: userID, Key: "sk-quota-exhausted", Status: service.StatusActive, Quota: 5, QuotaUsed: 5, GroupID: &eligibleGroup.ID, Group: eligibleGroup},
+		{ID: 7211, UserID: userID, Key: "sk-disabled-mixed", Status: service.StatusActive, GroupID: &disabledMixedGroup.ID, Group: disabledMixedGroup},
+		{ID: 7212, UserID: userID, Key: "sk-non-openai", Status: service.StatusActive, GroupID: &nonOpenAIGroup.ID, Group: nonOpenAIGroup},
 	}}
 	accountRepo := &imageStudioAccountRepoStub{
 		byGroup: map[int64][]service.Account{
@@ -114,6 +127,14 @@ func TestImageStudioEligibleKeysReturnsOnlyCurrentUserEligibleKeys(t *testing.T)
 				{
 					ID: 7304, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
 					Status: service.StatusActive, Schedulable: true,
+					Credentials: map[string]any{"base_url": "https://ordinary.example.invalid"},
+				},
+			},
+			disabledMixedGroup.ID: {
+				cindyGatewayModelAccountForTest(7305),
+				{
+					ID: 7306, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
+					Status:      service.StatusDisabled,
 					Credentials: map[string]any{"base_url": "https://ordinary.example.invalid"},
 				},
 			},
@@ -137,6 +158,9 @@ func TestImageStudioEligibleKeysReturnsOnlyCurrentUserEligibleKeys(t *testing.T)
 	require.Zero(t, accountRepo.calls[ordinaryGroup.ID], "ordinary groups must not reach schedulability discovery")
 	require.Equal(t, 1, accountRepo.calls[-mixedGroup.ID])
 	require.Zero(t, accountRepo.calls[mixedGroup.ID], "mixed groups must not be Image Studio eligible")
+	require.Equal(t, 1, accountRepo.calls[-disabledMixedGroup.ID])
+	require.Zero(t, accountRepo.calls[disabledMixedGroup.ID], "disabled ordinary members must keep the group mixed")
+	require.Zero(t, accountRepo.calls[-nonOpenAIGroup.ID], "non-OpenAI groups must fail closed before identity lookup")
 	var got struct {
 		Data struct {
 			Items []struct {
