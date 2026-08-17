@@ -53,7 +53,7 @@ jobs:
           go mod verify
           go test -p=1 -tags unit ./internal/service ./internal/handler -run 'Test.*(BusinessSystemPrompt|RemoteSkill|GPT56|Cindy|CompatibilityModes|AlphaSearch)' -count=1
           go test -p=1 ./internal/handler/admin ./internal/server/middleware -run 'Test.*(SystemPrompt|RemoteSkill|Audit)' -count=1
-          go test -p=1 -tags unit ./internal/repository ./internal/handler/admin ./internal/handler ./internal/service -run 'Test.*(CindyBalanceProbe|CindyGroupSplit|ImageStudioEligibleKeys|CindyCompatibility|TurnStateCommits|SchedulerCache|KeepsCindyRoutingIdentity|StrictCindyGroup|MaterializesCindyIdentity|DisabledOrdinaryMember|SkipsCindyAggregate|GatewayModelCapabilities)' -count=1
+          go test -p=1 -tags unit ./internal/repository ./internal/handler/admin ./internal/handler ./internal/service -run 'Test.*(CindyBalanceProbe|CindyGroupSplit|CindyCatalog|CindyCodexModels|ImageStudioEligibleKeys|CindyCompatibility|TurnStateCommits|SchedulerCache|KeepsCindyRoutingIdentity|StrictCindyGroup|MaterializesCindyIdentity|DisabledOrdinaryMember|SkipsCindyAggregate|GatewayModelCapabilities|GatewayModels|WriteOpenAIModelsList|AccountHandlerGetAvailableModels)' -count=1
           go test -p=1 -tags unit ./migrations -run 'Test.*(BusinessSystemPromptRemoteSkill|BusinessSystemPromptCodexSkillHybrid|BusinessSystemPromptManagedSource|RemoteSkillRegistry|RemoteSkillPaired|Migration207|Migration208|Migration209|Migration210|Migration211|Migration213|Migration222|Migration223|Migration224)' -count=1
           go test -p=1 -tags integration ./migrations -run '^TestCindy(OpenAIDefaults|PromptCacheHash|AlphaSearchBridge|BalanceMarkerReset|BalanceMarkerRestore|BalanceConfirmationReset)MigrationIsStrictAndIdempotent$' -count=1
           go test -p=1 -tags integration ./internal/repository -run '^Test(CindyGroupSplit(PreviewDriftAndAtomicCommit|RollsBackAllWritesWhenOutboxInsertFails)|ClassifyStrictCindyGroupUsesAllNonDeletedMembersAndOpenAIGroup|CindyBalanceProbe)' -count=1
@@ -75,6 +75,8 @@ jobs:
             src/utils/__tests__/cindyOpenAIDefaults.spec.ts \
             src/components/account/__tests__/CreateAccountModal.spec.ts \
             src/components/account/__tests__/EditAccountModal.spec.ts \
+            src/components/account/__tests__/ModelWhitelistSelector.spec.ts \
+            src/composables/__tests__/useModelWhitelist.spec.ts \
             src/components/account/__tests__/BulkEditAccountModal.spec.ts \
             src/views/admin/__tests__/SystemPromptsView.spec.ts \
             src/views/admin/__tests__/systemPromptsIntegrationSurface.spec.ts \

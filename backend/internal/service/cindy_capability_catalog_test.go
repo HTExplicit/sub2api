@@ -69,6 +69,183 @@ func TestCindyCapabilityCatalogHasExactFixedCandidates(t *testing.T) {
 	require.Equal(t, 10, registryEmptyCount)
 }
 
+func TestCindyCatalogMetadataMatchesPinnedCindySource(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		model         string
+		displayName   string
+		baseContext   int
+		codexContext  int
+		maxOutput     int
+		defaultEffort string
+		baseEfforts   []string
+		codexEfforts  []string
+		source        string
+	}{
+		{model: "gpt-5.6-luna", displayName: "GPT-5.6-Luna", baseContext: 1050000, codexContext: 1050000, maxOutput: 128000, defaultEffort: "high", baseEfforts: []string{"low", "medium", "high", "xhigh", "max"}, codexEfforts: []string{"low", "medium", "high", "xhigh", "max"}, source: CindyModelMetadataSourceRevision},
+		{model: "gpt-5.6-sol", displayName: "GPT-5.6-Sol", baseContext: 1050000, codexContext: 372000, maxOutput: 128000, defaultEffort: "high", baseEfforts: []string{"low", "medium", "high", "xhigh", "max"}, codexEfforts: []string{"low", "medium", "high", "xhigh", "max", "ultra"}, source: CindyModelMetadataSourceRevision},
+		{model: "gpt-5.6-terra", displayName: "GPT-5.6-Terra", baseContext: 1050000, codexContext: 372000, maxOutput: 128000, defaultEffort: "high", baseEfforts: []string{"low", "medium", "high", "xhigh", "max"}, codexEfforts: []string{"low", "medium", "high", "xhigh", "max", "ultra"}, source: CindyModelMetadataSourceRevision},
+		{model: "grok-4.5", displayName: "Grok 4.5", baseContext: 500000, codexContext: 500000, defaultEffort: "high", baseEfforts: []string{"low", "medium", "high"}, codexEfforts: []string{"low", "medium", "high"}, source: CindyModelMetadataSourceRevision},
+		{model: "glm-5.2", displayName: "GLM-5.2", baseContext: 1000000, codexContext: 1000000, maxOutput: 131072, defaultEffort: "max", baseEfforts: []string{"minimal", "high", "max"}, codexEfforts: []string{"minimal", "high", "max"}, source: cindyCompositeModelMetadataSourceRevision},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			capability, ok := resolveKnownCindyCapability(tt.model)
+			require.True(t, ok)
+			require.Equal(t, tt.displayName, capability.DisplayName)
+			require.Equal(t, tt.baseContext, capability.MaxInputTokens)
+			require.Equal(t, tt.codexContext, capability.CodexContextWindow)
+			require.Equal(t, tt.maxOutput, capability.MaxOutputTokens)
+			require.Equal(t, tt.defaultEffort, capability.DefaultReasoningEffort)
+			require.Equal(t, tt.baseEfforts, capability.ReasoningEfforts)
+			require.Equal(t, tt.codexEfforts, capability.CodexReasoningEfforts())
+			require.Equal(t, tt.source, capability.MetadataSourceRevision)
+		})
+	}
+}
+
+func TestCindyRegistryBackedModelsHavePinnedDisplayAndContextMetadata(t *testing.T) {
+	t.Parallel()
+
+	registryBacked := 0
+	for _, capability := range CindyCapabilities() {
+		if capability.RegistryID == "" {
+			continue
+		}
+		registryBacked++
+		require.NotEmpty(t, capability.DisplayName, capability.PublicID)
+		require.Positive(t, capability.MaxInputTokens, capability.PublicID)
+		require.Positive(t, capability.EffectiveCodexContextWindow(), capability.PublicID)
+		require.NotEmpty(t, capability.MetadataSourceRevision, capability.PublicID)
+	}
+	require.Equal(t, 13, registryBacked)
+}
+
+func TestCindyKnownPublicTextContextsDoNotUseDesktopFallback(t *testing.T) {
+	t.Parallel()
+
+	want := map[string]int{
+		"claude-opus-4-8": 1000000,
+		"claude-opus-5":   1000000,
+		"claude-sonnet-5": 1000000,
+		"gpt-5.6-luna":    1050000,
+		"gpt-5.6-sol":     1050000,
+		"gpt-5.6-terra":   1050000,
+		"hy3":             262144,
+		"grok-4.5":        500000,
+		"glm-5.2":         1000000,
+	}
+	for modelID, contextWindow := range want {
+		capability, ok := resolveKnownCindyCapability(modelID)
+		require.True(t, ok)
+		require.Equal(t, contextWindow, capability.MaxInputTokens, modelID)
+		require.NotEqual(t, 200000, capability.MaxInputTokens, modelID)
+	}
+}
+
+func TestCindyLiveFirstMetadataProvenanceIsExplicit(t *testing.T) {
+	t.Parallel()
+
+	for modelID, contextWindow := range map[string]int{
+		"deepseek-v4-flash": 1000000,
+		"deepseek-v4-pro":   1000000,
+		"kimi-k3":           1048576,
+	} {
+		capability, ok := resolveKnownCindyCapability(modelID)
+		require.True(t, ok)
+		require.Equal(t, contextWindow, capability.MaxInputTokens)
+		require.Equal(t, cindyCompositeModelMetadataSourceRevision, capability.MetadataSourceRevision)
+	}
+	require.Equal(t, "cindy-gateway-v1-models@2026-08-17", cindyObservedModelMetadataSourceRevision)
+}
+
+func TestCindyUnknownMetadataRemainsOmitted(t *testing.T) {
+	t.Parallel()
+
+	for _, modelID := range []string{
+		"gemini-3.6-flash",
+		"gemini-3.7-flash",
+		"grok-4.6",
+		"glm-5.3",
+		"qwen3.8-max",
+	} {
+		capability, ok := resolveKnownCindyCapability(modelID)
+		require.True(t, ok)
+		require.Zero(t, capability.MaxInputTokens, modelID)
+		require.Zero(t, capability.CodexContextWindow, modelID)
+		require.Zero(t, capability.MaxOutputTokens, modelID)
+		require.Empty(t, capability.ReasoningEfforts, modelID)
+		require.Empty(t, capability.CodexReasoningEffortLevels, modelID)
+		require.Empty(t, capability.DefaultReasoningEffort, modelID)
+	}
+
+	seed, ok := resolveKnownCindyCapability("seed-2.1-pro")
+	require.True(t, ok)
+	require.Equal(t, 256000, seed.MaxInputTokens)
+	require.Zero(t, seed.MaxOutputTokens)
+	require.Equal(t, CindyModelMetadataSourceRevision, seed.MetadataSourceRevision)
+
+	qwen, ok := resolveKnownCindyCapability("qwen3.8-max")
+	require.True(t, ok)
+	require.Equal(t, []string{"text"}, qwen.InputModalities)
+	require.Equal(t, CindyGatewayModelMetadataSourceRevision, qwen.MetadataSourceRevision)
+}
+
+func TestCindyCatalogModelsAndManagedMappingsAreCompleteDefensiveProjections(t *testing.T) {
+	t.Parallel()
+
+	models := CindyCatalogModels()
+	require.Len(t, models, 23)
+	for i, model := range models {
+		require.True(t, model.Managed)
+		require.Empty(t, model.AliasTarget)
+		require.NotEmpty(t, model.ID)
+		require.NotEmpty(t, model.LiveUpstreamID)
+		require.NotEmpty(t, model.DisplayName)
+		require.NotEmpty(t, model.SourceRevision)
+		require.Equal(t, model.CodexContextWindow, model.ContextWindow)
+		require.Equal(t, len(model.Endpoints) > 0, model.Verified)
+		if i > 0 {
+			require.Less(t, models[i-1].ID, model.ID)
+		}
+	}
+
+	byID := make(map[string]CindyCatalogModel, len(models))
+	for _, model := range models {
+		byID[model.ID] = model
+	}
+	require.Equal(t, 1050000, byID["gpt-5.6-sol"].BaseContextWindow)
+	require.Equal(t, 372000, byID["gpt-5.6-sol"].ContextWindow)
+	require.Equal(t, 372000, byID["gpt-5.6-sol"].CodexContextWindow)
+	require.Equal(t, CindyModelMetadataSourceRevision, byID["gpt-5.6-sol"].SourceRevision)
+	require.False(t, byID["deepseek-v4-pro"].PublicModel)
+	require.Equal(t,
+		CindyGatewayModelMetadataSourceRevision+";"+CindyCatalogProjectionSourceRevision,
+		byID["qwen3.8-max"].SourceRevision,
+	)
+
+	models[0].Endpoints = append(models[0].Endpoints, CindyEndpointReview)
+	require.NotEqual(t, models[0].Endpoints, CindyCatalogModels()[0].Endpoints)
+
+	mappings := CindyManagedModelMappings()
+	require.Len(t, mappings, 2)
+	require.Equal(t, "gpt-5.4", mappings[0].ID)
+	require.Equal(t, "gpt-5.6-sol", mappings[0].AliasTarget)
+	require.Equal(t, "openai/gpt-5.6-sol", mappings[0].LiveUpstreamID)
+	require.Equal(t, 1050000, mappings[0].BaseContextWindow)
+	require.Equal(t, 372000, mappings[0].ContextWindow)
+	require.Equal(t, CindyCompatibilityAliasSourceRevision, mappings[0].SourceRevision)
+	require.NotEqual(t, CindyModelMetadataSourceRevision, mappings[0].SourceRevision)
+	require.Equal(t, "gpt-5.4-mini", mappings[1].ID)
+	require.Equal(t, "gpt-5.6-luna", mappings[1].AliasTarget)
+	require.Equal(t, "openai/gpt-5.6-luna", mappings[1].LiveUpstreamID)
+	require.Equal(t, 1050000, mappings[1].ContextWindow)
+	require.Equal(t, CindyCompatibilityAliasSourceRevision, mappings[1].SourceRevision)
+	require.NotEqual(t, CindyModelMetadataSourceRevision, mappings[1].SourceRevision)
+}
+
 func TestCindyVerifiedEndpointMatrixMatchesThreeAccountProbe(t *testing.T) {
 	t.Parallel()
 

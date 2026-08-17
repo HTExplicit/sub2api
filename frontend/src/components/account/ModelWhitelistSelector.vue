@@ -1,5 +1,82 @@
 <template>
   <div>
+    <div
+      v-if="readonly"
+      data-testid="managed-model-catalog"
+      class="overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-dark-600 dark:bg-dark-700"
+    >
+      <div class="border-b border-gray-200 p-2 dark:border-dark-600">
+        <input
+          v-model="searchQuery"
+          type="text"
+          class="input w-full text-sm"
+          :placeholder="t('admin.accounts.searchModels')"
+        />
+      </div>
+      <div class="max-h-72 divide-y divide-gray-100 overflow-auto dark:divide-dark-600">
+        <div
+          v-for="model in filteredModels"
+          :key="model.value"
+          data-testid="managed-model-option"
+          class="flex min-w-0 items-start gap-2 px-3 py-2.5"
+        >
+          <ModelIcon :model="model.value" size="18px" class="mt-0.5 shrink-0" />
+          <div class="min-w-0 flex-1">
+            <div class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              <span class="break-all text-sm font-medium text-gray-900 dark:text-white">{{ model.value }}</span>
+              <span
+                v-if="model.label !== model.value"
+                class="truncate text-xs text-gray-500 dark:text-gray-400"
+              >
+                {{ model.label }}
+              </span>
+              <span
+                data-testid="model-verification-status"
+                :class="[
+                  'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium',
+                  model.verified
+                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
+                    : 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'
+                ]"
+              >
+                {{
+                  model.verified
+                    ? t('admin.accounts.cindyModelVerified')
+                    : t('admin.accounts.cindyModelPendingVerification')
+                }}
+              </span>
+            </div>
+            <p v-if="modelContextSummary(model)" class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+              {{ modelContextSummary(model) }}
+            </p>
+            <div v-if="model.endpoints?.length" class="mt-1 flex flex-wrap gap-1">
+              <span
+                v-for="endpoint in model.endpoints"
+                :key="endpoint"
+                class="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600 dark:bg-dark-600 dark:text-gray-300"
+              >
+                {{ endpoint }}
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            data-testid="copy-model-id"
+            class="shrink-0 rounded p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-500 dark:hover:text-primary-400"
+            :title="`${t('common.copy')} ${model.value}`"
+            :aria-label="`${t('common.copy')} ${model.value}`"
+            @click="copyModelId(model.value)"
+          >
+            <Icon name="copy" size="sm" />
+          </button>
+        </div>
+        <div v-if="filteredModels.length === 0" class="px-3 py-4 text-center text-sm text-gray-500">
+          {{ t('admin.accounts.noMatchingModels') }}
+        </div>
+      </div>
+    </div>
+
+    <template v-else>
     <!-- Multi-select Dropdown -->
     <div class="relative mb-3">
       <div
@@ -72,7 +149,15 @@
                 </svg>
               </span>
               <ModelIcon :model="model.value" size="18px" />
-              <span class="truncate text-gray-900 dark:text-white">{{ model.value }}</span>
+              <span class="min-w-0 flex-1">
+                <span class="block truncate text-gray-900 dark:text-white">{{ model.value }}</span>
+                <span
+                  v-if="modelContextSummary(model)"
+                  class="block truncate text-xs text-gray-500 dark:text-gray-400"
+                >
+                  {{ modelContextSummary(model) }}
+                </span>
+              </span>
             </button>
             <button
               type="button"
@@ -141,6 +226,7 @@
         </button>
       </div>
     </div>
+    </template>
   </div>
 </template>
 
@@ -154,6 +240,7 @@ import { useClipboard } from '@/composables/useClipboard'
 import ModelIcon from '@/components/common/ModelIcon.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { allModels, getModelsByPlatform } from '@/composables/useModelWhitelist'
+import type { AccountAvailableModel } from '@/types'
 
 const { t } = useI18n()
 
@@ -162,6 +249,8 @@ const props = defineProps<{
   platform?: string
   platforms?: string[]
   accountId?: number
+  models?: AccountAvailableModel[]
+  readonly?: boolean
   syncCredentials?: {
     platform: string
     type: string
@@ -211,7 +300,31 @@ const canSyncUpstream = computed(() => {
   return false
 })
 
-const availableOptions = computed(() => {
+interface ModelSelectorOption {
+  value: string
+  label: string
+  context_window?: number
+  base_context_window?: number
+  codex_context_window?: number
+  max_output_tokens?: number
+  verified?: boolean
+  endpoints?: string[]
+}
+
+const availableOptions = computed<ModelSelectorOption[]>(() => {
+  if (props.models) {
+    return props.models.map(model => ({
+      value: model.id,
+      label: model.display_name || model.id,
+      context_window: model.context_window,
+      base_context_window: model.base_context_window,
+      codex_context_window: model.codex_context_window,
+      max_output_tokens: model.max_output_tokens,
+      verified: model.verified,
+      endpoints: model.endpoints
+    }))
+  }
+
   if (normalizedPlatforms.value.length === 0) {
     return allModels
   }
@@ -253,6 +366,27 @@ const toggleModel = (model: string) => {
 
 const copyModelId = async (model: string) => {
   await copyToClipboard(model)
+}
+
+const formatTokenCount = (value: number) => new Intl.NumberFormat('en-US').format(value)
+
+const modelContextSummary = (model: ModelSelectorOption) => {
+  const parts: string[] = []
+  const effectiveContext = model.context_window || model.codex_context_window || model.base_context_window
+  if (
+    model.codex_context_window &&
+    model.base_context_window &&
+    model.codex_context_window !== model.base_context_window
+  ) {
+    parts.push(t('admin.accounts.codexContextWindow', { count: formatTokenCount(model.codex_context_window) }))
+    parts.push(t('admin.accounts.baseContextWindow', { count: formatTokenCount(model.base_context_window) }))
+  } else if (effectiveContext) {
+    parts.push(t('admin.accounts.contextWindow', { count: formatTokenCount(effectiveContext) }))
+  }
+  if (model.max_output_tokens) {
+    parts.push(t('admin.accounts.maxOutputTokens', { count: formatTokenCount(model.max_output_tokens) }))
+  }
+  return parts.join(' · ')
 }
 
 const addCustom = () => {

@@ -8,12 +8,16 @@ import (
 
 // Model represents an OpenAI model
 type Model struct {
-	ID          string `json:"id"`
-	Object      string `json:"object"`
-	Created     int64  `json:"created"`
-	OwnedBy     string `json:"owned_by"`
-	Type        string `json:"type"`
-	DisplayName string `json:"display_name"`
+	ID              string `json:"id"`
+	Object          string `json:"object"`
+	Created         int64  `json:"created"`
+	OwnedBy         string `json:"owned_by"`
+	Type            string `json:"type"`
+	DisplayName     string `json:"display_name"`
+	Description     string `json:"description,omitempty"`
+	ContextWindow   int    `json:"context_window,omitempty"`
+	MaxInputTokens  int    `json:"max_input_tokens,omitempty"`
+	MaxOutputTokens int    `json:"max_output_tokens,omitempty"`
 }
 
 // DefaultModels OpenAI models list

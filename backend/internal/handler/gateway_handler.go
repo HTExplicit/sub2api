@@ -1104,7 +1104,7 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 		if apiKey != nil && apiKey.Group != nil && apiKey.Group.CustomModelsListEnabled() {
 			availableModels = filterModelsByCustomList(availableModels, availableModels, apiKey.Group.ModelsListConfig.Models)
 		}
-		writeOpenAIModelsList(c, availableModels)
+		writeCindyOpenAIModelsList(c, availableModels)
 		return
 	}
 
@@ -1447,6 +1447,44 @@ func writeOpenAIModelsList(c *gin.Context, modelIDs []string) {
 			Type:        "model",
 			DisplayName: modelID,
 		})
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"object": "list",
+		"data":   models,
+	})
+}
+
+func writeCindyOpenAIModelsList(c *gin.Context, modelIDs []string) {
+	defaultsByID := make(map[string]openai.Model, len(openai.DefaultModels))
+	for _, model := range openai.DefaultModels {
+		defaultsByID[model.ID] = model
+	}
+	metadataByID := make(map[string]service.CindyCatalogModel, len(modelIDs))
+	for _, model := range service.CindyCatalogModels() {
+		metadataByID[model.ID] = model
+	}
+
+	models := make([]openai.Model, 0, len(modelIDs))
+	for _, modelID := range modelIDs {
+		model, ok := defaultsByID[modelID]
+		if !ok {
+			model = openai.Model{
+				ID:          modelID,
+				Object:      "model",
+				Created:     1704067200,
+				OwnedBy:     "openai",
+				Type:        "model",
+				DisplayName: modelID,
+			}
+		}
+		if metadata, ok := metadataByID[modelID]; ok {
+			model.DisplayName = metadata.DisplayName
+			model.Description = metadata.Description
+			model.ContextWindow = metadata.BaseContextWindow
+			model.MaxInputTokens = metadata.BaseContextWindow
+			model.MaxOutputTokens = metadata.MaxOutputTokens
+		}
+		models = append(models, model)
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"object": "list",

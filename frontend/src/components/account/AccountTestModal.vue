@@ -251,7 +251,11 @@ import { Icon } from '@/components/icons'
 import { useClipboard } from '@/composables/useClipboard'
 import { buildApiUrl } from '@/api/client'
 import { adminAPI } from '@/api/admin'
-import type { Account, ClaudeModel } from '@/types'
+import {
+  filterCindyAccountTestModels,
+  pickCindyAccountTestDefault
+} from '@/utils/cindyOpenAIDefaults'
+import type { Account, AccountAvailableModel } from '@/types'
 
 const { t } = useI18n()
 const { copyToClipboard } = useClipboard()
@@ -280,7 +284,7 @@ const status = ref<'idle' | 'connecting' | 'success' | 'error'>('idle')
 const outputLines = ref<OutputLine[]>([])
 const streamingContent = ref('')
 const errorMessage = ref('')
-const availableModels = ref<ClaudeModel[]>([])
+const availableModels = ref<AccountAvailableModel[]>([])
 const selectedModelId = ref('')
 const testPrompt = ref('')
 const loadingModels = ref(false)
@@ -309,7 +313,7 @@ const supportsOpenAIImageTest = computed(() => {
 
 const supportsImageTest = computed(() => supportsGeminiImageTest.value || supportsOpenAIImageTest.value)
 
-const sortTestModels = (models: ClaudeModel[]) => {
+const sortTestModels = (models: AccountAvailableModel[]) => {
   const priorityMap = new Map(prioritizedGeminiModels.map((id, index) => [id, index]))
 
   return [...models].sort((a, b) => {
@@ -347,13 +351,19 @@ const loadAvailableModels = async () => {
   loadingModels.value = true
   selectedModelId.value = '' // Reset selection before loading
   try {
-    const models = await adminAPI.accounts.getAvailableModels(props.account.id)
+    const models = filterCindyAccountTestModels(
+      props.account,
+      await adminAPI.accounts.getAvailableModels(props.account.id)
+    )
     availableModels.value = props.account.platform === 'gemini' || props.account.platform === 'antigravity'
       ? sortTestModels(models)
       : models
     // Default selection by platform
     if (availableModels.value.length > 0) {
-      if (props.account.platform === 'gemini') {
+      const cindyDefault = pickCindyAccountTestDefault(props.account, availableModels.value)
+      if (cindyDefault) {
+        selectedModelId.value = cindyDefault.id
+      } else if (props.account.platform === 'gemini') {
         selectedModelId.value = availableModels.value[0].id
       } else {
         // Try to select Sonnet as default, otherwise use first model

@@ -220,4 +220,31 @@ describe('AccountTestModal', () => {
       mode: 'compact'
     })
   })
+
+  it('Cindy 账号测试忽略特殊和未验证目录项并默认选择 Luna', async () => {
+    getAvailableModels.mockResolvedValue([
+      { id: 'cindy/auto-review', managed: true, verified: true, endpoints: ['cindy.reviews'] },
+      { id: 'candidate-unverified', managed: true, verified: false, endpoints: ['responses'] },
+      { id: 'claude-sonnet-5', managed: true, verified: true, endpoints: ['messages'] },
+      { id: 'gpt-5.6-sol', managed: true, verified: true, endpoints: ['responses'] },
+      { id: 'gpt-5.6-luna', managed: true, verified: true, endpoints: ['responses'] }
+    ])
+    const wrapper = mountModal({
+      id: 88,
+      name: 'Cindy API Key',
+      platform: 'openai',
+      type: 'apikey',
+      status: 'active',
+      credentials: { base_url: 'https://api.laxarouter.ai' }
+    })
+
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    expect((wrapper.vm as any).availableModels.map((item: { id: string }) => item.id)).toEqual([
+      'gpt-5.6-sol',
+      'gpt-5.6-luna'
+    ])
+    expect((wrapper.vm as any).selectedModelId).toBe('gpt-5.6-luna')
+  })
 })

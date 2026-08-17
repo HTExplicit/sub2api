@@ -148,8 +148,37 @@
 
             <!-- Whitelist Mode -->
             <div v-if="modelRestrictionMode === 'whitelist'">
-              <ModelWhitelistSelector v-model="allowedModels" :platform="account?.platform || 'anthropic'" :account-id="account?.id" />
-              <p class="text-xs text-gray-500 dark:text-gray-400">
+              <div v-if="isCindyAccount" class="mb-4" data-testid="cindy-managed-catalog">
+                <div class="mb-2 flex items-center justify-between gap-3">
+                  <div>
+                    <p class="text-sm font-medium text-gray-700 dark:text-gray-200">
+                      {{ t('admin.accounts.cindyManagedCatalog') }}
+                    </p>
+                  </div>
+                  <span class="shrink-0 text-xs font-medium text-primary-600 dark:text-primary-400">
+                    {{ cindyManagedCatalog.length }}
+                  </span>
+                </div>
+                <p v-if="cindyCatalogLoading" class="py-3 text-sm text-gray-500 dark:text-gray-400">
+                  {{ t('admin.accounts.cindyCatalogLoading') }}
+                </p>
+                <p v-else-if="cindyCatalogLoadFailed" class="py-3 text-sm text-red-600 dark:text-red-400">
+                  {{ t('admin.accounts.cindyCatalogLoadFailed') }}
+                </p>
+                <ModelWhitelistSelector
+                  v-else
+                  :model-value="[]"
+                  :models="cindyManagedCatalog"
+                  readonly
+                />
+              </div>
+              <ModelWhitelistSelector
+                v-if="!isCindyAccount"
+                v-model="allowedModels"
+                :platform="account?.platform || 'anthropic'"
+                :account-id="account?.id"
+              />
+              <p v-if="!isCindyAccount" class="text-xs text-gray-500 dark:text-gray-400">
                 {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
                 <span v-if="allowedModels.length === 0 && modelMappings.length === 0">{{
                   t('admin.accounts.supportsAllModels')
@@ -178,8 +207,38 @@
                 </p>
               </div>
 
+            <div
+              v-if="isCindyAccount && cindyManagedAliases.length > 0"
+              class="mb-4 border-b border-gray-200 pb-4 dark:border-dark-600"
+              data-testid="cindy-managed-aliases"
+            >
+              <p class="text-sm font-medium text-gray-700 dark:text-gray-200">
+                {{ t('admin.accounts.cindyManagedAliases') }}
+              </p>
+              <div class="mt-2 space-y-2">
+                <div
+                  v-for="alias in cindyManagedAliases"
+                  :key="alias.id"
+                  data-testid="cindy-managed-alias"
+                  class="grid min-w-0 grid-cols-1 items-center gap-2 text-sm sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]"
+                >
+                  <div class="min-w-0 break-all rounded border border-gray-200 bg-gray-50 px-3 py-2 text-gray-700 dark:border-dark-500 dark:bg-dark-700 dark:text-gray-200">
+                    {{ alias.id }}
+                  </div>
+                  <Icon name="arrowRight" size="sm" class="mx-auto rotate-90 text-gray-400 sm:rotate-0" />
+                  <div class="min-w-0 break-all rounded border border-gray-200 bg-gray-50 px-3 py-2 text-gray-700 dark:border-dark-500 dark:bg-dark-700 dark:text-gray-200">
+                    {{ alias.live_upstream_id || alias.alias_target }}
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <!-- Model Mapping List -->
-            <div v-if="modelMappings.length > 0" class="mb-3 space-y-2">
+            <div
+              v-if="modelMappings.length > 0"
+              class="mb-3 space-y-2"
+              data-testid="editable-model-mappings"
+            >
               <div
                 v-for="(mapping, index) in modelMappings"
                 :key="getModelMappingKey(mapping)"
@@ -2696,7 +2755,7 @@
         <button
           type="submit"
           form="edit-account-form"
-          :disabled="submitting"
+          :disabled="submitting || cindyCatalogLoading"
           class="btn btn-primary"
           data-tour="account-form-submit"
         >
@@ -2756,7 +2815,8 @@ import type {
   OpenAIAlphaSearchMode,
   OpenAIPromptCacheKeyMode,
   OpenAIEndpointCapability,
-  OllamaCloudUsageState
+  OllamaCloudUsageState,
+  AccountAvailableModel
 } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -2880,6 +2940,13 @@ const modelMappings = ref<ModelMapping[]>([])
 const openAICompactModelMappings = ref<ModelMapping[]>([])
 const modelRestrictionMode = ref<'whitelist' | 'mapping'>('whitelist')
 const allowedModels = ref<string[]>([])
+const cindyManagedCatalog = ref<AccountAvailableModel[]>([])
+const cindyManagedAliases = ref<AccountAvailableModel[]>([])
+const preservedCindyManagedMappings = ref<ModelMapping[]>([])
+const cindyCatalogLoading = ref(false)
+const cindyCatalogLoadFailed = ref(false)
+let cindyCatalogRequestSequence = 0
+const isCindyAccount = computed(() => isCindyOpenAIAPIKeyAccount(props.account))
 const DEFAULT_POOL_MODE_RETRY_COUNT = 3
 const MAX_POOL_MODE_RETRY_COUNT = 10
 const DEFAULT_POOL_MODE_RETRY_STATUS_CODES = [401, 403, 429]
@@ -3396,8 +3463,32 @@ const loadModelRestrictionFromMapping = (rawMapping?: Record<string, unknown>) =
       : 'whitelist'
 }
 
-const buildModelRestrictionMapping = () =>
-  buildModelMappingObject('combined', allowedModels.value, modelMappings.value)
+const isManagedCindyMapping = (from: string, to: string) => {
+  const managed = [...cindyManagedCatalog.value, ...cindyManagedAliases.value]
+    .find(model => model.id === from.trim())
+  if (!managed) return false
+
+  const target = to.trim()
+  return [managed.id, managed.alias_target, managed.live_upstream_id]
+    .filter((value): value is string => Boolean(value))
+    .includes(target)
+}
+
+const buildModelRestrictionMapping = () => {
+  const editableMapping = buildModelMappingObject('combined', allowedModels.value, modelMappings.value)
+  if (!isCindyAccount.value || preservedCindyManagedMappings.value.length === 0) {
+    return editableMapping
+  }
+
+  const merged: Record<string, string> = {}
+  for (const mapping of preservedCindyManagedMappings.value) {
+    const from = mapping.from.trim()
+    const to = mapping.to.trim()
+    if (from && to) merged[from] = to
+  }
+  Object.assign(merged, editableMapping || {})
+  return Object.keys(merged).length > 0 ? merged : null
+}
 
 const applyOpenAIModelMappingCredentials = (credentials: Record<string, unknown>) => {
   const shouldApplyModelMapping = !openaiPassthroughEnabled.value
@@ -3785,15 +3876,64 @@ async function loadTLSProfiles() {
   }
 }
 
+const resetCindyManagedModels = () => {
+  cindyManagedCatalog.value = []
+  cindyManagedAliases.value = []
+  preservedCindyManagedMappings.value = []
+  cindyCatalogLoading.value = false
+  cindyCatalogLoadFailed.value = false
+}
+
+const preserveManagedCindyMappings = () => {
+  const preserved: ModelMapping[] = []
+  allowedModels.value = allowedModels.value.filter(model => {
+    if (!isManagedCindyMapping(model, model)) return true
+    preserved.push({ from: model, to: model })
+    return false
+  })
+  modelMappings.value = modelMappings.value.filter(mapping => {
+    if (!isManagedCindyMapping(mapping.from, mapping.to)) return true
+    preserved.push({ ...mapping })
+    return false
+  })
+  preservedCindyManagedMappings.value = preserved
+}
+
+const loadCindyManagedModels = async (account: Account) => {
+  const requestSequence = ++cindyCatalogRequestSequence
+  resetCindyManagedModels()
+  if (!isCindyOpenAIAPIKeyAccount(account)) return
+
+  cindyCatalogLoading.value = true
+  try {
+    const models = await adminAPI.accounts.getAvailableModels(account.id)
+    if (requestSequence !== cindyCatalogRequestSequence) return
+
+    cindyManagedCatalog.value = models.filter(model => model.managed === true && !model.alias_target)
+    cindyManagedAliases.value = models.filter(model => model.managed === true && Boolean(model.alias_target))
+    preserveManagedCindyMappings()
+  } catch {
+    if (requestSequence !== cindyCatalogRequestSequence) return
+    cindyCatalogLoadFailed.value = true
+  } finally {
+    if (requestSequence === cindyCatalogRequestSequence) {
+      cindyCatalogLoading.value = false
+    }
+  }
+}
+
 watch(
   [() => props.show, () => props.account],
   ([show, newAccount], [wasShow, previousAccount]) => {
     if (!show || !newAccount) {
+      cindyCatalogRequestSequence += 1
+      resetCindyManagedModels()
       return
     }
     if (!wasShow || newAccount !== previousAccount) {
       syncFormFromAccount(newAccount)
       loadTLSProfiles()
+      void loadCindyManagedModels(newAccount)
     }
   },
   { immediate: true }
