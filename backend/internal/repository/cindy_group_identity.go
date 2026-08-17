@@ -7,7 +7,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
-// classifyStrictCindyGroupWithSQL evaluates complete active membership with a
+// classifyStrictCindyGroupWithSQL evaluates complete non-deleted membership with a
 // single aggregate query. COUNT/SUM(CASE) is supported by both PostgreSQL and
 // the SQLite repository tests, while retaining the exact structured identity
 // boundary used by service.IsCindyAPIKeyAccount.
@@ -17,24 +17,26 @@ func classifyStrictCindyGroupWithSQL(ctx context.Context, executor sqlExecutor, 
 	}
 	rows, err := executor.QueryContext(ctx, `
 		SELECT
-			COUNT(*) AS active_account_count,
+			COUNT(*) AS account_count,
 			COALESCE(SUM(CASE WHEN
-				a.platform = $2
-				AND a.type = $3
-				AND LOWER(TRIM(a.credentials ->> 'base_url')) IN ($4, $5)
+				a.platform = $3
+				AND a.type = $4
+				AND LOWER(TRIM(a.credentials ->> 'base_url')) IN ($5, $6)
 			THEN 1 ELSE 0 END), 0) AS cindy_account_count
 		FROM account_groups ag
 		JOIN accounts a ON a.id = ag.account_id
+		JOIN groups g ON g.id = ag.group_id
 		WHERE ag.group_id = $1
+			AND g.platform = $2
+			AND g.deleted_at IS NULL
 			AND a.deleted_at IS NULL
-			AND a.status = $6
 	`,
 		groupID,
+		service.PlatformOpenAI,
 		service.PlatformOpenAI,
 		service.AccountTypeAPIKey,
 		"https://api.laxarouter.ai",
 		"https://api.laxarouter.ai/",
-		service.StatusActive,
 	)
 	if err != nil {
 		return false, err
@@ -46,12 +48,12 @@ func classifyStrictCindyGroupWithSQL(ctx context.Context, executor sqlExecutor, 
 		}
 		return false, errors.New("cindy group identity query returned no row")
 	}
-	var activeAccountCount, cindyAccountCount int64
-	if err := rows.Scan(&activeAccountCount, &cindyAccountCount); err != nil {
+	var accountCount, cindyAccountCount int64
+	if err := rows.Scan(&accountCount, &cindyAccountCount); err != nil {
 		return false, err
 	}
 	if err := rows.Err(); err != nil {
 		return false, err
 	}
-	return activeAccountCount > 0 && activeAccountCount == cindyAccountCount, nil
+	return accountCount > 0 && accountCount == cindyAccountCount, nil
 }

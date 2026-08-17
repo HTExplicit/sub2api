@@ -22,7 +22,7 @@ type cindyGroupIdentityClassifier interface {
 // prevents promoted calls through legacy test doubles that anonymously embed a
 // nil AccountRepository.
 type cindyGroupAccountReader interface {
-	ListByGroup(ctx context.Context, groupID int64) ([]Account, error)
+	ListCindyGroupIdentityMembers(ctx context.Context, groupID int64) ([]Account, error)
 	CindyGroupIdentityReaderMarker()
 }
 
@@ -82,10 +82,9 @@ func isStrictCindyGroup(ctx context.Context, repo any, groupID *int64) bool {
 }
 
 func loadStrictCindyGroup(ctx context.Context, repo cindyGroupAccountReader, groupID int64) (bool, error) {
-	// Group identity depends on complete active membership, not transient
-	// schedulability. Balance-exhausted Cindy accounts remain active and must
-	// keep the group on its strict catalogue and routing policy.
-	accounts, err := repo.ListByGroup(ctx, groupID)
+	// Group identity depends on every non-deleted membership, regardless of
+	// enabled or transient schedulability state. This matches admin audit/split.
+	accounts, err := repo.ListCindyGroupIdentityMembers(ctx, groupID)
 	if err != nil {
 		return false, err
 	}
@@ -123,7 +122,7 @@ func isNilCindyGroupDependency(repo any) bool {
 }
 
 func classifyAuthenticatedCindyIdentityGroup(ctx context.Context, repo any, group *Group) (bool, error) {
-	if group == nil || group.ID <= 0 {
+	if group == nil || group.ID <= 0 || group.Platform != PlatformOpenAI {
 		return false, nil
 	}
 	if group.StrictCindyKnown {
@@ -147,7 +146,7 @@ func hasSchedulableCindyAccount(ctx context.Context, repo any, group *Group) (bo
 	if !CindyCapabilityCatalogFeatureEnabled() {
 		return false, nil
 	}
-	if group == nil || group.ID <= 0 {
+	if group == nil || group.ID <= 0 || group.Platform != PlatformOpenAI {
 		return false, nil
 	}
 
@@ -209,7 +208,7 @@ func (s *OpenAIGatewayService) ClassifyCindyIdentityGroup(ctx context.Context, g
 // closed so a random Cindy upstream manifest cannot leak live or unverified IDs.
 func (s *OpenAIGatewayService) ResolveCindyCodexModelsScope(ctx context.Context, group *Group) (CindyCodexModelsScope, error) {
 	var scope CindyCodexModelsScope
-	if !CindyCapabilityCatalogFeatureEnabled() || group == nil || group.ID <= 0 {
+	if !CindyCapabilityCatalogFeatureEnabled() || group == nil || group.ID <= 0 || group.Platform != PlatformOpenAI {
 		return scope, nil
 	}
 	if s == nil {

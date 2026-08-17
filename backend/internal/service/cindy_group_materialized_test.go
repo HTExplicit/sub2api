@@ -34,28 +34,33 @@ func TestClassifyAuthenticatedStrictCindyGroupUsesMaterializedIdentity(t *testin
 	}{
 		{
 			name:       "known ordinary snapshot does not query classifier",
-			group:      &Group{ID: 1, StrictCindyKnown: true},
+			group:      &Group{ID: 1, Platform: PlatformOpenAI, StrictCindyKnown: true},
 			classifier: &materializedCindyClassifierStub{err: transient},
 		},
 		{
 			name:       "known Cindy snapshot does not query classifier",
-			group:      &Group{ID: 2, StrictCindyKnown: true, StrictCindy: true},
+			group:      &Group{ID: 2, Platform: PlatformOpenAI, StrictCindyKnown: true, StrictCindy: true},
 			classifier: &materializedCindyClassifierStub{err: transient},
 			wantStrict: true,
 		},
 		{
 			name:       "legacy unknown snapshot explicitly falls back",
-			group:      &Group{ID: 3},
+			group:      &Group{ID: 3, Platform: PlatformOpenAI},
 			classifier: &materializedCindyClassifierStub{strict: true},
 			wantStrict: true,
 			wantCalls:  1,
 		},
 		{
 			name:       "legacy fallback failure remains fail closed",
-			group:      &Group{ID: 4},
+			group:      &Group{ID: 4, Platform: PlatformOpenAI},
 			classifier: &materializedCindyClassifierStub{err: transient},
 			wantErr:    transient,
 			wantCalls:  1,
+		},
+		{
+			name:       "non OpenAI group rejects a stale Cindy marker",
+			group:      &Group{ID: 5, Platform: PlatformGemini, StrictCindyKnown: true, StrictCindy: true},
+			classifier: &materializedCindyClassifierStub{strict: true},
 		},
 	}
 
@@ -102,11 +107,11 @@ func TestAPIKeyAuthSnapshotRoundTripsMaterializedCindyIdentity(t *testing.T) {
 	require.True(t, materialized.Group.StrictCindy)
 }
 
-func TestAPIKeyAuthSnapshotRejectsV19WithoutMaterializedIdentity(t *testing.T) {
+func TestAPIKeyAuthSnapshotRejectsV20WithActiveOnlyCindyIdentity(t *testing.T) {
 	t.Parallel()
 	svc := &APIKeyService{}
-	apiKey, used, err := svc.applyAuthCacheEntry("sk-v19", &APIKeyAuthCacheEntry{
-		Snapshot: &APIKeyAuthSnapshot{Version: 19},
+	apiKey, used, err := svc.applyAuthCacheEntry("sk-v20", &APIKeyAuthCacheEntry{
+		Snapshot: &APIKeyAuthSnapshot{Version: 20},
 	})
 	require.NoError(t, err)
 	require.False(t, used)

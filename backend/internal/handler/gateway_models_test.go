@@ -63,6 +63,10 @@ func (s *gatewayModelsAccountRepoStub) ListByGroup(ctx context.Context, groupID 
 	return s.ListSchedulableByGroupID(ctx, groupID)
 }
 
+func (s *gatewayModelsAccountRepoStub) ListCindyGroupIdentityMembers(ctx context.Context, groupID int64) ([]service.Account, error) {
+	return s.ListByGroup(ctx, groupID)
+}
+
 func (s *gatewayModelsAccountRepoStub) CindyGroupIdentityReaderMarker() {}
 
 type gatewayModelsPromotedNilAccountRepoStub struct {
@@ -269,6 +273,37 @@ func TestGatewayModelCapabilities_MixedGroupReturnsLocalFeatureGate404(t *testin
 	require.Empty(t, GetUpstreamEndpoint(c, service.PlatformOpenAI))
 }
 
+func TestGatewayModelCapabilities_DisabledOrdinaryMemberKeepsGroupMixed(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	groupID := int64(5610)
+	disabledOrdinary := service.Account{
+		ID:       3,
+		Platform: service.PlatformOpenAI,
+		Type:     service.AccountTypeAPIKey,
+		Status:   service.StatusDisabled,
+		Credentials: map[string]any{
+			"api_key":  "not-exposed",
+			"base_url": "https://ordinary.example.invalid",
+		},
+	}
+	h := newGatewayModelsHandlerForTest(&gatewayModelsAccountRepoStub{byGroup: map[int64][]service.Account{
+		groupID: {cindyGatewayModelAccountForTest(1), disabledOrdinary},
+	}})
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, EndpointModelCapabilities, nil)
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+		GroupID: &groupID,
+		Group:   &service.Group{ID: groupID, Platform: service.PlatformOpenAI},
+	})
+
+	h.ModelCapabilities(c)
+
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	require.Contains(t, rec.Body.String(), "Model capabilities are not available for this group")
+	require.Empty(t, GetUpstreamEndpoint(c, service.PlatformOpenAI))
+}
+
 func TestGatewayModelCapabilities_NoCindyReturns404(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	groupID := int64(5606)
@@ -308,7 +343,10 @@ func TestGatewayModelCapabilities_NonOpenAIGroupReturns404WithoutIdentityLookup(
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodGet, EndpointModelCapabilities, nil)
 	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
-		Group: &service.Group{ID: 5609, Platform: service.PlatformAnthropic},
+		Group: &service.Group{
+			ID: 5609, Platform: service.PlatformAnthropic,
+			StrictCindyKnown: true, StrictCindy: true,
+		},
 	})
 
 	h.ModelCapabilities(c)

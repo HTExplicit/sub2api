@@ -15,13 +15,13 @@ func TestAccountRepositoryClassifyStrictCindyGroupUsesAggregateIdentityQuery(t *
 
 	tests := []struct {
 		name       string
-		active     int64
+		members    int64
 		cindy      int64
 		wantStrict bool
 	}{
-		{name: "all active members are Cindy", active: 2, cindy: 2, wantStrict: true},
-		{name: "mixed active membership", active: 2, cindy: 1, wantStrict: false},
-		{name: "no active membership", active: 0, cindy: 0, wantStrict: false},
+		{name: "all non-deleted members are Cindy", members: 2, cindy: 2, wantStrict: true},
+		{name: "mixed non-deleted membership", members: 2, cindy: 1, wantStrict: false},
+		{name: "no non-deleted membership", members: 0, cindy: 0, wantStrict: false},
 	}
 
 	for _, test := range tests {
@@ -35,13 +35,13 @@ func TestAccountRepositoryClassifyStrictCindyGroupUsesAggregateIdentityQuery(t *
 				WithArgs(
 					int64(42),
 					service.PlatformOpenAI,
+					service.PlatformOpenAI,
 					service.AccountTypeAPIKey,
 					"https://api.laxarouter.ai",
 					"https://api.laxarouter.ai/",
-					service.StatusActive,
 				).
-				WillReturnRows(sqlmock.NewRows([]string{"active_account_count", "cindy_account_count"}).
-					AddRow(test.active, test.cindy))
+				WillReturnRows(sqlmock.NewRows([]string{"account_count", "cindy_account_count"}).
+					AddRow(test.members, test.cindy))
 
 			repo := &accountRepository{sql: db}
 			got, err := repo.ClassifyStrictCindyGroup(context.Background(), 42)
@@ -52,8 +52,11 @@ func TestAccountRepositoryClassifyStrictCindyGroupUsesAggregateIdentityQuery(t *
 			normalizedSQL := strings.ToLower(capturedSQL)
 			require.Contains(t, normalizedSQL, "sum(case when")
 			require.Contains(t, normalizedSQL, "lower(trim")
+			require.Contains(t, normalizedSQL, "join groups g")
+			require.Contains(t, normalizedSQL, "g.platform = $2")
+			require.Contains(t, normalizedSQL, "g.deleted_at is null")
 			require.Contains(t, normalizedSQL, "a.deleted_at is null")
-			require.Contains(t, normalizedSQL, "a.status = $6")
+			require.NotContains(t, normalizedSQL, "a.status")
 		})
 	}
 }

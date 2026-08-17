@@ -79,6 +79,53 @@ func TestAPIKeyRepositoryGetByKeyForAuthMaterializesCindyIdentity(t *testing.T) 
 	require.False(t, ordinary.Group.StrictCindy)
 }
 
+func TestAPIKeyRepositoryGetByKeyForAuthTreatsDisabledOrdinaryMemberAsMixed(t *testing.T) {
+	repo, client := newAPIKeyRepoSQLite(t)
+	ctx := context.Background()
+	user := mustCreateAPIKeyRepoUser(t, ctx, client, "cindy-auth-disabled-ordinary@test.com")
+	group, err := client.Group.Create().
+		SetName("cindy-auth-disabled-ordinary").
+		SetPlatform(service.PlatformOpenAI).
+		SetStatus(service.StatusActive).
+		Save(ctx)
+	require.NoError(t, err)
+
+	createMember := func(name, status, baseURL string) {
+		account, createErr := client.Account.Create().
+			SetName(name).
+			SetPlatform(service.PlatformOpenAI).
+			SetType(service.AccountTypeAPIKey).
+			SetStatus(status).
+			SetCredentials(map[string]any{
+				"api_key":  "upstream-secret",
+				"base_url": baseURL,
+			}).
+			Save(ctx)
+		require.NoError(t, createErr)
+		_, createErr = client.AccountGroup.Create().
+			SetAccountID(account.ID).
+			SetGroupID(group.ID).
+			SetPriority(50).
+			Save(ctx)
+		require.NoError(t, createErr)
+	}
+	createMember("active-cindy", service.StatusActive, "https://api.laxarouter.ai")
+	createMember("disabled-ordinary", service.StatusDisabled, "https://api.openai.com")
+
+	key := &service.APIKey{
+		UserID: user.ID, GroupID: &group.ID, Key: "sk-cindy-auth-disabled-ordinary",
+		Name: "Mixed materialized", Status: service.StatusActive,
+	}
+	require.NoError(t, repo.Create(ctx, key))
+
+	got, err := repo.GetByKeyForAuth(ctx, key.Key)
+	require.NoError(t, err)
+	require.NotNil(t, got.Group)
+	require.True(t, got.Group.StrictCindyKnown)
+	require.False(t, got.Group.StrictCindy,
+		"strict identity must include disabled non-deleted members")
+}
+
 func TestAPIKeyRepositoryGetByKeyForAuthMaterializesEmptyGroupAsKnownOrdinary(t *testing.T) {
 	repo, client := newAPIKeyRepoSQLite(t)
 	ctx := context.Background()

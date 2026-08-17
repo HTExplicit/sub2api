@@ -422,10 +422,18 @@ func (s *mutableCindyGroupReaderStub) ListByGroup(context.Context, int64) ([]Acc
 	return append([]Account(nil), s.accounts...), s.err
 }
 
+func (s *mutableCindyGroupReaderStub) ListCindyGroupIdentityMembers(ctx context.Context, groupID int64) ([]Account, error) {
+	return s.ListByGroup(ctx, groupID)
+}
+
 func (s *mutableCindyGroupReaderStub) CindyGroupIdentityReaderMarker() {}
 
 func (s cindyGroupReaderStub) ListByGroup(context.Context, int64) ([]Account, error) {
 	return append([]Account(nil), s.accounts...), s.err
+}
+
+func (s cindyGroupReaderStub) ListCindyGroupIdentityMembers(ctx context.Context, groupID int64) ([]Account, error) {
+	return s.ListByGroup(ctx, groupID)
 }
 
 func (s cindyGroupReaderStub) CindyGroupIdentityReaderMarker() {}
@@ -439,7 +447,7 @@ func (s unmarkedCindyGroupReaderStub) ListByGroup(context.Context, int64) ([]Acc
 	panic("unmarked group reader must not be called")
 }
 
-func TestIsStrictCindyGroupRequiresEverySchedulableAccount(t *testing.T) {
+func TestIsStrictCindyGroupRequiresEveryNonDeletedMember(t *testing.T) {
 	t.Parallel()
 	groupID := int64(42)
 	cindy := Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"}}
@@ -452,6 +460,10 @@ func TestIsStrictCindyGroupRequiresEverySchedulableAccount(t *testing.T) {
 	exhausted.CindyBalanceInsufficientAt = &now
 	require.True(t, isStrictCindyGroup(context.Background(), cindyGroupReaderStub{accounts: []Account{exhausted}}, &groupID), "persistent group identity must survive a fully exhausted pool")
 	require.False(t, isStrictCindyGroup(context.Background(), cindyGroupReaderStub{accounts: []Account{cindy, other}}, &groupID))
+	disabledOther := other
+	disabledOther.Status = StatusDisabled
+	disabledOther.Schedulable = false
+	require.False(t, isStrictCindyGroup(context.Background(), cindyGroupReaderStub{accounts: []Account{cindy, disabledOther}}, &groupID))
 	require.False(t, isStrictCindyGroup(context.Background(), cindyGroupReaderStub{}, &groupID))
 	var typedNil *cindyGroupReaderStub
 	require.False(t, isStrictCindyGroup(context.Background(), typedNil, &groupID))
