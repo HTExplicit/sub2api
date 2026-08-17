@@ -226,9 +226,12 @@ run_apply() {
 }
 
 assert_ssh_invocation() {
-  local expected_remote_command=$1 index
+  local expected_remote_command=$1 index line
   local -a actual expected
-  mapfile -t actual <"$tmpdir/ssh-capture"
+  actual=()
+  while IFS= read -r line; do
+    actual+=("$line")
+  done <"$tmpdir/ssh-capture"
   expected=(
     -F /dev/null
     -i "$tmpdir/home/.ssh/sub2api_deploy"
