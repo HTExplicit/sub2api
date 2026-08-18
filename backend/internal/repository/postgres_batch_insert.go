@@ -34,19 +34,19 @@ func postgresBatchInsert(
 	}
 
 	var query strings.Builder
-	query.WriteString("INSERT INTO ")
-	query.WriteString(pgx.Identifier{table}.Sanitize())
-	query.WriteString(" (")
+	_, _ = query.WriteString("INSERT INTO ")
+	_, _ = query.WriteString(pgx.Identifier{table}.Sanitize())
+	_, _ = query.WriteString(" (")
 	for index, column := range columns {
 		if column == "" {
 			return 0, fmt.Errorf("invalid empty batch insert column")
 		}
 		if index > 0 {
-			query.WriteByte(',')
+			_ = query.WriteByte(',')
 		}
-		query.WriteString(pgx.Identifier{column}.Sanitize())
+		_, _ = query.WriteString(pgx.Identifier{column}.Sanitize())
 	}
-	query.WriteString(") VALUES ")
+	_, _ = query.WriteString(") VALUES ")
 
 	args := make([]any, 0, len(rows)*len(columns))
 	parameter := 1
@@ -55,19 +55,19 @@ func postgresBatchInsert(
 			return 0, fmt.Errorf("batch insert row %d has %d values, want %d", rowIndex, len(row), len(columns))
 		}
 		if rowIndex > 0 {
-			query.WriteByte(',')
+			_ = query.WriteByte(',')
 		}
-		query.WriteByte('(')
+		_ = query.WriteByte('(')
 		for columnIndex, value := range row {
 			if columnIndex > 0 {
-				query.WriteByte(',')
+				_ = query.WriteByte(',')
 			}
-			query.WriteByte('$')
-			query.WriteString(strconv.Itoa(parameter))
+			_ = query.WriteByte('$')
+			_, _ = query.WriteString(strconv.Itoa(parameter))
 			parameter++
 			args = append(args, value)
 		}
-		query.WriteByte(')')
+		_ = query.WriteByte(')')
 	}
 
 	result, err := db.ExecContext(ctx, query.String(), args...)

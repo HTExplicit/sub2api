@@ -2,7 +2,6 @@ package repository
 
 import (
 	"database/sql"
-	"database/sql/driver"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
@@ -19,7 +18,7 @@ func openPostgresDB(dsn string, enableServerTiming bool) (*sql.DB, error) {
 		return nil, err
 	}
 
-	var connector driver.Connector = stdlib.GetConnector(*config)
+	connector := stdlib.GetConnector(*config)
 	if enableServerTiming {
 		connector = newServerTimingConnector(connector)
 	}

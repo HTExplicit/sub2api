@@ -284,7 +284,7 @@ func TestBatchImageRepository_MarkBatchImageJobSettled(t *testing.T) {
 	require.Equal(t, 0.5, *job.ActualCost)
 	require.Equal(t, "manifest-hash", batchImageDerefTest(job.ManifestHash))
 	require.NotNil(t, job.SettledAt)
-	require.Equal(t, now, *job.SettledAt)
+	require.True(t, now.Equal(*job.SettledAt), "settled instant mismatch: want %s, got %s", now, *job.SettledAt)
 
 	var eventCount int
 	err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM batch_image_events WHERE job_id = $1 AND event_type = 'settlement_completed'`, batchID).Scan(&eventCount)
