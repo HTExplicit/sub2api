@@ -259,7 +259,8 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	agentTaskRecoveryTried := false
 	invalidEncryptedContentRetryTried := false
 	tryRecoverInvalidEncryptedContent := func(upstreamMsg string, upstreamBody []byte) (bool, error) {
-		if invalidEncryptedContentRetryTried ||
+		if isOpenAICindyHTTPToWSV2Bypassed(c) ||
+			invalidEncryptedContentRetryTried ||
 			!isOpenAIInvalidEncryptedContentError(upstreamMsg, upstreamBody) ||
 			ValidateFunctionCallOutputContextBytes(body).HasFunctionCallOutput {
 			return false, nil

@@ -85,9 +85,12 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			body = liteBody
 		}
 	}
+	cindyHTTPFallbackBody := body
 	wsDecision := s.getOpenAIWSProtocolResolver().Resolve(account)
 	cindyHTTPToWSV2 := false
-	if bridgeDecision, eligible := s.resolveCindyHTTPToWSV2Decision(c, account); eligible {
+	if isOpenAICindyHTTPToWSV2Bypassed(c) {
+		wsDecision = openAIWSHTTPDecision("cindy_handshake_http_fallback")
+	} else if bridgeDecision, eligible := s.resolveCindyHTTPToWSV2Decision(c, account); eligible {
 		wsDecision = bridgeDecision
 		cindyHTTPToWSV2 = true
 		markOpenAICindyHTTPToWSV2Required(c)
@@ -795,6 +798,25 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			if c != nil && c.Writer != nil && c.Writer.Written() {
 				break
 			}
+			if cindyHTTPToWSV2 && !hasPreviousResponseID && isOpenAICindyHTTPToWSV2HandshakeForbidden(wsErr) {
+				if fallbackBody, safe := prepareOpenAICindyStatelessHTTPFallback(cindyHTTPFallbackBody); safe {
+					previousBypass, hadPreviousBypass := c.Get(openAICindyHTTPToWSV2BypassContextKey)
+					c.Set(openAICindyHTTPToWSV2BypassContextKey, true)
+					result, fallbackErr := s.Forward(ctx, c, account, fallbackBody)
+					if hadPreviousBypass {
+						c.Set(openAICindyHTTPToWSV2BypassContextKey, previousBypass)
+					} else {
+						c.Set(openAICindyHTTPToWSV2BypassContextKey, false)
+					}
+					logOpenAIWSModeInfo(
+						"cindy_http_bridge_fallback account_id=%d attempt=%d reason=handshake_forbidden success=%v",
+						account.ID,
+						attempt,
+						fallbackErr == nil,
+					)
+					return result, fallbackErr
+				}
+			}
 			if cindyHTTPToWSV2 && !hasPreviousResponseID {
 				if failoverErr, ok := s.cindyHTTPToWSV2FirstTurnFailover(
 					ctx, c, account, upstreamModel, wsErr,
@@ -950,7 +972,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	agentTaskRecoveryTried := false
 	rejectedFieldRetryState := newOpenAIResponsesRejectedFieldRetryState(body)
 	tryRecoverInvalidEncryptedContent := func(upstreamMsg string, upstreamBody []byte) (bool, error) {
-		if httpInvalidEncryptedContentRetryTried ||
+		if isOpenAICindyHTTPToWSV2Bypassed(c) ||
+			httpInvalidEncryptedContentRetryTried ||
 			!isOpenAIInvalidEncryptedContentError(upstreamMsg, upstreamBody) ||
 			ValidateFunctionCallOutputContextBytes(body).HasFunctionCallOutput {
 			return false, nil
