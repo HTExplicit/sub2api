@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/lib/pq"
 )
 
 type userGroupRateRepository struct {
@@ -70,7 +69,7 @@ func (r *userGroupRateRepository) GetByUserIDs(ctx context.Context, userIDs []in
 		SELECT user_id, group_id, rate_multiplier
 		FROM user_group_rate_multipliers
 		WHERE user_id = ANY($1) AND rate_multiplier IS NOT NULL
-	`, pq.Array(uniqueIDs))
+	`, uniqueIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -205,12 +204,12 @@ func (r *userGroupRateRepository) SyncUserGroupRates(ctx context.Context, userID
 			UPDATE user_group_rate_multipliers
 			SET rate_multiplier = NULL, updated_at = NOW()
 			WHERE user_id = $1 AND group_id = ANY($2)
-		`, userID, pq.Array(clearGroupIDs)); err != nil {
+		`, userID, clearGroupIDs); err != nil {
 			return err
 		}
 		if _, err := r.sql.ExecContext(ctx,
 			`DELETE FROM user_group_rate_multipliers WHERE user_id = $1 AND group_id = ANY($2) AND rate_multiplier IS NULL AND rpm_override IS NULL`,
-			userID, pq.Array(clearGroupIDs)); err != nil {
+			userID, clearGroupIDs); err != nil {
 			return err
 		}
 	}
@@ -230,7 +229,7 @@ func (r *userGroupRateRepository) SyncUserGroupRates(ctx context.Context, userID
 			DO UPDATE SET
 				rate_multiplier = EXCLUDED.rate_multiplier,
 				updated_at = EXCLUDED.updated_at
-		`, userID, now, pq.Array(upsertGroupIDs), pq.Array(upsertRates))
+		`, userID, now, upsertGroupIDs, upsertRates)
 		if err != nil {
 			return err
 		}
@@ -263,7 +262,7 @@ func (r *userGroupRateRepository) SyncGroupRateMultipliers(ctx context.Context, 
 			UPDATE user_group_rate_multipliers
 			SET rate_multiplier = NULL, updated_at = NOW()
 			WHERE group_id = $1 AND user_id <> ALL($2)
-		`, groupID, pq.Array(keepUserIDs)); err != nil {
+		`, groupID, keepUserIDs); err != nil {
 			return err
 		}
 	}
@@ -293,7 +292,7 @@ func (r *userGroupRateRepository) SyncGroupRateMultipliers(ctx context.Context, 
 		FROM unnest($3::bigint[], $4::double precision[]) AS data(user_id, rate_multiplier)
 		ON CONFLICT (user_id, group_id)
 		DO UPDATE SET rate_multiplier = EXCLUDED.rate_multiplier, updated_at = EXCLUDED.updated_at
-	`, groupID, now, pq.Array(userIDs), pq.Array(rates))
+	`, groupID, now, userIDs, rates)
 	return err
 }
 
@@ -330,7 +329,7 @@ func (r *userGroupRateRepository) SyncGroupRPMOverrides(ctx context.Context, gro
 			UPDATE user_group_rate_multipliers
 			SET rpm_override = NULL, updated_at = NOW()
 			WHERE group_id = $1 AND user_id <> ALL($2)
-		`, groupID, pq.Array(keepUserIDs)); err != nil {
+		`, groupID, keepUserIDs); err != nil {
 			return err
 		}
 	}
@@ -341,7 +340,7 @@ func (r *userGroupRateRepository) SyncGroupRPMOverrides(ctx context.Context, gro
 			UPDATE user_group_rate_multipliers
 			SET rpm_override = NULL, updated_at = NOW()
 			WHERE group_id = $1 AND user_id = ANY($2)
-		`, groupID, pq.Array(clearUserIDs)); err != nil {
+		`, groupID, clearUserIDs); err != nil {
 			return err
 		}
 	}
@@ -362,7 +361,7 @@ func (r *userGroupRateRepository) SyncGroupRPMOverrides(ctx context.Context, gro
 			FROM unnest($3::bigint[], $4::integer[]) AS data(user_id, rpm_override)
 			ON CONFLICT (user_id, group_id)
 			DO UPDATE SET rpm_override = EXCLUDED.rpm_override, updated_at = EXCLUDED.updated_at
-		`, groupID, now, pq.Array(upsertUserIDs), pq.Array(upsertValues))
+	`, groupID, now, upsertUserIDs, upsertValues)
 		if err != nil {
 			return err
 		}

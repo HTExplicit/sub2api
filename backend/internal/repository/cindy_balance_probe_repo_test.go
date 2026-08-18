@@ -11,7 +11,7 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/lib/pq"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 )
 
@@ -78,13 +78,13 @@ func TestCindyBalanceProbeRepositoryListJobsBoundsLimit(t *testing.T) {
 }
 
 func TestCindyBalanceProbeRepositoryLatestByAccountIDs(t *testing.T) {
-	db, mock, err := sqlmock.New()
+	db, mock, err := sqlmock.New(sqlmock.ValueConverterOption(pgxSQLMockValueConverter{}))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
 	now := time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
 	mock.ExpectQuery(`SELECT DISTINCT ON \(account_id\)[\s\S]+state AS outcome[\s\S]+WHERE account_id = ANY\(\$1\)[\s\S]+ORDER BY account_id, COALESCE\(finished_at, updated_at\) DESC`).
-		WithArgs("{11,22}").
+		WithArgs([]int64{11, 22}).
 		WillReturnRows(sqlmock.NewRows([]string{"account_id", "job_id", "outcome", "checked_at"}).
 			AddRow(int64(11), int64(101), "healthy", now).
 			AddRow(int64(22), int64(102), "luna_running", now.Add(time.Minute)))
@@ -196,7 +196,7 @@ func TestCindyBalanceProbeRepositoryCreateJobMapsSnapshotSerializationFailureToC
 
 	mock.ExpectBegin()
 	mock.ExpectQuery(`SELECT a\.id, a\.name, a\.platform, a\.type, a\.credentials, a\.extra,[\s\S]+FROM accounts a[\s\S]+ORDER BY a\.id`).
-		WillReturnError(&pq.Error{Code: "40001"})
+		WillReturnError(&pgconn.PgError{Code: "40001"})
 	mock.ExpectRollback()
 
 	job, err := (&cindyBalanceProbeRepository{db: db}).CreateJob(

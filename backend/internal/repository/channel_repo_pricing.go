@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/lib/pq"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // --- 模型定价 ---
@@ -97,7 +97,7 @@ func (r *channelRepository) batchLoadModelPricing(ctx context.Context, channelID
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT id, channel_id, platform, models, billing_mode, input_price, output_price, cache_write_price, cache_read_price, image_input_price, image_output_price, per_request_price, time_pricing, created_at, updated_at
 		 FROM channel_model_pricing WHERE channel_id = ANY($1) ORDER BY channel_id, id`,
-		pq.Array(channelIDs),
+		channelIDs,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("batch load model pricing: %w", err)
@@ -139,7 +139,7 @@ func (r *channelRepository) batchLoadIntervals(ctx context.Context, pricingIDs [
 		        per_request_price, sort_order, created_at, updated_at
 		 FROM channel_pricing_intervals
 		 WHERE pricing_id = ANY($1) ORDER BY pricing_id, sort_order, id`,
-		pq.Array(pricingIDs),
+		pricingIDs,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("batch load intervals: %w", err)
@@ -217,7 +217,7 @@ func setGroupIDsTx(ctx context.Context, exec dbExec, channelID int64, groupIDs [
 	_, err := exec.ExecContext(ctx,
 		`INSERT INTO channel_groups (channel_id, group_id)
 		 SELECT $1, unnest($2::bigint[])`,
-		channelID, pq.Array(groupIDs),
+		channelID, groupIDs,
 	)
 	if err != nil {
 		return fmt.Errorf("insert group associations: %w", err)
@@ -309,11 +309,11 @@ func replaceModelPricingTx(ctx context.Context, exec dbExec, channelID int64, pr
 	return nil
 }
 
-// isUniqueViolation 检查 pq 唯一约束违反错误
+// isUniqueViolation 检查 PostgreSQL 唯一约束违反错误
 func isUniqueViolation(err error) bool {
-	var pqErr *pq.Error
-	if errors.As(err, &pqErr) && pqErr != nil {
-		return pqErr.Code == "23505"
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr != nil {
+		return pgErr.Code == "23505"
 	}
 	return false
 }

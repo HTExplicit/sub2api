@@ -45,6 +45,56 @@ func TestOpsRepositoryBatchInsertErrorLogs(t *testing.T) {
 	require.Equal(t, 2, count)
 }
 
+func TestPGXBatchInsertAuditAndSystemLogs(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC()
+	auditRequestID := "pgx-audit-batch"
+	systemRequestID := "pgx-system-batch"
+	t.Cleanup(func() {
+		_, _ = integrationDB.ExecContext(ctx, "DELETE FROM audit_logs WHERE request_id = $1", auditRequestID)
+		_, _ = integrationDB.ExecContext(ctx, "DELETE FROM ops_system_logs WHERE request_id = $1", systemRequestID)
+	})
+
+	auditRepo := NewAuditLogRepository(integrationDB)
+	inserted, err := auditRepo.BatchInsert(ctx, []*service.AuditLog{
+		nil,
+		{
+			CreatedAt:   now,
+			Action:      "pgx.batch.audit",
+			Method:      "POST",
+			Path:        "/internal/pgx-batch",
+			RequestID:   auditRequestID,
+			StatusCode:  202,
+			LatencyMs:   3,
+			RequestBody: `{"safe":true}`,
+			Extra:       map[string]any{"driver": "pgx"},
+		},
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, inserted)
+
+	opsRepo := NewOpsRepository(integrationDB)
+	inserted, err = opsRepo.BatchInsertSystemLogs(ctx, []*service.OpsInsertSystemLogInput{
+		nil,
+		{
+			CreatedAt: now,
+			Level:     "info",
+			Component: "repository-test",
+			Message:   "pgx batch insert",
+			RequestID: systemRequestID,
+			ExtraJSON: `{"driver":"pgx"}`,
+		},
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, inserted)
+
+	var auditCount, systemCount int
+	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM audit_logs WHERE request_id = $1", auditRequestID).Scan(&auditCount))
+	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM ops_system_logs WHERE request_id = $1", systemRequestID).Scan(&systemCount))
+	require.Equal(t, 1, auditCount)
+	require.Equal(t, 1, systemCount)
+}
+
 func TestEnqueueSchedulerOutbox_DeduplicatesIdempotentEvents(t *testing.T) {
 	ctx := context.Background()
 	_, _ = integrationDB.ExecContext(ctx, "TRUNCATE scheduler_outbox RESTART IDENTITY")

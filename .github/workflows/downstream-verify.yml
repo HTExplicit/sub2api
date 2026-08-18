@@ -77,7 +77,7 @@ jobs:
         run: go test -p=1 -tags integration ./internal/repository -run '^TestAccountTaxonomy.*Integration$' -count=1
       - name: Cindy balance, identity, and split integration tests
         working-directory: backend
-        run: go test -p=1 -tags integration ./internal/repository -run '^Test(CindyBalanceProbe.*|CindyGroupSplit(PreviewDriftAndAtomicCommit|RollsBackAllWritesWhenOutboxInsertFails)|ClassifyStrictCindyGroupUsesAllNonDeletedMembersAndOpenAIGroup)$' -count=1
+        run: go test -p=1 -tags integration ./internal/repository -run '^Test(CindyBalanceProbe.*|CindyGroupSplit(PreviewDriftAndAtomicCommit|RollsBackAllWritesWhenOutboxInsertFails)|ClassifyStrictCindyGroupUsesAllNonDeletedMembersAndOpenAIGroup|PGXBatchInsertAuditAndSystemLogs)$' -count=1
       - name: Cindy defaults migration tests
         working-directory: backend
         run: |

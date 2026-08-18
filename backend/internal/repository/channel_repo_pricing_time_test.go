@@ -24,7 +24,7 @@ const channelModelPricingTimePricingJSON = `{"timezone":"Asia/Shanghai","periods
 
 func newChannelModelPricingTimePricingRepo(t *testing.T) (*channelRepository, sqlmock.Sqlmock) {
 	t.Helper()
-	db, mock, err := sqlmock.New()
+	db, mock, err := sqlmock.New(sqlmock.ValueConverterOption(pgxSQLMockValueConverter{}))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	return &channelRepository{db: db}, mock

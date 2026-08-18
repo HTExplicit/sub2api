@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/lib/pq"
 	"github.com/stretchr/testify/require"
 )
 
@@ -82,9 +81,9 @@ func TestCindyGroupSplitPreviewDriftAndAtomicCommit(t *testing.T) {
 	targetName := fmt.Sprintf("cindy-split-target-%d", suffix)
 	var targetID int64
 	t.Cleanup(func() {
-		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM api_keys WHERE id = ANY($1)", pq.Array([]int64{selectedKey.ID, unselectedKey.ID}))
-		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM account_groups WHERE account_id = ANY($1)", pq.Array([]int64{cindy.ID, ordinary.ID}))
-		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM accounts WHERE id = ANY($1)", pq.Array([]int64{cindy.ID, ordinary.ID}))
+		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM api_keys WHERE id = ANY($1)", []int64{selectedKey.ID, unselectedKey.ID})
+		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM account_groups WHERE account_id = ANY($1)", []int64{cindy.ID, ordinary.ID})
+		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM accounts WHERE id = ANY($1)", []int64{cindy.ID, ordinary.ID})
 		if targetID > 0 {
 			_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM scheduler_outbox WHERE group_id = $1", targetID)
 		}
@@ -260,8 +259,8 @@ func TestCindyGroupSplitRollsBackAllWritesWhenOutboxInsertFails(t *testing.T) {
 			      jsonb_build_object('account_ids', jsonb_build_array($4::bigint))
 		`, source.ID, targetName, cindy.ID, ordinary.ID)
 		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM api_keys WHERE id = $1", selectedKey.ID)
-		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM account_groups WHERE account_id = ANY($1)", pq.Array([]int64{cindy.ID, ordinary.ID}))
-		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM accounts WHERE id = ANY($1)", pq.Array([]int64{cindy.ID, ordinary.ID}))
+		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM account_groups WHERE account_id = ANY($1)", []int64{cindy.ID, ordinary.ID})
+		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM accounts WHERE id = ANY($1)", []int64{cindy.ID, ordinary.ID})
 		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM groups WHERE name IN ($1, $2)", source.Name, targetName)
 		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM users WHERE id = $1", user.ID)
 	})
@@ -305,7 +304,7 @@ func TestCindyGroupSplitRollsBackAllWritesWhenOutboxInsertFails(t *testing.T) {
 	require.NoError(t, integrationDB.QueryRowContext(ctx,
 		"SELECT COUNT(*) FROM account_groups WHERE group_id = $1 AND account_id = ANY($2)",
 		source.ID,
-		pq.Array([]int64{cindy.ID, ordinary.ID}),
+		[]int64{cindy.ID, ordinary.ID},
 	).Scan(&sourceMemberships))
 	require.NoError(t, integrationDB.QueryRowContext(ctx, `
 		SELECT COUNT(*)

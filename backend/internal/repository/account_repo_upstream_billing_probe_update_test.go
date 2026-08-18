@@ -315,7 +315,7 @@ func TestBulkUpdateDisablingProbeRemovesSnapshot(t *testing.T) {
 }
 
 func TestBulkUpdateProbeEligibilityMismatchRollsBack(t *testing.T) {
-	db, mock, err := sqlmock.New()
+	db, mock, err := sqlmock.New(sqlmock.ValueConverterOption(pgxSQLMockValueConverter{}))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	client := dbent.NewClient(dbent.Driver(entsql.OpenDB(dialect.Postgres, db)))
@@ -324,7 +324,7 @@ func TestBulkUpdateProbeEligibilityMismatchRollsBack(t *testing.T) {
 	enabled := true
 	mock.ExpectBegin()
 	mock.ExpectExec(`(?s)UPDATE accounts SET extra = .* WHERE id = ANY\(\$2\) AND deleted_at IS NULL AND type = \$3`).
-		WithArgs(sqlmock.AnyArg(), `{27,28}`, service.AccountTypeAPIKey).
+		WithArgs(sqlmock.AnyArg(), []int64{27, 28}, service.AccountTypeAPIKey).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectRollback()
 
@@ -450,7 +450,7 @@ func TestUpdateCredentialsRollsBackWhenOutboxFails(t *testing.T) {
 }
 
 func TestBulkUpdateRollsBackWhenOutboxFails(t *testing.T) {
-	db, mock, err := sqlmock.New()
+	db, mock, err := sqlmock.New(sqlmock.ValueConverterOption(pgxSQLMockValueConverter{}))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	client := dbent.NewClient(dbent.Driver(entsql.OpenDB(dialect.Postgres, db)))
@@ -459,7 +459,7 @@ func TestBulkUpdateRollsBackWhenOutboxFails(t *testing.T) {
 	name := "renamed"
 	mock.ExpectBegin()
 	mock.ExpectExec(`(?s)UPDATE accounts SET name = \$1.*WHERE id = ANY\(\$2\)`).
-		WithArgs(name, `{27,28}`).
+		WithArgs(name, []int64{27, 28}).
 		WillReturnResult(sqlmock.NewResult(0, 2))
 	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO scheduler_outbox")).WillReturnError(errors.New("outbox failed"))
 	mock.ExpectRollback()

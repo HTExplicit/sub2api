@@ -11,7 +11,6 @@ import (
 	dbaccountgroup "github.com/Wei-Shaw/sub2api/ent/accountgroup"
 	"github.com/Wei-Shaw/sub2api/ent/schema/mixins"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/lib/pq"
 )
 
 func (r *accountRepository) lockCindyAccount(ctx context.Context, accountID int64) (*dbAccountCandidate, error) {
@@ -240,7 +239,7 @@ func (r *accountRepository) DeleteCindyInsufficient(ctx context.Context, expecte
 	if _, err := tx.Client().AccountGroup.Delete().Where(dbaccountgroup.AccountIDIn(ids...)).Exec(ctx); err != nil {
 		return nil, err
 	}
-	if _, err := tx.Client().ExecContext(ctx, "DELETE FROM scheduled_test_plans WHERE account_id = ANY($1)", pq.Array(ids)); err != nil {
+	if _, err := tx.Client().ExecContext(ctx, "DELETE FROM scheduled_test_plans WHERE account_id = ANY($1)", ids); err != nil {
 		return nil, err
 	}
 	deleted, err := tx.Client().Account.Delete().Where(dbaccount.IDIn(ids...)).Exec(mixins.SkipSoftDelete(ctx))

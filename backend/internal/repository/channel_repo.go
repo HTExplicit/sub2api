@@ -9,7 +9,6 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/lib/pq"
 )
 
 type channelRepository struct {
@@ -370,7 +369,7 @@ func (r *channelRepository) batchLoadGroupIDs(ctx context.Context, channelIDs []
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT channel_id, group_id FROM channel_groups
 		 WHERE channel_id = ANY($1) ORDER BY channel_id, group_id`,
-		pq.Array(channelIDs),
+		channelIDs,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("batch load group ids: %w", err)
@@ -453,7 +452,7 @@ func (r *channelRepository) GetGroupsInOtherChannels(ctx context.Context, channe
 	}
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT group_id FROM channel_groups WHERE group_id = ANY($1) AND channel_id != $2`,
-		pq.Array(groupIDs), channelID,
+		groupIDs, channelID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get groups in other channels: %w", err)
@@ -528,7 +527,7 @@ func (r *channelRepository) GetGroupPlatforms(ctx context.Context, groupIDs []in
 	}
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT id, platform FROM groups WHERE id = ANY($1)`,
-		pq.Array(groupIDs),
+		groupIDs,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get group platforms: %w", err)

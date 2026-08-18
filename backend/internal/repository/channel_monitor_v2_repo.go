@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/lib/pq"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type channelMonitorV2Repository struct{ db *sql.DB }
@@ -22,6 +22,7 @@ func NewChannelMonitorV2Repository(db *sql.DB) service.ChannelMonitorV2Repositor
 func (r *channelMonitorV2Repository) GetConfig(ctx context.Context) (*service.ChannelMonitorV2Config, error) {
 	var cfg service.ChannelMonitorV2Config
 	var platforms, thresholds []byte
+	pgTypeMap := pgtype.NewMap()
 	err := r.db.QueryRowContext(ctx, `
 		SELECT version, enabled, refresh_interval_seconds, platforms, group_ids,
 		       COALESCE(ignored_error_categories, '{}'),
@@ -29,7 +30,7 @@ func (r *channelMonitorV2Repository) GetConfig(ctx context.Context) (*service.Ch
 		       updated_at, updated_by
 		FROM channel_monitor_v2_config WHERE id = 1`).Scan(
 		&cfg.Version, &cfg.Enabled, &cfg.RefreshIntervalSeconds, &platforms,
-		pq.Array(&cfg.GroupIDs), pq.Array(&cfg.IgnoredErrorCategories),
+		pgTypeMap.SQLScanner(&cfg.GroupIDs), pgTypeMap.SQLScanner(&cfg.IgnoredErrorCategories),
 		&thresholds,
 		&cfg.UpdatedAt, &cfg.UpdatedBy,
 	)
@@ -65,6 +66,7 @@ func (r *channelMonitorV2Repository) UpdateConfig(ctx context.Context, cfg servi
 	}
 	var updated service.ChannelMonitorV2Config
 	var raw, rawThresholds []byte
+	pgTypeMap := pgtype.NewMap()
 	err = r.db.QueryRowContext(ctx, `
 		UPDATE channel_monitor_v2_config
 		SET version = version + 1, enabled = $1, refresh_interval_seconds = $2,
@@ -75,10 +77,10 @@ func (r *channelMonitorV2Repository) UpdateConfig(ctx context.Context, cfg servi
 		          COALESCE(ignored_error_categories, '{}'),
 		          COALESCE(health_thresholds, '{}'::jsonb),
 		          updated_at, updated_by`,
-		cfg.Enabled, cfg.RefreshIntervalSeconds, platforms, pq.Array(cfg.GroupIDs),
-		pq.Array(cfg.IgnoredErrorCategories), thresholds, cfg.UpdatedBy, expectedVersion,
+		cfg.Enabled, cfg.RefreshIntervalSeconds, platforms, cfg.GroupIDs,
+		cfg.IgnoredErrorCategories, thresholds, cfg.UpdatedBy, expectedVersion,
 	).Scan(&updated.Version, &updated.Enabled, &updated.RefreshIntervalSeconds, &raw,
-		pq.Array(&updated.GroupIDs), pq.Array(&updated.IgnoredErrorCategories),
+		pgTypeMap.SQLScanner(&updated.GroupIDs), pgTypeMap.SQLScanner(&updated.IgnoredErrorCategories),
 		&rawThresholds,
 		&updated.UpdatedAt, &updated.UpdatedBy)
 	if err == sql.ErrNoRows {
@@ -619,7 +621,7 @@ func (r *channelMonitorV2Repository) loadChannelMonitorV2GroupInfo(ctx context.C
 	if len(groupIDs) == 0 {
 		return out, nil
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT id, COALESCE(name, ''), lower(COALESCE(NULLIF(TRIM(platform), ''), 'unknown')) FROM groups WHERE id = ANY($1) AND deleted_at IS NULL AND status = 'active'`, pq.Array(groupIDs))
+	rows, err := r.db.QueryContext(ctx, `SELECT id, COALESCE(name, ''), lower(COALESCE(NULLIF(TRIM(platform), ''), 'unknown')) FROM groups WHERE id = ANY($1) AND deleted_at IS NULL AND status = 'active'`, groupIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -718,7 +720,7 @@ func (r *channelMonitorV2Repository) loadErrorDetails(ctx context.Context, filte
 		platforms = intersectStrings(platforms, filter.Platforms)
 	}
 	if len(platforms) > 0 {
-		args = append(args, pq.Array(platforms))
+		args = append(args, platforms)
 		conditions = append(conditions, fmt.Sprintf("lower(COALESCE(NULLIF(TRIM(current_error.platform), ''), 'unknown')) = ANY($%d)", len(args)))
 	} else {
 		conditions = append(conditions, "FALSE")
@@ -736,7 +738,7 @@ func (r *channelMonitorV2Repository) loadErrorDetails(ctx context.Context, filte
 	if groupScopeEmpty {
 		conditions = append(conditions, "FALSE")
 	} else if len(groups) > 0 {
-		args = append(args, pq.Array(groups))
+		args = append(args, groups)
 		conditions = append(conditions, fmt.Sprintf("COALESCE(current_error.group_id, 0) = ANY($%d)", len(args)))
 	}
 	query := `SELECT
@@ -1131,7 +1133,7 @@ func channelMonitorV2Where(filter service.ChannelMonitorV2Filter, cfg service.Ch
 		platforms = intersectStrings(platforms, filter.Platforms)
 	}
 	if len(platforms) > 0 {
-		args = append(args, pq.Array(platforms))
+		args = append(args, platforms)
 		conditions = append(conditions, fmt.Sprintf("%s.platform = ANY($%d)", alias, len(args)))
 	} else {
 		conditions = append(conditions, "FALSE")
@@ -1149,7 +1151,7 @@ func channelMonitorV2Where(filter service.ChannelMonitorV2Filter, cfg service.Ch
 	if groupScopeEmpty {
 		conditions = append(conditions, "FALSE")
 	} else if len(groups) > 0 {
-		args = append(args, pq.Array(groups))
+		args = append(args, groups)
 		conditions = append(conditions, fmt.Sprintf("%s.group_id = ANY($%d)", alias, len(args)))
 	}
 	return "WHERE " + strings.Join(conditions, " AND "), args
@@ -1420,7 +1422,7 @@ func (r *channelMonitorV2Repository) loadIgnoredErrorCounts(
 		bucketExpr = "date_bin($1::interval,e.bucket_start,TIMESTAMPTZ '1970-01-01')"
 		groupBy = bucketExpr + ", e.platform, e.model"
 	}
-	args = append(args, pq.Array(cfg.IgnoredErrorCategories), service.ChannelMonitorV2TaxonomyVersion)
+	args = append(args, cfg.IgnoredErrorCategories, service.ChannelMonitorV2TaxonomyVersion)
 	catIdx := len(args) - 1
 	taxIdx := len(args)
 	query := fmt.Sprintf(
@@ -1463,7 +1465,7 @@ func (r *channelMonitorV2Repository) loadIgnoredErrorCountsByPlatformModel(
 		return byPM, 0, nil
 	}
 	where, args, _ := channelMonitorV2WhereWithRollup(filter, cfg, "e")
-	args = append(args, pq.Array(cfg.IgnoredErrorCategories), service.ChannelMonitorV2TaxonomyVersion)
+	args = append(args, cfg.IgnoredErrorCategories, service.ChannelMonitorV2TaxonomyVersion)
 	catIdx := len(args) - 1
 	taxIdx := len(args)
 	query := fmt.Sprintf(
@@ -1516,7 +1518,7 @@ func (r *channelMonitorV2Repository) loadIgnoredErrorCountsByMatrixKey(
 		bucketExpr = "date_bin($1::interval,e.bucket_start,TIMESTAMPTZ '1970-01-01')"
 		groupSQL = bucketExpr + ", e.platform, e.group_id, e.model"
 	}
-	args = append(args, pq.Array(cfg.IgnoredErrorCategories), service.ChannelMonitorV2TaxonomyVersion)
+	args = append(args, cfg.IgnoredErrorCategories, service.ChannelMonitorV2TaxonomyVersion)
 	catIdx := len(args) - 1
 	taxIdx := len(args)
 	query := fmt.Sprintf(

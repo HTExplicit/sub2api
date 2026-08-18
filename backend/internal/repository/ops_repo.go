@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/lib/pq"
 )
 
 type opsRepository struct {
@@ -641,32 +640,11 @@ func (r *opsRepository) BatchInsertSystemLogs(ctx context.Context, inputs []*ser
 		return 0, nil
 	}
 
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, err
+	columns := []string{
+		"created_at", "host", "level", "component", "message", "request_id", "client_request_id",
+		"user_id", "api_key_id", "account_id", "platform", "model", "extra",
 	}
-	stmt, err := tx.PrepareContext(ctx, pq.CopyIn(
-		"ops_system_logs",
-		"created_at",
-		"host",
-		"level",
-		"component",
-		"message",
-		"request_id",
-		"client_request_id",
-		"user_id",
-		"api_key_id",
-		"account_id",
-		"platform",
-		"model",
-		"extra",
-	))
-	if err != nil {
-		_ = tx.Rollback()
-		return 0, err
-	}
-
-	var inserted int64
+	rows := make([][]any, 0, len(inputs))
 	for _, input := range inputs {
 		if input == nil {
 			continue
@@ -688,8 +666,7 @@ func (r *opsRepository) BatchInsertSystemLogs(ctx context.Context, inputs []*ser
 		if extra == "" {
 			extra = "{}"
 		}
-		if _, err := stmt.ExecContext(
-			ctx,
+		rows = append(rows, []any{
 			createdAt.UTC(),
 			opsNullString(input.Host),
 			level,
@@ -703,27 +680,9 @@ func (r *opsRepository) BatchInsertSystemLogs(ctx context.Context, inputs []*ser
 			opsNullString(input.Platform),
 			opsNullString(input.Model),
 			extra,
-		); err != nil {
-			_ = stmt.Close()
-			_ = tx.Rollback()
-			return inserted, err
-		}
-		inserted++
+		})
 	}
-
-	if _, err := stmt.ExecContext(ctx); err != nil {
-		_ = stmt.Close()
-		_ = tx.Rollback()
-		return inserted, err
-	}
-	if err := stmt.Close(); err != nil {
-		_ = tx.Rollback()
-		return inserted, err
-	}
-	if err := tx.Commit(); err != nil {
-		return inserted, err
-	}
-	return inserted, nil
+	return postgresBatchInsert(ctx, r.db, "ops_system_logs", columns, rows)
 }
 
 func (r *opsRepository) ListSystemLogs(ctx context.Context, filter *service.OpsSystemLogFilter) (*service.OpsSystemLogList, error) {
@@ -977,12 +936,12 @@ func buildOpsErrorLogsWhere(filter *service.OpsErrorLogFilter) (string, []any) {
 		clauses = append(clauses, "COALESCE(e.is_business_limited,false) = false")
 	}
 	if len(filter.StatusCodes) > 0 {
-		args = append(args, pq.Array(filter.StatusCodes))
+		args = append(args, filter.StatusCodes)
 		clauses = append(clauses, "COALESCE(e.upstream_status_code, e.status_code, 0) = ANY($"+itoa(len(args))+")")
 	} else if filter.StatusCodesOther {
 		// "Other" means: status codes not in the common list.
 		known := []int{400, 401, 403, 404, 409, 422, 429, 500, 502, 503, 504, 529}
-		args = append(args, pq.Array(known))
+		args = append(args, known)
 		clauses = append(clauses, "NOT (COALESCE(e.upstream_status_code, e.status_code, 0) = ANY($"+itoa(len(args))+"))")
 	}
 	// Exact correlation keys (preferred for request↔upstream linkage).
@@ -1031,11 +990,11 @@ func buildOpsErrorLogsWhere(filter *service.OpsErrorLogFilter) (string, []any) {
 		clauses = append(clauses, "COALESCE(e.is_count_tokens, false) = false")
 	}
 	if len(filter.ErrorPhasesAny) > 0 {
-		args = append(args, pq.Array(filter.ErrorPhasesAny))
+		args = append(args, filter.ErrorPhasesAny)
 		clauses = append(clauses, "e.error_phase = ANY($"+itoa(len(args))+")")
 	}
 	if len(filter.ErrorTypesAny) > 0 {
-		args = append(args, pq.Array(filter.ErrorTypesAny))
+		args = append(args, filter.ErrorTypesAny)
 		clauses = append(clauses, "e.error_type = ANY($"+itoa(len(args))+")")
 	}
 

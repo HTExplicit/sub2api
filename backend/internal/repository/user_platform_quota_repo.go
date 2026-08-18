@@ -10,7 +10,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/userplatformquota"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
-	"github.com/lib/pq"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // UserPlatformQuotaRecord 是 repository 层的传输结构体，
@@ -497,8 +497,8 @@ func (r *userPlatformQuotaRepository) BatchSnapshotUsage(ctx context.Context, sn
 				"  updated_at           = EXCLUDED.updated_at")
 
 		if _, err := client.ExecContext(ctx, sb.String(), args...); err != nil {
-			var pqErr *pq.Error
-			if errors.As(err, &pqErr) && pqErr.Code == "23503" {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr != nil && pgErr.Code == "23503" {
 				return ErrUserPlatformQuotaFKViolation
 			}
 			return err

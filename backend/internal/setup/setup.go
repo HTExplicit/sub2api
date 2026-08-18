@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
-	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -17,7 +16,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
-	_ "github.com/lib/pq"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
@@ -196,7 +194,7 @@ func TestDatabaseConnection(cfg *DatabaseConfig) error {
 	// created yet, so the bootstrap connection must use PostgreSQL's maintenance DB.
 	defaultDSN, targetDSN := buildDatabaseConnectionDSNs(cfg)
 
-	db, err := sql.Open("postgres", defaultDSN)
+	db, err := repository.OpenPostgresDB(defaultDSN)
 	if err != nil {
 		return fmt.Errorf("failed to connect to PostgreSQL: %w", err)
 	}
@@ -242,7 +240,7 @@ func TestDatabaseConnection(cfg *DatabaseConfig) error {
 	}
 	db = nil
 
-	targetDB, err := sql.Open("postgres", targetDSN)
+	targetDB, err := repository.OpenPostgresDB(targetDSN)
 	if err != nil {
 		return fmt.Errorf("failed to connect to database '%s': %w", cfg.DBName, err)
 	}
@@ -358,7 +356,7 @@ func initializeDatabase(cfg *SetupConfig) error {
 		cfg.Database.Password, cfg.Database.DBName, cfg.Database.SSLMode,
 	)
 
-	db, err := sql.Open("postgres", dsn)
+	db, err := repository.OpenPostgresDB(dsn)
 	if err != nil {
 		return err
 	}
@@ -388,7 +386,7 @@ func createAdminUser(cfg *SetupConfig) (bool, string, error) {
 		cfg.Database.Password, cfg.Database.DBName, cfg.Database.SSLMode,
 	)
 
-	db, err := sql.Open("postgres", dsn)
+	db, err := repository.OpenPostgresDB(dsn)
 	if err != nil {
 		return false, "", err
 	}

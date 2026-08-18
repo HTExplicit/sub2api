@@ -11,7 +11,8 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/lib/pq"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 )
 
 type dashboardAggregationRepository struct {
@@ -49,7 +50,7 @@ func isPostgresDriver(db *sql.DB) bool {
 	if db == nil {
 		return false
 	}
-	_, ok := db.Driver().(*pq.Driver)
+	_, ok := db.Driver().(*stdlib.Driver)
 	return ok
 }
 
@@ -636,7 +637,7 @@ func (r *dashboardAggregationRepository) dropUsageLogsPartitions(ctx context.Con
 		return nil
 	}
 	for _, partition := range partitions {
-		if _, err := r.sql.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", pq.QuoteIdentifier(partition.name))); err != nil {
+		if _, err := r.sql.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", pgx.Identifier{partition.name}.Sanitize())); err != nil {
 			return err
 		}
 	}
@@ -659,7 +660,7 @@ func dropUsageLogsPartitionWithRollupInvalidation(ctx context.Context, db *sql.D
 	if err := invalidateGroupUsageRollupsAt(ctx, tx, monthStart); err != nil {
 		return rollback(err)
 	}
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", pq.QuoteIdentifier(name))); err != nil {
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", pgx.Identifier{name}.Sanitize())); err != nil {
 		return rollback(err)
 	}
 	return tx.Commit()
@@ -671,12 +672,16 @@ func (r *dashboardAggregationRepository) createUsageLogsPartition(ctx context.Co
 	name := fmt.Sprintf("usage_logs_%s", monthStart.Format("200601"))
 	query := fmt.Sprintf(
 		"CREATE TABLE IF NOT EXISTS %s PARTITION OF usage_logs FOR VALUES FROM (%s) TO (%s)",
-		pq.QuoteIdentifier(name),
-		pq.QuoteLiteral(monthStart.Format("2006-01-02")),
-		pq.QuoteLiteral(nextMonth.Format("2006-01-02")),
+		pgx.Identifier{name}.Sanitize(),
+		quotePostgresLiteral(monthStart.Format("2006-01-02")),
+		quotePostgresLiteral(nextMonth.Format("2006-01-02")),
 	)
 	_, err := r.sql.ExecContext(ctx, query)
 	return err
+}
+
+func quotePostgresLiteral(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
 func truncateToDay(t time.Time) time.Time {
