@@ -293,6 +293,7 @@ func TestCindyRolloutFlagHelper(t *testing.T) {
 			account,
 			"gpt-5.4-mini",
 			1,
+			time.Time{},
 			UsageTokens{InputTokens: 100, OutputTokens: 10},
 			"",
 			boolPtr(false),

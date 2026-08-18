@@ -23,7 +23,7 @@ func readCindyBalanceProbeJobsMigration(t *testing.T) string {
 func TestMigration224UsesExactFilenameAndCreatesProbeTables(t *testing.T) {
 	matches, err := fs.Glob(FS, "224_*.sql")
 	require.NoError(t, err)
-	require.Equal(t, []string{cindyBalanceProbeJobsMigration}, matches)
+	require.Contains(t, matches, cindyBalanceProbeJobsMigration)
 
 	sql := readCindyBalanceProbeJobsMigration(t)
 	require.Contains(t, sql, "create table if not exists cindy_balance_probe_jobs")

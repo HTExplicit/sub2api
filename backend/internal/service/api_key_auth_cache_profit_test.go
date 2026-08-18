@@ -48,7 +48,7 @@ func TestAPIKeyAuthSnapshotDormantProfitControlRoundtrip(t *testing.T) {
 	snapshot := svc.snapshotFromAPIKey(context.Background(), apiKey)
 	require.NotNil(t, snapshot)
 	require.Equal(t, apiKeyAuthSnapshotVersion, snapshot.Version)
-	require.Equal(t, 21, snapshot.Version, "v21 strict Cindy identity includes every non-deleted group member")
+	require.Equal(t, 21, snapshot.Version, "v21 preserves v20 pricing fields and includes every non-deleted strict Cindy group member")
 
 	// 模拟 L2 缓存的完整 JSON 往返（与 apiKeyCache.SetAuthCache/GetAuthCache 同构）。
 	payload, err := json.Marshal(&APIKeyAuthCacheEntry{Snapshot: snapshot})

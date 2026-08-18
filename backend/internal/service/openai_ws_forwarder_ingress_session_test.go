@@ -4223,7 +4223,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ContinuationErro
 						return
 					}
 					seeded := newOpenAIWSConn("strict_bound_conn", account.ID, captureConns[0], nil)
-					seeded.handshakeCompatibility = normalizeOpenAIWSHandshakeCompatibility(headers)
+					seeded.handshakeCompatibility = normalizeOpenAIWSHandshakeCompatibility(account, headers)
 					accountPool := pool.getOrCreateAccountPool(account.ID)
 					accountPool.mu.Lock()
 					accountPool.conns[seeded.id] = seeded
