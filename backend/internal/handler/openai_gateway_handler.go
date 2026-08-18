@@ -565,30 +565,6 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	// 仍可使用既有 Chat Completions 兼容能力。
 	needsResponses := nativeV2 || legacyCompact
 	requiredCapability := openAIResponsesRequiredCapabilityForRequest(imageIntent, needsResponses, requestPlatform)
-	if strictCindy && previousResponseID != "" {
-		currentGroupAccountID := h.gatewayService.ResolveAccountIDByPreviousResponseIDForScheduler(
-			c.Request.Context(),
-			apiKey.GroupID,
-			previousResponseID,
-			routingModel,
-			nil,
-			requiredCapability,
-			legacyCompact,
-		)
-		if resetBody, resetPreviousResponseID, reset := resetStrictCindyCrossGroupContinuation(
-			strictCindy,
-			body,
-			previousResponseID,
-			currentGroupAccountID,
-		); reset {
-			body = resetBody
-			sessionHashBody = service.RemovePreviousResponseIDFromBody(sessionHashBody)
-			previousResponseID = resetPreviousResponseID
-			reqLog.Info("openai.previous_response_id_reset_cross_group",
-				zap.String("reason", "current_group_binding_missing"),
-			)
-		}
-	}
 	forwardBody := openAIModelMappedBody(body, forwardMapped, forwardMappedModel, h.gatewayService.ReplaceModelInBody)
 	seedOpenAIForwardImageIntentHint(c, forwardMapped, imageIntent)
 	forwardModel := reqModel
@@ -2155,7 +2131,6 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "unable to determine model availability")
 		return
 	}
-	strictCindy := cindyIdentityGroup && service.CindyCapabilityCatalogFeatureEnabled()
 	wsRoutingModel := reqModel
 	if mappedModel, mapped := service.CindyCompatibilityMappedUpstreamModel(reqModel); mapped && cindyIdentityGroup {
 		wsRoutingModel = mappedModel
@@ -2286,29 +2261,6 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		reqLog.Info("openai.websocket_billing_eligibility_check_failed", zap.Error(err))
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "billing check failed")
 		return
-	}
-	if strictCindy && previousResponseIDKind == service.OpenAIPreviousResponseIDKindResponseID {
-		currentGroupAccountID := h.gatewayService.ResolveAccountIDByPreviousResponseIDForScheduler(
-			ctx,
-			apiKey.GroupID,
-			previousResponseID,
-			wsRoutingModel,
-			nil,
-			requiredCapability,
-			false,
-		)
-		if resetMessage, resetPreviousResponseID, reset := resetStrictCindyCrossGroupContinuation(
-			strictCindy,
-			firstMessage,
-			previousResponseID,
-			currentGroupAccountID,
-		); reset {
-			firstMessage = resetMessage
-			previousResponseID = resetPreviousResponseID
-			reqLog.Info("openai.websocket_previous_response_id_reset_cross_group",
-				zap.String("reason", "current_group_binding_missing"),
-			)
-		}
 	}
 	previousResponseCanMove := openAIWSPreviousResponseCanMove(firstMessage, previousResponseID)
 	accountSwitchReplaySafe := openAIWSInitialAccountSwitchReplaySafe(firstMessage, previousResponseCanMove)

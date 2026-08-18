@@ -20,11 +20,12 @@ func openAIWSPreviousResponseCanMove(payload []byte, previousResponseID string) 
 
 func openAIWSPayloadHasEncryptedState(payload []byte) bool {
 	input := gjson.GetBytes(payload, "input")
-	if !input.IsArray() {
-		return false
+	items := input.Array()
+	if input.IsObject() {
+		items = []gjson.Result{input}
 	}
-	for _, item := range input.Array() {
-		if strings.TrimSpace(item.Get("encrypted_content").String()) != "" {
+	for _, item := range items {
+		if item.Get("encrypted_content").Exists() {
 			return true
 		}
 	}
@@ -39,28 +40,4 @@ func openAIWSInitialAccountSwitchReplaySafe(payload []byte, previousResponseCanM
 		return false
 	}
 	return !openAIWSPayloadHasEncryptedState(payload)
-}
-
-func resetStrictCindyCrossGroupContinuation(
-	strictCindy bool,
-	payload []byte,
-	previousResponseID string,
-	currentGroupAccountID int64,
-) ([]byte, string, bool) {
-	previousResponseID = strings.TrimSpace(previousResponseID)
-	if !strictCindy || previousResponseID == "" || currentGroupAccountID > 0 ||
-		!gjson.ValidBytes(payload) || openAIWSPayloadHasEncryptedState(payload) {
-		return payload, previousResponseID, false
-	}
-
-	validation := service.ValidateFunctionCallOutputContextBytes(payload)
-	if validation.HasFunctionCallOutput && !openAIWSPreviousResponseCanMove(payload, previousResponseID) {
-		return payload, previousResponseID, false
-	}
-
-	updated := service.RemovePreviousResponseIDFromBody(payload)
-	if gjson.GetBytes(updated, "previous_response_id").Exists() {
-		return payload, previousResponseID, false
-	}
-	return updated, "", true
 }

@@ -256,6 +256,12 @@ func TestAnalyzeToolCallOutputContextCoverageBytes(t *testing.T) {
 			coversAllIDs: false,
 		},
 		{
+			name:         "single_object_tool_output_not_movable",
+			body:         map[string]any{"input": map[string]any{"type": "custom_tool_call_output", "call_id": "call_a"}},
+			hasOutput:    true,
+			coversAllIDs: false,
+		},
+		{
 			name: "mixed_context_and_reference_cover_all",
 			body: map[string]any{"input": []any{
 				map[string]any{"type": "function_call", "call_id": "call_a"},
@@ -289,4 +295,27 @@ func TestAnalyzeToolCallOutputContextCoverageBytes(t *testing.T) {
 			require.Equal(t, tt.coversAllIDs, coverage.ContextCoversAllCallIDs, "ContextCoversAllCallIDs")
 		})
 	}
+}
+
+func TestAnalyzeConcreteToolCallOutputContextCoverageBytes_RejectsStoredReferences(t *testing.T) {
+	itemReferenceOnly := []byte(`{"input":[` +
+		`{"type":"custom_tool_call_output","call_id":"call_1","output":"ok"},` +
+		`{"type":"item_reference","id":"call_1"}` +
+		`]}`)
+	concrete := []byte(`{"input":[` +
+		`{"type":"custom_tool_call","call_id":"call_1","name":"shell","input":"{}"},` +
+		`{"type":"custom_tool_call_output","call_id":"call_1","output":"ok"}` +
+		`]}`)
+
+	legacyCoverage := AnalyzeToolCallOutputContextCoverageBytes(itemReferenceOnly)
+	require.True(t, legacyCoverage.HasFunctionCallOutput)
+	require.True(t, legacyCoverage.ContextCoversAllCallIDs)
+
+	migrationCoverage := AnalyzeConcreteToolCallOutputContextCoverageBytes(itemReferenceOnly)
+	require.True(t, migrationCoverage.HasFunctionCallOutput)
+	require.False(t, migrationCoverage.ContextCoversAllCallIDs)
+
+	concreteCoverage := AnalyzeConcreteToolCallOutputContextCoverageBytes(concrete)
+	require.True(t, concreteCoverage.HasFunctionCallOutput)
+	require.True(t, concreteCoverage.ContextCoversAllCallIDs)
 }

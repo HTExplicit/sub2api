@@ -15,6 +15,7 @@ import (
 	coderws "github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func cindyHTTPToWSV2TestAccount() *Account {
@@ -47,6 +48,8 @@ func cindyHTTPToWSV2TestService() *OpenAIGatewayService {
 type cindyHTTPToWSV2DialStep struct {
 	conn      openAIWSClientConn
 	handshake http.Header
+	status    int
+	err       error
 }
 
 type cindyHTTPToWSV2SequenceDialer struct {
@@ -72,7 +75,7 @@ func (d *cindyHTTPToWSV2SequenceDialer) Dial(
 	}
 	step := d.steps[0]
 	d.steps = d.steps[1:]
-	return step.conn, 0, cloneHeader(step.handshake), nil
+	return step.conn, step.status, cloneHeader(step.handshake), step.err
 }
 
 func (d *cindyHTTPToWSV2SequenceDialer) capturedHeaders() []http.Header {
@@ -152,6 +155,9 @@ func TestResolveCindyHTTPToWSV2DecisionHonorsAllGates(t *testing.T) {
 		}},
 		{"global_force_http", func(s *OpenAIGatewayService, _ *gin.Context, _ *Account) { s.cfg.Gateway.OpenAIWS.ForceHTTP = true }},
 		{"account_force_http", func(_ *OpenAIGatewayService, _ *gin.Context, a *Account) { a.Extra["openai_ws_force_http"] = true }},
+		{"account_force_chat_completions", func(_ *OpenAIGatewayService, _ *gin.Context, a *Account) {
+			a.Extra[CindyResponsesModeExtraKey] = "force_chat_completions"
+		}},
 		{"non_cindy", func(_ *OpenAIGatewayService, _ *gin.Context, a *Account) {
 			a.Credentials["base_url"] = "https://api.openai.com"
 		}},
@@ -275,6 +281,195 @@ func TestCindyHTTPToWSV2ContinuationWithoutStickyConnectionFailsClosed(t *testin
 	var failoverErr *UpstreamFailoverError
 	require.ErrorAs(t, err, &failoverErr)
 	require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
+}
+
+func TestCindyHTTPToWSV2Handshake403FallsBackToOriginalStatelessHTTPStream(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body: io.NopCloser(strings.NewReader(
+			"data: " + `{"type":"response.completed","response":{"id":"resp_http_fallback","object":"response","status":"completed","model":"openai/gpt-5.6-sol","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}` + "\n\ndata: [DONE]\n\n",
+		)),
+	}}
+	svc, dialer := newCindyHTTPToWSV2TurnStateTestService(t, cindyHTTPToWSV2DialStep{
+		status: http.StatusForbidden,
+		err: &openAIWSHandshakeError{
+			Body: []byte(`{"error":{"message":"websocket upgrade forbidden"}}`),
+			Err:  errors.New("handshake rejected"),
+		},
+	})
+	svc.httpUpstream = upstream
+	body := []byte(`{"model":"openai/gpt-5.6-sol","stream":true,"store":false,"include":["reasoning.encrypted_content"],"input":[` +
+		`{"type":"message","role":"user","content":"first"},` +
+		`{"type":"reasoning","id":"rs_foreign","encrypted_content":"ENC"},` +
+		`{"type":"message","role":"assistant","content":"answer"},` +
+		`{"type":"custom_tool_call","call_id":"call_1","name":"shell","input":"{}"},` +
+		`{"type":"custom_tool_call_output","call_id":"call_1","output":"ok"},` +
+		`{"type":"compaction","encrypted_content":"CMP"},` +
+		`{"type":"message","role":"user","content":"continue"}` +
+		`]}`)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.146.0")
+	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+	result, err := svc.Forward(context.Background(), c, cindyHTTPToWSV2TestAccount(), body)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Stream)
+	require.Contains(t, recorder.Body.String(), `"type":"response.completed"`)
+	require.Contains(t, recorder.Body.String(), `"id":"resp_http_fallback"`)
+	require.Len(t, dialer.capturedHeaders(), 1)
+	require.NotNil(t, upstream.lastReq)
+	require.JSONEq(t, string(body), string(upstream.lastBody), "transport fallback must not rewrite conversation state")
+	require.Equal(t, "ENC", gjson.GetBytes(upstream.lastBody, `input.#(type=="reasoning").encrypted_content`).String())
+	require.Equal(t, "CMP", gjson.GetBytes(upstream.lastBody, `input.#(type=="compaction").encrypted_content`).String())
+	require.Equal(t, "answer", gjson.GetBytes(upstream.lastBody, `input.#(role=="assistant").content`).String())
+	require.Equal(t, "call_1", gjson.GetBytes(upstream.lastBody, `input.#(type=="custom_tool_call_output").call_id`).String())
+	require.Equal(t, "reasoning.encrypted_content", gjson.GetBytes(upstream.lastBody, "include.0").String())
+}
+
+func TestCindyHTTPToWSV2InBand403UsesNormalFailoverWithoutPayloadRewrite(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	firstConn := &openAIWSCaptureConn{events: [][]byte{
+		[]byte(`{"type":"response.failed","response":{"id":"resp_rejected","status":"failed","error":{"status_code":403,"message":"forbidden"}}}`),
+	}}
+	svc, dialer := newCindyHTTPToWSV2TurnStateTestService(t,
+		cindyHTTPToWSV2DialStep{conn: firstConn},
+	)
+	body := []byte(`{"model":"openai/gpt-5.6-sol","stream":false,"store":false,"input":[` +
+		`{"type":"message","role":"user","content":"first"},` +
+		`{"type":"reasoning","id":"rs_foreign","encrypted_content":"ENC"},` +
+		`{"type":"message","role":"assistant","content":"answer"},` +
+		`{"type":"custom_tool_call","call_id":"call_1","name":"shell","input":"{}"},` +
+		`{"type":"custom_tool_call_output","call_id":"call_1","output":"ok"},` +
+		`{"type":"compaction","encrypted_content":"CMP"},` +
+		`{"type":"message","role":"user","content":"continue"}` +
+		`]}`)
+	c := cindyHTTPToWSV2TestContext("/v1/responses")
+	result, err := svc.Forward(context.Background(), c, cindyHTTPToWSV2TestAccount(), body)
+
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.True(t, failoverErr.CindyHTTPToWSV2FirstTurn)
+	require.Len(t, dialer.capturedHeaders(), 1)
+	firstConn.mu.Lock()
+	firstWrites := append([]map[string]any(nil), firstConn.writes...)
+	firstConn.mu.Unlock()
+	require.Len(t, firstWrites, 1)
+	wsBody := payloadAsJSONBytes(firstWrites[0])
+	require.JSONEq(t, gjson.GetBytes(body, "input").Raw, gjson.GetBytes(wsBody, "input").Raw)
+	require.Equal(t, "ENC", gjson.GetBytes(wsBody, `input.#(type=="reasoning").encrypted_content`).String())
+	require.Equal(t, "CMP", gjson.GetBytes(wsBody, `input.#(type=="compaction").encrypted_content`).String())
+}
+
+func TestCindyHTTPToWSV2Handshake403HTTPFailurePreservesAccountFailover(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusForbidden,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"still forbidden"}}`)),
+	}}
+	svc, dialer := newCindyHTTPToWSV2TurnStateTestService(t, cindyHTTPToWSV2DialStep{
+		status: http.StatusForbidden,
+		err: &openAIWSHandshakeError{
+			Body: []byte(`{"error":{"message":"websocket upgrade forbidden"}}`),
+			Err:  errors.New("handshake rejected"),
+		},
+	})
+	svc.httpUpstream = upstream
+	body := []byte(`{"model":"openai/gpt-5.6-sol","stream":false,"input":"hello"}`)
+
+	c := cindyHTTPToWSV2TestContext("/v1/responses")
+	result, err := svc.Forward(context.Background(), c, cindyHTTPToWSV2TestAccount(), body)
+
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusForbidden, failoverErr.StatusCode)
+	require.Len(t, dialer.capturedHeaders(), 1)
+	require.NotNil(t, upstream.lastReq)
+	require.False(t, isOpenAICindyHTTPToWSV2Bypassed(c))
+	nextAccount := cindyHTTPToWSV2TestAccount()
+	nextAccount.ID = 2
+	_, eligible := svc.resolveCindyHTTPToWSV2Decision(c, nextAccount)
+	require.True(t, eligible)
+}
+
+func TestCindyHTTPToWSV2HandshakeFallbackDoesNotRewriteInvalidEncryptedContent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"openai/gpt-5.6-sol","stream":false,"store":false,"input":[` +
+		`{"type":"reasoning","encrypted_content":"ENC"},` +
+		`{"type":"compaction","encrypted_content":"CMP"},` +
+		`{"type":"message","role":"user","content":"continue"}` +
+		`]}`)
+
+	for _, tc := range []struct {
+		name        string
+		passthrough bool
+	}{
+		{name: "passthrough", passthrough: true},
+		{name: "normalized_forward"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			upstream := &httpUpstreamRecorder{resp: &http.Response{
+				StatusCode: http.StatusBadRequest,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body: io.NopCloser(strings.NewReader(
+					`{"error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}`,
+				)),
+			}}
+			svc, dialer := newCindyHTTPToWSV2TurnStateTestService(t, cindyHTTPToWSV2DialStep{
+				status: http.StatusForbidden,
+				err: &openAIWSHandshakeError{
+					Body: []byte(`{"error":{"message":"websocket upgrade forbidden"}}`),
+					Err:  errors.New("handshake rejected"),
+				},
+			})
+			svc.httpUpstream = upstream
+			account := cindyHTTPToWSV2TestAccount()
+			account.Extra["openai_passthrough"] = tc.passthrough
+
+			result, err := svc.Forward(context.Background(), cindyHTTPToWSV2TestContext("/v1/responses"), account, body)
+
+			require.Nil(t, result)
+			var failoverErr *UpstreamFailoverError
+			require.ErrorAs(t, err, &failoverErr)
+			require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
+			require.Len(t, dialer.capturedHeaders(), 1)
+			require.Len(t, upstream.requests, 1, "invalid encrypted fallback must not trigger a destructive cleanup retry")
+			require.JSONEq(t, gjson.GetBytes(body, "input").Raw, gjson.GetBytes(upstream.bodies[0], "input").Raw)
+		})
+	}
+}
+
+func TestPrepareOpenAICindyStatelessHTTPFallbackSafetyBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		want bool
+	}{
+		{name: "plain first turn", body: `{"model":"gpt-5.6-sol","input":"hello"}`, want: true},
+		{name: "previous response anchor", body: `{"model":"gpt-5.6-sol","previous_response_id":"resp_1","input":"next"}`},
+		{name: "orphan tool output", body: `{"model":"gpt-5.6-sol","input":[{"type":"custom_tool_call_output","call_id":"call_1","output":"ok"}]}`},
+		{name: "single object orphan tool output", body: `{"model":"gpt-5.6-sol","input":{"type":"custom_tool_call_output","call_id":"call_1","output":"ok"}}`},
+		{name: "encrypted state remains opaque", body: `{"model":"gpt-5.6-sol","input":[{"type":"reasoning","encrypted_content":"ENC"}]}`, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, safe := prepareOpenAICindyStatelessHTTPFallback([]byte(tc.body))
+			require.Equal(t, tc.want, safe)
+		})
+	}
+
+	cyber := &openAIWSDialError{
+		StatusCode:   http.StatusForbidden,
+		ResponseBody: []byte(`{"error":{"code":"cyber_policy","message":"blocked"}}`),
+	}
+	require.False(t, isOpenAICindyHTTPToWSV2HandshakeForbidden(cyber))
 }
 
 func TestCindyHTTPToWSV2FirstTurnHandshakeFailoverClassification(t *testing.T) {

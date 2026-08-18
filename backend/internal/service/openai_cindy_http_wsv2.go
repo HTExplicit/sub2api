@@ -7,13 +7,16 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
 	coderws "github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 )
 
 const (
 	openAICindyHTTPToWSV2Reason             = "cindy_http_to_wsv2"
 	openAICindyHTTPToWSV2RequiredContextKey = "openai_cindy_http_to_wsv2_required"
+	openAICindyHTTPToWSV2BypassContextKey   = "openai_cindy_http_to_wsv2_bypass"
 	openAICindyHTTPToWSV2FailoverReason     = GatewayFailureReason("cindy_http_to_wsv2_first_turn_failover")
 	openAICindyHTTPToWSV2TerminalReason     = GatewayFailureReason("websocket_terminal_failure")
 )
@@ -30,6 +33,44 @@ func isOpenAICindyHTTPToWSV2Required(c *gin.Context) bool {
 	}
 	required, ok := c.Get(openAICindyHTTPToWSV2RequiredContextKey)
 	return ok && required == true
+}
+
+func isOpenAICindyHTTPToWSV2Bypassed(c *gin.Context) bool {
+	if c == nil {
+		return false
+	}
+	bypassed, ok := c.Get(openAICindyHTTPToWSV2BypassContextKey)
+	return ok && bypassed == true
+}
+
+func isOpenAICindyHTTPToWSV2HandshakeForbidden(err error) bool {
+	var dialErr *openAIWSDialError
+	if !errors.As(err, &dialErr) || dialErr == nil || dialErr.StatusCode != http.StatusForbidden {
+		return false
+	}
+	hit, _, _ := detectOpenAICyberPolicy(dialErr.ResponseBody)
+	return !hit
+}
+
+func prepareOpenAICindyStatelessHTTPFallback(body []byte) ([]byte, bool) {
+	if !gjson.ValidBytes(body) || strings.TrimSpace(gjson.GetBytes(body, "previous_response_id").String()) != "" {
+		return body, false
+	}
+	coverage := AnalyzeConcreteToolCallOutputContextCoverageBytes(body)
+	if coverage.HasFunctionCallOutput && !coverage.ContextCoversAllCallIDs {
+		return body, false
+	}
+	input := gjson.GetBytes(body, "input")
+	switch {
+	case input.IsArray():
+		return body, len(input.Array()) > 0
+	case input.IsObject():
+		return body, true
+	case input.Type == gjson.String:
+		return body, strings.TrimSpace(input.String()) != ""
+	default:
+		return body, false
+	}
 }
 
 func newOpenAICindyHTTPToWSV2AccountRequiredError() *UpstreamFailoverError {
@@ -103,7 +144,8 @@ func finishOpenAICindyHTTPToWSV2Failover(
 func (s *OpenAIGatewayService) cindyHTTPToWSV2ConfigEligible(account *Account) bool {
 	if s == nil || s.cfg == nil || account == nil ||
 		!IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) ||
-		account.Concurrency <= 0 || account.IsOpenAIWSForceHTTPEnabled() {
+		account.Concurrency <= 0 || account.IsOpenAIWSForceHTTPEnabled() ||
+		!openai_compat.ShouldUseResponsesAPI(account.Extra) {
 		return false
 	}
 	wsCfg := s.cfg.Gateway.OpenAIWS
