@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestOpenAIWSInitialAccountSwitchReplaySafe(t *testing.T) {
@@ -59,4 +60,79 @@ func TestOpenAIWSPreviousResponseCanMove(t *testing.T) {
 		[]byte(`{"type":"response.create","previous_response_id":"resp_1","input":[{"type":"reasoning","encrypted_content":"cipher"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`),
 		"resp_1",
 	))
+}
+
+func TestResetStrictCindyCrossGroupContinuation(t *testing.T) {
+	tests := []struct {
+		name                  string
+		strictCindy           bool
+		payload               string
+		previousResponseID    string
+		currentGroupAccountID int64
+		wantReset             bool
+	}{
+		{
+			name:               "missing current-group binding resets plain continuation",
+			strictCindy:        true,
+			payload:            `{"type":"response.create","previous_response_id":"resp_old_group","input":"continue"}`,
+			previousResponseID: "resp_old_group",
+			wantReset:          true,
+		},
+		{
+			name:                  "current-group binding preserves continuation",
+			strictCindy:           true,
+			payload:               `{"type":"response.create","previous_response_id":"resp_current_group","input":"continue"}`,
+			previousResponseID:    "resp_current_group",
+			currentGroupAccountID: 42,
+		},
+		{
+			name:               "non Cindy request preserves continuation",
+			payload:            `{"type":"response.create","previous_response_id":"resp_openai","input":"continue"}`,
+			previousResponseID: "resp_openai",
+		},
+		{
+			name:               "complete tool context can rebuild without old binding",
+			strictCindy:        true,
+			payload:            `{"type":"response.create","previous_response_id":"resp_tool","input":[{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`,
+			previousResponseID: "resp_tool",
+			wantReset:          true,
+		},
+		{
+			name:               "orphan tool output preserves required anchor",
+			strictCindy:        true,
+			payload:            `{"type":"response.create","previous_response_id":"resp_tool","input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`,
+			previousResponseID: "resp_tool",
+		},
+		{
+			name:               "encrypted state preserves required anchor",
+			strictCindy:        true,
+			payload:            `{"type":"response.create","previous_response_id":"resp_encrypted","input":[{"type":"reasoning","encrypted_content":"cipher"},{"type":"input_text","text":"continue"}]}`,
+			previousResponseID: "resp_encrypted",
+		},
+		{
+			name:               "invalid payload is unchanged",
+			strictCindy:        true,
+			payload:            `{"previous_response_id":`,
+			previousResponseID: "resp_invalid",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			updated, previousResponseID, reset := resetStrictCindyCrossGroupContinuation(
+				tt.strictCindy,
+				[]byte(tt.payload),
+				tt.previousResponseID,
+				tt.currentGroupAccountID,
+			)
+			require.Equal(t, tt.wantReset, reset)
+			if tt.wantReset {
+				require.Empty(t, previousResponseID)
+				require.False(t, gjson.GetBytes(updated, "previous_response_id").Exists())
+				return
+			}
+			require.Equal(t, tt.previousResponseID, previousResponseID)
+			require.Equal(t, []byte(tt.payload), updated)
+		})
+	}
 }
