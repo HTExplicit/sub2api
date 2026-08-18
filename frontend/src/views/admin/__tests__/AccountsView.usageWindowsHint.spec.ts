@@ -104,10 +104,6 @@ function mountView() {
         Pagination: true,
         ConfirmDialog: true,
         AccountTableActions: { template: '<div><slot name="beforeCreate" /><slot name="after" /></div>' },
-        AccountTableFilters: {
-          props: ['groups'],
-          template: '<div data-test="account-filters" :data-group-count="groups.length"></div>'
-        },
         AccountBulkActionsBar: true,
         AccountActionMenu: true,
         ImportDataModal: true,
@@ -168,7 +164,8 @@ describe('admin AccountsView usage windows hint', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    expect(wrapper.get('[data-test="account-filters"]').attributes('data-group-count')).toBe('1')
+    const groupOption = wrapper.get('select[aria-label="admin.accounts.columns.groups"] option[value="7"]')
+    expect(groupOption.text()).toBe('production')
   })
 
   it('renders an explanatory tooltip next to the usage windows column header', async () => {
