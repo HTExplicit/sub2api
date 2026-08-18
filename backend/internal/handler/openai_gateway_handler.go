@@ -560,6 +560,35 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		forwardMapped = true
 		forwardMappedModel = compatibilityRoutingModel
 	}
+	requestPlatform := openAICompatibleRequestPlatform(c.Request.Context(), apiKey)
+	// 生图意图与压缩请求必须调度到确实支持 Responses API 的账号；普通文本
+	// 仍可使用既有 Chat Completions 兼容能力。
+	needsResponses := nativeV2 || legacyCompact
+	requiredCapability := openAIResponsesRequiredCapabilityForRequest(imageIntent, needsResponses, requestPlatform)
+	if strictCindy && previousResponseID != "" {
+		currentGroupAccountID := h.gatewayService.ResolveAccountIDByPreviousResponseIDForScheduler(
+			c.Request.Context(),
+			apiKey.GroupID,
+			previousResponseID,
+			routingModel,
+			nil,
+			requiredCapability,
+			legacyCompact,
+		)
+		if resetBody, resetPreviousResponseID, reset := resetStrictCindyCrossGroupContinuation(
+			strictCindy,
+			body,
+			previousResponseID,
+			currentGroupAccountID,
+		); reset {
+			body = resetBody
+			sessionHashBody = service.RemovePreviousResponseIDFromBody(sessionHashBody)
+			previousResponseID = resetPreviousResponseID
+			reqLog.Info("openai.previous_response_id_reset_cross_group",
+				zap.String("reason", "current_group_binding_missing"),
+			)
+		}
+	}
 	forwardBody := openAIModelMappedBody(body, forwardMapped, forwardMappedModel, h.gatewayService.ReplaceModelInBody)
 	seedOpenAIForwardImageIntentHint(c, forwardMapped, imageIntent)
 	forwardModel := reqModel
@@ -584,7 +613,6 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 
 	// Get subscription info (may be nil)
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
-	requestPlatform := openAICompatibleRequestPlatform(c.Request.Context(), apiKey)
 
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
 	routingStart := time.Now()
@@ -627,14 +655,6 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	var passthroughFailoverState openAIPassthroughFailoverState
 	var accountTypePreference service.OpenAIAccountTypePreference
 	var sameAccountRetrySelection *service.AccountSelectionResult
-
-	// 生图意图的 /v1/responses 请求必须调度到确实支持 Responses API 的账号，否则
-	// 会在 forward 阶段被静默降级为无法生图的 Chat Completions 直转（#4417）。
-	// 仅对 OpenAI 平台生效：Grok 生图走独立的 forwardGrokResponses 路径，不应被过滤。
-	// 复用前置权限与并发阶段在未修改 body 上确认的显式生图意图，避免大 tools 请求重复扫描。
-	// 该判断已排除 Codex 被动 image_gen namespace，避免 CC-only 账号被误过滤（#4476）。
-	needsResponses := nativeV2 || legacyCompact
-	requiredCapability := openAIResponsesRequiredCapabilityForRequest(imageIntent, needsResponses, requestPlatform)
 
 	// 分组利润控制：请求级装配定价上下文——pricingAt 固定本请求的
 	// D 与计费高峰因子，选号、槽位终检与全部 failover 重入共用同一门与阈值。
@@ -2135,6 +2155,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "unable to determine model availability")
 		return
 	}
+	strictCindy := cindyIdentityGroup && service.CindyCapabilityCatalogFeatureEnabled()
 	wsRoutingModel := reqModel
 	if mappedModel, mapped := service.CindyCompatibilityMappedUpstreamModel(reqModel); mapped && cindyIdentityGroup {
 		wsRoutingModel = mappedModel
@@ -2154,8 +2175,6 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "previous_response_id must be a response.id (resp_*), not a message id")
 		return
 	}
-	previousResponseCanMove := openAIWSPreviousResponseCanMove(firstMessage, previousResponseID)
-	accountSwitchReplaySafe := openAIWSInitialAccountSwitchReplaySafe(firstMessage, previousResponseCanMove)
 	reqLog = reqLog.With(
 		zap.Bool("ws_ingress", true),
 		zap.String("session_initial_model", reqModel),
@@ -2258,11 +2277,41 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	if requestPlatform == service.PlatformGrok {
 		requiredTransport = service.OpenAIUpstreamTransportHTTPSSE
 	}
+	// 与 HTTP Responses 路径保持一致：生图意图请求要求账号支持 Responses API。
+	requiredCapability := service.OpenAIEndpointCapabilityChatCompletions
+	if imageIntent && requestPlatform == service.PlatformOpenAI {
+		requiredCapability = service.OpenAIEndpointCapabilityResponses
+	}
 	if err := h.billingCacheService.CheckBillingEligibility(ctx, apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
 		reqLog.Info("openai.websocket_billing_eligibility_check_failed", zap.Error(err))
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "billing check failed")
 		return
 	}
+	if strictCindy && previousResponseIDKind == service.OpenAIPreviousResponseIDKindResponseID {
+		currentGroupAccountID := h.gatewayService.ResolveAccountIDByPreviousResponseIDForScheduler(
+			ctx,
+			apiKey.GroupID,
+			previousResponseID,
+			wsRoutingModel,
+			nil,
+			requiredCapability,
+			false,
+		)
+		if resetMessage, resetPreviousResponseID, reset := resetStrictCindyCrossGroupContinuation(
+			strictCindy,
+			firstMessage,
+			previousResponseID,
+			currentGroupAccountID,
+		); reset {
+			firstMessage = resetMessage
+			previousResponseID = resetPreviousResponseID
+			reqLog.Info("openai.websocket_previous_response_id_reset_cross_group",
+				zap.String("reason", "current_group_binding_missing"),
+			)
+		}
+	}
+	previousResponseCanMove := openAIWSPreviousResponseCanMove(firstMessage, previousResponseID)
+	accountSwitchReplaySafe := openAIWSInitialAccountSwitchReplaySafe(firstMessage, previousResponseCanMove)
 
 	sessionHash := h.gatewayService.GenerateSessionHashWithFallback(
 		c,
@@ -2335,14 +2384,6 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			return false
 		}
 		return ensureUserSlotHeld()
-	}
-
-	// 与 HTTP Responses 路径保持一致：生图意图请求要求账号支持 Responses API（#4417）。
-	// WSv2 传输本身已隐含 Responses 支持，此处为防御性对齐。
-	// 使用 IsExplicitImageGenerationIntent 排除被动 namespace 声明（#4476）。
-	requiredCapability := service.OpenAIEndpointCapabilityChatCompletions
-	if service.IsExplicitImageGenerationIntent("/v1/responses", reqModel, firstMessage) && requestPlatform == service.PlatformOpenAI {
-		requiredCapability = service.OpenAIEndpointCapabilityResponses
 	}
 
 	// 分组利润控制：WS 桥按连接装配定价上下文并装门（选号与抢槽共用该

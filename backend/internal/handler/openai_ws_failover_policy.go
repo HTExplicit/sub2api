@@ -40,3 +40,27 @@ func openAIWSInitialAccountSwitchReplaySafe(payload []byte, previousResponseCanM
 	}
 	return !openAIWSPayloadHasEncryptedState(payload)
 }
+
+func resetStrictCindyCrossGroupContinuation(
+	strictCindy bool,
+	payload []byte,
+	previousResponseID string,
+	currentGroupAccountID int64,
+) ([]byte, string, bool) {
+	previousResponseID = strings.TrimSpace(previousResponseID)
+	if !strictCindy || previousResponseID == "" || currentGroupAccountID > 0 ||
+		!gjson.ValidBytes(payload) || openAIWSPayloadHasEncryptedState(payload) {
+		return payload, previousResponseID, false
+	}
+
+	validation := service.ValidateFunctionCallOutputContextBytes(payload)
+	if validation.HasFunctionCallOutput && !openAIWSPreviousResponseCanMove(payload, previousResponseID) {
+		return payload, previousResponseID, false
+	}
+
+	updated := service.RemovePreviousResponseIDFromBody(payload)
+	if gjson.GetBytes(updated, "previous_response_id").Exists() {
+		return payload, previousResponseID, false
+	}
+	return updated, "", true
+}
