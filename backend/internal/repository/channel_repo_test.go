@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
-	"github.com/lib/pq"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 )
 
@@ -187,24 +187,24 @@ func TestIsUniqueViolation(t *testing.T) {
 	}{
 		{
 			name: "unique violation code 23505",
-			err:  &pq.Error{Code: "23505"},
+			err:  &pgconn.PgError{Code: "23505"},
 			want: true,
 		},
 		{
-			name: "different pq error code",
-			err:  &pq.Error{Code: "23503"},
+			name: "different PostgreSQL error code",
+			err:  &pgconn.PgError{Code: "23503"},
 			want: false,
 		},
 		{
-			name: "non-pq error",
+			name: "non-PostgreSQL error",
 			err:  errors.New("some generic error"),
 			want: false,
 		},
 		{
-			name: "typed nil pq.Error",
+			name: "typed nil pgconn.PgError",
 			err: func() error {
-				var pqErr *pq.Error
-				return pqErr
+				var pgErr *pgconn.PgError
+				return pgErr
 			}(),
 			want: false,
 		},
@@ -214,8 +214,8 @@ func TestIsUniqueViolation(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "wrapped pq error with 23505",
-			err:  fmt.Errorf("wrapped: %w", &pq.Error{Code: "23505"}),
+			name: "wrapped PostgreSQL error with 23505",
+			err:  fmt.Errorf("wrapped: %w", &pgconn.PgError{Code: "23505"}),
 			want: true,
 		},
 	}

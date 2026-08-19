@@ -10,7 +10,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitor"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitorrequesttemplate"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/lib/pq"
 )
 
 // channelMonitorRequestTemplateRepository 实现 service.ChannelMonitorRequestTemplateRepository。
@@ -193,7 +192,7 @@ func (r *channelMonitorRequestTemplateRepository) applyToMonitorsWithClient(
 		  AND provider = $5
 		  AND api_mode = $6
 	`, string(templateHeadersJSON), service.ChannelMonitorDuplicateOperationIDMetadataKey,
-		id, pq.Array(monitorIDs), string(tpl.Provider), defaultAPIModeRepo(tpl.APIMode))
+		id, monitorIDs, string(tpl.Provider), defaultAPIModeRepo(tpl.APIMode))
 	if err != nil {
 		return 0, fmt.Errorf("apply template headers to monitors: %w", err)
 	}

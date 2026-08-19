@@ -18,7 +18,7 @@ import (
 
 func newOllamaCloudUsageRepositoryTestClient(t *testing.T) (*dbent.Client, sqlmock.Sqlmock) {
 	t.Helper()
-	db, mock, err := sqlmock.New()
+	db, mock, err := sqlmock.New(sqlmock.ValueConverterOption(pgxSQLMockValueConverter{}))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	client := dbent.NewClient(dbent.Driver(entsql.OpenDB(dialect.Postgres, db)))
@@ -106,7 +106,7 @@ func TestSaveAndDeleteOllamaCloudUsageSessionKeepCiphertextOutOfSQL(t *testing.T
 		capturedSQL = append(capturedSQL, actualSQL)
 		return sqlmock.QueryMatcherRegexp.Match(expectedSQL, actualSQL)
 	})
-	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(matcher))
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(matcher), sqlmock.ValueConverterOption(pgxSQLMockValueConverter{}))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	client := dbent.NewClient(dbent.Driver(entsql.OpenDB(dialect.Postgres, db)))
@@ -158,7 +158,7 @@ func TestOllamaCloudBaseURLSQLRegexMatchesServiceSemantics(t *testing.T) {
 }
 
 func TestListOllamaCloudUsageGroupAccountsUsesOneStrictBatchQuery(t *testing.T) {
-	db, mock, err := sqlmock.New()
+	db, mock, err := sqlmock.New(sqlmock.ValueConverterOption(pgxSQLMockValueConverter{}))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	var capturedSQL string
@@ -186,7 +186,7 @@ func TestListOllamaCloudUsageGroupAccountsUsesOneStrictBatchQuery(t *testing.T) 
 }
 
 func TestListDueOllamaCloudUsageAccountsFiltersOrdersAndLimits(t *testing.T) {
-	db, mock, err := sqlmock.New()
+	db, mock, err := sqlmock.New(sqlmock.ValueConverterOption(pgxSQLMockValueConverter{}))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	now := time.Date(2026, time.July, 22, 12, 0, 0, 0, time.UTC)

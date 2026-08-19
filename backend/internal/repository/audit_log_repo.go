@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/lib/pq"
 )
 
 // auditLogRepository 审计日志仓储（raw SQL，append-only）。
@@ -26,6 +25,12 @@ func NewAuditLogRepository(db *sql.DB) service.AuditLogRepository {
 const auditLogInsertColumns = `created_at, actor_user_id, actor_email, actor_role, auth_method,
 credential_masked, action, method, path, request_id, client_ip, user_agent,
 request_body, status_code, latency_ms, extra`
+
+var auditLogInsertColumnNames = []string{
+	"created_at", "actor_user_id", "actor_email", "actor_role", "auth_method",
+	"credential_masked", "action", "method", "path", "request_id", "client_ip", "user_agent",
+	"request_body", "status_code", "latency_ms", "extra",
+}
 
 func auditLogInsertValues(log *service.AuditLog) []any {
 	createdAt := log.CreatedAt
@@ -66,47 +71,14 @@ func (r *auditLogRepository) BatchInsert(ctx context.Context, logs []*service.Au
 		return 0, nil
 	}
 
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, err
-	}
-	stmt, err := tx.PrepareContext(ctx, pq.CopyIn(
-		"audit_logs",
-		"created_at", "actor_user_id", "actor_email", "actor_role", "auth_method",
-		"credential_masked", "action", "method", "path", "request_id", "client_ip", "user_agent",
-		"request_body", "status_code", "latency_ms", "extra",
-	))
-	if err != nil {
-		_ = tx.Rollback()
-		return 0, err
-	}
-
-	var inserted int64
+	rows := make([][]any, 0, len(logs))
 	for _, log := range logs {
 		if log == nil {
 			continue
 		}
-		if _, err := stmt.ExecContext(ctx, auditLogInsertValues(log)...); err != nil {
-			_ = stmt.Close()
-			_ = tx.Rollback()
-			return inserted, err
-		}
-		inserted++
+		rows = append(rows, auditLogInsertValues(log))
 	}
-
-	if _, err := stmt.ExecContext(ctx); err != nil {
-		_ = stmt.Close()
-		_ = tx.Rollback()
-		return inserted, err
-	}
-	if err := stmt.Close(); err != nil {
-		_ = tx.Rollback()
-		return inserted, err
-	}
-	if err := tx.Commit(); err != nil {
-		return inserted, err
-	}
-	return inserted, nil
+	return postgresBatchInsert(ctx, r.db, "audit_logs", auditLogInsertColumnNames, rows)
 }
 
 func (r *auditLogRepository) Insert(ctx context.Context, log *service.AuditLog) error {

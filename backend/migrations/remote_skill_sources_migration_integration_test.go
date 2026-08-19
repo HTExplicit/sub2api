@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/stretchr/testify/require"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
@@ -50,7 +50,7 @@ func TestMain(m *testing.M) {
 		}
 	}
 	if err == nil {
-		remoteSkillMigrationDB, err = sql.Open("postgres", remoteSkillMigrationDSN)
+		remoteSkillMigrationDB, err = sql.Open("pgx/v5", remoteSkillMigrationDSN)
 	}
 	if err == nil {
 		err = remoteSkillMigrationDB.PingContext(ctx)
@@ -183,7 +183,7 @@ func remoteSkillMigrationTestDatabase(t *testing.T) (*sql.DB, string) {
 	_, err := remoteSkillMigrationDB.ExecContext(context.Background(), "CREATE SCHEMA "+schema)
 	require.NoError(t, err)
 
-	db, err := sql.Open("postgres", remoteSkillMigrationDSN)
+	db, err := sql.Open("pgx/v5", remoteSkillMigrationDSN)
 	require.NoError(t, err)
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)

@@ -1,14 +1,11 @@
 package repository
 
 import (
-	"database/sql"
 	"testing"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
-
-	_ "github.com/lib/pq"
 )
 
 func TestClampDBPoolSettings(t *testing.T) {
@@ -79,7 +76,7 @@ func TestApplyDBPoolSettings(t *testing.T) {
 		},
 	}
 
-	db, err := sql.Open("postgres", "host=127.0.0.1 port=5432 user=postgres sslmode=disable")
+	db, err := OpenPostgresDB("host=127.0.0.1 port=5432 user=postgres sslmode=disable")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = db.Close()

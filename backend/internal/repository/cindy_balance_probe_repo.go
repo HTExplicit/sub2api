@@ -12,7 +12,8 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/lib/pq"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type cindyBalanceProbeRepository struct {
@@ -128,12 +129,13 @@ func loadCindyBalanceProbeAccountSnapshot(ctx context.Context, tx *sql.Tx) ([]se
 	defer func() { _ = rows.Close() }()
 
 	accounts := make([]service.Account, 0)
+	pgTypeMap := pgtype.NewMap()
 	for rows.Next() {
 		var account service.Account
 		var credentialsJSON, extraJSON []byte
 		var proxyID, folderID sql.NullInt64
 		var markedAt, rateLimitResetAt, tempUnschedulableUntil sql.NullTime
-		var groupIDs, tagIDs pq.Int64Array
+		var groupIDs, tagIDs []int64
 		if err = rows.Scan(
 			&account.ID,
 			&account.Name,
@@ -149,8 +151,8 @@ func loadCindyBalanceProbeAccountSnapshot(ctx context.Context, tx *sql.Tx) ([]se
 			&markedAt,
 			&rateLimitResetAt,
 			&tempUnschedulableUntil,
-			&groupIDs,
-			&tagIDs,
+			pgTypeMap.SQLScanner(&groupIDs),
+			pgTypeMap.SQLScanner(&tagIDs),
 		); err != nil {
 			return nil, fmt.Errorf("scan Cindy balance probe account snapshot: %w", err)
 		}
@@ -207,8 +209,8 @@ func decodeCindyBalanceProbeJSONMap(data []byte) (map[string]any, error) {
 }
 
 func wrapCindyBalanceProbeCreateTransactionError(err error) error {
-	var postgresError *pq.Error
-	if errors.As(err, &postgresError) && postgresError.Code == "40001" {
+	var postgresError *pgconn.PgError
+	if errors.As(err, &postgresError) && postgresError != nil && postgresError.Code == "40001" {
 		return service.ErrCindyBalanceProbeChanged
 	}
 	return service.WrapCindyBalanceProbeCreateError(err)
@@ -329,7 +331,7 @@ func (r *cindyBalanceProbeRepository) LatestByAccountIDs(ctx context.Context, ac
 		FROM cindy_balance_probe_items
 		WHERE account_id = ANY($1)
 		ORDER BY account_id, COALESCE(finished_at, updated_at) DESC, updated_at DESC, id DESC
-	`, pq.Array(uniqueIDs))
+	`, uniqueIDs)
 	if err != nil {
 		return nil, fmt.Errorf("query latest Cindy balance probes: %w", err)
 	}

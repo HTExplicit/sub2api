@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/migrations"
-	"github.com/lib/pq"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -117,7 +117,7 @@ func TestGroupUsageRollupTriggerSerializesLateHistoricalInsertWithPublish(t *tes
 	var closedBefore string
 	err = integrationDB.QueryRowContext(ctx, fmt.Sprintf(
 		"SELECT closed_before::text FROM %s.usage_group_rollup_state WHERE id = 1",
-		pq.QuoteIdentifier(schema),
+		pgx.Identifier{schema}.Sanitize(),
 	)).Scan(&closedBefore)
 	require.NoError(t, err)
 	require.Equal(t, "2020-01-02", closedBefore)
@@ -192,7 +192,7 @@ func TestGroupUsageRollupTriggerSerializesInsertTransactionAcrossMidnight(t *tes
 	var closedBefore string
 	err = integrationDB.QueryRowContext(ctx, fmt.Sprintf(
 		"SELECT closed_before::text FROM %s.usage_group_rollup_state WHERE id = 1",
-		pq.QuoteIdentifier(schema),
+		pgx.Identifier{schema}.Sanitize(),
 	)).Scan(&closedBefore)
 	require.NoError(t, err)
 	require.Equal(t, insertDate, closedBefore)
@@ -404,7 +404,7 @@ func createGroupUsageRollupTriggerTestSchema(t *testing.T, ctx context.Context, 
 	t.Helper()
 
 	schema := fmt.Sprintf("group_usage_rollup_trigger_%d", time.Now().UnixNano())
-	quotedSchema := pq.QuoteIdentifier(schema)
+	quotedSchema := pgx.Identifier{schema}.Sanitize()
 	_, err := integrationDB.ExecContext(ctx, "CREATE SCHEMA "+quotedSchema)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -465,7 +465,7 @@ func beginGroupUsageRollupTriggerTestTx(t *testing.T, ctx context.Context, schem
 
 	tx, err := integrationDB.BeginTx(ctx, nil)
 	require.NoError(t, err)
-	require.NoError(t, setGroupUsageRollupTriggerSearchPath(ctx, tx, pq.QuoteIdentifier(schema)))
+	require.NoError(t, setGroupUsageRollupTriggerSearchPath(ctx, tx, pgx.Identifier{schema}.Sanitize()))
 	return tx
 }
 

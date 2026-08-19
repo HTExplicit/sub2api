@@ -104,7 +104,6 @@ function mountView() {
         Pagination: true,
         ConfirmDialog: true,
         AccountTableActions: { template: '<div><slot name="beforeCreate" /><slot name="after" /></div>' },
-        AccountTableFilters: { template: '<div></div>' },
         AccountBulkActionsBar: true,
         AccountActionMenu: true,
         ImportDataModal: true,
@@ -156,6 +155,17 @@ describe('admin AccountsView usage windows hint', () => {
     getBatchTodayStats.mockResolvedValue({ stats: {} })
     getAllProxies.mockResolvedValue([])
     getAllGroups.mockResolvedValue([])
+  })
+
+  it('keeps groups available when loading proxies fails', async () => {
+    getAllProxies.mockRejectedValue(new Error('proxy service unavailable'))
+    getAllGroups.mockResolvedValue([{ id: 7, name: 'production' }])
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    const groupOption = wrapper.get('select[aria-label="admin.accounts.columns.groups"] option[value="7"]')
+    expect(groupOption.text()).toBe('production')
   })
 
   it('renders an explanatory tooltip next to the usage windows column header', async () => {

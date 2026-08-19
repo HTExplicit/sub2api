@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"database/sql"
-	"database/sql/driver"
 	"regexp"
 	"strings"
 	"testing"
@@ -250,7 +249,7 @@ func TestAccountRepository_UpdateGrokOAuthCredentialsIfUnchanged_UsesExactAttemp
 }
 
 func TestAccountRepository_ListOAuthRefreshCandidatePage_SQLFilter(t *testing.T) {
-	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp), sqlmock.ValueConverterOption(pgxSQLMockValueConverter{}))
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 
@@ -299,16 +298,14 @@ func TestAccountRepository_ListOAuthRefreshCandidatePage_SQLFilter(t *testing.T)
 	require.Len(t, capturedArgs, 3)
 	require.Equal(t, int64(100), capturedArgs[1])
 	require.Equal(t, 200, capturedArgs[2])
-	valuer, ok := capturedArgs[0].(interface{ Value() (driver.Value, error) })
+	platforms, ok := capturedArgs[0].([]string)
 	require.True(t, ok)
-	platforms, err := valuer.Value()
-	require.NoError(t, err)
 	require.Contains(t, platforms, service.PlatformGrok)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestAccountRepository_ListOAuthRefreshCandidatePage_ReconciliationExcludesAPIKeys(t *testing.T) {
-	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp), sqlmock.ValueConverterOption(pgxSQLMockValueConverter{}))
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 

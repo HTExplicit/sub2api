@@ -15,7 +15,6 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	dbgroup "github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/lib/pq"
 )
 
 type cindyGroupSplitMember struct {
@@ -167,7 +166,7 @@ func (r *groupRepository) CommitCindyGroupSplit(ctx context.Context, groupID int
 		FROM account_groups
 		WHERE group_id = $1 AND account_id = ANY($3)
 		ON CONFLICT (account_id, group_id) DO NOTHING
-	`, groupID, target.ID, pq.Array(movedIDs))
+	`, groupID, target.ID, movedIDs)
 	if err != nil {
 		return nil, fmt.Errorf("insert Cindy split target memberships: %w", err)
 	}
@@ -182,7 +181,7 @@ func (r *groupRepository) CommitCindyGroupSplit(ctx context.Context, groupID int
 	deleteResult, err := txClient.ExecContext(ctx,
 		"DELETE FROM account_groups WHERE group_id = $1 AND account_id = ANY($2)",
 		groupID,
-		pq.Array(movedIDs),
+		movedIDs,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("delete Cindy split source memberships: %w", err)
@@ -200,7 +199,7 @@ func (r *groupRepository) CommitCindyGroupSplit(ctx context.Context, groupID int
 			UPDATE api_keys
 			SET group_id = $2, updated_at = NOW()
 			WHERE group_id = $1 AND id = ANY($3) AND deleted_at IS NULL
-		`, groupID, target.ID, pq.Array(input.APIKeyIDs))
+		`, groupID, target.ID, input.APIKeyIDs)
 		if err != nil {
 			return nil, fmt.Errorf("rebind Cindy split API keys: %w", err)
 		}

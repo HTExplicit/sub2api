@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: write
-  issues: write
   pull-requests: write
 
 concurrency:
@@ -66,12 +65,14 @@ jobs:
           set -e
           if ((merge_rc != 0)); then
             conflicts=$(git diff --name-only --diff-filter=U | sed 's/^/- `/' | sed 's/$/`/')
+            if [[ -z "$conflicts" ]]; then
+              conflicts='- Merge failed before Git reported conflicted paths; inspect the merge step log.'
+            fi
             git merge --abort || true
             title="Upstream ${tag} requires manual conflict resolution"
-            if ! gh issue list --state open --search "${title} in:title" --json title --jq '.[].title' | grep -Fxq "$title"; then
-              printf 'The scheduled downstream merge stopped without changing `main`.\n\n%s\n' "$conflicts" > /tmp/upstream-conflict.md
-              gh issue create --title "$title" --body-file /tmp/upstream-conflict.md
-            fi
+            printf '## %s\n\nThe scheduled downstream merge stopped without changing `main`.\n\n### Conflicted paths\n\n%s\n' \
+              "$title" "$conflicts" > /tmp/upstream-conflict.md
+            cat /tmp/upstream-conflict.md >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
 
@@ -81,6 +82,14 @@ jobs:
           git push origin "HEAD:refs/heads/${branch}"
           echo "branch=$branch" >> "$GITHUB_OUTPUT"
           echo "created=true" >> "$GITHUB_OUTPUT"
+      - name: Upload merge conflict report
+        if: failure() && steps.release.outputs.changed == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: upstream-${{ steps.release.outputs.tag }}-merge-conflicts
+          path: /tmp/upstream-conflict.md
+          if-no-files-found: ignore
+          retention-days: 30
       - name: Open candidate pull request
         if: steps.release.outputs.changed == 'true'
         shell: bash

@@ -12,7 +12,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/lib/pq"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 const (
@@ -970,9 +970,9 @@ func generateAffiliateCode() (string, error) {
 }
 
 func isAffiliateUniqueViolation(err error) bool {
-	var pqErr *pq.Error
-	if errors.As(err, &pqErr) {
-		return string(pqErr.Code) == "23505"
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr != nil {
+		return pgErr.Code == "23505"
 	}
 	return false
 }
@@ -1099,7 +1099,7 @@ func (r *affiliateRepository) BatchSetUserRebateRate(ctx context.Context, userID
 UPDATE user_affiliates
 SET aff_rebate_rate_percent = $1,
     updated_at = NOW()
-WHERE user_id = ANY($2)`, nullableArg(ratePercent), pq.Array(userIDs))
+WHERE user_id = ANY($2)`, nullableArg(ratePercent), userIDs)
 		if err != nil {
 			return fmt.Errorf("batch set aff_rebate_rate_percent: %w", err)
 		}

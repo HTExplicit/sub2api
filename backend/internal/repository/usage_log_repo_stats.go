@@ -13,7 +13,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/lib/pq"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -355,7 +354,7 @@ func (r *usageLogRepository) GetAccountWindowStatsBatch(ctx context.Context, acc
 		WHERE account_id = ANY($1) AND created_at >= $2
 		GROUP BY account_id
 	`
-	rows, err := r.sql.QueryContext(ctx, query, pq.Array(accountIDs), startTime)
+	rows, err := r.sql.QueryContext(ctx, query, accountIDs, startTime)
 	if err != nil {
 		return nil, err
 	}
@@ -409,7 +408,7 @@ func (r *usageLogRepository) GetGeminiUsageTotalsBatch(ctx context.Context, acco
 		WHERE account_id = ANY($1) AND created_at >= $2 AND created_at < $3
 		GROUP BY account_id
 	`
-	rows, err := r.sql.QueryContext(ctx, query, pq.Array(accountIDs), startTime, endTime)
+	rows, err := r.sql.QueryContext(ctx, query, accountIDs, startTime, endTime)
 	if err != nil {
 		return nil, err
 	}
@@ -509,7 +508,7 @@ func (r *usageLogRepository) GetBatchUserUsageStats(ctx context.Context, userIDs
 		GROUP BY ul.user_id, ` + usageLogEffectivePlatformExpr + `
 	`
 	today := timezone.Today()
-	rows, err := r.sql.QueryContext(ctx, query, pq.Array(normalizedUserIDs), startTime, endTime, today)
+	rows, err := r.sql.QueryContext(ctx, query, normalizedUserIDs, startTime, endTime, today)
 	if err != nil {
 		return nil, err
 	}
@@ -581,7 +580,7 @@ func (r *usageLogRepository) GetBatchAPIKeyUsageStats(ctx context.Context, apiKe
 		GROUP BY api_key_id
 	`
 	today := timezone.Today()
-	rows, err := r.sql.QueryContext(ctx, query, pq.Array(normalizedAPIKeyIDs), startTime, endTime, today)
+	rows, err := r.sql.QueryContext(ctx, query, normalizedAPIKeyIDs, startTime, endTime, today)
 	if err != nil {
 		return nil, err
 	}

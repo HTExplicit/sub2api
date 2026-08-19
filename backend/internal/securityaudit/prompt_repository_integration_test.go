@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,7 +26,7 @@ func openPromptAuditIntegrationDB(t *testing.T) *sql.DB {
 	if dsn == "" {
 		t.Skip(promptAuditPostgresTestEnv + " is not set")
 	}
-	db, err := sql.Open("postgres", dsn)
+	db, err := sql.Open("pgx/v5", dsn)
 	require.NoError(t, err)
 	db.SetMaxOpenConns(16)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

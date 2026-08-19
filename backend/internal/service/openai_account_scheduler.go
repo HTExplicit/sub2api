@@ -393,7 +393,7 @@ func (s *defaultOpenAIAccountScheduler) Select(
 
 	previousResponseID := strings.TrimSpace(req.PreviousResponseID)
 	if previousResponseID != "" && openAIContinuationCapability(req.RequiredCapability) &&
-		normalizeOpenAICompatiblePlatform(req.Platform) == PlatformOpenAI &&
+		NormalizeOpenAICompatiblePlatform(req.Platform) == PlatformOpenAI &&
 		(!req.StickyWeighted || !req.PreviousResponseCanMove) {
 		selection, err := s.service.selectAccountByPreviousResponseIDForCapabilityWithPolicy(
 			ctx,
@@ -503,7 +503,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		return nil, false, nil
 	}
 	accountRequestedModel := openAIRequestedModelForAccount(ctx, account, req.RequestedModel)
-	if shouldClearStickySession(account, accountRequestedModel) || account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() || !account.IsSchedulable() {
+	if shouldClearStickySession(account, accountRequestedModel) || account.Platform != NormalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() || !account.IsSchedulable() {
 		_ = s.service.deleteStickySessionAccountIDIfMatches(ctx, req.GroupID, sessionHash, accountID)
 		return nil, false, nil
 	}
@@ -1428,7 +1428,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			filterStats.exclude("not_schedulable")
 			continue
 		}
-		if account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() {
+		if account.Platform != NormalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() {
 			filterStats.exclude("platform_mismatch")
 			continue
 		}
@@ -2161,7 +2161,7 @@ func (s *OpenAIGatewayService) exclusionsForOtherOpenAIAccountTypes(
 	excludedIDs map[int64]struct{},
 	preferredType string,
 ) (map[int64]struct{}, error) {
-	accounts, err := s.listSchedulableAccounts(ctx, groupID, normalizeOpenAICompatiblePlatform(platform))
+	accounts, err := s.listSchedulableAccounts(ctx, groupID, NormalizeOpenAICompatiblePlatform(platform))
 	if err != nil {
 		return nil, err
 	}
@@ -2240,7 +2240,7 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 		return selection, decision, err
 	}
 	// The circuit only ever quarantines PlatformOpenAI accounts.
-	if normalizeOpenAICompatiblePlatform(platform) != PlatformOpenAI {
+	if NormalizeOpenAICompatiblePlatform(platform) != PlatformOpenAI {
 		return selection, decision, err
 	}
 	blocked := s.getOpenAIProxyStreamCircuit().activeBlockCount(time.Now())
@@ -2277,7 +2277,7 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 	if requiredImageCapability == "" {
 		ctx = s.withOpenAIProfitControlGate(ctx, groupID)
 	}
-	platform = normalizeOpenAICompatiblePlatform(platform)
+	platform = NormalizeOpenAICompatiblePlatform(platform)
 	decision := OpenAIAccountScheduleDecision{}
 	if strings.TrimSpace(previousResponseID) != "" && openAIContinuationCapability(requiredCapability) &&
 		platform == PlatformOpenAI && !previousResponseCanMove {

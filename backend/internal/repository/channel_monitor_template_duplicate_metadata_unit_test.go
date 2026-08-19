@@ -17,7 +17,7 @@ import (
 )
 
 func TestApplyChannelMonitorTemplatePreservesDuplicateOperationMetadataAtomically(t *testing.T) {
-	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp), sqlmock.ValueConverterOption(pgxSQLMockValueConverter{}))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	client := dbent.NewClient(dbent.Driver(entsql.OpenDB(dialect.Postgres, db)))
@@ -45,7 +45,7 @@ func TestApplyChannelMonitorTemplatePreservesDuplicateOperationMetadataAtomicall
 			`{"User-Agent":"template-client"}`,
 			service.ChannelMonitorDuplicateOperationIDMetadataKey,
 			templateID,
-			`{41,42}`,
+			[]int64{41, 42},
 			service.MonitorProviderOpenAI,
 			service.MonitorAPIModeResponses,
 		).
@@ -61,7 +61,7 @@ func TestApplyChannelMonitorTemplatePreservesDuplicateOperationMetadataAtomicall
 }
 
 func TestApplyChannelMonitorTemplateRollsBackWhenHeaderRowCountDiffers(t *testing.T) {
-	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp), sqlmock.ValueConverterOption(pgxSQLMockValueConverter{}))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	client := dbent.NewClient(dbent.Driver(entsql.OpenDB(dialect.Postgres, db)))
@@ -78,7 +78,7 @@ func TestApplyChannelMonitorTemplateRollsBackWhenHeaderRowCountDiffers(t *testin
 			`{"User-Agent":"template-client"}`,
 			service.ChannelMonitorDuplicateOperationIDMetadataKey,
 			templateID,
-			`{41,42}`,
+			[]int64{41, 42},
 			service.MonitorProviderOpenAI,
 			service.MonitorAPIModeResponses,
 		).

@@ -23,7 +23,7 @@ import (
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	redisclient "github.com/redis/go-redis/v9"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
@@ -178,7 +178,7 @@ func openSQLWithRetry(ctx context.Context, dsn string, timeout time.Duration) (*
 	var lastErr error
 
 	for time.Now().Before(deadline) {
-		db, err := sql.Open("postgres", dsn)
+		db, err := sql.Open("pgx/v5", dsn)
 		if err != nil {
 			lastErr = err
 			time.Sleep(250 * time.Millisecond)

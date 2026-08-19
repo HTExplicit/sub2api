@@ -8,7 +8,6 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/lib/pq"
 )
 
 const (
@@ -60,7 +59,7 @@ func (r *accountRepository) ListOllamaCloudUsageGroupAccounts(ctx context.Contex
 			AND `+ollamaCloudUsageEligibleSQL+`
 			AND credentials ->> 'api_key' = ANY($1)
 		ORDER BY id
-	`, pq.Array(keys))
+	`, keys)
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +245,7 @@ func (r *accountRepository) updateOllamaCloudUsageGroup(
 				AND `+ollamaCloudUsageEligibleSQL+`
 				AND credentials ->> 'api_key' = $2
 				AND id = ANY($3)
-		`, string(encoded), apiKey, pq.Array(memberIDs))
+		`, string(encoded), apiKey, memberIDs)
 		if err != nil {
 			return err
 		}
