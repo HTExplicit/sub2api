@@ -232,7 +232,7 @@ func (h *AccountHandler) runCindyAccountJobMutation(
 	mutate func(context.Context) (*service.Account, error),
 ) (*service.Account, error) {
 	if h == nil || h.cindyJobMutations == nil {
-		return nil, errors.New("Cindy account job mutation is unavailable")
+		return nil, errors.New("cindy account job mutation is unavailable")
 	}
 	return h.cindyJobMutations.Run(ctx, accountID, mutate)
 }

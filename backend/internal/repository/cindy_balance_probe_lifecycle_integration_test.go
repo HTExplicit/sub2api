@@ -285,11 +285,13 @@ func newCindyBalanceProbeLifecycleAccount(t *testing.T, suffix string) *service.
 	ctx := context.Background()
 	client := testEntClient(t)
 	account := mustCreateAccount(t, client, &service.Account{
-		Name:        fmt.Sprintf("cindy-balance-lifecycle-%s-%d", suffix, time.Now().UnixNano()),
-		Platform:    service.PlatformOpenAI,
-		Type:        service.AccountTypeAPIKey,
-		Status:      service.StatusActive,
-		Schedulable: true,
+		Name:            fmt.Sprintf("cindy-balance-lifecycle-%s-%d", suffix, time.Now().UnixNano()),
+		Platform:        service.PlatformCindy,
+		WirePlatform:    service.WirePlatformOpenAI,
+		ProviderProfile: service.ProviderProfileCindyLaxaV1,
+		Type:            service.AccountTypeAPIKey,
+		Status:          service.StatusActive,
+		Schedulable:     true,
 		Credentials: map[string]any{
 			"api_key":  fmt.Sprintf("sk-cindy-lifecycle-%s-%d", suffix, time.Now().UnixNano()),
 			"base_url": "https://api.laxarouter.ai",

@@ -22,8 +22,24 @@ func newAccountJobRepoTest(t *testing.T) (*accountJobRepository, sqlmock.Sqlmock
 	return &accountJobRepository{db: db}, mock
 }
 
+func accountJobTestColumns() []string {
+	return []string{
+		"id", "created_by", "kind", "idempotency_key", "request_hash", "status", "metadata",
+		"target_count", "processed_count", "succeeded_count", "failed_count", "canceled_count",
+		"cancel_requested_at", "error_code", "error_message", "retry_of_job_id", "attempt",
+		"started_at", "finished_at", "created_at", "updated_at",
+	}
+}
+
+func accountJobItemTestColumns() []string {
+	return []string{
+		"id", "job_id", "ordinal", "action", "target_account_id", "status", "metadata",
+		"error_code", "error_message", "started_at", "finished_at", "created_at", "updated_at",
+	}
+}
+
 func accountJobRows(now time.Time, id int64, status string) *sqlmock.Rows {
-	return sqlmock.NewRows(accountJobColumns()).AddRow(
+	return sqlmock.NewRows(accountJobTestColumns()).AddRow(
 		id, int64(7), service.AccountJobKindBatchDelete, "key", regexp.MustCompile("^[0-9a-f]{64}$").FindString("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
 		status, []byte(`{}`), 1, 0, 0, 0, 0, nil, nil, nil, nil, 1, nil, nil, now, now,
 	)
@@ -88,7 +104,7 @@ func TestAccountJobRepositoryReserveCapsBatchAtOneHundred(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectQuery("WITH picked AS[\\s\\S]+LIMIT \\$2[\\s\\S]+UPDATE admin_account_job_items").
 		WithArgs(int64(51), service.AccountJobBatchSize).
-		WillReturnRows(sqlmock.NewRows(accountJobItemColumns()))
+		WillReturnRows(sqlmock.NewRows(accountJobItemTestColumns()))
 	mock.ExpectCommit()
 
 	items, err := repo.ReservePendingItems(context.Background(), 51, 500)

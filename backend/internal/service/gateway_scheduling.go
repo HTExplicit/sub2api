@@ -886,7 +886,7 @@ func (s *GatewayService) resolveGatewayGroup(ctx context.Context, groupID *int64
 		if sourceGroup == nil {
 			sourceGroup = group
 		} else if sourceGroup.Platform == PlatformCindy && !providerGroupIdentityCompatible(sourceGroup, group) {
-			return nil, nil, fmt.Errorf("Cindy fallback group provider identity mismatch")
+			return nil, nil, fmt.Errorf("cindy fallback group provider identity mismatch")
 		}
 
 		if !group.ClaudeCodeOnly || IsClaudeCodeClient(ctx) {

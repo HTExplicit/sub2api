@@ -470,7 +470,7 @@ func (s *adminServiceImpl) BulkUpdateAccountTaxonomy(ctx context.Context, input 
 	}
 
 	contextTx := dbent.TxFromContext(ctx)
-	txClient := s.entClient
+	var txClient *dbent.Client
 	var ownedTx *dbent.Tx
 	if contextTx != nil {
 		txClient = contextTx.Client()
@@ -638,7 +638,7 @@ func (s *adminServiceImpl) hydrateAccountTaxonomy(ctx context.Context, accounts 
 func (s *adminServiceImpl) SetAccountTaxonomy(ctx context.Context, accountID int64, assignment AccountTaxonomyAssignment) (*Account, error) {
 	assignment.TagIDs = uniquePositiveIDs(assignment.TagIDs)
 	contextTx := dbent.TxFromContext(ctx)
-	txClient := s.entClient
+	var txClient *dbent.Client
 	var ownedTx *dbent.Tx
 	var err error
 	if contextTx != nil {

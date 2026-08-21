@@ -17,7 +17,7 @@ import (
 
 const cindyOpaqueBindingIDPrefix = "cindy_opaque_v1_"
 
-var errCindyOpaqueBindingConflict = errors.New("Cindy opaque continuation bindings disagree")
+var errCindyOpaqueBindingConflict = errors.New("cindy opaque continuation bindings disagree")
 
 func cindyOpaqueBindingIDsFromItem(itemType string, item gjson.Result) []string {
 	if !item.IsObject() {

@@ -22,10 +22,10 @@ func ValidateCindyCodexClientVersion(clientVersion string) error {
 	}
 	minimum := "v" + CindyCodexMinimumClientVersion
 	if !semver.IsValid(canonical) || semver.Canonical(canonical) != canonical {
-		return fmt.Errorf("Cindy Codex catalog requires a valid client_version at or above %s", CindyCodexMinimumClientVersion)
+		return fmt.Errorf("cindy Codex catalog requires a valid client_version at or above %s", CindyCodexMinimumClientVersion)
 	}
 	if semver.Compare(canonical, minimum) < 0 {
-		return fmt.Errorf("Cindy Codex catalog requires Codex %s or newer", CindyCodexMinimumClientVersion)
+		return fmt.Errorf("cindy Codex catalog requires Codex %s or newer", CindyCodexMinimumClientVersion)
 	}
 	return nil
 }

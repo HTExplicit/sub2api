@@ -992,10 +992,6 @@ func openAIAlphaSearchResponseFromResponsesSSEMode(body []byte, strictEvidence b
 	return encoded, hasWebSearchCall || len(results) > 0, err
 }
 
-func parseOpenAIResponsesSSEForAlphaSearch(body []byte) (string, []any, bool) {
-	return parseOpenAIResponsesSSEForAlphaSearchMode(body, false)
-}
-
 func parseOpenAIResponsesSSEForAlphaSearchMode(body []byte, strictEvidence bool) (string, []any, bool) {
 	text := strings.ReplaceAll(string(body), "\r\n", "\n")
 	var output strings.Builder
@@ -1066,10 +1062,6 @@ func parseOpenAIResponsesSSEForAlphaSearchMode(body []byte, strictEvidence bool)
 		return out, nil, false
 	}
 	return out, results, hasWebSearchCall
-}
-
-func containsOpenAIAlphaSearchWebSearchCall(value any) bool {
-	return containsOpenAIAlphaSearchWebSearchCallMode(value, false)
 }
 
 func containsOpenAIAlphaSearchWebSearchCallMode(value any, strictEvidence bool) bool {
@@ -1214,10 +1206,6 @@ func extractOpenAIResponsesCompletedText(response any) string {
 		}
 	}
 	return b.String()
-}
-
-func collectOpenAIAlphaSearchURLCitations(value any, results *[]any, seen map[string]struct{}) {
-	collectOpenAIAlphaSearchURLCitationsMode(value, results, seen, false)
 }
 
 func collectOpenAIAlphaSearchURLCitationsMode(value any, results *[]any, seen map[string]struct{}, strictEvidence bool) {

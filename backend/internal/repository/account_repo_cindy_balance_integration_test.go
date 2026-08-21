@@ -30,7 +30,8 @@ func TestCindyInsufficientDeleteIsProtectedAndRejectsStalePreview(t *testing.T) 
 	cindyCredentials := map[string]any{"base_url": "https://api.laxarouter.ai", "api_key": "test"}
 	createAccount := func(suffix string, credentials map[string]any, status string, marked bool) *service.Account {
 		account := &service.Account{
-			Name: namePrefix + "-" + suffix, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
+			Name: namePrefix + "-" + suffix, Platform: service.PlatformCindy, WirePlatform: service.WirePlatformOpenAI,
+			ProviderProfile: service.ProviderProfileCindyLaxaV1, Type: service.AccountTypeAPIKey,
 			Status: status, Schedulable: true, Credentials: credentials,
 		}
 		if marked {
@@ -49,7 +50,10 @@ func TestCindyInsufficientDeleteIsProtectedAndRejectsStalePreview(t *testing.T) 
 	createdAccountIDs := []int64{eligibleOne.ID, manualDisabled.ID, manualPaused.ID, nonCindy.ID, unmarkedCindy.ID}
 	var outboxEventID int64
 
-	group := mustCreateGroup(t, client, &service.Group{Name: namePrefix + "-group", Platform: service.PlatformOpenAI, RateMultiplier: 1})
+	group := mustCreateGroup(t, client, &service.Group{
+		Name: namePrefix + "-group", Platform: service.PlatformCindy, WirePlatform: service.WirePlatformOpenAI,
+		ProviderProfile: service.ProviderProfileCindyLaxaV1, RateMultiplier: 1,
+	})
 	t.Cleanup(func() {
 		if outboxEventID != 0 {
 			_, _ = integrationDB.ExecContext(context.Background(), `DELETE FROM scheduler_outbox WHERE id = $1`, outboxEventID)

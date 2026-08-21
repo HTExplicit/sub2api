@@ -325,12 +325,14 @@ func newCindyBalanceProbeFinalizeFixture(
 		"base_url": "https://api.laxarouter.ai",
 	}
 	account := mustCreateAccount(t, client, &service.Account{
-		Name:        fmt.Sprintf("cindy-balance-finalize-%d", time.Now().UnixNano()),
-		Platform:    service.PlatformOpenAI,
-		Type:        service.AccountTypeAPIKey,
-		Status:      service.StatusActive,
-		Schedulable: true,
-		Credentials: credentials,
+		Name:            fmt.Sprintf("cindy-balance-finalize-%d", time.Now().UnixNano()),
+		Platform:        service.PlatformCindy,
+		WirePlatform:    service.WirePlatformOpenAI,
+		ProviderProfile: service.ProviderProfileCindyLaxaV1,
+		Type:            service.AccountTypeAPIKey,
+		Status:          service.StatusActive,
+		Schedulable:     true,
+		Credentials:     credentials,
 	})
 	if marked {
 		_, err := integrationDB.ExecContext(ctx, `

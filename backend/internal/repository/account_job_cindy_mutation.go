@@ -27,11 +27,11 @@ func (r *accountJobCindyMutationRunner) Run(
 	mutate func(context.Context) (*service.Account, error),
 ) (*service.Account, error) {
 	if r == nil || r.client == nil || mutate == nil {
-		return nil, errors.New("Cindy account mutation is unavailable")
+		return nil, errors.New("cindy account mutation is unavailable")
 	}
 	identityRepo, ok := r.identity.(service.AccountCredentialIdentityTransactionalRepository)
 	if !ok || identityRepo == nil {
-		return nil, errors.New("Cindy credential identity transaction is unavailable")
+		return nil, errors.New("cindy credential identity transaction is unavailable")
 	}
 	tx, err := r.client.Tx(ctx)
 	if err != nil {
@@ -50,7 +50,7 @@ func (r *accountJobCindyMutationRunner) Run(
 		return nil, err
 	}
 	if account == nil || account.ID <= 0 {
-		return nil, errors.New("Cindy account mutation returned no account")
+		return nil, errors.New("cindy account mutation returned no account")
 	}
 	current, err := loadCanonicalCindyAccountForUpdate(ctx, txClient, account.ID)
 	if err != nil {

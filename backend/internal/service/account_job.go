@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -506,29 +505,4 @@ func normalizeAccountJobFailure(code string) (string, string) {
 		return code, message
 	}
 	return "execution_failed", messages["execution_failed"]
-}
-
-func accountJobResultMetadata(value any) json.RawMessage {
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return json.RawMessage(`{}`)
-	}
-	return raw
-}
-
-func accountJobSucceeded(itemID int64, metadata any) AccountJobExecutionResult {
-	return AccountJobExecutionResult{ItemID: itemID, Status: AccountJobItemStatusSucceeded, Metadata: accountJobResultMetadata(metadata)}
-}
-
-func accountJobFailed(itemID int64, code string) AccountJobExecutionResult {
-	code, message := normalizeAccountJobFailure(code)
-	return AccountJobExecutionResult{ItemID: itemID, Status: AccountJobItemStatusFailed,
-		Metadata: json.RawMessage(`{}`), ErrorCode: code, ErrorMessage: message}
-}
-
-func requireAccountJobTarget(item AccountJobItem) (int64, error) {
-	if item.TargetAccountID == nil || *item.TargetAccountID <= 0 {
-		return 0, fmt.Errorf("account job target is missing")
-	}
-	return *item.TargetAccountID, nil
 }

@@ -21,9 +21,6 @@ const imageStudioJobSelectColumns = `id, user_id, api_key_id, mode, model, promp
 	processed_count, succeeded_count, failed_count, canceled_count, cancel_requested_at,
 	error_code, error_message, request_expires_at, retain_until, started_at, finished_at, created_at, updated_at`
 
-const imageStudioItemSelectColumns = `id, job_id, ordinal, status, error_code, error_message,
-	started_at, finished_at, created_at, updated_at`
-
 const imageStudioArtifactSelectColumns = `id, job_id, item_id, kind, storage_key, content_type,
 	byte_size, revised_prompt, expires_at, created_at`
 

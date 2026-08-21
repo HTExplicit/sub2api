@@ -51,28 +51,6 @@ func validateDataImportUniformSettings(settings DataImportUniformSettings) error
 	return validateDataImportOperationalSettings(settings.GroupIDs, settings.ProxyID, settings.Concurrency, settings.Priority, settings.RateMultiplier, settings.Status)
 }
 
-func validateDataImportItemOverrides(settings DataImportItemOverrides) error {
-	if settings.Name != nil && strings.TrimSpace(*settings.Name) == "" {
-		return errors.New("name must not be empty")
-	}
-	if settings.Notes != nil {
-		if err := validateDataImportNotes(*settings.Notes); err != nil {
-			return err
-		}
-	}
-	if settings.ManagementFolder != nil {
-		if err := validateDataTaxonomyName(*settings.ManagementFolder, true); err != nil {
-			return fmt.Errorf("management_folder: %w", err)
-		}
-	}
-	if settings.Tags != nil {
-		if err := validateDataImportTags(*settings.Tags); err != nil {
-			return err
-		}
-	}
-	return validateDataImportOperationalSettings(settings.GroupIDs, settings.ProxyID, settings.Concurrency, settings.Priority, settings.RateMultiplier, settings.Status)
-}
-
 func validateDataImportNotes(setting DataImportNotesSetting) error {
 	switch setting.Mode {
 	case "append", "replace":

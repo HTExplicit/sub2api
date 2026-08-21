@@ -18,26 +18,6 @@ func NewAccountJobRepository(db *sql.DB) service.AccountJobRepository {
 	return &accountJobRepository{db: db}
 }
 
-var accountJobColumnNames = []string{
-	"id", "created_by", "kind", "idempotency_key", "request_hash", "status", "metadata",
-	"target_count", "processed_count", "succeeded_count", "failed_count", "canceled_count",
-	"cancel_requested_at", "error_code", "error_message", "retry_of_job_id", "attempt",
-	"started_at", "finished_at", "created_at", "updated_at",
-}
-
-var accountJobItemColumnNames = []string{
-	"id", "job_id", "ordinal", "action", "target_account_id", "status", "metadata",
-	"error_code", "error_message", "started_at", "finished_at", "created_at", "updated_at",
-}
-
-func accountJobColumns() []string {
-	return append([]string(nil), accountJobColumnNames...)
-}
-
-func accountJobItemColumns() []string {
-	return append([]string(nil), accountJobItemColumnNames...)
-}
-
 const accountJobSelectColumns = `id, created_by, kind, idempotency_key, request_hash, status, metadata,
 	target_count, processed_count, succeeded_count, failed_count, canceled_count,
 	cancel_requested_at, error_code, error_message, retry_of_job_id, attempt,

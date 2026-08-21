@@ -140,7 +140,7 @@ func validateProviderIdentityAccountsForGroup(ctx context.Context, repo AccountR
 			if account != nil && account.Platform != PlatformCindy && account.EffectiveProviderProfile() != ProviderProfileCindyLaxaV1 {
 				continue
 			}
-			return fmt.Errorf("Cindy accounts cannot bind to composite group %d", group.ID)
+			return fmt.Errorf("cindy accounts cannot bind to composite group %d", group.ID)
 		}
 		if account == nil || !ProviderIdentityCompatible(account, group) {
 			return fmt.Errorf("account provider identity does not match group %d identity %s/%s/%s",
@@ -164,7 +164,7 @@ func validateProviderIdentityGroupBindings(ctx context.Context, repo GroupReposi
 		}
 		if group.Platform == PlatformComposite {
 			if account.Platform == PlatformCindy || account.EffectiveProviderProfile() == ProviderProfileCindyLaxaV1 {
-				return fmt.Errorf("Cindy accounts cannot bind to composite group %d", groupID)
+				return fmt.Errorf("cindy accounts cannot bind to composite group %d", groupID)
 			}
 			continue
 		}
