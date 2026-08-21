@@ -382,6 +382,19 @@ func assertCodexManifestOmitsNonResponsesCindyIDs(t *testing.T, body string) {
 	}
 }
 
+func TestCompositeCodexModelsReusesExistingManifestSelection(t *testing.T) {
+	handler, upstream, groupID := newCodexModelsFailoverTestHandler(http.StatusServiceUnavailable)
+
+	recorder := performCodexModelsRequestForPlatform(t, handler, groupID, service.PlatformComposite)
+
+	if got, want := upstream.calls(), []int64{1, 2}; !equalInt64Slices(got, want) {
+		t.Fatalf("upstream account calls: got %v, want %v", got, want)
+	}
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+}
+
 func TestCodexModelsFailsOverFromRetryableUpstreamStatus(t *testing.T) {
 	retryableStatuses := []int{
 		http.StatusTooManyRequests,
@@ -554,8 +567,12 @@ func newCodexModelsFailoverTestHandlerWithAccountCount(firstStatus, accountCount
 }
 
 func performCodexModelsRequest(t *testing.T, handler *OpenAIGatewayHandler, groupID int64) *httptest.ResponseRecorder {
+	return performCodexModelsRequestForPlatform(t, handler, groupID, service.PlatformOpenAI)
+}
+
+func performCodexModelsRequestForPlatform(t *testing.T, handler *OpenAIGatewayHandler, groupID int64, platform string) *httptest.ResponseRecorder {
 	t.Helper()
-	return performCodexModelsRequestForGroup(t, handler, &service.Group{ID: groupID, Platform: service.PlatformOpenAI})
+	return performCodexModelsRequestForGroup(t, handler, &service.Group{ID: groupID, Platform: platform})
 }
 
 func performCodexModelsRequestForGroup(t *testing.T, handler *OpenAIGatewayHandler, group *service.Group) *httptest.ResponseRecorder {

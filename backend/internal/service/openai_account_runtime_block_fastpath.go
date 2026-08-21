@@ -437,6 +437,11 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	if s != nil {
 		scheduleOllamaCloudUsageActivity(s.deferredService, account)
 	}
+	// Capacity shedding describes this request, not account health. Keep the
+	// account schedulable while the request-local retry budget handles recovery.
+	if account != nil && account.Platform == PlatformOpenAI && isOpenAIRequestScopedCapacityShed("", responseBody) {
+		return false
+	}
 	if statusCode == http.StatusForbidden && account != nil &&
 		IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		if hit, _, _ := detectOpenAICyberPolicy(responseBody); hit {

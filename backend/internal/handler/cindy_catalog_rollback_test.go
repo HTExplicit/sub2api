@@ -67,7 +67,7 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 	strictMessages, err := gatewayService.ClassifyStrictCindyGroup(t.Context(), group)
 	require.NoError(t, err)
 	require.False(t, strictMessages)
-	require.False(t, allowOpenAICompatibleMessagesDispatch(apiKey),
+	require.False(t, allowOpenAICompatibleMessagesDispatch(nil, apiKey),
 		"catalog rollback must restore the legacy Messages dispatch policy")
 	cindyAccount := cindyGatewayModelAccountForTest(99202)
 	require.Equal(t, "legacy-mapped-model",
