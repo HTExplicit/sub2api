@@ -2442,6 +2442,10 @@ func accountSupportsOpenAICapabilities(ctx context.Context, account *Account, re
 		return false
 	}
 	isCindy := IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+	if isCindy && requiredCapability == OpenAIEndpointCapabilityAlphaSearch {
+		return CindyAlphaSearchModelAvailable(requestedModel) &&
+			account.SupportsOpenAIEndpointCapability(requiredCapability)
+	}
 	cindyCatalogEnabled := CindyCapabilityCatalogFeatureEnabled()
 	if isCindy && cindyCatalogEnabled && strings.TrimSpace(requestedModel) != "" {
 		endpoint, mapped := cindyEndpointForOpenAICapability(requiredCapability)

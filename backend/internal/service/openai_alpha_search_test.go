@@ -347,16 +347,23 @@ func TestOpenAIAlphaSearchResponseAcceptsWebSearchCallWithoutCitation(t *testing
 
 func TestForwardAlphaSearchCindyNativeModeBypassesEnabledResponsesBridge(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	body := []byte(`{"id":"search-session","model":"cindy/web-search","commands":{"search_query":[{"q":"news"}]}}`)
+	body := []byte(`{"id":"search-session","model":"gpt-5.6-sol","commands":{"search_query":[{"q":"news"}]}}`)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/alpha/search", bytes.NewReader(body))
 	c.Request.Header.Set("User-Agent", "codex-test")
 
-	upstream := &httpUpstreamRecorder{resp: &http.Response{
-		StatusCode: http.StatusOK,
-		Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"req-cindy-search"}},
-		Body: io.NopCloser(strings.NewReader(`{
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body: io.NopCloser(strings.NewReader("event: response.completed\n" +
+				`data: {"type":"response.completed","response":{"status":"completed","output":[]}}` + "\n\n")),
+		},
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"req-cindy-search"}},
+			Body: io.NopCloser(strings.NewReader(`{
 			"id":"msg-search-1",
 			"type":"message",
 			"model":"cindy/web-search",
@@ -367,6 +374,7 @@ func TestForwardAlphaSearchCindyNativeModeBypassesEnabledResponsesBridge(t *test
 			],
 			"usage":{"input_tokens":11,"output_tokens":4,"cache_read_input_tokens":2,"server_tool_use":{"web_search_requests":1}}
 		}`)),
+		},
 	}}
 	settings := &SettingService{}
 	settings.openAIRefusalRecoveryCache.Store(&cachedOpenAIRefusalRecoveryRuntime{
@@ -374,25 +382,23 @@ func TestForwardAlphaSearchCindyNativeModeBypassesEnabledResponsesBridge(t *test
 		expiresAt: time.Now().Add(time.Minute).UnixNano(),
 	})
 	service := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream, settingService: settings}
-	account := &Account{
-		ID:          48,
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Concurrency: 1,
-		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://api.laxarouter.ai"},
-		Extra:       map[string]any{"openai_alpha_search_mode": OpenAIAlphaSearchModeDirect},
-	}
+	account := firstClassCindyAlphaSearchAccount(48)
 
 	result, err := service.ForwardAlphaSearch(context.Background(), c, account, body)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "/v1/messages", result.UpstreamEndpoint)
+	require.Equal(t, "gpt-5.6-sol", result.Model)
+	require.Equal(t, "openai/gpt-5.6-sol", result.BillingModel)
 	require.Equal(t, 1, result.WebSearchCalls)
 	require.Equal(t, 11, result.Usage.InputTokens)
 	require.Equal(t, 4, result.Usage.OutputTokens)
 	require.Equal(t, 2, result.Usage.CacheReadInputTokens)
 	require.True(t, result.UsageInputTokensExcludeCache)
+	require.Len(t, upstream.requests, 2)
+	require.Equal(t, "/v1/responses", upstream.requests[0].URL.Path)
+	require.Equal(t, "openai/gpt-5.6-sol", gjson.GetBytes(upstream.bodies[0], "model").String())
 	require.Equal(t, "https://api.laxarouter.ai/v1/messages", upstream.lastReq.URL.String())
 	require.Equal(t, "application/json", upstream.lastReq.Header.Get("Accept"))
 	require.Equal(t, "Bearer sk-test", upstream.lastReq.Header.Get("Authorization"))
@@ -427,29 +433,34 @@ func TestForwardAlphaSearchCindyNativeMessagesRejectsUnverifiedSuccessWithoutPen
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			requestBody := []byte(`{"model":"cindy/web-search","commands":{"search_query":[{"q":"news"}]}}`)
+			requestBody := []byte(`{"model":"gpt-5.6-sol","commands":{"search_query":[{"q":"news"}]}}`)
 			recorder := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(recorder)
 			c.Request = httptest.NewRequest(http.MethodPost, "/v1/alpha/search", bytes.NewReader(requestBody))
-			upstream := &httpUpstreamRecorder{resp: &http.Response{
-				StatusCode: http.StatusOK,
-				Header:     http.Header{"Content-Type": []string{"application/json"}},
-				Body:       io.NopCloser(strings.NewReader(tt.body)),
+			upstream := &httpUpstreamRecorder{responses: []*http.Response{
+				{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+					Body: io.NopCloser(strings.NewReader("event: response.completed\n" +
+						`data: {"type":"response.completed","response":{"status":"completed","output":[]}}` + "\n\n")),
+				},
+				{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+					Body:       io.NopCloser(strings.NewReader(tt.body)),
+				},
 			}}
 			repo := &alphaSearchAccountStateRepo{}
 			service := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream, accountRepo: repo}
-			account := &Account{
-				ID: 49, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Concurrency: 1,
-				Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://api.laxarouter.ai"},
-			}
+			account := firstClassCindyAlphaSearchAccount(49)
 
 			result, err := service.ForwardAlphaSearch(context.Background(), c, account, requestBody)
 
 			require.Nil(t, result)
 			var failoverErr *UpstreamFailoverError
 			require.ErrorAs(t, err, &failoverErr)
-			require.True(t, failoverErr.IsOpenAIAlphaSearchBridgeUnavailable())
-			require.True(t, failoverErr.SuppressAccountHealthPenalty)
+			require.False(t, failoverErr.IsOpenAIAlphaSearchBridgeUnavailable())
+			require.False(t, failoverErr.SuppressAccountHealthPenalty)
 			require.False(t, c.Writer.Written())
 			require.Zero(t, repo.setErrorCalls)
 		})
@@ -479,29 +490,34 @@ func TestForwardAlphaSearchCindyRejectsErrorToolResultEvenWithUsage(t *testing.T
 func testForwardAlphaSearchCindyRejectsInvalidToolResult(t *testing.T, upstreamBody string) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	requestBody := []byte(`{"model":"cindy/web-search","commands":{"search_query":[{"q":"news"}]}}`)
+	requestBody := []byte(`{"model":"gpt-5.6-sol","commands":{"search_query":[{"q":"news"}]}}`)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/alpha/search", bytes.NewReader(requestBody))
-	upstream := &httpUpstreamRecorder{resp: &http.Response{
-		StatusCode: http.StatusOK,
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
-		Body:       io.NopCloser(strings.NewReader(upstreamBody)),
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body: io.NopCloser(strings.NewReader("event: response.completed\n" +
+				`data: {"type":"response.completed","response":{"status":"completed","output":[]}}` + "\n\n")),
+		},
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(upstreamBody)),
+		},
 	}}
 	repo := &alphaSearchAccountStateRepo{}
 	service := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream, accountRepo: repo}
-	account := &Account{
-		ID: 50, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Concurrency: 1,
-		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://api.laxarouter.ai"},
-	}
+	account := firstClassCindyAlphaSearchAccount(50)
 
 	result, err := service.ForwardAlphaSearch(context.Background(), c, account, requestBody)
 
 	require.Nil(t, result)
 	var failoverErr *UpstreamFailoverError
 	require.ErrorAs(t, err, &failoverErr)
-	require.True(t, failoverErr.IsOpenAIAlphaSearchBridgeUnavailable())
-	require.True(t, failoverErr.SuppressAccountHealthPenalty)
+	require.False(t, failoverErr.IsOpenAIAlphaSearchBridgeUnavailable())
+	require.False(t, failoverErr.SuppressAccountHealthPenalty)
 	require.False(t, c.Writer.Written())
 	require.Zero(t, repo.setErrorCalls)
 }

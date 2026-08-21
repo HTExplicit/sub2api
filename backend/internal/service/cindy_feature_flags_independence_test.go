@@ -8,6 +8,7 @@ import (
 )
 
 const cindyIndependentFlagsHelperEnv = "SUB2API_CINDY_INDEPENDENT_FLAGS_HELPER"
+const cindySearchMatrixHelperEnv = "SUB2API_CINDY_SEARCH_MATRIX_HELPER"
 
 func TestCindySurfaceFlagsAreIndependentAndDefaultOff(t *testing.T) {
 	tests := []struct {
@@ -91,6 +92,49 @@ func TestCindyIndependentFlagsHelper(t *testing.T) {
 	}
 	if strings.Join(got, ",") != expected {
 		t.Fatalf("Cindy surface flags = %s, want %s", strings.Join(got, ","), expected)
+	}
+}
+
+func TestCindySearchAvailabilityIsIndependentFromCatalogPublication(t *testing.T) {
+	tests := []struct {
+		name    string
+		catalog string
+		search  string
+		want    string
+	}{
+		{name: "both off", catalog: "false", search: "false", want: "false"},
+		{name: "catalog only", catalog: "true", search: "false", want: "false"},
+		{name: "search only", catalog: "false", search: "true", want: "true"},
+		{name: "both on", catalog: "true", search: "true", want: "true"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cmd := exec.Command(os.Args[0], "-test.run=^TestCindySearchAvailabilityHelper$")
+			cmd.Env = append(withoutEnvironmentKeys(os.Environ(),
+				CindyCapabilityCatalogEnabledEnv,
+				CindySearchEnabledEnv,
+				cindySearchMatrixHelperEnv,
+			),
+				CindyCapabilityCatalogEnabledEnv+"="+test.catalog,
+				CindySearchEnabledEnv+"="+test.search,
+				cindySearchMatrixHelperEnv+"="+test.want,
+			)
+			if output, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("isolated Search/catalog matrix check failed: %v\n%s", err, output)
+			}
+		})
+	}
+}
+
+func TestCindySearchAvailabilityHelper(t *testing.T) {
+	want := os.Getenv(cindySearchMatrixHelperEnv)
+	if want == "" {
+		t.Skip("subprocess helper")
+	}
+	got := boolString(CindyAlphaSearchModelAvailable("gpt-5.6-sol"))
+	if got != want {
+		t.Fatalf("Cindy Search availability = %s, want %s", got, want)
 	}
 }
 

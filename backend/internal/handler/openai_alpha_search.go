@@ -30,13 +30,24 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")
 		return
 	}
-	if apiKey.Group.Platform != service.PlatformOpenAI && apiKey.Group.Platform != service.PlatformComposite {
+	if apiKey.Group.Platform != service.PlatformOpenAI && apiKey.Group.Platform != service.PlatformComposite && apiKey.Group.Platform != service.PlatformCindy {
 		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Codex alpha search is only available for OpenAI and Composite groups")
 		return
 	}
-	strictCindySearch, err := h.gatewayService.ClassifyStrictCindyGroup(c.Request.Context(), apiKey.Group)
-	if err != nil {
-		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
+	cindySearch := apiKey.Group.Platform == service.PlatformCindy
+	if cindySearch {
+		classified, classifyErr := h.gatewayService.ClassifyCindyIdentityGroup(c.Request.Context(), apiKey.Group)
+		if classifyErr != nil {
+			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
+			return
+		}
+		if !classified {
+			h.errorResponse(c, http.StatusNotFound, "model_not_found", "Model is not supported on the alpha search endpoint")
+			return
+		}
+	}
+	if cindySearch && !service.CindySearchFeatureEnabled() {
+		h.errorResponse(c, http.StatusNotFound, "model_not_found", "Model is not supported on the alpha search endpoint")
 		return
 	}
 	subject, ok := middleware2.GetAuthSubjectFromContext(c)
@@ -51,10 +62,9 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 		zap.Int64("api_key_id", apiKey.ID),
 		zap.Any("group_id", apiKey.GroupID),
 	)
-	if !h.ensureResponsesDependencies(c, reqLog) {
+	if !cindySearch && !h.ensureResponsesDependencies(c, reqLog) {
 		return
 	}
-
 	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
 	if err != nil {
 		if maxErr, ok := extractMaxBytesError(err); ok {
@@ -84,8 +94,11 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Codex alpha search only supports OpenAI models for Composite groups")
 		return
 	}
-	if strictCindySearch && !service.CindyModelSupportsEndpoint(requestedModel, service.CindyEndpointAlphaSearch) {
+	if cindySearch && !service.CindyAlphaSearchModelAvailable(requestedModel) {
 		h.errorResponse(c, http.StatusNotFound, "model_not_found", "Model is not supported on the alpha search endpoint")
+		return
+	}
+	if cindySearch && !h.ensureResponsesDependencies(c, reqLog) {
 		return
 	}
 	reqLog = reqLog.With(zap.String("model", requestedModel))
@@ -97,7 +110,15 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 	}
 
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, requestedModel)
-	forwardBody := openAIModelMappedBody(body, channelMapping.Mapped, channelMapping.MappedModel, h.gatewayService.ReplaceModelInBody)
+	forwardBody := body
+	if cindySearch {
+		// First-class Cindy Search uses the pinned public-to-upstream mapping;
+		// channel mappings cannot expose or select the hidden fallback model.
+		channelMapping.Mapped = false
+		channelMapping.MappedModel = requestedModel
+	} else {
+		forwardBody = openAIModelMappedBody(body, channelMapping.Mapped, channelMapping.MappedModel, h.gatewayService.ReplaceModelInBody)
+	}
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
 
@@ -128,6 +149,7 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 	var sameAccountRetrySelection *service.AccountSelectionResult
 	routingStart := time.Now()
+	requestPlatform := openAICompatibleRequestPlatform(c.Request.Context(), apiKey)
 
 	// 分组利润控制：alpha search 文本入口请求级装门并固定 pricingAt
 	//（记录路径经 service.OpenAIPricingAtFromContext 从请求 ctx 回读）。
@@ -154,7 +176,7 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 				false,
 				false,
 				false,
-				service.PlatformOpenAI,
+				requestPlatform,
 			)
 		}
 		if err != nil || selection == nil || selection.Account == nil {
@@ -163,7 +185,7 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 				return
 			}
 			if len(failedAccountIDs) == 0 {
-				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, requestedModel, requestedModel, service.PlatformOpenAI)
+				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, requestedModel, requestedModel, requestPlatform)
 				if !cls.ModelNotFound {
 					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 				}

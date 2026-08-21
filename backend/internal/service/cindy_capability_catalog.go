@@ -545,6 +545,34 @@ func CindyModelSupportsEndpoint(model string, endpoint CindyEndpoint) bool {
 	return false
 }
 
+// CindyAlphaSearchModelAvailable reports whether a client-visible Cindy model
+// can drive native Responses web_search. Search rollout is intentionally
+// independent from catalog publication, so this lookup uses only the pinned
+// public ID and never accepts a live upstream ID or hidden helper model.
+func CindyAlphaSearchModelAvailable(model string) bool {
+	if !CindySearchFeatureEnabled() {
+		return false
+	}
+	capability := cindyCapabilityByPublicID[strings.TrimSpace(model)]
+	return capability != nil && capability.PublicModel &&
+		capability.Kind == CindyModelKindText &&
+		cindyCapabilityHasEndpoint(*capability, CindyEndpointResponses)
+}
+
+// CindyAlphaSearchUpstreamModel resolves the provider-qualified model for a
+// client-visible Search model. It deliberately shares the Search gate rather
+// than the Catalog gate so the two features can be rolled out independently.
+func CindyAlphaSearchUpstreamModel(model string) (string, bool) {
+	if !CindyAlphaSearchModelAvailable(model) {
+		return "", false
+	}
+	capability := cindyCapabilityByPublicID[strings.TrimSpace(model)]
+	if capability == nil || strings.TrimSpace(capability.LiveUpstreamID) == "" {
+		return "", false
+	}
+	return capability.LiveUpstreamID, true
+}
+
 func CindyModelHasVerifiedEndpoint(model string) bool {
 	capability, ok := ResolveCindyCapability(model)
 	return ok && len(capability.VerifiedEndpoints) > 0
