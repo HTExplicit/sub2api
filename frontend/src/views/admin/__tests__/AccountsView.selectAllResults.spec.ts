@@ -10,7 +10,10 @@ const {
   getUpstreamBillingProbeSettings,
   getAllProxies,
   getAllGroups,
-  showError
+  showError,
+  jobTrack,
+  reviewDuplicates,
+  batchRefreshTier
 } = vi.hoisted(() => ({
   listAccounts: vi.fn(),
   listWithEtag: vi.fn(),
@@ -18,7 +21,14 @@ const {
   getUpstreamBillingProbeSettings: vi.fn(),
   getAllProxies: vi.fn(),
   getAllGroups: vi.fn(),
-  showError: vi.fn()
+  showError: vi.fn(),
+  jobTrack: vi.fn(),
+  reviewDuplicates: vi.fn(),
+  batchRefreshTier: vi.fn()
+}))
+
+vi.mock('@/stores/accountJobs', () => ({
+  useAccountJobsStore: () => ({ track: jobTrack, reviewDuplicates })
 }))
 
 vi.mock('@/api/admin', () => ({
@@ -26,11 +36,15 @@ vi.mock('@/api/admin', () => ({
     accounts: {
       list: listAccounts,
       listWithEtag,
+      getFacets: vi.fn().mockResolvedValue({ total: 0, uncategorized_count: 0, platforms: [], types: [], statuses: [], plans: [], proxies: [], folders: [], tags: [] }),
+      listFolders: vi.fn().mockResolvedValue([]),
+      listTags: vi.fn().mockResolvedValue([]),
       getBatchTodayStats,
       getUpstreamBillingProbeSettings,
       batchDelete: vi.fn(),
       batchClearError: vi.fn(),
       batchRefresh: vi.fn(),
+      batchRefreshTier,
       bulkUpdate: vi.fn()
     },
     proxies: {
@@ -79,7 +93,7 @@ const makeAccounts = (count: number) => Array.from({ length: count }, (_, index)
 
 const AccountBulkActionsBarStub = {
   props: ['selectedIds', 'totalResults', 'selectingAll', 'allResultsSelected'],
-  emits: ['select-all-results', 'select-page', 'clear'],
+  emits: ['select-all-results', 'select-page', 'clear', 'duplicate-review', 'refresh-tier'],
   template: `
     <div>
       <span data-test="selected-count">{{ selectedIds.length }}</span>
@@ -88,6 +102,8 @@ const AccountBulkActionsBarStub = {
       <button data-test="select-page" @click="$emit('select-page')">select page</button>
       <button data-test="select-all-results" @click="$emit('select-all-results')">select all</button>
       <button data-test="clear" @click="$emit('clear')">clear</button>
+      <button data-test="duplicate-review" @click="$emit('duplicate-review')">duplicates</button>
+      <button data-test="refresh-tier" @click="$emit('refresh-tier')">refresh tier</button>
     </div>
   `
 }
@@ -144,6 +160,9 @@ describe('admin AccountsView select all filtered results', () => {
     getAllProxies.mockReset()
     getAllGroups.mockReset()
     showError.mockReset()
+    jobTrack.mockReset()
+    reviewDuplicates.mockReset().mockResolvedValue({ id: 91, status: 'pending' })
+    batchRefreshTier.mockReset().mockResolvedValue({ id: 92, kind: 'account_batch_refresh_tier', status: 'pending' })
 
     listWithEtag.mockResolvedValue({
       notModified: true,
@@ -224,5 +243,34 @@ describe('admin AccountsView select all filtered results', () => {
     expect(wrapper.get('[data-test="selected-count"]').text()).toBe('20')
     expect(wrapper.get('[data-test="all-results-selected"]').text()).toBe('false')
     expect(showError).toHaveBeenCalledWith('admin.accounts.bulkActions.selectAllFailed')
+  })
+
+  it('submits selected duplicate review and tier refresh jobs then clears selection', async () => {
+    const currentPage = makeAccounts(20)
+    listAccounts.mockResolvedValue({
+      items: currentPage,
+      total: 20,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-test="select-page"]').trigger('click')
+    await wrapper.get('[data-test="duplicate-review"]').trigger('click')
+    await flushPromises()
+
+    expect(reviewDuplicates).toHaveBeenCalledWith(currentPage.map((account) => account.id))
+    expect(wrapper.get('[data-test="selected-count"]').text()).toBe('0')
+
+    await wrapper.get('[data-test="select-page"]').trigger('click')
+    await wrapper.get('[data-test="refresh-tier"]').trigger('click')
+    await flushPromises()
+
+    expect(batchRefreshTier).toHaveBeenCalledWith(currentPage.map((account) => account.id))
+    expect(jobTrack).toHaveBeenCalledWith({ id: 92, kind: 'account_batch_refresh_tier', status: 'pending' })
+    expect(wrapper.get('[data-test="selected-count"]').text()).toBe('0')
   })
 })

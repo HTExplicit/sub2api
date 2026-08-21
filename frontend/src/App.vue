@@ -6,7 +6,7 @@ import NavigationProgress from '@/components/common/NavigationProgress.vue'
 import AdminComplianceDialog from '@/components/admin/AdminComplianceDialog.vue'
 import { resolveRouteDocumentTitle } from '@/router/title'
 import AnnouncementPopup from '@/components/common/AnnouncementPopup.vue'
-import { useAppStore, useAuthStore, useSubscriptionStore, useAnnouncementStore, useAdminComplianceStore, useAdminSettingsStore } from '@/stores'
+import { useAccountJobsStore, useAppStore, useAuthStore, useSubscriptionStore, useAnnouncementStore, useAdminComplianceStore, useAdminSettingsStore } from '@/stores'
 import { getSetupStatus } from '@/api/setup'
 import { updateFavicon } from '@/utils/branding'
 
@@ -18,6 +18,24 @@ const subscriptionStore = useSubscriptionStore()
 const announcementStore = useAnnouncementStore()
 const adminComplianceStore = useAdminComplianceStore()
 const adminSettingsStore = useAdminSettingsStore()
+const accountJobsStore = useAccountJobsStore()
+let accountJobsSessionKey: string | null = null
+
+watch(
+  [
+    () => authStore.isAuthenticated,
+    () => authStore.user?.id,
+    () => authStore.isAdmin,
+  ],
+  ([isAuthenticated, userID, isAdmin]) => {
+    const nextSessionKey = isAuthenticated && isAdmin && userID ? `admin:${userID}` : null
+    if (nextSessionKey === accountJobsSessionKey) return
+    accountJobsStore.clear()
+    accountJobsSessionKey = nextSessionKey
+    if (nextSessionKey) accountJobsStore.startPolling()
+  },
+  { immediate: true },
+)
 
 function updateDocumentTitle() {
   const customMenuItems = [
@@ -110,6 +128,7 @@ router.afterEach(() => {
 })
 
 onBeforeUnmount(() => {
+  accountJobsStore.clear()
   document.removeEventListener('visibilitychange', onVisibilityChange)
   window.removeEventListener('admin-compliance-required', onAdminComplianceRequired)
 })

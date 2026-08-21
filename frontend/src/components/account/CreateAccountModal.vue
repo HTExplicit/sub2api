@@ -3754,6 +3754,7 @@ import {
 } from '@/composables/useModelWhitelist'
 import { useAuthStore } from '@/stores/auth'
 import { adminAPI } from '@/api/admin'
+import type { AccountJob } from '@/api/admin/accountJobs'
 import { useQuotaNotifyState } from '@/composables/useQuotaNotifyState'
 import {
   useAccountOAuth,
@@ -3771,7 +3772,6 @@ import type {
   AccountType,
   CheckMixedChannelResponse,
   CreateAccountRequest,
-  CodexSessionImportMessage,
   OpenAICompactMode,
   OpenAIResponsesMode,
   OpenAIAlphaSearchMode,
@@ -3908,7 +3908,7 @@ interface Props {
 const props = defineProps<Props>()
 const emit = defineEmits<{
   close: []
-  created: []
+  created: [job?: AccountJob]
 }>()
 
 const appStore = useAppStore()
@@ -6139,15 +6139,6 @@ const buildOpenAICodexImportCredentialExtras = (): Record<string, unknown> | nul
   return credentials
 }
 
-const formatCodexImportMessages = (messages?: CodexSessionImportMessage[]) => {
-  return (messages || [])
-    .map((item) => {
-      const name = item.name ? ` ${item.name}` : ''
-      return `#${item.index}${name}: ${item.message}`
-    })
-    .join('\n')
-}
-
 const isAgentIdentityImportContent = (content: string) => {
   const isAgentIdentityValue = (value: unknown): boolean => {
     if (Array.isArray(value)) return value.length > 0 && value.every(isAgentIdentityValue)
@@ -6194,7 +6185,7 @@ const handleOpenAIImportCodexSession = async (content: string) => {
 
   try {
     const extra = buildOpenAICodexImportExtra()
-    const result = await adminAPI.accounts.importCodexSession({
+    const job = await adminAPI.accounts.importCodexSession({
       content: trimmed,
       name: form.name,
       notes: form.notes || null,
@@ -6211,37 +6202,8 @@ const handleOpenAIImportCodexSession = async (content: string) => {
       update_existing: true
     })
 
-    const successCount = result.created + result.updated
-    const params = {
-      created: result.created,
-      updated: result.updated,
-      skipped: result.skipped,
-      failed: result.failed
-    }
-
-    if (successCount > 0 && result.failed === 0) {
-      appStore.showSuccess(t('admin.accounts.oauth.openai.codexSessionImportSuccess', params))
-      emit('created')
-      handleClose()
-      return
-    }
-
-    const errorText = formatCodexImportMessages(result.errors)
-    const warningText = formatCodexImportMessages(result.warnings)
-    oauthClient.error.value = [errorText, warningText].filter(Boolean).join('\n')
-
-    if (result.failed === 0) {
-      appStore.showWarning(t('admin.accounts.oauth.openai.codexSessionImportSuccess', params))
-      return
-    }
-
-    if (successCount > 0) {
-      appStore.showWarning(t('admin.accounts.oauth.openai.codexSessionImportPartial', params))
-      emit('created')
-      return
-    }
-
-    appStore.showError(t('admin.accounts.oauth.openai.codexSessionImportFailed'))
+    emit('created', job)
+    handleClose()
   } catch (error: any) {
     oauthClient.error.value =
       error.response?.data?.detail ||

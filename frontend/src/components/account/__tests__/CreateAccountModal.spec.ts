@@ -8,18 +8,20 @@ const {
   importCodexSessionMock,
   createOpenAICodexPATMock,
   authIsSimpleMode,
+  showSuccess,
 } = vi.hoisted(() => ({
   createAccountMock: vi.fn(),
   probeUpstreamBillingMock: vi.fn(),
   importCodexSessionMock: vi.fn(),
   createOpenAICodexPATMock: vi.fn(),
   authIsSimpleMode: { value: true },
+  showSuccess: vi.fn(),
 }))
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
     showError: vi.fn(),
-    showSuccess: vi.fn(),
+    showSuccess,
     showWarning: vi.fn(),
   }),
 }))
@@ -207,14 +209,12 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     createAccountMock.mockReset().mockResolvedValue({ id: 42, platform: 'openai', type: 'apikey' })
     probeUpstreamBillingMock.mockReset().mockResolvedValue({})
     importCodexSessionMock.mockReset().mockResolvedValue({
-      created: 1,
-      updated: 0,
-      skipped: 0,
-      failed: 0,
-      errors: [],
-      warnings: [],
+      id: 51,
+      kind: 'account_codex_import',
+      status: 'pending'
     })
     createOpenAICodexPATMock.mockReset().mockResolvedValue({})
+    showSuccess.mockReset()
   })
 
   it('selects Cindy-safe modes and keeps the standard OpenAI option order', async () => {
@@ -388,6 +388,8 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     await flushPromises()
 
     expect(importCodexSessionMock).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('created')?.[0]?.[0]).toMatchObject({ id: 51, status: 'pending' })
+    expect(showSuccess).not.toHaveBeenCalled()
   })
 
   it('sends true explicitly when OpenAI long-context billing is enabled', async () => {

@@ -89,9 +89,9 @@ describe('BulkEditAccountModal', () => {
     translate.mockClear()
 
     vi.mocked(adminAPI.accounts.bulkUpdate).mockResolvedValue({
-      success: 2,
-      failed: 0,
-      results: []
+      id: 31,
+      kind: 'account_bulk_update',
+      status: 'pending'
     } as any)
     vi.mocked(adminAPI.accounts.checkMixedChannelRisk).mockResolvedValue({
       has_risk: false
@@ -679,13 +679,9 @@ describe('BulkEditAccountModal', () => {
     })
   })
 
-  it('成功响应包含影子继承数量时展示专用提示', async () => {
-    vi.mocked(adminAPI.accounts.bulkUpdate).mockResolvedValueOnce({
-      success: 2,
-      failed: 0,
-      long_context_inherited_count: 1,
-      results: []
-    } as any)
+  it('submits the update as a job without showing synchronous result counts', async () => {
+    const job = { id: 32, kind: 'account_bulk_update', status: 'pending' }
+    vi.mocked(adminAPI.accounts.bulkUpdate).mockResolvedValueOnce(job as any)
     const wrapper = mountModal({
       selectedPlatforms: ['openai'],
       selectedTypes: ['oauth']
@@ -694,34 +690,8 @@ describe('BulkEditAccountModal', () => {
     await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
     await flushPromises()
 
-    expect(showSuccess).toHaveBeenCalledWith('admin.accounts.bulkEdit.successWithInherited')
-    expect(translate).toHaveBeenCalledWith('admin.accounts.bulkEdit.successWithInherited', {
-      count: 2,
-      inherited: 1
-    })
-  })
-
-  it('部分成功且包含影子继承数量时展示组合提示', async () => {
-    vi.mocked(adminAPI.accounts.bulkUpdate).mockResolvedValueOnce({
-      success: 1,
-      failed: 1,
-      long_context_inherited_count: 1,
-      results: []
-    } as any)
-    const wrapper = mountModal({
-      selectedPlatforms: ['openai'],
-      selectedTypes: ['oauth']
-    })
-    await wrapper.get('#bulk-edit-openai-long-context-billing-enabled').setValue(true)
-    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
-    await flushPromises()
-
-    expect(showError).toHaveBeenCalledWith('admin.accounts.bulkEdit.partialSuccessWithInherited')
-    expect(translate).toHaveBeenCalledWith('admin.accounts.bulkEdit.partialSuccessWithInherited', {
-      success: 1,
-      failed: 1,
-      inherited: 1
-    })
+    expect(wrapper.emitted('updated')?.[0]?.[0]).toEqual(job)
+    expect(showSuccess).not.toHaveBeenCalled()
   })
 
   it('全影子长上下文错误使用专用提示并保持弹窗打开', async () => {

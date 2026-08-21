@@ -16,7 +16,7 @@ const tags = [{ id: 5, name: 'Paid', sort_order: 0, account_count: 1, created_at
 
 describe('AccountBulkTaxonomyModal', () => {
   beforeEach(() => {
-    bulkUpdateTaxonomy.mockReset().mockResolvedValue({ matched_count: 12, updated_count: 12 })
+    bulkUpdateTaxonomy.mockReset().mockResolvedValue({ id: 41, kind: 'account_bulk_taxonomy', status: 'pending' })
     showError.mockReset()
   })
 
@@ -40,7 +40,7 @@ describe('AccountBulkTaxonomyModal', () => {
       tag_add_ids: [5],
       tag_remove_ids: []
     }))
-    expect(wrapper.emitted('updated')).toEqual([[12, 12]])
+    expect(wrapper.emitted('updated')).toEqual([[{ id: 41, kind: 'account_bulk_taxonomy', status: 'pending' }]])
   })
 
   it('keeps tag add/remove mutually exclusive and reports count drift', async () => {

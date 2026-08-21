@@ -1509,6 +1509,7 @@ import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
+import type { AccountJob } from '@/api/admin/accountJobs'
 import type {
   Proxy as ProxyConfig,
   AdminGroup,
@@ -1569,7 +1570,7 @@ interface Props {
 const props = defineProps<Props>()
 const emit = defineEmits<{
   close: []
-  updated: []
+  updated: [job: AccountJob]
 }>()
 
 const { t } = useI18n()
@@ -2324,39 +2325,15 @@ const submitBulkUpdate = async (baseUpdates: Record<string, unknown>) => {
   submitting.value = true
 
   try {
-    const res = targetMode.value === 'filtered' && props.target?.filters
+    const job = targetMode.value === 'filtered' && props.target?.filters
       ? await adminAPI.accounts.bulkUpdate({
         filters: props.target.filters,
         ...updates
       })
       : await adminAPI.accounts.bulkUpdate(props.accountIds, updates)
-    const success = res.success || 0
-    const failed = res.failed || 0
-    const inherited = res.long_context_inherited_count || 0
-
-    if (success > 0 && failed === 0) {
-      if (inherited > 0) {
-        appStore.showSuccess(t('admin.accounts.bulkEdit.successWithInherited', {
-          count: success,
-          inherited
-        }))
-      } else {
-        appStore.showSuccess(t('admin.accounts.bulkEdit.success', { count: success }))
-      }
-    } else if (success > 0) {
-      const key = inherited > 0
-        ? 'admin.accounts.bulkEdit.partialSuccessWithInherited'
-        : 'admin.accounts.bulkEdit.partialSuccess'
-      appStore.showError(t(key, { success, failed, inherited }))
-    } else {
-      appStore.showError(t('admin.accounts.bulkEdit.failed'))
-    }
-
-    if (success > 0) {
-      pendingUpdatesForConfirm.value = null
-      emit('updated')
-      handleClose()
-    }
+    pendingUpdatesForConfirm.value = null
+    emit('updated', job)
+    handleClose()
   } catch (error: any) {
     // 兜底：多平台混合场景下，预检查跳过，由后端 409 触发确认框
     if (error.status === 409 && error.error === 'mixed_channel_warning') {

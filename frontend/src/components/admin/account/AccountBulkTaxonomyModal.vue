@@ -58,6 +58,7 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import type { AccountListFilters } from '@/api/admin/accounts'
+import type { AccountJob } from '@/api/admin/accountJobs'
 import { useAppStore } from '@/stores/app'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import type { AccountBulkTaxonomyRequest, AccountManagementFolder, AccountManagementTag } from '@/types'
@@ -74,7 +75,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   close: []
-  updated: [matchedCount: number, updatedCount: number]
+  updated: [job: AccountJob]
   stale: []
 }>()
 const { t } = useI18n()
@@ -139,8 +140,8 @@ const submit = async () => {
   }
   saving.value = true
   try {
-    const result = await adminAPI.accounts.bulkUpdateTaxonomy(payload)
-    emit('updated', result.matched_count, result.updated_count)
+    const job = await adminAPI.accounts.bulkUpdateTaxonomy(payload)
+    emit('updated', job)
   } catch (error: any) {
     if (error?.response?.status === 409) {
       appStore.showError(t('admin.accounts.bulkTaxonomy.targetChanged'))

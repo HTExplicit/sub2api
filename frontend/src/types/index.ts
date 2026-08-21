@@ -1317,11 +1317,6 @@ export interface AccountBulkTaxonomyRequest {
   tag_remove_ids?: number[]
 }
 
-export interface AccountBulkTaxonomyResult {
-  matched_count: number
-  updated_count: number
-}
-
 export interface AccountConsoleFilterState {
   search: string
   platforms: string[]
@@ -1661,70 +1656,6 @@ export interface AdminDataImportUniformSettings {
   schedulable?: boolean
 }
 
-export interface AdminDataImportItemOverrides {
-  name?: string
-  notes?: AdminDataImportNotesSetting
-  management_folder?: string
-  tags?: string[]
-  group_ids?: number[]
-  proxy_id?: number
-  concurrency?: number
-  priority?: number
-  rate_multiplier?: number
-  status?: 'active' | 'disabled' | 'error'
-  schedulable?: boolean
-}
-
-export interface AdminDataImportItemDecision {
-  index: number
-  action: AdminDataImportAction
-  existing_account_id?: number
-  overrides?: AdminDataImportItemOverrides
-}
-
-export interface AdminDataImportPreviewMatch {
-  account_id: number
-  name: string
-  matched_by: string
-}
-
-export interface AdminDataImportPreviewAccount {
-  index: number
-  name: string
-  platform: AccountPlatform
-  type: AccountType
-  masked_email?: string
-  plan?: string
-  management_folder?: string | null
-  tags?: string[]
-  groups?: string[]
-  valid: boolean
-  errors?: string[]
-  warnings?: string[]
-  strong_identity_matches?: AdminDataImportPreviewMatch[]
-  duplicate_of_index?: number
-  default_action: AdminDataImportAction
-}
-
-export interface AdminDataImportPreviewProxy {
-  index: number
-  name: string
-  protocol: ProxyProtocol
-  valid: boolean
-  will_reuse: boolean
-  existing_proxy_id?: number
-  errors?: string[]
-}
-
-export interface AdminDataImportPreviewResult {
-  type: string
-  version: number
-  accounts: AdminDataImportPreviewAccount[]
-  proxies: AdminDataImportPreviewProxy[]
-  valid: boolean
-  warnings?: string[]
-}
-
 export interface AdminDataImportError {
   kind: 'proxy' | 'account'
   name?: string
@@ -1788,31 +1719,6 @@ export interface OpenAICodexPATCreateRequest {
   extra?: Record<string, unknown>
   skip_default_group_bind?: boolean
   confirm_mixed_channel_risk?: boolean
-}
-
-export interface CodexSessionImportMessage {
-  index: number
-  name?: string
-  message: string
-}
-
-export interface CodexSessionImportItem {
-  index: number
-  name?: string
-  action: 'created' | 'updated' | 'skipped' | 'failed'
-  account_id?: number
-  message?: string
-}
-
-export interface CodexSessionImportResult {
-  total: number
-  created: number
-  updated: number
-  skipped: number
-  failed: number
-  items?: CodexSessionImportItem[]
-  warnings?: CodexSessionImportMessage[]
-  errors?: CodexSessionImportMessage[]
 }
 
 // ==================== Usage & Redeem Types ====================

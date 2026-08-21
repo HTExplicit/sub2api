@@ -4,6 +4,10 @@
  */
 
 import { apiClient } from '../client'
+import {
+  accountJobIdempotencyHeaders,
+  type AccountJob
+} from './accountJobs'
 import type {
   Account,
   CreateAccountRequest,
@@ -15,17 +19,12 @@ import type {
   AccountUsageStatsResponse,
   TempUnschedulableStatus,
   AdminDataPayload,
-  AdminDataImportResult,
-  AdminDataImportPreviewResult,
   AdminDataImportUniformSettings,
-  AdminDataImportItemDecision,
   AccountManagementFolder,
   AccountManagementTag,
   AccountConsoleFacets,
   AccountBulkTaxonomyRequest,
-  AccountBulkTaxonomyResult,
   CodexSessionImportRequest,
-  CodexSessionImportResult,
   OpenAICodexPATCreateRequest,
   CheckMixedChannelRequest,
   CheckMixedChannelResponse,
@@ -431,16 +430,12 @@ export async function exchangeCode(
  * @param accounts - Array of account data
  * @returns Results of batch creation
  */
-export async function batchCreate(accounts: CreateAccountRequest[]): Promise<{
-  success: number
-  failed: number
-  results: Array<{ success: boolean; account?: Account; error?: string }>
-}> {
-  const { data } = await apiClient.post<{
-    success: number
-    failed: number
-    results: Array<{ success: boolean; account?: Account; error?: string }>
-  }>('/admin/accounts/batch', { accounts })
+export async function batchCreate(accounts: CreateAccountRequest[]): Promise<AccountJob> {
+  const { data } = await apiClient.post<AccountJob>(
+    '/admin/accounts/batch',
+    { accounts },
+    accountJobIdempotencyHeaders('account_batch_create')
+  )
   return data
 }
 
@@ -453,16 +448,12 @@ export async function batchUpdateCredentials(request: {
   account_ids: number[]
   field: string
   value: any
-}): Promise<{
-  success: number
-  failed: number
-  results: Array<{ account_id: number; success: boolean; error?: string }>
-}> {
-  const { data } = await apiClient.post<{
-    success: number
-    failed: number
-    results: Array<{ account_id: number; success: boolean; error?: string }>
-  }>('/admin/accounts/batch-update-credentials', request)
+}): Promise<AccountJob> {
+  const { data } = await apiClient.post<AccountJob>(
+    '/admin/accounts/batch-update-credentials',
+    request,
+    accountJobIdempotencyHeaders('account_batch_update_credentials')
+  )
   return data
 }
 
@@ -475,28 +466,18 @@ export async function batchUpdateCredentials(request: {
 export async function bulkUpdate(
   accountIdsOrPayload: number[] | Record<string, unknown>,
   updates?: Record<string, unknown>
-): Promise<{
-  success: number
-  failed: number
-  success_ids?: number[]
-  failed_ids?: number[]
-  long_context_inherited_count?: number
-  results: Array<{ account_id: number; success: boolean; error?: string }>
-  }> {
+): Promise<AccountJob> {
   const payload = Array.isArray(accountIdsOrPayload)
     ? {
         account_ids: accountIdsOrPayload,
         ...(updates ?? {})
       }
     : accountIdsOrPayload
-  const { data } = await apiClient.post<{
-    success: number
-    failed: number
-    success_ids?: number[]
-    failed_ids?: number[]
-    long_context_inherited_count?: number
-    results: Array<{ account_id: number; success: boolean; error?: string }>
-  }>('/admin/accounts/bulk-update', payload)
+  const { data } = await apiClient.post<AccountJob>(
+    '/admin/accounts/bulk-update',
+    payload,
+    accountJobIdempotencyHeaders('account_bulk_update')
+  )
   return data
 }
 
@@ -668,21 +649,16 @@ export async function importData(payload: {
   data: AdminDataPayload
   skip_default_group_bind?: boolean
   uniform_settings?: AdminDataImportUniformSettings
-  items?: AdminDataImportItemDecision[]
-}): Promise<AdminDataImportResult> {
-  const { data } = await apiClient.post<AdminDataImportResult>('/admin/accounts/data', {
-    data: payload.data,
-    skip_default_group_bind: payload.skip_default_group_bind,
-    uniform_settings: payload.uniform_settings,
-    items: payload.items
-  })
-  return data
-}
-
-export async function previewDataImport(dataPayload: AdminDataPayload): Promise<AdminDataImportPreviewResult> {
-  const { data } = await apiClient.post<AdminDataImportPreviewResult>('/admin/accounts/data/preview', {
-    data: dataPayload
-  })
+}): Promise<AccountJob> {
+  const { data } = await apiClient.post<AccountJob>(
+    '/admin/accounts/data',
+    {
+      data: payload.data,
+      skip_default_group_bind: payload.skip_default_group_bind,
+      uniform_settings: payload.uniform_settings
+    },
+    accountJobIdempotencyHeaders('account_import')
+  )
   return data
 }
 
@@ -763,15 +739,21 @@ export async function getFacets(filters?: AccountListFilters): Promise<AccountCo
   return data
 }
 
-export async function bulkUpdateTaxonomy(payload: AccountBulkTaxonomyRequest): Promise<AccountBulkTaxonomyResult> {
-  const { data } = await apiClient.post<AccountBulkTaxonomyResult>('/admin/accounts/bulk-taxonomy', payload)
+export async function bulkUpdateTaxonomy(payload: AccountBulkTaxonomyRequest): Promise<AccountJob> {
+  const { data } = await apiClient.post<AccountJob>(
+    '/admin/accounts/bulk-taxonomy',
+    payload,
+    accountJobIdempotencyHeaders('account_bulk_taxonomy')
+  )
   return data
 }
 
-export async function importCodexSession(payload: CodexSessionImportRequest): Promise<CodexSessionImportResult> {
-  const { data } = await apiClient.post<CodexSessionImportResult>('/admin/accounts/import/codex-session', payload, {
-    timeout: 120000 // 120s timeout for large session imports
-  })
+export async function importCodexSession(payload: CodexSessionImportRequest): Promise<AccountJob> {
+  const { data } = await apiClient.post<AccountJob>(
+    '/admin/accounts/import/codex-session',
+    payload,
+    accountJobIdempotencyHeaders('account_import_codex')
+  )
   return data
 }
 
@@ -817,19 +799,6 @@ export async function refreshOpenAIToken(
 }
 
 /**
- * Batch operation result type
- */
-export interface BatchOperationResult {
-  total: number
-  success: number
-  failed: number
-  success_ids?: number[]
-  failed_ids?: number[]
-  errors?: Array<{ account_id: number; error: string }>
-  warnings?: Array<{ account_id: number; warning: string }>
-}
-
-/**
  * Revert account proxy to original before fallback
  * @param id - Account ID
  * @returns Success confirmation
@@ -842,10 +811,12 @@ export async function revertProxyFallback(id: number): Promise<{ message: string
 /**
  * Delete multiple accounts with bounded server-side concurrency.
  */
-export async function batchDelete(accountIds: number[]): Promise<BatchOperationResult> {
-  const { data } = await apiClient.post<BatchOperationResult>('/admin/accounts/batch-delete', {
-    account_ids: accountIds
-  })
+export async function batchDelete(accountIds: number[]): Promise<AccountJob> {
+  const { data } = await apiClient.post<AccountJob>(
+    '/admin/accounts/batch-delete',
+    { account_ids: accountIds },
+    accountJobIdempotencyHeaders('account_batch_delete')
+  )
   return data
 }
 
@@ -854,20 +825,20 @@ export interface CindyInsufficientDeletePreview {
   fingerprint: string
 }
 
-export interface CindyInsufficientDeleteResult {
-  deleted_count: number
-}
-
 export async function previewCindyInsufficientDeletion(): Promise<CindyInsufficientDeletePreview> {
   const { data } = await apiClient.get<CindyInsufficientDeletePreview>('/admin/accounts/cindy/insufficient-delete-preview')
   return data
 }
 
-export async function deleteCindyInsufficient(preview: CindyInsufficientDeletePreview): Promise<CindyInsufficientDeleteResult> {
-  const { data } = await apiClient.post<CindyInsufficientDeleteResult>('/admin/accounts/cindy/delete-insufficient', {
-    expected_count: preview.count,
-    fingerprint: preview.fingerprint
-  })
+export async function deleteCindyInsufficient(preview: CindyInsufficientDeletePreview): Promise<AccountJob> {
+  const { data } = await apiClient.post<AccountJob>(
+    '/admin/accounts/cindy/delete-insufficient',
+    {
+      expected_count: preview.count,
+      fingerprint: preview.fingerprint
+    },
+    accountJobIdempotencyHeaders('cindy_confirmed_cleanup')
+  )
   return data
 }
 
@@ -881,10 +852,12 @@ export async function clearCindyBalanceInsufficient(accountId: number): Promise<
  * @param accountIds - Array of account IDs
  * @returns Batch operation result
  */
-export async function batchClearError(accountIds: number[]): Promise<BatchOperationResult> {
-  const { data } = await apiClient.post<BatchOperationResult>('/admin/accounts/batch-clear-error', {
-    account_ids: accountIds
-  })
+export async function batchClearError(accountIds: number[]): Promise<AccountJob> {
+  const { data } = await apiClient.post<AccountJob>(
+    '/admin/accounts/batch-clear-error',
+    { account_ids: accountIds },
+    accountJobIdempotencyHeaders('account_batch_clear_error')
+  )
   return data
 }
 
@@ -893,12 +866,21 @@ export async function batchClearError(accountIds: number[]): Promise<BatchOperat
  * @param accountIds - Array of account IDs
  * @returns Batch operation result
  */
-export async function batchRefresh(accountIds: number[]): Promise<BatchOperationResult> {
-  const { data } = await apiClient.post<BatchOperationResult>('/admin/accounts/batch-refresh', {
-    account_ids: accountIds,
-  }, {
-    timeout: 120000  // 120s timeout for large batch refreshes
-  })
+export async function batchRefresh(accountIds: number[]): Promise<AccountJob> {
+  const { data } = await apiClient.post<AccountJob>(
+    '/admin/accounts/batch-refresh',
+    { account_ids: accountIds },
+    accountJobIdempotencyHeaders('account_batch_refresh')
+  )
+  return data
+}
+
+export async function batchRefreshTier(accountIds: number[]): Promise<AccountJob> {
+  const { data } = await apiClient.post<AccountJob>(
+    '/admin/accounts/batch-refresh-tier',
+    { account_ids: accountIds },
+    accountJobIdempotencyHeaders('account_batch_refresh_tier')
+  )
   return data
 }
 
@@ -1143,7 +1125,6 @@ export const accountsAPI = {
   syncFromCrs,
   exportData,
   importData,
-  previewDataImport,
   listFolders,
   createFolder,
   updateFolder,
@@ -1166,6 +1147,7 @@ export const accountsAPI = {
   clearCindyBalanceInsufficient,
   batchClearError,
   batchRefresh,
+  batchRefreshTier,
   setPrivacy,
   revertProxyFallback,
   refreshOpenAIQuota,

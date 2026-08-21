@@ -231,6 +231,8 @@
           @delete="handleBulkDelete"
           @reset-status="handleBulkResetStatus"
           @refresh-token="handleBulkRefreshToken"
+          @refresh-tier="handleBulkRefreshTier"
+          @duplicate-review="handleDuplicateReview"
           @probe-upstream-billing="handleBulkProbeUpstreamBilling"
           @edit-selected="openBulkEditSelected"
           @edit-filtered="openBulkEditFiltered"
@@ -578,7 +580,7 @@
       </template>
       <template #pagination><Pagination v-if="pagination.total > 0" :page="pagination.page" :total="pagination.total" :page-size="pagination.page_size" @update:page="handlePageChange" @update:pageSize="handlePageSizeChange" /></template>
     </TablePageLayout>
-    <CreateAccountModal :show="showCreate" :proxies="proxies" :groups="groups" @close="showCreate = false" @created="reload" />
+    <CreateAccountModal :show="showCreate" :proxies="proxies" :groups="groups" @close="showCreate = false" @created="handleAccountCreated" />
     <EditAccountModal :show="showEdit" :account="edAcc" :proxies="proxies" :groups="groups" @close="showEdit = false" @updated="handleAccountUpdated" />
     <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
@@ -666,8 +668,10 @@ import { useI18n } from 'vue-i18n'
 import { routeLocationKey, routerKey, type RouteLocationNormalizedLoaded, type Router } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
+import { useAccountJobsStore } from '@/stores/accountJobs'
 import { adminAPI } from '@/api/admin'
 import type { AccountListFilters, CindyInsufficientDeletePreview } from '@/api/admin/accounts'
+import type { AccountJob } from '@/api/admin/accountJobs'
 import { useTableLoader } from '@/composables/useTableLoader'
 import { useSwipeSelect, type SwipeSelectVirtualContext } from '@/composables/useSwipeSelect'
 import { useTableSelection } from '@/composables/useTableSelection'
@@ -725,7 +729,6 @@ import type {
   AccountPlatform,
   AccountSchedulerGroupScore,
   AccountType,
-  AdminDataImportResult,
   AccountUsageInfo,
   Proxy as AccountProxy,
   AdminGroup,
@@ -743,6 +746,7 @@ const props = withDefaults(defineProps<{
 const { t } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
+const accountJobsStore = useAccountJobsStore()
 const isCindyScope = computed(() => props.scope === 'cindy')
 const fallbackRoute = reactive({ query: {}, fullPath: '' }) as unknown as RouteLocationNormalizedLoaded
 const fallbackRouter = {
@@ -2408,18 +2412,9 @@ const handleBulkDelete = async () => {
   const accountIds = [...selIds.value]
   if (!confirm(t('admin.accounts.bulkActions.confirmDelete', { count: accountIds.length }))) return
   try {
-    const result = await adminAPI.accounts.batchDelete(accountIds)
-    if (result.failed > 0) {
-      appStore.showError(t('admin.accounts.bulkActions.partialSuccess', {
-        success: result.success,
-        failed: result.failed
-      }))
-      setSelectedIds(result.failed_ids?.length ? result.failed_ids : accountIds)
-    } else {
-      appStore.showSuccess(t('admin.accounts.bulkActions.deleteSuccess', { count: result.success }))
-      clearSelection()
-    }
-    await reload()
+    const job = await adminAPI.accounts.batchDelete(accountIds)
+    clearSelection()
+    accountJobsStore.track(job)
   } catch (error) {
     console.error('Failed to bulk delete accounts:', error)
     appStore.showError(String(error))
@@ -2428,14 +2423,9 @@ const handleBulkDelete = async () => {
 const handleBulkResetStatus = async () => {
   if (!confirm(t('common.confirm'))) return
   try {
-    const result = await adminAPI.accounts.batchClearError(selIds.value)
-    if (result.failed > 0) {
-      appStore.showError(t('admin.accounts.bulkActions.partialSuccess', { success: result.success, failed: result.failed }))
-    } else {
-      appStore.showSuccess(t('admin.accounts.bulkActions.resetStatusSuccess', { count: result.success }))
-      clearSelection()
-    }
-    reload()
+    const job = await adminAPI.accounts.batchClearError([...selIds.value])
+    clearSelection()
+    accountJobsStore.track(job)
   } catch (error) {
     console.error('Failed to bulk reset status:', error)
     appStore.showError(String(error))
@@ -2444,17 +2434,34 @@ const handleBulkResetStatus = async () => {
 const handleBulkRefreshToken = async () => {
   if (!confirm(t('common.confirm'))) return
   try {
-    const result = await adminAPI.accounts.batchRefresh(selIds.value)
-    if (result.failed > 0) {
-      appStore.showError(t('admin.accounts.bulkActions.partialSuccess', { success: result.success, failed: result.failed }))
-    } else {
-      appStore.showSuccess(t('admin.accounts.bulkActions.refreshTokenSuccess', { count: result.success }))
-      clearSelection()
-    }
-    reload()
+    const job = await adminAPI.accounts.batchRefresh([...selIds.value])
+    clearSelection()
+    accountJobsStore.track(job)
   } catch (error) {
     console.error('Failed to bulk refresh token:', error)
     appStore.showError(String(error))
+  }
+}
+const handleBulkRefreshTier = async () => {
+  if (!confirm(t('common.confirm'))) return
+  try {
+    const job = await adminAPI.accounts.batchRefreshTier([...selIds.value])
+    clearSelection()
+    accountJobsStore.track(job)
+  } catch (error) {
+    console.error('Failed to bulk refresh account tiers:', error)
+    appStore.showError(String(error))
+  }
+}
+const handleDuplicateReview = async () => {
+  const accountIDs = [...selIds.value]
+  if (accountIDs.length < 2 || accountIDs.length > 100) return
+  try {
+    await accountJobsStore.reviewDuplicates(accountIDs)
+    clearSelection()
+  } catch (error) {
+    console.error('Failed to review duplicate accounts:', error)
+    appStore.showError(t('common.operationFailed'))
   }
 }
 const handleBulkProbeUpstreamBilling = async () => {
@@ -2491,103 +2498,12 @@ const handleBulkProbeUpstreamBilling = async () => {
     accountIDs.forEach(id => probingUpstreamBilling.delete(id))
   }
 }
-const updateSchedulableInList = (accountIds: number[], schedulable: boolean) => {
-  if (accountIds.length === 0) return
-  const idSet = new Set(accountIds)
-  accounts.value = accounts.value.map((account) => (idSet.has(account.id) ? { ...account, schedulable } : account))
-}
-const normalizeBulkSchedulableResult = (
-  result: {
-    success?: number
-    failed?: number
-    success_ids?: number[]
-    failed_ids?: number[]
-    results?: Array<{ account_id: number; success: boolean }>
-  },
-  accountIds: number[]
-) => {
-  const responseSuccessIds = Array.isArray(result.success_ids) ? result.success_ids : []
-  const responseFailedIds = Array.isArray(result.failed_ids) ? result.failed_ids : []
-  if (responseSuccessIds.length > 0 || responseFailedIds.length > 0) {
-    return {
-      successIds: responseSuccessIds,
-      failedIds: responseFailedIds,
-      successCount: typeof result.success === 'number' ? result.success : responseSuccessIds.length,
-      failedCount: typeof result.failed === 'number' ? result.failed : responseFailedIds.length,
-      hasIds: true,
-      hasCounts: true
-    }
-  }
-
-  const results = Array.isArray(result.results) ? result.results : []
-  if (results.length > 0) {
-    const successIds = results.filter(item => item.success).map(item => item.account_id)
-    const failedIds = results.filter(item => !item.success).map(item => item.account_id)
-    return {
-      successIds,
-      failedIds,
-      successCount: typeof result.success === 'number' ? result.success : successIds.length,
-      failedCount: typeof result.failed === 'number' ? result.failed : failedIds.length,
-      hasIds: true,
-      hasCounts: true
-    }
-  }
-
-  const hasExplicitCounts = typeof result.success === 'number' || typeof result.failed === 'number'
-  const successCount = typeof result.success === 'number' ? result.success : 0
-  const failedCount = typeof result.failed === 'number' ? result.failed : 0
-  if (hasExplicitCounts && failedCount === 0 && successCount === accountIds.length && accountIds.length > 0) {
-    return {
-      successIds: accountIds,
-      failedIds: [],
-      successCount,
-      failedCount,
-      hasIds: true,
-      hasCounts: true
-    }
-  }
-
-  return {
-    successIds: [],
-    failedIds: [],
-    successCount,
-    failedCount,
-    hasIds: false,
-    hasCounts: hasExplicitCounts
-  }
-}
 const handleBulkToggleSchedulable = async (schedulable: boolean) => {
   const accountIds = [...selIds.value]
   try {
-    const result = await adminAPI.accounts.bulkUpdate(accountIds, { schedulable })
-    const { successIds, failedIds, successCount, failedCount, hasIds, hasCounts } = normalizeBulkSchedulableResult(result, accountIds)
-    if (!hasIds && !hasCounts) {
-      appStore.showError(t('admin.accounts.bulkSchedulableResultUnknown'))
-      setSelectedIds(accountIds)
-      load().catch((error) => {
-        console.error('Failed to refresh accounts:', error)
-      })
-      return
-    }
-    if (successIds.length > 0) {
-      updateSchedulableInList(successIds, schedulable)
-    }
-    if (successCount > 0 && failedCount === 0) {
-      const message = schedulable
-        ? t('admin.accounts.bulkSchedulableEnabled', { count: successCount })
-        : t('admin.accounts.bulkSchedulableDisabled', { count: successCount })
-      appStore.showSuccess(message)
-    }
-    if (failedCount > 0) {
-      const message = hasCounts || hasIds
-        ? t('admin.accounts.bulkSchedulablePartial', { success: successCount, failed: failedCount })
-        : t('admin.accounts.bulkSchedulableResultUnknown')
-      appStore.showError(message)
-      setSelectedIds(failedIds.length > 0 ? failedIds : accountIds)
-    } else {
-      if (hasIds) clearSelection()
-      else setSelectedIds(accountIds)
-    }
+    const job = await adminAPI.accounts.bulkUpdate(accountIds, { schedulable })
+    clearSelection()
+    accountJobsStore.track(job)
   } catch (error) {
     console.error('Failed to bulk toggle schedulable:', error)
     appStore.showError(t('common.error'))
@@ -2679,15 +2595,10 @@ const closeBulkTaxonomy = () => {
   bulkTaxonomyTarget.value = null
 }
 
-const refreshAfterBulkTaxonomy = async () => {
-  await Promise.all([load(), loadFacets(), loadTaxonomy()])
-  setSelectedIds(selIds.value.filter((id) => accounts.value.some((account) => account.id === id && accountMatchesCurrentFilters(account))))
-}
-
-const handleBulkTaxonomyUpdated = async (_matchedCount: number, updatedCount: number) => {
+const handleBulkTaxonomyUpdated = (job: AccountJob) => {
   closeBulkTaxonomy()
-  await refreshAfterBulkTaxonomy()
-  appStore.showSuccess(t('admin.accounts.bulkTaxonomy.success', { count: updatedCount }))
+  clearSelection()
+  accountJobsStore.track(job)
 }
 
 const handleBulkTaxonomyStale = async () => {
@@ -2695,25 +2606,24 @@ const handleBulkTaxonomyStale = async () => {
   await Promise.all([load(), loadFacets(), loadTaxonomy()])
 }
 
-const handleBulkUpdated = () => {
+const handleBulkUpdated = (job: AccountJob) => {
   showBulkEdit.value = false
   bulkEditTarget.value = null
   clearSelection()
-  reload()
+  accountJobsStore.track(job)
 }
-const handleDataImported = async (result: AdminDataImportResult) => {
-  const importedIDs = Array.from(new Set(result.account_ids || []))
-  activeFolder.value = ''
-  consoleFilters.value = {
-    ...consoleFilters.value,
-    account_ids: importedIDs
+const handleDataImported = (job: AccountJob) => {
+  showImportData.value = false
+  clearSelection()
+  accountJobsStore.track(job)
+}
+const handleAccountCreated = (job?: AccountJob) => {
+  if (job) {
+    clearSelection()
+    accountJobsStore.track(job)
+    return
   }
-  saveSensitiveConsoleState()
-  setSelectedIds(importedIDs)
-  pagination.page = 1
-  syncConsoleRoute()
-  syncConsoleParams()
-  await Promise.all([load(), loadFacets(), loadTaxonomy()])
+  void reload()
 }
 const ACCOUNT_UNGROUPED_GROUP_QUERY_VALUE = 'ungrouped'
 const ACCOUNT_PRIVACY_MODE_UNSET_QUERY_VALUE = '__unset__'
@@ -2876,15 +2786,11 @@ const confirmCindyInsufficientDelete = async () => {
   if (!preview || cindyDeleteLoading.value) return
   cindyDeleteLoading.value = true
   try {
-    const result = await adminAPI.accounts.deleteCindyInsufficient(preview)
+    const job = await adminAPI.accounts.deleteCindyInsufficient(preview)
     showCindyDeleteDialog.value = false
     cindyDeletePreview.value = null
-    pagination.page = 1
     clearSelection()
-    syncConsoleRoute('replace')
-    syncConsoleParams()
-    await Promise.all([reload(), loadFacets(), loadTaxonomy(), loadCindyDeleteCandidateCount()])
-    appStore.showSuccess(t('admin.accounts.cindy.deleteSuccess', { count: result.deleted_count }))
+    accountJobsStore.track(job)
   } catch (error: any) {
     showCindyDeleteDialog.value = false
     cindyDeletePreview.value = null
@@ -3107,6 +3013,12 @@ const confirmCreateSparkShadow = async () => {
 }
 const handleDelete = (a: Account) => { deletingAcc.value = a; showDeleteDialog.value = true }
 const confirmDelete = async () => { if(!deletingAcc.value) return; try { await adminAPI.accounts.delete(deletingAcc.value.id); showDeleteDialog.value = false; deletingAcc.value = null; reload() } catch (error) { console.error('Failed to delete account:', error) } }
+const updateSchedulableInList = (accountIds: number[], schedulable: boolean) => {
+  const idSet = new Set(accountIds)
+  accounts.value = accounts.value.map((account) => (
+    idSet.has(account.id) ? { ...account, schedulable } : account
+  ))
+}
 const handleToggleSchedulable = async (a: Account) => {
   const nextSchedulable = !a.schedulable
   togglingSchedulable.value = a.id

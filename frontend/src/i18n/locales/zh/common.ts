@@ -178,6 +178,7 @@ export default {
     modelPlaza: '模型广场',
     subscriptions: '订阅管理',
     accounts: '账号管理',
+    tasks: '任务',
     cindyAccounts: 'Cindy 账号',
     proxies: 'IP管理',
     redeemCodes: '兑换码',

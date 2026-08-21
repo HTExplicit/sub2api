@@ -37,6 +37,7 @@ import adminComplianceAPI from './compliance'
 import auditAPI from './audit'
 import systemPromptsAPI from './systemPrompts'
 import cindyBalanceProbeAPI from './cindyBalanceProbe'
+import accountJobsAPI from './accountJobs'
 
 /**
  * Unified admin API object for convenient access
@@ -75,7 +76,8 @@ export const adminAPI = {
   compliance: adminComplianceAPI,
   audit: auditAPI,
   systemPrompts: systemPromptsAPI,
-  cindyBalanceProbe: cindyBalanceProbeAPI
+  cindyBalanceProbe: cindyBalanceProbeAPI,
+  accountJobs: accountJobsAPI
 }
 
 export {
@@ -112,7 +114,8 @@ export {
   adminComplianceAPI,
   auditAPI,
   systemPromptsAPI,
-  cindyBalanceProbeAPI
+  cindyBalanceProbeAPI,
+  accountJobsAPI
 }
 
 export default adminAPI
