@@ -115,6 +115,9 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "Model capability catalog is not enabled")
 	require.Empty(t, GetUpstreamEndpoint(c, service.PlatformOpenAI))
 
+	// A legacy platform=openai + StrictCindy marker no longer grants Cindy
+	// aliases. Canonical platform=cindy routing is covered by the first-class
+	// catalog tests instead.
 	for _, tc := range []struct {
 		name          string
 		request       string
@@ -124,8 +127,6 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 		groupPlatform string
 		modelMapping  map[string]any
 	}{
-		{name: "strict_sol_alias", request: "gpt-5.4", expected: "openai/gpt-5.6-sol", strict: true},
-		{name: "strict_luna_alias", request: "gpt-5.4-mini", expected: "openai/gpt-5.6-luna", strict: true},
 		{
 			name: "configured_stable_sol", request: "gpt-5.6-sol", expected: "openai/gpt-5.6-sol",
 			modelMapping: map[string]any{"gpt-5.6-sol": "openai/gpt-5.6-sol"},
@@ -176,22 +177,6 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 		expectedModels []string
 	}{
 		{
-			name:           "strict_chat_sol_alias",
-			strictGroup:    true,
-			requestedModel: "gpt-5.4",
-			modelMapping:   map[string]any{"gpt-5.6-sol": "openai/gpt-5.6-sol"},
-			expectedStatus: http.StatusOK,
-			expectedModels: []string{"openai/gpt-5.6-sol"},
-		},
-		{
-			name:           "strict_chat_luna_alias",
-			strictGroup:    true,
-			requestedModel: "gpt-5.4-mini",
-			modelMapping:   map[string]any{"gpt-5.6-luna": "openai/gpt-5.6-luna"},
-			expectedStatus: http.StatusOK,
-			expectedModels: []string{"openai/gpt-5.6-luna"},
-		},
-		{
 			name:           "mixed_chat_does_not_map",
 			strictGroup:    false,
 			requestedModel: "gpt-5.4-mini",
@@ -232,14 +217,6 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 			require.Equal(t, []string{"/v1/responses"}, upstream.paths())
 		})
 	}
-
-	wsResult := runOpenAIResponsesWebSocketUsageLogCase(t, openAIResponsesWSUsageLogCase{
-		firstPayload:     `{"type":"response.create","model":"gpt-5.4-mini","input":"hi","stream":false}`,
-		strictCindyGroup: true,
-	})
-	require.Equal(t, "openai/gpt-5.6-luna",
-		gjson.GetBytes(wsResult.upstreamFirstPayload, "model").String(),
-		"direct Responses WebSocket ingress must preserve the strict catalog-off alias")
 
 	wsMixed := runOpenAIResponsesWebSocketUsageLogCase(t, openAIResponsesWSUsageLogCase{
 		firstPayload: `{"type":"response.create","model":"gpt-5.4-mini","input":"hi","stream":false}`,
