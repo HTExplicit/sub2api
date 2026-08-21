@@ -291,8 +291,9 @@ type OpenAIForwardResult struct {
 	// AudioUsage carries Voice billing units when present.
 	AudioUsage *AudioUsage
 
-	wsReplayInput       []json.RawMessage
-	wsReplayInputExists bool
+	wsReplayInput                []json.RawMessage
+	wsReplayInputExists          bool
+	wsAccountFailoverReplayInput []json.RawMessage
 }
 
 // SucceededForScheduling reports whether this result is an upstream success
@@ -437,6 +438,7 @@ type OpenAIGatewayService struct {
 	settingService        *SettingService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
 	businessPromptService *BusinessSystemPromptService
+	cindyHealth           CindyHealthCoordinator
 	liveAttestation       liveattestation.Provider
 	liveAttestationCipher SecretEncryptor
 
@@ -487,6 +489,13 @@ func (s *OpenAIGatewayService) SetBusinessSystemPromptService(promptService *Bus
 		return
 	}
 	s.businessPromptService = promptService
+}
+
+func (s *OpenAIGatewayService) SetCindyHealthCoordinator(coordinator CindyHealthCoordinator) {
+	if s == nil {
+		return
+	}
+	s.cindyHealth = coordinator
 }
 
 // NewOpenAIGatewayService creates a new OpenAIGatewayService

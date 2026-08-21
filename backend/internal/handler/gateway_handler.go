@@ -23,7 +23,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
@@ -1091,7 +1090,7 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	// account model_mapping keys. Compatibility aliases and unverified
 	// candidates are intentionally absent from the public list.
 	strictCindy := false
-	if platform == service.PlatformOpenAI {
+	if platform == service.PlatformOpenAI || platform == service.PlatformCindy {
 		var err error
 		strictCindy, err = h.gatewayService.ClassifyStrictCindyGroup(c.Request.Context(), authenticatedGroup)
 		if err != nil {
@@ -1179,7 +1178,7 @@ func (h *GatewayHandler) ModelCapabilities(c *gin.Context) {
 		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")
 		return
 	}
-	if apiKey.Group.Platform != service.PlatformOpenAI {
+	if apiKey.Group.Platform != service.PlatformOpenAI && apiKey.Group.Platform != service.PlatformCindy {
 		markLocalGate()
 		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Model capabilities are not available for this group")
 		return
@@ -1217,100 +1216,6 @@ func (h *GatewayHandler) ModelCapabilities(c *gin.Context) {
 	})
 }
 
-type imageStudioEligibleKeyGroup struct {
-	ID   int64  `json:"id"`
-	Name string `json:"name"`
-}
-
-type imageStudioEligibleAPIKey struct {
-	ID      int64                       `json:"id"`
-	Name    string                      `json:"name"`
-	Key     string                      `json:"key"`
-	GroupID int64                       `json:"group_id"`
-	Group   imageStudioEligibleKeyGroup `json:"group"`
-}
-
-type imageStudioEligibleKeyResponse struct {
-	APIKey       imageStudioEligibleAPIKey      `json:"api_key"`
-	Capabilities []service.CindyModelCapability `json:"capabilities"`
-}
-
-// ImageStudioEligibleKeys returns current-user keys that can route the fixed
-// Cindy image surface. Upstream account identity is never included.
-func (h *GatewayHandler) ImageStudioEligibleKeys(c *gin.Context) {
-	subject, ok := middleware2.GetAuthSubjectFromContext(c)
-	if !ok {
-		response.Unauthorized(c, "User not authenticated")
-		return
-	}
-
-	items := make([]imageStudioEligibleKeyResponse, 0)
-	if !service.ImageStudioFeatureEnabled() {
-		response.Success(c, gin.H{"items": items})
-		return
-	}
-	if h == nil || h.apiKeyService == nil || h.gatewayService == nil {
-		response.InternalError(c, "Image Studio eligibility is unavailable")
-		return
-	}
-
-	keys, err := h.apiKeyService.ListAll(c.Request.Context(), subject.UserID, service.APIKeyListFilters{Status: service.StatusActive})
-	if err != nil {
-		response.InternalError(c, "Unable to load Image Studio API keys")
-		return
-	}
-	capabilities := service.CindyImageModelCapabilities()
-	if len(capabilities) == 0 {
-		response.Success(c, gin.H{"items": items})
-		return
-	}
-
-	eligibleGroups := make(map[int64]bool)
-	checkedGroups := make(map[int64]struct{})
-	for i := range keys {
-		key := &keys[i]
-		group := key.Group
-		if key.UserID != subject.UserID || !key.IsActive() || key.IsExpired() || key.IsQuotaExhausted() || group == nil || !group.IsActive() || !group.AllowImageGeneration || group.Platform != service.PlatformOpenAI {
-			continue
-		}
-		if _, checked := checkedGroups[group.ID]; !checked {
-			strict, lookupErr := h.gatewayService.ClassifyStrictCindyGroup(c.Request.Context(), group)
-			if lookupErr != nil {
-				response.Error(c, http.StatusServiceUnavailable, "Unable to determine Image Studio eligibility")
-				return
-			}
-			eligible := false
-			if strict {
-				eligible, lookupErr = h.gatewayService.HasSchedulableCindyAccount(c.Request.Context(), group)
-				if lookupErr != nil {
-					response.Error(c, http.StatusServiceUnavailable, "Unable to determine Image Studio eligibility")
-					return
-				}
-			}
-			checkedGroups[group.ID] = struct{}{}
-			eligibleGroups[group.ID] = strict && eligible
-		}
-		if !eligibleGroups[group.ID] {
-			continue
-		}
-		items = append(items, imageStudioEligibleKeyResponse{
-			APIKey: imageStudioEligibleAPIKey{
-				ID:      key.ID,
-				Name:    key.Name,
-				Key:     key.Key,
-				GroupID: group.ID,
-				Group: imageStudioEligibleKeyGroup{
-					ID:   group.ID,
-					Name: group.Name,
-				},
-			},
-			Capabilities: capabilities,
-		})
-	}
-
-	response.Success(c, gin.H{"items": items})
-}
-
 func (h *GatewayHandler) compositeAvailableModels(ctx context.Context, groupID *int64) []string {
 	if h == nil || h.gatewayService == nil {
 		return nil
@@ -1318,10 +1223,12 @@ func (h *GatewayHandler) compositeAvailableModels(ctx context.Context, groupID *
 	seen := make(map[string]struct{})
 	models := make([]string, 0)
 	schedulablePlatforms := h.gatewayService.GetSchedulablePlatforms(ctx, groupID)
-	for _, platform := range []string{service.PlatformAnthropic, service.PlatformGemini, service.PlatformOpenAI, service.PlatformAntigravity, service.PlatformGrok} {
+	for _, platform := range []string{service.PlatformAnthropic, service.PlatformGemini, service.PlatformOpenAI, service.PlatformAntigravity, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek} {
 		platformModels := h.gatewayService.GetAvailableModels(ctx, groupID, platform)
 		if len(platformModels) == 0 {
-			if _, ok := schedulablePlatforms[platform]; ok {
+			// CN 供应商没有静态默认模型列表（defaultModelIDsForPlatform 的
+			// default 分支是 Claude 列表），composite 下只暴露账号映射键。
+			if _, ok := schedulablePlatforms[platform]; ok && !service.IsCNProvider(platform) {
 				platformModels = defaultModelIDsForPlatform(platform)
 			}
 		}
@@ -1581,7 +1488,7 @@ func defaultModelIDsForPlatform(platform string) []string {
 	case service.PlatformComposite:
 		ids := make([]string, 0)
 		seen := make(map[string]struct{})
-		for _, concretePlatform := range []string{service.PlatformAnthropic, service.PlatformGemini, service.PlatformOpenAI, service.PlatformAntigravity, service.PlatformGrok} {
+		for _, concretePlatform := range []string{service.PlatformAnthropic, service.PlatformGemini, service.PlatformOpenAI, service.PlatformAntigravity, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek} {
 			for _, id := range defaultModelIDsForPlatform(concretePlatform) {
 				if _, ok := seen[id]; ok {
 					continue

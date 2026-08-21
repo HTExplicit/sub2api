@@ -3,7 +3,6 @@ package admin
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -66,22 +65,23 @@ func (s *batchDeleteAdminService) DeleteAccount(ctx context.Context, id int64) e
 	return s.deleteErrorsByID[id]
 }
 
-func setupAccountBatchDeleteRouter(adminSvc *batchDeleteAdminService) *gin.Engine {
+func setupAccountBatchDeleteRouter(adminSvc *batchDeleteAdminService) (*gin.Engine, *AccountHandler, *accountJobSubmitRepository) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	jobs := attachAccountJobSubmitter(router, handler)
 	router.POST("/api/v1/admin/accounts/batch-delete", handler.BatchDelete)
-	return router
+	return router, handler, jobs
 }
 
-func TestAccountHandlerBatchDeleteReturnsStablePerAccountResults(t *testing.T) {
+func TestAccountHandlerBatchDeleteCreatesStablePerAccountJobItems(t *testing.T) {
 	adminSvc := &batchDeleteAdminService{
 		stubAdminService: newStubAdminService(),
 		deleteErrorsByID: map[int64]error{
 			3: errors.New("delete failed"),
 		},
 	}
-	router := setupAccountBatchDeleteRouter(adminSvc)
+	router, handler, jobs := setupAccountBatchDeleteRouter(adminSvc)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(
@@ -90,36 +90,28 @@ func TestAccountHandlerBatchDeleteReturnsStablePerAccountResults(t *testing.T) {
 		bytes.NewBufferString(`{"account_ids":[5,4,3,2,1,2,0,-1]}`),
 	)
 	req.Header.Set("Content-Type", "application/json")
+	setAccountJobTestIdempotencyKey(req)
 	router.ServeHTTP(rec, req)
 
-	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, http.StatusAccepted, rec.Code)
+	var payload accountIDsJobPayload
+	params := requireSubmittedAccountJob(t, jobs, service.AccountJobKindBatchDelete, &payload)
+	require.Equal(t, []int64{1, 2, 3, 4, 5}, payload.AccountIDs)
+	require.Len(t, params.Items, 5)
 
-	var payload struct {
-		Data struct {
-			Total      int     `json:"total"`
-			Success    int     `json:"success"`
-			Failed     int     `json:"failed"`
-			SuccessIDs []int64 `json:"success_ids"`
-			FailedIDs  []int64 `json:"failed_ids"`
-			Errors     []struct {
-				AccountID int64  `json:"account_id"`
-				Error     string `json:"error"`
-			} `json:"errors"`
-		} `json:"data"`
+	results := executeSubmittedAccountJobItems(handler, params)
+	for index, result := range results {
+		if index == 2 {
+			require.Equal(t, service.AccountJobItemStatusFailed, result.Status)
+			require.Equal(t, "delete_failed", result.ErrorCode)
+			continue
+		}
+		require.Equal(t, service.AccountJobItemStatusSucceeded, result.Status)
 	}
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
-	require.Equal(t, 5, payload.Data.Total)
-	require.Equal(t, 4, payload.Data.Success)
-	require.Equal(t, 1, payload.Data.Failed)
-	require.Equal(t, []int64{1, 2, 4, 5}, payload.Data.SuccessIDs)
-	require.Equal(t, []int64{3}, payload.Data.FailedIDs)
-	require.Equal(t, int64(3), payload.Data.Errors[0].AccountID)
-	require.Equal(t, "delete failed", payload.Data.Errors[0].Error)
-	require.LessOrEqual(t, adminSvc.maxActive, 5)
-	require.Greater(t, adminSvc.maxActive, 1)
+	require.Equal(t, []int64{1, 2, 3, 4, 5}, adminSvc.deletedIDs)
 }
 
-func TestAccountHandlerBatchDeleteDoesNotRaceSelectedShadowWithParent(t *testing.T) {
+func TestAccountHandlerBatchDeleteOrdersParentAndShadowJobItemsDeterministically(t *testing.T) {
 	parentID := int64(1)
 	adminSvc := &batchDeleteAdminService{
 		stubAdminService: newStubAdminService(),
@@ -129,7 +121,7 @@ func TestAccountHandlerBatchDeleteDoesNotRaceSelectedShadowWithParent(t *testing
 			3: {ID: 3},
 		},
 	}
-	router := setupAccountBatchDeleteRouter(adminSvc)
+	router, _, jobs := setupAccountBatchDeleteRouter(adminSvc)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(
@@ -138,27 +130,25 @@ func TestAccountHandlerBatchDeleteDoesNotRaceSelectedShadowWithParent(t *testing
 		bytes.NewBufferString(`{"account_ids":[1,2,3]}`),
 	)
 	req.Header.Set("Content-Type", "application/json")
+	setAccountJobTestIdempotencyKey(req)
 	router.ServeHTTP(rec, req)
 
-	require.Equal(t, http.StatusOK, rec.Code)
-
-	var payload struct {
-		Data struct {
-			SuccessIDs []int64 `json:"success_ids"`
-			FailedIDs  []int64 `json:"failed_ids"`
-		} `json:"data"`
+	require.Equal(t, http.StatusAccepted, rec.Code)
+	var payload accountIDsJobPayload
+	params := requireSubmittedAccountJob(t, jobs, service.AccountJobKindBatchDelete, &payload)
+	require.Equal(t, []int64{1, 2, 3}, payload.AccountIDs)
+	require.Len(t, params.Items, 3)
+	for index, seed := range params.Items {
+		require.Equal(t, int64(index+1), *seed.TargetAccountID)
 	}
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
-	require.Equal(t, []int64{1, 2, 3}, payload.Data.SuccessIDs)
-	require.Empty(t, payload.Data.FailedIDs)
-	require.ElementsMatch(t, []int64{1, 3}, adminSvc.deletedIDs)
+	require.Empty(t, adminSvc.deletedIDs, "提交请求不得在 HTTP handler 内执行删除")
 }
 
 func TestAccountHandlerBatchDeleteRejectsEmptyNormalizedIDs(t *testing.T) {
 	adminSvc := &batchDeleteAdminService{
 		stubAdminService: newStubAdminService(),
 	}
-	router := setupAccountBatchDeleteRouter(adminSvc)
+	router, _, _ := setupAccountBatchDeleteRouter(adminSvc)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(

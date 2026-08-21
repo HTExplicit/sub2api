@@ -30,13 +30,17 @@ func TestAPIKeyRepositoryGetByKeyForAuthMaterializesCindyIdentity(t *testing.T) 
 	user := mustCreateAPIKeyRepoUser(t, ctx, client, "cindy-auth-materialized@test.com")
 	group, err := client.Group.Create().
 		SetName("cindy-auth-materialized").
-		SetPlatform(service.PlatformOpenAI).
+		SetPlatform(service.PlatformCindy).
+		SetWirePlatform(service.WirePlatformOpenAI).
+		SetProviderProfile(service.ProviderProfileCindyLaxaV1).
 		SetStatus(service.StatusActive).
 		Save(ctx)
 	require.NoError(t, err)
 	account, err := client.Account.Create().
 		SetName("cindy-auth-materialized-account").
-		SetPlatform(service.PlatformOpenAI).
+		SetPlatform(service.PlatformCindy).
+		SetWirePlatform(service.WirePlatformOpenAI).
+		SetProviderProfile(service.ProviderProfileCindyLaxaV1).
 		SetType(service.AccountTypeAPIKey).
 		SetStatus(service.StatusActive).
 		SetCredentials(map[string]any{
@@ -85,15 +89,23 @@ func TestAPIKeyRepositoryGetByKeyForAuthTreatsDisabledOrdinaryMemberAsMixed(t *t
 	user := mustCreateAPIKeyRepoUser(t, ctx, client, "cindy-auth-disabled-ordinary@test.com")
 	group, err := client.Group.Create().
 		SetName("cindy-auth-disabled-ordinary").
-		SetPlatform(service.PlatformOpenAI).
+		SetPlatform(service.PlatformCindy).
+		SetWirePlatform(service.WirePlatformOpenAI).
+		SetProviderProfile(service.ProviderProfileCindyLaxaV1).
 		SetStatus(service.StatusActive).
 		Save(ctx)
 	require.NoError(t, err)
 
-	createMember := func(name, status, baseURL string) {
+	createMember := func(name, platform, status, baseURL string) {
+		profile := ""
+		if platform == service.PlatformCindy {
+			profile = service.ProviderProfileCindyLaxaV1
+		}
 		account, createErr := client.Account.Create().
 			SetName(name).
-			SetPlatform(service.PlatformOpenAI).
+			SetPlatform(platform).
+			SetWirePlatform(service.WirePlatformOpenAI).
+			SetProviderProfile(profile).
 			SetType(service.AccountTypeAPIKey).
 			SetStatus(status).
 			SetCredentials(map[string]any{
@@ -109,8 +121,8 @@ func TestAPIKeyRepositoryGetByKeyForAuthTreatsDisabledOrdinaryMemberAsMixed(t *t
 			Save(ctx)
 		require.NoError(t, createErr)
 	}
-	createMember("active-cindy", service.StatusActive, "https://api.laxarouter.ai")
-	createMember("disabled-ordinary", service.StatusDisabled, "https://api.openai.com")
+	createMember("active-cindy", service.PlatformCindy, service.StatusActive, "https://api.laxarouter.ai")
+	createMember("disabled-ordinary", service.PlatformOpenAI, service.StatusDisabled, "https://api.openai.com")
 
 	key := &service.APIKey{
 		UserID: user.ID, GroupID: &group.ID, Key: "sk-cindy-auth-disabled-ordinary",
@@ -132,7 +144,9 @@ func TestAPIKeyRepositoryGetByKeyForAuthMaterializesEmptyGroupAsKnownOrdinary(t 
 	user := mustCreateAPIKeyRepoUser(t, ctx, client, "ordinary-auth-materialized@test.com")
 	group, err := client.Group.Create().
 		SetName("ordinary-auth-materialized").
-		SetPlatform(service.PlatformOpenAI).
+		SetPlatform(service.PlatformCindy).
+		SetWirePlatform(service.WirePlatformOpenAI).
+		SetProviderProfile(service.ProviderProfileCindyLaxaV1).
 		SetStatus(service.StatusActive).
 		Save(ctx)
 	require.NoError(t, err)
@@ -149,7 +163,7 @@ func TestAPIKeyRepositoryGetByKeyForAuthMaterializesEmptyGroupAsKnownOrdinary(t 
 	require.False(t, got.Group.StrictCindy)
 }
 
-func TestAPIKeyRepositoryGetByKeyForAuthSkipsCindyAggregateForNonOpenAIGroup(t *testing.T) {
+func TestAPIKeyRepositoryGetByKeyForAuthSkipsCindyAggregateForNonCindyGroup(t *testing.T) {
 	repo, client := newAPIKeyRepoSQLite(t)
 	ctx := context.Background()
 	user := mustCreateAPIKeyRepoUser(t, ctx, client, "gemini-auth-materialized@test.com")
@@ -175,7 +189,7 @@ func TestAPIKeyRepositoryGetByKeyForAuthSkipsCindyAggregateForNonOpenAIGroup(t *
 	require.NotNil(t, got.Group)
 	require.True(t, got.Group.StrictCindyKnown)
 	require.False(t, got.Group.StrictCindy)
-	require.NoError(t, identityMock.ExpectationsWereMet(), "non-OpenAI auth must not execute the Cindy identity aggregate")
+	require.NoError(t, identityMock.ExpectationsWereMet(), "non-Cindy auth must not execute the Cindy identity aggregate")
 }
 
 func TestAPIKeyRepositoryGetByKeyForAuthFailsClosedWhenIdentityClassificationFails(t *testing.T) {
@@ -184,7 +198,9 @@ func TestAPIKeyRepositoryGetByKeyForAuthFailsClosedWhenIdentityClassificationFai
 	user := mustCreateAPIKeyRepoUser(t, ctx, client, "cindy-auth-classifier-failure@test.com")
 	group, err := client.Group.Create().
 		SetName("cindy-auth-classifier-failure").
-		SetPlatform(service.PlatformOpenAI).
+		SetPlatform(service.PlatformCindy).
+		SetWirePlatform(service.WirePlatformOpenAI).
+		SetProviderProfile(service.ProviderProfileCindyLaxaV1).
 		SetStatus(service.StatusActive).
 		Save(ctx)
 	require.NoError(t, err)

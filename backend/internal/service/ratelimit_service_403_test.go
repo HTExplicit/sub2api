@@ -87,53 +87,63 @@ func TestRateLimitService_HandleUpstreamError_OpenAI403ThresholdDisables(t *test
 	require.Contains(t, repo.lastErrorMsg, "consecutive_403=3/3")
 }
 
-func TestOpenAIGatewayService_Cindy403UsesEvidencePolicyEvenInPoolMode(t *testing.T) {
+func TestOpenAIGatewayService_Cindy403UsesTransientHealthCoordinatorEvenInPoolMode(t *testing.T) {
 	for _, poolMode := range []bool{false, true} {
 		t.Run(map[bool]string{false: "normal", true: "pool"}[poolMode], func(t *testing.T) {
 			repo := &rateLimitAccountRepoStub{}
-			counter := &openAI403CounterCacheStub{counts: []int64{1}}
-			blocker := &runtimeBlockRecorder{}
+			counter := &countingOpenAI403CounterCache{openAI403CounterCacheStub: openAI403CounterCacheStub{counts: []int64{1}}}
 			rateLimit := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
 			rateLimit.SetOpenAI403CounterCache(counter)
-			rateLimit.SetAccountRuntimeBlocker(blocker)
 			gateway := &OpenAIGatewayService{rateLimitService: rateLimit}
-			account := newCindyRateLimitAccount(303, poolMode)
+			health := &cindyHealthCoordinatorRecorder{}
+			gateway.SetCindyHealthCoordinator(health)
+			account := newFirstClassCindyRateLimitAccount(303, poolMode)
 
 			shouldDisable := gateway.handleOpenAIAccountUpstreamError(
 				context.Background(), account, http.StatusForbidden, http.Header{},
 				[]byte(`{"error":{"message":"account access forbidden"}}`), "gpt-5.4",
 			)
 
-			require.True(t, shouldDisable)
-			require.Equal(t, 1, repo.tempCalls)
+			require.False(t, shouldDisable)
+			require.Zero(t, repo.tempCalls)
 			require.Zero(t, repo.setErrorCalls)
-			require.Len(t, blocker.accounts, 1)
-			require.Equal(t, "openai_403_temp", blocker.reasons[0])
+			require.Zero(t, counter.increments)
+			require.Equal(t, []CindyHealthSignal{CindyHealthSignalForbidden}, health.signals)
+			require.Equal(t, []int64{account.ID}, health.accounts)
 		})
 	}
 }
 
-func TestOpenAIGatewayService_Cindy403ThresholdDisables(t *testing.T) {
+func TestOpenAIGatewayService_RepeatedCindy403NeverUsesPermanentDisable(t *testing.T) {
 	repo := &rateLimitAccountRepoStub{}
-	counter := &openAI403CounterCacheStub{counts: []int64{openAI403DisableThreshold}}
+	counter := &countingOpenAI403CounterCache{openAI403CounterCacheStub: openAI403CounterCacheStub{counts: []int64{openAI403DisableThreshold}}}
 	rateLimit := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
 	rateLimit.SetOpenAI403CounterCache(counter)
 	gateway := &OpenAIGatewayService{rateLimitService: rateLimit}
-	account := newCindyRateLimitAccount(304, true)
+	health := &cindyHealthCoordinatorRecorder{}
+	gateway.SetCindyHealthCoordinator(health)
+	account := newFirstClassCindyRateLimitAccount(304, true)
 
-	shouldDisable := gateway.handleOpenAIAccountUpstreamError(
-		context.Background(), account, http.StatusForbidden, http.Header{}, []byte("Forbidden"), "gpt-5.4",
-	)
+	for range 2 {
+		shouldDisable := gateway.handleOpenAIAccountUpstreamError(
+			context.Background(), account, http.StatusForbidden, http.Header{}, []byte("Forbidden"), "gpt-5.4",
+		)
+		require.False(t, shouldDisable)
+	}
 
-	require.True(t, shouldDisable)
-	require.Equal(t, 1, repo.setErrorCalls)
+	require.Zero(t, repo.setErrorCalls)
 	require.Zero(t, repo.tempCalls)
+	require.Zero(t, counter.increments)
+	require.Equal(t, []CindyHealthSignal{CindyHealthSignalForbidden, CindyHealthSignalForbidden}, health.signals)
 }
 
 func TestOpenAIGatewayService_Cindy403HTMLAndCyberDoNotPenalize(t *testing.T) {
-	for name, body := range map[string][]byte{
-		"html":  []byte(openAI403HTMLBody),
-		"cyber": []byte(`{"error":{"code":"cyber_policy","message":"blocked"}}`),
+	for name, tc := range map[string]struct {
+		body       []byte
+		wantSignal bool
+	}{
+		"html":  {body: []byte(openAI403HTMLBody), wantSignal: true},
+		"cyber": {body: []byte(`{"error":{"code":"cyber_policy","message":"blocked"}}`)},
 	} {
 		t.Run(name, func(t *testing.T) {
 			repo := &rateLimitAccountRepoStub{}
@@ -143,10 +153,12 @@ func TestOpenAIGatewayService_Cindy403HTMLAndCyberDoNotPenalize(t *testing.T) {
 			rateLimit.SetOpenAI403CounterCache(counter)
 			rateLimit.SetAccountRuntimeBlocker(blocker)
 			gateway := &OpenAIGatewayService{rateLimitService: rateLimit}
-			account := newCindyRateLimitAccount(305, true)
+			health := &cindyHealthCoordinatorRecorder{}
+			gateway.SetCindyHealthCoordinator(health)
+			account := newFirstClassCindyRateLimitAccount(305, true)
 
 			shouldDisable := gateway.handleOpenAIAccountUpstreamError(
-				context.Background(), account, http.StatusForbidden, http.Header{}, body, "gpt-5.4",
+				context.Background(), account, http.StatusForbidden, http.Header{}, tc.body, "gpt-5.4",
 			)
 
 			require.False(t, shouldDisable)
@@ -154,6 +166,11 @@ func TestOpenAIGatewayService_Cindy403HTMLAndCyberDoNotPenalize(t *testing.T) {
 			require.Zero(t, repo.tempCalls)
 			require.Zero(t, repo.setErrorCalls)
 			require.Empty(t, blocker.accounts)
+			if tc.wantSignal {
+				require.Equal(t, []CindyHealthSignal{CindyHealthSignalForbidden}, health.signals)
+			} else {
+				require.Empty(t, health.signals)
+			}
 		})
 	}
 }

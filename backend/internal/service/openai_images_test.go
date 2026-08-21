@@ -798,8 +798,10 @@ func TestOpenAIGatewayServiceForwardImages_OAuthPassesNAndReturnsAllImages(t *te
 
 func TestValidateOpenAIImagesUpstreamModel_AllowsOnlyStrictCindyMappedImage(t *testing.T) {
 	cindy := &Account{
-		Platform: PlatformOpenAI,
-		Type:     AccountTypeAPIKey,
+		Platform:        PlatformCindy,
+		WirePlatform:    WirePlatformOpenAI,
+		ProviderProfile: ProviderProfileCindyLaxaV1,
+		Type:            AccountTypeAPIKey,
 		Credentials: map[string]any{
 			"base_url": "https://api.laxarouter.ai",
 		},

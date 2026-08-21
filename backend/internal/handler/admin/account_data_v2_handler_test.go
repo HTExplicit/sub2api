@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -252,8 +251,6 @@ func setupAccountDataV2Router(svc service.AdminService) *gin.Engine {
 	router := gin.New()
 	handler := NewAccountHandler(svc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	router.GET("/api/v1/admin/accounts/data", handler.ExportData)
-	router.POST("/api/v1/admin/accounts/data/preview", handler.PreviewDataImport)
-	router.POST("/api/v1/admin/accounts/data", handler.ImportData)
 	return router
 }
 
@@ -286,15 +283,16 @@ func TestExportDataUsesCockpitConsoleFilters(t *testing.T) {
 	require.Equal(t, "desc", svc.consoleFilters.SortOrder)
 }
 
-func postAccountDataJSON(t *testing.T, router *gin.Engine, path string, payload any) *httptest.ResponseRecorder {
+func executeDataImportPayload(t *testing.T, svc service.AdminService, payload any) DataImportResult {
 	t.Helper()
-	body, err := json.Marshal(payload)
+	raw, err := json.Marshal(payload)
 	require.NoError(t, err)
-	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
-	request.Header.Set("Content-Type", "application/json")
-	router.ServeHTTP(recorder, request)
-	return recorder
+	var req DataImportRequest
+	require.NoError(t, json.Unmarshal(raw, &req))
+	handler := NewAccountHandler(svc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	result, err := handler.importData(context.Background(), req)
+	require.NoError(t, err)
+	return result
 }
 
 func testDataAccount(name, accountID, userID, email string) map[string]any {
@@ -312,81 +310,45 @@ func testDataAccount(name, accountID, userID, email string) map[string]any {
 	}
 }
 
-func TestPreviewDataImportIsReadOnlyAndSeparatesStrongIdentityFromEmailWarnings(t *testing.T) {
-	svc := newDataV2AdminService()
-	svc.accounts = []service.Account{{
-		ID: 7, Name: "Existing", Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth,
-		Credentials: map[string]any{"chatgpt_account_id": "workspace-1", "chatgpt_user_id": "user-1", "email": "same@example.com"},
-		Status:      service.StatusActive, Schedulable: true,
-	}}
-	router := setupAccountDataV2Router(svc)
-	payload := map[string]any{"data": map[string]any{
-		"type": dataType, "version": dataVersion, "proxies": []any{},
-		"accounts": []any{
-			testDataAccount("Existing", "workspace-1", "user-1", "same@example.com"),
-			testDataAccount("Existing", "", "", "same@example.com"),
-			testDataAccount("Other Team Member", "workspace-1", "user-2", "other@example.com"),
-		},
-	}}
-	recorder := postAccountDataJSON(t, router, "/api/v1/admin/accounts/data/preview", payload)
-	require.Equal(t, http.StatusOK, recorder.Code)
-	var response struct {
-		Data DataImportPreviewResult `json:"data"`
-	}
-	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
-	require.Len(t, response.Data.Accounts, 3)
-	require.Equal(t, dataImportActionSkip, response.Data.Accounts[0].DefaultAction)
-	require.Len(t, response.Data.Accounts[0].StrongIdentityMatches, 1)
-	require.Equal(t, int64(7), response.Data.Accounts[0].StrongIdentityMatches[0].AccountID)
-	require.Equal(t, "s***@example.com", response.Data.Accounts[0].MaskedEmail)
-	require.Equal(t, dataImportActionCreate, response.Data.Accounts[1].DefaultAction)
-	require.Empty(t, response.Data.Accounts[1].StrongIdentityMatches)
-	require.NotEmpty(t, response.Data.Accounts[1].Warnings)
-	require.Equal(t, dataImportActionCreate, response.Data.Accounts[2].DefaultAction)
-	require.Empty(t, response.Data.Accounts[2].StrongIdentityMatches)
-	require.Nil(t, response.Data.Accounts[2].DuplicateOfIndex)
-	require.Empty(t, svc.createdAccounts)
-	require.Empty(t, svc.updateInputs)
-	require.Empty(t, svc.folders)
-	require.Empty(t, svc.tags)
-}
-
 func TestDataAccountIdentityKeysTreatsClientEmailAsWarningOnly(t *testing.T) {
 	keys := dataAccountIdentityKeys("vertex", map[string]any{
 		"client_email": "service@example.com",
 	}, nil)
 	require.Empty(t, keys)
-	require.Equal(t, "service@example.com", dataAccountEmail(map[string]any{
-		"client_email": "service@example.com",
-	}, nil))
 }
 
-func TestImportDataAcceptsV1AndDefaultsStrongConflictToSkip(t *testing.T) {
+func TestDataAccountIdentityKeysUseCindyCredentialFingerprint(t *testing.T) {
+	credentials := map[string]any{"base_url": "https://api.laxarouter.ai", "api_key": " key "}
+	keys := dataAccountIdentityKeys(service.PlatformCindy, credentials, nil)
+	require.Len(t, keys, 1)
+	require.Equal(t, "credential_fingerprint", keys[0].Label)
+	trimmed := dataAccountIdentityKeys(service.PlatformCindy, map[string]any{
+		"base_url": "https://api.laxarouter.ai", "api_key": "key",
+	}, nil)
+	require.Len(t, trimmed, 1)
+	require.NotEqual(t, keys[0].Value, trimmed[0].Value)
+}
+
+func TestImportDataAcceptsV1AndUpdatesStrongIdentityAtExecutionTime(t *testing.T) {
 	svc := newDataV2AdminService()
 	svc.accounts = []service.Account{{
 		ID: 8, Name: "Existing", Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth,
 		Credentials: map[string]any{"chatgpt_account_id": "workspace-1", "chatgpt_user_id": "user-1"},
 		Status:      service.StatusActive, Schedulable: true,
 	}}
-	router := setupAccountDataV2Router(svc)
 	payload := map[string]any{"data": map[string]any{
 		"type": dataType, "version": dataVersionV1, "proxies": []any{},
 		"accounts": []any{testDataAccount("Imported", "workspace-1", "user-1", "new@example.com")},
 	}}
-	recorder := postAccountDataJSON(t, router, "/api/v1/admin/accounts/data", payload)
-	require.Equal(t, http.StatusOK, recorder.Code)
-	var response struct {
-		Data DataImportResult `json:"data"`
-	}
-	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
-	require.Equal(t, 1, response.Data.AccountSkipped)
-	require.Zero(t, response.Data.AccountCreated)
-	require.Zero(t, response.Data.AccountUpdated)
+	result := executeDataImportPayload(t, svc, payload)
+	require.Zero(t, result.AccountSkipped)
+	require.Zero(t, result.AccountCreated)
+	require.Equal(t, 1, result.AccountUpdated)
 	require.Empty(t, svc.createdAccounts)
-	require.Empty(t, svc.updateInputs)
+	require.Contains(t, svc.updateInputs, int64(8))
 }
 
-func TestImportDataConflictActionsAndSettingPrecedence(t *testing.T) {
+func TestImportDataExecutionTimeDecisionAndUniformSettings(t *testing.T) {
 	svc := newDataV2AdminService()
 	svc.accounts = []service.Account{{
 		ID: 9, Name: "Keep Name", Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth,
@@ -394,39 +356,27 @@ func TestImportDataConflictActionsAndSettingPrecedence(t *testing.T) {
 		Extra:       map[string]any{"preserved": true}, Concurrency: 9, Priority: 90,
 		Status: service.StatusActive, Schedulable: true,
 	}}
-	router := setupAccountDataV2Router(svc)
 	payload := map[string]any{
 		"data": map[string]any{
 			"type": dataType, "version": dataVersion, "proxies": []any{},
 			"accounts": []any{
-				testDataAccount("Skip", "workspace-1", "user-1", "one@example.com"),
 				testDataAccount("Update Source", "workspace-1", "user-1", "two@example.com"),
-				testDataAccount("Create Source", "workspace-1", "user-1", "three@example.com"),
+				testDataAccount("Create Source", "workspace-2", "user-2", "three@example.com"),
 			},
 		},
 		"uniform_settings": map[string]any{"name_prefix": "U-", "concurrency": 5, "priority": 50, "status": "disabled"},
-		"items": []any{
-			map[string]any{"index": 0, "action": "skip"},
-			map[string]any{"index": 1, "action": "update", "existing_account_id": 9, "overrides": map[string]any{"concurrency": 6}},
-			map[string]any{"index": 2, "action": "create", "overrides": map[string]any{"name": "Explicit", "priority": 70}},
-		},
 	}
-	recorder := postAccountDataJSON(t, router, "/api/v1/admin/accounts/data", payload)
-	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
-	var response struct {
-		Data DataImportResult `json:"data"`
-	}
-	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
-	require.Equal(t, 1, response.Data.AccountSkipped)
-	require.Equal(t, 1, response.Data.AccountUpdated)
-	require.Equal(t, 1, response.Data.AccountCreated)
-	require.Len(t, response.Data.AccountIDs, 2)
+	result := executeDataImportPayload(t, svc, payload)
+	require.Zero(t, result.AccountSkipped)
+	require.Equal(t, 1, result.AccountUpdated)
+	require.Equal(t, 1, result.AccountCreated)
+	require.Len(t, result.AccountIDs, 2)
 
 	update := svc.updateInputs[9]
 	require.NotNil(t, update)
 	require.Equal(t, "U-Update Source", update.Name)
 	require.NotNil(t, update.Concurrency)
-	require.Equal(t, 6, *update.Concurrency)
+	require.Equal(t, 5, *update.Concurrency)
 	require.NotNil(t, update.Priority)
 	require.Equal(t, 50, *update.Priority)
 	require.Equal(t, service.StatusDisabled, update.Status)
@@ -436,9 +386,9 @@ func TestImportDataConflictActionsAndSettingPrecedence(t *testing.T) {
 
 	require.Len(t, svc.createdAccounts, 1)
 	created := svc.createdAccounts[0]
-	require.Equal(t, "Explicit", created.Name)
+	require.Equal(t, "U-Create Source", created.Name)
 	require.Equal(t, 5, created.Concurrency)
-	require.Equal(t, 70, created.Priority)
+	require.Equal(t, 50, created.Priority)
 }
 
 func TestImportDataUpdatePreservesUnspecifiedOperationalSettings(t *testing.T) {
@@ -451,13 +401,11 @@ func TestImportDataUpdatePreservesUnspecifiedOperationalSettings(t *testing.T) {
 		RateMultiplier: func() *float64 { value := 1.5; return &value }(), GroupIDs: []int64{2},
 		Status: service.StatusActive, Schedulable: false,
 	}}
-	router := setupAccountDataV2Router(svc)
 	payload := map[string]any{
-		"data":  map[string]any{"type": dataType, "version": dataVersion, "proxies": []any{}, "accounts": []any{testDataAccount("JSON Name", "workspace-2", "user-2", "new@example.com")}},
-		"items": []any{map[string]any{"index": 0, "action": "update", "existing_account_id": 10}},
+		"data": map[string]any{"type": dataType, "version": dataVersion, "proxies": []any{}, "accounts": []any{testDataAccount("JSON Name", "workspace-2", "user-2", "new@example.com")}},
 	}
-	recorder := postAccountDataJSON(t, router, "/api/v1/admin/accounts/data", payload)
-	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	result := executeDataImportPayload(t, svc, payload)
+	require.Equal(t, 1, result.AccountUpdated)
 	update := svc.updateInputs[10]
 	require.NotNil(t, update)
 	require.Empty(t, update.Name)
@@ -473,7 +421,6 @@ func TestImportDataUpdatePreservesUnspecifiedOperationalSettings(t *testing.T) {
 
 func TestImportDataCreatesTaxonomyOnlyOnCommitAndReusesCaseInsensitiveNames(t *testing.T) {
 	svc := newDataV2AdminService()
-	router := setupAccountDataV2Router(svc)
 	first := testDataAccount("First", "workspace-a", "user-a", "a@example.com")
 	first["management_folder"] = " Imported "
 	first["tags"] = []string{"Blue"}
@@ -483,14 +430,8 @@ func TestImportDataCreatesTaxonomyOnlyOnCommitAndReusesCaseInsensitiveNames(t *t
 	payload := map[string]any{"data": map[string]any{
 		"type": dataType, "version": dataVersion, "proxies": []any{}, "accounts": []any{first, second},
 	}}
-	preview := postAccountDataJSON(t, router, "/api/v1/admin/accounts/data/preview", payload)
-	require.Equal(t, http.StatusOK, preview.Code)
-	require.Empty(t, svc.folders)
-	require.Empty(t, svc.tags)
-	require.Zero(t, svc.taxonomyCalls)
-
-	commit := postAccountDataJSON(t, router, "/api/v1/admin/accounts/data", payload)
-	require.Equal(t, http.StatusOK, commit.Code, commit.Body.String())
+	result := executeDataImportPayload(t, svc, payload)
+	require.Equal(t, 2, result.AccountCreated)
 	require.Len(t, svc.folders, 1)
 	require.Len(t, svc.tags, 1)
 	require.Equal(t, 2, svc.taxonomyCalls)
@@ -498,7 +439,6 @@ func TestImportDataCreatesTaxonomyOnlyOnCommitAndReusesCaseInsensitiveNames(t *t
 
 func TestImportDataCreateTreatsZeroProxyOverrideAsDirect(t *testing.T) {
 	svc := newDataV2AdminService()
-	router := setupAccountDataV2Router(svc)
 	payload := map[string]any{
 		"data": map[string]any{
 			"type": dataType, "version": dataVersion, "proxies": []any{},
@@ -506,8 +446,8 @@ func TestImportDataCreateTreatsZeroProxyOverrideAsDirect(t *testing.T) {
 		},
 		"uniform_settings": map[string]any{"proxy_id": 0},
 	}
-	recorder := postAccountDataJSON(t, router, "/api/v1/admin/accounts/data", payload)
-	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	result := executeDataImportPayload(t, svc, payload)
+	require.Equal(t, 1, result.AccountCreated)
 	require.Len(t, svc.createdAccounts, 1)
 	require.Nil(t, svc.createdAccounts[0].ProxyID)
 }
@@ -515,22 +455,16 @@ func TestImportDataCreateTreatsZeroProxyOverrideAsDirect(t *testing.T) {
 func TestImportDataRemovesNewTaxonomyWhenAssignmentFails(t *testing.T) {
 	svc := newDataV2AdminService()
 	svc.failTaxonomy = errors.New("synthetic taxonomy failure")
-	router := setupAccountDataV2Router(svc)
 	account := testDataAccount("Created", "workspace-taxonomy", "user-taxonomy", "taxonomy@example.com")
 	account["management_folder"] = "New Folder"
 	account["tags"] = []string{"New Tag"}
 	payload := map[string]any{"data": map[string]any{
 		"type": dataType, "version": dataVersion, "proxies": []any{}, "accounts": []any{account},
 	}}
-	recorder := postAccountDataJSON(t, router, "/api/v1/admin/accounts/data", payload)
-	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
-	var response struct {
-		Data DataImportResult `json:"data"`
-	}
-	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
-	require.Equal(t, 1, response.Data.AccountCreated)
-	require.Len(t, response.Data.Items, 1)
-	require.Contains(t, response.Data.Items[0].Warnings, "account was created but taxonomy could not be applied: synthetic taxonomy failure")
+	result := executeDataImportPayload(t, svc, payload)
+	require.Equal(t, 1, result.AccountCreated)
+	require.Len(t, result.Items, 1)
+	require.Contains(t, result.Items[0].Warnings, "account was created but taxonomy could not be applied: synthetic taxonomy failure")
 	require.Empty(t, svc.folders)
 	require.Empty(t, svc.tags)
 }
@@ -538,7 +472,6 @@ func TestImportDataRemovesNewTaxonomyWhenAssignmentFails(t *testing.T) {
 func TestImportDataAllowsPartialSuccessWithPerItemResults(t *testing.T) {
 	svc := newDataV2AdminService()
 	svc.failNames["Broken"] = errors.New("synthetic create failure")
-	router := setupAccountDataV2Router(svc)
 	payload := map[string]any{"data": map[string]any{
 		"type": dataType, "version": dataVersion, "proxies": []any{},
 		"accounts": []any{
@@ -546,16 +479,11 @@ func TestImportDataAllowsPartialSuccessWithPerItemResults(t *testing.T) {
 			testDataAccount("Broken", "workspace-bad", "user-bad", "bad@example.com"),
 		},
 	}}
-	recorder := postAccountDataJSON(t, router, "/api/v1/admin/accounts/data", payload)
-	require.Equal(t, http.StatusOK, recorder.Code)
-	var response struct {
-		Data DataImportResult `json:"data"`
-	}
-	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
-	require.Equal(t, 1, response.Data.AccountCreated)
-	require.Equal(t, 1, response.Data.AccountFailed)
-	require.Len(t, response.Data.AccountIDs, 1)
-	require.Len(t, response.Data.Items, 2)
-	require.Equal(t, "failed", response.Data.Items[1].Action)
-	require.Contains(t, response.Data.Items[1].Error, "synthetic create failure")
+	result := executeDataImportPayload(t, svc, payload)
+	require.Equal(t, 1, result.AccountCreated)
+	require.Equal(t, 1, result.AccountFailed)
+	require.Len(t, result.AccountIDs, 1)
+	require.Len(t, result.Items, 2)
+	require.Equal(t, "failed", result.Items[1].Action)
+	require.Contains(t, result.Items[1].Error, "synthetic create failure")
 }

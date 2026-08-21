@@ -18,6 +18,7 @@ const stickySessionPrefix = "sticky_session:"
 const liveCallPrefix = "live:call:"
 const openAIRuntimeBreakerPrefix = "openai_runtime_breaker:"
 const cindyBalancePendingPrefix = "cindy_balance_pending:v2:"
+const cindyHealthEpisodePrefix = "cindy_health_episode:v1:"
 const openAIRuntimeBreakerHalfOpenRetention = 5 * time.Minute
 
 type gatewayCache struct {
@@ -157,9 +158,79 @@ var _ service.LiveCallStore = (*gatewayCache)(nil)
 var _ service.OpenAIRuntimeBreakerStore = (*gatewayCache)(nil)
 var _ service.OpenAIRuntimeBreakerLeaseStore = (*gatewayCache)(nil)
 var _ service.CindyBalancePendingStore = (*gatewayCache)(nil)
+var _ service.CindyHealthEpisodeStore = (*gatewayCache)(nil)
 
 func cindyBalancePendingKey(accountID int64) string {
 	return cindyBalancePendingPrefix + strconv.FormatInt(accountID, 10)
+}
+
+func cindyHealthEpisodeKey(accountID int64) string {
+	return cindyHealthEpisodePrefix + strconv.FormatInt(accountID, 10)
+}
+
+func cindyHealthEpisodeValue(episode service.CindyHealthEpisode) string {
+	return strconv.FormatInt(episode.Generation, 10) + ":" + episode.EpisodeID
+}
+
+var claimCindyHealthEpisodeScript = redis.NewScript(`
+	local function valid_generation(value)
+		return string.match(value, '^[1-9][0-9]*$') ~= nil
+	end
+	local function generation_greater(left, right)
+		if string.len(left) ~= string.len(right) then
+			return string.len(left) > string.len(right)
+		end
+		return left > right
+	end
+	if not valid_generation(ARGV[1]) then
+		return redis.error_reply('invalid Cindy health generation')
+	end
+	local current = redis.call('GET', KEYS[1])
+	if not current then
+		redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3])
+		return 1
+	end
+	local separator = string.find(current, ':', 1, true)
+	if not separator then
+		return redis.error_reply('invalid Cindy health episode')
+	end
+	local current_generation = string.sub(current, 1, separator - 1)
+	if not valid_generation(current_generation) then
+		return redis.error_reply('invalid Cindy health generation')
+	end
+	if generation_greater(ARGV[1], current_generation) then
+		redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3])
+		return 1
+	end
+	return 0
+`)
+
+func (c *gatewayCache) ClaimCindyHealthEpisode(ctx context.Context, episode service.CindyHealthEpisode, ttl time.Duration) (bool, error) {
+	if c == nil || c.rdb == nil || episode.AccountID <= 0 || episode.Generation <= 0 ||
+		strings.TrimSpace(episode.EpisodeID) == "" || ttl <= 0 {
+		return false, errors.New("invalid Cindy health episode")
+	}
+	result, err := claimCindyHealthEpisodeScript.Run(
+		ctx, c.rdb, []string{cindyHealthEpisodeKey(episode.AccountID)},
+		strconv.FormatInt(episode.Generation, 10), cindyHealthEpisodeValue(episode), ttl.Milliseconds(),
+	).Int()
+	return result == 1, err
+}
+
+var clearCindyHealthEpisodeIfMatchScript = redis.NewScript(`
+	if redis.call('GET', KEYS[1]) ~= ARGV[1] then
+		return 0
+	end
+	return redis.call('DEL', KEYS[1])
+`)
+
+func (c *gatewayCache) ClearCindyHealthEpisodeIfMatch(ctx context.Context, episode service.CindyHealthEpisode) error {
+	if c == nil || c.rdb == nil || episode.AccountID <= 0 || episode.Generation <= 0 || strings.TrimSpace(episode.EpisodeID) == "" {
+		return errors.New("invalid Cindy health episode")
+	}
+	return clearCindyHealthEpisodeIfMatchScript.Run(
+		ctx, c.rdb, []string{cindyHealthEpisodeKey(episode.AccountID)}, cindyHealthEpisodeValue(episode),
+	).Err()
 }
 
 func (c *gatewayCache) MarkCindyBalancePending(ctx context.Context, accountID int64, credentialsFingerprint string) error {
@@ -649,6 +720,48 @@ func (c *gatewayCache) ClearAllOpenAIRuntimeBreakers(ctx context.Context, accoun
 		return nil
 	}
 	return clearAllOpenAIRuntimeBreakersScript.Run(ctx, c.rdb, []string{openAIRuntimeBreakerIndexKey(accountID)}).Err()
+}
+
+const reasoningContentPrefix = "reasoning_content:"
+
+// reasoningContentDefaultTTL 是 reasoning 缓存的默认过期时间。Codex 会话可能
+// 跨多天恢复，取 7 天；调用方传入非正 TTL 时兜底。
+const reasoningContentDefaultTTL = 7 * 24 * time.Hour
+
+// SetReasoningContent 按 reasoning item id 缓存 reasoning 全文。
+// itemID 或 content 为空时直接返回 nil（无可缓存内容，属正常情况而非错误）。
+func (c *gatewayCache) SetReasoningContent(ctx context.Context, itemID string, content string, ttl time.Duration) error {
+	if c == nil || c.rdb == nil {
+		return errors.New("gateway cache unavailable")
+	}
+	itemID = strings.TrimSpace(itemID)
+	if itemID == "" || content == "" {
+		return nil
+	}
+	if ttl <= 0 {
+		ttl = reasoningContentDefaultTTL
+	}
+	return c.rdb.Set(ctx, reasoningContentPrefix+itemID, content, ttl).Err()
+}
+
+// GetReasoningContent 返回缓存的 reasoning 全文；未命中返回
+// service.ErrReasoningContentNotFound。
+func (c *gatewayCache) GetReasoningContent(ctx context.Context, itemID string) (string, error) {
+	if c == nil || c.rdb == nil {
+		return "", errors.New("gateway cache unavailable")
+	}
+	itemID = strings.TrimSpace(itemID)
+	if itemID == "" {
+		return "", service.ErrReasoningContentNotFound
+	}
+	val, err := c.rdb.Get(ctx, reasoningContentPrefix+itemID).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return "", service.ErrReasoningContentNotFound
+		}
+		return "", err
+	}
+	return val, nil
 }
 
 const cyberSessionBlockPrefix = "cyber_session_block:"

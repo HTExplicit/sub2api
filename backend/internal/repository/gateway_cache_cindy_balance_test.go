@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/alicebob/miniredis/v2"
@@ -96,4 +97,46 @@ func TestGatewayCacheCindyBalancePendingCompareDeletePreservesNewerGeneration(t 
 	stored, err = cache.GetCindyBalancePendingFingerprint(ctx, accountID)
 	require.NoError(t, err)
 	require.Empty(t, stored)
+}
+
+func TestGatewayCacheCindyHealthEpisodeCASSeparatesGenerationAndEpisode(t *testing.T) {
+	server := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	cache := &gatewayCache{rdb: client}
+	ctx := context.Background()
+	oldEpisode := service.CindyHealthEpisode{AccountID: 77201, Generation: 4, EpisodeID: "old-episode"}
+	newEpisode := service.CindyHealthEpisode{AccountID: 77201, Generation: 5, EpisodeID: "new-episode"}
+
+	claimed, err := cache.ClaimCindyHealthEpisode(ctx, oldEpisode, 5*time.Minute)
+	require.NoError(t, err)
+	require.True(t, claimed)
+	claimed, err = cache.ClaimCindyHealthEpisode(ctx, oldEpisode, 5*time.Minute)
+	require.NoError(t, err)
+	require.False(t, claimed, "the same generation must have only one active episode")
+	claimed, err = cache.ClaimCindyHealthEpisode(ctx, newEpisode, 5*time.Minute)
+	require.NoError(t, err)
+	require.True(t, claimed, "a newer credential generation replaces stale work")
+
+	require.NoError(t, cache.ClearCindyHealthEpisodeIfMatch(ctx, oldEpisode))
+	require.True(t, server.Exists(cindyHealthEpisodeKey(oldEpisode.AccountID)), "old episode must not clear newer work")
+	require.NoError(t, cache.ClearCindyHealthEpisodeIfMatch(ctx, newEpisode))
+	require.False(t, server.Exists(cindyHealthEpisodeKey(oldEpisode.AccountID)))
+}
+
+func TestGatewayCacheCindyHealthEpisodeCASDoesNotRoundBigintGenerations(t *testing.T) {
+	server := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	cache := &gatewayCache{rdb: client}
+	ctx := context.Background()
+	oldEpisode := service.CindyHealthEpisode{AccountID: 77202, Generation: 9007199254740992, EpisodeID: "old-large"}
+	newEpisode := service.CindyHealthEpisode{AccountID: 77202, Generation: 9007199254740993, EpisodeID: "new-large"}
+
+	claimed, err := cache.ClaimCindyHealthEpisode(ctx, oldEpisode, time.Minute)
+	require.NoError(t, err)
+	require.True(t, claimed)
+	claimed, err = cache.ClaimCindyHealthEpisode(ctx, newEpisode, time.Minute)
+	require.NoError(t, err)
+	require.True(t, claimed, "adjacent BIGINT generations must remain distinct above 2^53")
 }

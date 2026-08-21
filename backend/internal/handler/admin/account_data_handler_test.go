@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -75,8 +74,6 @@ func setupAccountDataRouter() (*gin.Engine, *stubAdminService) {
 	)
 
 	router.GET("/api/v1/admin/accounts/data", h.ExportData)
-	router.POST("/api/v1/admin/accounts/data/preview", h.PreviewDataImport)
-	router.POST("/api/v1/admin/accounts/data", h.ImportData)
 	return router, adminSvc
 }
 
@@ -277,7 +274,7 @@ func TestExportDataSelectedIDsOverrideFilters(t *testing.T) {
 }
 
 func TestImportDataReusesProxyAndSkipsDefaultGroup(t *testing.T) {
-	router, adminSvc := setupAccountDataRouter()
+	_, adminSvc := setupAccountDataRouter()
 
 	adminSvc.proxies = []service.Proxy{
 		{
@@ -323,12 +320,8 @@ func TestImportDataReusesProxyAndSkipsDefaultGroup(t *testing.T) {
 		"skip_default_group_bind": true,
 	}
 
-	body, _ := json.Marshal(dataPayload)
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/data", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	router.ServeHTTP(rec, req)
-	require.Equal(t, http.StatusOK, rec.Code)
+	result := executeDataImportPayload(t, adminSvc, dataPayload)
+	require.Equal(t, 1, result.AccountCreated)
 
 	require.Len(t, adminSvc.createdProxies, 0)
 	require.Len(t, adminSvc.createdAccounts, 1)

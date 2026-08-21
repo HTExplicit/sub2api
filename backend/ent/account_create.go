@@ -95,6 +95,34 @@ func (_c *AccountCreate) SetPlatform(v string) *AccountCreate {
 	return _c
 }
 
+// SetWirePlatform sets the "wire_platform" field.
+func (_c *AccountCreate) SetWirePlatform(v string) *AccountCreate {
+	_c.mutation.SetWirePlatform(v)
+	return _c
+}
+
+// SetNillableWirePlatform sets the "wire_platform" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableWirePlatform(v *string) *AccountCreate {
+	if v != nil {
+		_c.SetWirePlatform(*v)
+	}
+	return _c
+}
+
+// SetProviderProfile sets the "provider_profile" field.
+func (_c *AccountCreate) SetProviderProfile(v string) *AccountCreate {
+	_c.mutation.SetProviderProfile(v)
+	return _c
+}
+
+// SetNillableProviderProfile sets the "provider_profile" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableProviderProfile(v *string) *AccountCreate {
+	if v != nil {
+		_c.SetProviderProfile(*v)
+	}
+	return _c
+}
+
 // SetType sets the "type" field.
 func (_c *AccountCreate) SetType(v string) *AccountCreate {
 	_c.mutation.SetType(v)
@@ -589,6 +617,14 @@ func (_c *AccountCreate) defaults() error {
 		v := account.DefaultUpdatedAt()
 		_c.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := _c.mutation.WirePlatform(); !ok {
+		v := account.DefaultWirePlatform
+		_c.mutation.SetWirePlatform(v)
+	}
+	if _, ok := _c.mutation.ProviderProfile(); !ok {
+		v := account.DefaultProviderProfile
+		_c.mutation.SetProviderProfile(v)
+	}
 	if _, ok := _c.mutation.Credentials(); !ok {
 		if account.DefaultCredentials == nil {
 			return fmt.Errorf("ent: uninitialized account.DefaultCredentials (forgotten import ent/runtime?)")
@@ -656,6 +692,22 @@ func (_c *AccountCreate) check() error {
 	if v, ok := _c.mutation.Platform(); ok {
 		if err := account.PlatformValidator(v); err != nil {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "Account.platform": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.WirePlatform(); !ok {
+		return &ValidationError{Name: "wire_platform", err: errors.New(`ent: missing required field "Account.wire_platform"`)}
+	}
+	if v, ok := _c.mutation.WirePlatform(); ok {
+		if err := account.WirePlatformValidator(v); err != nil {
+			return &ValidationError{Name: "wire_platform", err: fmt.Errorf(`ent: validator failed for field "Account.wire_platform": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.ProviderProfile(); !ok {
+		return &ValidationError{Name: "provider_profile", err: errors.New(`ent: missing required field "Account.provider_profile"`)}
+	}
+	if v, ok := _c.mutation.ProviderProfile(); ok {
+		if err := account.ProviderProfileValidator(v); err != nil {
+			return &ValidationError{Name: "provider_profile", err: fmt.Errorf(`ent: validator failed for field "Account.provider_profile": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.GetType(); !ok {
@@ -758,6 +810,14 @@ func (_c *AccountCreate) createSpec() (*Account, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Platform(); ok {
 		_spec.SetField(account.FieldPlatform, field.TypeString, value)
 		_node.Platform = value
+	}
+	if value, ok := _c.mutation.WirePlatform(); ok {
+		_spec.SetField(account.FieldWirePlatform, field.TypeString, value)
+		_node.WirePlatform = value
+	}
+	if value, ok := _c.mutation.ProviderProfile(); ok {
+		_spec.SetField(account.FieldProviderProfile, field.TypeString, value)
+		_node.ProviderProfile = value
 	}
 	if value, ok := _c.mutation.GetType(); ok {
 		_spec.SetField(account.FieldType, field.TypeString, value)
@@ -1099,6 +1159,30 @@ func (u *AccountUpsert) SetPlatform(v string) *AccountUpsert {
 // UpdatePlatform sets the "platform" field to the value that was provided on create.
 func (u *AccountUpsert) UpdatePlatform() *AccountUpsert {
 	u.SetExcluded(account.FieldPlatform)
+	return u
+}
+
+// SetWirePlatform sets the "wire_platform" field.
+func (u *AccountUpsert) SetWirePlatform(v string) *AccountUpsert {
+	u.Set(account.FieldWirePlatform, v)
+	return u
+}
+
+// UpdateWirePlatform sets the "wire_platform" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateWirePlatform() *AccountUpsert {
+	u.SetExcluded(account.FieldWirePlatform)
+	return u
+}
+
+// SetProviderProfile sets the "provider_profile" field.
+func (u *AccountUpsert) SetProviderProfile(v string) *AccountUpsert {
+	u.Set(account.FieldProviderProfile, v)
+	return u
+}
+
+// UpdateProviderProfile sets the "provider_profile" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateProviderProfile() *AccountUpsert {
+	u.SetExcluded(account.FieldProviderProfile)
 	return u
 }
 
@@ -1684,6 +1768,34 @@ func (u *AccountUpsertOne) SetPlatform(v string) *AccountUpsertOne {
 func (u *AccountUpsertOne) UpdatePlatform() *AccountUpsertOne {
 	return u.Update(func(s *AccountUpsert) {
 		s.UpdatePlatform()
+	})
+}
+
+// SetWirePlatform sets the "wire_platform" field.
+func (u *AccountUpsertOne) SetWirePlatform(v string) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetWirePlatform(v)
+	})
+}
+
+// UpdateWirePlatform sets the "wire_platform" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateWirePlatform() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateWirePlatform()
+	})
+}
+
+// SetProviderProfile sets the "provider_profile" field.
+func (u *AccountUpsertOne) SetProviderProfile(v string) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetProviderProfile(v)
+	})
+}
+
+// UpdateProviderProfile sets the "provider_profile" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateProviderProfile() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateProviderProfile()
 	})
 }
 
@@ -2511,6 +2623,34 @@ func (u *AccountUpsertBulk) SetPlatform(v string) *AccountUpsertBulk {
 func (u *AccountUpsertBulk) UpdatePlatform() *AccountUpsertBulk {
 	return u.Update(func(s *AccountUpsert) {
 		s.UpdatePlatform()
+	})
+}
+
+// SetWirePlatform sets the "wire_platform" field.
+func (u *AccountUpsertBulk) SetWirePlatform(v string) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetWirePlatform(v)
+	})
+}
+
+// UpdateWirePlatform sets the "wire_platform" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateWirePlatform() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateWirePlatform()
+	})
+}
+
+// SetProviderProfile sets the "provider_profile" field.
+func (u *AccountUpsertBulk) SetProviderProfile(v string) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetProviderProfile(v)
+	})
+}
+
+// UpdateProviderProfile sets the "provider_profile" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateProviderProfile() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateProviderProfile()
 	})
 }
 

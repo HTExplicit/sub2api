@@ -689,21 +689,21 @@ func TestResolveOpenAIMessagesDispatchMappedModel(t *testing.T) {
 				},
 			},
 		}
-		require.Equal(t, "gpt-5.4-mini", resolveOpenAIMessagesDispatchMappedModel(apiKey, "claude-sonnet-4-5-20250929"))
-		require.Equal(t, "gpt-5.6-sol", resolveOpenAIMessagesDispatchMappedModel(apiKey, "claude-fable-5"))
+		require.Equal(t, "gpt-5.4-mini", resolveOpenAIMessagesDispatchMappedModel(nil, apiKey, "claude-sonnet-4-5-20250929"))
+		require.Equal(t, "gpt-5.6-sol", resolveOpenAIMessagesDispatchMappedModel(nil, apiKey, "claude-fable-5"))
 	})
 
 	t.Run("uses_family_default_when_no_override", func(t *testing.T) {
 		apiKey := &service.APIKey{Group: &service.Group{}}
-		require.Equal(t, "gpt-5.4", resolveOpenAIMessagesDispatchMappedModel(apiKey, "claude-opus-4-6"))
-		require.Equal(t, "gpt-5.3-codex", resolveOpenAIMessagesDispatchMappedModel(apiKey, "claude-sonnet-4-5-20250929"))
-		require.Equal(t, "gpt-5.4-mini", resolveOpenAIMessagesDispatchMappedModel(apiKey, "claude-haiku-4-5-20251001"))
+		require.Equal(t, "gpt-5.4", resolveOpenAIMessagesDispatchMappedModel(nil, apiKey, "claude-opus-4-6"))
+		require.Equal(t, "gpt-5.3-codex", resolveOpenAIMessagesDispatchMappedModel(nil, apiKey, "claude-sonnet-4-5-20250929"))
+		require.Equal(t, "gpt-5.4-mini", resolveOpenAIMessagesDispatchMappedModel(nil, apiKey, "claude-haiku-4-5-20251001"))
 	})
 
 	t.Run("returns_empty_for_non_claude_or_missing_group", func(t *testing.T) {
-		require.Empty(t, resolveOpenAIMessagesDispatchMappedModel(nil, "claude-sonnet-4-5-20250929"))
-		require.Empty(t, resolveOpenAIMessagesDispatchMappedModel(&service.APIKey{}, "claude-sonnet-4-5-20250929"))
-		require.Empty(t, resolveOpenAIMessagesDispatchMappedModel(&service.APIKey{Group: &service.Group{}}, "gpt-5.4"))
+		require.Empty(t, resolveOpenAIMessagesDispatchMappedModel(nil, nil, "claude-sonnet-4-5-20250929"))
+		require.Empty(t, resolveOpenAIMessagesDispatchMappedModel(nil, &service.APIKey{}, "claude-sonnet-4-5-20250929"))
+		require.Empty(t, resolveOpenAIMessagesDispatchMappedModel(nil, &service.APIKey{Group: &service.Group{}}, "gpt-5.4"))
 	})
 
 	t.Run("grok_group_maps_claude_cli_model_to_grok_default", func(t *testing.T) {
@@ -715,8 +715,8 @@ func TestResolveOpenAIMessagesDispatchMappedModel(t *testing.T) {
 				Platform: service.PlatformGrok,
 			},
 		}
-		require.Equal(t, "grok-4.5", resolveOpenAIMessagesDispatchMappedModel(apiKey, "claude-sonnet-4-5"))
-		require.Empty(t, resolveOpenAIMessagesDispatchMappedModel(apiKey, "grok"))
+		require.Equal(t, "grok-4.5", resolveOpenAIMessagesDispatchMappedModel(nil, apiKey, "claude-sonnet-4-5"))
+		require.Empty(t, resolveOpenAIMessagesDispatchMappedModel(nil, apiKey, "grok"))
 	})
 
 	t.Run("does_not_fall_back_to_group_default_mapped_model", func(t *testing.T) {
@@ -725,8 +725,8 @@ func TestResolveOpenAIMessagesDispatchMappedModel(t *testing.T) {
 				DefaultMappedModel: "gpt-5.4",
 			},
 		}
-		require.Empty(t, resolveOpenAIMessagesDispatchMappedModel(apiKey, "gpt-5.4"))
-		require.Equal(t, "gpt-5.3-codex", resolveOpenAIMessagesDispatchMappedModel(apiKey, "claude-sonnet-4-5-20250929"))
+		require.Empty(t, resolveOpenAIMessagesDispatchMappedModel(nil, apiKey, "gpt-5.4"))
+		require.Equal(t, "gpt-5.3-codex", resolveOpenAIMessagesDispatchMappedModel(nil, apiKey, "claude-sonnet-4-5-20250929"))
 	})
 }
 
@@ -788,8 +788,10 @@ func TestOpenAIGatewayMessagesDispatchGateAllowsGrokGroups(t *testing.T) {
 
 func TestMessagesMixedGroupCindyUsesClaudeAliasNotLegacyGPTDispatch(t *testing.T) {
 	cindy := &service.Account{
-		Platform: service.PlatformOpenAI,
-		Type:     service.AccountTypeAPIKey,
+		Platform:        service.PlatformCindy,
+		WirePlatform:    service.WirePlatformOpenAI,
+		ProviderProfile: service.ProviderProfileCindyLaxaV1,
+		Type:            service.AccountTypeAPIKey,
 		Credentials: map[string]any{
 			"base_url": "https://api.laxarouter.ai",
 		},
@@ -871,7 +873,8 @@ func TestMessagesMixedGroupSelectedCindyForwardsNativeClaudeAlias(t *testing.T) 
 	cindyAccountID := int64(51041)
 	accounts := []service.Account{
 		{
-			ID: cindyAccountID, Name: "cindy", Platform: service.PlatformOpenAI,
+			ID: cindyAccountID, Name: "cindy", Platform: service.PlatformCindy,
+			WirePlatform: service.WirePlatformOpenAI, ProviderProfile: service.ProviderProfileCindyLaxaV1,
 			Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
 			Priority: 0, Concurrency: 0,
 			Credentials: map[string]any{
@@ -929,7 +932,8 @@ func TestMessagesMixedGroupSelectedCindyForwardsNativeClaudeAlias(t *testing.T) 
 		ID: 51043, GroupID: &groupID, Status: service.StatusActive,
 		User: &service.User{ID: 51044, Status: service.StatusActive},
 		Group: &service.Group{
-			ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive,
+			ID: groupID, Platform: service.PlatformCindy, WirePlatform: service.WirePlatformOpenAI,
+			ProviderProfile: service.ProviderProfileCindyLaxaV1, Status: service.StatusActive,
 			AllowMessagesDispatch: true, RateMultiplier: 1,
 		},
 	}
@@ -951,7 +955,8 @@ func TestImagesMixedGroupSelectedCindyRejectsUnverifiedControls(t *testing.T) {
 	groupID := int64(51060)
 	cindyAccountID := int64(51061)
 	repo := &openAIWSFailoverHandlerAccountRepoStub{accounts: []service.Account{{
-		ID: cindyAccountID, Name: "cindy", Platform: service.PlatformOpenAI,
+		ID: cindyAccountID, Name: "cindy", Platform: service.PlatformCindy,
+		WirePlatform: service.WirePlatformOpenAI, ProviderProfile: service.ProviderProfileCindyLaxaV1,
 		Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
 		Concurrency: 0,
 		Credentials: map[string]any{
@@ -993,7 +998,8 @@ func TestImagesMixedGroupSelectedCindyRejectsUnverifiedControls(t *testing.T) {
 		ID: 51062, GroupID: &groupID, Status: service.StatusActive,
 		User: &service.User{ID: 51063, Status: service.StatusActive},
 		Group: &service.Group{
-			ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive,
+			ID: groupID, Platform: service.PlatformCindy, WirePlatform: service.WirePlatformOpenAI,
+			ProviderProfile: service.ProviderProfileCindyLaxaV1, Status: service.StatusActive,
 			AllowImageGeneration: true, RateMultiplier: 1,
 		},
 	}
@@ -1056,7 +1062,8 @@ func TestImagesMixedGroupGeminiEditSelectsCindyAndForwardsLiveModel(t *testing.T
 	cindyAccountID := int64(51071)
 	repo := &openAIWSFailoverHandlerAccountRepoStub{accounts: []service.Account{
 		{
-			ID: cindyAccountID, Name: "cindy", Platform: service.PlatformOpenAI,
+			ID: cindyAccountID, Name: "cindy", Platform: service.PlatformCindy,
+			WirePlatform: service.WirePlatformOpenAI, ProviderProfile: service.ProviderProfileCindyLaxaV1,
 			Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
 			Concurrency: 0,
 			Credentials: map[string]any{"api_key": "sk-cindy-test", "base_url": "https://api.laxarouter.ai"},
@@ -1109,7 +1116,8 @@ func TestImagesMixedGroupGeminiEditSelectsCindyAndForwardsLiveModel(t *testing.T
 		ID: 51073, GroupID: &groupID, Status: service.StatusActive,
 		User: &service.User{ID: 51074, Status: service.StatusActive},
 		Group: &service.Group{
-			ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive,
+			ID: groupID, Platform: service.PlatformCindy, WirePlatform: service.WirePlatformOpenAI,
+			ProviderProfile: service.ProviderProfileCindyLaxaV1, Status: service.StatusActive,
 			AllowImageGeneration: true, RateMultiplier: 1,
 		},
 	}
@@ -1255,6 +1263,56 @@ func TestOpenAIResponses_RejectsMessageIDAsPreviousResponseID(t *testing.T) {
 
 	require.Equal(t, http.StatusBadRequest, w.Code)
 	require.Contains(t, w.Body.String(), "previous_response_id must be a response.id")
+}
+
+func TestOpenAIResponses_RejectsInvalidPreviousResponseIDTypesAndFormats(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{name: "number", value: `123`},
+		{name: "boolean", value: `true`},
+		{name: "object", value: `{"id":"resp_123"}`},
+		{name: "array", value: `["resp_123"]`},
+		{name: "unknown string", value: `"other_123"`},
+		{name: "empty response suffix", value: `"resp_"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			body := `{"model":"gpt-5.1","stream":false,"previous_response_id":` + tt.value + `,"input":"hello"}`
+			c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", strings.NewReader(body))
+			c.Request.Header.Set("Content-Type", "application/json")
+			groupID := int64(2)
+			c.Set(string(middleware.ContextKeyAPIKey), &service.APIKey{ID: 101, GroupID: &groupID, User: &service.User{ID: 1}})
+			c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 1, Concurrency: 1})
+			h := newOpenAIHandlerForPreviousResponseIDValidation(t, nil)
+			h.Responses(c)
+			require.Equal(t, http.StatusBadRequest, w.Code)
+			require.Contains(t, w.Body.String(), service.OpenAIContinuationAnchorValidationMessage)
+		})
+	}
+}
+
+func TestOpenAIResponses_TreatsNullAndBlankPreviousResponseIDAsNoAnchor(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, value := range []string{`null`, `""`, `"  "`} {
+		t.Run(value, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			body := `{"model":"gpt-5.1","stream":false,"previous_response_id":` + value + `,"input":"hello"}`
+			c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", strings.NewReader(body))
+			c.Request.Header.Set("Content-Type", "application/json")
+			groupID := int64(2)
+			c.Set(string(middleware.ContextKeyAPIKey), &service.APIKey{ID: 101, GroupID: &groupID, User: &service.User{ID: 1}})
+			c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 1, Concurrency: 1})
+			h := newOpenAIHandlerForPreviousResponseIDValidation(t, nil)
+			h.Responses(c)
+			require.NotContains(t, w.Body.String(), service.OpenAIContinuationAnchorValidationMessage)
+		})
+	}
 }
 
 func TestOpenAIResponses_AllowsResponseIDPastHTTPPrevalidation(t *testing.T) {
@@ -1516,6 +1574,46 @@ func TestOpenAIResponsesWebSocket_RejectsMessageIDAsPreviousResponseID(t *testin
 	require.ErrorAs(t, err, &closeErr)
 	require.Equal(t, coderws.StatusPolicyViolation, closeErr.Code)
 	require.Contains(t, strings.ToLower(closeErr.Reason), "previous_response_id")
+}
+
+func TestOpenAIResponsesWebSocket_RejectsInvalidPreviousResponseIDTypesAndFormats(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{name: "number", value: `123`},
+		{name: "boolean", value: `true`},
+		{name: "object", value: `{"id":"resp_123"}`},
+		{name: "array", value: `["resp_123"]`},
+		{name: "unknown string", value: `"other_123"`},
+		{name: "empty response suffix", value: `"resp_"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newOpenAIHandlerForPreviousResponseIDValidation(t, nil)
+			wsServer := newOpenAIWSHandlerTestServer(t, h, middleware.AuthSubject{UserID: 1, Concurrency: 1})
+			defer wsServer.Close()
+			dialCtx, cancelDial := context.WithTimeout(context.Background(), 3*time.Second)
+			clientConn, _, err := coderws.Dial(dialCtx, "ws"+strings.TrimPrefix(wsServer.URL, "http")+"/openai/v1/responses", nil)
+			cancelDial()
+			require.NoError(t, err)
+			defer func() { _ = clientConn.CloseNow() }()
+			payload := `{"type":"response.create","model":"gpt-5.1","stream":false,"previous_response_id":` + tt.value + `}`
+			writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
+			err = clientConn.Write(writeCtx, coderws.MessageText, []byte(payload))
+			cancelWrite()
+			require.NoError(t, err)
+			readCtx, cancelRead := context.WithTimeout(context.Background(), 3*time.Second)
+			_, _, err = clientConn.Read(readCtx)
+			cancelRead()
+			require.Error(t, err)
+			var closeErr coderws.CloseError
+			require.ErrorAs(t, err, &closeErr)
+			require.Equal(t, coderws.StatusPolicyViolation, closeErr.Code)
+			require.Equal(t, service.OpenAIContinuationAnchorValidationMessage, closeErr.Reason)
+		})
+	}
 }
 
 func TestOpenAIResponsesWebSocket_PreviousResponseIDKindLoggedBeforeAcquireFailure(t *testing.T) {

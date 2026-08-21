@@ -2,12 +2,33 @@ package service
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"testing"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
 )
+
+func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_StoreErrorFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(23)
+	cache := &openAIWSStateStoreTimeoutProbeCache{getErr: errors.New("redis unavailable")}
+	svc := &OpenAIGatewayService{
+		cache:              cache,
+		cfg:                newOpenAIWSV2TestConfig(),
+		openaiWSStateStore: NewOpenAIWSStateStore(cache),
+	}
+
+	selection, err := svc.SelectAccountByPreviousResponseID(ctx, &groupID, "resp_store_error", "gpt-5.6-sol", nil, false)
+
+	require.Nil(t, selection)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
+	require.Equal(t, http.StatusServiceUnavailable, failoverErr.ClientStatusCode)
+}
 
 func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_Hit(t *testing.T) {
 	ctx := context.Background()

@@ -169,18 +169,18 @@ func isRetryableCodexModelsManifestTransportError(err error) bool {
 }
 
 type codexModelsManifestRequest struct {
-	url                 string
-	headers             http.Header
-	proxyURL            string
-	accountID           int64
-	credentialAccountID int64
-	credentialAccount   *Account
-	accountConcurrency  int
-	useAPIKeyUpstream   bool
-	cindyCatalogEnabled bool
-	cindyCatalogVersion string
-	cindyImageEnabled   bool
-	projectCindyCatalog bool
+	url                        string
+	headers                    http.Header
+	proxyURL                   string
+	accountID                  int64
+	credentialAccountID        int64
+	credentialAccount          *Account
+	accountConcurrency         int
+	useAPIKeyUpstream          bool
+	cindyCatalogEnabled        bool
+	cindyCatalogVersion        string
+	cindyResponsesImageEnabled bool
+	projectCindyCatalog        bool
 }
 
 type codexModelsManifestCacheEntry struct {
@@ -359,17 +359,17 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 	}
 
 	request := codexModelsManifestRequest{
-		url:                 requestURL.String(),
-		headers:             headers,
-		proxyURL:            proxyURL,
-		accountID:           account.ID,
-		credentialAccountID: credAccount.ID,
-		credentialAccount:   credAccount,
-		accountConcurrency:  account.Concurrency,
-		useAPIKeyUpstream:   useAPIKeyUpstream,
-		cindyCatalogEnabled: CindyCapabilityCatalogFeatureEnabled(),
-		cindyCatalogVersion: CindyCapabilityCatalogVersion,
-		cindyImageEnabled:   CindyImageStudioFeatureEnabled(),
+		url:                        requestURL.String(),
+		headers:                    headers,
+		proxyURL:                   proxyURL,
+		accountID:                  account.ID,
+		credentialAccountID:        credAccount.ID,
+		credentialAccount:          credAccount,
+		accountConcurrency:         account.Concurrency,
+		useAPIKeyUpstream:          useAPIKeyUpstream,
+		cindyCatalogEnabled:        CindyCapabilityCatalogFeatureEnabled(),
+		cindyCatalogVersion:        CindyCapabilityCatalogVersion,
+		cindyResponsesImageEnabled: CindyResponsesImageBridgeFeatureEnabled(),
 		projectCindyCatalog: CindyCapabilityCatalogFeatureEnabled() &&
 			IsCindyAPIKeyAccount(credAccount.Platform, credAccount.Type, credAccount.Credentials),
 	}
@@ -626,7 +626,7 @@ type cindyCodexTruncationPolicy struct {
 }
 
 // cindyCodexModel mirrors every serialized field in the official
-// openai/codex rust-v0.146.0 ModelInfo. Fields represented by Rust Option are
+// openai/codex rust-v0.147.0 ModelInfo. Fields represented by Rust Option are
 // deliberately emitted as null to keep the local manifest stable and explicit.
 type cindyCodexModel struct {
 	Slug                              string                      `json:"slug"`
@@ -646,6 +646,8 @@ type cindyCodexModel struct {
 	BaseInstructions                  string                      `json:"base_instructions"`
 	ModelMessages                     any                         `json:"model_messages"`
 	IncludeSkillsUsageInstructions    bool                        `json:"include_skills_usage_instructions"`
+	IncludePluginUsageInstructions    bool                        `json:"include_plugin_usage_instructions"`
+	IncludeAppsUsageInstructions      bool                        `json:"include_apps_usage_instructions"`
 	SupportsReasoningSummaryParameter bool                        `json:"supports_reasoning_summary_parameter"`
 	DefaultReasoningSummary           string                      `json:"default_reasoning_summary"`
 	SupportVerbosity                  bool                        `json:"support_verbosity"`
@@ -665,6 +667,7 @@ type cindyCodexModel struct {
 	SupportsSearchTool                bool                        `json:"supports_search_tool"`
 	UseResponsesLite                  bool                        `json:"use_responses_lite"`
 	AutoReviewModelOverride           any                         `json:"auto_review_model_override"`
+	ModelSpecialty                    any                         `json:"model_specialty"`
 	ToolMode                          any                         `json:"tool_mode"`
 	MultiAgentVersion                 any                         `json:"multi_agent_version"`
 }
@@ -707,6 +710,8 @@ func newCindyCodexModel(capability CindyCapability, priority int) cindyCodexMode
 		ServiceTiers:                      []any{},
 		BaseInstructions:                  openai.CodexBaseInstructionsForModel(capability.PublicID),
 		IncludeSkillsUsageInstructions:    false,
+		IncludePluginUsageInstructions:    false,
+		IncludeAppsUsageInstructions:      false,
 		SupportsReasoningSummaryParameter: true,
 		DefaultReasoningSummary:           "auto",
 		SupportVerbosity:                  false,
@@ -716,6 +721,7 @@ func newCindyCodexModel(capability CindyCapability, priority int) cindyCodexMode
 		SupportsImageDetailOriginal:       false,
 		ContextWindow:                     contextWindow,
 		MaxContextWindow:                  contextWindow,
+		AutoCompactTokenLimit:             cindyCodexAutoCompactTokenLimitForModel(capability.PublicID),
 		EffectiveContextWindowPercent:     95,
 		ExperimentalSupportedTools:        []string{},
 		InputModalities:                   append([]string(nil), capability.InputModalities...),
@@ -727,11 +733,20 @@ func newCindyCodexModel(capability CindyCapability, priority int) cindyCodexMode
 func cindyCodexTruncationPolicyForModel(modelID string) cindyCodexTruncationPolicy {
 	switch modelID {
 	case "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra":
-		// Exact openai/codex rust-v0.146.0 models.json contract.
+		// Exact openai/codex rust-v0.147.0 models.json contract.
 		return cindyCodexTruncationPolicy{Mode: "tokens", Limit: 10000}
 	default:
-		// Official rust-v0.146.0 unknown-model fallback.
+		// Official rust-v0.147.0 unknown-model fallback.
 		return cindyCodexTruncationPolicy{Mode: "bytes", Limit: 10000}
+	}
+}
+
+func cindyCodexAutoCompactTokenLimitForModel(modelID string) any {
+	switch modelID {
+	case "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra":
+		return 900000
+	default:
+		return nil
 	}
 }
 
@@ -1043,14 +1058,14 @@ func buildCodexModelsManifestCacheKey(request codexModelsManifestRequest) string
 	hasher := sha256.New()
 	_, _ = fmt.Fprintf(
 		hasher,
-		"%d\n%d\n%s\n%s\ncindy-catalog:%t:%s\nimage-studio:%t\nproject-cindy:%t\n",
+		"%d\n%d\n%s\n%s\ncindy-catalog:%t:%s\nresponses-image-bridge:%t\nproject-cindy:%t\n",
 		request.accountID,
 		request.credentialAccountID,
 		request.proxyURL,
 		request.url,
 		request.cindyCatalogEnabled,
 		request.cindyCatalogVersion,
-		request.cindyImageEnabled,
+		request.cindyResponsesImageEnabled,
 		request.projectCindyCatalog,
 	)
 	headerNames := make([]string, 0, len(request.headers))

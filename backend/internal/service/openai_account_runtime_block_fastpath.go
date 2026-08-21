@@ -423,13 +423,14 @@ func isGrokOAuthAccount(account *Account) bool {
 }
 
 func isOpenAIAccount(account *Account) bool {
-	return account != nil && (account.Platform == PlatformOpenAI || account.Platform == PlatformGrok)
+	return account != nil && (account.Platform == PlatformOpenAI || account.Platform == PlatformGrok ||
+		hasCanonicalCindyProviderIdentity(account))
 }
 
 // handleOpenAIAccountUpstreamError expects canonicalModel to be the model used
 // for scheduling after applying account mapping exactly once.
 func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, canonicalModel ...string) bool {
-	cindyBalanceInsufficient := ClassifyCindyBalanceInsufficient(account, statusCode, responseBody) != CindyBalanceSignalNone
+	cindyHealthSignal := ClassifyCindyHealthSignal(account, statusCode, responseBody)
 	if account != nil && account.Platform == PlatformGrok && isGrokContentPolicyRejection(statusCode, responseBody) {
 		return false
 	}
@@ -437,21 +438,21 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	if s != nil {
 		scheduleOllamaCloudUsageActivity(s.deferredService, account)
 	}
-	if statusCode == http.StatusForbidden && account != nil &&
-		IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+	// Capacity shedding describes this request, not account health. Keep the
+	// account schedulable while the request-local retry budget handles recovery.
+	if account != nil && account.Platform == PlatformOpenAI && isOpenAIRequestScopedCapacityShed("", responseBody) {
+		return false
+	}
+	if cindyHealthSignal == CindyHealthSignalForbidden {
 		if hit, _, _ := detectOpenAICyberPolicy(responseBody); hit {
 			return false
 		}
-		if s == nil || s.rateLimitService == nil {
-			return false
+	}
+	if cindyHealthSignal != CindyHealthSignalNone {
+		if s != nil && s.cindyHealth != nil {
+			s.cindyHealth.ObserveCindyHealthSignal(ctx, account, cindyHealthSignal)
 		}
-		stateCtx, cancel := openAIAccountStateContext(ctx)
-		defer cancel()
-		// handleOpenAI403 owns the exact 10-minute cooldown / 3-strike disable
-		// policy and deliberately ignores HTML/WAF bodies. Call it directly so
-		// pool-mode compatibility cannot bypass Cindy's evidence-based 403 policy.
-		upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(responseBody)))
-		return s.rateLimitService.handleOpenAI403(stateCtx, account, upstreamMsg, responseBody)
+		return cindyHealthSignal == CindyHealthSignalExactBudget
 	}
 	if isOpenAIAccount(account) {
 		switch statusCode {
@@ -459,23 +460,11 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 			// Authentication and quota responses are handled exclusively by the
 			// request failover state: no same-account replay, runtime cooldown, then
 			// switch. Do not persist legacy schedulable/error state here.
-			if !cindyBalanceInsufficient {
-				return false
-			}
+			return false
 		}
 	}
 	stateCtx, cancel := openAIAccountStateContext(ctx)
 	defer cancel()
-	if cindyBalanceInsufficient {
-		if s == nil || s.rateLimitService == nil {
-			return false
-		}
-		shouldDisable := s.rateLimitService.HandleUpstreamError(stateCtx, account, statusCode, headers, responseBody)
-		if shouldDisable && account.CindyBalanceInsufficientAt != nil {
-			s.BlockAccountScheduling(account, time.Time{}, "cindy_balance_insufficient")
-		}
-		return shouldDisable
-	}
 
 	if account != nil && account.Platform == PlatformOpenAI && isOpenAIContextWindowError("", responseBody) {
 		return false

@@ -223,6 +223,34 @@ func (_u *GroupUpdate) SetNillablePlatform(v *string) *GroupUpdate {
 	return _u
 }
 
+// SetWirePlatform sets the "wire_platform" field.
+func (_u *GroupUpdate) SetWirePlatform(v string) *GroupUpdate {
+	_u.mutation.SetWirePlatform(v)
+	return _u
+}
+
+// SetNillableWirePlatform sets the "wire_platform" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableWirePlatform(v *string) *GroupUpdate {
+	if v != nil {
+		_u.SetWirePlatform(*v)
+	}
+	return _u
+}
+
+// SetProviderProfile sets the "provider_profile" field.
+func (_u *GroupUpdate) SetProviderProfile(v string) *GroupUpdate {
+	_u.mutation.SetProviderProfile(v)
+	return _u
+}
+
+// SetNillableProviderProfile sets the "provider_profile" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableProviderProfile(v *string) *GroupUpdate {
+	if v != nil {
+		_u.SetProviderProfile(*v)
+	}
+	return _u
+}
+
 // SetSubscriptionType sets the "subscription_type" field.
 func (_u *GroupUpdate) SetSubscriptionType(v string) *GroupUpdate {
 	_u.mutation.SetSubscriptionType(v)
@@ -1452,6 +1480,16 @@ func (_u *GroupUpdate) check() error {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "Group.platform": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.WirePlatform(); ok {
+		if err := group.WirePlatformValidator(v); err != nil {
+			return &ValidationError{Name: "wire_platform", err: fmt.Errorf(`ent: validator failed for field "Group.wire_platform": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.ProviderProfile(); ok {
+		if err := group.ProviderProfileValidator(v); err != nil {
+			return &ValidationError{Name: "provider_profile", err: fmt.Errorf(`ent: validator failed for field "Group.provider_profile": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.SubscriptionType(); ok {
 		if err := group.SubscriptionTypeValidator(v); err != nil {
 			return &ValidationError{Name: "subscription_type", err: fmt.Errorf(`ent: validator failed for field "Group.subscription_type": %w`, err)}
@@ -1552,6 +1590,12 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.Platform(); ok {
 		_spec.SetField(group.FieldPlatform, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.WirePlatform(); ok {
+		_spec.SetField(group.FieldWirePlatform, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ProviderProfile(); ok {
+		_spec.SetField(group.FieldProviderProfile, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.SubscriptionType(); ok {
 		_spec.SetField(group.FieldSubscriptionType, field.TypeString, value)
@@ -2340,6 +2384,34 @@ func (_u *GroupUpdateOne) SetPlatform(v string) *GroupUpdateOne {
 func (_u *GroupUpdateOne) SetNillablePlatform(v *string) *GroupUpdateOne {
 	if v != nil {
 		_u.SetPlatform(*v)
+	}
+	return _u
+}
+
+// SetWirePlatform sets the "wire_platform" field.
+func (_u *GroupUpdateOne) SetWirePlatform(v string) *GroupUpdateOne {
+	_u.mutation.SetWirePlatform(v)
+	return _u
+}
+
+// SetNillableWirePlatform sets the "wire_platform" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableWirePlatform(v *string) *GroupUpdateOne {
+	if v != nil {
+		_u.SetWirePlatform(*v)
+	}
+	return _u
+}
+
+// SetProviderProfile sets the "provider_profile" field.
+func (_u *GroupUpdateOne) SetProviderProfile(v string) *GroupUpdateOne {
+	_u.mutation.SetProviderProfile(v)
+	return _u
+}
+
+// SetNillableProviderProfile sets the "provider_profile" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableProviderProfile(v *string) *GroupUpdateOne {
+	if v != nil {
+		_u.SetProviderProfile(*v)
 	}
 	return _u
 }
@@ -3586,6 +3658,16 @@ func (_u *GroupUpdateOne) check() error {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "Group.platform": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.WirePlatform(); ok {
+		if err := group.WirePlatformValidator(v); err != nil {
+			return &ValidationError{Name: "wire_platform", err: fmt.Errorf(`ent: validator failed for field "Group.wire_platform": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.ProviderProfile(); ok {
+		if err := group.ProviderProfileValidator(v); err != nil {
+			return &ValidationError{Name: "provider_profile", err: fmt.Errorf(`ent: validator failed for field "Group.provider_profile": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.SubscriptionType(); ok {
 		if err := group.SubscriptionTypeValidator(v); err != nil {
 			return &ValidationError{Name: "subscription_type", err: fmt.Errorf(`ent: validator failed for field "Group.subscription_type": %w`, err)}
@@ -3703,6 +3785,12 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	}
 	if value, ok := _u.mutation.Platform(); ok {
 		_spec.SetField(group.FieldPlatform, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.WirePlatform(); ok {
+		_spec.SetField(group.FieldWirePlatform, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ProviderProfile(); ok {
+		_spec.SetField(group.FieldProviderProfile, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.SubscriptionType(); ok {
 		_spec.SetField(group.FieldSubscriptionType, field.TypeString, value)

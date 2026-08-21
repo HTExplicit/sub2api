@@ -22,6 +22,7 @@ const (
 	OpenAIAlphaSearchBridgeUnavailableCode          = "web_search_unavailable"
 	OpenAIAlphaSearchBridgeUnavailableClientMessage = "Web search is temporarily unavailable"
 	openAIAlphaSearchBridgeUnavailableReason        = GatewayFailureReason("openai_alpha_search_bridge_unavailable")
+	cindyAlphaSearchMessagesFallbackReason          = GatewayFailureReason("cindy_alpha_search_messages_fallback")
 )
 
 // ForwardAlphaSearch proxies Codex standalone web search without binding the
@@ -39,13 +40,17 @@ func (s *OpenAIGatewayService) ForwardAlphaSearch(ctx context.Context, c *gin.Co
 	if modelResult.Type != gjson.String || requestedModel == "" {
 		return nil, fmt.Errorf("model is required")
 	}
-	strictCindy := CindyCapabilityCatalogFeatureEnabled() &&
-		IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
-	if strictCindy && requestedModel != CindyWebSearchModel {
-		return nil, NewOpenAIAlphaSearchBridgeUnavailableError(http.StatusNotFound, nil, nil)
+	strictCindy := IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+	upstreamModel := ""
+	if strictCindy {
+		var available bool
+		upstreamModel, available = CindyAlphaSearchUpstreamModel(requestedModel)
+		if !available {
+			return nil, NewOpenAIAlphaSearchBridgeUnavailableError(http.StatusNotFound, nil, nil)
+		}
+	} else {
+		upstreamModel = normalizeOpenAIModelForUpstream(account, account.GetMappedModel(requestedModel))
 	}
-
-	upstreamModel := normalizeOpenAIModelForUpstream(account, account.GetMappedModel(requestedModel))
 	if upstreamModel != "" && upstreamModel != requestedModel {
 		body = ReplaceModelInBody(body, upstreamModel)
 	}
@@ -65,6 +70,12 @@ func (s *OpenAIGatewayService) ForwardAlphaSearch(ctx context.Context, c *gin.Co
 		proxyURL = account.Proxy.URL()
 	}
 	if strictCindy {
+		result, forwardErr := s.forwardAlphaSearchViaResponsesWebSearch(
+			ctx, c, account, body, token, proxyURL, requestedModel, upstreamModel,
+		)
+		if !isCindyAlphaSearchMessagesFallback(forwardErr) {
+			return result, forwardErr
+		}
 		return s.forwardCindyAlphaSearchViaNativeMessages(
 			ctx, c, account, body, token, proxyURL, requestedModel, upstreamModel,
 		)
@@ -199,12 +210,31 @@ func (s *OpenAIGatewayService) forwardCindyAlphaSearchViaNativeMessages(
 		return nil, newCindyAlphaSearchBalanceFailover(resp, respBody)
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, NewOpenAIAlphaSearchBridgeUnavailableError(resp.StatusCode, resp.Header, respBody)
+		upstreamMessage := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(respBody)))
+		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed ||
+			isCindyAlphaSearchResponsesCapabilityError(resp.StatusCode, upstreamMessage, respBody) {
+			return nil, NewOpenAIAlphaSearchBridgeUnavailableError(resp.StatusCode, resp.Header, respBody)
+		}
+		resp.Body = io.NopCloser(bytes.NewReader(respBody))
+		shouldDisable := s.handleFailoverSideEffects(ctx, resp, account, respBody, upstreamModel)
+		return nil, &UpstreamFailoverError{
+			StatusCode:             resp.StatusCode,
+			ResponseBody:           respBody,
+			ResponseHeaders:        resp.Header.Clone(),
+			RetryableOnSameAccount: !shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
+			Scope:                  GatewayFailureScopeAccount,
+			NextAccountAction:      NextAccountRetry,
+		}
 	}
 
 	parsed, err := parseCindyAlphaSearchMessagesResponse(respBody)
 	if err != nil || parsed.WebSearchCalls < 1 {
-		return nil, NewOpenAIAlphaSearchBridgeUnavailableError(http.StatusBadGateway, resp.Header, nil)
+		return nil, &UpstreamFailoverError{
+			StatusCode:        http.StatusBadGateway,
+			ResponseHeaders:   resp.Header.Clone(),
+			Scope:             GatewayFailureScopeAccount,
+			NextAccountAction: NextAccountRetry,
+		}
 	}
 	if !account.IsShadow() {
 		s.UpdateCodexUsageSnapshotFromHeaders(ctx, account.ID, resp.Header)
@@ -433,6 +463,7 @@ func (s *OpenAIGatewayService) forwardAlphaSearchViaResponsesWebSearch(
 	requestedModel string,
 	upstreamModel string,
 ) (*OpenAIForwardResult, error) {
+	strictCindy := IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
 	if upstreamModel == "" {
 		upstreamModel = requestedModel
 	}
@@ -469,19 +500,32 @@ func (s *OpenAIGatewayService) forwardAlphaSearchViaResponsesWebSearch(
 			upstreamMessage,
 			respBody,
 		)
+		cindyCapabilityError := isCindyAlphaSearchResponsesCapabilityError(
+			resp.StatusCode,
+			upstreamMessage,
+			respBody,
+		)
+		if strictCindy && (resp.StatusCode == http.StatusNotFound ||
+			resp.StatusCode == http.StatusMethodNotAllowed || cindyCapabilityError) {
+			return nil, newCindyAlphaSearchMessagesFallbackError(resp.StatusCode, resp.Header, respBody)
+		}
 		if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMessage, respBody) ||
 			bridgeCapabilityError {
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
-			// Responses bridge is an optional tool adapter. Any failure is scoped to
-			// this bridge request and must not mutate the model account's health.
+			shouldDisable := false
+			if strictCindy {
+				shouldDisable = s.handleFailoverSideEffects(ctx, resp, account, respBody, upstreamModel)
+			}
+			// Legacy OpenAI-compatible bridge failures stay health-neutral. First-class
+			// Cindy operational failures retain the normal account health path.
 			failoverErr := &UpstreamFailoverError{
 				StatusCode:                   resp.StatusCode,
 				ResponseBody:                 respBody,
 				ResponseHeaders:              resp.Header.Clone(),
-				RetryableOnSameAccount:       account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
+				RetryableOnSameAccount:       !shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
 				Scope:                        GatewayFailureScopeAccount,
 				NextAccountAction:            NextAccountRetry,
-				SuppressAccountHealthPenalty: true,
+				SuppressAccountHealthPenalty: !strictCindy,
 			}
 			if bridgeCapabilityError {
 				failoverErr.Reason = openAIAlphaSearchBridgeUnavailableReason
@@ -505,9 +549,18 @@ func (s *OpenAIGatewayService) forwardAlphaSearchViaResponsesWebSearch(
 	if !account.IsShadow() {
 		s.UpdateCodexUsageSnapshotFromHeaders(ctx, account.ID, resp.Header)
 	}
-	alphaRespBody, hasSearchEvidence, err := openAIAlphaSearchResponseFromResponsesSSE(respBody)
+	var alphaRespBody []byte
+	var hasSearchEvidence bool
+	if strictCindy {
+		alphaRespBody, hasSearchEvidence, err = openAICindyAlphaSearchResponseFromResponsesSSE(respBody)
+	} else {
+		alphaRespBody, hasSearchEvidence, err = openAIAlphaSearchResponseFromResponsesSSE(respBody)
+	}
 	if err != nil {
 		return nil, err
+	}
+	if strictCindy && !hasSearchEvidence {
+		return nil, newCindyAlphaSearchMessagesFallbackError(http.StatusBadGateway, resp.Header, nil)
 	}
 	if account.IsOpenAIApiKey() && !hasSearchEvidence {
 		return nil, NewOpenAIAlphaSearchBridgeUnavailableError(
@@ -576,7 +629,8 @@ func newCindyAlphaSearchBalanceFailover(resp *http.Response, body []byte) *Upstr
 
 func (s *OpenAIGatewayService) buildOpenAIAlphaSearchResponsesWebSearchRequest(ctx context.Context, c *gin.Context, account *Account, alphaBody []byte, body []byte, token string) (*http.Request, error) {
 	targetURL := chatgptCodexURL
-	if account.IsOpenAIApiKey() {
+	apiKeyUpstream := account.IsOpenAIApiKey() || IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+	if apiKeyUpstream {
 		baseURL := account.GetOpenAIBaseURL()
 		if baseURL == "" {
 			targetURL = openaiPlatformAPIURL
@@ -605,7 +659,7 @@ func (s *OpenAIGatewayService) buildOpenAIAlphaSearchResponsesWebSearchRequest(c
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
-	if account.IsOpenAIApiKey() {
+	if apiKeyUpstream {
 		if customUA := account.GetOpenAIUserAgent(); customUA != "" {
 			req.Header.Set("User-Agent", customUA)
 		} else if userAgent := openAIAlphaSearchInboundHeader(c, "User-Agent"); userAgent != "" {
@@ -919,7 +973,15 @@ func shouldApplyOpenAIAlphaSearchAccountErrorSideEffects(statusCode int) bool {
 }
 
 func openAIAlphaSearchResponseFromResponsesSSE(body []byte) ([]byte, bool, error) {
-	output, results, hasWebSearchCall := parseOpenAIResponsesSSEForAlphaSearch(body)
+	return openAIAlphaSearchResponseFromResponsesSSEMode(body, false)
+}
+
+func openAICindyAlphaSearchResponseFromResponsesSSE(body []byte) ([]byte, bool, error) {
+	return openAIAlphaSearchResponseFromResponsesSSEMode(body, true)
+}
+
+func openAIAlphaSearchResponseFromResponsesSSEMode(body []byte, strictEvidence bool) ([]byte, bool, error) {
+	output, results, hasWebSearchCall := parseOpenAIResponsesSSEForAlphaSearchMode(body, strictEvidence)
 	resp := map[string]any{
 		"output": output,
 	}
@@ -930,13 +992,26 @@ func openAIAlphaSearchResponseFromResponsesSSE(body []byte) ([]byte, bool, error
 	return encoded, hasWebSearchCall || len(results) > 0, err
 }
 
-func parseOpenAIResponsesSSEForAlphaSearch(body []byte) (string, []any, bool) {
+func parseOpenAIResponsesSSEForAlphaSearchMode(body []byte, strictEvidence bool) (string, []any, bool) {
 	text := strings.ReplaceAll(string(body), "\r\n", "\n")
 	var output strings.Builder
 	var completedResponse any
 	results := make([]any, 0)
 	seenURLs := make(map[string]struct{})
 	hasWebSearchCall := false
+	sawResponseInProgress := false
+	responseCompleted := false
+	responseFailed := false
+	recordResponseStatus := func(status string) {
+		switch strings.ToLower(strings.TrimSpace(status)) {
+		case "in_progress", "incomplete":
+			sawResponseInProgress = true
+		case "completed":
+			responseCompleted = true
+		case "failed", "cancelled":
+			responseFailed = true
+		}
+	}
 
 	for _, block := range strings.Split(text, "\n\n") {
 		data := openAIAlphaSearchSSEData(block)
@@ -950,41 +1025,62 @@ func parseOpenAIResponsesSSEForAlphaSearch(body []byte) (string, []any, bool) {
 		if delta, _ := event["delta"].(string); delta != "" && event["type"] == "response.output_text.delta" {
 			_, _ = output.WriteString(delta)
 		}
-		if event["type"] == "response.completed" {
+		eventType, _ := event["type"].(string)
+		switch eventType {
+		case "response.in_progress":
+			sawResponseInProgress = true
+		case "response.completed":
+			responseCompleted = true
 			completedResponse = event["response"]
+		case "response.failed":
+			responseFailed = true
 		}
-		if containsOpenAIAlphaSearchWebSearchCall(event) {
+		if response, ok := event["response"].(map[string]any); ok {
+			if status, ok := response["status"].(string); ok {
+				recordResponseStatus(status)
+			}
+		} else if eventType == "" || eventType == "response" {
+			if status, ok := event["status"].(string); ok {
+				recordResponseStatus(status)
+			}
+		}
+		if containsOpenAIAlphaSearchWebSearchCallMode(event, strictEvidence) {
 			hasWebSearchCall = true
 		}
-		collectOpenAIAlphaSearchURLCitations(event, &results, seenURLs)
+		collectOpenAIAlphaSearchURLCitationsMode(event, &results, seenURLs, strictEvidence)
 	}
 
 	out := output.String()
 	if strings.TrimSpace(out) == "" && completedResponse != nil {
 		out = extractOpenAIResponsesCompletedText(completedResponse)
-		if containsOpenAIAlphaSearchWebSearchCall(completedResponse) {
+		if containsOpenAIAlphaSearchWebSearchCallMode(completedResponse, strictEvidence) {
 			hasWebSearchCall = true
 		}
-		collectOpenAIAlphaSearchURLCitations(completedResponse, &results, seenURLs)
+		collectOpenAIAlphaSearchURLCitationsMode(completedResponse, &results, seenURLs, strictEvidence)
+	}
+	if strictEvidence && (responseFailed || (sawResponseInProgress && !responseCompleted)) {
+		return out, nil, false
 	}
 	return out, results, hasWebSearchCall
 }
 
-func containsOpenAIAlphaSearchWebSearchCall(value any) bool {
+func containsOpenAIAlphaSearchWebSearchCallMode(value any, strictEvidence bool) bool {
 	switch typed := value.(type) {
 	case map[string]any:
 		itemType, _ := typed["type"].(string)
-		if itemType == "web_search_call" || strings.HasPrefix(itemType, "response.web_search_call.") {
+		status, _ := typed["status"].(string)
+		if (!strictEvidence && (itemType == "web_search_call" || strings.HasPrefix(itemType, "response.web_search_call."))) ||
+			(strictEvidence && ((itemType == "web_search_call" && status == "completed") || itemType == "response.web_search_call.completed")) {
 			return true
 		}
 		for _, child := range typed {
-			if containsOpenAIAlphaSearchWebSearchCall(child) {
+			if containsOpenAIAlphaSearchWebSearchCallMode(child, strictEvidence) {
 				return true
 			}
 		}
 	case []any:
 		for _, child := range typed {
-			if containsOpenAIAlphaSearchWebSearchCall(child) {
+			if containsOpenAIAlphaSearchWebSearchCallMode(child, strictEvidence) {
 				return true
 			}
 		}
@@ -1005,6 +1101,49 @@ func isOpenAIAlphaSearchBridgeCapabilityError(statusCode int, upstreamMessage st
 		message = strings.ToLower(strings.TrimSpace(gjson.GetBytes(upstreamBody, "error.message").String()))
 	}
 	return strings.Contains(message, "tool")
+}
+
+func isCindyAlphaSearchResponsesCapabilityError(statusCode int, upstreamMessage string, upstreamBody []byte) bool {
+	if statusCode != http.StatusBadRequest {
+		return false
+	}
+	errorType := strings.ToLower(strings.TrimSpace(gjson.GetBytes(upstreamBody, "error.type").String()))
+	if errorType != "invalid_request_error" {
+		return false
+	}
+	errorCode := strings.ToLower(strings.TrimSpace(gjson.GetBytes(upstreamBody, "error.code").String()))
+	if errorCode == "unsupported_tool" || errorCode == "tool_not_supported" {
+		return true
+	}
+	message := strings.ToLower(strings.TrimSpace(upstreamMessage))
+	if message == "" {
+		message = strings.ToLower(strings.TrimSpace(gjson.GetBytes(upstreamBody, "error.message").String()))
+	}
+	return strings.Contains(message, "tool") &&
+		(strings.Contains(message, "unsupported") ||
+			strings.Contains(message, "not supported") ||
+			strings.Contains(message, "unavailable"))
+}
+
+func newCindyAlphaSearchMessagesFallbackError(
+	statusCode int,
+	responseHeaders http.Header,
+	responseBody []byte,
+) *UpstreamFailoverError {
+	return &UpstreamFailoverError{
+		StatusCode:                   statusCode,
+		ResponseBody:                 responseBody,
+		ResponseHeaders:              responseHeaders.Clone(),
+		Scope:                        GatewayFailureScopeAccount,
+		Reason:                       cindyAlphaSearchMessagesFallbackReason,
+		NextAccountAction:            NextAccountRetry,
+		SuppressAccountHealthPenalty: true,
+	}
+}
+
+func isCindyAlphaSearchMessagesFallback(err error) bool {
+	failoverErr, ok := err.(*UpstreamFailoverError)
+	return ok && failoverErr.Reason == cindyAlphaSearchMessagesFallbackReason
 }
 
 func NewOpenAIAlphaSearchBridgeUnavailableError(
@@ -1069,11 +1208,12 @@ func extractOpenAIResponsesCompletedText(response any) string {
 	return b.String()
 }
 
-func collectOpenAIAlphaSearchURLCitations(value any, results *[]any, seen map[string]struct{}) {
+func collectOpenAIAlphaSearchURLCitationsMode(value any, results *[]any, seen map[string]struct{}, strictEvidence bool) {
 	switch typed := value.(type) {
 	case map[string]any:
 		if typed["type"] == "url_citation" {
-			if urlValue, _ := typed["url"].(string); strings.TrimSpace(urlValue) != "" {
+			if urlValue, _ := typed["url"].(string); strings.TrimSpace(urlValue) != "" &&
+				(!strictEvidence || validOpenAIAlphaSearchHTTPURL(urlValue)) {
 				urlValue = strings.TrimSpace(urlValue)
 				if _, exists := seen[urlValue]; !exists {
 					seen[urlValue] = struct{}{}
@@ -1090,11 +1230,11 @@ func collectOpenAIAlphaSearchURLCitations(value any, results *[]any, seen map[st
 			}
 		}
 		for _, child := range typed {
-			collectOpenAIAlphaSearchURLCitations(child, results, seen)
+			collectOpenAIAlphaSearchURLCitationsMode(child, results, seen, strictEvidence)
 		}
 	case []any:
 		for _, child := range typed {
-			collectOpenAIAlphaSearchURLCitations(child, results, seen)
+			collectOpenAIAlphaSearchURLCitationsMode(child, results, seen, strictEvidence)
 		}
 	}
 }

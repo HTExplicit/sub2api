@@ -32,7 +32,7 @@ func TestAdminServiceHydrateCindyBalanceProbeLatest(t *testing.T) {
 	staleOutcome := "stale"
 	accounts := []Account{
 		{
-			ID: 7, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+			ID: 7, Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1, Type: AccountTypeAPIKey,
 			Credentials: map[string]any{"base_url": "https://api.laxarouter.ai", "api_key": "not-returned"},
 		},
 		{
@@ -58,7 +58,7 @@ func TestAdminServiceHydrateCindyBalanceProbeLatestPropagatesRepositoryError(t *
 	wantErr := errors.New("probe query failed")
 	repo := &adminAccountCindyProbeRepositoryStub{err: wantErr}
 	accounts := []Account{{
-		ID: 7, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		ID: 7, Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1, Type: AccountTypeAPIKey,
 		Credentials: map[string]any{"base_url": "https://api.laxarouter.ai", "api_key": "not-returned"},
 	}}
 

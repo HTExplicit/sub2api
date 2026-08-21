@@ -3,6 +3,8 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 WORKFLOW="$ROOT/.github/workflows/production-deploy.yml"
+DOWNSTREAM_RELEASE_WORKFLOW="$ROOT/.github/workflows/downstream-release.yml"
+GENERIC_RELEASE_WORKFLOW="$ROOT/.github/workflows/release.yml"
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -89,9 +91,11 @@ OPERATION=deploy \
 RELEASE_TAG=v0.1.177-codexrip.7 \
 EXPECTED_CURRENT_RELEASE_TAG= \
 CONFIRMATION=DEPLOY \
-CINDY_BALANCE_DETECTION=true \
+CINDY_HEALTH=true \
 CINDY_CAPABILITY_CATALOG=false \
+CINDY_SEARCH=false \
 IMAGE_STUDIO=false \
+CINDY_RESPONSES_IMAGE_BRIDGE=false \
 GITHUB_OUTPUT="$tmpdir/github-output" \
 bash "$resolve_script" >"$tmpdir/resolve-output" 2>&1
 resolve_status=$?
@@ -150,24 +154,30 @@ case "$image_ref" in
     tag=v0.1.177-codexrip.6
     digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     revision=1111111111111111111111111111111111111111
+    platform_v1=false
     ;;
   *:0.1.177-codexrip.7*)
     tag=v0.1.177-codexrip.7
     digest=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
     revision=2222222222222222222222222222222222222222
+    platform_v1=true
     ;;
   *:0.1.177-codexrip.8*)
     tag=v0.1.177-codexrip.8
     digest=sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
     revision=3333333333333333333333333333333333333333
+    platform_v1=true
     ;;
   *) exit 3 ;;
 esac
 if [[ "${MOCK_OVERRIDE_TAG:-}" == "$tag" ]]; then
   digest=${MOCK_REGISTRY_DIGEST_OVERRIDE:-$digest}
   revision=${MOCK_IMAGE_REVISION_OVERRIDE:-$revision}
+  platform_v1=${MOCK_IMAGE_PLATFORM_V1_OVERRIDE:-$platform_v1}
 fi
-if [[ " $* " == *' --format '* ]]; then
+if [[ " $* " == *'io.github.htexplicit.cindy-platform-v1'* ]]; then
+  printf '%s\n' "$platform_v1"
+elif [[ " $* " == *' --format '* ]]; then
   printf '%s\n' "$revision"
 else
   printf 'Name: image\nDigest: %s\n' "$digest"
@@ -195,13 +205,16 @@ run_resolve() {
     MOCK_BODY_SOURCE_OVERRIDE="${MOCK_BODY_SOURCE_OVERRIDE:-}" \
     MOCK_REGISTRY_DIGEST_OVERRIDE="${MOCK_REGISTRY_DIGEST_OVERRIDE:-}" \
     MOCK_IMAGE_REVISION_OVERRIDE="${MOCK_IMAGE_REVISION_OVERRIDE:-}" \
+    MOCK_IMAGE_PLATFORM_V1_OVERRIDE="${MOCK_IMAGE_PLATFORM_V1_OVERRIDE:-}" \
     OPERATION="$operation" \
     RELEASE_TAG="$tag" \
     EXPECTED_CURRENT_RELEASE_TAG="$expected_current" \
     CONFIRMATION="$confirmation" \
-    CINDY_BALANCE_DETECTION=true \
+    CINDY_HEALTH=true \
     CINDY_CAPABILITY_CATALOG=false \
+    CINDY_SEARCH=false \
     IMAGE_STUDIO=false \
+    CINDY_RESPONSES_IMAGE_BRIDGE=false \
     GITHUB_OUTPUT="$tmpdir/github-output" \
     bash "$resolve_script" >"$tmpdir/resolve-output" 2>&1
 }
@@ -261,8 +274,10 @@ assert_ssh_not_invoked() {
 rollback_target_ref=ghcr.io/htexplicit/sub2api:0.1.177-codexrip.6@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 rollback_current_ref=ghcr.io/htexplicit/sub2api:0.1.177-codexrip.7@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 
-run_resolve deploy v0.1.177-codexrip.7 '' DEPLOY ||
+if ! run_resolve deploy v0.1.177-codexrip.7 '' DEPLOY; then
+  cat "$tmpdir/resolve-output" >&2
   fail 'valid deploy resolution did not execute successfully'
+fi
 grep -Fq "image_ref=$rollback_current_ref" "$tmpdir/github-output" ||
   fail 'deploy did not emit the Release-bound immutable image'
 grep -Fxq 'expected_current_image_ref=' "$tmpdir/github-output" ||
@@ -291,6 +306,11 @@ if run_resolve deploy v0.1.177-codexrip.7 '' DEPLOY; then
   fail 'immutable image was accepted when its OCI revision did not match the release tag commit'
 fi
 unset MOCK_IMAGE_REVISION_OVERRIDE
+MOCK_IMAGE_PLATFORM_V1_OVERRIDE=false
+if run_resolve deploy v0.1.177-codexrip.7 '' DEPLOY; then
+  fail 'immutable image without the Cindy platform-v1 capability label was accepted'
+fi
+unset MOCK_IMAGE_PLATFORM_V1_OVERRIDE
 MOCK_RELEASE_DRAFT_OVERRIDE=true
 if run_resolve deploy v0.1.177-codexrip.7 '' DEPLOY; then
   fail 'draft Release was accepted for production deploy'
@@ -312,38 +332,39 @@ MOCK_IMAGE_REVISION_OVERRIDE=4444444444444444444444444444444444444444
 if run_resolve rollback v0.1.177-codexrip.6 v0.1.177-codexrip.7 ROLLBACK; then
   fail 'rollback accepted an expected-current image with the wrong OCI revision'
 fi
-unset MOCK_IMAGE_REVISION_OVERRIDE MOCK_OVERRIDE_TAG
+unset MOCK_IMAGE_REVISION_OVERRIDE
+MOCK_IMAGE_PLATFORM_V1_OVERRIDE=false
+if run_resolve rollback v0.1.177-codexrip.6 v0.1.177-codexrip.7 ROLLBACK; then
+  fail 'rollback accepted an expected-current image without the platform-v1 capability label'
+fi
+unset MOCK_IMAGE_PLATFORM_V1_OVERRIDE MOCK_OVERRIDE_TAG
 if run_resolve rollback v0.1.177-codexrip.8 v0.1.177-codexrip.7 ROLLBACK; then
   fail 'rollback target newer than expected-current was accepted'
 fi
 
-run_apply deploy "$rollback_current_ref" '' 'cindy=true,true,false' ||
+run_apply deploy "$rollback_current_ref" '' 'cindy=true,true,true,false,false' ||
   fail 'valid deploy operation did not execute successfully'
-assert_ssh_invocation "deploy $rollback_current_ref cindy=true,true,false"
+assert_ssh_invocation "deploy $rollback_current_ref cindy=true,true,true,false,false"
 
-run_apply rollback "$rollback_target_ref" "$rollback_current_ref" 'cindy=true,false,false' ||
+run_apply rollback "$rollback_target_ref" "$rollback_current_ref" 'cindy=true,false,false,false,false' ||
   fail 'valid rollback operation did not execute successfully'
-assert_ssh_invocation "rollback $rollback_target_ref from=$rollback_current_ref cindy=true,false,false"
+assert_ssh_invocation "rollback $rollback_target_ref from=$rollback_current_ref cindy=true,false,false,false,false"
 
-if run_apply deploy "$rollback_current_ref" "$rollback_target_ref" 'cindy=true,true,false'; then
+if run_apply deploy "$rollback_current_ref" "$rollback_target_ref" 'cindy=true,true,true,false,false'; then
   fail 'deploy accepted an unexpected expected-current image'
 fi
 assert_ssh_not_invoked
-if run_apply rollback "$rollback_target_ref" "$rollback_target_ref" 'cindy=true,false,false'; then
+if run_apply rollback "$rollback_target_ref" "$rollback_target_ref" 'cindy=true,false,false,false,false'; then
   fail 'rollback accepted a target equal to expected-current'
 fi
 assert_ssh_not_invoked
-if run_apply rollback "$rollback_target_ref" "$rollback_current_ref" 'cindy=true,false,true'; then
-  fail 'rollback accepted Image Studio without the Cindy capability catalog'
-fi
-assert_ssh_not_invoked
 MOCK_VPS_PORT=not-a-port
-if run_apply deploy "$rollback_current_ref" '' 'cindy=true,true,false'; then
+if run_apply deploy "$rollback_current_ref" '' 'cindy=true,true,true,false,false'; then
   fail 'deploy accepted a malformed SSH port'
 fi
 unset MOCK_VPS_PORT
 assert_ssh_not_invoked
-if run_apply deploy 'ghcr.io/htexplicit/sub2api:latest' '' 'cindy=true,true,false'; then
+if run_apply deploy 'ghcr.io/htexplicit/sub2api:latest' '' 'cindy=true,true,true,false,false'; then
   fail 'deploy accepted a mutable image reference'
 fi
 assert_ssh_not_invoked
@@ -351,11 +372,11 @@ if run_apply deploy "$rollback_current_ref" '' 'cindy=true,false,true'; then
   fail 'deploy accepted a malformed Cindy rollout'
 fi
 assert_ssh_not_invoked
-if run_apply rollback "$rollback_target_ref" '' 'cindy=true,false,false'; then
+if run_apply rollback "$rollback_target_ref" '' 'cindy=true,false,false,false,false'; then
   fail 'rollback accepted an empty expected-current image'
 fi
 assert_ssh_not_invoked
-if run_apply invalid "$rollback_current_ref" '' 'cindy=true,true,false'; then
+if run_apply invalid "$rollback_current_ref" '' 'cindy=true,true,true,false,false'; then
   fail 'immutable release operation accepted an unknown operation'
 fi
 assert_ssh_not_invoked
@@ -366,21 +387,23 @@ digest=$(awk '$1 == "Digest:" && digest == "" {digest=$2} END {if (digest == "")
   fail 'digest parser did not preserve the first index digest'
 
 for input in operation release_tag expected_current_release_tag confirmation \
-  cindy_balance_detection cindy_capability_catalog image_studio; do
+  cindy_health cindy_capability_catalog cindy_search image_studio \
+  cindy_responses_image_bridge; do
   grep -Fq "      ${input}:" "$WORKFLOW" || fail "missing typed workflow input: $input"
 done
 grep -Fq '          - deploy' "$WORKFLOW" || fail 'workflow operation is missing deploy'
 grep -Fq '          - rollback' "$WORKFLOW" || fail 'workflow operation is missing rollback'
-[[ "$(grep -c '        type: boolean' "$WORKFLOW")" -ge 3 ]] ||
+[[ "$(grep -c '        type: boolean' "$WORKFLOW")" -ge 5 ]] ||
   fail 'Cindy rollout inputs must be typed booleans'
-grep -Fq '        default: true' "$WORKFLOW" ||
-  fail 'the balance phase must default on'
-[[ "$(grep -c '        default: false' "$WORKFLOW")" -ge 2 ]] ||
-  fail 'catalog and image phases must default off'
-grep -Fq 'Image Studio requires the Cindy capability catalog in this release' "$WORKFLOW" ||
-  fail 'workflow must reject image rollout without the catalog'
-grep -Fq 'cindy_rollout=cindy=${CINDY_BALANCE_DETECTION},${CINDY_CAPABILITY_CATALOG},${IMAGE_STUDIO}' "$WORKFLOW" ||
+[[ "$(grep -c '        default: false' "$WORKFLOW")" -ge 5 ]] ||
+  fail 'all staged rollout phases must default off'
+if grep -Fq 'requires the Cindy capability catalog' "$WORKFLOW"; then
+  fail 'independent Search, Image Studio, or Responses-image flags still depend on the catalog'
+fi
+grep -Fq 'cindy_rollout=cindy=${CINDY_HEALTH},${CINDY_CAPABILITY_CATALOG},${CINDY_SEARCH},${IMAGE_STUDIO},${CINDY_RESPONSES_IMAGE_BRIDGE}' "$WORKFLOW" ||
   fail 'resolve must emit a canonical Cindy rollout tuple'
+grep -Fq 'io.github.htexplicit.cindy-platform-v1' "$WORKFLOW" ||
+  fail 'resolve must require the platform capability label from the immutable image'
 grep -Fq 'expected_current_image_ref=${expected_current_image_ref}' "$WORKFLOW" ||
   fail 'resolve must publish the immutable expected-current rollback image'
 grep -Fq '[[ "$CONFIRMATION" == DEPLOY ]]' "$WORKFLOW" ||
@@ -389,6 +412,10 @@ grep -Fq '[[ "$CONFIRMATION" == ROLLBACK ]]' "$WORKFLOW" ||
   fail 'rollback must require the exact ROLLBACK confirmation'
 grep -Fq 'resolve_release_image "$EXPECTED_CURRENT_RELEASE_TAG"' "$WORKFLOW" ||
   fail 'rollback must independently resolve the expected-current release image'
+grep -Fq 'resolve_release_image "$RELEASE_TAG" rollback-target' "$WORKFLOW" ||
+  fail 'rollback must resolve the target using the legacy-aware image role'
+grep -Fq 'resolve_release_image "$EXPECTED_CURRENT_RELEASE_TAG" platform' "$WORKFLOW" ||
+  fail 'rollback must require the expected-current image to be platform capable'
 grep -Fq 'isDraft,isPrerelease' "$WORKFLOW" ||
   fail 'release state resolution must inspect draft and prerelease flags'
 grep -Fq '\tfalse\tfalse' "$WORKFLOW" ||
@@ -402,26 +429,32 @@ grep -Fq 'remote_command="rollback ${IMAGE_REF} from=${EXPECTED_CURRENT_IMAGE_RE
 
 validate_rollout() {
   local value=$1
-  [[ "$value" =~ ^cindy=(true|false),(true|false),(true|false)$ ]] || return 1
-  [[ "${BASH_REMATCH[3]}" != true || "${BASH_REMATCH[2]}" == true ]]
+  [[ "$value" =~ ^cindy=(true|false),(true|false),(true|false),(true|false),(true|false)$ ]]
 }
 
-validate_rollout 'cindy=true,false,false' || fail 'balance-only rollout was rejected'
-validate_rollout 'cindy=true,true,false' || fail 'catalog rollout was rejected'
-validate_rollout 'cindy=true,true,true' || fail 'image rollout was rejected'
-if validate_rollout 'cindy=true,false,true'; then
-  fail 'image rollout without catalog was accepted'
-fi
+validate_rollout 'cindy=false,false,false,false,false' || fail 'platform-only rollout was rejected'
+validate_rollout 'cindy=false,true,false,false,false' || fail 'catalog rollout was rejected'
+validate_rollout 'cindy=true,true,false,false,false' || fail 'health rollout was rejected'
+validate_rollout 'cindy=true,true,true,false,false' || fail 'search rollout was rejected'
+validate_rollout 'cindy=true,true,true,true,false' || fail 'Image Studio rollout was rejected'
+validate_rollout 'cindy=true,true,true,true,true' || fail 'Responses-image rollout was rejected'
+validate_rollout 'cindy=false,false,true,true,true' || fail 'independent feature rollout was rejected'
 for invalid in \
-  'cindy=1,false,false' \
-  'cindy=true,false,false extra' \
-  'cindy=true,false,false;id' \
-  'cindy=true, true,false'
+  'cindy=1,false,false,false,false' \
+  'cindy=true,false,false,false,false extra' \
+  'cindy=true,false,false,false,false;id' \
+  'cindy=true, true,false,false,false' \
+  'cindy=true,false,false'
 do
   if validate_rollout "$invalid"; then
     fail "malformed rollout tuple was accepted: $invalid"
   fi
 done
+
+grep -Fq 'io.github.htexplicit.cindy-platform-v1=true' "$DOWNSTREAM_RELEASE_WORKFLOW" ||
+  fail 'downstream image must declare the platform capability label'
+grep -Fq "!contains(github.ref_name, '-codexrip.')" "$GENERIC_RELEASE_WORKFLOW" ||
+  fail 'generic Release workflow must skip downstream codexrip tags'
 
 version_strictly_less() {
   local target=$1 current=$2 first

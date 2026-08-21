@@ -1166,7 +1166,7 @@ func ResolveCindyResponsesImageTools(body []byte) ([]byte, error) {
 
 		capability, resolved := ResolveCindyCapability(model)
 		if !resolved || capability.Kind != CindyModelKindImage ||
-			!CindyModelSupportsEndpoint(model, CindyEndpointImagesGenerate) ||
+			!CindyModelSupportsResponsesImageBridge(model) ||
 			capability.Controls == nil || capability.Controls.Generation == nil {
 			return nil, fmt.Errorf("%w: %q", ErrCindyResponsesImageToolModelNotFound, model)
 		}

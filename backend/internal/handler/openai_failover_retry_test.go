@@ -84,6 +84,9 @@ func TestOpenAISameAccountRetryLimit_RequiresPoolModeAndExplicitStatus(t *testin
 
 func TestOpenAISameAccountRetryLimit_CindyBudget429AlwaysSwitchesAccount(t *testing.T) {
 	account := openAIRetryTestAccount(10)
+	account.Platform = service.PlatformCindy
+	account.WirePlatform = service.WirePlatformOpenAI
+	account.ProviderProfile = service.ProviderProfileCindyLaxaV1
 	account.Credentials["base_url"] = "https://api.laxarouter.ai"
 	account.Credentials["api_key"] = "test-key"
 

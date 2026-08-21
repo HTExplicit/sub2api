@@ -64,6 +64,8 @@ type AccountHandler struct {
 	grokImportProber        grokImportProber
 	upstreamBillingProbe    *service.UpstreamBillingProbeService
 	ollamaCloudUsage        *service.OllamaCloudUsageService
+	accountJobs             *service.AccountJobService
+	cindyJobMutations       service.AccountJobCindyMutationRunner
 }
 
 // SetUpstreamBillingProbeService attaches the optional remote billing probe service.
@@ -115,6 +117,8 @@ type CreateAccountRequest struct {
 	Name                    string         `json:"name" binding:"required"`
 	Notes                   *string        `json:"notes"`
 	Platform                string         `json:"platform" binding:"required"`
+	WirePlatform            string         `json:"wire_platform"`
+	ProviderProfile         string         `json:"provider_profile"`
 	Type                    string         `json:"type" binding:"required,oneof=oauth setup-token apikey upstream bedrock service_account"`
 	Credentials             map[string]any `json:"credentials" binding:"required"`
 	Extra                   map[string]any `json:"extra"`
@@ -194,6 +198,20 @@ type CheckMixedChannelRequest struct {
 	Platform  string  `json:"platform" binding:"required"`
 	GroupIDs  []int64 `json:"group_ids"`
 	AccountID *int64  `json:"account_id"`
+}
+
+func validateCreateAccountProviderIdentity(req CreateAccountRequest) error {
+	_, wirePlatform, providerProfile, err := service.ResolveAccountProviderIdentity(req.Platform, req.Type, req.Credentials)
+	if err != nil {
+		return err
+	}
+	if req.WirePlatform != "" && strings.ToLower(strings.TrimSpace(req.WirePlatform)) != wirePlatform {
+		return fmt.Errorf("wire_platform mismatch: expected %s", wirePlatform)
+	}
+	if req.ProviderProfile != "" && strings.ToLower(strings.TrimSpace(req.ProviderProfile)) != providerProfile {
+		return fmt.Errorf("provider_profile mismatch: expected %s", providerProfile)
+	}
+	return nil
 }
 
 // AccountWithConcurrency extends Account with real-time concurrency info
@@ -862,6 +880,10 @@ func (h *AccountHandler) Create(c *gin.Context) {
 	var req CreateAccountRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if err := validateCreateAccountProviderIdentity(req); err != nil {
+		response.BadRequest(c, err.Error())
 		return
 	}
 	if err := service.ValidateOpenAILongContextBillingExtra(req.Platform, req.Extra); err != nil {
@@ -1615,123 +1637,7 @@ func (h *AccountHandler) BatchDelete(c *gin.Context) {
 		response.BadRequest(c, "account_ids is required")
 		return
 	}
-
-	accounts, err := h.adminService.GetAccountsByIDs(c.Request.Context(), accountIDs)
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-
-	type deleteError struct {
-		AccountID int64  `json:"account_id"`
-		Error     string `json:"error"`
-	}
-
-	requestedIDs := make(map[int64]struct{}, len(accountIDs))
-	for _, accountID := range accountIDs {
-		requestedIDs[accountID] = struct{}{}
-	}
-	accountsByID := make(map[int64]*service.Account, len(accounts))
-	for _, account := range accounts {
-		if account != nil {
-			accountsByID[account.ID] = account
-		}
-	}
-
-	rootIDs := make([]int64, 0, len(accountIDs))
-	dependentIDs := make(map[int64][]int64)
-	failedIDs := make([]int64, 0)
-	errorsByAccount := make([]deleteError, 0)
-	for _, accountID := range accountIDs {
-		account := accountsByID[accountID]
-		if account == nil {
-			failedIDs = append(failedIDs, accountID)
-			errorsByAccount = append(errorsByAccount, deleteError{
-				AccountID: accountID,
-				Error:     "account not found",
-			})
-			continue
-		}
-
-		rootID := accountID
-		visited := map[int64]struct{}{accountID: {}}
-		for {
-			current := accountsByID[rootID]
-			if current == nil || current.ParentAccountID == nil {
-				break
-			}
-			parentID := *current.ParentAccountID
-			if _, selected := requestedIDs[parentID]; !selected {
-				break
-			}
-			if _, exists := accountsByID[parentID]; !exists {
-				break
-			}
-			if _, cyclic := visited[parentID]; cyclic {
-				rootID = accountID
-				break
-			}
-			visited[parentID] = struct{}{}
-			rootID = parentID
-		}
-
-		if rootID != accountID {
-			dependentIDs[rootID] = append(dependentIDs[rootID], accountID)
-			continue
-		}
-		rootIDs = append(rootIDs, accountID)
-	}
-
-	const maxConcurrency = 5
-	g, gctx := errgroup.WithContext(c.Request.Context())
-	g.SetLimit(maxConcurrency)
-
-	var mu sync.Mutex
-	successIDs := make([]int64, 0, len(accountIDs))
-
-	// Every worker returns nil so one account failure does not cancel the remaining deletions.
-	for _, id := range rootIDs {
-		accountID := id
-		g.Go(func() error {
-			err := h.adminService.DeleteAccount(gctx, accountID)
-
-			mu.Lock()
-			defer mu.Unlock()
-			affectedIDs := append([]int64{accountID}, dependentIDs[accountID]...)
-			if err != nil {
-				for _, affectedID := range affectedIDs {
-					failedIDs = append(failedIDs, affectedID)
-					errorsByAccount = append(errorsByAccount, deleteError{
-						AccountID: affectedID,
-						Error:     err.Error(),
-					})
-				}
-				return nil
-			}
-			successIDs = append(successIDs, affectedIDs...)
-			return nil
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-
-	sort.Slice(successIDs, func(i, j int) bool { return successIDs[i] < successIDs[j] })
-	sort.Slice(failedIDs, func(i, j int) bool { return failedIDs[i] < failedIDs[j] })
-	sort.Slice(errorsByAccount, func(i, j int) bool {
-		return errorsByAccount[i].AccountID < errorsByAccount[j].AccountID
-	})
-
-	response.Success(c, gin.H{
-		"total":       len(accountIDs),
-		"success":     len(successIDs),
-		"failed":      len(failedIDs),
-		"success_ids": successIDs,
-		"failed_ids":  failedIDs,
-		"errors":      errorsByAccount,
-	})
+	h.submitAccountJob(c, service.AccountJobKindBatchDelete, accountIDsJobPayload{AccountIDs: accountIDs}, accountJobSeeds(accountIDs))
 }
 
 // BatchClearError handles batch clearing account errors
@@ -1748,58 +1654,7 @@ func (h *AccountHandler) BatchClearError(c *gin.Context) {
 		response.BadRequest(c, "account_ids is required")
 		return
 	}
-
-	ctx := c.Request.Context()
-
-	const maxConcurrency = 10
-	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(maxConcurrency)
-
-	var mu sync.Mutex
-	var successCount, failedCount int
-	var errors []gin.H
-
-	// 注意：所有 goroutine 必须 return nil，避免 errgroup cancel 其他并发任务
-	for _, id := range req.AccountIDs {
-		accountID := id // 闭包捕获
-		g.Go(func() error {
-			account, err := h.adminService.ClearAccountError(gctx, accountID)
-			if err != nil {
-				mu.Lock()
-				failedCount++
-				errors = append(errors, gin.H{
-					"account_id": accountID,
-					"error":      err.Error(),
-				})
-				mu.Unlock()
-				return nil
-			}
-
-			// 清除错误后，同时清除 token 缓存
-			if h.tokenCacheInvalidator != nil && account.IsOAuth() {
-				if invalidateErr := h.tokenCacheInvalidator.InvalidateToken(gctx, account); invalidateErr != nil {
-					log.Printf("[WARN] Failed to invalidate token cache for account %d: %v", accountID, invalidateErr)
-				}
-			}
-
-			mu.Lock()
-			successCount++
-			mu.Unlock()
-			return nil
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-
-	response.Success(c, gin.H{
-		"total":   len(req.AccountIDs),
-		"success": successCount,
-		"failed":  failedCount,
-		"errors":  errors,
-	})
+	h.submitAccountIDsJob(c, service.AccountJobKindBatchClearError, req.AccountIDs)
 }
 
 // BatchRefresh handles batch refreshing account credentials
@@ -1816,84 +1671,7 @@ func (h *AccountHandler) BatchRefresh(c *gin.Context) {
 		response.BadRequest(c, "account_ids is required")
 		return
 	}
-
-	ctx := c.Request.Context()
-
-	accounts, err := h.adminService.GetAccountsByIDs(ctx, req.AccountIDs)
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-
-	// 建立已获取账号的 ID 集合，检测缺失的 ID
-	foundIDs := make(map[int64]bool, len(accounts))
-	for _, acc := range accounts {
-		if acc != nil {
-			foundIDs[acc.ID] = true
-		}
-	}
-
-	const maxConcurrency = 10
-	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(maxConcurrency)
-
-	var mu sync.Mutex
-	var successCount, failedCount int
-	var errors []gin.H
-	var warnings []gin.H
-
-	// 将不存在的账号 ID 标记为失败
-	for _, id := range req.AccountIDs {
-		if !foundIDs[id] {
-			failedCount++
-			errors = append(errors, gin.H{
-				"account_id": id,
-				"error":      "account not found",
-			})
-		}
-	}
-
-	// 注意：所有 goroutine 必须 return nil，避免 errgroup cancel 其他并发任务
-	for _, account := range accounts {
-		acc := account // 闭包捕获
-		if acc == nil {
-			continue
-		}
-		g.Go(func() error {
-			_, warning, err := h.refreshSingleAccount(gctx, acc)
-			mu.Lock()
-			if err != nil {
-				failedCount++
-				errors = append(errors, gin.H{
-					"account_id": acc.ID,
-					"error":      err.Error(),
-				})
-			} else {
-				successCount++
-				if warning != "" {
-					warnings = append(warnings, gin.H{
-						"account_id": acc.ID,
-						"warning":    warning,
-					})
-				}
-			}
-			mu.Unlock()
-			return nil
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-
-	response.Success(c, gin.H{
-		"total":    len(req.AccountIDs),
-		"success":  successCount,
-		"failed":   failedCount,
-		"errors":   errors,
-		"warnings": warnings,
-	})
+	h.submitAccountIDsJob(c, service.AccountJobKindBatchRefresh, req.AccountIDs)
 }
 
 // BatchCreate handles batch creating accounts
@@ -1907,118 +1685,16 @@ func (h *AccountHandler) BatchCreate(c *gin.Context) {
 		return
 	}
 	for _, item := range req.Accounts {
+		if err := validateCreateAccountProviderIdentity(item); err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
 		if err := service.ValidateOpenAILongContextBillingExtra(item.Platform, item.Extra); err != nil {
 			response.ErrorFrom(c, err)
 			return
 		}
 	}
-
-	executeAdminIdempotentJSON(c, "admin.accounts.batch_create", req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
-		success := 0
-		failed := 0
-		results := make([]gin.H, 0, len(req.Accounts))
-		// 收集需要异步设置隐私的 OAuth 账号
-		var antigravityPrivacyAccounts []*service.Account
-		var openaiPrivacyAccounts []*service.Account
-
-		for _, item := range req.Accounts {
-			if item.RateMultiplier != nil && *item.RateMultiplier < 0 {
-				failed++
-				results = append(results, gin.H{
-					"name":    item.Name,
-					"success": false,
-					"error":   "rate_multiplier must be >= 0",
-				})
-				continue
-			}
-
-			// base_rpm 输入校验：负值归零，超过 10000 截断
-			sanitizeExtraBaseRPM(item.Extra)
-
-			skipCheck := item.ConfirmMixedChannelRisk != nil && *item.ConfirmMixedChannelRisk
-
-			account, err := h.adminService.CreateAccount(ctx, &service.CreateAccountInput{
-				Name:                  item.Name,
-				Notes:                 item.Notes,
-				Platform:              item.Platform,
-				Type:                  item.Type,
-				Credentials:           item.Credentials,
-				Extra:                 item.Extra,
-				ProxyID:               item.ProxyID,
-				Concurrency:           item.Concurrency,
-				Priority:              item.Priority,
-				RateMultiplier:        item.RateMultiplier,
-				GroupIDs:              item.GroupIDs,
-				ExpiresAt:             item.ExpiresAt,
-				AutoPauseOnExpired:    item.AutoPauseOnExpired,
-				SkipMixedChannelCheck: skipCheck,
-			})
-			if err != nil {
-				failed++
-				results = append(results, gin.H{
-					"name":    item.Name,
-					"success": false,
-					"error":   err.Error(),
-				})
-				continue
-			}
-			// 收集需要异步设置隐私的 OAuth 账号
-			if account.Type == service.AccountTypeOAuth {
-				switch account.Platform {
-				case service.PlatformAntigravity:
-					antigravityPrivacyAccounts = append(antigravityPrivacyAccounts, account)
-				case service.PlatformOpenAI:
-					openaiPrivacyAccounts = append(openaiPrivacyAccounts, account)
-				}
-			}
-			// OpenAI APIKey 账号异步探测 /v1/responses 能力。
-			h.scheduleOpenAIResponsesProbe(account)
-			h.scheduleGrokImportProbe(account)
-			success++
-			results = append(results, gin.H{
-				"name":    item.Name,
-				"id":      account.ID,
-				"success": true,
-			})
-		}
-
-		// 异步设置隐私，避免批量创建时阻塞请求
-		adminSvc := h.adminService
-		if len(antigravityPrivacyAccounts) > 0 {
-			accounts := antigravityPrivacyAccounts
-			go func() {
-				defer func() {
-					if r := recover(); r != nil {
-						slog.Error("batch_create_antigravity_privacy_panic", "recover", r)
-					}
-				}()
-				bgCtx := context.Background()
-				for _, acc := range accounts {
-					adminSvc.ForceAntigravityPrivacy(bgCtx, acc)
-				}
-			}()
-		}
-		if len(openaiPrivacyAccounts) > 0 {
-			accounts := openaiPrivacyAccounts
-			go func() {
-				defer func() {
-					if r := recover(); r != nil {
-						slog.Error("batch_create_openai_privacy_panic", "recover", r)
-					}
-				}()
-				bgCtx := context.Background()
-				for _, acc := range accounts {
-					adminSvc.ForceOpenAIPrivacy(bgCtx, acc)
-				}
-			}()
-		}
-
-		return gin.H{
-			"success": success,
-			"failed":  failed,
-			"results": results,
-		}, nil
-	})
+	h.submitAccountJob(c, service.AccountJobKindBatchCreate, batchCreateJobPayload{Accounts: req.Accounts}, ordinalAccountJobSeeds(len(req.Accounts)))
 }
 
 // BatchUpdateCredentialsRequest represents batch credentials update request
@@ -2053,61 +1729,8 @@ func (h *AccountHandler) BatchUpdateCredentials(c *gin.Context) {
 			}
 		}
 	}
-
-	ctx := c.Request.Context()
-
-	// 阶段一：预验证所有账号存在，收集 credentials
-	type accountUpdate struct {
-		ID          int64
-		Credentials map[string]any
-	}
-	updates := make([]accountUpdate, 0, len(req.AccountIDs))
-	for _, accountID := range req.AccountIDs {
-		account, err := h.adminService.GetAccount(ctx, accountID)
-		if err != nil {
-			response.Error(c, 404, fmt.Sprintf("Account %d not found", accountID))
-			return
-		}
-		if account.Credentials == nil {
-			account.Credentials = make(map[string]any)
-		}
-		account.Credentials[req.Field] = req.Value
-		updates = append(updates, accountUpdate{ID: accountID, Credentials: account.Credentials})
-	}
-
-	// 阶段二：依次更新，返回每个账号的成功/失败明细，便于调用方重试
-	success := 0
-	failed := 0
-	successIDs := make([]int64, 0, len(updates))
-	failedIDs := make([]int64, 0, len(updates))
-	results := make([]gin.H, 0, len(updates))
-	for _, u := range updates {
-		updateInput := &service.UpdateAccountInput{Credentials: u.Credentials}
-		if _, err := h.adminService.UpdateAccount(ctx, u.ID, updateInput); err != nil {
-			failed++
-			failedIDs = append(failedIDs, u.ID)
-			results = append(results, gin.H{
-				"account_id": u.ID,
-				"success":    false,
-				"error":      err.Error(),
-			})
-			continue
-		}
-		success++
-		successIDs = append(successIDs, u.ID)
-		results = append(results, gin.H{
-			"account_id": u.ID,
-			"success":    true,
-		})
-	}
-
-	response.Success(c, gin.H{
-		"success":     success,
-		"failed":      failed,
-		"success_ids": successIDs,
-		"failed_ids":  failedIDs,
-		"results":     results,
-	})
+	req.AccountIDs = normalizeInt64IDList(req.AccountIDs)
+	h.submitAccountJob(c, service.AccountJobKindBatchUpdateCredentials, req, accountJobSeeds(req.AccountIDs))
 }
 
 // BulkUpdate handles bulk updating accounts with selected fields/credentials.
@@ -2129,9 +1752,6 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 	// base_rpm 输入校验：负值归零，超过 10000 截断
 	sanitizeExtraBaseRPM(req.Extra)
 
-	// 确定是否跳过混合渠道检查
-	skipCheck := req.ConfirmMixedChannelRisk != nil && *req.ConfirmMixedChannelRisk
-
 	hasUpdates := req.Name != "" ||
 		req.ProxyID != nil ||
 		req.Concurrency != nil ||
@@ -2150,48 +1770,13 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 		return
 	}
 
-	serviceFilters, err := toServiceBulkUpdateAccountFilters(req.Filters)
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return
+	ids := normalizeInt64IDList(req.AccountIDs)
+	seeds := accountJobSeeds(ids)
+	if len(seeds) == 0 {
+		seeds = ordinalAccountJobSeeds(1)
 	}
-	result, err := h.adminService.BulkUpdateAccounts(c.Request.Context(), &service.BulkUpdateAccountsInput{
-		AccountIDs:            req.AccountIDs,
-		Filters:               serviceFilters,
-		Name:                  req.Name,
-		ProxyID:               req.ProxyID,
-		Concurrency:           req.Concurrency,
-		Priority:              req.Priority,
-		RateMultiplier:        req.RateMultiplier,
-		LoadFactor:            req.LoadFactor,
-		Status:                req.Status,
-		Schedulable:           req.Schedulable,
-		GroupIDs:              req.GroupIDs,
-		Credentials:           req.Credentials,
-		Extra:                 req.Extra,
-		ProbeEnabled:          req.ProbeEnabled,
-		SkipMixedChannelCheck: skipCheck,
-	})
-	if err != nil {
-		var mixedErr *service.MixedChannelError
-		if errors.As(err, &mixedErr) {
-			c.JSON(409, gin.H{
-				"error":   "mixed_channel_warning",
-				"message": mixedErr.Error(),
-				"details": gin.H{
-					"group_id":         mixedErr.GroupID,
-					"group_name":       mixedErr.GroupName,
-					"current_platform": mixedErr.CurrentPlatform,
-					"other_platform":   mixedErr.OtherPlatform,
-				},
-			})
-			return
-		}
-		response.ErrorFrom(c, err)
-		return
-	}
-
-	response.Success(c, result)
+	req.AccountIDs = ids
+	h.submitAccountJob(c, service.AccountJobKindBulkUpdate, req, seeds)
 }
 
 func splitBulkAccountFilterValues(values ...string) []string {
@@ -3078,102 +2663,12 @@ func (h *AccountHandler) BatchRefreshTier(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		req = BatchRefreshTierRequest{}
 	}
-
-	ctx := c.Request.Context()
-	accounts := make([]*service.Account, 0)
-
-	if len(req.AccountIDs) == 0 {
-		allAccounts, _, err := h.adminService.ListAccounts(ctx, 1, 10000, "gemini", "oauth", "", "", 0, "", "name", "asc")
-		if err != nil {
-			response.ErrorFrom(c, err)
-			return
-		}
-		for i := range allAccounts {
-			acc := &allAccounts[i]
-			oauthType, _ := acc.Credentials["oauth_type"].(string)
-			if oauthType == "google_one" {
-				accounts = append(accounts, acc)
-			}
-		}
-	} else {
-		fetched, err := h.adminService.GetAccountsByIDs(ctx, req.AccountIDs)
-		if err != nil {
-			response.ErrorFrom(c, err)
-			return
-		}
-
-		for _, acc := range fetched {
-			if acc == nil {
-				continue
-			}
-			if acc.Platform != service.PlatformGemini || acc.Type != service.AccountTypeOAuth {
-				continue
-			}
-			oauthType, _ := acc.Credentials["oauth_type"].(string)
-			if oauthType != "google_one" {
-				continue
-			}
-			accounts = append(accounts, acc)
-		}
+	req.AccountIDs = normalizeInt64IDList(req.AccountIDs)
+	seeds := accountJobSeeds(req.AccountIDs)
+	if len(seeds) == 0 {
+		seeds = ordinalAccountJobSeeds(1)
 	}
-
-	const maxConcurrency = 10
-	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(maxConcurrency)
-
-	var mu sync.Mutex
-	var successCount, failedCount int
-	var errors []gin.H
-
-	for _, account := range accounts {
-		acc := account // 闭包捕获
-		g.Go(func() error {
-			_, extra, creds, err := h.geminiOAuthService.RefreshAccountGoogleOneTier(gctx, acc)
-			if err != nil {
-				mu.Lock()
-				failedCount++
-				errors = append(errors, gin.H{
-					"account_id": acc.ID,
-					"error":      err.Error(),
-				})
-				mu.Unlock()
-				return nil
-			}
-
-			_, updateErr := h.adminService.UpdateAccount(gctx, acc.ID, &service.UpdateAccountInput{
-				Credentials: creds,
-				Extra:       extra,
-			})
-
-			mu.Lock()
-			if updateErr != nil {
-				failedCount++
-				errors = append(errors, gin.H{
-					"account_id": acc.ID,
-					"error":      updateErr.Error(),
-				})
-			} else {
-				successCount++
-			}
-			mu.Unlock()
-
-			return nil
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-
-	results := gin.H{
-		"total":   len(accounts),
-		"success": successCount,
-		"failed":  failedCount,
-		"errors":  errors,
-	}
-
-	response.Success(c, results)
+	h.submitAccountJob(c, service.AccountJobKindBatchRefreshTier, req, seeds)
 }
 
 // GetAntigravityDefaultModelMapping 获取 Antigravity 平台的默认模型映射

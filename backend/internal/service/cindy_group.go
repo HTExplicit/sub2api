@@ -122,7 +122,14 @@ func isNilCindyGroupDependency(repo any) bool {
 }
 
 func classifyAuthenticatedCindyIdentityGroup(ctx context.Context, repo any, group *Group) (bool, error) {
-	if group == nil || group.ID <= 0 || group.Platform != PlatformOpenAI {
+	if group == nil || group.ID <= 0 {
+		return false, nil
+	}
+	if group.Platform == PlatformCindy {
+		return group.EffectiveWirePlatform() == WirePlatformOpenAI &&
+			group.EffectiveProviderProfile() == ProviderProfileCindyLaxaV1, nil
+	}
+	if group.Platform != PlatformOpenAI {
 		return false, nil
 	}
 	if group.StrictCindyKnown {
@@ -146,7 +153,7 @@ func hasSchedulableCindyAccount(ctx context.Context, repo any, group *Group) (bo
 	if !CindyCapabilityCatalogFeatureEnabled() {
 		return false, nil
 	}
-	if group == nil || group.ID <= 0 || group.Platform != PlatformOpenAI {
+	if group == nil || group.ID <= 0 || (group.Platform != PlatformOpenAI && group.Platform != PlatformCindy) {
 		return false, nil
 	}
 
@@ -208,11 +215,22 @@ func (s *OpenAIGatewayService) ClassifyCindyIdentityGroup(ctx context.Context, g
 // closed so a random Cindy upstream manifest cannot leak live or unverified IDs.
 func (s *OpenAIGatewayService) ResolveCindyCodexModelsScope(ctx context.Context, group *Group) (CindyCodexModelsScope, error) {
 	var scope CindyCodexModelsScope
-	if !CindyCapabilityCatalogFeatureEnabled() || group == nil || group.ID <= 0 || group.Platform != PlatformOpenAI {
+	if !CindyCapabilityCatalogFeatureEnabled() || group == nil || group.ID <= 0 {
 		return scope, nil
 	}
 	if s == nil {
 		return scope, errCindyGroupIdentityUnavailable
+	}
+	if group.Platform == PlatformCindy {
+		cindyIdentity, err := classifyAuthenticatedCindyIdentityGroup(ctx, s.accountRepo, group)
+		if err != nil {
+			return scope, err
+		}
+		scope.CatalogOnly = cindyIdentity
+		return scope, nil
+	}
+	if group.Platform != PlatformOpenAI {
+		return scope, nil
 	}
 
 	strict, err := classifyAuthenticatedStrictCindyGroup(ctx, s.accountRepo, group)

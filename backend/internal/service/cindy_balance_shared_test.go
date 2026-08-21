@@ -22,6 +22,30 @@ type cindyRateLimitAccountRepoStub struct {
 	setErrorCalls int
 }
 
+type cindyHealthCoordinatorRecorder struct {
+	mu        sync.Mutex
+	signals   []CindyHealthSignal
+	accounts  []int64
+	successes []int64
+}
+
+func (r *cindyHealthCoordinatorRecorder) ObserveCindyHealthSignal(_ context.Context, account *Account, signal CindyHealthSignal) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.signals = append(r.signals, signal)
+	if account != nil {
+		r.accounts = append(r.accounts, account.ID)
+	}
+}
+
+func (r *cindyHealthCoordinatorRecorder) ObserveCindyHealthSuccess(_ context.Context, account *Account) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if account != nil {
+		r.successes = append(r.successes, account.ID)
+	}
+}
+
 func (r *cindyRateLimitAccountRepoStub) MarkCindyBalanceInsufficient(context.Context, int64, time.Time) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -73,11 +97,17 @@ func newCindyRateLimitAccount(id int64, poolMode bool) *Account {
 	credentials := cindyCredentials()
 	credentials["pool_mode"] = poolMode
 	return &Account{
-		ID:          id,
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Status:      StatusActive,
-		Schedulable: true,
-		Credentials: credentials,
+		ID:              id,
+		Platform:        PlatformCindy,
+		WirePlatform:    WirePlatformOpenAI,
+		ProviderProfile: ProviderProfileCindyLaxaV1,
+		Type:            AccountTypeAPIKey,
+		Status:          StatusActive,
+		Schedulable:     true,
+		Credentials:     credentials,
 	}
+}
+
+func newFirstClassCindyRateLimitAccount(id int64, poolMode bool) *Account {
+	return newCindyRateLimitAccount(id, poolMode)
 }

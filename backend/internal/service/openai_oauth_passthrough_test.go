@@ -1558,6 +1558,9 @@ func TestOpenAIGatewayService_OpenAIPassthrough_RetryableStatusesTriggerFailover
 
 			account := newAccount(tc.accountType)
 			if tc.cindy {
+				account.Platform = PlatformCindy
+				account.WirePlatform = WirePlatformOpenAI
+				account.ProviderProfile = ProviderProfileCindyLaxaV1
 				account.Credentials = cindyCredentials()
 			}
 			requestBody := originalBody

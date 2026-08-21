@@ -12,20 +12,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func setupAccountMixedChannelRouter(adminSvc *stubAdminService) *gin.Engine {
+func setupAccountMixedChannelRouter(adminSvc *stubAdminService) (*gin.Engine, *AccountHandler, *accountJobSubmitRepository) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	jobs := attachAccountJobSubmitter(router, accountHandler)
 	router.POST("/api/v1/admin/accounts/check-mixed-channel", accountHandler.CheckMixedChannel)
 	router.POST("/api/v1/admin/accounts", accountHandler.Create)
 	router.PUT("/api/v1/admin/accounts/:id", accountHandler.Update)
 	router.POST("/api/v1/admin/accounts/bulk-update", accountHandler.BulkUpdate)
-	return router
+	return router, accountHandler, jobs
 }
 
 func TestAccountHandlerCheckMixedChannelNoRisk(t *testing.T) {
 	adminSvc := newStubAdminService()
-	router := setupAccountMixedChannelRouter(adminSvc)
+	router, _, _ := setupAccountMixedChannelRouter(adminSvc)
 
 	body, _ := json.Marshal(map[string]any{
 		"platform":  "antigravity",
@@ -56,7 +57,7 @@ func TestAccountHandlerCheckMixedChannelWithRisk(t *testing.T) {
 		CurrentPlatform: "Antigravity",
 		OtherPlatform:   "Anthropic",
 	}
-	router := setupAccountMixedChannelRouter(adminSvc)
+	router, _, _ := setupAccountMixedChannelRouter(adminSvc)
 
 	body, _ := json.Marshal(map[string]any{
 		"platform":   "antigravity",
@@ -93,7 +94,7 @@ func TestAccountHandlerCreateMixedChannelConflictSimplifiedResponse(t *testing.T
 		CurrentPlatform: "Antigravity",
 		OtherPlatform:   "Anthropic",
 	}
-	router := setupAccountMixedChannelRouter(adminSvc)
+	router, _, _ := setupAccountMixedChannelRouter(adminSvc)
 
 	body, _ := json.Marshal(map[string]any{
 		"name":        "ag-oauth-1",
@@ -126,7 +127,7 @@ func TestAccountHandlerUpdateMixedChannelConflictSimplifiedResponse(t *testing.T
 		CurrentPlatform: "Antigravity",
 		OtherPlatform:   "Anthropic",
 	}
-	router := setupAccountMixedChannelRouter(adminSvc)
+	router, _, _ := setupAccountMixedChannelRouter(adminSvc)
 
 	body, _ := json.Marshal(map[string]any{
 		"group_ids": []int64{27},
@@ -149,7 +150,7 @@ func TestAccountHandlerUpdateMixedChannelConflictSimplifiedResponse(t *testing.T
 
 func TestAccountHandlerUpdateMapsUpstreamBillingRateSyncSettings(t *testing.T) {
 	adminSvc := newStubAdminService()
-	router := setupAccountMixedChannelRouter(adminSvc)
+	router, _, _ := setupAccountMixedChannelRouter(adminSvc)
 	body, _ := json.Marshal(map[string]any{
 		"name":                               "gemini-key",
 		"upstream_billing_probe_enabled":     true,
@@ -169,7 +170,7 @@ func TestAccountHandlerUpdateMapsUpstreamBillingRateSyncSettings(t *testing.T) {
 	require.True(t, *adminSvc.lastUpdateAccountInput.RateSyncEnabled)
 }
 
-func TestAccountHandlerBulkUpdateMixedChannelConflict(t *testing.T) {
+func TestAccountHandlerBulkUpdateMixedChannelConflictFailsJobItems(t *testing.T) {
 	adminSvc := newStubAdminService()
 	adminSvc.bulkUpdateAccountErr = &service.MixedChannelError{
 		GroupID:         27,
@@ -177,7 +178,7 @@ func TestAccountHandlerBulkUpdateMixedChannelConflict(t *testing.T) {
 		CurrentPlatform: "Antigravity",
 		OtherPlatform:   "Anthropic",
 	}
-	router := setupAccountMixedChannelRouter(adminSvc)
+	router, handler, jobs := setupAccountMixedChannelRouter(adminSvc)
 
 	body, _ := json.Marshal(map[string]any{
 		"account_ids": []int64{1, 2, 3},
@@ -186,18 +187,24 @@ func TestAccountHandlerBulkUpdateMixedChannelConflict(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/bulk-update", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	setAccountJobTestIdempotencyKey(req)
 	router.ServeHTTP(rec, req)
 
-	require.Equal(t, http.StatusConflict, rec.Code)
-	var resp map[string]any
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
-	require.Equal(t, "mixed_channel_warning", resp["error"])
-	require.Contains(t, resp["message"], "claude-max")
+	require.Equal(t, http.StatusAccepted, rec.Code)
+	var payload BulkUpdateAccountsRequest
+	params := requireSubmittedAccountJob(t, jobs, service.AccountJobKindBulkUpdate, &payload)
+	require.Equal(t, []int64{1, 2, 3}, payload.AccountIDs)
+	results := executeSubmittedAccountJobItems(handler, params)
+	require.Len(t, results, 3)
+	for _, result := range results {
+		require.Equal(t, service.AccountJobItemStatusFailed, result.Status)
+		require.Equal(t, "bulk_update_failed", result.ErrorCode)
+	}
 }
 
 func TestAccountHandlerBulkUpdateMixedChannelConfirmSkips(t *testing.T) {
 	adminSvc := newStubAdminService()
-	router := setupAccountMixedChannelRouter(adminSvc)
+	router, handler, jobs := setupAccountMixedChannelRouter(adminSvc)
 
 	body, _ := json.Marshal(map[string]any{
 		"account_ids":                []int64{1, 2},
@@ -207,21 +214,26 @@ func TestAccountHandlerBulkUpdateMixedChannelConfirmSkips(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/bulk-update", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	setAccountJobTestIdempotencyKey(req)
 	router.ServeHTTP(rec, req)
 
-	require.Equal(t, http.StatusOK, rec.Code)
-	var resp map[string]any
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
-	require.Equal(t, float64(0), resp["code"])
-	data, ok := resp["data"].(map[string]any)
-	require.True(t, ok)
-	require.Equal(t, float64(2), data["success"])
-	require.Equal(t, float64(0), data["failed"])
+	require.Equal(t, http.StatusAccepted, rec.Code)
+	var payload BulkUpdateAccountsRequest
+	params := requireSubmittedAccountJob(t, jobs, service.AccountJobKindBulkUpdate, &payload)
+	require.NotNil(t, payload.ConfirmMixedChannelRisk)
+	require.True(t, *payload.ConfirmMixedChannelRisk)
+	results := executeSubmittedAccountJobItems(handler, params)
+	require.Len(t, results, 2)
+	for _, result := range results {
+		require.Equal(t, service.AccountJobItemStatusSucceeded, result.Status)
+	}
+	require.NotNil(t, adminSvc.lastBulkUpdateAccountInput)
+	require.True(t, adminSvc.lastBulkUpdateAccountInput.SkipMixedChannelCheck)
 }
 
 func TestBulkUpdateAcceptsFilterTargetRequest(t *testing.T) {
 	adminSvc := newStubAdminService()
-	router := setupAccountMixedChannelRouter(adminSvc)
+	router, _, jobs := setupAccountMixedChannelRouter(adminSvc)
 
 	body, _ := json.Marshal(map[string]any{
 		"filters": map[string]any{
@@ -237,20 +249,22 @@ func TestBulkUpdateAcceptsFilterTargetRequest(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/bulk-update", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	setAccountJobTestIdempotencyKey(req)
 	router.ServeHTTP(rec, req)
 
-	require.Equal(t, http.StatusOK, rec.Code)
-	var resp map[string]any
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
-	require.Equal(t, float64(0), resp["code"])
-	require.NotNil(t, adminSvc.lastBulkUpdateAccountInput)
-	require.NotNil(t, adminSvc.lastBulkUpdateAccountInput.Filters)
-	require.Nil(t, adminSvc.lastBulkUpdateAccountInput.Filters.Console)
+	require.Equal(t, http.StatusAccepted, rec.Code)
+	var payload BulkUpdateAccountsRequest
+	params := requireSubmittedAccountJob(t, jobs, service.AccountJobKindBulkUpdate, &payload)
+	require.Len(t, params.Items, 1, "filter-targeted jobs resolve their concrete targets in the worker")
+	filters, err := toServiceBulkUpdateAccountFilters(payload.Filters)
+	require.NoError(t, err)
+	require.NotNil(t, filters)
+	require.Nil(t, filters.Console)
 }
 
 func TestBulkUpdateAcceptsCockpitConsoleFilterTargetRequest(t *testing.T) {
 	adminSvc := newStubAdminService()
-	router := setupAccountMixedChannelRouter(adminSvc)
+	router, _, jobs := setupAccountMixedChannelRouter(adminSvc)
 	body, _ := json.Marshal(map[string]any{
 		"filters": map[string]any{
 			"platforms": "openai,grok", "types": "oauth", "statuses": "active,error",
@@ -263,12 +277,17 @@ func TestBulkUpdateAcceptsCockpitConsoleFilterTargetRequest(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/bulk-update", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	setAccountJobTestIdempotencyKey(req)
 	router.ServeHTTP(rec, req)
 
-	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-	require.NotNil(t, adminSvc.lastBulkUpdateAccountInput)
-	require.NotNil(t, adminSvc.lastBulkUpdateAccountInput.Filters)
-	filters := adminSvc.lastBulkUpdateAccountInput.Filters.Console
+	require.Equal(t, http.StatusAccepted, rec.Code, rec.Body.String())
+	var payload BulkUpdateAccountsRequest
+	params := requireSubmittedAccountJob(t, jobs, service.AccountJobKindBulkUpdate, &payload)
+	require.Len(t, params.Items, 1, "filter-targeted jobs resolve their concrete targets in the worker")
+	converted, err := toServiceBulkUpdateAccountFilters(payload.Filters)
+	require.NoError(t, err)
+	require.NotNil(t, converted)
+	filters := converted.Console
 	require.NotNil(t, filters)
 	require.Equal(t, []string{"openai", "grok"}, filters.Platforms)
 	require.Equal(t, []string{"oauth"}, filters.Types)
@@ -287,7 +306,7 @@ func TestBulkUpdateAcceptsCockpitConsoleFilterTargetRequest(t *testing.T) {
 
 func TestBulkUpdateAcceptsDedicatedUpstreamBillingProbeSetting(t *testing.T) {
 	adminSvc := newStubAdminService()
-	router := setupAccountMixedChannelRouter(adminSvc)
+	router, _, jobs := setupAccountMixedChannelRouter(adminSvc)
 
 	body, _ := json.Marshal(map[string]any{
 		"account_ids":                    []int64{1, 2},
@@ -296,10 +315,12 @@ func TestBulkUpdateAcceptsDedicatedUpstreamBillingProbeSetting(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/bulk-update", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	setAccountJobTestIdempotencyKey(req)
 	router.ServeHTTP(rec, req)
 
-	require.Equal(t, http.StatusOK, rec.Code)
-	require.NotNil(t, adminSvc.lastBulkUpdateAccountInput)
-	require.NotNil(t, adminSvc.lastBulkUpdateAccountInput.ProbeEnabled)
-	require.False(t, *adminSvc.lastBulkUpdateAccountInput.ProbeEnabled)
+	require.Equal(t, http.StatusAccepted, rec.Code)
+	var payload BulkUpdateAccountsRequest
+	requireSubmittedAccountJob(t, jobs, service.AccountJobKindBulkUpdate, &payload)
+	require.NotNil(t, payload.ProbeEnabled)
+	require.False(t, *payload.ProbeEnabled)
 }

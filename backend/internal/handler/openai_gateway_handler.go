@@ -167,9 +167,17 @@ func openAIForwardSucceededForScheduling(result *service.OpenAIForwardResult) bo
 	return result.SucceededForScheduling()
 }
 
-func resolveOpenAIMessagesDispatchMappedModel(apiKey *service.APIKey, requestedModel string) string {
+func resolveOpenAIMessagesDispatchMappedModel(c *gin.Context, apiKey *service.APIKey, requestedModel string) string {
 	if apiKey == nil || apiKey.Group == nil {
 		return ""
+	}
+	// composite 解析到 grok/CN 目标时调度级映射不适用（Group 级映射的 gpt-5.x
+	// 默认值是 openai 专属,发给这些上游必错）,模型改写交给账号级 model_mapping。
+	if apiKey.Group.Platform == service.PlatformComposite && c != nil && c.Request != nil {
+		if platform, ok := service.ResolvedTargetPlatformFromContext(c.Request.Context()); ok &&
+			(platform == service.PlatformGrok || service.IsCNProvider(platform)) {
+			return ""
+		}
 	}
 	return strings.TrimSpace(apiKey.Group.ResolveMessagesDispatchModel(requestedModel))
 }
@@ -266,7 +274,7 @@ func openAIResponsesRequiredCapabilityForRequest(imageIntent bool, needsResponse
 	return openAIResponsesRequiredCapability(imageIntent, platform)
 }
 
-func allowOpenAICompatibleMessagesDispatch(apiKey *service.APIKey) bool {
+func allowOpenAICompatibleMessagesDispatch(c *gin.Context, apiKey *service.APIKey) bool {
 	if apiKey == nil || apiKey.Group == nil {
 		return true
 	}
@@ -279,6 +287,15 @@ func allowOpenAICompatibleMessagesDispatch(apiKey *service.APIKey) bool {
 	// 若不豁免,CN 分组将永远 403。
 	if service.IsCNProvider(apiKey.Group.Platform) {
 		return true
+	}
+	// composite 分组解析到 grok/CN 目标时与对应独立分组同语义豁免：sanitize
+	// 对 composite 同样恒置 false,不豁免则这些目标的 /v1/messages 永远 403；
+	// 解析到 openai 目标仍受开关控制,维持现状。
+	if apiKey.Group.Platform == service.PlatformComposite && c != nil && c.Request != nil {
+		if platform, ok := service.ResolvedTargetPlatformFromContext(c.Request.Context()); ok &&
+			(platform == service.PlatformGrok || service.IsCNProvider(platform)) {
+			return true
+		}
 	}
 	return apiKey.Group.AllowMessagesDispatch
 }
@@ -312,18 +329,31 @@ func strictCindyResponsesImageBridgeAllowed(model string, body []byte) bool {
 }
 
 func resolveStrictCindyResponsesImageTools(strict bool, body []byte) ([]byte, error) {
-	if !strict || !service.CindyImageStudioFeatureEnabled() {
+	if !strict || !service.CindyResponsesImageBridgeFeatureEnabled() {
 		return body, nil
 	}
 	return service.ResolveCindyResponsesImageTools(body)
 }
 
 func resolveSelectedCindyResponsesImageTools(account *service.Account, body []byte) ([]byte, error) {
-	if !service.CindyImageStudioFeatureEnabled() || account == nil ||
+	if !service.CindyResponsesImageBridgeFeatureEnabled() || account == nil ||
 		!service.IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		return body, nil
 	}
 	return service.ResolveCindyResponsesImageTools(body)
+}
+
+// isResponsesWebSocketCompositePlatform 限定 composite 分组在 Responses WebSocket
+// 上可服务的目标平台。CN 供应商（kimi/zhipu/deepseek）刻意排除：其账号无法通过
+// WSv2 ingress 的 transport 过滤，且 WS HTTP 桥没有面向 CN 的 Responses 转换，
+// 放行只会把明确的策略拒绝变成误导性的 "no available account"。
+func isResponsesWebSocketCompositePlatform(platform string) bool {
+	switch platform {
+	case service.PlatformOpenAI, service.PlatformGrok:
+		return true
+	default:
+		return false
+	}
 }
 
 // NewOpenAIGatewayHandler creates a new OpenAIGatewayHandler
@@ -457,18 +487,59 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		return
 	}
 	reqModel := modelResult.String()
+	previousResponseID, anchorErr := service.ParseOpenAIContinuationAnchor(body)
+	if anchorErr != nil {
+		reqLog.Warn("openai.request_validation_failed", zap.String("reason", "previous_response_id_invalid"))
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", service.OpenAIContinuationAnchorValidationMessage)
+		return
+	}
 	ensureCompositeTargetPlatform(c, apiKey, reqModel)
-	if !compositeTargetPlatformAllowed(c, apiKey, reqModel, service.PlatformOpenAI, service.PlatformGrok) {
+	if !openAICompatibleTextTargetAllowed(c, apiKey, reqModel) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
 		return
 	}
 	compatibilityRoutingModel, compatibilityCandidate := service.CindyCompatibilityMappedUpstreamModel(reqModel)
 	catalogEnabled := service.CindyCapabilityCatalogFeatureEnabled()
 	cindyIdentityGroup := false
-	if catalogEnabled || compatibilityCandidate {
+	if (apiKey.Group != nil && apiKey.Group.Platform == service.PlatformCindy) || catalogEnabled || compatibilityCandidate {
 		cindyIdentityGroup, err = h.gatewayService.ClassifyCindyIdentityGroup(c.Request.Context(), apiKey.Group)
 		if err != nil {
 			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
+			return
+		}
+	}
+	cindyContinuation := service.CindyContinuationClassification{}
+	var opaqueContinuationBindingIDs []string
+	if cindyIdentityGroup {
+		cindyContinuation, err = service.ClassifyCindyContinuation(body, service.CindyContinuationProof{})
+		if err != nil {
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to classify continuation state")
+			return
+		}
+		switch cindyContinuation.Mode {
+		case service.CindyContinuationAnchorDelta,
+			service.CindyContinuationAnchorPlusFull,
+			service.CindyContinuationReferenceOnly:
+			writeCindyHTTPContinuationStateError(c)
+			return
+		case service.CindyContinuationOpaqueFull:
+			lookup := h.gatewayService.LookupCindyOpaqueContinuationBinding(
+				c.Request.Context(), apiKey.Group.ID, cindyContinuation.OpaqueBindingIDs,
+			)
+			switch lookup.State {
+			case service.OpenAIContinuationBindingHit:
+				opaqueContinuationBindingIDs = append([]string(nil), cindyContinuation.OpaqueBindingIDs...)
+			case service.OpenAIContinuationBindingStoreError:
+				h.handleFailoverExhausted(c, service.NewOpenAIContinuationStoreUnavailableError(), false)
+				return
+			default:
+				writeCindyHTTPContinuationStateError(c)
+				return
+			}
+		}
+		body, err = service.EnsureCindyResponsesStoreFalse(body)
+		if err != nil {
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to normalize continuation request")
 			return
 		}
 	}
@@ -491,12 +562,14 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	if cappedBody, changed := applyOpenAIReasoningEffortPolicyForRequest(c, apiKey, body); changed {
 		body = cappedBody
 	}
-	if repairedBody, repaired, repairErr := h.gatewayService.PrepareOpenAIRefusalContinuationRequest(c.Request.Context(), body); repairErr != nil {
-		reqLog.Warn("openai.refusal_continuation_repair_failed", zap.Error(repairErr))
-	} else if repaired {
-		body = repairedBody
-		service.MarkOpenAIRefusalPromptRepairAttempted(c)
-		reqLog.Info("openai.refusal_continuation_repaired")
+	if !cindyIdentityGroup {
+		if repairedBody, repaired, repairErr := h.gatewayService.PrepareOpenAIRefusalContinuationRequest(c.Request.Context(), body); repairErr != nil {
+			reqLog.Warn("openai.refusal_continuation_repair_failed", zap.Error(repairErr))
+		} else if repaired {
+			body = repairedBody
+			service.MarkOpenAIRefusalPromptRepairAttempted(c)
+			reqLog.Info("openai.refusal_continuation_repaired")
+		}
 	}
 
 	reqStream, ok := parseOpenAICompatibleStream(body)
@@ -505,7 +578,6 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		return
 	}
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
-	previousResponseID := strings.TrimSpace(gjson.GetBytes(body, "previous_response_id").String())
 	if previousResponseID != "" {
 		previousResponseIDKind := service.ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
 		reqLog = reqLog.With(
@@ -513,20 +585,6 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			zap.String("previous_response_id_kind", previousResponseIDKind),
 			zap.Int("previous_response_id_len", len(previousResponseID)),
 		)
-		if previousResponseIDKind == service.OpenAIPreviousResponseIDKindMessageID {
-			reqLog.Warn("openai.request_validation_failed",
-				zap.String("reason", "previous_response_id_looks_like_message_id"),
-			)
-			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "previous_response_id must be a response.id (resp_*), not a message id")
-			return
-		}
-		if previousResponseIDKind != service.OpenAIPreviousResponseIDKindResponseID {
-			reqLog.Warn("openai.request_validation_failed",
-				zap.String("reason", "previous_response_id_invalid_format"),
-			)
-			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "previous_response_id must be a response.id (resp_*)")
-			return
-		}
 	}
 
 	setOpsRequestContext(c, reqModel, reqStream)
@@ -562,6 +620,12 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	routingModel := reqModel
 	forwardMapped := channelMapping.Mapped
 	forwardMappedModel := channelMapping.MappedModel
+	if strictCindyResponsesImageBridgeAllowed(reqModel, body) {
+		// The body must retain the image-only model so the forwarder can build the
+		// verified image tool request. Scheduling, however, targets its Luna text
+		// controller because Cindy does not serve gpt-image-2 as a text endpoint.
+		routingModel = service.CindyDefaultTestModel
+	}
 	if compatibilityAlias {
 		routingModel = compatibilityRoutingModel
 		forwardMapped = true
@@ -665,6 +729,11 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			selection, err = h.gatewayService.ReacquireOpenAISameAccountSelection(c.Request.Context(), sameAccountRetrySelection)
 			sameAccountRetrySelection = nil
 			scheduleDecision.Layer = "same_account_retry"
+		} else if len(opaqueContinuationBindingIDs) > 0 {
+			selection, scheduleDecision, err = h.gatewayService.SelectAccountByCindyOpaqueContinuation(
+				c.Request.Context(), apiKey.GroupID, opaqueContinuationBindingIDs, routingModel,
+				failedAccountIDs, service.OpenAIUpstreamTransportAny, requiredCapability, requireCompact,
+			)
 		} else {
 			selection, scheduleDecision, err = h.gatewayService.SelectAccountWithSchedulerForCapabilityAndPreference(
 				c.Request.Context(),
@@ -778,7 +847,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		// Forward request
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
 		forwardStart := time.Now()
-		// 用扣除 compact 心跳字节的口径快照：心跳注释不构成语义响应，
+		// 用扣除非语义心跳字节的口径快照：心跳注释不构成语义响应，
 		// 不能因心跳字节变化而放弃 failover 换号（#3887）。
 		writerSizeBeforeForward := service.OpenAICompactKeepaliveAdjustedWrittenSize(c)
 		// 跨 passthrough 边界的 failover：从 Kiro 等透传账号切到 Bedrock 等非透传账号前，
@@ -893,7 +962,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						h.handleFailoverExhausted(c, failoverErr, true)
 						return
 					}
-					if failoverErr.SafeToFailoverAfterWrite && c.Writer.Written() {
+					// openAIForwardMayFailover 已确认写出的字节不含语义输出，
+					// 但重试耗尽时仍须按已提交的 SSE 响应返回流内错误。
+					if c.Writer.Written() {
 						streamStarted = true
 					}
 					if repairedBody, repaired, repairErr := prepareOpenAIRefusalPromptRetry(c, forwardBody, failoverErr); repairErr != nil {
@@ -936,6 +1007,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						return
 					}
 					if openAIFirstOutputFailoverExhausted(failoverErr, &firstOutputTimeoutSwitchCount) {
+						h.handleFailoverExhausted(c, failoverErr, streamStarted)
+						return
+					}
+					if cindyIdentityGroup && !cindyContinuation.CanSwitchAccount() {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
@@ -1196,7 +1271,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	}
 	// Strict Cindy groups always expose their verified native Messages surface;
 	// the legacy OpenAI conversion flag remains authoritative elsewhere.
-	if !strictCindyMessages && !allowOpenAICompatibleMessagesDispatch(apiKey) {
+	if !strictCindyMessages && !allowOpenAICompatibleMessagesDispatch(c, apiKey) {
 		h.anthropicErrorResponse(c, http.StatusForbidden, "permission_error",
 			"This group does not allow /v1/messages dispatch")
 		return
@@ -1243,7 +1318,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	}
 	bindOpenAIReasoningEffortPolicyForMessagesRequest(c, apiKey, body)
 	routingModel := service.NormalizeOpenAICompatRequestedModel(reqModel)
-	preferredMappedModel := resolveOpenAIMessagesDispatchMappedModel(apiKey, reqModel)
+	preferredMappedModel := resolveOpenAIMessagesDispatchMappedModel(c, apiKey, reqModel)
 	if strictCindyMessages {
 		// Cindy's Messages surface is native. Do not apply the legacy Claude-to-
 		// GPT family dispatch defaults that exist for OpenAI Responses bridging.
@@ -2167,17 +2242,40 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	ctx = c.Request.Context()
 	if apiKey.Group != nil && apiKey.Group.Platform == service.PlatformComposite {
 		platform, ok := service.ResolvedTargetPlatformFromContext(ctx)
-		if !ok || (platform != service.PlatformOpenAI && platform != service.PlatformGrok) {
+		if !ok || !isResponsesWebSocketCompositePlatform(platform) {
 			closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "Responses WebSocket API only supports OpenAI-compatible models for composite groups")
 			return
 		}
 	}
-	previousResponseID := strings.TrimSpace(gjson.GetBytes(firstMessage, "previous_response_id").String())
-	previousResponseIDKind := service.ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
-	if previousResponseID != "" && previousResponseIDKind == service.OpenAIPreviousResponseIDKindMessageID {
-		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "previous_response_id must be a response.id (resp_*), not a message id")
+	previousResponseID, anchorErr := service.ParseOpenAIContinuationAnchor(firstMessage)
+	if anchorErr != nil {
+		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, service.OpenAIContinuationAnchorValidationMessage)
 		return
 	}
+	var wsOpaqueContinuationBindingIDs []string
+	if cindyIdentityGroup {
+		classification, classifyErr := service.ClassifyCindyContinuation(firstMessage, service.CindyContinuationProof{})
+		if classifyErr != nil {
+			closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "invalid continuation payload")
+			return
+		}
+		if classification.Mode == service.CindyContinuationOpaqueFull {
+			lookup := h.gatewayService.LookupCindyOpaqueContinuationBinding(
+				ctx, apiKey.Group.ID, classification.OpaqueBindingIDs,
+			)
+			switch lookup.State {
+			case service.OpenAIContinuationBindingHit:
+				wsOpaqueContinuationBindingIDs = append([]string(nil), classification.OpaqueBindingIDs...)
+			case service.OpenAIContinuationBindingStoreError:
+				closeOpenAIWSFailoverExhausted(wsConn, service.NewOpenAIContinuationStoreUnavailableError())
+				return
+			default:
+				closeOpenAIWSFailoverExhausted(wsConn, service.NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil))
+				return
+			}
+		}
+	}
+	previousResponseIDKind := service.ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
 	reqLog = reqLog.With(
 		zap.Bool("ws_ingress", true),
 		zap.String("session_initial_model", reqModel),
@@ -2290,8 +2388,8 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "billing check failed")
 		return
 	}
-	previousResponseCanMove := openAIWSPreviousResponseCanMove(firstMessage, previousResponseID)
-	accountSwitchReplaySafe := openAIWSInitialAccountSwitchReplaySafe(firstMessage, previousResponseCanMove)
+	previousResponseCanMove := openAIWSPreviousResponseCanMove(firstMessage, previousResponseID, cindyIdentityGroup)
+	accountSwitchReplaySafe := openAIWSInitialAccountSwitchReplaySafe(firstMessage, previousResponseCanMove, cindyIdentityGroup)
 
 	sessionHash := h.gatewayService.GenerateSessionHashWithFallback(
 		c,
@@ -2305,6 +2403,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	var lastFailoverErr *service.UpstreamFailoverError
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 	var accountTypePreference service.OpenAIAccountTypePreference
+	wsAttemptMessage := append([]byte(nil), firstMessage...)
 	handleWSFailover := func(selection *service.AccountSelectionResult, account *service.Account, failoverErr *service.UpstreamFailoverError) bool {
 		if ctx.Err() != nil {
 			return false
@@ -2379,21 +2478,38 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			return
 		}
 		reqLog.Debug("openai.websocket_account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
-		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapabilityAndPreference(
-			ctx,
-			apiKey.GroupID,
-			previousResponseID,
-			sessionHash,
-			wsRoutingModel,
-			failedAccountIDs,
-			requiredTransport,
-			requiredCapability,
-			false,
-			previousResponseCanMove,
-			!imageIntent,
-			requestPlatform,
-			accountTypePreference,
+		var (
+			selection        *service.AccountSelectionResult
+			scheduleDecision service.OpenAIAccountScheduleDecision
 		)
+		if len(wsOpaqueContinuationBindingIDs) > 0 {
+			selection, scheduleDecision, err = h.gatewayService.SelectAccountByCindyOpaqueContinuation(
+				ctx,
+				apiKey.GroupID,
+				wsOpaqueContinuationBindingIDs,
+				wsRoutingModel,
+				failedAccountIDs,
+				requiredTransport,
+				requiredCapability,
+				false,
+			)
+		} else {
+			selection, scheduleDecision, err = h.gatewayService.SelectAccountWithSchedulerForCapabilityAndPreference(
+				ctx,
+				apiKey.GroupID,
+				previousResponseID,
+				sessionHash,
+				wsRoutingModel,
+				failedAccountIDs,
+				requiredTransport,
+				requiredCapability,
+				false,
+				previousResponseCanMove,
+				!imageIntent,
+				requestPlatform,
+				accountTypePreference,
+			)
+		}
 		if err != nil {
 			var selectionFailoverErr *service.UpstreamFailoverError
 			if errors.As(err, &selectionFailoverErr) && selectionFailoverErr.IsOpenAIContinuationStateUnavailable() {
@@ -2745,7 +2861,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			},
 		}
 
-		wsFirstMessage := firstMessage
+		wsFirstMessage := wsAttemptMessage
 		// 切组/会话失配防护：previous_response_id 未在当前分组命中粘连账号（StickyPreviousHit=false），
 		// 说明该会话链不属于本次调度到的账号，原样转发会触发上游会话链鉴权失败（“鉴权失败，请检查 API Key”）。
 		// 故剥离首包里的 previous_response_id，改用首包内 input 重建上下文；带 function_call_output 的
@@ -2757,7 +2873,8 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				zap.String("schedule_layer", scheduleDecision.Layer),
 			)
 		}
-		accountSwitchReplaySafe = openAIWSInitialAccountSwitchReplaySafe(wsFirstMessage, previousResponseCanMove)
+		wsAttemptMessage = wsFirstMessage
+		accountSwitchReplaySafe = openAIWSInitialAccountSwitchReplaySafe(wsFirstMessage, previousResponseCanMove, cindyIdentityGroup)
 
 		// WebSocket 首包可能很大，hash 必须在 hooks 外算成字符串，避免 AfterTurn 闭包保活请求体。
 		requestPayloadHash = service.HashUsageRequestPayload(wsFirstMessage)
@@ -2796,6 +2913,21 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
+				retryPayload, retryCurrentTurn := service.OpenAIWSCurrentTurnRetryPayload(err)
+				nextAttemptMessage, retrySafe := openAIWSNextAttemptMessage(wsAttemptMessage, retryPayload, retryCurrentTurn)
+				if !retrySafe {
+					closeOpenAIWSFailoverExhausted(wsConn, failoverErr)
+					return
+				}
+				wsAttemptMessage = nextAttemptMessage
+				if retryCurrentTurn {
+					previousResponseID = ""
+					reqLog.Warn("openai.websocket_current_turn_failover_retry",
+						zap.Int64("account_id", account.ID),
+						zap.Int("upstream_status", failoverErr.StatusCode),
+						zap.Int("retry_payload_bytes", len(retryPayload)),
+					)
+				}
 				if handleWSFailover(selection, account, failoverErr) {
 					continue
 				}
@@ -3464,6 +3596,19 @@ func (h *OpenAIGatewayHandler) errorResponse(c *gin.Context, status int, errType
 	})
 }
 
+func writeCindyHTTPContinuationStateError(c *gin.Context) {
+	if c == nil {
+		return
+	}
+	c.JSON(http.StatusBadRequest, gin.H{
+		"error": gin.H{
+			"type":    "invalid_request_error",
+			"code":    service.OpenAIContinuationStateUnavailableCode,
+			"message": service.OpenAIContinuationStateUnavailableClientMessage,
+		},
+	})
+}
+
 // openAICompactKeepaliveInterval 复用流式 keepalive 配置作为 compact 下游
 // 心跳间隔；0 表示禁用（与流式路径语义一致）。
 func (h *OpenAIGatewayHandler) openAICompactKeepaliveInterval() time.Duration {
@@ -3585,6 +3730,16 @@ func closeOpenAIClientWS(conn *coderws.Conn, status coderws.StatusCode, reason s
 	}
 	_ = conn.Close(status, reason)
 	_ = conn.CloseNow()
+}
+
+func openAIWSNextAttemptMessage(current, retryPayload []byte, retryCurrentTurn bool) ([]byte, bool) {
+	if !retryCurrentTurn {
+		return append([]byte(nil), current...), true
+	}
+	if len(retryPayload) == 0 {
+		return nil, false
+	}
+	return append([]byte(nil), retryPayload...), true
 }
 
 func closeOpenAIWSFailoverExhausted(conn *coderws.Conn, failoverErr *service.UpstreamFailoverError) {

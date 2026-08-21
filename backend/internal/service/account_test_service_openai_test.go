@@ -170,14 +170,16 @@ func TestAccountTestService_CindyBudget429DoesNotPersistWithoutConfirmation(t *t
 				cfg:          &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}},
 			}
 			account := &Account{
-				ID:          int64(8600 + index),
-				Platform:    PlatformOpenAI,
-				Type:        AccountTypeAPIKey,
-				Status:      StatusActive,
-				Schedulable: true,
-				Concurrency: 1,
-				Credentials: cindyCredentials(),
-				Extra:       map[string]any{"use_responses_api": true},
+				ID:              int64(8600 + index),
+				Platform:        PlatformCindy,
+				WirePlatform:    WirePlatformOpenAI,
+				ProviderProfile: ProviderProfileCindyLaxaV1,
+				Type:            AccountTypeAPIKey,
+				Status:          StatusActive,
+				Schedulable:     true,
+				Concurrency:     1,
+				Credentials:     cindyCredentials(),
+				Extra:           map[string]any{"use_responses_api": true},
 			}
 
 			err := tt.run(svc, c, account)
@@ -207,7 +209,7 @@ func TestAccountTestService_CindyBudget429DoesNotStartBackgroundProbe(t *testing
 		accountRepo: repo, httpUpstream: upstream, openAIGatewayService: gateway, cfg: cfg,
 	}
 	account := &Account{
-		ID: 8660, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		ID: 8660, Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1, Type: AccountTypeAPIKey,
 		Status: StatusActive, Schedulable: true, Concurrency: 1,
 		Credentials: cindyCredentials(), Extra: map[string]any{"use_responses_api": true},
 	}
@@ -234,12 +236,14 @@ func TestAccountTestService_OrdinaryCindy429DoesNotMarkBalanceInsufficient(t *te
 		cfg:          &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}},
 	}
 	account := &Account{
-		ID:          8699,
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Concurrency: 1,
-		Credentials: cindyCredentials(),
-		Extra:       map[string]any{"use_responses_api": true},
+		ID:              8699,
+		Platform:        PlatformCindy,
+		WirePlatform:    WirePlatformOpenAI,
+		ProviderProfile: ProviderProfileCindyLaxaV1,
+		Type:            AccountTypeAPIKey,
+		Concurrency:     1,
+		Credentials:     cindyCredentials(),
+		Extra:           map[string]any{"use_responses_api": true},
 	}
 
 	err := svc.testOpenAIAccountConnection(c, account, "gpt-5.6-sol", "hi", AccountTestModeDefault)
@@ -260,12 +264,14 @@ func TestAccountTestService_CindyEmptyModelUsesLuna(t *testing.T) {
 		cfg:          &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}},
 	}
 	account := &Account{
-		ID:          8700,
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Concurrency: 1,
-		Credentials: cindyCredentials(),
-		Extra:       map[string]any{"use_responses_api": true},
+		ID:              8700,
+		Platform:        PlatformCindy,
+		WirePlatform:    WirePlatformOpenAI,
+		ProviderProfile: ProviderProfileCindyLaxaV1,
+		Type:            AccountTypeAPIKey,
+		Concurrency:     1,
+		Credentials:     cindyCredentials(),
+		Extra:           map[string]any{"use_responses_api": true},
 	}
 
 	require.NoError(t, svc.testOpenAIAccountConnection(c, account, "", "hi", AccountTestModeDefault))

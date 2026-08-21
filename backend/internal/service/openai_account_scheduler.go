@@ -1752,6 +1752,9 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleReason(ctx con
 	if account == nil {
 		return false, "account_nil"
 	}
+	if NormalizeOpenAICompatiblePlatform(req.Platform) == PlatformCindy && !hasCanonicalCindyProviderIdentity(account) {
+		return false, "provider_identity_mismatch"
+	}
 	requestedModel := openAIRequestedModelForAccount(ctx, account, req.RequestedModel)
 	if s != nil && s.service != nil && s.service.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, requestedModel) {
 		return false, "runtime_blocked"
@@ -2185,16 +2188,21 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
 	excludedIDs map[int64]struct{},
 	requiredCapability OpenAIImagesCapability,
 	cindyEndpoint CindyEndpoint,
+	requestedPlatforms ...string,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
 	ctx = ensureOpenAIRuntimeBreakerProbeOwner(ctx)
 	ctx = withOpenAICindyImageEndpoint(ctx, cindyEndpoint)
-	selection, decision, err := s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, "", requiredCapability, false, PlatformOpenAI, false, false)
+	requestPlatform := PlatformOpenAI
+	if len(requestedPlatforms) > 0 {
+		requestPlatform = NormalizeOpenAICompatiblePlatform(requestedPlatforms[0])
+	}
+	selection, decision, err := s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, "", requiredCapability, false, requestPlatform, false, false)
 	if err == nil && selection != nil && selection.Account != nil {
 		return selection, decision, nil
 	}
 	// 如果要求 native 能力（如指定了模型）但没有可用的 APIKey 账号，回退到 basic（OAuth 账号）
 	if requiredCapability == OpenAIImagesCapabilityNative {
-		return s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, "", OpenAIImagesCapabilityBasic, false, PlatformOpenAI, false, false)
+		return s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, "", OpenAIImagesCapabilityBasic, false, requestPlatform, false, false)
 	}
 	return selection, decision, err
 }
@@ -2439,6 +2447,10 @@ func accountSupportsOpenAICapabilities(ctx context.Context, account *Account, re
 		return false
 	}
 	isCindy := IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+	if isCindy && requiredCapability == OpenAIEndpointCapabilityAlphaSearch {
+		return CindyAlphaSearchModelAvailable(requestedModel) &&
+			account.SupportsOpenAIEndpointCapability(requiredCapability)
+	}
 	cindyCatalogEnabled := CindyCapabilityCatalogFeatureEnabled()
 	if isCindy && cindyCatalogEnabled && strings.TrimSpace(requestedModel) != "" {
 		endpoint, mapped := cindyEndpointForOpenAICapability(requiredCapability)

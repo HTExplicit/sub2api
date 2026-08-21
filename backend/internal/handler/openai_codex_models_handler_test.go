@@ -142,7 +142,8 @@ func TestCodexModelsStrictCindyProjectsVerifiedPublicCatalog(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	groupID := int64(43)
 	accounts := []service.Account{{
-		ID: 1, Name: "cindy", Platform: service.PlatformOpenAI,
+		ID: 1, Name: "cindy", Platform: service.PlatformCindy,
+		WirePlatform: service.WirePlatformOpenAI, ProviderProfile: service.ProviderProfileCindyLaxaV1,
 		Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
 		Priority: 0, Concurrency: 1,
 		Credentials: map[string]any{
@@ -160,7 +161,8 @@ func TestCodexModelsStrictCindyProjectsVerifiedPublicCatalog(t *testing.T) {
 	)
 	handler := &OpenAIGatewayHandler{gatewayService: gatewayService, maxAccountSwitches: 3}
 	group := &service.Group{
-		ID: groupID, Platform: service.PlatformOpenAI,
+		ID: groupID, Platform: service.PlatformCindy,
+		WirePlatform: service.WirePlatformOpenAI, ProviderProfile: service.ProviderProfileCindyLaxaV1,
 		StrictCindyKnown: true, StrictCindy: true,
 	}
 	recorder := performCodexModelsRequestForGroup(t, handler, group)
@@ -176,9 +178,20 @@ func TestCodexModelsStrictCindyProjectsVerifiedPublicCatalog(t *testing.T) {
 		t.Fatalf("strict Cindy slugs: got %v, want %v", slugs, service.CindyCodexPublicModelIDs())
 	}
 	assertCodexManifestOmitsNonResponsesCindyIDs(t, recorder.Body.String())
+
+	outdated := performCodexModelsRequestForGroupWithVersion(t, handler, group, "0.146.0")
+	if outdated.Code != http.StatusUpgradeRequired {
+		t.Fatalf("outdated client status: got %d, want %d; body=%s", outdated.Code, http.StatusUpgradeRequired, outdated.Body.String())
+	}
+	if !strings.Contains(outdated.Body.String(), service.CindyCodexMinimumClientVersion) {
+		t.Fatalf("outdated client response must name minimum version; body=%s", outdated.Body.String())
+	}
+	if got := upstream.calls(); len(got) != 0 {
+		t.Fatalf("outdated strict Cindy request must not reach upstream; calls=%v", got)
+	}
 }
 
-func TestCodexModelsMixedGroupDeterministicallyUnionsOrdinaryAndVerifiedCindyResponses(t *testing.T) {
+func TestCodexModelsCindyGroupDoesNotUnionOrdinaryProviderModels(t *testing.T) {
 	if !runCodexCatalogEnabledHandlerTest(t) {
 		return
 	}
@@ -186,7 +199,8 @@ func TestCodexModelsMixedGroupDeterministicallyUnionsOrdinaryAndVerifiedCindyRes
 	groupID := int64(44)
 	accounts := []service.Account{
 		{
-			ID: 1, Name: "cindy", Platform: service.PlatformOpenAI,
+			ID: 1, Name: "cindy", Platform: service.PlatformCindy,
+			WirePlatform: service.WirePlatformOpenAI, ProviderProfile: service.ProviderProfileCindyLaxaV1,
 			Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
 			Priority: 0, Concurrency: 1,
 			Credentials: map[string]any{
@@ -237,43 +251,28 @@ func TestCodexModelsMixedGroupDeterministicallyUnionsOrdinaryAndVerifiedCindyRes
 	)
 	handler := &OpenAIGatewayHandler{gatewayService: gatewayService, maxAccountSwitches: 3}
 	group := &service.Group{
-		ID: groupID, Platform: service.PlatformOpenAI,
-		StrictCindyKnown: true, StrictCindy: false,
+		ID: groupID, Platform: service.PlatformCindy,
+		WirePlatform: service.WirePlatformOpenAI, ProviderProfile: service.ProviderProfileCindyLaxaV1,
+		StrictCindyKnown: true, StrictCindy: true,
 	}
 	first := performCodexModelsRequestForGroup(t, handler, group)
 	second := performCodexModelsRequestForGroup(t, handler, group)
 	if first.Code != http.StatusOK || second.Code != http.StatusOK {
-		t.Fatalf("mixed statuses: first=%d second=%d; first body=%s second body=%s", first.Code, second.Code, first.Body.String(), second.Body.String())
+		t.Fatalf("Cindy statuses: first=%d second=%d; first body=%s second body=%s", first.Code, second.Code, first.Body.String(), second.Body.String())
 	}
 	if first.Body.String() != second.Body.String() {
-		t.Fatalf("mixed manifest changed across identical requests: first=%s second=%s", first.Body.String(), second.Body.String())
+		t.Fatalf("Cindy manifest changed across identical requests: first=%s second=%s", first.Body.String(), second.Body.String())
 	}
-	if got := upstream.calls(); !equalInt64Slices(got, []int64{2}) {
-		t.Fatalf("mixed manifest must fetch only the ordinary account: got calls %v, want [2]", got)
+	if got := upstream.calls(); len(got) != 0 {
+		t.Fatalf("Cindy manifest must stay local and ignore ordinary provider accounts: calls=%v", got)
 	}
 
 	slugs := decodeCodexModelSlugs(t, first.Body.Bytes())
-	ordinarySlugs := []string{
-		"ordinary-model",
-		"openai/gpt-5.6-sol",
-		"gpt-5.4",
-		"gpt-5.4-mini",
-		"deepseek/deepseek-v4-pro",
-		"anthropic/claude-opus-5",
-		"x-ai/grok-4.6",
-		"google/gemini-3-pro-image",
-		"openai/gpt-image-2",
-	}
-	want := append(append([]string(nil), ordinarySlugs...), service.CindyCodexPublicModelIDs()...)
+	want := append([]string(nil), service.CindyCodexPublicModelIDs()...)
 	sort.Strings(slugs)
 	sort.Strings(want)
 	if got, expected := strings.Join(slugs, ","), strings.Join(want, ","); got != expected {
-		t.Fatalf("mixed slugs: got %v, want %v", slugs, want)
-	}
-	for _, slug := range ordinarySlugs {
-		if !strings.Contains(first.Body.String(), `"`+slug+`"`) {
-			t.Fatalf("mixed manifest dropped ordinary slug %q: %s", slug, first.Body.String())
-		}
+		t.Fatalf("Cindy slugs: got %v, want %v", slugs, want)
 	}
 }
 
@@ -379,6 +378,19 @@ func assertCodexManifestOmitsNonResponsesCindyIDs(t *testing.T, body string) {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("Codex manifest leaked forbidden ID %q: %s", forbidden, body)
 		}
+	}
+}
+
+func TestCompositeCodexModelsReusesExistingManifestSelection(t *testing.T) {
+	handler, upstream, groupID := newCodexModelsFailoverTestHandler(http.StatusServiceUnavailable)
+
+	recorder := performCodexModelsRequestForPlatform(t, handler, groupID, service.PlatformComposite)
+
+	if got, want := upstream.calls(), []int64{1, 2}; !equalInt64Slices(got, want) {
+		t.Fatalf("upstream account calls: got %v, want %v", got, want)
+	}
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
 	}
 }
 
@@ -554,15 +566,23 @@ func newCodexModelsFailoverTestHandlerWithAccountCount(firstStatus, accountCount
 }
 
 func performCodexModelsRequest(t *testing.T, handler *OpenAIGatewayHandler, groupID int64) *httptest.ResponseRecorder {
+	return performCodexModelsRequestForPlatform(t, handler, groupID, service.PlatformOpenAI)
+}
+
+func performCodexModelsRequestForPlatform(t *testing.T, handler *OpenAIGatewayHandler, groupID int64, platform string) *httptest.ResponseRecorder {
 	t.Helper()
-	return performCodexModelsRequestForGroup(t, handler, &service.Group{ID: groupID, Platform: service.PlatformOpenAI})
+	return performCodexModelsRequestForGroup(t, handler, &service.Group{ID: groupID, Platform: platform})
 }
 
 func performCodexModelsRequestForGroup(t *testing.T, handler *OpenAIGatewayHandler, group *service.Group) *httptest.ResponseRecorder {
+	return performCodexModelsRequestForGroupWithVersion(t, handler, group, service.CindyCodexMinimumClientVersion)
+}
+
+func performCodexModelsRequestForGroupWithVersion(t *testing.T, handler *OpenAIGatewayHandler, group *service.Group, clientVersion string) *httptest.ResponseRecorder {
 	t.Helper()
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
-	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models?client_version=0.144.0", nil)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models?client_version="+clientVersion, nil)
 	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
 		GroupID: &group.ID,
 		Group:   group,

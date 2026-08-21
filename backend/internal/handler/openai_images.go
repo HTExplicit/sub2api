@@ -168,6 +168,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 
 	sessionHash := h.gatewayService.GenerateExplicitSessionHash(c, body)
 	requestCtx := service.WithOpenAIImagesEndpoint(service.WithOpenAIImageGenerationIntent(c.Request.Context()))
+	requestPlatform := openAICompatibleRequestPlatform(c.Request.Context(), apiKey)
 
 	maxAccountSwitches := h.maxAccountSwitches
 	switchCount := 0
@@ -202,6 +203,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				failedAccountIDs,
 				parsed.RequiredCapability,
 				cindyEndpoint,
+				requestPlatform,
 			)
 		}
 		if err != nil {

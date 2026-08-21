@@ -125,6 +125,16 @@ func Platform(v string) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldPlatform, v))
 }
 
+// WirePlatform applies equality check predicate on the "wire_platform" field. It's identical to WirePlatformEQ.
+func WirePlatform(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldWirePlatform, v))
+}
+
+// ProviderProfile applies equality check predicate on the "provider_profile" field. It's identical to ProviderProfileEQ.
+func ProviderProfile(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldProviderProfile, v))
+}
+
 // SubscriptionType applies equality check predicate on the "subscription_type" field. It's identical to SubscriptionTypeEQ.
 func SubscriptionType(v string) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldSubscriptionType, v))
@@ -1033,6 +1043,136 @@ func PlatformEqualFold(v string) predicate.Group {
 // PlatformContainsFold applies the ContainsFold predicate on the "platform" field.
 func PlatformContainsFold(v string) predicate.Group {
 	return predicate.Group(sql.FieldContainsFold(FieldPlatform, v))
+}
+
+// WirePlatformEQ applies the EQ predicate on the "wire_platform" field.
+func WirePlatformEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldWirePlatform, v))
+}
+
+// WirePlatformNEQ applies the NEQ predicate on the "wire_platform" field.
+func WirePlatformNEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldWirePlatform, v))
+}
+
+// WirePlatformIn applies the In predicate on the "wire_platform" field.
+func WirePlatformIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldIn(FieldWirePlatform, vs...))
+}
+
+// WirePlatformNotIn applies the NotIn predicate on the "wire_platform" field.
+func WirePlatformNotIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldNotIn(FieldWirePlatform, vs...))
+}
+
+// WirePlatformGT applies the GT predicate on the "wire_platform" field.
+func WirePlatformGT(v string) predicate.Group {
+	return predicate.Group(sql.FieldGT(FieldWirePlatform, v))
+}
+
+// WirePlatformGTE applies the GTE predicate on the "wire_platform" field.
+func WirePlatformGTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldGTE(FieldWirePlatform, v))
+}
+
+// WirePlatformLT applies the LT predicate on the "wire_platform" field.
+func WirePlatformLT(v string) predicate.Group {
+	return predicate.Group(sql.FieldLT(FieldWirePlatform, v))
+}
+
+// WirePlatformLTE applies the LTE predicate on the "wire_platform" field.
+func WirePlatformLTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldLTE(FieldWirePlatform, v))
+}
+
+// WirePlatformContains applies the Contains predicate on the "wire_platform" field.
+func WirePlatformContains(v string) predicate.Group {
+	return predicate.Group(sql.FieldContains(FieldWirePlatform, v))
+}
+
+// WirePlatformHasPrefix applies the HasPrefix predicate on the "wire_platform" field.
+func WirePlatformHasPrefix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasPrefix(FieldWirePlatform, v))
+}
+
+// WirePlatformHasSuffix applies the HasSuffix predicate on the "wire_platform" field.
+func WirePlatformHasSuffix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasSuffix(FieldWirePlatform, v))
+}
+
+// WirePlatformEqualFold applies the EqualFold predicate on the "wire_platform" field.
+func WirePlatformEqualFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldEqualFold(FieldWirePlatform, v))
+}
+
+// WirePlatformContainsFold applies the ContainsFold predicate on the "wire_platform" field.
+func WirePlatformContainsFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldContainsFold(FieldWirePlatform, v))
+}
+
+// ProviderProfileEQ applies the EQ predicate on the "provider_profile" field.
+func ProviderProfileEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldProviderProfile, v))
+}
+
+// ProviderProfileNEQ applies the NEQ predicate on the "provider_profile" field.
+func ProviderProfileNEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldProviderProfile, v))
+}
+
+// ProviderProfileIn applies the In predicate on the "provider_profile" field.
+func ProviderProfileIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldIn(FieldProviderProfile, vs...))
+}
+
+// ProviderProfileNotIn applies the NotIn predicate on the "provider_profile" field.
+func ProviderProfileNotIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldNotIn(FieldProviderProfile, vs...))
+}
+
+// ProviderProfileGT applies the GT predicate on the "provider_profile" field.
+func ProviderProfileGT(v string) predicate.Group {
+	return predicate.Group(sql.FieldGT(FieldProviderProfile, v))
+}
+
+// ProviderProfileGTE applies the GTE predicate on the "provider_profile" field.
+func ProviderProfileGTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldGTE(FieldProviderProfile, v))
+}
+
+// ProviderProfileLT applies the LT predicate on the "provider_profile" field.
+func ProviderProfileLT(v string) predicate.Group {
+	return predicate.Group(sql.FieldLT(FieldProviderProfile, v))
+}
+
+// ProviderProfileLTE applies the LTE predicate on the "provider_profile" field.
+func ProviderProfileLTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldLTE(FieldProviderProfile, v))
+}
+
+// ProviderProfileContains applies the Contains predicate on the "provider_profile" field.
+func ProviderProfileContains(v string) predicate.Group {
+	return predicate.Group(sql.FieldContains(FieldProviderProfile, v))
+}
+
+// ProviderProfileHasPrefix applies the HasPrefix predicate on the "provider_profile" field.
+func ProviderProfileHasPrefix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasPrefix(FieldProviderProfile, v))
+}
+
+// ProviderProfileHasSuffix applies the HasSuffix predicate on the "provider_profile" field.
+func ProviderProfileHasSuffix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasSuffix(FieldProviderProfile, v))
+}
+
+// ProviderProfileEqualFold applies the EqualFold predicate on the "provider_profile" field.
+func ProviderProfileEqualFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldEqualFold(FieldProviderProfile, v))
+}
+
+// ProviderProfileContainsFold applies the ContainsFold predicate on the "provider_profile" field.
+func ProviderProfileContainsFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldContainsFold(FieldProviderProfile, v))
 }
 
 // SubscriptionTypeEQ applies the EQ predicate on the "subscription_type" field.

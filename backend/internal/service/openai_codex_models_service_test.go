@@ -562,7 +562,7 @@ func TestProjectCindyCodexModelsManifestMapsLiveAndHiddenAliases(t *testing.T) {
 	require.NotContains(t, string(projected), "gemini-3-pro-image")
 }
 
-func TestBuildCindyCodexModelsManifestMatchesRustV01460ModelInfoContract(t *testing.T) {
+func TestBuildCindyCodexModelsManifestMatchesRustV01470ModelInfoContract(t *testing.T) {
 	if !runCindyCodexCatalogEnabledTest(t) {
 		return
 	}
@@ -578,29 +578,30 @@ func TestBuildCindyCodexModelsManifestMatchesRustV01460ModelInfoContract(t *test
 	require.Len(t, envelope.Models, len(CindyCodexPublicModelIDs()))
 
 	// These are the fields without serde defaults in the official
-	// openai/codex rust-v0.146.0 ModelInfo contract.
+	// openai/codex rust-v0.147.0 ModelInfo contract.
 	requiredFields := []string{
 		"slug", "display_name", "description", "default_reasoning_level",
 		"supported_reasoning_levels", "shell_type", "visibility", "supported_in_api",
 		"priority", "additional_speed_tiers", "service_tiers", "default_service_tier",
 		"availability_nux", "upgrade", "base_instructions", "model_messages",
-		"include_skills_usage_instructions", "supports_reasoning_summary_parameter",
+		"include_skills_usage_instructions", "include_plugin_usage_instructions",
+		"include_apps_usage_instructions", "supports_reasoning_summary_parameter",
 		"default_reasoning_summary", "support_verbosity", "default_verbosity",
 		"apply_patch_tool_type", "web_search_tool_type", "truncation_policy",
 		"supports_parallel_tool_calls", "supports_image_detail_original",
 		"context_window", "max_context_window", "auto_compact_token_limit", "comp_hash",
 		"effective_context_window_percent", "experimental_supported_tools",
 		"input_modalities", "supports_search_tool", "use_responses_lite",
-		"auto_review_model_override", "tool_mode", "multi_agent_version",
+		"auto_review_model_override", "model_specialty", "tool_mode", "multi_agent_version",
 	}
 	bySlug := make(map[string]map[string]json.RawMessage, len(envelope.Models))
 	for _, model := range envelope.Models {
 		for _, field := range requiredFields {
 			_, ok := model[field]
-			require.Truef(t, ok, "missing rust-v0.146.0 ModelInfo field %q in %s", field, model["slug"])
+			require.Truef(t, ok, "missing rust-v0.147.0 ModelInfo field %q in %s", field, model["slug"])
 		}
 		var slug, shellType, visibility string
-		var supportedInAPI, includeSkills, supportsReasoningSummary bool
+		var supportedInAPI, includeSkills, includePlugins, includeApps, supportsReasoningSummary bool
 		var supportVerbosity, supportsParallel, supportsImageDetail bool
 		var supportsSearch, useResponsesLite bool
 		var priority, effectiveContextPercent int
@@ -629,6 +630,8 @@ func TestBuildCindyCodexModelsManifestMatchesRustV01460ModelInfoContract(t *test
 		require.NoError(t, json.Unmarshal(model["service_tiers"], &serviceTiers))
 		require.NoError(t, json.Unmarshal(model["base_instructions"], &baseInstructions))
 		require.NoError(t, json.Unmarshal(model["include_skills_usage_instructions"], &includeSkills))
+		require.NoError(t, json.Unmarshal(model["include_plugin_usage_instructions"], &includePlugins))
+		require.NoError(t, json.Unmarshal(model["include_apps_usage_instructions"], &includeApps))
 		require.NoError(t, json.Unmarshal(model["supports_reasoning_summary_parameter"], &supportsReasoningSummary))
 		require.NoError(t, json.Unmarshal(model["default_reasoning_summary"], &defaultReasoningSummary))
 		require.NoError(t, json.Unmarshal(model["support_verbosity"], &supportVerbosity))
@@ -658,6 +661,8 @@ func TestBuildCindyCodexModelsManifestMatchesRustV01460ModelInfoContract(t *test
 		}
 		require.NotEmpty(t, baseInstructions)
 		require.False(t, includeSkills)
+		require.False(t, includePlugins)
+		require.False(t, includeApps)
 		require.True(t, supportsReasoningSummary)
 		require.Equal(t, "auto", defaultReasoningSummary)
 		require.False(t, supportVerbosity)
@@ -675,10 +680,17 @@ func TestBuildCindyCodexModelsManifestMatchesRustV01460ModelInfoContract(t *test
 		require.False(t, useResponsesLite)
 		for _, nullField := range []string{
 			"default_service_tier", "availability_nux", "upgrade", "model_messages",
-			"default_verbosity", "apply_patch_tool_type", "auto_compact_token_limit",
-			"comp_hash", "auto_review_model_override", "tool_mode", "multi_agent_version",
+			"default_verbosity", "apply_patch_tool_type", "comp_hash",
+			"auto_review_model_override", "model_specialty", "tool_mode", "multi_agent_version",
 		} {
 			require.JSONEqf(t, "null", string(model[nullField]), "field %s must be explicit null", nullField)
+		}
+		if strings.HasPrefix(slug, "gpt-5.6-") {
+			var autoCompact int
+			require.NoError(t, json.Unmarshal(model["auto_compact_token_limit"], &autoCompact))
+			require.Equal(t, 900000, autoCompact)
+		} else {
+			require.JSONEq(t, "null", string(model["auto_compact_token_limit"]))
 		}
 		var truncation struct {
 			Mode  string `json:"mode"`
@@ -725,8 +737,8 @@ func TestBuildCindyCodexModelsManifestMatchesRustV01460ModelInfoContract(t *test
 		require.Equal(t, int64(10000), truncation.Limit)
 	}
 	assertCodexModel("gpt-5.6-luna", 1050000, "high", []string{"low", "medium", "high", "xhigh", "max"}, "tokens")
-	assertCodexModel("gpt-5.6-sol", 372000, "high", []string{"low", "medium", "high", "xhigh", "max", "ultra"}, "tokens")
-	assertCodexModel("gpt-5.6-terra", 372000, "high", []string{"low", "medium", "high", "xhigh", "max", "ultra"}, "tokens")
+	assertCodexModel("gpt-5.6-sol", 1050000, "high", []string{"low", "medium", "high", "xhigh", "max", "ultra"}, "tokens")
+	assertCodexModel("gpt-5.6-terra", 1050000, "high", []string{"low", "medium", "high", "xhigh", "max", "ultra"}, "tokens")
 	assertCodexModel("grok-4.5", 500000, "high", []string{"low", "medium", "high"}, "bytes")
 	assertCodexModel("glm-5.2", 1000000, "max", []string{"minimal", "high", "max"}, "bytes")
 }
@@ -809,7 +821,7 @@ func TestFetchCodexModelsManifestCindyRolloutProjection(t *testing.T) {
 		mode string
 	}{
 		{name: "catalog off preserves legacy IDs", env: []string{CindyCapabilityCatalogEnabledEnv + "=false", ImageStudioEnabledEnv + "=true"}, mode: "catalog_off"},
-		{name: "image off omits image IDs", env: []string{CindyCapabilityCatalogEnabledEnv + "=true", ImageStudioEnabledEnv + "=false"}, mode: "image_off"},
+		{name: "responses image off omits image IDs", env: []string{CindyCapabilityCatalogEnabledEnv + "=true", CindyResponsesImageBridgeEnabledEnv + "=false"}, mode: "image_off"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			cmd := exec.Command(os.Args[0], "-test.run=^TestFetchCodexModelsManifestCindyRolloutProjectionHelper$")
@@ -817,6 +829,7 @@ func TestFetchCodexModelsManifestCindyRolloutProjection(t *testing.T) {
 				CindyCapabilityCatalogEnabledEnv,
 				ImageStudioEnabledEnv,
 				CindyImageStudioEnabledEnv,
+				CindyResponsesImageBridgeEnabledEnv,
 				"SUB2API_CODEX_MODELS_CINDY_FLAG_HELPER",
 			), append(test.env, "SUB2API_CODEX_MODELS_CINDY_FLAG_HELPER="+test.mode)...)
 			if output, err := cmd.CombinedOutput(); err != nil {
@@ -838,10 +851,12 @@ func runCindyCodexCatalogEnabledTest(t *testing.T) bool {
 		CindyCapabilityCatalogEnabledEnv,
 		ImageStudioEnabledEnv,
 		CindyImageStudioEnabledEnv,
+		CindyResponsesImageBridgeEnabledEnv,
 		cindyCodexCatalogEnabledTestHelperEnv,
 	),
 		CindyCapabilityCatalogEnabledEnv+"=true",
 		ImageStudioEnabledEnv+"=true",
+		CindyResponsesImageBridgeEnabledEnv+"=true",
 		cindyCodexCatalogEnabledTestHelperEnv+"=1",
 	)
 	if output, err := cmd.CombinedOutput(); err != nil {
@@ -864,6 +879,9 @@ func TestFetchCodexModelsManifestCindyRolloutProjectionHelper(t *testing.T) {
 		}, nil
 	}}
 	account := newCodexModelsAPIKeyTestAccount("https://api.laxarouter.ai")
+	account.Platform = PlatformCindy
+	account.WirePlatform = WirePlatformOpenAI
+	account.ProviderProfile = ProviderProfileCindyLaxaV1
 	manifest, err := newCodexModelsAPIKeyTestService(upstream).FetchCodexModelsManifest(
 		context.Background(), account, "0.144.0", "",
 	)
@@ -898,7 +916,7 @@ func TestBuildCodexModelsManifestCacheKeyIncludesCindyRolloutFlags(t *testing.T)
 	require.NotEqual(t, baseKey, buildCodexModelsManifestCacheKey(withCatalog))
 
 	withImage := withCatalog
-	withImage.cindyImageEnabled = true
+	withImage.cindyResponsesImageEnabled = true
 	require.NotEqual(t, buildCodexModelsManifestCacheKey(withCatalog), buildCodexModelsManifestCacheKey(withImage))
 
 	withProjection := withImage

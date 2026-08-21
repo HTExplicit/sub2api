@@ -794,10 +794,23 @@ func TestGrokQuotaServiceQueryQuotaPaidBillingSkipsActiveProbe(t *testing.T) {
 	require.Nil(t, result.LocalUsage24h)
 
 	requests, _ := upstream.snapshot()
-	require.Len(t, requests, 2)
+	billingCalls := 0
+	responseCalls := 0
 	for _, req := range requests {
-		require.Equal(t, "/v1/billing", req.URL.Path)
+		switch req.URL.Path {
+		case "/v1/billing":
+			billingCalls++
+		case "/v1/models":
+			// Successful quota queries trigger an independent best-effort
+			// model refresh which may reach the recorder before this snapshot.
+		case "/v1/responses":
+			responseCalls++
+		default:
+			require.Failf(t, "unexpected upstream request", "path=%q", req.URL.Path)
+		}
 	}
+	require.Equal(t, 2, billingCalls)
+	require.Zero(t, responseCalls, "paid billing must skip the active usage probe")
 }
 
 func TestGrokQuotaServiceQueryQuotaCustomPaidMonthlyLimitSkipsActiveProbe(t *testing.T) {
@@ -819,10 +832,22 @@ func TestGrokQuotaServiceQueryQuotaCustomPaidMonthlyLimitSkipsActiveProbe(t *tes
 	require.Nil(t, result.Snapshot)
 
 	requests, _ := upstream.snapshot()
-	require.Len(t, requests, 2)
+	billingCalls := 0
+	responseCalls := 0
 	for _, req := range requests {
-		require.Equal(t, "/v1/billing", req.URL.Path)
+		switch req.URL.Path {
+		case "/v1/billing":
+			billingCalls++
+		case "/v1/models":
+			// Best-effort refresh is independent of the active usage probe.
+		case "/v1/responses":
+			responseCalls++
+		default:
+			require.Failf(t, "unexpected upstream request", "path=%q", req.URL.Path)
+		}
 	}
+	require.Equal(t, 2, billingCalls)
+	require.Zero(t, responseCalls, "custom paid billing must skip the active usage probe")
 }
 
 func TestGrokLocalUsage24hUsesRollingUTCWindow(t *testing.T) {

@@ -20,6 +20,7 @@ import (
 type AccountRepoSuite struct {
 	suite.Suite
 	ctx    context.Context
+	tx     *dbent.Tx
 	client *dbent.Client
 	repo   *accountRepository
 }
@@ -137,9 +138,9 @@ func (s *schedulerCacheRecorder) SetOutboxWatermark(ctx context.Context, id int6
 
 func (s *AccountRepoSuite) SetupTest() {
 	s.ctx = context.Background()
-	tx := testEntTx(s.T())
-	s.client = tx.Client()
-	s.repo = newAccountRepositoryWithSQL(s.client, tx, nil)
+	s.tx = testEntTx(s.T())
+	s.client = s.tx.Client()
+	s.repo = newAccountRepositoryWithSQL(s.client, s.tx, nil)
 }
 
 func TestAccountRepoSuite(t *testing.T) {
@@ -714,7 +715,8 @@ func (s *AccountRepoSuite) TestGroupBinding_And_BindGroups() {
 	s.Require().NoError(err, "GetGroups after remove")
 	s.Require().Empty(groups, "expected 0 groups after remove")
 
-	s.Require().NoError(s.repo.BindGroups(s.ctx, account.ID, []int64{g1.ID, g2.ID}), "BindGroups")
+	txCtx := dbent.NewTxContext(s.ctx, s.tx)
+	s.Require().NoError(s.repo.BindGroups(txCtx, account.ID, []int64{g1.ID, g2.ID}), "BindGroups")
 	groups, err = s.repo.GetGroups(s.ctx, account.ID)
 	s.Require().NoError(err, "GetGroups after bind")
 	s.Require().Len(groups, 2, "expected 2 groups after bind")
@@ -725,7 +727,8 @@ func (s *AccountRepoSuite) TestBindGroups_EmptyList() {
 	group := mustCreateGroup(s.T(), s.client, &service.Group{Name: "g-empty"})
 	mustBindAccountToGroup(s.T(), s.client, account.ID, group.ID, 1)
 
-	s.Require().NoError(s.repo.BindGroups(s.ctx, account.ID, []int64{}), "BindGroups empty")
+	txCtx := dbent.NewTxContext(s.ctx, s.tx)
+	s.Require().NoError(s.repo.BindGroups(txCtx, account.ID, []int64{}), "BindGroups empty")
 
 	groups, err := s.repo.GetGroups(s.ctx, account.ID)
 	s.Require().NoError(err)

@@ -28,8 +28,10 @@ func shouldReexecHandlerTestsWithCindyFeatures() bool {
 	for _, name := range []string{
 		service.CindyBalanceDetectionEnabledEnv,
 		service.CindyCapabilityCatalogEnabledEnv,
+		service.CindySearchEnabledEnv,
 		service.ImageStudioEnabledEnv,
 		service.CindyImageStudioEnabledEnv,
+		service.CindyResponsesImageBridgeEnabledEnv,
 	} {
 		if _, configured := os.LookupEnv(name); configured {
 			return false
@@ -54,7 +56,9 @@ func reexecHandlerTestsWithCindyFeatures() int {
 	cmd.Env = append(os.Environ(),
 		service.CindyBalanceDetectionEnabledEnv+"=true",
 		service.CindyCapabilityCatalogEnabledEnv+"=true",
+		service.CindySearchEnabledEnv+"=true",
 		service.ImageStudioEnabledEnv+"=true",
+		service.CindyResponsesImageBridgeEnabledEnv+"=true",
 		cindyFeatureOnHandlerTestMainEnv+"=1",
 	)
 	cmd.Stdout = os.Stdout

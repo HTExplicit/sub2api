@@ -40,6 +40,7 @@ const (
 const (
 	PlatformAnthropic   = domain.PlatformAnthropic
 	PlatformOpenAI      = domain.PlatformOpenAI
+	PlatformCindy       = domain.PlatformCindy
 	PlatformGemini      = domain.PlatformGemini
 	PlatformAntigravity = domain.PlatformAntigravity
 	PlatformGrok        = domain.PlatformGrok
@@ -64,6 +65,7 @@ const (
 	APIProtocolChatCompletions = domain.APIProtocolChatCompletions
 	APIProtocolAnthropic       = domain.APIProtocolAnthropic
 	APIProtocolResponses       = domain.APIProtocolResponses
+	APIProtocolAdaptive        = domain.APIProtocolAdaptive
 )
 
 // 国产 OpenAI 兼容供应商各模式的默认 base_url。

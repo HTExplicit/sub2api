@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"os"
+	"path/filepath"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -125,6 +126,28 @@ func ProvideOpenAIGatewayService(
 	return svc
 }
 
+func ProvideCindyHealthService(
+	accountRepo AccountRepository,
+	identityRepo AccountCredentialIdentityRepository,
+	healthRepo CindyHealthRepository,
+	cache GatewayCache,
+	gateway *OpenAIGatewayService,
+) *CindyHealthService {
+	var episodeStore CindyHealthEpisodeStore
+	if cache != nil {
+		episodeStore, _ = cache.(CindyHealthEpisodeStore)
+	}
+	var probe func(context.Context, *Account, string) cindyBalanceProbeOutcome
+	if gateway != nil {
+		probe = gateway.probeCindyBalanceModel
+	}
+	svc := NewCindyHealthService(accountRepo, identityRepo, healthRepo, episodeStore, gateway, probe)
+	if gateway != nil {
+		gateway.SetCindyHealthCoordinator(svc)
+	}
+	return svc
+}
+
 // ProvideCindyBalanceProbeService starts the explicit administrator-triggered
 // Cindy balance probe worker. The worker does not create jobs on its own.
 func ProvideCindyBalanceProbeService(
@@ -195,6 +218,14 @@ func ProvideBatchImageCleanupService(repo BatchImageRepository, accountRepo Acco
 	svc := NewBatchImageCleanupService(repo, accountRepo, cfg)
 	svc.Start()
 	return svc
+}
+
+func ProvideImageStudioArtifactStore(cfg *config.Config, repo ImageStudioRepository) *ImageStudioArtifactStore {
+	root := ""
+	if cfg != nil {
+		root = filepath.Join(cfg.Pricing.DataDir, "image-studio")
+	}
+	return NewImageStudioArtifactStore(root, repo)
 }
 
 // ProvideOpenAIOAuthService creates OpenAIOAuthService with privacy/account enrichment support.
@@ -890,6 +921,7 @@ var ProviderSet = wire.NewSet(
 	NewGroupService,
 	NewCompositeRouteResolver,
 	NewAccountService,
+	NewAccountJobService,
 	NewProxyService,
 	NewRedeemService,
 	NewPromoService,
@@ -906,6 +938,7 @@ var ProviderSet = wire.NewSet(
 	ProvideRemoteSkillCandidateSource,
 	ProvideRemoteSkillRegistryService,
 	ProvideOpenAIGatewayService,
+	ProvideCindyHealthService,
 	ProvideCindyBalanceProbeService,
 	ProvideImageStorageSettingService,
 	ProvideImageTaskService,
@@ -914,6 +947,9 @@ var ProviderSet = wire.NewSet(
 	NewBatchImageDownloadService,
 	ProvideBatchImageCleanupService,
 	ProvideBatchImageWorkerRuntime,
+	ProvideImageStudioArtifactStore,
+	wire.Bind(new(ImageStudioFileStorage), new(*ImageStudioArtifactStore)),
+	NewImageStudioService,
 	wire.Bind(new(AccountRuntimeBlocker), new(*OpenAIGatewayService)),
 	NewOAuthService,
 	ProvideOpenAIOAuthService,

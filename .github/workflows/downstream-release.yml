@@ -133,6 +133,7 @@ jobs:
             org.opencontainers.image.licenses=LGPL-3.0
             io.github.htexplicit.upstream-version=${{ env.UPSTREAM_VERSION }}
             io.github.htexplicit.patch=codexrip
+            io.github.htexplicit.cindy-platform-v1=true
           build-args: |
             VERSION=${{ env.VERSION }}
             COMMIT=${{ github.sha }}

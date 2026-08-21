@@ -26,6 +26,10 @@ func (r *groupPlatformRepoStub) Update(_ context.Context, group *Group) error {
 	return nil
 }
 
+func (r *groupPlatformRepoStub) GetAccountIDsByGroupIDs(_ context.Context, _ []int64) ([]int64, error) {
+	return nil, nil
+}
+
 type channelCacheInvalidatorSpy struct {
 	calls int
 }

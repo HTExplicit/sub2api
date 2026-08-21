@@ -10,13 +10,15 @@ import (
 
 func cindyEndpointSchedulingAccount(id int64) Account {
 	return Account{
-		ID:          id,
-		Name:        "cindy",
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Status:      StatusActive,
-		Schedulable: true,
-		Concurrency: 1,
+		ID:              id,
+		Name:            "cindy",
+		Platform:        PlatformCindy,
+		WirePlatform:    WirePlatformOpenAI,
+		ProviderProfile: ProviderProfileCindyLaxaV1,
+		Type:            AccountTypeAPIKey,
+		Status:          StatusActive,
+		Schedulable:     true,
+		Concurrency:     1,
 		Credentials: map[string]any{
 			"api_key":  "test-key",
 			"base_url": "https://api.laxarouter.ai",
@@ -43,14 +45,55 @@ func TestAccountSupportsOpenAICapabilities_StrictCindyModelEndpointMatrix(t *tes
 		{name: "Luna supports Responses", model: "gpt-5.6-luna", capability: OpenAIEndpointCapabilityResponses, want: true},
 		{name: "Luna supports Chat", model: "gpt-5.6-luna", capability: OpenAIEndpointCapabilityChatCompletions, want: true},
 		{name: "Luna supports Messages", model: "gpt-5.6-luna", capability: OpenAIEndpointCapabilityMessages, want: true},
-		{name: "search model supports alpha bridge", model: CindyWebSearchModel, capability: OpenAIEndpointCapabilityAlphaSearch, want: true},
-		{name: "ordinary text model does not inherit alpha bridge", model: "gpt-5.6-luna", capability: OpenAIEndpointCapabilityAlphaSearch, want: false},
+		{name: "hidden search model is not client selectable", model: CindyWebSearchModel, capability: OpenAIEndpointCapabilityAlphaSearch, want: false},
+		{name: "public Responses model supports alpha search", model: "gpt-5.6-luna", capability: OpenAIEndpointCapabilityAlphaSearch, want: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			require.Equal(t, tt.want, accountSupportsOpenAICapabilities(context.Background(), &account, tt.model, tt.capability, ""))
 		})
+	}
+}
+
+func TestAccountSupportsOpenAICapabilities_FirstClassCindySearchUsesPublicResponsesModels(t *testing.T) {
+	account := cindyEndpointSchedulingAccount(51002)
+
+	require.True(t, accountSupportsOpenAICapabilities(
+		context.Background(), &account, "gpt-5.6-sol", OpenAIEndpointCapabilityAlphaSearch, "",
+	))
+	require.False(t, accountSupportsOpenAICapabilities(
+		context.Background(), &account, CindyWebSearchModel, OpenAIEndpointCapabilityAlphaSearch, "",
+	))
+	require.False(t, accountSupportsOpenAICapabilities(
+		context.Background(), &account, "claude-opus-5", OpenAIEndpointCapabilityAlphaSearch, "",
+	))
+}
+
+func TestOpenAIGatewayService_SelectAccountWithScheduler_FirstClassCindySearch(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+	groupID := int64(51003)
+	account := cindyEndpointSchedulingAccount(51004)
+	cfg := &config.Config{}
+	cfg.Gateway.Scheduling.LoadBatchEnabled = false
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: []Account{account}},
+		cache:              &schedulerTestGatewayCache{},
+		cfg:                cfg,
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+
+	selection, _, err := svc.SelectAccountWithSchedulerForCapability(
+		context.Background(), &groupID, "", "", "gpt-5.6-sol", nil,
+		OpenAIUpstreamTransportHTTPSSE, OpenAIEndpointCapabilityAlphaSearch,
+		false, false, false, PlatformCindy,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.Equal(t, account.ID, selection.Account.ID)
+	if selection.ReleaseFunc != nil {
+		selection.ReleaseFunc()
 	}
 }
 
@@ -120,7 +163,7 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_CindyMessagesUsesMessag
 
 	selection, _, err := svc.SelectAccountWithSchedulerForCapability(
 		context.Background(), &groupID, "", "", "claude-opus-5", nil,
-		OpenAIUpstreamTransportAny, OpenAIEndpointCapabilityMessages, false, false, false,
+		OpenAIUpstreamTransportAny, OpenAIEndpointCapabilityMessages, false, false, false, PlatformCindy,
 	)
 	require.NoError(t, err)
 	require.NotNil(t, selection)
@@ -164,18 +207,18 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_MixedMessagesUsesNative
 	require.Equal(t, nativeModel, openAIRequestedModelForAccount(ctx, &cindy, legacyMappedModel))
 	require.Equal(t, legacyMappedModel, openAIRequestedModelForAccount(ctx, &ordinary, legacyMappedModel))
 	require.True(t, isOpenAICompatibleAccountEligibleForRequest(
-		ctx, &cindy, PlatformOpenAI, legacyMappedModel, false, OpenAIEndpointCapabilityMessages,
+		ctx, &cindy, PlatformCindy, legacyMappedModel, false, OpenAIEndpointCapabilityMessages,
 	))
 	require.NotNil(t, svc.resolveFreshSchedulableOpenAIAccount(
-		ctx, &cindy, PlatformOpenAI, legacyMappedModel, false, OpenAIEndpointCapabilityMessages,
+		ctx, &cindy, PlatformCindy, legacyMappedModel, false, OpenAIEndpointCapabilityMessages,
 	))
 	require.NotNil(t, svc.recheckSelectedOpenAIAccountFromDB(
-		ctx, &cindy, &groupID, PlatformOpenAI, legacyMappedModel, false, OpenAIEndpointCapabilityMessages,
+		ctx, &cindy, &groupID, PlatformCindy, legacyMappedModel, false, OpenAIEndpointCapabilityMessages,
 	))
 
 	selection, _, err := svc.SelectAccountWithSchedulerForCapability(
 		ctx, &groupID, "", "", legacyMappedModel, map[int64]struct{}{ordinary.ID: {}},
-		OpenAIUpstreamTransportAny, OpenAIEndpointCapabilityMessages, false, false, false,
+		OpenAIUpstreamTransportAny, OpenAIEndpointCapabilityMessages, false, false, false, PlatformCindy,
 	)
 	require.NoError(t, err)
 	require.NotNil(t, selection)
@@ -216,9 +259,11 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_MixedImagesGatesCindyBy
 		selection.ReleaseFunc()
 	}
 
-	selection, _, err = newService([]Account{cindy}).SelectAccountWithSchedulerForImages(
-		context.Background(), &groupID, "", "gemini-3-pro-image", nil,
-		OpenAIImagesCapabilityBasic, CindyEndpointImagesEdit,
+	imageCtx := withOpenAICindyImageEndpoint(context.Background(), CindyEndpointImagesEdit)
+	selection, _, err = newService([]Account{cindy}).selectAccountWithScheduler(
+		imageCtx, &groupID, "", "", "gemini-3-pro-image", nil,
+		OpenAIUpstreamTransportHTTPSSE, "", OpenAIImagesCapabilityBasic,
+		false, PlatformCindy, false, false,
 	)
 	require.NoError(t, err)
 	require.NotNil(t, selection)

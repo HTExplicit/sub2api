@@ -1,6 +1,16 @@
-import { apiClient, buildGatewayUrl } from './client'
+import { apiClient } from './client'
 
 export type ImageStudioEndpoint = 'images.generations' | 'images.edits' | string
+export type ImageStudioMode = 'generate' | 'edit'
+export type ImageStudioJobStatus =
+  | 'pending'
+  | 'preparing'
+  | 'running'
+  | 'succeeded'
+  | 'partially_succeeded'
+  | 'failed'
+  | 'canceled'
+  | 'canceled_with_results'
 
 export interface ImageRequestControls {
   sizes?: string[]
@@ -18,19 +28,10 @@ export interface ModelCapability {
   output_modalities: string[]
   endpoints: ImageStudioEndpoint[]
   client_surfaces: string[]
-  max_input_tokens?: number
-  max_output_tokens?: number
-  pricing_source?: string
   controls?: {
     generation?: ImageRequestControls
     edit?: ImageRequestControls
   }
-}
-
-export interface ModelCapabilitiesResponse {
-  object: 'list' | string
-  catalog_version: string
-  data: ModelCapability[]
 }
 
 export interface EligibleImageStudioKeyGroup {
@@ -41,7 +42,6 @@ export interface EligibleImageStudioKeyGroup {
 export interface EligibleImageStudioAPIKey {
   id: number
   name: string
-  key: string
   group_id: number
   group: EligibleImageStudioKeyGroup
 }
@@ -55,86 +55,80 @@ export interface EligibleImageStudioKeysResponse {
   items: EligibleImageStudioKey[]
 }
 
-export interface GeneratedImage {
-  blob: Blob
-  mimeType: string
-  revisedPrompt?: string
+export interface ImageStudioCounts {
+  processed: number
+  succeeded: number
+  failed: number
+  canceled: number
 }
 
-export interface GenerateImagesInput {
+export interface ImageStudioJob {
+  id: number
+  api_key_id: number
+  mode: ImageStudioMode
   model: string
-  prompt: string
-  n?: number
   size?: string
   quality?: string
-  signal?: AbortSignal
+  count: number
+  status: ImageStudioJobStatus
+  counts: ImageStudioCounts
+  error_code?: string
+  error_message?: string
+  request_expires_at?: string
+  created_at?: string
+  updated_at?: string
 }
 
-export interface EditImagesInput extends GenerateImagesInput {
-  image: File | Blob
-  imageName?: string
+export interface ImageStudioItem {
+  id: number
+  job_id: number
+  ordinal: number
+  status: 'pending' | 'running' | 'succeeded' | 'failed' | 'canceled'
+  error_code?: string
+  error_message?: string
+}
+
+export interface ImageStudioArtifact {
+  id: number
+  job_id: number
+  item_id?: number
+  kind: 'output'
+  content_type: string
+  byte_size: number
+  revised_prompt?: string
+  expires_at?: string
+  download_url: string
+}
+
+export interface ImageStudioJobDetail {
+  job: ImageStudioJob
+  items: ImageStudioItem[]
+  artifacts: ImageStudioArtifact[]
+}
+
+export interface CreateImageStudioJobInput {
+  apiKeyId: number
+  mode: ImageStudioMode
+  model: string
+  prompt: string
+  count: number
+  size?: string
+  quality?: string
+  reference?: File | Blob | null
+  referenceName?: string
   mask?: File | Blob | null
   maskName?: string
+  signal?: AbortSignal
 }
 
 export const MAX_IMAGE_BYTES = 20 * 1024 * 1024
 
-const MAX_BASE64_CHARACTERS = Math.ceil(MAX_IMAGE_BYTES / 3) * 4
 const ALLOWED_IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const
-
 export type AllowedImageMimeType = (typeof ALLOWED_IMAGE_MIME_TYPES)[number]
-
 const allowedImageMimeTypes = new Set<string>(ALLOWED_IMAGE_MIME_TYPES)
-
-function authHeaders(apiKey: string, extra?: HeadersInit): HeadersInit {
-  return {
-    Authorization: `Bearer ${apiKey}`,
-    ...extra,
-  }
-}
-
-async function gatewayError(response: Response): Promise<Error> {
-  let message = response.statusText || `HTTP ${response.status}`
-  let code: string | number = response.status
-  try {
-    const body = await response.json()
-    message = body?.error?.message || body?.message || message
-    code = body?.error?.code || body?.code || code
-  } catch {
-    // Preserve the HTTP status when an upstream proxy returns non-JSON content.
-  }
-  const error = new Error(message)
-  Object.assign(error, { status: response.status, code })
-  return error
-}
-
-export async function listModelCapabilities(
-  apiKey: string,
-  signal?: AbortSignal,
-): Promise<ModelCapabilitiesResponse> {
-  const response = await fetch(buildGatewayUrl('/v1/models/capabilities'), {
-    headers: authHeaders(apiKey),
-    signal,
-  })
-  if (!response.ok) throw await gatewayError(response)
-  return response.json()
-}
-
-export async function listEligibleImageStudioKeys(
-  signal?: AbortSignal,
-): Promise<EligibleImageStudioKeysResponse> {
-  const response = await apiClient.get<unknown>('/image-studio/eligible-keys', { signal })
-  const body = response.data
-  const payload = isRecord(body) && Array.isArray(body.items)
-    ? body
-    : isRecord(body) && isRecord(body.data)
-      ? body.data
-      : null
-  const items = payload && Array.isArray(payload.items)
-    ? payload.items.map(parseEligibleImageStudioKey).filter((item): item is EligibleImageStudioKey => item !== null)
-    : []
-  return { items }
-}
+const terminalStatuses = new Set<ImageStudioJobStatus>([
+  'succeeded', 'partially_succeeded', 'failed', 'canceled', 'canceled_with_results',
+])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -144,27 +138,28 @@ function isPositiveID(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
 }
 
+function unwrapData(value: unknown): unknown {
+  if (isRecord(value) && isRecord(value.data) && 'code' in value) return value.data
+  return value
+}
+
 function parseEligibleImageStudioKey(value: unknown): EligibleImageStudioKey | null {
   if (!isRecord(value) || !isRecord(value.api_key) || !Array.isArray(value.capabilities)) return null
-
   const apiKey = value.api_key
   const group = apiKey.group
   if (
     !isPositiveID(apiKey.id)
     || typeof apiKey.name !== 'string'
-    || typeof apiKey.key !== 'string'
     || !isPositiveID(apiKey.group_id)
     || !isRecord(group)
     || !isPositiveID(group.id)
     || group.id !== apiKey.group_id
     || typeof group.name !== 'string'
   ) return null
-
   return {
     api_key: {
       id: apiKey.id,
       name: apiKey.name,
-      key: apiKey.key,
       group_id: apiKey.group_id,
       group: { id: group.id, name: group.name },
     },
@@ -172,92 +167,106 @@ function parseEligibleImageStudioKey(value: unknown): EligibleImageStudioKey | n
   }
 }
 
+export async function listEligibleImageStudioKeys(signal?: AbortSignal): Promise<EligibleImageStudioKeysResponse> {
+  const response = await apiClient.get<unknown>('/image-studio/eligible-keys', { signal })
+  const body = unwrapData(response.data)
+  const items = isRecord(body) && Array.isArray(body.items)
+    ? body.items.map(parseEligibleImageStudioKey).filter((item): item is EligibleImageStudioKey => item !== null)
+    : []
+  return { items }
+}
+
+export async function createImageStudioJob(input: CreateImageStudioJobInput): Promise<ImageStudioJob> {
+  const body = new FormData()
+  body.set('api_key_id', String(input.apiKeyId))
+  body.set('mode', input.mode)
+  body.set('model', input.model)
+  body.set('prompt', input.prompt)
+  body.set('count', String(input.count))
+  if (input.size) body.set('size', input.size)
+  if (input.quality) body.set('quality', input.quality)
+  if (input.reference) body.set('reference', input.reference, input.referenceName || 'reference.png')
+  if (input.mask) body.set('mask', input.mask, input.maskName || 'mask.png')
+  const response = await apiClient.post<ImageStudioJob>('/image-studio/jobs', body, { signal: input.signal })
+  return unwrapData(response.data) as ImageStudioJob
+}
+
+export async function listImageStudioJobs(signal?: AbortSignal): Promise<ImageStudioJob[]> {
+  const response = await apiClient.get<unknown>('/image-studio/jobs', { signal })
+  const body = unwrapData(response.data)
+  return isRecord(body) && Array.isArray(body.items) ? body.items as ImageStudioJob[] : []
+}
+
+export async function getImageStudioJob(jobID: number, signal?: AbortSignal): Promise<ImageStudioJobDetail> {
+  const response = await apiClient.get<ImageStudioJobDetail>(`/image-studio/jobs/${jobID}`, { signal })
+  return unwrapData(response.data) as ImageStudioJobDetail
+}
+
+export async function cancelImageStudioJob(jobID: number, signal?: AbortSignal): Promise<ImageStudioJob> {
+  const response = await apiClient.post<ImageStudioJob>(`/image-studio/jobs/${jobID}/cancel`, undefined, { signal })
+  return unwrapData(response.data) as ImageStudioJob
+}
+
+export async function retryImageStudioJob(jobID: number, signal?: AbortSignal): Promise<ImageStudioJob> {
+  const response = await apiClient.post<ImageStudioJob>(`/image-studio/jobs/${jobID}/retry`, undefined, { signal })
+  return unwrapData(response.data) as ImageStudioJob
+}
+
+export async function downloadImageStudioArtifact(artifact: ImageStudioArtifact, signal?: AbortSignal): Promise<Blob> {
+  const response = await apiClient.get<Blob>(`/image-studio/jobs/${artifact.job_id}/artifacts/${artifact.id}`, {
+    responseType: 'blob',
+    signal,
+  })
+  return response.data
+}
+
+export function isImageStudioJobTerminal(status: ImageStudioJobStatus): boolean {
+  return terminalStatuses.has(status)
+}
+
+export async function waitForImageStudioJob(
+  jobID: number,
+  signal?: AbortSignal,
+  pollMilliseconds = 1000,
+  onProgress?: (detail: ImageStudioJobDetail) => void,
+): Promise<ImageStudioJobDetail> {
+  for (;;) {
+    const detail = await getImageStudioJob(jobID, signal)
+    onProgress?.(detail)
+    if (isImageStudioJobTerminal(detail.job.status)) return detail
+    await waitForImageStudioPoll(pollMilliseconds, signal)
+  }
+}
+
+function waitForImageStudioPoll(milliseconds: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'))
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      signal?.removeEventListener('abort', abort)
+      resolve()
+    }, milliseconds)
+    const abort = () => {
+      window.clearTimeout(timer)
+      reject(new DOMException('Aborted', 'AbortError'))
+    }
+    signal?.addEventListener('abort', abort, { once: true })
+  })
+}
+
 function canonicalImageMimeType(value: string): AllowedImageMimeType {
   const normalized = value.trim().toLowerCase()
-  if (!allowedImageMimeTypes.has(normalized)) {
-    throw new Error('The image API returned an unsupported image format')
-  }
+  if (!allowedImageMimeTypes.has(normalized)) throw new Error('The image API returned an unsupported image format')
   return normalized as AllowedImageMimeType
 }
 
-function outputFormatMimeType(value: string): AllowedImageMimeType {
-  switch (value.trim().toLowerCase()) {
-    case 'png':
-      return 'image/png'
-    case 'jpg':
-    case 'jpeg':
-      return 'image/jpeg'
-    case 'webp':
-      return 'image/webp'
-    default:
-      throw new Error('The image API returned an unsupported image format')
-  }
-}
-
-function splitBase64Value(value: string): { encoded: string, dataUrlMimeType?: AllowedImageMimeType } {
-  if (!value.startsWith('data:')) return { encoded: value }
-
-  const match = /^data:([^;,]+);base64,(.*)$/s.exec(value)
-  if (!match) throw new Error('The image API returned malformed base64 image data')
-  return {
-    encoded: match[2],
-    dataUrlMimeType: canonicalImageMimeType(match[1]),
-  }
-}
-
-function decodeBase64(value: string): { bytes: Uint8Array, dataUrlMimeType?: AllowedImageMimeType } {
-  const { encoded, dataUrlMimeType } = splitBase64Value(value)
-  if (!encoded || encoded.length > MAX_BASE64_CHARACTERS || encoded.length % 4 === 1) {
-    throw new Error('The image API returned invalid or oversized base64 image data')
-  }
-  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded) || (encoded.includes('=') && encoded.length % 4 !== 0)) {
-    throw new Error('The image API returned malformed base64 image data')
-  }
-
-  const unpadded = encoded.replace(/=+$/, '')
-  const padded = unpadded.padEnd(Math.ceil(unpadded.length / 4) * 4, '=')
-  let binary: string
-  try {
-    binary = atob(padded)
-  } catch {
-    throw new Error('The image API returned malformed base64 image data')
-  }
-  if (binary.length > MAX_IMAGE_BYTES || btoa(binary).replace(/=+$/, '') !== unpadded) {
-    throw new Error('The image API returned invalid or oversized base64 image data')
-  }
-  const bytes = new Uint8Array(binary.length)
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index)
-  }
-  return { bytes, dataUrlMimeType }
-}
-
-function declaredMimeTypeForImageItem(item: Record<string, unknown>): AllowedImageMimeType | undefined {
-  const declared: AllowedImageMimeType[] = []
-  const explicit = typeof item.mime_type === 'string' ? item.mime_type.trim() : ''
-  if (explicit) declared.push(canonicalImageMimeType(explicit))
-  const outputFormat = typeof item.output_format === 'string' ? item.output_format.trim().toLowerCase() : ''
-  if (outputFormat) declared.push(outputFormatMimeType(outputFormat))
-  if (declared.some(mimeType => mimeType !== declared[0])) {
-    throw new Error('The image API returned conflicting image formats')
-  }
-  return declared[0]
-}
-
 function detectImageMimeType(bytes: Uint8Array): AllowedImageMimeType | null {
-  if (bytes.length >= 8 &&
-    bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 &&
-    bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a) {
-    return 'image/png'
-  }
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
-    return 'image/jpeg'
-  }
-  if (bytes.length >= 12 &&
-    bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 &&
-    bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) {
-    return 'image/webp'
-  }
+  if (bytes.length >= 8
+    && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47
+    && bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a) return 'image/png'
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg'
+  if (bytes.length >= 12
+    && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46
+    && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return 'image/webp'
   return null
 }
 
@@ -265,10 +274,7 @@ function readBlobArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
   if (typeof blob.arrayBuffer === 'function') return blob.arrayBuffer()
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
-    reader.onload = () => {
-      if (reader.result instanceof ArrayBuffer) resolve(reader.result)
-      else reject(new Error('The image data could not be read'))
-    }
+    reader.onload = () => reader.result instanceof ArrayBuffer ? resolve(reader.result) : reject(new Error('The image data could not be read'))
     reader.onerror = () => reject(new Error('The image data could not be read'))
     reader.onabort = () => reject(new Error('The image data could not be read'))
     reader.readAsArrayBuffer(blob)
@@ -288,11 +294,9 @@ async function verifyBrowserCanDecode(blob: Blob): Promise<void> {
     }
     return
   }
-
-  if (typeof Image === 'undefined') return
+  if (typeof Image === 'undefined' || typeof URL.createObjectURL !== 'function') return
   const image = new Image()
-  if (typeof image.decode !== 'function' || typeof URL.createObjectURL !== 'function') return
-
+  if (typeof image.decode !== 'function') return
   const url = URL.createObjectURL(blob)
   try {
     image.src = url
@@ -305,105 +309,14 @@ async function verifyBrowserCanDecode(blob: Blob): Promise<void> {
   }
 }
 
-export async function validateImageBlob(
-  blob: Blob,
-  declaredMimeType: string | undefined = blob.type,
-): Promise<AllowedImageMimeType> {
-  if (blob.size < 1 || blob.size > MAX_IMAGE_BYTES) {
-    throw new Error('The image is empty or exceeds the 20 MB limit')
-  }
-
+export async function validateImageBlob(blob: Blob, declaredMimeType: string | undefined = blob.type): Promise<AllowedImageMimeType> {
+  if (blob.size < 1 || blob.size > MAX_IMAGE_BYTES) throw new Error('The image is empty or exceeds the 20 MB limit')
   const declared = declaredMimeType ? canonicalImageMimeType(declaredMimeType) : undefined
   const header = new Uint8Array(await readBlobArrayBuffer(blob.slice(0, 12)))
   const detected = detectImageMimeType(header)
   if (!detected) throw new Error('The image data does not contain a supported image')
   if (declared && declared !== detected) throw new Error('The image MIME type does not match its contents')
-
   const verifiedBlob = blob.type === detected ? blob : new Blob([blob], { type: detected })
   await verifyBrowserCanDecode(verifiedBlob)
   return detected
-}
-
-async function parseImagesResponse(response: Response, expectedCount: number): Promise<GeneratedImage[]> {
-  if (!response.ok) throw await gatewayError(response)
-  const body = await response.json()
-  const items = Array.isArray(body?.data) ? body.data : []
-  if (items.length !== expectedCount) {
-    throw new Error(`The image API returned ${items.length} images; expected ${expectedCount}`)
-  }
-  const images: GeneratedImage[] = []
-
-  for (const rawItem of items) {
-    const item = (rawItem && typeof rawItem === 'object' ? rawItem : {}) as Record<string, unknown>
-    const revisedPrompt = typeof item.revised_prompt === 'string' ? item.revised_prompt : undefined
-    if (typeof item.b64_json === 'string' && item.b64_json.trim()) {
-      const declaredMimeType = declaredMimeTypeForImageItem(item)
-      const { bytes, dataUrlMimeType } = decodeBase64(item.b64_json)
-      if (declaredMimeType && dataUrlMimeType && declaredMimeType !== dataUrlMimeType) {
-        throw new Error('The image API returned conflicting image formats')
-      }
-      const claimedMimeType = declaredMimeType || dataUrlMimeType
-      const unverifiedBlob = new Blob([bytes], { type: claimedMimeType || '' })
-      const mimeType = await validateImageBlob(unverifiedBlob, claimedMimeType)
-      images.push({ blob: new Blob([bytes], { type: mimeType }), mimeType, revisedPrompt })
-      continue
-    }
-    // Image Studio requests b64_json and never follows an upstream-provided
-    // URL. This keeps credentials and browser network access pinned to the
-    // configured gateway even if an upstream response is malformed.
-  }
-
-  if (images.length !== expectedCount) {
-    throw new Error(`The image API returned ${images.length} decodable images; expected ${expectedCount}`)
-  }
-  return images
-}
-
-function expectedImageCount(requestedCount?: number): number {
-  const expected = requestedCount === undefined ? 1 : requestedCount
-  if (!Number.isInteger(expected) || expected < 1 || expected > 4) {
-    throw new Error('Image output count must be between 1 and 4')
-  }
-  return expected
-}
-
-export async function generateImages(apiKey: string, input: GenerateImagesInput): Promise<GeneratedImage[]> {
-  const expectedCount = expectedImageCount(input.n)
-  const body: Record<string, unknown> = {
-    model: input.model,
-    prompt: input.prompt,
-    response_format: 'b64_json',
-  }
-  if (input.n !== undefined) body.n = input.n
-  if (input.size) body.size = input.size
-  if (input.quality) body.quality = input.quality
-
-  const response = await fetch(buildGatewayUrl('/v1/images/generations'), {
-    method: 'POST',
-    headers: authHeaders(apiKey, { 'Content-Type': 'application/json' }),
-    body: JSON.stringify(body),
-    signal: input.signal,
-  })
-  return parseImagesResponse(response, expectedCount)
-}
-
-export async function editImages(apiKey: string, input: EditImagesInput): Promise<GeneratedImage[]> {
-  const expectedCount = expectedImageCount(input.n)
-  const body = new FormData()
-  body.set('model', input.model)
-  body.set('prompt', input.prompt)
-  if (input.n !== undefined) body.set('n', String(input.n))
-  if (input.size) body.set('size', input.size)
-  if (input.quality) body.set('quality', input.quality)
-  body.set('response_format', 'b64_json')
-  body.set('image', input.image, input.imageName || 'reference.png')
-  if (input.mask) body.set('mask', input.mask, input.maskName || 'mask.png')
-
-  const response = await fetch(buildGatewayUrl('/v1/images/edits'), {
-    method: 'POST',
-    headers: authHeaders(apiKey),
-    body,
-    signal: input.signal,
-  })
-  return parseImagesResponse(response, expectedCount)
 }

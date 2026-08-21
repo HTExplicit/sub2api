@@ -872,6 +872,7 @@ func (s *GatewayService) resolveGatewayGroup(ctx context.Context, groupID *int64
 
 	currentID := *groupID
 	visited := map[int64]struct{}{}
+	var sourceGroup *Group
 	for {
 		if _, seen := visited[currentID]; seen {
 			return nil, nil, fmt.Errorf("fallback group cycle detected")
@@ -882,12 +883,17 @@ func (s *GatewayService) resolveGatewayGroup(ctx context.Context, groupID *int64
 		if err != nil {
 			return nil, nil, err
 		}
+		if sourceGroup == nil {
+			sourceGroup = group
+		} else if sourceGroup.Platform == PlatformCindy && !providerGroupIdentityCompatible(sourceGroup, group) {
+			return nil, nil, fmt.Errorf("cindy fallback group provider identity mismatch")
+		}
 
 		if !group.ClaudeCodeOnly || IsClaudeCodeClient(ctx) {
 			return group, &currentID, nil
 		}
 
-		if group.FallbackGroupID == nil {
+		if group.Platform == PlatformCindy || group.FallbackGroupID == nil {
 			return nil, nil, ErrClaudeCodeOnly
 		}
 		currentID = *group.FallbackGroupID

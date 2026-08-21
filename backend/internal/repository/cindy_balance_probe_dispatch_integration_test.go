@@ -22,12 +22,14 @@ func TestCindyBalanceProbeTerraDispatchUsesAuthoritativeEpoch(t *testing.T) {
 		"base_url": "https://api.laxarouter.ai",
 	}
 	account := mustCreateAccount(t, client, &service.Account{
-		Name:        fmt.Sprintf("cindy-balance-dispatch-%d", time.Now().UnixNano()),
-		Platform:    service.PlatformOpenAI,
-		Type:        service.AccountTypeAPIKey,
-		Status:      service.StatusActive,
-		Schedulable: true,
-		Credentials: credentials,
+		Name:            fmt.Sprintf("cindy-balance-dispatch-%d", time.Now().UnixNano()),
+		Platform:        service.PlatformCindy,
+		WirePlatform:    service.WirePlatformOpenAI,
+		ProviderProfile: service.ProviderProfileCindyLaxaV1,
+		Type:            service.AccountTypeAPIKey,
+		Status:          service.StatusActive,
+		Schedulable:     true,
+		Credentials:     credentials,
 	})
 	// The production worker validates a repository-reloaded account, not the
 	// nanosecond-precision Ent create input that PostgreSQL may round.
@@ -100,7 +102,7 @@ func TestCindyBalanceProbeTerraDispatchUsesAuthoritativeEpoch(t *testing.T) {
 
 	credentialsJSON, err := json.Marshal(account.Credentials)
 	require.NoError(t, err)
-	legacyStrictPredicateMatches := func(reservation *service.CindyBalanceProbeReservation) bool {
+	strictPredicateMatches := func(reservation *service.CindyBalanceProbeReservation) bool {
 		t.Helper()
 		var observedLunaAt any
 		if reservation.LunaAt != nil {
@@ -131,12 +133,12 @@ func TestCindyBalanceProbeTerraDispatchUsesAuthoritativeEpoch(t *testing.T) {
 		`, reservation.ItemID, reservation.JobID, firstLease, reservation.JobRequestCount,
 			reservation.Stage+"_running", reservation.AccountID, reservation.IdentityFingerprint,
 			reservation.AccountUpdatedAt, reservation.WasMarked, reservation.RequestCount,
-			observedLunaAt, service.PlatformOpenAI, service.AccountTypeAPIKey,
+			observedLunaAt, service.PlatformCindy, service.AccountTypeAPIKey,
 			service.StatusActive, string(credentialsJSON)).Scan(&matches))
 		return matches
 	}
-	require.True(t, legacyStrictPredicateMatches(terraReservation),
-		"the original strict predicate must accept an unmodified ReserveNext snapshot")
+	require.True(t, strictPredicateMatches(terraReservation),
+		"the strict predicate must accept an unmodified ReserveNext snapshot")
 
 	ready, err := repo.ValidateReservationForSend(ctx, terraReservation, account, firstLease)
 	require.NoError(t, err)
@@ -170,8 +172,8 @@ func TestCindyBalanceProbeTerraDispatchUsesAuthoritativeEpoch(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			staleObservation := *terraReservation
 			tc.mutate(&staleObservation)
-			require.False(t, legacyStrictPredicateMatches(&staleObservation),
-				"the original strict predicate treated an observation echo as lost authority")
+			require.False(t, strictPredicateMatches(&staleObservation),
+				"the strict predicate treats the echoed observation as stale")
 			ready, validateErr := repo.ValidateReservationForSend(ctx, &staleObservation, account, firstLease)
 			require.NoError(t, validateErr)
 			require.True(t, ready, "an observation echo must not revoke a current item dispatch epoch")

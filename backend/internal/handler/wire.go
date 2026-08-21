@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"context"
+
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
@@ -15,6 +17,7 @@ func ProvideAdminHandlers(
 	userHandler *admin.UserHandler,
 	groupHandler *admin.GroupHandler,
 	accountHandler *admin.AccountHandler,
+	accountJobHandler *admin.AccountJobHandler,
 	announcementHandler *admin.AnnouncementHandler,
 	dataManagementHandler *admin.DataManagementHandler,
 	backupHandler *admin.BackupHandler,
@@ -48,6 +51,7 @@ func ProvideAdminHandlers(
 	auditLogHandler *admin.AuditLogHandler,
 	systemPromptHandler *admin.SystemPromptHandler,
 	cindyBalanceProbeHandler *admin.CindyBalanceProbeHandler,
+	_ *service.AccountJobRuntime,
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
 	ollamaCloudUsage *service.OllamaCloudUsageService,
 ) *AdminHandlers {
@@ -58,6 +62,7 @@ func ProvideAdminHandlers(
 		User:                   userHandler,
 		Group:                  groupHandler,
 		Account:                accountHandler,
+		AccountJob:             accountJobHandler,
 		Announcement:           announcementHandler,
 		DataManagement:         dataManagementHandler,
 		Backup:                 backupHandler,
@@ -196,6 +201,7 @@ func ProvideHandlers(
 	modelPlazaHandler *ModelPlazaHandler,
 	asyncImageHandler *AsyncImageHandler,
 	batchImageHandler *BatchImageHandler,
+	imageStudioHandler *ImageStudioJobHandler,
 	remoteSkillHandler *RemoteSkillHandler,
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
@@ -222,6 +228,7 @@ func ProvideHandlers(
 		ModelPlaza:       modelPlazaHandler,
 		AsyncImage:       asyncImageHandler,
 		BatchImage:       batchImageHandler,
+		ImageStudio:      imageStudioHandler,
 		RemoteSkill:      remoteSkillHandler,
 	}
 }
@@ -249,6 +256,10 @@ var ProviderSet = wire.NewSet(
 	NewModelPlazaHandler,
 	NewAsyncImageHandler,
 	ProvideBatchImageHandler,
+	NewImageStudioJobHandler,
+	NewImageStudioGatewayExecutor,
+	wire.Bind(new(imageStudioImagesInvoker), new(*OpenAIGatewayHandler)),
+	ProvideImageStudioRuntime,
 	ProvideRemoteSkillHandler,
 
 	// Admin handlers
@@ -256,6 +267,7 @@ var ProviderSet = wire.NewSet(
 	admin.NewUserHandler,
 	admin.NewGroupHandler,
 	admin.ProvideAccountHandler,
+	admin.NewAccountJobHandler,
 	admin.NewAnnouncementHandler,
 	admin.NewDataManagementHandler,
 	admin.NewBackupHandler,
@@ -288,8 +300,34 @@ var ProviderSet = wire.NewSet(
 	admin.NewAuditLogHandler,
 	admin.NewSystemPromptHandler,
 	admin.NewCindyBalanceProbeHandler,
+	ProvideAccountJobRuntime,
 
 	// AdminHandlers and Handlers constructors
 	ProvideAdminHandlers,
 	ProvideHandlers,
 )
+
+func ProvideAccountJobRuntime(jobs *service.AccountJobService, accountHandler *admin.AccountHandler) (*service.AccountJobRuntime, error) {
+	accountHandler.SetAccountJobService(jobs)
+	runtime := service.NewAccountJobRuntime(jobs, accountHandler)
+	if err := runtime.Start(context.Background()); err != nil {
+		return nil, err
+	}
+	return runtime, nil
+}
+
+func ProvideImageStudioRuntime(
+	repo service.ImageStudioRepository,
+	studio *service.ImageStudioService,
+	store service.ImageStudioFileStorage,
+	executor *ImageStudioGatewayExecutor,
+) (*service.ImageStudioRuntime, error) {
+	runtime := service.NewImageStudioRuntime(repo, studio, store, executor, service.ImageStudioRuntimeOptions{})
+	if !service.ImageStudioFeatureEnabled() {
+		return runtime, nil
+	}
+	if err := runtime.Start(context.Background()); err != nil {
+		return nil, err
+	}
+	return runtime, nil
+}

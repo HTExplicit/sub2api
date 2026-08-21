@@ -2303,6 +2303,8 @@ type AccountMutation struct {
 	name                          *string
 	notes                         *string
 	platform                      *string
+	wire_platform                 *string
+	provider_profile              *string
 	_type                         *string
 	credentials                   *map[string]interface{}
 	extra                         *map[string]interface{}
@@ -2694,6 +2696,78 @@ func (m *AccountMutation) OldPlatform(ctx context.Context) (v string, err error)
 // ResetPlatform resets all changes to the "platform" field.
 func (m *AccountMutation) ResetPlatform() {
 	m.platform = nil
+}
+
+// SetWirePlatform sets the "wire_platform" field.
+func (m *AccountMutation) SetWirePlatform(s string) {
+	m.wire_platform = &s
+}
+
+// WirePlatform returns the value of the "wire_platform" field in the mutation.
+func (m *AccountMutation) WirePlatform() (r string, exists bool) {
+	v := m.wire_platform
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldWirePlatform returns the old "wire_platform" field's value of the Account entity.
+// If the Account object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountMutation) OldWirePlatform(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldWirePlatform is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldWirePlatform requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldWirePlatform: %w", err)
+	}
+	return oldValue.WirePlatform, nil
+}
+
+// ResetWirePlatform resets all changes to the "wire_platform" field.
+func (m *AccountMutation) ResetWirePlatform() {
+	m.wire_platform = nil
+}
+
+// SetProviderProfile sets the "provider_profile" field.
+func (m *AccountMutation) SetProviderProfile(s string) {
+	m.provider_profile = &s
+}
+
+// ProviderProfile returns the value of the "provider_profile" field in the mutation.
+func (m *AccountMutation) ProviderProfile() (r string, exists bool) {
+	v := m.provider_profile
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderProfile returns the old "provider_profile" field's value of the Account entity.
+// If the Account object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountMutation) OldProviderProfile(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderProfile is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderProfile requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderProfile: %w", err)
+	}
+	return oldValue.ProviderProfile, nil
+}
+
+// ResetProviderProfile resets all changes to the "provider_profile" field.
+func (m *AccountMutation) ResetProviderProfile() {
+	m.provider_profile = nil
 }
 
 // SetType sets the "type" field.
@@ -4335,7 +4409,7 @@ func (m *AccountMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *AccountMutation) Fields() []string {
-	fields := make([]string, 0, 33)
+	fields := make([]string, 0, 35)
 	if m.created_at != nil {
 		fields = append(fields, account.FieldCreatedAt)
 	}
@@ -4353,6 +4427,12 @@ func (m *AccountMutation) Fields() []string {
 	}
 	if m.platform != nil {
 		fields = append(fields, account.FieldPlatform)
+	}
+	if m.wire_platform != nil {
+		fields = append(fields, account.FieldWirePlatform)
+	}
+	if m.provider_profile != nil {
+		fields = append(fields, account.FieldProviderProfile)
 	}
 	if m._type != nil {
 		fields = append(fields, account.FieldType)
@@ -4455,6 +4535,10 @@ func (m *AccountMutation) Field(name string) (ent.Value, bool) {
 		return m.Notes()
 	case account.FieldPlatform:
 		return m.Platform()
+	case account.FieldWirePlatform:
+		return m.WirePlatform()
+	case account.FieldProviderProfile:
+		return m.ProviderProfile()
 	case account.FieldType:
 		return m.GetType()
 	case account.FieldCredentials:
@@ -4530,6 +4614,10 @@ func (m *AccountMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldNotes(ctx)
 	case account.FieldPlatform:
 		return m.OldPlatform(ctx)
+	case account.FieldWirePlatform:
+		return m.OldWirePlatform(ctx)
+	case account.FieldProviderProfile:
+		return m.OldProviderProfile(ctx)
 	case account.FieldType:
 		return m.OldType(ctx)
 	case account.FieldCredentials:
@@ -4634,6 +4722,20 @@ func (m *AccountMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetPlatform(v)
+		return nil
+	case account.FieldWirePlatform:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetWirePlatform(v)
+		return nil
+	case account.FieldProviderProfile:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderProfile(v)
 		return nil
 	case account.FieldType:
 		v, ok := value.(string)
@@ -5070,6 +5172,12 @@ func (m *AccountMutation) ResetField(name string) error {
 		return nil
 	case account.FieldPlatform:
 		m.ResetPlatform()
+		return nil
+	case account.FieldWirePlatform:
+		m.ResetWirePlatform()
+		return nil
+	case account.FieldProviderProfile:
+		m.ResetProviderProfile()
 		return nil
 	case account.FieldType:
 		m.ResetType()
@@ -24143,6 +24251,8 @@ type GroupMutation struct {
 	status                                  *string
 	duplicate_operation_id                  *string
 	platform                                *string
+	wire_platform                           *string
+	provider_profile                        *string
 	subscription_type                       *string
 	daily_limit_usd                         *float64
 	adddaily_limit_usd                      *float64
@@ -24922,6 +25032,78 @@ func (m *GroupMutation) OldPlatform(ctx context.Context) (v string, err error) {
 // ResetPlatform resets all changes to the "platform" field.
 func (m *GroupMutation) ResetPlatform() {
 	m.platform = nil
+}
+
+// SetWirePlatform sets the "wire_platform" field.
+func (m *GroupMutation) SetWirePlatform(s string) {
+	m.wire_platform = &s
+}
+
+// WirePlatform returns the value of the "wire_platform" field in the mutation.
+func (m *GroupMutation) WirePlatform() (r string, exists bool) {
+	v := m.wire_platform
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldWirePlatform returns the old "wire_platform" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldWirePlatform(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldWirePlatform is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldWirePlatform requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldWirePlatform: %w", err)
+	}
+	return oldValue.WirePlatform, nil
+}
+
+// ResetWirePlatform resets all changes to the "wire_platform" field.
+func (m *GroupMutation) ResetWirePlatform() {
+	m.wire_platform = nil
+}
+
+// SetProviderProfile sets the "provider_profile" field.
+func (m *GroupMutation) SetProviderProfile(s string) {
+	m.provider_profile = &s
+}
+
+// ProviderProfile returns the value of the "provider_profile" field in the mutation.
+func (m *GroupMutation) ProviderProfile() (r string, exists bool) {
+	v := m.provider_profile
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderProfile returns the old "provider_profile" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldProviderProfile(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderProfile is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderProfile requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderProfile: %w", err)
+	}
+	return oldValue.ProviderProfile, nil
+}
+
+// ResetProviderProfile resets all changes to the "provider_profile" field.
+func (m *GroupMutation) ResetProviderProfile() {
+	m.provider_profile = nil
 }
 
 // SetSubscriptionType sets the "subscription_type" field.
@@ -27819,7 +28001,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 62)
+	fields := make([]string, 0, 64)
 	if m.created_at != nil {
 		fields = append(fields, group.FieldCreatedAt)
 	}
@@ -27861,6 +28043,12 @@ func (m *GroupMutation) Fields() []string {
 	}
 	if m.platform != nil {
 		fields = append(fields, group.FieldPlatform)
+	}
+	if m.wire_platform != nil {
+		fields = append(fields, group.FieldWirePlatform)
+	}
+	if m.provider_profile != nil {
+		fields = append(fields, group.FieldProviderProfile)
 	}
 	if m.subscription_type != nil {
 		fields = append(fields, group.FieldSubscriptionType)
@@ -28042,6 +28230,10 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.DuplicateOperationID()
 	case group.FieldPlatform:
 		return m.Platform()
+	case group.FieldWirePlatform:
+		return m.WirePlatform()
+	case group.FieldProviderProfile:
+		return m.ProviderProfile()
 	case group.FieldSubscriptionType:
 		return m.SubscriptionType()
 	case group.FieldDailyLimitUsd:
@@ -28175,6 +28367,10 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldDuplicateOperationID(ctx)
 	case group.FieldPlatform:
 		return m.OldPlatform(ctx)
+	case group.FieldWirePlatform:
+		return m.OldWirePlatform(ctx)
+	case group.FieldProviderProfile:
+		return m.OldProviderProfile(ctx)
 	case group.FieldSubscriptionType:
 		return m.OldSubscriptionType(ctx)
 	case group.FieldDailyLimitUsd:
@@ -28377,6 +28573,20 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetPlatform(v)
+		return nil
+	case group.FieldWirePlatform:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetWirePlatform(v)
+		return nil
+	case group.FieldProviderProfile:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderProfile(v)
 		return nil
 	case group.FieldSubscriptionType:
 		v, ok := value.(string)
@@ -29266,6 +29476,12 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldPlatform:
 		m.ResetPlatform()
+		return nil
+	case group.FieldWirePlatform:
+		m.ResetWirePlatform()
+		return nil
+	case group.FieldProviderProfile:
+		m.ResetProviderProfile()
 		return nil
 	case group.FieldSubscriptionType:
 		m.ResetSubscriptionType()

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -63,6 +64,34 @@ type OpenAIWSStateStore interface {
 	BindSessionConn(groupID int64, sessionHash, connID string, ttl time.Duration)
 	GetSessionConn(groupID int64, sessionHash string) (string, bool)
 	DeleteSessionConn(groupID int64, sessionHash string)
+}
+
+type OpenAIContinuationBindingState string
+
+const (
+	OpenAIContinuationBindingHit        OpenAIContinuationBindingState = "hit"
+	OpenAIContinuationBindingMiss       OpenAIContinuationBindingState = "miss"
+	OpenAIContinuationBindingStoreError OpenAIContinuationBindingState = "store_error"
+)
+
+type OpenAIContinuationBindingLookup struct {
+	State     OpenAIContinuationBindingState
+	AccountID int64
+	Err       error
+}
+
+func LookupOpenAIContinuationBinding(ctx context.Context, store OpenAIWSStateStore, groupID int64, responseID string) OpenAIContinuationBindingLookup {
+	if store == nil || strings.TrimSpace(responseID) == "" {
+		return OpenAIContinuationBindingLookup{State: OpenAIContinuationBindingMiss}
+	}
+	accountID, err := store.GetResponseAccount(ctx, groupID, responseID)
+	if err != nil {
+		return OpenAIContinuationBindingLookup{State: OpenAIContinuationBindingStoreError, Err: err}
+	}
+	if accountID <= 0 {
+		return OpenAIContinuationBindingLookup{State: OpenAIContinuationBindingMiss}
+	}
+	return OpenAIContinuationBindingLookup{State: OpenAIContinuationBindingHit, AccountID: accountID}
 }
 
 type defaultOpenAIWSStateStore struct {
@@ -144,8 +173,13 @@ func (s *defaultOpenAIWSStateStore) GetResponseAccount(ctx context.Context, grou
 	cacheCtx, cancel := withOpenAIWSStateStoreRedisTimeout(ctx)
 	defer cancel()
 	accountID, err := s.cache.GetSessionAccountID(cacheCtx, groupID, cacheKey)
-	if err != nil || accountID <= 0 {
-		// 缓存读取失败不阻断主流程，按未命中降级。
+	if err != nil {
+		if errors.Is(err, ErrStickySessionNotFound) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	if accountID <= 0 {
 		return 0, nil
 	}
 	return accountID, nil

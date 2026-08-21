@@ -36,12 +36,14 @@ func newSchedulerCacheUnitWithRedis(t *testing.T) (*schedulerCache, *miniredis.M
 func TestSchedulerCacheIgnoresLegacyMetadataGeneration(t *testing.T) {
 	ctx := context.Background()
 	cache, _ := newSchedulerCacheUnitWithRedis(t)
-	bucket := service.SchedulerBucket{GroupID: 91, Platform: service.PlatformOpenAI, Mode: service.SchedulerModeSingle}
+	bucket := service.SchedulerBucket{GroupID: 91, Platform: service.PlatformCindy, Mode: service.SchedulerModeSingle}
 	account := service.Account{
-		ID:       9101,
-		Platform: service.PlatformOpenAI,
-		Type:     service.AccountTypeAPIKey,
-		Status:   service.StatusActive,
+		ID:              9101,
+		Platform:        service.PlatformCindy,
+		WirePlatform:    service.WirePlatformOpenAI,
+		ProviderProfile: service.ProviderProfileCindyLaxaV1,
+		Type:            service.AccountTypeAPIKey,
+		Status:          service.StatusActive,
 		Credentials: map[string]any{
 			"api_key":  "test-only-key",
 			"base_url": "https://api.laxarouter.ai",
@@ -763,20 +765,22 @@ func TestBuildSchedulerMetadataAccount_KeepsCindyRoutingIdentity(t *testing.T) {
 				credentials["openai_capabilities"] = tc.capabilities
 			}
 			account := service.Account{
-				ID:          tc.accountID,
-				Platform:    service.PlatformOpenAI,
-				Type:        service.AccountTypeAPIKey,
-				Status:      service.StatusActive,
-				Schedulable: true,
-				Credentials: credentials,
-				Extra:       tc.extra,
+				ID:              tc.accountID,
+				Platform:        service.PlatformCindy,
+				WirePlatform:    service.WirePlatformOpenAI,
+				ProviderProfile: service.ProviderProfileCindyLaxaV1,
+				Type:            service.AccountTypeAPIKey,
+				Status:          service.StatusActive,
+				Schedulable:     true,
+				Credentials:     credentials,
+				Extra:           tc.extra,
 			}
 
 			cache := newSchedulerCacheUnit(t)
 			ctx := context.Background()
 			bucket := service.SchedulerBucket{
 				GroupID:  tc.accountID,
-				Platform: service.PlatformOpenAI,
+				Platform: service.PlatformCindy,
 				Mode:     service.SchedulerModeSingle,
 			}
 			token, err := cache.CaptureBucketWriteToken(ctx, bucket)
@@ -797,6 +801,8 @@ func TestBuildSchedulerMetadataAccount_KeepsCindyRoutingIdentity(t *testing.T) {
 			require.Nil(t, got.Credentials["header_overrides"])
 			require.Nil(t, got.Credentials["access_token"])
 			require.Nil(t, got.Credentials["refresh_token"])
+			require.Equal(t, service.WirePlatformOpenAI, got.WirePlatform)
+			require.Equal(t, service.ProviderProfileCindyLaxaV1, got.ProviderProfile)
 			require.True(t, service.IsCindyAPIKeyAccount(got.Platform, got.Type, got.Credentials))
 			require.True(t, got.IsModelSupported("openai/gpt-5.6-luna"),
 				"the production scheduler snapshot must retain strict Cindy live-model routing")

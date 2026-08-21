@@ -150,6 +150,9 @@ func TestOpenAIGatewayServiceForward_StrictCindySkipsGlobalCodexImageInjection(t
 	svc.cfg.Gateway.CodexImageGenerationBridgeEnabled = true
 	c, _ := newOpenAIImageGenerationControlTestContext(true, "codex_cli_rs/0.146.0")
 	account := newOpenAIImageGenerationControlTestAccount()
+	account.Platform = PlatformCindy
+	account.WirePlatform = WirePlatformOpenAI
+	account.ProviderProfile = ProviderProfileCindyLaxaV1
 	account.Credentials["base_url"] = "https://api.laxarouter.ai"
 
 	result, err := svc.Forward(context.Background(), c, account, []byte(`{"model":"gpt-5.6-sol","input":"write code","stream":false}`))
@@ -501,9 +504,8 @@ func TestOpenAIGatewayService_CodexImageGenerationBridgeOverridePrecedence(t *te
 			name:   "strict Cindy does not inherit enabled global",
 			global: true,
 			account: &Account{
-				Platform:    PlatformOpenAI,
-				Type:        AccountTypeAPIKey,
-				Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"},
+				Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1,
+				Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"},
 			},
 			want: false,
 		},
@@ -514,25 +516,23 @@ func TestOpenAIGatewayService_CodexImageGenerationBridgeOverridePrecedence(t *te
 				featureKeyCodexImageGenerationBridge: map[string]any{PlatformOpenAI: true},
 			}},
 			account: &Account{
-				Platform:    PlatformOpenAI,
-				Type:        AccountTypeAPIKey,
-				Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"},
+				Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1,
+				Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"},
 			},
 			want: true,
 		},
 		{
-			name:   "account true explicitly enables strict Cindy",
+			name:   "legacy OpenAI account override does not enable first-class Cindy",
 			global: false,
 			channel: &Channel{ID: 1, Status: StatusActive, FeaturesConfig: map[string]any{
 				featureKeyCodexImageGenerationBridge: map[string]any{PlatformOpenAI: false},
 			}},
 			account: &Account{
-				Platform:    PlatformOpenAI,
-				Type:        AccountTypeAPIKey,
-				Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"},
-				Extra:       map[string]any{featureKeyCodexImageGenerationBridge: true},
+				Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1,
+				Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"},
+				Extra: map[string]any{featureKeyCodexImageGenerationBridge: true},
 			},
-			want: true,
+			want: false,
 		},
 		{
 			name:   "channel true overrides disabled global",

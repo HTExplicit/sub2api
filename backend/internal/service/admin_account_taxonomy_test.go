@@ -43,10 +43,10 @@ func TestFilterConsoleAccountsCombinesDerivedStatusAndPlanAcrossFullSet(t *testi
 func TestFilterConsoleAccountsCindyQuickViewsUseStrictIdentity(t *testing.T) {
 	markedAt := time.Now()
 	accounts := []*Account{
-		{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Credentials: cindyCredentials()},
-		{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Credentials: cindyCredentials(), CindyBalanceInsufficientAt: &markedAt},
-		{ID: 3, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Credentials: map[string]any{"base_url": "https://api.laxarouter.ai/v1"}, CindyBalanceInsufficientAt: &markedAt},
-		{ID: 4, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true, Credentials: cindyCredentials(), CindyBalanceInsufficientAt: &markedAt},
+		{ID: 1, Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Credentials: cindyCredentials()},
+		{ID: 2, Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Credentials: cindyCredentials(), CindyBalanceInsufficientAt: &markedAt},
+		{ID: 3, Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Credentials: map[string]any{"base_url": "https://api.laxarouter.ai/v1"}, CindyBalanceInsufficientAt: &markedAt},
+		{ID: 4, Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true, Credentials: cindyCredentials(), CindyBalanceInsufficientAt: &markedAt},
 	}
 
 	cindy := filterConsoleAccounts(accounts, AccountConsoleFilters{CindyOnly: true})

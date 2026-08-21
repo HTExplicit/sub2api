@@ -41,6 +41,7 @@ func RegisterAdminRoutes(
 		registerGroupRoutes(admin, h)
 
 		// 账号管理
+		registerAccountJobRoutes(admin, h)
 		registerAccountRoutes(admin, h, stepUpAuth)
 		registerCindyBalanceProbeRoutes(admin, h)
 
@@ -128,6 +129,17 @@ func RegisterAdminRoutes(
 
 		// 操作审计日志
 		registerAuditLogRoutes(admin, h, stepUpAuth)
+	}
+}
+
+func registerAccountJobRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	jobs := admin.Group("/account-jobs")
+	{
+		jobs.GET("", h.Admin.AccountJob.List)
+		jobs.GET("/:id", h.Admin.AccountJob.Get)
+		jobs.GET("/:id/items", h.Admin.AccountJob.ListItems)
+		jobs.POST("/:id/cancel", h.Admin.AccountJob.Cancel)
+		jobs.POST("/:id/retry-failed", h.Admin.AccountJob.RetryFailed)
 	}
 }
 
@@ -428,6 +440,8 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.POST("", h.Admin.Account.Create)
 		accounts.POST("/:id/duplicate", h.Admin.Account.Duplicate)
 		accounts.POST("/check-mixed-channel", h.Admin.Account.CheckMixedChannel)
+		accounts.POST("/duplicates/review", h.Admin.Account.ReviewDuplicateAccounts)
+		accounts.POST("/duplicates/merge", h.Admin.Account.MergeDuplicateAccounts)
 		accounts.POST("/bulk-taxonomy", h.Admin.Account.BulkUpdateAccountTaxonomy)
 		accounts.POST("/import/codex-session", h.Admin.Account.ImportCodexSession)
 		accounts.POST("/sync/crs", h.Admin.Account.SyncFromCRS)
@@ -467,7 +481,6 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.POST("/batch", h.Admin.Account.BatchCreate)
 		// 账号导出泄露上游凭证原文——要求 step-up 2FA
 		accounts.GET("/data", gin.HandlerFunc(stepUpAuth), h.Admin.Account.ExportData)
-		accounts.POST("/data/preview", h.Admin.Account.PreviewDataImport)
 		accounts.POST("/data", h.Admin.Account.ImportData)
 		accounts.POST("/batch-update-credentials", h.Admin.Account.BatchUpdateCredentials)
 		accounts.POST("/batch-refresh-tier", h.Admin.Account.BatchRefreshTier)

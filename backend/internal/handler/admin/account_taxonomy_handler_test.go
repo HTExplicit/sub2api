@@ -86,15 +86,16 @@ func (s *accountTaxonomyHandlerStub) BulkUpdateAccountTaxonomy(_ context.Context
 	return s.bulkResult, nil
 }
 
-func setupAccountTaxonomyHandlerRouter(adminSvc *accountTaxonomyHandlerStub) *gin.Engine {
+func setupAccountTaxonomyHandlerRouter(adminSvc *accountTaxonomyHandlerStub) (*gin.Engine, *accountJobSubmitRepository) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	jobs := attachAccountJobSubmitter(router, handler)
 	router.GET("/api/v1/admin/accounts/facets", handler.GetAccountFacets)
 	router.PUT("/api/v1/admin/accounts/folders/order", handler.ReorderAccountFolders)
 	router.PUT("/api/v1/admin/accounts/tags/order", handler.ReorderAccountTags)
 	router.POST("/api/v1/admin/accounts/bulk-taxonomy", handler.BulkUpdateAccountTaxonomy)
-	return router
+	return router, jobs
 }
 
 func TestAccountFacetsUsesStableSnakeCaseTaxonomyDTO(t *testing.T) {
@@ -108,7 +109,8 @@ func TestAccountFacetsUsesStableSnakeCaseTaxonomyDTO(t *testing.T) {
 	}
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/facets", nil)
-	setupAccountTaxonomyHandlerRouter(adminSvc).ServeHTTP(recorder, request)
+	router, _ := setupAccountTaxonomyHandlerRouter(adminSvc)
+	router.ServeHTTP(recorder, request)
 
 	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 	var responseBody map[string]any
@@ -153,16 +155,23 @@ func TestBulkAccountTaxonomyMapsFilteredTarget(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/bulk-taxonomy", bytes.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
-	setupAccountTaxonomyHandlerRouter(adminSvc).ServeHTTP(recorder, request)
+	setAccountJobTestIdempotencyKey(request)
+	router, jobs := setupAccountTaxonomyHandlerRouter(adminSvc)
+	router.ServeHTTP(recorder, request)
 
-	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
-	require.NotNil(t, adminSvc.lastBulk.Filters)
-	require.NotNil(t, adminSvc.lastBulk.Filters.Console)
-	require.Equal(t, []string{"openai"}, adminSvc.lastBulk.Filters.Console.Platforms)
-	require.True(t, adminSvc.lastBulk.Filters.Console.IncludeUncategorized)
-	require.Equal(t, []int64{3}, adminSvc.lastBulk.Filters.Console.TagIDs)
-	require.Equal(t, "set", adminSvc.lastBulk.FolderAction)
-	require.Equal(t, int64(7), *adminSvc.lastBulk.FolderID)
-	require.Equal(t, []int64{4}, adminSvc.lastBulk.TagAddIDs)
-	require.Equal(t, []int64{3}, adminSvc.lastBulk.TagRemoveIDs)
+	require.Equal(t, http.StatusAccepted, recorder.Code, recorder.Body.String())
+	var payload bulkAccountTaxonomyRequest
+	params := requireSubmittedAccountJob(t, jobs, service.AccountJobKindBulkTaxonomy, &payload)
+	require.Len(t, params.Items, 1, "filter-targeted jobs resolve concrete accounts in the worker")
+	filters, err := toServiceBulkUpdateAccountFilters(payload.Filters)
+	require.NoError(t, err)
+	require.NotNil(t, filters)
+	require.NotNil(t, filters.Console)
+	require.Equal(t, []string{"openai"}, filters.Console.Platforms)
+	require.True(t, filters.Console.IncludeUncategorized)
+	require.Equal(t, []int64{3}, filters.Console.TagIDs)
+	require.Equal(t, "set", payload.FolderAction)
+	require.Equal(t, int64(7), *payload.FolderID)
+	require.Equal(t, []int64{4}, payload.TagAddIDs)
+	require.Equal(t, []int64{3}, payload.TagRemoveIDs)
 }

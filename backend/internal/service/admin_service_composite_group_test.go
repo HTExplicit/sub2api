@@ -6,16 +6,28 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/stretchr/testify/require"
 )
 
 type accountRepoStubForCompositeModelsList struct {
 	accountRepoStub
 	accounts []Account
+	byID     map[int64]*Account
 }
 
 func (s *accountRepoStubForCompositeModelsList) ListSchedulableByGroupID(_ context.Context, _ int64) ([]Account, error) {
 	return s.accounts, nil
+}
+
+func (s *accountRepoStubForCompositeModelsList) GetByIDs(_ context.Context, ids []int64) ([]*Account, error) {
+	accounts := make([]*Account, 0, len(ids))
+	for _, id := range ids {
+		if account := s.byID[id]; account != nil {
+			accounts = append(accounts, account)
+		}
+	}
+	return accounts, nil
 }
 
 func TestAdminService_CreateCompositeGroupCopiesAccountsFromConcreteGroups(t *testing.T) {
@@ -38,7 +50,11 @@ func TestAdminService_CreateCompositeGroupCopiesAccountsFromConcreteGroups(t *te
 			return nil
 		},
 	}
-	svc := &adminServiceImpl{groupRepo: groupRepo}
+	accountRepo := &accountRepoStubForCompositeModelsList{byID: map[int64]*Account{
+		101: {ID: 101, Platform: PlatformOpenAI, Type: AccountTypeAPIKey},
+		202: {ID: 202, Platform: PlatformGemini, Type: AccountTypeAPIKey},
+	}}
+	svc := &adminServiceImpl{groupRepo: groupRepo, accountRepo: accountRepo}
 
 	group, err := svc.CreateGroup(context.Background(), &CreateGroupInput{
 		Name:               "Composite",
@@ -87,7 +103,11 @@ func TestAdminService_UpdateCompositeGroupCopiesAccountsFromConcreteGroups(t *te
 			return nil
 		},
 	}
-	svc := &adminServiceImpl{groupRepo: groupRepo}
+	accountRepo := &accountRepoStubForCompositeModelsList{byID: map[int64]*Account{
+		301: {ID: 301, Platform: PlatformOpenAI, Type: AccountTypeAPIKey},
+		302: {ID: 302, Platform: PlatformGrok, Type: AccountTypeAPIKey},
+	}}
+	svc := &adminServiceImpl{groupRepo: groupRepo, accountRepo: accountRepo}
 	maxReasoningEffort := "low"
 	reasoningEffortMappings := []ReasoningEffortMapping{{From: "max", To: "high"}}
 
@@ -174,6 +194,13 @@ func TestAdminService_CompositeModelsListCandidatesIncludeConcreteAccountMapping
 					"model_mapping": map[string]any{"gemini-custom": "gemini-2.5-flash"},
 				},
 			},
+			{
+				ID:       3,
+				Platform: PlatformKimi,
+				Credentials: map[string]any{
+					"model_mapping": map[string]any{"kimi-custom": "kimi-k2"},
+				},
+			},
 		},
 	}
 	groupRepo := &groupRepoStubForAdmin{
@@ -188,6 +215,19 @@ func TestAdminService_CompositeModelsListCandidatesIncludeConcreteAccountMapping
 	require.NoError(t, err)
 	require.Contains(t, candidates, "gpt-custom")
 	require.Contains(t, candidates, "gemini-custom")
+	require.Contains(t, candidates, "kimi-custom")
 	require.Contains(t, candidates, "gpt-5.5")
 	require.Contains(t, candidates, "gemini-2.5-flash")
+}
+
+// 独立 CN 分组的模型列表候选沿用 default 分支的 Claude 默认列表；
+// composite 支持不得改变独立分组的候选语义。
+func TestAdminService_CNProviderModelsListCandidatesKeepClaudeDefaults(t *testing.T) {
+	want := make([]string, 0, len(claude.DefaultModels))
+	for _, model := range claude.DefaultModels {
+		want = append(want, model.ID)
+	}
+	for _, platform := range []string{PlatformKimi, PlatformZhipu, PlatformDeepseek} {
+		require.Equal(t, want, defaultModelsListCandidateIDs(platform), "platform=%s", platform)
+	}
 }

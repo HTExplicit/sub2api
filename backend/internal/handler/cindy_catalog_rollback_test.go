@@ -67,7 +67,7 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 	strictMessages, err := gatewayService.ClassifyStrictCindyGroup(t.Context(), group)
 	require.NoError(t, err)
 	require.False(t, strictMessages)
-	require.False(t, allowOpenAICompatibleMessagesDispatch(apiKey),
+	require.False(t, allowOpenAICompatibleMessagesDispatch(nil, apiKey),
 		"catalog rollback must restore the legacy Messages dispatch policy")
 	cindyAccount := cindyGatewayModelAccountForTest(99202)
 	require.Equal(t, "legacy-mapped-model",
@@ -90,8 +90,12 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 		},
 	}
 	require.Equal(t, "gpt-5.4-mini", ordinaryAccount.GetMappedModel("gpt-5.4-mini"))
+	legacyProjectedAccount := cindyAccount
+	legacyProjectedAccount.Platform = service.PlatformOpenAI
+	legacyProjectedAccount.WirePlatform = ""
+	legacyProjectedAccount.ProviderProfile = ""
 	repo := &gatewayModelsAccountRepoStub{byGroup: map[int64][]service.Account{
-		groupID: {cindyAccount},
+		groupID: {legacyProjectedAccount},
 	}}
 	modelsHandler := newGatewayModelsHandlerForTest(repo)
 	rec := httptest.NewRecorder()
@@ -115,6 +119,9 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "Model capability catalog is not enabled")
 	require.Empty(t, GetUpstreamEndpoint(c, service.PlatformOpenAI))
 
+	// A legacy platform=openai + StrictCindy marker no longer grants Cindy
+	// aliases. Canonical platform=cindy routing is covered by the first-class
+	// catalog tests instead.
 	for _, tc := range []struct {
 		name          string
 		request       string
@@ -124,8 +131,6 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 		groupPlatform string
 		modelMapping  map[string]any
 	}{
-		{name: "strict_sol_alias", request: "gpt-5.4", expected: "openai/gpt-5.6-sol", strict: true},
-		{name: "strict_luna_alias", request: "gpt-5.4-mini", expected: "openai/gpt-5.6-luna", strict: true},
 		{
 			name: "configured_stable_sol", request: "gpt-5.6-sol", expected: "openai/gpt-5.6-sol",
 			modelMapping: map[string]any{"gpt-5.6-sol": "openai/gpt-5.6-sol"},
@@ -141,6 +146,9 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			h, accountRepo, upstream, handlerGroupID := newCindyBalanceFailoverHandler(t)
 			accountRepo.accounts = accountRepo.accounts[1:]
+			accountRepo.accounts[0].Platform = service.PlatformOpenAI
+			accountRepo.accounts[0].WirePlatform = ""
+			accountRepo.accounts[0].ProviderProfile = ""
 			if tc.modelMapping != nil {
 				accountRepo.accounts[0].Credentials["model_mapping"] = tc.modelMapping
 				accountRepo.accounts[0].Extra["openai_passthrough"] = false
@@ -154,6 +162,9 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 			require.True(t, exists)
 			requestAPIKey, ok := rawAPIKey.(*service.APIKey)
 			require.True(t, ok)
+			requestAPIKey.Group.Platform = service.PlatformOpenAI
+			requestAPIKey.Group.WirePlatform = ""
+			requestAPIKey.Group.ProviderProfile = ""
 			requestAPIKey.Group.StrictCindy = tc.strict
 			if tc.groupPlatform != "" {
 				requestAPIKey.Group.Platform = tc.groupPlatform
@@ -176,22 +187,6 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 		expectedModels []string
 	}{
 		{
-			name:           "strict_chat_sol_alias",
-			strictGroup:    true,
-			requestedModel: "gpt-5.4",
-			modelMapping:   map[string]any{"gpt-5.6-sol": "openai/gpt-5.6-sol"},
-			expectedStatus: http.StatusOK,
-			expectedModels: []string{"openai/gpt-5.6-sol"},
-		},
-		{
-			name:           "strict_chat_luna_alias",
-			strictGroup:    true,
-			requestedModel: "gpt-5.4-mini",
-			modelMapping:   map[string]any{"gpt-5.6-luna": "openai/gpt-5.6-luna"},
-			expectedStatus: http.StatusOK,
-			expectedModels: []string{"openai/gpt-5.6-luna"},
-		},
-		{
 			name:           "mixed_chat_does_not_map",
 			strictGroup:    false,
 			requestedModel: "gpt-5.4-mini",
@@ -212,6 +207,9 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			h, accountRepo, upstream, handlerGroupID := newCindyBalanceFailoverHandler(t)
 			accountRepo.accounts = accountRepo.accounts[1:]
+			accountRepo.accounts[0].Platform = service.PlatformOpenAI
+			accountRepo.accounts[0].WirePlatform = ""
+			accountRepo.accounts[0].ProviderProfile = ""
 			accountRepo.accounts[0].Credentials["model_mapping"] = tc.modelMapping
 			accountRepo.accounts[0].Extra["openai_passthrough"] = false
 			ctx, recorder := newStrictCindyHandlerContext(t, handlerGroupID, "/v1/chat/completions",
@@ -220,6 +218,9 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 			require.True(t, exists)
 			requestAPIKey, ok := rawAPIKey.(*service.APIKey)
 			require.True(t, ok)
+			requestAPIKey.Group.Platform = service.PlatformOpenAI
+			requestAPIKey.Group.WirePlatform = ""
+			requestAPIKey.Group.ProviderProfile = ""
 			requestAPIKey.Group.StrictCindy = tc.strictGroup
 			if tc.groupPlatform != "" {
 				requestAPIKey.Group.Platform = tc.groupPlatform
@@ -232,14 +233,6 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 			require.Equal(t, []string{"/v1/responses"}, upstream.paths())
 		})
 	}
-
-	wsResult := runOpenAIResponsesWebSocketUsageLogCase(t, openAIResponsesWSUsageLogCase{
-		firstPayload:     `{"type":"response.create","model":"gpt-5.4-mini","input":"hi","stream":false}`,
-		strictCindyGroup: true,
-	})
-	require.Equal(t, "openai/gpt-5.6-luna",
-		gjson.GetBytes(wsResult.upstreamFirstPayload, "model").String(),
-		"direct Responses WebSocket ingress must preserve the strict catalog-off alias")
 
 	wsMixed := runOpenAIResponsesWebSocketUsageLogCase(t, openAIResponsesWSUsageLogCase{
 		firstPayload: `{"type":"response.create","model":"gpt-5.4-mini","input":"hi","stream":false}`,

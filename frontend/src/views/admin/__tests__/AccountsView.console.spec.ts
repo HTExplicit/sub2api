@@ -16,6 +16,8 @@ const {
   deleteCindyInsufficient,
   clearCindyBalanceInsufficient,
   showSuccess,
+  jobTrack,
+  reviewDuplicates,
   getAllProxies,
   getAllGroups
 } = vi.hoisted(() => ({
@@ -30,8 +32,14 @@ const {
   deleteCindyInsufficient: vi.fn(),
   clearCindyBalanceInsufficient: vi.fn(),
   showSuccess: vi.fn(),
+  jobTrack: vi.fn(),
+  reviewDuplicates: vi.fn(),
   getAllProxies: vi.fn(),
   getAllGroups: vi.fn()
+}))
+
+vi.mock('@/stores/accountJobs', () => ({
+  useAccountJobsStore: () => ({ track: jobTrack, reviewDuplicates })
 }))
 
 vi.mock('@/api/admin', () => ({
@@ -144,15 +152,7 @@ const DetailsDrawerStub = {
 const ImportDataModalStub = {
   emits: ['imported'],
   data: () => ({
-    result: {
-      proxy_created: 0, proxy_reused: 0, proxy_failed: 0,
-      account_created: 2, account_updated: 0, account_skipped: 0, account_failed: 0,
-      account_ids: [101, 102],
-      items: [
-        { index: 0, name: 'a', action: 'create', account_id: 101 },
-        { index: 1, name: 'b', action: 'create', account_id: 102 }
-      ]
-    }
+    result: { id: 71, kind: 'account_import', status: 'pending' }
   }),
   template: '<button data-test="emit-import-result" @click="$emit(\'imported\', result)">imported</button>'
 }
@@ -249,9 +249,11 @@ describe('admin AccountsView Cockpit console', () => {
     getBatchTodayStats.mockReset().mockResolvedValue({ stats: {} })
     getUpstreamBillingProbeSettings.mockReset().mockResolvedValue({ enabled: true, interval_minutes: 30 })
     previewCindyInsufficientDeletion.mockReset().mockResolvedValue({ count: 2, fingerprint: 'fingerprint-2' })
-    deleteCindyInsufficient.mockReset().mockResolvedValue({ deleted_count: 2 })
+    deleteCindyInsufficient.mockReset().mockResolvedValue({ id: 72, kind: 'cindy_cleanup', status: 'pending' })
     clearCindyBalanceInsufficient.mockReset().mockResolvedValue({ ...account, cindy_balance_insufficient: false })
     showSuccess.mockReset()
+    jobTrack.mockReset()
+    reviewDuplicates.mockReset()
     getAllProxies.mockReset().mockResolvedValue([])
     getAllGroups.mockReset().mockResolvedValue([])
   })
@@ -377,20 +379,16 @@ describe('admin AccountsView Cockpit console', () => {
     expect(list.classes()).toEqual(expect.arrayContaining(['flex', 'min-h-0', 'min-w-0', 'flex-1', 'flex-col']))
   })
 
-  it('filters and selects successful account IDs after import', async () => {
+  it('tracks an import job without assuming synchronous account IDs', async () => {
     const wrapper = mountView()
     await flushPromises()
 
     await wrapper.get('[data-test="emit-import-result"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('[data-test="console-account-ids"]').text()).toBe('101,102')
-    expect(wrapper.get('[data-test="selected-ids"]').text()).toBe('101,102')
-    expect(listAccounts.mock.calls.some(call => call[2]?.account_ids === '101,102')).toBe(true)
-    expect(getFacets.mock.calls.some(call => call[0]?.account_ids === '101,102')).toBe(true)
-    expect(JSON.parse(sessionStorage.getItem('account-console-sensitive-filters-v1') || '{}')).toEqual({
-      search: '', account_ids: [101, 102]
-    })
+    expect(jobTrack).toHaveBeenCalledWith({ id: 71, kind: 'account_import', status: 'pending' })
+    expect(wrapper.get('[data-test="console-account-ids"]').text()).toBe('')
+    expect(wrapper.get('[data-test="selected-ids"]').text()).toBe('')
   })
 
   it('restores URL filters through browser history while sensitive filters stay in session storage', async () => {
@@ -523,7 +521,8 @@ describe('admin AccountsView Cockpit console', () => {
 
     await wrapper.get('[data-test="emit-import-result"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-test="scope-tools-context"]').attributes('data-selected')).toBe('101,102')
+    expect(wrapper.get('[data-test="scope-tools-context"]').attributes('data-selected')).toBe('')
+    expect(jobTrack).toHaveBeenCalledWith({ id: 71, kind: 'account_import', status: 'pending' })
   })
 
   it('deletes Cindy insufficient accounts only with the server preview fingerprint', async () => {
@@ -547,7 +546,8 @@ describe('admin AccountsView Cockpit console', () => {
     await wrapper.get('[data-test="confirm-dialog-submit"]').trigger('click')
     await flushPromises()
     expect(deleteCindyInsufficient).toHaveBeenCalledWith({ count: 2, fingerprint: 'fingerprint-2' })
-    expect(showSuccess).toHaveBeenCalled()
+    expect(jobTrack).toHaveBeenCalledWith({ id: 72, kind: 'cindy_cleanup', status: 'pending' })
+    expect(showSuccess).not.toHaveBeenCalled()
   })
 
   it('disables Cindy cleanup when the server preview has no deletable candidates', async () => {

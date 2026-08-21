@@ -232,11 +232,13 @@ func TestAccountHandlerGetAvailableModels_OpenAIAPIKeyDefaultsToConcreteGPT56Sol
 	svc := &availableModelsAdminService{
 		stubAdminService: newStubAdminService(),
 		account: service.Account{
-			ID:       46,
-			Name:     "openai-apikey",
-			Platform: service.PlatformOpenAI,
-			Type:     service.AccountTypeAPIKey,
-			Status:   service.StatusActive,
+			ID:              46,
+			Name:            "openai-apikey",
+			Platform:        service.PlatformCindy,
+			WirePlatform:    service.WirePlatformOpenAI,
+			ProviderProfile: service.ProviderProfileCindyLaxaV1,
+			Type:            service.AccountTypeAPIKey,
+			Status:          service.StatusActive,
 			Credentials: map[string]any{
 				"api_key": "test-key",
 			},
@@ -264,11 +266,13 @@ func TestAccountHandlerGetAvailableModels_CindyUsesManagedCatalogInsteadOfStored
 	svc := &availableModelsAdminService{
 		stubAdminService: newStubAdminService(),
 		account: service.Account{
-			ID:       47,
-			Name:     "cindy-openai-apikey",
-			Platform: service.PlatformOpenAI,
-			Type:     service.AccountTypeAPIKey,
-			Status:   service.StatusActive,
+			ID:              47,
+			Name:            "cindy-openai-apikey",
+			Platform:        service.PlatformCindy,
+			WirePlatform:    service.WirePlatformOpenAI,
+			ProviderProfile: service.ProviderProfileCindyLaxaV1,
+			Type:            service.AccountTypeAPIKey,
+			Status:          service.StatusActive,
 			Credentials: map[string]any{
 				"api_key":  "must-not-leak",
 				"base_url": "https://api.laxarouter.ai",
@@ -303,9 +307,9 @@ func TestAccountHandlerGetAvailableModels_CindyUsesManagedCatalogInsteadOfStored
 	require.NotContains(t, byID, "legacy-only")
 	sol := byID["gpt-5.6-sol"]
 	require.Equal(t, "openai/gpt-5.6-sol", sol.LiveUpstreamID)
-	require.Equal(t, 372000, sol.ContextWindow)
+	require.Equal(t, 1050000, sol.ContextWindow)
 	require.Equal(t, 1050000, sol.BaseContextWindow)
-	require.Equal(t, 372000, sol.CodexContextWindow)
+	require.Equal(t, 1050000, sol.CodexContextWindow)
 	require.Equal(t, 128000, sol.MaxOutputTokens)
 	require.Contains(t, sol.Endpoints, "responses")
 

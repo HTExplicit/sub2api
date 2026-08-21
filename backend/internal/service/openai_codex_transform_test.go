@@ -1256,8 +1256,10 @@ func TestNormalizeOpenAIResponsesImageOnlyModel_UsesLegacyControllerExceptExactC
 	cindyBody := map[string]any{"model": "gpt-image-2", "input": "draw"}
 	require.True(t, normalizeOpenAIResponsesImageOnlyModel(cindyBody))
 	cindy := &Account{
-		Platform: PlatformOpenAI,
-		Type:     AccountTypeAPIKey,
+		Platform:        PlatformCindy,
+		WirePlatform:    WirePlatformOpenAI,
+		ProviderProfile: ProviderProfileCindyLaxaV1,
+		Type:            AccountTypeAPIKey,
 		Credentials: map[string]any{
 			"base_url": "https://api.laxarouter.ai",
 		},
@@ -1268,8 +1270,10 @@ func TestNormalizeOpenAIResponsesImageOnlyModel_UsesLegacyControllerExceptExactC
 
 func TestMapCindyOpenAIResponsesImageModels_MapsControllerAndNestedTool(t *testing.T) {
 	cindy := &Account{
-		Platform: PlatformOpenAI,
-		Type:     AccountTypeAPIKey,
+		Platform:        PlatformCindy,
+		WirePlatform:    WirePlatformOpenAI,
+		ProviderProfile: ProviderProfileCindyLaxaV1,
+		Type:            AccountTypeAPIKey,
 		Credentials: map[string]any{
 			"base_url": "https://api.laxarouter.ai",
 		},
@@ -1330,11 +1334,9 @@ func TestResolveCindyResponsesImageTools_ValidatesAndMapsBeforeSelection(t *test
 			wantErr: "between 1 and 1",
 		},
 		{
-			name:             "full Gemini ID removes unsupported count",
-			body:             `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"google/gemini-3-pro-image","size":"1024x1024","quality":"low","n":1}]}`,
-			wantModel:        "google/gemini-3-pro-image",
-			wantActionAbsent: true,
-			wantCountAbsent:  true,
+			name:     "Responses image bridge rejects Gemini",
+			body:     `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"google/gemini-3-pro-image","size":"1024x1024","quality":"low","n":1}]}`,
+			modelErr: true,
 		},
 		{
 			name:       "explicit action remains stable",
@@ -1354,9 +1356,9 @@ func TestResolveCindyResponsesImageTools_ValidatesAndMapsBeforeSelection(t *test
 			modelErr: true,
 		},
 		{
-			name:    "Gemini rejects a second output",
-			body:    `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"gemini-3-pro-image","n":2}]}`,
-			wantErr: "between 1 and 1",
+			name:     "Responses image bridge rejects Gemini public ID",
+			body:     `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"gemini-3-pro-image","n":2}]}`,
+			modelErr: true,
 		},
 		{
 			name:    "unverified quality fails closed",

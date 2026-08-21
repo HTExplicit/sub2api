@@ -174,6 +174,28 @@
             <Icon :name="submitting ? 'refresh' : 'sparkles'" size="sm" :class="submitting ? 'animate-spin' : ''" />
             {{ submitting ? t('imageStudio.running') : t('imageStudio.run') }}
           </button>
+
+          <div v-if="activeJob" class="space-y-2 border-t border-gray-200 pt-4 dark:border-dark-700" data-testid="active-job-progress">
+            <div class="flex items-center justify-between gap-3 text-sm">
+              <span class="font-medium text-gray-800 dark:text-gray-200">{{ statusLabel(activeJob.status) }}</span>
+              <span class="tabular-nums text-gray-500 dark:text-gray-400">
+                {{ activeJob.counts.processed }}/{{ activeJob.count }}
+              </span>
+            </div>
+            <div class="h-2 overflow-hidden rounded bg-gray-100 dark:bg-dark-800">
+              <div class="h-full bg-primary-500 transition-[width]" :style="{ width: `${activeJobProgress}%` }" />
+            </div>
+            <button
+              v-if="!isImageStudioJobTerminal(activeJob.status)"
+              type="button"
+              class="btn btn-secondary w-full"
+              :disabled="canceling"
+              data-testid="cancel-image-job"
+              @click="cancelActiveJob"
+            >
+              {{ canceling ? t('imageStudio.canceling') : t('imageStudio.cancel') }}
+            </button>
+          </div>
         </form>
 
         <section class="min-w-0" aria-labelledby="image-studio-history-heading">
@@ -212,6 +234,9 @@
                     <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
                       {{ record.model }} · {{ record.size }} · {{ record.quality }}
                     </p>
+					<p v-if="record.status" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+					  {{ statusLabel(record.status) }}
+					</p>
                   </div>
                   <div class="flex shrink-0 items-center gap-1">
                     <button
@@ -238,7 +263,13 @@
                 </time>
               </div>
 
-              <div class="grid grid-cols-2 gap-px bg-gray-100 dark:bg-dark-800">
+			  <div
+				v-if="record.images.length === 0"
+				class="flex min-h-28 items-center justify-center px-4 text-center text-sm text-gray-500 dark:text-gray-400"
+			  >
+				{{ record.errorMessage || statusLabel(record.status || 'pending') }}
+			  </div>
+              <div v-else class="grid grid-cols-2 gap-px bg-gray-100 dark:bg-dark-800">
                 <div v-for="image in record.images" :key="image.id" class="group relative aspect-square min-w-0 bg-gray-50 dark:bg-dark-950">
                   <button type="button" class="h-full w-full" @click="previewURL = image.url">
                     <img :src="image.url" :alt="record.prompt" class="h-full w-full object-cover" />
@@ -290,13 +321,21 @@ import Icon from '@/components/icons/Icon.vue'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import {
-  editImages,
-  generateImages,
-  listEligibleImageStudioKeys,
-  MAX_IMAGE_BYTES,
-  validateImageBlob,
-  type EligibleImageStudioKey,
-  type ModelCapability,
+	cancelImageStudioJob,
+	createImageStudioJob,
+	downloadImageStudioArtifact,
+	isImageStudioJobTerminal,
+	listEligibleImageStudioKeys,
+	listImageStudioJobs,
+	MAX_IMAGE_BYTES,
+	retryImageStudioJob,
+	validateImageBlob,
+	waitForImageStudioJob,
+	type EligibleImageStudioKey,
+	type ImageStudioJob,
+	type ImageStudioJobDetail,
+	type ImageStudioJobStatus,
+	type ModelCapability,
 } from '@/api/imageStudio'
 import {
   clearImageStudioHistory,
@@ -366,6 +405,8 @@ const history = ref<DisplayHistoryRecord[]>([])
 const loadingKeys = ref(false)
 const loadingHistory = ref(false)
 const submitting = ref(false)
+const canceling = ref(false)
+const activeJob = ref<ImageStudioJob | null>(null)
 const sourceFile = ref<File | null>(null)
 const maskFile = ref<File | null>(null)
 const sourcePreviewURL = ref('')
@@ -431,17 +472,16 @@ const canSubmit = computed(() => Boolean(
     ? supportsGeneration.value
     : supportsEdit.value && supportsReferenceImage.value && sourceFile.value),
 ))
+const activeJobProgress = computed(() => {
+	if (!activeJob.value || activeJob.value.count < 1) return 0
+	return Math.min(100, Math.round((activeJob.value.counts.processed / activeJob.value.count) * 100))
+})
 
 function errorMessage(error: unknown): string {
   if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
     return error.message
   }
   return t('imageStudio.failed')
-}
-
-function randomID(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
 function revokeURL(value: string): void {
@@ -566,6 +606,66 @@ async function loadKeys(): Promise<void> {
   }
 }
 
+function storedRecord(record: DisplayHistoryRecord): ImageStudioHistoryRecord {
+  return {
+    ...record,
+    images: record.images.map(({ url: _url, ...image }) => image),
+  }
+}
+
+function statusLabel(status: ImageStudioJobStatus): string {
+  return t(`imageStudio.status.${status}`)
+}
+
+async function downloadTerminalImages(detail: ImageStudioJobDetail, signal: AbortSignal): Promise<ImageStudioHistoryRecord['images']> {
+  return Promise.all(detail.artifacts.map(async (artifact) => {
+    const blob = await downloadImageStudioArtifact(artifact, signal)
+    const mimeType = await validateImageBlob(blob, artifact.content_type || blob.type)
+    return {
+      id: `artifact:${artifact.id}`,
+      blob: blob.type === mimeType ? blob : new Blob([blob], { type: mimeType }),
+      mimeType,
+      revisedPrompt: artifact.revised_prompt,
+    }
+  }))
+}
+
+async function finishJob(
+  job: ImageStudioJob,
+  record: ImageStudioHistoryRecord,
+  ownerKey: string,
+  controller: AbortController,
+): Promise<void> {
+  activeJob.value = job
+  const detail = await waitForImageStudioJob(job.id, controller.signal, 1000, (progress) => {
+    if (!controller.signal.aborted && ownerKey === historyOwnerKey.value) activeJob.value = progress.job
+  })
+  if (controller.signal.aborted || ownerKey !== historyOwnerKey.value) return
+  const images = await downloadTerminalImages(detail, controller.signal)
+  if (controller.signal.aborted || ownerKey !== historyOwnerKey.value) return
+  const terminalRecord: ImageStudioHistoryRecord = {
+    ...record,
+    status: detail.job.status,
+    errorMessage: detail.job.error_message,
+    images,
+  }
+  const saved = await saveImageStudioHistory(ownerKey, terminalRecord)
+  if (ownerKey !== historyOwnerKey.value) return
+  if (saved) {
+    await loadHistory()
+  } else {
+    displayRecords([terminalRecord, ...history.value.filter(item => item.id !== terminalRecord.id).map(storedRecord)])
+    appStore.showError(t('imageStudio.historyUnavailable'))
+  }
+  if (detail.job.status === 'succeeded') {
+    appStore.showSuccess(t('imageStudio.saved'))
+  } else if (detail.job.status === 'partially_succeeded' || detail.job.status === 'canceled_with_results') {
+    appStore.showSuccess(t('imageStudio.partialSaved'))
+  } else {
+    appStore.showError(detail.job.error_message || t('imageStudio.failed'))
+  }
+}
+
 async function submit(): Promise<void> {
   const key = selectedApiKey.value
   const capability = selectedCapability.value
@@ -598,61 +698,50 @@ async function submit(): Promise<void> {
   submissionController = controller
   submitting.value = true
   try {
-    const common = {
-      model: capability.id,
-      prompt,
-      n: outputCountEnabled.value
-        ? Math.min(Math.max(Math.trunc(form.count) || 1, 1), maxOutputCount.value)
-        : undefined,
-      size: availableSizes.value.length ? form.size : undefined,
-      quality: availableQualities.value.length ? form.quality : undefined,
-      signal: controller.signal,
-    }
     const editSource = form.mode === 'edit' ? sourceFile.value : null
     const isEdit = editSource !== null
     if (editSource) await validateImageBlob(editSource, editSource.type)
     if (isEdit && supportsMask.value && maskFile.value) {
       await validateImageBlob(maskFile.value, maskFile.value.type)
     }
-    const generated = isEdit
-      ? await editImages(key.key, {
-          ...common,
-          image: editSource,
-          imageName: editSource.name,
-          mask: supportsMask.value ? maskFile.value : null,
-          maskName: supportsMask.value ? maskFile.value?.name : undefined,
-        })
-      : await generateImages(key.key, common)
-
-    if (controller.signal.aborted || ownerKey !== historyOwnerKey.value) return
-
-    const record: ImageStudioHistoryRecord = {
-      id: randomID(),
-      createdAt: Date.now(),
+    const count = outputCountEnabled.value
+      ? Math.min(Math.max(Math.trunc(form.count) || 1, 1), maxOutputCount.value)
+      : 1
+    const job = await createImageStudioJob({
+      apiKeyId: key.id,
       mode: form.mode,
       model: capability.id,
       prompt,
-      size: common.size || '',
-      quality: common.quality || '',
-      count: common.n || 1,
+      count,
+      size: availableSizes.value.length ? form.size : undefined,
+      quality: availableQualities.value.length ? form.quality : undefined,
+      reference: editSource,
+      referenceName: editSource?.name,
+      mask: isEdit && supportsMask.value ? maskFile.value : null,
+      maskName: isEdit && supportsMask.value ? maskFile.value?.name : undefined,
+      signal: controller.signal,
+    })
+    if (controller.signal.aborted || ownerKey !== historyOwnerKey.value) return
+    const record: ImageStudioHistoryRecord = {
+	  id: `job:${job.id}`,
+	  jobId: job.id,
+	  status: job.status,
+      createdAt: job.created_at ? Date.parse(job.created_at) : Date.now(),
+      mode: form.mode,
+      model: capability.id,
+      prompt,
+	  size: availableSizes.value.length ? form.size : '',
+	  quality: availableQualities.value.length ? form.quality : '',
+	  count,
       sourceImage: editSource || undefined,
       sourceImageName: editSource?.name,
       maskImage: isEdit && supportsMask.value ? maskFile.value || undefined : undefined,
       maskImageName: isEdit && supportsMask.value ? maskFile.value?.name : undefined,
-      images: generated.map(image => ({ id: randomID(), ...image })),
+	  images: [],
     }
-    const saved = await saveImageStudioHistory(ownerKey, record)
-    if (ownerKey !== historyOwnerKey.value) return
-    if (saved) {
-      await loadHistory()
-      appStore.showSuccess(t('imageStudio.saved'))
-    } else {
-      displayRecords([record, ...history.value.map(({ images, ...item }) => ({
-        ...item,
-        images: images.map(({ url: _url, ...image }) => image),
-      }))])
-      appStore.showError(t('imageStudio.historyUnavailable'))
-    }
+	await saveImageStudioHistory(ownerKey, record)
+	if (ownerKey === historyOwnerKey.value) await loadHistory()
+	await finishJob(job, record, ownerKey, controller)
   } catch (error) {
     if (controller.signal.aborted || ownerKey !== historyOwnerKey.value) return
     appStore.showError(`${t('imageStudio.failed')}: ${errorMessage(error)}`)
@@ -660,11 +749,35 @@ async function submit(): Promise<void> {
     if (submissionController === controller) {
       submissionController = null
       submitting.value = false
+	  activeJob.value = null
     }
   }
 }
 
 async function retryRecord(record: DisplayHistoryRecord): Promise<void> {
+	if (record.jobId && record.status === 'failed') {
+	  const ownerKey = historyOwnerKey.value
+	  if (!ownerKey) return
+	  submissionController?.abort()
+	  const controller = new AbortController()
+	  submissionController = controller
+	  submitting.value = true
+	  try {
+	    const job = await retryImageStudioJob(record.jobId, controller.signal)
+	    const pending = { ...storedRecord(record), status: job.status, errorMessage: undefined }
+	    await saveImageStudioHistory(ownerKey, pending)
+	    await finishJob(job, pending, ownerKey, controller)
+	  } catch (error) {
+	    if (!controller.signal.aborted && ownerKey === historyOwnerKey.value) appStore.showError(`${t('imageStudio.failed')}: ${errorMessage(error)}`)
+	  } finally {
+	    if (submissionController === controller) {
+	      submissionController = null
+	      submitting.value = false
+	      activeJob.value = null
+	    }
+	  }
+	  return
+	}
   if (!imageModels.value.some(model => model.id === record.model)) {
     appStore.showError(t('imageStudio.modelUnavailable'))
     return
@@ -679,6 +792,61 @@ async function retryRecord(record: DisplayHistoryRecord): Promise<void> {
   setFilePreview('mask', record.maskImage ? new File([record.maskImage], record.maskImageName || 'mask.png', { type: record.maskImage.type }) : null)
   await nextTick()
   await submit()
+}
+
+async function cancelActiveJob(): Promise<void> {
+	if (!activeJob.value || isImageStudioJobTerminal(activeJob.value.status)) return
+	canceling.value = true
+	try {
+	  activeJob.value = await cancelImageStudioJob(activeJob.value.id)
+	} catch (error) {
+	  appStore.showError(`${t('imageStudio.failed')}: ${errorMessage(error)}`)
+	} finally {
+	  canceling.value = false
+	}
+}
+
+async function resumeActiveJob(ownerKey: string): Promise<void> {
+	if (!ownerKey || submissionController) return
+	const controller = new AbortController()
+	try {
+	  const jobs = await listImageStudioJobs(controller.signal)
+	  const job = jobs.find(candidate => !isImageStudioJobTerminal(candidate.status))
+	  if (!job || ownerKey !== historyOwnerKey.value) return
+	  const previous = history.value.find(record => record.jobId === job.id)
+	  const record: ImageStudioHistoryRecord = previous
+	    ? storedRecord(previous)
+	    : {
+	        id: `job:${job.id}`,
+	        jobId: job.id,
+	        status: job.status,
+	        createdAt: job.created_at ? Date.parse(job.created_at) : Date.now(),
+	        mode: job.mode,
+	        model: job.model,
+	        prompt: '',
+	        size: job.size || '',
+	        quality: job.quality || '',
+	        count: job.count,
+	        images: [],
+	      }
+	  submissionController = controller
+	  submitting.value = true
+	  await finishJob(job, record, ownerKey, controller)
+	} catch (error) {
+	  if (!controller.signal.aborted && ownerKey === historyOwnerKey.value) appStore.showError(`${t('imageStudio.failed')}: ${errorMessage(error)}`)
+	} finally {
+	  if (submissionController === controller) {
+	    submissionController = null
+	    submitting.value = false
+	    activeJob.value = null
+	  }
+	}
+}
+
+async function loadOwnerData(): Promise<void> {
+	const ownerKey = historyOwnerKey.value
+	await Promise.all([loadKeys(), loadHistory()])
+	if (ownerKey === historyOwnerKey.value) await resumeActiveJob(ownerKey)
 }
 
 async function removeRecord(id: string): Promise<void> {
@@ -755,11 +923,13 @@ watch(historyOwnerKey, (ownerKey, previousOwnerKey) => {
   form.model = ''
   resetOwnerScopedForm()
   displayRecords([])
-  if (ownerKey) void Promise.all([loadKeys(), loadHistory()])
+	activeJob.value = null
+	canceling.value = false
+	if (ownerKey) void loadOwnerData()
 })
 
 onMounted(() => {
-  void Promise.all([loadKeys(), loadHistory()])
+	void loadOwnerData()
 })
 
 onBeforeUnmount(() => {

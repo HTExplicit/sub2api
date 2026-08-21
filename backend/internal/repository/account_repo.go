@@ -122,10 +122,19 @@ func newAccountRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor, schedul
 }
 
 func (r *accountRepository) Create(ctx context.Context, account *service.Account) error {
-	if err := createAccountRecord(ctx, r.client, account); err != nil {
+	client := r.client
+	exec := r.sql
+	if contextTx := dbent.TxFromContext(ctx); contextTx != nil {
+		client = contextTx.Client()
+		exec = client
+	}
+	if err := createAccountRecord(ctx, client, account); err != nil {
 		return err
 	}
-	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &account.ID, nil, buildSchedulerGroupPayload(account.GroupIDs)); err != nil {
+	if err := enqueueSchedulerOutbox(ctx, exec, service.SchedulerOutboxEventAccountChanged, &account.ID, nil, buildSchedulerGroupPayload(account.GroupIDs)); err != nil {
+		if dbent.TxFromContext(ctx) != nil {
+			return err
+		}
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue account create failed: account=%d err=%v", account.ID, err)
 	}
 	return nil
@@ -140,6 +149,8 @@ func createAccountRecord(ctx context.Context, client *dbent.Client, account *ser
 		SetName(account.Name).
 		SetNillableNotes(account.Notes).
 		SetPlatform(account.Platform).
+		SetWirePlatform(account.WirePlatform).
+		SetProviderProfile(account.ProviderProfile).
 		SetType(account.Type).
 		SetCredentials(normalizeJSONMap(account.Credentials)).
 		SetExtra(normalizeJSONMap(account.Extra)).
@@ -210,18 +221,19 @@ func (r *accountRepository) CreateWithAccountGroups(ctx context.Context, account
 	if account == nil {
 		return service.ErrAccountNilInput
 	}
-	tx, err := r.client.Tx(ctx)
-	if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
-		return err
-	}
-
+	contextTx := dbent.TxFromContext(ctx)
+	var tx *dbent.Tx
 	var txClient *dbent.Client
-	if err == nil {
+	if contextTx != nil {
+		txClient = contextTx.Client()
+	} else {
+		var err error
+		tx, err = r.client.Tx(ctx)
+		if err != nil {
+			return err
+		}
 		defer func() { _ = tx.Rollback() }()
 		txClient = tx.Client()
-	} else {
-		// Reuse a caller-owned transaction when this repository is already transactional.
-		txClient = r.client
 	}
 
 	if err := createAccountRecord(ctx, txClient, account); err != nil {
@@ -258,7 +270,11 @@ func (r *accountRepository) CreateWithAccountGroups(ctx context.Context, account
 }
 
 func (r *accountRepository) GetByID(ctx context.Context, id int64) (*service.Account, error) {
-	m, err := r.client.Account.Query().Where(dbaccount.IDEQ(id)).Only(ctx)
+	client := r.client
+	if contextTx := dbent.TxFromContext(ctx); contextTx != nil {
+		client = contextTx.Client()
+	}
+	m, err := client.Account.Query().Where(dbaccount.IDEQ(id)).Only(ctx)
 	if err != nil {
 		return nil, translatePersistenceError(err, service.ErrAccountNotFound, nil)
 	}
@@ -295,7 +311,11 @@ func (r *accountRepository) GetByIDs(ctx context.Context, ids []int64) ([]*servi
 		return []*service.Account{}, nil
 	}
 
-	entAccounts, err := r.client.Account.
+	client := r.client
+	if contextTx := dbent.TxFromContext(ctx); contextTx != nil {
+		client = contextTx.Client()
+	}
+	entAccounts, err := client.Account.
 		Query().
 		Where(dbaccount.IDIn(uniqueIDs...)).
 		All(ctx)
@@ -506,6 +526,8 @@ func (r *accountRepository) updateLockedAccount(
 		SetName(account.Name).
 		SetNillableNotes(account.Notes).
 		SetPlatform(account.Platform).
+		SetWirePlatform(account.WirePlatform).
+		SetProviderProfile(account.ProviderProfile).
 		SetType(account.Type).
 		SetCredentials(normalizeJSONMap(account.Credentials)).
 		SetExtra(extra).
@@ -1833,50 +1855,45 @@ func (r *accountRepository) BindGroups(ctx context.Context, accountID int64, gro
 		return err
 	}
 	// 使用事务保证删除旧绑定与创建新绑定的原子性
-	tx, err := r.client.Tx(ctx)
-	if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
-		return err
-	}
-
+	contextTx := dbent.TxFromContext(ctx)
+	var tx *dbent.Tx
 	var txClient *dbent.Client
-	if err == nil {
+	if contextTx != nil {
+		txClient = contextTx.Client()
+	} else {
+		tx, err = r.client.Tx(ctx)
+		if err != nil {
+			return err
+		}
 		defer func() { _ = tx.Rollback() }()
 		txClient = tx.Client()
-	} else {
-		// 已处于外部事务中（ErrTxStarted），复用当前 client
-		txClient = r.client
 	}
 
 	if _, err := txClient.AccountGroup.Delete().Where(dbaccountgroup.AccountIDEQ(accountID)).Exec(ctx); err != nil {
 		return err
 	}
 
-	if len(groupIDs) == 0 {
-		if tx != nil {
-			return tx.Commit()
+	if len(groupIDs) > 0 {
+		builders := make([]*dbent.AccountGroupCreate, 0, len(groupIDs))
+		for i, groupID := range groupIDs {
+			builders = append(builders, txClient.AccountGroup.Create().
+				SetAccountID(accountID).
+				SetGroupID(groupID).
+				SetPriority(i+1),
+			)
 		}
-		return nil
-	}
-
-	builders := make([]*dbent.AccountGroupCreate, 0, len(groupIDs))
-	for i, groupID := range groupIDs {
-		builders = append(builders, txClient.AccountGroup.Create().
-			SetAccountID(accountID).
-			SetGroupID(groupID).
-			SetPriority(i+1),
-		)
-	}
-
-	if _, err := txClient.AccountGroup.CreateBulk(builders...).Save(ctx); err != nil {
-		return err
-	}
-
-	if tx != nil {
-		if err := tx.Commit(); err != nil {
+		if _, err := txClient.AccountGroup.CreateBulk(builders...).Save(ctx); err != nil {
 			return err
 		}
 	}
+
 	payload := buildSchedulerGroupPayload(mergeGroupIDs(existingGroupIDs, groupIDs))
+	if contextTx != nil {
+		return enqueueSchedulerOutbox(ctx, txClient, service.SchedulerOutboxEventAccountGroupsChanged, &accountID, nil, payload)
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
 	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountGroupsChanged, &accountID, nil, payload); err != nil {
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue bind groups failed: account=%d err=%v", accountID, err)
 	}
@@ -2515,17 +2532,26 @@ func (r *accountRepository) UpdateSessionWindowEnd(ctx context.Context, id int64
 }
 
 func (r *accountRepository) SetSchedulable(ctx context.Context, id int64, schedulable bool) error {
-	_, err := r.client.Account.Update().
+	client := r.client
+	exec := r.sql
+	if contextTx := dbent.TxFromContext(ctx); contextTx != nil {
+		client = contextTx.Client()
+		exec = client
+	}
+	_, err := client.Account.Update().
 		Where(dbaccount.IDEQ(id)).
 		SetSchedulable(schedulable).
 		Save(ctx)
 	if err != nil {
 		return err
 	}
-	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &id, nil, nil); err != nil {
+	if err := enqueueSchedulerOutbox(ctx, exec, service.SchedulerOutboxEventAccountChanged, &id, nil, nil); err != nil {
+		if dbent.TxFromContext(ctx) != nil {
+			return err
+		}
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue schedulable change failed: account=%d err=%v", id, err)
 	}
-	if !schedulable {
+	if !schedulable && dbent.TxFromContext(ctx) == nil {
 		r.syncSchedulerAccountSnapshot(ctx, id)
 	}
 	return nil
@@ -3227,12 +3253,16 @@ func (r *accountRepository) loadProxies(ctx context.Context, proxyIDs []int64) (
 		return proxyMap, nil
 	}
 
+	client := r.client
+	if contextTx := dbent.TxFromContext(ctx); contextTx != nil {
+		client = contextTx.Client()
+	}
 	for start := 0; start < len(proxyIDs); start += postgresParameterBatchSize {
 		end := start + postgresParameterBatchSize
 		if end > len(proxyIDs) {
 			end = len(proxyIDs)
 		}
-		proxies, err := r.client.Proxy.Query().Where(dbproxy.IDIn(proxyIDs[start:end]...)).All(ctx)
+		proxies, err := client.Proxy.Query().Where(dbproxy.IDIn(proxyIDs[start:end]...)).All(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -3253,12 +3283,16 @@ func (r *accountRepository) loadAccountGroups(ctx context.Context, accountIDs []
 		return groupsByAccount, groupIDsByAccount, accountGroupsByAccount, nil
 	}
 
+	client := r.client
+	if contextTx := dbent.TxFromContext(ctx); contextTx != nil {
+		client = contextTx.Client()
+	}
 	for start := 0; start < len(accountIDs); start += postgresParameterBatchSize {
 		end := start + postgresParameterBatchSize
 		if end > len(accountIDs) {
 			end = len(accountIDs)
 		}
-		entries, err := r.client.AccountGroup.Query().
+		entries, err := client.AccountGroup.Query().
 			Where(dbaccountgroup.AccountIDIn(accountIDs[start:end]...)).
 			Order(dbaccountgroup.ByAccountID(), dbaccountgroup.ByPriority()).
 			All(ctx)
@@ -3301,12 +3335,16 @@ func (r *accountRepository) loadGroups(ctx context.Context, groupIDs []int64) (m
 		return groupMap, nil
 	}
 
+	client := r.client
+	if contextTx := dbent.TxFromContext(ctx); contextTx != nil {
+		client = contextTx.Client()
+	}
 	for start := 0; start < len(groupIDs); start += postgresParameterBatchSize {
 		end := start + postgresParameterBatchSize
 		if end > len(groupIDs) {
 			end = len(groupIDs)
 		}
-		groups, err := r.client.Group.Query().Where(dbgroup.IDIn(groupIDs[start:end]...)).All(ctx)
+		groups, err := client.Group.Query().Where(dbgroup.IDIn(groupIDs[start:end]...)).All(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -3337,7 +3375,11 @@ func uniquePositiveInt64s(ids []int64) []int64 {
 }
 
 func (r *accountRepository) loadAccountGroupIDs(ctx context.Context, accountID int64) ([]int64, error) {
-	entries, err := r.client.AccountGroup.
+	client := r.client
+	if contextTx := dbent.TxFromContext(ctx); contextTx != nil {
+		client = contextTx.Client()
+	}
+	entries, err := client.AccountGroup.
 		Query().
 		Where(dbaccountgroup.AccountIDEQ(accountID)).
 		All(ctx)
@@ -3400,6 +3442,8 @@ func accountEntityToService(m *dbent.Account) *service.Account {
 		Name:                       m.Name,
 		Notes:                      m.Notes,
 		Platform:                   m.Platform,
+		WirePlatform:               m.WirePlatform,
+		ProviderProfile:            m.ProviderProfile,
 		Type:                       m.Type,
 		Credentials:                copyJSONMap(m.Credentials),
 		Extra:                      copyJSONMap(m.Extra),

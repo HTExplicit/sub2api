@@ -12,8 +12,10 @@ import (
 
 func cindyImagePricingAccount() *Account {
 	return &Account{
-		Platform: PlatformOpenAI,
-		Type:     AccountTypeAPIKey,
+		Platform:        PlatformCindy,
+		WirePlatform:    WirePlatformOpenAI,
+		ProviderProfile: ProviderProfileCindyLaxaV1,
+		Type:            AccountTypeAPIKey,
 		Credentials: map[string]any{
 			"base_url": "https://api.laxarouter.ai",
 		},

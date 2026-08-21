@@ -28,14 +28,20 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 		h.errorResponse(c, http.StatusUnauthorized, "invalid_request_error", "API key group is required")
 		return
 	}
-	if apiKey.Group.Platform != service.PlatformOpenAI {
-		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Codex models manifest is only available for OpenAI groups")
+	if apiKey.Group.Platform != service.PlatformCindy && apiKey.Group.Platform != service.PlatformOpenAI && apiKey.Group.Platform != service.PlatformComposite {
+		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Codex models manifest is only available for Cindy, OpenAI, and Composite groups")
 		return
 	}
 	cindyScope, err := h.gatewayService.ResolveCindyCodexModelsScope(c.Request.Context(), apiKey.Group)
 	if err != nil {
 		h.errorResponse(c, http.StatusServiceUnavailable, "upstream_error", "Cindy Codex models catalog is temporarily unavailable")
 		return
+	}
+	if cindyScope.CatalogOnly || cindyScope.MergeCatalog {
+		if err := service.ValidateCindyCodexClientVersion(c.Query("client_version")); err != nil {
+			h.errorResponse(c, http.StatusUpgradeRequired, "invalid_request_error", err.Error())
+			return
+		}
 	}
 	if cindyScope.CatalogOnly {
 		manifest, buildErr := service.BuildCindyCodexModelsManifest(c.GetHeader("If-None-Match"))
