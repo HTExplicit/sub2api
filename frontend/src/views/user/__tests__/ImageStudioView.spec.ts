@@ -68,8 +68,8 @@ const capabilities = [
     endpoints: ['images.generations', 'images.edits'],
     client_surfaces: ['image_studio'],
     controls: {
-      generation: { sizes: ['1024x1024'], qualities: ['low'], max_output_count: 1 },
-      edit: { sizes: ['1024x1024'], qualities: ['low'], max_output_count: 1, supports_reference_image: true, supports_mask: true },
+      generation: { sizes: ['1024x1024'], qualities: ['low'], max_output_count: 4 },
+      edit: { sizes: ['1024x1024'], qualities: ['low'], max_output_count: 4, supports_reference_image: true, supports_mask: true },
     },
   },
 ]
@@ -154,11 +154,14 @@ describe('ImageStudioView job workflow', () => {
     expect(JSON.stringify(mocks.listEligibleKeys.mock.results)).not.toContain('sk-')
   })
 
-  it('creates and polls a four-item server job without sending a key secret', async () => {
+  it('shows the Studio output count control and submits a four-item generation job without a key secret', async () => {
     const wrapper = render()
     await selectDefaultModel(wrapper)
     await wrapper.get('[data-testid="prompt-input"]').setValue('draw a lighthouse')
-    await wrapper.get('#image-studio-count').setValue('4')
+    const countInput = wrapper.get('#image-studio-count')
+    expect(countInput.attributes('min')).toBe('1')
+    expect(countInput.attributes('max')).toBe('4')
+    await countInput.setValue('4')
     mocks.waitJob.mockResolvedValueOnce(terminalDetail({
       job: pendingJob({ count: 4, status: 'succeeded', counts: { processed: 4, succeeded: 4, failed: 0, canceled: 0 } }),
       artifacts: Array.from({ length: 4 }, (_, index) => ({ id: 52 + index, job_id: 41, kind: 'output', content_type: 'image/png', byte_size: 12 })),
@@ -180,6 +183,9 @@ describe('ImageStudioView job workflow', () => {
     await wrapper.get('[data-testid="model-select"]').setValue('gemini-3-pro-image')
     await wrapper.get('[data-testid="mode-edit"]').trigger('click')
     await wrapper.get('[data-testid="prompt-input"]').setValue('replace the sky')
+    const countInput = wrapper.get('#image-studio-count')
+    expect(countInput.attributes('max')).toBe('4')
+    await countInput.setValue('4')
     const reference = new File(['reference'], 'reference.png', { type: 'image/png' })
     const mask = new File(['mask'], 'mask.png', { type: 'image/png' })
     const referenceInput = wrapper.get('[data-testid="reference-upload"] input[type="file"]')
@@ -192,7 +198,7 @@ describe('ImageStudioView job workflow', () => {
     await flushPromises()
 
     expect(mocks.createJob).toHaveBeenCalledWith(expect.objectContaining({
-      apiKeyId: 1, mode: 'edit', model: 'gemini-3-pro-image', count: 1, reference, mask,
+      apiKeyId: 1, mode: 'edit', model: 'gemini-3-pro-image', count: 4, reference, mask,
     }))
   })
 

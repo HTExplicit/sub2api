@@ -26,13 +26,15 @@ func (accountJobTestCipher) Decrypt(value string) (string, error) {
 type accountJobTestRepo struct {
 	mu sync.Mutex
 
-	jobs        map[int64]*AccountJob
-	items       map[int64][]AccountJobItem
-	payloads    map[int64]accountJobTestPayload
-	nextID      int64
-	interrupted bool
-	claimCalls  int
-	claimLimit  int
+	jobs               map[int64]*AccountJob
+	items              map[int64][]AccountJobItem
+	payloads           map[int64]accountJobTestPayload
+	nextID             int64
+	interrupted        bool
+	claimCalls         int
+	claimLimit         int
+	reserveLimits      []int
+	reservedBatchSizes []int
 }
 
 type accountJobTestPayload struct {
@@ -128,16 +130,51 @@ func (r *accountJobTestRepo) Claim(context.Context) (*AccountJob, error) {
 	return nil, nil
 }
 
-func (r *accountJobTestRepo) Payload(context.Context, int64) (string, time.Time, error) {
-	return "", time.Time{}, ErrAccountJobNotFound
+func (r *accountJobTestRepo) Payload(_ context.Context, jobID int64) (string, time.Time, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	payload, ok := r.payloads[jobID]
+	if !ok {
+		return "", time.Time{}, ErrAccountJobNotFound
+	}
+	return payload.cipher, payload.expiresAt, nil
 }
 
-func (r *accountJobTestRepo) ReservePendingItems(context.Context, int64, int) ([]AccountJobItem, error) {
-	return nil, nil
+func (r *accountJobTestRepo) ReservePendingItems(_ context.Context, jobID int64, limit int) ([]AccountJobItem, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.reserveLimits = append(r.reserveLimits, limit)
+	reserved := make([]AccountJobItem, 0, limit)
+	for index := range r.items[jobID] {
+		if len(reserved) == limit {
+			break
+		}
+		if r.items[jobID][index].Status != AccountJobItemStatusPending {
+			continue
+		}
+		r.items[jobID][index].Status = AccountJobItemStatusRunning
+		reserved = append(reserved, r.items[jobID][index])
+	}
+	r.reservedBatchSizes = append(r.reservedBatchSizes, len(reserved))
+	return reserved, nil
 }
 
 func (r *accountJobTestRepo) CancelRequested(context.Context, int64) (bool, error) { return false, nil }
-func (r *accountJobTestRepo) CompleteItems(context.Context, int64, []AccountJobExecutionResult) error {
+func (r *accountJobTestRepo) CompleteItems(_ context.Context, jobID int64, results []AccountJobExecutionResult) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, result := range results {
+		for index := range r.items[jobID] {
+			if r.items[jobID][index].ID != result.ItemID {
+				continue
+			}
+			r.items[jobID][index].Status = result.Status
+			r.items[jobID][index].Metadata = result.Metadata
+			r.items[jobID][index].ErrorCode = result.ErrorCode
+			r.items[jobID][index].ErrorMessage = result.ErrorMessage
+			break
+		}
+	}
 	return nil
 }
 func (r *accountJobTestRepo) Finish(context.Context, int64, string, string) (*AccountJob, error) {
@@ -189,16 +226,42 @@ func TestAccountJobSubmitRequiresIdempotencyKeyAndEncryptsPayload(t *testing.T) 
 	require.WithinDuration(t, time.Now().UTC().Add(AccountJobPayloadTTL), repo.payloads[job.ID].expiresAt, time.Second)
 }
 
-func TestAccountJobSubmitRejectsMoreThanOneBatch(t *testing.T) {
+type accountJobTestExecutor struct {
+	processedItemIDs []int64
+}
+
+func (e *accountJobTestExecutor) ExecuteAccountJob(_ context.Context, _ *AccountJob, _ json.RawMessage, items []AccountJobItem) ([]AccountJobExecutionResult, error) {
+	if len(items) != 1 {
+		return nil, errors.New("expected one account job item")
+	}
+	e.processedItemIDs = append(e.processedItemIDs, items[0].ID)
+	return []AccountJobExecutionResult{{
+		ItemID:   items[0].ID,
+		Status:   AccountJobItemStatusSucceeded,
+		Metadata: json.RawMessage(`{}`),
+	}}, nil
+}
+
+func TestAccountJobSubmitProcessesMoreThanOneWorkerBatch(t *testing.T) {
 	repo := newAccountJobTestRepo()
 	jobs := NewAccountJobService(repo, accountJobTestCipher{})
-	items := make([]AccountJobItemSeed, AccountJobBatchSize+1)
+	items := make([]AccountJobItemSeed, 205)
 
-	_, _, err := jobs.Submit(context.Background(), 9, AccountJobKindBatchDelete, "too-many",
+	job, replayed, err := jobs.Submit(context.Background(), 9, AccountJobKindBatchDelete, "all-results",
 		json.RawMessage(`{"account_ids":[7]}`), nil, items)
+	require.NoError(t, err)
+	require.False(t, replayed)
+	require.Equal(t, 205, job.TargetCount)
 
-	require.ErrorIs(t, err, ErrAccountJobBatchTooLarge)
-	require.Empty(t, repo.jobs)
+	executor := &accountJobTestExecutor{}
+	runtime := NewAccountJobRuntime(jobs, executor)
+	code, message := runtime.execute(job)
+
+	require.Empty(t, code)
+	require.Empty(t, message)
+	require.Len(t, executor.processedItemIDs, 205)
+	require.Equal(t, []int{100, 100, 100, 100}, repo.reserveLimits)
+	require.Equal(t, []int{100, 100, 5, 0}, repo.reservedBatchSizes)
 }
 
 func TestAccountJobSubmitReplaysSamePayloadAndRejectsConflict(t *testing.T) {

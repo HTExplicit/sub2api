@@ -154,25 +154,29 @@ case "$image_ref" in
     tag=v0.1.177-codexrip.6
     digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     revision=1111111111111111111111111111111111111111
+    platform_v1=false
     ;;
   *:0.1.177-codexrip.7*)
     tag=v0.1.177-codexrip.7
     digest=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
     revision=2222222222222222222222222222222222222222
+    platform_v1=true
     ;;
   *:0.1.177-codexrip.8*)
     tag=v0.1.177-codexrip.8
     digest=sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
     revision=3333333333333333333333333333333333333333
+    platform_v1=true
     ;;
   *) exit 3 ;;
 esac
 if [[ "${MOCK_OVERRIDE_TAG:-}" == "$tag" ]]; then
   digest=${MOCK_REGISTRY_DIGEST_OVERRIDE:-$digest}
   revision=${MOCK_IMAGE_REVISION_OVERRIDE:-$revision}
+  platform_v1=${MOCK_IMAGE_PLATFORM_V1_OVERRIDE:-$platform_v1}
 fi
 if [[ " $* " == *'io.github.htexplicit.cindy-platform-v1'* ]]; then
-  printf '%s\n' "${MOCK_IMAGE_PLATFORM_V1_OVERRIDE:-true}"
+  printf '%s\n' "$platform_v1"
 elif [[ " $* " == *' --format '* ]]; then
   printf '%s\n' "$revision"
 else
@@ -328,7 +332,12 @@ MOCK_IMAGE_REVISION_OVERRIDE=4444444444444444444444444444444444444444
 if run_resolve rollback v0.1.177-codexrip.6 v0.1.177-codexrip.7 ROLLBACK; then
   fail 'rollback accepted an expected-current image with the wrong OCI revision'
 fi
-unset MOCK_IMAGE_REVISION_OVERRIDE MOCK_OVERRIDE_TAG
+unset MOCK_IMAGE_REVISION_OVERRIDE
+MOCK_IMAGE_PLATFORM_V1_OVERRIDE=false
+if run_resolve rollback v0.1.177-codexrip.6 v0.1.177-codexrip.7 ROLLBACK; then
+  fail 'rollback accepted an expected-current image without the platform-v1 capability label'
+fi
+unset MOCK_IMAGE_PLATFORM_V1_OVERRIDE MOCK_OVERRIDE_TAG
 if run_resolve rollback v0.1.177-codexrip.8 v0.1.177-codexrip.7 ROLLBACK; then
   fail 'rollback target newer than expected-current was accepted'
 fi
@@ -403,6 +412,10 @@ grep -Fq '[[ "$CONFIRMATION" == ROLLBACK ]]' "$WORKFLOW" ||
   fail 'rollback must require the exact ROLLBACK confirmation'
 grep -Fq 'resolve_release_image "$EXPECTED_CURRENT_RELEASE_TAG"' "$WORKFLOW" ||
   fail 'rollback must independently resolve the expected-current release image'
+grep -Fq 'resolve_release_image "$RELEASE_TAG" rollback-target' "$WORKFLOW" ||
+  fail 'rollback must resolve the target using the legacy-aware image role'
+grep -Fq 'resolve_release_image "$EXPECTED_CURRENT_RELEASE_TAG" platform' "$WORKFLOW" ||
+  fail 'rollback must require the expected-current image to be platform capable'
 grep -Fq 'isDraft,isPrerelease' "$WORKFLOW" ||
   fail 'release state resolution must inspect draft and prerelease flags'
 grep -Fq '\tfalse\tfalse' "$WORKFLOW" ||

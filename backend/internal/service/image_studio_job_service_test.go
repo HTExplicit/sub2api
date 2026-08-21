@@ -104,6 +104,37 @@ func TestImageStudioEligibleKeysUsesCanonicalCindyAndNeverReturnsCredential(t *t
 	require.Equal(t, key.ID, items[0].APIKey.ID)
 	require.NotEmpty(t, items[0].Capabilities)
 
+	studioCapabilities := make(map[string]CindyModelCapability, len(items[0].Capabilities))
+	for _, capability := range items[0].Capabilities {
+		studioCapabilities[capability.ID] = capability
+	}
+	gptStudio := studioCapabilities[ImageStudioModelGPTImage2]
+	require.NotNil(t, gptStudio.Controls)
+	require.NotNil(t, gptStudio.Controls.Generation)
+	require.Equal(t, ImageStudioMaxOutputCount, gptStudio.Controls.Generation.MaxOutputCount)
+	require.Nil(t, gptStudio.Controls.Edit)
+	geminiStudio := studioCapabilities[ImageStudioModelGeminiProImage]
+	require.NotNil(t, geminiStudio.Controls)
+	require.NotNil(t, geminiStudio.Controls.Generation)
+	require.NotNil(t, geminiStudio.Controls.Edit)
+	require.Equal(t, ImageStudioMaxOutputCount, geminiStudio.Controls.Generation.MaxOutputCount)
+	require.Equal(t, ImageStudioMaxOutputCount, geminiStudio.Controls.Edit.MaxOutputCount)
+
+	nativeCapabilities := make(map[string]CindyCapability)
+	for _, capability := range CindyCapabilities() {
+		nativeCapabilities[capability.PublicID] = capability
+	}
+	gptNative := nativeCapabilities[ImageStudioModelGPTImage2]
+	require.NotNil(t, gptNative.Controls)
+	require.NotNil(t, gptNative.Controls.Generation)
+	require.Equal(t, 1, gptNative.Controls.Generation.MaxOutputCount)
+	geminiNative := nativeCapabilities[ImageStudioModelGeminiProImage]
+	require.NotNil(t, geminiNative.Controls)
+	require.NotNil(t, geminiNative.Controls.Generation)
+	require.NotNil(t, geminiNative.Controls.Edit)
+	require.Equal(t, 1, geminiNative.Controls.Generation.MaxOutputCount)
+	require.Equal(t, 1, geminiNative.Controls.Edit.MaxOutputCount)
+
 	raw, err := json.Marshal(items)
 	require.NoError(t, err)
 	require.NotContains(t, string(raw), "must-never-leave-server")

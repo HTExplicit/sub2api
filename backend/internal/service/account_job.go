@@ -185,9 +185,6 @@ func (s *AccountJobService) Submit(ctx context.Context, createdBy int64, kind, i
 	if idempotencyKey == "" || len(idempotencyKey) > 255 {
 		return nil, false, ErrAccountJobIdempotencyRequired
 	}
-	if len(items) > AccountJobBatchSize {
-		return nil, false, ErrAccountJobBatchTooLarge
-	}
 	if createdBy <= 0 || !validAccountJobKind(kind) || !json.Valid(payload) || len(items) == 0 {
 		return nil, false, errors.New("invalid account job submission")
 	}

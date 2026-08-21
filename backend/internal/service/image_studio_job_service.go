@@ -122,7 +122,21 @@ func imageStudioModelCapabilities() []CindyModelCapability {
 		if capability == nil || capability.Kind != CindyModelKindImage || !capability.PublicModel {
 			continue
 		}
-		result = append(result, cindyModelCapabilityFromCapability(*capability))
+		studioCapability := cindyModelCapabilityFromCapability(*capability)
+		if capability.Controls != nil {
+			studioControls := &CindyCapabilityControls{
+				Generation: cloneCindyImageRequestControls(capability.Controls.Generation),
+				Edit:       cloneCindyImageRequestControls(capability.Controls.Edit),
+			}
+			if studioControls.Generation != nil {
+				studioControls.Generation.MaxOutputCount = ImageStudioMaxOutputCount
+			}
+			if studioControls.Edit != nil {
+				studioControls.Edit.MaxOutputCount = ImageStudioMaxOutputCount
+			}
+			studioCapability.Controls = studioControls
+		}
+		result = append(result, studioCapability)
 	}
 	return result
 }
