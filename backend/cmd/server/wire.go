@@ -119,6 +119,7 @@ func provideCleanup(
 	promptAudit *securityaudit.PromptService,
 	businessPrompt *service.BusinessSystemPromptService,
 	remoteSkillRegistry *service.RemoteSkillRegistryService,
+	cindyHealth *service.CindyHealthService,
 	cindyBalanceProbe *service.CindyBalanceProbeService,
 ) func() {
 	return func() {
@@ -132,6 +133,12 @@ func provideCleanup(
 
 		// 应用层清理步骤可并行执行，基础设施资源（Redis/Ent）最后按顺序关闭。
 		parallelSteps := []cleanupStep{
+			{"CindyHealthService", func() error {
+				if cindyHealth != nil {
+					cindyHealth.Stop()
+				}
+				return nil
+			}},
 			{"CindyBalanceProbeService", func() error {
 				if cindyBalanceProbe != nil {
 					cindyBalanceProbe.Stop()

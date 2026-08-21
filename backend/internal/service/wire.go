@@ -125,6 +125,28 @@ func ProvideOpenAIGatewayService(
 	return svc
 }
 
+func ProvideCindyHealthService(
+	accountRepo AccountRepository,
+	identityRepo AccountCredentialIdentityRepository,
+	healthRepo CindyHealthRepository,
+	cache GatewayCache,
+	gateway *OpenAIGatewayService,
+) *CindyHealthService {
+	var episodeStore CindyHealthEpisodeStore
+	if cache != nil {
+		episodeStore, _ = cache.(CindyHealthEpisodeStore)
+	}
+	var probe func(context.Context, *Account, string) cindyBalanceProbeOutcome
+	if gateway != nil {
+		probe = gateway.probeCindyBalanceModel
+	}
+	svc := NewCindyHealthService(accountRepo, identityRepo, healthRepo, episodeStore, gateway, probe)
+	if gateway != nil {
+		gateway.SetCindyHealthCoordinator(svc)
+	}
+	return svc
+}
+
 // ProvideCindyBalanceProbeService starts the explicit administrator-triggered
 // Cindy balance probe worker. The worker does not create jobs on its own.
 func ProvideCindyBalanceProbeService(
@@ -906,6 +928,7 @@ var ProviderSet = wire.NewSet(
 	ProvideRemoteSkillCandidateSource,
 	ProvideRemoteSkillRegistryService,
 	ProvideOpenAIGatewayService,
+	ProvideCindyHealthService,
 	ProvideCindyBalanceProbeService,
 	ProvideImageStorageSettingService,
 	ProvideImageTaskService,

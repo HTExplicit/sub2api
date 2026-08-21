@@ -954,6 +954,15 @@ func TestOpenAI429LegacySideEffects_DoNotPersistOrDuplicateRuntimeCooldown(t *te
 	require.False(t, svc.isOpenAIAccountRuntimeBlocked(apiKeyAccount))
 }
 
+func TestFirstClassCindyAccountUsesOpenAIRuntimeBlock(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := newFirstClassCindyRateLimitAccount(4403, false)
+
+	svc.BlockAccountScheduling(account, time.Now().Add(time.Minute), "cindy_health_quarantine")
+
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+}
+
 // TestOpenAI429FastPath_SkipsSparkShadow 外审第8轮 P1:spark 影子被选中后若 /responses 返回 429,
 // 不得按 global x-codex-* 信号写内存运行时熔断(否则 spark 被冷却到 global reset、单影子场景无可用账号)。
 func TestOpenAI429FastPath_SkipsSparkShadow(t *testing.T) {
