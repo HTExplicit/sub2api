@@ -161,6 +161,8 @@ back independently while rebuilding only the Sub2API service:
 |----------|-------|------------------------------|
 | `GATEWAY_CINDY_BALANCE_DETECTION_ENABLED` | Request-level exact failover and explicit admin balance-probe jobs | `true` |
 | `GATEWAY_CINDY_CAPABILITY_CATALOG_ENABLED` | Catalog, protocol gates, and capability API; the two exact compatibility aliases remain available while disabled | `false`; enable after the balance phase |
+| `GATEWAY_CINDY_SEARCH_ENABLED` | Native Cindy Search routing; independent from catalog exposure | `false` |
+| `GATEWAY_CINDY_RESPONSES_IMAGE_BRIDGE_ENABLED` | GPT Image 2 Responses bridge; independent from Image Studio | `false` |
 | `GATEWAY_IMAGE_STUDIO_ENABLED` | Image Studio; only Cindy capabilities are registered in this release | `false` until the strengthened A/B/C codec probe passes |
 
 Disabling balance detection does not clear an existing database balance marker.

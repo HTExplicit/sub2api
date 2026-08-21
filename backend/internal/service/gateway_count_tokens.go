@@ -16,34 +16,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ForwardCindyAnthropicCountTokens is the native compatibility adapter used by
-// endpoint probes and by the public handler only after count_tokens has its own
-// verified catalog capability. This adapter does not establish that evidence.
-func (s *GatewayService) ForwardCindyAnthropicCountTokens(
-	ctx context.Context,
-	c *gin.Context,
-	account *Account,
-	body []byte,
-	requestedModel string,
-) error {
-	if s == nil || account == nil || !IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		return errors.New("strict Cindy account is required for native count_tokens passthrough")
-	}
-	requestedModel = strings.TrimSpace(requestedModel)
-	if !CindyModelSupportsEndpoint(requestedModel, CindyEndpointMessages) {
-		return fmt.Errorf("cindy model %q is not verified for native Messages", requestedModel)
-	}
-	upstreamModel, ok := CindyMappedUpstreamModel(requestedModel)
-	if !ok {
-		return fmt.Errorf("cindy model %q is not in the fixed catalogue", requestedModel)
-	}
-	if !gjson.ValidBytes(body) {
-		return errors.New("invalid Anthropic count_tokens request body")
-	}
-	body = s.replaceModelInBody(body, upstreamModel)
-	return s.forwardCountTokensAnthropicAPIKeyPassthrough(ctx, c, account, body)
-}
-
 // ForwardCountTokens 转发 count_tokens 请求到上游 API
 // 特点：不记录使用量、仅支持非流式响应
 func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context, account *Account, parsed *ParsedRequest) error {

@@ -912,11 +912,9 @@ func (a *Account) ResolveMappedModel(requestedModel string) (mappedModel string,
 		if CindyCompatibilityRoutingTarget(requestedModel) {
 			return requestedModel, true
 		}
-		// Resolve the broader Cindy catalogue before account-level mappings.
-		if CindyCapabilityCatalogFeatureEnabled() {
-			if mappedModel, ok := CindyMappedUpstreamModel(requestedModel); ok {
-				return mappedModel, true
-			}
+		// Resolve whichever independently enabled Cindy surface owns this model.
+		if mappedModel, ok := CindyMappedUpstreamModel(requestedModel); ok {
+			return mappedModel, true
 		}
 	}
 	mapping := a.GetModelMapping()

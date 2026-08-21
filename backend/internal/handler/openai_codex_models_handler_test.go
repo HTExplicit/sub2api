@@ -142,7 +142,8 @@ func TestCodexModelsStrictCindyProjectsVerifiedPublicCatalog(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	groupID := int64(43)
 	accounts := []service.Account{{
-		ID: 1, Name: "cindy", Platform: service.PlatformOpenAI,
+		ID: 1, Name: "cindy", Platform: service.PlatformCindy,
+		WirePlatform: service.WirePlatformOpenAI, ProviderProfile: service.ProviderProfileCindyLaxaV1,
 		Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
 		Priority: 0, Concurrency: 1,
 		Credentials: map[string]any{
@@ -160,7 +161,8 @@ func TestCodexModelsStrictCindyProjectsVerifiedPublicCatalog(t *testing.T) {
 	)
 	handler := &OpenAIGatewayHandler{gatewayService: gatewayService, maxAccountSwitches: 3}
 	group := &service.Group{
-		ID: groupID, Platform: service.PlatformOpenAI,
+		ID: groupID, Platform: service.PlatformCindy,
+		WirePlatform: service.WirePlatformOpenAI, ProviderProfile: service.ProviderProfileCindyLaxaV1,
 		StrictCindyKnown: true, StrictCindy: true,
 	}
 	recorder := performCodexModelsRequestForGroup(t, handler, group)
@@ -176,6 +178,17 @@ func TestCodexModelsStrictCindyProjectsVerifiedPublicCatalog(t *testing.T) {
 		t.Fatalf("strict Cindy slugs: got %v, want %v", slugs, service.CindyCodexPublicModelIDs())
 	}
 	assertCodexManifestOmitsNonResponsesCindyIDs(t, recorder.Body.String())
+
+	outdated := performCodexModelsRequestForGroupWithVersion(t, handler, group, "0.146.0")
+	if outdated.Code != http.StatusUpgradeRequired {
+		t.Fatalf("outdated client status: got %d, want %d; body=%s", outdated.Code, http.StatusUpgradeRequired, outdated.Body.String())
+	}
+	if !strings.Contains(outdated.Body.String(), service.CindyCodexMinimumClientVersion) {
+		t.Fatalf("outdated client response must name minimum version; body=%s", outdated.Body.String())
+	}
+	if got := upstream.calls(); len(got) != 0 {
+		t.Fatalf("outdated strict Cindy request must not reach upstream; calls=%v", got)
+	}
 }
 
 func TestCodexModelsMixedGroupDeterministicallyUnionsOrdinaryAndVerifiedCindyResponses(t *testing.T) {
@@ -576,10 +589,14 @@ func performCodexModelsRequestForPlatform(t *testing.T, handler *OpenAIGatewayHa
 }
 
 func performCodexModelsRequestForGroup(t *testing.T, handler *OpenAIGatewayHandler, group *service.Group) *httptest.ResponseRecorder {
+	return performCodexModelsRequestForGroupWithVersion(t, handler, group, service.CindyCodexMinimumClientVersion)
+}
+
+func performCodexModelsRequestForGroupWithVersion(t *testing.T, handler *OpenAIGatewayHandler, group *service.Group, clientVersion string) *httptest.ResponseRecorder {
 	t.Helper()
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
-	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models?client_version=0.144.0", nil)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models?client_version="+clientVersion, nil)
 	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
 		GroupID: &group.ID,
 		Group:   group,

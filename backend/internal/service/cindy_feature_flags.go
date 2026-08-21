@@ -8,9 +8,11 @@ import (
 )
 
 const (
-	CindyBalanceDetectionEnabledEnv  = "GATEWAY_CINDY_BALANCE_DETECTION_ENABLED"
-	CindyCapabilityCatalogEnabledEnv = "GATEWAY_CINDY_CAPABILITY_CATALOG_ENABLED"
-	ImageStudioEnabledEnv            = config.ImageStudioEnabledEnv
+	CindyBalanceDetectionEnabledEnv     = "GATEWAY_CINDY_BALANCE_DETECTION_ENABLED"
+	CindyCapabilityCatalogEnabledEnv    = "GATEWAY_CINDY_CAPABILITY_CATALOG_ENABLED"
+	CindySearchEnabledEnv               = "GATEWAY_CINDY_SEARCH_ENABLED"
+	CindyResponsesImageBridgeEnabledEnv = "GATEWAY_CINDY_RESPONSES_IMAGE_BRIDGE_ENABLED"
+	ImageStudioEnabledEnv               = config.ImageStudioEnabledEnv
 	// CindyImageStudioEnabledEnv is retained for one release as a fallback
 	// when ImageStudioEnabledEnv is not configured.
 	CindyImageStudioEnabledEnv = config.LegacyImageStudioEnabledEnv
@@ -23,11 +25,15 @@ const (
 var cindyRolloutFeatures = struct {
 	balanceDetection  bool
 	capabilityCatalog bool
+	search            bool
 	imageStudio       bool
+	responsesImage    bool
 }{
 	balanceDetection:  envBoolWithDefault(CindyBalanceDetectionEnabledEnv, true),
 	capabilityCatalog: envBoolWithDefault(CindyCapabilityCatalogEnabledEnv, false),
+	search:            envBoolWithDefault(CindySearchEnabledEnv, false),
 	imageStudio:       imageStudioEnabledFromEnvironment(),
+	responsesImage:    envBoolWithDefault(CindyResponsesImageBridgeEnabledEnv, false),
 }
 
 func imageStudioEnabledFromEnvironment() bool {
@@ -58,14 +64,21 @@ func CindyCapabilityCatalogFeatureEnabled() bool {
 	return cindyRolloutFeatures.capabilityCatalog
 }
 
-// ImageStudioFeatureEnabled reports whether the generic Image Studio surface
-// is enabled. This release still requires the Cindy capability catalog.
+func CindySearchFeatureEnabled() bool {
+	return cindyRolloutFeatures.search
+}
+
+// ImageStudioFeatureEnabled is independent from the Cindy catalog rollout.
 func ImageStudioFeatureEnabled() bool {
-	return cindyRolloutFeatures.capabilityCatalog && cindyRolloutFeatures.imageStudio
+	return cindyRolloutFeatures.imageStudio
 }
 
 // CindyImageStudioFeatureEnabled is the one-release compatibility name for
 // existing Cindy-specific callers.
 func CindyImageStudioFeatureEnabled() bool {
 	return ImageStudioFeatureEnabled()
+}
+
+func CindyResponsesImageBridgeFeatureEnabled() bool {
+	return cindyRolloutFeatures.responsesImage
 }

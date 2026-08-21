@@ -57,7 +57,7 @@ func RegisterGatewayRoutes(
 	}
 	countTokensHandler := func(c *gin.Context) {
 		switch getGroupPlatform(c) {
-		case service.PlatformOpenAI, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek:
+		case service.PlatformCindy, service.PlatformOpenAI, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek:
 			h.OpenAIGateway.CountTokens(c)
 		case service.PlatformGrok:
 			h.OpenAIGateway.GrokCountTokens(c)
@@ -68,7 +68,7 @@ func RegisterGatewayRoutes(
 	modelsHandler := func(c *gin.Context) {
 		if c.Query("client_version") != "" {
 			switch getGroupPlatform(c) {
-			case service.PlatformOpenAI, service.PlatformComposite:
+			case service.PlatformCindy, service.PlatformOpenAI, service.PlatformComposite:
 				h.OpenAIGateway.CodexModels(c)
 				return
 			}

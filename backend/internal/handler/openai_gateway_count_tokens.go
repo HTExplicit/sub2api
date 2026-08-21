@@ -205,16 +205,16 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 		zap.Any("group_id", apiKey.GroupID),
 	)
 
-	strictCindyCountTokens, err := h.gatewayService.ClassifyStrictCindyGroup(c.Request.Context(), apiKey.Group)
+	cindyIdentity, err := h.gatewayService.ClassifyCindyIdentityGroup(c.Request.Context(), apiKey.Group)
 	if err != nil {
 		h.anthropicErrorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
 		return
 	}
-	// Classify strict Cindy before applying the legacy conversion flag so its
-	// independently evidence-gated count_tokens policy can return a stable
-	// client-fallback response. The legacy flag remains authoritative for
-	// ordinary OpenAI-compatible groups.
-	if !strictCindyCountTokens && !allowOpenAICompatibleMessagesDispatch(c, apiKey) {
+	if cindyIdentity {
+		h.anthropicErrorResponse(c, http.StatusNotFound, "not_found_error", "count_tokens endpoint is not supported by upstream")
+		return
+	}
+	if !allowOpenAICompatibleMessagesDispatch(c, apiKey) {
 		h.anthropicErrorResponse(c, http.StatusForbidden, "permission_error",
 			"This group does not allow /v1/messages dispatch")
 		return
@@ -259,22 +259,8 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 		h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
 		return
 	}
-	if strictCindyCountTokens && !service.CindyModelSupportsEndpoint(reqModel, service.CindyEndpointCountTokens) {
-		// Native Messages evidence does not prove the companion token-counting
-		// endpoint. Use Anthropic's unsupported response so clients can fall back
-		// locally until a separate A/B/C canary passes.
-		h.anthropicErrorResponse(c, http.StatusNotFound, "not_found_error", "count_tokens endpoint is not supported by upstream")
-		return
-	}
 	routingModel := service.NormalizeOpenAICompatRequestedModel(reqModel)
 	preferredMappedModel := resolveOpenAIMessagesDispatchMappedModel(c, apiKey, reqModel)
-	if strictCindyCountTokens {
-		// Keep the exact requested ID until the Cindy catalog resolves it. This
-		// preserves exact live IDs and deliberately enumerated aliases without
-		// applying the legacy Claude-to-GPT dispatch defaults.
-		routingModel = reqModel
-		preferredMappedModel = ""
-	}
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", parsedReq.Stream))
 
 	setOpsRequestContext(c, reqModel, false)
@@ -362,14 +348,7 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 		}
 
 		account := selection.Account
-		cindyCountTokensAccount := service.CindyCapabilityCatalogFeatureEnabled() &&
-			service.IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
 		setOpsSelectedAccount(c, account.ID, account.Platform)
-		if cindyCountTokensAccount && h.nativeAnthropicGatewayService == nil {
-			h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
-			h.anthropicErrorResponse(c, http.StatusServiceUnavailable, "api_error", "Native Messages gateway is unavailable")
-			return
-		}
 		// CountTokens has an Anthropic response contract; acquire silently and let
 		// this handler render any slot error in the correct envelope.
 		accountRelease, slotResult := h.acquireResponsesAccountSlotForSameAccountRetry(
@@ -394,11 +373,6 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 		attemptErr := func() error {
 			if accountRelease != nil {
 				defer accountRelease()
-			}
-			if cindyCountTokensAccount {
-				return h.nativeAnthropicGatewayService.ForwardCindyAnthropicCountTokens(
-					c.Request.Context(), c, account, body, reqModel,
-				)
 			}
 			return h.gatewayService.ForwardCountTokensAsAnthropic(c.Request.Context(), c, account, legacyForwardBody, defaultMappedModel)
 		}()

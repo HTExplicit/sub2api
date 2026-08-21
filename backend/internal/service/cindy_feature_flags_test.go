@@ -63,7 +63,9 @@ func TestCindyRolloutFlagsAreIndependentlyDisableable(t *testing.T) {
 			rolloutEnv := []string{
 				CindyBalanceDetectionEnabledEnv + "=true",
 				CindyCapabilityCatalogEnabledEnv + "=true",
+				CindySearchEnabledEnv + "=true",
 				ImageStudioEnabledEnv + "=true",
+				CindyResponsesImageBridgeEnabledEnv + "=true",
 			}
 			for index := range rolloutEnv {
 				if strings.HasPrefix(rolloutEnv[index], test.env+"=") {
@@ -74,8 +76,10 @@ func TestCindyRolloutFlagsAreIndependentlyDisableable(t *testing.T) {
 			cmd.Env = append(withoutEnvironmentKeys(os.Environ(),
 				CindyBalanceDetectionEnabledEnv,
 				CindyCapabilityCatalogEnabledEnv,
+				CindySearchEnabledEnv,
 				ImageStudioEnabledEnv,
 				CindyImageStudioEnabledEnv,
+				CindyResponsesImageBridgeEnabledEnv,
 				"SUB2API_CINDY_FLAG_HELPER",
 			), append(rolloutEnv, "SUB2API_CINDY_FLAG_HELPER="+test.name)...)
 			if output, err := cmd.CombinedOutput(); err != nil {
@@ -166,12 +170,14 @@ func TestCindyRolloutFlagHelper(t *testing.T) {
 			t.Fatal("balance rollback changed catalog or image features")
 		}
 		account := &Account{
-			ID:          99001,
-			Platform:    PlatformOpenAI,
-			Type:        AccountTypeAPIKey,
-			Status:      StatusActive,
-			Schedulable: true,
-			Credentials: cindyCredentials(),
+			ID:              99001,
+			Platform:        PlatformCindy,
+			WirePlatform:    WirePlatformOpenAI,
+			ProviderProfile: ProviderProfileCindyLaxaV1,
+			Type:            AccountTypeAPIKey,
+			Status:          StatusActive,
+			Schedulable:     true,
+			Credentials:     cindyCredentials(),
 		}
 		if cindyBalanceReplayBufferEnabled(account) {
 			t.Fatal("balance rollback still enabled Cindy transport replay buffers")
@@ -220,8 +226,8 @@ func TestCindyRolloutFlagHelper(t *testing.T) {
 			t.Fatal("legacy pending marker was not cleaned during rollback")
 		}
 	case "catalog":
-		if CindyCapabilityCatalogFeatureEnabled() || CindyImageStudioFeatureEnabled() {
-			t.Fatal("catalog rollback did not disable catalog-dependent surfaces")
+		if CindyCapabilityCatalogFeatureEnabled() || !CindyImageStudioFeatureEnabled() {
+			t.Fatal("catalog rollback changed an independent surface")
 		}
 		if !CindyBalanceDetectionFeatureEnabled() {
 			t.Fatal("catalog rollback changed balance detection")
@@ -230,17 +236,19 @@ func TestCindyRolloutFlagHelper(t *testing.T) {
 			t.Fatal("catalog rollback still exposed Cindy capabilities")
 		}
 
-		group := &Group{ID: 99101, Platform: PlatformOpenAI, StrictCindyKnown: true, StrictCindy: true}
+		group := &Group{ID: 99101, Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1, StrictCindyKnown: true, StrictCindy: true}
 		strict, err := classifyAuthenticatedStrictCindyGroup(context.Background(), nil, group)
 		if err != nil || strict {
 			t.Fatalf("catalog rollback retained strict routing gate: strict=%v err=%v", strict, err)
 		}
 
 		account := &Account{
-			ID:       99102,
-			Platform: PlatformOpenAI,
-			Type:     AccountTypeAPIKey,
-			Extra:    map[string]any{"openai_responses_supported": true},
+			ID:              99102,
+			Platform:        PlatformCindy,
+			WirePlatform:    WirePlatformOpenAI,
+			ProviderProfile: ProviderProfileCindyLaxaV1,
+			Type:            AccountTypeAPIKey,
+			Extra:           map[string]any{"openai_responses_supported": true},
 			Credentials: map[string]any{
 				"api_key":  "not-exposed",
 				"base_url": "https://api.laxarouter.ai",
@@ -337,8 +345,14 @@ func TestCindyRolloutFlagHelper(t *testing.T) {
 		if _, ok := ResolveCindyCapability("gpt-5.6-luna"); !ok {
 			t.Fatal("image rollback hid a text capability")
 		}
-		if _, ok := ResolveCindyCapability("gpt-image-2"); ok {
-			t.Fatal("image rollback still exposed an image capability")
+		if _, ok := ResolveCindyCapability("gpt-image-2"); !ok {
+			t.Fatal("image rollback hid an independently catalogued image capability")
+		}
+		if len(CindyImageModelCapabilities()) != 0 {
+			t.Fatal("image rollback still exposed Image Studio capabilities")
+		}
+		if !CindyModelSupportsResponsesImageBridge("gpt-image-2") {
+			t.Fatal("image rollback changed the independent Responses image bridge")
 		}
 	default:
 		t.Fatalf("unknown helper mode %q", os.Getenv("SUB2API_CINDY_FLAG_HELPER"))

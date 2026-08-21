@@ -329,14 +329,14 @@ func strictCindyResponsesImageBridgeAllowed(model string, body []byte) bool {
 }
 
 func resolveStrictCindyResponsesImageTools(strict bool, body []byte) ([]byte, error) {
-	if !strict || !service.CindyImageStudioFeatureEnabled() {
+	if !strict || !service.CindyResponsesImageBridgeFeatureEnabled() {
 		return body, nil
 	}
 	return service.ResolveCindyResponsesImageTools(body)
 }
 
 func resolveSelectedCindyResponsesImageTools(account *service.Account, body []byte) ([]byte, error) {
-	if !service.CindyImageStudioFeatureEnabled() || account == nil ||
+	if !service.CindyResponsesImageBridgeFeatureEnabled() || account == nil ||
 		!service.IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		return body, nil
 	}
