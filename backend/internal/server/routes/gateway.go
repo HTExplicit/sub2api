@@ -513,7 +513,7 @@ func getGroupPlatform(c *gin.Context) string {
 			return platform
 		}
 	}
-	return apiKey.Group.Platform
+	return apiKey.Group.EffectiveWirePlatform()
 }
 
 func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver) gin.HandlerFunc {

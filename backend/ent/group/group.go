@@ -44,6 +44,10 @@ const (
 	FieldDuplicateOperationID = "duplicate_operation_id"
 	// FieldPlatform holds the string denoting the platform field in the database.
 	FieldPlatform = "platform"
+	// FieldWirePlatform holds the string denoting the wire_platform field in the database.
+	FieldWirePlatform = "wire_platform"
+	// FieldProviderProfile holds the string denoting the provider_profile field in the database.
+	FieldProviderProfile = "provider_profile"
 	// FieldSubscriptionType holds the string denoting the subscription_type field in the database.
 	FieldSubscriptionType = "subscription_type"
 	// FieldDailyLimitUsd holds the string denoting the daily_limit_usd field in the database.
@@ -229,6 +233,8 @@ var Columns = []string{
 	FieldStatus,
 	FieldDuplicateOperationID,
 	FieldPlatform,
+	FieldWirePlatform,
+	FieldProviderProfile,
 	FieldSubscriptionType,
 	FieldDailyLimitUsd,
 	FieldWeeklyLimitUsd,
@@ -340,6 +346,14 @@ var (
 	DefaultPlatform string
 	// PlatformValidator is a validator for the "platform" field. It is called by the builders before save.
 	PlatformValidator func(string) error
+	// DefaultWirePlatform holds the default value on creation for the "wire_platform" field.
+	DefaultWirePlatform string
+	// WirePlatformValidator is a validator for the "wire_platform" field. It is called by the builders before save.
+	WirePlatformValidator func(string) error
+	// DefaultProviderProfile holds the default value on creation for the "provider_profile" field.
+	DefaultProviderProfile string
+	// ProviderProfileValidator is a validator for the "provider_profile" field. It is called by the builders before save.
+	ProviderProfileValidator func(string) error
 	// DefaultSubscriptionType holds the default value on creation for the "subscription_type" field.
 	DefaultSubscriptionType string
 	// SubscriptionTypeValidator is a validator for the "subscription_type" field. It is called by the builders before save.
@@ -490,6 +504,16 @@ func ByDuplicateOperationID(opts ...sql.OrderTermOption) OrderOption {
 // ByPlatform orders the results by the platform field.
 func ByPlatform(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPlatform, opts...).ToFunc()
+}
+
+// ByWirePlatform orders the results by the wire_platform field.
+func ByWirePlatform(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldWirePlatform, opts...).ToFunc()
+}
+
+// ByProviderProfile orders the results by the provider_profile field.
+func ByProviderProfile(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProviderProfile, opts...).ToFunc()
 }
 
 // BySubscriptionType orders the results by the subscription_type field.

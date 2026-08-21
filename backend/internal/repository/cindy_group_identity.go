@@ -19,21 +19,29 @@ func classifyStrictCindyGroupWithSQL(ctx context.Context, executor sqlExecutor, 
 		SELECT
 			COUNT(*) AS account_count,
 			COALESCE(SUM(CASE WHEN
-				a.platform = $3
-				AND a.type = $4
-				AND LOWER(TRIM(a.credentials ->> 'base_url')) IN ($5, $6)
+				a.platform = $5
+				AND a.wire_platform = $6
+				AND a.provider_profile = $7
+				AND a.type = $8
+				AND LOWER(TRIM(a.credentials ->> 'base_url')) IN ($9, $10)
 			THEN 1 ELSE 0 END), 0) AS cindy_account_count
 		FROM account_groups ag
 		JOIN accounts a ON a.id = ag.account_id
 		JOIN groups g ON g.id = ag.group_id
 		WHERE ag.group_id = $1
 			AND g.platform = $2
+			AND g.wire_platform = $3
+			AND g.provider_profile = $4
 			AND g.deleted_at IS NULL
 			AND a.deleted_at IS NULL
 	`,
 		groupID,
-		service.PlatformOpenAI,
-		service.PlatformOpenAI,
+		service.PlatformCindy,
+		service.WirePlatformOpenAI,
+		service.ProviderProfileCindyLaxaV1,
+		service.PlatformCindy,
+		service.WirePlatformOpenAI,
+		service.ProviderProfileCindyLaxaV1,
 		service.AccountTypeAPIKey,
 		"https://api.laxarouter.ai",
 		"https://api.laxarouter.ai/",

@@ -85,6 +85,16 @@ func Platform(v string) predicate.Account {
 	return predicate.Account(sql.FieldEQ(FieldPlatform, v))
 }
 
+// WirePlatform applies equality check predicate on the "wire_platform" field. It's identical to WirePlatformEQ.
+func WirePlatform(v string) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldWirePlatform, v))
+}
+
+// ProviderProfile applies equality check predicate on the "provider_profile" field. It's identical to ProviderProfileEQ.
+func ProviderProfile(v string) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldProviderProfile, v))
+}
+
 // Type applies equality check predicate on the "type" field. It's identical to TypeEQ.
 func Type(v string) predicate.Account {
 	return predicate.Account(sql.FieldEQ(FieldType, v))
@@ -538,6 +548,136 @@ func PlatformEqualFold(v string) predicate.Account {
 // PlatformContainsFold applies the ContainsFold predicate on the "platform" field.
 func PlatformContainsFold(v string) predicate.Account {
 	return predicate.Account(sql.FieldContainsFold(FieldPlatform, v))
+}
+
+// WirePlatformEQ applies the EQ predicate on the "wire_platform" field.
+func WirePlatformEQ(v string) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldWirePlatform, v))
+}
+
+// WirePlatformNEQ applies the NEQ predicate on the "wire_platform" field.
+func WirePlatformNEQ(v string) predicate.Account {
+	return predicate.Account(sql.FieldNEQ(FieldWirePlatform, v))
+}
+
+// WirePlatformIn applies the In predicate on the "wire_platform" field.
+func WirePlatformIn(vs ...string) predicate.Account {
+	return predicate.Account(sql.FieldIn(FieldWirePlatform, vs...))
+}
+
+// WirePlatformNotIn applies the NotIn predicate on the "wire_platform" field.
+func WirePlatformNotIn(vs ...string) predicate.Account {
+	return predicate.Account(sql.FieldNotIn(FieldWirePlatform, vs...))
+}
+
+// WirePlatformGT applies the GT predicate on the "wire_platform" field.
+func WirePlatformGT(v string) predicate.Account {
+	return predicate.Account(sql.FieldGT(FieldWirePlatform, v))
+}
+
+// WirePlatformGTE applies the GTE predicate on the "wire_platform" field.
+func WirePlatformGTE(v string) predicate.Account {
+	return predicate.Account(sql.FieldGTE(FieldWirePlatform, v))
+}
+
+// WirePlatformLT applies the LT predicate on the "wire_platform" field.
+func WirePlatformLT(v string) predicate.Account {
+	return predicate.Account(sql.FieldLT(FieldWirePlatform, v))
+}
+
+// WirePlatformLTE applies the LTE predicate on the "wire_platform" field.
+func WirePlatformLTE(v string) predicate.Account {
+	return predicate.Account(sql.FieldLTE(FieldWirePlatform, v))
+}
+
+// WirePlatformContains applies the Contains predicate on the "wire_platform" field.
+func WirePlatformContains(v string) predicate.Account {
+	return predicate.Account(sql.FieldContains(FieldWirePlatform, v))
+}
+
+// WirePlatformHasPrefix applies the HasPrefix predicate on the "wire_platform" field.
+func WirePlatformHasPrefix(v string) predicate.Account {
+	return predicate.Account(sql.FieldHasPrefix(FieldWirePlatform, v))
+}
+
+// WirePlatformHasSuffix applies the HasSuffix predicate on the "wire_platform" field.
+func WirePlatformHasSuffix(v string) predicate.Account {
+	return predicate.Account(sql.FieldHasSuffix(FieldWirePlatform, v))
+}
+
+// WirePlatformEqualFold applies the EqualFold predicate on the "wire_platform" field.
+func WirePlatformEqualFold(v string) predicate.Account {
+	return predicate.Account(sql.FieldEqualFold(FieldWirePlatform, v))
+}
+
+// WirePlatformContainsFold applies the ContainsFold predicate on the "wire_platform" field.
+func WirePlatformContainsFold(v string) predicate.Account {
+	return predicate.Account(sql.FieldContainsFold(FieldWirePlatform, v))
+}
+
+// ProviderProfileEQ applies the EQ predicate on the "provider_profile" field.
+func ProviderProfileEQ(v string) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldProviderProfile, v))
+}
+
+// ProviderProfileNEQ applies the NEQ predicate on the "provider_profile" field.
+func ProviderProfileNEQ(v string) predicate.Account {
+	return predicate.Account(sql.FieldNEQ(FieldProviderProfile, v))
+}
+
+// ProviderProfileIn applies the In predicate on the "provider_profile" field.
+func ProviderProfileIn(vs ...string) predicate.Account {
+	return predicate.Account(sql.FieldIn(FieldProviderProfile, vs...))
+}
+
+// ProviderProfileNotIn applies the NotIn predicate on the "provider_profile" field.
+func ProviderProfileNotIn(vs ...string) predicate.Account {
+	return predicate.Account(sql.FieldNotIn(FieldProviderProfile, vs...))
+}
+
+// ProviderProfileGT applies the GT predicate on the "provider_profile" field.
+func ProviderProfileGT(v string) predicate.Account {
+	return predicate.Account(sql.FieldGT(FieldProviderProfile, v))
+}
+
+// ProviderProfileGTE applies the GTE predicate on the "provider_profile" field.
+func ProviderProfileGTE(v string) predicate.Account {
+	return predicate.Account(sql.FieldGTE(FieldProviderProfile, v))
+}
+
+// ProviderProfileLT applies the LT predicate on the "provider_profile" field.
+func ProviderProfileLT(v string) predicate.Account {
+	return predicate.Account(sql.FieldLT(FieldProviderProfile, v))
+}
+
+// ProviderProfileLTE applies the LTE predicate on the "provider_profile" field.
+func ProviderProfileLTE(v string) predicate.Account {
+	return predicate.Account(sql.FieldLTE(FieldProviderProfile, v))
+}
+
+// ProviderProfileContains applies the Contains predicate on the "provider_profile" field.
+func ProviderProfileContains(v string) predicate.Account {
+	return predicate.Account(sql.FieldContains(FieldProviderProfile, v))
+}
+
+// ProviderProfileHasPrefix applies the HasPrefix predicate on the "provider_profile" field.
+func ProviderProfileHasPrefix(v string) predicate.Account {
+	return predicate.Account(sql.FieldHasPrefix(FieldProviderProfile, v))
+}
+
+// ProviderProfileHasSuffix applies the HasSuffix predicate on the "provider_profile" field.
+func ProviderProfileHasSuffix(v string) predicate.Account {
+	return predicate.Account(sql.FieldHasSuffix(FieldProviderProfile, v))
+}
+
+// ProviderProfileEqualFold applies the EqualFold predicate on the "provider_profile" field.
+func ProviderProfileEqualFold(v string) predicate.Account {
+	return predicate.Account(sql.FieldEqualFold(FieldProviderProfile, v))
+}
+
+// ProviderProfileContainsFold applies the ContainsFold predicate on the "provider_profile" field.
+func ProviderProfileContainsFold(v string) predicate.Account {
+	return predicate.Account(sql.FieldContainsFold(FieldProviderProfile, v))
 }
 
 // TypeEQ applies the EQ predicate on the "type" field.

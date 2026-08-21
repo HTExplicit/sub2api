@@ -34,8 +34,12 @@ func TestAccountRepositoryClassifyStrictCindyGroupUsesAggregateIdentityQuery(t *
 			mock.ExpectQuery("cindy group identity aggregate").
 				WithArgs(
 					int64(42),
-					service.PlatformOpenAI,
-					service.PlatformOpenAI,
+					service.PlatformCindy,
+					service.WirePlatformOpenAI,
+					service.ProviderProfileCindyLaxaV1,
+					service.PlatformCindy,
+					service.WirePlatformOpenAI,
+					service.ProviderProfileCindyLaxaV1,
 					service.AccountTypeAPIKey,
 					"https://api.laxarouter.ai",
 					"https://api.laxarouter.ai/",
@@ -51,9 +55,13 @@ func TestAccountRepositoryClassifyStrictCindyGroupUsesAggregateIdentityQuery(t *
 
 			normalizedSQL := strings.ToLower(capturedSQL)
 			require.Contains(t, normalizedSQL, "sum(case when")
+			require.Contains(t, normalizedSQL, "a.wire_platform = $6")
+			require.Contains(t, normalizedSQL, "a.provider_profile = $7")
 			require.Contains(t, normalizedSQL, "lower(trim")
 			require.Contains(t, normalizedSQL, "join groups g")
 			require.Contains(t, normalizedSQL, "g.platform = $2")
+			require.Contains(t, normalizedSQL, "g.wire_platform = $3")
+			require.Contains(t, normalizedSQL, "g.provider_profile = $4")
 			require.Contains(t, normalizedSQL, "g.deleted_at is null")
 			require.Contains(t, normalizedSQL, "a.deleted_at is null")
 			require.NotContains(t, normalizedSQL, "a.status")

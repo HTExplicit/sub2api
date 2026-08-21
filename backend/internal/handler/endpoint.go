@@ -197,7 +197,7 @@ func DeriveUpstreamEndpoint(inbound, rawRequestPath, platform string) string {
 	inbound = strings.TrimSpace(inbound)
 
 	switch platform {
-	case service.PlatformOpenAI, service.PlatformGrok:
+	case service.PlatformOpenAI, service.PlatformCindy, service.PlatformGrok:
 		// Discovery is served locally and never reaches an upstream Responses
 		// endpoint. Keep operations telemetry explicit instead of attributing a
 		// local capability-gate response to /v1/responses.

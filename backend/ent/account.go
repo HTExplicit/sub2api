@@ -32,6 +32,10 @@ type Account struct {
 	Notes *string `json:"notes,omitempty"`
 	// Platform holds the value of the "platform" field.
 	Platform string `json:"platform,omitempty"`
+	// WirePlatform holds the value of the "wire_platform" field.
+	WirePlatform string `json:"wire_platform,omitempty"`
+	// ProviderProfile holds the value of the "provider_profile" field.
+	ProviderProfile string `json:"provider_profile,omitempty"`
 	// Type holds the value of the "type" field.
 	Type string `json:"type,omitempty"`
 	// Credentials holds the value of the "credentials" field.
@@ -217,7 +221,7 @@ func (*Account) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullFloat64)
 		case account.FieldID, account.FieldProxyID, account.FieldProxyFallbackOriginID, account.FieldManagementFolderID, account.FieldConcurrency, account.FieldLoadFactor, account.FieldPriority, account.FieldParentAccountID:
 			values[i] = new(sql.NullInt64)
-		case account.FieldName, account.FieldNotes, account.FieldPlatform, account.FieldType, account.FieldStatus, account.FieldErrorMessage, account.FieldTempUnschedulableReason, account.FieldSessionWindowStatus, account.FieldQuotaDimension:
+		case account.FieldName, account.FieldNotes, account.FieldPlatform, account.FieldWirePlatform, account.FieldProviderProfile, account.FieldType, account.FieldStatus, account.FieldErrorMessage, account.FieldTempUnschedulableReason, account.FieldSessionWindowStatus, account.FieldQuotaDimension:
 			values[i] = new(sql.NullString)
 		case account.FieldCreatedAt, account.FieldUpdatedAt, account.FieldDeletedAt, account.FieldLastUsedAt, account.FieldExpiresAt, account.FieldCindyBalanceInsufficientAt, account.FieldRateLimitedAt, account.FieldRateLimitResetAt, account.FieldOverloadUntil, account.FieldTempUnschedulableUntil, account.FieldSessionWindowStart, account.FieldSessionWindowEnd:
 			values[i] = new(sql.NullTime)
@@ -279,6 +283,18 @@ func (_m *Account) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field platform", values[i])
 			} else if value.Valid {
 				_m.Platform = value.String
+			}
+		case account.FieldWirePlatform:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field wire_platform", values[i])
+			} else if value.Valid {
+				_m.WirePlatform = value.String
+			}
+		case account.FieldProviderProfile:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field provider_profile", values[i])
+			} else if value.Valid {
+				_m.ProviderProfile = value.String
 			}
 		case account.FieldType:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -565,6 +581,12 @@ func (_m *Account) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("platform=")
 	builder.WriteString(_m.Platform)
+	builder.WriteString(", ")
+	builder.WriteString("wire_platform=")
+	builder.WriteString(_m.WirePlatform)
+	builder.WriteString(", ")
+	builder.WriteString("provider_profile=")
+	builder.WriteString(_m.ProviderProfile)
 	builder.WriteString(", ")
 	builder.WriteString("type=")
 	builder.WriteString(_m.Type)

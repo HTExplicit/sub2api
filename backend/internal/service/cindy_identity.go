@@ -28,7 +28,7 @@ var cindyDeviceIDSources = map[string]struct{}{
 }
 
 func IsCindyAPIKeyAccount(platform, accountType string, credentials map[string]any) bool {
-	if platform != PlatformOpenAI || accountType != AccountTypeAPIKey || credentials == nil {
+	if platform != PlatformCindy || accountType != AccountTypeAPIKey || credentials == nil {
 		return false
 	}
 	rawBaseURL, ok := credentials["base_url"].(string)

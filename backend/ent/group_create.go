@@ -218,6 +218,34 @@ func (_c *GroupCreate) SetNillablePlatform(v *string) *GroupCreate {
 	return _c
 }
 
+// SetWirePlatform sets the "wire_platform" field.
+func (_c *GroupCreate) SetWirePlatform(v string) *GroupCreate {
+	_c.mutation.SetWirePlatform(v)
+	return _c
+}
+
+// SetNillableWirePlatform sets the "wire_platform" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableWirePlatform(v *string) *GroupCreate {
+	if v != nil {
+		_c.SetWirePlatform(*v)
+	}
+	return _c
+}
+
+// SetProviderProfile sets the "provider_profile" field.
+func (_c *GroupCreate) SetProviderProfile(v string) *GroupCreate {
+	_c.mutation.SetProviderProfile(v)
+	return _c
+}
+
+// SetNillableProviderProfile sets the "provider_profile" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableProviderProfile(v *string) *GroupCreate {
+	if v != nil {
+		_c.SetProviderProfile(*v)
+	}
+	return _c
+}
+
 // SetSubscriptionType sets the "subscription_type" field.
 func (_c *GroupCreate) SetSubscriptionType(v string) *GroupCreate {
 	_c.mutation.SetSubscriptionType(v)
@@ -1023,6 +1051,14 @@ func (_c *GroupCreate) defaults() error {
 		v := group.DefaultPlatform
 		_c.mutation.SetPlatform(v)
 	}
+	if _, ok := _c.mutation.WirePlatform(); !ok {
+		v := group.DefaultWirePlatform
+		_c.mutation.SetWirePlatform(v)
+	}
+	if _, ok := _c.mutation.ProviderProfile(); !ok {
+		v := group.DefaultProviderProfile
+		_c.mutation.SetProviderProfile(v)
+	}
 	if _, ok := _c.mutation.SubscriptionType(); !ok {
 		v := group.DefaultSubscriptionType
 		_c.mutation.SetSubscriptionType(v)
@@ -1205,6 +1241,22 @@ func (_c *GroupCreate) check() error {
 	if v, ok := _c.mutation.Platform(); ok {
 		if err := group.PlatformValidator(v); err != nil {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "Group.platform": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.WirePlatform(); !ok {
+		return &ValidationError{Name: "wire_platform", err: errors.New(`ent: missing required field "Group.wire_platform"`)}
+	}
+	if v, ok := _c.mutation.WirePlatform(); ok {
+		if err := group.WirePlatformValidator(v); err != nil {
+			return &ValidationError{Name: "wire_platform", err: fmt.Errorf(`ent: validator failed for field "Group.wire_platform": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.ProviderProfile(); !ok {
+		return &ValidationError{Name: "provider_profile", err: errors.New(`ent: missing required field "Group.provider_profile"`)}
+	}
+	if v, ok := _c.mutation.ProviderProfile(); ok {
+		if err := group.ProviderProfileValidator(v); err != nil {
+			return &ValidationError{Name: "provider_profile", err: fmt.Errorf(`ent: validator failed for field "Group.provider_profile": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.SubscriptionType(); !ok {
@@ -1411,6 +1463,14 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Platform(); ok {
 		_spec.SetField(group.FieldPlatform, field.TypeString, value)
 		_node.Platform = value
+	}
+	if value, ok := _c.mutation.WirePlatform(); ok {
+		_spec.SetField(group.FieldWirePlatform, field.TypeString, value)
+		_node.WirePlatform = value
+	}
+	if value, ok := _c.mutation.ProviderProfile(); ok {
+		_spec.SetField(group.FieldProviderProfile, field.TypeString, value)
+		_node.ProviderProfile = value
 	}
 	if value, ok := _c.mutation.SubscriptionType(); ok {
 		_spec.SetField(group.FieldSubscriptionType, field.TypeString, value)
@@ -1925,6 +1985,30 @@ func (u *GroupUpsert) SetPlatform(v string) *GroupUpsert {
 // UpdatePlatform sets the "platform" field to the value that was provided on create.
 func (u *GroupUpsert) UpdatePlatform() *GroupUpsert {
 	u.SetExcluded(group.FieldPlatform)
+	return u
+}
+
+// SetWirePlatform sets the "wire_platform" field.
+func (u *GroupUpsert) SetWirePlatform(v string) *GroupUpsert {
+	u.Set(group.FieldWirePlatform, v)
+	return u
+}
+
+// UpdateWirePlatform sets the "wire_platform" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateWirePlatform() *GroupUpsert {
+	u.SetExcluded(group.FieldWirePlatform)
+	return u
+}
+
+// SetProviderProfile sets the "provider_profile" field.
+func (u *GroupUpsert) SetProviderProfile(v string) *GroupUpsert {
+	u.Set(group.FieldProviderProfile, v)
+	return u
+}
+
+// UpdateProviderProfile sets the "provider_profile" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateProviderProfile() *GroupUpsert {
+	u.SetExcluded(group.FieldProviderProfile)
 	return u
 }
 
@@ -3009,6 +3093,34 @@ func (u *GroupUpsertOne) SetPlatform(v string) *GroupUpsertOne {
 func (u *GroupUpsertOne) UpdatePlatform() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdatePlatform()
+	})
+}
+
+// SetWirePlatform sets the "wire_platform" field.
+func (u *GroupUpsertOne) SetWirePlatform(v string) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetWirePlatform(v)
+	})
+}
+
+// UpdateWirePlatform sets the "wire_platform" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateWirePlatform() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateWirePlatform()
+	})
+}
+
+// SetProviderProfile sets the "provider_profile" field.
+func (u *GroupUpsertOne) SetProviderProfile(v string) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetProviderProfile(v)
+	})
+}
+
+// UpdateProviderProfile sets the "provider_profile" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateProviderProfile() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateProviderProfile()
 	})
 }
 
@@ -4399,6 +4511,34 @@ func (u *GroupUpsertBulk) SetPlatform(v string) *GroupUpsertBulk {
 func (u *GroupUpsertBulk) UpdatePlatform() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdatePlatform()
+	})
+}
+
+// SetWirePlatform sets the "wire_platform" field.
+func (u *GroupUpsertBulk) SetWirePlatform(v string) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetWirePlatform(v)
+	})
+}
+
+// UpdateWirePlatform sets the "wire_platform" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateWirePlatform() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateWirePlatform()
+	})
+}
+
+// SetProviderProfile sets the "provider_profile" field.
+func (u *GroupUpsertBulk) SetProviderProfile(v string) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetProviderProfile(v)
+	})
+}
+
+// UpdateProviderProfile sets the "provider_profile" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateProviderProfile() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateProviderProfile()
 	})
 }
 

@@ -28,6 +28,10 @@ const (
 	FieldNotes = "notes"
 	// FieldPlatform holds the string denoting the platform field in the database.
 	FieldPlatform = "platform"
+	// FieldWirePlatform holds the string denoting the wire_platform field in the database.
+	FieldWirePlatform = "wire_platform"
+	// FieldProviderProfile holds the string denoting the provider_profile field in the database.
+	FieldProviderProfile = "provider_profile"
 	// FieldType holds the string denoting the type field in the database.
 	FieldType = "type"
 	// FieldCredentials holds the string denoting the credentials field in the database.
@@ -166,6 +170,8 @@ var Columns = []string{
 	FieldName,
 	FieldNotes,
 	FieldPlatform,
+	FieldWirePlatform,
+	FieldProviderProfile,
 	FieldType,
 	FieldCredentials,
 	FieldExtra,
@@ -232,6 +238,14 @@ var (
 	NameValidator func(string) error
 	// PlatformValidator is a validator for the "platform" field. It is called by the builders before save.
 	PlatformValidator func(string) error
+	// DefaultWirePlatform holds the default value on creation for the "wire_platform" field.
+	DefaultWirePlatform string
+	// WirePlatformValidator is a validator for the "wire_platform" field. It is called by the builders before save.
+	WirePlatformValidator func(string) error
+	// DefaultProviderProfile holds the default value on creation for the "provider_profile" field.
+	DefaultProviderProfile string
+	// ProviderProfileValidator is a validator for the "provider_profile" field. It is called by the builders before save.
+	ProviderProfileValidator func(string) error
 	// TypeValidator is a validator for the "type" field. It is called by the builders before save.
 	TypeValidator func(string) error
 	// DefaultCredentials holds the default value on creation for the "credentials" field.
@@ -318,6 +332,16 @@ func ByNotes(opts ...sql.OrderTermOption) OrderOption {
 // ByPlatform orders the results by the platform field.
 func ByPlatform(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPlatform, opts...).ToFunc()
+}
+
+// ByWirePlatform orders the results by the wire_platform field.
+func ByWirePlatform(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldWirePlatform, opts...).ToFunc()
+}
+
+// ByProviderProfile orders the results by the provider_profile field.
+func ByProviderProfile(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProviderProfile, opts...).ToFunc()
 }
 
 // ByType orders the results by the type field.

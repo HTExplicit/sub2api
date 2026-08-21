@@ -24,6 +24,8 @@ type Account struct {
 	Name                    string
 	Notes                   *string
 	Platform                string
+	WirePlatform            string
+	ProviderProfile         string
 	Type                    string
 	Credentials             map[string]any
 	Extra                   map[string]any
@@ -328,7 +330,7 @@ func (a *Account) IsCNProvider() bool {
 // openai/grok 原生走 OpenAI 网关；kimi/zhipu/deepseek 同为 OpenAI Chat Completions
 // 兼容上游，也经 OpenAI 网关转发。
 func (a *Account) IsOpenAICompatible() bool {
-	return a != nil && (a.Platform == PlatformOpenAI || a.Platform == PlatformGrok ||
+	return a != nil && (a.EffectiveWirePlatform() == PlatformOpenAI || a.Platform == PlatformGrok ||
 		a.Platform == PlatformKimi || a.Platform == PlatformZhipu || a.Platform == PlatformDeepseek)
 }
 
@@ -1323,7 +1325,7 @@ func (a *Account) IsAPIKeyOrBedrock() bool {
 }
 
 func (a *Account) IsOpenAI() bool {
-	return a.Platform == PlatformOpenAI
+	return a != nil && a.EffectiveWirePlatform() == PlatformOpenAI
 }
 
 func (a *Account) IsOpenAILongContextBillingEnabled() bool {

@@ -115,6 +115,8 @@ type CreateAccountRequest struct {
 	Name                    string         `json:"name" binding:"required"`
 	Notes                   *string        `json:"notes"`
 	Platform                string         `json:"platform" binding:"required"`
+	WirePlatform            string         `json:"wire_platform"`
+	ProviderProfile         string         `json:"provider_profile"`
 	Type                    string         `json:"type" binding:"required,oneof=oauth setup-token apikey upstream bedrock service_account"`
 	Credentials             map[string]any `json:"credentials" binding:"required"`
 	Extra                   map[string]any `json:"extra"`
@@ -194,6 +196,20 @@ type CheckMixedChannelRequest struct {
 	Platform  string  `json:"platform" binding:"required"`
 	GroupIDs  []int64 `json:"group_ids"`
 	AccountID *int64  `json:"account_id"`
+}
+
+func validateCreateAccountProviderIdentity(req CreateAccountRequest) error {
+	_, wirePlatform, providerProfile, err := service.ResolveAccountProviderIdentity(req.Platform, req.Type, req.Credentials)
+	if err != nil {
+		return err
+	}
+	if req.WirePlatform != "" && strings.ToLower(strings.TrimSpace(req.WirePlatform)) != wirePlatform {
+		return fmt.Errorf("wire_platform mismatch: expected %s", wirePlatform)
+	}
+	if req.ProviderProfile != "" && strings.ToLower(strings.TrimSpace(req.ProviderProfile)) != providerProfile {
+		return fmt.Errorf("provider_profile mismatch: expected %s", providerProfile)
+	}
+	return nil
 }
 
 // AccountWithConcurrency extends Account with real-time concurrency info
@@ -862,6 +878,10 @@ func (h *AccountHandler) Create(c *gin.Context) {
 	var req CreateAccountRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if err := validateCreateAccountProviderIdentity(req); err != nil {
+		response.BadRequest(c, err.Error())
 		return
 	}
 	if err := service.ValidateOpenAILongContextBillingExtra(req.Platform, req.Extra); err != nil {
@@ -1907,6 +1927,10 @@ func (h *AccountHandler) BatchCreate(c *gin.Context) {
 		return
 	}
 	for _, item := range req.Accounts {
+		if err := validateCreateAccountProviderIdentity(item); err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
 		if err := service.ValidateOpenAILongContextBillingExtra(item.Platform, item.Extra); err != nil {
 			response.ErrorFrom(c, err)
 			return

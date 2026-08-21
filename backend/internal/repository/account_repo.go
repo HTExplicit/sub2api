@@ -140,6 +140,8 @@ func createAccountRecord(ctx context.Context, client *dbent.Client, account *ser
 		SetName(account.Name).
 		SetNillableNotes(account.Notes).
 		SetPlatform(account.Platform).
+		SetWirePlatform(account.WirePlatform).
+		SetProviderProfile(account.ProviderProfile).
 		SetType(account.Type).
 		SetCredentials(normalizeJSONMap(account.Credentials)).
 		SetExtra(normalizeJSONMap(account.Extra)).
@@ -506,6 +508,8 @@ func (r *accountRepository) updateLockedAccount(
 		SetName(account.Name).
 		SetNillableNotes(account.Notes).
 		SetPlatform(account.Platform).
+		SetWirePlatform(account.WirePlatform).
+		SetProviderProfile(account.ProviderProfile).
 		SetType(account.Type).
 		SetCredentials(normalizeJSONMap(account.Credentials)).
 		SetExtra(extra).
@@ -3400,6 +3404,8 @@ func accountEntityToService(m *dbent.Account) *service.Account {
 		Name:                       m.Name,
 		Notes:                      m.Notes,
 		Platform:                   m.Platform,
+		WirePlatform:               m.WirePlatform,
+		ProviderProfile:            m.ProviderProfile,
 		Type:                       m.Type,
 		Credentials:                copyJSONMap(m.Credentials),
 		Extra:                      copyJSONMap(m.Extra),

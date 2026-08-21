@@ -104,6 +104,7 @@ func TestDeriveUpstreamEndpoint(t *testing.T) {
 		// OpenAI — root Responses.
 		{"openai responses root", EndpointResponses, "/v1/responses", service.PlatformOpenAI, EndpointResponses},
 		{"openai responses input tokens", EndpointResponsesInputTokens, "/v1/responses/input_tokens", service.PlatformOpenAI, EndpointResponsesInputTokens},
+		{"cindy responses root uses openai wire", EndpointResponses, "/v1/responses", service.PlatformCindy, EndpointResponses},
 
 		// OpenAI — compact, raw path carries the derivable "/compact"
 		// (or nested) suffix, which must be preserved on the upstream

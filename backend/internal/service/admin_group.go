@@ -300,7 +300,15 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		return nil, errors.New("rate_multiplier must be > 0")
 	}
 
-	platform := NormalizeGroupPlatform(input.Platform)
+	platform, wirePlatform, providerProfile, err := ResolveGroupProviderIdentity(input.Platform)
+	if err != nil {
+		return nil, err
+	}
+	targetIdentity := &Group{
+		Platform:        platform,
+		WirePlatform:    wirePlatform,
+		ProviderProfile: providerProfile,
+	}
 	modelPricing, err := normalizeGroupModelPricing(platform, input.ModelPricing)
 	if err != nil {
 		return nil, err
@@ -394,6 +402,9 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 
 	// 校验降级分组
 	if input.FallbackGroupID != nil {
+		if platform == PlatformCindy && *input.FallbackGroupID > 0 {
+			return nil, errors.New("cindy groups cannot configure fallback groups")
+		}
 		if err := s.validateFallbackGroup(ctx, 0, *input.FallbackGroupID); err != nil {
 			return nil, err
 		}
@@ -437,7 +448,8 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 			if err != nil {
 				return nil, fmt.Errorf("source group %d not found: %w", srcGroupID, err)
 			}
-			if !canCopyAccountsFromGroupPlatform(platform, srcGroup.Platform) {
+			if !canCopyAccountsFromGroupPlatform(platform, srcGroup.Platform) ||
+				(platform != PlatformComposite && !providerGroupIdentityCompatible(targetIdentity, srcGroup)) {
 				return nil, fmt.Errorf("source group %d platform mismatch: expected %s, got %s", srcGroupID, platform, srcGroup.Platform)
 			}
 		}
@@ -454,6 +466,8 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		Name:                            input.Name,
 		Description:                     input.Description,
 		Platform:                        platform,
+		WirePlatform:                    wirePlatform,
+		ProviderProfile:                 providerProfile,
 		RateMultiplier:                  input.RateMultiplier,
 		IsExclusive:                     input.IsExclusive,
 		Status:                          StatusActive,
@@ -508,10 +522,13 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		ReasoningEffortMappings:         reasoningEffortMappings,
 	}
 	sanitizeGroupMessagesDispatchFields(group)
-	if group.Platform != PlatformOpenAI && group.Platform != PlatformComposite {
+	if group.EffectiveWirePlatform() != PlatformOpenAI && group.Platform != PlatformComposite {
 		group.AllowLive = false
 	}
 	sanitizeGroupReasoningEffortPolicy(group)
+	if err := validateProviderIdentityAccountsForGroup(ctx, s.accountRepo, group, accountIDsToCopy); err != nil {
+		return nil, err
+	}
 	if err := s.groupRepo.Create(ctx, group); err != nil {
 		return nil, err
 	}
@@ -641,6 +658,8 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 
 	// 渠道缓存里存了 groupID → platform 的映射，改了平台要让它失效（见函数末尾）
 	previousPlatform := group.Platform
+	previousWirePlatform := group.EffectiveWirePlatform()
+	previousProviderProfile := group.EffectiveProviderProfile()
 
 	if input.Name != "" {
 		group.Name = input.Name
@@ -651,6 +670,13 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	if input.Platform != "" {
 		group.Platform = input.Platform
 	}
+	group.Platform, group.WirePlatform, group.ProviderProfile, err = ResolveGroupProviderIdentity(group.Platform)
+	if err != nil {
+		return nil, err
+	}
+	identityChanged := previousPlatform != group.Platform ||
+		previousWirePlatform != group.EffectiveWirePlatform() ||
+		previousProviderProfile != group.EffectiveProviderProfile()
 	if input.RateMultiplier != nil {
 		if *input.RateMultiplier <= 0 {
 			return nil, errors.New("rate_multiplier must be > 0")
@@ -804,6 +830,9 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 		group.ClaudeCodeOnly = *input.ClaudeCodeOnly
 	}
 	if input.FallbackGroupID != nil {
+		if group.Platform == PlatformCindy && *input.FallbackGroupID > 0 {
+			return nil, errors.New("cindy groups cannot configure fallback groups")
+		}
 		// 校验降级分组
 		if *input.FallbackGroupID > 0 {
 			if err := s.validateFallbackGroup(ctx, id, *input.FallbackGroupID); err != nil {
@@ -814,6 +843,9 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 			// 传入 0 或负数表示清除降级分组
 			group.FallbackGroupID = nil
 		}
+	}
+	if group.Platform == PlatformCindy && group.FallbackGroupID != nil {
+		return nil, errors.New("cindy groups cannot configure fallback groups")
 	}
 	fallbackOnInvalidRequest := group.FallbackGroupIDOnInvalidRequest
 	if input.FallbackGroupIDOnInvalidRequest != nil {
@@ -886,10 +918,19 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 		group.ReasoningEffortMappings = reasoningEffortMappings
 	}
 	sanitizeGroupMessagesDispatchFields(group)
-	if group.Platform != PlatformOpenAI && group.Platform != PlatformComposite {
+	if group.EffectiveWirePlatform() != PlatformOpenAI && group.Platform != PlatformComposite {
 		group.AllowLive = false
 	}
 	sanitizeGroupReasoningEffortPolicy(group)
+	if identityChanged {
+		accountIDs, identityErr := s.groupRepo.GetAccountIDsByGroupIDs(ctx, []int64{id})
+		if identityErr != nil {
+			return nil, identityErr
+		}
+		if identityErr = validateProviderIdentityAccountsForGroup(ctx, s.accountRepo, group, accountIDs); identityErr != nil {
+			return nil, identityErr
+		}
+	}
 
 	if err := s.groupRepo.Update(ctx, group); err != nil {
 		return nil, err
@@ -929,7 +970,8 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 			if err != nil {
 				return nil, fmt.Errorf("source group %d not found: %w", srcGroupID, err)
 			}
-			if !canCopyAccountsFromGroupPlatform(group.Platform, srcGroup.Platform) {
+			if !canCopyAccountsFromGroupPlatform(group.Platform, srcGroup.Platform) ||
+				(group.Platform != PlatformComposite && !providerGroupIdentityCompatible(group, srcGroup)) {
 				return nil, fmt.Errorf("source group %d platform mismatch: expected %s, got %s", srcGroupID, group.Platform, srcGroup.Platform)
 			}
 		}
@@ -938,6 +980,9 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 		accountIDsToCopy, err := s.groupRepo.GetAccountIDsByGroupIDs(ctx, uniqueSourceGroupIDs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get accounts from source groups: %w", err)
+		}
+		if err := validateProviderIdentityAccountsForGroup(ctx, s.accountRepo, group, accountIDsToCopy); err != nil {
+			return nil, err
 		}
 
 		// 先清空当前分组的所有账号绑定

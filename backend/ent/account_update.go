@@ -107,6 +107,34 @@ func (_u *AccountUpdate) SetNillablePlatform(v *string) *AccountUpdate {
 	return _u
 }
 
+// SetWirePlatform sets the "wire_platform" field.
+func (_u *AccountUpdate) SetWirePlatform(v string) *AccountUpdate {
+	_u.mutation.SetWirePlatform(v)
+	return _u
+}
+
+// SetNillableWirePlatform sets the "wire_platform" field if the given value is not nil.
+func (_u *AccountUpdate) SetNillableWirePlatform(v *string) *AccountUpdate {
+	if v != nil {
+		_u.SetWirePlatform(*v)
+	}
+	return _u
+}
+
+// SetProviderProfile sets the "provider_profile" field.
+func (_u *AccountUpdate) SetProviderProfile(v string) *AccountUpdate {
+	_u.mutation.SetProviderProfile(v)
+	return _u
+}
+
+// SetNillableProviderProfile sets the "provider_profile" field if the given value is not nil.
+func (_u *AccountUpdate) SetNillableProviderProfile(v *string) *AccountUpdate {
+	if v != nil {
+		_u.SetProviderProfile(*v)
+	}
+	return _u
+}
+
 // SetType sets the "type" field.
 func (_u *AccountUpdate) SetType(v string) *AccountUpdate {
 	_u.mutation.SetType(v)
@@ -856,6 +884,16 @@ func (_u *AccountUpdate) check() error {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "Account.platform": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.WirePlatform(); ok {
+		if err := account.WirePlatformValidator(v); err != nil {
+			return &ValidationError{Name: "wire_platform", err: fmt.Errorf(`ent: validator failed for field "Account.wire_platform": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.ProviderProfile(); ok {
+		if err := account.ProviderProfileValidator(v); err != nil {
+			return &ValidationError{Name: "provider_profile", err: fmt.Errorf(`ent: validator failed for field "Account.provider_profile": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.GetType(); ok {
 		if err := account.TypeValidator(v); err != nil {
 			return &ValidationError{Name: "type", err: fmt.Errorf(`ent: validator failed for field "Account.type": %w`, err)}
@@ -911,6 +949,12 @@ func (_u *AccountUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.Platform(); ok {
 		_spec.SetField(account.FieldPlatform, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.WirePlatform(); ok {
+		_spec.SetField(account.FieldWirePlatform, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ProviderProfile(); ok {
+		_spec.SetField(account.FieldProviderProfile, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.GetType(); ok {
 		_spec.SetField(account.FieldType, field.TypeString, value)
@@ -1422,6 +1466,34 @@ func (_u *AccountUpdateOne) SetPlatform(v string) *AccountUpdateOne {
 func (_u *AccountUpdateOne) SetNillablePlatform(v *string) *AccountUpdateOne {
 	if v != nil {
 		_u.SetPlatform(*v)
+	}
+	return _u
+}
+
+// SetWirePlatform sets the "wire_platform" field.
+func (_u *AccountUpdateOne) SetWirePlatform(v string) *AccountUpdateOne {
+	_u.mutation.SetWirePlatform(v)
+	return _u
+}
+
+// SetNillableWirePlatform sets the "wire_platform" field if the given value is not nil.
+func (_u *AccountUpdateOne) SetNillableWirePlatform(v *string) *AccountUpdateOne {
+	if v != nil {
+		_u.SetWirePlatform(*v)
+	}
+	return _u
+}
+
+// SetProviderProfile sets the "provider_profile" field.
+func (_u *AccountUpdateOne) SetProviderProfile(v string) *AccountUpdateOne {
+	_u.mutation.SetProviderProfile(v)
+	return _u
+}
+
+// SetNillableProviderProfile sets the "provider_profile" field if the given value is not nil.
+func (_u *AccountUpdateOne) SetNillableProviderProfile(v *string) *AccountUpdateOne {
+	if v != nil {
+		_u.SetProviderProfile(*v)
 	}
 	return _u
 }
@@ -2188,6 +2260,16 @@ func (_u *AccountUpdateOne) check() error {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "Account.platform": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.WirePlatform(); ok {
+		if err := account.WirePlatformValidator(v); err != nil {
+			return &ValidationError{Name: "wire_platform", err: fmt.Errorf(`ent: validator failed for field "Account.wire_platform": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.ProviderProfile(); ok {
+		if err := account.ProviderProfileValidator(v); err != nil {
+			return &ValidationError{Name: "provider_profile", err: fmt.Errorf(`ent: validator failed for field "Account.provider_profile": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.GetType(); ok {
 		if err := account.TypeValidator(v); err != nil {
 			return &ValidationError{Name: "type", err: fmt.Errorf(`ent: validator failed for field "Account.type": %w`, err)}
@@ -2260,6 +2342,12 @@ func (_u *AccountUpdateOne) sqlSave(ctx context.Context) (_node *Account, err er
 	}
 	if value, ok := _u.mutation.Platform(); ok {
 		_spec.SetField(account.FieldPlatform, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.WirePlatform(); ok {
+		_spec.SetField(account.FieldWirePlatform, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ProviderProfile(); ok {
+		_spec.SetField(account.FieldProviderProfile, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.GetType(); ok {
 		_spec.SetField(account.FieldType, field.TypeString, value)

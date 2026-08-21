@@ -1752,6 +1752,9 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleReason(ctx con
 	if account == nil {
 		return false, "account_nil"
 	}
+	if NormalizeOpenAICompatiblePlatform(req.Platform) == PlatformCindy && !hasCanonicalCindyProviderIdentity(account) {
+		return false, "provider_identity_mismatch"
+	}
 	requestedModel := openAIRequestedModelForAccount(ctx, account, req.RequestedModel)
 	if s != nil && s.service != nil && s.service.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, requestedModel) {
 		return false, "runtime_blocked"

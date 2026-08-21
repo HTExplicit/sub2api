@@ -442,6 +442,13 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 		Status:      StatusActive,
 		Schedulable: true,
 	}
+	platform, wirePlatform, providerProfile, err := ResolveAccountProviderIdentity(account.Platform, account.Type, account.Credentials)
+	if err != nil {
+		return nil, err
+	}
+	account.Platform = platform
+	account.WirePlatform = wirePlatform
+	account.ProviderProfile = providerProfile
 	if input.ProbeEnabled != nil && *input.ProbeEnabled {
 		if !isUpstreamBillingProbeAccount(account) {
 			return nil, ErrUpstreamBillingProbeAccountInvalid
@@ -484,6 +491,11 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 }
 
 func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccountInput) (*Account, error) {
+	platform, _, _, err := ResolveAccountProviderIdentity(input.Platform, input.Type, input.Credentials)
+	if err != nil {
+		return nil, err
+	}
+	input.Platform = platform
 	accountExtra, err := normalizeOpenAILongContextBillingExtra(input.Platform, input.Extra)
 	if err != nil {
 		return nil, err
@@ -531,6 +543,9 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 	if err != nil {
 		return nil, err
 	}
+	if err := validateProviderIdentityGroupBindings(ctx, s.groupRepo, account, groupIDs); err != nil {
+		return nil, err
+	}
 	if err := s.accountRepo.Create(ctx, account); err != nil {
 		return nil, err
 	}
@@ -575,6 +590,9 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	if err != nil {
 		return nil, err
 	}
+	originalPlatform := account.Platform
+	originalWirePlatform := account.EffectiveWirePlatform()
+	originalProviderProfile := account.EffectiveProviderProfile()
 	currentCindyExtra := maps.Clone(account.Extra)
 	var normalizedExtra map[string]any
 	if input.Extra != nil {
@@ -639,6 +657,10 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		}
 		// Strip SSO/password residue that must never sit next to OAuth tokens.
 		account.Credentials = SanitizeStoredCredentials(account.Platform, account.Credentials)
+	}
+	account.Platform, account.WirePlatform, account.ProviderProfile, err = ResolveAccountProviderIdentity(account.Platform, account.Type, account.Credentials)
+	if err != nil {
+		return nil, err
 	}
 	// Extra 使用 map：需要区分“未提供(nil)”与“显式清空({})”。
 	// 关闭配额限制时前端会删除 quota_* 键并提交 extra:{}，此时也必须落库。
@@ -816,12 +838,23 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		if err := s.validateGroupIDsExist(ctx, *input.GroupIDs); err != nil {
 			return nil, err
 		}
+		if err := validateProviderIdentityGroupBindings(ctx, s.groupRepo, account, *input.GroupIDs); err != nil {
+			return nil, err
+		}
 
 		// 检查混合渠道风险（除非用户已确认）
 		if !input.SkipMixedChannelCheck {
 			if err := s.checkMixedChannelRisk(ctx, account.ID, account.Platform, *input.GroupIDs); err != nil {
 				return nil, err
 			}
+		}
+	}
+	identityChanged := originalPlatform != account.Platform ||
+		originalWirePlatform != account.EffectiveWirePlatform() ||
+		originalProviderProfile != account.EffectiveProviderProfile()
+	if input.GroupIDs == nil && identityChanged {
+		if err := validateProviderIdentityGroupBindings(ctx, s.groupRepo, account, account.GroupIDs); err != nil {
+			return nil, err
 		}
 	}
 

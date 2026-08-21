@@ -15,11 +15,12 @@ func cindyCredentials() map[string]any {
 }
 
 func TestIsCindyAPIKeyAccount(t *testing.T) {
-	require.True(t, IsCindyAPIKeyAccount(PlatformOpenAI, AccountTypeAPIKey, cindyCredentials()))
-	require.True(t, IsCindyAPIKeyAccount(PlatformOpenAI, AccountTypeAPIKey, map[string]any{"base_url": "https://API.LAXAROUTER.AI/"}))
-	require.False(t, IsCindyAPIKeyAccount(PlatformOpenAI, AccountTypeOAuth, cindyCredentials()))
-	require.False(t, IsCindyAPIKeyAccount(PlatformOpenAI, AccountTypeAPIKey, map[string]any{"base_url": "https://api.laxarouter.ai/v1"}))
-	require.False(t, IsCindyAPIKeyAccount(PlatformOpenAI, AccountTypeAPIKey, map[string]any{"base_url": "https://api.laxarouter.ai.evil.test"}))
+	require.True(t, IsCindyAPIKeyAccount(PlatformCindy, AccountTypeAPIKey, cindyCredentials()))
+	require.True(t, IsCindyAPIKeyAccount(PlatformCindy, AccountTypeAPIKey, map[string]any{"base_url": "https://API.LAXAROUTER.AI/"}))
+	require.False(t, IsCindyAPIKeyAccount(PlatformOpenAI, AccountTypeAPIKey, cindyCredentials()), "runtime legacy recognition must stay disabled")
+	require.False(t, IsCindyAPIKeyAccount(PlatformCindy, AccountTypeOAuth, cindyCredentials()))
+	require.False(t, IsCindyAPIKeyAccount(PlatformCindy, AccountTypeAPIKey, map[string]any{"base_url": "https://api.laxarouter.ai/v1"}))
+	require.False(t, IsCindyAPIKeyAccount(PlatformCindy, AccountTypeAPIKey, map[string]any{"base_url": "https://api.laxarouter.ai.evil.test"}))
 }
 
 func TestNormalizeCindyDeviceIdentityExtraPreservesInput(t *testing.T) {
@@ -30,7 +31,7 @@ func TestNormalizeCindyDeviceIdentityExtraPreservesInput(t *testing.T) {
 		"ordinary":                  "kept",
 	}
 
-	got, err := NormalizeCindyDeviceIdentityExtra(PlatformOpenAI, AccountTypeAPIKey, cindyCredentials(), requested, nil)
+	got, err := NormalizeCindyDeviceIdentityExtra(PlatformCindy, AccountTypeAPIKey, cindyCredentials(), requested, nil)
 	require.NoError(t, err)
 	require.Equal(t, deviceID, got[CindyDeviceIDExtraKey])
 	require.Equal(t, "registration-record", got[CindyDeviceIDSourceExtraKey])
@@ -48,7 +49,7 @@ func TestNormalizeCindyDeviceIdentityExtraPreservesExplicitCompatibilityModes(t 
 		CindyPromptCacheExtraKey:   OpenAIPromptCacheKeyModePassthrough,
 	}
 	got, err := NormalizeCindyDeviceIdentityExtra(
-		PlatformOpenAI, AccountTypeAPIKey, cindyCredentials(), requested, nil,
+		PlatformCindy, AccountTypeAPIKey, cindyCredentials(), requested, nil,
 	)
 	require.NoError(t, err)
 	require.Equal(t, requested[CindyResponsesModeExtraKey], got[CindyResponsesModeExtraKey])
@@ -57,9 +58,9 @@ func TestNormalizeCindyDeviceIdentityExtraPreservesExplicitCompatibilityModes(t 
 }
 
 func TestNormalizeCindyDeviceIdentityExtraGeneratesUniqueStoreOnlyIdentity(t *testing.T) {
-	first, err := NormalizeCindyDeviceIdentityExtra(PlatformOpenAI, AccountTypeAPIKey, cindyCredentials(), nil, nil)
+	first, err := NormalizeCindyDeviceIdentityExtra(PlatformCindy, AccountTypeAPIKey, cindyCredentials(), nil, nil)
 	require.NoError(t, err)
-	second, err := NormalizeCindyDeviceIdentityExtra(PlatformOpenAI, AccountTypeAPIKey, cindyCredentials(), nil, nil)
+	second, err := NormalizeCindyDeviceIdentityExtra(PlatformCindy, AccountTypeAPIKey, cindyCredentials(), nil, nil)
 	require.NoError(t, err)
 
 	firstID, firstOK := first[CindyDeviceIDExtraKey].(string)
@@ -79,7 +80,7 @@ func TestNormalizeCindyDeviceIdentityExtraPreservesStoredIdentityAndAcceptsMask(
 		CindyDeviceIDSourceExtraKey: "generated-production-v1",
 	}
 
-	got, err := NormalizeCindyDeviceIdentityExtra(PlatformOpenAI, AccountTypeAPIKey, cindyCredentials(), map[string]any{
+	got, err := NormalizeCindyDeviceIdentityExtra(PlatformCindy, AccountTypeAPIKey, cindyCredentials(), map[string]any{
 		CindyDeviceIDExtraKey: MaskCindyDeviceID(deviceID),
 		"ordinary":            true,
 	}, current)
@@ -96,7 +97,7 @@ func TestNormalizeCindyDeviceIdentityExtraRejectsInvalidValues(t *testing.T) {
 		{CindyDeviceIDExtraKey: strings.Repeat("a", 64), CindyDeviceIDSourceExtraKey: "unknown"},
 	}
 	for _, requested := range tests {
-		_, err := NormalizeCindyDeviceIdentityExtra(PlatformOpenAI, AccountTypeAPIKey, cindyCredentials(), requested, nil)
+		_, err := NormalizeCindyDeviceIdentityExtra(PlatformCindy, AccountTypeAPIKey, cindyCredentials(), requested, nil)
 		require.Error(t, err)
 	}
 }

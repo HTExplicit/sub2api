@@ -172,6 +172,8 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 				group.FieldID,
 				group.FieldName,
 				group.FieldPlatform,
+				group.FieldWirePlatform,
+				group.FieldProviderProfile,
 				group.FieldIsExclusive,
 				group.FieldStatus,
 				group.FieldSubscriptionType,
@@ -237,7 +239,7 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 	if apiKey.GroupID != nil && apiKey.Group != nil {
 		apiKey.Group.StrictCindyKnown = true
 		apiKey.Group.StrictCindy = false
-		if apiKey.Group.Platform == service.PlatformOpenAI {
+		if apiKey.Group.Platform == service.PlatformCindy {
 			strictCindy, classifyErr := classifyStrictCindyGroupWithSQL(ctx, r.sql, *apiKey.GroupID)
 			if classifyErr != nil {
 				return nil, fmt.Errorf("classify API key group identity: %w", classifyErr)
@@ -974,6 +976,8 @@ func groupEntityToService(g *dbent.Group) *service.Group {
 		Name:                            g.Name,
 		Description:                     derefString(g.Description),
 		Platform:                        g.Platform,
+		WirePlatform:                    g.WirePlatform,
+		ProviderProfile:                 g.ProviderProfile,
 		RateMultiplier:                  g.RateMultiplier,
 		IsExclusive:                     g.IsExclusive,
 		Status:                          g.Status,

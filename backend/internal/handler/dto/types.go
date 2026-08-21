@@ -88,13 +88,15 @@ type APIKey struct {
 }
 
 type Group struct {
-	ID             int64   `json:"id"`
-	Name           string  `json:"name"`
-	Description    string  `json:"description"`
-	Platform       string  `json:"platform"`
-	RateMultiplier float64 `json:"rate_multiplier"`
-	IsExclusive    bool    `json:"is_exclusive"`
-	Status         string  `json:"status"`
+	ID              int64   `json:"id"`
+	Name            string  `json:"name"`
+	Description     string  `json:"description"`
+	Platform        string  `json:"platform"`
+	WirePlatform    string  `json:"wire_platform"`
+	ProviderProfile string  `json:"provider_profile"`
+	RateMultiplier  float64 `json:"rate_multiplier"`
+	IsExclusive     bool    `json:"is_exclusive"`
+	Status          string  `json:"status"`
 
 	SubscriptionType          string   `json:"subscription_type"`
 	DailyLimitUSD             *float64 `json:"daily_limit_usd"`
@@ -194,11 +196,13 @@ type AdminGroup struct {
 }
 
 type Account struct {
-	ID       int64   `json:"id"`
-	Name     string  `json:"name"`
-	Notes    *string `json:"notes"`
-	Platform string  `json:"platform"`
-	Type     string  `json:"type"`
+	ID              int64   `json:"id"`
+	Name            string  `json:"name"`
+	Notes           *string `json:"notes"`
+	Platform        string  `json:"platform"`
+	WirePlatform    string  `json:"wire_platform"`
+	ProviderProfile string  `json:"provider_profile"`
+	Type            string  `json:"type"`
 	// Credentials 经 RedactCredentials 处理后只含非敏感子键；敏感 token / api_key / 私钥
 	// 的存在性通过 CredentialsStatus（has_<key>）暴露，原始值不返回前端。
 	Credentials             map[string]any                 `json:"credentials"`
