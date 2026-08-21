@@ -28,6 +28,7 @@ permissions:
 jobs:
   # Update VERSION file with tag version
   update-version:
+    if: ${{ !contains(github.ref_name, '-codexrip.') && !contains(github.event.inputs.tag, '-codexrip.') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -52,6 +53,7 @@ jobs:
           retention-days: 1
 
   build-frontend:
+    if: ${{ !contains(github.ref_name, '-codexrip.') && !contains(github.event.inputs.tag, '-codexrip.') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

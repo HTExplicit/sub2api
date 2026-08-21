@@ -24,18 +24,28 @@ on:
         description: 'Type DEPLOY for deploy or ROLLBACK for rollback'
         required: true
         type: string
-      cindy_balance_detection:
-        description: 'Enable exact Cindy failover and explicit admin balance-probe jobs'
+      cindy_health:
+        description: 'Enable Cindy health tracking and exact budget confirmation'
         required: true
-        default: true
+        default: false
         type: boolean
       cindy_capability_catalog:
         description: 'Enable the verified Cindy model and protocol catalog'
         required: true
         default: false
         type: boolean
+      cindy_search:
+        description: 'Enable native-first Cindy Search routing'
+        required: true
+        default: false
+        type: boolean
       image_studio:
         description: 'Enable verified Image Studio capabilities (Cindy-only in this release)'
+        required: true
+        default: false
+        type: boolean
+      cindy_responses_image_bridge:
+        description: 'Enable the GPT Image 2 Responses image bridge'
         required: true
         default: false
         type: boolean
@@ -70,9 +80,11 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag }}
           EXPECTED_CURRENT_RELEASE_TAG: ${{ inputs.expected_current_release_tag }}
           CONFIRMATION: ${{ inputs.confirmation }}
-          CINDY_BALANCE_DETECTION: ${{ inputs.cindy_balance_detection }}
+          CINDY_HEALTH: ${{ inputs.cindy_health }}
           CINDY_CAPABILITY_CATALOG: ${{ inputs.cindy_capability_catalog }}
+          CINDY_SEARCH: ${{ inputs.cindy_search }}
           IMAGE_STUDIO: ${{ inputs.image_studio }}
+          CINDY_RESPONSES_IMAGE_BRIDGE: ${{ inputs.cindy_responses_image_bridge }}
         shell: bash
         run: |
           set -euo pipefail
@@ -82,7 +94,7 @@ jobs:
           }
 
           resolve_release_image() {
-            local tag=$1 tag_commit version image inspect digest image_revision release_state release_assets release_body
+            local tag=$1 tag_commit version image inspect digest image_revision image_platform_v1 release_state release_assets release_body
             local release_image_ref='' release_source='' release_image_count=0 release_source_count=0 line
             local image_line_re='^Image: `([^`]+)`$'
             local source_line_re='^Source: `([0-9a-f]{40})`$'
@@ -106,6 +118,8 @@ jobs:
             [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
             image_revision=$(docker buildx imagetools inspect "${image}@${digest}" --format '{{ index .Image.Config.Labels "org.opencontainers.image.revision" }}') || return 1
             [[ "$image_revision" == "$tag_commit" ]] || return 1
+            image_platform_v1=$(docker buildx imagetools inspect "${image}@${digest}" --format '{{ index .Image.Config.Labels "io.github.htexplicit.cindy-platform-v1" }}') || return 1
+            [[ "$image_platform_v1" == true ]] || return 1
             release_body=$(gh release view "$tag" --json body --jq .body) || return 1
             while IFS= read -r line; do
               if [[ "$line" =~ $image_line_re ]]; then
@@ -145,13 +159,9 @@ jobs:
               exit 1
               ;;
           esac
-          for flag in "$CINDY_BALANCE_DETECTION" "$CINDY_CAPABILITY_CATALOG" "$IMAGE_STUDIO"; do
+          for flag in "$CINDY_HEALTH" "$CINDY_CAPABILITY_CATALOG" "$CINDY_SEARCH" "$IMAGE_STUDIO" "$CINDY_RESPONSES_IMAGE_BRIDGE"; do
             [[ "$flag" == true || "$flag" == false ]] || exit 1
           done
-          if [[ "$IMAGE_STUDIO" == true && "$CINDY_CAPABILITY_CATALOG" != true ]]; then
-            echo 'Image Studio requires the Cindy capability catalog in this release' >&2
-            exit 1
-          fi
 
           image_ref=$(resolve_release_image "$RELEASE_TAG") || exit 1
           expected_current_image_ref=''
@@ -164,7 +174,7 @@ jobs:
           echo "expected_current_image_ref=${expected_current_image_ref}" >> "$GITHUB_OUTPUT"
           echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
           echo "operation=${OPERATION}" >> "$GITHUB_OUTPUT"
-          echo "cindy_rollout=cindy=${CINDY_BALANCE_DETECTION},${CINDY_CAPABILITY_CATALOG},${IMAGE_STUDIO}" >> "$GITHUB_OUTPUT"
+          echo "cindy_rollout=cindy=${CINDY_HEALTH},${CINDY_CAPABILITY_CATALOG},${CINDY_SEARCH},${IMAGE_STUDIO},${CINDY_RESPONSES_IMAGE_BRIDGE}" >> "$GITHUB_OUTPUT"
 
   deploy:
     needs: resolve
@@ -198,11 +208,7 @@ jobs:
           set -euo pipefail
           [[ "$VPS_PORT" =~ ^[0-9]+$ ]] || exit 1
           [[ "$IMAGE_REF" =~ ^ghcr\.io/htexplicit/sub2api:[0-9]+\.[0-9]+\.[0-9]+-codexrip\.[1-9][0-9]*@sha256:[0-9a-f]{64}$ ]] || exit 1
-          [[ "$CINDY_ROLLOUT" =~ ^cindy=(true|false),(true|false),(true|false)$ ]] || exit 1
-          if [[ "${BASH_REMATCH[3]}" == true && "${BASH_REMATCH[2]}" != true ]]; then
-            echo 'Image Studio requires the Cindy capability catalog in this release' >&2
-            exit 1
-          fi
+          [[ "$CINDY_ROLLOUT" =~ ^cindy=(true|false),(true|false),(true|false),(true|false),(true|false)$ ]] || exit 1
           case "$OPERATION" in
             deploy)
               [[ -z "$EXPECTED_CURRENT_IMAGE_REF" ]] || exit 1

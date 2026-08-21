@@ -154,13 +154,13 @@ When using Docker Compose with `AUTO_SETUP=true`:
 
 ### Cindy staged rollout
 
-Three immutable process flags allow the Cindy changes to be enabled or rolled
+Five immutable process flags allow the Cindy changes to be enabled or rolled
 back independently while rebuilding only the Sub2API service:
 
 | Variable | Scope | Recommended first deployment |
 |----------|-------|------------------------------|
-| `GATEWAY_CINDY_BALANCE_DETECTION_ENABLED` | Request-level exact failover and explicit admin balance-probe jobs | `true` |
-| `GATEWAY_CINDY_CAPABILITY_CATALOG_ENABLED` | Catalog, protocol gates, and capability API; the two exact compatibility aliases remain available while disabled | `false`; enable after the balance phase |
+| `GATEWAY_CINDY_BALANCE_DETECTION_ENABLED` | Cindy health tracking and exact budget confirmation | `false`; enable in the health phase |
+| `GATEWAY_CINDY_CAPABILITY_CATALOG_ENABLED` | Catalog, protocol gates, and capability API; the two exact compatibility aliases remain available while disabled | `false`; enable in the catalog phase |
 | `GATEWAY_CINDY_SEARCH_ENABLED` | Native Cindy Search routing; independent from catalog exposure | `false` |
 | `GATEWAY_CINDY_RESPONSES_IMAGE_BRIDGE_ENABLED` | GPT Image 2 Responses bridge; independent from Image Studio | `false` |
 | `GATEWAY_IMAGE_STUDIO_ENABLED` | Image Studio; only Cindy capabilities are registered in this release | `false` until the strengthened A/B/C codec probe passes |
@@ -170,10 +170,10 @@ Ordinary traffic may fail over on an exact structured signal but never creates
 or clears an account marker; only an administrator-created durable probe job can
 change that state. Catalog rollback disables enumeration and protocol gates, but
 the exact `gpt-5.4` and `gpt-5.4-mini` Cindy compatibility aliases remain active.
-The image flag is additionally dependent on the catalog flag.
+Each flag is independently reversible.
 
-The protected production workflow exposes the three values as typed boolean
-inputs. A balance-only release is dispatched with:
+The protected production workflow exposes the five values as typed boolean
+inputs. The platform and jobs phase is dispatched with:
 
 ```bash
 gh workflow run production-deploy.yml \
@@ -182,23 +182,25 @@ gh workflow run production-deploy.yml \
   -f operation=deploy \
   -f release_tag=vX.Y.Z-codexrip.N \
   -f confirmation=DEPLOY \
-  -f cindy_balance_detection=true \
+  -f cindy_health=false \
   -f cindy_capability_catalog=false \
-  -f image_studio=false
+  -f cindy_search=false \
+  -f image_studio=false \
+  -f cindy_responses_image_bridge=false
 ```
 
-The workflow rejects `image_studio=true` unless
-`cindy_capability_catalog=true`. It resolves the release to an immutable digest,
-requires the Release body to record that exact image and source commit, and
-requires the immutable image's OCI revision to match the release tag commit.
-It sends only `deploy <immutable-ref> cindy=<balance>,<catalog>,<image>` to the
+The workflow resolves the release to an immutable digest, requires the Release
+body to record that exact image and source commit, and requires the immutable
+image's OCI revision and Cindy platform-v1 capability label to match the release.
+It sends only `deploy <immutable-ref> cindy=<health>,<catalog>,<search>,<studio>,<responses-image>` to the
 restricted host command. The host persists the tuple in
 `/opt/sub2api/docker-compose.cindy-rollout.yml`; a tuple-only change for the
 same digest recreates only `sub2api`, with the prior override included in the
 checksum-verified rollback set.
-During the guard-first migration window, the host also accepts the old workflow's
-exact `deploy <immutable-ref>` form and maps it to `cindy=true,false,false`.
-This workflow always emits the explicit tuple.
+During the guard-first migration window, the host accepts only the old workflow's
+three-value `cindy=<health>,<catalog>,<studio>` tuple and maps it to the canonical
+five-value tuple with Search and Responses-image disabled.
+This workflow always emits the explicit five-value tuple.
 
 An image downgrade uses the same protected `production` Environment and an
 explicit expected-current release rather than the deploy path:
@@ -211,9 +213,11 @@ gh workflow run production-deploy.yml \
   -f release_tag=v0.1.177-codexrip.6 \
   -f expected_current_release_tag=v0.1.177-codexrip.7 \
   -f confirmation=ROLLBACK \
-  -f cindy_balance_detection=true \
+  -f cindy_health=true \
   -f cindy_capability_catalog=false \
-  -f image_studio=false
+  -f cindy_search=false \
+  -f image_studio=false \
+  -f cindy_responses_image_bridge=false
 ```
 
 The resolver requires both Releases, their recorded immutable references, and
