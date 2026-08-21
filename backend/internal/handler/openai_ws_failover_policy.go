@@ -7,7 +7,15 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-func openAIWSPreviousResponseCanMove(payload []byte, previousResponseID string) bool {
+func openAIWSPreviousResponseCanMove(payload []byte, previousResponseID string, strictCindy bool) bool {
+	if strictCindy {
+		classification, err := service.ClassifyCindyContinuation(payload, service.CindyContinuationProof{})
+		if err != nil {
+			return false
+		}
+		return strings.TrimSpace(previousResponseID) == "" && classification.Mode == service.CindyContinuationFullReplay
+	}
+
 	if strings.TrimSpace(previousResponseID) == "" {
 		return true
 	}
@@ -16,6 +24,24 @@ func openAIWSPreviousResponseCanMove(payload []byte, previousResponseID string) 
 	}
 	coverage := service.AnalyzeToolCallOutputContextCoverageBytes(payload)
 	return coverage.HasFunctionCallOutput && coverage.ContextCoversAllCallIDs
+}
+
+func openAIWSInitialAccountSwitchReplaySafe(payload []byte, previousResponseCanMove bool, strictCindy bool) bool {
+	if !previousResponseCanMove {
+		return false
+	}
+	if strictCindy {
+		classification, err := service.ClassifyCindyContinuation(payload, service.CindyContinuationProof{})
+		if err != nil || classification.HasAnchor {
+			return false
+		}
+		return classification.CanSwitchAccount()
+	}
+
+	if !gjson.ValidBytes(payload) || strings.TrimSpace(gjson.GetBytes(payload, "previous_response_id").String()) != "" {
+		return false
+	}
+	return !openAIWSPayloadHasEncryptedState(payload)
 }
 
 func openAIWSPayloadHasEncryptedState(payload []byte) bool {
@@ -30,14 +56,4 @@ func openAIWSPayloadHasEncryptedState(payload []byte) bool {
 		}
 	}
 	return false
-}
-
-func openAIWSInitialAccountSwitchReplaySafe(payload []byte, previousResponseCanMove bool) bool {
-	if !previousResponseCanMove || !gjson.ValidBytes(payload) {
-		return false
-	}
-	if strings.TrimSpace(gjson.GetBytes(payload, "previous_response_id").String()) != "" {
-		return false
-	}
-	return !openAIWSPayloadHasEncryptedState(payload)
 }

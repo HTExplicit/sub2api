@@ -26,6 +26,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	startTime := time.Now()
 	// 固定渠道映射后的请求级 canonical body；账号 normalize/strip 不得改写跨 failover hint。
 	canonicalImageIntentBody := body
+	strictCindyAccount := account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
 
 	restrictionResult := s.detectCodexClientRestriction(c, account, body)
 	apiKeyID := getAPIKeyIDFromContext(c)
@@ -697,8 +698,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if err != nil {
 			return nil, err
 		}
-		_, hasPreviousResponseID := wsReqBody["previous_response_id"]
-		strictCindyContinuation := cindyHTTPToWSV2 && hasPreviousResponseID
+		hasPreviousResponseID := strings.TrimSpace(openAIWSPayloadString(wsReqBody, "previous_response_id")) != ""
+		strictCindyContinuation := strictCindyAccount && hasPreviousResponseID
 		logOpenAIWSModeDebug(
 			"forward_start account_id=%d account_type=%s model=%s stream=%v has_previous_response_id=%v",
 			account.ID,
@@ -750,6 +751,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			return true
 		}
 		recoverInvalidEncryptedContent := func(attempt int) bool {
+			if strictCindyAccount {
+				return false
+			}
 			if wsInvalidEncryptedContentRecoveryTried {
 				return false
 			}
@@ -943,6 +947,11 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				wsResult.ImageInputSize = imageInputSize
 				wsResult.BillingModel = imageBillingModel
 			}
+			if wsResult != nil && wsResult.wsReplayInputExists {
+				s.bindCindyOpaqueContinuationAccount(
+					ctx, c, account, cindyOpaqueBindingIDsFromRawItems(wsResult.wsReplayInput),
+				)
+			}
 			return wsResult, nil
 		}
 		if strictCindyContinuation {
@@ -988,7 +997,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	agentTaskRecoveryTried := false
 	rejectedFieldRetryState := newOpenAIResponsesRejectedFieldRetryState(body)
 	tryRecoverInvalidEncryptedContent := func(upstreamMsg string, upstreamBody []byte) (bool, error) {
-		if isOpenAICindyHTTPToWSV2Bypassed(c) ||
+		if strictCindyAccount || isOpenAICindyHTTPToWSV2Bypassed(c) ||
 			httpInvalidEncryptedContentRetryTried ||
 			!isOpenAIInvalidEncryptedContentError(upstreamMsg, upstreamBody) ||
 			ValidateFunctionCallOutputContextBytes(body).HasFunctionCallOutput {
@@ -1220,6 +1229,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		imageCount := 0
 		searchCount := 0
 		var imageOutputSizes []string
+		var opaqueBindingIDs []string
 		if reqStream {
 			setOpenAIRefusalEarlyStreamEligibility(c, account, body)
 			streamResult, err := s.handleStreamingResponseWithReasoning(ctx, resp, c, account, startTime, originalModel, upstreamModel, reasoningEffortValue)
@@ -1242,6 +1252,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			imageCount = streamResult.imageCount
 			imageOutputSizes = streamResult.imageOutputSizes
 			searchCount = streamResult.searchCount
+			opaqueBindingIDs = streamResult.opaqueBindingIDs
 		} else {
 			nonStreamResult, err := s.handleNonStreamingResponse(ctx, resp, c, account, originalModel, upstreamModel)
 			if err != nil {
@@ -1262,8 +1273,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			imageCount = nonStreamResult.imageCount
 			imageOutputSizes = nonStreamResult.imageOutputSizes
 			searchCount = nonStreamResult.searchCount
+			opaqueBindingIDs = nonStreamResult.opaqueBindingIDs
 		}
 		s.bindHTTPResponseAccount(ctx, c, account, responseID)
+		s.bindCindyOpaqueContinuationAccount(ctx, c, account, opaqueBindingIDs)
 
 		// Extract and save Codex usage snapshot from response headers (for OAuth accounts).
 		// 排除 spark 影子:其 codex_* 仅由 QueryUsage(/wham/usage bengalfox)更新(外审第7轮 P1)。

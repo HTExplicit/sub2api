@@ -645,6 +645,35 @@ func setOpenAIWSPayloadInputSequence(
 	return sjson.SetRawBytes(payload, "input", inputRaw)
 }
 
+func prepareCindyContinuationReplayPayload(
+	payload []byte,
+	fullInput []json.RawMessage,
+	fullInputExists bool,
+	verifiedFullHistory bool,
+) ([]byte, CindyContinuationClassification, bool) {
+	classification := CindyContinuationClassification{}
+	candidate, err := setOpenAIWSPayloadInputSequence(payload, fullInput, fullInputExists)
+	if err != nil {
+		return payload, classification, false
+	}
+	classification, err = ClassifyCindyContinuation(candidate, CindyContinuationProof{VerifiedFullHistory: verifiedFullHistory})
+	if err != nil {
+		return payload, classification, false
+	}
+	switch classification.Mode {
+	case CindyContinuationAnchorPlusFull:
+		withoutAnchor, removed, dropErr := dropPreviousResponseIDFromRawPayload(candidate)
+		if dropErr != nil || !removed {
+			return payload, classification, false
+		}
+		return withoutAnchor, classification, true
+	case CindyContinuationFullReplay, CindyContinuationOpaqueFull:
+		return candidate, classification, true
+	default:
+		return payload, classification, false
+	}
+}
+
 func buildOpenAIWSCurrentTurnRetryPayload(
 	payload []byte,
 	fullInput []json.RawMessage,

@@ -1257,6 +1257,56 @@ func TestOpenAIResponses_RejectsMessageIDAsPreviousResponseID(t *testing.T) {
 	require.Contains(t, w.Body.String(), "previous_response_id must be a response.id")
 }
 
+func TestOpenAIResponses_RejectsInvalidPreviousResponseIDTypesAndFormats(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{name: "number", value: `123`},
+		{name: "boolean", value: `true`},
+		{name: "object", value: `{"id":"resp_123"}`},
+		{name: "array", value: `["resp_123"]`},
+		{name: "unknown string", value: `"other_123"`},
+		{name: "empty response suffix", value: `"resp_"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			body := `{"model":"gpt-5.1","stream":false,"previous_response_id":` + tt.value + `,"input":"hello"}`
+			c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", strings.NewReader(body))
+			c.Request.Header.Set("Content-Type", "application/json")
+			groupID := int64(2)
+			c.Set(string(middleware.ContextKeyAPIKey), &service.APIKey{ID: 101, GroupID: &groupID, User: &service.User{ID: 1}})
+			c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 1, Concurrency: 1})
+			h := newOpenAIHandlerForPreviousResponseIDValidation(t, nil)
+			h.Responses(c)
+			require.Equal(t, http.StatusBadRequest, w.Code)
+			require.Contains(t, w.Body.String(), service.OpenAIContinuationAnchorValidationMessage)
+		})
+	}
+}
+
+func TestOpenAIResponses_TreatsNullAndBlankPreviousResponseIDAsNoAnchor(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, value := range []string{`null`, `""`, `"  "`} {
+		t.Run(value, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			body := `{"model":"gpt-5.1","stream":false,"previous_response_id":` + value + `,"input":"hello"}`
+			c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", strings.NewReader(body))
+			c.Request.Header.Set("Content-Type", "application/json")
+			groupID := int64(2)
+			c.Set(string(middleware.ContextKeyAPIKey), &service.APIKey{ID: 101, GroupID: &groupID, User: &service.User{ID: 1}})
+			c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 1, Concurrency: 1})
+			h := newOpenAIHandlerForPreviousResponseIDValidation(t, nil)
+			h.Responses(c)
+			require.NotContains(t, w.Body.String(), service.OpenAIContinuationAnchorValidationMessage)
+		})
+	}
+}
+
 func TestOpenAIResponses_AllowsResponseIDPastHTTPPrevalidation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -1516,6 +1566,46 @@ func TestOpenAIResponsesWebSocket_RejectsMessageIDAsPreviousResponseID(t *testin
 	require.ErrorAs(t, err, &closeErr)
 	require.Equal(t, coderws.StatusPolicyViolation, closeErr.Code)
 	require.Contains(t, strings.ToLower(closeErr.Reason), "previous_response_id")
+}
+
+func TestOpenAIResponsesWebSocket_RejectsInvalidPreviousResponseIDTypesAndFormats(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{name: "number", value: `123`},
+		{name: "boolean", value: `true`},
+		{name: "object", value: `{"id":"resp_123"}`},
+		{name: "array", value: `["resp_123"]`},
+		{name: "unknown string", value: `"other_123"`},
+		{name: "empty response suffix", value: `"resp_"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newOpenAIHandlerForPreviousResponseIDValidation(t, nil)
+			wsServer := newOpenAIWSHandlerTestServer(t, h, middleware.AuthSubject{UserID: 1, Concurrency: 1})
+			defer wsServer.Close()
+			dialCtx, cancelDial := context.WithTimeout(context.Background(), 3*time.Second)
+			clientConn, _, err := coderws.Dial(dialCtx, "ws"+strings.TrimPrefix(wsServer.URL, "http")+"/openai/v1/responses", nil)
+			cancelDial()
+			require.NoError(t, err)
+			defer func() { _ = clientConn.CloseNow() }()
+			payload := `{"type":"response.create","model":"gpt-5.1","stream":false,"previous_response_id":` + tt.value + `}`
+			writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
+			err = clientConn.Write(writeCtx, coderws.MessageText, []byte(payload))
+			cancelWrite()
+			require.NoError(t, err)
+			readCtx, cancelRead := context.WithTimeout(context.Background(), 3*time.Second)
+			_, _, err = clientConn.Read(readCtx)
+			cancelRead()
+			require.Error(t, err)
+			var closeErr coderws.CloseError
+			require.ErrorAs(t, err, &closeErr)
+			require.Equal(t, coderws.StatusPolicyViolation, closeErr.Code)
+			require.Equal(t, service.OpenAIContinuationAnchorValidationMessage, closeErr.Reason)
+		})
+	}
 }
 
 func TestOpenAIResponsesWebSocket_PreviousResponseIDKindLoggedBeforeAcquireFailure(t *testing.T) {

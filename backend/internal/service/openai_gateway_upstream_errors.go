@@ -520,6 +520,14 @@ func NewOpenAIContinuationStateUnavailableError(
 	}
 }
 
+// NewOpenAIContinuationStoreUnavailableError distinguishes an authoritative
+// state-store failure from a genuine binding miss.
+func NewOpenAIContinuationStoreUnavailableError() *UpstreamFailoverError {
+	err := NewOpenAIContinuationStateUnavailableError(http.StatusServiceUnavailable, nil, nil)
+	err.ClientStatusCode = http.StatusServiceUnavailable
+	return err
+}
+
 // IsOpenAIContinuationStateUnavailable reports a continuation-state failure
 // that must not switch accounts or reduce selected-account health.
 func (e *UpstreamFailoverError) IsOpenAIContinuationStateUnavailable() bool {

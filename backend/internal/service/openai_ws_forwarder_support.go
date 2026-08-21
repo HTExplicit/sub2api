@@ -561,10 +561,14 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 		return 0, nil, "", nil, nil
 	}
 
-	accountID, err := store.GetResponseAccount(ctx, derefGroupID(groupID), responseID)
-	if err != nil || accountID <= 0 {
+	binding := LookupOpenAIContinuationBinding(ctx, store, derefGroupID(groupID), responseID)
+	if binding.State == OpenAIContinuationBindingStoreError {
+		return 0, nil, "", nil, NewOpenAIContinuationStoreUnavailableError()
+	}
+	if binding.State == OpenAIContinuationBindingMiss {
 		return 0, nil, "", nil, nil
 	}
+	accountID := binding.AccountID
 	miss := func(deleteBinding, continuationUnavailable bool) (int64, *Account, string, OpenAIWSStateStore, error) {
 		if deleteBinding {
 			_, _ = store.DeleteResponseAccountIfMatches(ctx, derefGroupID(groupID), responseID, accountID)

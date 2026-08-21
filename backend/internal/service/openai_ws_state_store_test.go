@@ -193,6 +193,7 @@ type openAIWSStateStoreTimeoutProbeCache struct {
 	setDeadlineDelta  time.Duration
 	getDeadlineDelta  time.Duration
 	delDeadlineDelta  time.Duration
+	getErr            error
 }
 
 func (c *openAIWSStateStoreTimeoutProbeCache) GetSessionAccountID(ctx context.Context, _ int64, _ string) (int64, error) {
@@ -200,7 +201,7 @@ func (c *openAIWSStateStoreTimeoutProbeCache) GetSessionAccountID(ctx context.Co
 		c.getHasDeadline = true
 		c.getDeadlineDelta = time.Until(deadline)
 	}
-	return 123, nil
+	return 123, c.getErr
 }
 
 func (c *openAIWSStateStoreTimeoutProbeCache) SetSessionAccountID(ctx context.Context, _ int64, _ string, _ int64, _ time.Duration) error {
@@ -279,6 +280,30 @@ func TestOpenAIWSStateStore_RedisOpsUseShortTimeout(t *testing.T) {
 	require.True(t, probe2.getHasDeadline, "GetSessionAccountID 在缓存未命中时应携带独立超时上下文")
 	require.Greater(t, probe2.getDeadlineDelta, 2*time.Second)
 	require.LessOrEqual(t, probe2.getDeadlineDelta, 3*time.Second)
+}
+
+func TestLookupOpenAIContinuationBindingDistinguishesMissAndStoreError(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(5)
+
+	miss := LookupOpenAIContinuationBinding(ctx, NewOpenAIWSStateStore(nil), groupID, "resp_miss")
+	require.Equal(t, OpenAIContinuationBindingMiss, miss.State)
+	require.NoError(t, miss.Err)
+	sentinelMiss := LookupOpenAIContinuationBinding(
+		ctx,
+		NewOpenAIWSStateStore(&openAIWSStateStoreTimeoutProbeCache{getErr: ErrStickySessionNotFound}),
+		groupID,
+		"resp_sentinel_miss",
+	)
+	require.Equal(t, OpenAIContinuationBindingMiss, sentinelMiss.State)
+	require.NoError(t, sentinelMiss.Err)
+
+	storeErr := errors.New("redis unavailable")
+	probe := &openAIWSStateStoreTimeoutProbeCache{getErr: storeErr}
+	lookup := LookupOpenAIContinuationBinding(ctx, NewOpenAIWSStateStore(probe), groupID, "resp_store_error")
+	require.Equal(t, OpenAIContinuationBindingStoreError, lookup.State)
+	require.ErrorIs(t, lookup.Err, storeErr)
+	require.Zero(t, lookup.AccountID)
 }
 
 func TestWithOpenAIWSStateStoreRedisTimeout_WithParentContext(t *testing.T) {

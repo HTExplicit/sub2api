@@ -76,6 +76,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	refusalRuntime := s.openAIRefusalRecoveryRuntime(ctx)
 
 	wsDecision := s.getOpenAIWSProtocolResolver().Resolve(account)
+	strictCindyContinuation := IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
 	forceHTTPBridge := account.Platform == PlatformGrok
 	modeRouterV2Enabled := s != nil && s.cfg != nil && s.cfg.Gateway.OpenAIWS.ModeRouterV2Enabled
 	ingressMode := OpenAIWSIngressModeCtxPool
@@ -90,6 +91,12 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		switch ingressMode {
 		case OpenAIWSIngressModePassthrough:
+			if strictCindyContinuation {
+				// Strict Cindy continuation needs parsed anchors, exact live-connection
+				// affinity, accumulator recovery, and opaque output binding.
+				ingressMode = OpenAIWSIngressModeCtxPool
+				break
+			}
 			if wsDecision.Transport != OpenAIUpstreamTransportResponsesWebsocketV2 {
 				return fmt.Errorf("websocket ingress requires ws_v2 transport, got=%s", wsDecision.Transport)
 			}
@@ -190,8 +197,16 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		if !gjson.ValidBytes(trimmed) {
 			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", errors.New("invalid json"))
 		}
+		previousResponseID, anchorErr := ParseOpenAIContinuationAnchor(trimmed)
+		if anchorErr != nil {
+			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(
+				coderws.StatusPolicyViolation,
+				OpenAIContinuationAnchorValidationMessage,
+				anchorErr,
+			)
+		}
 
-		values := gjson.GetManyBytes(trimmed, "type", "model", "prompt_cache_key", "previous_response_id")
+		values := gjson.GetManyBytes(trimmed, "type", "model", "prompt_cache_key")
 		eventType := strings.TrimSpace(values[0].String())
 		normalized := trimmed
 		switch eventType {
@@ -240,15 +255,6 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			}
 		}
 		promptCacheKey := strings.TrimSpace(values[2].String())
-		previousResponseID := strings.TrimSpace(values[3].String())
-		previousResponseIDKind := ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
-		if previousResponseID != "" && previousResponseIDKind == OpenAIPreviousResponseIDKindMessageID {
-			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(
-				coderws.StatusPolicyViolation,
-				"previous_response_id must be a response.id (resp_*), not a message id",
-				nil,
-			)
-		}
 		if turnMetadata := strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader)); turnMetadata != "" {
 			next, setErr := applyPayloadMutation(normalized, "client_metadata."+openAIWSTurnMetadataHeader, turnMetadata)
 			if setErr != nil {
@@ -507,6 +513,25 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	turnState := strings.TrimSpace(c.GetHeader(openAIWSTurnStateHeader))
 	stateStore := s.getOpenAIWSStateStore()
 	groupID := getOpenAIGroupIDFromContext(c)
+	resolveStrictCindyAnchorConn := func(previousResponseID string, liveConnID string) (string, error) {
+		previousResponseID = strings.TrimSpace(previousResponseID)
+		if !strictCindyContinuation || previousResponseID == "" {
+			return "", nil
+		}
+		if stateStore == nil {
+			return "", NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
+		}
+		boundConnID, ok := stateStore.GetResponseConn(previousResponseID)
+		boundConnID = strings.TrimSpace(boundConnID)
+		if !ok || boundConnID == "" {
+			return "", NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
+		}
+		liveConnID = strings.TrimSpace(liveConnID)
+		if liveConnID != "" && liveConnID != boundConnID {
+			return "", NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
+		}
+		return boundConnID, nil
+	}
 	sessionHash := ""
 	preferredConnID := ""
 	storeDisabled := false
@@ -533,6 +558,16 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 	}
 	refreshIngressRouteState(firstPayload)
+	if strictCindyContinuation && firstPayload.previousResponseID != "" {
+		boundConnID, resolveErr := resolveStrictCindyAnchorConn(firstPayload.previousResponseID, "")
+		if resolveErr != nil {
+			return resolveErr
+		}
+		preferredConnID = boundConnID
+		if forceHTTPBridge {
+			return NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
+		}
+	}
 
 	if forceHTTPBridge || s.shouldBridgeOpenAIWSHTTP(account, firstPayload.payloadBytes, firstPayload.previousResponseID) {
 		logOpenAIWSModeInfo(
@@ -676,6 +711,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			if result.wsReplayInputExists {
 				bridgeReplayInput = append(bridgeReplayInput, cloneOpenAIWSRawMessages(result.wsReplayInput)...)
 				bridgeReplayInputExists = true
+				s.bindCindyOpaqueContinuationAccount(
+					ctx, c, account, cindyOpaqueBindingIDsFromRawItems(result.wsReplayInput),
+				)
 			}
 			bridgeAccountFailoverInput = cloneOpenAIWSRawMessages(turnAccountFailoverInput)
 			bridgeAccountFailoverInputExists = turnAccountFailoverInputExists
@@ -1076,7 +1114,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					fallbackReason == string(openAIContinuationStateErrorInvalidEncryptedContent)
 				recoverablePrevNotFound := fallbackReason == openAIWSIngressStagePreviousResponseNotFound &&
 					turnPreviousResponseID != "" &&
-					!turnHasFunctionCallOutput &&
+					(!turnHasFunctionCallOutput || strictCindyContinuation) &&
 					s.openAIWSIngressPreviousResponseRecoveryEnabled() &&
 					!downstreamOutputStarted()
 				recoverableInvalidEncrypted := fallbackReason == openAIWSIngressStageInvalidEncryptedContent &&
@@ -1321,10 +1359,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	currentImageInputSize := firstPayload.imageInputSize
 	currentPayloadBytes := firstPayload.payloadBytes
 	isStrictAffinityTurn := func(payload []byte) bool {
-		if !storeDisabled {
-			return false
-		}
-		return strings.TrimSpace(openAIWSPayloadStringFromRaw(payload, "previous_response_id")) != ""
+		hasAnchor := strings.TrimSpace(openAIWSPayloadStringFromRaw(payload, "previous_response_id")) != ""
+		return hasAnchor && (strictCindyContinuation || storeDisabled)
 	}
 	var sessionLease *openAIWSConnLease
 	sessionConnID := ""
@@ -1388,6 +1424,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	lastTurnReplayInputExists := false
 	currentTurnReplayInput := []json.RawMessage(nil)
 	currentTurnReplayInputExists := false
+	currentTurnReplayVerified := false
 	skipBeforeTurn := false
 	hasCurrentOrReplayFunctionCallOutput := func(payload []byte) bool {
 		if openAIWSRawPayloadHasToolCallOutput(payload) {
@@ -1407,11 +1444,46 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		sessionConnID = ""
 		preferredConnID = ""
 	}
+	prepareCindyFullReplay := func() (CindyContinuationClassification, bool) {
+		candidate, classification, replayable := prepareCindyContinuationReplayPayload(
+			currentPayload,
+			currentTurnReplayInput,
+			currentTurnReplayInputExists,
+			currentTurnReplayVerified,
+		)
+		if !replayable {
+			return classification, false
+		}
+		currentPayload = candidate
+		currentPayloadBytes = len(candidate)
+		return classification, true
+	}
 	recoverIngressPrevResponseNotFound := func(relayErr error, turn int, connID string) bool {
 		if !isOpenAIWSIngressPreviousResponseNotFound(relayErr) {
 			return false
 		}
-		if turn != 1 || turnRetry >= 1 || turnPrevRecoveryTried || !s.openAIWSIngressPreviousResponseRecoveryEnabled() {
+		if turnRetry >= 1 || turnPrevRecoveryTried || !s.openAIWSIngressPreviousResponseRecoveryEnabled() {
+			return false
+		}
+		if strictCindyContinuation {
+			turnPrevRecoveryTried = true
+			classification, recovered := prepareCindyFullReplay()
+			if !recovered || classification.Mode != CindyContinuationAnchorPlusFull {
+				return false
+			}
+			turnRetry++
+			resetSessionLease(true)
+			skipBeforeTurn = true
+			logOpenAIWSModeInfo(
+				"ingress_ws_prev_response_recovery account_id=%d turn=%d conn_id=%s action=full_replay retry=1 continuation_mode=%s",
+				account.ID,
+				turn,
+				truncateOpenAIWSLogValue(connID, openAIWSIDValueMaxLen),
+				normalizeOpenAIWSLogValue(string(classification.Mode)),
+			)
+			return true
+		}
+		if turn != 1 {
 			return false
 		}
 		if isStrictAffinityTurn(currentPayload) {
@@ -1468,6 +1540,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		return true
 	}
 	recoverIngressInvalidEncryptedContent := func(relayErr error, turn int, connID string) bool {
+		if strictCindyContinuation {
+			return false
+		}
 		if turn != 1 || turnRetry >= 1 || !isOpenAIWSIngressInvalidEncryptedContent(relayErr) || turnInvalidEncryptedRecoveryTried {
 			return false
 		}
@@ -1520,10 +1595,25 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		if transportFailure && initialTransportRetryUsed {
 			return false
 		}
-		if !shouldRetryOpenAIWSIngressTurn(turn, turnRetry, relayErr) {
+		if strictCindyContinuation {
+			if !transportFailure || turnRetry >= 1 {
+				return false
+			}
+			classification, replayable := prepareCindyFullReplay()
+			if !replayable {
+				logOpenAIWSModeInfo(
+					"ingress_ws_turn_retry_skip account_id=%d turn=%d conn_id=%s reason=continuation_not_replayable continuation_mode=%s",
+					account.ID,
+					turn,
+					truncateOpenAIWSLogValue(connID, openAIWSIDValueMaxLen),
+					normalizeOpenAIWSLogValue(string(classification.Mode)),
+				)
+				return false
+			}
+		} else if !shouldRetryOpenAIWSIngressTurn(turn, turnRetry, relayErr) {
 			return false
 		}
-		if isStrictAffinityTurn(currentPayload) {
+		if !strictCindyContinuation && isStrictAffinityTurn(currentPayload) {
 			logOpenAIWSModeInfo(
 				"ingress_ws_turn_retry_skip account_id=%d turn=%d conn_id=%s reason=strict_affinity",
 				account.ID,
@@ -1561,6 +1651,13 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		skipBeforeTurn = false
 		currentPreviousResponseID := openAIWSPayloadStringFromRaw(currentPayload, "previous_response_id")
+		if strictCindyContinuation && currentPreviousResponseID != "" {
+			boundConnID, resolveErr := resolveStrictCindyAnchorConn(currentPreviousResponseID, sessionConnID)
+			if resolveErr != nil {
+				return resolveErr
+			}
+			preferredConnID = boundConnID
+		}
 		expectedPrev := strings.TrimSpace(lastTurnResponseID)
 		toolSignals := ToolContinuationSignals{
 			HasFunctionCallOutput: openAIWSRawPayloadHasToolCallOutput(currentPayload),
@@ -1620,9 +1717,17 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			)
 			currentTurnReplayInput = nil
 			currentTurnReplayInputExists = false
+			currentTurnReplayVerified = false
 		} else {
 			currentTurnReplayInput = nextReplayInput
 			currentTurnReplayInputExists = nextReplayInputExists
+			// Anchored history is verified only when this connection accumulated
+			// the exact prior full-input baseline; item count is not proof.
+			currentTurnReplayVerified = verifiedCindyContinuationHistory(
+				currentPreviousResponseID,
+				lastTurnResponseID,
+				lastTurnReplayInputExists,
+			)
 		}
 		replayHasFunctionCallOutput := currentTurnReplayInputExists &&
 			openAIWSRawItemsHasFunctionCallOutput(currentTurnReplayInput)
@@ -1631,7 +1736,10 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			shouldKeepPreviousResponseID := false
 			strictReason := ""
 			var strictErr error
-			if lastTurnStrictState != nil {
+			if strictCindyContinuation && hasFunctionCallOutput &&
+				strings.TrimSpace(currentPreviousResponseID) != expectedPrev {
+				strictReason = "previous_response_id_mismatch"
+			} else if lastTurnStrictState != nil {
 				shouldKeepPreviousResponseID, strictReason, strictErr = shouldKeepIngressPreviousResponseIDWithStrictState(
 					lastTurnStrictState,
 					currentPayload,
@@ -1659,55 +1767,71 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					hasFunctionCallOutput,
 				)
 			} else if !shouldKeepPreviousResponseID {
-				updatedPayload, removed, dropErr := dropPreviousResponseIDFromRawPayload(currentPayload)
-				if dropErr != nil || !removed {
-					dropReason := "not_removed"
-					if dropErr != nil {
-						dropReason = "drop_error"
+				if strictCindyContinuation {
+					classification, replayable := prepareCindyFullReplay()
+					if !replayable || classification.Mode != CindyContinuationAnchorPlusFull {
+						return NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
 					}
 					logOpenAIWSModeInfo(
-						"ingress_ws_prev_response_strict_eval account_id=%d turn=%d conn_id=%s action=keep_previous_response_id reason=%s drop_reason=%s previous_response_id=%s expected_previous_response_id=%s has_function_call_output=%v",
+						"ingress_ws_prev_response_strict_eval account_id=%d turn=%d conn_id=%s action=full_replay reason=%s continuation_mode=%s",
 						account.ID,
 						turn,
 						truncateOpenAIWSLogValue(sessionConnID, openAIWSIDValueMaxLen),
 						normalizeOpenAIWSLogValue(strictReason),
-						normalizeOpenAIWSLogValue(dropReason),
-						truncateOpenAIWSLogValue(currentPreviousResponseID, openAIWSIDValueMaxLen),
-						truncateOpenAIWSLogValue(expectedPrev, openAIWSIDValueMaxLen),
-						hasFunctionCallOutput,
+						normalizeOpenAIWSLogValue(string(classification.Mode)),
 					)
+					currentPreviousResponseID = ""
 				} else {
-					updatedWithInput, setInputErr := setOpenAIWSPayloadInputSequence(
-						updatedPayload,
-						currentTurnReplayInput,
-						currentTurnReplayInputExists,
-					)
-					if setInputErr != nil {
+					updatedPayload, removed, dropErr := dropPreviousResponseIDFromRawPayload(currentPayload)
+					if dropErr != nil || !removed {
+						dropReason := "not_removed"
+						if dropErr != nil {
+							dropReason = "drop_error"
+						}
 						logOpenAIWSModeInfo(
-							"ingress_ws_prev_response_strict_eval account_id=%d turn=%d conn_id=%s action=keep_previous_response_id reason=%s drop_reason=set_full_input_error previous_response_id=%s expected_previous_response_id=%s cause=%s has_function_call_output=%v",
+							"ingress_ws_prev_response_strict_eval account_id=%d turn=%d conn_id=%s action=keep_previous_response_id reason=%s drop_reason=%s previous_response_id=%s expected_previous_response_id=%s has_function_call_output=%v",
 							account.ID,
 							turn,
 							truncateOpenAIWSLogValue(sessionConnID, openAIWSIDValueMaxLen),
 							normalizeOpenAIWSLogValue(strictReason),
+							normalizeOpenAIWSLogValue(dropReason),
 							truncateOpenAIWSLogValue(currentPreviousResponseID, openAIWSIDValueMaxLen),
 							truncateOpenAIWSLogValue(expectedPrev, openAIWSIDValueMaxLen),
-							truncateOpenAIWSLogValue(setInputErr.Error(), openAIWSLogValueMaxLen),
 							hasFunctionCallOutput,
 						)
 					} else {
-						currentPayload = updatedWithInput
-						currentPayloadBytes = len(updatedWithInput)
-						logOpenAIWSModeInfo(
-							"ingress_ws_prev_response_strict_eval account_id=%d turn=%d conn_id=%s action=drop_previous_response_id_full_create reason=%s previous_response_id=%s expected_previous_response_id=%s has_function_call_output=%v",
-							account.ID,
-							turn,
-							truncateOpenAIWSLogValue(sessionConnID, openAIWSIDValueMaxLen),
-							normalizeOpenAIWSLogValue(strictReason),
-							truncateOpenAIWSLogValue(currentPreviousResponseID, openAIWSIDValueMaxLen),
-							truncateOpenAIWSLogValue(expectedPrev, openAIWSIDValueMaxLen),
-							hasFunctionCallOutput,
+						updatedWithInput, setInputErr := setOpenAIWSPayloadInputSequence(
+							updatedPayload,
+							currentTurnReplayInput,
+							currentTurnReplayInputExists,
 						)
-						currentPreviousResponseID = ""
+						if setInputErr != nil {
+							logOpenAIWSModeInfo(
+								"ingress_ws_prev_response_strict_eval account_id=%d turn=%d conn_id=%s action=keep_previous_response_id reason=%s drop_reason=set_full_input_error previous_response_id=%s expected_previous_response_id=%s cause=%s has_function_call_output=%v",
+								account.ID,
+								turn,
+								truncateOpenAIWSLogValue(sessionConnID, openAIWSIDValueMaxLen),
+								normalizeOpenAIWSLogValue(strictReason),
+								truncateOpenAIWSLogValue(currentPreviousResponseID, openAIWSIDValueMaxLen),
+								truncateOpenAIWSLogValue(expectedPrev, openAIWSIDValueMaxLen),
+								truncateOpenAIWSLogValue(setInputErr.Error(), openAIWSLogValueMaxLen),
+								hasFunctionCallOutput,
+							)
+						} else {
+							currentPayload = updatedWithInput
+							currentPayloadBytes = len(updatedWithInput)
+							logOpenAIWSModeInfo(
+								"ingress_ws_prev_response_strict_eval account_id=%d turn=%d conn_id=%s action=drop_previous_response_id_full_create reason=%s previous_response_id=%s expected_previous_response_id=%s has_function_call_output=%v",
+								account.ID,
+								turn,
+								truncateOpenAIWSLogValue(sessionConnID, openAIWSIDValueMaxLen),
+								normalizeOpenAIWSLogValue(strictReason),
+								truncateOpenAIWSLogValue(currentPreviousResponseID, openAIWSIDValueMaxLen),
+								truncateOpenAIWSLogValue(expectedPrev, openAIWSIDValueMaxLen),
+								hasFunctionCallOutput,
+							)
+							currentPreviousResponseID = ""
+						}
 					}
 				}
 			}
@@ -1828,6 +1952,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		if result.wsReplayInputExists {
 			lastTurnReplayInput = append(lastTurnReplayInput, cloneOpenAIWSRawMessages(result.wsReplayInput)...)
 			lastTurnReplayInputExists = true
+			s.bindCindyOpaqueContinuationAccount(
+				ctx, c, account, cindyOpaqueBindingIDsFromRawItems(result.wsReplayInput),
+			)
 		}
 		nextStrictState, strictStateErr := buildOpenAIWSIngressPreviousTurnStrictState(currentPayload)
 		if strictStateErr != nil {
@@ -1917,19 +2044,27 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				storeDisabled,
 			)
 		}
-		if stateStore != nil && nextPayload.previousResponseID != "" {
-			if stickyConnID, ok := stateStore.GetResponseConn(nextPayload.previousResponseID); ok {
-				if sessionConnID != "" && stickyConnID != "" && stickyConnID != sessionConnID {
-					logOpenAIWSModeInfo(
-						"ingress_ws_keep_session_conn account_id=%d turn=%d conn_id=%s sticky_conn_id=%s previous_response_id=%s",
-						account.ID,
-						turn,
-						truncateOpenAIWSLogValue(sessionConnID, openAIWSIDValueMaxLen),
-						truncateOpenAIWSLogValue(stickyConnID, openAIWSIDValueMaxLen),
-						truncateOpenAIWSLogValue(nextPayload.previousResponseID, openAIWSIDValueMaxLen),
-					)
-				} else {
-					preferredConnID = stickyConnID
+		if nextPayload.previousResponseID != "" {
+			if strictCindyContinuation {
+				boundConnID, resolveErr := resolveStrictCindyAnchorConn(nextPayload.previousResponseID, sessionConnID)
+				if resolveErr != nil {
+					return resolveErr
+				}
+				preferredConnID = boundConnID
+			} else if stateStore != nil {
+				if stickyConnID, ok := stateStore.GetResponseConn(nextPayload.previousResponseID); ok {
+					if sessionConnID != "" && stickyConnID != "" && stickyConnID != sessionConnID {
+						logOpenAIWSModeInfo(
+							"ingress_ws_keep_session_conn account_id=%d turn=%d conn_id=%s sticky_conn_id=%s previous_response_id=%s",
+							account.ID,
+							turn,
+							truncateOpenAIWSLogValue(sessionConnID, openAIWSIDValueMaxLen),
+							truncateOpenAIWSLogValue(stickyConnID, openAIWSIDValueMaxLen),
+							truncateOpenAIWSLogValue(nextPayload.previousResponseID, openAIWSIDValueMaxLen),
+						)
+					} else {
+						preferredConnID = stickyConnID
+					}
 				}
 			}
 		}

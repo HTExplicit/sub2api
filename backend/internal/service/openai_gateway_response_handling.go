@@ -31,6 +31,7 @@ type openaiStreamingResult struct {
 	imageCount       int
 	imageOutputSizes []string
 	searchCount      int
+	opaqueBindingIDs []string
 }
 
 type openaiNonStreamingResult struct {
@@ -40,6 +41,7 @@ type openaiNonStreamingResult struct {
 	imageCount       int
 	imageOutputSizes []string
 	searchCount      int
+	opaqueBindingIDs []string
 }
 
 // stageOpenAIHTTPResponseTurnState prepares the response header without
@@ -439,6 +441,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	streamImageOutputs := make([]json.RawMessage, 0, 1)
 	streamSeenImages := make(map[string]struct{})
 	searchCounter := 0
+	opaqueBindingIDs := make([]string, 0, 2)
 	// Dedup search tool calls across SSE events (item.done + response.completed
 	// both list the same call_id — counting both would ~2× the surcharge).
 	streamSearchSeen := make(map[string]struct{})
@@ -450,6 +453,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			imageCount:       imageCounter.Count(),
 			imageOutputSizes: imageCounter.Sizes(),
 			searchCount:      searchCounter,
+			opaqueBindingIDs: normalizeCindyOpaqueBindingIDs(opaqueBindingIDs),
 		}
 	}
 	flushPending := func(disconnectMessage string) {
@@ -570,6 +574,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		if data, ok := extractOpenAISSEDataLine(line); ok {
 			rawData := data
 			rawDataBytes := []byte(rawData)
+			opaqueBindingIDs = append(opaqueBindingIDs, cindyOpaqueBindingIDsFromResponsePayload(rawDataBytes)...)
 			rawEventType := strings.TrimSpace(gjson.GetBytes(rawDataBytes, "type").String())
 			if rawEventType == "response.failed" || rawEventType == "error" {
 				if failoverErr, ok := s.cindyBalanceHTTPResponseTerminalFailover(
@@ -1655,6 +1660,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 		imageCount:       countOpenAIResponseImageOutputsFromJSONBytes(body),
 		imageOutputSizes: collectOpenAIResponseImageOutputSizesFromJSONBytes(body),
 		searchCount:      countGrokNativeSearchCallsFromJSONBytes(body),
+		opaqueBindingIDs: cindyOpaqueBindingIDsFromResponsePayload(body),
 	}, nil
 }
 
@@ -1780,6 +1786,7 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 		imageCount:       countOpenAIImageOutputsFromSSEBody(bodyText),
 		imageOutputSizes: collectOpenAIImageOutputSizesFromSSEBody(bodyText),
 		searchCount:      countGrokNativeSearchCallsFromSSEBody(bodyText),
+		opaqueBindingIDs: cindyOpaqueBindingIDsFromResponsePayload(body),
 	}, nil
 }
 

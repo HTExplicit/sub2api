@@ -53,11 +53,9 @@ func isOpenAICindyHTTPToWSV2HandshakeForbidden(err error) bool {
 }
 
 func prepareOpenAICindyStatelessHTTPFallback(body []byte) ([]byte, bool) {
-	if !gjson.ValidBytes(body) || strings.TrimSpace(gjson.GetBytes(body, "previous_response_id").String()) != "" {
-		return body, false
-	}
-	coverage := AnalyzeConcreteToolCallOutputContextCoverageBytes(body)
-	if coverage.HasFunctionCallOutput && !coverage.ContextCoversAllCallIDs {
+	classification, err := ClassifyCindyContinuation(body, CindyContinuationProof{})
+	if err != nil || classification.HasAnchor ||
+		(classification.Mode != CindyContinuationFullReplay && classification.Mode != CindyContinuationOpaqueFull) {
 		return body, false
 	}
 	input := gjson.GetBytes(body, "input")

@@ -20,7 +20,7 @@ import (
 
 func cindyHTTPToWSV2TestAccount() *Account {
 	return &Account{
-		ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		ID: 1, Platform: PlatformCindy, Type: AccountTypeAPIKey,
 		Status: StatusActive, Schedulable: true, Concurrency: 1,
 		Credentials: map[string]any{"base_url": "https://api.laxarouter.ai", "api_key": "sk-test"},
 		Extra:       map[string]any{"openai_passthrough": true},
@@ -447,6 +447,38 @@ func TestCindyHTTPToWSV2HandshakeFallbackDoesNotRewriteInvalidEncryptedContent(t
 	}
 }
 
+func TestCindyPassthroughInvalidEncryptedContentFailsWithoutPayloadCleanup(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body: io.NopCloser(strings.NewReader(
+			`{"error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}`,
+		)),
+	}}
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream}
+	body := []byte(`{"model":"gpt-5.6-sol","store":false,"previous_response_id":"resp_1","input":[{"type":"reasoning","id":"rs_foreign","encrypted_content":"cipher","phase":"analysis"}]}`)
+
+	result, err := svc.Forward(context.Background(), c, cindyHTTPToWSV2TestAccount(), body)
+
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
+	require.Len(t, upstream.bodies, 1, "strict Cindy must not retry a cleaned request")
+	require.Equal(t, "resp_1", gjson.GetBytes(upstream.bodies[0], "previous_response_id").String())
+	require.Equal(t, "rs_foreign", gjson.GetBytes(upstream.bodies[0], "input.0.id").String())
+	require.Equal(t, "cipher", gjson.GetBytes(upstream.bodies[0], "input.0.encrypted_content").String())
+	require.Equal(t, "analysis", gjson.GetBytes(upstream.bodies[0], "input.0.phase").String())
+}
+
 func TestPrepareOpenAICindyStatelessHTTPFallbackSafetyBoundary(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -457,6 +489,9 @@ func TestPrepareOpenAICindyStatelessHTTPFallbackSafetyBoundary(t *testing.T) {
 		{name: "previous response anchor", body: `{"model":"gpt-5.6-sol","previous_response_id":"resp_1","input":"next"}`},
 		{name: "orphan tool output", body: `{"model":"gpt-5.6-sol","input":[{"type":"custom_tool_call_output","call_id":"call_1","output":"ok"}]}`},
 		{name: "single object orphan tool output", body: `{"model":"gpt-5.6-sol","input":{"type":"custom_tool_call_output","call_id":"call_1","output":"ok"}}`},
+		{name: "item reference", body: `{"model":"gpt-5.6-sol","input":[{"type":"item_reference","id":"call_1"}]}`},
+		{name: "reasoning id only", body: `{"model":"gpt-5.6-sol","input":[{"type":"reasoning","id":"rs_1"}]}`},
+		{name: "concrete tool output", body: `{"model":"gpt-5.6-sol","input":[{"type":"custom_tool_call","call_id":"call_1","name":"tool","input":"{}"},{"type":"custom_tool_call_output","call_id":"call_1","output":"ok"}]}`, want: true},
 		{name: "encrypted state remains opaque", body: `{"model":"gpt-5.6-sol","input":[{"type":"reasoning","encrypted_content":"ENC"}]}`, want: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -662,7 +697,7 @@ func TestCindyHTTPToWSV2TurnStateStagesUntilOutputAndRecordsFailoverAttempt(t *t
 	require.True(t, ok)
 	require.Len(t, events, 1)
 	attempt := events[0]
-	require.Equal(t, PlatformOpenAI, attempt.Platform)
+	require.Equal(t, PlatformCindy, attempt.Platform)
 	require.Equal(t, accountA.ID, attempt.AccountID)
 	require.Equal(t, http.StatusServiceUnavailable, attempt.UpstreamStatusCode)
 	require.Equal(t, "upstream-attempt-A", attempt.UpstreamRequestID)

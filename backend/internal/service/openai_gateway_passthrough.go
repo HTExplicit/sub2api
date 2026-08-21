@@ -348,7 +348,8 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	agentTaskRecoveryTried := false
 	invalidEncryptedContentRetryTried := false
 	tryRecoverInvalidEncryptedContent := func(upstreamMsg string, upstreamBody []byte) (bool, error) {
-		if isOpenAICindyHTTPToWSV2Bypassed(c) ||
+		if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) ||
+			isOpenAICindyHTTPToWSV2Bypassed(c) ||
 			invalidEncryptedContentRetryTried ||
 			!isOpenAIInvalidEncryptedContentError(upstreamMsg, upstreamBody) ||
 			ValidateFunctionCallOutputContextBytes(body).HasFunctionCallOutput {
@@ -466,6 +467,7 @@ retryUpstream:
 	responseID := ""
 	imageCount := 0
 	var imageOutputSizes []string
+	var opaqueBindingIDs []string
 	if reqStream {
 		setOpenAIRefusalEarlyStreamEligibility(c, account, body)
 		result, err := s.handleStreamingResponsePassthrough(ctx, resp, c, account, startTime, reqModel, upstreamPassthroughModel)
@@ -487,6 +489,7 @@ retryUpstream:
 		responseID = strings.TrimSpace(result.responseID)
 		imageCount = result.imageCount
 		imageOutputSizes = result.imageOutputSizes
+		opaqueBindingIDs = result.opaqueBindingIDs
 	} else {
 		result, err := s.handleNonStreamingResponsePassthrough(ctx, resp, c, reqModel, upstreamPassthroughModel, account)
 		if err != nil {
@@ -506,8 +509,10 @@ retryUpstream:
 		responseID = strings.TrimSpace(result.responseID)
 		imageCount = result.imageCount
 		imageOutputSizes = result.imageOutputSizes
+		opaqueBindingIDs = result.opaqueBindingIDs
 	}
 	s.bindHTTPResponseAccount(ctx, c, account, responseID)
+	s.bindCindyOpaqueContinuationAccount(ctx, c, account, opaqueBindingIDs)
 
 	// 排除 spark 影子:其 codex_* 仅由 QueryUsage(/wham/usage bengalfox)更新(外审第7轮 P1)。
 	if !account.IsShadow() {
@@ -1039,6 +1044,7 @@ type openaiStreamingResultPassthrough struct {
 	responseID       string
 	imageCount       int
 	imageOutputSizes []string
+	opaqueBindingIDs []string
 }
 
 type openaiNonStreamingResultPassthrough struct {
@@ -1047,6 +1053,7 @@ type openaiNonStreamingResultPassthrough struct {
 	responseID       string
 	imageCount       int
 	imageOutputSizes []string
+	opaqueBindingIDs []string
 }
 
 const openAIStreamKeepaliveBytesKey = "openai_stream_keepalive_bytes"
@@ -1678,6 +1685,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	imageCounter := newOpenAIImageOutputCounter()
 	var firstTokenMs *int
 	responseID := ""
+	opaqueBindingIDs := make([]string, 0, 2)
 	clientDisconnected := false
 	sawDone := false
 	sawTerminalEvent := false
@@ -1741,6 +1749,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			responseID:       responseID,
 			imageCount:       imageCounter.Count(),
 			imageOutputSizes: imageCounter.Sizes(),
+			opaqueBindingIDs: normalizeCindyOpaqueBindingIDs(opaqueBindingIDs),
 		}
 	}
 
@@ -1758,6 +1767,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		}
 		if data, ok := extractOpenAISSEDataLine(line); ok {
 			rawDataBytes := []byte(data)
+			opaqueBindingIDs = append(opaqueBindingIDs, cindyOpaqueBindingIDsFromResponsePayload(rawDataBytes)...)
 			upstreamEventType := strings.TrimSpace(gjson.GetBytes(rawDataBytes, "type").String())
 			if upstreamEventType == "response.failed" || upstreamEventType == "error" {
 				if s.handleCindyBalanceHTTPResponseTerminalEvent(ctx, account, resp.StatusCode, resp.Header, rawDataBytes, mappedModel) {
@@ -2204,6 +2214,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 		responseID:       extractOpenAIResponseIDFromJSONBytes(body),
 		imageCount:       countOpenAIResponseImageOutputsFromJSONBytes(body),
 		imageOutputSizes: collectOpenAIResponseImageOutputSizesFromJSONBytes(body),
+		opaqueBindingIDs: cindyOpaqueBindingIDsFromResponsePayload(body),
 	}, nil
 }
 
@@ -2306,6 +2317,7 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 		responseID:       extractOpenAIResponseIDFromJSONBytes(body),
 		imageCount:       countOpenAIImageOutputsFromSSEBody(bodyText),
 		imageOutputSizes: collectOpenAIImageOutputSizesFromSSEBody(bodyText),
+		opaqueBindingIDs: cindyOpaqueBindingIDsFromResponsePayload(body),
 	}, nil
 }
 

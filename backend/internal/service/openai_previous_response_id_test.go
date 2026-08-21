@@ -1,6 +1,9 @@
 package service
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestClassifyOpenAIPreviousResponseIDKind(t *testing.T) {
 	tests := []struct {
@@ -30,5 +33,46 @@ func TestIsOpenAIPreviousResponseIDLikelyMessageID(t *testing.T) {
 	}
 	if IsOpenAIPreviousResponseIDLikelyMessageID("resp_123") {
 		t.Fatal("expected resp_123 not to be identified as message id")
+	}
+}
+
+func TestParseOpenAIContinuationAnchor(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload string
+		want    string
+		wantErr bool
+	}{
+		{name: "missing", payload: `{"input":"hello"}`},
+		{name: "null", payload: `{"previous_response_id":null}`},
+		{name: "empty", payload: `{"previous_response_id":""}`},
+		{name: "whitespace", payload: `{"previous_response_id":"  "}`},
+		{name: "valid", payload: `{"previous_response_id":"resp_123"}`, want: "resp_123"},
+		{name: "valid trimmed", payload: `{"previous_response_id":"  resp_abc-123  "}`, want: "resp_abc-123"},
+		{name: "number", payload: `{"previous_response_id":123}`, wantErr: true},
+		{name: "boolean", payload: `{"previous_response_id":true}`, wantErr: true},
+		{name: "object", payload: `{"previous_response_id":{"id":"resp_123"}}`, wantErr: true},
+		{name: "array", payload: `{"previous_response_id":["resp_123"]}`, wantErr: true},
+		{name: "unknown string", payload: `{"previous_response_id":"other_123"}`, wantErr: true},
+		{name: "message string", payload: `{"previous_response_id":"msg_123"}`, wantErr: true},
+		{name: "empty response suffix", payload: `{"previous_response_id":"resp_"}`, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseOpenAIContinuationAnchor([]byte(tt.payload))
+			if tt.wantErr {
+				if !errors.Is(err, ErrInvalidOpenAIContinuationAnchor) {
+					t.Fatalf("ParseOpenAIContinuationAnchor() error=%v, want %v", err, ErrInvalidOpenAIContinuationAnchor)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseOpenAIContinuationAnchor() unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("ParseOpenAIContinuationAnchor()=%q, want %q", got, tt.want)
+			}
+		})
 	}
 }
