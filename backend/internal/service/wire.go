@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"os"
+	"path/filepath"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -217,6 +218,14 @@ func ProvideBatchImageCleanupService(repo BatchImageRepository, accountRepo Acco
 	svc := NewBatchImageCleanupService(repo, accountRepo, cfg)
 	svc.Start()
 	return svc
+}
+
+func ProvideImageStudioArtifactStore(cfg *config.Config, repo ImageStudioRepository) *ImageStudioArtifactStore {
+	root := ""
+	if cfg != nil {
+		root = filepath.Join(cfg.Pricing.DataDir, "image-studio")
+	}
+	return NewImageStudioArtifactStore(root, repo)
 }
 
 // ProvideOpenAIOAuthService creates OpenAIOAuthService with privacy/account enrichment support.
@@ -938,6 +947,9 @@ var ProviderSet = wire.NewSet(
 	NewBatchImageDownloadService,
 	ProvideBatchImageCleanupService,
 	ProvideBatchImageWorkerRuntime,
+	ProvideImageStudioArtifactStore,
+	wire.Bind(new(ImageStudioFileStorage), new(*ImageStudioArtifactStore)),
+	NewImageStudioService,
 	wire.Bind(new(AccountRuntimeBlocker), new(*OpenAIGatewayService)),
 	NewOAuthService,
 	ProvideOpenAIOAuthService,

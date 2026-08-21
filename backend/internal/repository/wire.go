@@ -74,6 +74,7 @@ var ProviderSet = wire.NewSet(
 	NewAccountCredentialIdentityRepository,
 	NewAccountJobRepository,
 	NewAccountJobCindyMutationRunner,
+	NewImageStudioRepository,
 	NewAdminAccountRepository,
 	NewCindyBalanceProbeRepository,
 	NewCindyHealthRepository,

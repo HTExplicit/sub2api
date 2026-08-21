@@ -1,222 +1,80 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  editImages,
-  generateImages,
+  createImageStudioJob,
+  downloadImageStudioArtifact,
+  getImageStudioJob,
   listEligibleImageStudioKeys,
-  listModelCapabilities,
-  MAX_IMAGE_BYTES,
 } from '@/api/imageStudio'
 
 const apiGet = vi.hoisted(() => vi.fn())
+const apiPost = vi.hoisted(() => vi.fn())
 
 vi.mock('@/api/client', () => ({
-  apiClient: { get: apiGet },
-  buildGatewayUrl: (path: string) => `https://gateway.test${path}`,
+  apiClient: { get: apiGet, post: apiPost },
 }))
 
-const PNG_1X1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZlLsAAAAASUVORK5CYII='
-const JPEG_1X1 = '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAH/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAEFAn//xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAEDAQE/AX//xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAECAQE/AX//xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAY/An//xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAE/IX//2gAMAwEAAgADAAAAEP/EABQRAQAAAAAAAAAAAAAAAAAAABD/2gAIAQMBAT8QH//EABQRAQAAAAAAAAAAAAAAAAAAABD/2gAIAQIBAT8QH//EABQQAQAAAAAAAAAAAAAAAAAAABD/2gAIAQEAAT8QH//Z'
-const WEBP_1X1 = 'UklGRh4AAABXRUJQVlA4TBEAAAAvAAAAAAfQ//73v/+BiOh/AAA='
-
-function imageResponse(data: unknown[]): Response {
-  return new Response(JSON.stringify({ data }), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' },
-  })
-}
-
-describe('imageStudio API', () => {
+describe('imageStudio job API', () => {
   beforeEach(() => {
-    vi.restoreAllMocks()
-    apiGet.mockReset()
-    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({
-      width: 1,
-      height: 1,
-      close: vi.fn(),
-    })))
+    vi.clearAllMocks()
   })
 
-  afterEach(() => {
-    vi.unstubAllGlobals()
-  })
-
-  it('loads model capabilities with the explicitly selected gateway key', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
-      object: 'list',
-      catalog_version: 'test',
-      data: [],
-    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
-
-    await listModelCapabilities('sk-selected')
-
-    expect(fetchMock).toHaveBeenCalledWith('https://gateway.test/v1/models/capabilities', expect.objectContaining({
-      headers: expect.objectContaining({ Authorization: 'Bearer sk-selected' }),
-    }))
-  })
-
-  it('loads eligible keys, unwraps both response shapes, and drops unrelated key metadata', async () => {
-    const serverItem = {
+  it('accepts only the secret-free eligible key DTO', async () => {
+    apiGet.mockResolvedValue({ data: { items: [{
       api_key: {
         id: 1,
         name: 'Images',
-        key: 'sk-image',
-        group_id: 10,
-        group: { id: 10, name: 'Cindy', description: 'must not escape' },
-        user_id: 42,
-        ip_whitelist: ['192.0.2.1'],
-        last_used_ip: '192.0.2.2',
-        quota: 100,
-      },
-      capabilities: [],
-    }
-    const item = {
-      api_key: {
-        id: 1,
-        name: 'Images',
-        key: 'sk-image',
         group_id: 10,
         group: { id: 10, name: 'Cindy' },
+        key: 'must-not-enter-browser-state',
       },
       capabilities: [],
-    }
-    apiGet.mockResolvedValueOnce({ data: { items: [serverItem] } })
-      .mockResolvedValueOnce({ data: { data: { items: [serverItem] } } })
+    }] } })
 
-    await expect(listEligibleImageStudioKeys()).resolves.toEqual({ items: [item] })
-    await expect(listEligibleImageStudioKeys()).resolves.toEqual({ items: [item] })
-    expect(apiGet).toHaveBeenNthCalledWith(1, '/image-studio/eligible-keys', { signal: undefined })
+    const result = await listEligibleImageStudioKeys()
+
+    expect(result.items).toEqual([{
+      api_key: { id: 1, name: 'Images', group_id: 10, group: { id: 10, name: 'Cindy' } },
+      capabilities: [],
+    }])
+    expect(JSON.stringify(result)).not.toContain('must-not-enter-browser-state')
+    expect(JSON.stringify(result)).not.toContain('"key"')
   })
 
-  it('accepts real minimal PNG, JPEG, and WebP payloads only after browser decoding', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(imageResponse([
-      { b64_json: PNG_1X1, output_format: 'png' },
-      { b64_json: JPEG_1X1, mime_type: 'image/jpeg' },
-      { b64_json: `data:image/webp;base64,${WEBP_1X1}`, output_format: 'webp' },
-    ]))
+  it('creates a server-owned job without accepting an API key secret', async () => {
+    apiPost.mockResolvedValue({ data: { id: 41, status: 'pending' } })
 
-    const result = await generateImages('sk-selected', {
+    const result = await createImageStudioJob({
+      apiKeyId: 9,
+      mode: 'generate',
       model: 'gpt-image-2',
       prompt: 'draw',
-      n: 3,
+      count: 4,
       size: '1024x1024',
       quality: 'low',
     })
 
-    expect(result.map(image => image.mimeType)).toEqual(['image/png', 'image/jpeg', 'image/webp'])
-    expect(result.every(image => image.blob.size > 0)).toBe(true)
-    expect(globalThis.createImageBitmap).toHaveBeenCalledTimes(3)
-    const [, request] = fetchMock.mock.calls[0]
-    expect(request?.headers).toEqual(expect.objectContaining({
-      Authorization: 'Bearer sk-selected',
-      'Content-Type': 'application/json',
-    }))
-    expect(JSON.parse(String(request?.body))).toEqual(expect.objectContaining({
-      model: 'gpt-image-2',
-      prompt: 'draw',
-      n: 3,
-      response_format: 'b64_json',
-    }))
+    expect(result.id).toBe(41)
+    expect(apiPost).toHaveBeenCalledWith('/image-studio/jobs', expect.any(FormData), expect.objectContaining({ signal: undefined }))
+    const form = apiPost.mock.calls[0]?.[1] as FormData
+    expect(form.get('api_key_id')).toBe('9')
+    expect(form.get('count')).toBe('4')
+    expect(Array.from(form.keys())).not.toContain('api_key')
+    expect(Array.from(form.keys())).not.toContain('key')
   })
 
-  it('fails closed instead of following an upstream-provided image URL', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(imageResponse([
-      { url: 'https://untrusted.example/generated.png' },
-    ]))
+  it('loads job progress and downloads an owner-scoped artifact through the session client', async () => {
+    apiGet.mockResolvedValueOnce({ data: {
+      job: { id: 41, status: 'partially_succeeded', count: 2, counts: { processed: 2, succeeded: 1, failed: 1, canceled: 0 } },
+      items: [],
+      artifacts: [{ id: 52, job_id: 41, kind: 'output', content_type: 'image/png', byte_size: 12, download_url: '/api/v1/image-studio/jobs/41/artifacts/52' }],
+    } }).mockResolvedValueOnce({ data: new Blob(['image'], { type: 'image/png' }) })
 
-    await expect(generateImages('sk-selected', {
-      model: 'gpt-image-2',
-      prompt: 'draw',
-      n: 1,
-    })).rejects.toThrow('returned 0 decodable images; expected 1')
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-  })
+    const detail = await getImageStudioJob(41)
+    const blob = await downloadImageStudioArtifact(detail.artifacts[0])
 
-  it('rejects mixed base64 and URL items when fewer images decode than requested', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(imageResponse([
-      { b64_json: PNG_1X1, mime_type: 'image/png' },
-      { url: 'https://untrusted.example/generated.png' },
-    ]))
-
-    await expect(generateImages('sk-selected', {
-      model: 'gpt-image-2',
-      prompt: 'draw two',
-      n: 2,
-    })).rejects.toThrow('returned 1 decodable images; expected 2')
-  })
-
-  it('fails closed when the upstream returns fewer images than requested', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(imageResponse([{ b64_json: PNG_1X1 }]))
-
-    await expect(generateImages('sk-selected', {
-      model: 'gpt-image-2',
-      prompt: 'draw four',
-      n: 4,
-    })).rejects.toThrow('returned 1 images; expected 4')
-  })
-
-  it.each([
-    ['a PNG payload declared as WebP', { b64_json: PNG_1X1, mime_type: 'image/webp' }, 'does not match'],
-    ['an SVG data URL', { b64_json: `data:image/svg+xml;base64,${btoa('<svg xmlns="http://www.w3.org/2000/svg"/>')}` }, 'unsupported'],
-    ['malformed base64', { b64_json: '%%%not-base64%%%' }, 'malformed'],
-    ['non-image bytes', { b64_json: btoa('not an image') }, 'supported image'],
-  ])('rejects %s from the service', async (_label, item, message) => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(imageResponse([item]))
-
-    await expect(generateImages('sk-selected', {
-      model: 'gpt-image-2',
-      prompt: 'draw',
-      n: 1,
-    })).rejects.toThrow(message)
-  })
-
-  it('rejects a response whose decoded image exceeds the byte limit', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(imageResponse([{ b64_json: 'AAAA' }]))
-    vi.spyOn(globalThis, 'atob').mockReturnValue('\0'.repeat(MAX_IMAGE_BYTES + 1))
-
-    await expect(generateImages('sk-selected', {
-      model: 'gpt-image-2',
-      prompt: 'draw',
-      n: 1,
-    })).rejects.toThrow('oversized')
-  })
-
-  it('rejects magic-looking bytes when the browser decoder cannot decode them', async () => {
-    vi.mocked(globalThis.createImageBitmap).mockRejectedValueOnce(new Error('decode failed'))
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(imageResponse([{
-      b64_json: btoa(String.fromCharCode(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)),
-      mime_type: 'image/png',
-    }]))
-
-    await expect(generateImages('sk-selected', {
-      model: 'gpt-image-2',
-      prompt: 'draw',
-      n: 1,
-    })).rejects.toThrow('could not be decoded')
-  })
-
-  it('sends edit/reference/mask fields as multipart without overriding the boundary', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(imageResponse([
-      { b64_json: PNG_1X1, output_format: 'png' },
-    ]))
-    const source = new File([Uint8Array.from(atob(PNG_1X1), value => value.charCodeAt(0))], 'source.png', { type: 'image/png' })
-    const mask = new File([Uint8Array.from(atob(PNG_1X1), value => value.charCodeAt(0))], 'mask.png', { type: 'image/png' })
-
-    await editImages('sk-selected', {
-      model: 'gemini-3-pro-image',
-      prompt: 'replace sky',
-      n: 1,
-      size: '1024x1024',
-      quality: 'low',
-      image: source,
-      mask,
-    })
-
-    const [, request] = fetchMock.mock.calls[0]
-    expect(request?.headers).toEqual({ Authorization: 'Bearer sk-selected' })
-    expect(request?.body).toBeInstanceOf(FormData)
-    const form = request?.body as FormData
-    expect(form.get('model')).toBe('gemini-3-pro-image')
-    expect(form.get('image')).toBeInstanceOf(Blob)
-    expect(form.get('mask')).toBeInstanceOf(Blob)
+    expect(detail.job.status).toBe('partially_succeeded')
+    expect(blob.type).toBe('image/png')
+    expect(apiGet).toHaveBeenNthCalledWith(1, '/image-studio/jobs/41', { signal: undefined })
+    expect(apiGet).toHaveBeenNthCalledWith(2, '/image-studio/jobs/41/artifacts/52', { responseType: 'blob', signal: undefined })
   })
 })

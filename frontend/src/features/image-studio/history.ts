@@ -9,6 +9,9 @@ export interface ImageStudioHistoryImage {
 
 export interface ImageStudioHistoryRecord {
   id: string
+  jobId?: number
+  status?: import('@/api/imageStudio').ImageStudioJobStatus
+  errorMessage?: string
   createdAt: number
   mode: ImageStudioMode
   model: string

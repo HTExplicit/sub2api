@@ -201,6 +201,7 @@ func ProvideHandlers(
 	modelPlazaHandler *ModelPlazaHandler,
 	asyncImageHandler *AsyncImageHandler,
 	batchImageHandler *BatchImageHandler,
+	imageStudioHandler *ImageStudioJobHandler,
 	remoteSkillHandler *RemoteSkillHandler,
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
@@ -227,6 +228,7 @@ func ProvideHandlers(
 		ModelPlaza:       modelPlazaHandler,
 		AsyncImage:       asyncImageHandler,
 		BatchImage:       batchImageHandler,
+		ImageStudio:      imageStudioHandler,
 		RemoteSkill:      remoteSkillHandler,
 	}
 }
@@ -254,6 +256,10 @@ var ProviderSet = wire.NewSet(
 	NewModelPlazaHandler,
 	NewAsyncImageHandler,
 	ProvideBatchImageHandler,
+	NewImageStudioJobHandler,
+	NewImageStudioGatewayExecutor,
+	wire.Bind(new(imageStudioImagesInvoker), new(*OpenAIGatewayHandler)),
+	ProvideImageStudioRuntime,
 	ProvideRemoteSkillHandler,
 
 	// Admin handlers
@@ -304,6 +310,22 @@ var ProviderSet = wire.NewSet(
 func ProvideAccountJobRuntime(jobs *service.AccountJobService, accountHandler *admin.AccountHandler) (*service.AccountJobRuntime, error) {
 	accountHandler.SetAccountJobService(jobs)
 	runtime := service.NewAccountJobRuntime(jobs, accountHandler)
+	if err := runtime.Start(context.Background()); err != nil {
+		return nil, err
+	}
+	return runtime, nil
+}
+
+func ProvideImageStudioRuntime(
+	repo service.ImageStudioRepository,
+	studio *service.ImageStudioService,
+	store service.ImageStudioFileStorage,
+	executor *ImageStudioGatewayExecutor,
+) (*service.ImageStudioRuntime, error) {
+	runtime := service.NewImageStudioRuntime(repo, studio, store, executor, service.ImageStudioRuntimeOptions{})
+	if !service.ImageStudioFeatureEnabled() {
+		return runtime, nil
+	}
 	if err := runtime.Start(context.Background()); err != nil {
 		return nil, err
 	}

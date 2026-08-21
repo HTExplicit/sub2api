@@ -23,7 +23,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
@@ -1215,100 +1214,6 @@ func (h *GatewayHandler) ModelCapabilities(c *gin.Context) {
 		"catalog_version": service.CindyCapabilityCatalogVersion,
 		"data":            service.CindyVerifiedModelCapabilities(),
 	})
-}
-
-type imageStudioEligibleKeyGroup struct {
-	ID   int64  `json:"id"`
-	Name string `json:"name"`
-}
-
-type imageStudioEligibleAPIKey struct {
-	ID      int64                       `json:"id"`
-	Name    string                      `json:"name"`
-	Key     string                      `json:"key"`
-	GroupID int64                       `json:"group_id"`
-	Group   imageStudioEligibleKeyGroup `json:"group"`
-}
-
-type imageStudioEligibleKeyResponse struct {
-	APIKey       imageStudioEligibleAPIKey      `json:"api_key"`
-	Capabilities []service.CindyModelCapability `json:"capabilities"`
-}
-
-// ImageStudioEligibleKeys returns current-user keys that can route the fixed
-// Cindy image surface. Upstream account identity is never included.
-func (h *GatewayHandler) ImageStudioEligibleKeys(c *gin.Context) {
-	subject, ok := middleware2.GetAuthSubjectFromContext(c)
-	if !ok {
-		response.Unauthorized(c, "User not authenticated")
-		return
-	}
-
-	items := make([]imageStudioEligibleKeyResponse, 0)
-	if !service.ImageStudioFeatureEnabled() {
-		response.Success(c, gin.H{"items": items})
-		return
-	}
-	if h == nil || h.apiKeyService == nil || h.gatewayService == nil {
-		response.InternalError(c, "Image Studio eligibility is unavailable")
-		return
-	}
-
-	keys, err := h.apiKeyService.ListAll(c.Request.Context(), subject.UserID, service.APIKeyListFilters{Status: service.StatusActive})
-	if err != nil {
-		response.InternalError(c, "Unable to load Image Studio API keys")
-		return
-	}
-	capabilities := service.CindyImageModelCapabilities()
-	if len(capabilities) == 0 {
-		response.Success(c, gin.H{"items": items})
-		return
-	}
-
-	eligibleGroups := make(map[int64]bool)
-	checkedGroups := make(map[int64]struct{})
-	for i := range keys {
-		key := &keys[i]
-		group := key.Group
-		if key.UserID != subject.UserID || !key.IsActive() || key.IsExpired() || key.IsQuotaExhausted() || group == nil || !group.IsActive() || !group.AllowImageGeneration || group.Platform != service.PlatformOpenAI {
-			continue
-		}
-		if _, checked := checkedGroups[group.ID]; !checked {
-			strict, lookupErr := h.gatewayService.ClassifyStrictCindyGroup(c.Request.Context(), group)
-			if lookupErr != nil {
-				response.Error(c, http.StatusServiceUnavailable, "Unable to determine Image Studio eligibility")
-				return
-			}
-			eligible := false
-			if strict {
-				eligible, lookupErr = h.gatewayService.HasSchedulableCindyAccount(c.Request.Context(), group)
-				if lookupErr != nil {
-					response.Error(c, http.StatusServiceUnavailable, "Unable to determine Image Studio eligibility")
-					return
-				}
-			}
-			checkedGroups[group.ID] = struct{}{}
-			eligibleGroups[group.ID] = strict && eligible
-		}
-		if !eligibleGroups[group.ID] {
-			continue
-		}
-		items = append(items, imageStudioEligibleKeyResponse{
-			APIKey: imageStudioEligibleAPIKey{
-				ID:      key.ID,
-				Name:    key.Name,
-				Key:     key.Key,
-				GroupID: group.ID,
-				Group: imageStudioEligibleKeyGroup{
-					ID:   group.ID,
-					Name: group.Name,
-				},
-			},
-			Capabilities: capabilities,
-		})
-	}
-
-	response.Success(c, gin.H{"items": items})
 }
 
 func (h *GatewayHandler) compositeAvailableModels(ctx context.Context, groupID *int64) []string {
