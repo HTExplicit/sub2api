@@ -121,40 +121,15 @@ func (h *AccountHandler) ImportCodexSession(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-	if err := service.ValidateOpenAILongContextBillingExtra(service.PlatformOpenAI, req.Extra); err != nil {
-		response.ErrorFrom(c, err)
-		return
+	count := len(req.Contents)
+	if strings.TrimSpace(req.Content) != "" {
+		count++
 	}
-	if req.Concurrency != nil && *req.Concurrency < 0 {
-		response.BadRequest(c, "concurrency must be >= 0")
-		return
-	}
-	if req.Priority != nil && *req.Priority < 0 {
-		response.BadRequest(c, "priority must be >= 0")
-		return
-	}
-	if req.RateMultiplier != nil && *req.RateMultiplier < 0 {
-		response.BadRequest(c, "rate_multiplier must be >= 0")
-		return
-	}
-	if req.LoadFactor != nil && *req.LoadFactor > 10000 {
-		response.BadRequest(c, "load_factor must be <= 10000")
-		return
-	}
-
-	entries, err := parseCodexSessionImportEntries(req)
-	if err != nil {
-		response.BadRequest(c, err.Error())
-		return
-	}
-	if len(entries) == 0 {
+	if count == 0 {
 		response.BadRequest(c, "请输入 accessToken 或 Codex session JSON")
 		return
 	}
-
-	executeAdminIdempotentJSON(c, "admin.accounts.import_codex_session", req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
-		return h.importCodexSessions(ctx, req, entries)
-	})
+	h.submitAccountJob(c, service.AccountJobKindImportCodex, req, ordinalAccountJobSeeds(count))
 }
 
 func (h *AccountHandler) importCodexSessions(ctx context.Context, req CodexSessionImportRequest, entries []codexImportEntry) (CodexSessionImportResult, error) {

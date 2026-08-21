@@ -29,27 +29,6 @@ func validateDataImportRequest(req DataImportRequest) error {
 	if err := validateDataImportUniformSettings(req.UniformSettings); err != nil {
 		return err
 	}
-	seen := make(map[int]struct{}, len(req.Items))
-	for _, decision := range req.Items {
-		if decision.Index < 0 || decision.Index >= len(req.Data.Accounts) {
-			return fmt.Errorf("import item index is out of range: %d", decision.Index)
-		}
-		if _, exists := seen[decision.Index]; exists {
-			return fmt.Errorf("duplicate import item decision: %d", decision.Index)
-		}
-		seen[decision.Index] = struct{}{}
-		switch decision.Action {
-		case dataImportActionSkip, dataImportActionUpdate, dataImportActionCreate:
-		default:
-			return fmt.Errorf("invalid import action for item %d: %s", decision.Index, decision.Action)
-		}
-		if decision.ExistingAccountID != nil && *decision.ExistingAccountID <= 0 {
-			return fmt.Errorf("existing_account_id must be positive for item %d", decision.Index)
-		}
-		if err := validateDataImportItemOverrides(decision.Overrides); err != nil {
-			return fmt.Errorf("item %d: %w", decision.Index, err)
-		}
-	}
 	return nil
 }
 
@@ -160,11 +139,6 @@ func (h *AccountHandler) importData(ctx context.Context, req DataImportRequest) 
 		accountsByID[account.ID] = account
 	}
 
-	decisions := make(map[int]DataImportItemDecision, len(req.Items))
-	for _, decision := range req.Items {
-		decisions[decision.Index] = decision
-	}
-
 	var taxonomy *dataImportTaxonomyResolver
 	if dataImportNeedsTaxonomy(req) {
 		console, consoleErr := h.accountConsoleService()
@@ -201,31 +175,18 @@ func (h *AccountHandler) importData(ctx context.Context, req DataImportRequest) 
 
 		keys := dataAccountIdentityKeys(item.Platform, item.Credentials, item.Extra)
 		matches := identityIndex.Find(keys)
-		decision, hasDecision := decisions[index]
-		if !hasDecision {
-			decision = DataImportItemDecision{Index: index, Action: dataImportActionCreate}
-			if len(matches) > 0 {
-				decision.Action = dataImportActionSkip
-			}
-		}
-		itemResult.Action = decision.Action
-
-		switch decision.Action {
-		case dataImportActionSkip:
-			result.AccountSkipped++
-			if len(matches) == 1 {
-				id := matches[0].AccountID
-				itemResult.AccountID = &id
-			}
-			result.Items = append(result.Items, itemResult)
+		if len(matches) > 1 {
+			h.recordDataImportFailure(&result, &itemResult, errors.New("multiple current identity matches"))
 			continue
-		case dataImportActionUpdate:
-			existing, matchErr := resolveDataImportUpdateTarget(decision, matches, accountsByID)
-			if matchErr != nil {
-				h.recordDataImportFailure(&result, &itemResult, matchErr)
+		}
+		if len(matches) == 1 {
+			itemResult.Action = dataImportActionUpdate
+			existing, ok := accountsByID[matches[0].AccountID]
+			if !ok {
+				h.recordDataImportFailure(&result, &itemResult, errors.New("current identity match is unavailable"))
 				continue
 			}
-			updated, warnings, updateErr := h.updateImportedDataAccount(ctx, item, existing, req.UniformSettings, decision.Overrides, taxonomy)
+			updated, warnings, updateErr := h.updateImportedDataAccount(ctx, item, existing, req.UniformSettings, DataImportItemOverrides{}, taxonomy)
 			if updateErr != nil {
 				h.recordDataImportFailure(&result, &itemResult, updateErr)
 				continue
@@ -240,8 +201,9 @@ func (h *AccountHandler) importData(ctx context.Context, req DataImportRequest) 
 			accountsByID[id] = *updated
 			identityIndex.Add(*updated)
 			h.scheduleGrokImportProbe(updated)
-		case dataImportActionCreate:
-			created, warnings, createErr := h.createImportedDataAccount(ctx, item, req.UniformSettings, decision.Overrides, proxyKeyToID, groups, taxonomy, skipDefaultGroupBind)
+		} else {
+			itemResult.Action = dataImportActionCreate
+			created, warnings, createErr := h.createImportedDataAccount(ctx, item, req.UniformSettings, DataImportItemOverrides{}, proxyKeyToID, groups, taxonomy, skipDefaultGroupBind)
 			if createErr != nil {
 				h.recordDataImportFailure(&result, &itemResult, createErr)
 				continue
@@ -267,35 +229,6 @@ func (h *AccountHandler) recordDataImportFailure(result *DataImportResult, item 
 	item.Error = err.Error()
 	result.Items = append(result.Items, *item)
 	result.Errors = append(result.Errors, DataImportError{Kind: "account", Name: item.Name, Message: err.Error()})
-}
-
-func resolveDataImportUpdateTarget(decision DataImportItemDecision, matches []DataImportPreviewMatch, accountsByID map[int64]service.Account) (service.Account, error) {
-	if len(matches) == 0 {
-		return service.Account{}, errors.New("update requires a current strong identity match")
-	}
-	targetID := int64(0)
-	if decision.ExistingAccountID != nil {
-		targetID = *decision.ExistingAccountID
-	} else if len(matches) == 1 {
-		targetID = matches[0].AccountID
-	} else {
-		return service.Account{}, errors.New("multiple strong identity matches; existing_account_id is required")
-	}
-	matched := false
-	for _, match := range matches {
-		if match.AccountID == targetID {
-			matched = true
-			break
-		}
-	}
-	if !matched {
-		return service.Account{}, errors.New("selected account is not a current strong identity match")
-	}
-	account, ok := accountsByID[targetID]
-	if !ok {
-		return service.Account{}, errors.New("selected account no longer exists")
-	}
-	return account, nil
 }
 
 func (h *AccountHandler) createImportedDataAccount(
@@ -740,11 +673,6 @@ func dataImportNeedsTaxonomy(req DataImportRequest) bool {
 	}
 	for _, item := range req.Data.Accounts {
 		if item.ManagementFolder != nil || item.Tags != nil {
-			return true
-		}
-	}
-	for _, item := range req.Items {
-		if item.Overrides.ManagementFolder != nil || item.Overrides.Tags != nil {
 			return true
 		}
 	}

@@ -354,26 +354,12 @@ func (h *AccountHandler) BulkUpdateAccountTaxonomy(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-	filters, err := toServiceBulkUpdateAccountFilters(req.Filters)
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return
+	req.AccountIDs = normalizeInt64IDList(req.AccountIDs)
+	seeds := accountJobSeeds(req.AccountIDs)
+	if len(seeds) == 0 {
+		seeds = ordinalAccountJobSeeds(1)
 	}
-	console, err := h.accountTaxonomyMutationService()
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-	result, err := console.BulkUpdateAccountTaxonomy(c.Request.Context(), service.BulkAccountTaxonomyInput{
-		AccountIDs: req.AccountIDs, Filters: filters, ExpectedMatchCount: req.ExpectedMatchCount,
-		FolderAction: req.FolderAction, FolderID: req.FolderID,
-		TagAddIDs: req.TagAddIDs, TagRemoveIDs: req.TagRemoveIDs,
-	})
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-	response.Success(c, result)
+	h.submitAccountJob(c, service.AccountJobKindBulkTaxonomy, req, seeds)
 }
 
 func splitQueryValues(c *gin.Context, keys ...string) []string {

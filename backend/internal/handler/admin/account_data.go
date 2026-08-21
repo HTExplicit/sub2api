@@ -82,7 +82,6 @@ type DataImportRequest struct {
 	Data                 DataPayload               `json:"data"`
 	SkipDefaultGroupBind *bool                     `json:"skip_default_group_bind"`
 	UniformSettings      DataImportUniformSettings `json:"uniform_settings,omitempty"`
-	Items                []DataImportItemDecision  `json:"items,omitempty"`
 }
 
 type DataImportResult struct {
@@ -130,13 +129,6 @@ type DataImportItemOverrides struct {
 	RateMultiplier   *float64                `json:"rate_multiplier,omitempty"`
 	Status           *string                 `json:"status,omitempty"`
 	Schedulable      *bool                   `json:"schedulable,omitempty"`
-}
-
-type DataImportItemDecision struct {
-	Index             int                     `json:"index"`
-	Action            string                  `json:"action"`
-	ExistingAccountID *int64                  `json:"existing_account_id,omitempty"`
-	Overrides         DataImportItemOverrides `json:"overrides,omitempty"`
 }
 
 type DataImportItemResult struct {
@@ -316,19 +308,11 @@ func (h *AccountHandler) ImportData(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-
-	if err := validateDataHeader(req.Data); err != nil {
-		response.BadRequest(c, err.Error())
+	if len(req.Data.Accounts) == 0 {
+		response.BadRequest(c, "data.accounts is required")
 		return
 	}
-	if err := validateDataImportRequest(req); err != nil {
-		response.BadRequest(c, err.Error())
-		return
-	}
-
-	executeAdminIdempotentJSON(c, "admin.accounts.import_data", req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
-		return h.importData(ctx, req)
-	})
+	h.submitAccountJob(c, service.AccountJobKindImportData, req, ordinalAccountJobSeeds(len(req.Data.Accounts)))
 }
 
 func (h *AccountHandler) listAllProxies(ctx context.Context) ([]service.Proxy, error) {

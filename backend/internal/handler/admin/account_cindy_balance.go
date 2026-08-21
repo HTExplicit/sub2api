@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -44,10 +45,5 @@ func (h *AccountHandler) DeleteCindyInsufficient(c *gin.Context) {
 		response.BadRequest(c, "expected_count and fingerprint are required")
 		return
 	}
-	result, err := h.adminService.DeleteCindyInsufficient(c.Request.Context(), req.ExpectedCount, req.Fingerprint)
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-	response.Success(c, result)
+	h.submitOneAccountJob(c, service.AccountJobKindCindyConfirmedCleanup, req)
 }

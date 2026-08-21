@@ -72,6 +72,8 @@ var ProviderSet = wire.NewSet(
 	NewCompositeModelRouteRepository,
 	NewAccountRepository,
 	NewAccountCredentialIdentityRepository,
+	NewAccountJobRepository,
+	NewAccountJobCindyMutationRunner,
 	NewAdminAccountRepository,
 	NewCindyBalanceProbeRepository,
 	NewCindyHealthRepository,

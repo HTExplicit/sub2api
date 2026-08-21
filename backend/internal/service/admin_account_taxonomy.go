@@ -100,7 +100,11 @@ func normalizeAccountTaxonomyName(value string) (string, string, error) {
 }
 
 func (s *adminServiceImpl) ListAccountFolders(ctx context.Context) ([]AccountManagementFolder, error) {
-	rows, err := s.entClient.AccountFolder.Query().
+	client := s.entClient
+	if contextTx := dbent.TxFromContext(ctx); contextTx != nil {
+		client = contextTx.Client()
+	}
+	rows, err := client.AccountFolder.Query().
 		Order(dbent.Asc(dbaccountfolder.FieldSortOrder), dbent.Asc(dbaccountfolder.FieldName)).
 		All(ctx)
 	if err != nil {
@@ -125,14 +129,18 @@ func (s *adminServiceImpl) CreateAccountFolder(ctx context.Context, input Accoun
 	if err != nil {
 		return nil, err
 	}
-	exists, err := s.entClient.AccountFolder.Query().Where(dbaccountfolder.NormalizedNameEQ(normalized)).Exist(ctx)
+	client := s.entClient
+	if contextTx := dbent.TxFromContext(ctx); contextTx != nil {
+		client = contextTx.Client()
+	}
+	exists, err := client.AccountFolder.Query().Where(dbaccountfolder.NormalizedNameEQ(normalized)).Exist(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if exists {
 		return nil, ErrAccountFolderExists
 	}
-	row, err := s.entClient.AccountFolder.Create().
+	row, err := client.AccountFolder.Create().
 		SetName(name).SetNormalizedName(normalized).SetSortOrder(input.SortOrder).Save(ctx)
 	if err != nil {
 		if dbent.IsConstraintError(err) {
@@ -203,7 +211,11 @@ func (s *adminServiceImpl) DeleteAccountFolder(ctx context.Context, id int64, mo
 }
 
 func (s *adminServiceImpl) ListAccountTags(ctx context.Context) ([]AccountManagementTag, error) {
-	rows, err := s.entClient.AccountTag.Query().
+	client := s.entClient
+	if contextTx := dbent.TxFromContext(ctx); contextTx != nil {
+		client = contextTx.Client()
+	}
+	rows, err := client.AccountTag.Query().
 		Order(dbent.Asc(dbaccounttag.FieldSortOrder), dbent.Asc(dbaccounttag.FieldName)).
 		All(ctx)
 	if err != nil {
@@ -228,14 +240,18 @@ func (s *adminServiceImpl) CreateAccountTag(ctx context.Context, input AccountTa
 	if err != nil {
 		return nil, err
 	}
-	exists, err := s.entClient.AccountTag.Query().Where(dbaccounttag.NormalizedNameEQ(normalized)).Exist(ctx)
+	client := s.entClient
+	if contextTx := dbent.TxFromContext(ctx); contextTx != nil {
+		client = contextTx.Client()
+	}
+	exists, err := client.AccountTag.Query().Where(dbaccounttag.NormalizedNameEQ(normalized)).Exist(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if exists {
 		return nil, ErrAccountTagExists
 	}
-	row, err := s.entClient.AccountTag.Create().
+	row, err := client.AccountTag.Create().
 		SetName(name).SetNormalizedName(normalized).SetSortOrder(input.SortOrder).Save(ctx)
 	if err != nil {
 		if dbent.IsConstraintError(err) {
@@ -453,12 +469,20 @@ func (s *adminServiceImpl) BulkUpdateAccountTaxonomy(ctx context.Context, input 
 		return &BulkAccountTaxonomyResult{}, nil
 	}
 
-	tx, err := s.entClient.Tx(ctx)
-	if err != nil {
-		return nil, err
+	contextTx := dbent.TxFromContext(ctx)
+	txClient := s.entClient
+	var ownedTx *dbent.Tx
+	if contextTx != nil {
+		txClient = contextTx.Client()
+	} else {
+		ownedTx, err = s.entClient.Tx(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = ownedTx.Rollback() }()
+		txClient = ownedTx.Client()
 	}
-	defer func() { _ = tx.Rollback() }()
-	lockedAccounts, err := tx.Account.Query().Where(
+	lockedAccounts, err := txClient.Account.Query().Where(
 		dbaccount.IDIn(input.AccountIDs...),
 		dbaccount.DeletedAtIsNil(),
 	).ForUpdate().IDs(ctx)
@@ -472,7 +496,7 @@ func (s *adminServiceImpl) BulkUpdateAccountTaxonomy(ctx context.Context, input 
 		return nil, ErrAccountNotFound
 	}
 	if input.FolderAction == "set" {
-		exists, queryErr := tx.AccountFolder.Query().Where(dbaccountfolder.IDEQ(*input.FolderID)).Exist(ctx)
+		exists, queryErr := txClient.AccountFolder.Query().Where(dbaccountfolder.IDEQ(*input.FolderID)).Exist(ctx)
 		if queryErr != nil {
 			return nil, queryErr
 		}
@@ -482,7 +506,7 @@ func (s *adminServiceImpl) BulkUpdateAccountTaxonomy(ctx context.Context, input 
 	}
 	allTagIDs := append(append([]int64(nil), input.TagAddIDs...), input.TagRemoveIDs...)
 	if len(allTagIDs) > 0 {
-		count, queryErr := tx.AccountTag.Query().Where(dbaccounttag.IDIn(allTagIDs...)).Count(ctx)
+		count, queryErr := txClient.AccountTag.Query().Where(dbaccounttag.IDIn(allTagIDs...)).Count(ctx)
 		if queryErr != nil {
 			return nil, queryErr
 		}
@@ -491,7 +515,7 @@ func (s *adminServiceImpl) BulkUpdateAccountTaxonomy(ctx context.Context, input 
 		}
 	}
 	if input.FolderAction != "" {
-		update := tx.Account.Update().Where(dbaccount.IDIn(input.AccountIDs...), dbaccount.DeletedAtIsNil())
+		update := txClient.Account.Update().Where(dbaccount.IDIn(input.AccountIDs...), dbaccount.DeletedAtIsNil())
 		if input.FolderAction == "set" {
 			update.SetManagementFolderID(*input.FolderID)
 		} else {
@@ -502,7 +526,7 @@ func (s *adminServiceImpl) BulkUpdateAccountTaxonomy(ctx context.Context, input 
 		}
 	}
 	if len(input.TagRemoveIDs) > 0 {
-		if _, err = tx.AccountTagBinding.Delete().Where(
+		if _, err = txClient.AccountTagBinding.Delete().Where(
 			dbaccounttagbinding.AccountIDIn(input.AccountIDs...),
 			dbaccounttagbinding.TagIDIn(input.TagRemoveIDs...),
 		).Exec(ctx); err != nil {
@@ -514,9 +538,9 @@ func (s *adminServiceImpl) BulkUpdateAccountTaxonomy(ctx context.Context, input 
 		builders := make([]*dbent.AccountTagBindingCreate, 0, len(input.AccountIDs)*len(input.TagAddIDs))
 		for _, accountID := range input.AccountIDs {
 			for _, tagID := range input.TagAddIDs {
-				builders = append(builders, tx.AccountTagBinding.Create().SetAccountID(accountID).SetTagID(tagID))
+				builders = append(builders, txClient.AccountTagBinding.Create().SetAccountID(accountID).SetTagID(tagID))
 				if len(builders) == bindingBatchSize {
-					if err = tx.AccountTagBinding.CreateBulk(builders...).OnConflictColumns("account_id", "tag_id").DoNothing().Exec(ctx); err != nil {
+					if err = txClient.AccountTagBinding.CreateBulk(builders...).OnConflictColumns("account_id", "tag_id").DoNothing().Exec(ctx); err != nil {
 						return nil, err
 					}
 					builders = builders[:0]
@@ -524,13 +548,15 @@ func (s *adminServiceImpl) BulkUpdateAccountTaxonomy(ctx context.Context, input 
 			}
 		}
 		if len(builders) > 0 {
-			if err = tx.AccountTagBinding.CreateBulk(builders...).OnConflictColumns("account_id", "tag_id").DoNothing().Exec(ctx); err != nil {
+			if err = txClient.AccountTagBinding.CreateBulk(builders...).OnConflictColumns("account_id", "tag_id").DoNothing().Exec(ctx); err != nil {
 				return nil, err
 			}
 		}
 	}
-	if err = tx.Commit(); err != nil {
-		return nil, err
+	if ownedTx != nil {
+		if err = ownedTx.Commit(); err != nil {
+			return nil, err
+		}
 	}
 	return &BulkAccountTaxonomyResult{MatchedCount: len(input.AccountIDs), UpdatedCount: len(input.AccountIDs)}, nil
 }
@@ -563,12 +589,16 @@ func (s *adminServiceImpl) hydrateAccountTaxonomy(ctx context.Context, accounts 
 		byID[account.ID] = account
 		ids = append(ids, account.ID)
 	}
+	client := s.entClient
+	if contextTx := dbent.TxFromContext(ctx); contextTx != nil {
+		client = contextTx.Client()
+	}
 	for start := 0; start < len(ids); start += accountTaxonomyHydrationBatchSize {
 		end := start + accountTaxonomyHydrationBatchSize
 		if end > len(ids) {
 			end = len(ids)
 		}
-		rows, err := s.entClient.Account.Query().
+		rows, err := client.Account.Query().
 			Where(dbaccount.IDIn(ids[start:end]...)).
 			WithManagementFolder().
 			WithTags().
@@ -607,12 +637,21 @@ func (s *adminServiceImpl) hydrateAccountTaxonomy(ctx context.Context, accounts 
 
 func (s *adminServiceImpl) SetAccountTaxonomy(ctx context.Context, accountID int64, assignment AccountTaxonomyAssignment) (*Account, error) {
 	assignment.TagIDs = uniquePositiveIDs(assignment.TagIDs)
-	tx, err := s.entClient.Tx(ctx)
-	if err != nil {
-		return nil, err
+	contextTx := dbent.TxFromContext(ctx)
+	txClient := s.entClient
+	var ownedTx *dbent.Tx
+	var err error
+	if contextTx != nil {
+		txClient = contextTx.Client()
+	} else {
+		ownedTx, err = s.entClient.Tx(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = ownedTx.Rollback() }()
+		txClient = ownedTx.Client()
 	}
-	defer func() { _ = tx.Rollback() }()
-	if exists, queryErr := tx.Account.Query().Where(dbaccount.IDEQ(accountID)).Exist(ctx); queryErr != nil {
+	if exists, queryErr := txClient.Account.Query().Where(dbaccount.IDEQ(accountID)).Exist(ctx); queryErr != nil {
 		return nil, queryErr
 	} else if !exists {
 		return nil, ErrAccountNotFound
@@ -621,14 +660,14 @@ func (s *adminServiceImpl) SetAccountTaxonomy(ctx context.Context, accountID int
 		if *assignment.FolderID <= 0 {
 			return nil, infraerrors.BadRequest("ACCOUNT_FOLDER_ID_INVALID", "folder_id must be positive or null")
 		}
-		if exists, queryErr := tx.AccountFolder.Query().Where(dbaccountfolder.IDEQ(*assignment.FolderID)).Exist(ctx); queryErr != nil {
+		if exists, queryErr := txClient.AccountFolder.Query().Where(dbaccountfolder.IDEQ(*assignment.FolderID)).Exist(ctx); queryErr != nil {
 			return nil, queryErr
 		} else if !exists {
 			return nil, ErrAccountFolderNotFound
 		}
 	}
 	if len(assignment.TagIDs) > 0 {
-		count, queryErr := tx.AccountTag.Query().Where(dbaccounttag.IDIn(assignment.TagIDs...)).Count(ctx)
+		count, queryErr := txClient.AccountTag.Query().Where(dbaccounttag.IDIn(assignment.TagIDs...)).Count(ctx)
 		if queryErr != nil {
 			return nil, queryErr
 		}
@@ -636,7 +675,7 @@ func (s *adminServiceImpl) SetAccountTaxonomy(ctx context.Context, accountID int
 			return nil, ErrAccountTagNotFound
 		}
 	}
-	update := tx.Account.UpdateOneID(accountID).ClearTags()
+	update := txClient.Account.UpdateOneID(accountID).ClearTags()
 	if assignment.FolderID == nil {
 		update.ClearManagementFolderID()
 	} else {
@@ -648,8 +687,10 @@ func (s *adminServiceImpl) SetAccountTaxonomy(ctx context.Context, accountID int
 	if _, err = update.Save(ctx); err != nil {
 		return nil, err
 	}
-	if err = tx.Commit(); err != nil {
-		return nil, err
+	if ownedTx != nil {
+		if err = ownedTx.Commit(); err != nil {
+			return nil, err
+		}
 	}
 	return s.GetAccount(ctx, accountID)
 }
