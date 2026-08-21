@@ -821,7 +821,7 @@ func TestFetchCodexModelsManifestCindyRolloutProjection(t *testing.T) {
 		mode string
 	}{
 		{name: "catalog off preserves legacy IDs", env: []string{CindyCapabilityCatalogEnabledEnv + "=false", ImageStudioEnabledEnv + "=true"}, mode: "catalog_off"},
-		{name: "image off omits image IDs", env: []string{CindyCapabilityCatalogEnabledEnv + "=true", ImageStudioEnabledEnv + "=false"}, mode: "image_off"},
+		{name: "responses image off omits image IDs", env: []string{CindyCapabilityCatalogEnabledEnv + "=true", CindyResponsesImageBridgeEnabledEnv + "=false"}, mode: "image_off"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			cmd := exec.Command(os.Args[0], "-test.run=^TestFetchCodexModelsManifestCindyRolloutProjectionHelper$")
@@ -829,6 +829,7 @@ func TestFetchCodexModelsManifestCindyRolloutProjection(t *testing.T) {
 				CindyCapabilityCatalogEnabledEnv,
 				ImageStudioEnabledEnv,
 				CindyImageStudioEnabledEnv,
+				CindyResponsesImageBridgeEnabledEnv,
 				"SUB2API_CODEX_MODELS_CINDY_FLAG_HELPER",
 			), append(test.env, "SUB2API_CODEX_MODELS_CINDY_FLAG_HELPER="+test.mode)...)
 			if output, err := cmd.CombinedOutput(); err != nil {
@@ -850,10 +851,12 @@ func runCindyCodexCatalogEnabledTest(t *testing.T) bool {
 		CindyCapabilityCatalogEnabledEnv,
 		ImageStudioEnabledEnv,
 		CindyImageStudioEnabledEnv,
+		CindyResponsesImageBridgeEnabledEnv,
 		cindyCodexCatalogEnabledTestHelperEnv,
 	),
 		CindyCapabilityCatalogEnabledEnv+"=true",
 		ImageStudioEnabledEnv+"=true",
+		CindyResponsesImageBridgeEnabledEnv+"=true",
 		cindyCodexCatalogEnabledTestHelperEnv+"=1",
 	)
 	if output, err := cmd.CombinedOutput(); err != nil {
@@ -876,6 +879,9 @@ func TestFetchCodexModelsManifestCindyRolloutProjectionHelper(t *testing.T) {
 		}, nil
 	}}
 	account := newCodexModelsAPIKeyTestAccount("https://api.laxarouter.ai")
+	account.Platform = PlatformCindy
+	account.WirePlatform = WirePlatformOpenAI
+	account.ProviderProfile = ProviderProfileCindyLaxaV1
 	manifest, err := newCodexModelsAPIKeyTestService(upstream).FetchCodexModelsManifest(
 		context.Background(), account, "0.144.0", "",
 	)

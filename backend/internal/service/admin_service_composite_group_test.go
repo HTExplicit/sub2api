@@ -13,10 +13,21 @@ import (
 type accountRepoStubForCompositeModelsList struct {
 	accountRepoStub
 	accounts []Account
+	byID     map[int64]*Account
 }
 
 func (s *accountRepoStubForCompositeModelsList) ListSchedulableByGroupID(_ context.Context, _ int64) ([]Account, error) {
 	return s.accounts, nil
+}
+
+func (s *accountRepoStubForCompositeModelsList) GetByIDs(_ context.Context, ids []int64) ([]*Account, error) {
+	accounts := make([]*Account, 0, len(ids))
+	for _, id := range ids {
+		if account := s.byID[id]; account != nil {
+			accounts = append(accounts, account)
+		}
+	}
+	return accounts, nil
 }
 
 func TestAdminService_CreateCompositeGroupCopiesAccountsFromConcreteGroups(t *testing.T) {
@@ -39,7 +50,11 @@ func TestAdminService_CreateCompositeGroupCopiesAccountsFromConcreteGroups(t *te
 			return nil
 		},
 	}
-	svc := &adminServiceImpl{groupRepo: groupRepo}
+	accountRepo := &accountRepoStubForCompositeModelsList{byID: map[int64]*Account{
+		101: {ID: 101, Platform: PlatformOpenAI, Type: AccountTypeAPIKey},
+		202: {ID: 202, Platform: PlatformGemini, Type: AccountTypeAPIKey},
+	}}
+	svc := &adminServiceImpl{groupRepo: groupRepo, accountRepo: accountRepo}
 
 	group, err := svc.CreateGroup(context.Background(), &CreateGroupInput{
 		Name:               "Composite",
@@ -88,7 +103,11 @@ func TestAdminService_UpdateCompositeGroupCopiesAccountsFromConcreteGroups(t *te
 			return nil
 		},
 	}
-	svc := &adminServiceImpl{groupRepo: groupRepo}
+	accountRepo := &accountRepoStubForCompositeModelsList{byID: map[int64]*Account{
+		301: {ID: 301, Platform: PlatformOpenAI, Type: AccountTypeAPIKey},
+		302: {ID: 302, Platform: PlatformGrok, Type: AccountTypeAPIKey},
+	}}
+	svc := &adminServiceImpl{groupRepo: groupRepo, accountRepo: accountRepo}
 	maxReasoningEffort := "low"
 	reasoningEffortMappings := []ReasoningEffortMapping{{From: "max", To: "high"}}
 

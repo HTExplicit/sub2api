@@ -90,8 +90,12 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 		},
 	}
 	require.Equal(t, "gpt-5.4-mini", ordinaryAccount.GetMappedModel("gpt-5.4-mini"))
+	legacyProjectedAccount := cindyAccount
+	legacyProjectedAccount.Platform = service.PlatformOpenAI
+	legacyProjectedAccount.WirePlatform = ""
+	legacyProjectedAccount.ProviderProfile = ""
 	repo := &gatewayModelsAccountRepoStub{byGroup: map[int64][]service.Account{
-		groupID: {cindyAccount},
+		groupID: {legacyProjectedAccount},
 	}}
 	modelsHandler := newGatewayModelsHandlerForTest(repo)
 	rec := httptest.NewRecorder()
@@ -142,6 +146,9 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			h, accountRepo, upstream, handlerGroupID := newCindyBalanceFailoverHandler(t)
 			accountRepo.accounts = accountRepo.accounts[1:]
+			accountRepo.accounts[0].Platform = service.PlatformOpenAI
+			accountRepo.accounts[0].WirePlatform = ""
+			accountRepo.accounts[0].ProviderProfile = ""
 			if tc.modelMapping != nil {
 				accountRepo.accounts[0].Credentials["model_mapping"] = tc.modelMapping
 				accountRepo.accounts[0].Extra["openai_passthrough"] = false
@@ -155,6 +162,9 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 			require.True(t, exists)
 			requestAPIKey, ok := rawAPIKey.(*service.APIKey)
 			require.True(t, ok)
+			requestAPIKey.Group.Platform = service.PlatformOpenAI
+			requestAPIKey.Group.WirePlatform = ""
+			requestAPIKey.Group.ProviderProfile = ""
 			requestAPIKey.Group.StrictCindy = tc.strict
 			if tc.groupPlatform != "" {
 				requestAPIKey.Group.Platform = tc.groupPlatform
@@ -197,6 +207,9 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			h, accountRepo, upstream, handlerGroupID := newCindyBalanceFailoverHandler(t)
 			accountRepo.accounts = accountRepo.accounts[1:]
+			accountRepo.accounts[0].Platform = service.PlatformOpenAI
+			accountRepo.accounts[0].WirePlatform = ""
+			accountRepo.accounts[0].ProviderProfile = ""
 			accountRepo.accounts[0].Credentials["model_mapping"] = tc.modelMapping
 			accountRepo.accounts[0].Extra["openai_passthrough"] = false
 			ctx, recorder := newStrictCindyHandlerContext(t, handlerGroupID, "/v1/chat/completions",
@@ -205,6 +218,9 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 			require.True(t, exists)
 			requestAPIKey, ok := rawAPIKey.(*service.APIKey)
 			require.True(t, ok)
+			requestAPIKey.Group.Platform = service.PlatformOpenAI
+			requestAPIKey.Group.WirePlatform = ""
+			requestAPIKey.Group.ProviderProfile = ""
 			requestAPIKey.Group.StrictCindy = tc.strictGroup
 			if tc.groupPlatform != "" {
 				requestAPIKey.Group.Platform = tc.groupPlatform

@@ -191,7 +191,7 @@ func TestCodexModelsStrictCindyProjectsVerifiedPublicCatalog(t *testing.T) {
 	}
 }
 
-func TestCodexModelsMixedGroupDeterministicallyUnionsOrdinaryAndVerifiedCindyResponses(t *testing.T) {
+func TestCodexModelsCindyGroupDoesNotUnionOrdinaryProviderModels(t *testing.T) {
 	if !runCodexCatalogEnabledHandlerTest(t) {
 		return
 	}
@@ -199,7 +199,8 @@ func TestCodexModelsMixedGroupDeterministicallyUnionsOrdinaryAndVerifiedCindyRes
 	groupID := int64(44)
 	accounts := []service.Account{
 		{
-			ID: 1, Name: "cindy", Platform: service.PlatformOpenAI,
+			ID: 1, Name: "cindy", Platform: service.PlatformCindy,
+			WirePlatform: service.WirePlatformOpenAI, ProviderProfile: service.ProviderProfileCindyLaxaV1,
 			Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
 			Priority: 0, Concurrency: 1,
 			Credentials: map[string]any{
@@ -250,43 +251,28 @@ func TestCodexModelsMixedGroupDeterministicallyUnionsOrdinaryAndVerifiedCindyRes
 	)
 	handler := &OpenAIGatewayHandler{gatewayService: gatewayService, maxAccountSwitches: 3}
 	group := &service.Group{
-		ID: groupID, Platform: service.PlatformOpenAI,
-		StrictCindyKnown: true, StrictCindy: false,
+		ID: groupID, Platform: service.PlatformCindy,
+		WirePlatform: service.WirePlatformOpenAI, ProviderProfile: service.ProviderProfileCindyLaxaV1,
+		StrictCindyKnown: true, StrictCindy: true,
 	}
 	first := performCodexModelsRequestForGroup(t, handler, group)
 	second := performCodexModelsRequestForGroup(t, handler, group)
 	if first.Code != http.StatusOK || second.Code != http.StatusOK {
-		t.Fatalf("mixed statuses: first=%d second=%d; first body=%s second body=%s", first.Code, second.Code, first.Body.String(), second.Body.String())
+		t.Fatalf("Cindy statuses: first=%d second=%d; first body=%s second body=%s", first.Code, second.Code, first.Body.String(), second.Body.String())
 	}
 	if first.Body.String() != second.Body.String() {
-		t.Fatalf("mixed manifest changed across identical requests: first=%s second=%s", first.Body.String(), second.Body.String())
+		t.Fatalf("Cindy manifest changed across identical requests: first=%s second=%s", first.Body.String(), second.Body.String())
 	}
-	if got := upstream.calls(); !equalInt64Slices(got, []int64{2}) {
-		t.Fatalf("mixed manifest must fetch only the ordinary account: got calls %v, want [2]", got)
+	if got := upstream.calls(); len(got) != 0 {
+		t.Fatalf("Cindy manifest must stay local and ignore ordinary provider accounts: calls=%v", got)
 	}
 
 	slugs := decodeCodexModelSlugs(t, first.Body.Bytes())
-	ordinarySlugs := []string{
-		"ordinary-model",
-		"openai/gpt-5.6-sol",
-		"gpt-5.4",
-		"gpt-5.4-mini",
-		"deepseek/deepseek-v4-pro",
-		"anthropic/claude-opus-5",
-		"x-ai/grok-4.6",
-		"google/gemini-3-pro-image",
-		"openai/gpt-image-2",
-	}
-	want := append(append([]string(nil), ordinarySlugs...), service.CindyCodexPublicModelIDs()...)
+	want := append([]string(nil), service.CindyCodexPublicModelIDs()...)
 	sort.Strings(slugs)
 	sort.Strings(want)
 	if got, expected := strings.Join(slugs, ","), strings.Join(want, ","); got != expected {
-		t.Fatalf("mixed slugs: got %v, want %v", slugs, want)
-	}
-	for _, slug := range ordinarySlugs {
-		if !strings.Contains(first.Body.String(), `"`+slug+`"`) {
-			t.Fatalf("mixed manifest dropped ordinary slug %q: %s", slug, first.Body.String())
-		}
+		t.Fatalf("Cindy slugs: got %v, want %v", slugs, want)
 	}
 }
 

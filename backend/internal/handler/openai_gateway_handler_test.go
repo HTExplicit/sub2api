@@ -788,8 +788,10 @@ func TestOpenAIGatewayMessagesDispatchGateAllowsGrokGroups(t *testing.T) {
 
 func TestMessagesMixedGroupCindyUsesClaudeAliasNotLegacyGPTDispatch(t *testing.T) {
 	cindy := &service.Account{
-		Platform: service.PlatformOpenAI,
-		Type:     service.AccountTypeAPIKey,
+		Platform:        service.PlatformCindy,
+		WirePlatform:    service.WirePlatformOpenAI,
+		ProviderProfile: service.ProviderProfileCindyLaxaV1,
+		Type:            service.AccountTypeAPIKey,
 		Credentials: map[string]any{
 			"base_url": "https://api.laxarouter.ai",
 		},
@@ -871,7 +873,8 @@ func TestMessagesMixedGroupSelectedCindyForwardsNativeClaudeAlias(t *testing.T) 
 	cindyAccountID := int64(51041)
 	accounts := []service.Account{
 		{
-			ID: cindyAccountID, Name: "cindy", Platform: service.PlatformOpenAI,
+			ID: cindyAccountID, Name: "cindy", Platform: service.PlatformCindy,
+			WirePlatform: service.WirePlatformOpenAI, ProviderProfile: service.ProviderProfileCindyLaxaV1,
 			Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
 			Priority: 0, Concurrency: 0,
 			Credentials: map[string]any{
@@ -929,7 +932,8 @@ func TestMessagesMixedGroupSelectedCindyForwardsNativeClaudeAlias(t *testing.T) 
 		ID: 51043, GroupID: &groupID, Status: service.StatusActive,
 		User: &service.User{ID: 51044, Status: service.StatusActive},
 		Group: &service.Group{
-			ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive,
+			ID: groupID, Platform: service.PlatformCindy, WirePlatform: service.WirePlatformOpenAI,
+			ProviderProfile: service.ProviderProfileCindyLaxaV1, Status: service.StatusActive,
 			AllowMessagesDispatch: true, RateMultiplier: 1,
 		},
 	}
@@ -951,7 +955,8 @@ func TestImagesMixedGroupSelectedCindyRejectsUnverifiedControls(t *testing.T) {
 	groupID := int64(51060)
 	cindyAccountID := int64(51061)
 	repo := &openAIWSFailoverHandlerAccountRepoStub{accounts: []service.Account{{
-		ID: cindyAccountID, Name: "cindy", Platform: service.PlatformOpenAI,
+		ID: cindyAccountID, Name: "cindy", Platform: service.PlatformCindy,
+		WirePlatform: service.WirePlatformOpenAI, ProviderProfile: service.ProviderProfileCindyLaxaV1,
 		Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
 		Concurrency: 0,
 		Credentials: map[string]any{
@@ -993,7 +998,8 @@ func TestImagesMixedGroupSelectedCindyRejectsUnverifiedControls(t *testing.T) {
 		ID: 51062, GroupID: &groupID, Status: service.StatusActive,
 		User: &service.User{ID: 51063, Status: service.StatusActive},
 		Group: &service.Group{
-			ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive,
+			ID: groupID, Platform: service.PlatformCindy, WirePlatform: service.WirePlatformOpenAI,
+			ProviderProfile: service.ProviderProfileCindyLaxaV1, Status: service.StatusActive,
 			AllowImageGeneration: true, RateMultiplier: 1,
 		},
 	}
@@ -1056,7 +1062,8 @@ func TestImagesMixedGroupGeminiEditSelectsCindyAndForwardsLiveModel(t *testing.T
 	cindyAccountID := int64(51071)
 	repo := &openAIWSFailoverHandlerAccountRepoStub{accounts: []service.Account{
 		{
-			ID: cindyAccountID, Name: "cindy", Platform: service.PlatformOpenAI,
+			ID: cindyAccountID, Name: "cindy", Platform: service.PlatformCindy,
+			WirePlatform: service.WirePlatformOpenAI, ProviderProfile: service.ProviderProfileCindyLaxaV1,
 			Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
 			Concurrency: 0,
 			Credentials: map[string]any{"api_key": "sk-cindy-test", "base_url": "https://api.laxarouter.ai"},
@@ -1109,7 +1116,8 @@ func TestImagesMixedGroupGeminiEditSelectsCindyAndForwardsLiveModel(t *testing.T
 		ID: 51073, GroupID: &groupID, Status: service.StatusActive,
 		User: &service.User{ID: 51074, Status: service.StatusActive},
 		Group: &service.Group{
-			ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive,
+			ID: groupID, Platform: service.PlatformCindy, WirePlatform: service.WirePlatformOpenAI,
+			ProviderProfile: service.ProviderProfileCindyLaxaV1, Status: service.StatusActive,
 			AllowImageGeneration: true, RateMultiplier: 1,
 		},
 	}

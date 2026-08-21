@@ -363,7 +363,7 @@ func TestCindyBalanceProbeUsesFreshTokenForEveryClaim(t *testing.T) {
 func TestCindyBalanceProbeReservationCASFailureStopsBeforeProbe(t *testing.T) {
 	updatedAt := time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
 	account := &Account{
-		ID: 13, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		ID: 13, Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1, Type: AccountTypeAPIKey,
 		Status: StatusActive, Schedulable: true, UpdatedAt: updatedAt,
 		Credentials: map[string]any{
 			"api_key":  "sk-test",
@@ -401,7 +401,7 @@ func TestCindyBalanceProbeReservationCASFailureStopsBeforeProbe(t *testing.T) {
 func TestCindyBalanceProbeReservationMatchesExactAccountGeneration(t *testing.T) {
 	updatedAt := time.Date(2026, 8, 17, 5, 30, 0, 123456000, time.UTC)
 	base := &Account{
-		ID: 13, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		ID: 13, Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1, Type: AccountTypeAPIKey,
 		Status: StatusActive, Schedulable: true, UpdatedAt: updatedAt,
 		Credentials: map[string]any{
 			"api_key":      "sk-cindy-generation",
@@ -458,7 +458,7 @@ func TestCindyBalanceProbeReservationMatchesExactAccountGeneration(t *testing.T)
 func TestCindyBalanceProbeAccountUpdateAfterLoadStopsBeforeProbe(t *testing.T) {
 	loadedAt := time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
 	account := &Account{
-		ID: 13, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		ID: 13, Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1, Type: AccountTypeAPIKey,
 		Status: StatusActive, Schedulable: true, UpdatedAt: loadedAt,
 		Credentials: map[string]any{
 			"api_key":  "sk-old-generation",

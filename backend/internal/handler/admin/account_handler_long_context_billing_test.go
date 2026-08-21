@@ -17,12 +17,14 @@ func TestAccountAdminBoundariesRejectMalformedOpenAILongContextBillingValue(t *t
 	const malformedExtra = `"extra":{"openai_long_context_billing_enabled":"true"}`
 
 	tests := []struct {
-		name   string
-		method string
-		path   string
-		body   string
-		mount  func(*gin.Engine, *AccountHandler)
-		setup  func(*stubAdminService)
+		name         string
+		method       string
+		path         string
+		body         string
+		mount        func(*gin.Engine, *AccountHandler)
+		setup        func(*stubAdminService)
+		jobKind      string
+		jobErrorCode string
 	}{
 		{
 			name:   "create",
@@ -52,6 +54,8 @@ func TestAccountAdminBoundariesRejectMalformedOpenAILongContextBillingValue(t *t
 			setup: func(stub *stubAdminService) {
 				stub.bulkUpdateAccountErr = infraerrors.BadRequest("OPENAI_LONG_CONTEXT_BILLING_INVALID", "invalid")
 			},
+			jobKind:      service.AccountJobKindBulkUpdate,
+			jobErrorCode: "bulk_update_failed",
 		},
 		{
 			name:   "batch create",
@@ -68,6 +72,8 @@ func TestAccountAdminBoundariesRejectMalformedOpenAILongContextBillingValue(t *t
 			mount: func(router *gin.Engine, handler *AccountHandler) {
 				router.POST("/accounts/import-codex-session", handler.ImportCodexSession)
 			},
+			jobKind:      service.AccountJobKindImportCodex,
+			jobErrorCode: "payload_invalid",
 		},
 	}
 
@@ -80,12 +86,25 @@ func TestAccountAdminBoundariesRejectMalformedOpenAILongContextBillingValue(t *t
 			}
 			handler := NewAccountHandler(stub, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 			router := gin.New()
+			jobs := attachAccountJobSubmitter(router, handler)
 			tt.mount(router, handler)
 			recorder := httptest.NewRecorder()
 			request := httptest.NewRequest(tt.method, tt.path, bytes.NewBufferString(tt.body))
 			request.Header.Set("Content-Type", "application/json")
+			setAccountJobTestIdempotencyKey(request)
 
 			router.ServeHTTP(recorder, request)
+
+			if tt.jobKind != "" {
+				require.Equal(t, http.StatusAccepted, recorder.Code)
+				var payload map[string]any
+				params := requireSubmittedAccountJob(t, jobs, tt.jobKind, &payload)
+				results := executeSubmittedAccountJobItems(handler, params)
+				require.Len(t, results, 1)
+				require.Equal(t, service.AccountJobItemStatusFailed, results[0].Status)
+				require.Equal(t, tt.jobErrorCode, results[0].ErrorCode)
+				return
+			}
 
 			require.Equal(t, http.StatusBadRequest, recorder.Code)
 			var responseBody struct {

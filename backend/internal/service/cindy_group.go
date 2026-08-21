@@ -153,7 +153,7 @@ func hasSchedulableCindyAccount(ctx context.Context, repo any, group *Group) (bo
 	if !CindyCapabilityCatalogFeatureEnabled() {
 		return false, nil
 	}
-	if group == nil || group.ID <= 0 || group.Platform != PlatformOpenAI {
+	if group == nil || group.ID <= 0 || (group.Platform != PlatformOpenAI && group.Platform != PlatformCindy) {
 		return false, nil
 	}
 

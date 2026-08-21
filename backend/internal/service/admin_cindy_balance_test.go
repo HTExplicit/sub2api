@@ -39,7 +39,9 @@ func TestAdminServiceClearCindyBalanceInsufficientPreservesManualState(t *testin
 		accountRepoStubForClearAccountError: accountRepoStubForClearAccountError{
 			account: &Account{
 				ID:                         8401,
-				Platform:                   PlatformOpenAI,
+				Platform:                   PlatformCindy,
+				WirePlatform:               WirePlatformOpenAI,
+				ProviderProfile:            ProviderProfileCindyLaxaV1,
 				Type:                       AccountTypeAPIKey,
 				Status:                     StatusDisabled,
 				Schedulable:                false,

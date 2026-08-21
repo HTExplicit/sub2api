@@ -75,7 +75,7 @@ func TestOpenAIAlphaSearchModeDisabledExcludesOnlyExplicitAPIKeyAccount(t *testi
 }
 
 func TestMissingCompatibilityModesUseCindySafeCacheAndOrdinaryNativeDefaults(t *testing.T) {
-	cindy := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: cindyCredentials()}
+	cindy := &Account{Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1, Type: AccountTypeAPIKey, Credentials: cindyCredentials()}
 	ordinary := &Account{
 		Platform:    PlatformOpenAI,
 		Type:        AccountTypeAPIKey,
@@ -91,9 +91,11 @@ func TestMissingCompatibilityModesUseCindySafeCacheAndOrdinaryNativeDefaults(t *
 
 func TestCindyExplicitCompatibilityModesRemainAvailable(t *testing.T) {
 	cindy := &Account{
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Credentials: cindyCredentials(),
+		Platform:        PlatformCindy,
+		WirePlatform:    WirePlatformOpenAI,
+		ProviderProfile: ProviderProfileCindyLaxaV1,
+		Type:            AccountTypeAPIKey,
+		Credentials:     cindyCredentials(),
 		Extra: map[string]any{
 			"openai_alpha_search_mode":     OpenAIAlphaSearchModeResponsesWebSearch,
 			"openai_prompt_cache_key_mode": OpenAIPromptCacheKeyModeSHA25664,
@@ -112,9 +114,11 @@ func TestCindyDefaultPromptCacheModeHashesAzureRejectedLongKeyWhenGlobalGateIsEn
 	longKey := strings.Repeat("x", 363)
 	body := []byte(`{"prompt_cache_key":"` + longKey + `","input":[]}`)
 	cindy := &Account{
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Credentials: cindyCredentials(),
+		Platform:        PlatformCindy,
+		WirePlatform:    WirePlatformOpenAI,
+		ProviderProfile: ProviderProfileCindyLaxaV1,
+		Type:            AccountTypeAPIKey,
+		Credentials:     cindyCredentials(),
 	}
 
 	normalized, changed, err := normalizeOpenAIAPIKeyPromptCacheKey(body, cindy, true)
@@ -129,9 +133,11 @@ func TestCindyExplicitPromptCachePassthroughRemainsAvailable(t *testing.T) {
 	longKey := strings.Repeat("x", 363)
 	body := []byte(`{"prompt_cache_key":"` + longKey + `","input":[]}`)
 	cindy := &Account{
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Credentials: cindyCredentials(),
+		Platform:        PlatformCindy,
+		WirePlatform:    WirePlatformOpenAI,
+		ProviderProfile: ProviderProfileCindyLaxaV1,
+		Type:            AccountTypeAPIKey,
+		Credentials:     cindyCredentials(),
 		Extra: map[string]any{
 			"openai_prompt_cache_key_mode": OpenAIPromptCacheKeyModePassthrough,
 		},

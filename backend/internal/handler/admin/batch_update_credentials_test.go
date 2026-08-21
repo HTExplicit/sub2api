@@ -33,17 +33,18 @@ func (f *failingAdminService) UpdateAccount(ctx context.Context, id int64, input
 	return f.stubAdminService.UpdateAccount(ctx, id, input)
 }
 
-func setupAccountHandlerWithService(adminSvc service.AdminService) (*gin.Engine, *AccountHandler) {
+func setupAccountHandlerWithService(adminSvc service.AdminService) (*gin.Engine, *AccountHandler, *accountJobSubmitRepository) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	jobs := attachAccountJobSubmitter(router, handler)
 	router.POST("/api/v1/admin/accounts/batch-update-credentials", handler.BatchUpdateCredentials)
-	return router, handler
+	return router, handler, jobs
 }
 
 func TestBatchUpdateCredentials_AllSuccess(t *testing.T) {
 	svc := &failingAdminService{stubAdminService: newStubAdminService()}
-	router, _ := setupAccountHandlerWithService(svc)
+	router, handler, jobs := setupAccountHandlerWithService(svc)
 
 	body, _ := json.Marshal(BatchUpdateCredentialsRequest{
 		AccountIDs: []int64{1, 2, 3},
@@ -54,9 +55,18 @@ func TestBatchUpdateCredentials_AllSuccess(t *testing.T) {
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("POST", "/api/v1/admin/accounts/batch-update-credentials", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	setAccountJobTestIdempotencyKey(req)
 	router.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusOK, w.Code, "全部成功时应返回 200")
+	require.Equal(t, http.StatusAccepted, w.Code, "合法批量更新应创建异步任务")
+	var payload BatchUpdateCredentialsRequest
+	params := requireSubmittedAccountJob(t, jobs, service.AccountJobKindBatchUpdateCredentials, &payload)
+	require.Equal(t, []int64{1, 2, 3}, payload.AccountIDs)
+	require.Len(t, params.Items, 3)
+	results := executeSubmittedAccountJobItems(handler, params)
+	for _, result := range results {
+		require.Equal(t, service.AccountJobItemStatusSucceeded, result.Status)
+	}
 	require.Equal(t, int64(3), svc.updateCallCount.Load(), "应调用 3 次 UpdateAccount")
 }
 
@@ -66,7 +76,7 @@ func TestBatchUpdateCredentials_PartialFailure(t *testing.T) {
 		stubAdminService: newStubAdminService(),
 		failOnAccountID:  2,
 	}
-	router, _ := setupAccountHandlerWithService(svc)
+	router, handler, jobs := setupAccountHandlerWithService(svc)
 
 	body, _ := json.Marshal(BatchUpdateCredentialsRequest{
 		AccountIDs: []int64{1, 2, 3},
@@ -77,16 +87,17 @@ func TestBatchUpdateCredentials_PartialFailure(t *testing.T) {
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("POST", "/api/v1/admin/accounts/batch-update-credentials", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	setAccountJobTestIdempotencyKey(req)
 	router.ServeHTTP(w, req)
 
-	// 实现采用"部分成功"模式：总是返回 200 + 成功/失败明细
-	require.Equal(t, http.StatusOK, w.Code, "批量更新返回 200 + 成功/失败明细")
-
-	var resp map[string]any
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	data := resp["data"].(map[string]any)
-	require.Equal(t, float64(2), data["success"], "应有 2 个成功")
-	require.Equal(t, float64(1), data["failed"], "应有 1 个失败")
+	require.Equal(t, http.StatusAccepted, w.Code, "批量更新应先返回任务")
+	var payload BatchUpdateCredentialsRequest
+	params := requireSubmittedAccountJob(t, jobs, service.AccountJobKindBatchUpdateCredentials, &payload)
+	results := executeSubmittedAccountJobItems(handler, params)
+	require.Equal(t, service.AccountJobItemStatusSucceeded, results[0].Status)
+	require.Equal(t, service.AccountJobItemStatusFailed, results[1].Status)
+	require.Equal(t, "credentials_update_failed", results[1].ErrorCode)
+	require.Equal(t, service.AccountJobItemStatusSucceeded, results[2].Status)
 
 	// 所有 3 个账号都会被尝试更新（非 fail-fast）
 	require.Equal(t, int64(3), svc.updateCallCount.Load(),
@@ -99,7 +110,7 @@ func TestBatchUpdateCredentials_FirstAccountNotFound(t *testing.T) {
 		stubAdminService: newStubAdminService(),
 		failOnAccountID:  1,
 	}
-	router, _ := setupAccountHandlerWithService(svc)
+	router, handler, jobs := setupAccountHandlerWithService(svc)
 
 	body, _ := json.Marshal(BatchUpdateCredentialsRequest{
 		AccountIDs: []int64{1, 2, 3},
@@ -110,9 +121,15 @@ func TestBatchUpdateCredentials_FirstAccountNotFound(t *testing.T) {
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("POST", "/api/v1/admin/accounts/batch-update-credentials", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	setAccountJobTestIdempotencyKey(req)
 	router.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusNotFound, w.Code, "第一阶段验证失败应返回 404")
+	require.Equal(t, http.StatusAccepted, w.Code, "账号存在性由任务项执行时判定")
+	var payload BatchUpdateCredentialsRequest
+	params := requireSubmittedAccountJob(t, jobs, service.AccountJobKindBatchUpdateCredentials, &payload)
+	results := executeSubmittedAccountJobItems(handler, params)
+	require.Equal(t, service.AccountJobItemStatusFailed, results[0].Status)
+	require.Equal(t, "account_not_found", results[0].ErrorCode)
 }
 
 // getAccountFailingService 模拟 GetAccount 在特定 ID 时返回 not found。
@@ -130,7 +147,7 @@ func (f *getAccountFailingService) GetAccount(ctx context.Context, id int64) (*s
 
 func TestBatchUpdateCredentials_InterceptWarmupRequests_NonBool(t *testing.T) {
 	svc := &failingAdminService{stubAdminService: newStubAdminService()}
-	router, _ := setupAccountHandlerWithService(svc)
+	router, _, _ := setupAccountHandlerWithService(svc)
 
 	// intercept_warmup_requests 传入非 bool 类型（string），应返回 400
 	body, _ := json.Marshal(map[string]any{
@@ -150,7 +167,7 @@ func TestBatchUpdateCredentials_InterceptWarmupRequests_NonBool(t *testing.T) {
 
 func TestBatchUpdateCredentials_InterceptWarmupRequests_ValidBool(t *testing.T) {
 	svc := &failingAdminService{stubAdminService: newStubAdminService()}
-	router, _ := setupAccountHandlerWithService(svc)
+	router, _, jobs := setupAccountHandlerWithService(svc)
 
 	body, _ := json.Marshal(map[string]any{
 		"account_ids": []int64{1},
@@ -161,15 +178,20 @@ func TestBatchUpdateCredentials_InterceptWarmupRequests_ValidBool(t *testing.T) 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("POST", "/api/v1/admin/accounts/batch-update-credentials", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	setAccountJobTestIdempotencyKey(req)
 	router.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusOK, w.Code,
-		"intercept_warmup_requests 传入合法 bool 值应返回 200")
+	require.Equal(t, http.StatusAccepted, w.Code,
+		"intercept_warmup_requests 传入合法 bool 值应创建任务")
+	var payload BatchUpdateCredentialsRequest
+	params := requireSubmittedAccountJob(t, jobs, service.AccountJobKindBatchUpdateCredentials, &payload)
+	require.Equal(t, true, payload.Value)
+	require.Len(t, params.Items, 1)
 }
 
 func TestBatchUpdateCredentials_AccountUUID_NonString(t *testing.T) {
 	svc := &failingAdminService{stubAdminService: newStubAdminService()}
-	router, _ := setupAccountHandlerWithService(svc)
+	router, _, _ := setupAccountHandlerWithService(svc)
 
 	// account_uuid 传入非 string 类型（number），应返回 400
 	body, _ := json.Marshal(map[string]any{
@@ -189,7 +211,7 @@ func TestBatchUpdateCredentials_AccountUUID_NonString(t *testing.T) {
 
 func TestBatchUpdateCredentials_AccountUUID_NullValue(t *testing.T) {
 	svc := &failingAdminService{stubAdminService: newStubAdminService()}
-	router, _ := setupAccountHandlerWithService(svc)
+	router, _, jobs := setupAccountHandlerWithService(svc)
 
 	// account_uuid 传入 null（设置为空），应正常通过
 	body, _ := json.Marshal(map[string]any{
@@ -201,8 +223,12 @@ func TestBatchUpdateCredentials_AccountUUID_NullValue(t *testing.T) {
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("POST", "/api/v1/admin/accounts/batch-update-credentials", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	setAccountJobTestIdempotencyKey(req)
 	router.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusOK, w.Code,
-		"account_uuid 传入 null 应返回 200")
+	require.Equal(t, http.StatusAccepted, w.Code,
+		"account_uuid 传入 null 应创建任务")
+	var payload BatchUpdateCredentialsRequest
+	requireSubmittedAccountJob(t, jobs, service.AccountJobKindBatchUpdateCredentials, &payload)
+	require.Nil(t, payload.Value)
 }

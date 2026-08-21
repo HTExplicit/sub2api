@@ -353,6 +353,8 @@ func TestAPIContracts(t *testing.T) {
 						"name": "Group One",
 						"description": "desc",
 						"platform": "anthropic",
+						"wire_platform": "anthropic",
+						"provider_profile": "",
 						"rate_multiplier": 1.5,
 						"peak_rate_enabled": false,
 						"peak_start": "",
@@ -1385,21 +1387,27 @@ func TestAPIContracts(t *testing.T) {
 			path:   "/api/v1/admin/accounts/bulk-update",
 			body:   `{"account_ids":[101,102],"schedulable":false}`,
 			headers: map[string]string{
-				"Content-Type": "application/json",
+				"Content-Type":    "application/json",
+				"Idempotency-Key": "contract-bulk-update",
 			},
-			wantStatus: http.StatusOK,
+			wantStatus: http.StatusAccepted,
 			wantJSON: `{
 				"code": 0,
-				"message": "success",
+				"message": "accepted",
 				"data": {
-					"success": 2,
-					"failed": 0,
-					"success_ids": [101, 102],
-					"failed_ids": [],
-					"results": [
-						{"account_id": 101, "success": true},
-						{"account_id": 102, "success": true}
-					]
+					"id": 1,
+					"created_by": 1,
+					"kind": "account_bulk_update",
+					"status": "pending",
+					"metadata": {"target_count": 2},
+					"target_count": 2,
+					"processed_count": 0,
+					"succeeded_count": 0,
+					"failed_count": 0,
+					"canceled_count": 0,
+					"attempt": 1,
+					"created_at": "2025-01-02T03:04:05Z",
+					"updated_at": "2025-01-02T03:04:05Z"
 				}
 			}`,
 		},
@@ -1490,6 +1498,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 	usageHandler := handler.NewUsageHandler(usageService, apiKeyService, nil, nil)
 	adminSettingHandler := adminhandler.NewSettingHandler(settingService, nil, nil, nil, nil, nil, nil)
 	adminAccountHandler := adminhandler.NewAccountHandler(adminService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	adminAccountHandler.SetAccountJobService(service.NewAccountJobService(&contractAccountJobRepo{now: now}, contractAccountJobCipher{}))
 
 	jwtAuth := func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{
@@ -1571,6 +1580,61 @@ func doRequest(t *testing.T, router http.Handler, method, path, body string, hea
 }
 
 func ptr[T any](v T) *T { return &v }
+
+type contractAccountJobCipher struct{}
+
+func (contractAccountJobCipher) Encrypt(value string) (string, error) { return "cipher:" + value, nil }
+func (contractAccountJobCipher) Decrypt(value string) (string, error) { return value, nil }
+
+type contractAccountJobRepo struct {
+	now time.Time
+}
+
+func (r *contractAccountJobRepo) Create(_ context.Context, params service.CreateAccountJobParams) (*service.AccountJob, bool, error) {
+	return &service.AccountJob{
+		ID: 1, CreatedBy: params.CreatedBy, Kind: params.Kind, IdempotencyKey: params.IdempotencyKey,
+		RequestHash: params.RequestHash, Status: service.AccountJobStatusPending, Metadata: params.Metadata,
+		TargetCount: len(params.Items), Attempt: params.Attempt, CreatedAt: r.now, UpdatedAt: r.now,
+	}, false, nil
+}
+
+func (*contractAccountJobRepo) FindIdempotent(context.Context, int64, string, string) (*service.AccountJob, error) {
+	return nil, service.ErrAccountJobNotFound
+}
+func (*contractAccountJobRepo) Get(context.Context, int64) (*service.AccountJob, error) {
+	return nil, service.ErrAccountJobNotFound
+}
+func (*contractAccountJobRepo) List(context.Context, int64, string, string, int, int) (*service.AccountJobList, error) {
+	return &service.AccountJobList{}, nil
+}
+func (*contractAccountJobRepo) ListItems(context.Context, int64, string, int, int) (*service.AccountJobItemList, error) {
+	return &service.AccountJobItemList{}, nil
+}
+func (*contractAccountJobRepo) MarkInterrupted(context.Context) error              { return nil }
+func (*contractAccountJobRepo) Claim(context.Context) (*service.AccountJob, error) { return nil, nil }
+func (*contractAccountJobRepo) Payload(context.Context, int64) (string, time.Time, error) {
+	return "", time.Time{}, service.ErrAccountJobNotFound
+}
+func (*contractAccountJobRepo) ReservePendingItems(context.Context, int64, int) ([]service.AccountJobItem, error) {
+	return nil, nil
+}
+func (*contractAccountJobRepo) CancelRequested(context.Context, int64) (bool, error) {
+	return false, nil
+}
+func (*contractAccountJobRepo) CompleteItems(context.Context, int64, []service.AccountJobExecutionResult) error {
+	return nil
+}
+func (*contractAccountJobRepo) Finish(context.Context, int64, string, string) (*service.AccountJob, error) {
+	return nil, nil
+}
+func (*contractAccountJobRepo) Cancel(context.Context, int64, int64) (*service.AccountJob, error) {
+	return nil, nil
+}
+func (*contractAccountJobRepo) FailedItemSeeds(context.Context, int64, int64) (*service.AccountJob, []service.AccountJobItemSeed, string, time.Time, error) {
+	return nil, nil, "", time.Time{}, service.ErrAccountJobNotFound
+}
+func (*contractAccountJobRepo) ExpirePayloads(context.Context, time.Time) error { return nil }
+func (*contractAccountJobRepo) Prune(context.Context, time.Time) error          { return nil }
 
 type stubUserRepo struct {
 	users map[int64]*service.User

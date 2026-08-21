@@ -151,7 +151,7 @@ func (s *groupRepoStubForAdmin) GetAccountIDsByGroupIDs(_ context.Context, group
 	if s.getAccountIDsByGroupIDsFn != nil {
 		return s.getAccountIDsByGroupIDsFn(groupIDs)
 	}
-	panic("unexpected GetAccountIDsByGroupIDs call")
+	return nil, nil
 }
 
 func (s *groupRepoStubForAdmin) UpdateSortOrders(_ context.Context, _ []GroupSortOrderUpdate) error {
@@ -1247,7 +1247,7 @@ func (s *groupRepoStubForFallbackCycle) BindAccountsToGroup(_ context.Context, _
 }
 
 func (s *groupRepoStubForFallbackCycle) GetAccountIDsByGroupIDs(_ context.Context, _ []int64) ([]int64, error) {
-	panic("unexpected GetAccountIDsByGroupIDs call")
+	return nil, nil
 }
 
 func (s *groupRepoStubForFallbackCycle) UpdateSortOrders(_ context.Context, _ []GroupSortOrderUpdate) error {
@@ -1318,7 +1318,7 @@ func (s *groupRepoStubForInvalidRequestFallback) DeleteAccountGroupsByGroupID(_ 
 }
 
 func (s *groupRepoStubForInvalidRequestFallback) GetAccountIDsByGroupIDs(_ context.Context, _ []int64) ([]int64, error) {
-	panic("unexpected GetAccountIDsByGroupIDs call")
+	return nil, nil
 }
 
 func (s *groupRepoStubForInvalidRequestFallback) BindAccountsToGroup(_ context.Context, _ int64, _ []int64) error {

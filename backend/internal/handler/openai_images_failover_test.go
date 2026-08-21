@@ -316,12 +316,14 @@ func TestCindyNativeImagesHTTP200BudgetJSONFailsOverBeforeWrite(t *testing.T) {
 	exhaustedAccountID := int64(11)
 	accounts := []service.Account{
 		{
-			ID: exhaustedAccountID, Name: "cindy-image-exhausted", Platform: service.PlatformOpenAI,
+			ID: exhaustedAccountID, Name: "cindy-image-exhausted", Platform: service.PlatformCindy,
+			WirePlatform: service.WirePlatformOpenAI, ProviderProfile: service.ProviderProfileCindyLaxaV1,
 			Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
 			Priority: 0, Credentials: map[string]any{"api_key": "sk-cindy-a", "base_url": "https://api.laxarouter.ai"},
 		},
 		{
-			ID: 12, Name: "cindy-image-healthy", Platform: service.PlatformOpenAI,
+			ID: 12, Name: "cindy-image-healthy", Platform: service.PlatformCindy,
+			WirePlatform: service.WirePlatformOpenAI, ProviderProfile: service.ProviderProfileCindyLaxaV1,
 			Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
 			Priority: 1, Credentials: map[string]any{"api_key": "sk-cindy-b", "base_url": "https://api.laxarouter.ai"},
 		},
@@ -354,7 +356,8 @@ func TestCindyNativeImagesHTTP200BudgetJSONFailsOverBeforeWrite(t *testing.T) {
 		ID: 100, GroupID: &groupID, Status: service.StatusActive,
 		User: &service.User{ID: 101, Status: service.StatusActive},
 		Group: &service.Group{
-			ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive,
+			ID: groupID, Platform: service.PlatformCindy, WirePlatform: service.WirePlatformOpenAI,
+			ProviderProfile: service.ProviderProfileCindyLaxaV1, Status: service.StatusActive,
 			StrictCindyKnown: true, StrictCindy: true, AllowImageGeneration: true, RateMultiplier: 1,
 		},
 	})

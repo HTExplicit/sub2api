@@ -97,19 +97,17 @@ func newCindyRateLimitAccount(id int64, poolMode bool) *Account {
 	credentials := cindyCredentials()
 	credentials["pool_mode"] = poolMode
 	return &Account{
-		ID:          id,
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Status:      StatusActive,
-		Schedulable: true,
-		Credentials: credentials,
+		ID:              id,
+		Platform:        PlatformCindy,
+		WirePlatform:    WirePlatformOpenAI,
+		ProviderProfile: ProviderProfileCindyLaxaV1,
+		Type:            AccountTypeAPIKey,
+		Status:          StatusActive,
+		Schedulable:     true,
+		Credentials:     credentials,
 	}
 }
 
 func newFirstClassCindyRateLimitAccount(id int64, poolMode bool) *Account {
-	account := newCindyRateLimitAccount(id, poolMode)
-	account.Platform = PlatformCindy
-	account.WirePlatform = WirePlatformOpenAI
-	account.ProviderProfile = ProviderProfileCindyLaxaV1
-	return account
+	return newCindyRateLimitAccount(id, poolMode)
 }

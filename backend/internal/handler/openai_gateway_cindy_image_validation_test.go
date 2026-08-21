@@ -117,7 +117,8 @@ func newCindyResponsesImageValidationContext(
 		ID: 58101, GroupID: &groupID, Status: service.StatusActive,
 		User: &service.User{ID: 58102, Status: service.StatusActive},
 		Group: &service.Group{
-			ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive,
+			ID: groupID, Platform: service.PlatformCindy, WirePlatform: service.WirePlatformOpenAI,
+			ProviderProfile: service.ProviderProfileCindyLaxaV1, Status: service.StatusActive,
 			StrictCindyKnown: true, StrictCindy: strict,
 			AllowImageGeneration: true, RateMultiplier: 1,
 		},
@@ -137,12 +138,18 @@ func cindyResponsesImageValidationAccount(cindy bool) service.Account {
 		baseURL = "https://api.laxarouter.ai"
 		extra = nil
 	}
-	return service.Account{
+	account := service.Account{
 		ID: 58103, Name: "image-validation", Platform: service.PlatformOpenAI,
 		Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
 		Credentials: map[string]any{"api_key": "sk-test", "base_url": baseURL},
 		Extra:       extra,
 	}
+	if cindy {
+		account.Platform = service.PlatformCindy
+		account.WirePlatform = service.WirePlatformOpenAI
+		account.ProviderProfile = service.ProviderProfileCindyLaxaV1
+	}
+	return account
 }
 
 func TestStrictCindyResponsesImageRequestsNormalizeVerifiedWireControls(t *testing.T) {
@@ -209,7 +216,7 @@ func TestStrictCindyResponsesTopLevelLiveIDRejectsUnverifiedControls(t *testing.
 	}
 }
 
-func TestResponsesMixedGroupSelectedCindyRejectsUnknownNestedImageModelAndReleases(t *testing.T) {
+func TestResponsesCindyGroupRejectsUnknownNestedImageModelBeforeConcurrencyAcquire(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h, upstream, concurrencyCache, groupID := newCindyResponsesImageValidationHandler(t, cindyResponsesImageValidationAccount(true))
 	body := []byte(`{"model":"gpt-5.6-luna","input":"draw","tools":[{"type":"image_generation","model":"unknown-image"}],"tool_choice":{"type":"image_generation"}}`)
@@ -220,10 +227,10 @@ func TestResponsesMixedGroupSelectedCindyRejectsUnknownNestedImageModelAndReleas
 	require.Equal(t, http.StatusNotFound, recorder.Code, recorder.Body.String())
 	require.Equal(t, "model_not_found", gjson.GetBytes(recorder.Body.Bytes(), "error.type").String())
 	require.Empty(t, upstream.snapshot())
-	require.Equal(t, int32(1), atomic.LoadInt32(&concurrencyCache.releaseAccountCalled))
+	require.Equal(t, int32(0), atomic.LoadInt32(&concurrencyCache.releaseAccountCalled))
 }
 
-func TestResponsesMixedGroupSelectedCindyRejectsInvalidNestedControlsAndReleases(t *testing.T) {
+func TestResponsesCindyGroupRejectsInvalidNestedControlsBeforeConcurrencyAcquire(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h, upstream, concurrencyCache, groupID := newCindyResponsesImageValidationHandler(t, cindyResponsesImageValidationAccount(true))
 	body := []byte(`{"model":"gpt-5.6-luna","input":"draw","tools":[{"type":"image_generation","model":"gpt-image-2","quality":"high"}],"tool_choice":{"type":"image_generation"}}`)
@@ -235,7 +242,7 @@ func TestResponsesMixedGroupSelectedCindyRejectsInvalidNestedControlsAndReleases
 	require.Equal(t, "invalid_request_error", gjson.GetBytes(recorder.Body.Bytes(), "error.type").String())
 	require.Contains(t, gjson.GetBytes(recorder.Body.Bytes(), "error.message").String(), "quality")
 	require.Empty(t, upstream.snapshot())
-	require.Equal(t, int32(1), atomic.LoadInt32(&concurrencyCache.releaseAccountCalled))
+	require.Equal(t, int32(0), atomic.LoadInt32(&concurrencyCache.releaseAccountCalled))
 }
 
 func TestResponsesSelectedNonCindyPreservesNestedImageBody(t *testing.T) {
@@ -248,6 +255,12 @@ func TestResponsesSelectedNonCindyPreservesNestedImageBody(t *testing.T) {
 
 	h, upstream, concurrencyCache, groupID := newCindyResponsesImageValidationHandler(t, account)
 	c, recorder := newCindyResponsesImageValidationContext(t, groupID, false, body)
+	apiKeyValue, exists := c.Get(string(middleware2.ContextKeyAPIKey))
+	require.True(t, exists)
+	apiKey := apiKeyValue.(*service.APIKey)
+	apiKey.Group.Platform = service.PlatformOpenAI
+	apiKey.Group.WirePlatform = ""
+	apiKey.Group.ProviderProfile = ""
 	h.Responses(c)
 
 	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
@@ -262,17 +275,17 @@ func TestCindyImageRollbackPreservesLegacyResponsesImageToolRequest(t *testing.T
 	tests := []struct {
 		name           string
 		catalogEnabled string
-		imageEnabled   string
+		bridgeEnabled  string
 	}{
-		{name: "image phase disabled", catalogEnabled: "true", imageEnabled: "false"},
-		{name: "catalog phase disabled", catalogEnabled: "false", imageEnabled: "true"},
+		{name: "responses image phase disabled", catalogEnabled: "true", bridgeEnabled: "false"},
+		{name: "catalog phase disabled keeps responses image independent", catalogEnabled: "false", bridgeEnabled: "true"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			cmd := exec.Command(os.Args[0], "-test.run=^TestCindyImageRollbackValidationHelper$")
 			cmd.Env = append(withoutCindyImageValidationEnv(os.Environ()),
 				service.CindyCapabilityCatalogEnabledEnv+"="+test.catalogEnabled,
-				service.ImageStudioEnabledEnv+"="+test.imageEnabled,
+				service.CindyResponsesImageBridgeEnabledEnv+"="+test.bridgeEnabled,
 				cindyImageRollbackValidationHelperEnv+"=1",
 			)
 			if output, err := cmd.CombinedOutput(); err != nil {
@@ -286,10 +299,6 @@ func TestCindyImageRollbackValidationHelper(t *testing.T) {
 	if os.Getenv(cindyImageRollbackValidationHelperEnv) == "" {
 		t.Skip("subprocess helper")
 	}
-	if service.CindyImageStudioFeatureEnabled() {
-		t.Fatal("image rollback helper started with the image phase enabled")
-	}
-
 	gin.SetMode(gin.TestMode)
 	account := cindyResponsesImageValidationAccount(true)
 	body := []byte(`{"model":"gpt-5.6-luna","input":"draw","tools":[{"type":"image_generation","model":"unknown-image","quality":"high"}],"tool_choice":{"type":"image_generation"}}`)
@@ -297,6 +306,14 @@ func TestCindyImageRollbackValidationHelper(t *testing.T) {
 	c, recorder := newCindyResponsesImageValidationContext(t, groupID, false, body)
 
 	h.Responses(c)
+
+	if service.CindyResponsesImageBridgeFeatureEnabled() {
+		require.Equal(t, http.StatusNotFound, recorder.Code, recorder.Body.String())
+		require.Equal(t, "model_not_found", gjson.GetBytes(recorder.Body.Bytes(), "error.type").String())
+		require.Empty(t, upstream.snapshot())
+		require.Equal(t, int32(1), atomic.LoadInt32(&concurrencyCache.releaseAccountCalled))
+		return
+	}
 
 	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 	calls := upstream.snapshot()
@@ -308,10 +325,11 @@ func TestCindyImageRollbackValidationHelper(t *testing.T) {
 
 func withoutCindyImageValidationEnv(environment []string) []string {
 	blocked := map[string]struct{}{
-		strings.ToUpper(service.CindyCapabilityCatalogEnabledEnv): {},
-		strings.ToUpper(service.ImageStudioEnabledEnv):            {},
-		strings.ToUpper(service.CindyImageStudioEnabledEnv):       {},
-		strings.ToUpper(cindyImageRollbackValidationHelperEnv):    {},
+		strings.ToUpper(service.CindyCapabilityCatalogEnabledEnv):    {},
+		strings.ToUpper(service.ImageStudioEnabledEnv):               {},
+		strings.ToUpper(service.CindyImageStudioEnabledEnv):          {},
+		strings.ToUpper(service.CindyResponsesImageBridgeEnabledEnv): {},
+		strings.ToUpper(cindyImageRollbackValidationHelperEnv):       {},
 	}
 	filtered := make([]string, 0, len(environment))
 	for _, entry := range environment {

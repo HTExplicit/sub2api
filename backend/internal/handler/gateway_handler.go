@@ -1090,7 +1090,7 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	// account model_mapping keys. Compatibility aliases and unverified
 	// candidates are intentionally absent from the public list.
 	strictCindy := false
-	if platform == service.PlatformOpenAI {
+	if platform == service.PlatformOpenAI || platform == service.PlatformCindy {
 		var err error
 		strictCindy, err = h.gatewayService.ClassifyStrictCindyGroup(c.Request.Context(), authenticatedGroup)
 		if err != nil {
@@ -1178,7 +1178,7 @@ func (h *GatewayHandler) ModelCapabilities(c *gin.Context) {
 		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")
 		return
 	}
-	if apiKey.Group.Platform != service.PlatformOpenAI {
+	if apiKey.Group.Platform != service.PlatformOpenAI && apiKey.Group.Platform != service.PlatformCindy {
 		markLocalGate()
 		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Model capabilities are not available for this group")
 		return

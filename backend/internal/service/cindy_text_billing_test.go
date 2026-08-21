@@ -281,10 +281,12 @@ func TestOpenAIRecordUsageCindyCatalogCoversResponsesAndNativeMessages(t *testin
 
 func cindyTextBillingAccount() *Account {
 	return &Account{
-		ID:       9901,
-		Platform: PlatformOpenAI,
-		Type:     AccountTypeAPIKey,
-		Status:   StatusActive,
+		ID:              9901,
+		Platform:        PlatformCindy,
+		WirePlatform:    WirePlatformOpenAI,
+		ProviderProfile: ProviderProfileCindyLaxaV1,
+		Type:            AccountTypeAPIKey,
+		Status:          StatusActive,
 		Credentials: map[string]any{
 			"api_key":  "not-exposed",
 			"base_url": "https://api.laxarouter.ai",

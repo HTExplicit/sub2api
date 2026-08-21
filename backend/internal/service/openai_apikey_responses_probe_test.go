@@ -160,9 +160,11 @@ func TestSelectResponsesProbeModel(t *testing.T) {
 
 	// Strict Cindy probes must never generate the OpenAI default gpt-5.4.
 	cindy := &Account{
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Credentials: cindyCredentials(),
+		Platform:        PlatformCindy,
+		WirePlatform:    WirePlatformOpenAI,
+		ProviderProfile: ProviderProfileCindyLaxaV1,
+		Type:            AccountTypeAPIKey,
+		Credentials:     cindyCredentials(),
 	}
 	require.Equal(t, "openai/gpt-5.6-luna", selectResponsesProbeModel(cindy))
 }

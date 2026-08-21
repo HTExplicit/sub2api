@@ -75,11 +75,13 @@ func TestCalculateOpenAIRecordUsageCost_CindyWebSearchExplicitZeroUnlessGroupOve
 	t.Parallel()
 	svc := &OpenAIGatewayService{billingService: &BillingService{}}
 	groupID := int64(12)
-	apiKey := &APIKey{ID: 2, GroupID: &groupID, Group: &Group{ID: groupID, Platform: PlatformOpenAI}}
+	apiKey := &APIKey{ID: 2, GroupID: &groupID, Group: &Group{ID: groupID, Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1}}
 	account := &Account{
-		ID:       22,
-		Platform: PlatformOpenAI,
-		Type:     AccountTypeAPIKey,
+		ID:              22,
+		Platform:        PlatformCindy,
+		WirePlatform:    WirePlatformOpenAI,
+		ProviderProfile: ProviderProfileCindyLaxaV1,
+		Type:            AccountTypeAPIKey,
 		Credentials: map[string]any{
 			"api_key":  "sk-test",
 			"base_url": "https://api.laxarouter.ai",

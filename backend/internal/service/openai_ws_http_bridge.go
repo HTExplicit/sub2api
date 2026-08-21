@@ -612,7 +612,9 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		if !clientDisconnected {
 			startsSemanticOutput := openAIWSPassthroughStartsSemanticOutput(clientMessage) &&
 				!isOpenAIWSTerminalEvent(eventType)
-			stageBeforeSemanticOutput := turn == 1 && account.Platform == PlatformOpenAI && !wroteDownstream
+			stageBeforeSemanticOutput := turn == 1 && !wroteDownstream &&
+				(account.Platform == PlatformOpenAI ||
+					(account.EffectiveWirePlatform() == PlatformOpenAI && CindyBalanceDetectionFeatureEnabled()))
 			commitStagedMessages := !stageBeforeSemanticOutput ||
 				openAIStreamDataStartsClientOutput(string(clientMessage), eventType) ||
 				isOpenAIWSTerminalEvent(eventType)

@@ -16,13 +16,15 @@ import (
 
 func newCindyNativeMessagesAccount() *Account {
 	return &Account{
-		ID:          901,
-		Name:        "cindy-native-messages",
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Concurrency: 1,
-		Status:      StatusActive,
-		Schedulable: true,
+		ID:              901,
+		Name:            "cindy-native-messages",
+		Platform:        PlatformCindy,
+		WirePlatform:    WirePlatformOpenAI,
+		ProviderProfile: ProviderProfileCindyLaxaV1,
+		Type:            AccountTypeAPIKey,
+		Concurrency:     1,
+		Status:          StatusActive,
+		Schedulable:     true,
 		Credentials: map[string]any{
 			"api_key":  "cindy-secret",
 			"base_url": "https://api.laxarouter.ai",

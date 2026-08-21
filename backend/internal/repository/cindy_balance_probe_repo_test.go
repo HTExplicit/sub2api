@@ -123,7 +123,7 @@ func TestCindyBalanceProbeRepositoryCreateJobRejectsTransactionalCandidateDrift(
 		Filters: service.AccountConsoleFilters{CindyOnly: true},
 	}
 	previewedAccount := service.Account{
-		ID: 17, Name: "candidate-one", Platform: service.PlatformOpenAI,
+		ID: 17, Name: "candidate-one", Platform: service.PlatformCindy,
 		Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
 		Credentials: credentials, Extra: map[string]any{}, UpdatedAt: now,
 	}
@@ -142,7 +142,7 @@ func TestCindyBalanceProbeRepositoryCreateJobRejectsTransactionalCandidateDrift(
 		{
 			name: "existing candidate generation changed",
 			rows: cindyBalanceProbeAccountSnapshotRows().AddRow(
-				int64(17), "candidate-one", service.PlatformOpenAI, service.AccountTypeAPIKey,
+				int64(17), "candidate-one", service.PlatformCindy, service.AccountTypeAPIKey,
 				mustMarshalCindyBalanceProbeTestJSON(t, credentials), []byte(`{}`), nil, nil,
 				service.StatusActive, true, now.Add(time.Second), nil, nil, nil, "{}", "{}",
 			),
@@ -151,12 +151,12 @@ func TestCindyBalanceProbeRepositoryCreateJobRejectsTransactionalCandidateDrift(
 			name: "new matching candidate appeared",
 			rows: cindyBalanceProbeAccountSnapshotRows().
 				AddRow(
-					int64(17), "candidate-one", service.PlatformOpenAI, service.AccountTypeAPIKey,
+					int64(17), "candidate-one", service.PlatformCindy, service.AccountTypeAPIKey,
 					mustMarshalCindyBalanceProbeTestJSON(t, credentials), []byte(`{}`), nil, nil,
 					service.StatusActive, true, now, nil, nil, nil, "{}", "{}",
 				).
 				AddRow(
-					int64(18), "candidate-two", service.PlatformOpenAI, service.AccountTypeAPIKey,
+					int64(18), "candidate-two", service.PlatformCindy, service.AccountTypeAPIKey,
 					[]byte(`{"api_key":"sk-candidate-two","base_url":"https://api.laxarouter.ai"}`), []byte(`{}`), nil, nil,
 					service.StatusActive, true, now, nil, nil, nil, "{}", "{}",
 				),
@@ -264,7 +264,7 @@ func TestCindyBalanceProbeRepositoryValidateReservationUsesClaimAndItemEpoch(t *
 		"base_url": "https://api.laxarouter.ai",
 	}
 	fingerprint, err := service.CindyAccountIdentityFingerprint(
-		service.PlatformOpenAI,
+		service.PlatformCindy,
 		service.AccountTypeAPIKey,
 		credentials,
 	)
@@ -283,7 +283,7 @@ func TestCindyBalanceProbeRepositoryValidateReservationUsesClaimAndItemEpoch(t *
 		}(),
 	}
 	account := &service.Account{
-		ID: reservation.AccountID, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
+		ID: reservation.AccountID, Platform: service.PlatformCindy, Type: service.AccountTypeAPIKey,
 		Status: service.StatusActive, Schedulable: true, UpdatedAt: reservation.AccountUpdatedAt,
 		Credentials: credentials,
 	}
@@ -310,7 +310,7 @@ func TestCindyBalanceProbeRepositoryValidateReservationUsesClaimAndItemEpoch(t *
 					reservation.JobRequestCount, "terra_running", reservation.AccountID,
 					reservation.IdentityFingerprint, reservation.AccountUpdatedAt,
 					reservation.WasMarked, reservation.RequestCount, reservation.LunaAt.UTC(),
-					service.PlatformOpenAI, service.AccountTypeAPIKey, service.StatusActive, string(credentialsJSON))
+					service.PlatformCindy, service.AccountTypeAPIKey, service.StatusActive, string(credentialsJSON))
 			if tt.authorized {
 				expectation.WillReturnRows(sqlmock.NewRows([]string{"job_request_count_match", "luna_at_match"}).
 					AddRow(tt.jobEchoMatch, tt.lunaEchoMatch))
@@ -351,7 +351,7 @@ func TestCindyBalanceProbeRepositoryCompleteStageDistinguishesPauseFromLostAutho
 		"base_url": "https://api.laxarouter.ai",
 	}
 	fingerprint, err := service.CindyAccountIdentityFingerprint(
-		service.PlatformOpenAI,
+		service.PlatformCindy,
 		service.AccountTypeAPIKey,
 		credentials,
 	)
@@ -364,7 +364,7 @@ func TestCindyBalanceProbeRepositoryCompleteStageDistinguishesPauseFromLostAutho
 		IdentityFingerprint: fingerprint, AccountUpdatedAt: updatedAt,
 	}
 	account := &service.Account{
-		ID: 13, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
+		ID: 13, Platform: service.PlatformCindy, Type: service.AccountTypeAPIKey,
 		Status: service.StatusActive, Schedulable: true,
 		Credentials: credentials, UpdatedAt: updatedAt,
 	}
@@ -469,7 +469,7 @@ func TestCindyBalanceProbeRepositoryFinalizeExhaustedEnqueuesTypedAccountChange(
 		"base_url": "https://api.laxarouter.ai",
 	}
 	fingerprint, err := service.CindyAccountIdentityFingerprint(
-		service.PlatformOpenAI,
+		service.PlatformCindy,
 		service.AccountTypeAPIKey,
 		credentials,
 	)
@@ -506,7 +506,7 @@ func TestCindyBalanceProbeRepositoryFinalizeExhaustedEnqueuesTypedAccountChange(
 			"platform", "type", "status", "schedulable", "credentials", "updated_at",
 			"cindy_balance_insufficient_at", "deleted_at",
 		}).AddRow(
-			service.PlatformOpenAI,
+			service.PlatformCindy,
 			service.AccountTypeAPIKey,
 			service.StatusActive,
 			true,

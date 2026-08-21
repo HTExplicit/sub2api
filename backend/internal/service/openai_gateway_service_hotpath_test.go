@@ -557,7 +557,7 @@ func TestForwardCindyResponsesTopLevelLiveImageIDUsesLunaController(t *testing.T
 	cfg.Security.URLAllowlist.Enabled = false
 	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream}
 	account := &Account{
-		ID: 12, Name: "cindy", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Concurrency: 1,
+		ID: 12, Name: "cindy", Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1, Type: AccountTypeAPIKey, Concurrency: 1,
 		Credentials: map[string]any{
 			"api_key":  "sk-test",
 			"base_url": "https://api.laxarouter.ai",

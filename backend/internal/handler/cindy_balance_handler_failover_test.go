@@ -238,14 +238,16 @@ func newCindyBalanceFailoverHandlerWithCache(t *testing.T, cache service.Gateway
 	groupID := int64(57100)
 	accounts := []service.Account{
 		{
-			ID: cindyHandlerExhaustedAccountID, Name: "cindy-A", Platform: service.PlatformOpenAI,
+			ID: cindyHandlerExhaustedAccountID, Name: "cindy-A", Platform: service.PlatformCindy,
+			WirePlatform: service.WirePlatformOpenAI, ProviderProfile: service.ProviderProfileCindyLaxaV1,
 			Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
 			Priority: 1, Concurrency: 0,
 			Credentials: map[string]any{"api_key": "sk-a", "base_url": "https://api.laxarouter.ai"},
 			Extra:       map[string]any{"openai_passthrough": true},
 		},
 		{
-			ID: cindyHandlerHealthyAccountID, Name: "cindy-B", Platform: service.PlatformOpenAI,
+			ID: cindyHandlerHealthyAccountID, Name: "cindy-B", Platform: service.PlatformCindy,
+			WirePlatform: service.WirePlatformOpenAI, ProviderProfile: service.ProviderProfileCindyLaxaV1,
 			Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
 			Priority: 2, Concurrency: 0,
 			Credentials: map[string]any{"api_key": "sk-b", "base_url": "https://api.laxarouter.ai"},
@@ -323,7 +325,8 @@ func newStrictCindyHandlerContext(t *testing.T, groupID int64, path, body string
 		ID: 57103, GroupID: &groupID, Status: service.StatusActive,
 		User: &service.User{ID: 57104, Status: service.StatusActive},
 		Group: &service.Group{
-			ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive,
+			ID: groupID, Platform: service.PlatformCindy, WirePlatform: service.WirePlatformOpenAI,
+			ProviderProfile: service.ProviderProfileCindyLaxaV1, Status: service.StatusActive,
 			StrictCindyKnown: true, StrictCindy: true, RateMultiplier: 1,
 		},
 	}

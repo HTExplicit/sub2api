@@ -89,11 +89,13 @@ func newGatewayModelsHandlerForTest(repo service.AccountRepository) *GatewayHand
 
 func cindyGatewayModelAccountForTest(id int64) service.Account {
 	return service.Account{
-		ID:          id,
-		Platform:    service.PlatformOpenAI,
-		Type:        service.AccountTypeAPIKey,
-		Status:      service.StatusActive,
-		Schedulable: true,
+		ID:              id,
+		Platform:        service.PlatformCindy,
+		WirePlatform:    service.WirePlatformOpenAI,
+		ProviderProfile: service.ProviderProfileCindyLaxaV1,
+		Type:            service.AccountTypeAPIKey,
+		Status:          service.StatusActive,
+		Schedulable:     true,
 		Credentials: map[string]any{
 			"api_key":  "not-exposed",
 			"base_url": "https://api.laxarouter.ai",
@@ -115,7 +117,8 @@ func TestGatewayModels_StrictCindyUsesVerifiedPublicCatalog(t *testing.T) {
 	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
 	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
 		GroupID: &groupID,
-		Group:   &service.Group{ID: groupID, Platform: service.PlatformOpenAI},
+		Group: &service.Group{ID: groupID, Platform: service.PlatformCindy,
+			WirePlatform: service.WirePlatformOpenAI, ProviderProfile: service.ProviderProfileCindyLaxaV1},
 	})
 
 	h.Models(c)
@@ -142,7 +145,7 @@ func TestGatewayModels_StrictCindyUsesVerifiedPublicCatalog(t *testing.T) {
 	require.Equal(t, 1000000, byID["claude-opus-4-8"].ContextWindow)
 	require.Equal(t, 1000000, byID["claude-opus-5"].ContextWindow)
 	require.Equal(t, 1000000, byID["claude-sonnet-5"].ContextWindow)
-	require.Equal(t, 262144, byID["hy3"].ContextWindow)
+	require.NotContains(t, byID, "hy3")
 	require.Equal(t, 500000, byID["grok-4.5"].ContextWindow)
 	require.Equal(t, 1000000, byID["glm-5.2"].ContextWindow)
 }
@@ -160,7 +163,7 @@ func TestWriteOpenAIModelsListOmitsCindyMetadataForOrdinaryProviders(t *testing.
 	require.NotContains(t, rec.Body.String(), "max_output_tokens")
 }
 
-func TestGatewayModels_MixedGroupMergesOnlyVerifiedPublicCindyModels(t *testing.T) {
+func TestGatewayModels_CindyGroupDoesNotUnionOrdinaryProviderModels(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	groupID := int64(5604)
 	cindy := cindyGatewayModelAccountForTest(1)
@@ -191,7 +194,8 @@ func TestGatewayModels_MixedGroupMergesOnlyVerifiedPublicCindyModels(t *testing.
 	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
 	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
 		GroupID: &groupID,
-		Group:   &service.Group{ID: groupID, Platform: service.PlatformOpenAI},
+		Group: &service.Group{ID: groupID, Platform: service.PlatformCindy,
+			WirePlatform: service.WirePlatformOpenAI, ProviderProfile: service.ProviderProfileCindyLaxaV1},
 	})
 
 	h.Models(c)
@@ -200,10 +204,8 @@ func TestGatewayModels_MixedGroupMergesOnlyVerifiedPublicCindyModels(t *testing.
 	var got gatewayModelsResponseForTest
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	modelIDs := modelIDsForTest(got.Data)
-	require.Contains(t, modelIDs, "ordinary-model")
-	for _, model := range service.CindyPublicModelIDs() {
-		require.Contains(t, modelIDs, model)
-	}
+	require.Equal(t, service.CindyPublicModelIDs(), modelIDs)
+	require.NotContains(t, modelIDs, "ordinary-model")
 	require.NotContains(t, modelIDs, "openai/gpt-5.6-sol")
 	require.NotContains(t, modelIDs, "gpt-5.4")
 	require.NotContains(t, modelIDs, "deepseek-v4-pro")
@@ -221,7 +223,8 @@ func TestGatewayModelCapabilities_StrictCindyHidesInternalIDs(t *testing.T) {
 	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models/capabilities", nil)
 	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
 		GroupID: &groupID,
-		Group:   &service.Group{ID: groupID, Platform: service.PlatformOpenAI},
+		Group: &service.Group{ID: groupID, Platform: service.PlatformCindy,
+			WirePlatform: service.WirePlatformOpenAI, ProviderProfile: service.ProviderProfileCindyLaxaV1},
 	})
 
 	h.ModelCapabilities(c)
@@ -257,7 +260,7 @@ func TestGatewayModelCapabilities_StrictCindyHidesInternalIDs(t *testing.T) {
 	require.Equal(t, []service.CindyEndpoint{service.CindyEndpointMessages}, byID["claude-opus-5"])
 	require.Equal(t, []service.CindyEndpoint{service.CindyEndpointResponses, service.CindyEndpointChatCompletions, service.CindyEndpointMessages}, byID["gpt-5.6-sol"])
 	require.Equal(t, []service.CindyEndpoint{service.CindyEndpointResponses, service.CindyEndpointChatCompletions, service.CindyEndpointMessages}, byID["gpt-5.6-luna"])
-	require.Equal(t, []service.CindyEndpoint{service.CindyEndpointAlphaSearch}, byID["cindy/web-search"])
+	require.NotContains(t, byID, "cindy/web-search")
 	require.Equal(t, []service.CindyEndpoint{service.CindyEndpointImagesGenerate}, byID["gpt-image-2"])
 	require.Equal(t, []string{"1024x1024"}, byControls["gpt-image-2"].Generation.Sizes)
 	require.Equal(t, 1, byControls["gpt-image-2"].Generation.MaxOutputCount)

@@ -620,6 +620,12 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	routingModel := reqModel
 	forwardMapped := channelMapping.Mapped
 	forwardMappedModel := channelMapping.MappedModel
+	if strictCindyResponsesImageBridgeAllowed(reqModel, body) {
+		// The body must retain the image-only model so the forwarder can build the
+		// verified image tool request. Scheduling, however, targets its Luna text
+		// controller because Cindy does not serve gpt-image-2 as a text endpoint.
+		routingModel = service.CindyDefaultTestModel
+	}
 	if compatibilityAlias {
 		routingModel = compatibilityRoutingModel
 		forwardMapped = true

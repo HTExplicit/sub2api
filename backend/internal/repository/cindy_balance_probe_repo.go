@@ -587,7 +587,7 @@ func (r *cindyBalanceProbeRepository) ValidateReservationForSend(
 	`, reservation.ItemID, reservation.JobID, leaseToken, reservation.JobRequestCount,
 		expectedState, reservation.AccountID, reservation.IdentityFingerprint,
 		reservation.AccountUpdatedAt, reservation.WasMarked, reservation.RequestCount, lunaAt,
-		service.PlatformOpenAI, service.AccountTypeAPIKey, service.StatusActive, string(credentialsJSON)).
+		service.PlatformCindy, service.AccountTypeAPIKey, service.StatusActive, string(credentialsJSON)).
 		Scan(&jobRequestCountMatch, &lunaAtMatch)
 	if errors.Is(err, sql.ErrNoRows) {
 		slog.Warn("cindy_balance_probe_dispatch_authority_rejected", "stage", reservation.Stage)

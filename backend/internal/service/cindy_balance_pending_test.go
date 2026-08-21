@@ -211,7 +211,9 @@ func TestAdminCindyBalanceRecoveryIgnoresLegacyPendingCleanupFailure(t *testing.
 				accountRepoStubForClearAccountError: accountRepoStubForClearAccountError{
 					account: &Account{
 						ID:                         99107,
-						Platform:                   PlatformOpenAI,
+						Platform:                   PlatformCindy,
+						WirePlatform:               WirePlatformOpenAI,
+						ProviderProfile:            ProviderProfileCindyLaxaV1,
 						Type:                       AccountTypeAPIKey,
 						Status:                     StatusActive,
 						Schedulable:                true,
