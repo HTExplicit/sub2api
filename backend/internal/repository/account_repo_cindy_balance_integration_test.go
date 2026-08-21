@@ -45,7 +45,12 @@ func TestCindyInsufficientDeleteIsProtectedAndRejectsStalePreview(t *testing.T) 
 	manualPaused := createAccount("paused", cindyCredentials, service.StatusActive, true)
 	_, err = client.Account.UpdateOneID(manualPaused.ID).SetSchedulable(false).Save(ctx)
 	require.NoError(t, err)
-	nonCindy := createAccount("non-cindy", map[string]any{"base_url": "https://api.laxarouter.ai/v1"}, service.StatusActive, true)
+	nonCindy := mustCreateAccount(t, client, &service.Account{
+		Name: namePrefix + "-non-cindy", Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
+		Status: service.StatusActive, Schedulable: true,
+		Credentials:                map[string]any{"base_url": "https://api.laxarouter.ai/v1", "api_key": "test"},
+		CindyBalanceInsufficientAt: &stamp,
+	})
 	unmarkedCindy := createAccount("unmarked", cindyCredentials, service.StatusActive, false)
 	createdAccountIDs := []int64{eligibleOne.ID, manualDisabled.ID, manualPaused.ID, nonCindy.ID, unmarkedCindy.ID}
 	var outboxEventID int64
