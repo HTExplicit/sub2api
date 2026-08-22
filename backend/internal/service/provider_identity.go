@@ -14,8 +14,7 @@ const (
 
 // ResolveAccountProviderIdentity returns the persisted semantic platform,
 // protocol handler family and provider isolation profile. Legacy OpenAI+Laxa
-// rows retain ordinary OpenAI provider identity even while temporary
-// account-level compatibility recognizes them; migration 229 owns their
+// rows are deliberately ordinary OpenAI at runtime; migration 229 owns their
 // one-time projection to the first-class Cindy identity.
 func ResolveAccountProviderIdentity(platform, accountType string, credentials map[string]any) (string, string, string, error) {
 	platform = strings.ToLower(strings.TrimSpace(platform))

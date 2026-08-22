@@ -47,27 +47,6 @@ func TestIsCindyBalanceInsufficientResponse(t *testing.T) {
 	}
 }
 
-func TestLegacyLaxaOpenAIAccountRetainsExactBudgetClassification(t *testing.T) {
-	require.True(t, CindyBalanceDetectionFeatureEnabled(), "service test process must enable balance detection")
-	legacy := &Account{
-		ID:          8503,
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Credentials: cindyCredentials(),
-	}
-
-	require.Equal(t, CindyBalanceSignalHTTP429, ClassifyCindyBalanceInsufficient(
-		legacy,
-		http.StatusTooManyRequests,
-		[]byte(exactCindyBudgetExceededBody),
-	))
-	require.Equal(t, CindyBalanceSignalNone, ClassifyCindyBalanceInsufficient(
-		legacy,
-		http.StatusTooManyRequests,
-		[]byte(`{"error":{"type":"rate_limit_error","code":"429"}}`),
-	))
-}
-
 func TestClassifyCindyBalanceInsufficientTerminalEvents(t *testing.T) {
 	cindy := newCindyRateLimitAccount(8511, true)
 	nonCindy := &Account{

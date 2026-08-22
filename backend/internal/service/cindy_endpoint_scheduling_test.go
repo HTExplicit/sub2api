@@ -148,52 +148,6 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_MixedGroupGatesCindyByE
 	}
 }
 
-func TestOpenAIGatewayService_SelectAccountWithScheduler_MixedLegacyLaxaUsesGenericOpenAIPool(t *testing.T) {
-	resetOpenAIAdvancedSchedulerSettingCacheForTest()
-	groupID := int64(51013)
-	legacyLaxa := Account{
-		ID: 51014, Name: "legacy-laxa", Platform: PlatformOpenAI,
-		Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1,
-		Credentials: cindyCredentials(),
-	}
-	ordinary := Account{
-		ID: 51015, Name: "ordinary-openai-compatible", Platform: PlatformOpenAI,
-		Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1,
-		Credentials: map[string]any{"api_key": "ordinary-key", "base_url": "https://compat.example"},
-	}
-	cfg := &config.Config{}
-	cfg.Gateway.Scheduling.LoadBatchEnabled = false
-	svc := &OpenAIGatewayService{
-		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: []Account{legacyLaxa, ordinary}},
-		cache:              &schedulerTestGatewayCache{},
-		cfg:                cfg,
-		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
-	}
-
-	for _, test := range []struct {
-		name       string
-		excludedID int64
-		wantID     int64
-	}{
-		{name: "legacy remains selectable", excludedID: ordinary.ID, wantID: legacyLaxa.ID},
-		{name: "ordinary member remains selectable", excludedID: legacyLaxa.ID, wantID: ordinary.ID},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			selection, _, err := svc.SelectAccountWithSchedulerForCapability(
-				context.Background(), &groupID, "", "", "gpt-5.6-luna",
-				map[int64]struct{}{test.excludedID: {}}, OpenAIUpstreamTransportAny,
-				OpenAIEndpointCapabilityResponses, false, false, false, PlatformOpenAI,
-			)
-			require.NoError(t, err)
-			require.NotNil(t, selection)
-			require.Equal(t, test.wantID, selection.Account.ID)
-			if selection.ReleaseFunc != nil {
-				selection.ReleaseFunc()
-			}
-		})
-	}
-}
-
 func TestOpenAIGatewayService_SelectAccountWithScheduler_CindyMessagesUsesMessagesCapability(t *testing.T) {
 	resetOpenAIAdvancedSchedulerSettingCacheForTest()
 	groupID := int64(51020)

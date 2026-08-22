@@ -15,16 +15,6 @@ type materializedCindyClassifierStub struct {
 	calls  atomic.Int64
 }
 
-type legacyCindyGroupReaderStub struct {
-	accounts []Account
-}
-
-func (s legacyCindyGroupReaderStub) ListCindyGroupIdentityMembers(context.Context, int64) ([]Account, error) {
-	return s.accounts, nil
-}
-
-func (legacyCindyGroupReaderStub) CindyGroupIdentityReaderMarker() {}
-
 func (s *materializedCindyClassifierStub) ClassifyStrictCindyGroup(context.Context, int64) (bool, error) {
 	s.calls.Add(1)
 	return s.strict, s.err
@@ -87,36 +77,6 @@ func TestClassifyAuthenticatedStrictCindyGroupUsesMaterializedIdentity(t *testin
 			require.Equal(t, test.wantCalls, test.classifier.calls.Load())
 		})
 	}
-}
-
-func TestLegacyLaxaOpenAIGroupCompatibilityKeepsMixedGroupOrdinary(t *testing.T) {
-	t.Parallel()
-	legacyLaxa := Account{
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Credentials: cindyCredentials(),
-	}
-	ordinary := Account{
-		Platform: PlatformOpenAI,
-		Type:     AccountTypeAPIKey,
-		Credentials: map[string]any{
-			"base_url": "https://api.openai.com",
-			"api_key":  "ordinary-key",
-		},
-	}
-	group := &Group{ID: 71, Platform: PlatformOpenAI}
-
-	pure, err := classifyAuthenticatedCindyIdentityGroup(context.Background(), legacyCindyGroupReaderStub{
-		accounts: []Account{legacyLaxa},
-	}, group)
-	require.NoError(t, err)
-	require.True(t, pure, "pure legacy Laxa groups retain the temporary compatibility classification")
-
-	mixed, err := classifyAuthenticatedCindyIdentityGroup(context.Background(), legacyCindyGroupReaderStub{
-		accounts: []Account{legacyLaxa, ordinary},
-	}, group)
-	require.NoError(t, err)
-	require.False(t, mixed, "mixed OpenAI groups must stay on generic OpenAI continuation and scheduling")
 }
 
 func TestAPIKeyAuthSnapshotRoundTripsMaterializedCindyIdentity(t *testing.T) {
