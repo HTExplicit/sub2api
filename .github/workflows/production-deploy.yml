@@ -244,6 +244,8 @@ jobs:
             -i ~/.ssh/sub2api_deploy \
             -o BatchMode=yes \
             -o IdentitiesOnly=yes \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=3 \
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             -p "$VPS_PORT" \

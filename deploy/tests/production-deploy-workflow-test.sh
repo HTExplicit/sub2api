@@ -250,6 +250,8 @@ assert_ssh_invocation() {
     -i "$tmpdir/home/.ssh/sub2api_deploy"
     -o BatchMode=yes
     -o IdentitiesOnly=yes
+    -o ServerAliveInterval=30
+    -o ServerAliveCountMax=3
     -o StrictHostKeyChecking=yes
     -o "UserKnownHostsFile=$tmpdir/home/.ssh/known_hosts"
     -p 2222
