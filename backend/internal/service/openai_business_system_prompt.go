@@ -32,7 +32,7 @@ func (s *OpenAIGatewayService) applyBusinessSystemPrompt(
 	protocol string,
 	compact bool,
 ) ([]byte, BusinessSystemPromptApplication, error) {
-	if s == nil || s.businessPromptService == nil || account == nil || account.Platform != PlatformOpenAI {
+	if s == nil || s.businessPromptService == nil || account == nil || !account.IsOpenAI() {
 		return body, BusinessSystemPromptApplication{}, nil
 	}
 	snapshot, ok := s.businessPromptService.CurrentSnapshot()
@@ -52,7 +52,7 @@ func (s *OpenAIGatewayService) applyBusinessSystemPrompt(
 		}
 	}
 	return ApplyBusinessSystemPromptToJSON(body, snapshot, BusinessSystemPromptTarget{
-		Platform: account.Platform,
+		Platform: account.EffectiveWirePlatform(),
 		Protocol: protocol,
 		Compact:  compact,
 	})
@@ -62,7 +62,7 @@ func (s *OpenAIGatewayService) businessSystemPromptSnapshotForRequest(
 	ctx *gin.Context,
 	account *Account,
 ) (BusinessSystemPromptSnapshot, bool, error) {
-	if s == nil || s.businessPromptService == nil || account == nil || account.Platform != PlatformOpenAI {
+	if s == nil || s.businessPromptService == nil || account == nil || !account.IsOpenAI() {
 		return BusinessSystemPromptSnapshot{}, false, nil
 	}
 	if ctx != nil {
@@ -100,7 +100,7 @@ func (s *OpenAIGatewayService) applyBusinessSystemPromptForRequest(
 	// Eligibility is checked before consulting request-scoped state. This keeps
 	// an OpenAI attempt's frozen application from crossing into a Grok-specific
 	// transform if a caller ever reuses the Gin context across platforms.
-	if s == nil || s.businessPromptService == nil || account == nil || account.Platform != PlatformOpenAI {
+	if s == nil || s.businessPromptService == nil || account == nil || !account.IsOpenAI() {
 		return body, BusinessSystemPromptApplication{}, nil
 	}
 	if ctx != nil {
@@ -185,7 +185,7 @@ func (s *OpenAIGatewayService) applyBusinessSystemPromptForRequest(
 		}
 	}
 	updated, application, err := ApplyBusinessSystemPromptToJSON(body, snapshot, BusinessSystemPromptTarget{
-		Platform: account.Platform,
+		Platform: account.EffectiveWirePlatform(),
 		Protocol: protocol,
 		Compact:  compact,
 	})
