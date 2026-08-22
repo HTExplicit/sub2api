@@ -584,7 +584,18 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 		}
 	}
 
-	account, err := s.getSchedulableAccount(ctx, accountID)
+	var account *Account
+	var err error
+	// Response affinity identifies the account, but provider identity must come
+	// from the database because a persisted scheduler snapshot can predate a migration.
+	if s.accountRepo != nil {
+		account, err = s.accountRepo.GetByID(ctx, accountID)
+		if err == nil && account != nil && s.isOpenAIAccountBlockedBySchedulingThreshold(ctx, account) {
+			account = nil
+		}
+	} else {
+		account, err = s.getSchedulableAccount(ctx, accountID)
+	}
 	if err != nil || account == nil {
 		return miss(true, false)
 	}
@@ -618,38 +629,6 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 	}
 	if vetoed, _ := openAIProfitControlVetoReason(ctx, account); vetoed {
 		return miss(false, false)
-	}
-	if s.schedulerSnapshot != nil && s.accountRepo != nil {
-		latest, latestErr := s.accountRepo.GetByID(ctx, account.ID)
-		if latestErr != nil || latest == nil {
-			return miss(true, false)
-		}
-		if !latest.IsOpenAI() || !latest.IsActive() || !latest.Schedulable {
-			return miss(true, false)
-		}
-		if s.getOpenAIWSProtocolResolver().Resolve(latest).Transport != OpenAIUpstreamTransportResponsesWebsocketV2 &&
-			!s.cindyHTTPToWSV2ConfigEligible(latest) {
-			return miss(false, false)
-		}
-		if shouldClearStickySession(latest, requestedModel) || !latest.IsSchedulable() {
-			return miss(false, false)
-		}
-		if !parentHealthyForShadow(latest, s.parentAccountLookup(ctx)) {
-			return miss(false, false)
-		}
-		if requestedModel != "" && !latest.IsModelSupported(requestedModel) {
-			return miss(false, false)
-		}
-		if !latest.SupportsOpenAIEndpointCapability(requiredCapability) {
-			return miss(false, false)
-		}
-		if paused, _ := shouldAutoPauseOpenAIAccountByQuota(ctx, latest); paused {
-			return miss(false, false)
-		}
-		if vetoed, _ := openAIProfitControlVetoReason(ctx, latest); vetoed {
-			return miss(false, false)
-		}
-		account = latest
 	}
 	if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, requestedModel) {
 		return miss(false, true)
