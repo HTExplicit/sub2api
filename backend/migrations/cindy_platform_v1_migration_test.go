@@ -1,6 +1,7 @@
 package migrations
 
 import (
+	"io/fs"
 	"strings"
 	"testing"
 
@@ -48,4 +49,30 @@ func TestMigration229UsesReservedPostUpstreamNumber(t *testing.T) {
 		}
 	}
 	require.True(t, found)
+}
+
+func TestMigration235RepairsForwardProjectionWithoutLedgerReplay(t *testing.T) {
+	matches, err := fs.Glob(FS, "235_*.sql")
+	require.NoError(t, err)
+	require.Equal(t, []string{"235_preserve_mixed_openai_cindy_groups.sql"}, matches)
+
+	raw, err := FS.ReadFile(matches[0])
+	require.NoError(t, err)
+	sql := strings.ToLower(string(raw))
+
+	beginAt := strings.Index(sql, "begin;")
+	restoreAt := strings.Index(sql, "select * from project_cindy_platform_v1_to_legacy()")
+	redefineAt := strings.Index(sql, "create or replace function project_cindy_platform_v1_from_legacy()")
+	forwardAt := strings.LastIndex(sql, "select * from project_cindy_platform_v1_from_legacy()")
+	commitAt := strings.LastIndex(sql, "commit;")
+	require.GreaterOrEqual(t, beginAt, 0)
+	require.Greater(t, restoreAt, beginAt)
+	require.Greater(t, redefineAt, restoreAt)
+	require.Greater(t, forwardAt, redefineAt)
+	require.Greater(t, commitAt, forwardAt)
+	require.Contains(t, sql, "return query")
+	require.Contains(t, sql, "from project_cindy_platform_v1_discover_legacy()")
+	require.NotContains(t, sql, "update groups")
+	require.NotContains(t, sql, "update accounts")
+	require.NotContains(t, sql, "delete from cindy_platform_v1_projection")
 }
