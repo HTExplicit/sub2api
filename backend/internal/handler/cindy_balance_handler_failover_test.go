@@ -517,20 +517,30 @@ func TestFirstClassCindyOpaqueFullUsesStableOriginalAccountBinding(t *testing.T)
 	require.Equal(t, "different current user content", gjson.GetBytes(requestBodies[2], "input.1.content").String())
 }
 
-func TestFirstClassCindyOpaqueFullLegacyBindingMissNeverSwitchesAccounts(t *testing.T) {
+func TestFirstClassCindyOpaqueFullBindingMissReplaysThroughOrdinaryFailover(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	h, _, upstream, groupID := newFirstClassCindyContinuationHandler(t, nil)
-	body := `{"model":"gpt-5.6-sol","store":false,"input":[{"type":"reasoning","id":"rs_foreign","encrypted_content":"cipher-missing","phase":"analysis"},{"type":"message","role":"user","content":"next"}],"stream":false}`
+	h, repo, upstream, groupID := newFirstClassCindyContinuationHandler(t, nil)
+	body := `{"model":"gpt-5.6-sol","store":false,"input":[{"type":"reasoning","id":"rs_foreign","encrypted_content":"cipher-missing","phase":"analysis"},{"type":"function_call","id":"fc_foreign","call_id":"call_foreign","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_foreign","output":"ok"},{"type":"message","role":"user","content":"next"}],"stream":false}`
+	classification, err := service.ClassifyCindyContinuation([]byte(body), service.CindyContinuationProof{})
+	require.NoError(t, err)
+	require.Equal(t, service.CindyContinuationOpaqueFull, classification.Mode)
+	require.False(t, classification.HasExternalReference)
 	c, recorder := newFirstClassCindyContinuationContext(t, groupID, body)
 
 	h.Responses(c)
 
-	require.Equal(t, http.StatusBadRequest, recorder.Code)
-	require.Equal(t, service.OpenAIContinuationStateUnavailableCode, gjson.GetBytes(recorder.Body.Bytes(), "error.code").String())
-	require.Empty(t, upstream.calls(), "legacy opaque history without an authoritative session binding must fail before upstream")
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	requireCindyHandlerFailover(t, repo, upstream)
+	requestBodies := upstream.bodies()
+	require.Len(t, requestBodies, 2)
+	for _, requestBody := range requestBodies {
+		require.JSONEq(t, gjson.Get(body, "input").Raw, gjson.GetBytes(requestBody, "input").Raw)
+		require.False(t, gjson.GetBytes(requestBody, "store").Bool())
+		require.False(t, gjson.GetBytes(requestBody, "previous_response_id").Exists())
+	}
 }
 
-func TestFirstClassCindyOpaqueFullLegacyHistoryUsesExistingSessionBinding(t *testing.T) {
+func TestFirstClassCindyOpaqueFullBindingMissUsesOrdinarySessionAffinity(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cache := &cindyLegacySessionCache{accountID: cindyHandlerHealthyAccountID}
 	h, repo, upstream, groupID := newFirstClassCindyContinuationHandler(t, cache)
@@ -550,8 +560,7 @@ func TestFirstClassCindyOpaqueFullLegacyHistoryUsesExistingSessionBinding(t *tes
 	classification, err := service.ClassifyCindyContinuation([]byte(secondBody), service.CindyContinuationProof{})
 	require.NoError(t, err)
 	lookup := h.gatewayService.LookupCindyOpaqueContinuationBinding(context.Background(), groupID, classification.OpaqueBindingIDs)
-	require.Equal(t, service.OpenAIContinuationBindingHit, lookup.State)
-	require.Equal(t, cindyHandlerHealthyAccountID, lookup.AccountID)
+	require.Equal(t, service.OpenAIContinuationBindingMiss, lookup.State)
 }
 
 type cindyOpaqueStoreErrorCache struct {

@@ -510,6 +510,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	}
 	cindyContinuation := service.CindyContinuationClassification{}
 	var opaqueContinuationBindingIDs []string
+	opaqueContinuationBindingMiss := false
 	legacySessionContinuation := false
 	if cindyIdentityGroup {
 		cindyContinuation, err = service.ClassifyCindyContinuation(body, service.CindyContinuationProof{})
@@ -531,10 +532,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				h.handleFailoverExhausted(c, service.NewOpenAIContinuationStoreUnavailableError(), false)
 				return
 			default:
-				// v0.1.177 predates opaque carrier bindings. An existing
-				// session-sticky account may prove ownership, but this payload
-				// must never be load-balanced or failed over.
-				legacySessionContinuation = true
+				// A complete opaque history is self-contained. Bindings retain
+				// affinity when present, but a miss can use ordinary scheduling.
+				opaqueContinuationBindingMiss = true
 			}
 		}
 		if !cindyContinuation.HasAnchor && cindyContinuation.Mode != service.CindyContinuationReferenceOnly {
@@ -1017,7 +1017,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
-					if cindyIdentityGroup && !cindyContinuation.CanSwitchAccount() {
+					if cindyIdentityGroup && !cindyContinuation.CanSwitchAccount() && !opaqueContinuationBindingMiss {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
