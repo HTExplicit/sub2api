@@ -81,7 +81,7 @@ jobs:
       - name: Cindy defaults migration tests
         working-directory: backend
         run: |
-          go test -p=1 ./migrations -run '^(TestMigration(207RestoresOnlyCindyNativeOpenAIModes|208UsesCindyPromptCacheHashOnly|209RestoresOnlyCindyAlphaSearchBridge|210ResetsOnlyLegacyCindyBalanceMarkers|211RestoresOnlyExactUnresolvedCindyBudgetMarkers|213ResetsOnlyStrictCindyBalanceMarkers)|TestMigration235RepairsForwardProjectionWithoutLedgerReplay)$' -count=1
+          go test -p=1 ./migrations -run '^(TestMigration(207RestoresOnlyCindyNativeOpenAIModes|208UsesCindyPromptCacheHashOnly|209RestoresOnlyCindyAlphaSearchBridge|210ResetsOnlyLegacyCindyBalanceMarkers|211RestoresOnlyExactUnresolvedCindyBudgetMarkers|213ResetsOnlyStrictCindyBalanceMarkers)|TestMigration235RestrictsLedgerReplayToLifecycleExcludedRows)$' -count=1
           go test -p=1 -tags integration ./migrations -run '^(TestCindy(OpenAIDefaults|PromptCacheHash|AlphaSearchBridge|BalanceMarkerReset|BalanceMarkerRestore|BalanceConfirmationReset|PlatformProjectionRoundTrip)MigrationIsStrictAndIdempotent|TestMigration235PreservesMixedOpenAIGroupsAfterCanonicalReplay)$' -count=1
 
   frontend:

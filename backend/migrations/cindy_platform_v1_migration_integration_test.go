@@ -176,6 +176,24 @@ func TestMigration235PreservesMixedOpenAIGroupsAfterCanonicalReplay(t *testing.T
 	`).Scan(&ledgerRows))
 	require.Equal(t, 4, ledgerRows)
 
+	require.NoError(t, execRemoteSkillSQL(ctx, db, `SELECT * FROM project_cindy_platform_v1_to_legacy()`))
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "legacy-cindy-active", "openai", "openai", "")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "legacy-cindy-active", "openai", "openai", "")
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "independent-pure-cindy", "openai", "", "")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "independent-pure-cindy", "openai", "", "")
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "cindy-soft-deleted", "openai", "openai", "")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "cindy-empty", "openai", "openai", "")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "cindy-soft-deleted", "openai", "openai", "")
+
+	require.NoError(t, execRemoteSkillSQL(ctx, db, `SELECT * FROM project_cindy_platform_v1_from_legacy()`))
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "legacy-cindy-active", "openai", "openai", "")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "legacy-cindy-active", "openai", "openai", "")
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "independent-pure-cindy", "cindy", "openai", "cindy_laxa_v1")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "independent-pure-cindy", "cindy", "openai", "cindy_laxa_v1")
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "cindy-soft-deleted", "cindy", "openai", "cindy_laxa_v1")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "cindy-empty", "cindy", "openai", "cindy_laxa_v1")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "cindy-soft-deleted", "cindy", "openai", "cindy_laxa_v1")
+
 	for range 2 {
 		var promotedAccounts, promotedGroups int64
 		require.NoError(t, db.QueryRowContext(ctx, `

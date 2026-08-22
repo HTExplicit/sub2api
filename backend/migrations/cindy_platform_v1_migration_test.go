@@ -52,7 +52,7 @@ func TestMigration229UsesReservedPostUpstreamNumber(t *testing.T) {
 	require.True(t, found)
 }
 
-func TestMigration235RepairsForwardProjectionWithoutLedgerReplay(t *testing.T) {
+func TestMigration235RestrictsLedgerReplayToLifecycleExcludedRows(t *testing.T) {
 	matches, err := fs.Glob(FS, "235_*.sql")
 	require.NoError(t, err)
 	require.Equal(t, []string{"235_preserve_mixed_openai_cindy_groups.sql"}, matches)
@@ -76,11 +76,10 @@ func TestMigration235RepairsForwardProjectionWithoutLedgerReplay(t *testing.T) {
 	forwardFunction := sql[redefineAt:functionEnd]
 	require.Contains(t, forwardFunction, "return query")
 	require.Contains(t, forwardFunction, "from project_cindy_platform_v1_discover_legacy()")
-	require.NotContains(t, forwardFunction, "cindy_platform_v1_projection")
-	require.NotContains(t, forwardFunction, "update groups")
-	require.NotContains(t, forwardFunction, "update accounts")
-	require.Contains(t, sql, "create temp table project_cindy_platform_v1_preserved_accounts")
-	require.Contains(t, sql, "create temp table project_cindy_platform_v1_preserved_groups")
+	require.Contains(t, forwardFunction, "cindy_platform_v1_projection")
+	require.Contains(t, forwardFunction, "a.deleted_at is not null")
+	require.Contains(t, forwardFunction, "g.deleted_at is not null or not exists")
+	require.NotContains(t, sql, "create temp table")
 	require.NotContains(t, sql, "insert into account_groups")
 	require.NotContains(t, sql, "update account_groups")
 	require.NotContains(t, sql, "delete from account_groups")
@@ -93,7 +92,7 @@ func TestMigration235RepairsForwardProjectionWithoutLedgerReplay(t *testing.T) {
 		raw, err := os.ReadFile(workflow)
 		require.NoError(t, err)
 		contents := string(raw)
-		require.Contains(t, contents, "TestMigration235RepairsForwardProjectionWithoutLedgerReplay")
+		require.Contains(t, contents, "TestMigration235RestrictsLedgerReplayToLifecycleExcludedRows")
 		require.Contains(t, contents, "TestMigration235PreservesMixedOpenAIGroupsAfterCanonicalReplay")
 	}
 }
