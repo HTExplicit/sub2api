@@ -216,8 +216,8 @@ func (s *OpenAIGatewayService) SelectAccountByCindyOpaqueContinuation(
 	return attachSelectionProfitGate(ctx, attachSelectionRuntimeBreakerProbe(ctx, selection)), decision, nil
 }
 
-// SelectAccountByCindyLegacySessionContinuation restores pre-v0.1.179 opaque
-// conversations that have a session binding but predate opaque carrier keys.
+// SelectAccountByCindyLegacySessionContinuation restores pre-v0.1.179
+// reference or opaque conversations from their existing session binding.
 func (s *OpenAIGatewayService) SelectAccountByCindyLegacySessionContinuation(
 	ctx context.Context,
 	groupID *int64,

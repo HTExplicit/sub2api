@@ -510,7 +510,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	}
 	cindyContinuation := service.CindyContinuationClassification{}
 	var opaqueContinuationBindingIDs []string
-	legacyOpaqueContinuationBindingMiss := false
+	legacySessionContinuation := false
 	if cindyIdentityGroup {
 		cindyContinuation, err = service.ClassifyCindyContinuation(body, service.CindyContinuationProof{})
 		if err != nil {
@@ -519,10 +519,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		}
 		switch cindyContinuation.Mode {
 		case service.CindyContinuationReferenceOnly:
-			if !cindyContinuation.HasAnchor {
-				writeCindyHTTPContinuationStateError(c)
-				return
-			}
+			legacySessionContinuation = !cindyContinuation.HasAnchor
 		case service.CindyContinuationOpaqueFull:
 			lookup := h.gatewayService.LookupCindyOpaqueContinuationBinding(
 				c.Request.Context(), apiKey.Group.ID, cindyContinuation.OpaqueBindingIDs,
@@ -537,10 +534,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				// v0.1.177 predates opaque carrier bindings. An existing
 				// session-sticky account may prove ownership, but this payload
 				// must never be load-balanced or failed over.
-				legacyOpaqueContinuationBindingMiss = true
+				legacySessionContinuation = true
 			}
 		}
-		if !cindyContinuation.HasAnchor {
+		if !cindyContinuation.HasAnchor && cindyContinuation.Mode != service.CindyContinuationReferenceOnly {
 			body, err = service.EnsureCindyResponsesStoreFalse(body)
 			if err != nil {
 				h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to normalize continuation request")
@@ -739,7 +736,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				c.Request.Context(), apiKey.GroupID, opaqueContinuationBindingIDs, routingModel,
 				failedAccountIDs, service.OpenAIUpstreamTransportAny, requiredCapability, requireCompact,
 			)
-		} else if legacyOpaqueContinuationBindingMiss {
+		} else if legacySessionContinuation {
 			selection, scheduleDecision, err = h.gatewayService.SelectAccountByCindyLegacySessionContinuation(
 				c.Request.Context(), apiKey.GroupID, sessionHash, cindyContinuation.OpaqueBindingIDs,
 				routingModel, failedAccountIDs, service.OpenAIUpstreamTransportAny, requiredCapability, requireCompact,
@@ -3616,19 +3613,6 @@ func (h *OpenAIGatewayHandler) errorResponse(c *gin.Context, status int, errType
 		"error": gin.H{
 			"type":    errType,
 			"message": message,
-		},
-	})
-}
-
-func writeCindyHTTPContinuationStateError(c *gin.Context) {
-	if c == nil {
-		return
-	}
-	c.JSON(http.StatusBadRequest, gin.H{
-		"error": gin.H{
-			"type":    "invalid_request_error",
-			"code":    service.OpenAIContinuationStateUnavailableCode,
-			"message": service.OpenAIContinuationStateUnavailableClientMessage,
 		},
 	})
 }
