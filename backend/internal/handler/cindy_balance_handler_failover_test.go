@@ -395,27 +395,60 @@ func TestStrictCindyResponsesHandlerFailsOverHTTP200BudgetSSEBeforeFirstByte(t *
 	require.NotContains(t, recorder.Body.String(), "resp_budget_a")
 }
 
-func TestFirstClassCindyResponsesRejectsUnanchoredExternalReferencesBeforeSelection(t *testing.T) {
+func TestFirstClassCindyResponsesForwardsUnanchoredCodexHistoryToStickyAccount(t *testing.T) {
 	tests := []struct {
 		name string
 		body string
 	}{
-		{name: "item reference", body: `{"model":"gpt-5.6-sol","input":[{"type":"item_reference","id":"fc_1"}],"stream":false}`},
-		{name: "orphan tool output", body: `{"model":"gpt-5.6-sol","input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}],"stream":false}`},
+		{name: "item reference", body: `{"model":"gpt-5.6-sol","prompt_cache_key":"legacy-reference-session","store":true,"input":[{"type":"item_reference","id":"fc_1"}],"stream":false}`},
+		{name: "reasoning id", body: `{"model":"gpt-5.6-sol","prompt_cache_key":"legacy-reference-session","input":[{"type":"reasoning","id":"rs_1"}],"stream":false}`},
+		{name: "referenced tool output", body: `{"model":"gpt-5.6-sol","prompt_cache_key":"legacy-reference-session","store":false,"input":[{"type":"item_reference","id":"call_1"},{"type":"function_call_output","call_id":"call_1","output":"ok"}],"stream":false}`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			gin.SetMode(gin.TestMode)
-			h, _, upstream, groupID := newFirstClassCindyContinuationHandler(t, nil)
+			cache := &cindyLegacySessionCache{accountID: cindyHandlerHealthyAccountID}
+			h, _, upstream, groupID := newFirstClassCindyContinuationHandler(t, cache)
 			c, recorder := newFirstClassCindyContinuationContext(t, groupID, test.body)
 
 			h.Responses(c)
 
-			require.Equal(t, http.StatusBadRequest, recorder.Code)
-			require.Equal(t, service.OpenAIContinuationStateUnavailableCode, gjson.Get(recorder.Body.String(), "error.code").String())
-			require.Empty(t, upstream.calls(), "invalid continuation must not select or call an upstream account")
+			require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+			require.Equal(t, []int64{cindyHandlerHealthyAccountID}, upstream.calls())
+			bodies := upstream.bodies()
+			require.Len(t, bodies, 1)
+			require.JSONEq(t, gjson.Get(test.body, "input").Raw, gjson.GetBytes(bodies[0], "input").Raw)
+			require.Equal(t, gjson.Get(test.body, "store").Exists(), gjson.GetBytes(bodies[0], "store").Exists())
+			require.Equal(t, gjson.Get(test.body, "store").Raw, gjson.GetBytes(bodies[0], "store").Raw)
 		})
 	}
+}
+
+func TestFirstClassCindyResponsesReferenceHistoryRequiresSessionBinding(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h, _, upstream, groupID := newFirstClassCindyContinuationHandler(t, nil)
+	c, recorder := newFirstClassCindyContinuationContext(t, groupID,
+		`{"model":"gpt-5.6-sol","prompt_cache_key":"missing-reference-session","input":[{"type":"reasoning","id":"rs_1"}],"stream":false}`)
+
+	h.Responses(c)
+
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	require.Equal(t, service.OpenAIContinuationStateUnavailableCode, gjson.Get(recorder.Body.String(), "error.code").String())
+	require.Empty(t, upstream.calls(), "reference history must not load-balance without its original session binding")
+}
+
+func TestFirstClassCindyResponsesReferenceHistoryDistinguishesSessionStoreError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cache := &cindyOpaqueStoreErrorCache{err: errors.New("redis unavailable")}
+	h, _, upstream, groupID := newFirstClassCindyContinuationHandler(t, cache)
+	c, recorder := newFirstClassCindyContinuationContext(t, groupID,
+		`{"model":"gpt-5.6-sol","prompt_cache_key":"unavailable-reference-session","input":[{"type":"reasoning","id":"rs_1"}],"stream":false}`)
+
+	h.Responses(c)
+
+	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
+	require.Equal(t, service.OpenAIContinuationStateUnavailableCode, gjson.Get(recorder.Body.String(), "error.code").String())
+	require.Empty(t, upstream.calls())
 }
 
 func TestFirstClassCindyResponsesExistingAnchorUsesBoundAccount(t *testing.T) {
