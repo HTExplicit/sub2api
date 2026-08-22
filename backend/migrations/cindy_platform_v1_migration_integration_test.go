@@ -26,6 +26,9 @@ func TestCindyPlatformProjectionRoundTripMigrationIsStrictAndIdempotent(t *testi
 	assertCindyPlatformIdentity(t, ctx, db, "groups", "legacy-cindy-active", "cindy", "openai", "cindy_laxa_v1")
 	assertCindyPlatformIdentity(t, ctx, db, "accounts", "ordinary-openai", "openai", "openai", "")
 	assertCindyPlatformIdentity(t, ctx, db, "groups", "ordinary-openai", "openai", "openai", "")
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "legacy-cindy-with-deleted-ordinary", "openai", "openai", "")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "legacy-cindy-with-deleted-ordinary", "openai", "openai", "")
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "deleted-ordinary-companion", "openai", "openai", "")
 
 	require.NoError(t, execRemoteSkillSQL(ctx, db, `
 		INSERT INTO accounts
@@ -77,9 +80,11 @@ func TestCindyPlatformProjectionRoundTripMigrationIsStrictAndIdempotent(t *testi
 	for _, name := range []string{"legacy-cindy-active", "cindy-soft-deleted"} {
 		assertCindyPlatformIdentity(t, ctx, db, "accounts", name, "openai", "openai", "")
 	}
-	for _, name := range []string{"legacy-cindy-active", "cindy-empty", "cindy-soft-deleted"} {
+	for _, name := range []string{"legacy-cindy-active", "cindy-empty", "cindy-soft-deleted", "legacy-cindy-with-deleted-ordinary"} {
 		assertCindyPlatformIdentity(t, ctx, db, "groups", name, "openai", "openai", "")
 	}
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "legacy-cindy-with-deleted-ordinary", "openai", "openai", "")
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "deleted-ordinary-companion", "openai", "openai", "")
 	assertCindyPlatformIdentity(t, ctx, db, "accounts", "new-legacy-cindy", "openai", "", "")
 	assertCindyPlatformIdentity(t, ctx, db, "groups", "new-legacy-cindy", "openai", "", "")
 
@@ -104,15 +109,28 @@ func assertCindyProjectionForwardState(t *testing.T, ctx context.Context, db *sq
 		{table: "accounts", name: "legacy-cindy-active"},
 		{table: "accounts", name: "cindy-soft-deleted"},
 		{table: "accounts", name: "new-legacy-cindy"},
+		{table: "accounts", name: "legacy-cindy-with-deleted-ordinary"},
 		{table: "groups", name: "legacy-cindy-active"},
 		{table: "groups", name: "cindy-empty"},
 		{table: "groups", name: "cindy-soft-deleted"},
 		{table: "groups", name: "new-legacy-cindy"},
+		{table: "groups", name: "legacy-cindy-with-deleted-ordinary"},
 	} {
 		assertCindyPlatformIdentity(t, ctx, db, tc.table, tc.name, "cindy", "openai", "cindy_laxa_v1")
 	}
 	assertCindyPlatformIdentity(t, ctx, db, "accounts", "ordinary-openai", "openai", "openai", "")
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "deleted-ordinary-companion", "openai", "openai", "")
 	assertCindyPlatformIdentity(t, ctx, db, "groups", "ordinary-openai", "openai", "openai", "")
+
+	var deletedCompanionProjectionRows int
+	require.NoError(t, db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM cindy_platform_v1_projection p
+		JOIN accounts a ON a.id = p.entity_id
+		WHERE p.entity_type = 'account'
+		  AND a.name = 'deleted-ordinary-companion'
+	`).Scan(&deletedCompanionProjectionRows))
+	require.Zero(t, deletedCompanionProjectionRows)
 
 	var pending int
 	require.NoError(t, db.QueryRowContext(ctx, `
@@ -180,13 +198,22 @@ CREATE TABLE account_groups (
 
 INSERT INTO groups (id, name, platform, fallback_group_id, deleted_at) VALUES
 	(1, 'ordinary-openai', 'openai', NULL, NULL),
-	(2, 'legacy-cindy-active', 'openai', NULL, NULL);
+	(2, 'legacy-cindy-active', 'openai', NULL, NULL),
+	(6, 'legacy-cindy-with-deleted-ordinary', 'openai', NULL, NULL);
 
 INSERT INTO accounts (id, name, platform, type, credentials, deleted_at) VALUES
 	(1, 'ordinary-openai', 'openai', 'apikey',
 	 '{"base_url":"https://api.openai.com","api_key":"fixture-ordinary"}', NULL),
 	(2, 'legacy-cindy-active', 'openai', 'apikey',
-	 '{"base_url":"https://api.laxarouter.ai","api_key":"fixture-cindy"}', NULL);
+	 '{"base_url":"https://api.laxarouter.ai","api_key":"fixture-cindy"}', NULL),
+	(6, 'legacy-cindy-with-deleted-ordinary', 'openai', 'apikey',
+	 '{"base_url":"https://api.laxarouter.ai","api_key":"fixture-cindy-with-deleted-companion"}', NULL),
+	(7, 'deleted-ordinary-companion', 'openai', 'apikey',
+	 '{"base_url":"https://api.openai.com","api_key":"fixture-deleted-ordinary"}', NOW());
 
-INSERT INTO account_groups (account_id, group_id) VALUES (1, 1), (2, 2);
+INSERT INTO account_groups (account_id, group_id) VALUES
+	(1, 1),
+	(2, 2),
+	(6, 6),
+	(7, 6);
 `
