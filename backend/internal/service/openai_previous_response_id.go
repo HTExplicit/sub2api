@@ -14,12 +14,13 @@ const (
 	OpenAIPreviousResponseIDKindMessageID     = "message_id"
 	OpenAIPreviousResponseIDKindUnknown       = "unknown"
 	OpenAIContinuationAnchorValidationMessage = "previous_response_id must be a response.id (resp_*)"
+	OpenAIContinuationAnchorMaxLength         = 1024
 )
 
 var ErrInvalidOpenAIContinuationAnchor = errors.New(OpenAIContinuationAnchorValidationMessage)
 
 var (
-	openAIResponseIDPattern = regexp.MustCompile(`^resp_[A-Za-z0-9_-]{1,256}$`)
+	openAIResponseIDPattern = regexp.MustCompile(`^resp_[A-Za-z0-9_-]+$`)
 	openAIMessageIDPattern  = regexp.MustCompile(`^(msg|message|item|chatcmpl)_[A-Za-z0-9_-]{1,256}$`)
 )
 
@@ -29,7 +30,7 @@ func ClassifyOpenAIPreviousResponseIDKind(id string) string {
 	if trimmed == "" {
 		return OpenAIPreviousResponseIDKindEmpty
 	}
-	if openAIResponseIDPattern.MatchString(trimmed) {
+	if len(trimmed) <= OpenAIContinuationAnchorMaxLength && openAIResponseIDPattern.MatchString(trimmed) {
 		return OpenAIPreviousResponseIDKindResponseID
 	}
 	if openAIMessageIDPattern.MatchString(strings.ToLower(trimmed)) {

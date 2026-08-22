@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -37,6 +38,8 @@ func TestIsOpenAIPreviousResponseIDLikelyMessageID(t *testing.T) {
 }
 
 func TestParseOpenAIContinuationAnchor(t *testing.T) {
+	productionLengthID := "resp_" + strings.Repeat("a", 452)
+	overLimitID := "resp_" + strings.Repeat("a", OpenAIContinuationAnchorMaxLength-len("resp_")+1)
 	tests := []struct {
 		name    string
 		payload string
@@ -49,6 +52,8 @@ func TestParseOpenAIContinuationAnchor(t *testing.T) {
 		{name: "whitespace", payload: `{"previous_response_id":"  "}`},
 		{name: "valid", payload: `{"previous_response_id":"resp_123"}`, want: "resp_123"},
 		{name: "valid trimmed", payload: `{"previous_response_id":"  resp_abc-123  "}`, want: "resp_abc-123"},
+		{name: "production length response id", payload: `{"previous_response_id":"` + productionLengthID + `"}`, want: productionLengthID},
+		{name: "over bounded length", payload: `{"previous_response_id":"` + overLimitID + `"}`, wantErr: true},
 		{name: "number", payload: `{"previous_response_id":123}`, wantErr: true},
 		{name: "boolean", payload: `{"previous_response_id":true}`, wantErr: true},
 		{name: "object", payload: `{"previous_response_id":{"id":"resp_123"}}`, wantErr: true},
