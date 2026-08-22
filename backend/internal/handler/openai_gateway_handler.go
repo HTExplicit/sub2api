@@ -510,6 +510,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	}
 	cindyContinuation := service.CindyContinuationClassification{}
 	var opaqueContinuationBindingIDs []string
+	legacyOpaqueContinuationBindingMiss := false
 	if cindyIdentityGroup {
 		cindyContinuation, err = service.ClassifyCindyContinuation(body, service.CindyContinuationProof{})
 		if err != nil {
@@ -517,11 +518,11 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			return
 		}
 		switch cindyContinuation.Mode {
-		case service.CindyContinuationAnchorDelta,
-			service.CindyContinuationAnchorPlusFull,
-			service.CindyContinuationReferenceOnly:
-			writeCindyHTTPContinuationStateError(c)
-			return
+		case service.CindyContinuationReferenceOnly:
+			if !cindyContinuation.HasAnchor {
+				writeCindyHTTPContinuationStateError(c)
+				return
+			}
 		case service.CindyContinuationOpaqueFull:
 			lookup := h.gatewayService.LookupCindyOpaqueContinuationBinding(
 				c.Request.Context(), apiKey.Group.ID, cindyContinuation.OpaqueBindingIDs,
@@ -533,14 +534,18 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				h.handleFailoverExhausted(c, service.NewOpenAIContinuationStoreUnavailableError(), false)
 				return
 			default:
-				writeCindyHTTPContinuationStateError(c)
-				return
+				// v0.1.177 predates opaque carrier bindings. An existing
+				// session-sticky account may prove ownership, but this payload
+				// must never be load-balanced or failed over.
+				legacyOpaqueContinuationBindingMiss = true
 			}
 		}
-		body, err = service.EnsureCindyResponsesStoreFalse(body)
-		if err != nil {
-			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to normalize continuation request")
-			return
+		if !cindyContinuation.HasAnchor {
+			body, err = service.EnsureCindyResponsesStoreFalse(body)
+			if err != nil {
+				h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to normalize continuation request")
+				return
+			}
 		}
 	}
 	strictCindy := cindyIdentityGroup && catalogEnabled
@@ -733,6 +738,11 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			selection, scheduleDecision, err = h.gatewayService.SelectAccountByCindyOpaqueContinuation(
 				c.Request.Context(), apiKey.GroupID, opaqueContinuationBindingIDs, routingModel,
 				failedAccountIDs, service.OpenAIUpstreamTransportAny, requiredCapability, requireCompact,
+			)
+		} else if legacyOpaqueContinuationBindingMiss {
+			selection, scheduleDecision, err = h.gatewayService.SelectAccountByCindyLegacySessionContinuation(
+				c.Request.Context(), apiKey.GroupID, sessionHash, cindyContinuation.OpaqueBindingIDs,
+				routingModel, failedAccountIDs, service.OpenAIUpstreamTransportAny, requiredCapability, requireCompact,
 			)
 		} else {
 			selection, scheduleDecision, err = h.gatewayService.SelectAccountWithSchedulerForCapabilityAndPreference(
@@ -2252,13 +2262,16 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, service.OpenAIContinuationAnchorValidationMessage)
 		return
 	}
+	wsCindyContinuation := service.CindyContinuationClassification{}
 	var wsOpaqueContinuationBindingIDs []string
+	wsLegacyOpaqueContinuationBindingMiss := false
 	if cindyIdentityGroup {
 		classification, classifyErr := service.ClassifyCindyContinuation(firstMessage, service.CindyContinuationProof{})
 		if classifyErr != nil {
 			closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "invalid continuation payload")
 			return
 		}
+		wsCindyContinuation = classification
 		if classification.Mode == service.CindyContinuationOpaqueFull {
 			lookup := h.gatewayService.LookupCindyOpaqueContinuationBinding(
 				ctx, apiKey.Group.ID, classification.OpaqueBindingIDs,
@@ -2270,8 +2283,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				closeOpenAIWSFailoverExhausted(wsConn, service.NewOpenAIContinuationStoreUnavailableError())
 				return
 			default:
-				closeOpenAIWSFailoverExhausted(wsConn, service.NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil))
-				return
+				wsLegacyOpaqueContinuationBindingMiss = true
 			}
 		}
 	}
@@ -2487,6 +2499,18 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				ctx,
 				apiKey.GroupID,
 				wsOpaqueContinuationBindingIDs,
+				wsRoutingModel,
+				failedAccountIDs,
+				requiredTransport,
+				requiredCapability,
+				false,
+			)
+		} else if wsLegacyOpaqueContinuationBindingMiss {
+			selection, scheduleDecision, err = h.gatewayService.SelectAccountByCindyLegacySessionContinuation(
+				ctx,
+				apiKey.GroupID,
+				sessionHash,
+				wsCindyContinuation.OpaqueBindingIDs,
 				wsRoutingModel,
 				failedAccountIDs,
 				requiredTransport,

@@ -558,16 +558,6 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 	}
 	refreshIngressRouteState(firstPayload)
-	if strictCindyContinuation && firstPayload.previousResponseID != "" {
-		boundConnID, resolveErr := resolveStrictCindyAnchorConn(firstPayload.previousResponseID, "")
-		if resolveErr != nil {
-			return resolveErr
-		}
-		preferredConnID = boundConnID
-		if forceHTTPBridge {
-			return NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
-		}
-	}
 
 	if forceHTTPBridge || s.shouldBridgeOpenAIWSHTTP(account, firstPayload.payloadBytes, firstPayload.previousResponseID) {
 		logOpenAIWSModeInfo(
@@ -1651,7 +1641,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		skipBeforeTurn = false
 		currentPreviousResponseID := openAIWSPayloadStringFromRaw(currentPayload, "previous_response_id")
-		if strictCindyContinuation && currentPreviousResponseID != "" {
+		if strictCindyContinuation && currentPreviousResponseID != "" && turn > 1 {
 			boundConnID, resolveErr := resolveStrictCindyAnchorConn(currentPreviousResponseID, sessionConnID)
 			if resolveErr != nil {
 				return resolveErr
@@ -1836,7 +1826,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				}
 			}
 		}
-		forcePreferredConn := isStrictAffinityTurn(currentPayload)
+		forcePreferredConn := isStrictAffinityTurn(currentPayload) && strings.TrimSpace(preferredConnID) != ""
 		if sessionLease == nil {
 			acquiredLease, acquireErr := acquireTurnLease(turn, preferredConnID, forcePreferredConn)
 			if acquireErr != nil {

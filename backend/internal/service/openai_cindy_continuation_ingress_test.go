@@ -497,6 +497,31 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CindyModeRouterP
 	require.Equal(t, "mode-router-stable-cipher", gjson.Get(requestToJSONString(writes[1]), "input.0.encrypted_content").String())
 }
 
+func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CindyInitialAnchorAfterRestartOpensNewConnection(t *testing.T) {
+	clientConn, capture, passthroughDialer, serverErrCh := newCindyContinuationAnchorValidationHarness(t, [][]byte{
+		[]byte(`{"type":"response.completed","response":{"id":"resp_after_restart","model":"gpt-5.6-sol","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
+	})
+
+	writeCindyContinuationTestMessage(t, clientConn,
+		`{"type":"response.create","model":"gpt-5.6-sol","stream":false,"previous_response_id":"resp_before_restart","input":"continue"}`)
+	response := readCindyContinuationTestMessage(t, clientConn)
+	require.Equal(t, "resp_after_restart", gjson.GetBytes(response, "response.id").String())
+	require.NoError(t, clientConn.Close(coderws.StatusNormalClosure, "done"))
+
+	select {
+	case serverErr := <-serverErrCh:
+		require.NoError(t, serverErr)
+	case <-time.After(5 * time.Second):
+		t.Fatal("waiting for restarted Cindy continuation timed out")
+	}
+	require.Zero(t, passthroughDialer.DialCount(), "strict Cindy mode must stay on the contract-aware pool")
+	capture.mu.Lock()
+	writes := append([]map[string]any(nil), capture.writes...)
+	capture.mu.Unlock()
+	require.Len(t, writes, 1)
+	require.Equal(t, "resp_before_restart", openAIWSPayloadString(writes[0], "previous_response_id"))
+}
+
 func newCindyContinuationAnchorValidationHarness(
 	t *testing.T,
 	events [][]byte,

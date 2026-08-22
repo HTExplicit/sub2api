@@ -393,7 +393,7 @@ func (s *defaultOpenAIAccountScheduler) Select(
 
 	previousResponseID := strings.TrimSpace(req.PreviousResponseID)
 	if previousResponseID != "" && openAIContinuationCapability(req.RequiredCapability) &&
-		NormalizeOpenAICompatiblePlatform(req.Platform) == PlatformOpenAI &&
+		openAIPlatformSupportsResponseAffinity(req.Platform) &&
 		(!req.StickyWeighted || !req.PreviousResponseCanMove) {
 		selection, err := s.service.selectAccountByPreviousResponseIDForCapabilityWithPolicy(
 			ctx,
@@ -2288,7 +2288,7 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 	platform = NormalizeOpenAICompatiblePlatform(platform)
 	decision := OpenAIAccountScheduleDecision{}
 	if strings.TrimSpace(previousResponseID) != "" && openAIContinuationCapability(requiredCapability) &&
-		platform == PlatformOpenAI && !previousResponseCanMove {
+		openAIPlatformSupportsResponseAffinity(platform) && !previousResponseCanMove {
 		selection, err := s.selectAccountByPreviousResponseIDForCapabilityWithPolicy(
 			ctx,
 			groupID,
@@ -2387,7 +2387,7 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 	stickyWeighted := s.isOpenAIAdvancedSchedulerStickyWeightedEnabled(ctx)
 	subscriptionPriority := s.isOpenAIAdvancedSchedulerSubscriptionPriorityEnabled(ctx)
 	stickyPreviousAccountID := int64(0)
-	if stickyWeighted && previousResponseCanMove && strings.TrimSpace(previousResponseID) != "" && platform == PlatformOpenAI {
+	if stickyWeighted && previousResponseCanMove && strings.TrimSpace(previousResponseID) != "" && openAIPlatformSupportsResponseAffinity(platform) {
 		stickyPreviousAccountID = s.ResolveAccountIDByPreviousResponseIDForScheduler(ctx, groupID, previousResponseID, requestedModel, excludedIDs, requiredCapability, requireCompact)
 	}
 
@@ -2414,6 +2414,15 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 func openAIContinuationCapability(capability OpenAIEndpointCapability) bool {
 	switch capability {
 	case "", OpenAIEndpointCapabilityChatCompletions, OpenAIEndpointCapabilityResponses:
+		return true
+	default:
+		return false
+	}
+}
+
+func openAIPlatformSupportsResponseAffinity(platform string) bool {
+	switch NormalizeOpenAICompatiblePlatform(platform) {
+	case PlatformOpenAI, PlatformCindy:
 		return true
 	default:
 		return false
