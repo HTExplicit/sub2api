@@ -38,7 +38,7 @@ func TestIsOpenAIPreviousResponseIDLikelyMessageID(t *testing.T) {
 }
 
 func TestParseOpenAIContinuationAnchor(t *testing.T) {
-	productionLengthID := "resp_" + strings.Repeat("a", 452)
+	productionLengthID := "resp_" + strings.Repeat("a", 448) + "+/=."
 	overLimitID := "resp_" + strings.Repeat("a", OpenAIContinuationAnchorMaxLength-len("resp_")+1)
 	tests := []struct {
 		name    string

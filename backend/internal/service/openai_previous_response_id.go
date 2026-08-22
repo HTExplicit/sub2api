@@ -20,7 +20,7 @@ const (
 var ErrInvalidOpenAIContinuationAnchor = errors.New(OpenAIContinuationAnchorValidationMessage)
 
 var (
-	openAIResponseIDPattern = regexp.MustCompile(`^resp_[A-Za-z0-9_-]+$`)
+	openAIResponseIDPattern = regexp.MustCompile(`^resp_[A-Za-z0-9_+=/.-]+$`)
 	openAIMessageIDPattern  = regexp.MustCompile(`^(msg|message|item|chatcmpl)_[A-Za-z0-9_-]{1,256}$`)
 )
 
