@@ -13,7 +13,7 @@ import (
 	dbmigrations "github.com/Wei-Shaw/sub2api/migrations"
 )
 
-func TestMigration234RestoresProjectionLedgerAcrossRollbackRoundTrips(t *testing.T) {
+func TestCindyPlatformProjectionRoundTripMigrationIsStrictAndIdempotent(t *testing.T) {
 	ctx := context.Background()
 	db, _ := remoteSkillMigrationTestDatabase(t)
 	require.NoError(t, execRemoteSkillSQL(ctx, db, cindyPlatformPre229FixtureSQL))
