@@ -98,6 +98,48 @@ func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_CindyHTTPBridgeH
 	}
 }
 
+func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_UsesCanonicalCindyIdentityAfterMigration(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(23)
+	canonical := *cindyHTTPToWSV2TestAccount()
+	canonical.ID = 205
+	canonical.WirePlatform = WirePlatformOpenAI
+	canonical.ProviderProfile = ProviderProfileCindyLaxaV1
+	canonical.GroupIDs = []int64{groupID}
+
+	stale := canonical
+	stale.Platform = PlatformOpenAI
+	stale.WirePlatform = ""
+	stale.ProviderProfile = ""
+
+	cache := &schedulerTestGatewayCache{}
+	store := NewOpenAIWSStateStore(cache)
+	cfg := newOpenAIWSV2TestConfig()
+	cfg.Gateway.OpenAIWS.CindyHTTPToWSV2Enabled = true
+	svc := &OpenAIGatewayService{
+		accountRepo:        stubOpenAIAccountRepo{accounts: []Account{canonical}},
+		cache:              cache,
+		cfg:                cfg,
+		schedulerSnapshot:  &SchedulerSnapshotService{cache: &openAISnapshotCacheStub{accountsByID: map[int64]*Account{stale.ID: &stale}}},
+		concurrencyService: NewConcurrencyService(stubConcurrencyCache{}),
+		openaiWSStateStore: store,
+	}
+	require.NoError(t, store.BindResponseAccount(ctx, groupID, "resp_cindy_migrated", canonical.ID, time.Hour))
+
+	selection, err := svc.SelectAccountByPreviousResponseID(
+		ctx, &groupID, "resp_cindy_migrated", "gpt-5.6-sol", nil, false,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, PlatformCindy, selection.Account.Platform)
+	require.Equal(t, canonical.ID, selection.Account.ID)
+	if selection.ReleaseFunc != nil {
+		selection.ReleaseFunc()
+	}
+}
+
 func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_CindyHTTPBridgeToggleOffMiss(t *testing.T) {
 	ctx := context.Background()
 	groupID := int64(23)
