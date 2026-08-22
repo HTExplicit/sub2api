@@ -40,6 +40,26 @@ type cindyHandlerFailoverAccountRepo struct {
 	markedIDs     []int64
 }
 
+type cindyHandlerConcurrencyCache struct {
+	service.ConcurrencyCache
+}
+
+func (c *cindyHandlerConcurrencyCache) AcquireAccountSlot(context.Context, int64, int, string) (bool, error) {
+	return true, nil
+}
+
+func (c *cindyHandlerConcurrencyCache) ReleaseAccountSlot(context.Context, int64, string) error {
+	return nil
+}
+
+func (c *cindyHandlerConcurrencyCache) GetAccountsLoadBatch(_ context.Context, accounts []service.AccountWithConcurrency) (map[int64]*service.AccountLoadInfo, error) {
+	result := make(map[int64]*service.AccountLoadInfo, len(accounts))
+	for _, account := range accounts {
+		result[account.ID] = &service.AccountLoadInfo{AccountID: account.ID}
+	}
+	return result, nil
+}
+
 func (r *cindyHandlerFailoverAccountRepo) ListSchedulableByPlatform(_ context.Context, platform string) ([]service.Account, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -266,7 +286,7 @@ func newCindyBalanceFailoverHandlerWithCache(t *testing.T, cache service.Gateway
 	billingService := service.NewBillingService(cfg, nil)
 	billingCache := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
 	t.Cleanup(billingCache.Stop)
-	concurrencyService := service.NewConcurrencyService(nil)
+	concurrencyService := service.NewConcurrencyService(&cindyHandlerConcurrencyCache{})
 	rateLimitService := service.NewRateLimitService(repo, nil, cfg, nil, nil)
 	openAIGateway := service.NewOpenAIGatewayService(
 		repo, nil, nil, nil, nil, nil, cache, cfg, nil, concurrencyService,
@@ -293,11 +313,18 @@ func newCindyBalanceFailoverHandlerWithCache(t *testing.T, cache service.Gateway
 
 func newFirstClassCindyContinuationHandler(t *testing.T, cache service.GatewayCache) (*OpenAIGatewayHandler, *cindyHandlerFailoverAccountRepo, *cindyHandlerFailoverUpstream, int64) {
 	h, repo, upstream, groupID := newCindyBalanceFailoverHandlerWithCache(t, cache)
+	h.cfg.Gateway.OpenAIWS.Enabled = true
+	h.cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	h.cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	h.cfg.Gateway.OpenAIWS.CindyHTTPToWSV2Enabled = true
 	repo.mu.Lock()
 	for i := range repo.accounts {
 		repo.accounts[i].Platform = service.PlatformCindy
 		repo.accounts[i].WirePlatform = service.WirePlatformOpenAI
 		repo.accounts[i].ProviderProfile = service.ProviderProfileCindyLaxaV1
+		repo.accounts[i].Concurrency = 1
+		repo.accounts[i].GroupIDs = []int64{groupID}
+		repo.accounts[i].Extra["openai_responses_supported"] = true
 	}
 	repo.mu.Unlock()
 	return h, repo, upstream, groupID
@@ -305,6 +332,7 @@ func newFirstClassCindyContinuationHandler(t *testing.T, cache service.GatewayCa
 
 func newFirstClassCindyContinuationContext(t *testing.T, groupID int64, body string) (*gin.Context, *httptest.ResponseRecorder) {
 	c, recorder := newStrictCindyHandlerContext(t, groupID, "/v1/responses", body)
+	c.Request.Header.Set("User-Agent", "compatible-client/1.0")
 	raw, exists := c.Get(string(middleware.ContextKeyAPIKey))
 	require.True(t, exists)
 	apiKey, ok := raw.(*service.APIKey)
@@ -367,12 +395,11 @@ func TestStrictCindyResponsesHandlerFailsOverHTTP200BudgetSSEBeforeFirstByte(t *
 	require.NotContains(t, recorder.Body.String(), "resp_budget_a")
 }
 
-func TestFirstClassCindyResponsesRejectsNonSelfContainedHTTPBeforeSelection(t *testing.T) {
+func TestFirstClassCindyResponsesRejectsUnanchoredExternalReferencesBeforeSelection(t *testing.T) {
 	tests := []struct {
 		name string
 		body string
 	}{
-		{name: "anchor delta", body: `{"model":"gpt-5.6-sol","previous_response_id":"resp_1","input":"next","stream":false}`},
 		{name: "item reference", body: `{"model":"gpt-5.6-sol","input":[{"type":"item_reference","id":"fc_1"}],"stream":false}`},
 		{name: "orphan tool output", body: `{"model":"gpt-5.6-sol","input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}],"stream":false}`},
 	}
@@ -389,6 +416,26 @@ func TestFirstClassCindyResponsesRejectsNonSelfContainedHTTPBeforeSelection(t *t
 			require.Empty(t, upstream.calls(), "invalid continuation must not select or call an upstream account")
 		})
 	}
+}
+
+func TestFirstClassCindyResponsesExistingAnchorUsesBoundAccount(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h, _, upstream, groupID := newFirstClassCindyContinuationHandler(t, nil)
+	first, firstRecorder := newFirstClassCindyContinuationContext(t, groupID,
+		`{"model":"gpt-5.6-sol","input":"first","stream":true}`)
+	h.Responses(first)
+	require.Equal(t, http.StatusOK, firstRecorder.Code, firstRecorder.Body.String())
+	require.Equal(t, []int64{cindyHandlerExhaustedAccountID, cindyHandlerHealthyAccountID}, upstream.calls())
+
+	second, secondRecorder := newFirstClassCindyContinuationContext(t, groupID,
+		`{"model":"gpt-5.6-sol","store":true,"previous_response_id":"resp_healthy_b","input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}],"stream":true}`)
+	h.Responses(second)
+
+	require.Equal(t, http.StatusOK, secondRecorder.Code, secondRecorder.Body.String())
+	require.Equal(t, []int64{cindyHandlerExhaustedAccountID, cindyHandlerHealthyAccountID, cindyHandlerHealthyAccountID}, upstream.calls())
+	bodies := upstream.bodies()
+	require.Equal(t, "resp_healthy_b", gjson.GetBytes(bodies[2], "previous_response_id").String())
+	require.True(t, gjson.GetBytes(bodies[2], "store").Bool(), "anchored legacy conversations must preserve the client's store mode")
 }
 
 func TestFirstClassCindyResponsesFullReplayForcesStoreFalseAndPreservesIDs(t *testing.T) {
@@ -437,7 +484,7 @@ func TestFirstClassCindyOpaqueFullUsesStableOriginalAccountBinding(t *testing.T)
 	require.Equal(t, "different current user content", gjson.GetBytes(requestBodies[2], "input.1.content").String())
 }
 
-func TestFirstClassCindyOpaqueFullBindingMissFailsClosed(t *testing.T) {
+func TestFirstClassCindyOpaqueFullLegacyBindingMissNeverSwitchesAccounts(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h, _, upstream, groupID := newFirstClassCindyContinuationHandler(t, nil)
 	body := `{"model":"gpt-5.6-sol","store":false,"input":[{"type":"reasoning","id":"rs_foreign","encrypted_content":"cipher-missing","phase":"analysis"},{"type":"message","role":"user","content":"next"}],"stream":false}`
@@ -447,7 +494,31 @@ func TestFirstClassCindyOpaqueFullBindingMissFailsClosed(t *testing.T) {
 
 	require.Equal(t, http.StatusBadRequest, recorder.Code)
 	require.Equal(t, service.OpenAIContinuationStateUnavailableCode, gjson.GetBytes(recorder.Body.Bytes(), "error.code").String())
-	require.Empty(t, upstream.calls())
+	require.Empty(t, upstream.calls(), "legacy opaque history without an authoritative session binding must fail before upstream")
+}
+
+func TestFirstClassCindyOpaqueFullLegacyHistoryUsesExistingSessionBinding(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cache := &cindyLegacySessionCache{accountID: cindyHandlerHealthyAccountID}
+	h, repo, upstream, groupID := newFirstClassCindyContinuationHandler(t, cache)
+	boundAccount, err := repo.GetByID(context.Background(), cindyHandlerHealthyAccountID)
+	require.NoError(t, err)
+	require.True(t, service.IsCindyAPIKeyAccount(boundAccount.Platform, boundAccount.Type, boundAccount.Credentials))
+	require.True(t, boundAccount.IsModelSupported("gpt-5.6-sol"))
+	require.True(t, boundAccount.SupportsOpenAIEndpointCapability(service.OpenAIEndpointCapabilityChatCompletions))
+	secondBody := `{"model":"gpt-5.6-sol","prompt_cache_key":"legacy-opaque-session","store":false,"input":[{"type":"reasoning","id":"rs_legacy","encrypted_content":"legacy-cipher","phase":"analysis"},{"type":"message","role":"user","content":"continue"}],"stream":true}`
+	second, secondRecorder := newFirstClassCindyContinuationContext(t, groupID, secondBody)
+	h.Responses(second)
+
+	require.Equal(t, http.StatusOK, secondRecorder.Code, secondRecorder.Body.String())
+	require.Equal(t, []int64{cindyHandlerHealthyAccountID}, upstream.calls())
+	bodies := upstream.bodies()
+	require.Equal(t, "legacy-cipher", gjson.GetBytes(bodies[0], "input.0.encrypted_content").String())
+	classification, err := service.ClassifyCindyContinuation([]byte(secondBody), service.CindyContinuationProof{})
+	require.NoError(t, err)
+	lookup := h.gatewayService.LookupCindyOpaqueContinuationBinding(context.Background(), groupID, classification.OpaqueBindingIDs)
+	require.Equal(t, service.OpenAIContinuationBindingHit, lookup.State)
+	require.Equal(t, cindyHandlerHealthyAccountID, lookup.AccountID)
 }
 
 type cindyOpaqueStoreErrorCache struct {
@@ -457,6 +528,34 @@ type cindyOpaqueStoreErrorCache struct {
 
 func (c *cindyOpaqueStoreErrorCache) GetSessionAccountID(context.Context, int64, string) (int64, error) {
 	return 0, c.err
+}
+
+type cindyLegacySessionCache struct {
+	service.GatewayCache
+	accountID int64
+}
+
+func (c *cindyLegacySessionCache) GetSessionAccountID(_ context.Context, _ int64, key string) (int64, error) {
+	if strings.HasPrefix(key, "openai:response:") {
+		return 0, service.ErrStickySessionNotFound
+	}
+	return c.accountID, nil
+}
+
+func (c *cindyLegacySessionCache) SetSessionAccountID(context.Context, int64, string, int64, time.Duration) error {
+	return nil
+}
+
+func (c *cindyLegacySessionCache) RefreshSessionTTL(context.Context, int64, string, time.Duration) error {
+	return nil
+}
+
+func (c *cindyLegacySessionCache) DeleteSessionAccountID(context.Context, int64, string) error {
+	return nil
+}
+
+func (c *cindyLegacySessionCache) DeleteSessionAccountIDIfMatches(context.Context, int64, string, int64) (bool, error) {
+	return false, nil
 }
 
 func TestFirstClassCindyOpaqueFullStoreErrorFailsClosed(t *testing.T) {

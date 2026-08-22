@@ -267,20 +267,27 @@ func TestCindyHTTPToWSV2ContinuationReusesOneConnectionAcrossIndependentHTTPRequ
 	require.True(t, HasFunctionCallOutput(writes[1]))
 }
 
-func TestCindyHTTPToWSV2ContinuationWithoutStickyConnectionFailsClosed(t *testing.T) {
+func TestCindyHTTPToWSV2ContinuationWithoutLocalConnectionReconnectsBoundAccount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	svc := cindyHTTPToWSV2TestService()
-	svc.toolCorrector = NewCodexToolCorrector()
+	capture := &openAIWSCaptureConn{events: [][]byte{
+		[]byte(`{"type":"response.completed","response":{"id":"resp_resumed","model":"gpt-5.4","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
+	}}
+	svc, dialer := newCindyHTTPToWSV2TurnStateTestService(t, cindyHTTPToWSV2DialStep{conn: capture})
 	account := cindyHTTPToWSV2TestAccount()
 	c := cindyHTTPToWSV2TestContext("/v1/responses")
-	body := []byte(`{"model":"gpt-5.4","stream":false,"previous_response_id":"resp_missing","input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`)
+	body := []byte(`{"model":"gpt-5.4","stream":false,"previous_response_id":"resp_from_old_process","input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`)
 
 	result, err := svc.Forward(context.Background(), c, account, body)
 
-	require.Nil(t, result)
-	var failoverErr *UpstreamFailoverError
-	require.ErrorAs(t, err, &failoverErr)
-	require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "resp_resumed", result.RequestID)
+	require.Len(t, dialer.capturedHeaders(), 1)
+	capture.mu.Lock()
+	writes := append([]map[string]any(nil), capture.writes...)
+	capture.mu.Unlock()
+	require.Len(t, writes, 1)
+	require.Equal(t, "resp_from_old_process", openAIWSPayloadString(writes[0], "previous_response_id"))
 }
 
 func TestCindyHTTPToWSV2Handshake403FallsBackToOriginalStatelessHTTPStream(t *testing.T) {

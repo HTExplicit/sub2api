@@ -216,6 +216,80 @@ func (s *OpenAIGatewayService) SelectAccountByCindyOpaqueContinuation(
 	return attachSelectionProfitGate(ctx, attachSelectionRuntimeBreakerProbe(ctx, selection)), decision, nil
 }
 
+// SelectAccountByCindyLegacySessionContinuation restores pre-v0.1.179 opaque
+// conversations that have a session binding but predate opaque carrier keys.
+func (s *OpenAIGatewayService) SelectAccountByCindyLegacySessionContinuation(
+	ctx context.Context,
+	groupID *int64,
+	sessionHash string,
+	bindingIDs []string,
+	requestedModel string,
+	excludedIDs map[int64]struct{},
+	requiredTransport OpenAIUpstreamTransport,
+	requiredCapability OpenAIEndpointCapability,
+	requireCompact bool,
+) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+	decision := OpenAIAccountScheduleDecision{Layer: "legacy_session_binding"}
+	if s == nil || strings.TrimSpace(sessionHash) == "" {
+		return nil, decision, NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
+	}
+	ctx = s.withOpenAIProfitControlGate(ctx, groupID)
+	accountID, err := s.getStickySessionAccountID(ctx, groupID, sessionHash)
+	if err != nil {
+		if errors.Is(err, ErrStickySessionNotFound) {
+			return nil, decision, NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
+		}
+		return nil, decision, NewOpenAIContinuationStoreUnavailableError()
+	}
+	if accountID <= 0 {
+		return nil, decision, NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
+	}
+	if excludedIDs != nil {
+		if _, excluded := excludedIDs[accountID]; excluded {
+			return nil, decision, NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
+		}
+	}
+
+	account, err := s.getSchedulableAccount(ctx, accountID)
+	if err != nil || account == nil || !s.openAIAccountMatchesSchedulingGroup(account, groupID) {
+		return nil, decision, NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
+	}
+	account = s.recheckSelectedOpenAIAccountFromDB(
+		ctx, account, groupID, PlatformCindy, requestedModel, requireCompact, requiredCapability,
+	)
+	if account == nil || !IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) ||
+		!s.isOpenAIAccountTransportCompatible(account, requiredTransport) {
+		return nil, decision, NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
+	}
+	if err := bindCindyOpaqueContinuationAccount(
+		ctx, s.getOpenAIWSStateStore(), derefGroupID(groupID), account.ID, bindingIDs, s.openAIWSResponseStickyTTL(),
+	); err != nil {
+		return nil, decision, NewOpenAIContinuationStoreUnavailableError()
+	}
+
+	acquired, acquireErr := s.tryAcquireAccountSlot(ctx, account.ID, account.Concurrency)
+	if acquireErr != nil {
+		return nil, decision, acquireErr
+	}
+	selection := &AccountSelectionResult{Account: account}
+	if acquired != nil && acquired.Acquired {
+		selection.Acquired = true
+		selection.ReleaseFunc = acquired.ReleaseFunc
+	} else if s.concurrencyService != nil {
+		cfg := s.schedulingConfig()
+		selection.WaitPlan = &AccountWaitPlan{
+			AccountID: account.ID, MaxConcurrency: account.Concurrency,
+			Timeout: cfg.StickySessionWaitTimeout, MaxWaiting: cfg.StickySessionMaxWaiting,
+		}
+	} else {
+		return nil, decision, NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
+	}
+	decision.StickySessionHit = true
+	decision.SelectedAccountID = account.ID
+	decision.SelectedAccountType = account.Type
+	return attachSelectionProfitGate(ctx, attachSelectionRuntimeBreakerProbe(ctx, selection)), decision, nil
+}
+
 func bindCindyOpaqueContinuationAccount(ctx context.Context, store OpenAIWSStateStore, groupID, accountID int64, bindingIDs []string, ttl time.Duration) error {
 	if store == nil || accountID <= 0 {
 		return nil
