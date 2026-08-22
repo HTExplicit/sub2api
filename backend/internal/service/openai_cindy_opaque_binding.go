@@ -132,8 +132,11 @@ func LookupCindyOpaqueContinuationBinding(ctx context.Context, store OpenAIWSSta
 	resolvedAccountID := int64(0)
 	for _, bindingID := range bindingIDs {
 		lookup := LookupOpenAIContinuationBinding(ctx, store, groupID, bindingID)
-		if lookup.State != OpenAIContinuationBindingHit {
+		switch lookup.State {
+		case OpenAIContinuationBindingStoreError:
 			return lookup
+		case OpenAIContinuationBindingMiss:
+			continue
 		}
 		if resolvedAccountID == 0 {
 			resolvedAccountID = lookup.AccountID
@@ -142,6 +145,9 @@ func LookupCindyOpaqueContinuationBinding(ctx context.Context, store OpenAIWSSta
 		if lookup.AccountID != resolvedAccountID {
 			return OpenAIContinuationBindingLookup{State: OpenAIContinuationBindingStoreError, Err: errCindyOpaqueBindingConflict}
 		}
+	}
+	if resolvedAccountID == 0 {
+		return OpenAIContinuationBindingLookup{State: OpenAIContinuationBindingMiss}
 	}
 	return OpenAIContinuationBindingLookup{State: OpenAIContinuationBindingHit, AccountID: resolvedAccountID}
 }
