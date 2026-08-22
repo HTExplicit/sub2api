@@ -112,6 +112,17 @@ func TestMigration235PreservesMixedOpenAIGroupsAfterCanonicalReplay(t *testing.T
 	assertCindyPlatformIdentity(t, ctx, db, "groups", "legacy-cindy-active", "cindy", "openai", "cindy_laxa_v1")
 
 	require.NoError(t, execRemoteSkillSQL(ctx, db, `
+		INSERT INTO accounts
+			(id, name, platform, wire_platform, provider_profile, type, credentials, deleted_at)
+		VALUES
+			(3, 'cindy-soft-deleted', 'cindy', 'openai', 'cindy_laxa_v1', 'apikey',
+			 '{"base_url":"https://api.laxarouter.ai","api_key":"fixture-deleted"}', NOW());
+		INSERT INTO groups
+			(id, name, platform, wire_platform, provider_profile, fallback_group_id, deleted_at)
+		VALUES
+			(3, 'cindy-empty', 'cindy', 'openai', 'cindy_laxa_v1', NULL, NULL),
+			(4, 'cindy-soft-deleted', 'cindy', 'openai', 'cindy_laxa_v1', NULL, NOW());
+
 		SELECT * FROM project_cindy_platform_v1_to_legacy();
 
 		INSERT INTO accounts
@@ -140,6 +151,9 @@ func TestMigration235PreservesMixedOpenAIGroupsAfterCanonicalReplay(t *testing.T
 	assertCindyPlatformIdentity(t, ctx, db, "accounts", "ordinary-member-added-after-rollback", "openai", "", "")
 	assertCindyPlatformIdentity(t, ctx, db, "accounts", "independent-pure-cindy", "cindy", "openai", "cindy_laxa_v1")
 	assertCindyPlatformIdentity(t, ctx, db, "groups", "independent-pure-cindy", "cindy", "openai", "cindy_laxa_v1")
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "cindy-soft-deleted", "cindy", "openai", "cindy_laxa_v1")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "cindy-empty", "cindy", "openai", "cindy_laxa_v1")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "cindy-soft-deleted", "cindy", "openai", "cindy_laxa_v1")
 
 	migration235, err := dbmigrations.FS.ReadFile("235_preserve_mixed_openai_cindy_groups.sql")
 	require.NoError(t, err)
@@ -150,6 +164,9 @@ func TestMigration235PreservesMixedOpenAIGroupsAfterCanonicalReplay(t *testing.T
 	assertCindyPlatformIdentity(t, ctx, db, "accounts", "ordinary-member-added-after-rollback", "openai", "", "")
 	assertCindyPlatformIdentity(t, ctx, db, "accounts", "independent-pure-cindy", "cindy", "openai", "cindy_laxa_v1")
 	assertCindyPlatformIdentity(t, ctx, db, "groups", "independent-pure-cindy", "cindy", "openai", "cindy_laxa_v1")
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "cindy-soft-deleted", "cindy", "openai", "cindy_laxa_v1")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "cindy-empty", "cindy", "openai", "cindy_laxa_v1")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "cindy-soft-deleted", "cindy", "openai", "cindy_laxa_v1")
 
 	var ledgerRows int
 	require.NoError(t, db.QueryRowContext(ctx, `

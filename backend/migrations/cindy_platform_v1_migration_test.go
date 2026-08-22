@@ -2,6 +2,7 @@ package migrations
 
 import (
 	"io/fs"
+	"os"
 	"strings"
 	"testing"
 
@@ -70,9 +71,29 @@ func TestMigration235RepairsForwardProjectionWithoutLedgerReplay(t *testing.T) {
 	require.Greater(t, redefineAt, restoreAt)
 	require.Greater(t, forwardAt, redefineAt)
 	require.Greater(t, commitAt, forwardAt)
-	require.Contains(t, sql, "return query")
-	require.Contains(t, sql, "from project_cindy_platform_v1_discover_legacy()")
-	require.NotContains(t, sql, "update groups")
-	require.NotContains(t, sql, "update accounts")
+	functionEnd := redefineAt + strings.Index(sql[redefineAt:], "$$;")
+	require.Greater(t, functionEnd, redefineAt)
+	forwardFunction := sql[redefineAt:functionEnd]
+	require.Contains(t, forwardFunction, "return query")
+	require.Contains(t, forwardFunction, "from project_cindy_platform_v1_discover_legacy()")
+	require.NotContains(t, forwardFunction, "cindy_platform_v1_projection")
+	require.NotContains(t, forwardFunction, "update groups")
+	require.NotContains(t, forwardFunction, "update accounts")
+	require.Contains(t, sql, "create temp table project_cindy_platform_v1_preserved_accounts")
+	require.Contains(t, sql, "create temp table project_cindy_platform_v1_preserved_groups")
+	require.NotContains(t, sql, "insert into account_groups")
+	require.NotContains(t, sql, "update account_groups")
+	require.NotContains(t, sql, "delete from account_groups")
 	require.NotContains(t, sql, "delete from cindy_platform_v1_projection")
+
+	for _, workflow := range []string{
+		"../../.github/workflows/downstream-verify.yml",
+		"../../.github/workflows/downstream-release.yml",
+	} {
+		raw, err := os.ReadFile(workflow)
+		require.NoError(t, err)
+		contents := string(raw)
+		require.Contains(t, contents, "TestMigration235RepairsForwardProjectionWithoutLedgerReplay")
+		require.Contains(t, contents, "TestMigration235PreservesMixedOpenAIGroupsAfterCanonicalReplay")
+	}
 }
