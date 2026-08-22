@@ -16,10 +16,11 @@ func cindyCredentials() map[string]any {
 
 func TestIsCindyAPIKeyAccount(t *testing.T) {
 	require.True(t, IsCindyAPIKeyAccount(PlatformCindy, AccountTypeAPIKey, cindyCredentials()))
+	require.True(t, IsCindyAPIKeyAccount(PlatformOpenAI, AccountTypeAPIKey, cindyCredentials()), "legacy Laxa rows retain temporary account-level compatibility")
 	require.True(t, IsCindyAPIKeyAccount(PlatformCindy, AccountTypeAPIKey, map[string]any{"base_url": "https://API.LAXAROUTER.AI/"}))
-	require.False(t, IsCindyAPIKeyAccount(PlatformOpenAI, AccountTypeAPIKey, cindyCredentials()), "runtime legacy recognition must stay disabled")
 	require.False(t, IsCindyAPIKeyAccount(PlatformCindy, AccountTypeOAuth, cindyCredentials()))
 	require.False(t, IsCindyAPIKeyAccount(PlatformCindy, AccountTypeAPIKey, map[string]any{"base_url": "https://api.laxarouter.ai/v1"}))
+	require.False(t, IsCindyAPIKeyAccount(PlatformOpenAI, AccountTypeAPIKey, map[string]any{"base_url": "https://api.laxarouter.ai/v1"}))
 	require.False(t, IsCindyAPIKeyAccount(PlatformCindy, AccountTypeAPIKey, map[string]any{"base_url": "https://api.laxarouter.ai.evil.test"}))
 }
 

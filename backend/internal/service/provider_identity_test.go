@@ -118,6 +118,42 @@ func TestProviderIdentityCompatibleRequiresEveryAxis(t *testing.T) {
 	require.False(t, ProviderIdentityCompatible(account, &otherWire))
 }
 
+func TestCanonicalCindyProviderIdentityRejectsLegacyOpenAIRow(t *testing.T) {
+	legacy := &Account{
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Credentials: cindyCredentials(),
+	}
+	require.True(t, IsCindyAPIKeyAccount(legacy.Platform, legacy.Type, legacy.Credentials),
+		"legacy account-level behavior must remain available")
+	require.False(t, hasCanonicalCindyProviderIdentity(legacy),
+		"legacy OpenAI rows must not cross the canonical Cindy provider boundary")
+
+	canonical := *legacy
+	canonical.Platform = PlatformCindy
+	canonical.WirePlatform = WirePlatformOpenAI
+	canonical.ProviderProfile = ProviderProfileCindyLaxaV1
+	require.True(t, hasCanonicalCindyProviderIdentity(&canonical))
+}
+
+func TestCanonicalCindySchedulerRequestRejectsLegacyOpenAIRow(t *testing.T) {
+	legacy := &Account{
+		ID:          71001,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: cindyCredentials(),
+	}
+
+	compatible, reason := (&defaultOpenAIAccountScheduler{}).isAccountRequestCompatibleReason(
+		context.Background(), legacy, OpenAIAccountScheduleRequest{Platform: PlatformCindy},
+	)
+	require.False(t, compatible)
+	require.Equal(t, "provider_identity_mismatch", reason)
+}
+
 func TestValidateProviderIdentityGroupBindingsExcludesCindyFromComposite(t *testing.T) {
 	account := &Account{
 		Platform:        PlatformCindy,

@@ -28,7 +28,9 @@ var cindyDeviceIDSources = map[string]struct{}{
 }
 
 func IsCindyAPIKeyAccount(platform, accountType string, credentials map[string]any) bool {
-	if platform != PlatformCindy || accountType != AccountTypeAPIKey || credentials == nil {
+	// Temporary rollback compatibility: remove PlatformOpenAI after every
+	// v0.1.177-era Laxa row is canonical Cindy and legacy rollback is retired.
+	if (platform != PlatformOpenAI && platform != PlatformCindy) || accountType != AccountTypeAPIKey || credentials == nil {
 		return false
 	}
 	rawBaseURL, ok := credentials["base_url"].(string)
