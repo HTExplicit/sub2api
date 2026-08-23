@@ -116,6 +116,16 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	startTime time.Time,
 ) (*OpenAIForwardResult, error) {
 	upstreamPassthroughModel := ""
+	if account != nil && IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		if mappedModel, mapped := CindyCompatibilityMappedUpstreamModel(reqModel); mapped {
+			nextBody, setErr := sjson.SetBytes(body, "model", mappedModel)
+			if setErr != nil {
+				return nil, fmt.Errorf("set legacy Cindy compatibility model: %w", setErr)
+			}
+			body = nextBody
+			upstreamPassthroughModel = mappedModel
+		}
+	}
 	if isOpenAIResponsesCompactPath(c) {
 		compactMappedModel := resolveOpenAICompactForwardModel(account, reqModel)
 		if compactMappedModel != "" && compactMappedModel != reqModel {

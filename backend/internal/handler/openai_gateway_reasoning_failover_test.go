@@ -148,7 +148,7 @@ func TestDeriveOpenAIForwardAttemptBody_SanitizationSticksAcrossBedrockRetries(t
 func TestLegacyCindyRuntimeCompatibilityPreservesReasoningAcrossFailover(t *testing.T) {
 	h := &OpenAIGatewayHandler{}
 	canonical := []byte(kiroReasoningCanonicalBody)
-	state := &openAIPassthroughFailoverState{passthroughSeen: true}
+	state := &openAIPassthroughFailoverState{}
 	account := newOpenAIPassthroughAccount(60, false)
 	account.Credentials = map[string]any{
 		"api_key":  "not-exposed",
@@ -160,4 +160,10 @@ func TestLegacyCindyRuntimeCompatibilityPreservesReasoningAcrossFailover(t *test
 	require.JSONEq(t, kiroReasoningCanonicalBody, string(got))
 	require.Equal(t, 1, reasoningItemCount(t, got))
 	require.Equal(t, "ENC_BLOB", gjson.GetBytes(got, "input.1.encrypted_content").String())
+	require.True(t, state.passthroughSeen, "legacy Laxa must advance cross-mode failover state")
+
+	ordinary := newOpenAIPassthroughAccount(61, false)
+	next := h.deriveOpenAIForwardAttemptBody(nil, canonical, ordinary, state)
+	require.Equal(t, 0, reasoningItemCount(t, next),
+		"a later ordinary non-passthrough account must not receive Laxa encrypted reasoning")
 }

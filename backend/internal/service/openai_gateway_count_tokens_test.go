@@ -85,6 +85,31 @@ func TestOpenAIGatewayService_ForwardCountTokensAsAnthropic_APIKeyUsesResponsesI
 	require.False(t, gjson.GetBytes(upstream.lastBody, "messages").Exists())
 }
 
+func TestLegacyCindyRuntimeCompatibilityCountTokensMapsPublicAliases(t *testing.T) {
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":  "not-exposed",
+			"base_url": "https://api.laxarouter.ai",
+		},
+	}
+	for alias, live := range map[string]string{
+		"gpt-5.4":      "openai/gpt-5.6-sol",
+		"gpt-5.4-mini": "openai/gpt-5.6-luna",
+	} {
+		prepared, err := prepareOpenAIInputTokensCountRequest(
+			[]byte(`{"model":"`+alias+`","messages":[{"role":"user","content":"hi"}]}`),
+			account,
+			"unrelated-default",
+		)
+		require.NoError(t, err)
+		require.Equal(t, live, prepared.BillingModel, alias)
+		require.Equal(t, live, prepared.UpstreamModel, alias)
+		require.Equal(t, live, prepared.Request.Model, alias)
+	}
+}
+
 func TestOpenAIGatewayService_ForwardCountTokensAsAnthropic_OAuthFallsBackWhenPlatformEndpointUnsupported(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

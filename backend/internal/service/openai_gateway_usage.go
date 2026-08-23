@@ -712,7 +712,7 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageTokenCost(
 }
 
 func isCindyCompatibilityBillingModel(model string) bool {
-	_, ok := CindyCompatibilityMappedUpstreamModel(model)
+	_, ok := CindyCompatibilityTextPricingForModel(model)
 	return ok
 }
 

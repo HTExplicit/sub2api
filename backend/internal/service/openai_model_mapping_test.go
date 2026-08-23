@@ -154,6 +154,32 @@ func TestResolveOpenAIForwardModel(t *testing.T) {
 	}
 }
 
+func TestLegacyCindyRuntimeCompatibilityMapsResponsesWSMessagesAndCountTokens(t *testing.T) {
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":  "not-exposed",
+			"base_url": "https://api.laxarouter.ai",
+			"model_mapping": map[string]any{
+				"gpt-5.4":      "stale-sol",
+				"gpt-5.4-mini": "stale-luna",
+			},
+		},
+	}
+
+	for alias, live := range map[string]string{
+		"gpt-5.4":      "openai/gpt-5.6-sol",
+		"gpt-5.4-mini": "openai/gpt-5.6-luna",
+	} {
+		for _, dispatch := range []string{"", "unrelated-messages-dispatch"} {
+			if got := resolveOpenAIForwardModel(account, alias, dispatch); got != live {
+				t.Fatalf("resolveOpenAIForwardModel(%q, dispatch=%q) = %q, want %q", alias, dispatch, got, live)
+			}
+		}
+	}
+}
+
 func TestResolveOpenAICompactForwardModel(t *testing.T) {
 	tests := []struct {
 		name          string

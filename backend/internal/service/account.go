@@ -860,6 +860,11 @@ func resolveRequestedModelInMapping(mapping map[string]string, requestedModel st
 // 请求卡死在该账号上、无法 failover 到真正支持该模型的 API Key 账号（#3662）。
 // 未知/自定义别名仍保持允许（兼容渠道级映射），见 isOpenAIOAuthServableModel。
 func (a *Account) IsModelSupported(requestedModel string) bool {
+	if a != nil && IsLegacyCindyAPIKeyAccount(a.Platform, a.Type, a.Credentials) {
+		if _, ok := CindyCompatibilityMappedUpstreamModel(requestedModel); ok {
+			return true
+		}
+	}
 	if a != nil && IsCindyRuntimeCompatibleAPIKeyAccount(a.Platform, a.Type, a.Credentials) &&
 		CindyCompatibilityRoutingTarget(requestedModel) {
 		return true
@@ -906,6 +911,11 @@ func (a *Account) GetMappedModel(requestedModel string) string {
 // ResolveMappedModel 获取映射后的模型名，并返回是否命中了账号级映射。
 // matched=true 表示命中了精确映射或通配符映射，即使映射结果与原模型名相同。
 func (a *Account) ResolveMappedModel(requestedModel string) (mappedModel string, matched bool) {
+	if a != nil && IsLegacyCindyAPIKeyAccount(a.Platform, a.Type, a.Credentials) {
+		if mappedModel, ok := CindyCompatibilityMappedUpstreamModel(requestedModel); ok {
+			return mappedModel, true
+		}
+	}
 	if a != nil && IsCindyRuntimeCompatibleAPIKeyAccount(a.Platform, a.Type, a.Credentials) &&
 		CindyCompatibilityRoutingTarget(requestedModel) {
 		return requestedModel, true

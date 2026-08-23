@@ -149,6 +149,58 @@ func TestLegacyCindyRuntimeCompatibilityUsesHTTPToWSV2(t *testing.T) {
 	require.Equal(t, OpenAIUpstreamTransportResponsesWebsocketV2, decision.Transport)
 }
 
+func TestLegacyCindyRuntimeCompatibilityMapsResponsesAliasesOverHTTPAndWS(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for alias, live := range map[string]string{
+		"gpt-5.4":      "openai/gpt-5.6-sol",
+		"gpt-5.4-mini": "openai/gpt-5.6-luna",
+	} {
+		t.Run(alias+"/http", func(t *testing.T) {
+			upstream := &httpUpstreamRecorder{resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body: io.NopCloser(strings.NewReader(
+					`{"id":"resp_http_alias","status":"completed","model":"` + live + `","output":[],"usage":{"input_tokens":1,"output_tokens":1}}`,
+				)),
+			}}
+			cfg := &config.Config{}
+			cfg.Security.URLAllowlist.Enabled = false
+			svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream, toolCorrector: NewCodexToolCorrector()}
+			account := cindyHTTPToWSV2TestAccount()
+			account.Platform = PlatformOpenAI
+
+			result, err := svc.Forward(
+				context.Background(), cindyHTTPToWSV2TestContext("/v1/responses"), account,
+				[]byte(`{"model":"`+alias+`","stream":false,"input":"hi"}`),
+			)
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.Equal(t, live, gjson.GetBytes(upstream.lastBody, "model").String())
+		})
+
+		t.Run(alias+"/ws", func(t *testing.T) {
+			capture := &openAIWSCaptureConn{events: [][]byte{
+				[]byte(`{"type":"response.completed","response":{"id":"resp_ws_alias","model":"` + live + `","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
+			}}
+			svc, _ := newCindyHTTPToWSV2TurnStateTestService(t, cindyHTTPToWSV2DialStep{conn: capture})
+			account := cindyHTTPToWSV2TestAccount()
+			account.Platform = PlatformOpenAI
+
+			result, err := svc.Forward(
+				context.Background(), cindyHTTPToWSV2TestContext("/v1/responses"), account,
+				[]byte(`{"model":"`+alias+`","stream":false,"input":"hi"}`),
+			)
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			capture.mu.Lock()
+			writes := append([]map[string]any(nil), capture.writes...)
+			capture.mu.Unlock()
+			require.Len(t, writes, 1)
+			require.Equal(t, live, openAIWSPayloadString(writes[0], "model"))
+		})
+	}
+}
+
 func TestResolveCindyHTTPToWSV2DecisionHonorsAllGates(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	tests := []struct {

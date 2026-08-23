@@ -516,7 +516,7 @@ func TestAccountResolveMappedModel(t *testing.T) {
 	}
 }
 
-func TestLegacyCindyRuntimeCompatibilityPreservesDirectLiveModels(t *testing.T) {
+func TestLegacyCindyRuntimeCompatibilityMapsAliasesAndPreservesDirectLiveModels(t *testing.T) {
 	account := &Account{
 		Platform: PlatformOpenAI,
 		Type:     AccountTypeAPIKey,
@@ -531,6 +531,15 @@ func TestLegacyCindyRuntimeCompatibilityPreservesDirectLiveModels(t *testing.T) 
 		},
 	}
 
+	for alias, live := range map[string]string{
+		"gpt-5.4":      "openai/gpt-5.6-sol",
+		"gpt-5.4-mini": "openai/gpt-5.6-luna",
+	} {
+		require.True(t, account.IsModelSupported(alias), alias)
+		mapped, matched := account.ResolveMappedModel(alias)
+		require.True(t, matched, alias)
+		require.Equal(t, live, mapped, alias)
+	}
 	for _, model := range []string{"openai/gpt-5.6-sol", "openai/gpt-5.6-luna"} {
 		require.True(t, account.IsModelSupported(model), model)
 		mapped, matched := account.ResolveMappedModel(model)
