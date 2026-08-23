@@ -8,10 +8,11 @@ import (
 
 // PricingSource 定价来源标识
 const (
-	PricingSourceGroup    = "group"
-	PricingSourceChannel  = "channel"
-	PricingSourceLiteLLM  = "litellm"
-	PricingSourceFallback = "fallback"
+	PricingSourceGroup        = "group"
+	PricingSourceChannel      = "channel"
+	PricingSourceCindyCatalog = "cindy_catalog"
+	PricingSourceLiteLLM      = "litellm"
+	PricingSourceFallback     = "fallback"
 )
 
 // ResolvedPricing 统一定价解析结果
@@ -70,6 +71,19 @@ type PricingInput struct {
 // 2. 如果指定了 GroupID，查找渠道定价并覆盖
 func (r *ModelPricingResolver) Resolve(ctx context.Context, input PricingInput) *ResolvedPricing {
 	longContextPricingEnabled := input.Group == nil || input.Group.LongContextPricingEnabled
+	if input.Group != nil && input.Group.Platform == PlatformCindy &&
+		input.Group.EffectiveWirePlatform() == WirePlatformOpenAI &&
+		input.Group.EffectiveProviderProfile() == ProviderProfileCindyLaxaV1 {
+		// Strict Cindy pricing is owned by the exact Task 1 catalog calculators.
+		// This generic resolver cannot represent every Priority, long-context,
+		// image, and explicit-zero dimension, so fail closed instead of falling
+		// through to channel or LiteLLM pricing.
+		return &ResolvedPricing{
+			Mode:                      BillingModeToken,
+			Source:                    PricingSourceCindyCatalog,
+			longContextPricingEnabled: longContextPricingEnabled,
+		}
+	}
 	if groupPricing := matchGroupModelPricing(input.Group, input.Model); groupPricing != nil {
 		// Group token cards only override the first-tier / flat rates.
 		// Long-context ladders come from official presets, gated by the checkbox.

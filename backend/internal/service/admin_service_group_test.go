@@ -307,7 +307,9 @@ func TestAdminService_ListGroups_PassesSortParams(t *testing.T) {
 }
 
 func TestAdminServiceGetGroupModelsListCandidatesUsesCindyCatalog(t *testing.T) {
-	t.Parallel()
+	previous := cindyRolloutFeatures.capabilityCatalog
+	cindyRolloutFeatures.capabilityCatalog = false
+	t.Cleanup(func() { cindyRolloutFeatures.capabilityCatalog = previous })
 
 	want := []string{
 		"claude-opus-4-8", "claude-opus-5", "claude-sonnet-5", "deepseek-v4-flash",

@@ -66,6 +66,62 @@ func TestMigration236FailsClosedWhenStrictCindyGroupAlreadyHasAnotherChannel(t *
 	require.ErrorContains(t, err, "strict Cindy groups already belong to another channel")
 }
 
+func TestMigration236MaintainsBindingAcrossMembershipAndIdentityMutations(t *testing.T) {
+	ctx := context.Background()
+	db, _ := remoteSkillMigrationTestDatabase(t)
+	require.NoError(t, execRemoteSkillSQL(ctx, db, cindyChannelBindingFixtureSQL))
+	require.NoError(t, execRemoteSkillSQL(ctx, db, `
+		INSERT INTO groups (id, name, platform, wire_platform, provider_profile) VALUES
+			(61, 'future-cindy', 'cindy', 'openai', 'cindy_laxa_v1'),
+			(99, 'fallback', 'openai', 'openai', '');
+		INSERT INTO accounts (id, platform, wire_platform, provider_profile, type, credentials)
+		VALUES
+			(71, 'cindy', 'openai', 'cindy_laxa_v1', 'apikey', '{"base_url":"https://api.laxarouter.ai"}'),
+			(72, 'openai', 'openai', '', 'apikey', '{"base_url":"https://api.openai.com"}');
+	`))
+	migration, err := dbmigrations.FS.ReadFile("236_bind_strict_cindy_groups_to_catalog_channel.sql")
+	require.NoError(t, err)
+	require.NoError(t, execRemoteSkillSQL(ctx, db, string(migration)))
+
+	var bindings int
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM channel_groups WHERE group_id = 61`).Scan(&bindings))
+	require.Zero(t, bindings, "empty canonical group is not strict")
+
+	require.NoError(t, execRemoteSkillSQL(ctx, db, `INSERT INTO account_groups (account_id, group_id) VALUES (71, 61)`))
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM channel_groups WHERE group_id = 61`).Scan(&bindings))
+	require.Equal(t, 1, bindings)
+
+	_, err = db.ExecContext(ctx, `INSERT INTO account_groups (account_id, group_id) VALUES (72, 61)`)
+	require.ErrorContains(t, err, "mixed or cross-profile membership")
+	_, err = db.ExecContext(ctx, `UPDATE groups SET fallback_group_id_on_invalid_request = 99 WHERE id = 61`)
+	require.ErrorContains(t, err, "cannot configure fallback groups")
+	_, err = db.ExecContext(ctx, `UPDATE accounts SET provider_profile = 'cindy_future_v2' WHERE id = 71`)
+	require.ErrorContains(t, err, "mixed or cross-profile membership")
+
+	require.NoError(t, execRemoteSkillSQL(ctx, db, `DELETE FROM account_groups WHERE account_id = 71 AND group_id = 61`))
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM channel_groups WHERE group_id = 61`).Scan(&bindings))
+	require.Zero(t, bindings)
+}
+
+func TestMigration236RejectsMarkedChannelCustomData(t *testing.T) {
+	ctx := context.Background()
+	db, _ := remoteSkillMigrationTestDatabase(t)
+	require.NoError(t, execRemoteSkillSQL(ctx, db, cindyChannelBindingFixtureSQL))
+	require.NoError(t, execRemoteSkillSQL(ctx, db, `
+		INSERT INTO channels (
+			name, description, status, model_mapping, billing_model_source,
+			restrict_models, features, features_config, apply_pricing_to_account_stats
+		) VALUES (
+			'renamed', 'custom', 'active', '{"cindy":{}}', 'channel_mapped',
+			TRUE, '["custom"]', '{"cindy_catalog_managed":"cindy_laxa_v1","extra":true}', TRUE
+		);
+	`))
+	migration, err := dbmigrations.FS.ReadFile("236_bind_strict_cindy_groups_to_catalog_channel.sql")
+	require.NoError(t, err)
+	err = execRemoteSkillSQL(ctx, db, string(migration))
+	require.ErrorContains(t, err, "ambiguous name, mapping, pricing, features, or group topology")
+}
+
 const cindyChannelBindingFixtureSQL = `
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE TABLE groups (
@@ -75,6 +131,9 @@ CREATE TABLE groups (
     wire_platform TEXT NOT NULL DEFAULT '',
     provider_profile TEXT NOT NULL DEFAULT '',
     fallback_group_id BIGINT,
+    fallback_group_id_on_invalid_request BIGINT,
+    status TEXT NOT NULL DEFAULT 'active',
+    is_exclusive BOOLEAN NOT NULL DEFAULT FALSE,
     deleted_at TIMESTAMPTZ
 );
 CREATE TABLE accounts (
@@ -84,6 +143,7 @@ CREATE TABLE accounts (
     provider_profile TEXT NOT NULL DEFAULT '',
     type TEXT NOT NULL,
     credentials JSONB NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'active',
     deleted_at TIMESTAMPTZ
 );
 CREATE TABLE account_groups (
@@ -105,7 +165,9 @@ CREATE TABLE channels (
     model_mapping JSONB NOT NULL DEFAULT '{}',
     billing_model_source TEXT NOT NULL DEFAULT 'channel_mapped',
     restrict_models BOOLEAN NOT NULL DEFAULT FALSE,
+    features TEXT NOT NULL DEFAULT '',
     features_config JSONB NOT NULL DEFAULT '{}',
+    apply_pricing_to_account_stats BOOLEAN NOT NULL DEFAULT FALSE,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE TABLE channel_groups (
@@ -118,6 +180,10 @@ CREATE TABLE channel_model_pricing (
     id BIGSERIAL PRIMARY KEY,
     channel_id BIGINT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
     platform TEXT NOT NULL
+);
+CREATE TABLE channel_account_stats_pricing_rules (
+    id BIGSERIAL PRIMARY KEY,
+    channel_id BIGINT NOT NULL REFERENCES channels(id) ON DELETE CASCADE
 );
 CREATE TABLE scheduler_outbox (
     id BIGSERIAL PRIMARY KEY,

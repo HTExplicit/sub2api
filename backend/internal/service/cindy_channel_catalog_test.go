@@ -16,14 +16,14 @@ func TestHydrateManagedCindyCatalogChannelUsesCanonicalCatalog(t *testing.T) {
 	}
 
 	require.True(t, hydrateManagedCindyCatalogChannel(channel))
-	require.Len(t, channel.ModelPricing, 22)
-	require.Len(t, channel.ModelMapping[PlatformCindy], 22)
+	require.Empty(t, channel.ModelPricing)
 
 	for _, capability := range CindyCapabilities() {
 		require.Equal(t, capability.LiveUpstreamID, channel.ModelMapping[PlatformCindy][capability.PublicID])
-		pricing := channel.GetModelPricingByPlatform(PlatformCindy, capability.PublicID)
-		require.NotNil(t, pricing, capability.PublicID)
+		require.Equal(t, capability.LiveUpstreamID, channel.ModelMapping[PlatformCindy][capability.LiveUpstreamID])
 	}
+	require.Equal(t, "openai/gpt-5.6-sol", channel.ModelMapping[PlatformCindy]["gpt-5.4"])
+	require.Equal(t, "openai/gpt-5.6-luna", channel.ModelMapping[PlatformCindy]["gpt-5.4-mini"])
 	require.Nil(t, channel.ModelMapping[PlatformOpenAI])
 }
 

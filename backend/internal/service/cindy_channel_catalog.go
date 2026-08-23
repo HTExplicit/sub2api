@@ -1,5 +1,10 @@
 package service
 
+import (
+	"sort"
+	"strings"
+)
+
 const (
 	CindyCatalogChannelName        = "Cindy Catalog"
 	CindyCatalogChannelMarkerKey   = "cindy_catalog_managed"
@@ -15,18 +20,27 @@ func hydrateManagedCindyCatalogChannel(channel *Channel) bool {
 	}
 
 	capabilities := CindyCapabilities()
-	mapping := make(map[string]string, len(capabilities))
-	pricing := make([]ChannelModelPricing, 0, len(capabilities))
+	mapping := make(map[string]string, len(capabilities)*2+len(cindyCompatibilityAliases)+len(cindyHiddenAliases))
 	for i := range capabilities {
 		capability := capabilities[i]
 		if !capability.PublicModel || len(capability.VerifiedEndpoints) == 0 {
 			continue
 		}
 		mapping[capability.PublicID] = capability.LiveUpstreamID
-		pricing = append(pricing, cindyCatalogChannelPricing(capability))
+		mapping[capability.LiveUpstreamID] = capability.LiveUpstreamID
+	}
+	for alias, publicID := range cindyCompatibilityAliases {
+		if capability := cindyCapabilityByPublicID[publicID]; capability != nil {
+			mapping[alias] = capability.LiveUpstreamID
+		}
+	}
+	for alias, publicID := range cindyHiddenAliases {
+		if capability := cindyCapabilityByPublicID[publicID]; capability != nil {
+			mapping[alias] = capability.LiveUpstreamID
+		}
 	}
 	channel.ModelMapping = map[string]map[string]string{PlatformCindy: mapping}
-	channel.ModelPricing = pricing
+	channel.ModelPricing = nil
 	return true
 }
 
@@ -38,38 +52,31 @@ func isManagedCindyCatalogChannel(channel *Channel) bool {
 	return ok && marker == CindyCatalogChannelMarkerValue
 }
 
-func cindyCatalogChannelPricing(capability CindyCapability) ChannelModelPricing {
-	entry := ChannelModelPricing{
-		Platform:    PlatformCindy,
-		Models:      []string{capability.PublicID},
-		BillingMode: BillingModeToken,
-	}
-	if capability.TextPricing != nil {
-		pricing := *capability.TextPricing
-		if discounted, err := cindyCatalogCostDiscount(capability.PublicID); err == nil {
-			pricing = applyCindyCatalogCostDiscount(pricing, discounted)
-		}
-		entry.InputPrice = optionalCindyChannelPrice(pricing.InputCostPerToken)
-		entry.OutputPrice = optionalCindyChannelPrice(pricing.OutputCostPerToken)
-		entry.CacheReadPrice = optionalCindyChannelPrice(pricing.CacheReadInputTokenCost)
-		if pricing.CacheCreationInputTokenCostPresent {
-			entry.CacheWritePrice = optionalCindyChannelPrice(pricing.CacheCreationInputTokenCost)
+func cindyInternalPublicModelIDs() []string {
+	models := make([]string, 0, len(cindyCapabilityCatalog))
+	for i := range cindyCapabilityCatalog {
+		capability := cindyCapabilityCatalog[i]
+		if capability.PublicModel && len(capability.VerifiedEndpoints) > 0 {
+			models = append(models, capability.PublicID)
 		}
 	}
-	if capability.ImagePricing != nil {
-		pricing := capability.ImagePricing
-		entry.InputPrice = optionalCindyChannelPrice(pricing.InputCostPerToken)
-		entry.OutputPrice = optionalCindyChannelPrice(pricing.OutputCostPerToken)
-		entry.CacheReadPrice = optionalCindyChannelPrice(pricing.CacheReadInputTokenCost)
-		entry.ImageInputPrice = optionalCindyChannelPrice(pricing.InputCostPerImageToken)
-		entry.ImageOutputPrice = optionalCindyChannelPrice(pricing.OutputCostPerImageToken)
-	}
-	return entry
+	sort.Strings(models)
+	return models
 }
 
-func optionalCindyChannelPrice(value float64) *float64 {
-	if value == 0 {
-		return nil
+func cindyManagedChannelModelAllowed(model string) bool {
+	capability, ok := resolveKnownCindyCapability(strings.TrimSpace(model))
+	return ok && capability.PublicModel && len(capability.VerifiedEndpoints) > 0
+}
+
+func cindyManagedChannelNameReserved(name string) bool {
+	return strings.EqualFold(strings.TrimSpace(name), CindyCatalogChannelName)
+}
+
+func hasCindyManagedChannelMarker(featuresConfig map[string]any) bool {
+	if featuresConfig == nil {
+		return false
 	}
-	return &value
+	_, ok := featuresConfig[CindyCatalogChannelMarkerKey]
+	return ok
 }

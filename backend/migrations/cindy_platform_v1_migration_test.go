@@ -107,15 +107,28 @@ func TestMigration236DefinesManagedCindyChannelAndDurableInvalidation(t *testing
 	sql := strings.ToLower(string(raw))
 
 	for _, fragment := range []string{
+		"set local lock_timeout = '5s'",
+		"set local statement_timeout = '60s'",
+		"lock table groups, accounts, account_groups",
 		"cindy_catalog_managed",
 		"cindy_laxa_v1",
+		"fallback_group_id_on_invalid_request is null",
+		"join accounts strict_member",
 		"insert into channel_groups",
 		"insert into scheduler_outbox",
 		"enqueue_group_api_key_auth_cache_invalidations",
+		"trg_groups_cindy_channel_topology",
+		"trg_accounts_cindy_identity_auth_cache_invalidation",
+		"after update of platform, wire_platform, provider_profile, type, credentials, status, deleted_at on accounts",
+		"old.fallback_group_id_on_invalid_request is not distinct from new.fallback_group_id_on_invalid_request",
+		"channel_account_stats_pricing_rules",
+		"guard_managed_cindy_channel",
 		"raise exception",
 	} {
 		require.Contains(t, sql, fragment)
 	}
 	require.NotRegexp(t, `where\s+g\.id\s*=\s*\d+`, sql)
 	require.NotContains(t, sql, "platform = 'openai' and cmp.platform = 'openai'")
+	require.NotContains(t, sql, "gpt-5.6")
+	require.NotContains(t, sql, "insert into channel_model_pricing")
 }

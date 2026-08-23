@@ -57,6 +57,24 @@ func TestResolve_UnknownModel(t *testing.T) {
 	require.Equal(t, "fallback", resolved.Source)
 }
 
+func TestResolve_StrictCindyNeverFallsThroughGenericPricing(t *testing.T) {
+	bs := newTestBillingServiceForResolver()
+	bs.fallbackPrices["gpt-5.6-sol"] = &ModelPricing{InputPricePerToken: 999}
+	r := NewModelPricingResolver(nil, bs)
+
+	resolved := r.Resolve(context.Background(), PricingInput{
+		Model: "gpt-5.6-sol",
+		Group: &Group{
+			Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI,
+			ProviderProfile: ProviderProfileCindyLaxaV1,
+		},
+	})
+
+	require.NotNil(t, resolved)
+	require.Equal(t, PricingSourceCindyCatalog, resolved.Source)
+	require.Nil(t, resolved.BasePricing)
+}
+
 func TestGetIntervalPricing_NoIntervals(t *testing.T) {
 	bs := newTestBillingServiceForResolver()
 	r := NewModelPricingResolver(&ChannelService{}, bs)

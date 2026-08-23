@@ -231,7 +231,7 @@ func compositeRouteFromInput(groupID int64, input CompositeRouteInput) (*Composi
 func defaultModelsListCandidateIDs(platform string) []string {
 	switch platform {
 	case PlatformCindy:
-		return CindyPublicModelIDs()
+		return cindyInternalPublicModelIDs()
 	case PlatformOpenAI:
 		return openai.DefaultModelIDs()
 	case PlatformGemini:
