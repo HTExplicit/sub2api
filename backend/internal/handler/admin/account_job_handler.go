@@ -218,6 +218,7 @@ func accountJobSucceeded(itemID int64, metadata any) service.AccountJobExecution
 }
 
 func accountJobFailed(itemID int64, code string) service.AccountJobExecutionResult {
+	code, message := service.NormalizeAccountJobFailure(code)
 	return service.AccountJobExecutionResult{ItemID: itemID, Status: service.AccountJobItemStatusFailed,
-		Metadata: json.RawMessage(`{}`), ErrorCode: code, ErrorMessage: "account job item failed"}
+		Metadata: json.RawMessage(`{}`), ErrorCode: code, ErrorMessage: message}
 }

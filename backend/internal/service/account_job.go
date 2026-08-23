@@ -490,19 +490,31 @@ func normalizeAccountJobMetadata(raw json.RawMessage) json.RawMessage {
 	return append(json.RawMessage(nil), raw...)
 }
 
-func normalizeAccountJobFailure(code string) (string, string) {
+func NormalizeAccountJobFailure(code string) (string, string) {
 	messages := map[string]string{
-		"payload_expired":         "account job payload expired",
-		"payload_unavailable":     "account job payload is unavailable",
-		"cancel_check_failed":     "account job cancellation state is unavailable",
-		"item_reservation_failed": "account job items could not be reserved",
-		"item_completion_failed":  "account job item result could not be persisted",
-		"result_redacted":         "account job result was rejected",
-		"execution_failed":        "account job item failed",
+		"payload_expired":                    "account job payload expired",
+		"payload_unavailable":                "account job payload is unavailable",
+		"cancel_check_failed":                "account job cancellation state is unavailable",
+		"item_reservation_failed":            "account job items could not be reserved",
+		"item_completion_failed":             "account job item result could not be persisted",
+		"result_redacted":                    "account job result was rejected",
+		"execution_failed":                   "account job item failed",
+		"account_import_payload_invalid":     "account import item is invalid",
+		"account_import_identity_conflict":   "account identity matches multiple existing accounts",
+		"cindy_import_target_group_required": "one explicit target group is required for Cindy imports",
+		"cindy_import_target_group_invalid":  "target group is not a strict Cindy group",
+		"cindy_import_credential_conflict":   "credential is duplicated in the submitted import",
+		"cindy_import_device_conflict":       "device identity belongs to another Cindy credential",
+		"cindy_import_device_invalid":        "Cindy device identity is invalid",
+		"account_import_execution_failed":    "account import item could not be applied",
 	}
 	code = strings.TrimSpace(code)
 	if message, ok := messages[code]; ok {
 		return code, message
 	}
 	return "execution_failed", messages["execution_failed"]
+}
+
+func normalizeAccountJobFailure(code string) (string, string) {
+	return NormalizeAccountJobFailure(code)
 }

@@ -107,6 +107,11 @@ func normalizeCindyDeviceIDSource(value any) (string, bool) {
 	return source, ok
 }
 
+func ValidCindyDeviceIDSource(value any) bool {
+	_, ok := normalizeCindyDeviceIDSource(value)
+	return ok
+}
+
 // NormalizeCindyDeviceIdentityExtra validates and completes the store-only Cindy identity.
 // It does not imply or perform any upstream request-header injection.
 func NormalizeCindyDeviceIdentityExtra(

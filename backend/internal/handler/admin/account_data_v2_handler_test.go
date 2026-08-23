@@ -24,6 +24,7 @@ type dataV2AdminService struct {
 	updateInputs   map[int64]*service.UpdateAccountInput
 	failNames      map[string]error
 	failTaxonomy   error
+	getGroupErr    error
 	taxonomyCalls  int
 	consoleFilters service.AccountConsoleFilters
 }
@@ -59,6 +60,19 @@ func (s *dataV2AdminService) ListAccounts(_ context.Context, page, pageSize int,
 		end = total
 	}
 	return append([]service.Account(nil), s.accounts[start:end]...), int64(total), nil
+}
+
+func (s *dataV2AdminService) GetGroup(_ context.Context, id int64) (*service.Group, error) {
+	if s.getGroupErr != nil {
+		return nil, s.getGroupErr
+	}
+	for index := range s.groups {
+		if s.groups[index].ID == id {
+			group := s.groups[index]
+			return &group, nil
+		}
+	}
+	return nil, service.ErrGroupNotFound
 }
 
 func (s *dataV2AdminService) CreateAccount(_ context.Context, input *service.CreateAccountInput) (*service.Account, error) {

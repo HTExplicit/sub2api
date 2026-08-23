@@ -102,8 +102,10 @@ func TestAccountJobBulkUpdateUsesCindyMutationRunner(t *testing.T) {
 	require.Equal(t, []int64{43}, runner.accountIDs)
 }
 
-func TestAccountJobDataImportUsesCindyMutationRunnerWithoutPreviewDecision(t *testing.T) {
+func TestAccountJobDataImportUsesCindyMutationRunnerWithCanonicalDecision(t *testing.T) {
 	adminService := newDataV2AdminService()
+	groupID := int64(81)
+	adminService.groups = []service.Group{strictCindyImportGroup(groupID)}
 	runner := &recordingCindyJobMutationRunner{}
 	handler := NewAccountHandler(adminService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	handler.cindyJobMutations = runner
@@ -113,10 +115,13 @@ func TestAccountJobDataImportUsesCindyMutationRunnerWithoutPreviewDecision(t *te
 			Name: "Cindy", Platform: service.PlatformCindy, Type: service.AccountTypeAPIKey,
 			Credentials: cindyJobCredentials(), Concurrency: 1, Priority: 1,
 		}}},
+		TargetGroupID: &groupID,
 	}, service.AccountJobItem{ID: 4, Ordinal: 1})
 
 	require.Equal(t, service.AccountJobItemStatusSucceeded, result.Status)
 	require.Equal(t, []int64{0}, runner.accountIDs)
+	require.Len(t, adminService.createdAccounts, 1)
+	require.Equal(t, []int64{groupID}, adminService.createdAccounts[0].GroupIDs)
 }
 
 var _ service.AccountJobCindyMutationRunner = (*recordingCindyJobMutationRunner)(nil)

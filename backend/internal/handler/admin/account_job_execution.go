@@ -439,12 +439,20 @@ func (h *AccountHandler) executeDataImportJob(ctx context.Context, raw json.RawM
 		return accountJobFailed(item.ID, "payload_invalid")
 	}
 	originalIndex := item.Ordinal - 1
-	account := req.Data.Accounts[originalIndex]
-	enrichCredentialsFromIDToken(&account)
-	if err := validateDataAccountV2(account); err != nil {
-		return accountJobFailed(item.ID, "payload_invalid")
+	_, decisions, decisionErr := h.previewDataImport(ctx, req)
+	if decisionErr != nil || originalIndex >= len(decisions) {
+		return accountJobFailed(item.ID, dataImportCodeExecutionFailed)
 	}
+	decision := decisions[originalIndex]
+	if decision.rejected() {
+		return accountJobFailed(item.ID, decision.Code)
+	}
+	account := decision.Account
 	req.Data.Accounts = []DataAccount{account}
+	if len(decision.GroupIDs) > 0 {
+		groupIDs := append([]int64(nil), decision.GroupIDs...)
+		req.UniformSettings.GroupIDs = &groupIDs
+	}
 	importOne := func(mutationCtx context.Context) (*service.Account, DataImportResult, error) {
 		result, importErr := h.importData(mutationCtx, req)
 		if importErr != nil || result.AccountFailed > 0 || len(result.Items) != 1 || result.Items[0].AccountID == nil {
@@ -462,20 +470,21 @@ func (h *AccountHandler) executeDataImportJob(ctx context.Context, raw json.RawM
 	var result DataImportResult
 	var err error
 	if isStrictCindyAccountInput(account.Platform, account.Type, account.Credentials) {
-		targetID, targetErr := h.resolveDataImportCindyTarget(ctx, account)
-		if targetErr != nil {
-			return accountJobFailed(item.ID, "import_failed")
+		targetID := int64(0)
+		if decision.AccountID != nil {
+			targetID = *decision.AccountID
 		}
 		_, err = h.runCindyAccountJobMutation(ctx, targetID, func(mutationCtx context.Context) (*service.Account, error) {
 			var imported *service.Account
-			imported, result, targetErr = importOne(mutationCtx)
-			return imported, targetErr
+			var importErr error
+			imported, result, importErr = importOne(mutationCtx)
+			return imported, importErr
 		})
 	} else {
 		_, result, err = importOne(ctx)
 	}
 	if err != nil || result.AccountFailed > 0 {
-		return accountJobFailed(item.ID, "import_failed")
+		return accountJobFailed(item.ID, dataImportCodeExecutionFailed)
 	}
 	metadata := map[string]any{"source_index": originalIndex}
 	if len(result.Items) == 1 {
@@ -485,21 +494,6 @@ func (h *AccountHandler) executeDataImportJob(ctx context.Context, raw json.RawM
 		}
 	}
 	return accountJobSucceeded(item.ID, metadata)
-}
-
-func (h *AccountHandler) resolveDataImportCindyTarget(ctx context.Context, item DataAccount) (int64, error) {
-	accounts, err := h.listAccountsFiltered(ctx, service.PlatformCindy, service.AccountTypeAPIKey, "", "", 0, "", "id", "asc")
-	if err != nil {
-		return 0, err
-	}
-	matches := buildDataIdentityIndex(accounts).Find(dataAccountIdentityKeys(item.Platform, item.Credentials, item.Extra))
-	if len(matches) > 1 {
-		return 0, errors.New("multiple current Cindy credential identity matches")
-	}
-	if len(matches) == 1 {
-		return matches[0].AccountID, nil
-	}
-	return 0, nil
 }
 
 func (h *AccountHandler) executeCodexImportJob(ctx context.Context, raw json.RawMessage, item service.AccountJobItem) service.AccountJobExecutionResult {
