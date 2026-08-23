@@ -73,14 +73,24 @@ func hasRecoverableLegacyCindyOpaqueReasoning(payload []byte) bool {
 		items = []gjson.Result{input}
 	}
 	for _, item := range items {
-		switch strings.TrimSpace(item.Get("type").String()) {
-		case "reasoning", "compaction", "compaction_summary":
-			if hasNonNullCindyContinuationCarrier(item.Get("encrypted_content")) {
-				return true
-			}
+		if isOpenAIEncryptedPortableContinuationStateType(item.Get("type").String()) &&
+			hasNonNullCindyContinuationCarrier(item.Get("encrypted_content")) {
+			return true
 		}
 	}
 	return false
+}
+
+// isOpenAIEncryptedPortableContinuationStateType limits the legacy recovery
+// to self-contained provider state. Tool calls and outputs intentionally remain
+// outside this set because their encrypted carriers cannot be safely removed.
+func isOpenAIEncryptedPortableContinuationStateType(itemType string) bool {
+	switch strings.TrimSpace(itemType) {
+	case "reasoning", "compaction", "compaction_summary":
+		return true
+	default:
+		return false
+	}
 }
 
 func EnsureCindyResponsesStoreFalse(payload []byte) ([]byte, error) {

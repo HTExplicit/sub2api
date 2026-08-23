@@ -144,18 +144,28 @@ func TestSanitizeOpenAICrossModeFailoverReasoning_DropsWholeEncryptedItem(t *tes
 	body := []byte(`{"model":"gpt-5.1","input":[` +
 		`{"type":"message","role":"user","content":"hi"},` +
 		`{"type":"reasoning","id":"rs_kiro_1","encrypted_content":"ENC","summary":[{"type":"summary_text","text":"t"}]},` +
-		`{"type":"message","role":"assistant","content":"yo"}` +
+		`{"type":"compaction","id":"cmp_kiro_1","encrypted_content":"CMP","summary":"compaction"},` +
+		`{"type":"compaction_summary","id":"cmp_summary_kiro_1","encrypted_content":"CMP_SUMMARY","phase":"summary"},` +
+		`{"type":"function_call","call_id":"call_1","name":"lookup","arguments":"{}","encrypted_content":"TOOL"},` +
+		`{"type":"function_call_output","call_id":"call_1","output":"yo"}` +
 		`]}`)
 
 	sanitized, changed, err := SanitizeOpenAICrossModeFailoverReasoning(body)
 	require.NoError(t, err)
 	require.True(t, changed)
-	// The whole reasoning item is gone — id and summary go with encrypted_content,
-	// unlike trimOpenAIEncryptedReasoningItems which keeps the skeleton.
-	require.NotContains(t, string(sanitized), "reasoning")
-	require.NotContains(t, string(sanitized), "rs_kiro_1")
-	require.NotContains(t, string(sanitized), "summary_text")
-	require.Equal(t, int64(2), gjson.GetBytes(sanitized, "input.#").Int())
+	// State items are deleted with their coupled IDs/metadata. An encrypted tool
+	// carrier remains because it cannot be safely detached from its output pair.
+	for _, value := range []string{
+		"rs_kiro_1", "ENC", "summary_text", "cmp_kiro_1", "CMP",
+		"cmp_summary_kiro_1", "CMP_SUMMARY", "summary",
+	} {
+		require.NotContains(t, string(sanitized), value)
+	}
+	require.Equal(t, int64(3), gjson.GetBytes(sanitized, "input.#").Int())
+	require.Equal(t, "function_call", gjson.GetBytes(sanitized, "input.1.type").String())
+	require.Equal(t, "TOOL", gjson.GetBytes(sanitized, "input.1.encrypted_content").String())
+	require.Equal(t, "function_call_output", gjson.GetBytes(sanitized, "input.2.type").String())
+	require.Equal(t, "yo", gjson.GetBytes(sanitized, "input.2.output").String())
 }
 
 func TestSanitizeOpenAICrossModeFailoverReasoning_NoEncryptedIsNoop(t *testing.T) {

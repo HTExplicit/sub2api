@@ -584,6 +584,25 @@ func TestLegacyCindyRuntimeCompatibilityPreservesOpaqueHTTPContinuation(t *testi
 	require.Equal(t, "cipher", gjson.GetBytes(upstream.bodies[0], "input.0.encrypted_content").String())
 }
 
+func requireLegacyCindyOpaqueStateRemoved(t *testing.T, body []byte) {
+	t.Helper()
+	for _, value := range []string{
+		"stale-cipher-reasoning", "stale-cipher-compaction", "stale-cipher-compaction-summary",
+		"rs_deleted_account", "cmp_deleted_account", "cmp_summary_deleted_account",
+		"reasoning summary", "compaction summary", "compaction-summary summary",
+		"reasoning-phase", "compaction-phase", "compaction-summary-phase",
+	} {
+		require.NotContains(t, string(body), value, "the recovered request must drop the complete portable opaque state item")
+	}
+	require.Equal(t, int64(3), gjson.GetBytes(body, "input.#").Int())
+	require.Equal(t, "message", gjson.GetBytes(body, "input.0.type").String())
+	require.Equal(t, "function_call", gjson.GetBytes(body, "input.1.type").String())
+	require.Equal(t, "call_1", gjson.GetBytes(body, "input.1.call_id").String())
+	require.Equal(t, "function_call_output", gjson.GetBytes(body, "input.2.type").String())
+	require.Equal(t, "call_1", gjson.GetBytes(body, "input.2.call_id").String())
+	require.Equal(t, "kept", gjson.GetBytes(body, "input.2.output").String())
+}
+
 func TestLegacyCindyRuntimeCompatibilityReplaysSelfContainedHistoryWithoutInvalidOpaqueState(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	upstream := &httpUpstreamRecorder{responses: []*http.Response{
@@ -607,19 +626,49 @@ func TestLegacyCindyRuntimeCompatibilityReplaysSelfContainedHistoryWithoutInvali
 	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream, toolCorrector: NewCodexToolCorrector()}
 	account := cindyHTTPToWSV2TestAccount()
 	account.Platform = PlatformOpenAI
-	body := []byte(`{"model":"openai/gpt-5.6-sol","store":false,"input":[{"type":"message","role":"user","content":"continue"},{"type":"reasoning","id":"rs_deleted_account","encrypted_content":"stale-cipher","phase":"analysis"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"kept"}]}`)
+	body := []byte(`{"model":"openai/gpt-5.6-sol","store":false,"input":[{"type":"message","role":"user","content":"continue"},{"type":"reasoning","id":"rs_deleted_account","encrypted_content":"stale-cipher-reasoning","summary":"reasoning summary","phase":"reasoning-phase"},{"type":"compaction","id":"cmp_deleted_account","encrypted_content":"stale-cipher-compaction","summary":"compaction summary","phase":"compaction-phase"},{"type":"compaction_summary","id":"cmp_summary_deleted_account","encrypted_content":"stale-cipher-compaction-summary","summary":"compaction-summary summary","phase":"compaction-summary-phase"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"kept"}]}`)
 
 	result, err := svc.Forward(context.Background(), cindyHTTPToWSV2TestContext("/v1/responses"), account, body)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Len(t, upstream.bodies, 2)
-	require.Equal(t, "stale-cipher", gjson.GetBytes(upstream.bodies[0], "input.1.encrypted_content").String())
-	require.Equal(t, "continue", gjson.GetBytes(upstream.bodies[1], "input.0.content").String())
-	require.NotContains(t, string(upstream.bodies[1]), "stale-cipher",
-		"the invalid encrypted reasoning carrier must not survive the self-contained replay")
-	require.Equal(t, "call_1", gjson.GetBytes(upstream.bodies[1], "input.2.call_id").String())
-	require.Equal(t, "kept", gjson.GetBytes(upstream.bodies[1], "input.3.output").String())
+	require.Contains(t, string(upstream.bodies[0]), "stale-cipher-compaction-summary")
+	requireLegacyCindyOpaqueStateRemoved(t, upstream.bodies[1])
+}
+
+func TestLegacyCindyRuntimeCompatibilityReplaysSelfContainedHistoryOverNonPassthroughHTTP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		{
+			StatusCode: http.StatusBadRequest,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(
+				`{"error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}`,
+			)),
+		},
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(
+				`{"id":"resp_recovered","status":"completed","model":"openai/gpt-5.6-sol","output":[],"usage":{"input_tokens":1,"output_tokens":1}}`,
+			)),
+		},
+	}}
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream, toolCorrector: NewCodexToolCorrector()}
+	account := cindyHTTPToWSV2TestAccount()
+	account.Platform = PlatformOpenAI
+	account.Extra = map[string]any{}
+	body := []byte(`{"model":"openai/gpt-5.6-sol","store":false,"input":[{"type":"message","role":"user","content":"continue"},{"type":"reasoning","id":"rs_deleted_account","encrypted_content":"stale-cipher-reasoning","summary":"reasoning summary","phase":"reasoning-phase"},{"type":"compaction","id":"cmp_deleted_account","encrypted_content":"stale-cipher-compaction","summary":"compaction summary","phase":"compaction-phase"},{"type":"compaction_summary","id":"cmp_summary_deleted_account","encrypted_content":"stale-cipher-compaction-summary","summary":"compaction-summary summary","phase":"compaction-summary-phase"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"kept"}]}`)
+
+	result, err := svc.Forward(context.Background(), cindyHTTPToWSV2TestContext("/v1/responses"), account, body)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.bodies, 2)
+	requireLegacyCindyOpaqueStateRemoved(t, upstream.bodies[1])
 }
 
 func TestLegacyCindyHTTPToWSV2RetriesSelfContainedHistoryAfterInvalidOpaqueState(t *testing.T) {

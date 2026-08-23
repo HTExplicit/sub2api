@@ -369,7 +369,16 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		var decoded map[string]any
 		decoder := json.NewDecoder(bytes.NewReader(body))
 		decoder.UseNumber()
-		if decodeErr := decoder.Decode(&decoded); decodeErr != nil || !trimOpenAIEncryptedReasoningItems(decoded) {
+		decodeErr := decoder.Decode(&decoded)
+		removedReasoningItems := false
+		if decodeErr == nil {
+			if legacyOpaqueRecovery {
+				removedReasoningItems = dropOpenAIEncryptedReasoningInputItems(decoded)
+			} else {
+				removedReasoningItems = trimOpenAIEncryptedReasoningItems(decoded)
+			}
+		}
+		if decodeErr != nil || !removedReasoningItems {
 			logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] Skip invalid_encrypted_content retry because encrypted reasoning items are missing or cannot be decoded (account: %s)", account.Name)
 			return false, nil
 		}

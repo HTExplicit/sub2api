@@ -769,7 +769,12 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				)
 				return false
 			}
-			removedReasoningItems := trimOpenAIEncryptedReasoningItems(wsReqBody)
+			removedReasoningItems := false
+			if legacyOpaqueRecovery {
+				removedReasoningItems = dropOpenAIEncryptedReasoningInputItems(wsReqBody)
+			} else {
+				removedReasoningItems = trimOpenAIEncryptedReasoningItems(wsReqBody)
+			}
 			if !removedReasoningItems {
 				logOpenAIWSModeInfo(
 					"reconnect_invalid_encrypted_content_recovery_skip account_id=%d attempt=%d reason=missing_encrypted_reasoning_items",
@@ -1011,7 +1016,13 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if decodeErr != nil {
 			return false, decodeErr
 		}
-		if !trimOpenAIEncryptedReasoningItems(decoded) {
+		removedReasoningItems := false
+		if legacyOpaqueRecovery {
+			removedReasoningItems = dropOpenAIEncryptedReasoningInputItems(decoded)
+		} else {
+			removedReasoningItems = trimOpenAIEncryptedReasoningItems(decoded)
+		}
+		if !removedReasoningItems {
 			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Skip non-WSv2 invalid_encrypted_content retry because encrypted reasoning items are missing (account: %s)", account.Name)
 			return false, nil
 		}

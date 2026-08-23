@@ -87,6 +87,12 @@ func TestLegacyCindyOpaqueRecoveryRequiresSelfContainedHistory(t *testing.T) {
 	require.True(t, canRecoverLegacyCindyOpaqueContinuation(legacy, []byte(
 		`{"input":[{"type":"reasoning","id":"rs_1","encrypted_content":"cipher"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`,
 	)), "paired concrete tool history remains replayable when only reasoning state is removed")
+	require.True(t, canRecoverLegacyCindyOpaqueContinuation(legacy, []byte(
+		`{"input":[{"type":"compaction","id":"cmp_1","encrypted_content":"cipher"}]}`,
+	)), "encrypted compaction is a portable state item")
+	require.True(t, canRecoverLegacyCindyOpaqueContinuation(legacy, []byte(
+		`{"input":[{"type":"compaction_summary","id":"cmp_1","encrypted_content":"cipher"}]}`,
+	)), "encrypted compaction summaries are portable state items")
 	require.False(t, canRecoverLegacyCindyOpaqueContinuation(legacy, []byte(
 		`{"input":[{"type":"reasoning","id":"rs_1","encrypted_content":"cipher"},{"type":"function_call_output","call_id":"call_orphan","output":"ok"}]}`,
 	)), "orphan tool output remains reference-only")
@@ -96,6 +102,11 @@ func TestLegacyCindyOpaqueRecoveryRequiresSelfContainedHistory(t *testing.T) {
 	require.False(t, canRecoverLegacyCindyOpaqueContinuation(&canonical, []byte(
 		`{"input":[{"type":"reasoning","id":"rs_1","encrypted_content":"cipher"}]}`,
 	)), "canonical Cindy remains binding-strict")
+	ordinary := *legacy
+	ordinary.Credentials = map[string]any{"api_key": "test", "base_url": "https://api.openai.com"}
+	require.False(t, canRecoverLegacyCindyOpaqueContinuation(&ordinary, []byte(
+		`{"input":[{"type":"reasoning","id":"rs_1","encrypted_content":"cipher"}]}`,
+	)), "ordinary OpenAI remains binding-strict")
 }
 
 func TestClassifyCindyContinuationRejectsInvalidJSON(t *testing.T) {
