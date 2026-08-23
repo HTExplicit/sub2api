@@ -59,7 +59,7 @@ func isCindyLaxaAPIKeyAccount(accountType string, credentials map[string]any) bo
 	if err != nil || parsed.Scheme != "https" || !strings.EqualFold(parsed.Hostname(), cindyAPIHost) {
 		return false
 	}
-	return parsed.Port() == "" && parsed.User == nil && parsed.RawQuery == "" && parsed.Fragment == "" &&
+	return parsed.Port() == "" && parsed.User == nil && !parsed.ForceQuery && parsed.RawQuery == "" && parsed.Fragment == "" &&
 		(parsed.EscapedPath() == "" || parsed.EscapedPath() == "/")
 }
 

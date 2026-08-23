@@ -25,6 +25,11 @@ BEGIN
     WHERE p.entity_type = 'account'
       AND p.entity_id = a.id
       AND a.deleted_at IS NOT NULL
+      AND a.type = 'apikey'
+      AND jsonb_typeof(a.credentials->'base_url') = 'string'
+      AND LOWER(BTRIM(a.credentials->>'base_url')) IN (
+          'https://api.laxarouter.ai', 'https://api.laxarouter.ai/'
+      )
       AND (a.platform, a.wire_platform, a.provider_profile) IS NOT DISTINCT FROM
           (p.original_platform, p.original_wire_platform, p.original_provider_profile);
     GET DIAGNOSTICS replayed_accounts = ROW_COUNT;

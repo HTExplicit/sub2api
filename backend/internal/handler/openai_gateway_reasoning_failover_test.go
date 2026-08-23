@@ -160,10 +160,12 @@ func TestLegacyCindyRuntimeCompatibilityPreservesReasoningAcrossFailover(t *test
 	require.JSONEq(t, kiroReasoningCanonicalBody, string(got))
 	require.Equal(t, 1, reasoningItemCount(t, got))
 	require.Equal(t, "ENC_BLOB", gjson.GetBytes(got, "input.1.encrypted_content").String())
-	require.True(t, state.passthroughSeen, "legacy Laxa must advance cross-mode failover state")
+	require.False(t, state.passthroughSeen, "legacy Laxa is not an OpenAI passthrough attempt")
 
 	ordinary := newOpenAIPassthroughAccount(61, false)
 	next := h.deriveOpenAIForwardAttemptBody(nil, canonical, ordinary, state)
-	require.Equal(t, 0, reasoningItemCount(t, next),
-		"a later ordinary non-passthrough account must not receive Laxa encrypted reasoning")
+	require.JSONEq(t, kiroReasoningCanonicalBody, string(next),
+		"legacy-to-ordinary failover must keep the canonical request body")
+	require.Equal(t, 1, reasoningItemCount(t, next))
+	require.Equal(t, "ENC_BLOB", gjson.GetBytes(next, "input.1.encrypted_content").String())
 }

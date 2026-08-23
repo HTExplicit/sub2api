@@ -30,9 +30,6 @@ func (h *OpenAIGatewayHandler) deriveOpenAIForwardAttemptBody(
 	state *openAIPassthroughFailoverState,
 ) []byte {
 	if account != nil && service.IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		if state != nil && service.IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-			state.passthroughSeen = true
-		}
 		return canonicalBody
 	}
 	currentPassthrough := account.IsOpenAIPassthroughEnabled()

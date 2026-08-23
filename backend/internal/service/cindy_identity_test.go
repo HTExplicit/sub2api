@@ -23,6 +23,13 @@ func TestIsCindyAPIKeyAccount(t *testing.T) {
 	require.False(t, IsCindyAPIKeyAccount(PlatformCindy, AccountTypeAPIKey, map[string]any{"base_url": "https://api.laxarouter.ai.evil.test"}))
 }
 
+func TestIsCindyAPIKeyAccountRejectsForceQueryEndpoint(t *testing.T) {
+	credentials := map[string]any{"base_url": "https://api.laxarouter.ai?"}
+
+	require.False(t, IsCindyAPIKeyAccount(PlatformCindy, AccountTypeAPIKey, credentials))
+	require.False(t, IsLegacyCindyAPIKeyAccount(PlatformOpenAI, AccountTypeAPIKey, credentials))
+}
+
 func TestLegacyCindyAPIKeyAccountRequiresExactLegacyIdentity(t *testing.T) {
 	require.True(t, IsLegacyCindyAPIKeyAccount(PlatformOpenAI, AccountTypeAPIKey, cindyCredentials()))
 	require.True(t, IsLegacyCindyAPIKeyAccount(PlatformOpenAI, AccountTypeAPIKey, map[string]any{"base_url": "https://API.LAXAROUTER.AI/"}))
