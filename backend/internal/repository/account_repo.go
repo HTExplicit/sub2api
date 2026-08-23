@@ -887,11 +887,18 @@ func (r *accountRepository) Delete(ctx context.Context, id int64) error {
 		txClient = contextTx.Client()
 	} else {
 		tx, err = r.client.Tx(ctx)
-		if err != nil {
+		if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
 			return err
 		}
-		defer func() { _ = tx.Rollback() }()
-		txClient = tx.Client()
+		if tx != nil {
+			defer func() { _ = tx.Rollback() }()
+			txClient = tx.Client()
+		} else {
+			// Some integration and composed repository callers hold a transaction
+			// in the Ent client itself rather than in context. Reuse that client;
+			// the caller owns commit, rollback, and post-commit cache visibility.
+			txClient = r.client
+		}
 	}
 
 	if _, err := txClient.AccountGroup.Delete().Where(dbaccountgroup.AccountIDEQ(id)).Exec(ctx); err != nil {
