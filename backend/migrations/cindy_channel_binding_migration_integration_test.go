@@ -134,6 +134,16 @@ CREATE TABLE groups (
     fallback_group_id_on_invalid_request BIGINT,
     status TEXT NOT NULL DEFAULT 'active',
     is_exclusive BOOLEAN NOT NULL DEFAULT FALSE,
+    allow_image_generation BOOLEAN NOT NULL DEFAULT FALSE,
+    subscription_type VARCHAR(20) NOT NULL DEFAULT 'standard',
+    rate_multiplier DECIMAL(10, 4) NOT NULL DEFAULT 1.0,
+    peak_rate_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    peak_start VARCHAR(5) NOT NULL DEFAULT '',
+    peak_end VARCHAR(5) NOT NULL DEFAULT '',
+    peak_rate_multiplier DECIMAL(10,4) NOT NULL DEFAULT 1.0,
+    profit_control_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    profit_min_margin DECIMAL(10,4) NOT NULL DEFAULT 0,
+    profit_safety_buffer DECIMAL(10,4) NOT NULL DEFAULT 0,
     deleted_at TIMESTAMPTZ
 );
 CREATE TABLE accounts (

@@ -164,3 +164,24 @@ func TestMigration236TrimsReservedManagedChannelNames(t *testing.T) {
 	require.Contains(t, sql, "new_reserved := lower(btrim(new.name)) = lower('cindy catalog')")
 	require.NotContains(t, sql, "lower(c.name) = lower('cindy catalog')")
 }
+
+func TestMigration236IntegrationFixtureIncludesGroupAuthTriggerColumns(t *testing.T) {
+	raw, err := os.ReadFile("cindy_channel_binding_migration_integration_test.go")
+	require.NoError(t, err)
+	fixture := strings.ToLower(string(raw))
+
+	for _, column := range []string{
+		"allow_image_generation boolean not null default false",
+		"subscription_type varchar(20) not null default 'standard'",
+		"rate_multiplier decimal(10, 4) not null default 1.0",
+		"peak_rate_enabled boolean not null default false",
+		"peak_start varchar(5) not null default ''",
+		"peak_end varchar(5) not null default ''",
+		"peak_rate_multiplier decimal(10,4) not null default 1.0",
+		"profit_control_enabled boolean not null default false",
+		"profit_min_margin decimal(10,4) not null default 0",
+		"profit_safety_buffer decimal(10,4) not null default 0",
+	} {
+		require.Contains(t, fixture, column)
+	}
+}
