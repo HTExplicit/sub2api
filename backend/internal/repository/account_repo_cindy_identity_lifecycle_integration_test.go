@@ -141,6 +141,56 @@ func TestDeleteInsideOuterTransactionDefersSchedulerSideEffectsToCommittedOutbox
 	require.NoError(t, err, "rolling back the outer transaction must preserve the account")
 }
 
+func TestDeleteThroughTransactionalRepositoryDefersSchedulerSideEffectsToCommittedOutbox(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	cache := newCindyIdentityLifecycleSchedulerCache(t)
+	repo := newAccountRepositoryWithSQL(client, integrationDB, cache)
+	suffix := time.Now().UnixNano()
+	account := &service.Account{
+		Name: fmt.Sprintf("cindy-delete-transactional-repository-%d", suffix), Platform: service.PlatformCindy,
+		WirePlatform: service.WirePlatformOpenAI, ProviderProfile: service.ProviderProfileCindyLaxaV1,
+		Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
+		Credentials: map[string]any{"api_key": fmt.Sprintf("transactional-repository-key-%d", suffix), "base_url": "https://api.laxarouter.ai"},
+		Extra:       map[string]any{},
+	}
+	require.NoError(t, repo.Create(ctx, account))
+	require.NoError(t, cache.SetAccount(ctx, account))
+	_, err := integrationDB.ExecContext(ctx, "DELETE FROM scheduler_outbox WHERE account_id = $1", account.ID)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM scheduler_outbox WHERE account_id = $1", account.ID)
+		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM cindy_health_states WHERE account_id = $1", account.ID)
+		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM account_credential_identities WHERE account_id = $1", account.ID)
+		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM accounts WHERE id = $1", account.ID)
+	})
+
+	tx, err := client.Tx(ctx)
+	require.NoError(t, err)
+	txRepo := newAccountRepositoryWithSQL(tx.Client(), tx.Client(), cache)
+	require.NoError(t, txRepo.Delete(ctx, account.ID))
+
+	cached, err := cache.GetAccount(ctx, account.ID)
+	require.NoError(t, err)
+	require.NotNil(t, cached, "a delete through an already-transactional repository must not evict cache before commit")
+	var committedOutboxCount int
+	require.NoError(t, integrationDB.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM scheduler_outbox WHERE account_id = $1", account.ID).
+		Scan(&committedOutboxCount))
+	require.Zero(t, committedOutboxCount, "outbox must not escape the transactional repository")
+	rows, err := tx.Client().QueryContext(ctx, "SELECT COUNT(*) FROM scheduler_outbox WHERE account_id = $1", account.ID)
+	require.NoError(t, err)
+	require.True(t, rows.Next())
+	var transactionalOutboxCount int
+	require.NoError(t, rows.Scan(&transactionalOutboxCount))
+	require.NoError(t, rows.Close())
+	require.Equal(t, 1, transactionalOutboxCount)
+	require.NoError(t, tx.Rollback())
+
+	_, err = repo.GetByID(ctx, account.ID)
+	require.NoError(t, err, "rolling back the transactional repository must preserve the account")
+}
+
 func TestCredentialIdentityReimportKeepsRetiredOwnerHistory(t *testing.T) {
 	ctx := context.Background()
 	client := testEntClient(t)

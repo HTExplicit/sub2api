@@ -270,20 +270,27 @@ func (s *AccountRepoSuite) TestDelete() {
 }
 
 func (s *AccountRepoSuite) TestDelete_RemovesSchedulerAccountSnapshot() {
-	account := mustCreateAccount(s.T(), s.client, &service.Account{Name: "to-delete-cache"})
+	// This assertion covers Delete's owned-transaction path. The suite client is
+	// deliberately transactional for isolation, so using it here would instead
+	// exercise the externally-owned transaction contract.
+	client := testEntClient(s.T())
 	cacheRecorder := &schedulerCacheRecorder{
-		accounts: map[int64]*service.Account{
-			account.ID: {
-				ID:          account.ID,
-				Name:        account.Name,
-				Status:      service.StatusActive,
-				Schedulable: true,
-			},
-		},
+		accounts: make(map[int64]*service.Account),
 	}
-	s.repo.schedulerCache = cacheRecorder
+	repo := newAccountRepositoryWithSQL(client, integrationDB, cacheRecorder)
+	account := mustCreateAccount(s.T(), client, &service.Account{Name: "to-delete-cache-owned"})
+	cacheRecorder.accounts[account.ID] = &service.Account{
+		ID:          account.ID,
+		Name:        account.Name,
+		Status:      service.StatusActive,
+		Schedulable: true,
+	}
+	s.T().Cleanup(func() {
+		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM scheduler_outbox WHERE account_id = $1", account.ID)
+		_, _ = integrationDB.ExecContext(context.Background(), "DELETE FROM accounts WHERE id = $1", account.ID)
+	})
 
-	err := s.repo.Delete(s.ctx, account.ID)
+	err := repo.Delete(s.ctx, account.ID)
 	s.Require().NoError(err, "Delete")
 
 	s.Require().Equal([]int64{account.ID}, cacheRecorder.deleteIDs)
