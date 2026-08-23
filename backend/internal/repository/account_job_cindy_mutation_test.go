@@ -71,17 +71,19 @@ func (s *accountJobRuntimeBlockerStub) ClearAccountSchedulingBlock(accountID int
 	s.cleared = append(s.cleared, accountID)
 }
 
-type accountJobSchedulerWriterStub struct {
+type accountJobSchedulerRefresherStub struct {
 	mock         sqlmock.Sqlmock
-	account      *service.Account
+	accountID    int64
+	groupIDs     []int64
 	beforeCommit bool
 }
 
-func (s *accountJobSchedulerWriterStub) SetAccount(_ context.Context, account *service.Account) error {
+func (s *accountJobSchedulerRefresherStub) RefreshAccountAndGroups(_ context.Context, accountID int64, groupIDs []int64) error {
 	if err := s.mock.ExpectationsWereMet(); err != nil {
 		s.beforeCommit = true
 	}
-	s.account = account
+	s.accountID = accountID
+	s.groupIDs = append([]int64(nil), groupIDs...)
 	return nil
 }
 
@@ -97,13 +99,20 @@ func newAccountJobCindyMutationTest(
 	return &accountJobCindyMutationRunner{client: client, identity: identity}, mock
 }
 
-func expectAccountJobCindyMutationLocks(mock sqlmock.Sqlmock, accountID int64) {
+func expectAccountJobCindyMutationLocks(mock sqlmock.Sqlmock, accountID int64, groupIDs ...int64) {
 	mock.ExpectQuery("(?s)SELECT id FROM accounts.*FOR UPDATE").
 		WithArgs(accountID).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(accountID))
 	mock.ExpectQuery("(?s)SELECT id FROM account_credential_identities.*FOR UPDATE").
 		WithArgs(accountID).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(90))
+	groupRows := sqlmock.NewRows([]string{"group_id"})
+	for _, groupID := range groupIDs {
+		groupRows.AddRow(groupID)
+	}
+	mock.ExpectQuery("(?s)SELECT group_id FROM account_groups.*FOR SHARE").
+		WithArgs(accountID).
+		WillReturnRows(groupRows)
 }
 
 func expectCanonicalCindyMutationAccount(mock sqlmock.Sqlmock, accountID int64) {
@@ -199,8 +208,8 @@ func TestAccountJobCindyMutationReturnsAndCachesCompleteCallbackAccountAfterComm
 		Identity: service.AccountCredentialIdentity{ID: 91, Generation: 4, Active: true},
 	}}
 	runner, mock := newAccountJobCindyMutationTest(t, identity)
-	cache := &accountJobSchedulerWriterStub{mock: mock}
-	runner.schedulerCache = cache
+	refresher := &accountJobSchedulerRefresherStub{mock: mock}
+	runner.scheduler = refresher
 	accountID := int64(74)
 	markedAt := time.Now().UTC()
 	callbackAccount := canonicalCindyJobMutationAccount(accountID)
@@ -209,7 +218,7 @@ func TestAccountJobCindyMutationReturnsAndCachesCompleteCallbackAccountAfterComm
 	callbackAccount.CindyBalanceInsufficientAt = &markedAt
 
 	mock.ExpectBegin()
-	expectAccountJobCindyMutationLocks(mock, accountID)
+	expectAccountJobCindyMutationLocks(mock, accountID, 7, 8)
 	expectCanonicalCindyMutationAccount(mock, accountID)
 	mock.ExpectExec(regexp.QuoteMeta("DELETE FROM cindy_health_states WHERE account_id = $1")).
 		WithArgs(accountID).WillReturnResult(sqlmock.NewResult(0, 1))
@@ -227,10 +236,10 @@ func TestAccountJobCindyMutationReturnsAndCachesCompleteCallbackAccountAfterComm
 	require.NoError(t, err)
 	require.Same(t, callbackAccount, returned)
 	require.Nil(t, returned.CindyBalanceInsufficientAt)
-	require.Same(t, callbackAccount, cache.account)
-	require.Equal(t, []int64{8, 9}, cache.account.GroupIDs)
-	require.Equal(t, true, cache.account.Extra["complete"])
-	require.False(t, cache.beforeCommit)
+	require.Equal(t, accountID, refresher.accountID)
+	require.Equal(t, []int64{7, 8, 9}, refresher.groupIDs)
+	require.Equal(t, true, returned.Extra["complete"])
+	require.False(t, refresher.beforeCommit)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

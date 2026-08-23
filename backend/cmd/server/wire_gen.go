@@ -202,7 +202,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	adminGroupRepository := repository.NewAdminGroupRepository(client, db)
 	adminAccountRepository := repository.NewAdminAccountRepository(client, db, schedulerCache)
 	accountCredentialIdentityRepository := repository.NewAccountCredentialIdentityRepository(db)
-	accountJobCindyMutationRunner := repository.NewAccountJobCindyMutationRunner(client, accountCredentialIdentityRepository, schedulerCache, openAIGatewayService)
+	accountJobCindyMutationRunner := repository.NewAccountJobCindyMutationRunner(client, accountCredentialIdentityRepository, schedulerSnapshotService, openAIGatewayService)
 	cindyBalanceProbeRepository := repository.NewCindyBalanceProbeRepository(db)
 	proxyExitInfoProber := repository.NewProxyExitInfoProber(configConfig)
 	proxyLatencyCache := repository.NewProxyLatencyCache(redisClient)
