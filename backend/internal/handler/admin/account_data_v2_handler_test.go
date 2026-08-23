@@ -264,7 +264,7 @@ func TestExportDataUsesCockpitConsoleFilters(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(
 		http.MethodGet,
-		"/api/v1/admin/accounts/data?platforms=openai,grok&statuses=active,error&plans=team&proxies=direct,5&folder=uncategorized&tags=3,4&account_ids=1&group=12&search=Exported&sort_by=priority&sort_order=desc&include_proxies=false",
+		"/api/v1/admin/accounts/data?platforms=openai,grok&statuses=active,error&plans=team&proxies=direct,5&folder=uncategorized&tags=3,4&account_ids=1&group_id=12&search=Exported&sort_by=priority&sort_order=desc&include_proxies=false",
 		nil,
 	)
 	router.ServeHTTP(recorder, request)

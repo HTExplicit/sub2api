@@ -445,7 +445,7 @@ func hasAccountConsoleFilters(c *gin.Context) bool {
 
 func (h *AccountHandler) GetAccountFacets(c *gin.Context) {
 	var groupID int64
-	if value := c.Query("group"); value == accountListGroupUngroupedQueryValue {
+	if value := c.Query("group_id"); value == accountListGroupUngroupedQueryValue {
 		groupID = service.AccountListGroupUngrouped
 	} else if value != "" {
 		parsed, err := strconv.ParseInt(value, 10, 64)

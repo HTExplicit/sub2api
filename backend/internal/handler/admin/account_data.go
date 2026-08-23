@@ -379,7 +379,7 @@ func (h *AccountHandler) resolveExportAccounts(ctx context.Context, ids []int64,
 	}
 
 	groupID := int64(0)
-	if groupIDStr := c.Query("group"); groupIDStr != "" {
+	if groupIDStr := c.Query("group_id"); groupIDStr != "" {
 		if groupIDStr == accountListGroupUngroupedQueryValue {
 			groupID = service.AccountListGroupUngrouped
 		} else {

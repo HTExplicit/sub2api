@@ -97,6 +97,38 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_FirstClassCindySearch(t
 	}
 }
 
+func TestOpenAIGatewayServiceSelectAccountWithSchedulerRejectsCrossProfileCindyCandidate(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+	groupID := int64(51005)
+	canonical := cindyEndpointSchedulingAccount(51006)
+	canonical.Priority = 10
+	crossProfile := cindyEndpointSchedulingAccount(51007)
+	crossProfile.ProviderProfile = "cindy_future_v2"
+	crossProfile.Priority = 1
+	cfg := &config.Config{}
+	cfg.Gateway.Scheduling.LoadBatchEnabled = false
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Priority = 1
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: []Account{crossProfile, canonical}},
+		cache:              &schedulerTestGatewayCache{},
+		cfg:                cfg,
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+
+	selection, _, err := svc.SelectAccountWithSchedulerForCapability(
+		context.Background(), &groupID, "", "", "gpt-5.6-sol", nil,
+		OpenAIUpstreamTransportHTTPSSE, OpenAIEndpointCapabilityResponses,
+		false, false, false, PlatformCindy,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.Equal(t, canonical.ID, selection.Account.ID)
+	if selection.ReleaseFunc != nil {
+		selection.ReleaseFunc()
+	}
+}
+
 func TestOpenAIGatewayService_SelectAccountWithScheduler_MixedGroupGatesCindyByEndpoint(t *testing.T) {
 	resetOpenAIAdvancedSchedulerSettingCacheForTest()
 	groupID := int64(51010)

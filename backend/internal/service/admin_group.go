@@ -230,6 +230,8 @@ func compositeRouteFromInput(groupID int64, input CompositeRouteInput) (*Composi
 
 func defaultModelsListCandidateIDs(platform string) []string {
 	switch platform {
+	case PlatformCindy:
+		return CindyPublicModelIDs()
 	case PlatformOpenAI:
 		return openai.DefaultModelIDs()
 	case PlatformGemini:
@@ -412,6 +414,9 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	fallbackOnInvalidRequest := input.FallbackGroupIDOnInvalidRequest
 	if fallbackOnInvalidRequest != nil && *fallbackOnInvalidRequest <= 0 {
 		fallbackOnInvalidRequest = nil
+	}
+	if platform == PlatformCindy && fallbackOnInvalidRequest != nil {
+		return nil, errors.New("cindy groups cannot configure fallback groups")
 	}
 	// 校验无效请求兜底分组
 	if fallbackOnInvalidRequest != nil {
@@ -854,6 +859,9 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 		} else {
 			fallbackOnInvalidRequest = nil
 		}
+	}
+	if group.Platform == PlatformCindy && fallbackOnInvalidRequest != nil {
+		return nil, errors.New("cindy groups cannot configure fallback groups")
 	}
 	if fallbackOnInvalidRequest != nil {
 		if err := s.validateFallbackGroupOnInvalidRequest(ctx, id, group.Platform, group.SubscriptionType, *fallbackOnInvalidRequest); err != nil {

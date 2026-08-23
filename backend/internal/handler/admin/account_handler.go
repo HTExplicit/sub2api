@@ -543,7 +543,7 @@ func (h *AccountHandler) List(c *gin.Context) {
 	includeSchedulerScore := parseBoolQueryWithDefault(c.Query("include_scheduler_score"), false)
 
 	var groupID int64
-	if groupIDStr := c.Query("group"); groupIDStr != "" {
+	if groupIDStr := c.Query("group_id"); groupIDStr != "" {
 		if groupIDStr == accountListGroupUngroupedQueryValue {
 			groupID = service.AccountListGroupUngrouped
 		} else {

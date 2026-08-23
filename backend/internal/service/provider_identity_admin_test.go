@@ -131,6 +131,47 @@ func TestAdminCreateGroupPersistsCanonicalCindyIdentity(t *testing.T) {
 	require.Equal(t, ProviderProfileCindyLaxaV1, group.ProviderProfile)
 }
 
+func TestAdminCreateGroupRejectsCindyFallbackVariants(t *testing.T) {
+	t.Parallel()
+
+	fallbackID := int64(92)
+	tests := []struct {
+		name  string
+		input *CreateGroupInput
+	}{
+		{
+			name: "ordinary fallback",
+			input: &CreateGroupInput{
+				Name: "cindy", Platform: PlatformCindy, RateMultiplier: 1,
+				FallbackGroupID: &fallbackID,
+			},
+		},
+		{
+			name: "invalid request fallback",
+			input: &CreateGroupInput{
+				Name: "cindy", Platform: PlatformCindy, RateMultiplier: 1,
+				FallbackGroupIDOnInvalidRequest: &fallbackID,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			repo := &groupRepoStubForAdmin{getByIDByID: map[int64]*Group{
+				fallbackID: {ID: fallbackID, Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1},
+			}}
+			svc := &adminServiceImpl{groupRepo: repo}
+
+			group, err := svc.CreateGroup(context.Background(), test.input)
+
+			require.ErrorContains(t, err, "cindy groups cannot configure fallback groups")
+			require.Nil(t, group)
+			require.Nil(t, repo.created)
+		})
+	}
+}
+
 func TestAdminUpdateGroupRejectsFinalIdentityMismatchBeforeWrite(t *testing.T) {
 	existing := &Group{
 		ID:           82,

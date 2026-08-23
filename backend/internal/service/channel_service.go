@@ -326,6 +326,7 @@ func populateChannelCache(channels []Channel, groupPlatforms map[int64]string) *
 	cache.loadedAt = time.Now()
 
 	for i := range channels {
+		hydrateManagedCindyCatalogChannel(&channels[i])
 		channels[i].normalizeBillingModelSource()
 		ch := &channels[i]
 		cache.byID[ch.ID] = ch

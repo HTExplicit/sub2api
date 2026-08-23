@@ -96,3 +96,26 @@ func TestMigration235RestrictsLedgerReplayToLifecycleExcludedRows(t *testing.T) 
 		require.Contains(t, contents, "TestMigration235PreservesMixedOpenAIGroupsAfterCanonicalReplay")
 	}
 }
+
+func TestMigration236DefinesManagedCindyChannelAndDurableInvalidation(t *testing.T) {
+	matches, err := fs.Glob(FS, "236_*.sql")
+	require.NoError(t, err)
+	require.Equal(t, []string{"236_bind_strict_cindy_groups_to_catalog_channel.sql"}, matches)
+
+	raw, err := FS.ReadFile(matches[0])
+	require.NoError(t, err)
+	sql := strings.ToLower(string(raw))
+
+	for _, fragment := range []string{
+		"cindy_catalog_managed",
+		"cindy_laxa_v1",
+		"insert into channel_groups",
+		"insert into scheduler_outbox",
+		"enqueue_group_api_key_auth_cache_invalidations",
+		"raise exception",
+	} {
+		require.Contains(t, sql, fragment)
+	}
+	require.NotRegexp(t, `where\s+g\.id\s*=\s*\d+`, sql)
+	require.NotContains(t, sql, "platform = 'openai' and cmp.platform = 'openai'")
+}
