@@ -174,3 +174,35 @@ func TestOpenAIGatewayService_Cindy403HTMLAndCyberDoNotPenalize(t *testing.T) {
 		})
 	}
 }
+
+func TestRateLimitServiceCindy403NeverPersistsPermanentError(t *testing.T) {
+	legacy := newCindyRateLimitAccount(307, false)
+	legacy.Platform = PlatformOpenAI
+	legacy.WirePlatform = ""
+	legacy.ProviderProfile = ""
+	for _, test := range []struct {
+		name    string
+		account *Account
+	}{
+		{name: "canonical", account: newFirstClassCindyRateLimitAccount(306, false)},
+		{name: "legacy", account: legacy},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repo := &rateLimitAccountRepoStub{}
+			counter := &countingOpenAI403CounterCache{openAI403CounterCacheStub: openAI403CounterCacheStub{counts: []int64{openAI403DisableThreshold}}}
+			service := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+			service.SetOpenAI403CounterCache(counter)
+
+			for range 2 {
+				require.True(t, service.HandleUpstreamError(
+					context.Background(), test.account, http.StatusForbidden, http.Header{},
+					[]byte(`{"error":{"message":"temporary forbidden"}}`),
+				))
+			}
+
+			require.Equal(t, 2, repo.tempCalls)
+			require.Zero(t, repo.setErrorCalls)
+			require.Zero(t, counter.increments)
+		})
+	}
+}

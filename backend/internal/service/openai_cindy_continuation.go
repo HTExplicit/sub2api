@@ -54,6 +54,35 @@ func (c CindyContinuationClassification) CanSwitchAccount() bool {
 		!c.HasOpaqueState
 }
 
+func canRecoverLegacyCindyOpaqueContinuation(account *Account, payload []byte) bool {
+	if account == nil || !IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		return false
+	}
+	classification, err := ClassifyCindyContinuation(payload, CindyContinuationProof{})
+	if err != nil || classification.Mode != CindyContinuationOpaqueFull ||
+		!classification.VerifiedFullHistory || classification.HasExternalReference {
+		return false
+	}
+	return hasRecoverableLegacyCindyOpaqueReasoning(payload)
+}
+
+func hasRecoverableLegacyCindyOpaqueReasoning(payload []byte) bool {
+	input := gjson.GetBytes(payload, "input")
+	items := input.Array()
+	if input.IsObject() {
+		items = []gjson.Result{input}
+	}
+	for _, item := range items {
+		switch strings.TrimSpace(item.Get("type").String()) {
+		case "reasoning", "compaction", "compaction_summary":
+			if hasNonNullCindyContinuationCarrier(item.Get("encrypted_content")) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func EnsureCindyResponsesStoreFalse(payload []byte) ([]byte, error) {
 	if !gjson.ValidBytes(payload) {
 		return nil, ErrInvalidCindyContinuationPayload

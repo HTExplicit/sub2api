@@ -357,12 +357,13 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 
 	agentTaskRecoveryTried := false
 	invalidEncryptedContentRetryTried := false
+	legacyOpaqueRecovery := canRecoverLegacyCindyOpaqueContinuation(account, body)
 	tryRecoverInvalidEncryptedContent := func(upstreamMsg string, upstreamBody []byte) (bool, error) {
-		if IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) ||
+		if (IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) && !legacyOpaqueRecovery) ||
 			isOpenAICindyHTTPToWSV2Bypassed(c) ||
 			invalidEncryptedContentRetryTried ||
 			!isOpenAIInvalidEncryptedContentError(upstreamMsg, upstreamBody) ||
-			ValidateFunctionCallOutputContextBytes(body).HasFunctionCallOutput {
+			(ValidateFunctionCallOutputContextBytes(body).HasFunctionCallOutput && !legacyOpaqueRecovery) {
 			return false, nil
 		}
 		var decoded map[string]any

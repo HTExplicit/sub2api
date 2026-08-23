@@ -829,6 +829,13 @@ type GatewayService struct {
 	tlsFPProfileService   *TLSFingerprintProfileService
 	balanceNotifyService  *BalanceNotifyService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
+	cindyHealth           CindyHealthCoordinator
+}
+
+func (s *GatewayService) SetCindyHealthCoordinator(coordinator CindyHealthCoordinator) {
+	if s != nil {
+		s.cindyHealth = coordinator
+	}
 }
 
 // NewGatewayService creates a new GatewayService

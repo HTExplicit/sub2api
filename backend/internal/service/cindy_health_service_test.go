@@ -200,11 +200,13 @@ func TestLegacyCindyCompatibilityDoesNotEnterCanonicalHealth(t *testing.T) {
 
 func TestProvideCindyHealthServiceWiresGatewayCoordinator(t *testing.T) {
 	gateway := &OpenAIGatewayService{}
+	nativeGateway := &GatewayService{}
 
-	health := ProvideCindyHealthService(nil, nil, nil, nil, gateway)
+	health := ProvideCindyHealthService(nil, nil, nil, nil, gateway, nativeGateway)
 	t.Cleanup(health.Stop)
 
 	require.Same(t, health, gateway.cindyHealth)
+	require.Same(t, health, nativeGateway.cindyHealth)
 }
 
 func TestCindyHealthExactBudgetRequiresLunaAndTerraForSameGeneration(t *testing.T) {
