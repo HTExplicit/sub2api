@@ -17,6 +17,7 @@ import (
 
 type accountJobIdentityTransactionStub struct {
 	bindErr error
+	result  *service.BindAccountCredentialIdentityResult
 	params  []service.BindAccountCredentialIdentityParams
 }
 
@@ -44,11 +45,30 @@ func (s *accountJobIdentityTransactionStub) BindInTransaction(
 	if s.bindErr != nil {
 		return nil, s.bindErr
 	}
+	if s.result != nil {
+		result := *s.result
+		result.Identity.AccountID = params.AccountID
+		result.Identity.ProviderProfile = params.ProviderProfile
+		result.Identity.AuthType = params.AuthType
+		result.Identity.NormalizedBaseURL = params.NormalizedBaseURL
+		result.Identity.Fingerprint = params.Fingerprint
+		return &result, nil
+	}
 	return &service.BindAccountCredentialIdentityResult{Identity: service.AccountCredentialIdentity{
 		ID: 91, AccountID: params.AccountID, ProviderProfile: params.ProviderProfile,
 		AuthType: params.AuthType, NormalizedBaseURL: params.NormalizedBaseURL,
 		Fingerprint: params.Fingerprint, Generation: 3, Active: true,
 	}}, nil
+}
+
+type accountJobRuntimeBlockerStub struct {
+	cleared []int64
+}
+
+func (s *accountJobRuntimeBlockerStub) BlockAccountScheduling(*service.Account, time.Time, string) {}
+
+func (s *accountJobRuntimeBlockerStub) ClearAccountSchedulingBlock(accountID int64) {
+	s.cleared = append(s.cleared, accountID)
 }
 
 func newAccountJobCindyMutationTest(
@@ -85,17 +105,64 @@ func expectCanonicalCindyMutationAccount(mock sqlmock.Sqlmock, accountID int64) 
 }
 
 func TestAccountJobCindyMutationCommitsIdentityHealthAndSchedulerTogether(t *testing.T) {
-	identity := &accountJobIdentityTransactionStub{}
+	tests := []struct {
+		name      string
+		accountID int64
+		created   bool
+		rotated   bool
+	}{
+		{name: "created", accountID: 71, created: true},
+		{name: "rotated", accountID: 72, rotated: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			identity := &accountJobIdentityTransactionStub{result: &service.BindAccountCredentialIdentityResult{
+				Created: test.created, Rotated: test.rotated,
+				Identity: service.AccountCredentialIdentity{ID: 91, Generation: 2, Active: true},
+			}}
+			runner, mock := newAccountJobCindyMutationTest(t, identity)
+			runtime := &accountJobRuntimeBlockerStub{}
+			runner.runtimeBlocker = runtime
+
+			mock.ExpectBegin()
+			expectAccountJobCindyMutationLocks(mock, test.accountID)
+			expectCanonicalCindyMutationAccount(mock, test.accountID)
+			mock.ExpectExec(regexp.QuoteMeta("DELETE FROM cindy_health_states WHERE account_id = $1")).
+				WithArgs(test.accountID).WillReturnResult(sqlmock.NewResult(0, 1))
+			mock.ExpectExec("UPDATE accounts SET cindy_balance_insufficient_at = NULL").
+				WithArgs(test.accountID).WillReturnResult(sqlmock.NewResult(0, 1))
+			mock.ExpectExec("INSERT INTO scheduler_outbox").
+				WithArgs(service.SchedulerOutboxEventAccountChanged, &test.accountID, nil, nil, sqlmock.AnyArg()).
+				WillReturnResult(sqlmock.NewResult(1, 1))
+			mock.ExpectCommit()
+
+			account, err := runner.Run(context.Background(), test.accountID, func(ctx context.Context) (*service.Account, error) {
+				require.NotNil(t, dbent.TxFromContext(ctx))
+				return canonicalCindyJobMutationAccount(test.accountID), nil
+			})
+
+			require.NoError(t, err)
+			require.Equal(t, test.accountID, account.ID)
+			require.Len(t, identity.params, 1)
+			require.Equal(t, test.accountID, identity.params[0].AccountID)
+			require.Equal(t, []int64{test.accountID}, runtime.cleared)
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestAccountJobCindyMutationKeepsHealthWhenCredentialIdentityIsUnchanged(t *testing.T) {
+	identity := &accountJobIdentityTransactionStub{result: &service.BindAccountCredentialIdentityResult{
+		Identity: service.AccountCredentialIdentity{ID: 91, Generation: 3, Active: true},
+	}}
 	runner, mock := newAccountJobCindyMutationTest(t, identity)
-	accountID := int64(71)
+	runtime := &accountJobRuntimeBlockerStub{}
+	runner.runtimeBlocker = runtime
+	accountID := int64(73)
 
 	mock.ExpectBegin()
 	expectAccountJobCindyMutationLocks(mock, accountID)
 	expectCanonicalCindyMutationAccount(mock, accountID)
-	mock.ExpectExec(regexp.QuoteMeta("DELETE FROM cindy_health_states WHERE account_id = $1")).
-		WithArgs(accountID).WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectExec("UPDATE accounts SET cindy_balance_insufficient_at = NULL").
-		WithArgs(accountID).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec("INSERT INTO scheduler_outbox").
 		WithArgs(service.SchedulerOutboxEventAccountChanged, &accountID, nil, nil, sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
@@ -108,8 +175,7 @@ func TestAccountJobCindyMutationCommitsIdentityHealthAndSchedulerTogether(t *tes
 
 	require.NoError(t, err)
 	require.Equal(t, accountID, account.ID)
-	require.Len(t, identity.params, 1)
-	require.Equal(t, accountID, identity.params[0].AccountID)
+	require.Empty(t, runtime.cleared)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

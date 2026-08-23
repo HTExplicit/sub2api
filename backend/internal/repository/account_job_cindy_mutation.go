@@ -10,15 +10,17 @@ import (
 )
 
 type accountJobCindyMutationRunner struct {
-	client   *dbent.Client
-	identity service.AccountCredentialIdentityRepository
+	client         *dbent.Client
+	identity       service.AccountCredentialIdentityRepository
+	runtimeBlocker service.AccountRuntimeBlocker
 }
 
 func NewAccountJobCindyMutationRunner(
 	client *dbent.Client,
 	identity service.AccountCredentialIdentityRepository,
+	runtimeBlocker service.AccountRuntimeBlocker,
 ) service.AccountJobCindyMutationRunner {
-	return &accountJobCindyMutationRunner{client: client, identity: identity}
+	return &accountJobCindyMutationRunner{client: client, identity: identity, runtimeBlocker: runtimeBlocker}
 }
 
 func (r *accountJobCindyMutationRunner) Run(
@@ -76,20 +78,24 @@ func (r *accountJobCindyMutationRunner) Run(
 	if err != nil {
 		return nil, err
 	}
-	if _, err = identityRepo.BindInTransaction(ctx, txClient, service.BindAccountCredentialIdentityParams{
+	bindResult, err := identityRepo.BindInTransaction(ctx, txClient, service.BindAccountCredentialIdentityParams{
 		AccountID: current.ID, ProviderProfile: service.ProviderProfileCindyLaxaV1,
 		AuthType: service.AccountTypeAPIKey, NormalizedBaseURL: normalizedURL,
 		Fingerprint: fingerprint,
-	}); err != nil {
+	})
+	if err != nil {
 		return nil, err
 	}
-	if _, err = txClient.ExecContext(ctx, `DELETE FROM cindy_health_states WHERE account_id = $1`, current.ID); err != nil {
-		return nil, err
-	}
-	if _, err = txClient.ExecContext(ctx, `
-		UPDATE accounts SET cindy_balance_insufficient_at = NULL, updated_at = NOW()
-		WHERE id = $1 AND deleted_at IS NULL`, current.ID); err != nil {
-		return nil, err
+	credentialChanged := bindResult != nil && (bindResult.Created || bindResult.Rotated)
+	if credentialChanged {
+		if _, err = txClient.ExecContext(ctx, `DELETE FROM cindy_health_states WHERE account_id = $1`, current.ID); err != nil {
+			return nil, err
+		}
+		if _, err = txClient.ExecContext(ctx, `
+			UPDATE accounts SET cindy_balance_insufficient_at = NULL, updated_at = NOW()
+			WHERE id = $1 AND deleted_at IS NULL`, current.ID); err != nil {
+			return nil, err
+		}
 	}
 	if err = enqueueSchedulerOutbox(ctx, txClient, service.SchedulerOutboxEventAccountChanged, &current.ID, nil, nil); err != nil {
 		return nil, err
@@ -97,7 +103,12 @@ func (r *accountJobCindyMutationRunner) Run(
 	if err = tx.Commit(); err != nil {
 		return nil, err
 	}
-	current.CindyBalanceInsufficientAt = nil
+	if credentialChanged {
+		current.CindyBalanceInsufficientAt = nil
+		if r.runtimeBlocker != nil {
+			r.runtimeBlocker.ClearAccountSchedulingBlock(current.ID)
+		}
+	}
 	return current, nil
 }
 

@@ -9,9 +9,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type recordingAdminCindyMutationRunner struct {
+	accountIDs []int64
+}
+
+func (r *recordingAdminCindyMutationRunner) Run(
+	ctx context.Context,
+	accountID int64,
+	mutate func(context.Context) (*Account, error),
+) (*Account, error) {
+	r.accountIDs = append(r.accountIDs, accountID)
+	return mutate(ctx)
+}
+
 func TestAdminCreateAccountPersistsCanonicalCindyIdentity(t *testing.T) {
 	repo := &accountRepoStubForBulkUpdate{createID: 71}
-	svc := &adminServiceImpl{accountRepo: repo}
+	runner := &recordingAdminCindyMutationRunner{}
+	svc := &adminServiceImpl{accountRepo: repo, cindyAccountMutations: runner}
 
 	account, err := svc.CreateAccount(context.Background(), &CreateAccountInput{
 		Name:                 "cindy",
@@ -26,6 +40,29 @@ func TestAdminCreateAccountPersistsCanonicalCindyIdentity(t *testing.T) {
 	require.Equal(t, PlatformCindy, account.Platform)
 	require.Equal(t, WirePlatformOpenAI, account.WirePlatform)
 	require.Equal(t, ProviderProfileCindyLaxaV1, account.ProviderProfile)
+	require.Equal(t, []int64{0}, runner.accountIDs)
+}
+
+func TestAdminUpdateAccountUsesCanonicalCindyMutationRunner(t *testing.T) {
+	accountID := int64(74)
+	account := &Account{
+		ID: accountID, Name: "cindy", Platform: PlatformCindy,
+		WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1,
+		Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true,
+		Credentials: map[string]any{"api_key": "old", "base_url": "https://api.laxarouter.ai"},
+		Extra:       map[string]any{},
+	}
+	repo := &accountRepoStubForBulkUpdate{getByIDAccounts: map[int64]*Account{accountID: account}}
+	runner := &recordingAdminCindyMutationRunner{}
+	svc := &adminServiceImpl{accountRepo: repo, cindyAccountMutations: runner}
+
+	updated, err := svc.UpdateAccount(context.Background(), accountID, &UpdateAccountInput{
+		Credentials: map[string]any{"api_key": "new", "base_url": "https://api.laxarouter.ai"},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+	require.Equal(t, []int64{accountID}, runner.accountIDs)
 }
 
 func TestAdminCreateAccountRejectsCindyCompositeBindingBeforeWrite(t *testing.T) {
@@ -33,7 +70,10 @@ func TestAdminCreateAccountRejectsCindyCompositeBindingBeforeWrite(t *testing.T)
 	groupRepo := &groupRepoStubForAdmin{getByIDByID: map[int64]*Group{
 		9: {ID: 9, Platform: PlatformComposite},
 	}}
-	svc := &adminServiceImpl{accountRepo: accountRepo, groupRepo: groupRepo}
+	svc := &adminServiceImpl{
+		accountRepo: accountRepo, groupRepo: groupRepo,
+		cindyAccountMutations: &recordingAdminCindyMutationRunner{},
+	}
 
 	account, err := svc.CreateAccount(context.Background(), &CreateAccountInput{
 		Name:                  "cindy",
@@ -63,7 +103,7 @@ func TestAdminUpdateAccountRejectsMalformedFinalCindyIdentityBeforeWrite(t *test
 			Extra:           map[string]any{},
 		},
 	}}
-	svc := &adminServiceImpl{accountRepo: accountRepo}
+	svc := &adminServiceImpl{accountRepo: accountRepo, cindyAccountMutations: &recordingAdminCindyMutationRunner{}}
 
 	account, err := svc.UpdateAccount(context.Background(), 73, &UpdateAccountInput{
 		Credentials: map[string]any{"base_url": "https://api.laxarouter.ai/v1"},

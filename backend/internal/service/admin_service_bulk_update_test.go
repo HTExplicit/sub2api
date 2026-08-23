@@ -166,6 +166,31 @@ func TestAdminService_BulkUpdateAccounts_AllSuccessIDs(t *testing.T) {
 	require.Len(t, result.Results, 3)
 }
 
+func TestAdminServiceBulkGroupBindingRejectsProviderIdentityMismatchBeforeWrite(t *testing.T) {
+	accountID := int64(91)
+	groupID := int64(92)
+	repo := &accountRepoStubForBulkUpdate{
+		getByIDsAccounts: []*Account{{
+			ID: accountID, Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI,
+			ProviderProfile: ProviderProfileCindyLaxaV1, Type: AccountTypeAPIKey,
+			Credentials: map[string]any{"api_key": "secret", "base_url": "https://api.laxarouter.ai"},
+		}},
+	}
+	groupRepo := &groupRepoStubForAdmin{getByIDByID: map[int64]*Group{
+		groupID: {ID: groupID, Platform: PlatformOpenAI, WirePlatform: PlatformOpenAI},
+	}}
+	svc := &adminServiceImpl{accountRepo: repo, groupRepo: groupRepo}
+
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs: []int64{accountID}, GroupIDs: &[]int64{groupID}, SkipMixedChannelCheck: true,
+	})
+
+	require.ErrorContains(t, err, "provider identity")
+	require.Nil(t, result)
+	require.Zero(t, repo.bulkUpdateCalls)
+	require.Empty(t, repo.bindGroupsCalls)
+}
+
 func TestAdminService_BulkUpdateAccounts_RejectsRateChangeForSyncedAccounts(t *testing.T) {
 	repo := &accountRepoStubForBulkUpdate{
 		getByIDsAccounts: []*Account{
@@ -204,10 +229,15 @@ func TestAdminService_BulkUpdateAccounts_PartialFailureIDs(t *testing.T) {
 		bindGroupErrByID: map[int64]error{
 			2: errors.New("bind failed"),
 		},
+		getByIDsAccounts: []*Account{
+			{ID: 1, Platform: PlatformOpenAI, WirePlatform: PlatformOpenAI},
+			{ID: 2, Platform: PlatformOpenAI, WirePlatform: PlatformOpenAI},
+			{ID: 3, Platform: PlatformOpenAI, WirePlatform: PlatformOpenAI},
+		},
 	}
 	svc := &adminServiceImpl{
 		accountRepo: repo,
-		groupRepo:   &groupRepoStubForAdmin{getByID: &Group{ID: 10, Name: "g10"}},
+		groupRepo:   &groupRepoStubForAdmin{getByID: &Group{ID: 10, Name: "g10", Platform: PlatformOpenAI, WirePlatform: PlatformOpenAI}},
 	}
 
 	groupIDs := []int64{10}
@@ -259,7 +289,7 @@ func TestAdminService_BulkUpdateAccounts_MixedChannelPreCheckBlocksOnExistingCon
 	}
 	svc := &adminServiceImpl{
 		accountRepo: repo,
-		groupRepo:   &groupRepoStubForAdmin{getByID: &Group{ID: 10, Name: "target-group"}},
+		groupRepo:   &groupRepoStubForAdmin{getByID: &Group{ID: 10, Name: "target-group", Platform: PlatformAntigravity, WirePlatform: PlatformAntigravity}},
 	}
 
 	groupIDs := []int64{10}
