@@ -31,7 +31,15 @@ func calculateCindyCatalogTextCost(
 		}
 		return nil, fmt.Errorf("%w for strict Cindy text model %q", ErrModelPricingUnavailable, model)
 	}
-	pricing, err := cindyTextPricingForServiceTier(model, pricing, serviceTier)
+	discount, err := cindyCatalogCostDiscount(model)
+	if err != nil {
+		return nil, err
+	}
+	if discount == 1 {
+		return &CostBreakdown{BillingMode: string(BillingModeToken)}, nil
+	}
+	pricing = applyCindyCatalogCostDiscount(pricing, discount)
+	pricing, err = cindyTextPricingForServiceTier(model, pricing, serviceTier)
 	if err != nil {
 		return nil, err
 	}
@@ -47,6 +55,38 @@ func calculateCindyCatalogTextCost(
 	cost := billingService.computeTokenBreakdown(modelPricing, tokens, rateMultiplier, "", longContextBillingEnabled)
 	cost.BillingMode = string(BillingModeToken)
 	return cost, nil
+}
+
+func cindyCatalogCostDiscount(model string) (float64, error) {
+	capability, ok := resolveKnownCindyCapability(model)
+	if !ok {
+		return 0, nil
+	}
+	if capability.CostDiscount < 0 || capability.CostDiscount > 1 {
+		return 0, fmt.Errorf("%w for strict Cindy text model %q: catalog discount is outside [0,1]", ErrModelPricingUnavailable, model)
+	}
+	return capability.CostDiscount, nil
+}
+
+func applyCindyCatalogCostDiscount(pricing CindyTextPricing, discount float64) CindyTextPricing {
+	factor := 1 - discount
+	pricing.InputCostPerToken *= factor
+	pricing.OutputCostPerToken *= factor
+	pricing.InputCostPerTokenPriority *= factor
+	pricing.OutputCostPerTokenPriority *= factor
+	pricing.CacheReadInputTokenCost *= factor
+	pricing.CacheReadInputTokenCostPriority *= factor
+	pricing.CacheCreationInputTokenCost *= factor
+	pricing.CacheCreationInputTokenCostAbove1hr *= factor
+	pricing.InputCostPerAudioToken *= factor
+	pricing.LongContextInputCostPerToken *= factor
+	pricing.LongContextOutputCostPerToken *= factor
+	pricing.LongContextCacheReadInputTokenCost *= factor
+	pricing.LongContextCacheCreationTokenCost *= factor
+	pricing.LongContextInputCostPerTokenPriority *= factor
+	pricing.LongContextOutputCostPerTokenPriority *= factor
+	pricing.LongContextCacheReadInputTokenCostPriority *= factor
+	return pricing
 }
 
 func cindyTextPricingForServiceTier(model string, pricing CindyTextPricing, serviceTier string) (CindyTextPricing, error) {

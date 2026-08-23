@@ -135,6 +135,37 @@ func TestCalculateCindyCatalogTextCostUsesV4PriceAndRejectsUnknownModel(t *testi
 	require.ErrorIs(t, err, ErrModelPricingUnavailable)
 }
 
+func TestCalculateCindyCatalogTextCostAppliesCatalogDiscount(t *testing.T) {
+	t.Parallel()
+	billingService := NewBillingService(&config.Config{}, nil)
+	tokens := UsageTokens{InputTokens: 100, OutputTokens: 10, CacheReadTokens: 20}
+
+	tests := []struct {
+		model       string
+		discount    float64
+		inputPrice  float64
+		outputPrice float64
+		cachePrice  float64
+	}{
+		{model: "hy3", discount: 0.9, inputPrice: 0.132e-6, outputPrice: 0.528e-6, cachePrice: 0.033e-6},
+		{model: "glm-5.2", discount: 0.3, inputPrice: 1.4e-6, outputPrice: 4.4e-6, cachePrice: 0.26e-6},
+		{model: "glm-5.3", discount: 0.2, inputPrice: 1.4e-6, outputPrice: 4.4e-6, cachePrice: 0.26e-6},
+	}
+
+	for _, test := range tests {
+		t.Run(test.model, func(t *testing.T) {
+			cost, err := calculateCindyCatalogTextCost(billingService, test.model, tokens, 1, "", false)
+			require.NoError(t, err)
+			factor := 1 - test.discount
+			require.InDelta(t, float64(tokens.InputTokens)*test.inputPrice*factor, cost.InputCost, 1e-12)
+			require.InDelta(t, float64(tokens.OutputTokens)*test.outputPrice*factor, cost.OutputCost, 1e-12)
+			require.InDelta(t, float64(tokens.CacheReadTokens)*test.cachePrice*factor, cost.CacheReadCost, 1e-12)
+			require.InDelta(t, cost.InputCost+cost.OutputCost+cost.CacheReadCost, cost.TotalCost, 1e-12)
+			require.InDelta(t, cost.TotalCost, cost.ActualCost, 1e-12)
+		})
+	}
+}
+
 func TestOpenAIRecordUsageTokenCostPrefersExplicitGroupPricingForCindy(t *testing.T) {
 	t.Parallel()
 	inputPrice := 9e-6
