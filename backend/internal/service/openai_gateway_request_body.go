@@ -229,9 +229,9 @@ func SanitizeOpenAICrossModeFailoverReasoning(body []byte) (sanitized []byte, ch
 	return out, true, nil
 }
 
-// dropOpenAIEncryptedReasoningInputItems removes reasoning input items that carry
-// provider-specific encrypted_content in full — including their coupled id and
-// summary — and reports whether anything changed. Contrast with
+// dropOpenAIEncryptedReasoningInputItems removes portable continuation-state
+// input items that carry provider-specific encrypted_content in full — including
+// their coupled id and summary — and reports whether anything changed. Contrast with
 // trimOpenAIEncryptedReasoningItems, which only strips fields while keeping the
 // reasoning item skeleton.
 func dropOpenAIEncryptedReasoningInputItems(reqBody map[string]any) bool {
@@ -247,7 +247,7 @@ func dropOpenAIEncryptedReasoningInputItems(reqBody map[string]any) bool {
 		filtered := input[:0]
 		changed := false
 		for _, item := range input {
-			if isOpenAIEncryptedReasoningInputItem(item) {
+			if isOpenAIEncryptedPortableContinuationStateInputItem(item) {
 				changed = true
 				continue
 			}
@@ -266,7 +266,7 @@ func dropOpenAIEncryptedReasoningInputItems(reqBody map[string]any) bool {
 		filtered := input[:0]
 		changed := false
 		for _, item := range input {
-			if isOpenAIEncryptedReasoningInputItem(item) {
+			if isOpenAIEncryptedPortableContinuationStateInputItem(item) {
 				changed = true
 				continue
 			}
@@ -282,7 +282,7 @@ func dropOpenAIEncryptedReasoningInputItems(reqBody map[string]any) bool {
 		reqBody["input"] = filtered
 		return true
 	case map[string]any:
-		if isOpenAIEncryptedReasoningInputItem(input) {
+		if isOpenAIEncryptedPortableContinuationStateInputItem(input) {
 			delete(reqBody, "input")
 			return true
 		}
@@ -292,16 +292,14 @@ func dropOpenAIEncryptedReasoningInputItems(reqBody map[string]any) bool {
 	}
 }
 
-func isOpenAIEncryptedReasoningInputItem(item any) bool {
+func isOpenAIEncryptedPortableContinuationStateInputItem(item any) bool {
 	inputItem, ok := item.(map[string]any)
 	if !ok {
 		return false
 	}
-	if itemType, _ := inputItem["type"].(string); strings.TrimSpace(itemType) != "reasoning" {
-		return false
-	}
-	_, has := inputItem["encrypted_content"]
-	return has
+	itemType, _ := inputItem["type"].(string)
+	encryptedContent, has := inputItem["encrypted_content"]
+	return has && isOpenAIRemovableEncryptedPortableContinuationState(itemType, encryptedContent)
 }
 
 // IsOpenAIResponsesCompactPath reports whether the request targets the legacy

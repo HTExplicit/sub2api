@@ -656,6 +656,7 @@ type adminServiceImpl struct {
 	accountRepo           AccountRepository
 	accountDuplicateRepo  AccountDuplicateRepository
 	accountBillingRepo    AccountBillingSettingsRepository
+	cindyAccountMutations AccountJobCindyMutationRunner
 	cindyBalanceProbeRepo CindyBalanceProbeRepository
 	proxyRepo             ProxyRepository
 	apiKeyRepo            APIKeyRepository
@@ -698,6 +699,7 @@ func NewAdminService(
 	userRepo UserRepository,
 	groupRepo AdminGroupRepository,
 	accountRepo AdminAccountRepository,
+	cindyAccountMutations AccountJobCindyMutationRunner,
 	cindyBalanceProbeRepo CindyBalanceProbeRepository,
 	proxyRepo ProxyRepository,
 	apiKeyRepo APIKeyRepository,
@@ -726,6 +728,7 @@ func NewAdminService(
 		accountRepo:           accountRepo,
 		accountDuplicateRepo:  accountRepo,
 		accountBillingRepo:    accountRepo,
+		cindyAccountMutations: cindyAccountMutations,
 		cindyBalanceProbeRepo: cindyBalanceProbeRepo,
 		proxyRepo:             proxyRepo,
 		apiKeyRepo:            apiKeyRepo,

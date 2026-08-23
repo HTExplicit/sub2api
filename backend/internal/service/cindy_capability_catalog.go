@@ -471,7 +471,8 @@ func resolveKnownCindyCapability(model string) (CindyCapability, bool) {
 // CindyCompatibilityMappedUpstreamModel resolves only the two exact OpenAI
 // compatibility aliases that must remain callable while the broader Cindy
 // capability catalog is rolled back. The caller is responsible for enforcing
-// exact Cindy account identity before applying the result.
+// canonical Cindy group identity or the exact temporary legacy Laxa runtime
+// identity before applying the result.
 func CindyCompatibilityMappedUpstreamModel(model string) (string, bool) {
 	publicID, ok := cindyCompatibilityAliases[model]
 	if !ok {
@@ -501,7 +502,8 @@ func CindyCompatibilityRoutingTarget(model string) bool {
 
 // CindyCompatibilityTextPricingForModel resolves only the two exact aliases
 // that remain routable when the broader Cindy capability catalog is disabled.
-// Callers must enforce strict Cindy account identity before using this price.
+// Callers must enforce canonical Cindy identity or the exact temporary legacy
+// Laxa runtime identity before using this price.
 func CindyCompatibilityTextPricingForModel(model string) (CindyTextPricing, bool) {
 	if publicID, ok := cindyCompatibilityAliases[model]; ok {
 		capability := cindyCapabilityByPublicID[publicID]

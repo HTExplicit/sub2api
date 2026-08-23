@@ -132,6 +132,7 @@ func ProvideCindyHealthService(
 	healthRepo CindyHealthRepository,
 	cache GatewayCache,
 	gateway *OpenAIGatewayService,
+	nativeGateway *GatewayService,
 ) *CindyHealthService {
 	var episodeStore CindyHealthEpisodeStore
 	if cache != nil {
@@ -144,6 +145,9 @@ func ProvideCindyHealthService(
 	svc := NewCindyHealthService(accountRepo, identityRepo, healthRepo, episodeStore, gateway, probe)
 	if gateway != nil {
 		gateway.SetCindyHealthCoordinator(svc)
+	}
+	if nativeGateway != nil {
+		nativeGateway.SetCindyHealthCoordinator(svc)
 	}
 	return svc
 }

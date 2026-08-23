@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	dbent "github.com/Wei-Shaw/sub2api/ent"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -491,6 +492,18 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 }
 
 func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccountInput) (*Account, error) {
+	if dbent.TxFromContext(ctx) == nil && isCanonicalCindyAccountInput(input.Platform, input.Type, input.Credentials) {
+		if s.cindyAccountMutations == nil {
+			return nil, errors.New("cindy account mutation is unavailable")
+		}
+		return s.cindyAccountMutations.Run(ctx, 0, func(txCtx context.Context) (*Account, error) {
+			return s.createAccount(txCtx, input)
+		})
+	}
+	return s.createAccount(ctx, input)
+}
+
+func (s *adminServiceImpl) createAccount(ctx context.Context, input *CreateAccountInput) (*Account, error) {
 	platform, _, _, err := ResolveAccountProviderIdentity(input.Platform, input.Type, input.Credentials)
 	if err != nil {
 		return nil, err
@@ -586,6 +599,24 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 }
 
 func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *UpdateAccountInput) (*Account, error) {
+	if dbent.TxFromContext(ctx) == nil {
+		current, err := s.accountRepo.GetByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if hasCanonicalCindyProviderIdentity(current) {
+			if s.cindyAccountMutations == nil {
+				return nil, errors.New("cindy account mutation is unavailable")
+			}
+			return s.cindyAccountMutations.Run(ctx, id, func(txCtx context.Context) (*Account, error) {
+				return s.updateAccount(txCtx, id, input)
+			})
+		}
+	}
+	return s.updateAccount(ctx, id, input)
+}
+
+func (s *adminServiceImpl) updateAccount(ctx context.Context, id int64, input *UpdateAccountInput) (*Account, error) {
 	account, err := s.accountRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -988,7 +1019,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 
 	// 预取所有目标账号，供凭据守卫/代理守卫/混合渠道检查共用，避免多次 DB 查询。
 	var cachedTargets []*Account
-	if len(input.Credentials) > 0 || input.ProxyID != nil || needMixedChannelCheck || openAISettings.any() || input.ProbeEnabled != nil || input.RateMultiplier != nil {
+	if len(input.Credentials) > 0 || input.ProxyID != nil || input.GroupIDs != nil || needMixedChannelCheck || openAISettings.any() || input.ProbeEnabled != nil || input.RateMultiplier != nil {
 		loaded, err := s.accountRepo.GetByIDs(ctx, input.AccountIDs)
 		if err != nil {
 			return nil, err
@@ -999,6 +1030,17 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	for _, account := range cachedTargets {
 		if account != nil {
 			targetsByID[account.ID] = account
+		}
+	}
+	if input.GroupIDs != nil {
+		for _, accountID := range input.AccountIDs {
+			account, ok := targetsByID[accountID]
+			if !ok {
+				return nil, ErrAccountNotFound
+			}
+			if err := validateProviderIdentityGroupBindings(ctx, s.groupRepo, account, *input.GroupIDs); err != nil {
+				return nil, err
+			}
 		}
 	}
 	if openAISettings.any() {
@@ -1200,6 +1242,12 @@ func updatesUpstreamBillingProbeIdentity(credentials map[string]any) bool {
 		}
 	}
 	return false
+}
+
+func isCanonicalCindyAccountInput(platform, accountType string, credentials map[string]any) bool {
+	resolvedPlatform, wirePlatform, profile, err := ResolveAccountProviderIdentity(platform, accountType, credentials)
+	return err == nil && resolvedPlatform == PlatformCindy &&
+		wirePlatform == WirePlatformOpenAI && profile == ProviderProfileCindyLaxaV1
 }
 
 func upstreamBillingProbeIdentity(account *Account) map[string]any {

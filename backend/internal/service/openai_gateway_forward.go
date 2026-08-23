@@ -26,7 +26,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	startTime := time.Now()
 	// 固定渠道映射后的请求级 canonical body；账号 normalize/strip 不得改写跨 failover hint。
 	canonicalImageIntentBody := body
-	strictCindyAccount := account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+	cindyRuntimeAccount := account != nil && IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+	legacyOpaqueRecovery := canRecoverLegacyCindyOpaqueContinuation(account, body)
 
 	restrictionResult := s.detectCodexClientRestriction(c, account, body)
 	apiKeyID := getAPIKeyIDFromContext(c)
@@ -699,7 +700,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			return nil, err
 		}
 		hasPreviousResponseID := strings.TrimSpace(openAIWSPayloadString(wsReqBody, "previous_response_id")) != ""
-		strictCindyContinuation := strictCindyAccount && hasPreviousResponseID
+		strictCindyContinuation := cindyRuntimeAccount && hasPreviousResponseID
 		logOpenAIWSModeDebug(
 			"forward_start account_id=%d account_type=%s model=%s stream=%v has_previous_response_id=%v",
 			account.ID,
@@ -711,6 +712,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		maxAttempts := openAIWSReconnectRetryLimit + 1
 		if cindyHTTPToWSV2 {
 			maxAttempts = 1
+			if legacyOpaqueRecovery {
+				maxAttempts = 2
+			}
 		}
 		wsAttempts := 0
 		var wsResult *OpenAIForwardResult
@@ -732,7 +736,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				)
 				return false
 			}
-			if HasFunctionCallOutput(wsReqBody) {
+			if HasFunctionCallOutput(wsReqBody) && !legacyOpaqueRecovery {
 				logOpenAIWSModeInfo(
 					"reconnect_prev_response_recovery_skip account_id=%d attempt=%d reason=has_function_call_output previous_response_id_present=true",
 					account.ID,
@@ -751,13 +755,13 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			return true
 		}
 		recoverInvalidEncryptedContent := func(attempt int) bool {
-			if strictCindyAccount {
+			if cindyRuntimeAccount && !legacyOpaqueRecovery {
 				return false
 			}
 			if wsInvalidEncryptedContentRecoveryTried {
 				return false
 			}
-			if HasFunctionCallOutput(wsReqBody) {
+			if HasFunctionCallOutput(wsReqBody) && !legacyOpaqueRecovery {
 				logOpenAIWSModeInfo(
 					"reconnect_invalid_encrypted_content_recovery_skip account_id=%d attempt=%d reason=has_function_call_output",
 					account.ID,
@@ -765,7 +769,12 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				)
 				return false
 			}
-			removedReasoningItems := trimOpenAIEncryptedReasoningItems(wsReqBody)
+			removedReasoningItems := false
+			if legacyOpaqueRecovery {
+				removedReasoningItems = dropOpenAIEncryptedReasoningInputItems(wsReqBody)
+			} else {
+				removedReasoningItems = trimOpenAIEncryptedReasoningItems(wsReqBody)
+			}
 			if !removedReasoningItems {
 				logOpenAIWSModeInfo(
 					"reconnect_invalid_encrypted_content_recovery_skip account_id=%d attempt=%d reason=missing_encrypted_reasoning_items",
@@ -837,13 +846,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 					return result, fallbackErr
 				}
 			}
-			if cindyHTTPToWSV2 && !hasPreviousResponseID {
-				if failoverErr, ok := s.cindyHTTPToWSV2FirstTurnFailover(
-					ctx, c, account, upstreamModel, wsErr,
-				); ok {
-					return nil, failoverErr
-				}
-			}
 			var taskRecoveredErr *agentIdentityTaskRecoveredError
 			if errors.As(wsErr, &taskRecoveredErr) {
 				continue
@@ -860,6 +862,13 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 			if !strictCindyContinuation && reason == "invalid_encrypted_content" && recoverInvalidEncryptedContent(attempt) {
 				continue
+			}
+			if cindyHTTPToWSV2 && !hasPreviousResponseID {
+				if failoverErr, ok := s.cindyHTTPToWSV2FirstTurnFailover(
+					ctx, c, account, upstreamModel, wsErr,
+				); ok {
+					return nil, failoverErr
+				}
 			}
 			if retryable && attempt < maxAttempts {
 				backoff := s.openAIWSRetryBackoff(attempt)
@@ -997,17 +1006,23 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	agentTaskRecoveryTried := false
 	rejectedFieldRetryState := newOpenAIResponsesRejectedFieldRetryState(body)
 	tryRecoverInvalidEncryptedContent := func(upstreamMsg string, upstreamBody []byte) (bool, error) {
-		if strictCindyAccount || isOpenAICindyHTTPToWSV2Bypassed(c) ||
+		if (cindyRuntimeAccount && !legacyOpaqueRecovery) || isOpenAICindyHTTPToWSV2Bypassed(c) ||
 			httpInvalidEncryptedContentRetryTried ||
 			!isOpenAIInvalidEncryptedContentError(upstreamMsg, upstreamBody) ||
-			ValidateFunctionCallOutputContextBytes(body).HasFunctionCallOutput {
+			(ValidateFunctionCallOutputContextBytes(body).HasFunctionCallOutput && !legacyOpaqueRecovery) {
 			return false, nil
 		}
 		decoded, decodeErr := ensureReqBody()
 		if decodeErr != nil {
 			return false, decodeErr
 		}
-		if !trimOpenAIEncryptedReasoningItems(decoded) {
+		removedReasoningItems := false
+		if legacyOpaqueRecovery {
+			removedReasoningItems = dropOpenAIEncryptedReasoningInputItems(decoded)
+		} else {
+			removedReasoningItems = trimOpenAIEncryptedReasoningItems(decoded)
+		}
+		if !removedReasoningItems {
 			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Skip non-WSv2 invalid_encrypted_content retry because encrypted reasoning items are missing (account: %s)", account.Name)
 			return false, nil
 		}
@@ -1171,7 +1186,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				return nil, newOpenAIOpaqueStreamPreflightError(resp.StatusCode, resp.Header, respBody)
 			}
 			if resp.StatusCode == http.StatusForbidden &&
-				IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+				IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 				if hit, _, _ := detectOpenAICyberPolicy(respBody); hit {
 					markOpenAICyberPolicyFromResponse(c, resp.StatusCode, respBody)
 					if s.openAIRefusalRecoveryRuntime(ctx).CyberFailoverEnabled() {
@@ -1209,7 +1224,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 					!shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
 				)
 				if resp.StatusCode == http.StatusForbidden &&
-					IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+					IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 					failoverErr = sanitizeOpenAICindyFailoverError(failoverErr)
 				}
 				return nil, failoverErr

@@ -183,13 +183,30 @@ func TestClassifyCindyHealthSignalRejects401AndKeeps403Transient(t *testing.T) {
 	))
 }
 
+func TestLegacyCindyCompatibilityDoesNotEnterCanonicalHealth(t *testing.T) {
+	legacy := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":  "not-exposed",
+			"base_url": "https://api.laxarouter.ai",
+		},
+	}
+	require.Equal(t, CindyHealthSignalNone, ClassifyCindyHealthSignal(legacy, http.StatusForbidden, nil))
+	require.Equal(t, CindyHealthSignalNone, ClassifyCindyHealthSignal(
+		legacy, http.StatusTooManyRequests, []byte(exactCindyBudgetExceededBody),
+	))
+}
+
 func TestProvideCindyHealthServiceWiresGatewayCoordinator(t *testing.T) {
 	gateway := &OpenAIGatewayService{}
+	nativeGateway := &GatewayService{}
 
-	health := ProvideCindyHealthService(nil, nil, nil, nil, gateway)
+	health := ProvideCindyHealthService(nil, nil, nil, nil, gateway, nativeGateway)
 	t.Cleanup(health.Stop)
 
 	require.Same(t, health, gateway.cindyHealth)
+	require.Same(t, health, nativeGateway.cindyHealth)
 }
 
 func TestCindyHealthExactBudgetRequiresLunaAndTerraForSameGeneration(t *testing.T) {

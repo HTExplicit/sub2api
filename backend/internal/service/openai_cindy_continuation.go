@@ -54,6 +54,70 @@ func (c CindyContinuationClassification) CanSwitchAccount() bool {
 		!c.HasOpaqueState
 }
 
+func canRecoverLegacyCindyOpaqueContinuation(account *Account, payload []byte) bool {
+	if account == nil || !IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		return false
+	}
+	classification, err := ClassifyCindyContinuation(payload, CindyContinuationProof{})
+	if err != nil || classification.Mode != CindyContinuationOpaqueFull ||
+		!classification.VerifiedFullHistory || classification.HasExternalReference {
+		return false
+	}
+	return hasOnlyRecoverableLegacyCindyOpaqueState(payload)
+}
+
+func hasOnlyRecoverableLegacyCindyOpaqueState(payload []byte) bool {
+	input := gjson.GetBytes(payload, "input")
+	items := input.Array()
+	if input.IsObject() {
+		items = []gjson.Result{input}
+	}
+	foundRemovableState := false
+	for _, item := range items {
+		if !item.IsObject() {
+			continue
+		}
+		itemType := strings.TrimSpace(item.Get("type").String())
+		if len(cindyOpaqueBindingIDsFromItem(itemType, item)) == 0 {
+			continue
+		}
+		if !isOpenAIRemovableEncryptedPortableContinuationState(
+			itemType,
+			item.Get("encrypted_content").Value(),
+		) {
+			return false
+		}
+		foundRemovableState = true
+	}
+	return foundRemovableState
+}
+
+// isOpenAIRemovableEncryptedPortableContinuationState is shared by recovery
+// eligibility and deletion so both agree on type and non-empty carrier semantics.
+func isOpenAIRemovableEncryptedPortableContinuationState(itemType string, encryptedContent any) bool {
+	switch strings.TrimSpace(itemType) {
+	case "reasoning", "compaction", "compaction_summary":
+		return hasNonEmptyOpenAIContinuationCarrier(encryptedContent)
+	default:
+		return false
+	}
+}
+
+func hasNonEmptyOpenAIContinuationCarrier(value any) bool {
+	switch carrier := value.(type) {
+	case nil:
+		return false
+	case string:
+		return strings.TrimSpace(carrier) != ""
+	case []any:
+		return len(carrier) > 0
+	case map[string]any:
+		return len(carrier) > 0
+	default:
+		return true
+	}
+}
+
 func EnsureCindyResponsesStoreFalse(payload []byte) ([]byte, error) {
 	if !gjson.ValidBytes(payload) {
 		return nil, ErrInvalidCindyContinuationPayload
@@ -169,14 +233,5 @@ func hasNonNullCindyContinuationCarrier(value gjson.Result) bool {
 	if !value.Exists() || value.Type == gjson.Null {
 		return false
 	}
-	switch {
-	case value.Type == gjson.String:
-		return strings.TrimSpace(value.String()) != ""
-	case value.IsArray():
-		return len(value.Array()) > 0
-	case value.IsObject():
-		return len(value.Map()) > 0
-	default:
-		return strings.TrimSpace(value.Raw) != ""
-	}
+	return hasNonEmptyOpenAIContinuationCarrier(value.Value())
 }

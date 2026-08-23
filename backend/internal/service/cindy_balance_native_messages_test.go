@@ -36,6 +36,8 @@ func TestForwardCindyAnthropicMessagesHTTP200ErrorFailsOverBeforeWrite(t *testin
 	repo := &cindyRateLimitAccountRepoStub{}
 	service := newCindyNativeMessagesService(upstream)
 	service.rateLimitService = NewRateLimitService(repo, nil, nil, nil, nil)
+	health := &cindyHealthCoordinatorRecorder{}
+	service.SetCindyHealthCoordinator(health)
 	account := newCindyNativeMessagesAccount()
 
 	_, err := service.ForwardCindyAnthropicMessages(
@@ -53,6 +55,7 @@ func TestForwardCindyAnthropicMessagesHTTP200ErrorFailsOverBeforeWrite(t *testin
 	require.Nil(t, account.CindyBalanceInsufficientAt)
 	require.False(t, c.Writer.Written())
 	require.Empty(t, recorder.Body.String())
+	require.Equal(t, []CindyHealthSignal{CindyHealthSignalExactBudget}, health.signals)
 }
 
 func TestForwardCindyAnthropicMessagesHTTP200ErrorAfterOutputDropsRawPayload(t *testing.T) {
@@ -79,6 +82,8 @@ func TestForwardCindyAnthropicMessagesHTTP200ErrorAfterOutputDropsRawPayload(t *
 	repo := &cindyRateLimitAccountRepoStub{}
 	service := newCindyNativeMessagesService(upstream)
 	service.rateLimitService = NewRateLimitService(repo, nil, nil, nil, nil)
+	health := &cindyHealthCoordinatorRecorder{}
+	service.SetCindyHealthCoordinator(health)
 	account := newCindyNativeMessagesAccount()
 
 	_, err := service.ForwardCindyAnthropicMessages(
@@ -96,6 +101,7 @@ func TestForwardCindyAnthropicMessagesHTTP200ErrorAfterOutputDropsRawPayload(t *
 	require.NotContains(t, recorder.Body.String(), "sensitive upstream detail")
 	require.NotContains(t, string(failoverErr.ResponseBody), "budget_exceeded")
 	require.Equal(t, 0, repo.markCalls, "the first exact signal must not persist a permanent marker")
+	require.Equal(t, []CindyHealthSignal{CindyHealthSignalExactBudget}, health.signals)
 }
 
 func TestForwardCindyAnthropicMessagesExact429PrecedesPoolRetry(t *testing.T) {
@@ -114,6 +120,8 @@ func TestForwardCindyAnthropicMessagesExact429PrecedesPoolRetry(t *testing.T) {
 	rateLimitService.SetAccountRuntimeBlocker(runtimeBlocker)
 	service := newCindyNativeMessagesService(upstream)
 	service.rateLimitService = rateLimitService
+	health := &cindyHealthCoordinatorRecorder{}
+	service.SetCindyHealthCoordinator(health)
 	account := newCindyNativeMessagesAccount()
 	account.Credentials["pool_mode"] = true
 	account.Credentials["pool_mode_retry_count"] = float64(3)
@@ -133,6 +141,43 @@ func TestForwardCindyAnthropicMessagesExact429PrecedesPoolRetry(t *testing.T) {
 	require.Equal(t, 1, upstream.calls, "exact budget exhaustion must not enter the pool retry loop")
 	require.Equal(t, 0, repo.markCalls, "the first exact signal must wait for independent confirmation")
 	require.False(t, runtimeBlocker.isOpenAIAccountRuntimeBlocked(account))
+	require.Equal(t, []CindyHealthSignal{CindyHealthSignalExactBudget}, health.signals)
+	require.Equal(t, []int64{account.ID}, health.accounts)
+}
+
+func TestForwardCindyAnthropicMessages403UsesSharedTransientHealth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	upstream := &anthropicHTTPUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusForbidden,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"temporary forbidden"}}`)),
+	}}
+	repo := &cindyRateLimitAccountRepoStub{}
+	rateLimitService := NewRateLimitService(repo, nil, nil, nil, nil)
+	service := newCindyNativeMessagesService(upstream)
+	service.rateLimitService = rateLimitService
+	health := &cindyHealthCoordinatorRecorder{}
+	service.SetCindyHealthCoordinator(health)
+	account := newCindyNativeMessagesAccount()
+
+	_, err := service.ForwardCindyAnthropicMessages(
+		context.Background(), c, account,
+		[]byte(`{"model":"gpt-5.6-luna","max_tokens":16,"messages":[{"role":"user","content":"hi"}],"stream":false}`),
+		"gpt-5.6-luna",
+	)
+
+	var failoverErr *UpstreamFailoverError
+	require.Error(t, err)
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusForbidden, failoverErr.StatusCode)
+	require.False(t, failoverErr.RetryableOnSameAccount)
+	require.Equal(t, 1, upstream.calls)
+	require.Zero(t, repo.setErrorCalls)
+	require.Equal(t, []CindyHealthSignal{CindyHealthSignalForbidden}, health.signals)
+	require.Equal(t, []int64{account.ID}, health.accounts)
 }
 
 func TestForwardCindyAnthropicMessagesHTTP200JSONErrorFailsOverBeforeWrite(t *testing.T) {
@@ -153,6 +198,8 @@ func TestForwardCindyAnthropicMessagesHTTP200JSONErrorFailsOverBeforeWrite(t *te
 	rateLimitService.SetAccountRuntimeBlocker(runtimeBlocker)
 	service := newCindyNativeMessagesService(upstream)
 	service.rateLimitService = rateLimitService
+	health := &cindyHealthCoordinatorRecorder{}
+	service.SetCindyHealthCoordinator(health)
 	account := newCindyNativeMessagesAccount()
 
 	_, err := service.ForwardCindyAnthropicMessages(
@@ -169,6 +216,7 @@ func TestForwardCindyAnthropicMessagesHTTP200JSONErrorFailsOverBeforeWrite(t *te
 	require.Empty(t, recorder.Body.String())
 	require.Equal(t, 0, repo.markCalls, "the first exact signal must wait for independent confirmation")
 	require.False(t, runtimeBlocker.isOpenAIAccountRuntimeBlocked(account))
+	require.Equal(t, []CindyHealthSignal{CindyHealthSignalExactBudget}, health.signals)
 }
 
 func TestCindyAnthropicPassthroughBuffersPreambleAndSuppressesIdlePingUntilClassification(t *testing.T) {

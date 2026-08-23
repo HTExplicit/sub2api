@@ -1,6 +1,8 @@
 package migrations
 
 import (
+	"io/fs"
+	"os"
 	"strings"
 	"testing"
 
@@ -48,4 +50,49 @@ func TestMigration229UsesReservedPostUpstreamNumber(t *testing.T) {
 		}
 	}
 	require.True(t, found)
+}
+
+func TestMigration235RestrictsLedgerReplayToLifecycleExcludedRows(t *testing.T) {
+	matches, err := fs.Glob(FS, "235_*.sql")
+	require.NoError(t, err)
+	require.Equal(t, []string{"235_preserve_mixed_openai_cindy_groups.sql"}, matches)
+
+	raw, err := FS.ReadFile(matches[0])
+	require.NoError(t, err)
+	sql := strings.ToLower(string(raw))
+
+	beginAt := strings.Index(sql, "begin;")
+	restoreAt := strings.Index(sql, "select * from project_cindy_platform_v1_to_legacy()")
+	redefineAt := strings.Index(sql, "create or replace function project_cindy_platform_v1_from_legacy()")
+	forwardAt := strings.LastIndex(sql, "select * from project_cindy_platform_v1_from_legacy()")
+	commitAt := strings.LastIndex(sql, "commit;")
+	require.GreaterOrEqual(t, beginAt, 0)
+	require.Greater(t, restoreAt, beginAt)
+	require.Greater(t, redefineAt, restoreAt)
+	require.Greater(t, forwardAt, redefineAt)
+	require.Greater(t, commitAt, forwardAt)
+	functionEnd := redefineAt + strings.Index(sql[redefineAt:], "$$;")
+	require.Greater(t, functionEnd, redefineAt)
+	forwardFunction := sql[redefineAt:functionEnd]
+	require.Contains(t, forwardFunction, "return query")
+	require.Contains(t, forwardFunction, "from project_cindy_platform_v1_discover_legacy()")
+	require.Contains(t, forwardFunction, "cindy_platform_v1_projection")
+	require.Contains(t, forwardFunction, "a.deleted_at is not null")
+	require.Contains(t, forwardFunction, "g.deleted_at is not null or not exists")
+	require.NotContains(t, sql, "create temp table")
+	require.NotContains(t, sql, "insert into account_groups")
+	require.NotContains(t, sql, "update account_groups")
+	require.NotContains(t, sql, "delete from account_groups")
+	require.NotContains(t, sql, "delete from cindy_platform_v1_projection")
+
+	for _, workflow := range []string{
+		"../../.github/workflows/downstream-verify.yml",
+		"../../.github/workflows/downstream-release.yml",
+	} {
+		raw, err := os.ReadFile(workflow)
+		require.NoError(t, err)
+		contents := string(raw)
+		require.Contains(t, contents, "TestMigration235RestrictsLedgerReplayToLifecycleExcludedRows")
+		require.Contains(t, contents, "TestMigration235PreservesMixedOpenAIGroupsAfterCanonicalReplay")
+	}
 }

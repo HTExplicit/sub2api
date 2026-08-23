@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -135,6 +136,70 @@ func TestResolveCindyHTTPToWSV2DecisionEligible(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, OpenAIUpstreamTransportResponsesWebsocketV2, decision.Transport)
 	require.Equal(t, openAICindyHTTPToWSV2Reason, decision.Reason)
+}
+
+func TestLegacyCindyRuntimeCompatibilityUsesHTTPToWSV2(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := cindyHTTPToWSV2TestService()
+	account := cindyHTTPToWSV2TestAccount()
+	account.Platform = PlatformOpenAI
+
+	decision, ok := svc.resolveCindyHTTPToWSV2Decision(cindyHTTPToWSV2TestContext("/v1/responses"), account)
+
+	require.True(t, ok)
+	require.Equal(t, OpenAIUpstreamTransportResponsesWebsocketV2, decision.Transport)
+}
+
+func TestLegacyCindyRuntimeCompatibilityMapsResponsesAliasesOverHTTPAndWS(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for alias, live := range map[string]string{
+		"gpt-5.4":      "openai/gpt-5.6-sol",
+		"gpt-5.4-mini": "openai/gpt-5.6-luna",
+	} {
+		t.Run(alias+"/http", func(t *testing.T) {
+			upstream := &httpUpstreamRecorder{resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body: io.NopCloser(strings.NewReader(
+					`{"id":"resp_http_alias","status":"completed","model":"` + live + `","output":[],"usage":{"input_tokens":1,"output_tokens":1}}`,
+				)),
+			}}
+			cfg := &config.Config{}
+			cfg.Security.URLAllowlist.Enabled = false
+			svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream, toolCorrector: NewCodexToolCorrector()}
+			account := cindyHTTPToWSV2TestAccount()
+			account.Platform = PlatformOpenAI
+
+			result, err := svc.Forward(
+				context.Background(), cindyHTTPToWSV2TestContext("/v1/responses"), account,
+				[]byte(`{"model":"`+alias+`","stream":false,"input":"hi"}`),
+			)
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.Equal(t, live, gjson.GetBytes(upstream.lastBody, "model").String())
+		})
+
+		t.Run(alias+"/ws", func(t *testing.T) {
+			capture := &openAIWSCaptureConn{events: [][]byte{
+				[]byte(`{"type":"response.completed","response":{"id":"resp_ws_alias","model":"` + live + `","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
+			}}
+			svc, _ := newCindyHTTPToWSV2TurnStateTestService(t, cindyHTTPToWSV2DialStep{conn: capture})
+			account := cindyHTTPToWSV2TestAccount()
+			account.Platform = PlatformOpenAI
+
+			result, err := svc.Forward(
+				context.Background(), cindyHTTPToWSV2TestContext("/v1/responses"), account,
+				[]byte(`{"model":"`+alias+`","stream":false,"input":"hi"}`),
+			)
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			capture.mu.Lock()
+			writes := append([]map[string]any(nil), capture.writes...)
+			capture.mu.Unlock()
+			require.Len(t, writes, 1)
+			require.Equal(t, live, openAIWSPayloadString(writes[0], "model"))
+		})
+	}
 }
 
 func TestResolveCindyHTTPToWSV2DecisionHonorsAllGates(t *testing.T) {
@@ -484,6 +549,160 @@ func TestCindyPassthroughInvalidEncryptedContentFailsWithoutPayloadCleanup(t *te
 	require.Equal(t, "rs_foreign", gjson.GetBytes(upstream.bodies[0], "input.0.id").String())
 	require.Equal(t, "cipher", gjson.GetBytes(upstream.bodies[0], "input.0.encrypted_content").String())
 	require.Equal(t, "analysis", gjson.GetBytes(upstream.bodies[0], "input.0.phase").String())
+}
+
+func TestLegacyCindyRuntimeCompatibilityPreservesOpaqueHTTPContinuation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body: io.NopCloser(strings.NewReader(
+			`{"error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}`,
+		)),
+	}}
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream}
+	body := []byte(`{"model":"openai/gpt-5.6-sol","store":false,"previous_response_id":"resp_legacy","input":[{"type":"reasoning","id":"rs_legacy","encrypted_content":"cipher","phase":"analysis"}]}`)
+	account := cindyHTTPToWSV2TestAccount()
+	account.Platform = PlatformOpenAI
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
+	require.Len(t, upstream.bodies, 1, "legacy Laxa continuation must not retry a destructively cleaned request")
+	require.Equal(t, "resp_legacy", gjson.GetBytes(upstream.bodies[0], "previous_response_id").String())
+	require.Equal(t, "rs_legacy", gjson.GetBytes(upstream.bodies[0], "input.0.id").String())
+	require.Equal(t, "cipher", gjson.GetBytes(upstream.bodies[0], "input.0.encrypted_content").String())
+}
+
+func requireLegacyCindyOpaqueStateRemoved(t *testing.T, body []byte) {
+	t.Helper()
+	for _, value := range []string{
+		"stale-cipher-reasoning", "stale-cipher-compaction", "stale-cipher-compaction-summary",
+		"rs_deleted_account", "cmp_deleted_account", "cmp_summary_deleted_account",
+		"reasoning summary", "compaction summary", "compaction-summary summary",
+		"reasoning-phase", "compaction-phase", "compaction-summary-phase",
+	} {
+		require.NotContains(t, string(body), value, "the recovered request must drop the complete portable opaque state item")
+	}
+	require.Equal(t, int64(3), gjson.GetBytes(body, "input.#").Int())
+	require.Equal(t, "message", gjson.GetBytes(body, "input.0.type").String())
+	require.Equal(t, "function_call", gjson.GetBytes(body, "input.1.type").String())
+	require.Equal(t, "call_1", gjson.GetBytes(body, "input.1.call_id").String())
+	require.Equal(t, "function_call_output", gjson.GetBytes(body, "input.2.type").String())
+	require.Equal(t, "call_1", gjson.GetBytes(body, "input.2.call_id").String())
+	require.Equal(t, "kept", gjson.GetBytes(body, "input.2.output").String())
+}
+
+func TestLegacyCindyRuntimeCompatibilityReplaysSelfContainedHistoryWithoutInvalidOpaqueState(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		{
+			StatusCode: http.StatusBadRequest,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(
+				`{"error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}`,
+			)),
+		},
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(
+				`{"id":"resp_recovered","status":"completed","model":"openai/gpt-5.6-sol","output":[],"usage":{"input_tokens":1,"output_tokens":1}}`,
+			)),
+		},
+	}}
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream, toolCorrector: NewCodexToolCorrector()}
+	account := cindyHTTPToWSV2TestAccount()
+	account.Platform = PlatformOpenAI
+	body := []byte(`{"model":"openai/gpt-5.6-sol","store":false,"input":[{"type":"message","role":"user","content":"continue"},{"type":"reasoning","id":"rs_deleted_account","encrypted_content":"stale-cipher-reasoning","summary":"reasoning summary","phase":"reasoning-phase"},{"type":"compaction","id":"cmp_deleted_account","encrypted_content":"stale-cipher-compaction","summary":"compaction summary","phase":"compaction-phase"},{"type":"compaction_summary","id":"cmp_summary_deleted_account","encrypted_content":"stale-cipher-compaction-summary","summary":"compaction-summary summary","phase":"compaction-summary-phase"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"kept"}]}`)
+
+	result, err := svc.Forward(context.Background(), cindyHTTPToWSV2TestContext("/v1/responses"), account, body)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.bodies, 2)
+	require.Contains(t, string(upstream.bodies[0]), "stale-cipher-compaction-summary")
+	requireLegacyCindyOpaqueStateRemoved(t, upstream.bodies[1])
+}
+
+func TestLegacyCindyRuntimeCompatibilityReplaysSelfContainedHistoryOverNonPassthroughHTTP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		{
+			StatusCode: http.StatusBadRequest,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(
+				`{"error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}`,
+			)),
+		},
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(
+				`{"id":"resp_recovered","status":"completed","model":"openai/gpt-5.6-sol","output":[],"usage":{"input_tokens":1,"output_tokens":1}}`,
+			)),
+		},
+	}}
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream, toolCorrector: NewCodexToolCorrector()}
+	account := cindyHTTPToWSV2TestAccount()
+	account.Platform = PlatformOpenAI
+	account.Extra = map[string]any{}
+	body := []byte(`{"model":"openai/gpt-5.6-sol","store":false,"input":[{"type":"message","role":"user","content":"continue"},{"type":"reasoning","id":"rs_deleted_account","encrypted_content":"stale-cipher-reasoning","summary":"reasoning summary","phase":"reasoning-phase"},{"type":"compaction","id":"cmp_deleted_account","encrypted_content":"stale-cipher-compaction","summary":"compaction summary","phase":"compaction-phase"},{"type":"compaction_summary","id":"cmp_summary_deleted_account","encrypted_content":"stale-cipher-compaction-summary","summary":"compaction-summary summary","phase":"compaction-summary-phase"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"kept"}]}`)
+
+	result, err := svc.Forward(context.Background(), cindyHTTPToWSV2TestContext("/v1/responses"), account, body)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.bodies, 2)
+	requireLegacyCindyOpaqueStateRemoved(t, upstream.bodies[1])
+}
+
+func TestLegacyCindyHTTPToWSV2RetriesSelfContainedHistoryAfterInvalidOpaqueState(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	failed := &openAIWSCaptureConn{events: [][]byte{
+		[]byte(`{"type":"response.failed","response":{"id":"resp_invalid","status":"failed","error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}}`),
+	}}
+	recovered := &openAIWSCaptureConn{events: [][]byte{
+		[]byte(`{"type":"response.completed","response":{"id":"resp_recovered_ws","model":"openai/gpt-5.6-sol","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
+	}}
+	svc, dialer := newCindyHTTPToWSV2TurnStateTestService(t,
+		cindyHTTPToWSV2DialStep{conn: failed},
+		cindyHTTPToWSV2DialStep{conn: recovered},
+	)
+	account := cindyHTTPToWSV2TestAccount()
+	account.Platform = PlatformOpenAI
+	body := []byte(`{"model":"openai/gpt-5.6-sol","store":false,"input":[{"type":"message","role":"user","content":"continue"},{"type":"reasoning","id":"rs_deleted_account","encrypted_content":"stale-cipher-reasoning","summary":"reasoning summary","phase":"reasoning-phase"},{"type":"compaction","id":"cmp_deleted_account","encrypted_content":"stale-cipher-compaction","summary":"compaction summary","phase":"compaction-phase"},{"type":"compaction_summary","id":"cmp_summary_deleted_account","encrypted_content":"stale-cipher-compaction-summary","summary":"compaction-summary summary","phase":"compaction-summary-phase"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"kept"}]}`)
+
+	result, err := svc.Forward(context.Background(), cindyHTTPToWSV2TestContext("/v1/responses"), account, body)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, dialer.capturedHeaders(), 2, "the cleaned history must be sent on a fresh WS connection")
+	failed.mu.Lock()
+	failedWrites := append([]map[string]any(nil), failed.writes...)
+	failed.mu.Unlock()
+	recovered.mu.Lock()
+	recoveredWrites := append([]map[string]any(nil), recovered.writes...)
+	recovered.mu.Unlock()
+	require.Len(t, failedWrites, 1)
+	require.Len(t, recoveredWrites, 1)
+	recoveredPayload, marshalErr := json.Marshal(recoveredWrites[0])
+	require.NoError(t, marshalErr)
+	requireLegacyCindyOpaqueStateRemoved(t, recoveredPayload)
 }
 
 func TestPrepareOpenAICindyStatelessHTTPFallbackSafetyBoundary(t *testing.T) {

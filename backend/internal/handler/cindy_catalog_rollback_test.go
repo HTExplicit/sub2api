@@ -119,9 +119,9 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "Model capability catalog is not enabled")
 	require.Empty(t, GetUpstreamEndpoint(c, service.PlatformOpenAI))
 
-	// A legacy platform=openai + StrictCindy marker no longer grants Cindy
-	// aliases. Canonical platform=cindy routing is covered by the first-class
-	// catalog tests instead.
+	// Exact legacy Laxa rows retain only the two compatibility aliases while the
+	// catalog is disabled. Ordinary OpenAI rows never inherit that behavior,
+	// even when a stale group marker is present.
 	for _, tc := range []struct {
 		name          string
 		request       string
@@ -139,9 +139,9 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 			name: "configured_stable_luna", request: "gpt-5.6-luna", expected: "openai/gpt-5.6-luna",
 			modelMapping: map[string]any{"gpt-5.6-luna": "openai/gpt-5.6-luna"},
 		},
-		{name: "mixed_group_does_not_map", request: "gpt-5.4-mini", expected: "gpt-5.4-mini"},
+		{name: "legacy_mixed_group_maps", request: "gpt-5.4-mini", expected: "openai/gpt-5.6-luna"},
 		{name: "ordinary_openai_does_not_map", request: "gpt-5.4-mini", expected: "gpt-5.4-mini", ordinary: true},
-		{name: "non_openai_stale_marker_does_not_map", request: "gpt-5.4-mini", expected: "gpt-5.4-mini", strict: true, groupPlatform: service.PlatformGemini},
+		{name: "ordinary_non_openai_stale_marker_does_not_map", request: "gpt-5.4-mini", expected: "gpt-5.4-mini", strict: true, ordinary: true, groupPlatform: service.PlatformGemini},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h, accountRepo, upstream, handlerGroupID := newCindyBalanceFailoverHandler(t)
@@ -181,25 +181,27 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 		name           string
 		strictGroup    bool
 		groupPlatform  string
+		ordinary       bool
 		requestedModel string
 		modelMapping   map[string]any
 		expectedStatus int
 		expectedModels []string
 	}{
 		{
-			name:           "mixed_chat_does_not_map",
+			name:           "legacy_mixed_chat_maps",
 			strictGroup:    false,
 			requestedModel: "gpt-5.4-mini",
 			modelMapping:   map[string]any{"gpt-5.4-mini": "gpt-5.4-mini"},
 			expectedStatus: http.StatusOK,
-			expectedModels: []string{"gpt-5.4-mini"},
+			expectedModels: []string{"openai/gpt-5.6-luna"},
 		},
 		{
-			name:           "non_openai_stale_marker_chat_does_not_map",
+			name:           "ordinary_non_openai_stale_marker_chat_does_not_map",
 			strictGroup:    true,
 			groupPlatform:  service.PlatformGemini,
 			requestedModel: "gpt-5.4-mini",
 			modelMapping:   map[string]any{"gpt-5.4-mini": "gpt-5.4-mini"},
+			ordinary:       true,
 			expectedStatus: http.StatusOK,
 			expectedModels: []string{"gpt-5.4-mini"},
 		},
@@ -212,6 +214,9 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 			accountRepo.accounts[0].ProviderProfile = ""
 			accountRepo.accounts[0].Credentials["model_mapping"] = tc.modelMapping
 			accountRepo.accounts[0].Extra["openai_passthrough"] = false
+			if tc.ordinary {
+				accountRepo.accounts[0].Credentials["base_url"] = "https://ordinary.example.invalid"
+			}
 			ctx, recorder := newStrictCindyHandlerContext(t, handlerGroupID, "/v1/chat/completions",
 				`{"model":"`+tc.requestedModel+`","messages":[{"role":"user","content":"hi"}],"max_tokens":16,"stream":false}`)
 			rawAPIKey, exists := ctx.Get(string(middleware2.ContextKeyAPIKey))

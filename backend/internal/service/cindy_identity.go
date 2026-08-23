@@ -28,7 +28,27 @@ var cindyDeviceIDSources = map[string]struct{}{
 }
 
 func IsCindyAPIKeyAccount(platform, accountType string, credentials map[string]any) bool {
-	if platform != PlatformCindy || accountType != AccountTypeAPIKey || credentials == nil {
+	return platform == PlatformCindy && isCindyLaxaAPIKeyAccount(accountType, credentials)
+}
+
+// IsLegacyCindyAPIKeyAccount recognizes only the temporary OpenAI-platform
+// projection used before every Laxa account has been migrated to first-class
+// Cindy identity. It must not be used to enable identity, health, catalog,
+// search, image, probe, or cleanup behavior.
+func IsLegacyCindyAPIKeyAccount(platform, accountType string, credentials map[string]any) bool {
+	return platform == PlatformOpenAI && isCindyLaxaAPIKeyAccount(accountType, credentials)
+}
+
+// IsCindyRuntimeCompatibleAPIKeyAccount is restricted to data-plane wire
+// behavior and provider-specific guardrails that must survive the projection
+// window.
+func IsCindyRuntimeCompatibleAPIKeyAccount(platform, accountType string, credentials map[string]any) bool {
+	return IsCindyAPIKeyAccount(platform, accountType, credentials) ||
+		IsLegacyCindyAPIKeyAccount(platform, accountType, credentials)
+}
+
+func isCindyLaxaAPIKeyAccount(accountType string, credentials map[string]any) bool {
+	if accountType != AccountTypeAPIKey || credentials == nil {
 		return false
 	}
 	rawBaseURL, ok := credentials["base_url"].(string)
@@ -39,7 +59,7 @@ func IsCindyAPIKeyAccount(platform, accountType string, credentials map[string]a
 	if err != nil || parsed.Scheme != "https" || !strings.EqualFold(parsed.Hostname(), cindyAPIHost) {
 		return false
 	}
-	return parsed.Port() == "" && parsed.User == nil && parsed.RawQuery == "" && parsed.Fragment == "" &&
+	return parsed.Port() == "" && parsed.User == nil && !parsed.ForceQuery && parsed.RawQuery == "" && parsed.Fragment == "" &&
 		(parsed.EscapedPath() == "" || parsed.EscapedPath() == "/")
 }
 

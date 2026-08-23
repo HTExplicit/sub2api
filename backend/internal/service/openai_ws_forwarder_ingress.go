@@ -76,7 +76,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	refusalRuntime := s.openAIRefusalRecoveryRuntime(ctx)
 
 	wsDecision := s.getOpenAIWSProtocolResolver().Resolve(account)
-	strictCindyContinuation := IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+	strictCindyContinuation := IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials)
 	forceHTTPBridge := account.Platform == PlatformGrok
 	modeRouterV2Enabled := s != nil && s.cfg != nil && s.cfg.Gateway.OpenAIWS.ModeRouterV2Enabled
 	ingressMode := OpenAIWSIngressModeCtxPool

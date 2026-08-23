@@ -880,18 +880,25 @@ func (r *accountRepository) Delete(ctx context.Context, id int64) error {
 		return err
 	}
 	// 使用事务保证账号与关联分组的删除原子性
-	tx, err := r.client.Tx(ctx)
-	if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
-		return err
-	}
-
+	contextTx := dbent.TxFromContext(ctx)
+	var tx *dbent.Tx
 	var txClient *dbent.Client
-	if err == nil {
-		defer func() { _ = tx.Rollback() }()
-		txClient = tx.Client()
+	if contextTx != nil {
+		txClient = contextTx.Client()
 	} else {
-		// 已处于外部事务中（ErrTxStarted），复用当前 client
-		txClient = r.client
+		tx, err = r.client.Tx(ctx)
+		if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
+			return err
+		}
+		if tx != nil {
+			defer func() { _ = tx.Rollback() }()
+			txClient = tx.Client()
+		} else {
+			// Some integration and composed repository callers hold a transaction
+			// in the Ent client itself rather than in context. Reuse that client;
+			// the caller owns commit, rollback, and post-commit cache visibility.
+			txClient = r.client
+		}
 	}
 
 	if _, err := txClient.AccountGroup.Delete().Where(dbaccountgroup.AccountIDEQ(id)).Exec(ctx); err != nil {
@@ -900,7 +907,19 @@ func (r *accountRepository) Delete(ctx context.Context, id int64) error {
 	if _, err := txClient.ExecContext(ctx, "DELETE FROM scheduled_test_plans WHERE account_id = $1", id); err != nil {
 		return err
 	}
+	if _, err := txClient.ExecContext(ctx, "DELETE FROM cindy_health_states WHERE account_id = $1", id); err != nil {
+		return err
+	}
+	if _, err := txClient.ExecContext(ctx, `
+		UPDATE account_credential_identities
+		SET active = FALSE, retired_at = NOW(), updated_at = NOW()
+		WHERE account_id = $1 AND active`, id); err != nil {
+		return err
+	}
 	if _, err := txClient.Account.Delete().Where(dbaccount.IDEQ(id)).Exec(ctx); err != nil {
+		return err
+	}
+	if err := enqueueSchedulerOutbox(ctx, txClient, service.SchedulerOutboxEventAccountChanged, &id, nil, buildSchedulerGroupPayload(groupIDs)); err != nil {
 		return err
 	}
 
@@ -908,10 +927,7 @@ func (r *accountRepository) Delete(ctx context.Context, id int64) error {
 		if err := tx.Commit(); err != nil {
 			return err
 		}
-	}
-	r.deleteSchedulerAccountSnapshot(ctx, id)
-	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &id, nil, buildSchedulerGroupPayload(groupIDs)); err != nil {
-		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue account delete failed: account=%d err=%v", id, err)
+		r.deleteSchedulerAccountSnapshot(ctx, id)
 	}
 	return nil
 }

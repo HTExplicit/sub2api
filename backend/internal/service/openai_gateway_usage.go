@@ -236,8 +236,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		if !isUsagePricingUnavailableError(err) {
 			return err
 		}
-		if account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-			(CindyCapabilityCatalogFeatureEnabled() || hasCindyCompatibilityBillingModel(billingModels)) {
+		if shouldFailClosedCindyTextPricing(account, billingModels) {
 			return err
 		}
 		logger.L().With(
@@ -690,8 +689,7 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageTokenCost(
 			LongContextBillingEnabled: longContextBillingGate,
 		})
 	}
-	if account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-		(CindyCapabilityCatalogFeatureEnabled() || isCindyCompatibilityBillingModel(billingModel)) {
+	if shouldUseCindyTextPricing(account, billingModel) {
 		longContextBillingEnabled := longContextBillingGate != nil && *longContextBillingGate
 		return calculateCindyCatalogTextCost(s.billingService, billingModel, tokens, multiplier, longContextBillingEnabled)
 	}
@@ -714,7 +712,7 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageTokenCost(
 }
 
 func isCindyCompatibilityBillingModel(model string) bool {
-	_, ok := CindyCompatibilityMappedUpstreamModel(model)
+	_, ok := CindyCompatibilityTextPricingForModel(model)
 	return ok
 }
 
@@ -725,6 +723,28 @@ func hasCindyCompatibilityBillingModel(models []string) bool {
 		}
 	}
 	return false
+}
+
+func shouldUseCindyTextPricing(account *Account, model string) bool {
+	if account == nil {
+		return false
+	}
+	if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) && CindyCapabilityCatalogFeatureEnabled() {
+		return true
+	}
+	return IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
+		isCindyCompatibilityBillingModel(model)
+}
+
+func shouldFailClosedCindyTextPricing(account *Account, models []string) bool {
+	if account == nil {
+		return false
+	}
+	if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) && CindyCapabilityCatalogFeatureEnabled() {
+		return true
+	}
+	return IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
+		hasCindyCompatibilityBillingModel(models)
 }
 
 func (s *OpenAIGatewayService) calculateOpenAIImageCost(

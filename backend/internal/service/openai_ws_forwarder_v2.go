@@ -655,6 +655,13 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		cindyHTTPToWSV2FirstTurn := decision.Reason == openAICindyHTTPToWSV2Reason &&
 			previousResponseID == "" && !wroteDownstream
 		if eventType == "response.failed" {
+			if continuationKind := classifyOpenAIContinuationStateError("", message); continuationKind != openAIContinuationStateErrorNone && !wroteDownstream {
+				lease.MarkBroken()
+				if refusalOutput != nil {
+					refusalOutput.DropTurn()
+				}
+				return nil, wrapOpenAIWSFallback(string(continuationKind), errors.New("upstream continuation state rejected"))
+			}
 			if cindyHTTPToWSV2FirstTurn {
 				if failoverErr, ok := s.cindyHTTPToWSV2FirstTurnEventFailover(
 					ctx, c, account, mappedModel, lease.HandshakeHeaders(), message,

@@ -100,6 +100,187 @@ func TestCindyPlatformProjectionRoundTripMigrationIsStrictAndIdempotent(t *testi
 	require.Zero(t, promotedGroups)
 }
 
+func TestMigration235PreservesMixedOpenAIGroupsAfterCanonicalReplay(t *testing.T) {
+	ctx := context.Background()
+	db, _ := remoteSkillMigrationTestDatabase(t)
+	require.NoError(t, execRemoteSkillSQL(ctx, db, cindyPlatformPre229FixtureSQL))
+
+	migration229, err := dbmigrations.FS.ReadFile("229_cindy_platform_wire_identity.sql")
+	require.NoError(t, err)
+	require.NoError(t, execRemoteSkillSQL(ctx, db, string(migration229)))
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "legacy-cindy-active", "cindy", "openai", "cindy_laxa_v1")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "legacy-cindy-active", "cindy", "openai", "cindy_laxa_v1")
+
+	require.NoError(t, execRemoteSkillSQL(ctx, db, `
+		INSERT INTO accounts
+			(id, name, platform, wire_platform, provider_profile, type, credentials, deleted_at)
+		VALUES
+			(3, 'cindy-soft-deleted', 'cindy', 'openai', 'cindy_laxa_v1', 'apikey',
+			 '{"base_url":"https://api.laxarouter.ai","api_key":"fixture-deleted"}', NOW());
+		INSERT INTO groups
+			(id, name, platform, wire_platform, provider_profile, fallback_group_id, deleted_at)
+		VALUES
+			(3, 'cindy-empty', 'cindy', 'openai', 'cindy_laxa_v1', NULL, NULL),
+			(4, 'cindy-soft-deleted', 'cindy', 'openai', 'cindy_laxa_v1', NULL, NOW());
+
+		SELECT * FROM project_cindy_platform_v1_to_legacy();
+
+		INSERT INTO accounts
+			(id, name, platform, type, credentials, deleted_at)
+		VALUES
+			(8, 'ordinary-member-added-after-rollback', 'openai', 'apikey',
+			 '{"base_url":"https://api.openai.com","api_key":"fixture-added-ordinary"}', NULL),
+			(9, 'independent-pure-cindy', 'openai', 'apikey',
+			 '{"base_url":"https://api.laxarouter.ai","api_key":"fixture-independent-cindy"}', NULL);
+		INSERT INTO groups
+			(id, name, platform, fallback_group_id, deleted_at)
+		VALUES
+			(9, 'independent-pure-cindy', 'openai', NULL, NULL);
+		INSERT INTO account_groups (account_id, group_id) VALUES
+			(8, 2),
+			(9, 9);
+	`))
+
+	// Migration 234 replays the canonical ledger before it discovers current
+	// topology, reproducing the mixed-group promotion that 235 must repair.
+	migration234, err := dbmigrations.FS.ReadFile("234_fix_cindy_platform_projection_round_trip.sql")
+	require.NoError(t, err)
+	require.NoError(t, execRemoteSkillSQL(ctx, db, string(migration234)))
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "legacy-cindy-active", "cindy", "openai", "cindy_laxa_v1")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "legacy-cindy-active", "cindy", "openai", "cindy_laxa_v1")
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "ordinary-member-added-after-rollback", "openai", "", "")
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "independent-pure-cindy", "cindy", "openai", "cindy_laxa_v1")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "independent-pure-cindy", "cindy", "openai", "cindy_laxa_v1")
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "cindy-soft-deleted", "cindy", "openai", "cindy_laxa_v1")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "cindy-empty", "cindy", "openai", "cindy_laxa_v1")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "cindy-soft-deleted", "cindy", "openai", "cindy_laxa_v1")
+
+	migration235, err := dbmigrations.FS.ReadFile("235_preserve_mixed_openai_cindy_groups.sql")
+	require.NoError(t, err)
+	require.NoError(t, execRemoteSkillSQL(ctx, db, string(migration235)))
+
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "legacy-cindy-active", "openai", "openai", "")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "legacy-cindy-active", "openai", "openai", "")
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "ordinary-member-added-after-rollback", "openai", "", "")
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "independent-pure-cindy", "cindy", "openai", "cindy_laxa_v1")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "independent-pure-cindy", "cindy", "openai", "cindy_laxa_v1")
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "cindy-soft-deleted", "cindy", "openai", "cindy_laxa_v1")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "cindy-empty", "cindy", "openai", "cindy_laxa_v1")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "cindy-soft-deleted", "cindy", "openai", "cindy_laxa_v1")
+
+	var ledgerRows int
+	require.NoError(t, db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM cindy_platform_v1_projection
+		WHERE (entity_type, entity_id) IN (('account', 2), ('group', 2), ('account', 9), ('group', 9))
+	`).Scan(&ledgerRows))
+	require.Equal(t, 4, ledgerRows)
+
+	require.NoError(t, execRemoteSkillSQL(ctx, db, `SELECT * FROM project_cindy_platform_v1_to_legacy()`))
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "legacy-cindy-active", "openai", "openai", "")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "legacy-cindy-active", "openai", "openai", "")
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "independent-pure-cindy", "openai", "", "")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "independent-pure-cindy", "openai", "", "")
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "cindy-soft-deleted", "openai", "openai", "")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "cindy-empty", "openai", "openai", "")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "cindy-soft-deleted", "openai", "openai", "")
+
+	require.NoError(t, execRemoteSkillSQL(ctx, db, `SELECT * FROM project_cindy_platform_v1_from_legacy()`))
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "legacy-cindy-active", "openai", "openai", "")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "legacy-cindy-active", "openai", "openai", "")
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "independent-pure-cindy", "cindy", "openai", "cindy_laxa_v1")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "independent-pure-cindy", "cindy", "openai", "cindy_laxa_v1")
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "cindy-soft-deleted", "cindy", "openai", "cindy_laxa_v1")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "cindy-empty", "cindy", "openai", "cindy_laxa_v1")
+	assertCindyPlatformIdentity(t, ctx, db, "groups", "cindy-soft-deleted", "cindy", "openai", "cindy_laxa_v1")
+
+	for range 2 {
+		var promotedAccounts, promotedGroups int64
+		require.NoError(t, db.QueryRowContext(ctx, `
+			SELECT promoted_accounts, promoted_groups
+			FROM project_cindy_platform_v1_from_legacy()
+		`).Scan(&promotedAccounts, &promotedGroups))
+		require.Zero(t, promotedAccounts)
+		require.Zero(t, promotedGroups)
+	}
+}
+
+func TestMigration235SkipsStaleSoftDeletedAccountLedgerEntries(t *testing.T) {
+	ctx := context.Background()
+	db, _ := remoteSkillMigrationTestDatabase(t)
+	require.NoError(t, execRemoteSkillSQL(ctx, db, cindyPlatformPre229FixtureSQL))
+
+	for _, migrationName := range []string{
+		"229_cindy_platform_wire_identity.sql",
+		"234_fix_cindy_platform_projection_round_trip.sql",
+	} {
+		migrationSQL, err := dbmigrations.FS.ReadFile(migrationName)
+		require.NoError(t, err)
+		require.NoError(t, execRemoteSkillSQL(ctx, db, string(migrationSQL)))
+	}
+
+	require.NoError(t, execRemoteSkillSQL(ctx, db, `
+		INSERT INTO accounts
+			(id, name, platform, wire_platform, provider_profile, type, credentials, deleted_at)
+		VALUES
+			(10, 'ledger-retyped-before-delete', 'cindy', 'openai', 'cindy_laxa_v1', 'apikey',
+			 '{"base_url":"https://api.laxarouter.ai","api_key":"fixture-retyped"}', NULL),
+			(11, 'ledger-repointed-before-delete', 'cindy', 'openai', 'cindy_laxa_v1', 'apikey',
+			 '{"base_url":"https://api.laxarouter.ai","api_key":"fixture-repointed"}', NULL),
+			(12, 'ledger-non-string-url-before-delete', 'cindy', 'openai', 'cindy_laxa_v1', 'apikey',
+			 '{"base_url":"https://api.laxarouter.ai","api_key":"fixture-non-string"}', NULL),
+			(13, 'ledger-unchanged-laxa-before-delete', 'cindy', 'openai', 'cindy_laxa_v1', 'apikey',
+			 '{"base_url":" HTTPS://API.LAXAROUTER.AI/ ","api_key":"fixture-unchanged"}', NULL);
+
+		SELECT * FROM project_cindy_platform_v1_to_legacy();
+
+		UPDATE accounts
+		SET type = 'oauth', deleted_at = NOW()
+		WHERE id = 10;
+		UPDATE accounts
+		SET credentials = '{"base_url":"https://api.openai.com","api_key":"fixture-repointed"}',
+			deleted_at = NOW()
+		WHERE id = 11;
+		UPDATE accounts
+		SET credentials = '{"base_url":17,"api_key":"fixture-non-string"}',
+			deleted_at = NOW()
+		WHERE id = 12;
+		UPDATE accounts
+		SET deleted_at = NOW()
+		WHERE id = 13;
+	`))
+
+	for _, name := range []string{
+		"ledger-retyped-before-delete",
+		"ledger-repointed-before-delete",
+		"ledger-non-string-url-before-delete",
+		"ledger-unchanged-laxa-before-delete",
+	} {
+		assertCindyPlatformIdentity(t, ctx, db, "accounts", name, "openai", "openai", "")
+	}
+
+	migration235, err := dbmigrations.FS.ReadFile("235_preserve_mixed_openai_cindy_groups.sql")
+	require.NoError(t, err)
+	require.NoError(t, execRemoteSkillSQL(ctx, db, string(migration235)))
+
+	for _, name := range []string{
+		"ledger-retyped-before-delete",
+		"ledger-repointed-before-delete",
+		"ledger-non-string-url-before-delete",
+	} {
+		assertCindyPlatformIdentity(t, ctx, db, "accounts", name, "openai", "openai", "")
+	}
+	assertCindyPlatformIdentity(t, ctx, db, "accounts", "ledger-unchanged-laxa-before-delete", "cindy", "openai", "cindy_laxa_v1")
+
+	var promotedAccounts, promotedGroups int64
+	require.NoError(t, db.QueryRowContext(ctx, `
+		SELECT promoted_accounts, promoted_groups
+		FROM project_cindy_platform_v1_from_legacy()
+	`).Scan(&promotedAccounts, &promotedGroups))
+	require.Zero(t, promotedAccounts)
+	require.Zero(t, promotedGroups)
+}
+
 func assertCindyProjectionForwardState(t *testing.T, ctx context.Context, db *sql.DB) {
 	t.Helper()
 	for _, tc := range []struct {

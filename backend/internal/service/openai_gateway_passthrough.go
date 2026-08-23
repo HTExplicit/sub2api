@@ -116,6 +116,16 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	startTime time.Time,
 ) (*OpenAIForwardResult, error) {
 	upstreamPassthroughModel := ""
+	if account != nil && IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		if mappedModel, mapped := CindyCompatibilityMappedUpstreamModel(reqModel); mapped {
+			nextBody, setErr := sjson.SetBytes(body, "model", mappedModel)
+			if setErr != nil {
+				return nil, fmt.Errorf("set legacy Cindy compatibility model: %w", setErr)
+			}
+			body = nextBody
+			upstreamPassthroughModel = mappedModel
+		}
+	}
 	if isOpenAIResponsesCompactPath(c) {
 		compactMappedModel := resolveOpenAICompactForwardModel(account, reqModel)
 		if compactMappedModel != "" && compactMappedModel != reqModel {
@@ -347,18 +357,28 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 
 	agentTaskRecoveryTried := false
 	invalidEncryptedContentRetryTried := false
+	legacyOpaqueRecovery := canRecoverLegacyCindyOpaqueContinuation(account, body)
 	tryRecoverInvalidEncryptedContent := func(upstreamMsg string, upstreamBody []byte) (bool, error) {
-		if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) ||
+		if (IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) && !legacyOpaqueRecovery) ||
 			isOpenAICindyHTTPToWSV2Bypassed(c) ||
 			invalidEncryptedContentRetryTried ||
 			!isOpenAIInvalidEncryptedContentError(upstreamMsg, upstreamBody) ||
-			ValidateFunctionCallOutputContextBytes(body).HasFunctionCallOutput {
+			(ValidateFunctionCallOutputContextBytes(body).HasFunctionCallOutput && !legacyOpaqueRecovery) {
 			return false, nil
 		}
 		var decoded map[string]any
 		decoder := json.NewDecoder(bytes.NewReader(body))
 		decoder.UseNumber()
-		if decodeErr := decoder.Decode(&decoded); decodeErr != nil || !trimOpenAIEncryptedReasoningItems(decoded) {
+		decodeErr := decoder.Decode(&decoded)
+		removedReasoningItems := false
+		if decodeErr == nil {
+			if legacyOpaqueRecovery {
+				removedReasoningItems = dropOpenAIEncryptedReasoningInputItems(decoded)
+			} else {
+				removedReasoningItems = trimOpenAIEncryptedReasoningItems(decoded)
+			}
+		}
+		if decodeErr != nil || !removedReasoningItems {
 			logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] Skip invalid_encrypted_content retry because encrypted reasoning items are missing or cannot be decoded (account: %s)", account.Name)
 			return false, nil
 		}
@@ -774,11 +794,11 @@ func shouldFailoverOpenAIPassthroughResponse(account *Account, statusCode int, r
 	// A generic Cindy 402 is request-retryable but is not evidence of account
 	// balance exhaustion. Keep failover separate from persistent account state.
 	if statusCode == http.StatusPaymentRequired && account != nil &&
-		IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		return true
 	}
 	if statusCode == http.StatusForbidden && account != nil &&
-		IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		if hit, _, _ := detectOpenAICyberPolicy(responseBody); hit {
 			return false
 		}
@@ -925,7 +945,7 @@ func (s *OpenAIGatewayService) handleFailoverErrorResponsePassthrough(
 		!shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
 	)
 	if resp.StatusCode == http.StatusForbidden && account != nil &&
-		IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		failoverErr = sanitizeOpenAICindyFailoverError(failoverErr)
 	}
 	return failoverErr

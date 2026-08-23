@@ -151,7 +151,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CindyPreviousNot
 	require.Equal(t, "final", gjson.Get(replayed, "input.2.phase").String())
 }
 
-func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CindyModeRouterPassthroughInitialAnchorNeverLeavesBusyBoundConn(t *testing.T) {
+func TestLegacyCindyRuntimeCompatibilityWSIngressInitialAnchorNeverLeavesBusyBoundConn(t *testing.T) {
 	for _, storeField := range []struct {
 		name  string
 		field string
@@ -177,7 +177,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CindyModeRouterP
 			stateStore := NewOpenAIWSStateStore(svc.cache)
 			svc.openaiWSStateStore = stateStore
 			account := cindyHTTPToWSV2TestAccount()
-			account.Platform = PlatformCindy
+			account.Platform = PlatformOpenAI
 			account.ID = 9420
 			account.Extra = map[string]any{
 				"responses_websockets_v2_enabled":            true,

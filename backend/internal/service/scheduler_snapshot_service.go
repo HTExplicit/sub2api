@@ -322,6 +322,22 @@ func (s *SchedulerSnapshotService) UpdateAccountInCache(ctx context.Context, acc
 	return s.cache.SetAccount(ctx, account)
 }
 
+// RefreshAccountAndGroups synchronously applies the same account event path
+// used by the durable scheduler outbox. groupIDs must contain both the old and
+// new memberships so stale buckets are removed before an admin mutation
+// returns.
+func (s *SchedulerSnapshotService) RefreshAccountAndGroups(ctx context.Context, accountID int64, groupIDs []int64) error {
+	if s == nil || accountID <= 0 {
+		return nil
+	}
+	groupValues := make([]any, 0, len(groupIDs))
+	for _, groupID := range groupIDs {
+		groupValues = append(groupValues, groupID)
+	}
+	payload := map[string]any{"group_ids": groupValues}
+	return s.handleAccountEvent(ctx, &accountID, payload, make(map[batchSeenKey]struct{}))
+}
+
 func (s *SchedulerSnapshotService) runInitialRebuild() {
 	if s.cache == nil {
 		return

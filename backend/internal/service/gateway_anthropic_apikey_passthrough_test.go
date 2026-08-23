@@ -313,6 +313,75 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_BearerAuthScheme(t *testing.T
 	require.Empty(t, getHeaderRaw(countReq.Header, "cookie"))
 }
 
+func TestLegacyCindyRuntimeCompatibilityPreservesAnthropicWireContract(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	svc := &GatewayService{cfg: &config.Config{}}
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":  "legacy-key",
+			"base_url": "https://api.laxarouter.ai",
+		},
+	}
+	body := []byte(`{"model":"openai/gpt-5.6-sol","messages":[]}`)
+
+	messageReq, _, err := svc.buildUpstreamRequestAnthropicAPIKeyPassthrough(
+		context.Background(), c, account, body, "legacy-key",
+	)
+	require.NoError(t, err)
+	require.Equal(t, "https://api.laxarouter.ai/v1/messages", messageReq.URL.String())
+	require.Equal(t, "Bearer legacy-key", getHeaderRaw(messageReq.Header, "authorization"))
+	require.Empty(t, getHeaderRaw(messageReq.Header, "x-api-key"))
+
+	countReq, err := svc.buildCountTokensRequestAnthropicAPIKeyPassthrough(
+		context.Background(), c, account, body, "legacy-key",
+	)
+	require.NoError(t, err)
+	require.Equal(t, "https://api.laxarouter.ai/v1/messages/count_tokens", countReq.URL.String())
+	require.Equal(t, "Bearer legacy-key", getHeaderRaw(countReq.Header, "authorization"))
+	require.Empty(t, getHeaderRaw(countReq.Header, "x-api-key"))
+
+	result, err := svc.ForwardCindyAnthropicMessages(
+		context.Background(), c, account, body, "gpt-5.6-sol",
+	)
+	require.Nil(t, result)
+	require.ErrorContains(t, err, "strict Cindy account is required",
+		"legacy wire compatibility must not enable the canonical Cindy catalog path")
+}
+
+func TestLegacyCindyRuntimeCompatibilityRejectsMalformedCountTokensSuccess(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", nil)
+	upstream := &anthropicHTTPUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"unexpected":true}`)),
+	}}
+	svc := &GatewayService{
+		cfg:          &config.Config{Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize}},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID: 103, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Concurrency: 1,
+		Credentials: map[string]any{"api_key": "legacy-key", "base_url": "https://api.laxarouter.ai"},
+	}
+
+	err := svc.forwardCountTokensAnthropicAPIKeyPassthrough(
+		context.Background(), c, account, []byte(`{"model":"openai/gpt-5.6-sol","messages":[]}`),
+	)
+
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
+	require.Empty(t, recorder.Body.String())
+}
+
 // TestGatewayService_AnthropicAPIKeyPassthrough_ModelMappingEdgeCases 覆盖透传模式下模型映射的各种边界情况
 func TestGatewayService_AnthropicAPIKeyPassthrough_ModelMappingEdgeCases(t *testing.T) {
 	gin.SetMode(gin.TestMode)

@@ -55,18 +55,6 @@ func (r *accountCredentialIdentityRepository) BindInTransaction(
 		return nil, err
 	}
 
-	existing, err := queryCredentialIdentity(ctx, tx, credentialIdentitySelect+` WHERE fingerprint = $1 ORDER BY account_id LIMIT 1 FOR UPDATE`, params.Fingerprint)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return nil, err
-	}
-	if existing != nil && existing.AccountID != params.AccountID {
-		return nil, service.ErrCredentialIdentityConflict
-	}
-	if existing != nil && (existing.ProviderProfile != params.ProviderProfile ||
-		existing.AuthType != params.AuthType || existing.NormalizedBaseURL != params.NormalizedBaseURL) {
-		return nil, service.ErrCredentialIdentityInvalid
-	}
-
 	active, err := queryCredentialIdentity(ctx, tx, credentialIdentitySelect+` WHERE account_id = $1 AND active FOR UPDATE`, params.AccountID)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
@@ -77,7 +65,21 @@ func (r *accountCredentialIdentityRepository) BindInTransaction(
 		return nil, service.ErrCredentialIdentityGenerationConflict
 	}
 	if active != nil && active.Fingerprint == params.Fingerprint {
+		if active.ProviderProfile != params.ProviderProfile || active.AuthType != params.AuthType ||
+			active.NormalizedBaseURL != params.NormalizedBaseURL {
+			return nil, service.ErrCredentialIdentityInvalid
+		}
 		return &service.BindAccountCredentialIdentityResult{Identity: *active}, nil
+	}
+
+	activeOwner, err := queryCredentialIdentity(ctx, tx, credentialIdentitySelect+`
+		WHERE fingerprint = $1 AND active AND account_id <> $2
+		ORDER BY account_id LIMIT 1 FOR UPDATE`, params.Fingerprint, params.AccountID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	if activeOwner != nil {
+		return nil, service.ErrCredentialIdentityConflict
 	}
 
 	generation := int64(1)
@@ -113,32 +115,20 @@ func (r *accountCredentialIdentityRepository) BindInTransaction(
 		}
 	}
 
-	created := existing == nil
-	if existing == nil {
-		existing, err = queryCredentialIdentity(ctx, tx, `
-			INSERT INTO account_credential_identities
-				(account_id, provider_profile, auth_type, normalized_base_url, fingerprint, generation, active)
-			VALUES ($1, $2, $3, $4, $5, $6, TRUE)
-			RETURNING id, account_id, provider_profile, auth_type, normalized_base_url,
-			          fingerprint, generation, active
-		`, params.AccountID, params.ProviderProfile, params.AuthType, params.NormalizedBaseURL, params.Fingerprint, generation)
-	} else {
-		existing, err = queryCredentialIdentity(ctx, tx, `
-			UPDATE account_credential_identities
-			SET provider_profile = $2, auth_type = $3, normalized_base_url = $4,
-			    generation = $5, active = TRUE, retired_at = NULL, updated_at = NOW()
-			WHERE id = $1
-			RETURNING id, account_id, provider_profile, auth_type, normalized_base_url,
-			          fingerprint, generation, active
-		`, existing.ID, params.ProviderProfile, params.AuthType, params.NormalizedBaseURL, generation)
-	}
+	existing, err := queryCredentialIdentity(ctx, tx, `
+		INSERT INTO account_credential_identities
+			(account_id, provider_profile, auth_type, normalized_base_url, fingerprint, generation, active)
+		VALUES ($1, $2, $3, $4, $5, $6, TRUE)
+		RETURNING id, account_id, provider_profile, auth_type, normalized_base_url,
+		          fingerprint, generation, active
+	`, params.AccountID, params.ProviderProfile, params.AuthType, params.NormalizedBaseURL, params.Fingerprint, generation)
 	if err != nil {
 		return nil, translateCredentialIdentityError(err)
 	}
 	return &service.BindAccountCredentialIdentityResult{
 		Identity: *existing,
-		Rotated:  active != nil || !created,
-		Created:  created,
+		Rotated:  active != nil,
+		Created:  true,
 	}, nil
 }
 

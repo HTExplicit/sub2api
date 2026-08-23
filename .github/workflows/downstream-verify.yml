@@ -47,8 +47,8 @@ jobs:
       - name: Cindy manual balance, split, image, and turn-state tests
         working-directory: backend
         run: |
-          go test -p=1 -tags unit ./internal/repository ./internal/service ./internal/handler ./internal/handler/admin -run 'Test.*(CindyBalanceProbe|CindyGroupSplit|CindyCatalog|CindyCodexModels|ImageStudioEligibleKeys|CindyCompatibility|TurnStateCommits|SchedulerCache|KeepsCindyRoutingIdentity|StrictCindyGroup|MaterializesCindyIdentity|DisabledOrdinaryMember|SkipsCindyAggregate|GatewayModelCapabilities|GatewayModels|WriteOpenAIModelsList|AccountHandlerGetAvailableModels)' -count=1
-          go test -p=1 -tags unit ./migrations -run 'Test.*(Migration222|Migration223|Migration224)' -count=1
+          go test -p=1 -tags unit ./internal/repository ./internal/service ./internal/handler ./internal/handler/admin -run 'Test.*(AccountCredentialIdentity|AccountJobCindyMutation|ProviderIdentityMismatch|CindyBalanceProbe|CindyGroupSplit|CindyCatalog|CindyCodexModels|ImageStudioEligibleKeys|CindyCompatibility|LegacyCindyRuntimeCompatibility|CodexImageGenerationBridgeOverridePrecedence|TurnStateCommits|SchedulerCache|SchedulerRefresh|KeepsCindyRoutingIdentity|StrictCindyGroup|MaterializesCindyIdentity|DisabledOrdinaryMember|SkipsCindyAggregate|GatewayModelCapabilities|GatewayModels|WriteOpenAIModelsList|AccountHandlerGetAvailableModels)' -count=1
+          go test -p=1 -tags unit ./migrations -run 'Test.*(Migration222|Migration223|Migration224|Migration230|Migration231|Migration232|Migration235)' -count=1
       - name: Request body recovery tests
         working-directory: backend
         run: go test -p=1 ./internal/pkg/httputil ./internal/handler -run 'Test(ReadRequestBodyWithPrealloc|ReadLenientJSONRequestBodyWithPrealloc|RequestBodyReadDiagnostics|ClassifyRequestContentEncoding)' -count=1
@@ -81,8 +81,8 @@ jobs:
       - name: Cindy defaults migration tests
         working-directory: backend
         run: |
-          go test -p=1 ./migrations -run '^TestMigration(207RestoresOnlyCindyNativeOpenAIModes|208UsesCindyPromptCacheHashOnly|209RestoresOnlyCindyAlphaSearchBridge|210ResetsOnlyLegacyCindyBalanceMarkers|211RestoresOnlyExactUnresolvedCindyBudgetMarkers|213ResetsOnlyStrictCindyBalanceMarkers)$' -count=1
-          go test -p=1 -tags integration ./migrations -run '^TestCindy(OpenAIDefaults|PromptCacheHash|AlphaSearchBridge|BalanceMarkerReset|BalanceMarkerRestore|BalanceConfirmationReset|PlatformProjectionRoundTrip)MigrationIsStrictAndIdempotent$' -count=1
+          go test -p=1 ./migrations -run '^(TestMigration(207RestoresOnlyCindyNativeOpenAIModes|208UsesCindyPromptCacheHashOnly|209RestoresOnlyCindyAlphaSearchBridge|210ResetsOnlyLegacyCindyBalanceMarkers|211RestoresOnlyExactUnresolvedCindyBudgetMarkers|213ResetsOnlyStrictCindyBalanceMarkers)|TestMigration235RestrictsLedgerReplayToLifecycleExcludedRows)$' -count=1
+          go test -p=1 -tags integration ./migrations -run '^(TestCindy(OpenAIDefaults|PromptCacheHash|AlphaSearchBridge|BalanceMarkerReset|BalanceMarkerRestore|BalanceConfirmationReset|PlatformProjectionRoundTrip)MigrationIsStrictAndIdempotent|TestMigration235PreservesMixedOpenAIGroupsAfterCanonicalReplay)$' -count=1
 
   frontend:
     name: Downstream frontend

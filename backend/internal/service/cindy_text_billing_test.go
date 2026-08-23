@@ -177,6 +177,124 @@ func TestOpenAIRecordUsageTokenCostKeepsNonCindyPathUnchanged(t *testing.T) {
 	require.Equal(t, want, got)
 }
 
+func TestLegacyCindyRuntimeCompatibilityUsesExactModelPricing(t *testing.T) {
+	t.Parallel()
+	billingService := NewBillingService(&config.Config{}, nil)
+	svc := &OpenAIGatewayService{billingService: billingService}
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":  "not-exposed",
+			"base_url": "https://api.laxarouter.ai",
+		},
+	}
+
+	for _, test := range []struct {
+		model       string
+		serviceTier string
+		inputPrice  float64
+		outputPrice float64
+	}{
+		{model: "gpt-5.4", inputPrice: 5e-6, outputPrice: 30e-6},
+		{model: "gpt-5.4-mini", inputPrice: 0.2e-6, outputPrice: 1.2e-6},
+		{model: "gpt-5.6-sol", serviceTier: "priority", inputPrice: 5e-6, outputPrice: 30e-6},
+		{model: "gpt-5.6-luna", serviceTier: "priority", inputPrice: 0.2e-6, outputPrice: 1.2e-6},
+		{model: "openai/gpt-5.6-sol", serviceTier: "priority", inputPrice: 5e-6, outputPrice: 30e-6},
+		{model: "openai/gpt-5.6-luna", serviceTier: "priority", inputPrice: 0.2e-6, outputPrice: 1.2e-6},
+	} {
+		t.Run(test.model, func(t *testing.T) {
+			cost, err := svc.calculateOpenAIRecordUsageTokenCost(
+				context.Background(), &APIKey{}, account, test.model, 1, time.Time{},
+				UsageTokens{InputTokens: 100, OutputTokens: 10}, test.serviceTier, boolPtr(false),
+			)
+			require.NoError(t, err)
+			require.InDelta(t, 100*test.inputPrice, cost.InputCost, 1e-12)
+			require.InDelta(t, 10*test.outputPrice, cost.OutputCost, 1e-12)
+			require.True(t, shouldFailClosedCindyTextPricing(account, []string{test.model}), test.model)
+		})
+	}
+}
+
+func TestLegacyCindyRuntimeCompatibilityExplicitGroupPricingWins(t *testing.T) {
+	t.Parallel()
+	inputPrice := 9e-6
+	outputPrice := 11e-6
+	groupID := int64(8802)
+	billingService := NewBillingService(&config.Config{}, nil)
+	svc := &OpenAIGatewayService{
+		billingService: billingService,
+		resolver:       NewModelPricingResolver(nil, billingService),
+	}
+	apiKey := &APIKey{
+		GroupID: &groupID,
+		Group: &Group{ID: groupID, ModelPricing: []ChannelModelPricing{{
+			Models:      []string{"openai/gpt-5.6-sol"},
+			BillingMode: BillingModeToken,
+			InputPrice:  &inputPrice,
+			OutputPrice: &outputPrice,
+		}}},
+	}
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "not-exposed", "base_url": "https://api.laxarouter.ai",
+		},
+	}
+
+	cost, err := svc.calculateOpenAIRecordUsageTokenCost(
+		context.Background(), apiKey, account, "openai/gpt-5.6-sol", 1, time.Time{},
+		UsageTokens{InputTokens: 100, OutputTokens: 10}, "", boolPtr(false),
+	)
+	require.NoError(t, err)
+	require.InDelta(t, 100*inputPrice, cost.InputCost, 1e-12)
+	require.InDelta(t, 10*outputPrice, cost.OutputCost, 1e-12)
+}
+
+func TestLegacyCindyRuntimeCompatibilityRecordUsageKeepsAliasPricingAfterLiveMapping(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		requested  string
+		live       string
+		inputCost  float64
+		outputCost float64
+	}{
+		{requested: "gpt-5.4", live: "openai/gpt-5.6-sol", inputCost: 100 * 5e-6, outputCost: 10 * 30e-6},
+		{requested: "gpt-5.4-mini", live: "openai/gpt-5.6-luna", inputCost: 100 * 0.2e-6, outputCost: 10 * 1.2e-6},
+	} {
+		t.Run(test.requested, func(t *testing.T) {
+			cfg := &config.Config{RunMode: config.RunModeSimple}
+			cfg.Default.RateMultiplier = 1
+			repo := &cindyTextUsageLogRepo{}
+			svc := &OpenAIGatewayService{
+				cfg:             cfg,
+				billingService:  NewBillingService(cfg, nil),
+				usageLogRepo:    repo,
+				deferredService: &DeferredService{},
+			}
+			account := &Account{
+				ID: 9902, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+				Credentials: map[string]any{"api_key": "not-exposed", "base_url": "https://api.laxarouter.ai"},
+			}
+
+			err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+				Result: &OpenAIForwardResult{
+					Model: test.requested, BillingModel: test.live, UpstreamModel: test.live,
+					Usage: OpenAIUsage{InputTokens: 100, OutputTokens: 10},
+				},
+				APIKey: &APIKey{}, User: &User{ID: 1}, Account: account,
+				ChannelUsageFields: ChannelUsageFields{OriginalModel: test.requested},
+			})
+
+			require.NoError(t, err)
+			require.NotNil(t, repo.last)
+			require.InDelta(t, test.inputCost, repo.last.InputCost, 1e-12)
+			require.InDelta(t, test.outputCost, repo.last.OutputCost, 1e-12)
+		})
+	}
+}
+
 func TestOpenAIRecordUsageStrictCindyUnknownPriceFailsClosed(t *testing.T) {
 	t.Parallel()
 	cfg := &config.Config{}

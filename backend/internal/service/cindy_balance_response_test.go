@@ -15,7 +15,7 @@ func TestIsCindyBalanceInsufficientResponse(t *testing.T) {
 		ID:          8502,
 		Platform:    PlatformOpenAI,
 		Type:        AccountTypeAPIKey,
-		Credentials: map[string]any{"base_url": "https://api.openai.com", "api_key": "test-key"},
+		Credentials: map[string]any{"base_url": "https://api.laxarouter.ai", "api_key": "test-key"},
 	}
 
 	tests := []struct {
@@ -53,7 +53,7 @@ func TestClassifyCindyBalanceInsufficientTerminalEvents(t *testing.T) {
 		ID:          8512,
 		Platform:    PlatformOpenAI,
 		Type:        AccountTypeAPIKey,
-		Credentials: map[string]any{"base_url": "https://api.openai.com", "api_key": "test-key"},
+		Credentials: map[string]any{"base_url": "https://api.laxarouter.ai", "api_key": "test-key"},
 	}
 	tests := []struct {
 		name    string

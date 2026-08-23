@@ -25,6 +25,19 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func (s *GatewayService) observeCindyHealthSignal(ctx context.Context, account *Account, statusCode int, body []byte) CindyHealthSignal {
+	signal := ClassifyCindyHealthSignal(account, statusCode, body)
+	if signal == CindyHealthSignalForbidden {
+		if hit, _, _ := detectOpenAICyberPolicy(body); hit {
+			return CindyHealthSignalNone
+		}
+	}
+	if signal != CindyHealthSignalNone && s != nil && s.cindyHealth != nil {
+		s.cindyHealth.ObserveCindyHealthSignal(ctx, account, signal)
+	}
+	return signal
+}
+
 type anthropicPassthroughForwardInput struct {
 	Body          []byte
 	Parsed        *ParsedRequest
@@ -176,18 +189,21 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 			return nil, fmt.Errorf("upstream request failed: %s", safeErr)
 		}
 
-		// Cindy's exact structured budget signal must win over pool-mode retries
-		// and ordinary 429 handling. Peek and restore every Cindy 429 so a generic
-		// response keeps the existing path without consuming its body.
-		if resp.StatusCode == http.StatusTooManyRequests &&
-			IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		// Native Messages shares the same Cindy health classifier as Responses.
+		// Exact budget and transient 403 signals must be observed before pool-mode
+		// retries or generic account error handling can reinterpret them.
+		if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
+			(resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusForbidden) {
 			respBody, _ := s.readUpstreamErrorBody(resp)
 			_ = resp.Body.Close()
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
-			if ClassifyCindyBalanceInsufficient(account, resp.StatusCode, respBody) == CindyBalanceSignalHTTP429 {
-				if s.rateLimitService != nil {
-					s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, input.RequestModel)
-				}
+			healthSignal := s.observeCindyHealthSignal(ctx, account, resp.StatusCode, respBody)
+			exactBudget := healthSignal == CindyHealthSignalExactBudget
+			cyberPolicy := resp.StatusCode == http.StatusForbidden
+			if cyberPolicy {
+				cyberPolicy, _, _ = detectOpenAICyberPolicy(respBody)
+			}
+			if exactBudget {
 				return nil, sanitizeOpenAICindyFailoverError(&UpstreamFailoverError{
 					StatusCode:               resp.StatusCode,
 					ResponseBody:             respBody,
@@ -196,6 +212,16 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 					Scope:                    GatewayFailureScopeAccount,
 					NextAccountAction:        NextAccountRetry,
 					CindyBalanceInsufficient: true,
+				})
+			}
+			if healthSignal == CindyHealthSignalForbidden || cyberPolicy {
+				return nil, sanitizeOpenAICindyFailoverError(&UpstreamFailoverError{
+					StatusCode:             resp.StatusCode,
+					ResponseBody:           respBody,
+					ResponseHeaders:        resp.Header.Clone(),
+					RetryableOnSameAccount: false,
+					Scope:                  GatewayFailureScopeAccount,
+					NextAccountAction:      NextAccountRetry,
 				})
 			}
 		}
@@ -379,7 +405,7 @@ func (s *GatewayService) buildUpstreamRequestAnthropicAPIKeyPassthrough(
 		if err != nil {
 			return nil, nil, err
 		}
-		if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		if IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 			targetURL = validatedURL + "/v1/messages"
 		} else {
 			targetURL = validatedURL + "/v1/messages?beta=true"
@@ -656,8 +682,9 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 			if data, ok := extractAnthropicSSEDataLine(line); ok {
 				trimmed := strings.TrimSpace(data)
 				payload := []byte(trimmed)
-				if resp.StatusCode == http.StatusOK &&
-					ClassifyCindyBalanceInsufficient(account, http.StatusOK, payload) != CindyBalanceSignalNone {
+				healthSignal := s.observeCindyHealthSignal(ctx, account, http.StatusOK, payload)
+				exactBudget := healthSignal == CindyHealthSignalExactBudget
+				if resp.StatusCode == http.StatusOK && exactBudget {
 					if s.rateLimitService != nil {
 						s.rateLimitService.HandleUpstreamError(ctx, account, http.StatusOK, resp.Header, payload, model)
 					}
@@ -967,7 +994,9 @@ func (s *GatewayService) handleNonStreamingResponseAnthropicAPIKeyPassthrough(
 		observer = beginUpstreamResponseModelObservation(c)
 	}
 	observer.ObserveAnthropic(body)
-	if ClassifyCindyBalanceInsufficient(account, resp.StatusCode, body) != CindyBalanceSignalNone {
+	healthSignal := s.observeCindyHealthSignal(ctx, account, resp.StatusCode, body)
+	exactBudget := healthSignal == CindyHealthSignalExactBudget
+	if exactBudget {
 		if s.rateLimitService != nil {
 			s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, body)
 		}

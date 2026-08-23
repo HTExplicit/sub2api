@@ -4,21 +4,33 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
+type accountSchedulerRefresher interface {
+	RefreshAccountAndGroups(context.Context, int64, []int64) error
+}
+
 type accountJobCindyMutationRunner struct {
-	client   *dbent.Client
-	identity service.AccountCredentialIdentityRepository
+	client         *dbent.Client
+	identity       service.AccountCredentialIdentityRepository
+	scheduler      accountSchedulerRefresher
+	runtimeBlocker service.AccountRuntimeBlocker
 }
 
 func NewAccountJobCindyMutationRunner(
 	client *dbent.Client,
 	identity service.AccountCredentialIdentityRepository,
+	scheduler *service.SchedulerSnapshotService,
+	runtimeBlocker service.AccountRuntimeBlocker,
 ) service.AccountJobCindyMutationRunner {
-	return &accountJobCindyMutationRunner{client: client, identity: identity}
+	return &accountJobCindyMutationRunner{
+		client: client, identity: identity, scheduler: scheduler, runtimeBlocker: runtimeBlocker,
+	}
 }
 
 func (r *accountJobCindyMutationRunner) Run(
@@ -39,8 +51,13 @@ func (r *accountJobCindyMutationRunner) Run(
 	}
 	defer func() { _ = tx.Rollback() }()
 	txClient := tx.Client()
+	var previousGroupIDs []int64
 	if accountID > 0 {
 		if err = lockCindyAccountJobTarget(ctx, txClient, accountID); err != nil {
+			return nil, err
+		}
+		previousGroupIDs, err = loadCindyAccountJobGroupIDs(ctx, txClient, accountID)
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -76,20 +93,24 @@ func (r *accountJobCindyMutationRunner) Run(
 	if err != nil {
 		return nil, err
 	}
-	if _, err = identityRepo.BindInTransaction(ctx, txClient, service.BindAccountCredentialIdentityParams{
+	bindResult, err := identityRepo.BindInTransaction(ctx, txClient, service.BindAccountCredentialIdentityParams{
 		AccountID: current.ID, ProviderProfile: service.ProviderProfileCindyLaxaV1,
 		AuthType: service.AccountTypeAPIKey, NormalizedBaseURL: normalizedURL,
 		Fingerprint: fingerprint,
-	}); err != nil {
+	})
+	if err != nil {
 		return nil, err
 	}
-	if _, err = txClient.ExecContext(ctx, `DELETE FROM cindy_health_states WHERE account_id = $1`, current.ID); err != nil {
-		return nil, err
-	}
-	if _, err = txClient.ExecContext(ctx, `
-		UPDATE accounts SET cindy_balance_insufficient_at = NULL, updated_at = NOW()
-		WHERE id = $1 AND deleted_at IS NULL`, current.ID); err != nil {
-		return nil, err
+	credentialChanged := bindResult != nil && (bindResult.Created || bindResult.Rotated)
+	if credentialChanged {
+		if _, err = txClient.ExecContext(ctx, `DELETE FROM cindy_health_states WHERE account_id = $1`, current.ID); err != nil {
+			return nil, err
+		}
+		if _, err = txClient.ExecContext(ctx, `
+			UPDATE accounts SET cindy_balance_insufficient_at = NULL, updated_at = NOW()
+			WHERE id = $1 AND deleted_at IS NULL`, current.ID); err != nil {
+			return nil, err
+		}
 	}
 	if err = enqueueSchedulerOutbox(ctx, txClient, service.SchedulerOutboxEventAccountChanged, &current.ID, nil, nil); err != nil {
 		return nil, err
@@ -97,8 +118,64 @@ func (r *accountJobCindyMutationRunner) Run(
 	if err = tx.Commit(); err != nil {
 		return nil, err
 	}
-	current.CindyBalanceInsufficientAt = nil
-	return current, nil
+	if credentialChanged {
+		account.CindyBalanceInsufficientAt = nil
+	}
+	if r.scheduler != nil {
+		cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		groupIDs := mergeCindyAccountMutationGroupIDs(previousGroupIDs, account.GroupIDs)
+		if cacheErr := r.scheduler.RefreshAccountAndGroups(cacheCtx, account.ID, groupIDs); cacheErr != nil {
+			logger.LegacyPrintf("repository.account", "[Scheduler] sync Cindy account snapshot failed: id=%d err=%v", account.ID, cacheErr)
+		}
+		cancel()
+	}
+	if credentialChanged {
+		if r.runtimeBlocker != nil {
+			r.runtimeBlocker.ClearAccountSchedulingBlock(account.ID)
+		}
+	}
+	return account, nil
+}
+
+func loadCindyAccountJobGroupIDs(ctx context.Context, client *dbent.Client, accountID int64) ([]int64, error) {
+	rows, err := client.QueryContext(ctx, `
+		SELECT group_id FROM account_groups
+		WHERE account_id = $1
+		ORDER BY group_id
+		FOR SHARE`, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	groupIDs := make([]int64, 0)
+	for rows.Next() {
+		var groupID int64
+		if err = rows.Scan(&groupID); err != nil {
+			return nil, err
+		}
+		if groupID > 0 {
+			groupIDs = append(groupIDs, groupID)
+		}
+	}
+	return groupIDs, rows.Err()
+}
+
+func mergeCindyAccountMutationGroupIDs(previous, current []int64) []int64 {
+	seen := make(map[int64]struct{}, len(previous)+len(current))
+	merged := make([]int64, 0, len(previous)+len(current))
+	for _, groupIDs := range [][]int64{previous, current} {
+		for _, groupID := range groupIDs {
+			if groupID <= 0 {
+				continue
+			}
+			if _, exists := seen[groupID]; exists {
+				continue
+			}
+			seen[groupID] = struct{}{}
+			merged = append(merged, groupID)
+		}
+	}
+	return merged
 }
 
 func lockCindyAccountJobTarget(ctx context.Context, client *dbent.Client, accountID int64) error {
