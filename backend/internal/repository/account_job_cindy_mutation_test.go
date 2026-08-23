@@ -71,6 +71,20 @@ func (s *accountJobRuntimeBlockerStub) ClearAccountSchedulingBlock(accountID int
 	s.cleared = append(s.cleared, accountID)
 }
 
+type accountJobSchedulerWriterStub struct {
+	mock         sqlmock.Sqlmock
+	account      *service.Account
+	beforeCommit bool
+}
+
+func (s *accountJobSchedulerWriterStub) SetAccount(_ context.Context, account *service.Account) error {
+	if err := s.mock.ExpectationsWereMet(); err != nil {
+		s.beforeCommit = true
+	}
+	s.account = account
+	return nil
+}
+
 func newAccountJobCindyMutationTest(
 	t *testing.T,
 	identity *accountJobIdentityTransactionStub,
@@ -176,6 +190,47 @@ func TestAccountJobCindyMutationKeepsHealthWhenCredentialIdentityIsUnchanged(t *
 	require.NoError(t, err)
 	require.Equal(t, accountID, account.ID)
 	require.Empty(t, runtime.cleared)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestAccountJobCindyMutationReturnsAndCachesCompleteCallbackAccountAfterCommit(t *testing.T) {
+	identity := &accountJobIdentityTransactionStub{result: &service.BindAccountCredentialIdentityResult{
+		Rotated:  true,
+		Identity: service.AccountCredentialIdentity{ID: 91, Generation: 4, Active: true},
+	}}
+	runner, mock := newAccountJobCindyMutationTest(t, identity)
+	cache := &accountJobSchedulerWriterStub{mock: mock}
+	runner.schedulerCache = cache
+	accountID := int64(74)
+	markedAt := time.Now().UTC()
+	callbackAccount := canonicalCindyJobMutationAccount(accountID)
+	callbackAccount.GroupIDs = []int64{8, 9}
+	callbackAccount.Extra = map[string]any{"complete": true}
+	callbackAccount.CindyBalanceInsufficientAt = &markedAt
+
+	mock.ExpectBegin()
+	expectAccountJobCindyMutationLocks(mock, accountID)
+	expectCanonicalCindyMutationAccount(mock, accountID)
+	mock.ExpectExec(regexp.QuoteMeta("DELETE FROM cindy_health_states WHERE account_id = $1")).
+		WithArgs(accountID).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("UPDATE accounts SET cindy_balance_insufficient_at = NULL").
+		WithArgs(accountID).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO scheduler_outbox").
+		WithArgs(service.SchedulerOutboxEventAccountChanged, &accountID, nil, nil, sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	returned, err := runner.Run(context.Background(), accountID, func(context.Context) (*service.Account, error) {
+		return callbackAccount, nil
+	})
+
+	require.NoError(t, err)
+	require.Same(t, callbackAccount, returned)
+	require.Nil(t, returned.CindyBalanceInsufficientAt)
+	require.Same(t, callbackAccount, cache.account)
+	require.Equal(t, []int64{8, 9}, cache.account.GroupIDs)
+	require.Equal(t, true, cache.account.Extra["complete"])
+	require.False(t, cache.beforeCommit)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

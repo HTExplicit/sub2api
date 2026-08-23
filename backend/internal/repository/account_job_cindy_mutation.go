@@ -4,23 +4,33 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
+
+type accountSchedulerWriter interface {
+	SetAccount(context.Context, *service.Account) error
+}
 
 type accountJobCindyMutationRunner struct {
 	client         *dbent.Client
 	identity       service.AccountCredentialIdentityRepository
+	schedulerCache accountSchedulerWriter
 	runtimeBlocker service.AccountRuntimeBlocker
 }
 
 func NewAccountJobCindyMutationRunner(
 	client *dbent.Client,
 	identity service.AccountCredentialIdentityRepository,
+	schedulerCache service.SchedulerCache,
 	runtimeBlocker service.AccountRuntimeBlocker,
 ) service.AccountJobCindyMutationRunner {
-	return &accountJobCindyMutationRunner{client: client, identity: identity, runtimeBlocker: runtimeBlocker}
+	return &accountJobCindyMutationRunner{
+		client: client, identity: identity, schedulerCache: schedulerCache, runtimeBlocker: runtimeBlocker,
+	}
 }
 
 func (r *accountJobCindyMutationRunner) Run(
@@ -104,12 +114,21 @@ func (r *accountJobCindyMutationRunner) Run(
 		return nil, err
 	}
 	if credentialChanged {
-		current.CindyBalanceInsufficientAt = nil
+		account.CindyBalanceInsufficientAt = nil
+	}
+	if r.schedulerCache != nil {
+		cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		if cacheErr := r.schedulerCache.SetAccount(cacheCtx, account); cacheErr != nil {
+			logger.LegacyPrintf("repository.account", "[Scheduler] sync Cindy account snapshot failed: id=%d err=%v", account.ID, cacheErr)
+		}
+		cancel()
+	}
+	if credentialChanged {
 		if r.runtimeBlocker != nil {
-			r.runtimeBlocker.ClearAccountSchedulingBlock(current.ID)
+			r.runtimeBlocker.ClearAccountSchedulingBlock(account.ID)
 		}
 	}
-	return current, nil
+	return account, nil
 }
 
 func lockCindyAccountJobTarget(ctx context.Context, client *dbent.Client, accountID int64) error {

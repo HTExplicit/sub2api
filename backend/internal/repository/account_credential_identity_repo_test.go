@@ -42,21 +42,28 @@ func newCredentialIdentityRepoTest(t *testing.T) (*accountCredentialIdentityRepo
 	return &accountCredentialIdentityRepository{db: db}, mock
 }
 
-func expectCredentialIdentityLookup(mock sqlmock.Sqlmock, params service.BindAccountCredentialIdentityParams, fingerprintRows *sqlmock.Rows, fingerprintErr error, activeRows *sqlmock.Rows, activeErr error) {
+func expectCredentialIdentityLookup(
+	mock sqlmock.Sqlmock,
+	params service.BindAccountCredentialIdentityParams,
+	activeRows *sqlmock.Rows,
+	activeErr error,
+	activeOwnerRows *sqlmock.Rows,
+	activeOwnerErr error,
+) {
 	mock.ExpectExec("SELECT pg_advisory_xact_lock").WithArgs(params.Fingerprint).WillReturnResult(sqlmock.NewResult(0, 1))
-	fingerprintQuery := regexp.QuoteMeta(credentialIdentitySelect + ` WHERE fingerprint = $1 ORDER BY account_id LIMIT 1 FOR UPDATE`)
-	fingerprintExpectation := mock.ExpectQuery(fingerprintQuery).WithArgs(params.Fingerprint)
-	if fingerprintErr != nil {
-		fingerprintExpectation.WillReturnError(fingerprintErr)
-	} else {
-		fingerprintExpectation.WillReturnRows(fingerprintRows)
-	}
 	activeQuery := regexp.QuoteMeta(credentialIdentitySelect + ` WHERE account_id = $1 AND active FOR UPDATE`)
 	activeExpectation := mock.ExpectQuery(activeQuery).WithArgs(params.AccountID)
 	if activeErr != nil {
 		activeExpectation.WillReturnError(activeErr)
 	} else {
 		activeExpectation.WillReturnRows(activeRows)
+	}
+	activeOwnerExpectation := mock.ExpectQuery("(?s)FROM account_credential_identities.*WHERE fingerprint = \\$1 AND active AND account_id <> \\$2.*FOR UPDATE").
+		WithArgs(params.Fingerprint, params.AccountID)
+	if activeOwnerErr != nil {
+		activeOwnerExpectation.WillReturnError(activeOwnerErr)
+	} else {
+		activeOwnerExpectation.WillReturnRows(activeOwnerRows)
 	}
 }
 
@@ -81,12 +88,14 @@ func TestAccountCredentialIdentityBindCreatesGenerationOne(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestAccountCredentialIdentityBindRerunIsIdempotent(t *testing.T) {
+func TestAccountCredentialIdentityBindRerunIsIdempotentBeforeHistoricalFingerprintLookup(t *testing.T) {
 	repo, mock := newCredentialIdentityRepoTest(t)
 	params := credentialIdentityBinding(t, 42, "same-key")
 
 	mock.ExpectBegin()
-	expectCredentialIdentityLookup(mock, params, credentialIdentityRows(params, 12, 3, true), nil, credentialIdentityRows(params, 12, 3, true), nil)
+	mock.ExpectExec("SELECT pg_advisory_xact_lock").WithArgs(params.Fingerprint).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(regexp.QuoteMeta(credentialIdentitySelect + ` WHERE account_id = $1 AND active FOR UPDATE`)).
+		WithArgs(params.AccountID).WillReturnRows(credentialIdentityRows(params, 12, 3, true))
 	mock.ExpectCommit()
 
 	result, err := repo.Bind(context.Background(), params)
@@ -103,7 +112,7 @@ func TestAccountCredentialIdentityBindRotationIncrementsGeneration(t *testing.T)
 	newParams := credentialIdentityBinding(t, 43, "new-key")
 
 	mock.ExpectBegin()
-	expectCredentialIdentityLookup(mock, newParams, nil, sql.ErrNoRows, credentialIdentityRows(oldParams, 13, 4, true), nil)
+	expectCredentialIdentityLookup(mock, newParams, credentialIdentityRows(oldParams, 13, 4, true), nil, nil, sql.ErrNoRows)
 	mock.ExpectExec("UPDATE account_credential_identities").WithArgs(int64(13)).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectQuery("INSERT INTO account_credential_identities").
 		WithArgs(newParams.AccountID, newParams.ProviderProfile, newParams.AuthType, newParams.NormalizedBaseURL, newParams.Fingerprint, int64(5)).
@@ -126,11 +135,34 @@ func TestAccountCredentialIdentityBindRejectsAnotherAccountFingerprint(t *testin
 
 	mock.ExpectBegin()
 	mock.ExpectExec("SELECT pg_advisory_xact_lock").WithArgs(requested.Fingerprint).WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectQuery(regexp.QuoteMeta(credentialIdentitySelect + ` WHERE fingerprint = $1 ORDER BY account_id LIMIT 1 FOR UPDATE`)).
-		WithArgs(requested.Fingerprint).WillReturnRows(credentialIdentityRows(owner, 15, 1, true))
+	mock.ExpectQuery(regexp.QuoteMeta(credentialIdentitySelect + ` WHERE account_id = $1 AND active FOR UPDATE`)).
+		WithArgs(requested.AccountID).WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("(?s)FROM account_credential_identities.*WHERE fingerprint = \\$1 AND active AND account_id <> \\$2.*FOR UPDATE").
+		WithArgs(requested.Fingerprint, requested.AccountID).WillReturnRows(credentialIdentityRows(owner, 15, 1, true))
 	mock.ExpectRollback()
 
 	_, err := repo.Bind(context.Background(), requested)
 	require.ErrorIs(t, err, service.ErrCredentialIdentityConflict)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestAccountCredentialIdentityBindIgnoresAnotherAccountsRetiredFingerprintAndCreatesNewHistory(t *testing.T) {
+	repo, mock := newCredentialIdentityRepoTest(t)
+	params := credentialIdentityBinding(t, 46, "reimported-key")
+
+	mock.ExpectBegin()
+	expectCredentialIdentityLookup(mock, params, nil, sql.ErrNoRows, nil, sql.ErrNoRows)
+	mock.ExpectQuery("SELECT COALESCE\\(MAX\\(generation\\), 0\\) \\+ 1").
+		WithArgs(params.AccountID).WillReturnRows(sqlmock.NewRows([]string{"generation"}).AddRow(1))
+	mock.ExpectQuery("INSERT INTO account_credential_identities").
+		WithArgs(params.AccountID, params.ProviderProfile, params.AuthType, params.NormalizedBaseURL, params.Fingerprint, int64(1)).
+		WillReturnRows(credentialIdentityRows(params, 17, 1, true))
+	mock.ExpectCommit()
+
+	result, err := repo.Bind(context.Background(), params)
+	require.NoError(t, err)
+	require.True(t, result.Created)
+	require.False(t, result.Rotated)
+	require.Equal(t, params.AccountID, result.Identity.AccountID)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
