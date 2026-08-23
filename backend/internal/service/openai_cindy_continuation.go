@@ -63,33 +63,58 @@ func canRecoverLegacyCindyOpaqueContinuation(account *Account, payload []byte) b
 		!classification.VerifiedFullHistory || classification.HasExternalReference {
 		return false
 	}
-	return hasRecoverableLegacyCindyOpaqueReasoning(payload)
+	return hasOnlyRecoverableLegacyCindyOpaqueState(payload)
 }
 
-func hasRecoverableLegacyCindyOpaqueReasoning(payload []byte) bool {
+func hasOnlyRecoverableLegacyCindyOpaqueState(payload []byte) bool {
 	input := gjson.GetBytes(payload, "input")
 	items := input.Array()
 	if input.IsObject() {
 		items = []gjson.Result{input}
 	}
+	foundRemovableState := false
 	for _, item := range items {
-		if isOpenAIEncryptedPortableContinuationStateType(item.Get("type").String()) &&
-			hasNonNullCindyContinuationCarrier(item.Get("encrypted_content")) {
-			return true
+		if !item.IsObject() {
+			continue
 		}
+		itemType := strings.TrimSpace(item.Get("type").String())
+		if len(cindyOpaqueBindingIDsFromItem(itemType, item)) == 0 {
+			continue
+		}
+		if !isOpenAIRemovableEncryptedPortableContinuationState(
+			itemType,
+			item.Get("encrypted_content").Value(),
+		) {
+			return false
+		}
+		foundRemovableState = true
 	}
-	return false
+	return foundRemovableState
 }
 
-// isOpenAIEncryptedPortableContinuationStateType limits the legacy recovery
-// to self-contained provider state. Tool calls and outputs intentionally remain
-// outside this set because their encrypted carriers cannot be safely removed.
-func isOpenAIEncryptedPortableContinuationStateType(itemType string) bool {
+// isOpenAIRemovableEncryptedPortableContinuationState is shared by recovery
+// eligibility and deletion so both agree on type and non-empty carrier semantics.
+func isOpenAIRemovableEncryptedPortableContinuationState(itemType string, encryptedContent any) bool {
 	switch strings.TrimSpace(itemType) {
 	case "reasoning", "compaction", "compaction_summary":
-		return true
+		return hasNonEmptyOpenAIContinuationCarrier(encryptedContent)
 	default:
 		return false
+	}
+}
+
+func hasNonEmptyOpenAIContinuationCarrier(value any) bool {
+	switch carrier := value.(type) {
+	case nil:
+		return false
+	case string:
+		return strings.TrimSpace(carrier) != ""
+	case []any:
+		return len(carrier) > 0
+	case map[string]any:
+		return len(carrier) > 0
+	default:
+		return true
 	}
 }
 
@@ -208,14 +233,5 @@ func hasNonNullCindyContinuationCarrier(value gjson.Result) bool {
 	if !value.Exists() || value.Type == gjson.Null {
 		return false
 	}
-	switch {
-	case value.Type == gjson.String:
-		return strings.TrimSpace(value.String()) != ""
-	case value.IsArray():
-		return len(value.Array()) > 0
-	case value.IsObject():
-		return len(value.Map()) > 0
-	default:
-		return strings.TrimSpace(value.Raw) != ""
-	}
+	return hasNonEmptyOpenAIContinuationCarrier(value.Value())
 }

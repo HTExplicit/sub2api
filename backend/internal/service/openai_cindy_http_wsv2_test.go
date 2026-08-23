@@ -685,7 +685,7 @@ func TestLegacyCindyHTTPToWSV2RetriesSelfContainedHistoryAfterInvalidOpaqueState
 	)
 	account := cindyHTTPToWSV2TestAccount()
 	account.Platform = PlatformOpenAI
-	body := []byte(`{"model":"openai/gpt-5.6-sol","store":false,"input":[{"type":"message","role":"user","content":"continue"},{"type":"reasoning","id":"rs_deleted_account","encrypted_content":"stale-cipher","phase":"analysis"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"kept"}]}`)
+	body := []byte(`{"model":"openai/gpt-5.6-sol","store":false,"input":[{"type":"message","role":"user","content":"continue"},{"type":"reasoning","id":"rs_deleted_account","encrypted_content":"stale-cipher-reasoning","summary":"reasoning summary","phase":"reasoning-phase"},{"type":"compaction","id":"cmp_deleted_account","encrypted_content":"stale-cipher-compaction","summary":"compaction summary","phase":"compaction-phase"},{"type":"compaction_summary","id":"cmp_summary_deleted_account","encrypted_content":"stale-cipher-compaction-summary","summary":"compaction-summary summary","phase":"compaction-summary-phase"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"kept"}]}`)
 
 	result, err := svc.Forward(context.Background(), cindyHTTPToWSV2TestContext("/v1/responses"), account, body)
 
@@ -700,11 +700,9 @@ func TestLegacyCindyHTTPToWSV2RetriesSelfContainedHistoryAfterInvalidOpaqueState
 	recovered.mu.Unlock()
 	require.Len(t, failedWrites, 1)
 	require.Len(t, recoveredWrites, 1)
-	require.Empty(t, openAIWSPayloadString(recoveredWrites[0], "input.1.encrypted_content"))
 	recoveredPayload, marshalErr := json.Marshal(recoveredWrites[0])
 	require.NoError(t, marshalErr)
-	require.Contains(t, string(recoveredPayload), `"call_id":"call_1"`)
-	require.Contains(t, string(recoveredPayload), `"output":"kept"`)
+	requireLegacyCindyOpaqueStateRemoved(t, recoveredPayload)
 }
 
 func TestPrepareOpenAICindyStatelessHTTPFallbackSafetyBoundary(t *testing.T) {

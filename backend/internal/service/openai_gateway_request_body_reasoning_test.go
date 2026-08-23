@@ -176,6 +176,30 @@ func TestSanitizeOpenAICrossModeFailoverReasoning_NoEncryptedIsNoop(t *testing.T
 	require.Equal(t, string(body), string(sanitized))
 }
 
+func TestSanitizeOpenAICrossModeFailoverReasoning_PreservesEmptyCarriers(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.1","input":[` +
+		`{"type":"reasoning","id":"rs_stale","encrypted_content":"ENC"},` +
+		`{"type":"reasoning","id":"rs_null","encrypted_content":null,"content":[{"type":"reasoning_text","text":"keep null"}]},` +
+		`{"type":"compaction","id":"cmp_empty_string","encrypted_content":"","summary":"keep string"},` +
+		`{"type":"compaction_summary","id":"cmp_empty_array","encrypted_content":[],"summary":"keep array"},` +
+		`{"type":"reasoning","id":"rs_empty_object","encrypted_content":{},"summary":"keep object"}` +
+		`]}`)
+
+	sanitized, changed, err := SanitizeOpenAICrossModeFailoverReasoning(body)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.NotContains(t, string(sanitized), "rs_stale")
+	require.Equal(t, int64(4), gjson.GetBytes(sanitized, "input.#").Int())
+	require.Equal(t, "rs_null", gjson.GetBytes(sanitized, "input.0.id").String())
+	require.Equal(t, "keep null", gjson.GetBytes(sanitized, "input.0.content.0.text").String())
+	require.Equal(t, "cmp_empty_string", gjson.GetBytes(sanitized, "input.1.id").String())
+	require.Equal(t, "keep string", gjson.GetBytes(sanitized, "input.1.summary").String())
+	require.Equal(t, "cmp_empty_array", gjson.GetBytes(sanitized, "input.2.id").String())
+	require.Equal(t, "keep array", gjson.GetBytes(sanitized, "input.2.summary").String())
+	require.Equal(t, "rs_empty_object", gjson.GetBytes(sanitized, "input.3.id").String())
+	require.Equal(t, "keep object", gjson.GetBytes(sanitized, "input.3.summary").String())
+}
+
 func TestSanitizeOpenAICrossModeFailoverReasoning_NoInputIsNoop(t *testing.T) {
 	body := []byte(`{"model":"gpt-5.1"}`)
 	sanitized, changed, err := SanitizeOpenAICrossModeFailoverReasoning(body)

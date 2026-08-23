@@ -298,11 +298,8 @@ func isOpenAIEncryptedPortableContinuationStateInputItem(item any) bool {
 		return false
 	}
 	itemType, _ := inputItem["type"].(string)
-	if !isOpenAIEncryptedPortableContinuationStateType(itemType) {
-		return false
-	}
-	_, has := inputItem["encrypted_content"]
-	return has
+	encryptedContent, has := inputItem["encrypted_content"]
+	return has && isOpenAIRemovableEncryptedPortableContinuationState(itemType, encryptedContent)
 }
 
 // IsOpenAIResponsesCompactPath reports whether the request targets the legacy

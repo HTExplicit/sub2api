@@ -87,6 +87,32 @@ func TestLegacyCindyOpaqueRecoveryRequiresSelfContainedHistory(t *testing.T) {
 	require.True(t, canRecoverLegacyCindyOpaqueContinuation(legacy, []byte(
 		`{"input":[{"type":"reasoning","id":"rs_1","encrypted_content":"cipher"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`,
 	)), "paired concrete tool history remains replayable when only reasoning state is removed")
+	for _, tc := range []struct {
+		name    string
+		payload string
+	}{
+		{
+			name:    "mixed encrypted function call",
+			payload: `{"input":[{"type":"reasoning","id":"rs_1","encrypted_content":"reasoning-cipher"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}","encrypted_content":"tool-cipher"},{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`,
+		},
+		{
+			name:    "mixed encrypted custom tool call",
+			payload: `{"input":[{"type":"reasoning","id":"rs_1","encrypted_content":"reasoning-cipher"},{"type":"custom_tool_call","call_id":"call_1","name":"tool","input":"{}","encrypted_content":"tool-cipher"},{"type":"custom_tool_call_output","call_id":"call_1","output":"ok"}]}`,
+		},
+		{
+			name:    "mixed encrypted function output",
+			payload: `{"input":[{"type":"reasoning","id":"rs_1","encrypted_content":"reasoning-cipher"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"ok","encrypted_content":"output-cipher"}]}`,
+		},
+		{
+			name:    "mixed encrypted provider state",
+			payload: `{"input":[{"type":"reasoning","id":"rs_1","encrypted_content":"reasoning-cipher"},{"type":"provider_state","id":"state_1","encrypted_content":"provider-cipher"}]}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.False(t, canRecoverLegacyCindyOpaqueContinuation(legacy, []byte(tc.payload)),
+				"any non-removable opaque carrier must reject the entire recovery")
+		})
+	}
 	require.True(t, canRecoverLegacyCindyOpaqueContinuation(legacy, []byte(
 		`{"input":[{"type":"compaction","id":"cmp_1","encrypted_content":"cipher"}]}`,
 	)), "encrypted compaction is a portable state item")
