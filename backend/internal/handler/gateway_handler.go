@@ -1210,9 +1210,11 @@ func (h *GatewayHandler) ModelCapabilities(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"object":          "list",
-		"catalog_version": service.CindyCapabilityCatalogVersion,
-		"data":            service.CindyVerifiedModelCapabilities(),
+		"object":           "list",
+		"catalog_version":  service.CindyCapabilityCatalogVersion,
+		"catalog_revision": service.CindyModelMetadataSourceRevision,
+		"catalog_sha256":   service.CindyModelMetadataSourceSHA256,
+		"data":             service.CindyVerifiedModelCapabilities(),
 	})
 }
 

@@ -7,29 +7,22 @@ import (
 
 // CindyCapabilityCatalogVersion is bumped whenever the fixed Cindy data-plane
 // catalogue or one of its verified endpoint decisions changes.
-const CindyCapabilityCatalogVersion = "2026-08-21.1"
+const CindyCapabilityCatalogVersion = "2026-08-24.1"
+
+// CindyModelMetadataSchemaVersion and CindyModelMetadataSourceSHA256 pin the
+// exact public international Cindy catalog shipped with this release.
+const (
+	CindyModelMetadataSchemaVersion = 4
+	CindyModelMetadataSourceSHA256  = "b2783df6c272fc9851c85f3ffe871c962a6ab701f7698be1893fbfd03a5f28d3"
+)
 
 // CindyModelMetadataSourceRevision pins the shipped Cindy registry used for
 // display, context-window, output-limit, and reasoning metadata.
-const CindyModelMetadataSourceRevision = "makecindy/cindy@v0.1.55+8932b34ca684f3a0794e023c93797b0e23603f49"
-
-// CindyGatewayModelMetadataSourceRevision identifies values confirmed by the
-// Cindy gateway model inventory independently from the pinned source registry.
-const CindyGatewayModelMetadataSourceRevision = "cindy-gateway-v1-models@2026-08-17"
-
-// CindyCatalogProjectionSourceRevision identifies model metadata curated by
-// Sub2API when Cindy's registry does not contain the observed gateway model.
-const CindyCatalogProjectionSourceRevision = "sub2api-cindy-catalog@2026-08-17.1"
+const CindyModelMetadataSourceRevision = "makecindy/cindy@1ff5cbcc9d29aec6fedb8c14889ecd86b72a22de"
 
 // CindyCompatibilityAliasSourceRevision identifies downstream aliases managed
 // by Sub2API. These aliases are not part of Cindy's upstream model registry.
 const CindyCompatibilityAliasSourceRevision = "sub2api-cindy-compat@2026-08-17.1"
-
-const cindyCompositeModelMetadataSourceRevision = CindyModelMetadataSourceRevision + ";" + CindyGatewayModelMetadataSourceRevision
-
-// cindyObservedModelMetadataSourceRevision identifies candidates that exist in
-// the fixed live catalogue but not in the pinned Cindy registry.
-const cindyObservedModelMetadataSourceRevision = CindyGatewayModelMetadataSourceRevision
 
 // CindyDefaultTestModel is the stable public model used by Cindy connectivity
 // and capability probes when the caller did not choose a model explicitly.
@@ -87,6 +80,7 @@ type CindyImagePricing struct {
 	OutputCostPerToken           float64
 	CacheReadInputTokenCost      float64
 	InputCostPerImage            float64
+	OutputCostPerImage           float64
 	OutputCostPerImage1KOr2K     float64
 	OutputCostPerImage4K         float64
 	InputCostPerImageToken       float64
@@ -98,17 +92,25 @@ type CindyImagePricing struct {
 // the exact model's provider. Long-context fields apply to every token in a
 // request after the provider-specific threshold comparison is satisfied.
 type CindyTextPricing struct {
-	InputCostPerToken                   float64
-	OutputCostPerToken                  float64
-	CacheReadInputTokenCost             float64
-	CacheCreationInputTokenCost         float64
-	CacheCreationInputTokenCostAbove1hr float64
-	LongContextInputTokenThreshold      int
-	LongContextThresholdInclusive       bool
-	LongContextInputCostPerToken        float64
-	LongContextOutputCostPerToken       float64
-	LongContextCacheReadInputTokenCost  float64
-	LongContextCacheCreationTokenCost   float64
+	InputCostPerToken                          float64
+	OutputCostPerToken                         float64
+	InputCostPerTokenPriority                  float64
+	OutputCostPerTokenPriority                 float64
+	CacheReadInputTokenCost                    float64
+	CacheReadInputTokenCostPriority            float64
+	CacheCreationInputTokenCost                float64
+	CacheCreationInputTokenCostPresent         bool
+	CacheCreationInputTokenCostAbove1hr        float64
+	InputCostPerAudioToken                     float64
+	LongContextInputTokenThreshold             int
+	LongContextThresholdInclusive              bool
+	LongContextInputCostPerToken               float64
+	LongContextOutputCostPerToken              float64
+	LongContextCacheReadInputTokenCost         float64
+	LongContextCacheCreationTokenCost          float64
+	LongContextInputCostPerTokenPriority       float64
+	LongContextOutputCostPerTokenPriority      float64
+	LongContextCacheReadInputTokenCostPriority float64
 }
 
 // CindyImageRequestControls describes only request controls verified on one
@@ -143,6 +145,7 @@ type CindyCapability struct {
 	OutputModalities           []string
 	VerifiedEndpoints          []CindyEndpoint
 	ClientSurfaces             []string
+	AgentWireProtocols         map[string]string
 	MaxInputTokens             int
 	CodexContextWindow         int
 	MaxOutputTokens            int
@@ -151,6 +154,7 @@ type CindyCapability struct {
 	DefaultReasoningEffort     string
 	MetadataSourceRevision     string
 	PricingSource              string
+	CostDiscount               float64
 	TextPricing                *CindyTextPricing
 	ImagePricing               *CindyImagePricing
 	Controls                   *CindyCapabilityControls
@@ -187,60 +191,24 @@ type CindyCatalogModel struct {
 // capability. It intentionally excludes live upstream IDs, registry IDs, and
 // account identity.
 type CindyModelCapability struct {
-	Object            string                   `json:"object"`
-	ID                string                   `json:"id"`
-	Kind              CindyModelKind           `json:"kind"`
-	InputModalities   []string                 `json:"input_modalities"`
-	OutputModalities  []string                 `json:"output_modalities"`
-	Endpoints         []CindyEndpoint          `json:"endpoints"`
-	ClientSurfaces    []string                 `json:"client_surfaces"`
-	MaxInputTokens    int                      `json:"max_input_tokens,omitempty"`
-	MaxOutputTokens   int                      `json:"max_output_tokens,omitempty"`
-	PricingSource     string                   `json:"pricing_source,omitempty"`
-	ExplicitZeroPrice bool                     `json:"explicit_zero_price,omitempty"`
-	Controls          *CindyCapabilityControls `json:"controls,omitempty"`
-}
-
-// cindyCapabilityCatalog contains exactly the 23 IDs observed consistently on
-// the 2026-08-17 Cindy data plane. Endpoint verification is deliberately
-// conservative: unprobed combinations remain available for management
-// inspection and future explicit verification, but are not schedulable.
-var cindyCapabilityCatalog = []CindyCapability{
-	{PublicID: "claude-opus-4-8", LiveUpstreamID: "anthropic/claude-opus-4-8", RegistryID: "anthropic/claude-opus-4-8", DisplayName: "Opus 4.8", Description: "Most capable, supports xhigh effort", Kind: CindyModelKindText, InputModalities: []string{"text", "image"}, OutputModalities: []string{"text"}, VerifiedEndpoints: []CindyEndpoint{CindyEndpointMessages}, ClientSurfaces: []string{CindyClientSurfaceClaude, CindyClientSurfaceAnthropic}, MaxInputTokens: 1000000, CodexContextWindow: 1000000, MaxOutputTokens: 128000, ReasoningEfforts: []string{"low", "medium", "high", "xhigh", "max"}, DefaultReasoningEffort: "high", MetadataSourceRevision: CindyModelMetadataSourceRevision, PricingSource: "https://platform.claude.com/docs/en/about-claude/pricing", TextPricing: &CindyTextPricing{InputCostPerToken: 5e-6, OutputCostPerToken: 25e-6, CacheReadInputTokenCost: 0.5e-6, CacheCreationInputTokenCost: 6.25e-6, CacheCreationInputTokenCostAbove1hr: 10e-6}, PublicModel: true},
-	{PublicID: "claude-opus-5", LiveUpstreamID: "anthropic/claude-opus-5", RegistryID: "anthropic/claude-opus-5", DisplayName: "Opus 5", Description: "Latest Opus for ambitious work", Kind: CindyModelKindText, InputModalities: []string{"text", "image"}, OutputModalities: []string{"text"}, VerifiedEndpoints: []CindyEndpoint{CindyEndpointMessages}, ClientSurfaces: []string{CindyClientSurfaceClaude, CindyClientSurfaceAnthropic}, MaxInputTokens: 1000000, CodexContextWindow: 1000000, MaxOutputTokens: 128000, ReasoningEfforts: []string{"low", "medium", "high", "xhigh", "max"}, DefaultReasoningEffort: "high", MetadataSourceRevision: CindyModelMetadataSourceRevision, PricingSource: "https://platform.claude.com/docs/en/about-claude/pricing", TextPricing: &CindyTextPricing{InputCostPerToken: 5e-6, OutputCostPerToken: 25e-6, CacheReadInputTokenCost: 0.5e-6, CacheCreationInputTokenCost: 6.25e-6, CacheCreationInputTokenCostAbove1hr: 10e-6}, PublicModel: true},
-	{PublicID: "claude-sonnet-5", LiveUpstreamID: "anthropic/claude-sonnet-5", RegistryID: "anthropic/claude-sonnet-5", DisplayName: "Sonnet 5", Description: "Latest Sonnet - fast and highly capable", Kind: CindyModelKindText, InputModalities: []string{"text", "image"}, OutputModalities: []string{"text"}, VerifiedEndpoints: []CindyEndpoint{CindyEndpointMessages}, ClientSurfaces: []string{CindyClientSurfaceClaude, CindyClientSurfaceAnthropic}, MaxInputTokens: 1000000, CodexContextWindow: 1000000, MaxOutputTokens: 128000, ReasoningEfforts: []string{"low", "medium", "high", "xhigh", "max"}, DefaultReasoningEffort: "high", MetadataSourceRevision: CindyModelMetadataSourceRevision, PricingSource: "https://platform.claude.com/docs/en/about-claude/pricing", TextPricing: &CindyTextPricing{InputCostPerToken: 2e-6, OutputCostPerToken: 10e-6, CacheReadInputTokenCost: 0.2e-6, CacheCreationInputTokenCost: 2.5e-6, CacheCreationInputTokenCostAbove1hr: 4e-6}, PublicModel: true},
-	{PublicID: "seed-2.1-pro", LiveUpstreamID: "bytedance-seed/seed-2.1-pro", RegistryID: "bytedance-seed/seed-2.1-pro", DisplayName: "Seed 2.1 Pro", Kind: CindyModelKindText, InputModalities: []string{"text"}, OutputModalities: []string{"text"}, MaxInputTokens: 256000, CodexContextWindow: 256000, ReasoningEfforts: []string{"minimal", "low", "medium", "high"}, DefaultReasoningEffort: "minimal", MetadataSourceRevision: CindyModelMetadataSourceRevision, PricingSource: "explicit-zero:no-exact-public-usd-price", ExplicitZeroPrice: true, PublicModel: false},
-	{PublicID: "cindy/auto-review", LiveUpstreamID: "cindy/auto-review", RegistryID: "", DisplayName: "Cindy Auto Review", Kind: CindyModelKindSpecial, InputModalities: []string{"text"}, OutputModalities: []string{"json"}, MetadataSourceRevision: CindyGatewayModelMetadataSourceRevision, PricingSource: "explicit-zero:no-public-price", ExplicitZeroPrice: true, PublicModel: false},
-	{PublicID: CindyWebSearchModel, LiveUpstreamID: CindyWebSearchModel, RegistryID: "", DisplayName: "Cindy Web Search", Kind: CindyModelKindSpecial, InputModalities: []string{"text"}, OutputModalities: []string{"text", "citations"}, VerifiedEndpoints: []CindyEndpoint{CindyEndpointAlphaSearch}, ClientSurfaces: []string{CindyClientSurfaceCodex, CindyClientSurfaceOpenAI}, MetadataSourceRevision: CindyGatewayModelMetadataSourceRevision, PricingSource: "explicit-zero:no-public-price", ExplicitZeroPrice: true, PublicModel: false},
-	{PublicID: "deepseek-v4-flash", LiveUpstreamID: "deepseek/deepseek-v4-flash", RegistryID: "deepseek/deepseek-v4-flash", DisplayName: "DeepSeek V4 Flash", Description: "DeepSeek V4 Flash efficiency-optimized MoE; only high/max effective", Kind: CindyModelKindText, InputModalities: []string{"text"}, OutputModalities: []string{"text"}, MaxInputTokens: 1048576, CodexContextWindow: 1048576, MaxOutputTokens: 384000, ReasoningEfforts: []string{"high", "max"}, DefaultReasoningEffort: "high", MetadataSourceRevision: cindyCompositeModelMetadataSourceRevision, PricingSource: "explicit-zero:no-stable-exact-price-across-published-rate-boundary", ExplicitZeroPrice: true, PublicModel: false},
-	{PublicID: "deepseek-v4-pro", LiveUpstreamID: "deepseek/deepseek-v4-pro", RegistryID: "deepseek/deepseek-v4-pro", DisplayName: "DeepSeek V4 Pro", Description: "DeepSeek V4 Pro reasoning model; only high/max effective", Kind: CindyModelKindText, InputModalities: []string{"text"}, OutputModalities: []string{"text"}, MaxInputTokens: 1048576, CodexContextWindow: 1048576, MaxOutputTokens: 384000, ReasoningEfforts: []string{"high", "max"}, DefaultReasoningEffort: "high", MetadataSourceRevision: cindyCompositeModelMetadataSourceRevision, PricingSource: "explicit-zero:no-stable-exact-price-across-published-rate-boundary", ExplicitZeroPrice: true, PublicModel: false},
-	{PublicID: "gemini-3-pro-image", LiveUpstreamID: "google/gemini-3-pro-image", RegistryID: "", DisplayName: "Gemini 3 Pro Image", Kind: CindyModelKindImage, InputModalities: []string{"text", "image"}, OutputModalities: []string{"image"}, VerifiedEndpoints: []CindyEndpoint{CindyEndpointImagesGenerate, CindyEndpointImagesEdit}, ClientSurfaces: []string{CindyClientSurfaceImage}, MetadataSourceRevision: CindyGatewayModelMetadataSourceRevision, PricingSource: "https://ai.google.dev/gemini-api/docs/pricing#gemini-3-pro-image", ImagePricing: &CindyImagePricing{InputCostPerToken: 2e-6, OutputCostPerToken: 12e-6, InputCostPerImage: 0.0011, OutputCostPerImage1KOr2K: 0.134, OutputCostPerImage4K: 0.24, OutputCostPerImageToken: 120e-6}, Controls: &CindyCapabilityControls{Generation: &CindyImageRequestControls{Sizes: []string{"1024x1024"}, Qualities: []string{"low"}, MaxOutputCount: 1}, Edit: &CindyImageRequestControls{Sizes: []string{"1024x1024"}, Qualities: []string{"low"}, MaxOutputCount: 1, SupportsReferenceImage: true, SupportsMask: true}}, PublicModel: true},
-	{PublicID: "gemini-3.5-flash", LiveUpstreamID: "google/gemini-3.5-flash", RegistryID: "google/gemini-3.5-flash", DisplayName: "Gemini 3.5 Flash", Description: "Google Gemini 3.5 Flash with stronger reasoning", Kind: CindyModelKindText, InputModalities: []string{"text", "image"}, OutputModalities: []string{"text"}, MaxInputTokens: 1000000, CodexContextWindow: 1000000, ReasoningEfforts: []string{"low", "medium", "high"}, DefaultReasoningEffort: "high", MetadataSourceRevision: CindyModelMetadataSourceRevision, PricingSource: "https://ai.google.dev/gemini-api/docs/pricing#gemini-3.5-flash", TextPricing: &CindyTextPricing{InputCostPerToken: 1.5e-6, OutputCostPerToken: 9e-6, CacheReadInputTokenCost: 0.15e-6}, PublicModel: false},
-	{PublicID: "gemini-3.6-flash", LiveUpstreamID: "google/gemini-3.6-flash", RegistryID: "", DisplayName: "Gemini 3.6 Flash", Kind: CindyModelKindText, InputModalities: []string{"text", "image"}, OutputModalities: []string{"text"}, VerifiedEndpoints: []CindyEndpoint{CindyEndpointMessages}, ClientSurfaces: []string{CindyClientSurfaceClaude, CindyClientSurfaceAnthropic}, MaxInputTokens: 1000000, CodexContextWindow: 1000000, MetadataSourceRevision: CindyGatewayModelMetadataSourceRevision, PricingSource: "https://ai.google.dev/gemini-api/docs/pricing#gemini-3.6-flash", TextPricing: &CindyTextPricing{InputCostPerToken: 0.75e-6, OutputCostPerToken: 3.75e-6, CacheReadInputTokenCost: 0.075e-6}, PublicModel: true},
-	{PublicID: "gemini-3.7-flash", LiveUpstreamID: "google/gemini-3.7-flash", RegistryID: "", DisplayName: "Gemini 3.7 Flash", Kind: CindyModelKindText, InputModalities: []string{"text", "image"}, OutputModalities: []string{"text"}, MaxInputTokens: 1000000, CodexContextWindow: 1000000, MetadataSourceRevision: CindyGatewayModelMetadataSourceRevision, PricingSource: "https://ai.google.dev/gemini-api/docs/pricing#gemini-3.7-flash", TextPricing: &CindyTextPricing{InputCostPerToken: 0.75e-6, OutputCostPerToken: 3.75e-6, CacheReadInputTokenCost: 0.075e-6}, PublicModel: false},
-	{PublicID: "kimi-k3", LiveUpstreamID: "moonshotai/kimi-k3", RegistryID: "moonshotai/kimi-k3", DisplayName: "Kimi K3", Kind: CindyModelKindText, InputModalities: []string{"text"}, OutputModalities: []string{"text"}, MaxInputTokens: 1000000, CodexContextWindow: 1000000, MaxOutputTokens: 131072, ReasoningEfforts: []string{"low", "high", "max"}, DefaultReasoningEffort: "max", MetadataSourceRevision: cindyCompositeModelMetadataSourceRevision, PricingSource: "explicit-zero:no-exact-public-usd-price", ExplicitZeroPrice: true, PublicModel: false},
-	{PublicID: "gpt-5.6-luna", LiveUpstreamID: "openai/gpt-5.6-luna", RegistryID: "openai/gpt-5.6-luna", DisplayName: "GPT-5.6-Luna", Kind: CindyModelKindText, InputModalities: []string{"text", "image"}, OutputModalities: []string{"text"}, VerifiedEndpoints: []CindyEndpoint{CindyEndpointResponses, CindyEndpointChatCompletions, CindyEndpointMessages}, ClientSurfaces: []string{CindyClientSurfaceCodex, CindyClientSurfacePi, CindyClientSurfaceOpenAI, CindyClientSurfaceClaude, CindyClientSurfaceAnthropic}, MaxInputTokens: 1050000, CodexContextWindow: 1050000, MaxOutputTokens: 128000, ReasoningEfforts: []string{"low", "medium", "high", "xhigh", "max"}, DefaultReasoningEffort: "high", MetadataSourceRevision: CindyModelMetadataSourceRevision, PricingSource: "https://developers.openai.com/api/docs/pricing", TextPricing: &CindyTextPricing{InputCostPerToken: 0.2e-6, OutputCostPerToken: 1.2e-6, CacheReadInputTokenCost: 0.02e-6, CacheCreationInputTokenCost: 0.25e-6, LongContextInputTokenThreshold: 272000, LongContextInputCostPerToken: 0.4e-6, LongContextOutputCostPerToken: 1.8e-6, LongContextCacheReadInputTokenCost: 0.04e-6, LongContextCacheCreationTokenCost: 0.5e-6}, PublicModel: true},
-	{PublicID: "gpt-5.6-sol", LiveUpstreamID: "openai/gpt-5.6-sol", RegistryID: "openai/gpt-5.6-sol", DisplayName: "GPT-5.6-Sol", Description: "GPT-5.6-Sol for coding tasks", Kind: CindyModelKindText, InputModalities: []string{"text", "image"}, OutputModalities: []string{"text"}, VerifiedEndpoints: []CindyEndpoint{CindyEndpointResponses, CindyEndpointChatCompletions, CindyEndpointMessages}, ClientSurfaces: []string{CindyClientSurfaceCodex, CindyClientSurfacePi, CindyClientSurfaceOpenAI, CindyClientSurfaceClaude, CindyClientSurfaceAnthropic}, MaxInputTokens: 1050000, CodexContextWindow: 1050000, MaxOutputTokens: 128000, ReasoningEfforts: []string{"low", "medium", "high", "xhigh", "max"}, CodexReasoningEffortLevels: []string{"low", "medium", "high", "xhigh", "max", "ultra"}, DefaultReasoningEffort: "high", MetadataSourceRevision: CindyModelMetadataSourceRevision, PricingSource: "https://developers.openai.com/api/docs/pricing", TextPricing: &CindyTextPricing{InputCostPerToken: 5e-6, OutputCostPerToken: 30e-6, CacheReadInputTokenCost: 0.5e-6, CacheCreationInputTokenCost: 6.25e-6, LongContextInputTokenThreshold: 272000, LongContextInputCostPerToken: 10e-6, LongContextOutputCostPerToken: 45e-6, LongContextCacheReadInputTokenCost: 1e-6, LongContextCacheCreationTokenCost: 12.5e-6}, PublicModel: true},
-	{PublicID: "gpt-5.6-terra", LiveUpstreamID: "openai/gpt-5.6-terra", RegistryID: "openai/gpt-5.6-terra", DisplayName: "GPT-5.6-Terra", Description: "GPT-5.6-Terra for coding tasks", Kind: CindyModelKindText, InputModalities: []string{"text", "image"}, OutputModalities: []string{"text"}, VerifiedEndpoints: []CindyEndpoint{CindyEndpointResponses, CindyEndpointChatCompletions, CindyEndpointMessages}, ClientSurfaces: []string{CindyClientSurfaceCodex, CindyClientSurfacePi, CindyClientSurfaceOpenAI, CindyClientSurfaceClaude, CindyClientSurfaceAnthropic}, MaxInputTokens: 1050000, CodexContextWindow: 1050000, MaxOutputTokens: 128000, ReasoningEfforts: []string{"low", "medium", "high", "xhigh", "max"}, CodexReasoningEffortLevels: []string{"low", "medium", "high", "xhigh", "max", "ultra"}, DefaultReasoningEffort: "high", MetadataSourceRevision: CindyModelMetadataSourceRevision, PricingSource: "https://developers.openai.com/api/docs/pricing", TextPricing: &CindyTextPricing{InputCostPerToken: 2e-6, OutputCostPerToken: 12e-6, CacheReadInputTokenCost: 0.2e-6, CacheCreationInputTokenCost: 2.5e-6, LongContextInputTokenThreshold: 272000, LongContextInputCostPerToken: 4e-6, LongContextOutputCostPerToken: 18e-6, LongContextCacheReadInputTokenCost: 0.4e-6, LongContextCacheCreationTokenCost: 5e-6}, PublicModel: true},
-	{PublicID: "gpt-image-2", LiveUpstreamID: "openai/gpt-image-2", RegistryID: "", DisplayName: "GPT Image 2", Kind: CindyModelKindImage, InputModalities: []string{"text", "image"}, OutputModalities: []string{"image"}, VerifiedEndpoints: []CindyEndpoint{CindyEndpointImagesGenerate}, ClientSurfaces: []string{CindyClientSurfaceImage}, MetadataSourceRevision: CindyGatewayModelMetadataSourceRevision, PricingSource: "https://developers.openai.com/api/docs/pricing", ImagePricing: &CindyImagePricing{InputCostPerToken: 5e-6, OutputCostPerToken: 10e-6, CacheReadInputTokenCost: 1.25e-6, InputCostPerImageToken: 8e-6, OutputCostPerImageToken: 30e-6, CacheReadInputImageTokenCost: 2e-6}, Controls: &CindyCapabilityControls{Generation: &CindyImageRequestControls{Sizes: []string{"1024x1024"}, Qualities: []string{"low"}, MaxOutputCount: 1}}, PublicModel: true},
-	{PublicID: "qwen/qwen3.8-max-preview", LiveUpstreamID: "qwen/qwen3.8-max", RegistryID: "qwen/qwen3.8-max-preview", DisplayName: "Qwen 3.8 Max Preview", Kind: CindyModelKindText, InputModalities: []string{"text"}, OutputModalities: []string{"text"}, MaxInputTokens: 983616, CodexContextWindow: 983616, MetadataSourceRevision: cindyCompositeModelMetadataSourceRevision, PricingSource: "explicit-zero:no-exact-public-usd-price", ExplicitZeroPrice: true, PublicModel: false},
-	{PublicID: "hy3", LiveUpstreamID: "tencent/hy3", RegistryID: "", DisplayName: "Hy3", Kind: CindyModelKindText, InputModalities: []string{"text"}, OutputModalities: []string{"text"}, VerifiedEndpoints: []CindyEndpoint{CindyEndpointMessages}, ClientSurfaces: []string{CindyClientSurfaceClaude, CindyClientSurfaceAnthropic}, MaxOutputTokens: 128000, MetadataSourceRevision: CindyGatewayModelMetadataSourceRevision, PricingSource: "explicit-zero:no-exact-public-usd-price", ExplicitZeroPrice: true, PublicModel: false},
-	{PublicID: "grok-4.5", LiveUpstreamID: "x-ai/grok-4.5", RegistryID: "xai/grok-4.5", DisplayName: "Grok 4.5", Description: "xAI Grok 4.5 flagship coding and agent model with a 500k context window", Kind: CindyModelKindText, InputModalities: []string{"text", "image"}, OutputModalities: []string{"text"}, VerifiedEndpoints: []CindyEndpoint{CindyEndpointResponses, CindyEndpointChatCompletions, CindyEndpointMessages}, ClientSurfaces: []string{CindyClientSurfaceCodex, CindyClientSurfacePi, CindyClientSurfaceOpenAI, CindyClientSurfaceClaude, CindyClientSurfaceAnthropic}, MaxInputTokens: 500000, CodexContextWindow: 500000, ReasoningEfforts: []string{"low", "medium", "high"}, DefaultReasoningEffort: "high", MetadataSourceRevision: CindyModelMetadataSourceRevision, PricingSource: "https://docs.x.ai/developers/pricing", TextPricing: &CindyTextPricing{InputCostPerToken: 2e-6, OutputCostPerToken: 6e-6, CacheReadInputTokenCost: 0.3e-6, LongContextInputTokenThreshold: 200000, LongContextThresholdInclusive: true, LongContextInputCostPerToken: 4e-6, LongContextOutputCostPerToken: 12e-6, LongContextCacheReadInputTokenCost: 0.6e-6}, PublicModel: true},
-	{PublicID: "grok-4.6", LiveUpstreamID: "x-ai/grok-4.6", RegistryID: "", DisplayName: "Grok 4.6", Kind: CindyModelKindText, InputModalities: []string{"text", "image"}, OutputModalities: []string{"text"}, VerifiedEndpoints: []CindyEndpoint{CindyEndpointMessages}, ClientSurfaces: []string{CindyClientSurfaceClaude, CindyClientSurfaceAnthropic}, MaxInputTokens: 500000, CodexContextWindow: 500000, MetadataSourceRevision: CindyGatewayModelMetadataSourceRevision, PricingSource: "https://docs.x.ai/developers/pricing", TextPricing: &CindyTextPricing{InputCostPerToken: 2e-6, OutputCostPerToken: 6e-6, CacheReadInputTokenCost: 0.5e-6, LongContextInputTokenThreshold: 200000, LongContextThresholdInclusive: true, LongContextInputCostPerToken: 4e-6, LongContextOutputCostPerToken: 12e-6, LongContextCacheReadInputTokenCost: 1e-6}, PublicModel: true},
-	{PublicID: "glm-5.2", LiveUpstreamID: "z-ai/glm-5.2", RegistryID: "z-ai/glm-5.2", DisplayName: "GLM-5.2", Description: "Zhipu GLM-5.2 agentic coding model; 1M context", Kind: CindyModelKindText, InputModalities: []string{"text"}, OutputModalities: []string{"text"}, VerifiedEndpoints: []CindyEndpoint{CindyEndpointResponses, CindyEndpointChatCompletions, CindyEndpointMessages}, ClientSurfaces: []string{CindyClientSurfaceCodex, CindyClientSurfacePi, CindyClientSurfaceOpenAI, CindyClientSurfaceClaude, CindyClientSurfaceAnthropic}, MaxInputTokens: 1000000, CodexContextWindow: 1000000, MaxOutputTokens: 131072, ReasoningEfforts: []string{"minimal", "high", "max"}, DefaultReasoningEffort: "max", MetadataSourceRevision: cindyCompositeModelMetadataSourceRevision, PricingSource: "https://docs.z.ai/guides/overview/pricing", TextPricing: &CindyTextPricing{InputCostPerToken: 1.4e-6, OutputCostPerToken: 4.4e-6, CacheReadInputTokenCost: 0.26e-6}, PublicModel: true},
-	{PublicID: "glm-5.3", LiveUpstreamID: "z-ai/glm-5.3", RegistryID: "", DisplayName: "GLM-5.3", Kind: CindyModelKindText, InputModalities: []string{"text"}, OutputModalities: []string{"text"}, MaxInputTokens: 1000000, CodexContextWindow: 1000000, MetadataSourceRevision: CindyGatewayModelMetadataSourceRevision, PricingSource: "explicit-zero:no-exact-public-usd-price", ExplicitZeroPrice: true, PublicModel: false},
+	Object             string                   `json:"object"`
+	ID                 string                   `json:"id"`
+	Kind               CindyModelKind           `json:"kind"`
+	InputModalities    []string                 `json:"input_modalities"`
+	OutputModalities   []string                 `json:"output_modalities"`
+	Endpoints          []CindyEndpoint          `json:"endpoints"`
+	ClientSurfaces     []string                 `json:"client_surfaces"`
+	AgentWireProtocols map[string]string        `json:"agent_wire_protocols,omitempty"`
+	MaxInputTokens     int                      `json:"max_input_tokens,omitempty"`
+	MaxOutputTokens    int                      `json:"max_output_tokens,omitempty"`
+	PricingSource      string                   `json:"pricing_source,omitempty"`
+	ExplicitZeroPrice  bool                     `json:"explicit_zero_price,omitempty"`
+	Controls           *CindyCapabilityControls `json:"controls,omitempty"`
 }
 
 var cindyCompatibilityAliases = map[string]string{
 	"gpt-5.4":      "gpt-5.6-sol",
 	"gpt-5.4-mini": "gpt-5.6-luna",
-}
-
-var cindyApprovedManualContextWindows = map[string]int{
-	"gemini-3.6-flash": 1000000,
-	"gemini-3.7-flash": 1000000,
-	"glm-5.3":          1000000,
-	"grok-4.6":         500000,
 }
 
 var cindyHiddenAliases = map[string]string{
@@ -275,7 +243,7 @@ func init() {
 	}
 }
 
-// CindyCapabilities returns a defensive copy of all 23 fixed candidates.
+// CindyCapabilities returns a defensive copy of the 22 fixed v4 models.
 func CindyCapabilities() []CindyCapability {
 	result := make([]CindyCapability, len(cindyCapabilityCatalog))
 	for i := range cindyCapabilityCatalog {
@@ -290,6 +258,7 @@ func cloneCindyCapability(in CindyCapability) CindyCapability {
 	out.OutputModalities = append([]string(nil), in.OutputModalities...)
 	out.VerifiedEndpoints = append([]CindyEndpoint(nil), in.VerifiedEndpoints...)
 	out.ClientSurfaces = append([]string(nil), in.ClientSurfaces...)
+	out.AgentWireProtocols = cloneCindyStringMap(in.AgentWireProtocols)
 	out.ReasoningEfforts = append([]string(nil), in.ReasoningEfforts...)
 	out.CodexReasoningEffortLevels = append([]string(nil), in.CodexReasoningEffortLevels...)
 	if in.TextPricing != nil {
@@ -327,7 +296,7 @@ func (c CindyCapability) CodexReasoningEfforts() []string {
 	return append([]string(nil), c.ReasoningEfforts...)
 }
 
-// CindyCatalogModels returns all 23 observed candidates for management views.
+// CindyCatalogModels returns all 22 pinned v4 models for management views.
 // It is intentionally independent of rollout flags and PublicModel so an
 // administrator can inspect the complete fixed inventory without advertising
 // unverified candidates on client-facing endpoints.
@@ -372,14 +341,7 @@ func cindyCatalogModelFromCapability(capability CindyCapability) CindyCatalogMod
 	}
 	sourceRevision := strings.TrimSpace(capability.MetadataSourceRevision)
 	if sourceRevision == "" {
-		if capability.RegistryID != "" {
-			sourceRevision = CindyModelMetadataSourceRevision
-		} else {
-			sourceRevision = cindyObservedModelMetadataSourceRevision
-		}
-	}
-	if capability.RegistryID == "" {
-		sourceRevision += ";" + CindyCatalogProjectionSourceRevision
+		sourceRevision = CindyModelMetadataSourceRevision
 	}
 	codexContextWindow := capability.EffectiveCodexContextWindow()
 	capacitySource := cindyCapacitySourceForCapability(capability)
@@ -404,12 +366,8 @@ func cindyCatalogModelFromCapability(capability CindyCapability) CindyCatalogMod
 }
 
 func cindyCapacitySourceForCapability(capability CindyCapability) CindyCapacitySource {
-	if capability.RegistryID != "" && capability.MaxInputTokens > 0 {
+	if capability.MaxInputTokens > 0 {
 		return CindyCapacityPinnedRegistry
-	}
-	if approved, ok := cindyApprovedManualContextWindows[capability.PublicID]; ok &&
-		approved > 0 && capability.MaxInputTokens == approved {
-		return CindyCapacityApprovedManual
 	}
 	return CindyCapacityUnknown
 }
@@ -538,6 +496,9 @@ func CindyModelSupportsEndpoint(model string, endpoint CindyEndpoint) bool {
 	if (endpoint == CindyEndpointImagesGenerate || endpoint == CindyEndpointImagesEdit) &&
 		!CindyImageStudioFeatureEnabled() {
 		return false
+	}
+	if endpoint == CindyEndpointChatCompletions {
+		return capability.Kind == CindyModelKindText && cindyCapabilityHasEndpoint(capability, CindyEndpointResponses)
 	}
 	for _, verified := range capability.VerifiedEndpoints {
 		if verified == endpoint {
@@ -722,17 +683,29 @@ func CindyImageModelCapabilities() []CindyModelCapability {
 
 func cindyModelCapabilityFromCapability(capability CindyCapability) CindyModelCapability {
 	return CindyModelCapability{
-		Object:            "model_capability",
-		ID:                capability.PublicID,
-		Kind:              capability.Kind,
-		InputModalities:   append([]string(nil), capability.InputModalities...),
-		OutputModalities:  append([]string(nil), capability.OutputModalities...),
-		Endpoints:         append([]CindyEndpoint(nil), capability.VerifiedEndpoints...),
-		ClientSurfaces:    append([]string(nil), capability.ClientSurfaces...),
-		MaxInputTokens:    capability.MaxInputTokens,
-		MaxOutputTokens:   capability.MaxOutputTokens,
-		PricingSource:     capability.PricingSource,
-		ExplicitZeroPrice: capability.ExplicitZeroPrice,
-		Controls:          cloneCindyCapability(capability).Controls,
+		Object:             "model_capability",
+		ID:                 capability.PublicID,
+		Kind:               capability.Kind,
+		InputModalities:    append([]string(nil), capability.InputModalities...),
+		OutputModalities:   append([]string(nil), capability.OutputModalities...),
+		Endpoints:          append([]CindyEndpoint(nil), capability.VerifiedEndpoints...),
+		ClientSurfaces:     append([]string(nil), capability.ClientSurfaces...),
+		AgentWireProtocols: cloneCindyStringMap(capability.AgentWireProtocols),
+		MaxInputTokens:     capability.MaxInputTokens,
+		MaxOutputTokens:    capability.MaxOutputTokens,
+		PricingSource:      capability.PricingSource,
+		ExplicitZeroPrice:  capability.ExplicitZeroPrice,
+		Controls:           cloneCindyCapability(capability).Controls,
 	}
+}
+
+func cloneCindyStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
 }

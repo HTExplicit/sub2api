@@ -174,8 +174,15 @@ func TestCodexModelsStrictCindyProjectsVerifiedPublicCatalog(t *testing.T) {
 		t.Fatalf("strict Cindy manifest must be local; upstream calls=%v", got)
 	}
 	slugs := decodeCodexModelSlugs(t, recorder.Body.Bytes())
-	if got, want := strings.Join(slugs, ","), strings.Join(service.CindyCodexPublicModelIDs(), ","); got != want {
-		t.Fatalf("strict Cindy slugs: got %v, want %v", slugs, service.CindyCodexPublicModelIDs())
+	want := []string{
+		"claude-opus-4-8", "claude-opus-5", "claude-sonnet-5",
+		"deepseek-v4-flash", "deepseek-v4-flash-vision-exp", "deepseek-v4-pro",
+		"gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.7-flash",
+		"glm-5.2", "glm-5.3", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-image-2",
+		"grok-4.5", "grok-4.6", "hy3", "kimi-k3", "qwen3.8-max", "seed-2.1-pro",
+	}
+	if got, expected := strings.Join(slugs, ","), strings.Join(want, ","); got != expected {
+		t.Fatalf("strict Cindy slugs: got %v, want %v", slugs, want)
 	}
 	assertCodexManifestOmitsNonResponsesCindyIDs(t, recorder.Body.String())
 
@@ -369,11 +376,9 @@ func assertCodexManifestOmitsNonResponsesCindyIDs(t *testing.T, body string) {
 		"openai/gpt-5.6-sol",
 		"gpt-5.4",
 		"gpt-5.4-mini",
-		"deepseek-v4-pro",
-		"seed-2.1-pro",
-		"claude-opus-5",
-		"grok-4.6",
 		"gemini-3-pro-image",
+		"cindy/web-search",
+		"cindy/auto-review",
 	} {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("Codex manifest leaked forbidden ID %q: %s", forbidden, body)
