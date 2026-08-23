@@ -27,7 +27,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	// 固定渠道映射后的请求级 canonical body；账号 normalize/strip 不得改写跨 failover hint。
 	canonicalImageIntentBody := body
 	cindyRuntimeAccount := account != nil && IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials)
-	legacyOpaqueRecovery := canRecoverLegacyCindyOpaqueContinuation(account, body)
+	portableOpaqueRecovery := canRecoverCindyPortableOpaqueContinuation(account, body)
 
 	restrictionResult := s.detectCodexClientRestriction(c, account, body)
 	apiKeyID := getAPIKeyIDFromContext(c)
@@ -712,7 +712,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		maxAttempts := openAIWSReconnectRetryLimit + 1
 		if cindyHTTPToWSV2 {
 			maxAttempts = 1
-			if legacyOpaqueRecovery {
+			if portableOpaqueRecovery {
 				maxAttempts = 2
 			}
 		}
@@ -736,7 +736,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				)
 				return false
 			}
-			if HasFunctionCallOutput(wsReqBody) && !legacyOpaqueRecovery {
+			if HasFunctionCallOutput(wsReqBody) && !portableOpaqueRecovery {
 				logOpenAIWSModeInfo(
 					"reconnect_prev_response_recovery_skip account_id=%d attempt=%d reason=has_function_call_output previous_response_id_present=true",
 					account.ID,
@@ -755,13 +755,13 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			return true
 		}
 		recoverInvalidEncryptedContent := func(attempt int) bool {
-			if cindyRuntimeAccount && !legacyOpaqueRecovery {
+			if cindyRuntimeAccount && !portableOpaqueRecovery {
 				return false
 			}
 			if wsInvalidEncryptedContentRecoveryTried {
 				return false
 			}
-			if HasFunctionCallOutput(wsReqBody) && !legacyOpaqueRecovery {
+			if HasFunctionCallOutput(wsReqBody) && !portableOpaqueRecovery {
 				logOpenAIWSModeInfo(
 					"reconnect_invalid_encrypted_content_recovery_skip account_id=%d attempt=%d reason=has_function_call_output",
 					account.ID,
@@ -770,7 +770,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				return false
 			}
 			removedReasoningItems := false
-			if legacyOpaqueRecovery {
+			if portableOpaqueRecovery {
 				removedReasoningItems = dropOpenAIEncryptedReasoningInputItems(wsReqBody)
 			} else {
 				removedReasoningItems = trimOpenAIEncryptedReasoningItems(wsReqBody)
@@ -1006,10 +1006,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	agentTaskRecoveryTried := false
 	rejectedFieldRetryState := newOpenAIResponsesRejectedFieldRetryState(body)
 	tryRecoverInvalidEncryptedContent := func(upstreamMsg string, upstreamBody []byte) (bool, error) {
-		if (cindyRuntimeAccount && !legacyOpaqueRecovery) || isOpenAICindyHTTPToWSV2Bypassed(c) ||
+		if (cindyRuntimeAccount && !portableOpaqueRecovery) || isOpenAICindyHTTPToWSV2Bypassed(c) ||
 			httpInvalidEncryptedContentRetryTried ||
 			!isOpenAIInvalidEncryptedContentError(upstreamMsg, upstreamBody) ||
-			(ValidateFunctionCallOutputContextBytes(body).HasFunctionCallOutput && !legacyOpaqueRecovery) {
+			(ValidateFunctionCallOutputContextBytes(body).HasFunctionCallOutput && !portableOpaqueRecovery) {
 			return false, nil
 		}
 		decoded, decodeErr := ensureReqBody()
@@ -1017,7 +1017,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			return false, decodeErr
 		}
 		removedReasoningItems := false
-		if legacyOpaqueRecovery {
+		if portableOpaqueRecovery {
 			removedReasoningItems = dropOpenAIEncryptedReasoningInputItems(decoded)
 		} else {
 			removedReasoningItems = trimOpenAIEncryptedReasoningItems(decoded)

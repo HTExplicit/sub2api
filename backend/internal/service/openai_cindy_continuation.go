@@ -54,8 +54,8 @@ func (c CindyContinuationClassification) CanSwitchAccount() bool {
 		!c.HasOpaqueState
 }
 
-func canRecoverLegacyCindyOpaqueContinuation(account *Account, payload []byte) bool {
-	if account == nil || !IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+func canRecoverCindyPortableOpaqueContinuation(account *Account, payload []byte) bool {
+	if account == nil || !IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		return false
 	}
 	classification, err := ClassifyCindyContinuation(payload, CindyContinuationProof{})
@@ -63,10 +63,10 @@ func canRecoverLegacyCindyOpaqueContinuation(account *Account, payload []byte) b
 		!classification.VerifiedFullHistory || classification.HasExternalReference {
 		return false
 	}
-	return hasOnlyRecoverableLegacyCindyOpaqueState(payload)
+	return hasOnlyRecoverableCindyPortableOpaqueState(payload)
 }
 
-func hasOnlyRecoverableLegacyCindyOpaqueState(payload []byte) bool {
+func hasOnlyRecoverableCindyPortableOpaqueState(payload []byte) bool {
 	input := gjson.GetBytes(payload, "input")
 	items := input.Array()
 	if input.IsObject() {

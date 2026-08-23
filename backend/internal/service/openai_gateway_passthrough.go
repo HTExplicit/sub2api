@@ -357,13 +357,13 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 
 	agentTaskRecoveryTried := false
 	invalidEncryptedContentRetryTried := false
-	legacyOpaqueRecovery := canRecoverLegacyCindyOpaqueContinuation(account, body)
+	portableOpaqueRecovery := canRecoverCindyPortableOpaqueContinuation(account, body)
 	tryRecoverInvalidEncryptedContent := func(upstreamMsg string, upstreamBody []byte) (bool, error) {
-		if (IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) && !legacyOpaqueRecovery) ||
+		if (IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) && !portableOpaqueRecovery) ||
 			isOpenAICindyHTTPToWSV2Bypassed(c) ||
 			invalidEncryptedContentRetryTried ||
 			!isOpenAIInvalidEncryptedContentError(upstreamMsg, upstreamBody) ||
-			(ValidateFunctionCallOutputContextBytes(body).HasFunctionCallOutput && !legacyOpaqueRecovery) {
+			(ValidateFunctionCallOutputContextBytes(body).HasFunctionCallOutput && !portableOpaqueRecovery) {
 			return false, nil
 		}
 		var decoded map[string]any
@@ -372,7 +372,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		decodeErr := decoder.Decode(&decoded)
 		removedReasoningItems := false
 		if decodeErr == nil {
-			if legacyOpaqueRecovery {
+			if portableOpaqueRecovery {
 				removedReasoningItems = dropOpenAIEncryptedReasoningInputItems(decoded)
 			} else {
 				removedReasoningItems = trimOpenAIEncryptedReasoningItems(decoded)

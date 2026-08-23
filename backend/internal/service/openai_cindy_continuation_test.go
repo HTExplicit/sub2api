@@ -67,7 +67,7 @@ func TestCindyOpaqueBindingIDDependsOnlyOnProviderCarrier(t *testing.T) {
 	require.Equal(t, first.OpaqueBindingIDs, responseIDs)
 }
 
-func TestLegacyCindyOpaqueRecoveryRequiresSelfContainedHistory(t *testing.T) {
+func TestCindyPortableOpaqueRecoveryRequiresSelfContainedHistory(t *testing.T) {
 	legacy := &Account{
 		Platform: PlatformOpenAI,
 		Type:     AccountTypeAPIKey,
@@ -78,13 +78,13 @@ func TestLegacyCindyOpaqueRecoveryRequiresSelfContainedHistory(t *testing.T) {
 	canonical := *legacy
 	canonical.Platform = PlatformCindy
 
-	require.True(t, canRecoverLegacyCindyOpaqueContinuation(legacy, []byte(
+	require.True(t, canRecoverCindyPortableOpaqueContinuation(legacy, []byte(
 		`{"input":[{"type":"message","role":"user","content":"continue"},{"type":"reasoning","id":"rs_1","encrypted_content":"cipher"}]}`,
 	)))
-	require.False(t, canRecoverLegacyCindyOpaqueContinuation(legacy, []byte(
+	require.False(t, canRecoverCindyPortableOpaqueContinuation(legacy, []byte(
 		`{"previous_response_id":"resp_1","input":[{"type":"reasoning","id":"rs_1","encrypted_content":"cipher"}]}`,
 	)), "an unverified anchor cannot be replayed")
-	require.True(t, canRecoverLegacyCindyOpaqueContinuation(legacy, []byte(
+	require.True(t, canRecoverCindyPortableOpaqueContinuation(legacy, []byte(
 		`{"input":[{"type":"reasoning","id":"rs_1","encrypted_content":"cipher"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`,
 	)), "paired concrete tool history remains replayable when only reasoning state is removed")
 	for _, tc := range []struct {
@@ -109,28 +109,56 @@ func TestLegacyCindyOpaqueRecoveryRequiresSelfContainedHistory(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			require.False(t, canRecoverLegacyCindyOpaqueContinuation(legacy, []byte(tc.payload)),
+			require.False(t, canRecoverCindyPortableOpaqueContinuation(legacy, []byte(tc.payload)),
 				"any non-removable opaque carrier must reject the entire recovery")
 		})
 	}
-	require.True(t, canRecoverLegacyCindyOpaqueContinuation(legacy, []byte(
+	require.True(t, canRecoverCindyPortableOpaqueContinuation(legacy, []byte(
 		`{"input":[{"type":"compaction","id":"cmp_1","encrypted_content":"cipher"}]}`,
 	)), "encrypted compaction is a portable state item")
-	require.True(t, canRecoverLegacyCindyOpaqueContinuation(legacy, []byte(
+	require.True(t, canRecoverCindyPortableOpaqueContinuation(legacy, []byte(
 		`{"input":[{"type":"compaction_summary","id":"cmp_1","encrypted_content":"cipher"}]}`,
 	)), "encrypted compaction summaries are portable state items")
-	require.False(t, canRecoverLegacyCindyOpaqueContinuation(legacy, []byte(
+	require.False(t, canRecoverCindyPortableOpaqueContinuation(legacy, []byte(
 		`{"input":[{"type":"reasoning","id":"rs_1","encrypted_content":"cipher"},{"type":"function_call_output","call_id":"call_orphan","output":"ok"}]}`,
 	)), "orphan tool output remains reference-only")
-	require.False(t, canRecoverLegacyCindyOpaqueContinuation(legacy, []byte(
+	require.False(t, canRecoverCindyPortableOpaqueContinuation(legacy, []byte(
 		`{"input":[{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}","encrypted_content":"cipher"},{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`,
 	)), "opaque tool state is not removable by the reasoning recovery")
-	require.False(t, canRecoverLegacyCindyOpaqueContinuation(&canonical, []byte(
+	require.True(t, canRecoverCindyPortableOpaqueContinuation(&canonical, []byte(
 		`{"input":[{"type":"reasoning","id":"rs_1","encrypted_content":"cipher"}]}`,
-	)), "canonical Cindy remains binding-strict")
+	)), "canonical Cindy has the same portable opaque recovery contract")
+	require.False(t, canRecoverCindyPortableOpaqueContinuation(&canonical, []byte(
+		`{"previous_response_id":"resp_1","input":[{"type":"reasoning","id":"rs_1","encrypted_content":"cipher"}]}`,
+	)), "canonical Cindy still rejects an unverified anchor")
+	for _, tc := range []struct {
+		name    string
+		payload string
+	}{
+		{
+			name:    "external item reference",
+			payload: `{"input":[{"type":"reasoning","id":"rs_1","encrypted_content":"cipher"},{"type":"item_reference","id":"msg_1"}]}`,
+		},
+		{
+			name:    "orphan tool output",
+			payload: `{"input":[{"type":"reasoning","id":"rs_1","encrypted_content":"cipher"},{"type":"function_call_output","call_id":"call_orphan","output":"ok"}]}`,
+		},
+		{
+			name:    "nonportable opaque tool state",
+			payload: `{"input":[{"type":"reasoning","id":"rs_1","encrypted_content":"reasoning-cipher"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}","encrypted_content":"tool-cipher"},{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`,
+		},
+		{
+			name:    "empty portable carrier",
+			payload: `{"input":[{"type":"reasoning","id":"rs_1","encrypted_content":"  "}]}`,
+		},
+	} {
+		t.Run("canonical rejects "+tc.name, func(t *testing.T) {
+			require.False(t, canRecoverCindyPortableOpaqueContinuation(&canonical, []byte(tc.payload)))
+		})
+	}
 	ordinary := *legacy
 	ordinary.Credentials = map[string]any{"api_key": "test", "base_url": "https://api.openai.com"}
-	require.False(t, canRecoverLegacyCindyOpaqueContinuation(&ordinary, []byte(
+	require.False(t, canRecoverCindyPortableOpaqueContinuation(&ordinary, []byte(
 		`{"input":[{"type":"reasoning","id":"rs_1","encrypted_content":"cipher"}]}`,
 	)), "ordinary OpenAI remains binding-strict")
 }
