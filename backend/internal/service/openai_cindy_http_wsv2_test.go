@@ -137,6 +137,18 @@ func TestResolveCindyHTTPToWSV2DecisionEligible(t *testing.T) {
 	require.Equal(t, openAICindyHTTPToWSV2Reason, decision.Reason)
 }
 
+func TestLegacyCindyRuntimeCompatibilityUsesHTTPToWSV2(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := cindyHTTPToWSV2TestService()
+	account := cindyHTTPToWSV2TestAccount()
+	account.Platform = PlatformOpenAI
+
+	decision, ok := svc.resolveCindyHTTPToWSV2Decision(cindyHTTPToWSV2TestContext("/v1/responses"), account)
+
+	require.True(t, ok)
+	require.Equal(t, OpenAIUpstreamTransportResponsesWebsocketV2, decision.Transport)
+}
+
 func TestResolveCindyHTTPToWSV2DecisionHonorsAllGates(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	tests := []struct {
@@ -484,6 +496,39 @@ func TestCindyPassthroughInvalidEncryptedContentFailsWithoutPayloadCleanup(t *te
 	require.Equal(t, "rs_foreign", gjson.GetBytes(upstream.bodies[0], "input.0.id").String())
 	require.Equal(t, "cipher", gjson.GetBytes(upstream.bodies[0], "input.0.encrypted_content").String())
 	require.Equal(t, "analysis", gjson.GetBytes(upstream.bodies[0], "input.0.phase").String())
+}
+
+func TestLegacyCindyRuntimeCompatibilityPreservesOpaqueHTTPContinuation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body: io.NopCloser(strings.NewReader(
+			`{"error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}`,
+		)),
+	}}
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream}
+	body := []byte(`{"model":"openai/gpt-5.6-sol","store":false,"previous_response_id":"resp_legacy","input":[{"type":"reasoning","id":"rs_legacy","encrypted_content":"cipher","phase":"analysis"}]}`)
+	account := cindyHTTPToWSV2TestAccount()
+	account.Platform = PlatformOpenAI
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
+	require.Len(t, upstream.bodies, 1, "legacy Laxa continuation must not retry a destructively cleaned request")
+	require.Equal(t, "resp_legacy", gjson.GetBytes(upstream.bodies[0], "previous_response_id").String())
+	require.Equal(t, "rs_legacy", gjson.GetBytes(upstream.bodies[0], "input.0.id").String())
+	require.Equal(t, "cipher", gjson.GetBytes(upstream.bodies[0], "input.0.encrypted_content").String())
 }
 
 func TestPrepareOpenAICindyStatelessHTTPFallbackSafetyBoundary(t *testing.T) {

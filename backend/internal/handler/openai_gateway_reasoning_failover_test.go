@@ -144,3 +144,20 @@ func TestDeriveOpenAIForwardAttemptBody_SanitizationSticksAcrossBedrockRetries(t
 	require.Equal(t, 0, reasoningItemCount(t, nextAccount), "later Bedrock account must remain sanitized")
 	require.JSONEq(t, kiroReasoningCanonicalBody, string(canonical), "canonical forwardBody must never be mutated")
 }
+
+func TestLegacyCindyRuntimeCompatibilityPreservesReasoningAcrossFailover(t *testing.T) {
+	h := &OpenAIGatewayHandler{}
+	canonical := []byte(kiroReasoningCanonicalBody)
+	state := &openAIPassthroughFailoverState{passthroughSeen: true}
+	account := newOpenAIPassthroughAccount(60, false)
+	account.Credentials = map[string]any{
+		"api_key":  "not-exposed",
+		"base_url": "https://api.laxarouter.ai",
+	}
+
+	got := h.deriveOpenAIForwardAttemptBody(nil, canonical, account, state)
+
+	require.JSONEq(t, kiroReasoningCanonicalBody, string(got))
+	require.Equal(t, 1, reasoningItemCount(t, got))
+	require.Equal(t, "ENC_BLOB", gjson.GetBytes(got, "input.1.encrypted_content").String())
+}

@@ -368,7 +368,7 @@ func (s *GatewayService) forwardCountTokensAnthropicAPIKeyPassthrough(ctx contex
 		return fmt.Errorf("upstream error: %d message=%s", resp.StatusCode, upstreamMsg)
 	}
 
-	if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) && !validAnthropicCountTokensResponse(respBody) {
+	if IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) && !validAnthropicCountTokensResponse(respBody) {
 		return &UpstreamFailoverError{
 			StatusCode:             http.StatusBadGateway,
 			ResponseHeaders:        resp.Header.Clone(),
@@ -407,7 +407,7 @@ func (s *GatewayService) buildCountTokensRequestAnthropicAPIKeyPassthrough(
 			return nil, err
 		}
 		targetURL = validatedURL + "/v1/messages/count_tokens?beta=true"
-		if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		if IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 			targetURL = validatedURL + "/v1/messages/count_tokens"
 		}
 	}

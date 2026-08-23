@@ -23,6 +23,39 @@ func TestIsCindyAPIKeyAccount(t *testing.T) {
 	require.False(t, IsCindyAPIKeyAccount(PlatformCindy, AccountTypeAPIKey, map[string]any{"base_url": "https://api.laxarouter.ai.evil.test"}))
 }
 
+func TestLegacyCindyAPIKeyAccountRequiresExactLegacyIdentity(t *testing.T) {
+	require.True(t, IsLegacyCindyAPIKeyAccount(PlatformOpenAI, AccountTypeAPIKey, cindyCredentials()))
+	require.True(t, IsLegacyCindyAPIKeyAccount(PlatformOpenAI, AccountTypeAPIKey, map[string]any{"base_url": "https://API.LAXAROUTER.AI/"}))
+
+	require.False(t, IsLegacyCindyAPIKeyAccount(PlatformCindy, AccountTypeAPIKey, cindyCredentials()), "canonical Cindy is not a legacy row")
+	require.False(t, IsLegacyCindyAPIKeyAccount(PlatformOpenAI, AccountTypeOAuth, cindyCredentials()))
+	for _, baseURL := range []string{
+		"https://api.laxarouter.ai/v1",
+		"https://api.laxarouter.ai?mode=compat",
+		"https://api.laxarouter.ai:443",
+		"https://user@api.laxarouter.ai",
+		"https://api.laxarouter.ai.evil.test",
+	} {
+		require.False(t, IsLegacyCindyAPIKeyAccount(
+			PlatformOpenAI,
+			AccountTypeAPIKey,
+			map[string]any{"base_url": baseURL},
+		), baseURL)
+	}
+}
+
+func TestCindyRuntimeCompatibleAPIKeyAccountUnionsCanonicalAndLegacyOnly(t *testing.T) {
+	require.True(t, IsCindyRuntimeCompatibleAPIKeyAccount(PlatformCindy, AccountTypeAPIKey, cindyCredentials()))
+	require.True(t, IsCindyRuntimeCompatibleAPIKeyAccount(PlatformOpenAI, AccountTypeAPIKey, cindyCredentials()))
+	require.False(t, IsCindyRuntimeCompatibleAPIKeyAccount(
+		PlatformOpenAI,
+		AccountTypeAPIKey,
+		map[string]any{"base_url": "https://api.openai.com"},
+	))
+	require.False(t, IsCindyAPIKeyAccount(PlatformOpenAI, AccountTypeAPIKey, cindyCredentials()),
+		"runtime compatibility must not widen canonical Cindy identity")
+}
+
 func TestNormalizeCindyDeviceIdentityExtraPreservesInput(t *testing.T) {
 	deviceID := "7a986ef4-0fde-48df-a73f-f7c0de1a9cae"
 	requested := map[string]any{

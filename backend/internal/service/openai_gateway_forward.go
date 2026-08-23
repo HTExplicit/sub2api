@@ -26,7 +26,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	startTime := time.Now()
 	// 固定渠道映射后的请求级 canonical body；账号 normalize/strip 不得改写跨 failover hint。
 	canonicalImageIntentBody := body
-	strictCindyAccount := account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+	cindyRuntimeAccount := account != nil && IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials)
 
 	restrictionResult := s.detectCodexClientRestriction(c, account, body)
 	apiKeyID := getAPIKeyIDFromContext(c)
@@ -699,7 +699,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			return nil, err
 		}
 		hasPreviousResponseID := strings.TrimSpace(openAIWSPayloadString(wsReqBody, "previous_response_id")) != ""
-		strictCindyContinuation := strictCindyAccount && hasPreviousResponseID
+		strictCindyContinuation := cindyRuntimeAccount && hasPreviousResponseID
 		logOpenAIWSModeDebug(
 			"forward_start account_id=%d account_type=%s model=%s stream=%v has_previous_response_id=%v",
 			account.ID,
@@ -751,7 +751,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			return true
 		}
 		recoverInvalidEncryptedContent := func(attempt int) bool {
-			if strictCindyAccount {
+			if cindyRuntimeAccount {
 				return false
 			}
 			if wsInvalidEncryptedContentRecoveryTried {
@@ -997,7 +997,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	agentTaskRecoveryTried := false
 	rejectedFieldRetryState := newOpenAIResponsesRejectedFieldRetryState(body)
 	tryRecoverInvalidEncryptedContent := func(upstreamMsg string, upstreamBody []byte) (bool, error) {
-		if strictCindyAccount || isOpenAICindyHTTPToWSV2Bypassed(c) ||
+		if cindyRuntimeAccount || isOpenAICindyHTTPToWSV2Bypassed(c) ||
 			httpInvalidEncryptedContentRetryTried ||
 			!isOpenAIInvalidEncryptedContentError(upstreamMsg, upstreamBody) ||
 			ValidateFunctionCallOutputContextBytes(body).HasFunctionCallOutput {
@@ -1171,7 +1171,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				return nil, newOpenAIOpaqueStreamPreflightError(resp.StatusCode, resp.Header, respBody)
 			}
 			if resp.StatusCode == http.StatusForbidden &&
-				IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+				IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 				if hit, _, _ := detectOpenAICyberPolicy(respBody); hit {
 					markOpenAICyberPolicyFromResponse(c, resp.StatusCode, respBody)
 					if s.openAIRefusalRecoveryRuntime(ctx).CyberFailoverEnabled() {
@@ -1209,7 +1209,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 					!shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
 				)
 				if resp.StatusCode == http.StatusForbidden &&
-					IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+					IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 					failoverErr = sanitizeOpenAICindyFailoverError(failoverErr)
 				}
 				return nil, failoverErr

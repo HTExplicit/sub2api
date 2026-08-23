@@ -348,7 +348,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	agentTaskRecoveryTried := false
 	invalidEncryptedContentRetryTried := false
 	tryRecoverInvalidEncryptedContent := func(upstreamMsg string, upstreamBody []byte) (bool, error) {
-		if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) ||
+		if IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) ||
 			isOpenAICindyHTTPToWSV2Bypassed(c) ||
 			invalidEncryptedContentRetryTried ||
 			!isOpenAIInvalidEncryptedContentError(upstreamMsg, upstreamBody) ||
@@ -774,11 +774,11 @@ func shouldFailoverOpenAIPassthroughResponse(account *Account, statusCode int, r
 	// A generic Cindy 402 is request-retryable but is not evidence of account
 	// balance exhaustion. Keep failover separate from persistent account state.
 	if statusCode == http.StatusPaymentRequired && account != nil &&
-		IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		return true
 	}
 	if statusCode == http.StatusForbidden && account != nil &&
-		IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		if hit, _, _ := detectOpenAICyberPolicy(responseBody); hit {
 			return false
 		}
@@ -925,7 +925,7 @@ func (s *OpenAIGatewayService) handleFailoverErrorResponsePassthrough(
 		!shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
 	)
 	if resp.StatusCode == http.StatusForbidden && account != nil &&
-		IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		failoverErr = sanitizeOpenAICindyFailoverError(failoverErr)
 	}
 	return failoverErr

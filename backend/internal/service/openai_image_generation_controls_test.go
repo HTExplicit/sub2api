@@ -510,6 +510,25 @@ func TestOpenAIGatewayService_CodexImageGenerationBridgeOverridePrecedence(t *te
 			want: false,
 		},
 		{
+			name:   "legacy Cindy does not inherit enabled global",
+			global: true,
+			account: &Account{
+				Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+				Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"},
+			},
+			want: false,
+		},
+		{
+			name:   "legacy Cindy account override remains authoritative",
+			global: false,
+			account: &Account{
+				Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+				Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"},
+				Extra:       map[string]any{featureKeyCodexImageGenerationBridge: true},
+			},
+			want: true,
+		},
+		{
 			name:   "channel true explicitly enables strict Cindy",
 			global: false,
 			channel: &Channel{ID: 1, Status: StatusActive, FeaturesConfig: map[string]any{

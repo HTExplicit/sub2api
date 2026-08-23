@@ -7,6 +7,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGrokAccountModelMappingCacheInvalidatesWithRuntimeSettings(t *testing.T) {
@@ -513,6 +514,31 @@ func TestAccountResolveMappedModel(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLegacyCindyRuntimeCompatibilityPreservesDirectLiveModels(t *testing.T) {
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":  "not-exposed",
+			"base_url": "https://api.laxarouter.ai",
+			"model_mapping": map[string]any{
+				"openai/gpt-5.6-sol":   "stale-sol-target",
+				"openai/gpt-5.6-luna":  "stale-luna-target",
+				"openai/gpt-5.6-terra": "custom-terra-target",
+			},
+		},
+	}
+
+	for _, model := range []string{"openai/gpt-5.6-sol", "openai/gpt-5.6-luna"} {
+		require.True(t, account.IsModelSupported(model), model)
+		mapped, matched := account.ResolveMappedModel(model)
+		require.True(t, matched, model)
+		require.Equal(t, model, mapped, model)
+	}
+	require.Equal(t, "custom-terra-target", account.GetMappedModel("openai/gpt-5.6-terra"),
+		"legacy compatibility must not enable the broader Cindy catalog")
 }
 
 func TestAccountGetModelMapping_AntigravityEnsuresGeminiDefaultPassthroughs(t *testing.T) {

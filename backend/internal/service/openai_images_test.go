@@ -810,7 +810,7 @@ func TestValidateOpenAIImagesUpstreamModel_AllowsOnlyStrictCindyMappedImage(t *t
 		Platform: PlatformOpenAI,
 		Type:     AccountTypeAPIKey,
 		Credentials: map[string]any{
-			"base_url": "https://api.openai.com",
+			"base_url": "https://api.laxarouter.ai",
 		},
 	}
 

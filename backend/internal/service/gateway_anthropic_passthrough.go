@@ -379,7 +379,7 @@ func (s *GatewayService) buildUpstreamRequestAnthropicAPIKeyPassthrough(
 		if err != nil {
 			return nil, nil, err
 		}
-		if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		if IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 			targetURL = validatedURL + "/v1/messages"
 		} else {
 			targetURL = validatedURL + "/v1/messages?beta=true"

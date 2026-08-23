@@ -76,6 +76,7 @@ func TestOpenAIAlphaSearchModeDisabledExcludesOnlyExplicitAPIKeyAccount(t *testi
 
 func TestMissingCompatibilityModesUseCindySafeCacheAndOrdinaryNativeDefaults(t *testing.T) {
 	cindy := &Account{Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1, Type: AccountTypeAPIKey, Credentials: cindyCredentials()}
+	legacy := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: cindyCredentials()}
 	ordinary := &Account{
 		Platform:    PlatformOpenAI,
 		Type:        AccountTypeAPIKey,
@@ -85,6 +86,8 @@ func TestMissingCompatibilityModesUseCindySafeCacheAndOrdinaryNativeDefaults(t *
 	require.Equal(t, OpenAIAlphaSearchModeResponsesWebSearch, cindy.GetOpenAIAlphaSearchMode())
 	require.True(t, cindy.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityAlphaSearch))
 	require.Equal(t, OpenAIPromptCacheKeyModeSHA25664, cindy.GetOpenAIPromptCacheKeyMode())
+	require.Equal(t, OpenAIAlphaSearchModeDirect, legacy.GetOpenAIAlphaSearchMode(), "legacy compatibility must not enable Cindy search")
+	require.Equal(t, OpenAIPromptCacheKeyModeSHA25664, legacy.GetOpenAIPromptCacheKeyMode(), "legacy continuation keeps the safe cache key wire format")
 	require.Equal(t, OpenAIAlphaSearchModeDirect, ordinary.GetOpenAIAlphaSearchMode())
 	require.Equal(t, OpenAIPromptCacheKeyModePassthrough, ordinary.GetOpenAIPromptCacheKeyMode())
 }

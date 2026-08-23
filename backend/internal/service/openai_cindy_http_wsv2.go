@@ -141,7 +141,7 @@ func finishOpenAICindyHTTPToWSV2Failover(
 
 func (s *OpenAIGatewayService) cindyHTTPToWSV2ConfigEligible(account *Account) bool {
 	if s == nil || s.cfg == nil || account == nil ||
-		!IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) ||
+		!IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) ||
 		account.Concurrency <= 0 || account.IsOpenAIWSForceHTTPEnabled() ||
 		!openai_compat.ShouldUseResponsesAPI(account.Extra) {
 		return false

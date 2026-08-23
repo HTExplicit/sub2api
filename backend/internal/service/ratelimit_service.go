@@ -290,7 +290,7 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 	// above. Its generic 402 responses must not persist an account-level balance
 	// or authentication failure; the current request can still fail over.
 	if statusCode == http.StatusPaymentRequired &&
-		IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		slog.Info("cindy_402_account_state_skipped", "account_id", account.ID)
 		return false
 	}

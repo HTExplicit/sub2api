@@ -904,3 +904,26 @@ func TestOpenAIGatewayCindy402DoesNotPersistOrBlockAccount(t *testing.T) {
 	require.Nil(t, account.CindyBalanceInsufficientAt)
 	require.False(t, gateway.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.6-sol"))
 }
+
+func TestLegacyCindyRuntimeCompatibility402DoesNotPersistOrBlockAccount(t *testing.T) {
+	repo := &cindyRateLimitAccountRepoStub{}
+	rateLimitService := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	gateway := &OpenAIGatewayService{rateLimitService: rateLimitService}
+	rateLimitService.SetAccountRuntimeBlocker(gateway)
+	account := newCindyRateLimitAccount(8403, false)
+	account.Platform = PlatformOpenAI
+
+	shouldDisable := gateway.handleOpenAIAccountUpstreamError(
+		context.Background(), account, http.StatusPaymentRequired, http.Header{},
+		[]byte(`{"error":{"type":"budget_exceeded","code":"429"}}`), "gpt-5.6-sol",
+	)
+
+	require.False(t, shouldDisable)
+	require.Zero(t, repo.markCalls)
+	require.Zero(t, repo.setErrorCalls)
+	require.Nil(t, account.CindyBalanceInsufficientAt)
+	require.False(t, gateway.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.6-sol"))
+	require.True(t, shouldFailoverOpenAIPassthroughResponse(
+		account, http.StatusPaymentRequired, []byte(`{"error":{"type":"billing_error"}}`),
+	), "legacy Laxa 402 remains request-failover only")
+}
