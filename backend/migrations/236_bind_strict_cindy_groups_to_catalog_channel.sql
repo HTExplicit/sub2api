@@ -183,7 +183,7 @@ BEGIN
         RAISE EXCEPTION 'ambiguous managed Cindy channel topology: % candidates', managed_channel_count;
     END IF;
     IF managed_channel_count = 0 THEN
-        IF EXISTS (SELECT 1 FROM channels c WHERE LOWER(c.name) = LOWER('Cindy Catalog')) THEN
+        IF EXISTS (SELECT 1 FROM channels c WHERE LOWER(BTRIM(c.name)) = LOWER('Cindy Catalog')) THEN
             RAISE EXCEPTION 'ambiguous managed Cindy channel topology: reserved name already exists';
         END IF;
         INSERT INTO channels (
@@ -209,7 +209,7 @@ BEGIN
             )
         ) OR EXISTS (
             SELECT 1 FROM channels c
-            WHERE c.id <> managed_channel_id AND LOWER(c.name) = LOWER('Cindy Catalog')
+            WHERE c.id <> managed_channel_id AND LOWER(BTRIM(c.name)) = LOWER('Cindy Catalog')
         ) OR EXISTS (
             SELECT 1 FROM channel_model_pricing cmp WHERE cmp.channel_id = managed_channel_id
         ) OR EXISTS (
@@ -261,11 +261,11 @@ DECLARE
 BEGIN
     IF TG_OP <> 'INSERT' THEN
         old_managed := OLD.features_config->>'cindy_catalog_managed' = 'cindy_laxa_v1';
-        old_reserved := LOWER(OLD.name) = LOWER('Cindy Catalog');
+        old_reserved := LOWER(BTRIM(OLD.name)) = LOWER('Cindy Catalog');
     END IF;
     IF TG_OP <> 'DELETE' THEN
         new_managed := NEW.features_config ? 'cindy_catalog_managed';
-        new_reserved := LOWER(NEW.name) = LOWER('Cindy Catalog');
+        new_reserved := LOWER(BTRIM(NEW.name)) = LOWER('Cindy Catalog');
     END IF;
     IF old_managed OR new_managed OR old_reserved OR new_reserved THEN
         RAISE EXCEPTION 'managed Cindy catalog channel is immutable';
@@ -407,8 +407,18 @@ BEGIN
     IF TG_OP = 'UPDATE'
        AND OLD.status IS NOT DISTINCT FROM NEW.status
        AND OLD.is_exclusive IS NOT DISTINCT FROM NEW.is_exclusive
-       AND OLD.deleted_at IS NOT DISTINCT FROM NEW.deleted_at
+       AND OLD.allow_image_generation IS NOT DISTINCT FROM NEW.allow_image_generation
        AND OLD.platform IS NOT DISTINCT FROM NEW.platform
+       AND OLD.subscription_type IS NOT DISTINCT FROM NEW.subscription_type
+       AND OLD.rate_multiplier IS NOT DISTINCT FROM NEW.rate_multiplier
+       AND OLD.peak_rate_enabled IS NOT DISTINCT FROM NEW.peak_rate_enabled
+       AND OLD.peak_start IS NOT DISTINCT FROM NEW.peak_start
+       AND OLD.peak_end IS NOT DISTINCT FROM NEW.peak_end
+       AND OLD.peak_rate_multiplier IS NOT DISTINCT FROM NEW.peak_rate_multiplier
+       AND OLD.profit_control_enabled IS NOT DISTINCT FROM NEW.profit_control_enabled
+       AND OLD.profit_min_margin IS NOT DISTINCT FROM NEW.profit_min_margin
+       AND OLD.profit_safety_buffer IS NOT DISTINCT FROM NEW.profit_safety_buffer
+       AND OLD.deleted_at IS NOT DISTINCT FROM NEW.deleted_at
        AND OLD.wire_platform IS NOT DISTINCT FROM NEW.wire_platform
        AND OLD.provider_profile IS NOT DISTINCT FROM NEW.provider_profile
        AND OLD.fallback_group_id IS NOT DISTINCT FROM NEW.fallback_group_id
@@ -423,8 +433,7 @@ $$;
 
 DROP TRIGGER IF EXISTS trg_groups_auth_cache_invalidation ON groups;
 CREATE TRIGGER trg_groups_auth_cache_invalidation
-AFTER UPDATE OF status, is_exclusive, deleted_at, platform, wire_platform,
-    provider_profile, fallback_group_id, fallback_group_id_on_invalid_request OR DELETE ON groups
+AFTER UPDATE OR DELETE ON groups
 FOR EACH ROW EXECUTE FUNCTION enqueue_group_auth_cache_invalidation();
 
 CREATE OR REPLACE FUNCTION reconcile_group_cindy_channel_topology()

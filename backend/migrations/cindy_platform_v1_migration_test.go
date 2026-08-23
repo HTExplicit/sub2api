@@ -132,3 +132,35 @@ func TestMigration236DefinesManagedCindyChannelAndDurableInvalidation(t *testing
 	require.NotContains(t, sql, "gpt-5.6")
 	require.NotContains(t, sql, "insert into channel_model_pricing")
 }
+
+func TestMigration236PreservesCompleteGroupAuthInvalidationCoverage(t *testing.T) {
+	raw, err := FS.ReadFile("236_bind_strict_cindy_groups_to_catalog_channel.sql")
+	require.NoError(t, err)
+	sql := strings.ToLower(string(raw))
+
+	for _, field := range []string{
+		"status", "is_exclusive", "allow_image_generation", "platform",
+		"subscription_type", "rate_multiplier", "peak_rate_enabled", "peak_start",
+		"peak_end", "peak_rate_multiplier", "profit_control_enabled",
+		"profit_min_margin", "profit_safety_buffer", "deleted_at",
+		"wire_platform", "provider_profile", "fallback_group_id",
+		"fallback_group_id_on_invalid_request",
+	} {
+		require.Contains(t, sql,
+			"old."+field+" is not distinct from new."+field,
+			"missing durable group auth invalidation field %s", field)
+	}
+	require.Contains(t, sql, "after update or delete on groups")
+	require.NotContains(t, sql, "create trigger trg_groups_auth_cache_invalidation\nafter update of")
+}
+
+func TestMigration236TrimsReservedManagedChannelNames(t *testing.T) {
+	raw, err := FS.ReadFile("236_bind_strict_cindy_groups_to_catalog_channel.sql")
+	require.NoError(t, err)
+	sql := strings.ToLower(string(raw))
+
+	require.Contains(t, sql, "lower(btrim(c.name)) = lower('cindy catalog')")
+	require.Contains(t, sql, "old_reserved := lower(btrim(old.name)) = lower('cindy catalog')")
+	require.Contains(t, sql, "new_reserved := lower(btrim(new.name)) = lower('cindy catalog')")
+	require.NotContains(t, sql, "lower(c.name) = lower('cindy catalog')")
+}
