@@ -426,25 +426,13 @@ func (s *CindyBalanceProbeService) finalizeRecovery(
 				}
 				cancel()
 			}
-			clearRuntime := true
 			if captured != nil {
 				cleared, clearErr := s.gateway.ClearCindyHealthTerminalPendingIfMatch(ctx, *captured)
 				if clearErr != nil {
 					slog.Error("cindy_balance_probe_recovery_terminal_pending_clear_failed", "job_id", reservation.JobID, "error", clearErr)
 				}
-				clearRuntime = clearErr == nil && cleared
-			} else {
-				latest, getErr := s.gateway.GetCindyHealthTerminalPending(ctx, reservation.AccountID, CindyHealthStatusBalanceInsufficient)
-				if getErr != nil {
-					slog.Error("cindy_balance_probe_recovery_terminal_pending_recheck_failed", "job_id", reservation.JobID, "error", getErr)
-				}
-				clearRuntime = getErr == nil && latest == nil
-			}
-			if clearRuntime {
-				if captured != nil {
+				if clearErr == nil && cleared {
 					s.gateway.ClearCindyHealthEpisodeBlock(*captured)
-				} else {
-					s.gateway.ClearCindyBalanceRuntimeBlock(reservation.AccountID)
 				}
 			}
 		}

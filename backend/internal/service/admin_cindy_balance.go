@@ -46,31 +46,15 @@ func (s *adminServiceImpl) ClearCindyBalanceInsufficient(ctx context.Context, id
 			slog.Warn("cindy_balance_legacy_pending_clear_failed", "account_id", id, "error", err)
 		}
 	}
-	clearRuntime := true
-	if managed {
-		if captured != nil {
-			cleared, clearErr := manager.ClearCindyHealthTerminalPendingIfMatch(ctx, *captured)
-			if clearErr != nil {
-				slog.Warn("cindy_balance_terminal_pending_clear_failed", "account_id", id, "error", clearErr)
-			}
-			clearRuntime = clearErr == nil && cleared
-		} else {
-			latest, getErr := manager.GetCindyHealthTerminalPending(ctx, id, CindyHealthStatusBalanceInsufficient)
-			if getErr != nil {
-				slog.Warn("cindy_balance_terminal_pending_recheck_failed", "account_id", id, "error", getErr)
-			}
-			clearRuntime = getErr == nil && latest == nil
+	if managed && captured != nil {
+		cleared, clearErr := manager.ClearCindyHealthTerminalPendingIfMatch(ctx, *captured)
+		if clearErr != nil {
+			slog.Warn("cindy_balance_terminal_pending_clear_failed", "account_id", id, "error", clearErr)
 		}
-	}
-	if clearRuntime && s.runtimeBlocker != nil {
-		if captured != nil {
+		if clearErr == nil && cleared && s.runtimeBlocker != nil {
 			if episodeClearer, ok := s.runtimeBlocker.(CindyHealthEpisodeRuntimeBlocker); ok {
 				episodeClearer.ClearCindyHealthEpisodeBlock(*captured)
 			}
-		} else if balanceClearer, ok := s.runtimeBlocker.(CindyBalanceRuntimeClearer); ok {
-			balanceClearer.ClearCindyBalanceRuntimeBlock(id)
-		} else {
-			s.runtimeBlocker.ClearAccountSchedulingBlock(id)
 		}
 	}
 	return s.accountRepo.GetByID(ctx, id)

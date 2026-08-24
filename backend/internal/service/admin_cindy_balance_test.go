@@ -20,6 +20,7 @@ type cindyBalanceAdminRepoStub struct {
 type cindyBalanceRecoveryInterleavingCache struct {
 	*stubGatewayCache
 	terminalPending *CindyHealthEpisode
+	afterGet        func()
 	afterClear      func()
 }
 
@@ -28,11 +29,17 @@ func (c *cindyBalanceRecoveryInterleavingCache) GetCindyHealthTerminalPending(
 	_ int64,
 	_ string,
 ) (*CindyHealthEpisode, error) {
-	if c.terminalPending == nil {
-		return nil, nil
+	var captured *CindyHealthEpisode
+	if c.terminalPending != nil {
+		episode := *c.terminalPending
+		captured = &episode
 	}
-	episode := *c.terminalPending
-	return &episode, nil
+	if c.afterGet != nil {
+		afterGet := c.afterGet
+		c.afterGet = nil
+		afterGet()
+	}
+	return captured, nil
 }
 
 func (c *cindyBalanceRecoveryInterleavingCache) ClearCindyHealthTerminalPendingIfMatch(
@@ -107,7 +114,7 @@ func TestAdminServiceClearCindyBalanceInsufficientPreservesManualState(t *testin
 	require.Nil(t, updated.CindyBalanceInsufficientAt)
 	require.Equal(t, StatusDisabled, updated.Status)
 	require.False(t, updated.Schedulable)
-	require.Equal(t, []int64{8401}, blocker.clearedIDs)
+	require.Empty(t, blocker.clearedIDs, "recovery without a captured episode must not clear runtime state by account")
 	require.False(t, updated.IsSchedulable(), "clearing the Cindy marker must not re-enable a manually disabled account")
 }
 
@@ -166,6 +173,36 @@ func TestAdminBalanceRecoveryDoesNotClearRuntimeReplacementAfterRedisCAS(t *test
 	block, ok := raw.(cindyHealthRuntimeBlock)
 	require.True(t, ok)
 	require.Equal(t, newEpisode.EpisodeID, block.Episode.EpisodeID)
+}
+
+func TestAdminBalanceRecoveryWithNoCapturedEpisodeDoesNotClearConcurrentRuntimeEpisode(t *testing.T) {
+	account, identity := newHealthTestAccount(t, 8406, "admin-runtime-nil-capture-race")
+	markedAt := time.Now().UTC()
+	account.CindyBalanceInsufficientAt = &markedAt
+	replacement := CindyHealthEpisode{
+		AccountID: account.ID, Generation: identity.Generation, EpisodeID: "admin-after-nil-capture",
+		Fingerprint: identity.Fingerprint, Status: CindyHealthStatusBalanceInsufficient,
+		Evidence: CindyHealthEvidenceExactBudget, ObservedAt: markedAt.Add(time.Second),
+	}
+	cache := &cindyBalanceRecoveryInterleavingCache{stubGatewayCache: &stubGatewayCache{}}
+	gateway := &OpenAIGatewayService{cache: cache}
+	cache.afterGet = func() {
+		require.True(t, gateway.BlockCindyHealthEpisode(account, replacement, "cindy_balance_insufficient"))
+	}
+	repo := &cindyBalanceAdminRepoStub{accountRepoStubForClearAccountError: accountRepoStubForClearAccountError{
+		account: account,
+	}}
+	svc := &adminServiceImpl{accountRepo: repo, runtimeBlocker: gateway}
+
+	_, err := svc.ClearCindyBalanceInsufficient(context.Background(), account.ID)
+
+	require.NoError(t, err)
+	require.True(t, gateway.isOpenAIAccountRuntimeBlocked(account), "the episode installed after a nil capture must retain the runtime block")
+	raw, loaded := gateway.cindyHealthRuntimeBlocks.Load(account.ID)
+	require.True(t, loaded)
+	block, ok := raw.(cindyHealthRuntimeBlock)
+	require.True(t, ok)
+	require.Equal(t, replacement.EpisodeID, block.Episode.EpisodeID)
 }
 
 func TestAdminServiceBannedCleanupClearsAllCindyRuntimeStateAfterCommit(t *testing.T) {
