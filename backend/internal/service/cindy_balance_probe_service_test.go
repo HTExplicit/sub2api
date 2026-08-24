@@ -62,6 +62,36 @@ type cindyBalanceProbeCreateRepositoryStub struct {
 	err                 error
 }
 
+type cindyBalanceProbeDiagnosticHealthCoordinator struct {
+	gateway *OpenAIGatewayService
+	seen    int
+}
+
+func (c *cindyBalanceProbeDiagnosticHealthCoordinator) ObserveCindyHealthSignal(_ context.Context, account *Account, signal CindyHealthSignal) {
+	if signal != CindyHealthSignalExactBudget || c == nil || c.gateway == nil || account == nil {
+		return
+	}
+	c.seen++
+	fingerprint, err := AccountCredentialFingerprint(
+		ProviderProfileCindyLaxaV1,
+		AccountTypeAPIKey,
+		"https://api.laxarouter.ai",
+		account.GetCredential("api_key"),
+	)
+	if err != nil {
+		return
+	}
+	c.gateway.BlockCindyHealthEpisode(account, CindyHealthEpisode{
+		AccountID: account.ID, Generation: account.CindyCredentialGeneration,
+		EpisodeID: "diagnostic-episode", Fingerprint: fingerprint,
+		Status: CindyHealthStatusBalanceInsufficient, Evidence: CindyHealthEvidenceExactBudget,
+		ObservedAt: time.Unix(1, 0).UTC(),
+	}, "cindy_balance_insufficient")
+}
+
+func (c *cindyBalanceProbeDiagnosticHealthCoordinator) ObserveCindyHealthSuccess(context.Context, *Account) {
+}
+
 func (s *cindyBalanceProbeCreateRepositoryStub) CreateJob(
 	_ context.Context,
 	_ *int64,
@@ -269,6 +299,7 @@ func TestCindyBalanceProbeFinalizeExhaustedBlocksOnlyAfterDatabaseCommit(t *test
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			account := newCindyRateLimitAccount(23001, true)
+			account.CindyCredentialGeneration = 7
 			fingerprint, err := CindyAccountIdentityFingerprint(account.Platform, account.Type, account.Credentials)
 			require.NoError(t, err)
 			reservation := &CindyBalanceProbeReservation{
@@ -276,6 +307,8 @@ func TestCindyBalanceProbeFinalizeExhaustedBlocksOnlyAfterDatabaseCommit(t *test
 			}
 			store := newCindyBalanceProbePendingStoreStub()
 			gateway := &OpenAIGatewayService{cache: store}
+			health := &cindyBalanceProbeDiagnosticHealthCoordinator{gateway: gateway}
+			gateway.cindyHealth = health
 			rateLimit := &RateLimitService{runtimeBlocker: gateway}
 			repo := &cindyBalanceProbeFinalizeRepositoryStub{state: tc.state, err: tc.err}
 			repo.beforeFinalize = func() {
@@ -297,6 +330,20 @@ func TestCindyBalanceProbeFinalizeExhaustedBlocksOnlyAfterDatabaseCommit(t *test
 			require.Equal(t, 1, repo.calls)
 			require.Equal(t, tc.wantClear, store.clearCalls)
 			require.Equal(t, tc.wantBlock, gateway.isOpenAIAccountRuntimeBlocked(account))
+			wantSeen := 0
+			if tc.wantBlock {
+				wantSeen = 1
+			}
+			require.Equal(t, wantSeen, health.seen)
+			_, legacyBlock := gateway.cindyBalanceRuntimeBlockFingerprint.Load(account.ID)
+			require.False(t, legacyBlock, "diagnostic exhaustion must not create a legacy runtime block")
+			if tc.wantBlock {
+				raw, loaded := gateway.cindyHealthRuntimeBlocks.Load(account.ID)
+				require.True(t, loaded)
+				block, ok := raw.(cindyHealthRuntimeBlock)
+				require.True(t, ok)
+				require.Equal(t, "diagnostic-episode", block.Episode.EpisodeID)
+			}
 		})
 	}
 }

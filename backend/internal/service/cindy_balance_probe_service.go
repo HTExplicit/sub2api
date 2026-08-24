@@ -457,11 +457,12 @@ func (s *CindyBalanceProbeService) finalizeExhausted(
 		cindyBalanceProbeConfirmationWindow,
 	)
 	if err == nil && (state == "exhausted" || state == "already_marked") {
-		// The DB marker and item outcome committed atomically. Block locally only
-		// after that commit; scheduler outbox propagation supplies the durable
-		// cross-process invalidation.
-		if s.rateLimit != nil {
-			s.rateLimit.blockCindyBalanceRuntime(account)
+		// The DB marker and item outcome committed atomically. Reuse the shared
+		// health coordinator so the diagnostic terminal block is owned by the
+		// current credential generation/fingerprint episode, just like a request
+		// signal. Do not fall back to the legacy fingerprint-only block.
+		if s.gateway != nil && s.gateway.cindyHealth != nil {
+			s.gateway.cindyHealth.ObserveCindyHealthSignal(ctx, account, CindyHealthSignalExactBudget)
 		}
 		if s.gateway != nil {
 			store, ok := s.gateway.cindyBalancePendingStore()
