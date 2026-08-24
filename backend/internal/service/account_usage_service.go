@@ -131,6 +131,17 @@ func NewUsageCache() *UsageCache {
 	return &UsageCache{}
 }
 
+// InvalidateAccount drops persisted usage snapshots after a successful commit.
+// It is intentionally account-scoped so unrelated account caches remain warm.
+func (c *UsageCache) InvalidateAccount(accountID int64) {
+	if c == nil || accountID <= 0 {
+		return
+	}
+	c.windowStatsCache.Delete(accountID)
+	c.apiCache.Delete(accountID)
+	c.antigravityCache.Delete(accountID)
+}
+
 // WindowStats 窗口期统计
 //
 // cost: 账号口径费用（total_cost * account_rate_multiplier）

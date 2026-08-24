@@ -42,15 +42,15 @@ func (r *usageBillingRepository) Apply(ctx context.Context, cmd *service.UsageBi
 		}
 	}()
 
-	applied, err := r.claimUsageBillingKey(ctx, tx, cmd)
+	applied, ownerAccountID, err := r.claimUsageBillingKeyWithOwner(ctx, tx, cmd)
 	if err != nil {
 		return nil, err
 	}
 	if !applied {
-		return &service.UsageBillingApplyResult{Applied: false}, nil
+		return &service.UsageBillingApplyResult{Applied: false, OwnerAccountID: ownerAccountID}, nil
 	}
 
-	result := &service.UsageBillingApplyResult{Applied: true}
+	result := &service.UsageBillingApplyResult{Applied: true, OwnerAccountID: ownerAccountID}
 	if err := r.applyUsageBillingEffects(ctx, tx, cmd, result); err != nil {
 		return nil, err
 	}
@@ -63,33 +63,44 @@ func (r *usageBillingRepository) Apply(ctx context.Context, cmd *service.UsageBi
 }
 
 func (r *usageBillingRepository) claimUsageBillingKey(ctx context.Context, tx *sql.Tx, cmd *service.UsageBillingCommand) (bool, error) {
-	return r.claimUsageBillingRequest(ctx, tx, cmd.RequestID, cmd.APIKeyID, cmd.RequestFingerprint)
+	applied, _, err := r.claimUsageBillingKeyWithOwner(ctx, tx, cmd)
+	return applied, err
+}
+
+func (r *usageBillingRepository) claimUsageBillingKeyWithOwner(ctx context.Context, tx *sql.Tx, cmd *service.UsageBillingCommand) (bool, int64, error) {
+	return r.claimUsageBillingRequestWithOwner(ctx, tx, cmd.RequestID, cmd.APIKeyID, cmd.RequestFingerprint, cmd.AccountID)
 }
 
 func (r *usageBillingRepository) claimUsageBillingRequest(ctx context.Context, tx *sql.Tx, requestID string, apiKeyID int64, requestFingerprint string) (bool, error) {
+	applied, _, err := r.claimUsageBillingRequestWithOwner(ctx, tx, requestID, apiKeyID, requestFingerprint, 0)
+	return applied, err
+}
+
+func (r *usageBillingRepository) claimUsageBillingRequestWithOwner(ctx context.Context, tx *sql.Tx, requestID string, apiKeyID int64, requestFingerprint string, accountID int64) (bool, int64, error) {
+	var ownerAccountID int64
 	var id int64
 	err := tx.QueryRowContext(ctx, `
-		INSERT INTO usage_billing_dedup (request_id, api_key_id, request_fingerprint)
-		VALUES ($1, $2, $3)
+		INSERT INTO usage_billing_dedup (request_id, api_key_id, request_fingerprint, account_id)
+		VALUES ($1, $2, $3, NULLIF($4, 0))
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
-		RETURNING id
-	`, requestID, apiKeyID, requestFingerprint).Scan(&id)
+		RETURNING id, COALESCE(account_id, 0)
+	`, requestID, apiKeyID, requestFingerprint, accountID).Scan(&id, &ownerAccountID)
 	if errors.Is(err, sql.ErrNoRows) {
 		var existingFingerprint string
 		if err := tx.QueryRowContext(ctx, `
-			SELECT request_fingerprint
+			SELECT request_fingerprint, COALESCE(account_id, 0)
 			FROM usage_billing_dedup
 			WHERE request_id = $1 AND api_key_id = $2
-		`, requestID, apiKeyID).Scan(&existingFingerprint); err != nil {
-			return false, err
+		`, requestID, apiKeyID).Scan(&existingFingerprint, &ownerAccountID); err != nil {
+			return false, 0, err
 		}
 		if strings.TrimSpace(existingFingerprint) != strings.TrimSpace(requestFingerprint) {
-			return false, service.ErrUsageBillingRequestConflict
+			return false, ownerAccountID, service.ErrUsageBillingRequestConflict
 		}
-		return false, nil
+		return false, ownerAccountID, nil
 	}
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
 	var archivedFingerprint string
 	err = tx.QueryRowContext(ctx, `
@@ -99,14 +110,14 @@ func (r *usageBillingRepository) claimUsageBillingRequest(ctx context.Context, t
 	`, requestID, apiKeyID).Scan(&archivedFingerprint)
 	if err == nil {
 		if strings.TrimSpace(archivedFingerprint) != strings.TrimSpace(requestFingerprint) {
-			return false, service.ErrUsageBillingRequestConflict
+			return false, ownerAccountID, service.ErrUsageBillingRequestConflict
 		}
-		return false, nil
+		return false, ownerAccountID, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		return false, err
+		return false, 0, err
 	}
-	return true, nil
+	return true, ownerAccountID, nil
 }
 
 func (r *usageBillingRepository) ReserveBatchImageBalance(ctx context.Context, cmd *service.BatchImageBalanceHoldCommand) (*service.BatchImageBalanceHoldResult, error) {

@@ -439,6 +439,8 @@ type OpenAIGatewayService struct {
 	userPlatformQuotaRepo UserPlatformQuotaRepository
 	businessPromptService *BusinessSystemPromptService
 	cindyHealth           CindyHealthCoordinator
+	usageCache            *UsageCache
+	usageCommitObserver   func(int64)
 	liveAttestation       liveattestation.Provider
 	liveAttestationCipher SecretEncryptor
 
@@ -497,6 +499,18 @@ func (s *OpenAIGatewayService) SetCindyHealthCoordinator(coordinator CindyHealth
 		return
 	}
 	s.cindyHealth = coordinator
+}
+
+func (s *OpenAIGatewayService) SetUsageCache(cache *UsageCache) {
+	if s != nil {
+		s.usageCache = cache
+	}
+}
+
+func (s *OpenAIGatewayService) SetUsageCommitObserver(observer func(int64)) {
+	if s != nil {
+		s.usageCommitObserver = observer
+	}
 }
 
 // NewOpenAIGatewayService creates a new OpenAIGatewayService
