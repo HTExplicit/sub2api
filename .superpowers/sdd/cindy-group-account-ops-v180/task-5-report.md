@@ -43,3 +43,26 @@ git diff --check
   the stats path intentionally reads it in SQL so schema generation is not
   required for this narrow change.
 - No full package suite or production traffic was run.
+
+## Fix Round: 1620bd1fb..HEAD
+
+- Extended the detached usage snapshot to WebSocket, Chat Completions, Images,
+  Embeddings, and Alpha Search dispatches. Workers now receive detached API-key,
+  account, user, group, subscription, pointer, and nested credential values and
+  do not read Gin context after enqueue.
+- Failed and partial Chat Completions, Images, and WebSocket image turns return
+  before normal usage submission. Refusal retries remain operational-only.
+- Added regression coverage for successful-result gating and post-dispatch
+  mutation of request/auth/account/subscription values.
+
+Fix-round checks passed:
+
+```text
+go test -tags=unit ./internal/handler -run 'TestSnapshotOpenAIUsageMetadataOwnsValuesBeforeAsyncDispatch|TestShouldSubmitOpenAIUsageRequiresSuccessfulResult|^$' -count=1
+go test -tags=unit ./internal/handler ./internal/service ./internal/server/routes -run 'TestSnapshotOpenAIUsageMetadataOwnsValuesBeforeAsyncDispatch|TestShouldSubmitOpenAIUsageRequiresSuccessfulResult|TestBuildCindyDuplicateIdentityInventoryDoesNotChooseTerminalOwner|TestBuildCindyDuplicateIdentityInventoryIsDeterministicAndRedacted|^$' -count=1
+go test -tags=unit ./internal/handler -run '^$' -count=1
+git diff --check
+```
+
+The full package matrix, live PostgreSQL/Redis concurrency, and production
+acceptance remain CI/deployment gates.

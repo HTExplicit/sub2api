@@ -51,14 +51,23 @@ func TestSnapshotOpenAIUsageMetadataOwnsValuesBeforeAsyncDispatch(t *testing.T) 
 	context.Request.Header.Set("User-Agent", "snapshot-agent")
 	context.Request.Header.Set("X-Forwarded-For", "192.0.2.10")
 	context.Set("requested_public_model", "gpt-5")
-	apiKey := &service.APIKey{ID: 7, User: &service.User{ID: 8}, Group: &service.Group{ID: 9, Platform: service.PlatformCindy}}
-	account := &service.Account{ID: 10, Platform: service.PlatformCindy, Credentials: map[string]any{"api_key": "secret"}}
+	groupID := int64(6)
+	accountRate := 1.25
+	parentID := int64(4)
+	dailyWindow := time.Unix(20, 0)
+	apiKey := &service.APIKey{ID: 7, GroupID: &groupID, User: &service.User{ID: 8}, Group: &service.Group{ID: 9, Platform: service.PlatformCindy}}
+	account := &service.Account{ID: 10, Platform: service.PlatformCindy, ParentAccountID: &parentID, RateMultiplier: &accountRate, Credentials: map[string]any{"api_key": "secret"}}
+	subscription := &service.UserSubscription{ID: 12, DailyWindowStart: &dailyWindow}
 	result := &service.OpenAIForwardResult{UpstreamModel: "gpt-5.6-sol"}
 	mapping := service.ChannelMappingResult{ChannelID: 11, Mapped: true, MappedModel: "gpt-5.6-sol", BillingModelSource: service.BillingModelSourceChannelMapped}
 
-	snapshot := snapshotOpenAIUsageMetadata(context, apiKey, account, nil, mapping, "gpt-5", result, []byte(`{"model":"gpt-5"}`))
+	snapshot := snapshotOpenAIUsageMetadata(context, apiKey, account, subscription, mapping, "gpt-5", result, []byte(`{"model":"gpt-5"}`))
 	apiKey.ID = 99
+	groupID = 99
 	account.ID = 100
+	accountRate = 9
+	parentID = 99
+	dailyWindow = time.Unix(99, 0)
 	account.Credentials["api_key"] = "changed"
 	context.Request.Header.Set("User-Agent", "changed-agent")
 	input := snapshot.Input(result, nil, time.Time{})
@@ -69,4 +78,15 @@ func TestSnapshotOpenAIUsageMetadataOwnsValuesBeforeAsyncDispatch(t *testing.T) 
 	require.Equal(t, int64(11), input.ChannelID)
 	require.Equal(t, "gpt-5.6-sol", input.ChannelMappedModel)
 	require.Equal(t, "secret", input.Account.Credentials["api_key"])
+	require.Equal(t, int64(6), *input.APIKey.GroupID)
+	require.Equal(t, 1.25, *input.Account.RateMultiplier)
+	require.Equal(t, int64(4), *input.Account.ParentAccountID)
+	require.Equal(t, int64(20), input.Subscription.DailyWindowStart.Unix())
+}
+
+func TestShouldSubmitOpenAIUsageRequiresSuccessfulResult(t *testing.T) {
+	result := &service.OpenAIForwardResult{ImageCount: 1}
+	require.True(t, shouldSubmitOpenAIUsage(nil, result))
+	require.False(t, shouldSubmitOpenAIUsage(context.Canceled, result))
+	require.False(t, shouldSubmitOpenAIUsage(nil, nil))
 }
