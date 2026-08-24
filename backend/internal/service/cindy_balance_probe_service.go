@@ -417,6 +417,9 @@ func (s *CindyBalanceProbeService) finalizeRecovery(
 				}
 				cancel()
 			}
+			if clearErr := s.gateway.ClearCindyHealthTerminalPending(ctx, reservation.AccountID, CindyHealthStatusBalanceInsufficient); clearErr != nil {
+				slog.Error("cindy_balance_probe_recovery_terminal_pending_clear_failed", "job_id", reservation.JobID, "error", clearErr)
+			}
 			s.gateway.ClearAccountSchedulingBlock(reservation.AccountID)
 		}
 	}

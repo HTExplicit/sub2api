@@ -73,6 +73,7 @@ func TestAdminServiceClearCindyBalanceInsufficientPreservesManualState(t *testin
 	require.Equal(t, StatusDisabled, updated.Status)
 	require.False(t, updated.Schedulable)
 	require.Equal(t, []int64{8401}, blocker.clearedIDs)
+	require.Equal(t, []string{CindyHealthStatusBalanceInsufficient}, blocker.clearedTerminalStatuses)
 	require.False(t, updated.IsSchedulable(), "clearing the Cindy marker must not re-enable a manually disabled account")
 }
 

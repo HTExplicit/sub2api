@@ -162,6 +162,7 @@ var _ service.OpenAIRuntimeBreakerLeaseStore = (*gatewayCache)(nil)
 var _ service.CindyBalancePendingStore = (*gatewayCache)(nil)
 var _ service.CindyHealthEpisodeStore = (*gatewayCache)(nil)
 var _ service.CindyHealthStateCleaner = (*gatewayCache)(nil)
+var _ service.CindyHealthTerminalPendingClearer = (*gatewayCache)(nil)
 
 func cindyBalancePendingKey(accountID int64) string {
 	return cindyBalancePendingPrefix + strconv.FormatInt(accountID, 10)
@@ -340,6 +341,33 @@ func (c *gatewayCache) ListCindyHealthEpisodes(ctx context.Context, limit int) (
 	return out, nil
 }
 
+func (c *gatewayCache) GetCindyHealthEpisodes(ctx context.Context, accountID int64) ([]service.CindyHealthEpisode, error) {
+	if c == nil || c.rdb == nil || accountID <= 0 {
+		return nil, errors.New("invalid Cindy health account")
+	}
+	keys := []string{
+		cindyHealthPendingKeyV3(accountID, service.CindyHealthStatusBanned),
+		cindyHealthPendingKeyV3(accountID, service.CindyHealthStatusBalanceInsufficient),
+	}
+	values, err := c.rdb.MGet(ctx, keys...).Result()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]service.CindyHealthEpisode, 0, len(values))
+	for _, raw := range values {
+		value, ok := raw.(string)
+		if !ok || value == "" {
+			continue
+		}
+		episode, parseErr := parseCindyHealthEpisodeValue(value)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		out = append(out, episode)
+	}
+	return out, nil
+}
+
 func (c *gatewayCache) ClearAllCindyHealthState(ctx context.Context, accountID int64) error {
 	if c == nil || c.rdb == nil || accountID <= 0 {
 		return errors.New("invalid Cindy health cleanup")
@@ -365,6 +393,14 @@ func (c *gatewayCache) ClearAllCindyHealthState(ctx context.Context, accountID i
 		}
 	}
 	return c.rdb.Del(ctx, keys...).Err()
+}
+
+func (c *gatewayCache) ClearCindyHealthTerminalPending(ctx context.Context, accountID int64, status string) error {
+	if c == nil || c.rdb == nil || accountID <= 0 ||
+		(status != service.CindyHealthStatusBanned && status != service.CindyHealthStatusBalanceInsufficient) {
+		return errors.New("invalid Cindy terminal pending cleanup")
+	}
+	return c.rdb.Del(ctx, cindyHealthPendingKeyV3(accountID, status)).Err()
 }
 
 func (c *gatewayCache) MarkCindyBalancePending(ctx context.Context, accountID int64, credentialsFingerprint string) error {

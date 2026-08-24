@@ -128,6 +128,11 @@ type cindyHealthEpisodeStoreStub struct {
 	pending map[int64]CindyHealthEpisode
 }
 
+type cindyPendingGatewayCacheStub struct {
+	GatewayCache
+	*cindyHealthEpisodeStoreStub
+}
+
 func (s *cindyHealthEpisodeStoreStub) ClaimCindyHealthEpisode(_ context.Context, episode CindyHealthEpisode, _ time.Duration) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -160,6 +165,15 @@ func (s *cindyHealthEpisodeStoreStub) ListCindyHealthEpisodes(_ context.Context,
 		out = append(out, episode)
 	}
 	return out, nil
+}
+
+func (s *cindyHealthEpisodeStoreStub) GetCindyHealthEpisodes(_ context.Context, accountID int64) ([]CindyHealthEpisode, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if episode, ok := s.pending[accountID]; ok {
+		return []CindyHealthEpisode{episode}, nil
+	}
+	return []CindyHealthEpisode{}, nil
 }
 
 type cindyHealthRuntimeStub struct {
@@ -422,6 +436,52 @@ func TestCindyHealthAppliedFalseRetainsPendingUntilAuthoritativeRetry(t *testing
 	}
 
 	require.Len(t, repo.terminalEpisodes(), 1)
+	store.mu.Lock()
+	require.Empty(t, store.pending)
+	store.mu.Unlock()
+}
+
+func TestCindyHealthClaimFalseRestoresExistingGenerationScopedBlock(t *testing.T) {
+	account, identity := newHealthTestAccount(t, 9111, "existing-key")
+	existing := CindyHealthEpisode{
+		AccountID: account.ID, Generation: identity.Generation, EpisodeID: "existing-episode",
+		Fingerprint: identity.Fingerprint, Status: CindyHealthStatusBanned,
+		Evidence: CindyHealthEvidenceUnauthorized, ObservedAt: time.Now().UTC(),
+	}
+	store := &cindyHealthEpisodeStoreStub{pending: map[int64]CindyHealthEpisode{account.ID: existing}}
+	gateway := &OpenAIGatewayService{}
+	svc := &CindyHealthService{
+		accountRepo:  &cindyHealthAccountRepoStub{account: account},
+		identityRepo: &cindyHealthIdentityRepoStub{identity: identity},
+		healthRepo:   &cindyHealthRepositoryStub{}, episodeStore: store, runtime: gateway,
+		now: time.Now, ctx: context.Background(), retryWake: make(chan struct{}, 1),
+	}
+
+	svc.ObserveCindyHealthSignal(context.Background(), account, CindyHealthSignalBanned)
+
+	require.True(t, gateway.isOpenAIAccountRuntimeBlockedContext(context.Background(), account))
+}
+
+func TestCindyTerminalPendingHotPathBlocksBeforeRetryHydrationAndClearsStale(t *testing.T) {
+	account, identity := newHealthTestAccount(t, 9112, "hotpath-key")
+	current := CindyHealthEpisode{
+		AccountID: account.ID, Generation: identity.Generation, EpisodeID: "hotpath-current",
+		Fingerprint: identity.Fingerprint, Status: CindyHealthStatusBanned,
+		Evidence: CindyHealthEvidenceUnauthorized, ObservedAt: time.Now().UTC(),
+	}
+	store := &cindyHealthEpisodeStoreStub{pending: map[int64]CindyHealthEpisode{account.ID: current}}
+	gateway := &OpenAIGatewayService{cache: &cindyPendingGatewayCacheStub{cindyHealthEpisodeStoreStub: store}}
+
+	require.True(t, gateway.isOpenAIAccountRequestRuntimeBlockedContext(context.Background(), account, "gpt-5.6-sol"))
+
+	gateway.ClearAccountSchedulingBlock(account.ID)
+	stale := current
+	stale.Generation--
+	stale.EpisodeID = "hotpath-stale"
+	store.mu.Lock()
+	store.pending[account.ID] = stale
+	store.mu.Unlock()
+	require.False(t, gateway.isOpenAIAccountRequestRuntimeBlockedContext(context.Background(), account, "gpt-5.6-sol"))
 	store.mu.Lock()
 	require.Empty(t, store.pending)
 	store.mu.Unlock()

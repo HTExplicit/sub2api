@@ -104,6 +104,7 @@ type CindyHealthRepository interface {
 type CindyHealthEpisodeStore interface {
 	ClaimCindyHealthEpisode(ctx context.Context, episode CindyHealthEpisode, ttl time.Duration) (bool, error)
 	ClearCindyHealthEpisodeIfMatch(ctx context.Context, episode CindyHealthEpisode) error
+	GetCindyHealthEpisodes(ctx context.Context, accountID int64) ([]CindyHealthEpisode, error)
 	ListCindyHealthEpisodes(ctx context.Context, limit int) ([]CindyHealthEpisode, error)
 }
 
@@ -227,6 +228,7 @@ func (s *CindyHealthService) ObserveCindyHealthSignal(ctx context.Context, accou
 			if claimErr != nil {
 				slog.Error("cindy_terminal_pending_claim_failed", "account_id", account.ID, "generation", identity.Generation, "error", claimErr)
 			} else if !claimed {
+				s.restoreCurrentPendingBlock(stateCtx, account)
 				s.wakeTerminalRetry()
 				return
 			}
@@ -266,6 +268,38 @@ func (s *CindyHealthService) ObserveCindyHealthSignal(ctx context.Context, accou
 		_, _ = s.healthRepo.BeginCindyHealthEpisode(stateCtx, episode, signal.evidence(), now, until)
 		return
 	}
+}
+
+func (s *CindyHealthService) restoreCurrentPendingBlock(ctx context.Context, account *Account) bool {
+	if s == nil || s.episodeStore == nil || s.runtime == nil || account == nil {
+		return false
+	}
+	episodes, err := s.episodeStore.GetCindyHealthEpisodes(ctx, account.ID)
+	if err != nil {
+		slog.Error("cindy_terminal_pending_get_failed", "account_id", account.ID, "error", err)
+		return false
+	}
+	for _, episode := range episodes {
+		if !episode.terminalValid() || episode.Generation != account.CindyCredentialGeneration {
+			continue
+		}
+		fingerprint, fingerprintErr := AccountCredentialFingerprint(
+			ProviderProfileCindyLaxaV1, AccountTypeAPIKey, "https://api.laxarouter.ai", account.GetCredential("api_key"),
+		)
+		if fingerprintErr != nil || fingerprint != episode.Fingerprint {
+			continue
+		}
+		reason := "cindy_banned"
+		if episode.Status == CindyHealthStatusBalanceInsufficient {
+			reason = "cindy_balance_insufficient"
+		}
+		if episodeRuntime, ok := s.runtime.(CindyHealthEpisodeRuntimeBlocker); ok {
+			return episodeRuntime.BlockCindyHealthEpisode(account, episode, reason)
+		}
+		s.runtime.BlockAccountScheduling(account, time.Time{}, reason)
+		return true
+	}
+	return false
 }
 
 func (s *CindyHealthService) wakeTerminalRetry() {

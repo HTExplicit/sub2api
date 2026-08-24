@@ -13,11 +13,12 @@ import (
 )
 
 type runtimeBlockRecorder struct {
-	accounts              []*Account
-	until                 []time.Time
-	reasons               []string
-	clearedIDs            []int64
-	clearedCindyHealthIDs []int64
+	accounts                []*Account
+	until                   []time.Time
+	reasons                 []string
+	clearedIDs              []int64
+	clearedCindyHealthIDs   []int64
+	clearedTerminalStatuses []string
 }
 
 func (r *runtimeBlockRecorder) BlockAccountScheduling(account *Account, until time.Time, reason string) {
@@ -32,6 +33,11 @@ func (r *runtimeBlockRecorder) ClearAccountSchedulingBlock(accountID int64) {
 
 func (r *runtimeBlockRecorder) ClearAllCindyHealthState(_ context.Context, accountID int64) error {
 	r.clearedCindyHealthIDs = append(r.clearedCindyHealthIDs, accountID)
+	return nil
+}
+
+func (r *runtimeBlockRecorder) ClearCindyHealthTerminalPending(_ context.Context, _ int64, status string) error {
+	r.clearedTerminalStatuses = append(r.clearedTerminalStatuses, status)
 	return nil
 }
 

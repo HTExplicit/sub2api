@@ -42,6 +42,10 @@ type CindyHealthStateCleaner interface {
 	ClearAllCindyHealthState(ctx context.Context, accountID int64) error
 }
 
+type CindyHealthTerminalPendingClearer interface {
+	ClearCindyHealthTerminalPending(ctx context.Context, accountID int64, status string) error
+}
+
 // CindyBalanceSignal identifies the exact structured Cindy budget signal that
 // was observed. The transport shape is part of the contract: an HTTP error is
 // not interchangeable with an in-band Responses/WebSocket terminal event.

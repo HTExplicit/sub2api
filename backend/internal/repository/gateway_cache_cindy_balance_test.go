@@ -200,3 +200,18 @@ func TestGatewayCacheCindyTerminalPendingSurvivesRestartAndListsGenerationExactl
 	require.NoError(t, err)
 	require.ElementsMatch(t, []service.CindyHealthEpisode{episode, balanceEpisode}, episodes)
 }
+
+func TestGatewayCacheBalanceRecoveryClearsOnlyBalanceV3Pending(t *testing.T) {
+	server := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	cache := &gatewayCache{rdb: client}
+	ctx := context.Background()
+	const accountID int64 = 77205
+	require.NoError(t, client.Set(ctx, cindyHealthPendingKeyV3(accountID, service.CindyHealthStatusBanned), "banned", 0).Err())
+	require.NoError(t, client.Set(ctx, cindyHealthPendingKeyV3(accountID, service.CindyHealthStatusBalanceInsufficient), "balance", 0).Err())
+
+	require.NoError(t, cache.ClearCindyHealthTerminalPending(ctx, accountID, service.CindyHealthStatusBalanceInsufficient))
+	require.True(t, server.Exists(cindyHealthPendingKeyV3(accountID, service.CindyHealthStatusBanned)))
+	require.False(t, server.Exists(cindyHealthPendingKeyV3(accountID, service.CindyHealthStatusBalanceInsufficient)))
+}

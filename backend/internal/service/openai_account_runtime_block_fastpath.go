@@ -705,6 +705,54 @@ func (s *OpenAIGatewayService) cindyBalancePendingStore() (CindyBalancePendingSt
 	return store, ok && store != nil
 }
 
+func (s *OpenAIGatewayService) cindyHealthEpisodeStore() (CindyHealthEpisodeStore, bool) {
+	if s == nil || s.cache == nil {
+		return nil, false
+	}
+	store, ok := s.cache.(CindyHealthEpisodeStore)
+	return store, ok && store != nil
+}
+
+func (s *OpenAIGatewayService) isCindyTerminalPendingBlocked(ctx context.Context, account *Account) bool {
+	if s == nil || account == nil || !hasCanonicalCindyProviderIdentity(account) || account.CindyCredentialGeneration <= 0 {
+		return false
+	}
+	store, ok := s.cindyHealthEpisodeStore()
+	if !ok {
+		return false
+	}
+	stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cindyBalancePendingReadTimeout)
+	episodes, err := store.GetCindyHealthEpisodes(stateCtx, account.ID)
+	cancel()
+	if err != nil {
+		slog.Error("cindy_terminal_pending_hotpath_read_failed", "account_id", account.ID, "error", err)
+		return false
+	}
+	fingerprint, err := AccountCredentialFingerprint(
+		ProviderProfileCindyLaxaV1, AccountTypeAPIKey, "https://api.laxarouter.ai", account.GetCredential("api_key"),
+	)
+	if err != nil {
+		return false
+	}
+	blocked := false
+	for _, episode := range episodes {
+		if !episode.terminalValid() || episode.Generation != account.CindyCredentialGeneration || episode.Fingerprint != fingerprint {
+			clearCtx, clearCancel := context.WithTimeout(context.WithoutCancel(ctx), cindyBalancePendingReadTimeout)
+			_ = store.ClearCindyHealthEpisodeIfMatch(clearCtx, episode)
+			clearCancel()
+			continue
+		}
+		reason := "cindy_banned"
+		if episode.Status == CindyHealthStatusBalanceInsufficient {
+			reason = "cindy_balance_insufficient"
+		}
+		if s.BlockCindyHealthEpisode(account, episode, reason) {
+			blocked = true
+		}
+	}
+	return blocked
+}
+
 // ClearCindyBalancePending is used by the explicit admin recovery path. It is
 // deliberately separate from ClearAccountSchedulingBlock: ordinary runtime
 // recovery must never erase a durable Cindy budget signal.
@@ -729,6 +777,19 @@ func (s *OpenAIGatewayService) ClearAllCindyHealthState(ctx context.Context, acc
 	stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	defer cancel()
 	return cleaner.ClearAllCindyHealthState(stateCtx, accountID)
+}
+
+func (s *OpenAIGatewayService) ClearCindyHealthTerminalPending(ctx context.Context, accountID int64, status string) error {
+	if s == nil || accountID <= 0 || s.cache == nil {
+		return nil
+	}
+	clearer, ok := s.cache.(CindyHealthTerminalPendingClearer)
+	if !ok {
+		return nil
+	}
+	stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+	defer cancel()
+	return clearer.ClearCindyHealthTerminalPending(stateCtx, accountID, status)
 }
 
 // withCindyBalancePendingSnapshot loads every not-yet-covered strict Cindy
@@ -883,8 +944,6 @@ func (s *OpenAIGatewayService) openAIAccountRuntimeBlockLock(accountID int64) *s
 }
 
 func (s *OpenAIGatewayService) blockAccountSchedulingLocked(account *Account, until time.Time, reason string) (uint64, bool) {
-	generation := s.openaiAccountRuntimeBlockSequence.Add(1)
-	s.openaiAccountRuntimeBlockGeneration.Store(account.ID, generation)
 	now := time.Now()
 	blockUntil := until
 	indefinite := blockUntil.IsZero() && (reason == "cindy_balance_insufficient" || reason == "cindy_banned")
@@ -892,32 +951,24 @@ func (s *OpenAIGatewayService) blockAccountSchedulingLocked(account *Account, un
 		blockUntil = now.Add(openAIStopSchedulingBridgeCooldown)
 	}
 
-	for {
-		current, loaded := s.openaiAccountRuntimeBlockUntil.Load(account.ID)
-		if !loaded {
-			actual, stored := s.openaiAccountRuntimeBlockUntil.LoadOrStore(account.ID, blockUntil)
-			if !stored {
-				return generation, true
-			}
-			current = actual
-		}
-
+	if current, loaded := s.openaiAccountRuntimeBlockUntil.Load(account.ID); loaded {
 		currentUntil, ok := current.(time.Time)
-		if !ok {
-			if s.openaiAccountRuntimeBlockUntil.CompareAndSwap(account.ID, current, blockUntil) {
-				return generation, true
+		if ok {
+			// A stored zero time is the Cindy balance fail-closed sentinel. It must
+			// dominate every later finite cooldown until an explicit clear removes it.
+			if currentUntil.IsZero() || (!blockUntil.IsZero() && !blockUntil.After(currentUntil)) {
+				owner, _ := s.openaiAccountRuntimeBlockGeneration.Load(account.ID)
+				if generation, valid := owner.(uint64); valid {
+					return generation, false
+				}
+				return 0, false
 			}
-			continue
-		}
-		// A stored zero time is the Cindy balance fail-closed sentinel. It must
-		// dominate every later finite cooldown until an explicit clear removes it.
-		if currentUntil.IsZero() || (!blockUntil.IsZero() && !blockUntil.After(currentUntil)) {
-			return generation, false
-		}
-		if s.openaiAccountRuntimeBlockUntil.CompareAndSwap(account.ID, current, blockUntil) {
-			return generation, true
 		}
 	}
+	generation := s.openaiAccountRuntimeBlockSequence.Add(1)
+	s.openaiAccountRuntimeBlockUntil.Store(account.ID, blockUntil)
+	s.openaiAccountRuntimeBlockGeneration.Store(account.ID, generation)
+	return generation, true
 }
 
 func (s *OpenAIGatewayService) ClearAccountSchedulingBlock(accountID int64) {
@@ -1124,6 +1175,9 @@ func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlockedContext(ctx c
 		return false
 	}
 	if s.isOpenAIAccountRuntimeBlockedContext(ctx, account) || s.isOpenAIAccountModelRuntimeBlocked(account, requestedModel) {
+		return true
+	}
+	if s.isCindyTerminalPendingBlocked(ctx, account) {
 		return true
 	}
 	if s.isCindyBalancePendingBlocked(ctx, account) {

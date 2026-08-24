@@ -38,6 +38,11 @@ func (s *adminServiceImpl) ClearCindyBalanceInsufficient(ctx context.Context, id
 			slog.Warn("cindy_balance_legacy_pending_clear_failed", "account_id", id, "error", err)
 		}
 	}
+	if terminalClearer, ok := s.runtimeBlocker.(CindyHealthTerminalPendingClearer); ok {
+		if err := terminalClearer.ClearCindyHealthTerminalPending(ctx, id, CindyHealthStatusBalanceInsufficient); err != nil {
+			slog.Warn("cindy_balance_terminal_pending_clear_failed", "account_id", id, "error", err)
+		}
+	}
 	if s.runtimeBlocker != nil {
 		s.runtimeBlocker.ClearAccountSchedulingBlock(id)
 	}

@@ -1421,6 +1421,7 @@ func TestCindyBannedRuntimeBlockIsIndefiniteAndGenerationScopedAcrossABA(t *test
 	require.True(t, ok)
 	require.True(t, stored.(time.Time).IsZero(), "banned runtime block must be indefinite")
 	require.True(t, svc.isOpenAIAccountRuntimeBlockedContext(context.Background(), account))
+	svc.BlockAccountScheduling(account, time.Now().Add(2*time.Minute), "cindy_health_quarantine")
 
 	currentABA := *account
 	currentABA.CindyCredentialGeneration = 6
