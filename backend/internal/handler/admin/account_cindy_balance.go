@@ -33,6 +33,23 @@ func (h *AccountHandler) PreviewCindyInsufficientDeletion(c *gin.Context) {
 }
 
 func (h *AccountHandler) DeleteCindyInsufficient(c *gin.Context) {
+	h.submitCindyCleanup(c, service.AccountJobKindCindyConfirmedCleanup)
+}
+
+func (h *AccountHandler) PreviewCindyBannedDeletion(c *gin.Context) {
+	preview, err := h.adminService.PreviewCindyBannedDeletion(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, preview)
+}
+
+func (h *AccountHandler) DeleteCindyBanned(c *gin.Context) {
+	h.submitCindyCleanup(c, service.AccountJobKindCindyBannedCleanup)
+}
+
+func (h *AccountHandler) submitCindyCleanup(c *gin.Context, kind string) {
 	var req struct {
 		ExpectedCount int    `json:"expected_count"`
 		Fingerprint   string `json:"fingerprint"`
@@ -45,5 +62,5 @@ func (h *AccountHandler) DeleteCindyInsufficient(c *gin.Context) {
 		response.BadRequest(c, "expected_count and fingerprint are required")
 		return
 	}
-	h.submitOneAccountJob(c, service.AccountJobKindCindyConfirmedCleanup, req)
+	h.submitOneAccountJob(c, kind, req)
 }

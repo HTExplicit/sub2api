@@ -440,6 +440,26 @@ func (_u *AccountUpdate) ClearCindyBalanceInsufficientAt() *AccountUpdate {
 	return _u
 }
 
+// SetCindyBannedAt sets the "cindy_banned_at" field.
+func (_u *AccountUpdate) SetCindyBannedAt(v time.Time) *AccountUpdate {
+	_u.mutation.SetCindyBannedAt(v)
+	return _u
+}
+
+// SetNillableCindyBannedAt sets the "cindy_banned_at" field if the given value is not nil.
+func (_u *AccountUpdate) SetNillableCindyBannedAt(v *time.Time) *AccountUpdate {
+	if v != nil {
+		_u.SetCindyBannedAt(*v)
+	}
+	return _u
+}
+
+// ClearCindyBannedAt clears the value of the "cindy_banned_at" field.
+func (_u *AccountUpdate) ClearCindyBannedAt() *AccountUpdate {
+	_u.mutation.ClearCindyBannedAt()
+	return _u
+}
+
 // SetRateLimitedAt sets the "rate_limited_at" field.
 func (_u *AccountUpdate) SetRateLimitedAt(v time.Time) *AccountUpdate {
 	_u.mutation.SetRateLimitedAt(v)
@@ -1033,6 +1053,12 @@ func (_u *AccountUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.CindyBalanceInsufficientAtCleared() {
 		_spec.ClearField(account.FieldCindyBalanceInsufficientAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.CindyBannedAt(); ok {
+		_spec.SetField(account.FieldCindyBannedAt, field.TypeTime, value)
+	}
+	if _u.mutation.CindyBannedAtCleared() {
+		_spec.ClearField(account.FieldCindyBannedAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.RateLimitedAt(); ok {
 		_spec.SetField(account.FieldRateLimitedAt, field.TypeTime, value)
@@ -1803,6 +1829,26 @@ func (_u *AccountUpdateOne) ClearCindyBalanceInsufficientAt() *AccountUpdateOne 
 	return _u
 }
 
+// SetCindyBannedAt sets the "cindy_banned_at" field.
+func (_u *AccountUpdateOne) SetCindyBannedAt(v time.Time) *AccountUpdateOne {
+	_u.mutation.SetCindyBannedAt(v)
+	return _u
+}
+
+// SetNillableCindyBannedAt sets the "cindy_banned_at" field if the given value is not nil.
+func (_u *AccountUpdateOne) SetNillableCindyBannedAt(v *time.Time) *AccountUpdateOne {
+	if v != nil {
+		_u.SetCindyBannedAt(*v)
+	}
+	return _u
+}
+
+// ClearCindyBannedAt clears the value of the "cindy_banned_at" field.
+func (_u *AccountUpdateOne) ClearCindyBannedAt() *AccountUpdateOne {
+	_u.mutation.ClearCindyBannedAt()
+	return _u
+}
+
 // SetRateLimitedAt sets the "rate_limited_at" field.
 func (_u *AccountUpdateOne) SetRateLimitedAt(v time.Time) *AccountUpdateOne {
 	_u.mutation.SetRateLimitedAt(v)
@@ -2426,6 +2472,12 @@ func (_u *AccountUpdateOne) sqlSave(ctx context.Context) (_node *Account, err er
 	}
 	if _u.mutation.CindyBalanceInsufficientAtCleared() {
 		_spec.ClearField(account.FieldCindyBalanceInsufficientAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.CindyBannedAt(); ok {
+		_spec.SetField(account.FieldCindyBannedAt, field.TypeTime, value)
+	}
+	if _u.mutation.CindyBannedAtCleared() {
+		_spec.ClearField(account.FieldCindyBannedAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.RateLimitedAt(); ok {
 		_spec.SetField(account.FieldRateLimitedAt, field.TypeTime, value)

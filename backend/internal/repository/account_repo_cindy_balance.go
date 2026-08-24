@@ -25,28 +25,36 @@ func (r *accountRepository) lockCindyAccount(ctx context.Context, accountID int6
 		return nil, err
 	}
 	return &dbAccountCandidate{
-		ID:          account.ID,
-		Platform:    account.Platform,
-		Type:        account.Type,
-		Status:      account.Status,
-		Schedulable: account.Schedulable,
-		Credentials: account.Credentials,
-		MarkedAt:    account.CindyBalanceInsufficientAt,
+		ID:              account.ID,
+		Platform:        account.Platform,
+		WirePlatform:    account.WirePlatform,
+		ProviderProfile: account.ProviderProfile,
+		Type:            account.Type,
+		Status:          account.Status,
+		Schedulable:     account.Schedulable,
+		Credentials:     account.Credentials,
+		MarkedAt:        account.CindyBalanceInsufficientAt,
 	}, nil
 }
 
 type dbAccountCandidate struct {
-	ID          int64
-	Platform    string
-	Type        string
-	Status      string
-	Schedulable bool
-	Credentials map[string]any
-	MarkedAt    *time.Time
+	ID              int64
+	Platform        string
+	WirePlatform    string
+	ProviderProfile string
+	Type            string
+	Status          string
+	Schedulable     bool
+	Credentials     map[string]any
+	MarkedAt        *time.Time
+	BannedAt        *time.Time
 }
 
 func isCindyCandidate(account *dbAccountCandidate) bool {
-	return account != nil && service.IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+	return account != nil && account.Platform == service.PlatformCindy &&
+		account.WirePlatform == service.WirePlatformOpenAI &&
+		account.ProviderProfile == service.ProviderProfileCindyLaxaV1 &&
+		service.IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
 }
 
 func (r *accountRepository) MarkCindyBalanceInsufficient(ctx context.Context, accountID int64, observedAt time.Time) (bool, error) {
@@ -151,9 +159,17 @@ func (r *accountRepository) ClearCindyBalanceInsufficient(ctx context.Context, a
 }
 
 func cindyInsufficientCandidateIDs(accounts []*dbAccountCandidate) []int64 {
+	return cindyTerminalCandidateIDs(accounts, false)
+}
+
+func cindyTerminalCandidateIDs(accounts []*dbAccountCandidate, banned bool) []int64 {
 	ids := make([]int64, 0, len(accounts))
 	for _, account := range accounts {
-		if account.MarkedAt != nil && isCindyCandidate(account) && account.Status == service.StatusActive && account.Schedulable {
+		terminal := account.MarkedAt != nil
+		if banned {
+			terminal = account.BannedAt != nil
+		}
+		if terminal && isCindyCandidate(account) && account.Status == service.StatusActive && account.Schedulable {
 			ids = append(ids, account.ID)
 		}
 	}
@@ -162,8 +178,17 @@ func cindyInsufficientCandidateIDs(accounts []*dbAccountCandidate) []int64 {
 }
 
 func loadCindyInsufficientCandidates(ctx context.Context, repo *accountRepository, lock bool) ([]*dbAccountCandidate, error) {
-	query := repo.client.Account.Query().
-		Where(dbaccount.CindyBalanceInsufficientAtNotNil()).
+	return loadCindyTerminalCandidates(ctx, repo, lock, false)
+}
+
+func loadCindyTerminalCandidates(ctx context.Context, repo *accountRepository, lock, banned bool) ([]*dbAccountCandidate, error) {
+	query := repo.client.Account.Query()
+	if banned {
+		query = query.Where(dbaccount.CindyBannedAtNotNil())
+	} else {
+		query = query.Where(dbaccount.CindyBalanceInsufficientAtNotNil())
+	}
+	query = query.
 		Order(dbent.Asc(dbaccount.FieldID))
 	if lock {
 		query = query.ForUpdate()
@@ -175,9 +200,11 @@ func loadCindyInsufficientCandidates(ctx context.Context, repo *accountRepositor
 	out := make([]*dbAccountCandidate, 0, len(accounts))
 	for _, account := range accounts {
 		out = append(out, &dbAccountCandidate{
-			ID: account.ID, Platform: account.Platform, Type: account.Type,
+			ID: account.ID, Platform: account.Platform, WirePlatform: account.WirePlatform,
+			ProviderProfile: account.ProviderProfile, Type: account.Type,
 			Status: account.Status, Schedulable: account.Schedulable,
 			Credentials: account.Credentials, MarkedAt: account.CindyBalanceInsufficientAt,
+			BannedAt: account.CindyBannedAt,
 		})
 	}
 	return out, nil
@@ -194,7 +221,26 @@ func (r *accountRepository) PreviewCindyInsufficientDeletion(ctx context.Context
 	}, nil
 }
 
+func (r *accountRepository) PreviewCindyBannedDeletion(ctx context.Context) (*service.CindyInsufficientDeletePreview, error) {
+	accounts, err := loadCindyTerminalCandidates(ctx, r, false, true)
+	if err != nil {
+		return nil, err
+	}
+	ids := cindyTerminalCandidateIDs(accounts, true)
+	return &service.CindyInsufficientDeletePreview{
+		Count: len(ids), Fingerprint: service.CindyInsufficientAccountFingerprint(ids),
+	}, nil
+}
+
 func (r *accountRepository) DeleteCindyInsufficient(ctx context.Context, expectedCount int, fingerprint string) (*service.CindyInsufficientDeleteResult, error) {
+	return r.deleteCindyTerminalAccounts(ctx, expectedCount, fingerprint, false)
+}
+
+func (r *accountRepository) DeleteCindyBanned(ctx context.Context, expectedCount int, fingerprint string) (*service.CindyInsufficientDeleteResult, error) {
+	return r.deleteCindyTerminalAccounts(ctx, expectedCount, fingerprint, true)
+}
+
+func (r *accountRepository) deleteCindyTerminalAccounts(ctx context.Context, expectedCount int, fingerprint string, banned bool) (*service.CindyInsufficientDeleteResult, error) {
 	if expectedCount < 0 || service.NormalizeCindyInsufficientFingerprint(fingerprint) == "" {
 		return nil, service.ErrCindyInsufficientDeleteChanged
 	}
@@ -204,11 +250,11 @@ func (r *accountRepository) DeleteCindyInsufficient(ctx context.Context, expecte
 	}
 	defer func() { _ = tx.Rollback() }()
 	txRepo := &accountRepository{client: tx.Client(), sql: tx.Client(), schedulerCache: r.schedulerCache}
-	accounts, err := loadCindyInsufficientCandidates(ctx, txRepo, true)
+	accounts, err := loadCindyTerminalCandidates(ctx, txRepo, true, banned)
 	if err != nil {
 		return nil, err
 	}
-	ids := cindyInsufficientCandidateIDs(accounts)
+	ids := cindyTerminalCandidateIDs(accounts, banned)
 	actualFingerprint := service.CindyInsufficientAccountFingerprint(ids)
 	if len(ids) != expectedCount || actualFingerprint != service.NormalizeCindyInsufficientFingerprint(fingerprint) {
 		return nil, service.ErrCindyInsufficientDeleteChanged
@@ -220,8 +266,20 @@ func (r *accountRepository) DeleteCindyInsufficient(ctx context.Context, expecte
 		return &service.CindyInsufficientDeleteResult{}, nil
 	}
 
+	children, err := tx.Client().Account.Query().
+		Where(dbaccount.ParentAccountIDIn(ids...)).
+		All(mixins.SkipSoftDelete(ctx))
+	if err != nil {
+		return nil, err
+	}
+	childIDs := make([]int64, 0, len(children))
+	for _, child := range children {
+		childIDs = append(childIDs, child.ID)
+	}
+	deleteIDs := append(append([]int64(nil), childIDs...), ids...)
+
 	bindings, err := tx.Client().AccountGroup.Query().
-		Where(dbaccountgroup.AccountIDIn(ids...)).
+		Where(dbaccountgroup.AccountIDIn(deleteIDs...)).
 		All(ctx)
 	if err != nil {
 		return nil, err
@@ -236,11 +294,23 @@ func (r *accountRepository) DeleteCindyInsufficient(ctx context.Context, expecte
 	}
 	sort.Slice(groupIDs, func(i, j int) bool { return groupIDs[i] < groupIDs[j] })
 
-	if _, err := tx.Client().AccountGroup.Delete().Where(dbaccountgroup.AccountIDIn(ids...)).Exec(ctx); err != nil {
+	if _, err := tx.Client().AccountGroup.Delete().Where(dbaccountgroup.AccountIDIn(deleteIDs...)).Exec(ctx); err != nil {
 		return nil, err
 	}
-	if _, err := tx.Client().ExecContext(ctx, "DELETE FROM scheduled_test_plans WHERE account_id = ANY($1)", ids); err != nil {
+	if _, err := tx.Client().ExecContext(ctx, "DELETE FROM scheduled_test_plans WHERE account_id = ANY($1)", deleteIDs); err != nil {
 		return nil, err
+	}
+	if _, err := tx.Client().ExecContext(ctx, "DELETE FROM usage_logs WHERE account_id = ANY($1)", deleteIDs); err != nil {
+		return nil, err
+	}
+	if len(childIDs) > 0 {
+		deletedChildren, childErr := tx.Client().Account.Delete().Where(dbaccount.IDIn(childIDs...)).Exec(mixins.SkipSoftDelete(ctx))
+		if childErr != nil {
+			return nil, childErr
+		}
+		if deletedChildren != len(childIDs) {
+			return nil, fmt.Errorf("cindy dependent account delete count mismatch: expected %d, deleted %d", len(childIDs), deletedChildren)
+		}
 	}
 	deleted, err := tx.Client().Account.Delete().Where(dbaccount.IDIn(ids...)).Exec(mixins.SkipSoftDelete(ctx))
 	if err != nil {
@@ -249,15 +319,17 @@ func (r *accountRepository) DeleteCindyInsufficient(ctx context.Context, expecte
 	if deleted != len(ids) {
 		return nil, fmt.Errorf("cindy account delete count mismatch: expected %d, deleted %d", len(ids), deleted)
 	}
-	payload := map[string]any{"account_ids": ids, "group_ids": groupIDs}
+	payload := map[string]any{"account_ids": deleteIDs, "group_ids": groupIDs}
 	if err := enqueueSchedulerOutbox(ctx, tx.Client(), service.SchedulerOutboxEventAccountBulkChanged, nil, nil, payload); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	for _, accountID := range ids {
+	for _, accountID := range deleteIDs {
 		r.deleteSchedulerAccountSnapshot(ctx, accountID)
 	}
-	return &service.CindyInsufficientDeleteResult{DeletedCount: len(ids), DeletedAccountIDs: ids}, nil
+	return &service.CindyInsufficientDeleteResult{
+		DeletedCount: len(ids), DependentDeletedCount: len(childIDs), DeletedAccountIDs: deleteIDs,
+	}, nil
 }

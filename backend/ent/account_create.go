@@ -337,6 +337,20 @@ func (_c *AccountCreate) SetNillableCindyBalanceInsufficientAt(v *time.Time) *Ac
 	return _c
 }
 
+// SetCindyBannedAt sets the "cindy_banned_at" field.
+func (_c *AccountCreate) SetCindyBannedAt(v time.Time) *AccountCreate {
+	_c.mutation.SetCindyBannedAt(v)
+	return _c
+}
+
+// SetNillableCindyBannedAt sets the "cindy_banned_at" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableCindyBannedAt(v *time.Time) *AccountCreate {
+	if v != nil {
+		_c.SetCindyBannedAt(*v)
+	}
+	return _c
+}
+
 // SetRateLimitedAt sets the "rate_limited_at" field.
 func (_c *AccountCreate) SetRateLimitedAt(v time.Time) *AccountCreate {
 	_c.mutation.SetRateLimitedAt(v)
@@ -878,6 +892,10 @@ func (_c *AccountCreate) createSpec() (*Account, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.CindyBalanceInsufficientAt(); ok {
 		_spec.SetField(account.FieldCindyBalanceInsufficientAt, field.TypeTime, value)
 		_node.CindyBalanceInsufficientAt = &value
+	}
+	if value, ok := _c.mutation.CindyBannedAt(); ok {
+		_spec.SetField(account.FieldCindyBannedAt, field.TypeTime, value)
+		_node.CindyBannedAt = &value
 	}
 	if value, ok := _c.mutation.RateLimitedAt(); ok {
 		_spec.SetField(account.FieldRateLimitedAt, field.TypeTime, value)
@@ -1465,6 +1483,24 @@ func (u *AccountUpsert) UpdateCindyBalanceInsufficientAt() *AccountUpsert {
 // ClearCindyBalanceInsufficientAt clears the value of the "cindy_balance_insufficient_at" field.
 func (u *AccountUpsert) ClearCindyBalanceInsufficientAt() *AccountUpsert {
 	u.SetNull(account.FieldCindyBalanceInsufficientAt)
+	return u
+}
+
+// SetCindyBannedAt sets the "cindy_banned_at" field.
+func (u *AccountUpsert) SetCindyBannedAt(v time.Time) *AccountUpsert {
+	u.Set(account.FieldCindyBannedAt, v)
+	return u
+}
+
+// UpdateCindyBannedAt sets the "cindy_banned_at" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateCindyBannedAt() *AccountUpsert {
+	u.SetExcluded(account.FieldCindyBannedAt)
+	return u
+}
+
+// ClearCindyBannedAt clears the value of the "cindy_banned_at" field.
+func (u *AccountUpsert) ClearCindyBannedAt() *AccountUpsert {
+	u.SetNull(account.FieldCindyBannedAt)
 	return u
 }
 
@@ -2125,6 +2161,27 @@ func (u *AccountUpsertOne) UpdateCindyBalanceInsufficientAt() *AccountUpsertOne 
 func (u *AccountUpsertOne) ClearCindyBalanceInsufficientAt() *AccountUpsertOne {
 	return u.Update(func(s *AccountUpsert) {
 		s.ClearCindyBalanceInsufficientAt()
+	})
+}
+
+// SetCindyBannedAt sets the "cindy_banned_at" field.
+func (u *AccountUpsertOne) SetCindyBannedAt(v time.Time) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetCindyBannedAt(v)
+	})
+}
+
+// UpdateCindyBannedAt sets the "cindy_banned_at" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateCindyBannedAt() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateCindyBannedAt()
+	})
+}
+
+// ClearCindyBannedAt clears the value of the "cindy_banned_at" field.
+func (u *AccountUpsertOne) ClearCindyBannedAt() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearCindyBannedAt()
 	})
 }
 
@@ -2980,6 +3037,27 @@ func (u *AccountUpsertBulk) UpdateCindyBalanceInsufficientAt() *AccountUpsertBul
 func (u *AccountUpsertBulk) ClearCindyBalanceInsufficientAt() *AccountUpsertBulk {
 	return u.Update(func(s *AccountUpsert) {
 		s.ClearCindyBalanceInsufficientAt()
+	})
+}
+
+// SetCindyBannedAt sets the "cindy_banned_at" field.
+func (u *AccountUpsertBulk) SetCindyBannedAt(v time.Time) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetCindyBannedAt(v)
+	})
+}
+
+// UpdateCindyBannedAt sets the "cindy_banned_at" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateCindyBannedAt() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateCindyBannedAt()
+	})
+}
+
+// ClearCindyBannedAt clears the value of the "cindy_banned_at" field.
+func (u *AccountUpsertBulk) ClearCindyBannedAt() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearCindyBannedAt()
 	})
 }
 

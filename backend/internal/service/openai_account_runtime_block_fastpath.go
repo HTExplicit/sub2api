@@ -452,7 +452,7 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 		if s != nil && s.cindyHealth != nil {
 			s.cindyHealth.ObserveCindyHealthSignal(ctx, account, cindyHealthSignal)
 		}
-		return cindyHealthSignal == CindyHealthSignalExactBudget
+		return cindyHealthSignal == CindyHealthSignalExactBudget || cindyHealthSignal == CindyHealthSignalBanned
 	}
 	if isOpenAIAccount(account) {
 		switch statusCode {

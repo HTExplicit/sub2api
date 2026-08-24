@@ -66,6 +66,8 @@ const (
 	FieldSchedulable = "schedulable"
 	// FieldCindyBalanceInsufficientAt holds the string denoting the cindy_balance_insufficient_at field in the database.
 	FieldCindyBalanceInsufficientAt = "cindy_balance_insufficient_at"
+	// FieldCindyBannedAt holds the string denoting the cindy_banned_at field in the database.
+	FieldCindyBannedAt = "cindy_banned_at"
 	// FieldRateLimitedAt holds the string denoting the rate_limited_at field in the database.
 	FieldRateLimitedAt = "rate_limited_at"
 	// FieldRateLimitResetAt holds the string denoting the rate_limit_reset_at field in the database.
@@ -189,6 +191,7 @@ var Columns = []string{
 	FieldAutoPauseOnExpired,
 	FieldSchedulable,
 	FieldCindyBalanceInsufficientAt,
+	FieldCindyBannedAt,
 	FieldRateLimitedAt,
 	FieldRateLimitResetAt,
 	FieldOverloadUntil,
@@ -417,6 +420,11 @@ func BySchedulable(opts ...sql.OrderTermOption) OrderOption {
 // ByCindyBalanceInsufficientAt orders the results by the cindy_balance_insufficient_at field.
 func ByCindyBalanceInsufficientAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCindyBalanceInsufficientAt, opts...).ToFunc()
+}
+
+// ByCindyBannedAt orders the results by the cindy_banned_at field.
+func ByCindyBannedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCindyBannedAt, opts...).ToFunc()
 }
 
 // ByRateLimitedAt orders the results by the rate_limited_at field.

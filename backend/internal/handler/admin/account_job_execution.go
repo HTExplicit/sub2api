@@ -164,9 +164,28 @@ func (h *AccountHandler) executeAccountJobItem(ctx context.Context, kind string,
 		}
 		result, err := h.adminService.DeleteCindyInsufficient(ctx, req.ExpectedCount, req.Fingerprint)
 		if err != nil {
-			return accountJobFailed(item.ID, "cleanup_failed")
+			if errors.Is(err, service.ErrCindyInsufficientDeleteChanged) {
+				return accountJobFailed(item.ID, "cindy_cleanup_target_changed")
+			}
+			return accountJobFailed(item.ID, "cindy_cleanup_failed")
 		}
-		return accountJobSucceeded(item.ID, map[string]any{"deleted_count": result.DeletedCount})
+		return accountJobSucceeded(item.ID, map[string]any{"deleted_count": result.DeletedCount, "dependent_deleted_count": result.DependentDeletedCount})
+	case service.AccountJobKindCindyBannedCleanup:
+		var req struct {
+			ExpectedCount int    `json:"expected_count"`
+			Fingerprint   string `json:"fingerprint"`
+		}
+		if json.Unmarshal(raw, &req) != nil {
+			return accountJobFailed(item.ID, "payload_invalid")
+		}
+		result, err := h.adminService.DeleteCindyBanned(ctx, req.ExpectedCount, req.Fingerprint)
+		if err != nil {
+			if errors.Is(err, service.ErrCindyInsufficientDeleteChanged) {
+				return accountJobFailed(item.ID, "cindy_cleanup_target_changed")
+			}
+			return accountJobFailed(item.ID, "cindy_cleanup_failed")
+		}
+		return accountJobSucceeded(item.ID, map[string]any{"deleted_count": result.DeletedCount, "dependent_deleted_count": result.DependentDeletedCount})
 	default:
 		return accountJobFailed(item.ID, "kind_unsupported")
 	}

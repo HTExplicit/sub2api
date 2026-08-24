@@ -11,13 +11,16 @@ import (
 )
 
 const (
-	CindyHealthStatusHealthy            = "healthy"
-	CindyHealthStatusQuarantined        = "quarantined"
-	CindyHealthStatusConfirmedExhausted = "confirmed_exhausted"
+	CindyHealthStatusHealthy             = "healthy"
+	CindyHealthStatusQuarantined         = "quarantined"
+	CindyHealthStatusConfirmedExhausted  = "confirmed_exhausted"
+	CindyHealthStatusBalanceInsufficient = CindyHealthStatusConfirmedExhausted
+	CindyHealthStatusBanned              = "banned"
 
 	CindyHealthEvidenceExactBudget  = "exact_budget"
 	CindyHealthEvidenceDualExact    = "dual_exact_budget"
 	CindyHealthEvidenceForbidden    = "http_403"
+	CindyHealthEvidenceUnauthorized = "http_401"
 	CindyHealthEvidenceRecovered    = "valid_success"
 	CindyHealthEvidenceInconclusive = "inconclusive"
 
@@ -36,6 +39,7 @@ const (
 	CindyHealthSignalNone CindyHealthSignal = iota
 	CindyHealthSignalExactBudget
 	CindyHealthSignalForbidden
+	CindyHealthSignalBanned
 )
 
 func (s CindyHealthSignal) evidence() string {
@@ -44,15 +48,21 @@ func (s CindyHealthSignal) evidence() string {
 		return CindyHealthEvidenceExactBudget
 	case CindyHealthSignalForbidden:
 		return CindyHealthEvidenceForbidden
+	case CindyHealthSignalBanned:
+		return CindyHealthEvidenceUnauthorized
 	default:
 		return ""
 	}
 }
 
-// ClassifyCindyHealthSignal deliberately has no 401 branch. A first-class
-// invalid-credential state requires an observed provider field contract.
 func ClassifyCindyHealthSignal(account *Account, statusCode int, body []byte) CindyHealthSignal {
-	if account == nil || !hasCanonicalCindyProviderIdentity(account) || !CindyBalanceDetectionFeatureEnabled() {
+	if account == nil || !hasCanonicalCindyProviderIdentity(account) {
+		return CindyHealthSignalNone
+	}
+	if statusCode == http.StatusUnauthorized {
+		return CindyHealthSignalBanned
+	}
+	if !CindyBalanceDetectionFeatureEnabled() {
 		return CindyHealthSignalNone
 	}
 	if ClassifyCindyBalanceInsufficient(account, statusCode, body) != CindyBalanceSignalNone {
@@ -84,6 +94,7 @@ type CindyHealthFinalization struct {
 type CindyHealthRepository interface {
 	BeginCindyHealthEpisode(ctx context.Context, episode CindyHealthEpisode, evidence string, observedAt, quarantineUntil time.Time) (bool, error)
 	FinalizeCindyHealthEpisode(ctx context.Context, episode CindyHealthEpisode, finalization CindyHealthFinalization) (bool, error)
+	PersistCindyTerminalState(ctx context.Context, episode CindyHealthEpisode, finalization CindyHealthFinalization) (bool, error)
 	RecoverTransientCindyHealth(ctx context.Context, accountID, generation int64, observedAt time.Time) (*CindyHealthEpisode, bool, error)
 }
 
@@ -203,16 +214,23 @@ func (s *CindyHealthService) ObserveCindyHealthSignal(ctx context.Context, accou
 		return
 	}
 	now := s.now().UTC()
-	if account.CindyBalanceInsufficientAt != nil {
+	if account.CindyBannedAt != nil && signal != CindyHealthSignalExactBudget {
+		s.runtime.BlockAccountScheduling(account, time.Time{}, "cindy_banned")
+		return
+	}
+	if signal == CindyHealthSignalBanned {
+		s.runtime.BlockAccountScheduling(account, time.Time{}, "cindy_banned")
+	} else if signal == CindyHealthSignalExactBudget {
+		s.runtime.BlockAccountScheduling(account, time.Time{}, "cindy_balance_insufficient")
+	}
+	if signal == CindyHealthSignalExactBudget && account.CindyBalanceInsufficientAt != nil {
 		s.runtime.BlockAccountScheduling(account, time.Time{}, "cindy_balance_insufficient")
 		return
 	}
-	backoff := cindyHealthForbiddenBackoff
-	if signal == CindyHealthSignalExactBudget {
-		backoff = cindyHealthConfirmBackoff
+	until := now.Add(cindyHealthForbiddenBackoff)
+	if signal == CindyHealthSignalForbidden {
+		s.runtime.BlockAccountScheduling(account, until, "cindy_health_quarantine")
 	}
-	until := now.Add(backoff)
-	s.runtime.BlockAccountScheduling(account, until, "cindy_health_quarantine")
 
 	stateCtx, cancel := s.stateContext(ctx)
 	defer cancel()
@@ -221,6 +239,23 @@ func (s *CindyHealthService) ObserveCindyHealthSignal(ctx context.Context, accou
 		return
 	}
 	episode := CindyHealthEpisode{AccountID: account.ID, Generation: identity.Generation, EpisodeID: uuid.NewString()}
+	if signal == CindyHealthSignalBanned || signal == CindyHealthSignalExactBudget {
+		status := CindyHealthStatusBanned
+		if signal == CindyHealthSignalExactBudget {
+			status = CindyHealthStatusBalanceInsufficient
+		}
+		applied, err := s.healthRepo.PersistCindyTerminalState(stateCtx, episode, CindyHealthFinalization{
+			Status: status, Evidence: signal.evidence(), ObservedAt: now,
+		})
+		if err == nil && applied {
+			if signal == CindyHealthSignalBanned {
+				account.CindyBannedAt = &now
+			} else {
+				account.CindyBalanceInsufficientAt = &now
+			}
+		}
+		return
+	}
 	if signal == CindyHealthSignalForbidden {
 		_, _ = s.healthRepo.BeginCindyHealthEpisode(stateCtx, episode, signal.evidence(), now, until)
 		return

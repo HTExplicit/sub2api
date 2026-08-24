@@ -2325,6 +2325,7 @@ type AccountMutation struct {
 	auto_pause_on_expired         *bool
 	schedulable                   *bool
 	cindy_balance_insufficient_at *time.Time
+	cindy_banned_at               *time.Time
 	rate_limited_at               *time.Time
 	rate_limit_reset_at           *time.Time
 	overload_until                *time.Time
@@ -3588,6 +3589,55 @@ func (m *AccountMutation) ResetCindyBalanceInsufficientAt() {
 	delete(m.clearedFields, account.FieldCindyBalanceInsufficientAt)
 }
 
+// SetCindyBannedAt sets the "cindy_banned_at" field.
+func (m *AccountMutation) SetCindyBannedAt(t time.Time) {
+	m.cindy_banned_at = &t
+}
+
+// CindyBannedAt returns the value of the "cindy_banned_at" field in the mutation.
+func (m *AccountMutation) CindyBannedAt() (r time.Time, exists bool) {
+	v := m.cindy_banned_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCindyBannedAt returns the old "cindy_banned_at" field's value of the Account entity.
+// If the Account object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountMutation) OldCindyBannedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCindyBannedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCindyBannedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCindyBannedAt: %w", err)
+	}
+	return oldValue.CindyBannedAt, nil
+}
+
+// ClearCindyBannedAt clears the value of the "cindy_banned_at" field.
+func (m *AccountMutation) ClearCindyBannedAt() {
+	m.cindy_banned_at = nil
+	m.clearedFields[account.FieldCindyBannedAt] = struct{}{}
+}
+
+// CindyBannedAtCleared returns if the "cindy_banned_at" field was cleared in this mutation.
+func (m *AccountMutation) CindyBannedAtCleared() bool {
+	_, ok := m.clearedFields[account.FieldCindyBannedAt]
+	return ok
+}
+
+// ResetCindyBannedAt resets all changes to the "cindy_banned_at" field.
+func (m *AccountMutation) ResetCindyBannedAt() {
+	m.cindy_banned_at = nil
+	delete(m.clearedFields, account.FieldCindyBannedAt)
+}
+
 // SetRateLimitedAt sets the "rate_limited_at" field.
 func (m *AccountMutation) SetRateLimitedAt(t time.Time) {
 	m.rate_limited_at = &t
@@ -4409,7 +4459,7 @@ func (m *AccountMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *AccountMutation) Fields() []string {
-	fields := make([]string, 0, 35)
+	fields := make([]string, 0, 36)
 	if m.created_at != nil {
 		fields = append(fields, account.FieldCreatedAt)
 	}
@@ -4484,6 +4534,9 @@ func (m *AccountMutation) Fields() []string {
 	}
 	if m.cindy_balance_insufficient_at != nil {
 		fields = append(fields, account.FieldCindyBalanceInsufficientAt)
+	}
+	if m.cindy_banned_at != nil {
+		fields = append(fields, account.FieldCindyBannedAt)
 	}
 	if m.rate_limited_at != nil {
 		fields = append(fields, account.FieldRateLimitedAt)
@@ -4573,6 +4626,8 @@ func (m *AccountMutation) Field(name string) (ent.Value, bool) {
 		return m.Schedulable()
 	case account.FieldCindyBalanceInsufficientAt:
 		return m.CindyBalanceInsufficientAt()
+	case account.FieldCindyBannedAt:
+		return m.CindyBannedAt()
 	case account.FieldRateLimitedAt:
 		return m.RateLimitedAt()
 	case account.FieldRateLimitResetAt:
@@ -4652,6 +4707,8 @@ func (m *AccountMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldSchedulable(ctx)
 	case account.FieldCindyBalanceInsufficientAt:
 		return m.OldCindyBalanceInsufficientAt(ctx)
+	case account.FieldCindyBannedAt:
+		return m.OldCindyBannedAt(ctx)
 	case account.FieldRateLimitedAt:
 		return m.OldRateLimitedAt(ctx)
 	case account.FieldRateLimitResetAt:
@@ -4856,6 +4913,13 @@ func (m *AccountMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetCindyBalanceInsufficientAt(v)
 		return nil
+	case account.FieldCindyBannedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCindyBannedAt(v)
+		return nil
 	case account.FieldRateLimitedAt:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -5049,6 +5113,9 @@ func (m *AccountMutation) ClearedFields() []string {
 	if m.FieldCleared(account.FieldCindyBalanceInsufficientAt) {
 		fields = append(fields, account.FieldCindyBalanceInsufficientAt)
 	}
+	if m.FieldCleared(account.FieldCindyBannedAt) {
+		fields = append(fields, account.FieldCindyBannedAt)
+	}
 	if m.FieldCleared(account.FieldRateLimitedAt) {
 		fields = append(fields, account.FieldRateLimitedAt)
 	}
@@ -5119,6 +5186,9 @@ func (m *AccountMutation) ClearField(name string) error {
 		return nil
 	case account.FieldCindyBalanceInsufficientAt:
 		m.ClearCindyBalanceInsufficientAt()
+		return nil
+	case account.FieldCindyBannedAt:
+		m.ClearCindyBannedAt()
 		return nil
 	case account.FieldRateLimitedAt:
 		m.ClearRateLimitedAt()
@@ -5229,6 +5299,9 @@ func (m *AccountMutation) ResetField(name string) error {
 		return nil
 	case account.FieldCindyBalanceInsufficientAt:
 		m.ResetCindyBalanceInsufficientAt()
+		return nil
+	case account.FieldCindyBannedAt:
+		m.ResetCindyBannedAt()
 		return nil
 	case account.FieldRateLimitedAt:
 		m.ResetRateLimitedAt()

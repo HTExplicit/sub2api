@@ -229,6 +229,7 @@ type Account struct {
 	Schedulable                bool       `json:"schedulable"`
 	IsCindy                    bool       `json:"is_cindy"`
 	CindyBalanceInsufficient   bool       `json:"cindy_balance_insufficient"`
+	CindyBanned                bool       `json:"cindy_banned"`
 	CindyBalanceProbeJobID     *int64     `json:"cindy_balance_probe_job_id"`
 	CindyBalanceProbeOutcome   *string    `json:"cindy_balance_probe_outcome"`
 	CindyBalanceProbeCheckedAt *time.Time `json:"cindy_balance_probe_checked_at"`
@@ -354,6 +355,7 @@ type AccountConsoleFacets struct {
 	Tags               []AccountManagementTag    `json:"tags"`
 	CindyTotal         int                       `json:"cindy_total"`
 	CindyInsufficient  int                       `json:"cindy_insufficient_count"`
+	CindyBanned        int                       `json:"cindy_banned_count"`
 }
 
 type AccountFacetOption struct {

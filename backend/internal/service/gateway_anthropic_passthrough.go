@@ -193,17 +193,18 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 		// Exact budget and transient 403 signals must be observed before pool-mode
 		// retries or generic account error handling can reinterpret them.
 		if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-			(resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusForbidden) {
+			(resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized) {
 			respBody, _ := s.readUpstreamErrorBody(resp)
 			_ = resp.Body.Close()
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
 			healthSignal := s.observeCindyHealthSignal(ctx, account, resp.StatusCode, respBody)
 			exactBudget := healthSignal == CindyHealthSignalExactBudget
+			banned := healthSignal == CindyHealthSignalBanned
 			cyberPolicy := resp.StatusCode == http.StatusForbidden
 			if cyberPolicy {
 				cyberPolicy, _, _ = detectOpenAICyberPolicy(respBody)
 			}
-			if exactBudget {
+			if exactBudget || banned {
 				return nil, sanitizeOpenAICindyFailoverError(&UpstreamFailoverError{
 					StatusCode:               resp.StatusCode,
 					ResponseBody:             respBody,
@@ -211,7 +212,7 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 					RetryableOnSameAccount:   false,
 					Scope:                    GatewayFailureScopeAccount,
 					NextAccountAction:        NextAccountRetry,
-					CindyBalanceInsufficient: true,
+					CindyBalanceInsufficient: exactBudget,
 				})
 			}
 			if healthSignal == CindyHealthSignalForbidden || cyberPolicy {

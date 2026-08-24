@@ -436,6 +436,8 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.DELETE("/tags/:id", h.Admin.Account.DeleteAccountTag)
 		accounts.GET("/cindy/insufficient-delete-preview", h.Admin.Account.PreviewCindyInsufficientDeletion)
 		accounts.POST("/cindy/delete-insufficient", h.Admin.Account.DeleteCindyInsufficient)
+		accounts.GET("/cindy/banned-delete-preview", h.Admin.Account.PreviewCindyBannedDeletion)
+		accounts.POST("/cindy/delete-banned", h.Admin.Account.DeleteCindyBanned)
 		accounts.GET("/:id", h.Admin.Account.GetByID)
 		accounts.POST("", h.Admin.Account.Create)
 		accounts.POST("/:id/duplicate", h.Admin.Account.Duplicate)

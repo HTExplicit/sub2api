@@ -25,6 +25,7 @@ const (
 	AccountJobKindDuplicateReview        = "account_duplicate_review"
 	AccountJobKindDuplicateMerge         = "account_duplicate_merge"
 	AccountJobKindCindyConfirmedCleanup  = "cindy_confirmed_cleanup"
+	AccountJobKindCindyBannedCleanup     = "cindy_banned_cleanup"
 
 	AccountJobStatusPending            = "pending"
 	AccountJobStatusRunning            = "running"
@@ -438,7 +439,7 @@ func validAccountJobKind(kind string) bool {
 		AccountJobKindBulkUpdate, AccountJobKindBulkTaxonomy, AccountJobKindBatchDelete,
 		AccountJobKindBatchClearError, AccountJobKindBatchRefresh, AccountJobKindBatchRefreshTier,
 		AccountJobKindBatchUpdateCredentials, AccountJobKindDuplicateReview,
-		AccountJobKindDuplicateMerge, AccountJobKindCindyConfirmedCleanup:
+		AccountJobKindDuplicateMerge, AccountJobKindCindyConfirmedCleanup, AccountJobKindCindyBannedCleanup:
 		return true
 	default:
 		return false
@@ -499,6 +500,8 @@ func NormalizeAccountJobFailure(code string) (string, string) {
 		"item_completion_failed":             "account job item result could not be persisted",
 		"result_redacted":                    "account job result was rejected",
 		"execution_failed":                   "account job item failed",
+		"cindy_cleanup_target_changed":       "matching Cindy accounts changed; reload and confirm again",
+		"cindy_cleanup_failed":               "Cindy account cleanup failed",
 		"account_import_payload_invalid":     "account import item is invalid",
 		"account_import_identity_conflict":   "account identity matches multiple existing accounts",
 		"cindy_import_target_group_required": "one explicit target group is required for Cindy imports",

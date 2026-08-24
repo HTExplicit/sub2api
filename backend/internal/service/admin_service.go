@@ -105,6 +105,8 @@ type AdminService interface {
 	ClearCindyBalanceInsufficient(ctx context.Context, id int64) (*Account, error)
 	PreviewCindyInsufficientDeletion(ctx context.Context) (*CindyInsufficientDeletePreview, error)
 	DeleteCindyInsufficient(ctx context.Context, expectedCount int, fingerprint string) (*CindyInsufficientDeleteResult, error)
+	PreviewCindyBannedDeletion(ctx context.Context) (*CindyInsufficientDeletePreview, error)
+	DeleteCindyBanned(ctx context.Context, expectedCount int, fingerprint string) (*CindyInsufficientDeleteResult, error)
 	BulkUpdateAccounts(ctx context.Context, input *BulkUpdateAccountsInput) (*BulkUpdateAccountsResult, error)
 	CheckMixedChannelRisk(ctx context.Context, currentAccountID int64, currentAccountPlatform string, groupIDs []int64) error
 	// RevertAccountProxyFallback 将账号的 proxy_id 切回 proxy_fallback_origin_id，并清空 origin 字段。

@@ -67,6 +67,7 @@ type AccountConsoleFilters struct {
 	PrivacyMode          string   `json:"privacy_mode,omitempty"`
 	CindyOnly            bool     `json:"cindy_only,omitempty"`
 	CindyBalanceStatus   string   `json:"cindy_balance_status,omitempty"`
+	CindyHealthStatus    string   `json:"cindy_health_status,omitempty"`
 	SortBy               string   `json:"sort_by,omitempty"`
 	SortOrder            string   `json:"sort_order,omitempty"`
 }
@@ -89,6 +90,7 @@ type AccountConsoleFacets struct {
 	Tags               []AccountManagementTag    `json:"tags"`
 	CindyTotal         int                       `json:"cindy_total"`
 	CindyInsufficient  int                       `json:"cindy_insufficient_count"`
+	CindyBanned        int                       `json:"cindy_banned_count"`
 }
 
 func normalizeAccountTaxonomyName(value string) (string, string, error) {
@@ -698,10 +700,18 @@ func (s *adminServiceImpl) SetAccountTaxonomy(ctx context.Context, accountID int
 func (s *adminServiceImpl) accountConsoleQuery(filters AccountConsoleFilters) *dbent.AccountQuery {
 	query := s.entClient.Account.Query()
 	if filters.CindyOnly {
-		query = query.Where(dbaccount.PlatformEQ(PlatformOpenAI), dbaccount.TypeEQ(AccountTypeAPIKey))
+		query = query.Where(
+			dbaccount.PlatformEQ(PlatformCindy),
+			dbaccount.WirePlatformEQ(WirePlatformOpenAI),
+			dbaccount.ProviderProfileEQ(ProviderProfileCindyLaxaV1),
+			dbaccount.TypeEQ(AccountTypeAPIKey),
+		)
 	}
 	if filters.CindyBalanceStatus == "insufficient" {
 		query = query.Where(dbaccount.CindyBalanceInsufficientAtNotNil())
+	}
+	if filters.CindyHealthStatus == "banned" {
+		query = query.Where(dbaccount.CindyBannedAtNotNil())
 	}
 	if values := normalizeStringFilter(filters.Platforms); len(values) > 0 {
 		query = query.Where(dbaccount.PlatformIn(values...))
@@ -852,17 +862,20 @@ func filterConsoleAccounts(accounts []*Account, filters AccountConsoleFilters) [
 	for _, value := range normalizeStringFilter(filters.Plans) {
 		plans[strings.ToLower(value)] = struct{}{}
 	}
-	if len(statuses) == 0 && len(plans) == 0 && !filters.CindyOnly && filters.CindyBalanceStatus == "" {
+	if len(statuses) == 0 && len(plans) == 0 && !filters.CindyOnly && filters.CindyBalanceStatus == "" && filters.CindyHealthStatus == "" {
 		return accounts
 	}
 	now := time.Now()
 	out := make([]*Account, 0, len(accounts))
 	for _, account := range accounts {
-		isCindy := IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+		isCindy := hasCanonicalCindyProviderIdentity(account)
 		if filters.CindyOnly && !isCindy {
 			continue
 		}
 		if filters.CindyBalanceStatus == "insufficient" && (!isCindy || account.CindyBalanceInsufficientAt == nil) {
+			continue
+		}
+		if filters.CindyHealthStatus == "banned" && (!isCindy || account.CindyBannedAt == nil) {
 			continue
 		}
 		if len(statuses) > 0 {
@@ -966,6 +979,7 @@ type accountFacetMatcher struct {
 	tagIDs               map[int64]struct{}
 	cindyOnly            bool
 	cindyBalanceStatus   string
+	cindyHealthStatus    string
 }
 
 func stringFilterSet(values []string, lower bool) map[string]struct{} {
@@ -1000,6 +1014,7 @@ func newAccountFacetMatcher(filters AccountConsoleFilters) accountFacetMatcher {
 		tagIDs:               int64FilterSet(filters.TagIDs),
 		cindyOnly:            filters.CindyOnly,
 		cindyBalanceStatus:   filters.CindyBalanceStatus,
+		cindyHealthStatus:    filters.CindyHealthStatus,
 	}
 }
 
@@ -1063,11 +1078,14 @@ func (matcher accountFacetMatcher) matches(account *Account, ignored accountFace
 		}
 	}
 	if ignored != accountFacetCindy {
-		isCindy := IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+		isCindy := hasCanonicalCindyProviderIdentity(account)
 		if matcher.cindyOnly && !isCindy {
 			return false
 		}
 		if matcher.cindyBalanceStatus == "insufficient" && (!isCindy || account.CindyBalanceInsufficientAt == nil) {
+			return false
+		}
+		if matcher.cindyHealthStatus == "banned" && (!isCindy || account.CindyBannedAt == nil) {
 			return false
 		}
 	}
@@ -1097,6 +1115,7 @@ func (s *adminServiceImpl) GetAccountConsoleFacets(ctx context.Context, filters 
 	baseFilters.TagIDs = nil
 	baseFilters.CindyOnly = false
 	baseFilters.CindyBalanceStatus = ""
+	baseFilters.CindyHealthStatus = ""
 	accounts, err := s.listAccountConsoleAll(ctx, baseFilters)
 	if err != nil {
 		return nil, err
@@ -1114,7 +1133,7 @@ func (s *adminServiceImpl) GetAccountConsoleFacets(ctx context.Context, filters 
 	platforms, types, statuses, plans, proxies := map[string]int{}, map[string]int{}, map[string]int{}, map[string]int{}, map[string]int{}
 	folderCounts, tagCounts := map[int64]int{}, map[int64]int{}
 	uncategorizedCount := 0
-	cindyTotal, cindyInsufficient := 0, 0
+	cindyTotal, cindyInsufficient, cindyBanned := 0, 0, 0
 	for _, account := range platformAccounts {
 		platforms[account.Platform]++
 	}
@@ -1149,12 +1168,15 @@ func (s *adminServiceImpl) GetAccountConsoleFacets(ctx context.Context, filters 
 		}
 	}
 	for _, account := range cindyAccounts {
-		if !IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		if !hasCanonicalCindyProviderIdentity(account) {
 			continue
 		}
 		cindyTotal++
 		if account.CindyBalanceInsufficientAt != nil {
 			cindyInsufficient++
+		}
+		if account.CindyBannedAt != nil {
+			cindyBanned++
 		}
 	}
 	folders, err := s.ListAccountFolders(ctx)
@@ -1191,6 +1213,6 @@ func (s *adminServiceImpl) GetAccountConsoleFacets(ctx context.Context, filters 
 		Platforms: facetOptions(platforms), Types: facetOptions(types),
 		Statuses: facetOptions(statuses), Plans: facetOptions(plans), Proxies: proxyOptions,
 		Folders: folders, Tags: tags,
-		CindyTotal: cindyTotal, CindyInsufficient: cindyInsufficient,
+		CindyTotal: cindyTotal, CindyInsufficient: cindyInsufficient, CindyBanned: cindyBanned,
 	}, nil
 }

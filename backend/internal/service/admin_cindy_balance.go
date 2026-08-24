@@ -63,6 +63,46 @@ func (s *adminServiceImpl) DeleteCindyInsufficient(ctx context.Context, expected
 	}
 	if s.runtimeBlocker != nil {
 		for _, accountID := range result.DeletedAccountIDs {
+			if pendingClearer, ok := s.runtimeBlocker.(interface {
+				ClearCindyBalancePending(context.Context, int64) error
+			}); ok {
+				if clearErr := pendingClearer.ClearCindyBalancePending(ctx, accountID); clearErr != nil {
+					slog.Warn("cindy_cleanup_pending_clear_failed", "account_id", accountID, "error", clearErr)
+				}
+			}
+			s.runtimeBlocker.ClearAccountSchedulingBlock(accountID)
+		}
+	}
+	return result, nil
+}
+
+func (s *adminServiceImpl) cindyBannedRepo() (CindyBannedAccountRepository, error) {
+	repo, ok := s.accountRepo.(CindyBannedAccountRepository)
+	if !ok {
+		return nil, errors.New("cindy banned account repository is not configured")
+	}
+	return repo, nil
+}
+
+func (s *adminServiceImpl) PreviewCindyBannedDeletion(ctx context.Context) (*CindyInsufficientDeletePreview, error) {
+	repo, err := s.cindyBannedRepo()
+	if err != nil {
+		return nil, err
+	}
+	return repo.PreviewCindyBannedDeletion(ctx)
+}
+
+func (s *adminServiceImpl) DeleteCindyBanned(ctx context.Context, expectedCount int, fingerprint string) (*CindyInsufficientDeleteResult, error) {
+	repo, err := s.cindyBannedRepo()
+	if err != nil {
+		return nil, err
+	}
+	result, err := repo.DeleteCindyBanned(ctx, expectedCount, fingerprint)
+	if err != nil {
+		return nil, err
+	}
+	if s.runtimeBlocker != nil {
+		for _, accountID := range result.DeletedAccountIDs {
 			s.runtimeBlocker.ClearAccountSchedulingBlock(accountID)
 		}
 	}

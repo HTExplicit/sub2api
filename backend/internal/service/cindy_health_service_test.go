@@ -48,6 +48,7 @@ type cindyHealthRepositoryStub struct {
 	mu        sync.Mutex
 	begun     []CindyHealthEpisode
 	finalized []CindyHealthFinalization
+	persisted []CindyHealthEpisode
 	recovered *CindyHealthEpisode
 }
 
@@ -73,6 +74,24 @@ func (r *cindyHealthRepositoryStub) FinalizeCindyHealthEpisode(
 	defer r.mu.Unlock()
 	r.finalized = append(r.finalized, finalization)
 	return true, nil
+}
+
+func (r *cindyHealthRepositoryStub) PersistCindyTerminalState(
+	_ context.Context,
+	episode CindyHealthEpisode,
+	finalization CindyHealthFinalization,
+) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.finalized = append(r.finalized, finalization)
+	r.persisted = append(r.persisted, episode)
+	return true, nil
+}
+
+func (r *cindyHealthRepositoryStub) terminalEpisodes() []CindyHealthEpisode {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]CindyHealthEpisode(nil), r.persisted...)
 }
 
 func (r *cindyHealthRepositoryStub) RecoverTransientCindyHealth(
@@ -171,10 +190,10 @@ func newHealthTestService(
 	return service, identityRepo
 }
 
-func TestClassifyCindyHealthSignalRejects401AndKeeps403Transient(t *testing.T) {
+func TestClassifyCindyHealthSignalTreatsStrict401AsBannedAndKeeps403Transient(t *testing.T) {
 	account, _ := newHealthTestAccount(t, 9101, "key-one")
 
-	require.Equal(t, CindyHealthSignalNone, ClassifyCindyHealthSignal(
+	require.Equal(t, CindyHealthSignalBanned, ClassifyCindyHealthSignal(
 		account, http.StatusUnauthorized, []byte(`{"error":{"type":"token_not_found"}}`),
 	))
 	require.Equal(t, CindyHealthSignalForbidden, ClassifyCindyHealthSignal(account, http.StatusForbidden, nil))
@@ -198,6 +217,30 @@ func TestLegacyCindyCompatibilityDoesNotEnterCanonicalHealth(t *testing.T) {
 	))
 }
 
+func TestStrictCindy401ReachesSharedHealthCoordinatorAcrossHTTPMessagesAndAccountTest(t *testing.T) {
+	account, _ := newHealthTestAccount(t, 9106, "key-six")
+	recorder := &cindyHealthCoordinatorRecorder{}
+	openAI := &OpenAIGatewayService{cindyHealth: recorder}
+	native := &GatewayService{cindyHealth: recorder}
+	accountTest := &AccountTestService{openAIGatewayService: openAI}
+
+	require.True(t, openAI.handleOpenAIAccountUpstreamError(
+		context.Background(), account, http.StatusUnauthorized, nil, []byte(`{"error":{"message":"ignored"}}`),
+	))
+	require.Equal(t, CindyHealthSignalBanned, native.observeCindyHealthSignal(
+		context.Background(), account, http.StatusUnauthorized, []byte(`{"error":{"message":"ignored"}}`),
+	))
+	require.True(t, accountTest.markCindyBalanceInsufficientFromTest(
+		context.Background(), account, http.StatusUnauthorized, []byte(`{"error":{"message":"ignored"}}`),
+	))
+
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+	require.Equal(t, []CindyHealthSignal{
+		CindyHealthSignalBanned, CindyHealthSignalBanned, CindyHealthSignalBanned,
+	}, recorder.signals)
+}
+
 func TestProvideCindyHealthServiceWiresGatewayCoordinator(t *testing.T) {
 	gateway := &OpenAIGatewayService{}
 	nativeGateway := &GatewayService{}
@@ -209,7 +252,7 @@ func TestProvideCindyHealthServiceWiresGatewayCoordinator(t *testing.T) {
 	require.Same(t, health, nativeGateway.cindyHealth)
 }
 
-func TestCindyHealthExactBudgetRequiresLunaAndTerraForSameGeneration(t *testing.T) {
+func TestCindyHealthExactBudgetPersistsImmediatelyWithoutAutomaticProbes(t *testing.T) {
 	account, identity := newHealthTestAccount(t, 9102, "key-two")
 	repo := &cindyHealthRepositoryStub{}
 	store := &cindyHealthEpisodeStoreStub{}
@@ -230,40 +273,54 @@ func TestCindyHealthExactBudgetRequiresLunaAndTerraForSameGeneration(t *testing.
 	}, time.Second, 10*time.Millisecond)
 
 	begun, finalized := repo.snapshot()
-	require.Len(t, begun, 1)
-	require.Equal(t, int64(7), begun[0].Generation)
+	require.Empty(t, begun)
 	require.Len(t, finalized, 1)
-	require.Equal(t, CindyHealthStatusConfirmedExhausted, finalized[0].Status)
+	require.Equal(t, CindyHealthStatusBalanceInsufficient, finalized[0].Status)
 	modelsMu.Lock()
-	require.Equal(t, []string{"openai/gpt-5.6-luna", "openai/gpt-5.6-terra"}, models)
+	require.Empty(t, models)
 	modelsMu.Unlock()
 }
 
-func TestCindyHealthGenerationRotationDiscardsOldProbeResult(t *testing.T) {
+func TestCindyHealthBannedBlocksBeforeGenerationBoundPersistence(t *testing.T) {
+	account, identity := newHealthTestAccount(t, 9105, "key-five")
+	repo := &cindyHealthRepositoryStub{}
+	runtime := &cindyHealthRuntimeStub{}
+	svc, _ := newHealthTestService(t, account, identity, repo, &cindyHealthEpisodeStoreStub{}, runtime,
+		func(context.Context, *Account, string) cindyBalanceProbeOutcome {
+			t.Fatal("strict 401 must not launch an automatic probe")
+			return cindyBalanceProbeOther
+		})
+
+	svc.ObserveCindyHealthSignal(context.Background(), account, CindyHealthSignalBanned)
+
+	_, finalized := repo.snapshot()
+	require.Len(t, finalized, 1)
+	require.Equal(t, CindyHealthStatusBanned, finalized[0].Status)
+	runtime.mu.Lock()
+	require.Len(t, runtime.blocks, 1)
+	require.True(t, runtime.blocks[0].IsZero(), "banned must install a permanent runtime block")
+	runtime.mu.Unlock()
+}
+
+func TestCindyHealthTerminalWriteCarriesCurrentGenerationWithoutProbe(t *testing.T) {
 	account, identity := newHealthTestAccount(t, 9103, "old-key")
 	repo := &cindyHealthRepositoryStub{}
 	store := &cindyHealthEpisodeStoreStub{}
 	runtime := &cindyHealthRuntimeStub{}
-	var identityRepo *cindyHealthIdentityRepoStub
 	probeCalls := 0
-	svc, identityRepo := newHealthTestService(t, account, identity, repo, store, runtime, func(context.Context, *Account, string) cindyBalanceProbeOutcome {
+	svc, _ := newHealthTestService(t, account, identity, repo, store, runtime, func(context.Context, *Account, string) cindyBalanceProbeOutcome {
 		probeCalls++
-		if probeCalls == 1 {
-			identityRepo.rotate(8, "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
-		}
 		return cindyBalanceProbeExhausted
 	})
 
 	svc.ObserveCindyHealthSignal(context.Background(), account, CindyHealthSignalExactBudget)
-	require.Eventually(t, func() bool {
-		store.mu.Lock()
-		defer store.mu.Unlock()
-		return len(store.cleared) == 1
-	}, time.Second, 10*time.Millisecond)
 
-	_, finalized := repo.snapshot()
-	require.Empty(t, finalized)
-	require.Equal(t, 1, probeCalls, "rotation between Luna and Terra must stop the old generation")
+	persisted := repo.terminalEpisodes()
+	require.Len(t, persisted, 1)
+	require.Equal(t, account.ID, persisted[0].AccountID)
+	require.Equal(t, identity.Generation, persisted[0].Generation)
+	require.NotEmpty(t, persisted[0].EpisodeID)
+	require.Zero(t, probeCalls)
 }
 
 func TestCindyHealth403OnlyCreatesFiniteTransientQuarantine(t *testing.T) {

@@ -539,7 +539,9 @@ func (r *accountRepository) updateLockedAccount(
 		SetAutoPauseOnExpired(account.AutoPauseOnExpired)
 	if credentialGenerationChanged {
 		builder.ClearCindyBalanceInsufficientAt()
+		builder.ClearCindyBannedAt()
 		account.CindyBalanceInsufficientAt = nil
+		account.CindyBannedAt = nil
 	}
 
 	if explicitRateMultiplier != nil {
@@ -821,6 +823,10 @@ func (r *accountRepository) UpdateCredentials(ctx context.Context, id int64, cre
 			cindy_balance_insufficient_at = CASE
 				WHEN credentials IS DISTINCT FROM $1::jsonb THEN NULL
 				ELSE cindy_balance_insufficient_at
+			END,
+			cindy_banned_at = CASE
+				WHEN credentials IS DISTINCT FROM $1::jsonb THEN NULL
+				ELSE cindy_banned_at
 			END,
 			extra = CASE
 				-- 凭证整体未变化 ⇒ Ollama 组身份必然未变化；顶层 DISTINCT 守卫防止
@@ -2970,6 +2976,8 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 			"credentials = "+mergedCredentials,
 			"cindy_balance_insufficient_at = CASE WHEN credentials IS DISTINCT FROM "+mergedCredentials+
 				" THEN NULL ELSE cindy_balance_insufficient_at END",
+			"cindy_banned_at = CASE WHEN credentials IS DISTINCT FROM "+mergedCredentials+
+				" THEN NULL ELSE cindy_banned_at END",
 		)
 		args = append(args, payload)
 		idx++
@@ -3479,6 +3487,7 @@ func accountEntityToService(m *dbent.Account) *service.Account {
 		UpdatedAt:                  m.UpdatedAt,
 		Schedulable:                m.Schedulable,
 		CindyBalanceInsufficientAt: m.CindyBalanceInsufficientAt,
+		CindyBannedAt:              m.CindyBannedAt,
 		RateLimitedAt:              m.RateLimitedAt,
 		RateLimitResetAt:           m.RateLimitResetAt,
 		OverloadUntil:              m.OverloadUntil,

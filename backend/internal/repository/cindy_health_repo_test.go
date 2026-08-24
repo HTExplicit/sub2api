@@ -108,3 +108,35 @@ func TestCindyHealthRepositorySuccessDeletesTransientWithoutClearingConfirmedMar
 	require.Equal(t, "episode-9", episode.EpisodeID)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+func TestCindyHealthRepositoryPersistsBannedForMatchingGenerationAndInvalidatesCaches(t *testing.T) {
+	repo, mock := newCindyHealthRepoTest(t)
+	episode := service.CindyHealthEpisode{AccountID: 9205, Generation: 12, EpisodeID: "banned-12"}
+	observedAt := time.Date(2026, 8, 24, 1, 2, 3, 0, time.UTC)
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("(?s)SELECT i.id.*JOIN accounts a.*FOR UPDATE OF a, i").
+		WithArgs(episode.AccountID, episode.Generation, service.ProviderProfileCindyLaxaV1, service.AccountTypeAPIKey, "https://api.laxarouter.ai").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(405))
+	mock.ExpectExec("INSERT INTO cindy_health_states").
+		WithArgs(episode.AccountID, int64(405), episode.Generation, episode.EpisodeID,
+			service.CindyHealthStatusBanned, service.CindyHealthEvidenceUnauthorized, observedAt).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("UPDATE accounts SET cindy_banned_at").
+		WithArgs(observedAt, episode.AccountID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO scheduler_outbox").
+		WithArgs(service.SchedulerOutboxEventAccountChanged, &episode.AccountID, nil, nil, sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("enqueue_group_api_key_auth_cache_invalidations").
+		WithArgs(episode.AccountID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	applied, err := repo.PersistCindyTerminalState(context.Background(), episode, service.CindyHealthFinalization{
+		Status: service.CindyHealthStatusBanned, Evidence: service.CindyHealthEvidenceUnauthorized, ObservedAt: observedAt,
+	})
+	require.NoError(t, err)
+	require.True(t, applied)
+	require.NoError(t, mock.ExpectationsWereMet())
+}

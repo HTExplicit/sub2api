@@ -74,7 +74,7 @@ func (r *cindyHealthRepository) BeginCindyHealthEpisode(
 			confirmed_at = NULL,
 			updated_at = NOW()
 		WHERE cindy_health_states.credential_generation <> EXCLUDED.credential_generation
-		   OR (cindy_health_states.status <> 'confirmed_exhausted'
+		   OR (cindy_health_states.status NOT IN ('confirmed_exhausted', 'banned')
 		       AND (EXCLUDED.evidence = 'exact_budget' OR cindy_health_states.evidence <> 'exact_budget'))
 		RETURNING account_id`,
 		episode.AccountID, identityID, episode.Generation, episode.EpisodeID,
@@ -194,6 +194,102 @@ func (r *cindyHealthRepository) FinalizeCindyHealthEpisode(
 		return false, err
 	}
 	return accountID == episode.AccountID, nil
+}
+
+func (r *cindyHealthRepository) PersistCindyTerminalState(
+	ctx context.Context,
+	episode service.CindyHealthEpisode,
+	finalization service.CindyHealthFinalization,
+) (bool, error) {
+	if r == nil || r.db == nil || !episodeValidForTerminalWrite(episode) || finalization.ObservedAt.IsZero() {
+		return false, nil
+	}
+	if finalization.Status != service.CindyHealthStatusBanned &&
+		finalization.Status != service.CindyHealthStatusBalanceInsufficient {
+		return false, nil
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var identityID int64
+	err = tx.QueryRowContext(
+		ctx, activeCindyCredentialIdentityForUpdate,
+		episode.AccountID, episode.Generation, service.ProviderProfileCindyLaxaV1,
+		service.AccountTypeAPIKey, "https://api.laxarouter.ai",
+	).Scan(&identityID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	observedAt := finalization.ObservedAt.UTC()
+	result, err := tx.ExecContext(ctx, `
+		INSERT INTO cindy_health_states (
+			account_id, credential_identity_id, credential_generation, episode_id,
+			status, evidence, observed_at, quarantine_until, confirmed_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, $7, NOW())
+		ON CONFLICT (account_id) DO UPDATE SET
+			credential_identity_id = EXCLUDED.credential_identity_id,
+			credential_generation = EXCLUDED.credential_generation,
+			episode_id = EXCLUDED.episode_id,
+			status = CASE
+				WHEN cindy_health_states.credential_generation = EXCLUDED.credential_generation
+				 AND cindy_health_states.status = 'banned'
+				 AND EXCLUDED.status = 'confirmed_exhausted'
+				THEN cindy_health_states.status
+				ELSE EXCLUDED.status
+			END,
+			evidence = CASE
+				WHEN cindy_health_states.credential_generation = EXCLUDED.credential_generation
+				 AND cindy_health_states.status = 'banned'
+				 AND EXCLUDED.status = 'confirmed_exhausted'
+				THEN cindy_health_states.evidence
+				ELSE EXCLUDED.evidence
+			END,
+			observed_at = EXCLUDED.observed_at,
+			quarantine_until = NULL,
+			confirmed_at = EXCLUDED.confirmed_at,
+			updated_at = NOW()`,
+		episode.AccountID, identityID, episode.Generation, episode.EpisodeID,
+		finalization.Status, finalization.Evidence, observedAt)
+	if err != nil {
+		return false, err
+	}
+	if affected, rowsErr := result.RowsAffected(); rowsErr != nil || affected != 1 {
+		return false, rowsErr
+	}
+	column := "cindy_balance_insufficient_at"
+	if finalization.Status == service.CindyHealthStatusBanned {
+		column = "cindy_banned_at"
+	}
+	result, err = tx.ExecContext(ctx, `UPDATE accounts SET `+column+` = COALESCE(`+column+`, $1), updated_at = NOW()
+		WHERE id = $2 AND deleted_at IS NULL`, observedAt, episode.AccountID)
+	if err != nil {
+		return false, err
+	}
+	if affected, rowsErr := result.RowsAffected(); rowsErr != nil || affected != 1 {
+		return false, rowsErr
+	}
+	if err = enqueueSchedulerOutbox(ctx, tx, service.SchedulerOutboxEventAccountChanged, &episode.AccountID, nil, nil); err != nil {
+		return false, err
+	}
+	if _, err = tx.ExecContext(ctx, `
+		SELECT enqueue_group_api_key_auth_cache_invalidations(ag.group_id)
+		FROM account_groups ag WHERE ag.account_id = $1`, episode.AccountID); err != nil {
+		return false, err
+	}
+	if err = tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func episodeValidForTerminalWrite(episode service.CindyHealthEpisode) bool {
+	return episode.AccountID > 0 && episode.Generation > 0 &&
+		strings.TrimSpace(episode.EpisodeID) != "" && len(episode.EpisodeID) <= 64
 }
 
 func (r *cindyHealthRepository) RecoverTransientCindyHealth(

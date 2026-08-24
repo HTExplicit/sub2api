@@ -111,7 +111,7 @@ func (r *accountJobCindyMutationRunner) Run(
 			return nil, err
 		}
 		if _, err = txClient.ExecContext(ctx, `
-			UPDATE accounts SET cindy_balance_insufficient_at = NULL, updated_at = NOW()
+			UPDATE accounts SET cindy_balance_insufficient_at = NULL, cindy_banned_at = NULL, updated_at = NOW()
 			WHERE id = $1 AND deleted_at IS NULL`, current.ID); err != nil {
 			return nil, err
 		}
@@ -124,6 +124,7 @@ func (r *accountJobCindyMutationRunner) Run(
 	}
 	if credentialChanged {
 		account.CindyBalanceInsufficientAt = nil
+		account.CindyBannedAt = nil
 	}
 	if r.scheduler != nil {
 		cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)

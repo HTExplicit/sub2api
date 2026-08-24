@@ -166,6 +166,11 @@ func (Account) Fields() []ent.Field {
 			Nillable().
 			Comment("Recognized Cindy budget exhaustion; NULL means no known balance exhaustion.").
 			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
+		field.Time("cindy_banned_at").
+			Optional().
+			Nillable().
+			Comment("Strict Cindy 401 terminal state for the active credential generation.").
+			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
 
 		// rate_limited_at: 触发速率限制的时间
 		// 当收到 429 错误时记录
