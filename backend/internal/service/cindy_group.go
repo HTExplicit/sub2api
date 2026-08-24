@@ -100,6 +100,29 @@ func loadStrictCindyGroup(ctx context.Context, repo cindyGroupAccountReader, gro
 	return true, nil
 }
 
+func hydrateStrictCindyGroupIdentity(ctx context.Context, repo any, group *Group) error {
+	if group == nil || group.ID <= 0 {
+		return nil
+	}
+	if group.Platform != PlatformCindy || group.EffectiveWirePlatform() != WirePlatformOpenAI ||
+		group.EffectiveProviderProfile() != ProviderProfileCindyLaxaV1 {
+		group.StrictCindyKnown = true
+		group.StrictCindy = false
+		return nil
+	}
+	classifier, ok := repo.(cindyGroupIdentityClassifier)
+	if !ok || isNilCindyGroupDependency(classifier) {
+		return errCindyGroupIdentityUnavailable
+	}
+	strict, err := classifier.ClassifyStrictCindyGroup(ctx, group.ID)
+	if err != nil {
+		return err
+	}
+	group.StrictCindyKnown = true
+	group.StrictCindy = strict
+	return nil
+}
+
 func asCindyGroupAccountReader(repo any) (cindyGroupAccountReader, bool) {
 	reader, ok := repo.(cindyGroupAccountReader)
 	if !ok || isNilCindyGroupDependency(reader) {

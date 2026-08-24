@@ -503,6 +503,7 @@ func NormalizeAccountJobFailure(code string) (string, string) {
 		"account_import_identity_conflict":   "account identity matches multiple existing accounts",
 		"cindy_import_target_group_required": "one explicit target group is required for Cindy imports",
 		"cindy_import_target_group_invalid":  "target group is not a strict Cindy group",
+		"cindy_import_api_key_invalid":       "Cindy API key is required",
 		"cindy_import_credential_conflict":   "credential is duplicated in the submitted import",
 		"cindy_import_device_conflict":       "device identity belongs to another Cindy credential",
 		"cindy_import_device_invalid":        "Cindy device identity is invalid",

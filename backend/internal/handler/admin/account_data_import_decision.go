@@ -19,6 +19,7 @@ const (
 	dataImportCodeIdentityConflict        = "account_import_identity_conflict"
 	dataImportCodeCindyTargetRequired     = "cindy_import_target_group_required"
 	dataImportCodeCindyTargetInvalid      = "cindy_import_target_group_invalid"
+	dataImportCodeCindyAPIKeyInvalid      = "cindy_import_api_key_invalid"
 	dataImportCodeCindyCredentialConflict = "cindy_import_credential_conflict"
 	dataImportCodeCindyDeviceConflict     = "cindy_import_device_conflict"
 	dataImportCodeCindyDeviceInvalid      = "cindy_import_device_invalid"
@@ -32,6 +33,7 @@ var dataImportBusinessMessages = map[string]string{
 	dataImportCodeIdentityConflict:        "account identity matches multiple existing accounts",
 	dataImportCodeCindyTargetRequired:     "one explicit target group is required for Cindy imports",
 	dataImportCodeCindyTargetInvalid:      "target group is not a strict Cindy group",
+	dataImportCodeCindyAPIKeyInvalid:      "Cindy API key is required",
 	dataImportCodeCindyCredentialConflict: "credential is duplicated in the submitted import",
 	dataImportCodeCindyDeviceConflict:     "device identity belongs to another Cindy credential",
 	dataImportCodeCindyDeviceInvalid:      "Cindy device identity is invalid",
@@ -109,14 +111,25 @@ func (h *AccountHandler) previewDataImport(ctx context.Context, req DataImportRe
 	for index := range req.Data.Accounts {
 		item := req.Data.Accounts[index]
 		enrichCredentialsFromIDToken(&item)
-		if service.IsLegacyCindyAPIKeyAccount(item.Platform, item.Type, item.Credentials) {
-			item.Platform = service.PlatformCindy
-		}
+		legacyCindy := service.IsLegacyCindyAPIKeyAccount(item.Platform, item.Type, item.Credentials)
+		cindyCandidate := legacyCindy || service.IsCindyAPIKeyAccount(item.Platform, item.Type, item.Credentials)
 		decision := dataImportDecision{Account: item}
+		if cindyCandidate {
+			apiKey, ok := item.Credentials["api_key"].(string)
+			if !ok || strings.TrimSpace(apiKey) == "" {
+				rejectDataImportDecision(&decision, dataImportCodeCindyAPIKeyInvalid)
+			}
+		}
+		if legacyCindy && !decision.rejected() {
+			decision.Account.Platform = service.PlatformCindy
+		}
+		item = decision.Account
 		isCindy := service.IsCindyAPIKeyAccount(item.Platform, item.Type, item.Credentials)
 		if isCindy {
 			decision.Account.Groups = nil
-			if req.TargetGroupID == nil || *req.TargetGroupID <= 0 {
+			if decision.rejected() {
+				// Preserve the earlier credential validation result.
+			} else if req.TargetGroupID == nil || *req.TargetGroupID <= 0 {
 				rejectDataImportDecision(&decision, dataImportCodeCindyTargetRequired)
 			} else if !targetIsStrict {
 				rejectDataImportDecision(&decision, dataImportCodeCindyTargetInvalid)
@@ -125,7 +138,7 @@ func (h *AccountHandler) previewDataImport(ctx context.Context, req DataImportRe
 			}
 		}
 		if !decision.rejected() {
-			if validateErr := validateDataAccountV2(item); validateErr != nil {
+			if validateErr := validateDataAccountV2(decision.Account); validateErr != nil {
 				rejectDataImportDecision(&decision, dataImportCodePayloadInvalid)
 			}
 		}

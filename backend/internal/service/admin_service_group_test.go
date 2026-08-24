@@ -42,6 +42,49 @@ type groupRepoStubForAdmin struct {
 	listWithFiltersErr         error
 }
 
+type adminGroupCindyClassifierStub struct {
+	AccountRepository
+	strict bool
+	err    error
+	ids    []int64
+}
+
+func (s *adminGroupCindyClassifierStub) ClassifyStrictCindyGroup(_ context.Context, groupID int64) (bool, error) {
+	s.ids = append(s.ids, groupID)
+	return s.strict, s.err
+}
+
+func TestAdminServiceGetGroupHydratesStrictCindyIdentityFromCompleteMembership(t *testing.T) {
+	tests := []struct {
+		name             string
+		storedKnown      bool
+		storedStrict     bool
+		classifiedStrict bool
+	}{
+		{name: "hydrates strict identity", classifiedStrict: true},
+		{name: "overrides stale materialized marker", storedKnown: true, storedStrict: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			groupID := int64(88)
+			repo := &groupRepoStubForAdmin{getByID: &Group{
+				ID: groupID, Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI,
+				ProviderProfile: ProviderProfileCindyLaxaV1, Hydrated: true,
+				StrictCindyKnown: test.storedKnown, StrictCindy: test.storedStrict,
+			}}
+			classifier := &adminGroupCindyClassifierStub{strict: test.classifiedStrict}
+			svc := &adminServiceImpl{groupRepo: repo, accountRepo: classifier}
+
+			group, err := svc.GetGroup(context.Background(), groupID)
+
+			require.NoError(t, err)
+			require.True(t, group.StrictCindyKnown)
+			require.Equal(t, test.classifiedStrict, group.StrictCindy)
+			require.Equal(t, []int64{groupID}, classifier.ids)
+		})
+	}
+}
+
 func (s *groupRepoStubForAdmin) Create(_ context.Context, g *Group) error {
 	if s.createID > 0 {
 		g.ID = s.createID

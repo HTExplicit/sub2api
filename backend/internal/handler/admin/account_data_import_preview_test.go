@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -79,11 +80,55 @@ func TestDataImportDecisionRequiresOneExplicitStrictCindyTargetGroup(t *testing.
 	require.Equal(t, dataImportActionReject, invalid.Items[0].Action)
 	require.Equal(t, dataImportCodeCindyTargetInvalid, invalid.Items[0].Code)
 
+	account.Platform = service.PlatformOpenAI
+	account.Groups = []string{"", " legacy-cindy-name "}
 	valid, decisions, err := handler.previewDataImport(context.Background(), cindyImportRequest(&strictID, account))
 	require.NoError(t, err)
 	require.Equal(t, dataImportActionCreate, valid.Items[0].Action)
+	require.Equal(t, service.PlatformCindy, decisions[0].Account.Platform)
 	require.Equal(t, []int64{strictID}, decisions[0].GroupIDs)
 	require.Empty(t, decisions[0].Account.Groups, "legacy group names are never import authority")
+}
+
+func TestDataImportDecisionRejectsInvalidCindyAPIKey(t *testing.T) {
+	groupID := int64(88)
+	svc := newDataV2AdminService()
+	svc.groups = []service.Group{strictCindyImportGroup(groupID)}
+	handler := NewAccountHandler(svc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	tests := []struct {
+		name     string
+		platform string
+		apiKey   any
+	}{
+		{name: "canonical missing", platform: service.PlatformCindy, apiKey: nil},
+		{name: "canonical non-string", platform: service.PlatformCindy, apiKey: 42},
+		{name: "canonical blank", platform: service.PlatformCindy, apiKey: "  "},
+		{name: "legacy missing", platform: service.PlatformOpenAI, apiKey: nil},
+		{name: "legacy non-string", platform: service.PlatformOpenAI, apiKey: 42},
+		{name: "legacy blank", platform: service.PlatformOpenAI, apiKey: ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			account := cindyImportAccount("invalid-key", test.platform, "placeholder", "")
+			if test.apiKey == nil {
+				delete(account.Credentials, "api_key")
+			} else {
+				account.Credentials["api_key"] = test.apiKey
+			}
+
+			preview, decisions, err := handler.previewDataImport(context.Background(), cindyImportRequest(&groupID, account))
+
+			require.NoError(t, err)
+			require.Equal(t, dataImportActionReject, preview.Items[0].Action)
+			require.Equal(t, "cindy_import_api_key_invalid", preview.Items[0].Code)
+			require.Equal(t, "Cindy API key is required", preview.Items[0].Message)
+			if test.platform == service.PlatformOpenAI {
+				require.Equal(t, service.PlatformOpenAI, decisions[0].Account.Platform,
+					"invalid legacy credentials must not be promoted")
+			}
+		})
+	}
 }
 
 func TestDataImportDecisionPropagatesTargetGroupLookupFailure(t *testing.T) {
@@ -197,4 +242,44 @@ func TestAccountJobImportPreservesSafeDecisionError(t *testing.T) {
 	require.Equal(t, service.AccountJobItemStatusFailed, result.Status)
 	require.Equal(t, dataImportCodeCindyCredentialConflict, result.ErrorCode)
 	require.Equal(t, "credential is duplicated in the submitted import", result.ErrorMessage)
+}
+
+type accountJobCindyMutationRunnerFunc func(
+	context.Context,
+	int64,
+	func(context.Context) (*service.Account, error),
+) (*service.Account, error)
+
+func (f accountJobCindyMutationRunnerFunc) Run(
+	ctx context.Context,
+	accountID int64,
+	mutate func(context.Context) (*service.Account, error),
+) (*service.Account, error) {
+	return f(ctx, accountID, mutate)
+}
+
+func TestAccountJobImportRedactsTransactionalDeviceConflict(t *testing.T) {
+	groupID := int64(88)
+	deviceID := strings.Repeat("d", 64)
+	svc := newDataV2AdminService()
+	svc.groups = []service.Group{strictCindyImportGroup(groupID)}
+	handler := NewAccountHandler(svc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler.cindyJobMutations = accountJobCindyMutationRunnerFunc(func(
+		context.Context,
+		int64,
+		func(context.Context) (*service.Account, error),
+	) (*service.Account, error) {
+		return nil, fmt.Errorf("device %s: %w", deviceID, service.ErrCindyDeviceIdentityConflict)
+	})
+	req := cindyImportRequest(&groupID, cindyImportAccount("conflict", service.PlatformCindy, "private-key", deviceID))
+
+	result := executeAccountJobTestItem(t, handler, service.AccountJobKindImportData, req, service.AccountJobItem{ID: 93, Ordinal: 1})
+
+	require.Equal(t, service.AccountJobItemStatusFailed, result.Status)
+	require.Equal(t, dataImportCodeCindyDeviceConflict, result.ErrorCode)
+	require.Equal(t, "device identity belongs to another Cindy credential", result.ErrorMessage)
+	encoded, err := json.Marshal(result)
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), deviceID)
+	require.NotContains(t, string(encoded), "private-key")
 }

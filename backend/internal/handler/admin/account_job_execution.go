@@ -483,6 +483,9 @@ func (h *AccountHandler) executeDataImportJob(ctx context.Context, raw json.RawM
 	} else {
 		_, result, err = importOne(ctx)
 	}
+	if errors.Is(err, service.ErrCindyDeviceIdentityConflict) {
+		return accountJobFailed(item.ID, dataImportCodeCindyDeviceConflict)
+	}
 	if err != nil || result.AccountFailed > 0 {
 		return accountJobFailed(item.ID, dataImportCodeExecutionFailed)
 	}

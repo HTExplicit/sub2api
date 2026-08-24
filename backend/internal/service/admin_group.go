@@ -45,7 +45,14 @@ func (s *adminServiceImpl) GetAllGroupsIncludingInactive(ctx context.Context) ([
 }
 
 func (s *adminServiceImpl) GetGroup(ctx context.Context, id int64) (*Group, error) {
-	return s.groupRepo.GetByID(ctx, id)
+	group, err := s.groupRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err = hydrateStrictCindyGroupIdentity(ctx, s.accountRepo, group); err != nil {
+		return nil, err
+	}
+	return group, nil
 }
 
 func (s *adminServiceImpl) GetGroupModelsListCandidates(ctx context.Context, id int64, platform string) ([]string, error) {

@@ -3,6 +3,7 @@ package service
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"maps"
 	"net/url"
 	"strings"
@@ -10,6 +11,8 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/google/uuid"
 )
+
+var ErrCindyDeviceIdentityConflict = errors.New("cindy device identity belongs to another account")
 
 const (
 	CindyDeviceIDExtraKey       = "cindy_device_id"
