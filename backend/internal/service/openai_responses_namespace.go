@@ -77,8 +77,9 @@ func shouldStripOpenAIResponsesInputNamespaces(account *Account, transport OpenA
 //     故 OAuth 非 compact 请求必须保留。
 //   - compact 端点的 schema 不含该字段，携带即 400 `Unknown parameter:
 //     input[N].namespace`（issue #4761 正文），故 compact 一律清理。
-//   - API Key 出口是标准 Responses API（api.openai.com 或自定义 base_url），同样
-//     不认识该字段，维持全量清理；否则只能退化成
+//   - 严格 Cindy API Key 的原生 Responses 出口按 namespace 解析历史调用，行为与
+//     Codex OAuth 一致，非 compact 请求必须保留；其他 API Key 出口仍按标准
+//     Responses API 处理并全量清理，否则只能退化成
 //     openai_responses_rejected_field_retry 的逐项删除，6 次上限根本盖不住长历史。
 //   - 摊平模式下调用项已被改写成平名，残留 namespace 指向的声明已不存在，一律清理。
 func shouldKeepOpenAIResponsesToolCallNamespaces(
@@ -87,10 +88,13 @@ func shouldKeepOpenAIResponsesToolCallNamespaces(
 	passthroughEnabled bool,
 	compactPath bool,
 ) bool {
-	if account == nil || !account.IsOpenAIOAuth() {
+	if compactPath {
 		return false
 	}
-	if compactPath {
+	if account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		return true
+	}
+	if account == nil || !account.IsOpenAIOAuth() {
 		return false
 	}
 	return !shouldFlattenOpenAIResponsesNamespaces(account, transport, passthroughEnabled, compactPath)
