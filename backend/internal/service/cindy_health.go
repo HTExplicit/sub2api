@@ -123,6 +123,10 @@ type CindyHealthCoordinator interface {
 	ObserveCindyHealthSuccess(ctx context.Context, account *Account)
 }
 
+type CindyHealthEpisodeAuthority interface {
+	ResolveCindyHealthEpisode(ctx context.Context, episode CindyHealthEpisode) (*Account, bool, error)
+}
+
 type CindyHealthService struct {
 	accountRepo  AccountRepository
 	identityRepo AccountCredentialIdentityRepository
@@ -197,6 +201,27 @@ func (s *CindyHealthService) currentIdentity(ctx context.Context, account *Accou
 		return nil, false
 	}
 	return identity, true
+}
+
+func (s *CindyHealthService) ResolveCindyHealthEpisode(ctx context.Context, episode CindyHealthEpisode) (*Account, bool, error) {
+	if s == nil || s.accountRepo == nil || s.identityRepo == nil || !episode.terminalValid() {
+		return nil, false, errors.New("cindy health authority is unavailable")
+	}
+	account, err := s.accountRepo.GetByID(ctx, episode.AccountID)
+	if err != nil {
+		return nil, false, err
+	}
+	identity, err := s.identityRepo.GetActiveByAccountID(ctx, episode.AccountID)
+	if err != nil || identity == nil || !identity.Active || identity.Generation <= 0 {
+		if err == nil {
+			err = errors.New("active Cindy credential identity is unavailable")
+		}
+		return nil, false, err
+	}
+	if !hasCanonicalCindyProviderIdentity(account) || account.CindyCredentialGeneration != identity.Generation {
+		return nil, false, errors.New("Cindy credential generation projection is unavailable")
+	}
+	return account, identity.Generation == episode.Generation && identity.Fingerprint == episode.Fingerprint, nil
 }
 
 func (s *CindyHealthService) ObserveCindyHealthSignal(ctx context.Context, account *Account, signal CindyHealthSignal) {

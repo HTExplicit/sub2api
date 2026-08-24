@@ -403,6 +403,15 @@ func (s *CindyBalanceProbeService) finalizeRecovery(
 	accountSnapshot *Account,
 	leaseToken string,
 ) bool {
+	var captured *CindyHealthEpisode
+	if s.gateway != nil {
+		var captureErr error
+		captured, captureErr = s.gateway.GetCindyHealthTerminalPending(ctx, reservation.AccountID, CindyHealthStatusBalanceInsufficient)
+		if captureErr != nil {
+			slog.Error("cindy_balance_probe_recovery_terminal_pending_capture_failed", "job_id", reservation.JobID, "error", captureErr)
+			return false
+		}
+	}
 	recovered, err := s.repo.FinalizeRecovery(ctx, reservation, accountSnapshot, leaseToken, s.now().UTC())
 	if err != nil {
 		slog.Error("cindy_balance_probe_recovery_failed", "job_id", reservation.JobID, "error", err)
@@ -417,10 +426,23 @@ func (s *CindyBalanceProbeService) finalizeRecovery(
 				}
 				cancel()
 			}
-			if clearErr := s.gateway.ClearCindyHealthTerminalPending(ctx, reservation.AccountID, CindyHealthStatusBalanceInsufficient); clearErr != nil {
-				slog.Error("cindy_balance_probe_recovery_terminal_pending_clear_failed", "job_id", reservation.JobID, "error", clearErr)
+			clearRuntime := true
+			if captured != nil {
+				cleared, clearErr := s.gateway.ClearCindyHealthTerminalPendingIfMatch(ctx, *captured)
+				if clearErr != nil {
+					slog.Error("cindy_balance_probe_recovery_terminal_pending_clear_failed", "job_id", reservation.JobID, "error", clearErr)
+				}
+				clearRuntime = clearErr == nil && cleared
+			} else {
+				latest, getErr := s.gateway.GetCindyHealthTerminalPending(ctx, reservation.AccountID, CindyHealthStatusBalanceInsufficient)
+				if getErr != nil {
+					slog.Error("cindy_balance_probe_recovery_terminal_pending_recheck_failed", "job_id", reservation.JobID, "error", getErr)
+				}
+				clearRuntime = getErr == nil && latest == nil
 			}
-			s.gateway.ClearAccountSchedulingBlock(reservation.AccountID)
+			if clearRuntime {
+				s.gateway.ClearCindyBalanceRuntimeBlock(reservation.AccountID)
+			}
 		}
 	}
 	return true

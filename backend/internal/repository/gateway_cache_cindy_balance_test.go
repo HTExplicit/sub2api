@@ -208,10 +208,29 @@ func TestGatewayCacheBalanceRecoveryClearsOnlyBalanceV3Pending(t *testing.T) {
 	cache := &gatewayCache{rdb: client}
 	ctx := context.Background()
 	const accountID int64 = 77205
-	require.NoError(t, client.Set(ctx, cindyHealthPendingKeyV3(accountID, service.CindyHealthStatusBanned), "banned", 0).Err())
-	require.NoError(t, client.Set(ctx, cindyHealthPendingKeyV3(accountID, service.CindyHealthStatusBalanceInsufficient), "balance", 0).Err())
+	oldBalance := service.CindyHealthEpisode{AccountID: accountID, Generation: 7, EpisodeID: "old-balance", Fingerprint: strings.Repeat("a", 64), Status: service.CindyHealthStatusBalanceInsufficient, Evidence: service.CindyHealthEvidenceExactBudget, ObservedAt: time.Now().UTC()}
+	newBalance := oldBalance
+	newBalance.EpisodeID = "new-balance"
+	banned := oldBalance
+	banned.EpisodeID = "banned"
+	banned.Status = service.CindyHealthStatusBanned
+	banned.Evidence = service.CindyHealthEvidenceUnauthorized
+	oldRaw, err := cindyHealthEpisodeValue(oldBalance)
+	require.NoError(t, err)
+	newRaw, err := cindyHealthEpisodeValue(newBalance)
+	require.NoError(t, err)
+	bannedRaw, err := cindyHealthEpisodeValue(banned)
+	require.NoError(t, err)
+	require.NoError(t, client.Set(ctx, cindyHealthPendingKeyV3(accountID, banned.Status), bannedRaw, 0).Err())
+	require.NoError(t, client.Set(ctx, cindyHealthPendingKeyV3(accountID, oldBalance.Status), oldRaw, 0).Err())
+	captured, err := cache.GetCindyHealthTerminalPending(ctx, accountID, oldBalance.Status)
+	require.NoError(t, err)
+	require.Equal(t, oldBalance.EpisodeID, captured.EpisodeID)
+	require.NoError(t, client.Set(ctx, cindyHealthPendingKeyV3(accountID, newBalance.Status), newRaw, 0).Err())
 
-	require.NoError(t, cache.ClearCindyHealthTerminalPending(ctx, accountID, service.CindyHealthStatusBalanceInsufficient))
+	cleared, err := cache.ClearCindyHealthTerminalPendingIfMatch(ctx, *captured)
+	require.NoError(t, err)
+	require.False(t, cleared)
 	require.True(t, server.Exists(cindyHealthPendingKeyV3(accountID, service.CindyHealthStatusBanned)))
-	require.False(t, server.Exists(cindyHealthPendingKeyV3(accountID, service.CindyHealthStatusBalanceInsufficient)))
+	require.True(t, server.Exists(cindyHealthPendingKeyV3(accountID, service.CindyHealthStatusBalanceInsufficient)))
 }

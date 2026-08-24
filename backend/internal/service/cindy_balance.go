@@ -42,8 +42,13 @@ type CindyHealthStateCleaner interface {
 	ClearAllCindyHealthState(ctx context.Context, accountID int64) error
 }
 
-type CindyHealthTerminalPendingClearer interface {
-	ClearCindyHealthTerminalPending(ctx context.Context, accountID int64, status string) error
+type CindyHealthTerminalPendingManager interface {
+	GetCindyHealthTerminalPending(ctx context.Context, accountID int64, status string) (*CindyHealthEpisode, error)
+	ClearCindyHealthTerminalPendingIfMatch(ctx context.Context, episode CindyHealthEpisode) (bool, error)
+}
+
+type CindyBalanceRuntimeClearer interface {
+	ClearCindyBalanceRuntimeBlock(accountID int64)
 }
 
 // CindyBalanceSignal identifies the exact structured Cindy budget signal that

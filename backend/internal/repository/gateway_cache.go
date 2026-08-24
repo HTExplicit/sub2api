@@ -162,7 +162,7 @@ var _ service.OpenAIRuntimeBreakerLeaseStore = (*gatewayCache)(nil)
 var _ service.CindyBalancePendingStore = (*gatewayCache)(nil)
 var _ service.CindyHealthEpisodeStore = (*gatewayCache)(nil)
 var _ service.CindyHealthStateCleaner = (*gatewayCache)(nil)
-var _ service.CindyHealthTerminalPendingClearer = (*gatewayCache)(nil)
+var _ service.CindyHealthTerminalPendingManager = (*gatewayCache)(nil)
 
 func cindyBalancePendingKey(accountID int64) string {
 	return cindyBalancePendingPrefix + strconv.FormatInt(accountID, 10)
@@ -395,12 +395,42 @@ func (c *gatewayCache) ClearAllCindyHealthState(ctx context.Context, accountID i
 	return c.rdb.Del(ctx, keys...).Err()
 }
 
-func (c *gatewayCache) ClearCindyHealthTerminalPending(ctx context.Context, accountID int64, status string) error {
+func (c *gatewayCache) GetCindyHealthTerminalPending(ctx context.Context, accountID int64, status string) (*service.CindyHealthEpisode, error) {
 	if c == nil || c.rdb == nil || accountID <= 0 ||
 		(status != service.CindyHealthStatusBanned && status != service.CindyHealthStatusBalanceInsufficient) {
-		return errors.New("invalid Cindy terminal pending cleanup")
+		return nil, errors.New("invalid Cindy terminal pending lookup")
 	}
-	return c.rdb.Del(ctx, cindyHealthPendingKeyV3(accountID, status)).Err()
+	value, err := c.rdb.Get(ctx, cindyHealthPendingKeyV3(accountID, status)).Result()
+	if errors.Is(err, redis.Nil) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	episode, err := parseCindyHealthEpisodeValue(value)
+	if err != nil {
+		return nil, err
+	}
+	return &episode, nil
+}
+
+func (c *gatewayCache) ClearCindyHealthTerminalPendingIfMatch(ctx context.Context, episode service.CindyHealthEpisode) (bool, error) {
+	if c == nil || c.rdb == nil || !episodeTerminalPendingValid(episode) {
+		return false, errors.New("invalid Cindy terminal pending cleanup")
+	}
+	value, err := cindyHealthEpisodeValue(episode)
+	if err != nil {
+		return false, err
+	}
+	deleted, err := clearCindyHealthEpisodeIfMatchScript.Run(
+		ctx, c.rdb, []string{cindyHealthStoreKey(episode)}, value,
+	).Int()
+	return deleted == 1, err
+}
+
+func episodeTerminalPendingValid(episode service.CindyHealthEpisode) bool {
+	return episode.AccountID > 0 && episode.Generation > 0 && strings.TrimSpace(episode.EpisodeID) != "" &&
+		(episode.Status == service.CindyHealthStatusBanned || episode.Status == service.CindyHealthStatusBalanceInsufficient)
 }
 
 func (c *gatewayCache) MarkCindyBalancePending(ctx context.Context, accountID int64, credentialsFingerprint string) error {

@@ -726,7 +726,7 @@ func (s *OpenAIGatewayService) isCindyTerminalPendingBlocked(ctx context.Context
 	cancel()
 	if err != nil {
 		slog.Error("cindy_terminal_pending_hotpath_read_failed", "account_id", account.ID, "error", err)
-		return false
+		return true
 	}
 	fingerprint, err := AccountCredentialFingerprint(
 		ProviderProfileCindyLaxaV1, AccountTypeAPIKey, "https://api.laxarouter.ai", account.GetCredential("api_key"),
@@ -736,17 +736,36 @@ func (s *OpenAIGatewayService) isCindyTerminalPendingBlocked(ctx context.Context
 	}
 	blocked := false
 	for _, episode := range episodes {
-		if !episode.terminalValid() || episode.Generation != account.CindyCredentialGeneration || episode.Fingerprint != fingerprint {
+		if !episode.terminalValid() {
+			return true
+		}
+		candidate := account
+		if episode.Generation != account.CindyCredentialGeneration || episode.Fingerprint != fingerprint {
+			authority, available := s.cindyHealth.(CindyHealthEpisodeAuthority)
+			if !available {
+				return true
+			}
+			authorityCtx, authorityCancel := context.WithTimeout(context.WithoutCancel(ctx), cindyBalancePendingReadTimeout)
+			authoritativeAccount, current, resolveErr := authority.ResolveCindyHealthEpisode(authorityCtx, episode)
+			authorityCancel()
+			if resolveErr != nil || authoritativeAccount == nil {
+				slog.Error("cindy_terminal_pending_authority_failed", "account_id", account.ID, "error", resolveErr)
+				return true
+			}
+			if current {
+				candidate = authoritativeAccount
+			} else {
 			clearCtx, clearCancel := context.WithTimeout(context.WithoutCancel(ctx), cindyBalancePendingReadTimeout)
 			_ = store.ClearCindyHealthEpisodeIfMatch(clearCtx, episode)
 			clearCancel()
 			continue
+			}
 		}
 		reason := "cindy_banned"
 		if episode.Status == CindyHealthStatusBalanceInsufficient {
 			reason = "cindy_balance_insufficient"
 		}
-		if s.BlockCindyHealthEpisode(account, episode, reason) {
+		if s.BlockCindyHealthEpisode(candidate, episode, reason) {
 			blocked = true
 		}
 	}
@@ -779,17 +798,50 @@ func (s *OpenAIGatewayService) ClearAllCindyHealthState(ctx context.Context, acc
 	return cleaner.ClearAllCindyHealthState(stateCtx, accountID)
 }
 
-func (s *OpenAIGatewayService) ClearCindyHealthTerminalPending(ctx context.Context, accountID int64, status string) error {
+func (s *OpenAIGatewayService) GetCindyHealthTerminalPending(ctx context.Context, accountID int64, status string) (*CindyHealthEpisode, error) {
 	if s == nil || accountID <= 0 || s.cache == nil {
-		return nil
+		return nil, nil
 	}
-	clearer, ok := s.cache.(CindyHealthTerminalPendingClearer)
+	manager, ok := s.cache.(CindyHealthTerminalPendingManager)
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	defer cancel()
-	return clearer.ClearCindyHealthTerminalPending(stateCtx, accountID, status)
+	return manager.GetCindyHealthTerminalPending(stateCtx, accountID, status)
+}
+
+func (s *OpenAIGatewayService) ClearCindyHealthTerminalPendingIfMatch(ctx context.Context, episode CindyHealthEpisode) (bool, error) {
+	if s == nil || s.cache == nil {
+		return false, nil
+	}
+	manager, ok := s.cache.(CindyHealthTerminalPendingManager)
+	if !ok {
+		return false, nil
+	}
+	stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+	defer cancel()
+	return manager.ClearCindyHealthTerminalPendingIfMatch(stateCtx, episode)
+	}
+
+func (s *OpenAIGatewayService) ClearCindyBalanceRuntimeBlock(accountID int64) {
+	if s == nil || accountID <= 0 {
+		return
+	}
+	mu := s.openAIAccountRuntimeBlockLock(accountID)
+	mu.Lock()
+	defer mu.Unlock()
+	if raw, ok := s.cindyHealthRuntimeBlocks.Load(accountID); ok {
+		if block, valid := raw.(cindyHealthRuntimeBlock); valid && block.Episode.Status == CindyHealthStatusBanned {
+			return
+		}
+		s.cindyHealthRuntimeBlocks.Delete(accountID)
+	}
+	if _, legacyBalance := s.cindyBalanceRuntimeBlockFingerprint.Load(accountID); legacyBalance {
+		s.cindyBalanceRuntimeBlockFingerprint.Delete(accountID)
+	}
+	s.openaiAccountRuntimeBlockUntil.Delete(accountID)
+	s.openaiAccountRuntimeBlockGeneration.Store(accountID, s.openaiAccountRuntimeBlockSequence.Add(1))
 }
 
 // withCindyBalancePendingSnapshot loads every not-yet-covered strict Cindy

@@ -18,7 +18,8 @@ type runtimeBlockRecorder struct {
 	reasons                 []string
 	clearedIDs              []int64
 	clearedCindyHealthIDs   []int64
-	clearedTerminalStatuses []string
+	terminalPending         *CindyHealthEpisode
+	replacementOnClear      *CindyHealthEpisode
 }
 
 func (r *runtimeBlockRecorder) BlockAccountScheduling(account *Account, until time.Time, reason string) {
@@ -36,9 +37,28 @@ func (r *runtimeBlockRecorder) ClearAllCindyHealthState(_ context.Context, accou
 	return nil
 }
 
-func (r *runtimeBlockRecorder) ClearCindyHealthTerminalPending(_ context.Context, _ int64, status string) error {
-	r.clearedTerminalStatuses = append(r.clearedTerminalStatuses, status)
-	return nil
+func (r *runtimeBlockRecorder) GetCindyHealthTerminalPending(_ context.Context, _ int64, _ string) (*CindyHealthEpisode, error) {
+	if r.terminalPending == nil {
+		return nil, nil
+	}
+	episode := *r.terminalPending
+	return &episode, nil
+}
+
+func (r *runtimeBlockRecorder) ClearCindyHealthTerminalPendingIfMatch(_ context.Context, episode CindyHealthEpisode) (bool, error) {
+	if r.replacementOnClear != nil {
+		r.terminalPending = r.replacementOnClear
+	}
+	if r.terminalPending == nil || r.terminalPending.EpisodeID != episode.EpisodeID ||
+		r.terminalPending.Generation != episode.Generation || r.terminalPending.Fingerprint != episode.Fingerprint {
+		return false, nil
+	}
+	r.terminalPending = nil
+	return true, nil
+}
+
+func (r *runtimeBlockRecorder) ClearCindyBalanceRuntimeBlock(accountID int64) {
+	r.clearedIDs = append(r.clearedIDs, accountID)
 }
 
 func TestRateLimitService_HandleUpstreamError_OpenAI403FirstHitTempUnschedulable(t *testing.T) {
