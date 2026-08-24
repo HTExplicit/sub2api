@@ -306,6 +306,51 @@ func TestCindyBalanceProbeRecoveryClearFailureCannotReMarkFromOrdinaryRequest(t 
 	markRepo.mu.Unlock()
 }
 
+func TestCindyBalanceProbeRecoveryDoesNotClearRuntimeReplacementAfterRedisCAS(t *testing.T) {
+	account := newCindyRateLimitAccount(23004, true)
+	account.CindyCredentialGeneration = 7
+	reservationFingerprint, err := CindyAccountIdentityFingerprint(account.Platform, account.Type, account.Credentials)
+	require.NoError(t, err)
+	episodeFingerprint, err := AccountCredentialFingerprint(
+		ProviderProfileCindyLaxaV1,
+		AccountTypeAPIKey,
+		"https://api.laxarouter.ai",
+		account.GetCredential("api_key"),
+	)
+	require.NoError(t, err)
+	observedAt := time.Now().UTC()
+	oldEpisode := CindyHealthEpisode{
+		AccountID: account.ID, Generation: account.CindyCredentialGeneration, EpisodeID: "diagnostic-old",
+		Fingerprint: episodeFingerprint, Status: CindyHealthStatusBalanceInsufficient,
+		Evidence: CindyHealthEvidenceExactBudget, ObservedAt: observedAt,
+	}
+	newEpisode := oldEpisode
+	newEpisode.EpisodeID = "diagnostic-replacement"
+	newEpisode.ObservedAt = observedAt.Add(time.Second)
+	cache := &cindyBalanceRecoveryInterleavingCache{
+		stubGatewayCache: &stubGatewayCache{},
+		terminalPending:  &oldEpisode,
+	}
+	gateway := &OpenAIGatewayService{cache: cache}
+	require.True(t, gateway.BlockCindyHealthEpisode(account, oldEpisode, "cindy_balance_insufficient"))
+	cache.afterClear = func() {
+		require.True(t, gateway.BlockCindyHealthEpisode(account, newEpisode, "cindy_balance_insufficient"))
+	}
+	probeRepo := &cindyBalanceProbeRecoveryRepositoryStub{recovered: true}
+	svc := &CindyBalanceProbeService{repo: probeRepo, gateway: gateway, now: time.Now}
+	reservation := &CindyBalanceProbeReservation{
+		JobID: 45, ItemID: 46, AccountID: account.ID, IdentityFingerprint: reservationFingerprint,
+	}
+
+	require.True(t, svc.finalizeRecovery(context.Background(), reservation, account, "lease-epoch"))
+	require.True(t, gateway.isOpenAIAccountRuntimeBlocked(account), "the replacement episode must retain the runtime block")
+	raw, loaded := gateway.cindyHealthRuntimeBlocks.Load(account.ID)
+	require.True(t, loaded)
+	block, ok := raw.(cindyHealthRuntimeBlock)
+	require.True(t, ok)
+	require.Equal(t, newEpisode.EpisodeID, block.Episode.EpisodeID)
+}
+
 func TestCindyBalanceProbeMarkedLunaSuccessFinalizesWithPreSendSnapshot(t *testing.T) {
 	account := newCindyRateLimitAccount(23003, true)
 	fingerprint, err := CindyAccountIdentityFingerprint(account.Platform, account.Type, account.Credentials)

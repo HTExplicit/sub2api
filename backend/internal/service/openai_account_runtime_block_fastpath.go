@@ -646,7 +646,9 @@ func (s *OpenAIGatewayService) ClearCindyHealthEpisodeBlock(episode CindyHealthE
 	defer mu.Unlock()
 	raw, ok := s.cindyHealthRuntimeBlocks.Load(episode.AccountID)
 	current, valid := raw.(cindyHealthRuntimeBlock)
-	if !ok || !valid || current.Episode.Generation != episode.Generation || current.Episode.EpisodeID != episode.EpisodeID {
+	if !ok || !valid || current.Episode.AccountID != episode.AccountID ||
+		current.Episode.Generation != episode.Generation || current.Episode.EpisodeID != episode.EpisodeID ||
+		current.Episode.Fingerprint != episode.Fingerprint || current.Episode.Status != episode.Status {
 		return
 	}
 	owner, _ := s.openaiAccountRuntimeBlockGeneration.Load(episode.AccountID)
@@ -714,7 +716,7 @@ func (s *OpenAIGatewayService) cindyHealthEpisodeStore() (CindyHealthEpisodeStor
 }
 
 func (s *OpenAIGatewayService) isCindyTerminalPendingBlocked(ctx context.Context, account *Account) bool {
-	if s == nil || account == nil || !hasCanonicalCindyProviderIdentity(account) || account.CindyCredentialGeneration <= 0 {
+	if s == nil || account == nil || !hasCanonicalCindyProviderIdentity(account) {
 		return false
 	}
 	store, ok := s.cindyHealthEpisodeStore()
@@ -731,16 +733,14 @@ func (s *OpenAIGatewayService) isCindyTerminalPendingBlocked(ctx context.Context
 	fingerprint, err := AccountCredentialFingerprint(
 		ProviderProfileCindyLaxaV1, AccountTypeAPIKey, "https://api.laxarouter.ai", account.GetCredential("api_key"),
 	)
-	if err != nil {
-		return false
-	}
 	blocked := false
 	for _, episode := range episodes {
 		if !episode.terminalValid() {
 			return true
 		}
 		candidate := account
-		if episode.Generation != account.CindyCredentialGeneration || episode.Fingerprint != fingerprint {
+		if account.CindyCredentialGeneration <= 0 || err != nil ||
+			episode.Generation != account.CindyCredentialGeneration || episode.Fingerprint != fingerprint {
 			authority, available := s.cindyHealth.(CindyHealthEpisodeAuthority)
 			if !available {
 				return true
@@ -755,10 +755,10 @@ func (s *OpenAIGatewayService) isCindyTerminalPendingBlocked(ctx context.Context
 			if current {
 				candidate = authoritativeAccount
 			} else {
-			clearCtx, clearCancel := context.WithTimeout(context.WithoutCancel(ctx), cindyBalancePendingReadTimeout)
-			_ = store.ClearCindyHealthEpisodeIfMatch(clearCtx, episode)
-			clearCancel()
-			continue
+				clearCtx, clearCancel := context.WithTimeout(context.WithoutCancel(ctx), cindyBalancePendingReadTimeout)
+				_ = store.ClearCindyHealthEpisodeIfMatch(clearCtx, episode)
+				clearCancel()
+				continue
 			}
 		}
 		reason := "cindy_banned"
@@ -822,7 +822,7 @@ func (s *OpenAIGatewayService) ClearCindyHealthTerminalPendingIfMatch(ctx contex
 	stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	defer cancel()
 	return manager.ClearCindyHealthTerminalPendingIfMatch(stateCtx, episode)
-	}
+}
 
 func (s *OpenAIGatewayService) ClearCindyBalanceRuntimeBlock(accountID int64) {
 	if s == nil || accountID <= 0 {

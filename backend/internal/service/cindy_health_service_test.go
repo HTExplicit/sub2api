@@ -480,7 +480,7 @@ func TestCindyTerminalPendingHotPathBlocksBeforeRetryHydrationAndClearsStale(t *
 
 	gateway.ClearAccountSchedulingBlock(account.ID)
 	gateway.cindyHealth = &CindyHealthService{
-		accountRepo: &cindyHealthAccountRepoStub{account: account},
+		accountRepo:  &cindyHealthAccountRepoStub{account: account},
 		identityRepo: &cindyHealthIdentityRepoStub{identity: identity},
 	}
 	stale := current
@@ -508,17 +508,67 @@ func TestCindyTerminalPendingHotPathUsesAuthoritativeGenerationBeforeDeleting(t 
 	}
 	store := &cindyHealthEpisodeStoreStub{pending: map[int64]CindyHealthEpisode{cached.ID: pending}}
 	authority := &CindyHealthService{
-		accountRepo: &cindyHealthAccountRepoStub{account: current},
+		accountRepo:  &cindyHealthAccountRepoStub{account: current},
 		identityRepo: &cindyHealthIdentityRepoStub{identity: identity},
 	}
 	gateway := &OpenAIGatewayService{
-		cache: &cindyPendingGatewayCacheStub{cindyHealthEpisodeStoreStub: store},
+		cache:       &cindyPendingGatewayCacheStub{cindyHealthEpisodeStoreStub: store},
 		cindyHealth: authority,
 	}
 
 	require.True(t, gateway.isOpenAIAccountRequestRuntimeBlockedContext(context.Background(), cached, "gpt-5.6-sol"))
 	store.mu.Lock()
 	require.Len(t, store.pending, 1, "a newer authoritative episode must not be deleted by a stale scheduler snapshot")
+	store.mu.Unlock()
+}
+
+func TestCindyTerminalPendingHotPathReconcilesZeroCachedGenerationToCurrentPending(t *testing.T) {
+	cached, _ := newHealthTestAccount(t, 9115, "current-key")
+	cached.CindyCredentialGeneration = 0
+	current, identity := newHealthTestAccount(t, cached.ID, "current-key")
+	pending := CindyHealthEpisode{
+		AccountID: cached.ID, Generation: identity.Generation, EpisodeID: "current-db-episode",
+		Fingerprint: identity.Fingerprint, Status: CindyHealthStatusBanned,
+		Evidence: CindyHealthEvidenceUnauthorized, ObservedAt: time.Now().UTC(),
+	}
+	store := &cindyHealthEpisodeStoreStub{pending: map[int64]CindyHealthEpisode{cached.ID: pending}}
+	gateway := &OpenAIGatewayService{
+		cache: &cindyPendingGatewayCacheStub{cindyHealthEpisodeStoreStub: store},
+		cindyHealth: &CindyHealthService{
+			accountRepo:  &cindyHealthAccountRepoStub{account: current},
+			identityRepo: &cindyHealthIdentityRepoStub{identity: identity},
+		},
+	}
+
+	require.True(t, gateway.isOpenAIAccountRequestRuntimeBlockedContext(context.Background(), cached, "gpt-5.6-sol"))
+	store.mu.Lock()
+	require.Len(t, store.pending, 1, "a current authoritative episode must survive a zero-generation cache snapshot")
+	store.mu.Unlock()
+}
+
+func TestCindyTerminalPendingHotPathReconcilesZeroCachedGenerationAndClearsAuthoritativeStalePending(t *testing.T) {
+	cached, staleIdentity := newHealthTestAccount(t, 9116, "stale-key")
+	cached.CindyCredentialGeneration = 0
+	current, identity := newHealthTestAccount(t, cached.ID, "current-key")
+	current.CindyCredentialGeneration = 8
+	identity.Generation = 8
+	pending := CindyHealthEpisode{
+		AccountID: cached.ID, Generation: staleIdentity.Generation, EpisodeID: "stale-db-episode",
+		Fingerprint: staleIdentity.Fingerprint, Status: CindyHealthStatusBanned,
+		Evidence: CindyHealthEvidenceUnauthorized, ObservedAt: time.Now().UTC(),
+	}
+	store := &cindyHealthEpisodeStoreStub{pending: map[int64]CindyHealthEpisode{cached.ID: pending}}
+	gateway := &OpenAIGatewayService{
+		cache: &cindyPendingGatewayCacheStub{cindyHealthEpisodeStoreStub: store},
+		cindyHealth: &CindyHealthService{
+			accountRepo:  &cindyHealthAccountRepoStub{account: current},
+			identityRepo: &cindyHealthIdentityRepoStub{identity: identity},
+		},
+	}
+
+	require.False(t, gateway.isOpenAIAccountRequestRuntimeBlockedContext(context.Background(), cached, "gpt-5.6-sol"))
+	store.mu.Lock()
+	require.Empty(t, store.pending, "only authoritative stale evidence may remove the pending episode")
 	store.mu.Unlock()
 }
 

@@ -63,7 +63,11 @@ func (s *adminServiceImpl) ClearCindyBalanceInsufficient(ctx context.Context, id
 		}
 	}
 	if clearRuntime && s.runtimeBlocker != nil {
-		if balanceClearer, ok := s.runtimeBlocker.(CindyBalanceRuntimeClearer); ok {
+		if captured != nil {
+			if episodeClearer, ok := s.runtimeBlocker.(CindyHealthEpisodeRuntimeBlocker); ok {
+				episodeClearer.ClearCindyHealthEpisodeBlock(*captured)
+			}
+		} else if balanceClearer, ok := s.runtimeBlocker.(CindyBalanceRuntimeClearer); ok {
 			balanceClearer.ClearCindyBalanceRuntimeBlock(id)
 		} else {
 			s.runtimeBlocker.ClearAccountSchedulingBlock(id)

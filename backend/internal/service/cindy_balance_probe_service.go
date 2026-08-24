@@ -441,7 +441,11 @@ func (s *CindyBalanceProbeService) finalizeRecovery(
 				clearRuntime = getErr == nil && latest == nil
 			}
 			if clearRuntime {
-				s.gateway.ClearCindyBalanceRuntimeBlock(reservation.AccountID)
+				if captured != nil {
+					s.gateway.ClearCindyHealthEpisodeBlock(*captured)
+				} else {
+					s.gateway.ClearCindyBalanceRuntimeBlock(reservation.AccountID)
+				}
 			}
 		}
 	}
