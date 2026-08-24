@@ -21,3 +21,14 @@ func TestBuildCindyDuplicateIdentityInventoryIsDeterministicAndRedacted(t *testi
 	require.Len(t, result[0].IdentityHash, 64)
 	require.NotContains(t, result[0].IdentityHash, "secret-key")
 }
+
+func TestBuildCindyDuplicateIdentityInventoryDoesNotChooseTerminalOwner(t *testing.T) {
+	accounts := []Account{
+		{ID: 11, Platform: PlatformCindy, Type: AccountTypeAPIKey, Status: StatusDisabled, CreatedAt: time.Unix(1, 0), Credentials: map[string]any{"base_url": "https://api.laxarouter.ai", "api_key": "terminal-key"}},
+		{ID: 12, Platform: PlatformCindy, Type: AccountTypeAPIKey, Status: StatusDisabled, CreatedAt: time.Unix(2, 0), Credentials: map[string]any{"base_url": "https://api.laxarouter.ai", "api_key": "terminal-key"}},
+	}
+	result := BuildCindyDuplicateIdentityInventory(accounts)
+	require.Len(t, result, 1)
+	require.Zero(t, result[0].ProposedOwnerID)
+	require.Equal(t, []int64{11, 12}, result[0].OtherAccountIDs)
+}

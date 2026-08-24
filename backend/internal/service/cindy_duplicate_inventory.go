@@ -42,6 +42,12 @@ func BuildCindyDuplicateIdentityInventory(accounts []Account) []CindyDuplicateId
 		if len(members) < 2 {
 			continue
 		}
+		nonTerminal := make([]candidate, 0, len(members))
+		for _, member := range members {
+			if !cindyDuplicateTerminal(member.account) {
+				nonTerminal = append(nonTerminal, member)
+			}
+		}
 		sort.Slice(members, func(i, j int) bool {
 			left, right := members[i].account, members[j].account
 			leftTerminal, rightTerminal := cindyDuplicateTerminal(left), cindyDuplicateTerminal(right)
@@ -56,10 +62,25 @@ func BuildCindyDuplicateIdentityInventory(accounts []Account) []CindyDuplicateId
 			}
 			return left.ID < right.ID
 		})
-		owner := members[0].account.ID
+		owner := int64(0)
+		if len(nonTerminal) > 0 {
+			sort.Slice(nonTerminal, func(i, j int) bool {
+				left, right := nonTerminal[i].account, nonTerminal[j].account
+				if !left.CreatedAt.Equal(right.CreatedAt) {
+					return left.CreatedAt.Before(right.CreatedAt)
+				}
+				if !left.UpdatedAt.Equal(right.UpdatedAt) {
+					return left.UpdatedAt.Before(right.UpdatedAt)
+				}
+				return left.ID < right.ID
+			})
+			owner = nonTerminal[0].account.ID
+		}
 		others := make([]int64, 0, len(members)-1)
-		for _, member := range members[1:] {
-			others = append(others, member.account.ID)
+		for _, member := range members {
+			if owner == 0 || member.account.ID != owner {
+				others = append(others, member.account.ID)
+			}
 		}
 		sort.Slice(others, func(i, j int) bool { return others[i] < others[j] })
 		result = append(result, CindyDuplicateIdentityGroup{IdentityHash: hash, ProposedOwnerID: owner, OtherAccountIDs: others})
