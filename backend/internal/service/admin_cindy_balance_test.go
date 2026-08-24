@@ -12,7 +12,8 @@ import (
 
 type cindyBalanceAdminRepoStub struct {
 	accountRepoStubForClearAccountError
-	clearCalls int
+	clearCalls   int
+	deleteResult *CindyInsufficientDeleteResult
 }
 
 func (r *cindyBalanceAdminRepoStub) MarkCindyBalanceInsufficient(context.Context, int64, time.Time) (bool, error) {
@@ -30,7 +31,18 @@ func (r *cindyBalanceAdminRepoStub) PreviewCindyInsufficientDeletion(context.Con
 }
 
 func (r *cindyBalanceAdminRepoStub) DeleteCindyInsufficient(context.Context, int, string) (*CindyInsufficientDeleteResult, error) {
+	if r.deleteResult != nil {
+		return r.deleteResult, nil
+	}
 	return &CindyInsufficientDeleteResult{}, nil
+}
+
+func (r *cindyBalanceAdminRepoStub) PreviewCindyBannedDeletion(context.Context) (*CindyInsufficientDeletePreview, error) {
+	return &CindyInsufficientDeletePreview{}, nil
+}
+
+func (r *cindyBalanceAdminRepoStub) DeleteCindyBanned(context.Context, int, string) (*CindyInsufficientDeleteResult, error) {
+	return r.deleteResult, nil
 }
 
 func TestAdminServiceClearCindyBalanceInsufficientPreservesManualState(t *testing.T) {
@@ -62,4 +74,19 @@ func TestAdminServiceClearCindyBalanceInsufficientPreservesManualState(t *testin
 	require.False(t, updated.Schedulable)
 	require.Equal(t, []int64{8401}, blocker.clearedIDs)
 	require.False(t, updated.IsSchedulable(), "clearing the Cindy marker must not re-enable a manually disabled account")
+}
+
+func TestAdminServiceBannedCleanupClearsAllCindyRuntimeStateAfterCommit(t *testing.T) {
+	repo := &cindyBalanceAdminRepoStub{deleteResult: &CindyInsufficientDeleteResult{
+		DeletedCount: 1, DeletedAccountIDs: []int64{8402, 8403},
+	}}
+	blocker := &runtimeBlockRecorder{}
+	svc := &adminServiceImpl{accountRepo: repo, runtimeBlocker: blocker}
+
+	result, err := svc.DeleteCindyBanned(context.Background(), 1, "fingerprint")
+
+	require.NoError(t, err)
+	require.Equal(t, 1, result.DeletedCount)
+	require.Equal(t, []int64{8402, 8403}, blocker.clearedCindyHealthIDs)
+	require.Equal(t, []int64{8402, 8403}, blocker.clearedIDs)
 }

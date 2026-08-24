@@ -171,6 +171,10 @@ func (Account) Fields() []ent.Field {
 			Nillable().
 			Comment("Strict Cindy 401 terminal state for the active credential generation.").
 			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
+		field.Int64("cindy_credential_generation").
+			Default(0).
+			NonNegative().
+			Comment("Active strict Cindy credential generation projection; zero for non-Cindy accounts."),
 
 		// rate_limited_at: 触发速率限制的时间
 		// 当收到 429 错误时记录

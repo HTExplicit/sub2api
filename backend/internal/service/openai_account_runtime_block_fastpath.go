@@ -612,6 +612,52 @@ func (s *OpenAIGatewayService) BlockAccountScheduling(account *Account, until ti
 	}
 }
 
+type cindyHealthRuntimeBlock struct {
+	Episode CindyHealthEpisode
+	Owner   uint64
+	Reason  string
+}
+
+func (s *OpenAIGatewayService) BlockCindyHealthEpisode(account *Account, episode CindyHealthEpisode, reason string) bool {
+	if s == nil || account == nil || !hasCanonicalCindyProviderIdentity(account) || !episode.valid() ||
+		account.ID != episode.AccountID || account.CindyCredentialGeneration != episode.Generation {
+		return false
+	}
+	fingerprint, err := AccountCredentialFingerprint(
+		ProviderProfileCindyLaxaV1, AccountTypeAPIKey, "https://api.laxarouter.ai", account.GetCredential("api_key"),
+	)
+	if err != nil || fingerprint != episode.Fingerprint {
+		return false
+	}
+	mu := s.openAIAccountRuntimeBlockLock(account.ID)
+	mu.Lock()
+	defer mu.Unlock()
+	owner, _ := s.blockAccountSchedulingLocked(account, time.Time{}, reason)
+	s.cindyHealthRuntimeBlocks.Store(account.ID, cindyHealthRuntimeBlock{Episode: episode, Owner: owner, Reason: reason})
+	return true
+}
+
+func (s *OpenAIGatewayService) ClearCindyHealthEpisodeBlock(episode CindyHealthEpisode) {
+	if s == nil || !episode.valid() {
+		return
+	}
+	mu := s.openAIAccountRuntimeBlockLock(episode.AccountID)
+	mu.Lock()
+	defer mu.Unlock()
+	raw, ok := s.cindyHealthRuntimeBlocks.Load(episode.AccountID)
+	current, valid := raw.(cindyHealthRuntimeBlock)
+	if !ok || !valid || current.Episode.Generation != episode.Generation || current.Episode.EpisodeID != episode.EpisodeID {
+		return
+	}
+	owner, _ := s.openaiAccountRuntimeBlockGeneration.Load(episode.AccountID)
+	if owner == current.Owner {
+		s.openaiAccountRuntimeBlockUntil.Delete(episode.AccountID)
+		s.cindyBalanceRuntimeBlockFingerprint.Delete(episode.AccountID)
+		s.openaiAccountRuntimeBlockGeneration.Store(episode.AccountID, s.openaiAccountRuntimeBlockSequence.Add(1))
+	}
+	s.cindyHealthRuntimeBlocks.Delete(episode.AccountID)
+}
+
 func (s *OpenAIGatewayService) blockCindyBalanceScheduling(account *Account) {
 	if s == nil || account == nil ||
 		!IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
@@ -670,6 +716,19 @@ func (s *OpenAIGatewayService) ClearCindyBalancePending(ctx context.Context, acc
 	stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	defer cancel()
 	return store.ClearCindyBalancePending(stateCtx, accountID)
+}
+
+func (s *OpenAIGatewayService) ClearAllCindyHealthState(ctx context.Context, accountID int64) error {
+	if s == nil || accountID <= 0 || s.cache == nil {
+		return nil
+	}
+	cleaner, ok := s.cache.(CindyHealthStateCleaner)
+	if !ok {
+		return nil
+	}
+	stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+	defer cancel()
+	return cleaner.ClearAllCindyHealthState(stateCtx, accountID)
 }
 
 // withCindyBalancePendingSnapshot loads every not-yet-covered strict Cindy
@@ -828,7 +887,7 @@ func (s *OpenAIGatewayService) blockAccountSchedulingLocked(account *Account, un
 	s.openaiAccountRuntimeBlockGeneration.Store(account.ID, generation)
 	now := time.Now()
 	blockUntil := until
-	indefinite := blockUntil.IsZero() && reason == "cindy_balance_insufficient"
+	indefinite := blockUntil.IsZero() && (reason == "cindy_balance_insufficient" || reason == "cindy_banned")
 	if !indefinite && (blockUntil.IsZero() || !blockUntil.After(now)) {
 		blockUntil = now.Add(openAIStopSchedulingBridgeCooldown)
 	}
@@ -870,6 +929,7 @@ func (s *OpenAIGatewayService) ClearAccountSchedulingBlock(accountID int64) {
 	defer mu.Unlock()
 	s.openaiAccountRuntimeBlockUntil.Delete(accountID)
 	s.cindyBalanceRuntimeBlockFingerprint.Delete(accountID)
+	s.cindyHealthRuntimeBlocks.Delete(accountID)
 	s.openaiAccountRuntimeBlockGeneration.Store(accountID, s.openaiAccountRuntimeBlockSequence.Add(1))
 	state := s.getOpenAIAccountModelTransientState()
 	if state != nil {
@@ -898,6 +958,10 @@ func (s *OpenAIGatewayService) clearOpenAIAccountSchedulingBlockScope(accountID 
 }
 
 func (s *OpenAIGatewayService) isOpenAIAccountRuntimeBlocked(account *Account) bool {
+	return s.isOpenAIAccountRuntimeBlockedContext(context.Background(), account)
+}
+
+func (s *OpenAIGatewayService) isOpenAIAccountRuntimeBlockedContext(_ context.Context, account *Account) bool {
 	if s == nil || account == nil || account.ID <= 0 {
 		return false
 	}
@@ -925,6 +989,29 @@ func (s *OpenAIGatewayService) isOpenAIAccountRuntimeBlocked(account *Account) b
 			s.cindyBalanceRuntimeBlockFingerprint.Delete(account.ID)
 			s.openaiAccountRuntimeBlockGeneration.Store(account.ID, s.openaiAccountRuntimeBlockSequence.Add(1))
 		} else if cooldownUntil.IsZero() {
+			if rawHealth, healthLoaded := s.cindyHealthRuntimeBlocks.Load(account.ID); healthLoaded {
+				health, healthValid := rawHealth.(cindyHealthRuntimeBlock)
+				currentFingerprint, fingerprintErr := AccountCredentialFingerprint(
+					ProviderProfileCindyLaxaV1, AccountTypeAPIKey, "https://api.laxarouter.ai", account.GetCredential("api_key"),
+				)
+				if !healthValid || account.CindyCredentialGeneration != health.Episode.Generation ||
+					fingerprintErr != nil || currentFingerprint != health.Episode.Fingerprint {
+					currentOwner, _ := s.openaiAccountRuntimeBlockGeneration.Load(account.ID)
+					if healthValid && currentOwner == health.Owner {
+						s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
+						s.cindyHealthRuntimeBlocks.Delete(account.ID)
+						s.openaiAccountRuntimeBlockGeneration.Store(account.ID, s.openaiAccountRuntimeBlockSequence.Add(1))
+						mu.Unlock()
+						return false
+					}
+					s.cindyHealthRuntimeBlocks.Delete(account.ID)
+				}
+				if healthValid && account.CindyCredentialGeneration == health.Episode.Generation &&
+					fingerprintErr == nil && currentFingerprint == health.Episode.Fingerprint {
+					mu.Unlock()
+					return true
+				}
+			}
 			storedFingerprint, fingerprintLoaded := s.cindyBalanceRuntimeBlockFingerprint.Load(account.ID)
 			currentFingerprint, fingerprintErr := CindyAccountIdentityFingerprint(
 				account.Platform,
@@ -1036,7 +1123,7 @@ func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlockedContext(ctx c
 	if s == nil || account == nil {
 		return false
 	}
-	if s.isOpenAIAccountRuntimeBlocked(account) || s.isOpenAIAccountModelRuntimeBlocked(account, requestedModel) {
+	if s.isOpenAIAccountRuntimeBlockedContext(ctx, account) || s.isOpenAIAccountModelRuntimeBlocked(account, requestedModel) {
 		return true
 	}
 	if s.isCindyBalancePendingBlocked(ctx, account) {

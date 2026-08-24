@@ -52,6 +52,8 @@ type Account struct {
 	CindyBalanceInsufficientAt *time.Time
 	// CindyBannedAt is the durable projection of a generation-bound strict Cindy 401 terminal state.
 	CindyBannedAt *time.Time
+	// CindyCredentialGeneration identifies the exact active credential revision carried by this account snapshot.
+	CindyCredentialGeneration int64
 	// The following presentation-only fields are hydrated from durable manual
 	// balance probe items for admin account list responses.
 	CindyBalanceProbeJobID     *int64

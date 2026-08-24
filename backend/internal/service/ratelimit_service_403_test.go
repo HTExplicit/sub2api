@@ -13,10 +13,11 @@ import (
 )
 
 type runtimeBlockRecorder struct {
-	accounts   []*Account
-	until      []time.Time
-	reasons    []string
-	clearedIDs []int64
+	accounts              []*Account
+	until                 []time.Time
+	reasons               []string
+	clearedIDs            []int64
+	clearedCindyHealthIDs []int64
 }
 
 func (r *runtimeBlockRecorder) BlockAccountScheduling(account *Account, until time.Time, reason string) {
@@ -27,6 +28,11 @@ func (r *runtimeBlockRecorder) BlockAccountScheduling(account *Account, until ti
 
 func (r *runtimeBlockRecorder) ClearAccountSchedulingBlock(accountID int64) {
 	r.clearedIDs = append(r.clearedIDs, accountID)
+}
+
+func (r *runtimeBlockRecorder) ClearAllCindyHealthState(_ context.Context, accountID int64) error {
+	r.clearedCindyHealthIDs = append(r.clearedCindyHealthIDs, accountID)
+	return nil
 }
 
 func TestRateLimitService_HandleUpstreamError_OpenAI403FirstHitTempUnschedulable(t *testing.T) {

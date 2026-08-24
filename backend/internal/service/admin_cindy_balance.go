@@ -61,18 +61,7 @@ func (s *adminServiceImpl) DeleteCindyInsufficient(ctx context.Context, expected
 	if err != nil {
 		return nil, err
 	}
-	if s.runtimeBlocker != nil {
-		for _, accountID := range result.DeletedAccountIDs {
-			if pendingClearer, ok := s.runtimeBlocker.(interface {
-				ClearCindyBalancePending(context.Context, int64) error
-			}); ok {
-				if clearErr := pendingClearer.ClearCindyBalancePending(ctx, accountID); clearErr != nil {
-					slog.Warn("cindy_cleanup_pending_clear_failed", "account_id", accountID, "error", clearErr)
-				}
-			}
-			s.runtimeBlocker.ClearAccountSchedulingBlock(accountID)
-		}
-	}
+	s.clearDeletedCindyRuntimeState(ctx, result.DeletedAccountIDs)
 	return result, nil
 }
 
@@ -101,10 +90,20 @@ func (s *adminServiceImpl) DeleteCindyBanned(ctx context.Context, expectedCount 
 	if err != nil {
 		return nil, err
 	}
-	if s.runtimeBlocker != nil {
-		for _, accountID := range result.DeletedAccountIDs {
-			s.runtimeBlocker.ClearAccountSchedulingBlock(accountID)
-		}
-	}
+	s.clearDeletedCindyRuntimeState(ctx, result.DeletedAccountIDs)
 	return result, nil
+}
+
+func (s *adminServiceImpl) clearDeletedCindyRuntimeState(ctx context.Context, accountIDs []int64) {
+	if s.runtimeBlocker == nil {
+		return
+	}
+	for _, accountID := range accountIDs {
+		if cleaner, ok := s.runtimeBlocker.(CindyHealthStateCleaner); ok {
+			if clearErr := cleaner.ClearAllCindyHealthState(ctx, accountID); clearErr != nil {
+				slog.Warn("cindy_cleanup_health_state_clear_failed", "account_id", accountID, "error", clearErr)
+			}
+		}
+		s.runtimeBlocker.ClearAccountSchedulingBlock(accountID)
+	}
 }

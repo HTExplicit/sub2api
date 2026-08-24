@@ -106,6 +106,9 @@ func (r *accountJobCindyMutationRunner) Run(
 		return nil, err
 	}
 	credentialChanged := bindResult != nil && (bindResult.Created || bindResult.Rotated)
+	if bindResult != nil {
+		account.CindyCredentialGeneration = bindResult.Identity.Generation
+	}
 	if credentialChanged {
 		if _, err = txClient.ExecContext(ctx, `DELETE FROM cindy_health_states WHERE account_id = $1`, current.ID); err != nil {
 			return nil, err

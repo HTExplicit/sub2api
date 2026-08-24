@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -19,6 +20,7 @@ const liveCallPrefix = "live:call:"
 const openAIRuntimeBreakerPrefix = "openai_runtime_breaker:"
 const cindyBalancePendingPrefix = "cindy_balance_pending:v2:"
 const cindyHealthEpisodePrefix = "cindy_health_episode:v1:"
+const cindyHealthPendingPrefixV3 = "cindy_health_pending:v3:"
 const openAIRuntimeBreakerHalfOpenRetention = 5 * time.Minute
 
 type gatewayCache struct {
@@ -159,6 +161,7 @@ var _ service.OpenAIRuntimeBreakerStore = (*gatewayCache)(nil)
 var _ service.OpenAIRuntimeBreakerLeaseStore = (*gatewayCache)(nil)
 var _ service.CindyBalancePendingStore = (*gatewayCache)(nil)
 var _ service.CindyHealthEpisodeStore = (*gatewayCache)(nil)
+var _ service.CindyHealthStateCleaner = (*gatewayCache)(nil)
 
 func cindyBalancePendingKey(accountID int64) string {
 	return cindyBalancePendingPrefix + strconv.FormatInt(accountID, 10)
@@ -168,8 +171,55 @@ func cindyHealthEpisodeKey(accountID int64) string {
 	return cindyHealthEpisodePrefix + strconv.FormatInt(accountID, 10)
 }
 
-func cindyHealthEpisodeValue(episode service.CindyHealthEpisode) string {
-	return strconv.FormatInt(episode.Generation, 10) + ":" + episode.EpisodeID
+func cindyHealthPendingKeyV3(accountID int64, status ...string) string {
+	key := cindyHealthPendingPrefixV3 + strconv.FormatInt(accountID, 10)
+	if len(status) > 0 && strings.TrimSpace(status[0]) != "" {
+		key += ":" + strings.TrimSpace(status[0])
+	}
+	return key
+}
+
+func cindyHealthStoreKey(episode service.CindyHealthEpisode) string {
+	if episode.Status != "" {
+		return cindyHealthPendingKeyV3(episode.AccountID, episode.Status)
+	}
+	return cindyHealthEpisodeKey(episode.AccountID)
+}
+
+type cindyHealthStoredEpisode struct {
+	AccountID   int64     `json:"account_id"`
+	Generation  string    `json:"generation"`
+	EpisodeID   string    `json:"episode_id"`
+	Fingerprint string    `json:"fingerprint,omitempty"`
+	Status      string    `json:"status,omitempty"`
+	Evidence    string    `json:"evidence,omitempty"`
+	ObservedAt  time.Time `json:"observed_at,omitempty"`
+}
+
+func cindyHealthEpisodeValue(episode service.CindyHealthEpisode) (string, error) {
+	raw, err := json.Marshal(cindyHealthStoredEpisode{
+		AccountID: episode.AccountID, Generation: strconv.FormatInt(episode.Generation, 10),
+		EpisodeID: episode.EpisodeID, Fingerprint: episode.Fingerprint, Status: episode.Status,
+		Evidence: episode.Evidence, ObservedAt: episode.ObservedAt,
+	})
+	return string(raw), err
+}
+
+func parseCindyHealthEpisodeValue(value string) (service.CindyHealthEpisode, error) {
+	var stored cindyHealthStoredEpisode
+	if err := json.Unmarshal([]byte(value), &stored); err != nil {
+		return service.CindyHealthEpisode{}, err
+	}
+	generation, err := strconv.ParseInt(stored.Generation, 10, 64)
+	if err != nil {
+		return service.CindyHealthEpisode{}, err
+	}
+	episode := service.CindyHealthEpisode{
+		AccountID: stored.AccountID, Generation: generation, EpisodeID: stored.EpisodeID,
+		Fingerprint: stored.Fingerprint, Status: stored.Status, Evidence: stored.Evidence,
+		ObservedAt: stored.ObservedAt,
+	}
+	return episode, nil
 }
 
 var claimCindyHealthEpisodeScript = redis.NewScript(`
@@ -187,19 +237,27 @@ var claimCindyHealthEpisodeScript = redis.NewScript(`
 	end
 	local current = redis.call('GET', KEYS[1])
 	if not current then
-		redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3])
+		if ARGV[3] == '0' then
+			redis.call('SET', KEYS[1], ARGV[2])
+		else
+			redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3])
+		end
 		return 1
 	end
-	local separator = string.find(current, ':', 1, true)
-	if not separator then
+	local ok, decoded = pcall(cjson.decode, current)
+	if not ok or type(decoded) ~= 'table' then
 		return redis.error_reply('invalid Cindy health episode')
 	end
-	local current_generation = string.sub(current, 1, separator - 1)
+	local current_generation = decoded['generation']
 	if not valid_generation(current_generation) then
 		return redis.error_reply('invalid Cindy health generation')
 	end
 	if generation_greater(ARGV[1], current_generation) then
-		redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3])
+		if ARGV[3] == '0' then
+			redis.call('SET', KEYS[1], ARGV[2])
+		else
+			redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3])
+		end
 		return 1
 	end
 	return 0
@@ -207,12 +265,16 @@ var claimCindyHealthEpisodeScript = redis.NewScript(`
 
 func (c *gatewayCache) ClaimCindyHealthEpisode(ctx context.Context, episode service.CindyHealthEpisode, ttl time.Duration) (bool, error) {
 	if c == nil || c.rdb == nil || episode.AccountID <= 0 || episode.Generation <= 0 ||
-		strings.TrimSpace(episode.EpisodeID) == "" || ttl <= 0 {
+		strings.TrimSpace(episode.EpisodeID) == "" || ttl < 0 || (episode.Status == "" && ttl == 0) {
 		return false, errors.New("invalid Cindy health episode")
 	}
+	value, err := cindyHealthEpisodeValue(episode)
+	if err != nil {
+		return false, err
+	}
 	result, err := claimCindyHealthEpisodeScript.Run(
-		ctx, c.rdb, []string{cindyHealthEpisodeKey(episode.AccountID)},
-		strconv.FormatInt(episode.Generation, 10), cindyHealthEpisodeValue(episode), ttl.Milliseconds(),
+		ctx, c.rdb, []string{cindyHealthStoreKey(episode)},
+		strconv.FormatInt(episode.Generation, 10), value, ttl.Milliseconds(),
 	).Int()
 	return result == 1, err
 }
@@ -228,9 +290,81 @@ func (c *gatewayCache) ClearCindyHealthEpisodeIfMatch(ctx context.Context, episo
 	if c == nil || c.rdb == nil || episode.AccountID <= 0 || episode.Generation <= 0 || strings.TrimSpace(episode.EpisodeID) == "" {
 		return errors.New("invalid Cindy health episode")
 	}
+	value, err := cindyHealthEpisodeValue(episode)
+	if err != nil {
+		return err
+	}
 	return clearCindyHealthEpisodeIfMatchScript.Run(
-		ctx, c.rdb, []string{cindyHealthEpisodeKey(episode.AccountID)}, cindyHealthEpisodeValue(episode),
+		ctx, c.rdb, []string{cindyHealthStoreKey(episode)}, value,
 	).Err()
+}
+
+func (c *gatewayCache) ListCindyHealthEpisodes(ctx context.Context, limit int) ([]service.CindyHealthEpisode, error) {
+	if c == nil || c.rdb == nil {
+		return nil, errors.New("gateway cache unavailable")
+	}
+	if limit <= 0 {
+		return []service.CindyHealthEpisode{}, nil
+	}
+	keys := make([]string, 0, limit)
+	var cursor uint64
+	for {
+		batch, next, err := c.rdb.Scan(ctx, cursor, cindyHealthPendingPrefixV3+"*", int64(limit-len(keys))).Result()
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, batch...)
+		cursor = next
+		if cursor == 0 || len(keys) >= limit {
+			break
+		}
+	}
+	if len(keys) > limit {
+		keys = keys[:limit]
+	}
+	out := make([]service.CindyHealthEpisode, 0, len(keys))
+	for _, key := range keys {
+		value, getErr := c.rdb.Get(ctx, key).Result()
+		if errors.Is(getErr, redis.Nil) {
+			continue
+		}
+		if getErr != nil {
+			return nil, getErr
+		}
+		episode, parseErr := parseCindyHealthEpisodeValue(value)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		out = append(out, episode)
+	}
+	return out, nil
+}
+
+func (c *gatewayCache) ClearAllCindyHealthState(ctx context.Context, accountID int64) error {
+	if c == nil || c.rdb == nil || accountID <= 0 {
+		return errors.New("invalid Cindy health cleanup")
+	}
+	id := strconv.FormatInt(accountID, 10)
+	keys := []string{
+		"cindy_balance_pending:" + id,
+		cindyBalancePendingKey(accountID),
+		cindyHealthEpisodeKey(accountID),
+		"cindy_health_episode:v2:" + id,
+		cindyHealthPendingKeyV3(accountID),
+	}
+	var cursor uint64
+	for {
+		matched, next, err := c.rdb.Scan(ctx, cursor, cindyHealthPendingKeyV3(accountID)+":*", 16).Result()
+		if err != nil {
+			return err
+		}
+		keys = append(keys, matched...)
+		cursor = next
+		if cursor == 0 {
+			break
+		}
+	}
+	return c.rdb.Del(ctx, keys...).Err()
 }
 
 func (c *gatewayCache) MarkCindyBalancePending(ctx context.Context, accountID int64, credentialsFingerprint string) error {

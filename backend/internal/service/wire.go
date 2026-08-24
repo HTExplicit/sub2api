@@ -138,11 +138,7 @@ func ProvideCindyHealthService(
 	if cache != nil {
 		episodeStore, _ = cache.(CindyHealthEpisodeStore)
 	}
-	var probe func(context.Context, *Account, string) cindyBalanceProbeOutcome
-	if gateway != nil {
-		probe = gateway.probeCindyBalanceModel
-	}
-	svc := NewCindyHealthService(accountRepo, identityRepo, healthRepo, episodeStore, gateway, probe)
+	svc := NewCindyHealthService(accountRepo, identityRepo, healthRepo, episodeStore, gateway)
 	if gateway != nil {
 		gateway.SetCindyHealthCoordinator(svc)
 	}

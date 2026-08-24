@@ -34,6 +34,8 @@ func TestMigration237AddsGenerationBoundBannedTerminalState(t *testing.T) {
 	sql := strings.ToLower(string(raw))
 
 	require.Contains(t, sql, "cindy_banned_at")
+	require.Contains(t, sql, "cindy_credential_generation")
+	require.Contains(t, sql, "trg_project_sync_cindy_credential_generation")
 	require.Contains(t, sql, "status in ('quarantined', 'confirmed_exhausted', 'banned')")
 	require.Contains(t, sql, "credential_generation")
 }

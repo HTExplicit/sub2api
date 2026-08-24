@@ -847,7 +847,7 @@ func accountConsoleStatus(account *Account, now time.Time) string {
 	if account.RateLimitResetAt != nil && account.RateLimitResetAt.After(now) {
 		return "rate_limited"
 	}
-	if account.CindyBalanceInsufficientAt != nil || !account.Schedulable {
+	if account.CindyBalanceInsufficientAt != nil || account.CindyBannedAt != nil || !account.Schedulable {
 		return "unschedulable"
 	}
 	return StatusActive
@@ -956,15 +956,17 @@ func facetOptions(counts map[string]int) []AccountFacetOption {
 type accountFacetDimension string
 
 const (
-	accountFacetNone      accountFacetDimension = ""
-	accountFacetPlatforms accountFacetDimension = "platforms"
-	accountFacetTypes     accountFacetDimension = "types"
-	accountFacetStatuses  accountFacetDimension = "statuses"
-	accountFacetPlans     accountFacetDimension = "plans"
-	accountFacetProxies   accountFacetDimension = "proxies"
-	accountFacetFolders   accountFacetDimension = "folders"
-	accountFacetTags      accountFacetDimension = "tags"
-	accountFacetCindy     accountFacetDimension = "cindy"
+	accountFacetNone          accountFacetDimension = ""
+	accountFacetPlatforms     accountFacetDimension = "platforms"
+	accountFacetTypes         accountFacetDimension = "types"
+	accountFacetStatuses      accountFacetDimension = "statuses"
+	accountFacetPlans         accountFacetDimension = "plans"
+	accountFacetProxies       accountFacetDimension = "proxies"
+	accountFacetFolders       accountFacetDimension = "folders"
+	accountFacetTags          accountFacetDimension = "tags"
+	accountFacetCindyIdentity accountFacetDimension = "cindy_identity"
+	accountFacetCindyBalance  accountFacetDimension = "cindy_balance"
+	accountFacetCindyHealth   accountFacetDimension = "cindy_health"
 )
 
 type accountFacetMatcher struct {
@@ -1077,17 +1079,17 @@ func (matcher accountFacetMatcher) matches(account *Account, ignored accountFace
 			return false
 		}
 	}
-	if ignored != accountFacetCindy {
-		isCindy := hasCanonicalCindyProviderIdentity(account)
-		if matcher.cindyOnly && !isCindy {
-			return false
-		}
-		if matcher.cindyBalanceStatus == "insufficient" && (!isCindy || account.CindyBalanceInsufficientAt == nil) {
-			return false
-		}
-		if matcher.cindyHealthStatus == "banned" && (!isCindy || account.CindyBannedAt == nil) {
-			return false
-		}
+	isCindy := hasCanonicalCindyProviderIdentity(account)
+	if ignored != accountFacetCindyIdentity && matcher.cindyOnly && !isCindy {
+		return false
+	}
+	if ignored != accountFacetCindyBalance && matcher.cindyBalanceStatus == "insufficient" &&
+		(!isCindy || account.CindyBalanceInsufficientAt == nil) {
+		return false
+	}
+	if ignored != accountFacetCindyHealth && matcher.cindyHealthStatus == "banned" &&
+		(!isCindy || account.CindyBannedAt == nil) {
+		return false
 	}
 	return true
 }
@@ -1129,7 +1131,9 @@ func (s *adminServiceImpl) GetAccountConsoleFacets(ctx context.Context, filters 
 	proxyAccounts := filterAccountsForFacet(accounts, matcher, accountFacetProxies, now)
 	folderAccounts := filterAccountsForFacet(accounts, matcher, accountFacetFolders, now)
 	tagAccounts := filterAccountsForFacet(accounts, matcher, accountFacetTags, now)
-	cindyAccounts := filterAccountsForFacet(accounts, matcher, accountFacetCindy, now)
+	cindyAccounts := filterAccountsForFacet(accounts, matcher, accountFacetCindyIdentity, now)
+	cindyBalanceAccounts := filterAccountsForFacet(accounts, matcher, accountFacetCindyBalance, now)
+	cindyHealthAccounts := filterAccountsForFacet(accounts, matcher, accountFacetCindyHealth, now)
 	platforms, types, statuses, plans, proxies := map[string]int{}, map[string]int{}, map[string]int{}, map[string]int{}, map[string]int{}
 	folderCounts, tagCounts := map[int64]int{}, map[int64]int{}
 	uncategorizedCount := 0
@@ -1172,8 +1176,18 @@ func (s *adminServiceImpl) GetAccountConsoleFacets(ctx context.Context, filters 
 			continue
 		}
 		cindyTotal++
+	}
+	for _, account := range cindyBalanceAccounts {
+		if !hasCanonicalCindyProviderIdentity(account) {
+			continue
+		}
 		if account.CindyBalanceInsufficientAt != nil {
 			cindyInsufficient++
+		}
+	}
+	for _, account := range cindyHealthAccounts {
+		if !hasCanonicalCindyProviderIdentity(account) {
+			continue
 		}
 		if account.CindyBannedAt != nil {
 			cindyBanned++

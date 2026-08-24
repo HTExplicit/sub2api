@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"database/sql"
-	"regexp"
 	"testing"
 	"time"
 
@@ -57,34 +56,6 @@ func TestCindyHealthRepositoryRejectsStaleGenerationBeforeStateWrite(t *testing.
 	applied, err := repo.BeginCindyHealthEpisode(context.Background(), episode, service.CindyHealthEvidenceExactBudget, now, now.Add(time.Minute))
 	require.NoError(t, err)
 	require.False(t, applied)
-	require.NoError(t, mock.ExpectationsWereMet())
-}
-
-func TestCindyHealthRepositoryConfirmsOnlyMatchingEpisodeAndPublishesSchedulerChange(t *testing.T) {
-	repo, mock := newCindyHealthRepoTest(t)
-	episode := service.CindyHealthEpisode{AccountID: 9203, Generation: 8, EpisodeID: "episode-8"}
-	confirmedAt := time.Date(2026, 8, 21, 2, 3, 4, 0, time.UTC)
-
-	mock.ExpectBegin()
-	mock.ExpectQuery("(?s)SELECT h.account_id.*JOIN account_credential_identities.*i.active").
-		WithArgs(episode.AccountID, episode.Generation, episode.EpisodeID).
-		WillReturnRows(sqlmock.NewRows([]string{"account_id"}).AddRow(episode.AccountID))
-	mock.ExpectExec(regexp.QuoteMeta("UPDATE cindy_health_states")).
-		WithArgs(service.CindyHealthStatusConfirmedExhausted, service.CindyHealthEvidenceDualExact, confirmedAt, episode.AccountID, episode.Generation, episode.EpisodeID).
-		WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectExec(regexp.QuoteMeta("UPDATE accounts")).
-		WithArgs(confirmedAt, episode.AccountID).
-		WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectExec("INSERT INTO scheduler_outbox").
-		WithArgs(service.SchedulerOutboxEventAccountChanged, &episode.AccountID, nil, nil, sqlmock.AnyArg()).
-		WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectCommit()
-
-	applied, err := repo.FinalizeCindyHealthEpisode(context.Background(), episode, service.CindyHealthFinalization{
-		Status: service.CindyHealthStatusConfirmedExhausted, Evidence: service.CindyHealthEvidenceDualExact, ObservedAt: confirmedAt,
-	})
-	require.NoError(t, err)
-	require.True(t, applied)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

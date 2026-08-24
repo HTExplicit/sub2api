@@ -2294,69 +2294,71 @@ func (m *APIKeyMutation) ResetEdge(name string) error {
 // AccountMutation represents an operation that mutates the Account nodes in the graph.
 type AccountMutation struct {
 	config
-	op                            Op
-	typ                           string
-	id                            *int64
-	created_at                    *time.Time
-	updated_at                    *time.Time
-	deleted_at                    *time.Time
-	name                          *string
-	notes                         *string
-	platform                      *string
-	wire_platform                 *string
-	provider_profile              *string
-	_type                         *string
-	credentials                   *map[string]interface{}
-	extra                         *map[string]interface{}
-	proxy_fallback_origin_id      *int64
-	addproxy_fallback_origin_id   *int64
-	concurrency                   *int
-	addconcurrency                *int
-	load_factor                   *int
-	addload_factor                *int
-	priority                      *int
-	addpriority                   *int
-	rate_multiplier               *float64
-	addrate_multiplier            *float64
-	status                        *string
-	error_message                 *string
-	last_used_at                  *time.Time
-	expires_at                    *time.Time
-	auto_pause_on_expired         *bool
-	schedulable                   *bool
-	cindy_balance_insufficient_at *time.Time
-	cindy_banned_at               *time.Time
-	rate_limited_at               *time.Time
-	rate_limit_reset_at           *time.Time
-	overload_until                *time.Time
-	temp_unschedulable_until      *time.Time
-	temp_unschedulable_reason     *string
-	session_window_start          *time.Time
-	session_window_end            *time.Time
-	session_window_status         *string
-	quota_dimension               *account.QuotaDimension
-	clearedFields                 map[string]struct{}
-	groups                        map[int64]struct{}
-	removedgroups                 map[int64]struct{}
-	clearedgroups                 bool
-	management_folder             *int64
-	clearedmanagement_folder      bool
-	tags                          map[int64]struct{}
-	removedtags                   map[int64]struct{}
-	clearedtags                   bool
-	proxy                         *int64
-	clearedproxy                  bool
-	parent                        *int64
-	clearedparent                 bool
-	children                      map[int64]struct{}
-	removedchildren               map[int64]struct{}
-	clearedchildren               bool
-	usage_logs                    map[int64]struct{}
-	removedusage_logs             map[int64]struct{}
-	clearedusage_logs             bool
-	done                          bool
-	oldValue                      func(context.Context) (*Account, error)
-	predicates                    []predicate.Account
+	op                             Op
+	typ                            string
+	id                             *int64
+	created_at                     *time.Time
+	updated_at                     *time.Time
+	deleted_at                     *time.Time
+	name                           *string
+	notes                          *string
+	platform                       *string
+	wire_platform                  *string
+	provider_profile               *string
+	_type                          *string
+	credentials                    *map[string]interface{}
+	extra                          *map[string]interface{}
+	proxy_fallback_origin_id       *int64
+	addproxy_fallback_origin_id    *int64
+	concurrency                    *int
+	addconcurrency                 *int
+	load_factor                    *int
+	addload_factor                 *int
+	priority                       *int
+	addpriority                    *int
+	rate_multiplier                *float64
+	addrate_multiplier             *float64
+	status                         *string
+	error_message                  *string
+	last_used_at                   *time.Time
+	expires_at                     *time.Time
+	auto_pause_on_expired          *bool
+	schedulable                    *bool
+	cindy_balance_insufficient_at  *time.Time
+	cindy_banned_at                *time.Time
+	cindy_credential_generation    *int64
+	addcindy_credential_generation *int64
+	rate_limited_at                *time.Time
+	rate_limit_reset_at            *time.Time
+	overload_until                 *time.Time
+	temp_unschedulable_until       *time.Time
+	temp_unschedulable_reason      *string
+	session_window_start           *time.Time
+	session_window_end             *time.Time
+	session_window_status          *string
+	quota_dimension                *account.QuotaDimension
+	clearedFields                  map[string]struct{}
+	groups                         map[int64]struct{}
+	removedgroups                  map[int64]struct{}
+	clearedgroups                  bool
+	management_folder              *int64
+	clearedmanagement_folder       bool
+	tags                           map[int64]struct{}
+	removedtags                    map[int64]struct{}
+	clearedtags                    bool
+	proxy                          *int64
+	clearedproxy                   bool
+	parent                         *int64
+	clearedparent                  bool
+	children                       map[int64]struct{}
+	removedchildren                map[int64]struct{}
+	clearedchildren                bool
+	usage_logs                     map[int64]struct{}
+	removedusage_logs              map[int64]struct{}
+	clearedusage_logs              bool
+	done                           bool
+	oldValue                       func(context.Context) (*Account, error)
+	predicates                     []predicate.Account
 }
 
 var _ ent.Mutation = (*AccountMutation)(nil)
@@ -3638,6 +3640,62 @@ func (m *AccountMutation) ResetCindyBannedAt() {
 	delete(m.clearedFields, account.FieldCindyBannedAt)
 }
 
+// SetCindyCredentialGeneration sets the "cindy_credential_generation" field.
+func (m *AccountMutation) SetCindyCredentialGeneration(i int64) {
+	m.cindy_credential_generation = &i
+	m.addcindy_credential_generation = nil
+}
+
+// CindyCredentialGeneration returns the value of the "cindy_credential_generation" field in the mutation.
+func (m *AccountMutation) CindyCredentialGeneration() (r int64, exists bool) {
+	v := m.cindy_credential_generation
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCindyCredentialGeneration returns the old "cindy_credential_generation" field's value of the Account entity.
+// If the Account object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountMutation) OldCindyCredentialGeneration(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCindyCredentialGeneration is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCindyCredentialGeneration requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCindyCredentialGeneration: %w", err)
+	}
+	return oldValue.CindyCredentialGeneration, nil
+}
+
+// AddCindyCredentialGeneration adds i to the "cindy_credential_generation" field.
+func (m *AccountMutation) AddCindyCredentialGeneration(i int64) {
+	if m.addcindy_credential_generation != nil {
+		*m.addcindy_credential_generation += i
+	} else {
+		m.addcindy_credential_generation = &i
+	}
+}
+
+// AddedCindyCredentialGeneration returns the value that was added to the "cindy_credential_generation" field in this mutation.
+func (m *AccountMutation) AddedCindyCredentialGeneration() (r int64, exists bool) {
+	v := m.addcindy_credential_generation
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCindyCredentialGeneration resets all changes to the "cindy_credential_generation" field.
+func (m *AccountMutation) ResetCindyCredentialGeneration() {
+	m.cindy_credential_generation = nil
+	m.addcindy_credential_generation = nil
+}
+
 // SetRateLimitedAt sets the "rate_limited_at" field.
 func (m *AccountMutation) SetRateLimitedAt(t time.Time) {
 	m.rate_limited_at = &t
@@ -4459,7 +4517,7 @@ func (m *AccountMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *AccountMutation) Fields() []string {
-	fields := make([]string, 0, 36)
+	fields := make([]string, 0, 37)
 	if m.created_at != nil {
 		fields = append(fields, account.FieldCreatedAt)
 	}
@@ -4537,6 +4595,9 @@ func (m *AccountMutation) Fields() []string {
 	}
 	if m.cindy_banned_at != nil {
 		fields = append(fields, account.FieldCindyBannedAt)
+	}
+	if m.cindy_credential_generation != nil {
+		fields = append(fields, account.FieldCindyCredentialGeneration)
 	}
 	if m.rate_limited_at != nil {
 		fields = append(fields, account.FieldRateLimitedAt)
@@ -4628,6 +4689,8 @@ func (m *AccountMutation) Field(name string) (ent.Value, bool) {
 		return m.CindyBalanceInsufficientAt()
 	case account.FieldCindyBannedAt:
 		return m.CindyBannedAt()
+	case account.FieldCindyCredentialGeneration:
+		return m.CindyCredentialGeneration()
 	case account.FieldRateLimitedAt:
 		return m.RateLimitedAt()
 	case account.FieldRateLimitResetAt:
@@ -4709,6 +4772,8 @@ func (m *AccountMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldCindyBalanceInsufficientAt(ctx)
 	case account.FieldCindyBannedAt:
 		return m.OldCindyBannedAt(ctx)
+	case account.FieldCindyCredentialGeneration:
+		return m.OldCindyCredentialGeneration(ctx)
 	case account.FieldRateLimitedAt:
 		return m.OldRateLimitedAt(ctx)
 	case account.FieldRateLimitResetAt:
@@ -4920,6 +4985,13 @@ func (m *AccountMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetCindyBannedAt(v)
 		return nil
+	case account.FieldCindyCredentialGeneration:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCindyCredentialGeneration(v)
+		return nil
 	case account.FieldRateLimitedAt:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -5013,6 +5085,9 @@ func (m *AccountMutation) AddedFields() []string {
 	if m.addrate_multiplier != nil {
 		fields = append(fields, account.FieldRateMultiplier)
 	}
+	if m.addcindy_credential_generation != nil {
+		fields = append(fields, account.FieldCindyCredentialGeneration)
+	}
 	return fields
 }
 
@@ -5031,6 +5106,8 @@ func (m *AccountMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedPriority()
 	case account.FieldRateMultiplier:
 		return m.AddedRateMultiplier()
+	case account.FieldCindyCredentialGeneration:
+		return m.AddedCindyCredentialGeneration()
 	}
 	return nil, false
 }
@@ -5074,6 +5151,13 @@ func (m *AccountMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddRateMultiplier(v)
+		return nil
+	case account.FieldCindyCredentialGeneration:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCindyCredentialGeneration(v)
 		return nil
 	}
 	return fmt.Errorf("unknown Account numeric field %s", name)
@@ -5302,6 +5386,9 @@ func (m *AccountMutation) ResetField(name string) error {
 		return nil
 	case account.FieldCindyBannedAt:
 		m.ResetCindyBannedAt()
+		return nil
+	case account.FieldCindyCredentialGeneration:
+		m.ResetCindyCredentialGeneration()
 		return nil
 	case account.FieldRateLimitedAt:
 		m.ResetRateLimitedAt()

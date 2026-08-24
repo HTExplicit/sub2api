@@ -460,6 +460,27 @@ func (_u *AccountUpdate) ClearCindyBannedAt() *AccountUpdate {
 	return _u
 }
 
+// SetCindyCredentialGeneration sets the "cindy_credential_generation" field.
+func (_u *AccountUpdate) SetCindyCredentialGeneration(v int64) *AccountUpdate {
+	_u.mutation.ResetCindyCredentialGeneration()
+	_u.mutation.SetCindyCredentialGeneration(v)
+	return _u
+}
+
+// SetNillableCindyCredentialGeneration sets the "cindy_credential_generation" field if the given value is not nil.
+func (_u *AccountUpdate) SetNillableCindyCredentialGeneration(v *int64) *AccountUpdate {
+	if v != nil {
+		_u.SetCindyCredentialGeneration(*v)
+	}
+	return _u
+}
+
+// AddCindyCredentialGeneration adds value to the "cindy_credential_generation" field.
+func (_u *AccountUpdate) AddCindyCredentialGeneration(v int64) *AccountUpdate {
+	_u.mutation.AddCindyCredentialGeneration(v)
+	return _u
+}
+
 // SetRateLimitedAt sets the "rate_limited_at" field.
 func (_u *AccountUpdate) SetRateLimitedAt(v time.Time) *AccountUpdate {
 	_u.mutation.SetRateLimitedAt(v)
@@ -924,6 +945,11 @@ func (_u *AccountUpdate) check() error {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "Account.status": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.CindyCredentialGeneration(); ok {
+		if err := account.CindyCredentialGenerationValidator(v); err != nil {
+			return &ValidationError{Name: "cindy_credential_generation", err: fmt.Errorf(`ent: validator failed for field "Account.cindy_credential_generation": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.SessionWindowStatus(); ok {
 		if err := account.SessionWindowStatusValidator(v); err != nil {
 			return &ValidationError{Name: "session_window_status", err: fmt.Errorf(`ent: validator failed for field "Account.session_window_status": %w`, err)}
@@ -1059,6 +1085,12 @@ func (_u *AccountUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.CindyBannedAtCleared() {
 		_spec.ClearField(account.FieldCindyBannedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.CindyCredentialGeneration(); ok {
+		_spec.SetField(account.FieldCindyCredentialGeneration, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedCindyCredentialGeneration(); ok {
+		_spec.AddField(account.FieldCindyCredentialGeneration, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.RateLimitedAt(); ok {
 		_spec.SetField(account.FieldRateLimitedAt, field.TypeTime, value)
@@ -1849,6 +1881,27 @@ func (_u *AccountUpdateOne) ClearCindyBannedAt() *AccountUpdateOne {
 	return _u
 }
 
+// SetCindyCredentialGeneration sets the "cindy_credential_generation" field.
+func (_u *AccountUpdateOne) SetCindyCredentialGeneration(v int64) *AccountUpdateOne {
+	_u.mutation.ResetCindyCredentialGeneration()
+	_u.mutation.SetCindyCredentialGeneration(v)
+	return _u
+}
+
+// SetNillableCindyCredentialGeneration sets the "cindy_credential_generation" field if the given value is not nil.
+func (_u *AccountUpdateOne) SetNillableCindyCredentialGeneration(v *int64) *AccountUpdateOne {
+	if v != nil {
+		_u.SetCindyCredentialGeneration(*v)
+	}
+	return _u
+}
+
+// AddCindyCredentialGeneration adds value to the "cindy_credential_generation" field.
+func (_u *AccountUpdateOne) AddCindyCredentialGeneration(v int64) *AccountUpdateOne {
+	_u.mutation.AddCindyCredentialGeneration(v)
+	return _u
+}
+
 // SetRateLimitedAt sets the "rate_limited_at" field.
 func (_u *AccountUpdateOne) SetRateLimitedAt(v time.Time) *AccountUpdateOne {
 	_u.mutation.SetRateLimitedAt(v)
@@ -2326,6 +2379,11 @@ func (_u *AccountUpdateOne) check() error {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "Account.status": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.CindyCredentialGeneration(); ok {
+		if err := account.CindyCredentialGenerationValidator(v); err != nil {
+			return &ValidationError{Name: "cindy_credential_generation", err: fmt.Errorf(`ent: validator failed for field "Account.cindy_credential_generation": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.SessionWindowStatus(); ok {
 		if err := account.SessionWindowStatusValidator(v); err != nil {
 			return &ValidationError{Name: "session_window_status", err: fmt.Errorf(`ent: validator failed for field "Account.session_window_status": %w`, err)}
@@ -2478,6 +2536,12 @@ func (_u *AccountUpdateOne) sqlSave(ctx context.Context) (_node *Account, err er
 	}
 	if _u.mutation.CindyBannedAtCleared() {
 		_spec.ClearField(account.FieldCindyBannedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.CindyCredentialGeneration(); ok {
+		_spec.SetField(account.FieldCindyCredentialGeneration, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedCindyCredentialGeneration(); ok {
+		_spec.AddField(account.FieldCindyCredentialGeneration, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.RateLimitedAt(); ok {
 		_spec.SetField(account.FieldRateLimitedAt, field.TypeTime, value)
