@@ -47,6 +47,23 @@
         }) }}
       </div>
 
+      <div v-if="payload" class="space-y-1">
+        <label class="input-label" for="account-import-target-group">{{ t('admin.accounts.dataImportTargetGroup') }}</label>
+        <select
+          id="account-import-target-group"
+          v-model="targetGroupID"
+          class="input w-full"
+          :disabled="busy"
+          data-test="import-target-group"
+        >
+          <option value="">{{ t('admin.accounts.dataImportTargetGroupPlaceholder') }}</option>
+          <option v-for="group in importGroups" :key="group.id" :value="String(group.id)">
+            {{ group.name }} · {{ t(`admin.groups.platforms.${group.platform}`) }}
+          </option>
+        </select>
+        <p class="input-hint">{{ t('admin.accounts.dataImportTargetGroupHint') }}</p>
+      </div>
+
       <details v-if="payload" class="rounded-md border border-gray-200 dark:border-dark-700">
         <summary class="cursor-pointer px-3 py-2.5 text-sm font-medium text-gray-800 dark:text-gray-100">
           {{ t('admin.accounts.importUniformSettings') }}
@@ -63,6 +80,35 @@
           />
         </div>
       </details>
+
+      <div v-if="preview" class="space-y-3 rounded-md border border-gray-200 px-3 py-3 dark:border-dark-700" data-test="import-preview">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <span class="text-sm font-semibold text-gray-800 dark:text-gray-100">{{ t('admin.accounts.dataImportPreviewItems') }}</span>
+          <span class="text-xs text-gray-500 dark:text-dark-400">
+            {{ t('admin.accounts.dataImportPreviewSummary', { create: preview.create_count, update: preview.update_count, reject: preview.reject_count }) }}
+          </span>
+        </div>
+        <div class="max-h-52 max-w-full overflow-x-auto overflow-y-auto rounded border border-gray-100 dark:border-dark-700">
+          <table class="min-w-full text-left text-xs">
+            <thead class="sticky top-0 bg-gray-50 text-gray-500 dark:bg-dark-800 dark:text-dark-300">
+              <tr>
+                <th class="px-2 py-1.5">#</th>
+                <th class="px-2 py-1.5">{{ t('admin.accounts.accountName') }}</th>
+                <th class="px-2 py-1.5">{{ t('admin.accounts.dataImportPreviewAction') }}</th>
+                <th class="px-2 py-1.5">{{ t('admin.accounts.status') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in preview.items" :key="item.index" class="border-t border-gray-100 dark:border-dark-700">
+                <td class="px-2 py-1.5 text-gray-500">{{ item.index + 1 }}</td>
+                <td class="max-w-[16rem] truncate px-2 py-1.5">{{ redactedItemLabel(item.index) }}</td>
+                <td class="px-2 py-1.5">{{ item.action }}</td>
+                <td class="max-w-[22rem] truncate px-2 py-1.5 text-gray-500" :title="item.message || item.error || ''">{{ item.message || item.error || item.code || '--' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </form>
 
     <template #footer>
@@ -70,11 +116,20 @@
         {{ t('common.cancel') }}
       </button>
       <button
+        type="button"
+        data-test="preview-import"
+        class="btn btn-secondary"
+        :disabled="busy || !payload"
+        @click="handlePreview"
+      >
+        {{ previewLoading ? t('admin.accounts.dataImportPreviewing') : t('admin.accounts.dataImportPreview') }}
+      </button>
+      <button
         type="submit"
         form="account-import-job-form"
         data-test="submit-import-job"
         class="btn btn-primary"
-        :disabled="busy || !payload"
+        :disabled="busy || !payload || !preview"
       >
         {{ busy ? t('admin.accounts.dataImporting') : t('admin.accounts.dataImportSubmitJob') }}
       </button>
@@ -88,6 +143,7 @@ import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import AccountImportSettingsEditor, { type AccountImportSettingsDraft } from './AccountImportSettingsEditor.vue'
 import { adminAPI } from '@/api/admin'
+import type { AccountImportPreview } from '@/api/admin/accounts'
 import { useAppStore } from '@/stores/app'
 import type { AccountJob } from '@/api/admin/accountJobs'
 import type {
@@ -123,6 +179,9 @@ const busy = ref(false)
 const files = ref<File[]>([])
 const payload = ref<AdminDataPayload | null>(null)
 const uniformDraft = ref(makeSettingsDraft())
+const targetGroupID = ref('')
+const preview = ref<AccountImportPreview | null>(null)
+const previewLoading = ref(false)
 const dragDepth = ref(0)
 const fileInput = ref<HTMLInputElement | null>(null)
 let selectionGeneration = 0
@@ -134,6 +193,13 @@ const selectedFilesLabel = computed(() => {
   return t('admin.accounts.selectedCount', { count: files.value.length })
 })
 const fileListTitle = computed(() => files.value.map((file) => file.name).join(', '))
+const importGroups = computed(() => props.groups.filter((group) =>
+  group.platform === 'cindy' &&
+  (!group.wire_platform || group.wire_platform === 'openai') &&
+  (!group.provider_profile || group.provider_profile === 'cindy_laxa_v1')
+))
+
+const redactedItemLabel = (index: number) => `#${index + 1}`
 
 function makeSettingsDraft(): AccountImportSettingsDraft {
   return {
@@ -174,6 +240,9 @@ function reset(): void {
   busy.value = false
   files.value = []
   payload.value = null
+  targetGroupID.value = ''
+  preview.value = null
+  previewLoading.value = false
   uniformDraft.value = makeSettingsDraft()
   dragDepth.value = 0
   if (fileInput.value) fileInput.value.value = ''
@@ -220,6 +289,7 @@ async function setSelectedFiles(source: FileList | File[] | null | undefined): P
     if (requestGeneration !== selectionGeneration) return
     files.value = accepted
     payload.value = parsed
+    preview.value = null
   } catch (error) {
     if (requestGeneration !== selectionGeneration) return
     files.value = []
@@ -306,21 +376,56 @@ function buildUniformSettings(draft: AccountImportSettingsDraft): AdminDataImpor
   return settings
 }
 
+function buildImportRequest() {
+  return {
+    data: payload.value!,
+    skip_default_group_bind: true,
+    uniform_settings: buildUniformSettings(uniformDraft.value),
+    ...(targetGroupID.value ? { target_group_id: Number(targetGroupID.value) } : {}),
+  }
+}
+
+async function handlePreview(): Promise<void> {
+  if (!payload.value || previewLoading.value) return
+  previewLoading.value = true
+  try {
+    preview.value = await adminAPI.accounts.previewImportData(buildImportRequest())
+  } catch (error: any) {
+    preview.value = null
+    if (error?.response?.status === 409) {
+      appStore.showWarning(t('admin.accounts.dataImportStalePreview'))
+    } else {
+      appStore.showError(error instanceof Error ? error.message : t('admin.accounts.dataImportFailed'))
+    }
+  } finally {
+    previewLoading.value = false
+  }
+}
+
 async function handleSubmit(): Promise<void> {
-  if (!payload.value || busy.value) return
+  if (!payload.value || !preview.value || busy.value) {
+    if (payload.value && !preview.value) appStore.showInfo(t('admin.accounts.dataImportPreviewRequired'))
+    return
+  }
   busy.value = true
   try {
-    const job = await adminAPI.accounts.importData({
-      data: payload.value,
-      skip_default_group_bind: true,
-      uniform_settings: buildUniformSettings(uniformDraft.value),
-    })
+    const job = await adminAPI.accounts.importData(buildImportRequest())
     emit('imported', job)
     emit('close')
-  } catch {
-    appStore.showError(t('admin.accounts.dataImportFailed'))
+  } catch (error: any) {
+    if (error?.response?.status === 409) {
+      preview.value = null
+      appStore.showWarning(t('admin.accounts.dataImportStalePreview'))
+      await handlePreview()
+    } else {
+      appStore.showError(t('admin.accounts.dataImportFailed'))
+    }
   } finally {
     busy.value = false
   }
 }
+
+watch([uniformDraft, targetGroupID], () => {
+  preview.value = null
+}, { deep: true })
 </script>

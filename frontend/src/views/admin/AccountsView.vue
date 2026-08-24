@@ -197,15 +197,15 @@
             </button>
           </div>
           <button
-            v-if="cindyView !== 'all'"
+            v-if="cindyView === 'insufficient' || cindyView === 'banned'"
             type="button"
             class="btn btn-danger"
-            data-test="delete-cindy-insufficient"
+            :data-test="cindyView === 'banned' ? 'delete-cindy-banned' : 'delete-cindy-insufficient'"
             :disabled="cindyDeleteCandidateCount === null || cindyDeleteCandidateCount === 0 || cindyDeleteLoading"
-            @click="openCindyInsufficientDelete"
+            @click="openCindyTerminalDelete"
           >
             <Icon name="trash" size="sm" />
-            {{ t('admin.accounts.cindy.deleteInsufficient') }}
+            {{ cindyView === 'banned' ? t('admin.accounts.cindy.deleteBanned') : t('admin.accounts.cindy.deleteInsufficient') }}
           </button>
         </div>
       </template>
@@ -612,12 +612,12 @@
     <ConfirmDialog :show="showDeleteDialog" :title="t('admin.accounts.deleteAccount')" :message="t('admin.accounts.deleteConfirm', { name: deletingAcc?.name })" :confirm-text="t('common.delete')" :cancel-text="t('common.cancel')" :danger="true" @confirm="confirmDelete" @cancel="showDeleteDialog = false" />
     <ConfirmDialog
       :show="showCindyDeleteDialog"
-      :title="t('admin.accounts.cindy.deleteInsufficient')"
-      :message="t('admin.accounts.cindy.deleteConfirm', { count: cindyDeletePreview?.count ?? 0 })"
+      :title="cindyView === 'banned' ? t('admin.accounts.cindy.deleteBanned') : t('admin.accounts.cindy.deleteInsufficient')"
+      :message="t(cindyView === 'banned' ? 'admin.accounts.cindy.deleteBannedConfirm' : 'admin.accounts.cindy.deleteConfirm', { count: cindyDeletePreview?.count ?? 0 })"
       :confirm-text="t('common.delete')"
       :cancel-text="t('common.cancel')"
       :danger="true"
-      @confirm="confirmCindyInsufficientDelete"
+      @confirm="confirmCindyTerminalDelete"
       @cancel="closeCindyDeleteDialog"
     />
     <ConfirmDialog :show="showCreateShadowDialog" :title="t('admin.accounts.createSparkShadow')" :message="t('admin.accounts.createSparkShadowConfirm', { name: creatingShadowAcc?.name })" @confirm="confirmCreateSparkShadow" @cancel="showCreateShadowDialog = false" />
@@ -796,8 +796,9 @@ const facetsError = ref<unknown>(null)
 let facetsRequestSequence = 0
 let taxonomyRequestSequence = 0
 const activeFolder = ref(queryString('folder'))
-type CindyAccountView = 'all' | 'cindy' | 'insufficient'
+type CindyAccountView = 'all' | 'cindy' | 'insufficient' | 'banned'
 const initialCindyView = (): CindyAccountView => {
+  if (queryString('cindy_health_status') === 'banned') return 'banned'
   if (queryString('cindy_balance_status') === 'insufficient') return 'insufficient'
   if (isCindyScope.value) return 'cindy'
   if (queryString('cindy_only') === 'true') return 'cindy'
@@ -814,7 +815,7 @@ const consoleFilters = ref<AccountConsoleFilterState>({
   plans: queryList('plans'),
   proxies: queryList('proxies'),
   tags: queryList('tags').map(Number).filter((id) => Number.isInteger(id) && id > 0),
-  group: queryString('group'),
+  group_id: queryString('group_id'),
   privacy_mode: queryString('privacy_mode'),
   account_ids: initialSensitiveConsoleState.account_ids
 })
@@ -827,10 +828,12 @@ const finiteFacetCount = (value: unknown): number | undefined => {
 }
 const cindyTotal = computed(() => finiteFacetCount(facets.value?.cindy_total) ?? 0)
 const cindyInsufficientCount = computed(() => finiteFacetCount(facets.value?.cindy_insufficient_count) ?? 0)
+const cindyBannedCount = computed(() => finiteFacetCount(facets.value?.cindy_banned_count) ?? 0)
 const cindyViewOptions = computed<Array<{ value: CindyAccountView; label: string; count: number | string }>>(() => {
   const scopedOptions: Array<{ value: CindyAccountView; label: string; count: number | string }> = [
     { value: 'cindy', label: t('admin.accounts.cindy.accounts'), count: cindyTotal.value },
-    { value: 'insufficient', label: t('admin.accounts.cindy.insufficient'), count: cindyInsufficientCount.value }
+    { value: 'insufficient', label: t('admin.accounts.cindy.insufficient'), count: cindyInsufficientCount.value },
+    { value: 'banned', label: t('admin.accounts.cindy.banned'), count: cindyBannedCount.value }
   ]
   if (isCindyScope.value) return scopedOptions
   return [
@@ -1420,7 +1423,7 @@ const {
     tags: '',
     account_ids: '',
     privacy_mode: '',
-    group: '',
+    group_id: '',
     search: '',
     include_scheduler_score: shouldIncludeSchedulerScore() ? '1' : '0',
     sort_by: sortState.sort_by,
@@ -1451,10 +1454,11 @@ const buildConsoleRouteQuery = (): Record<string, string> => {
   setList('proxies', state.proxies)
   setList('tags', state.tags)
   if (activeFolder.value) query.folder = activeFolder.value
-  if (state.group) query.group = state.group
+  if (state.group_id) query.group_id = state.group_id
   if (state.privacy_mode) query.privacy_mode = state.privacy_mode
   if (isCindyScope.value || cindyView.value !== 'all') query.cindy_only = 'true'
   if (cindyView.value === 'insufficient') query.cindy_balance_status = 'insufficient'
+  if (cindyView.value === 'banned') query.cindy_health_status = 'banned'
   if (sortState.sort_by !== 'name' || sortState.sort_order !== 'asc') query.sort_by = sortState.sort_by
   if (sortState.sort_order !== 'asc') query.sort_order = sortState.sort_order
   if (pagination.page > 1) query.page = String(pagination.page)
@@ -1485,7 +1489,7 @@ const applyConsoleRouteState = () => {
     plans: queryList('plans'),
     proxies: queryList('proxies'),
     tags: queryList('tags').map(Number).filter((id) => Number.isInteger(id) && id > 0),
-    group: queryString('group'),
+    group_id: queryString('group_id'),
     privacy_mode: queryString('privacy_mode')
   }
   const sortKey = queryString('sort_by')
@@ -1506,10 +1510,11 @@ const buildConsoleAPIParams = (includeFolder = true) => {
     folder: includeFolder && activeFolder.value ? activeFolder.value : undefined,
     tags: state.tags.length ? state.tags.join(',') : undefined,
     account_ids: state.account_ids.length ? state.account_ids.join(',') : undefined,
-    group: state.group || undefined,
+    group_id: state.group_id || undefined,
     privacy_mode: state.privacy_mode || undefined,
     cindy_only: isCindyScope.value || cindyView.value !== 'all' ? 'true' : undefined,
     cindy_balance_status: cindyView.value === 'insufficient' ? 'insufficient' as const : undefined,
+    cindy_health_status: cindyView.value === 'banned' ? 'banned' as const : undefined,
     search: state.search.trim() || undefined,
     sort_by: sortState.sort_by,
     sort_order: sortState.sort_order
@@ -1523,7 +1528,7 @@ const cindyProbeFilters = computed(() => {
     .map(Number)
     .filter((value) => Number.isSafeInteger(value) && value > 0)
   const folderID = Number(activeFolder.value)
-  const numericGroupID = Number(state.group)
+  const numericGroupID = Number(state.group_id)
   return {
     platforms: [...state.platforms],
     types: [...state.types],
@@ -1536,11 +1541,12 @@ const cindyProbeFilters = computed(() => {
     tag_ids: [...state.tags],
     account_ids: [...state.account_ids],
     search: state.search.trim(),
-    group_id: state.group === ACCOUNT_UNGROUPED_GROUP_QUERY_VALUE
+    group_id: state.group_id === ACCOUNT_UNGROUPED_GROUP_QUERY_VALUE
       ? -1
       : (Number.isSafeInteger(numericGroupID) && numericGroupID > 0 ? numericGroupID : undefined),
     privacy_mode: state.privacy_mode || undefined,
     cindy_balance_status: cindyView.value === 'insufficient' ? 'insufficient' : undefined,
+    cindy_health_status: cindyView.value === 'banned' ? 'banned' : undefined,
     sort_by: sortState.sort_by,
     sort_order: sortState.sort_order
   }
@@ -1550,8 +1556,8 @@ const syncConsoleParams = () => {
   const requestParams = params as Record<string, unknown>
   for (const key of [
     'platform', 'type', 'status', 'platforms', 'types', 'statuses', 'plans', 'proxies',
-    'folder', 'folders', 'tags', 'account_ids', 'group', 'privacy_mode', 'search',
-    'cindy_only', 'cindy_balance_status'
+    'folder', 'folders', 'tags', 'account_ids', 'group_id', 'privacy_mode', 'search',
+    'cindy_only', 'cindy_balance_status', 'cindy_health_status'
   ]) {
     delete requestParams[key]
   }
@@ -1581,13 +1587,15 @@ const loadFacets = async () => {
 let cindyDeleteCandidateRequestSequence = 0
 const loadCindyDeleteCandidateCount = async () => {
   const requestSequence = ++cindyDeleteCandidateRequestSequence
-  if (cindyView.value === 'all') {
+  if (cindyView.value !== 'insufficient' && cindyView.value !== 'banned') {
     cindyDeleteCandidateCount.value = null
     return
   }
   cindyDeleteCandidateCount.value = null
   try {
-    const preview = await adminAPI.accounts.previewCindyInsufficientDeletion()
+    const preview = cindyView.value === 'banned'
+      ? await adminAPI.accounts.previewCindyBannedDeletion()
+      : await adminAPI.accounts.previewCindyInsufficientDeletion()
     if (requestSequence === cindyDeleteCandidateRequestSequence) {
       cindyDeleteCandidateCount.value = preview.count
     }
@@ -1957,7 +1965,7 @@ const refreshAccountsIncrementally = async () => {
         type?: string
         status?: string
         privacy_mode?: string
-        group?: string
+        group_id?: string
         search?: string
         sort_by?: string
         sort_order?: AccountSortOrder
@@ -2659,11 +2667,11 @@ const accountMatchesCurrentFilters = (account: Account) => {
   if (activeFolder.value && activeFolder.value !== 'uncategorized' && String(account.management_folder?.id || '') !== activeFolder.value) return false
   if (state.tags.length && !account.tags?.some(tag => state.tags.includes(tag.id))) return false
   if (state.account_ids.length && !state.account_ids.includes(account.id)) return false
-  if (state.group) {
+  if (state.group_id) {
     const groupIds = account.group_ids ?? account.groups?.map((group) => group.id) ?? []
-    if (state.group === ACCOUNT_UNGROUPED_GROUP_QUERY_VALUE) {
+    if (state.group_id === ACCOUNT_UNGROUPED_GROUP_QUERY_VALUE) {
       if (groupIds.length > 0) return false
-    } else if (!groupIds.includes(Number(state.group))) {
+    } else if (!groupIds.includes(Number(state.group_id))) {
       return false
     }
   }
@@ -2761,14 +2769,16 @@ const closeCindyDeleteDialog = () => {
   showCindyDeleteDialog.value = false
   cindyDeletePreview.value = null
 }
-const openCindyInsufficientDelete = async () => {
+const openCindyTerminalDelete = async () => {
   if (cindyDeleteLoading.value) return
   cindyDeleteLoading.value = true
   try {
-    const preview = await adminAPI.accounts.previewCindyInsufficientDeletion()
+    const preview = cindyView.value === 'banned'
+      ? await adminAPI.accounts.previewCindyBannedDeletion()
+      : await adminAPI.accounts.previewCindyInsufficientDeletion()
     cindyDeleteCandidateCount.value = preview.count
     if (preview.count === 0) {
-      appStore.showInfo(t('admin.accounts.cindy.noInsufficient'))
+      appStore.showInfo(cindyView.value === 'banned' ? t('admin.accounts.cindy.noBanned') : t('admin.accounts.cindy.noInsufficient'))
       await loadFacets()
       return
     }
@@ -2781,12 +2791,14 @@ const openCindyInsufficientDelete = async () => {
     cindyDeleteLoading.value = false
   }
 }
-const confirmCindyInsufficientDelete = async () => {
+const confirmCindyTerminalDelete = async () => {
   const preview = cindyDeletePreview.value
   if (!preview || cindyDeleteLoading.value) return
   cindyDeleteLoading.value = true
   try {
-    const job = await adminAPI.accounts.deleteCindyInsufficient(preview)
+    const job = cindyView.value === 'banned'
+      ? await adminAPI.accounts.deleteCindyBanned(preview)
+      : await adminAPI.accounts.deleteCindyInsufficient(preview)
     showCindyDeleteDialog.value = false
     cindyDeletePreview.value = null
     clearSelection()
@@ -2802,7 +2814,7 @@ const confirmCindyInsufficientDelete = async () => {
       appStore.showWarning(t('admin.accounts.cindy.candidatesChanged'))
     } else {
       console.error('Failed to delete Cindy insufficient accounts:', error)
-      appStore.showError(extractApiErrorMessage(error, t('admin.accounts.cindy.deleteFailed')))
+      appStore.showError(extractApiErrorMessage(error, t(cindyView.value === 'banned' ? 'admin.accounts.cindy.deleteBannedFailed' : 'admin.accounts.cindy.deleteFailed')))
     }
   } finally {
     cindyDeleteLoading.value = false

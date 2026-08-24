@@ -5,14 +5,15 @@ import AccountImportSettingsEditor, {
   type AccountImportSettingsDraft,
 } from '@/components/admin/account/AccountImportSettingsEditor.vue'
 
-const { importData, showError, showSuccess, showWarning } = vi.hoisted(() => ({
+const { importData, previewImportData, showError, showSuccess, showWarning } = vi.hoisted(() => ({
   importData: vi.fn(),
+  previewImportData: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
   showWarning: vi.fn(),
 }))
 
-vi.mock('@/api/admin', () => ({ adminAPI: { accounts: { importData } } }))
+vi.mock('@/api/admin', () => ({ adminAPI: { accounts: { importData, previewImportData } } }))
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({ showError, showSuccess, showWarning }),
 }))
@@ -58,6 +59,7 @@ describe('account data import job', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     importData.mockResolvedValue({ id: 81, kind: 'account_import', status: 'pending' })
+    previewImportData.mockResolvedValue({ create_count: 2, update_count: 0, reject_count: 0, items: [] })
   })
 
   it('rejects invalid JSON locally without calling the import endpoint', async () => {
@@ -91,6 +93,8 @@ describe('account data import job', () => {
     draft.enabled.namePrefix = true
     draft.namePrefix = 'Batch-'
     editor.vm.$emit('update:modelValue', draft)
+    await wrapper.get('[data-test="preview-import"]').trigger('click')
+    await flushPromises()
     await wrapper.get('#account-import-job-form').trigger('submit')
     await flushPromises()
 

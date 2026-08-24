@@ -64,7 +64,7 @@
       </div>
 
       <select
-        :value="modelValue.group"
+        :value="modelValue.group_id"
         class="input h-9 w-44 py-1.5 text-sm"
         :aria-label="t('admin.accounts.columns.groups')"
         @change="updateGroup(($event.target as HTMLSelectElement).value)"
@@ -184,7 +184,7 @@ const updateSearch = (value: string) => {
   emit('update:modelValue', { ...props.modelValue, search: value })
 }
 
-const updateGroup = (value: string) => withUpdate({ group: value })
+const updateGroup = (value: string) => withUpdate({ group_id: value })
 
 const toggleMenu = (key: MenuKey) => {
   openMenu.value = openMenu.value === key ? null : key
@@ -212,11 +212,11 @@ const activeChips = computed<FilterChip[]>(() => {
       chips.push({ key: `${menu.key}:${value}`, menu: menu.key, value, label: labels.get(value) || value })
     }
   }
-  if (props.modelValue.group) {
-    const groupLabel = props.modelValue.group === 'ungrouped'
+  if (props.modelValue.group_id) {
+    const groupLabel = props.modelValue.group_id === 'ungrouped'
       ? t('admin.accounts.ungroupedGroup')
-      : props.groups.find((group) => String(group.id) === props.modelValue.group)?.name || props.modelValue.group
-    chips.push({ key: `group:${props.modelValue.group}`, menu: 'group', value: props.modelValue.group, label: groupLabel })
+      : props.groups.find((group) => String(group.id) === props.modelValue.group_id)?.name || props.modelValue.group_id
+    chips.push({ key: `group_id:${props.modelValue.group_id}`, menu: 'group', value: props.modelValue.group_id, label: groupLabel })
   }
   if (props.modelValue.account_ids.length) {
     chips.push({
@@ -229,7 +229,7 @@ const activeChips = computed<FilterChip[]>(() => {
 
 const removeChip = (chip: FilterChip) => {
   if (chip.menu === 'group') {
-    withUpdate({ group: '' })
+    withUpdate({ group_id: '' })
     return
   }
   if (chip.menu === 'account_ids') {
@@ -240,7 +240,7 @@ const removeChip = (chip: FilterChip) => {
 }
 
 const clearAll = () => withUpdate({
-  platforms: [], types: [], statuses: [], plans: [], proxies: [], tags: [], group: '', account_ids: []
+  platforms: [], types: [], statuses: [], plans: [], proxies: [], tags: [], group_id: '', account_ids: []
 })
 
 const handleDocumentClick = (event: MouseEvent) => {

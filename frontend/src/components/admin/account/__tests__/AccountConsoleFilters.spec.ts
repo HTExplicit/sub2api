@@ -15,7 +15,7 @@ const state = (): AccountConsoleFilterState => ({
   plans: [],
   proxies: [],
   tags: [4],
-  group: '',
+  group_id: '',
   privacy_mode: '',
   account_ids: [101, 102]
 })

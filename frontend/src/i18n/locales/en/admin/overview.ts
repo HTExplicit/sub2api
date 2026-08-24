@@ -968,6 +968,7 @@ export default {
       failedToDelete: 'Failed to delete group',
       nameRequired: 'Please enter group name',
       rateMultipliers: 'Rate Multipliers',
+      cindyAccounts: 'Cindy accounts',
       rateMultipliersTitle: 'Group Rate Multipliers',
       addUserRate: 'Add User Rate Multiplier',
       rpmOverrides: 'RPM Overrides',
@@ -1003,6 +1004,7 @@ export default {
         kimi: 'Kimi',
         zhipu: 'Zhipu GLM',
         deepseek: 'DeepSeek',
+        cindy: 'Cindy',
         composite: 'Composite',
       },
       deleteConfirm:

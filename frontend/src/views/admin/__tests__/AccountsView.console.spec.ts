@@ -13,7 +13,9 @@ const {
   getBatchTodayStats,
   getUpstreamBillingProbeSettings,
   previewCindyInsufficientDeletion,
+  previewCindyBannedDeletion,
   deleteCindyInsufficient,
+  deleteCindyBanned,
   clearCindyBalanceInsufficient,
   showSuccess,
   jobTrack,
@@ -29,7 +31,9 @@ const {
   getBatchTodayStats: vi.fn(),
   getUpstreamBillingProbeSettings: vi.fn(),
   previewCindyInsufficientDeletion: vi.fn(),
+  previewCindyBannedDeletion: vi.fn(),
   deleteCindyInsufficient: vi.fn(),
+  deleteCindyBanned: vi.fn(),
   clearCindyBalanceInsufficient: vi.fn(),
   showSuccess: vi.fn(),
   jobTrack: vi.fn(),
@@ -53,7 +57,9 @@ vi.mock('@/api/admin', () => ({
       getBatchTodayStats,
       getUpstreamBillingProbeSettings,
       previewCindyInsufficientDeletion,
+      previewCindyBannedDeletion,
       deleteCindyInsufficient,
+      deleteCindyBanned,
       clearCindyBalanceInsufficient,
       delete: vi.fn(),
       batchClearError: vi.fn(),
@@ -249,7 +255,9 @@ describe('admin AccountsView Cockpit console', () => {
     getBatchTodayStats.mockReset().mockResolvedValue({ stats: {} })
     getUpstreamBillingProbeSettings.mockReset().mockResolvedValue({ enabled: true, interval_minutes: 30 })
     previewCindyInsufficientDeletion.mockReset().mockResolvedValue({ count: 2, fingerprint: 'fingerprint-2' })
+    previewCindyBannedDeletion.mockReset().mockResolvedValue({ count: 1, fingerprint: 'banned-fingerprint' })
     deleteCindyInsufficient.mockReset().mockResolvedValue({ id: 72, kind: 'cindy_cleanup', status: 'pending' })
+    deleteCindyBanned.mockReset().mockResolvedValue({ id: 73, kind: 'cindy_banned_cleanup', status: 'pending' })
     clearCindyBalanceInsufficient.mockReset().mockResolvedValue({ ...account, cindy_balance_insufficient: false })
     showSuccess.mockReset()
     jobTrack.mockReset()
@@ -398,13 +406,13 @@ describe('admin AccountsView Cockpit console', () => {
       history: createMemoryHistory(),
       routes: [{ path: '/admin/accounts', component: { template: '<div />' } }]
     })
-    await router.push('/admin/accounts?folder=7&statuses=active&group=ungrouped&sort_by=status&sort_order=desc&page=2&page_size=50')
+    await router.push('/admin/accounts?folder=7&statuses=active&group_id=ungrouped&sort_by=status&sort_order=desc&page=2&page_size=50')
     await router.isReady()
     const wrapper = mountView([router])
     await flushPromises()
 
     expect(listAccounts).toHaveBeenCalledWith(2, 50, expect.objectContaining({
-      folder: '7', statuses: 'active', group: 'ungrouped', search: 'private search', account_ids: '1', sort_by: 'status', sort_order: 'desc'
+      folder: '7', statuses: 'active', group_id: 'ungrouped', search: 'private search', account_ids: '1', sort_by: 'status', sort_order: 'desc'
     }), expect.any(Object))
     expect(router.currentRoute.value.query.search).toBeUndefined()
     expect(router.currentRoute.value.query.account_ids).toBeUndefined()
@@ -422,14 +430,14 @@ describe('admin AccountsView Cockpit console', () => {
 
   it('switches Cindy quick views and persists their API filters', async () => {
     getFacets.mockResolvedValue({
-      total: 10, uncategorized_count: 10, cindy_total: 4, cindy_insufficient_count: 2,
+      total: 10, uncategorized_count: 10, cindy_total: 4, cindy_insufficient_count: 2, cindy_banned_count: 1,
       platforms: [], types: [], statuses: [], plans: [], proxies: [], folders: [], tags: []
     })
     const wrapper = mountView()
     await flushPromises()
 
     const viewButtons = wrapper.get('[data-test="cindy-account-view"]').findAll('button')
-    expect(viewButtons).toHaveLength(3)
+    expect(viewButtons).toHaveLength(4)
     expect(wrapper.get('[data-test="cindy-account-view"]').text()).toContain('admin.accounts.cindy.insufficient')
 
     await viewButtons[1].trigger('click')
@@ -439,11 +447,15 @@ describe('admin AccountsView Cockpit console', () => {
     await wrapper.get('[data-test="cindy-account-view"]').findAll('button')[2].trigger('click')
     await flushPromises()
     expect(listAccounts.mock.calls.some(call => call[2]?.cindy_only === 'true' && call[2]?.cindy_balance_status === 'insufficient')).toBe(true)
+
+    await wrapper.get('[data-test="cindy-account-view"]').findAll('button')[3].trigger('click')
+    await flushPromises()
+    expect(listAccounts.mock.calls.some(call => call[2]?.cindy_only === 'true' && call[2]?.cindy_health_status === 'banned')).toBe(true)
   })
 
   it('forces the dedicated Cindy scope even when the route query tries to disable it', async () => {
     getFacets.mockResolvedValue({
-      total: 4, uncategorized_count: 4, cindy_total: 4, cindy_insufficient_count: 2,
+      total: 4, uncategorized_count: 4, cindy_total: 4, cindy_insufficient_count: 2, cindy_banned_count: 1,
       platforms: [], types: [], statuses: [], plans: [], proxies: [], folders: [], tags: []
     })
     const router = createRouter({
@@ -456,7 +468,7 @@ describe('admin AccountsView Cockpit console', () => {
     const wrapper = mountView([router], { scope: 'cindy' })
     await flushPromises()
 
-    expect(wrapper.get('[data-test="cindy-account-view"]').findAll('button')).toHaveLength(2)
+    expect(wrapper.get('[data-test="cindy-account-view"]').findAll('button')).toHaveLength(3)
     expect(listAccounts.mock.calls.some(call => call[2]?.cindy_only !== 'true')).toBe(false)
     expect(getFacets.mock.calls.some(call => call[0]?.cindy_only !== 'true')).toBe(false)
     expect(router.currentRoute.value.query.cindy_only).toBe('true')
@@ -495,7 +507,7 @@ describe('admin AccountsView Cockpit console', () => {
       history: createMemoryHistory(),
       routes: [{ path: '/admin/cindy-accounts', component: { template: '<div />' } }]
     })
-    await router.push('/admin/cindy-accounts?platforms=openai&proxies=direct,3&folder=uncategorized&tags=2&group=ungrouped&privacy_mode=private&cindy_balance_status=insufficient')
+    await router.push('/admin/cindy-accounts?platforms=openai&proxies=direct,3&folder=uncategorized&tags=2&group_id=ungrouped&privacy_mode=private&cindy_balance_status=insufficient')
     await router.isReady()
 
     const wrapper = mountView([router], { scope: 'cindy' }, {
@@ -527,12 +539,12 @@ describe('admin AccountsView Cockpit console', () => {
 
   it('deletes Cindy insufficient accounts only with the server preview fingerprint', async () => {
     getFacets.mockResolvedValue({
-      total: 10, uncategorized_count: 10, cindy_total: 4, cindy_insufficient_count: 2,
+      total: 10, uncategorized_count: 10, cindy_total: 4, cindy_insufficient_count: 2, cindy_banned_count: 0,
       platforms: [], types: [], statuses: [], plans: [], proxies: [], folders: [], tags: []
     })
     const wrapper = mountView()
     await flushPromises()
-    await wrapper.get('[data-test="cindy-account-view"]').findAll('button')[1].trigger('click')
+    await wrapper.get('[data-test="cindy-account-view"]').findAll('button')[2].trigger('click')
     await flushPromises()
 
     const deleteButton = wrapper.get('[data-test="delete-cindy-insufficient"]')
@@ -559,10 +571,32 @@ describe('admin AccountsView Cockpit console', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    await wrapper.get('[data-test="cindy-account-view"]').findAll('button')[1].trigger('click')
+    await wrapper.get('[data-test="cindy-account-view"]').findAll('button')[2].trigger('click')
     await flushPromises()
 
     expect(wrapper.get('[data-test="delete-cindy-insufficient"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('keeps banned cleanup independent from insufficient-balance cleanup', async () => {
+    getFacets.mockResolvedValue({
+      total: 10, uncategorized_count: 10, cindy_total: 4, cindy_insufficient_count: 2, cindy_banned_count: 1,
+      platforms: [], types: [], statuses: [], plans: [], proxies: [], folders: [], tags: []
+    })
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-test="cindy-account-view"]').findAll('button')[3].trigger('click')
+    await flushPromises()
+
+    const deleteButton = wrapper.get('[data-test="delete-cindy-banned"]')
+    expect(deleteButton.attributes('disabled')).toBeUndefined()
+    previewCindyBannedDeletion.mockClear()
+    await deleteButton.trigger('click')
+    await flushPromises()
+    expect(previewCindyBannedDeletion).toHaveBeenCalledTimes(1)
+    await wrapper.get('[data-test="confirm-dialog-submit"]').trigger('click')
+    await flushPromises()
+    expect(deleteCindyBanned).toHaveBeenCalledWith({ count: 1, fingerprint: 'banned-fingerprint' })
+    expect(jobTrack).toHaveBeenCalledWith({ id: 73, kind: 'cindy_banned_cleanup', status: 'pending' })
   })
 
   it('manual Cindy recovery calls the dedicated endpoint and refreshes the filtered list', async () => {
@@ -579,7 +613,7 @@ describe('admin AccountsView Cockpit console', () => {
   it('refreshes accounts, Cindy facets, and delete candidates when account testing closes', async () => {
     const wrapper = mountView()
     await flushPromises()
-    await wrapper.get('[data-test="cindy-account-view"]').findAll('button')[1].trigger('click')
+    await wrapper.get('[data-test="cindy-account-view"]').findAll('button')[2].trigger('click')
     await flushPromises()
     listAccounts.mockClear()
     getFacets.mockClear()

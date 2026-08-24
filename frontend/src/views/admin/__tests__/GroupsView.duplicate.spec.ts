@@ -1,5 +1,6 @@
 import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AdminGroup } from '@/types'
@@ -136,9 +137,13 @@ const DataTableStub = defineComponent({
   template: '<div><div v-for="row in data" :key="row.id"><slot name="cell-actions" :row="row" /></div></div>'
 })
 
-function mountView() {
+function mountView(plugins: any[] = []) {
+  const router = plugins.length
+    ? null
+    : createRouter({ history: createMemoryHistory(), routes: [{ path: '/admin/groups', component: { template: '<div />' } }, { path: '/admin/accounts', component: { template: '<div />' } }] })
   return mount(GroupsView, {
     global: {
+      plugins: router ? [router] : plugins,
       stubs: {
         AppLayout: AppLayoutStub,
         TablePageLayout: TablePageLayoutStub,
@@ -210,6 +215,30 @@ describe('GroupsView duplicate action', () => {
     expect(duplicateGroup).toHaveBeenCalledWith(42)
     expect(showSuccess).toHaveBeenCalledWith('admin.groups.duplicateSuccess')
     expect(listGroups).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  it('deep-links a Cindy group to the canonical account console filters', async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/admin/groups', component: { template: '<div />' } }, { path: '/admin/accounts', component: { template: '<div />' } }]
+    })
+    await router.push('/admin/groups')
+    await router.isReady()
+    listGroups.mockResolvedValue({
+      items: [{ ...sourceGroup, platform: 'cindy' }],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+    const wrapper = mountView([router])
+    await flushPromises()
+
+    await wrapper.get('[data-test="group-cindy-accounts"]').trigger('click')
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/admin/accounts'))
+    expect(router.currentRoute.value.path).toBe('/admin/accounts')
+    expect(router.currentRoute.value.query).toEqual({ platforms: 'cindy', cindy_only: 'true', group_id: '42' })
     wrapper.unmount()
   })
 
