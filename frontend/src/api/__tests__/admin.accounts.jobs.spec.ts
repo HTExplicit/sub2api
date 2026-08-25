@@ -46,6 +46,12 @@ describe('admin accounts job submissions', () => {
       '/admin/accounts/cindy/delete-insufficient',
       '/admin/accounts/cindy/delete-banned',
     ])
+    expect(post.mock.calls[3][1]).toEqual({
+      data,
+      skip_default_group_bind: undefined,
+      uniform_settings: { concurrency: 2 },
+    })
+    expect(post.mock.calls[3][1]).not.toHaveProperty('target_group_id')
     const keys = post.mock.calls.map((call) => call[2]?.headers?.['Idempotency-Key']).filter((key): key is string => typeof key === 'string')
     expect(keys).toHaveLength(12)
     expect(keys.every((key) => typeof key === 'string' && key.length > 20)).toBe(true)

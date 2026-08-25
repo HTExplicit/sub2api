@@ -659,7 +659,7 @@ export async function importData(payload: {
       data: payload.data,
       skip_default_group_bind: payload.skip_default_group_bind,
       uniform_settings: payload.uniform_settings,
-      target_group_id: payload.target_group_id
+      ...(payload.target_group_id == null ? {} : { target_group_id: payload.target_group_id })
     },
     accountJobIdempotencyHeaders('account_import')
   )

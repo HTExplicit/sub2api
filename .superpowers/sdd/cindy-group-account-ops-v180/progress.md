@@ -73,7 +73,7 @@
 - Task 5: fix round 1/5 (initial review found async Gin/mutable captures, refusal/partial-result billing, missing inventory caller, and terminal-owner selection; commits f6c95b5..1620bd1).
 - Task 5: fix round 2/5 (all strict OpenAI usage workers now snapshot detached request/account state; failed/partial Chat, Images, and WS turns are non-billable; commits 1620bd1..9799a91).
 - Task 5: complete (commits 6647309..9799a91; focused handler/service/repository checks passed; PostgreSQL/Redis concurrency and production acceptance remain CI/deployment gates; global today-stats cache clear is safe but over-broad and deferred).
-- Task 6: complete (working-tree implementation verified; commit pending; focused frontend typecheck, lint, and 13-file/44-test matrix passed; import token/fingerprint remains explicitly ruled out by the plan).
+- Task 6: complete (commits 0768b94fe..5d04ba3d9 plus the import payload boundary assertion; focused frontend typecheck, lint, and 13-file/44-test matrix passed; import token/fingerprint remains explicitly ruled out by the plan).
 - Task 7: pending — integration review, PR, Release, and controlled production acceptance.
 
 ## Continuation 2026-08-24
