@@ -45,8 +45,8 @@ func TestCindyAlphaSearchDisabledReturns404BeforeRequestDependencies(t *testing.
 	require.Contains(t, recorder.Body.String(), `"type":"model_not_found"`)
 }
 
-func TestCindyAlphaSearchRejectsHiddenAndMessagesOnlyModelsBeforeSelection(t *testing.T) {
-	for _, model := range []string{service.CindyWebSearchModel, "claude-opus-5"} {
+func TestCindyAlphaSearchRejectsHiddenAndImageOnlyModelsBeforeSelection(t *testing.T) {
+	for _, model := range []string{service.CindyWebSearchModel, "gemini-3-pro-image"} {
 		t.Run(model, func(t *testing.T) {
 			c, recorder := newCindyAlphaSearchGateContext(`{"model":"` + model + `"}`)
 			c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 92})

@@ -219,7 +219,7 @@ func (s *CindyHealthService) ResolveCindyHealthEpisode(ctx context.Context, epis
 		return nil, false, err
 	}
 	if !hasCanonicalCindyProviderIdentity(account) || account.CindyCredentialGeneration != identity.Generation {
-		return nil, false, errors.New("Cindy credential generation projection is unavailable")
+		return nil, false, errors.New("cindy credential generation projection is unavailable")
 	}
 	return account, identity.Generation == episode.Generation && identity.Fingerprint == episode.Fingerprint, nil
 }

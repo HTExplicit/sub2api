@@ -62,11 +62,6 @@ func (r *usageBillingRepository) Apply(ctx context.Context, cmd *service.UsageBi
 	return result, nil
 }
 
-func (r *usageBillingRepository) claimUsageBillingKey(ctx context.Context, tx *sql.Tx, cmd *service.UsageBillingCommand) (bool, error) {
-	applied, _, err := r.claimUsageBillingKeyWithOwner(ctx, tx, cmd)
-	return applied, err
-}
-
 func (r *usageBillingRepository) claimUsageBillingKeyWithOwner(ctx context.Context, tx *sql.Tx, cmd *service.UsageBillingCommand) (bool, int64, error) {
 	return r.claimUsageBillingRequestWithOwner(ctx, tx, cmd.RequestID, cmd.APIKeyID, cmd.RequestFingerprint, cmd.AccountID)
 }
