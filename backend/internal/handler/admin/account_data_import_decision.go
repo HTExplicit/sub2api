@@ -88,9 +88,29 @@ func (h *AccountHandler) previewDataImport(ctx context.Context, req DataImportRe
 			return preview, nil, err
 		}
 	}
-	targetIsStrict := targetGroup != nil && targetGroup.StrictCindyKnown && targetGroup.StrictCindy &&
-		targetGroup.Platform == service.PlatformCindy && targetGroup.EffectiveWirePlatform() == service.WirePlatformOpenAI &&
+	targetHasMember := false
+	if targetGroup != nil {
+		for index := range existing {
+			for _, groupID := range existing[index].GroupIDs {
+				if groupID == targetGroup.ID {
+					targetHasMember = true
+					break
+				}
+			}
+			if targetHasMember {
+				break
+			}
+		}
+	}
+	targetHasCanonicalIdentity := targetGroup != nil && targetGroup.Platform == service.PlatformCindy &&
+		targetGroup.EffectiveWirePlatform() == service.WirePlatformOpenAI &&
 		targetGroup.EffectiveProviderProfile() == service.ProviderProfileCindyLaxaV1
+	// A canonical Cindy group with no members is the only safe bootstrap target:
+	// the repository's strict classifier intentionally returns false for empty
+	// groups, while the first import needs one empty target to establish that
+	// membership. Once any member exists, retain the full strict all-members gate.
+	targetIsStrict := targetHasCanonicalIdentity &&
+		((targetGroup.StrictCindyKnown && targetGroup.StrictCindy) || !targetHasMember)
 
 	decisions := make([]dataImportDecision, len(req.Data.Accounts))
 	fingerprintItems := make(map[string][]int)
