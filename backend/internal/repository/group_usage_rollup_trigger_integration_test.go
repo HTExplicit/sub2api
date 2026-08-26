@@ -477,7 +477,7 @@ func setGroupUsageRollupTriggerSearchPath(ctx context.Context, tx *sql.Tx, quote
 }
 
 func setGroupUsageRollupTriggerTimeZone(ctx context.Context, tx *sql.Tx, name string) error {
-	_, err := tx.ExecContext(ctx, "SET LOCAL TIME ZONE "+pq.QuoteLiteral(name))
+	_, err := tx.ExecContext(ctx, "SELECT set_config('TimeZone', $1, true)", name)
 	return err
 }
 
