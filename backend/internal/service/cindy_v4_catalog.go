@@ -38,6 +38,10 @@ var cindyCapabilityCatalog = []CindyCapability{
 }
 
 func newCindyV4ChatCapability(publicID, liveID, displayName, description string, contextWindow, maxOutputTokens int, inputModalities, efforts []string, defaultEffort string, costDiscount float64, pricing CindyTextPricing) CindyCapability {
+	var codexEfforts []string
+	if publicID == "gpt-5.6-sol" || publicID == "gpt-5.6-terra" {
+		codexEfforts = append(append([]string(nil), efforts...), "ultra")
+	}
 	return CindyCapability{
 		PublicID: publicID, LiveUpstreamID: liveID, RegistryID: liveID,
 		DisplayName: displayName, Description: description, Kind: CindyModelKindText,
@@ -46,7 +50,7 @@ func newCindyV4ChatCapability(publicID, liveID, displayName, description string,
 		ClientSurfaces:     []string{CindyClientSurfaceCodex, CindyClientSurfacePi, CindyClientSurfaceOpenAI, CindyClientSurfaceClaude, CindyClientSurfaceAnthropic},
 		AgentWireProtocols: map[string]string{"claude-code": "anthropic-messages", "codex": "openai-responses", "pi": "openai-responses"},
 		MaxInputTokens:     contextWindow, CodexContextWindow: contextWindow, MaxOutputTokens: maxOutputTokens,
-		ReasoningEfforts: efforts, DefaultReasoningEffort: defaultEffort,
+		ReasoningEfforts: efforts, CodexReasoningEffortLevels: codexEfforts, DefaultReasoningEffort: defaultEffort,
 		MetadataSourceRevision: CindyModelMetadataSourceRevision, PricingSource: CindyModelMetadataSourceRevision,
 		CostDiscount: costDiscount, TextPricing: &pricing, PublicModel: true,
 	}

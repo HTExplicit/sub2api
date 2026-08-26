@@ -75,6 +75,12 @@ func (r *cindyHealthRepositoryStub) PersistCindyTerminalState(
 ) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	for _, persisted := range r.persisted {
+		if persisted.AccountID == episode.AccountID && persisted.Generation == episode.Generation &&
+			persisted.EpisodeID == episode.EpisodeID {
+			return false, nil
+		}
+	}
 	if len(r.persistErrors) > 0 {
 		err := r.persistErrors[0]
 		r.persistErrors = r.persistErrors[1:]

@@ -59,7 +59,9 @@ type cindyV4FixtureModalities struct {
 }
 
 type cindyV4FixtureAgent struct {
-	WireProtocol string `json:"wireProtocol"`
+	WireProtocol  string   `json:"wireProtocol"`
+	Efforts       []string `json:"efforts"`
+	DefaultEffort string   `json:"defaultEffort"`
 }
 
 func TestCindyV4CatalogFixtureMatchesPinnedSourceAndGoTable(t *testing.T) {
@@ -114,6 +116,14 @@ func TestCindyV4CatalogFixtureMatchesPinnedSourceAndGoTable(t *testing.T) {
 				require.Empty(t, capability.AgentWireProtocols)
 			} else {
 				require.Equal(t, wireProtocols, capability.AgentWireProtocols)
+			}
+			codexEfforts := model.Efforts
+			if override := model.PerAgent["codex"].Efforts; len(override) > 0 {
+				codexEfforts = override
+			}
+			require.Equal(t, codexEfforts, capability.CodexReasoningEfforts())
+			if override := model.PerAgent["codex"].DefaultEffort; override != "" {
+				require.Equal(t, model.DefaultEffort, override)
 			}
 
 			switch model.Mode {

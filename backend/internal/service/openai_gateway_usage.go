@@ -544,7 +544,7 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 		pricePerCall := webSearchPricePerCallFromAPIKey(apiKey)
 		if pricePerCall == nil && CindyCapabilityCatalogFeatureEnabled() && account != nil &&
 			IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-			CindyModelUsesExplicitZeroPrice(billingModel) {
+			(CindyModelUsesExplicitZeroPrice(billingModel) || strings.TrimSpace(billingModel) == CindyWebSearchModel) {
 			zeroPrice := 0.0
 			pricePerCall = &zeroPrice
 		}

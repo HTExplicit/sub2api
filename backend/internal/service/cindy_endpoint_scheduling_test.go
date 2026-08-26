@@ -34,9 +34,9 @@ func TestAccountSupportsOpenAICapabilities_StrictCindyModelEndpointMatrix(t *tes
 		capability OpenAIEndpointCapability
 		want       bool
 	}{
-		{name: "messages-only Claude on Messages", model: "claude-opus-5", capability: OpenAIEndpointCapabilityMessages, want: true},
-		{name: "messages-only Claude not on Responses", model: "claude-opus-5", capability: OpenAIEndpointCapabilityResponses, want: false},
-		{name: "messages-only Claude not on Chat", model: "claude-opus-5", capability: OpenAIEndpointCapabilityChatCompletions, want: false},
+		{name: "v4 Claude supports Messages", model: "claude-opus-5", capability: OpenAIEndpointCapabilityMessages, want: true},
+		{name: "v4 Claude supports Responses", model: "claude-opus-5", capability: OpenAIEndpointCapabilityResponses, want: true},
+		{name: "v4 Claude supports Chat conversion", model: "claude-opus-5", capability: OpenAIEndpointCapabilityChatCompletions, want: true},
 		{name: "image-only Gemini not on Responses", model: "gemini-3-pro-image", capability: OpenAIEndpointCapabilityResponses, want: false},
 		{name: "image-only Gemini not on Chat", model: "gemini-3-pro-image", capability: OpenAIEndpointCapabilityChatCompletions, want: false},
 		{name: "GPT image public ID uses exact Responses bridge", model: "gpt-image-2", capability: OpenAIEndpointCapabilityResponses, want: true},
@@ -65,7 +65,7 @@ func TestAccountSupportsOpenAICapabilities_FirstClassCindySearchUsesPublicRespon
 	require.False(t, accountSupportsOpenAICapabilities(
 		context.Background(), &account, CindyWebSearchModel, OpenAIEndpointCapabilityAlphaSearch, "",
 	))
-	require.False(t, accountSupportsOpenAICapabilities(
+	require.True(t, accountSupportsOpenAICapabilities(
 		context.Background(), &account, "claude-opus-5", OpenAIEndpointCapabilityAlphaSearch, "",
 	))
 }
