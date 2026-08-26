@@ -513,7 +513,7 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 		}
 		return true
 	}
-	if isOpenAIAccount(account) && (account.Type == AccountTypeAPIKey || statusCode != http.StatusTooManyRequests) {
+	if isOpenAIAccount(account) && account.Type == AccountTypeAPIKey {
 		switch statusCode {
 		case http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests:
 			// Authentication and quota responses are handled exclusively by the
@@ -521,6 +521,10 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 			// switch. Do not persist legacy schedulable/error state here.
 			return false
 		}
+	}
+	if isOpenAIOAuthAccount(account) && (statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden) &&
+		strings.EqualFold(strings.TrimSpace(extractUpstreamErrorMessage(responseBody)), "credential or quota failure") {
+		return false
 	}
 	stateCtx, cancel := openAIAccountStateContext(ctx)
 	defer cancel()
@@ -1097,6 +1101,14 @@ func canonicalOpenAIAccountSchedulingModel(account *Account, requestedModel stri
 	model := strings.TrimSpace(requestedModel)
 	if account == nil || model == "" {
 		return model
+	}
+	if IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		if mapped, ok := CindyCompatibilityMappedUpstreamModel(model); ok {
+			return mapped
+		}
+		if mapped, ok := CindyMappedUpstreamModel(model); ok {
+			return mapped
+		}
 	}
 	if account.IsOpenAI() {
 		return resolveOpenAIAccountUpstreamModelForRequest(account, model, false)

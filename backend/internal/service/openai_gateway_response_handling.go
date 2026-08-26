@@ -665,7 +665,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 					}
 				}
 			}
-			if eventType == "error" {
+			if eventType == "error" && account != nil && account.IsOpenAIOAuthLike() {
 				failedMessage = extractOpenAISSEErrorMessage(dataBytes)
 				if failedMessage == "" {
 					failedMessage = "Upstream response failed"

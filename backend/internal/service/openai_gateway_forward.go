@@ -613,6 +613,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		}
 		if !account.IsOpenAIApiKey() {
 			markPatchDelete("previous_response_id")
+		} else if s.cfg != nil && !s.cfg.Gateway.OpenAIWS.Enabled && strings.TrimSpace(previousResponseResult.String()) != "" {
+			markPatchDelete("previous_response_id")
 		}
 	}
 	if openAIRequestBodyMayContainEmptyBase64InputImage(body) {

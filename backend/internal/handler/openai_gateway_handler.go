@@ -3352,7 +3352,8 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 }
 
 func credentialFailoverClientResponse(failoverErr *service.UpstreamFailoverError) (int, string) {
-	if failoverErr != nil && failoverErr.ClientStatusCode > 0 && strings.TrimSpace(failoverErr.ClientMessage) != "" {
+	if failoverErr != nil && failoverErr.Reason == service.OpenAIUpstreamAccessStateReason &&
+		failoverErr.ClientStatusCode > 0 && strings.TrimSpace(failoverErr.ClientMessage) != "" {
 		return failoverErr.ClientStatusCode, failoverErr.ClientMessage
 	}
 	if failoverErr != nil && failoverErr.Reason == service.AntigravityCredentialRejectedReason {
