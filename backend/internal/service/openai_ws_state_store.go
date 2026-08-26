@@ -67,8 +67,8 @@ type OpenAIWSStateStore interface {
 	GetResponseConn(responseID string) (string, bool)
 	DeleteResponseConn(responseID string)
 
-	BindSessionTurnState(groupID int64, sessionHash string, accountID int64, turnState string, ttl time.Duration)
-	GetSessionTurnState(groupID int64, sessionHash string, accountID int64) (string, bool)
+	BindSessionTurnState(groupID int64, sessionHash string, args ...any)
+	GetSessionTurnState(groupID int64, sessionHash string, accountIDs ...int64) (string, bool)
 	DeleteSessionTurnState(groupID int64, sessionHash string)
 
 	BindSessionConn(groupID int64, sessionHash, connID string, ttl time.Duration)
@@ -364,7 +364,21 @@ func (s *defaultOpenAIWSStateStore) DeleteResponseConn(responseID string) {
 	s.responseToConnMu.Unlock()
 }
 
-func (s *defaultOpenAIWSStateStore) BindSessionTurnState(groupID int64, sessionHash string, accountID int64, turnState string, ttl time.Duration) {
+func (s *defaultOpenAIWSStateStore) BindSessionTurnState(groupID int64, sessionHash string, args ...any) {
+	accountID := int64(0)
+	turnState := ""
+	ttl := time.Duration(0)
+	switch len(args) {
+	case 2:
+		turnState, _ = args[0].(string)
+		ttl, _ = args[1].(time.Duration)
+	case 3:
+		accountID, _ = args[0].(int64)
+		turnState, _ = args[1].(string)
+		ttl, _ = args[2].(time.Duration)
+	default:
+		return
+	}
 	key := openAIWSSessionTurnStateKey(groupID, sessionHash)
 	state := strings.TrimSpace(turnState)
 	if key == "" || accountID <= 0 || state == "" {
@@ -383,7 +397,11 @@ func (s *defaultOpenAIWSStateStore) BindSessionTurnState(groupID int64, sessionH
 	s.sessionToTurnStateMu.Unlock()
 }
 
-func (s *defaultOpenAIWSStateStore) GetSessionTurnState(groupID int64, sessionHash string, accountID int64) (string, bool) {
+func (s *defaultOpenAIWSStateStore) GetSessionTurnState(groupID int64, sessionHash string, accountIDs ...int64) (string, bool) {
+	accountID := int64(0)
+	if len(accountIDs) > 0 {
+		accountID = accountIDs[0]
+	}
 	key := openAIWSSessionTurnStateKey(groupID, sessionHash)
 	if key == "" || accountID <= 0 {
 		return "", false

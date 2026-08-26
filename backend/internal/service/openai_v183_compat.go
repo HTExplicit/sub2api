@@ -5,7 +5,10 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync/atomic"
+	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 )
@@ -14,7 +17,11 @@ const (
 	openAIUpstreamAccessUnavailableClientMessage = "Upstream access is temporarily unavailable, please retry later"
 	OpenAIUpstreamAccessStateReason              = GatewayFailureReason("openai_upstream_access_state")
 	openAIImagesVerbatimPromptInstructions       = "When invoking the image_generation tool, use the user's image prompt verbatim. Do not rewrite, expand, summarize, embellish, translate, normalize punctuation, or add or remove visual details or constraints. Preserve the original language, wording, capitalization, quotes, and punctuation exactly."
+	defaultAntigravityTestModel                  = "claude-sonnet-4-6"
+	openAIImagesOAuthUnavailableReason           = "openai_images_oauth_tool_unavailable"
 )
+
+const openAIImagesOAuthUnavailableCooldown = 30 * time.Minute
 
 // openAIRequestPayloadView unwraps Responses WebSocket event envelopes while
 // leaving ordinary HTTP objects untouched.
@@ -64,6 +71,55 @@ func openAIUsageHasTokens(usage *OpenAIUsage) bool {
 	return usage != nil && (usage.InputTokens > 0 || usage.ImageInputTokens > 0 ||
 		usage.OutputTokens > 0 || usage.CacheCreationInputTokens > 0 ||
 		usage.CacheReadInputTokens > 0 || usage.ImageOutputTokens > 0)
+}
+
+func antigravityConnectionTestModel(modelID string) string {
+	if modelID == "" {
+		return defaultAntigravityTestModel
+	}
+	return modelID
+}
+
+func openAICompatTerminalResponse(event *apicompat.ResponsesStreamEvent, payload []byte) *apicompat.ResponsesResponse {
+	if event == nil {
+		return nil
+	}
+	if event.Response != nil {
+		return event.Response
+	}
+	switch strings.TrimSpace(event.Type) {
+	case "response.failed", "error":
+		message := extractOpenAISSEErrorMessage(payload)
+		if message == "" {
+			message = "Upstream response failed"
+		}
+		return &apicompat.ResponsesResponse{Status: "failed", Error: &apicompat.ResponsesError{Code: event.Code, Message: message}}
+	default:
+		return nil
+	}
+}
+
+const openAIMissingUsageLogInterval = time.Minute
+
+type openAIMissingUsageLogSampler struct {
+	total      atomic.Uint64
+	suppressed atomic.Uint64
+	lastLog    atomic.Int64
+}
+
+func (s *openAIMissingUsageLogSampler) sample(now time.Time) (logNow bool, total uint64, suppressed uint64) {
+	total = s.total.Add(1)
+	nowNanos := now.UnixNano()
+	for {
+		last := s.lastLog.Load()
+		if last != 0 && nowNanos-last < int64(openAIMissingUsageLogInterval) {
+			s.suppressed.Add(1)
+			return false, total, 0
+		}
+		if s.lastLog.CompareAndSwap(last, nowNanos) {
+			return true, total, s.suppressed.Swap(0)
+		}
+	}
 }
 
 func openAIAlphaSearchSchedulingModel(account *Account, requestedModel string) string {
