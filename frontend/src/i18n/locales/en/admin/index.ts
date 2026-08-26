@@ -8,6 +8,7 @@ import audit from './audit'
 import promptAudit from './promptAudit'
 import systemPrompts from './systemPrompts'
 import accountTasks from './accountTasks'
+import plugins from './plugins'
 
 export default {
   ...overview,
@@ -20,4 +21,5 @@ export default {
   ...promptAudit,
   ...systemPrompts,
   ...accountTasks,
+  ...plugins,
 }

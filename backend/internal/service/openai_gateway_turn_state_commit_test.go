@@ -194,7 +194,7 @@ func TestOpenAIPassthroughTurnStateUsesTheSameDownstreamCommitBoundary(t *testin
 
 		_, err := svc.handleNonStreamingResponsePassthrough(
 			context.Background(), openAITurnStateJSONResponse("state-B"), failedContext,
-			"gpt-5.6-luna", "gpt-5.6-luna", accountB,
+			accountB, "gpt-5.6-luna", "gpt-5.6-luna",
 		)
 		require.ErrorContains(t, err, "write downstream OpenAI passthrough response")
 		requireOpenAITurnStateOrigin(t, svc, seed, 403)
@@ -203,7 +203,7 @@ func TestOpenAIPassthroughTurnStateUsesTheSameDownstreamCommitBoundary(t *testin
 		require.Equal(t, seed, successSeed)
 		_, err = svc.handleNonStreamingResponsePassthrough(
 			context.Background(), openAITurnStateJSONResponse("state-B"), successContext,
-			"gpt-5.6-luna", "gpt-5.6-luna", accountB,
+			accountB, "gpt-5.6-luna", "gpt-5.6-luna",
 		)
 		require.NoError(t, err)
 		requireOpenAITurnStateOrigin(t, svc, seed, accountB.ID)

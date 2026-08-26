@@ -799,7 +799,7 @@ func TestOpenAIGatewayCindyNonStreamingResponsesFailureFailsOverBeforeWrite(t *t
 		{
 			name: "passthrough",
 			handle: func(gateway *OpenAIGatewayService, ctx context.Context, resp *http.Response, c *gin.Context, account *Account) error {
-				_, err := gateway.handleNonStreamingResponsePassthrough(ctx, resp, c, "gpt-5.6-luna", "openai/gpt-5.6-luna", account)
+				_, err := gateway.handleNonStreamingResponsePassthrough(ctx, resp, c, account, "gpt-5.6-luna", "openai/gpt-5.6-luna")
 				return err
 			},
 		},
@@ -870,7 +870,7 @@ func TestOpenAIGatewayCindyNonStreamingPassthroughClassifiesJSONAndSSEError(t *t
 			}
 
 			_, err := gateway.handleNonStreamingResponsePassthrough(
-				context.Background(), resp, c, "gpt-5.6-luna", "openai/gpt-5.6-luna", account,
+				context.Background(), resp, c, account, "gpt-5.6-luna", "openai/gpt-5.6-luna",
 			)
 
 			var failoverErr *UpstreamFailoverError

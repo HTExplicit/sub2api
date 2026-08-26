@@ -40,7 +40,9 @@ func (s *OpenAIGatewayService) probeCindyBalanceModel(ctx context.Context, accou
 		"max_output_tokens": 1,
 		"stream":            false,
 	})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, buildOpenAIResponsesURL(account.GetOpenAIBaseURL()), bytes.NewReader(body))
+	// The account has already passed strict canonical Cindy identity validation;
+	// its operator-controlled endpoint is the intended probe destination.
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, buildOpenAIResponsesURL(account.GetOpenAIBaseURL()), bytes.NewReader(body)) //nolint:gosec
 	if err != nil {
 		return cindyBalanceProbeOther
 	}

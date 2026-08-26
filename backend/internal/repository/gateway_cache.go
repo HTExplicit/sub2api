@@ -764,21 +764,75 @@ func (c *gatewayCache) GetReasoningContent(ctx context.Context, itemID string) (
 	return val, nil
 }
 
-const cyberSessionBlockPrefix = "cyber_session_block:"
+const (
+	cyberSessionBlockPrefix         = "cyber_session_block:"
+	cyberSessionScopePrefix         = "cyber_session_scope:"
+	cyberSessionRedisCommandMaxKeys = 128
+)
 
-// SetCyberSessionBlocked 把被 cyber_policy 命中的会话写入屏蔽表（TTL 自动过期）。
-// 存储值 "1" 作为存在标记（IsCyberSessionBlocked 只检查 key 是否存在，不读值）。
-func (c *gatewayCache) SetCyberSessionBlocked(ctx context.Context, key string, ttl time.Duration) error {
-	return c.rdb.Set(ctx, cyberSessionBlockPrefix+key, "1", ttl).Err()
+func (c *gatewayCache) SetCyberSessionBlocked(ctx context.Context, scopeKey string, keys []string, ttl time.Duration) error {
+	if len(keys) == 0 {
+		return nil
+	}
+	exactKeys := make([]string, 0, cyberSessionRedisCommandMaxKeys)
+	flush := func() error {
+		if len(exactKeys) == 0 {
+			return nil
+		}
+		pipe := c.rdb.TxPipeline()
+		for _, key := range exactKeys {
+			pipe.Set(ctx, cyberSessionBlockPrefix+key, "1", ttl)
+		}
+		_, err := pipe.Exec(ctx)
+		exactKeys = exactKeys[:0]
+		return err
+	}
+	for _, key := range keys {
+		if key == "" {
+			continue
+		}
+		exactKeys = append(exactKeys, key)
+		if len(exactKeys) == cyberSessionRedisCommandMaxKeys {
+			if err := flush(); err != nil {
+				return err
+			}
+		}
+	}
+	if err := flush(); err != nil {
+		return err
+	}
+	if scopeKey != "" {
+		return c.rdb.Set(ctx, cyberSessionScopePrefix+scopeKey, "1", ttl).Err()
+	}
+	return nil
 }
 
-// IsCyberSessionBlocked 查询会话是否在屏蔽表中。
-func (c *gatewayCache) IsCyberSessionBlocked(ctx context.Context, key string) (bool, error) {
-	n, err := c.rdb.Exists(ctx, cyberSessionBlockPrefix+key).Result()
-	if err != nil {
-		return false, err
+func (c *gatewayCache) IsCyberSessionScopeActive(ctx context.Context, scopeKey string) (bool, error) {
+	n, err := c.rdb.Exists(ctx, cyberSessionScopePrefix+scopeKey).Result()
+	return n > 0, err
+}
+
+func (c *gatewayCache) FindCyberSessionBlocked(ctx context.Context, keys []string) (string, error) {
+	for start := 0; start < len(keys); start += cyberSessionRedisCommandMaxKeys {
+		end := start + cyberSessionRedisCommandMaxKeys
+		if end > len(keys) {
+			end = len(keys)
+		}
+		redisKeys := make([]string, end-start)
+		for i, key := range keys[start:end] {
+			redisKeys[i] = cyberSessionBlockPrefix + key
+		}
+		values, err := c.rdb.MGet(ctx, redisKeys...).Result()
+		if err != nil {
+			return "", err
+		}
+		for i, value := range values {
+			if value != nil {
+				return keys[start+i], nil
+			}
+		}
 	}
-	return n > 0, nil
+	return "", nil
 }
 
 var claimLiveControllerScript = redis.NewScript(`
