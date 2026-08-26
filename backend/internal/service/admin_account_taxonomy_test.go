@@ -57,6 +57,45 @@ func TestFilterConsoleAccountsCindyQuickViewsUseStrictIdentity(t *testing.T) {
 	require.Equal(t, []int64{2, 3, 4}, accountIDsForFacetTest(unschedulable))
 }
 
+func TestFilterConsoleAccountsKeepsCindyBannedAndBalanceIndependent(t *testing.T) {
+	markedAt := time.Now().UTC()
+	accounts := []*Account{
+		{ID: 1, Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1, Type: AccountTypeAPIKey, Credentials: cindyCredentials(), CindyBannedAt: &markedAt},
+		{ID: 2, Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1, Type: AccountTypeAPIKey, Credentials: cindyCredentials(), CindyBalanceInsufficientAt: &markedAt},
+	}
+
+	banned := filterConsoleAccounts(accounts, AccountConsoleFilters{CindyHealthStatus: "banned"})
+	insufficient := filterConsoleAccounts(accounts, AccountConsoleFilters{CindyBalanceStatus: "insufficient"})
+	require.Len(t, banned, 1)
+	require.Len(t, insufficient, 1)
+	require.Equal(t, int64(1), banned[0].ID)
+	require.Equal(t, int64(2), insufficient[0].ID)
+}
+
+func TestCindyFacetDimensionsConstrainEachOtherIndependently(t *testing.T) {
+	now := time.Now().UTC()
+	accounts := []*Account{
+		{ID: 1, Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1, Type: AccountTypeAPIKey, Credentials: cindyCredentials(), CindyBannedAt: &now},
+		{ID: 2, Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1, Type: AccountTypeAPIKey, Credentials: cindyCredentials(), CindyBalanceInsufficientAt: &now},
+		{ID: 3, Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1, Type: AccountTypeAPIKey, Credentials: cindyCredentials(), CindyBannedAt: &now, CindyBalanceInsufficientAt: &now},
+	}
+
+	bannedMatcher := newAccountFacetMatcher(AccountConsoleFilters{CindyHealthStatus: "banned"})
+	balanceOptions := filterAccountsForFacet(accounts, bannedMatcher, accountFacetCindyBalance, now)
+	require.Equal(t, []int64{1, 3}, accountIDsForFacetTest(balanceOptions))
+
+	balanceMatcher := newAccountFacetMatcher(AccountConsoleFilters{CindyBalanceStatus: "insufficient"})
+	healthOptions := filterAccountsForFacet(accounts, balanceMatcher, accountFacetCindyHealth, now)
+	require.Equal(t, []int64{2, 3}, accountIDsForFacetTest(healthOptions))
+}
+
+func TestAccountConsoleStatusTreatsBannedAsUnschedulable(t *testing.T) {
+	now := time.Now().UTC()
+	require.Equal(t, "unschedulable", accountConsoleStatus(&Account{
+		Status: StatusActive, Schedulable: true, CindyBannedAt: &now,
+	}, now))
+}
+
 func TestAccountConsolePlanUsesProviderBillingSnapshotAndFacetCounts(t *testing.T) {
 	account := &Account{
 		Platform:    PlatformGrok,

@@ -138,11 +138,7 @@ func ProvideCindyHealthService(
 	if cache != nil {
 		episodeStore, _ = cache.(CindyHealthEpisodeStore)
 	}
-	var probe func(context.Context, *Account, string) cindyBalanceProbeOutcome
-	if gateway != nil {
-		probe = gateway.probeCindyBalanceModel
-	}
-	svc := NewCindyHealthService(accountRepo, identityRepo, healthRepo, episodeStore, gateway, probe)
+	svc := NewCindyHealthService(accountRepo, identityRepo, healthRepo, episodeStore, gateway)
 	if gateway != nil {
 		gateway.SetCindyHealthCoordinator(svc)
 	}
@@ -350,8 +346,14 @@ func ProvideAccountUsageService(
 	cache *UsageCache,
 	identityCache IdentityCache,
 	tlsFPProfileService *TLSFingerprintProfileService,
+	gatewayService *GatewayService,
 	openAIGatewayService *OpenAIGatewayService,
+	usageCommitObserver UsageCommitObserver,
 ) *AccountUsageService {
+	gatewayService.SetUsageCache(cache)
+	openAIGatewayService.SetUsageCache(cache)
+	gatewayService.SetUsageCommitObserver(usageCommitObserver)
+	openAIGatewayService.SetUsageCommitObserver(usageCommitObserver)
 	service := NewAccountUsageService(
 		accountRepo,
 		usageLogRepo,

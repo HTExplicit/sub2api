@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"net/http"
 	"sync"
@@ -45,10 +46,13 @@ func (r *cindyHealthIdentityRepoStub) rotate(generation int64, fingerprint strin
 }
 
 type cindyHealthRepositoryStub struct {
-	mu        sync.Mutex
-	begun     []CindyHealthEpisode
-	finalized []CindyHealthFinalization
-	recovered *CindyHealthEpisode
+	mu             sync.Mutex
+	begun          []CindyHealthEpisode
+	finalized      []CindyHealthFinalization
+	persisted      []CindyHealthEpisode
+	recovered      *CindyHealthEpisode
+	persistErrors  []error
+	persistApplied []bool
 }
 
 func (r *cindyHealthRepositoryStub) BeginCindyHealthEpisode(
@@ -64,15 +68,42 @@ func (r *cindyHealthRepositoryStub) BeginCindyHealthEpisode(
 	return true, nil
 }
 
-func (r *cindyHealthRepositoryStub) FinalizeCindyHealthEpisode(
+func (r *cindyHealthRepositoryStub) PersistCindyTerminalState(
 	_ context.Context,
 	episode CindyHealthEpisode,
 	finalization CindyHealthFinalization,
 ) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	for _, persisted := range r.persisted {
+		if persisted.AccountID == episode.AccountID && persisted.Generation == episode.Generation &&
+			persisted.EpisodeID == episode.EpisodeID {
+			return false, nil
+		}
+	}
+	if len(r.persistErrors) > 0 {
+		err := r.persistErrors[0]
+		r.persistErrors = r.persistErrors[1:]
+		if err != nil {
+			return false, err
+		}
+	}
+	if len(r.persistApplied) > 0 {
+		applied := r.persistApplied[0]
+		r.persistApplied = r.persistApplied[1:]
+		if !applied {
+			return false, nil
+		}
+	}
 	r.finalized = append(r.finalized, finalization)
+	r.persisted = append(r.persisted, episode)
 	return true, nil
+}
+
+func (r *cindyHealthRepositoryStub) terminalEpisodes() []CindyHealthEpisode {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]CindyHealthEpisode(nil), r.persisted...)
 }
 
 func (r *cindyHealthRepositoryStub) RecoverTransientCindyHealth(
@@ -100,11 +131,25 @@ type cindyHealthEpisodeStoreStub struct {
 	mu      sync.Mutex
 	claimed []CindyHealthEpisode
 	cleared []CindyHealthEpisode
+	pending map[int64]CindyHealthEpisode
+	getErr  error
+}
+
+type cindyPendingGatewayCacheStub struct {
+	GatewayCache
+	*cindyHealthEpisodeStoreStub
 }
 
 func (s *cindyHealthEpisodeStoreStub) ClaimCindyHealthEpisode(_ context.Context, episode CindyHealthEpisode, _ time.Duration) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.pending == nil {
+		s.pending = make(map[int64]CindyHealthEpisode)
+	}
+	if current, ok := s.pending[episode.AccountID]; ok && current.Generation >= episode.Generation {
+		return false, nil
+	}
+	s.pending[episode.AccountID] = episode
 	s.claimed = append(s.claimed, episode)
 	return true, nil
 }
@@ -112,8 +157,33 @@ func (s *cindyHealthEpisodeStoreStub) ClaimCindyHealthEpisode(_ context.Context,
 func (s *cindyHealthEpisodeStoreStub) ClearCindyHealthEpisodeIfMatch(_ context.Context, episode CindyHealthEpisode) error {
 	s.mu.Lock()
 	s.cleared = append(s.cleared, episode)
+	if current, ok := s.pending[episode.AccountID]; ok && current.Generation == episode.Generation && current.EpisodeID == episode.EpisodeID {
+		delete(s.pending, episode.AccountID)
+	}
 	s.mu.Unlock()
 	return nil
+}
+
+func (s *cindyHealthEpisodeStoreStub) ListCindyHealthEpisodes(_ context.Context, _ int) ([]CindyHealthEpisode, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]CindyHealthEpisode, 0, len(s.pending))
+	for _, episode := range s.pending {
+		out = append(out, episode)
+	}
+	return out, nil
+}
+
+func (s *cindyHealthEpisodeStoreStub) GetCindyHealthEpisodes(_ context.Context, accountID int64) ([]CindyHealthEpisode, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.getErr != nil {
+		return nil, s.getErr
+	}
+	if episode, ok := s.pending[accountID]; ok {
+		return []CindyHealthEpisode{episode}, nil
+	}
+	return []CindyHealthEpisode{}, nil
 }
 
 type cindyHealthRuntimeStub struct {
@@ -140,7 +210,8 @@ func newHealthTestAccount(t *testing.T, accountID int64, key string) (*Account, 
 		ID: accountID, Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI,
 		ProviderProfile: ProviderProfileCindyLaxaV1, Type: AccountTypeAPIKey,
 		Status: StatusActive, Schedulable: true,
-		Credentials: map[string]any{"base_url": "https://api.laxarouter.ai", "api_key": key},
+		CindyCredentialGeneration: 7,
+		Credentials:               map[string]any{"base_url": "https://api.laxarouter.ai", "api_key": key},
 	}
 	fingerprint, err := AccountCredentialFingerprint(
 		ProviderProfileCindyLaxaV1, AccountTypeAPIKey, "https://api.laxarouter.ai", key,
@@ -165,16 +236,16 @@ func newHealthTestService(
 	t.Helper()
 	identityRepo := &cindyHealthIdentityRepoStub{identity: identity}
 	service := NewCindyHealthService(
-		&cindyHealthAccountRepoStub{account: account}, identityRepo, repo, store, runtime, probe,
+		&cindyHealthAccountRepoStub{account: account}, identityRepo, repo, store, runtime,
 	)
 	t.Cleanup(service.Stop)
 	return service, identityRepo
 }
 
-func TestClassifyCindyHealthSignalRejects401AndKeeps403Transient(t *testing.T) {
+func TestClassifyCindyHealthSignalTreatsStrict401AsBannedAndKeeps403Transient(t *testing.T) {
 	account, _ := newHealthTestAccount(t, 9101, "key-one")
 
-	require.Equal(t, CindyHealthSignalNone, ClassifyCindyHealthSignal(
+	require.Equal(t, CindyHealthSignalBanned, ClassifyCindyHealthSignal(
 		account, http.StatusUnauthorized, []byte(`{"error":{"type":"token_not_found"}}`),
 	))
 	require.Equal(t, CindyHealthSignalForbidden, ClassifyCindyHealthSignal(account, http.StatusForbidden, nil))
@@ -198,6 +269,30 @@ func TestLegacyCindyCompatibilityDoesNotEnterCanonicalHealth(t *testing.T) {
 	))
 }
 
+func TestStrictCindy401ReachesSharedHealthCoordinatorAcrossHTTPMessagesAndAccountTest(t *testing.T) {
+	account, _ := newHealthTestAccount(t, 9106, "key-six")
+	recorder := &cindyHealthCoordinatorRecorder{}
+	openAI := &OpenAIGatewayService{cindyHealth: recorder}
+	native := &GatewayService{cindyHealth: recorder}
+	accountTest := &AccountTestService{openAIGatewayService: openAI}
+
+	require.True(t, openAI.handleOpenAIAccountUpstreamError(
+		context.Background(), account, http.StatusUnauthorized, nil, []byte(`{"error":{"message":"ignored"}}`),
+	))
+	require.Equal(t, CindyHealthSignalBanned, native.observeCindyHealthSignal(
+		context.Background(), account, http.StatusUnauthorized, []byte(`{"error":{"message":"ignored"}}`),
+	))
+	require.True(t, accountTest.markCindyBalanceInsufficientFromTest(
+		context.Background(), account, http.StatusUnauthorized, []byte(`{"error":{"message":"ignored"}}`),
+	))
+
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+	require.Equal(t, []CindyHealthSignal{
+		CindyHealthSignalBanned, CindyHealthSignalBanned, CindyHealthSignalBanned,
+	}, recorder.signals)
+}
+
 func TestProvideCindyHealthServiceWiresGatewayCoordinator(t *testing.T) {
 	gateway := &OpenAIGatewayService{}
 	nativeGateway := &GatewayService{}
@@ -209,7 +304,7 @@ func TestProvideCindyHealthServiceWiresGatewayCoordinator(t *testing.T) {
 	require.Same(t, health, nativeGateway.cindyHealth)
 }
 
-func TestCindyHealthExactBudgetRequiresLunaAndTerraForSameGeneration(t *testing.T) {
+func TestCindyHealthExactBudgetPersistsImmediatelyWithoutAutomaticProbes(t *testing.T) {
 	account, identity := newHealthTestAccount(t, 9102, "key-two")
 	repo := &cindyHealthRepositoryStub{}
 	store := &cindyHealthEpisodeStoreStub{}
@@ -230,40 +325,265 @@ func TestCindyHealthExactBudgetRequiresLunaAndTerraForSameGeneration(t *testing.
 	}, time.Second, 10*time.Millisecond)
 
 	begun, finalized := repo.snapshot()
-	require.Len(t, begun, 1)
-	require.Equal(t, int64(7), begun[0].Generation)
+	require.Empty(t, begun)
 	require.Len(t, finalized, 1)
-	require.Equal(t, CindyHealthStatusConfirmedExhausted, finalized[0].Status)
+	require.Equal(t, CindyHealthStatusBalanceInsufficient, finalized[0].Status)
 	modelsMu.Lock()
-	require.Equal(t, []string{"openai/gpt-5.6-luna", "openai/gpt-5.6-terra"}, models)
+	require.Empty(t, models)
 	modelsMu.Unlock()
 }
 
-func TestCindyHealthGenerationRotationDiscardsOldProbeResult(t *testing.T) {
+func TestCindyHealthBannedBlocksBeforeGenerationBoundPersistence(t *testing.T) {
+	account, identity := newHealthTestAccount(t, 9105, "key-five")
+	repo := &cindyHealthRepositoryStub{}
+	runtime := &cindyHealthRuntimeStub{}
+	svc, _ := newHealthTestService(t, account, identity, repo, &cindyHealthEpisodeStoreStub{}, runtime,
+		func(context.Context, *Account, string) cindyBalanceProbeOutcome {
+			t.Fatal("strict 401 must not launch an automatic probe")
+			return cindyBalanceProbeOther
+		})
+
+	svc.ObserveCindyHealthSignal(context.Background(), account, CindyHealthSignalBanned)
+
+	_, finalized := repo.snapshot()
+	require.Len(t, finalized, 1)
+	require.Equal(t, CindyHealthStatusBanned, finalized[0].Status)
+	runtime.mu.Lock()
+	require.Len(t, runtime.blocks, 1)
+	require.True(t, runtime.blocks[0].IsZero(), "banned must install a permanent runtime block")
+	runtime.mu.Unlock()
+}
+
+func TestCindyHealthTerminalWriteCarriesCurrentGenerationWithoutProbe(t *testing.T) {
 	account, identity := newHealthTestAccount(t, 9103, "old-key")
 	repo := &cindyHealthRepositoryStub{}
 	store := &cindyHealthEpisodeStoreStub{}
 	runtime := &cindyHealthRuntimeStub{}
-	var identityRepo *cindyHealthIdentityRepoStub
 	probeCalls := 0
-	svc, identityRepo := newHealthTestService(t, account, identity, repo, store, runtime, func(context.Context, *Account, string) cindyBalanceProbeOutcome {
+	svc, _ := newHealthTestService(t, account, identity, repo, store, runtime, func(context.Context, *Account, string) cindyBalanceProbeOutcome {
 		probeCalls++
-		if probeCalls == 1 {
-			identityRepo.rotate(8, "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
-		}
 		return cindyBalanceProbeExhausted
 	})
 
 	svc.ObserveCindyHealthSignal(context.Background(), account, CindyHealthSignalExactBudget)
-	require.Eventually(t, func() bool {
-		store.mu.Lock()
-		defer store.mu.Unlock()
-		return len(store.cleared) == 1
-	}, time.Second, 10*time.Millisecond)
 
-	_, finalized := repo.snapshot()
-	require.Empty(t, finalized)
-	require.Equal(t, 1, probeCalls, "rotation between Luna and Terra must stop the old generation")
+	persisted := repo.terminalEpisodes()
+	require.Len(t, persisted, 1)
+	require.Equal(t, account.ID, persisted[0].AccountID)
+	require.Equal(t, identity.Generation, persisted[0].Generation)
+	require.NotEmpty(t, persisted[0].EpisodeID)
+	require.Zero(t, probeCalls)
+}
+
+func TestCindyHealthRejectsABAStaleResponseBeforeRuntimeBlock(t *testing.T) {
+	account, identity := newHealthTestAccount(t, 9107, "same-key")
+	account.CindyCredentialGeneration = 4
+	identity.Generation = 6
+	repo := &cindyHealthRepositoryStub{}
+	runtime := &cindyHealthRuntimeStub{}
+	svc, _ := newHealthTestService(t, account, identity, repo, &cindyHealthEpisodeStoreStub{}, runtime, nil)
+
+	svc.ObserveCindyHealthSignal(context.Background(), account, CindyHealthSignalBanned)
+
+	require.Empty(t, repo.terminalEpisodes())
+	runtime.mu.Lock()
+	require.Empty(t, runtime.blocks)
+	runtime.mu.Unlock()
+}
+
+func TestCindyHealthTerminalPersistenceFailureRetainsPendingAndRetries(t *testing.T) {
+	account, identity := newHealthTestAccount(t, 9108, "retry-key")
+	repo := &cindyHealthRepositoryStub{persistErrors: []error{errors.New("db unavailable"), errors.New("db still unavailable"), nil}}
+	store := &cindyHealthEpisodeStoreStub{}
+	runtime := &cindyHealthRuntimeStub{}
+	svc, _ := newHealthTestService(t, account, identity, repo, store, runtime, nil)
+
+	svc.ObserveCindyHealthSignal(context.Background(), account, CindyHealthSignalBanned)
+	store.mu.Lock()
+	require.Len(t, store.pending, 1)
+	store.mu.Unlock()
+
+	for attempts := 0; attempts < 3 && len(repo.terminalEpisodes()) == 0; attempts++ {
+		svc.retryPendingTerminals()
+	}
+	require.Len(t, repo.terminalEpisodes(), 1)
+	store.mu.Lock()
+	require.Empty(t, store.pending)
+	store.mu.Unlock()
+}
+
+func TestCindyHealthRestartRecoversDurablePendingWithoutAutomaticProbe(t *testing.T) {
+	account, identity := newHealthTestAccount(t, 9109, "restart-key")
+	store := &cindyHealthEpisodeStoreStub{pending: map[int64]CindyHealthEpisode{
+		account.ID: {
+			AccountID: account.ID, Generation: identity.Generation, EpisodeID: "restart-episode",
+			Fingerprint: identity.Fingerprint, Status: CindyHealthStatusBanned,
+			Evidence: CindyHealthEvidenceUnauthorized, ObservedAt: time.Now().UTC(),
+		},
+	}}
+	repo := &cindyHealthRepositoryStub{}
+	runtime := &cindyHealthRuntimeStub{}
+	svc, _ := newHealthTestService(t, account, identity, repo, store, runtime, nil)
+
+	svc.retryPendingTerminals()
+
+	require.Len(t, repo.terminalEpisodes(), 1)
+	store.mu.Lock()
+	require.Empty(t, store.pending)
+	store.mu.Unlock()
+}
+
+func TestCindyHealthAppliedFalseRetainsPendingUntilAuthoritativeRetry(t *testing.T) {
+	account, identity := newHealthTestAccount(t, 9110, "cas-retry-key")
+	repo := &cindyHealthRepositoryStub{persistApplied: []bool{false, true}}
+	store := &cindyHealthEpisodeStoreStub{}
+	runtime := &cindyHealthRuntimeStub{}
+	svc, _ := newHealthTestService(t, account, identity, repo, store, runtime, nil)
+
+	svc.ObserveCindyHealthSignal(context.Background(), account, CindyHealthSignalExactBudget)
+	for attempts := 0; attempts < 3 && len(repo.terminalEpisodes()) == 0; attempts++ {
+		svc.retryPendingTerminals()
+	}
+
+	require.Len(t, repo.terminalEpisodes(), 1)
+	store.mu.Lock()
+	require.Empty(t, store.pending)
+	store.mu.Unlock()
+}
+
+func TestCindyHealthClaimFalseRestoresExistingGenerationScopedBlock(t *testing.T) {
+	account, identity := newHealthTestAccount(t, 9111, "existing-key")
+	existing := CindyHealthEpisode{
+		AccountID: account.ID, Generation: identity.Generation, EpisodeID: "existing-episode",
+		Fingerprint: identity.Fingerprint, Status: CindyHealthStatusBanned,
+		Evidence: CindyHealthEvidenceUnauthorized, ObservedAt: time.Now().UTC(),
+	}
+	store := &cindyHealthEpisodeStoreStub{pending: map[int64]CindyHealthEpisode{account.ID: existing}}
+	gateway := &OpenAIGatewayService{}
+	svc := &CindyHealthService{
+		accountRepo:  &cindyHealthAccountRepoStub{account: account},
+		identityRepo: &cindyHealthIdentityRepoStub{identity: identity},
+		healthRepo:   &cindyHealthRepositoryStub{}, episodeStore: store, runtime: gateway,
+		now: time.Now, ctx: context.Background(), retryWake: make(chan struct{}, 1),
+	}
+
+	svc.ObserveCindyHealthSignal(context.Background(), account, CindyHealthSignalBanned)
+
+	require.True(t, gateway.isOpenAIAccountRuntimeBlockedContext(context.Background(), account))
+}
+
+func TestCindyTerminalPendingHotPathBlocksBeforeRetryHydrationAndClearsStale(t *testing.T) {
+	account, identity := newHealthTestAccount(t, 9112, "hotpath-key")
+	current := CindyHealthEpisode{
+		AccountID: account.ID, Generation: identity.Generation, EpisodeID: "hotpath-current",
+		Fingerprint: identity.Fingerprint, Status: CindyHealthStatusBanned,
+		Evidence: CindyHealthEvidenceUnauthorized, ObservedAt: time.Now().UTC(),
+	}
+	store := &cindyHealthEpisodeStoreStub{pending: map[int64]CindyHealthEpisode{account.ID: current}}
+	gateway := &OpenAIGatewayService{cache: &cindyPendingGatewayCacheStub{cindyHealthEpisodeStoreStub: store}}
+
+	require.True(t, gateway.isOpenAIAccountRequestRuntimeBlockedContext(context.Background(), account, "gpt-5.6-sol"))
+
+	gateway.ClearAccountSchedulingBlock(account.ID)
+	gateway.cindyHealth = &CindyHealthService{
+		accountRepo:  &cindyHealthAccountRepoStub{account: account},
+		identityRepo: &cindyHealthIdentityRepoStub{identity: identity},
+	}
+	stale := current
+	stale.Generation--
+	stale.EpisodeID = "hotpath-stale"
+	store.mu.Lock()
+	store.pending[account.ID] = stale
+	store.mu.Unlock()
+	require.False(t, gateway.isOpenAIAccountRequestRuntimeBlockedContext(context.Background(), account, "gpt-5.6-sol"))
+	store.mu.Lock()
+	require.Empty(t, store.pending)
+	store.mu.Unlock()
+}
+
+func TestCindyTerminalPendingHotPathUsesAuthoritativeGenerationBeforeDeleting(t *testing.T) {
+	cached, _ := newHealthTestAccount(t, 9113, "old-key")
+	cached.CindyCredentialGeneration = 4
+	current, identity := newHealthTestAccount(t, cached.ID, "new-key")
+	current.CindyCredentialGeneration = 6
+	identity.Generation = 6
+	pending := CindyHealthEpisode{
+		AccountID: cached.ID, Generation: 6, EpisodeID: "newer-db-episode",
+		Fingerprint: identity.Fingerprint, Status: CindyHealthStatusBanned,
+		Evidence: CindyHealthEvidenceUnauthorized, ObservedAt: time.Now().UTC(),
+	}
+	store := &cindyHealthEpisodeStoreStub{pending: map[int64]CindyHealthEpisode{cached.ID: pending}}
+	authority := &CindyHealthService{
+		accountRepo:  &cindyHealthAccountRepoStub{account: current},
+		identityRepo: &cindyHealthIdentityRepoStub{identity: identity},
+	}
+	gateway := &OpenAIGatewayService{
+		cache:       &cindyPendingGatewayCacheStub{cindyHealthEpisodeStoreStub: store},
+		cindyHealth: authority,
+	}
+
+	require.True(t, gateway.isOpenAIAccountRequestRuntimeBlockedContext(context.Background(), cached, "gpt-5.6-sol"))
+	store.mu.Lock()
+	require.Len(t, store.pending, 1, "a newer authoritative episode must not be deleted by a stale scheduler snapshot")
+	store.mu.Unlock()
+}
+
+func TestCindyTerminalPendingHotPathReconcilesZeroCachedGenerationToCurrentPending(t *testing.T) {
+	cached, _ := newHealthTestAccount(t, 9115, "current-key")
+	cached.CindyCredentialGeneration = 0
+	current, identity := newHealthTestAccount(t, cached.ID, "current-key")
+	pending := CindyHealthEpisode{
+		AccountID: cached.ID, Generation: identity.Generation, EpisodeID: "current-db-episode",
+		Fingerprint: identity.Fingerprint, Status: CindyHealthStatusBanned,
+		Evidence: CindyHealthEvidenceUnauthorized, ObservedAt: time.Now().UTC(),
+	}
+	store := &cindyHealthEpisodeStoreStub{pending: map[int64]CindyHealthEpisode{cached.ID: pending}}
+	gateway := &OpenAIGatewayService{
+		cache: &cindyPendingGatewayCacheStub{cindyHealthEpisodeStoreStub: store},
+		cindyHealth: &CindyHealthService{
+			accountRepo:  &cindyHealthAccountRepoStub{account: current},
+			identityRepo: &cindyHealthIdentityRepoStub{identity: identity},
+		},
+	}
+
+	require.True(t, gateway.isOpenAIAccountRequestRuntimeBlockedContext(context.Background(), cached, "gpt-5.6-sol"))
+	store.mu.Lock()
+	require.Len(t, store.pending, 1, "a current authoritative episode must survive a zero-generation cache snapshot")
+	store.mu.Unlock()
+}
+
+func TestCindyTerminalPendingHotPathReconcilesZeroCachedGenerationAndClearsAuthoritativeStalePending(t *testing.T) {
+	cached, staleIdentity := newHealthTestAccount(t, 9116, "stale-key")
+	cached.CindyCredentialGeneration = 0
+	current, identity := newHealthTestAccount(t, cached.ID, "current-key")
+	current.CindyCredentialGeneration = 8
+	identity.Generation = 8
+	pending := CindyHealthEpisode{
+		AccountID: cached.ID, Generation: staleIdentity.Generation, EpisodeID: "stale-db-episode",
+		Fingerprint: staleIdentity.Fingerprint, Status: CindyHealthStatusBanned,
+		Evidence: CindyHealthEvidenceUnauthorized, ObservedAt: time.Now().UTC(),
+	}
+	store := &cindyHealthEpisodeStoreStub{pending: map[int64]CindyHealthEpisode{cached.ID: pending}}
+	gateway := &OpenAIGatewayService{
+		cache: &cindyPendingGatewayCacheStub{cindyHealthEpisodeStoreStub: store},
+		cindyHealth: &CindyHealthService{
+			accountRepo:  &cindyHealthAccountRepoStub{account: current},
+			identityRepo: &cindyHealthIdentityRepoStub{identity: identity},
+		},
+	}
+
+	require.False(t, gateway.isOpenAIAccountRequestRuntimeBlockedContext(context.Background(), cached, "gpt-5.6-sol"))
+	store.mu.Lock()
+	require.Empty(t, store.pending, "only authoritative stale evidence may remove the pending episode")
+	store.mu.Unlock()
+}
+
+func TestCindyTerminalPendingHotPathFailsClosedOnRedisReadError(t *testing.T) {
+	account, _ := newHealthTestAccount(t, 9114, "redis-error-key")
+	store := &cindyHealthEpisodeStoreStub{getErr: errors.New("redis unavailable")}
+	gateway := &OpenAIGatewayService{cache: &cindyPendingGatewayCacheStub{cindyHealthEpisodeStoreStub: store}}
+
+	require.True(t, gateway.isOpenAIAccountRequestRuntimeBlockedContext(context.Background(), account, "gpt-5.6-sol"))
 }
 
 func TestCindyHealth403OnlyCreatesFiniteTransientQuarantine(t *testing.T) {

@@ -27,6 +27,14 @@ type gatewayModelsResponseForTest struct {
 	Data   []gatewayModelItemForTest `json:"data"`
 }
 
+var cindyV4PublicIDsForHandlerTest = []string{
+	"claude-opus-4-8", "claude-opus-5", "claude-sonnet-5",
+	"deepseek-v4-flash", "deepseek-v4-flash-vision-exp", "deepseek-v4-pro",
+	"gemini-3-pro-image", "gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.7-flash",
+	"glm-5.2", "glm-5.3", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-image-2",
+	"grok-4.5", "grok-4.6", "hy3", "kimi-k3", "qwen3.8-max", "seed-2.1-pro",
+}
+
 type gatewayModelItemForTest struct {
 	ID                      string                                `json:"id"`
 	Object                  string                                `json:"object"`
@@ -126,11 +134,12 @@ func TestGatewayModels_StrictCindyUsesVerifiedPublicCatalog(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	var got gatewayModelsResponseForTest
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
-	require.Equal(t, service.CindyPublicModelIDs(), modelIDsForTest(got.Data))
+	require.Equal(t, cindyV4PublicIDsForHandlerTest, modelIDsForTest(got.Data))
+	require.Len(t, got.Data, 22)
 	require.NotContains(t, modelIDsForTest(got.Data), "gpt-5.4")
 	require.NotContains(t, modelIDsForTest(got.Data), "openai/gpt-5.6-sol")
-	require.NotContains(t, modelIDsForTest(got.Data), "deepseek-v4-pro")
-	require.NotContains(t, modelIDsForTest(got.Data), "seed-2.1-pro")
+	require.NotContains(t, modelIDsForTest(got.Data), "cindy/web-search")
+	require.NotContains(t, modelIDsForTest(got.Data), "cindy/auto-review")
 	byID := make(map[string]gatewayModelItemForTest, len(got.Data))
 	for _, model := range got.Data {
 		byID[model.ID] = model
@@ -145,7 +154,7 @@ func TestGatewayModels_StrictCindyUsesVerifiedPublicCatalog(t *testing.T) {
 	require.Equal(t, 1000000, byID["claude-opus-4-8"].ContextWindow)
 	require.Equal(t, 1000000, byID["claude-opus-5"].ContextWindow)
 	require.Equal(t, 1000000, byID["claude-sonnet-5"].ContextWindow)
-	require.NotContains(t, byID, "hy3")
+	require.Equal(t, 262144, byID["hy3"].ContextWindow)
 	require.Equal(t, 500000, byID["grok-4.5"].ContextWindow)
 	require.Equal(t, 1000000, byID["glm-5.2"].ContextWindow)
 }
@@ -208,8 +217,8 @@ func TestGatewayModels_CindyGroupDoesNotUnionOrdinaryProviderModels(t *testing.T
 	require.NotContains(t, modelIDs, "ordinary-model")
 	require.NotContains(t, modelIDs, "openai/gpt-5.6-sol")
 	require.NotContains(t, modelIDs, "gpt-5.4")
-	require.NotContains(t, modelIDs, "deepseek-v4-pro")
-	require.NotContains(t, modelIDs, "seed-2.1-pro")
+	require.Contains(t, modelIDs, "deepseek-v4-pro")
+	require.Contains(t, modelIDs, "seed-2.1-pro")
 }
 
 func TestGatewayModelCapabilities_StrictCindyHidesInternalIDs(t *testing.T) {
@@ -231,9 +240,11 @@ func TestGatewayModelCapabilities_StrictCindyHidesInternalIDs(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	var got struct {
-		Object         string `json:"object"`
-		CatalogVersion string `json:"catalog_version"`
-		Data           []struct {
+		Object          string `json:"object"`
+		CatalogVersion  string `json:"catalog_version"`
+		CatalogRevision string `json:"catalog_revision"`
+		CatalogSHA256   string `json:"catalog_sha256"`
+		Data            []struct {
 			ID        string                           `json:"id"`
 			Kind      string                           `json:"kind"`
 			Endpoints []service.CindyEndpoint          `json:"endpoints"`
@@ -243,7 +254,9 @@ func TestGatewayModelCapabilities_StrictCindyHidesInternalIDs(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	require.Equal(t, "list", got.Object)
 	require.Equal(t, service.CindyCapabilityCatalogVersion, got.CatalogVersion)
-	require.NotEmpty(t, got.Data)
+	require.Equal(t, service.CindyModelMetadataSourceRevision, got.CatalogRevision)
+	require.Equal(t, service.CindyModelMetadataSourceSHA256, got.CatalogSHA256)
+	require.Len(t, got.Data, 22)
 	require.NotContains(t, rec.Body.String(), "live_upstream")
 	require.NotContains(t, rec.Body.String(), "registry_id")
 	require.NotContains(t, rec.Body.String(), "openai/gpt-5.6-sol")
@@ -257,15 +270,15 @@ func TestGatewayModelCapabilities_StrictCindyHidesInternalIDs(t *testing.T) {
 			"count_tokens has no independent A/B/C verification yet")
 	}
 	require.NotContains(t, rec.Body.String(), string(service.CindyEndpointCountTokens))
-	require.Equal(t, []service.CindyEndpoint{service.CindyEndpointMessages}, byID["claude-opus-5"])
-	require.Equal(t, []service.CindyEndpoint{service.CindyEndpointResponses, service.CindyEndpointChatCompletions, service.CindyEndpointMessages}, byID["gpt-5.6-sol"])
-	require.Equal(t, []service.CindyEndpoint{service.CindyEndpointResponses, service.CindyEndpointChatCompletions, service.CindyEndpointMessages}, byID["gpt-5.6-luna"])
+	require.Equal(t, []service.CindyEndpoint{service.CindyEndpointResponses, service.CindyEndpointMessages}, byID["claude-opus-5"])
+	require.Equal(t, []service.CindyEndpoint{service.CindyEndpointResponses, service.CindyEndpointMessages}, byID["gpt-5.6-sol"])
+	require.Equal(t, []service.CindyEndpoint{service.CindyEndpointResponses, service.CindyEndpointMessages}, byID["gpt-5.6-luna"])
 	require.NotContains(t, byID, "cindy/web-search")
 	require.Equal(t, []service.CindyEndpoint{service.CindyEndpointImagesGenerate}, byID["gpt-image-2"])
 	require.Equal(t, []string{"1024x1024"}, byControls["gpt-image-2"].Generation.Sizes)
 	require.Equal(t, 1, byControls["gpt-image-2"].Generation.MaxOutputCount)
 	require.Nil(t, byControls["gpt-image-2"].Edit)
-	require.NotContains(t, byID, "seed-2.1-pro")
+	require.Equal(t, []service.CindyEndpoint{service.CindyEndpointResponses, service.CindyEndpointMessages}, byID["seed-2.1-pro"])
 }
 
 func TestGatewayModelCapabilities_MixedGroupReturnsLocalFeatureGate404(t *testing.T) {

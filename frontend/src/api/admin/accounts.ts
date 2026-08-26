@@ -47,13 +47,14 @@ export interface AccountListFilters {
   folder?: string
   tags?: string
   account_ids?: string
-  group?: string
+  group_id?: string
   search?: string
   privacy_mode?: string
   lite?: string
   include_scheduler_score?: string
   cindy_only?: string
   cindy_balance_status?: 'insufficient'
+  cindy_health_status?: 'banned'
   sort_by?: string
   sort_order?: 'asc' | 'desc'
 }
@@ -631,7 +632,8 @@ export async function exportData(options?: {
   } else if (options?.filters) {
     const exportFilterKeys: Array<keyof AccountListFilters> = [
       'platform', 'type', 'status', 'platforms', 'types', 'statuses', 'plans', 'proxies',
-      'folders', 'folder', 'tags', 'account_ids', 'group', 'privacy_mode', 'search', 'sort_by', 'sort_order'
+      'folders', 'folder', 'tags', 'account_ids', 'group_id', 'privacy_mode', 'cindy_only',
+      'cindy_balance_status', 'cindy_health_status', 'search', 'sort_by', 'sort_order'
     ]
     for (const key of exportFilterKeys) {
       const value = options.filters[key]
@@ -649,16 +651,35 @@ export async function importData(payload: {
   data: AdminDataPayload
   skip_default_group_bind?: boolean
   uniform_settings?: AdminDataImportUniformSettings
+  target_group_id?: number | null
 }): Promise<AccountJob> {
   const { data } = await apiClient.post<AccountJob>(
     '/admin/accounts/data',
     {
       data: payload.data,
       skip_default_group_bind: payload.skip_default_group_bind,
-      uniform_settings: payload.uniform_settings
+      uniform_settings: payload.uniform_settings,
+      ...(payload.target_group_id == null ? {} : { target_group_id: payload.target_group_id })
     },
     accountJobIdempotencyHeaders('account_import')
   )
+  return data
+}
+
+export interface AccountImportPreview {
+  create_count: number
+  update_count: number
+  reject_count: number
+  items: Array<{ index: number; name: string; action: string; account_id?: number; warnings?: string[]; code?: string; message?: string; error?: string }>
+}
+
+export async function previewImportData(payload: {
+  data: AdminDataPayload
+  skip_default_group_bind?: boolean
+  uniform_settings?: AdminDataImportUniformSettings
+  target_group_id?: number | null
+}): Promise<AccountImportPreview> {
+  const { data } = await apiClient.post<AccountImportPreview>('/admin/accounts/data/preview', payload)
   return data
 }
 
@@ -827,6 +848,19 @@ export interface CindyInsufficientDeletePreview {
 
 export async function previewCindyInsufficientDeletion(): Promise<CindyInsufficientDeletePreview> {
   const { data } = await apiClient.get<CindyInsufficientDeletePreview>('/admin/accounts/cindy/insufficient-delete-preview')
+  return data
+}
+
+export async function previewCindyBannedDeletion(): Promise<CindyInsufficientDeletePreview> {
+  const { data } = await apiClient.get<CindyInsufficientDeletePreview>('/admin/accounts/cindy/banned-delete-preview')
+  return data
+}
+
+export async function deleteCindyBanned(preview: CindyInsufficientDeletePreview): Promise<AccountJob> {
+  const { data } = await apiClient.post<AccountJob>('/admin/accounts/cindy/delete-banned', {
+    expected_count: preview.count,
+    fingerprint: preview.fingerprint
+  }, accountJobIdempotencyHeaders('cindy_banned_cleanup'))
   return data
 }
 
@@ -1125,6 +1159,7 @@ export const accountsAPI = {
   syncFromCrs,
   exportData,
   importData,
+  previewImportData,
   listFolders,
   createFolder,
   updateFolder,
@@ -1144,6 +1179,8 @@ export const accountsAPI = {
   batchDelete,
   previewCindyInsufficientDeletion,
   deleteCindyInsufficient,
+  previewCindyBannedDeletion,
+  deleteCindyBanned,
   clearCindyBalanceInsufficient,
   batchClearError,
   batchRefresh,

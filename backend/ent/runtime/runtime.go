@@ -270,8 +270,14 @@ func init() {
 	accountDescSchedulable := accountFields[20].Descriptor()
 	// account.DefaultSchedulable holds the default value on creation for the schedulable field.
 	account.DefaultSchedulable = accountDescSchedulable.Default.(bool)
+	// accountDescCindyCredentialGeneration is the schema descriptor for cindy_credential_generation field.
+	accountDescCindyCredentialGeneration := accountFields[23].Descriptor()
+	// account.DefaultCindyCredentialGeneration holds the default value on creation for the cindy_credential_generation field.
+	account.DefaultCindyCredentialGeneration = accountDescCindyCredentialGeneration.Default.(int64)
+	// account.CindyCredentialGenerationValidator is a validator for the "cindy_credential_generation" field. It is called by the builders before save.
+	account.CindyCredentialGenerationValidator = accountDescCindyCredentialGeneration.Validators[0].(func(int64) error)
 	// accountDescSessionWindowStatus is the schema descriptor for session_window_status field.
-	accountDescSessionWindowStatus := accountFields[29].Descriptor()
+	accountDescSessionWindowStatus := accountFields[31].Descriptor()
 	// account.SessionWindowStatusValidator is a validator for the "session_window_status" field. It is called by the builders before save.
 	account.SessionWindowStatusValidator = accountDescSessionWindowStatus.Validators[0].(func(string) error)
 	accountfolderMixin := schema.AccountFolder{}.Mixin()

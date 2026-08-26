@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -78,6 +79,9 @@ func (r *accountJobCindyMutationRunner) Run(
 		current.ProviderProfile != service.ProviderProfileCindyLaxaV1 {
 		return nil, service.ErrCindyAccountRequired
 	}
+	if err = claimCindyDeviceIdentity(ctx, txClient, current); err != nil {
+		return nil, err
+	}
 	normalizedURL, err := service.NormalizeCredentialIdentityBaseURL(
 		service.ProviderProfileCindyLaxaV1, current.GetCredential("base_url"),
 	)
@@ -102,12 +106,15 @@ func (r *accountJobCindyMutationRunner) Run(
 		return nil, err
 	}
 	credentialChanged := bindResult != nil && (bindResult.Created || bindResult.Rotated)
+	if bindResult != nil {
+		account.CindyCredentialGeneration = bindResult.Identity.Generation
+	}
 	if credentialChanged {
 		if _, err = txClient.ExecContext(ctx, `DELETE FROM cindy_health_states WHERE account_id = $1`, current.ID); err != nil {
 			return nil, err
 		}
 		if _, err = txClient.ExecContext(ctx, `
-			UPDATE accounts SET cindy_balance_insufficient_at = NULL, updated_at = NOW()
+			UPDATE accounts SET cindy_balance_insufficient_at = NULL, cindy_banned_at = NULL, updated_at = NOW()
 			WHERE id = $1 AND deleted_at IS NULL`, current.ID); err != nil {
 			return nil, err
 		}
@@ -120,6 +127,7 @@ func (r *accountJobCindyMutationRunner) Run(
 	}
 	if credentialChanged {
 		account.CindyBalanceInsufficientAt = nil
+		account.CindyBannedAt = nil
 	}
 	if r.scheduler != nil {
 		cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
@@ -135,6 +143,62 @@ func (r *accountJobCindyMutationRunner) Run(
 		}
 	}
 	return account, nil
+}
+
+func claimCindyDeviceIdentity(ctx context.Context, client *dbent.Client, account *service.Account) error {
+	if client == nil || account == nil || account.ID <= 0 {
+		return errors.New("cindy device identity claim is unavailable")
+	}
+	deviceID := strings.TrimSpace(account.GetExtraString(service.CindyDeviceIDExtraKey))
+	if !service.ValidCindyDeviceID(deviceID) {
+		return errors.New("cindy device identity is invalid")
+	}
+
+	lockRows, err := client.QueryContext(ctx, "SELECT pg_advisory_xact_lock($1)", advisoryLockHash("cindy-device:"+deviceID))
+	if err != nil {
+		return err
+	}
+	for lockRows.Next() {
+	}
+	if err = lockRows.Err(); err != nil {
+		_ = lockRows.Close()
+		return err
+	}
+	if err = lockRows.Close(); err != nil {
+		return err
+	}
+
+	ownerRows, err := client.QueryContext(ctx, `
+		SELECT id FROM accounts
+		WHERE deleted_at IS NULL
+		  AND id <> $1
+		  AND platform = $2
+		  AND wire_platform = $3
+		  AND provider_profile = $4
+		  AND type = $5
+		  AND lower(btrim(credentials->>'base_url')) IN ($6, $7)
+		  AND jsonb_typeof(credentials->'api_key') = 'string'
+		  AND btrim(credentials->>'api_key') <> ''
+		  AND jsonb_typeof(extra->'cindy_device_id') = 'string'
+		  AND btrim(extra->>'cindy_device_id') = $8
+		LIMIT 1
+		FOR UPDATE`,
+		account.ID, service.PlatformCindy, service.WirePlatformOpenAI,
+		service.ProviderProfileCindyLaxaV1, service.AccountTypeAPIKey,
+		"https://api.laxarouter.ai", "https://api.laxarouter.ai/", deviceID,
+	)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = ownerRows.Close() }()
+	if !ownerRows.Next() {
+		return ownerRows.Err()
+	}
+	var ownerID int64
+	if err = ownerRows.Scan(&ownerID); err != nil {
+		return err
+	}
+	return service.ErrCindyDeviceIdentityConflict
 }
 
 func loadCindyAccountJobGroupIDs(ctx context.Context, client *dbent.Client, accountID int64) ([]int64, error) {
@@ -222,7 +286,7 @@ func lockCindyAccountJobTarget(ctx context.Context, client *dbent.Client, accoun
 
 func loadCanonicalCindyAccountForUpdate(ctx context.Context, client *dbent.Client, accountID int64) (*service.Account, error) {
 	rows, err := client.QueryContext(ctx, `
-		SELECT id, name, platform, wire_platform, provider_profile, type, credentials,
+		SELECT id, name, platform, wire_platform, provider_profile, type, credentials, extra,
 		       status, schedulable, updated_at
 		FROM accounts WHERE id = $1 AND deleted_at IS NULL
 		FOR UPDATE`, accountID)
@@ -237,13 +301,16 @@ func loadCanonicalCindyAccountForUpdate(ctx context.Context, client *dbent.Clien
 		return nil, service.ErrAccountNotFound
 	}
 	account := &service.Account{}
-	var credentials []byte
+	var credentials, extra []byte
 	if err = rows.Scan(&account.ID, &account.Name, &account.Platform, &account.WirePlatform,
-		&account.ProviderProfile, &account.Type, &credentials, &account.Status,
+		&account.ProviderProfile, &account.Type, &credentials, &extra, &account.Status,
 		&account.Schedulable, &account.UpdatedAt); err != nil {
 		return nil, err
 	}
 	if err = json.Unmarshal(credentials, &account.Credentials); err != nil {
+		return nil, err
+	}
+	if err = json.Unmarshal(extra, &account.Extra); err != nil {
 		return nil, err
 	}
 	return account, rows.Err()

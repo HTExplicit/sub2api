@@ -27,3 +27,15 @@ func TestMigration231CreatesGenerationBoundSlimHealthState(t *testing.T) {
 		require.NotContains(t, sql, forbidden)
 	}
 }
+
+func TestMigration237AddsGenerationBoundBannedTerminalState(t *testing.T) {
+	raw, err := FS.ReadFile("237_cindy_terminal_health_and_cleanup.sql")
+	require.NoError(t, err)
+	sql := strings.ToLower(string(raw))
+
+	require.Contains(t, sql, "cindy_banned_at")
+	require.Contains(t, sql, "cindy_credential_generation")
+	require.Contains(t, sql, "trg_project_sync_cindy_credential_generation")
+	require.Contains(t, sql, "status in ('quarantined', 'confirmed_exhausted', 'banned')")
+	require.Contains(t, sql, "credential_generation")
+}

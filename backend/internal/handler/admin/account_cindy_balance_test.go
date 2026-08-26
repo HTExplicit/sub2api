@@ -21,6 +21,9 @@ type cindyAdminServiceStub struct {
 	lastExpectedCount   int
 	lastFingerprint     string
 	deleteInvocationCnt int
+	bannedPreview       *service.CindyInsufficientDeletePreview
+	bannedDeleteResult  *service.CindyInsufficientDeleteResult
+	bannedDeleteErr     error
 }
 
 func (s *cindyAdminServiceStub) PreviewCindyInsufficientDeletion(context.Context) (*service.CindyInsufficientDeletePreview, error) {
@@ -34,6 +37,14 @@ func (s *cindyAdminServiceStub) DeleteCindyInsufficient(_ context.Context, expec
 	return s.deleteResult, s.deleteErr
 }
 
+func (s *cindyAdminServiceStub) PreviewCindyBannedDeletion(context.Context) (*service.CindyInsufficientDeletePreview, error) {
+	return s.bannedPreview, nil
+}
+
+func (s *cindyAdminServiceStub) DeleteCindyBanned(context.Context, int, string) (*service.CindyInsufficientDeleteResult, error) {
+	return s.bannedDeleteResult, s.bannedDeleteErr
+}
+
 func setupCindyAccountHandlerRouter(adminSvc *cindyAdminServiceStub) (*gin.Engine, *AccountHandler, *accountJobSubmitRepository) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
@@ -41,7 +52,35 @@ func setupCindyAccountHandlerRouter(adminSvc *cindyAdminServiceStub) (*gin.Engin
 	jobs := attachAccountJobSubmitter(router, handler)
 	router.GET("/api/v1/admin/accounts/cindy/insufficient-delete-preview", handler.PreviewCindyInsufficientDeletion)
 	router.POST("/api/v1/admin/accounts/cindy/delete-insufficient", handler.DeleteCindyInsufficient)
+	router.GET("/api/v1/admin/accounts/cindy/banned-delete-preview", handler.PreviewCindyBannedDeletion)
+	router.POST("/api/v1/admin/accounts/cindy/delete-banned", handler.DeleteCindyBanned)
 	return router, handler, jobs
+}
+
+func TestCindyBannedCleanupUsesSeparateJobWithoutClientAccountIDs(t *testing.T) {
+	adminSvc := &cindyAdminServiceStub{
+		stubAdminService:   newStubAdminService(),
+		bannedPreview:      &service.CindyInsufficientDeletePreview{Count: 1, Fingerprint: "banned-fingerprint"},
+		bannedDeleteResult: &service.CindyInsufficientDeleteResult{DeletedCount: 1},
+	}
+	router, handler, jobs := setupCindyAccountHandlerRouter(adminSvc)
+
+	preview := httptest.NewRecorder()
+	router.ServeHTTP(preview, httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/cindy/banned-delete-preview", nil))
+	require.Equal(t, http.StatusOK, preview.Code)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/cindy/delete-banned",
+		bytes.NewBufferString(`{"expected_count":1,"fingerprint":"banned-fingerprint","account_ids":[999]}`))
+	request.Header.Set("Content-Type", "application/json")
+	setAccountJobTestIdempotencyKey(request)
+	router.ServeHTTP(recorder, request)
+	require.Equal(t, http.StatusAccepted, recorder.Code)
+	var payload map[string]any
+	params := requireSubmittedAccountJob(t, jobs, service.AccountJobKindCindyBannedCleanup, &payload)
+	require.NotContains(t, params.PayloadCipher, "account_ids")
+	results := executeSubmittedAccountJobItems(handler, params)
+	require.Equal(t, service.AccountJobItemStatusSucceeded, results[0].Status)
 }
 
 func TestCindyInsufficientDeletePreviewAndDeleteDoNotAcceptAccountIDs(t *testing.T) {
@@ -104,5 +143,5 @@ func TestCindyInsufficientDeleteJobFailsWhenCandidateSetChanged(t *testing.T) {
 	params := requireSubmittedAccountJob(t, jobs, service.AccountJobKindCindyConfirmedCleanup, &payload)
 	results := executeSubmittedAccountJobItems(handler, params)
 	require.Equal(t, service.AccountJobItemStatusFailed, results[0].Status)
-	require.Equal(t, "cleanup_failed", results[0].ErrorCode)
+	require.Equal(t, "cindy_cleanup_target_changed", results[0].ErrorCode)
 }

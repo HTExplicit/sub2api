@@ -268,6 +268,7 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 		Schedulable:                a.Schedulable,
 		IsCindy:                    service.IsCindyAPIKeyAccount(a.Platform, a.Type, a.Credentials),
 		CindyBalanceInsufficient:   a.CindyBalanceInsufficientAt != nil,
+		CindyBanned:                a.CindyBannedAt != nil,
 		CindyBalanceProbeJobID:     a.CindyBalanceProbeJobID,
 		CindyBalanceProbeOutcome:   a.CindyBalanceProbeOutcome,
 		CindyBalanceProbeCheckedAt: a.CindyBalanceProbeCheckedAt,

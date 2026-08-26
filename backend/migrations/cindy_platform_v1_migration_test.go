@@ -96,3 +96,92 @@ func TestMigration235RestrictsLedgerReplayToLifecycleExcludedRows(t *testing.T) 
 		require.Contains(t, contents, "TestMigration235PreservesMixedOpenAIGroupsAfterCanonicalReplay")
 	}
 }
+
+func TestMigration236DefinesManagedCindyChannelAndDurableInvalidation(t *testing.T) {
+	matches, err := fs.Glob(FS, "236_*.sql")
+	require.NoError(t, err)
+	require.Equal(t, []string{"236_bind_strict_cindy_groups_to_catalog_channel.sql"}, matches)
+
+	raw, err := FS.ReadFile(matches[0])
+	require.NoError(t, err)
+	sql := strings.ToLower(string(raw))
+
+	for _, fragment := range []string{
+		"set local lock_timeout = '5s'",
+		"set local statement_timeout = '60s'",
+		"lock table groups, accounts, account_groups",
+		"cindy_catalog_managed",
+		"cindy_laxa_v1",
+		"fallback_group_id_on_invalid_request is null",
+		"join accounts strict_member",
+		"insert into channel_groups",
+		"insert into scheduler_outbox",
+		"enqueue_group_api_key_auth_cache_invalidations",
+		"trg_groups_cindy_channel_topology",
+		"trg_accounts_cindy_identity_auth_cache_invalidation",
+		"after update of platform, wire_platform, provider_profile, type, credentials, status, deleted_at on accounts",
+		"old.fallback_group_id_on_invalid_request is not distinct from new.fallback_group_id_on_invalid_request",
+		"channel_account_stats_pricing_rules",
+		"guard_managed_cindy_channel",
+		"raise exception",
+	} {
+		require.Contains(t, sql, fragment)
+	}
+	require.NotRegexp(t, `where\s+g\.id\s*=\s*\d+`, sql)
+	require.NotContains(t, sql, "platform = 'openai' and cmp.platform = 'openai'")
+	require.NotContains(t, sql, "gpt-5.6")
+	require.NotContains(t, sql, "insert into channel_model_pricing")
+}
+
+func TestMigration236PreservesCompleteGroupAuthInvalidationCoverage(t *testing.T) {
+	raw, err := FS.ReadFile("236_bind_strict_cindy_groups_to_catalog_channel.sql")
+	require.NoError(t, err)
+	sql := strings.ToLower(string(raw))
+
+	for _, field := range []string{
+		"status", "is_exclusive", "allow_image_generation", "platform",
+		"subscription_type", "rate_multiplier", "peak_rate_enabled", "peak_start",
+		"peak_end", "peak_rate_multiplier", "profit_control_enabled",
+		"profit_min_margin", "profit_safety_buffer", "deleted_at",
+		"wire_platform", "provider_profile", "fallback_group_id",
+		"fallback_group_id_on_invalid_request",
+	} {
+		require.Contains(t, sql,
+			"old."+field+" is not distinct from new."+field,
+			"missing durable group auth invalidation field %s", field)
+	}
+	require.Contains(t, sql, "after update or delete on groups")
+	require.NotContains(t, sql, "create trigger trg_groups_auth_cache_invalidation\nafter update of")
+}
+
+func TestMigration236TrimsReservedManagedChannelNames(t *testing.T) {
+	raw, err := FS.ReadFile("236_bind_strict_cindy_groups_to_catalog_channel.sql")
+	require.NoError(t, err)
+	sql := strings.ToLower(string(raw))
+
+	require.Contains(t, sql, "lower(btrim(c.name)) = lower('cindy catalog')")
+	require.Contains(t, sql, "old_reserved := lower(btrim(old.name)) = lower('cindy catalog')")
+	require.Contains(t, sql, "new_reserved := lower(btrim(new.name)) = lower('cindy catalog')")
+	require.NotContains(t, sql, "lower(c.name) = lower('cindy catalog')")
+}
+
+func TestMigration236IntegrationFixtureIncludesGroupAuthTriggerColumns(t *testing.T) {
+	raw, err := os.ReadFile("cindy_channel_binding_migration_integration_test.go")
+	require.NoError(t, err)
+	fixture := strings.ToLower(string(raw))
+
+	for _, column := range []string{
+		"allow_image_generation boolean not null default false",
+		"subscription_type varchar(20) not null default 'standard'",
+		"rate_multiplier decimal(10, 4) not null default 1.0",
+		"peak_rate_enabled boolean not null default false",
+		"peak_start varchar(5) not null default ''",
+		"peak_end varchar(5) not null default ''",
+		"peak_rate_multiplier decimal(10,4) not null default 1.0",
+		"profit_control_enabled boolean not null default false",
+		"profit_min_margin decimal(10,4) not null default 0",
+		"profit_safety_buffer decimal(10,4) not null default 0",
+	} {
+		require.Contains(t, fixture, column)
+	}
+}

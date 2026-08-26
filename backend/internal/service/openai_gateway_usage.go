@@ -450,8 +450,10 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		quotaPlatform = PlatformFromAPIKey(apiKey)
 	}
 
+	var applied bool
 	billingErr := func() error {
-		_, err := applyUsageBilling(ctx, requestID, usageLog, &postUsageBillingParams{
+		var err error
+		applied, err = applyUsageBilling(ctx, requestID, usageLog, &postUsageBillingParams{
 			Cost:                  cost,
 			User:                  user,
 			APIKey:                apiKey,
@@ -470,6 +472,14 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		usageLog.ActualCost = 0
 		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
 		return billingErr
+	}
+	if applied {
+		if s.usageCache != nil && account != nil {
+			s.usageCache.InvalidateAccount(account.ID)
+		}
+		if s.usageCommitObserver != nil && account != nil {
+			s.usageCommitObserver(account.ID)
+		}
 	}
 	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
 
@@ -534,7 +544,7 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 		pricePerCall := webSearchPricePerCallFromAPIKey(apiKey)
 		if pricePerCall == nil && CindyCapabilityCatalogFeatureEnabled() && account != nil &&
 			IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-			CindyModelUsesExplicitZeroPrice(billingModel) {
+			(CindyModelUsesExplicitZeroPrice(billingModel) || strings.TrimSpace(billingModel) == CindyWebSearchModel) {
 			zeroPrice := 0.0
 			pricePerCall = &zeroPrice
 		}
@@ -692,7 +702,7 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageTokenCost(
 	}
 	if shouldUseCindyTextPricing(account, billingModel) {
 		longContextBillingEnabled := longContextBillingGate != nil && *longContextBillingGate
-		return calculateCindyCatalogTextCost(s.billingService, billingModel, tokens, multiplier, longContextBillingEnabled)
+		return calculateCindyCatalogTextCost(s.billingService, billingModel, tokens, multiplier, serviceTier, longContextBillingEnabled)
 	}
 	if s.resolver != nil && apiKey.Group != nil {
 		gid := apiKey.Group.ID
@@ -825,15 +835,29 @@ func (s *OpenAIGatewayService) calculateCindyCatalogImageCost(
 	if result == nil || result.ImageCount <= 0 {
 		return &CostBreakdown{BillingMode: string(BillingModeImage)}, nil
 	}
-	outputPricePerImage := pricing.OutputCostPerImage1KOr2K
+	outputPricePerImage := pricing.OutputCostPerImage
+	if outputPricePerImage <= 0 {
+		outputPricePerImage = pricing.OutputCostPerImage1KOr2K
+	}
 	if NormalizeImageBillingTierOrDefault(result.ImageSize) == ImageBillingSize4K {
-		outputPricePerImage = pricing.OutputCostPerImage4K
+		if pricing.OutputCostPerImage4K > 0 {
+			outputPricePerImage = pricing.OutputCostPerImage4K
+		}
 	}
 	if tokens.ImageOutputTokens > 0 && pricing.OutputCostPerImageToken <= 0 {
 		return nil, fmt.Errorf("%w for strict Cindy image output tokens: %s", ErrModelPricingUnavailable, billingModel)
 	}
+	if tokens.ImageInputTokens > 0 && pricing.InputCostPerImageToken <= 0 {
+		return nil, fmt.Errorf("%w for strict Cindy image input tokens: %s", ErrModelPricingUnavailable, billingModel)
+	}
+	if tokens.CacheReadTokens > 0 && pricing.CacheReadInputTokenCost <= 0 {
+		return nil, fmt.Errorf("%w for strict Cindy image cache-read tokens: %s", ErrModelPricingUnavailable, billingModel)
+	}
 	if tokens.ImageOutputTokens <= 0 && outputPricePerImage <= 0 {
 		return nil, fmt.Errorf("%w for strict Cindy image output units: %s", ErrModelPricingUnavailable, billingModel)
+	}
+	if result.ImageInputCount > 0 && tokens.ImageInputTokens <= 0 && pricing.InputCostPerImage <= 0 {
+		return nil, fmt.Errorf("%w for strict Cindy image input units: %s", ErrModelPricingUnavailable, billingModel)
 	}
 
 	breakdown := s.billingService.computeTokenBreakdown(&ModelPricing{

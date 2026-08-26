@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 )
@@ -27,6 +28,88 @@ type cindyHealthCoordinatorRecorder struct {
 	signals   []CindyHealthSignal
 	accounts  []int64
 	successes []int64
+}
+
+// cindyBalanceRecoveryInterleavingCache is shared by default and unit-tagged
+// recovery tests so both build modes exercise the same episode-CAS fixture.
+type cindyBalanceRecoveryInterleavingCache struct {
+	*stubGatewayCache
+	terminalPending  *CindyHealthEpisode
+	afterGet         func()
+	afterClear       func()
+	legacyClearErr   error
+	legacyClearCalls int
+	legacyCleared    bool
+	legacyPending    bool
+}
+
+func (c *cindyBalanceRecoveryInterleavingCache) GetCindyBalancePendingFingerprint(_ context.Context, _ int64) (string, error) {
+	if c.legacyPending {
+		return strings.Repeat("f", 64), nil
+	}
+	return "", nil
+}
+
+func (c *cindyBalanceRecoveryInterleavingCache) HasCindyBalancePendingBatch(_ context.Context, accountIDs []int64) (map[int64]bool, error) {
+	result := make(map[int64]bool)
+	if c.legacyPending {
+		for _, accountID := range accountIDs {
+			result[accountID] = true
+		}
+	}
+	return result, nil
+}
+
+func (c *cindyBalanceRecoveryInterleavingCache) ClearCindyBalancePending(_ context.Context, _ int64) error {
+	c.legacyClearCalls++
+	if c.legacyClearErr != nil {
+		return c.legacyClearErr
+	}
+	c.legacyCleared = true
+	c.legacyPending = false
+	return nil
+}
+
+func (c *cindyBalanceRecoveryInterleavingCache) ClearCindyBalancePendingIfFingerprintMatches(
+	ctx context.Context,
+	accountID int64,
+	_ string,
+) error {
+	return c.ClearCindyBalancePending(ctx, accountID)
+}
+
+func (c *cindyBalanceRecoveryInterleavingCache) GetCindyHealthTerminalPending(
+	_ context.Context,
+	_ int64,
+	_ string,
+) (*CindyHealthEpisode, error) {
+	var captured *CindyHealthEpisode
+	if c.terminalPending != nil {
+		episode := *c.terminalPending
+		captured = &episode
+	}
+	if c.afterGet != nil {
+		afterGet := c.afterGet
+		c.afterGet = nil
+		afterGet()
+	}
+	return captured, nil
+}
+
+func (c *cindyBalanceRecoveryInterleavingCache) ClearCindyHealthTerminalPendingIfMatch(
+	_ context.Context,
+	episode CindyHealthEpisode,
+) (bool, error) {
+	current := c.terminalPending
+	if current == nil || current.AccountID != episode.AccountID || current.Generation != episode.Generation ||
+		current.EpisodeID != episode.EpisodeID || current.Fingerprint != episode.Fingerprint || current.Status != episode.Status {
+		return false, nil
+	}
+	c.terminalPending = nil
+	if c.afterClear != nil {
+		c.afterClear()
+	}
+	return true, nil
 }
 
 func (r *cindyHealthCoordinatorRecorder) ObserveCindyHealthSignal(_ context.Context, account *Account, signal CindyHealthSignal) {

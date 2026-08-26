@@ -26,6 +26,14 @@ func (s *adminServiceImpl) ClearCindyBalanceInsufficient(ctx context.Context, id
 	if err != nil {
 		return nil, err
 	}
+	var captured *CindyHealthEpisode
+	manager, managed := s.runtimeBlocker.(CindyHealthTerminalPendingManager)
+	if managed {
+		captured, err = manager.GetCindyHealthTerminalPending(ctx, id, CindyHealthStatusBalanceInsufficient)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if _, err := repo.ClearCindyBalanceInsufficient(ctx, id); err != nil {
 		return nil, err
 	}
@@ -38,8 +46,16 @@ func (s *adminServiceImpl) ClearCindyBalanceInsufficient(ctx context.Context, id
 			slog.Warn("cindy_balance_legacy_pending_clear_failed", "account_id", id, "error", err)
 		}
 	}
-	if s.runtimeBlocker != nil {
-		s.runtimeBlocker.ClearAccountSchedulingBlock(id)
+	if managed && captured != nil {
+		cleared, clearErr := manager.ClearCindyHealthTerminalPendingIfMatch(ctx, *captured)
+		if clearErr != nil {
+			slog.Warn("cindy_balance_terminal_pending_clear_failed", "account_id", id, "error", clearErr)
+		}
+		if clearErr == nil && cleared && s.runtimeBlocker != nil {
+			if episodeClearer, ok := s.runtimeBlocker.(CindyHealthEpisodeRuntimeBlocker); ok {
+				episodeClearer.ClearCindyHealthEpisodeBlock(*captured)
+			}
+		}
 	}
 	return s.accountRepo.GetByID(ctx, id)
 }
@@ -61,10 +77,49 @@ func (s *adminServiceImpl) DeleteCindyInsufficient(ctx context.Context, expected
 	if err != nil {
 		return nil, err
 	}
-	if s.runtimeBlocker != nil {
-		for _, accountID := range result.DeletedAccountIDs {
-			s.runtimeBlocker.ClearAccountSchedulingBlock(accountID)
-		}
-	}
+	s.clearDeletedCindyRuntimeState(ctx, result.DeletedAccountIDs)
 	return result, nil
+}
+
+func (s *adminServiceImpl) cindyBannedRepo() (CindyBannedAccountRepository, error) {
+	repo, ok := s.accountRepo.(CindyBannedAccountRepository)
+	if !ok {
+		return nil, errors.New("cindy banned account repository is not configured")
+	}
+	return repo, nil
+}
+
+func (s *adminServiceImpl) PreviewCindyBannedDeletion(ctx context.Context) (*CindyInsufficientDeletePreview, error) {
+	repo, err := s.cindyBannedRepo()
+	if err != nil {
+		return nil, err
+	}
+	return repo.PreviewCindyBannedDeletion(ctx)
+}
+
+func (s *adminServiceImpl) DeleteCindyBanned(ctx context.Context, expectedCount int, fingerprint string) (*CindyInsufficientDeleteResult, error) {
+	repo, err := s.cindyBannedRepo()
+	if err != nil {
+		return nil, err
+	}
+	result, err := repo.DeleteCindyBanned(ctx, expectedCount, fingerprint)
+	if err != nil {
+		return nil, err
+	}
+	s.clearDeletedCindyRuntimeState(ctx, result.DeletedAccountIDs)
+	return result, nil
+}
+
+func (s *adminServiceImpl) clearDeletedCindyRuntimeState(ctx context.Context, accountIDs []int64) {
+	if s.runtimeBlocker == nil {
+		return
+	}
+	for _, accountID := range accountIDs {
+		if cleaner, ok := s.runtimeBlocker.(CindyHealthStateCleaner); ok {
+			if clearErr := cleaner.ClearAllCindyHealthState(ctx, accountID); clearErr != nil {
+				slog.Warn("cindy_cleanup_health_state_clear_failed", "account_id", accountID, "error", clearErr)
+			}
+		}
+		s.runtimeBlocker.ClearAccountSchedulingBlock(accountID)
+	}
 }

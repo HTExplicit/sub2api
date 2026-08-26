@@ -46,6 +46,8 @@ func TestListModelAvailabilityCandidates_GroupQueryIgnoresTransientState(t *test
 	for _, configuredPredicate := range []string{"group_id", "status", "schedulable", "platform"} {
 		require.Contains(t, whereClause, configuredPredicate)
 	}
+	require.Contains(t, whereClause, "cindy_balance_insufficient_at")
+	require.Contains(t, whereClause, "cindy_banned_at")
 	for _, transientPredicate := range []string{
 		"rate_limit_reset_at",
 		"overload_until",

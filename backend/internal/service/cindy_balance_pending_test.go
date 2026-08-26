@@ -207,26 +207,24 @@ func TestAdminCindyBalanceRecoveryIgnoresLegacyPendingCleanupFailure(t *testing.
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			markedAt := time.Now().UTC()
+			account, identity := newHealthTestAccount(t, 99107, "legacy-pending-cleanup")
+			account.CindyBalanceInsufficientAt = &markedAt
+			episode := CindyHealthEpisode{
+				AccountID: account.ID, Generation: identity.Generation, EpisodeID: "legacy-pending-episode",
+				Fingerprint: identity.Fingerprint, Status: CindyHealthStatusBalanceInsufficient,
+				Evidence: CindyHealthEvidenceExactBudget, ObservedAt: markedAt,
+			}
 			repo := &cindyBalanceAdminRepoStub{
 				accountRepoStubForClearAccountError: accountRepoStubForClearAccountError{
-					account: &Account{
-						ID:                         99107,
-						Platform:                   PlatformCindy,
-						WirePlatform:               WirePlatformOpenAI,
-						ProviderProfile:            ProviderProfileCindyLaxaV1,
-						Type:                       AccountTypeAPIKey,
-						Status:                     StatusActive,
-						Schedulable:                true,
-						Credentials:                cindyCredentials(),
-						CindyBalanceInsufficientAt: &markedAt,
-					},
+					account: account,
 				},
 			}
-			store := newCindyBalancePendingStoreStub()
-			store.pending[repo.account.ID] = true
-			store.clearErr = tc.clearErr
-			gateway := &OpenAIGatewayService{cache: store}
-			gateway.BlockAccountScheduling(repo.account, time.Time{}, "cindy_balance_insufficient")
+			cache := &cindyBalanceRecoveryInterleavingCache{
+				stubGatewayCache: &stubGatewayCache{}, terminalPending: &episode,
+				legacyClearErr: tc.clearErr, legacyPending: true,
+			}
+			gateway := &OpenAIGatewayService{cache: cache}
+			require.True(t, gateway.BlockCindyHealthEpisode(repo.account, episode, "cindy_balance_insufficient"))
 			svc := &adminServiceImpl{accountRepo: repo, runtimeBlocker: gateway}
 
 			updated, err := svc.ClearCindyBalanceInsufficient(context.Background(), repo.account.ID)
@@ -234,7 +232,9 @@ func TestAdminCindyBalanceRecoveryIgnoresLegacyPendingCleanupFailure(t *testing.
 			require.NoError(t, err)
 			require.Nil(t, updated.CindyBalanceInsufficientAt)
 			require.False(t, gateway.isOpenAIAccountRuntimeBlocked(updated))
-			require.Equal(t, tc.clearErr != nil, store.isPending(repo.account.ID))
+			require.Equal(t, 1, cache.legacyClearCalls)
+			require.Equal(t, tc.clearErr == nil, cache.legacyCleared)
+			require.Equal(t, tc.clearErr != nil, cache.legacyPending)
 		})
 	}
 }

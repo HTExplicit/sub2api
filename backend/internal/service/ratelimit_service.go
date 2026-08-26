@@ -151,10 +151,6 @@ func (s *RateLimitService) notifyAccountSchedulingBlockCleared(accountID int64) 
 	s.runtimeBlocker.ClearAccountSchedulingBlock(accountID)
 }
 
-func (s *RateLimitService) blockCindyBalanceRuntime(account *Account) {
-	s.notifyAccountSchedulingBlocked(account, time.Time{}, "cindy_balance_insufficient")
-}
-
 // ApplyAccountSchedulingThreshold evaluates admin-configured per-platform
 // utilization thresholds and, when breached, parks the account as temp-
 // unschedulable until the winning window resets. Returns true when the account

@@ -51,6 +51,10 @@ type Account struct {
 	Schedulable bool
 	// CindyBalanceInsufficientAt is set after recognized Cindy budget exhaustion.
 	CindyBalanceInsufficientAt *time.Time
+	// CindyBannedAt is the durable projection of a generation-bound strict Cindy 401 terminal state.
+	CindyBannedAt *time.Time
+	// CindyCredentialGeneration identifies the exact active credential revision carried by this account snapshot.
+	CindyCredentialGeneration int64
 	// The following presentation-only fields are hydrated from durable manual
 	// balance probe items for admin account list responses.
 	CindyBalanceProbeJobID     *int64
@@ -216,7 +220,7 @@ func (a *Account) IsSchedulable() bool {
 	if !a.IsActive() || !a.Schedulable {
 		return false
 	}
-	if a.CindyBalanceInsufficientAt != nil {
+	if a.CindyBalanceInsufficientAt != nil || a.CindyBannedAt != nil {
 		return false
 	}
 	now := time.Now()

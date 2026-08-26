@@ -28,8 +28,27 @@ type CindyInsufficientDeletePreview struct {
 }
 
 type CindyInsufficientDeleteResult struct {
-	DeletedCount      int     `json:"deleted_count"`
-	DeletedAccountIDs []int64 `json:"-"`
+	DeletedCount          int     `json:"deleted_count"`
+	DependentDeletedCount int     `json:"dependent_deleted_count"`
+	DeletedAccountIDs     []int64 `json:"-"`
+}
+
+type CindyBannedAccountRepository interface {
+	PreviewCindyBannedDeletion(ctx context.Context) (*CindyInsufficientDeletePreview, error)
+	DeleteCindyBanned(ctx context.Context, expectedCount int, fingerprint string) (*CindyInsufficientDeleteResult, error)
+}
+
+type CindyHealthStateCleaner interface {
+	ClearAllCindyHealthState(ctx context.Context, accountID int64) error
+}
+
+type CindyHealthTerminalPendingManager interface {
+	GetCindyHealthTerminalPending(ctx context.Context, accountID int64, status string) (*CindyHealthEpisode, error)
+	ClearCindyHealthTerminalPendingIfMatch(ctx context.Context, episode CindyHealthEpisode) (bool, error)
+}
+
+type CindyBalanceRuntimeClearer interface {
+	ClearCindyBalanceRuntimeBlock(accountID int64)
 }
 
 // CindyBalanceSignal identifies the exact structured Cindy budget signal that

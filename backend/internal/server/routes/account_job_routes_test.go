@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAccountJobRoutesExposeSlimContractWithoutImportPreview(t *testing.T) {
+func TestAccountJobRoutesExposeImportPreviewAndJobContract(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	adminAccount := adminhandler.NewAccountHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
@@ -33,12 +33,11 @@ func TestAccountJobRoutesExposeSlimContractWithoutImportPreview(t *testing.T) {
 		http.MethodGet + " /api/v1/admin/account-jobs/:id/items",
 		http.MethodPost + " /api/v1/admin/account-jobs/:id/cancel",
 		http.MethodPost + " /api/v1/admin/account-jobs/:id/retry-failed",
+		http.MethodPost + " /api/v1/admin/accounts/data/preview",
 		http.MethodPost + " /api/v1/admin/accounts/duplicates/review",
 		http.MethodPost + " /api/v1/admin/accounts/duplicates/merge",
 	} {
 		_, ok := registered[expected]
 		require.True(t, ok, expected)
 	}
-	_, previewRegistered := registered[http.MethodPost+" /api/v1/admin/accounts/data/preview"]
-	require.False(t, previewRegistered)
 }

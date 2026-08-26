@@ -126,9 +126,24 @@ type UsageCache struct {
 	grokProbeCache    sync.Map           // accountID -> last billing probe attempt
 }
 
+// UsageCommitObserver runs only after the billing CAS confirms this process
+// owns the committed usage row.
+type UsageCommitObserver func(accountID int64)
+
 // NewUsageCache 创建 UsageCache 实例
 func NewUsageCache() *UsageCache {
 	return &UsageCache{}
+}
+
+// InvalidateAccount drops persisted usage snapshots after a successful commit.
+// It is intentionally account-scoped so unrelated account caches remain warm.
+func (c *UsageCache) InvalidateAccount(accountID int64) {
+	if c == nil || accountID <= 0 {
+		return
+	}
+	c.windowStatsCache.Delete(accountID)
+	c.apiCache.Delete(accountID)
+	c.antigravityCache.Delete(accountID)
 }
 
 // WindowStats 窗口期统计

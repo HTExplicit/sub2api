@@ -62,6 +62,14 @@ func TestClassifyStrictCindyGroupUsesAllNonDeletedMembersAndCindyGroup(t *testin
 			group := mustCreateGroup(t, client, groupInput)
 			for i := range test.members {
 				account := mustCreateAccount(t, client, &test.members[i])
+				if test.name == "disabled ordinary member makes Cindy group mixed" && i == 1 {
+					_, err := client.ExecContext(context.Background(), "SET LOCAL session_replication_role = replica")
+					require.NoError(t, err)
+					mustBindAccountToGroup(t, client, account.ID, group.ID, i+1)
+					_, err = client.ExecContext(context.Background(), "SET LOCAL session_replication_role = origin")
+					require.NoError(t, err)
+					continue
+				}
 				mustBindAccountToGroup(t, client, account.ID, group.ID, i+1)
 			}
 

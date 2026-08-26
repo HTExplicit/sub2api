@@ -294,7 +294,7 @@ func TestAccountHandlerGetAvailableModels_CindyUsesManagedCatalogInsteadOfStored
 		Data []managedAvailableModel `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
-	require.Len(t, resp.Data, 25, "23 fixed catalog candidates and two compatibility aliases")
+	require.Len(t, resp.Data, 24, "22 fixed v4 models and two compatibility aliases")
 
 	byID := make(map[string]managedAvailableModel, len(resp.Data))
 	for _, model := range resp.Data {

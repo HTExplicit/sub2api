@@ -403,6 +403,15 @@ func (s *CindyBalanceProbeService) finalizeRecovery(
 	accountSnapshot *Account,
 	leaseToken string,
 ) bool {
+	var captured *CindyHealthEpisode
+	if s.gateway != nil {
+		var captureErr error
+		captured, captureErr = s.gateway.GetCindyHealthTerminalPending(ctx, reservation.AccountID, CindyHealthStatusBalanceInsufficient)
+		if captureErr != nil {
+			slog.Error("cindy_balance_probe_recovery_terminal_pending_capture_failed", "job_id", reservation.JobID, "error", captureErr)
+			return false
+		}
+	}
 	recovered, err := s.repo.FinalizeRecovery(ctx, reservation, accountSnapshot, leaseToken, s.now().UTC())
 	if err != nil {
 		slog.Error("cindy_balance_probe_recovery_failed", "job_id", reservation.JobID, "error", err)
@@ -417,7 +426,15 @@ func (s *CindyBalanceProbeService) finalizeRecovery(
 				}
 				cancel()
 			}
-			s.gateway.ClearAccountSchedulingBlock(reservation.AccountID)
+			if captured != nil {
+				cleared, clearErr := s.gateway.ClearCindyHealthTerminalPendingIfMatch(ctx, *captured)
+				if clearErr != nil {
+					slog.Error("cindy_balance_probe_recovery_terminal_pending_clear_failed", "job_id", reservation.JobID, "error", clearErr)
+				}
+				if clearErr == nil && cleared {
+					s.gateway.ClearCindyHealthEpisodeBlock(*captured)
+				}
+			}
 		}
 	}
 	return true
@@ -440,11 +457,12 @@ func (s *CindyBalanceProbeService) finalizeExhausted(
 		cindyBalanceProbeConfirmationWindow,
 	)
 	if err == nil && (state == "exhausted" || state == "already_marked") {
-		// The DB marker and item outcome committed atomically. Block locally only
-		// after that commit; scheduler outbox propagation supplies the durable
-		// cross-process invalidation.
-		if s.rateLimit != nil {
-			s.rateLimit.blockCindyBalanceRuntime(account)
+		// The DB marker and item outcome committed atomically. Reuse the shared
+		// health coordinator so the diagnostic terminal block is owned by the
+		// current credential generation/fingerprint episode, just like a request
+		// signal. Do not fall back to the legacy fingerprint-only block.
+		if s.gateway != nil && s.gateway.cindyHealth != nil {
+			s.gateway.cindyHealth.ObserveCindyHealthSignal(ctx, account, CindyHealthSignalExactBudget)
 		}
 		if s.gateway != nil {
 			store, ok := s.gateway.cindyBalancePendingStore()

@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -11,23 +13,18 @@ import (
 )
 
 const (
-	CindyHealthStatusHealthy            = "healthy"
-	CindyHealthStatusQuarantined        = "quarantined"
-	CindyHealthStatusConfirmedExhausted = "confirmed_exhausted"
+	CindyHealthStatusQuarantined         = "quarantined"
+	CindyHealthStatusConfirmedExhausted  = "confirmed_exhausted"
+	CindyHealthStatusBalanceInsufficient = CindyHealthStatusConfirmedExhausted
+	CindyHealthStatusBanned              = "banned"
 
 	CindyHealthEvidenceExactBudget  = "exact_budget"
-	CindyHealthEvidenceDualExact    = "dual_exact_budget"
 	CindyHealthEvidenceForbidden    = "http_403"
-	CindyHealthEvidenceRecovered    = "valid_success"
-	CindyHealthEvidenceInconclusive = "inconclusive"
+	CindyHealthEvidenceUnauthorized = "http_401"
 
 	cindyHealthForbiddenBackoff = 2 * time.Minute
-	cindyHealthConfirmBackoff   = 5 * time.Minute
-	cindyHealthMixedBackoff     = 15 * time.Minute
-	cindyHealthEpisodeTTL       = 5 * time.Minute
-	cindyHealthProbeTimeout     = 20 * time.Second
 	cindyHealthStateTimeout     = 3 * time.Second
-	cindyHealthProbeConcurrency = 2
+	cindyHealthRetryInterval    = time.Second
 )
 
 type CindyHealthSignal uint8
@@ -36,6 +33,7 @@ const (
 	CindyHealthSignalNone CindyHealthSignal = iota
 	CindyHealthSignalExactBudget
 	CindyHealthSignalForbidden
+	CindyHealthSignalBanned
 )
 
 func (s CindyHealthSignal) evidence() string {
@@ -44,15 +42,21 @@ func (s CindyHealthSignal) evidence() string {
 		return CindyHealthEvidenceExactBudget
 	case CindyHealthSignalForbidden:
 		return CindyHealthEvidenceForbidden
+	case CindyHealthSignalBanned:
+		return CindyHealthEvidenceUnauthorized
 	default:
 		return ""
 	}
 }
 
-// ClassifyCindyHealthSignal deliberately has no 401 branch. A first-class
-// invalid-credential state requires an observed provider field contract.
 func ClassifyCindyHealthSignal(account *Account, statusCode int, body []byte) CindyHealthSignal {
-	if account == nil || !hasCanonicalCindyProviderIdentity(account) || !CindyBalanceDetectionFeatureEnabled() {
+	if account == nil || !hasCanonicalCindyProviderIdentity(account) {
+		return CindyHealthSignalNone
+	}
+	if statusCode == http.StatusUnauthorized {
+		return CindyHealthSignalBanned
+	}
+	if !CindyBalanceDetectionFeatureEnabled() {
 		return CindyHealthSignalNone
 	}
 	if ClassifyCindyBalanceInsufficient(account, statusCode, body) != CindyBalanceSignalNone {
@@ -65,13 +69,23 @@ func ClassifyCindyHealthSignal(account *Account, statusCode int, body []byte) Ci
 }
 
 type CindyHealthEpisode struct {
-	AccountID  int64
-	Generation int64
-	EpisodeID  string
+	AccountID   int64
+	Generation  int64
+	EpisodeID   string
+	Fingerprint string
+	Status      string
+	Evidence    string
+	ObservedAt  time.Time
 }
 
 func (e CindyHealthEpisode) valid() bool {
 	return e.AccountID > 0 && e.Generation > 0 && strings.TrimSpace(e.EpisodeID) != "" && len(e.EpisodeID) <= 64
+}
+
+func (e CindyHealthEpisode) terminalValid() bool {
+	return e.valid() && NormalizeCindyCredentialsFingerprint(e.Fingerprint) != "" &&
+		(e.Status == CindyHealthStatusBanned || e.Status == CindyHealthStatusBalanceInsufficient) &&
+		strings.TrimSpace(e.Evidence) != "" && !e.ObservedAt.IsZero()
 }
 
 type CindyHealthFinalization struct {
@@ -83,13 +97,15 @@ type CindyHealthFinalization struct {
 
 type CindyHealthRepository interface {
 	BeginCindyHealthEpisode(ctx context.Context, episode CindyHealthEpisode, evidence string, observedAt, quarantineUntil time.Time) (bool, error)
-	FinalizeCindyHealthEpisode(ctx context.Context, episode CindyHealthEpisode, finalization CindyHealthFinalization) (bool, error)
+	PersistCindyTerminalState(ctx context.Context, episode CindyHealthEpisode, finalization CindyHealthFinalization) (bool, error)
 	RecoverTransientCindyHealth(ctx context.Context, accountID, generation int64, observedAt time.Time) (*CindyHealthEpisode, bool, error)
 }
 
 type CindyHealthEpisodeStore interface {
 	ClaimCindyHealthEpisode(ctx context.Context, episode CindyHealthEpisode, ttl time.Duration) (bool, error)
 	ClearCindyHealthEpisodeIfMatch(ctx context.Context, episode CindyHealthEpisode) error
+	GetCindyHealthEpisodes(ctx context.Context, accountID int64) ([]CindyHealthEpisode, error)
+	ListCindyHealthEpisodes(ctx context.Context, limit int) ([]CindyHealthEpisode, error)
 }
 
 type CindyHealthRuntimeBlocker interface {
@@ -97,9 +113,18 @@ type CindyHealthRuntimeBlocker interface {
 	ClearAccountSchedulingBlock(accountID int64)
 }
 
+type CindyHealthEpisodeRuntimeBlocker interface {
+	BlockCindyHealthEpisode(account *Account, episode CindyHealthEpisode, reason string) bool
+	ClearCindyHealthEpisodeBlock(episode CindyHealthEpisode)
+}
+
 type CindyHealthCoordinator interface {
 	ObserveCindyHealthSignal(ctx context.Context, account *Account, signal CindyHealthSignal)
 	ObserveCindyHealthSuccess(ctx context.Context, account *Account)
+}
+
+type CindyHealthEpisodeAuthority interface {
+	ResolveCindyHealthEpisode(ctx context.Context, episode CindyHealthEpisode) (*Account, bool, error)
 }
 
 type CindyHealthService struct {
@@ -108,15 +133,13 @@ type CindyHealthService struct {
 	healthRepo   CindyHealthRepository
 	episodeStore CindyHealthEpisodeStore
 	runtime      CindyHealthRuntimeBlocker
-	probe        func(context.Context, *Account, string) cindyBalanceProbeOutcome
 	now          func() time.Time
 
-	ctx      context.Context
-	cancel   context.CancelFunc
-	slots    chan struct{}
-	launchMu sync.Mutex
-	stopped  bool
-	wg       sync.WaitGroup
+	ctx           context.Context
+	cancel        context.CancelFunc
+	wg            sync.WaitGroup
+	retryWake     chan struct{}
+	retryInterval time.Duration
 }
 
 func NewCindyHealthService(
@@ -125,46 +148,26 @@ func NewCindyHealthService(
 	healthRepo CindyHealthRepository,
 	episodeStore CindyHealthEpisodeStore,
 	runtime CindyHealthRuntimeBlocker,
-	probe func(context.Context, *Account, string) cindyBalanceProbeOutcome,
 ) *CindyHealthService {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &CindyHealthService{
+	svc := &CindyHealthService{
 		accountRepo: accountRepo, identityRepo: identityRepo, healthRepo: healthRepo,
-		episodeStore: episodeStore, runtime: runtime, probe: probe, now: time.Now,
-		ctx: ctx, cancel: cancel, slots: make(chan struct{}, cindyHealthProbeConcurrency),
+		episodeStore: episodeStore, runtime: runtime, now: time.Now,
+		ctx: ctx, cancel: cancel, retryWake: make(chan struct{}, 1), retryInterval: cindyHealthRetryInterval,
 	}
+	if episodeStore != nil {
+		svc.wg.Add(1)
+		go svc.runTerminalRetryLoop()
+	}
+	return svc
 }
 
 func (s *CindyHealthService) Stop() {
 	if s == nil {
 		return
 	}
-	s.launchMu.Lock()
-	if !s.stopped {
-		s.stopped = true
-		s.cancel()
-	}
-	s.launchMu.Unlock()
+	s.cancel()
 	s.wg.Wait()
-}
-
-func (s *CindyHealthService) launch(fn func()) bool {
-	s.launchMu.Lock()
-	defer s.launchMu.Unlock()
-	if s.stopped {
-		return false
-	}
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-		select {
-		case s.slots <- struct{}{}:
-			defer func() { <-s.slots }()
-			fn()
-		case <-s.ctx.Done():
-		}
-	}()
-	return true
 }
 
 func (s *CindyHealthService) stateContext(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -184,6 +187,9 @@ func (s *CindyHealthService) currentIdentity(ctx context.Context, account *Accou
 		identity.ProviderProfile != ProviderProfileCindyLaxaV1 || identity.AuthType != AccountTypeAPIKey {
 		return nil, false
 	}
+	if account.CindyCredentialGeneration != identity.Generation {
+		return nil, false
+	}
 	normalizedURL, err := NormalizeCredentialIdentityBaseURL(ProviderProfileCindyLaxaV1, account.GetCredential("base_url"))
 	if err != nil || normalizedURL != identity.NormalizedBaseURL {
 		return nil, false
@@ -197,120 +203,212 @@ func (s *CindyHealthService) currentIdentity(ctx context.Context, account *Accou
 	return identity, true
 }
 
+func (s *CindyHealthService) ResolveCindyHealthEpisode(ctx context.Context, episode CindyHealthEpisode) (*Account, bool, error) {
+	if s == nil || s.accountRepo == nil || s.identityRepo == nil || !episode.terminalValid() {
+		return nil, false, errors.New("cindy health authority is unavailable")
+	}
+	account, err := s.accountRepo.GetByID(ctx, episode.AccountID)
+	if err != nil {
+		return nil, false, err
+	}
+	identity, err := s.identityRepo.GetActiveByAccountID(ctx, episode.AccountID)
+	if err != nil || identity == nil || !identity.Active || identity.Generation <= 0 {
+		if err == nil {
+			err = errors.New("active Cindy credential identity is unavailable")
+		}
+		return nil, false, err
+	}
+	if !hasCanonicalCindyProviderIdentity(account) || account.CindyCredentialGeneration != identity.Generation {
+		return nil, false, errors.New("cindy credential generation projection is unavailable")
+	}
+	return account, identity.Generation == episode.Generation && identity.Fingerprint == episode.Fingerprint, nil
+}
+
 func (s *CindyHealthService) ObserveCindyHealthSignal(ctx context.Context, account *Account, signal CindyHealthSignal) {
 	if s == nil || s.healthRepo == nil || s.runtime == nil || signal == CindyHealthSignalNone ||
 		!hasCanonicalCindyProviderIdentity(account) {
 		return
 	}
 	now := s.now().UTC()
-	if account.CindyBalanceInsufficientAt != nil {
-		s.runtime.BlockAccountScheduling(account, time.Time{}, "cindy_balance_insufficient")
-		return
-	}
-	backoff := cindyHealthForbiddenBackoff
-	if signal == CindyHealthSignalExactBudget {
-		backoff = cindyHealthConfirmBackoff
-	}
-	until := now.Add(backoff)
-	s.runtime.BlockAccountScheduling(account, until, "cindy_health_quarantine")
-
 	stateCtx, cancel := s.stateContext(ctx)
 	defer cancel()
 	identity, ok := s.currentIdentity(stateCtx, account)
 	if !ok {
 		return
 	}
-	episode := CindyHealthEpisode{AccountID: account.ID, Generation: identity.Generation, EpisodeID: uuid.NewString()}
+	episode := CindyHealthEpisode{
+		AccountID: account.ID, Generation: identity.Generation, EpisodeID: uuid.NewString(),
+		Fingerprint: identity.Fingerprint, Evidence: signal.evidence(), ObservedAt: now,
+	}
+	if signal == CindyHealthSignalBanned || signal == CindyHealthSignalExactBudget {
+		status := CindyHealthStatusBanned
+		reason := "cindy_banned"
+		if signal == CindyHealthSignalExactBudget {
+			status = CindyHealthStatusBalanceInsufficient
+			reason = "cindy_balance_insufficient"
+		}
+		episode.Status = status
+		if s.episodeStore != nil {
+			claimed, claimErr := s.episodeStore.ClaimCindyHealthEpisode(stateCtx, episode, 0)
+			if claimErr != nil {
+				slog.Error("cindy_terminal_pending_claim_failed", "account_id", account.ID, "generation", identity.Generation, "error", claimErr)
+			} else if !claimed {
+				s.restoreCurrentPendingBlock(stateCtx, account)
+				s.wakeTerminalRetry()
+				return
+			}
+		}
+		if episodeRuntime, supported := s.runtime.(CindyHealthEpisodeRuntimeBlocker); supported {
+			if !episodeRuntime.BlockCindyHealthEpisode(account, episode, reason) {
+				return
+			}
+		} else {
+			s.runtime.BlockAccountScheduling(account, time.Time{}, reason)
+		}
+		applied, err := s.healthRepo.PersistCindyTerminalState(stateCtx, episode, CindyHealthFinalization{
+			Status: status, Evidence: signal.evidence(), ObservedAt: now,
+		})
+		if err != nil || !applied {
+			slog.Error("cindy_terminal_persist_failed", "account_id", account.ID, "generation", identity.Generation, "applied", applied, "error", err)
+			s.wakeTerminalRetry()
+			return
+		}
+		if s.episodeStore != nil {
+			if clearErr := s.episodeStore.ClearCindyHealthEpisodeIfMatch(stateCtx, episode); clearErr != nil {
+				slog.Warn("cindy_terminal_pending_clear_failed", "account_id", account.ID, "generation", identity.Generation, "error", clearErr)
+			}
+		}
+		if applied {
+			if signal == CindyHealthSignalBanned {
+				account.CindyBannedAt = &now
+			} else {
+				account.CindyBalanceInsufficientAt = &now
+			}
+		}
+		return
+	}
+	until := now.Add(cindyHealthForbiddenBackoff)
 	if signal == CindyHealthSignalForbidden {
+		s.runtime.BlockAccountScheduling(account, until, "cindy_health_quarantine")
 		_, _ = s.healthRepo.BeginCindyHealthEpisode(stateCtx, episode, signal.evidence(), now, until)
 		return
 	}
-	if s.episodeStore == nil || s.probe == nil {
-		return
-	}
-	claimed, err := s.episodeStore.ClaimCindyHealthEpisode(stateCtx, episode, cindyHealthEpisodeTTL)
-	if err != nil || !claimed {
-		return
-	}
-	begun, err := s.healthRepo.BeginCindyHealthEpisode(stateCtx, episode, signal.evidence(), now, until)
-	if err != nil || !begun {
-		_ = s.episodeStore.ClearCindyHealthEpisodeIfMatch(stateCtx, episode)
-		return
-	}
-	if !s.launch(func() { s.confirmExactEpisode(episode) }) {
-		_ = s.episodeStore.ClearCindyHealthEpisodeIfMatch(stateCtx, episode)
-	}
 }
 
-func (s *CindyHealthService) loadEpisodeAccount(ctx context.Context, episode CindyHealthEpisode) (*Account, bool) {
-	if s == nil || s.accountRepo == nil || !episode.valid() {
-		return nil, false
+func (s *CindyHealthService) restoreCurrentPendingBlock(ctx context.Context, account *Account) bool {
+	if s == nil || s.episodeStore == nil || s.runtime == nil || account == nil {
+		return false
 	}
-	account, err := s.accountRepo.GetByID(ctx, episode.AccountID)
-	if err != nil || account == nil {
-		return nil, false
+	episodes, err := s.episodeStore.GetCindyHealthEpisodes(ctx, account.ID)
+	if err != nil {
+		slog.Error("cindy_terminal_pending_get_failed", "account_id", account.ID, "error", err)
+		return false
 	}
-	identity, ok := s.currentIdentity(ctx, account)
-	return account, ok && identity.Generation == episode.Generation
+	for _, episode := range episodes {
+		if !episode.terminalValid() || episode.Generation != account.CindyCredentialGeneration {
+			continue
+		}
+		fingerprint, fingerprintErr := AccountCredentialFingerprint(
+			ProviderProfileCindyLaxaV1, AccountTypeAPIKey, "https://api.laxarouter.ai", account.GetCredential("api_key"),
+		)
+		if fingerprintErr != nil || fingerprint != episode.Fingerprint {
+			continue
+		}
+		reason := "cindy_banned"
+		if episode.Status == CindyHealthStatusBalanceInsufficient {
+			reason = "cindy_balance_insufficient"
+		}
+		if episodeRuntime, ok := s.runtime.(CindyHealthEpisodeRuntimeBlocker); ok {
+			return episodeRuntime.BlockCindyHealthEpisode(account, episode, reason)
+		}
+		s.runtime.BlockAccountScheduling(account, time.Time{}, reason)
+		return true
+	}
+	return false
 }
 
-func (s *CindyHealthService) confirmExactEpisode(episode CindyHealthEpisode) {
-	defer func() {
-		clearCtx, cancel := context.WithTimeout(context.Background(), cindyHealthStateTimeout)
-		defer cancel()
-		_ = s.episodeStore.ClearCindyHealthEpisodeIfMatch(clearCtx, episode)
-	}()
-
-	account, ok := s.loadEpisodeAccount(s.ctx, episode)
-	if !ok {
+func (s *CindyHealthService) wakeTerminalRetry() {
+	if s == nil || s.retryWake == nil {
 		return
 	}
-	outcomes := [2]cindyBalanceProbeOutcome{}
-	for index, model := range cindyBalanceProbeModels {
-		probeCtx, cancel := context.WithTimeout(s.ctx, cindyHealthProbeTimeout)
-		outcomes[index] = s.probe(probeCtx, account, model)
-		cancel()
-		if s.ctx.Err() != nil {
-			return
-		}
-		account, ok = s.loadEpisodeAccount(s.ctx, episode)
-		if !ok {
-			return
-		}
-	}
-
-	now := s.now().UTC()
-	finalization := CindyHealthFinalization{
-		Status: CindyHealthStatusQuarantined, Evidence: CindyHealthEvidenceInconclusive,
-		ObservedAt: now,
-	}
-	until := now.Add(cindyHealthMixedBackoff)
-	finalization.QuarantineUntil = &until
-	if outcomes[0] == cindyBalanceProbeSuccess || outcomes[1] == cindyBalanceProbeSuccess {
-		finalization.Status = CindyHealthStatusHealthy
-		finalization.Evidence = CindyHealthEvidenceRecovered
-		finalization.QuarantineUntil = nil
-	} else if outcomes[0] == cindyBalanceProbeExhausted && outcomes[1] == cindyBalanceProbeExhausted {
-		finalization.Status = CindyHealthStatusConfirmedExhausted
-		finalization.Evidence = CindyHealthEvidenceDualExact
-		finalization.QuarantineUntil = nil
-	}
-	stateCtx, cancel := context.WithTimeout(s.ctx, cindyHealthStateTimeout)
-	defer cancel()
-	if _, ok = s.loadEpisodeAccount(stateCtx, episode); !ok {
-		return
-	}
-	applied, err := s.healthRepo.FinalizeCindyHealthEpisode(stateCtx, episode, finalization)
-	if err != nil || !applied {
-		return
-	}
-	switch finalization.Status {
-	case CindyHealthStatusHealthy:
-		s.runtime.ClearAccountSchedulingBlock(episode.AccountID)
-	case CindyHealthStatusConfirmedExhausted:
-		s.runtime.BlockAccountScheduling(account, time.Time{}, "cindy_balance_insufficient")
+	select {
+	case s.retryWake <- struct{}{}:
 	default:
-		s.runtime.BlockAccountScheduling(account, until, "cindy_health_quarantine")
+	}
+}
+
+func (s *CindyHealthService) runTerminalRetryLoop() {
+	defer s.wg.Done()
+	s.retryPendingTerminals()
+	ticker := time.NewTicker(s.retryInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-ticker.C:
+			s.retryPendingTerminals()
+		case <-s.retryWake:
+			s.retryPendingTerminals()
+		}
+	}
+}
+
+func (s *CindyHealthService) retryPendingTerminals() {
+	if s == nil || s.episodeStore == nil || s.accountRepo == nil || s.healthRepo == nil || s.runtime == nil {
+		return
+	}
+	listCtx, cancel := context.WithTimeout(s.ctx, cindyHealthStateTimeout)
+	episodes, err := s.episodeStore.ListCindyHealthEpisodes(listCtx, 100)
+	cancel()
+	if err != nil {
+		slog.Error("cindy_terminal_pending_list_failed", "error", err)
+		return
+	}
+	for _, episode := range episodes {
+		if !episode.terminalValid() {
+			continue
+		}
+		ctx, episodeCancel := context.WithTimeout(s.ctx, cindyHealthStateTimeout)
+		account, getErr := s.accountRepo.GetByID(ctx, episode.AccountID)
+		if getErr != nil || account == nil {
+			if errors.Is(getErr, ErrAccountNotFound) {
+				_ = s.episodeStore.ClearCindyHealthEpisodeIfMatch(ctx, episode)
+			}
+			slog.Warn("cindy_terminal_pending_account_load_failed", "account_id", episode.AccountID, "error", getErr)
+			episodeCancel()
+			continue
+		}
+		identity, current := s.currentIdentity(ctx, account)
+		if !current || identity.Generation != episode.Generation || identity.Fingerprint != episode.Fingerprint {
+			if episodeRuntime, ok := s.runtime.(CindyHealthEpisodeRuntimeBlocker); ok {
+				episodeRuntime.ClearCindyHealthEpisodeBlock(episode)
+			}
+			_ = s.episodeStore.ClearCindyHealthEpisodeIfMatch(ctx, episode)
+			episodeCancel()
+			continue
+		}
+		reason := "cindy_banned"
+		if episode.Status == CindyHealthStatusBalanceInsufficient {
+			reason = "cindy_balance_insufficient"
+		}
+		if episodeRuntime, ok := s.runtime.(CindyHealthEpisodeRuntimeBlocker); ok &&
+			!episodeRuntime.BlockCindyHealthEpisode(account, episode, reason) {
+			episodeCancel()
+			continue
+		}
+		applied, persistErr := s.healthRepo.PersistCindyTerminalState(ctx, episode, CindyHealthFinalization{
+			Status: episode.Status, Evidence: episode.Evidence, ObservedAt: episode.ObservedAt,
+		})
+		if persistErr != nil || !applied {
+			slog.Error("cindy_terminal_retry_failed", "account_id", episode.AccountID, "generation", episode.Generation, "applied", applied, "error", persistErr)
+			episodeCancel()
+			continue
+		}
+		if clearErr := s.episodeStore.ClearCindyHealthEpisodeIfMatch(ctx, episode); clearErr != nil {
+			slog.Warn("cindy_terminal_pending_clear_failed", "account_id", episode.AccountID, "generation", episode.Generation, "error", clearErr)
+		}
+		episodeCancel()
 	}
 }
 

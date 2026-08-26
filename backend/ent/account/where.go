@@ -170,6 +170,16 @@ func CindyBalanceInsufficientAt(v time.Time) predicate.Account {
 	return predicate.Account(sql.FieldEQ(FieldCindyBalanceInsufficientAt, v))
 }
 
+// CindyBannedAt applies equality check predicate on the "cindy_banned_at" field. It's identical to CindyBannedAtEQ.
+func CindyBannedAt(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldCindyBannedAt, v))
+}
+
+// CindyCredentialGeneration applies equality check predicate on the "cindy_credential_generation" field. It's identical to CindyCredentialGenerationEQ.
+func CindyCredentialGeneration(v int64) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldCindyCredentialGeneration, v))
+}
+
 // RateLimitedAt applies equality check predicate on the "rate_limited_at" field. It's identical to RateLimitedAtEQ.
 func RateLimitedAt(v time.Time) predicate.Account {
 	return predicate.Account(sql.FieldEQ(FieldRateLimitedAt, v))
@@ -1333,6 +1343,96 @@ func CindyBalanceInsufficientAtIsNil() predicate.Account {
 // CindyBalanceInsufficientAtNotNil applies the NotNil predicate on the "cindy_balance_insufficient_at" field.
 func CindyBalanceInsufficientAtNotNil() predicate.Account {
 	return predicate.Account(sql.FieldNotNull(FieldCindyBalanceInsufficientAt))
+}
+
+// CindyBannedAtEQ applies the EQ predicate on the "cindy_banned_at" field.
+func CindyBannedAtEQ(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldCindyBannedAt, v))
+}
+
+// CindyBannedAtNEQ applies the NEQ predicate on the "cindy_banned_at" field.
+func CindyBannedAtNEQ(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldNEQ(FieldCindyBannedAt, v))
+}
+
+// CindyBannedAtIn applies the In predicate on the "cindy_banned_at" field.
+func CindyBannedAtIn(vs ...time.Time) predicate.Account {
+	return predicate.Account(sql.FieldIn(FieldCindyBannedAt, vs...))
+}
+
+// CindyBannedAtNotIn applies the NotIn predicate on the "cindy_banned_at" field.
+func CindyBannedAtNotIn(vs ...time.Time) predicate.Account {
+	return predicate.Account(sql.FieldNotIn(FieldCindyBannedAt, vs...))
+}
+
+// CindyBannedAtGT applies the GT predicate on the "cindy_banned_at" field.
+func CindyBannedAtGT(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldGT(FieldCindyBannedAt, v))
+}
+
+// CindyBannedAtGTE applies the GTE predicate on the "cindy_banned_at" field.
+func CindyBannedAtGTE(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldGTE(FieldCindyBannedAt, v))
+}
+
+// CindyBannedAtLT applies the LT predicate on the "cindy_banned_at" field.
+func CindyBannedAtLT(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldLT(FieldCindyBannedAt, v))
+}
+
+// CindyBannedAtLTE applies the LTE predicate on the "cindy_banned_at" field.
+func CindyBannedAtLTE(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldLTE(FieldCindyBannedAt, v))
+}
+
+// CindyBannedAtIsNil applies the IsNil predicate on the "cindy_banned_at" field.
+func CindyBannedAtIsNil() predicate.Account {
+	return predicate.Account(sql.FieldIsNull(FieldCindyBannedAt))
+}
+
+// CindyBannedAtNotNil applies the NotNil predicate on the "cindy_banned_at" field.
+func CindyBannedAtNotNil() predicate.Account {
+	return predicate.Account(sql.FieldNotNull(FieldCindyBannedAt))
+}
+
+// CindyCredentialGenerationEQ applies the EQ predicate on the "cindy_credential_generation" field.
+func CindyCredentialGenerationEQ(v int64) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldCindyCredentialGeneration, v))
+}
+
+// CindyCredentialGenerationNEQ applies the NEQ predicate on the "cindy_credential_generation" field.
+func CindyCredentialGenerationNEQ(v int64) predicate.Account {
+	return predicate.Account(sql.FieldNEQ(FieldCindyCredentialGeneration, v))
+}
+
+// CindyCredentialGenerationIn applies the In predicate on the "cindy_credential_generation" field.
+func CindyCredentialGenerationIn(vs ...int64) predicate.Account {
+	return predicate.Account(sql.FieldIn(FieldCindyCredentialGeneration, vs...))
+}
+
+// CindyCredentialGenerationNotIn applies the NotIn predicate on the "cindy_credential_generation" field.
+func CindyCredentialGenerationNotIn(vs ...int64) predicate.Account {
+	return predicate.Account(sql.FieldNotIn(FieldCindyCredentialGeneration, vs...))
+}
+
+// CindyCredentialGenerationGT applies the GT predicate on the "cindy_credential_generation" field.
+func CindyCredentialGenerationGT(v int64) predicate.Account {
+	return predicate.Account(sql.FieldGT(FieldCindyCredentialGeneration, v))
+}
+
+// CindyCredentialGenerationGTE applies the GTE predicate on the "cindy_credential_generation" field.
+func CindyCredentialGenerationGTE(v int64) predicate.Account {
+	return predicate.Account(sql.FieldGTE(FieldCindyCredentialGeneration, v))
+}
+
+// CindyCredentialGenerationLT applies the LT predicate on the "cindy_credential_generation" field.
+func CindyCredentialGenerationLT(v int64) predicate.Account {
+	return predicate.Account(sql.FieldLT(FieldCindyCredentialGeneration, v))
+}
+
+// CindyCredentialGenerationLTE applies the LTE predicate on the "cindy_credential_generation" field.
+func CindyCredentialGenerationLTE(v int64) predicate.Account {
+	return predicate.Account(sql.FieldLTE(FieldCindyCredentialGeneration, v))
 }
 
 // RateLimitedAtEQ applies the EQ predicate on the "rate_limited_at" field.

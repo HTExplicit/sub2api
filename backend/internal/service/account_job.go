@@ -25,6 +25,7 @@ const (
 	AccountJobKindDuplicateReview        = "account_duplicate_review"
 	AccountJobKindDuplicateMerge         = "account_duplicate_merge"
 	AccountJobKindCindyConfirmedCleanup  = "cindy_confirmed_cleanup"
+	AccountJobKindCindyBannedCleanup     = "cindy_banned_cleanup"
 
 	AccountJobStatusPending            = "pending"
 	AccountJobStatusRunning            = "running"
@@ -438,7 +439,7 @@ func validAccountJobKind(kind string) bool {
 		AccountJobKindBulkUpdate, AccountJobKindBulkTaxonomy, AccountJobKindBatchDelete,
 		AccountJobKindBatchClearError, AccountJobKindBatchRefresh, AccountJobKindBatchRefreshTier,
 		AccountJobKindBatchUpdateCredentials, AccountJobKindDuplicateReview,
-		AccountJobKindDuplicateMerge, AccountJobKindCindyConfirmedCleanup:
+		AccountJobKindDuplicateMerge, AccountJobKindCindyConfirmedCleanup, AccountJobKindCindyBannedCleanup:
 		return true
 	default:
 		return false
@@ -490,19 +491,10 @@ func normalizeAccountJobMetadata(raw json.RawMessage) json.RawMessage {
 	return append(json.RawMessage(nil), raw...)
 }
 
+func NormalizeAccountJobFailure(code string) (string, string) {
+	return NormalizeAccountBusinessFailure(code)
+}
+
 func normalizeAccountJobFailure(code string) (string, string) {
-	messages := map[string]string{
-		"payload_expired":         "account job payload expired",
-		"payload_unavailable":     "account job payload is unavailable",
-		"cancel_check_failed":     "account job cancellation state is unavailable",
-		"item_reservation_failed": "account job items could not be reserved",
-		"item_completion_failed":  "account job item result could not be persisted",
-		"result_redacted":         "account job result was rejected",
-		"execution_failed":        "account job item failed",
-	}
-	code = strings.TrimSpace(code)
-	if message, ok := messages[code]; ok {
-		return code, message
-	}
-	return "execution_failed", messages["execution_failed"]
+	return NormalizeAccountJobFailure(code)
 }

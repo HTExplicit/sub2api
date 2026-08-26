@@ -443,6 +443,8 @@ type OpenAIGatewayService struct {
 	userPlatformQuotaRepo UserPlatformQuotaRepository
 	businessPromptService *BusinessSystemPromptService
 	cindyHealth           CindyHealthCoordinator
+	usageCache            *UsageCache
+	usageCommitObserver   UsageCommitObserver
 	liveAttestation       liveattestation.Provider
 	liveAttestationCipher SecretEncryptor
 
@@ -468,6 +470,7 @@ type OpenAIGatewayService struct {
 	openaiAccountRuntimeBlockLocks      sync.Map // key: int64(accountID), value: *sync.Mutex
 	openaiAccountRuntimeBlockGeneration sync.Map // key: int64(accountID), value: uint64
 	cindyBalanceRuntimeBlockFingerprint sync.Map // key: int64(accountID), value: opaque credential SHA-256
+	cindyHealthRuntimeBlocks            sync.Map // key: int64(accountID), value: cindyHealthRuntimeBlock
 	openaiAccountRuntimeBlockSequence   atomic.Uint64
 	openaiOAuth429RetryStartedAt        sync.Map // key: int64(accountID), value: time.Time
 	grokCredentialMutationLocks         sync.Map // key: int64(accountID), value: *sync.Mutex
@@ -502,6 +505,18 @@ func (s *OpenAIGatewayService) SetCindyHealthCoordinator(coordinator CindyHealth
 		return
 	}
 	s.cindyHealth = coordinator
+}
+
+func (s *OpenAIGatewayService) SetUsageCache(cache *UsageCache) {
+	if s != nil {
+		s.usageCache = cache
+	}
+}
+
+func (s *OpenAIGatewayService) SetUsageCommitObserver(observer UsageCommitObserver) {
+	if s != nil {
+		s.usageCommitObserver = observer
+	}
 }
 
 // NewOpenAIGatewayService creates a new OpenAIGatewayService

@@ -1404,6 +1404,31 @@ func TestOpenAIRuntimeBlock_ClearAccountSchedulingBlock(t *testing.T) {
 	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
 }
 
+func TestCindyBannedRuntimeBlockIsIndefiniteAndGenerationScopedAcrossABA(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := newCindyRateLimitAccount(99101, false)
+	account.CindyCredentialGeneration = 4
+	fingerprint, err := AccountCredentialFingerprint(
+		ProviderProfileCindyLaxaV1, AccountTypeAPIKey, "https://api.laxarouter.ai", account.GetCredential("api_key"),
+	)
+	require.NoError(t, err)
+	episode := CindyHealthEpisode{
+		AccountID: account.ID, Generation: 4, EpisodeID: "episode-generation-4", Fingerprint: fingerprint,
+	}
+
+	require.True(t, svc.BlockCindyHealthEpisode(account, episode, "cindy_banned"))
+	stored, ok := svc.openaiAccountRuntimeBlockUntil.Load(account.ID)
+	require.True(t, ok)
+	require.True(t, stored.(time.Time).IsZero(), "banned runtime block must be indefinite")
+	require.True(t, svc.isOpenAIAccountRuntimeBlockedContext(context.Background(), account))
+	svc.BlockAccountScheduling(account, time.Now().Add(2*time.Minute), "cindy_health_quarantine")
+
+	currentABA := *account
+	currentABA.CindyCredentialGeneration = 6
+	require.False(t, svc.isOpenAIAccountRuntimeBlockedContext(context.Background(), &currentABA),
+		"generation 4 evidence must not block generation 6 even when the credential fingerprint repeats")
+}
+
 func TestShouldStopOpenAIOAuth429Failover_OnlyDuringStorm(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	account := &Account{ID: 42, Platform: PlatformOpenAI, Type: AccountTypeOAuth}

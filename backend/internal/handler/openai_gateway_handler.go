@@ -907,46 +907,26 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		if err == nil && result != nil && result.FirstTokenMs != nil {
 			service.SetOpsLatencyMs(c, service.OpsTimeToFirstTokenMsKey, int64(*result.FirstTokenMs))
 		}
-		// #5148 对齐：错误返回携带的部分 result（流中断前上游已计量的 usage）照常
-		// 入账；failover 错误恒定 result=nil，不会重复计费。
+		// Failed/partial results remain operational evidence only. Usage is queued
+		// after the loop confirms a final successful account result.
 		submitResponsesUsage := func(res *service.OpenAIForwardResult) {
 			if res == nil {
 				return
 			}
-			userAgent := c.GetHeader("User-Agent")
-			clientIP := ip.GetClientIP(c)
-			requestPayloadHash := service.HashUsageRequestPayload(body)
-			inboundEndpoint := GetInboundEndpoint(c)
-			upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, account, res)
-			quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
-			sessionID := service.ExtractClientSessionID(c)
-			cyberBlocked := service.GetOpsCyberPolicy(c) != nil
+			usageSnapshot := snapshotOpenAIUsageMetadata(c, apiKey, account, subscription, channelMapping, reqModel, res, body)
+			usageInput := usageSnapshot.Input(res, h.apiKeyService, pricingAt)
+			usageAPIKeyID := usageInput.APIKey.ID
+			usageGroupID := usageInput.APIKey.GroupID
+			usageAccountID := usageInput.Account.ID
 			h.submitOpenAIUsageRecordTask(c.Request.Context(), res, func(ctx context.Context) {
-				if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
-					Result:             res,
-					APIKey:             apiKey,
-					User:               apiKey.User,
-					Account:            account,
-					Subscription:       subscription,
-					InboundEndpoint:    inboundEndpoint,
-					UpstreamEndpoint:   upstreamEndpoint,
-					UserAgent:          userAgent,
-					IPAddress:          clientIP,
-					RequestPayloadHash: requestPayloadHash,
-					APIKeyService:      h.apiKeyService,
-					QuotaPlatform:      quotaPlatform,
-					SessionID:          sessionID,
-					ChannelUsageFields: clientRequestedUsageFields(c, channelMapping, reqModel, res.UpstreamModel),
-					PricingAt:          pricingAt,
-					CyberBlocked:       cyberBlocked,
-				}); err != nil {
+				if err := h.gatewayService.RecordUsage(ctx, usageInput); err != nil {
 					logger.L().With(
 						zap.String("component", "handler.openai_gateway.responses"),
 						zap.Int64("user_id", subject.UserID),
-						zap.Int64("api_key_id", apiKey.ID),
-						zap.Any("group_id", apiKey.GroupID),
+						zap.Int64("api_key_id", usageAPIKeyID),
+						zap.Any("group_id", usageGroupID),
 						zap.String("model", reqModel),
-						zap.Int64("account_id", account.ID),
+						zap.Int64("account_id", usageAccountID),
 					).Error("openai.record_usage_failed", zap.Error(err))
 				}
 			})
@@ -982,9 +962,8 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					if repairedBody, repaired, repairErr := prepareOpenAIRefusalPromptRetry(c, forwardBody, failoverErr); repairErr != nil {
 						reqLog.Warn("openai.refusal_prompt_retry_prepare_failed", zap.Error(repairErr))
 					} else if repaired {
-						if result != nil && !cyberAttempt {
-							h.recordOpenAIRefusalRetryUsage(c, apiKey, account, subscription, reqModel, body, result, channelMapping)
-						}
+						// A refusal retry is an unsuccessful attempt; it is operational
+						// evidence only and must not create billing or usage rows.
 						forwardBody = repairedBody
 						clearCyberPolicyTurnState(c)
 						reqLog.Info("openai.refusal_prompt_retrying", zap.Int64("account_id", account.ID))
@@ -1082,7 +1061,6 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					zap.Bool("upstream_error_response_already_written", upstreamErrorAlreadyCommunicated),
 					zap.Error(err),
 				}
-				submitResponsesUsage(result)
 				if shouldLogOpenAIForwardFailureAsWarn(c, wroteFallback) {
 					reqLog.Warn("openai.forward_failed", fields...)
 					return
@@ -1102,7 +1080,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		}
 
 		// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
-		submitResponsesUsage(result)
+		if shouldSubmitOpenAIUsage(err, result) {
+			submitResponsesUsage(result)
+		}
 		reqLog.Debug("openai.request_completed",
 			zap.Int64("account_id", account.ID),
 			zap.Int("switch_count", switchCount),
@@ -1562,47 +1542,26 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		if err == nil && result != nil && result.FirstTokenMs != nil {
 			service.SetOpsLatencyMs(c, service.OpsTimeToFirstTokenMsKey, int64(*result.FirstTokenMs))
 		}
-		// Forward 与错误一起返回的部分结果：流中断/客户端断开排水前上游已计量的
-		// usage 照常入账，避免上游已产生消耗的请求完全漏记（#5148，对齐 anthropic
-		// 网关同名修复）。failover 错误恒定 result=nil，不会重复计费。
+		// Forward results returned with an error are operational evidence only;
+		// billing is queued only after a final successful account result.
 		submitMessagesUsage := func(res *service.OpenAIForwardResult) {
 			if res == nil {
 				return
 			}
-			userAgent := c.GetHeader("User-Agent")
-			clientIP := ip.GetClientIP(c)
-			requestPayloadHash := service.HashUsageRequestPayload(body)
-			inboundEndpoint := GetInboundEndpoint(c)
-			upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, account, res)
-			quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
-			sessionID := service.ExtractClientSessionID(c)
-			cyberBlocked := service.GetOpsCyberPolicy(c) != nil
+			usageSnapshot := snapshotOpenAIUsageMetadata(c, apiKey, account, subscription, channelMappingMsg, reqModel, res, body)
+			usageInput := usageSnapshot.Input(res, h.apiKeyService, pricingAt)
+			usageAPIKeyID := usageInput.APIKey.ID
+			usageGroupID := usageInput.APIKey.GroupID
+			usageAccountID := usageInput.Account.ID
 			h.submitOpenAIUsageRecordTask(c.Request.Context(), res, func(ctx context.Context) {
-				if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
-					Result:             res,
-					APIKey:             apiKey,
-					User:               apiKey.User,
-					Account:            account,
-					Subscription:       subscription,
-					InboundEndpoint:    inboundEndpoint,
-					UpstreamEndpoint:   upstreamEndpoint,
-					UserAgent:          userAgent,
-					IPAddress:          clientIP,
-					RequestPayloadHash: requestPayloadHash,
-					APIKeyService:      h.apiKeyService,
-					QuotaPlatform:      quotaPlatform,
-					SessionID:          sessionID,
-					ChannelUsageFields: clientRequestedUsageFields(c, channelMappingMsg, reqModel, res.UpstreamModel),
-					PricingAt:          pricingAt,
-					CyberBlocked:       cyberBlocked,
-				}); err != nil {
+				if err := h.gatewayService.RecordUsage(ctx, usageInput); err != nil {
 					logger.L().With(
 						zap.String("component", "handler.openai_gateway.messages"),
 						zap.Int64("user_id", subject.UserID),
-						zap.Int64("api_key_id", apiKey.ID),
-						zap.Any("group_id", apiKey.GroupID),
+						zap.Int64("api_key_id", usageAPIKeyID),
+						zap.Any("group_id", usageGroupID),
 						zap.String("model", reqModel),
-						zap.Int64("account_id", account.ID),
+						zap.Int64("account_id", usageAccountID),
 					).Error("openai_messages.record_usage_failed", zap.Error(err))
 				}
 			})
@@ -1690,7 +1649,6 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					)
 					// 断开排水期间上游已计量的 usage 必须入账（此前直接 return 丢弃，
 					// payg 上游照常计费而平台漏记）。
-					submitMessagesUsage(result)
 					return
 				}
 				h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(currentRoutingModel), false, nil)
@@ -1700,7 +1658,6 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					zap.Bool("fallback_error_response_written", wroteFallback),
 					zap.Error(err),
 				)
-				submitMessagesUsage(result)
 				return
 			}
 		}
@@ -1710,7 +1667,9 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(currentRoutingModel), true, nil)
 		}
 
-		submitMessagesUsage(result)
+		if shouldSubmitOpenAIUsage(err, result) {
+			submitMessagesUsage(result)
+		}
 		reqLog.Debug("openai_messages.request_completed",
 			zap.Int64("account_id", account.ID),
 			zap.Int("switch_count", switchCount),
@@ -2827,19 +2786,16 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					cyberBlockedThisConn = true
 				}
 				if turnErr != nil {
-					if result == nil || result.ImageCount <= 0 {
-						return
+					// Cyber failures are recorded only by the dedicated operational
+					// path above; every other failed/partial turn is non-billable.
+					if result != nil && result.ImageCount > 0 && service.GetOpsCyberPolicy(c) == nil {
+						reqLog.Warn("openai.websocket_partial_error_with_image_result",
+							zap.Int64("account_id", account.ID),
+							zap.Int("image_count", result.ImageCount),
+							zap.Error(turnErr),
+						)
 					}
-					// cyber 命中时该 turn 的用量已由 recordCyberPolicyIfMarked(forwardErrored=true)
-					// 按真实 token 记录，这里不再走下方 RecordUsage，避免对同一 turn 双写/双扣费。
-					if service.GetOpsCyberPolicy(c) != nil {
-						return
-					}
-					reqLog.Warn("openai.websocket_partial_error_with_image_result",
-						zap.Int64("account_id", account.ID),
-						zap.Int("image_count", result.ImageCount),
-						zap.Error(turnErr),
-					)
+					return
 				}
 				if result == nil {
 					return
@@ -2860,34 +2816,19 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					scheduleModel = turnRequestedModel
 				}
 				h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, scheduleModel, openAIForwardSucceededForScheduling(result), result.FirstTokenMs)
-				inboundEndpoint := GetInboundEndpoint(c)
-				upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, account, result)
-				quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
-				sessionID := service.ExtractClientSessionID(c)
 				turnRecordPricingAt := turnPricing.currentOr(turnStart)
 				cyberBlocked := service.GetOpsCyberPolicy(c) != nil
+				turnUsageSnapshot := snapshotOpenAIUsageMetadataWithHash(c, apiKey, account, subscription, turnMapping, turnRequestedModel, result, requestPayloadHash)
+				turnUsageSnapshot.channelFields = turnUsageFields
+				turnUsageSnapshot.cyberBlocked = cyberBlocked
+				turnUsageInput := turnUsageSnapshot.Input(result, h.apiKeyService, turnRecordPricingAt)
+				accountID := account.ID
+				requestID := result.RequestID
 				h.submitOpenAIUsageRecordTask(ctx, result, func(taskCtx context.Context) {
-					if err := h.gatewayService.RecordUsage(taskCtx, &service.OpenAIRecordUsageInput{
-						Result:             result,
-						APIKey:             apiKey,
-						User:               apiKey.User,
-						Account:            account,
-						Subscription:       subscription,
-						InboundEndpoint:    inboundEndpoint,
-						UpstreamEndpoint:   upstreamEndpoint,
-						UserAgent:          userAgent,
-						IPAddress:          clientIP,
-						RequestPayloadHash: requestPayloadHash,
-						APIKeyService:      h.apiKeyService,
-						QuotaPlatform:      quotaPlatform,
-						SessionID:          sessionID,
-						ChannelUsageFields: turnUsageFields,
-						PricingAt:          turnRecordPricingAt,
-						CyberBlocked:       cyberBlocked,
-					}); err != nil {
+					if err := h.gatewayService.RecordUsage(taskCtx, turnUsageInput); err != nil {
 						reqLog.Error("openai.websocket_record_usage_failed",
-							zap.Int64("account_id", account.ID),
-							zap.String("request_id", result.RequestID),
+							zap.Int64("account_id", accountID),
+							zap.String("request_id", requestID),
 							zap.Error(err),
 						)
 					}
@@ -3147,6 +3088,266 @@ func (h *OpenAIGatewayHandler) submitOpenAIUsageRecordTask(parent context.Contex
 		return
 	}
 	h.submitUsageRecordTask(parent, task)
+}
+
+// openAIUsageSnapshot owns the values consumed by an asynchronous usage task.
+// In particular, it must not retain the recyclable Gin context or mutable
+// request/auth objects owned by the gateway handler.
+type openAIUsageSnapshot struct {
+	apiKey             service.APIKey
+	user               service.User
+	account            service.Account
+	group              *service.Group
+	subscription       *service.UserSubscription
+	inboundEndpoint    string
+	upstreamEndpoint   string
+	userAgent          string
+	ipAddress          string
+	sessionID          string
+	requestPayloadHash string
+	quotaPlatform      string
+	channelFields      service.ChannelUsageFields
+	cyberBlocked       bool
+}
+
+func snapshotOpenAIUsageMetadata(
+	c *gin.Context,
+	apiKey *service.APIKey,
+	account *service.Account,
+	subscription *service.UserSubscription,
+	mapping service.ChannelMappingResult,
+	requestedModel string,
+	result *service.OpenAIForwardResult,
+	body []byte,
+) *openAIUsageSnapshot {
+	return snapshotOpenAIUsageMetadataWithHash(c, apiKey, account, subscription, mapping, requestedModel, result, service.HashUsageRequestPayload(body))
+}
+
+func snapshotOpenAIUsageMetadataWithHash(
+	c *gin.Context,
+	apiKey *service.APIKey,
+	account *service.Account,
+	subscription *service.UserSubscription,
+	mapping service.ChannelMappingResult,
+	requestedModel string,
+	result *service.OpenAIForwardResult,
+	requestPayloadHash string,
+) *openAIUsageSnapshot {
+	upstreamModel := ""
+	if result != nil {
+		upstreamModel = result.UpstreamModel
+	}
+	snapshot := &openAIUsageSnapshot{
+		inboundEndpoint:    GetInboundEndpoint(c),
+		userAgent:          c.GetHeader("User-Agent"),
+		ipAddress:          ip.GetClientIP(c),
+		requestPayloadHash: requestPayloadHash,
+		channelFields:      clientRequestedUsageFields(c, mapping, requestedModel, upstreamModel),
+		cyberBlocked:       service.GetOpsCyberPolicy(c) != nil,
+	}
+	if c != nil && c.Request != nil {
+		snapshot.quotaPlatform = service.QuotaPlatform(c.Request.Context(), apiKey)
+		snapshot.sessionID = service.ExtractClientSessionID(c)
+	}
+	if apiKey != nil {
+		snapshot.apiKey = *apiKey
+		snapshot.apiKey.GroupID = cloneInt64Ptr(apiKey.GroupID)
+		snapshot.apiKey.LastUsedAt = cloneTimePtr(apiKey.LastUsedAt)
+		snapshot.apiKey.LastUsedIP = cloneStringPtr(apiKey.LastUsedIP)
+		snapshot.apiKey.ExpiresAt = cloneTimePtr(apiKey.ExpiresAt)
+		snapshot.apiKey.Window5hStart = cloneTimePtr(apiKey.Window5hStart)
+		snapshot.apiKey.Window1dStart = cloneTimePtr(apiKey.Window1dStart)
+		snapshot.apiKey.Window7dStart = cloneTimePtr(apiKey.Window7dStart)
+		snapshot.apiKey.IPWhitelist = append([]string(nil), apiKey.IPWhitelist...)
+		snapshot.apiKey.IPBlacklist = append([]string(nil), apiKey.IPBlacklist...)
+		snapshot.apiKey.User = nil
+		snapshot.apiKey.Group = nil
+		if apiKey.User != nil {
+			snapshot.user = *apiKey.User
+			snapshot.user.AllowedGroups = append([]int64(nil), apiKey.User.AllowedGroups...)
+			snapshot.user.LastLoginAt = cloneTimePtr(apiKey.User.LastLoginAt)
+			snapshot.user.LastActiveAt = cloneTimePtr(apiKey.User.LastActiveAt)
+			snapshot.user.LastUsedAt = cloneTimePtr(apiKey.User.LastUsedAt)
+			snapshot.user.DeletedAt = cloneTimePtr(apiKey.User.DeletedAt)
+			snapshot.user.GroupRates = cloneFloat64Map(apiKey.User.GroupRates)
+			snapshot.user.TotpSecretEncrypted = cloneStringPtr(apiKey.User.TotpSecretEncrypted)
+			snapshot.user.TotpEnabledAt = cloneTimePtr(apiKey.User.TotpEnabledAt)
+			snapshot.user.BalanceNotifyThreshold = cloneFloat64Ptr(apiKey.User.BalanceNotifyThreshold)
+			snapshot.user.BalanceNotifyExtraEmails = append([]service.NotifyEmailEntry(nil), apiKey.User.BalanceNotifyExtraEmails...)
+			snapshot.user.UserGroupRPMOverride = cloneIntPtr(apiKey.User.UserGroupRPMOverride)
+			snapshot.apiKey.User = &snapshot.user
+		}
+	}
+	if apiKey != nil && apiKey.Group != nil {
+		groupCopy := *apiKey.Group
+		groupCopy.DailyLimitUSD = cloneFloat64Ptr(apiKey.Group.DailyLimitUSD)
+		groupCopy.WeeklyLimitUSD = cloneFloat64Ptr(apiKey.Group.WeeklyLimitUSD)
+		groupCopy.MonthlyLimitUSD = cloneFloat64Ptr(apiKey.Group.MonthlyLimitUSD)
+		snapshot.group = &groupCopy
+		snapshot.apiKey.Group = snapshot.group
+	}
+	if account != nil {
+		snapshot.account = *account
+		snapshot.account.Credentials = cloneUsageMap(account.Credentials)
+		snapshot.account.Extra = cloneUsageMap(account.Extra)
+		snapshot.account.Notes = cloneStringPtr(account.Notes)
+		snapshot.account.ProxyID = cloneInt64Ptr(account.ProxyID)
+		snapshot.account.ProxyFallbackOriginID = cloneInt64Ptr(account.ProxyFallbackOriginID)
+		snapshot.account.ProxyFallbackOriginName = cloneStringPtr(account.ProxyFallbackOriginName)
+		snapshot.account.ManagementFolderID = cloneInt64Ptr(account.ManagementFolderID)
+		snapshot.account.RateMultiplier = cloneFloat64Ptr(account.RateMultiplier)
+		snapshot.account.LoadFactor = cloneIntPtr(account.LoadFactor)
+		snapshot.account.LastUsedAt = cloneTimePtr(account.LastUsedAt)
+		snapshot.account.ExpiresAt = cloneTimePtr(account.ExpiresAt)
+		snapshot.account.CindyBalanceInsufficientAt = cloneTimePtr(account.CindyBalanceInsufficientAt)
+		snapshot.account.CindyBannedAt = cloneTimePtr(account.CindyBannedAt)
+		snapshot.account.CindyBalanceProbeJobID = cloneInt64Ptr(account.CindyBalanceProbeJobID)
+		snapshot.account.CindyBalanceProbeOutcome = cloneStringPtr(account.CindyBalanceProbeOutcome)
+		snapshot.account.CindyBalanceProbeCheckedAt = cloneTimePtr(account.CindyBalanceProbeCheckedAt)
+		snapshot.account.RateLimitedAt = cloneTimePtr(account.RateLimitedAt)
+		snapshot.account.RateLimitResetAt = cloneTimePtr(account.RateLimitResetAt)
+		snapshot.account.OverloadUntil = cloneTimePtr(account.OverloadUntil)
+		snapshot.account.TempUnschedulableUntil = cloneTimePtr(account.TempUnschedulableUntil)
+		snapshot.account.SessionWindowStart = cloneTimePtr(account.SessionWindowStart)
+		snapshot.account.SessionWindowEnd = cloneTimePtr(account.SessionWindowEnd)
+		snapshot.account.ParentAccountID = cloneInt64Ptr(account.ParentAccountID)
+		snapshot.account.GroupIDs = append([]int64(nil), account.GroupIDs...)
+		// Usage billing only needs scalar account metadata and credentials. Do not
+		// retain mutable presentation/cache pointers from the request-owned value.
+		snapshot.account.Proxy = nil
+		snapshot.account.ManagementFolder = nil
+		snapshot.account.Tags = nil
+		snapshot.account.AccountGroups = nil
+		snapshot.account.Groups = nil
+	}
+	if snapshot.account.ID > 0 {
+		snapshot.upstreamEndpoint = resolveOpenAIUpstreamEndpoint(c, &snapshot.account, result)
+	}
+	if subscription != nil {
+		subscriptionCopy := *subscription
+		subscriptionCopy.DailyWindowStart = cloneTimePtr(subscription.DailyWindowStart)
+		subscriptionCopy.WeeklyWindowStart = cloneTimePtr(subscription.WeeklyWindowStart)
+		subscriptionCopy.MonthlyWindowStart = cloneTimePtr(subscription.MonthlyWindowStart)
+		subscriptionCopy.AssignedBy = cloneInt64Ptr(subscription.AssignedBy)
+		subscriptionCopy.DeletedAt = cloneTimePtr(subscription.DeletedAt)
+		if subscription.Group != nil {
+			groupCopy := *subscription.Group
+			subscriptionCopy.Group = &groupCopy
+		}
+		subscriptionCopy.User = nil
+		subscriptionCopy.AssignedByUser = nil
+		snapshot.subscription = &subscriptionCopy
+	}
+	return snapshot
+}
+
+func cloneTimePtr(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
+}
+
+func cloneInt64Ptr(value *int64) *int64 {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
+}
+
+func cloneIntPtr(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
+}
+
+func cloneStringPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
+}
+
+func cloneFloat64Ptr(value *float64) *float64 {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
+}
+
+func cloneFloat64Map(value map[int64]float64) map[int64]float64 {
+	if value == nil {
+		return nil
+	}
+	clone := make(map[int64]float64, len(value))
+	for key, item := range value {
+		clone[key] = item
+	}
+	return clone
+}
+
+func (s *openAIUsageSnapshot) Input(result *service.OpenAIForwardResult, apiKeyService service.APIKeyQuotaUpdater, pricingAt time.Time) *service.OpenAIRecordUsageInput {
+	if s == nil {
+		return nil
+	}
+	return &service.OpenAIRecordUsageInput{
+		Result:             result,
+		APIKey:             &s.apiKey,
+		User:               s.apiKey.User,
+		Account:            &s.account,
+		Subscription:       s.subscription,
+		InboundEndpoint:    s.inboundEndpoint,
+		UpstreamEndpoint:   s.upstreamEndpoint,
+		UserAgent:          s.userAgent,
+		IPAddress:          s.ipAddress,
+		SessionID:          s.sessionID,
+		RequestPayloadHash: s.requestPayloadHash,
+		APIKeyService:      apiKeyService,
+		QuotaPlatform:      s.quotaPlatform,
+		ChannelUsageFields: s.channelFields,
+		PricingAt:          pricingAt,
+		CyberBlocked:       s.cyberBlocked,
+	}
+}
+
+func cloneUsageMap(input map[string]any) map[string]any {
+	if input == nil {
+		return nil
+	}
+	output := make(map[string]any, len(input))
+	for key, value := range input {
+		output[key] = cloneUsageValue(value)
+	}
+	return output
+}
+
+func cloneUsageValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return cloneUsageMap(typed)
+	case []any:
+		clone := make([]any, len(typed))
+		for i, item := range typed {
+			clone[i] = cloneUsageValue(item)
+		}
+		return clone
+	case []string:
+		return append([]string(nil), typed...)
+	case []int64:
+		return append([]int64(nil), typed...)
+	default:
+		return value
+	}
+}
+
+func shouldSubmitOpenAIUsage(err error, result *service.OpenAIForwardResult) bool {
+	return err == nil && result != nil
 }
 
 func (h *OpenAIGatewayHandler) submitMandatoryUsageRecordTask(parent context.Context, task service.UsageRecordTask) {
@@ -3694,56 +3895,6 @@ func prepareOpenAIRefusalPromptRetry(
 	return repaired, true, nil
 }
 
-func (h *OpenAIGatewayHandler) recordOpenAIRefusalRetryUsage(
-	c *gin.Context,
-	apiKey *service.APIKey,
-	account *service.Account,
-	subscription *service.UserSubscription,
-	model string,
-	requestBody []byte,
-	result *service.OpenAIForwardResult,
-	channelMapping service.ChannelMappingResult,
-) {
-	if h == nil || c == nil || apiKey == nil || account == nil || result == nil {
-		return
-	}
-	userAgent := c.GetHeader("User-Agent")
-	clientIP := ip.GetClientIP(c)
-	requestPayloadHash := service.HashUsageRequestPayload(requestBody)
-	inboundEndpoint := GetInboundEndpoint(c)
-	upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, account, result)
-	quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
-	sessionID := service.ExtractClientSessionID(c)
-	channelFields := clientRequestedUsageFields(c, channelMapping, model, result.UpstreamModel)
-
-	h.submitOpenAIUsageRecordTask(c.Request.Context(), result, func(ctx context.Context) {
-		if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
-			Result:             result,
-			APIKey:             apiKey,
-			User:               apiKey.User,
-			Account:            account,
-			Subscription:       subscription,
-			InboundEndpoint:    inboundEndpoint,
-			UpstreamEndpoint:   upstreamEndpoint,
-			UserAgent:          userAgent,
-			IPAddress:          clientIP,
-			RequestPayloadHash: requestPayloadHash,
-			APIKeyService:      h.apiKeyService,
-			QuotaPlatform:      quotaPlatform,
-			SessionID:          sessionID,
-			ChannelUsageFields: channelFields,
-			CyberBlocked:       false,
-		}); err != nil {
-			logger.L().With(
-				zap.String("component", "handler.openai_gateway.refusal_retry_usage"),
-				zap.Int64("api_key_id", apiKey.ID),
-				zap.Int64("account_id", account.ID),
-				zap.String("model", model),
-			).Error("openai.refusal_retry_usage_record_failed", zap.Error(err))
-		}
-	})
-}
-
 func isOpenAIWSUpgradeRequest(r *http.Request) bool {
 	if r == nil {
 		return false
@@ -4154,10 +4305,10 @@ func cyberSessionScopeKey(apiKeyID int64, c *gin.Context) string {
 	return service.CyberSessionScopeKey(apiKeyID, strings.TrimSpace(ip.GetClientIP(c)), c.GetHeader("User-Agent"))
 }
 
-// recordCyberPolicyIfMarked 在 gateway forward 返回后检查 cyber 标记，异步写风控日志/邮件，
-// 并在 forward 返回错误时写一条 tokens=0 用量行。标记由 gateway 服务层在透传 cyber 后设置；
-// 当前请求已发给用户，本方法只做事后记录，不影响响应。forwardErrored 为 true 时才写用量行，
-// 避免与正常 RecordUsage(forward 成功路径)重复。每请求至多记录一次。
+// recordCyberPolicyIfMarked records operational cyber evidence and session
+// blocks only. Failed, refusal, cyber, and failover attempts never enter
+// billing or account statistics; the final successful owner is the sole usage
+// writer for a request.
 func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey *service.APIKey, account *service.Account, subscription *service.UserSubscription, model string, forwardErrored bool, cyberBlockInput any, channelFields service.ChannelUsageFields, requestPayloadHash string) {
 	mark := service.GetOpsCyberPolicy(c)
 	if mark == nil {
@@ -4197,11 +4348,9 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 		}
 	}
 	inboundEndpoint := GetInboundEndpoint(c)
-	upstreamEndpoint := ""
 	var accountID int64
 	if account != nil {
 		accountID = account.ID
-		upstreamEndpoint = resolveOpenAIUpstreamEndpoint(c, account, nil)
 	}
 	stream := false
 	if v, ok := c.Get(opsStreamKey); ok {
@@ -4212,7 +4361,6 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 	cmSvc := h.contentModerationService
 	gwSvc := h.gatewayService
 	opsSvc := h.opsService
-	apiKeySvc := h.apiKeyService
 	requestPath := ""
 	if c.Request != nil && c.Request.URL != nil {
 		requestPath = c.Request.URL.Path
@@ -4228,8 +4376,6 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 		userAgent = c.GetHeader("User-Agent")
 		clientIPStr = strings.TrimSpace(ip.GetClientIP(c))
 	}
-	// 提前拍成标量，避免在下方 goroutine 内访问 gin.Context。
-	sessionID := service.ExtractClientSessionID(c)
 	apiKeyPrefix := ""
 	if apiKey != nil {
 		apiKeyPrefix = keyPrefix(apiKey.Key, 8)
@@ -4270,26 +4416,6 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 				UpstreamStatus:  mark.UpstreamStatus,
 				UpstreamInTok:   mark.UpstreamInTok,
 				UpstreamOutTok:  mark.UpstreamOutTok,
-			})
-		}
-		if forwardErrored && gwSvc != nil {
-			gwSvc.RecordCyberPolicyUsageLog(ctx, service.CyberPolicyUsageInput{
-				APIKey:             apiKey,
-				Account:            account,
-				Subscription:       subscription,
-				RequestID:          requestID,
-				Model:              model,
-				Stream:             stream,
-				InputTokens:        mark.UpstreamInTok,
-				OutputTokens:       mark.UpstreamOutTok,
-				InboundEndpoint:    inboundEndpoint,
-				UpstreamEndpoint:   upstreamEndpoint,
-				UserAgent:          userAgent,
-				IPAddress:          clientIPStr,
-				SessionID:          sessionID,
-				RequestPayloadHash: requestPayloadHash,
-				APIKeyService:      apiKeySvc,
-				ChannelUsageFields: channelFields,
 			})
 		}
 		if gwSvc != nil && len(blockPlan.keys) > 0 {

@@ -82,6 +82,7 @@ type DataImportRequest struct {
 	Data                 DataPayload               `json:"data"`
 	SkipDefaultGroupBind *bool                     `json:"skip_default_group_bind"`
 	UniformSettings      DataImportUniformSettings `json:"uniform_settings,omitempty"`
+	TargetGroupID        *int64                    `json:"target_group_id,omitempty"`
 }
 
 type DataImportResult struct {
@@ -137,7 +138,16 @@ type DataImportItemResult struct {
 	Action    string   `json:"action"`
 	AccountID *int64   `json:"account_id,omitempty"`
 	Warnings  []string `json:"warnings,omitempty"`
+	Code      string   `json:"code,omitempty"`
+	Message   string   `json:"message,omitempty"`
 	Error     string   `json:"error,omitempty"`
+}
+
+type DataImportPreviewResult struct {
+	CreateCount int                    `json:"create_count"`
+	UpdateCount int                    `json:"update_count"`
+	RejectCount int                    `json:"reject_count"`
+	Items       []DataImportItemResult `json:"items"`
 }
 
 type DataImportError struct {
@@ -315,6 +325,24 @@ func (h *AccountHandler) ImportData(c *gin.Context) {
 	h.submitAccountJob(c, service.AccountJobKindImportData, req, ordinalAccountJobSeeds(len(req.Data.Accounts)))
 }
 
+func (h *AccountHandler) PreviewImportData(c *gin.Context) {
+	var req DataImportRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request")
+		return
+	}
+	if len(req.Data.Accounts) == 0 {
+		response.BadRequest(c, "data.accounts is required")
+		return
+	}
+	preview, _, err := h.previewDataImport(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, preview)
+}
+
 func (h *AccountHandler) listAllProxies(ctx context.Context) ([]service.Proxy, error) {
 	page := 1
 	pageSize := dataPageCap
@@ -379,7 +407,7 @@ func (h *AccountHandler) resolveExportAccounts(ctx context.Context, ids []int64,
 	}
 
 	groupID := int64(0)
-	if groupIDStr := c.Query("group"); groupIDStr != "" {
+	if groupIDStr := c.Query("group_id"); groupIDStr != "" {
 		if groupIDStr == accountListGroupUngroupedQueryValue {
 			groupID = service.AccountListGroupUngrouped
 		} else {

@@ -550,6 +550,14 @@ func (s *stubAdminService) DeleteCindyInsufficient(context.Context, int, string)
 	return &service.CindyInsufficientDeleteResult{}, nil
 }
 
+func (s *stubAdminService) PreviewCindyBannedDeletion(context.Context) (*service.CindyInsufficientDeletePreview, error) {
+	return &service.CindyInsufficientDeletePreview{}, nil
+}
+
+func (s *stubAdminService) DeleteCindyBanned(context.Context, int, string) (*service.CindyInsufficientDeleteResult, error) {
+	return &service.CindyInsufficientDeleteResult{}, nil
+}
+
 func (s *stubAdminService) BulkUpdateAccounts(ctx context.Context, input *service.BulkUpdateAccountsInput) (*service.BulkUpdateAccountsResult, error) {
 	s.lastBulkUpdateAccountInput = input
 	if s.bulkUpdateAccountErr != nil {

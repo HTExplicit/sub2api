@@ -282,8 +282,9 @@ func (r *usageLogRepository) GetAccountTodayStats(ctx context.Context, accountID
 			COALESCE(SUM(COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1)), 0) as cost,
 			COALESCE(SUM(total_cost), 0) as standard_cost,
 			COALESCE(SUM(actual_cost), 0) as user_cost
-		FROM usage_logs
-		WHERE account_id = $1 AND created_at >= $2
+		FROM usage_logs ul
+		LEFT JOIN accounts a ON a.id = ul.account_id
+		WHERE ul.account_id = $1 AND ul.created_at >= GREATEST($2, COALESCE(a.cindy_account_stats_reset_at, '-infinity'::timestamptz))
 	`
 
 	stats := &usagestats.AccountStats{}
@@ -312,8 +313,9 @@ func (r *usageLogRepository) GetAccountWindowStats(ctx context.Context, accountI
 			COALESCE(SUM(COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1)), 0) as cost,
 			COALESCE(SUM(total_cost), 0) as standard_cost,
 			COALESCE(SUM(actual_cost), 0) as user_cost
-		FROM usage_logs
-		WHERE account_id = $1 AND created_at >= $2
+		FROM usage_logs ul
+		LEFT JOIN accounts a ON a.id = ul.account_id
+		WHERE ul.account_id = $1 AND ul.created_at >= GREATEST($2, COALESCE(a.cindy_account_stats_reset_at, '-infinity'::timestamptz))
 	`
 
 	stats := &usagestats.AccountStats{}
@@ -343,15 +345,16 @@ func (r *usageLogRepository) GetAccountWindowStatsBatch(ctx context.Context, acc
 
 	query := `
 		SELECT
-			account_id,
+			ul.account_id,
 			COUNT(*) as requests,
 			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as tokens,
 			COALESCE(SUM(COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1)), 0) as cost,
 			COALESCE(SUM(total_cost), 0) as standard_cost,
 			COALESCE(SUM(actual_cost), 0) as user_cost
-		FROM usage_logs
-		WHERE account_id = ANY($1) AND created_at >= $2
-		GROUP BY account_id
+		FROM usage_logs ul
+		LEFT JOIN accounts a ON a.id = ul.account_id
+		WHERE ul.account_id = ANY($1) AND ul.created_at >= GREATEST($2, COALESCE(a.cindy_account_stats_reset_at, '-infinity'::timestamptz))
+		GROUP BY ul.account_id
 	`
 	rows, err := r.sql.QueryContext(ctx, query, accountIDs, startTime)
 	if err != nil {

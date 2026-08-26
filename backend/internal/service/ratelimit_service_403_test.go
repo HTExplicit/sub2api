@@ -13,10 +13,13 @@ import (
 )
 
 type runtimeBlockRecorder struct {
-	accounts   []*Account
-	until      []time.Time
-	reasons    []string
-	clearedIDs []int64
+	accounts                []*Account
+	until                   []time.Time
+	reasons                 []string
+	clearedIDs              []int64
+	clearedCindyHealthIDs   []int64
+	terminalPending         *CindyHealthEpisode
+	replacementOnClear      *CindyHealthEpisode
 }
 
 func (r *runtimeBlockRecorder) BlockAccountScheduling(account *Account, until time.Time, reason string) {
@@ -26,6 +29,35 @@ func (r *runtimeBlockRecorder) BlockAccountScheduling(account *Account, until ti
 }
 
 func (r *runtimeBlockRecorder) ClearAccountSchedulingBlock(accountID int64) {
+	r.clearedIDs = append(r.clearedIDs, accountID)
+}
+
+func (r *runtimeBlockRecorder) ClearAllCindyHealthState(_ context.Context, accountID int64) error {
+	r.clearedCindyHealthIDs = append(r.clearedCindyHealthIDs, accountID)
+	return nil
+}
+
+func (r *runtimeBlockRecorder) GetCindyHealthTerminalPending(_ context.Context, _ int64, _ string) (*CindyHealthEpisode, error) {
+	if r.terminalPending == nil {
+		return nil, nil
+	}
+	episode := *r.terminalPending
+	return &episode, nil
+}
+
+func (r *runtimeBlockRecorder) ClearCindyHealthTerminalPendingIfMatch(_ context.Context, episode CindyHealthEpisode) (bool, error) {
+	if r.replacementOnClear != nil {
+		r.terminalPending = r.replacementOnClear
+	}
+	if r.terminalPending == nil || r.terminalPending.EpisodeID != episode.EpisodeID ||
+		r.terminalPending.Generation != episode.Generation || r.terminalPending.Fingerprint != episode.Fingerprint {
+		return false, nil
+	}
+	r.terminalPending = nil
+	return true, nil
+}
+
+func (r *runtimeBlockRecorder) ClearCindyBalanceRuntimeBlock(accountID int64) {
 	r.clearedIDs = append(r.clearedIDs, accountID)
 }
 

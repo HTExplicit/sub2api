@@ -42,6 +42,49 @@ type groupRepoStubForAdmin struct {
 	listWithFiltersErr         error
 }
 
+type adminGroupCindyClassifierStub struct {
+	AccountRepository
+	strict bool
+	err    error
+	ids    []int64
+}
+
+func (s *adminGroupCindyClassifierStub) ClassifyStrictCindyGroup(_ context.Context, groupID int64) (bool, error) {
+	s.ids = append(s.ids, groupID)
+	return s.strict, s.err
+}
+
+func TestAdminServiceGetGroupHydratesStrictCindyIdentityFromCompleteMembership(t *testing.T) {
+	tests := []struct {
+		name             string
+		storedKnown      bool
+		storedStrict     bool
+		classifiedStrict bool
+	}{
+		{name: "hydrates strict identity", classifiedStrict: true},
+		{name: "overrides stale materialized marker", storedKnown: true, storedStrict: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			groupID := int64(88)
+			repo := &groupRepoStubForAdmin{getByID: &Group{
+				ID: groupID, Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI,
+				ProviderProfile: ProviderProfileCindyLaxaV1, Hydrated: true,
+				StrictCindyKnown: test.storedKnown, StrictCindy: test.storedStrict,
+			}}
+			classifier := &adminGroupCindyClassifierStub{strict: test.classifiedStrict}
+			svc := &adminServiceImpl{groupRepo: repo, accountRepo: classifier}
+
+			group, err := svc.GetGroup(context.Background(), groupID)
+
+			require.NoError(t, err)
+			require.True(t, group.StrictCindyKnown)
+			require.Equal(t, test.classifiedStrict, group.StrictCindy)
+			require.Equal(t, []int64{groupID}, classifier.ids)
+		})
+	}
+}
+
 func (s *groupRepoStubForAdmin) Create(_ context.Context, g *Group) error {
 	if s.createID > 0 {
 		g.ID = s.createID
@@ -304,6 +347,31 @@ func TestAdminService_ListGroups_PassesSortParams(t *testing.T) {
 		SortBy:    "account_count",
 		SortOrder: "ASC",
 	}, repo.listWithFiltersParams)
+}
+
+func TestAdminServiceGetGroupModelsListCandidatesUsesCindyCatalog(t *testing.T) {
+	previous := cindyRolloutFeatures.capabilityCatalog
+	cindyRolloutFeatures.capabilityCatalog = false
+	t.Cleanup(func() { cindyRolloutFeatures.capabilityCatalog = previous })
+
+	want := []string{
+		"claude-opus-4-8", "claude-opus-5", "claude-sonnet-5", "deepseek-v4-flash",
+		"deepseek-v4-flash-vision-exp", "deepseek-v4-pro", "gemini-3-pro-image",
+		"gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.7-flash", "glm-5.2", "glm-5.3",
+		"gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-image-2", "grok-4.5",
+		"grok-4.6", "hy3", "kimi-k3", "qwen3.8-max", "seed-2.1-pro",
+	}
+
+	repo := &groupRepoStubForAdmin{getByID: &Group{ID: 81, Platform: PlatformCindy}}
+	svc := &adminServiceImpl{groupRepo: repo}
+
+	got, err := svc.GetGroupModelsListCandidates(context.Background(), 81, "")
+
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+	for _, model := range got {
+		require.NotContains(t, model, "/")
+	}
 }
 
 // TestAdminService_CreateGroup_WithImagePricing 测试创建分组时 ImagePrice 字段正确传递

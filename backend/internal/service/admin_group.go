@@ -45,7 +45,14 @@ func (s *adminServiceImpl) GetAllGroupsIncludingInactive(ctx context.Context) ([
 }
 
 func (s *adminServiceImpl) GetGroup(ctx context.Context, id int64) (*Group, error) {
-	return s.groupRepo.GetByID(ctx, id)
+	group, err := s.groupRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err = hydrateStrictCindyGroupIdentity(ctx, s.accountRepo, group); err != nil {
+		return nil, err
+	}
+	return group, nil
 }
 
 func (s *adminServiceImpl) GetGroupModelsListCandidates(ctx context.Context, id int64, platform string) ([]string, error) {
@@ -230,6 +237,8 @@ func compositeRouteFromInput(groupID int64, input CompositeRouteInput) (*Composi
 
 func defaultModelsListCandidateIDs(platform string) []string {
 	switch platform {
+	case PlatformCindy:
+		return cindyInternalPublicModelIDs()
 	case PlatformOpenAI:
 		return openai.DefaultModelIDs()
 	case PlatformGemini:
@@ -412,6 +421,9 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	fallbackOnInvalidRequest := input.FallbackGroupIDOnInvalidRequest
 	if fallbackOnInvalidRequest != nil && *fallbackOnInvalidRequest <= 0 {
 		fallbackOnInvalidRequest = nil
+	}
+	if platform == PlatformCindy && fallbackOnInvalidRequest != nil {
+		return nil, errors.New("cindy groups cannot configure fallback groups")
 	}
 	// 校验无效请求兜底分组
 	if fallbackOnInvalidRequest != nil {
@@ -854,6 +866,9 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 		} else {
 			fallbackOnInvalidRequest = nil
 		}
+	}
+	if group.Platform == PlatformCindy && fallbackOnInvalidRequest != nil {
+		return nil, errors.New("cindy groups cannot configure fallback groups")
 	}
 	if fallbackOnInvalidRequest != nil {
 		if err := s.validateFallbackGroupOnInvalidRequest(ctx, id, group.Platform, group.SubscriptionType, *fallbackOnInvalidRequest); err != nil {

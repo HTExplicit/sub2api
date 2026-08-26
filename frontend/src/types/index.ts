@@ -529,7 +529,7 @@ export interface PaginationConfig {
 
 // ==================== API Key & Group Types ====================
 
-export type GroupPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok' | 'kimi' | 'zhipu' | 'deepseek' | 'composite'
+export type GroupPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok' | 'kimi' | 'zhipu' | 'deepseek' | 'cindy' | 'composite'
 
 export type VideoModelPrices = Record<string, Record<string, number>>
 
@@ -552,6 +552,8 @@ export interface Group {
   name: string
   description: string | null
   platform: GroupPlatform
+  wire_platform?: string
+  provider_profile?: string
   rate_multiplier: number
   rpm_limit?: number // Group-level RPM cap (0 = unlimited); overrides user-level rpm_limit when set
   max_reasoning_effort?: string // OpenAI/Codex reasoning ceiling; empty means unlimited
@@ -877,7 +879,7 @@ export interface UpdateGroupRequest {
 
 // ==================== Account & Proxy Types ====================
 
-export type AccountPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok' | 'kimi' | 'zhipu' | 'deepseek'
+export type AccountPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok' | 'kimi' | 'zhipu' | 'deepseek' | 'cindy'
 export type AccountType = 'oauth' | 'setup-token' | 'apikey' | 'upstream' | 'bedrock' | 'service_account'
 export type OAuthAddMethod = 'oauth' | 'setup-token'
 export type ProxyProtocol = 'http' | 'https' | 'socks5' | 'socks5h'
@@ -1301,6 +1303,7 @@ export interface AccountConsoleFacets {
   tags: AccountManagementTag[]
   cindy_total?: number
   cindy_insufficient_count?: number
+  cindy_banned_count?: number
 }
 
 export interface AccountBulkTaxonomyTargetFilters {
@@ -1312,7 +1315,7 @@ export interface AccountBulkTaxonomyTargetFilters {
   folder?: string
   tags?: string
   account_ids?: string
-  group?: string
+  group_id?: string
   privacy_mode?: string
   search?: string
   sort_by?: string
@@ -1337,7 +1340,7 @@ export interface AccountConsoleFilterState {
   plans: string[]
   proxies: string[]
   tags: number[]
-  group: string
+  group_id: string
   privacy_mode: string
   account_ids: number[]
 }

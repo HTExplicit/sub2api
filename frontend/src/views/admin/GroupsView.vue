@@ -413,6 +413,17 @@
                 </span>
               </button>
               <button
+                v-if="row.platform === 'cindy'"
+                data-test="group-cindy-accounts"
+                :title="t('admin.groups.cindyAccounts')"
+                :aria-label="t('admin.groups.cindyAccounts')"
+                @click="openCindyAccounts(row)"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-cyan-50 hover:text-cyan-600 dark:hover:bg-cyan-900/20 dark:hover:text-cyan-400"
+              >
+                <Icon name="users" size="sm" />
+                <span class="text-xs">{{ t('admin.groups.cindyAccounts') }}</span>
+              </button>
+              <button
                 v-if="row.platform === 'composite'"
                 @click="handleCompositeRoutes(row)"
                 class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-cyan-600 dark:hover:bg-dark-700 dark:hover:text-cyan-400"
@@ -4336,6 +4347,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { useRouter } from "vue-router";
 import { useAppStore } from "@/stores/app";
 import { useOnboardingStore } from "@/stores/onboarding";
 import { adminAPI } from "@/api/admin";
@@ -4489,6 +4501,7 @@ const groupPricingToAPI = (
     }));
 
 const { t } = useI18n();
+const router = useRouter();
 const appStore = useAppStore();
 const onboardingStore = useOnboardingStore();
 
@@ -6094,6 +6107,17 @@ const closeEditModal = () => {
   editForm.allow_live = false;
   resetModelsListState(editModelsListState);
 };
+
+const openCindyAccounts = (group: AdminGroup) => {
+  void router.push({
+    path: '/admin/accounts',
+    query: {
+      platforms: 'cindy',
+      cindy_only: 'true',
+      group_id: String(group.id)
+    }
+  })
+}
 
 const handleUpdateGroup = async () => {
   if (!editingGroup.value) return;

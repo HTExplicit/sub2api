@@ -539,7 +539,9 @@ func (r *accountRepository) updateLockedAccount(
 		SetAutoPauseOnExpired(account.AutoPauseOnExpired)
 	if credentialGenerationChanged {
 		builder.ClearCindyBalanceInsufficientAt()
+		builder.ClearCindyBannedAt()
 		account.CindyBalanceInsufficientAt = nil
+		account.CindyBannedAt = nil
 	}
 
 	if explicitRateMultiplier != nil {
@@ -822,6 +824,10 @@ func (r *accountRepository) UpdateCredentials(ctx context.Context, id int64, cre
 				WHEN credentials IS DISTINCT FROM $1::jsonb THEN NULL
 				ELSE cindy_balance_insufficient_at
 			END,
+			cindy_banned_at = CASE
+				WHEN credentials IS DISTINCT FROM $1::jsonb THEN NULL
+				ELSE cindy_banned_at
+			END,
 			extra = CASE
 				-- 凭证整体未变化 ⇒ Ollama 组身份必然未变化；顶层 DISTINCT 守卫防止
 				-- 非 Ollama 账号的无变化持久化误清探测快照或重写 NULL extra。
@@ -952,6 +958,7 @@ func (r *accountRepository) accountListFilteredQuery(platform, accountType, stat
 				dbaccount.StatusEQ(status),
 				dbaccount.SchedulableEQ(true),
 				dbaccount.CindyBalanceInsufficientAtIsNil(),
+				dbaccount.CindyBannedAtIsNil(),
 				dbaccount.Or(
 					dbaccount.RateLimitResetAtIsNil(),
 					dbaccount.RateLimitResetAtLTE(time.Now()),
@@ -1951,6 +1958,7 @@ func (r *accountRepository) schedulableAccountsQuery(now time.Time) *dbent.Accou
 			dbaccount.StatusEQ(service.StatusActive),
 			dbaccount.SchedulableEQ(true),
 			dbaccount.CindyBalanceInsufficientAtIsNil(),
+			dbaccount.CindyBannedAtIsNil(),
 			tempUnschedulablePredicate(),
 			notExpiredPredicate(now),
 			dbaccount.Or(dbaccount.OverloadUntilIsNil(), dbaccount.OverloadUntilLTE(now)),
@@ -2010,6 +2018,7 @@ func (r *accountRepository) ListSchedulableCapacityByGroupIDs(ctx context.Contex
 			AND a.status = $2
 			AND a.schedulable = TRUE
 			AND a.cindy_balance_insufficient_at IS NULL
+			AND a.cindy_banned_at IS NULL
 			AND (a.temp_unschedulable_until IS NULL OR a.temp_unschedulable_until <= $3)
 			AND (a.expires_at IS NULL OR a.expires_at > $3 OR a.auto_pause_on_expired = FALSE)
 			AND (a.overload_until IS NULL OR a.overload_until <= $3)
@@ -2059,6 +2068,7 @@ func (r *accountRepository) ListSchedulableByPlatform(ctx context.Context, platf
 			dbaccount.StatusEQ(service.StatusActive),
 			dbaccount.SchedulableEQ(true),
 			dbaccount.CindyBalanceInsufficientAtIsNil(),
+			dbaccount.CindyBannedAtIsNil(),
 			tempUnschedulablePredicate(),
 			notExpiredPredicate(now),
 			dbaccount.Or(dbaccount.OverloadUntilIsNil(), dbaccount.OverloadUntilLTE(now)),
@@ -2094,6 +2104,7 @@ func (r *accountRepository) ListSchedulableByPlatforms(ctx context.Context, plat
 			dbaccount.StatusEQ(service.StatusActive),
 			dbaccount.SchedulableEQ(true),
 			dbaccount.CindyBalanceInsufficientAtIsNil(),
+			dbaccount.CindyBannedAtIsNil(),
 			tempUnschedulablePredicate(),
 			notExpiredPredicate(now),
 			dbaccount.Or(dbaccount.OverloadUntilIsNil(), dbaccount.OverloadUntilLTE(now)),
@@ -2115,6 +2126,7 @@ func (r *accountRepository) ListSchedulableUngroupedByPlatform(ctx context.Conte
 			dbaccount.StatusEQ(service.StatusActive),
 			dbaccount.SchedulableEQ(true),
 			dbaccount.CindyBalanceInsufficientAtIsNil(),
+			dbaccount.CindyBannedAtIsNil(),
 			dbaccount.Not(dbaccount.HasAccountGroups()),
 			tempUnschedulablePredicate(),
 			notExpiredPredicate(now),
@@ -2140,6 +2152,7 @@ func (r *accountRepository) ListSchedulableUngroupedByPlatforms(ctx context.Cont
 			dbaccount.StatusEQ(service.StatusActive),
 			dbaccount.SchedulableEQ(true),
 			dbaccount.CindyBalanceInsufficientAtIsNil(),
+			dbaccount.CindyBannedAtIsNil(),
 			dbaccount.Not(dbaccount.HasAccountGroups()),
 			tempUnschedulablePredicate(),
 			notExpiredPredicate(now),
@@ -2192,6 +2205,7 @@ func (r *accountRepository) ListModelAvailabilityCandidates(
 		dbaccount.StatusEQ(service.StatusActive),
 		dbaccount.SchedulableEQ(true),
 		dbaccount.CindyBalanceInsufficientAtIsNil(),
+		dbaccount.CindyBannedAtIsNil(),
 		dbaccount.PlatformIn(platforms...),
 	}
 	if !includeGrouped {
@@ -2970,6 +2984,8 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 			"credentials = "+mergedCredentials,
 			"cindy_balance_insufficient_at = CASE WHEN credentials IS DISTINCT FROM "+mergedCredentials+
 				" THEN NULL ELSE cindy_balance_insufficient_at END",
+			"cindy_banned_at = CASE WHEN credentials IS DISTINCT FROM "+mergedCredentials+
+				" THEN NULL ELSE cindy_banned_at END",
 		)
 		args = append(args, payload)
 		idx++
@@ -3136,6 +3152,7 @@ func (r *accountRepository) queryAccountsByGroup(ctx context.Context, groupID in
 		preds = append(preds,
 			dbaccount.SchedulableEQ(true),
 			dbaccount.CindyBalanceInsufficientAtIsNil(),
+			dbaccount.CindyBannedAtIsNil(),
 		)
 		if !opts.ignoreTransientState {
 			now := time.Now()
@@ -3479,6 +3496,8 @@ func accountEntityToService(m *dbent.Account) *service.Account {
 		UpdatedAt:                  m.UpdatedAt,
 		Schedulable:                m.Schedulable,
 		CindyBalanceInsufficientAt: m.CindyBalanceInsufficientAt,
+		CindyBannedAt:              m.CindyBannedAt,
+		CindyCredentialGeneration:  m.CindyCredentialGeneration,
 		RateLimitedAt:              m.RateLimitedAt,
 		RateLimitResetAt:           m.RateLimitResetAt,
 		OverloadUntil:              m.OverloadUntil,

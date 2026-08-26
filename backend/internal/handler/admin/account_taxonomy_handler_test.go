@@ -23,6 +23,7 @@ type accountTaxonomyHandlerStub struct {
 	tags          []service.AccountManagementTag
 	lastFolderIDs []int64
 	lastTagIDs    []int64
+	lastFacets    service.AccountConsoleFilters
 }
 
 func newAccountTaxonomyHandlerStub() *accountTaxonomyHandlerStub {
@@ -67,7 +68,8 @@ func (s *accountTaxonomyHandlerStub) ListAccountsConsole(context.Context, int, i
 	return nil, 0, nil
 }
 
-func (s *accountTaxonomyHandlerStub) GetAccountConsoleFacets(context.Context, service.AccountConsoleFilters) (*service.AccountConsoleFacets, error) {
+func (s *accountTaxonomyHandlerStub) GetAccountConsoleFacets(_ context.Context, filters service.AccountConsoleFilters) (*service.AccountConsoleFacets, error) {
+	s.lastFacets = filters
 	return s.facets, nil
 }
 
@@ -108,11 +110,12 @@ func TestAccountFacetsUsesStableSnakeCaseTaxonomyDTO(t *testing.T) {
 		Tags:      []service.AccountManagementTag{{ID: 9, Name: "Paid", SortOrder: 1, AccountCount: 2, CreatedAt: now, UpdatedAt: now}},
 	}
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/facets", nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/facets?group_id=12", nil)
 	router, _ := setupAccountTaxonomyHandlerRouter(adminSvc)
 	router.ServeHTTP(recorder, request)
 
 	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	require.Equal(t, int64(12), adminSvc.lastFacets.GroupID)
 	var responseBody map[string]any
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &responseBody))
 	data, ok := responseBody["data"].(map[string]any)

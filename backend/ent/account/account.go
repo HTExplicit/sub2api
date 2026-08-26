@@ -66,6 +66,10 @@ const (
 	FieldSchedulable = "schedulable"
 	// FieldCindyBalanceInsufficientAt holds the string denoting the cindy_balance_insufficient_at field in the database.
 	FieldCindyBalanceInsufficientAt = "cindy_balance_insufficient_at"
+	// FieldCindyBannedAt holds the string denoting the cindy_banned_at field in the database.
+	FieldCindyBannedAt = "cindy_banned_at"
+	// FieldCindyCredentialGeneration holds the string denoting the cindy_credential_generation field in the database.
+	FieldCindyCredentialGeneration = "cindy_credential_generation"
 	// FieldRateLimitedAt holds the string denoting the rate_limited_at field in the database.
 	FieldRateLimitedAt = "rate_limited_at"
 	// FieldRateLimitResetAt holds the string denoting the rate_limit_reset_at field in the database.
@@ -189,6 +193,8 @@ var Columns = []string{
 	FieldAutoPauseOnExpired,
 	FieldSchedulable,
 	FieldCindyBalanceInsufficientAt,
+	FieldCindyBannedAt,
+	FieldCindyCredentialGeneration,
 	FieldRateLimitedAt,
 	FieldRateLimitResetAt,
 	FieldOverloadUntil,
@@ -266,6 +272,10 @@ var (
 	DefaultAutoPauseOnExpired bool
 	// DefaultSchedulable holds the default value on creation for the "schedulable" field.
 	DefaultSchedulable bool
+	// DefaultCindyCredentialGeneration holds the default value on creation for the "cindy_credential_generation" field.
+	DefaultCindyCredentialGeneration int64
+	// CindyCredentialGenerationValidator is a validator for the "cindy_credential_generation" field. It is called by the builders before save.
+	CindyCredentialGenerationValidator func(int64) error
 	// SessionWindowStatusValidator is a validator for the "session_window_status" field. It is called by the builders before save.
 	SessionWindowStatusValidator func(string) error
 )
@@ -417,6 +427,16 @@ func BySchedulable(opts ...sql.OrderTermOption) OrderOption {
 // ByCindyBalanceInsufficientAt orders the results by the cindy_balance_insufficient_at field.
 func ByCindyBalanceInsufficientAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCindyBalanceInsufficientAt, opts...).ToFunc()
+}
+
+// ByCindyBannedAt orders the results by the cindy_banned_at field.
+func ByCindyBannedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCindyBannedAt, opts...).ToFunc()
+}
+
+// ByCindyCredentialGeneration orders the results by the cindy_credential_generation field.
+func ByCindyCredentialGeneration(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCindyCredentialGeneration, opts...).ToFunc()
 }
 
 // ByRateLimitedAt orders the results by the rate_limited_at field.

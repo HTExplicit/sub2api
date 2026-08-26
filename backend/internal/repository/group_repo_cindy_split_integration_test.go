@@ -236,6 +236,16 @@ func TestCindyGroupSplitRollsBackAllWritesWhenOutboxInsertFails(t *testing.T) {
 		Status:  service.StatusActive,
 		GroupID: &source.ID,
 	})
+	_, err = integrationDB.ExecContext(ctx, `
+		DELETE FROM scheduler_outbox
+		WHERE group_id = $1
+		   OR account_id = ANY($2)
+		   OR COALESCE(payload, '{}'::jsonb) @>
+		      jsonb_build_object('account_ids', jsonb_build_array($3::bigint))
+		   OR COALESCE(payload, '{}'::jsonb) @>
+		      jsonb_build_object('account_ids', jsonb_build_array($4::bigint))
+	`, source.ID, []int64{cindy.ID, ordinary.ID}, cindy.ID, ordinary.ID)
+	require.NoError(t, err)
 
 	targetName := fmt.Sprintf("cindy-split-rollback-target-%d", suffix)
 	functionName := fmt.Sprintf("fail_cindy_split_outbox_%d", suffix)

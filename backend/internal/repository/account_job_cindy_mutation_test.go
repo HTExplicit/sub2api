@@ -116,15 +116,33 @@ func expectAccountJobCindyMutationLocks(mock sqlmock.Sqlmock, accountID int64, g
 }
 
 func expectCanonicalCindyMutationAccount(mock sqlmock.Sqlmock, accountID int64) {
-	credentials := []byte(`{"base_url":"https://api.laxarouter.ai","api_key":"test-key"}`)
-	mock.ExpectQuery("(?s)SELECT id, name, platform, wire_platform, provider_profile, type, credentials,.*FOR UPDATE").
+	expectCanonicalCindyMutationAccountWithCredential(mock, accountID, "test-key", cindyMutationTestDeviceID)
+	expectAvailableCindyDeviceClaim(mock, accountID, cindyMutationTestDeviceID)
+}
+
+const cindyMutationTestDeviceID = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+
+func expectCanonicalCindyMutationAccountWithCredential(mock sqlmock.Sqlmock, accountID int64, apiKey, deviceID string) {
+	credentials := []byte(`{"base_url":"https://api.laxarouter.ai","api_key":"` + apiKey + `"}`)
+	extra := []byte(`{"cindy_device_id":"` + deviceID + `","cindy_device_id_source":"input-preserved"}`)
+	mock.ExpectQuery("(?s)SELECT id, name, platform, wire_platform, provider_profile, type, credentials, extra,.*FOR UPDATE").
 		WithArgs(accountID).
 		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "name", "platform", "wire_platform", "provider_profile", "type", "credentials",
+			"id", "name", "platform", "wire_platform", "provider_profile", "type", "credentials", "extra",
 			"status", "schedulable", "updated_at",
 		}).AddRow(accountID, "Cindy", service.PlatformCindy, service.WirePlatformOpenAI,
-			service.ProviderProfileCindyLaxaV1, service.AccountTypeAPIKey, credentials,
+			service.ProviderProfileCindyLaxaV1, service.AccountTypeAPIKey, credentials, extra,
 			service.StatusActive, true, time.Now().UTC()))
+}
+
+func expectAvailableCindyDeviceClaim(mock sqlmock.Sqlmock, accountID int64, deviceID string) {
+	mock.ExpectQuery("SELECT pg_advisory_xact_lock").WithArgs(advisoryLockHash("cindy-device:" + deviceID)).
+		WillReturnRows(sqlmock.NewRows([]string{"pg_advisory_xact_lock"}).AddRow(nil))
+	mock.ExpectQuery("(?s)SELECT id FROM accounts.*cindy_device_id.*FOR UPDATE").
+		WithArgs(accountID, service.PlatformCindy, service.WirePlatformOpenAI,
+			service.ProviderProfileCindyLaxaV1, service.AccountTypeAPIKey,
+			"https://api.laxarouter.ai", "https://api.laxarouter.ai/", deviceID).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 }
 
 func TestAccountJobCindyMutationCommitsIdentityHealthAndSchedulerTogether(t *testing.T) {
@@ -272,6 +290,60 @@ func TestAccountJobCindyMutationRollsBackAccountAndGroupsWhenIdentityBindFails(t
 
 	require.ErrorIs(t, err, bindErr)
 	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestAccountJobCindyMutationSerializesSameDeviceAcrossCredentialKeys(t *testing.T) {
+	identity := &accountJobIdentityTransactionStub{}
+	runner, mock := newAccountJobCindyMutationTest(t, identity)
+	firstAccountID := int64(75)
+	secondAccountID := int64(76)
+	deviceID := cindyMutationTestDeviceID
+
+	mock.ExpectBegin()
+	expectAccountJobCindyMutationLocks(mock, firstAccountID)
+	expectCanonicalCindyMutationAccountWithCredential(mock, firstAccountID, "test-key-one", deviceID)
+	expectAvailableCindyDeviceClaim(mock, firstAccountID, deviceID)
+	mock.ExpectExec("INSERT INTO scheduler_outbox").
+		WithArgs(service.SchedulerOutboxEventAccountChanged, &firstAccountID, nil, nil, sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	first, err := runner.Run(context.Background(), firstAccountID, func(context.Context) (*service.Account, error) {
+		return canonicalCindyJobMutationAccountWithCredential(firstAccountID, "test-key-one", deviceID), nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, firstAccountID, first.ID)
+
+	mock.ExpectBegin()
+	expectAccountJobCindyMutationLocks(mock, secondAccountID)
+	expectCanonicalCindyMutationAccountWithCredential(mock, secondAccountID, "test-key-two", deviceID)
+	mock.ExpectQuery("SELECT pg_advisory_xact_lock").WithArgs(advisoryLockHash("cindy-device:" + deviceID)).
+		WillReturnRows(sqlmock.NewRows([]string{"pg_advisory_xact_lock"}).AddRow(nil))
+	mock.ExpectQuery("(?s)SELECT id FROM accounts.*cindy_device_id.*FOR UPDATE").
+		WithArgs(secondAccountID, service.PlatformCindy, service.WirePlatformOpenAI,
+			service.ProviderProfileCindyLaxaV1, service.AccountTypeAPIKey,
+			"https://api.laxarouter.ai", "https://api.laxarouter.ai/", deviceID).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(firstAccountID))
+	mock.ExpectRollback()
+
+	_, err = runner.Run(context.Background(), secondAccountID, func(context.Context) (*service.Account, error) {
+		return canonicalCindyJobMutationAccountWithCredential(secondAccountID, "test-key-two", deviceID), nil
+	})
+
+	require.ErrorIs(t, err, service.ErrCindyDeviceIdentityConflict)
+	require.Len(t, identity.params, 1, "only the first serialized device claim may bind and commit")
+	require.Equal(t, firstAccountID, identity.params[0].AccountID)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func canonicalCindyJobMutationAccountWithCredential(accountID int64, apiKey, deviceID string) *service.Account {
+	account := canonicalCindyJobMutationAccount(accountID)
+	account.Credentials["api_key"] = apiKey
+	account.Extra = map[string]any{
+		service.CindyDeviceIDExtraKey:       deviceID,
+		service.CindyDeviceIDSourceExtraKey: "input-preserved",
+	}
+	return account
 }
 
 func canonicalCindyJobMutationAccount(accountID int64) *service.Account {

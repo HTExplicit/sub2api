@@ -220,7 +220,7 @@ func TestCalculateOpenAIImageCost_StrictCindyUsesCatalogPerImagePrice(t *testing
 		cindyImagePricingAccount(), result, UsageTokens{}, 1,
 	)
 	require.NoError(t, err)
-	require.InDelta(t, 0.2411, cost.TotalCost, 1e-12)
+	require.InDelta(t, 0.1351, cost.TotalCost, 1e-12)
 }
 
 func TestCalculateOpenAIImageCost_StrictCindyGroupPriceWins(t *testing.T) {
@@ -247,6 +247,22 @@ func TestCalculateOpenAIImageCost_StrictCindyMissingOutputMeterFailsClosed(t *te
 	cost, err := svc.calculateOpenAIImageCost(
 		context.Background(), "gpt-image-2", &APIKey{Group: &Group{}},
 		cindyImagePricingAccount(), result, UsageTokens{}, 1,
+	)
+
+	require.Nil(t, cost)
+	require.ErrorIs(t, err, ErrModelPricingUnavailable)
+}
+
+func TestCalculateCindyCatalogImageCostMissingInputTokenMeterFailsClosed(t *testing.T) {
+	t.Parallel()
+	svc := &OpenAIGatewayService{billingService: NewBillingService(&config.Config{}, nil)}
+
+	cost, err := svc.calculateCindyCatalogImageCost(
+		"gemini-3-pro-image",
+		&OpenAIForwardResult{ImageCount: 1, ImageInputCount: 1},
+		UsageTokens{InputTokens: 1, ImageInputTokens: 1},
+		1,
+		CindyImagePricing{OutputCostPerImage: 0.134, InputCostPerImage: 0.0011},
 	)
 
 	require.Nil(t, cost)

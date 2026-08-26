@@ -131,7 +131,7 @@ func TestForwardCindyAnthropicMessagesRejectsUnverifiedWire(t *testing.T) {
 
 	_, err := newCindyNativeMessagesService(&anthropicHTTPUpstreamRecorder{}).ForwardCindyAnthropicMessages(
 		context.Background(), c, newCindyNativeMessagesAccount(),
-		[]byte(`{"model":"deepseek-v4-pro","messages":[]}`), "deepseek-v4-pro",
+		[]byte(`{"model":"gemini-3-pro-image","messages":[]}`), "gemini-3-pro-image",
 	)
 	require.ErrorContains(t, err, "not verified for native Messages")
 }

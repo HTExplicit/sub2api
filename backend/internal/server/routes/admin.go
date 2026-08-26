@@ -442,6 +442,9 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.DELETE("/tags/:id", h.Admin.Account.DeleteAccountTag)
 		accounts.GET("/cindy/insufficient-delete-preview", h.Admin.Account.PreviewCindyInsufficientDeletion)
 		accounts.POST("/cindy/delete-insufficient", h.Admin.Account.DeleteCindyInsufficient)
+		accounts.GET("/cindy/banned-delete-preview", h.Admin.Account.PreviewCindyBannedDeletion)
+		accounts.POST("/cindy/delete-banned", h.Admin.Account.DeleteCindyBanned)
+		accounts.GET("/cindy/duplicate-identity-inventory", h.Admin.Account.GetCindyDuplicateIdentityInventory)
 		accounts.GET("/:id", h.Admin.Account.GetByID)
 		accounts.POST("", h.Admin.Account.Create)
 		accounts.POST("/:id/duplicate", h.Admin.Account.Duplicate)
@@ -487,6 +490,7 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.POST("/batch", h.Admin.Account.BatchCreate)
 		// 账号导出泄露上游凭证原文——要求 step-up 2FA
 		accounts.GET("/data", gin.HandlerFunc(stepUpAuth), h.Admin.Account.ExportData)
+		accounts.POST("/data/preview", h.Admin.Account.PreviewImportData)
 		accounts.POST("/data", h.Admin.Account.ImportData)
 		accounts.POST("/batch-update-credentials", h.Admin.Account.BatchUpdateCredentials)
 		accounts.POST("/batch-refresh-tier", h.Admin.Account.BatchRefreshTier)

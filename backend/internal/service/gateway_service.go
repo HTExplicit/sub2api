@@ -835,11 +835,25 @@ type GatewayService struct {
 	balanceNotifyService  *BalanceNotifyService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
 	cindyHealth           CindyHealthCoordinator
+	usageCache            *UsageCache
+	usageCommitObserver   UsageCommitObserver
 }
 
 func (s *GatewayService) SetCindyHealthCoordinator(coordinator CindyHealthCoordinator) {
 	if s != nil {
 		s.cindyHealth = coordinator
+	}
+}
+
+func (s *GatewayService) SetUsageCache(cache *UsageCache) {
+	if s != nil {
+		s.usageCache = cache
+	}
+}
+
+func (s *GatewayService) SetUsageCommitObserver(observer UsageCommitObserver) {
+	if s != nil {
+		s.usageCommitObserver = observer
 	}
 }
 

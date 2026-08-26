@@ -823,7 +823,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		cindyBalanceInsufficient := s.markCindyBalanceInsufficientFromTest(ctx, account, resp.StatusCode, body)
+		cindyTerminal := s.markCindyBalanceInsufficientFromTest(ctx, account, resp.StatusCode, body)
 		body = redactAgentIdentitySensitiveBodyForAccount(ctx, s.accountRepo, credentialAccount, body)
 		if !agentIdentityTaskRecoveryWasTried(ctx) && credentialAccount.IsOpenAIAgentIdentity() && isAgentIdentityTaskInvalidHTTPResponse(resp.StatusCode, body) {
 			expectedTaskID := credentialAccount.GetCredential("task_id")
@@ -833,11 +833,11 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 			c.Request = c.Request.WithContext(markAgentIdentityTaskRecoveryTried(ctx))
 			return s.testOpenAIAccountConnection(c, account, modelID, prompt, mode)
 		}
-		if resp.StatusCode == http.StatusTooManyRequests && !cindyBalanceInsufficient {
+		if resp.StatusCode == http.StatusTooManyRequests && !cindyTerminal {
 			s.reconcileOpenAI429State(ctx, account, resp.Header, body)
 		}
 		// 401 Unauthorized: 标记账号为永久错误
-		if resp.StatusCode == http.StatusUnauthorized && s.accountRepo != nil {
+		if resp.StatusCode == http.StatusUnauthorized && !cindyTerminal && s.accountRepo != nil {
 			errMsg := fmt.Sprintf("Authentication failed (401): %s", string(body))
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
@@ -2021,11 +2021,11 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		cindyBalanceInsufficient := s.markCindyBalanceInsufficientFromTest(ctx, account, resp.StatusCode, body)
-		if resp.StatusCode == http.StatusTooManyRequests && !cindyBalanceInsufficient {
+		cindyTerminal := s.markCindyBalanceInsufficientFromTest(ctx, account, resp.StatusCode, body)
+		if resp.StatusCode == http.StatusTooManyRequests && !cindyTerminal {
 			s.reconcileOpenAI429State(ctx, account, resp.Header, body)
 		}
-		if resp.StatusCode == http.StatusUnauthorized && s.accountRepo != nil {
+		if resp.StatusCode == http.StatusUnauthorized && !cindyTerminal && s.accountRepo != nil {
 			errMsg := fmt.Sprintf("Chat Completions authentication failed (401): %s", string(body))
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
@@ -2159,7 +2159,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
-	cindyBalanceInsufficient := s.markCindyBalanceInsufficientFromTest(ctx, account, resp.StatusCode, body)
+	cindyTerminal := s.markCindyBalanceInsufficientFromTest(ctx, account, resp.StatusCode, body)
 	body = redactAgentIdentitySensitiveBodyForAccount(ctx, s.accountRepo, credentialAccount, body)
 	if !agentIdentityTaskRecoveryWasTried(ctx) && credentialAccount.IsOpenAIAgentIdentity() && isAgentIdentityTaskInvalidHTTPResponse(resp.StatusCode, body) {
 		expectedTaskID := credentialAccount.GetCredential("task_id")
@@ -2181,13 +2181,13 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 			mergeAccountExtra(account, updates)
 		}
 		// 探测如返回 429,主动同步限流状态,避免后续短时间内继续选中。
-		if resp.StatusCode == http.StatusTooManyRequests && !cindyBalanceInsufficient {
+		if resp.StatusCode == http.StatusTooManyRequests && !cindyTerminal {
 			s.reconcileOpenAI429State(ctx, account, resp.Header, body)
 		}
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		if resp.StatusCode == http.StatusUnauthorized && s.accountRepo != nil {
+		if resp.StatusCode == http.StatusUnauthorized && !cindyTerminal && s.accountRepo != nil {
 			errMsg := fmt.Sprintf("Authentication failed (401): %s", string(body))
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
@@ -2239,14 +2239,14 @@ func (s *AccountTestService) reconcileOpenAI429State(ctx context.Context, accoun
 }
 
 func (s *AccountTestService) markCindyBalanceInsufficientFromTest(ctx context.Context, account *Account, statusCode int, body []byte) bool {
-	signal := ClassifyCindyBalanceInsufficient(account, statusCode, body)
-	if signal == CindyBalanceSignalNone {
+	signal := ClassifyCindyHealthSignal(account, statusCode, body)
+	if signal != CindyHealthSignalExactBudget && signal != CindyHealthSignalBanned {
 		return false
 	}
-	// Connection tests report the observed request failure only. They never
-	// create follow-up traffic or modify account-wide balance state; that is
-	// reserved for an explicit administrator-created durable probe job.
-	log.Printf("Cindy budget signal observed during account test; no balance probe scheduled")
+	if s != nil && s.openAIGatewayService != nil && s.openAIGatewayService.cindyHealth != nil {
+		s.openAIGatewayService.cindyHealth.ObserveCindyHealthSignal(ctx, account, signal)
+	}
+	log.Printf("Cindy terminal health signal observed during account test")
 	return true
 }
 

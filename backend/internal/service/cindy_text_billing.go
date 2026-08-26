@@ -14,6 +14,7 @@ func calculateCindyCatalogTextCost(
 	model string,
 	tokens UsageTokens,
 	rateMultiplier float64,
+	serviceTier string,
 	longContextBillingEnabled bool,
 ) (*CostBreakdown, error) {
 	if billingService == nil {
@@ -30,6 +31,22 @@ func calculateCindyCatalogTextCost(
 		}
 		return nil, fmt.Errorf("%w for strict Cindy text model %q", ErrModelPricingUnavailable, model)
 	}
+	discount, err := cindyCatalogCostDiscount(model)
+	if err != nil {
+		return nil, err
+	}
+	if discount == 1 {
+		return &CostBreakdown{BillingMode: string(BillingModeToken)}, nil
+	}
+	pricing = applyCindyCatalogCostDiscount(pricing, discount)
+	pricing, err = cindyTextPricingForServiceTier(model, pricing, serviceTier)
+	if err != nil {
+		return nil, err
+	}
+	if (tokens.CacheCreationTokens > 0 || tokens.CacheCreation5mTokens > 0 || tokens.CacheCreation1hTokens > 0) &&
+		!pricing.CacheCreationInputTokenCostPresent {
+		return nil, fmt.Errorf("%w for strict Cindy text model %q: cache-creation price is absent", ErrModelPricingUnavailable, model)
+	}
 
 	modelPricing, err := cindyTextPricingAsModelPricing(model, pricing)
 	if err != nil {
@@ -38,6 +55,65 @@ func calculateCindyCatalogTextCost(
 	cost := billingService.computeTokenBreakdown(modelPricing, tokens, rateMultiplier, "", longContextBillingEnabled)
 	cost.BillingMode = string(BillingModeToken)
 	return cost, nil
+}
+
+func cindyCatalogCostDiscount(model string) (float64, error) {
+	capability, ok := resolveKnownCindyCapability(model)
+	if !ok {
+		return 0, nil
+	}
+	if capability.CostDiscount < 0 || capability.CostDiscount > 1 {
+		return 0, fmt.Errorf("%w for strict Cindy text model %q: catalog discount is outside [0,1]", ErrModelPricingUnavailable, model)
+	}
+	return capability.CostDiscount, nil
+}
+
+func applyCindyCatalogCostDiscount(pricing CindyTextPricing, discount float64) CindyTextPricing {
+	factor := 1 - discount
+	pricing.InputCostPerToken *= factor
+	pricing.OutputCostPerToken *= factor
+	pricing.InputCostPerTokenPriority *= factor
+	pricing.OutputCostPerTokenPriority *= factor
+	pricing.CacheReadInputTokenCost *= factor
+	pricing.CacheReadInputTokenCostPriority *= factor
+	pricing.CacheCreationInputTokenCost *= factor
+	pricing.CacheCreationInputTokenCostAbove1hr *= factor
+	pricing.InputCostPerAudioToken *= factor
+	pricing.LongContextInputCostPerToken *= factor
+	pricing.LongContextOutputCostPerToken *= factor
+	pricing.LongContextCacheReadInputTokenCost *= factor
+	pricing.LongContextCacheCreationTokenCost *= factor
+	pricing.LongContextInputCostPerTokenPriority *= factor
+	pricing.LongContextOutputCostPerTokenPriority *= factor
+	pricing.LongContextCacheReadInputTokenCostPriority *= factor
+	return pricing
+}
+
+func cindyTextPricingForServiceTier(model string, pricing CindyTextPricing, serviceTier string) (CindyTextPricing, error) {
+	switch normalizeBillingServiceTier(serviceTier) {
+	case "", "auto", "default", "scale":
+		return pricing, nil
+	case "priority", "fast":
+		if pricing.InputCostPerTokenPriority <= 0 || pricing.OutputCostPerTokenPriority <= 0 ||
+			pricing.CacheReadInputTokenCostPriority <= 0 {
+			return CindyTextPricing{}, fmt.Errorf("%w for strict Cindy text model %q: priority prices are incomplete", ErrModelPricingUnavailable, model)
+		}
+		pricing.InputCostPerToken = pricing.InputCostPerTokenPriority
+		pricing.OutputCostPerToken = pricing.OutputCostPerTokenPriority
+		pricing.CacheReadInputTokenCost = pricing.CacheReadInputTokenCostPriority
+		if pricing.LongContextInputTokenThreshold > 0 {
+			if pricing.LongContextInputCostPerTokenPriority <= 0 || pricing.LongContextOutputCostPerTokenPriority <= 0 ||
+				pricing.LongContextCacheReadInputTokenCostPriority <= 0 {
+				return CindyTextPricing{}, fmt.Errorf("%w for strict Cindy text model %q: priority long-context prices are incomplete", ErrModelPricingUnavailable, model)
+			}
+			pricing.LongContextInputCostPerToken = pricing.LongContextInputCostPerTokenPriority
+			pricing.LongContextOutputCostPerToken = pricing.LongContextOutputCostPerTokenPriority
+			pricing.LongContextCacheReadInputTokenCost = pricing.LongContextCacheReadInputTokenCostPriority
+		}
+		return pricing, nil
+	default:
+		return CindyTextPricing{}, fmt.Errorf("%w for strict Cindy text model %q: service tier %q has no exact catalog price", ErrModelPricingUnavailable, model, serviceTier)
+	}
 }
 
 func cindyTextPricingAsModelPricing(model string, pricing CindyTextPricing) (*ModelPricing, error) {
