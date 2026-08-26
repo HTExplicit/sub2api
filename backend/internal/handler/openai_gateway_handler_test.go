@@ -2173,7 +2173,7 @@ func TestCloseOpenAIWSFailoverExhausted_ContinuationWritesSingleFailureTerminal(
 			serverErrCh <- err
 			return
 		}
-		closeOpenAIWSFailoverExhausted(conn, service.NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil))
+		closeOpenAIWSFailoverExhausted(nil, conn, service.NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil))
 		serverErrCh <- nil
 	}))
 	defer server.Close()
