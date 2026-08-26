@@ -79,7 +79,7 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION enqueue_channel_group_cache_invalidations(target_group_id BIGINT)
+CREATE OR REPLACE FUNCTION enqueue_channel_group_scheduler_invalidation(target_group_id BIGINT)
 RETURNS VOID
 LANGUAGE plpgsql
 AS $$
@@ -91,6 +91,15 @@ BEGIN
     VALUES ('group_changed', NULL, target_group_id, NULL,
         'scheduler_outbox:channel_group:' || target_group_id::TEXT)
     ON CONFLICT (dedup_key) WHERE dedup_key IS NOT NULL DO NOTHING;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION enqueue_channel_group_cache_invalidations(target_group_id BIGINT)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    PERFORM enqueue_channel_group_scheduler_invalidation(target_group_id);
     PERFORM enqueue_group_api_key_auth_cache_invalidations(target_group_id);
 END;
 $$;
@@ -155,6 +164,11 @@ RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 BEGIN
+	IF TG_OP = 'UPDATE'
+	   AND OLD.account_id IS NOT DISTINCT FROM NEW.account_id
+	   AND OLD.group_id IS NOT DISTINCT FROM NEW.group_id THEN
+		RETURN NEW;
+	END IF;
     IF TG_OP <> 'INSERT' THEN
         PERFORM enqueue_channel_group_cache_invalidations(OLD.group_id);
     END IF;
@@ -441,7 +455,7 @@ RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    PERFORM enqueue_channel_group_cache_invalidations(NEW.id);
+    PERFORM enqueue_channel_group_scheduler_invalidation(NEW.id);
     PERFORM project_assert_cindy_group_topology(NEW.id);
     PERFORM project_reconcile_cindy_group_channel(NEW.id);
     RETURN NEW;
@@ -450,7 +464,7 @@ $$;
 
 DROP TRIGGER IF EXISTS trg_groups_cindy_channel_topology ON groups;
 CREATE TRIGGER trg_groups_cindy_channel_topology
-AFTER INSERT OR UPDATE OF platform, wire_platform, provider_profile,
+AFTER UPDATE OF platform, wire_platform, provider_profile,
     fallback_group_id, fallback_group_id_on_invalid_request, deleted_at ON groups
 FOR EACH ROW EXECUTE FUNCTION reconcile_group_cindy_channel_topology();
 
