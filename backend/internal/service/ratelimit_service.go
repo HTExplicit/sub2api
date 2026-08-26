@@ -275,6 +275,9 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 		}
 		return ErrorPolicySkipped
 	}
+	if statusCode == 529 {
+		return ErrorPolicyMatched
+	}
 	if s.tryTempUnschedulable(ctx, account, statusCode, responseBody, firstRequestedModel(requestedModel)) {
 		return ErrorPolicyTempUnscheduled
 	}
@@ -318,6 +321,14 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 	// 如果启用且错误码不在列表中，则不处理（不停止调度、不标记限流/过载）
 	if !account.ShouldHandleErrorCode(statusCode) {
 		slog.Info("account_error_code_skipped", "account_id", account.ID, "status_code", statusCode)
+		return false
+	}
+	if statusCode == 529 {
+		if customErrorCodesEnabled {
+			s.handleCustomErrorCode(ctx, account, statusCode, extractUpstreamErrorMessage(responseBody))
+			return true
+		}
+		s.handle529(ctx, account)
 		return false
 	}
 

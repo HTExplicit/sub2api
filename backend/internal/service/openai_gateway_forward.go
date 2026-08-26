@@ -54,15 +54,30 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if normalized {
 		body = normalizedBody
 	}
+	legacyIngressBody, legacyIngressChanged, legacyIngressErr := normalizeOpenAIResponsesLegacyIngress(body)
+	if legacyIngressErr != nil {
+		return nil, legacyIngressErr
+	}
+	if legacyIngressChanged {
+		body = legacyIngressBody
+	}
 	// 在分流到 passthrough / Codex transform / 原生 ChatCompletions 之前统一修正
 	// 显式为 null 的工具 Schema type，否则 upstream 的 400 会被归一成可重试的 502，
 	// 同一份坏定义在账号池里反复重放。
-	sanitizedToolBody, toolSchemaSanitized, toolSchemaErr := sanitizeOpenAIResponsesToolParameterTypes(body)
+	sanitizedToolBody, toolSchemaSanitized, toolSchemaErr := sanitizeOpenAIResponsesToolSchemasForPlatform(body, account.Platform)
 	if toolSchemaErr != nil {
-		return nil, fmt.Errorf("sanitize OpenAI Responses tool parameters: %w", toolSchemaErr)
-	}
-	if toolSchemaSanitized {
+		return nil, toolSchemaErr
+	} else if toolSchemaSanitized {
 		body = sanitizedToolBody
+	}
+	if account.IsOpenAIOAuthLike() {
+		reasoningBody, reasoningChanged, reasoningErr := normalizeOpenAIResponsesReasoningMode(body)
+		if reasoningErr != nil {
+			return nil, fmt.Errorf("normalize OpenAI Responses reasoning.mode: %w", reasoningErr)
+		}
+		if reasoningChanged {
+			body = reasoningBody
+		}
 	}
 	compatRuntime := OpenAIRefusalRecoveryRuntime{}
 	if s.settingService != nil {
@@ -141,6 +156,17 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			return nil, err
 		}
 	}
+	nativeDeepSeekResponses := account.Platform == PlatformDeepseek &&
+		(account.GetAPIProtocol() == APIProtocolResponses || account.IsAdaptiveAPIProtocol())
+	if nativeDeepSeekResponses && account.Type == AccountTypeAPIKey && !compactPath &&
+		needsOpenAIResponsesClientToolAdaptation(body) {
+		adaptedBody, mapping, adaptErr := adaptOpenAIResponsesClientTools(body)
+		if adaptErr != nil {
+			return nil, fmt.Errorf("adapt DeepSeek Responses client tools: %w", adaptErr)
+		}
+		body = adaptedBody
+		setOpenAIResponsesClientToolMapping(c, mapping)
+	}
 
 	originalBody := body
 	requestView := newOpenAIRequestView(body)
@@ -150,8 +176,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	// but it still needs the original value to isolate the upstream Session_Id.
 	promptCacheKey := strings.TrimSpace(requestView.PromptCacheKey)
 	originalModel := reqModel
-	nativeDeepSeekResponses := account.Platform == PlatformDeepseek &&
-		(account.GetAPIProtocol() == APIProtocolResponses || account.IsAdaptiveAPIProtocol())
 
 	if account.Platform == PlatformGrok {
 		return s.forwardGrokResponses(ctx, c, account, body, originalModel, reqStream, startTime)
@@ -163,11 +187,28 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if account.IsAnthropicProtocol() {
 		return s.forwardResponsesViaNativeAnthropic(ctx, c, account, body, reqModel)
 	}
+	if account.IsOpenAIApiKey() && !cindyRuntimeAccount {
+		if normalized, changed, normalizeErr := normalizeOpenAIParallelToolCallsWithoutTools(body, responsesLite); normalizeErr != nil {
+			return nil, normalizeErr
+		} else if changed {
+			body = normalized
+			originalBody = normalized
+		}
+		if normalized, changed, normalizeErr := normalizeOpenAIAPIKeyStoreFalseReasoningReplay(body, isOpenAIResponsesCompactPath(c)); normalizeErr != nil {
+			return nil, normalizeErr
+		} else if changed {
+			body = normalized
+			originalBody = normalized
+		}
+		requestView = newOpenAIRequestView(body)
+		reqModel, reqStream, promptCacheKey = requestView.Model, requestView.Stream, requestView.PromptCacheKey
+		originalModel = reqModel
+	}
 
 	if shouldForwardOpenAIResponsesViaRawChatCompletions(account) {
 		return s.forwardResponsesViaRawChatCompletions(ctx, c, account, body, compactPath)
 	}
-	if account.Platform == PlatformOpenAI && account.Type == AccountTypeAPIKey {
+	if !cindyRuntimeAccount && account.IsOpenAI() && (account.IsOpenAIApiKey() || account.IsOpenAIOAuthLike()) {
 		sanitizedBody, changed, sanitizeErr := sanitizeOpenAIResponsesInputItemIDs(body)
 		if sanitizeErr != nil {
 			return nil, fmt.Errorf("sanitize OpenAI Responses input item IDs: %w", sanitizeErr)
@@ -340,35 +381,33 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		markPatchSet("instructions", defaultCodexSynthInstructions(reqModel))
 	}
 
-	billingModel := account.GetMappedModel(reqModel)
-	if billingModel != reqModel {
-		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Model mapping applied: %s -> %s (account: %s, isCodexCLI: %v)", reqModel, billingModel, account.Name, isCodexCLI)
-		reqModel = billingModel
-		markPatchSet("model", billingModel)
-	}
-	upstreamModel := billingModel
 	isCompactRequest := compactPath
-	compactMapped := false
-	if isCompactRequest {
-		compactMappedModel := resolveOpenAICompactForwardModel(account, billingModel)
-		if compactMappedModel != "" && compactMappedModel != billingModel {
-			compactMapped = true
-			upstreamModel = compactMappedModel
-			reqModel = compactMappedModel
-			markPatchSet("model", compactMappedModel)
-			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Compact model mapping applied: %s -> %s (account: %s, isCodexCLI: %v)", billingModel, compactMappedModel, account.Name, isCodexCLI)
+	requestedModel := reqModel
+	billingModel, upstreamModel := resolveOpenAIForwardMappedModels(account, requestedModel, isCompactRequest)
+	if cindyRuntimeAccount {
+		if mappedModel, mapped := CindyCompatibilityMappedUpstreamModel(requestedModel); mapped {
+			upstreamModel = mappedModel
+		} else if mappedModel, mapped := CindyMappedUpstreamModel(requestedModel); mapped {
+			upstreamModel = mappedModel
 		}
 	}
-	if !compactMapped {
-		modelForNormalize := reqModel
-		if modelForNormalize == "" {
-			modelForNormalize = requestView.Model
+	if isCompactRequest {
+		if compactModel := s.resolveOpenAICompactFallbackModel(account, requestedModel); compactModel != "" {
+			upstreamModel = compactModel
 		}
-		upstreamModel = normalizeOpenAIModelForUpstream(account, modelForNormalize)
-		if upstreamModel != "" && upstreamModel != modelForNormalize {
-			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Upstream model resolved: %s -> %s (account: %s, type: %s, isCodexCLI: %v)", modelForNormalize, upstreamModel, account.Name, account.Type, isCodexCLI)
-			reqModel = upstreamModel
-			markPatchSet("model", upstreamModel)
+	}
+	if billingModel != requestedModel {
+		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Model mapping applied: %s -> %s (account: %s, isCodexCLI: %v)", requestedModel, billingModel, account.Name, isCodexCLI)
+	}
+	reqModel = billingModel
+	if upstreamModel != requestedModel {
+		markPatchSet("model", upstreamModel)
+	}
+	if upstreamModel != billingModel {
+		if isCompactRequest {
+			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Compact model mapping applied: %s -> %s (account: %s, isCodexCLI: %v)", requestedModel, upstreamModel, account.Name, isCodexCLI)
+		} else {
+			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Upstream model resolved: %s -> %s (account: %s, type: %s, isCodexCLI: %v)", billingModel, upstreamModel, account.Name, account.Type, isCodexCLI)
 		}
 	}
 	if strings.TrimSpace(gjson.GetBytes(body, "reasoning.effort").String()) == "minimal" {
@@ -461,7 +500,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		}
 	}
 
-	if account.Type == AccountTypeOAuth {
+	if account.UsesOpenAICodexProtocol() {
 		decoded, decodeErr := ensureReqBody()
 		if decodeErr != nil {
 			return nil, decodeErr
@@ -563,16 +602,18 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 	previousResponseResult := gjson.GetBytes(body, "previous_response_id")
 	if wsDecision.Transport != OpenAIUpstreamTransportResponsesWebsocketV2 && previousResponseResult.Exists() {
-		if strings.TrimSpace(previousResponseResult.String()) != "" &&
-			GetOpenAIClientTransport(c) == OpenAIClientTransportHTTP {
+		configuredDecision := s.getOpenAIWSProtocolResolver().Resolve(account)
+		if strings.TrimSpace(previousResponseResult.String()) != "" && GetOpenAIClientTransport(c) == OpenAIClientTransportHTTP &&
+			(cindyRuntimeAccount || configuredDecision.Transport == OpenAIUpstreamTransportResponsesWebsocketV2) {
 			MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalFeatureGate)
 			c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
-				"type":    "invalid_request_error",
-				"message": "previous_response_id is only supported on Responses WebSocket v2",
+				"type": "invalid_request_error", "message": "previous_response_id is only supported on Responses WebSocket v2",
 			}})
 			return nil, errors.New("previous_response_id requires OpenAI Responses WebSocket v2")
 		}
-		markPatchDelete("previous_response_id")
+		if !account.IsOpenAIApiKey() {
+			markPatchDelete("previous_response_id")
+		}
 	}
 	if openAIRequestBodyMayContainEmptyBase64InputImage(body) {
 		decoded, decodeErr := ensureReqBody()
@@ -609,6 +650,28 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 		}
 	}
+	if account.UsesOpenAICodexProtocol() {
+		decoded, decodeErr := ensureReqBody()
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
+		if input, ok := decoded["input"].([]any); ok && sanitizeOpenAIResponsesOrphanToolOutputs(
+			decoded,
+			input,
+			strings.TrimSpace(firstNonEmptyString(decoded["previous_response_id"])) != "",
+		) {
+			markDecodedModified()
+		}
+	}
+	if reqBody != nil || openAIResponsesInputMayNeedTruncation(body) {
+		decoded, decodeErr := ensureReqBody()
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
+		if truncateOpenAIResponsesInputText(decoded) {
+			markDecodedModified()
+		}
+	}
 
 	if bodyModified {
 		if requestView.HasPatches() {
@@ -631,6 +694,13 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 			requestView = newOpenAIRequestView(body)
 		}
+	}
+	if normalizedBody, changed, normalizeErr := NormalizeCompactionTriggerInputOrder(body); normalizeErr != nil {
+		return nil, fmt.Errorf("normalize compaction trigger order: %w", normalizeErr)
+	} else if changed {
+		body = normalizedBody
+		requestView = newOpenAIRequestView(body)
+		reqBody = nil
 	}
 
 	// Business System Prompt is deliberately the final service-owned prompt
@@ -704,6 +774,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if err != nil {
 		return nil, err
 	}
+	SetOpsUpstreamModel(c, upstreamModel)
 
 	// 命中 WS 时仅走 WebSocket Mode；不再自动回退 HTTP。
 	if wsDecision.Transport == OpenAIUpstreamTransportResponsesWebsocketV2 {
@@ -1259,6 +1330,13 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			return s.handleErrorResponse(ctx, resp, c, account, body, billingModel)
 		}
 		defer func() { _ = resp.Body.Close() }()
+		if mapping, ok := openAIResponsesClientToolMapping(c); ok && isEventStreamResponse(resp.Header) {
+			maxLineSize := defaultMaxLineSize
+			if s.cfg != nil && s.cfg.Gateway.MaxLineSize > 0 {
+				maxLineSize = s.cfg.Gateway.MaxLineSize
+			}
+			resp.Body = newResponsesClientToolStreamBody(resp.Body, mapping, maxLineSize)
+		}
 
 		serviceTier := extractOpenAIServiceTierFromBody(body)
 		// 上游接受后只保留计费需要的标量，避免响应处理期间继续保活完整 input/tools map。
@@ -1358,7 +1436,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 		// Extract and save Codex usage snapshot from response headers (for OAuth accounts).
 		// 排除 spark 影子:其 codex_* 仅由 QueryUsage(/wham/usage bengalfox)更新(外审第7轮 P1)。
-		if account.Type == AccountTypeOAuth && !account.IsShadow() {
+		if account.UsesOpenAICodexProtocol() && !account.IsShadow() {
 			if snapshot := ParseCodexRateLimitHeaders(resp.Header); snapshot != nil {
 				s.updateCodexUsageSnapshot(ctx, account.ID, snapshot)
 			}
@@ -1377,7 +1455,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			UpstreamModel:                 upstreamModel,
 			UpstreamResponseModel:         observedUpstreamResponseModel(c),
 			UpstreamResponseModelConflict: observedUpstreamResponseModelConflict(c),
-			ServiceTier:                   serviceTier,
+			UpstreamResponseServiceTier:   observedUpstreamResponseServiceTier(c),
+			ServiceTier:                   resolvedOpenAIUpstreamServiceTier(c, serviceTier),
 			ReasoningEffort:               reasoningEffort,
 			Stream:                        reqStream,
 			OpenAIWSMode:                  false,
@@ -1424,7 +1503,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	// Determine target URL based on account type
 	var targetURL string
 	switch account.Type {
-	case AccountTypeOAuth:
+	case AccountTypeOAuth, AccountTypeSetupToken:
 		// OAuth accounts use ChatGPT internal API
 		targetURL = chatgptCodexURL
 	case AccountTypeAPIKey:
@@ -1470,7 +1549,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	}
 
 	// Set headers specific to OAuth accounts (ChatGPT internal API)
-	if account.Type == AccountTypeOAuth {
+	if account.UsesOpenAICodexProtocol() {
 		// Required: set Host for ChatGPT API (must use req.Host, not Header.Set)
 		req.Host = "chatgpt.com"
 		if err := resolveAndSetOpenAIChatGPTAccountHeaders(ctx, s.accountRepo, req.Header, account); err != nil {
@@ -1490,7 +1569,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	// 客户端回带的 x-codex-turn-state 若已知由其他账号铸造（failover 换号），
 	// 剥离后再出站——异账号 blob 与本账号的（指纹收敛后）出站身份自相矛盾。
 	s.guardOpenAICodexTurnStateEcho(c, account, req.Header)
-	if account.Type == AccountTypeOAuth {
+	if account.UsesOpenAICodexProtocol() {
 		compatMessagesBridge := isOpenAICompatMessagesBridgeContext(c) || isOpenAICompatMessagesBridgeBody(body)
 		// 清除客户端透传的 session 头，后续用隔离后的值重新设置，防止跨用户会话碰撞。
 		clientConversationID := strings.TrimSpace(req.Header.Get("conversation_id"))
@@ -1545,7 +1624,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 
 	// 终态收口：强制统一 OAuth 出站身份（User-Agent / originator / version 同源自洽）。
 	// 客户端自报身份不参与构造，浏览器型 UA 也因此不会再到达上游（原浏览器 UA 兜底已被吸收）。
-	if account.Type == AccountTypeOAuth {
+	if account.UsesOpenAICodexProtocol() {
 		enforceCodexIdentityHeadersWithUA(req.Header, s.codexIdentityOverrideUA(account))
 	}
 

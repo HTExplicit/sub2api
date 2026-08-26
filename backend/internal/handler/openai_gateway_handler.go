@@ -1797,6 +1797,14 @@ func (h *OpenAIGatewayHandler) handleAnthropicFailoverExhausted(c *gin.Context, 
 		h.anthropicStreamingAwareError(c, status, "api_error", message, streamStarted)
 		return
 	}
+	if failoverErr != nil && failoverErr.RequestScopedTransient && strings.TrimSpace(failoverErr.ClientMessage) != "" {
+		status := failoverErr.ClientStatusCode
+		if status <= 0 {
+			status = http.StatusServiceUnavailable
+		}
+		h.anthropicStreamingAwareError(c, status, "api_error", failoverErr.ClientMessage, streamStarted)
+		return
+	}
 	if failoverErr != nil && failoverErr.IsOpenAICyberFailover() {
 		h.anthropicStreamingAwareErrorWithDetails(
 			c,
@@ -3287,6 +3295,15 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 		h.handleStreamingAwareError(c, status, "upstream_error", message, streamStarted)
 		return
 	}
+	if failoverErr.RequestScopedTransient && strings.TrimSpace(failoverErr.ClientMessage) != "" {
+		status := failoverErr.ClientStatusCode
+		if status <= 0 {
+			status = http.StatusServiceUnavailable
+		}
+		service.SetOpsUpstreamError(c, failoverErr.StatusCode, failoverErr.ClientMessage, "")
+		h.handleStreamingAwareError(c, status, "server_error", failoverErr.ClientMessage, streamStarted)
+		return
+	}
 	if failoverErr.CindyBalanceInsufficient {
 		status, errType, message := h.mapUpstreamError(http.StatusTooManyRequests)
 		service.SetOpsUpstreamError(c, http.StatusTooManyRequests, message, "")
@@ -3335,6 +3352,9 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 }
 
 func credentialFailoverClientResponse(failoverErr *service.UpstreamFailoverError) (int, string) {
+	if failoverErr != nil && failoverErr.ClientStatusCode > 0 && strings.TrimSpace(failoverErr.ClientMessage) != "" {
+		return failoverErr.ClientStatusCode, failoverErr.ClientMessage
+	}
 	if failoverErr != nil && failoverErr.Reason == service.AntigravityCredentialRejectedReason {
 		return http.StatusBadGateway, service.AntigravityCredentialRejectedClientMessage
 	}
@@ -4074,6 +4094,7 @@ func (h *OpenAIGatewayHandler) enqueueCyberSessionBlockedOpsEntry(c *gin.Context
 	if h.opsService == nil {
 		return
 	}
+	c.Set(opsDedicatedEntryEnqueuedKey, true)
 	meta := cyberPolicyOpsErrorMeta{Model: model, InboundEndpoint: GetInboundEndpoint(c), CreatedAt: time.Now(), SessionBlockKey: sessionBlockKey}
 	meta.RequestID = c.Writer.Header().Get("X-Request-Id")
 	if c.Request != nil && c.Request.URL != nil {

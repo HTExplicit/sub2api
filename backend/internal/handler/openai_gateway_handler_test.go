@@ -715,7 +715,7 @@ func TestResolveOpenAIMessagesDispatchMappedModel(t *testing.T) {
 				Platform: service.PlatformGrok,
 			},
 		}
-		require.Equal(t, "grok-4.5", resolveOpenAIMessagesDispatchMappedModel(nil, apiKey, "claude-sonnet-4-5"))
+		require.Equal(t, xai.DefaultTextModel, resolveOpenAIMessagesDispatchMappedModel(nil, apiKey, "claude-sonnet-4-5"))
 		require.Empty(t, resolveOpenAIMessagesDispatchMappedModel(nil, apiKey, "grok"))
 	})
 

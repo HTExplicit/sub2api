@@ -373,7 +373,12 @@ func (s *defaultOpenAIWSStateStore) BindSessionTurnState(groupID int64, sessionH
 		turnState, _ = args[0].(string)
 		ttl, _ = args[1].(time.Duration)
 	case 3:
-		accountID, _ = args[0].(int64)
+		switch value := args[0].(type) {
+		case int64:
+			accountID = value
+		case int:
+			accountID = int64(value)
+		}
 		turnState, _ = args[1].(string)
 		ttl, _ = args[2].(time.Duration)
 	default:

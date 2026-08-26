@@ -513,7 +513,7 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 		}
 		return true
 	}
-	if isOpenAIAccount(account) && account.Type == AccountTypeAPIKey {
+	if isOpenAIAccount(account) && (account.Type == AccountTypeAPIKey || statusCode != http.StatusTooManyRequests) {
 		switch statusCode {
 		case http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests:
 			// Authentication and quota responses are handled exclusively by the
@@ -556,6 +556,9 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	}
 	if statusCode == http.StatusTooManyRequests {
 		s.markOpenAIOAuth429RateLimited(stateCtx, account, headers, responseBody)
+		if isOpenAIOAuthAccount(account) {
+			return false
+		}
 	}
 	if s.rateLimitService == nil {
 		return false
@@ -1094,6 +1097,9 @@ func canonicalOpenAIAccountSchedulingModel(account *Account, requestedModel stri
 	model := strings.TrimSpace(requestedModel)
 	if account == nil || model == "" {
 		return model
+	}
+	if account.IsOpenAI() {
+		return resolveOpenAIAccountUpstreamModelForRequest(account, model, false)
 	}
 	if mapped := strings.TrimSpace(account.GetMappedModel(model)); mapped != "" {
 		return mapped

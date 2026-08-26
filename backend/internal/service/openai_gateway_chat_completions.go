@@ -152,7 +152,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 
 	promptCacheKey = strings.TrimSpace(promptCacheKey)
 	compatPromptCacheInjected := false
-	if promptCacheKey == "" && account.Type == AccountTypeOAuth && shouldAutoInjectPromptCacheKeyForCompat(upstreamModel) {
+	if promptCacheKey == "" && account.UsesOpenAICodexProtocol() && shouldAutoInjectPromptCacheKeyForCompat(upstreamModel) {
 		promptCacheKey = deriveCompatPromptCacheKey(&chatReq, upstreamModel)
 		compatPromptCacheInjected = promptCacheKey != ""
 	}
@@ -233,7 +233,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	}
 	logger.L().Debug("openai chat_completions: model mapping applied", logFields...)
 
-	if account.Type == AccountTypeOAuth {
+	if account.UsesOpenAICodexProtocol() {
 		var reqBody map[string]any
 		if err := json.Unmarshal(responsesBody, &reqBody); err != nil {
 			return nil, fmt.Errorf("unmarshal for codex transform: %w", err)
@@ -382,9 +382,8 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 
 	// Propagate ServiceTier and ReasoningEffort to result for billing
 	if handleErr == nil && result != nil {
-		if responsesReq.ServiceTier != "" {
-			st := responsesReq.ServiceTier
-			result.ServiceTier = &st
+		if tier := resolvedOpenAIUpstreamServiceTier(c, extractOpenAIServiceTierFromBody(responsesBody)); tier != nil {
+			result.ServiceTier = tier
 		}
 		if responsesReq.Reasoning != nil && responsesReq.Reasoning.Effort != "" {
 			re := responsesReq.Reasoning.Effort
@@ -484,6 +483,7 @@ func (s *OpenAIGatewayService) handleChatBufferedStreamingResponse(
 		observer = beginUpstreamResponseModelObservation(c)
 	}
 	observer.Observe(finalResponse.Model, true)
+	observer.ObserveServiceTier(finalResponse.ServiceTier, true)
 	if strings.TrimSpace(finalResponse.Status) == "failed" {
 		payload := terminalPayload
 		if len(payload) == 0 {
@@ -557,6 +557,7 @@ func (s *OpenAIGatewayService) handleChatBufferedStreamingResponse(
 		UpstreamModel:                 upstreamModel,
 		UpstreamResponseModel:         observedUpstreamResponseModel(c),
 		UpstreamResponseModelConflict: observedUpstreamResponseModelConflict(c),
+		UpstreamResponseServiceTier:   observedUpstreamResponseServiceTier(c),
 		Stream:                        false,
 		Duration:                      time.Since(startTime),
 	}
@@ -678,6 +679,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 			UpstreamModel:                 upstreamModel,
 			UpstreamResponseModel:         observedUpstreamResponseModel(c),
 			UpstreamResponseModelConflict: observedUpstreamResponseModelConflict(c),
+			UpstreamResponseServiceTier:   observedUpstreamResponseServiceTier(c),
 			Stream:                        true,
 			Duration:                      time.Since(startTime),
 			FirstTokenMs:                  firstTokenMs,
@@ -768,7 +770,11 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 				}
 				return true
 			}
-			if openAIStreamFailedEventShouldFailover(payloadBytes, message) {
+			shouldFailover := openAIStreamFailedEventShouldFailover(payloadBytes, message)
+			if isBareErrorEvent {
+				shouldFailover = openAIStreamErrorEventShouldFailover(payloadBytes, message)
+			}
+			if !clientOutputStarted && shouldFailover {
 				streamFailoverErr = s.newOpenAIStreamFailoverError(c, account, false, requestID, payloadBytes, message, resp.StatusCode, resp.Header)
 				return true
 			}

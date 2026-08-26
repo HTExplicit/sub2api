@@ -586,9 +586,16 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 		}
 		return 0, nil, "", nil, nil
 	}
+	policyMiss := func() (int64, *Account, string, OpenAIWSStateStore, error) {
+		return 0, nil, responseID, store, errOpenAIContinuationPolicyMismatch
+	}
+	policyMissDelete := func() (int64, *Account, string, OpenAIWSStateStore, error) {
+		_, _ = store.DeleteResponseAccountIfMatches(ctx, derefGroupID(groupID), responseID, accountID)
+		return policyMiss()
+	}
 	if excludedIDs != nil {
 		if _, excluded := excludedIDs[accountID]; excluded {
-			return miss(false, false)
+			return policyMiss()
 		}
 	}
 
@@ -599,7 +606,7 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 	if s.accountRepo != nil {
 		account, err = s.accountRepo.GetByID(ctx, accountID)
 		if err == nil && account != nil && s.isOpenAIAccountBlockedBySchedulingThreshold(ctx, account) {
-			account = nil
+			return policyMiss()
 		}
 	} else {
 		account, err = s.getSchedulableAccount(ctx, accountID)
@@ -619,7 +626,7 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 		return miss(true, false)
 	}
 	if shouldClearStickySession(account, requestedModel) || !account.IsSchedulable() {
-		return miss(false, false)
+		return policyMiss()
 	}
 	hasGroupMetadata := len(account.GroupIDs) > 0 || len(account.AccountGroups) > 0
 	if hasGroupMetadata && !s.openAIAccountMatchesSchedulingGroup(account, groupID) {
@@ -629,29 +636,29 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 		return 0, nil, responseID, store, errOpenAIContinuationPolicyMismatch
 	}
 	if !parentHealthyForShadow(account, s.parentAccountLookup(ctx)) {
-		return miss(false, false)
+		return policyMiss()
 	}
 	if requestedModel != "" && !account.IsModelSupported(requestedModel) {
-		return miss(false, false)
+		return policyMiss()
 	}
 	if !account.SupportsOpenAIEndpointCapability(requiredCapability) {
-		return miss(false, false)
+		return policyMiss()
 	}
 	// Quota auto-pause must also gate the previous_response_id sticky path; otherwise an
 	// account over its 5h/7d threshold keeps serving the same response chain even though
 	// normal scheduling skips it. Pause is transient, so fall through to normal scheduling
 	// without deleting the binding (the window may reset before the next turn).
 	if paused, _ := shouldAutoPauseOpenAIAccountByQuota(ctx, account); paused {
-		return miss(false, false)
+		return policyMiss()
 	}
 	if vetoed, _ := openAIProfitControlVetoReason(ctx, account); vetoed {
-		return miss(false, false)
+		return policyMiss()
 	}
 	if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, requestedModel) {
 		return miss(false, true)
 	}
 	if requireCompact && openAICompactSupportTier(account) == 0 {
-		return miss(true, false)
+		return policyMissDelete()
 	}
 	return accountID, account, responseID, store, nil
 }

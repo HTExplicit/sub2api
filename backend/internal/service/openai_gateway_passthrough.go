@@ -159,7 +159,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		}
 	}
 
-	if account != nil && account.Type == AccountTypeOAuth {
+	if account != nil && account.UsesOpenAICodexProtocol() {
 		if rejectReason := detectOpenAIPassthroughInstructionsRejectReason(reqModel, body); rejectReason != "" {
 			rejectMsg := "OpenAI codex passthrough requires a non-empty instructions field"
 			MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalPolicyDenied)
@@ -699,7 +699,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 ) (*http.Request, error) {
 	targetURL := openaiPlatformAPIURL
 	switch account.Type {
-	case AccountTypeOAuth:
+	case AccountTypeOAuth, AccountTypeSetupToken:
 		targetURL = chatgptCodexURL
 	case AccountTypeAPIKey:
 		baseURL := account.GetOpenAIBaseURL()
@@ -755,7 +755,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	}
 
 	// OAuth 透传到 ChatGPT internal API 时补齐必要头。
-	if account.Type == AccountTypeOAuth {
+	if account.UsesOpenAICodexProtocol() {
 		// Current Codex OAuth HTTP no longer negotiates the legacy Responses
 		// experiment. Passthrough may receive it from an older client, so remove
 		// only that token while preserving any independent beta negotiation.
@@ -821,7 +821,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	applyStagedCodexFingerprintHeaders(c, account, req.Header)
 	// 终态收口：透传路径的 OAuth 与非透传完全一致，同样强制统一出站身份
 	// （User-Agent / originator / version 同源自洽），客户端自报身份不会到达上游。
-	if account.Type == AccountTypeOAuth {
+	if account.UsesOpenAICodexProtocol() {
 		enforceCodexIdentityHeadersWithUA(req.Header, s.codexIdentityOverrideUA(account))
 	}
 
@@ -1847,11 +1847,16 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	sawDone := false
 	sawTerminalEvent := false
 	sawFailedEvent := false
+	sawBareError := false
+	sawResponseFailed := false
+	failureDelivered := false
+	var bareErrorPayload []byte
 	semanticOutputSeen := false
 	capacityFailoverSuppressedLogged := false
 	pendingErrorEventHeader := false
 	failedMessage := ""
 	clientOutputStarted := false
+	codexFailureTerminal := account != nil && account.Platform == PlatformOpenAI
 	var refusalStream *openAIRefusalStreamState
 	var refusalRuntime OpenAIRefusalRecoveryRuntime
 	refusalEarlyEmitted := false
@@ -1888,6 +1893,26 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		pendingLines = pendingLines[:0]
 		return true
 	}
+	ensureResponseFailedTerminal := func() {
+		if !sawBareError || sawResponseFailed || failureDelivered || clientDisconnected {
+			return
+		}
+		if !writePendingLines() {
+			return
+		}
+		prepareTurnStateHeader()
+		if _, err := fmt.Fprint(w, buildOpenAIResponseFailedSSE(responseID, originalModel, bareErrorPayload, failedMessage)); err != nil {
+			clientDisconnected = true
+			return
+		}
+		commitTurnStateAfterWrite()
+		clientOutputStarted = true
+		sawFailedEvent = true
+		sawTerminalEvent = true
+		failureDelivered = true
+		flushPending = true
+		flushPendingOutput()
+	}
 
 	scanner := bufio.NewScanner(resp.Body)
 	maxLineSize := defaultMaxLineSize
@@ -1913,9 +1938,11 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 
 	for documentScanner.Scan() {
 		line := documentScanner.Text()
-		if strings.TrimSpace(line) == "event: error" && openAIStreamClientOutputStarted(c, clientOutputStarted) {
-			pendingErrorEventHeader = true
-			continue
+		if strings.TrimSpace(line) == "event: error" {
+			if codexFailureTerminal || openAIStreamClientOutputStarted(c, clientOutputStarted) {
+				pendingErrorEventHeader = true
+				continue
+			}
 		}
 		lineStartsClientOutput := false
 		forceFlushFailedEvent := false
@@ -2006,6 +2033,10 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 					}
 				}
 				if !cyberPolicyHit {
+					if openAIStreamErrorEventShouldFailover(dataBytes, errorMessage) {
+						return resultWithUsage(),
+							s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, errorMessage, resp.StatusCode, resp.Header)
+					}
 					if status, errType, errMsg, matched := applyOpenAIStreamFailedErrorPassthroughRule(c, account.Platform, dataBytes, errorMessage); matched {
 						s.recordOpenAIStreamUpstreamError(c, account, true, upstreamRequestID, "http_error", dataBytes, errorMessage)
 						MarkResponseCommitted(c)
@@ -2018,13 +2049,22 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 						})
 						return resultWithUsage(), fmt.Errorf("upstream error event: passthrough rule matched message=%s", errMsg)
 					}
-					if openAIStreamErrorEventShouldFailover(dataBytes, errorMessage) {
-						return resultWithUsage(),
-							s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, errorMessage, resp.StatusCode, resp.Header)
-					}
 				}
 			}
+			if eventType == "error" && codexFailureTerminal {
+				sawBareError = true
+				bareErrorPayload = append(bareErrorPayload[:0], dataBytes...)
+				failedMessage = extractOpenAISSEErrorMessage(dataBytes)
+				if failedMessage == "" {
+					failedMessage = "Upstream response failed"
+				}
+				s.parseSSEUsageBytesWithType(dataBytes, eventType, usage)
+				pendingErrorEventHeader = false
+				sawTerminalEvent = true
+				continue
+			}
 			if eventType == "response.failed" {
+				sawResponseFailed = true
 				failedMessage = extractOpenAISSEErrorMessage(dataBytes)
 				// response.failed 自带上游已消耗的 usage（input token 通常已扣）；必须先解析
 				// 再打 cyber 标记，否则 mark 记到的是解析前的 0，导致流式 cyber 按 0 token 计费
@@ -2061,6 +2101,10 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 					}
 				}
 				if !cyberPolicyHit && !cyberPolicySanitized && !openAIStreamClientOutputStarted(c, clientOutputStarted) {
+					if openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
+						return resultWithUsage(),
+							s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, failedMessage, resp.StatusCode, resp.Header)
+					}
 					if status, errType, errMsg, matched := applyOpenAIStreamFailedErrorPassthroughRule(c, account.Platform, dataBytes, failedMessage); matched {
 						// 命中透传规则也要记录 ops 上游错误事件（对齐 CC/Messages 与
 						// antigravity 先例），否则透传命中的 failed 在监控中不可见。
@@ -2074,10 +2118,6 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 							},
 						})
 						return resultWithUsage(), fmt.Errorf("upstream response failed: passthrough rule matched message=%s", errMsg)
-					}
-					if openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
-						return resultWithUsage(),
-							s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, failedMessage, resp.StatusCode, resp.Header)
 					}
 				}
 				if !cyberPolicyHit && !cyberPolicySanitized && openAIStreamClientOutputStarted(c, clientOutputStarted) {
@@ -2101,6 +2141,13 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				}
 			}
 			if trimmedData == "[DONE]" {
+				if sawBareError && !sawResponseFailed {
+					ensureResponseFailedTerminal()
+					break
+				}
+				if sawFailedEvent {
+					break
+				}
 				sawDone = true
 			}
 			if openAIStreamEventIsTerminal(trimmedData) {
@@ -2228,6 +2275,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			}
 		}
 	}
+	ensureResponseFailedTerminal()
 	if err := documentScanner.Err(); err != nil {
 		if (sawDone || sawTerminalEvent) && !sawFailedEvent {
 			s.clearOpenAIProxyStreamDisconnect(account)

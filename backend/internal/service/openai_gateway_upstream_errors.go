@@ -135,7 +135,7 @@ func isOpenAITransientProcessingError(upstreamStatusCode int, upstreamMsg string
 	if isOpenAICapacityShedMessage(upstreamMsg) ||
 		isOpenAICapacityShedMessage(gjson.GetBytes(upstreamBody, "error.message").String()) ||
 		isOpenAICapacityShedMessage(gjson.GetBytes(upstreamBody, "response.error.message").String()) ||
-		isOpenAICapacityShedMessage(string(upstreamBody)) {
+		(!gjson.ValidBytes(upstreamBody) && isOpenAICapacityShedMessage(string(upstreamBody))) {
 		return true
 	}
 	if upstreamStatusCode != http.StatusBadRequest && upstreamStatusCode != http.StatusServiceUnavailable {
@@ -170,7 +170,11 @@ func isOpenAITransientProcessingError(upstreamStatusCode int, upstreamMsg string
 	if match(gjson.GetBytes(upstreamBody, "error.message").String()) {
 		return true
 	}
-	return match(string(upstreamBody))
+	if match(gjson.GetBytes(upstreamBody, "response.error.message").String()) ||
+		match(gjson.GetBytes(upstreamBody, "message").String()) {
+		return true
+	}
+	return !gjson.ValidBytes(upstreamBody) && match(string(upstreamBody))
 }
 
 func isOpenAICapacityShedMessage(text string) bool {
@@ -183,7 +187,7 @@ func isOpenAICapacityShedMessage(text string) bool {
 func isOpenAIRequestScopedCapacityShed(upstreamMsg string, upstreamBody []byte) bool {
 	return isOpenAIUpstreamCapacityShedEvent(upstreamBody) ||
 		isOpenAICapacityShedMessage(upstreamMsg) ||
-		isOpenAICapacityShedMessage(string(upstreamBody))
+		(!gjson.ValidBytes(upstreamBody) && isOpenAICapacityShedMessage(string(upstreamBody)))
 }
 
 func isOpenAIContextWindowError(upstreamMsg string, upstreamBody []byte) bool {
@@ -228,7 +232,7 @@ func isOpenAIContextWindowError(upstreamMsg string, upstreamBody []byte) bool {
 			return true
 		}
 	}
-	return match(string(upstreamBody))
+	return !gjson.ValidBytes(upstreamBody) && match(string(upstreamBody))
 }
 
 func (s *OpenAIGatewayService) shouldFailoverUpstreamError(statusCode int) bool {

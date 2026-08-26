@@ -17,8 +17,10 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 	"go.uber.org/zap"
@@ -644,6 +646,10 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 					}
 				}
 				if !cyberPolicyHit {
+					if openAIStreamErrorEventShouldFailover(dataBytes, errorMessage) {
+						streamEarlyErr = s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, dataBytes, errorMessage, resp.StatusCode, resp.Header)
+						return
+					}
 					if status, errType, errMsg, matched := applyOpenAIStreamFailedErrorPassthroughRule(c, account.Platform, dataBytes, errorMessage); matched {
 						s.recordOpenAIStreamUpstreamError(c, account, false, upstreamRequestID, "http_error", dataBytes, errorMessage)
 						MarkResponseCommitted(c)
@@ -657,11 +663,15 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 						streamEarlyErr = fmt.Errorf("upstream error event: passthrough rule matched message=%s", errMsg)
 						return
 					}
-					if openAIStreamErrorEventShouldFailover(dataBytes, errorMessage) {
-						streamEarlyErr = s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, dataBytes, errorMessage, resp.StatusCode, resp.Header)
-						return
-					}
 				}
+			}
+			if eventType == "error" {
+				failedMessage = extractOpenAISSEErrorMessage(dataBytes)
+				if failedMessage == "" {
+					failedMessage = "Upstream response failed"
+				}
+				forceFlushFailedEvent = true
+				sawFailedEvent = true
 			}
 			if eventType == "response.failed" {
 				failedMessage = extractOpenAISSEErrorMessage(dataBytes)
@@ -706,6 +716,11 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 					}
 				}
 				if !cyberPolicyHit && !cyberPolicySanitized && !openAIStreamClientOutputStarted(c, clientOutputStarted) {
+					if openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
+						sawFailedEvent = true
+						streamEarlyErr = s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, dataBytes, failedMessage, resp.StatusCode, resp.Header)
+						return
+					}
 					if status, errType, errMsg, matched := applyOpenAIStreamFailedErrorPassthroughRule(c, account.Platform, dataBytes, failedMessage); matched {
 						sawFailedEvent = true
 						// 命中透传规则也要记录 ops 上游错误事件（对齐 CC/Messages 与
@@ -720,11 +735,6 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 							},
 						})
 						streamEarlyErr = fmt.Errorf("upstream response failed: passthrough rule matched message=%s", errMsg)
-						return
-					}
-					if openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
-						sawFailedEvent = true
-						streamEarlyErr = s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, dataBytes, failedMessage, resp.StatusCode, resp.Header)
 						return
 					}
 				}
@@ -1248,7 +1258,7 @@ func openAICompatPayloadWithEventType(payload, eventType string) string {
 	if eventType == "" || strings.TrimSpace(payload) == "" || strings.TrimSpace(payload) == "[DONE]" {
 		return payload
 	}
-	if gjson.Get(payload, "type").Exists() {
+	if strings.TrimSpace(gjson.Get(payload, "type").String()) != "" {
 		return payload
 	}
 	patched, err := sjson.Set(payload, "type", eventType)
@@ -1522,6 +1532,15 @@ func openAIUsageFromGJSON(value gjson.Result) (OpenAIUsage, bool) {
 	if outputTokens == 0 {
 		outputTokens = value.Get("completion_tokens").Int()
 	}
+	reasoningTokens := max(int(firstPositiveGJSONInt(
+		value.Get("completion_tokens_details.reasoning_tokens"),
+		value.Get("output_tokens_details.reasoning_tokens"),
+	)), 0)
+	if reasoningTokens > 0 {
+		outputTokens = xai.IncludeIndependentReasoningTokens(
+			inputTokens, outputTokens, value.Get("total_tokens").Int(), int64(reasoningTokens),
+		)
+	}
 	cacheReadTokens := openAICacheReadTokensFromUsage(value)
 	cacheCreationTokens := openAICacheCreationTokensFromUsage(value)
 	imageOutputTokens := value.Get("output_tokens_details.image_tokens").Int()
@@ -1666,6 +1685,10 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	body, err = restoreGrokResponsesClientToolPayload(c, body)
 	if err != nil {
 		return nil, fmt.Errorf("restore Grok Responses client tool response: %w", err)
+	}
+	body, err = restoreOpenAIResponsesClientToolPayload(c, body)
+	if err != nil {
+		return nil, fmt.Errorf("restore OpenAI Responses client tool response: %w", err)
 	}
 	body, err = restoreOpenAIResponsesNamespacePayload(c, body)
 	if err != nil {
@@ -1873,13 +1896,9 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 func extractOpenAISSETerminalEvent(body string) (string, []byte, bool) {
 	var terminalType string
 	var terminalPayload []byte
-	forEachOpenAISSEDataPayload(body, func(data []byte) {
-		if terminalPayload != nil {
-			return
-		}
-		eventType := strings.TrimSpace(gjson.GetBytes(data, "type").String())
+	forEachOpenAISSEFrame(body, func(eventType string, data []byte) {
 		switch eventType {
-		case "response.completed", "response.done", "response.failed", "response.incomplete", "response.cancelled", "response.canceled":
+		case "response.completed", "response.done", "response.failed", "response.incomplete", "response.cancelled", "response.canceled", "error":
 			terminalType = eventType
 			terminalPayload = append([]byte(nil), data...)
 		}
@@ -1900,6 +1919,44 @@ func extractOpenAISSEErrorMessage(payload []byte) string {
 		}
 	}
 	return sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(payload)))
+}
+
+func buildOpenAIResponseFailedSSE(responseID, model string, source []byte, fallbackMessage string) string {
+	responseID = strings.TrimSpace(responseID)
+	if responseID == "" {
+		responseID = "resp_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	}
+	errorType := strings.TrimSpace(gjson.GetBytes(source, "error.type").String())
+	if errorType == "" {
+		errorType = strings.TrimSpace(gjson.GetBytes(source, "response.error.type").String())
+	}
+	code := strings.TrimSpace(gjson.GetBytes(source, "error.code").String())
+	if code == "" {
+		code = strings.TrimSpace(gjson.GetBytes(source, "response.error.code").String())
+	}
+	if code == "" {
+		code = "upstream_error"
+	}
+	message := extractOpenAISSEErrorMessage(source)
+	if message == "" {
+		message = strings.TrimSpace(fallbackMessage)
+	}
+	if message == "" {
+		message = "Upstream response failed"
+	}
+	errorBody := gin.H{"code": code, "message": message}
+	if errorType != "" {
+		errorBody["type"] = errorType
+	}
+	response := gin.H{"id": responseID, "object": "response", "status": "failed", "output": []any{}, "error": errorBody}
+	if model = strings.TrimSpace(model); model != "" {
+		response["model"] = model
+	}
+	payload, err := marshalOpenAIUpstreamJSON(gin.H{"type": "response.failed", "response": response})
+	if err != nil {
+		payload = []byte(`{"type":"response.failed","response":{"status":"failed","output":[],"error":{"code":"upstream_error","message":"Upstream response failed"}}}`)
+	}
+	return "event: response.failed\ndata: " + string(payload) + "\n\n"
 }
 
 // sanitizeOpenAICyberPolicyFailedEvent replaces an upstream policy terminal
