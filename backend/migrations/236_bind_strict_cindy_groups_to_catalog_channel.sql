@@ -89,7 +89,12 @@ BEGIN
     END IF;
     INSERT INTO scheduler_outbox (event_type, account_id, group_id, payload, dedup_key)
     VALUES ('group_changed', NULL, target_group_id, NULL,
-        'scheduler_outbox:channel_group:' || target_group_id::TEXT)
+		'scheduler_outbox:' || encode(sha256(
+			convert_to('group_changed', 'UTF8')
+			|| decode('0000', 'hex')
+			|| convert_to(target_group_id::TEXT, 'UTF8')
+			|| decode('00', 'hex')
+		), 'hex'))
     ON CONFLICT (dedup_key) WHERE dedup_key IS NOT NULL DO NOTHING;
 END;
 $$;
@@ -164,11 +169,6 @@ RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 BEGIN
-	IF TG_OP = 'UPDATE'
-	   AND OLD.account_id IS NOT DISTINCT FROM NEW.account_id
-	   AND OLD.group_id IS NOT DISTINCT FROM NEW.group_id THEN
-		RETURN NEW;
-	END IF;
     IF TG_OP <> 'INSERT' THEN
         PERFORM enqueue_channel_group_cache_invalidations(OLD.group_id);
     END IF;
@@ -391,20 +391,31 @@ RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    IF TG_OP <> 'INSERT' THEN
-        PERFORM enqueue_channel_group_cache_invalidations(OLD.group_id);
-        PERFORM project_assert_cindy_group_topology(OLD.group_id);
-        PERFORM project_reconcile_cindy_group_channel(OLD.group_id);
-    END IF;
-    IF TG_OP <> 'DELETE' AND (TG_OP = 'INSERT'
-        OR NEW.account_id IS DISTINCT FROM OLD.account_id
-        OR NEW.group_id IS DISTINCT FROM OLD.group_id) THEN
-        PERFORM enqueue_channel_group_cache_invalidations(NEW.group_id);
-        PERFORM project_assert_cindy_group_topology(NEW.group_id);
-        PERFORM project_reconcile_cindy_group_channel(NEW.group_id);
-    END IF;
-    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
-    RETURN NEW;
+	IF TG_OP = 'UPDATE' THEN
+		IF OLD.account_id IS NOT DISTINCT FROM NEW.account_id
+		   AND OLD.group_id IS NOT DISTINCT FROM NEW.group_id THEN
+			RETURN NEW;
+		END IF;
+		PERFORM enqueue_channel_group_cache_invalidations(OLD.group_id);
+		PERFORM project_assert_cindy_group_topology(OLD.group_id);
+		PERFORM project_reconcile_cindy_group_channel(OLD.group_id);
+		IF NEW.group_id IS DISTINCT FROM OLD.group_id THEN
+			PERFORM enqueue_channel_group_cache_invalidations(NEW.group_id);
+			PERFORM project_assert_cindy_group_topology(NEW.group_id);
+			PERFORM project_reconcile_cindy_group_channel(NEW.group_id);
+		END IF;
+		RETURN NEW;
+	ELSIF TG_OP = 'INSERT' THEN
+		PERFORM enqueue_channel_group_cache_invalidations(NEW.group_id);
+		PERFORM project_assert_cindy_group_topology(NEW.group_id);
+		PERFORM project_reconcile_cindy_group_channel(NEW.group_id);
+		RETURN NEW;
+	ELSE
+		PERFORM enqueue_channel_group_cache_invalidations(OLD.group_id);
+		PERFORM project_assert_cindy_group_topology(OLD.group_id);
+		PERFORM project_reconcile_cindy_group_channel(OLD.group_id);
+		RETURN OLD;
+	END IF;
 END;
 $$;
 
