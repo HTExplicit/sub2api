@@ -1169,7 +1169,7 @@ func TestCindyWSV2BalanceTerminalWriteOrdering(t *testing.T) {
 			_, err := gateway.forwardOpenAIWSV2(
 				context.Background(), c, account,
 				map[string]any{"model": "openai/gpt-5.6-luna", "stream": true, "input": "hi"},
-				"sk-test", decision, true, true,
+				"", "sk-test", decision, true, true,
 				"gpt-5.6-luna", "openai/gpt-5.6-luna", time.Now(), 0, "", new(bool),
 			)
 

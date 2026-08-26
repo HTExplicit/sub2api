@@ -126,6 +126,10 @@ type UsageCache struct {
 	grokProbeCache    sync.Map           // accountID -> last billing probe attempt
 }
 
+// UsageCommitObserver runs only after the billing CAS confirms this process
+// owns the committed usage row.
+type UsageCommitObserver func(accountID int64)
+
 // NewUsageCache 创建 UsageCache 实例
 func NewUsageCache() *UsageCache {
 	return &UsageCache{}
@@ -740,6 +744,9 @@ func (s *AccountUsageService) getOpenAIUsage(ctx context.Context, account *Accou
 					if updates := buildCodexSparkWindowExtraUpdates(quotaUsage, now); len(updates) > 0 {
 						mergeAccountExtra(account, updates)
 						s.persistOpenAICodexProbeSnapshot(account.ID, updates)
+						if account.ParentAccountID != nil {
+							notifyOpenAIAutoReset(*account.ParentAccountID)
+						}
 						if usage.UpdatedAt == nil {
 							usage.UpdatedAt = &now
 						}
@@ -932,7 +939,9 @@ func (s *AccountUsageService) persistOpenAICodexProbeSnapshot(accountID int64, u
 	go func() {
 		updateCtx, updateCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer updateCancel()
-		_ = s.accountRepo.UpdateExtra(updateCtx, accountID, updates)
+		if err := s.accountRepo.UpdateExtra(updateCtx, accountID, updates); err == nil {
+			notifyOpenAIAutoReset(accountID)
+		}
 	}()
 }
 

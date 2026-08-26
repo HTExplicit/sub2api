@@ -178,6 +178,7 @@ export default {
     modelPlaza: 'Model Plaza',
     subscriptions: 'Subscriptions',
     accounts: 'Accounts',
+    plugins: 'Plugins',
     tasks: 'Tasks',
     cindyAccounts: 'Cindy Accounts',
     proxies: 'Proxies',

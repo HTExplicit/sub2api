@@ -29,6 +29,49 @@ type cindyHealthCoordinatorRecorder struct {
 	successes []int64
 }
 
+// cindyBalanceRecoveryInterleavingCache is shared by default and unit-tagged
+// recovery tests so both build modes exercise the same episode-CAS fixture.
+type cindyBalanceRecoveryInterleavingCache struct {
+	*stubGatewayCache
+	terminalPending *CindyHealthEpisode
+	afterGet        func()
+	afterClear      func()
+}
+
+func (c *cindyBalanceRecoveryInterleavingCache) GetCindyHealthTerminalPending(
+	_ context.Context,
+	_ int64,
+	_ string,
+) (*CindyHealthEpisode, error) {
+	var captured *CindyHealthEpisode
+	if c.terminalPending != nil {
+		episode := *c.terminalPending
+		captured = &episode
+	}
+	if c.afterGet != nil {
+		afterGet := c.afterGet
+		c.afterGet = nil
+		afterGet()
+	}
+	return captured, nil
+}
+
+func (c *cindyBalanceRecoveryInterleavingCache) ClearCindyHealthTerminalPendingIfMatch(
+	_ context.Context,
+	episode CindyHealthEpisode,
+) (bool, error) {
+	current := c.terminalPending
+	if current == nil || current.AccountID != episode.AccountID || current.Generation != episode.Generation ||
+		current.EpisodeID != episode.EpisodeID || current.Fingerprint != episode.Fingerprint || current.Status != episode.Status {
+		return false, nil
+	}
+	c.terminalPending = nil
+	if c.afterClear != nil {
+		c.afterClear()
+	}
+	return true, nil
+}
+
 func (r *cindyHealthCoordinatorRecorder) ObserveCindyHealthSignal(_ context.Context, account *Account, signal CindyHealthSignal) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

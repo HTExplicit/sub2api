@@ -13,32 +13,18 @@ import (
 const (
 	dataImportActionReject = "reject"
 
-	dataImportCodeCreate                  = "account_import_create"
-	dataImportCodeUpdate                  = "account_import_update"
-	dataImportCodePayloadInvalid          = "account_import_payload_invalid"
-	dataImportCodeIdentityConflict        = "account_import_identity_conflict"
-	dataImportCodeCindyTargetRequired     = "cindy_import_target_group_required"
-	dataImportCodeCindyTargetInvalid      = "cindy_import_target_group_invalid"
-	dataImportCodeCindyAPIKeyInvalid      = "cindy_import_api_key_invalid"
-	dataImportCodeCindyCredentialConflict = "cindy_import_credential_conflict"
-	dataImportCodeCindyDeviceConflict     = "cindy_import_device_conflict"
-	dataImportCodeCindyDeviceInvalid      = "cindy_import_device_invalid"
-	dataImportCodeExecutionFailed         = "account_import_execution_failed"
+	dataImportCodeCreate                  = service.AccountImportCodeCreate
+	dataImportCodeUpdate                  = service.AccountImportCodeUpdate
+	dataImportCodePayloadInvalid          = service.AccountImportCodePayloadInvalid
+	dataImportCodeIdentityConflict        = service.AccountImportCodeIdentityConflict
+	dataImportCodeCindyTargetRequired     = service.AccountImportCodeCindyTargetRequired
+	dataImportCodeCindyTargetInvalid      = service.AccountImportCodeCindyTargetInvalid
+	dataImportCodeCindyAPIKeyInvalid      = service.AccountImportCodeCindyAPIKeyInvalid
+	dataImportCodeCindyCredentialConflict = service.AccountImportCodeCredentialConflict
+	dataImportCodeCindyDeviceConflict     = service.AccountImportCodeDeviceConflict
+	dataImportCodeCindyDeviceInvalid      = service.AccountImportCodeDeviceInvalid
+	dataImportCodeExecutionFailed         = service.AccountImportCodeExecutionFailed
 )
-
-var dataImportBusinessMessages = map[string]string{
-	dataImportCodeCreate:                  "account will be created",
-	dataImportCodeUpdate:                  "account will be updated",
-	dataImportCodePayloadInvalid:          "account import item is invalid",
-	dataImportCodeIdentityConflict:        "account identity matches multiple existing accounts",
-	dataImportCodeCindyTargetRequired:     "one explicit target group is required for Cindy imports",
-	dataImportCodeCindyTargetInvalid:      "target group is not a strict Cindy group",
-	dataImportCodeCindyAPIKeyInvalid:      "Cindy API key is required",
-	dataImportCodeCindyCredentialConflict: "credential is duplicated in the submitted import",
-	dataImportCodeCindyDeviceConflict:     "device identity belongs to another Cindy credential",
-	dataImportCodeCindyDeviceInvalid:      "Cindy device identity is invalid",
-	dataImportCodeExecutionFailed:         "account import item could not be applied",
-}
 
 type dataImportDecision struct {
 	Account   DataAccount
@@ -53,10 +39,11 @@ type dataImportDecision struct {
 func (d dataImportDecision) rejected() bool { return d.Action == dataImportActionReject }
 
 func dataImportMessage(code string) string {
-	if message, ok := dataImportBusinessMessages[code]; ok {
+	if message, ok := service.AccountBusinessMessage(code); ok {
 		return message
 	}
-	return dataImportBusinessMessages[dataImportCodeExecutionFailed]
+	message, _ := service.AccountBusinessMessage(dataImportCodeExecutionFailed)
+	return message
 }
 
 func rejectDataImportDecision(decision *dataImportDecision, code string) {

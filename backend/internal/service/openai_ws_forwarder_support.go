@@ -488,12 +488,18 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapabilityWit
 	}
 	accountID, account, responseID, store, resolveErr := s.resolveAccountByPreviousResponseIDForCapability(ctx, groupID, previousResponseID, requestedModel, excludedIDs, requiredCapability, requireCompact)
 	if resolveErr != nil {
+		if errors.Is(resolveErr, errOpenAIContinuationPolicyMismatch) {
+			return nil, nil
+		}
 		if strictContinuation {
 			return nil, resolveErr
 		}
 		return nil, nil
 	}
 	if accountID <= 0 || account == nil || store == nil {
+		if strictContinuation {
+			return nil, NewOpenAIContinuationStateUnavailableError(http.StatusServiceUnavailable, nil, nil)
+		}
 		return nil, nil
 	}
 
@@ -540,6 +546,8 @@ func (s *OpenAIGatewayService) ResolveAccountIDByPreviousResponseIDForScheduler(
 	return accountID
 }
 
+var errOpenAIContinuationPolicyMismatch = errors.New("continuation account does not satisfy current group policy")
+
 func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 	ctx context.Context,
 	groupID *int64,
@@ -578,9 +586,16 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 		}
 		return 0, nil, "", nil, nil
 	}
+	policyMiss := func() (int64, *Account, string, OpenAIWSStateStore, error) {
+		return 0, nil, responseID, store, errOpenAIContinuationPolicyMismatch
+	}
+	policyMissDelete := func() (int64, *Account, string, OpenAIWSStateStore, error) {
+		_, _ = store.DeleteResponseAccountIfMatches(ctx, derefGroupID(groupID), responseID, accountID)
+		return policyMiss()
+	}
 	if excludedIDs != nil {
 		if _, excluded := excludedIDs[accountID]; excluded {
-			return miss(false, false)
+			return policyMiss()
 		}
 	}
 
@@ -591,7 +606,7 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 	if s.accountRepo != nil {
 		account, err = s.accountRepo.GetByID(ctx, accountID)
 		if err == nil && account != nil && s.isOpenAIAccountBlockedBySchedulingThreshold(ctx, account) {
-			account = nil
+			return policyMiss()
 		}
 	} else {
 		account, err = s.getSchedulableAccount(ctx, accountID)
@@ -601,40 +616,49 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 	}
 	// 普通 WSv2 与严格 Cindy HTTP -> WSv2 桥接都可以使用 previous_response_id 粘连。
 	// force_http、全局关闭和账号级强制 HTTP 仍会让桥接资格失败。
-	if s.getOpenAIWSProtocolResolver().Resolve(account).Transport != OpenAIUpstreamTransportResponsesWebsocketV2 &&
+	allowStatelessAPIKeyContinuation := account.IsOpenAIApiKey() &&
+		!IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+	if !allowStatelessAPIKeyContinuation && s.getOpenAIWSProtocolResolver().Resolve(account).Transport != OpenAIUpstreamTransportResponsesWebsocketV2 &&
 		!s.cindyHTTPToWSV2ConfigEligible(account) {
-		return miss(false, false)
+		return 0, nil, responseID, store, errOpenAIContinuationPolicyMismatch
 	}
 	if !account.IsOpenAI() || !account.IsActive() || !account.Schedulable {
 		return miss(true, false)
 	}
 	if shouldClearStickySession(account, requestedModel) || !account.IsSchedulable() {
-		return miss(false, false)
+		return policyMiss()
+	}
+	hasGroupMetadata := len(account.GroupIDs) > 0 || len(account.AccountGroups) > 0
+	if hasGroupMetadata && !s.openAIAccountMatchesSchedulingGroup(account, groupID) {
+		return 0, nil, responseID, store, errOpenAIContinuationPolicyMismatch
+	}
+	if s.openAIGroupRequiresPrivacySet(ctx, groupID) && !account.IsPrivacySet() {
+		return 0, nil, responseID, store, errOpenAIContinuationPolicyMismatch
 	}
 	if !parentHealthyForShadow(account, s.parentAccountLookup(ctx)) {
-		return miss(false, false)
+		return policyMiss()
 	}
 	if requestedModel != "" && !account.IsModelSupported(requestedModel) {
-		return miss(false, false)
+		return policyMiss()
 	}
 	if !account.SupportsOpenAIEndpointCapability(requiredCapability) {
-		return miss(false, false)
+		return policyMiss()
 	}
 	// Quota auto-pause must also gate the previous_response_id sticky path; otherwise an
 	// account over its 5h/7d threshold keeps serving the same response chain even though
 	// normal scheduling skips it. Pause is transient, so fall through to normal scheduling
 	// without deleting the binding (the window may reset before the next turn).
 	if paused, _ := shouldAutoPauseOpenAIAccountByQuota(ctx, account); paused {
-		return miss(false, false)
+		return policyMiss()
 	}
 	if vetoed, _ := openAIProfitControlVetoReason(ctx, account); vetoed {
-		return miss(false, false)
+		return policyMiss()
 	}
 	if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, requestedModel) {
 		return miss(false, true)
 	}
 	if requireCompact && openAICompactSupportTier(account) == 0 {
-		return miss(true, false)
+		return policyMissDelete()
 	}
 	return accountID, account, responseID, store, nil
 }

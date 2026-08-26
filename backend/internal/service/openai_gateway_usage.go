@@ -145,6 +145,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	if !isGrokVideoUsageResult(result, nil) {
 		ApplyOpenAIImageBillingResolution(result)
 	}
+	logServiceTierBillingDowngrade("service.openai_gateway", account, result.RequestID, ApplyOpenAIServiceTierBillingResolution(result))
 
 	// OpenAI input_tokens 是总输入，包含缓存读取和缓存写入明细；原生
 	// Anthropic Messages 的 input_tokens 已与两类缓存 token 互斥。按结果上
@@ -472,14 +473,13 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
 		return billingErr
 	}
-	if !applied {
-		return nil
-	}
-	if s.usageCache != nil && account != nil {
-		s.usageCache.InvalidateAccount(account.ID)
-	}
-	if s.usageCommitObserver != nil && account != nil {
-		s.usageCommitObserver(account.ID)
+	if applied {
+		if s.usageCache != nil && account != nil {
+			s.usageCache.InvalidateAccount(account.ID)
+		}
+		if s.usageCommitObserver != nil && account != nil {
+			s.usageCommitObserver(account.ID)
+		}
 	}
 	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
 
@@ -1241,7 +1241,9 @@ func (s *OpenAIGatewayService) updateCodexUsageSnapshot(ctx context.Context, acc
 	go func() {
 		updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = s.accountRepo.UpdateExtra(updateCtx, accountID, updates)
+		if err := s.accountRepo.UpdateExtra(updateCtx, accountID, updates); err == nil {
+			notifyOpenAIAutoReset(accountID)
+		}
 	}()
 }
 
