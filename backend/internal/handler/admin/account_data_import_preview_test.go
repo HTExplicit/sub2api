@@ -90,6 +90,33 @@ func TestDataImportDecisionRequiresOneExplicitStrictCindyTargetGroup(t *testing.
 	require.Empty(t, decisions[0].Account.Groups, "legacy group names are never import authority")
 }
 
+func TestDataImportDecisionAllowsOnlyEmptyCanonicalCindyBootstrapTarget(t *testing.T) {
+	groupID := int64(88)
+	emptyCanonical := strictCindyImportGroup(groupID)
+	emptyCanonical.StrictCindy = false
+
+	svc := newDataV2AdminService()
+	svc.groups = []service.Group{emptyCanonical}
+	handler := NewAccountHandler(svc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	account := cindyImportAccount("bootstrap", service.PlatformOpenAI, "key", "")
+
+	preview, decisions, err := handler.previewDataImport(context.Background(), cindyImportRequest(&groupID, account))
+	require.NoError(t, err)
+	require.Equal(t, dataImportActionCreate, preview.Items[0].Action)
+	require.Equal(t, service.PlatformCindy, decisions[0].Account.Platform)
+	require.Equal(t, []int64{groupID}, decisions[0].GroupIDs)
+
+	svc.accounts = []service.Account{{
+		ID: 1, Name: "ordinary", Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "ordinary-key", "base_url": "https://api.openai.com"},
+		GroupIDs:    []int64{groupID},
+	}}
+	preview, _, err = handler.previewDataImport(context.Background(), cindyImportRequest(&groupID, account))
+	require.NoError(t, err)
+	require.Equal(t, dataImportActionReject, preview.Items[0].Action)
+	require.Equal(t, dataImportCodeCindyTargetInvalid, preview.Items[0].Code)
+}
+
 func TestDataImportDecisionRejectsInvalidCindyAPIKey(t *testing.T) {
 	groupID := int64(88)
 	svc := newDataV2AdminService()
