@@ -672,6 +672,45 @@ func extractOpenAIImagesModelRefusal(body []byte) string {
 	return refusal
 }
 
+func isOpenAIImagesContentPolicyRefusal(text string) bool {
+	lower := strings.ToLower(text)
+	for _, marker := range []string{
+		"content policy", "content_policy", "content filter", "content_filter",
+		"safety system", "safety policy", "safety violation", "moderation",
+		"安全系统", "安全策略", "安全政策", "内容政策", "内容审核", "违规内容", "不适合生成",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func openAIImagesTextFallbackError(body []byte) *OpenAIImagesUpstreamError {
+	return openAIImagesTextFallbackErrorForText(extractOpenAIImagesModelRefusal(body))
+}
+
+func openAIImagesTextFallbackErrorForText(text string) *OpenAIImagesUpstreamError {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil
+	}
+	if isOpenAIImagesContentPolicyRefusal(text) {
+		return &OpenAIImagesUpstreamError{
+			StatusCode: http.StatusBadRequest,
+			ErrorType:  "image_generation_user_error",
+			Code:       "content_policy_violation",
+			Message:    sanitizeUpstreamErrorMessage(text),
+		}
+	}
+	return &OpenAIImagesUpstreamError{
+		StatusCode: http.StatusBadGateway,
+		ErrorType:  "upstream_error",
+		Code:       "image_generation_unavailable",
+		Message:    "Upstream did not execute image generation",
+	}
+}
+
 // summarizeOpenAIImagesNoOutputBody 从上游 SSE 响应体提取诊断摘要，用于软失败时
 // 记录到 ops 日志（上游无图、无标准错误的场景）。提取最终事件类型、response.status、
 // incomplete_details.reason，并附 body 截断片段，便于事后定位上游到底返回了什么。
@@ -1351,6 +1390,17 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 	pendingResults := make([]openAIResponsesImageResult, 0, 1)
 	pendingSeen := make(map[string]struct{})
 	streamMeta := openAIResponsesImageResult{Model: strings.TrimSpace(fallbackModel)}
+	var fallbackText strings.Builder
+	appendFallbackText := func(text string) {
+		if text == "" || fallbackText.Len() >= 600 {
+			return
+		}
+		remaining := 600 - fallbackText.Len()
+		if len(text) > remaining {
+			text = text[:remaining]
+		}
+		_, _ = fallbackText.WriteString(text)
+	}
 	var createdAt int64
 	clientDisconnected := false
 	lastDownstreamWriteAt := time.Now()
@@ -1376,6 +1426,9 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 			if eventCreatedAt > 0 {
 				createdAt = eventCreatedAt
 			}
+		}
+		if gjson.GetBytes(dataBytes, "type").String() == "response.output_text.delta" {
+			appendFallbackText(gjson.GetBytes(dataBytes, "delta").String())
 		}
 		switch gjson.GetBytes(dataBytes, "type").String() {
 		case "response.image_generation_call.partial_image":
@@ -1441,6 +1494,20 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 			}
 			reconcileOpenAIResponsesImageResultSizes(finalResults, nil)
 			if len(finalResults) == 0 {
+				textFallbackErr := openAIImagesTextFallbackErrorForText(fallbackText.String())
+				if textFallbackErr == nil {
+					textFallbackErr = openAIImagesTextFallbackError(dataBytes)
+				}
+				if textFallbackErr != nil {
+					retryable := IsOpenAIImagesRetryableUpstreamError(textFallbackErr)
+					setOpsUpstreamError(c, textFallbackErr.clientStatusCode(), textFallbackErr.clientMessage(), summarizeOpenAIImagesNoOutputBody(dataBytes))
+					if !retryable && !clientDisconnected {
+						s.tryWriteOpenAIImagesStreamEvent(c, flusher, &clientDisconnected, &lastDownstreamWriteAt, "error", buildOpenAIImagesStreamErrorBodyFromUpstream(textFallbackErr))
+					}
+					processDataErr = textFallbackErr
+					processDataDone = true
+					return
+				}
 				outputErr := fmt.Errorf("upstream did not return image output")
 				// 软失败：response.completed 事件里没有图片。记录上游诊断摘要到 ops，
 				// 与非流式路径保持一致，避免上游响应信息丢失。

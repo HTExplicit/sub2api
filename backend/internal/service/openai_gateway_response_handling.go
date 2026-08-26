@@ -359,6 +359,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	sawFailedEvent := false
 	responsesSemanticOutputSeen := false
 	capacityFailoverSuppressedLogged := false
+	pendingErrorEventHeader := false
 	failedMessage := ""
 	clientOutputStarted := false
 	upstreamRequestID := strings.TrimSpace(resp.Header.Get("x-request-id"))
@@ -565,6 +566,10 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		if streamEarlyErr != nil {
 			return
 		}
+		if strings.TrimSpace(line) == "event: error" && openAIStreamClientOutputStarted(c, clientOutputStarted) {
+			pendingErrorEventHeader = true
+			return
+		}
 		refusalAction := openAIRefusalStreamHold
 		var refusalReplacement []byte
 		var refusalCompletionErr error
@@ -612,6 +617,14 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				isOpenAIUpstreamCapacityShedEvent(dataBytes) {
 				logOpenAICapacityFailoverSuppressed(ctx, account, "native_sse", upstreamRequestID, eventType)
 				capacityFailoverSuppressedLogged = true
+			}
+			if eventType == "error" && openAIStreamClientOutputStarted(c, clientOutputStarted) && isOpenAIUpstreamCapacityShedEvent(dataBytes) {
+				pendingErrorEventHeader = false
+				return
+			}
+			if eventType == "error" && pendingErrorEventHeader {
+				line = "event: error\n" + line
+				pendingErrorEventHeader = false
 			}
 			if eventType == "error" && !openAIStreamClientOutputStarted(c, clientOutputStarted) {
 				errorMessage := extractOpenAISSEErrorMessage(dataBytes)

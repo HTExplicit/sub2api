@@ -1761,6 +1761,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	sawFailedEvent := false
 	semanticOutputSeen := false
 	capacityFailoverSuppressedLogged := false
+	pendingErrorEventHeader := false
 	failedMessage := ""
 	clientOutputStarted := false
 	var refusalStream *openAIRefusalStreamState
@@ -1824,6 +1825,10 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 
 	for documentScanner.Scan() {
 		line := documentScanner.Text()
+		if strings.TrimSpace(line) == "event: error" && openAIStreamClientOutputStarted(c, clientOutputStarted) {
+			pendingErrorEventHeader = true
+			continue
+		}
 		lineStartsClientOutput := false
 		forceFlushFailedEvent := false
 		refusalAction := openAIRefusalStreamHold
@@ -1893,6 +1898,14 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				isOpenAIUpstreamCapacityShedEvent(dataBytes) {
 				logOpenAICapacityFailoverSuppressed(ctx, account, "passthrough_sse", upstreamRequestID, eventType)
 				capacityFailoverSuppressedLogged = true
+			}
+			if eventType == "error" && openAIStreamClientOutputStarted(c, clientOutputStarted) && isOpenAIUpstreamCapacityShedEvent(dataBytes) {
+				pendingErrorEventHeader = false
+				continue
+			}
+			if eventType == "error" && pendingErrorEventHeader {
+				line = "event: error\n" + line
+				pendingErrorEventHeader = false
 			}
 			if eventType == "error" && !openAIStreamClientOutputStarted(c, clientOutputStarted) {
 				errorMessage := extractOpenAISSEErrorMessage(dataBytes)
