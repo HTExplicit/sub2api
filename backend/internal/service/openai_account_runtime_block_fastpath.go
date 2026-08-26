@@ -1140,7 +1140,14 @@ func (s *OpenAIGatewayService) blockAccountSchedulingLocked(account *Account, un
 		if ok {
 			// A stored zero time is the Cindy balance fail-closed sentinel. It must
 			// dominate every later finite cooldown until an explicit clear removes it.
-			if currentUntil.IsZero() || (!blockUntil.IsZero() && !blockUntil.After(currentUntil)) {
+			if currentUntil.IsZero() {
+				owner, _ := s.openaiAccountRuntimeBlockGeneration.Load(account.ID)
+				if generation, valid := owner.(uint64); valid {
+					return generation, false
+				}
+				return 0, false
+			}
+			if !blockUntil.IsZero() && !blockUntil.After(currentUntil) {
 				// The effective deadline is unchanged, but this independent block call
 				// owns the retained state. Advance the generation so an earlier
 				// tentative rollback cannot delete it.
