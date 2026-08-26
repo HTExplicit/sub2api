@@ -513,7 +513,7 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 		}
 		return true
 	}
-	if isOpenAIAccount(account) {
+	if isOpenAIAccount(account) && account.Type == AccountTypeAPIKey {
 		switch statusCode {
 		case http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests:
 			// Authentication and quota responses are handled exclusively by the
@@ -530,9 +530,9 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	}
 
 	if isOpenAIImageRateLimitError(statusCode, responseBody) {
-		if s != nil && s.rateLimitService != nil {
-			_ = s.rateLimitService.HandleOpenAIImageRateLimit(stateCtx, account, statusCode, headers, responseBody)
-		}
+		// Image rate-limit signals stay request-scoped here. Dedicated admin or
+		// capability handlers may opt into model cooldown explicitly; the generic
+		// gateway failover path must not persist it before the bounded retry runs.
 		return false
 	}
 
@@ -646,10 +646,6 @@ func (s *OpenAIGatewayService) markOpenAIOAuth429RateLimited(ctx context.Context
 	}
 	s.BlockAccountScheduling(account, cooldownUntil, "429")
 	s.openaiOAuth429RetryStartedAt.Delete(account.ID)
-}
-
-func (s *OpenAIGatewayService) shouldRetryOpenAIOAuth429OnSameAccount(account *Account, statusCode int, shouldDisable bool) bool {
-	return s.shouldRetryOpenAIOAuth429OnSameAccountWithResponse(account, statusCode, shouldDisable, nil, nil)
 }
 
 func (s *OpenAIGatewayService) shouldRetryOpenAIOAuth429OnSameAccountWithResponse(account *Account, statusCode int, shouldDisable bool, headers http.Header, responseBody []byte) bool {

@@ -133,7 +133,7 @@ linters:
       # 必须逐点 //nolint:gosec 并写明信任边界。
       - path: '_test\.go$'
         linters: [ gosec ]
-        text: 'G70[34]'
+        text: 'G70[234]'
 
 formatters:
   enable:

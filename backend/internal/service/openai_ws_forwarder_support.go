@@ -601,7 +601,7 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 	}
 	// 普通 WSv2 与严格 Cindy HTTP -> WSv2 桥接都可以使用 previous_response_id 粘连。
 	// force_http、全局关闭和账号级强制 HTTP 仍会让桥接资格失败。
-	if s.getOpenAIWSProtocolResolver().Resolve(account).Transport != OpenAIUpstreamTransportResponsesWebsocketV2 &&
+	if !account.IsOpenAIApiKey() && s.getOpenAIWSProtocolResolver().Resolve(account).Transport != OpenAIUpstreamTransportResponsesWebsocketV2 &&
 		!s.cindyHTTPToWSV2ConfigEligible(account) {
 		return miss(false, false)
 	}
@@ -609,6 +609,12 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 		return miss(true, false)
 	}
 	if shouldClearStickySession(account, requestedModel) || !account.IsSchedulable() {
+		return miss(false, false)
+	}
+	if !s.openAIAccountMatchesSchedulingGroup(account, groupID) {
+		return miss(false, false)
+	}
+	if s.openAIGroupRequiresPrivacySet(ctx, groupID) && !account.IsPrivacySet() {
 		return miss(false, false)
 	}
 	if !parentHealthyForShadow(account, s.parentAccountLookup(ctx)) {

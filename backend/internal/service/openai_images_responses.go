@@ -622,7 +622,7 @@ func openAIImagesUpstreamErrorFromSSEPayload(payload []byte) *OpenAIImagesUpstre
 // 上游 response.completed 无图时，模型常以 output_text / message 形式输出拒绝说明
 // （如“被安全系统判定为不适合生成”）。这类失败是内容策略拦截，重试/换账号均无效，
 // 应把该文本作为内容策略错误透传给客户端。返回空串表示无文字输出（真空响应）。
-func extractOpenAIImagesModelRefusal(body []byte) string {
+func extractOpenAIImagesModelText(body []byte) string {
 	var b strings.Builder
 	collect := func(s string) {
 		if s = strings.TrimSpace(s); s != "" {
@@ -686,8 +686,18 @@ func isOpenAIImagesContentPolicyRefusal(text string) bool {
 	return false
 }
 
+// extractOpenAIImagesModelRefusal returns only text with an explicit safety or
+// moderation signal. Plain prompt suggestions are capability failures instead.
+func extractOpenAIImagesModelRefusal(body []byte) string {
+	text := extractOpenAIImagesModelText(body)
+	if !isOpenAIImagesContentPolicyRefusal(text) {
+		return ""
+	}
+	return text
+}
+
 func openAIImagesTextFallbackError(body []byte) *OpenAIImagesUpstreamError {
-	return openAIImagesTextFallbackErrorForText(extractOpenAIImagesModelRefusal(body))
+	return openAIImagesTextFallbackErrorForText(extractOpenAIImagesModelText(body))
 }
 
 func openAIImagesTextFallbackErrorForText(text string) *OpenAIImagesUpstreamError {
@@ -1312,25 +1322,12 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthNonStreamingResponse(
 			}
 			return OpenAIUsage{}, 0, nil, upstreamErr
 		}
-		// 软失败兜底：上游无图。先区分两种情形（实测真因，见下）：
-		//
-		// (A) 内容审核拒绝：模型未出图，但输出了文字拒绝（response.completed 里带
-		//     output_text / message，内容如“被安全系统判定为不适合生成”）。这是用户
-		//     prompt 触发 OpenAI 内容策略，模型主动拒绝改用文字回应。**换账号/重试均无效**
-		//     （内容层拦截，与账号/承载模型无关），应把拒绝理由作为 400 透传给客户端，
-		//     避免无谓地重试 + 消耗其它账号配额，且让客户端拿到可读的拒绝原因。
-		// (B) 真空响应：既无图也无任何文字输出（罕见，如偶发路由到 gpt-5.x-mini、
-		//     image_gen 工具未执行）。这是上游的概率性失败，此时才按可重试处理。
-		if refusal := extractOpenAIImagesModelRefusal(body); refusal != "" {
-			refusalErr := &OpenAIImagesUpstreamError{
-				StatusCode: http.StatusBadRequest,
-				ErrorType:  "image_generation_user_error",
-				Code:       "content_policy_violation",
-				Message:    sanitizeUpstreamErrorMessage(refusal),
+		if textFallbackErr := openAIImagesTextFallbackError(body); textFallbackErr != nil {
+			setOpsUpstreamError(c, textFallbackErr.clientStatusCode(), textFallbackErr.clientMessage(), summarizeOpenAIImagesNoOutputBody(body))
+			if !IsOpenAIImagesRetryableUpstreamError(textFallbackErr) {
+				writeOpenAIImagesUpstreamErrorResponse(c, textFallbackErr)
 			}
-			setOpsUpstreamError(c, http.StatusBadRequest, refusalErr.clientMessage(), summarizeOpenAIImagesNoOutputBody(body))
-			writeOpenAIImagesUpstreamErrorResponse(c, refusalErr)
-			return OpenAIUsage{}, 0, nil, refusalErr
+			return OpenAIUsage{}, 0, nil, textFallbackErr
 		}
 		// (B) 真空响应：记录上游诊断摘要到 ops（last_event/status/model/body 片段）便于
 		// 排查，并返回 UpstreamFailoverError 触发重试。因实测为「同账号概率性失败」，优先
@@ -1852,12 +1849,15 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 				Message:            upstreamMsg,
 			})
 			shouldDisable := s.handleFailoverSideEffects(upstreamCtx, resp, account, respBody, requestModel)
-			return nil, &UpstreamFailoverError{
-				StatusCode:             resp.StatusCode,
-				ResponseBody:           respBody,
-				ResponseHeaders:        resp.Header.Clone(),
-				RetryableOnSameAccount: !shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
-			}
+			return nil, s.newOpenAIAccountFailoverError(
+				account,
+				resp.StatusCode,
+				resp.Header,
+				respBody,
+				upstreamMsg,
+				shouldDisable,
+				!shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
+			)
 		}
 		return s.handleOpenAIImagesErrorResponse(upstreamCtx, resp, c, account, requestModel)
 	}
@@ -2023,6 +2023,21 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthResponseError(
 	}
 
 	responseBody := openAIImagesUpstreamErrorResponseBody(upstreamErr)
+	if upstreamErr.Code == "image_generation_unavailable" {
+		s.coolOpenAIImagesOAuthTool(ctx, account)
+		if responseWritten {
+			return err
+		}
+		return s.newOpenAIAccountFailoverError(
+			account,
+			upstreamErr.StatusCode,
+			headers,
+			responseBody,
+			upstreamErr.clientMessage(),
+			false,
+			false,
+		)
+	}
 	statusCode := upstreamErr.StatusCode
 	shouldDisable := false
 	if cindyBalanceInsufficient {

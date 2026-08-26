@@ -474,19 +474,6 @@ func setOpsErrorClassification(c *gin.Context, classification string) {
 	}
 }
 
-func opsErrorClassification(c *gin.Context, fallback string) string {
-	if c != nil {
-		if value, ok := c.Get(opsErrorClassificationKey); ok {
-			if classification, ok := value.(string); ok {
-				if classification = strings.TrimSpace(classification); classification != "" {
-					return classification
-				}
-			}
-		}
-	}
-	return strings.TrimSpace(fallback)
-}
-
 func setOpsSelectedAccount(c *gin.Context, accountID int64, platform ...string) {
 	if c == nil || accountID <= 0 {
 		return
