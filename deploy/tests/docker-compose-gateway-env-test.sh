@@ -32,6 +32,7 @@ do
       GATEWAY_MAX_CONNS_PER_HOST) value=1024 ;;
       GATEWAY_MAX_IDLE_CONNS) value=2560 ;;
       GATEWAY_MAX_IDLE_CONNS_PER_HOST) value=120 ;;
+      GATEWAY_IMAGE_STUDIO_ENABLED) value= ;;
     esac
 
     expected=$(printf '      - %s=${%s:-%s}' "$key" "$key" "$value")

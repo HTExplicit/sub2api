@@ -488,12 +488,18 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapabilityWit
 	}
 	accountID, account, responseID, store, resolveErr := s.resolveAccountByPreviousResponseIDForCapability(ctx, groupID, previousResponseID, requestedModel, excludedIDs, requiredCapability, requireCompact)
 	if resolveErr != nil {
+		if errors.Is(resolveErr, errOpenAIContinuationPolicyMismatch) {
+			return nil, nil
+		}
 		if strictContinuation {
 			return nil, resolveErr
 		}
 		return nil, nil
 	}
 	if accountID <= 0 || account == nil || store == nil {
+		if strictContinuation {
+			return nil, NewOpenAIContinuationStateUnavailableError(http.StatusServiceUnavailable, nil, nil)
+		}
 		return nil, nil
 	}
 
@@ -539,6 +545,8 @@ func (s *OpenAIGatewayService) ResolveAccountIDByPreviousResponseIDForScheduler(
 	accountID, _, _, _, _ := s.resolveAccountByPreviousResponseIDForCapability(ctx, groupID, previousResponseID, requestedModel, excludedIDs, requiredCapability, requireCompact)
 	return accountID
 }
+
+var errOpenAIContinuationPolicyMismatch = errors.New("continuation account does not satisfy current group policy")
 
 func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 	ctx context.Context,
@@ -601,9 +609,11 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 	}
 	// 普通 WSv2 与严格 Cindy HTTP -> WSv2 桥接都可以使用 previous_response_id 粘连。
 	// force_http、全局关闭和账号级强制 HTTP 仍会让桥接资格失败。
-	if !account.IsOpenAIApiKey() && s.getOpenAIWSProtocolResolver().Resolve(account).Transport != OpenAIUpstreamTransportResponsesWebsocketV2 &&
+	allowStatelessAPIKeyContinuation := account.IsOpenAIApiKey() &&
+		!IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+	if !allowStatelessAPIKeyContinuation && s.getOpenAIWSProtocolResolver().Resolve(account).Transport != OpenAIUpstreamTransportResponsesWebsocketV2 &&
 		!s.cindyHTTPToWSV2ConfigEligible(account) {
-		return miss(false, false)
+		return 0, nil, responseID, store, errOpenAIContinuationPolicyMismatch
 	}
 	if !account.IsOpenAI() || !account.IsActive() || !account.Schedulable {
 		return miss(true, false)
@@ -611,11 +621,12 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 	if shouldClearStickySession(account, requestedModel) || !account.IsSchedulable() {
 		return miss(false, false)
 	}
-	if !s.openAIAccountMatchesSchedulingGroup(account, groupID) {
-		return miss(false, false)
+	hasGroupMetadata := len(account.GroupIDs) > 0 || len(account.AccountGroups) > 0
+	if hasGroupMetadata && !s.openAIAccountMatchesSchedulingGroup(account, groupID) {
+		return 0, nil, responseID, store, errOpenAIContinuationPolicyMismatch
 	}
 	if s.openAIGroupRequiresPrivacySet(ctx, groupID) && !account.IsPrivacySet() {
-		return miss(false, false)
+		return 0, nil, responseID, store, errOpenAIContinuationPolicyMismatch
 	}
 	if !parentHealthyForShadow(account, s.parentAccountLookup(ctx)) {
 		return miss(false, false)

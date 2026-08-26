@@ -141,7 +141,7 @@ func (s *OpenAIGatewayService) ForwardAlphaSearch(ctx context.Context, c *gin.Co
 				return nil, newOpenAIUpstreamFailoverError(resp.StatusCode, resp.Header, respBody, upstreamMessage, retryableOnSameAccount)
 			}
 			return nil, &UpstreamFailoverError{
-				StatusCode: resp.StatusCode, ResponseBody: respBody, ResponseHeaders: resp.Header.Clone(),
+				StatusCode: resp.StatusCode, ResponseBody: respBody,
 				RetryableOnSameAccount: retryableOnSameAccount,
 			}
 		}
