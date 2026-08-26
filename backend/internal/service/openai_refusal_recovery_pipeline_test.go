@@ -96,7 +96,7 @@ func TestOpenAINonStreamingPassthroughRewritesRefusalAndPreservesUsage(t *testin
 		)),
 	}
 
-	result, err := svc.handleNonStreamingResponsePassthrough(context.Background(), resp, c, "gpt-5.4", "")
+	result, err := svc.handleNonStreamingResponsePassthrough(context.Background(), resp, c, nil, "gpt-5.4", "")
 
 	require.NoError(t, err)
 	require.Equal(t, "resp_rewrite", result.responseID)
@@ -118,7 +118,7 @@ func TestOpenAINonStreamingRefusalRetryCanReturnSubstantiveAnswer(t *testing.T) 
 		)),
 	}
 
-	firstResult, firstErr := svc.handleNonStreamingResponsePassthrough(context.Background(), first, c, "gpt-5.6-sol", "")
+	firstResult, firstErr := svc.handleNonStreamingResponsePassthrough(context.Background(), first, c, nil, "gpt-5.6-sol", "")
 	require.Nil(t, firstResult)
 	var failoverErr *UpstreamFailoverError
 	require.ErrorAs(t, firstErr, &failoverErr)
@@ -138,7 +138,7 @@ func TestOpenAINonStreamingRefusalRetryCanReturnSubstantiveAnswer(t *testing.T) 
 		)),
 	}
 
-	secondResult, secondErr := svc.handleNonStreamingResponsePassthrough(context.Background(), second, c, "gpt-5.6-sol", "")
+	secondResult, secondErr := svc.handleNonStreamingResponsePassthrough(context.Background(), second, c, nil, "gpt-5.6-sol", "")
 	require.NoError(t, secondErr)
 	require.NotNil(t, secondResult)
 	require.Equal(t, "resp_second", secondResult.responseID)
@@ -157,7 +157,7 @@ func TestOpenAINonStreamingPassthroughRewritesStructuredRefusal(t *testing.T) {
 		)),
 	}
 
-	result, err := svc.handleNonStreamingResponsePassthrough(context.Background(), resp, c, "gpt-5.4", "")
+	result, err := svc.handleNonStreamingResponsePassthrough(context.Background(), resp, c, nil, "gpt-5.4", "")
 
 	require.NoError(t, err)
 	require.Equal(t, "resp_structured", result.responseID)
@@ -183,7 +183,7 @@ func TestOpenAINonStreamingPassthroughSSEToJSONRewritesRefusal(t *testing.T) {
 		Body:       io.NopCloser(strings.NewReader(upstream)),
 	}
 
-	result, err := svc.handleNonStreamingResponsePassthrough(context.Background(), resp, c, "gpt-5.4", "")
+	result, err := svc.handleNonStreamingResponsePassthrough(context.Background(), resp, c, nil, "gpt-5.4", "")
 
 	require.NoError(t, err)
 	require.Equal(t, "resp_sse_json", result.responseID)
@@ -291,7 +291,7 @@ func TestOpenAINonStreamingCyberPolicyReturnsFailoverBeforeWriting(t *testing.T)
 		{
 			name: "passthrough",
 			run: func(svc *OpenAIGatewayService, ctx context.Context, resp *http.Response, c *gin.Context) (any, error) {
-				return svc.handleNonStreamingResponsePassthrough(ctx, resp, c, "gpt-5.6-sol", "gpt-5.6-sol")
+				return svc.handleNonStreamingResponsePassthrough(ctx, resp, c, nil, "gpt-5.6-sol", "gpt-5.6-sol")
 			},
 		},
 	}
@@ -356,7 +356,7 @@ func TestOpenAINonStreamingSSECyberPolicyReturnsFailover(t *testing.T) {
 		{
 			name: "passthrough",
 			run: func(svc *OpenAIGatewayService, resp *http.Response, c *gin.Context) (any, error) {
-				return svc.handleNonStreamingResponsePassthrough(context.Background(), resp, c, "gpt-5.6-sol", "gpt-5.6-sol")
+				return svc.handleNonStreamingResponsePassthrough(context.Background(), resp, c, nil, "gpt-5.6-sol", "gpt-5.6-sol")
 			},
 		},
 	}
