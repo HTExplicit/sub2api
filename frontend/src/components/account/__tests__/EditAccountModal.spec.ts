@@ -346,6 +346,8 @@ describe('EditAccountModal', () => {
 
   it('uses Cindy-safe defaults with the standard OpenAI option order', () => {
     const cindy = buildAccount()
+    cindy.platform = 'cindy'
+    cindy.is_cindy = true
     cindy.credentials.base_url = 'https://api.laxarouter.ai'
     cindy.extra = {}
     const cindyWrapper = mountModal(cindy)
@@ -373,8 +375,36 @@ describe('EditAccountModal', () => {
     expect(ordinaryCache.element.options[0].value).toBe('passthrough')
   })
 
+  it('keeps canonical Cindy identity and fixed endpoint on edit submission', async () => {
+    const cindy = buildAccount()
+    cindy.platform = 'cindy'
+    cindy.is_cindy = true
+    cindy.credentials.base_url = 'https://api.laxarouter.ai'
+    cindy.extra = {}
+    updateAccountMock.mockResolvedValue(cindy)
+
+    const wrapper = mountModal(cindy)
+    await flushPromises()
+    const baseUrl = wrapper
+      .findAll<HTMLInputElement>('input')
+      .find((input) => input.element.value === 'https://api.laxarouter.ai')
+    expect(baseUrl?.attributes('readonly')).toBeDefined()
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(updateAccountMock).toHaveBeenCalledWith(cindy.id, expect.objectContaining({
+      credentials: expect.objectContaining({ base_url: 'https://api.laxarouter.ai' }),
+      extra: expect.objectContaining({
+        openai_alpha_search_mode: 'responses_web_search',
+        openai_prompt_cache_key_mode: 'sha256_64'
+      })
+    }))
+  })
+
   it('preserves an explicit Cindy bridge and SHA-256 selection without reordering options', () => {
     const cindy = buildAccount()
+    cindy.platform = 'cindy'
+    cindy.is_cindy = true
     cindy.credentials.base_url = 'https://api.laxarouter.ai'
     cindy.extra = {
       openai_responses_mode: 'force_responses',
@@ -394,6 +424,8 @@ describe('EditAccountModal', () => {
 
   it('keeps the Cindy catalog read-only while preserving rollback mappings and custom overrides', async () => {
     const cindy = buildAccount()
+    cindy.platform = 'cindy'
+    cindy.is_cindy = true
     cindy.credentials.base_url = 'https://api.laxarouter.ai'
     cindy.credentials.model_mapping = {
       'gpt-5.6-luna': 'openai/gpt-5.6-luna',
@@ -533,6 +565,8 @@ describe('EditAccountModal', () => {
 
   it('keeps Cindy catalog loading and failure states bounded to the managed projection', async () => {
     const cindy = buildAccount()
+    cindy.platform = 'cindy'
+    cindy.is_cindy = true
     cindy.credentials.base_url = 'https://api.laxarouter.ai'
     cindy.extra = {}
     let rejectModels: (reason?: unknown) => void = () => undefined

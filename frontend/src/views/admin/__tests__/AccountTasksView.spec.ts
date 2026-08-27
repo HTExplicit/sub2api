@@ -71,6 +71,7 @@ describe('AccountTasksView', () => {
     await flushPromises()
 
     expect(api.list).toHaveBeenCalledWith({ page: 1, page_size: 20, kind: undefined, status: undefined })
+    expect(wrapper.find('option[value="cindy_banned_cleanup"]').exists()).toBe(true)
     await wrapper.get('[data-test="task-open-41"]').trigger('click')
     await flushPromises()
 

@@ -114,3 +114,14 @@ describe('PlatformTypeBadge OpenAI authentication modes', () => {
     expect(wrapper.text()).toContain('OAuth')
   })
 })
+
+describe('PlatformTypeBadge canonical Cindy identity', () => {
+  it('renders Cindy instead of falling through to Gemini', () => {
+    const wrapper = mount(PlatformTypeBadge, {
+      props: { platform: 'cindy', type: 'apikey' },
+      global: { stubs: { PlatformIcon: true, Icon: true } }
+    })
+    expect(wrapper.text()).toContain('Cindy')
+    expect(wrapper.text()).not.toContain('Gemini')
+  })
+})

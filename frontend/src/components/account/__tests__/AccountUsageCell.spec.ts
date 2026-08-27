@@ -773,11 +773,11 @@ describe('AccountUsageCell', () => {
   })
 
   it.each([
-    { id: 4300, tokens: 0, expected: 0, compact: '0' },
-    { id: 4301, tokens: 500_000, expected: 50, compact: '500.0K' },
-    { id: 4302, tokens: 1_000_000, expected: 100, compact: '1.0M' },
-    { id: 4303, tokens: 1_100_000, expected: 100, compact: '1.1M' }
-  ])('Grok Free derives its 1M quota from local tokens: $tokens -> $expected%', async ({ id, tokens, expected, compact }) => {
+    { id: 4300, tokens: 0, expected: 0 },
+    { id: 4301, tokens: 500_000, expected: 50 },
+    { id: 4302, tokens: 1_000_000, expected: 100 },
+    { id: 4303, tokens: 1_100_000, expected: 100 }
+  ])('Grok Free derives its 1M quota from local tokens: $tokens -> $expected%', async ({ id, tokens, expected }) => {
     getUsage.mockResolvedValue({
       grok_free_token_limit: 1_000_000,
       grok_billing: {

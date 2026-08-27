@@ -9,6 +9,7 @@ const {
   createOpenAICodexPATMock,
   authIsSimpleMode,
   showSuccess,
+  getCindyModelsMock,
 } = vi.hoisted(() => ({
   createAccountMock: vi.fn(),
   probeUpstreamBillingMock: vi.fn(),
@@ -16,6 +17,7 @@ const {
   createOpenAICodexPATMock: vi.fn(),
   authIsSimpleMode: { value: true },
   showSuccess: vi.fn(),
+  getCindyModelsMock: vi.fn(),
 }))
 
 vi.mock('@/stores/app', () => ({
@@ -49,6 +51,9 @@ vi.mock('@/api/admin', () => ({
     },
     tlsFingerprintProfiles: {
       list: vi.fn().mockResolvedValue([]),
+    },
+    groups: {
+      getModelsListCandidates: getCindyModelsMock,
     },
   },
 }))
@@ -137,9 +142,11 @@ const ModelWhitelistSelectorStub = defineComponent({
     },
     platform: String,
     syncCredentials: Object,
+    models: Array,
+    readonly: Boolean,
   },
   emits: ['update:modelValue'],
-  template: '<div data-testid="model-whitelist-selector" />',
+  template: '<div data-testid="model-whitelist-selector">{{ models?.map((model) => model.id).join(",") }}</div>',
 })
 
 function mountModal(groups: any[] = []) {
@@ -215,6 +222,42 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     })
     createOpenAICodexPATMock.mockReset().mockResolvedValue({})
     showSuccess.mockReset()
+    getCindyModelsMock.mockReset().mockResolvedValue(['gpt-5.6-luna', 'gpt-image-2'])
+  })
+
+  it('creates a canonical Cindy API-key account with fixed identity defaults', async () => {
+    const wrapper = mountModal([
+      { id: 1, name: 'Cindy', platform: 'cindy', wire_platform: 'openai', provider_profile: 'cindy_laxa_v1' }
+    ])
+    await wrapper.get('[data-testid="select-cindy-platform"]').trigger('click')
+    await wrapper.get('[data-testid="select-pricing-groups"]').trigger('click')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Cindy account')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('cindy-api-key')
+    await wrapper.get('[data-testid="cindy-device-id"]').setValue('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Cindy account',
+      platform: 'cindy',
+      type: 'apikey',
+      credentials: expect.objectContaining({
+        api_key: 'cindy-api-key',
+        base_url: 'https://api.laxarouter.ai'
+      }),
+      extra: expect.objectContaining({
+        cindy_device_id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        cindy_device_id_source: 'input-preserved'
+      }),
+      concurrency: 3,
+      priority: 50,
+      rate_multiplier: 1,
+      group_ids: [1, 2],
+      upstream_billing_probe_enabled: false
+    }))
+    expect(wrapper.get('[placeholder="https://api.laxarouter.ai"]').attributes('readonly')).toBeDefined()
+    expect(wrapper.find('[data-testid="cindy-managed-create-catalog"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="cindy-managed-create-catalog"]').text()).toContain('gpt-5.6-luna')
   })
 
   it('selects Cindy-safe modes and keeps the standard OpenAI option order', async () => {

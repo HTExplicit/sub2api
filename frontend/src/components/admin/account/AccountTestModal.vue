@@ -377,7 +377,8 @@ import { ADMIN_UI_REQUEST_HEADER } from '@/api/adminUIRequest'
 import { adminAPI } from '@/api/admin'
 import {
   filterCindyAccountTestModels,
-  pickCindyAccountTestDefault
+  pickCindyAccountTestDefault,
+  isCindyOpenAIAPIKeyAccount
 } from '@/utils/cindyOpenAIDefaults'
 import type { Account, AccountAvailableModel } from '@/types'
 
@@ -426,7 +427,9 @@ const uploadAudioDataURL = ref('')
 const uploadAudioName = ref('')
 const imageFileInput = ref<HTMLInputElement | null>(null)
 const audioFileInput = ref<HTMLInputElement | null>(null)
-const isOpenAIAccount = computed(() => props.account?.platform === 'openai')
+const isOpenAIAccount = computed(() =>
+  props.account?.platform === 'openai' || isCindyOpenAIAPIKeyAccount(props.account)
+)
 const isGrokAccount = computed(() => props.account?.platform === 'grok')
 const openAITestModeOptions = computed(() => [
   { value: 'default', label: t('admin.accounts.openai.testModeDefault') },
@@ -452,7 +455,7 @@ const supportsGeminiImageTest = computed(() => {
 const supportsOpenAIImageTest = computed(() => {
   const modelID = selectedModelId.value.toLowerCase()
   if (!modelID.startsWith('gpt-image-')) return false
-  return props.account?.platform === 'openai'
+  return props.account?.platform === 'openai' || isCindyOpenAIAPIKeyAccount(props.account)
 })
 
 const isGrokImageModel = (id: string) => {

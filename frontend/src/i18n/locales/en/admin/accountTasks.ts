@@ -40,6 +40,7 @@ export default {
       account_duplicate_review: 'Duplicate review',
       account_duplicate_merge: 'Duplicate merge',
       cindy_confirmed_cleanup: 'Cindy confirmed cleanup',
+      cindy_banned_cleanup: 'Cindy banned cleanup',
     },
     statuses: {
       pending: 'Pending',

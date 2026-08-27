@@ -4687,7 +4687,7 @@ const platformFilterOptions = computed(() => [
 ]);
 
 const compositeRoutePlatformOptions = computed(() => [
-  ...CONCRETE_PLATFORM_OPTIONS,
+  ...CONCRETE_PLATFORM_OPTIONS.filter((option) => option.value !== "cindy"),
 ]);
 
 const compositeRouteEndpointOptions = computed(() => [
@@ -4909,10 +4909,11 @@ const rpmOverridesGroup = ref<AdminGroup | null>(null);
 const showCindyGroupAudit = ref(false);
 const sortableGroups = ref<AdminGroup[]>([]);
 type ConcreteGroupPlatform = Exclude<GroupPlatform, "composite">;
+type CompositeTargetPlatform = Exclude<ConcreteGroupPlatform, "cindy">;
 type CompositeRouteFormState = {
   public_model: string;
   match_type: CompositeRouteMatchType;
-  target_platform: ConcreteGroupPlatform;
+  target_platform: CompositeTargetPlatform;
   upstream_model: string;
   endpoint: CompositeRouteEndpoint;
   priority: number;
@@ -6384,6 +6385,12 @@ const closeCompositeRoutesModal = () => {
 };
 
 const editCompositeRoute = (route: CompositeModelRoute) => {
+  // Strict Cindy routing is channel-owned and cannot be a Composite target.
+  // Fail closed if an older or malformed server row reaches this editor.
+  if (route.target_platform === "cindy") {
+    appStore.showError(t("admin.groups.compositeRoutes.failedToLoad"));
+    return;
+  }
   compositeRouteEditingId.value = route.id;
   compositeRouteForm.public_model = route.public_model;
   compositeRouteForm.match_type = route.match_type;

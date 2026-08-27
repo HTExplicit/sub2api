@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CONCRETE_PLATFORM_OPTIONS, GROUP_PLATFORM_OPTIONS } from '@/constants/platforms'
+import { CONCRETE_PLATFORM_OPTIONS, CONCRETE_PLATFORM_VALUES, GROUP_PLATFORM_OPTIONS } from '@/constants/platforms'
 
 const concretePlatforms = [
   'anthropic',
@@ -16,6 +16,7 @@ const concretePlatforms = [
 describe('platform option catalogs', () => {
   it('exposes every concrete account platform', () => {
     expect(CONCRETE_PLATFORM_OPTIONS.map((option) => option.value)).toEqual(concretePlatforms)
+    expect(CONCRETE_PLATFORM_VALUES).toEqual(concretePlatforms)
   })
 
   it('adds composite for group-backed filters', () => {

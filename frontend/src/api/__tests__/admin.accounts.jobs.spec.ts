@@ -29,6 +29,7 @@ describe('admin accounts job submissions', () => {
     await accountsAPI.batchRefreshTier([1])
     await accountsAPI.deleteCindyInsufficient({ count: 1, fingerprint: 'f'.repeat(64) } as never)
     await accountsAPI.previewCindyBannedDeletion()
+    await accountsAPI.getCindyDuplicateIdentityInventory()
     await accountsAPI.deleteCindyBanned({ count: 1, fingerprint: 'f'.repeat(64) } as never)
 
     expect(post.mock.calls.map((call) => call[0])).toEqual([
@@ -56,5 +57,8 @@ describe('admin accounts job submissions', () => {
     expect(keys).toHaveLength(12)
     expect(keys.every((key) => typeof key === 'string' && key.length > 20)).toBe(true)
     expect(new Set(keys).size).toBe(12)
+    expect(get.mock.calls.map((call) => call[0])).toContain(
+      '/admin/accounts/cindy/duplicate-identity-inventory'
+    )
   })
 })

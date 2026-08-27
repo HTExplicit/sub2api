@@ -232,10 +232,11 @@ describe('AccountTestModal', () => {
     const wrapper = mountModal({
       id: 88,
       name: 'Cindy API Key',
-      platform: 'openai',
+      platform: 'cindy',
       type: 'apikey',
       status: 'active',
-      credentials: { base_url: 'https://api.laxarouter.ai' }
+      credentials: { base_url: 'https://api.laxarouter.ai' },
+      is_cindy: true
     })
 
     await wrapper.setProps({ show: true })

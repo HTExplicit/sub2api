@@ -846,6 +846,19 @@ export interface CindyInsufficientDeletePreview {
   fingerprint: string
 }
 
+export interface CindyDuplicateIdentityGroup {
+  identity_hash: string
+  proposed_owner_id: number
+  other_account_ids: number[]
+}
+
+export async function getCindyDuplicateIdentityInventory(): Promise<CindyDuplicateIdentityGroup[]> {
+  const { data } = await apiClient.get<CindyDuplicateIdentityGroup[]>(
+    '/admin/accounts/cindy/duplicate-identity-inventory'
+  )
+  return data
+}
+
 export async function previewCindyInsufficientDeletion(): Promise<CindyInsufficientDeletePreview> {
   const { data } = await apiClient.get<CindyInsufficientDeletePreview>('/admin/accounts/cindy/insufficient-delete-preview')
   return data
@@ -1178,6 +1191,7 @@ export const accountsAPI = {
   getAntigravityDefaultModelMapping,
   batchDelete,
   previewCindyInsufficientDeletion,
+  getCindyDuplicateIdentityInventory,
   deleteCindyInsufficient,
   previewCindyBannedDeletion,
   deleteCindyBanned,

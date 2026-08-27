@@ -202,6 +202,33 @@
             <PlatformIcon platform="deepseek" size="sm" />
             DeepSeek
           </button>
+          <button
+            type="button"
+            data-testid="select-cindy-platform"
+            @click="selectCindyPlatform"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-all',
+              form.platform === 'cindy'
+                ? 'bg-white text-cyan-700 shadow-sm dark:bg-dark-600 dark:text-cyan-300'
+                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+            ]"
+          >
+            <PlatformIcon platform="cindy" size="sm" />
+            Cindy
+          </button>
+        </div>
+      </div>
+
+      <div v-if="form.platform === 'cindy'" data-testid="cindy-account-type">
+        <label class="input-label">{{ t('admin.accounts.accountType') }}</label>
+        <div class="mt-2 flex items-center gap-3 rounded-lg border-2 border-cyan-500 bg-cyan-50 p-3 dark:bg-cyan-900/20">
+          <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-cyan-600 text-white">
+            <Icon name="key" size="sm" />
+          </div>
+          <div>
+            <span class="block text-sm font-medium text-gray-900 dark:text-white">Cindy API Key</span>
+            <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.cindy.canonicalHint') }}</span>
+          </div>
         </div>
       </div>
 
@@ -1256,6 +1283,7 @@
             v-model="apiKeyBaseUrl"
             type="text"
             class="input"
+            :readonly="form.platform === 'cindy'"
             :placeholder="apiKeyBaseUrlPlaceholder"
           />
           <p v-if="baseUrlHint" class="input-hint">{{ baseUrlHint }}</p>
@@ -1305,8 +1333,21 @@
           <p v-if="apiKeyHint" class="input-hint">{{ apiKeyHint }}</p>
         </div>
 
+        <div v-if="form.platform === 'cindy'">
+          <label class="input-label">{{ t('admin.accounts.cindy.deviceId') }}</label>
+          <input
+            v-model="cindyDeviceID"
+            type="text"
+            class="input font-mono"
+            data-testid="cindy-device-id"
+            :placeholder="t('admin.accounts.cindy.deviceIdPlaceholder')"
+          />
+          <p class="input-hint">{{ t('admin.accounts.cindy.deviceIdHint') }}</p>
+        </div>
+
         <!-- 上游倍率自动探测：全部 API-key 平台可用（所在区块已限定 apikey 类型） -->
         <div
+          v-if="form.platform !== 'cindy'"
           class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600"
         >
           <div>
@@ -1337,6 +1378,24 @@
           <label class="input-label">{{ t('admin.accounts.modelRestriction') }}</label>
 
           <div
+            v-if="form.platform === 'cindy'"
+            class="rounded-lg border border-cyan-200 bg-cyan-50 p-3 text-sm text-cyan-800 dark:border-cyan-800/50 dark:bg-cyan-900/20 dark:text-cyan-200"
+            data-testid="cindy-managed-create-catalog"
+          >
+            <p class="font-medium">{{ t('admin.accounts.cindyManagedCatalog') }}</p>
+            <p class="mt-1 text-xs">{{ t('admin.accounts.cindy.managedCatalogHint') }}</p>
+            <p v-if="cindyCreateCatalogLoading" class="mt-2 text-xs">{{ t('admin.accounts.cindyCatalogLoading') }}</p>
+            <p v-else-if="cindyCreateCatalogLoadFailed" class="mt-2 text-xs text-red-600 dark:text-red-300">{{ t('admin.accounts.cindyCatalogLoadFailed') }}</p>
+            <ModelWhitelistSelector
+              v-else
+              class="mt-2"
+              :model-value="[]"
+              :models="cindyCreateCatalog"
+              readonly
+            />
+          </div>
+
+          <div
             v-if="isOpenAIModelRestrictionDisabled"
             class="mb-3 rounded-lg bg-amber-50 p-3 dark:bg-amber-900/20"
           >
@@ -1345,7 +1404,7 @@
             </p>
           </div>
 
-          <template v-else>
+          <template v-else-if="form.platform !== 'cindy'">
             <!-- Mode Toggle -->
             <div class="mb-4 flex gap-2">
               <button
@@ -3377,7 +3436,7 @@
 
         <!-- Group Selection - 仅标准模式显示 -->
         <GroupSelector
-          v-if="!authStore.isSimpleMode"
+          v-if="!authStore.isSimpleMode || form.platform === 'cindy'"
           v-model="form.group_ids"
           :groups="groups"
           :platform="form.platform"
@@ -3776,7 +3835,8 @@ import type {
   OpenAIResponsesMode,
   OpenAIAlphaSearchMode,
   OpenAIPromptCacheKeyMode,
-  OpenAIEndpointCapability
+  OpenAIEndpointCapability,
+  AccountAvailableModel
 } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -3850,6 +3910,7 @@ const oauthStepTitle = computed(() => {
 
 // Platform-specific hints for API Key type
 const baseUrlHint = computed(() => {
+  if (form.platform === 'cindy') return t('admin.accounts.cindy.fixedEndpointHint')
   if (form.platform === 'openai') return t('admin.accounts.openai.baseUrlHint')
   if (form.platform === 'gemini') return t('admin.accounts.gemini.baseUrlHint')
   if (form.platform === 'grok') return ''
@@ -3857,6 +3918,7 @@ const baseUrlHint = computed(() => {
 })
 
 const apiKeyHint = computed(() => {
+  if (form.platform === 'cindy') return t('admin.accounts.cindy.apiKeyHint')
   if (form.platform === 'openai') return t('admin.accounts.openai.apiKeyHint')
   if (form.platform === 'gemini') return t('admin.accounts.gemini.apiKeyHint')
   if (form.platform === 'grok') return ''
@@ -3869,6 +3931,8 @@ const apiKeyBaseUrlPlaceholder = computed(() => {
     return defaultCNBaseUrl(form.platform, accountMode.value, apiProtocol.value) || 'https://api.example.com'
   }
   switch (form.platform) {
+    case 'cindy':
+      return 'https://api.laxarouter.ai'
     case 'openai':
       return 'https://api.openai.com'
     case 'gemini':
@@ -3882,6 +3946,8 @@ const apiKeyBaseUrlPlaceholder = computed(() => {
 
 const apiKeyValuePlaceholder = computed(() => {
   switch (form.platform) {
+    case 'cindy':
+      return 'cindy-...'
     case 'openai':
       return 'sk-proj-...'
     case 'gemini':
@@ -3980,6 +4046,11 @@ const accountCategory = ref<'oauth-based' | 'apikey' | 'bedrock' | 'service_acco
 const addMethod = ref<AddMethod>('oauth') // For oauth-based: 'oauth' or 'setup-token'
 const apiKeyBaseUrl = ref('https://api.anthropic.com')
 const apiKeyValue = ref('')
+const cindyDeviceID = ref('')
+const cindyCreateCatalog = ref<AccountAvailableModel[]>([])
+const cindyCreateCatalogLoading = ref(false)
+const cindyCreateCatalogLoadFailed = ref(false)
+const cindyDeviceIDPattern = /^(?:[0-9a-f]{64}|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/
 const upstreamBillingAutoProbeEnabled = ref(true)
 
 // ── 国产供应商（Kimi / Zhipu / DeepSeek）账号类型、API 协议与端点 ──
@@ -4064,6 +4135,36 @@ function selectCNPlatform(platform: 'kimi' | 'zhipu' | 'deepseek') {
   }
   apiKeyBaseUrl.value = defaultCNBaseUrl(platform, accountMode.value, apiProtocol.value)
   resetAdaptiveBaseUrls(platform, accountMode.value)
+}
+
+function selectCindyPlatform() {
+  form.platform = 'cindy'
+  form.type = 'apikey'
+  accountCategory.value = 'apikey'
+  apiKeyBaseUrl.value = 'https://api.laxarouter.ai'
+  void loadCindyCreateCatalog()
+}
+
+async function loadCindyCreateCatalog(): Promise<void> {
+  if (cindyCreateCatalogLoading.value) return
+  cindyCreateCatalogLoading.value = true
+  cindyCreateCatalogLoadFailed.value = false
+  try {
+    const models = await adminAPI.groups.getModelsListCandidates(0, 'cindy')
+    cindyCreateCatalog.value = models.map(id => ({
+      id,
+      type: 'model',
+      display_name: id,
+      created_at: '',
+      managed: true,
+      verified: true
+    }))
+  } catch {
+    cindyCreateCatalog.value = []
+    cindyCreateCatalogLoadFailed.value = true
+  } finally {
+    cindyCreateCatalogLoading.value = false
+  }
 }
 // 账号类型 / 协议变更时同步默认 base url。
 watch(accountMode, (mode, previousMode) => {
@@ -4621,14 +4722,16 @@ watch(
 // Reset platform-specific settings when platform changes
 watch(
   () => form.platform,
-  (newPlatform) => {
+  (newPlatform, previousPlatform) => {
     // Reset base URL based on platform
     if (newPlatform === 'kimi' || newPlatform === 'zhipu' || newPlatform === 'deepseek') {
       apiKeyBaseUrl.value = defaultCNBaseUrl(newPlatform, accountMode.value, apiProtocol.value)
     } else {
       apiKeyBaseUrl.value =
-        (newPlatform === 'openai')
-          ? 'https://api.openai.com'
+        (newPlatform === 'cindy')
+          ? 'https://api.laxarouter.ai'
+          : (newPlatform === 'openai')
+            ? 'https://api.openai.com'
           : newPlatform === 'gemini'
             ? 'https://generativelanguage.googleapis.com'
             : newPlatform === 'grok'
@@ -4660,6 +4763,23 @@ watch(
       modelRestrictionMode.value = 'mapping'
       form.concurrency = 1
       form.load_factor = null
+    }
+    if (newPlatform === 'cindy') {
+      accountCategory.value = 'apikey'
+      form.type = 'apikey'
+      form.concurrency = 3
+      form.load_factor = null
+      form.priority = 50
+      form.rate_multiplier = 1
+      upstreamBillingAutoProbeEnabled.value = false
+      allowedModels.value = []
+      void loadCindyCreateCatalog()
+    } else if (previousPlatform === 'cindy') {
+      cindyDeviceID.value = ''
+      form.concurrency = newPlatform === 'grok' ? 1 : 10
+      form.priority = 1
+      form.rate_multiplier = 1
+      upstreamBillingAutoProbeEnabled.value = true
     }
     if (newPlatform !== 'gemini' && newPlatform !== 'anthropic' && accountCategory.value === 'service_account') {
       accountCategory.value = 'oauth-based'
@@ -5080,6 +5200,10 @@ const resetForm = () => {
   adaptiveBaseUrls.value = { chat_completions: '', anthropic: '', responses: '' }
   apiKeyBaseUrl.value = 'https://api.anthropic.com'
   apiKeyValue.value = ''
+  cindyDeviceID.value = ''
+  cindyCreateCatalog.value = []
+  cindyCreateCatalogLoading.value = false
+  cindyCreateCatalogLoadFailed.value = false
   upstreamBillingAutoProbeEnabled.value = true
   editQuotaLimit.value = null
   editQuotaDailyLimit.value = null
@@ -5291,6 +5415,17 @@ const buildAnthropicExtra = (base?: Record<string, unknown>): Record<string, unk
     extra.web_search_emulation = webSearchEmulationMode.value
   }
 
+  return Object.keys(extra).length > 0 ? extra : undefined
+}
+
+const buildCindyExtra = (base?: Record<string, unknown>): Record<string, unknown> | undefined => {
+  if (form.platform !== 'cindy') return base
+  const extra: Record<string, unknown> = { ...(base || {}) }
+  const deviceID = cindyDeviceID.value.trim()
+  if (deviceID) {
+    extra.cindy_device_id = deviceID
+    extra.cindy_device_id_source = 'input-preserved'
+  }
   return Object.keys(extra).length > 0 ? extra : undefined
 }
 
@@ -5526,6 +5661,18 @@ const handleSubmit = async () => {
   }
 
   // For apikey type, create directly
+  if (form.platform === 'cindy') {
+    if (form.group_ids.length === 0) {
+      appStore.showError(t('admin.accounts.cindy.groupRequired'))
+      return
+    }
+    const deviceID = cindyDeviceID.value.trim()
+    if (deviceID && !cindyDeviceIDPattern.test(deviceID)) {
+      appStore.showError(t('admin.accounts.cindy.deviceIdInvalid'))
+      return
+    }
+    apiKeyBaseUrl.value = 'https://api.laxarouter.ai'
+  }
   if (!apiKeyValue.value.trim()) {
     appStore.showError(t('admin.accounts.pleaseEnterApiKey'))
     return
@@ -5533,8 +5680,10 @@ const handleSubmit = async () => {
 
   // Determine default base URL based on platform
   const defaultBaseUrl =
-    form.platform === 'openai'
-      ? 'https://api.openai.com'
+    form.platform === 'cindy'
+      ? 'https://api.laxarouter.ai'
+      : form.platform === 'openai'
+        ? 'https://api.openai.com'
       : form.platform === 'gemini'
         ? 'https://generativelanguage.googleapis.com'
         : form.platform === 'grok'
@@ -5574,7 +5723,7 @@ const handleSubmit = async () => {
   }
 
   // Add model mapping if configured（OpenAI 开启自动透传时不应用）
-  if (!isOpenAIModelRestrictionDisabled.value) {
+  if (form.platform !== 'cindy' && !isOpenAIModelRestrictionDisabled.value) {
     const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
     if (modelMapping) {
       credentials.model_mapping = modelMapping
@@ -5622,7 +5771,7 @@ const handleSubmit = async () => {
   }
 
   form.credentials = credentials
-  const extra = buildAnthropicExtra(buildOpenAIExtra())
+  const extra = buildCindyExtra(buildAnthropicExtra(buildOpenAIExtra()))
 
   await doCreateAccount({
     ...form,
