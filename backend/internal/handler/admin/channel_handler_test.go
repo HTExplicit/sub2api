@@ -542,7 +542,7 @@ func TestSyncPricingModels_ValidPlatform_EmptyService(t *testing.T) {
 	svc := service.NewPricingService(nil, nil)
 	router := setupSyncPricingModelsRouter(svc)
 
-	for _, platform := range []string{"anthropic", "openai", "gemini", "antigravity", "grok", "kimi", "zhipu", "deepseek", "cindy"} {
+	for _, platform := range []string{"anthropic", "openai", "gemini", "antigravity", "grok", "kimi", "zhipu", "deepseek"} {
 		req := httptest.NewRequest(http.MethodGet, "/channels/pricing/sync-models?platform="+platform, nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
@@ -557,4 +557,15 @@ func TestSyncPricingModels_ValidPlatform_EmptyService(t *testing.T) {
 		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 		require.NotNil(t, body.Data.Models, "models must not be null for platform=%s", platform)
 	}
+}
+
+func TestSyncPricingModels_CindyUsesManagedCatalog(t *testing.T) {
+	svc := service.NewPricingService(nil, nil)
+	router := setupSyncPricingModelsRouter(svc)
+
+	req := httptest.NewRequest(http.MethodGet, "/channels/pricing/sync-models?platform=cindy", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusBadRequest, w.Code)
 }
