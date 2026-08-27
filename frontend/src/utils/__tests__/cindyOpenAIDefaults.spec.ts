@@ -24,7 +24,14 @@ const model = (
 })
 
 describe('Cindy OpenAI defaults', () => {
-  it('detects only the strict Cindy API-key endpoint or backend marker', () => {
+  it('detects canonical Cindy and the exact legacy import projection only', () => {
+    expect(
+      isCindyOpenAIAPIKeyAccount({
+        platform: 'cindy',
+        type: 'apikey',
+        credentials: {}
+      })
+    ).toBe(true)
     expect(
       isCindyOpenAIAPIKeyAccount({
         platform: 'openai',
@@ -66,9 +73,10 @@ describe('Cindy OpenAI defaults', () => {
 
   it('keeps only verified Cindy account-test endpoints and prefers Luna', () => {
     const account = {
-      platform: 'openai',
+      platform: 'cindy',
       type: 'apikey',
-      credentials: { base_url: 'https://api.laxarouter.ai' }
+      credentials: { base_url: 'https://api.laxarouter.ai' },
+      is_cindy: true
     }
     const models = [
       model('cindy/auto-review', ['cindy.reviews']),

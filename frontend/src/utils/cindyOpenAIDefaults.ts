@@ -14,7 +14,9 @@ export interface CindyAccountLike {
 }
 
 export function isCindyOpenAIAPIKeyAccount(account: CindyAccountLike | null | undefined): boolean {
-  if (!account || account.platform !== 'openai' || account.type !== 'apikey') return false
+  if (!account || account.type !== 'apikey') return false
+  if (account.platform === 'cindy') return true
+  if (account.platform !== 'openai') return false
   if (account.is_cindy === true) return true
 
   const rawBaseUrl = account.credentials?.base_url

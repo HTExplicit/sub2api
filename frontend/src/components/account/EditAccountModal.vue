@@ -34,9 +34,12 @@
             v-model="editBaseUrl"
             type="text"
             class="input"
+            :readonly="isCindyAccount"
             :placeholder="
-              account.platform === 'openai'
-                ? 'https://api.openai.com'
+              isCindyAccount
+                ? 'https://api.laxarouter.ai'
+                : account.platform === 'openai'
+                  ? 'https://api.openai.com'
                 : account.platform === 'gemini'
                   ? 'https://generativelanguage.googleapis.com'
                   : account.platform === 'antigravity'
@@ -129,8 +132,10 @@
             data-lpignore="true"
             data-bwignore="true"
             :placeholder="
-              account.platform === 'openai'
-                ? 'sk-proj-...'
+              isCindyAccount
+                ? 'cindy-...'
+                : account.platform === 'openai'
+                  ? 'sk-proj-...'
                 : account.platform === 'gemini'
                   ? 'AIza...'
                   : account.platform === 'antigravity'
@@ -1767,7 +1772,7 @@
 
       <!-- OpenAI WS Mode 三态（off/ctx_pool/passthrough） -->
       <div
-        v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
+        v-if="(account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')) || isCindyAccount"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="flex items-center justify-between">
@@ -1788,7 +1793,7 @@
 
       <!-- OpenAI APIKey Responses API support mode -->
       <div
-        v-if="account?.platform === 'openai' && account?.type === 'apikey'"
+        v-if="(account?.platform === 'openai' && account?.type === 'apikey') || isCindyAccount"
         class="space-y-4 border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="flex items-center justify-between gap-4">
@@ -1850,7 +1855,7 @@
             />
           </div>
         </div>
-        <div>
+        <div v-if="!isCindyAccount">
           <label class="input-label mb-2 block">{{ t('admin.accounts.openai.endpointCapabilities') }}</label>
           <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <label
@@ -1873,7 +1878,7 @@
       </div>
 
       <div
-        v-if="account?.type === 'apikey'"
+        v-if="account?.type === 'apikey' && !isCindyAccount"
         class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div>
@@ -2192,7 +2197,7 @@
       </div>
 
       <div
-        v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
+        v-if="(account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')) || isCindyAccount"
         class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
       >
         <div class="flex items-center justify-between">
@@ -2862,7 +2867,7 @@
 
       <!-- Group Selection - 仅标准模式显示 -->
       <GroupSelector
-        v-if="!authStore.isSimpleMode"
+        v-if="!authStore.isSimpleMode || isCindyAccount"
         v-model="form.group_ids"
         :groups="groups"
         :platform="account?.platform"
@@ -3032,6 +3037,7 @@ const handleOllamaCloudUsageUpdated = (state: OllamaCloudUsageState) => {
 // Platform-specific hint for Base URL
 const baseUrlHint = computed(() => {
   if (!props.account) return t('admin.accounts.baseUrlHint')
+  if (isCindyAccount.value) return t('admin.accounts.cindy.fixedEndpointHint')
   if (props.account.platform === 'openai') return t('admin.accounts.openai.baseUrlHint')
   if (props.account.platform === 'gemini') return t('admin.accounts.gemini.baseUrlHint')
   if (props.account.platform === 'grok') return ''
@@ -3632,6 +3638,7 @@ const tempUnschedPresets = computed(() => [
 
 // Computed: default base URL based on platform
 const defaultBaseUrl = computed(() => {
+  if (isCindyAccount.value) return 'https://api.laxarouter.ai'
   if (props.account?.platform === 'openai') return 'https://api.openai.com'
   if (props.account?.platform === 'gemini') return 'https://generativelanguage.googleapis.com'
   if (props.account?.platform === 'grok') return 'https://api.x.ai/v1'
@@ -3853,7 +3860,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   anthropicPassthroughEnabled.value = false
   anthropicAPIKeyAuthScheme.value = 'x_api_key'
   webSearchEmulationMode.value = 'default'
-  if (newAccount.platform === 'openai' && (newAccount.type === 'oauth' || newAccount.type === 'setup-token' || newAccount.type === 'apikey')) {
+  const canonicalCindy = isCindyOpenAIAPIKeyAccount(newAccount)
+  if ((newAccount.platform === 'openai' && (newAccount.type === 'oauth' || newAccount.type === 'setup-token' || newAccount.type === 'apikey')) || canonicalCindy) {
     openaiPassthroughEnabled.value = extra?.openai_passthrough === true || extra?.openai_oauth_passthrough === true
     openaiFlattenNamespacesEnabled.value =
       newAccount.type === 'oauth' && extra?.openai_responses_flatten_namespaces === true
@@ -3865,7 +3873,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       : ''
     openAICompactMode.value = (extra?.openai_compact_mode as OpenAICompactMode) || 'auto'
     if (newAccount.type === 'apikey') {
-      const cindy = isCindyOpenAIAPIKeyAccount(newAccount)
+      const cindy = canonicalCindy
       openAIResponsesMode.value = normalizeOpenAIResponsesMode(
         extra?.openai_responses_mode ?? (cindy ? CINDY_OPENAI_DEFAULTS.responsesMode : undefined)
       )
@@ -4087,8 +4095,10 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       editAdaptiveBaseUrls.value = nextAdaptiveBaseUrls
     }
     const platformDefaultUrl =
-      newAccount.platform === 'openai'
-        ? 'https://api.openai.com'
+      canonicalCindy
+        ? 'https://api.laxarouter.ai'
+        : newAccount.platform === 'openai'
+          ? 'https://api.openai.com'
         : newAccount.platform === 'gemini'
           ? 'https://generativelanguage.googleapis.com'
           : newAccount.platform === 'grok'
@@ -4815,7 +4825,9 @@ const handleSubmit = async () => {
     // For apikey type, handle credentials update
     if (props.account.type === 'apikey') {
       const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
-      const newBaseUrl = editBaseUrl.value.trim() || defaultBaseUrl.value
+      const newBaseUrl = isCindyAccount.value
+        ? 'https://api.laxarouter.ai'
+        : editBaseUrl.value.trim() || defaultBaseUrl.value
       const shouldApplyModelMapping = !(props.account.platform === 'openai' && openaiPassthroughEnabled.value)
 
       // Always update credentials for apikey type to handle model mapping changes
@@ -4868,6 +4880,8 @@ const handleSubmit = async () => {
       }
       if (props.account.platform === 'openai') {
         applyOpenAIEndpointCapabilities(newCredentials)
+      }
+      if (props.account.platform === 'openai' || isCindyAccount.value) {
         const compactModelMapping = buildModelMappingObject('mapping', [], openAICompactModelMappings.value)
         if (compactModelMapping) {
           newCredentials.compact_model_mapping = compactModelMapping
@@ -5409,6 +5423,34 @@ const handleSubmit = async () => {
         }
       }
 
+      updatePayload.extra = newExtra
+    }
+
+    // Canonical Cindy accounts share the OpenAI wire controls without being
+    // projected back to platform=openai. Keep provider identity immutable and
+    // persist only the Cindy-compatible API-key modes.
+    if (isCindyAccount.value) {
+      const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
+        (props.account.extra as Record<string, unknown>) || {}
+      const newExtra: Record<string, unknown> = { ...currentExtra }
+      newExtra.openai_apikey_responses_websockets_v2_mode = openaiAPIKeyResponsesWebSocketV2Mode.value
+      newExtra.openai_apikey_responses_websockets_v2_enabled = isOpenAIWSModeEnabled(openaiAPIKeyResponsesWebSocketV2Mode.value)
+      delete newExtra.responses_websockets_v2_enabled
+      delete newExtra.openai_ws_enabled
+      if (!openAITextGenerationCapabilityEnabled.value || openAIResponsesMode.value === 'auto') {
+        delete newExtra.openai_responses_mode
+      } else {
+        newExtra.openai_responses_mode = openAIResponsesMode.value
+      }
+      newExtra.openai_alpha_search_mode = openAIAlphaSearchMode.value
+      newExtra.openai_prompt_cache_key_mode = openAIPromptCacheKeyMode.value
+      if (openAICompactMode.value === 'auto') {
+        delete newExtra.openai_compact_mode
+      } else {
+        newExtra.openai_compact_mode = openAICompactMode.value
+      }
+      delete newExtra.openai_passthrough
+      delete newExtra.openai_oauth_passthrough
       updatePayload.extra = newExtra
     }
 

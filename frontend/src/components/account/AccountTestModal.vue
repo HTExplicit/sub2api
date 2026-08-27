@@ -253,7 +253,8 @@ import { buildApiUrl } from '@/api/client'
 import { adminAPI } from '@/api/admin'
 import {
   filterCindyAccountTestModels,
-  pickCindyAccountTestDefault
+  pickCindyAccountTestDefault,
+  isCindyOpenAIAPIKeyAccount
 } from '@/utils/cindyOpenAIDefaults'
 import type { Account, AccountAvailableModel } from '@/types'
 
@@ -291,7 +292,9 @@ const loadingModels = ref(false)
 let abortController: AbortController | null = null
 const generatedImages = ref<PreviewImage[]>([])
 const testMode = ref<'default' | 'compact'>('default')
-const isOpenAIAccount = computed(() => props.account?.platform === 'openai')
+const isOpenAIAccount = computed(() =>
+  props.account?.platform === 'openai' || isCindyOpenAIAPIKeyAccount(props.account)
+)
 const openAITestModeOptions = computed(() => [
   { value: 'default', label: t('admin.accounts.openai.testModeDefault') },
   { value: 'compact', label: t('admin.accounts.openai.testModeCompact') }
@@ -308,7 +311,7 @@ const supportsGeminiImageTest = computed(() => {
 const supportsOpenAIImageTest = computed(() => {
   const modelID = selectedModelId.value.toLowerCase()
   if (!modelID.startsWith('gpt-image-')) return false
-  return props.account?.platform === 'openai'
+  return props.account?.platform === 'openai' || isCindyOpenAIAPIKeyAccount(props.account)
 })
 
 const supportsImageTest = computed(() => supportsGeminiImageTest.value || supportsOpenAIImageTest.value)

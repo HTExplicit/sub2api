@@ -22,6 +22,10 @@ export const CONCRETE_PLATFORM_OPTIONS = [
   { value: 'cindy', label: 'Cindy' }
 ] as const satisfies readonly PlatformOption<AccountPlatform>[]
 
+export const CONCRETE_PLATFORM_VALUES = CONCRETE_PLATFORM_OPTIONS.map(
+  option => option.value
+) as AccountPlatform[]
+
 /** Platforms that can own a group. */
 export const GROUP_PLATFORM_OPTIONS = [
   ...CONCRETE_PLATFORM_OPTIONS,

@@ -40,6 +40,7 @@ export default {
       account_duplicate_review: '重复账号复核',
       account_duplicate_merge: '重复账号合并',
       cindy_confirmed_cleanup: '清理已确认 Cindy 账号',
+      cindy_banned_cleanup: '清理已封禁 Cindy 账号',
     },
     statuses: {
       pending: '等待中',

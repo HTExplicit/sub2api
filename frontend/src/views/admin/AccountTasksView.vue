@@ -107,6 +107,7 @@ const jobKinds = [
   'account_duplicate_review',
   'account_duplicate_merge',
   'cindy_confirmed_cleanup',
+  'cindy_banned_cleanup',
 ]
 const jobStatuses: AccountJobStatus[] = [
   'pending',

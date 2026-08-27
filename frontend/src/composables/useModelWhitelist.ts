@@ -428,6 +428,7 @@ export function getModelsByPlatform(platform: string): string[] {
     case 'meta': return metaModels
     case 'xai':
     case 'grok': return xaiModels
+    case 'cindy': return []
     case 'cohere': return cohereModels
     case 'yi': return yiModels
     case 'moonshot':
@@ -449,6 +450,7 @@ export function getPresetMappingsByPlatform(platform: string) {
   if (platform === 'grok' || platform === 'xai') return grokPresetMappings
   if (platform === 'antigravity') return antigravityPresetMappings
   if (platform === 'bedrock') return bedrockPresetMappings
+  if (platform === 'cindy') return []
   return anthropicPresetMappings
 }
 

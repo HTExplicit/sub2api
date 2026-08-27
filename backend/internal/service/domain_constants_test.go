@@ -21,3 +21,9 @@ func TestSettingKeyAuthSourcePlatformQuotas(t *testing.T) {
 		t.Fatalf("got %q, want %q", got, "auth_source_default_dingtalk_platform_quotas")
 	}
 }
+
+func TestAllowedQuotaPlatformsIncludesCanonicalCindy(t *testing.T) {
+	if !IsAllowedQuotaPlatform(PlatformCindy) {
+		t.Fatal("canonical Cindy platform must participate in user platform quotas")
+	}
+}
