@@ -43,6 +43,16 @@ func calculateCindyCatalogTextCost(
 	if err != nil {
 		return nil, err
 	}
+	// Cindy schema-v4 intentionally has no separate cache-write field for the
+	// GPT-5.6 family. The Responses/WS usage contract still reports cache-write
+	// tokens as a disjoint bucket, so apply the same established GPT-5.6 policy
+	// used by the generic OpenAI billing path: input price × 1.25. This is a
+	// downstream protocol-billing rule, not a mutation of the pinned v4 fixture.
+	// Other models with an absent cache-write price remain fail-closed.
+	if (tokens.CacheCreationTokens > 0 || tokens.CacheCreation5mTokens > 0 || tokens.CacheCreation1hTokens > 0) &&
+		!pricing.CacheCreationInputTokenCostPresent {
+		pricing = applyCindyGPT56CacheCreationFallback(model, pricing)
+	}
 	if (tokens.CacheCreationTokens > 0 || tokens.CacheCreation5mTokens > 0 || tokens.CacheCreation1hTokens > 0) &&
 		!pricing.CacheCreationInputTokenCostPresent {
 		return nil, fmt.Errorf("%w for strict Cindy text model %q: cache-creation price is absent", ErrModelPricingUnavailable, model)
@@ -55,6 +65,27 @@ func calculateCindyCatalogTextCost(
 	cost := billingService.computeTokenBreakdown(modelPricing, tokens, rateMultiplier, "", longContextBillingEnabled)
 	cost.BillingMode = string(BillingModeToken)
 	return cost, nil
+}
+
+func applyCindyGPT56CacheCreationFallback(model string, pricing CindyTextPricing) CindyTextPricing {
+	capability, ok := resolveKnownCindyCapability(model)
+	if !ok {
+		return pricing
+	}
+	switch capability.PublicID {
+	case "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra":
+	default:
+		return pricing
+	}
+	if pricing.InputCostPerToken <= 0 {
+		return pricing
+	}
+	pricing.CacheCreationInputTokenCost = pricing.InputCostPerToken * 1.25
+	pricing.CacheCreationInputTokenCostPresent = true
+	if pricing.LongContextInputTokenThreshold > 0 && pricing.LongContextInputCostPerToken > 0 {
+		pricing.LongContextCacheCreationTokenCost = pricing.LongContextInputCostPerToken * 1.25
+	}
+	return pricing
 }
 
 func cindyCatalogCostDiscount(model string) (float64, error) {

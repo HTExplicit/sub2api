@@ -40,6 +40,37 @@ func TestCalculateCindyCatalogTextCostUsesTargetPricingAndCacheTiers(t *testing.
 		require.NoError(t, err)
 		require.InDelta(t, 15*6.25e-6, cost.CacheCreationCost, 1e-12)
 	})
+
+	t.Run("GPT-5.6 cache creation uses the established input 1.25x fallback", func(t *testing.T) {
+		tokens := UsageTokens{InputTokens: 700, OutputTokens: 50, CacheCreationTokens: 200, CacheReadTokens: 100}
+		cost, err := calculateCindyCatalogTextCost(billingService, "openai/gpt-5.6-luna", tokens, 1, "", true)
+		require.NoError(t, err)
+		require.InDelta(t, 700*0.2e-6, cost.InputCost, 1e-12)
+		require.InDelta(t, 200*0.25e-6, cost.CacheCreationCost, 1e-12)
+		require.InDelta(t, 100*0.02e-6, cost.CacheReadCost, 1e-12)
+		require.InDelta(t, 50*1.2e-6, cost.OutputCost, 1e-12)
+	})
+
+	t.Run("GPT-5.6 Fast cache creation follows the priority input tier", func(t *testing.T) {
+		tokens := UsageTokens{CacheCreationTokens: 200}
+		cost, err := calculateCindyCatalogTextCost(billingService, "gpt-5.6-luna", tokens, 1, "fast", true)
+		require.NoError(t, err)
+		require.InDelta(t, 200*2.5e-6, cost.CacheCreationCost, 1e-12)
+	})
+
+	t.Run("GPT-5.6 long-context cache creation follows the long input tier", func(t *testing.T) {
+		tokens := UsageTokens{CacheCreationTokens: 272001}
+		cost, err := calculateCindyCatalogTextCost(billingService, "gpt-5.6-luna", tokens, 1, "", true)
+		require.NoError(t, err)
+		require.True(t, cost.LongContextBillingApplied)
+		require.InDelta(t, 272001*2.5e-6, cost.CacheCreationCost, 1e-12)
+	})
+
+	t.Run("non-GPT missing cache creation price remains fail closed", func(t *testing.T) {
+		_, err := calculateCindyCatalogTextCost(billingService, "gemini-3.6-flash", UsageTokens{CacheCreationTokens: 1}, 1, "", true)
+		require.ErrorIs(t, err, ErrModelPricingUnavailable)
+		require.ErrorContains(t, err, "cache-creation price is absent")
+	})
 }
 
 func TestCalculateCindyCatalogTextCostHonorsLongContextPolicy(t *testing.T) {
@@ -400,6 +431,25 @@ func TestOpenAIRecordUsageCindyCatalogCoversResponsesAndNativeMessages(t *testin
 			wantOutputCost:        5 * 25e-6,
 			wantCacheCreationCost: 10 * 6.25e-6,
 			wantCacheReadCost:     20 * 0.5e-6,
+		},
+		{
+			name: "Responses WSv2 persists GPT-5.6 cache writes with fallback pricing",
+			result: &OpenAIForwardResult{
+				RequestID:     "resp_cindy_wsv2_cache_write",
+				Model:         "gpt-5.6-luna",
+				BillingModel:  "openai/gpt-5.6-luna",
+				UpstreamModel: "openai/gpt-5.6-luna",
+				OpenAIWSMode:  true,
+				Usage: OpenAIUsage{
+					InputTokens: 1000, OutputTokens: 50,
+					CacheCreationInputTokens: 200, CacheReadInputTokens: 100,
+				},
+			},
+			wantInputTokens:       700,
+			wantInputCost:         700 * 0.2e-6,
+			wantOutputCost:        50 * 1.2e-6,
+			wantCacheCreationCost: 200 * 0.25e-6,
+			wantCacheReadCost:     100 * 0.02e-6,
 		},
 	}
 
