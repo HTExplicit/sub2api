@@ -2506,6 +2506,9 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		if err != nil {
 			var selectionFailoverErr *service.UpstreamFailoverError
 			if errors.As(err, &selectionFailoverErr) && selectionFailoverErr.IsOpenAIContinuationStateUnavailable() {
+				reqLog.Warn("openai.websocket_continuation_state_unavailable",
+					zap.String("stage", "account_selection"),
+				)
 				closeOpenAIWSFailoverExhausted(c, wsConn, selectionFailoverErr)
 				return
 			}
@@ -2888,6 +2891,11 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
+				if failoverErr.IsOpenAIContinuationStateUnavailable() {
+					reqLog.Warn("openai.websocket_continuation_state_unavailable",
+						zap.String("stage", "upstream_turn"),
+					)
+				}
 				retryPayload, retryCurrentTurn := service.OpenAIWSCurrentTurnRetryPayload(err)
 				nextAttemptMessage, retrySafe := openAIWSNextAttemptMessage(wsAttemptMessage, retryPayload, retryCurrentTurn)
 				if !retrySafe {

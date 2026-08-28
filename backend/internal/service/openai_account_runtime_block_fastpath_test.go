@@ -408,6 +408,93 @@ func TestOpenAIStrictContinuation_RuntimeBlockStopsFallbackAndPreservesResponseB
 	require.Equal(t, bound.ID, accountID, "runtime cooldown must preserve the strict continuation anchor")
 }
 
+func TestOpenAIStrictCindyContinuation_TransientRuntimeBlockKeepsBoundAccount(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(49)
+	bound := Account{
+		ID:          4912,
+		Platform:    PlatformCindy,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Priority:    1,
+		Credentials: map[string]any{
+			"api_key":  "sk-cindy-bound",
+			"base_url": "https://api.laxarouter.ai",
+		},
+		Extra: map[string]any{
+			"openai_apikey_responses_websockets_v2_enabled": true,
+		},
+	}
+	fallback := bound
+	fallback.ID = 4913
+	fallback.Priority = 100
+	fallback.Credentials = map[string]any{
+		"api_key":  "sk-cindy-fallback",
+		"base_url": "https://api.laxarouter.ai",
+	}
+
+	for _, testCase := range []struct {
+		name          string
+		until         time.Time
+		wantSelection bool
+	}{
+		{name: "finite cooldown", until: time.Now().Add(time.Minute), wantSelection: true},
+		{name: "terminal block", until: time.Time{}, wantSelection: false},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			cache := &runtimeBreakerTestCache{}
+			store := NewOpenAIWSStateStore(cache)
+			svc := &OpenAIGatewayService{
+				accountRepo:        stubOpenAIAccountRepo{accounts: []Account{bound, fallback}},
+				cache:              cache,
+				cfg:                newOpenAIWSV2TestConfig(),
+				concurrencyService: NewConcurrencyService(stubConcurrencyCache{}),
+				openaiWSStateStore: store,
+			}
+			require.NoError(t, store.BindResponseAccount(ctx, groupID, "resp_cindy_runtime", bound.ID, time.Hour))
+			reason := "test_cindy_runtime"
+			if testCase.until.IsZero() {
+				reason = "cindy_banned"
+			}
+			svc.BlockAccountScheduling(&bound, testCase.until, reason)
+			require.True(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(ctx, &bound, "gpt-5.6-luna"))
+			require.Equal(t, !testCase.wantSelection,
+				svc.isOpenAIAccountStrictContinuationBlockedContext(ctx, &bound, "gpt-5.6-luna"))
+
+			selection, _, err := svc.SelectAccountWithSchedulerForCapability(
+				ctx,
+				&groupID,
+				"resp_cindy_runtime",
+				"",
+				"gpt-5.6-luna",
+				nil,
+				OpenAIUpstreamTransportResponsesWebsocketV2,
+				OpenAIEndpointCapabilityChatCompletions,
+				false,
+				false,
+				true,
+			)
+			if testCase.wantSelection {
+				require.NoError(t, err)
+				require.NotNil(t, selection)
+				require.Equal(t, bound.ID, selection.Account.ID)
+				return
+			}
+
+			require.Nil(t, selection)
+			var continuationErr *UpstreamFailoverError
+			require.ErrorAs(t, err, &continuationErr)
+			require.True(t, continuationErr.IsOpenAIContinuationStateUnavailable())
+			require.False(t, continuationErr.ShouldRetryNextAccount())
+			accountID, getErr := store.GetResponseAccount(ctx, groupID, "resp_cindy_runtime")
+			require.NoError(t, getErr)
+			require.Equal(t, bound.ID, accountID)
+		})
+	}
+}
+
 func TestOpenAIStrictContinuation_MissingBindingDoesNotFallBackToAnotherAccount(t *testing.T) {
 	ctx := context.Background()
 	groupID := int64(4711)
