@@ -57,6 +57,20 @@ func TestCalculateCindyCatalogTextCostUsesTargetPricingAndCacheTiers(t *testing.
 		require.NoError(t, err)
 		require.InDelta(t, 200*2.5e-6, cost.CacheCreationCost, 1e-12)
 	})
+
+	t.Run("GPT-5.6 long-context cache creation follows the long input tier", func(t *testing.T) {
+		tokens := UsageTokens{CacheCreationTokens: 272001}
+		cost, err := calculateCindyCatalogTextCost(billingService, "gpt-5.6-luna", tokens, 1, "", true)
+		require.NoError(t, err)
+		require.True(t, cost.LongContextBillingApplied)
+		require.InDelta(t, 272001*2.5e-6, cost.CacheCreationCost, 1e-12)
+	})
+
+	t.Run("non-GPT missing cache creation price remains fail closed", func(t *testing.T) {
+		_, err := calculateCindyCatalogTextCost(billingService, "gemini-3.6-flash", UsageTokens{CacheCreationTokens: 1}, 1, "", true)
+		require.ErrorIs(t, err, ErrModelPricingUnavailable)
+		require.ErrorContains(t, err, "cache-creation price is absent")
+	})
 }
 
 func TestCalculateCindyCatalogTextCostHonorsLongContextPolicy(t *testing.T) {
