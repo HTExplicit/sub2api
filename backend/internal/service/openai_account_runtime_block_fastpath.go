@@ -1442,6 +1442,43 @@ func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlockedContext(ctx c
 	return false
 }
 
+// isOpenAIAccountStrictContinuationBlockedContext keeps request-scoped terminal
+// Cindy state fail-closed while allowing an already-bound continuation to probe
+// its only valid account during a finite cooldown. A
+// previous_response_id cannot move to another Cindy credential, so translating
+// a short 403/429/transport cooldown into "continuation state unavailable" is
+// both misleading and destructive. Indefinite health/balance blocks and their
+// pending write windows remain terminal.
+func (s *OpenAIGatewayService) isOpenAIAccountStrictContinuationBlockedContext(
+	ctx context.Context,
+	account *Account,
+	requestedModel string,
+) bool {
+	if !s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, requestedModel) {
+		return false
+	}
+	if account == nil || !IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		return true
+	}
+	if s.isCindyTerminalPendingBlocked(ctx, account) || s.isCindyBalancePendingBlocked(ctx, account) {
+		return true
+	}
+
+	// A zero account-wide deadline is owned by a terminal health/balance
+	// episode. A finite deadline, or a model-only transient block with no
+	// account-wide entry, may be probed only through the exact continuation
+	// binding; normal scheduling continues to exclude it.
+	mu := s.openAIAccountRuntimeBlockLock(account.ID)
+	mu.Lock()
+	defer mu.Unlock()
+	value, ok := s.openaiAccountRuntimeBlockUntil.Load(account.ID)
+	if !ok {
+		return false
+	}
+	blockUntil, valid := value.(time.Time)
+	return !valid || blockUntil.IsZero()
+}
+
 // CooldownOpenAIRetryExhausted is the handler-to-scheduler circuit breaker used
 // after the bounded same-account retry budget is exhausted. It reuses the
 // existing in-memory account/model blockers and never shortens a stronger block.

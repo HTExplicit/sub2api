@@ -654,7 +654,7 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 	if vetoed, _ := openAIProfitControlVetoReason(ctx, account); vetoed {
 		return policyMiss()
 	}
-	if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, requestedModel) {
+	if s.isOpenAIAccountStrictContinuationBlockedContext(ctx, account, requestedModel) {
 		return miss(false, true)
 	}
 	if requireCompact && openAICompactSupportTier(account) == 0 {
