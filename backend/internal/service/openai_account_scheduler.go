@@ -2597,13 +2597,6 @@ func cindyEndpointForOpenAICapability(capability OpenAIEndpointCapability) (Cind
 	}
 }
 
-func cindyModelSupportsOpenAIEndpoint(model string, endpoint CindyEndpoint) bool {
-	if CindyModelSupportsEndpoint(model, endpoint) {
-		return true
-	}
-	return endpoint == CindyEndpointResponses && CindyModelSupportsResponsesImageBridge(model)
-}
-
 func cindyFreePoolModelSupportsOpenAIEndpoint(model string, endpoint CindyEndpoint) bool {
 	if CindyFreePoolModelSupportsEndpoint(model, endpoint) {
 		return true
