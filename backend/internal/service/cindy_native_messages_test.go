@@ -54,7 +54,7 @@ func TestForwardCindyAnthropicMessagesJSONUsesNativeWireAndUsage(t *testing.T) {
 	c.Request.Header.Set("Authorization", "Bearer inbound-secret")
 	c.Request.Header.Set("X-Api-Key", "inbound-anthropic-secret")
 
-	upstreamBody := `{"id":"msg_1","type":"message","role":"assistant","model":"anthropic/claude-opus-5","content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":11,"output_tokens":3,"cache_read_input_tokens":2,"cache_creation_input_tokens":10,"cache_creation":{"ephemeral_5m_input_tokens":4,"ephemeral_1h_input_tokens":6}}}`
+	upstreamBody := `{"id":"msg_1","type":"message","role":"assistant","model":"google/gemini-3.6-flash","content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":11,"output_tokens":3,"cache_read_input_tokens":2,"cache_creation_input_tokens":10,"cache_creation":{"ephemeral_5m_input_tokens":4,"ephemeral_1h_input_tokens":6}}}`
 	upstream := &anthropicHTTPUpstreamRecorder{resp: &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid-cindy-json"}},
@@ -63,8 +63,8 @@ func TestForwardCindyAnthropicMessagesJSONUsesNativeWireAndUsage(t *testing.T) {
 
 	result, err := newCindyNativeMessagesService(upstream).ForwardCindyAnthropicMessages(
 		context.Background(), c, newCindyNativeMessagesAccount(),
-		[]byte(`{"model":"claude-opus-5","max_tokens":16,"messages":[{"role":"user","content":"hi"}],"stream":false}`),
-		"claude-opus-5",
+		[]byte(`{"model":"gemini-3.6-flash","max_tokens":16,"messages":[{"role":"user","content":"hi"}],"stream":false}`),
+		"gemini-3.6-flash",
 	)
 
 	require.NoError(t, err)
@@ -72,15 +72,15 @@ func TestForwardCindyAnthropicMessagesJSONUsesNativeWireAndUsage(t *testing.T) {
 	require.Equal(t, "https://api.laxarouter.ai/v1/messages", upstream.lastReq.URL.String())
 	require.Equal(t, "Bearer cindy-secret", upstream.lastReq.Header.Get("Authorization"))
 	require.Empty(t, upstream.lastReq.Header.Get("x-api-key"))
-	require.Equal(t, "anthropic/claude-opus-5", gjson.GetBytes(upstream.lastBody, "model").String())
+	require.Equal(t, "google/gemini-3.6-flash", gjson.GetBytes(upstream.lastBody, "model").String())
 	require.Equal(t, 11, result.Usage.InputTokens)
 	require.Equal(t, 3, result.Usage.OutputTokens)
 	require.Equal(t, 2, result.Usage.CacheReadInputTokens)
 	require.Equal(t, 10, result.Usage.CacheCreationInputTokens)
 	require.Equal(t, 4, result.Usage.CacheCreation5mTokens)
 	require.Equal(t, 6, result.Usage.CacheCreation1hTokens)
-	require.Equal(t, "claude-opus-5", result.Model)
-	require.Equal(t, "anthropic/claude-opus-5", result.UpstreamModel)
+	require.Equal(t, "gemini-3.6-flash", result.Model)
+	require.Equal(t, "google/gemini-3.6-flash", result.UpstreamModel)
 	require.JSONEq(t, upstreamBody, rec.Body.String())
 }
 
@@ -92,7 +92,7 @@ func TestForwardCindyAnthropicMessagesSSEPreservesEventsAndUsage(t *testing.T) {
 
 	upstreamSSE := strings.Join([]string{
 		`event: message_start`,
-		`data: {"type":"message_start","message":{"id":"msg_2","model":"anthropic/claude-sonnet-5","usage":{"input_tokens":7,"cache_read_input_tokens":1}}}`,
+		`data: {"type":"message_start","message":{"id":"msg_2","model":"google/gemini-3.6-flash","usage":{"input_tokens":7,"cache_read_input_tokens":1}}}`,
 		``,
 		`event: message_delta`,
 		`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":4}}`,
@@ -109,13 +109,13 @@ func TestForwardCindyAnthropicMessagesSSEPreservesEventsAndUsage(t *testing.T) {
 
 	result, err := newCindyNativeMessagesService(upstream).ForwardCindyAnthropicMessages(
 		context.Background(), c, newCindyNativeMessagesAccount(),
-		[]byte(`{"model":"claude-sonnet-4-5-20250929","max_tokens":16,"messages":[{"role":"user","content":"hi"}],"stream":true}`),
-		"claude-sonnet-4-5-20250929",
+		[]byte(`{"model":"gemini-3.6-flash","max_tokens":16,"messages":[{"role":"user","content":"hi"}],"stream":true}`),
+		"gemini-3.6-flash",
 	)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, "anthropic/claude-sonnet-5", gjson.GetBytes(upstream.lastBody, "model").String())
+	require.Equal(t, "google/gemini-3.6-flash", gjson.GetBytes(upstream.lastBody, "model").String())
 	require.Equal(t, 7, result.Usage.InputTokens)
 	require.Equal(t, 4, result.Usage.OutputTokens)
 	require.Equal(t, 1, result.Usage.CacheReadInputTokens)

@@ -532,7 +532,6 @@ func TestLegacyCindyRuntimeCompatibilityMapsAliasesAndPreservesDirectLiveModels(
 	}
 
 	for alias, live := range map[string]string{
-		"gpt-5.4":      "openai/gpt-5.6-sol",
 		"gpt-5.4-mini": "openai/gpt-5.6-luna",
 	} {
 		require.True(t, account.IsModelSupported(alias), alias)
@@ -540,12 +539,21 @@ func TestLegacyCindyRuntimeCompatibilityMapsAliasesAndPreservesDirectLiveModels(
 		require.True(t, matched, alias)
 		require.Equal(t, live, mapped, alias)
 	}
-	for _, model := range []string{"openai/gpt-5.6-sol", "openai/gpt-5.6-luna"} {
+	for _, model := range []string{"openai/gpt-5.6-luna"} {
 		require.True(t, account.IsModelSupported(model), model)
 		mapped, matched := account.ResolveMappedModel(model)
 		require.True(t, matched, model)
 		require.Equal(t, model, mapped, model)
 	}
+	for _, model := range []string{"gpt-5.4", "gpt-5.6-sol"} {
+		require.False(t, account.IsModelSupported(model), model)
+	}
+	mappedSol, matchedSol := account.ResolveMappedModel("openai/gpt-5.6-sol")
+	require.True(t, matchedSol)
+	require.Equal(t, "stale-sol-target", mappedSol,
+		"account-level legacy mappings remain data, while the Cindy gateway allowlist rejects Sol")
+	_, solRoutable := ResolveCindyCapability("openai/gpt-5.6-sol")
+	require.False(t, solRoutable)
 	require.Equal(t, "custom-terra-target", account.GetMappedModel("openai/gpt-5.6-terra"),
 		"legacy compatibility must not enable the broader Cindy catalog")
 }

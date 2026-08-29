@@ -34,13 +34,14 @@ func TestAccountSupportsOpenAICapabilities_StrictCindyModelEndpointMatrix(t *tes
 		capability OpenAIEndpointCapability
 		want       bool
 	}{
-		{name: "v4 Claude supports Messages", model: "claude-opus-5", capability: OpenAIEndpointCapabilityMessages, want: true},
-		{name: "v4 Claude supports Responses", model: "claude-opus-5", capability: OpenAIEndpointCapabilityResponses, want: true},
-		{name: "v4 Claude supports Chat conversion", model: "claude-opus-5", capability: OpenAIEndpointCapabilityChatCompletions, want: true},
+		{name: "free Gemini supports Messages", model: "gemini-3.6-flash", capability: OpenAIEndpointCapabilityMessages, want: true},
+		{name: "free Gemini supports Responses", model: "gemini-3.6-flash", capability: OpenAIEndpointCapabilityResponses, want: true},
+		{name: "free Gemini supports Chat conversion", model: "gemini-3.6-flash", capability: OpenAIEndpointCapabilityChatCompletions, want: true},
+		{name: "restricted Claude is not selectable", model: "claude-opus-5", capability: OpenAIEndpointCapabilityMessages, want: false},
 		{name: "image-only Gemini not on Responses", model: "gemini-3-pro-image", capability: OpenAIEndpointCapabilityResponses, want: false},
 		{name: "image-only Gemini not on Chat", model: "gemini-3-pro-image", capability: OpenAIEndpointCapabilityChatCompletions, want: false},
-		{name: "GPT image public ID uses exact Responses bridge", model: "gpt-image-2", capability: OpenAIEndpointCapabilityResponses, want: true},
-		{name: "GPT image live ID uses exact Responses bridge", model: "openai/gpt-image-2", capability: OpenAIEndpointCapabilityResponses, want: true},
+		{name: "restricted GPT image public ID is unavailable", model: "gpt-image-2", capability: OpenAIEndpointCapabilityResponses, want: false},
+		{name: "restricted GPT image live ID is unavailable", model: "openai/gpt-image-2", capability: OpenAIEndpointCapabilityResponses, want: false},
 		{name: "GPT image is not a chat model", model: "gpt-image-2", capability: OpenAIEndpointCapabilityChatCompletions, want: false},
 		{name: "Luna supports Responses", model: "gpt-5.6-luna", capability: OpenAIEndpointCapabilityResponses, want: true},
 		{name: "Luna supports Chat", model: "gpt-5.6-luna", capability: OpenAIEndpointCapabilityChatCompletions, want: true},
@@ -60,12 +61,12 @@ func TestAccountSupportsOpenAICapabilities_FirstClassCindySearchUsesPublicRespon
 	account := cindyEndpointSchedulingAccount(51002)
 
 	require.True(t, accountSupportsOpenAICapabilities(
-		context.Background(), &account, "gpt-5.6-sol", OpenAIEndpointCapabilityAlphaSearch, "",
+		context.Background(), &account, "gpt-5.6-luna", OpenAIEndpointCapabilityAlphaSearch, "",
 	))
 	require.False(t, accountSupportsOpenAICapabilities(
 		context.Background(), &account, CindyWebSearchModel, OpenAIEndpointCapabilityAlphaSearch, "",
 	))
-	require.True(t, accountSupportsOpenAICapabilities(
+	require.False(t, accountSupportsOpenAICapabilities(
 		context.Background(), &account, "claude-opus-5", OpenAIEndpointCapabilityAlphaSearch, "",
 	))
 }
@@ -84,7 +85,7 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_FirstClassCindySearch(t
 	}
 
 	selection, _, err := svc.SelectAccountWithSchedulerForCapability(
-		context.Background(), &groupID, "", "", "gpt-5.6-sol", nil,
+		context.Background(), &groupID, "", "", "gpt-5.6-luna", nil,
 		OpenAIUpstreamTransportHTTPSSE, OpenAIEndpointCapabilityAlphaSearch,
 		false, false, false, PlatformCindy,
 	)
@@ -116,7 +117,7 @@ func TestOpenAIGatewayServiceSelectAccountWithSchedulerRejectsCrossProfileCindyC
 	}
 
 	selection, _, err := svc.SelectAccountWithSchedulerForCapability(
-		context.Background(), &groupID, "", "", "gpt-5.6-sol", nil,
+		context.Background(), &groupID, "", "", "gpt-5.6-luna", nil,
 		OpenAIUpstreamTransportHTTPSSE, OpenAIEndpointCapabilityResponses,
 		false, false, false, PlatformCindy,
 	)
@@ -194,7 +195,7 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_CindyMessagesUsesMessag
 	}
 
 	selection, _, err := svc.SelectAccountWithSchedulerForCapability(
-		context.Background(), &groupID, "", "", "claude-opus-5", nil,
+		context.Background(), &groupID, "", "", "gemini-3.6-flash", nil,
 		OpenAIUpstreamTransportAny, OpenAIEndpointCapabilityMessages, false, false, false, PlatformCindy,
 	)
 	require.NoError(t, err)
@@ -233,7 +234,7 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_MixedMessagesUsesNative
 		cfg:                cfg,
 		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
 	}
-	nativeModel := "claude-sonnet-4-5-20250929"
+	nativeModel := "gemini-3.6-flash"
 	legacyMappedModel := "gpt-5.3-codex"
 	ctx := WithOpenAICindyRequestedModel(context.Background(), nativeModel)
 	require.Equal(t, nativeModel, openAIRequestedModelForAccount(ctx, &cindy, legacyMappedModel))
@@ -297,10 +298,6 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_MixedImagesGatesCindyBy
 		OpenAIUpstreamTransportHTTPSSE, "", OpenAIImagesCapabilityBasic,
 		false, PlatformCindy, false, false,
 	)
-	require.NoError(t, err)
-	require.NotNil(t, selection)
-	require.Equal(t, cindy.ID, selection.Account.ID)
-	if selection.ReleaseFunc != nil {
-		selection.ReleaseFunc()
-	}
+	require.Error(t, err)
+	require.Nil(t, selection)
 }

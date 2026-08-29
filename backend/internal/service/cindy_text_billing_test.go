@@ -14,31 +14,31 @@ func TestCalculateCindyCatalogTextCostUsesTargetPricingAndCacheTiers(t *testing.
 	t.Parallel()
 	billingService := NewBillingService(&config.Config{}, nil)
 
-	t.Run("hidden alias uses mapped target price", func(t *testing.T) {
+	t.Run("allowed hidden alias uses mapped target price", func(t *testing.T) {
 		tokens := UsageTokens{
 			InputTokens:     100,
 			OutputTokens:    10,
 			CacheReadTokens: 20,
 		}
-		cost, err := calculateCindyCatalogTextCost(billingService, "gpt-5.4", tokens, 1.5, "", true)
+		cost, err := calculateCindyCatalogTextCost(billingService, "gpt-5.4-mini", tokens, 1.5, "", true)
 		require.NoError(t, err)
 		require.Equal(t, string(BillingModeToken), cost.BillingMode)
-		require.InDelta(t, 100*5e-6, cost.InputCost, 1e-12)
-		require.InDelta(t, 10*30e-6, cost.OutputCost, 1e-12)
+		require.InDelta(t, 100*0.2e-6, cost.InputCost, 1e-12)
+		require.InDelta(t, 10*1.2e-6, cost.OutputCost, 1e-12)
 		require.Zero(t, cost.CacheCreationCost)
-		require.InDelta(t, 20*0.5e-6, cost.CacheReadCost, 1e-12)
+		require.InDelta(t, 20*0.02e-6, cost.CacheReadCost, 1e-12)
 		require.InDelta(t, cost.TotalCost*1.5, cost.ActualCost, 1e-12)
 	})
 
-	t.Run("Anthropic cache creation uses the exact aggregate v4 price", func(t *testing.T) {
+	t.Run("Qwen Flash cache creation uses the exact aggregate v4 price", func(t *testing.T) {
 		tokens := UsageTokens{
 			CacheCreationTokens:   15,
 			CacheCreation5mTokens: 10,
 			CacheCreation1hTokens: 5,
 		}
-		cost, err := calculateCindyCatalogTextCost(billingService, "anthropic/claude-opus-5", tokens, 1, "", true)
+		cost, err := calculateCindyCatalogTextCost(billingService, "qwen/qwen3.8-flash", tokens, 1, "", true)
 		require.NoError(t, err)
-		require.InDelta(t, 15*6.25e-6, cost.CacheCreationCost, 1e-12)
+		require.InDelta(t, 15*0.2e-6, cost.CacheCreationCost, 1e-12)
 	})
 
 	t.Run("GPT-5.6 cache creation uses the established input 1.25x fallback", func(t *testing.T) {
@@ -73,28 +73,13 @@ func TestCalculateCindyCatalogTextCostUsesTargetPricingAndCacheTiers(t *testing.
 	})
 }
 
-func TestCalculateCindyCatalogTextCostHonorsLongContextPolicy(t *testing.T) {
+func TestCalculateCindyCatalogTextCostRejectsRestrictedLongContextModel(t *testing.T) {
 	t.Parallel()
 	billingService := NewBillingService(&config.Config{}, nil)
 	tokens := UsageTokens{InputTokens: 100000, CacheReadTokens: 100000, OutputTokens: 10}
 
-	standard, err := calculateCindyCatalogTextCost(billingService, "x-ai/grok-4.6", tokens, 1, "", false)
-	require.NoError(t, err)
-	require.False(t, standard.LongContextBillingApplied)
-	require.InDelta(t, 100000*2e-6, standard.InputCost, 1e-12)
-	require.InDelta(t, 100000*0.5e-6, standard.CacheReadCost, 1e-12)
-
-	longContext, err := calculateCindyCatalogTextCost(billingService, "x-ai/grok-4.6", tokens, 1, "", true)
-	require.NoError(t, err)
-	require.False(t, longContext.LongContextBillingApplied, "v4 Above200k pricing is strictly above the threshold")
-
-	tokens.InputTokens++
-	longContext, err = calculateCindyCatalogTextCost(billingService, "x-ai/grok-4.6", tokens, 1, "", true)
-	require.NoError(t, err)
-	require.True(t, longContext.LongContextBillingApplied)
-	require.InDelta(t, 100001*4e-6, longContext.InputCost, 1e-12)
-	require.InDelta(t, 100000*1e-6, longContext.CacheReadCost, 1e-12)
-	require.InDelta(t, 10*12e-6, longContext.OutputCost, 1e-12)
+	_, err := calculateCindyCatalogTextCost(billingService, "x-ai/grok-4.6", tokens, 1, "", false)
+	require.ErrorIs(t, err, ErrModelPricingUnavailable)
 }
 
 func TestCalculateCindyCatalogTextCostOpenAI272KBoundary(t *testing.T) {
@@ -111,8 +96,6 @@ func TestCalculateCindyCatalogTextCostOpenAI272KBoundary(t *testing.T) {
 		longOutput    float64
 	}{
 		{model: "gpt-5.6-luna", baseInput: 0.2e-6, baseCacheRead: 0.02e-6, baseOutput: 1.2e-6, longInput: 2e-6, longCacheRead: 0.2e-6, longOutput: 9e-6},
-		{model: "openai/gpt-5.6-sol", baseInput: 5e-6, baseCacheRead: 0.5e-6, baseOutput: 30e-6, longInput: 10e-6, longCacheRead: 1e-6, longOutput: 45e-6},
-		{model: "gpt-5.6-terra", baseInput: 2e-6, baseCacheRead: 0.2e-6, baseOutput: 12e-6, longInput: 5e-6, longCacheRead: 0.5e-6, longOutput: 22.5e-6},
 	}
 
 	for _, test := range tests {
@@ -157,9 +140,9 @@ func TestCalculateCindyCatalogTextCostUsesV4PriceAndRejectsUnknownModel(t *testi
 	t.Parallel()
 	billingService := NewBillingService(&config.Config{}, nil)
 
-	priced, err := calculateCindyCatalogTextCost(billingService, "seed-2.1-pro", UsageTokens{InputTokens: 10}, 1, "", true)
+	priced, err := calculateCindyCatalogTextCost(billingService, "qwen3.8-27b", UsageTokens{InputTokens: 10}, 1, "", true)
 	require.NoError(t, err)
-	require.InDelta(t, 10*0.88e-6, priced.TotalCost, 1e-12)
+	require.InDelta(t, 10*0.425e-6, priced.TotalCost, 1e-12)
 	require.Equal(t, string(BillingModeToken), priced.BillingMode)
 
 	_, err = calculateCindyCatalogTextCost(billingService, "not-in-cindy-catalog", UsageTokens{InputTokens: 10}, 1, "", true)
@@ -179,8 +162,7 @@ func TestCalculateCindyCatalogTextCostAppliesCatalogDiscount(t *testing.T) {
 		cachePrice  float64
 	}{
 		{model: "hy3", discount: 0.9, inputPrice: 0.132e-6, outputPrice: 0.528e-6, cachePrice: 0.033e-6},
-		{model: "glm-5.2", discount: 0.3, inputPrice: 1.4e-6, outputPrice: 4.4e-6, cachePrice: 0.26e-6},
-		{model: "glm-5.3", discount: 0.2, inputPrice: 1.4e-6, outputPrice: 4.4e-6, cachePrice: 0.26e-6},
+		{model: "glm-5.3-flash", discount: 0.5, inputPrice: 0.15e-6, outputPrice: 0.5e-6, cachePrice: 0.03e-6},
 	}
 
 	for _, test := range tests {
@@ -260,11 +242,8 @@ func TestLegacyCindyRuntimeCompatibilityUsesExactModelPricing(t *testing.T) {
 		inputPrice  float64
 		outputPrice float64
 	}{
-		{model: "gpt-5.4", inputPrice: 5e-6, outputPrice: 30e-6},
 		{model: "gpt-5.4-mini", inputPrice: 0.2e-6, outputPrice: 1.2e-6},
-		{model: "gpt-5.6-sol", serviceTier: "priority", inputPrice: 10e-6, outputPrice: 60e-6},
 		{model: "gpt-5.6-luna", serviceTier: "priority", inputPrice: 2e-6, outputPrice: 12e-6},
-		{model: "openai/gpt-5.6-sol", serviceTier: "priority", inputPrice: 10e-6, outputPrice: 60e-6},
 		{model: "openai/gpt-5.6-luna", serviceTier: "priority", inputPrice: 2e-6, outputPrice: 12e-6},
 	} {
 		t.Run(test.model, func(t *testing.T) {
@@ -324,7 +303,6 @@ func TestLegacyCindyRuntimeCompatibilityRecordUsageKeepsAliasPricingAfterLiveMap
 		inputCost  float64
 		outputCost float64
 	}{
-		{requested: "gpt-5.4", live: "openai/gpt-5.6-sol", inputCost: 100 * 5e-6, outputCost: 10 * 30e-6},
 		{requested: "gpt-5.4-mini", live: "openai/gpt-5.6-luna", inputCost: 100 * 0.2e-6, outputCost: 10 * 1.2e-6},
 	} {
 		t.Run(test.requested, func(t *testing.T) {
@@ -399,26 +377,26 @@ func TestOpenAIRecordUsageCindyCatalogCoversResponsesAndNativeMessages(t *testin
 		{
 			name: "Responses total input is split into mutually exclusive buckets",
 			result: &OpenAIForwardResult{
-				Model:         "gpt-5.4",
-				BillingModel:  "openai/gpt-5.6-sol",
-				UpstreamModel: "openai/gpt-5.6-sol",
+				Model:         "gpt-5.6-luna",
+				BillingModel:  "openai/gpt-5.6-luna",
+				UpstreamModel: "openai/gpt-5.6-luna",
 				Usage: OpenAIUsage{
 					InputTokens: 130, OutputTokens: 5,
 					CacheReadInputTokens: 20,
 				},
 			},
 			wantInputTokens:       110,
-			wantInputCost:         110 * 5e-6,
-			wantOutputCost:        5 * 30e-6,
+			wantInputCost:         110 * 0.2e-6,
+			wantOutputCost:        5 * 1.2e-6,
 			wantCacheCreationCost: 0,
-			wantCacheReadCost:     20 * 0.5e-6,
+			wantCacheReadCost:     20 * 0.02e-6,
 		},
 		{
 			name: "native Messages preserves disjoint input and cache TTL buckets",
 			result: &OpenAIForwardResult{
-				Model:                        "claude-opus-4-5-20251101",
-				BillingModel:                 "anthropic/claude-opus-5",
-				UpstreamModel:                "anthropic/claude-opus-5",
+				Model:                        "qwen3.8-flash",
+				BillingModel:                 "qwen/qwen3.8-flash",
+				UpstreamModel:                "qwen/qwen3.8-flash",
 				UsageInputTokensExcludeCache: true,
 				Usage: OpenAIUsage{
 					InputTokens: 100, OutputTokens: 5,
@@ -427,10 +405,10 @@ func TestOpenAIRecordUsageCindyCatalogCoversResponsesAndNativeMessages(t *testin
 				},
 			},
 			wantInputTokens:       100,
-			wantInputCost:         100 * 5e-6,
-			wantOutputCost:        5 * 25e-6,
-			wantCacheCreationCost: 10 * 6.25e-6,
-			wantCacheReadCost:     20 * 0.5e-6,
+			wantInputCost:         100 * 0.16e-6,
+			wantOutputCost:        5 * 0.47e-6,
+			wantCacheCreationCost: 10 * 0.2e-6,
+			wantCacheReadCost:     20 * 0.016e-6,
 		},
 		{
 			name: "Responses WSv2 persists GPT-5.6 cache writes with fallback pricing",
@@ -501,7 +479,7 @@ func TestCalculateCindyCatalogTextCostUsesExactPriorityTier(t *testing.T) {
 
 	cost, err := calculateCindyCatalogTextCost(
 		billing,
-		"gpt-5.6-sol",
+		"gpt-5.6-luna",
 		UsageTokens{InputTokens: 100, OutputTokens: 10, CacheReadTokens: 20},
 		1,
 		"priority",
@@ -509,9 +487,9 @@ func TestCalculateCindyCatalogTextCostUsesExactPriorityTier(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	require.InDelta(t, 100*10e-6, cost.InputCost, 1e-12)
-	require.InDelta(t, 10*60e-6, cost.OutputCost, 1e-12)
-	require.InDelta(t, 20*1e-6, cost.CacheReadCost, 1e-12)
+	require.InDelta(t, 100*2e-6, cost.InputCost, 1e-12)
+	require.InDelta(t, 10*12e-6, cost.OutputCost, 1e-12)
+	require.InDelta(t, 20*0.2e-6, cost.CacheReadCost, 1e-12)
 }
 
 func TestCalculateCindyCatalogTextCostFailsClosedForMissingNeededPrice(t *testing.T) {

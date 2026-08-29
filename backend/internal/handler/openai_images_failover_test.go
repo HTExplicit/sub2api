@@ -310,7 +310,7 @@ func TestOpenAIGatewayHandlerImages_ServerErrorFailsOverAndReturnsClearErrorWhen
 	}
 }
 
-func TestCindyNativeImagesHTTP200BudgetJSONFailsOverBeforeWrite(t *testing.T) {
+func TestCindyNativeImagesUnavailableFreePoolModelRejectsBeforeSelection(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	groupID := int64(3131)
 	exhaustedAccountID := int64(11)
@@ -365,16 +365,16 @@ func TestCindyNativeImagesHTTP200BudgetJSONFailsOverBeforeWrite(t *testing.T) {
 
 	handler.Images(c)
 
-	require.Equal(t, []int64{exhaustedAccountID, 12}, upstream.imageCalls())
+	require.Empty(t, upstream.imageCalls())
 	require.Empty(t, upstream.probeCalls(), "request-time exact signals must not start balance probes")
-	require.Empty(t, repo.marked(), "one exact request signal must not permanently mark the account")
-	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
-	require.Equal(t, "aW1hZ2U=", gjson.GetBytes(recorder.Body.Bytes(), "data.0.b64_json").String())
+	require.Empty(t, repo.marked())
+	require.Equal(t, http.StatusNotFound, recorder.Code, recorder.Body.String())
+	require.Equal(t, "model_not_found", gjson.GetBytes(recorder.Body.Bytes(), "error.type").String())
 	require.NotContains(t, recorder.Body.String(), "budget_exceeded")
 	require.NotContains(t, recorder.Body.String(), "sensitive upstream budget detail")
 }
 
-func TestCindyNativeImagesHTTP201BudgetEventShapeDoesNotMarkOrFailover(t *testing.T) {
+func TestLegacyCindyNativeImagesUnavailableFreePoolModelRejectsBeforeSelection(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	groupID := int64(3132)
 	firstAccountID := int64(21)
@@ -426,9 +426,8 @@ func TestCindyNativeImagesHTTP201BudgetEventShapeDoesNotMarkOrFailover(t *testin
 
 	handler.Images(c)
 
-	require.Equal(t, []int64{firstAccountID}, upstream.calls())
+	require.Empty(t, upstream.calls())
 	require.Empty(t, repo.marked())
-	require.Equal(t, http.StatusCreated, recorder.Code, recorder.Body.String())
-	require.Equal(t, "error", gjson.GetBytes(recorder.Body.Bytes(), "type").String())
-	require.Equal(t, "ordinary 201 body", gjson.GetBytes(recorder.Body.Bytes(), "error.message").String())
+	require.Equal(t, http.StatusNotFound, recorder.Code, recorder.Body.String())
+	require.Equal(t, "model_not_found", gjson.GetBytes(recorder.Body.Bytes(), "error.type").String())
 }

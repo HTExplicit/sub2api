@@ -7,18 +7,25 @@ import (
 
 // CindyCapabilityCatalogVersion is bumped whenever the fixed Cindy data-plane
 // catalogue or one of its verified endpoint decisions changes.
-const CindyCapabilityCatalogVersion = "2026-08-24.1"
+const CindyCapabilityCatalogVersion = "2026-08-29.1"
 
 // CindyModelMetadataSchemaVersion and CindyModelMetadataSourceSHA256 pin the
 // exact public international Cindy catalog shipped with this release.
 const (
 	CindyModelMetadataSchemaVersion = 4
-	CindyModelMetadataSourceSHA256  = "b2783df6c272fc9851c85f3ffe871c962a6ab701f7698be1893fbfd03a5f28d3"
+	CindyModelMetadataSourceSHA256  = "4f7730d47b10ed0d2c1e5b87789e571fe719c6bca3907f26f811c568eee2c29a"
 )
 
 // CindyModelMetadataSourceRevision pins the shipped Cindy registry used for
 // display, context-window, output-limit, and reasoning metadata.
-const CindyModelMetadataSourceRevision = "makecindy/cindy@1ff5cbcc9d29aec6fedb8c14889ecd86b72a22de"
+const CindyModelMetadataSourceRevision = "makecindy/cindy@1b4f9f42bf3a0517a45c776161278ed22891b5f0"
+
+// CindyFreeModelCatalogSourceRevision and SHA256 pin the authenticated model
+// inventory returned by the newest eligible production free-trial key.
+const (
+	CindyFreeModelCatalogSourceRevision = "laxarouter-free-key@2026-08-29"
+	CindyFreeModelCatalogSHA256         = "a292efade35e63895aa20b63beed0d1ec712d93d030c6a2300cc9e739e926d46"
+)
 
 // CindyCompatibilityAliasSourceRevision identifies downstream aliases managed
 // by Sub2API. These aliases are not part of Cindy's upstream model registry.
@@ -211,6 +218,24 @@ var cindyCompatibilityAliases = map[string]string{
 	"gpt-5.4-mini": "gpt-5.6-luna",
 }
 
+// cindyFreeModelUpstreamIDs pins the complete authenticated free-key inventory.
+// The two cindy/* special IDs have no v4 candidate row, so init publishes only
+// the nine ordinary candidate intersections; their independent endpoint gates
+// remain authoritative.
+var cindyFreeModelUpstreamIDs = map[string]struct{}{
+	"cindy/auto-review":                     {},
+	"cindy/web-search":                      {},
+	"deepseek/deepseek-v4-flash":            {},
+	"deepseek/deepseek-v4-flash-vision-exp": {},
+	"deepseek/deepseek-v4-pro":              {},
+	"google/gemini-3.6-flash":               {},
+	"openai/gpt-5.6-luna":                   {},
+	"qwen/qwen3.8-27b":                      {},
+	"qwen/qwen3.8-flash":                    {},
+	"tencent/hy3":                           {},
+	"z-ai/glm-5.3-flash":                    {},
+}
+
 var cindyHiddenAliases = map[string]string{
 	"claude-opus-4":              "claude-opus-5",
 	"claude-opus-4-20250514":     "claude-opus-5",
@@ -238,12 +263,13 @@ func init() {
 	cindyCapabilityByUpstreamID = make(map[string]*CindyCapability, len(cindyCapabilityCatalog))
 	for i := range cindyCapabilityCatalog {
 		capability := &cindyCapabilityCatalog[i]
+		_, capability.PublicModel = cindyFreeModelUpstreamIDs[capability.LiveUpstreamID]
 		cindyCapabilityByPublicID[capability.PublicID] = capability
 		cindyCapabilityByUpstreamID[capability.LiveUpstreamID] = capability
 	}
 }
 
-// CindyCapabilities returns a defensive copy of the 22 fixed v4 models.
+// CindyCapabilities returns a defensive copy of the 25 fixed v4 candidates.
 func CindyCapabilities() []CindyCapability {
 	result := make([]CindyCapability, len(cindyCapabilityCatalog))
 	for i := range cindyCapabilityCatalog {
@@ -254,8 +280,12 @@ func CindyCapabilities() []CindyCapability {
 
 func cloneCindyCapability(in CindyCapability) CindyCapability {
 	out := in
-	out.InputModalities = append([]string(nil), in.InputModalities...)
-	out.OutputModalities = append([]string(nil), in.OutputModalities...)
+	if in.InputModalities != nil {
+		out.InputModalities = append([]string{}, in.InputModalities...)
+	}
+	if in.OutputModalities != nil {
+		out.OutputModalities = append([]string{}, in.OutputModalities...)
+	}
 	out.VerifiedEndpoints = append([]CindyEndpoint(nil), in.VerifiedEndpoints...)
 	out.ClientSurfaces = append([]string(nil), in.ClientSurfaces...)
 	out.AgentWireProtocols = cloneCindyStringMap(in.AgentWireProtocols)
@@ -296,7 +326,7 @@ func (c CindyCapability) CodexReasoningEfforts() []string {
 	return append([]string(nil), c.ReasoningEfforts...)
 }
 
-// CindyCatalogModels returns all 22 pinned v4 models for management views.
+// CindyCatalogModels returns all 25 pinned v4 candidates for management views.
 // It is intentionally independent of rollout flags and PublicModel so an
 // administrator can inspect the complete fixed inventory without advertising
 // unverified candidates on client-facing endpoints.
@@ -322,7 +352,7 @@ func CindyManagedModelMappings() []CindyCatalogModel {
 	for _, alias := range aliases {
 		targetID := cindyCompatibilityAliases[alias]
 		capability := cindyCapabilityByPublicID[targetID]
-		if capability == nil {
+		if capability == nil || !capability.PublicModel {
 			continue
 		}
 		model := cindyCatalogModelFromCapability(*capability)
@@ -387,7 +417,7 @@ func cloneCindyImageRequestControls(in *CindyImageRequestControls) *CindyImageRe
 // provider-prefix stripping or family wildcard matching is performed.
 func ResolveCindyCapability(model string) (CindyCapability, bool) {
 	capability, ok := resolveKnownCindyCapability(model)
-	if !ok {
+	if !ok || !capability.PublicModel {
 		return CindyCapability{}, false
 	}
 	if CindyCapabilityCatalogFeatureEnabled() {
@@ -437,7 +467,7 @@ func CindyCompatibilityMappedUpstreamModel(model string) (string, bool) {
 		return "", false
 	}
 	capability := cindyCapabilityByPublicID[publicID]
-	if capability == nil {
+	if capability == nil || !capability.PublicModel {
 		return "", false
 	}
 	return capability.LiveUpstreamID, true
@@ -451,7 +481,7 @@ func CindyCompatibilityMappedUpstreamModel(model string) (string, bool) {
 func CindyCompatibilityRoutingTarget(model string) bool {
 	for _, publicID := range cindyCompatibilityAliases {
 		capability := cindyCapabilityByPublicID[publicID]
-		if capability != nil && model == capability.LiveUpstreamID {
+		if capability != nil && capability.PublicModel && model == capability.LiveUpstreamID {
 			return true
 		}
 	}
@@ -465,14 +495,14 @@ func CindyCompatibilityRoutingTarget(model string) bool {
 func CindyCompatibilityTextPricingForModel(model string) (CindyTextPricing, bool) {
 	if publicID, ok := cindyCompatibilityAliases[model]; ok {
 		capability := cindyCapabilityByPublicID[publicID]
-		if capability != nil && capability.TextPricing != nil {
+		if capability != nil && capability.PublicModel && capability.TextPricing != nil {
 			return *capability.TextPricing, true
 		}
 		return CindyTextPricing{}, false
 	}
 	for _, publicID := range cindyCompatibilityAliases {
 		capability := cindyCapabilityByPublicID[publicID]
-		if capability != nil && capability.TextPricing != nil &&
+		if capability != nil && capability.PublicModel && capability.TextPricing != nil &&
 			(model == capability.PublicID || model == capability.LiveUpstreamID) {
 			return *capability.TextPricing, true
 		}

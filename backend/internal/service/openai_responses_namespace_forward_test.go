@@ -13,7 +13,7 @@ import (
 // codexNamespaceRequestBody 模拟 Codex 多智能体请求：collaboration 命名空间声明 +
 // 历史里的命名空间调用项 + 带残留 namespace 的普通消息项。
 const codexNamespaceRequestBody = `{
-	"model":"gpt-5.6-terra",
+	"model":"gpt-5.6-luna",
 	"stream":false,
 	"instructions":"test",
 	"tools":[

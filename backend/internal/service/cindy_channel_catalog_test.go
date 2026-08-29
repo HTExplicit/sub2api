@@ -19,10 +19,15 @@ func TestHydrateManagedCindyCatalogChannelUsesCanonicalCatalog(t *testing.T) {
 	require.Empty(t, channel.ModelPricing)
 
 	for _, capability := range CindyCapabilities() {
-		require.Equal(t, capability.LiveUpstreamID, channel.ModelMapping[PlatformCindy][capability.PublicID])
-		require.Equal(t, capability.LiveUpstreamID, channel.ModelMapping[PlatformCindy][capability.LiveUpstreamID])
+		if capability.PublicModel {
+			require.Equal(t, capability.LiveUpstreamID, channel.ModelMapping[PlatformCindy][capability.PublicID])
+			require.Equal(t, capability.LiveUpstreamID, channel.ModelMapping[PlatformCindy][capability.LiveUpstreamID])
+		} else {
+			require.NotContains(t, channel.ModelMapping[PlatformCindy], capability.PublicID)
+			require.NotContains(t, channel.ModelMapping[PlatformCindy], capability.LiveUpstreamID)
+		}
 	}
-	require.Equal(t, "openai/gpt-5.6-sol", channel.ModelMapping[PlatformCindy]["gpt-5.4"])
+	require.NotContains(t, channel.ModelMapping[PlatformCindy], "gpt-5.4")
 	require.Equal(t, "openai/gpt-5.6-luna", channel.ModelMapping[PlatformCindy]["gpt-5.4-mini"])
 	require.Nil(t, channel.ModelMapping[PlatformOpenAI])
 }

@@ -1408,7 +1408,7 @@ func TestMapCindyOpenAIResponsesImageModels_MapsControllerAndNestedTool(t *testi
 	require.True(t, ok)
 	functionTool, ok := tools[1].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, "openai/gpt-image-2", imageTool["model"])
+	require.Equal(t, "gpt-image-2", imageTool["model"])
 	require.Equal(t, "keep-me", functionTool["name"])
 
 	ordinary := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.openai.com"}}
@@ -1430,22 +1430,19 @@ func TestResolveCindyResponsesImageTools_ValidatesAndMapsBeforeSelection(t *test
 		unchanged        bool
 	}{
 		{
-			name:             "empty model selects verified GPT default",
-			body:             `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation"}]}`,
-			wantModel:        "openai/gpt-image-2",
-			wantActionAbsent: true,
+			name:     "empty model rejects unavailable free-pool image default",
+			body:     `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation"}]}`,
+			modelErr: true,
 		},
 		{
-			name:             "public GPT ID maps with verified controls",
-			body:             `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"gpt-image-2","size":"1024x1024","quality":"low","n":1}]}`,
-			wantModel:        "openai/gpt-image-2",
-			wantActionAbsent: true,
-			wantCountAbsent:  true,
+			name:     "public GPT ID is unavailable to the free pool",
+			body:     `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"gpt-image-2","size":"1024x1024","quality":"low","n":1}]}`,
+			modelErr: true,
 		},
 		{
-			name:    "GPT rejects a second output",
-			body:    `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"gpt-image-2","n":2}]}`,
-			wantErr: "between 1 and 1",
+			name:     "restricted GPT rejects before count validation",
+			body:     `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"gpt-image-2","n":2}]}`,
+			modelErr: true,
 		},
 		{
 			name:     "Responses image bridge rejects Gemini",
@@ -1453,11 +1450,9 @@ func TestResolveCindyResponsesImageTools_ValidatesAndMapsBeforeSelection(t *test
 			modelErr: true,
 		},
 		{
-			name:       "explicit action remains stable",
-			body:       `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"openai/gpt-image-2","action":"auto"}]}`,
-			wantModel:  "openai/gpt-image-2",
-			wantAction: "auto",
-			unchanged:  true,
+			name:     "restricted live GPT image ID is unavailable",
+			body:     `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"openai/gpt-image-2","action":"auto"}]}`,
+			modelErr: true,
 		},
 		{
 			name:     "unknown image ID fails closed",
@@ -1475,14 +1470,14 @@ func TestResolveCindyResponsesImageTools_ValidatesAndMapsBeforeSelection(t *test
 			modelErr: true,
 		},
 		{
-			name:    "unverified quality fails closed",
-			body:    `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"gpt-image-2","quality":"high"}]}`,
-			wantErr: "quality is not verified",
+			name:     "restricted GPT rejects before quality validation",
+			body:     `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"gpt-image-2","quality":"high"}]}`,
+			modelErr: true,
 		},
 		{
-			name:    "unverified output format fails closed",
-			body:    `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"gpt-image-2","output_format":"png"}]}`,
-			wantErr: "output_format is not verified",
+			name:     "restricted GPT rejects before output format validation",
+			body:     `{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"gpt-image-2","output_format":"png"}]}`,
+			modelErr: true,
 		},
 		{
 			name:      "non image tools remain byte stable",
@@ -1525,19 +1520,12 @@ func TestResolveCindyResponsesImageTools_ValidatesAndMapsBeforeSelection(t *test
 func TestResolveCindyResponsesImageTools_TopLevelLiveIDNormalizesAndValidatesControls(t *testing.T) {
 	t.Parallel()
 
-	resolved, err := ResolveCindyResponsesImageTools([]byte(
-		`{"model":"openai/gpt-image-2","input":"draw","size":"1024x1024","quality":"low","n":1}`,
-	))
-	require.NoError(t, err)
-	require.Equal(t, "gpt-image-2", gjson.GetBytes(resolved, "model").String())
-	require.False(t, gjson.GetBytes(resolved, "n").Exists())
-
-	resolved, err = ResolveCindyResponsesImageTools([]byte(
-		`{"model":"gpt-image-2","input":"draw","size":"1024x1024","quality":"low","n":1}`,
-	))
-	require.NoError(t, err)
-	require.Equal(t, "gpt-image-2", gjson.GetBytes(resolved, "model").String())
-	require.False(t, gjson.GetBytes(resolved, "n").Exists())
+	for _, model := range []string{"openai/gpt-image-2", "gpt-image-2"} {
+		_, err := ResolveCindyResponsesImageTools([]byte(
+			`{"model":"` + model + `","input":"draw","size":"1024x1024","quality":"low","n":1}`,
+		))
+		require.ErrorIs(t, err, ErrCindyResponsesImageToolModelNotFound)
+	}
 
 	tests := []struct {
 		name string
@@ -1547,17 +1535,17 @@ func TestResolveCindyResponsesImageTools_TopLevelLiveIDNormalizesAndValidatesCon
 		{
 			name: "size",
 			body: `{"model":"openai/gpt-image-2","input":"draw","size":"1536x1024","quality":"low","n":1}`,
-			want: "request.size is not verified",
+			want: "model is not verified",
 		},
 		{
 			name: "quality",
 			body: `{"model":"openai/gpt-image-2","input":"draw","size":"1024x1024","quality":"high","n":1}`,
-			want: "request.quality is not verified",
+			want: "model is not verified",
 		},
 		{
 			name: "count",
 			body: `{"model":"openai/gpt-image-2","input":"draw","size":"1024x1024","quality":"low","n":2}`,
-			want: "request.n must be between 1 and 1",
+			want: "model is not verified",
 		},
 	}
 	for _, test := range tests {

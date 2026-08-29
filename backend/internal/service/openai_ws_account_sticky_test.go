@@ -87,7 +87,7 @@ func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_CindyHTTPBridgeH
 	}
 	require.NoError(t, store.BindResponseAccount(ctx, groupID, "resp_cindy_bridge", account.ID, time.Hour))
 
-	selection, err := svc.SelectAccountByPreviousResponseID(ctx, &groupID, "resp_cindy_bridge", "gpt-5.4", nil, false)
+	selection, err := svc.SelectAccountByPreviousResponseID(ctx, &groupID, "resp_cindy_bridge", "gpt-5.4-mini", nil, false)
 
 	require.NoError(t, err)
 	require.NotNil(t, selection)
@@ -127,7 +127,7 @@ func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_UsesCanonicalCin
 	require.NoError(t, store.BindResponseAccount(ctx, groupID, "resp_cindy_migrated", canonical.ID, time.Hour))
 
 	selection, err := svc.SelectAccountByPreviousResponseID(
-		ctx, &groupID, "resp_cindy_migrated", "gpt-5.6-sol", nil, false,
+		ctx, &groupID, "resp_cindy_migrated", "gpt-5.6-luna", nil, false,
 	)
 
 	require.NoError(t, err)

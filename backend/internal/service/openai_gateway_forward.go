@@ -176,6 +176,16 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	// but it still needs the original value to isolate the upstream Session_Id.
 	promptCacheKey := strings.TrimSpace(requestView.PromptCacheKey)
 	originalModel := reqModel
+	if CindyCapabilityCatalogFeatureEnabled() && cindyRuntimeAccount {
+		if capability, known := resolveKnownCindyCapability(originalModel); known && !capability.PublicModel {
+			err := fmt.Errorf("cindy model %q is not available to the free-key pool", originalModel)
+			setOpsUpstreamError(c, http.StatusBadRequest, err.Error(), "")
+			c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
+				"type": "invalid_request_error", "message": err.Error(), "param": "model",
+			}})
+			return nil, err
+		}
+	}
 
 	if account.Platform == PlatformGrok {
 		return s.forwardGrokResponses(ctx, c, account, body, originalModel, reqStream, startTime)

@@ -123,7 +123,7 @@ func TestBusinessSystemPromptHybridAppliesToFirstClassCindyOpenAIWireAccount(t *
 		"api_key":  "sk-test",
 		"base_url": "https://api.laxarouter.ai",
 	}
-	body := []byte(`{"model":"gpt-5.6-sol","instructions":"client","input":"Reply with exactly OK."}`)
+	body := []byte(`{"model":"gpt-5.6-luna","instructions":"client","input":"Reply with exactly OK."}`)
 
 	ctx, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
 	updated, application, err := svc.applyBusinessSystemPromptForRequest(
@@ -249,7 +249,11 @@ func TestBusinessSystemPromptNativeResponsesAppliesForAPIKeyAndOAuth(t *testing.
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			body := []byte(`{"model":"gpt-5.4","stream":false,"instructions":" client ","prompt_cache_key":"cache","input":[{"role":"user","content":"hello"}]}`)
+			model := "gpt-5.4"
+			if account.Platform == PlatformCindy {
+				model = "gpt-5.6-luna"
+			}
+			body := []byte(`{"model":"` + model + `","stream":false,"instructions":" client ","prompt_cache_key":"cache","input":[{"role":"user","content":"hello"}]}`)
 			c, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
 			upstream := businessSystemPromptErrorUpstream()
 			svc := &OpenAIGatewayService{

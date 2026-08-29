@@ -413,7 +413,7 @@ func TestOpenAIGatewayCindyAlphaSearchBalancePrecedesHealthSuppression(t *testin
 	}
 	for index, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			requestBody := []byte(`{"id":"search-session","model":"gpt-5.6-sol","commands":{"search_query":[{"q":"news"}]}}`)
+			requestBody := []byte(`{"id":"search-session","model":"gpt-5.6-luna","commands":{"search_query":[{"q":"news"}]}}`)
 			recorder := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(recorder)
 			c.Request = httptest.NewRequest(http.MethodPost, "/v1/alpha/search", bytes.NewReader(requestBody))

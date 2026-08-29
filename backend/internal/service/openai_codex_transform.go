@@ -1270,6 +1270,10 @@ func ResolveCindyResponsesImageTools(body []byte) ([]byte, error) {
 	}
 	changed := false
 	topLevelModel := strings.TrimSpace(firstNonEmptyString(request["model"]))
+	if capability, known := resolveKnownCindyCapability(topLevelModel); known &&
+		capability.Kind == CindyModelKindImage && !capability.PublicModel {
+		return nil, fmt.Errorf("%w: %q", ErrCindyResponsesImageToolModelNotFound, topLevelModel)
+	}
 	if CindyModelSupportsResponsesImageBridge(topLevelModel) {
 		capability, _ := ResolveCindyCapability(topLevelModel)
 		if capability.Controls == nil || capability.Controls.Generation == nil {

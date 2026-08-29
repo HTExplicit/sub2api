@@ -59,8 +59,9 @@ func TestOpenAIGatewayServiceRecordUsage_ReportsCindyRecovery(t *testing.T) {
 
 	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
 		Result: &OpenAIForwardResult{
-			RequestID: "resp_cindy_health_recovery",
-			Model:     "gpt-5.1",
+			RequestID:    "resp_cindy_health_recovery",
+			Model:        "gpt-5.6-luna",
+			BillingModel: "openai/gpt-5.6-luna",
 		},
 		APIKey:  &APIKey{ID: 1002, Group: &Group{RateMultiplier: 1}},
 		User:    &User{ID: 2002},
@@ -82,8 +83,9 @@ func TestOpenAIGatewayServiceRecordUsage_CyberLogIsNotCindyRecovery(t *testing.T
 
 	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
 		Result: &OpenAIForwardResult{
-			RequestID: "resp_cindy_cyber_log",
-			Model:     "gpt-5.1",
+			RequestID:    "resp_cindy_cyber_log",
+			Model:        "gpt-5.6-luna",
+			BillingModel: "openai/gpt-5.6-luna",
 		},
 		APIKey:       &APIKey{ID: 1003, Group: &Group{RateMultiplier: 1}},
 		User:         &User{ID: 2003},

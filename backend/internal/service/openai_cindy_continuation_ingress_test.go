@@ -35,11 +35,11 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CindyPreviousNot
 	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
 
 	firstConn := &openAIWSCaptureConn{events: [][]byte{
-		[]byte(`{"type":"response.completed","response":{"id":"resp_cindy_full_1","model":"gpt-5.6-sol","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
+		[]byte(`{"type":"response.completed","response":{"id":"resp_cindy_full_1","model":"gpt-5.6-luna","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
 		[]byte(`{"type":"error","error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"missing anchor"}}`),
 	}}
 	secondConn := &openAIWSCaptureConn{events: [][]byte{
-		[]byte(`{"type":"response.completed","response":{"id":"resp_cindy_full_2","model":"gpt-5.6-sol","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
+		[]byte(`{"type":"response.completed","response":{"id":"resp_cindy_full_2","model":"gpt-5.6-luna","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
 	}}
 	dialer := &openAIWSQueueDialer{conns: []openAIWSClientConn{firstConn, secondConn}}
 	pool := newOpenAIWSConnPool(cfg)
@@ -113,10 +113,10 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CindyPreviousNot
 		return payload
 	}
 
-	writeMessage(`{"type":"response.create","model":"gpt-5.6-sol","stream":false,"store":false,"input":[{"type":"message","id":"msg_foreign","role":"user","phase":"analysis","content":[{"type":"input_text","text":"first"}]},{"type":"function_call","id":"fc_foreign","call_id":"call_foreign","name":"tool","arguments":"{}","phase":"analysis"}]}`)
+	writeMessage(`{"type":"response.create","model":"gpt-5.6-luna","stream":false,"store":false,"input":[{"type":"message","id":"msg_foreign","role":"user","phase":"analysis","content":[{"type":"input_text","text":"first"}]},{"type":"function_call","id":"fc_foreign","call_id":"call_foreign","name":"tool","arguments":"{}","phase":"analysis"}]}`)
 	require.Equal(t, "resp_cindy_full_1", gjson.GetBytes(readMessage(), "response.id").String())
 
-	writeMessage(`{"type":"response.create","model":"gpt-5.6-sol","stream":false,"store":false,"previous_response_id":"resp_cindy_full_1","input":[{"type":"function_call_output","id":"out_foreign","call_id":"call_foreign","output":"ok","phase":"final"}]}`)
+	writeMessage(`{"type":"response.create","model":"gpt-5.6-luna","stream":false,"store":false,"previous_response_id":"resp_cindy_full_1","input":[{"type":"function_call_output","id":"out_foreign","call_id":"call_foreign","output":"ok","phase":"final"}]}`)
 	require.Equal(t, "resp_cindy_full_2", gjson.GetBytes(readMessage(), "response.id").String())
 	require.NoError(t, clientConn.Close(coderws.StatusNormalClosure, "done"))
 
@@ -237,7 +237,7 @@ func TestLegacyCindyRuntimeCompatibilityWSIngressInitialAnchorNeverLeavesBusyBou
 
 			clientConn := dialCindyContinuationTestClient(t, wsServer.URL)
 			defer func() { _ = clientConn.CloseNow() }()
-			payload := `{"type":"response.create","model":"gpt-5.6-sol","stream":false,"previous_response_id":"resp_bound_busy","input":"next"` + storeField.field + `}`
+			payload := `{"type":"response.create","model":"gpt-5.6-luna","stream":false,"previous_response_id":"resp_bound_busy","input":"next"` + storeField.field + `}`
 			writeCindyContinuationTestMessage(t, clientConn, payload)
 			select {
 			case serverErr := <-serverErrCh:
@@ -269,7 +269,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CindyModeRouterP
 			cfg.Gateway.OpenAIWS.ModeRouterV2Enabled = true
 			cfg.Gateway.OpenAIWS.IngressModeDefault = OpenAIWSIngressModeCtxPool
 			capture := &openAIWSCaptureConn{events: [][]byte{
-				[]byte(`{"type":"response.completed","response":{"id":"resp_cindy_conn_1","model":"gpt-5.6-sol","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
+				[]byte(`{"type":"response.completed","response":{"id":"resp_cindy_conn_1","model":"gpt-5.6-luna","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
 				[]byte(`{"type":"error","error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"wrong connection"}}`),
 			}}
 			pool := newOpenAIWSConnPool(cfg)
@@ -317,12 +317,12 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CindyModeRouterP
 
 			clientConn := dialCindyContinuationTestClient(t, wsServer.URL)
 			defer func() { _ = clientConn.CloseNow() }()
-			writeCindyContinuationTestMessage(t, clientConn, `{"type":"response.create","model":"gpt-5.6-sol","stream":false,"input":"first"}`)
+			writeCindyContinuationTestMessage(t, clientConn, `{"type":"response.create","model":"gpt-5.6-luna","stream":false,"input":"first"}`)
 			firstResponse := readCindyContinuationTestMessage(t, clientConn)
 			require.Equal(t, "resp_cindy_conn_1", gjson.GetBytes(firstResponse, "response.id").String())
 
 			stateStore.BindResponseConn("resp_cross_conn", "different_live_conn", time.Minute)
-			secondPayload := `{"type":"response.create","model":"gpt-5.6-sol","stream":false,"previous_response_id":"resp_cross_conn","input":"second"` + storeField.field + `}`
+			secondPayload := `{"type":"response.create","model":"gpt-5.6-luna","stream":false,"previous_response_id":"resp_cross_conn","input":"second"` + storeField.field + `}`
 			writeCindyContinuationTestMessage(t, clientConn, secondPayload)
 			select {
 			case serverErr := <-serverErrCh:
@@ -357,13 +357,13 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CindyModeRouterP
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			clientConn, capture, passthroughDialer, serverErrCh := newCindyContinuationAnchorValidationHarness(t, [][]byte{
-				[]byte(`{"type":"response.completed","response":{"id":"resp_anchor_validation_1","model":"gpt-5.6-sol","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
+				[]byte(`{"type":"response.completed","response":{"id":"resp_anchor_validation_1","model":"gpt-5.6-luna","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
 			})
-			writeCindyContinuationTestMessage(t, clientConn, `{"type":"response.create","model":"gpt-5.6-sol","stream":false,"input":"first"}`)
+			writeCindyContinuationTestMessage(t, clientConn, `{"type":"response.create","model":"gpt-5.6-luna","stream":false,"input":"first"}`)
 			firstResponse := readCindyContinuationTestMessage(t, clientConn)
 			require.Equal(t, "resp_anchor_validation_1", gjson.GetBytes(firstResponse, "response.id").String())
 
-			writeCindyContinuationTestMessage(t, clientConn, `{"type":"response.create","model":"gpt-5.6-sol","stream":false,"previous_response_id":`+tt.value+`,"input":"second"}`)
+			writeCindyContinuationTestMessage(t, clientConn, `{"type":"response.create","model":"gpt-5.6-luna","stream":false,"previous_response_id":`+tt.value+`,"input":"second"}`)
 			select {
 			case serverErr := <-serverErrCh:
 				var closeErr *OpenAIWSClientCloseError
@@ -386,14 +386,14 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CindyModeRouterP
 	for _, value := range []string{`null`, `""`, `"  "`} {
 		t.Run(value, func(t *testing.T) {
 			clientConn, capture, passthroughDialer, _ := newCindyContinuationAnchorValidationHarness(t, [][]byte{
-				[]byte(`{"type":"response.completed","response":{"id":"resp_anchor_blank_1","model":"gpt-5.6-sol","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
-				[]byte(`{"type":"response.completed","response":{"id":"resp_anchor_blank_2","model":"gpt-5.6-sol","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
+				[]byte(`{"type":"response.completed","response":{"id":"resp_anchor_blank_1","model":"gpt-5.6-luna","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
+				[]byte(`{"type":"response.completed","response":{"id":"resp_anchor_blank_2","model":"gpt-5.6-luna","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
 			})
-			writeCindyContinuationTestMessage(t, clientConn, `{"type":"response.create","model":"gpt-5.6-sol","stream":false,"input":"first"}`)
+			writeCindyContinuationTestMessage(t, clientConn, `{"type":"response.create","model":"gpt-5.6-luna","stream":false,"input":"first"}`)
 			firstResponse := readCindyContinuationTestMessage(t, clientConn)
 			require.Equal(t, "resp_anchor_blank_1", gjson.GetBytes(firstResponse, "response.id").String())
 
-			writeCindyContinuationTestMessage(t, clientConn, `{"type":"response.create","model":"gpt-5.6-sol","stream":false,"previous_response_id":`+value+`,"input":"second"}`)
+			writeCindyContinuationTestMessage(t, clientConn, `{"type":"response.create","model":"gpt-5.6-luna","stream":false,"previous_response_id":`+value+`,"input":"second"}`)
 			secondResponse := readCindyContinuationTestMessage(t, clientConn)
 			require.Equal(t, "resp_anchor_blank_2", gjson.GetBytes(secondResponse, "response.id").String())
 			capture.mu.Lock()
@@ -412,14 +412,14 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CindyModeRouterP
 	cfg.Gateway.OpenAIWS.IngressModeDefault = OpenAIWSIngressModeCtxPool
 
 	poolCapture := &openAIWSCaptureConn{events: [][]byte{
-		[]byte(`{"type":"response.completed","response":{"id":"resp_mode_router_opaque_1","model":"gpt-5.6-sol","status":"completed","output":[{"type":"function_call","id":"fc_mode_router_opaque","call_id":"call_mode_router_opaque","name":"tool","arguments":"{}","encrypted_content":"mode-router-stable-cipher","phase":"analysis"}],"usage":{"input_tokens":1,"output_tokens":1}}}`),
-		[]byte(`{"type":"response.completed","response":{"id":"resp_mode_router_opaque_2","model":"gpt-5.6-sol","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
+		[]byte(`{"type":"response.completed","response":{"id":"resp_mode_router_opaque_1","model":"gpt-5.6-luna","status":"completed","output":[{"type":"function_call","id":"fc_mode_router_opaque","call_id":"call_mode_router_opaque","name":"tool","arguments":"{}","encrypted_content":"mode-router-stable-cipher","phase":"analysis"}],"usage":{"input_tokens":1,"output_tokens":1}}}`),
+		[]byte(`{"type":"response.completed","response":{"id":"resp_mode_router_opaque_2","model":"gpt-5.6-luna","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
 	}}
 	pool := newOpenAIWSConnPool(cfg)
 	pool.setClientDialerForTest(&openAIWSQueueDialer{conns: []openAIWSClientConn{poolCapture}})
 	t.Cleanup(pool.Close)
 	passthroughCapture := &openAIWSCaptureConn{events: [][]byte{
-		[]byte(`{"type":"response.completed","response":{"id":"resp_unbound_passthrough","model":"gpt-5.6-sol","status":"completed","output":[{"type":"function_call","id":"fc_mode_router_opaque","call_id":"call_mode_router_opaque","name":"tool","arguments":"{}","encrypted_content":"mode-router-stable-cipher","phase":"analysis"}],"usage":{"input_tokens":1,"output_tokens":1}}}`),
+		[]byte(`{"type":"response.completed","response":{"id":"resp_unbound_passthrough","model":"gpt-5.6-luna","status":"completed","output":[{"type":"function_call","id":"fc_mode_router_opaque","call_id":"call_mode_router_opaque","name":"tool","arguments":"{}","encrypted_content":"mode-router-stable-cipher","phase":"analysis"}],"usage":{"input_tokens":1,"output_tokens":1}}}`),
 	}}
 	passthroughDialer := &openAIWSCaptureDialer{conn: passthroughCapture}
 	stateStore := NewOpenAIWSStateStore(nil)
@@ -476,10 +476,10 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CindyModeRouterP
 	}
 
 	runSession(
-		`{"type":"response.create","model":"gpt-5.6-sol","stream":false,"input":"establish opaque state"}`,
+		`{"type":"response.create","model":"gpt-5.6-luna","stream":false,"input":"establish opaque state"}`,
 		"resp_mode_router_opaque_1",
 	)
-	secondPayload := `{"type":"response.create","model":"gpt-5.6-sol","stream":false,"store":false,"input":[{"type":"function_call","id":"fc_mode_router_opaque","call_id":"call_mode_router_opaque","name":"tool","arguments":"{}","encrypted_content":"mode-router-stable-cipher","phase":"analysis"},{"type":"function_call_output","id":"out_mode_router_opaque","call_id":"call_mode_router_opaque","output":"ok","phase":"final"}]}`
+	secondPayload := `{"type":"response.create","model":"gpt-5.6-luna","stream":false,"store":false,"input":[{"type":"function_call","id":"fc_mode_router_opaque","call_id":"call_mode_router_opaque","name":"tool","arguments":"{}","encrypted_content":"mode-router-stable-cipher","phase":"analysis"},{"type":"function_call_output","id":"out_mode_router_opaque","call_id":"call_mode_router_opaque","output":"ok","phase":"final"}]}`
 	classification, classifyErr := ClassifyCindyContinuation([]byte(secondPayload), CindyContinuationProof{})
 	require.NoError(t, classifyErr)
 	require.Equal(t, CindyContinuationOpaqueFull, classification.Mode)
@@ -499,11 +499,11 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CindyModeRouterP
 
 func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CindyInitialAnchorAfterRestartOpensNewConnection(t *testing.T) {
 	clientConn, capture, passthroughDialer, serverErrCh := newCindyContinuationAnchorValidationHarness(t, [][]byte{
-		[]byte(`{"type":"response.completed","response":{"id":"resp_after_restart","model":"gpt-5.6-sol","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
+		[]byte(`{"type":"response.completed","response":{"id":"resp_after_restart","model":"gpt-5.6-luna","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
 	})
 
 	writeCindyContinuationTestMessage(t, clientConn,
-		`{"type":"response.create","model":"gpt-5.6-sol","stream":false,"previous_response_id":"resp_before_restart","input":"continue"}`)
+		`{"type":"response.create","model":"gpt-5.6-luna","stream":false,"previous_response_id":"resp_before_restart","input":"continue"}`)
 	response := readCindyContinuationTestMessage(t, clientConn)
 	require.Equal(t, "resp_after_restart", gjson.GetBytes(response, "response.id").String())
 	require.NoError(t, clientConn.Close(coderws.StatusNormalClosure, "done"))

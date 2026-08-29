@@ -175,11 +175,9 @@ func TestCodexModelsStrictCindyProjectsVerifiedPublicCatalog(t *testing.T) {
 	}
 	slugs := decodeCodexModelSlugs(t, recorder.Body.Bytes())
 	want := []string{
-		"claude-opus-4-8", "claude-opus-5", "claude-sonnet-5",
 		"deepseek-v4-flash", "deepseek-v4-flash-vision-exp", "deepseek-v4-pro",
-		"gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.7-flash",
-		"glm-5.2", "glm-5.3", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-image-2",
-		"grok-4.5", "grok-4.6", "hy3", "kimi-k3", "qwen3.8-max", "seed-2.1-pro",
+		"gemini-3.6-flash", "glm-5.3-flash", "gpt-5.6-luna", "hy3",
+		"qwen3.8-27b", "qwen3.8-flash",
 	}
 	if got, expected := strings.Join(slugs, ","), strings.Join(want, ","); got != expected {
 		t.Fatalf("strict Cindy slugs: got %v, want %v", slugs, want)
@@ -419,7 +417,7 @@ func TestCodexModelsFailsOverFromRetryableUpstreamStatus(t *testing.T) {
 			if recorder.Code != http.StatusOK {
 				t.Fatalf("status: got %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
 			}
-			if got, want := recorder.Body.String(), `{"models":[{"slug":"gpt-5.6-sol"}]}`; got != want {
+			if got, want := recorder.Body.String(), `{"models":[{"auto_compact_token_limit":900000,"context_window":1000000,"max_context_window":1000000,"slug":"gpt-5.6-sol"}]}`; got != want {
 				t.Fatalf("body: got %q, want %q", got, want)
 			}
 		})
@@ -454,7 +452,7 @@ func TestCodexModelsFailsOverFromInvalidManifestEnvelope(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status: got %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
 	}
-	if got, want := recorder.Body.String(), `{"models":[{"slug":"gpt-5.6-sol"}]}`; got != want {
+	if got, want := recorder.Body.String(), `{"models":[{"auto_compact_token_limit":900000,"context_window":1000000,"max_context_window":1000000,"slug":"gpt-5.6-sol"}]}`; got != want {
 		t.Fatalf("body: got %q, want %q", got, want)
 	}
 }

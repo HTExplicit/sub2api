@@ -571,10 +571,9 @@ func TestForwardCindyResponsesTopLevelLiveImageIDUsesLunaController(t *testing.T
 
 	result, err := svc.Forward(context.Background(), c, account, []byte(`{"model":"openai/gpt-image-2","stream":false,"input":"draw"}`))
 
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Equal(t, "openai/gpt-5.6-luna", gjson.GetBytes(upstream.lastBody, "model").String())
-	require.Equal(t, "openai/gpt-image-2", gjson.GetBytes(upstream.lastBody, "tools.0.model").String())
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Empty(t, upstream.lastBody)
 }
 
 func TestOpenAIGatewayService_Forward_HTTPRetryRecoveryDoesNotDecodeBeforeError(t *testing.T) {

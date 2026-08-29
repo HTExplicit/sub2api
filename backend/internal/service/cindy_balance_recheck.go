@@ -13,11 +13,12 @@ import (
 
 const cindyBalanceProbeMaxBodyBytes = 64 << 10
 
-// These control models are used only by an explicitly created durable admin
-// job. Business traffic and account connection tests never call this probe.
+// These lowest-positive-input-price free-pool controls are used only by an
+// explicitly created durable admin job. Persisted luna/terra stage names are
+// retained as historical schema labels and no longer identify these models.
 var cindyBalanceProbeModels = [...]string{
-	"openai/gpt-5.6-luna",
-	"openai/gpt-5.6-terra",
+	"tencent/hy3",
+	"z-ai/glm-5.3-flash",
 }
 
 type cindyBalanceProbeOutcome uint8

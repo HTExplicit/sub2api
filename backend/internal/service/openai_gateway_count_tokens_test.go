@@ -95,7 +95,6 @@ func TestLegacyCindyRuntimeCompatibilityCountTokensMapsPublicAliases(t *testing.
 		},
 	}
 	for alias, live := range map[string]string{
-		"gpt-5.4":      "openai/gpt-5.6-sol",
 		"gpt-5.4-mini": "openai/gpt-5.6-luna",
 	} {
 		prepared, err := prepareOpenAIInputTokensCountRequest(

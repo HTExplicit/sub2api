@@ -35,134 +35,26 @@ func TestOpenAIImagesRequestInputImageCount_ExcludesGenerationAndMask(t *testing
 	require.Zero(t, request.InputImageCount())
 }
 
-func TestValidateCindyImageRequest_UsesEndpointSpecificVerifiedControls(t *testing.T) {
+func TestValidateCindyImageRequest_RejectsUnavailableFreePoolImageCandidates(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name    string
-		model   string
-		request *OpenAIImagesRequest
-		wantErr string
-	}{
-		{
-			name:  "GPT generation accepts the verified single output",
-			model: "gpt-image-2",
-			request: &OpenAIImagesRequest{
-				Endpoint:       openAIImagesGenerationsEndpoint,
-				N:              1,
-				Size:           "1024x1024",
-				Quality:        "low",
-				ResponseFormat: "b64_json",
-			},
-		},
-		{
-			name:  "GPT generation rejects an unverified second output",
-			model: "gpt-image-2",
-			request: &OpenAIImagesRequest{
-				Endpoint: openAIImagesGenerationsEndpoint,
-				N:        2,
-				Size:     "1024x1024",
-				Quality:  "low",
-			},
-			wantErr: "between 1 and 1",
-		},
-		{
-			name:  "GPT generation rejects zero outputs",
-			model: "gpt-image-2",
-			request: &OpenAIImagesRequest{
-				Endpoint: openAIImagesGenerationsEndpoint,
-				N:        0,
-				Size:     "1024x1024",
-				Quality:  "low",
-			},
-			wantErr: "between 1 and 1",
-		},
-		{
-			name:  "GPT edit remains unavailable",
-			model: "gpt-image-2",
-			request: &OpenAIImagesRequest{
-				Endpoint: openAIImagesEditsEndpoint,
-				N:        1,
-				Size:     "1024x1024",
-				Quality:  "low",
-				Uploads:  []OpenAIImagesUpload{{FieldName: "image"}},
-			},
-			wantErr: "not verified for images.edits",
-		},
-		{
-			name:  "Gemini generation is fixed to one output",
-			model: "gemini-3-pro-image",
-			request: &OpenAIImagesRequest{
-				Endpoint: openAIImagesGenerationsEndpoint,
-				N:        2,
-				Size:     "1024x1024",
-				Quality:  "low",
-			},
-			wantErr: "between 1 and 1",
-		},
-		{
-			name:  "Gemini edit accepts reference and mask",
-			model: "google/gemini-3-pro-image",
-			request: &OpenAIImagesRequest{
-				Endpoint:   openAIImagesEditsEndpoint,
-				N:          1,
-				Size:       "1024x1024",
-				Quality:    "low",
-				Uploads:    []OpenAIImagesUpload{{FieldName: "image"}},
-				HasMask:    true,
-				MaskUpload: &OpenAIImagesUpload{FieldName: "mask"},
-			},
-		},
-		{
-			name:  "unverified size fails closed",
-			model: "gemini-3-pro-image",
-			request: &OpenAIImagesRequest{
-				Endpoint: openAIImagesGenerationsEndpoint,
-				N:        1,
-				Size:     "2048x2048",
-				Quality:  "low",
-			},
-			wantErr: "size",
-		},
-		{
-			name:  "URL response format fails closed",
-			model: "gpt-image-2",
-			request: &OpenAIImagesRequest{
-				Endpoint:       openAIImagesGenerationsEndpoint,
-				N:              1,
-				Size:           "1024x1024",
-				Quality:        "low",
-				ResponseFormat: "url",
-			},
-			wantErr: "b64_json",
-		},
-		{
-			name:  "streaming fails closed",
-			model: "gpt-image-2",
-			request: &OpenAIImagesRequest{
-				Endpoint: openAIImagesGenerationsEndpoint,
-				N:        1,
-				Size:     "1024x1024",
-				Quality:  "low",
-				Stream:   true,
-			},
-			wantErr: "stream",
-		},
+	request := &OpenAIImagesRequest{
+		Endpoint:       openAIImagesGenerationsEndpoint,
+		N:              1,
+		Size:           "1024x1024",
+		Quality:        "low",
+		ResponseFormat: "b64_json",
 	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			err := ValidateCindyImageRequest(test.model, test.request)
-			if test.wantErr == "" {
-				require.NoError(t, err)
-				return
-			}
-			require.ErrorContains(t, err, test.wantErr)
-		})
+	for _, model := range []string{
+		"gpt-image-2", "openai/gpt-image-2",
+		"gemini-3-pro-image", "google/gemini-3-pro-image",
+	} {
+		err := ValidateCindyImageRequest(model, request)
+		require.ErrorContains(t, err, "no verified Cindy image capability", model)
 	}
 }
 
-func TestCalculateOpenAIImageCost_StrictCindyUsesCatalogTokenPrice(t *testing.T) {
+func TestCalculateOpenAIImageCost_StrictCindyRejectsUnavailableGPTImageCandidate(t *testing.T) {
 	t.Parallel()
 	svc := &OpenAIGatewayService{billingService: NewBillingService(&config.Config{}, nil)}
 	result := &OpenAIForwardResult{ImageCount: 1, ImageSize: ImageBillingSize2K}
@@ -173,14 +65,11 @@ func TestCalculateOpenAIImageCost_StrictCindyUsesCatalogTokenPrice(t *testing.T)
 		cindyImagePricingAccount(), result, tokens, 1,
 	)
 
-	require.NoError(t, err)
-	require.InDelta(t, 0.03, cost.TotalCost, 1e-12)
-	require.InDelta(t, 0.03, cost.ActualCost, 1e-12)
-	require.Equal(t, string(BillingModeImage), cost.BillingMode)
-	require.NotEqual(t, defaultImageGenerationPrice*1.5, cost.TotalCost)
+	require.Nil(t, cost)
+	require.ErrorIs(t, err, ErrModelPricingUnavailable)
 }
 
-func TestCalculateOpenAIImageCost_GPTImage2BillsTextAndImageOutputTokens(t *testing.T) {
+func TestCalculateOpenAIImageCost_StrictCindyRejectsUnavailableGPTImagePublicID(t *testing.T) {
 	t.Parallel()
 	svc := &OpenAIGatewayService{billingService: NewBillingService(&config.Config{}, nil)}
 	result := &OpenAIForwardResult{ImageCount: 1, ImageSize: ImageBillingSize2K}
@@ -191,14 +80,11 @@ func TestCalculateOpenAIImageCost_GPTImage2BillsTextAndImageOutputTokens(t *test
 		cindyImagePricingAccount(), result, tokens, 1,
 	)
 
-	require.NoError(t, err)
-	require.InDelta(t, 60*10e-6, cost.OutputCost, 1e-12)
-	require.InDelta(t, 40*30e-6, cost.ImageOutputCost, 1e-12)
-	require.InDelta(t, 0.0018, cost.TotalCost, 1e-12)
-	require.InDelta(t, cost.TotalCost, cost.ActualCost, 1e-12)
+	require.Nil(t, cost)
+	require.ErrorIs(t, err, ErrModelPricingUnavailable)
 }
 
-func TestCalculateOpenAIImageCost_StrictCindyUsesCatalogPerImagePrice(t *testing.T) {
+func TestCalculateOpenAIImageCost_StrictCindyRejectsUnavailableGeminiImageCandidate(t *testing.T) {
 	t.Parallel()
 	svc := &OpenAIGatewayService{billingService: NewBillingService(&config.Config{}, nil)}
 	result := &OpenAIForwardResult{ImageCount: 1, ImageSize: ImageBillingSize2K}
@@ -208,19 +94,8 @@ func TestCalculateOpenAIImageCost_StrictCindyUsesCatalogPerImagePrice(t *testing
 		cindyImagePricingAccount(), result, UsageTokens{}, 1,
 	)
 
-	require.NoError(t, err)
-	require.InDelta(t, 0.134, cost.TotalCost, 1e-12)
-	require.InDelta(t, 0.134, cost.ActualCost, 1e-12)
-
-	result.ImageCount = 1
-	result.ImageInputCount = 1
-	result.ImageSize = ImageBillingSize4K
-	cost, err = svc.calculateOpenAIImageCost(
-		context.Background(), "gemini-3-pro-image", &APIKey{Group: &Group{}},
-		cindyImagePricingAccount(), result, UsageTokens{}, 1,
-	)
-	require.NoError(t, err)
-	require.InDelta(t, 0.1351, cost.TotalCost, 1e-12)
+	require.Nil(t, cost)
+	require.ErrorIs(t, err, ErrModelPricingUnavailable)
 }
 
 func TestCalculateOpenAIImageCost_StrictCindyGroupPriceWins(t *testing.T) {

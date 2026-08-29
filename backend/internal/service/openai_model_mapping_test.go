@@ -169,7 +169,6 @@ func TestLegacyCindyRuntimeCompatibilityMapsResponsesWSMessagesAndCountTokens(t 
 	}
 
 	for alias, live := range map[string]string{
-		"gpt-5.4":      "openai/gpt-5.6-sol",
 		"gpt-5.4-mini": "openai/gpt-5.6-luna",
 	} {
 		for _, dispatch := range []string{"", "unrelated-messages-dispatch"} {

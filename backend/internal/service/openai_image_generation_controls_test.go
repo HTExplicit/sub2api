@@ -143,7 +143,7 @@ func TestOpenAIGatewayServiceForward_StrictCindySkipsGlobalCodexImageInjection(t
 		resp: &http.Response{
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"Content-Type": []string{"application/json"}},
-			Body:       io.NopCloser(strings.NewReader(`{"id":"resp_cindy","model":"gpt-5.6-sol","usage":{"input_tokens":1,"output_tokens":1}}`)),
+			Body:       io.NopCloser(strings.NewReader(`{"id":"resp_cindy","model":"gpt-5.6-luna","usage":{"input_tokens":1,"output_tokens":1}}`)),
 		},
 	}
 	svc := newOpenAIImageGenerationControlTestService(upstream)
@@ -155,7 +155,7 @@ func TestOpenAIGatewayServiceForward_StrictCindySkipsGlobalCodexImageInjection(t
 	account.ProviderProfile = ProviderProfileCindyLaxaV1
 	account.Credentials["base_url"] = "https://api.laxarouter.ai"
 
-	result, err := svc.Forward(context.Background(), c, account, []byte(`{"model":"gpt-5.6-sol","input":"write code","stream":false}`))
+	result, err := svc.Forward(context.Background(), c, account, []byte(`{"model":"gpt-5.6-luna","input":"write code","stream":false}`))
 
 	require.NoError(t, err)
 	require.NotNil(t, result)

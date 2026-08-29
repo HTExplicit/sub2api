@@ -67,7 +67,7 @@ type cindyV4FixtureAgent struct {
 func TestCindyV4CatalogFixtureMatchesPinnedSourceAndGoTable(t *testing.T) {
 	t.Parallel()
 
-	raw, err := os.ReadFile("testdata/cindy_model_access_v4_2026-08-24.json")
+	raw, err := os.ReadFile("testdata/cindy_model_access_v4_2026-08-29.json")
 	require.NoError(t, err)
 	// The public response was minified without a trailing newline. Git keeps one
 	// repository newline; exclude only that byte when validating the source hash.
@@ -79,7 +79,7 @@ func TestCindyV4CatalogFixtureMatchesPinnedSourceAndGoTable(t *testing.T) {
 	var fixture cindyV4CatalogFixture
 	require.NoError(t, json.Unmarshal(payload, &fixture))
 	require.Equal(t, CindyModelMetadataSchemaVersion, fixture.SchemaVersion)
-	require.Len(t, fixture.Models, 22)
+	require.Len(t, fixture.Models, 25)
 
 	capabilities := CindyCapabilities()
 	require.Len(t, capabilities, len(fixture.Models))
