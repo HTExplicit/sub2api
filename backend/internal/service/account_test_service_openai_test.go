@@ -214,11 +214,11 @@ func TestAccountTestService_CindyBudget429DoesNotStartBackgroundProbe(t *testing
 		Credentials: cindyCredentials(), Extra: map[string]any{"use_responses_api": true},
 	}
 
-	err := svc.testOpenAIAccountConnection(c, account, "gpt-5.6-sol", "hi", AccountTestModeDefault)
+	err := svc.testOpenAIAccountConnection(c, account, "gpt-5.6-luna", "hi", AccountTestModeDefault)
 
 	require.Error(t, err)
 	require.Len(t, upstream.bodies, 1, "a manual connection test must issue only its requested call")
-	require.Equal(t, "openai/gpt-5.6-sol", gjson.GetBytes(upstream.bodies[0], "model").String())
+	require.Equal(t, "openai/gpt-5.6-luna", gjson.GetBytes(upstream.bodies[0], "model").String())
 	require.Zero(t, repo.markCalls)
 	require.Nil(t, account.CindyBalanceInsufficientAt)
 }

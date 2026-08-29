@@ -34,17 +34,19 @@ func TestManagedCindyCatalogChannelAdmissionUsesExactCatalogAndAliases(t *testin
 	svc := NewChannelService(repo, nil, nil, nil)
 
 	for _, model := range []string{
-		"gpt-5.6-sol", "openai/gpt-5.6-sol", "gpt-5.4",
 		"gpt-5.6-luna", "openai/gpt-5.6-luna", "gpt-5.4-mini",
 	} {
 		require.False(t, svc.IsModelRestricted(context.Background(), groupID, model), model)
 	}
+	for _, model := range []string{"gpt-5.6-sol", "openai/gpt-5.6-sol", "gpt-5.4"} {
+		require.True(t, svc.IsModelRestricted(context.Background(), groupID, model), model)
+	}
 	require.True(t, svc.IsModelRestricted(context.Background(), groupID, "not-in-cindy-catalog"))
 	require.Nil(t, svc.GetChannelModelPricing(context.Background(), groupID, "gpt-5.6-sol"))
 
-	mapped := svc.ResolveChannelMapping(context.Background(), groupID, "gpt-5.4")
+	mapped := svc.ResolveChannelMapping(context.Background(), groupID, "gpt-5.4-mini")
 	require.True(t, mapped.Mapped)
-	require.Equal(t, "openai/gpt-5.6-sol", mapped.MappedModel)
+	require.Equal(t, "openai/gpt-5.6-luna", mapped.MappedModel)
 }
 
 func (r managedCindyChannelGroupRepo) GetByID(_ context.Context, id int64) (*Group, error) {

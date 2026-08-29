@@ -42,8 +42,8 @@ func TestForwardCindyAnthropicMessagesHTTP200ErrorFailsOverBeforeWrite(t *testin
 
 	_, err := service.ForwardCindyAnthropicMessages(
 		context.Background(), c, account,
-		[]byte(`{"model":"claude-opus-5","max_tokens":16,"messages":[{"role":"user","content":"hi"}],"stream":true}`),
-		"claude-opus-5",
+		[]byte(`{"model":"gpt-5.6-luna","max_tokens":16,"messages":[{"role":"user","content":"hi"}],"stream":true}`),
+		"gpt-5.6-luna",
 	)
 
 	var failoverErr *UpstreamFailoverError
@@ -88,8 +88,8 @@ func TestForwardCindyAnthropicMessagesHTTP200ErrorAfterOutputDropsRawPayload(t *
 
 	_, err := service.ForwardCindyAnthropicMessages(
 		context.Background(), c, account,
-		[]byte(`{"model":"claude-opus-5","max_tokens":16,"messages":[{"role":"user","content":"hi"}],"stream":true}`),
-		"claude-opus-5",
+		[]byte(`{"model":"gpt-5.6-luna","max_tokens":16,"messages":[{"role":"user","content":"hi"}],"stream":true}`),
+		"gpt-5.6-luna",
 	)
 
 	var failoverErr *UpstreamFailoverError
