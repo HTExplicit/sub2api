@@ -62,7 +62,7 @@ func (s *GatewayService) ForwardCindyAnthropicMessages(
 		return nil, errors.New("strict Cindy account is required for native Messages passthrough")
 	}
 	requestedModel = strings.TrimSpace(requestedModel)
-	if !CindyModelSupportsEndpoint(requestedModel, CindyEndpointMessages) {
+	if !CindyFreePoolModelSupportsEndpoint(requestedModel, CindyEndpointMessages) {
 		return nil, fmt.Errorf("cindy model %q is not verified for native Messages", requestedModel)
 	}
 	upstreamModel, ok := CindyMappedUpstreamModel(requestedModel)

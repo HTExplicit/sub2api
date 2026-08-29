@@ -9,6 +9,7 @@ import (
 
 const cindyIndependentFlagsHelperEnv = "SUB2API_CINDY_INDEPENDENT_FLAGS_HELPER"
 const cindySearchMatrixHelperEnv = "SUB2API_CINDY_SEARCH_MATRIX_HELPER"
+const cindyFreePoolFlagHelperEnv = "SUB2API_CINDY_FREE_POOL_FLAG_HELPER"
 
 func TestCindySurfaceFlagsAreIndependentAndDefaultOff(t *testing.T) {
 	tests := []struct {
@@ -135,6 +136,46 @@ func TestCindySearchAvailabilityHelper(t *testing.T) {
 	got := boolString(CindyAlphaSearchModelAvailable("gpt-5.6-luna"))
 	if got != want {
 		t.Fatalf("Cindy Search availability = %s, want %s", got, want)
+	}
+}
+
+func TestCindyFreePoolAllowlistSurvivesCatalogPublicationRollback(t *testing.T) {
+	cmd := exec.Command(os.Args[0], "-test.run=^TestCindyFreePoolAllowlistHelper$")
+	cmd.Env = append(withoutEnvironmentKeys(os.Environ(),
+		CindyCapabilityCatalogEnabledEnv,
+		cindyFreePoolFlagHelperEnv,
+	),
+		CindyCapabilityCatalogEnabledEnv+"=false",
+		cindyFreePoolFlagHelperEnv+"=1",
+	)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("isolated free-pool allowlist check failed: %v\n%s", err, output)
+	}
+}
+
+func TestCindyFreePoolAllowlistHelper(t *testing.T) {
+	if os.Getenv(cindyFreePoolFlagHelperEnv) != "1" {
+		t.Skip("subprocess helper")
+	}
+	if CindyCapabilityCatalogFeatureEnabled() {
+		t.Fatal("catalog publication must be disabled in helper")
+	}
+	if !CindyFreePoolModelSupportsEndpoint("gpt-5.6-luna", CindyEndpointResponses) {
+		t.Fatal("free Luna must remain routable by the permanent pool allowlist")
+	}
+	if !CindyFreePoolModelAllowed("gpt-5.6-luna") {
+		t.Fatal("free Luna must remain routable when scheduler capability is unspecified")
+	}
+	for _, removed := range []string{"gpt-5.6-sol", "openai/gpt-5.6-terra", "gpt-image-2", CindyWebSearchModel, CindyAutoReviewModel} {
+		if CindyFreePoolModelSupportsEndpoint(removed, CindyEndpointResponses) {
+			t.Fatalf("removed or special model %q bypassed the permanent pool allowlist", removed)
+		}
+		if CindyFreePoolModelAllowed(removed) {
+			t.Fatalf("removed or special model %q bypassed the unspecified-capability allowlist", removed)
+		}
+	}
+	if CindyModelSupportsEndpoint("gpt-5.6-luna", CindyEndpointResponses) {
+		t.Fatal("public catalog gate must remain disabled independently")
 	}
 }
 

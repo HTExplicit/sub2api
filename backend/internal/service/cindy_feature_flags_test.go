@@ -276,6 +276,12 @@ func TestCindyRolloutFlagHelper(t *testing.T) {
 				t.Fatalf("catalog rollback resolved stable Cindy model %q to %q, want %q", requested, got, want)
 			}
 		}
+		if CindyFreePoolModelSupportsEndpoint("gpt-5.6-sol", CindyEndpointResponses) {
+			t.Fatal("catalog rollback restored paid Sol routing from stored account data")
+		}
+		if !CindyFreePoolModelSupportsEndpoint("gpt-5.6-luna", CindyEndpointResponses) {
+			t.Fatal("catalog rollback removed permanent free Luna routing")
+		}
 		if _, ok := CindyCompatibilityMappedUpstreamModel("gpt-5.4"); ok {
 			t.Fatal("catalog rollback exposed compatibility alias for a restricted target")
 		}
@@ -332,8 +338,11 @@ func TestCindyRolloutFlagHelper(t *testing.T) {
 			OpenAIEndpointCapabilityChatCompletions,
 			OpenAIEndpointCapabilityMessages,
 		} {
-			if !accountSupportsOpenAICapabilities(context.Background(), account, "legacy-model", capability, "") {
-				t.Fatalf("catalog rollback rejected legacy %s routing", capability)
+			if accountSupportsOpenAICapabilities(context.Background(), account, "legacy-model", capability, "") {
+				t.Fatalf("catalog rollback restored removed legacy %s routing", capability)
+			}
+			if !accountSupportsOpenAICapabilities(context.Background(), account, "gpt-5.6-luna", capability, "") {
+				t.Fatalf("catalog rollback rejected free Luna %s routing", capability)
 			}
 		}
 		routingContext := WithOpenAICindyRequestedModel(context.Background(), "catalog-native-model")

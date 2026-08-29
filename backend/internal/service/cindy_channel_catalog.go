@@ -20,7 +20,7 @@ func hydrateManagedCindyCatalogChannel(channel *Channel) bool {
 	}
 
 	capabilities := CindyCapabilities()
-	mapping := make(map[string]string, len(capabilities)*2+len(cindyCompatibilityAliases)+len(cindyHiddenAliases))
+	mapping := make(map[string]string, len(capabilities)*2+len(cindyCompatibilityAliases))
 	for i := range capabilities {
 		capability := capabilities[i]
 		if !capability.PublicModel || len(capability.VerifiedEndpoints) == 0 {
@@ -30,11 +30,6 @@ func hydrateManagedCindyCatalogChannel(channel *Channel) bool {
 		mapping[capability.LiveUpstreamID] = capability.LiveUpstreamID
 	}
 	for alias, publicID := range cindyCompatibilityAliases {
-		if capability := cindyCapabilityByPublicID[publicID]; capability != nil && capability.PublicModel {
-			mapping[alias] = capability.LiveUpstreamID
-		}
-	}
-	for alias, publicID := range cindyHiddenAliases {
 		if capability := cindyCapabilityByPublicID[publicID]; capability != nil && capability.PublicModel {
 			mapping[alias] = capability.LiveUpstreamID
 		}

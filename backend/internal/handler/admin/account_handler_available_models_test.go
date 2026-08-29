@@ -34,6 +34,8 @@ type managedAvailableModel struct {
 	SourceRevision     string   `json:"source_revision"`
 	AliasTarget        string   `json:"alias_target"`
 	Managed            bool     `json:"managed"`
+	Verified           bool     `json:"verified"`
+	PublicModel        bool     `json:"public_model"`
 }
 
 func (s *availableModelsAdminService) GetAccount(_ context.Context, id int64) (*service.Account, error) {
@@ -294,7 +296,7 @@ func TestAccountHandlerGetAvailableModels_CindyUsesManagedCatalogInsteadOfStored
 		Data []managedAvailableModel `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
-	require.Len(t, resp.Data, 26, "25 fixed v4 candidates and one allowed compatibility alias")
+	require.Len(t, resp.Data, 12, "11 fixed free models and one allowed compatibility alias")
 
 	byID := make(map[string]managedAvailableModel, len(resp.Data))
 	for _, model := range resp.Data {
@@ -305,13 +307,27 @@ func TestAccountHandlerGetAvailableModels_CindyUsesManagedCatalogInsteadOfStored
 	}
 
 	require.NotContains(t, byID, "legacy-only")
-	sol := byID["gpt-5.6-sol"]
-	require.Equal(t, "openai/gpt-5.6-sol", sol.LiveUpstreamID)
-	require.Equal(t, 1050000, sol.ContextWindow)
-	require.Equal(t, 1050000, sol.BaseContextWindow)
-	require.Equal(t, 1050000, sol.CodexContextWindow)
-	require.Equal(t, 128000, sol.MaxOutputTokens)
-	require.Contains(t, sol.Endpoints, "responses")
+	luna := byID["gpt-5.6-luna"]
+	require.Equal(t, "openai/gpt-5.6-luna", luna.LiveUpstreamID)
+	require.Equal(t, 1050000, luna.ContextWindow)
+	require.Equal(t, 1050000, luna.BaseContextWindow)
+	require.Equal(t, 1050000, luna.CodexContextWindow)
+	require.Equal(t, 128000, luna.MaxOutputTokens)
+	require.True(t, luna.PublicModel)
+	require.True(t, luna.Verified)
+	require.Contains(t, luna.Endpoints, "responses")
+
+	search := byID["cindy/web-search"]
+	require.Equal(t, "cindy/web-search", search.LiveUpstreamID)
+	require.False(t, search.PublicModel)
+	require.True(t, search.Verified)
+	require.Equal(t, []string{"alpha.search"}, search.Endpoints)
+
+	review := byID["cindy/auto-review"]
+	require.Equal(t, "cindy/auto-review", review.LiveUpstreamID)
+	require.False(t, review.PublicModel)
+	require.False(t, review.Verified)
+	require.Empty(t, review.Endpoints)
 
 	mini := byID["gpt-5.4-mini"]
 	require.Equal(t, "gpt-5.6-luna", mini.AliasTarget)
@@ -319,6 +335,9 @@ func TestAccountHandlerGetAvailableModels_CindyUsesManagedCatalogInsteadOfStored
 	require.Equal(t, 1050000, mini.ContextWindow)
 	require.Equal(t, 128000, mini.MaxOutputTokens)
 	require.NotContains(t, byID, "gpt-5.4")
+	require.NotContains(t, byID, "gpt-5.6-sol")
+	require.NotContains(t, byID, "gpt-5.6-terra")
+	require.NotContains(t, byID, "gpt-image-2")
 
 	require.NotContains(t, rec.Body.String(), "must-not-leak")
 	require.NotContains(t, rec.Body.String(), "api_key")

@@ -60,6 +60,12 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
 	beginUpstreamResponseModelObservation(c)
+	if account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		requestedModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())
+		if !CindyFreePoolModelSupportsEndpoint(requestedModel, CindyEndpointChatCompletions) {
+			return nil, fmt.Errorf("cindy model %q is not available to the free-key pool", requestedModel)
+		}
+	}
 
 	restrictionResult := s.detectCodexClientRestriction(c, account, body)
 	logCodexCLIOnlyDetection(ctx, c, account, getAPIKeyIDFromContext(c), restrictionResult, body)

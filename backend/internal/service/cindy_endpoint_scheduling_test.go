@@ -47,6 +47,7 @@ func TestAccountSupportsOpenAICapabilities_StrictCindyModelEndpointMatrix(t *tes
 		{name: "Luna supports Chat", model: "gpt-5.6-luna", capability: OpenAIEndpointCapabilityChatCompletions, want: true},
 		{name: "Luna supports Messages", model: "gpt-5.6-luna", capability: OpenAIEndpointCapabilityMessages, want: true},
 		{name: "hidden search model is not client selectable", model: CindyWebSearchModel, capability: OpenAIEndpointCapabilityAlphaSearch, want: false},
+		{name: "auto review model is not client selectable", model: CindyAutoReviewModel, capability: OpenAIEndpointCapabilityResponses, want: false},
 		{name: "public Responses model supports alpha search", model: "gpt-5.6-luna", capability: OpenAIEndpointCapabilityAlphaSearch, want: true},
 	}
 
