@@ -7,6 +7,8 @@ import (
 	_ "embed"
 	"errors"
 	"flag"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -20,6 +22,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/Wei-Shaw/sub2api/internal/setup"
 	"github.com/Wei-Shaw/sub2api/internal/web"
 
@@ -59,7 +62,24 @@ func main() {
 	// Parse command line flags
 	setupMode := flag.Bool("setup", false, "Run setup wizard in CLI mode")
 	showVersion := flag.Bool("version", false, "Show version information")
+	verifyCodexContextContract := flag.Bool(
+		"verify-codex-context-contract",
+		false,
+		"Verify the embedded ordinary Codex context normalization contract",
+	)
 	flag.Parse()
+	if *verifyCodexContextContract {
+		exitCode := runCodexContextContractVerification(
+			os.Stdout,
+			*setupMode,
+			*showVersion,
+			flag.Args(),
+		)
+		if exitCode != 0 {
+			os.Exit(exitCode)
+		}
+		return
+	}
 
 	if *showVersion {
 		log.Printf("Sub2API %s (commit: %s, built: %s)\n", Version, Commit, Date)
@@ -92,6 +112,41 @@ func main() {
 
 	// Normal server mode
 	runMainServer()
+}
+
+func runCodexContextContractVerification(
+	stdout io.Writer,
+	setupMode bool,
+	showVersion bool,
+	positionalArgs []string,
+) int {
+	return runCodexContextContractVerificationWith(
+		stdout,
+		setupMode,
+		showVersion,
+		positionalArgs,
+		service.VerifyOfficialCodexContextContract,
+	)
+}
+
+func runCodexContextContractVerificationWith(
+	stdout io.Writer,
+	setupMode bool,
+	showVersion bool,
+	positionalArgs []string,
+	verify func() (string, error),
+) int {
+	if setupMode || showVersion || len(positionalArgs) != 0 {
+		_, _ = fmt.Fprintln(stdout, service.OfficialCodexContextInvalidArgsLine)
+		return 2
+	}
+	line, err := verify()
+	if err != nil {
+		_, _ = fmt.Fprintln(stdout, service.OfficialCodexContextContractFailureLine)
+		return 1
+	}
+	_, _ = fmt.Fprintln(stdout, line)
+	return 0
 }
 
 func runSetupServer() {
