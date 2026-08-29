@@ -887,16 +887,16 @@ func TestValidateOpenAIImagesUpstreamModel_AllowsOnlyStrictCindyMappedImage(t *t
 		},
 	}
 
-	require.NoError(t, validateOpenAIImagesUpstreamModel(cindy, "gpt-image-2", "openai/gpt-image-2"))
-	require.NoError(t, validateOpenAIImagesUpstreamModel(cindy, "gemini-3-pro-image", "google/gemini-3-pro-image"))
+	require.Error(t, validateOpenAIImagesUpstreamModel(cindy, "gpt-image-2", "openai/gpt-image-2"))
+	require.Error(t, validateOpenAIImagesUpstreamModel(cindy, "gemini-3-pro-image", "google/gemini-3-pro-image"))
 	require.Error(t, validateOpenAIImagesUpstreamModel(ordinary, "gpt-image-2", "openai/gpt-image-2"))
 	require.Error(t, validateOpenAIImagesUpstreamModel(ordinary, "gemini-3-pro-image", "google/gemini-3-pro-image"))
 	require.Error(t, validateOpenAIImagesUpstreamModel(cindy, "gpt-image-2", "other/gpt-image-2"))
 }
 
 func TestValidateOpenAIImagesModel_RecognizesCatalogImageWithoutChangingNativeSet(t *testing.T) {
-	require.NoError(t, validateOpenAIImagesModel("gemini-3-pro-image"))
-	require.NoError(t, validateOpenAIImagesModel("google/gemini-3-pro-image"))
+	require.Error(t, validateOpenAIImagesModel("gemini-3-pro-image"))
+	require.Error(t, validateOpenAIImagesModel("google/gemini-3-pro-image"))
 	require.False(t, IsNativeOpenAIImagesModel("gemini-3-pro-image"))
 	require.True(t, IsNativeOpenAIImagesModel("gpt-image-2"))
 	require.Error(t, validateOpenAIImagesModel("gpt-5.6-luna"))

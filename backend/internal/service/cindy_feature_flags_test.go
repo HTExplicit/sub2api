@@ -276,8 +276,10 @@ func TestCindyRolloutFlagHelper(t *testing.T) {
 				t.Fatalf("catalog rollback resolved stable Cindy model %q to %q, want %q", requested, got, want)
 			}
 		}
+		if _, ok := CindyCompatibilityMappedUpstreamModel("gpt-5.4"); ok {
+			t.Fatal("catalog rollback exposed compatibility alias for a restricted target")
+		}
 		for requested, want := range map[string]string{
-			"gpt-5.4":      "openai/gpt-5.6-sol",
 			"gpt-5.4-mini": "openai/gpt-5.6-luna",
 		} {
 			mapped, ok := CindyCompatibilityMappedUpstreamModel(requested)
@@ -345,14 +347,14 @@ func TestCindyRolloutFlagHelper(t *testing.T) {
 		if _, ok := ResolveCindyCapability("gpt-5.6-luna"); !ok {
 			t.Fatal("image rollback hid a text capability")
 		}
-		if _, ok := ResolveCindyCapability("gpt-image-2"); !ok {
-			t.Fatal("image rollback hid an independently catalogued image capability")
+		if _, ok := ResolveCindyCapability("gpt-image-2"); ok {
+			t.Fatal("image rollback exposed a model unavailable to the free-key pool")
 		}
 		if len(CindyImageModelCapabilities()) != 0 {
 			t.Fatal("image rollback still exposed Image Studio capabilities")
 		}
-		if !CindyModelSupportsResponsesImageBridge("gpt-image-2") {
-			t.Fatal("image rollback changed the independent Responses image bridge")
+		if CindyModelSupportsResponsesImageBridge("gpt-image-2") {
+			t.Fatal("image rollback exposed a bridge unavailable to the free-key pool")
 		}
 	default:
 		t.Fatalf("unknown helper mode %q", os.Getenv("SUB2API_CINDY_FLAG_HELPER"))

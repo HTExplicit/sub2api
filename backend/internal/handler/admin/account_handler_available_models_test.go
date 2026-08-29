@@ -294,7 +294,7 @@ func TestAccountHandlerGetAvailableModels_CindyUsesManagedCatalogInsteadOfStored
 		Data []managedAvailableModel `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
-	require.Len(t, resp.Data, 24, "22 fixed v4 models and two compatibility aliases")
+	require.Len(t, resp.Data, 26, "25 fixed v4 candidates and one allowed compatibility alias")
 
 	byID := make(map[string]managedAvailableModel, len(resp.Data))
 	for _, model := range resp.Data {
@@ -318,6 +318,7 @@ func TestAccountHandlerGetAvailableModels_CindyUsesManagedCatalogInsteadOfStored
 	require.Equal(t, "openai/gpt-5.6-luna", mini.LiveUpstreamID)
 	require.Equal(t, 1050000, mini.ContextWindow)
 	require.Equal(t, 128000, mini.MaxOutputTokens)
+	require.NotContains(t, byID, "gpt-5.4")
 
 	require.NotContains(t, rec.Body.String(), "must-not-leak")
 	require.NotContains(t, rec.Body.String(), "api_key")

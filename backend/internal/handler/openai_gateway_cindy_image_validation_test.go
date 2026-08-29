@@ -152,22 +152,19 @@ func cindyResponsesImageValidationAccount(cindy bool) service.Account {
 	return account
 }
 
-func TestStrictCindyResponsesImageRequestsNormalizeVerifiedWireControls(t *testing.T) {
+func TestStrictCindyResponsesImageRequestsRejectModelsOutsideFreePool(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	tests := []struct {
-		name              string
-		body              string
-		wantTopLevelModel string
+		name string
+		body string
 	}{
 		{
-			name:              "nested image tool",
-			body:              `{"model":"gpt-5.6-luna","input":"Create a small red square on white.","stream":false,"tools":[{"type":"image_generation","model":"gpt-image-2","size":"1024x1024","quality":"low","n":1}],"tool_choice":{"type":"image_generation"}}`,
-			wantTopLevelModel: "openai/gpt-5.6-luna",
+			name: "nested image tool",
+			body: `{"model":"gpt-5.6-luna","input":"Create a small red square on white.","stream":false,"tools":[{"type":"image_generation","model":"gpt-image-2","size":"1024x1024","quality":"low","n":1}],"tool_choice":{"type":"image_generation"}}`,
 		},
 		{
-			name:              "top level image bridge",
-			body:              `{"model":"gpt-image-2","input":"Create a small red square on white.","stream":false,"size":"1024x1024","quality":"low","n":1}`,
-			wantTopLevelModel: "openai/gpt-5.6-luna",
+			name: "top level image bridge",
+			body: `{"model":"gpt-image-2","input":"Create a small red square on white.","stream":false,"size":"1024x1024","quality":"low","n":1}`,
 		},
 	}
 	for _, test := range tests {
@@ -177,15 +174,9 @@ func TestStrictCindyResponsesImageRequestsNormalizeVerifiedWireControls(t *testi
 
 			h.Responses(c)
 
-			require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
-			calls := upstream.snapshot()
-			require.Len(t, calls, 1)
-			require.Equal(t, test.wantTopLevelModel, gjson.GetBytes(calls[0], "model").String())
-			require.Equal(t, "image_generation", gjson.GetBytes(calls[0], "tools.0.type").String())
-			require.False(t, gjson.GetBytes(calls[0], "tools.0.action").Exists())
-			require.Equal(t, "openai/gpt-image-2", gjson.GetBytes(calls[0], "tools.0.model").String())
-			require.False(t, gjson.GetBytes(calls[0], "n").Exists())
-			require.False(t, gjson.GetBytes(calls[0], "tools.0.n").Exists())
+			require.Equal(t, http.StatusNotFound, recorder.Code, recorder.Body.String())
+			require.Equal(t, "model_not_found", gjson.GetBytes(recorder.Body.Bytes(), "error.type").String())
+			require.Empty(t, upstream.snapshot())
 		})
 	}
 }
@@ -195,11 +186,10 @@ func TestStrictCindyResponsesTopLevelLiveIDRejectsUnverifiedControls(t *testing.
 	tests := []struct {
 		name string
 		body string
-		want string
 	}{
-		{name: "size", body: `{"model":"openai/gpt-image-2","input":"draw","size":"1536x1024","quality":"low","n":1}`, want: "size"},
-		{name: "quality", body: `{"model":"openai/gpt-image-2","input":"draw","size":"1024x1024","quality":"high","n":1}`, want: "quality"},
-		{name: "count", body: `{"model":"openai/gpt-image-2","input":"draw","size":"1024x1024","quality":"low","n":2}`, want: "n"},
+		{name: "size", body: `{"model":"openai/gpt-image-2","input":"draw","size":"1536x1024","quality":"low","n":1}`},
+		{name: "quality", body: `{"model":"openai/gpt-image-2","input":"draw","size":"1024x1024","quality":"high","n":1}`},
+		{name: "count", body: `{"model":"openai/gpt-image-2","input":"draw","size":"1024x1024","quality":"low","n":2}`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -208,9 +198,8 @@ func TestStrictCindyResponsesTopLevelLiveIDRejectsUnverifiedControls(t *testing.
 
 			h.Responses(c)
 
-			require.Equal(t, http.StatusBadRequest, recorder.Code, recorder.Body.String())
-			require.Equal(t, "invalid_request_error", gjson.GetBytes(recorder.Body.Bytes(), "error.type").String())
-			require.Contains(t, gjson.GetBytes(recorder.Body.Bytes(), "error.message").String(), test.want)
+			require.Equal(t, http.StatusNotFound, recorder.Code, recorder.Body.String())
+			require.Equal(t, "model_not_found", gjson.GetBytes(recorder.Body.Bytes(), "error.type").String())
 			require.Empty(t, upstream.snapshot())
 		})
 	}
@@ -238,9 +227,8 @@ func TestResponsesCindyGroupRejectsInvalidNestedControlsBeforeConcurrencyAcquire
 
 	h.Responses(c)
 
-	require.Equal(t, http.StatusBadRequest, recorder.Code, recorder.Body.String())
-	require.Equal(t, "invalid_request_error", gjson.GetBytes(recorder.Body.Bytes(), "error.type").String())
-	require.Contains(t, gjson.GetBytes(recorder.Body.Bytes(), "error.message").String(), "quality")
+	require.Equal(t, http.StatusNotFound, recorder.Code, recorder.Body.String())
+	require.Equal(t, "model_not_found", gjson.GetBytes(recorder.Body.Bytes(), "error.type").String())
 	require.Empty(t, upstream.snapshot())
 	require.Equal(t, int32(0), atomic.LoadInt32(&concurrencyCache.releaseAccountCalled))
 }

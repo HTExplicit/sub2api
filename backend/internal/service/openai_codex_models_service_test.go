@@ -550,20 +550,14 @@ func TestProjectCindyCodexModelsManifestMapsLiveAndHiddenAliases(t *testing.T) {
 
 	require.NoError(t, err)
 	require.JSONEq(t, `{"models":[`+
-		`{"display_name":"Sol live","slug":"gpt-5.6-sol"},`+
 		`{"slug":"gpt-5.6-luna","use_responses_lite":true},`+
-		`{"slug":"seed-2.1-pro"},`+
-		`{"slug":"deepseek-v4-pro"},`+
-		`{"slug":"claude-opus-5"},`+
-		`{"slug":"grok-4.6"},`+
-		`{"slug":"gpt-image-2"}`+
+		`{"slug":"deepseek-v4-pro"}`+
 		`],"metadata":{"version":1}}`, string(projected))
 	require.NotContains(t, string(projected), "openai/gpt-5.6-sol")
 	require.NotContains(t, string(projected), "gpt-5.4")
-	require.Contains(t, string(projected), "seed-2.1-pro")
 	require.Contains(t, string(projected), "deepseek-v4-pro")
-	require.Contains(t, string(projected), "claude-opus-5")
-	require.Contains(t, string(projected), "grok-4.6")
+	require.NotContains(t, string(projected), "claude-opus-5")
+	require.NotContains(t, string(projected), "grok-4.6")
 	require.NotContains(t, string(projected), "gemini-3-pro-image")
 }
 
@@ -741,11 +735,10 @@ func TestBuildCindyCodexModelsManifestMatchesRustV01470ModelInfoContract(t *test
 		require.Equal(t, truncationMode, truncation.Mode)
 		require.Equal(t, int64(10000), truncation.Limit)
 	}
-	assertCodexModel("gpt-5.6-luna", 1050000, "medium", []string{"low", "medium", "high", "xhigh", "max"}, "tokens")
-	assertCodexModel("gpt-5.6-sol", 1050000, "medium", []string{"low", "medium", "high", "xhigh", "max", "ultra"}, "tokens")
-	assertCodexModel("gpt-5.6-terra", 1050000, "medium", []string{"low", "medium", "high", "xhigh", "max", "ultra"}, "tokens")
-	assertCodexModel("grok-4.5", 500000, "high", []string{"low", "medium", "high"}, "bytes")
-	assertCodexModel("glm-5.2", 1000000, "max", []string{"minimal", "medium", "high", "max"}, "bytes")
+	assertCodexModel("gpt-5.6-luna", 1050000, "medium", []string{"medium", "high", "xhigh"}, "tokens")
+	assertCodexModel("deepseek-v4-pro", 1000000, "high", []string{"medium", "high", "max"}, "bytes")
+	assertCodexModel("qwen3.8-flash", 991808, "xhigh", []string{"low", "medium", "high", "xhigh"}, "bytes")
+	assertCodexModel("glm-5.3-flash", 1000000, "max", []string{"low", "medium", "high", "max"}, "bytes")
 }
 
 func TestMergeCindyCodexModelsManifestPreservesOrdinaryKnownModelIDs(t *testing.T) {
@@ -896,10 +889,10 @@ func TestFetchCodexModelsManifestCindyRolloutProjectionHelper(t *testing.T) {
 	case "catalog_off":
 		require.Equal(t, upstreamBody, string(manifest.Body))
 	case "image_off":
-		require.JSONEq(t, `{"models":[{"slug":"gpt-5.6-sol"},{"slug":"gpt-5.6-luna"},{"slug":"deepseek-v4-pro"},{"slug":"claude-opus-5"}]}`, string(manifest.Body))
+		require.JSONEq(t, `{"models":[{"slug":"gpt-5.6-luna"},{"slug":"deepseek-v4-pro"}]}`, string(manifest.Body))
 		require.NotContains(t, string(manifest.Body), "gpt-image-2")
 		require.Contains(t, string(manifest.Body), "deepseek-v4-pro")
-		require.Contains(t, string(manifest.Body), "claude-opus-5")
+		require.NotContains(t, string(manifest.Body), "claude-opus-5")
 		require.NotContains(t, string(manifest.Body), "gemini-3-pro-image")
 	default:
 		t.Fatalf("unknown helper mode %q", mode)
@@ -974,7 +967,7 @@ func TestFetchCodexModelsManifestAPIKeyDisablesResponsesLiteForAffectedModels(t 
 	s := newCodexModelsAPIKeyTestService(upstream)
 	manifest, err := s.FetchCodexModelsManifest(context.Background(), newCodexModelsAPIKeyTestAccount("https://upstream.example"), "0.145.0", "")
 	require.NoError(t, err)
-	require.JSONEq(t, `{"models":[{"slug":"gpt-5.6-sol","use_responses_lite":false},{"slug":"gpt-5.6-codex","use_responses_lite":true}],"metadata":{"version":1}}`, string(manifest.Body))
+	require.JSONEq(t, `{"models":[{"slug":"gpt-5.6-sol","use_responses_lite":false,"context_window":1000000,"max_context_window":1000000,"auto_compact_token_limit":900000},{"slug":"gpt-5.6-codex","use_responses_lite":true}],"metadata":{"version":1}}`, string(manifest.Body))
 	require.Equal(t, codexModelsManifestBodyETag(manifest.Body), manifest.ETag)
 	require.Equal(t, `"upstream-strong"`, manifest.upstreamETag)
 
@@ -982,6 +975,38 @@ func TestFetchCodexModelsManifestAPIKeyDisablesResponsesLiteForAffectedModels(t 
 	require.NoError(t, err)
 	require.True(t, notModified.NotModified)
 	require.Equal(t, manifest.ETag, notModified.ETag)
+}
+
+func TestNormalizeOfficialCodexModelContextsTargetsOnlyGPT56(t *testing.T) {
+	body := []byte(`{"models":[` +
+		`{"slug":"gpt-5.6-sol","context_window":1050000,"max_context_window":1050000,"auto_compact_token_limit":null,"other":"sol"},` +
+		`{"slug":"gpt-5.6-terra","context_window":1050000,"max_context_window":1050000,"auto_compact_token_limit":900000},` +
+		`{"slug":"gpt-5.6-luna"},` +
+		`{"slug":"gpt-5.5","context_window":272000,"other":"preserved"},` +
+		`null,"malformed"],"metadata":{"version":7}}`)
+
+	got, err := normalizeOfficialCodexModelContexts(body)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"models":[`+
+		`{"slug":"gpt-5.6-sol","context_window":1000000,"max_context_window":1000000,"auto_compact_token_limit":900000,"other":"sol"},`+
+		`{"slug":"gpt-5.6-terra","context_window":272000,"max_context_window":921000,"auto_compact_token_limit":null},`+
+		`{"slug":"gpt-5.6-luna","context_window":272000,"max_context_window":921000,"auto_compact_token_limit":null},`+
+		`{"slug":"gpt-5.5","context_window":272000,"other":"preserved"},`+
+		`null,"malformed"],"metadata":{"version":7}}`, string(got))
+}
+
+func TestNormalizeOfficialCodexModelContextsLeavesUnrelatedBodyByteExact(t *testing.T) {
+	body := []byte(` {"models":[{"slug":"gpt-5.5","context_window":272000}]} `)
+	got, err := normalizeOfficialCodexModelContexts(body)
+	require.NoError(t, err)
+	require.Equal(t, body, got)
+}
+
+func TestBuildCodexModelsManifestCacheKeySeparatesOfficialContextNormalization(t *testing.T) {
+	base := codexModelsManifestRequest{accountID: 1, credentialAccountID: 1, url: "https://example.test/v1/models"}
+	normalized := base
+	normalized.normalizeOfficialContexts = true
+	require.NotEqual(t, buildCodexModelsManifestCacheKey(base), buildCodexModelsManifestCacheKey(normalized))
 }
 
 func TestFetchCodexModelsManifestOAuthPreservesResponsesLite(t *testing.T) {
@@ -1571,7 +1596,7 @@ func TestFetchCodexModelsManifestAPIKeyRevalidatesStaleETag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stale fetch returned error: %v", err)
 	}
-	if got := string(manifest.Body); got != `{"models":[{"slug":"gpt-5.6-sol","use_responses_lite":false}]}` {
+	if got := string(manifest.Body); got != `{"models":[{"auto_compact_token_limit":900000,"context_window":1000000,"max_context_window":1000000,"slug":"gpt-5.6-sol","use_responses_lite":false}]}` {
 		t.Fatalf("stale body: got %q", got)
 	}
 	select {
@@ -1597,7 +1622,7 @@ func TestFetchCodexModelsManifestAPIKeyRevalidatesStaleETag(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	manifest, err = s.FetchCodexModelsManifest(context.Background(), account, "0.144.0", "")
-	if err != nil || string(manifest.Body) != `{"models":[{"slug":"gpt-5.6-sol","use_responses_lite":false}]}` {
+	if err != nil || string(manifest.Body) != `{"models":[{"auto_compact_token_limit":900000,"context_window":1000000,"max_context_window":1000000,"slug":"gpt-5.6-sol","use_responses_lite":false}]}` {
 		t.Fatalf("renewed cached manifest: body=%q err=%v", manifest.Body, err)
 	}
 	if got := calls.Load(); got != 2 {

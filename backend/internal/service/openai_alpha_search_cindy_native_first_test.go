@@ -60,7 +60,7 @@ func newCindyAlphaSearchServiceContext(t *testing.T, upstream HTTPUpstream) (*Op
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
-	body := []byte(`{"model":"gpt-5.6-sol","commands":{"search_query":[{"q":"news"}]}}`)
+	body := []byte(`{"model":"gpt-5.6-luna","commands":{"search_query":[{"q":"news"}]}}`)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/alpha/search", bytes.NewReader(body))
 	c.Request.Header.Set("Content-Type", "application/json")
 	return &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}, c, recorder
@@ -74,16 +74,16 @@ func TestForwardAlphaSearchCindyUsesPublicResponsesModelBeforeHiddenFallback(t *
 			`data: {"type":"response.output_text.delta","delta":"native result"}`+"\n\n"),
 	}}
 	service, c, recorder := newCindyAlphaSearchServiceContext(t, upstream)
-	body := []byte(`{"model":"gpt-5.6-sol","commands":{"search_query":[{"q":"news"}]}}`)
+	body := []byte(`{"model":"gpt-5.6-luna","commands":{"search_query":[{"q":"news"}]}}`)
 
 	result, err := service.ForwardAlphaSearch(context.Background(), c, firstClassCindyAlphaSearchAccount(61001), body)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "/v1/responses", result.UpstreamEndpoint)
-	require.Equal(t, "openai/gpt-5.6-sol", result.UpstreamModel)
+	require.Equal(t, "openai/gpt-5.6-luna", result.UpstreamModel)
 	require.Equal(t, []string{"/v1/responses"}, []string{upstream.requests[0].URL.Path})
-	require.Equal(t, "openai/gpt-5.6-sol", gjson.GetBytes(upstream.bodies[0], "model").String())
+	require.Equal(t, "openai/gpt-5.6-luna", gjson.GetBytes(upstream.bodies[0], "model").String())
 	require.Equal(t, "web_search", gjson.GetBytes(upstream.bodies[0], "tools.0.type").String())
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.JSONEq(t, `{"output":"native result"}`, recorder.Body.String())
@@ -127,15 +127,15 @@ func TestForwardAlphaSearchCindyFallsBackToHiddenMessagesOnlyForUnsupportedOrUnp
 		t.Run(test.name, func(t *testing.T) {
 			upstream := &httpUpstreamRecorder{responses: []*http.Response{test.firstResponse(), cindyAlphaSearchMessagesSuccessResponse()}}
 			service, c, recorder := newCindyAlphaSearchServiceContext(t, upstream)
-			body := []byte(`{"model":"gpt-5.6-sol","commands":{"search_query":[{"q":"news"}]}}`)
+			body := []byte(`{"model":"gpt-5.6-luna","commands":{"search_query":[{"q":"news"}]}}`)
 
 			result, err := service.ForwardAlphaSearch(context.Background(), c, firstClassCindyAlphaSearchAccount(61002), body)
 
 			require.NoError(t, err)
 			require.NotNil(t, result)
 			require.Equal(t, "/v1/messages", result.UpstreamEndpoint)
-			require.Equal(t, "gpt-5.6-sol", result.Model)
-			require.Equal(t, "openai/gpt-5.6-sol", result.BillingModel)
+			require.Equal(t, "gpt-5.6-luna", result.Model)
+			require.Equal(t, "openai/gpt-5.6-luna", result.BillingModel)
 			require.Len(t, upstream.requests, 2)
 			require.Equal(t, "/v1/responses", upstream.requests[0].URL.Path)
 			require.Equal(t, "/v1/messages", upstream.requests[1].URL.Path)
@@ -164,7 +164,7 @@ func TestForwardAlphaSearchCindyOperationalResponsesFailuresNeverSwitchProtocol(
 				cindyAlphaSearchMessagesSuccessResponse(),
 			}}
 			service, c, _ := newCindyAlphaSearchServiceContext(t, upstream)
-			body := []byte(`{"model":"gpt-5.6-sol","commands":{"search_query":[{"q":"news"}]}}`)
+			body := []byte(`{"model":"gpt-5.6-luna","commands":{"search_query":[{"q":"news"}]}}`)
 
 			result, err := service.ForwardAlphaSearch(context.Background(), c, firstClassCindyAlphaSearchAccount(61003), body)
 
@@ -181,7 +181,7 @@ func TestForwardAlphaSearchCindyOperationalResponsesFailuresNeverSwitchProtocol(
 	t.Run("transport error", func(t *testing.T) {
 		upstream := &httpUpstreamRecorder{err: errors.New("upstream connection reset")}
 		service, c, _ := newCindyAlphaSearchServiceContext(t, upstream)
-		body := []byte(`{"model":"gpt-5.6-sol","commands":{"search_query":[{"q":"news"}]}}`)
+		body := []byte(`{"model":"gpt-5.6-luna","commands":{"search_query":[{"q":"news"}]}}`)
 
 		result, err := service.ForwardAlphaSearch(context.Background(), c, firstClassCindyAlphaSearchAccount(61005), body)
 
@@ -201,7 +201,7 @@ func TestForwardAlphaSearchCindyGenericBadRequestDoesNotSwitchProtocol(t *testin
 		cindyAlphaSearchMessagesSuccessResponse(),
 	}}
 	service, c, recorder := newCindyAlphaSearchServiceContext(t, upstream)
-	body := []byte(`{"model":"gpt-5.6-sol","settings":{"search_context_size":"invalid"}}`)
+	body := []byte(`{"model":"gpt-5.6-luna","settings":{"search_context_size":"invalid"}}`)
 
 	result, err := service.ForwardAlphaSearch(context.Background(), c, firstClassCindyAlphaSearchAccount(61006), body)
 
@@ -223,7 +223,7 @@ func TestForwardAlphaSearchCindyInvalidMessagesFallbackUsesNormalFailurePath(t *
 	}`)
 	upstream := &httpUpstreamRecorder{responses: []*http.Response{responsesWithoutEvidence, messagesWithoutEvidence}}
 	service, c, _ := newCindyAlphaSearchServiceContext(t, upstream)
-	body := []byte(`{"model":"gpt-5.6-sol","commands":{"search_query":[{"q":"news"}]}}`)
+	body := []byte(`{"model":"gpt-5.6-luna","commands":{"search_query":[{"q":"news"}]}}`)
 
 	result, err := service.ForwardAlphaSearch(context.Background(), c, firstClassCindyAlphaSearchAccount(61004), body)
 
@@ -253,7 +253,7 @@ func TestForwardAlphaSearchCindyMessagesFallbackHTTPFailureClassification(t *tes
 				alphaSearchHTTPResponse(test.status, "application/json", test.body),
 			}}
 			service, c, _ := newCindyAlphaSearchServiceContext(t, upstream)
-			body := []byte(`{"model":"gpt-5.6-sol","commands":{"search_query":[{"q":"news"}]}}`)
+			body := []byte(`{"model":"gpt-5.6-luna","commands":{"search_query":[{"q":"news"}]}}`)
 
 			result, err := service.ForwardAlphaSearch(context.Background(), c, firstClassCindyAlphaSearchAccount(61007), body)
 

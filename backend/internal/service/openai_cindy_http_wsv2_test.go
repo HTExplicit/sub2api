@@ -153,7 +153,6 @@ func TestLegacyCindyRuntimeCompatibilityUsesHTTPToWSV2(t *testing.T) {
 func TestLegacyCindyRuntimeCompatibilityMapsResponsesAliasesOverHTTPAndWS(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for alias, live := range map[string]string{
-		"gpt-5.4":      "openai/gpt-5.6-sol",
 		"gpt-5.4-mini": "openai/gpt-5.6-luna",
 	} {
 		t.Run(alias+"/http", func(t *testing.T) {
@@ -269,7 +268,7 @@ func TestCindyHTTPToWSV2FailoverDoesNotDowngradeToNonCindyHTTP(t *testing.T) {
 
 	result, err := svc.Forward(
 		context.Background(), c, nonCindy,
-		[]byte(`{"model":"gpt-5.4","stream":false,"input":"hi"}`),
+		[]byte(`{"model":"gpt-5.4-mini","stream":false,"input":"hi"}`),
 	)
 
 	require.Nil(t, result)
@@ -291,8 +290,8 @@ func TestCindyHTTPToWSV2ContinuationReusesOneConnectionAcrossIndependentHTTPRequ
 	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
 	cfg.Gateway.OpenAIWS.StickyResponseIDTTLSeconds = 60
 	captureConn := &openAIWSCaptureConn{events: [][]byte{
-		[]byte(`{"type":"response.completed","response":{"id":"resp_cindy_tool","model":"gpt-5.4","status":"completed","output":[{"type":"function_call","id":"fc_1","call_id":"call_1","name":"fetch","arguments":"{}"}],"usage":{"input_tokens":1,"output_tokens":1}}}`),
-		[]byte(`{"type":"response.completed","response":{"id":"resp_cindy_done","model":"gpt-5.4","status":"completed","output":[{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"done"}]}],"usage":{"input_tokens":1,"output_tokens":1}}}`),
+		[]byte(`{"type":"response.completed","response":{"id":"resp_cindy_tool","model":"gpt-5.4-mini","status":"completed","output":[{"type":"function_call","id":"fc_1","call_id":"call_1","name":"fetch","arguments":"{}"}],"usage":{"input_tokens":1,"output_tokens":1}}}`),
+		[]byte(`{"type":"response.completed","response":{"id":"resp_cindy_done","model":"gpt-5.4-mini","status":"completed","output":[{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"done"}]}],"usage":{"input_tokens":1,"output_tokens":1}}}`),
 	}}
 	dialer := &openAIWSCaptureDialer{conn: captureConn}
 	pool := newOpenAIWSConnPool(cfg)
@@ -305,7 +304,7 @@ func TestCindyHTTPToWSV2ContinuationReusesOneConnectionAcrossIndependentHTTPRequ
 	account := cindyHTTPToWSV2TestAccount()
 
 	firstContext := cindyHTTPToWSV2TestContext("/v1/responses")
-	firstBody := []byte(`{"model":"gpt-5.4","stream":false,"input":[{"role":"user","content":"run tool"}]}`)
+	firstBody := []byte(`{"model":"gpt-5.4-mini","stream":false,"input":[{"role":"user","content":"run tool"}]}`)
 	firstResult, err := svc.Forward(context.Background(), firstContext, account, firstBody)
 	require.NoError(t, err)
 	require.Equal(t, "resp_cindy_tool", firstResult.RequestID)
@@ -313,7 +312,7 @@ func TestCindyHTTPToWSV2ContinuationReusesOneConnectionAcrossIndependentHTTPRequ
 	require.False(t, firstResult.Stream)
 
 	secondContext := cindyHTTPToWSV2TestContext("/v1/responses")
-	secondBody := []byte(`{"model":"gpt-5.4","stream":false,"previous_response_id":"resp_cindy_tool","input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`)
+	secondBody := []byte(`{"model":"gpt-5.4-mini","stream":false,"previous_response_id":"resp_cindy_tool","input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`)
 	secondResult, err := svc.Forward(context.Background(), secondContext, account, secondBody)
 	require.NoError(t, err)
 	require.Equal(t, "resp_cindy_done", secondResult.RequestID)
@@ -335,12 +334,12 @@ func TestCindyHTTPToWSV2ContinuationReusesOneConnectionAcrossIndependentHTTPRequ
 func TestCindyHTTPToWSV2ContinuationWithoutLocalConnectionReconnectsBoundAccount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	capture := &openAIWSCaptureConn{events: [][]byte{
-		[]byte(`{"type":"response.completed","response":{"id":"resp_resumed","model":"gpt-5.4","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
+		[]byte(`{"type":"response.completed","response":{"id":"resp_resumed","model":"gpt-5.4-mini","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
 	}}
 	svc, dialer := newCindyHTTPToWSV2TurnStateTestService(t, cindyHTTPToWSV2DialStep{conn: capture})
 	account := cindyHTTPToWSV2TestAccount()
 	c := cindyHTTPToWSV2TestContext("/v1/responses")
-	body := []byte(`{"model":"gpt-5.4","stream":false,"previous_response_id":"resp_from_old_process","input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`)
+	body := []byte(`{"model":"gpt-5.4-mini","stream":false,"previous_response_id":"resp_from_old_process","input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`)
 
 	result, err := svc.Forward(context.Background(), c, account, body)
 
@@ -361,7 +360,7 @@ func TestCindyHTTPToWSV2Handshake403FallsBackToOriginalStatelessHTTPStream(t *te
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
 		Body: io.NopCloser(strings.NewReader(
-			"data: " + `{"type":"response.completed","response":{"id":"resp_http_fallback","object":"response","status":"completed","model":"openai/gpt-5.6-sol","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}` + "\n\ndata: [DONE]\n\n",
+			"data: " + `{"type":"response.completed","response":{"id":"resp_http_fallback","object":"response","status":"completed","model":"openai/gpt-5.6-luna","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}` + "\n\ndata: [DONE]\n\n",
 		)),
 	}}
 	svc, dialer := newCindyHTTPToWSV2TurnStateTestService(t, cindyHTTPToWSV2DialStep{
@@ -372,7 +371,7 @@ func TestCindyHTTPToWSV2Handshake403FallsBackToOriginalStatelessHTTPStream(t *te
 		},
 	})
 	svc.httpUpstream = upstream
-	body := []byte(`{"model":"openai/gpt-5.6-sol","stream":true,"store":false,"include":["reasoning.encrypted_content"],"input":[` +
+	body := []byte(`{"model":"openai/gpt-5.6-luna","stream":true,"store":false,"include":["reasoning.encrypted_content"],"input":[` +
 		`{"type":"message","role":"user","content":"first"},` +
 		`{"type":"reasoning","id":"rs_foreign","encrypted_content":"ENC"},` +
 		`{"type":"message","role":"assistant","content":"answer"},` +
@@ -412,7 +411,7 @@ func TestCindyHTTPToWSV2InBand403UsesNormalFailoverWithoutPayloadRewrite(t *test
 	svc, dialer := newCindyHTTPToWSV2TurnStateTestService(t,
 		cindyHTTPToWSV2DialStep{conn: firstConn},
 	)
-	body := []byte(`{"model":"openai/gpt-5.6-sol","stream":false,"store":false,"input":[` +
+	body := []byte(`{"model":"openai/gpt-5.6-luna","stream":false,"store":false,"input":[` +
 		`{"type":"message","role":"user","content":"first"},` +
 		`{"type":"reasoning","id":"rs_foreign","encrypted_content":"ENC"},` +
 		`{"type":"message","role":"assistant","content":"answer"},` +
@@ -454,7 +453,7 @@ func TestCindyHTTPToWSV2Handshake403HTTPFailurePreservesAccountFailover(t *testi
 		},
 	})
 	svc.httpUpstream = upstream
-	body := []byte(`{"model":"openai/gpt-5.6-sol","stream":false,"input":"hello"}`)
+	body := []byte(`{"model":"openai/gpt-5.6-luna","stream":false,"input":"hello"}`)
 
 	c := cindyHTTPToWSV2TestContext("/v1/responses")
 	result, err := svc.Forward(context.Background(), c, cindyHTTPToWSV2TestAccount(), body)
@@ -474,7 +473,7 @@ func TestCindyHTTPToWSV2Handshake403HTTPFailurePreservesAccountFailover(t *testi
 
 func TestCindyHTTPToWSV2HandshakeFallbackDoesNotRewriteInvalidEncryptedContent(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	body := []byte(`{"model":"openai/gpt-5.6-sol","stream":false,"store":false,"input":[` +
+	body := []byte(`{"model":"openai/gpt-5.6-luna","stream":false,"store":false,"input":[` +
 		`{"type":"reasoning","encrypted_content":"ENC"},` +
 		`{"type":"compaction","encrypted_content":"CMP"},` +
 		`{"type":"message","role":"user","content":"continue"}` +
@@ -536,7 +535,7 @@ func TestCindyPassthroughInvalidEncryptedContentFailsWithoutPayloadCleanup(t *te
 	cfg := &config.Config{}
 	cfg.Security.URLAllowlist.Enabled = false
 	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream}
-	body := []byte(`{"model":"gpt-5.6-sol","store":false,"previous_response_id":"resp_1","input":[{"type":"reasoning","id":"rs_foreign","encrypted_content":"cipher","phase":"analysis"}]}`)
+	body := []byte(`{"model":"gpt-5.6-luna","store":false,"previous_response_id":"resp_1","input":[{"type":"reasoning","id":"rs_foreign","encrypted_content":"cipher","phase":"analysis"}]}`)
 
 	result, err := svc.Forward(context.Background(), c, cindyHTTPToWSV2TestAccount(), body)
 
@@ -568,7 +567,7 @@ func TestLegacyCindyRuntimeCompatibilityPreservesOpaqueHTTPContinuation(t *testi
 	cfg := &config.Config{}
 	cfg.Security.URLAllowlist.Enabled = false
 	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream}
-	body := []byte(`{"model":"openai/gpt-5.6-sol","store":false,"previous_response_id":"resp_legacy","input":[{"type":"reasoning","id":"rs_legacy","encrypted_content":"cipher","phase":"analysis"}]}`)
+	body := []byte(`{"model":"openai/gpt-5.6-luna","store":false,"previous_response_id":"resp_legacy","input":[{"type":"reasoning","id":"rs_legacy","encrypted_content":"cipher","phase":"analysis"}]}`)
 	account := cindyHTTPToWSV2TestAccount()
 	account.Platform = PlatformOpenAI
 
@@ -617,7 +616,7 @@ func TestLegacyCindyRuntimeCompatibilityReplaysSelfContainedHistoryWithoutInvali
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"Content-Type": []string{"application/json"}},
 			Body: io.NopCloser(strings.NewReader(
-				`{"id":"resp_recovered","status":"completed","model":"openai/gpt-5.6-sol","output":[],"usage":{"input_tokens":1,"output_tokens":1}}`,
+				`{"id":"resp_recovered","status":"completed","model":"openai/gpt-5.6-luna","output":[],"usage":{"input_tokens":1,"output_tokens":1}}`,
 			)),
 		},
 	}}
@@ -626,7 +625,7 @@ func TestLegacyCindyRuntimeCompatibilityReplaysSelfContainedHistoryWithoutInvali
 	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream, toolCorrector: NewCodexToolCorrector()}
 	account := cindyHTTPToWSV2TestAccount()
 	account.Platform = PlatformOpenAI
-	body := []byte(`{"model":"openai/gpt-5.6-sol","store":false,"input":[{"type":"message","role":"user","content":"continue"},{"type":"reasoning","id":"rs_deleted_account","encrypted_content":"stale-cipher-reasoning","summary":"reasoning summary","phase":"reasoning-phase"},{"type":"compaction","id":"cmp_deleted_account","encrypted_content":"stale-cipher-compaction","summary":"compaction summary","phase":"compaction-phase"},{"type":"compaction_summary","id":"cmp_summary_deleted_account","encrypted_content":"stale-cipher-compaction-summary","summary":"compaction-summary summary","phase":"compaction-summary-phase"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"kept"}]}`)
+	body := []byte(`{"model":"openai/gpt-5.6-luna","store":false,"input":[{"type":"message","role":"user","content":"continue"},{"type":"reasoning","id":"rs_deleted_account","encrypted_content":"stale-cipher-reasoning","summary":"reasoning summary","phase":"reasoning-phase"},{"type":"compaction","id":"cmp_deleted_account","encrypted_content":"stale-cipher-compaction","summary":"compaction summary","phase":"compaction-phase"},{"type":"compaction_summary","id":"cmp_summary_deleted_account","encrypted_content":"stale-cipher-compaction-summary","summary":"compaction-summary summary","phase":"compaction-summary-phase"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"kept"}]}`)
 
 	result, err := svc.Forward(context.Background(), cindyHTTPToWSV2TestContext("/v1/responses"), account, body)
 
@@ -651,7 +650,7 @@ func TestLegacyCindyRuntimeCompatibilityReplaysSelfContainedHistoryOverNonPassth
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"Content-Type": []string{"application/json"}},
 			Body: io.NopCloser(strings.NewReader(
-				`{"id":"resp_recovered","status":"completed","model":"openai/gpt-5.6-sol","output":[],"usage":{"input_tokens":1,"output_tokens":1}}`,
+				`{"id":"resp_recovered","status":"completed","model":"openai/gpt-5.6-luna","output":[],"usage":{"input_tokens":1,"output_tokens":1}}`,
 			)),
 		},
 	}}
@@ -661,7 +660,7 @@ func TestLegacyCindyRuntimeCompatibilityReplaysSelfContainedHistoryOverNonPassth
 	account := cindyHTTPToWSV2TestAccount()
 	account.Platform = PlatformOpenAI
 	account.Extra = map[string]any{}
-	body := []byte(`{"model":"openai/gpt-5.6-sol","store":false,"input":[{"type":"message","role":"user","content":"continue"},{"type":"reasoning","id":"rs_deleted_account","encrypted_content":"stale-cipher-reasoning","summary":"reasoning summary","phase":"reasoning-phase"},{"type":"compaction","id":"cmp_deleted_account","encrypted_content":"stale-cipher-compaction","summary":"compaction summary","phase":"compaction-phase"},{"type":"compaction_summary","id":"cmp_summary_deleted_account","encrypted_content":"stale-cipher-compaction-summary","summary":"compaction-summary summary","phase":"compaction-summary-phase"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"kept"}]}`)
+	body := []byte(`{"model":"openai/gpt-5.6-luna","store":false,"input":[{"type":"message","role":"user","content":"continue"},{"type":"reasoning","id":"rs_deleted_account","encrypted_content":"stale-cipher-reasoning","summary":"reasoning summary","phase":"reasoning-phase"},{"type":"compaction","id":"cmp_deleted_account","encrypted_content":"stale-cipher-compaction","summary":"compaction summary","phase":"compaction-phase"},{"type":"compaction_summary","id":"cmp_summary_deleted_account","encrypted_content":"stale-cipher-compaction-summary","summary":"compaction-summary summary","phase":"compaction-summary-phase"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"kept"}]}`)
 
 	result, err := svc.Forward(context.Background(), cindyHTTPToWSV2TestContext("/v1/responses"), account, body)
 
@@ -685,7 +684,7 @@ func TestCanonicalCindyReplaysSelfContainedHistoryOverNonPassthroughHTTP(t *test
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"Content-Type": []string{"application/json"}},
 			Body: io.NopCloser(strings.NewReader(
-				`{"id":"resp_recovered","status":"completed","model":"openai/gpt-5.6-sol","output":[],"usage":{"input_tokens":1,"output_tokens":1}}`,
+				`{"id":"resp_recovered","status":"completed","model":"openai/gpt-5.6-luna","output":[],"usage":{"input_tokens":1,"output_tokens":1}}`,
 			)),
 		},
 	}}
@@ -694,7 +693,7 @@ func TestCanonicalCindyReplaysSelfContainedHistoryOverNonPassthroughHTTP(t *test
 	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream, toolCorrector: NewCodexToolCorrector()}
 	account := cindyHTTPToWSV2TestAccount()
 	account.Extra = map[string]any{}
-	body := []byte(`{"model":"openai/gpt-5.6-sol","store":false,"input":[{"type":"message","role":"user","content":"continue"},{"type":"reasoning","id":"rs_deleted_account","encrypted_content":"stale-cipher-reasoning","summary":"reasoning summary","phase":"reasoning-phase"},{"type":"compaction","id":"cmp_deleted_account","encrypted_content":"stale-cipher-compaction","summary":"compaction summary","phase":"compaction-phase"},{"type":"compaction_summary","id":"cmp_summary_deleted_account","encrypted_content":"stale-cipher-compaction-summary","summary":"compaction-summary summary","phase":"compaction-summary-phase"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"kept"}]}`)
+	body := []byte(`{"model":"openai/gpt-5.6-luna","store":false,"input":[{"type":"message","role":"user","content":"continue"},{"type":"reasoning","id":"rs_deleted_account","encrypted_content":"stale-cipher-reasoning","summary":"reasoning summary","phase":"reasoning-phase"},{"type":"compaction","id":"cmp_deleted_account","encrypted_content":"stale-cipher-compaction","summary":"compaction summary","phase":"compaction-phase"},{"type":"compaction_summary","id":"cmp_summary_deleted_account","encrypted_content":"stale-cipher-compaction-summary","summary":"compaction-summary summary","phase":"compaction-summary-phase"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"kept"}]}`)
 
 	result, err := svc.Forward(context.Background(), cindyHTTPToWSV2TestContext("/v1/responses"), account, body)
 
@@ -711,7 +710,7 @@ func TestLegacyCindyHTTPToWSV2RetriesSelfContainedHistoryAfterInvalidOpaqueState
 		[]byte(`{"type":"response.failed","response":{"id":"resp_invalid","status":"failed","error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}}`),
 	}}
 	recovered := &openAIWSCaptureConn{events: [][]byte{
-		[]byte(`{"type":"response.completed","response":{"id":"resp_recovered_ws","model":"openai/gpt-5.6-sol","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
+		[]byte(`{"type":"response.completed","response":{"id":"resp_recovered_ws","model":"openai/gpt-5.6-luna","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
 	}}
 	svc, dialer := newCindyHTTPToWSV2TurnStateTestService(t,
 		cindyHTTPToWSV2DialStep{conn: failed},
@@ -719,7 +718,7 @@ func TestLegacyCindyHTTPToWSV2RetriesSelfContainedHistoryAfterInvalidOpaqueState
 	)
 	account := cindyHTTPToWSV2TestAccount()
 	account.Platform = PlatformOpenAI
-	body := []byte(`{"model":"openai/gpt-5.6-sol","store":false,"input":[{"type":"message","role":"user","content":"continue"},{"type":"reasoning","id":"rs_deleted_account","encrypted_content":"stale-cipher-reasoning","summary":"reasoning summary","phase":"reasoning-phase"},{"type":"compaction","id":"cmp_deleted_account","encrypted_content":"stale-cipher-compaction","summary":"compaction summary","phase":"compaction-phase"},{"type":"compaction_summary","id":"cmp_summary_deleted_account","encrypted_content":"stale-cipher-compaction-summary","summary":"compaction-summary summary","phase":"compaction-summary-phase"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"kept"}]}`)
+	body := []byte(`{"model":"openai/gpt-5.6-luna","store":false,"input":[{"type":"message","role":"user","content":"continue"},{"type":"reasoning","id":"rs_deleted_account","encrypted_content":"stale-cipher-reasoning","summary":"reasoning summary","phase":"reasoning-phase"},{"type":"compaction","id":"cmp_deleted_account","encrypted_content":"stale-cipher-compaction","summary":"compaction summary","phase":"compaction-phase"},{"type":"compaction_summary","id":"cmp_summary_deleted_account","encrypted_content":"stale-cipher-compaction-summary","summary":"compaction-summary summary","phase":"compaction-summary-phase"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"kept"}]}`)
 
 	result, err := svc.Forward(context.Background(), cindyHTTPToWSV2TestContext("/v1/responses"), account, body)
 
@@ -745,13 +744,13 @@ func TestCanonicalCindyHTTPToWSV2RetriesSelfContainedHistoryAfterInvalidOpaqueSt
 		[]byte(`{"type":"response.failed","response":{"id":"resp_invalid","status":"failed","error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}}`),
 	}}
 	recovered := &openAIWSCaptureConn{events: [][]byte{
-		[]byte(`{"type":"response.completed","response":{"id":"resp_recovered_ws","model":"openai/gpt-5.6-sol","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
+		[]byte(`{"type":"response.completed","response":{"id":"resp_recovered_ws","model":"openai/gpt-5.6-luna","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
 	}}
 	svc, dialer := newCindyHTTPToWSV2TurnStateTestService(t,
 		cindyHTTPToWSV2DialStep{conn: failed},
 		cindyHTTPToWSV2DialStep{conn: recovered},
 	)
-	body := []byte(`{"model":"openai/gpt-5.6-sol","store":false,"input":[{"type":"message","role":"user","content":"continue"},{"type":"reasoning","id":"rs_deleted_account","encrypted_content":"stale-cipher-reasoning","summary":"reasoning summary","phase":"reasoning-phase"},{"type":"compaction","id":"cmp_deleted_account","encrypted_content":"stale-cipher-compaction","summary":"compaction summary","phase":"compaction-phase"},{"type":"compaction_summary","id":"cmp_summary_deleted_account","encrypted_content":"stale-cipher-compaction-summary","summary":"compaction-summary summary","phase":"compaction-summary-phase"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"kept"}]}`)
+	body := []byte(`{"model":"openai/gpt-5.6-luna","store":false,"input":[{"type":"message","role":"user","content":"continue"},{"type":"reasoning","id":"rs_deleted_account","encrypted_content":"stale-cipher-reasoning","summary":"reasoning summary","phase":"reasoning-phase"},{"type":"compaction","id":"cmp_deleted_account","encrypted_content":"stale-cipher-compaction","summary":"compaction summary","phase":"compaction-phase"},{"type":"compaction_summary","id":"cmp_summary_deleted_account","encrypted_content":"stale-cipher-compaction-summary","summary":"compaction-summary summary","phase":"compaction-summary-phase"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"kept"}]}`)
 
 	result, err := svc.Forward(
 		context.Background(),
@@ -781,14 +780,14 @@ func TestPrepareOpenAICindyStatelessHTTPFallbackSafetyBoundary(t *testing.T) {
 		body string
 		want bool
 	}{
-		{name: "plain first turn", body: `{"model":"gpt-5.6-sol","input":"hello"}`, want: true},
-		{name: "previous response anchor", body: `{"model":"gpt-5.6-sol","previous_response_id":"resp_1","input":"next"}`},
-		{name: "orphan tool output", body: `{"model":"gpt-5.6-sol","input":[{"type":"custom_tool_call_output","call_id":"call_1","output":"ok"}]}`},
-		{name: "single object orphan tool output", body: `{"model":"gpt-5.6-sol","input":{"type":"custom_tool_call_output","call_id":"call_1","output":"ok"}}`},
-		{name: "item reference", body: `{"model":"gpt-5.6-sol","input":[{"type":"item_reference","id":"call_1"}]}`},
-		{name: "reasoning id only", body: `{"model":"gpt-5.6-sol","input":[{"type":"reasoning","id":"rs_1"}]}`},
-		{name: "concrete tool output", body: `{"model":"gpt-5.6-sol","input":[{"type":"custom_tool_call","call_id":"call_1","name":"tool","input":"{}"},{"type":"custom_tool_call_output","call_id":"call_1","output":"ok"}]}`, want: true},
-		{name: "encrypted state remains opaque", body: `{"model":"gpt-5.6-sol","input":[{"type":"reasoning","encrypted_content":"ENC"}]}`, want: true},
+		{name: "plain first turn", body: `{"model":"gpt-5.6-luna","input":"hello"}`, want: true},
+		{name: "previous response anchor", body: `{"model":"gpt-5.6-luna","previous_response_id":"resp_1","input":"next"}`},
+		{name: "orphan tool output", body: `{"model":"gpt-5.6-luna","input":[{"type":"custom_tool_call_output","call_id":"call_1","output":"ok"}]}`},
+		{name: "single object orphan tool output", body: `{"model":"gpt-5.6-luna","input":{"type":"custom_tool_call_output","call_id":"call_1","output":"ok"}}`},
+		{name: "item reference", body: `{"model":"gpt-5.6-luna","input":[{"type":"item_reference","id":"call_1"}]}`},
+		{name: "reasoning id only", body: `{"model":"gpt-5.6-luna","input":[{"type":"reasoning","id":"rs_1"}]}`},
+		{name: "concrete tool output", body: `{"model":"gpt-5.6-luna","input":[{"type":"custom_tool_call","call_id":"call_1","name":"tool","input":"{}"},{"type":"custom_tool_call_output","call_id":"call_1","output":"ok"}]}`, want: true},
+		{name: "encrypted state remains opaque", body: `{"model":"gpt-5.6-luna","input":[{"type":"reasoning","encrypted_content":"ENC"}]}`, want: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, safe := prepareOpenAICindyStatelessHTTPFallback([]byte(tc.body))
@@ -828,7 +827,7 @@ func TestCindyHTTPToWSV2FirstTurnHandshakeFailoverClassification(t *testing.T) {
 			c := cindyHTTPToWSV2TestContext("/v1/responses")
 
 			classified, ok := svc.cindyHTTPToWSV2FirstTurnFailover(
-				context.Background(), c, account, "gpt-5.4", dialErr,
+				context.Background(), c, account, "gpt-5.4-mini", dialErr,
 			)
 
 			require.True(t, ok)
@@ -857,7 +856,7 @@ func TestCindyHTTPToWSV2FirstTurnHandshakeFailoverClassification(t *testing.T) {
 
 	t.Run("transport_without_http_status", func(t *testing.T) {
 		classified, ok := svc.cindyHTTPToWSV2FirstTurnFailover(
-			context.Background(), cindyHTTPToWSV2TestContext("/v1/responses"), account, "gpt-5.4",
+			context.Background(), cindyHTTPToWSV2TestContext("/v1/responses"), account, "gpt-5.4-mini",
 			&openAIWSDialError{Err: errors.New("connection refused")},
 		)
 		require.True(t, ok)
@@ -870,7 +869,7 @@ func TestCindyHTTPToWSV2FirstTurnHandshakeFailoverClassification(t *testing.T) {
 
 	htmlErr := &openAIWSDialError{StatusCode: http.StatusForbidden, ResponseBody: []byte("<!doctype html><html><body>Forbidden</body></html>")}
 	classified, ok := svc.cindyHTTPToWSV2FirstTurnFailover(
-		context.Background(), cindyHTTPToWSV2TestContext("/v1/responses"), account, "gpt-5.4", htmlErr,
+		context.Background(), cindyHTTPToWSV2TestContext("/v1/responses"), account, "gpt-5.4-mini", htmlErr,
 	)
 	require.True(t, ok)
 	var htmlFailover *UpstreamFailoverError
@@ -880,7 +879,7 @@ func TestCindyHTTPToWSV2FirstTurnHandshakeFailoverClassification(t *testing.T) {
 	require.JSONEq(t, string(openAITransportFailoverBody), string(htmlFailover.ResponseBody))
 
 	classified, ok = svc.cindyHTTPToWSV2FirstTurnFailover(
-		context.Background(), cindyHTTPToWSV2TestContext("/v1/responses"), account, "gpt-5.4",
+		context.Background(), cindyHTTPToWSV2TestContext("/v1/responses"), account, "gpt-5.4-mini",
 		coderws.CloseError{Code: coderws.StatusTryAgainLater, Reason: "retry later"},
 	)
 	require.True(t, ok)
@@ -905,7 +904,7 @@ func TestCindyHTTPToWSV2FirstTurnTerminalEventFailoverClassification(t *testing.
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			classified, ok := svc.cindyHTTPToWSV2FirstTurnEventFailover(
-				context.Background(), nil, account, "gpt-5.4", http.Header{}, []byte(tc.payload),
+				context.Background(), nil, account, "gpt-5.4-mini", http.Header{}, []byte(tc.payload),
 			)
 			require.True(t, ok)
 			var failoverErr *UpstreamFailoverError
@@ -959,7 +958,7 @@ func TestCindyHTTPToWSV2TurnStateStagesUntilOutputAndRecordsFailoverAttempt(t *t
 		},
 		{
 			conn: &openAIWSCaptureConn{events: [][]byte{
-				[]byte(`{"type":"response.completed","response":{"id":"resp_b_done","model":"gpt-5.4","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
+				[]byte(`{"type":"response.completed","response":{"id":"resp_b_done","model":"gpt-5.4-mini","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
 			}},
 			handshake: http.Header{"X-Codex-Turn-State": []string{"turn-state-B"}},
 		},
@@ -967,7 +966,7 @@ func TestCindyHTTPToWSV2TurnStateStagesUntilOutputAndRecordsFailoverAttempt(t *t
 	svc, dialer := newCindyHTTPToWSV2TurnStateTestService(t, dialerSteps...)
 	groupID := int64(77)
 	c, recorder := newCindyHTTPToWSV2TurnStateTestContext("session-failover-stage", 7001, groupID)
-	body := []byte(`{"model":"gpt-5.4","stream":true,"input":"hi"}`)
+	body := []byte(`{"model":"gpt-5.4-mini","stream":true,"input":"hi"}`)
 
 	result, err := svc.Forward(context.Background(), c, accountA, body)
 	require.Nil(t, result)
@@ -1030,7 +1029,7 @@ func TestCindyHTTPToWSV2TurnStateStagesUntilOutputAndRecordsFailoverAttempt(t *t
 func TestCindyHTTPToWSV2TurnStateNoStateClearsPriorOwnerAndProvenance(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	completed := func(id string) []byte {
-		return []byte(`{"type":"response.completed","response":{"id":"` + id + `","model":"gpt-5.4","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`)
+		return []byte(`{"type":"response.completed","response":{"id":"` + id + `","model":"gpt-5.4-mini","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`)
 	}
 	svc, dialer := newCindyHTTPToWSV2TurnStateTestService(t,
 		cindyHTTPToWSV2DialStep{
@@ -1050,7 +1049,7 @@ func TestCindyHTTPToWSV2TurnStateNoStateClearsPriorOwnerAndProvenance(t *testing
 	accountB := cindyHTTPToWSV2TestAccount()
 	accountB.ID = 9202
 	groupID := int64(78)
-	body := []byte(`{"model":"gpt-5.4","stream":false,"input":"hi"}`)
+	body := []byte(`{"model":"gpt-5.4-mini","stream":false,"input":"hi"}`)
 
 	cA1, _ := newCindyHTTPToWSV2TurnStateTestContext("session-owner-reuse", 7002, groupID)
 	resultA1, err := svc.Forward(context.Background(), cA1, accountA, body)

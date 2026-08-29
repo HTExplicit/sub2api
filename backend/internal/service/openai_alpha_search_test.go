@@ -185,7 +185,7 @@ func TestForwardAlphaSearchPATUsesResponsesWebSearchFallback(t *testing.T) {
 
 func TestForwardAlphaSearchAPIKeyResponsesBridgeUsesConfiguredBaseURL(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	body := []byte(`{"id":"search-session","model":"gpt-5.6-sol","commands":{"search_query":[{"q":"news"}]}}`)
+	body := []byte(`{"id":"search-session","model":"gpt-5.6-luna","commands":{"search_query":[{"q":"news"}]}}`)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/alpha/search", bytes.NewReader(body))
@@ -359,7 +359,7 @@ func TestOpenAIAlphaSearchResponseAcceptsWebSearchCallWithoutCitation(t *testing
 
 func TestForwardAlphaSearchCindyNativeModeBypassesEnabledResponsesBridge(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	body := []byte(`{"id":"search-session","model":"gpt-5.6-sol","commands":{"search_query":[{"q":"news"}]}}`)
+	body := []byte(`{"id":"search-session","model":"gpt-5.6-luna","commands":{"search_query":[{"q":"news"}]}}`)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/alpha/search", bytes.NewReader(body))
@@ -401,8 +401,8 @@ func TestForwardAlphaSearchCindyNativeModeBypassesEnabledResponsesBridge(t *test
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "/v1/messages", result.UpstreamEndpoint)
-	require.Equal(t, "gpt-5.6-sol", result.Model)
-	require.Equal(t, "openai/gpt-5.6-sol", result.BillingModel)
+	require.Equal(t, "gpt-5.6-luna", result.Model)
+	require.Equal(t, "openai/gpt-5.6-luna", result.BillingModel)
 	require.Equal(t, 1, result.WebSearchCalls)
 	require.Equal(t, 11, result.Usage.InputTokens)
 	require.Equal(t, 4, result.Usage.OutputTokens)
@@ -410,7 +410,7 @@ func TestForwardAlphaSearchCindyNativeModeBypassesEnabledResponsesBridge(t *test
 	require.True(t, result.UsageInputTokensExcludeCache)
 	require.Len(t, upstream.requests, 2)
 	require.Equal(t, "/v1/responses", upstream.requests[0].URL.Path)
-	require.Equal(t, "openai/gpt-5.6-sol", gjson.GetBytes(upstream.bodies[0], "model").String())
+	require.Equal(t, "openai/gpt-5.6-luna", gjson.GetBytes(upstream.bodies[0], "model").String())
 	require.Equal(t, "https://api.laxarouter.ai/v1/messages", upstream.lastReq.URL.String())
 	require.Equal(t, "application/json", upstream.lastReq.Header.Get("Accept"))
 	require.Equal(t, "Bearer sk-test", upstream.lastReq.Header.Get("Authorization"))
@@ -445,7 +445,7 @@ func TestForwardAlphaSearchCindyNativeMessagesRejectsUnverifiedSuccessWithoutPen
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			requestBody := []byte(`{"model":"gpt-5.6-sol","commands":{"search_query":[{"q":"news"}]}}`)
+			requestBody := []byte(`{"model":"gpt-5.6-luna","commands":{"search_query":[{"q":"news"}]}}`)
 			recorder := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(recorder)
 			c.Request = httptest.NewRequest(http.MethodPost, "/v1/alpha/search", bytes.NewReader(requestBody))
@@ -502,7 +502,7 @@ func TestForwardAlphaSearchCindyRejectsErrorToolResultEvenWithUsage(t *testing.T
 func testForwardAlphaSearchCindyRejectsInvalidToolResult(t *testing.T, upstreamBody string) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	requestBody := []byte(`{"model":"gpt-5.6-sol","commands":{"search_query":[{"q":"news"}]}}`)
+	requestBody := []byte(`{"model":"gpt-5.6-luna","commands":{"search_query":[{"q":"news"}]}}`)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/alpha/search", bytes.NewReader(requestBody))

@@ -132,7 +132,7 @@ func TestCindySearchAvailabilityHelper(t *testing.T) {
 	if want == "" {
 		t.Skip("subprocess helper")
 	}
-	got := boolString(CindyAlphaSearchModelAvailable("gpt-5.6-sol"))
+	got := boolString(CindyAlphaSearchModelAvailable("gpt-5.6-luna"))
 	if got != want {
 		t.Fatalf("Cindy Search availability = %s, want %s", got, want)
 	}

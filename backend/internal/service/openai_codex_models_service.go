@@ -180,6 +180,7 @@ type codexModelsManifestRequest struct {
 	cindyCatalogVersion        string
 	cindyResponsesImageEnabled bool
 	projectCindyCatalog        bool
+	normalizeOfficialContexts  bool
 }
 
 type codexModelsManifestCacheEntry struct {
@@ -357,6 +358,7 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 		proxyURL = account.Proxy.URL()
 	}
 
+	isCindyAccount := IsCindyAPIKeyAccount(credAccount.Platform, credAccount.Type, credAccount.Credentials)
 	request := codexModelsManifestRequest{
 		url:                        requestURL.String(),
 		headers:                    headers,
@@ -369,8 +371,8 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 		cindyCatalogEnabled:        CindyCapabilityCatalogFeatureEnabled(),
 		cindyCatalogVersion:        CindyCapabilityCatalogVersion,
 		cindyResponsesImageEnabled: CindyResponsesImageBridgeFeatureEnabled(),
-		projectCindyCatalog: CindyCapabilityCatalogFeatureEnabled() &&
-			IsCindyAPIKeyAccount(credAccount.Platform, credAccount.Type, credAccount.Credentials),
+		projectCindyCatalog:        CindyCapabilityCatalogFeatureEnabled() && isCindyAccount,
+		normalizeOfficialContexts:  useAPIKeyUpstream && !isCindyAccount,
 	}
 	if useAPIKeyUpstream {
 		return s.fetchCachedAPIKeyCodexModelsManifest(ctx, request, ifNoneMatch)
@@ -573,6 +575,20 @@ func (s *OpenAIGatewayService) fetchCodexModelsManifestUpstream(ctx context.Cont
 					err,
 				),
 				retryable: true,
+			}
+		}
+		if request.normalizeOfficialContexts {
+			body, err = normalizeOfficialCodexModelContexts(body)
+			if err != nil {
+				return nil, &codexModelsManifestUpstreamError{
+					err: infraerrors.Newf(
+						http.StatusBadGateway,
+						"OPENAI_CODEX_MODELS_UPSTREAM_INVALID_MANIFEST",
+						"codex models manifest upstream contexts could not be normalized: %v",
+						err,
+					),
+					retryable: true,
+				}
 			}
 		}
 	}
@@ -965,6 +981,80 @@ func adjustAPIKeyCodexModelsManifest(body []byte) ([]byte, error) {
 	return adjusted, nil
 }
 
+type officialCodexContext struct {
+	contextWindow    int
+	maxContextWindow int
+	autoCompactLimit json.RawMessage
+}
+
+var officialCodexContexts = map[string]officialCodexContext{
+	"gpt-5.6-sol": {
+		contextWindow: 1000000, maxContextWindow: 1000000,
+		autoCompactLimit: json.RawMessage("900000"),
+	},
+	"gpt-5.6-terra": {
+		contextWindow: 272000, maxContextWindow: 921000,
+		autoCompactLimit: json.RawMessage("null"),
+	},
+	"gpt-5.6-luna": {
+		contextWindow: 272000, maxContextWindow: 921000,
+		autoCompactLimit: json.RawMessage("null"),
+	},
+}
+
+// normalizeOfficialCodexModelContexts applies the current Codex client
+// manifest contract to ordinary custom API-key providers. Cindy has its own
+// pinned catalog and OAuth manifests remain authoritative passthroughs.
+func normalizeOfficialCodexModelContexts(body []byte) ([]byte, error) {
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil, fmt.Errorf("decode JSON object: %w", err)
+	}
+	var models []json.RawMessage
+	if err := json.Unmarshal(envelope["models"], &models); err != nil {
+		return nil, fmt.Errorf("decode top-level models array: %w", err)
+	}
+
+	changed := false
+	for i, rawModel := range models {
+		var model map[string]json.RawMessage
+		if err := json.Unmarshal(rawModel, &model); err != nil || model == nil {
+			continue
+		}
+		var slug string
+		if err := json.Unmarshal(model["slug"], &slug); err != nil {
+			continue
+		}
+		contract, ok := officialCodexContexts[slug]
+		if !ok {
+			continue
+		}
+		model["context_window"] = json.RawMessage(fmt.Sprintf("%d", contract.contextWindow))
+		model["max_context_window"] = json.RawMessage(fmt.Sprintf("%d", contract.maxContextWindow))
+		model["auto_compact_token_limit"] = append(json.RawMessage(nil), contract.autoCompactLimit...)
+		adjusted, err := json.Marshal(model)
+		if err != nil {
+			return nil, fmt.Errorf("encode model %q: %w", slug, err)
+		}
+		models[i] = adjusted
+		changed = true
+	}
+	if !changed {
+		return body, nil
+	}
+
+	adjustedModels, err := json.Marshal(models)
+	if err != nil {
+		return nil, fmt.Errorf("encode top-level models array: %w", err)
+	}
+	envelope["models"] = adjustedModels
+	adjusted, err := json.Marshal(envelope)
+	if err != nil {
+		return nil, fmt.Errorf("encode JSON object: %w", err)
+	}
+	return adjusted, nil
+}
+
 // convertOpenAIModelListToCodexManifest rewrites a standard OpenAI
 // GET /v1/models response ({"object":"list","data":[{"id":...},...]}) into the
 // Codex manifest envelope ({"models":[{"slug":...},...]}) so custom API key
@@ -1038,7 +1128,7 @@ func buildCodexModelsManifestCacheKey(request codexModelsManifestRequest) string
 	hasher := sha256.New()
 	_, _ = fmt.Fprintf(
 		hasher,
-		"%d\n%d\n%s\n%s\ncindy-catalog:%t:%s\nresponses-image-bridge:%t\nproject-cindy:%t\n",
+		"%d\n%d\n%s\n%s\ncindy-catalog:%t:%s\nresponses-image-bridge:%t\nproject-cindy:%t\nnormalize-official-contexts:%t\n",
 		request.accountID,
 		request.credentialAccountID,
 		request.proxyURL,
@@ -1047,6 +1137,7 @@ func buildCodexModelsManifestCacheKey(request codexModelsManifestRequest) string
 		request.cindyCatalogVersion,
 		request.cindyResponsesImageEnabled,
 		request.projectCindyCatalog,
+		request.normalizeOfficialContexts,
 	)
 	headerNames := make([]string, 0, len(request.headers))
 	for name := range request.headers {

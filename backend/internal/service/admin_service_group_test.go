@@ -355,11 +355,9 @@ func TestAdminServiceGetGroupModelsListCandidatesUsesCindyCatalog(t *testing.T) 
 	t.Cleanup(func() { cindyRolloutFeatures.capabilityCatalog = previous })
 
 	want := []string{
-		"claude-opus-4-8", "claude-opus-5", "claude-sonnet-5", "deepseek-v4-flash",
-		"deepseek-v4-flash-vision-exp", "deepseek-v4-pro", "gemini-3-pro-image",
-		"gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.7-flash", "glm-5.2", "glm-5.3",
-		"gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-image-2", "grok-4.5",
-		"grok-4.6", "hy3", "kimi-k3", "qwen3.8-max", "seed-2.1-pro",
+		"deepseek-v4-flash", "deepseek-v4-flash-vision-exp", "deepseek-v4-pro",
+		"gemini-3.6-flash", "glm-5.3-flash", "gpt-5.6-luna", "hy3",
+		"qwen3.8-27b", "qwen3.8-flash",
 	}
 
 	repo := &groupRepoStubForAdmin{getByID: &Group{ID: 81, Platform: PlatformCindy}}

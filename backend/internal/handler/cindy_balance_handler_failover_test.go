@@ -182,7 +182,7 @@ func (u *cindyHandlerFailoverUpstream) respond(req *http.Request, accountID int6
 	if isMessages {
 		return cindyHandlerSSEResponse(strings.Join([]string{
 			"event: message_start",
-			`data: {"type":"message_start","message":{"id":"msg_healthy_b","type":"message","role":"assistant","model":"anthropic/claude-opus-5","content":[],"usage":{"input_tokens":1,"output_tokens":0}}}`,
+			`data: {"type":"message_start","message":{"id":"msg_healthy_b","type":"message","role":"assistant","model":"google/gemini-3.6-flash","content":[],"usage":{"input_tokens":1,"output_tokens":0}}}`,
 			"",
 			"event: content_block_delta",
 			`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"messages-recovered-B"}}`,
@@ -208,7 +208,7 @@ func (u *cindyHandlerFailoverUpstream) respond(req *http.Request, accountID int6
 		`data: {"type":"response.output_text.delta","response_id":"resp_healthy_b","delta":"responses-recovered-B"}`,
 		"",
 		"event: response.completed",
-		`data: {"type":"response.completed","response":{"id":"resp_healthy_b","object":"response","model":"openai/gpt-5.6-sol","status":"completed","output":` + healthyOutput + `,"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}`,
+		`data: {"type":"response.completed","response":{"id":"resp_healthy_b","object":"response","model":"openai/gpt-5.6-luna","status":"completed","output":` + healthyOutput + `,"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}`,
 		"",
 	}, "\n")), nil
 }
@@ -382,7 +382,7 @@ func TestStrictCindyResponsesHandlerFailsOverHTTP200BudgetSSEBeforeFirstByte(t *
 	gin.SetMode(gin.TestMode)
 	h, repo, upstream, groupID := newCindyBalanceFailoverHandler(t)
 	c, recorder := newStrictCindyHandlerContext(t, groupID, "/v1/responses",
-		`{"model":"gpt-5.6-sol","input":"hi","stream":true}`)
+		`{"model":"gpt-5.6-luna","input":"hi","stream":true}`)
 
 	h.Responses(c)
 
@@ -400,9 +400,9 @@ func TestFirstClassCindyResponsesForwardsUnanchoredCodexHistoryToStickyAccount(t
 		name string
 		body string
 	}{
-		{name: "item reference", body: `{"model":"gpt-5.6-sol","prompt_cache_key":"legacy-reference-session","store":true,"input":[{"type":"item_reference","id":"fc_1"}],"stream":false}`},
-		{name: "reasoning id", body: `{"model":"gpt-5.6-sol","prompt_cache_key":"legacy-reference-session","input":[{"type":"reasoning","id":"rs_1"}],"stream":false}`},
-		{name: "referenced tool output", body: `{"model":"gpt-5.6-sol","prompt_cache_key":"legacy-reference-session","store":false,"input":[{"type":"item_reference","id":"call_1"},{"type":"function_call_output","call_id":"call_1","output":"ok"}],"stream":false}`},
+		{name: "item reference", body: `{"model":"gpt-5.6-luna","prompt_cache_key":"legacy-reference-session","store":true,"input":[{"type":"item_reference","id":"fc_1"}],"stream":false}`},
+		{name: "reasoning id", body: `{"model":"gpt-5.6-luna","prompt_cache_key":"legacy-reference-session","input":[{"type":"reasoning","id":"rs_1"}],"stream":false}`},
+		{name: "referenced tool output", body: `{"model":"gpt-5.6-luna","prompt_cache_key":"legacy-reference-session","store":false,"input":[{"type":"item_reference","id":"call_1"},{"type":"function_call_output","call_id":"call_1","output":"ok"}],"stream":false}`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -428,7 +428,7 @@ func TestFirstClassCindyResponsesReferenceHistoryRequiresSessionBinding(t *testi
 	gin.SetMode(gin.TestMode)
 	h, _, upstream, groupID := newFirstClassCindyContinuationHandler(t, nil)
 	c, recorder := newFirstClassCindyContinuationContext(t, groupID,
-		`{"model":"gpt-5.6-sol","prompt_cache_key":"missing-reference-session","input":[{"type":"reasoning","id":"rs_1"}],"stream":false}`)
+		`{"model":"gpt-5.6-luna","prompt_cache_key":"missing-reference-session","input":[{"type":"reasoning","id":"rs_1"}],"stream":false}`)
 
 	h.Responses(c)
 
@@ -442,7 +442,7 @@ func TestFirstClassCindyResponsesReferenceHistoryDistinguishesSessionStoreError(
 	cache := &cindyOpaqueStoreErrorCache{err: errors.New("redis unavailable")}
 	h, _, upstream, groupID := newFirstClassCindyContinuationHandler(t, cache)
 	c, recorder := newFirstClassCindyContinuationContext(t, groupID,
-		`{"model":"gpt-5.6-sol","prompt_cache_key":"unavailable-reference-session","input":[{"type":"reasoning","id":"rs_1"}],"stream":false}`)
+		`{"model":"gpt-5.6-luna","prompt_cache_key":"unavailable-reference-session","input":[{"type":"reasoning","id":"rs_1"}],"stream":false}`)
 
 	h.Responses(c)
 
@@ -455,13 +455,13 @@ func TestFirstClassCindyResponsesExistingAnchorUsesBoundAccount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h, _, upstream, groupID := newFirstClassCindyContinuationHandler(t, nil)
 	first, firstRecorder := newFirstClassCindyContinuationContext(t, groupID,
-		`{"model":"gpt-5.6-sol","input":"first","stream":true}`)
+		`{"model":"gpt-5.6-luna","input":"first","stream":true}`)
 	h.Responses(first)
 	require.Equal(t, http.StatusOK, firstRecorder.Code, firstRecorder.Body.String())
 	require.Equal(t, []int64{cindyHandlerExhaustedAccountID, cindyHandlerHealthyAccountID}, upstream.calls())
 
 	second, secondRecorder := newFirstClassCindyContinuationContext(t, groupID,
-		`{"model":"gpt-5.6-sol","store":true,"previous_response_id":"resp_healthy_b","input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}],"stream":true}`)
+		`{"model":"gpt-5.6-luna","store":true,"previous_response_id":"resp_healthy_b","input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}],"stream":true}`)
 	h.Responses(second)
 
 	require.Equal(t, http.StatusOK, secondRecorder.Code, secondRecorder.Body.String())
@@ -474,7 +474,7 @@ func TestFirstClassCindyResponsesExistingAnchorUsesBoundAccount(t *testing.T) {
 func TestFirstClassCindyResponsesFullReplayForcesStoreFalseAndPreservesIDs(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h, _, upstream, groupID := newFirstClassCindyContinuationHandler(t, nil)
-	body := `{"model":"gpt-5.6-sol","store":true,"input":[{"type":"message","id":"foreign-message-id","role":"user","content":"hi","phase":"analysis"},{"type":"function_call","id":"foreign-tool-id","call_id":"foreign-call-id","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"foreign-call-id","output":"ok"}],"stream":true}`
+	body := `{"model":"gpt-5.6-luna","store":true,"input":[{"type":"message","id":"foreign-message-id","role":"user","content":"hi","phase":"analysis"},{"type":"function_call","id":"foreign-tool-id","call_id":"foreign-call-id","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"foreign-call-id","output":"ok"}],"stream":true}`
 	c, recorder := newFirstClassCindyContinuationContext(t, groupID, body)
 
 	h.Responses(c)
@@ -496,12 +496,12 @@ func TestFirstClassCindyOpaqueFullUsesStableOriginalAccountBinding(t *testing.T)
 	h, _, upstream, groupID := newFirstClassCindyContinuationHandler(t, nil)
 	upstream.healthyOpaque = "cipher-stable"
 	first, firstRecorder := newFirstClassCindyContinuationContext(t, groupID,
-		`{"model":"gpt-5.6-sol","input":"establish opaque state","stream":true}`)
+		`{"model":"gpt-5.6-luna","input":"establish opaque state","stream":true}`)
 	h.Responses(first)
 	require.Equal(t, http.StatusOK, firstRecorder.Code)
 	require.Equal(t, []int64{cindyHandlerExhaustedAccountID, cindyHandlerHealthyAccountID}, upstream.calls())
 
-	secondBody := `{"model":"gpt-5.6-sol","store":false,"input":[{"type":"reasoning","id":"rs_bound","encrypted_content":"cipher-stable","phase":"analysis"},{"type":"message","role":"user","content":"different current user content"}],"stream":false}`
+	secondBody := `{"model":"gpt-5.6-luna","store":false,"input":[{"type":"reasoning","id":"rs_bound","encrypted_content":"cipher-stable","phase":"analysis"},{"type":"message","role":"user","content":"different current user content"}],"stream":false}`
 	classification, err := service.ClassifyCindyContinuation([]byte(secondBody), service.CindyContinuationProof{})
 	require.NoError(t, err)
 	lookup := h.gatewayService.LookupCindyOpaqueContinuationBinding(context.Background(), groupID, classification.OpaqueBindingIDs)
@@ -520,7 +520,7 @@ func TestFirstClassCindyOpaqueFullUsesStableOriginalAccountBinding(t *testing.T)
 func TestFirstClassCindyOpaqueFullBindingMissReplaysThroughOrdinaryFailover(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h, repo, upstream, groupID := newFirstClassCindyContinuationHandler(t, nil)
-	body := `{"model":"gpt-5.6-sol","store":false,"input":[{"type":"reasoning","id":"rs_foreign","encrypted_content":"cipher-missing","phase":"analysis"},{"type":"function_call","id":"fc_foreign","call_id":"call_foreign","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_foreign","output":"ok"},{"type":"message","role":"user","content":"next"}],"stream":false}`
+	body := `{"model":"gpt-5.6-luna","store":false,"input":[{"type":"reasoning","id":"rs_foreign","encrypted_content":"cipher-missing","phase":"analysis"},{"type":"function_call","id":"fc_foreign","call_id":"call_foreign","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_foreign","output":"ok"},{"type":"message","role":"user","content":"next"}],"stream":false}`
 	classification, err := service.ClassifyCindyContinuation([]byte(body), service.CindyContinuationProof{})
 	require.NoError(t, err)
 	require.Equal(t, service.CindyContinuationOpaqueFull, classification.Mode)
@@ -547,9 +547,9 @@ func TestFirstClassCindyOpaqueFullBindingMissUsesOrdinarySessionAffinity(t *test
 	boundAccount, err := repo.GetByID(context.Background(), cindyHandlerHealthyAccountID)
 	require.NoError(t, err)
 	require.True(t, service.IsCindyAPIKeyAccount(boundAccount.Platform, boundAccount.Type, boundAccount.Credentials))
-	require.True(t, boundAccount.IsModelSupported("gpt-5.6-sol"))
+	require.True(t, boundAccount.IsModelSupported("gpt-5.6-luna"))
 	require.True(t, boundAccount.SupportsOpenAIEndpointCapability(service.OpenAIEndpointCapabilityChatCompletions))
-	secondBody := `{"model":"gpt-5.6-sol","prompt_cache_key":"legacy-opaque-session","store":false,"input":[{"type":"reasoning","id":"rs_legacy","encrypted_content":"legacy-cipher","phase":"analysis"},{"type":"message","role":"user","content":"continue"}],"stream":true}`
+	secondBody := `{"model":"gpt-5.6-luna","prompt_cache_key":"legacy-opaque-session","store":false,"input":[{"type":"reasoning","id":"rs_legacy","encrypted_content":"legacy-cipher","phase":"analysis"},{"type":"message","role":"user","content":"continue"}],"stream":true}`
 	second, secondRecorder := newFirstClassCindyContinuationContext(t, groupID, secondBody)
 	h.Responses(second)
 
@@ -604,7 +604,7 @@ func TestFirstClassCindyOpaqueFullStoreErrorFailsClosed(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cache := &cindyOpaqueStoreErrorCache{err: errors.New("redis unavailable")}
 	h, _, upstream, groupID := newFirstClassCindyContinuationHandler(t, cache)
-	body := `{"model":"gpt-5.6-sol","store":false,"input":[{"type":"reasoning","id":"rs_foreign","encrypted_content":"cipher-error","phase":"analysis"},{"type":"message","role":"user","content":"next"}],"stream":false}`
+	body := `{"model":"gpt-5.6-luna","store":false,"input":[{"type":"reasoning","id":"rs_foreign","encrypted_content":"cipher-error","phase":"analysis"},{"type":"message","role":"user","content":"next"}],"stream":false}`
 	c, recorder := newFirstClassCindyContinuationContext(t, groupID, body)
 
 	h.Responses(c)
@@ -618,7 +618,7 @@ func TestStrictCindyNativeMessagesHandlerFailsOverHTTP200BudgetSSEBeforeFirstEve
 	gin.SetMode(gin.TestMode)
 	h, repo, upstream, groupID := newCindyBalanceFailoverHandler(t)
 	c, recorder := newStrictCindyHandlerContext(t, groupID, "/v1/messages",
-		`{"model":"claude-opus-5","max_tokens":16,"messages":[{"role":"user","content":"hi"}],"stream":true}`)
+		`{"model":"gemini-3.6-flash","max_tokens":16,"messages":[{"role":"user","content":"hi"}],"stream":true}`)
 
 	h.Messages(c)
 
@@ -640,12 +640,12 @@ func TestStrictCindyHTTP201TerminalShapesDoNotMarkBalance(t *testing.T) {
 		{
 			name: "responses",
 			path: "/v1/responses",
-			body: `{"model":"gpt-5.6-sol","input":"hi","stream":true}`,
+			body: `{"model":"gpt-5.6-luna","input":"hi","stream":true}`,
 		},
 		{
 			name: "native_messages",
 			path: "/v1/messages",
-			body: `{"model":"claude-opus-5","max_tokens":16,"messages":[{"role":"user","content":"hi"}],"stream":true}`,
+			body: `{"model":"gemini-3.6-flash","max_tokens":16,"messages":[{"role":"user","content":"hi"}],"stream":true}`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

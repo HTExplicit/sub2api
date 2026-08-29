@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -180,11 +179,11 @@ func TestOpenAIResponsesRequiredCapability(t *testing.T) {
 func TestStrictCindyResponsesImageBridgeAllowed_IsExactGPTImageOnly(t *testing.T) {
 	t.Parallel()
 
-	require.True(t, strictCindyResponsesImageBridgeAllowed(
+	require.False(t, strictCindyResponsesImageBridgeAllowed(
 		"gpt-image-2",
 		[]byte(`{"model":"gpt-image-2","input":"draw"}`),
 	))
-	require.True(t, strictCindyResponsesImageBridgeAllowed(
+	require.False(t, strictCindyResponsesImageBridgeAllowed(
 		"openai/gpt-image-2",
 		[]byte(`{"model":"openai/gpt-image-2","input":"draw"}`),
 	))
@@ -206,11 +205,10 @@ func TestResolveStrictCindyResponsesImageTools_PreservesNonCindyAndGatesStrict(t
 	require.NoError(t, err)
 	require.Equal(t, unknown, ordinary)
 
-	strict, err := resolveStrictCindyResponsesImageTools(true, []byte(
+	_, err = resolveStrictCindyResponsesImageTools(true, []byte(
 		`{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"gpt-image-2","n":1}]}`,
 	))
-	require.NoError(t, err)
-	require.Equal(t, "openai/gpt-image-2", gjson.GetBytes(strict, "tools.0.model").String())
+	require.ErrorIs(t, err, service.ErrCindyResponsesImageToolModelNotFound)
 
 	_, err = resolveStrictCindyResponsesImageTools(true, unknown)
 	require.ErrorIs(t, err, service.ErrCindyResponsesImageToolModelNotFound)
@@ -853,7 +851,7 @@ func (u *cindyNativeMessagesCaptureUpstream) capture(req *http.Request, accountI
 			"id":"msg_mixed_cindy",
 			"type":"message",
 			"role":"assistant",
-			"model":"anthropic/claude-opus-5",
+			"model":"google/gemini-3.6-flash",
 			"content":[{"type":"text","text":"ok"}],
 			"stop_reason":"end_turn",
 			"usage":{"input_tokens":1,"output_tokens":1}
@@ -922,7 +920,7 @@ func TestMessagesMixedGroupSelectedCindyForwardsNativeClaudeAlias(t *testing.T) 
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{
-		"model":"claude-opus-4-6",
+		"model":"gemini-3.6-flash",
 		"max_tokens":16,
 		"stream":false,
 		"messages":[{"role":"user","content":"hello"}]
@@ -946,7 +944,7 @@ func TestMessagesMixedGroupSelectedCindyForwardsNativeClaudeAlias(t *testing.T) 
 	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 	require.Equal(t, cindyAccountID, accountID)
 	require.Equal(t, "https://api.laxarouter.ai/v1/messages", upstreamURL)
-	require.Equal(t, "anthropic/claude-opus-5", gjson.GetBytes(upstreamBody, "model").String())
+	require.Equal(t, "google/gemini-3.6-flash", gjson.GetBytes(upstreamBody, "model").String())
 	require.NotContains(t, string(upstreamBody), "gpt-5.4")
 }
 
@@ -1009,9 +1007,8 @@ func TestImagesMixedGroupSelectedCindyRejectsUnverifiedControls(t *testing.T) {
 	h.Images(c)
 
 	accountID, _, _ := upstream.snapshot()
-	require.Equal(t, http.StatusBadRequest, recorder.Code, recorder.Body.String())
-	require.Equal(t, "invalid_request_error", gjson.GetBytes(recorder.Body.Bytes(), "error.type").String())
-	require.Contains(t, gjson.GetBytes(recorder.Body.Bytes(), "error.message").String(), "quality")
+	require.Equal(t, http.StatusNotFound, recorder.Code, recorder.Body.String())
+	require.Equal(t, "model_not_found", gjson.GetBytes(recorder.Body.Bytes(), "error.type").String())
 	require.Zero(t, accountID)
 }
 
@@ -1127,28 +1124,12 @@ func TestImagesMixedGroupGeminiEditSelectsCindyAndForwardsLiveModel(t *testing.T
 	h.Images(c)
 
 	accountID, upstreamURL, contentType, upstreamBody := upstream.snapshot()
-	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
-	require.Equal(t, cindyAccountID, accountID)
-	require.Equal(t, "https://api.laxarouter.ai/v1/images/edits", upstreamURL)
-	mediaType, params, err := mime.ParseMediaType(contentType)
-	require.NoError(t, err)
-	require.Equal(t, "multipart/form-data", mediaType)
-	reader := multipart.NewReader(bytes.NewReader(upstreamBody), params["boundary"])
-	upstreamModel := ""
-	for {
-		part, partErr := reader.NextPart()
-		if partErr == io.EOF {
-			break
-		}
-		require.NoError(t, partErr)
-		if part.FormName() == "model" {
-			value, readErr := io.ReadAll(part)
-			require.NoError(t, readErr)
-			upstreamModel = string(value)
-		}
-		require.NoError(t, part.Close())
-	}
-	require.Equal(t, "google/gemini-3-pro-image", upstreamModel)
+	require.Equal(t, http.StatusBadRequest, recorder.Code, recorder.Body.String())
+	require.Equal(t, "invalid_request_error", gjson.GetBytes(recorder.Body.Bytes(), "error.type").String())
+	require.Zero(t, accountID)
+	require.Empty(t, upstreamURL)
+	require.Empty(t, contentType)
+	require.Empty(t, upstreamBody)
 }
 
 func TestOpenAIModelMappedBody(t *testing.T) {
