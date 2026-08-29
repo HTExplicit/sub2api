@@ -73,7 +73,7 @@ func applyCindyGPT56CacheCreationFallback(model string, pricing CindyTextPricing
 		return pricing
 	}
 	switch capability.PublicID {
-	case "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra":
+	case "gpt-5.6-luna":
 	default:
 		return pricing
 	}

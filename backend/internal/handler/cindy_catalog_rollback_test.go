@@ -119,9 +119,10 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "Model capability catalog is not enabled")
 	require.Empty(t, GetUpstreamEndpoint(c, service.PlatformOpenAI))
 
-	// Exact legacy Laxa rows retain only the two compatibility aliases while the
+	// Exact legacy Laxa rows retain only the Luna compatibility alias while the
 	// catalog is disabled. Ordinary OpenAI rows never inherit that behavior,
-	// even when a stale group marker is present.
+	// even when a stale group marker is present. The permanent free-pool
+	// allowlist remains authoritative independently from catalog publication.
 	for _, tc := range []struct {
 		name          string
 		request       string
@@ -131,10 +132,6 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 		groupPlatform string
 		modelMapping  map[string]any
 	}{
-		{
-			name: "configured_stable_sol", request: "gpt-5.6-sol", expected: "openai/gpt-5.6-sol",
-			modelMapping: map[string]any{"gpt-5.6-sol": "openai/gpt-5.6-sol"},
-		},
 		{
 			name: "configured_stable_luna", request: "gpt-5.6-luna", expected: "openai/gpt-5.6-luna",
 			modelMapping: map[string]any{"gpt-5.6-luna": "openai/gpt-5.6-luna"},
@@ -176,6 +173,33 @@ func TestCindyCatalogRollbackHandlerHelper(t *testing.T) {
 			require.Equal(t, []string{tc.expected}, upstream.models())
 		})
 	}
+
+	t.Run("configured_paid_sol_stays_rejected", func(t *testing.T) {
+		h, accountRepo, upstream, handlerGroupID := newCindyBalanceFailoverHandler(t)
+		accountRepo.accounts = accountRepo.accounts[1:]
+		accountRepo.accounts[0].Platform = service.PlatformOpenAI
+		accountRepo.accounts[0].WirePlatform = ""
+		accountRepo.accounts[0].ProviderProfile = ""
+		accountRepo.accounts[0].Credentials["model_mapping"] = map[string]any{
+			"gpt-5.6-sol": "openai/gpt-5.6-sol",
+		}
+		accountRepo.accounts[0].Extra["openai_passthrough"] = false
+		ctx, recorder := newStrictCindyHandlerContext(t, handlerGroupID, "/v1/responses",
+			`{"model":"gpt-5.6-sol","input":"hi","stream":false}`)
+		rawAPIKey, exists := ctx.Get(string(middleware2.ContextKeyAPIKey))
+		require.True(t, exists)
+		requestAPIKey, ok := rawAPIKey.(*service.APIKey)
+		require.True(t, ok)
+		requestAPIKey.Group.Platform = service.PlatformOpenAI
+		requestAPIKey.Group.WirePlatform = ""
+		requestAPIKey.Group.ProviderProfile = ""
+
+		h.Responses(ctx)
+
+		require.Equal(t, http.StatusBadRequest, recorder.Code, recorder.Body.String())
+		require.Contains(t, recorder.Body.String(), "not available to the free-key pool")
+		require.Empty(t, upstream.models())
+	})
 
 	for _, tc := range []struct {
 		name           string

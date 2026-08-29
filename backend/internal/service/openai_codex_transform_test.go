@@ -1517,45 +1517,6 @@ func TestResolveCindyResponsesImageTools_ValidatesAndMapsBeforeSelection(t *test
 	}
 }
 
-func TestResolveCindyResponsesImageTools_TopLevelLiveIDNormalizesAndValidatesControls(t *testing.T) {
-	t.Parallel()
-
-	for _, model := range []string{"openai/gpt-image-2", "gpt-image-2"} {
-		_, err := ResolveCindyResponsesImageTools([]byte(
-			`{"model":"` + model + `","input":"draw","size":"1024x1024","quality":"low","n":1}`,
-		))
-		require.ErrorIs(t, err, ErrCindyResponsesImageToolModelNotFound)
-	}
-
-	tests := []struct {
-		name string
-		body string
-		want string
-	}{
-		{
-			name: "size",
-			body: `{"model":"openai/gpt-image-2","input":"draw","size":"1536x1024","quality":"low","n":1}`,
-			want: "model is not verified",
-		},
-		{
-			name: "quality",
-			body: `{"model":"openai/gpt-image-2","input":"draw","size":"1024x1024","quality":"high","n":1}`,
-			want: "model is not verified",
-		},
-		{
-			name: "count",
-			body: `{"model":"openai/gpt-image-2","input":"draw","size":"1024x1024","quality":"low","n":2}`,
-			want: "model is not verified",
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			_, err := ResolveCindyResponsesImageTools([]byte(test.body))
-			require.ErrorContains(t, err, test.want)
-		})
-	}
-}
-
 func TestValidateOpenAIResponsesImageModel_RejectsImageOnlyModel(t *testing.T) {
 	err := validateOpenAIResponsesImageModel(map[string]any{
 		"tools": []any{

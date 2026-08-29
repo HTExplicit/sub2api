@@ -152,7 +152,7 @@ func cindyResponsesImageValidationAccount(cindy bool) service.Account {
 	return account
 }
 
-func TestStrictCindyResponsesImageRequestsRejectModelsOutsideFreePool(t *testing.T) {
+func TestStrictCindyResponsesRejectsModelsOutsideOrdinaryFreePool(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	tests := []struct {
 		name string
@@ -165,6 +165,14 @@ func TestStrictCindyResponsesImageRequestsRejectModelsOutsideFreePool(t *testing
 		{
 			name: "top level image bridge",
 			body: `{"model":"gpt-image-2","input":"Create a small red square on white.","stream":false,"size":"1024x1024","quality":"low","n":1}`,
+		},
+		{
+			name: "management only web search ID",
+			body: `{"model":"cindy/web-search","input":"search","stream":false}`,
+		},
+		{
+			name: "management only auto review ID",
+			body: `{"model":"cindy/auto-review","input":"review","stream":false}`,
 		},
 	}
 	for _, test := range tests {

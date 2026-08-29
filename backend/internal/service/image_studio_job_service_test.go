@@ -100,26 +100,7 @@ func TestImageStudioEligibleKeysHidesUnavailableCindyImageCandidatesAndCredentia
 
 	items, err := studio.EligibleKeys(context.Background(), 7)
 	require.NoError(t, err)
-	require.Len(t, items, 1)
-	require.Equal(t, key.ID, items[0].APIKey.ID)
-	require.Empty(t, items[0].Capabilities)
-
-	nativeCapabilities := make(map[string]CindyCapability)
-	for _, capability := range CindyCapabilities() {
-		nativeCapabilities[capability.PublicID] = capability
-	}
-	gptNative := nativeCapabilities[ImageStudioModelGPTImage2]
-	require.False(t, gptNative.PublicModel)
-	require.NotNil(t, gptNative.Controls)
-	require.NotNil(t, gptNative.Controls.Generation)
-	require.Equal(t, 1, gptNative.Controls.Generation.MaxOutputCount)
-	geminiNative := nativeCapabilities[ImageStudioModelGeminiProImage]
-	require.False(t, geminiNative.PublicModel)
-	require.NotNil(t, geminiNative.Controls)
-	require.NotNil(t, geminiNative.Controls.Generation)
-	require.NotNil(t, geminiNative.Controls.Edit)
-	require.Equal(t, 1, geminiNative.Controls.Generation.MaxOutputCount)
-	require.Equal(t, 1, geminiNative.Controls.Edit.MaxOutputCount)
+	require.Empty(t, items, "the permanent free Cindy catalog has no Image Studio model")
 
 	raw, err := json.Marshal(items)
 	require.NoError(t, err)
@@ -128,7 +109,7 @@ func TestImageStudioEligibleKeysHidesUnavailableCindyImageCandidatesAndCredentia
 	require.NotContains(t, string(raw), `"key"`)
 }
 
-func TestImageStudioCreatePersistsInputsAndFourFanoutItems(t *testing.T) {
+func TestImageStudioCreateRejectsRemovedPaidCindyImageModel(t *testing.T) {
 	group, key, account := canonicalImageStudioFixture()
 	repo := &imageStudioRepoFake{job: &ImageStudioJob{ID: 61, UserID: 7, APIKeyID: key.ID, Count: 4, Status: ImageStudioJobPending}}
 	store := &imageStudioStoreFake{}
@@ -145,13 +126,8 @@ func TestImageStudioCreatePersistsInputsAndFourFanoutItems(t *testing.T) {
 		Prompt: " replace the sky ", Count: 4,
 	}, &ImageStudioUpload{Data: []byte("reference"), ContentType: "image/png"}, &ImageStudioUpload{Data: []byte("mask"), ContentType: "image/png"})
 
-	require.NoError(t, err)
-	require.Equal(t, int64(61), job.ID)
-	require.Equal(t, "replace the sky", repo.created.Input.Prompt)
-	require.Equal(t, "1024x1024", repo.created.Input.Size)
-	require.Equal(t, "low", repo.created.Input.Quality)
-	require.Equal(t, 4, repo.created.Input.Count)
-	require.Len(t, repo.created.InputArtifacts, 2)
-	require.Equal(t, ImageStudioFileRetention, repo.created.RequestExpiresAt.Sub(studio.now()))
-	require.Equal(t, ImageStudioMetadataRetention, repo.created.RetainUntil.Sub(studio.now()))
+	require.Nil(t, job)
+	require.ErrorContains(t, err, "Image Studio model is unavailable")
+	require.Empty(t, repo.created.Input.Model)
+	require.Empty(t, store.saved)
 }

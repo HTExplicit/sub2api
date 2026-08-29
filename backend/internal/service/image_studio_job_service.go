@@ -68,6 +68,9 @@ func (s *ImageStudioService) EligibleKeys(ctx context.Context, userID int64) ([]
 		return nil, fmt.Errorf("list image studio keys: %w", err)
 	}
 	capabilities := imageStudioModelCapabilities()
+	if len(capabilities) == 0 {
+		return []ImageStudioEligibleKey{}, nil
+	}
 	items := make([]ImageStudioEligibleKey, 0, len(keys))
 	groupEligibility := make(map[int64]bool)
 	groupChecked := make(map[int64]bool)
@@ -184,6 +187,10 @@ func (s *ImageStudioService) Create(
 	}
 	if err := ValidateImageStudioCreateInput(input, reference != nil, mask != nil); err != nil {
 		return nil, err
+	}
+	capability := cindyCapabilityByPublicID[input.Model]
+	if capability == nil || !capability.PublicModel || capability.Kind != CindyModelKindImage {
+		return nil, newImageStudioError(400, "model_unavailable", "Image Studio model is unavailable")
 	}
 	if _, err := s.eligibleAPIKey(ctx, userID, input.APIKeyID); err != nil {
 		return nil, err

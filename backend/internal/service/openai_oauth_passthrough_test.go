@@ -1563,9 +1563,14 @@ func TestOpenAIGatewayService_OpenAIPassthrough_RetryableStatusesTriggerFailover
 				account.ProviderProfile = ProviderProfileCindyLaxaV1
 				account.Credentials = cindyCredentials()
 			}
+			requestModel := "gpt-5.2"
 			requestBody := originalBody
+			if tc.cindy {
+				requestModel = "gpt-5.6-luna"
+				requestBody = []byte(`{"model":"gpt-5.6-luna","stream":false,"instructions":"local-test-instructions","input":[{"type":"text","text":"hi"}]}`)
+			}
 			if tc.stream {
-				requestBody = []byte(`{"model":"gpt-5.2","stream":true,"instructions":"local-test-instructions","input":[{"type":"text","text":"hi"}]}`)
+				requestBody = []byte(`{"model":"` + requestModel + `","stream":true,"instructions":"local-test-instructions","input":[{"type":"text","text":"hi"}]}`)
 			}
 			start := time.Now()
 			_, err := svc.Forward(context.Background(), c, account, requestBody)

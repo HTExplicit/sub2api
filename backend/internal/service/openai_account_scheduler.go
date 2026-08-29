@@ -2558,15 +2558,18 @@ func accountSupportsOpenAICapabilities(ctx context.Context, account *Account, re
 		return CindyAlphaSearchModelAvailable(requestedModel) &&
 			account.SupportsOpenAIEndpointCapability(requiredCapability)
 	}
-	cindyCatalogEnabled := CindyCapabilityCatalogFeatureEnabled()
-	if isCindy && cindyCatalogEnabled && strings.TrimSpace(requestedModel) != "" {
+	if isCindy && strings.TrimSpace(requestedModel) != "" {
 		endpoint, mapped := cindyEndpointForOpenAICapability(requiredCapability)
-		if requiredCapability != "" && (!mapped || !cindyModelSupportsOpenAIEndpoint(requestedModel, endpoint)) {
+		if requiredCapability == "" {
+			if !CindyFreePoolModelAllowed(requestedModel) {
+				return false
+			}
+		} else if !mapped || !cindyFreePoolModelSupportsOpenAIEndpoint(requestedModel, endpoint) {
 			return false
 		}
 	}
 	if imageEndpoint, ok := openAICindyImageEndpoint(ctx); ok {
-		if isCindy && cindyCatalogEnabled && !CindyModelSupportsEndpoint(requestedModel, imageEndpoint) {
+		if isCindy && !CindyFreePoolModelSupportsEndpoint(requestedModel, imageEndpoint) {
 			return false
 		}
 		if !isCindy && !IsNativeOpenAIImagesModel(requestedModel) {
@@ -2594,8 +2597,8 @@ func cindyEndpointForOpenAICapability(capability OpenAIEndpointCapability) (Cind
 	}
 }
 
-func cindyModelSupportsOpenAIEndpoint(model string, endpoint CindyEndpoint) bool {
-	if CindyModelSupportsEndpoint(model, endpoint) {
+func cindyFreePoolModelSupportsOpenAIEndpoint(model string, endpoint CindyEndpoint) bool {
+	if CindyFreePoolModelSupportsEndpoint(model, endpoint) {
 		return true
 	}
 	return endpoint == CindyEndpointResponses && CindyModelSupportsResponsesImageBridge(model)

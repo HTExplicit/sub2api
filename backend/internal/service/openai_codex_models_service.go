@@ -728,7 +728,7 @@ func newCindyCodexModel(capability CindyCapability, priority int) cindyCodexMode
 
 func cindyCodexTruncationPolicyForModel(modelID string) cindyCodexTruncationPolicy {
 	switch modelID {
-	case "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra":
+	case "gpt-5.6-luna":
 		// Exact openai/codex rust-v0.147.0 models.json contract.
 		return cindyCodexTruncationPolicy{Mode: "tokens", Limit: 10000}
 	default:
@@ -769,7 +769,8 @@ func cindyCodexReasoningEffortDescription(effort string) string {
 
 // BuildCindyCodexModelsManifest builds the deterministic local manifest used
 // by strict Cindy groups. It never fetches Cindy's upstream /models response,
-// so live IDs, hidden 5.4 aliases, and unverified candidates cannot leak.
+// so live IDs, the management-only special IDs, and removed paid models cannot
+// leak.
 func BuildCindyCodexModelsManifest(ifNoneMatch string) (*CodexModelsManifest, error) {
 	models := make([]cindyCodexModel, 0, len(cindyCapabilityCatalog))
 	for priority, modelID := range CindyCodexPublicModelIDs() {
@@ -875,7 +876,8 @@ func mergeCindyCodexModelsManifest(body []byte) ([]byte, error) {
 
 	// The ordinary manifest is an independent provider contract. Preserve its
 	// entries without semantic rewriting, including IDs that happen
-	// to match a Cindy live ID, hidden alias, or unverified candidate. Catalog
+	// to match a Cindy live ID, compatibility alias, or management-only special
+	// ID. Catalog
 	// verification constrains only exact Cindy sources.
 	merged := append([]json.RawMessage(nil), models...)
 	seenExactSlugs := make(map[string]struct{}, len(models))

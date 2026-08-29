@@ -7,14 +7,7 @@ import (
 
 // CindyCapabilityCatalogVersion is bumped whenever the fixed Cindy data-plane
 // catalogue or one of its verified endpoint decisions changes.
-const CindyCapabilityCatalogVersion = "2026-08-29.1"
-
-// CindyModelMetadataSchemaVersion and CindyModelMetadataSourceSHA256 pin the
-// exact public international Cindy catalog shipped with this release.
-const (
-	CindyModelMetadataSchemaVersion = 4
-	CindyModelMetadataSourceSHA256  = "4f7730d47b10ed0d2c1e5b87789e571fe719c6bca3907f26f811c568eee2c29a"
-)
+const CindyCapabilityCatalogVersion = "2026-08-30.1"
 
 // CindyModelMetadataSourceRevision pins the shipped Cindy registry used for
 // display, context-window, output-limit, and reasoning metadata.
@@ -38,6 +31,10 @@ const CindyDefaultTestModel = "gpt-5.6-luna"
 // CindyWebSearchModel is the exact native Messages model verified with the
 // web_search_20250305 server tool.
 const CindyWebSearchModel = "cindy/web-search"
+
+// CindyAutoReviewModel remains visible only in the management inventory. It
+// has no public schema or handler and must fail closed on every routing path.
+const CindyAutoReviewModel = "cindy/auto-review"
 
 type CindyModelKind string
 
@@ -214,43 +211,7 @@ type CindyModelCapability struct {
 }
 
 var cindyCompatibilityAliases = map[string]string{
-	"gpt-5.4":      "gpt-5.6-sol",
 	"gpt-5.4-mini": "gpt-5.6-luna",
-}
-
-// cindyFreeModelUpstreamIDs pins the complete authenticated free-key inventory.
-// The two cindy/* special IDs have no v4 candidate row, so init publishes only
-// the nine ordinary candidate intersections; their independent endpoint gates
-// remain authoritative.
-var cindyFreeModelUpstreamIDs = map[string]struct{}{
-	"cindy/auto-review":                     {},
-	"cindy/web-search":                      {},
-	"deepseek/deepseek-v4-flash":            {},
-	"deepseek/deepseek-v4-flash-vision-exp": {},
-	"deepseek/deepseek-v4-pro":              {},
-	"google/gemini-3.6-flash":               {},
-	"openai/gpt-5.6-luna":                   {},
-	"qwen/qwen3.8-27b":                      {},
-	"qwen/qwen3.8-flash":                    {},
-	"tencent/hy3":                           {},
-	"z-ai/glm-5.3-flash":                    {},
-}
-
-var cindyHiddenAliases = map[string]string{
-	"claude-opus-4":              "claude-opus-5",
-	"claude-opus-4-20250514":     "claude-opus-5",
-	"claude-opus-4-1-20250805":   "claude-opus-5",
-	"claude-opus-4-5-20251101":   "claude-opus-5",
-	"claude-opus-4-6":            "claude-opus-5",
-	"claude-opus-4-7":            "claude-opus-5",
-	"claude-sonnet-4":            "claude-sonnet-5",
-	"claude-sonnet-4-20250514":   "claude-sonnet-5",
-	"claude-sonnet-4-5-20250929": "claude-sonnet-5",
-	"claude-sonnet-4-6":          "claude-sonnet-5",
-	"claude-3-5-haiku-20241022":  "claude-sonnet-5",
-	"claude-haiku-4-5-20251001":  "claude-sonnet-5",
-	"claude-haiku-4-6":           "claude-sonnet-5",
-	"claude-haiku-5":             "claude-sonnet-5",
 }
 
 var (
@@ -263,13 +224,13 @@ func init() {
 	cindyCapabilityByUpstreamID = make(map[string]*CindyCapability, len(cindyCapabilityCatalog))
 	for i := range cindyCapabilityCatalog {
 		capability := &cindyCapabilityCatalog[i]
-		_, capability.PublicModel = cindyFreeModelUpstreamIDs[capability.LiveUpstreamID]
 		cindyCapabilityByPublicID[capability.PublicID] = capability
 		cindyCapabilityByUpstreamID[capability.LiveUpstreamID] = capability
 	}
 }
 
-// CindyCapabilities returns a defensive copy of the 25 fixed v4 candidates.
+// CindyCapabilities returns a defensive copy of the complete 11-item free
+// inventory: nine ordinary reasoning models and two special IDs.
 func CindyCapabilities() []CindyCapability {
 	result := make([]CindyCapability, len(cindyCapabilityCatalog))
 	for i := range cindyCapabilityCatalog {
@@ -326,10 +287,9 @@ func (c CindyCapability) CodexReasoningEfforts() []string {
 	return append([]string(nil), c.ReasoningEfforts...)
 }
 
-// CindyCatalogModels returns all 25 pinned v4 candidates for management views.
-// It is intentionally independent of rollout flags and PublicModel so an
-// administrator can inspect the complete fixed inventory without advertising
-// unverified candidates on client-facing endpoints.
+// CindyCatalogModels returns the complete 11-item free inventory for
+// management views. It is independent of rollout flags so the two special IDs
+// remain visible without entering ordinary client-facing model surfaces.
 func CindyCatalogModels() []CindyCatalogModel {
 	models := make([]CindyCatalogModel, 0, len(cindyCapabilityCatalog))
 	for _, capability := range cindyCapabilityCatalog {
@@ -448,16 +408,11 @@ func resolveKnownCindyCapability(model string) (CindyCapability, bool) {
 			return cloneCindyCapability(*capability), true
 		}
 	}
-	if publicID, ok := cindyHiddenAliases[model]; ok {
-		if capability := cindyCapabilityByPublicID[publicID]; capability != nil {
-			return cloneCindyCapability(*capability), true
-		}
-	}
 	return CindyCapability{}, false
 }
 
-// CindyCompatibilityMappedUpstreamModel resolves only the two exact OpenAI
-// compatibility aliases that must remain callable while the broader Cindy
+// CindyCompatibilityMappedUpstreamModel resolves only the exact OpenAI
+// compatibility alias that must remain callable while the broader Cindy
 // capability catalog is rolled back. The caller is responsible for enforcing
 // canonical Cindy group identity or the exact temporary legacy Laxa runtime
 // identity before applying the result.
@@ -488,7 +443,7 @@ func CindyCompatibilityRoutingTarget(model string) bool {
 	return false
 }
 
-// CindyCompatibilityTextPricingForModel resolves only the two exact aliases
+// CindyCompatibilityTextPricingForModel resolves only the exact alias
 // that remain routable when the broader Cindy capability catalog is disabled.
 // Callers must enforce canonical Cindy identity or the exact temporary legacy
 // Laxa runtime identity before using this price.
@@ -519,8 +474,18 @@ func CindyMappedUpstreamModel(model string) (string, bool) {
 }
 
 func CindyModelSupportsEndpoint(model string, endpoint CindyEndpoint) bool {
-	capability, ok := ResolveCindyCapability(model)
-	if !ok {
+	if !CindyCapabilityCatalogFeatureEnabled() {
+		return false
+	}
+	return CindyFreePoolModelSupportsEndpoint(model, endpoint)
+}
+
+// CindyFreePoolModelSupportsEndpoint is the permanent Cindy data-plane
+// allowlist. Unlike catalog publication it is not a rollout flag: disabling
+// the public catalog must never restore routing to removed paid models.
+func CindyFreePoolModelSupportsEndpoint(model string, endpoint CindyEndpoint) bool {
+	capability, ok := resolveKnownCindyCapability(model)
+	if !ok || !cindyFreePoolOrdinaryCapability(capability) {
 		return false
 	}
 	if (endpoint == CindyEndpointImagesGenerate || endpoint == CindyEndpointImagesEdit) &&
@@ -536,6 +501,19 @@ func CindyModelSupportsEndpoint(model string, endpoint CindyEndpoint) bool {
 		}
 	}
 	return false
+}
+
+// CindyFreePoolModelAllowed reports whether a model belongs to the nine-item
+// ordinary routing surface even when a scheduler call does not specify an
+// endpoint capability.
+func CindyFreePoolModelAllowed(model string) bool {
+	capability, ok := resolveKnownCindyCapability(model)
+	return ok && cindyFreePoolOrdinaryCapability(capability)
+}
+
+func cindyFreePoolOrdinaryCapability(capability CindyCapability) bool {
+	return capability.PublicModel && capability.Kind == CindyModelKindText &&
+		len(capability.VerifiedEndpoints) > 0
 }
 
 // CindyAlphaSearchModelAvailable reports whether a client-visible Cindy model
