@@ -2690,6 +2690,23 @@ func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResultForSelection(sel
 	}
 }
 
+// ReportOpenAIAccountScheduleResultForSelectionWithContext preserves the
+// existing reporter interface while carrying the request marker needed to
+// distinguish injected business success from an unrelated scheduler success.
+func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResultForSelectionWithContext(
+	selection *AccountSelectionResult,
+	accountID int64,
+	model string,
+	success bool,
+	firstTokenMs *int,
+	requestCtx context.Context,
+) {
+	s.ReportOpenAIAccountScheduleResultForSelection(selection, accountID, model, success, firstTokenMs)
+	if success {
+		s.observeCodexQuotaOverdraftScheduleSuccess(accountID, model, []context.Context{requestCtx})
+	}
+}
+
 // ReportOpenAIAccountSameAccountRetry records the failed attempt without
 // ending the selection's half-open probe. Ownership transfers to the exact
 // same-account selection and is finalized only by success, rotation, or stop.

@@ -907,6 +907,8 @@ export default {
         planType: '订阅档位（手动覆盖）',
         planTypeDesc: '手动纠正本账号的 ChatGPT 订阅档位（Plus / Pro / Free）。注意：令牌临期刷新或命中 429 限流时，会用真实档位自动覆盖此处设置。',
         planTypeClear: '清空（自动识别）',
+        codexQuotaOverdraft: 'Codex 额度透支',
+        codexQuotaOverdraftDesc: '仅对 OpenAI OAuth 账号生效。5h/7d 额度达到预热阈值后，允许有界继续请求并记录透支状态。',
         codexCLIOnly: '仅允许 Codex 官方客户端',
         codexCLIOnlyDesc: '仅对 OpenAI OAuth 生效。开启后仅允许 Codex 官方客户端家族访问；关闭后完全绕过并保持原逻辑。',
         codexCLIOnlyAppServer: '允许 Codex app-server 客户端',

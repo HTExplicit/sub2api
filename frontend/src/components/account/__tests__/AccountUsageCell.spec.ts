@@ -622,6 +622,42 @@ describe('AccountUsageCell', () => {
   expect(wrapper.text()).toContain('7d|100|106540000')
   })
 
+  it('OpenAI OAuth 透支探测状态会显示在账号用量单元格', async () => {
+    getUsage.mockResolvedValue({
+      five_hour: {
+        utilization: 100,
+        resets_at: '2099-03-07T12:00:00Z',
+        remaining_seconds: 3600
+      },
+      codex_quota_overdraft: {
+        status: 'failed',
+        quota_window: '5h',
+        cycle_key: '5h:4076577600',
+        attempts: 1,
+        limit: 1,
+        started_at: '2026-03-07T10:00:00Z',
+        recover_at: '2099-03-07T12:00:00Z'
+      }
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({ id: 2005, platform: 'openai', type: 'oauth' })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: true,
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('usage.overdraftProbeFailed')
+    expect(wrapper.text()).toContain('1/1 · 5h')
+  })
+
   it('Key 账号会展示 today stats 徽章并带 A/U 提示', async () => {
 		const wrapper = mount(AccountUsageCell, {
 		  props: {

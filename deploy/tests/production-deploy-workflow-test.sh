@@ -93,10 +93,11 @@ EXPECTED_CURRENT_RELEASE_TAG= \
 CONFIRMATION=DEPLOY \
 CINDY_HEALTH=true \
 CINDY_CAPABILITY_CATALOG=false \
-CINDY_SEARCH=false \
-IMAGE_STUDIO=false \
-CINDY_RESPONSES_IMAGE_BRIDGE=false \
-GITHUB_OUTPUT="$tmpdir/github-output" \
+  CINDY_SEARCH=false \
+  IMAGE_STUDIO=false \
+  CINDY_RESPONSES_IMAGE_BRIDGE=false \
+  OVERDRAFT=false \
+  GITHUB_OUTPUT="$tmpdir/github-output" \
 bash "$resolve_script" >"$tmpdir/resolve-output" 2>&1
 resolve_status=$?
 set -e
@@ -215,12 +216,13 @@ run_resolve() {
     CINDY_SEARCH=false \
     IMAGE_STUDIO=false \
     CINDY_RESPONSES_IMAGE_BRIDGE=false \
+    OVERDRAFT=false \
     GITHUB_OUTPUT="$tmpdir/github-output" \
     bash "$resolve_script" >"$tmpdir/resolve-output" 2>&1
 }
 
 run_apply() {
-  local operation=$1 image_ref=$2 expected_current=$3 rollout=$4
+  local operation=$1 image_ref=$2 expected_current=$3 rollout=$4 overdraft=${5:-false}
   : >"$tmpdir/ssh-capture"
   : >"$tmpdir/ssh-calls"
   : >"$tmpdir/apply-output"
@@ -235,6 +237,7 @@ run_apply() {
     IMAGE_REF="$image_ref" \
     EXPECTED_CURRENT_IMAGE_REF="$expected_current" \
     CINDY_ROLLOUT="$rollout" \
+    OVERDRAFT="$overdraft" \
     bash "$apply_script" >"$tmpdir/apply-output" 2>&1
 }
 
@@ -346,11 +349,15 @@ fi
 
 run_apply deploy "$rollback_current_ref" '' 'cindy=true,true,true,false,false' ||
   fail 'valid deploy operation did not execute successfully'
-assert_ssh_invocation "deploy $rollback_current_ref cindy=true,true,true,false,false"
+assert_ssh_invocation "deploy $rollback_current_ref cindy=true,true,true,false,false overdraft=false"
 
 run_apply rollback "$rollback_target_ref" "$rollback_current_ref" 'cindy=true,false,false,false,false' ||
   fail 'valid rollback operation did not execute successfully'
-assert_ssh_invocation "rollback $rollback_target_ref from=$rollback_current_ref cindy=true,false,false,false,false"
+assert_ssh_invocation "rollback $rollback_target_ref from=$rollback_current_ref cindy=true,false,false,false,false overdraft=false"
+
+run_apply deploy "$rollback_current_ref" '' 'cindy=true,true,true,false,false' true ||
+  fail 'valid overdraft-enabled deploy operation did not execute successfully'
+assert_ssh_invocation "deploy $rollback_current_ref cindy=true,true,true,false,false overdraft=true"
 
 if run_apply deploy "$rollback_current_ref" "$rollback_target_ref" 'cindy=true,true,true,false,false'; then
   fail 'deploy accepted an unexpected expected-current image'
@@ -382,6 +389,10 @@ if run_apply invalid "$rollback_current_ref" '' 'cindy=true,true,true,false,fals
   fail 'immutable release operation accepted an unknown operation'
 fi
 assert_ssh_not_invoked
+if run_apply deploy "$rollback_current_ref" '' 'cindy=true,true,true,false,false' 1; then
+  fail 'immutable release operation accepted a non-boolean overdraft flag'
+fi
+assert_ssh_not_invoked
 
 inspect=$'Name: image\nDigest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nManifest: amd64\nManifest: attestation'
 digest=$(awk '$1 == "Digest:" && digest == "" {digest=$2} END {if (digest == "") exit 1; print digest}' <<<"$inspect")
@@ -390,7 +401,7 @@ digest=$(awk '$1 == "Digest:" && digest == "" {digest=$2} END {if (digest == "")
 
 for input in operation release_tag expected_current_release_tag confirmation \
   cindy_health cindy_capability_catalog cindy_search image_studio \
-  cindy_responses_image_bridge; do
+  cindy_responses_image_bridge overdraft; do
   grep -Fq "      ${input}:" "$WORKFLOW" || fail "missing typed workflow input: $input"
 done
 grep -Fq '          - deploy' "$WORKFLOW" || fail 'workflow operation is missing deploy'
@@ -424,9 +435,9 @@ grep -Fq '\tfalse\tfalse' "$WORKFLOW" ||
   fail 'deploy and rollback releases must be published and non-prerelease'
 grep -Fq 'version_strictly_less "$RELEASE_TAG" "$EXPECTED_CURRENT_RELEASE_TAG"' "$WORKFLOW" ||
   fail 'rollback must require the target release to be older than expected-current'
-grep -Fq 'remote_command="deploy ${IMAGE_REF} ${CINDY_ROLLOUT}"' "$WORKFLOW" ||
+grep -Fq 'remote_command="deploy ${IMAGE_REF} ${CINDY_ROLLOUT} overdraft=${OVERDRAFT}"' "$WORKFLOW" ||
   fail 'deploy must pass the canonical rollout tuple to the forced command'
-grep -Fq 'remote_command="rollback ${IMAGE_REF} from=${EXPECTED_CURRENT_IMAGE_REF} ${CINDY_ROLLOUT}"' "$WORKFLOW" ||
+grep -Fq 'remote_command="rollback ${IMAGE_REF} from=${EXPECTED_CURRENT_IMAGE_REF} ${CINDY_ROLLOUT} overdraft=${OVERDRAFT}"' "$WORKFLOW" ||
   fail 'rollback must bind the target to the exact expected-current image'
 
 validate_rollout() {

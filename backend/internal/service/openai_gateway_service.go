@@ -442,6 +442,7 @@ type OpenAIGatewayService struct {
 	settingService        *SettingService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
 	businessPromptService *BusinessSystemPromptService
+	codexQuotaOverdraft   *CodexQuotaOverdraftCoordinator
 	cindyHealth           CindyHealthCoordinator
 	usageCache            *UsageCache
 	usageCommitObserver   UsageCommitObserver
@@ -453,6 +454,7 @@ type OpenAIGatewayService struct {
 	openaiSchedulerOnce            sync.Once
 	openaiProxyStreamCircuitOnce   sync.Once
 	openaiWSPassthroughDialerOnce  sync.Once
+	codexQuotaOverdraftOnce        sync.Once
 	openaiModelTransientOnce       sync.Once
 	agentIdentityTaskMu            sync.Mutex
 	openaiWSPool                   *openAIWSConnPool
@@ -548,6 +550,7 @@ func NewOpenAIGatewayService(
 	// 拿不到配置，故在此发布进程级开关快照。配置取反义，零值即「强制统一出口开启」。
 	if cfg != nil {
 		SetCodexIdentityEnforcementEnabled(!cfg.Gateway.DisableCodexIdentityEnforcement)
+		SetCodexQuotaOverdraftEnabled(cfg.Gateway.CodexQuotaOverdraftEnabled)
 	}
 	svc := &OpenAIGatewayService{
 		accountRepo:         accountRepo,

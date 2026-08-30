@@ -1234,6 +1234,10 @@ func (s *OpenAIGatewayService) updateCodexUsageSnapshot(ctx context.Context, acc
 	if len(updates) == 0 {
 		return
 	}
+	if s.codexQuotaOverdraft != nil {
+		s.processCodexQuotaOverdraftUsageSnapshot(ctx, accountID, now, updates)
+		return
+	}
 	if !s.getCodexSnapshotThrottle().Allow(accountID, now) {
 		return
 	}
