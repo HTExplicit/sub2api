@@ -6,12 +6,6 @@ import (
 	"time"
 )
 
-type codexQuotaOverdraftAccountTestCoordinator interface {
-	ObserveAccount(account *Account, preferredModel string)
-	ObserveBusinessSuccess(account *Account, preferredModel string)
-	HandleQuota429(ctx context.Context, account *Account, headers http.Header, body []byte, preferredModel string) bool
-}
-
 func (s *AccountTestService) SetCodexQuotaOverdraftCoordinator(coordinator *CodexQuotaOverdraftCoordinator) {
 	if s != nil {
 		s.codexQuotaOverdraft = coordinator
