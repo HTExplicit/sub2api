@@ -49,6 +49,11 @@ on:
         required: true
         default: false
         type: boolean
+      overdraft:
+        description: 'Enable Codex 5h/7d quota overdraft continuation'
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -66,6 +71,7 @@ jobs:
       release_tag: ${{ steps.resolve.outputs.release_tag }}
       operation: ${{ steps.resolve.outputs.operation }}
       cindy_rollout: ${{ steps.resolve.outputs.cindy_rollout }}
+      overdraft: ${{ steps.resolve.outputs.overdraft }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -85,6 +91,7 @@ jobs:
           CINDY_SEARCH: ${{ inputs.cindy_search }}
           IMAGE_STUDIO: ${{ inputs.image_studio }}
           CINDY_RESPONSES_IMAGE_BRIDGE: ${{ inputs.cindy_responses_image_bridge }}
+          OVERDRAFT: ${{ inputs.overdraft }}
         shell: bash
         run: |
           set -euo pipefail
@@ -172,6 +179,7 @@ jobs:
           for flag in "$CINDY_HEALTH" "$CINDY_CAPABILITY_CATALOG" "$CINDY_SEARCH" "$IMAGE_STUDIO" "$CINDY_RESPONSES_IMAGE_BRIDGE"; do
             [[ "$flag" == true || "$flag" == false ]] || exit 1
           done
+          [[ "$OVERDRAFT" == true || "$OVERDRAFT" == false ]] || exit 1
 
           expected_current_image_ref=''
           case "$OPERATION" in
@@ -190,6 +198,7 @@ jobs:
           echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
           echo "operation=${OPERATION}" >> "$GITHUB_OUTPUT"
           echo "cindy_rollout=cindy=${CINDY_HEALTH},${CINDY_CAPABILITY_CATALOG},${CINDY_SEARCH},${IMAGE_STUDIO},${CINDY_RESPONSES_IMAGE_BRIDGE}" >> "$GITHUB_OUTPUT"
+          echo "overdraft=${OVERDRAFT}" >> "$GITHUB_OUTPUT"
 
   deploy:
     needs: resolve
@@ -218,21 +227,23 @@ jobs:
           IMAGE_REF: ${{ needs.resolve.outputs.image_ref }}
           EXPECTED_CURRENT_IMAGE_REF: ${{ needs.resolve.outputs.expected_current_image_ref }}
           CINDY_ROLLOUT: ${{ needs.resolve.outputs.cindy_rollout }}
+          OVERDRAFT: ${{ needs.resolve.outputs.overdraft }}
         shell: bash
         run: |
           set -euo pipefail
           [[ "$VPS_PORT" =~ ^[0-9]+$ ]] || exit 1
           [[ "$IMAGE_REF" =~ ^ghcr\.io/htexplicit/sub2api:[0-9]+\.[0-9]+\.[0-9]+-codexrip\.[1-9][0-9]*@sha256:[0-9a-f]{64}$ ]] || exit 1
           [[ "$CINDY_ROLLOUT" =~ ^cindy=(true|false),(true|false),(true|false),(true|false),(true|false)$ ]] || exit 1
+          [[ "$OVERDRAFT" == true || "$OVERDRAFT" == false ]] || exit 1
           case "$OPERATION" in
             deploy)
               [[ -z "$EXPECTED_CURRENT_IMAGE_REF" ]] || exit 1
-              remote_command="deploy ${IMAGE_REF} ${CINDY_ROLLOUT}"
+              remote_command="deploy ${IMAGE_REF} ${CINDY_ROLLOUT} overdraft=${OVERDRAFT}"
               ;;
             rollback)
               [[ "$EXPECTED_CURRENT_IMAGE_REF" =~ ^ghcr\.io/htexplicit/sub2api:[0-9]+\.[0-9]+\.[0-9]+-codexrip\.[1-9][0-9]*@sha256:[0-9a-f]{64}$ ]] || exit 1
               [[ "$EXPECTED_CURRENT_IMAGE_REF" != "$IMAGE_REF" ]] || exit 1
-              remote_command="rollback ${IMAGE_REF} from=${EXPECTED_CURRENT_IMAGE_REF} ${CINDY_ROLLOUT}"
+              remote_command="rollback ${IMAGE_REF} from=${EXPECTED_CURRENT_IMAGE_REF} ${CINDY_ROLLOUT} overdraft=${OVERDRAFT}"
               ;;
             *)
               echo 'Operation must be deploy or rollback' >&2

@@ -185,4 +185,24 @@ describe('UsageProgressBar', () => {
     await wrapper.setProps({ utilization: 100 })
     expect(wrapper.get('span.text-right').classes()).toContain('text-red-600')
   })
+
+  it('透支状态显示窗口统计和预计恢复时间', () => {
+    const wrapper = mount(UsageProgressBar, {
+      props: {
+        label: '5h',
+        utilization: 100,
+        resetsAt: '2026-03-17T05:00:00Z',
+        color: 'indigo',
+        overdraftActive: true,
+        overdraftRecoverAt: '2026-03-17T05:00:00Z',
+        overdraftStats: { requests: 12, tokens: 3456, cost: 1.23 }
+      }
+    })
+
+    expect(wrapper.text()).toContain('usage.overdraftActive')
+    expect(wrapper.text()).toContain('12 req')
+    expect(wrapper.text()).toContain('3.5K')
+    expect(wrapper.text()).toContain('$1.23')
+    expect(wrapper.getComponent({ name: 'CodexOverdraftStats' }).exists()).toBe(true)
+  })
 })

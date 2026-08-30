@@ -274,6 +274,10 @@ func openAIResponsesRequiredCapabilityForRequest(imageIntent bool, needsResponse
 	return openAIResponsesRequiredCapability(imageIntent, platform)
 }
 
+func shouldEnableCodexQuotaOverdraftForResponses(legacyCompact, nativeV2, imageIntent bool) bool {
+	return !legacyCompact && !nativeV2 && !imageIntent
+}
+
 func allowOpenAICompatibleMessagesDispatch(c *gin.Context, apiKey *service.APIKey) bool {
 	if apiKey == nil || apiKey.Group == nil {
 		return true
@@ -609,6 +613,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	if imageIntent && !service.GroupAllowsImageGeneration(apiKey.Group) {
 		h.errorResponse(c, http.StatusForbidden, "permission_error", service.ImageGenerationPermissionMessage())
 		return
+	}
+	if shouldEnableCodexQuotaOverdraftForResponses(legacyCompact, nativeV2, imageIntent) {
+		c.Request = c.Request.WithContext(service.WithCodexQuotaOverdraftScheduling(c.Request.Context()))
 	}
 	var imageReleaseFunc func()
 	if imageIntent {
@@ -1074,9 +1081,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			if account.Type == service.AccountTypeOAuth && !account.IsShadow() {
 				h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(c.Request.Context(), account.ID, result.ResponseHeaders)
 			}
-			h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(routingModel), openAIForwardSucceededForScheduling(result), result.FirstTokenMs)
+			h.gatewayService.ReportOpenAIAccountScheduleResultForSelectionWithContext(selection, account.ID, account.GetMappedModel(routingModel), openAIForwardSucceededForScheduling(result), result.FirstTokenMs, c.Request.Context())
 		} else {
-			h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(routingModel), openAIForwardSucceededForScheduling(result), nil)
+			h.gatewayService.ReportOpenAIAccountScheduleResultForSelectionWithContext(selection, account.ID, account.GetMappedModel(routingModel), openAIForwardSucceededForScheduling(result), nil, c.Request.Context())
 		}
 
 		// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
@@ -1381,7 +1388,8 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	var sameAccountRetrySelection *service.AccountSelectionResult
 
 	// 分组利润控制：Messages 文本入口同样请求级装门并固定 pricingAt。
-	msgPricingCtx, pricingAt := h.gatewayService.WithOpenAIRequestPricingContext(c.Request.Context(), apiKey.GroupID)
+	msgPricingCtx := service.WithCodexQuotaOverdraftScheduling(c.Request.Context())
+	msgPricingCtx, pricingAt := h.gatewayService.WithOpenAIRequestPricingContext(msgPricingCtx, apiKey.GroupID)
 	msgPricingCtx = service.WithOpenAICindyRequestedModel(msgPricingCtx, routingModel)
 	c.Request = c.Request.WithContext(msgPricingCtx)
 
@@ -1662,9 +1670,9 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			}
 		}
 		if result != nil {
-			h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(currentRoutingModel), true, result.FirstTokenMs)
+			h.gatewayService.ReportOpenAIAccountScheduleResultForSelectionWithContext(selection, account.ID, account.GetMappedModel(currentRoutingModel), true, result.FirstTokenMs, c.Request.Context())
 		} else {
-			h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(currentRoutingModel), true, nil)
+			h.gatewayService.ReportOpenAIAccountScheduleResultForSelectionWithContext(selection, account.ID, account.GetMappedModel(currentRoutingModel), true, nil, c.Request.Context())
 		}
 
 		if shouldSubmitOpenAIUsage(err, result) {
@@ -2277,6 +2285,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, service.ImageGenerationPermissionMessage())
 		return
 	}
+	if !imageIntent {
+		ctx = service.WithCodexQuotaOverdraftScheduling(ctx)
+		c.Request = c.Request.WithContext(ctx)
+	}
 
 	// F5a: 握手层会话屏蔽检查。WS 握手无 body，显式标识仅来自握手 header
 	// （session_id / conversation_id）；无标识则放行，连接内仍有本地 flag 兜底。
@@ -2818,7 +2830,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				if scheduleModel == "" {
 					scheduleModel = turnRequestedModel
 				}
-				h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, scheduleModel, openAIForwardSucceededForScheduling(result), result.FirstTokenMs)
+				h.gatewayService.ReportOpenAIAccountScheduleResultForSelectionWithContext(selection, account.ID, scheduleModel, openAIForwardSucceededForScheduling(result), result.FirstTokenMs, c.Request.Context())
 				turnRecordPricingAt := turnPricing.currentOr(turnStart)
 				cyberBlocked := service.GetOpsCyberPolicy(c) != nil
 				turnUsageSnapshot := snapshotOpenAIUsageMetadataWithHash(c, apiKey, account, subscription, turnMapping, turnRequestedModel, result, requestPayloadHash)

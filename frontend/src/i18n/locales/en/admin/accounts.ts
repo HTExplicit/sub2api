@@ -827,6 +827,9 @@ export default {
         planTypeDesc:
           "Manually correct this account's ChatGPT plan tier (Plus / Pro / Free). Note: a token refresh near expiry or a 429 rate-limit response will auto-overwrite this with the real tier.",
         planTypeClear: 'Clear (auto-detect)',
+        codexQuotaOverdraft: 'Codex quota overdraft',
+        codexQuotaOverdraftDesc:
+          'Only applies to OpenAI OAuth accounts. Allow bounded Codex continuation after the 5h/7d quota reaches the pre-arm threshold.',
         codexCLIOnly: 'Codex official clients only',
         codexCLIOnlyDesc:
           'Only applies to OpenAI OAuth. When enabled, only Codex official client families are allowed; when disabled, the gateway bypasses this restriction and keeps existing behavior.',

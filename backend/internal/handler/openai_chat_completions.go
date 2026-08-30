@@ -181,7 +181,8 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 	var sameAccountRetrySelection *service.AccountSelectionResult
 
 	// 分组利润控制：chat completions 文本入口请求级装门并固定 pricingAt。
-	ccPricingCtx, pricingAt := h.gatewayService.WithOpenAIRequestPricingContext(c.Request.Context(), apiKey.GroupID)
+	ccPricingCtx := service.WithCodexQuotaOverdraftScheduling(c.Request.Context())
+	ccPricingCtx, pricingAt := h.gatewayService.WithOpenAIRequestPricingContext(ccPricingCtx, apiKey.GroupID)
 	c.Request = c.Request.WithContext(ccPricingCtx)
 
 	for {
@@ -428,9 +429,9 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			}
 		}
 		if result != nil {
-			h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(routingModel), true, result.FirstTokenMs)
+			h.gatewayService.ReportOpenAIAccountScheduleResultForSelectionWithContext(selection, account.ID, account.GetMappedModel(routingModel), true, result.FirstTokenMs, c.Request.Context())
 		} else {
-			h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(routingModel), true, nil)
+			h.gatewayService.ReportOpenAIAccountScheduleResultForSelectionWithContext(selection, account.ID, account.GetMappedModel(routingModel), true, nil, c.Request.Context())
 		}
 
 		if shouldSubmitOpenAIUsage(err, result) {

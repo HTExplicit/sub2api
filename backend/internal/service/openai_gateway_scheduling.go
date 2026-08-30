@@ -487,6 +487,9 @@ func shouldAutoPauseOpenAIAccountByQuota(ctx context.Context, account *Account) 
 	if account == nil || !account.IsOpenAI() {
 		return false, openAIQuotaAutoPauseDecision{}
 	}
+	if codexQuotaOverdraftBypassesSchedulingThreshold(ctx, account) {
+		return false, openAIQuotaAutoPauseDecision{}
+	}
 	if config := ResolveOpenAIAutoResetCreditConfig(account); config.Enabled {
 		now := time.Now()
 		utilization5h, has5h := resolveOpenAIQuotaUtilization(account.Extra, "5h", now)
@@ -1642,6 +1645,9 @@ func (s *OpenAIGatewayService) filterOpenAIAccountsBySchedulingThreshold(ctx con
 
 func (s *OpenAIGatewayService) isOpenAIAccountBlockedBySchedulingThreshold(ctx context.Context, account *Account) bool {
 	if s == nil || s.rateLimitService == nil || account == nil {
+		return false
+	}
+	if codexQuotaOverdraftBypassesSchedulingThreshold(ctx, account) {
 		return false
 	}
 	return s.rateLimitService.ApplyAccountSchedulingThreshold(ctx, account)
