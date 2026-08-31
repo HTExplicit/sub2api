@@ -64,6 +64,39 @@
         <p class="input-hint">{{ t('admin.accounts.dataImportTargetGroupHint') }}</p>
       </div>
 
+      <fieldset v-if="payload" class="space-y-2 rounded-md border border-gray-200 px-3 py-3 dark:border-dark-700">
+        <legend class="px-1 text-sm font-semibold text-gray-800 dark:text-gray-100">
+          {{ t('admin.accounts.importProxyStrategy') }}
+        </legend>
+        <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <label
+            v-for="option in proxyStrategyOptions"
+            :key="option.value"
+            class="flex cursor-pointer items-center gap-2 rounded border px-2.5 py-2 text-sm"
+            :class="proxyStrategy === option.value
+              ? 'border-primary-400 bg-primary-50 text-primary-700 dark:border-primary-600 dark:bg-primary-900/20 dark:text-primary-200'
+              : 'border-gray-200 text-gray-700 dark:border-dark-600 dark:text-dark-200'"
+          >
+            <input v-model="proxyStrategy" type="radio" :value="option.value" :disabled="busy" />
+            <span>{{ option.label }}</span>
+          </label>
+        </div>
+        <select
+          v-if="proxyStrategy === 'existing'"
+          v-model="selectedProxyID"
+          class="input w-full"
+          :class="!proxySelectionValid ? 'border-red-400 focus:border-red-500 focus:ring-red-500' : ''"
+          :disabled="busy"
+          data-test="import-uniform-proxy"
+        >
+          <option value="">{{ t('admin.accounts.importProxySelect') }}</option>
+          <option v-for="proxy in proxies" :key="proxy.id" :value="String(proxy.id)">{{ proxy.name }}</option>
+        </select>
+        <p v-if="!proxySelectionValid" class="text-xs text-red-600 dark:text-red-300">
+          {{ t('admin.accounts.importProxyRequired') }}
+        </p>
+      </fieldset>
+
       <details v-if="payload" class="rounded-md border border-gray-200 dark:border-dark-700">
         <summary class="cursor-pointer px-3 py-2.5 text-sm font-medium text-gray-800 dark:text-gray-100">
           {{ t('admin.accounts.importUniformSettings') }}
@@ -77,13 +110,19 @@
             :tags="tags"
             :groups="groups"
             :proxies="proxies"
+            :show-proxy="false"
           />
         </div>
       </details>
 
       <div v-if="preview" class="space-y-3 rounded-md border border-gray-200 px-3 py-3 dark:border-dark-700" data-test="import-preview">
         <div class="flex flex-wrap items-center justify-between gap-2">
-          <span class="text-sm font-semibold text-gray-800 dark:text-gray-100">{{ t('admin.accounts.dataImportPreviewItems') }}</span>
+          <div class="flex min-w-0 flex-wrap items-center gap-2">
+            <span class="text-sm font-semibold text-gray-800 dark:text-gray-100">{{ t('admin.accounts.dataImportPreviewItems') }}</span>
+            <span class="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-dark-800 dark:text-dark-300">
+              {{ t('admin.accounts.importProxySummary', { value: proxySummaryLabel }) }}
+            </span>
+          </div>
           <span class="text-xs text-gray-500 dark:text-dark-400">
             {{ t('admin.accounts.dataImportPreviewSummary', { create: preview.create_count, update: preview.update_count, reject: preview.reject_count }) }}
           </span>
@@ -119,7 +158,7 @@
         type="button"
         data-test="preview-import"
         class="btn btn-secondary"
-        :disabled="busy || !payload"
+        :disabled="busy || !payload || !proxySelectionValid"
         @click="handlePreview"
       >
         {{ previewLoading ? t('admin.accounts.dataImportPreviewing') : t('admin.accounts.dataImportPreview') }}
@@ -129,7 +168,7 @@
         form="account-import-job-form"
         data-test="submit-import-job"
         class="btn btn-primary"
-        :disabled="busy || !payload || !preview"
+        :disabled="busy || !payload || !preview || !proxySelectionValid"
       >
         {{ busy ? t('admin.accounts.dataImporting') : t('admin.accounts.dataImportSubmitJob') }}
       </button>
@@ -180,6 +219,9 @@ const files = ref<File[]>([])
 const payload = ref<AdminDataPayload | null>(null)
 const uniformDraft = ref(makeSettingsDraft())
 const targetGroupID = ref('')
+type ImportProxyStrategy = 'preserve' | 'direct' | 'existing'
+const proxyStrategy = ref<ImportProxyStrategy>('preserve')
+const selectedProxyID = ref('')
 const preview = ref<AccountImportPreview | null>(null)
 const previewLoading = ref(false)
 const dragDepth = ref(0)
@@ -198,6 +240,18 @@ const importGroups = computed(() => props.groups.filter((group) =>
   (!group.wire_platform || group.wire_platform === 'openai') &&
   (!group.provider_profile || group.provider_profile === 'cindy_laxa_v1')
 ))
+const proxyStrategyOptions = computed<Array<{ value: ImportProxyStrategy; label: string }>>(() => [
+  { value: 'preserve', label: t('admin.accounts.importProxyPreserve') },
+  { value: 'direct', label: t('admin.accounts.importProxyDirect') },
+  { value: 'existing', label: t('admin.accounts.importProxyExisting') },
+])
+const selectedProxy = computed(() => props.proxies.find((proxy) => String(proxy.id) === selectedProxyID.value))
+const proxySelectionValid = computed(() => proxyStrategy.value !== 'existing' || Boolean(selectedProxy.value))
+const proxySummaryLabel = computed(() => {
+  if (proxyStrategy.value === 'direct') return t('admin.accounts.importProxyDirect')
+  if (proxyStrategy.value === 'existing') return selectedProxy.value?.name || t('admin.accounts.importProxySelect')
+  return t('admin.accounts.importProxyPreserve')
+})
 
 const redactedItemLabel = (index: number) => `#${index + 1}`
 
@@ -241,6 +295,8 @@ function reset(): void {
   files.value = []
   payload.value = null
   targetGroupID.value = ''
+  proxyStrategy.value = 'preserve'
+  selectedProxyID.value = ''
   preview.value = null
   previewLoading.value = false
   uniformDraft.value = makeSettingsDraft()
@@ -367,7 +423,8 @@ function buildUniformSettings(draft: AccountImportSettingsDraft): AdminDataImpor
   if (draft.enabled.folder) settings.management_folder = draft.folder.trim()
   if (draft.enabled.tags) settings.tags = parseTags(draft.tagsText)
   if (draft.enabled.groups) settings.group_ids = [...draft.groupIDs]
-  if (draft.enabled.proxy) settings.proxy_id = Number(draft.proxyID || 0)
+  if (proxyStrategy.value === 'direct') settings.proxy_id = 0
+  if (proxyStrategy.value === 'existing' && selectedProxy.value) settings.proxy_id = selectedProxy.value.id
   if (draft.enabled.concurrency) settings.concurrency = Number(draft.concurrency)
   if (draft.enabled.priority) settings.priority = Number(draft.priority)
   if (draft.enabled.rateMultiplier) settings.rate_multiplier = Number(draft.rateMultiplier)
@@ -387,6 +444,10 @@ function buildImportRequest() {
 
 async function handlePreview(): Promise<void> {
   if (!payload.value || previewLoading.value) return
+  if (!proxySelectionValid.value) {
+    appStore.showError(t('admin.accounts.importProxyRequired'))
+    return
+  }
   previewLoading.value = true
   try {
     preview.value = await adminAPI.accounts.previewImportData(buildImportRequest())
@@ -403,7 +464,8 @@ async function handlePreview(): Promise<void> {
 }
 
 async function handleSubmit(): Promise<void> {
-  if (!payload.value || !preview.value || busy.value) {
+  if (!payload.value || !preview.value || busy.value || !proxySelectionValid.value) {
+    if (!proxySelectionValid.value) appStore.showError(t('admin.accounts.importProxyRequired'))
     if (payload.value && !preview.value) appStore.showInfo(t('admin.accounts.dataImportPreviewRequired'))
     return
   }
@@ -425,7 +487,7 @@ async function handleSubmit(): Promise<void> {
   }
 }
 
-watch([uniformDraft, targetGroupID], () => {
+watch([uniformDraft, targetGroupID, proxyStrategy, selectedProxyID], () => {
   preview.value = null
 }, { deep: true })
 </script>

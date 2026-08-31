@@ -2425,6 +2425,7 @@ func (s *openAIWSUsageHandlerAccountRepoStub) GetByID(ctx context.Context, id in
 
 type openAIWSFailoverHandlerAccountRepoStub struct {
 	service.AccountRepository
+	mu             sync.Mutex
 	accounts       []service.Account
 	rateLimitedIDs []int64
 }
@@ -2559,6 +2560,8 @@ func (u *openAIHTTPPassthroughSSERateLimitUpstream) calls() []int64 {
 }
 
 func (s *openAIWSFailoverHandlerAccountRepoStub) ListSchedulableByPlatform(ctx context.Context, platform string) ([]service.Account, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	out := make([]service.Account, 0, len(s.accounts))
 	for _, account := range s.accounts {
 		if account.Platform == platform && account.IsSchedulable() {
@@ -2577,6 +2580,8 @@ func (s *openAIWSFailoverHandlerAccountRepoStub) ListSchedulableUngroupedByPlatf
 }
 
 func (s *openAIWSFailoverHandlerAccountRepoStub) GetByID(ctx context.Context, id int64) (*service.Account, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for _, account := range s.accounts {
 		if account.ID == id {
 			acc := account
@@ -2587,6 +2592,8 @@ func (s *openAIWSFailoverHandlerAccountRepoStub) GetByID(ctx context.Context, id
 }
 
 func (s *openAIWSFailoverHandlerAccountRepoStub) SetRateLimited(ctx context.Context, id int64, resetAt time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.rateLimitedIDs = append(s.rateLimitedIDs, id)
 	for i := range s.accounts {
 		if s.accounts[i].ID == id {

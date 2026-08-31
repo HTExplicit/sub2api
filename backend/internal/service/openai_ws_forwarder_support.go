@@ -314,6 +314,20 @@ func (s *OpenAIGatewayService) handleOpenAIWSErrorEventTransientFailure(ctx cont
 func (s *OpenAIGatewayService) handleOpenAIWSFailureAccountSideEffects(ctx context.Context, account *Account, canonicalModel string, headers http.Header, payload []byte) bool {
 	message := extractOpenAISSEErrorMessage(payload)
 	status := openAIStreamFailureStatus(payload, message)
+	if isOpenAIAccount(account) && account.Type == AccountTypeAPIKey {
+		switch status {
+		case http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests, 529:
+			// A passthrough WS terminal is already the end of this request, so it
+			// cannot reach the HTTP handler's retry-exhausted cleanup. Reuse that
+			// request-local cooldown here without persisting legacy account errors.
+			s.CooldownOpenAIRetryExhausted(ctx, account, canonicalModel, &UpstreamFailoverError{
+				StatusCode:      status,
+				ResponseBody:    append([]byte(nil), payload...),
+				ResponseHeaders: cloneHeader(headers),
+			})
+			return true
+		}
+	}
 	switch status {
 	case http.StatusUnauthorized, http.StatusTooManyRequests, 529:
 		s.handleOpenAIStreamTerminalAccountSideEffects(nil, account, payload, message, headers, canonicalModel)

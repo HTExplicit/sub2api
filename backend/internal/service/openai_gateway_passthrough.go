@@ -2686,6 +2686,15 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 		if msg == "" {
 			msg = "Upstream compact response failed"
 		}
+		if markOpenAICyberPolicyFromResponse(c, resp.StatusCode, terminalPayload) {
+			ctx := context.Background()
+			if c != nil && c.Request != nil {
+				ctx = c.Request.Context()
+			}
+			if s.openAIRefusalRecoveryRuntime(ctx).CyberFailoverEnabled() {
+				return nil, NewOpenAICyberFailoverError(terminalPayload, resp.Header)
+			}
+		}
 		if compactErr := newOpenAICompactFallbackSignal(c, terminalPayload, msg); compactErr != nil {
 			return nil, compactErr
 		}

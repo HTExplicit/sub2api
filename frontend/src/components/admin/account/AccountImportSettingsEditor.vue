@@ -54,7 +54,7 @@
       </div>
     </SettingField>
 
-    <SettingField v-model:enabled="draft.enabled.proxy" :label="t('admin.accounts.columns.proxy')">
+    <SettingField v-if="showProxy" v-model:enabled="draft.enabled.proxy" :label="t('admin.accounts.columns.proxy')">
       <select v-model="draft.proxyID" class="input h-9 py-1.5 text-sm" :disabled="!draft.enabled.proxy">
         <option value="0">{{ t('admin.accounts.directConnection') }}</option>
         <option v-for="proxy in proxies" :key="proxy.id" :value="String(proxy.id)">{{ proxy.name }}</option>
@@ -133,12 +133,14 @@ const props = withDefaults(defineProps<{
   tags?: AccountManagementTag[]
   groups?: AdminGroup[]
   proxies?: Proxy[]
+  showProxy?: boolean
   uid?: string
 }>(), {
   folders: () => [],
   tags: () => [],
   groups: () => [],
   proxies: () => [],
+  showProxy: true,
   uid: 'settings'
 })
 

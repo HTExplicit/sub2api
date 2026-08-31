@@ -21,7 +21,8 @@ const {
   jobTrack,
   reviewDuplicates,
   getAllProxies,
-  getAllGroups
+  getAllGroups,
+  accountJobsState
 } = vi.hoisted(() => ({
   listAccounts: vi.fn(),
   listWithEtag: vi.fn(),
@@ -39,12 +40,19 @@ const {
   jobTrack: vi.fn(),
   reviewDuplicates: vi.fn(),
   getAllProxies: vi.fn(),
-  getAllGroups: vi.fn()
+  getAllGroups: vi.fn(),
+  accountJobsState: { store: null as any }
 }))
 
-vi.mock('@/stores/accountJobs', () => ({
-  useAccountJobsStore: () => ({ track: jobTrack, reviewDuplicates })
-}))
+vi.mock('@/stores/accountJobs', async () => {
+  const { reactive } = await vi.importActual<typeof import('vue')>('vue')
+  const store = reactive({ recentJobs: [] as any[], track: jobTrack, reviewDuplicates })
+  accountJobsState.store = store
+  return {
+    isTerminalAccountJob: (job: { status?: string }) => ['succeeded', 'partially_succeeded', 'failed', 'canceled'].includes(job.status || ''),
+    useAccountJobsStore: () => store
+  }
+})
 
 vi.mock('@/api/admin', () => ({
   adminAPI: {
@@ -262,6 +270,7 @@ describe('admin AccountsView Cockpit console', () => {
     showSuccess.mockReset()
     jobTrack.mockReset()
     reviewDuplicates.mockReset()
+    accountJobsState.store.recentJobs.splice(0)
     getAllProxies.mockReset().mockResolvedValue([])
     getAllGroups.mockReset().mockResolvedValue([])
   })
@@ -397,6 +406,36 @@ describe('admin AccountsView Cockpit console', () => {
     expect(jobTrack).toHaveBeenCalledWith({ id: 71, kind: 'account_import', status: 'pending' })
     expect(wrapper.get('[data-test="console-account-ids"]').text()).toBe('')
     expect(wrapper.get('[data-test="selected-ids"]').text()).toBe('')
+    wrapper.unmount()
+  })
+
+  it('coalesces one account, facet, and taxonomy refresh when an import job completes', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const initialLists = listAccounts.mock.calls.length
+    const initialFacets = getFacets.mock.calls.length
+    const initialFolders = listFolders.mock.calls.length
+    const initialTags = listTags.mock.calls.length
+
+    await wrapper.get('[data-test="emit-import-result"]').trigger('click')
+    await flushPromises()
+    expect(listAccounts).toHaveBeenCalledTimes(initialLists)
+    accountJobsState.store.recentJobs.push({ id: 71, status: 'succeeded' })
+
+    await vi.waitFor(() => {
+      expect(listAccounts).toHaveBeenCalledTimes(initialLists + 1)
+      expect(getFacets).toHaveBeenCalledTimes(initialFacets + 1)
+      expect(listFolders).toHaveBeenCalledTimes(initialFolders + 1)
+      expect(listTags).toHaveBeenCalledTimes(initialTags + 1)
+    })
+
+    accountJobsState.store.recentJobs[0].processed_count = 1
+    await flushPromises()
+    expect(listAccounts).toHaveBeenCalledTimes(initialLists + 1)
+    expect(getFacets).toHaveBeenCalledTimes(initialFacets + 1)
+    expect(listFolders).toHaveBeenCalledTimes(initialFolders + 1)
+    expect(listTags).toHaveBeenCalledTimes(initialTags + 1)
+    wrapper.unmount()
   })
 
   it('restores URL filters through browser history while sensitive filters stay in session storage', async () => {

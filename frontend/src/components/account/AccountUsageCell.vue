@@ -845,9 +845,6 @@ const requestUsage = async (
     }
   }
 }
-// How long a quota-reset response may suppress the row-patch usage refetch.
-const SUPPRESS_USAGE_REFRESH_WINDOW_MS = 5 * 1000
-
 const props = withDefaults(
   defineProps<{
     account: Account
@@ -2107,6 +2104,10 @@ const emptyUsageText = computed(() => {
 
 const handleQuotaResetAccountUpdated = (account: Account) => {
   emit('account-updated', account)
+  // A quota reset changes upstream state independently of the account-row
+  // patch. Bypass the normal five-minute cache so the displayed windows are
+  // reconciled with the authoritative /usage response immediately.
+  void loadUsage({ source: 'active', bypassCache: true, force: true })
 }
 const handleOllamaCloudUsageUpdated = (state: NonNullable<Account['ollama_cloud_usage']>) => {
   emit('account-updated', { ...props.account, ollama_cloud_usage: state })

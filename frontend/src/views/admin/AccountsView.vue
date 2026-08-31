@@ -668,7 +668,7 @@ import { useI18n } from 'vue-i18n'
 import { routeLocationKey, routerKey, type RouteLocationNormalizedLoaded, type Router } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
-import { useAccountJobsStore } from '@/stores/accountJobs'
+import { isTerminalAccountJob, useAccountJobsStore } from '@/stores/accountJobs'
 import { adminAPI } from '@/api/admin'
 import type { AccountListFilters, CindyInsufficientDeletePreview } from '@/api/admin/accounts'
 import type { AccountJob } from '@/api/admin/accountJobs'
@@ -747,6 +747,9 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const accountJobsStore = useAccountJobsStore()
+const pendingDataImportJobIDs = new Set<number>()
+let importCompletionRefreshRunning = false
+let importCompletionRefreshQueued = false
 const isCindyScope = computed(() => props.scope === 'cindy')
 const fallbackRoute = reactive({ query: {}, fullPath: '' }) as unknown as RouteLocationNormalizedLoaded
 const fallbackRouter = {
@@ -1956,7 +1959,7 @@ watch(() => route.fullPath, async () => {
   applyConsoleRouteState()
   syncConsoleParams()
   if (isCindyScope.value) syncConsoleRoute('replace')
-	await Promise.all([load(), loadFacets()])
+  await Promise.all([load(), loadFacets()])
 })
 
 const isAnyModalOpen = computed(() => {
@@ -2716,8 +2719,38 @@ const handleBulkUpdated = (job: AccountJob) => {
 const handleDataImported = (job: AccountJob) => {
   showImportData.value = false
   clearSelection()
+  pendingDataImportJobIDs.add(job.id)
   accountJobsStore.track(job)
 }
+
+const refreshCompletedImports = async () => {
+  if (importCompletionRefreshRunning) {
+    importCompletionRefreshQueued = true
+    return
+  }
+  importCompletionRefreshRunning = true
+  try {
+    do {
+      importCompletionRefreshQueued = false
+      await Promise.all([reload(), loadFacets(), loadTaxonomy()])
+    } while (importCompletionRefreshQueued)
+  } finally {
+    importCompletionRefreshRunning = false
+  }
+}
+
+watch(
+  () => (accountJobsStore.recentJobs || []).map((job) => `${job.id}:${job.status}`).join('|'),
+  () => {
+    let completed = false
+    for (const job of accountJobsStore.recentJobs || []) {
+      if (!pendingDataImportJobIDs.has(job.id) || !isTerminalAccountJob(job)) continue
+      pendingDataImportJobIDs.delete(job.id)
+      completed = true
+    }
+    if (completed) void refreshCompletedImports()
+  }
+)
 const handleAccountCreated = (job?: AccountJob) => {
   if (job) {
     clearSelection()

@@ -146,18 +146,6 @@ func decodeCodexManifestModels(t *testing.T, body []byte) []map[string]any {
 	return envelope.Models
 }
 
-func codexManifestModelSlugs(t *testing.T, body []byte) []string {
-	t.Helper()
-	models := decodeCodexManifestModels(t, body)
-	slugs := make([]string, 0, len(models))
-	for _, model := range models {
-		slug, ok := model["slug"].(string)
-		require.True(t, ok)
-		slugs = append(slugs, slug)
-	}
-	return slugs
-}
-
 func effortsFromManifestModel(t *testing.T, model map[string]any) []string {
 	t.Helper()
 	levels, ok := model["supported_reasoning_levels"].([]any)
@@ -640,8 +628,12 @@ func TestFetchCodexModelsManifestAPIKeyConvertsStandardOpenAIModelList(t *testin
 	if err != nil {
 		t.Fatalf("FetchCodexModelsManifest returned error: %v", err)
 	}
-	if got, want := string(manifest.Body), `{"models":[{"slug":"gpt-5.6"},{"slug":"gpt-5.6-codex"}]}`; got != want {
-		t.Errorf("converted body: got %q, want %q", got, want)
+	models := decodeCompleteCodexManifestModels(t, manifest.Body)
+	require.Equal(t, []string{"gpt-5.6", "gpt-5.6-codex"}, completeCodexManifestModelSlugs(models))
+	for _, model := range models {
+		require.NotEmpty(t, model.DisplayName)
+		require.NotEmpty(t, model.ModelMessages.InstructionsTemplate)
+		require.Positive(t, model.ContextWindow)
 	}
 	require.Equal(t, codexModelsManifestBodyETag(manifest.Body), manifest.ETag)
 	require.Equal(t, `W/"openai-list"`, manifest.upstreamETag)
@@ -1031,11 +1023,8 @@ func TestFetchCodexModelsManifestCindyRolloutProjectionHelper(t *testing.T) {
 	case "catalog_off":
 		require.Equal(t, upstreamBody, string(manifest.Body))
 	case "image_off":
-		require.JSONEq(t, `{"models":[{"slug":"gpt-5.6-luna"},{"slug":"deepseek-v4-pro"}]}`, string(manifest.Body))
-		require.NotContains(t, string(manifest.Body), "gpt-image-2")
-		require.Contains(t, string(manifest.Body), "deepseek-v4-pro")
-		require.NotContains(t, string(manifest.Body), "claude-opus-5")
-		require.NotContains(t, string(manifest.Body), "gemini-3-pro-image")
+		models := decodeCompleteCodexManifestModels(t, manifest.Body)
+		require.Equal(t, []string{"gpt-5.6-luna", "deepseek-v4-pro"}, completeCodexManifestModelSlugs(models))
 	default:
 		t.Fatalf("unknown helper mode %q", mode)
 	}
@@ -1212,11 +1201,47 @@ func TestConvertOpenAIModelListToCodexManifest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := string(convertOpenAIModelListToCodexManifest([]byte(tt.body))); got != tt.want {
+			converted := convertOpenAIModelListToCodexManifest([]byte(tt.body))
+			if tt.name == "standard list" {
+				models := decodeCompleteCodexManifestModels(t, converted)
+				require.Equal(t, []string{"m-1", "m-2"}, completeCodexManifestModelSlugs(models))
+				for _, model := range models {
+					require.NotEmpty(t, model.DisplayName)
+					require.NotEmpty(t, model.ModelMessages.InstructionsTemplate)
+				}
+				return
+			}
+			if got := string(converted); got != tt.want {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})
 	}
+}
+
+type completeCodexManifestTestModel struct {
+	Slug          string `json:"slug"`
+	DisplayName   string `json:"display_name"`
+	ContextWindow int64  `json:"context_window"`
+	ModelMessages struct {
+		InstructionsTemplate string `json:"instructions_template"`
+	} `json:"model_messages"`
+}
+
+func decodeCompleteCodexManifestModels(t *testing.T, body []byte) []completeCodexManifestTestModel {
+	t.Helper()
+	var envelope struct {
+		Models []completeCodexManifestTestModel `json:"models"`
+	}
+	require.NoError(t, json.Unmarshal(body, &envelope))
+	return envelope.Models
+}
+
+func completeCodexManifestModelSlugs(models []completeCodexManifestTestModel) []string {
+	slugs := make([]string, 0, len(models))
+	for _, model := range models {
+		slugs = append(slugs, model.Slug)
+	}
+	return slugs
 }
 
 func TestFetchCodexModelsManifestUsesConfiguredBodyLimit(t *testing.T) {

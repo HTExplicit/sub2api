@@ -14,6 +14,8 @@ export default {
     previousPage: '上一页',
     nextPage: '下一页',
     progress: '已处理 {processed} / {total}',
+    progressMetrics: '耗时 {elapsed} · {rate} 项/秒 · 预计剩余 {eta}',
+    etaDone: '已完成',
     jobProgress: '任务 #{id} 的进度',
     resultSummary: '成功 {succeeded}，失败 {failed}，取消 {canceled}',
     account: '账号 #{id}',

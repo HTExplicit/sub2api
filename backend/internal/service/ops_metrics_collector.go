@@ -57,6 +57,9 @@ type OpsMetricsCollector struct {
 
 	lastCgroupCPUUsageNanos uint64
 	lastCgroupCPUSampleAt   time.Time
+	dbPoolStatsMu           sync.Mutex
+	lastDBWaitCount         int64
+	hasDBWaitSample         bool
 
 	stopCh    chan struct{}
 	startOnce sync.Once
@@ -271,7 +274,7 @@ func (c *OpsMetricsCollector) collectAndPersist(ctx context.Context) error {
 
 	dbOK := c.checkDB(ctx)
 	redisOK := c.checkRedis(ctx)
-	active, idle := c.dbPoolStats()
+	active, idle, waiting := c.dbPoolStats()
 	redisTotal, redisIdle, redisStatsOK := c.redisPoolStats()
 
 	successCount, tokenConsumed, err := c.queryUsageCounts(ctx, windowStart, windowEnd)
@@ -360,6 +363,7 @@ func (c *OpsMetricsCollector) collectAndPersist(ctx context.Context) error {
 
 		DBConnActive:          intPtr(active),
 		DBConnIdle:            intPtr(idle),
+		DBConnWaiting:         intPtr(waiting),
 		GoroutineCount:        intPtr(goroutines),
 		ConcurrencyQueueDepth: concurrencyQueueDepth,
 	}
@@ -869,12 +873,31 @@ func (c *OpsMetricsCollector) redisPoolStats() (total int, idle int, ok bool) {
 	return int(stats.TotalConns), int(stats.IdleConns), true
 }
 
-func (c *OpsMetricsCollector) dbPoolStats() (active int, idle int) {
+func (c *OpsMetricsCollector) dbPoolStats() (active int, idle int, waiting int) {
 	if c == nil || c.db == nil {
-		return 0, 0
+		return 0, 0, 0
 	}
-	stats := c.db.Stats()
-	return stats.InUse, stats.Idle
+	return c.recordDBPoolStats(c.db.Stats())
+}
+
+func (c *OpsMetricsCollector) recordDBPoolStats(stats sql.DBStats) (active int, idle int, waiting int) {
+	if c == nil {
+		return stats.InUse, stats.Idle, 0
+	}
+	c.dbPoolStatsMu.Lock()
+	defer c.dbPoolStatsMu.Unlock()
+
+	waitDelta := int64(0)
+	if c.hasDBWaitSample && stats.WaitCount >= c.lastDBWaitCount {
+		waitDelta = stats.WaitCount - c.lastDBWaitCount
+	}
+	c.lastDBWaitCount = stats.WaitCount
+	c.hasDBWaitSample = true
+	maxInt := int64(^uint(0) >> 1)
+	if waitDelta > maxInt {
+		waitDelta = maxInt
+	}
+	return stats.InUse, stats.Idle, int(waitDelta)
 }
 
 var opsMetricsCollectorReleaseScript = redis.NewScript(`

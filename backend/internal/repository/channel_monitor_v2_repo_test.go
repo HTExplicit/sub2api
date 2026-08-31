@@ -8,7 +8,6 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/lib/pq"
 	"github.com/stretchr/testify/require"
 )
 
@@ -107,7 +106,7 @@ func TestChannelMonitorV2WhereRestrictsOrdinaryViewerToAllowedConfiguredGroups(t
 	}
 	where, args := channelMonitorV2Where(filter, cfg, "m")
 	require.Contains(t, where, "m.group_id = ANY($4)")
-	require.Equal(t, pq.Array([]int64{4}), args[3])
+	require.Equal(t, []int64{4}, args[3])
 }
 
 func TestChannelMonitorV2WhereRejectsOrdinaryViewerWithNoAllowedGroups(t *testing.T) {
@@ -145,7 +144,7 @@ func TestChannelMonitorV2AdminScopeRemainsGlobal(t *testing.T) {
 	}
 	where, args := channelMonitorV2Where(filter, cfg, "m")
 	require.Contains(t, where, "m.group_id = ANY($4)")
-	require.Equal(t, pq.Array([]int64{9}), args[3])
+	require.Equal(t, []int64{9}, args[3])
 }
 
 func TestChannelMonitorV2MatrixDoesNotSeedGroupsForEmptyViewerScope(t *testing.T) {

@@ -16,17 +16,23 @@ import (
 
 type dataV2AdminService struct {
 	*stubAdminService
-	nextAccountID  int64
-	nextFolderID   int64
-	nextTagID      int64
-	folders        []service.AccountManagementFolder
-	tags           []service.AccountManagementTag
-	updateInputs   map[int64]*service.UpdateAccountInput
-	failNames      map[string]error
-	failTaxonomy   error
-	getGroupErr    error
-	taxonomyCalls  int
-	consoleFilters service.AccountConsoleFilters
+	nextAccountID          int64
+	nextFolderID           int64
+	nextTagID              int64
+	folders                []service.AccountManagementFolder
+	tags                   []service.AccountManagementTag
+	updateInputs           map[int64]*service.UpdateAccountInput
+	failNames              map[string]error
+	failTaxonomy           error
+	getGroupErr            error
+	getGroupCalls          int
+	enforceProxyReferences bool
+	taxonomyCalls          int
+	listCalls              int
+	groupListCalls         int
+	folderListCalls        int
+	tagListCalls           int
+	consoleFilters         service.AccountConsoleFilters
 }
 
 func newDataV2AdminService() *dataV2AdminService {
@@ -44,6 +50,7 @@ func newDataV2AdminService() *dataV2AdminService {
 }
 
 func (s *dataV2AdminService) ListAccounts(_ context.Context, page, pageSize int, _, _, _, _ string, _ int64, _, _, _ string) ([]service.Account, int64, error) {
+	s.listCalls++
 	total := len(s.accounts)
 	if page < 1 {
 		page = 1
@@ -63,6 +70,7 @@ func (s *dataV2AdminService) ListAccounts(_ context.Context, page, pageSize int,
 }
 
 func (s *dataV2AdminService) GetGroup(_ context.Context, id int64) (*service.Group, error) {
+	s.getGroupCalls++
 	if s.getGroupErr != nil {
 		return nil, s.getGroupErr
 	}
@@ -75,9 +83,26 @@ func (s *dataV2AdminService) GetGroup(_ context.Context, id int64) (*service.Gro
 	return nil, service.ErrGroupNotFound
 }
 
+func (s *dataV2AdminService) GetAllGroupsIncludingInactive(_ context.Context) ([]service.Group, error) {
+	s.groupListCalls++
+	return append([]service.Group(nil), s.groups...), nil
+}
+
 func (s *dataV2AdminService) CreateAccount(_ context.Context, input *service.CreateAccountInput) (*service.Account, error) {
 	if err := s.failNames[input.Name]; err != nil {
 		return nil, err
+	}
+	if s.enforceProxyReferences && input.ProxyID != nil && *input.ProxyID > 0 {
+		found := false
+		for _, proxy := range s.proxies {
+			if proxy.ID == *input.ProxyID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, errors.New("proxy reference is unavailable")
+		}
 	}
 	s.createdAccounts = append(s.createdAccounts, input)
 	s.nextAccountID++
@@ -156,6 +181,7 @@ func (s *dataV2AdminService) SetAccountSchedulable(_ context.Context, id int64, 
 }
 
 func (s *dataV2AdminService) ListAccountFolders(context.Context) ([]service.AccountManagementFolder, error) {
+	s.folderListCalls++
 	return append([]service.AccountManagementFolder(nil), s.folders...), nil
 }
 
@@ -187,6 +213,7 @@ func (s *dataV2AdminService) DeleteAccountFolder(_ context.Context, id int64, _ 
 }
 
 func (s *dataV2AdminService) ListAccountTags(context.Context) ([]service.AccountManagementTag, error) {
+	s.tagListCalls++
 	return append([]service.AccountManagementTag(nil), s.tags...), nil
 }
 
@@ -341,6 +368,26 @@ func TestDataAccountIdentityKeysUseCindyCredentialFingerprint(t *testing.T) {
 	}, nil)
 	require.Len(t, trimmed, 1)
 	require.NotEqual(t, keys[0].Value, trimmed[0].Value)
+}
+
+func TestDataIdentityIndexUpdateRemovesStaleKeys(t *testing.T) {
+	account := service.Account{
+		ID: 17, Name: "before", Platform: service.PlatformOpenAI,
+		Credentials: map[string]any{"account_id": "old-account", "user_id": "old-user"},
+	}
+	index := buildDataIdentityIndex([]service.Account{account})
+	require.Len(t, index.Find(dataAccountIdentityKeys(account.Platform, account.Credentials, nil)), 1)
+
+	account.Name = "after"
+	account.Credentials = map[string]any{"account_id": "new-account", "user_id": "new-user"}
+	index.Add(account)
+
+	require.Empty(t, index.Find(dataAccountIdentityKeys(service.PlatformOpenAI, map[string]any{
+		"account_id": "old-account", "user_id": "old-user",
+	}, nil)))
+	matches := index.Find(dataAccountIdentityKeys(account.Platform, account.Credentials, nil))
+	require.Len(t, matches, 1)
+	require.Equal(t, int64(17), matches[0].AccountID)
 }
 
 func TestImportDataAcceptsV1AndUpdatesStrongIdentityAtExecutionTime(t *testing.T) {

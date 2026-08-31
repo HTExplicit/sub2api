@@ -161,6 +161,13 @@ type AccountJobExecutor interface {
 	ExecuteAccountJob(context.Context, *AccountJob, json.RawMessage, []AccountJobItem) ([]AccountJobExecutionResult, error)
 }
 
+// AccountJobPreparingExecutor builds request-scoped state once for a claimed
+// job. The returned context is reused for every item and discarded when the
+// job finishes, is canceled, or the process stops.
+type AccountJobPreparingExecutor interface {
+	PrepareAccountJob(context.Context, *AccountJob, json.RawMessage) (context.Context, func(), error)
+}
+
 // AccountJobCindyMutationRunner supplies the one ordinary PostgreSQL
 // transaction used by strict Cindy job items. The callback performs the
 // existing account/group/taxonomy mutation through a transaction-aware context;
@@ -359,6 +366,28 @@ func (r *AccountJobRuntime) execute(job *AccountJob) (string, string) {
 		return normalizeAccountJobFailure("payload_unavailable")
 	}
 	payload := json.RawMessage(plaintext)
+	canceled, cancelErr := r.jobs.repo.CancelRequested(r.ctx, job.ID)
+	if cancelErr != nil {
+		return normalizeAccountJobFailure("cancel_check_failed")
+	}
+	if canceled {
+		return "", ""
+	}
+	executionCtx := r.ctx
+	cleanup := func() {}
+	if preparer, ok := r.executor.(AccountJobPreparingExecutor); ok {
+		preparedCtx, preparedCleanup, prepareErr := preparer.PrepareAccountJob(r.ctx, job, payload)
+		if prepareErr != nil {
+			return normalizeAccountJobFailure("preparation_failed")
+		}
+		if preparedCtx != nil {
+			executionCtx = preparedCtx
+		}
+		if preparedCleanup != nil {
+			cleanup = preparedCleanup
+		}
+	}
+	defer cleanup()
 	for {
 		canceled, cancelErr := r.jobs.repo.CancelRequested(r.ctx, job.ID)
 		if cancelErr != nil {
@@ -390,7 +419,7 @@ func (r *AccountJobRuntime) execute(job *AccountJob) (string, string) {
 			result := AccountJobExecutionResult{ItemID: item.ID, Status: AccountJobItemStatusFailed,
 				ErrorCode: "execution_failed", ErrorMessage: "account job item failed"}
 			if r.executor != nil {
-				results, executeErr := r.executor.ExecuteAccountJob(r.ctx, job, payload, []AccountJobItem{item})
+				results, executeErr := r.executor.ExecuteAccountJob(executionCtx, job, payload, []AccountJobItem{item})
 				if executeErr == nil && len(results) == 1 && results[0].ItemID == item.ID {
 					result = results[0]
 				}

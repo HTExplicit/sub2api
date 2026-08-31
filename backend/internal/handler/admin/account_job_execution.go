@@ -458,22 +458,48 @@ func (h *AccountHandler) executeDataImportJob(ctx context.Context, raw json.RawM
 		return accountJobFailed(item.ID, "payload_invalid")
 	}
 	originalIndex := item.Ordinal - 1
-	_, decisions, decisionErr := h.previewDataImport(ctx, req)
-	if decisionErr != nil || originalIndex >= len(decisions) {
+	preparedState, prepared := dataImportJobStateFromContext(ctx)
+	var decisions []dataImportDecision
+	if prepared {
+		decisions = preparedState.decisions
+	} else {
+		_, currentDecisions, decisionErr := h.previewDataImport(ctx, req)
+		if decisionErr != nil {
+			return accountJobFailed(item.ID, dataImportCodeExecutionFailed)
+		}
+		decisions = currentDecisions
+	}
+	if originalIndex >= len(decisions) {
 		return accountJobFailed(item.ID, dataImportCodeExecutionFailed)
 	}
 	decision := decisions[originalIndex]
+	if prepared {
+		var decisionErr error
+		decision, decisionErr = preparedState.currentDecision(originalIndex)
+		if decisionErr != nil {
+			return accountJobFailed(item.ID, dataImportCodeExecutionFailed)
+		}
+	}
 	if decision.rejected() {
 		return accountJobFailed(item.ID, decision.Code)
 	}
 	account := decision.Account
-	req.Data.Accounts = []DataAccount{account}
-	if len(decision.GroupIDs) > 0 {
-		groupIDs := append([]int64(nil), decision.GroupIDs...)
-		req.UniformSettings.GroupIDs = &groupIDs
+	if !prepared {
+		req.Data.Accounts = []DataAccount{account}
+		if len(decision.GroupIDs) > 0 {
+			groupIDs := append([]int64(nil), decision.GroupIDs...)
+			req.UniformSettings.GroupIDs = &groupIDs
+		}
 	}
 	importOne := func(mutationCtx context.Context) (*service.Account, DataImportResult, error) {
-		result, importErr := h.importData(mutationCtx, req)
+		var result DataImportResult
+		var imported *service.Account
+		var importErr error
+		if prepared {
+			imported, result, importErr = preparedState.executeOne(mutationCtx, originalIndex, decision)
+		} else {
+			result, importErr = h.importData(mutationCtx, req)
+		}
 		if importErr != nil || result.AccountFailed > 0 || len(result.Items) != 1 || result.Items[0].AccountID == nil {
 			if importErr == nil {
 				importErr = errors.New("data import item failed")
@@ -481,26 +507,41 @@ func (h *AccountHandler) executeDataImportJob(ctx context.Context, raw json.RawM
 			return nil, result, importErr
 		}
 		if len(result.Items[0].Warnings) > 0 {
-			return nil, result, errors.New("data import item completed with an incomplete mutation")
+			return imported, result, errors.New("data import item completed with an incomplete mutation")
+		}
+		if imported != nil {
+			return imported, result, nil
 		}
 		updated, getErr := h.adminService.GetAccount(mutationCtx, *result.Items[0].AccountID)
 		return updated, result, getErr
 	}
 	var result DataImportResult
+	var importedAccount *service.Account
 	var err error
 	if isStrictCindyAccountInput(account.Platform, account.Type, account.Credentials) {
 		targetID := int64(0)
 		if decision.AccountID != nil {
 			targetID = *decision.AccountID
 		}
-		_, err = h.runCindyAccountJobMutation(ctx, targetID, func(mutationCtx context.Context) (*service.Account, error) {
+		importedAccount, err = h.runCindyAccountJobMutation(ctx, targetID, func(mutationCtx context.Context) (*service.Account, error) {
 			var imported *service.Account
 			var importErr error
 			imported, result, importErr = importOne(mutationCtx)
 			return imported, importErr
 		})
+		if prepared && err == nil {
+			preparedState.recordCommittedAccount(importedAccount)
+			h.scheduleGrokImportProbe(importedAccount)
+		}
 	} else {
-		_, result, err = importOne(ctx)
+		importedAccount, result, err = importOne(ctx)
+		if prepared && importedAccount != nil {
+			// Non-Cindy imports use the existing item-level mutation semantics.
+			// Even a warning can follow a committed account mutation, so keep the
+			// in-memory identity index aligned before reporting the item failure.
+			preparedState.recordCommittedAccount(importedAccount)
+			h.scheduleGrokImportProbe(importedAccount)
+		}
 	}
 	if errors.Is(err, service.ErrCindyDeviceIdentityConflict) {
 		return accountJobFailed(item.ID, dataImportCodeCindyDeviceConflict)

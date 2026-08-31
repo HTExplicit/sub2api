@@ -1211,6 +1211,7 @@ function generateRoutedCodexFiles(
   const isWindows = activeTab.value === 'windows'
   const configDir = isWindows ? '%userprofile%\\.codex' : '~/.codex'
   const preferredModels: Partial<Record<GroupPlatform, string>> = {
+    cindy: 'gpt-5.6-luna',
     openai: 'gpt-5.5',
     anthropic: 'claude-sonnet-4-6',
     gemini: 'gemini-2.5-pro',
@@ -1224,6 +1225,7 @@ function generateRoutedCodexFiles(
   const preferredModel = preferredModels[platform] || ''
   const model = selectCodexCatalogModel(preferredModel)
   const labels: Record<GroupPlatform, string> = {
+    cindy: 'Cindy',
     anthropic: 'Anthropic',
     openai: 'OpenAI',
     gemini: 'Gemini',
