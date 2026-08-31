@@ -870,6 +870,14 @@ type gatewayForwardingSettingsResult struct {
 }
 
 func (s *SettingService) getGatewayForwardingSettingsCached(ctx context.Context) gatewayForwardingSettingsResult {
+	if s == nil || s.settingRepo == nil {
+		return gatewayForwardingSettingsResult{
+			openAITTFTMode:                   OpenAITTFTModeSemantic,
+			fp:                               true,
+			claudeOAuthSystemPromptInjection: true,
+			clientDatelineNormalization:      true,
+		}
+	}
 	if cached, ok := gatewayForwardingCache.Load().(*cachedGatewayForwardingSettings); ok && cached != nil {
 		if time.Now().UnixNano() < cached.expiresAt {
 			return gatewayForwardingSettingsResult{

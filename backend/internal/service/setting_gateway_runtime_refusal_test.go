@@ -21,6 +21,20 @@ type openAIRefusalRuntimeRepo struct {
 	getMultipleWait  <-chan struct{}
 }
 
+func TestGatewayForwardingSettingsWithoutRepositoryUseSafeDefaults(t *testing.T) {
+	service := &SettingService{}
+	require.Equal(t, OpenAITTFTModeSemantic, service.GetOpenAITTFTMode(context.Background()))
+	fingerprint, metadata, cch := service.GetGatewayForwardingSettings(context.Background())
+	require.True(t, fingerprint)
+	require.False(t, metadata)
+	require.False(t, cch)
+	enabled, prompt, blocks := service.GetClaudeOAuthSystemPromptInjectionSettings(context.Background())
+	require.True(t, enabled)
+	require.Empty(t, prompt)
+	require.Empty(t, blocks)
+	require.True(t, service.IsClientDatelineNormalizationEnabled(context.Background()))
+}
+
 func (r *openAIRefusalRuntimeRepo) Get(_ context.Context, key string) (*Setting, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
