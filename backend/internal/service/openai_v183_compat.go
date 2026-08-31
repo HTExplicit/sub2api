@@ -20,24 +20,7 @@ const (
 	OpenAIUpstreamAccessStateReason              = GatewayFailureReason("openai_upstream_access_state")
 	openAIImagesVerbatimPromptInstructions       = "When invoking the image_generation tool, use the user's image prompt verbatim. Do not rewrite, expand, summarize, embellish, translate, normalize punctuation, or add or remove visual details or constraints. Preserve the original language, wording, capitalization, quotes, and punctuation exactly."
 	defaultAntigravityTestModel                  = "claude-sonnet-4-6"
-	openAIImagesOAuthUnavailableReason           = "openai_images_oauth_tool_unavailable"
 )
-
-const openAIImagesOAuthUnavailableCooldown = 30 * time.Minute
-
-func (s *OpenAIGatewayService) coolOpenAIImagesOAuthTool(ctx context.Context, account *Account) {
-	if s == nil || s.accountRepo == nil || account == nil || account.Platform != PlatformOpenAI {
-		return
-	}
-	stateCtx, cancel := openAIAccountStateContext(ctx)
-	defer cancel()
-	resetAt := time.Now().Add(openAIImagesOAuthUnavailableCooldown)
-	if err := s.accountRepo.SetModelRateLimit(stateCtx, account.ID, openAIImageGenerationRateLimitKey, resetAt, openAIImagesOAuthUnavailableReason); err != nil {
-		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Images OAuth tool cooldown write failed account_id=%d error=%v", account.ID, err)
-		return
-	}
-	logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Images OAuth tool unavailable account_id=%d reset_in=%s", account.ID, time.Until(resetAt).Truncate(time.Second))
-}
 
 // openAIRequestPayloadView unwraps Responses WebSocket event envelopes while
 // leaving ordinary HTTP objects untouched.
@@ -254,35 +237,6 @@ func (e *UpstreamFailoverError) IsOpenAICapacityShed() bool {
 	return e != nil && e.RequestScopedTransient && isOpenAIRequestScopedCapacityShed("", e.ResponseBody)
 }
 
-func (s *OpenAIGatewayService) handleOpenAIStreamTerminalAccountSideEffects(
-	c *gin.Context,
-	account *Account,
-	payload []byte,
-	message string,
-	headers http.Header,
-) (int, bool) {
-	statusCode := openAIStreamFailureStatus(payload, message)
-	switch statusCode {
-	case http.StatusForbidden:
-		if !openAIStream403AccountFailure(payload, message) {
-			return statusCode, false
-		}
-		fallthrough
-	case http.StatusUnauthorized, http.StatusTooManyRequests, 529:
-		ctx := context.Background()
-		if c != nil && c.Request != nil {
-			ctx = c.Request.Context()
-		}
-		accountHeaders := headers
-		if statusCode == http.StatusTooManyRequests {
-			accountHeaders = nil
-		}
-		return statusCode, s.handleOpenAIAccountUpstreamError(ctx, account, statusCode, accountHeaders, payload)
-	default:
-		return statusCode, false
-	}
-}
-
 func openAIStream403AccountFailure(payload []byte, message string) bool {
 	return isOpenAIUpstreamAccessStateError(message, payload) || openAIStreamCredentialAuthFailure(payload)
 }
@@ -311,29 +265,6 @@ func openAIStreamCredentialAuthFailure(payload []byte) bool {
 		}
 	}
 	return false
-}
-
-func (s *OpenAIGatewayService) handleOpenAIWSFailureAccountSideEffects(ctx context.Context, account *Account, canonicalModel string, headers http.Header, payload []byte) bool {
-	message := extractOpenAISSEErrorMessage(payload)
-	status := openAIStreamFailureStatus(payload, message)
-	switch status {
-	case http.StatusUnauthorized, http.StatusTooManyRequests, 529:
-		s.handleOpenAIStreamTerminalAccountSideEffects(nil, account, payload, message, headers)
-		return true
-	case http.StatusForbidden:
-		if !openAIStream403AccountFailure(payload, message) {
-			return false
-		}
-		s.handleOpenAIStreamTerminalAccountSideEffects(nil, account, payload, message, headers)
-		return true
-	}
-
-	status = openAIWSPayloadTransientStatus(payload)
-	if status == 0 {
-		return false
-	}
-	s.handleOpenAIAccountUpstreamError(ctx, account, status, headers, payload, canonicalModel)
-	return true
 }
 
 func markOpenAIWSClientVisibleFailure(c *gin.Context, eventType string, payload []byte) {

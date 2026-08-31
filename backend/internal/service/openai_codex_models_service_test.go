@@ -31,6 +31,148 @@ type codexModelsHTTPUpstreamStub struct {
 	do func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error)
 }
 
+type codexModelsVisibilityAccountRepo struct {
+	AccountRepository
+	byGroup map[int64][]Account
+}
+
+func (r codexModelsVisibilityAccountRepo) ListSchedulableByGroupID(_ context.Context, groupID int64) ([]Account, error) {
+	return append([]Account(nil), r.byGroup[groupID]...), nil
+}
+
+func (r codexModelsVisibilityAccountRepo) ListByGroup(_ context.Context, groupID int64) ([]Account, error) {
+	return append([]Account(nil), r.byGroup[groupID]...), nil
+}
+
+type countingCodexModelsAccountRepo struct {
+	AccountRepository
+	accounts       []Account
+	err            error
+	listByGroupErr error
+	calls          atomic.Int32
+}
+
+func (r *countingCodexModelsAccountRepo) ListSchedulableByGroupID(_ context.Context, _ int64) ([]Account, error) {
+	r.calls.Add(1)
+	if r.err != nil {
+		return nil, r.err
+	}
+	return append([]Account(nil), r.accounts...), nil
+}
+
+func (r *countingCodexModelsAccountRepo) ListByGroup(_ context.Context, _ int64) ([]Account, error) {
+	if r.listByGroupErr != nil {
+		return nil, r.listByGroupErr
+	}
+	return append([]Account(nil), r.accounts...), nil
+}
+
+type splitCodexModelsAccountRepo struct {
+	AccountRepository
+	schedulable map[int64][]Account
+	catalog     map[int64][]Account
+}
+
+func (r splitCodexModelsAccountRepo) ListSchedulableByGroupID(_ context.Context, groupID int64) ([]Account, error) {
+	return append([]Account(nil), r.schedulable[groupID]...), nil
+}
+
+func (r splitCodexModelsAccountRepo) ListByGroup(_ context.Context, groupID int64) ([]Account, error) {
+	return append([]Account(nil), r.catalog[groupID]...), nil
+}
+
+func newCodexCatalogMappedAccount(
+	id int64,
+	target string,
+	displayName string,
+	levels []string,
+	modalities []string,
+	contextWindow int64,
+	schedulable bool,
+	extraMapping map[string]any,
+) Account {
+	reasoning := true
+	mapping := map[string]any{"my-coder": target}
+	for key, value := range extraMapping {
+		mapping[key] = value
+	}
+	account := Account{
+		ID:          id,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: schedulable,
+		Credentials: map[string]any{
+			"base_url":      fmt.Sprintf("https://provider-%d.example/v1", id),
+			"model_mapping": mapping,
+		},
+	}
+	models := map[string]UpstreamModelMetadata{
+		target: {
+			ID:                       target,
+			DisplayName:              displayName,
+			Description:              displayName + " upstream",
+			Reasoning:                &reasoning,
+			SupportedReasoningLevels: levels,
+			InputModalities:          modalities,
+			ContextWindow:            contextWindow,
+		},
+	}
+	for _, value := range extraMapping {
+		exclusive, _ := value.(string)
+		if exclusive == "" || exclusive == target {
+			continue
+		}
+		models[exclusive] = UpstreamModelMetadata{
+			ID:                       exclusive,
+			DisplayName:              "Exclusive Model",
+			Description:              "Only mapped on the unschedulable account",
+			Reasoning:                &reasoning,
+			SupportedReasoningLevels: []string{"high"},
+			InputModalities:          []string{"text", "image"},
+			ContextWindow:            1_000_000,
+		}
+	}
+	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: models})
+	return account
+}
+
+func decodeCodexManifestModels(t *testing.T, body []byte) []map[string]any {
+	t.Helper()
+	var envelope struct {
+		Models []map[string]any `json:"models"`
+	}
+	require.NoError(t, json.Unmarshal(body, &envelope))
+	return envelope.Models
+}
+
+func codexManifestModelSlugs(t *testing.T, body []byte) []string {
+	t.Helper()
+	models := decodeCodexManifestModels(t, body)
+	slugs := make([]string, 0, len(models))
+	for _, model := range models {
+		slug, ok := model["slug"].(string)
+		require.True(t, ok)
+		slugs = append(slugs, slug)
+	}
+	return slugs
+}
+
+func effortsFromManifestModel(t *testing.T, model map[string]any) []string {
+	t.Helper()
+	levels, ok := model["supported_reasoning_levels"].([]any)
+	require.True(t, ok)
+	efforts := make([]string, 0, len(levels))
+	for _, rawLevel := range levels {
+		level, ok := rawLevel.(map[string]any)
+		require.True(t, ok)
+		effort, ok := level["effort"].(string)
+		require.True(t, ok)
+		efforts = append(efforts, effort)
+	}
+	return efforts
+}
+
 type codexModelsBlockingBody struct {
 	ctx         context.Context
 	readStarted chan struct{}

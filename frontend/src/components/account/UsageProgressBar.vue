@@ -33,15 +33,9 @@
     />
 
     <!-- Progress bar row -->
-    <div :class="['flex min-w-0 items-center', density === 'compact' ? 'gap-0.5' : 'gap-1']">
-      <!-- Label badge (fixed width for alignment) -->
-      <span
-        :class="[
-          'shrink-0 rounded px-1 text-center text-[10px] font-medium',
-          density === 'compact' ? 'w-auto' : 'w-[32px]',
-          labelClass
-        ]"
-      >
+	<div :class="['flex min-w-0 items-center', density === 'compact' ? 'gap-0.5' : 'gap-1']">
+	  <!-- Label badge: density controls compact layout; label-width controls long labels. -->
+	  <span :class="[labelSizeClass, labelClass]">
         {{ label }}
       </span>
 
@@ -99,8 +93,11 @@ const props = withDefaults(defineProps<{
   overdraftStats?: WindowStats | null
   overdraftStartedAt?: string | null
   overdraftRecoverAt?: string | null
+  /** fixed: 定宽居中徽章；auto: 限宽截断左对齐 */
+  labelWidth?: 'fixed' | 'auto'
 }>(), {
-  density: 'detail'
+  density: 'detail',
+  labelWidth: 'fixed'
 })
 
 const { t } = useI18n()
@@ -139,6 +136,16 @@ const labelClass = computed(() => {
   return colors[props.color]
 })
 
+// Label badge width mode: fixed 定宽保证账号页纵向对齐；auto 限宽截断适配
+// 监控页「Pro/7 天」类组合标签。百分比列在两种模式下保持不变。
+const labelSizeClass = computed(() =>
+  props.density === 'compact'
+    ? 'w-auto shrink-0 rounded px-1 text-center text-[10px] font-medium'
+    : props.labelWidth === 'auto'
+	? 'max-w-[72px] shrink-0 truncate rounded px-1 text-left text-[10px] font-medium'
+	: 'w-[32px] shrink-0 rounded px-1 text-center text-[10px] font-medium'
+)
+
 // Progress bar color based on utilization
 const barClass = computed(() => {
   if (props.remainingCapacity) {
@@ -149,9 +156,9 @@ const barClass = computed(() => {
     }
     return 'bg-green-500'
   }
-  if (props.utilization >= 100) {
+  if (props.utilization >= 90) {
     return 'bg-red-500'
-  } else if (props.utilization >= 80) {
+  } else if (props.utilization >= 75) {
     return 'bg-amber-500'
   } else {
     return 'bg-green-500'
@@ -168,9 +175,9 @@ const textClass = computed(() => {
     }
     return 'text-gray-600 dark:text-gray-400'
   }
-  if (props.utilization >= 100) {
+  if (props.utilization >= 90) {
     return 'text-red-600 dark:text-red-400'
-  } else if (props.utilization >= 80) {
+  } else if (props.utilization >= 75) {
     return 'text-amber-600 dark:text-amber-400'
   } else {
     return 'text-gray-600 dark:text-gray-400'

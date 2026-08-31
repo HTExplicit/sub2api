@@ -18,6 +18,28 @@ import (
 	"github.com/tidwall/sjson"
 )
 
+type openAIWSRejectedFieldRetryError struct {
+	body   []byte
+	reason string
+}
+
+func (e *openAIWSRejectedFieldRetryError) Error() string {
+	if e == nil || strings.TrimSpace(e.reason) == "" {
+		return "retry websocket turn after rejected field normalization"
+	}
+	return "retry websocket turn after rejected field normalization: " + e.reason
+}
+
+func openAIWSRejectedFieldRetryHTTPStatus(message []byte) int {
+	for _, value := range gjson.GetManyBytes(message, "status", "status_code", "error.status", "error.status_code") {
+		status := int(value.Int())
+		if status >= 100 && status <= 599 {
+			return status
+		}
+	}
+	return openAIWSErrorHTTPStatus(message)
+}
+
 func (s *OpenAIGatewayService) openAIWSIngressInterTurnIdleTimeout() time.Duration {
 	if s == nil || s.cfg == nil || s.cfg.Gateway.OpenAIWS.IngressInterTurnIdleTimeoutSeconds <= 0 {
 		return 0
@@ -113,6 +135,10 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			if wsDecision.Transport != OpenAIUpstreamTransportResponsesWebsocketV2 {
 				return fmt.Errorf("websocket ingress requires ws_v2 transport, got=%s", wsDecision.Transport)
 			}
+			if s.shouldBridgeOpenAIWSPassthroughFirstMessage(account, firstClientMessage) {
+				forceHTTPBridge = true
+				break
+			}
 			// 透传 relay 通过 TurnStarted 记录每个 turn 的开始时刻，但不触发
 			// BeforeTurn；因此仍只有建连时的利润准入门，没有 turn 级复核。
 			// handler 计费在 turn 定价未冻结时回退到对应的 turn 开始时刻。
@@ -174,6 +200,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		imageSizeTier            string
 		imageInputSize           string
 		payloadBytes             int
+		requestedReasoningEffort *string
 	}
 	ingressSessionOriginalModel := ""
 
@@ -245,6 +272,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				nil,
 			)
 		}
+		requestedReasoningEffort := CanonicalRequestedReasoningEffort(normalized, strings.TrimSpace(values[1].String()))
 		if hooks != nil && (hooks.MaxReasoningEffort != "" || len(hooks.ReasoningEffortMappings) > 0) {
 			if capped, changed := ApplyOpenAIReasoningEffortPolicy(normalized, hooks.MaxReasoningEffort, hooks.ReasoningEffortMappings); changed {
 				normalized = capped
@@ -480,6 +508,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			imageSizeTier:            imageSizeTier,
 			imageInputSize:           imageInputSize,
 			payloadBytes:             len(normalized),
+			requestedReasoningEffort: requestedReasoningEffort,
 		}, nil
 	}
 
@@ -942,6 +971,11 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				wsPath,
 				account.ProxyID != nil && account.Proxy != nil,
 			)
+			var dialErr *openAIWSDialError
+			if errors.As(acquireErr, &dialErr) && dialErr != nil && dialErr.StatusCode == http.StatusTooManyRequests {
+				s.persistOpenAIWSRateLimitSignal(ctx, account, dialErr.ResponseHeaders, nil, "rate_limit_exceeded", "rate_limit_error", strings.TrimSpace(acquireErr.Error()), canonicalModel)
+				return nil, s.newOpenAIWSRateLimitFailoverError(account, dialErr.ResponseHeaders, nil, acquireErr.Error())
+			}
 			if errors.Is(acquireErr, errOpenAIWSPreferredConnUnavailable) {
 				return nil, NewOpenAIWSClientCloseError(
 					coderws.StatusPolicyViolation,
@@ -989,7 +1023,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		return lease, nil
 	}
 
-	sendAndRelay := func(turn int, lease *openAIWSConnLease, payload []byte, payloadBytes int, originalModel string, imageBillingModel string, imageSizeTier string, imageInputSize string) (*OpenAIForwardResult, error) {
+	var rejectedFieldRetryState *openAIResponsesRejectedFieldRetryState
+	sendAndRelay := func(turn int, lease *openAIWSConnLease, payload []byte, payloadBytes int, originalModel string, imageBillingModel string, imageSizeTier string, imageInputSize string, requestedReasoningEffort *string) (*OpenAIForwardResult, error) {
 		responseModelObserver := &upstreamResponseModelObserver{}
 		if lease == nil {
 			return nil, errors.New("upstream websocket lease is nil")
@@ -1142,6 +1177,31 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			}
 			if eventType == "error" {
 				errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(upstreamMessage)
+				statusCode := openAIWSRejectedFieldRetryHTTPStatus(upstreamMessage)
+				if !wroteDownstream && statusCode == http.StatusBadRequest && rejectedFieldRetryState != nil {
+					retryBody, retryReason, changed, retryErr := normalizeOpenAIResponsesRejectedFieldRetryBody(
+						statusCode,
+						payload,
+						upstreamMessage,
+					)
+					if retryErr != nil {
+						return nil, fmt.Errorf("normalize websocket rejected field retry: %w", retryErr)
+					}
+					if changed && rejectedFieldRetryState.Allow(retryBody) {
+						logOpenAIWSModeInfo(
+							"ingress_ws_rejected_field_retry account_id=%d turn=%d conn_id=%s reason=%s",
+							account.ID,
+							turn,
+							truncateOpenAIWSLogValue(lease.ConnID(), openAIWSIDValueMaxLen),
+							truncateOpenAIWSLogValue(retryReason, openAIWSLogValueMaxLen),
+						)
+						return nil, &openAIWSRejectedFieldRetryError{
+							body:   append([]byte(nil), retryBody...),
+							reason: retryReason,
+						}
+					}
+				}
+				s.persistOpenAIWSRateLimitSignal(ctx, account, lease.HandshakeHeaders(), upstreamMessage, errCodeRaw, errTypeRaw, errMsgRaw, mappedModel)
 				fallbackReason, _ := classifyOpenAIWSErrorEventFromRaw(errCodeRaw, errTypeRaw, errMsgRaw)
 				errCode, errType, errMessage := summarizeOpenAIWSErrorEventFieldsFromRaw(errCodeRaw, errTypeRaw, errMsgRaw)
 				continuationStateError := fallbackReason == openAIWSIngressStagePreviousResponseNotFound ||
@@ -1363,6 +1423,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					UpstreamResponseModelConflict: responseModelObserver.Conflict(),
 					ServiceTier:                   extractOpenAIServiceTierFromBody(payload),
 					ReasoningEffort:               ApplyThinkingEnabledFallback(extractOpenAIReasoningEffortFromBody(payload, mappedModel, originalModel), payload, mappedModel),
+					RequestedReasoningEffort:      requestedReasoningEffort,
 					Stream:                        reqStream,
 					OpenAIWSMode:                  true,
 					UpstreamTerminalEvent:         terminalEvent,
@@ -1392,6 +1453,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	currentImageSizeTier := firstPayload.imageSizeTier
 	currentImageInputSize := firstPayload.imageInputSize
 	currentPayloadBytes := firstPayload.payloadBytes
+	currentRequestedReasoningEffort := firstPayload.requestedReasoningEffort
 	isStrictAffinityTurn := func(payload []byte) bool {
 		hasAnchor := strings.TrimSpace(openAIWSPayloadStringFromRaw(payload, "previous_response_id")) != ""
 		return hasAnchor && (strictCindyContinuation || storeDisabled)
@@ -1447,6 +1509,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	defer releaseSessionLease()
 
 	turn := 1
+	rejectedFieldRetryState = newOpenAIResponsesRejectedFieldRetryState(currentPayload)
 	turnRetry := 0
 	turnPrevRecoveryTried := false
 	turnInvalidEncryptedRecoveryTried := false
@@ -1930,7 +1993,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			)
 		}
 
-		result, relayErr := sendAndRelay(turn, sessionLease, currentPayload, currentPayloadBytes, currentOriginalModel, currentImageBillingModel, currentImageSizeTier, currentImageInputSize)
+		result, relayErr := sendAndRelay(turn, sessionLease, currentPayload, currentPayloadBytes, currentOriginalModel, currentImageBillingModel, currentImageSizeTier, currentImageInputSize, currentRequestedReasoningEffort)
 		if relayErr != nil {
 			lastTurnClean = false
 			if recoverIngressInvalidEncryptedContent(relayErr, turn, connID) {
@@ -2108,6 +2171,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		currentImageSizeTier = nextPayload.imageSizeTier
 		currentImageInputSize = nextPayload.imageInputSize
 		currentPayloadBytes = nextPayload.payloadBytes
+		currentRequestedReasoningEffort = nextPayload.requestedReasoningEffort
+		rejectedFieldRetryState = newOpenAIResponsesRejectedFieldRetryState(currentPayload)
 		storeDisabled = s.isOpenAIWSStoreDisabledInRequestRaw(currentPayload, account)
 		if !storeDisabled {
 			unpinSessionConn(sessionConnID)

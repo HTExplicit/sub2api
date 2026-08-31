@@ -79,25 +79,45 @@ func shouldStripOpenAIResponsesInputNamespaces(account *Account, transport OpenA
 //     input[N].namespace`（issue #4761 正文），故 compact 一律清理。
 //   - 严格 Cindy API Key 的原生 Responses 出口按 namespace 解析历史调用，行为与
 //     Codex OAuth 一致，非 compact 请求必须保留；其他 API Key 出口仍按标准
-//     Responses API 处理并全量清理，否则只能退化成
-//     openai_responses_rejected_field_retry 的逐项删除，6 次上限根本盖不住长历史。
+//     Responses API 处理；仅在请求声明 namespace 工具时保留调用项 namespace，
+//     防止声明与历史调用失配并触发 Missing namespace。
 //   - 摊平模式下调用项已被改写成平名，残留 namespace 指向的声明已不存在，一律清理。
 func shouldKeepOpenAIResponsesToolCallNamespaces(
 	account *Account,
 	transport OpenAIUpstreamTransport,
 	passthroughEnabled bool,
 	compactPath bool,
+	body []byte,
 ) bool {
-	if compactPath {
+	if account == nil || compactPath {
 		return false
 	}
-	if account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+	if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		return true
 	}
-	if account == nil || !account.IsOpenAIOAuthLike() {
+	if account.IsOpenAIApiKey() {
+		return hasOpenAIResponsesNamespaceToolDeclaration(body)
+	}
+	if !account.IsOpenAIOAuthLike() {
 		return false
 	}
 	return !shouldFlattenOpenAIResponsesNamespaces(account, transport, passthroughEnabled, compactPath)
+}
+
+func hasOpenAIResponsesNamespaceToolDeclaration(body []byte) bool {
+	tools := gjson.GetBytes(body, "tools")
+	if !tools.IsArray() {
+		return false
+	}
+	found := false
+	tools.ForEach(func(_, tool gjson.Result) bool {
+		if strings.EqualFold(strings.TrimSpace(tool.Get("type").String()), "namespace") {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
 }
 
 // openAIResponsesToolCallItemTypes 是携带 namespace 的调用项类型集合。与
