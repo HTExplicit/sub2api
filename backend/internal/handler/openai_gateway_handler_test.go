@@ -217,7 +217,7 @@ func TestResolveStrictCindyResponsesImageTools_PreservesNonCindyAndGatesStrict(t
 func TestResolveOpenAIMessagesMetadataSession_DoesNotDerivePromptCacheKey(t *testing.T) {
 	body := []byte(`{"model":"claude-sonnet-4-5","metadata":{"user_id":"claude-code-session"},"messages":[{"role":"user","content":"hello"}]}`)
 
-	sessionHash, promptCacheKey := resolveOpenAIMessagesMetadataSession("", "", "claude-sonnet-4-5", body)
+	sessionHash, promptCacheKey := resolveOpenAIMessagesMetadataSession(nil, "", "", "claude-sonnet-4-5", body)
 
 	require.NotEmpty(t, sessionHash)
 	require.Empty(t, promptCacheKey)
@@ -226,10 +226,56 @@ func TestResolveOpenAIMessagesMetadataSession_DoesNotDerivePromptCacheKey(t *tes
 func TestResolveOpenAIMessagesMetadataSession_PreservesExplicitPromptCacheKey(t *testing.T) {
 	body := []byte(`{"metadata":{"user_id":"claude-code-session"}}`)
 
-	sessionHash, promptCacheKey := resolveOpenAIMessagesMetadataSession("", "explicit-cache", "claude-sonnet-4-5", body)
+	sessionHash, promptCacheKey := resolveOpenAIMessagesMetadataSession(nil, "", "explicit-cache", "claude-sonnet-4-5", body)
 
 	require.NotEmpty(t, sessionHash)
 	require.Equal(t, "explicit-cache", promptCacheKey)
+}
+
+func TestResolveOpenAIMessagesMetadataSession_ClaudeCodeHeaderOverridesContentFallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	c.Request.Header.Set("X-Claude-Code-Session-Id", "claude-session-001")
+
+	body1 := []byte(`{"model":"gpt-5.6-sol","system":"parent","messages":[{"role":"user","content":"parent task"}]}`)
+	body2 := []byte(`{"model":"gpt-5.6-sol","system":"subagent","messages":[{"role":"user","content":"child task"}]}`)
+
+	contentHash1 := (&service.OpenAIGatewayService{}).GenerateSessionHash(c, body1)
+	contentHash2 := (&service.OpenAIGatewayService{}).GenerateSessionHash(c, body2)
+	require.NotEqual(t, contentHash1, contentHash2, "different bodies should prove the content fallback differs")
+
+	hash1, cacheKey1 := resolveOpenAIMessagesMetadataSession(c, contentHash1, "", "gpt-5.6-sol", body1)
+	hash2, cacheKey2 := resolveOpenAIMessagesMetadataSession(c, contentHash2, "", "gpt-5.6-sol", body2)
+	require.Equal(t, service.DeriveSessionHashFromSeed("claude-session-001"), hash1)
+	require.Equal(t, hash1, hash2, "the same Claude Code session must keep one sticky account across changed turn bodies")
+	require.Empty(t, cacheKey1, "routing-only fix must not create an upstream prompt cache key")
+	require.Empty(t, cacheKey2, "routing-only fix must not create an upstream prompt cache key")
+}
+
+func TestResolveOpenAIMessagesMetadataSession_OpenAISignalWinsOverClaudeHeader(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	c.Request.Header.Set("X-Claude-Code-Session-Id", "claude-session-001")
+
+	hash, cacheKey := resolveOpenAIMessagesMetadataSession(c, "content-hash", "explicit-openai-session", "gpt-5.6-sol", []byte(`{"metadata":{"user_id":"opaque"}}`))
+	require.Equal(t, "content-hash", hash, "existing OpenAI session resolution must remain authoritative")
+	require.Equal(t, "explicit-openai-session", cacheKey)
+}
+
+func TestResolveOpenAIMessagesMetadataSession_BlankClaudeHeaderKeepsContentFallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	c.Request.Header.Set("X-Claude-Code-Session-Id", "   ")
+
+	hash, cacheKey := resolveOpenAIMessagesMetadataSession(c, "content-hash", "", "gpt-5.6-sol", []byte(`{"metadata":{"user_id":"opaque"}}`))
+	require.Equal(t, "content-hash", hash)
+	require.Empty(t, cacheKey)
 }
 
 func TestOpenAIHandleStreamingAwareError_NonStreaming(t *testing.T) {
@@ -2379,6 +2425,7 @@ func (s *openAIWSUsageHandlerAccountRepoStub) GetByID(ctx context.Context, id in
 
 type openAIWSFailoverHandlerAccountRepoStub struct {
 	service.AccountRepository
+	mu             sync.Mutex
 	accounts       []service.Account
 	rateLimitedIDs []int64
 }
@@ -2513,6 +2560,8 @@ func (u *openAIHTTPPassthroughSSERateLimitUpstream) calls() []int64 {
 }
 
 func (s *openAIWSFailoverHandlerAccountRepoStub) ListSchedulableByPlatform(ctx context.Context, platform string) ([]service.Account, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	out := make([]service.Account, 0, len(s.accounts))
 	for _, account := range s.accounts {
 		if account.Platform == platform && account.IsSchedulable() {
@@ -2531,6 +2580,8 @@ func (s *openAIWSFailoverHandlerAccountRepoStub) ListSchedulableUngroupedByPlatf
 }
 
 func (s *openAIWSFailoverHandlerAccountRepoStub) GetByID(ctx context.Context, id int64) (*service.Account, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for _, account := range s.accounts {
 		if account.ID == id {
 			acc := account
@@ -2541,6 +2592,8 @@ func (s *openAIWSFailoverHandlerAccountRepoStub) GetByID(ctx context.Context, id
 }
 
 func (s *openAIWSFailoverHandlerAccountRepoStub) SetRateLimited(ctx context.Context, id int64, resetAt time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.rateLimitedIDs = append(s.rateLimitedIDs, id)
 	for i := range s.accounts {
 		if s.accounts[i].ID == id {

@@ -13,6 +13,7 @@ import (
 	dbaccountgroup "github.com/Wei-Shaw/sub2api/ent/accountgroup"
 	dbaccounttag "github.com/Wei-Shaw/sub2api/ent/accounttag"
 	dbaccounttagbinding "github.com/Wei-Shaw/sub2api/ent/accounttagbinding"
+	"github.com/Wei-Shaw/sub2api/ent/schema/mixins"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 
 	entsql "entgo.io/ent/dialect/sql"
@@ -102,6 +103,10 @@ func normalizeAccountTaxonomyName(value string) (string, string, error) {
 }
 
 func (s *adminServiceImpl) ListAccountFolders(ctx context.Context) ([]AccountManagementFolder, error) {
+	return s.listAccountFolders(ctx, true)
+}
+
+func (s *adminServiceImpl) listAccountFolders(ctx context.Context, includeCounts bool) ([]AccountManagementFolder, error) {
 	client := s.entClient
 	if contextTx := dbent.TxFromContext(ctx); contextTx != nil {
 		client = contextTx.Client()
@@ -112,14 +117,27 @@ func (s *adminServiceImpl) ListAccountFolders(ctx context.Context) ([]AccountMan
 	if err != nil {
 		return nil, err
 	}
+	counts := make(map[int64]int)
+	if includeCounts {
+		var grouped []struct {
+			ManagementFolderID int64 `json:"management_folder_id"`
+			Count              int   `json:"count"`
+		}
+		if err := client.Account.Query().
+			Where(dbaccount.ManagementFolderIDNotNil()).
+			GroupBy(dbaccount.FieldManagementFolderID).
+			Aggregate(dbent.Count()).
+			Scan(ctx, &grouped); err != nil {
+			return nil, err
+		}
+		for _, item := range grouped {
+			counts[item.ManagementFolderID] = item.Count
+		}
+	}
 	out := make([]AccountManagementFolder, 0, len(rows))
 	for _, row := range rows {
-		count, countErr := row.QueryAccounts().Count(ctx)
-		if countErr != nil {
-			return nil, countErr
-		}
 		out = append(out, AccountManagementFolder{
-			ID: row.ID, Name: row.Name, SortOrder: row.SortOrder, AccountCount: count,
+			ID: row.ID, Name: row.Name, SortOrder: row.SortOrder, AccountCount: counts[row.ID],
 			CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 		})
 	}
@@ -198,14 +216,20 @@ func (s *adminServiceImpl) DeleteAccountFolder(ctx context.Context, id int64, mo
 	if count > 0 && !moveAccounts {
 		return infraerrors.Conflict("ACCOUNT_FOLDER_NOT_EMPTY", "folder contains accounts; confirm moving them to uncategorized")
 	}
-	if count > 0 {
-		if _, err = tx.Account.Update().Where(dbaccount.ManagementFolderIDEQ(id)).ClearManagementFolderID().Save(ctx); err != nil {
-			return err
-		}
+	// Taxonomy is presentation-only. Hidden soft-deleted accounts must not keep
+	// a RESTRICT foreign key that makes an otherwise empty folder undeletable.
+	if _, err = tx.Account.Update().
+		Where(dbaccount.ManagementFolderIDEQ(id)).
+		ClearManagementFolderID().
+		Save(mixins.SkipSoftDelete(ctx)); err != nil {
+		return err
 	}
 	if err = tx.AccountFolder.DeleteOneID(id).Exec(ctx); err != nil {
 		if dbent.IsNotFound(err) {
 			return ErrAccountFolderNotFound
+		}
+		if dbent.IsConstraintError(err) {
+			return infraerrors.Conflict("ACCOUNT_FOLDER_NOT_EMPTY", "folder references changed; reload and retry")
 		}
 		return err
 	}
@@ -213,6 +237,10 @@ func (s *adminServiceImpl) DeleteAccountFolder(ctx context.Context, id int64, mo
 }
 
 func (s *adminServiceImpl) ListAccountTags(ctx context.Context) ([]AccountManagementTag, error) {
+	return s.listAccountTags(ctx, true)
+}
+
+func (s *adminServiceImpl) listAccountTags(ctx context.Context, includeCounts bool) ([]AccountManagementTag, error) {
 	client := s.entClient
 	if contextTx := dbent.TxFromContext(ctx); contextTx != nil {
 		client = contextTx.Client()
@@ -223,14 +251,27 @@ func (s *adminServiceImpl) ListAccountTags(ctx context.Context) ([]AccountManage
 	if err != nil {
 		return nil, err
 	}
+	counts := make(map[int64]int)
+	if includeCounts {
+		var grouped []struct {
+			TagID int64 `json:"tag_id"`
+			Count int   `json:"count"`
+		}
+		if err := client.AccountTagBinding.Query().
+			Where(dbaccounttagbinding.HasAccountWith(dbaccount.DeletedAtIsNil())).
+			GroupBy(dbaccounttagbinding.FieldTagID).
+			Aggregate(dbent.Count()).
+			Scan(ctx, &grouped); err != nil {
+			return nil, err
+		}
+		for _, item := range grouped {
+			counts[item.TagID] = item.Count
+		}
+	}
 	out := make([]AccountManagementTag, 0, len(rows))
 	for _, row := range rows {
-		count, countErr := row.QueryAccounts().Count(ctx)
-		if countErr != nil {
-			return nil, countErr
-		}
 		out = append(out, AccountManagementTag{
-			ID: row.ID, Name: row.Name, SortOrder: row.SortOrder, AccountCount: count,
+			ID: row.ID, Name: row.Name, SortOrder: row.SortOrder, AccountCount: counts[row.ID],
 			CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 		})
 	}
@@ -1193,14 +1234,14 @@ func (s *adminServiceImpl) GetAccountConsoleFacets(ctx context.Context, filters 
 			cindyBanned++
 		}
 	}
-	folders, err := s.ListAccountFolders(ctx)
+	folders, err := s.listAccountFolders(ctx, false)
 	if err != nil {
 		return nil, err
 	}
 	for i := range folders {
 		folders[i].AccountCount = folderCounts[folders[i].ID]
 	}
-	tags, err := s.ListAccountTags(ctx)
+	tags, err := s.listAccountTags(ctx, false)
 	if err != nil {
 		return nil, err
 	}

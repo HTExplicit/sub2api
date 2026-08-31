@@ -26,7 +26,8 @@ type dataIdentityKey struct {
 }
 
 type dataIdentityIndex struct {
-	byKey map[string][]service.Account
+	byKey    map[string][]service.Account
+	keysByID map[int64][]string
 }
 
 func validateDataAccountV2(item DataAccount) error {
@@ -160,7 +161,10 @@ func dataAccountIdentityKeys(platform string, credentials, extra map[string]any)
 }
 
 func buildDataIdentityIndex(accounts []service.Account) *dataIdentityIndex {
-	index := &dataIdentityIndex{byKey: make(map[string][]service.Account)}
+	index := &dataIdentityIndex{
+		byKey:    make(map[string][]service.Account),
+		keysByID: make(map[int64][]string),
+	}
 	for _, account := range accounts {
 		index.Add(account)
 	}
@@ -223,22 +227,44 @@ func dataAccountIdentityUserConflicts(label, incomingUserID, storedUserID string
 }
 
 func (index *dataIdentityIndex) Add(account service.Account) {
-	if index == nil || account.IsCredentialShadow() {
+	if index == nil {
+		return
+	}
+	if index.byKey == nil {
+		index.byKey = make(map[string][]service.Account)
+	}
+	if index.keysByID == nil {
+		index.keysByID = make(map[int64][]string)
+	}
+	// Updated credentials can change every identity key. Remove the prior
+	// reverse-indexed entries first so stale keys cannot match a later item.
+	index.Remove(account.ID)
+	if account.IsCredentialShadow() {
 		return
 	}
 	for _, key := range dataAccountIdentityKeys(account.Platform, account.Credentials, account.Extra) {
-		items := index.byKey[key.Value]
-		replaced := false
-		for position := range items {
-			if items[position].ID == account.ID {
-				items[position] = account
-				replaced = true
-				break
+		index.byKey[key.Value] = append(index.byKey[key.Value], account)
+		index.keysByID[account.ID] = append(index.keysByID[account.ID], key.Value)
+	}
+}
+
+func (index *dataIdentityIndex) Remove(accountID int64) {
+	if index == nil || accountID <= 0 {
+		return
+	}
+	for _, key := range index.keysByID[accountID] {
+		items := index.byKey[key]
+		kept := items[:0]
+		for _, item := range items {
+			if item.ID != accountID {
+				kept = append(kept, item)
 			}
 		}
-		if !replaced {
-			items = append(items, account)
+		if len(kept) == 0 {
+			delete(index.byKey, key)
+			continue
 		}
-		index.byKey[key.Value] = items
+		index.byKey[key] = kept
 	}
+	delete(index.keysByID, accountID)
 }

@@ -12,6 +12,7 @@ import (
 	dbaccount "github.com/Wei-Shaw/sub2api/ent/account"
 	dbaccountgroup "github.com/Wei-Shaw/sub2api/ent/accountgroup"
 	dbaccounttagbinding "github.com/Wei-Shaw/sub2api/ent/accounttagbinding"
+	"github.com/Wei-Shaw/sub2api/ent/schema/mixins"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
@@ -208,6 +209,101 @@ func TestAccountTaxonomyCRUDAndAdminHydrationIntegration(t *testing.T) {
 	loaded, err = admin.GetAccount(ctx, row.ID)
 	require.NoError(t, err)
 	require.Empty(t, loaded.Tags)
+}
+
+func TestDeleteAccountFolderClearsSoftDeletedReferencesIntegration(t *testing.T) {
+	ctx := context.Background()
+	prefix := taxonomyIntegrationPrefix("soft-delete")
+	client, admin := newAccountTaxonomyIntegrationAdmin(t, prefix)
+	empty, err := admin.CreateAccountFolder(ctx, service.AccountTaxonomyInput{Name: prefix + "Empty"})
+	require.NoError(t, err)
+	require.NoError(t, admin.DeleteAccountFolder(ctx, empty.ID, false))
+
+	hiddenOnly, err := admin.CreateAccountFolder(ctx, service.AccountTaxonomyInput{Name: prefix + "Hidden Only"})
+	require.NoError(t, err)
+	hiddenAccount, err := client.Account.Create().
+		SetName(prefix + "hidden").
+		SetPlatform(service.PlatformOpenAI).
+		SetType(service.AccountTypeOAuth).
+		SetManagementFolderID(hiddenOnly.ID).
+		Save(ctx)
+	require.NoError(t, err)
+	require.NoError(t, client.Account.DeleteOneID(hiddenAccount.ID).Exec(ctx))
+	require.NoError(t, admin.DeleteAccountFolder(ctx, hiddenOnly.ID, false))
+	hiddenRow, err := client.Account.Query().
+		Where(dbaccount.IDEQ(hiddenAccount.ID)).
+		Only(mixins.SkipSoftDelete(ctx))
+	require.NoError(t, err)
+	require.Nil(t, hiddenRow.ManagementFolderID)
+
+	mixed, err := admin.CreateAccountFolder(ctx, service.AccountTaxonomyInput{Name: prefix + "Mixed"})
+	require.NoError(t, err)
+	liveAccount, err := client.Account.Create().
+		SetName(prefix + "live").
+		SetPlatform(service.PlatformOpenAI).
+		SetType(service.AccountTypeOAuth).
+		SetManagementFolderID(mixed.ID).
+		Save(ctx)
+	require.NoError(t, err)
+	mixedHidden, err := client.Account.Create().
+		SetName(prefix + "mixed-hidden").
+		SetPlatform(service.PlatformOpenAI).
+		SetType(service.AccountTypeOAuth).
+		SetManagementFolderID(mixed.ID).
+		Save(ctx)
+	require.NoError(t, err)
+	require.NoError(t, client.Account.DeleteOneID(mixedHidden.ID).Exec(ctx))
+
+	err = admin.DeleteAccountFolder(ctx, mixed.ID, false)
+	require.Error(t, err)
+	require.Equal(t, 409, infraerrors.Code(err))
+	require.Equal(t, "ACCOUNT_FOLDER_NOT_EMPTY", infraerrors.Reason(err))
+	require.NoError(t, admin.DeleteAccountFolder(ctx, mixed.ID, true))
+
+	rows, err := client.Account.Query().
+		Where(dbaccount.IDIn(liveAccount.ID, mixedHidden.ID)).
+		All(mixins.SkipSoftDelete(ctx))
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+	for _, row := range rows {
+		require.Nil(t, row.ManagementFolderID)
+	}
+}
+
+func TestDeleteAccountFolderSerializesConcurrentReclassificationIntegration(t *testing.T) {
+	ctx := context.Background()
+	prefix := taxonomyIntegrationPrefix("concurrent-folder-delete")
+	client, admin := newAccountTaxonomyIntegrationAdmin(t, prefix)
+	folder, err := admin.CreateAccountFolder(ctx, service.AccountTaxonomyInput{Name: prefix + "Folder"})
+	require.NoError(t, err)
+	account, err := client.Account.Create().
+		SetName(prefix + "account").
+		SetPlatform(service.PlatformOpenAI).
+		SetType(service.AccountTypeOAuth).
+		Save(ctx)
+	require.NoError(t, err)
+
+	start := make(chan struct{})
+	deleteErr := make(chan error, 1)
+	assignErr := make(chan error, 1)
+	go func() {
+		<-start
+		deleteErr <- admin.DeleteAccountFolder(ctx, folder.ID, true)
+	}()
+	go func() {
+		<-start
+		_, assign := admin.SetAccountTaxonomy(ctx, account.ID, service.AccountTaxonomyAssignment{FolderID: &folder.ID})
+		assignErr <- assign
+	}()
+	close(start)
+
+	require.NoError(t, <-deleteErr)
+	<-assignErr // Either ordering is valid; the final database state is authoritative.
+	_, err = client.AccountFolder.Get(ctx, folder.ID)
+	require.True(t, dbent.IsNotFound(err))
+	loaded, err := admin.GetAccount(ctx, account.ID)
+	require.NoError(t, err)
+	require.Nil(t, loaded.ManagementFolder)
 }
 
 func TestAccountTaxonomyCombinedFiltersAndFacetsIntegration(t *testing.T) {

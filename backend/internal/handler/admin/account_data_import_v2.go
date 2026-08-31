@@ -401,6 +401,19 @@ func (h *AccountHandler) updateImportedDataAccount(
 }
 
 func (h *AccountHandler) validateDataImportReferences(ctx context.Context, groupIDs []int64, proxyID *int64) error {
+	if cache, ok := dataImportReferenceCacheFromContext(ctx); ok {
+		for _, groupID := range groupIDs {
+			if _, exists := cache.groupIDs[groupID]; !exists {
+				return fmt.Errorf("group %d is unavailable", groupID)
+			}
+		}
+		if proxyID != nil && *proxyID > 0 {
+			if _, exists := cache.proxyIDs[*proxyID]; !exists {
+				return fmt.Errorf("proxy %d is unavailable", *proxyID)
+			}
+		}
+		return nil
+	}
 	for _, groupID := range groupIDs {
 		if _, err := h.adminService.GetGroup(ctx, groupID); err != nil {
 			return fmt.Errorf("group %d is unavailable: %w", groupID, err)

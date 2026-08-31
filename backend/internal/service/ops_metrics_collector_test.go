@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -11,6 +12,21 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestOpsMetricsCollectorRecordsDatabasePoolWaitDelta(t *testing.T) {
+	collector := &OpsMetricsCollector{}
+
+	active, idle, waiting := collector.recordDBPoolStats(sql.DBStats{InUse: 3, Idle: 2, WaitCount: 7})
+	require.Equal(t, 3, active)
+	require.Equal(t, 2, idle)
+	require.Zero(t, waiting, "the first sample establishes a cumulative wait baseline")
+
+	_, _, waiting = collector.recordDBPoolStats(sql.DBStats{WaitCount: 11})
+	require.Equal(t, 4, waiting)
+
+	_, _, waiting = collector.recordDBPoolStats(sql.DBStats{WaitCount: 2})
+	require.Zero(t, waiting, "a replaced database pool must reset the cumulative baseline")
+}
 
 func TestWriteOpenAIFastPolicyBlockedResponseMarksBusinessLimited(t *testing.T) {
 	gin.SetMode(gin.TestMode)

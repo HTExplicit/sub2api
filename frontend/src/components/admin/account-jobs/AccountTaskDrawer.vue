@@ -77,6 +77,16 @@
             <p class="mt-1 text-xs tabular-nums text-gray-500 dark:text-dark-300">
               {{ t('admin.accountTasks.progress', { processed: store.currentJob.processed_count, total: store.currentJob.target_count }) }}
             </p>
+            <p class="mt-1 text-xs tabular-nums text-gray-500 dark:text-dark-300" data-test="task-result-summary">
+              {{ t('admin.accountTasks.resultSummary', {
+                succeeded: store.currentJob.succeeded_count,
+                failed: store.currentJob.failed_count,
+                canceled: store.currentJob.canceled_count
+              }) }}
+            </p>
+            <p class="mt-1 text-xs tabular-nums text-gray-500 dark:text-dark-300" data-test="task-progress-metrics">
+              {{ t('admin.accountTasks.progressMetrics', { elapsed: elapsedLabel, rate: rateLabel, eta: etaLabel }) }}
+            </p>
             <p
               v-if="store.currentJob.error_message"
               class="mt-2 break-words text-xs text-red-600 dark:text-red-300"
@@ -187,9 +197,10 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
-import { useAccountJobsStore } from '@/stores/accountJobs'
+import { isTerminalAccountJob, useAccountJobsStore } from '@/stores/accountJobs'
 import { useAppStore } from '@/stores/app'
 import type {
   AccountJobItem,
@@ -203,6 +214,8 @@ const store = useAccountJobsStore()
 const appStore = useAppStore()
 const survivorID = ref<number | null>(null)
 const merging = ref(false)
+const now = ref(Date.now())
+useIntervalFn(() => { now.value = Date.now() }, 1_000)
 
 function safeDuplicateReview(item: AccountJobItem): DuplicateReviewMetadata | null {
   if (item.status !== 'succeeded' || !item.metadata || typeof item.metadata !== 'object') return null
@@ -250,6 +263,39 @@ const progressPercent = computed(() => {
   const job = store.currentJob
   if (!job || job.target_count <= 0) return 0
   return Math.min(100, Math.round((job.processed_count / job.target_count) * 100))
+})
+const elapsedSeconds = computed(() => {
+  const job = store.currentJob
+  if (!job) return 0
+  const started = new Date(job.started_at || job.created_at).getTime()
+  const finished = job.finished_at ? new Date(job.finished_at).getTime() : now.value
+  if (!Number.isFinite(started) || !Number.isFinite(finished) || finished <= started) return 0
+  return Math.max(0, Math.floor((finished - started) / 1_000))
+})
+const formatDuration = (seconds: number): string => {
+  if (!Number.isFinite(seconds) || seconds <= 0) return '0s'
+  const whole = Math.max(0, Math.round(seconds))
+  const hours = Math.floor(whole / 3_600)
+  const minutes = Math.floor((whole % 3_600) / 60)
+  const remaining = whole % 60
+  if (hours > 0) return `${hours}h ${minutes}m`
+  if (minutes > 0) return `${minutes}m ${remaining}s`
+  return `${remaining}s`
+}
+const processingRate = computed(() => {
+  const job = store.currentJob
+  if (!job || elapsedSeconds.value <= 0 || job.processed_count <= 0) return 0
+  return job.processed_count / elapsedSeconds.value
+})
+const elapsedLabel = computed(() => formatDuration(elapsedSeconds.value))
+const rateLabel = computed(() => processingRate.value > 0 ? processingRate.value.toFixed(1) : '0.0')
+const etaLabel = computed(() => {
+  const job = store.currentJob
+  if (!job || isTerminalAccountJob(job)) return t('admin.accountTasks.etaDone')
+  const remaining = Math.max(0, job.target_count - job.processed_count)
+  if (remaining === 0) return '0s'
+  if (processingRate.value <= 0) return '--'
+  return formatDuration(remaining / processingRate.value)
 })
 const canCancel = computed(() => {
   const job = store.currentJob

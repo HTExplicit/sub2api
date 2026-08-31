@@ -15,14 +15,14 @@ const { importData, previewImportData, showError, showSuccess, showWarning } = v
 
 vi.mock('@/api/admin', () => ({ adminAPI: { accounts: { importData, previewImportData } } }))
 vi.mock('@/stores/app', () => ({
-  useAppStore: () => ({ showError, showSuccess, showWarning }),
+  useAppStore: () => ({ showError, showSuccess, showWarning, showInfo: vi.fn() }),
 }))
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: (key: string) => key }),
 }))
 
-const mountModal = () => mount(ImportDataModal, {
-  props: { show: true },
+const mountModal = (proxies: any[] = []) => mount(ImportDataModal, {
+  props: { show: true, proxies },
   global: {
     stubs: {
       BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' },
@@ -109,5 +109,39 @@ describe('account data import job', () => {
     })
     expect(wrapper.emitted('imported')?.[0]?.[0]).toMatchObject({ id: 81, status: 'pending' })
     expect(showSuccess).not.toHaveBeenCalled()
+  })
+
+  it('applies one direct proxy strategy to the whole import', async () => {
+    const wrapper = mountModal()
+    await selectFiles(wrapper, [jsonFile('direct.json', payload('direct'))])
+
+    await wrapper.get('input[type="radio"][value="direct"]').setValue(true)
+    await wrapper.get('[data-test="preview-import"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('#account-import-job-form').trigger('submit')
+    await flushPromises()
+
+    expect(previewImportData).toHaveBeenCalledWith(expect.objectContaining({
+      uniform_settings: { proxy_id: 0 },
+    }))
+    expect(importData).toHaveBeenCalledWith(expect.objectContaining({
+      uniform_settings: { proxy_id: 0 },
+    }))
+  })
+
+  it('requires and applies one existing proxy for the whole import', async () => {
+    const wrapper = mountModal([{ id: 7, name: 'Managed Proxy' }])
+    await selectFiles(wrapper, [jsonFile('proxy.json', payload('proxied'))])
+
+    await wrapper.get('input[type="radio"][value="existing"]').setValue(true)
+    expect(wrapper.get('[data-test="preview-import"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-test="import-uniform-proxy"]').setValue('7')
+    expect(wrapper.get('[data-test="preview-import"]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('[data-test="preview-import"]').trigger('click')
+    await flushPromises()
+
+    expect(previewImportData).toHaveBeenCalledWith(expect.objectContaining({
+      uniform_settings: { proxy_id: 7 },
+    }))
   })
 })

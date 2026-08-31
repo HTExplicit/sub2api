@@ -228,6 +228,13 @@ func TestAccountJobSubmitRequiresIdempotencyKeyAndEncryptsPayload(t *testing.T) 
 
 type accountJobTestExecutor struct {
 	processedItemIDs []int64
+	prepareCalls     int
+	cleanupCalls     int
+}
+
+func (e *accountJobTestExecutor) PrepareAccountJob(ctx context.Context, _ *AccountJob, _ json.RawMessage) (context.Context, func(), error) {
+	e.prepareCalls++
+	return ctx, func() { e.cleanupCalls++ }, nil
 }
 
 func (e *accountJobTestExecutor) ExecuteAccountJob(_ context.Context, _ *AccountJob, _ json.RawMessage, items []AccountJobItem) ([]AccountJobExecutionResult, error) {
@@ -260,6 +267,8 @@ func TestAccountJobSubmitProcessesMoreThanOneWorkerBatch(t *testing.T) {
 	require.Empty(t, code)
 	require.Empty(t, message)
 	require.Len(t, executor.processedItemIDs, 205)
+	require.Equal(t, 1, executor.prepareCalls)
+	require.Equal(t, 1, executor.cleanupCalls)
 	require.Equal(t, []int{100, 100, 100, 100}, repo.reserveLimits)
 	require.Equal(t, []int{100, 100, 5, 0}, repo.reservedBatchSizes)
 }

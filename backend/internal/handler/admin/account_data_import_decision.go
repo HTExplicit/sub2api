@@ -61,11 +61,20 @@ func (h *AccountHandler) previewDataImport(ctx context.Context, req DataImportRe
 	if err := validateDataImportRequest(req); err != nil {
 		return preview, nil, infraerrors.BadRequest("ACCOUNT_IMPORT_SETTINGS_INVALID", "invalid account import settings")
 	}
-	existing, err := h.listAccountsFiltered(ctx, "", "", "", "", 0, "", "id", "asc")
-	if err != nil {
-		return preview, nil, err
+	var err error
+	previewState, prepared := dataImportPreviewStateFromContext(ctx)
+	var existing []service.Account
+	var identityIndex *dataIdentityIndex
+	if prepared {
+		existing = previewState.existing
+		identityIndex = previewState.identityIndex
+	} else {
+		existing, err = h.listAccountsFiltered(ctx, "", "", "", "", 0, "", "id", "asc")
+		if err != nil {
+			return preview, nil, err
+		}
+		identityIndex = buildDataIdentityIndex(existing)
 	}
-	identityIndex := buildDataIdentityIndex(existing)
 	deviceOwners := make(map[string][]int64)
 	for index := range existing {
 		account := &existing[index]
@@ -83,9 +92,16 @@ func (h *AccountHandler) previewDataImport(ctx context.Context, req DataImportRe
 
 	var targetGroup *service.Group
 	if req.TargetGroupID != nil && *req.TargetGroupID > 0 {
-		targetGroup, err = h.adminService.GetGroup(ctx, *req.TargetGroupID)
-		if err != nil && !errors.Is(err, service.ErrGroupNotFound) {
-			return preview, nil, err
+		if prepared {
+			if group, ok := previewState.groupsByID[*req.TargetGroupID]; ok {
+				groupCopy := group
+				targetGroup = &groupCopy
+			}
+		} else {
+			targetGroup, err = h.adminService.GetGroup(ctx, *req.TargetGroupID)
+			if err != nil && !errors.Is(err, service.ErrGroupNotFound) {
+				return preview, nil, err
+			}
 		}
 	}
 	targetHasMember := false

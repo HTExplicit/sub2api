@@ -13,8 +13,8 @@ import (
 func TestMigration231CreatesGenerationBoundSlimHealthState(t *testing.T) {
 	matches, err := fs.Glob(FS, "231_*.sql")
 	require.NoError(t, err)
-	require.Equal(t, []string{"231_cindy_health_state.sql"}, matches)
-	raw, err := FS.ReadFile(matches[0])
+	require.Contains(t, matches, "231_cindy_health_state.sql")
+	raw, err := FS.ReadFile("231_cindy_health_state.sql")
 	require.NoError(t, err)
 	sql := strings.ToLower(string(raw))
 

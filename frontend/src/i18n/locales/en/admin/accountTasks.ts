@@ -14,6 +14,8 @@ export default {
     previousPage: 'Previous',
     nextPage: 'Next',
     progress: '{processed} of {total}',
+    progressMetrics: 'Elapsed {elapsed} · {rate} items/s · ETA {eta}',
+    etaDone: 'done',
     jobProgress: 'Progress for task #{id}',
     resultSummary: '{succeeded} succeeded, {failed} failed, {canceled} canceled',
     account: 'Account #{id}',

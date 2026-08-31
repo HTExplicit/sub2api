@@ -14,6 +14,17 @@ vi.mock('@/api/admin', () => ({
       listWithEtag: vi.fn(),
       getBatchTodayStats: vi.fn().mockResolvedValue({ stats: {} }),
       getUpstreamBillingProbeSettings: vi.fn().mockResolvedValue({ enabled: true, interval_minutes: 30 }),
+      getFacets: vi.fn().mockResolvedValue({
+        platforms: [],
+        types: [],
+        statuses: [],
+        plans: [],
+        proxies: [],
+        folders: [],
+        tags: []
+      }),
+      listFolders: vi.fn().mockResolvedValue([]),
+      listTags: vi.fn().mockResolvedValue([]),
       delete: vi.fn(),
       batchClearError: vi.fn(),
       batchRefresh: vi.fn(),
@@ -30,6 +41,15 @@ vi.mock('@/stores/app', () => ({
 
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({ token: 'test-token', isSimpleMode: false })
+}))
+
+vi.mock('@/stores/accountJobs', () => ({
+  isTerminalAccountJob: () => false,
+  useAccountJobsStore: () => ({
+    recentJobs: [],
+    track: vi.fn(),
+    reviewDuplicates: vi.fn()
+  })
 }))
 
 vi.mock('vue-i18n', async () => {
@@ -106,7 +126,11 @@ describe('admin AccountsView priority column preferences', () => {
     })
   })
 
-  it('shows priority as a sortable column for fresh preferences', async () => {
+  it('shows priority as a sortable column when the saved preference exposes it', async () => {
+    localStorage.setItem('account-hidden-columns', JSON.stringify([]))
+    localStorage.setItem('account-hidden-columns-version', 'cockpit-console-defaults-v1')
+    localStorage.setItem('account-usage-column-version', 'usage-visible-v1')
+
     const wrapper = mountView()
     await flushPromises()
 
@@ -125,7 +149,8 @@ describe('admin AccountsView priority column preferences', () => {
 
   it('preserves an existing preference that explicitly hides priority', async () => {
     localStorage.setItem('account-hidden-columns', JSON.stringify(['priority', 'today_stats']))
-    localStorage.setItem('account-hidden-columns-version', 'scheduler-score-hidden-by-default')
+    localStorage.setItem('account-hidden-columns-version', 'cockpit-console-defaults-v1')
+    localStorage.setItem('account-usage-column-version', 'usage-visible-v1')
 
     const wrapper = mountView()
     await flushPromises()
@@ -137,16 +162,15 @@ describe('admin AccountsView priority column preferences', () => {
     ])
   })
 
-  it('keeps priority visible while migrating older saved preferences', async () => {
+  it('applies compact defaults while migrating older saved preferences', async () => {
     localStorage.setItem('account-hidden-columns', JSON.stringify(['today_stats']))
 
     const wrapper = mountView()
     await flushPromises()
 
-    expect(wrapper.get('[data-column="priority"]').text()).toBe('sortable')
+    expect(wrapper.find('[data-column="priority"]').exists()).toBe(false)
     expect(JSON.parse(localStorage.getItem('account-hidden-columns') || '[]')).toEqual(
-      expect.arrayContaining(['today_stats', 'scheduler_score'])
+      expect.arrayContaining(['today_stats', 'scheduler_score', 'priority'])
     )
-    expect(JSON.parse(localStorage.getItem('account-hidden-columns') || '[]')).not.toContain('priority')
   })
 })

@@ -321,6 +321,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			if res == nil {
 				return
 			}
+			stampOpenAIRequestedReasoningEffort(res, c)
 			usageSnapshot := snapshotOpenAIUsageMetadata(c, apiKey, account, subscription, channelMapping, reqModel, res, body)
 			usageInput := usageSnapshot.Input(res, h.apiKeyService, pricingAt)
 			usageAPIKeyID := usageInput.APIKey.ID

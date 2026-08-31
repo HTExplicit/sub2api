@@ -53,10 +53,11 @@ jobs:
           go mod verify
           go test -p=1 -tags unit ./internal/service ./internal/handler -run 'Test.*(BusinessSystemPrompt|RemoteSkill|GPT56|Cindy|CompatibilityModes|AlphaSearch)' -count=1
           go test -p=1 ./internal/handler/admin ./internal/server/middleware -run 'Test.*(SystemPrompt|RemoteSkill|Audit)' -count=1
-          go test -p=1 -tags unit ./internal/repository ./internal/handler/admin ./internal/handler ./internal/service -run 'Test.*(AccountCredentialIdentity|AccountJobCindyMutation|ProviderIdentityMismatch|CindyBalanceProbe|CindyGroupSplit|CindyCatalog|CindyCodexModels|ImageStudioEligibleKeys|CindyCompatibility|LegacyCindyRuntimeCompatibility|CodexImageGenerationBridgeOverridePrecedence|CodexQuotaOverdraft|TurnStateCommits|SchedulerCache|SchedulerRefresh|KeepsCindyRoutingIdentity|StrictCindyGroup|MaterializesCindyIdentity|DisabledOrdinaryMember|SkipsCindyAggregate|GatewayModelCapabilities|GatewayModels|WriteOpenAIModelsList|AccountHandlerGetAvailableModels)' -count=1
+          go test -p=1 -tags unit ./internal/repository ./internal/handler/admin ./internal/handler ./internal/service -run 'Test.*(AccountCredentialIdentity|AccountJobCindyMutation|AccountJobDataImport|DataIdentityIndex|OpsMetricsCollectorRecordsDatabasePoolWaitDelta|OpenAIBlockedUpstreamsDoNotSerializeManagementPlane|ProviderIdentityMismatch|CindyBalanceProbe|CindyGroupSplit|CindyCatalog|CindyCodexModels|ImageStudioEligibleKeys|CindyCompatibility|LegacyCindyRuntimeCompatibility|CodexImageGenerationBridgeOverridePrecedence|CodexQuotaOverdraft|TurnStateCommits|SchedulerCache|SchedulerRefresh|KeepsCindyRoutingIdentity|StrictCindyGroup|MaterializesCindyIdentity|DisabledOrdinaryMember|SkipsCindyAggregate|GatewayModelCapabilities|GatewayModels|WriteOpenAIModelsList|AccountHandlerGetAvailableModels)' -count=1
           go test -p=1 -tags unit ./migrations -run '^(Test.*(BusinessSystemPromptRemoteSkill|BusinessSystemPromptCodexSkillHybrid|BusinessSystemPromptManagedSource|RemoteSkillRegistry|RemoteSkillPaired|Migration207|Migration208|Migration209|Migration210|Migration211|Migration213|Migration222|Migration223|Migration224|Migration230|Migration231|Migration232)|TestMigration235RestrictsLedgerReplayToLifecycleExcludedRows)$' -count=1
           go test -p=1 -tags integration ./migrations -run '^(TestCindy(OpenAIDefaults|PromptCacheHash|AlphaSearchBridge|BalanceMarkerReset|BalanceMarkerRestore|BalanceConfirmationReset|PlatformProjectionRoundTrip)MigrationIsStrictAndIdempotent|TestMigration235PreservesMixedOpenAIGroupsAfterCanonicalReplay)$' -count=1
           go test -p=1 -tags integration ./internal/repository -run '^Test(CindyGroupSplit(PreviewDriftAndAtomicCommit|RollsBackAllWritesWhenOutboxInsertFails)|ClassifyStrictCindyGroupUsesAllNonDeletedMembersAndOpenAIGroup|CindyBalanceProbe|DeleteCanonicalCindyAccountRetiresIdentityAndDeletesHealth|DeleteInsideOuterTransactionDefersSchedulerSideEffectsToCommittedOutbox|CredentialIdentityReimportKeepsRetiredOwnerHistory)' -count=1
+          go test -p=1 -tags integration ./internal/repository -run '^Test(AccountTaxonomy.*|DeleteAccountFolder.*)Integration$' -count=1
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 9.15.9
@@ -80,6 +81,8 @@ jobs:
             src/components/account/__tests__/BulkEditAccountModal.spec.ts \
             src/components/account/__tests__/UsageProgressBar.spec.ts \
             src/components/account/__tests__/AccountUsageCell.spec.ts \
+            src/__tests__/integration/data-import.spec.ts \
+            src/components/admin/account-jobs/__tests__/AccountTaskDrawer.spec.ts \
             src/views/admin/__tests__/SystemPromptsView.spec.ts \
             src/views/admin/__tests__/systemPromptsIntegrationSurface.spec.ts \
             src/api/__tests__/imageStudio.spec.ts \
@@ -90,6 +93,7 @@ jobs:
             src/components/layout/__tests__/AppSidebar.spec.ts \
             src/components/layout/__tests__/AppSidebar.simple-mode.spec.ts \
             src/views/admin/__tests__/AccountsView.console.spec.ts \
+            src/views/admin/__tests__/AccountsView.priorityColumn.spec.ts \
             src/views/admin/__tests__/GroupsView.columnSettings.spec.ts \
             src/views/user/__tests__/ImageStudioView.spec.ts \
             src/router/__tests__/title.spec.ts

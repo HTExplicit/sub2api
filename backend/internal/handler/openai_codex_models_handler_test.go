@@ -51,6 +51,14 @@ func (r codexModelsFailoverAccountRepo) ListSchedulableByGroupIDAndPlatform(ctx 
 	return r.ListSchedulableByPlatform(ctx, platform)
 }
 
+func (r codexModelsFailoverAccountRepo) ListSchedulableByGroupID(_ context.Context, _ int64) ([]service.Account, error) {
+	return append([]service.Account(nil), r.accounts...), nil
+}
+
+func (r codexModelsFailoverAccountRepo) ListByGroup(_ context.Context, _ int64) ([]service.Account, error) {
+	return append([]service.Account(nil), r.accounts...), nil
+}
+
 func (r codexModelsFailoverAccountRepo) CindyCodexModelsAccountReaderMarker() {}
 
 type codexModelsFailoverHTTPUpstream struct {
@@ -281,7 +289,7 @@ func TestCodexModelsCindyGroupDoesNotUnionOrdinaryProviderModels(t *testing.T) {
 	}
 }
 
-func TestCodexModelsCatalogEnabledNonCindyPreservesLegacyManifest(t *testing.T) {
+func TestCodexModelsCatalogEnabledNonCindyCompletesLegacyManifest(t *testing.T) {
 	if !runCodexCatalogEnabledHandlerTest(t) {
 		return
 	}
@@ -316,9 +324,7 @@ func TestCodexModelsCatalogEnabledNonCindyPreservesLegacyManifest(t *testing.T) 
 	if got := upstream.calls(); !equalInt64Slices(got, []int64{1}) {
 		t.Fatalf("ordinary upstream calls: got %v, want [1]", got)
 	}
-	if got := recorder.Body.String(); got != legacyBody {
-		t.Fatalf("catalog-enabled ordinary manifest changed: got %s, want %s", got, legacyBody)
-	}
+	requireCompleteCodexModelsHandlerResponse(t, recorder, "gpt-5.6-sol")
 }
 
 const codexCatalogEnabledHandlerTestHelperEnv = "SUB2API_CODEX_MODELS_HANDLER_CATALOG_TEST_HELPER"
@@ -399,6 +405,8 @@ func TestCompositeCodexModelsReusesExistingManifestSelection(t *testing.T) {
 
 func TestCodexModelsFailsOverFromRetryableUpstreamStatus(t *testing.T) {
 	retryableStatuses := []int{
+		http.StatusNotFound,
+		http.StatusMethodNotAllowed,
 		http.StatusTooManyRequests,
 		http.StatusInternalServerError,
 		http.StatusBadGateway,
@@ -417,9 +425,7 @@ func TestCodexModelsFailsOverFromRetryableUpstreamStatus(t *testing.T) {
 			if recorder.Code != http.StatusOK {
 				t.Fatalf("status: got %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
 			}
-			if got, want := recorder.Body.String(), `{"models":[{"auto_compact_token_limit":900000,"context_window":1000000,"max_context_window":1000000,"slug":"gpt-5.6-sol"}]}`; got != want {
-				t.Fatalf("body: got %q, want %q", got, want)
-			}
+			requireCompleteCodexModelsHandlerResponse(t, recorder, "gpt-5.6-sol")
 		})
 	}
 }
@@ -452,9 +458,7 @@ func TestCodexModelsFailsOverFromInvalidManifestEnvelope(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status: got %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
 	}
-	if got, want := recorder.Body.String(), `{"models":[{"auto_compact_token_limit":900000,"context_window":1000000,"max_context_window":1000000,"slug":"gpt-5.6-sol"}]}`; got != want {
-		t.Fatalf("body: got %q, want %q", got, want)
-	}
+	requireCompleteCodexModelsHandlerResponse(t, recorder, "gpt-5.6-sol")
 }
 
 func TestCodexModelsDoesNotFailOverFromPermanentUpstreamStatus(t *testing.T) {
@@ -462,7 +466,6 @@ func TestCodexModelsDoesNotFailOverFromPermanentUpstreamStatus(t *testing.T) {
 		http.StatusBadRequest,
 		http.StatusUnauthorized,
 		http.StatusForbidden,
-		http.StatusNotFound,
 		600,
 	}
 	for _, status := range statuses {
@@ -477,6 +480,36 @@ func TestCodexModelsDoesNotFailOverFromPermanentUpstreamStatus(t *testing.T) {
 				t.Fatalf("status: got %d, want %d; body=%s", recorder.Code, http.StatusBadGateway, recorder.Body.String())
 			}
 		})
+	}
+}
+
+func requireCompleteCodexModelsHandlerResponse(t *testing.T, recorder *httptest.ResponseRecorder, slug string) {
+	t.Helper()
+	var envelope struct {
+		Models []map[string]any `json:"models"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode body: %v; body=%s", err, recorder.Body.String())
+	}
+	var model map[string]any
+	for _, candidate := range envelope.Models {
+		candidateSlug, _ := candidate["slug"].(string)
+		if candidateSlug == slug || strings.TrimPrefix(candidateSlug, "openai/") == slug {
+			model = candidate
+			break
+		}
+	}
+	if model == nil {
+		t.Fatalf("manifest does not contain slug %q; body=%s", slug, recorder.Body.String())
+	}
+	if levels, ok := model["supported_reasoning_levels"].([]any); !ok || len(levels) == 0 {
+		t.Fatalf("supported_reasoning_levels must be populated: %v", model["supported_reasoning_levels"])
+	}
+	if messages, ok := model["model_messages"].(map[string]any); !ok || messages["instructions_template"] == "" {
+		t.Fatalf("model_messages.instructions_template must be populated: %v", model["model_messages"])
+	}
+	if policy, ok := model["truncation_policy"].(map[string]any); !ok || len(policy) == 0 {
+		t.Fatalf("truncation_policy must be populated: %v", model["truncation_policy"])
 	}
 }
 

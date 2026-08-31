@@ -113,6 +113,8 @@ describe('AccountTaskDrawer', () => {
     })
 
     expect(wrapper.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('50')
+    expect(wrapper.get('[data-test="task-result-summary"]').text()).toContain('admin.accountTasks.resultSummary')
+    expect(wrapper.get('[data-test="task-progress-metrics"]').text()).toContain('admin.accountTasks.progressMetrics')
     expect(wrapper.find('[data-test="task-cancel"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="task-retry"]').exists()).toBe(false)
 
