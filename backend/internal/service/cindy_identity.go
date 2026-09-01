@@ -200,9 +200,18 @@ func NormalizeCindyDeviceIdentityExtra(
 	normalized[CindyDeviceIDExtraKey] = deviceID
 	normalized[CindyDeviceIDSourceExtraKey] = source
 	setCindyDefault(normalized, current, CindyResponsesModeExtraKey, "force_responses")
-	setCindyDefault(normalized, current, CindyAlphaSearchExtraKey, OpenAIAlphaSearchModeResponsesWebSearch)
-	setCindyDefault(normalized, current, CindyPromptCacheExtraKey, OpenAIPromptCacheKeyModeSHA25664)
+	preserveCindyRollbackExtra(normalized, current, CindyAlphaSearchExtraKey)
+	preserveCindyRollbackExtra(normalized, current, CindyPromptCacheExtraKey)
 	return normalized, nil
+}
+
+func preserveCindyRollbackExtra(normalized, current map[string]any, key string) {
+	if _, present := normalized[key]; present {
+		return
+	}
+	if value, present := current[key]; present {
+		normalized[key] = value
+	}
 }
 
 func setCindyDefault(normalized, current map[string]any, key string, fallback any) {

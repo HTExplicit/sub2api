@@ -5,8 +5,11 @@ import (
 	"encoding/hex"
 	"unicode/utf8"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"go.uber.org/zap"
 )
 
 const (
@@ -18,43 +21,42 @@ const (
 	OpenAIPromptCacheKeyModeSHA25664    = "sha256_64"
 )
 
-func (a *Account) GetOpenAIAlphaSearchMode() string {
-	if a == nil || !a.IsOpenAIApiKey() {
-		return OpenAIAlphaSearchModeDirect
-	}
-	switch a.GetExtraString("openai_alpha_search_mode") {
-	case OpenAIAlphaSearchModeDirect:
-		return OpenAIAlphaSearchModeDirect
-	case OpenAIAlphaSearchModeResponsesWebSearch:
-		return OpenAIAlphaSearchModeResponsesWebSearch
-	case OpenAIAlphaSearchModeDisabled:
-		return OpenAIAlphaSearchModeDisabled
-	default:
-		if _, present := a.Extra["openai_alpha_search_mode"]; !present &&
-			IsCindyAPIKeyAccount(a.Platform, a.Type, a.Credentials) {
-			return OpenAIAlphaSearchModeResponsesWebSearch
-		}
-		return OpenAIAlphaSearchModeDirect
+const cindyManagedCompatibilityContextKey = "cindy_managed_compatibility"
+
+// SetCindyManagedCompatibility freezes the authenticated group decision for
+// the request. Account identity is checked again at the final wire boundary,
+// so neither a mixed group nor a non-Cindy account can inherit this policy.
+func SetCindyManagedCompatibility(c *gin.Context, enabled bool) {
+	if c != nil {
+		c.Set(cindyManagedCompatibilityContextKey, enabled)
 	}
 }
 
-func (a *Account) GetOpenAIPromptCacheKeyMode() string {
-	if a == nil || !a.IsOpenAIApiKey() {
-		return OpenAIPromptCacheKeyModePassthrough
+func cindyManagedCompatibilityEnabled(c *gin.Context) bool {
+	if c == nil {
+		return false
 	}
-	if a.GetExtraString("openai_prompt_cache_key_mode") == OpenAIPromptCacheKeyModeSHA25664 {
-		return OpenAIPromptCacheKeyModeSHA25664
-	}
-	if _, present := a.Extra["openai_prompt_cache_key_mode"]; !present &&
-		IsCindyRuntimeCompatibleAPIKeyAccount(a.Platform, a.Type, a.Credentials) {
-		return OpenAIPromptCacheKeyModeSHA25664
-	}
-	return OpenAIPromptCacheKeyModePassthrough
+	value, exists := c.Get(cindyManagedCompatibilityContextKey)
+	enabled, ok := value.(bool)
+	return exists && ok && enabled
 }
 
-func normalizeOpenAIAPIKeyPromptCacheKey(body []byte, account *Account, globallyEnabled bool) ([]byte, bool, error) {
-	if !globallyEnabled || account == nil || !account.IsOpenAIApiKey() ||
-		account.GetOpenAIPromptCacheKeyMode() != OpenAIPromptCacheKeyModeSHA25664 {
+func observeCindyManagedPromptCacheNormalization(c *gin.Context, changed bool) {
+	if !changed || c == nil || c.Request == nil {
+		return
+	}
+	logger.FromContext(c.Request.Context()).Info(
+		"openai.cindy_prompt_cache_key_normalized",
+		zap.Bool("normalized", true),
+	)
+}
+
+// normalizeCindyManagedPromptCacheKey is the single final-wire normalizer.
+// It intentionally ignores the legacy account extras and global settings,
+// which remain stored for one rollback window only.
+func normalizeCindyManagedPromptCacheKey(body []byte, c *gin.Context, account *Account) ([]byte, bool, error) {
+	if !cindyManagedCompatibilityEnabled(c) || account == nil ||
+		!IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		return body, false, nil
 	}
 	value := gjson.GetBytes(body, "prompt_cache_key")

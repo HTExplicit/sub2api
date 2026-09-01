@@ -63,11 +63,9 @@ describe('Cindy OpenAI defaults', () => {
     ).toBe(false)
   })
 
-  it('uses the proven Responses web-search bridge with a Cindy-safe cache key', () => {
+  it('keeps only the account-level Responses transport default', () => {
     expect(CINDY_OPENAI_DEFAULTS).toEqual({
-      responsesMode: 'force_responses',
-      alphaSearchMode: 'responses_web_search',
-      promptCacheKeyMode: 'sha256_64'
+      responsesMode: 'force_responses'
     })
   })
 

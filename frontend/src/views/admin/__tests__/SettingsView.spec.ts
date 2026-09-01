@@ -382,6 +382,31 @@ const baseSettingsResponse = {
   default_balance: 0,
   default_concurrency: 1,
   default_subscriptions: [],
+  cindy_managed_compatibility: {
+    config_source: "cindy_group_managed",
+    web_search: {
+      enabled: true,
+      verified_text_models: [
+        "deepseek-v4-flash",
+        "deepseek-v4-flash-vision-exp",
+        "deepseek-v4-pro",
+        "gemini-3.6-flash",
+        "glm-5.3-flash",
+        "gpt-5.6-luna",
+        "hy3",
+        "qwen3.8-27b",
+        "qwen3.8-flash",
+      ],
+      compatibility_aliases: { "gpt-5.4-mini": "gpt-5.6-luna" },
+      primary_path: "responses_web_search",
+      fallback_path: "messages_cindy_web_search",
+    },
+    prompt_cache_key: {
+      mode: "automatic",
+      max_characters: 64,
+      overflow_transform: "sha256_lower_hex",
+    },
+  },
   site_name: "Sub2API",
   site_logo: "",
   site_subtitle: "",
@@ -733,6 +758,19 @@ describe("admin SettingsView payment visible method controls", () => {
     });
     fetchPublicSettings.mockResolvedValue(undefined);
     adminSettingsFetch.mockResolvedValue(undefined);
+  });
+
+  it("renders Cindy compatibility as a read-only managed capability card", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await openFeaturesTab(wrapper);
+
+    expect(wrapper.get('[data-testid="cindy-managed-compatibility-card"]').text()).toContain(
+      "admin.settings.features.riskControl.cindyManaged.title",
+    );
+    expect(wrapper.findAll('[data-testid="cindy-managed-models"] span')).toHaveLength(9);
+    expect(wrapper.find('input[name="openai_apikey_alpha_search_responses_bridge_enabled"]').exists()).toBe(false);
+    expect(wrapper.find('input[name="openai_apikey_prompt_cache_key_normalization_enabled"]').exists()).toBe(false);
   });
 
   it("submits the compact home page toggle", async () => {

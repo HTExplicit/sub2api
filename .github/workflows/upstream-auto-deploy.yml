@@ -1,0 +1,76 @@
+name: Upstream Auto Deploy Handoff
+
+on:
+  workflow_run:
+    workflows: [Downstream Release]
+    types: [completed]
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-auto-deploy-handoff
+  cancel-in-progress: false
+
+jobs:
+  handoff:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Validate automatic candidate release
+        id: candidate
+        env:
+          RELEASE_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RELEASE_TAG: ${{ github.event.workflow_run.head_branch }}
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_CONCLUSION" == success ]]
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-codexrip\.1$ ]]
+          git init /tmp/candidate
+          git -C /tmp/candidate remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git -C /tmp/candidate fetch --depth=1 origin "$RELEASE_SHA"
+          git -C /tmp/candidate checkout --detach FETCH_HEAD
+          [[ "$(jq -r .risk_class /tmp/candidate/.downstream/upstream-risk.json)" == safe ]]
+          [[ "$(jq -r .overlap_file_count /tmp/candidate/.downstream/upstream-risk.json)" == 0 ]]
+          [[ "$(jq -r .critical_file_count /tmp/candidate/.downstream/upstream-risk.json)" == 0 ]]
+          expected="$(tr -d '\r\n' </tmp/candidate/.downstream/upstream-base)-codexrip.1"
+          [[ "$RELEASE_TAG" == "$expected" ]]
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch approval-gated production run once
+        env:
+          RELEASE_TAG: ${{ steps.candidate.outputs.release_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          title="Deploy ${RELEASE_TAG} (preserve)"
+          existing=$(gh run list --workflow production-deploy.yml --event workflow_dispatch --limit 50 \
+            --json displayTitle --jq "[.[] | select(.displayTitle == \"${title}\")] | length")
+          [[ "$existing" == 0 ]] || exit 0
+          gh workflow run production-deploy.yml --ref main \
+            -f operation=deploy-preserve \
+            -f release_tag="$RELEASE_TAG" \
+            -f confirmation=DEPLOY
+
+      - name: Create or update failure issue
+        if: failure()
+        env:
+          TITLE: Upstream automatic release or deploy handoff failed
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh label create upstream-automation-failed --color B60205 --description 'Upstream automation stopped without production change' --force
+          body=$(mktemp)
+          printf 'Automation stopped without retrying or changing the current production release.\n\nRun: %s\n' "$RUN_URL" >"$body"
+          issue=$(gh issue list --state open --search "${TITLE} in:title" --json number,title --jq ".[] | select(.title == \"${TITLE}\") | .number" | head -n1)
+          if [[ -n "$issue" ]]; then
+            gh issue edit "$issue" --body-file "$body" --add-label upstream-automation-failed
+          else
+            gh issue create --title "$TITLE" --body-file "$body" --label upstream-automation-failed
+          fi

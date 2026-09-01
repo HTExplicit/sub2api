@@ -88,21 +88,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			body = reasoningBody
 		}
 	}
-	compatRuntime := OpenAIRefusalRecoveryRuntime{}
-	if s.settingService != nil {
-		compatRuntime = s.settingService.GetOpenAIRefusalRecoveryRuntime(ctx)
-	}
-	normalizedCacheBody, cacheKeyNormalized, cacheKeyErr := normalizeOpenAIAPIKeyPromptCacheKey(
-		body,
-		account,
-		compatRuntime.APIKeyPromptCacheKeyNormalization,
-	)
-	if cacheKeyErr != nil {
-		return nil, fmt.Errorf("normalize OpenAI API key prompt_cache_key: %w", cacheKeyErr)
-	}
-	if cacheKeyNormalized {
-		body = normalizedCacheBody
-	}
 	responsesLite := account.IsOpenAI() && isOpenAIResponsesLiteHeader(c.GetHeader(responsesLiteHeader))
 	if responsesLite {
 		liteBody, changed, liteErr := normalizeOpenAIResponsesLitePayloadForAccount(body, account)
@@ -776,16 +761,13 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			reqBody = nil
 		}
 	}
-	finalCacheBody, finalCacheChanged, finalCacheErr := normalizeOpenAIAPIKeyPromptCacheKey(
-		body,
-		account,
-		compatRuntime.APIKeyPromptCacheKeyNormalization,
-	)
+	finalCacheBody, finalCacheChanged, finalCacheErr := normalizeCindyManagedPromptCacheKey(body, c, account)
 	if finalCacheErr != nil {
-		return nil, fmt.Errorf("normalize final OpenAI API key prompt_cache_key: %w", finalCacheErr)
+		return nil, fmt.Errorf("normalize final Cindy prompt_cache_key: %w", finalCacheErr)
 	}
 	if finalCacheChanged {
 		body = finalCacheBody
+		observeCindyManagedPromptCacheNormalization(c, true)
 		requestView = newOpenAIRequestView(body)
 		reqBody = nil
 	}
@@ -1177,18 +1159,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		return true, nil
 	}
 	for {
-		finalCacheBody, finalCacheChanged, finalCacheErr := normalizeOpenAIAPIKeyPromptCacheKey(
-			body,
-			account,
-			compatRuntime.APIKeyPromptCacheKeyNormalization,
-		)
-		if finalCacheErr != nil {
-			return nil, fmt.Errorf("normalize final OpenAI API key prompt_cache_key: %w", finalCacheErr)
-		}
-		if finalCacheChanged {
-			body = finalCacheBody
-			promptCacheKey = gjson.GetBytes(body, "prompt_cache_key").String()
-		}
 		// Build upstream request
 		upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
 		var headerGuard *openAIFirstOutputHeaderGuard

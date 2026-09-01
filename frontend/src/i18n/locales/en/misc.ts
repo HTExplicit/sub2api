@@ -27,6 +27,23 @@ export default {
     waitingDownstreamSync: 'Waiting for downstream sync',
     upstreamBase: 'Upstream baseline v{version}',
     downstreamManagedHint: 'Current upstream baseline: v{current}; latest upstream: v{latest}. Updates and rollbacks are managed by the downstream release channel.',
+    downstreamStatusLoading: 'Loading downstream release status…',
+    downstreamStatus: {
+      current: 'Production is current',
+      sync_pending: 'Sync pending',
+      candidate_testing: 'Candidate PR testing',
+      review_required: 'Human review required',
+      release_ready: 'Downstream release ready',
+      approval_pending: 'Production approval pending',
+      deploying: 'Deploying',
+      failed: 'Automation stopped'
+    },
+    downstreamLink: {
+      official: 'Official release',
+      candidate: 'Candidate PR',
+      release: 'Downstream release',
+      production: 'Production run'
+    },
     releaseNotes: 'Release Notes',
     noReleaseNotes: 'No release notes',
     viewUpdate: 'View Update',

@@ -272,7 +272,7 @@ func TestBusinessSystemPromptNativeResponsesAppliesForAPIKeyAndOAuth(t *testing.
 	}
 }
 
-func TestBusinessSystemPromptAPIKeyPromptCacheKeyIsNormalizedAfterPromptRewrite(t *testing.T) {
+func TestBusinessSystemPromptOrdinaryAPIKeyPromptCacheKeyRemainsOfficialAfterPromptRewrite(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{"model":"gpt-5.4","stream":false,"instructions":"client","prompt_cache_key":"` + strings.Repeat("k", 363) + `","input":[]}`)
 	c, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
@@ -295,10 +295,37 @@ func TestBusinessSystemPromptAPIKeyPromptCacheKeyIsNormalizedAfterPromptRewrite(
 
 	require.Error(t, err)
 	require.Nil(t, result)
-	require.Regexp(t, `^[0-9a-f]{64}$`, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
+	ordinaryKey := gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String()
+	require.True(t, strings.HasPrefix(ordinaryKey, strings.Repeat("k", 363)+":business-system-prompt:"))
+	require.NotRegexp(t, `^[0-9a-f]{64}$`, ordinaryKey)
 }
 
-func TestBusinessSystemPromptPassthroughPromptCacheKeyIsNormalizedAfterPromptRewrite(t *testing.T) {
+func TestBusinessSystemPromptManagedCindyPromptCacheKeyNormalizesAfterFinalRewrite(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"gpt-5.6-luna","stream":false,"instructions":"client","prompt_cache_key":"` + strings.Repeat("m", 363) + `","input":[]}`)
+	c, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
+	SetCindyManagedCompatibility(c, true)
+	upstream := businessSystemPromptErrorUpstream()
+	account := businessSystemPromptAPIKeyAccount(true)
+	account.Platform = PlatformCindy
+	account.WirePlatform = WirePlatformOpenAI
+	account.ProviderProfile = ProviderProfileCindyLaxaV1
+	account.Credentials["base_url"] = "https://api.laxarouter.ai"
+	account.Extra["openai_prompt_cache_key_mode"] = OpenAIPromptCacheKeyModePassthrough
+	svc := &OpenAIGatewayService{
+		cfg: businessSystemPromptTestConfig(), httpUpstream: upstream,
+		businessPromptService: newGatewayBusinessSystemPromptPolicy(t, false, false),
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Regexp(t, `^[0-9a-f]{64}$`, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
+	require.Equal(t, 1, strings.Count(string(upstream.lastBody), "business-server"))
+}
+
+func TestBusinessSystemPromptOrdinaryPassthroughPromptCacheKeyRemainsOfficialAfterPromptRewrite(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{"model":"gpt-5.4","stream":false,"instructions":"client","prompt_cache_key":"` + strings.Repeat("p", 363) + `","input":[]}`)
 	c, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
@@ -324,10 +351,12 @@ func TestBusinessSystemPromptPassthroughPromptCacheKeyIsNormalizedAfterPromptRew
 
 	require.Error(t, err)
 	require.Nil(t, result)
-	require.Regexp(t, `^[0-9a-f]{64}$`, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
+	ordinaryKey := gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String()
+	require.True(t, strings.HasPrefix(ordinaryKey, strings.Repeat("p", 363)+":business-system-prompt:"))
+	require.NotRegexp(t, `^[0-9a-f]{64}$`, ordinaryKey)
 }
 
-func TestBusinessSystemPromptWSV2PromptCacheKeyIsNormalizedAfterPromptRewrite(t *testing.T) {
+func TestBusinessSystemPromptOrdinaryWSV2PromptCacheKeyRemainsOfficialAfterPromptRewrite(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	received := make(chan []byte, 1)
 	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
@@ -391,7 +420,9 @@ func TestBusinessSystemPromptWSV2PromptCacheKeyIsNormalizedAfterPromptRewrite(t 
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	payload := <-received
-	require.Regexp(t, `^[0-9a-f]{64}$`, gjson.GetBytes(payload, "prompt_cache_key").String())
+	ordinaryKey := gjson.GetBytes(payload, "prompt_cache_key").String()
+	require.True(t, strings.HasPrefix(ordinaryKey, strings.Repeat("w", 363)+":business-system-prompt:"))
+	require.NotRegexp(t, `^[0-9a-f]{64}$`, ordinaryKey)
 }
 
 func TestBusinessSystemPromptUpstreamErrorIsSanitizedBeforeInspection(t *testing.T) {

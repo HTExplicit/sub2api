@@ -358,15 +358,13 @@ type UpdateSettingsRequest struct {
 	RiskControlEnabled *bool `json:"risk_control_enabled"`
 
 	// cyber 会话屏蔽开关 + TTL
-	CyberSessionBlockEnabled                       *bool     `json:"cyber_session_block_enabled"`
-	CyberSessionBlockTTLSeconds                    *int      `json:"cyber_session_block_ttl_seconds"`
-	OpenAIRefusalRecoveryEnabled                   *bool     `json:"openai_refusal_recovery_enabled"`
-	OpenAICyberFailoverEnabled                     *bool     `json:"openai_cyber_failover_enabled"`
-	OpenAIAPIKeyAlphaSearchResponsesBridgeEnabled  *bool     `json:"openai_apikey_alpha_search_responses_bridge_enabled"`
-	OpenAIAPIKeyPromptCacheKeyNormalizationEnabled *bool     `json:"openai_apikey_prompt_cache_key_normalization_enabled"`
-	OpenAIRefusalRewriteEnabled                    *bool     `json:"openai_refusal_rewrite_enabled"`
-	OpenAIRefusalKeywords                          *[]string `json:"openai_refusal_keywords"`
-	OpenAIRefusalReplacement                       *string   `json:"openai_refusal_replacement"`
+	CyberSessionBlockEnabled     *bool     `json:"cyber_session_block_enabled"`
+	CyberSessionBlockTTLSeconds  *int      `json:"cyber_session_block_ttl_seconds"`
+	OpenAIRefusalRecoveryEnabled *bool     `json:"openai_refusal_recovery_enabled"`
+	OpenAICyberFailoverEnabled   *bool     `json:"openai_cyber_failover_enabled"`
+	OpenAIRefusalRewriteEnabled  *bool     `json:"openai_refusal_rewrite_enabled"`
+	OpenAIRefusalKeywords        *[]string `json:"openai_refusal_keywords"`
+	OpenAIRefusalReplacement     *string   `json:"openai_refusal_replacement"`
 
 	// OpenAI fast/flex policy (optional, only updated when provided)
 	OpenAIFastPolicySettings *dto.OpenAIFastPolicySettings `json:"openai_fast_policy_settings,omitempty"`
@@ -1988,10 +1986,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.CyberSessionBlockTTLSeconds
 		}(),
-		OpenAIRefusalRecoveryEnabled:                   boolValueOrDefault(req.OpenAIRefusalRecoveryEnabled, previousSettings.OpenAIRefusalRecoveryEnabled),
-		OpenAICyberFailoverEnabled:                     boolValueOrDefault(req.OpenAICyberFailoverEnabled, previousSettings.OpenAICyberFailoverEnabled),
-		OpenAIAPIKeyAlphaSearchResponsesBridgeEnabled:  boolValueOrDefault(req.OpenAIAPIKeyAlphaSearchResponsesBridgeEnabled, previousSettings.OpenAIAPIKeyAlphaSearchResponsesBridgeEnabled),
-		OpenAIAPIKeyPromptCacheKeyNormalizationEnabled: boolValueOrDefault(req.OpenAIAPIKeyPromptCacheKeyNormalizationEnabled, previousSettings.OpenAIAPIKeyPromptCacheKeyNormalizationEnabled),
+		OpenAIRefusalRecoveryEnabled: boolValueOrDefault(req.OpenAIRefusalRecoveryEnabled, previousSettings.OpenAIRefusalRecoveryEnabled),
+		OpenAICyberFailoverEnabled:   boolValueOrDefault(req.OpenAICyberFailoverEnabled, previousSettings.OpenAICyberFailoverEnabled),
+		// Deprecated compatibility values are deliberately preserved for a
+		// rollback window but are no longer public write fields or runtime gates.
+		OpenAIAPIKeyAlphaSearchResponsesBridgeEnabled:  previousSettings.OpenAIAPIKeyAlphaSearchResponsesBridgeEnabled,
+		OpenAIAPIKeyPromptCacheKeyNormalizationEnabled: previousSettings.OpenAIAPIKeyPromptCacheKeyNormalizationEnabled,
 		OpenAIRefusalRewriteEnabled:                    boolValueOrDefault(req.OpenAIRefusalRewriteEnabled, previousSettings.OpenAIRefusalRewriteEnabled),
 		OpenAIRefusalKeywords: func() []string {
 			if req.OpenAIRefusalKeywords != nil {
@@ -2406,18 +2406,17 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 
 		AffiliateEnabled: updatedSettings.AffiliateEnabled,
 
-		RiskControlEnabled:                             updatedSettings.RiskControlEnabled,
-		CyberSessionBlockEnabled:                       updatedSettings.CyberSessionBlockEnabled,
-		CyberSessionBlockTTLSeconds:                    updatedSettings.CyberSessionBlockTTLSeconds,
-		OpenAIRefusalRecoveryEnabled:                   updatedSettings.OpenAIRefusalRecoveryEnabled,
-		OpenAICyberFailoverEnabled:                     updatedSettings.OpenAICyberFailoverEnabled,
-		OpenAIAPIKeyAlphaSearchResponsesBridgeEnabled:  updatedSettings.OpenAIAPIKeyAlphaSearchResponsesBridgeEnabled,
-		OpenAIAPIKeyPromptCacheKeyNormalizationEnabled: updatedSettings.OpenAIAPIKeyPromptCacheKeyNormalizationEnabled,
-		OpenAIRefusalRewriteEnabled:                    updatedSettings.OpenAIRefusalRewriteEnabled,
-		OpenAIRefusalKeywords:                          append([]string(nil), updatedSettings.OpenAIRefusalKeywords...),
-		OpenAIRefusalReplacement:                       updatedSettings.OpenAIRefusalReplacement,
-		AccountSchedulingThresholds:                    updatedSettings.AccountSchedulingThresholds,
-		AllowUserViewErrorRequests:                     updatedSettings.AllowUserViewErrorRequests,
+		RiskControlEnabled:           updatedSettings.RiskControlEnabled,
+		CyberSessionBlockEnabled:     updatedSettings.CyberSessionBlockEnabled,
+		CyberSessionBlockTTLSeconds:  updatedSettings.CyberSessionBlockTTLSeconds,
+		OpenAIRefusalRecoveryEnabled: updatedSettings.OpenAIRefusalRecoveryEnabled,
+		OpenAICyberFailoverEnabled:   updatedSettings.OpenAICyberFailoverEnabled,
+		CindyManagedCompatibility:    cindyManagedCompatibilitySettings(),
+		OpenAIRefusalRewriteEnabled:  updatedSettings.OpenAIRefusalRewriteEnabled,
+		OpenAIRefusalKeywords:        append([]string(nil), updatedSettings.OpenAIRefusalKeywords...),
+		OpenAIRefusalReplacement:     updatedSettings.OpenAIRefusalReplacement,
+		AccountSchedulingThresholds:  updatedSettings.AccountSchedulingThresholds,
+		AllowUserViewErrorRequests:   updatedSettings.AllowUserViewErrorRequests,
 	}
 	if fastPolicy, err := h.settingService.GetOpenAIFastPolicySettings(c.Request.Context()); err != nil {
 		slog.Error("openai_fast_policy_settings_get_failed", "error", err)

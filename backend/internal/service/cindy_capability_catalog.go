@@ -524,10 +524,10 @@ func CindyAlphaSearchModelAvailable(model string) bool {
 	if !CindySearchFeatureEnabled() {
 		return false
 	}
-	capability := cindyCapabilityByPublicID[strings.TrimSpace(model)]
-	return capability != nil && capability.PublicModel &&
+	capability, ok := resolveKnownCindyCapability(model)
+	return ok && capability.PublicModel &&
 		capability.Kind == CindyModelKindText &&
-		cindyCapabilityHasEndpoint(*capability, CindyEndpointResponses)
+		cindyCapabilityHasEndpoint(capability, CindyEndpointResponses)
 }
 
 // CindyAlphaSearchUpstreamModel resolves the provider-qualified model for a
@@ -537,11 +537,34 @@ func CindyAlphaSearchUpstreamModel(model string) (string, bool) {
 	if !CindyAlphaSearchModelAvailable(model) {
 		return "", false
 	}
-	capability := cindyCapabilityByPublicID[strings.TrimSpace(model)]
-	if capability == nil || strings.TrimSpace(capability.LiveUpstreamID) == "" {
+	capability, ok := resolveKnownCindyCapability(model)
+	if !ok || strings.TrimSpace(capability.LiveUpstreamID) == "" {
 		return "", false
 	}
 	return capability.LiveUpstreamID, true
+}
+
+// CindyManagedCompatibilityModels returns the nine verified public text IDs
+// used by managed Search. The compatibility alias is projected separately so
+// management clients never confuse it with an upstream catalog entry.
+func CindyManagedCompatibilityModels() []string {
+	models := make([]string, 0, len(cindyCapabilityCatalog))
+	for _, capability := range cindyCapabilityCatalog {
+		if capability.PublicModel && capability.Kind == CindyModelKindText &&
+			cindyCapabilityHasEndpoint(capability, CindyEndpointResponses) {
+			models = append(models, capability.PublicID)
+		}
+	}
+	sort.Strings(models)
+	return models
+}
+
+func CindyManagedCompatibilityAliases() map[string]string {
+	aliases := make(map[string]string, len(cindyCompatibilityAliases))
+	for alias, target := range cindyCompatibilityAliases {
+		aliases[alias] = target
+	}
+	return aliases
 }
 
 func CindyModelHasVerifiedEndpoint(model string) bool {

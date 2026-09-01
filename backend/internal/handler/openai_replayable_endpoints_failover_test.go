@@ -223,17 +223,11 @@ func TestAlphaSearchRetriesPoolFailureOnExactSameAccount(t *testing.T) {
 	require.Equal(t, []int64{1, 1}, upstream.calls())
 }
 
-func TestAlphaSearchResponsesBridgeToolFailureSwitchesAccountAndSucceeds(t *testing.T) {
+func TestAlphaSearchLegacyBridgeSettingsDoNotSwitchOrdinaryAPIKeys(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	successSSE := "event: response.output_item.done\n" +
-		`data: {"type":"response.output_item.done","item":{"type":"web_search_call","id":"ws_1","status":"completed"}}` + "\n\n" +
-		"event: response.output_text.delta\n" +
-		`data: {"type":"response.output_text.delta","delta":"search result"}` + "\n\n"
 	upstream := &replayableEndpointFailoverUpstream{
 		firstStatus: http.StatusBadRequest,
 		firstBody:   `{"error":{"type":"invalid_request_error","message":"This upstream tool is unavailable"}}`,
-		successBody: successSSE,
-		successType: "text/event-stream",
 	}
 	h, groupID := newReplayableEndpointFailoverHandler(t, upstream)
 	c, recorder := newReplayableEndpointContext(t, groupID, http.MethodPost, "/v1/alpha/search", []byte(
@@ -242,11 +236,11 @@ func TestAlphaSearchResponsesBridgeToolFailureSwitchesAccountAndSucceeds(t *test
 
 	h.AlphaSearch(c)
 
-	require.Equal(t, []int64{1, 2}, upstream.calls())
-	require.Equal(t, []string{"/v1/responses", "/v1/responses"}, upstream.requestPaths())
-	require.Equal(t, http.StatusOK, recorder.Code)
-	require.JSONEq(t, `{"output":"search result"}`, recorder.Body.String())
-	require.Equal(t, EndpointResponses, GetUpstreamEndpoint(c, service.PlatformOpenAI))
+	require.Equal(t, []int64{1}, upstream.calls())
+	require.Equal(t, []string{"/v1/alpha/search"}, upstream.requestPaths())
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	require.JSONEq(t, `{"error":{"type":"invalid_request_error","message":"This upstream tool is unavailable"}}`, recorder.Body.String())
+	require.Equal(t, EndpointAlphaSearch, GetUpstreamEndpoint(c, service.PlatformOpenAI))
 }
 
 func TestEmbeddingsRetriesPoolFailureOnExactSameAccount(t *testing.T) {

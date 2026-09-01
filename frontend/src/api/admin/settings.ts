@@ -433,6 +433,22 @@ export function deriveWeChatConnectStoredMode(
   return normalizeWeChatConnectMode(legacyMode);
 }
 
+export interface CindyManagedCompatibilitySettings {
+  config_source: "cindy_group_managed";
+  web_search: {
+    enabled: boolean;
+    verified_text_models: string[];
+    compatibility_aliases: Record<string, string>;
+    primary_path: "responses_web_search";
+    fallback_path: "messages_cindy_web_search";
+  };
+  prompt_cache_key: {
+    mode: "automatic";
+    max_characters: 64;
+    overflow_transform: "sha256_lower_hex";
+  };
+}
+
 /**
  * System settings interface
  */
@@ -696,8 +712,7 @@ export interface SystemSettings {
   cyber_session_block_ttl_seconds: number;
   openai_refusal_recovery_enabled: boolean;
   openai_cyber_failover_enabled: boolean;
-  openai_apikey_alpha_search_responses_bridge_enabled: boolean;
-  openai_apikey_prompt_cache_key_normalization_enabled: boolean;
+  cindy_managed_compatibility: CindyManagedCompatibilitySettings;
   openai_refusal_rewrite_enabled: boolean;
   openai_refusal_keywords: string[];
   openai_refusal_replacement: string;
@@ -1016,8 +1031,6 @@ export interface UpdateSettingsRequest {
   cyber_session_block_ttl_seconds?: number;
   openai_refusal_recovery_enabled?: boolean;
   openai_cyber_failover_enabled?: boolean;
-  openai_apikey_alpha_search_responses_bridge_enabled?: boolean;
-  openai_apikey_prompt_cache_key_normalization_enabled?: boolean;
   openai_refusal_rewrite_enabled?: boolean;
   openai_refusal_keywords?: string[];
   openai_refusal_replacement?: string;

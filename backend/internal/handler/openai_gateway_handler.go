@@ -370,6 +370,7 @@ func (h *OpenAIGatewayHandler) strictCindyModelAllowed(c *gin.Context, apiKey *s
 	if err != nil {
 		return false, err
 	}
+	service.SetCindyManagedCompatibility(c, strictCindy)
 	if !strictCindy {
 		return true, nil
 	}
@@ -565,6 +566,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			return
 		}
 	}
+	service.SetCindyManagedCompatibility(c, cindyIdentityGroup)
 	cindyContinuation := service.CindyContinuationClassification{}
 	var opaqueContinuationBindingIDs []string
 	opaqueContinuationBindingMiss := false
@@ -1327,6 +1329,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		h.anthropicErrorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
 		return
 	}
+	service.SetCindyManagedCompatibility(c, strictCindyMessages)
 	// Strict Cindy groups always expose their verified native Messages surface;
 	// the legacy OpenAI conversion flag remains authoritative elsewhere.
 	if !strictCindyMessages && !allowOpenAICompatibleMessagesDispatch(c, apiKey) {
@@ -2513,6 +2516,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "unable to determine model availability")
 		return
 	}
+	service.SetCindyManagedCompatibility(c, cindyIdentityGroup)
 	wsRoutingModel := reqModel
 	if mappedModel, mapped := service.CindyCompatibilityMappedUpstreamModel(reqModel); mapped && cindyIdentityGroup {
 		wsRoutingModel = mappedModel

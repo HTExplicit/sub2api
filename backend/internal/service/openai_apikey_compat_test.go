@@ -3,151 +3,135 @@ package service
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
 
-func TestNormalizeOpenAIAPIKeyPromptCacheKeyRequiresBothSwitches(t *testing.T) {
-	longKey := strings.Repeat("cache-key-", 9)
-	body := []byte(`{"prompt_cache_key":"` + longKey + `","input":[]}`)
-	account := &Account{
-		Platform: PlatformOpenAI,
-		Type:     AccountTypeAPIKey,
-		Extra:    map[string]any{"openai_prompt_cache_key_mode": OpenAIPromptCacheKeyModeSHA25664},
-	}
-
-	unchanged, changed, err := normalizeOpenAIAPIKeyPromptCacheKey(body, account, false)
-	require.NoError(t, err)
-	require.False(t, changed)
-	require.Equal(t, body, unchanged)
-
-	account.Extra["openai_prompt_cache_key_mode"] = OpenAIPromptCacheKeyModePassthrough
-	unchanged, changed, err = normalizeOpenAIAPIKeyPromptCacheKey(body, account, true)
-	require.NoError(t, err)
-	require.False(t, changed)
-	require.Equal(t, body, unchanged)
+func managedCindyPromptCacheContext() *gin.Context {
+	c, _ := gin.CreateTestContext(nil)
+	SetCindyManagedCompatibility(c, true)
+	return c
 }
 
-func TestNormalizeOpenAIAPIKeyPromptCacheKeyHashesOnlyLongExplicitAPIKeyValues(t *testing.T) {
-	longKey := strings.Repeat("x", 65)
-	body := []byte(`{"prompt_cache_key":"` + longKey + `","input":[]}`)
-	account := &Account{
-		Platform: PlatformOpenAI,
-		Type:     AccountTypeAPIKey,
-		Extra:    map[string]any{"openai_prompt_cache_key_mode": OpenAIPromptCacheKeyModeSHA25664},
-	}
-
-	normalized, changed, err := normalizeOpenAIAPIKeyPromptCacheKey(body, account, true)
-	require.NoError(t, err)
-	require.True(t, changed)
-	digest := sha256.Sum256([]byte(longKey))
-	require.Equal(t, hex.EncodeToString(digest[:]), gjson.GetBytes(normalized, "prompt_cache_key").String())
-	require.Len(t, gjson.GetBytes(normalized, "prompt_cache_key").String(), 64)
-
-	shortBody := []byte(`{"prompt_cache_key":"` + strings.Repeat("y", 64) + `"}`)
-	shortResult, shortChanged, err := normalizeOpenAIAPIKeyPromptCacheKey(shortBody, account, true)
-	require.NoError(t, err)
-	require.False(t, shortChanged)
-	require.Equal(t, shortBody, shortResult)
-
-	oauth := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth, Extra: account.Extra}
-	oauthResult, oauthChanged, err := normalizeOpenAIAPIKeyPromptCacheKey(body, oauth, true)
-	require.NoError(t, err)
-	require.False(t, oauthChanged)
-	require.Equal(t, body, oauthResult)
-}
-
-func TestOpenAIAlphaSearchModeDisabledExcludesOnlyExplicitAPIKeyAccount(t *testing.T) {
-	disabled := &Account{
-		Platform: PlatformOpenAI,
-		Type:     AccountTypeAPIKey,
-		Extra:    map[string]any{"openai_alpha_search_mode": OpenAIAlphaSearchModeDisabled},
-	}
-	direct := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
-	oauth := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth, Extra: disabled.Extra}
-
-	require.False(t, disabled.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityAlphaSearch))
-	require.True(t, direct.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityAlphaSearch))
-	require.True(t, oauth.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityAlphaSearch))
-}
-
-func TestMissingCompatibilityModesUseCindySafeCacheAndOrdinaryNativeDefaults(t *testing.T) {
-	cindy := &Account{Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1, Type: AccountTypeAPIKey, Credentials: cindyCredentials()}
-	legacy := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: cindyCredentials()}
-	ordinary := &Account{
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Credentials: map[string]any{"base_url": "https://api.openai.com"},
-	}
-
-	require.Equal(t, OpenAIAlphaSearchModeResponsesWebSearch, cindy.GetOpenAIAlphaSearchMode())
-	require.True(t, cindy.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityAlphaSearch))
-	require.Equal(t, OpenAIPromptCacheKeyModeSHA25664, cindy.GetOpenAIPromptCacheKeyMode())
-	require.Equal(t, OpenAIAlphaSearchModeDirect, legacy.GetOpenAIAlphaSearchMode(), "legacy compatibility must not enable Cindy search")
-	require.Equal(t, OpenAIPromptCacheKeyModeSHA25664, legacy.GetOpenAIPromptCacheKeyMode(), "legacy continuation keeps the safe cache key wire format")
-	require.Equal(t, OpenAIAlphaSearchModeDirect, ordinary.GetOpenAIAlphaSearchMode())
-	require.Equal(t, OpenAIPromptCacheKeyModePassthrough, ordinary.GetOpenAIPromptCacheKeyMode())
-}
-
-func TestCindyExplicitCompatibilityModesRemainAvailable(t *testing.T) {
-	cindy := &Account{
+func managedCindyPromptCacheAccount() *Account {
+	return &Account{
 		Platform:        PlatformCindy,
 		WirePlatform:    WirePlatformOpenAI,
 		ProviderProfile: ProviderProfileCindyLaxaV1,
 		Type:            AccountTypeAPIKey,
 		Credentials:     cindyCredentials(),
+	}
+}
+
+func TestCindyManagedPromptCacheKeyRequiresGroupAndExactAccountIdentity(t *testing.T) {
+	longKey := strings.Repeat("x", 65)
+	body := []byte(`{"prompt_cache_key":"` + longKey + `","input":[]}`)
+	cindy := managedCindyPromptCacheAccount()
+
+	unmanaged, changed, err := normalizeCindyManagedPromptCacheKey(body, nil, cindy)
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Equal(t, body, unmanaged)
+
+	ordinary := &Account{
+		Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Credentials: map[string]any{"base_url": "https://api.openai.com"},
 		Extra: map[string]any{
-			"openai_alpha_search_mode":     OpenAIAlphaSearchModeResponsesWebSearch,
 			"openai_prompt_cache_key_mode": OpenAIPromptCacheKeyModeSHA25664,
 		},
 	}
-
-	require.Equal(t, OpenAIAlphaSearchModeResponsesWebSearch, cindy.GetOpenAIAlphaSearchMode())
-	require.Equal(t, OpenAIPromptCacheKeyModeSHA25664, cindy.GetOpenAIPromptCacheKeyMode())
-
-	cindy.Extra["openai_alpha_search_mode"] = OpenAIAlphaSearchModeDirect
-	require.Equal(t, OpenAIAlphaSearchModeDirect, cindy.GetOpenAIAlphaSearchMode())
-	require.True(t, cindy.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityAlphaSearch))
-}
-
-func TestCindyDefaultPromptCacheModeHashesAzureRejectedLongKeyWhenGlobalGateIsEnabled(t *testing.T) {
-	longKey := strings.Repeat("x", 363)
-	body := []byte(`{"prompt_cache_key":"` + longKey + `","input":[]}`)
-	cindy := &Account{
-		Platform:        PlatformCindy,
-		WirePlatform:    WirePlatformOpenAI,
-		ProviderProfile: ProviderProfileCindyLaxaV1,
-		Type:            AccountTypeAPIKey,
-		Credentials:     cindyCredentials(),
-	}
-
-	normalized, changed, err := normalizeOpenAIAPIKeyPromptCacheKey(body, cindy, true)
-	require.NoError(t, err)
-	require.True(t, changed)
-	digest := sha256.Sum256([]byte(longKey))
-	require.Equal(t, hex.EncodeToString(digest[:]), gjson.GetBytes(normalized, "prompt_cache_key").String())
-	require.Len(t, gjson.GetBytes(normalized, "prompt_cache_key").String(), 64)
-}
-
-func TestCindyExplicitPromptCachePassthroughRemainsAvailable(t *testing.T) {
-	longKey := strings.Repeat("x", 363)
-	body := []byte(`{"prompt_cache_key":"` + longKey + `","input":[]}`)
-	cindy := &Account{
-		Platform:        PlatformCindy,
-		WirePlatform:    WirePlatformOpenAI,
-		ProviderProfile: ProviderProfileCindyLaxaV1,
-		Type:            AccountTypeAPIKey,
-		Credentials:     cindyCredentials(),
-		Extra: map[string]any{
-			"openai_prompt_cache_key_mode": OpenAIPromptCacheKeyModePassthrough,
-		},
-	}
-	require.Equal(t, OpenAIPromptCacheKeyModePassthrough, cindy.GetOpenAIPromptCacheKeyMode())
-	unchanged, changed, err := normalizeOpenAIAPIKeyPromptCacheKey(body, cindy, true)
+	ordinaryResult, changed, err := normalizeCindyManagedPromptCacheKey(body, managedCindyPromptCacheContext(), ordinary)
 	require.NoError(t, err)
 	require.False(t, changed)
-	require.Equal(t, body, unchanged)
+	require.Equal(t, body, ordinaryResult)
+
+	legacy := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: cindyCredentials()}
+	legacyResult, changed, err := normalizeCindyManagedPromptCacheKey(body, managedCindyPromptCacheContext(), legacy)
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Equal(t, body, legacyResult)
+}
+
+func TestCindyManagedPromptCacheKeyNormalizesFinalUnicodeWireValue(t *testing.T) {
+	tests := []struct {
+		name     string
+		value    string
+		wantHash bool
+	}{
+		{name: "64 ASCII", value: strings.Repeat("a", 64)},
+		{name: "65 ASCII", value: strings.Repeat("b", 65), wantHash: true},
+		{name: "363 ASCII", value: strings.Repeat("c", 363), wantHash: true},
+		{name: "64 Unicode characters", value: strings.Repeat("界", 64)},
+		{name: "65 Unicode characters", value: strings.Repeat("界", 65), wantHash: true},
+		{name: "empty", value: ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			body := []byte(`{"prompt_cache_key":"` + test.value + `","input":[]}`)
+			normalized, changed, err := normalizeCindyManagedPromptCacheKey(
+				body, managedCindyPromptCacheContext(), managedCindyPromptCacheAccount(),
+			)
+			require.NoError(t, err)
+			require.Equal(t, test.wantHash, changed)
+			if !test.wantHash {
+				require.Equal(t, body, normalized)
+				return
+			}
+			digest := sha256.Sum256([]byte(test.value))
+			require.Equal(t, hex.EncodeToString(digest[:]), gjson.GetBytes(normalized, "prompt_cache_key").String())
+			require.Len(t, gjson.GetBytes(normalized, "prompt_cache_key").String(), 64)
+		})
+	}
+
+	nonString := []byte(`{"prompt_cache_key":123,"input":[]}`)
+	result, changed, err := normalizeCindyManagedPromptCacheKey(
+		nonString, managedCindyPromptCacheContext(), managedCindyPromptCacheAccount(),
+	)
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Equal(t, nonString, result)
+}
+
+func TestLegacyCompatibilityModesAreStoredButIgnoredByManagedRuntime(t *testing.T) {
+	longKey := strings.Repeat("x", 363)
+	body := []byte(`{"prompt_cache_key":"` + longKey + `","input":[]}`)
+	cindy := managedCindyPromptCacheAccount()
+	cindy.Extra = map[string]any{
+		"openai_alpha_search_mode":     OpenAIAlphaSearchModeDisabled,
+		"openai_prompt_cache_key_mode": OpenAIPromptCacheKeyModePassthrough,
+	}
+
+	normalized, changed, err := normalizeCindyManagedPromptCacheKey(
+		body, managedCindyPromptCacheContext(), cindy,
+	)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.NotEqual(t, longKey, gjson.GetBytes(normalized, "prompt_cache_key").String())
+	require.True(t, cindy.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityAlphaSearch))
+
+	ordinaryDisabled := &Account{
+		Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Extra: map[string]any{"openai_alpha_search_mode": OpenAIAlphaSearchModeDisabled},
+	}
+	require.True(t, ordinaryDisabled.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityAlphaSearch))
+}
+
+func TestCindyManagedPromptCacheObservationRecordsOnlyBoolean(t *testing.T) {
+	logSink, restore := captureStructuredLog(t)
+	defer restore()
+	c := managedCindyPromptCacheContext()
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	observeCindyManagedPromptCacheNormalization(c, true)
+
+	require.True(t, logSink.ContainsMessage("openai.cindy_prompt_cache_key_normalized"))
+	require.True(t, logSink.ContainsFieldValue("normalized", "true"))
+	require.False(t, logSink.ContainsField("prompt_cache_key"))
+	require.False(t, logSink.ContainsField("original_value"))
 }

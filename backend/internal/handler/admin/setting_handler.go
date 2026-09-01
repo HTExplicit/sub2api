@@ -268,8 +268,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		CyberSessionBlockTTLSeconds:                            settings.CyberSessionBlockTTLSeconds,
 		OpenAIRefusalRecoveryEnabled:                           settings.OpenAIRefusalRecoveryEnabled,
 		OpenAICyberFailoverEnabled:                             settings.OpenAICyberFailoverEnabled,
-		OpenAIAPIKeyAlphaSearchResponsesBridgeEnabled:          settings.OpenAIAPIKeyAlphaSearchResponsesBridgeEnabled,
-		OpenAIAPIKeyPromptCacheKeyNormalizationEnabled:         settings.OpenAIAPIKeyPromptCacheKeyNormalizationEnabled,
+		CindyManagedCompatibility:                              cindyManagedCompatibilitySettings(),
 		OpenAIRefusalRewriteEnabled:                            settings.OpenAIRefusalRewriteEnabled,
 		OpenAIRefusalKeywords:                                  append([]string(nil), settings.OpenAIRefusalKeywords...),
 		OpenAIRefusalReplacement:                               settings.OpenAIRefusalReplacement,
@@ -416,6 +415,22 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 	}
 
 	response.Success(c, systemSettingsResponseData(payload, authSourceDefaults))
+}
+
+func cindyManagedCompatibilitySettings() dto.CindyManagedCompatibilitySettings {
+	return dto.CindyManagedCompatibilitySettings{
+		ConfigSource: "cindy_group_managed",
+		WebSearch: dto.CindyManagedWebSearchSettings{
+			Enabled:              service.CindySearchFeatureEnabled(),
+			VerifiedTextModels:   service.CindyManagedCompatibilityModels(),
+			CompatibilityAliases: service.CindyManagedCompatibilityAliases(),
+			PrimaryPath:          "responses_web_search",
+			FallbackPath:         "messages_cindy_web_search",
+		},
+		PromptCacheKey: dto.CindyManagedPromptCacheKeySettings{
+			Mode: "automatic", MaxCharacters: 64, OverflowTransform: "sha256_lower_hex",
+		},
+	}
 }
 
 // openaiFastPolicySettingsToDTO converts service -> dto for OpenAI fast policy.

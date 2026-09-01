@@ -58,6 +58,8 @@ jobs:
           go test -p=1 -tags integration ./migrations -run '^(TestCindy(OpenAIDefaults|PromptCacheHash|AlphaSearchBridge|BalanceMarkerReset|BalanceMarkerRestore|BalanceConfirmationReset|PlatformProjectionRoundTrip)MigrationIsStrictAndIdempotent|TestMigration235PreservesMixedOpenAIGroupsAfterCanonicalReplay)$' -count=1
           go test -p=1 -tags integration ./internal/repository -run '^Test(CindyGroupSplit(PreviewDriftAndAtomicCommit|RollsBackAllWritesWhenOutboxInsertFails)|ClassifyStrictCindyGroupUsesAllNonDeletedMembersAndOpenAIGroup|CindyBalanceProbe|DeleteCanonicalCindyAccountRetiresIdentityAndDeletesHealth|DeleteInsideOuterTransactionDefersSchedulerSideEffectsToCommittedOutbox|CredentialIdentityReimportKeepsRetiredOwnerHistory)' -count=1
           go test -p=1 -tags integration ./internal/repository -run '^(Test(AccountTaxonomy.*|DeleteAccountFolder.*)Integration|TestAPIKeyRepoSuite/TestReleaseAcceptanceKeyIsHiddenButAuthenticates)$' -count=1
+          python3 ../.github/scripts/test_upstream_risk.py
+          python3 ../.github/scripts/test_upstream_automation_contract.py
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 9.15.9
@@ -94,6 +96,9 @@ jobs:
             src/components/layout/__tests__/AppSidebar.simple-mode.spec.ts \
             src/views/admin/__tests__/AccountsView.console.spec.ts \
             src/views/admin/__tests__/AccountsView.priorityColumn.spec.ts \
+            src/views/admin/__tests__/SettingsView.spec.ts \
+            src/components/common/__tests__/VersionBadge.downstream.spec.ts \
+            src/api/__tests__/downstreamStatus.spec.ts \
             src/views/admin/__tests__/GroupsView.columnSettings.spec.ts \
             src/views/user/__tests__/ImageStudioView.spec.ts \
             src/router/__tests__/title.spec.ts
