@@ -155,7 +155,7 @@ jobs:
 
   candidate-image:
     name: Candidate OCI image
-    if: startsWith(github.ref, 'refs/heads/sync/')
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/sync/')
     needs: [backend, frontend]
     runs-on: ubuntu-latest
     steps:
