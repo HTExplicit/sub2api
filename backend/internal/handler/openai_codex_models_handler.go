@@ -232,7 +232,9 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 				h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Failed to merge Codex models manifest")
 				return
 			}
-		} else if err := h.gatewayService.MergeGroupConfiguredCodexModels(c.Request.Context(), apiKey.Group, manifest, ifNoneMatch); err != nil {
+		} else if err := h.gatewayService.MergeGroupConfiguredCodexModelsForAccount(
+			c.Request.Context(), apiKey.Group, manifest, ifNoneMatch, account,
+		); err != nil {
 			h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 			h.errorResponse(c, http.StatusInternalServerError, "api_error", "Failed to build Codex models manifest")
 			return

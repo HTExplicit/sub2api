@@ -1109,6 +1109,120 @@ func TestBuildGroupConfiguredCodexModelsManifestUsesAdministratorConfiguration(t
 	require.Equal(t, manifest.ETag, notModified.ETag)
 }
 
+func TestBuildGroupConfiguredCodexModelsManifestNormalizesFinalOrdinaryGPT56Contexts(t *testing.T) {
+	t.Parallel()
+
+	const groupID int64 = 78
+	account := newCodexModelsAPIKeyTestAccount("https://openai-compatible.example.test/v1")
+	account.Credentials["model_mapping"] = map[string]any{
+		"gpt-5.6-sol":   "provider-sol",
+		"gpt-5.6-terra": "provider-terra",
+		"gpt-5.6-luna":  "provider-luna",
+	}
+	svc := &OpenAIGatewayService{accountRepo: codexModelsVisibilityAccountRepo{
+		byGroup: map[int64][]Account{groupID: {*account}},
+	}}
+
+	manifest, configured, err := svc.BuildGroupConfiguredCodexModelsManifest(
+		context.Background(),
+		&Group{ID: groupID, Platform: PlatformOpenAI},
+		"",
+	)
+	require.NoError(t, err)
+	require.True(t, configured)
+	models := decodeCodexManifestModels(t, manifest.Body)
+	require.Len(t, models, 3)
+	bySlug := make(map[string]map[string]any, len(models))
+	for _, model := range models {
+		slug, ok := model["slug"].(string)
+		require.True(t, ok)
+		bySlug[slug] = model
+	}
+	require.EqualValues(t, 1_000_000, bySlug["gpt-5.6-sol"]["context_window"])
+	require.EqualValues(t, 1_000_000, bySlug["gpt-5.6-sol"]["max_context_window"])
+	require.EqualValues(t, 900_000, bySlug["gpt-5.6-sol"]["auto_compact_token_limit"])
+	require.EqualValues(t, 272_000, bySlug["gpt-5.6-terra"]["context_window"])
+	require.EqualValues(t, 921_000, bySlug["gpt-5.6-terra"]["max_context_window"])
+	require.Nil(t, bySlug["gpt-5.6-terra"]["auto_compact_token_limit"])
+	require.EqualValues(t, 272_000, bySlug["gpt-5.6-luna"]["context_window"])
+	require.EqualValues(t, 921_000, bySlug["gpt-5.6-luna"]["max_context_window"])
+	require.Nil(t, bySlug["gpt-5.6-luna"]["auto_compact_token_limit"])
+	notModified, configured, err := svc.BuildGroupConfiguredCodexModelsManifest(
+		context.Background(),
+		&Group{ID: groupID, Platform: PlatformOpenAI},
+		"W/"+manifest.ETag,
+	)
+	require.NoError(t, err)
+	require.True(t, configured)
+	require.True(t, notModified.NotModified)
+	require.Empty(t, notModified.Body)
+	require.Equal(t, manifest.ETag, notModified.ETag)
+}
+
+func TestMergeGroupConfiguredCodexModelsForAccountNormalizesAfterFinalMerge(t *testing.T) {
+	t.Parallel()
+
+	const groupID int64 = 79
+	account := newCodexModelsAPIKeyTestAccount("https://openai-compatible.example.test/v1")
+	svc := &OpenAIGatewayService{accountRepo: codexModelsVisibilityAccountRepo{
+		byGroup: map[int64][]Account{groupID: {*account}},
+	}}
+	manifest := &CodexModelsManifest{Body: []byte(`{"models":[
+		{"slug":"gpt-5.6-sol","context_window":272000,"max_context_window":872000,"auto_compact_token_limit":null},
+		{"slug":"gpt-5.6-terra","context_window":272000,"max_context_window":872000,"auto_compact_token_limit":null},
+		{"slug":"gpt-5.6-luna","context_window":272000,"max_context_window":872000,"auto_compact_token_limit":null}
+	]}`)}
+
+	require.NoError(t, svc.MergeGroupConfiguredCodexModelsForAccount(
+		context.Background(),
+		&Group{ID: groupID, Platform: PlatformOpenAI},
+		manifest,
+		"",
+		account,
+	))
+	models := decodeCodexManifestModels(t, manifest.Body)
+	bySlug := make(map[string]map[string]any, len(models))
+	for _, model := range models {
+		slug, ok := model["slug"].(string)
+		require.True(t, ok)
+		bySlug[slug] = model
+	}
+	require.EqualValues(t, 1_000_000, bySlug["gpt-5.6-sol"]["context_window"])
+	require.EqualValues(t, 1_000_000, bySlug["gpt-5.6-sol"]["max_context_window"])
+	require.EqualValues(t, 900_000, bySlug["gpt-5.6-sol"]["auto_compact_token_limit"])
+	require.EqualValues(t, 921_000, bySlug["gpt-5.6-terra"]["max_context_window"])
+	require.EqualValues(t, 921_000, bySlug["gpt-5.6-luna"]["max_context_window"])
+	require.Equal(t, codexModelsManifestBodyETag(manifest.Body), manifest.ETag)
+
+	repeated := &CodexModelsManifest{Body: []byte(`{"models":[
+		{"slug":"gpt-5.6-sol","context_window":272000,"max_context_window":872000,"auto_compact_token_limit":null},
+		{"slug":"gpt-5.6-terra","context_window":272000,"max_context_window":872000,"auto_compact_token_limit":null},
+		{"slug":"gpt-5.6-luna","context_window":272000,"max_context_window":872000,"auto_compact_token_limit":null}
+	]}`)}
+	require.NoError(t, svc.MergeGroupConfiguredCodexModelsForAccount(
+		context.Background(),
+		&Group{ID: groupID, Platform: PlatformOpenAI},
+		repeated,
+		"W/"+manifest.ETag,
+		account,
+	))
+	require.True(t, repeated.NotModified)
+	require.Empty(t, repeated.Body)
+	require.Equal(t, manifest.ETag, repeated.ETag)
+}
+
+func TestOrdinaryCodexContextNormalizationExcludesOAuthAndCindy(t *testing.T) {
+	t.Parallel()
+
+	require.False(t, allOrdinaryOpenAIAPIKeyAccounts([]Account{{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+	}}))
+	cindy := newCodexModelsAPIKeyTestAccount("https://api.laxarouter.ai")
+	cindy.Platform = PlatformCindy
+	require.False(t, allOrdinaryOpenAIAPIKeyAccounts([]Account{*cindy}))
+}
+
 // Scenario: OpenAI 通配映射展开组内精确选择，但不发布通配符 slug。
 func TestBuildGroupConfiguredCodexModelsManifestExpandsSelectedModelCoveredByWildcardMapping(t *testing.T) {
 	t.Parallel()
