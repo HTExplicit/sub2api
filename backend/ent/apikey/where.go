@@ -95,6 +95,16 @@ func Status(v string) predicate.APIKey {
 	return predicate.APIKey(sql.FieldEQ(FieldStatus, v))
 }
 
+// Purpose applies equality check predicate on the "purpose" field. It's identical to PurposeEQ.
+func Purpose(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldPurpose, v))
+}
+
+// LeaseID applies equality check predicate on the "lease_id" field. It's identical to LeaseIDEQ.
+func LeaseID(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldLeaseID, v))
+}
+
 // LastUsedAt applies equality check predicate on the "last_used_at" field. It's identical to LastUsedAtEQ.
 func LastUsedAt(v time.Time) predicate.APIKey {
 	return predicate.APIKey(sql.FieldEQ(FieldLastUsedAt, v))
@@ -533,6 +543,146 @@ func StatusEqualFold(v string) predicate.APIKey {
 // StatusContainsFold applies the ContainsFold predicate on the "status" field.
 func StatusContainsFold(v string) predicate.APIKey {
 	return predicate.APIKey(sql.FieldContainsFold(FieldStatus, v))
+}
+
+// PurposeEQ applies the EQ predicate on the "purpose" field.
+func PurposeEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldPurpose, v))
+}
+
+// PurposeNEQ applies the NEQ predicate on the "purpose" field.
+func PurposeNEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldPurpose, v))
+}
+
+// PurposeIn applies the In predicate on the "purpose" field.
+func PurposeIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldPurpose, vs...))
+}
+
+// PurposeNotIn applies the NotIn predicate on the "purpose" field.
+func PurposeNotIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldPurpose, vs...))
+}
+
+// PurposeGT applies the GT predicate on the "purpose" field.
+func PurposeGT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldPurpose, v))
+}
+
+// PurposeGTE applies the GTE predicate on the "purpose" field.
+func PurposeGTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldPurpose, v))
+}
+
+// PurposeLT applies the LT predicate on the "purpose" field.
+func PurposeLT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldPurpose, v))
+}
+
+// PurposeLTE applies the LTE predicate on the "purpose" field.
+func PurposeLTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldPurpose, v))
+}
+
+// PurposeContains applies the Contains predicate on the "purpose" field.
+func PurposeContains(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContains(FieldPurpose, v))
+}
+
+// PurposeHasPrefix applies the HasPrefix predicate on the "purpose" field.
+func PurposeHasPrefix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasPrefix(FieldPurpose, v))
+}
+
+// PurposeHasSuffix applies the HasSuffix predicate on the "purpose" field.
+func PurposeHasSuffix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasSuffix(FieldPurpose, v))
+}
+
+// PurposeEqualFold applies the EqualFold predicate on the "purpose" field.
+func PurposeEqualFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEqualFold(FieldPurpose, v))
+}
+
+// PurposeContainsFold applies the ContainsFold predicate on the "purpose" field.
+func PurposeContainsFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContainsFold(FieldPurpose, v))
+}
+
+// LeaseIDEQ applies the EQ predicate on the "lease_id" field.
+func LeaseIDEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldLeaseID, v))
+}
+
+// LeaseIDNEQ applies the NEQ predicate on the "lease_id" field.
+func LeaseIDNEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldLeaseID, v))
+}
+
+// LeaseIDIn applies the In predicate on the "lease_id" field.
+func LeaseIDIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldLeaseID, vs...))
+}
+
+// LeaseIDNotIn applies the NotIn predicate on the "lease_id" field.
+func LeaseIDNotIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldLeaseID, vs...))
+}
+
+// LeaseIDGT applies the GT predicate on the "lease_id" field.
+func LeaseIDGT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldLeaseID, v))
+}
+
+// LeaseIDGTE applies the GTE predicate on the "lease_id" field.
+func LeaseIDGTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldLeaseID, v))
+}
+
+// LeaseIDLT applies the LT predicate on the "lease_id" field.
+func LeaseIDLT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldLeaseID, v))
+}
+
+// LeaseIDLTE applies the LTE predicate on the "lease_id" field.
+func LeaseIDLTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldLeaseID, v))
+}
+
+// LeaseIDContains applies the Contains predicate on the "lease_id" field.
+func LeaseIDContains(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContains(FieldLeaseID, v))
+}
+
+// LeaseIDHasPrefix applies the HasPrefix predicate on the "lease_id" field.
+func LeaseIDHasPrefix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasPrefix(FieldLeaseID, v))
+}
+
+// LeaseIDHasSuffix applies the HasSuffix predicate on the "lease_id" field.
+func LeaseIDHasSuffix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasSuffix(FieldLeaseID, v))
+}
+
+// LeaseIDIsNil applies the IsNil predicate on the "lease_id" field.
+func LeaseIDIsNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldIsNull(FieldLeaseID))
+}
+
+// LeaseIDNotNil applies the NotNil predicate on the "lease_id" field.
+func LeaseIDNotNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotNull(FieldLeaseID))
+}
+
+// LeaseIDEqualFold applies the EqualFold predicate on the "lease_id" field.
+func LeaseIDEqualFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEqualFold(FieldLeaseID, v))
+}
+
+// LeaseIDContainsFold applies the ContainsFold predicate on the "lease_id" field.
+func LeaseIDContainsFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContainsFold(FieldLeaseID, v))
 }
 
 // LastUsedAtEQ applies the EQ predicate on the "last_used_at" field.

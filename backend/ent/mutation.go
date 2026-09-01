@@ -129,6 +129,8 @@ type APIKeyMutation struct {
 	key                *string
 	name               *string
 	status             *string
+	purpose            *string
+	lease_id           *string
 	last_used_at       *time.Time
 	ip_whitelist       *[]string
 	appendip_whitelist []string
@@ -577,6 +579,91 @@ func (m *APIKeyMutation) OldStatus(ctx context.Context) (v string, err error) {
 // ResetStatus resets all changes to the "status" field.
 func (m *APIKeyMutation) ResetStatus() {
 	m.status = nil
+}
+
+// SetPurpose sets the "purpose" field.
+func (m *APIKeyMutation) SetPurpose(s string) {
+	m.purpose = &s
+}
+
+// Purpose returns the value of the "purpose" field in the mutation.
+func (m *APIKeyMutation) Purpose() (r string, exists bool) {
+	v := m.purpose
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPurpose returns the old "purpose" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldPurpose(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPurpose is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPurpose requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPurpose: %w", err)
+	}
+	return oldValue.Purpose, nil
+}
+
+// ResetPurpose resets all changes to the "purpose" field.
+func (m *APIKeyMutation) ResetPurpose() {
+	m.purpose = nil
+}
+
+// SetLeaseID sets the "lease_id" field.
+func (m *APIKeyMutation) SetLeaseID(s string) {
+	m.lease_id = &s
+}
+
+// LeaseID returns the value of the "lease_id" field in the mutation.
+func (m *APIKeyMutation) LeaseID() (r string, exists bool) {
+	v := m.lease_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLeaseID returns the old "lease_id" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldLeaseID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLeaseID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLeaseID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLeaseID: %w", err)
+	}
+	return oldValue.LeaseID, nil
+}
+
+// ClearLeaseID clears the value of the "lease_id" field.
+func (m *APIKeyMutation) ClearLeaseID() {
+	m.lease_id = nil
+	m.clearedFields[apikey.FieldLeaseID] = struct{}{}
+}
+
+// LeaseIDCleared returns if the "lease_id" field was cleared in this mutation.
+func (m *APIKeyMutation) LeaseIDCleared() bool {
+	_, ok := m.clearedFields[apikey.FieldLeaseID]
+	return ok
+}
+
+// ResetLeaseID resets all changes to the "lease_id" field.
+func (m *APIKeyMutation) ResetLeaseID() {
+	m.lease_id = nil
+	delete(m.clearedFields, apikey.FieldLeaseID)
 }
 
 // SetLastUsedAt sets the "last_used_at" field.
@@ -1544,7 +1631,7 @@ func (m *APIKeyMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *APIKeyMutation) Fields() []string {
-	fields := make([]string, 0, 23)
+	fields := make([]string, 0, 25)
 	if m.created_at != nil {
 		fields = append(fields, apikey.FieldCreatedAt)
 	}
@@ -1568,6 +1655,12 @@ func (m *APIKeyMutation) Fields() []string {
 	}
 	if m.status != nil {
 		fields = append(fields, apikey.FieldStatus)
+	}
+	if m.purpose != nil {
+		fields = append(fields, apikey.FieldPurpose)
+	}
+	if m.lease_id != nil {
+		fields = append(fields, apikey.FieldLeaseID)
 	}
 	if m.last_used_at != nil {
 		fields = append(fields, apikey.FieldLastUsedAt)
@@ -1638,6 +1731,10 @@ func (m *APIKeyMutation) Field(name string) (ent.Value, bool) {
 		return m.GroupID()
 	case apikey.FieldStatus:
 		return m.Status()
+	case apikey.FieldPurpose:
+		return m.Purpose()
+	case apikey.FieldLeaseID:
+		return m.LeaseID()
 	case apikey.FieldLastUsedAt:
 		return m.LastUsedAt()
 	case apikey.FieldIPWhitelist:
@@ -1693,6 +1790,10 @@ func (m *APIKeyMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldGroupID(ctx)
 	case apikey.FieldStatus:
 		return m.OldStatus(ctx)
+	case apikey.FieldPurpose:
+		return m.OldPurpose(ctx)
+	case apikey.FieldLeaseID:
+		return m.OldLeaseID(ctx)
 	case apikey.FieldLastUsedAt:
 		return m.OldLastUsedAt(ctx)
 	case apikey.FieldIPWhitelist:
@@ -1787,6 +1888,20 @@ func (m *APIKeyMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetStatus(v)
+		return nil
+	case apikey.FieldPurpose:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPurpose(v)
+		return nil
+	case apikey.FieldLeaseID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLeaseID(v)
 		return nil
 	case apikey.FieldLastUsedAt:
 		v, ok := value.(time.Time)
@@ -2028,6 +2143,9 @@ func (m *APIKeyMutation) ClearedFields() []string {
 	if m.FieldCleared(apikey.FieldGroupID) {
 		fields = append(fields, apikey.FieldGroupID)
 	}
+	if m.FieldCleared(apikey.FieldLeaseID) {
+		fields = append(fields, apikey.FieldLeaseID)
+	}
 	if m.FieldCleared(apikey.FieldLastUsedAt) {
 		fields = append(fields, apikey.FieldLastUsedAt)
 	}
@@ -2068,6 +2186,9 @@ func (m *APIKeyMutation) ClearField(name string) error {
 		return nil
 	case apikey.FieldGroupID:
 		m.ClearGroupID()
+		return nil
+	case apikey.FieldLeaseID:
+		m.ClearLeaseID()
 		return nil
 	case apikey.FieldLastUsedAt:
 		m.ClearLastUsedAt()
@@ -2121,6 +2242,12 @@ func (m *APIKeyMutation) ResetField(name string) error {
 		return nil
 	case apikey.FieldStatus:
 		m.ResetStatus()
+		return nil
+	case apikey.FieldPurpose:
+		m.ResetPurpose()
+		return nil
+	case apikey.FieldLeaseID:
+		m.ResetLeaseID()
 		return nil
 	case apikey.FieldLastUsedAt:
 		m.ResetLastUsedAt()

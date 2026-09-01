@@ -113,6 +113,34 @@ func (_c *APIKeyCreate) SetNillableStatus(v *string) *APIKeyCreate {
 	return _c
 }
 
+// SetPurpose sets the "purpose" field.
+func (_c *APIKeyCreate) SetPurpose(v string) *APIKeyCreate {
+	_c.mutation.SetPurpose(v)
+	return _c
+}
+
+// SetNillablePurpose sets the "purpose" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillablePurpose(v *string) *APIKeyCreate {
+	if v != nil {
+		_c.SetPurpose(*v)
+	}
+	return _c
+}
+
+// SetLeaseID sets the "lease_id" field.
+func (_c *APIKeyCreate) SetLeaseID(v string) *APIKeyCreate {
+	_c.mutation.SetLeaseID(v)
+	return _c
+}
+
+// SetNillableLeaseID sets the "lease_id" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableLeaseID(v *string) *APIKeyCreate {
+	if v != nil {
+		_c.SetLeaseID(*v)
+	}
+	return _c
+}
+
 // SetLastUsedAt sets the "last_used_at" field.
 func (_c *APIKeyCreate) SetLastUsedAt(v time.Time) *APIKeyCreate {
 	_c.mutation.SetLastUsedAt(v)
@@ -387,6 +415,10 @@ func (_c *APIKeyCreate) defaults() error {
 		v := apikey.DefaultStatus
 		_c.mutation.SetStatus(v)
 	}
+	if _, ok := _c.mutation.Purpose(); !ok {
+		v := apikey.DefaultPurpose
+		_c.mutation.SetPurpose(v)
+	}
 	if _, ok := _c.mutation.Quota(); !ok {
 		v := apikey.DefaultQuota
 		_c.mutation.SetQuota(v)
@@ -455,6 +487,19 @@ func (_c *APIKeyCreate) check() error {
 	if v, ok := _c.mutation.Status(); ok {
 		if err := apikey.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "APIKey.status": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.Purpose(); !ok {
+		return &ValidationError{Name: "purpose", err: errors.New(`ent: missing required field "APIKey.purpose"`)}
+	}
+	if v, ok := _c.mutation.Purpose(); ok {
+		if err := apikey.PurposeValidator(v); err != nil {
+			return &ValidationError{Name: "purpose", err: fmt.Errorf(`ent: validator failed for field "APIKey.purpose": %w`, err)}
+		}
+	}
+	if v, ok := _c.mutation.LeaseID(); ok {
+		if err := apikey.LeaseIDValidator(v); err != nil {
+			return &ValidationError{Name: "lease_id", err: fmt.Errorf(`ent: validator failed for field "APIKey.lease_id": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.Quota(); !ok {
@@ -534,6 +579,14 @@ func (_c *APIKeyCreate) createSpec() (*APIKey, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Status(); ok {
 		_spec.SetField(apikey.FieldStatus, field.TypeString, value)
 		_node.Status = value
+	}
+	if value, ok := _c.mutation.Purpose(); ok {
+		_spec.SetField(apikey.FieldPurpose, field.TypeString, value)
+		_node.Purpose = value
+	}
+	if value, ok := _c.mutation.LeaseID(); ok {
+		_spec.SetField(apikey.FieldLeaseID, field.TypeString, value)
+		_node.LeaseID = &value
 	}
 	if value, ok := _c.mutation.LastUsedAt(); ok {
 		_spec.SetField(apikey.FieldLastUsedAt, field.TypeTime, value)
@@ -790,6 +843,36 @@ func (u *APIKeyUpsert) SetStatus(v string) *APIKeyUpsert {
 // UpdateStatus sets the "status" field to the value that was provided on create.
 func (u *APIKeyUpsert) UpdateStatus() *APIKeyUpsert {
 	u.SetExcluded(apikey.FieldStatus)
+	return u
+}
+
+// SetPurpose sets the "purpose" field.
+func (u *APIKeyUpsert) SetPurpose(v string) *APIKeyUpsert {
+	u.Set(apikey.FieldPurpose, v)
+	return u
+}
+
+// UpdatePurpose sets the "purpose" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdatePurpose() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldPurpose)
+	return u
+}
+
+// SetLeaseID sets the "lease_id" field.
+func (u *APIKeyUpsert) SetLeaseID(v string) *APIKeyUpsert {
+	u.Set(apikey.FieldLeaseID, v)
+	return u
+}
+
+// UpdateLeaseID sets the "lease_id" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateLeaseID() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldLeaseID)
+	return u
+}
+
+// ClearLeaseID clears the value of the "lease_id" field.
+func (u *APIKeyUpsert) ClearLeaseID() *APIKeyUpsert {
+	u.SetNull(apikey.FieldLeaseID)
 	return u
 }
 
@@ -1217,6 +1300,41 @@ func (u *APIKeyUpsertOne) SetStatus(v string) *APIKeyUpsertOne {
 func (u *APIKeyUpsertOne) UpdateStatus() *APIKeyUpsertOne {
 	return u.Update(func(s *APIKeyUpsert) {
 		s.UpdateStatus()
+	})
+}
+
+// SetPurpose sets the "purpose" field.
+func (u *APIKeyUpsertOne) SetPurpose(v string) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetPurpose(v)
+	})
+}
+
+// UpdatePurpose sets the "purpose" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdatePurpose() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdatePurpose()
+	})
+}
+
+// SetLeaseID sets the "lease_id" field.
+func (u *APIKeyUpsertOne) SetLeaseID(v string) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetLeaseID(v)
+	})
+}
+
+// UpdateLeaseID sets the "lease_id" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateLeaseID() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateLeaseID()
+	})
+}
+
+// ClearLeaseID clears the value of the "lease_id" field.
+func (u *APIKeyUpsertOne) ClearLeaseID() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearLeaseID()
 	})
 }
 
@@ -1855,6 +1973,41 @@ func (u *APIKeyUpsertBulk) SetStatus(v string) *APIKeyUpsertBulk {
 func (u *APIKeyUpsertBulk) UpdateStatus() *APIKeyUpsertBulk {
 	return u.Update(func(s *APIKeyUpsert) {
 		s.UpdateStatus()
+	})
+}
+
+// SetPurpose sets the "purpose" field.
+func (u *APIKeyUpsertBulk) SetPurpose(v string) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetPurpose(v)
+	})
+}
+
+// UpdatePurpose sets the "purpose" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdatePurpose() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdatePurpose()
+	})
+}
+
+// SetLeaseID sets the "lease_id" field.
+func (u *APIKeyUpsertBulk) SetLeaseID(v string) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetLeaseID(v)
+	})
+}
+
+// UpdateLeaseID sets the "lease_id" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateLeaseID() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateLeaseID()
+	})
+}
+
+// ClearLeaseID clears the value of the "lease_id" field.
+func (u *APIKeyUpsertBulk) ClearLeaseID() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearLeaseID()
 	})
 }
 

@@ -134,6 +134,40 @@ func (_u *APIKeyUpdate) SetNillableStatus(v *string) *APIKeyUpdate {
 	return _u
 }
 
+// SetPurpose sets the "purpose" field.
+func (_u *APIKeyUpdate) SetPurpose(v string) *APIKeyUpdate {
+	_u.mutation.SetPurpose(v)
+	return _u
+}
+
+// SetNillablePurpose sets the "purpose" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillablePurpose(v *string) *APIKeyUpdate {
+	if v != nil {
+		_u.SetPurpose(*v)
+	}
+	return _u
+}
+
+// SetLeaseID sets the "lease_id" field.
+func (_u *APIKeyUpdate) SetLeaseID(v string) *APIKeyUpdate {
+	_u.mutation.SetLeaseID(v)
+	return _u
+}
+
+// SetNillableLeaseID sets the "lease_id" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableLeaseID(v *string) *APIKeyUpdate {
+	if v != nil {
+		_u.SetLeaseID(*v)
+	}
+	return _u
+}
+
+// ClearLeaseID clears the value of the "lease_id" field.
+func (_u *APIKeyUpdate) ClearLeaseID() *APIKeyUpdate {
+	_u.mutation.ClearLeaseID()
+	return _u
+}
+
 // SetLastUsedAt sets the "last_used_at" field.
 func (_u *APIKeyUpdate) SetLastUsedAt(v time.Time) *APIKeyUpdate {
 	_u.mutation.SetLastUsedAt(v)
@@ -560,6 +594,16 @@ func (_u *APIKeyUpdate) check() error {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "APIKey.status": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.Purpose(); ok {
+		if err := apikey.PurposeValidator(v); err != nil {
+			return &ValidationError{Name: "purpose", err: fmt.Errorf(`ent: validator failed for field "APIKey.purpose": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.LeaseID(); ok {
+		if err := apikey.LeaseIDValidator(v); err != nil {
+			return &ValidationError{Name: "lease_id", err: fmt.Errorf(`ent: validator failed for field "APIKey.lease_id": %w`, err)}
+		}
+	}
 	if _u.mutation.UserCleared() && len(_u.mutation.UserIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "APIKey.user"`)
 	}
@@ -595,6 +639,15 @@ func (_u *APIKeyUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(apikey.FieldStatus, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Purpose(); ok {
+		_spec.SetField(apikey.FieldPurpose, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.LeaseID(); ok {
+		_spec.SetField(apikey.FieldLeaseID, field.TypeString, value)
+	}
+	if _u.mutation.LeaseIDCleared() {
+		_spec.ClearField(apikey.FieldLeaseID, field.TypeString)
 	}
 	if value, ok := _u.mutation.LastUsedAt(); ok {
 		_spec.SetField(apikey.FieldLastUsedAt, field.TypeTime, value)
@@ -918,6 +971,40 @@ func (_u *APIKeyUpdateOne) SetNillableStatus(v *string) *APIKeyUpdateOne {
 	if v != nil {
 		_u.SetStatus(*v)
 	}
+	return _u
+}
+
+// SetPurpose sets the "purpose" field.
+func (_u *APIKeyUpdateOne) SetPurpose(v string) *APIKeyUpdateOne {
+	_u.mutation.SetPurpose(v)
+	return _u
+}
+
+// SetNillablePurpose sets the "purpose" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillablePurpose(v *string) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetPurpose(*v)
+	}
+	return _u
+}
+
+// SetLeaseID sets the "lease_id" field.
+func (_u *APIKeyUpdateOne) SetLeaseID(v string) *APIKeyUpdateOne {
+	_u.mutation.SetLeaseID(v)
+	return _u
+}
+
+// SetNillableLeaseID sets the "lease_id" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableLeaseID(v *string) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetLeaseID(*v)
+	}
+	return _u
+}
+
+// ClearLeaseID clears the value of the "lease_id" field.
+func (_u *APIKeyUpdateOne) ClearLeaseID() *APIKeyUpdateOne {
+	_u.mutation.ClearLeaseID()
 	return _u
 }
 
@@ -1360,6 +1447,16 @@ func (_u *APIKeyUpdateOne) check() error {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "APIKey.status": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.Purpose(); ok {
+		if err := apikey.PurposeValidator(v); err != nil {
+			return &ValidationError{Name: "purpose", err: fmt.Errorf(`ent: validator failed for field "APIKey.purpose": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.LeaseID(); ok {
+		if err := apikey.LeaseIDValidator(v); err != nil {
+			return &ValidationError{Name: "lease_id", err: fmt.Errorf(`ent: validator failed for field "APIKey.lease_id": %w`, err)}
+		}
+	}
 	if _u.mutation.UserCleared() && len(_u.mutation.UserIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "APIKey.user"`)
 	}
@@ -1412,6 +1509,15 @@ func (_u *APIKeyUpdateOne) sqlSave(ctx context.Context) (_node *APIKey, err erro
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(apikey.FieldStatus, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Purpose(); ok {
+		_spec.SetField(apikey.FieldPurpose, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.LeaseID(); ok {
+		_spec.SetField(apikey.FieldLeaseID, field.TypeString, value)
+	}
+	if _u.mutation.LeaseIDCleared() {
+		_spec.ClearField(apikey.FieldLeaseID, field.TypeString)
 	}
 	if value, ok := _u.mutation.LastUsedAt(); ok {
 		_spec.SetField(apikey.FieldLastUsedAt, field.TypeTime, value)
