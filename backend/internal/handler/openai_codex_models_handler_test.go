@@ -61,6 +61,10 @@ func (r codexModelsFailoverAccountRepo) ListByGroup(_ context.Context, _ int64) 
 
 func (r codexModelsFailoverAccountRepo) CindyCodexModelsAccountReaderMarker() {}
 
+func (r codexModelsFailoverAccountRepo) ListModelAvailabilityCandidates(_ context.Context, _ *int64, _ []string, _ bool) ([]service.Account, error) {
+	return append([]service.Account(nil), r.accounts...), nil
+}
+
 type codexModelsFailoverHTTPUpstream struct {
 	service.HTTPUpstream
 	mu          sync.Mutex
@@ -485,6 +489,17 @@ func TestCodexModelsDoesNotFailOverFromPermanentUpstreamStatus(t *testing.T) {
 
 func requireCompleteCodexModelsHandlerResponse(t *testing.T, recorder *httptest.ResponseRecorder, slug string) {
 	t.Helper()
+	manifestSlugs := codexHandlerManifestSlugs(t, recorder)
+	foundSlug := false
+	for _, candidate := range manifestSlugs {
+		if candidate == slug || strings.TrimPrefix(candidate, "openai/") == slug {
+			foundSlug = true
+			break
+		}
+	}
+	if !foundSlug {
+		t.Fatalf("manifest slugs %v do not contain %q", manifestSlugs, slug)
+	}
 	var envelope struct {
 		Models []map[string]any `json:"models"`
 	}
@@ -510,6 +525,10 @@ func requireCompleteCodexModelsHandlerResponse(t *testing.T, recorder *httptest.
 	}
 	if policy, ok := model["truncation_policy"].(map[string]any); !ok || len(policy) == 0 {
 		t.Fatalf("truncation_policy must be populated: %v", model["truncation_policy"])
+	}
+	modalities, ok := model["input_modalities"].([]any)
+	if !ok || len(modalities) != 2 || modalities[0] != "text" || modalities[1] != "image" {
+		t.Fatalf("known GPT model modalities: got %v, want [text image]", model["input_modalities"])
 	}
 }
 
@@ -626,6 +645,24 @@ func performCodexModelsRequestForGroupWithVersion(t *testing.T, handler *OpenAIG
 
 	handler.CodexModels(c)
 	return recorder
+}
+
+func codexHandlerManifestSlugs(t *testing.T, recorder *httptest.ResponseRecorder) []string {
+	t.Helper()
+
+	var envelope struct {
+		Models []struct {
+			Slug string `json:"slug"`
+		} `json:"models"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode body: %v; body=%s", err, recorder.Body.String())
+	}
+	slugs := make([]string, 0, len(envelope.Models))
+	for _, model := range envelope.Models {
+		slugs = append(slugs, model.Slug)
+	}
+	return slugs
 }
 
 func equalInt64Slices(got, want []int64) bool {

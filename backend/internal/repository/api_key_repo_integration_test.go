@@ -86,6 +86,44 @@ func (s *APIKeyRepoSuite) TestGetByKey_NotFound() {
 	s.Require().Error(err, "expected error for non-existent key")
 }
 
+func (s *APIKeyRepoSuite) TestReleaseAcceptanceKeyIsHiddenButAuthenticates() {
+	user := s.mustCreateUser("release-acceptance-key@test.com")
+	group := s.mustCreateGroup("g-release-acceptance")
+	leaseID := "accept-0123456789abcdef0123456789abcdef0123456789abcdef"
+	key := &service.APIKey{
+		UserID:      user.ID,
+		Key:         "sk-accept-integration-test",
+		Name:        "Release acceptance (ephemeral)",
+		GroupID:     &group.ID,
+		Status:      service.StatusActive,
+		Purpose:     service.APIKeyPurposeReleaseAcceptance,
+		LeaseID:     &leaseID,
+		ExpiresAt:   ptrTime(time.Now().Add(30 * time.Minute)),
+		IPWhitelist: []string{"127.0.0.1", "::1"},
+	}
+	s.Require().NoError(s.repo.Create(s.ctx, key))
+	s.Require().Equal(service.APIKeyPurposeReleaseAcceptance, key.Purpose)
+
+	_, err := s.repo.GetByID(s.ctx, key.ID)
+	s.Require().ErrorIs(err, service.ErrAPIKeyNotFound)
+
+	listed, result, err := s.repo.ListByUserID(
+		s.ctx,
+		user.ID,
+		pagination.PaginationParams{Page: 1, PageSize: 20},
+		service.APIKeyListFilters{},
+	)
+	s.Require().NoError(err)
+	s.Require().Empty(listed)
+	s.Require().Zero(result.Total)
+
+	authenticated, err := s.repo.GetByKeyForAuth(s.ctx, key.Key)
+	s.Require().NoError(err)
+	s.Require().Equal(key.ID, authenticated.ID)
+	s.Require().Equal(service.APIKeyPurposeReleaseAcceptance, authenticated.Purpose)
+	s.Require().Equal(leaseID, *authenticated.LeaseID)
+}
+
 func (s *APIKeyRepoSuite) TestGetByKeyForAuth_PreservesMessagesDispatchModelConfig() {
 	user := s.mustCreateUser("getbykey-auth-dispatch@test.com")
 	group, err := s.client.Group.Create().
