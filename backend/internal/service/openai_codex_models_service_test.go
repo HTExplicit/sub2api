@@ -3492,6 +3492,59 @@ func TestCompleteAPIKeyCodexModelsManifestForClientUsesKnownGPTImageFallback(t *
 	require.Equal(t, []any{"text"}, bySlug["gpt-4o"]["input_modalities"])
 }
 
+func TestCompleteAPIKeyCodexModelsManifestForClientNormalizesFinalOrdinaryGPT56Contexts(t *testing.T) {
+	t.Parallel()
+
+	svc := &OpenAIGatewayService{}
+	manifest := &CodexModelsManifest{Body: []byte(`{"models":[
+		{"slug":"gpt-5.6-sol"},
+		{"slug":"gpt-5.6-terra"},
+		{"slug":"gpt-5.6-luna"}
+	]}`)}
+	account := newCodexModelsAPIKeyTestAccount("https://openai-compatible.example.test/v1")
+
+	require.NoError(t, svc.CompleteAPIKeyCodexModelsManifestForClient(manifest, account))
+	models := decodeCodexManifestModels(t, manifest.Body)
+	require.Len(t, models, 3)
+	bySlug := make(map[string]map[string]any, len(models))
+	for _, model := range models {
+		slug, ok := model["slug"].(string)
+		require.True(t, ok)
+		bySlug[slug] = model
+	}
+	require.EqualValues(t, 1_000_000, bySlug["gpt-5.6-sol"]["context_window"])
+	require.EqualValues(t, 1_000_000, bySlug["gpt-5.6-sol"]["max_context_window"])
+	require.EqualValues(t, 900_000, bySlug["gpt-5.6-sol"]["auto_compact_token_limit"])
+	require.EqualValues(t, 272_000, bySlug["gpt-5.6-terra"]["context_window"])
+	require.EqualValues(t, 921_000, bySlug["gpt-5.6-terra"]["max_context_window"])
+	require.Nil(t, bySlug["gpt-5.6-terra"]["auto_compact_token_limit"])
+	require.EqualValues(t, 272_000, bySlug["gpt-5.6-luna"]["context_window"])
+	require.EqualValues(t, 921_000, bySlug["gpt-5.6-luna"]["max_context_window"])
+	require.Nil(t, bySlug["gpt-5.6-luna"]["auto_compact_token_limit"])
+}
+
+func TestCompleteAPIKeyCodexModelsManifestForClientKeepsCindyPinnedContexts(t *testing.T) {
+	if !runCindyCodexCatalogEnabledTest(t) {
+		return
+	}
+	manifest, err := BuildCindyCodexModelsManifest("")
+	require.NoError(t, err)
+	account := newCodexModelsAPIKeyTestAccount("https://api.laxarouter.ai")
+	account.Platform = PlatformCindy
+	account.WirePlatform = WirePlatformOpenAI
+	account.ProviderProfile = ProviderProfileCindyLaxaV1
+
+	require.NoError(t, (&OpenAIGatewayService{}).CompleteAPIKeyCodexModelsManifestForClient(manifest, account))
+	models := decodeCodexManifestModels(t, manifest.Body)
+	for _, model := range models {
+		if model["slug"] == "gpt-5.6-luna" {
+			require.EqualValues(t, 1_050_000, model["context_window"])
+			return
+		}
+	}
+	t.Fatal("Cindy Luna model missing")
+}
+
 // Scenario: 标准 /models 型号列表优先使用已同步账号能力，再使用本地 descriptor 兜底。
 
 func TestCompleteAPIKeyCodexModelsManifestForClientUsesSyncedMetadataForConvertedModelList(t *testing.T) {

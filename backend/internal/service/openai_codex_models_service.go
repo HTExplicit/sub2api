@@ -2409,6 +2409,17 @@ func (s *OpenAIGatewayService) CompleteAPIKeyCodexModelsManifestForClient(manife
 	if err != nil {
 		return err
 	}
+	// v0.1.185 completes sparse provider manifests after the upstream body was
+	// normalized. Run the downstream ordinary GPT-5.6 contract on the final
+	// descriptor set so synthesized context fields cannot overwrite the Codex
+	// client contract. Strict Cindy has its own pinned catalog and must remain
+	// outside this normalization.
+	if !IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		body, err = normalizeOfficialCodexModelContexts(body)
+		if err != nil {
+			return err
+		}
+	}
 	manifest.Body = body
 	manifest.ETag = codexModelsManifestBodyETag(manifest.Body)
 	return nil
