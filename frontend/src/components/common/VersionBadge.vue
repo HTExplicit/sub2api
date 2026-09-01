@@ -256,6 +256,24 @@
                     <p class="mt-1 text-xs text-gray-600 dark:text-dark-300">
                       {{ t('version.downstreamManagedHint', { current: upstreamBaseVersion, latest: latestVersion }) }}
                     </p>
+                    <div v-if="downstreamStatus" class="mt-2" data-testid="downstream-release-status">
+                      <span class="inline-flex rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-medium text-blue-700 dark:bg-dark-800 dark:text-blue-300">
+                        {{ t(`version.downstreamStatus.${downstreamStatus.status}`) }}
+                      </span>
+                      <div class="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                        <a
+                          v-for="link in downstreamStatus.links"
+                          :key="`${link.label}:${link.url}`"
+                          :href="link.url"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="text-[11px] text-blue-600 hover:underline dark:text-blue-400"
+                        >{{ t(`version.downstreamLink.${link.label}`) }}</a>
+                      </div>
+                    </div>
+                    <p v-else-if="downstreamStatusLoading" class="mt-2 text-[11px] text-gray-500 dark:text-dark-400">
+                      {{ t('version.downstreamStatusLoading') }}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -678,6 +696,11 @@ import {
   type RollbackVersionInfo
 } from '@/api/admin/system'
 import { useClipboard } from '@/composables/useClipboard'
+import {
+  clearDownstreamStatusCache,
+  fetchDownstreamStatus,
+  type DownstreamStatusInfo
+} from '@/api/downstreamStatus'
 import Icon from '@/components/icons/Icon.vue'
 
 const GITHUB_REPO = 'Wei-Shaw/sub2api'
@@ -715,6 +738,8 @@ const restarting = ref(false)
 const needRestart = ref(false)
 const updateError = ref('')
 const updateSuccess = ref(false)
+const downstreamStatus = ref<DownstreamStatusInfo | null>(null)
+const downstreamStatusLoading = ref(false)
 const restartCountdown = ref(0)
 // Distinguishes the success + restart panel between update and rollback flows
 const successKind = ref<'update' | 'rollback'>('update')
@@ -763,7 +788,12 @@ const activeManualCommand = computed(() =>
 // Only show update check for release builds (binary/docker deployment)
 const isReleaseBuild = computed(() => buildType.value === 'release')
 const isDownstream = computed(() => updateStrategy.value === 'downstream')
-const badgeNeedsAttention = computed(() => hasUpdate.value || (isDownstream.value && upstreamUpdateAvailable.value))
+const downstreamNeedsAttention = computed(() =>
+  downstreamStatus.value != null && downstreamStatus.value.status !== 'current'
+)
+const badgeNeedsAttention = computed(() =>
+  hasUpdate.value || (isDownstream.value && (upstreamUpdateAvailable.value || downstreamNeedsAttention.value))
+)
 const badgeTitle = computed(() => {
   if (isDownstream.value) {
     return upstreamUpdateAvailable.value
@@ -773,8 +803,28 @@ const badgeTitle = computed(() => {
   return hasUpdate.value ? t('version.updateAvailable') : t('version.upToDate')
 })
 
-function toggleDropdown() {
+async function loadDownstreamStatus(force = false) {
+  if (!isDownstream.value || !currentVersion.value || !latestVersion.value) return
+  downstreamStatusLoading.value = true
+  try {
+    downstreamStatus.value = await fetchDownstreamStatus(
+      currentVersion.value,
+      latestVersion.value,
+      force
+    )
+  } catch {
+    downstreamStatus.value = null
+  } finally {
+    downstreamStatusLoading.value = false
+  }
+}
+
+async function toggleDropdown() {
   dropdownOpen.value = !dropdownOpen.value
+  if (dropdownOpen.value) {
+    await appStore.fetchVersion(false)
+    await loadDownstreamStatus(false)
+  }
 }
 
 function closeDropdown() {
@@ -791,6 +841,10 @@ async function refreshVersion(force = true) {
   resetRollbackState()
 
   await appStore.fetchVersion(force)
+  if (isDownstream.value) {
+    clearDownstreamStatusCache()
+    await loadDownstreamStatus(true)
+  }
 }
 
 async function handleUpdate() {

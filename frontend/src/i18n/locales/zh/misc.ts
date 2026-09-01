@@ -27,6 +27,23 @@ export default {
     waitingDownstreamSync: '等待下游同步',
     upstreamBase: '官方基线 v{version}',
     downstreamManagedHint: '当前官方基线 v{current}，官方最新 v{latest}。更新与回退由下游发布通道管理。',
+    downstreamStatusLoading: '正在读取下游发布状态…',
+    downstreamStatus: {
+      current: '生产已是当前下游版本',
+      sync_pending: '等待同步任务',
+      candidate_testing: '候选 PR 测试中',
+      review_required: '需要人工审查',
+      release_ready: '下游 Release 已就绪',
+      approval_pending: '等待生产审批',
+      deploying: '正在部署',
+      failed: '自动化已停止'
+    },
+    downstreamLink: {
+      official: '官方 Release',
+      candidate: '候选 PR',
+      release: '下游 Release',
+      production: '生产任务'
+    },
     releaseNotes: '更新日志',
     noReleaseNotes: '暂无更新日志',
     viewUpdate: '查看更新',

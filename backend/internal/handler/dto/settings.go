@@ -25,6 +25,26 @@ type CustomEndpoint struct {
 	Description string `json:"description"`
 }
 
+type CindyManagedWebSearchSettings struct {
+	Enabled              bool              `json:"enabled"`
+	VerifiedTextModels   []string          `json:"verified_text_models"`
+	CompatibilityAliases map[string]string `json:"compatibility_aliases"`
+	PrimaryPath          string            `json:"primary_path"`
+	FallbackPath         string            `json:"fallback_path"`
+}
+
+type CindyManagedPromptCacheKeySettings struct {
+	Mode              string `json:"mode"`
+	MaxCharacters     int    `json:"max_characters"`
+	OverflowTransform string `json:"overflow_transform"`
+}
+
+type CindyManagedCompatibilitySettings struct {
+	ConfigSource   string                             `json:"config_source"`
+	WebSearch      CindyManagedWebSearchSettings      `json:"web_search"`
+	PromptCacheKey CindyManagedPromptCacheKeySettings `json:"prompt_cache_key"`
+}
+
 // SystemSettings represents the admin settings API response payload.
 type SystemSettings struct {
 	RegistrationEnabled                 bool                     `json:"registration_enabled"`
@@ -326,15 +346,14 @@ type SystemSettings struct {
 	RiskControlEnabled bool `json:"risk_control_enabled"`
 
 	// cyber 会话屏蔽开关 + TTL
-	CyberSessionBlockEnabled                       bool     `json:"cyber_session_block_enabled"`
-	CyberSessionBlockTTLSeconds                    int      `json:"cyber_session_block_ttl_seconds"`
-	OpenAIRefusalRecoveryEnabled                   bool     `json:"openai_refusal_recovery_enabled"`
-	OpenAICyberFailoverEnabled                     bool     `json:"openai_cyber_failover_enabled"`
-	OpenAIAPIKeyAlphaSearchResponsesBridgeEnabled  bool     `json:"openai_apikey_alpha_search_responses_bridge_enabled"`
-	OpenAIAPIKeyPromptCacheKeyNormalizationEnabled bool     `json:"openai_apikey_prompt_cache_key_normalization_enabled"`
-	OpenAIRefusalRewriteEnabled                    bool     `json:"openai_refusal_rewrite_enabled"`
-	OpenAIRefusalKeywords                          []string `json:"openai_refusal_keywords"`
-	OpenAIRefusalReplacement                       string   `json:"openai_refusal_replacement"`
+	CyberSessionBlockEnabled     bool                              `json:"cyber_session_block_enabled"`
+	CyberSessionBlockTTLSeconds  int                               `json:"cyber_session_block_ttl_seconds"`
+	OpenAIRefusalRecoveryEnabled bool                              `json:"openai_refusal_recovery_enabled"`
+	OpenAICyberFailoverEnabled   bool                              `json:"openai_cyber_failover_enabled"`
+	CindyManagedCompatibility    CindyManagedCompatibilitySettings `json:"cindy_managed_compatibility"`
+	OpenAIRefusalRewriteEnabled  bool                              `json:"openai_refusal_rewrite_enabled"`
+	OpenAIRefusalKeywords        []string                          `json:"openai_refusal_keywords"`
+	OpenAIRefusalReplacement     string                            `json:"openai_refusal_replacement"`
 
 	// Affiliate (邀请返利) feature switch
 	AffiliateEnabled bool `json:"affiliate_enabled"`

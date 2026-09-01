@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import VersionBadge from '../VersionBadge.vue'
@@ -18,7 +18,9 @@ const mocks = vi.hoisted(() => ({
     clearVersionCache: vi.fn()
   },
   performUpdate: vi.fn(),
-  getRollbackVersions: vi.fn()
+  getRollbackVersions: vi.fn(),
+  fetchDownstreamStatus: vi.fn(),
+  clearDownstreamStatusCache: vi.fn()
 }))
 
 vi.mock('vue-i18n', async () => {
@@ -45,6 +47,11 @@ vi.mock('@/composables/useClipboard', () => ({
   useClipboard: () => ({ copied: false, copyToClipboard: vi.fn() })
 }))
 
+vi.mock('@/api/downstreamStatus', () => ({
+  fetchDownstreamStatus: mocks.fetchDownstreamStatus,
+  clearDownstreamStatusCache: mocks.clearDownstreamStatusCache
+}))
+
 function mountBadge() {
   return mount(VersionBadge, {
     global: {
@@ -67,6 +74,13 @@ describe('VersionBadge downstream releases', () => {
     mocks.appStore.fetchVersion.mockReset()
     mocks.performUpdate.mockReset()
     mocks.getRollbackVersions.mockReset()
+    mocks.fetchDownstreamStatus.mockReset()
+    mocks.fetchDownstreamStatus.mockResolvedValue({
+      status: 'current',
+      official_latest: '0.1.166',
+      downstream_base: '0.1.166',
+      links: [{ label: 'official', url: 'https://official.example' }]
+    })
   })
 
   it('shows a managed downstream build without offering official update or rollback', async () => {
@@ -74,11 +88,15 @@ describe('VersionBadge downstream releases', () => {
 
     expect(wrapper.get('button').attributes('title')).toBe('version.downstreamManaged')
     await wrapper.get('button').trigger('click')
+    await flushPromises()
 
     expect(wrapper.text()).toContain('version.downstreamManaged')
     expect(wrapper.text()).toContain('version.upstreamBase')
     expect(wrapper.text()).not.toContain('version.updateNow')
     expect(wrapper.text()).not.toContain('version.rollback')
+    expect(wrapper.get('[data-testid="downstream-release-status"]').text()).toContain(
+      'version.downstreamStatus.current'
+    )
     expect(mocks.performUpdate).not.toHaveBeenCalled()
     expect(mocks.getRollbackVersions).not.toHaveBeenCalled()
   })
@@ -86,14 +104,23 @@ describe('VersionBadge downstream releases', () => {
   it('marks a newer official baseline as waiting for downstream synchronization', async () => {
     mocks.appStore.latestVersion = '0.1.167'
     mocks.appStore.upstreamUpdateAvailable = true
+    mocks.fetchDownstreamStatus.mockResolvedValue({
+      status: 'candidate_testing',
+      official_latest: '0.1.167',
+      downstream_base: '0.1.166',
+      candidate_pr: { number: 9, title: 'candidate', url: 'https://candidate.example' },
+      links: [{ label: 'candidate', url: 'https://candidate.example' }]
+    })
     const wrapper = mountBadge()
 
     expect(wrapper.get('button').attributes('title')).toBe('version.waitingDownstreamSync')
     await wrapper.get('button').trigger('click')
+    await flushPromises()
 
     expect(wrapper.text()).toContain('version.waitingDownstreamSync')
     expect(wrapper.text()).not.toContain('version.updateNow')
     expect(wrapper.text()).not.toContain('version.rollback')
+    expect(wrapper.text()).toContain('version.downstreamStatus.candidate_testing')
     expect(mocks.performUpdate).not.toHaveBeenCalled()
     expect(mocks.getRollbackVersions).not.toHaveBeenCalled()
   })

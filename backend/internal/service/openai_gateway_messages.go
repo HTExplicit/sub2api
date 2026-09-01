@@ -303,6 +303,13 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 			}
 		}
 	}
+	if normalizedBody, changed, normalizeErr := normalizeCindyManagedPromptCacheKey(responsesBody, c, account); normalizeErr != nil {
+		return nil, fmt.Errorf("normalize final Messages-to-Responses Cindy prompt_cache_key: %w", normalizeErr)
+	} else if changed {
+		responsesBody = normalizedBody
+		promptCacheKey = strings.TrimSpace(gjson.GetBytes(responsesBody, "prompt_cache_key").String())
+		observeCindyManagedPromptCacheNormalization(c, true)
+	}
 	grokCacheIdentity := ""
 	if account.Platform == PlatformGrok {
 		grokIntentBody := responsesBody

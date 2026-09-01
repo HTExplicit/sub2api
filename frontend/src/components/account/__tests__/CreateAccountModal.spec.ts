@@ -271,7 +271,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(wrapper.get('[data-testid="cindy-managed-create-catalog"]').text()).toContain('gpt-5.6-luna')
   })
 
-  it('selects Cindy-safe modes and keeps the standard OpenAI option order', async () => {
+  it('keeps only the transport selector and removes account-level compatibility modes', async () => {
     const wrapper = mountModal()
     await selectButtonByText(wrapper, 'OpenAI')
     await selectButtonByText(wrapper, 'API Key')
@@ -284,17 +284,10 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     await flushPromises()
 
     const responses = wrapper.get<HTMLSelectElement>('[data-testid="openai-responses-mode-select"]')
-    const alpha = wrapper.get<HTMLSelectElement>('[data-testid="openai-alpha-search-mode-select"]')
-    const cache = wrapper.get<HTMLSelectElement>('[data-testid="openai-prompt-cache-key-mode-select"]')
 
     expect(responses.element.value).toBe('force_responses')
-    expect(alpha.element.value).toBe('responses_web_search')
-    expect(alpha.element.options[0].value).toBe('direct')
-    expect(alpha.element.options[1].value).toBe('responses_web_search')
-    expect(alpha.element.options[2].value).toBe('disabled')
-    expect(cache.element.value).toBe('sha256_64')
-    expect(cache.element.options[0].value).toBe('passthrough')
-    expect(cache.element.options[1].value).toBe('sha256_64')
+    expect(wrapper.find('[data-testid="openai-alpha-search-mode-select"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="openai-prompt-cache-key-mode-select"]').exists()).toBe(false)
   })
 
   it('hides only the redundant account toggle when every selected group enables tier pricing', async () => {

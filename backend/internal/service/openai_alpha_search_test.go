@@ -183,7 +183,7 @@ func TestForwardAlphaSearchPATUsesResponsesWebSearchFallback(t *testing.T) {
 	require.Contains(t, gjson.GetBytes(upstream.lastBody, "input.0.content.0.text").String(), `"search_query"`)
 }
 
-func TestForwardAlphaSearchAPIKeyResponsesBridgeUsesConfiguredBaseURL(t *testing.T) {
+func TestForwardAlphaSearchOrdinaryAPIKeyIgnoresLegacyBridgeSettings(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{"id":"search-session","model":"gpt-5.6-luna","commands":{"search_query":[{"q":"news"}]}}`)
 	recorder := httptest.NewRecorder()
@@ -216,15 +216,12 @@ func TestForwardAlphaSearchAPIKeyResponsesBridgeUsesConfiguredBaseURL(t *testing
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, 1, result.WebSearchCalls)
-	require.Equal(t, "https://cindy.example/gateway/v1/responses", upstream.lastReq.URL.String())
+	require.Equal(t, "https://cindy.example/gateway/v1/alpha/search", upstream.lastReq.URL.String())
 	require.Equal(t, "Bearer sk-test", upstream.lastReq.Header.Get("Authorization"))
-	require.Equal(t, "text/event-stream", upstream.lastReq.Header.Get("Accept"))
-	require.Empty(t, upstream.lastReq.Header.Get("OpenAI-Beta"))
-	require.Empty(t, upstream.lastReq.Header.Get("ChatGPT-Account-ID"))
 	require.Equal(t, http.StatusOK, recorder.Code)
 }
 
-func TestForwardAlphaSearchAPIKeyResponsesBridgeToolErrorFailsOverWithoutAccountPenalty(t *testing.T) {
+func TestForwardAlphaSearchOrdinaryAPIKeyToolErrorUsesOfficialFailurePath(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{"id":"search-session","model":"gpt-5.6-sol","commands":{"search_query":[{"q":"news"}]}}`)
 	recorder := httptest.NewRecorder()
@@ -255,19 +252,13 @@ func TestForwardAlphaSearchAPIKeyResponsesBridgeToolErrorFailsOverWithoutAccount
 	result, err := service.ForwardAlphaSearch(context.Background(), c, account, body)
 
 	require.Nil(t, result)
-	var failoverErr *UpstreamFailoverError
-	require.ErrorAs(t, err, &failoverErr)
-	require.True(t, failoverErr.IsOpenAIAlphaSearchBridgeUnavailable())
-	require.True(t, failoverErr.ShouldRetryNextAccount())
-	require.True(t, failoverErr.SuppressAccountHealthPenalty)
-	require.Equal(t, GatewayFailureScopeAccount, failoverErr.Scope)
-	require.Equal(t, http.StatusServiceUnavailable, failoverErr.ClientStatusCode)
-	require.Equal(t, OpenAIAlphaSearchBridgeUnavailableClientMessage, failoverErr.ClientMessage)
-	require.False(t, c.Writer.Written())
-	require.Equal(t, "https://compat.example/v1/responses", upstream.lastReq.URL.String())
+	require.NoError(t, err)
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	require.JSONEq(t, string(upstreamBody), recorder.Body.String())
+	require.Equal(t, "https://compat.example/v1/alpha/search", upstream.lastReq.URL.String())
 }
 
-func TestForwardAlphaSearchAPIKeyResponsesBridgeGenericBadRequestDoesNotFanOut(t *testing.T) {
+func TestForwardAlphaSearchOrdinaryAPIKeyGenericBadRequestDoesNotFanOut(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{"id":"search-session","model":"gpt-5.6-sol","settings":{"search_context_size":"invalid"}}`)
 	recorder := httptest.NewRecorder()
@@ -303,7 +294,7 @@ func TestForwardAlphaSearchAPIKeyResponsesBridgeGenericBadRequestDoesNotFanOut(t
 	require.JSONEq(t, upstreamBody, recorder.Body.String())
 }
 
-func TestForwardAlphaSearchAPIKeyResponsesBridgeRejectsTextWithoutSearchEvidence(t *testing.T) {
+func TestForwardAlphaSearchOrdinaryAPIKeyTrustsOfficialAlphaSearchSuccess(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{"id":"search-session","model":"gpt-5.6-sol","commands":{"search_query":[{"q":"news"}]}}`)
 	recorder := httptest.NewRecorder()
@@ -336,12 +327,11 @@ func TestForwardAlphaSearchAPIKeyResponsesBridgeRejectsTextWithoutSearchEvidence
 
 	result, err := service.ForwardAlphaSearch(context.Background(), c, account, body)
 
-	require.Nil(t, result)
-	var failoverErr *UpstreamFailoverError
-	require.ErrorAs(t, err, &failoverErr)
-	require.True(t, failoverErr.IsOpenAIAlphaSearchBridgeUnavailable())
-	require.True(t, failoverErr.SuppressAccountHealthPenalty)
-	require.False(t, c.Writer.Written())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 1, result.WebSearchCalls)
+	require.Equal(t, "https://compat.example/v1/alpha/search", upstream.lastReq.URL.String())
+	require.Equal(t, http.StatusOK, recorder.Code)
 }
 
 func TestOpenAIAlphaSearchResponseAcceptsWebSearchCallWithoutCitation(t *testing.T) {

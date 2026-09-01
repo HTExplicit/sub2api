@@ -344,35 +344,19 @@ describe('EditAccountModal', () => {
     getAvailableModelsMock.mockResolvedValue([])
   })
 
-  it('uses Cindy-safe defaults with the standard OpenAI option order', () => {
+  it('does not expose account-level compatibility selectors', () => {
     const cindy = buildAccount()
     cindy.platform = 'cindy'
     cindy.is_cindy = true
     cindy.credentials.base_url = 'https://api.laxarouter.ai'
     cindy.extra = {}
     const cindyWrapper = mountModal(cindy)
-    const cindyAlpha = cindyWrapper.get<HTMLSelectElement>('[data-testid="openai-alpha-search-mode-select"]')
-    const cindyCache = cindyWrapper.get<HTMLSelectElement>(
-      '[data-testid="openai-prompt-cache-key-mode-select"]'
-    )
-    expect(cindyAlpha.element.value).toBe('responses_web_search')
-    expect(cindyAlpha.element.options[0].value).toBe('direct')
-    expect(cindyAlpha.element.options[1].value).toBe('responses_web_search')
-    expect(cindyAlpha.element.options[2].value).toBe('disabled')
-    expect(cindyCache.element.value).toBe('sha256_64')
-    expect(cindyCache.element.options[0].value).toBe('passthrough')
+    expect(cindyWrapper.find('[data-testid="openai-alpha-search-mode-select"]').exists()).toBe(false)
+    expect(cindyWrapper.find('[data-testid="openai-prompt-cache-key-mode-select"]').exists()).toBe(false)
 
     const ordinaryWrapper = mountModal(buildAccount())
-    const ordinaryAlpha = ordinaryWrapper.get<HTMLSelectElement>(
-      '[data-testid="openai-alpha-search-mode-select"]'
-    )
-    const ordinaryCache = ordinaryWrapper.get<HTMLSelectElement>(
-      '[data-testid="openai-prompt-cache-key-mode-select"]'
-    )
-    expect(ordinaryAlpha.element.value).toBe('direct')
-    expect(ordinaryAlpha.element.options[0].value).toBe('direct')
-    expect(ordinaryCache.element.value).toBe('passthrough')
-    expect(ordinaryCache.element.options[0].value).toBe('passthrough')
+    expect(ordinaryWrapper.find('[data-testid="openai-alpha-search-mode-select"]').exists()).toBe(false)
+    expect(ordinaryWrapper.find('[data-testid="openai-prompt-cache-key-mode-select"]').exists()).toBe(false)
   })
 
   it('keeps canonical Cindy identity and fixed endpoint on edit submission', async () => {
@@ -394,14 +378,13 @@ describe('EditAccountModal', () => {
 
     expect(updateAccountMock).toHaveBeenCalledWith(cindy.id, expect.objectContaining({
       credentials: expect.objectContaining({ base_url: 'https://api.laxarouter.ai' }),
-      extra: expect.objectContaining({
-        openai_alpha_search_mode: 'responses_web_search',
-        openai_prompt_cache_key_mode: 'sha256_64'
-      })
     }))
+    const submitted = updateAccountMock.mock.calls[0]?.[1] as { extra?: Record<string, unknown> }
+    expect(submitted.extra).not.toHaveProperty('openai_alpha_search_mode')
+    expect(submitted.extra).not.toHaveProperty('openai_prompt_cache_key_mode')
   })
 
-  it('preserves an explicit Cindy bridge and SHA-256 selection without reordering options', () => {
+  it('preserves legacy compatibility values for rollback without exposing controls', async () => {
     const cindy = buildAccount()
     cindy.platform = 'cindy'
     cindy.is_cindy = true
@@ -412,14 +395,17 @@ describe('EditAccountModal', () => {
       openai_prompt_cache_key_mode: 'sha256_64'
     }
 
+    updateAccountMock.mockResolvedValue(cindy)
     const wrapper = mountModal(cindy)
-    const alpha = wrapper.get<HTMLSelectElement>('[data-testid="openai-alpha-search-mode-select"]')
-    const cache = wrapper.get<HTMLSelectElement>('[data-testid="openai-prompt-cache-key-mode-select"]')
-
-    expect(alpha.element.value).toBe('responses_web_search')
-    expect(alpha.element.options[0].value).toBe('direct')
-    expect(cache.element.value).toBe('sha256_64')
-    expect(cache.element.options[0].value).toBe('passthrough')
+    expect(wrapper.find('[data-testid="openai-alpha-search-mode-select"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="openai-prompt-cache-key-mode-select"]').exists()).toBe(false)
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+    const submitted = updateAccountMock.mock.calls[0]?.[1] as { extra?: Record<string, unknown> }
+    expect(submitted.extra).not.toHaveProperty('openai_alpha_search_mode')
+    expect(submitted.extra).not.toHaveProperty('openai_prompt_cache_key_mode')
+    expect(cindy.extra?.openai_alpha_search_mode).toBe('responses_web_search')
+    expect(cindy.extra?.openai_prompt_cache_key_mode).toBe('sha256_64')
   })
 
   it('keeps the Cindy catalog read-only while preserving rollback mappings and custom overrides', async () => {

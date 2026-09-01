@@ -7300,28 +7300,64 @@
             </div>
 
             <div class="space-y-5 border-t border-gray-100 pt-5 dark:border-dark-700">
-              <div class="flex items-center justify-between gap-4">
-                <div class="min-w-0">
-                  <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    {{ t('admin.settings.features.riskControl.apiKeyCompatibility.alphaSearchBridge') }}
-                  </label>
-                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                    {{ t('admin.settings.features.riskControl.apiKeyCompatibility.alphaSearchBridgeHint') }}
-                  </p>
+              <div
+                class="rounded-xl border border-blue-100 bg-blue-50/60 p-4 dark:border-blue-900/60 dark:bg-blue-950/20"
+                data-testid="cindy-managed-compatibility-card"
+              >
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p class="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                      {{ t('admin.settings.features.riskControl.cindyManaged.title') }}
+                    </p>
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t('admin.settings.features.riskControl.cindyManaged.source') }}
+                    </p>
+                  </div>
+                  <span
+                    class="rounded-full px-2.5 py-1 text-xs font-medium"
+                    :class="form.cindy_managed_compatibility.web_search.enabled
+                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                      : 'bg-gray-200 text-gray-600 dark:bg-dark-700 dark:text-gray-300'"
+                  >
+                    {{ form.cindy_managed_compatibility.web_search.enabled
+                      ? t('admin.settings.features.riskControl.cindyManaged.enabled')
+                      : t('admin.settings.features.riskControl.cindyManaged.disabled') }}
+                  </span>
                 </div>
-                <Toggle v-model="form.openai_apikey_alpha_search_responses_bridge_enabled" />
-              </div>
 
-              <div class="flex items-center justify-between gap-4 border-t border-gray-100 pt-5 dark:border-dark-700">
-                <div class="min-w-0">
-                  <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    {{ t('admin.settings.features.riskControl.apiKeyCompatibility.promptCacheKeyNormalization') }}
-                  </label>
-                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                    {{ t('admin.settings.features.riskControl.apiKeyCompatibility.promptCacheKeyNormalizationHint') }}
-                  </p>
-                </div>
-                <Toggle v-model="form.openai_apikey_prompt_cache_key_normalization_enabled" />
+                <dl class="mt-4 space-y-3 text-xs">
+                  <div>
+                    <dt class="font-medium text-gray-700 dark:text-gray-300">
+                      {{ t('admin.settings.features.riskControl.cindyManaged.webSearch') }}
+                    </dt>
+                    <dd class="mt-1 text-gray-500 dark:text-gray-400">
+                      {{ t('admin.settings.features.riskControl.cindyManaged.webSearchPath') }}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt class="font-medium text-gray-700 dark:text-gray-300">
+                      {{ t('admin.settings.features.riskControl.cindyManaged.models') }}
+                    </dt>
+                    <dd class="mt-1 flex flex-wrap gap-1.5" data-testid="cindy-managed-models">
+                      <span
+                        v-for="model in form.cindy_managed_compatibility.web_search.verified_text_models"
+                        :key="model"
+                        class="rounded-md bg-white px-2 py-1 text-gray-600 shadow-sm dark:bg-dark-800 dark:text-gray-300"
+                      >{{ model }}</span>
+                    </dd>
+                    <dd class="mt-2 text-gray-500 dark:text-gray-400">
+                      {{ t('admin.settings.features.riskControl.cindyManaged.alias') }}
+                    </dd>
+                  </div>
+                  <div class="border-t border-blue-100 pt-3 dark:border-blue-900/60">
+                    <dt class="font-medium text-gray-700 dark:text-gray-300">
+                      {{ t('admin.settings.features.riskControl.cindyManaged.promptCacheKey') }}
+                    </dt>
+                    <dd class="mt-1 text-gray-500 dark:text-gray-400">
+                      {{ t('admin.settings.features.riskControl.cindyManaged.promptCacheKeyHint') }}
+                    </dd>
+                  </div>
+                </dl>
               </div>
 
               <div class="flex items-center justify-between gap-4">
@@ -9754,8 +9790,21 @@ const form = reactive<SettingsForm>({
   cyber_session_block_ttl_seconds: 3600,
   openai_refusal_recovery_enabled: false,
   openai_cyber_failover_enabled: false,
-  openai_apikey_alpha_search_responses_bridge_enabled: false,
-  openai_apikey_prompt_cache_key_normalization_enabled: false,
+  cindy_managed_compatibility: {
+    config_source: "cindy_group_managed",
+    web_search: {
+      enabled: false,
+      verified_text_models: [],
+      compatibility_aliases: { "gpt-5.4-mini": "gpt-5.6-luna" },
+      primary_path: "responses_web_search",
+      fallback_path: "messages_cindy_web_search",
+    },
+    prompt_cache_key: {
+      mode: "automatic",
+      max_characters: 64,
+      overflow_transform: "sha256_lower_hex",
+    },
+  },
   openai_refusal_rewrite_enabled: false,
   openai_refusal_keywords: [...DEFAULT_OPENAI_REFUSAL_KEYWORDS],
   openai_refusal_replacement: "",
@@ -11732,10 +11781,6 @@ async function saveSettings() {
         Number(form.cyber_session_block_ttl_seconds) || 3600,
       openai_refusal_recovery_enabled: form.openai_refusal_recovery_enabled,
       openai_cyber_failover_enabled: form.openai_cyber_failover_enabled,
-      openai_apikey_alpha_search_responses_bridge_enabled:
-        form.openai_apikey_alpha_search_responses_bridge_enabled,
-      openai_apikey_prompt_cache_key_normalization_enabled:
-        form.openai_apikey_prompt_cache_key_normalization_enabled,
       openai_refusal_rewrite_enabled: form.openai_refusal_rewrite_enabled,
       openai_refusal_keywords: [...form.openai_refusal_keywords],
       openai_refusal_replacement: form.openai_refusal_replacement,

@@ -1,0 +1,65 @@
+name: Upstream risk gate
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: upstream-risk-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  classify:
+    name: Upstream risk gate
+    if: startsWith(github.event.pull_request.head.ref, 'sync/upstream-')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out trusted gate implementation
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+          fetch-depth: 1
+          path: trusted
+
+      - name: Check out candidate as data only
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          path: candidate
+
+      - name: Recompute and enforce risk decision
+        env:
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          LABELS_JSON: ${{ toJson(github.event.pull_request.labels.*.name) }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$HEAD_REPOSITORY" == "$GITHUB_REPOSITORY" ]]
+          python3 trusted/.github/scripts/test_upstream_risk.py
+          manifest=candidate/.downstream/upstream-risk.json
+          [[ -f "$manifest" && ! -L "$manifest" ]]
+          base=$(jq -er '.upstream_base | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))' "$manifest")
+          tag=$(jq -er '.upstream_tag | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))' "$manifest")
+          downstream_commit=$(jq -er '.downstream_commit | select(test("^[0-9a-f]{40}$"))' "$manifest")
+          git -C candidate remote add upstream https://github.com/Wei-Shaw/sub2api.git 2>/dev/null || true
+          git -C candidate fetch upstream "refs/tags/${base}:refs/tags/${base}" "refs/tags/${tag}:refs/tags/${tag}" --force
+          python3 trusted/.github/scripts/upstream_risk.py \
+            --repo candidate --base "$base" --tag "$tag" --downstream-ref "$downstream_commit" \
+            --output /tmp/recomputed.json
+          for key in risk_class upstream_base upstream_tag downstream_commit upstream_files downstream_files overlap_files critical_files upstream_file_count downstream_file_count overlap_file_count critical_file_count; do
+            diff -u <(jq -S ".${key}" "$manifest") <(jq -S ".${key}" /tmp/recomputed.json)
+          done
+          [[ "$(jq -r .merge_conflicts "$manifest")" == '[]' ]]
+          risk=$(jq -r .risk_class /tmp/recomputed.json)
+          if [[ "$risk" == safe ]]; then
+            [[ "$(jq -r .overlap_file_count /tmp/recomputed.json)" == 0 ]]
+            [[ "$(jq -r .critical_file_count /tmp/recomputed.json)" == 0 ]]
+          else
+            jq -e 'index("upstream-reviewed") != null' <<<"$LABELS_JSON" >/dev/null
+          fi

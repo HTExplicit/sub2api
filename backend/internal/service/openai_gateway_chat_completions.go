@@ -319,6 +319,13 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 			}
 		}
 	}
+	if normalizedBody, changed, normalizeErr := normalizeCindyManagedPromptCacheKey(responsesBody, c, account); normalizeErr != nil {
+		return nil, fmt.Errorf("normalize final Chat-to-Responses Cindy prompt_cache_key: %w", normalizeErr)
+	} else if changed {
+		responsesBody = normalizedBody
+		promptCacheKey = strings.TrimSpace(gjson.GetBytes(responsesBody, "prompt_cache_key").String())
+		observeCindyManagedPromptCacheNormalization(c, true)
+	}
 
 	// 5. Get access token
 	token, _, err := s.GetAccessToken(ctx, account)

@@ -137,6 +137,23 @@ func TestCindySearchAvailabilityHelper(t *testing.T) {
 	if got != want {
 		t.Fatalf("Cindy Search availability = %s, want %s", got, want)
 	}
+	if want == "true" {
+		models := CindyManagedCompatibilityModels()
+		if len(models) != 9 {
+			t.Fatalf("managed Cindy Search model count = %d, want 9", len(models))
+		}
+		for _, model := range models {
+			if !CindyAlphaSearchModelAvailable(model) {
+				t.Fatalf("managed Cindy Search model %q is unavailable", model)
+			}
+		}
+		if !CindyAlphaSearchModelAvailable("gpt-5.4-mini") {
+			t.Fatal("managed Cindy Search compatibility alias is unavailable")
+		}
+		if upstream, ok := CindyAlphaSearchUpstreamModel("gpt-5.4-mini"); !ok || upstream != "openai/gpt-5.6-luna" {
+			t.Fatalf("managed Cindy Search alias target = %q, available=%v", upstream, ok)
+		}
+	}
 }
 
 func TestCindyFreePoolAllowlistSurvivesCatalogPublicationRollback(t *testing.T) {

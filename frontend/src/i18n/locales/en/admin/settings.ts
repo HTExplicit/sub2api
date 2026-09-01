@@ -67,11 +67,17 @@ export default {
           cyberSessionBlock: 'Cyber session auto-block',
           cyberSessionBlockHint: 'When enabled, sessions hit by upstream cyber_policy are blocked locally for the TTL and no longer forwarded. Only the offending session is blocked; other sessions on the same key are unaffected.',
           cyberSessionBlockTTL: 'Block TTL (seconds)',
-          apiKeyCompatibility: {
-            alphaSearchBridge: 'API key Alpha Search bridge',
-            alphaSearchBridgeHint: 'Global master switch. Only accounts explicitly set to Responses Web Search bridge /v1/alpha/search to /v1/responses on their own Base URL. Disabled by default.',
-            promptCacheKeyNormalization: 'API key prompt cache key normalization',
-            promptCacheKeyNormalizationHint: 'Global master switch. Only accounts explicitly set to SHA-256 normalize prompt_cache_key values longer than 64 characters to deterministic 64-character hexadecimal values. Disabled by default.',
+          cindyManaged: {
+            title: 'Cindy compatibility',
+            source: 'Configuration source: Cindy group managed (read-only)',
+            enabled: 'Search enabled',
+            disabled: 'Search disabled',
+            webSearch: 'Codex Web Search',
+            webSearchPath: 'Primary: Responses web_search on the selected text model. Fallback to native Messages cindy/web-search only for explicit tool incompatibility or missing search evidence.',
+            models: 'Verified text models',
+            alias: 'Compatibility alias: gpt-5.4-mini → gpt-5.6-luna',
+            promptCacheKey: 'Long cache keys: automatic compatibility',
+            promptCacheKeyHint: 'Final Cindy prompt_cache_key values longer than 64 Unicode characters become lowercase SHA-256 hex; shorter values are preserved exactly.',
           },
           refusalRecovery: {
             title: 'OpenAI Refusal Recovery',

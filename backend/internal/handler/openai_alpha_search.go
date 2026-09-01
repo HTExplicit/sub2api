@@ -44,6 +44,7 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 			h.errorResponse(c, http.StatusNotFound, "model_not_found", "Model is not supported on the alpha search endpoint")
 			return
 		}
+		service.SetCindyManagedCompatibility(c, true)
 	}
 	if cindySearch && !service.CindySearchFeatureEnabled() {
 		h.errorResponse(c, http.StatusNotFound, "model_not_found", "Model is not supported on the alpha search endpoint")

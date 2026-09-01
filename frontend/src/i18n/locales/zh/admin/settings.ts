@@ -67,11 +67,17 @@ export default {
           cyberSessionBlock: 'cyber 会话自动屏蔽',
           cyberSessionBlockHint: '开启后,被上游网络安全策略(cyber_policy)拦截的会话将在 TTL 内被本地屏蔽,不再发往上游。仅屏蔽该会话,不影响同 Key 其他会话。',
           cyberSessionBlockTTL: '屏蔽时长(秒)',
-          apiKeyCompatibility: {
-            alphaSearchBridge: 'API Key Alpha Search 桥接',
-            alphaSearchBridgeHint: '全局总开关。仅账号显式选择 Responses Web Search 时，将 /v1/alpha/search 桥接到该账号 Base URL 的 /v1/responses。默认关闭。',
-            promptCacheKeyNormalization: 'API Key Prompt Cache Key 归一化',
-            promptCacheKeyNormalizationHint: '全局总开关。仅账号显式选择 SHA-256 模式时，将超过 64 字符的 prompt_cache_key 转为确定性的 64 位十六进制值。默认关闭。',
+          cindyManaged: {
+            title: 'Cindy 兼容能力',
+            source: '配置来源：Cindy 分组托管（只读）',
+            enabled: '搜索已启用',
+            disabled: '搜索已关闭',
+            webSearch: 'Codex Web Search',
+            webSearchPath: '主路径：所选文本模型的 Responses web_search；仅明确不支持工具或缺少搜索证据时回退原生 Messages cindy/web-search。',
+            models: '已验证文本模型',
+            alias: '兼容别名：gpt-5.4-mini → gpt-5.6-luna',
+            promptCacheKey: '长缓存键：自动兼容',
+            promptCacheKeyHint: '最终发往 Cindy 的 prompt_cache_key 超过 64 个 Unicode 字符时自动转为小写 SHA-256 十六进制；短值逐字保留。',
           },
           refusalRecovery: {
             title: 'OpenAI 拒答恢复',

@@ -88,13 +88,7 @@ func (s *OpenAIGatewayService) ForwardAlphaSearch(ctx context.Context, c *gin.Co
 	// /responses，但会被 standalone /alpha/search 的 access enforcement
 	// 拒绝为 no_matching_rule。对 PAT 账号使用等价的 hosted web_search
 	// Responses 路径兜底，避免把可用账号误判为搜索不可用。
-	apiKeyResponsesBridgeEnabled := false
-	if s.settingService != nil {
-		apiKeyResponsesBridgeEnabled = s.settingService.GetOpenAIRefusalRecoveryRuntime(ctx).APIKeyAlphaSearchResponsesBridge
-	}
-	if account.IsOpenAIPersonalAccessToken() ||
-		(account.IsOpenAIApiKey() && apiKeyResponsesBridgeEnabled &&
-			account.GetOpenAIAlphaSearchMode() == OpenAIAlphaSearchModeResponsesWebSearch) {
+	if account.IsOpenAIPersonalAccessToken() {
 		return s.forwardAlphaSearchViaResponsesWebSearch(ctx, c, account, body, token, proxyURL, requestedModel, upstreamModel)
 	}
 
@@ -511,8 +505,7 @@ func (s *OpenAIGatewayService) forwardAlphaSearchViaResponsesWebSearch(
 			upstreamMessage,
 			respBody,
 		)
-		if strictCindy && (resp.StatusCode == http.StatusNotFound ||
-			resp.StatusCode == http.StatusMethodNotAllowed || cindyCapabilityError) {
+		if strictCindy && cindyCapabilityError {
 			return nil, newCindyAlphaSearchMessagesFallbackError(resp.StatusCode, resp.Header, respBody)
 		}
 		if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMessage, respBody) ||

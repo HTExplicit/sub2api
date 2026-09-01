@@ -1,0 +1,71 @@
+name: Upstream Auto Release
+
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: upstream-auto-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    if: >-
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'sync/upstream-') &&
+      contains(github.event.pull_request.labels.*.name, 'upstream-safe-candidate')
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+
+      - name: Validate safe merge and create fixed downstream tag
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest=.downstream/upstream-risk.json
+          [[ -f "$manifest" && ! -L "$manifest" ]]
+          [[ "$(jq -r .risk_class "$manifest")" == safe ]]
+          [[ "$(jq -r .overlap_file_count "$manifest")" == 0 ]]
+          [[ "$(jq -r .critical_file_count "$manifest")" == 0 ]]
+          upstream_tag=$(tr -d '\r\n' < .downstream/upstream-base)
+          [[ "$upstream_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$(jq -r .upstream_tag "$manifest")" == "$upstream_tag" ]]
+          release_tag="${upstream_tag}-codexrip.1"
+          if git ls-remote --exit-code --tags origin "refs/tags/${release_tag}" >/dev/null 2>&1 ||
+             gh release view "$release_tag" >/dev/null 2>&1; then
+            echo "release tag already exists: $release_tag" >&2
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a "$release_tag" -m "Sub2API ${release_tag#v}"
+          git push origin "refs/tags/${release_tag}"
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update failure issue
+        if: failure()
+        env:
+          TITLE: Upstream automatic release failed
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh label create upstream-automation-failed --color B60205 --description 'Upstream automation stopped without production change' --force
+          body=$(mktemp)
+          printf 'Automatic tagging stopped. Production was not changed.\n\nRun: %s\n' "$RUN_URL" >"$body"
+          issue=$(gh issue list --state open --search "${TITLE} in:title" --json number,title --jq ".[] | select(.title == \"${TITLE}\") | .number" | head -n1)
+          if [[ -n "$issue" ]]; then
+            gh issue edit "$issue" --body-file "$body" --add-label upstream-automation-failed
+          else
+            gh issue create --title "$TITLE" --body-file "$body" --label upstream-automation-failed
+          fi

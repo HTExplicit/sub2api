@@ -1,9 +1,7 @@
 import type { AccountAvailableModel } from '@/types'
 
 export const CINDY_OPENAI_DEFAULTS = {
-  responsesMode: 'force_responses',
-  alphaSearchMode: 'responses_web_search',
-  promptCacheKeyMode: 'sha256_64'
+  responsesMode: 'force_responses'
 } as const
 
 export interface CindyAccountLike {

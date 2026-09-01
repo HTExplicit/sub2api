@@ -1,4 +1,6 @@
 name: Production Deploy
+run-name: >-
+  ${{ inputs.operation == 'rollback' && format('Rollback to {0}', inputs.release_tag) || inputs.operation == 'deploy-preserve' && format('Deploy {0} (preserve)', inputs.release_tag) || format('Deploy {0} (explicit)', inputs.release_tag) }}
 
 on:
   workflow_dispatch:
@@ -10,6 +12,7 @@ on:
         type: choice
         options:
           - deploy
+          - deploy-preserve
           - rollback
       release_tag:
         description: 'Target release tag, for example v0.1.177-codexrip.7'
@@ -72,6 +75,7 @@ jobs:
       operation: ${{ steps.resolve.outputs.operation }}
       cindy_rollout: ${{ steps.resolve.outputs.cindy_rollout }}
       overdraft: ${{ steps.resolve.outputs.overdraft }}
+      runtime_spec: ${{ steps.resolve.outputs.runtime_spec }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -95,6 +99,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          runtime_mode=explicit
+          if [[ "$OPERATION" == deploy-preserve ]]; then
+            OPERATION=deploy
+            runtime_mode=preserve
+          fi
 
           validate_release_tag() {
             [[ "$1" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-codexrip\.[1-9][0-9]*$ ]]
@@ -176,10 +186,15 @@ jobs:
               exit 1
               ;;
           esac
-          for flag in "$CINDY_HEALTH" "$CINDY_CAPABILITY_CATALOG" "$CINDY_SEARCH" "$IMAGE_STUDIO" "$CINDY_RESPONSES_IMAGE_BRIDGE"; do
-            [[ "$flag" == true || "$flag" == false ]] || exit 1
-          done
-          [[ "$OVERDRAFT" == true || "$OVERDRAFT" == false ]] || exit 1
+          [[ "$runtime_mode" == explicit || "$runtime_mode" == preserve ]] || exit 1
+          if [[ "$runtime_mode" == preserve ]]; then
+            [[ "$OPERATION" == deploy ]] || exit 1
+          else
+            for flag in "$CINDY_HEALTH" "$CINDY_CAPABILITY_CATALOG" "$CINDY_SEARCH" "$IMAGE_STUDIO" "$CINDY_RESPONSES_IMAGE_BRIDGE"; do
+              [[ "$flag" == true || "$flag" == false ]] || exit 1
+            done
+            [[ "$OVERDRAFT" == true || "$OVERDRAFT" == false ]] || exit 1
+          fi
 
           expected_current_image_ref=''
           case "$OPERATION" in
@@ -197,8 +212,15 @@ jobs:
           echo "expected_current_image_ref=${expected_current_image_ref}" >> "$GITHUB_OUTPUT"
           echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
           echo "operation=${OPERATION}" >> "$GITHUB_OUTPUT"
-          echo "cindy_rollout=cindy=${CINDY_HEALTH},${CINDY_CAPABILITY_CATALOG},${CINDY_SEARCH},${IMAGE_STUDIO},${CINDY_RESPONSES_IMAGE_BRIDGE}" >> "$GITHUB_OUTPUT"
-          echo "overdraft=${OVERDRAFT}" >> "$GITHUB_OUTPUT"
+          if [[ "$runtime_mode" == preserve ]]; then
+            echo 'runtime_spec=runtime=preserve' >> "$GITHUB_OUTPUT"
+            echo 'cindy_rollout=' >> "$GITHUB_OUTPUT"
+            echo 'overdraft=' >> "$GITHUB_OUTPUT"
+          else
+            echo 'runtime_spec=runtime=explicit' >> "$GITHUB_OUTPUT"
+            echo "cindy_rollout=cindy=${CINDY_HEALTH},${CINDY_CAPABILITY_CATALOG},${CINDY_SEARCH},${IMAGE_STUDIO},${CINDY_RESPONSES_IMAGE_BRIDGE}" >> "$GITHUB_OUTPUT"
+            echo "overdraft=${OVERDRAFT}" >> "$GITHUB_OUTPUT"
+          fi
 
   deploy:
     needs: resolve
@@ -228,17 +250,27 @@ jobs:
           EXPECTED_CURRENT_IMAGE_REF: ${{ needs.resolve.outputs.expected_current_image_ref }}
           CINDY_ROLLOUT: ${{ needs.resolve.outputs.cindy_rollout }}
           OVERDRAFT: ${{ needs.resolve.outputs.overdraft }}
+          RUNTIME_SPEC: ${{ needs.resolve.outputs.runtime_spec }}
         shell: bash
         run: |
           set -euo pipefail
           [[ "$VPS_PORT" =~ ^[0-9]+$ ]] || exit 1
           [[ "$IMAGE_REF" =~ ^ghcr\.io/htexplicit/sub2api:[0-9]+\.[0-9]+\.[0-9]+-codexrip\.[1-9][0-9]*@sha256:[0-9a-f]{64}$ ]] || exit 1
-          [[ "$CINDY_ROLLOUT" =~ ^cindy=(true|false),(true|false),(true|false),(true|false),(true|false)$ ]] || exit 1
-          [[ "$OVERDRAFT" == true || "$OVERDRAFT" == false ]] || exit 1
+          [[ "$RUNTIME_SPEC" == runtime=explicit || "$RUNTIME_SPEC" == runtime=preserve ]] || exit 1
+          if [[ "$RUNTIME_SPEC" == runtime=explicit ]]; then
+            [[ "$CINDY_ROLLOUT" =~ ^cindy=(true|false),(true|false),(true|false),(true|false),(true|false)$ ]] || exit 1
+            [[ "$OVERDRAFT" == true || "$OVERDRAFT" == false ]] || exit 1
+          else
+            [[ -z "$CINDY_ROLLOUT" && -z "$OVERDRAFT" && "$OPERATION" == deploy ]] || exit 1
+          fi
           case "$OPERATION" in
             deploy)
               [[ -z "$EXPECTED_CURRENT_IMAGE_REF" ]] || exit 1
-              remote_command="deploy ${IMAGE_REF} ${CINDY_ROLLOUT} overdraft=${OVERDRAFT}"
+              if [[ "$RUNTIME_SPEC" == runtime=preserve ]]; then
+                remote_command="deploy ${IMAGE_REF} runtime=preserve"
+              else
+                remote_command="deploy ${IMAGE_REF} ${CINDY_ROLLOUT} overdraft=${OVERDRAFT}"
+              fi
               ;;
             rollback)
               [[ "$EXPECTED_CURRENT_IMAGE_REF" =~ ^ghcr\.io/htexplicit/sub2api:[0-9]+\.[0-9]+\.[0-9]+-codexrip\.[1-9][0-9]*@sha256:[0-9a-f]{64}$ ]] || exit 1

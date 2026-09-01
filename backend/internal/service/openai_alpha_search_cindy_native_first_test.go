@@ -30,7 +30,6 @@ func firstClassCindyAlphaSearchAccount(id int64) *Account {
 			"api_key":  "sk-test",
 			"base_url": "https://api.laxarouter.ai",
 		},
-		Extra: map[string]any{"openai_alpha_search_mode": OpenAIAlphaSearchModeResponsesWebSearch},
 	}
 }
 
@@ -95,18 +94,6 @@ func TestForwardAlphaSearchCindyFallsBackToHiddenMessagesOnlyForUnsupportedOrUnp
 		firstResponse func() *http.Response
 	}{
 		{
-			name: "responses endpoint not found",
-			firstResponse: func() *http.Response {
-				return alphaSearchHTTPResponse(http.StatusNotFound, "application/json", `{"error":{"type":"not_found_error","message":"not found"}}`)
-			},
-		},
-		{
-			name: "responses method not allowed",
-			firstResponse: func() *http.Response {
-				return alphaSearchHTTPResponse(http.StatusMethodNotAllowed, "application/json", `{"error":{"type":"method_not_allowed","message":"method not allowed"}}`)
-			},
-		},
-		{
 			name: "structured tool unsupported",
 			firstResponse: func() *http.Response {
 				return alphaSearchHTTPResponse(http.StatusBadRequest, "application/json", `{"error":{"type":"invalid_request_error","code":"unsupported_tool","param":"tools[0]","message":"web_search tool is unsupported"}}`)
@@ -144,6 +131,41 @@ func TestForwardAlphaSearchCindyFallsBackToHiddenMessagesOnlyForUnsupportedOrUnp
 			require.Contains(t, recorder.Body.String(), "fallback result")
 		})
 	}
+}
+
+func TestForwardAlphaSearchCindyEndpointErrorsDoNotSwitchProtocol(t *testing.T) {
+	for _, status := range []int{http.StatusNotFound, http.StatusMethodNotAllowed} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			upstream := &httpUpstreamRecorder{responses: []*http.Response{
+				alphaSearchHTTPResponse(status, "application/json", `{"error":{"type":"not_found_error","message":"responses unavailable"}}`),
+				cindyAlphaSearchMessagesSuccessResponse(),
+			}}
+			service, c, _ := newCindyAlphaSearchServiceContext(t, upstream)
+			body := []byte(`{"model":"gpt-5.6-luna","commands":{"search_query":[{"q":"news"}]}}`)
+
+			_, _ = service.ForwardAlphaSearch(context.Background(), c, firstClassCindyAlphaSearchAccount(61008), body)
+
+			require.Len(t, upstream.requests, 1)
+			require.Equal(t, "/v1/responses", upstream.requests[0].URL.Path)
+		})
+	}
+}
+
+func TestForwardAlphaSearchCindyCompatibilityAliasUsesManagedLunaTarget(t *testing.T) {
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		alphaSearchHTTPResponse(http.StatusOK, "text/event-stream", "event: response.output_item.done\n"+
+			`data: {"type":"response.output_item.done","item":{"type":"web_search_call","id":"ws_alias","status":"completed"}}`+"\n\n"),
+	}}
+	service, c, _ := newCindyAlphaSearchServiceContext(t, upstream)
+	body := []byte(`{"model":"gpt-5.4-mini","commands":{"search_query":[{"q":"news"}]}}`)
+
+	result, err := service.ForwardAlphaSearch(context.Background(), c, firstClassCindyAlphaSearchAccount(61009), body)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "gpt-5.4-mini", result.Model)
+	require.Equal(t, "openai/gpt-5.6-luna", result.UpstreamModel)
+	require.Equal(t, "openai/gpt-5.6-luna", gjson.GetBytes(upstream.bodies[0], "model").String())
 }
 
 func TestForwardAlphaSearchCindyOperationalResponsesFailuresNeverSwitchProtocol(t *testing.T) {
@@ -249,7 +271,7 @@ func TestForwardAlphaSearchCindyMessagesFallbackHTTPFailureClassification(t *tes
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			upstream := &httpUpstreamRecorder{responses: []*http.Response{
-				alphaSearchHTTPResponse(http.StatusNotFound, "application/json", `{"error":{"type":"not_found_error","message":"responses unavailable"}}`),
+				alphaSearchHTTPResponse(http.StatusBadRequest, "application/json", `{"error":{"type":"invalid_request_error","code":"unsupported_tool","message":"web_search tool is unsupported"}}`),
 				alphaSearchHTTPResponse(test.status, "application/json", test.body),
 			}}
 			service, c, _ := newCindyAlphaSearchServiceContext(t, upstream)

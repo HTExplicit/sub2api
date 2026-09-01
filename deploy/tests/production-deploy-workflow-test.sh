@@ -222,7 +222,7 @@ run_resolve() {
 }
 
 run_apply() {
-  local operation=$1 image_ref=$2 expected_current=$3 rollout=$4 overdraft=${5:-false}
+  local operation=$1 image_ref=$2 expected_current=$3 rollout=$4 overdraft=${5-false} runtime_spec=${6-runtime=explicit}
   : >"$tmpdir/ssh-capture"
   : >"$tmpdir/ssh-calls"
   : >"$tmpdir/apply-output"
@@ -238,6 +238,7 @@ run_apply() {
     EXPECTED_CURRENT_IMAGE_REF="$expected_current" \
     CINDY_ROLLOUT="$rollout" \
     OVERDRAFT="$overdraft" \
+    RUNTIME_SPEC="$runtime_spec" \
     bash "$apply_script" >"$tmpdir/apply-output" 2>&1
 }
 
@@ -359,6 +360,10 @@ run_apply deploy "$rollback_current_ref" '' 'cindy=true,true,true,false,false' t
   fail 'valid overdraft-enabled deploy operation did not execute successfully'
 assert_ssh_invocation "deploy $rollback_current_ref cindy=true,true,true,false,false overdraft=true"
 
+run_apply deploy "$rollback_current_ref" '' '' '' runtime=preserve ||
+  fail 'valid runtime-preserve deploy operation did not execute successfully'
+assert_ssh_invocation "deploy $rollback_current_ref runtime=preserve"
+
 if run_apply deploy "$rollback_current_ref" "$rollback_target_ref" 'cindy=true,true,true,false,false'; then
   fail 'deploy accepted an unexpected expected-current image'
 fi
@@ -405,6 +410,7 @@ for input in operation release_tag expected_current_release_tag confirmation \
   grep -Fq "      ${input}:" "$WORKFLOW" || fail "missing typed workflow input: $input"
 done
 grep -Fq '          - deploy' "$WORKFLOW" || fail 'workflow operation is missing deploy'
+grep -Fq '          - deploy-preserve' "$WORKFLOW" || fail 'workflow operation is missing deploy-preserve'
 grep -Fq '          - rollback' "$WORKFLOW" || fail 'workflow operation is missing rollback'
 [[ "$(grep -c '        type: boolean' "$WORKFLOW")" -ge 5 ]] ||
   fail 'Cindy rollout inputs must be typed booleans'
@@ -437,6 +443,8 @@ grep -Fq 'version_strictly_less "$RELEASE_TAG" "$EXPECTED_CURRENT_RELEASE_TAG"' 
   fail 'rollback must require the target release to be older than expected-current'
 grep -Fq 'remote_command="deploy ${IMAGE_REF} ${CINDY_ROLLOUT} overdraft=${OVERDRAFT}"' "$WORKFLOW" ||
   fail 'deploy must pass the canonical rollout tuple to the forced command'
+grep -Fq 'remote_command="deploy ${IMAGE_REF} runtime=preserve"' "$WORKFLOW" ||
+  fail 'automatic deploy must preserve the locked runtime tuple'
 grep -Fq 'remote_command="rollback ${IMAGE_REF} from=${EXPECTED_CURRENT_IMAGE_REF} ${CINDY_ROLLOUT} overdraft=${OVERDRAFT}"' "$WORKFLOW" ||
   fail 'rollback must bind the target to the exact expected-current image'
 

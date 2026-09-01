@@ -122,6 +122,8 @@ tests
 CLAUDE.md
 .claude
 scripts
+!.github/scripts/
+!.github/scripts/*.py
 !backend/scripts/
 !backend/scripts/resolve-version.sh
 !backend/internal/service/remote_skill_seed/tree/scripts/

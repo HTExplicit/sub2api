@@ -292,20 +292,13 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 			return nil, promptErr
 		}
 	}
-	cacheKeyNormalizationEnabled := false
-	if s.settingService != nil {
-		cacheKeyNormalizationEnabled = s.settingService.GetOpenAIRefusalRecoveryRuntime(ctx).APIKeyPromptCacheKeyNormalization
-	}
-	finalCacheBody, finalCacheChanged, finalCacheErr := normalizeOpenAIAPIKeyPromptCacheKey(
-		body,
-		account,
-		cacheKeyNormalizationEnabled,
-	)
+	finalCacheBody, finalCacheChanged, finalCacheErr := normalizeCindyManagedPromptCacheKey(body, c, account)
 	if finalCacheErr != nil {
-		return nil, fmt.Errorf("normalize final passthrough OpenAI API key prompt_cache_key: %w", finalCacheErr)
+		return nil, fmt.Errorf("normalize final passthrough Cindy prompt_cache_key: %w", finalCacheErr)
 	}
 	if finalCacheChanged {
 		body = finalCacheBody
+		observeCindyManagedPromptCacheNormalization(c, true)
 	}
 	logBusinessSystemPromptObservation(
 		ctx,

@@ -506,6 +506,17 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				)
 			}
 		}
+		if normalizedPayload, changed, normalizeErr := normalizeCindyManagedPromptCacheKey(normalized, c, account); normalizeErr != nil {
+			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(
+				coderws.StatusPolicyViolation,
+				"invalid websocket request payload",
+				normalizeErr,
+			)
+		} else if changed {
+			normalized = normalizedPayload
+			promptCacheKey = strings.TrimSpace(gjson.GetBytes(normalized, "prompt_cache_key").String())
+			observeCindyManagedPromptCacheNormalization(c, true)
+		}
 		ingressSessionOriginalModel = originalModel
 
 		return openAIWSClientPayload{

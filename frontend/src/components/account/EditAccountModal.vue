@@ -1857,36 +1857,6 @@
         >
           {{ t('admin.accounts.openai.responsesModeTextDisabledHint') }}
         </div>
-        <div class="flex items-center justify-between gap-4">
-          <div>
-            <label class="input-label mb-0">{{ t('admin.accounts.openai.alphaSearchMode') }}</label>
-            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {{ t('admin.accounts.openai.alphaSearchModeDesc') }}
-            </p>
-          </div>
-          <div class="w-56">
-            <Select
-              v-model="openAIAlphaSearchMode"
-              :options="openAIAlphaSearchModeOptions"
-              data-testid="openai-alpha-search-mode-select"
-            />
-          </div>
-        </div>
-        <div class="flex items-center justify-between gap-4">
-          <div>
-            <label class="input-label mb-0">{{ t('admin.accounts.openai.promptCacheKeyMode') }}</label>
-            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {{ t('admin.accounts.openai.promptCacheKeyModeDesc') }}
-            </p>
-          </div>
-          <div class="w-56">
-            <Select
-              v-model="openAIPromptCacheKeyMode"
-              :options="openAIPromptCacheKeyModeOptions"
-              data-testid="openai-prompt-cache-key-mode-select"
-            />
-          </div>
-        </div>
         <div v-if="!isCindyAccount">
           <label class="input-label mb-2 block">{{ t('admin.accounts.openai.endpointCapabilities') }}</label>
           <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -3007,8 +2977,6 @@ import type {
   CheckMixedChannelResponse,
   OpenAICompactMode,
   OpenAIResponsesMode,
-  OpenAIAlphaSearchMode,
-  OpenAIPromptCacheKeyMode,
   OpenAIEndpointCapability,
   OllamaCloudUsageState,
   AccountAvailableModel
@@ -3407,8 +3375,6 @@ const openAILongContextBillingEnabled = ref(false)
 const editPlanType = ref<string>('')
 const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openAIResponsesMode = ref<OpenAIResponsesMode>('auto')
-const openAIAlphaSearchMode = ref<OpenAIAlphaSearchMode>('direct')
-const openAIPromptCacheKeyMode = ref<OpenAIPromptCacheKeyMode>('passthrough')
 const openAIEndpointCapabilities = ref<OpenAIEndpointCapability[]>(['chat_completions', 'embeddings'])
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
@@ -3552,15 +3518,6 @@ const openAIResponsesModeOptions = computed(() => [
   { value: 'auto', label: t('admin.accounts.openai.responsesModeAuto') },
   { value: 'force_responses', label: t('admin.accounts.openai.responsesModeForceResponses') },
   { value: 'force_chat_completions', label: t('admin.accounts.openai.responsesModeForceChatCompletions') }
-])
-const openAIAlphaSearchModeOptions = computed(() => [
-  { value: 'direct', label: t('admin.accounts.openai.alphaSearchModeDirect') },
-  { value: 'responses_web_search', label: t('admin.accounts.openai.alphaSearchModeResponsesWebSearch') },
-  { value: 'disabled', label: t('admin.accounts.openai.alphaSearchModeDisabled') }
-])
-const openAIPromptCacheKeyModeOptions = computed(() => [
-  { value: 'passthrough', label: t('admin.accounts.openai.promptCacheKeyModePassthrough') },
-  { value: 'sha256_64', label: t('admin.accounts.openai.promptCacheKeyModeSHA25664') }
 ])
 const openAITextEndpointCapabilityLabel = computed(() => {
   if (openAIResponsesMode.value === 'force_responses') {
@@ -3923,8 +3880,6 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   editPlanType.value = ''
   openAICompactMode.value = 'auto'
   openAIResponsesMode.value = 'auto'
-  openAIAlphaSearchMode.value = 'direct'
-  openAIPromptCacheKeyMode.value = 'passthrough'
   openAIEndpointCapabilities.value = ['chat_completions', 'embeddings']
   openAICompactModelMappings.value = []
   openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
@@ -3954,12 +3909,6 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       openAIResponsesMode.value = normalizeOpenAIResponsesMode(
         extra?.openai_responses_mode ?? (cindy ? CINDY_OPENAI_DEFAULTS.responsesMode : undefined)
       )
-      openAIAlphaSearchMode.value =
-        (extra?.openai_alpha_search_mode as OpenAIAlphaSearchMode) ||
-        (cindy ? CINDY_OPENAI_DEFAULTS.alphaSearchMode : 'direct')
-      openAIPromptCacheKeyMode.value =
-        (extra?.openai_prompt_cache_key_mode as OpenAIPromptCacheKeyMode) ||
-        (cindy ? CINDY_OPENAI_DEFAULTS.promptCacheKeyMode : 'passthrough')
       openAIEndpointCapabilities.value = readOpenAIEndpointCapabilities(
         newAccount.credentials as Record<string, unknown> | undefined
       )
@@ -5445,11 +5394,6 @@ const handleSubmit = async () => {
         } else {
           newExtra.openai_responses_mode = openAIResponsesMode.value
         }
-			newExtra.openai_alpha_search_mode = openAIAlphaSearchMode.value
-			newExtra.openai_prompt_cache_key_mode = openAIPromptCacheKeyMode.value
-		} else {
-			delete newExtra.openai_alpha_search_mode
-			delete newExtra.openai_prompt_cache_key_mode
 		}
 		if (autoPause5hThreshold.value != null && autoPause5hThreshold.value > 0) {
 			newExtra.auto_pause_5h_threshold = autoPause5hThreshold.value / 100
@@ -5545,8 +5489,6 @@ const handleSubmit = async () => {
       } else {
         newExtra.openai_responses_mode = openAIResponsesMode.value
       }
-      newExtra.openai_alpha_search_mode = openAIAlphaSearchMode.value
-      newExtra.openai_prompt_cache_key_mode = openAIPromptCacheKeyMode.value
       if (openAICompactMode.value === 'auto') {
         delete newExtra.openai_compact_mode
       } else {

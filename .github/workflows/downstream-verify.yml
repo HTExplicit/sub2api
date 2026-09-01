@@ -32,6 +32,10 @@ jobs:
       - name: Service tests
         working-directory: backend
         run: go test -p=1 -tags unit ./internal/service -run 'Test.*(Refusal|CyberPolicy|Continuation|InvalidEncryptedContent|PreviousResponseNotFound|CapacityShed|RequestScopedTransient|ServerOverloaded|BusinessSystemPrompt|RemoteSkill|Cindy|CompatibilityModes|AlphaSearch)|Test(UpdateService|NormalizeAccountTaxonomyName|FilterConsoleAccounts|AccountConsolePlan|AccountFacetMatcher)' -count=1
+      - name: Upstream automation classifier tests
+        run: |
+          python3 .github/scripts/test_upstream_risk.py
+          python3 .github/scripts/test_upstream_automation_contract.py
       - name: OpenAI probe ownership race tests
         working-directory: backend
         run: go test -race -tags unit ./internal/service -run 'TestOpenAIRuntimeBreaker_(APIKeySameAccountRetryDoesNotUseRedisLease|OAuthSameAccountRetryTransfersProbeUntilFinalFailure|SuppressedRetryReleasesSelectionClaim)' -count=1
@@ -114,6 +118,7 @@ jobs:
           pnpm exec vitest run \
             src/views/admin/__tests__/SettingsView.spec.ts \
             src/components/common/__tests__/VersionBadge.downstream.spec.ts \
+            src/api/__tests__/downstreamStatus.spec.ts \
             src/i18n/__tests__/accountConsoleLocales.spec.ts \
             src/__tests__/integration/data-import.spec.ts \
             src/components/admin/account-jobs/__tests__/AccountTaskDrawer.spec.ts \
@@ -150,7 +155,7 @@ jobs:
 
   candidate-image:
     name: Candidate OCI image
-    if: startsWith(github.ref, 'refs/heads/sync/')
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/sync/')
     needs: [backend, frontend]
     runs-on: ubuntu-latest
     steps:

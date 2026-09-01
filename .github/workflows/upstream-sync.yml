@@ -2,12 +2,13 @@ name: Upstream Stable Sync
 
 on:
   schedule:
-    - cron: '15 20 * * *'
+    - cron: '17 * * * *'
   workflow_dispatch:
 
 permissions:
   contents: write
   pull-requests: write
+  issues: write
 
 concurrency:
   group: upstream-stable-sync
@@ -24,6 +25,12 @@ jobs:
         with:
           fetch-depth: 0
           ref: main
+
+      - name: Test the trusted risk classifier
+        run: |
+          python3 .github/scripts/test_upstream_risk.py
+          python3 .github/scripts/test_upstream_automation_contract.py
+
       - name: Resolve latest stable release
         id: release
         shell: bash
@@ -33,74 +40,123 @@ jobs:
           tag=$(jq -er 'select(.draft == false and .prerelease == false) | .tag_name' <<<"$payload")
           [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           current=$(tr -d '\r\n' < .downstream/upstream-base)
+          [[ "$current" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          if [[ "$tag" == "$current" ]]; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Merge release into candidate branch
+          echo "base=$current" >> "$GITHUB_OUTPUT"
+          [[ "$tag" == "$current" ]] && echo 'changed=false' >> "$GITHUB_OUTPUT" || echo 'changed=true' >> "$GITHUB_OUTPUT"
+
+      - name: Analyze and merge release into candidate branch
         if: steps.release.outputs.changed == 'true'
-        id: merge
+        id: candidate
         shell: bash
         run: |
           set -euo pipefail
           tag='${{ steps.release.outputs.tag }}'
+          base='${{ steps.release.outputs.base }}'
           branch="sync/upstream-${tag#v}"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git" 2>/dev/null || true
-          git fetch upstream "refs/tags/${tag}:refs/tags/${tag}" --force
+          git fetch upstream "refs/tags/${base}:refs/tags/${base}" "refs/tags/${tag}:refs/tags/${tag}" --force
 
-          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
-            echo "branch=$branch" >> "$GITHUB_OUTPUT"
-            echo "created=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          python3 .github/scripts/upstream_risk.py \
+            --repo . --base "$base" --tag "$tag" \
+            --output .downstream/upstream-risk.json --github-output "$GITHUB_OUTPUT"
 
-          git switch -c "$branch"
+          old_remote=$(git ls-remote --heads origin "refs/heads/${branch}" | awk '{print $1}')
+          git switch -C "$branch" origin/main
           set +e
           git merge --no-ff --no-commit "$tag"
           merge_rc=$?
           set -e
           if ((merge_rc != 0)); then
-            conflicts=$(git diff --name-only --diff-filter=U | sed 's/^/- `/' | sed 's/$/`/')
-            if [[ -z "$conflicts" ]]; then
-              conflicts='- Merge failed before Git reported conflicted paths; inspect the merge step log.'
-            fi
+            mapfile -t conflict_files < <(git diff --name-only --diff-filter=U | LC_ALL=C sort -u)
             git merge --abort || true
-            title="Upstream ${tag} requires manual conflict resolution"
-            printf '## %s\n\nThe scheduled downstream merge stopped without changing `main`.\n\n### Conflicted paths\n\n%s\n' \
-              "$title" "$conflicts" > /tmp/upstream-conflict.md
-            cat /tmp/upstream-conflict.md >> "$GITHUB_STEP_SUMMARY"
-            exit 1
+            {
+              printf '## Upstream %s requires manual conflict resolution\n\n' "$tag"
+              printf 'The hourly sync stopped without changing `main`.\n\n### Conflicted paths\n\n'
+              if ((${#conflict_files[@]} == 0)); then
+                printf -- '- Merge failed before Git reported conflicted paths.\n'
+              else
+                printf -- '- `%s`\n' "${conflict_files[@]}"
+              fi
+            } > /tmp/upstream-conflict.md
+            echo 'conflict=true' >> "$GITHUB_OUTPUT"
+            echo "branch=$branch" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
           printf '%s\n' "$tag" > .downstream/upstream-base
-          git add .downstream/upstream-base
+          git add .downstream/upstream-base .downstream/upstream-risk.json
           git commit -m "chore: merge upstream ${tag}"
-          git push origin "HEAD:refs/heads/${branch}"
+          if [[ -n "$old_remote" ]]; then
+            git push --force-with-lease="refs/heads/${branch}:${old_remote}" origin "HEAD:refs/heads/${branch}"
+          else
+            git push origin "HEAD:refs/heads/${branch}"
+          fi
+          echo 'conflict=false' >> "$GITHUB_OUTPUT"
           echo "branch=$branch" >> "$GITHUB_OUTPUT"
-          echo "created=true" >> "$GITHUB_OUTPUT"
-      - name: Upload merge conflict report
-        if: failure() && steps.release.outputs.changed == 'true'
+
+      - name: Create or update conflict issue
+        if: steps.release.outputs.changed == 'true' && steps.candidate.outputs.conflict == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag='${{ steps.release.outputs.tag }}'
+          title="Upstream ${tag} merge conflicts"
+          gh label create upstream-review-required --color B60205 --description 'Manual upstream review is required' --force
+          issue=$(gh issue list --state open --search "${title} in:title" --json number,title --jq ".[] | select(.title == \"${title}\") | .number" | head -n1)
+          if [[ -n "$issue" ]]; then
+            gh issue edit "$issue" --body-file /tmp/upstream-conflict.md --add-label upstream-review-required
+          else
+            gh issue create --title "$title" --body-file /tmp/upstream-conflict.md --label upstream-review-required
+          fi
+
+      - name: Create or update candidate pull request
+        if: steps.release.outputs.changed == 'true' && steps.candidate.outputs.conflict == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch='${{ steps.candidate.outputs.branch }}'
+          tag='${{ steps.release.outputs.tag }}'
+          risk='${{ steps.candidate.outputs.risk_class }}'
+          overlap='${{ steps.candidate.outputs.overlap_file_count }}'
+          critical='${{ steps.candidate.outputs.critical_file_count }}'
+          gh label create upstream-safe-candidate --color 0E8A16 --description 'Eligible for checked auto-merge' --force
+          gh label create upstream-review-required --color B60205 --description 'Manual upstream review is required' --force
+          gh label create upstream-reviewed --color 5319E7 --description 'Human upstream overlap review completed' --force
+          body=$(mktemp)
+          cat >"$body" <<EOF
+          Stable upstream candidate for **${tag}**.
+
+          - Risk class: \`${risk}\`
+          - Downstream overlap files: \`${overlap}\`
+          - Critical upstream paths: \`${critical}\`
+          - Full machine-readable report: [\`.downstream/upstream-risk.json\`](https://github.com/${GITHUB_REPOSITORY}/blob/${branch}/.downstream/upstream-risk.json)
+
+          Production remains protected by the \`production\` Environment. This PR cannot deploy directly.
+          EOF
+          pr=$(gh pr list --state open --head "$branch" --json number --jq '.[0].number // empty')
+          if [[ -z "$pr" ]]; then
+            gh pr create --base main --head "$branch" --title "chore: merge upstream ${tag}" --body-file "$body"
+            pr=$(gh pr list --state open --head "$branch" --json number --jq '.[0].number')
+          else
+            gh pr edit "$pr" --title "chore: merge upstream ${tag}" --body-file "$body"
+          fi
+          gh pr edit "$pr" --remove-label upstream-safe-candidate --remove-label upstream-review-required 2>/dev/null || true
+          if [[ "$risk" == safe ]]; then
+            gh pr edit "$pr" --add-label upstream-safe-candidate
+            gh pr merge "$pr" --auto --merge
+          else
+            gh pr merge "$pr" --disable-auto 2>/dev/null || true
+            gh pr edit "$pr" --add-label upstream-review-required
+          fi
+
+      - name: Upload conflict report
+        if: always() && steps.candidate.outputs.conflict == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: upstream-${{ steps.release.outputs.tag }}-merge-conflicts
           path: /tmp/upstream-conflict.md
-          if-no-files-found: ignore
+          if-no-files-found: error
           retention-days: 30
-      - name: Open candidate pull request
-        if: steps.release.outputs.changed == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          branch='${{ steps.merge.outputs.branch }}'
-          tag='${{ steps.release.outputs.tag }}'
-          if gh pr list --state open --head "$branch" --json number --jq 'length' | grep -qx 0; then
-            gh pr create \
-              --base main \
-              --head "$branch" \
-              --title "chore: merge upstream ${tag}" \
-              --body "Automated stable-release candidate. CI and the OCI candidate build must pass; merging this PR does not deploy production."
-          fi
