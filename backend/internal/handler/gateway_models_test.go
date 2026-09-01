@@ -95,6 +95,13 @@ func (s *gatewayModelsAccountRepoStub) ListCindyGroupIdentityMembers(ctx context
 
 func (s *gatewayModelsAccountRepoStub) CindyGroupIdentityReaderMarker() {}
 
+func (s *gatewayModelsAccountRepoStub) ListModelAvailabilityCandidates(ctx context.Context, groupID *int64, _ []string, _ bool) ([]service.Account, error) {
+	if groupID == nil {
+		return nil, nil
+	}
+	return s.ListSchedulableByGroupID(ctx, *groupID)
+}
+
 type gatewayModelsPromotedNilAccountRepoStub struct {
 	service.AccountRepository
 }
