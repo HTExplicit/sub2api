@@ -489,6 +489,17 @@ func TestCodexModelsDoesNotFailOverFromPermanentUpstreamStatus(t *testing.T) {
 
 func requireCompleteCodexModelsHandlerResponse(t *testing.T, recorder *httptest.ResponseRecorder, slug string) {
 	t.Helper()
+	manifestSlugs := codexHandlerManifestSlugs(t, recorder)
+	foundSlug := false
+	for _, candidate := range manifestSlugs {
+		if candidate == slug || strings.TrimPrefix(candidate, "openai/") == slug {
+			foundSlug = true
+			break
+		}
+	}
+	if !foundSlug {
+		t.Fatalf("manifest slugs %v do not contain %q", manifestSlugs, slug)
+	}
 	var envelope struct {
 		Models []map[string]any `json:"models"`
 	}
