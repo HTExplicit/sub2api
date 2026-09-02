@@ -42,7 +42,7 @@ jobs:
           [[ "$(jq -r .upstream_tag "$manifest")" == "$upstream_tag" ]]
           release_tag="${upstream_tag}-codexrip.1"
           if git ls-remote --exit-code --tags origin "refs/tags/${release_tag}" >/dev/null 2>&1 ||
-             gh release view "$release_tag" >/dev/null 2>&1; then
+             gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "release tag already exists: $release_tag" >&2
             exit 1
           fi

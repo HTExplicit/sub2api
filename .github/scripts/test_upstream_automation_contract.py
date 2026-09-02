@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import re
 import unittest
 from pathlib import Path
 
@@ -22,7 +23,10 @@ class UpstreamAutomationContractTest(unittest.TestCase):
         self.assertIn(".draft == false and .prerelease == false", self.sync)
         self.assertIn("--force-with-lease", self.sync)
         self.assertIn("upstream-review-required", self.sync)
-        self.assertIn("gh pr merge \"$pr\" --auto --merge", self.sync)
+        self.assertIn(
+            'gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --auto --merge',
+            self.sync,
+        )
         self.assertIn("/tmp/upstream-conflict.md", self.sync)
 
     def test_risk_gate_executes_only_trusted_code(self):
@@ -52,6 +56,13 @@ class UpstreamAutomationContractTest(unittest.TestCase):
             self.assertIn('gh label create --repo "$GITHUB_REPOSITORY"', workflow)
             self.assertIn('gh issue list --repo "$GITHUB_REPOSITORY"', workflow)
             self.assertIn('gh issue create --repo "$GITHUB_REPOSITORY"', workflow)
+
+    def test_repository_mutations_never_depend_on_git_remote_inference(self):
+        local_commands = re.compile(r"\bgh (label|issue|pr|release|run|workflow)\b")
+        for workflow in (self.sync, self.release, self.handoff):
+            for line in workflow.splitlines():
+                if local_commands.search(line):
+                    self.assertIn('--repo "$GITHUB_REPOSITORY"', line, line)
 
 
 if __name__ == "__main__":
