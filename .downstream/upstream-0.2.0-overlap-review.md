@@ -4,7 +4,7 @@
 > Reviewed: 2026-09-02
 > Upstream base: `v0.1.185`
 > Upstream tag: `v0.2.0` (`aa236488351eb71e120fc2b6fb32e36b0374c918`)
-> Downstream input: `aeca4d9a17697d70ecdcb6cb218f0df0773fa9bb`
+> Downstream input: `bf2c1891c6e0881e488095e47997012d32120ba5`
 > Planned downstream release: `v0.2.0-codexrip.2`
 
 The trusted risk classifier reports 148 upstream files, 75 downstream-overlap
@@ -16,6 +16,15 @@ The candidate also contains one downstream-owned status fix outside the 75-file
 overlap: the tokenless public GitHub status reader recognizes a matching open
 `upstream-review-required` Issue when conflict sync has no candidate PR or
 release, reports `review_required`, and exposes the Issue link in VersionBadge.
+
+The reviewed Codex quota root fix from PR #113 is integrated without changing
+the upstream overlap count. Transient `rate_limit_error` events with under-100
+5h/7d observation headers retain bounded retry/short cooldown semantics; only
+explicit hard quota evidence can terminate the overdraft cycle. The final
+candidate also carries the context-specific scheduler bucket, monotonic usage
+snapshot CAS, first-injection statistics boundary, and HTTP/SSE/WebSocket
+classifier tests. Release-specific test selection includes the new classifier
+and scheduler-context families.
 
 ## Resolution Invariants
 
