@@ -958,116 +958,6 @@ func codexQuotaOverdraftResponseIsQuotaLimited(headers http.Header, body []byte)
 	return classifyOpenAIOAuth429At(headers, body, time.Now()).Disposition != openAIOAuth429Transient
 }
 
-func codexQuotaOverdraftTextHasTransientRateLimitEvidence(text string) bool {
-	normalized := strings.NewReplacer("-", "_", " ", "_").Replace(strings.ToLower(text))
-	for _, marker := range []string{
-		"rate_limit_error",
-		"rate_limit_exceeded",
-		"too_many_requests",
-		"request_rate_limited",
-		"token_rate_limited",
-	} {
-		if strings.Contains(normalized, marker) {
-			return true
-		}
-	}
-	return false
-}
-
-func codexQuotaOverdraftJSONHasQuotaEvidence(value any, depth int) bool {
-	if depth > 6 {
-		return false
-	}
-	switch typed := value.(type) {
-	case map[string]any:
-		for key, raw := range typed {
-			normalizedKey := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(key), "-", "_"))
-			switch normalizedKey {
-			case "type", "code", "reason", "error_code":
-				if marker, ok := raw.(string); ok && codexQuotaOverdraftQuotaCode(marker) {
-					return true
-				}
-			case "limit_reached", "limitreached":
-				if reached, ok := raw.(bool); ok && reached {
-					return true
-				}
-			case "used_percent", "usedpercent":
-				if used, ok := raw.(float64); ok && used >= 100 {
-					return true
-				}
-			}
-			if codexQuotaOverdraftJSONHasQuotaEvidence(raw, depth+1) {
-				return true
-			}
-		}
-	case []any:
-		for _, item := range typed {
-			if codexQuotaOverdraftJSONHasQuotaEvidence(item, depth+1) {
-				return true
-			}
-		}
-	case string:
-		if codexQuotaOverdraftQuotaCode(typed) {
-			return true
-		}
-		text := strings.ToLower(strings.Join(strings.Fields(typed), " "))
-		for _, marker := range []string{
-			"usage limit has been reached",
-			"you have reached your usage limit",
-			"quota exhausted",
-			"insufficient quota",
-			"weekly limit reached",
-		} {
-			if strings.Contains(text, marker) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func codexQuotaOverdraftQuotaCode(value string) bool {
-	value = strings.ToLower(strings.TrimSpace(value))
-	value = strings.NewReplacer("-", "_", " ", "_").Replace(value)
-	switch value {
-	case "usage_limit_reached", "weekly_limit_reached", "monthly_limit_reached", "quota_exhausted", "insufficient_quota", "billing_hard_limit_reached":
-		return true
-	default:
-		return false
-	}
-}
-
-func codexQuotaOverdraftJSONHasTransientRateLimitEvidence(value any, depth int) bool {
-	if depth > 6 {
-		return false
-	}
-	switch typed := value.(type) {
-	case map[string]any:
-		for key, raw := range typed {
-			normalizedKey := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(key), "-", "_"))
-			if normalizedKey == "type" || normalizedKey == "code" || normalizedKey == "reason" || normalizedKey == "error_code" {
-				if marker, ok := raw.(string); ok {
-					marker = strings.NewReplacer("-", "_", " ", "_").Replace(strings.ToLower(strings.TrimSpace(marker)))
-					switch marker {
-					case "rate_limit_error", "rate_limit_exceeded", "too_many_requests", "request_rate_limited", "token_rate_limited":
-						return true
-					}
-				}
-			}
-			if codexQuotaOverdraftJSONHasTransientRateLimitEvidence(raw, depth+1) {
-				return true
-			}
-		}
-	case []any:
-		for _, item := range typed {
-			if codexQuotaOverdraftJSONHasTransientRateLimitEvidence(item, depth+1) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 func codexQuotaOverdraftSignalFromAccount(account *Account, state *CodexQuotaOverdraftProbeState, now time.Time) (codexQuotaOverdraftSignal, bool) {
 	if account == nil || len(account.Extra) == 0 {
 		return codexQuotaOverdraftSignal{}, false
@@ -1150,7 +1040,9 @@ func codexQuotaOverdraftFallbackSignal(headers http.Header, body []byte, state *
 	} else if state != nil && state.RecoverAt != nil && state.RecoverAt.After(now) {
 		recoverAt = *state.RecoverAt
 	}
-	if window != "5h" && window != "7d" {
+	switch window {
+	case "5h", "7d":
+	default:
 		window = "multiple"
 	}
 	signal := codexQuotaOverdraftSignal{
@@ -1160,9 +1052,10 @@ func codexQuotaOverdraftFallbackSignal(headers http.Header, body []byte, state *
 		FiveHourRecoverAt: codexQuotaOverdraftTimePtr(recoverAt),
 		SevenDayRecoverAt: codexQuotaOverdraftTimePtr(recoverAt),
 	}
-	if window == "5h" {
+	switch window {
+	case "5h":
 		signal.SevenDayRecoverAt = nil
-	} else if window == "7d" {
+	case "7d":
 		signal.FiveHourRecoverAt = nil
 	}
 	return signal

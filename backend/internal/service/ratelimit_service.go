@@ -1361,10 +1361,6 @@ func calculateOpenAI429ResetTime(headers http.Header) *time.Time {
 	return classification.ResetAt
 }
 
-func (s *RateLimitService) calculateOpenAI429ResetTime(headers http.Header) *time.Time {
-	return calculateOpenAI429ResetTime(headers)
-}
-
 // anthropic429Result holds the parsed Anthropic 429 rate-limit information.
 type anthropic429Result struct {
 	resetAt       time.Time  // The correct reset time to use for SetRateLimited
