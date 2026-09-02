@@ -143,6 +143,12 @@ func (s *OpenAIGatewayService) BuildGroupConfiguredCodexModelsManifest(
 	if err != nil {
 		return nil, false, fmt.Errorf("build group configured Codex models: %w", err)
 	}
+	if allOrdinaryOpenAIAPIKeyAccounts(visible) {
+		body, err = normalizeOfficialCodexModelContexts(body)
+		if err != nil {
+			return nil, false, fmt.Errorf("normalize group configured Codex models: %w", err)
+		}
+	}
 	manifest := &CodexModelsManifest{
 		Body: body,
 		ETag: codexModelsManifestBodyETag(body),
@@ -164,6 +170,37 @@ func (s *OpenAIGatewayService) MergeGroupConfiguredCodexModels(
 	manifest *CodexModelsManifest,
 	ifNoneMatch string,
 ) error {
+	return s.mergeGroupConfiguredCodexModels(ctx, group, manifest, ifNoneMatch, false)
+}
+
+// MergeGroupConfiguredCodexModelsForAccount performs the same group-local
+// merge and then applies account-type-specific final wire invariants. Keeping
+// the normalization after the merge is essential because locally configured
+// model aliases can replace or append descriptors after the upstream manifest
+// was normalized.
+func (s *OpenAIGatewayService) MergeGroupConfiguredCodexModelsForAccount(
+	ctx context.Context,
+	group *Group,
+	manifest *CodexModelsManifest,
+	ifNoneMatch string,
+	account *Account,
+) error {
+	return s.mergeGroupConfiguredCodexModels(
+		ctx,
+		group,
+		manifest,
+		ifNoneMatch,
+		isOrdinaryOpenAIAPIKeyAccount(account),
+	)
+}
+
+func (s *OpenAIGatewayService) mergeGroupConfiguredCodexModels(
+	ctx context.Context,
+	group *Group,
+	manifest *CodexModelsManifest,
+	ifNoneMatch string,
+	normalizeOfficialContexts bool,
+) error {
 	if s == nil || s.accountRepo == nil || group == nil || manifest == nil || manifest.NotModified {
 		return nil
 	}
@@ -183,6 +220,14 @@ func (s *OpenAIGatewayService) MergeGroupConfiguredCodexModels(
 	)
 	if err != nil {
 		return fmt.Errorf("merge group configured Codex models: %w", err)
+	}
+	if normalizeOfficialContexts {
+		normalizedBody, normalizeErr := normalizeOfficialCodexModelContexts(body)
+		if normalizeErr != nil {
+			return fmt.Errorf("normalize merged group Codex models: %w", normalizeErr)
+		}
+		changed = changed || !bytes.Equal(normalizedBody, body)
+		body = normalizedBody
 	}
 	if changed {
 		manifest.Body = body
@@ -1610,7 +1655,7 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 		cindyCatalogVersion:        CindyCapabilityCatalogVersion,
 		cindyResponsesImageEnabled: CindyResponsesImageBridgeFeatureEnabled(),
 		projectCindyCatalog:        CindyCapabilityCatalogFeatureEnabled() && isCindyAccount,
-		normalizeOfficialContexts:  useAPIKeyUpstream && !isCindyAccount,
+		normalizeOfficialContexts:  useAPIKeyUpstream && isOrdinaryOpenAIAPIKeyAccount(credAccount),
 	}
 	if useAPIKeyUpstream {
 		return s.fetchCachedAPIKeyCodexModelsManifest(ctx, request, ifNoneMatch)
@@ -2270,6 +2315,24 @@ var officialCodexContexts = map[string]officialCodexContext{
 	},
 }
 
+func isOrdinaryOpenAIAPIKeyAccount(account *Account) bool {
+	return account != nil &&
+		account.IsOpenAIApiKey() &&
+		!IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+}
+
+func allOrdinaryOpenAIAPIKeyAccounts(accounts []Account) bool {
+	if len(accounts) == 0 {
+		return false
+	}
+	for i := range accounts {
+		if !isOrdinaryOpenAIAPIKeyAccount(&accounts[i]) {
+			return false
+		}
+	}
+	return true
+}
+
 // normalizeOfficialCodexModelContexts applies the current Codex client
 // manifest contract to ordinary custom API-key providers. Cindy has its own
 // pinned catalog and OAuth manifests remain authoritative passthroughs.
@@ -2414,7 +2477,7 @@ func (s *OpenAIGatewayService) CompleteAPIKeyCodexModelsManifestForClient(manife
 	// descriptor set so synthesized context fields cannot overwrite the Codex
 	// client contract. Strict Cindy has its own pinned catalog and must remain
 	// outside this normalization.
-	if !IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+	if isOrdinaryOpenAIAPIKeyAccount(account) {
 		body, err = normalizeOfficialCodexModelContexts(body)
 		if err != nil {
 			return err
