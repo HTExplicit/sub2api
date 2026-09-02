@@ -15,6 +15,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -2665,19 +2666,71 @@ func (r *accountRepository) UpdateExtra(ctx context.Context, id int64, updates m
 	if service.ShouldEnsureCodexFingerprintSeedForExtraUpdates(updates) {
 		extraExpression = ensureCodexFingerprintSeedSQL(extraExpression)
 	}
-	result, err := client.ExecContext(
-		ctx,
-		"UPDATE accounts SET extra = "+extraExpression+", updated_at = NOW() WHERE id = $2 AND deleted_at IS NULL",
-		string(payload), id,
-	)
-
-	if err != nil {
-		return err
-	}
-
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return err
+	affected := int64(0)
+	candidateUpdatedAt, monotonicSnapshot := codexUsageUpdatedAtFromExtraUpdates(updates)
+	if monotonicSnapshot {
+		rows, queryErr := client.QueryContext(ctx, `
+			WITH target AS MATERIALIZED (
+				SELECT id, extra ->> 'codex_usage_updated_at' AS current_updated_at
+				FROM accounts
+				WHERE id = $2 AND deleted_at IS NULL
+			), updated AS (
+				UPDATE accounts AS a
+				SET extra = `+extraExpression+`, updated_at = NOW()
+				FROM target
+				WHERE a.id = target.id
+					AND (
+						target.current_updated_at IS NULL
+						OR target.current_updated_at !~ '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$'
+						OR target.current_updated_at::timestamptz <= $3::timestamptz
+					)
+				RETURNING a.id
+			)
+			SELECT EXISTS (SELECT 1 FROM target), EXISTS (SELECT 1 FROM updated)
+		`, string(payload), id, candidateUpdatedAt.Format(time.RFC3339Nano))
+		if queryErr != nil {
+			return queryErr
+		}
+		var exists, updated bool
+		if !rows.Next() {
+			_ = rows.Close()
+			if rowsErr := rows.Err(); rowsErr != nil {
+				return rowsErr
+			}
+			return service.ErrAccountNotFound
+		}
+		if scanErr := rows.Scan(&exists, &updated); scanErr != nil {
+			_ = rows.Close()
+			return scanErr
+		}
+		if closeErr := rows.Close(); closeErr != nil {
+			return closeErr
+		}
+		if !exists {
+			return service.ErrAccountNotFound
+		}
+		if !updated {
+			slog.Info("codex_quota_snapshot_stale_ignored",
+				"account_id", id,
+				"candidate_updated_at", candidateUpdatedAt.Format(time.RFC3339Nano),
+			)
+			return nil
+		}
+		affected = 1
+	} else {
+		result, execErr := client.ExecContext(
+			ctx,
+			"UPDATE accounts SET extra = "+extraExpression+", updated_at = NOW() WHERE id = $2 AND deleted_at IS NULL",
+			string(payload), id,
+		)
+		if execErr != nil {
+			return execErr
+		}
+		var rowsErr error
+		affected, rowsErr = result.RowsAffected()
+		if rowsErr != nil {
+			return rowsErr
+		}
 	}
 	if affected == 0 {
 		return service.ErrAccountNotFound
@@ -2703,6 +2756,22 @@ func (r *accountRepository) UpdateExtra(ctx context.Context, id int64, updates m
 		}
 	}
 	return nil
+}
+
+func codexUsageUpdatedAtFromExtraUpdates(updates map[string]any) (time.Time, bool) {
+	raw, ok := updates["codex_usage_updated_at"]
+	if !ok || raw == nil {
+		return time.Time{}, false
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return time.Time{}, false
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(value))
+	if err != nil {
+		return time.Time{}, false
+	}
+	return parsed.UTC(), true
 }
 
 // UpdateUpstreamBillingProbeSnapshot stores a probe result only while the

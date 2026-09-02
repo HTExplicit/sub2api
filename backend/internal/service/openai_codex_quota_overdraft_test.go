@@ -32,6 +32,9 @@ func TestCodexQuotaOverdraftInjection(t *testing.T) {
 	updated := svc.prepareCodexQuotaOverdraftBody(ctx, oauth, false, body)
 	require.NotEqual(t, string(body), string(updated))
 	require.True(t, codexQuotaOverdraftWasInjected(ctx, oauth.ID))
+	injectedAt, ok := codexQuotaOverdraftInjectedAt(ctx, oauth.ID)
+	require.True(t, ok)
+	require.WithinDuration(t, time.Now(), injectedAt, time.Second)
 
 	var document codexQuotaOverdraftDocument
 	require.NoError(t, json.Unmarshal(updated, &document))
@@ -46,6 +49,9 @@ func TestCodexQuotaOverdraftInjection(t *testing.T) {
 
 	again := svc.prepareCodexQuotaOverdraftBody(ctx, oauth, false, updated)
 	require.Equal(t, string(updated), string(again), "重复处理不能再次注入")
+	againAt, ok := codexQuotaOverdraftInjectedAt(ctx, oauth.ID)
+	require.True(t, ok)
+	require.Equal(t, injectedAt, againAt, "重复处理必须保留首次请求边界")
 }
 
 func TestCodexQuotaOverdraftInjectionGuards(t *testing.T) {

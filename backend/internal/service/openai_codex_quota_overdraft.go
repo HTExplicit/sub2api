@@ -116,20 +116,29 @@ func markCodexQuotaOverdraftInjected(ctx context.Context, accountID int64) {
 		return
 	}
 	if state := codexQuotaOverdraftRequestStateFromContext(ctx); state != nil {
-		state.injectedAccounts.Store(accountID, struct{}{})
+		state.injectedAccounts.LoadOrStore(accountID, time.Now().UTC())
 	}
 }
 
 func codexQuotaOverdraftWasInjected(ctx context.Context, accountID int64) bool {
+	_, ok := codexQuotaOverdraftInjectedAt(ctx, accountID)
+	return ok
+}
+
+func codexQuotaOverdraftInjectedAt(ctx context.Context, accountID int64) (time.Time, bool) {
 	if accountID <= 0 {
-		return false
+		return time.Time{}, false
 	}
 	state := codexQuotaOverdraftRequestStateFromContext(ctx)
 	if state == nil {
-		return false
+		return time.Time{}, false
 	}
-	_, ok := state.injectedAccounts.Load(accountID)
-	return ok
+	value, ok := state.injectedAccounts.Load(accountID)
+	if !ok {
+		return time.Time{}, false
+	}
+	startedAt, ok := value.(time.Time)
+	return startedAt, ok && !startedAt.IsZero()
 }
 
 func codexQuotaOverdraftInjectionEligible(account *Account, now time.Time) bool {

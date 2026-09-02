@@ -329,7 +329,7 @@ func (c *schedulerCache) CaptureBucketWriteToken(ctx context.Context, bucket ser
 }
 
 func (c *schedulerCache) RetireBucket(ctx context.Context, bucket service.SchedulerBucket) error {
-	snapshotKeyPrefix := fmt.Sprintf("%s%d:%s:%s:v", schedulerSnapshotPrefix, bucket.GroupID, bucket.Platform, bucket.Mode)
+	snapshotKeyPrefix := schedulerSnapshotKeyPrefix(bucket)
 	result, err := retireBucketScript.Run(ctx, c.rdb, []string{
 		schedulerBucketKey(schedulerEpochPrefix, bucket),
 		schedulerBucketKey(schedulerRetiredPrefix, bucket),
@@ -348,7 +348,7 @@ func (c *schedulerCache) RetireBucket(ctx context.Context, bucket service.Schedu
 }
 
 func (c *schedulerCache) ReopenBucket(ctx context.Context, bucket service.SchedulerBucket) (service.SchedulerBucketWriteToken, error) {
-	snapshotKeyPrefix := fmt.Sprintf("%s%d:%s:%s:v", schedulerSnapshotPrefix, bucket.GroupID, bucket.Platform, bucket.Mode)
+	snapshotKeyPrefix := schedulerSnapshotKeyPrefix(bucket)
 	result, err := reopenBucketScript.Run(ctx, c.rdb, []string{
 		schedulerBucketKey(schedulerEpochPrefix, bucket),
 		schedulerBucketKey(schedulerRetiredPrefix, bucket),
@@ -543,7 +543,7 @@ func (c *schedulerCache) activateSnapshotVersion(ctx context.Context, bucket ser
 	// 旧快照使用 EXPIRE 宽限期而非立即 DEL，避免 reader 竞态。
 	activeKey := schedulerBucketKey(schedulerActivePrefix, bucket)
 	readyKey := schedulerBucketKey(schedulerReadyPrefix, bucket)
-	snapshotKeyPrefix := fmt.Sprintf("%s%d:%s:%s:v", schedulerSnapshotPrefix, bucket.GroupID, bucket.Platform, bucket.Mode)
+	snapshotKeyPrefix := schedulerSnapshotKeyPrefix(bucket)
 
 	keys := []string{
 		activeKey,
@@ -721,7 +721,7 @@ func (c *schedulerCache) SetOutboxWatermark(ctx context.Context, id int64) error
 }
 
 func schedulerBucketKey(prefix string, bucket service.SchedulerBucket) string {
-	return fmt.Sprintf("%s%d:%s:%s", prefix, bucket.GroupID, bucket.Platform, bucket.Mode)
+	return prefix + bucket.String()
 }
 
 func schedulerGroupLifecycleLockKey(groupID int64) string {
@@ -729,7 +729,11 @@ func schedulerGroupLifecycleLockKey(groupID int64) string {
 }
 
 func schedulerSnapshotKey(bucket service.SchedulerBucket, version string) string {
-	return fmt.Sprintf("%s%d:%s:%s:v%s", schedulerSnapshotPrefix, bucket.GroupID, bucket.Platform, bucket.Mode, version)
+	return schedulerSnapshotKeyPrefix(bucket) + version
+}
+
+func schedulerSnapshotKeyPrefix(bucket service.SchedulerBucket) string {
+	return schedulerSnapshotPrefix + bucket.String() + ":v"
 }
 
 func schedulerAccountKey(id string) string {
@@ -1070,6 +1074,8 @@ func filterSchedulerExtra(extra map[string]any) map[string]any {
 		"codex_5h_reset_after_seconds",
 		"codex_7d_reset_after_seconds",
 		"codex_usage_updated_at",
+		service.CodexQuotaOverdraftEnabledExtraKey,
+		service.CodexQuotaOverdraftProbeExtraKey,
 		"auto_pause_5h_threshold",
 		"auto_pause_7d_threshold",
 		"auto_pause_5h_disabled",
@@ -1082,6 +1088,13 @@ func filterSchedulerExtra(extra map[string]any) map[string]any {
 	filtered := make(map[string]any)
 	for _, key := range keys {
 		if value, ok := extra[key]; ok && value != nil {
+			if key == service.CodexQuotaOverdraftProbeExtraKey {
+				filteredProbe := filterSchedulerCodexQuotaOverdraftProbe(value)
+				if filteredProbe == nil {
+					continue
+				}
+				value = filteredProbe
+			}
 			if key == service.UpstreamBillingProbeExtraKey {
 				filteredProbe := filterSchedulerUpstreamBillingProbe(value)
 				if filteredProbe == nil {
@@ -1093,6 +1106,31 @@ func filterSchedulerExtra(extra map[string]any) map[string]any {
 		}
 	}
 	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
+}
+
+func filterSchedulerCodexQuotaOverdraftProbe(value any) map[string]any {
+	source, ok := value.(map[string]any)
+	if !ok {
+		return nil
+	}
+	keys := []string{
+		"status", "quota_window", "cycle_key", "started_at", "retry_at", "recover_at",
+		"five_hour_recover_at", "seven_day_recover_at", "overdraft_started_at",
+		"five_hour_overdraft_started_at", "seven_day_overdraft_started_at",
+	}
+	filtered := make(map[string]any, len(keys))
+	for _, key := range keys {
+		if raw, exists := source[key]; exists && raw != nil {
+			filtered[key] = raw
+		}
+	}
+	if _, ok := filtered["status"].(string); !ok {
+		return nil
+	}
+	if _, ok := filtered["cycle_key"].(string); !ok {
 		return nil
 	}
 	return filtered

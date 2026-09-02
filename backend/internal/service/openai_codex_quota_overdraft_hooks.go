@@ -45,7 +45,7 @@ func (s *OpenAIGatewayService) processCodexQuotaOverdraftUsageSnapshot(
 	updates map[string]any,
 ) {
 	persistSnapshot := codexQuotaOverdraftSnapshotPrearmReached(updates) || s.getCodexSnapshotThrottle().Allow(accountID, now)
-	businessSuccess := codexQuotaOverdraftWasInjected(ctx, accountID)
+	businessStartedAt, businessSuccess := codexQuotaOverdraftInjectedAt(ctx, accountID)
 
 	go func() {
 		updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -93,7 +93,7 @@ func (s *OpenAIGatewayService) processCodexQuotaOverdraftUsageSnapshot(
 		}
 		mergeAccountExtra(account, updates)
 		if businessSuccess {
-			s.codexQuotaOverdraft.observeBusinessSuccess(account, "")
+			s.codexQuotaOverdraft.observeBusinessSuccess(account, "", businessStartedAt)
 		} else {
 			s.codexQuotaOverdraft.observeAccount(account, "")
 		}
@@ -105,7 +105,9 @@ func (s *OpenAIGatewayService) observeCodexQuotaOverdraftScheduleSuccess(
 	model string,
 	requestCtx []context.Context,
 ) {
-	if len(requestCtx) > 0 && s.codexQuotaOverdraft != nil && codexQuotaOverdraftWasInjected(requestCtx[0], accountID) {
-		s.codexQuotaOverdraft.ObserveBusinessSuccessByID(accountID, model)
+	if len(requestCtx) > 0 && s.codexQuotaOverdraft != nil {
+		if startedAt, ok := codexQuotaOverdraftInjectedAt(requestCtx[0], accountID); ok {
+			s.codexQuotaOverdraft.ObserveBusinessSuccessByID(accountID, model, startedAt)
+		}
 	}
 }

@@ -420,32 +420,8 @@ const (
 )
 
 func classifyOpenAIOAuth429(headers http.Header, responseBody []byte) (openAIOAuth429Disposition, *time.Time) {
-	if snapshot := ParseCodexRateLimitHeaders(headers); snapshot != nil {
-		if normalized := snapshot.Normalize(); normalized != nil {
-			if normalized.Used7dPercent != nil && *normalized.Used7dPercent >= 100 {
-				if normalized.Reset7dSeconds != nil {
-					resetAt := time.Now().Add(time.Duration(*normalized.Reset7dSeconds) * time.Second)
-					return openAIOAuth429Quota7d, &resetAt
-				}
-				return openAIOAuth429Quota7d, nil
-			}
-			if normalized.Used5hPercent != nil && *normalized.Used5hPercent >= 100 {
-				if normalized.Reset5hSeconds != nil {
-					resetAt := time.Now().Add(time.Duration(*normalized.Reset5hSeconds) * time.Second)
-					return openAIOAuth429Quota5h, &resetAt
-				}
-				return openAIOAuth429Quota5h, nil
-			}
-		}
-	}
-	if resetAt := calculateOpenAI429ResetTime(headers); resetAt != nil {
-		return openAIOAuth429QuotaReset, resetAt
-	}
-	if resetUnix := parseOpenAIRateLimitResetTime(responseBody); resetUnix != nil {
-		resetAt := time.Unix(*resetUnix, 0)
-		return openAIOAuth429QuotaReset, &resetAt
-	}
-	return openAIOAuth429Transient, nil
+	classification := classifyOpenAIOAuth429At(headers, responseBody, time.Now())
+	return classification.Disposition, classification.ResetAt
 }
 
 func openAIAccountStateContext(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -657,7 +633,15 @@ func (s *OpenAIGatewayService) markOpenAIOAuth429RateLimited(ctx context.Context
 		return
 	}
 	s.recordOpenAIOAuth429()
-	disposition, resetAt := classifyOpenAIOAuth429(headers, responseBody)
+	classification := classifyOpenAIOAuth429At(headers, responseBody, time.Now())
+	disposition, resetAt := classification.Disposition, classification.ResetAt
+	slog.Info("codex_quota_429_classified",
+		"account_id", account.ID,
+		"classification", map[bool]string{true: "transient", false: "hard_quota"}[disposition == openAIOAuth429Transient],
+		"window", classification.Window,
+		"source", classification.Source,
+		"code", classification.Code,
+	)
 	if disposition == openAIOAuth429Transient && s.openAIOAuth429RetryWindowActive(account) {
 		return
 	}
@@ -1520,15 +1504,25 @@ func (s *OpenAIGatewayService) CooldownOpenAIRetryExhausted(
 		s.BlockAccountScheduling(account, now.Add(openAIRetryExhaustedAuthCooldown), "retry_exhausted_auth")
 		return
 	case http.StatusTooManyRequests:
+		classification := classifyOpenAIOAuth429At(failoverErr.ResponseHeaders, failoverErr.ResponseBody, now)
 		until := now.Add(openAIOAuth429FallbackCooldown)
-		if resetAt := parseRetryAfterResetTime(failoverErr.ResponseHeaders, now); resetAt != nil && resetAt.After(until) {
+		if classification.Disposition != openAIOAuth429Transient && classification.ResetAt != nil && classification.ResetAt.After(now) {
+			until = *classification.ResetAt
+		} else if resetAt := parseRetryAfterResetTime(failoverErr.ResponseHeaders, now); resetAt != nil && resetAt.After(now) {
+			maxResetAt := now.Add(time.Duration(maxRateLimit429CooldownSeconds) * time.Second)
 			until = *resetAt
-		}
-		if s.rateLimitService != nil {
-			if resetAt := s.rateLimitService.calculateOpenAI429ResetTime(failoverErr.ResponseHeaders); resetAt != nil && resetAt.After(until) {
-				until = *resetAt
+			if until.After(maxResetAt) {
+				until = maxResetAt
 			}
 		}
+		slog.Info("codex_quota_429_classified",
+			"account_id", account.ID,
+			"classification", map[bool]string{true: "transient", false: "hard_quota"}[classification.Disposition == openAIOAuth429Transient],
+			"window", classification.Window,
+			"source", classification.Source,
+			"code", classification.Code,
+			"path", "retry_exhausted",
+		)
 		s.BlockAccountScheduling(account, until, "retry_exhausted_429")
 		return
 	}
