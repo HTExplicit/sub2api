@@ -3,7 +3,6 @@
 package migrations
 
 import (
-	"io/fs"
 	"strings"
 	"testing"
 
@@ -11,11 +10,9 @@ import (
 )
 
 func TestMigration233CreatesOnlySlimImageStudioTables(t *testing.T) {
-	matches, err := fs.Glob(FS, "233_*.sql")
-	require.NoError(t, err)
-	require.Equal(t, []string{"233_image_studio_jobs.sql"}, matches)
-
-	raw, err := FS.ReadFile(matches[0])
+	// Migration identity is the complete filename. Official and downstream
+	// migrations intentionally share numeric prefixes.
+	raw, err := FS.ReadFile("233_image_studio_jobs.sql")
 	require.NoError(t, err)
 	sql := strings.ToLower(string(raw))
 

@@ -148,6 +148,8 @@ func GroupFromServiceAdmin(g *service.Group) *AdminGroup {
 	}
 	out := &AdminGroup{
 		Group:                       groupFromServiceBase(g),
+		ForceOpenAIFast:             g.ForceOpenAIFast,
+		FreeOpenAIFast:              g.FreeOpenAIFast,
 		ProfitControlEnabled:        false,
 		ProfitMinMargin:             0,
 		ProfitSafetyBuffer:          0,
@@ -223,6 +225,7 @@ func groupFromServiceBase(g *service.Group) Group {
 		RequirePrivacySet:               g.RequirePrivacySet,
 		RPMLimit:                        g.RPMLimit,
 		MaxReasoningEffort:              g.MaxReasoningEffort,
+		MaxReasoningEffortOverLimit:     g.MaxReasoningEffortOverLimit,
 		ReasoningEffortMappings:         g.ReasoningEffortMappings,
 		CreatedAt:                       g.CreatedAt,
 		UpdatedAt:                       g.UpdatedAt,

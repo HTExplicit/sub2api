@@ -9,7 +9,7 @@ export type DownstreamReleaseStatus =
   | 'failed'
 
 export interface DownstreamStatusLink {
-  label: 'official' | 'candidate' | 'release' | 'production'
+  label: 'official' | 'candidate' | 'review' | 'release' | 'production'
   url: string
 }
 
@@ -18,6 +18,7 @@ export interface DownstreamStatusInfo {
   official_latest: string
   downstream_base: string
   candidate_pr?: { number: number; title: string; url: string }
+  review_issue?: { number: number; title: string; url: string }
   downstream_release?: { tag: string; url: string }
   production_run?: { status: string; conclusion: string; url: string }
   links: DownstreamStatusLink[]
@@ -32,6 +33,8 @@ let cached: { key: string; at: number; value: DownstreamStatusInfo } | null = nu
 
 const trimVersion = (value: string): string => value.trim().replace(/^v/, '')
 const upstreamBase = (value: string): string => trimVersion(value).split('-codexrip.')[0] || ''
+const referencesOfficialVersion = (title: string, official: string): boolean =>
+  (title.match(/\bv\d+\.\d+\.\d+\b/gi) || []).some(version => trimVersion(version) === official)
 
 async function githubJSON<T>(path: string): Promise<T> {
   const response = await fetch(`${API_ROOT}${path}`, {
@@ -75,6 +78,20 @@ export async function fetchDownstreamStatus(
   const candidate = pulls.find(item => item.head.ref === expectedBranch)
   const releaseTag = release?.tag_name?.replace(/^v/, '') || ''
   const relevantRelease = release && upstreamBase(releaseTag) === official ? release : null
+  const reviewIssue = !candidate && !relevantRelease && upstreamBase(current) !== official
+    ? (await githubJSON<Array<{
+        number: number
+        title: string
+        html_url: string
+        labels: Array<{ name: string }>
+        pull_request?: unknown
+      }>>('/issues?state=open&labels=upstream-review-required&per_page=30').catch(() => []))
+        .find(item =>
+          !item.pull_request &&
+          item.labels.some(label => label.name === 'upstream-review-required') &&
+          referencesOfficialVersion(item.title, official)
+        )
+    : undefined
   const relevantRun = relevantRelease
     ? runs.workflow_runs.find(item => item.display_title.includes(relevantRelease.tag_name))
     : undefined
@@ -91,6 +108,8 @@ export async function fetchDownstreamStatus(
     status = candidate.labels.some(label => label.name === 'upstream-review-required')
       ? 'review_required'
       : 'candidate_testing'
+  } else if (reviewIssue) {
+    status = 'review_required'
   } else if (relevantRelease && current !== releaseTag) {
     if (!relevantRun) {
       status = 'release_ready'
@@ -117,6 +136,9 @@ export async function fetchDownstreamStatus(
     candidate_pr: candidate
       ? { number: candidate.number, title: candidate.title, url: candidate.html_url }
       : undefined,
+    review_issue: reviewIssue
+      ? { number: reviewIssue.number, title: reviewIssue.title, url: reviewIssue.html_url }
+      : undefined,
     downstream_release: relevantRelease
       ? { tag: relevantRelease.tag_name, url: relevantRelease.html_url }
       : undefined,
@@ -126,9 +148,10 @@ export async function fetchDownstreamStatus(
     links: [
       { label: 'official', url: `https://github.com/Wei-Shaw/sub2api/releases/tag/v${official}` },
       ...(candidate ? [{ label: 'candidate' as const, url: candidate.html_url }] : []),
+      ...(reviewIssue ? [{ label: 'review' as const, url: reviewIssue.html_url }] : []),
       ...(relevantRelease ? [{ label: 'release' as const, url: relevantRelease.html_url }] : []),
       ...(relevantRun ? [{ label: 'production' as const, url: relevantRun.html_url }] : []),
-      ...(!candidate && !relevantRelease
+      ...(!candidate && !reviewIssue && !relevantRelease
         ? [{ label: 'candidate' as const, url: `${HTML_ROOT}/pulls?q=is%3Apr+head%3A${expectedBranch}` }]
         : [])
     ]
