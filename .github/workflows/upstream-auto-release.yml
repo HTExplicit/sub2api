@@ -60,12 +60,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh label create upstream-automation-failed --color B60205 --description 'Upstream automation stopped without production change' --force
+          gh label create --repo "$GITHUB_REPOSITORY" upstream-automation-failed --color B60205 --description 'Upstream automation stopped without production change' --force
           body=$(mktemp)
           printf 'Automatic tagging stopped. Production was not changed.\n\nRun: %s\n' "$RUN_URL" >"$body"
-          issue=$(gh issue list --state open --search "${TITLE} in:title" --json number,title --jq ".[] | select(.title == \"${TITLE}\") | .number" | head -n1)
+          issue=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "${TITLE} in:title" --json number,title --jq ".[] | select(.title == \"${TITLE}\") | .number" | head -n1)
           if [[ -n "$issue" ]]; then
-            gh issue edit "$issue" --body-file "$body" --add-label upstream-automation-failed
+            gh issue edit "$issue" --repo "$GITHUB_REPOSITORY" --body-file "$body" --add-label upstream-automation-failed
           else
-            gh issue create --title "$TITLE" --body-file "$body" --label upstream-automation-failed
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body-file "$body" --label upstream-automation-failed
           fi

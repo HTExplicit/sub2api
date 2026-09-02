@@ -36,6 +36,8 @@ class UpstreamAutomationContractTest(unittest.TestCase):
         self.assertIn("upstream-safe-candidate", self.release)
         self.assertIn("git ls-remote --exit-code --tags", self.release)
         self.assertIn("-codexrip.1", self.release)
+        self.assertIn("endsWith(github.event.workflow_run.head_branch, '-codexrip.1')", self.handoff)
+        self.assertIn("Manual codexrip releases must remain independent", self.handoff)
         self.assertIn("operation=deploy-preserve", self.handoff)
         self.assertIn("environment:\n      name: production", self.production)
         self.assertIn("runtime=preserve", self.production)
@@ -46,6 +48,10 @@ class UpstreamAutomationContractTest(unittest.TestCase):
         self.assertIn("upstream-automation-failed", self.handoff)
         self.assertNotIn("for attempt", self.release)
         self.assertNotIn("for attempt", self.handoff)
+        for workflow in (self.release, self.handoff):
+            self.assertIn('gh label create --repo "$GITHUB_REPOSITORY"', workflow)
+            self.assertIn('gh issue list --repo "$GITHUB_REPOSITORY"', workflow)
+            self.assertIn('gh issue create --repo "$GITHUB_REPOSITORY"', workflow)
 
 
 if __name__ == "__main__":
