@@ -104,12 +104,12 @@ jobs:
           set -euo pipefail
           tag='${{ steps.release.outputs.tag }}'
           title="Upstream ${tag} merge conflicts"
-          gh label create upstream-review-required --color B60205 --description 'Manual upstream review is required' --force
-          issue=$(gh issue list --state open --search "${title} in:title" --json number,title --jq ".[] | select(.title == \"${title}\") | .number" | head -n1)
+          gh label create --repo "$GITHUB_REPOSITORY" upstream-review-required --color B60205 --description 'Manual upstream review is required' --force
+          issue=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "${title} in:title" --json number,title --jq ".[] | select(.title == \"${title}\") | .number" | head -n1)
           if [[ -n "$issue" ]]; then
-            gh issue edit "$issue" --body-file /tmp/upstream-conflict.md --add-label upstream-review-required
+            gh issue edit "$issue" --repo "$GITHUB_REPOSITORY" --body-file /tmp/upstream-conflict.md --add-label upstream-review-required
           else
-            gh issue create --title "$title" --body-file /tmp/upstream-conflict.md --label upstream-review-required
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file /tmp/upstream-conflict.md --label upstream-review-required
           fi
 
       - name: Create or update candidate pull request
@@ -122,9 +122,9 @@ jobs:
           risk='${{ steps.candidate.outputs.risk_class }}'
           overlap='${{ steps.candidate.outputs.overlap_file_count }}'
           critical='${{ steps.candidate.outputs.critical_file_count }}'
-          gh label create upstream-safe-candidate --color 0E8A16 --description 'Eligible for checked auto-merge' --force
-          gh label create upstream-review-required --color B60205 --description 'Manual upstream review is required' --force
-          gh label create upstream-reviewed --color 5319E7 --description 'Human upstream overlap review completed' --force
+          gh label create --repo "$GITHUB_REPOSITORY" upstream-safe-candidate --color 0E8A16 --description 'Eligible for checked auto-merge' --force
+          gh label create --repo "$GITHUB_REPOSITORY" upstream-review-required --color B60205 --description 'Manual upstream review is required' --force
+          gh label create --repo "$GITHUB_REPOSITORY" upstream-reviewed --color 5319E7 --description 'Human upstream overlap review completed' --force
           body=$(mktemp)
           cat >"$body" <<EOF
           Stable upstream candidate for **${tag}**.
@@ -136,20 +136,20 @@ jobs:
 
           Production remains protected by the \`production\` Environment. This PR cannot deploy directly.
           EOF
-          pr=$(gh pr list --state open --head "$branch" --json number --jq '.[0].number // empty')
+          pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --head "$branch" --json number --jq '.[0].number // empty')
           if [[ -z "$pr" ]]; then
-            gh pr create --base main --head "$branch" --title "chore: merge upstream ${tag}" --body-file "$body"
-            pr=$(gh pr list --state open --head "$branch" --json number --jq '.[0].number')
+            gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" --title "chore: merge upstream ${tag}" --body-file "$body"
+            pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --head "$branch" --json number --jq '.[0].number')
           else
-            gh pr edit "$pr" --title "chore: merge upstream ${tag}" --body-file "$body"
+            gh pr edit "$pr" --repo "$GITHUB_REPOSITORY" --title "chore: merge upstream ${tag}" --body-file "$body"
           fi
-          gh pr edit "$pr" --remove-label upstream-safe-candidate --remove-label upstream-review-required 2>/dev/null || true
+          gh pr edit "$pr" --repo "$GITHUB_REPOSITORY" --remove-label upstream-safe-candidate --remove-label upstream-review-required 2>/dev/null || true
           if [[ "$risk" == safe ]]; then
-            gh pr edit "$pr" --add-label upstream-safe-candidate
-            gh pr merge "$pr" --auto --merge
+            gh pr edit "$pr" --repo "$GITHUB_REPOSITORY" --add-label upstream-safe-candidate
+            gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --auto --merge
           else
-            gh pr merge "$pr" --disable-auto 2>/dev/null || true
-            gh pr edit "$pr" --add-label upstream-review-required
+            gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --disable-auto 2>/dev/null || true
+            gh pr edit "$pr" --repo "$GITHUB_REPOSITORY" --add-label upstream-review-required
           fi
 
       - name: Upload conflict report
