@@ -16,6 +16,12 @@ concurrency:
 
 jobs:
   handoff:
+    # Only the fixed .1 tag emitted by Upstream Auto Release is eligible for
+    # this handoff. Manual codexrip releases must remain independent.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      startsWith(github.event.workflow_run.head_branch, 'v') &&
+      endsWith(github.event.workflow_run.head_branch, '-codexrip.1')
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
@@ -65,12 +71,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh label create upstream-automation-failed --color B60205 --description 'Upstream automation stopped without production change' --force
+          gh label create --repo "$GITHUB_REPOSITORY" upstream-automation-failed --color B60205 --description 'Upstream automation stopped without production change' --force
           body=$(mktemp)
           printf 'Automation stopped without retrying or changing the current production release.\n\nRun: %s\n' "$RUN_URL" >"$body"
-          issue=$(gh issue list --state open --search "${TITLE} in:title" --json number,title --jq ".[] | select(.title == \"${TITLE}\") | .number" | head -n1)
+          issue=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "${TITLE} in:title" --json number,title --jq ".[] | select(.title == \"${TITLE}\") | .number" | head -n1)
           if [[ -n "$issue" ]]; then
-            gh issue edit "$issue" --body-file "$body" --add-label upstream-automation-failed
+            gh issue edit "$issue" --repo "$GITHUB_REPOSITORY" --body-file "$body" --add-label upstream-automation-failed
           else
-            gh issue create --title "$TITLE" --body-file "$body" --label upstream-automation-failed
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body-file "$body" --label upstream-automation-failed
           fi
