@@ -57,6 +57,11 @@ on:
         required: true
         default: false
         type: boolean
+      interrupt_business:
+        description: 'Temporarily stop Sub2API after backup to drain active requests before recreation'
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -75,6 +80,7 @@ jobs:
       operation: ${{ steps.resolve.outputs.operation }}
       cindy_rollout: ${{ steps.resolve.outputs.cindy_rollout }}
       overdraft: ${{ steps.resolve.outputs.overdraft }}
+      maintenance_spec: ${{ steps.resolve.outputs.maintenance_spec }}
       runtime_spec: ${{ steps.resolve.outputs.runtime_spec }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -96,6 +102,7 @@ jobs:
           IMAGE_STUDIO: ${{ inputs.image_studio }}
           CINDY_RESPONSES_IMAGE_BRIDGE: ${{ inputs.cindy_responses_image_bridge }}
           OVERDRAFT: ${{ inputs.overdraft }}
+          INTERRUPT_BUSINESS: ${{ inputs.interrupt_business }}
         shell: bash
         run: |
           set -euo pipefail
@@ -187,13 +194,18 @@ jobs:
               ;;
           esac
           [[ "$runtime_mode" == explicit || "$runtime_mode" == preserve ]] || exit 1
+          [[ "$INTERRUPT_BUSINESS" == true || "$INTERRUPT_BUSINESS" == false ]] || exit 1
           if [[ "$runtime_mode" == preserve ]]; then
+            [[ "$INTERRUPT_BUSINESS" == false ]] || exit 1
             [[ "$OPERATION" == deploy ]] || exit 1
           else
             for flag in "$CINDY_HEALTH" "$CINDY_CAPABILITY_CATALOG" "$CINDY_SEARCH" "$IMAGE_STUDIO" "$CINDY_RESPONSES_IMAGE_BRIDGE"; do
               [[ "$flag" == true || "$flag" == false ]] || exit 1
             done
             [[ "$OVERDRAFT" == true || "$OVERDRAFT" == false ]] || exit 1
+            if [[ "$OPERATION" == rollback ]]; then
+              [[ "$INTERRUPT_BUSINESS" == false ]] || exit 1
+            fi
           fi
 
           expected_current_image_ref=''
@@ -216,10 +228,16 @@ jobs:
             echo 'runtime_spec=runtime=preserve' >> "$GITHUB_OUTPUT"
             echo 'cindy_rollout=' >> "$GITHUB_OUTPUT"
             echo 'overdraft=' >> "$GITHUB_OUTPUT"
+            echo 'maintenance_spec=' >> "$GITHUB_OUTPUT"
           else
             echo 'runtime_spec=runtime=explicit' >> "$GITHUB_OUTPUT"
             echo "cindy_rollout=cindy=${CINDY_HEALTH},${CINDY_CAPABILITY_CATALOG},${CINDY_SEARCH},${IMAGE_STUDIO},${CINDY_RESPONSES_IMAGE_BRIDGE}" >> "$GITHUB_OUTPUT"
             echo "overdraft=${OVERDRAFT}" >> "$GITHUB_OUTPUT"
+            if [[ "$OPERATION" == deploy && "$INTERRUPT_BUSINESS" == true ]]; then
+              echo 'maintenance_spec=maintenance=interrupt' >> "$GITHUB_OUTPUT"
+            else
+              echo 'maintenance_spec=' >> "$GITHUB_OUTPUT"
+            fi
           fi
 
   deploy:
@@ -250,6 +268,7 @@ jobs:
           EXPECTED_CURRENT_IMAGE_REF: ${{ needs.resolve.outputs.expected_current_image_ref }}
           CINDY_ROLLOUT: ${{ needs.resolve.outputs.cindy_rollout }}
           OVERDRAFT: ${{ needs.resolve.outputs.overdraft }}
+          MAINTENANCE_SPEC: ${{ needs.resolve.outputs.maintenance_spec }}
           RUNTIME_SPEC: ${{ needs.resolve.outputs.runtime_spec }}
         shell: bash
         run: |
@@ -260,8 +279,10 @@ jobs:
           if [[ "$RUNTIME_SPEC" == runtime=explicit ]]; then
             [[ "$CINDY_ROLLOUT" =~ ^cindy=(true|false),(true|false),(true|false),(true|false),(true|false)$ ]] || exit 1
             [[ "$OVERDRAFT" == true || "$OVERDRAFT" == false ]] || exit 1
+            [[ -z "$MAINTENANCE_SPEC" || "$MAINTENANCE_SPEC" == maintenance=interrupt ]] || exit 1
+            [[ "$OPERATION" == deploy || -z "$MAINTENANCE_SPEC" ]] || exit 1
           else
-            [[ -z "$CINDY_ROLLOUT" && -z "$OVERDRAFT" && "$OPERATION" == deploy ]] || exit 1
+            [[ -z "$CINDY_ROLLOUT" && -z "$OVERDRAFT" && -z "$MAINTENANCE_SPEC" && "$OPERATION" == deploy ]] || exit 1
           fi
           case "$OPERATION" in
             deploy)
@@ -270,6 +291,9 @@ jobs:
                 remote_command="deploy ${IMAGE_REF} runtime=preserve"
               else
                 remote_command="deploy ${IMAGE_REF} ${CINDY_ROLLOUT} overdraft=${OVERDRAFT}"
+                if [[ -n "$MAINTENANCE_SPEC" ]]; then
+                  remote_command+=" $MAINTENANCE_SPEC"
+                fi
               fi
               ;;
             rollback)
