@@ -75,7 +75,7 @@ func TestCalculateOpenAI429ResetTime_5hExhausted(t *testing.T) {
 	}
 }
 
-func TestCalculateOpenAI429ResetTime_NeitherExhausted_UsesMax(t *testing.T) {
+func TestCalculateOpenAI429ResetTime_NeitherExhausted_IgnoresWindowResets(t *testing.T) {
 	svc := &RateLimitService{}
 
 	// Neither limit at 100%, should use the longer reset time
@@ -87,23 +87,8 @@ func TestCalculateOpenAI429ResetTime_NeitherExhausted_UsesMax(t *testing.T) {
 	headers.Set("x-codex-secondary-reset-after-seconds", "5000")
 	headers.Set("x-codex-secondary-window-minutes", "300")
 
-	before := time.Now()
 	resetAt := svc.calculateOpenAI429ResetTime(headers)
-	after := time.Now()
-
-	if resetAt == nil {
-		t.Fatal("expected non-nil resetAt")
-		return
-	}
-
-	// Should use the max (100000 seconds from 7d window)
-	expectedDuration := 100000 * time.Second
-	minExpected := before.Add(expectedDuration)
-	maxExpected := after.Add(expectedDuration)
-
-	if resetAt.Before(minExpected) || resetAt.After(maxExpected) {
-		t.Errorf("resetAt %v not in expected range [%v, %v]", resetAt, minExpected, maxExpected)
-	}
+	require.Nil(t, resetAt, "observation resets must not turn a transient 429 into a quota-window cooldown")
 }
 
 func TestCalculateOpenAI429ResetTime_NoCodexHeaders(t *testing.T) {
@@ -197,14 +182,38 @@ func TestCalculateOpenAI429ResetTime_ReversedWindowOrder(t *testing.T) {
 type openAI429SnapshotRepo struct {
 	mockAccountRepoForGemini
 	rateLimitedID      int64
+	rateLimitedAt      time.Time
 	updatedExtra       map[string]any
 	bulkUpdatedIDs     []int64
 	bulkUpdatedPayload AccountBulkUpdate
 }
 
-func (r *openAI429SnapshotRepo) SetRateLimited(_ context.Context, id int64, _ time.Time) error {
+func (r *openAI429SnapshotRepo) SetRateLimited(_ context.Context, id int64, resetAt time.Time) error {
 	r.rateLimitedID = id
+	r.rateLimitedAt = resetAt
 	return nil
+}
+
+func TestHandle429_OpenAITransientIncidentHeadersUseShortFallback(t *testing.T) {
+	repo := &openAI429SnapshotRepo{}
+	svc := NewRateLimitService(repo, nil, nil, nil, nil)
+	account := &Account{ID: 125, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	headers := http.Header{}
+	headers.Set("x-codex-primary-used-percent", "28")
+	headers.Set("x-codex-primary-reset-after-seconds", "18000")
+	headers.Set("x-codex-primary-window-minutes", "300")
+	headers.Set("x-codex-secondary-used-percent", "69")
+	headers.Set("x-codex-secondary-reset-after-seconds", "604800")
+	headers.Set("x-codex-secondary-window-minutes", "10080")
+	now := time.Now()
+
+	svc.handle429(context.Background(), account, headers, []byte(`{"error":{"type":"rate_limit_error"}}`))
+
+	require.Equal(t, account.ID, repo.rateLimitedID)
+	require.WithinDuration(t, now.Add(openAIOAuth429FallbackCooldown), repo.rateLimitedAt, 2*time.Second)
+	require.Less(t, repo.rateLimitedAt.Sub(now), time.Minute)
+	require.Equal(t, 28.0, repo.updatedExtra["codex_5h_used_percent"])
+	require.Equal(t, 69.0, repo.updatedExtra["codex_7d_used_percent"])
 }
 
 func (r *openAI429SnapshotRepo) UpdateExtra(_ context.Context, _ int64, updates map[string]any) error {
@@ -560,20 +569,16 @@ func TestCalculateOpenAI429ResetTime_UserProvidedScenario(t *testing.T) {
 	t.Logf("User scenario: reset_at=%v, duration=%.2f days", resetAt, actualDays)
 }
 
-func TestCalculateOpenAI429ResetTime_5MinFallbackWhenNoReset(t *testing.T) {
-	// Test that we return nil when there's used_percent but no reset_after_seconds
-	// This should cause the caller to use the default 5-minute fallback
-
+func TestCalculateOpenAI429ResetTime_HardQuotaWithoutResetUsesWindowFallback(t *testing.T) {
 	svc := &RateLimitService{}
 
 	headers := http.Header{}
 	headers.Set("x-codex-primary-used-percent", "100")
 	// No reset_after_seconds!
 
+	before := time.Now()
 	resetAt := svc.calculateOpenAI429ResetTime(headers)
-
-	// Should return nil since there's no reset time available
-	if resetAt != nil {
-		t.Errorf("expected nil when no reset_after_seconds, got %v", resetAt)
-	}
+	require.NotNil(t, resetAt)
+	require.GreaterOrEqual(t, resetAt.Sub(before), 5*time.Hour-time.Second)
+	require.LessOrEqual(t, resetAt.Sub(before), 7*24*time.Hour+time.Second)
 }

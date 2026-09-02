@@ -17,6 +17,7 @@ import (
 	_ "image/png"
 	"io"
 	"log"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -2228,22 +2229,32 @@ func (s *AccountTestService) reconcileOpenAI429State(ctx context.Context, accoun
 
 	persistOpenAI429PlanType(ctx, s.accountRepo, account, body)
 
-	var resetAt *time.Time
-	if calculated := calculateOpenAI429ResetTime(headers); calculated != nil {
-		resetAt = calculated
-	} else if unixTs := parseOpenAIRateLimitResetTime(body); unixTs != nil {
-		t := time.Unix(*unixTs, 0)
-		resetAt = &t
+	now := time.Now()
+	classification := classifyOpenAIOAuth429At(headers, body, now)
+	resetAt := classification.ResetAt
+	if classification.Disposition == openAIOAuth429Transient {
+		resetAt = parseRetryAfterResetTime(headers, now)
+		maxResetAt := now.Add(time.Duration(maxRateLimit429CooldownSeconds) * time.Second)
+		if resetAt == nil {
+			fallback := now.Add(openAIOAuth429FallbackCooldown)
+			resetAt = &fallback
+		} else if resetAt.After(maxResetAt) {
+			resetAt = &maxResetAt
+		}
 	}
-	if resetAt == nil {
-		return
-	}
+	slog.Info("codex_quota_429_classified",
+		"account_id", account.ID,
+		"classification", map[bool]string{true: "transient", false: "hard_quota"}[classification.Disposition == openAIOAuth429Transient],
+		"window", classification.Window,
+		"source", classification.Source,
+		"code", classification.Code,
+		"path", "account_test",
+	)
 
 	if err := s.accountRepo.SetRateLimited(ctx, account.ID, *resetAt); err != nil {
 		return
 	}
 
-	now := time.Now()
 	account.RateLimitedAt = &now
 	account.RateLimitResetAt = resetAt
 

@@ -1076,6 +1076,29 @@ func TestOpenAI429FastPath_SkipsSparkShadow(t *testing.T) {
 	require.True(t, svc.isOpenAIAccountRuntimeBlocked(normal), "normal OpenAI OAuth account should still be runtime-blocked")
 }
 
+func TestMarkOpenAIOAuth429RateLimited_IncidentHeadersStayShortAfterRetryWindow(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 803, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	headers := http.Header{}
+	headers.Set("x-codex-primary-used-percent", "24")
+	headers.Set("x-codex-primary-reset-after-seconds", "18000")
+	headers.Set("x-codex-primary-window-minutes", "300")
+	headers.Set("x-codex-secondary-used-percent", "71")
+	headers.Set("x-codex-secondary-reset-after-seconds", "604800")
+	headers.Set("x-codex-secondary-window-minutes", "10080")
+	svc.openaiOAuth429RetryStartedAt.Store(account.ID, time.Now().Add(-openAIOAuth429RetryWindow-time.Second))
+	now := time.Now()
+
+	svc.markOpenAIOAuth429RateLimited(context.Background(), account, headers, []byte(`{"error":{"type":"rate_limit_error"}}`))
+
+	value, ok := svc.openaiAccountRuntimeBlockUntil.Load(account.ID)
+	require.True(t, ok)
+	until, ok := value.(time.Time)
+	require.True(t, ok)
+	require.WithinDuration(t, now.Add(openAIOAuth429FallbackCooldown), until, 2*time.Second)
+	require.Less(t, until.Sub(now), time.Minute)
+}
+
 func TestOpenAIRuntimeBlock_AppliesToOpenAIAPIKeyWhenRateLimitServiceStopsScheduling(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	account := &Account{ID: 44, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
@@ -1300,6 +1323,32 @@ func TestCooldownOpenAIRetryExhausted_DoesNotShortenExistingBlock(t *testing.T) 
 	until, ok := value.(time.Time)
 	require.True(t, ok)
 	require.True(t, until.After(wantMinimum))
+}
+
+func TestCooldownOpenAIRetryExhausted_Transient429IgnoresUnderLimitCodexResets(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 4799, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	headers := http.Header{"Retry-After": []string{"7"}}
+	headers.Set("x-codex-primary-used-percent", "18")
+	headers.Set("x-codex-primary-reset-after-seconds", "18000")
+	headers.Set("x-codex-primary-window-minutes", "300")
+	headers.Set("x-codex-secondary-used-percent", "64")
+	headers.Set("x-codex-secondary-reset-after-seconds", "604800")
+	headers.Set("x-codex-secondary-window-minutes", "10080")
+	now := time.Now()
+
+	svc.CooldownOpenAIRetryExhausted(context.Background(), account, "gpt-5.4", &UpstreamFailoverError{
+		StatusCode:      http.StatusTooManyRequests,
+		ResponseHeaders: headers,
+		ResponseBody:    []byte(`{"error":{"type":"rate_limit_error"}}`),
+	})
+
+	value, ok := svc.openaiAccountRuntimeBlockUntil.Load(account.ID)
+	require.True(t, ok)
+	until, ok := value.(time.Time)
+	require.True(t, ok)
+	require.WithinDuration(t, now.Add(7*time.Second), until, 2*time.Second)
+	require.Less(t, until.Sub(now), time.Minute)
 }
 
 func TestOpenAIPoolModeNonRetryable5xx_StillCreatesModelTransientBlock(t *testing.T) {

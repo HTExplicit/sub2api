@@ -1662,6 +1662,30 @@ func (s *AccountRepoSuite) TestUpdateExtra_SchedulerNeutralSkipsOutboxAndSyncsFr
 	s.Require().Equal("2026-03-11T10:00:00Z", cacheRecorder.accounts[account.ID].Extra["codex_usage_updated_at"])
 }
 
+func (s *AccountRepoSuite) TestUpdateExtra_StaleCodexSnapshotCannotOverwriteNewerWindowState() {
+	account := mustCreateAccount(s.T(), s.client, &service.Account{
+		Name:     "acc-extra-codex-monotonic",
+		Platform: service.PlatformOpenAI,
+		Extra: map[string]any{
+			"codex_usage_updated_at": "2026-03-11T11:00:00Z",
+			"codex_5h_used_percent":  99.0,
+			"codex_5h_reset_at":      "2026-03-11T15:00:00Z",
+		},
+	})
+
+	s.Require().NoError(s.repo.UpdateExtra(s.ctx, account.ID, map[string]any{
+		"codex_usage_updated_at": "2026-03-11T10:00:00Z",
+		"codex_5h_used_percent":  12.0,
+		"codex_5h_reset_at":      "2026-03-11T12:00:00Z",
+	}))
+
+	got, err := s.repo.GetByID(s.ctx, account.ID)
+	s.Require().NoError(err)
+	s.Require().Equal("2026-03-11T11:00:00Z", got.Extra["codex_usage_updated_at"])
+	s.Require().Equal(99.0, got.Extra["codex_5h_used_percent"])
+	s.Require().Equal("2026-03-11T15:00:00Z", got.Extra["codex_5h_reset_at"])
+}
+
 func (s *AccountRepoSuite) TestUpdateExtra_ExhaustedCodexSnapshotSyncsSchedulerCache() {
 	account := mustCreateAccount(s.T(), s.client, &service.Account{
 		Name:     "acc-extra-codex-exhausted",

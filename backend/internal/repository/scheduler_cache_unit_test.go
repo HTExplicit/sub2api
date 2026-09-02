@@ -566,17 +566,22 @@ func TestBuildSchedulerMetadataAccount_KeepsQuotaAutoPauseFields(t *testing.T) {
 	account := service.Account{
 		ID: 88,
 		Extra: map[string]any{
-			"codex_5h_used_percent":        12.34,
-			"codex_7d_used_percent":        56.78,
-			"codex_5h_reset_at":            "2026-05-29T10:00:00Z",
-			"codex_7d_reset_at":            "2026-06-01T10:00:00Z",
-			"codex_5h_reset_after_seconds": 300,
-			"codex_7d_reset_after_seconds": 600,
-			"codex_usage_updated_at":       "2026-05-29T09:00:00Z",
-			"auto_pause_5h_threshold":      0.95,
-			"auto_pause_7d_threshold":      0.96,
-			"auto_pause_5h_disabled":       true,
-			"auto_pause_7d_disabled":       false,
+			"codex_5h_used_percent":                    12.34,
+			"codex_7d_used_percent":                    56.78,
+			"codex_5h_reset_at":                        "2026-05-29T10:00:00Z",
+			"codex_7d_reset_at":                        "2026-06-01T10:00:00Z",
+			"codex_5h_reset_after_seconds":             300,
+			"codex_7d_reset_after_seconds":             600,
+			"codex_usage_updated_at":                   "2026-05-29T09:00:00Z",
+			"auto_pause_5h_threshold":                  0.95,
+			"auto_pause_7d_threshold":                  0.96,
+			"auto_pause_5h_disabled":                   true,
+			"auto_pause_7d_disabled":                   false,
+			service.CodexQuotaOverdraftEnabledExtraKey: true,
+			service.CodexQuotaOverdraftProbeExtraKey: map[string]any{
+				"status": "passed", "cycle_key": "7d:1", "quota_window": "7d",
+				"recover_at": "2026-06-01T10:00:00Z", "reason_code": "must-not-enter-cache",
+			},
 		},
 	}
 
@@ -593,6 +598,12 @@ func TestBuildSchedulerMetadataAccount_KeepsQuotaAutoPauseFields(t *testing.T) {
 	require.Equal(t, 0.96, got.Extra["auto_pause_7d_threshold"])
 	require.Equal(t, true, got.Extra["auto_pause_5h_disabled"])
 	require.Equal(t, false, got.Extra["auto_pause_7d_disabled"])
+	require.Equal(t, true, got.Extra[service.CodexQuotaOverdraftEnabledExtraKey])
+	probe, ok := got.Extra[service.CodexQuotaOverdraftProbeExtraKey].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "passed", probe["status"])
+	require.Equal(t, "7d:1", probe["cycle_key"])
+	require.NotContains(t, probe, "reason_code")
 }
 
 func TestBuildSchedulerMetadataAccount_KeepsQuotaStateForCachedAccounts(t *testing.T) {
