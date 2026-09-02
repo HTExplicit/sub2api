@@ -6,11 +6,13 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
@@ -178,11 +180,12 @@ func TestCodexQuotaOverdraftSingleProbeQuotaFailurePauses(t *testing.T) {
 
 func TestCodexQuotaOverdraftBusinessSuccessAtExhaustionPassesWithoutProbe(t *testing.T) {
 	now := time.Date(2026, time.August, 13, 14, 0, 0, 0, time.UTC)
+	requestStartedAt := now.Add(-3 * time.Second)
 	account := newCodexOverdraftProbeTestAccount(now)
 	repo := &codexOverdraftProbeRepoStub{account: account}
 	coordinator := &CodexQuotaOverdraftCoordinator{accountRepo: repo, now: func() time.Time { return now }}
 
-	coordinator.observeBusinessSuccess(account, "gpt-5.4")
+	coordinator.observeBusinessSuccess(account, "gpt-5.4", requestStartedAt)
 
 	state, ok := codexQuotaOverdraftStateFromAccount(account)
 	require.True(t, ok)
@@ -192,6 +195,7 @@ func TestCodexQuotaOverdraftBusinessSuccessAtExhaustionPassesWithoutProbe(t *tes
 	require.Equal(t, 1, state.Attempts)
 	require.Equal(t, 1, state.Limit)
 	require.NotNil(t, state.FiveHourStartedAt)
+	require.Equal(t, requestStartedAt, *state.FiveHourStartedAt)
 }
 
 func TestCodexQuotaOverdraftBusinessSuccessCannotReplaceFailedCycle(t *testing.T) {
@@ -246,6 +250,54 @@ func TestCodexQuotaOverdraftInjectedBusinessQuota429FailsImmediately(t *testing.
 	require.Equal(t, 1, repo.tempPauseCalls)
 }
 
+func TestCodexQuotaOverdraftStructuredTerminalEventsUseSharedRuntimeSideEffects(t *testing.T) {
+	t.Cleanup(func() { SetCodexQuotaOverdraftEnabled(false) })
+	SetCodexQuotaOverdraftEnabled(true)
+
+	newRuntime := func() (*OpenAIGatewayService, *Account, *codexOverdraftProbeRepoStub, context.Context) {
+		now := time.Date(2026, time.August, 13, 14, 0, 0, 0, time.UTC)
+		account := newCodexOverdraftProbeTestAccount(now)
+		repo := &codexOverdraftProbeRepoStub{account: account}
+		cfg := &config.Config{Gateway: config.GatewayConfig{CodexQuotaOverdraftEnabled: true}}
+		coordinator := &CodexQuotaOverdraftCoordinator{
+			accountRepo: repo, httpUpstream: &queuedHTTPUpstream{}, cfg: cfg, now: func() time.Time { return now },
+		}
+		gateway := &OpenAIGatewayService{cfg: cfg, codexQuotaOverdraft: coordinator}
+		ctx := WithCodexQuotaOverdraftScheduling(context.Background())
+		markCodexQuotaOverdraftInjected(ctx, account.ID)
+		return gateway, account, repo, ctx
+	}
+
+	t.Run("sse response.failed", func(t *testing.T) {
+		gateway, account, repo, requestCtx := newRuntime()
+		gin.SetMode(gin.TestMode)
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil).WithContext(requestCtx)
+		payload := []byte(`{"type":"response.failed","response":{"error":{"type":"usage_limit_reached"}}}`)
+
+		status, _ := gateway.handleOpenAIStreamTerminalAccountSideEffects(c, account, payload, "", nil, "gpt-5.4")
+
+		require.Equal(t, http.StatusTooManyRequests, status)
+		require.Equal(t, 1, repo.tempPauseCalls)
+		state, ok := codexQuotaOverdraftStateFromAccount(account)
+		require.True(t, ok)
+		require.Equal(t, codexQuotaOverdraftProbeFailed, state.Status)
+	})
+
+	t.Run("websocket error", func(t *testing.T) {
+		gateway, account, repo, requestCtx := newRuntime()
+		payload := []byte(`{"type":"error","error":{"code":"quota_exhausted"}}`)
+
+		handled := gateway.handleOpenAIWSFailureAccountSideEffects(requestCtx, account, "gpt-5.4", nil, payload)
+
+		require.True(t, handled)
+		require.Equal(t, 1, repo.tempPauseCalls)
+		state, ok := codexQuotaOverdraftStateFromAccount(account)
+		require.True(t, ok)
+		require.Equal(t, codexQuotaOverdraftProbeFailed, state.Status)
+	})
+}
+
 func TestCodexQuotaOverdraftTransient429DoesNotEnterQuotaCooldown(t *testing.T) {
 	t.Cleanup(func() { SetCodexQuotaOverdraftEnabled(false) })
 	SetCodexQuotaOverdraftEnabled(true)
@@ -263,7 +315,7 @@ func TestCodexQuotaOverdraftTransient429DoesNotEnterQuotaCooldown(t *testing.T) 
 	ctx := WithCodexQuotaOverdraftScheduling(context.Background())
 	markCodexQuotaOverdraftInjected(ctx, account.ID)
 	headers := http.Header{}
-	headers.Set("x-codex-primary-used-percent", "100")
+	headers.Set("x-codex-primary-used-percent", "37")
 	headers.Set("x-codex-primary-reset-after-seconds", "3600")
 	headers.Set("x-codex-primary-window-minutes", "300")
 
@@ -571,8 +623,8 @@ func TestClassifyCodexQuotaOverdraftProbeResponses(t *testing.T) {
 	require.Equal(t, "quota_limited", reason)
 
 	status, reason = classifyCodexQuotaOverdraftProbe(http.StatusTooManyRequests, nil, []byte(`{"rate_limit":{"allowed":false,"limit_reached":true}}`))
-	require.Equal(t, "retry", status)
-	require.Equal(t, "quota_limited", reason)
+	require.Equal(t, "inconclusive", status)
+	require.Equal(t, "transient_failure", reason)
 
 	status, reason = classifyCodexQuotaOverdraftProbe(http.StatusTooManyRequests, nil, []byte(`{"error":{"type":"rate_limit_exceeded","message":"too many requests"}}`))
 	require.Equal(t, "inconclusive", status)
@@ -583,20 +635,20 @@ func TestClassifyCodexQuotaOverdraftProbeResponses(t *testing.T) {
 	headers.Set("x-codex-primary-reset-after-seconds", "3600")
 	headers.Set("x-codex-primary-window-minutes", "300")
 	status, reason = classifyCodexQuotaOverdraftProbe(http.StatusTooManyRequests, headers, []byte(`{"error":{"type":"rate_limit_exceeded","message":"too many requests"}}`))
-	require.Equal(t, "inconclusive", status)
-	require.Equal(t, "transient_failure", reason)
+	require.Equal(t, "retry", status)
+	require.Equal(t, "quota_limited", reason)
 
 	status, reason = classifyCodexQuotaOverdraftProbe(http.StatusTooManyRequests, headers, []byte(`{"error":{"type":"rate_limit_error","message":"temporarily limited"}}`))
-	require.Equal(t, "inconclusive", status)
-	require.Equal(t, "transient_failure", reason)
+	require.Equal(t, "retry", status)
+	require.Equal(t, "quota_limited", reason)
 
 	status, reason = classifyCodexQuotaOverdraftProbe(http.StatusTooManyRequests, headers, []byte(`{"error":{"type":"rate_limit_error"},"usage":{"used_percent":100}}`))
-	require.Equal(t, "inconclusive", status)
-	require.Equal(t, "transient_failure", reason)
+	require.Equal(t, "retry", status)
+	require.Equal(t, "quota_limited", reason)
 
 	status, reason = classifyCodexQuotaOverdraftProbe(http.StatusTooManyRequests, headers, []byte("data: {\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\"}}\n\n"))
-	require.Equal(t, "inconclusive", status)
-	require.Equal(t, "transient_failure", reason)
+	require.Equal(t, "retry", status)
+	require.Equal(t, "quota_limited", reason)
 
 	status, reason = classifyCodexQuotaOverdraftProbe(http.StatusServiceUnavailable, nil, nil)
 	require.Equal(t, "inconclusive", status)

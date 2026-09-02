@@ -1185,7 +1185,17 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 	if account.Platform == PlatformOpenAI {
 		persistOpenAI429PlanType(ctx, s.accountRepo, account, responseBody)
 		s.persistOpenAICodexSnapshot(ctx, account, headers)
-		if resetAt := s.calculateOpenAI429ResetTime(headers); resetAt != nil {
+		classification := classifyOpenAIOAuth429At(headers, responseBody, time.Now())
+		slog.Info("codex_quota_429_classified",
+			"account_id", account.ID,
+			"classification", map[bool]string{true: "transient", false: "hard_quota"}[classification.Disposition == openAIOAuth429Transient],
+			"window", classification.Window,
+			"source", classification.Source,
+			"code", classification.Code,
+			"path", "rate_limit_service",
+		)
+		if classification.Disposition != openAIOAuth429Transient && classification.ResetAt != nil {
+			resetAt := classification.ResetAt
 			s.notifyAccountSchedulingBlocked(account, *resetAt, "429")
 			if err := s.accountRepo.SetRateLimited(ctx, account.ID, *resetAt); err != nil {
 				slog.Warn("rate_limit_set_failed", "account_id", account.ID, "error", err)
@@ -1194,6 +1204,8 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 			slog.Info("openai_account_rate_limited", "account_id", account.ID, "reset_at", *resetAt)
 			return
 		}
+		s.apply429FallbackRateLimit(ctx, account, "openai_transient_429")
+		return
 	}
 
 	// 2. Anthropic 平台：尝试解析 per-window 头（5h / 7d），选择实际触发的窗口
@@ -1341,49 +1353,12 @@ func clampRateLimit429CooldownSeconds(seconds int) int {
 // calculateOpenAI429ResetTime 从 OpenAI 429 响应头计算正确的重置时间
 // 返回 nil 表示无法从响应头中确定重置时间
 func calculateOpenAI429ResetTime(headers http.Header) *time.Time {
-	snapshot := ParseCodexRateLimitHeaders(headers)
-	if snapshot == nil {
-		return nil
-	}
-
-	normalized := snapshot.Normalize()
-	if normalized == nil {
-		return nil
-	}
-
 	now := time.Now()
-
-	// 判断哪个限制被触发（used_percent >= 100）
-	is7dExhausted := normalized.Used7dPercent != nil && *normalized.Used7dPercent >= 100
-	is5hExhausted := normalized.Used5hPercent != nil && *normalized.Used5hPercent >= 100
-
-	// 优先使用被触发限制的重置时间
-	if is7dExhausted && normalized.Reset7dSeconds != nil {
-		resetAt := now.Add(time.Duration(*normalized.Reset7dSeconds) * time.Second)
-		slog.Info("openai_429_7d_limit_exhausted", "reset_after_seconds", *normalized.Reset7dSeconds, "reset_at", resetAt)
-		return &resetAt
+	classification := classifyOpenAIOAuth429At(headers, nil, now)
+	if classification.Disposition == openAIOAuth429Transient {
+		return nil
 	}
-	if is5hExhausted && normalized.Reset5hSeconds != nil {
-		resetAt := now.Add(time.Duration(*normalized.Reset5hSeconds) * time.Second)
-		slog.Info("openai_429_5h_limit_exhausted", "reset_after_seconds", *normalized.Reset5hSeconds, "reset_at", resetAt)
-		return &resetAt
-	}
-
-	// 都未达到100%但收到429，使用较长的重置时间
-	var maxResetSecs int
-	if normalized.Reset7dSeconds != nil && *normalized.Reset7dSeconds > maxResetSecs {
-		maxResetSecs = *normalized.Reset7dSeconds
-	}
-	if normalized.Reset5hSeconds != nil && *normalized.Reset5hSeconds > maxResetSecs {
-		maxResetSecs = *normalized.Reset5hSeconds
-	}
-	if maxResetSecs > 0 {
-		resetAt := now.Add(time.Duration(maxResetSecs) * time.Second)
-		slog.Info("openai_429_using_max_reset", "max_reset_seconds", maxResetSecs, "reset_at", resetAt)
-		return &resetAt
-	}
-
-	return nil
+	return classification.ResetAt
 }
 
 func (s *RateLimitService) calculateOpenAI429ResetTime(headers http.Header) *time.Time {

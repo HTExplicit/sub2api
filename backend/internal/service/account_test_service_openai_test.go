@@ -681,7 +681,36 @@ func TestAccountTestService_OpenAI429ActiveAccountDoesNotClearError(t *testing.T
 	require.NotNil(t, account.RateLimitResetAt)
 }
 
-func TestAccountTestService_OpenAI429WithoutResetSignalDoesNotMutateRuntimeState(t *testing.T) {
+func TestAccountTestService_OpenAITransient429UsesShortCooldownDespiteQuotaObservationHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := newTestContext()
+
+	resp := newJSONResponse(http.StatusTooManyRequests, `{"error":{"type":"rate_limit_error","code":"rate_limit_exceeded"}}`)
+	resp.Header.Set("x-codex-primary-used-percent", "22")
+	resp.Header.Set("x-codex-primary-reset-after-seconds", "18000")
+	resp.Header.Set("x-codex-primary-window-minutes", "300")
+	resp.Header.Set("x-codex-secondary-used-percent", "73")
+	resp.Header.Set("x-codex-secondary-reset-after-seconds", "604800")
+	resp.Header.Set("x-codex-secondary-window-minutes", "10080")
+
+	repo := &openAIAccountTestRepo{}
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
+	svc := &AccountTestService{accountRepo: repo, httpUpstream: upstream}
+	account := &Account{
+		ID: 780, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive,
+		Concurrency: 1, Credentials: map[string]any{"access_token": "test-token"},
+	}
+
+	before := time.Now()
+	err := svc.testOpenAIAccountConnection(ctx, account, "gpt-5.4", "", "")
+	require.Error(t, err)
+	require.Equal(t, account.ID, repo.rateLimitedID)
+	require.NotNil(t, repo.rateLimitedAt)
+	require.WithinDuration(t, before.Add(openAIOAuth429FallbackCooldown), *repo.rateLimitedAt, 2*time.Second)
+	require.Less(t, repo.rateLimitedAt.Sub(before), time.Minute)
+}
+
+func TestAccountTestService_OpenAIHardQuotaWithoutResetUsesBoundedFallback(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, _ := newTestContext()
 
@@ -702,12 +731,13 @@ func TestAccountTestService_OpenAI429WithoutResetSignalDoesNotMutateRuntimeState
 
 	err := svc.testOpenAIAccountConnection(ctx, account, "gpt-5.4", "", "")
 	require.Error(t, err)
-	require.Zero(t, repo.rateLimitedID)
-	require.Nil(t, repo.rateLimitedAt)
-	require.Zero(t, repo.clearedErrorID)
-	require.Equal(t, StatusError, account.Status)
-	require.Equal(t, "stale 403", account.ErrorMessage)
-	require.Nil(t, account.RateLimitResetAt)
+	require.Equal(t, account.ID, repo.rateLimitedID)
+	require.NotNil(t, repo.rateLimitedAt)
+	require.Equal(t, account.ID, repo.clearedErrorID)
+	require.Equal(t, StatusActive, account.Status)
+	require.Empty(t, account.ErrorMessage)
+	require.NotNil(t, account.RateLimitResetAt)
+	require.WithinDuration(t, time.Now().Add(5*time.Hour), *account.RateLimitResetAt, 2*time.Second)
 }
 
 func TestAccountTestService_OpenAI401SetsPermanentErrorOnly(t *testing.T) {
