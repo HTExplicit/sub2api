@@ -124,4 +124,28 @@ describe('VersionBadge downstream releases', () => {
     expect(mocks.performUpdate).not.toHaveBeenCalled()
     expect(mocks.getRollbackVersions).not.toHaveBeenCalled()
   })
+
+  it('links the review-required issue when conflict sync has no candidate PR', async () => {
+    mocks.appStore.latestVersion = '0.2.0'
+    mocks.appStore.upstreamUpdateAvailable = true
+    mocks.fetchDownstreamStatus.mockResolvedValue({
+      status: 'review_required',
+      official_latest: '0.2.0',
+      downstream_base: '0.1.185',
+      review_issue: {
+        number: 112,
+        title: 'Upstream v0.2.0 merge conflicts',
+        url: 'https://review-issue.example'
+      },
+      links: [{ label: 'review', url: 'https://review-issue.example' }]
+    })
+    const wrapper = mountBadge()
+
+    await wrapper.get('button').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('version.downstreamStatus.review_required')
+    const reviewLink = wrapper.get('a[href="https://review-issue.example"]')
+    expect(reviewLink.text()).toBe('version.downstreamLink.review')
+  })
 })

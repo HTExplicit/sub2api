@@ -41,6 +41,7 @@ export default {
     downstreamLink: {
       official: '官方 Release',
       candidate: '候选 PR',
+      review: '审查 Issue',
       release: '下游 Release',
       production: '生产任务'
     },

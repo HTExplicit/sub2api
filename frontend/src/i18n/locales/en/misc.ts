@@ -41,6 +41,7 @@ export default {
     downstreamLink: {
       official: 'Official release',
       candidate: 'Candidate PR',
+      review: 'Review issue',
       release: 'Downstream release',
       production: 'Production run'
     },
