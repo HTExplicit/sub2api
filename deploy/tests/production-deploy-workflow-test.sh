@@ -97,6 +97,7 @@ CINDY_CAPABILITY_CATALOG=false \
   IMAGE_STUDIO=false \
   CINDY_RESPONSES_IMAGE_BRIDGE=false \
   OVERDRAFT=false \
+  INTERRUPT_BUSINESS=false \
   GITHUB_OUTPUT="$tmpdir/github-output" \
 bash "$resolve_script" >"$tmpdir/resolve-output" 2>&1
 resolve_status=$?
@@ -195,7 +196,7 @@ EOF
 chmod +x "$tmpdir/bin/gh" "$tmpdir/bin/docker" "$tmpdir/bin/ssh"
 
 run_resolve() {
-  local operation=$1 tag=$2 expected_current=$3 confirmation=$4
+  local operation=$1 tag=$2 expected_current=$3 confirmation=$4 interrupt=${5-false}
   : >"$tmpdir/github-output"
   : >"$tmpdir/resolve-output"
   PATH="$tmpdir/bin:$PATH" \
@@ -217,12 +218,13 @@ run_resolve() {
     IMAGE_STUDIO=false \
     CINDY_RESPONSES_IMAGE_BRIDGE=false \
     OVERDRAFT=false \
+    INTERRUPT_BUSINESS="$interrupt" \
     GITHUB_OUTPUT="$tmpdir/github-output" \
     bash "$resolve_script" >"$tmpdir/resolve-output" 2>&1
 }
 
 run_apply() {
-  local operation=$1 image_ref=$2 expected_current=$3 rollout=$4 overdraft=${5-false} runtime_spec=${6-runtime=explicit}
+  local operation=$1 image_ref=$2 expected_current=$3 rollout=$4 overdraft=${5-false} runtime_spec=${6-runtime=explicit} maintenance_spec=${7-}
   : >"$tmpdir/ssh-capture"
   : >"$tmpdir/ssh-calls"
   : >"$tmpdir/apply-output"
@@ -238,6 +240,7 @@ run_apply() {
     EXPECTED_CURRENT_IMAGE_REF="$expected_current" \
     CINDY_ROLLOUT="$rollout" \
     OVERDRAFT="$overdraft" \
+    MAINTENANCE_SPEC="$maintenance_spec" \
     RUNTIME_SPEC="$runtime_spec" \
     bash "$apply_script" >"$tmpdir/apply-output" 2>&1
 }
@@ -288,6 +291,11 @@ grep -Fq "image_ref=$rollback_current_ref" "$tmpdir/github-output" ||
   fail 'deploy did not emit the Release-bound immutable image'
 grep -Fxq 'expected_current_image_ref=' "$tmpdir/github-output" ||
   fail 'deploy unexpectedly emitted an expected-current rollback image'
+
+run_resolve deploy v0.1.177-codexrip.7 '' DEPLOY true ||
+  fail 'deploy resolution rejected the explicit interruption mode'
+grep -Fxq 'maintenance_spec=maintenance=interrupt' "$tmpdir/github-output" ||
+  fail 'deploy resolution did not emit the explicit interruption spec'
 
 run_resolve rollback v0.1.177-codexrip.6 v0.1.177-codexrip.7 ROLLBACK ||
   fail 'valid rollback resolution did not execute successfully'
@@ -347,6 +355,9 @@ unset MOCK_IMAGE_PLATFORM_V1_OVERRIDE MOCK_OVERRIDE_TAG
 if run_resolve rollback v0.1.177-codexrip.8 v0.1.177-codexrip.7 ROLLBACK; then
   fail 'rollback target newer than expected-current was accepted'
 fi
+if run_resolve rollback v0.1.177-codexrip.6 v0.1.177-codexrip.7 ROLLBACK true; then
+  fail 'rollback accepted the business interruption mode'
+fi
 
 run_apply deploy "$rollback_current_ref" '' 'cindy=true,true,true,false,false' ||
   fail 'valid deploy operation did not execute successfully'
@@ -359,6 +370,10 @@ assert_ssh_invocation "rollback $rollback_target_ref from=$rollback_current_ref 
 run_apply deploy "$rollback_current_ref" '' 'cindy=true,true,true,false,false' true ||
   fail 'valid overdraft-enabled deploy operation did not execute successfully'
 assert_ssh_invocation "deploy $rollback_current_ref cindy=true,true,true,false,false overdraft=true"
+
+run_apply deploy "$rollback_current_ref" '' 'cindy=true,true,true,false,false' true runtime=explicit maintenance=interrupt ||
+  fail 'valid maintenance-interrupt deploy operation did not execute successfully'
+assert_ssh_invocation "deploy $rollback_current_ref cindy=true,true,true,false,false overdraft=true maintenance=interrupt"
 
 run_apply deploy "$rollback_current_ref" '' '' '' runtime=preserve ||
   fail 'valid runtime-preserve deploy operation did not execute successfully'
@@ -406,7 +421,7 @@ digest=$(awk '$1 == "Digest:" && digest == "" {digest=$2} END {if (digest == "")
 
 for input in operation release_tag expected_current_release_tag confirmation \
   cindy_health cindy_capability_catalog cindy_search image_studio \
-  cindy_responses_image_bridge overdraft; do
+  cindy_responses_image_bridge overdraft interrupt_business; do
   grep -Fq "      ${input}:" "$WORKFLOW" || fail "missing typed workflow input: $input"
 done
 grep -Fq '          - deploy' "$WORKFLOW" || fail 'workflow operation is missing deploy'
@@ -443,6 +458,14 @@ grep -Fq 'version_strictly_less "$RELEASE_TAG" "$EXPECTED_CURRENT_RELEASE_TAG"' 
   fail 'rollback must require the target release to be older than expected-current'
 grep -Fq 'remote_command="deploy ${IMAGE_REF} ${CINDY_ROLLOUT} overdraft=${OVERDRAFT}"' "$WORKFLOW" ||
   fail 'deploy must pass the canonical rollout tuple to the forced command'
+grep -Fq 'maintenance_spec=maintenance=interrupt' "$WORKFLOW" ||
+  fail 'explicit business interruption must resolve to a fixed maintenance spec'
+grep -Fq 'remote_command+=" $MAINTENANCE_SPEC"' "$WORKFLOW" ||
+  fail 'explicit business interruption must be appended only after validation'
+grep -Fq '[[ "$OPERATION" == deploy || -z "$MAINTENANCE_SPEC" ]]' "$WORKFLOW" ||
+  fail 'rollback must reject the maintenance interrupt spec'
+grep -Fq '[[ "$INTERRUPT_BUSINESS" == false ]]' "$WORKFLOW" ||
+  fail 'preserve/rollback paths must reject business interruption'
 grep -Fq 'remote_command="deploy ${IMAGE_REF} runtime=preserve"' "$WORKFLOW" ||
   fail 'automatic deploy must preserve the locked runtime tuple'
 grep -Fq 'remote_command="rollback ${IMAGE_REF} from=${EXPECTED_CURRENT_IMAGE_REF} ${CINDY_ROLLOUT} overdraft=${OVERDRAFT}"' "$WORKFLOW" ||
