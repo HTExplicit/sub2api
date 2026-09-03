@@ -18,7 +18,6 @@ const (
 	codexQuotaOverdraftCallIDPrefix    = "call_sub2api_overdraft_"
 	codexQuotaOverdraftExecInput       = `const r = await tools.exec_command({"cmd":"true","yield_time_ms":1000,"max_output_tokens":1000}); text(r.output);`
 	codexQuotaOverdraftMaxBodyBytes    = 32 << 20
-	codexQuotaOverdraftPrearmPercent   = 95
 	CodexQuotaOverdraftEnabledExtraKey = "codex_quota_overdraft_enabled"
 )
 
@@ -120,11 +119,6 @@ func markCodexQuotaOverdraftInjected(ctx context.Context, accountID int64) {
 	}
 }
 
-func codexQuotaOverdraftWasInjected(ctx context.Context, accountID int64) bool {
-	_, ok := codexQuotaOverdraftInjectedAt(ctx, accountID)
-	return ok
-}
-
 func codexQuotaOverdraftInjectedAt(ctx context.Context, accountID int64) (time.Time, bool) {
 	if accountID <= 0 {
 		return time.Time{}, false
@@ -141,34 +135,10 @@ func codexQuotaOverdraftInjectedAt(ctx context.Context, accountID int64) (time.T
 	return startedAt, ok && !startedAt.IsZero()
 }
 
-func codexQuotaOverdraftInjectionEligible(account *Account, now time.Time) bool {
-	if !isCodexQuotaOverdraftAccount(account) {
-		return false
-	}
-	state, _ := codexQuotaOverdraftStateFromAccount(account)
-	if state != nil && state.RecoverAt != nil && state.RecoverAt.After(now) {
-		switch state.Status {
-		case codexQuotaOverdraftProbePending, codexQuotaOverdraftProbePassed, codexQuotaOverdraftProbeInconclusive:
-			return true
-		case codexQuotaOverdraftProbeFailed:
-			return false
-		}
-	}
-	windowEligible := func(usedKey, resetKey string) bool {
-		if parseExtraFloat64(account.Extra[usedKey]) < codexQuotaOverdraftPrearmPercent {
-			return false
-		}
-		resetAt := codexQuotaOverdraftResetAt(account.Extra[resetKey], now)
-		return resetAt == nil || resetAt.After(now)
-	}
-	return windowEligible("codex_5h_used_percent", "codex_5h_reset_at") ||
-		windowEligible("codex_7d_used_percent", "codex_7d_reset_at")
-}
-
 func (s *OpenAIGatewayService) shouldInjectCodexQuotaOverdraft(ctx context.Context, account *Account, compact bool) bool {
 	return codexQuotaOverdraftSchedulingEnabled(ctx) && !compact &&
 		s != nil && s.cfg != nil && s.cfg.Gateway.CodexQuotaOverdraftEnabled &&
-		codexQuotaOverdraftInjectionEligible(account, time.Now().UTC())
+		isCodexQuotaOverdraftAccount(account)
 }
 
 func (s *OpenAIGatewayService) prepareCodexQuotaOverdraftBody(ctx context.Context, account *Account, compact bool, body []byte) []byte {

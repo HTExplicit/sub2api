@@ -31,7 +31,6 @@ func TestCodexQuotaOverdraftInjection(t *testing.T) {
 
 	updated := svc.prepareCodexQuotaOverdraftBody(ctx, oauth, false, body)
 	require.NotEqual(t, string(body), string(updated))
-	require.True(t, codexQuotaOverdraftWasInjected(ctx, oauth.ID))
 	injectedAt, ok := codexQuotaOverdraftInjectedAt(ctx, oauth.ID)
 	require.True(t, ok)
 	require.WithinDuration(t, time.Now(), injectedAt, time.Second)
@@ -74,7 +73,7 @@ func TestCodexQuotaOverdraftInjectionGuards(t *testing.T) {
 
 	SetCodexQuotaOverdraftEnabled(true)
 	underPrearm := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth, Extra: map[string]any{"codex_5h_used_percent": 94}}
-	require.Equal(t, string(body), string(svc.prepareCodexQuotaOverdraftBody(WithCodexQuotaOverdraftScheduling(context.Background()), underPrearm, false, body)), "95% 以下不能注入")
+	require.NotEqual(t, string(body), string(svc.prepareCodexQuotaOverdraftBody(WithCodexQuotaOverdraftScheduling(context.Background()), underPrearm, false, body)), "对齐上游:不再有 95% 预arm门,达标前也注入")
 	require.Equal(t, string(body), string(svc.prepareCodexQuotaOverdraftBody(context.Background(), oauth, false, body)), "未标记的端点不能注入")
 	require.Equal(t, string(body), string(svc.prepareCodexQuotaOverdraftBody(WithCodexQuotaOverdraftScheduling(context.Background()), oauth, true, body)), "compact 不能注入")
 
@@ -161,7 +160,7 @@ func TestCodexQuotaOverdraftDisabledAccountDoesNotInject(t *testing.T) {
 	require.Equal(t, string(body), string(updated))
 }
 
-func TestCodexQuotaOverdraftSchedulingDoesNotBypassThresholdBelowPrearm(t *testing.T) {
+func TestCodexQuotaOverdraftSchedulingBypassesThresholdRegardlessOfPrearm(t *testing.T) {
 	t.Cleanup(func() { SetCodexQuotaOverdraftEnabled(false) })
 	SetCodexQuotaOverdraftEnabled(true)
 	ctx := WithCodexQuotaOverdraftScheduling(context.Background())
@@ -175,7 +174,7 @@ func TestCodexQuotaOverdraftSchedulingDoesNotBypassThresholdBelowPrearm(t *testi
 	quotaCtx := withOpenAIQuotaAutoPauseSettings(ctx, OpsOpenAIAccountQuotaAutoPauseSettings{DefaultThreshold5h: 0.9})
 
 	paused, _ := shouldAutoPauseOpenAIAccountByQuota(quotaCtx, account)
-	require.True(t, paused)
+	require.False(t, paused, "对齐上游:透支账号在阈值之上也绕过自动暂停,不看预arm门")
 }
 
 func TestCodexQuotaOverdraftSchedulingOnlyBypassesQuotaThresholds(t *testing.T) {

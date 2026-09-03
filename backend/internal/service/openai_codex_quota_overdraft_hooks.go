@@ -44,7 +44,7 @@ func (s *OpenAIGatewayService) processCodexQuotaOverdraftUsageSnapshot(
 	now time.Time,
 	updates map[string]any,
 ) {
-	persistSnapshot := codexQuotaOverdraftSnapshotPrearmReached(updates) || s.getCodexSnapshotThrottle().Allow(accountID, now)
+	persistSnapshot := codexQuotaOverdraftSnapshotExhausted(updates) || s.getCodexSnapshotThrottle().Allow(accountID, now)
 	businessStartedAt, businessSuccess := codexQuotaOverdraftInjectedAt(ctx, accountID)
 
 	go func() {

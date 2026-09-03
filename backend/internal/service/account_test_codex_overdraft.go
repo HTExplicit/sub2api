@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"net/http"
-	"time"
 )
 
 func (s *AccountTestService) SetCodexQuotaOverdraftCoordinator(coordinator *CodexQuotaOverdraftCoordinator) {
@@ -21,9 +20,6 @@ func (s *AccountTestService) prepareCodexQuotaOverdraftTestRequest(
 		return ctx, payload, false
 	}
 	ctx = WithCodexQuotaOverdraftScheduling(ctx)
-	if !codexQuotaOverdraftInjectionEligible(account, time.Now().UTC()) {
-		return ctx, payload, false
-	}
 	updated, changed, err := injectCodexQuotaOverdraft(payload)
 	if err != nil || !changed {
 		return ctx, payload, false
