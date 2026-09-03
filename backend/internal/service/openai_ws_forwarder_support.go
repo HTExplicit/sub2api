@@ -240,6 +240,9 @@ func openAIWSPayloadStatus(payload []byte) int {
 	if status != 0 {
 		return status
 	}
+	if isOpenAIModelNotSupportedPayload(payload) {
+		return http.StatusBadRequest
+	}
 	code := strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, "response.error.code").String()))
 	errType := strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, "response.error.type").String()))
 	if code == "" {
@@ -329,6 +332,15 @@ func (s *OpenAIGatewayService) handleOpenAIWSFailureAccountSideEffects(ctx conte
 		}
 	}
 	switch status {
+	case http.StatusBadRequest:
+		if !isOpenAIModelNotSupportedPayload(payload) {
+			return false
+		}
+		model := strings.TrimSpace(canonicalModel)
+		if model == "" {
+			model = firstNonEmpty(gjson.GetBytes(payload, "model").String(), gjson.GetBytes(payload, "response.model").String())
+		}
+		return s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, nil, payload, model)
 	case http.StatusUnauthorized, http.StatusTooManyRequests, 529:
 		s.handleOpenAIStreamTerminalAccountSideEffectsWithContext(ctx, account, payload, message, headers, canonicalModel)
 		return true
@@ -791,6 +803,10 @@ func classifyOpenAIWSErrorEventFromRaw(codeRaw, errTypeRaw, msgRaw string) (stri
 	msg := strings.ToLower(strings.TrimSpace(msgRaw))
 
 	switch code {
+	case "model_not_supported":
+		if hasModelNotSupportedMessage(msgRaw) {
+			return "model_not_supported", true
+		}
 	case "upgrade_required":
 		return "upgrade_required", true
 	case "websocket_not_supported", "websocket_unsupported":
@@ -801,6 +817,9 @@ func classifyOpenAIWSErrorEventFromRaw(codeRaw, errTypeRaw, msgRaw string) (stri
 		return "invalid_encrypted_content", true
 	case "previous_response_not_found":
 		return "previous_response_not_found", true
+	}
+	if errType == "model_not_supported" && hasModelNotSupportedMessage(msgRaw) {
+		return "model_not_supported", true
 	}
 	if isOpenAIWSRateLimitError(codeRaw, errTypeRaw, msgRaw) {
 		return "upstream_rate_limited", false
@@ -842,6 +861,8 @@ func openAIWSErrorHTTPStatusFromRaw(codeRaw, errTypeRaw string) int {
 	code := strings.ToLower(strings.TrimSpace(codeRaw))
 	errType := strings.ToLower(strings.TrimSpace(errTypeRaw))
 	switch {
+	case code == "model_not_supported" || errType == "model_not_supported":
+		return http.StatusBadRequest
 	case strings.Contains(errType, "invalid_request"),
 		strings.Contains(code, "invalid_request"),
 		strings.Contains(code, "bad_request"),

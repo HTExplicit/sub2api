@@ -1307,6 +1307,25 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					)
 				}
 				canonicalModel := canonicalOpenAIAccountSchedulingModel(account, originalModel)
+				if isOpenAIModelNotSupportedPayload(upstreamMessage) {
+					// The upstream transport is already HTTP 200, but this exact
+					// structured event means the selected Cindy key cannot serve the
+					// requested model. Persist an account/model cooldown and expose a
+					// replayable failover only before client-visible output. The outer
+					// ingress handler still enforces continuation affinity.
+					_ = s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, nil, upstreamMessage, canonicalModel)
+					if !downstreamOutputStarted() {
+						lease.MarkBroken()
+						return nil, &UpstreamFailoverError{
+							StatusCode:        http.StatusBadRequest,
+							ResponseBody:      append([]byte(nil), upstreamMessage...),
+							ResponseHeaders:   cloneHeader(lease.HandshakeHeaders()),
+							Scope:             GatewayFailureScopeAccount,
+							Reason:            openAIModelNotSupportedReason,
+							NextAccountAction: NextAccountRetry,
+						}
+					}
+				}
 				s.handleOpenAIWSErrorEventTransientFailure(ctx, account, canonicalModel, lease.HandshakeHeaders(), upstreamMessage)
 				s.persistOpenAIWSRateLimitSignal(ctx, account, lease.HandshakeHeaders(), upstreamMessage, errCodeRaw, errTypeRaw, errMsgRaw)
 				if !downstreamOutputStarted() && isOpenAIWSRateLimitError(errCodeRaw, errTypeRaw, errMsgRaw) {
@@ -1351,6 +1370,21 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 						}
 					}
 					return nil, continuationErr
+				}
+				if isOpenAIModelNotSupportedPayload(upstreamMessage) {
+					canonicalModel := canonicalOpenAIAccountSchedulingModel(account, originalModel)
+					_ = s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, nil, upstreamMessage, canonicalModel)
+					if !downstreamOutputStarted() {
+						lease.MarkBroken()
+						return nil, &UpstreamFailoverError{
+							StatusCode:        http.StatusBadRequest,
+							ResponseBody:      append([]byte(nil), upstreamMessage...),
+							ResponseHeaders:   cloneHeader(lease.HandshakeHeaders()),
+							Scope:             GatewayFailureScopeAccount,
+							Reason:            openAIModelNotSupportedReason,
+							NextAccountAction: NextAccountRetry,
+						}
+					}
 				}
 				if hit, code, msg := detectOpenAICyberPolicy(upstreamMessage); hit {
 					MarkOpsCyberPolicy(c, CyberPolicyMark{

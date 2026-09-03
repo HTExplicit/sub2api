@@ -1332,6 +1332,28 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 						return continuationErr
 					}
 				}
+				// A model_not_supported terminal is account-specific.  Preserve the
+				// pre-output failover signal so the ingress handler can switch keys
+				// when the current turn is replay-safe; later continuation turns are
+				// rejected by that handler's existing affinity guard.
+				if !wroteDownstream && isOpenAIModelNotSupportedPayload(payload) {
+					model := strings.TrimSpace(capturedSessionModel)
+					failoverErr := newOpenAIUpstreamFailoverError(
+						http.StatusBadRequest,
+						handshakeHeaders,
+						openAITransportFailoverBody,
+						extractOpenAISSEErrorMessage(payload),
+						false,
+					)
+					failoverErr.Scope = GatewayFailureScopeAccount
+					failoverErr.Reason = openAIModelNotSupportedReason
+					failoverErr.NextAccountAction = NextAccountRetry
+					if model == "" {
+						model = firstNonEmpty(gjson.GetBytes(payload, "model").String(), gjson.GetBytes(payload, "response.model").String())
+					}
+					_ = s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, nil, payload, model)
+					return failoverErr
+				}
 				if (eventType == "error" || eventType == "response.failed") && markOpenAIWSV2PassthroughCyberPolicy(c, payload) {
 					return nil
 				}

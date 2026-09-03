@@ -257,6 +257,24 @@ func (s *OpenAIGatewayService) cindyHTTPToWSV2FirstTurnEventFailover(
 		return failoverErr, true
 	}
 	statusCode := openAIWSPayloadStatus(payload)
+	if statusCode == http.StatusBadRequest && isOpenAIModelNotSupportedPayload(payload) {
+		// The first HTTP->WSv2 turn is still safe to replay on another
+		// credential.  Persist only the Cindy account/model cooldown; do not
+		// treat this as a generic terminal/provider failure.
+		model := strings.TrimSpace(canonicalModel)
+		if model == "" {
+			model = firstNonEmpty(gjson.GetBytes(payload, "model").String(), gjson.GetBytes(payload, "response.model").String())
+		}
+		_ = s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, nil, payload, model)
+		failoverErr := newOpenAIUpstreamFailoverError(
+			statusCode, headers, openAITransportFailoverBody, "model not supported", false,
+		)
+		failoverErr.Scope = GatewayFailureScopeAccount
+		failoverErr.Reason = openAIModelNotSupportedReason
+		failoverErr.NextAccountAction = NextAccountRetry
+		failoverErr.ClientStatusCode = http.StatusBadGateway
+		return sanitizeOpenAICindyFailoverError(failoverErr), true
+	}
 	if statusCode != http.StatusForbidden && statusCode != http.StatusTooManyRequests &&
 		statusCode < http.StatusInternalServerError {
 		return nil, false

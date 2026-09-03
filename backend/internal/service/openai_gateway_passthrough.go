@@ -875,6 +875,9 @@ func shouldFailoverOpenAIPassthroughResponse(account *Account, statusCode int, r
 	if isOpenAIContextWindowError("", responseBody) {
 		return false
 	}
+	if isOpenAIModelNotSupportedError(statusCode, "", responseBody) {
+		return true
+	}
 	if isOpenAIHTTPUpstreamAccessStateError(statusCode, "", responseBody) {
 		return true
 	}
@@ -1489,6 +1492,9 @@ func sanitizeOpenAICapacityShedErrorCodeForClient(payload []byte) ([]byte, bool)
 }
 
 func openAIStreamFailedEventSemanticStatus(payload []byte, message string) int {
+	if isOpenAIModelNotSupportedPayload(payload) {
+		return http.StatusBadRequest
+	}
 	if isOpenAIContextWindowError(message, payload) {
 		return http.StatusBadRequest
 	}
@@ -1535,6 +1541,10 @@ func openAIStreamFailureStatus(payload []byte, message string) int {
 	}
 	semanticStatus := openAIStreamFailedEventSemanticStatus(payload, message)
 	switch semanticStatus {
+	case http.StatusBadRequest:
+		if isOpenAIModelNotSupportedPayload(payload) {
+			return http.StatusBadRequest
+		}
 	case http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests, 529:
 		return semanticStatus
 	case http.StatusServiceUnavailable:
@@ -1624,6 +1634,9 @@ func openAIStreamFailedEventShouldFailover(payload []byte, message string) bool 
 	if isOpenAIContextWindowError(message, payload) {
 		return false
 	}
+	if isOpenAIModelNotSupportedPayload(payload) {
+		return true
+	}
 	if isOpenAIUpstreamAccessStateError(message, payload) {
 		return true
 	}
@@ -1676,6 +1689,9 @@ func openAIStreamErrorEventShouldFailover(payload []byte, message string) bool {
 	if isOpenAIContextWindowError(message, payload) {
 		return false
 	}
+	if isOpenAIModelNotSupportedPayload(payload) {
+		return true
+	}
 	if isOpenAIUpstreamAccessStateError(message, payload) {
 		return true
 	}
@@ -1721,6 +1737,15 @@ func (s *OpenAIGatewayService) handleOpenAIStreamTerminalAccountSideEffectsWithC
 ) (int, bool) {
 	statusCode := openAIStreamFailureStatus(payload, message)
 	switch statusCode {
+	case http.StatusBadRequest:
+		if !isOpenAIModelNotSupportedPayload(payload) {
+			return statusCode, false
+		}
+		model := firstNonEmpty(canonicalModel...)
+		if model == "" {
+			model = firstNonEmpty(gjson.GetBytes(payload, "model").String(), gjson.GetBytes(payload, "response.model").String())
+		}
+		return statusCode, s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, nil, payload, model)
 	case http.StatusForbidden:
 		if !openAIStream403AccountFailure(payload, message) {
 			return statusCode, false
@@ -1753,6 +1778,9 @@ func openAIStreamFailedEventRetryableOnSameAccount(account *Account, payload []b
 	// 因此先在同一账号上做有界重试，用尽后才按常规流程切号。
 	if isOpenAIUpstreamCapacityShedEvent(payload) {
 		return true
+	}
+	if isOpenAIModelNotSupportedPayload(payload) {
+		return false
 	}
 	if !account.IsPoolMode() {
 		return false

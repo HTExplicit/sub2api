@@ -719,6 +719,16 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			}
 			s.handleOpenAIWSErrorEventTransientFailure(ctx, account, mappedModel, lease.HandshakeHeaders(), message)
 			errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(message)
+			if isOpenAIModelNotSupportedPayload(message) {
+				// The event is carried over an established HTTP-200 WebSocket
+				// stream, but its structured type is an account/model capability
+				// failure. Persist the Cindy pair cooldown before any fallback.
+				model := strings.TrimSpace(mappedModel)
+				if model == "" {
+					model = firstNonEmpty(gjson.GetBytes(message, "model").String(), gjson.GetBytes(message, "response.model").String())
+				}
+				_ = s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, nil, message, model)
+			}
 			s.persistOpenAIWSRateLimitSignal(ctx, account, lease.HandshakeHeaders(), message, errCodeRaw, errTypeRaw, errMsgRaw, mappedModel)
 			errMsg := strings.TrimSpace(errMsgRaw)
 			if errMsg == "" {

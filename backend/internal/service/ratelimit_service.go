@@ -2396,6 +2396,9 @@ func (s *RateLimitService) HandleUpstreamModelNotFound(ctx context.Context, acco
 	var cooldown time.Duration
 	var reason string
 	switch {
+	case IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
+		isOpenAIModelNotSupportedError(statusCode, "", responseBody):
+		cooldown, reason = upstreamModelNotSupportedCooldown, string(openAIModelNotSupportedReason)
 	case isUpstreamModelNotFoundError(statusCode, responseBody):
 		cooldown, reason = upstreamModelNotFoundCooldown, upstreamModelNotFoundReason
 	case isOpenAIOAuthAccount(account) && isOpenAICodexPlanGatedModelError(statusCode, responseBody):
