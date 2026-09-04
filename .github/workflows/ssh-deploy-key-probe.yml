@@ -32,7 +32,7 @@ jobs:
           chmod 600 "$key_file" "$hosts_file"
           ssh-keygen -y -f "$key_file" >/dev/null
           set +e
-          timeout 20 ssh -F /dev/null -i "$key_file" \
+          timeout 20 ssh -vv -F /dev/null -i "$key_file" \
             -o BatchMode=yes -o IdentitiesOnly=yes \
             -o ConnectTimeout=8 -o ConnectionAttempts=1 \
             -o ServerAliveInterval=5 -o ServerAliveCountMax=1 \
@@ -43,8 +43,22 @@ jobs:
           set -e
           if grep -qi 'Rejected deployment command' "$out_file" "$err_file"; then
             printf 'PROBE|label=deploy-key|status=authenticated-forced-command-rejected\n'
+          elif grep -qi 'Authenticated to ' "$err_file"; then
+            printf 'PROBE|label=deploy-key|status=authenticated-session-stalled|rc=%s\n' "$rc"
+          elif grep -qi 'Server accepts key' "$err_file"; then
+            printf 'PROBE|label=deploy-key|status=server-accepted-key-stalled|rc=%s\n' "$rc"
           elif grep -qiE 'Permission denied|sign_and_send_pubkey|no mutual signature' "$out_file" "$err_file"; then
             printf 'PROBE|label=deploy-key|status=authentication-failed\n'
+          elif grep -qiE 'Host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED' "$err_file"; then
+            printf 'PROBE|label=deploy-key|status=host-key-verification-failed\n'
+          elif grep -qi 'Offering public key' "$err_file"; then
+            printf 'PROBE|label=deploy-key|status=key-offered-no-result|rc=%s\n' "$rc"
+          elif grep -qi 'Remote protocol version' "$err_file"; then
+            printf 'PROBE|label=deploy-key|status=protocol-established-pre-auth-stalled|rc=%s\n' "$rc"
+          elif grep -qi 'Connection established' "$err_file"; then
+            printf 'PROBE|label=deploy-key|status=tcp-established-kex-stalled|rc=%s\n' "$rc"
+          elif grep -qiE 'timed out|not responding|Connection refused|No route to host|Network is unreachable|Connection reset|Connection closed|kex_exchange_identification' "$err_file"; then
+            printf 'PROBE|label=deploy-key|status=transport-failed|rc=%s\n' "$rc"
           elif ((rc == 124)); then
             printf 'PROBE|label=deploy-key|status=timeout\n'
           else
