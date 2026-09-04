@@ -70,6 +70,13 @@ only `sub2api`, and restores the prior override and process flags if any gate fa
 
 `reconcile-runtime` is a separate recovery operation for a container known to have been
 recreated from the base Compose file while the canonical override remained on disk. It requires
-the exact current Release, the `RECONCILE` confirmation, and the explicit canonical tuple. The
-host rejects any other drift before mutation, captures the non-Sub2 container snapshot, and on
-failure recreates only `sub2api` from the verified prior base-only runtime.
+the exact current Release, the `RECONCILE` confirmation, and the explicit canonical tuple. Set
+the typed `interrupt_business` input to `true` only when a controlled stop is required; the
+forced command then carries the exact `maintenance=interrupt` suffix. The host rejects any
+other drift before mutation, captures the non-Sub2 container snapshot, drains loopback
+connections and Redis-backed in-flight leases after the stop, and on failure recreates only
+`sub2api` from the verified prior base-only runtime.
+Because this operation does not pull or change the image, it records a fixed
+`SKIP|native-responses|reason=runtime-reconcile-same-image` marker instead of
+creating a temporary protocol-canary credential; health, tuple, snapshot, and
+observation gates remain mandatory.
