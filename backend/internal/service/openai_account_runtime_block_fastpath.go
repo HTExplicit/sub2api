@@ -1309,6 +1309,13 @@ func canonicalOpenAIAccountSchedulingModel(account *Account, requestedModel stri
 		if mapped, ok := CindyMappedUpstreamModel(model); ok {
 			return mapped
 		}
+		// The catalog toggle only controls publication/strict routing. Legacy
+		// Laxa passthrough must still use the verified live Luna wire ID when
+		// the user requests it directly, otherwise the model cooldown key would
+		// regress to the unsupported bare spelling during a catalog rollback.
+		if model == CindyDefaultTestModel {
+			return "openai/gpt-5.6-luna"
+		}
 	}
 	if account.IsOpenAI() {
 		return resolveOpenAIAccountUpstreamModelForRequest(account, model, false)

@@ -680,6 +680,19 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 					return nil, failoverErr
 				}
 			}
+			if !wroteDownstream && IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
+				isOpenAIModelNotSupportedPayload(message) {
+				// This is an account/model capability response carried over an
+				// established HTTP-200 WS stream. Preserve the structured signal so
+				// the outer scheduler can cool only this Cindy/Laxa pair and, when
+				// the turn is replay-safe, move to another credential.
+				_ = s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, nil, message, mappedModel)
+				lease.MarkBroken()
+				if refusalOutput != nil {
+					refusalOutput.DropTurn()
+				}
+				return nil, newOpenAIModelNotSupportedFailoverError(lease.HandshakeHeaders(), message)
+			}
 			if hit, code, msg := detectOpenAICyberPolicy(message); hit {
 				MarkOpsCyberPolicy(c, CyberPolicyMark{
 					Code:           code,
@@ -717,8 +730,28 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 					return nil, failoverErr
 				}
 			}
+			if !wroteDownstream && IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
+				isOpenAIModelNotSupportedPayload(message) {
+				_ = s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, nil, message, mappedModel)
+				lease.MarkBroken()
+				if refusalOutput != nil {
+					refusalOutput.DropTurn()
+				}
+				return nil, newOpenAIModelNotSupportedFailoverError(lease.HandshakeHeaders(), message)
+			}
 			s.handleOpenAIWSErrorEventTransientFailure(ctx, account, mappedModel, lease.HandshakeHeaders(), message)
 			errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(message)
+			if IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
+				isOpenAIModelNotSupportedPayload(message) {
+				// The event is carried over an established HTTP-200 WebSocket
+				// stream, but its structured type is an account/model capability
+				// failure. Persist the Cindy pair cooldown before any fallback.
+				model := strings.TrimSpace(mappedModel)
+				if model == "" {
+					model = firstNonEmpty(gjson.GetBytes(message, "model").String(), gjson.GetBytes(message, "response.model").String())
+				}
+				_ = s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, nil, message, model)
+			}
 			s.persistOpenAIWSRateLimitSignal(ctx, account, lease.HandshakeHeaders(), message, errCodeRaw, errTypeRaw, errMsgRaw, mappedModel)
 			errMsg := strings.TrimSpace(errMsgRaw)
 			if errMsg == "" {
@@ -766,6 +799,14 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			}
 			// error 事件后连接不再可复用，避免回池后污染下一请求。
 			lease.MarkBroken()
+			if fallbackReason == "model_not_supported" {
+				canFallback = IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
+					isOpenAIModelNotSupportedPayload(message)
+			}
+			if fallbackReason == "model_not_supported" && canFallback && !wroteDownstream {
+				_ = s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, lease.HandshakeHeaders(), message, mappedModel)
+				return nil, newOpenAIModelNotSupportedFailoverError(lease.HandshakeHeaders(), message)
+			}
 			if !wroteDownstream && canFallback {
 				return nil, wrapOpenAIWSFallback(fallbackReason, errors.New(errMsg))
 			}

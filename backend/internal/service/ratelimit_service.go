@@ -346,6 +346,18 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 		return false
 	}
 
+	// A structured Cindy/Laxa model_not_supported response is scoped to the
+	// (account, model) pair, not to the account pool.  Persist that cooldown
+	// before the pool-mode early return below; pool accounts otherwise skip all
+	// local error state and would immediately be selected again for the same
+	// model, defeating the bounded cross-key failover contract.
+	if len(requestedModel) > 0 &&
+		IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
+		isOpenAIModelNotSupportedError(statusCode, "", responseBody) &&
+		s.HandleUpstreamModelNotFound(ctx, account, requestedModel[0], statusCode, responseBody) {
+		return true
+	}
+
 	// 池模式默认不标记本地账号状态；但管理员显式配置的临时不可调度规则优先。
 	// 401 保留现有认证错误语义，不在这里改变池模式的认证处理。
 	if account.IsPoolMode() && !customErrorCodesEnabled {
@@ -2390,12 +2402,16 @@ func (s *RateLimitService) HandleUpstreamModelNotFound(ctx context.Context, acco
 	if s == nil || account == nil || s.accountRepo == nil {
 		return false
 	}
-	if !account.ShouldHandleErrorCode(statusCode) {
+	modelNotSupported := IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
+		isOpenAIModelNotSupportedError(statusCode, "", responseBody)
+	if !account.ShouldHandleErrorCode(statusCode) && !modelNotSupported {
 		return false
 	}
 	var cooldown time.Duration
 	var reason string
 	switch {
+	case modelNotSupported:
+		cooldown, reason = upstreamModelNotSupportedCooldown, string(openAIModelNotSupportedReason)
 	case isUpstreamModelNotFoundError(statusCode, responseBody):
 		cooldown, reason = upstreamModelNotFoundCooldown, upstreamModelNotFoundReason
 	case isOpenAIOAuthAccount(account) && isOpenAICodexPlanGatedModelError(statusCode, responseBody):
@@ -2446,6 +2462,29 @@ func modelRateLimitKeyForUpstreamModelNotFound(ctx context.Context, account *Acc
 	modelKey := strings.TrimSpace(requestedModel)
 	if account == nil || modelKey == "" {
 		return modelKey
+	}
+	if IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		forwardModel := modelKey
+		requireCompact := false
+		if forwarded, ok := openAIForwardModelFromContext(ctx); ok {
+			if candidate := strings.TrimSpace(forwarded.model); candidate != "" {
+				forwardModel = candidate
+				requireCompact = forwarded.useCompactModelMapping
+			}
+		}
+		canonical := strings.TrimSpace(canonicalOpenAIAccountSchedulingModel(account, forwardModel))
+		if requireCompact {
+			// Resolve from the request-context model exactly as the passthrough
+			// sender does. requestedModel may already be the compact wire target;
+			// comparing it against that target before returning would incorrectly
+			// fall back to canonical Luna and make the read/write keys diverge.
+			if compact := strings.TrimSpace(resolveOpenAIAccountUpstreamModelForRequest(account, forwardModel, true)); compact != "" {
+				return compact
+			}
+		}
+		if canonical != "" {
+			return canonical
+		}
 	}
 	if account.Platform == PlatformAntigravity {
 		if resolved := strings.TrimSpace(resolveFinalAntigravityModelKey(ctx, account, modelKey)); resolved != "" {

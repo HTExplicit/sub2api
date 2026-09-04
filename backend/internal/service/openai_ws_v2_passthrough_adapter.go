@@ -17,6 +17,7 @@ import (
 	coderws "github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 type openAIWSClientFrameConn struct {
@@ -99,6 +100,41 @@ func openAIWSPassthroughPolicyModelForFrame(account *Account, payload []byte) st
 		return ""
 	}
 	return original
+}
+
+// resolveLegacyCindyOpenAIModel mirrors the legacy Laxa HTTP
+// passthrough wire mapping for Responses WebSocket frames.  The temporary
+// OpenAI-platform projection bypasses the first-class Cindy resolver, so a
+// direct public Luna ID would otherwise reach Laxa without its required
+// provider prefix.  Keep this deliberately narrow: ordinary OpenAI
+// passthrough accounts and any administrator/channel mapping which has
+// already changed the model retain their existing behavior.
+func resolveLegacyCindyOpenAIModel(account *Account, model string) string {
+	model = strings.TrimSpace(model)
+	if account == nil || model == "" ||
+		!IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		return model
+	}
+	if mapped, ok := cindyLegacyLaxaLiveUpstreamModel(model); ok {
+		return mapped
+	}
+	return model
+}
+
+func replaceLegacyCindyWSPassthroughSessionModel(account *Account, payload []byte) ([]byte, error) {
+	if account == nil || len(payload) == 0 || strings.TrimSpace(gjson.GetBytes(payload, "type").String()) != "session.update" {
+		return payload, nil
+	}
+	current := strings.TrimSpace(gjson.GetBytes(payload, "session.model").String())
+	mapped := resolveLegacyCindyOpenAIModel(account, current)
+	if mapped == "" || mapped == current {
+		return payload, nil
+	}
+	next, err := sjson.SetBytes(payload, "session.model", mapped)
+	if err != nil {
+		return nil, err
+	}
+	return next, nil
 }
 
 // openAIWSPassthroughPolicyModelFromSessionFrame returns the upstream model
@@ -726,6 +762,15 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 		}
 		firstClientMessage = liteFirstMessage
 	}
+	if normalizedFirstMessage, normalizeErr := normalizeLegacyLaxaFullReplayStoreFalse(account, firstClientMessage); normalizeErr != nil {
+		return NewOpenAIWSClientCloseError(
+			coderws.StatusPolicyViolation,
+			"invalid websocket request payload",
+			normalizeErr,
+		)
+	} else {
+		firstClientMessage = normalizedFirstMessage
+	}
 	originalFirstClientMessage := firstClientMessage
 	if next, policyErr := applyOpenAIWSReasoningEffortPolicy(firstClientMessage, hooks); policyErr != nil {
 		return NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, policyErr.Error(), policyErr)
@@ -768,10 +813,17 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 			return mapErr
 		}
 		if mappedModel = strings.TrimSpace(mappedModel); mappedModel != "" {
-			if accountMapped := normalizeOpenAIModelForUpstream(account, account.GetMappedModel(mappedModel)); accountMapped != "" {
+			if legacyMapped := resolveLegacyCindyOpenAIModel(account, mappedModel); legacyMapped != mappedModel {
+				mappedModel = legacyMapped
+			} else if accountMapped := normalizeOpenAIModelForUpstream(account, account.GetMappedModel(mappedModel)); accountMapped != "" {
 				mappedModel = accountMapped
 			}
 			firstClientMessage = s.ReplaceModelInBody(firstClientMessage, mappedModel)
+		}
+	}
+	if currentModel := strings.TrimSpace(gjson.GetBytes(firstClientMessage, "model").String()); currentModel != "" {
+		if upstreamModel := resolveLegacyCindyOpenAIModel(account, currentModel); upstreamModel != currentModel {
+			firstClientMessage = s.ReplaceModelInBody(firstClientMessage, upstreamModel)
 		}
 	}
 	capturedSessionModel := openAIWSPassthroughPolicyModelForFrame(account, firstClientMessage)
@@ -918,8 +970,14 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 			s.persistOpenAIWSRateLimitSignal(ctx, account, handshakeHeaders, nil, "rate_limit_exceeded", "rate_limit_error", strings.TrimSpace(err.Error()), capturedSessionModel)
 			return s.newOpenAIWSRateLimitFailoverError(account, handshakeHeaders, nil, err.Error())
 		}
-		retrySameAccount, failoverErr := openAIWSInitialDialFailover(dialErr)
+		retrySameAccount, failoverErr := openAIWSInitialDialFailover(account, dialErr)
 		if failoverErr != nil {
+			if failoverErr.IsOpenAIModelNotSupported() {
+				_ = s.handleOpenAIAccountUpstreamError(
+					ctx, account, http.StatusBadRequest, handshakeHeaders, responseBody, capturedSessionModel,
+				)
+				return failoverErr
+			}
 			if retrySameAccount && !transportRetryUsed {
 				transportRetryUsed = true
 				continue
@@ -1000,6 +1058,10 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 			}
 			eventType := strings.TrimSpace(gjson.GetBytes(payload, "type").String())
 			isResponseCreate := eventType == "response.create"
+			originalSessionRequestModel := ""
+			if eventType == "session.update" {
+				originalSessionRequestModel = strings.TrimSpace(gjson.GetBytes(payload, "session.model").String())
+			}
 			responsesLite := isOpenAIResponsesLiteWebSocketPayload(payload)
 			responseCreateAt := time.Time{}
 			acceptedTurn := false
@@ -1071,12 +1133,41 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 						return payload, nil, err
 					}
 					if upstreamModel = strings.TrimSpace(upstreamModel); upstreamModel != "" {
-						if accountMapped := normalizeOpenAIModelForUpstream(account, account.GetMappedModel(upstreamModel)); accountMapped != "" {
+						if legacyMapped := resolveLegacyCindyOpenAIModel(account, upstreamModel); legacyMapped != upstreamModel {
+							upstreamModel = legacyMapped
+						} else if accountMapped := normalizeOpenAIModelForUpstream(account, account.GetMappedModel(upstreamModel)); accountMapped != "" {
 							upstreamModel = accountMapped
 						}
 						payload = s.ReplaceModelInBody(payload, upstreamModel)
 					}
 				}
+				if currentModel := strings.TrimSpace(gjson.GetBytes(payload, "model").String()); currentModel != "" {
+					if upstreamModel := resolveLegacyCindyOpenAIModel(account, currentModel); upstreamModel != currentModel {
+						payload = s.ReplaceModelInBody(payload, upstreamModel)
+					}
+				}
+			}
+			if eventType == "session.update" {
+				var sessionModelErr error
+				payload, sessionModelErr = replaceLegacyCindyWSPassthroughSessionModel(account, payload)
+				if sessionModelErr != nil {
+					return payload, nil, NewOpenAIWSClientCloseError(
+						coderws.StatusPolicyViolation,
+						"invalid websocket request payload",
+						sessionModelErr,
+					)
+				}
+			}
+			if isResponseCreate {
+				normalizedPayload, normalizeErr := normalizeLegacyLaxaFullReplayStoreFalse(account, payload)
+				if normalizeErr != nil {
+					return payload, nil, NewOpenAIWSClientCloseError(
+						coderws.StatusPolicyViolation,
+						"invalid websocket request payload",
+						normalizeErr,
+					)
+				}
+				payload = normalizedPayload
 			}
 			// 在评估策略前先刷新 capturedSessionModel：客户端可能通过
 			// session.update 修改 session-level model（Realtime /
@@ -1088,7 +1179,14 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 			if updated := openAIWSPassthroughPolicyModelFromSessionFrame(account, payload); updated != "" {
 				capturedSessionModel = updated
 			}
-			usageMeta.updateSessionRequestModel(payload)
+			if originalSessionRequestModel != "" {
+				// Keep usage/response restoration on the client's public spelling;
+				// the payload itself may already have been rewritten to the
+				// provider-qualified Laxa wire ID above.
+				usageMeta.sessionRequestModel = originalSessionRequestModel
+			} else {
+				usageMeta.updateSessionRequestModel(payload)
+			}
 			if requestModelForThisFrame == "" {
 				requestModelForThisFrame = usageMeta.requestModelForFrame(payload)
 			}
@@ -1255,6 +1353,19 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 					Duration:                      turn.Duration,
 					FirstTokenMs:                  turn.FirstTokenMs,
 				}
+				// Persist account affinity for response anchors produced by the
+				// passthrough relay. A later client reconnect must select the same
+				// legacy Laxa credential instead of replaying an opaque anchor on a
+				// sibling key; the passthrough transport itself owns its connection.
+				if responseID := strings.TrimSpace(turn.RequestID); responseID != "" &&
+					IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+					stateStore := s.getOpenAIWSStateStore()
+					groupID := getOpenAIGroupIDFromContext(c)
+					if stateStore != nil {
+						ttl := s.openAIWSResponseStickyTTL()
+						logOpenAIWSBindResponseAccountWarn(groupID, account.ID, responseID, stateStore.BindResponseAccount(ctx, groupID, responseID, account.ID, ttl))
+					}
+				}
 				logOpenAIWSV2Passthrough(
 					"relay_turn_completed account_id=%d turn=%d request_id=%s terminal_event=%s turn_requested_model=%s turn_upstream_model=%s duration_ms=%d first_token_ms=%d input_tokens=%d output_tokens=%d cache_read_tokens=%d",
 					account.ID,
@@ -1331,6 +1442,24 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 					if continuationErr := openAIContinuationStateErrorFromFailedEvent(http.StatusOK, handshakeHeaders, payload); continuationErr != nil {
 						return continuationErr
 					}
+				}
+				// A model_not_supported terminal is account-specific.  Preserve the
+				// pre-output failover signal so the ingress handler can switch keys
+				// when the current turn is replay-safe; later continuation turns are
+				// rejected by that handler's existing affinity guard.
+				if !wroteDownstream &&
+					IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
+					isOpenAIModelNotSupportedPayload(payload) {
+					model := strings.TrimSpace(capturedSessionModel)
+					failoverErr := newOpenAIModelNotSupportedFailoverError(handshakeHeaders, payload)
+					if model == "" {
+						model = firstNonEmpty(gjson.GetBytes(payload, "model").String(), gjson.GetBytes(payload, "response.model").String())
+					}
+					if model == "" {
+						model = canonicalOpenAIAccountSchedulingModel(account, requestModel)
+					}
+					_ = s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, nil, payload, model)
+					return failoverErr
 				}
 				if (eventType == "error" || eventType == "response.failed") && markOpenAIWSV2PassthroughCyberPolicy(c, payload) {
 					return nil
@@ -1543,6 +1672,26 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 		relayErr,
 		wroteDownstream,
 	)
+	// The passthrough relay has no safe way to replay a later turn: the
+	// handler only retains the initial response.create frame, while the live
+	// connection may already contain opaque/anchor state produced by earlier
+	// turns.  If a later turn fails (including a structured model-not-supported
+	// or rate-limit failover signal), convert retryable failover errors into a
+	// client close so the outer account loop cannot replay the first turn on a
+	// different credential.  The first turn remains eligible for the normal
+	// account failover path below.
+	if turnCount > 0 {
+		var modelNotSupportedErr *UpstreamFailoverError
+		if errors.As(turnErr, &modelNotSupportedErr) && modelNotSupportedErr.IsOpenAIModelNotSupported() {
+			// Keep the structured capability error, but make it terminal for this
+			// already-established relay. The handler can emit one response.failed
+			// event without replaying the initial request on another account.
+			modelNotSupportedErr.NextAccountAction = NextAccountStop
+			modelNotSupportedErr.Scope = GatewayFailureScopeRequest
+		} else {
+			turnErr = normalizeOpenAIWSNonInitialTurnError(turnCount+1, turnErr)
+		}
+	}
 	if transportCause, transportFailure := openAIWSIngressTurnTransportCause(turnErr); transportFailure && turnCount == 0 {
 		if !transportRetryUsed {
 			return fmt.Errorf("%w: %w", errOpenAIWSPassthroughRetrySameAccount, transportCause)

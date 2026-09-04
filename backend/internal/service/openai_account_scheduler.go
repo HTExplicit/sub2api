@@ -400,16 +400,34 @@ func (s *defaultOpenAIAccountScheduler) Select(
 	if previousResponseID != "" && openAIContinuationCapability(req.RequiredCapability) &&
 		openAIPlatformSupportsResponseAffinity(req.Platform) &&
 		(!req.StickyWeighted || !req.PreviousResponseCanMove) {
-		selection, err := s.service.selectAccountByPreviousResponseIDForCapabilityWithPolicy(
-			ctx,
-			req.GroupID,
-			previousResponseID,
-			req.RequestedModel,
-			req.ExcludedIDs,
-			req.RequiredCapability,
-			req.RequireCompact,
-			!req.PreviousResponseCanMove,
-		)
+		var selection *AccountSelectionResult
+		var err error
+		if req.PreviousResponseCanMove {
+			// A movable continuation may fall back to ordinary scheduling when
+			// the stored account no longer satisfies a current capability or
+			// compact policy.  Strict fail-closed semantics apply only when the
+			// request explicitly carries credential-bound continuation state.
+			selection, err = s.service.selectAccountByPreviousResponseIDForCapabilityWithPolicy(
+				ctx,
+				req.GroupID,
+				previousResponseID,
+				req.RequestedModel,
+				req.ExcludedIDs,
+				req.RequiredCapability,
+				req.RequireCompact,
+				false,
+			)
+		} else {
+			selection, err = s.service.selectAccountByPreviousResponseIDForStrictContinuation(
+				ctx,
+				req.GroupID,
+				previousResponseID,
+				req.RequestedModel,
+				req.ExcludedIDs,
+				req.RequiredCapability,
+				req.RequireCompact,
+			)
+		}
 		if err != nil {
 			return nil, decision, err
 		}
@@ -1792,6 +1810,14 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleReason(ctx con
 	if s != nil && s.service != nil && s.service.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, requestedModel) {
 		return false, "runtime_blocked"
 	}
+	// The scheduler's candidate filter already checks the account's ordinary
+	// active/schedulable state.  This gate is intentionally only the per-model
+	// cooldown: calling IsSchedulableForModelWithContext here would duplicate
+	// the broad account gate and make sticky/test fixtures with no persisted
+	// status look unavailable for unrelated reasons.
+	if account.isModelRateLimitedWithContext(ctx, requestedModel) {
+		return false, "model_rate_limited"
+	}
 	if s != nil && s.service != nil && s.service.isOpenAIProxyStreamQuarantined(ctx, account) {
 		return false, "proxy_stream_quarantined"
 	}
@@ -2360,7 +2386,7 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 	}
 	if strings.TrimSpace(previousResponseID) != "" && openAIContinuationCapability(requiredCapability) &&
 		openAIPlatformSupportsResponseAffinity(platform) && !previousResponseCanMove {
-		selection, err := s.selectAccountByPreviousResponseIDForCapabilityWithPolicy(
+		selection, err := s.selectAccountByPreviousResponseIDForStrictContinuation(
 			ctx,
 			groupID,
 			previousResponseID,
@@ -2368,7 +2394,6 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 			excludedIDs,
 			requiredCapability,
 			requireCompact,
-			true,
 		)
 		if err != nil {
 			return nil, decision, err

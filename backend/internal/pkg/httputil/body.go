@@ -82,7 +82,7 @@ func ReadRequestBodyWithPrealloc(req *http.Request) ([]byte, error) {
 		}
 		return raw, nil
 	}
-	if readErr != nil && !errors.Is(readErr, io.ErrUnexpectedEOF) {
+	if readErr != nil && !isOnlyUnexpectedEOF(readErr) {
 		return nil, &RequestBodyReadError{
 			Stage:         "read",
 			ReceivedBytes: receivedBytes,
@@ -93,7 +93,7 @@ func ReadRequestBodyWithPrealloc(req *http.Request) ([]byte, error) {
 	decoded, decodeErr := decompressRequestBody(enc, raw)
 	if decodeErr != nil {
 		wrappedDecodeErr := fmt.Errorf("decode Content-Encoding %q: %w", enc, decodeErr)
-		if !errors.Is(decodeErr, io.ErrUnexpectedEOF) {
+		if !isOnlyUnexpectedEOF(decodeErr) {
 			return nil, &RequestBodyReadError{
 				Stage:         "decode",
 				ReceivedBytes: receivedBytes,
@@ -133,7 +133,7 @@ func ReadRequestBodyWithPrealloc(req *http.Request) ([]byte, error) {
 // JSON string control bytes before strict validation.
 func ReadLenientJSONRequestBodyWithPrealloc(req *http.Request, maxNormalizedBytes int64) ([]byte, error) {
 	body, readErr := ReadRequestBodyWithPrealloc(req)
-	if readErr != nil && !errors.Is(readErr, io.ErrUnexpectedEOF) {
+	if readErr != nil && !isOnlyUnexpectedEOF(readErr) {
 		return nil, readErr
 	}
 	normalized, normalizeErr := NormalizeLenientJSONRequestBody(body, maxNormalizedBytes)
@@ -152,6 +152,45 @@ func updateDecodedRequestMetadata(req *http.Request, decodedBytes int) {
 	req.ContentLength = int64(decodedBytes)
 }
 
+// isOnlyUnexpectedEOF accepts a transport/decompressor EOF only when the
+// complete error chain contains no other terminal cause. errors.Is alone would
+// incorrectly accept errors.Join(io.ErrUnexpectedEOF, otherErr).
+func isOnlyUnexpectedEOF(err error) bool {
+	if err == nil {
+		return false
+	}
+	foundEOF := false
+	var walk func(error) bool
+	walk = func(current error) bool {
+		if current == nil {
+			return true
+		}
+		if joined, ok := current.(interface{ Unwrap() []error }); ok {
+			children := joined.Unwrap()
+			if len(children) == 0 {
+				return false
+			}
+			for _, child := range children {
+				if !walk(child) {
+					return false
+				}
+			}
+			return true
+		}
+		if wrapped, ok := current.(interface{ Unwrap() error }); ok {
+			if child := wrapped.Unwrap(); child != nil {
+				return walk(child)
+			}
+		}
+		if errors.Is(current, io.ErrUnexpectedEOF) {
+			foundEOF = true
+			return true
+		}
+		return false
+	}
+	return walk(err) && foundEOF
+}
+
 func decompressRequestBody(encoding string, raw []byte) ([]byte, error) {
 	switch encoding {
 	case "zstd":
@@ -160,24 +199,35 @@ func decompressRequestBody(encoding string, raw []byte) ([]byte, error) {
 			return nil, err
 		}
 		defer dec.Close()
-		return io.ReadAll(io.LimitReader(dec, maxDecompressedBodySize))
+		return readDecompressedBodyWithLimit(dec, maxDecompressedBodySize)
 	case "gzip", "x-gzip":
 		gr, err := gzip.NewReader(bytes.NewReader(raw))
 		if err != nil {
 			return nil, err
 		}
 		defer func() { _ = gr.Close() }()
-		return io.ReadAll(io.LimitReader(gr, maxDecompressedBodySize))
+		return readDecompressedBodyWithLimit(gr, maxDecompressedBodySize)
 	case "deflate":
 		zr, err := zlib.NewReader(bytes.NewReader(raw))
 		if err != nil {
 			return nil, err
 		}
 		defer func() { _ = zr.Close() }()
-		return io.ReadAll(io.LimitReader(zr, maxDecompressedBodySize))
+		return readDecompressedBodyWithLimit(zr, maxDecompressedBodySize)
 	default:
 		return nil, errors.New("unsupported Content-Encoding")
 	}
+}
+
+func readDecompressedBodyWithLimit(reader io.Reader, limit int64) ([]byte, error) {
+	if limit <= 0 {
+		return io.ReadAll(reader)
+	}
+	decoded, err := io.ReadAll(io.LimitReader(reader, limit+1))
+	if int64(len(decoded)) > limit {
+		return decoded[:limit], &http.MaxBytesError{Limit: limit}
+	}
+	return decoded, err
 }
 
 // NormalizeLenientJSONRequestBody escapes raw control bytes that broken

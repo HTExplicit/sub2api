@@ -175,6 +175,11 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 	// derive a stable seed from the final upstream model family.
 	billingModel := resolveOpenAIForwardModel(account, originalModel, defaultMappedModel)
 	upstreamModel := normalizeOpenAIModelForUpstream(account, billingModel)
+	if account != nil && IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		if legacyModel, mapped := cindyLegacyLaxaLiveUpstreamModel(originalModel); mapped {
+			upstreamModel = legacyModel
+		}
+	}
 
 	promptCacheKey = strings.TrimSpace(promptCacheKey)
 	compatPromptCacheInjected := false
@@ -550,7 +555,7 @@ func (s *OpenAIGatewayService) handleChatBufferedStreamingResponse(
 			return nil, fmt.Errorf("openai cyber_policy: %s", msg)
 		}
 		message := openAICompatFailedResponseMessage(finalResponse)
-		if openAIStreamFailedEventShouldFailover(payload, message) {
+		if openAIStreamFailedEventShouldFailoverForAccount(account, payload, message) {
 			return nil, s.newOpenAIStreamFailoverErrorWithModel(c, account, false, requestID, payload, message, upstreamModel, resp.Header)
 		}
 		message = s.recordOpenAIStreamUpstreamError(c, account, false, requestID, "http_error", payload, message)
@@ -812,9 +817,9 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 				}
 				return true
 			}
-			shouldFailover := openAIStreamFailedEventShouldFailover(payloadBytes, message)
+			shouldFailover := openAIStreamFailedEventShouldFailoverForAccount(account, payloadBytes, message)
 			if isBareErrorEvent {
-				shouldFailover = openAIStreamErrorEventShouldFailover(payloadBytes, message)
+				shouldFailover = openAIStreamErrorEventShouldFailoverForAccount(account, payloadBytes, message)
 			}
 			if !clientOutputStarted && shouldFailover {
 				streamFailoverErr = s.newOpenAIStreamFailoverErrorWithModel(c, account, false, requestID, payloadBytes, message, upstreamModel, resp.Header)

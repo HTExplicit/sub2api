@@ -1974,6 +1974,11 @@ func (h *GatewayHandler) handleConcurrencyError(c *gin.Context, err error, slotT
 }
 
 func (h *GatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError, platform string, streamStarted bool) {
+	if failoverErr != nil && failoverErr.IsOpenAIModelNotSupported() {
+		service.SetOpsUpstreamError(c, http.StatusBadRequest, service.OpenAIModelNotSupportedClientMessage, "")
+		h.handleStreamingAwareError(c, http.StatusBadRequest, service.OpenAIModelNotSupportedCode, service.OpenAIModelNotSupportedClientMessage, streamStarted)
+		return
+	}
 	if failoverErr.CindyBalanceInsufficient {
 		status, errType, message := h.mapUpstreamError(http.StatusTooManyRequests)
 		service.SetOpsUpstreamError(c, http.StatusTooManyRequests, message, "")

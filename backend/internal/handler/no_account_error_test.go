@@ -185,6 +185,26 @@ func TestClassifyNoAccountError_HasModelSupport_KeepsRoutingMessageGenerationToC
 	require.False(t, cls.ModelNotFound)
 }
 
+func TestClassifyNoAccountError_ModelNotSupportedCooldownExhaustedReturnsStructured400(t *testing.T) {
+	c := newTestGinContextWithRequest()
+	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{
+		HasAccountsInPool:                  true,
+		HasModelSupport:                    true,
+		ModelNotSupportedCooldownExhausted: true,
+	}}
+	apiKey := &service.APIKey{GroupID: ptrInt64(7)}
+
+	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, "gpt-5.6-luna", "gpt-5.6-luna", service.PlatformOpenAI)
+	cls = classifySelectionFailureError(
+		fmt.Errorf("no available accounts supporting model: gpt-5.6-luna (pool=2, filtered: model_rate_limited=2)"),
+		cls,
+	)
+
+	require.Equal(t, http.StatusBadRequest, cls.Status)
+	require.Equal(t, service.OpenAIModelNotSupportedCode, cls.ErrType)
+	require.Equal(t, service.OpenAIModelNotSupportedClientMessage, cls.Message)
+}
+
 func TestClassifyNoAccountError_ModelSupportedOnlyByRateLimitedAccount_Returns503(t *testing.T) {
 	c := newTestGinContextWithRequest()
 	// The diagnoser's configured-state lookup still sees the model-supporting

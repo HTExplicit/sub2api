@@ -456,6 +456,195 @@ func requirePassthroughUpstreamWrite(t *testing.T, upstream *stagedPassthroughCo
 	}
 }
 
+func TestResolveLegacyCindyOpenAIModel(t *testing.T) {
+	legacy := passthroughLifecycleAccount()
+	legacy.Credentials["base_url"] = "https://api.laxarouter.ai"
+	require.Equal(t, "openai/gpt-5.6-luna", resolveLegacyCindyOpenAIModel(legacy, "gpt-5.6-luna"))
+	require.Equal(t, "openai/gpt-5.6-luna", resolveLegacyCindyOpenAIModel(legacy, "gpt-5.4-mini"))
+	ordinary := passthroughLifecycleAccount()
+	require.Equal(t, "gpt-5.6-luna", resolveLegacyCindyOpenAIModel(ordinary, "gpt-5.6-luna"))
+}
+
+func TestReplaceLegacyCindyWSPassthroughSessionModel(t *testing.T) {
+	legacy := passthroughLifecycleAccount()
+	legacy.Credentials["base_url"] = "https://api.laxarouter.ai"
+
+	updated, err := replaceLegacyCindyWSPassthroughSessionModel(
+		legacy,
+		[]byte(`{"type":"session.update","session":{"model":"gpt-5.6-luna"}}`),
+	)
+	require.NoError(t, err)
+	require.Equal(t, "openai/gpt-5.6-luna", gjson.GetBytes(updated, "session.model").String())
+
+	ordinary := passthroughLifecycleAccount()
+	unchanged, err := replaceLegacyCindyWSPassthroughSessionModel(
+		ordinary,
+		[]byte(`{"type":"session.update","session":{"model":"gpt-5.6-luna"}}`),
+	)
+	require.NoError(t, err)
+	require.Equal(t, "gpt-5.6-luna", gjson.GetBytes(unchanged, "session.model").String())
+}
+
+func TestPassthroughLifecycle_LegacyLaxaSessionModelRoundTrip(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	controlCtx, cancelControl := context.WithCancelCause(context.Background())
+	defer cancelControl(context.Canceled)
+	upstream := newStagedPassthroughConn()
+	upstream.Send(`{"type":"response.completed","response":{"id":"resp_luna_1","model":"openai/gpt-5.6-luna","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`)
+
+	account := passthroughLifecycleAccount()
+	account.Credentials["base_url"] = "https://api.laxarouter.ai"
+	results := make(chan *OpenAIForwardResult, 2)
+	server, serverErr := startPassthroughLifecycleServerWithHooks(
+		t,
+		controlCtx,
+		newPassthroughLifecycleService(passthroughLifecycleConfig(), upstream),
+		account,
+		func(*gin.Context) *OpenAIWSIngressHooks {
+			return &OpenAIWSIngressHooks{AfterTurn: func(_ int, result *OpenAIForwardResult, err error) {
+				require.NoError(t, err)
+				results <- result
+			}}
+		},
+	)
+	defer server.Close()
+	clientConn := dialPassthroughLifecycleClientWithPayload(t, server, `{"type":"response.create","model":"gpt-5.6-luna","stream":false}`)
+	defer func() { _ = clientConn.CloseNow() }()
+
+	firstRequest := requirePassthroughUpstreamWrite(t, upstream, 3*time.Second)
+	require.Equal(t, "openai/gpt-5.6-luna", gjson.GetBytes(firstRequest, "model").String())
+	firstEvent, err := readPassthroughLifecycleFrame(t, clientConn, 3*time.Second)
+	require.NoError(t, err)
+	require.Equal(t, "gpt-5.6-luna", gjson.GetBytes(firstEvent, "response.model").String())
+	firstResult := <-results
+	require.Equal(t, "gpt-5.6-luna", firstResult.Model)
+	require.Equal(t, "openai/gpt-5.6-luna", firstResult.UpstreamModel)
+
+	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
+	require.NoError(t, clientConn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"session.update","session":{"model":"gpt-5.6-luna"}}`)))
+	cancelWrite()
+	sessionUpdate := requirePassthroughUpstreamWrite(t, upstream, 3*time.Second)
+	require.Equal(t, "openai/gpt-5.6-luna", gjson.GetBytes(sessionUpdate, "session.model").String())
+
+	writeCtx, cancelWrite = context.WithTimeout(context.Background(), 3*time.Second)
+	require.NoError(t, clientConn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.create","stream":false}`)))
+	cancelWrite()
+	secondRequest := requirePassthroughUpstreamWrite(t, upstream, 3*time.Second)
+	require.Equal(t, "openai/gpt-5.6-luna", gjson.GetBytes(secondRequest, "model").String())
+
+	upstream.Send(`{"type":"response.completed","response":{"id":"resp_luna_2","model":"openai/gpt-5.6-luna","status":"completed","output":[],"usage":{"input_tokens":2,"output_tokens":1}}}`)
+	secondEvent, err := readPassthroughLifecycleFrame(t, clientConn, 3*time.Second)
+	require.NoError(t, err)
+	require.Equal(t, "gpt-5.6-luna", gjson.GetBytes(secondEvent, "response.model").String())
+	secondResult := <-results
+	require.Equal(t, "gpt-5.6-luna", secondResult.Model)
+	require.Equal(t, "openai/gpt-5.6-luna", secondResult.UpstreamModel)
+
+	require.NoError(t, clientConn.Close(coderws.StatusNormalClosure, "done"))
+	select {
+	case <-serverErr:
+	case <-time.After(3 * time.Second):
+		t.Fatal("legacy Laxa session model test did not exit")
+	}
+}
+
+func TestPassthroughLifecycle_LegacyLaxaPlainFullReplayForcesStoreFalse(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	controlCtx, cancelControl := context.WithCancelCause(context.Background())
+	defer cancelControl(context.Canceled)
+	upstream := newStagedPassthroughConn()
+	upstream.Send(`{"type":"response.completed","response":{"id":"resp_laxa_full","model":"openai/gpt-5.6-luna","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`)
+
+	account := passthroughLifecycleAccount()
+	account.Credentials["base_url"] = "https://api.laxarouter.ai"
+	server, serverErr := startPassthroughLifecycleServer(
+		t,
+		controlCtx,
+		newPassthroughLifecycleService(passthroughLifecycleConfig(), upstream),
+		account,
+	)
+	defer server.Close()
+	clientConn := dialPassthroughLifecycleClientWithPayload(t, server, `{"type":"response.create","model":"gpt-5.6-luna","stream":false,"store":true,"input":[{"type":"message","role":"user","content":"hello"}]}`)
+	defer func() { _ = clientConn.CloseNow() }()
+
+	request := requirePassthroughUpstreamWrite(t, upstream, 3*time.Second)
+	require.False(t, gjson.GetBytes(request, "store").Bool(), "legacy Laxa plain full replay must use store=false")
+	completed, err := readPassthroughLifecycleFrame(t, clientConn, 3*time.Second)
+	require.NoError(t, err)
+	require.Equal(t, "resp_laxa_full", gjson.GetBytes(completed, "response.id").String())
+	require.NoError(t, clientConn.Close(coderws.StatusNormalClosure, "done"))
+	select {
+	case err := <-serverErr:
+		require.NoError(t, err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("legacy Laxa full replay test did not exit")
+	}
+}
+
+func TestPassthroughLifecycle_ResponseAffinityOnlyBindsLegacyLaxa(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		legacyLaxa bool
+	}{
+		{name: "ordinary OpenAI"},
+		{name: "legacy Laxa", legacyLaxa: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			controlCtx, cancelControl := context.WithCancelCause(context.Background())
+			defer cancelControl(context.Canceled)
+			upstream := newStagedPassthroughConn()
+			responseID := "resp_affinity_ordinary"
+			if tt.legacyLaxa {
+				responseID = "resp_affinity_laxa"
+			}
+			upstream.Send(`{"type":"response.completed","response":{"id":"` + responseID + `","model":"gpt-5.1","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`)
+
+			svc := newPassthroughLifecycleService(passthroughLifecycleConfig(), upstream)
+			account := passthroughLifecycleAccount()
+			if tt.legacyLaxa {
+				account.Credentials["base_url"] = "https://api.laxarouter.ai"
+			}
+			turnDone := make(chan struct{}, 1)
+			server, serverErr := startPassthroughLifecycleServerWithHooks(
+				t, controlCtx, svc, account,
+				func(*gin.Context) *OpenAIWSIngressHooks {
+					return &OpenAIWSIngressHooks{AfterTurn: func(_ int, _ *OpenAIForwardResult, _ error) {
+						turnDone <- struct{}{}
+					}}
+				},
+			)
+			defer server.Close()
+			clientConn := dialPassthroughLifecycleClient(t, server)
+			defer func() { _ = clientConn.CloseNow() }()
+
+			_ = requirePassthroughUpstreamWrite(t, upstream, 3*time.Second)
+			_, err := readPassthroughLifecycleFrame(t, clientConn, 3*time.Second)
+			require.NoError(t, err)
+			select {
+			case <-turnDone:
+			case <-time.After(3 * time.Second):
+				t.Fatal("passthrough affinity turn did not complete")
+			}
+
+			boundAccountID, err := svc.getOpenAIWSStateStore().GetResponseAccount(context.Background(), 0, responseID)
+			require.NoError(t, err)
+			if tt.legacyLaxa {
+				require.Equal(t, account.ID, boundAccountID)
+			} else {
+				require.Zero(t, boundAccountID)
+			}
+
+			require.NoError(t, clientConn.Close(coderws.StatusNormalClosure, "done"))
+			select {
+			case <-serverErr:
+			case <-time.After(3 * time.Second):
+				t.Fatal("passthrough affinity test did not exit")
+			}
+		})
+	}
+}
+
 func TestPassthroughLifecycle_ResponsesLiteFirstFramePinsParallelToolCalls(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	controlCtx, cancelControl := context.WithCancelCause(context.Background())

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -86,6 +87,104 @@ type openAIResponsesGenericBadRequestUpstream struct {
 	service.HTTPUpstream
 	mu         sync.Mutex
 	accountIDs []int64
+}
+
+type openAIResponsesModelNotSupportedUpstream struct {
+	service.HTTPUpstream
+	mu         sync.Mutex
+	accountIDs []int64
+	requests   [][]byte
+}
+
+type openAIResponsesCooledAccountRepo struct {
+	openAIImagesFailoverAccountRepo
+}
+
+// The common failover repository stub embeds AccountRepository for methods
+// unrelated to these tests. Implement the persistent model-availability query
+// explicitly so continuation classification can inspect accounts even when a
+// transient model cooldown is present.
+func (r openAIImagesFailoverAccountRepo) ListModelAvailabilityCandidates(
+	_ context.Context,
+	_ *int64,
+	platforms []string,
+	_ bool,
+) ([]service.Account, error) {
+	allowed := make(map[string]struct{}, len(platforms))
+	for _, platform := range platforms {
+		allowed[platform] = struct{}{}
+	}
+	result := make([]service.Account, 0, len(r.accounts))
+	for _, account := range r.accounts {
+		if _, ok := allowed[account.Platform]; !ok || !account.IsActive() || !account.Schedulable {
+			continue
+		}
+		result = append(result, account)
+	}
+	return result, nil
+}
+
+func (r openAIResponsesCooledAccountRepo) ListByPlatform(_ context.Context, platform string) ([]service.Account, error) {
+	return r.accountsForPlatform(platform), nil
+}
+
+func (r openAIResponsesCooledAccountRepo) ListByGroup(_ context.Context, _ int64) ([]service.Account, error) {
+	return append([]service.Account(nil), r.accounts...), nil
+}
+
+// The shared failover repository stub embeds the production interface for
+// unrelated methods. Provide the persistent-eligibility query explicitly so
+// the legacy cooldown diagnosis can inspect accounts whose transient model
+// limits would otherwise be filtered by ListSchedulable*.
+func (r openAIResponsesCooledAccountRepo) ListModelAvailabilityCandidates(
+	_ context.Context,
+	_ *int64,
+	platforms []string,
+	_ bool,
+) ([]service.Account, error) {
+	allowed := make(map[string]struct{}, len(platforms))
+	for _, platform := range platforms {
+		allowed[platform] = struct{}{}
+	}
+	result := make([]service.Account, 0, len(r.accounts))
+	for _, account := range r.accounts {
+		if _, ok := allowed[account.Platform]; !ok || !account.IsActive() || !account.Schedulable {
+			continue
+		}
+		result = append(result, account)
+	}
+	return result, nil
+}
+
+func (u *openAIResponsesModelNotSupportedUpstream) Do(req *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
+	requestBody, _ := io.ReadAll(req.Body)
+	u.mu.Lock()
+	u.accountIDs = append(u.accountIDs, accountID)
+	u.requests = append(u.requests, requestBody)
+	u.mu.Unlock()
+	return &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body: io.NopCloser(bytes.NewBufferString(
+			`{"error":{"code":400,"type":"model_not_supported","message":"model is not supported"}}`,
+		)),
+	}, nil
+}
+
+func (u *openAIResponsesModelNotSupportedUpstream) bodies() [][]byte {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	result := make([][]byte, len(u.requests))
+	for i := range u.requests {
+		result[i] = append([]byte(nil), u.requests[i]...)
+	}
+	return result
+}
+
+func (u *openAIResponsesModelNotSupportedUpstream) calls() []int64 {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return append([]int64(nil), u.accountIDs...)
 }
 
 func (u *openAIResponsesGenericBadRequestUpstream) Do(_ *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
@@ -363,4 +462,128 @@ func TestOpenAIGatewayHandlerResponses_StreamingOpaqueContinuationToolChainStops
 	require.True(t, ok)
 	require.Len(t, events, 1)
 	require.Equal(t, "continuation_state", events[0].Kind)
+}
+
+func TestLegacyLaxaContinuationModelNotSupportedDoesNotReplayAcrossAccounts(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstream := &openAIResponsesModelNotSupportedUpstream{}
+	accounts := []service.Account{
+		{
+			ID: 1, Name: "legacy-laxa-a", Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
+			Status: service.StatusActive, Schedulable: true, Concurrency: 0,
+			Credentials: map[string]any{"api_key": "test-a", "base_url": "https://api.laxarouter.ai"},
+			Extra:       map[string]any{"openai_passthrough": true},
+		},
+		{
+			ID: 2, Name: "legacy-laxa-b", Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
+			Status: service.StatusActive, Schedulable: true, Concurrency: 0, Priority: 1,
+			Credentials: map[string]any{"api_key": "test-b", "base_url": "https://api.laxarouter.ai"},
+			Extra:       map[string]any{"openai_passthrough": true},
+		},
+	}
+	cfg := &config.Config{RunMode: config.RunModeSimple}
+	repo := openAIResponsesCooledAccountRepo{
+		openAIImagesFailoverAccountRepo: openAIImagesFailoverAccountRepo{accounts: accounts},
+	}
+	gateway := service.NewOpenAIGatewayService(
+		repo, nil, nil, nil, nil, nil, nil,
+		cfg, nil, nil, nil, nil, nil, upstream, nil, nil, nil, nil, nil, nil, nil, nil,
+	)
+	billing := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
+	t.Cleanup(billing.Stop)
+	handler := NewOpenAIGatewayHandler(gateway, service.NewConcurrencyService(nil), billing,
+		service.NewAPIKeyService(nil, nil, nil, nil, nil, nil, cfg), nil, nil, nil, nil, cfg)
+	handler.maxAccountSwitches = 10
+
+	body := []byte(`{"model":"gpt-5.6-luna","stream":false,"store":true,"input":[{"type":"reasoning","encrypted_content":"opaque-state"}]}`)
+	c, rec := newOpenAIResponsesFailoverTestContextWithBody(t, nil, body)
+	handler.Responses(c)
+
+	require.Equal(t, []int64{1}, upstream.calls(), "opaque legacy Laxa continuation must not replay to account 2")
+	require.False(t, gjson.GetBytes(upstream.bodies()[0], "store").Bool(), "legacy Laxa opaque replay must be normalized to store=false")
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Equal(t, service.OpenAIModelNotSupportedCode, gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
+	require.Equal(t, service.OpenAIModelNotSupportedCode, gjson.GetBytes(rec.Body.Bytes(), "error.code").String())
+}
+
+func TestLegacyLaxaPreCooledPoolReturnsModelNotSupportedWithoutUpstreamReplay(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	resetAt := time.Now().Add(30 * time.Minute).UTC().Format(time.RFC3339)
+	accounts := make([]service.Account, 0, 2)
+	for id := int64(1); id <= 2; id++ {
+		accounts = append(accounts, service.Account{
+			ID: id, Name: "legacy-laxa", Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
+			Status: service.StatusActive, Schedulable: true, Concurrency: 0,
+			Credentials: map[string]any{"api_key": "test", "base_url": "https://api.laxarouter.ai"},
+			Extra: map[string]any{
+				"openai_passthrough": true,
+				"model_rate_limits": map[string]any{
+					"openai/gpt-5.6-luna": map[string]any{
+						"rate_limit_reset_at": resetAt,
+						"reason":              "upstream_400_model_not_supported",
+					},
+				},
+			},
+		})
+	}
+	upstream := &openAIResponsesModelNotSupportedUpstream{}
+	repo := openAIResponsesCooledAccountRepo{
+		openAIImagesFailoverAccountRepo: openAIImagesFailoverAccountRepo{accounts: accounts},
+	}
+	cfg := &config.Config{RunMode: config.RunModeSimple}
+	gateway := service.NewOpenAIGatewayService(
+		repo, nil, nil, nil, nil, nil, nil, cfg, nil, nil, nil, nil, nil, upstream,
+		nil, nil, nil, nil, nil, nil, nil, nil,
+	)
+	billing := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
+	t.Cleanup(billing.Stop)
+	handler := NewOpenAIGatewayHandler(gateway, service.NewConcurrencyService(nil), billing,
+		service.NewAPIKeyService(nil, nil, nil, nil, nil, nil, cfg), nil, nil, nil, nil, cfg)
+	body := []byte(`{"model":"gpt-5.6-luna","stream":false,"input":"hello"}`)
+	c, rec := newOpenAIResponsesFailoverTestContextWithBody(t, nil, body)
+
+	handler.Responses(c)
+
+	require.Empty(t, upstream.calls())
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Equal(t, service.OpenAIModelNotSupportedCode, gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
+	require.Equal(t, service.OpenAIModelNotSupportedCode, gjson.GetBytes(rec.Body.Bytes(), "error.code").String())
+}
+
+func TestMixedOpenAIAndLaxaReferenceOnlyRequestKeepsOrdinaryScheduling(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	accounts := []service.Account{
+		{
+			ID: 1, Name: "ordinary-openai", Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
+			Status: service.StatusActive, Schedulable: true, Concurrency: 0,
+			Credentials: map[string]any{"api_key": "ordinary", "base_url": "https://api.openai.com"},
+			Extra:       map[string]any{"openai_passthrough": true},
+		},
+		{
+			ID: 2, Name: "legacy-laxa", Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
+			Status: service.StatusActive, Schedulable: true, Concurrency: 0, Priority: 1,
+			Credentials: map[string]any{"api_key": "laxa", "base_url": "https://api.laxarouter.ai"},
+			Extra:       map[string]any{"openai_passthrough": true},
+		},
+	}
+	repo := openAIResponsesCooledAccountRepo{
+		openAIImagesFailoverAccountRepo: openAIImagesFailoverAccountRepo{accounts: accounts},
+	}
+	upstream := &openAIHTTPPassthroughFailoverUpstream{succeedOnCall: 1}
+	cfg := &config.Config{RunMode: config.RunModeSimple}
+	gateway := service.NewOpenAIGatewayService(
+		repo, nil, nil, nil, nil, nil, nil, cfg, nil, nil, nil, nil, nil, upstream,
+		nil, nil, nil, nil, nil, nil, nil, nil,
+	)
+	billing := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
+	t.Cleanup(billing.Stop)
+	handler := NewOpenAIGatewayHandler(gateway, service.NewConcurrencyService(nil), billing,
+		service.NewAPIKeyService(nil, nil, nil, nil, nil, nil, cfg), nil, nil, nil, nil, cfg)
+	body := []byte(`{"model":"gpt-5.6-luna","stream":false,"input":[{"type":"reasoning","id":"rs_external"}]}`)
+	c, rec := newOpenAIResponsesFailoverTestContextWithBody(t, nil, body)
+
+	handler.Responses(c)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Equal(t, []int64{1}, upstream.calls(), "a mixed group must not force an ordinary reference onto the Laxa session selector")
 }

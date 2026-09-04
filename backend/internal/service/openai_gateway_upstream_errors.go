@@ -270,6 +270,24 @@ func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(statusCode i
 	return isOpenAITransientProcessingError(statusCode, upstreamMsg, upstreamBody)
 }
 
+// shouldFailoverOpenAIUpstreamResponseForAccount adds the one capability
+// failure that is meaningful only for a Cindy/Laxa API-key credential.  Keep
+// the transport-only classifier above account-agnostic so a model_not_supported
+// payload from an ordinary OpenAI-compatible provider remains a deterministic
+// client 400 rather than being replayed across its pool.
+func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponseForAccount(
+	account *Account,
+	statusCode int,
+	upstreamMsg string,
+	upstreamBody []byte,
+) bool {
+	if isOpenAIModelNotSupportedError(statusCode, upstreamMsg, upstreamBody) {
+		return account != nil &&
+			IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+	}
+	return s.shouldFailoverOpenAIUpstreamResponse(statusCode, upstreamMsg, upstreamBody)
+}
+
 // OpenAIRequestBodyTooLargeClientMessage is the fixed downstream message used
 // after all account-specific request body limit failovers are exhausted.
 const OpenAIRequestBodyTooLargeClientMessage = "Request payload is too large"

@@ -210,8 +210,18 @@ func (s *OpenAIGatewayService) cindyHTTPToWSV2FirstTurnFailover(
 		}
 	}
 
-	_, failoverErr := openAIWSInitialDialFailover(err)
+	_, failoverErr := openAIWSInitialDialFailover(account, err)
 	if failoverErr != nil {
+		var dialErr *openAIWSDialError
+		if errors.As(err, &dialErr) && dialErr != nil &&
+			isOpenAIModelNotSupportedError(dialErr.StatusCode, "", dialErr.ResponseBody) {
+			_ = s.handleOpenAIAccountUpstreamError(
+				ctx, account, http.StatusBadRequest, dialErr.ResponseHeaders, dialErr.ResponseBody, canonicalModel,
+			)
+			return finishOpenAICindyHTTPToWSV2Failover(
+				c, account, newOpenAIModelNotSupportedFailoverError(dialErr.ResponseHeaders, dialErr.ResponseBody),
+			)
+		}
 		failoverErr.RetryableOnSameAccount = false
 		if dialErr != nil && (dialErr.StatusCode == 0 || dialErr.StatusCode == http.StatusRequestTimeout ||
 			dialErr.StatusCode >= http.StatusInternalServerError) {
@@ -257,6 +267,18 @@ func (s *OpenAIGatewayService) cindyHTTPToWSV2FirstTurnEventFailover(
 		return failoverErr, true
 	}
 	statusCode := openAIWSPayloadStatus(payload)
+	if statusCode == http.StatusBadRequest && isOpenAIModelNotSupportedPayload(payload) {
+		// The first HTTP->WSv2 turn is still safe to replay on another
+		// credential.  Persist only the Cindy account/model cooldown; do not
+		// treat this as a generic terminal/provider failure.
+		model := strings.TrimSpace(canonicalModel)
+		if model == "" {
+			model = firstNonEmpty(gjson.GetBytes(payload, "model").String(), gjson.GetBytes(payload, "response.model").String())
+		}
+		_ = s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, nil, payload, model)
+		failoverErr := newOpenAIModelNotSupportedFailoverError(headers, payload)
+		return sanitizeOpenAICindyFailoverError(failoverErr), true
+	}
 	if statusCode != http.StatusForbidden && statusCode != http.StatusTooManyRequests &&
 		statusCode < http.StatusInternalServerError {
 		return nil, false

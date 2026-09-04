@@ -2794,6 +2794,22 @@ func TestOpenAIAccountScheduler_SkipsAccountBlockedForRequestedModel(t *testing.
 	require.True(t, scheduler.isAccountRequestCompatible(context.Background(), account, OpenAIAccountScheduleRequest{RequestedModel: "gpt-5.6-sol"}))
 }
 
+func TestOpenAIAccountScheduler_ReportsPersistentModelCooldown(t *testing.T) {
+	reset := time.Now().Add(time.Minute)
+	account := &Account{
+		ID: 21634, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Status: StatusActive, Schedulable: true,
+		Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"},
+		Extra: map[string]any{modelRateLimitsKey: map[string]any{
+			"openai/gpt-5.6-luna": map[string]any{"rate_limit_reset_at": reset.UTC().Format(time.RFC3339)},
+		}},
+	}
+	scheduler := &defaultOpenAIAccountScheduler{}
+	ok, reason := scheduler.isAccountRequestCompatibleReason(context.Background(), account, OpenAIAccountScheduleRequest{RequestedModel: "gpt-5.6-luna"})
+	require.False(t, ok)
+	require.Equal(t, "model_rate_limited", reason)
+}
+
 func TestReportOpenAIAccountScheduleResult_SuccessClearsOnlyExpiredModelTransientState(t *testing.T) {
 	svc := &OpenAIGatewayService{openaiModelTransient: newOpenAIAccountModelTransientState(128)}
 	now := time.Now()

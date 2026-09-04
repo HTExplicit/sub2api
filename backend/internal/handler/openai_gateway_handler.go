@@ -568,9 +568,16 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	}
 	service.SetCindyManagedCompatibility(c, cindyIdentityGroup)
 	cindyContinuation := service.CindyContinuationClassification{}
+	legacyLaxaGroup := false
+	legacyLaxaOnlyGroup := false
+	legacyLaxaContinuation := service.CindyContinuationClassification{}
+	legacyLaxaContinuationKnown := false
 	var opaqueContinuationBindingIDs []string
+	var legacyLaxaOpaqueContinuationBindingIDs []string
+	legacyLaxaOpaqueContinuationBindingMiss := false
 	opaqueContinuationBindingMiss := false
 	legacySessionContinuation := false
+	legacyLaxaSessionContinuation := false
 	if cindyIdentityGroup {
 		cindyContinuation, err = service.ClassifyCindyContinuation(body, service.CindyContinuationProof{})
 		if err != nil {
@@ -601,6 +608,56 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			if err != nil {
 				h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to normalize continuation request")
 				return
+			}
+		}
+	}
+	// Legacy Laxa accounts are represented as PlatformOpenAI while the
+	// compatibility projection is active, so they do not make the group a
+	// canonical Cindy identity group. Still classify non-portable continuation
+	// payloads and require their account/opaque binding before scheduling.
+	legacyContinuationPlatform := openAICompatibleRequestPlatform(c.Request.Context(), apiKey)
+	if !cindyIdentityGroup && legacyContinuationPlatform == service.PlatformOpenAI &&
+		legacyLaxaContinuationPayloadCandidate(body) {
+		legacyLaxaGroup, legacyLaxaOnlyGroup, err = h.gatewayService.ClassifyLegacyLaxaAccountPool(c.Request.Context(), apiKey.GroupID)
+		if err != nil {
+			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine continuation account")
+			return
+		}
+		if legacyLaxaGroup {
+			legacyLaxaContinuation, err = service.ClassifyCindyContinuation(body, service.CindyContinuationProof{})
+			if err != nil {
+				h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to classify continuation state")
+				return
+			}
+			legacyLaxaContinuationKnown = true
+			switch legacyLaxaContinuation.Mode {
+			case service.CindyContinuationReferenceOnly:
+				legacyLaxaSessionContinuation = legacyLaxaOnlyGroup && !legacyLaxaContinuation.HasAnchor
+			case service.CindyContinuationOpaqueFull:
+				lookup := h.gatewayService.LookupCindyOpaqueContinuationBinding(
+					c.Request.Context(), apiKey.Group.ID, legacyLaxaContinuation.OpaqueBindingIDs,
+				)
+				switch lookup.State {
+				case service.OpenAIContinuationBindingHit:
+					legacyLaxaOpaqueContinuationBindingIDs = append([]string(nil), legacyLaxaContinuation.OpaqueBindingIDs...)
+				case service.OpenAIContinuationBindingStoreError:
+					h.handleFailoverExhausted(c, service.NewOpenAIContinuationStoreUnavailableError(), false)
+					return
+				default:
+					// A self-contained opaque payload may still be attempted on the
+					// normally selected account. Keep the miss marker so a capability
+					// failure cannot replay that credential-bound state onto a sibling;
+					// forcing a sticky-session lookup here would reject the first
+					// attempt when older rows have no durable session record.
+					legacyLaxaOpaqueContinuationBindingMiss = true
+				}
+			}
+			if !legacyLaxaContinuation.HasAnchor && legacyLaxaContinuation.Mode != service.CindyContinuationReferenceOnly {
+				body, err = service.EnsureCindyResponsesStoreFalse(body)
+				if err != nil {
+					h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to normalize continuation request")
+					return
+				}
 			}
 		}
 	}
@@ -817,9 +874,19 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				c.Request.Context(), apiKey.GroupID, opaqueContinuationBindingIDs, routingModel,
 				failedAccountIDs, service.OpenAIUpstreamTransportAny, requiredCapability, requireCompact,
 			)
+		} else if len(legacyLaxaOpaqueContinuationBindingIDs) > 0 {
+			selection, scheduleDecision, err = h.gatewayService.SelectAccountByLegacyLaxaOpaqueContinuation(
+				c.Request.Context(), apiKey.GroupID, legacyLaxaOpaqueContinuationBindingIDs, routingModel,
+				failedAccountIDs, service.OpenAIUpstreamTransportAny, requiredCapability, requireCompact,
+			)
 		} else if legacySessionContinuation {
 			selection, scheduleDecision, err = h.gatewayService.SelectAccountByCindyLegacySessionContinuation(
 				c.Request.Context(), apiKey.GroupID, sessionHash, cindyContinuation.OpaqueBindingIDs,
+				routingModel, failedAccountIDs, service.OpenAIUpstreamTransportAny, requiredCapability, requireCompact,
+			)
+		} else if legacyLaxaSessionContinuation {
+			selection, scheduleDecision, err = h.gatewayService.SelectAccountByLegacyLaxaSessionContinuation(
+				c.Request.Context(), apiKey.GroupID, sessionHash, legacyLaxaContinuation.OpaqueBindingIDs,
 				routingModel, failedAccountIDs, service.OpenAIUpstreamTransportAny, requiredCapability, requireCompact,
 			)
 		} else {
@@ -867,7 +934,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				if !cls.ModelNotFound {
 					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 				}
-				h.handleStreamingAwareError(c, cls.Status, cls.ErrType, cls.Message, streamStarted)
+				h.handleOpenAINoAccountError(c, cls, streamStarted)
 				return
 			}
 			if lastFailoverErr != nil {
@@ -882,7 +949,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			if !cls.ModelNotFound {
 				markOpsRoutingCapacityLimited(c)
 			}
-			h.handleStreamingAwareError(c, cls.Status, cls.ErrType, cls.Message, streamStarted)
+			h.handleOpenAINoAccountError(c, cls, streamStarted)
 			return
 		}
 		if previousResponseID != "" && selection != nil && selection.Account != nil {
@@ -1052,6 +1119,15 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
+					// A legacy Laxa row still appears as an OpenAI account, so it does
+					// not enter the first-class Cindy continuation branch below. Do
+					// not replay any account-bound response anchor or opaque carrier on
+					// another credential, regardless of the upstream failure reason.
+					if !legacyLaxaContinuationCanSwitchAccount(account, body) {
+						finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(routingModel), failoverErr, openAIFailoverRetryStop)
+						h.handleFailoverExhausted(c, failoverErr, streamStarted)
+						return
+					}
 					retryAction := retryState.Handle(
 						c.Request.Context(),
 						h.gatewayService,
@@ -1078,7 +1154,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
-					if cindyIdentityGroup && !cindyContinuation.CanSwitchAccount() && !opaqueContinuationBindingMiss {
+					if (cindyIdentityGroup && !cindyContinuation.CanSwitchAccount() && !opaqueContinuationBindingMiss) ||
+						(service.IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
+							legacyLaxaGroup && legacyLaxaContinuationKnown &&
+							(!legacyLaxaContinuation.CanSwitchAccount() || legacyLaxaOpaqueContinuationBindingMiss)) {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
@@ -2630,6 +2709,11 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	wsCindyContinuation := service.CindyContinuationClassification{}
 	var wsOpaqueContinuationBindingIDs []string
 	wsLegacyOpaqueContinuationBindingMiss := false
+	wsLegacyLaxaGroup := false
+	wsLegacyLaxaOnlyGroup := false
+	wsLegacyLaxaContinuation := service.CindyContinuationClassification{}
+	var wsLegacyLaxaOpaqueContinuationBindingIDs []string
+	wsLegacyLaxaSessionContinuation := false
 	if cindyIdentityGroup {
 		classification, classifyErr := service.ClassifyCindyContinuation(firstMessage, service.CindyContinuationProof{})
 		if classifyErr != nil {
@@ -2649,6 +2733,53 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				return
 			default:
 				wsLegacyOpaqueContinuationBindingMiss = true
+			}
+		}
+	}
+	legacyWSPlatform := ""
+	if apiKey.Group != nil && apiKey.Group.Platform == service.PlatformOpenAI {
+		legacyWSPlatform = service.PlatformOpenAI
+	} else if platform, ok := service.ResolvedTargetPlatformFromContext(ctx); ok {
+		legacyWSPlatform = service.NormalizeOpenAICompatiblePlatform(platform)
+	}
+	if !cindyIdentityGroup && legacyWSPlatform == service.PlatformOpenAI && legacyLaxaContinuationPayloadCandidate(firstMessage) {
+		wsLegacyLaxaGroup, wsLegacyLaxaOnlyGroup, err = h.gatewayService.ClassifyLegacyLaxaAccountPool(ctx, apiKey.GroupID)
+		if err != nil {
+			closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "unable to determine continuation account")
+			return
+		}
+		if wsLegacyLaxaGroup {
+			wsLegacyLaxaContinuation, err = service.ClassifyCindyContinuation(firstMessage, service.CindyContinuationProof{})
+			if err != nil {
+				closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "invalid continuation payload")
+				return
+			}
+			switch wsLegacyLaxaContinuation.Mode {
+			case service.CindyContinuationReferenceOnly:
+				wsLegacyLaxaSessionContinuation = wsLegacyLaxaOnlyGroup && !wsLegacyLaxaContinuation.HasAnchor
+			case service.CindyContinuationOpaqueFull:
+				lookup := h.gatewayService.LookupCindyOpaqueContinuationBinding(
+					ctx, apiKey.Group.ID, wsLegacyLaxaContinuation.OpaqueBindingIDs,
+				)
+				switch lookup.State {
+				case service.OpenAIContinuationBindingHit:
+					wsLegacyLaxaOpaqueContinuationBindingIDs = append([]string(nil), wsLegacyLaxaContinuation.OpaqueBindingIDs...)
+				case service.OpenAIContinuationBindingStoreError:
+					closeOpenAIWSFailoverExhausted(c, wsConn, service.NewOpenAIContinuationStoreUnavailableError())
+					return
+				default:
+					// Allow the first attempt through ordinary account selection when
+					// no durable opaque owner survived. Replay safety is derived from
+					// the classified opaque state below, so a capability failure cannot
+					// move this credential-bound payload to a sibling account.
+				}
+			}
+			if !wsLegacyLaxaContinuation.HasAnchor && wsLegacyLaxaContinuation.Mode != service.CindyContinuationReferenceOnly {
+				firstMessage, err = service.EnsureCindyResponsesStoreFalse(firstMessage)
+				if err != nil {
+					closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "invalid continuation payload")
+					return
+				}
 			}
 		}
 	}
@@ -2785,7 +2916,6 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	}
 	previousResponseCanMove := openAIWSPreviousResponseCanMove(firstMessage, previousResponseID, cindyIdentityGroup)
 	accountSwitchReplaySafe := openAIWSInitialAccountSwitchReplaySafe(firstMessage, previousResponseCanMove, cindyIdentityGroup)
-
 	sessionHash := h.gatewayService.GenerateSessionHashWithFallback(
 		c,
 		firstMessage,
@@ -2813,7 +2943,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		}
 		releaseAccountSlot()
 		if failoverErr.ShouldRetryNextAccount() && !accountSwitchReplaySafe {
-			if previousResponseID != "" {
+			if failoverErr.IsOpenAIModelNotSupported() && wsLegacyLaxaGroup && !wsLegacyLaxaContinuation.CanSwitchAccount() {
+				closeOpenAIWSFailoverExhausted(c, wsConn, failoverErr)
+			} else if previousResponseID != "" || (cindyIdentityGroup && !wsCindyContinuation.CanSwitchAccount()) ||
+				(service.IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) && !openAIWSLegacyLaxaReplaySafe(wsAttemptMessage)) {
 				closeOpenAIWSFailoverExhausted(c, wsConn, service.NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil))
 			} else {
 				writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
@@ -2825,6 +2958,11 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		}
 		if !failoverErr.ShouldRetryNextAccount() {
 			closeOpenAIWSFailoverExhausted(c, wsConn, failoverErr)
+			return false
+		}
+		if service.IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
+			!openAIWSLegacyLaxaReplaySafe(wsAttemptMessage) {
+			closeOpenAIWSFailoverExhausted(c, wsConn, service.NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil))
 			return false
 		}
 		if ctx.Err() != nil {
@@ -2888,6 +3026,29 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				requiredCapability,
 				false,
 			)
+		} else if len(wsLegacyLaxaOpaqueContinuationBindingIDs) > 0 {
+			selection, scheduleDecision, err = h.gatewayService.SelectAccountByLegacyLaxaOpaqueContinuation(
+				ctx,
+				apiKey.GroupID,
+				wsLegacyLaxaOpaqueContinuationBindingIDs,
+				wsRoutingModel,
+				failedAccountIDs,
+				requiredTransport,
+				requiredCapability,
+				false,
+			)
+		} else if wsLegacyLaxaSessionContinuation {
+			selection, scheduleDecision, err = h.gatewayService.SelectAccountByLegacyLaxaSessionContinuation(
+				ctx,
+				apiKey.GroupID,
+				sessionHash,
+				wsLegacyLaxaContinuation.OpaqueBindingIDs,
+				wsRoutingModel,
+				failedAccountIDs,
+				requiredTransport,
+				requiredCapability,
+				false,
+			)
 		} else if wsLegacyOpaqueContinuationBindingMiss {
 			selection, scheduleDecision, err = h.gatewayService.SelectAccountByCindyLegacySessionContinuation(
 				ctx,
@@ -2930,6 +3091,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				zap.Error(openAICompatibleSelectionErrorForLog(err, requestPlatform)),
 				zap.Int("excluded_account_count", len(failedAccountIDs)),
 			)
+			if wsSelectionModelNotSupported(c, h.gatewayService, apiKey, wsRoutingModel, reqModel, requestPlatform) {
+				closeOpenAIWSModelNotSupported(c, wsConn)
+				return
+			}
 			if lastFailoverErr != nil {
 				closeOpenAIWSFailoverExhausted(c, wsConn, lastFailoverErr)
 			} else {
@@ -2938,6 +3103,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			return
 		}
 		if selection == nil || selection.Account == nil {
+			if wsSelectionModelNotSupported(c, h.gatewayService, apiKey, wsRoutingModel, reqModel, requestPlatform) {
+				closeOpenAIWSModelNotSupported(c, wsConn)
+				return
+			}
 			if lastFailoverErr != nil {
 				closeOpenAIWSFailoverExhausted(c, wsConn, lastFailoverErr)
 			} else {
@@ -2947,6 +3116,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		}
 
 		account := selection.Account
+		if service.IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
+			!openAIWSLegacyLaxaReplaySafe(wsAttemptMessage) {
+			accountSwitchReplaySafe = false
+		}
 		currentAccountSelection = selection
 		accountMaxConcurrency := account.Concurrency
 		if selection.WaitPlan != nil && selection.WaitPlan.MaxConcurrency > 0 {
@@ -3280,6 +3453,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		}
 		wsAttemptMessage = wsFirstMessage
 		accountSwitchReplaySafe = openAIWSInitialAccountSwitchReplaySafe(wsFirstMessage, previousResponseCanMove, cindyIdentityGroup)
+		if service.IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
+			!openAIWSLegacyLaxaReplaySafe(wsFirstMessage) {
+			accountSwitchReplaySafe = false
+		}
 
 		// WebSocket 首包可能很大，hash 必须在 hooks 外算成字符串，避免 AfterTurn 闭包保活请求体。
 		requestPayloadHash = service.HashUsageRequestPayload(wsFirstMessage)
@@ -3866,6 +4043,23 @@ func (h *OpenAIGatewayHandler) handleConcurrencyError(c *gin.Context, err error,
 	h.handleStreamingAwareError(c, status, errType, message, streamStarted)
 }
 
+func (h *OpenAIGatewayHandler) handleOpenAINoAccountError(c *gin.Context, classification noAccountErrorClassification, streamStarted bool) {
+	if classification.ErrType == service.OpenAIModelNotSupportedCode {
+		service.SetOpsUpstreamError(c, http.StatusBadRequest, classification.Message, "")
+		h.handleStreamingAwareErrorWithCode(
+			c,
+			classification.Status,
+			service.OpenAIModelNotSupportedCode,
+			service.OpenAIModelNotSupportedCode,
+			classification.Message,
+			streamStarted,
+			false,
+		)
+		return
+	}
+	h.handleStreamingAwareError(c, classification.Status, classification.ErrType, classification.Message, streamStarted)
+}
+
 func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError, streamStarted bool) {
 	if failoverErr == nil {
 		h.handleFailoverExhaustedSimple(c, http.StatusBadGateway, streamStarted)
@@ -3879,6 +4073,19 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 			"invalid_request_error",
 			service.OpenAIRequestBodyTooLargeClientMessage,
 			streamStarted,
+		)
+		return
+	}
+	if failoverErr.IsOpenAIModelNotSupported() {
+		service.SetOpsUpstreamError(c, http.StatusBadRequest, service.OpenAIModelNotSupportedClientMessage, "")
+		h.handleStreamingAwareErrorWithCode(
+			c,
+			http.StatusBadRequest,
+			service.OpenAIModelNotSupportedCode,
+			service.OpenAIModelNotSupportedCode,
+			service.OpenAIModelNotSupportedClientMessage,
+			streamStarted,
+			false,
 		)
 		return
 	}
@@ -4107,6 +4314,12 @@ func (h *OpenAIGatewayHandler) handleStreamingAwareErrorWithDetails(
 	countTowardsSLA bool,
 	retryable bool,
 ) {
+	if errType == service.OpenAIModelNotSupportedCode {
+		status = http.StatusBadRequest
+		code = service.OpenAIModelNotSupportedCode
+		message = service.OpenAIModelNotSupportedClientMessage
+		retryable = false
+	}
 	// body-signal compact 心跳可能已把响应头提交为 200：先停心跳（建立
 	// happens-before，接管 ResponseWriter），并升级为流内错误处理。
 	if service.StopOpenAICompactSSEKeepaliveCommitted(c) {
@@ -4390,6 +4603,33 @@ func openAIWSNextAttemptMessage(current, retryPayload []byte, retryCurrentTurn b
 	return append([]byte(nil), retryPayload...), true
 }
 
+// wsSelectionModelNotSupported reuses the persistent availability diagnosis
+// on the WebSocket account-selection path.  Unlike HTTP Responses, WS has no
+// response writer status to carry the exhausted-account result; callers use
+// this predicate to emit the same structured model_not_supported terminal.
+func wsSelectionModelNotSupported(
+	c *gin.Context,
+	diagnoser service.ModelAvailabilityDiagnoser,
+	apiKey *service.APIKey,
+	routingModel string,
+	displayModel string,
+	platform string,
+) bool {
+	classification := classifyNoAccountErrorFromGin(c, diagnoser, apiKey, routingModel, displayModel, platform)
+	return classification.ErrType == service.OpenAIModelNotSupportedCode
+}
+
+func closeOpenAIWSModelNotSupported(c *gin.Context, conn *coderws.Conn) {
+	service.SetOpsUpstreamError(c, http.StatusBadRequest, service.OpenAIModelNotSupportedClientMessage, "")
+	service.MarkOpsStreamFailure(c, service.OpenAIModelNotSupportedCode, service.OpenAIModelNotSupportedCode, service.OpenAIModelNotSupportedClientMessage, http.StatusBadRequest)
+	writeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if conn != nil {
+		_ = conn.Write(writeCtx, coderws.MessageText, openAIWSModelNotSupportedFailureEvent())
+	}
+	cancel()
+	closeOpenAIClientWS(conn, coderws.StatusPolicyViolation, service.OpenAIModelNotSupportedClientMessage)
+}
+
 func closeOpenAIWSFailoverExhausted(c *gin.Context, conn *coderws.Conn, failoverErr *service.UpstreamFailoverError) {
 	intendedStatus := http.StatusBadGateway
 	errorType := "upstream_error"
@@ -4400,6 +4640,11 @@ func closeOpenAIWSFailoverExhausted(c *gin.Context, conn *coderws.Conn, failover
 			errorCode = reason
 		}
 		switch {
+		case failoverErr.IsOpenAIModelNotSupported():
+			intendedStatus = http.StatusBadRequest
+			errorType = service.OpenAIModelNotSupportedCode
+			errorCode = service.OpenAIModelNotSupportedCode
+			message = service.OpenAIModelNotSupportedClientMessage
 		case failoverErr.IsOpenAIContinuationStateUnavailable():
 			intendedStatus = http.StatusBadRequest
 			errorType = "invalid_request_error"
@@ -4440,6 +4685,13 @@ func closeOpenAIWSFailoverExhausted(c *gin.Context, conn *coderws.Conn, failover
 		closeOpenAIClientWS(conn, coderws.StatusPolicyViolation, "continuation state unavailable; start a new conversation")
 		return
 	}
+	if failoverErr.IsOpenAIModelNotSupported() {
+		writeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = conn.Write(writeCtx, coderws.MessageText, openAIWSModelNotSupportedFailureEvent())
+		cancel()
+		closeOpenAIClientWS(conn, coderws.StatusPolicyViolation, service.OpenAIModelNotSupportedClientMessage)
+		return
+	}
 	if failoverErr.Stage == service.GatewayFailureStageAccountAuth {
 		closeOpenAIClientWS(conn, coderws.StatusTryAgainLater, service.GrokCredentialUnavailableClientMessage)
 		return
@@ -4473,6 +4725,27 @@ func openAIWSContinuationStateUnavailableFailureEvent() []byte {
 	})
 	if err != nil {
 		return []byte(`{"type":"response.failed","response":{"id":"resp_continuation_state_unavailable","object":"response","status":"failed","output":[],"error":{"type":"invalid_request_error","code":"continuation_state_unavailable","message":"This conversation can no longer be resumed because its upstream state is unavailable. Start a new conversation to continue."}}}`)
+	}
+	return payload
+}
+
+func openAIWSModelNotSupportedFailureEvent() []byte {
+	payload, err := json.Marshal(gin.H{
+		"type": "response.failed",
+		"response": gin.H{
+			"id":     "resp_model_not_supported",
+			"object": "response",
+			"status": "failed",
+			"output": []any{},
+			"error": gin.H{
+				"type":    service.OpenAIModelNotSupportedCode,
+				"code":    service.OpenAIModelNotSupportedCode,
+				"message": service.OpenAIModelNotSupportedClientMessage,
+			},
+		},
+	})
+	if err != nil {
+		return []byte(`{"type":"response.failed","response":{"id":"resp_model_not_supported","object":"response","status":"failed","output":[],"error":{"type":"model_not_supported","code":"model_not_supported","message":"The requested model is temporarily unavailable. Please try again later."}}}`)
 	}
 	return payload
 }

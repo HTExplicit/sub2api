@@ -169,6 +169,43 @@ func (s *OpenAIGatewayService) SelectAccountByCindyOpaqueContinuation(
 	requiredCapability OpenAIEndpointCapability,
 	requireCompact bool,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+	return s.selectAccountByOpaqueContinuation(
+		ctx, groupID, bindingIDs, requestedModel, excludedIDs, requiredTransport,
+		requiredCapability, requireCompact, false,
+	)
+}
+
+// SelectAccountByLegacyLaxaOpaqueContinuation is the compatibility-window
+// equivalent of SelectAccountByCindyOpaqueContinuation. It preserves the
+// opaque binding's account affinity while accepting the temporary
+// PlatformOpenAI representation of a Laxa API-key account.
+func (s *OpenAIGatewayService) SelectAccountByLegacyLaxaOpaqueContinuation(
+	ctx context.Context,
+	groupID *int64,
+	bindingIDs []string,
+	requestedModel string,
+	excludedIDs map[int64]struct{},
+	requiredTransport OpenAIUpstreamTransport,
+	requiredCapability OpenAIEndpointCapability,
+	requireCompact bool,
+) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+	return s.selectAccountByOpaqueContinuation(
+		ctx, groupID, bindingIDs, requestedModel, excludedIDs, requiredTransport,
+		requiredCapability, requireCompact, true,
+	)
+}
+
+func (s *OpenAIGatewayService) selectAccountByOpaqueContinuation(
+	ctx context.Context,
+	groupID *int64,
+	bindingIDs []string,
+	requestedModel string,
+	excludedIDs map[int64]struct{},
+	requiredTransport OpenAIUpstreamTransport,
+	requiredCapability OpenAIEndpointCapability,
+	requireCompact bool,
+	allowLegacyLaxa bool,
+) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
 	decision := OpenAIAccountScheduleDecision{Layer: "opaque_binding"}
 	if s == nil {
 		return nil, decision, NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
@@ -192,10 +229,18 @@ func (s *OpenAIGatewayService) SelectAccountByCindyOpaqueContinuation(
 	if err != nil || account == nil || !s.openAIAccountMatchesSchedulingGroup(account, groupID) {
 		return nil, decision, NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
 	}
+	selectionPlatform := PlatformCindy
+	if allowLegacyLaxa {
+		selectionPlatform = PlatformOpenAI
+	}
 	account = s.recheckSelectedOpenAIAccountFromDB(
-		ctx, account, groupID, PlatformCindy, requestedModel, requireCompact, requiredCapability,
+		ctx, account, groupID, selectionPlatform, requestedModel, requireCompact, requiredCapability,
 	)
-	if account == nil || !IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) ||
+	identityOK := account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+	if allowLegacyLaxa {
+		identityOK = account != nil && IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+	}
+	if account == nil || !identityOK ||
 		!s.isOpenAIAccountTransportCompatible(account, requiredTransport) {
 		return nil, decision, NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
 	}
@@ -235,6 +280,44 @@ func (s *OpenAIGatewayService) SelectAccountByCindyLegacySessionContinuation(
 	requiredCapability OpenAIEndpointCapability,
 	requireCompact bool,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+	return s.selectAccountByLegacySessionContinuation(
+		ctx, groupID, sessionHash, bindingIDs, requestedModel, excludedIDs,
+		requiredTransport, requiredCapability, requireCompact, false,
+	)
+}
+
+// SelectAccountByLegacyLaxaSessionContinuation restores a non-portable
+// reference continuation for a legacy OpenAI-platform Laxa account without
+// allowing the normal scheduler to drift to a sibling credential.
+func (s *OpenAIGatewayService) SelectAccountByLegacyLaxaSessionContinuation(
+	ctx context.Context,
+	groupID *int64,
+	sessionHash string,
+	bindingIDs []string,
+	requestedModel string,
+	excludedIDs map[int64]struct{},
+	requiredTransport OpenAIUpstreamTransport,
+	requiredCapability OpenAIEndpointCapability,
+	requireCompact bool,
+) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+	return s.selectAccountByLegacySessionContinuation(
+		ctx, groupID, sessionHash, bindingIDs, requestedModel, excludedIDs,
+		requiredTransport, requiredCapability, requireCompact, true,
+	)
+}
+
+func (s *OpenAIGatewayService) selectAccountByLegacySessionContinuation(
+	ctx context.Context,
+	groupID *int64,
+	sessionHash string,
+	bindingIDs []string,
+	requestedModel string,
+	excludedIDs map[int64]struct{},
+	requiredTransport OpenAIUpstreamTransport,
+	requiredCapability OpenAIEndpointCapability,
+	requireCompact bool,
+	allowLegacyLaxa bool,
+) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
 	decision := OpenAIAccountScheduleDecision{Layer: "legacy_session_binding"}
 	if s == nil || strings.TrimSpace(sessionHash) == "" {
 		return nil, decision, NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
@@ -260,10 +343,18 @@ func (s *OpenAIGatewayService) SelectAccountByCindyLegacySessionContinuation(
 	if err != nil || account == nil || !s.openAIAccountMatchesSchedulingGroup(account, groupID) {
 		return nil, decision, NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
 	}
+	selectionPlatform := PlatformCindy
+	if allowLegacyLaxa {
+		selectionPlatform = PlatformOpenAI
+	}
 	account = s.recheckSelectedOpenAIAccountFromDB(
-		ctx, account, groupID, PlatformCindy, requestedModel, requireCompact, requiredCapability,
+		ctx, account, groupID, selectionPlatform, requestedModel, requireCompact, requiredCapability,
 	)
-	if account == nil || !IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) ||
+	identityOK := account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+	if allowLegacyLaxa {
+		identityOK = account != nil && IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+	}
+	if account == nil || !identityOK ||
 		!s.isOpenAIAccountTransportCompatible(account, requiredTransport) {
 		return nil, decision, NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
 	}
@@ -310,7 +401,7 @@ func bindCindyOpaqueContinuationAccount(ctx context.Context, store OpenAIWSState
 
 func (s *OpenAIGatewayService) bindCindyOpaqueContinuationAccount(ctx context.Context, c *gin.Context, account *Account, bindingIDs []string) {
 	if s == nil || account == nil || account.ID <= 0 || len(bindingIDs) == 0 ||
-		!IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		!IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		return
 	}
 	groupID := getOpenAIGroupIDFromContext(c)

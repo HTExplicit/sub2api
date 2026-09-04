@@ -100,3 +100,29 @@ func resolveOpenAICompactForwardModel(account *Account, model string) string {
 	}
 	return trimmedModel
 }
+
+// resolveOpenAICompactForwardModelWithCanonical also checks the canonical
+// provider-qualified spelling used by the legacy Laxa projection. Compact
+// mappings are intentionally checked against the client spelling first, so an
+// explicit public alias (including an identity mapping) remains authoritative;
+// the canonical lookup covers configurations written after the live upstream
+// ID was published.
+func resolveOpenAICompactForwardModelWithCanonical(account *Account, requestedModel, canonicalModel string) string {
+	requestedModel = strings.TrimSpace(requestedModel)
+	canonicalModel = strings.TrimSpace(canonicalModel)
+	if requestedModel == "" || account == nil {
+		return requestedModel
+	}
+	if mapped, matched := account.ResolveCompactMappedModel(requestedModel); matched {
+		if mapped = strings.TrimSpace(mapped); mapped != "" {
+			return mapped
+		}
+		return requestedModel
+	}
+	if canonicalModel != "" && canonicalModel != requestedModel {
+		if mapped, matched := account.ResolveCompactMappedModel(canonicalModel); matched && strings.TrimSpace(mapped) != "" {
+			return strings.TrimSpace(mapped)
+		}
+	}
+	return requestedModel
+}

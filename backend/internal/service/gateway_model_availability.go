@@ -21,6 +21,11 @@ type ModelAvailabilityDiagnosis struct {
 	// HasModelSupport is true if at least one account's model mapping admits
 	// the requested model.
 	HasModelSupport bool
+	// ModelNotSupportedCooldownExhausted is true only when at least one
+	// persistently eligible account supports the model and every such account
+	// is a Cindy/Laxa credential currently carrying the exact
+	// model_not_supported cooldown for this request's canonical wire model.
+	ModelNotSupportedCooldownExhausted bool
 }
 
 // ModelAvailabilityDiagnoser is implemented by gateway services that can

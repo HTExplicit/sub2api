@@ -363,6 +363,16 @@ func (s *OpenAIGatewayService) newOpenAIAccountFailoverErrorWithClassificationHe
 	shouldDisable bool,
 	retryableOnSameAccount bool,
 ) *UpstreamFailoverError {
+	// `model_not_supported` is only account/model-scoped for the Laxa Cindy
+	// data plane.  Keep the generic constructor account-agnostic: it is also
+	// used by ordinary OpenAI-compatible providers, where treating an arbitrary
+	// 400 as a pool-wide failover would replay a client error.  All Cindy/Laxa
+	// callers that have an account flow through this constructor instead.
+	if account != nil &&
+		IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
+		isOpenAIModelNotSupportedError(statusCode, upstreamMsg, responseBody) {
+		return newOpenAIModelNotSupportedFailoverError(responseHeaders, responseBody)
+	}
 	oauth429Retry := s.shouldRetryOpenAIOAuth429OnSameAccountWithResponse(
 		account, statusCode, shouldDisable, classificationHeaders, responseBody,
 	)
