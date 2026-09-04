@@ -1,21 +1,22 @@
 name: Production Deploy
 run-name: >-
-  ${{ inputs.operation == 'rollback' && format('Rollback to {0}', inputs.release_tag) || inputs.operation == 'deploy-preserve' && format('Deploy {0} (preserve)', inputs.release_tag) || format('Deploy {0} (explicit)', inputs.release_tag) }}
+  ${{ inputs.operation == 'rollback' && format('Rollback to {0}', inputs.release_tag) || inputs.operation == 'reconcile-runtime' && format('Reconcile runtime for {0}', inputs.release_tag) || inputs.operation == 'deploy-preserve' && format('Deploy {0} (preserve)', inputs.release_tag) || format('Deploy {0} (explicit)', inputs.release_tag) }}
 
 on:
   workflow_dispatch:
     inputs:
       operation:
-        description: 'Deploy a release or roll back from an exact currently running release'
+        description: 'Deploy, reconcile an exact current release, or roll back'
         required: true
         default: deploy
         type: choice
         options:
           - deploy
           - deploy-preserve
+          - reconcile-runtime
           - rollback
       release_tag:
-        description: 'Target release tag, for example v0.1.177-codexrip.7'
+        description: 'Target release tag; for reconcile, the exact release currently running'
         required: true
         type: string
       expected_current_release_tag:
@@ -24,7 +25,7 @@ on:
         default: ''
         type: string
       confirmation:
-        description: 'Type DEPLOY for deploy or ROLLBACK for rollback'
+        description: 'Type DEPLOY, RECONCILE, or ROLLBACK for the selected operation'
         required: true
         type: string
       cindy_health:
@@ -183,13 +184,18 @@ jobs:
               [[ "$CONFIRMATION" == DEPLOY ]] || exit 1
               [[ -z "$EXPECTED_CURRENT_RELEASE_TAG" ]] || exit 1
               ;;
+            reconcile-runtime)
+              [[ "$CONFIRMATION" == RECONCILE ]] || exit 1
+              [[ -z "$EXPECTED_CURRENT_RELEASE_TAG" ]] || exit 1
+              [[ "$INTERRUPT_BUSINESS" == false ]] || exit 1
+              ;;
             rollback)
               [[ "$CONFIRMATION" == ROLLBACK ]] || exit 1
               validate_release_tag "$EXPECTED_CURRENT_RELEASE_TAG" || exit 1
               version_strictly_less "$RELEASE_TAG" "$EXPECTED_CURRENT_RELEASE_TAG" || exit 1
               ;;
             *)
-              echo 'Operation must be deploy or rollback' >&2
+              echo 'Operation must be deploy, reconcile-runtime, or rollback' >&2
               exit 1
               ;;
           esac
@@ -210,7 +216,7 @@ jobs:
 
           expected_current_image_ref=''
           case "$OPERATION" in
-            deploy)
+            deploy|reconcile-runtime)
               image_ref=$(resolve_release_image "$RELEASE_TAG" platform) || exit 1
               ;;
             rollback)
@@ -296,13 +302,19 @@ jobs:
                 fi
               fi
               ;;
+            reconcile-runtime)
+              [[ -z "$EXPECTED_CURRENT_IMAGE_REF" ]] || exit 1
+              [[ "$RUNTIME_SPEC" == runtime=explicit ]] || exit 1
+              [[ -z "$MAINTENANCE_SPEC" ]] || exit 1
+              remote_command="reconcile-runtime ${IMAGE_REF} ${CINDY_ROLLOUT} overdraft=${OVERDRAFT}"
+              ;;
             rollback)
               [[ "$EXPECTED_CURRENT_IMAGE_REF" =~ ^ghcr\.io/htexplicit/sub2api:[0-9]+\.[0-9]+\.[0-9]+-codexrip\.[1-9][0-9]*@sha256:[0-9a-f]{64}$ ]] || exit 1
               [[ "$EXPECTED_CURRENT_IMAGE_REF" != "$IMAGE_REF" ]] || exit 1
               remote_command="rollback ${IMAGE_REF} from=${EXPECTED_CURRENT_IMAGE_REF} ${CINDY_ROLLOUT} overdraft=${OVERDRAFT}"
               ;;
             *)
-              echo 'Operation must be deploy or rollback' >&2
+              echo 'Operation must be deploy, reconcile-runtime, or rollback' >&2
               exit 1
               ;;
           esac

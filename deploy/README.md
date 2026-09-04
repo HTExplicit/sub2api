@@ -208,14 +208,15 @@ gh workflow run production-deploy.yml \
   -f cindy_capability_catalog=false \
   -f cindy_search=false \
   -f image_studio=false \
-  -f cindy_responses_image_bridge=false
+  -f cindy_responses_image_bridge=false \
+  -f overdraft=false
 ```
 
 The workflow resolves the release to an immutable digest, requires the Release
 body to record that exact image and source commit, and requires the immutable
 image's OCI revision and Cindy platform-v1 capability label to match the release.
-It sends only `deploy <immutable-ref> cindy=<health>,<catalog>,<search>,<studio>,<responses-image>` to the
-restricted host command. The host persists the tuple in
+It sends only `deploy <immutable-ref> cindy=<health>,<catalog>,<search>,<studio>,<responses-image> overdraft=<boolean>`
+to the restricted host command. The host persists the tuple in
 `/opt/sub2api/docker-compose.cindy-rollout.yml`; a tuple-only change for the
 same digest recreates only `sub2api`, with the prior override included in the
 checksum-verified rollback set.
@@ -223,6 +224,34 @@ During the guard-first migration window, the host accepts only the old workflow'
 three-value `cindy=<health>,<catalog>,<studio>` tuple and maps it to the canonical
 five-value tuple with Search and Responses-image disabled.
 This workflow always emits the explicit five-value tuple.
+
+If an out-of-band maintenance action recreated `sub2api` from only the base
+Compose file while the canonical rollout override remained valid on disk, use
+the dedicated reconciliation operation with the exact Release currently
+running:
+
+```bash
+gh workflow run production-deploy.yml \
+  --repo HTExplicit/sub2api \
+  --ref main \
+  -f operation=reconcile-runtime \
+  -f release_tag=vX.Y.Z-codexrip.N \
+  -f confirmation=RECONCILE \
+  -f cindy_health=true \
+  -f cindy_capability_catalog=true \
+  -f cindy_search=true \
+  -f image_studio=false \
+  -f cindy_responses_image_bridge=false \
+  -f overdraft=true
+```
+
+The host proves that the requested immutable image is already running, the
+active container came from base-only Compose, the running tuple matches that
+base configuration, and the on-disk canonical override matches the requested
+target. It then takes the normal root-only backup and non-target container
+snapshot, recreates only `sub2api`, and observes the reconciled runtime for 300
+seconds. Any failure restores the prior base-only runtime; this operation does
+not pull or change an image.
 
 An image downgrade uses the same protected `production` Environment and an
 explicit expected-current release rather than the deploy path:
@@ -239,13 +268,14 @@ gh workflow run production-deploy.yml \
   -f cindy_capability_catalog=false \
   -f cindy_search=false \
   -f image_studio=false \
-  -f cindy_responses_image_bridge=false
+  -f cindy_responses_image_bridge=false \
+  -f overdraft=false
 ```
 
 The resolver requires both Releases, their recorded immutable references, and
 their OCI source revisions to match valid `main` ancestors, and requires
 `CURRENT` to be strictly newer than `TARGET`. The forced command is exactly
-`rollback <target-ref> from=<current-ref> cindy=...`; the
+`rollback <target-ref> from=<current-ref> cindy=... overdraft=...`; the
 host rejects it before pulling or mutating state unless the running image is
 byte-for-byte equal to `from=`. Ordinary deploys remain unable to downgrade.
 

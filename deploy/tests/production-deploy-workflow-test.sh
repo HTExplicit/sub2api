@@ -292,6 +292,28 @@ grep -Fq "image_ref=$rollback_current_ref" "$tmpdir/github-output" ||
 grep -Fxq 'expected_current_image_ref=' "$tmpdir/github-output" ||
   fail 'deploy unexpectedly emitted an expected-current rollback image'
 
+if ! run_resolve reconcile-runtime v0.1.177-codexrip.7 '' RECONCILE; then
+  cat "$tmpdir/resolve-output" >&2
+  fail 'valid runtime reconciliation did not resolve successfully'
+fi
+grep -Fq "image_ref=$rollback_current_ref" "$tmpdir/github-output" ||
+  fail 'runtime reconciliation did not resolve its exact current Release image'
+grep -Fxq 'expected_current_image_ref=' "$tmpdir/github-output" ||
+  fail 'runtime reconciliation unexpectedly emitted a second current image'
+grep -Fxq 'operation=reconcile-runtime' "$tmpdir/github-output" ||
+  fail 'runtime reconciliation did not preserve its dedicated operation'
+grep -Fxq 'runtime_spec=runtime=explicit' "$tmpdir/github-output" ||
+  fail 'runtime reconciliation did not require an explicit target runtime tuple'
+if run_resolve reconcile-runtime v0.1.177-codexrip.7 '' DEPLOY; then
+  fail 'runtime reconciliation accepted the deploy confirmation word'
+fi
+if run_resolve reconcile-runtime v0.1.177-codexrip.7 v0.1.177-codexrip.6 RECONCILE; then
+  fail 'runtime reconciliation accepted a separate expected-current release'
+fi
+if run_resolve reconcile-runtime v0.1.177-codexrip.7 '' RECONCILE true; then
+  fail 'runtime reconciliation accepted business interruption mode'
+fi
+
 run_resolve deploy v0.1.177-codexrip.7 '' DEPLOY true ||
   fail 'deploy resolution rejected the explicit interruption mode'
 grep -Fxq 'maintenance_spec=maintenance=interrupt' "$tmpdir/github-output" ||
@@ -379,6 +401,23 @@ run_apply deploy "$rollback_current_ref" '' '' '' runtime=preserve ||
   fail 'valid runtime-preserve deploy operation did not execute successfully'
 assert_ssh_invocation "deploy $rollback_current_ref runtime=preserve"
 
+run_apply reconcile-runtime "$rollback_current_ref" '' 'cindy=true,true,true,false,false' true ||
+  fail 'valid runtime reconciliation did not execute successfully'
+assert_ssh_invocation "reconcile-runtime $rollback_current_ref cindy=true,true,true,false,false overdraft=true"
+
+if run_apply reconcile-runtime "$rollback_current_ref" "$rollback_target_ref" 'cindy=true,true,true,false,false' true; then
+  fail 'runtime reconciliation accepted a second expected-current image'
+fi
+assert_ssh_not_invoked
+if run_apply reconcile-runtime "$rollback_current_ref" '' 'cindy=true,true,true,false,false' true runtime=preserve; then
+  fail 'runtime reconciliation accepted runtime-preserve mode'
+fi
+assert_ssh_not_invoked
+if run_apply reconcile-runtime "$rollback_current_ref" '' 'cindy=true,true,true,false,false' true runtime=explicit maintenance=interrupt; then
+  fail 'runtime reconciliation accepted maintenance interrupt mode'
+fi
+assert_ssh_not_invoked
+
 if run_apply deploy "$rollback_current_ref" "$rollback_target_ref" 'cindy=true,true,true,false,false'; then
   fail 'deploy accepted an unexpected expected-current image'
 fi
@@ -426,6 +465,7 @@ for input in operation release_tag expected_current_release_tag confirmation \
 done
 grep -Fq '          - deploy' "$WORKFLOW" || fail 'workflow operation is missing deploy'
 grep -Fq '          - deploy-preserve' "$WORKFLOW" || fail 'workflow operation is missing deploy-preserve'
+grep -Fq '          - reconcile-runtime' "$WORKFLOW" || fail 'workflow operation is missing reconcile-runtime'
 grep -Fq '          - rollback' "$WORKFLOW" || fail 'workflow operation is missing rollback'
 [[ "$(grep -c '        type: boolean' "$WORKFLOW")" -ge 5 ]] ||
   fail 'Cindy rollout inputs must be typed booleans'
@@ -444,6 +484,8 @@ grep -Fq '[[ "$CONFIRMATION" == DEPLOY ]]' "$WORKFLOW" ||
   fail 'deploy must require the exact DEPLOY confirmation'
 grep -Fq '[[ "$CONFIRMATION" == ROLLBACK ]]' "$WORKFLOW" ||
   fail 'rollback must require the exact ROLLBACK confirmation'
+grep -Fq '[[ "$CONFIRMATION" == RECONCILE ]]' "$WORKFLOW" ||
+  fail 'runtime reconciliation must require the exact RECONCILE confirmation'
 grep -Fq 'resolve_release_image "$EXPECTED_CURRENT_RELEASE_TAG"' "$WORKFLOW" ||
   fail 'rollback must independently resolve the expected-current release image'
 grep -Fq 'resolve_release_image "$RELEASE_TAG" rollback-target' "$WORKFLOW" ||
@@ -468,6 +510,8 @@ grep -Fq '[[ "$INTERRUPT_BUSINESS" == false ]]' "$WORKFLOW" ||
   fail 'preserve/rollback paths must reject business interruption'
 grep -Fq 'remote_command="deploy ${IMAGE_REF} runtime=preserve"' "$WORKFLOW" ||
   fail 'automatic deploy must preserve the locked runtime tuple'
+grep -Fq 'remote_command="reconcile-runtime ${IMAGE_REF} ${CINDY_ROLLOUT} overdraft=${OVERDRAFT}"' "$WORKFLOW" ||
+  fail 'runtime reconciliation must bind the exact current image and explicit runtime tuple'
 grep -Fq 'remote_command="rollback ${IMAGE_REF} from=${EXPECTED_CURRENT_IMAGE_REF} ${CINDY_ROLLOUT} overdraft=${OVERDRAFT}"' "$WORKFLOW" ||
   fail 'rollback must bind the target to the exact expected-current image'
 
