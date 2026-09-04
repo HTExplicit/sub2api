@@ -258,7 +258,7 @@ assert_ssh_invocation() {
     -o BatchMode=yes
     -o IdentitiesOnly=yes
     -o ServerAliveInterval=30
-    -o ServerAliveCountMax=3
+    -o ServerAliveCountMax=10
     -o StrictHostKeyChecking=yes
     -o "UserKnownHostsFile=$tmpdir/home/.ssh/known_hosts"
     -p 2222

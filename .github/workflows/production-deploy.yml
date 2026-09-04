@@ -312,7 +312,7 @@ jobs:
             -o BatchMode=yes \
             -o IdentitiesOnly=yes \
             -o ServerAliveInterval=30 \
-            -o ServerAliveCountMax=3 \
+            -o ServerAliveCountMax=10 \
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             -p "$VPS_PORT" \
