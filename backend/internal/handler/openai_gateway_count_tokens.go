@@ -420,6 +420,8 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 
 func writeCountTokensFailoverError(c *gin.Context, failoverErr *service.UpstreamFailoverError, _ error) {
 	status := http.StatusBadGateway
+	errorType := "upstream_error"
+	errorCode := ""
 	if failoverErr != nil && failoverErr.StatusCode >= 500 && failoverErr.StatusCode < 600 {
 		status = failoverErr.StatusCode
 	}
@@ -427,11 +429,18 @@ func writeCountTokensFailoverError(c *gin.Context, failoverErr *service.Upstream
 	if failoverErr != nil && failoverErr.ClientMessage != "" {
 		message = failoverErr.ClientMessage
 	}
+	if failoverErr != nil && failoverErr.IsOpenAIModelNotSupported() {
+		status = http.StatusBadRequest
+		errorType = service.OpenAIModelNotSupportedCode
+		errorCode = service.OpenAIModelNotSupportedCode
+		message = service.OpenAIModelNotSupportedClientMessage
+	}
+	error := gin.H{"type": errorType, "message": message}
+	if errorCode != "" {
+		error["code"] = errorCode
+	}
 	c.JSON(status, gin.H{
-		"type": "error",
-		"error": gin.H{
-			"type":    "upstream_error",
-			"message": message,
-		},
+		"type":  "error",
+		"error": error,
 	})
 }

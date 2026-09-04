@@ -949,6 +949,15 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			if c != nil && c.Writer != nil && c.Writer.Written() {
 				break
 			}
+			// Structured Cindy/Laxa capability failures must cross the WS retry
+			// boundary intact. They are account/model scoped (and already cooled
+			// by the WS forwarder), so converting them into the generic strict
+			// continuation error would lose the required 400/model_not_supported
+			// response at the handler.
+			var modelNotSupportedErr *UpstreamFailoverError
+			if errors.As(wsErr, &modelNotSupportedErr) && modelNotSupportedErr.IsOpenAIModelNotSupported() {
+				return nil, modelNotSupportedErr
+			}
 			if cindyHTTPToWSV2 && !hasPreviousResponseID && isOpenAICindyHTTPToWSV2HandshakeForbidden(wsErr) {
 				if fallbackBody, safe := prepareOpenAICindyStatelessHTTPFallback(cindyHTTPFallbackBody); safe {
 					previousBypass, hadPreviousBypass := c.Get(openAICindyHTTPToWSV2BypassContextKey)
@@ -1318,7 +1327,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 					return s.handleErrorResponse(ctx, resp, c, account, body, billingModel)
 				}
 			}
-			if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody) {
+			if s.shouldFailoverOpenAIUpstreamResponseForAccount(account, resp.StatusCode, upstreamMsg, respBody) {
 				upstreamDetail := ""
 				if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
 					maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
@@ -1339,11 +1348,13 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				})
 
 				shouldDisable := s.handleFailoverSideEffects(ctx, resp, account, respBody, upstreamModel)
-				failoverErr := newOpenAIUpstreamFailoverError(
+				failoverErr := s.newOpenAIAccountFailoverError(
+					account,
 					resp.StatusCode,
 					resp.Header,
 					respBody,
 					upstreamMsg,
+					shouldDisable,
 					!shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
 				)
 				if resp.StatusCode == http.StatusForbidden &&

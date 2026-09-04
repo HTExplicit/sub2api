@@ -258,13 +258,6 @@ func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(statusCode i
 	if isOpenAIContextWindowError(upstreamMsg, upstreamBody) {
 		return false
 	}
-	// Laxa may expose a model in the shared catalogue while an individual
-	// API-key credential is temporarily unable to serve it.  This is an
-	// account/model capability failure, not a deterministic client 400: switch
-	// accounts and let RateLimitService cool only the affected pair.
-	if isOpenAIModelNotSupportedError(statusCode, upstreamMsg, upstreamBody) {
-		return true
-	}
 	if isOpenAIHTTPUpstreamAccessStateError(statusCode, upstreamMsg, upstreamBody) {
 		return true
 	}
@@ -275,6 +268,24 @@ func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(statusCode i
 		return true
 	}
 	return isOpenAITransientProcessingError(statusCode, upstreamMsg, upstreamBody)
+}
+
+// shouldFailoverOpenAIUpstreamResponseForAccount adds the one capability
+// failure that is meaningful only for a Cindy/Laxa API-key credential.  Keep
+// the transport-only classifier above account-agnostic so a model_not_supported
+// payload from an ordinary OpenAI-compatible provider remains a deterministic
+// client 400 rather than being replayed across its pool.
+func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponseForAccount(
+	account *Account,
+	statusCode int,
+	upstreamMsg string,
+	upstreamBody []byte,
+) bool {
+	if isOpenAIModelNotSupportedError(statusCode, upstreamMsg, upstreamBody) {
+		return account != nil &&
+			IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+	}
+	return s.shouldFailoverOpenAIUpstreamResponse(statusCode, upstreamMsg, upstreamBody)
 }
 
 // OpenAIRequestBodyTooLargeClientMessage is the fixed downstream message used
@@ -506,16 +517,6 @@ func newOpenAIUpstreamFailoverError(
 		failoverErr.NextAccountAction = NextAccountRetry
 		failoverErr.ClientStatusCode = http.StatusRequestEntityTooLarge
 		failoverErr.ClientMessage = OpenAIRequestBodyTooLargeClientMessage
-	}
-	if isOpenAIModelNotSupportedError(statusCode, upstreamMsg, responseBody) {
-		// Do not retry the same credential: this response is specific to its
-		// advertised model capability.  Keep the raw status/body for internal
-		// attribution; exhausted failover follows the normal sanitized envelope.
-		failoverErr.RetryableOnSameAccount = false
-		failoverErr.RequestScopedTransient = false
-		failoverErr.Scope = GatewayFailureScopeAccount
-		failoverErr.Reason = openAIModelNotSupportedReason
-		failoverErr.NextAccountAction = NextAccountRetry
 	}
 	if isOpenAIHTTPUpstreamAccessStateError(statusCode, upstreamMsg, responseBody) {
 		failoverErr.RetryableOnSameAccount = false

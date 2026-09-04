@@ -154,6 +154,7 @@ func TestLegacyCindyRuntimeCompatibilityMapsResponsesAliasesOverHTTPAndWS(t *tes
 	gin.SetMode(gin.TestMode)
 	for alias, live := range map[string]string{
 		"gpt-5.4-mini": "openai/gpt-5.6-luna",
+		"gpt-5.6-luna": "openai/gpt-5.6-luna",
 	} {
 		t.Run(alias+"/http", func(t *testing.T) {
 			upstream := &httpUpstreamRecorder{resp: &http.Response{

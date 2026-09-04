@@ -686,8 +686,8 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 					}
 				}
 				if !cyberPolicyHit {
-					if openAIStreamErrorEventShouldFailover(dataBytes, errorMessage) {
-						streamEarlyErr = s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, dataBytes, errorMessage, resp.StatusCode, resp.Header)
+					if openAIStreamErrorEventShouldFailoverForAccount(account, dataBytes, errorMessage) {
+						streamEarlyErr = s.newOpenAIStreamFailoverErrorWithModel(c, account, false, upstreamRequestID, dataBytes, errorMessage, mappedModel, resp.Header)
 						return
 					}
 					if status, errType, errMsg, matched := applyOpenAIStreamFailedErrorPassthroughRule(c, account.Platform, dataBytes, errorMessage); matched {
@@ -768,9 +768,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 					}
 				}
 				if !cyberPolicyHit && !cyberPolicySanitized && !openAIStreamClientOutputStarted(c, clientOutputStarted) {
-					if openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
+					if openAIStreamFailedEventShouldFailoverForAccount(account, dataBytes, failedMessage) {
 						sawFailedEvent = true
-						streamEarlyErr = s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, dataBytes, failedMessage, resp.StatusCode, resp.Header)
+						streamEarlyErr = s.newOpenAIStreamFailoverErrorWithModel(c, account, false, upstreamRequestID, dataBytes, failedMessage, mappedModel, resp.Header)
 						return
 					}
 					if status, errType, errMsg, matched := applyOpenAIStreamFailedErrorPassthroughRule(c, account.Platform, dataBytes, failedMessage); matched {
@@ -1704,6 +1704,15 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	})
 	if cindyBalanceInsufficient {
 		return nil, newCindyBalanceTerminalFailover(resp.Header)
+	}
+	if account != nil && IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
+		isOpenAIModelNotSupportedPayload(body) {
+		model := strings.TrimSpace(mappedModel)
+		if model == "" {
+			model = canonicalOpenAIAccountSchedulingModel(account, originalModel)
+		}
+		_ = s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, resp.Header, body, model)
+		return nil, newOpenAIModelNotSupportedFailoverError(resp.Header, body)
 	}
 	body = s.rewriteBusinessSystemPromptJSONForRequest(c, body, BusinessSystemPromptProtocolResponses)
 

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/klauspost/compress/zstd"
@@ -253,6 +254,25 @@ func TestReadLenientJSONRequestBodyWithPrealloc_rejects_non_eof_read_error(t *te
 
 	if !errors.Is(err, terminalErr) {
 		t.Fatalf("expected synthetic read failure, got %T %v", err, err)
+	}
+}
+
+func TestReadLenientJSONRequestBodyWithPrealloc_rejects_joined_eof_and_non_eof_error(t *testing.T) {
+	terminalErr := errors.Join(io.ErrUnexpectedEOF, errors.New("synthetic non-eof failure"))
+	req := requestWithTerminalError(t, []byte(samplePayload), "", terminalErr)
+
+	_, err := ReadLenientJSONRequestBodyWithPrealloc(req, 1024)
+
+	if err == nil || !errors.Is(err, terminalErr) {
+		t.Fatalf("expected joined read failure, got %T %v", err, err)
+	}
+}
+
+func TestReadDecompressedBodyWithLimitRejectsExpansion(t *testing.T) {
+	_, err := readDecompressedBodyWithLimit(strings.NewReader("0123456789X"), 10)
+	var maxErr *http.MaxBytesError
+	if !errors.As(err, &maxErr) || maxErr.Limit != 10 {
+		t.Fatalf("expected MaxBytesError(limit=10), got %T %v", err, err)
 	}
 }
 

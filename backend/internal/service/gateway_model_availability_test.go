@@ -223,6 +223,43 @@ func TestOpenAIDiagnoseModelAvailabilityForPlatform_RateLimitedSupportingAccount
 	require.True(t, diag.HasModelSupport, "OpenAI-compatible diagnosis must keep transiently limited supporting accounts in the configured pool")
 }
 
+func TestOpenAIDiagnoseModelAvailabilityForPlatform_DetectsExhaustedLaxaModelCooldown(t *testing.T) {
+	groupID := int64(44)
+	resetAt := time.Now().Add(30 * time.Minute).UTC().Format(time.RFC3339)
+	accounts := make([]Account, 0, 2)
+	for id := int64(1); id <= 2; id++ {
+		accounts = append(accounts, Account{
+			ID: id, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+			Status: StatusActive, Schedulable: true,
+			AccountGroups: []AccountGroup{{GroupID: groupID}},
+			Credentials:   map[string]any{"base_url": "https://api.laxarouter.ai"},
+			Extra: map[string]any{modelRateLimitsKey: map[string]any{
+				"openai/gpt-5.6-luna": map[string]any{
+					"rate_limit_reset_at": resetAt,
+					"reason":              string(openAIModelNotSupportedReason),
+				},
+			}},
+		})
+	}
+	repo := &mockAccountRepoForPlatform{accounts: accounts, accountsByID: map[int64]*Account{}}
+	svc := &OpenAIGatewayService{accountRepo: repo, cfg: testConfig()}
+
+	diag := svc.DiagnoseModelAvailabilityForPlatform(context.Background(), &groupID, "gpt-5.6-luna", PlatformOpenAI)
+
+	require.True(t, diag.HasAccountsInPool)
+	require.True(t, diag.HasModelSupport)
+	require.True(t, diag.ModelNotSupportedCooldownExhausted)
+
+	repo.accounts = append(repo.accounts, Account{
+		ID: 3, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Status: StatusActive, Schedulable: true,
+		AccountGroups: []AccountGroup{{GroupID: groupID}},
+		Credentials:   map[string]any{"base_url": "https://api.openai.com"},
+	})
+	diag = svc.DiagnoseModelAvailabilityForPlatform(context.Background(), &groupID, "gpt-5.6-luna", PlatformOpenAI)
+	require.False(t, diag.ModelNotSupportedCooldownExhausted, "an ordinary supporting account keeps the pool from being classified as Laxa cooldown exhaustion")
+}
+
 func TestDiagnoseModelAvailabilityForPlatform_WrongPlatformFiltersOut(t *testing.T) {
 	// Group has only Anthropic accounts; user routes to OpenAI gateway.
 	// Diagnosis must NOT see Anthropic accounts (listSchedulableAccounts filters

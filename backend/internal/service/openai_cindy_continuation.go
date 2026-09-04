@@ -132,6 +132,29 @@ func EnsureCindyResponsesStoreFalse(payload []byte) ([]byte, error) {
 	return updated, nil
 }
 
+// normalizeLegacyLaxaFullReplayStoreFalse applies the Cindy wire contract to
+// the temporary OpenAI-platform projection.  The handler cannot always
+// classify a plain message-history replay before account selection, so the
+// selected account's wire boundary performs the final narrow check.  Anchored
+// and reference-only continuations intentionally retain the client's store
+// mode; only portable FULL_REPLAY/OPAQUE_FULL payloads are normalized.
+func normalizeLegacyLaxaFullReplayStoreFalse(account *Account, payload []byte) ([]byte, error) {
+	if account == nil || !IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		return payload, nil
+	}
+	classification, err := ClassifyCindyContinuation(payload, CindyContinuationProof{})
+	if err != nil {
+		// Preserve the existing malformed-payload path.  The caller will run its
+		// normal JSON validation and report the protocol-specific error.
+		return payload, nil
+	}
+	if classification.HasAnchor ||
+		(classification.Mode != CindyContinuationFullReplay && classification.Mode != CindyContinuationOpaqueFull) {
+		return payload, nil
+	}
+	return EnsureCindyResponsesStoreFalse(payload)
+}
+
 func ClassifyCindyContinuation(payload []byte, proof CindyContinuationProof) (CindyContinuationClassification, error) {
 	classification := CindyContinuationClassification{}
 	if !gjson.ValidBytes(payload) {

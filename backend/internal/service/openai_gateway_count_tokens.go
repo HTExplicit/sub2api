@@ -348,13 +348,18 @@ func (s *OpenAIGatewayService) ForwardCountTokensAsAnthropic(
 			writeAnthropicCountTokensError(c, http.StatusNotFound, "not_found_error", "Token counting is not supported by upstream")
 			return nil
 		}
-		if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody) {
+		if s.shouldFailoverOpenAIUpstreamResponseForAccount(account, resp.StatusCode, upstreamMsg, respBody) {
 			shouldDisable := s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, prepared.UpstreamModel)
+			retryableOnSameAccount := !shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode)
+			if IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
+				isOpenAIModelNotSupportedError(resp.StatusCode, upstreamMsg, respBody) {
+				return newOpenAIModelNotSupportedFailoverError(resp.Header, respBody)
+			}
 			return &UpstreamFailoverError{
 				StatusCode:             resp.StatusCode,
 				ResponseHeaders:        resp.Header.Clone(),
 				ResponseBody:           respBody,
-				RetryableOnSameAccount: !shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
+				RetryableOnSameAccount: retryableOnSameAccount,
 			}
 		}
 		if s.rateLimitService != nil {

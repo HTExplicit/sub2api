@@ -67,7 +67,39 @@ func (a *Account) modelRateLimitKeysForRequest(ctx context.Context, requestedMod
 		return nil
 	}
 
-	modelKey := a.GetMappedModel(requestedModel)
+	// The handler records the channel-mapped model and whether this is the
+	// legacy /responses/compact surface in the request context.  Use that same
+	// forwarding model when present so a cooldown written for a compact target
+	// cannot be read back later under the public Luna spelling.
+	forwardModel := strings.TrimSpace(requestedModel)
+	requireCompact := false
+	if forwarded, ok := openAIForwardModelFromContext(ctx); ok {
+		if model := strings.TrimSpace(forwarded.model); model != "" {
+			forwardModel = model
+			requireCompact = forwarded.useCompactModelMapping
+		}
+	}
+	modelKey := a.GetMappedModel(forwardModel)
+	// Cindy's public IDs and legacy OpenAI-projection aliases are both written
+	// as their provider-qualified live upstream ID. Read the same key here so a
+	// 30-minute model_not_supported cooldown cannot be bypassed by requesting
+	// the public spelling on the next scheduling pass.
+	if IsCindyRuntimeCompatibleAPIKeyAccount(a.Platform, a.Type, a.Credentials) {
+		canonical := canonicalOpenAIAccountSchedulingModel(a, forwardModel)
+		if requireCompact {
+			compact := resolveOpenAICompactForwardModelWithCanonical(a, forwardModel, canonical)
+			if compact == strings.TrimSpace(forwardModel) && strings.TrimSpace(requestedModel) != strings.TrimSpace(forwardModel) {
+				compact = resolveOpenAICompactForwardModelWithCanonical(a, requestedModel, canonical)
+			}
+			if compact != "" && compact != strings.TrimSpace(requestedModel) && compact != strings.TrimSpace(forwardModel) {
+				modelKey = compact
+			} else if canonical != "" {
+				modelKey = canonical
+			}
+		} else if canonical != "" {
+			modelKey = canonical
+		}
+	}
 	if a.Platform == PlatformAntigravity {
 		modelKey = resolveFinalAntigravityModelKey(ctx, a, requestedModel)
 	}
@@ -187,6 +219,34 @@ func (a *Account) modelRateLimitResetAt(scope string) *time.Time {
 		return nil
 	}
 	return &resetAt
+}
+
+func (a *Account) hasActiveModelRateLimitReasonWithContext(ctx context.Context, requestedModel, expectedReason string) bool {
+	expectedReason = strings.TrimSpace(expectedReason)
+	if a == nil || expectedReason == "" || a.Extra == nil {
+		return false
+	}
+	rawLimits, ok := a.Extra[modelRateLimitsKey].(map[string]any)
+	if !ok {
+		return false
+	}
+	now := time.Now()
+	for _, key := range a.modelRateLimitKeysForRequest(ctx, requestedModel) {
+		rawLimit, ok := rawLimits[key].(map[string]any)
+		reason, reasonOK := rawLimit["reason"].(string)
+		if !ok || !reasonOK || strings.TrimSpace(reason) != expectedReason {
+			continue
+		}
+		resetAtRaw, ok := rawLimit["rate_limit_reset_at"].(string)
+		if !ok {
+			continue
+		}
+		resetAt, err := time.Parse(time.RFC3339, strings.TrimSpace(resetAtRaw))
+		if err == nil && now.Before(resetAt) {
+			return true
+		}
+	}
+	return false
 }
 
 func setAccountModelRateLimitSnapshot(account *Account, scope string, resetAt time.Time, reason string, now time.Time) {

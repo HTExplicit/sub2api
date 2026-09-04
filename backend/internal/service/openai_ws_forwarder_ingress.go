@@ -122,7 +122,20 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	refusalRuntime := s.openAIRefusalRecoveryRuntime(ctx)
 
 	wsDecision := s.getOpenAIWSProtocolResolver().Resolve(account)
-	strictCindyContinuation := IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+	legacyLaxaAccount := IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+	// Fresh legacy Laxa turns remain on the explicitly selected passthrough
+	// transport. Once a frame carries an anchor, an opaque carrier, or an
+	// external reference, however, it has the same connection-affinity contract
+	// as first-class Cindy continuation state and must use the stateful pool.
+	// Classify the first frame before the mode-router branch so a busy bound
+	// connection cannot be bypassed by an early passthrough return.
+	legacyLaxaContinuation := false
+	if legacyLaxaAccount {
+		if classification, classifyErr := ClassifyCindyContinuation(firstClientMessage, CindyContinuationProof{}); classifyErr == nil {
+			legacyLaxaContinuation = classification.HasAnchor || classification.Mode != CindyContinuationFullReplay
+		}
+	}
+	strictCindyContinuation := IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) || legacyLaxaContinuation
 	forceHTTPBridge := account.Platform == PlatformGrok
 	modeRouterV2Enabled := s != nil && s.cfg != nil && s.cfg.Gateway.OpenAIWS.ModeRouterV2Enabled
 	ingressMode := OpenAIWSIngressModeCtxPool
@@ -402,7 +415,28 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				requestModel = mappedModel
 			}
 		}
-		upstreamModel := normalizeOpenAIModelForUpstream(account, account.GetMappedModel(requestModel))
+		legacyModel, legacyModelKnown := requestModel, false
+		if legacyLaxaAccount {
+			legacyModel, legacyModelKnown = cindyLegacyLaxaLiveUpstreamModel(requestModel)
+		}
+		if !legacyModelKnown {
+			legacyModel = requestModel
+		}
+		if legacyModelKnown {
+			// A stale account model_mapping must not override the verified live
+			// wire ID for a direct legacy Laxa public model or compatibility alias.
+			requestModel = legacyModel
+		}
+		mappedRequestModel := requestModel
+		if !legacyModelKnown {
+			mappedRequestModel = account.GetMappedModel(requestModel)
+		}
+		upstreamModel := normalizeOpenAIModelForUpstream(account, mappedRequestModel)
+		// Legacy Laxa API-key rows are still represented as PlatformOpenAI during
+		// the projection window. Their account mapping therefore does not enter
+		// the first-class Cindy resolver; apply the same provider-qualified live
+		// ID used by HTTP passthrough before writing every WS request frame.
+		upstreamModel = resolveLegacyCindyOpenAIModel(account, upstreamModel)
 		if modelMissing || upstreamModel != originalModel {
 			next, setErr := applyPayloadMutation(normalized, "model", upstreamModel)
 			if setErr != nil {
@@ -1005,7 +1039,17 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					acquireErr,
 				)
 			}
-			retrySameAccount, failoverErr := openAIWSInitialDialFailover(acquireErr)
+			retrySameAccount, failoverErr := openAIWSInitialDialFailover(account, acquireErr)
+			if failoverErr != nil && failoverErr.IsOpenAIModelNotSupported() {
+				_ = s.handleOpenAIAccountUpstreamError(
+					ctx,
+					account,
+					http.StatusBadRequest,
+					failoverErr.ResponseHeaders,
+					failoverErr.ResponseBody,
+					canonicalModel,
+				)
+			}
 			if failoverErr != nil {
 				if turn == 1 && retrySameAccount && !initialTransportRetryUsed {
 					initialTransportRetryUsed = true
@@ -1307,7 +1351,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					)
 				}
 				canonicalModel := canonicalOpenAIAccountSchedulingModel(account, originalModel)
-				if isOpenAIModelNotSupportedPayload(upstreamMessage) {
+				if IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
+					isOpenAIModelNotSupportedPayload(upstreamMessage) {
 					// The upstream transport is already HTTP 200, but this exact
 					// structured event means the selected Cindy key cannot serve the
 					// requested model. Persist an account/model cooldown and expose a
@@ -1316,14 +1361,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					_ = s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, nil, upstreamMessage, canonicalModel)
 					if !downstreamOutputStarted() {
 						lease.MarkBroken()
-						return nil, &UpstreamFailoverError{
-							StatusCode:        http.StatusBadRequest,
-							ResponseBody:      append([]byte(nil), upstreamMessage...),
-							ResponseHeaders:   cloneHeader(lease.HandshakeHeaders()),
-							Scope:             GatewayFailureScopeAccount,
-							Reason:            openAIModelNotSupportedReason,
-							NextAccountAction: NextAccountRetry,
-						}
+						return nil, newOpenAIModelNotSupportedFailoverError(lease.HandshakeHeaders(), upstreamMessage)
 					}
 				}
 				s.handleOpenAIWSErrorEventTransientFailure(ctx, account, canonicalModel, lease.HandshakeHeaders(), upstreamMessage)
@@ -1371,19 +1409,13 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					}
 					return nil, continuationErr
 				}
-				if isOpenAIModelNotSupportedPayload(upstreamMessage) {
+				if IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
+					isOpenAIModelNotSupportedPayload(upstreamMessage) {
 					canonicalModel := canonicalOpenAIAccountSchedulingModel(account, originalModel)
 					_ = s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, nil, upstreamMessage, canonicalModel)
 					if !downstreamOutputStarted() {
 						lease.MarkBroken()
-						return nil, &UpstreamFailoverError{
-							StatusCode:        http.StatusBadRequest,
-							ResponseBody:      append([]byte(nil), upstreamMessage...),
-							ResponseHeaders:   cloneHeader(lease.HandshakeHeaders()),
-							Scope:             GatewayFailureScopeAccount,
-							Reason:            openAIModelNotSupportedReason,
-							NextAccountAction: NextAccountRetry,
-						}
+						return nil, newOpenAIModelNotSupportedFailoverError(lease.HandshakeHeaders(), upstreamMessage)
 					}
 				}
 				if hit, code, msg := detectOpenAICyberPolicy(upstreamMessage); hit {

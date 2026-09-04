@@ -81,6 +81,26 @@ func TestOpenAIContinuationStateFailoverExhausted_ReturnsTerminalResponsesSSE(t 
 	require.NotContains(t, body, "must-not-leak")
 }
 
+func TestOpenAIModelNotSupportedFailoverExhausted_ReturnsStructured400(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	(&OpenAIGatewayHandler{}).handleFailoverExhausted(c, &service.UpstreamFailoverError{
+		StatusCode: http.StatusBadRequest,
+		Reason:     service.GatewayFailureReason("upstream_400_model_not_supported"),
+	}, false)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	var envelope map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &envelope))
+	errBody, ok := envelope["error"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, service.OpenAIModelNotSupportedCode, errBody["type"])
+	require.Equal(t, service.OpenAIModelNotSupportedCode, errBody["code"])
+	require.Equal(t, service.OpenAIModelNotSupportedClientMessage, errBody["message"])
+}
+
 func bodyLimitFailoverTestError() *service.UpstreamFailoverError {
 	return &service.UpstreamFailoverError{
 		StatusCode:        http.StatusRequestEntityTooLarge,

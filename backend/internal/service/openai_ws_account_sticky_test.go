@@ -506,6 +506,101 @@ func TestOpenAIGatewayService_SelectAccountByPreviousResponseID_CapabilityMismat
 	require.Equal(t, account.ID, boundAccountID)
 }
 
+func TestOpenAIGatewayService_StrictPreviousResponsePolicyMismatchFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(26)
+	account := Account{
+		ID:          32,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"base_url":            "https://api.laxarouter.ai",
+			"openai_capabilities": []any{"chat_completions"},
+		},
+		Extra: map[string]any{
+			"openai_apikey_responses_websockets_v2_enabled": true,
+			"openai_passthrough":                            true,
+		},
+	}
+	cache := &stubGatewayCache{}
+	store := NewOpenAIWSStateStore(cache)
+	svc := &OpenAIGatewayService{
+		accountRepo:        stubOpenAIAccountRepo{accounts: []Account{account}},
+		cache:              cache,
+		cfg:                newOpenAIWSV2TestConfig(),
+		concurrencyService: NewConcurrencyService(stubConcurrencyCache{}),
+		openaiWSStateStore: store,
+	}
+
+	require.NoError(t, store.BindResponseAccount(ctx, groupID, "resp_prev_strict_policy", account.ID, time.Hour))
+	selection, err := svc.selectAccountByPreviousResponseIDForStrictContinuation(
+		ctx,
+		&groupID,
+		"resp_prev_strict_policy",
+		"text-embedding-3-small",
+		nil,
+		OpenAIEndpointCapabilityEmbeddings,
+		false,
+	)
+
+	require.Nil(t, selection)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
+}
+
+func TestOpenAIGatewayService_StrictPreviousResponseModelCooldownUsesCanonicalLaxaKey(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(27)
+	resetAt := time.Now().Add(30 * time.Minute).UTC().Format(time.RFC3339)
+	account := Account{
+		ID:          33,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"base_url": "https://api.laxarouter.ai",
+			"api_key":  "test-key",
+		},
+		Extra: map[string]any{
+			"openai_passthrough": true,
+			modelRateLimitsKey: map[string]any{
+				"openai/gpt-5.6-luna": map[string]any{"rate_limit_reset_at": resetAt},
+			},
+		},
+	}
+	cache := &stubGatewayCache{}
+	store := NewOpenAIWSStateStore(cache)
+	svc := &OpenAIGatewayService{
+		accountRepo:        stubOpenAIAccountRepo{accounts: []Account{account}},
+		cache:              cache,
+		cfg:                newOpenAIWSV2TestConfig(),
+		concurrencyService: NewConcurrencyService(stubConcurrencyCache{}),
+		openaiWSStateStore: store,
+	}
+
+	require.NoError(t, store.BindResponseAccount(ctx, groupID, "resp_prev_laxa_cooldown", account.ID, time.Hour))
+	selection, err := svc.selectAccountByPreviousResponseIDForStrictContinuation(
+		ctx,
+		&groupID,
+		"resp_prev_laxa_cooldown",
+		"gpt-5.4-mini",
+		nil,
+		OpenAIEndpointCapabilityChatCompletions,
+		false,
+	)
+
+	require.Nil(t, selection)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
+}
+
 func newOpenAIWSV2TestConfig() *config.Config {
 	cfg := &config.Config{}
 	cfg.Gateway.OpenAIWS.Enabled = true

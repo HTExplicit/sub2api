@@ -115,7 +115,7 @@ func (s *OpenAIGatewayService) ForwardAlphaSearch(ctx context.Context, c *gin.Co
 
 	if resp.StatusCode >= http.StatusBadRequest {
 		upstreamMessage := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(respBody)))
-		if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMessage, respBody) ||
+		if s.shouldFailoverOpenAIUpstreamResponseForAccount(account, resp.StatusCode, upstreamMessage, respBody) ||
 			isOpenAIAlphaSearchEndpointUnsupported(account, resp.StatusCode) {
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
 			// alpha/search 是独立的工具端点，单次 401 不能证明账号的模型调用
@@ -128,6 +128,10 @@ func (s *OpenAIGatewayService) ForwardAlphaSearch(ctx context.Context, c *gin.Co
 				shouldDisable = s.handleFailoverSideEffects(ctx, resp, account, respBody, openAIAlphaSearchSchedulingModel(account, requestedModel))
 			}
 			retryableOnSameAccount := !shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode)
+			if IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
+				isOpenAIModelNotSupportedError(resp.StatusCode, upstreamMessage, respBody) {
+				return nil, newOpenAIModelNotSupportedFailoverError(resp.Header, respBody)
+			}
 			if account.IsOpenAIOAuthLike() && resp.StatusCode == http.StatusTooManyRequests {
 				return nil, s.newOpenAIAccountFailoverError(account, resp.StatusCode, resp.Header, respBody, upstreamMessage, shouldDisable, retryableOnSameAccount)
 			}
@@ -508,7 +512,7 @@ func (s *OpenAIGatewayService) forwardAlphaSearchViaResponsesWebSearch(
 		if strictCindy && cindyCapabilityError {
 			return nil, newCindyAlphaSearchMessagesFallbackError(resp.StatusCode, resp.Header, respBody)
 		}
-		if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMessage, respBody) ||
+		if s.shouldFailoverOpenAIUpstreamResponseForAccount(account, resp.StatusCode, upstreamMessage, respBody) ||
 			bridgeCapabilityError {
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
 			shouldDisable := false
@@ -516,22 +520,28 @@ func (s *OpenAIGatewayService) forwardAlphaSearchViaResponsesWebSearch(
 				shouldDisable = s.handleFailoverSideEffects(ctx, resp, account, respBody, upstreamModel)
 			}
 			retryableOnSameAccount := !shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode)
-			if account.IsOpenAIOAuthLike() && resp.StatusCode == http.StatusTooManyRequests {
-				return nil, s.newOpenAIAccountFailoverError(account, resp.StatusCode, resp.Header, respBody, upstreamMessage, shouldDisable, retryableOnSameAccount)
-			}
-			if isOpenAIHTTPUpstreamAccessStateError(resp.StatusCode, upstreamMessage, respBody) {
-				return nil, newOpenAIUpstreamFailoverError(resp.StatusCode, resp.Header, respBody, upstreamMessage, retryableOnSameAccount)
-			}
 			// Legacy OpenAI-compatible bridge failures stay health-neutral. First-class
 			// Cindy operational failures retain the normal account health path.
-			failoverErr := &UpstreamFailoverError{
-				StatusCode:                   resp.StatusCode,
-				ResponseBody:                 respBody,
-				ResponseHeaders:              resp.Header.Clone(),
-				RetryableOnSameAccount:       retryableOnSameAccount,
-				Scope:                        GatewayFailureScopeAccount,
-				NextAccountAction:            NextAccountRetry,
-				SuppressAccountHealthPenalty: !strictCindy,
+			var failoverErr *UpstreamFailoverError
+			if IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
+				isOpenAIModelNotSupportedError(resp.StatusCode, upstreamMessage, respBody) {
+				failoverErr = newOpenAIModelNotSupportedFailoverError(resp.Header, respBody)
+			} else if account.IsOpenAIOAuthLike() && resp.StatusCode == http.StatusTooManyRequests {
+				failoverErr = s.newOpenAIAccountFailoverError(account, resp.StatusCode, resp.Header, respBody, upstreamMessage, shouldDisable, retryableOnSameAccount)
+			} else if isOpenAIHTTPUpstreamAccessStateError(resp.StatusCode, upstreamMessage, respBody) {
+				failoverErr = newOpenAIUpstreamFailoverError(resp.StatusCode, resp.Header, respBody, upstreamMessage, retryableOnSameAccount)
+			} else {
+				failoverErr = &UpstreamFailoverError{
+					StatusCode:             resp.StatusCode,
+					ResponseBody:           respBody,
+					ResponseHeaders:        resp.Header.Clone(),
+					RetryableOnSameAccount: retryableOnSameAccount,
+				}
+			}
+			if !failoverErr.IsOpenAIModelNotSupported() {
+				failoverErr.Scope = GatewayFailureScopeAccount
+				failoverErr.NextAccountAction = NextAccountRetry
+				failoverErr.SuppressAccountHealthPenalty = !strictCindy
 			}
 			if bridgeCapabilityError {
 				failoverErr.Reason = openAIAlphaSearchBridgeUnavailableReason

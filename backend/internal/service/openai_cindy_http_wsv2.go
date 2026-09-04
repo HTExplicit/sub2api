@@ -210,8 +210,18 @@ func (s *OpenAIGatewayService) cindyHTTPToWSV2FirstTurnFailover(
 		}
 	}
 
-	_, failoverErr := openAIWSInitialDialFailover(err)
+	_, failoverErr := openAIWSInitialDialFailover(account, err)
 	if failoverErr != nil {
+		var dialErr *openAIWSDialError
+		if errors.As(err, &dialErr) && dialErr != nil &&
+			isOpenAIModelNotSupportedError(dialErr.StatusCode, "", dialErr.ResponseBody) {
+			_ = s.handleOpenAIAccountUpstreamError(
+				ctx, account, http.StatusBadRequest, dialErr.ResponseHeaders, dialErr.ResponseBody, canonicalModel,
+			)
+			return finishOpenAICindyHTTPToWSV2Failover(
+				c, account, newOpenAIModelNotSupportedFailoverError(dialErr.ResponseHeaders, dialErr.ResponseBody),
+			)
+		}
 		failoverErr.RetryableOnSameAccount = false
 		if dialErr != nil && (dialErr.StatusCode == 0 || dialErr.StatusCode == http.StatusRequestTimeout ||
 			dialErr.StatusCode >= http.StatusInternalServerError) {
@@ -266,13 +276,7 @@ func (s *OpenAIGatewayService) cindyHTTPToWSV2FirstTurnEventFailover(
 			model = firstNonEmpty(gjson.GetBytes(payload, "model").String(), gjson.GetBytes(payload, "response.model").String())
 		}
 		_ = s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, nil, payload, model)
-		failoverErr := newOpenAIUpstreamFailoverError(
-			statusCode, headers, openAITransportFailoverBody, "model not supported", false,
-		)
-		failoverErr.Scope = GatewayFailureScopeAccount
-		failoverErr.Reason = openAIModelNotSupportedReason
-		failoverErr.NextAccountAction = NextAccountRetry
-		failoverErr.ClientStatusCode = http.StatusBadGateway
+		failoverErr := newOpenAIModelNotSupportedFailoverError(headers, payload)
 		return sanitizeOpenAICindyFailoverError(failoverErr), true
 	}
 	if statusCode != http.StatusForbidden && statusCode != http.StatusTooManyRequests &&

@@ -768,6 +768,16 @@ func resolveOpenAIAccountUpstreamModelForRequest(account *Account, requestedMode
 	// upstream normalization, but never compact_model_mapping.
 	if shouldForwardOpenAIResponsesViaRawChatCompletions(account) {
 		upstreamModel := resolveOpenAIForwardModel(account, requestedModel, "")
+		if account != nil && IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+			// A legacy Laxa row can be routed through the raw Chat Completions
+			// fallback when its Responses probe is disabled. Keep the scheduler's
+			// canonical key aligned with the body sent by that fallback; otherwise
+			// a direct Luna request is filtered/cooldown-tracked under the bare
+			// public spelling while the upstream sees the provider-qualified ID.
+			if legacyModel, mapped := cindyLegacyLaxaLiveUpstreamModel(requestedModel); mapped {
+				return legacyModel
+			}
+		}
 		return normalizeOpenAIModelForUpstream(account, upstreamModel)
 	}
 
@@ -781,8 +791,23 @@ func resolveOpenAIAccountUpstreamModelForRequest(account *Account, requestedMode
 		if upstreamModel == "" {
 			return ""
 		}
+		if IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+			if mapped, ok := CindyMappedUpstreamModel(upstreamModel); ok {
+				upstreamModel = mapped
+			} else if mapped, ok := CindyCompatibilityMappedUpstreamModel(upstreamModel); ok {
+				upstreamModel = mapped
+			} else if upstreamModel == CindyDefaultTestModel {
+				upstreamModel = "openai/gpt-5.6-luna"
+			}
+		}
 		if requireCompact {
-			return resolveOpenAICompactForwardModel(account, upstreamModel)
+			// forwardOpenAIPassthrough resolves compact mappings from the client
+			// spelling after the Cindy mapping. Preserve the compact mapping's
+			// precedence when it actually overrides the raw client spelling;
+			// otherwise retain the canonical Cindy upstream key.
+			if compactModel := strings.TrimSpace(resolveOpenAICompactForwardModelWithCanonical(account, requestedModel, upstreamModel)); compactModel != "" && compactModel != strings.TrimSpace(requestedModel) {
+				return compactModel
+			}
 		}
 		return upstreamModel
 	}

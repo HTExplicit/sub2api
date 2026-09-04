@@ -388,6 +388,10 @@ func (h *GatewayHandler) handleCCFailoverExhausted(c *gin.Context, lastErr *serv
 		h.chatCompletionsErrorResponse(c, status, "server_error", message)
 		return
 	}
+	if lastErr != nil && lastErr.IsOpenAIModelNotSupported() {
+		h.chatCompletionsErrorResponse(c, http.StatusBadRequest, service.OpenAIModelNotSupportedCode, service.OpenAIModelNotSupportedClientMessage)
+		return
+	}
 	if lastErr != nil && lastErr.IsOpenAICapacityShed() && strings.TrimSpace(lastErr.ClientMessage) != "" {
 		status := lastErr.ClientStatusCode
 		if status <= 0 {

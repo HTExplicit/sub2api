@@ -201,6 +201,62 @@ func TestEnsureCindyResponsesStoreFalsePreservesContinuationFields(t *testing.T)
 	require.JSONEq(t, `{"store":false,"input":[{"type":"reasoning","id":"rs_foreign","encrypted_content":"cipher","phase":"analysis"},{"type":"function_call","id":"fc_foreign","call_id":"call_foreign","name":"tool","arguments":"{}"}]}`, string(got))
 }
 
+func TestNormalizeLegacyLaxaFullReplayStoreFalse(t *testing.T) {
+	legacy := &Account{
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"base_url": "https://api.laxarouter.ai", "api_key": "test"},
+	}
+	ordinary := &Account{
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"base_url": "https://api.openai.com", "api_key": "test"},
+	}
+
+	tests := []struct {
+		name       string
+		account    *Account
+		payload    string
+		wantStore  string
+		wantAnchor bool
+	}{
+		{
+			name:      "legacy plain full replay",
+			account:   legacy,
+			payload:   `{"model":"gpt-5.6-luna","store":true,"input":[{"type":"message","role":"user","content":"hello"}]}`,
+			wantStore: "false",
+		},
+		{
+			name:      "legacy opaque full replay",
+			account:   legacy,
+			payload:   `{"model":"gpt-5.6-luna","store":true,"input":[{"type":"reasoning","id":"rs_1","encrypted_content":"cipher"}]}`,
+			wantStore: "false",
+		},
+		{
+			name:       "legacy anchored continuation preserves store",
+			account:    legacy,
+			payload:    `{"model":"gpt-5.6-luna","store":true,"previous_response_id":"resp_1","input":"next"}`,
+			wantStore:  "true",
+			wantAnchor: true,
+		},
+		{
+			name:      "ordinary OpenAI unchanged",
+			account:   ordinary,
+			payload:   `{"model":"gpt-5.6-luna","store":true,"input":[{"type":"message","role":"user","content":"hello"}]}`,
+			wantStore: "true",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := normalizeLegacyLaxaFullReplayStoreFalse(tt.account, []byte(tt.payload))
+			require.NoError(t, err)
+			require.Equal(t, tt.wantStore, gjson.GetBytes(got, "store").String())
+			require.Equal(t, tt.wantAnchor, gjson.GetBytes(got, "previous_response_id").Exists())
+		})
+	}
+}
+
 func TestCindyContinuationAccumulatorProof(t *testing.T) {
 	baseline := []json.RawMessage{
 		json.RawMessage(`{"type":"message","id":"msg_foreign","role":"user","content":[{"type":"input_text","text":"first"}]}`),

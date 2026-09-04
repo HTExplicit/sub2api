@@ -56,7 +56,7 @@ func classifySelectionFailureError(err error, fallback noAccountErrorClassificat
 	// one message that names the real problem. It also flips the ops attribution
 	// from a local model-configuration issue to routing capacity, because call
 	// sites gate markOpsRoutingCapacityLimitedIfNoAvailable on ModelNotFound.
-	if fallback.ModelNotFound {
+	if fallback.ModelNotFound || fallback.ErrType == service.OpenAIModelNotSupportedCode {
 		return fallback
 	}
 	match := selectionModelRateLimitedPattern.FindStringSubmatch(strings.ToLower(err.Error()))
@@ -122,6 +122,13 @@ func classifyNoAccountError(
 	}
 
 	result := diag.DiagnoseModelAvailabilityForPlatform(ctx, apiKey.GroupID, routingModel, platform)
+	if result.ModelNotSupportedCooldownExhausted {
+		return noAccountErrorClassification{
+			Status:  http.StatusBadRequest,
+			ErrType: service.OpenAIModelNotSupportedCode,
+			Message: service.OpenAIModelNotSupportedClientMessage,
+		}
+	}
 	if result.HasAccountsInPool && !result.HasModelSupport {
 		return noAccountErrorClassification{
 			Status:        http.StatusNotFound,

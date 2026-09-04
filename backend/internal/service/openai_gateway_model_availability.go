@@ -54,6 +54,8 @@ func (s *OpenAIGatewayService) DiagnoseModelAvailabilityForPlatform(
 	}
 
 	diag := ModelAvailabilityDiagnosis{}
+	supportingAccounts := 0
+	modelNotSupportedCooldowns := 0
 	for i := range accounts {
 		diag.HasAccountsInPool = true
 		// Mirrors the per-candidate filter used during account selection
@@ -62,8 +64,13 @@ func (s *OpenAIGatewayService) DiagnoseModelAvailabilityForPlatform(
 		// mapping must match.
 		if accounts[i].IsModelSupported(requestedModel) {
 			diag.HasModelSupport = true
-			return diag
+			supportingAccounts++
+			if IsCindyRuntimeCompatibleAPIKeyAccount(accounts[i].Platform, accounts[i].Type, accounts[i].Credentials) &&
+				accounts[i].hasActiveModelRateLimitReasonWithContext(ctx, requestedModel, string(openAIModelNotSupportedReason)) {
+				modelNotSupportedCooldowns++
+			}
 		}
 	}
+	diag.ModelNotSupportedCooldownExhausted = supportingAccounts > 0 && modelNotSupportedCooldowns == supportingAccounts
 	return diag
 }

@@ -80,3 +80,15 @@ func TestOpenAIWSPreviousResponseCanMove(t *testing.T) {
 		true,
 	))
 }
+
+func TestOpenAIWSLegacyLaxaReplaySafe(t *testing.T) {
+	require.True(t, openAIWSLegacyLaxaReplaySafe(
+		[]byte(`{"type":"response.create","model":"gpt-5.6-luna","input":"hello"}`),
+	))
+	require.False(t, openAIWSLegacyLaxaReplaySafe(
+		[]byte(`{"type":"response.create","model":"gpt-5.6-luna","previous_response_id":"resp_1","input":"hello"}`),
+	))
+	require.False(t, openAIWSLegacyLaxaReplaySafe(
+		[]byte(`{"type":"response.create","model":"gpt-5.6-luna","input":[{"type":"reasoning","encrypted_content":"opaque"}]}`),
+	))
+}
