@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -77,6 +78,168 @@ func TestAccountJobDataImportPreparesIdentityStateOnceForOneHundredItems(t *test
 	require.GreaterOrEqual(t, baselineService.getGroupCalls, 100)
 	require.GreaterOrEqual(t, baselineService.folderListCalls, 100)
 	require.GreaterOrEqual(t, baselineService.tagListCalls, 100)
+}
+
+// hydratingDataV2AdminService mirrors the production AdminService boundary:
+// GetAllGroupsIncludingInactive returns lightweight groups, while GetGroup
+// supplies the authoritative strict-Cindy marker.
+type hydratingDataV2AdminService struct {
+	*dataV2AdminService
+	strictCindy bool
+	returnNil   bool
+}
+
+func (s *hydratingDataV2AdminService) GetGroup(ctx context.Context, id int64) (*service.Group, error) {
+	if s.returnNil {
+		return nil, nil
+	}
+	group, err := s.dataV2AdminService.GetGroup(ctx, id)
+	if err != nil || group == nil {
+		return group, err
+	}
+	if group.Platform == service.PlatformCindy &&
+		group.EffectiveWirePlatform() == service.WirePlatformOpenAI &&
+		group.EffectiveProviderProfile() == service.ProviderProfileCindyLaxaV1 {
+		group.StrictCindyKnown = true
+		group.StrictCindy = s.strictCindy
+	}
+	return group, nil
+}
+
+func TestAccountJobDataImportHydratesExplicitCindyTargetOnce(t *testing.T) {
+	groupID := int64(12)
+	listedGroup := strictCindyImportGroup(groupID)
+	listedGroup.StrictCindyKnown = false
+	listedGroup.StrictCindy = false
+
+	adminService := newDataV2AdminService()
+	adminService.groups = []service.Group{listedGroup}
+	adminService.accounts = []service.Account{*canonicalCindyJobAccount(42)}
+	adminService.accounts[0].GroupIDs = []int64{groupID}
+	adminService.accounts[0].Credentials["api_key"] = "existing-key"
+	handler := NewAccountHandler(&hydratingDataV2AdminService{dataV2AdminService: adminService, strictCindy: true}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler.cindyJobMutations = &recordingCindyJobMutationRunner{}
+
+	request := cindyImportRequest(&groupID,
+		cindyImportAccount("new-one", service.PlatformOpenAI, "new-key-one", ""),
+		cindyImportAccount("new-two", service.PlatformOpenAI, "new-key-two", ""),
+	)
+	raw, err := json.Marshal(request)
+	require.NoError(t, err)
+	job := &service.AccountJob{ID: 905, Kind: service.AccountJobKindImportData}
+	preparedCtx, cleanup, err := handler.PrepareAccountJob(context.Background(), job, raw)
+	require.NoError(t, err)
+	defer cleanup()
+
+	for ordinal := 1; ordinal <= len(request.Data.Accounts); ordinal++ {
+		results, executeErr := handler.ExecuteAccountJob(preparedCtx, job, raw, []service.AccountJobItem{{ID: int64(ordinal), Ordinal: ordinal}})
+		require.NoError(t, executeErr)
+		require.Len(t, results, 1)
+		require.Equal(t, service.AccountJobItemStatusSucceeded, results[0].Status)
+	}
+	require.Equal(t, 1, adminService.groupListCalls)
+	require.Equal(t, 1, adminService.getGroupCalls, "the explicit target must be hydrated once per import job")
+	require.Len(t, adminService.createdAccounts, 2)
+	for _, created := range adminService.createdAccounts {
+		require.Equal(t, []int64{groupID}, created.GroupIDs)
+	}
+}
+
+func TestAccountJobDataImportPreparedMixedCindyTargetStillRejected(t *testing.T) {
+	groupID := int64(12)
+	mixedGroup := strictCindyImportGroup(groupID)
+	mixedGroup.StrictCindyKnown = false
+	mixedGroup.StrictCindy = false
+
+	adminService := newDataV2AdminService()
+	adminService.groups = []service.Group{mixedGroup}
+	adminService.accounts = []service.Account{{
+		ID: 42, Name: "ordinary", Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "ordinary-key", "base_url": "https://api.openai.com"},
+		GroupIDs:    []int64{groupID}, Status: service.StatusActive, Schedulable: true,
+	}}
+	handler := NewAccountHandler(&hydratingDataV2AdminService{dataV2AdminService: adminService, strictCindy: false}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	request := cindyImportRequest(&groupID, cindyImportAccount("incoming", service.PlatformOpenAI, "new-key", ""))
+	raw, err := json.Marshal(request)
+	require.NoError(t, err)
+	job := &service.AccountJob{ID: 906, Kind: service.AccountJobKindImportData}
+	preparedCtx, cleanup, err := handler.PrepareAccountJob(context.Background(), job, raw)
+	require.NoError(t, err)
+	defer cleanup()
+
+	results, err := handler.ExecuteAccountJob(preparedCtx, job, raw, []service.AccountJobItem{{ID: 1, Ordinal: 1}})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.Equal(t, service.AccountJobItemStatusFailed, results[0].Status)
+	require.Equal(t, dataImportCodeCindyTargetInvalid, results[0].ErrorCode)
+	require.Empty(t, adminService.createdAccounts)
+}
+
+func TestAccountJobDataImportMissingTargetIsRejectedPerItem(t *testing.T) {
+	groupID := int64(12)
+	adminService := newDataV2AdminService()
+	adminService.groups = nil
+	hydratingService := &hydratingDataV2AdminService{dataV2AdminService: adminService, strictCindy: true}
+	handler := NewAccountHandler(hydratingService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	request := cindyImportRequest(&groupID, cindyImportAccount("incoming", service.PlatformOpenAI, "new-key", ""))
+	raw, err := json.Marshal(request)
+	require.NoError(t, err)
+	job := &service.AccountJob{ID: 907, Kind: service.AccountJobKindImportData}
+	preparedCtx, cleanup, err := handler.PrepareAccountJob(context.Background(), job, raw)
+	require.NoError(t, err)
+	defer cleanup()
+
+	results, err := handler.ExecuteAccountJob(preparedCtx, job, raw, []service.AccountJobItem{{ID: 1, Ordinal: 1}})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.Equal(t, service.AccountJobItemStatusFailed, results[0].Status)
+	require.Equal(t, dataImportCodeCindyTargetInvalid, results[0].ErrorCode)
+	require.Empty(t, adminService.createdAccounts)
+}
+
+func TestAccountJobDataImportPreparationPropagatesTargetLookupFailure(t *testing.T) {
+	groupID := int64(12)
+	adminService := newDataV2AdminService()
+	adminService.groups = []service.Group{strictCindyImportGroup(groupID)}
+	adminService.getGroupErr = errors.New("target lookup unavailable")
+	handler := NewAccountHandler(&hydratingDataV2AdminService{dataV2AdminService: adminService, strictCindy: true}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	request := cindyImportRequest(&groupID, cindyImportAccount("incoming", service.PlatformOpenAI, "new-key", ""))
+	raw, err := json.Marshal(request)
+	require.NoError(t, err)
+	job := &service.AccountJob{ID: 908, Kind: service.AccountJobKindImportData}
+	_, cleanup, err := handler.PrepareAccountJob(context.Background(), job, raw)
+	require.Nil(t, cleanup)
+	require.EqualError(t, err, "target lookup unavailable")
+}
+
+func TestAccountJobDataImportPreparedEmptyCindyTargetBootstraps(t *testing.T) {
+	groupID := int64(12)
+	listedGroup := strictCindyImportGroup(groupID)
+	listedGroup.StrictCindyKnown = false
+	listedGroup.StrictCindy = false
+	adminService := newDataV2AdminService()
+	adminService.groups = []service.Group{listedGroup}
+	hydratingService := &hydratingDataV2AdminService{dataV2AdminService: adminService, strictCindy: false}
+	handler := NewAccountHandler(hydratingService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler.cindyJobMutations = &recordingCindyJobMutationRunner{}
+
+	request := cindyImportRequest(&groupID, cindyImportAccount("bootstrap", service.PlatformOpenAI, "new-key", ""))
+	raw, err := json.Marshal(request)
+	require.NoError(t, err)
+	job := &service.AccountJob{ID: 909, Kind: service.AccountJobKindImportData}
+	preparedCtx, cleanup, err := handler.PrepareAccountJob(context.Background(), job, raw)
+	require.NoError(t, err)
+	defer cleanup()
+
+	results, err := handler.ExecuteAccountJob(preparedCtx, job, raw, []service.AccountJobItem{{ID: 1, Ordinal: 1}})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.Equal(t, service.AccountJobItemStatusSucceeded, results[0].Status)
+	require.Len(t, adminService.createdAccounts, 1)
+	require.Equal(t, []int64{groupID}, adminService.createdAccounts[0].GroupIDs)
 }
 
 func TestAccountJobDataImportUpdatesMutableIdentityIndexAfterEachCommit(t *testing.T) {

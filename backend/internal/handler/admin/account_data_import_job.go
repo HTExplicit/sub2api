@@ -93,6 +93,26 @@ func (h *AccountHandler) PrepareAccountJob(
 	for _, group := range allGroups {
 		groupsByID[group.ID] = group
 	}
+	targetGroupID := int64(0)
+	// Group list queries intentionally omit the strict Cindy membership marker.
+	// Hydrate the one explicit import target exactly once so prepared jobs use
+	// the same authoritative decision input as the synchronous preview path.
+	if req.TargetGroupID != nil && *req.TargetGroupID > 0 {
+		targetGroupID = *req.TargetGroupID
+		targetGroup, getGroupErr := h.adminService.GetGroup(ctx, targetGroupID)
+		if getGroupErr != nil {
+			if !errors.Is(getGroupErr, service.ErrGroupNotFound) {
+				return ctx, nil, getGroupErr
+			}
+			delete(groupsByID, targetGroupID)
+		} else if targetGroup == nil || targetGroup.ID != targetGroupID {
+			// A nil result or an ID mismatch is an unavailable target. Do not
+			// retain a stale lightweight entry from the bulk list.
+			delete(groupsByID, targetGroupID)
+		} else {
+			groupsByID[targetGroupID] = *targetGroup
+		}
+	}
 	previewState := &dataImportPreviewState{
 		existing:      existing,
 		identityIndex: identityIndex,
@@ -129,6 +149,13 @@ func (h *AccountHandler) PrepareAccountJob(
 	groupIDs := make(map[int64]struct{}, len(allGroups))
 	for _, group := range allGroups {
 		groupIDs[group.ID] = struct{}{}
+	}
+	if targetGroupID > 0 {
+		if _, ok := groupsByID[targetGroupID]; ok {
+			// The authoritative lookup wins even if the bulk list raced with a
+			// status change and did not contain the target.
+			groupIDs[targetGroupID] = struct{}{}
+		}
 	}
 	proxyIDs := make(map[int64]struct{}, len(proxyKeyToID))
 	for _, proxyID := range proxyKeyToID {
