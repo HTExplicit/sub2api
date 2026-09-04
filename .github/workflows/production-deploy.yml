@@ -187,7 +187,6 @@ jobs:
             reconcile-runtime)
               [[ "$CONFIRMATION" == RECONCILE ]] || exit 1
               [[ -z "$EXPECTED_CURRENT_RELEASE_TAG" ]] || exit 1
-              [[ "$INTERRUPT_BUSINESS" == false ]] || exit 1
               ;;
             rollback)
               [[ "$CONFIRMATION" == ROLLBACK ]] || exit 1
@@ -239,7 +238,7 @@ jobs:
             echo 'runtime_spec=runtime=explicit' >> "$GITHUB_OUTPUT"
             echo "cindy_rollout=cindy=${CINDY_HEALTH},${CINDY_CAPABILITY_CATALOG},${CINDY_SEARCH},${IMAGE_STUDIO},${CINDY_RESPONSES_IMAGE_BRIDGE}" >> "$GITHUB_OUTPUT"
             echo "overdraft=${OVERDRAFT}" >> "$GITHUB_OUTPUT"
-            if [[ "$OPERATION" == deploy && "$INTERRUPT_BUSINESS" == true ]]; then
+            if [[ ("$OPERATION" == deploy || "$OPERATION" == reconcile-runtime) && "$INTERRUPT_BUSINESS" == true ]]; then
               echo 'maintenance_spec=maintenance=interrupt' >> "$GITHUB_OUTPUT"
             else
               echo 'maintenance_spec=' >> "$GITHUB_OUTPUT"
@@ -286,7 +285,7 @@ jobs:
             [[ "$CINDY_ROLLOUT" =~ ^cindy=(true|false),(true|false),(true|false),(true|false),(true|false)$ ]] || exit 1
             [[ "$OVERDRAFT" == true || "$OVERDRAFT" == false ]] || exit 1
             [[ -z "$MAINTENANCE_SPEC" || "$MAINTENANCE_SPEC" == maintenance=interrupt ]] || exit 1
-            [[ "$OPERATION" == deploy || -z "$MAINTENANCE_SPEC" ]] || exit 1
+            [[ "$OPERATION" == deploy || "$OPERATION" == reconcile-runtime || -z "$MAINTENANCE_SPEC" ]] || exit 1
           else
             [[ -z "$CINDY_ROLLOUT" && -z "$OVERDRAFT" && -z "$MAINTENANCE_SPEC" && "$OPERATION" == deploy ]] || exit 1
           fi
@@ -305,8 +304,10 @@ jobs:
             reconcile-runtime)
               [[ -z "$EXPECTED_CURRENT_IMAGE_REF" ]] || exit 1
               [[ "$RUNTIME_SPEC" == runtime=explicit ]] || exit 1
-              [[ -z "$MAINTENANCE_SPEC" ]] || exit 1
               remote_command="reconcile-runtime ${IMAGE_REF} ${CINDY_ROLLOUT} overdraft=${OVERDRAFT}"
+              if [[ -n "$MAINTENANCE_SPEC" ]]; then
+                remote_command+=" $MAINTENANCE_SPEC"
+              fi
               ;;
             rollback)
               [[ "$EXPECTED_CURRENT_IMAGE_REF" =~ ^ghcr\.io/htexplicit/sub2api:[0-9]+\.[0-9]+\.[0-9]+-codexrip\.[1-9][0-9]*@sha256:[0-9a-f]{64}$ ]] || exit 1

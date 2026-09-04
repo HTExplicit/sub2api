@@ -310,9 +310,12 @@ fi
 if run_resolve reconcile-runtime v0.1.177-codexrip.7 v0.1.177-codexrip.6 RECONCILE; then
   fail 'runtime reconciliation accepted a separate expected-current release'
 fi
-if run_resolve reconcile-runtime v0.1.177-codexrip.7 '' RECONCILE true; then
-  fail 'runtime reconciliation accepted business interruption mode'
+if ! run_resolve reconcile-runtime v0.1.177-codexrip.7 '' RECONCILE true; then
+  cat "$tmpdir/resolve-output" >&2
+  fail 'runtime reconciliation rejected the explicit interruption mode'
 fi
+grep -Fxq 'maintenance_spec=maintenance=interrupt' "$tmpdir/github-output" ||
+  fail 'runtime reconciliation did not emit the explicit interruption spec'
 
 run_resolve deploy v0.1.177-codexrip.7 '' DEPLOY true ||
   fail 'deploy resolution rejected the explicit interruption mode'
@@ -405,6 +408,10 @@ run_apply reconcile-runtime "$rollback_current_ref" '' 'cindy=true,true,true,fal
   fail 'valid runtime reconciliation did not execute successfully'
 assert_ssh_invocation "reconcile-runtime $rollback_current_ref cindy=true,true,true,false,false overdraft=true"
 
+run_apply reconcile-runtime "$rollback_current_ref" '' 'cindy=true,true,true,false,false' true runtime=explicit maintenance=interrupt ||
+  fail 'valid interrupted runtime reconciliation did not execute successfully'
+assert_ssh_invocation "reconcile-runtime $rollback_current_ref cindy=true,true,true,false,false overdraft=true maintenance=interrupt"
+
 if run_apply reconcile-runtime "$rollback_current_ref" "$rollback_target_ref" 'cindy=true,true,true,false,false' true; then
   fail 'runtime reconciliation accepted a second expected-current image'
 fi
@@ -413,11 +420,6 @@ if run_apply reconcile-runtime "$rollback_current_ref" '' 'cindy=true,true,true,
   fail 'runtime reconciliation accepted runtime-preserve mode'
 fi
 assert_ssh_not_invoked
-if run_apply reconcile-runtime "$rollback_current_ref" '' 'cindy=true,true,true,false,false' true runtime=explicit maintenance=interrupt; then
-  fail 'runtime reconciliation accepted maintenance interrupt mode'
-fi
-assert_ssh_not_invoked
-
 if run_apply deploy "$rollback_current_ref" "$rollback_target_ref" 'cindy=true,true,true,false,false'; then
   fail 'deploy accepted an unexpected expected-current image'
 fi
@@ -504,14 +506,18 @@ grep -Fq 'maintenance_spec=maintenance=interrupt' "$WORKFLOW" ||
   fail 'explicit business interruption must resolve to a fixed maintenance spec'
 grep -Fq 'remote_command+=" $MAINTENANCE_SPEC"' "$WORKFLOW" ||
   fail 'explicit business interruption must be appended only after validation'
-grep -Fq '[[ "$OPERATION" == deploy || -z "$MAINTENANCE_SPEC" ]]' "$WORKFLOW" ||
-  fail 'rollback must reject the maintenance interrupt spec'
+grep -Fq '[[ "$OPERATION" == deploy || "$OPERATION" == reconcile-runtime || -z "$MAINTENANCE_SPEC" ]]' "$WORKFLOW" ||
+  fail 'rollback must reject the maintenance interrupt spec while allowing deploy/reconcile'
 grep -Fq '[[ "$INTERRUPT_BUSINESS" == false ]]' "$WORKFLOW" ||
   fail 'preserve/rollback paths must reject business interruption'
 grep -Fq 'remote_command="deploy ${IMAGE_REF} runtime=preserve"' "$WORKFLOW" ||
   fail 'automatic deploy must preserve the locked runtime tuple'
 grep -Fq 'remote_command="reconcile-runtime ${IMAGE_REF} ${CINDY_ROLLOUT} overdraft=${OVERDRAFT}"' "$WORKFLOW" ||
   fail 'runtime reconciliation must bind the exact current image and explicit runtime tuple'
+grep -Fq 'remote_command+=" $MAINTENANCE_SPEC"' "$WORKFLOW" ||
+  fail 'runtime reconciliation must append only the validated maintenance interrupt spec'
+grep -Fq 'if [[ ("$OPERATION" == deploy || "$OPERATION" == reconcile-runtime) && "$INTERRUPT_BUSINESS" == true ]]; then' "$WORKFLOW" ||
+  fail 'runtime reconciliation interruption was not bound to the fixed maintenance spec'
 grep -Fq 'remote_command="rollback ${IMAGE_REF} from=${EXPECTED_CURRENT_IMAGE_REF} ${CINDY_ROLLOUT} overdraft=${OVERDRAFT}"' "$WORKFLOW" ||
   fail 'rollback must bind the target to the exact expected-current image'
 
