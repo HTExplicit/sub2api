@@ -242,7 +242,8 @@ gh workflow run production-deploy.yml \
   -f cindy_search=true \
   -f image_studio=false \
   -f cindy_responses_image_bridge=false \
-  -f overdraft=true
+  -f overdraft=true \
+  -f interrupt_business=false
 ```
 
 The host proves that the requested immutable image is already running, the
@@ -252,6 +253,17 @@ target. It then takes the normal root-only backup and non-target container
 snapshot, recreates only `sub2api`, and observes the reconciled runtime for 300
 seconds. Any failure restores the prior base-only runtime; this operation does
 not pull or change an image.
+
+For a controlled stop before recreation, set `-f interrupt_business=true`. The
+host appends only `maintenance=interrupt`, stops `sub2api` after the root-only
+backup, waits for three stable zero samples of loopback connections and
+Redis-backed active leases (up to the fixed 900 second lease grace window), and
+then recreates only `sub2api`. A timeout or any post-recreate gate failure
+restores the verified base-only runtime and returns a failure status.
+
+The reconcile path records a fixed same-image native-canary skip marker and does
+not create a temporary acceptance credential; all local health, tuple, image,
+snapshot, and 300-second observation gates still run.
 
 An image downgrade uses the same protected `production` Environment and an
 explicit expected-current release rather than the deploy path:
