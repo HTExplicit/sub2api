@@ -356,7 +356,7 @@ func TestAdminServiceGetGroupModelsListCandidatesUsesCindyCatalog(t *testing.T) 
 
 	want := []string{
 		"deepseek-v4-flash", "deepseek-v4-flash-vision-exp", "deepseek-v4-pro",
-		"gemini-3.6-flash", "glm-5.3-flash", "gpt-5.6-luna", "hy3",
+		"gemini-3.6-flash", "glm-5.3-flash", "gpt-5.6-luna", "gpt-6-astra", "hy3",
 		"qwen3.8-27b", "qwen3.8-flash",
 	}
 

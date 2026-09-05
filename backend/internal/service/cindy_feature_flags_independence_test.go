@@ -139,8 +139,8 @@ func TestCindySearchAvailabilityHelper(t *testing.T) {
 	}
 	if want == "true" {
 		models := CindyManagedCompatibilityModels()
-		if len(models) != 9 {
-			t.Fatalf("managed Cindy Search model count = %d, want 9", len(models))
+		if len(models) != 10 {
+			t.Fatalf("managed Cindy Search model count = %d, want 10", len(models))
 		}
 		for _, model := range models {
 			if !CindyAlphaSearchModelAvailable(model) {

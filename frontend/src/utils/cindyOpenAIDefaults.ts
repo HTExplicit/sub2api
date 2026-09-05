@@ -46,6 +46,7 @@ export function filterCindyAccountTestModels(
 
   return models.filter(model =>
     model.managed === true &&
+    model.public_model !== false &&
     model.verified === true &&
     model.endpoints?.some(endpoint => CINDY_ACCOUNT_TEST_ENDPOINTS.has(endpoint)) === true
   )

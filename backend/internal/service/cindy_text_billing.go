@@ -108,6 +108,7 @@ func applyCindyCatalogCostDiscount(pricing CindyTextPricing, discount float64) C
 	pricing.CacheReadInputTokenCost *= factor
 	pricing.CacheReadInputTokenCostPriority *= factor
 	pricing.CacheCreationInputTokenCost *= factor
+	pricing.CacheCreationInputTokenCostPriority *= factor
 	pricing.CacheCreationInputTokenCostAbove1hr *= factor
 	pricing.InputCostPerAudioToken *= factor
 	pricing.LongContextInputCostPerToken *= factor
@@ -132,6 +133,10 @@ func cindyTextPricingForServiceTier(model string, pricing CindyTextPricing, serv
 		pricing.InputCostPerToken = pricing.InputCostPerTokenPriority
 		pricing.OutputCostPerToken = pricing.OutputCostPerTokenPriority
 		pricing.CacheReadInputTokenCost = pricing.CacheReadInputTokenCostPriority
+		if pricing.CacheCreationInputTokenCostPriority > 0 {
+			pricing.CacheCreationInputTokenCost = pricing.CacheCreationInputTokenCostPriority
+			pricing.CacheCreationInputTokenCostPresent = true
+		}
 		if pricing.LongContextInputTokenThreshold > 0 {
 			if pricing.LongContextInputCostPerTokenPriority <= 0 || pricing.LongContextOutputCostPerTokenPriority <= 0 ||
 				pricing.LongContextCacheReadInputTokenCostPriority <= 0 {

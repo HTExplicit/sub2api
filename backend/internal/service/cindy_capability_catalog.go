@@ -7,17 +7,19 @@ import (
 
 // CindyCapabilityCatalogVersion is bumped whenever the fixed Cindy data-plane
 // catalogue or one of its verified endpoint decisions changes.
-const CindyCapabilityCatalogVersion = "2026-08-30.1"
+const CindyCapabilityCatalogVersion = "2026-09-05.1"
 
 // CindyModelMetadataSourceRevision pins the shipped Cindy registry used for
 // display, context-window, output-limit, and reasoning metadata.
 const CindyModelMetadataSourceRevision = "makecindy/cindy@1b4f9f42bf3a0517a45c776161278ed22891b5f0"
 
+const CindyCatalogAdditionsMetadataSourceRevision = "makecindy/cindy@81e383b5acb43ff4c7ff388a4103f77492c530e6"
+
 // CindyFreeModelCatalogSourceRevision and SHA256 pin the authenticated model
 // inventory returned by the newest eligible production free-trial key.
 const (
-	CindyFreeModelCatalogSourceRevision = "laxarouter-free-key@2026-08-29"
-	CindyFreeModelCatalogSHA256         = "a292efade35e63895aa20b63beed0d1ec712d93d030c6a2300cc9e739e926d46"
+	CindyFreeModelCatalogSourceRevision = "laxarouter-free-key@2026-09-05"
+	CindyFreeModelCatalogSHA256         = "9f27de4e91b54efe44c9ac8107882cbe971dc94be3ea715bfd6dfaae7fd2d07a"
 )
 
 // CindyCompatibilityAliasSourceRevision identifies downstream aliases managed
@@ -103,6 +105,7 @@ type CindyTextPricing struct {
 	CacheReadInputTokenCost                    float64
 	CacheReadInputTokenCostPriority            float64
 	CacheCreationInputTokenCost                float64
+	CacheCreationInputTokenCostPriority        float64
 	CacheCreationInputTokenCostPresent         bool
 	CacheCreationInputTokenCostAbove1hr        float64
 	InputCostPerAudioToken                     float64
@@ -287,7 +290,7 @@ func (c CindyCapability) CodexReasoningEfforts() []string {
 	return append([]string(nil), c.ReasoningEfforts...)
 }
 
-// CindyCatalogModels returns the complete 11-item free inventory for
+// CindyCatalogModels returns the complete authenticated free inventory for
 // management views. It is independent of rollout flags so the two special IDs
 // remain visible without entering ordinary client-facing model surfaces.
 func CindyCatalogModels() []CindyCatalogModel {
@@ -503,7 +506,7 @@ func CindyFreePoolModelSupportsEndpoint(model string, endpoint CindyEndpoint) bo
 	return false
 }
 
-// CindyFreePoolModelAllowed reports whether a model belongs to the nine-item
+// CindyFreePoolModelAllowed reports whether a model belongs to the verified
 // ordinary routing surface even when a scheduler call does not specify an
 // endpoint capability.
 func CindyFreePoolModelAllowed(model string) bool {
@@ -527,7 +530,8 @@ func CindyAlphaSearchModelAvailable(model string) bool {
 	capability, ok := resolveKnownCindyCapability(model)
 	return ok && capability.PublicModel &&
 		capability.Kind == CindyModelKindText &&
-		cindyCapabilityHasEndpoint(capability, CindyEndpointResponses)
+		cindyCapabilityHasEndpoint(capability, CindyEndpointResponses) &&
+		cindyCapabilityHasEndpoint(capability, CindyEndpointAlphaSearch)
 }
 
 // CindyAlphaSearchUpstreamModel resolves the provider-qualified model for a
@@ -544,14 +548,15 @@ func CindyAlphaSearchUpstreamModel(model string) (string, bool) {
 	return capability.LiveUpstreamID, true
 }
 
-// CindyManagedCompatibilityModels returns the nine verified public text IDs
+// CindyManagedCompatibilityModels returns the verified public text IDs
 // used by managed Search. The compatibility alias is projected separately so
 // management clients never confuse it with an upstream catalog entry.
 func CindyManagedCompatibilityModels() []string {
 	models := make([]string, 0, len(cindyCapabilityCatalog))
 	for _, capability := range cindyCapabilityCatalog {
 		if capability.PublicModel && capability.Kind == CindyModelKindText &&
-			cindyCapabilityHasEndpoint(capability, CindyEndpointResponses) {
+			cindyCapabilityHasEndpoint(capability, CindyEndpointResponses) &&
+			cindyCapabilityHasEndpoint(capability, CindyEndpointAlphaSearch) {
 			models = append(models, capability.PublicID)
 		}
 	}

@@ -303,7 +303,7 @@ func TestAccountHandlerGetAvailableModels_CindyUsesManagedCatalogInsteadOfStored
 		Data []managedAvailableModel `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
-	require.Len(t, resp.Data, 12, "11 fixed free models and one allowed compatibility alias")
+	require.Len(t, resp.Data, 16, "15 fixed free models and one allowed compatibility alias")
 
 	byID := make(map[string]managedAvailableModel, len(resp.Data))
 	for _, model := range resp.Data {
@@ -314,6 +314,12 @@ func TestAccountHandlerGetAvailableModels_CindyUsesManagedCatalogInsteadOfStored
 	}
 
 	require.NotContains(t, byID, "legacy-only")
+	for _, id := range []string{"gemini-3.8-flash", "muse-spark-1.3", "hy4-preview"} {
+		require.True(t, byID[id].Verified, id)
+		require.False(t, byID[id].PublicModel, id)
+	}
+	require.True(t, byID["gpt-6-astra"].PublicModel)
+	require.Equal(t, []string{"responses", "alpha.search"}, byID["gpt-6-astra"].Endpoints)
 	luna := byID["gpt-5.6-luna"]
 	require.Equal(t, "openai/gpt-5.6-luna", luna.LiveUpstreamID)
 	require.Equal(t, 1050000, luna.ContextWindow)

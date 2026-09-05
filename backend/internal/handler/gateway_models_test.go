@@ -29,7 +29,7 @@ type gatewayModelsResponseForTest struct {
 
 var cindyV4PublicIDsForHandlerTest = []string{
 	"deepseek-v4-flash", "deepseek-v4-flash-vision-exp", "deepseek-v4-pro",
-	"gemini-3.6-flash", "glm-5.3-flash", "gpt-5.6-luna", "hy3",
+	"gemini-3.6-flash", "glm-5.3-flash", "gpt-5.6-luna", "gpt-6-astra", "hy3",
 	"qwen3.8-27b", "qwen3.8-flash",
 }
 
@@ -156,7 +156,7 @@ func TestGatewayModels_StrictCindyUsesVerifiedPublicCatalog(t *testing.T) {
 	var got gatewayModelsResponseForTest
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	require.Equal(t, cindyV4PublicIDsForHandlerTest, modelIDsForTest(got.Data))
-	require.Len(t, got.Data, 9)
+	require.Len(t, got.Data, 10)
 	require.NotContains(t, modelIDsForTest(got.Data), "gpt-5.4")
 	require.NotContains(t, modelIDsForTest(got.Data), "openai/gpt-5.6-sol")
 	require.NotContains(t, modelIDsForTest(got.Data), "cindy/web-search")
@@ -271,7 +271,7 @@ func TestGatewayModelCapabilities_StrictCindyHidesInternalIDs(t *testing.T) {
 	require.Equal(t, service.CindyCapabilityCatalogVersion, got.CatalogVersion)
 	require.Equal(t, service.CindyFreeModelCatalogSourceRevision, got.CatalogRevision)
 	require.Equal(t, service.CindyFreeModelCatalogSHA256, got.CatalogSHA256)
-	require.Len(t, got.Data, 9)
+	require.Len(t, got.Data, 10)
 	require.NotContains(t, rec.Body.String(), "live_upstream")
 	require.NotContains(t, rec.Body.String(), "registry_id")
 	require.NotContains(t, rec.Body.String(), "openai/gpt-5.6-sol")
@@ -285,9 +285,13 @@ func TestGatewayModelCapabilities_StrictCindyHidesInternalIDs(t *testing.T) {
 			"count_tokens has no independent A/B/C verification yet")
 	}
 	require.NotContains(t, rec.Body.String(), string(service.CindyEndpointCountTokens))
-	require.Equal(t, []service.CindyEndpoint{service.CindyEndpointResponses, service.CindyEndpointMessages}, byID["gpt-5.6-luna"])
-	require.Equal(t, []service.CindyEndpoint{service.CindyEndpointResponses, service.CindyEndpointMessages}, byID["qwen3.8-flash"])
-	require.Equal(t, []service.CindyEndpoint{service.CindyEndpointResponses, service.CindyEndpointMessages}, byID["glm-5.3-flash"])
+	require.Equal(t, []service.CindyEndpoint{service.CindyEndpointResponses, service.CindyEndpointMessages, service.CindyEndpointAlphaSearch}, byID["gpt-5.6-luna"])
+	require.Equal(t, []service.CindyEndpoint{service.CindyEndpointResponses, service.CindyEndpointMessages, service.CindyEndpointAlphaSearch}, byID["qwen3.8-flash"])
+	require.Equal(t, []service.CindyEndpoint{service.CindyEndpointResponses, service.CindyEndpointMessages, service.CindyEndpointAlphaSearch}, byID["glm-5.3-flash"])
+	require.Equal(t, []service.CindyEndpoint{service.CindyEndpointResponses, service.CindyEndpointAlphaSearch}, byID["gpt-6-astra"])
+	require.NotContains(t, byID, "gemini-3.8-flash")
+	require.NotContains(t, byID, "muse-spark-1.3")
+	require.NotContains(t, byID, "hy4-preview")
 	require.NotContains(t, byID, "cindy/web-search")
 	require.NotContains(t, byID, "gpt-image-2")
 	require.NotContains(t, byControls, "gpt-image-2")
