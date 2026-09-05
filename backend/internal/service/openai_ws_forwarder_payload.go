@@ -611,38 +611,6 @@ func openAIWSRawItemsHasFunctionCallOutput(items []json.RawMessage) bool {
 	return false
 }
 
-func openAIWSRawItemsHaveToolCallContextForOutputs(items []json.RawMessage) bool {
-	if len(items) == 0 {
-		return false
-	}
-	contextCallIDs := make(map[string]struct{})
-	outputCallIDs := make(map[string]struct{})
-	for _, item := range items {
-		itemType := gjson.GetBytes(item, "type").String()
-		callID := strings.TrimSpace(gjson.GetBytes(item, "call_id").String())
-		switch {
-		case isCodexToolCallContextItemType(itemType):
-			if callID != "" {
-				contextCallIDs[callID] = struct{}{}
-			}
-		case isCodexToolCallOutputItemType(itemType):
-			if callID == "" {
-				return false
-			}
-			outputCallIDs[callID] = struct{}{}
-		}
-	}
-	if len(outputCallIDs) == 0 || len(contextCallIDs) == 0 {
-		return false
-	}
-	for callID := range outputCallIDs {
-		if _, ok := contextCallIDs[callID]; !ok {
-			return false
-		}
-	}
-	return true
-}
-
 // sanitizeOpenAIWSHistoricalReplayToolCalls 返回的新头数组与 previousItems 共享正文。
 func sanitizeOpenAIWSHistoricalReplayToolCalls(
 	previousItems []json.RawMessage,

@@ -6,6 +6,7 @@ import AccountsView from '../AccountsView.vue'
 
 const {
   listAccounts,
+  getById,
   listWithEtag,
   getFacets,
   listFolders,
@@ -25,6 +26,7 @@ const {
   accountJobsState
 } = vi.hoisted(() => ({
   listAccounts: vi.fn(),
+  getById: vi.fn(),
   listWithEtag: vi.fn(),
   getFacets: vi.fn(),
   listFolders: vi.fn(),
@@ -58,6 +60,7 @@ vi.mock('@/api/admin', () => ({
   adminAPI: {
     accounts: {
       list: listAccounts,
+      getById,
       listWithEtag,
       getFacets,
       listFolders,
@@ -256,6 +259,7 @@ describe('admin AccountsView Cockpit console', () => {
     localStorage.clear()
     sessionStorage.clear()
     listAccounts.mockReset().mockResolvedValue({ items: [account], total: 1, page: 1, page_size: 20, pages: 1 })
+    getById.mockReset().mockResolvedValue(account)
     listWithEtag.mockReset().mockResolvedValue({ notModified: true, etag: null, data: null })
     getFacets.mockReset().mockResolvedValue({ total: 1, uncategorized_count: 1, platforms: [], types: [], statuses: [], plans: [], proxies: [], folders: [], tags: [] })
     listFolders.mockReset().mockResolvedValue([])
@@ -361,10 +365,12 @@ describe('admin AccountsView Cockpit console', () => {
 
     expect(wrapper.get('[data-test="edit-modal"]').attributes('data-show')).toBe('false')
     await wrapper.get('[data-test="open-row"]').trigger('click')
+    await flushPromises()
     expect(wrapper.get('[data-test="details-drawer"]').text()).toContain('console-account')
     expect(wrapper.get('[data-test="edit-modal"]').attributes('data-show')).toBe('false')
 
     await wrapper.get('[data-test="drawer-edit"]').trigger('click')
+    await flushPromises()
     expect(wrapper.get('[data-test="edit-modal"]').attributes('data-show')).toBe('true')
     expect(wrapper.get('[data-test="edit-modal"]').attributes('data-id')).toBe('1')
   })

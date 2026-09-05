@@ -1313,14 +1313,20 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					}
 				}
 				errCode, errType, errMessage := summarizeOpenAIWSErrorEventFieldsFromRaw(errCodeRaw, errTypeRaw, errMsgRaw)
+				// With recovery disabled, ordinary native WS clients receive the
+				// original terminal events; lineage is applied to their next turn.
+				passthroughInvalidEncrypted := !strictCindyContinuation &&
+					!s.openAIWSIngressPreviousResponseRecoveryEnabled() &&
+					fallbackReason == openAIWSIngressStageInvalidEncryptedContent
 				continuationStateError := fallbackReason == openAIWSIngressStagePreviousResponseNotFound ||
-					fallbackReason == string(openAIContinuationStateErrorInvalidEncryptedContent)
+					(fallbackReason == string(openAIContinuationStateErrorInvalidEncryptedContent) && !passthroughInvalidEncrypted)
 				recoverablePrevNotFound := fallbackReason == openAIWSIngressStagePreviousResponseNotFound &&
 					turnPreviousResponseID != "" &&
 					(!turnHasFunctionCallOutput || strictCindyContinuation) &&
 					s.openAIWSIngressPreviousResponseRecoveryEnabled() &&
 					!downstreamOutputStarted()
 				recoverableInvalidEncrypted := fallbackReason == openAIWSIngressStageInvalidEncryptedContent &&
+					s.openAIWSIngressPreviousResponseRecoveryEnabled() &&
 					!turnHasFunctionCallOutput &&
 					!downstreamOutputStarted()
 				if recoverablePrevNotFound {
@@ -1434,6 +1440,10 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 
 			if eventType == "response.failed" {
 				continuationErr := openAIContinuationStateErrorFromFailedEvent(http.StatusOK, lease.HandshakeHeaders(), upstreamMessage)
+				if !strictCindyContinuation && !s.openAIWSIngressPreviousResponseRecoveryEnabled() &&
+					classifyOpenAIContinuationStateError("", upstreamMessage) == openAIContinuationStateErrorInvalidEncryptedContent {
+					continuationErr = nil
+				}
 				if continuationErr != nil {
 					lease.MarkBroken()
 					kind := classifyOpenAIContinuationStateError(extractOpenAISSEErrorMessage(upstreamMessage), upstreamMessage)
