@@ -20,12 +20,24 @@ func TestAccountIsSchedulable_QuotaExceeded(t *testing.T) {
 		{
 			name: "Cindy balance marker overrides active schedulable status",
 			account: &Account{
+				Platform:                   PlatformCindy,
+				Credentials:                map[string]any{"base_url": "https://api.laxarouter.ai"},
 				Status:                     StatusActive,
 				Schedulable:                true,
 				Type:                       AccountTypeAPIKey,
 				CindyBalanceInsufficientAt: &now,
 			},
 			want: false,
+		},
+		{
+			name: "ordinary API key ignores residual Cindy terminal markers",
+			account: &Account{
+				Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+				Status: StatusActive, Schedulable: true,
+				Credentials:                map[string]any{"base_url": "https://api.openai.com"},
+				CindyBalanceInsufficientAt: &now, CindyBannedAt: &now,
+			},
+			want: true,
 		},
 		{
 			name: "apikey daily quota exceeded",

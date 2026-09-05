@@ -958,8 +958,7 @@ func (r *accountRepository) accountListFilteredQuery(platform, accountType, stat
 			q = q.Where(
 				dbaccount.StatusEQ(status),
 				dbaccount.SchedulableEQ(true),
-				dbaccount.CindyBalanceInsufficientAtIsNil(),
-				dbaccount.CindyBannedAtIsNil(),
+				cindyTerminalStateAvailablePredicate(),
 				dbaccount.Or(
 					dbaccount.RateLimitResetAtIsNil(),
 					dbaccount.RateLimitResetAtLTE(time.Now()),
@@ -1953,13 +1952,21 @@ func (r *accountRepository) ListSchedulableAccountLoads(ctx context.Context) ([]
 	return loads, nil
 }
 
+// Cindy-only columns must not exclude an ordinary account carrying old values.
+// Canonical Cindy provider identity is checked separately before routing.
+func cindyTerminalStateAvailablePredicate() dbpredicate.Account {
+	return dbaccount.Or(
+		dbaccount.PlatformNEQ(service.PlatformCindy),
+		dbaccount.And(dbaccount.CindyBalanceInsufficientAtIsNil(), dbaccount.CindyBannedAtIsNil()),
+	)
+}
+
 func (r *accountRepository) schedulableAccountsQuery(ctx context.Context, now time.Time) *dbent.AccountQuery {
 	return r.client.Account.Query().
 		Where(
 			dbaccount.StatusEQ(service.StatusActive),
 			dbaccount.SchedulableEQ(true),
-			dbaccount.CindyBalanceInsufficientAtIsNil(),
-			dbaccount.CindyBannedAtIsNil(),
+			cindyTerminalStateAvailablePredicate(),
 			tempUnschedulablePredicate(ctx),
 			notExpiredPredicate(now),
 			dbaccount.Or(dbaccount.OverloadUntilIsNil(), dbaccount.OverloadUntilLTE(now)),
@@ -2018,8 +2025,7 @@ func (r *accountRepository) ListSchedulableCapacityByGroupIDs(ctx context.Contex
 			AND a.deleted_at IS NULL
 			AND a.status = $2
 			AND a.schedulable = TRUE
-			AND a.cindy_balance_insufficient_at IS NULL
-			AND a.cindy_banned_at IS NULL
+			AND (a.platform <> 'cindy' OR (a.cindy_balance_insufficient_at IS NULL AND a.cindy_banned_at IS NULL))
 			AND (a.temp_unschedulable_until IS NULL OR a.temp_unschedulable_until <= $3)
 			AND (a.expires_at IS NULL OR a.expires_at > $3 OR a.auto_pause_on_expired = FALSE)
 			AND (a.overload_until IS NULL OR a.overload_until <= $3)
@@ -2068,8 +2074,7 @@ func (r *accountRepository) ListSchedulableByPlatform(ctx context.Context, platf
 			dbaccount.PlatformEQ(platform),
 			dbaccount.StatusEQ(service.StatusActive),
 			dbaccount.SchedulableEQ(true),
-			dbaccount.CindyBalanceInsufficientAtIsNil(),
-			dbaccount.CindyBannedAtIsNil(),
+			cindyTerminalStateAvailablePredicate(),
 			tempUnschedulablePredicate(ctx),
 			notExpiredPredicate(now),
 			dbaccount.Or(dbaccount.OverloadUntilIsNil(), dbaccount.OverloadUntilLTE(now)),
@@ -2104,8 +2109,7 @@ func (r *accountRepository) ListSchedulableByPlatforms(ctx context.Context, plat
 			dbaccount.PlatformIn(platforms...),
 			dbaccount.StatusEQ(service.StatusActive),
 			dbaccount.SchedulableEQ(true),
-			dbaccount.CindyBalanceInsufficientAtIsNil(),
-			dbaccount.CindyBannedAtIsNil(),
+			cindyTerminalStateAvailablePredicate(),
 			tempUnschedulablePredicate(ctx),
 			notExpiredPredicate(now),
 			dbaccount.Or(dbaccount.OverloadUntilIsNil(), dbaccount.OverloadUntilLTE(now)),
@@ -2126,8 +2130,7 @@ func (r *accountRepository) ListSchedulableUngroupedByPlatform(ctx context.Conte
 			dbaccount.PlatformEQ(platform),
 			dbaccount.StatusEQ(service.StatusActive),
 			dbaccount.SchedulableEQ(true),
-			dbaccount.CindyBalanceInsufficientAtIsNil(),
-			dbaccount.CindyBannedAtIsNil(),
+			cindyTerminalStateAvailablePredicate(),
 			dbaccount.Not(dbaccount.HasAccountGroups()),
 			tempUnschedulablePredicate(ctx),
 			notExpiredPredicate(now),
@@ -2152,8 +2155,7 @@ func (r *accountRepository) ListSchedulableUngroupedByPlatforms(ctx context.Cont
 			dbaccount.PlatformIn(platforms...),
 			dbaccount.StatusEQ(service.StatusActive),
 			dbaccount.SchedulableEQ(true),
-			dbaccount.CindyBalanceInsufficientAtIsNil(),
-			dbaccount.CindyBannedAtIsNil(),
+			cindyTerminalStateAvailablePredicate(),
 			dbaccount.Not(dbaccount.HasAccountGroups()),
 			tempUnschedulablePredicate(ctx),
 			notExpiredPredicate(now),
@@ -2205,8 +2207,7 @@ func (r *accountRepository) ListModelAvailabilityCandidates(
 	preds := []dbpredicate.Account{
 		dbaccount.StatusEQ(service.StatusActive),
 		dbaccount.SchedulableEQ(true),
-		dbaccount.CindyBalanceInsufficientAtIsNil(),
-		dbaccount.CindyBannedAtIsNil(),
+		cindyTerminalStateAvailablePredicate(),
 		dbaccount.PlatformIn(platforms...),
 	}
 	if !includeGrouped {
@@ -3220,8 +3221,7 @@ func (r *accountRepository) queryAccountsByGroup(ctx context.Context, groupID in
 	if opts.schedulable {
 		preds = append(preds,
 			dbaccount.SchedulableEQ(true),
-			dbaccount.CindyBalanceInsufficientAtIsNil(),
-			dbaccount.CindyBannedAtIsNil(),
+			cindyTerminalStateAvailablePredicate(),
 		)
 		if !opts.ignoreTransientState {
 			now := time.Now()

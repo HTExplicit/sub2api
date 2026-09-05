@@ -676,7 +676,7 @@ func (s *OpenAIGatewayService) ClassifyLegacyLaxaAccountPool(ctx context.Context
 	for i := range accounts {
 		account := &accounts[i]
 		if account.Platform != PlatformOpenAI || !account.IsActive() || !account.Schedulable ||
-			account.CindyBalanceInsufficientAt != nil || account.CindyBannedAt != nil {
+			account.hasCindyTerminalSchedulingBlock() {
 			continue
 		}
 		if IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
