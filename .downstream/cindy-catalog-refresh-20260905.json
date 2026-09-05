@@ -1,0 +1,17 @@
+{
+  "observedAt": "2026-09-05T09:52:03Z",
+  "catalogSha256": "9f27de4e91b54efe44c9ac8107882cbe971dc94be3ea715bfd6dfaae7fd2d07a",
+  "catalogCount": 15,
+  "accountsUsed": 1,
+  "nativeRequests": 8,
+  "retries": 0,
+  "accountSwitches": 0,
+  "metadataSource": "makecindy/cindy@81e383b5acb43ff4c7ff388a4103f77492c530e6",
+  "probeEvidence": "us-capability-probe-2026-09-05_095203_090290.log",
+  "models": [
+    {"id": "google/gemini-3.8-flash", "responsesSearchStatus": 200, "responsesVerified": true, "searchVerified": true, "messagesStatus": 200, "messagesVerified": true, "metadataComplete": false, "public": false},
+    {"id": "meta/muse-spark-1.3", "responsesSearchStatus": 200, "responsesVerified": true, "searchVerified": true, "messagesStatus": 200, "messagesVerified": true, "metadataComplete": false, "public": false},
+    {"id": "openai/gpt-6-astra", "responsesSearchStatus": 200, "responsesVerified": true, "searchVerified": true, "messagesStatus": 400, "messagesVerified": false, "metadataComplete": true, "public": true},
+    {"id": "tencent/hy4-preview", "responsesSearchStatus": 0, "responsesVerified": false, "searchVerified": false, "messagesStatus": 200, "messagesVerified": true, "metadataComplete": false, "public": false}
+  ]
+}

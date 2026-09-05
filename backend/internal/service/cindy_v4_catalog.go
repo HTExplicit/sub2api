@@ -16,6 +16,10 @@ var cindyCapabilityCatalog = []CindyCapability{
 	newCindyFreeChatCapability("glm-5.3-flash", "z-ai/glm-5.3-flash", "GLM 5.3 Flash", "Zhipu GLM-5.3-Flash native multimodal coding model; 1M context", 1000000, 131072, []string{"text", "image"}, []string{"low", "medium", "high", "max"}, "max", 0.5, CindyTextPricing{InputCostPerToken: 0.15e-6, OutputCostPerToken: 0.5e-6, CacheReadInputTokenCost: 0.03e-6, CacheCreationInputTokenCostPresent: true}),
 	newCindyFreeSpecialCapability(CindyWebSearchModel, "Cindy Web Search", "Internal model for the independently gated /v1/alpha/search bridge", []CindyEndpoint{CindyEndpointAlphaSearch}),
 	newCindyFreeSpecialCapability(CindyAutoReviewModel, "Cindy Auto Review", "Reserved management-visible model without a public schema or routing handler", nil),
+	newCindyAstraCapability(),
+	newCindyMetadataPendingCapability("gemini-3.8-flash", "google/gemini-3.8-flash", "Gemini 3.8 Flash", 0, 0, []CindyEndpoint{CindyEndpointResponses, CindyEndpointMessages, CindyEndpointAlphaSearch}),
+	newCindyMetadataPendingCapability("muse-spark-1.3", "meta/muse-spark-1.3", "Muse Spark 1.3", 0, 0, []CindyEndpoint{CindyEndpointResponses, CindyEndpointMessages, CindyEndpointAlphaSearch}),
+	newCindyMetadataPendingCapability("hy4-preview", "tencent/hy4-preview", "HY4 Preview", 960000, 64000, []CindyEndpoint{CindyEndpointMessages}),
 }
 
 func newCindyFreeChatCapability(publicID, liveID, displayName, description string, contextWindow, maxOutputTokens int, inputModalities, efforts []string, defaultEffort string, costDiscount float64, pricing CindyTextPricing) CindyCapability {
@@ -23,13 +27,41 @@ func newCindyFreeChatCapability(publicID, liveID, displayName, description strin
 		PublicID: publicID, LiveUpstreamID: liveID, RegistryID: liveID,
 		DisplayName: displayName, Description: description, Kind: CindyModelKindText,
 		InputModalities: inputModalities, OutputModalities: []string{"text"},
-		VerifiedEndpoints:  []CindyEndpoint{CindyEndpointResponses, CindyEndpointMessages},
+		VerifiedEndpoints:  []CindyEndpoint{CindyEndpointResponses, CindyEndpointMessages, CindyEndpointAlphaSearch},
 		ClientSurfaces:     []string{CindyClientSurfaceCodex, CindyClientSurfacePi, CindyClientSurfaceOpenAI, CindyClientSurfaceClaude, CindyClientSurfaceAnthropic},
 		AgentWireProtocols: map[string]string{"claude-code": "anthropic-messages", "codex": "openai-responses", "pi": "openai-responses"},
 		MaxInputTokens:     contextWindow, CodexContextWindow: contextWindow, MaxOutputTokens: maxOutputTokens,
 		ReasoningEfforts: efforts, DefaultReasoningEffort: defaultEffort,
 		MetadataSourceRevision: CindyModelMetadataSourceRevision, PricingSource: CindyModelMetadataSourceRevision,
 		CostDiscount: costDiscount, TextPricing: &pricing, PublicModel: true,
+	}
+}
+
+func newCindyAstraCapability() CindyCapability {
+	capability := newCindyFreeChatCapability("gpt-6-astra", "openai/gpt-6-astra", "GPT-6 Astra",
+		"OpenAI GPT-6 Astra for complex reasoning, coding, computer use, research, and document creation",
+		272000, 128000, []string{"text"}, []string{"low", "medium", "high", "xhigh", "max"}, "medium", 0,
+		CindyTextPricing{InputCostPerToken: 10e-6, OutputCostPerToken: 50e-6,
+			CacheReadInputTokenCost: 1e-6, CacheCreationInputTokenCost: 12.5e-6, CacheCreationInputTokenCostPresent: true,
+			InputCostPerTokenPriority: 20e-6, OutputCostPerTokenPriority: 100e-6,
+			CacheReadInputTokenCostPriority: 2e-6, CacheCreationInputTokenCostPriority: 25e-6})
+	capability.MetadataSourceRevision = CindyCatalogAdditionsMetadataSourceRevision
+	capability.PricingSource = CindyCatalogAdditionsMetadataSourceRevision
+	capability.CodexReasoningEffortLevels = []string{"low", "medium", "high", "xhigh", "max", "ultra"}
+	capability.VerifiedEndpoints = []CindyEndpoint{CindyEndpointResponses, CindyEndpointAlphaSearch}
+	capability.ClientSurfaces = []string{CindyClientSurfaceCodex, CindyClientSurfacePi, CindyClientSurfaceOpenAI}
+	capability.AgentWireProtocols = map[string]string{"codex": "openai-responses", "pi": "openai-responses"}
+	return capability
+}
+
+func newCindyMetadataPendingCapability(publicID, liveID, displayName string, contextWindow, maxOutputTokens int, endpoints []CindyEndpoint) CindyCapability {
+	return CindyCapability{
+		PublicID: publicID, LiveUpstreamID: liveID, RegistryID: liveID,
+		DisplayName: displayName, Description: "Metadata pending verification", Kind: CindyModelKindText,
+		InputModalities: []string{"text"}, OutputModalities: []string{"text"},
+		VerifiedEndpoints: endpoints, MetadataSourceRevision: CindyFreeModelCatalogSourceRevision,
+		MaxInputTokens: contextWindow, CodexContextWindow: contextWindow, MaxOutputTokens: maxOutputTokens,
+		PublicModel: false,
 	}
 }
 

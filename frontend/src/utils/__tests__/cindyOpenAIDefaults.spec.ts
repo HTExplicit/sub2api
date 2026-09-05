@@ -79,6 +79,7 @@ describe('Cindy OpenAI defaults', () => {
     const models = [
       model('cindy/auto-review', ['cindy.reviews']),
       model('candidate-unverified', ['responses'], { verified: false }),
+      model('gemini-3.8-flash', ['responses', 'messages'], { public_model: false }),
       model('claude-sonnet-5', ['messages']),
       model('gpt-image-2', ['images.generations']),
       model('gpt-5.6-sol', ['responses']),

@@ -25,17 +25,17 @@ type cindyFreeFixtureModel struct {
 	OrdinaryRoutable bool           `json:"ordinaryRoutable"`
 }
 
-func TestCindyFreeCatalogFixtureMatchesExactElevenItemInventory(t *testing.T) {
+func TestCindyFreeCatalogFixtureMatchesExactFifteenItemInventory(t *testing.T) {
 	t.Parallel()
 
-	raw, err := os.ReadFile("testdata/cindy_free_catalog_2026-08-29.json")
+	raw, err := os.ReadFile("testdata/cindy_free_catalog_2026-09-05.json")
 	require.NoError(t, err)
 
 	var fixture cindyFreeCatalogFixture
 	require.NoError(t, json.Unmarshal(raw, &fixture))
 	require.Equal(t, 1, fixture.SchemaVersion)
 	require.Equal(t, CindyFreeModelCatalogSourceRevision, fixture.SourceRevision)
-	require.Len(t, fixture.Models, 11)
+	require.Len(t, fixture.Models, 15)
 
 	capabilities := CindyCapabilities()
 	require.Len(t, capabilities, len(fixture.Models))
@@ -49,6 +49,7 @@ func TestCindyFreeCatalogFixtureMatchesExactElevenItemInventory(t *testing.T) {
 	ids := make([]string, 0, len(fixture.Models))
 	ordinaryCount := 0
 	specialCount := 0
+	pendingCount := 0
 	for _, model := range fixture.Models {
 		ids = append(ids, model.ID)
 		capability, ok := byUpstreamID[model.ID]
@@ -60,13 +61,18 @@ func TestCindyFreeCatalogFixtureMatchesExactElevenItemInventory(t *testing.T) {
 			ordinaryCount++
 			require.Equal(t, CindyModelKindText, capability.Kind, model.ID)
 			require.NotEmpty(t, capability.VerifiedEndpoints, model.ID)
-		} else {
+		} else if model.Kind == CindyModelKindSpecial {
 			specialCount++
 			require.Equal(t, CindyModelKindSpecial, capability.Kind, model.ID)
+		} else {
+			pendingCount++
+			require.Equal(t, CindyModelKindText, capability.Kind, model.ID)
+			require.Nil(t, capability.TextPricing, model.ID)
 		}
 	}
-	require.Equal(t, 9, ordinaryCount)
+	require.Equal(t, 10, ordinaryCount)
 	require.Equal(t, 2, specialCount)
+	require.Equal(t, 3, pendingCount)
 
 	sort.Strings(ids)
 	sum := sha256.Sum256([]byte(strings.Join(ids, "\n") + "\n"))

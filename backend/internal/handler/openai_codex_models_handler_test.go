@@ -188,7 +188,7 @@ func TestCodexModelsStrictCindyProjectsVerifiedPublicCatalog(t *testing.T) {
 	slugs := decodeCodexModelSlugs(t, recorder.Body.Bytes())
 	want := []string{
 		"deepseek-v4-flash", "deepseek-v4-flash-vision-exp", "deepseek-v4-pro",
-		"gemini-3.6-flash", "glm-5.3-flash", "gpt-5.6-luna", "hy3",
+		"gemini-3.6-flash", "glm-5.3-flash", "gpt-5.6-luna", "gpt-6-astra", "hy3",
 		"qwen3.8-27b", "qwen3.8-flash",
 	}
 	if got, expected := strings.Join(slugs, ","), strings.Join(want, ","); got != expected {
