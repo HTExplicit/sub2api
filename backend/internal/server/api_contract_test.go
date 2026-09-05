@@ -955,7 +955,7 @@ func TestAPIContracts(t *testing.T) {
 						"config_source": "cindy_group_managed",
 						"web_search": {
 							"enabled": false,
-							"verified_text_models": ["deepseek-v4-flash","deepseek-v4-flash-vision-exp","deepseek-v4-pro","gemini-3.6-flash","glm-5.3-flash","gpt-5.6-luna","hy3","qwen3.8-27b","qwen3.8-flash"],
+							"verified_text_models": ["deepseek-v4-flash","deepseek-v4-flash-vision-exp","deepseek-v4-pro","gemini-3.6-flash","glm-5.3-flash","gpt-5.6-luna","gpt-6-astra","hy3","qwen3.8-27b","qwen3.8-flash"],
 							"compatibility_aliases": {"gpt-5.4-mini":"gpt-5.6-luna"},
 							"primary_path": "responses_web_search",
 							"fallback_path": "messages_cindy_web_search"
@@ -1286,7 +1286,7 @@ func TestAPIContracts(t *testing.T) {
 						"config_source": "cindy_group_managed",
 						"web_search": {
 							"enabled": false,
-							"verified_text_models": ["deepseek-v4-flash","deepseek-v4-flash-vision-exp","deepseek-v4-pro","gemini-3.6-flash","glm-5.3-flash","gpt-5.6-luna","hy3","qwen3.8-27b","qwen3.8-flash"],
+							"verified_text_models": ["deepseek-v4-flash","deepseek-v4-flash-vision-exp","deepseek-v4-pro","gemini-3.6-flash","glm-5.3-flash","gpt-5.6-luna","gpt-6-astra","hy3","qwen3.8-27b","qwen3.8-flash"],
 							"compatibility_aliases": {"gpt-5.4-mini":"gpt-5.6-luna"},
 							"primary_path": "responses_web_search",
 							"fallback_path": "messages_cindy_web_search"
