@@ -85,8 +85,14 @@ jobs:
 
           old_remote=$(git ls-remote --heads origin "refs/heads/${branch}" | awk '{print $1}')
           if [[ -n "$old_remote" ]]; then
-            echo "Candidate $branch already exists; preserve manual resolutions and resume via Upstream Reviewed Promotion." >&2
-            exit 1
+            echo "Candidate $branch already exists; preserving manual resolutions and requiring Upstream Reviewed Promotion." >&2
+            printf '## Upstream %s candidate already exists\\n\\n' "$tag" > /tmp/upstream-conflict.md
+            printf 'The sync workflow did not overwrite the existing candidate branch.\\n\\n' >> /tmp/upstream-conflict.md
+            printf 'Inspect and resolve the existing candidate PR, then run Upstream Reviewed Promotion.\\n' >> /tmp/upstream-conflict.md
+            python3 -c 'import json; d=json.load(open(".downstream/upstream-risk.json")); d["merge_conflicts"]=["existing_candidate_branch"]; print(json.dumps(d,indent=2))' > /tmp/upstream-conflict.json
+            echo 'conflict=true' >> "$GITHUB_OUTPUT"
+            echo "branch=$branch" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           git switch -C "$branch" origin/main
           set +e
