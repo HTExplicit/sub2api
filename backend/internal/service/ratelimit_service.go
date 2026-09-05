@@ -1193,8 +1193,8 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 			return
 		}
 	}
-	// 1. OpenAI 平台：优先尝试解析 x-codex-* 响应头（用于 rate_limit_exceeded）
-	if account.Platform == PlatformOpenAI {
+	// Codex quota windows belong to OAuth credentials, never ordinary API keys.
+	if isOpenAIOAuthAccount(account) {
 		persistOpenAI429PlanType(ctx, s.accountRepo, account, responseBody)
 		s.persistOpenAICodexSnapshot(ctx, account, headers)
 		classification := classifyOpenAIOAuth429At(headers, responseBody, time.Now())
@@ -1218,6 +1218,21 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 		}
 		s.apply429FallbackRateLimit(ctx, account, "openai_transient_429")
 		return
+	}
+	// Ordinary OpenAI accounts retain the upstream header/body fallback order.
+	if account.Platform == PlatformOpenAI {
+		persistOpenAI429PlanType(ctx, s.accountRepo, account, responseBody)
+		s.persistOpenAICodexSnapshot(ctx, account, headers)
+		notifyOpenAIAutoReset(account.ID)
+		if resetAt := calculateOpenAI429ResetTime(headers); resetAt != nil {
+			s.notifyAccountSchedulingBlocked(account, *resetAt, "429")
+			if err := s.accountRepo.SetRateLimited(ctx, account.ID, *resetAt); err != nil {
+				slog.Warn("rate_limit_set_failed", "account_id", account.ID, "error", err)
+				return
+			}
+			slog.Info("openai_account_rate_limited", "account_id", account.ID, "reset_at", *resetAt)
+			return
+		}
 	}
 
 	// 2. Anthropic 平台：尝试解析 per-window 头（5h / 7d），选择实际触发的窗口
@@ -1365,12 +1380,37 @@ func clampRateLimit429CooldownSeconds(seconds int) int {
 // calculateOpenAI429ResetTime 从 OpenAI 429 响应头计算正确的重置时间
 // 返回 nil 表示无法从响应头中确定重置时间
 func calculateOpenAI429ResetTime(headers http.Header) *time.Time {
-	now := time.Now()
-	classification := classifyOpenAIOAuth429At(headers, nil, now)
-	if classification.Disposition == openAIOAuth429Transient {
+	snapshot := ParseCodexRateLimitHeaders(headers)
+	if snapshot == nil {
 		return nil
 	}
-	return classification.ResetAt
+	normalized := snapshot.Normalize()
+	if normalized == nil {
+		return nil
+	}
+	now := time.Now()
+	is7dExhausted := normalized.Used7dPercent != nil && *normalized.Used7dPercent >= 100
+	is5hExhausted := normalized.Used5hPercent != nil && *normalized.Used5hPercent >= 100
+	if is7dExhausted && normalized.Reset7dSeconds != nil {
+		resetAt := now.Add(time.Duration(*normalized.Reset7dSeconds) * time.Second)
+		return &resetAt
+	}
+	if is5hExhausted && normalized.Reset5hSeconds != nil {
+		resetAt := now.Add(time.Duration(*normalized.Reset5hSeconds) * time.Second)
+		return &resetAt
+	}
+	var maxResetSecs int
+	if normalized.Reset7dSeconds != nil && *normalized.Reset7dSeconds > maxResetSecs {
+		maxResetSecs = *normalized.Reset7dSeconds
+	}
+	if normalized.Reset5hSeconds != nil && *normalized.Reset5hSeconds > maxResetSecs {
+		maxResetSecs = *normalized.Reset5hSeconds
+	}
+	if maxResetSecs > 0 {
+		resetAt := now.Add(time.Duration(maxResetSecs) * time.Second)
+		return &resetAt
+	}
+	return nil
 }
 
 // anthropic429Result holds the parsed Anthropic 429 rate-limit information.

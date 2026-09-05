@@ -220,7 +220,7 @@ func (a *Account) IsSchedulable() bool {
 	if !a.IsActive() || !a.Schedulable {
 		return false
 	}
-	if a.CindyBalanceInsufficientAt != nil || a.CindyBannedAt != nil {
+	if a.hasCindyTerminalSchedulingBlock() {
 		return false
 	}
 	now := time.Now()
@@ -324,6 +324,11 @@ func (a *Account) IsZhipu() bool {
 
 func (a *Account) IsDeepseek() bool {
 	return a.Platform == PlatformDeepseek
+}
+
+func (a *Account) hasCindyTerminalSchedulingBlock() bool {
+	return hasCanonicalCindyProviderIdentity(a) &&
+		(a.CindyBalanceInsufficientAt != nil || a.CindyBannedAt != nil)
 }
 
 // IsCNProvider 报告是否为国产 OpenAI 兼容供应商（kimi/zhipu/deepseek）。

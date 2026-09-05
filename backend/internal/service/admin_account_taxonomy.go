@@ -888,7 +888,7 @@ func accountConsoleStatus(account *Account, now time.Time) string {
 	if account.RateLimitResetAt != nil && account.RateLimitResetAt.After(now) {
 		return "rate_limited"
 	}
-	if account.CindyBalanceInsufficientAt != nil || account.CindyBannedAt != nil || !account.Schedulable {
+	if account.hasCindyTerminalSchedulingBlock() || !account.Schedulable {
 		return "unschedulable"
 	}
 	return StatusActive

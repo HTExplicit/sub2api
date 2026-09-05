@@ -54,7 +54,7 @@ func TestFilterConsoleAccountsCindyQuickViewsUseStrictIdentity(t *testing.T) {
 	insufficient := filterConsoleAccounts(accounts, AccountConsoleFilters{CindyOnly: true, CindyBalanceStatus: "insufficient"})
 	require.Equal(t, []int64{2}, accountIDsForFacetTest(insufficient))
 	unschedulable := filterConsoleAccounts(accounts, AccountConsoleFilters{Statuses: []string{"unschedulable"}})
-	require.Equal(t, []int64{2, 3, 4}, accountIDsForFacetTest(unschedulable))
+	require.Equal(t, []int64{2}, accountIDsForFacetTest(unschedulable), "terminal markers require the same strict identity as the Cindy quick views")
 }
 
 func TestFilterConsoleAccountsKeepsCindyBannedAndBalanceIndependent(t *testing.T) {
@@ -92,6 +92,7 @@ func TestCindyFacetDimensionsConstrainEachOtherIndependently(t *testing.T) {
 func TestAccountConsoleStatusTreatsBannedAsUnschedulable(t *testing.T) {
 	now := time.Now().UTC()
 	require.Equal(t, "unschedulable", accountConsoleStatus(&Account{
+		Platform: PlatformCindy, Type: AccountTypeAPIKey, Credentials: cindyCredentials(),
 		Status: StatusActive, Schedulable: true, CindyBannedAt: &now,
 	}, now))
 }
