@@ -10,7 +10,6 @@ import accountJobsAPI, {
 import { useAppStore } from '@/stores/app'
 import { i18n } from '@/i18n'
 
-const POLL_INTERVAL_MS = 3_000
 const TERMINAL_STATUSES = new Set(['succeeded', 'partially_succeeded', 'failed', 'canceled'])
 
 export function isTerminalAccountJob(job: AccountJob): boolean {
@@ -30,8 +29,11 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
   const listFilters = reactive({ kind: '', status: '' })
   const trackedStatuses = new Map<number, AccountJob['status']>()
   const notifiedJobs = new Set<number>()
-  let poller: ReturnType<typeof setInterval> | null = null
   let generation = 0
+  let listRequest: AbortController | null = null
+  let currentRequest: AbortController | null = null
+  let listRequestSerial = 0
+  let currentRequestSerial = 0
 
   const activeJobs = computed(() => recentJobs.value.filter((job) => !isTerminalAccountJob(job)))
   const activeCount = computed(() => activeJobs.value.length)
@@ -62,21 +64,41 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
     if (previous) trackedStatuses.set(job.id, job.status)
   }
 
-  function upsertRecent(job: AccountJob): void {
+  function updateRecent(job: AccountJob, allowInsert = false): void {
+    const matchesFilters = (!listFilters.kind || listFilters.kind === job.kind)
+      && (!listFilters.status || listFilters.status === job.status)
     const index = recentJobs.value.findIndex((candidate) => candidate.id === job.id)
     if (index >= 0) {
-      recentJobs.value[index] = job
+      if (matchesFilters) recentJobs.value[index] = job
+      else {
+        recentJobs.value.splice(index, 1)
+        jobPage.total = Math.max(0, jobPage.total - 1)
+      }
       return
     }
-    recentJobs.value = [job, ...recentJobs.value]
+    if (allowInsert && matchesFilters && jobPage.page === 1) {
+      recentJobs.value = [job, ...recentJobs.value].slice(0, jobPage.pageSize)
+      jobPage.total += 1
+    }
+  }
+
+  function invalidateCurrentRequest(): void {
+    currentRequest?.abort()
+    currentRequest = null
+    currentRequestSerial += 1
+    loadingCurrent.value = false
   }
 
   function track(job: AccountJob, options: { open?: boolean } = {}): void {
     const previous = trackedStatuses.get(job.id)
     if (previous) observeTrackedTransition(job)
     else trackedStatuses.set(job.id, job.status)
-    upsertRecent(job)
+    listRequest?.abort()
+    listRequestSerial += 1
+    loadingJobs.value = false
+    updateRecent(job, true)
     if (options.open !== false) {
+      invalidateCurrentRequest()
       currentJob.value = job
       selectedJobID.value = job.id
       items.value = []
@@ -88,6 +110,11 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
 
   async function loadRecent(params: AccountJobListParams = {}): Promise<void> {
     const requestGeneration = generation
+    const detailSerial = currentRequestSerial
+    const requestSerial = ++listRequestSerial
+    listRequest?.abort()
+    const controller = new AbortController()
+    listRequest = controller
     if (Object.prototype.hasOwnProperty.call(params, 'kind')) listFilters.kind = params.kind ?? ''
     if (Object.prototype.hasOwnProperty.call(params, 'status')) listFilters.status = params.status ?? ''
     loadingJobs.value = true
@@ -97,19 +124,23 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
         page_size: params.page_size ?? jobPage.pageSize,
         kind: listFilters.kind || undefined,
         status: listFilters.status || undefined,
-      })
-      if (generation !== requestGeneration) return
+      }, { signal: controller.signal })
+      if (generation !== requestGeneration || requestSerial !== listRequestSerial) return
       for (const job of page.items) observeTrackedTransition(job)
       recentJobs.value = page.items
       jobPage.total = page.total
       jobPage.page = page.page
       jobPage.pageSize = page.page_size
-      if (currentJob.value) {
+      if (currentJob.value && detailSerial === currentRequestSerial && !loadingCurrent.value) {
         const updated = page.items.find((job) => job.id === currentJob.value?.id)
         if (updated) currentJob.value = updated
       }
+    } catch (error) {
+      if (controller.signal.aborted || generation !== requestGeneration || requestSerial !== listRequestSerial) return
+      throw error
     } finally {
-      if (generation === requestGeneration) loadingJobs.value = false
+      if (listRequest === controller) listRequest = null
+      if (generation === requestGeneration && requestSerial === listRequestSerial) loadingJobs.value = false
     }
   }
 
@@ -118,26 +149,48 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
     params: AccountJobItemListParams = {},
   ): Promise<void> {
     const requestGeneration = generation
+    const requestSerial = ++currentRequestSerial
+    currentRequest?.abort()
+    const controller = new AbortController()
+    currentRequest = controller
     loadingCurrent.value = true
     try {
       const [job, page] = await Promise.all([
-        accountJobsAPI.get(jobID),
+        accountJobsAPI.get(jobID, { signal: controller.signal }),
         accountJobsAPI.listItems(jobID, {
           page: params.page ?? itemPage.page,
           page_size: params.page_size ?? itemPage.pageSize,
           status: params.status,
-        }),
+        }, { signal: controller.signal }),
       ])
-      if (generation !== requestGeneration || selectedJobID.value !== jobID) return
+      if (generation !== requestGeneration || requestSerial !== currentRequestSerial || selectedJobID.value !== jobID) return
       observeTrackedTransition(job)
       currentJob.value = job
-      upsertRecent(job)
+      updateRecent(job)
       items.value = page.items
       itemPage.total = page.total
       itemPage.page = page.page
       itemPage.pageSize = page.page_size
+    } catch (error) {
+      if (controller.signal.aborted || generation !== requestGeneration || requestSerial !== currentRequestSerial) return
+      controller.abort()
+      if ((error as { status?: number; response?: { status?: number } })?.status === 404
+        || (error as { response?: { status?: number } })?.response?.status === 404) {
+        selectedJobID.value = null
+        currentJob.value = null
+        items.value = []
+        itemPage.total = 0
+        itemPage.page = 1
+        const index = recentJobs.value.findIndex((candidate) => candidate.id === jobID)
+        if (index >= 0) {
+          recentJobs.value.splice(index, 1)
+          jobPage.total = Math.max(0, jobPage.total - 1)
+        }
+      }
+      throw error
     } finally {
-      if (generation === requestGeneration) loadingCurrent.value = false
+      if (currentRequest === controller) currentRequest = null
+      if (generation === requestGeneration && requestSerial === currentRequestSerial) loadingCurrent.value = false
     }
   }
 
@@ -154,21 +207,39 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
     selectedJobID.value = jobID
     currentJob.value = known ?? null
     drawerOpen.value = true
-    await loadCurrent(jobID, params)
+    try {
+      await loadCurrent(jobID, params)
+    } catch {
+      useAppStore().showError(String(i18n.global.t('admin.accountTasks.loadFailed')))
+    }
   }
 
   function closeDrawer(): void {
+    invalidateCurrentRequest()
     drawerOpen.value = false
   }
 
-  function openDrawer(): void {
+  async function refreshDrawer(): Promise<void> {
+    try {
+      const jobID = selectedJobID.value
+      await Promise.all([
+        loadRecent(),
+        jobID === null ? Promise.resolve() : loadCurrent(jobID),
+      ])
+    } catch {
+      useAppStore().showError(String(i18n.global.t('admin.accountTasks.loadFailed')))
+    }
+  }
+
+  async function openDrawer(): Promise<void> {
     drawerOpen.value = true
+    await refreshDrawer()
   }
 
   async function cancelJob(jobID: number): Promise<AccountJob> {
     const job = await accountJobsAPI.cancel(jobID)
     observeTrackedTransition(job)
-    upsertRecent(job)
+    updateRecent(job)
     if (currentJob.value?.id === job.id) currentJob.value = job
     return job
   }
@@ -191,33 +262,9 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
     return job
   }
 
-  async function poll(): Promise<void> {
-    try {
-      await loadRecent()
-      const jobID = selectedJobID.value
-      if (drawerOpen.value && jobID) {
-        await loadCurrent(jobID)
-      }
-    } catch {
-      console.error('Account job polling failed')
-    }
-  }
-
-  function startPolling(): void {
-    if (poller) return
-    void poll()
-    poller = setInterval(() => {
-      void poll()
-    }, POLL_INTERVAL_MS)
-  }
-
-  function stopPolling(): void {
-    if (poller) clearInterval(poller)
-    poller = null
-  }
-
   function clear(): void {
-    stopPolling()
+    listRequest?.abort()
+    currentRequest?.abort()
     generation += 1
     recentJobs.value = []
     currentJob.value = null
@@ -254,13 +301,12 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
     loadCurrent,
     openJob,
     openDrawer,
+    refreshDrawer,
     closeDrawer,
     cancelJob,
     retryJob,
     reviewDuplicates,
     mergeDuplicates,
-    startPolling,
-    stopPolling,
     clear,
   }
 })

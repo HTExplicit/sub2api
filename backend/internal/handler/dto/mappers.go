@@ -494,7 +494,17 @@ func AccountListItemFromAccount(a *Account) *AccountListItem {
 		return nil
 	}
 	return &AccountListItem{
-		ID: a.ID, Name: a.Name, Notes: a.Notes, Platform: a.Platform, Type: a.Type,
+		WirePlatform:               a.WirePlatform,
+		ProviderProfile:            a.ProviderProfile,
+		ManagementFolder:           a.ManagementFolder,
+		Tags:                       a.Tags,
+		IsCindy:                    a.IsCindy,
+		CindyBalanceInsufficient:   a.CindyBalanceInsufficient,
+		CindyBanned:                a.CindyBanned,
+		CindyBalanceProbeJobID:     a.CindyBalanceProbeJobID,
+		CindyBalanceProbeOutcome:   a.CindyBalanceProbeOutcome,
+		CindyBalanceProbeCheckedAt: a.CindyBalanceProbeCheckedAt,
+		ID:                         a.ID, Name: a.Name, Notes: a.Notes, Platform: a.Platform, Type: a.Type,
 		Credentials: a.Credentials, CredentialsStatus: a.CredentialsStatus, Extra: a.Extra,
 		OllamaCloudUsage: a.OllamaCloudUsage,
 		ProxyID:          a.ProxyID, ProxyFallbackOriginID: a.ProxyFallbackOriginID, ProxyFallbackOriginName: a.ProxyFallbackOriginName,

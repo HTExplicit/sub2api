@@ -1,0 +1,40 @@
+name: Upstream Reviewed Promotion
+run-name: Promote upstream PR ${{ inputs.pr_number }}
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Same-repository upstream candidate PR (safe or explicitly upstream-reviewed)'
+        required: true
+        type: string
+      confirmation:
+        description: 'Type PROMOTE to merge, release, and queue the protected production deployment'
+        required: true
+        type: string
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+concurrency:
+  group: upstream-reviewed-promotion
+  cancel-in-progress: false
+jobs:
+  promote:
+    if: github.repository == 'HTExplicit/sub2api' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Validate and promote the exact checked candidate
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          [[ "$CONFIRMATION" == PROMOTE && "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          python3 .github/scripts/upstream_promote.py --pr "$PR_NUMBER"

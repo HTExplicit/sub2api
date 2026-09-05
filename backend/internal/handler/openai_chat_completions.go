@@ -134,7 +134,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 
 	// 解析渠道级模型映射
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)
-	routingModel := reqModel
+	routingModel := openAIChannelForwardModel(channelMapping, reqModel)
 	forwardMapped := channelMapping.Mapped
 	forwardMappedModel := channelMapping.MappedModel
 	if compatibilityAlias {

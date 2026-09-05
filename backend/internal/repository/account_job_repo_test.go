@@ -11,6 +11,7 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/Wei-Shaw/sub2api/migrations"
 	"github.com/stretchr/testify/require"
 )
 
@@ -111,4 +112,21 @@ func TestAccountJobRepositoryReserveCapsBatchAtOneHundred(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, items)
 	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestAccountJobRepositoryPruneOnlyFinishedBeforeCutoff(t *testing.T) {
+	repo, mock := newAccountJobRepoTest(t)
+	cutoff := time.Date(2026, time.September, 4, 12, 0, 0, 0, time.UTC)
+	// The strict comparison retains jobs completed exactly at the cutoff;
+	// unfinished jobs have no finished_at and cannot match the predicate.
+	mock.ExpectExec(regexp.QuoteMeta("DELETE FROM admin_account_jobs WHERE finished_at IS NOT NULL AND finished_at < $1")).
+		WithArgs(cutoff).
+		WillReturnResult(sqlmock.NewResult(0, 2))
+
+	require.NoError(t, repo.Prune(context.Background(), cutoff))
+	require.NoError(t, mock.ExpectationsWereMet())
+	// Results belong only to their parent job and are removed by the existing FK.
+	migration, err := migrations.FS.ReadFile("232_admin_account_jobs.sql")
+	require.NoError(t, err)
+	require.Contains(t, string(migration), "job_id BIGINT NOT NULL REFERENCES admin_account_jobs(id) ON DELETE CASCADE")
 }

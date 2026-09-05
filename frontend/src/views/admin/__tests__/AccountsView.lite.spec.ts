@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
 
 import AccountsView from '../AccountsView.vue'
 import AccountActionMenu from '@/components/admin/account/AccountActionMenu.vue'
@@ -13,6 +14,9 @@ const {
   getUpstreamBillingProbeSettings,
   getAllProxies,
   getAllGroups,
+  getFacets,
+  listFolders,
+  listTags,
   showError
 } = vi.hoisted(() => ({
   listAccounts: vi.fn(),
@@ -22,6 +26,9 @@ const {
   getUpstreamBillingProbeSettings: vi.fn(),
   getAllProxies: vi.fn(),
   getAllGroups: vi.fn(),
+  getFacets: vi.fn(),
+  listFolders: vi.fn(),
+  listTags: vi.fn(),
   showError: vi.fn()
 }))
 
@@ -33,6 +40,9 @@ vi.mock('@/api/admin', () => ({
       listWithEtag,
       getBatchTodayStats,
       getUpstreamBillingProbeSettings,
+      getFacets,
+      listFolders,
+      listTags,
       delete: vi.fn(),
       batchClearError: vi.fn(),
       batchRefresh: vi.fn(),
@@ -88,8 +98,9 @@ const AccountStatsModalStub = defineComponent({
   template: '<div data-test="stats-account">{{ show ? account?.name : "" }}</div>'
 })
 
-function mountView() {
+function mountView(props: { scope?: 'all' | 'cindy' } = {}) {
   return mount(AccountsView, {
+    props,
     global: {
       stubs: {
         AppLayout: { template: '<div><slot /></div>' },
@@ -98,6 +109,7 @@ function mountView() {
         AccountTableActions: { template: '<div><slot name="after" /></div>' },
         AccountTableFilters: true,
         AccountBulkActionsBar: true,
+        AccountCardGrid: true,
         Pagination: true,
         ConfirmDialog: true,
         AccountActionMenu: true,
@@ -152,6 +164,7 @@ const fullAccount = {
 
 describe('admin AccountsView lite account list', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     localStorage.clear()
     listAccounts.mockReset().mockResolvedValue({ items: [listRow], total: 1, page: 1, page_size: 20, pages: 1 })
     listWithEtag.mockReset().mockResolvedValue({ notModified: true, etag: 'compact-etag', data: null })
@@ -160,6 +173,9 @@ describe('admin AccountsView lite account list', () => {
     getUpstreamBillingProbeSettings.mockReset().mockResolvedValue({ enabled: true })
     getAllProxies.mockReset().mockResolvedValue([])
     getAllGroups.mockReset().mockResolvedValue([{ id: 7, name: 'codex', platform: 'openai' }])
+    getFacets.mockReset().mockResolvedValue({ total: 1, platforms: [], types: [], statuses: [], plans: [], proxies: [], folders: [], tags: [] })
+    listFolders.mockReset().mockResolvedValue([])
+    listTags.mockReset().mockResolvedValue([])
     showError.mockReset()
   })
 
@@ -186,6 +202,34 @@ describe('admin AccountsView lite account list', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-test="account-groups"]').text()).toBe('codex')
+    wrapper.unmount()
+  })
+
+  it('keeps Cindy scope filters on compact requests', async () => {
+    const wrapper = mountView({ scope: 'cindy' })
+    await flushPromises()
+
+    expect(listAccounts).toHaveBeenCalledWith(
+      1, 20,
+      expect.objectContaining({ lite: '1', cindy_only: 'true' }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    )
+    wrapper.unmount()
+  })
+
+  it('preserves taxonomy and hydrates group labels for downstream card layouts', async () => {
+    localStorage.setItem('account-console-view-mode', 'cards')
+    const taxonomy = { management_folder: { id: 4, name: 'Primary' }, tags: [{ id: 2, name: 'priority' }] }
+    listAccounts.mockResolvedValue({ items: [{ ...listRow, ...taxonomy }], total: 1, page: 1, page_size: 20, pages: 1 })
+    const wrapper = mountView()
+    await flushPromises()
+
+    const card = wrapper.findComponent({ name: 'AccountCardGrid' })
+    expect(card.props('accounts')[0]).toMatchObject({
+      ...taxonomy,
+      group_ids: [7],
+      groups: [{ id: 7, name: 'codex' }],
+    })
     wrapper.unmount()
   })
 

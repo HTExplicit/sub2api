@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -53,6 +53,33 @@ describe('AccountTaskDrawer', () => {
       processed_count: 0,
       succeeded_count: 0,
     })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('refreshes the current snapshot only after clicking the explicit refresh button', async () => {
+    vi.useFakeTimers()
+    const store = useAccountJobsStore()
+    store.track({ ...reviewJob, status: 'running' })
+    api.list.mockResolvedValue({ items: [store.currentJob], total: 1, page: 1, page_size: 20 })
+    api.get.mockResolvedValue(store.currentJob)
+    api.listItems.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
+    const wrapper = mount(AccountTaskDrawer, {
+      global: { stubs: { Teleport: true, RouterLink: true, Icon: true } },
+    })
+
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(api.list).not.toHaveBeenCalled()
+    expect(api.get).not.toHaveBeenCalled()
+    expect(api.listItems).not.toHaveBeenCalled()
+    await wrapper.get('[data-test="task-refresh"]').trigger('click')
+    await flushPromises()
+    expect(api.list).toHaveBeenCalledTimes(1)
+    expect(api.get).toHaveBeenCalledTimes(1)
+    expect(api.listItems).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
   })
 
   it('uses only safe duplicate review metadata to submit a confirmed merge', async () => {

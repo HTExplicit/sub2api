@@ -32,7 +32,6 @@ watch(
     if (nextSessionKey === accountJobsSessionKey) return
     accountJobsStore.clear()
     accountJobsSessionKey = nextSessionKey
-    if (nextSessionKey) accountJobsStore.startPolling()
   },
   { immediate: true },
 )

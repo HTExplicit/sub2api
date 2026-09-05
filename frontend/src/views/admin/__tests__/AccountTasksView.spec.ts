@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -47,6 +47,10 @@ describe('AccountTasksView', () => {
     api.listItems.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('is exposed as an authenticated administrator route', () => {
     const route = router.getRoutes().find((candidate) => candidate.path === '/admin/tasks')
 
@@ -54,6 +58,7 @@ describe('AccountTasksView', () => {
   })
 
   it('loads the requested page and opens a selected task in the global drawer', async () => {
+    vi.useFakeTimers()
     const wrapper = mount(AccountTasksView, {
       global: {
         stubs: {
@@ -70,7 +75,15 @@ describe('AccountTasksView', () => {
     })
     await flushPromises()
 
-    expect(api.list).toHaveBeenCalledWith({ page: 1, page_size: 20, kind: undefined, status: undefined })
+    expect(api.list).toHaveBeenCalledWith(
+      { page: 1, page_size: 20, kind: undefined, status: undefined },
+      { signal: expect.any(AbortSignal) },
+    )
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(api.list).toHaveBeenCalledTimes(1)
+    await wrapper.get('button.btn-secondary').trigger('click')
+    await flushPromises()
+    expect(api.list).toHaveBeenCalledTimes(2)
     expect(wrapper.find('option[value="cindy_banned_cleanup"]').exists()).toBe(true)
     await wrapper.get('[data-test="task-open-41"]').trigger('click')
     await flushPromises()
@@ -78,5 +91,9 @@ describe('AccountTasksView', () => {
     const store = useAccountJobsStore()
     expect(store.drawerOpen).toBe(true)
     expect(store.currentJob?.id).toBe(41)
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(api.get).toHaveBeenCalledTimes(1)
+    expect(api.listItems).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
   })
 })

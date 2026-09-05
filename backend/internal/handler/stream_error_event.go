@@ -57,8 +57,8 @@ type responsesFailedEvent struct {
 // 返回 false 表示 writer 不支持 Flusher，无法以 SSE 形式回报错误；
 // 此时 caller 也无法回退到 JSON（HTTP 200 已固化），通常意味着连接已经损坏，
 // 应当让请求处理函数 return，由上层关闭连接。
-func writeResponsesFailedSSE(c *gin.Context, errType, message string) bool {
-	return writeResponsesFailedSSEWithDetails(c, errType, "", message, false)
+func writeResponsesFailedSSE(c *gin.Context, errType, code, message string) bool {
+	return writeResponsesFailedSSEWithDetails(c, errType, code, message, false)
 }
 
 func writeResponsesFailedSSEWithDetails(c *gin.Context, errType, code, message string, retryable bool) bool {
@@ -77,7 +77,7 @@ func writeResponsesFailedSSEWithDetails(c *gin.Context, errType, code, message s
 	}
 
 	if code == "" {
-		code = mapResponsesErrorCode(errType)
+		code = mapResponsesErrorCode(errType, "")
 	}
 	payload, err := json.Marshal(responsesFailedEvent{
 		Type: "response.failed",
@@ -89,7 +89,7 @@ func writeResponsesFailedSSEWithDetails(c *gin.Context, errType, code, message s
 			Status:    "failed",
 			Output:    []any{},
 			Error: responsesFailedError{
-				Code:      code,
+				Code:      mapResponsesErrorCode(errType, code),
 				Message:   message,
 				Retryable: retryable,
 			},
@@ -185,7 +185,10 @@ func requestModel(c *gin.Context) string {
 
 // mapResponsesErrorCode 把内部 errType 映射为 Responses 协议常见的 error.code。
 // 无明确映射时原样返回，保证至少可读。
-func mapResponsesErrorCode(errType string) string {
+func mapResponsesErrorCode(errType, code string) string {
+	if code != "" {
+		return code
+	}
 	switch errType {
 	case "rate_limit_error":
 		return "rate_limit_exceeded"

@@ -4,8 +4,20 @@ on:
   schedule:
     - cron: '17 * * * *'
   workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: 'Optional exact official stable tag; empty resolves latest stable'
+        required: false
+        default: ''
+        type: string
+      auto_promote:
+        description: 'For safe candidates only: merge checked PR, release and queue production approval'
+        required: true
+        default: true
+        type: boolean
 
 permissions:
+  actions: write
   contents: write
   pull-requests: write
   issues: write
@@ -33,14 +45,22 @@ jobs:
 
       - name: Resolve latest stable release
         id: release
+        env:
+          REQUESTED_TAG: ${{ inputs.upstream_tag }}
         shell: bash
         run: |
           set -euo pipefail
-          payload=$(gh api "repos/${UPSTREAM_REPOSITORY}/releases/latest")
+          if [[ -n "$REQUESTED_TAG" ]]; then
+            [[ "$REQUESTED_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+            payload=$(gh api "repos/${UPSTREAM_REPOSITORY}/releases/tags/${REQUESTED_TAG}")
+          else
+            payload=$(gh api "repos/${UPSTREAM_REPOSITORY}/releases/latest")
+          fi
           tag=$(jq -er 'select(.draft == false and .prerelease == false) | .tag_name' <<<"$payload")
           [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           current=$(tr -d '\r\n' < .downstream/upstream-base)
           [[ "$current" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$(printf '%s\n%s\n' "$current" "$tag" | sort -V | head -n1)" == "$current" ]]
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "base=$current" >> "$GITHUB_OUTPUT"
           [[ "$tag" == "$current" ]] && echo 'changed=false' >> "$GITHUB_OUTPUT" || echo 'changed=true' >> "$GITHUB_OUTPUT"
@@ -64,6 +84,10 @@ jobs:
             --output .downstream/upstream-risk.json --github-output "$GITHUB_OUTPUT"
 
           old_remote=$(git ls-remote --heads origin "refs/heads/${branch}" | awk '{print $1}')
+          if [[ -n "$old_remote" ]]; then
+            echo "Candidate $branch already exists; preserve manual resolutions and resume via Upstream Reviewed Promotion." >&2
+            exit 1
+          fi
           git switch -C "$branch" origin/main
           set +e
           git merge --no-ff --no-commit "$tag"
@@ -81,6 +105,7 @@ jobs:
                 printf -- '- `%s`\n' "${conflict_files[@]}"
               fi
             } > /tmp/upstream-conflict.md
+            python3 -c 'import json,sys; d=json.load(open(".downstream/upstream-risk.json")); d["merge_conflicts"]=sys.argv[1:]; print(json.dumps(d,indent=2))' "${conflict_files[@]}" > /tmp/upstream-conflict.json
             echo 'conflict=true' >> "$GITHUB_OUTPUT"
             echo "branch=$branch" >> "$GITHUB_OUTPUT"
             exit 0
@@ -114,6 +139,8 @@ jobs:
 
       - name: Create or update candidate pull request
         if: steps.release.outputs.changed == 'true' && steps.candidate.outputs.conflict == 'false'
+        env:
+          AUTO_PROMOTE: ${{ github.event_name == 'schedule' || inputs.auto_promote }}
         shell: bash
         run: |
           set -euo pipefail
@@ -151,12 +178,25 @@ jobs:
             gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --disable-auto 2>/dev/null || true
             gh pr edit "$pr" --repo "$GITHUB_REPOSITORY" --add-label upstream-review-required
           fi
+          # Bot-created pushes cannot be relied on to trigger downstream workflows.
+          for workflow in backend-ci.yml security-scan.yml downstream-verify.yml; do
+            gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" --ref "$branch"
+          done
+          gh workflow run upstream-risk-gate.yml --repo "$GITHUB_REPOSITORY" --ref "$branch" -f pr_number="$pr"
+          if [[ "$risk" == safe && "$AUTO_PROMOTE" == true ]]; then
+            gh workflow run upstream-promote.yml --repo "$GITHUB_REPOSITORY" --ref main \
+              -f pr_number="$pr" -f confirmation=PROMOTE
+          else
+            echo "Candidate PR #$pr requires review; use Upstream Reviewed Promotion after resolution."
+          fi
 
       - name: Upload conflict report
         if: always() && steps.candidate.outputs.conflict == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: upstream-${{ steps.release.outputs.tag }}-merge-conflicts
-          path: /tmp/upstream-conflict.md
+          path: |
+            /tmp/upstream-conflict.md
+            /tmp/upstream-conflict.json
           if-no-files-found: error
           retention-days: 30

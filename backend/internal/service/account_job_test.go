@@ -35,6 +35,8 @@ type accountJobTestRepo struct {
 	claimLimit         int
 	reserveLimits      []int
 	reservedBatchSizes []int
+	expireBefore       time.Time
+	pruneBefore        time.Time
 }
 
 type accountJobTestPayload struct {
@@ -205,8 +207,31 @@ func (r *accountJobTestRepo) FailedItemSeeds(_ context.Context, jobID, createdBy
 	payload := r.payloads[jobID]
 	return cloneAccountJob(job), seeds, payload.cipher, payload.expiresAt, nil
 }
-func (r *accountJobTestRepo) ExpirePayloads(context.Context, time.Time) error { return nil }
-func (r *accountJobTestRepo) Prune(context.Context, time.Time) error          { return nil }
+func (r *accountJobTestRepo) ExpirePayloads(_ context.Context, before time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.expireBefore = before
+	return nil
+}
+func (r *accountJobTestRepo) Prune(_ context.Context, before time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.pruneBefore = before
+	return nil
+}
+
+func TestAccountJobCleanupRetainsResultsForOneDay(t *testing.T) {
+	repo := newAccountJobTestRepo()
+	runtime := NewAccountJobRuntime(NewAccountJobService(repo, accountJobTestCipher{}), nil)
+	runtime.ctx = context.Background()
+	now := time.Date(2026, time.September, 5, 12, 0, 0, 0, time.UTC)
+
+	runtime.cleanup(now)
+
+	require.Equal(t, 24*time.Hour, AccountJobResultTTL)
+	require.Equal(t, now.Add(-24*time.Hour), repo.pruneBefore)
+	require.Equal(t, now, repo.expireBefore)
+}
 
 func TestAccountJobSubmitRequiresIdempotencyKeyAndEncryptsPayload(t *testing.T) {
 	repo := newAccountJobTestRepo()

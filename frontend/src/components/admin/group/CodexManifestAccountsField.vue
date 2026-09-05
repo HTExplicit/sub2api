@@ -225,7 +225,7 @@ const searchRunner = useKeyedDebouncedSearch<SimpleAccount[]>({
       {
         search: keyword,
         platform: "openai",
-        group: String(props.groupId),
+        group_id: String(props.groupId),
       },
       { signal },
     );

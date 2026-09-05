@@ -367,7 +367,7 @@
             />
           </template>
           <template #cell-groups="{ row }">
-            <AccountGroupsCell :groups="row.groups" :max-display="4" />
+            <AccountGroupsCell :groups="accountGroupsForRow(row)" :max-display="4" />
           </template>
           <template #cell-taxonomy_route="{ row }">
             <div class="max-w-[18rem] space-y-1">
@@ -540,7 +540,7 @@
         </DataTable>
         <AccountCompactList
           v-else-if="viewMode === 'compact'"
-          :accounts="accounts"
+          :accounts="accountsWithGroups"
           :loading="loading"
           :selected-ids="selIds"
           :today-stats="todayStatsByAccountId"
@@ -558,7 +558,7 @@
         />
         <AccountCardGrid
           v-else
-          :accounts="accounts"
+          :accounts="accountsWithGroups"
           :loading="loading"
           :selected-ids="selIds"
           :today-stats="todayStatsByAccountId"
@@ -722,6 +722,7 @@ import { getFloatingPanelPosition } from '@/utils/floatingPanel'
 import { formatMultiplier } from '@/utils/formatters'
 import type {
   Account,
+  AccountListItem,
   AccountConsoleFacets,
   AccountConsoleFilterState,
   AccountManagementFolder,
@@ -846,6 +847,12 @@ const cindyViewOptions = computed<Array<{ value: CindyAccountView; label: string
 })
 const folderNavigationTotal = computed(() => finiteFacetCount(facets.value?.total))
 const folderNavigationUncategorized = computed(() => finiteFacetCount(facets.value?.uncategorized_count))
+const groupsByID = computed(() => new Map(groups.value.map(group => [group.id, group])))
+const accountGroupsForRow = (account: Pick<AccountListItem, 'group_ids'>): AdminGroup[] => {
+  const groupIDs = account.group_ids ?? []
+  if (groupIDs.length === 0) return []
+  return groupIDs.map(id => groupsByID.value.get(id)).filter((group): group is AdminGroup => Boolean(group))
+}
 const accountTableRef = ref<HTMLElement | null>(null)
 const dataTableRef = ref<InstanceType<typeof DataTable> | null>(null)
 type AccountBulkEditTarget =
@@ -1413,7 +1420,7 @@ const {
   debouncedReload: baseDebouncedReload,
   handlePageChange: baseHandlePageChange,
   handlePageSizeChange: baseHandlePageSizeChange
-} = useTableLoader<Account, any>({
+} = useTableLoader<AccountListItem, any>({
   fetchFn: adminAPI.accounts.list,
   initialParams: {
     platform: '',
@@ -1430,6 +1437,7 @@ const {
     privacy_mode: '',
     group_id: '',
     search: '',
+    lite: '1',
     include_scheduler_score: shouldIncludeSchedulerScore() ? '1' : '0',
     sort_by: sortState.sort_by,
     sort_order: sortState.sort_order
@@ -1438,6 +1446,12 @@ const {
 
 pagination.page = queryPositiveInt('page', pagination.page)
 pagination.page_size = queryPositiveInt('page_size', pagination.page_size)
+// Compact responses omit repeated group objects; hydrate downstream card/compact
+// layouts from the same catalog already used by the official table layout.
+const accountsWithGroups = computed<Account[]>(() => accounts.value.map(account => ({
+  ...account,
+  groups: accountGroupsForRow(account)
+})))
 
 const saveSensitiveConsoleState = () => {
   sessionStorage.setItem(ACCOUNT_CONSOLE_SESSION_KEY, JSON.stringify({
@@ -1673,7 +1687,7 @@ const handleFolderSelect = (folder: string) => {
 const handleTaxonomyChanged = async () => {
   await Promise.all([reload(), loadFacets(), loadTaxonomy()])
   if (detailsAccount.value) {
-    detailsAccount.value = accounts.value.find(account => account.id === detailsAccount.value?.id) || detailsAccount.value
+    detailsAccount.value = await loadAccountDetails(detailsAccount.value) || detailsAccount.value
   }
 }
 
@@ -1691,7 +1705,7 @@ const {
   toggleVisible,
   selectVisible: selectCurrentPage,
   batchUpdate
-} = useTableSelection<Account>({
+} = useTableSelection<AccountListItem>({
   rows: accounts,
   getId: (account) => account.id
 })
@@ -1734,8 +1748,6 @@ const resetAutoRefreshCache = () => {
   upstreamBillingRateETag.value = null
 }
 
-const isFirstLoad = ref(true)
-
 type AccountLoadOptions = {
   refreshTodayStats?: boolean
 }
@@ -1746,14 +1758,8 @@ const load = async (options: AccountLoadOptions = {}) => {
   hasPendingListSync.value = false
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = false
-  if (isFirstLoad.value) {
-    requestParams.lite = '1'
-  }
+  requestParams.lite = '1'
   await baseLoad()
-  if (isFirstLoad.value) {
-    isFirstLoad.value = false
-    delete requestParams.lite
-  }
   if (options.refreshTodayStats !== false) await refreshTodayStatsBatch()
 }
 
@@ -2329,14 +2335,15 @@ function accountDisplayEmail(row: any): string {
 }
 
 const accountRouteSummary = (account: Account) => {
-  const groups = account.groups?.map(group => group.name).filter(Boolean) || []
+  const groups = accountGroupsForRow(account).map(group => group.name).filter(Boolean)
   const proxy = account.proxy?.name || t('admin.accounts.directConnection')
   return groups.length ? `${groups.join(', ')} · ${proxy}` : proxy
 }
 
-const openDetails = (account: Account) => {
-  detailsAccount.value = account
+const openDetails = async (account: AccountListItem) => {
   menu.show = false
+  const detail = await loadAccountDetails(account)
+  if (detail) detailsAccount.value = detail
 }
 
 function accountHomepageUrl(row: Account): string {
@@ -2456,7 +2463,27 @@ const cols = computed(() =>
   )
 )
 
-const handleEdit = (a: Account) => { edAcc.value = a; showEdit.value = true }
+const accountDetailLoading = new Set<number>()
+const loadAccountDetails = async (account: Pick<AccountListItem, 'id'>): Promise<Account | null> => {
+  if (accountDetailLoading.has(account.id)) return null
+  accountDetailLoading.add(account.id)
+  try {
+    return await adminAPI.accounts.getById(account.id)
+  } catch (error) {
+    console.error('Failed to load account details:', error)
+    appStore.showError(extractApiErrorMessage(error, t('common.error')))
+    return null
+  } finally {
+    accountDetailLoading.delete(account.id)
+  }
+}
+
+const handleEdit = async (a: AccountListItem) => {
+  const account = await loadAccountDetails(a)
+  if (!account) return
+  edAcc.value = account
+  showEdit.value = true
+}
 const openMenu = (a: Account, e: MouseEvent) => {
   menu.acc = a
 
@@ -3021,8 +3048,18 @@ const closeTestModal = async () => {
 }
 const closeStatsModal = () => { showStats.value = false; statsAcc.value = null }
 const closeReAuthModal = () => { showReAuth.value = false; reAuthAcc.value = null }
-const handleTest = (a: Account) => { testingAcc.value = a; showTest.value = true }
-const handleViewStats = (a: Account) => { statsAcc.value = a; showStats.value = true }
+const handleTest = async (a: AccountListItem) => {
+  const account = await loadAccountDetails(a)
+  if (!account) return
+  testingAcc.value = account
+  showTest.value = true
+}
+const handleViewStats = async (a: AccountListItem) => {
+  const account = await loadAccountDetails(a)
+  if (!account) return
+  statsAcc.value = account
+  showStats.value = true
+}
 const handleSchedule = async (a: Account) => {
   scheduleAcc.value = a
   scheduleModelOptions.value = []
