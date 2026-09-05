@@ -1,9 +1,19 @@
 name: Downstream Release
+run-name: Release ${{ inputs.release_tag || github.ref_name }}
 
 on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing immutable codexrip tag on main'
+        required: true
+        type: string
   push:
     tags:
       - 'v*.*.*-codexrip.*'
+
+env:
+  RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
 
 permissions:
   contents: write
@@ -12,7 +22,7 @@ permissions:
   attestations: write
 
 concurrency:
-  group: downstream-release-${{ github.ref }}
+  group: downstream-release-${{ inputs.release_tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -22,25 +32,29 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
       upstream_version: ${{ steps.meta.outputs.upstream_version }}
       build_date: ${{ steps.meta.outputs.build_date }}
+      source_sha: ${{ steps.meta.outputs.source_sha }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
+          ref: ${{ env.RELEASE_TAG }}
       - name: Validate release tag and source
         id: meta
         shell: bash
         run: |
           set -euo pipefail
-          tag="$GITHUB_REF_NAME"
+          tag="$RELEASE_TAG"
           [[ "$tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-codexrip\.([1-9][0-9]*)$ ]]
           upstream_version="${BASH_REMATCH[1]}"
           version="${tag#v}"
           git fetch origin main
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          source_sha=$(git rev-parse HEAD)
+          git merge-base --is-ancestor "$source_sha" origin/main
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
           [[ "$(tr -d '\r\n' < .downstream/upstream-base)" == "v${upstream_version}" ]]
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "upstream_version=$upstream_version" >> "$GITHUB_OUTPUT"
-          echo "build_date=$(git show -s --format=%cI "$GITHUB_SHA")" >> "$GITHUB_OUTPUT"
+          echo "build_date=$(git show -s --format=%cI "$source_sha")" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: backend/go.mod
@@ -112,9 +126,12 @@ jobs:
       UPSTREAM_VERSION: ${{ needs.verify.outputs.upstream_version }}
       BUILD_DATE: ${{ needs.verify.outputs.build_date }}
       GH_TOKEN: ${{ github.token }}
+      SOURCE_SHA: ${{ needs.verify.outputs.source_sha }}
       PROMPT_SHA: c01ea5ce364caf52e28e214162fd36e6d733280aae0bf94fed7ac2ebe8bbb621
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - name: Verify fixed System Prompt capture
         shell: bash
         run: |
@@ -139,7 +156,7 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/HTExplicit/sub2api
             org.opencontainers.image.version=${{ env.VERSION }}
-            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.revision=${{ needs.verify.outputs.source_sha }}
             org.opencontainers.image.created=${{ env.BUILD_DATE }}
             org.opencontainers.image.licenses=LGPL-3.0
             io.github.htexplicit.upstream-version=${{ env.UPSTREAM_VERSION }}
@@ -147,7 +164,7 @@ jobs:
             io.github.htexplicit.cindy-platform-v1=true
           build-args: |
             VERSION=${{ env.VERSION }}
-            COMMIT=${{ github.sha }}
+            COMMIT=${{ needs.verify.outputs.source_sha }}
             DATE=${{ env.BUILD_DATE }}
             GOPROXY=https://proxy.golang.org,direct
             GOSUMDB=sum.golang.org
@@ -167,11 +184,11 @@ jobs:
           Codexrip downstream Sub2API build based on upstream v${UPSTREAM_VERSION}.
 
           Image: \`${IMAGE}:${VERSION}@${{ steps.build.outputs.digest }}\`
-          Source: \`${GITHUB_SHA}\`
+          Source: \`${SOURCE_SHA}\`
           Fixed System Prompt SHA-256: \`${PROMPT_SHA}\`
           Remote Skill source: \`moxinggang\` (paired tree and prompt are activated by the application migration gate)
           EOF
-          gh release create "$GITHUB_REF_NAME" \
+          gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --title "Sub2API ${VERSION}" \
             --notes-file /tmp/release-notes.md

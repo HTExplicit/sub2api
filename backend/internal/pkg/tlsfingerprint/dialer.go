@@ -11,10 +11,46 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"time"
 
 	utls "github.com/refraction-networking/utls"
 	"golang.org/x/net/proxy"
 )
+
+const (
+	connectTimeout   = 10 * time.Second
+	handshakeTimeout = 10 * time.Second
+)
+
+func newTCPDialer() *net.Dialer {
+	return &net.Dialer{Timeout: connectTimeout, KeepAlive: 30 * time.Second}
+}
+
+// Bound CONNECT read/write as well as dialing. Cancellation must interrupt an
+// already established tunnel; a context on DialContext alone cannot do that.
+func setupDeadline(ctx context.Context, conn net.Conn) (func() error, error) {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		deadline = time.Now().Add(connectTimeout)
+	}
+	if err := conn.SetDeadline(deadline); err != nil {
+		return nil, err
+	}
+	done := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		_ = conn.SetDeadline(time.Now())
+		close(done)
+	})
+	return func() error {
+		if !stop() {
+			<-done
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return conn.SetDeadline(time.Time{})
+	}, nil
+}
 
 // Profile contains TLS fingerprint configuration.
 // All slice fields use built-in defaults when empty.
@@ -121,7 +157,7 @@ var (
 // If baseDialer is nil, direct TCP dial is used.
 func NewDialer(profile *Profile, baseDialer func(ctx context.Context, network, addr string) (net.Conn, error)) *Dialer {
 	if baseDialer == nil {
-		baseDialer = (&net.Dialer{}).DialContext
+		baseDialer = newTCPDialer().DialContext
 	}
 	return &Dialer{profile: profile, baseDialer: baseDialer}
 }
@@ -160,7 +196,7 @@ func (d *SOCKS5ProxyDialer) DialTLSContext(ctx context.Context, network, addr st
 		proxyAddr = net.JoinHostPort(d.proxyURL.Hostname(), "1080") // Default SOCKS5 port
 	}
 
-	socksDialer, err := proxy.SOCKS5("tcp", proxyAddr, auth, proxy.Direct)
+	socksDialer, err := proxy.SOCKS5("tcp", proxyAddr, auth, newTCPDialer())
 	if err != nil {
 		slog.Debug("tls_fingerprint_socks5_dialer_failed", "error", err)
 		return nil, fmt.Errorf("create SOCKS5 dialer: %w", err)
@@ -168,7 +204,13 @@ func (d *SOCKS5ProxyDialer) DialTLSContext(ctx context.Context, network, addr st
 
 	// Step 2: Establish SOCKS5 tunnel to target
 	slog.Debug("tls_fingerprint_socks5_establishing_tunnel", "target", addr)
-	conn, err := socksDialer.Dial("tcp", addr)
+	contextDialer, ok := socksDialer.(proxy.ContextDialer)
+	if !ok {
+		return nil, fmt.Errorf("SOCKS5 dialer does not support context cancellation")
+	}
+	connectCtx, cancel := context.WithTimeout(ctx, connectTimeout)
+	defer cancel()
+	conn, err := contextDialer.DialContext(connectCtx, network, addr)
 	if err != nil {
 		slog.Debug("tls_fingerprint_socks5_connect_failed", "error", err)
 		return nil, fmt.Errorf("SOCKS5 connect: %w", err)
@@ -197,13 +239,27 @@ func (d *HTTPProxyDialer) DialTLSContext(ctx context.Context, network, addr stri
 		}
 	}
 
-	dialer := &net.Dialer{}
-	conn, err := dialer.DialContext(ctx, "tcp", proxyAddr)
+	connectCtx, cancel := context.WithTimeout(ctx, connectTimeout)
+	defer cancel()
+	conn, err := newTCPDialer().DialContext(connectCtx, network, proxyAddr)
 	if err != nil {
 		slog.Debug("tls_fingerprint_http_proxy_connect_failed", "error", err)
 		return nil, fmt.Errorf("connect to proxy: %w", err)
 	}
 	slog.Debug("tls_fingerprint_http_proxy_connected", "proxy_addr", proxyAddr)
+	finish, err := setupDeadline(connectCtx, conn)
+	if err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("set CONNECT deadline: %w", err)
+	}
+	// Always stop the cancellation callback before handing off this connection.
+	finished := false
+	defer func() {
+		if !finished {
+			_ = finish()
+			_ = conn.Close()
+		}
+	}()
 
 	// Step 2: Send CONNECT request to establish tunnel
 	req := &http.Request{
@@ -225,6 +281,9 @@ func (d *HTTPProxyDialer) DialTLSContext(ctx context.Context, network, addr stri
 	if err := req.Write(conn); err != nil {
 		_ = conn.Close()
 		slog.Debug("tls_fingerprint_http_proxy_write_failed", "error", err)
+		if connectCtx.Err() != nil {
+			err = connectCtx.Err()
+		}
 		return nil, fmt.Errorf("write CONNECT request: %w", err)
 	}
 
@@ -234,6 +293,9 @@ func (d *HTTPProxyDialer) DialTLSContext(ctx context.Context, network, addr stri
 	if err != nil {
 		_ = conn.Close()
 		slog.Debug("tls_fingerprint_http_proxy_read_response_failed", "error", err)
+		if connectCtx.Err() != nil {
+			err = connectCtx.Err()
+		}
 		return nil, fmt.Errorf("read CONNECT response: %w", err)
 	}
 	// CONNECT response has no body; do not defer resp.Body.Close() as it wraps the
@@ -245,6 +307,12 @@ func (d *HTTPProxyDialer) DialTLSContext(ctx context.Context, network, addr stri
 		return nil, fmt.Errorf("proxy CONNECT failed: %s", resp.Status)
 	}
 	slog.Debug("tls_fingerprint_http_proxy_tunnel_established")
+	if err := finish(); err != nil {
+		finished = true
+		_ = conn.Close()
+		return nil, fmt.Errorf("finish CONNECT: %w", err)
+	}
+	finished = true
 
 	// Step 4: Perform TLS handshake on the tunnel with utls fingerprint
 	return performTLSHandshake(ctx, conn, d.profile, addr)
@@ -255,7 +323,9 @@ func (d *HTTPProxyDialer) DialTLSContext(ctx context.Context, network, addr stri
 func (d *Dialer) DialTLSContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	// Establish TCP connection using base dialer (supports proxy)
 	slog.Debug("tls_fingerprint_dialing_tcp", "addr", addr)
-	conn, err := d.baseDialer(ctx, network, addr)
+	connectCtx, cancel := context.WithTimeout(ctx, connectTimeout)
+	defer cancel()
+	conn, err := d.baseDialer(connectCtx, network, addr)
 	if err != nil {
 		slog.Debug("tls_fingerprint_tcp_dial_failed", "error", err)
 		return nil, err
@@ -270,6 +340,8 @@ func (d *Dialer) DialTLSContext(ctx context.Context, network, addr string) (net.
 // It builds a ClientHello spec from the profile, applies it, and completes the handshake.
 // On failure, conn is closed and an error is returned.
 func performTLSHandshake(ctx context.Context, conn net.Conn, profile *Profile, addr string) (net.Conn, error) {
+	ctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
+	defer cancel()
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		host = addr

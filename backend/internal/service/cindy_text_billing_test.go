@@ -202,7 +202,7 @@ func TestOpenAIRecordUsageTokenCostPrefersExplicitGroupPricingForCindy(t *testin
 	cost, err := svc.calculateOpenAIRecordUsageTokenCost(
 		context.Background(), apiKey, cindyTextBillingAccount(), "gpt-5.4", 1,
 		time.Time{},
-		UsageTokens{InputTokens: 100, OutputTokens: 10}, "", boolPtr(true),
+		UsageTokens{InputTokens: 100, OutputTokens: 10}, "", "", boolPtr(true),
 	)
 	require.NoError(t, err)
 	require.InDelta(t, 100*inputPrice, cost.InputCost, 1e-12)
@@ -216,7 +216,7 @@ func TestOpenAIRecordUsageTokenCostKeepsNonCindyPathUnchanged(t *testing.T) {
 	tokens := UsageTokens{InputTokens: 100, OutputTokens: 10, CacheReadTokens: 5}
 	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.openai.com"}}
 
-	got, err := svc.calculateOpenAIRecordUsageTokenCost(context.Background(), &APIKey{}, account, "gpt-5.1", 1.25, time.Time{}, tokens, "priority", boolPtr(true))
+	got, err := svc.calculateOpenAIRecordUsageTokenCost(context.Background(), &APIKey{}, account, "gpt-5.1", 1.25, time.Time{}, tokens, "priority", "", boolPtr(true))
 	require.NoError(t, err)
 	want, err := billingService.calculateCostWithServiceTierPolicy("gpt-5.1", tokens, 1.25, "priority", true)
 	require.NoError(t, err)
@@ -249,7 +249,7 @@ func TestLegacyCindyRuntimeCompatibilityUsesExactModelPricing(t *testing.T) {
 		t.Run(test.model, func(t *testing.T) {
 			cost, err := svc.calculateOpenAIRecordUsageTokenCost(
 				context.Background(), &APIKey{}, account, test.model, 1, time.Time{},
-				UsageTokens{InputTokens: 100, OutputTokens: 10}, test.serviceTier, boolPtr(false),
+				UsageTokens{InputTokens: 100, OutputTokens: 10}, test.serviceTier, "", boolPtr(false),
 			)
 			require.NoError(t, err)
 			require.InDelta(t, 100*test.inputPrice, cost.InputCost, 1e-12)
@@ -288,7 +288,7 @@ func TestLegacyCindyRuntimeCompatibilityExplicitGroupPricingWins(t *testing.T) {
 
 	cost, err := svc.calculateOpenAIRecordUsageTokenCost(
 		context.Background(), apiKey, account, "openai/gpt-5.6-sol", 1, time.Time{},
-		UsageTokens{InputTokens: 100, OutputTokens: 10}, "", boolPtr(false),
+		UsageTokens{InputTokens: 100, OutputTokens: 10}, "", "", boolPtr(false),
 	)
 	require.NoError(t, err)
 	require.InDelta(t, 100*inputPrice, cost.InputCost, 1e-12)

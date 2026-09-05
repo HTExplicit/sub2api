@@ -660,6 +660,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		}
 		imageCounter.AddSSEData(message)
 
+		if eventType == "error" || eventType == "response.failed" {
+			markOpenAICyberPolicyEvent(c, message, http.StatusOK, usage)
+		}
 		cindyHTTPToWSV2FirstTurn := decision.Reason == openAICindyHTTPToWSV2Reason &&
 			previousResponseID == "" && !wroteDownstream
 		if eventType == "response.failed" {

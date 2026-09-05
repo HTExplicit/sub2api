@@ -22,6 +22,16 @@
               {{ t('admin.accountTasks.description') }}
             </p>
           </div>
+          <button
+            type="button"
+            data-test="task-refresh"
+            class="btn-ghost btn-icon shrink-0"
+            :aria-label="t('common.refresh')"
+            :disabled="store.loadingJobs || store.loadingCurrent"
+            @click="store.refreshDrawer"
+          >
+            <Icon name="refresh" size="sm" />
+          </button>
           <button type="button" class="btn-ghost btn-icon shrink-0" :aria-label="t('common.close')" @click="store.closeDrawer">
             <Icon name="x" size="sm" />
           </button>
@@ -197,7 +207,6 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import { isTerminalAccountJob, useAccountJobsStore } from '@/stores/accountJobs'
@@ -214,8 +223,6 @@ const store = useAccountJobsStore()
 const appStore = useAppStore()
 const survivorID = ref<number | null>(null)
 const merging = ref(false)
-const now = ref(Date.now())
-useIntervalFn(() => { now.value = Date.now() }, 1_000)
 
 function safeDuplicateReview(item: AccountJobItem): DuplicateReviewMetadata | null {
   if (item.status !== 'succeeded' || !item.metadata || typeof item.metadata !== 'object') return null
@@ -268,7 +275,8 @@ const elapsedSeconds = computed(() => {
   const job = store.currentJob
   if (!job) return 0
   const started = new Date(job.started_at || job.created_at).getTime()
-  const finished = job.finished_at ? new Date(job.finished_at).getTime() : now.value
+  // Metrics describe the last explicitly refreshed snapshot, not a stale live estimate.
+  const finished = new Date(job.finished_at || job.updated_at).getTime()
   if (!Number.isFinite(started) || !Number.isFinite(finished) || finished <= started) return 0
   return Math.max(0, Math.floor((finished - started) / 1_000))
 })
@@ -364,11 +372,15 @@ async function submitDuplicateMerge(): Promise<void> {
   }
 }
 
-function changeItemPage(offset: number): void {
+async function changeItemPage(offset: number): Promise<void> {
   if (!store.currentJob) return
-  void store.loadCurrent(store.currentJob.id, {
-    page: store.itemPage.page + offset,
-    page_size: store.itemPage.pageSize,
-  })
+  try {
+    await store.loadCurrent(store.currentJob.id, {
+      page: store.itemPage.page + offset,
+      page_size: store.itemPage.pageSize,
+    })
+  } catch {
+    appStore.showError(t('admin.accountTasks.loadFailed'))
+  }
 }
 </script>

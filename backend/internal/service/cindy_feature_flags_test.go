@@ -312,6 +312,7 @@ func TestCindyRolloutFlagHelper(t *testing.T) {
 			time.Time{},
 			UsageTokens{InputTokens: 100, OutputTokens: 10},
 			"",
+			"",
 			boolPtr(false),
 		)
 		if err != nil {

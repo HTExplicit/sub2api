@@ -235,7 +235,9 @@ type OpenAIUsage struct {
 type OpenAIForwardResult struct {
 	RequestID  string
 	ResponseID string
-	Usage      OpenAIUsage
+	// Direct upstream headers are used for request-ID attribution.
+	UpstreamHeaders http.Header
+	Usage           OpenAIUsage
 	// UsageInputTokensExcludeCache marks Anthropic-style usage where
 	// input_tokens is already disjoint from cache read/write tokens. OpenAI
 	// Responses reports a total input count and therefore leaves this false.
@@ -947,7 +949,10 @@ func (s *OpenAIGatewayService) writeOpenAIWSFallbackErrorResponse(c *gin.Context
 
 	setOpsUpstreamError(c, statusCode, upstreamMessage, "")
 	if account != nil {
+		proxyID, proxyName := opsUpstreamWSProxyAttribution(account)
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+			ProxyID:            proxyID,
+			ProxyName:          proxyName,
 			Platform:           account.Platform,
 			AccountID:          account.ID,
 			AccountName:        account.Name,

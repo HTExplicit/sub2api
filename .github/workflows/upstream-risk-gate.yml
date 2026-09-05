@@ -1,6 +1,12 @@
 name: Upstream risk gate
 
 on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Candidate PR to verify at this exact head ref'
+        required: true
+        type: string
   pull_request_target:
     types: [opened, synchronize, reopened, labeled, unlabeled]
 
@@ -15,9 +21,24 @@ concurrency:
 jobs:
   classify:
     name: Upstream risk gate
-    if: startsWith(github.event.pull_request.head.ref, 'sync/upstream-')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.pull_request.head.ref, 'sync/upstream-')
     runs-on: ubuntu-latest
     steps:
+      - name: Resolve immutable candidate metadata
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          pr=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")
+          [[ "$(jq -r .head.sha <<<"$pr")" == "$EXPECTED_SHA" ]]
+          [[ "$(jq -r .head.repo.full_name <<<"$pr")" == "$GITHUB_REPOSITORY" ]]
+          echo "sha=$EXPECTED_SHA" >> "$GITHUB_OUTPUT"
+          echo "repository=$(jq -r .head.repo.full_name <<<"$pr")" >> "$GITHUB_OUTPUT"
+          echo "labels=$(jq -c '[.labels[].name]' <<<"$pr")" >> "$GITHUB_OUTPUT"
       - name: Check out trusted gate implementation
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -28,15 +49,15 @@ jobs:
       - name: Check out candidate as data only
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
-          ref: ${{ github.event.pull_request.head.sha }}
+          repository: ${{ steps.pr.outputs.repository }}
+          ref: ${{ steps.pr.outputs.sha }}
           fetch-depth: 0
           path: candidate
 
       - name: Recompute and enforce risk decision
         env:
-          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
-          LABELS_JSON: ${{ toJson(github.event.pull_request.labels.*.name) }}
+          HEAD_REPOSITORY: ${{ steps.pr.outputs.repository }}
+          LABELS_JSON: ${{ steps.pr.outputs.labels }}
         shell: bash
         run: |
           set -euo pipefail

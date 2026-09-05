@@ -5,6 +5,7 @@ on:
     types: [closed]
 
 permissions:
+  actions: write
   contents: write
   issues: write
 
@@ -22,35 +23,15 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          ref: ${{ github.event.pull_request.merge_commit_sha }}
-          fetch-depth: 0
 
-      - name: Validate safe merge and create fixed downstream tag
-        id: release
-        shell: bash
+      - name: Resume the checked promotion pipeline
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          manifest=.downstream/upstream-risk.json
-          [[ -f "$manifest" && ! -L "$manifest" ]]
-          [[ "$(jq -r .risk_class "$manifest")" == safe ]]
-          [[ "$(jq -r .overlap_file_count "$manifest")" == 0 ]]
-          [[ "$(jq -r .critical_file_count "$manifest")" == 0 ]]
-          upstream_tag=$(tr -d '\r\n' < .downstream/upstream-base)
-          [[ "$upstream_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          [[ "$(jq -r .upstream_tag "$manifest")" == "$upstream_tag" ]]
-          release_tag="${upstream_tag}-codexrip.1"
-          if git ls-remote --exit-code --tags origin "refs/tags/${release_tag}" >/dev/null 2>&1 ||
-             gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "release tag already exists: $release_tag" >&2
-            exit 1
-          fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git tag -a "$release_tag" -m "Sub2API ${release_tag#v}"
-          git push origin "refs/tags/${release_tag}"
-          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          gh workflow run upstream-promote.yml --repo "$GITHUB_REPOSITORY" --ref main \
+            -f pr_number="$PR_NUMBER" -f confirmation=PROMOTE
 
       - name: Create or update failure issue
         if: failure()

@@ -42,7 +42,7 @@ const (
 
 	AccountJobBatchSize   = 100
 	AccountJobPayloadTTL  = 24 * time.Hour
-	AccountJobResultTTL   = 30 * 24 * time.Hour
+	AccountJobResultTTL   = 24 * time.Hour
 	accountJobWorkerCount = 2
 )
 
