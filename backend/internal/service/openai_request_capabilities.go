@@ -10,7 +10,8 @@ import (
 // OpenAIResponsesRequireNativeUpstream keeps non-representable requests out
 // of Chat-only candidates. The converter independently enforces this boundary.
 func OpenAIResponsesRequireNativeUpstream(body []byte) bool {
-	if gjson.GetBytes(body, "previous_response_id").String() != "" || gjson.GetBytes(body, "background").Bool() || gjson.GetBytes(body, "conversation").Exists() {
+	conversation := gjson.GetBytes(body, "conversation")
+	if gjson.GetBytes(body, "previous_response_id").String() != "" || gjson.GetBytes(body, "background").Bool() || (conversation.Exists() && conversation.Type != gjson.Null) {
 		return true
 	}
 	var request apicompat.ResponsesRequest

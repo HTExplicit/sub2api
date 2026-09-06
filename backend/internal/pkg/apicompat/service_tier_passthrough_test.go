@@ -147,7 +147,7 @@ func TestChatCompletionsChunkToResponsesEvents_PreservesServiceTier(t *testing.T
 
 	// 终止事件同样携带。
 	state.FinishReason = "stop"
-	state.Text.WriteString("fixture")
+	_, _ = state.Text.WriteString("fixture")
 	final := FinalizeChatCompletionsResponsesStream(state)
 	completed := findEvent(final, "response.completed")
 	require.NotNil(t, completed)
