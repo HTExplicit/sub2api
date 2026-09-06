@@ -499,14 +499,11 @@ func TestOpenAIWSHTTPBridgeAPIKeyReusesClientToolMappingWhenFollowupOmitsTools(t
 	require.Equal(t, "function", secondTools[0].Get("type").String())
 	require.Equal(t, "exec", secondTools[0].Get("name").String())
 	secondInput := gjson.GetBytes(upstream.bodies[1], "input").Array()
-	require.Len(t, secondInput, 3)
-	require.Equal(t, "run pwd", secondInput[0].String())
-	require.Equal(t, "function_call", secondInput[1].Get("type").String())
-	require.Equal(t, "fc_custom_1", secondInput[1].Get("id").String())
-	require.JSONEq(t, `{"input":"pwd"}`, secondInput[1].Get("arguments").String())
-	require.False(t, secondInput[1].Get("input").Exists())
-	require.Equal(t, "function_call_output", secondInput[2].Get("type").String())
-	require.False(t, secondInput[2].Get("id").Exists())
+	require.Equal(t, "resp_custom_first", gjson.GetBytes(upstream.bodies[1], "previous_response_id").String())
+	require.Len(t, secondInput, 1, "native HTTP retains its anchor instead of repeating prior state")
+	require.Equal(t, "function_call_output", secondInput[0].Get("type").String())
+	require.Equal(t, "call_custom_1", secondInput[0].Get("call_id").String())
+	require.False(t, secondInput[0].Get("id").Exists())
 }
 
 func TestOpenAIWSHTTPBridgeFullCustomToolHistoryWithoutPreviousResponseIDDoesNotReplay(t *testing.T) {
@@ -597,9 +594,11 @@ func TestOpenAIWSHTTPBridgeFullCustomToolHistoryWithoutPreviousResponseIDDoesNot
 
 	require.Len(t, upstream.bodies, 4)
 	orphanInput := gjson.GetBytes(upstream.bodies[1], "input").Array()
-	require.Len(t, orphanInput, 2)
+	require.Len(t, orphanInput, 3, "an unfinished call is retained until the upstream validates it")
 	require.Equal(t, "run pwd", orphanInput[0].String())
-	require.Equal(t, "user", orphanInput[1].Get("role").String())
+	require.Equal(t, "custom_tool_call", orphanInput[1].Get("type").String())
+	require.Equal(t, "call_1", orphanInput[1].Get("call_id").String())
+	require.Equal(t, "user", orphanInput[2].Get("role").String())
 	for _, body := range upstream.bodies[2:] {
 		input := gjson.GetBytes(body, "input").Array()
 		require.Len(t, input, 3)
@@ -1657,7 +1656,7 @@ func TestProxyResponsesWebSocketFromClientForGrokUsesXAIHTTPBridgeAndPreservesMa
 			"",
 			`data: {"type":"response.output_text.delta","response":{"id":"` + responseID + `"},"delta":"ok"}`,
 			"",
-			`data: {"type":"response.completed","response":{"id":"` + responseID + `","model":"grok-4.3","usage":{"input_tokens":4,"output_tokens":2,"input_tokens_details":{"cached_tokens":` + fmt.Sprintf("%d", cachedTokens) + `}}}}`,
+			`data: {"type":"response.completed","response":{"id":"` + responseID + `","model":"grok-4.3","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":4,"output_tokens":2,"input_tokens_details":{"cached_tokens":` + fmt.Sprintf("%d", cachedTokens) + `}}}}`,
 			"",
 		}, "\n")
 		return &http.Response{

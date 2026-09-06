@@ -1894,7 +1894,7 @@ func TestOpenAIResponsesWebSocket_PassthroughUsageLogPersistsUserAgentAndReasoni
 	require.True(t, got.log.OpenAIWSMode)
 }
 
-func TestOpenAIResponsesWebSocket_PassthroughUsageLogInfersReasoningFromInitialRequestModel(t *testing.T) {
+func TestOpenAIResponsesWebSocket_PassthroughMaterializesReasoningBeforeChannelMapping(t *testing.T) {
 	got := runOpenAIResponsesWebSocketUsageLogCase(t, openAIResponsesWSUsageLogCase{
 		firstPayload: `{"type":"response.create","model":"gpt-5.4-xhigh","stream":false}`,
 		userAgent:    testStringPtr("codex_cli_rs/0.125.0 mapped"),
@@ -1906,8 +1906,9 @@ func TestOpenAIResponsesWebSocket_PassthroughUsageLogInfersReasoningFromInitialR
 	require.Equal(t, "gpt-5.4", gjson.GetBytes(got.upstreamFirstPayload, "model").String(),
 		"上游首帧应使用渠道映射后的模型")
 	require.NotNil(t, got.log.ReasoningEffort)
+	require.Equal(t, "xhigh", gjson.GetBytes(got.upstreamFirstPayload, "reasoning.effort").String(), "effort must be present on the wire, not only inferred for logs")
 	require.Equal(t, "xhigh", *got.log.ReasoningEffort,
-		"usage log reasoning effort 必须使用渠道映射前首帧模型后缀推导")
+		"usage log must reflect the materialized upstream effort")
 }
 
 func TestOpenAIResponsesWebSocket_PassthroughUsageLogLeavesUserAgentNilWhenMissing(t *testing.T) {

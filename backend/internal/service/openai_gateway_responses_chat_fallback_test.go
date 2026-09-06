@@ -61,7 +61,7 @@ func TestForwardResponses_ForceChatCompletionsRoutesNonStreamingToChatCompletion
 }
 
 // Scenario: 第三方无推理模型不收到兼容档位。
-func TestForwardResponses_ForceChatCompletionsOmitsNoneReasoningEffort(t *testing.T) {
+func TestForwardResponses_ForceChatCompletionsPreservesExplicitNoneReasoningEffort(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	body := []byte(`{"model":"company-coding-model","input":"hello","reasoning":{"effort":"none"},"stream":false}`)
@@ -86,8 +86,9 @@ func TestForwardResponses_ForceChatCompletionsOmitsNoneReasoningEffort(t *testin
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "company-coding-model", gjson.GetBytes(upstream.lastBody, "model").String())
-	require.False(t, gjson.GetBytes(upstream.lastBody, "reasoning_effort").Exists())
-	require.Nil(t, result.ReasoningEffort)
+	require.Equal(t, "none", gjson.GetBytes(upstream.lastBody, "reasoning_effort").String())
+	require.NotNil(t, result.ReasoningEffort)
+	require.Equal(t, "none", *result.ReasoningEffort)
 }
 
 func TestForwardResponses_PassthroughFlagWithUnsupportedResponsesUsesAccountMapping(t *testing.T) {

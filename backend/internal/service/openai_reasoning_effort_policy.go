@@ -504,17 +504,21 @@ func ApplyReasoningEffortPolicy(body []byte, maxEffort string, mappings []Reason
 }
 
 func applyOpenAIWSReasoningEffortPolicy(payload []byte, hooks *OpenAIWSIngressHooks) ([]byte, error) {
-	if hooks == nil || (hooks.MaxReasoningEffort == "" && len(hooks.ReasoningEffortMappings) == 0) {
-		return payload, nil
+	withEffort, _, err := materializeOpenAIModelReasoningEffort(payload)
+	if err != nil {
+		return payload, err
 	}
-	capped, changed, err := ApplyOpenAIReasoningEffortPolicy(payload, hooks.MaxReasoningEffort, hooks.ReasoningEffortMappings, hooks.MaxReasoningEffortOverLimit)
+	if hooks == nil || (hooks.MaxReasoningEffort == "" && len(hooks.ReasoningEffortMappings) == 0) {
+		return withEffort, nil
+	}
+	capped, changed, err := ApplyOpenAIReasoningEffortPolicy(withEffort, hooks.MaxReasoningEffort, hooks.ReasoningEffortMappings, hooks.MaxReasoningEffortOverLimit)
 	if err != nil {
 		return payload, err
 	}
 	if changed {
 		return capped, nil
 	}
-	return payload, nil
+	return withEffort, nil
 }
 
 // ApplyOpenAIReasoningEffortPolicy is retained for OpenAI forwarding callers.
