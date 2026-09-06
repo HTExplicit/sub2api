@@ -30,12 +30,13 @@ func TestResolveOpenAIWSClientFirstMessageTimeout(t *testing.T) {
 	require.Equal(t, 120*time.Second, ResolveOpenAIWSClientFirstMessageTimeout(cfg))
 }
 
-func TestPrepareOpenAIWSHTTPBridgeBodyStripsWSFields(t *testing.T) {
-	body, err := prepareOpenAIWSHTTPBridgeBody(nil, []byte(`{"type":"response.create","generate":true,"model":"gpt-5","stream":false,"previous_response_id":"resp_prev","input":"hi","sequence":900719925474099312345}`))
+func TestPrepareOpenAIWSHTTPBridgeBodyPreservesResponsesAnchor(t *testing.T) {
+	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	body, err := prepareOpenAIWSHTTPBridgeBody(account, []byte(`{"type":"response.create","generate":true,"model":"gpt-5","stream":false,"previous_response_id":"resp_prev","input":"hi","sequence":900719925474099312345}`))
 	require.NoError(t, err)
 	require.False(t, gjson.GetBytes(body, "type").Exists())
 	require.False(t, gjson.GetBytes(body, "generate").Exists())
-	require.False(t, gjson.GetBytes(body, "previous_response_id").Exists())
+	require.Equal(t, "resp_prev", gjson.GetBytes(body, "previous_response_id").String())
 	require.Equal(t, "gpt-5", gjson.GetBytes(body, "model").String())
 	require.True(t, gjson.GetBytes(body, "stream").Bool())
 	require.Equal(t, "hi", gjson.GetBytes(body, "input").String())
@@ -44,7 +45,7 @@ func TestPrepareOpenAIWSHTTPBridgeBodyStripsWSFields(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestPrepareOpenAIWSHTTPBridgeBodyStripsNoneReasoningForCompatibleEndpoint(t *testing.T) {
+func TestPrepareOpenAIWSHTTPBridgeBodyPreservesExplicitNoneForCompatibleEndpoint(t *testing.T) {
 	payload := []byte(`{"type":"response.create","model":"company-coding-model","reasoning":{"effort":"none"},"input":"hi"}`)
 	compatible := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{
 		"base_url": "https://compat.example/v1",
@@ -52,8 +53,7 @@ func TestPrepareOpenAIWSHTTPBridgeBodyStripsNoneReasoningForCompatibleEndpoint(t
 
 	body, err := prepareOpenAIWSHTTPBridgeBody(compatible, payload)
 	require.NoError(t, err)
-	require.False(t, gjson.GetBytes(body, "reasoning.effort").Exists())
-	require.False(t, gjson.GetBytes(body, "reasoning").Exists())
+	require.Equal(t, "none", gjson.GetBytes(body, "reasoning.effort").String())
 
 	officialBody, err := prepareOpenAIWSHTTPBridgeBody(&Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}, payload)
 	require.NoError(t, err)
@@ -1992,7 +1992,7 @@ func TestOpenAIWSHTTPBridgeAcceptsFirstFrameAboveLegacy16MiB(t *testing.T) {
 	require.Equal(t, "gpt-5", gjson.GetBytes(upstream.lastBody, "model").String())
 }
 
-func TestOpenAIWSHTTPBridgeKeepsContinuationFramesOnHTTPWithoutPreviousResponseID(t *testing.T) {
+func TestOpenAIWSHTTPBridgePreservesNativeHTTPContinuationAnchor(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	firstSSEBody := strings.Join([]string{
@@ -2135,14 +2135,11 @@ func TestOpenAIWSHTTPBridgeKeepsContinuationFramesOnHTTPWithoutPreviousResponseI
 
 	require.Len(t, upstream.bodies, 2, "进入 HTTP bridge 后同一客户端 WS 连接内应保持 HTTP/SSE bridge")
 	require.False(t, gjson.GetBytes(upstream.bodies[0], "previous_response_id").Exists())
-	require.False(t, gjson.GetBytes(upstream.bodies[1], "previous_response_id").Exists())
+	require.Equal(t, "resp_bridge_first", gjson.GetBytes(upstream.bodies[1], "previous_response_id").String())
 	secondInput := gjson.GetBytes(upstream.bodies[1], "input").Array()
-	require.Len(t, secondInput, 3)
-	require.Equal(t, "first", secondInput[0].String())
-	require.Equal(t, "function_call", secondInput[1].Get("type").String())
-	require.Equal(t, "call_bridge_1", secondInput[1].Get("call_id").String())
-	require.Equal(t, "function_call_output", secondInput[2].Get("type").String())
-	require.Equal(t, "call_bridge_1", secondInput[2].Get("call_id").String())
+	require.Len(t, secondInput, 1)
+	require.Equal(t, "function_call_output", secondInput[0].Get("type").String())
+	require.Equal(t, "call_bridge_1", secondInput[0].Get("call_id").String())
 	require.Equal(t, 0, captureDialer.DialCount())
 	require.Empty(t, captureConn.writes)
 }

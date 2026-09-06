@@ -59,7 +59,7 @@ func TestOpenAIWSPreviousResponseCanMove(t *testing.T) {
 		"resp_1",
 		false,
 	))
-	require.True(t, openAIWSPreviousResponseCanMove(
+	require.False(t, openAIWSPreviousResponseCanMove(
 		[]byte(`{"type":"response.create","previous_response_id":"resp_1","input":[{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`),
 		"resp_1",
 		false,
@@ -79,6 +79,18 @@ func TestOpenAIWSPreviousResponseCanMove(t *testing.T) {
 		"",
 		true,
 	))
+}
+
+func TestOpenAIWSFailoverDoesNotTreatExternalStateAsFullHistory(t *testing.T) {
+	for _, payload := range []string{
+		`{"type":"response.create","input":[{"type":"item_reference","id":"rs_old"}]}`,
+		`{"type":"response.create","conversation":"conv_old","input":"next"}`,
+		`{"type":"response.create","input":[{"type":"compaction","encrypted_content":"opaque"}]}`,
+		`{"type":"response.create","input":[{"type":"function_call_output","call_id":"unseen","output":"ok"}]}`,
+	} {
+		require.False(t, openAIWSPreviousResponseCanMove([]byte(payload), "", false))
+		require.False(t, openAIWSInitialAccountSwitchReplaySafe([]byte(payload), true, false))
+	}
 }
 
 func TestOpenAIWSLegacyLaxaReplaySafe(t *testing.T) {

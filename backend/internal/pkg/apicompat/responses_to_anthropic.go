@@ -3,7 +3,6 @@ package apicompat
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 )
 
@@ -36,7 +35,7 @@ func ResponsesToAnthropic(resp *ResponsesResponse, model string) *AnthropicRespo
 			// Always surface encrypted_content as thinking.signature so Claude
 			// Code / multi-turn clients can send it back. Signature-only
 			// thinking blocks are valid when the model omits a visible summary.
-			if summaryText != "" || strings.TrimSpace(item.EncryptedContent) != "" {
+			if summaryText != "" || item.EncryptedContent != "" {
 				blocks = append(blocks, AnthropicContentBlock{
 					Type:      "thinking",
 					Thinking:  summaryText,
@@ -370,7 +369,9 @@ func resToAnthHandleOutputItemAdded(evt *ResponsesStreamEvent, state *ResponsesE
 		state.OutputIndexToBlockIdx[evt.OutputIndex] = idx
 		state.ContentBlockOpen = true
 		state.CurrentBlockType = "thinking"
-		state.PendingThinkingSignature = strings.TrimSpace(evt.Item.EncryptedContent)
+		// output_item.added may carry an incomplete encrypted prefix. Only
+		// the finished reasoning item is authoritative for later replay.
+		state.PendingThinkingSignature = ""
 
 		events = append(events, AnthropicStreamEvent{
 			Type:  "content_block_start",
@@ -554,10 +555,13 @@ func resToAnthHandleOutputItemDone(evt *ResponsesStreamEvent, state *ResponsesEv
 		return resToAnthHandleWebSearchDone(evt, state)
 	}
 
-	// Capture encrypted_content on reasoning item done (often only present here).
+	// Only the finished item may supply replayable ciphertext. A missing
+	// status is allowed for compatible providers whose done event is the
+	// completion signal; an explicitly unfinished item is not replayable.
 	if evt.Item.Type == "reasoning" {
-		if sig := strings.TrimSpace(evt.Item.EncryptedContent); sig != "" {
-			state.PendingThinkingSignature = sig
+		state.PendingThinkingSignature = ""
+		if evt.Item.Status == "" || evt.Item.Status == "completed" {
+			state.PendingThinkingSignature = evt.Item.EncryptedContent
 		}
 	}
 
@@ -686,7 +690,7 @@ func closeCurrentBlock(state *ResponsesEventToAnthropicState) []AnthropicStreamE
 	// Emit signature_delta before stop so Claude clients retain encrypted
 	// reasoning for the next turn (required for Grok multi-turn cache).
 	if state.CurrentBlockType == "thinking" {
-		if sig := strings.TrimSpace(state.PendingThinkingSignature); sig != "" {
+		if sig := state.PendingThinkingSignature; sig != "" {
 			events = append(events, AnthropicStreamEvent{
 				Type:  "content_block_delta",
 				Index: &idx,

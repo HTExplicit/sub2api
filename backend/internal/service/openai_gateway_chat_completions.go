@@ -72,6 +72,15 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 	compatPromptCacheTenantIsolated bool,
 ) (*OpenAIForwardResult, error) {
 	beginUpstreamResponseModelObservation(c)
+	if account != nil && account.IsOpenAI() {
+		requestedModel := gjson.GetBytes(body, "model").String()
+		mappedModel := resolveOpenAIForwardModel(account, requestedModel, defaultMappedModel)
+		withEffort, _, err := materializeOpenAIForwardReasoningEffort(ctx, body, mappedModel)
+		if err != nil {
+			return nil, err
+		}
+		body = withEffort
+	}
 	if account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		requestedModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())
 		if !CindyFreePoolModelSupportsEndpoint(requestedModel, CindyEndpointChatCompletions) {

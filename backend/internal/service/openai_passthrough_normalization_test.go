@@ -110,11 +110,12 @@ func TestNormalizeOpenAIResponsesWebSocketCompatibilityBody_APIKeyStoreFalseRepl
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.False(t, gjson.GetBytes(normalized, "parallel_tool_calls").Exists())
-	require.Equal(t, int64(2), gjson.GetBytes(normalized, "input.#").Int())
-	require.False(t, gjson.GetBytes(normalized, "input.0.id").Exists())
-	require.False(t, gjson.GetBytes(normalized, "input.0.call_id").Exists())
+	require.Equal(t, int64(3), gjson.GetBytes(normalized, "input.#").Int())
+	require.Equal(t, "rs_drop", gjson.GetBytes(normalized, "input.0.id").String())
+	require.Equal(t, "rs_keep", gjson.GetBytes(normalized, "input.1.id").String())
+	require.Equal(t, "cipher", gjson.GetBytes(normalized, "input.1.encrypted_content").String())
 	require.True(t, gjson.GetBytes(normalized, "input.0.summary").IsArray())
-	require.Equal(t, "message", gjson.GetBytes(normalized, "input.1.type").String())
+	require.Equal(t, "message", gjson.GetBytes(normalized, "input.2.type").String())
 }
 
 func TestNormalizeOpenAIResponsesReasoningMode(t *testing.T) {

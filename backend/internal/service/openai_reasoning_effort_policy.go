@@ -402,6 +402,22 @@ func ApplyOpenAIReasoningEffortPolicyFromContext(ctx context.Context, body []byt
 	return ApplyOpenAIReasoningEffortPolicy(body, policy.maxEffort, policy.mappings, policy.overLimit)
 }
 
+// A mapped alias may become known only after an account has been selected.
+// Apply the already-bound policy to that newly materialized value exactly
+// once; explicit fields have already passed ingress policy and must not be
+// mapped a second time (mapping rules need not be idempotent).
+func materializeOpenAIForwardReasoningEffort(ctx context.Context, body []byte, modelCandidates ...string) ([]byte, bool, error) {
+	updated, changed, err := materializeOpenAIModelReasoningEffort(body, modelCandidates...)
+	if err != nil || !changed {
+		return updated, changed, err
+	}
+	governed, _, err := ApplyOpenAIReasoningEffortPolicyFromContext(ctx, updated)
+	if err != nil {
+		return body, false, err
+	}
+	return governed, true, nil
+}
+
 func mapReasoningEffort(raw string, mappings []ReasoningEffortMapping, requestModel string) (string, bool) {
 	value := strings.TrimSpace(raw)
 	canonical := normalizeReasoningEffortMappingSource(value)
@@ -503,5 +519,13 @@ func applyOpenAIWSReasoningEffortPolicy(payload []byte, hooks *OpenAIWSIngressHo
 
 // ApplyOpenAIReasoningEffortPolicy is retained for OpenAI forwarding callers.
 func ApplyOpenAIReasoningEffortPolicy(body []byte, maxEffort string, mappings []ReasoningEffortMapping, overLimit string) ([]byte, bool, error) {
-	return ApplyReasoningEffortPolicy(body, maxEffort, mappings, overLimit)
+	withEffort, aliasChanged, err := materializeOpenAIModelReasoningEffort(body)
+	if err != nil {
+		return body, false, err
+	}
+	result, policyChanged, err := ApplyReasoningEffortPolicy(withEffort, maxEffort, mappings, overLimit)
+	if err != nil {
+		return body, false, err
+	}
+	return result, aliasChanged || policyChanged, nil
 }

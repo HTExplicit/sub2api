@@ -17,6 +17,18 @@ import (
 )
 
 func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CindyPreviousNotFoundReplaysVerifiedFullHistoryOnce(t *testing.T) {
+	account := cindyHTTPToWSV2TestAccount()
+	account.Platform = PlatformCindy
+	verifyOpenAIWSFullHistoryRecovery(t, account)
+}
+
+func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_NativePreviousNotFoundReplaysVerifiedFullHistoryOnce(t *testing.T) {
+	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "sk-test"}, Concurrency: 1}
+	verifyOpenAIWSFullHistoryRecovery(t, account)
+}
+
+func verifyOpenAIWSFullHistoryRecovery(t *testing.T, account *Account) {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 
 	cfg := &config.Config{}
@@ -35,7 +47,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CindyPreviousNot
 	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
 
 	firstConn := &openAIWSCaptureConn{events: [][]byte{
-		[]byte(`{"type":"response.completed","response":{"id":"resp_cindy_full_1","model":"gpt-5.6-luna","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
+		[]byte(`{"type":"response.completed","response":{"id":"resp_cindy_full_1","model":"gpt-5.6-luna","status":"completed","output":[{"type":"reasoning","id":"rs_full","encrypted_content":"opaque","summary":[],"extension":"retained"},{"type":"message","id":"msg_full","role":"assistant","phase":"commentary","content":[{"type":"output_text","text":"checking"}]},{"type":"future_item","extension":{"retained":true}}],"usage":{"input_tokens":1,"output_tokens":1}}}`),
 		[]byte(`{"type":"error","error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"missing anchor"}}`),
 	}}
 	secondConn := &openAIWSCaptureConn{events: [][]byte{
@@ -54,8 +66,6 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CindyPreviousNot
 		toolCorrector:    NewCodexToolCorrector(),
 		openaiWSPool:     pool,
 	}
-	account := cindyHTTPToWSV2TestAccount()
-	account.Platform = PlatformCindy
 	account.ID = 9411
 	account.Extra = map[string]any{
 		"openai_passthrough":              true,
@@ -140,15 +150,19 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CindyPreviousNot
 	replayed := requestToJSONString(secondWrites[0])
 	require.False(t, gjson.Get(replayed, "previous_response_id").Exists())
 	require.False(t, gjson.Get(replayed, "store").Bool())
-	require.Len(t, gjson.Get(replayed, "input").Array(), 3)
+	require.Len(t, gjson.Get(replayed, "input").Array(), 6)
 	require.Equal(t, "msg_foreign", gjson.Get(replayed, "input.0.id").String())
 	require.Equal(t, "analysis", gjson.Get(replayed, "input.0.phase").String())
 	require.Equal(t, "fc_foreign", gjson.Get(replayed, "input.1.id").String())
 	require.Equal(t, "call_foreign", gjson.Get(replayed, "input.1.call_id").String())
 	require.Equal(t, "analysis", gjson.Get(replayed, "input.1.phase").String())
-	require.Equal(t, "out_foreign", gjson.Get(replayed, "input.2.id").String())
-	require.Equal(t, "call_foreign", gjson.Get(replayed, "input.2.call_id").String())
-	require.Equal(t, "final", gjson.Get(replayed, "input.2.phase").String())
+	require.Equal(t, "opaque", gjson.Get(replayed, "input.2.encrypted_content").String())
+	require.Equal(t, "retained", gjson.Get(replayed, "input.2.extension").String())
+	require.Equal(t, "commentary", gjson.Get(replayed, "input.3.phase").String())
+	require.True(t, gjson.Get(replayed, "input.4.extension.retained").Bool())
+	require.Equal(t, "out_foreign", gjson.Get(replayed, "input.5.id").String())
+	require.Equal(t, "call_foreign", gjson.Get(replayed, "input.5.call_id").String())
+	require.Equal(t, "final", gjson.Get(replayed, "input.5.phase").String())
 }
 
 func TestLegacyCindyRuntimeCompatibilityWSIngressInitialAnchorNeverLeavesBusyBoundConn(t *testing.T) {

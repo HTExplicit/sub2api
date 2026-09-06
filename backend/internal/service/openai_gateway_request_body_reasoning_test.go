@@ -234,60 +234,58 @@ func TestTrimOpenAIEncryptedReasoningItems_ContentNullDropsBareSkeleton(t *testi
 	assert.False(t, hasInput, "bare reasoning skeleton should be dropped, emptying input")
 }
 
-func TestNormalizeOpenAIAPIKeyStoreFalseReasoningReplay(t *testing.T) {
+func TestNativeAPIKeyReasoningReplayPreservesStoreFalseHistory(t *testing.T) {
 	body := []byte(`{"model":"gpt-5.5","store":false,"input":[` +
-		`{"type":"reasoning","id":"rs_encrypted","call_id":"remove","encrypted_content":"cipher","summary":null,"opaque":9007199254740993},` +
+		`{"type":"reasoning","id":"rs_encrypted","encrypted_content":"cipher","summary":null,"opaque":9007199254740993},` +
 		`{"type":"reasoning","id":"rs_server_only","summary":[{"type":"summary_text","text":"drop"}]},` +
 		`{"type":"item_reference","id":"rs_server_only"},` +
 		`{"type":"item_reference","id":"msg_keep"},` +
 		`{"type":"message","id":"msg_keep","role":"user","content":"continue"}` +
 		`]}`)
 
-	normalized, changed, err := normalizeOpenAIAPIKeyStoreFalseReasoningReplay(body, false)
+	normalized, changed, err := normalizeOpenAIResponsesWebSocketCompatibilityBody(body, &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}, false)
 	require.NoError(t, err)
-	require.True(t, changed)
-	require.Equal(t, int64(3), gjson.GetBytes(normalized, "input.#").Int())
+	require.False(t, changed)
+	require.Equal(t, string(body), string(normalized))
+	require.Equal(t, int64(5), gjson.GetBytes(normalized, "input.#").Int())
 	require.Equal(t, "reasoning", gjson.GetBytes(normalized, "input.0.type").String())
-	require.False(t, gjson.GetBytes(normalized, "input.0.id").Exists())
+	require.Equal(t, "rs_encrypted", gjson.GetBytes(normalized, "input.0.id").String())
 	require.False(t, gjson.GetBytes(normalized, "input.0.call_id").Exists())
 	require.Equal(t, "cipher", gjson.GetBytes(normalized, "input.0.encrypted_content").String())
-	require.True(t, gjson.GetBytes(normalized, "input.0.summary").IsArray())
+	require.Equal(t, gjson.Null, gjson.GetBytes(normalized, "input.0.summary").Type)
 	require.Equal(t, "9007199254740993", gjson.GetBytes(normalized, "input.0.opaque").Raw)
-	require.Equal(t, "msg_keep", gjson.GetBytes(normalized, "input.1.id").String())
-	require.Equal(t, "message", gjson.GetBytes(normalized, "input.2.type").String())
+	require.Equal(t, "rs_server_only", gjson.GetBytes(normalized, "input.2.id").String())
 }
 
-func TestNormalizeOpenAIAPIKeyStoreFalseReasoningReplayRequiresExplicitStoreFalse(t *testing.T) {
+func TestNativeAPIKeyReasoningReplayPreservesStoreModes(t *testing.T) {
 	for _, body := range []string{
 		`{"input":[{"type":"reasoning","id":"rs_keep"}]}`,
 		`{"store":true,"input":[{"type":"reasoning","id":"rs_keep"}]}`,
 	} {
-		normalized, changed, err := normalizeOpenAIAPIKeyStoreFalseReasoningReplay([]byte(body), false)
+		normalized, changed, err := normalizeOpenAIResponsesWebSocketCompatibilityBody([]byte(body), &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}, false)
 		require.NoError(t, err)
 		require.False(t, changed)
 		require.Equal(t, body, string(normalized))
 	}
 }
 
-func TestNormalizeOpenAIAPIKeyStoreFalseReasoningReplayKnownCompactMode(t *testing.T) {
+func TestNativeAPIKeyReasoningReplayCompactDoesNotProvePriorStoreMode(t *testing.T) {
 	body := []byte(`{"input":[{"type":"reasoning","id":"rs_drop","summary":[]},{"type":"message","content":"continue"}]}`)
 
-	normalized, changed, err := normalizeOpenAIAPIKeyStoreFalseReasoningReplay(body, true)
+	normalized, changed, err := normalizeOpenAIResponsesWebSocketCompatibilityBody(body, &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}, true)
 
 	require.NoError(t, err)
-	require.True(t, changed)
-	require.Equal(t, int64(1), gjson.GetBytes(normalized, "input.#").Int())
-	require.Equal(t, "message", gjson.GetBytes(normalized, "input.0.type").String())
+	require.False(t, changed)
+	require.Equal(t, string(body), string(normalized))
 }
 
-func TestNormalizeOpenAIAPIKeyStoreFalseReasoningReplayRejectsEmptyEncryptedContent(t *testing.T) {
+func TestNativeAPIKeyReasoningReplayLeavesInvalidContentForUpstreamValidation(t *testing.T) {
 	for _, encrypted := range []string{"null", `""`, `"   "`, "123"} {
 		body := []byte(`{"store":false,"input":[{"type":"reasoning","id":"rs_drop","encrypted_content":` + encrypted + `},{"type":"message","content":"continue"}]}`)
-		normalized, changed, err := normalizeOpenAIAPIKeyStoreFalseReasoningReplay(body, false)
+		normalized, changed, err := normalizeOpenAIResponsesWebSocketCompatibilityBody(body, &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}, false)
 		require.NoError(t, err)
-		require.True(t, changed)
-		require.Equal(t, int64(1), gjson.GetBytes(normalized, "input.#").Int())
-		require.Equal(t, "message", gjson.GetBytes(normalized, "input.0.type").String())
+		require.False(t, changed)
+		require.Equal(t, string(body), string(normalized))
 	}
 }
 
@@ -316,10 +314,12 @@ func TestFilterOpenAIResponsesNoneReasoningEffortForAccount(t *testing.T) {
 		wantReasoning bool
 	}{
 		{
-			name:          "custom compatible endpoint strips none placeholders",
+			name:          "custom compatible endpoint preserves native none",
 			account:       &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://compat.example/v1"}},
 			body:          `{"reasoning":{"effort":"none"},"reasoning_effort":"NONE"}`,
-			wantReasoning: false,
+			wantNested:    true,
+			wantFlat:      true,
+			wantReasoning: true,
 		},
 		{
 			name:          "third-party platform keeps other reasoning members",

@@ -100,7 +100,7 @@ func TestApplyOpenAICompatModelNormalization(t *testing.T) {
 
 		require.Equal(t, "gpt-5.4", req.Model)
 		require.NotNil(t, req.OutputConfig)
-		require.Equal(t, "max", req.OutputConfig.Effort)
+		require.Equal(t, "xhigh", req.OutputConfig.Effort)
 	})
 
 	t.Run("explicit output config wins over model suffix", func(t *testing.T) {

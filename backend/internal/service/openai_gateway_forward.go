@@ -21,6 +21,25 @@ import (
 func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (*OpenAIForwardResult, error) {
 	beginUpstreamResponseModelObservation(c)
 	ClearActualOpenAIUpstreamEndpoint(c)
+	// Capture the continuation requirement before any compatibility transform.
+	// Its absence after normalization cannot prove this was a stateless request.
+	requestedPreviousResponseID := strings.TrimSpace(gjson.GetBytes(body, "previous_response_id").String())
+	if account != nil && account.IsOpenAI() {
+		requestedModel := gjson.GetBytes(body, "model").String()
+		candidates := []string{account.GetMappedModel(requestedModel)}
+		if isOpenAIResponsesCompactPath(c) {
+			if compactModel, matched := account.ResolveCompactMappedModel(requestedModel); matched {
+				candidates = append([]string{compactModel}, candidates...)
+			} else if compactModel := s.resolveOpenAICompactFallbackModel(account, requestedModel); compactModel != "" {
+				candidates = append([]string{compactModel}, candidates...)
+			}
+		}
+		withEffort, _, err := materializeOpenAIForwardReasoningEffort(ctx, body, candidates...)
+		if err != nil {
+			return nil, err
+		}
+		body = withEffort
+	}
 	if shouldForwardOpenAIResponsesViaRawChatCompletions(account) {
 		SetActualOpenAIUpstreamEndpoint(c, "/v1/chat/completions")
 	}
@@ -40,7 +59,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	// 固定渠道映射后的请求级 canonical body；账号 normalize/strip 不得改写跨 failover hint。
 	canonicalImageIntentBody := body
 	cindyRuntimeAccount := account != nil && IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials)
-	portableOpaqueRecovery := canRecoverCindyPortableOpaqueContinuation(account, body)
 
 	restrictionResult := s.detectCodexClientRestriction(c, account, body)
 	apiKeyID := getAPIKeyIDFromContext(c)
@@ -125,6 +143,16 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		// 普通账号仍只允许 WS 入站走 WS 上游。Cindy 的 HTTP -> WSv2 是独立、严格受控的例外。
 		wsDecision = resolveOpenAIWSDecisionByClientTransport(wsDecision, GetOpenAIClientTransport(c))
 	}
+	if requestedPreviousResponseID != "" && wsDecision.Transport != OpenAIUpstreamTransportResponsesWebsocketV2 &&
+		(cindyRuntimeAccount || account.UsesOpenAICodexProtocol()) {
+		// This endpoint-specific restriction is independent of the global WS
+		// switch. Native Responses API-key HTTP supports its own stored IDs.
+		MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalFeatureGate)
+		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
+			"type": "invalid_request_error", "message": "this upstream requires Responses WebSocket v2 for previous_response_id",
+		}})
+		return nil, errors.New("selected upstream requires Responses WebSocket v2 for previous_response_id")
+	}
 	passthroughEnabled := account.IsOpenAIPassthroughEnabled() && !cindyHTTPToWSV2
 	compactPath := isOpenAIResponsesCompactPath(c)
 	if shouldFlattenOpenAIResponsesNamespaces(account, wsDecision.Transport, passthroughEnabled, compactPath) {
@@ -198,12 +226,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			body = normalized
 			originalBody = normalized
 		}
-		if normalized, changed, normalizeErr := normalizeOpenAIAPIKeyStoreFalseReasoningReplay(body, isOpenAIResponsesCompactPath(c)); normalizeErr != nil {
-			return nil, normalizeErr
-		} else if changed {
-			body = normalized
-			originalBody = normalized
-		}
 		requestView = newOpenAIRequestView(body)
 		reqModel, reqStream, promptCacheKey = requestView.Model, requestView.Stream, requestView.PromptCacheKey
 		originalModel = reqModel
@@ -212,7 +234,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if shouldForwardOpenAIResponsesViaRawChatCompletions(account) {
 		return s.forwardResponsesViaRawChatCompletions(ctx, c, account, body, compactPath)
 	}
-	if !cindyRuntimeAccount && account.IsOpenAI() && (account.IsOpenAIApiKey() || account.IsOpenAIOAuthLike()) {
+	if usesOfficialOpenAIResponsesInputContract(account) {
 		normalizedReasoningBody, reasoningChanged, reasoningErr := normalizeOpenAIResponsesReasoningContentReplay(body)
 		if reasoningErr != nil {
 			return nil, fmt.Errorf("normalize OpenAI Responses reasoning content replay: %w", reasoningErr)
@@ -411,6 +433,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			upstreamModel = compactModel
 		}
 	}
+	if account.IsOpenAIApiKey() {
+		upstreamModel = normalizeOpenAIModelForUpstream(account, upstreamModel)
+	}
 	if billingModel != requestedModel {
 		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Model mapping applied: %s -> %s (account: %s, isCodexCLI: %v)", requestedModel, billingModel, account.Name, isCodexCLI)
 	}
@@ -424,10 +449,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		} else {
 			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Upstream model resolved: %s -> %s (account: %s, type: %s, isCodexCLI: %v)", billingModel, upstreamModel, account.Name, account.Type, isCodexCLI)
 		}
-	}
-	if strings.TrimSpace(gjson.GetBytes(body, "reasoning.effort").String()) == "minimal" {
-		markPatchSet("reasoning.effort", "none")
-		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Normalized reasoning.effort: minimal -> none (account: %s)", account.Name)
 	}
 
 	imageIntent = imageIntent || cindyResponsesImageBridge || IsImageGenerationIntent(openAIResponsesEndpoint, reqModel, nil) || isOpenAIImageGenerationModel(upstreamModel)
@@ -631,23 +652,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 		}
 	}
-	previousResponseResult := gjson.GetBytes(body, "previous_response_id")
-	if wsDecision.Transport != OpenAIUpstreamTransportResponsesWebsocketV2 && previousResponseResult.Exists() {
-		configuredDecision := s.getOpenAIWSProtocolResolver().Resolve(account)
-		if strings.TrimSpace(previousResponseResult.String()) != "" && GetOpenAIClientTransport(c) == OpenAIClientTransportHTTP &&
-			(cindyRuntimeAccount || configuredDecision.Transport == OpenAIUpstreamTransportResponsesWebsocketV2) {
-			MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalFeatureGate)
-			c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
-				"type": "invalid_request_error", "message": "previous_response_id is only supported on Responses WebSocket v2",
-			}})
-			return nil, errors.New("previous_response_id requires OpenAI Responses WebSocket v2")
-		}
-		if !account.IsOpenAIApiKey() {
-			markPatchDelete("previous_response_id")
-		} else if s.cfg != nil && !s.cfg.Gateway.OpenAIWS.Enabled && strings.TrimSpace(previousResponseResult.String()) != "" {
-			markPatchDelete("previous_response_id")
-		}
-	}
 	if openAIRequestBodyMayContainEmptyBase64InputImage(body) {
 		decoded, decodeErr := ensureReqBody()
 		if decodeErr != nil {
@@ -695,12 +699,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if decodeErr != nil {
 			return nil, decodeErr
 		}
-		if input, ok := decoded["input"].([]any); ok && sanitizeOpenAIResponsesOrphanToolOutputs(
-			decoded,
-			input,
-			strings.TrimSpace(firstNonEmptyString(decoded["previous_response_id"])) != "",
-		) {
-			markDecodedModified()
+		if input, ok := decoded["input"].([]any); ok {
+			if err := validateOpenAIResponsesToolOutputs(input, requestedPreviousResponseID != ""); err != nil {
+				return nil, err
+			}
 		}
 	}
 	if reqBody != nil || openAIResponsesInputMayNeedTruncation(body) {
@@ -742,26 +744,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		requestView = newOpenAIRequestView(body)
 		reqBody = nil
 	}
-	// 剥离本会话已被上游判定失效的加密项（invalid_encrypted_content lineage），
-	// 阻断同一失效密文随客户端历史在每一轮重复触发"被拒→剥离→重试/重连"。
-	// lineage 会话键统一按进场形态的 body 派生：后续重试可能改写 body，
-	// 延迟计算会与下一请求的进场键漂移。
-	lineageGroupID := getOpenAIGroupIDFromContext(c)
-	lineageEntryBody := body
-	lineageSessionHash := ""
-	if stateStore := s.getOpenAIWSStateStore(); stateStore != nil && stateStore.HasAnySessionInvalidEncryptedContent() {
-		lineageSessionHash = s.GenerateSessionHash(c, body)
-		if invalidDigests := stateStore.GetSessionInvalidEncryptedContentDigests(lineageGroupID, lineageSessionHash); len(invalidDigests) > 0 {
-			strippedBody, strippedCount := s.stripSessionInvalidEncryptedContentLogged(
-				body, invalidDigests, "invalid_encrypted_lineage_strip", account.ID, 0,
-			)
-			if strippedCount > 0 {
-				body = strippedBody
-				requestView = newOpenAIRequestView(body)
-				reqBody = nil
-			}
-		}
-	}
+	// A prior rejection is not evidence that an encrypted state item is
+	// dispensable. Preserve the incoming history and let its source validate it.
 
 	// Business System Prompt is deliberately the final service-owned prompt
 	// layer. All legacy Codex/image/compat transforms above run first, so the
@@ -853,101 +837,15 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		maxAttempts := openAIWSReconnectRetryLimit + 1
 		if cindyHTTPToWSV2 {
 			maxAttempts = 1
-			if portableOpaqueRecovery {
-				maxAttempts = 2
-			}
 		}
 		wsAttempts := 0
 		var wsResult *OpenAIForwardResult
 		var wsErr error
 		wsLastFailureReason := ""
 		agentTaskRecoveryTried := false
-		wsPrevResponseRecoveryTried := false
-		wsInvalidEncryptedContentRecoveryTried := false
-		recoverPrevResponseNotFound := func(attempt int) bool {
-			if wsPrevResponseRecoveryTried {
-				return false
-			}
-			previousResponseID := openAIWSPayloadString(wsReqBody, "previous_response_id")
-			if previousResponseID == "" {
-				logOpenAIWSModeInfo(
-					"reconnect_prev_response_recovery_skip account_id=%d attempt=%d reason=missing_previous_response_id previous_response_id_present=false",
-					account.ID,
-					attempt,
-				)
-				return false
-			}
-			if HasFunctionCallOutput(wsReqBody) && !portableOpaqueRecovery {
-				logOpenAIWSModeInfo(
-					"reconnect_prev_response_recovery_skip account_id=%d attempt=%d reason=has_function_call_output previous_response_id_present=true",
-					account.ID,
-					attempt,
-				)
-				return false
-			}
-			delete(wsReqBody, "previous_response_id")
-			wsPrevResponseRecoveryTried = true
-			logOpenAIWSModeInfo(
-				"reconnect_prev_response_recovery account_id=%d attempt=%d action=drop_previous_response_id retry=1 previous_response_id_present=true previous_response_id_kind=%s",
-				account.ID,
-				attempt,
-				normalizeOpenAIWSLogValue(ClassifyOpenAIPreviousResponseIDKind(previousResponseID)),
-			)
-			return true
-		}
-		recoverInvalidEncryptedContent := func(attempt int) bool {
-			if cindyRuntimeAccount && !portableOpaqueRecovery {
-				return false
-			}
-			if wsInvalidEncryptedContentRecoveryTried {
-				return false
-			}
-			if HasFunctionCallOutput(wsReqBody) && !portableOpaqueRecovery {
-				logOpenAIWSModeInfo(
-					"reconnect_invalid_encrypted_content_recovery_skip account_id=%d attempt=%d reason=has_function_call_output",
-					account.ID,
-					attempt,
-				)
-				return false
-			}
-			removedReasoningItems := false
-			if portableOpaqueRecovery {
-				removedReasoningItems = dropOpenAIEncryptedReasoningInputItems(wsReqBody)
-			} else {
-				removedReasoningItems = trimOpenAIEncryptedReasoningItems(wsReqBody)
-			}
-			invalidDigests := collectOpenAIEncryptedContentDigestsRaw(lineageEntryBody)
-			if !removedReasoningItems {
-				logOpenAIWSModeInfo(
-					"reconnect_invalid_encrypted_content_recovery_skip account_id=%d attempt=%d reason=missing_encrypted_reasoning_items",
-					account.ID,
-					attempt,
-				)
-				return false
-			}
-			if len(invalidDigests) > 0 {
-				if lineageSessionHash == "" {
-					lineageSessionHash = s.GenerateSessionHash(c, lineageEntryBody)
-				}
-				s.markOpenAIWSInvalidEncryptedContentLineage(lineageGroupID, lineageSessionHash, invalidDigests)
-			}
-			previousResponseID := openAIWSPayloadString(wsReqBody, "previous_response_id")
-			hasFunctionCallOutput := HasFunctionCallOutput(wsReqBody)
-			if previousResponseID != "" && !hasFunctionCallOutput {
-				delete(wsReqBody, "previous_response_id")
-			}
-			wsInvalidEncryptedContentRecoveryTried = true
-			logOpenAIWSModeInfo(
-				"reconnect_invalid_encrypted_content_recovery account_id=%d attempt=%d action=drop_encrypted_reasoning_items retry=1 previous_response_id_present=%v previous_response_id_kind=%s has_function_call_output=%v dropped_previous_response_id=%v",
-				account.ID,
-				attempt,
-				previousResponseID != "",
-				normalizeOpenAIWSLogValue(ClassifyOpenAIPreviousResponseIDKind(previousResponseID)),
-				hasFunctionCallOutput,
-				previousResponseID != "" && !hasFunctionCallOutput,
-			)
-			return true
-		}
+		// This single-request forwarder has no trusted full-history accumulator.
+		// Missing anchors and rejected encrypted state therefore terminate;
+		// proven full-input reconstruction belongs to the WS ingress lifecycle.
 		retryBudget := s.openAIWSRetryTotalBudget()
 		retryStartedAt := time.Now()
 	wsRetryLoop:
@@ -1013,13 +911,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			if reason != "" {
 				wsLastFailureReason = reason
 			}
-			// previous_response_not_found 说明续链锚点不可用：
-			// 对非 function_call_output 场景，允许一次“去掉 previous_response_id 后重放”。
-			if !strictCindyContinuation && reason == "previous_response_not_found" && recoverPrevResponseNotFound(attempt) {
-				continue
-			}
-			if !strictCindyContinuation && reason == "invalid_encrypted_content" && recoverInvalidEncryptedContent(attempt) {
-				continue
+			if stateReason := strings.TrimPrefix(reason, "prewarm_"); stateReason == "previous_response_not_found" || stateReason == "invalid_encrypted_content" {
+				break
 			}
 			if cindyHTTPToWSV2 && !hasPreviousResponseID {
 				if failoverErr, ok := s.cindyHTTPToWSV2FirstTurnFailover(
@@ -1148,66 +1041,23 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		return nil, wsErr
 	}
 
-	reasoningEffort := extractOpenAIReasoningEffortFromBody(body, upstreamModel, billingModel, originalModel)
-	// 国产模型默认 effort 补充：此处 reqModel 已被 mapping 重写为 billingModel。
-	reasoningEffort = ApplyThinkingEnabledFallback(reasoningEffort, body, reqModel)
-	reasoningEffortValue := ""
-	if reasoningEffort != nil {
-		reasoningEffortValue = *reasoningEffort
-	}
-	firstOutputTimeout := time.Duration(0)
-	if reqStream && account.Platform == PlatformOpenAI {
-		firstOutputTimeout = s.openAIFirstOutputTimeout(reasoningEffortValue)
-	}
-
-	httpInvalidEncryptedContentRetryTried := false
 	compactModelFallbackRetried := false
 	agentTaskRecoveryTried := false
 	rejectedFieldRetryState := newOpenAIResponsesRejectedFieldRetryState(body)
-	tryRecoverInvalidEncryptedContent := func(upstreamMsg string, upstreamBody []byte) (bool, error) {
-		if (cindyRuntimeAccount && !portableOpaqueRecovery) || isOpenAICindyHTTPToWSV2Bypassed(c) ||
-			httpInvalidEncryptedContentRetryTried ||
-			!isOpenAIInvalidEncryptedContentError(upstreamMsg, upstreamBody) ||
-			(ValidateFunctionCallOutputContextBytes(body).HasFunctionCallOutput && !portableOpaqueRecovery) {
-			return false, nil
-		}
-		decoded, decodeErr := ensureReqBody()
-		if decodeErr != nil {
-			return false, decodeErr
-		}
-		removedReasoningItems := false
-		if portableOpaqueRecovery {
-			removedReasoningItems = dropOpenAIEncryptedReasoningInputItems(decoded)
-		} else {
-			removedReasoningItems = trimOpenAIEncryptedReasoningItems(decoded)
-		}
-		if !removedReasoningItems {
-			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Skip non-WSv2 invalid_encrypted_content retry because encrypted reasoning items are missing (account: %s)", account.Name)
-			return false, nil
-		}
-		// The continuation anchor and encrypted reasoning carrier are bound to
-		// the failed upstream state. Retry the cleaned request on this account
-		// once, whether the error arrived as HTTP failure or response.failed.
-		delete(decoded, "previous_response_id")
-		retryBody, marshalErr := marshalOpenAIUpstreamJSON(decoded)
-		if marshalErr != nil {
-			return false, fmt.Errorf("serialize invalid_encrypted_content retry body: %w", marshalErr)
-		}
-		body = retryBody
-		requestView = newOpenAIRequestView(body)
-		reqBody = nil
-		httpInvalidEncryptedContentRetryTried = true
-		if invalidDigests := collectOpenAIEncryptedContentDigestsRaw(lineageEntryBody); len(invalidDigests) > 0 {
-			if lineageSessionHash == "" {
-				lineageSessionHash = s.GenerateSessionHash(c, lineageEntryBody)
-			}
-			s.markOpenAIWSInvalidEncryptedContentLineage(lineageGroupID, lineageSessionHash, invalidDigests)
-		}
-		rejectedFieldRetryState.remember(body)
-		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Retrying non-WSv2 request once after invalid_encrypted_content (account: %s)", account.Name)
-		return true, nil
-	}
 	for {
+		// Read the final attempt payload. A compatibility retry may have changed
+		// the request, so neither the original alias nor prior attempt is usage
+		// evidence for what this upstream actually receives.
+		reasoningEffort := extractOpenAIReasoningEffortFromBody(body, upstreamModel)
+		reasoningEffort = ApplyThinkingEnabledFallback(reasoningEffort, body, upstreamModel)
+		reasoningEffortValue := ""
+		if reasoningEffort != nil {
+			reasoningEffortValue = *reasoningEffort
+		}
+		firstOutputTimeout := time.Duration(0)
+		if reqStream && account.Platform == PlatformOpenAI {
+			firstOutputTimeout = s.openAIFirstOutputTimeout(reasoningEffortValue)
+		}
 		// Build upstream request
 		upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
 		var headerGuard *openAIFirstOutputHeaderGuard
@@ -1288,11 +1138,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			respBody = s.redactAgentIdentitySensitiveBody(ctx, account, respBody)
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
 			continuationStateError := classifyOpenAIContinuationStateError(upstreamMsg, respBody)
-			if recovered, recoveryErr := tryRecoverInvalidEncryptedContent(upstreamMsg, respBody); recoveryErr != nil {
-				return nil, recoveryErr
-			} else if recovered {
-				continue
-			}
 			if continuationStateError != openAIContinuationStateErrorNone {
 				// The failure describes request history, not account health. Do not
 				// let a compatibility proxy's 4xx/5xx wrapper fan this one request
@@ -1464,16 +1309,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 					}
 					return s.handleErrorResponse(ctx, compactResp, c, account, body, resolveOpenAIErrorSchedulingModel(billingModel, upstreamModel))
 				}
-				var failoverErr *UpstreamFailoverError
-				if errors.As(err, &failoverErr) && !openAIStreamClientOutputStarted(c, false) {
-					upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(failoverErr.ResponseBody)))
-					if recovered, recoveryErr := tryRecoverInvalidEncryptedContent(upstreamMsg, failoverErr.ResponseBody); recoveryErr != nil {
-						return nil, recoveryErr
-					} else if recovered {
-						_ = resp.Body.Close()
-						continue
-					}
-				}
 				return nil, err
 			}
 			usage = streamResult.usage
@@ -1503,16 +1338,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 					_ = resp.Body.Close()
 					compactResp, _ := openAICompactFallbackErrorResponse(resp, signal)
 					return s.handleErrorResponse(ctx, compactResp, c, account, body, resolveOpenAIErrorSchedulingModel(billingModel, upstreamModel))
-				}
-				var failoverErr *UpstreamFailoverError
-				if errors.As(err, &failoverErr) && !openAIStreamClientOutputStarted(c, false) {
-					upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(failoverErr.ResponseBody)))
-					if recovered, recoveryErr := tryRecoverInvalidEncryptedContent(upstreamMsg, failoverErr.ResponseBody); recoveryErr != nil {
-						return nil, recoveryErr
-					} else if recovered {
-						_ = resp.Body.Close()
-						continue
-					}
 				}
 				return nil, err
 			}
