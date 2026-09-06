@@ -363,6 +363,18 @@ func (s *OpenAIGatewayService) newOpenAIAccountFailoverErrorWithClassificationHe
 	shouldDisable bool,
 	retryableOnSameAccount bool,
 ) *UpstreamFailoverError {
+	// This is evidence that this request's budget was rejected, not proof of an
+	// invalid credential or a permanently empty account. Do not retry the same
+	// purchase or block unrelated models and smaller requests globally.
+	if isOpenAIRequestBudgetRejection(account, statusCode, responseBody) {
+		return &UpstreamFailoverError{
+			StatusCode: statusCode, ResponseHeaders: responseHeaders.Clone(), ResponseBody: responseBody,
+			Scope: GatewayFailureScopeRequest, Reason: GatewayFailureReason("openai_request_budget_rejected"),
+			NextAccountAction: NextAccountRetry, SuppressAccountHealthPenalty: true,
+			ClientStatusCode: http.StatusBadGateway, ClientErrorCode: "upstream_request_budget_rejected",
+			ClientMessage: "No eligible upstream accepted the budget for this request",
+		}
+	}
 	// `model_not_supported` is only account/model-scoped for the Laxa Cindy
 	// data plane.  Keep the generic constructor account-agnostic: it is also
 	// used by ordinary OpenAI-compatible providers, where treating an arbitrary

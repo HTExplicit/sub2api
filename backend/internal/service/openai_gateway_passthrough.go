@@ -923,6 +923,9 @@ func shouldFailoverOpenAIPassthroughResponse(account *Account, statusCode int, r
 	if isOpenAIContextWindowError("", responseBody) {
 		return false
 	}
+	if isOpenAIReportedUpstreamFailure(statusCode, responseBody) {
+		return true
+	}
 	if account != nil && IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
 		isOpenAIModelNotSupportedError(statusCode, "", responseBody) {
 		return true

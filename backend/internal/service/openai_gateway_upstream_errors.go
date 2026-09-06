@@ -258,6 +258,9 @@ func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(statusCode i
 	if isOpenAIContextWindowError(upstreamMsg, upstreamBody) {
 		return false
 	}
+	if isOpenAIReportedUpstreamFailure(statusCode, upstreamBody) {
+		return true
+	}
 	if isOpenAIHTTPUpstreamAccessStateError(statusCode, upstreamMsg, upstreamBody) {
 		return true
 	}
@@ -268,6 +271,36 @@ func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(statusCode i
 		return true
 	}
 	return isOpenAITransientProcessingError(statusCode, upstreamMsg, upstreamBody)
+}
+
+// A proxy can report its own upstream failure using HTTP 400. The structured
+// error type, not the number or message text alone, distinguishes that from a
+// client's invalid request. An identified parameter always stays client-scoped.
+func isOpenAIReportedUpstreamFailure(status int, body []byte) bool {
+	if status != http.StatusBadRequest || gjson.GetBytes(body, "error.type").String() != "upstream_error" ||
+		strings.TrimSpace(gjson.GetBytes(body, "error.param").String()) != "" {
+		return false
+	}
+	if isOpenAIContinuationStateError("", body) || isOpenAIContextWindowError("", body) || isOpenAIInstructionsRequiredError(status, "", body) {
+		return false
+	}
+	if hit, _, _ := detectOpenAICyberPolicy(body); hit {
+		return false
+	}
+	switch gjson.GetBytes(body, "error.code").String() {
+	case "", "400", "upstream_error", "server_error":
+		return true
+	default:
+		return false
+	}
+}
+
+func isOpenAIRequestBudgetRejection(account *Account, status int, body []byte) bool {
+	return account != nil && account.Platform == PlatformOpenAI && account.Type == AccountTypeAPIKey &&
+		!IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
+		(status == http.StatusForbidden || status == http.StatusPaymentRequired) &&
+		gjson.GetBytes(body, "error.type").String() == "balance_insufficient_error" &&
+		gjson.GetBytes(body, "error.code").String() == "balance_insufficient"
 }
 
 // shouldFailoverOpenAIUpstreamResponseForAccount adds the one capability
@@ -508,6 +541,15 @@ func newOpenAIUpstreamFailoverError(
 		ResponseHeaders:        responseHeaders.Clone(),
 		RetryableOnSameAccount: retryableOnSameAccount || requestScopedCapacity,
 		RequestScopedTransient: requestScopedCapacity,
+	}
+	if isOpenAIReportedUpstreamFailure(statusCode, responseBody) {
+		failoverErr.RetryableOnSameAccount = false
+		failoverErr.Scope = GatewayFailureScopeRequest
+		failoverErr.SuppressAccountHealthPenalty = true
+		failoverErr.Reason = GatewayFailureReason("openai_upstream_reported_failure")
+		failoverErr.ClientStatusCode = http.StatusBadGateway
+		failoverErr.ClientErrorCode = "upstream_request_failed"
+		failoverErr.ClientMessage = "Upstream failed to process the request"
 	}
 	if isOpenAIRequestBodyTooLargeError(statusCode, upstreamMsg, responseBody) {
 		failoverErr.RetryableOnSameAccount = false

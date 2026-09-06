@@ -29,6 +29,8 @@ jobs:
           check-latest: false
           cache: true
           cache-dependency-path: backend/go.sum
+      - name: Agent protocol contracts
+        run: bash .github/scripts/test_agent_protocol.sh
       - name: Service tests
         working-directory: backend
         run: go test -p=1 -tags unit ./internal/service -run 'Test.*(Refusal|CyberPolicy|Continuation|InvalidEncryptedContent|PreviousResponseNotFound|CapacityShed|RequestScopedTransient|ServerOverloaded|BusinessSystemPrompt|RemoteSkill|Cindy|CompatibilityModes|AlphaSearch)|Test(UpdateService|NormalizeAccountTaxonomyName|FilterConsoleAccounts|AccountConsolePlan|AccountFacetMatcher)' -count=1

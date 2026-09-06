@@ -70,12 +70,13 @@ func SetupRouter(
 	}))
 	r.Use(middleware2.ServerTiming(cfg.Server.EnableServerTiming))
 
-	// Serve embedded frontend with settings injection if available
+	// The frontend is a NoRoute fallback, never a pre-routing API interceptor.
+	var frontend gin.HandlerFunc
 	if web.HasEmbeddedFrontend() {
 		frontendServer, err := web.NewFrontendServer(settingService) //nolint:staticcheck // SA4023: the !embed stub always errors; embed builds can return nil
 		if err != nil {                                              //nolint:staticcheck // SA4023: see above
 			log.Printf("Warning: Failed to create frontend server with settings injection: %v, using legacy mode", err)
-			r.Use(web.ServeEmbeddedFrontend())
+			frontend = web.ServeEmbeddedFrontend()
 			settingService.SetOnUpdateCallback(refreshFrameOrigins)
 		} else {
 			// Register combined callback: invalidate HTML cache + refresh frame origins
@@ -83,7 +84,7 @@ func SetupRouter(
 				frontendServer.InvalidateCache()
 				refreshFrameOrigins()
 			})
-			r.Use(frontendServer.Middleware())
+			frontend = frontendServer.Middleware()
 		}
 	} else {
 		settingService.SetOnUpdateCallback(refreshFrameOrigins)
@@ -91,6 +92,7 @@ func SetupRouter(
 
 	// 注册路由
 	registerRoutes(r, handlers, jwtAuth, optionalJWTAuth, adminAuth, apiKeyAuth, auditLog, stepUpAuth, apiKeyService, subscriptionService, opsService, settingService, compositeResolver, cfg, redisClient)
+	web.RegisterFrontendFallback(r, frontend)
 
 	return r
 }

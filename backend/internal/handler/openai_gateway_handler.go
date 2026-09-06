@@ -801,7 +801,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	requestPlatform := openAICompatibleRequestPlatform(c.Request.Context(), apiKey)
 	// 生图意图与压缩请求必须调度到确实支持 Responses API 的账号；普通文本
 	// 仍可使用既有 Chat Completions 兼容能力。
-	needsResponses := nativeV2 || legacyCompact
+	needsResponses := nativeV2 || legacyCompact || service.OpenAIResponsesRequireNativeUpstream(body)
 	requiredCapability := openAIResponsesRequiredCapabilityForRequest(imageIntent, needsResponses, requestPlatform)
 	forwardBody := openAIModelMappedBody(body, forwardMapped, forwardMappedModel, h.gatewayService.ReplaceModelInBody)
 	seedOpenAIForwardImageIntentHint(c, forwardMapped, imageIntent)
@@ -2996,7 +2996,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	}
 	// 与 HTTP Responses 路径保持一致：生图意图请求要求账号支持 Responses API。
 	requiredCapability := service.OpenAIEndpointCapabilityChatCompletions
-	if imageIntent && requestPlatform == service.PlatformOpenAI {
+	if (imageIntent || service.OpenAIResponsesRequireNativeUpstream(firstMessage)) && requestPlatform == service.PlatformOpenAI {
 		requiredCapability = service.OpenAIEndpointCapabilityResponses
 	}
 	if err := h.billingCacheService.CheckBillingEligibility(ctx, apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
@@ -4150,12 +4150,28 @@ func (h *OpenAIGatewayHandler) handleOpenAINoAccountError(c *gin.Context, classi
 		)
 		return
 	}
-	h.handleStreamingAwareError(c, classification.Status, classification.ErrType, classification.Message, streamStarted)
+	code := classification.ErrType
+	if classification.Status == http.StatusServiceUnavailable {
+		code = "no_eligible_account"
+	}
+	h.handleStreamingAwareErrorWithCode(c, classification.Status, classification.ErrType, code, classification.Message, streamStarted, false)
 }
 
 func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError, streamStarted bool) {
 	if failoverErr == nil {
 		h.handleFailoverExhaustedSimple(c, http.StatusBadGateway, streamStarted)
+		return
+	}
+	if failoverErr.ClientErrorCode != "" {
+		errType := failoverErr.ClientErrorType
+		if errType == "" {
+			errType = "upstream_error"
+		}
+		if failoverErr.ClientErrorParam != "" && !streamStarted && !c.Writer.Written() {
+			c.JSON(failoverErr.ClientStatusCode, gin.H{"error": gin.H{"type": errType, "code": failoverErr.ClientErrorCode, "param": failoverErr.ClientErrorParam, "message": failoverErr.ClientMessage}})
+			return
+		}
+		h.handleStreamingAwareErrorWithCode(c, failoverErr.ClientStatusCode, errType, failoverErr.ClientErrorCode, failoverErr.ClientMessage, streamStarted, false)
 		return
 	}
 	if failoverErr.IsOpenAIRequestBodyTooLarge() {

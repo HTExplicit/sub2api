@@ -1381,8 +1381,36 @@ func (s *defaultOpenAIAccountScheduler) tryFallbackToWeightedSticky(
 // The reasons map is lazily allocated: on the happy path (nothing filtered
 // out, or an account is eventually selected) no extra allocation happens.
 type openAISelectionFilterStats struct {
-	pool    int
-	reasons map[string]int
+	pool              int
+	reasons           map[string]int
+	retryAfterSeconds int
+}
+
+func (s *openAISelectionFilterStats) observeRuntimeCooldown(gateway *OpenAIGatewayService, accountID int64) {
+	if gateway == nil {
+		return
+	}
+	if raw, ok := gateway.openaiAccountRuntimeBlockUntil.Load(accountID); ok {
+		if until, valid := raw.(time.Time); valid && until.After(time.Now()) {
+			seconds := int((time.Until(until) + time.Second - 1) / time.Second)
+			if s.retryAfterSeconds == 0 || seconds < s.retryAfterSeconds {
+				s.retryAfterSeconds = seconds
+			}
+		}
+	}
+}
+
+func (s openAISelectionFilterStats) failure(model string, compact bool, stage string) error {
+	err := noAvailableOpenAISelectionError(model, compact, s.summary(stage))
+	if detailed, ok := err.(openAINoAvailableSelectionError); ok {
+		rejected := make(map[string]int, len(s.reasons))
+		for reason, count := range s.reasons {
+			rejected[reason] = count
+		}
+		detailed.diagnostics = &OpenAISelectionDiagnostics{Pool: s.pool, Rejected: rejected, Stage: stage, RetryAfterSeconds: s.retryAfterSeconds}
+		return detailed
+	}
+	return err
 }
 
 func (s *openAISelectionFilterStats) exclude(reason string) {
@@ -1431,20 +1459,20 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		return nil, 0, 0, 0, err
 	}
 	if len(accounts) == 0 {
-		return nil, 0, 0, 0, noAvailableOpenAISelectionError(req.RequestedModel, false, openAISelectionFilterStats{}.summary(""))
+		return nil, 0, 0, 0, openAISelectionFilterStats{}.failure(req.RequestedModel, false, "")
 	}
 	ctx = s.service.withCindyBalancePendingSnapshot(ctx, accounts)
 	// Local free-tier soft gate on the Grok scheduling path only (not admin probe).
 	accounts = s.filterGrokFreeQuotaAccounts(ctx, accounts)
 	if len(accounts) == 0 {
-		return nil, 0, 0, 0, noAvailableOpenAISelectionError(req.RequestedModel, false, openAISelectionFilterStats{}.summary("grok_free_quota_soft_gate"))
+		return nil, 0, 0, 0, openAISelectionFilterStats{}.failure(req.RequestedModel, false, "grok_free_quota_soft_gate")
 	}
 	// Team+model rate-limit cool: siblings of a 429'd team skip the hot model.
 	if req.Platform == PlatformGrok {
 		now := time.Now()
 		filtered := filterGrokTeamModelRateLimitedAccounts(accounts, req.RequestedModel, now)
 		if len(filtered) == 0 && len(accounts) > 0 {
-			return nil, 0, 0, 0, noAvailableOpenAISelectionError(req.RequestedModel, false, openAISelectionFilterStats{}.summary("grok_team_model_rate_limit"))
+			return nil, 0, 0, 0, openAISelectionFilterStats{}.failure(req.RequestedModel, false, "grok_team_model_rate_limit")
 		}
 		if filtered != nil {
 			accounts = filtered
@@ -1452,7 +1480,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		// Per-account model free-usage soft-block (other models stay eligible).
 		modelFiltered := filterGrokModelQuotaBlockedAccounts(accounts, req.RequestedModel, now)
 		if len(modelFiltered) == 0 && len(accounts) > 0 {
-			return nil, 0, 0, 0, noAvailableOpenAISelectionError(req.RequestedModel, false, openAISelectionFilterStats{}.summary("grok_model_quota_block"))
+			return nil, 0, 0, 0, openAISelectionFilterStats{}.failure(req.RequestedModel, false, "grok_model_quota_block")
 		}
 		accounts = modelFiltered
 	}
@@ -1484,6 +1512,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		}
 		if s.service.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, openAIRequestedModelForAccount(ctx, account, req.RequestedModel)) {
 			filterStats.exclude("runtime_blocked")
+			filterStats.observeRuntimeCooldown(s.service, account.ID)
 			continue
 		}
 		// require_privacy_set is a group-scoped eligibility gate. Do not mutate
@@ -1507,7 +1536,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		})
 	}
 	if len(filtered) == 0 {
-		return nil, 0, 0, 0, noAvailableOpenAISelectionError(req.RequestedModel, false, filterStats.summary(""))
+		return nil, 0, 0, 0, filterStats.failure(req.RequestedModel, false, "")
 	}
 
 	loadMap := map[int64]*AccountLoadInfo{}
@@ -1701,7 +1730,7 @@ func (s *defaultOpenAIAccountScheduler) finishLoadBalanceSelectionFallback(
 	loadSkew := attempt.loadSkew
 
 	if len(attempt.selectionOrder) == 0 {
-		return nil, candidateCount, topK, loadSkew, noAvailableOpenAISelectionError(req.RequestedModel, attempt.compactBlocked, filterStats.summary("selection_order_empty"))
+		return nil, candidateCount, topK, loadSkew, filterStats.failure(req.RequestedModel, attempt.compactBlocked, "selection_order_empty")
 	}
 
 	if stickyFallback, stickyErr := s.tryFallbackToWeightedSticky(ctx, req); stickyErr != nil {
@@ -1736,7 +1765,7 @@ func (s *defaultOpenAIAccountScheduler) finishLoadBalanceSelectionFallback(
 				continue
 			}
 			if !s.consumeOpenAISelectionDBRecheck(budget) {
-				return nil, candidateCount, topK, loadSkew, noAvailableOpenAISelectionError(req.RequestedModel, compactBlocked, filterStats.summary("selection_order_exhausted"))
+				return nil, candidateCount, topK, loadSkew, filterStats.failure(req.RequestedModel, compactBlocked, "selection_order_exhausted")
 			}
 			fresh = s.service.recheckSelectedOpenAIAccountFromDB(ctx, fresh, req.GroupID, req.Platform, req.RequestedModel, false, req.RequiredCapability)
 			if fresh == nil || !s.isAccountTransportCompatible(fresh, req.RequiredTransport) || !s.isAccountRequestCompatible(ctx, fresh, req) {
@@ -1758,7 +1787,7 @@ func (s *defaultOpenAIAccountScheduler) finishLoadBalanceSelectionFallback(
 		}
 	}
 
-	return nil, candidateCount, topK, loadSkew, noAvailableOpenAISelectionError(req.RequestedModel, compactBlocked, filterStats.summary("selection_order_exhausted"))
+	return nil, candidateCount, topK, loadSkew, filterStats.failure(req.RequestedModel, compactBlocked, "selection_order_exhausted")
 }
 
 func (s *defaultOpenAIAccountScheduler) isAccountTransportCompatible(account *Account, requiredTransport OpenAIUpstreamTransport) bool {

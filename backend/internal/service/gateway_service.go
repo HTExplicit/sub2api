@@ -740,6 +740,9 @@ type UpstreamFailoverError struct {
 	Reason                       GatewayFailureReason
 	NextAccountAction            NextAccountAction
 	ClientStatusCode             int
+	ClientErrorCode              string
+	ClientErrorType              string
+	ClientErrorParam             string
 	ClientMessage                string
 	SuppressAccountHealthPenalty bool
 	CindyBalanceInsufficient     bool // raw budget payload was consumed and sanitized before crossing the handler boundary

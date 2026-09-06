@@ -6,6 +6,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -307,7 +308,8 @@ func noAvailableOpenAISelectionError(requestedModel string, compactBlocked bool,
 }
 
 type openAINoAvailableSelectionError struct {
-	message string
+	message     string
+	diagnostics *OpenAISelectionDiagnostics
 }
 
 func (e openAINoAvailableSelectionError) Error() string {
@@ -316,6 +318,30 @@ func (e openAINoAvailableSelectionError) Error() string {
 
 func (e openAINoAvailableSelectionError) Unwrap() error {
 	return ErrNoAvailableAccounts
+}
+
+func (e openAINoAvailableSelectionError) SelectionDiagnostics() *OpenAISelectionDiagnostics {
+	return e.diagnostics
+}
+
+// OpenAISelectionDiagnostics carries only aggregate, non-secret veto reasons.
+// It is distinct from an upstream attempt: selection can fail before any HTTP
+// request is sent and must not manufacture an upstream account/error event.
+type OpenAISelectionDiagnostics struct {
+	Pool              int            `json:"pool"`
+	Rejected          map[string]int `json:"rejected,omitempty"`
+	Stage             string         `json:"stage,omitempty"`
+	RetryAfterSeconds int            `json:"retry_after_seconds,omitempty"`
+}
+
+func GetOpenAISelectionDiagnostics(err error) *OpenAISelectionDiagnostics {
+	var detailed interface {
+		SelectionDiagnostics() *OpenAISelectionDiagnostics
+	}
+	if errors.As(err, &detailed) {
+		return detailed.SelectionDiagnostics()
+	}
+	return nil
 }
 
 // openAICompactSupportTier classifies an OpenAI-compatible account by compact capability.
@@ -346,31 +372,44 @@ func openAICompactSupportTier(account *Account) int {
 // 注意：对 spark 影子账号，调用方还须额外调用 parentHealthyForShadow(account, lookup)
 // 检查母账号凭据可用性；该检查未内置于本函数，以避免注入 DB 依赖。
 func isOpenAICompatibleAccountEligibleForRequest(ctx context.Context, account *Account, platform string, requestedModel string, requireCompact bool, requiredCapability OpenAIEndpointCapability) bool {
-	if !isOpenAICompatibleAccountEligibleForRequestBeforeProfit(ctx, account, platform, requestedModel, requireCompact, requiredCapability) {
-		return false
+	eligible, _ := openAICompatibleAccountEligibility(ctx, account, platform, requestedModel, requireCompact, requiredCapability)
+	return eligible
+}
+
+func openAICompatibleAccountEligibility(ctx context.Context, account *Account, platform string, requestedModel string, requireCompact bool, requiredCapability OpenAIEndpointCapability) (bool, string) {
+	if eligible, reason := openAICompatibleAccountEligibilityBeforeProfit(ctx, account, platform, requestedModel, requireCompact, requiredCapability); !eligible {
+		return false, reason
 	}
 	// 分组利润控制：legacy 引擎的粘性/候选循环与 DB recheck 共用
 	// 本判定，任何 fallback 都不能把利润不合格账号重新放回候选。
-	if vetoed, _ := openAIProfitControlVetoReason(ctx, account); vetoed {
-		return false
+	if vetoed, reason := openAIProfitControlVetoReason(ctx, account); vetoed {
+		return false, reason
 	}
-	return true
+	return true, ""
 }
 
 // isOpenAICompatibleAccountEligibleForRequestBeforeProfit applies every
 // ordinary scheduling gate. Legacy selection uses it before classifying the
 // profit veto so earlier failures retain their actual reason.
 func isOpenAICompatibleAccountEligibleForRequestBeforeProfit(ctx context.Context, account *Account, platform string, requestedModel string, requireCompact bool, requiredCapability OpenAIEndpointCapability) bool {
+	eligible, _ := openAICompatibleAccountEligibilityBeforeProfit(ctx, account, platform, requestedModel, requireCompact, requiredCapability)
+	return eligible
+}
+
+func openAICompatibleAccountEligibilityBeforeProfit(ctx context.Context, account *Account, platform string, requestedModel string, requireCompact bool, requiredCapability OpenAIEndpointCapability) (bool, string) {
 	platform = NormalizeOpenAICompatiblePlatform(platform)
 	if account == nil || account.Platform != platform || !account.IsOpenAICompatible() {
-		return false
+		return false, "platform_mismatch"
 	}
 	if platform == PlatformCindy && !hasCanonicalCindyProviderIdentity(account) {
-		return false
+		return false, "provider_identity_mismatch"
 	}
 	requestedModel = openAIRequestedModelForAccount(ctx, account, requestedModel)
 	if !account.IsSchedulableForModelWithContext(ctx, requestedModel) {
-		return false
+		if account.IsSchedulable() && account.isModelRateLimitedWithContext(ctx, requestedModel) {
+			return false, "model_rate_limited"
+		}
+		return false, "not_schedulable"
 	}
 	if account.IsOpenAI() {
 		if paused, reason := shouldAutoPauseOpenAIAccountByQuota(ctx, account); paused {
@@ -382,7 +421,7 @@ func isOpenAICompatibleAccountEligibleForRequestBeforeProfit(ctx context.Context
 				"threshold", reason.threshold,
 				"utilization", reason.utilization,
 			)
-			return false
+			return false, "quota_auto_pause"
 		}
 	}
 	if account.IsGrok() {
@@ -393,23 +432,23 @@ func isOpenAICompatibleAccountEligibleForRequestBeforeProfit(ctx context.Context
 				"threshold", reason.threshold,
 				"utilization", reason.utilization,
 			)
-			return false
+			return false, "quota_auto_pause"
 		}
 	}
 	if requestedModel != "" && !account.IsModelSupported(requestedModel) {
-		return false
+		return false, "model_not_supported"
 	}
 	if !accountSupportsOpenAICapabilities(ctx, account, requestedModel, requiredCapability, "") {
 		if account.IsGrok() && requiredCapability == OpenAIEndpointCapabilityGrokMediaGeneration {
 			_, reason := account.GrokMediaGenerationEligibility()
 			slog.Debug("grok_media_account_ineligible", "account_id", account.ID, "reason", reason)
 		}
-		return false
+		return false, "capability_mismatch"
 	}
 	if requireCompact && openAICompactSupportTier(account) == 0 {
-		return false
+		return false, "compact_not_supported"
 	}
-	return true
+	return true, ""
 }
 
 type openAIQuotaAutoPauseDecision struct {
@@ -879,7 +918,7 @@ func (s *OpenAIGatewayService) selectAccountForModelWithExclusions(ctx context.C
 	selected, compactBlocked, filterStats := s.selectBestAccount(ctx, groupID, platform, accounts, requestedModel, excludedIDs, requireCompact, requiredCapability, preferLowUpstreamRate)
 
 	if selected == nil {
-		return nil, noAvailableOpenAISelectionError(requestedModel, compactBlocked, filterStats.summary(""))
+		return nil, filterStats.failure(requestedModel, compactBlocked, "")
 	}
 
 	hydrated, err := s.hydrateSelectedAccount(ctx, selected)
@@ -1152,7 +1191,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	}
 	accounts = s.filterOpenAIAccountsForGroupPrivacy(ctx, groupID, accounts)
 	if len(accounts) == 0 {
-		return nil, ErrNoAvailableAccounts
+		return nil, noAvailableOpenAISelectionError(requestedModel, false, "pool=0, no_schedulable_accounts_or_privacy_requirement")
 	}
 	ctx = s.withCindyBalancePendingSnapshot(ctx, accounts)
 
@@ -1231,26 +1270,33 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		return a
 	}
 	baseCandidateCount := 0
+	filterStats := openAISelectionFilterStats{pool: len(accounts)}
 	candidates := make([]*Account, 0, len(accounts))
 	for i := range accounts {
 		acc := &accounts[i]
 		if isExcluded(acc.ID) {
+			filterStats.exclude("excluded")
 			continue
 		}
 		// Scheduler snapshots can be temporarily stale (bucket rebuild is throttled);
 		// re-check schedulability here so recently rate-limited/overloaded accounts
 		// are not selected again before the bucket is rebuilt.
-		if !isOpenAICompatibleAccountEligibleForRequest(ctx, acc, platform, requestedModel, false, requiredCapability) {
+		if eligible, reason := openAICompatibleAccountEligibility(ctx, acc, platform, requestedModel, false, requiredCapability); !eligible {
+			filterStats.exclude(reason)
 			continue
 		}
 		if !parentHealthyForShadow(acc, parentLookupL2) {
+			filterStats.exclude("shadow_parent_unhealthy")
 			continue
 		}
 		accountRequestedModel := openAIRequestedModelForAccount(ctx, acc, requestedModel)
 		if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, acc, accountRequestedModel) {
+			filterStats.exclude("runtime_blocked")
+			filterStats.observeRuntimeCooldown(s, acc.ID)
 			continue
 		}
 		if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, acc, accountRequestedModel, requireCompact) {
+			filterStats.exclude("channel_upstream_restricted")
 			continue
 		}
 		baseCandidateCount++
@@ -1258,7 +1304,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	}
 
 	if len(candidates) == 0 {
-		return nil, ErrNoAvailableAccounts
+		return nil, filterStats.failure(requestedModel, false, "")
 	}
 	rateOrder := openAILegacyUpstreamRateOrder{}
 	if preferLowUpstreamRate {
@@ -1449,7 +1495,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	if requireCompact && baseCandidateCount > 0 {
 		return nil, ErrNoAvailableCompactAccounts
 	}
-	return nil, ErrNoAvailableAccounts
+	return nil, filterStats.failure(requestedModel, false, "fresh_state_or_slot_unavailable")
 }
 
 func (s *OpenAIGatewayService) listSchedulableAccounts(ctx context.Context, groupID *int64, platform string) ([]Account, error) {

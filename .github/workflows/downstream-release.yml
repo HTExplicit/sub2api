@@ -61,6 +61,8 @@ jobs:
           check-latest: false
           cache: true
           cache-dependency-path: backend/go.sum
+      - name: Agent protocol contracts
+        run: bash .github/scripts/test_agent_protocol.sh
       - name: Backend downstream tests
         working-directory: backend
         run: |
