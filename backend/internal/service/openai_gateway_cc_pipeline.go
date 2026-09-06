@@ -321,53 +321,24 @@ func (s *OpenAIGatewayService) scanCCStream(
 			st.Usage = *u
 		}
 
-		var envelope struct {
-			Error json.RawMessage `json:"error"`
-		}
-		if err := json.Unmarshal([]byte(payload), &envelope); err != nil {
-			st.Err = ccStreamProtocolFailure("upstream_invalid_stream", "Upstream sent an invalid JSON stream event")
-			break
-		}
-		if len(envelope.Error) > 0 && string(envelope.Error) != "null" {
-			message := extractOpenAISSEErrorMessage([]byte(payload))
-			status := openAIStreamFailedEventSemanticStatus([]byte(payload), message)
-			failure := s.newOpenAIAccountFailoverError(account, status, resp.Header, []byte(payload), message, false, false)
-			if !openAIStreamErrorEventShouldFailoverForAccount(account, []byte(payload), message) {
-				failure.NextAccountAction = NextAccountStop
-				failure.Scope = GatewayFailureScopeRequest
-				failure.SuppressAccountHealthPenalty = true
-			}
-			setOpsUpstreamError(c, status, "upstream_stream_error", "")
-			st.Err = failure
-			break
-		}
-		var chunk apicompat.ChatCompletionsChunk
-		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
-			logger.L().Warn(logPrefix+": failed to parse chat stream chunk",
-				zap.Error(err),
-				zap.String("request_id", requestID),
-			)
-			st.Err = ccStreamProtocolFailure("upstream_invalid_stream", "Upstream sent an invalid completion chunk")
+		chunk, err := s.decodeCCStreamChunk(c, account, resp.Header, payload)
+		if err != nil {
+			st.Err = err
 			break
 		}
 		for _, choice := range chunk.Choices {
 			if choice.FinishReason != nil && *choice.FinishReason != "" {
-				terminal := apicompat.ChatCompletionTerminalForReason(*choice.FinishReason)
-				if terminal.Error != nil {
-					st.Err = ccStreamProtocolFailure(terminal.Error.Code, terminal.Error.Message)
-					break
-				}
 				st.FinishReason = *choice.FinishReason
 			}
 		}
 		if st.Err != nil {
 			break
 		}
-		if st.FirstTokenMs == nil && !isOpenAIChatUsageOnlyStreamChunk(payload) && chatChunkStartsResponsesOutput(&chunk) {
+		if st.FirstTokenMs == nil && !isOpenAIChatUsageOnlyStreamChunk(payload) && chatChunkStartsResponsesOutput(chunk) {
 			ms := int(time.Since(startTime).Milliseconds())
 			st.FirstTokenMs = &ms
 		}
-		emit(&chunk)
+		emit(chunk)
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -390,7 +361,43 @@ func (s *OpenAIGatewayService) scanCCStream(
 
 func ccStreamProtocolFailure(code, message string) *UpstreamFailoverError {
 	body, _ := json.Marshal(map[string]any{"error": map[string]string{"type": "upstream_error", "code": code, "message": message}})
-	return &UpstreamFailoverError{StatusCode: http.StatusBadGateway, ResponseBody: body, Reason: GatewayFailureReason("openai_upstream_protocol_error")}
+	return &UpstreamFailoverError{StatusCode: http.StatusBadGateway, ResponseBody: body, Reason: GatewayFailureReason("openai_upstream_protocol_error"), ClientStatusCode: http.StatusBadGateway, ClientErrorCode: code, ClientMessage: message}
+}
+
+// decodeCCStreamChunk is shared by raw forwarding and protocol conversion.
+// Error envelopes and malformed data must never look like empty completions.
+func (s *OpenAIGatewayService) decodeCCStreamChunk(c *gin.Context, account *Account, headers http.Header, payload string) (*apicompat.ChatCompletionsChunk, error) {
+	var envelope struct {
+		Error json.RawMessage `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(payload), &envelope); err != nil {
+		return nil, ccStreamProtocolFailure("upstream_invalid_stream", "Upstream sent an invalid JSON stream event")
+	}
+	if len(envelope.Error) > 0 && string(envelope.Error) != "null" {
+		message := extractOpenAISSEErrorMessage([]byte(payload))
+		status := openAIStreamFailedEventSemanticStatus([]byte(payload), message)
+		failure := s.newOpenAIAccountFailoverError(account, status, headers, []byte(payload), message, false, false)
+		if !openAIStreamErrorEventShouldFailoverForAccount(account, []byte(payload), message) {
+			failure.NextAccountAction = NextAccountStop
+			failure.Scope = GatewayFailureScopeRequest
+			failure.SuppressAccountHealthPenalty = true
+		}
+		setOpsUpstreamError(c, status, "upstream_stream_error", "")
+		return nil, failure
+	}
+	var chunk apicompat.ChatCompletionsChunk
+	if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+		return nil, ccStreamProtocolFailure("upstream_invalid_stream", "Upstream sent an invalid completion chunk")
+	}
+	for _, choice := range chunk.Choices {
+		if choice.FinishReason != nil && *choice.FinishReason != "" {
+			terminal := apicompat.ChatCompletionTerminalForReason(*choice.FinishReason)
+			if terminal.Error != nil {
+				return nil, ccStreamProtocolFailure(terminal.Error.Code, terminal.Error.Message)
+			}
+		}
+	}
+	return &chunk, nil
 }
 
 // logCCStreamMissingDoneSentinel 记录"上游未发 [DONE] 哨兵即结束"的 debug 日志。
