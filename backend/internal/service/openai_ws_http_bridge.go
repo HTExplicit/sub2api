@@ -251,7 +251,13 @@ func prepareOpenAIWSHTTPBridgeBody(account *Account, payload []byte) ([]byte, er
 	}
 	delete(body, "type")
 	delete(body, "generate")
-	delete(body, "previous_response_id")
+	// previous_response_id is a Responses field shared by HTTP and WS, not a
+	// WS envelope field. A bridge caller that needs stateless replay must first
+	// prove and construct the complete input; it cannot do so by deleting here.
+	if strings.TrimSpace(gjson.GetBytes(payload, "previous_response_id").String()) != "" &&
+		account != nil && (account.UsesOpenAICodexProtocol() || account.Platform == PlatformGrok) {
+		return nil, NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
+	}
 	deleteOpenAIResponsesNoneReasoningEffortFromObject(account, body)
 	body["stream"] = true
 	return json.Marshal(body)
@@ -262,6 +268,7 @@ type openAIWSToolCallReplayCollector struct {
 	seen     map[string]struct{}
 	allItems []json.RawMessage
 	allSeen  map[string]struct{}
+	complete bool
 }
 
 func (c *openAIWSToolCallReplayCollector) AddEvent(eventType string, message []byte) {
@@ -275,11 +282,42 @@ func (c *openAIWSToolCallReplayCollector) AddEvent(eventType string, message []b
 		if !output.IsArray() {
 			return
 		}
-		for _, item := range output.Array() {
-			c.addAllItem(item)
+		status := strings.TrimSpace(gjson.GetBytes(message, "response.status").String())
+		if (status != "" && status != "completed") ||
+			gjson.GetBytes(message, "response.error").Type == gjson.JSON ||
+			gjson.GetBytes(message, "response.incomplete_details").Type == gjson.JSON {
+			return
+		}
+		items := output.Array()
+		// The terminal array is the authoritative order, including repeated
+		// unkeyed items and unknown extensions. Do not substitute the order in
+		// which parallel output_item.done frames happened to arrive.
+		if len(items) > 0 {
+			c.allItems = make([]json.RawMessage, 0, len(items))
+			for _, item := range items {
+				if !item.IsObject() || strings.TrimSpace(item.Get("type").String()) == "" {
+					return
+				}
+				c.allItems = append(c.allItems, json.RawMessage(item.Raw))
+			}
+			c.complete = true
+		} else {
+			// A terminal claiming [] after item events is inconsistent; retain
+			// those items, but do not certify that we captured a full response.
+			c.complete = len(c.allItems) == 0
+		}
+		for _, item := range items {
 			c.addItem(item)
 		}
 	}
+}
+
+func (c *openAIWSToolCallReplayCollector) Complete() bool {
+	return c != nil && c.complete
+}
+
+func isOpenAIWSSuccessTerminalEvent(eventType string) bool {
+	return eventType == "response.completed" || eventType == "response.done"
 }
 
 // Items/AllItems 返回浅拷贝头数组；正文由 collector 独立分配且此后不可变，
@@ -541,11 +579,8 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, openAIWSHTTPBridgeErrorBodyLimitBytes))
 		_ = resp.Body.Close()
 		markOpenAICyberPolicyEvent(c, respBody, resp.StatusCode, nil)
-		if resp.StatusCode == http.StatusBadRequest &&
-			extractUpstreamErrorCode(respBody) == openAIWSFallbackReasonInvalidEncryptedContent {
-			s.markOpenAIWSInvalidEncryptedContentLineageFromPayload(
-				c, body, "ingress_ws_http_bridge_invalid_encrypted_lineage_mark", account.ID, turn,
-			)
+		if isOpenAIContinuationStateError("", respBody) {
+			return nil, NewOpenAIContinuationStateUnavailableError(resp.StatusCode, resp.Header, respBody)
 		}
 		retryBody, retryReason, changed, retryErr := normalizeOpenAIResponsesRejectedFieldRetryBody(resp.StatusCode, body, respBody)
 		if retryErr != nil {
@@ -661,10 +696,8 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			Duration:                      time.Since(turnStart),
 			FirstTokenMs:                  firstTokenMs,
 		}
-		if replayInput := replayCollector.Items(); len(replayInput) > 0 {
-			result.wsReplayInput = replayInput
-			result.wsReplayInputExists = true
-		}
+		result.wsReplayInput = replayCollector.AllItems()
+		result.wsReplayInputExists = replayCollector.Complete()
 		result.wsAccountFailoverReplayInput = replayCollector.AllItems()
 		if imageCount > 0 {
 			result.ImageCount = imageCount
@@ -824,6 +857,9 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 				errMessage = "upstream error event"
 			}
 			statusCode := openAIStreamFailureStatus(upstreamMessage, errMessage)
+			if isOpenAIContinuationStateError(errMessage, upstreamMessage) {
+				return resultWithUsage(), NewOpenAIContinuationStateUnavailableError(statusCode, resp.Header, upstreamMessage)
+			}
 			shouldFailover := openAIStreamFailedEventShouldFailoverForAccount(account, upstreamMessage, errMessage)
 			if eventType == "error" {
 				errCodeRaw, errTypeRaw, _ := parseOpenAIWSErrorEventFields(upstreamMessage)
@@ -836,11 +872,6 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 					isOpenAIModelNotSupportedPayload(upstreamMessage) {
 					statusCode = http.StatusBadRequest
 					shouldFailover = true
-				}
-				if reason, _ := classifyOpenAIWSErrorEventFromRaw(errCodeRaw, errTypeRaw, errMessage); reason == openAIWSFallbackReasonInvalidEncryptedContent {
-					s.markOpenAIWSInvalidEncryptedContentLineageFromPayload(
-						c, body, "ingress_ws_http_bridge_invalid_encrypted_lineage_mark", account.ID, turn,
-					)
 				}
 			}
 			requestScopedCapacity := isOpenAIUpstreamCapacityShedEvent(upstreamMessage)

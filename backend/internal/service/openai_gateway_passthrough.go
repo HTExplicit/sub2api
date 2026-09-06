@@ -131,7 +131,6 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	canonicalImageIntentBody []byte,
 	reqModel string,
 	attemptImageIntentInvalidated bool,
-	reasoningEffort *string,
 	reqStream bool,
 	startTime time.Time,
 ) (*OpenAIForwardResult, error) {
@@ -184,6 +183,21 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 			body = nextBody
 			upstreamPassthroughModel = compactMappedModel
 			attemptImageIntentInvalidated = true
+		}
+	}
+	if account != nil && account.IsOpenAI() {
+		withEffort, _, aliasErr := materializeOpenAIModelReasoningEffort(body)
+		if aliasErr != nil {
+			return nil, aliasErr
+		}
+		body = withEffort
+		if baseModel, _, alias := resolveOpenAIModelReasoningAlias(gjson.GetBytes(body, "model").String()); alias {
+			normalizedBody, setErr := sjson.SetBytes(body, "model", baseModel)
+			if setErr != nil {
+				return nil, fmt.Errorf("normalize passthrough model effort alias: %w", setErr)
+			}
+			body = normalizedBody
+			upstreamPassthroughModel = baseModel
 		}
 	}
 
@@ -418,43 +432,8 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	}
 
 	agentTaskRecoveryTried := false
-	invalidEncryptedContentRetryTried := false
 	compactModelFallbackRetried := false
-	portableOpaqueRecovery := canRecoverCindyPortableOpaqueContinuation(account, body)
-	tryRecoverInvalidEncryptedContent := func(upstreamMsg string, upstreamBody []byte) (bool, error) {
-		if (IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) && !portableOpaqueRecovery) ||
-			isOpenAICindyHTTPToWSV2Bypassed(c) ||
-			invalidEncryptedContentRetryTried ||
-			!isOpenAIInvalidEncryptedContentError(upstreamMsg, upstreamBody) ||
-			(ValidateFunctionCallOutputContextBytes(body).HasFunctionCallOutput && !portableOpaqueRecovery) {
-			return false, nil
-		}
-		var decoded map[string]any
-		decoder := json.NewDecoder(bytes.NewReader(body))
-		decoder.UseNumber()
-		decodeErr := decoder.Decode(&decoded)
-		removedReasoningItems := false
-		if decodeErr == nil {
-			if portableOpaqueRecovery {
-				removedReasoningItems = dropOpenAIEncryptedReasoningInputItems(decoded)
-			} else {
-				removedReasoningItems = trimOpenAIEncryptedReasoningItems(decoded)
-			}
-		}
-		if decodeErr != nil || !removedReasoningItems {
-			logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] Skip invalid_encrypted_content retry because encrypted reasoning items are missing or cannot be decoded (account: %s)", account.Name)
-			return false, nil
-		}
-		delete(decoded, "previous_response_id")
-		retryBody, marshalErr := marshalOpenAIUpstreamJSON(decoded)
-		if marshalErr != nil {
-			return false, fmt.Errorf("serialize passthrough invalid_encrypted_content retry body: %w", marshalErr)
-		}
-		body = retryBody
-		invalidEncryptedContentRetryTried = true
-		logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] Retrying request once on the same account after invalid_encrypted_content (account: %s)", account.Name)
-		return true, nil
-	}
+	var reasoningEffort *string
 
 retryUpstream:
 	var resp *http.Response
@@ -463,6 +442,10 @@ retryUpstream:
 		if actualModel == "" {
 			actualModel = reqModel
 		}
+		// Report the effective sent request, including any endpoint adapter or
+		// bounded retry changes, rather than inferring effort from billing aliases.
+		reasoningEffort = extractOpenAIReasoningEffortFromBody(body, actualModel)
+		reasoningEffort = ApplyThinkingEnabledFallback(reasoningEffort, body, actualModel)
 		SetOpsUpstreamModel(c, actualModel)
 		upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
 		upstreamReq, buildErr := s.buildUpstreamRequestOpenAIPassthrough(upstreamCtx, c, account, body, token)
@@ -509,11 +492,6 @@ retryUpstream:
 			continue
 		}
 		continuationStateError := classifyOpenAIContinuationStateError(upstreamMsg, probeBody)
-		if recovered, recoveryErr := tryRecoverInvalidEncryptedContent(upstreamMsg, probeBody); recoveryErr != nil {
-			return nil, recoveryErr
-		} else if recovered {
-			continue
-		}
 		if continuationStateError != openAIContinuationStateErrorNone ||
 			isOpenAIOpaqueContinuationToolChainBadRequest(resp.StatusCode, body, upstreamMsg, probeBody) {
 			// Continuation failures describe request history rather than account
@@ -586,16 +564,6 @@ retryUpstream:
 				}
 				return nil, s.handleErrorResponsePassthrough(ctx, compactResp, c, account, body, compactBody)
 			}
-			var failoverErr *UpstreamFailoverError
-			if errors.As(err, &failoverErr) && !openAIStreamClientOutputStarted(c, false) {
-				upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(failoverErr.ResponseBody)))
-				if recovered, recoveryErr := tryRecoverInvalidEncryptedContent(upstreamMsg, failoverErr.ResponseBody); recoveryErr != nil {
-					return nil, recoveryErr
-				} else if recovered {
-					_ = resp.Body.Close()
-					goto retryUpstream
-				}
-			}
 			return nil, err
 		}
 		usage = result.usage
@@ -622,16 +590,6 @@ retryUpstream:
 					return nil, s.handleFailoverErrorResponsePassthrough(ctx, compactResp, c, account, body, compactBody)
 				}
 				return nil, s.handleErrorResponsePassthrough(ctx, compactResp, c, account, body, compactBody)
-			}
-			var failoverErr *UpstreamFailoverError
-			if errors.As(err, &failoverErr) && !openAIStreamClientOutputStarted(c, false) {
-				upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(failoverErr.ResponseBody)))
-				if recovered, recoveryErr := tryRecoverInvalidEncryptedContent(upstreamMsg, failoverErr.ResponseBody); recoveryErr != nil {
-					return nil, recoveryErr
-				} else if recovered {
-					_ = resp.Body.Close()
-					goto retryUpstream
-				}
 			}
 			return nil, err
 		}

@@ -611,41 +611,6 @@ func openAIWSRawItemsHasFunctionCallOutput(items []json.RawMessage) bool {
 	return false
 }
 
-// sanitizeOpenAIWSHistoricalReplayToolCalls 返回的新头数组与 previousItems 共享正文。
-func sanitizeOpenAIWSHistoricalReplayToolCalls(
-	previousItems []json.RawMessage,
-	currentItems []json.RawMessage,
-) []json.RawMessage {
-	if len(previousItems) == 0 {
-		return previousItems
-	}
-	outputCallIDs := make(map[string]struct{})
-	collectOutputCallIDs := func(items []json.RawMessage) {
-		for _, item := range items {
-			if !isCodexToolCallOutputItemType(gjson.GetBytes(item, "type").String()) {
-				continue
-			}
-			if callID := strings.TrimSpace(gjson.GetBytes(item, "call_id").String()); callID != "" {
-				outputCallIDs[callID] = struct{}{}
-			}
-		}
-	}
-	collectOutputCallIDs(previousItems)
-	collectOutputCallIDs(currentItems)
-
-	sanitized := make([]json.RawMessage, 0, len(previousItems))
-	for _, item := range previousItems {
-		if isCodexToolCallContextItemType(gjson.GetBytes(item, "type").String()) {
-			callID := strings.TrimSpace(gjson.GetBytes(item, "call_id").String())
-			if _, paired := outputCallIDs[callID]; !paired {
-				continue
-			}
-		}
-		sanitized = append(sanitized, item)
-	}
-	return sanitized
-}
-
 func openAIWSRawPayloadHasToolCallOutput(payload []byte) bool {
 	if len(payload) == 0 {
 		return false
@@ -682,7 +647,9 @@ func buildOpenAIWSReplayInputSequenceFromItems(
 	if !hasPreviousResponseID || !previousFullInputExists {
 		return currentItems, currentExists
 	}
-	previousFullInput = sanitizeOpenAIWSHistoricalReplayToolCalls(previousFullInput, currentItems)
+	// An unfinished tool call is still part of the original output. A client
+	// may supply its result in a later turn; deleting it is not proof that a
+	// shorter transcript is a complete replay of the response chain.
 	if !currentExists || len(currentItems) == 0 {
 		return previousFullInput, true
 	}
@@ -768,13 +735,21 @@ func buildOpenAIWSCurrentTurnRetryPayload(
 	payload []byte,
 	fullInput []json.RawMessage,
 	fullInputExists bool,
+	verifiedFullHistory bool,
 	originalModel string,
 ) ([]byte, bool, error) {
-	if !fullInputExists {
+	if !fullInputExists || !verifiedFullHistory {
 		return nil, false, nil
 	}
 	retryPayload, err := setOpenAIWSPayloadInputSequence(payload, fullInput, true)
 	if err != nil {
+		return nil, false, err
+	}
+	// This payload is handed to a different account. Classify the intact
+	// candidate before removing its anchor, so opaque or unresolved state can
+	// never become "portable" as a consequence of deleting its requirements.
+	classification, err := ClassifyCindyContinuation(retryPayload, CindyContinuationProof{VerifiedFullHistory: verifiedFullHistory})
+	if err != nil || !classification.CanSwitchAccount() || openAIWSHasConversationReference(retryPayload) {
 		return nil, false, err
 	}
 	retryPayload = RemovePreviousResponseIDFromBody(retryPayload)
@@ -789,6 +764,35 @@ func buildOpenAIWSCurrentTurnRetryPayload(
 		return nil, false, nil
 	}
 	return retryPayload, true, nil
+}
+
+func openAIWSHasConversationReference(payload []byte) bool {
+	conversation := gjson.GetBytes(payload, "conversation")
+	return conversation.Exists() && conversation.Type != gjson.Null &&
+		(conversation.Type != gjson.String || strings.TrimSpace(conversation.String()) != "")
+}
+
+// A locally accumulated input is complete only if its first request had no
+// external history dependency, and every anchored successor names that exact
+// completed baseline. Nonempty input and paired tool IDs alone prove neither.
+func openAIWSReplayHistoryVerified(payload []byte, baselineResponseID string, baselineVerified bool) bool {
+	if openAIWSHasConversationReference(payload) {
+		return false
+	}
+	anchor := strings.TrimSpace(gjson.GetBytes(payload, "previous_response_id").String())
+	if anchor != "" {
+		return baselineVerified && anchor == strings.TrimSpace(baselineResponseID)
+	}
+	classification, err := ClassifyCindyContinuation(payload, CindyContinuationProof{})
+	return err == nil && classification.CanReplayWithoutAnchor()
+}
+
+func prepareOpenAIWSVerifiedReplayPayload(payload []byte, fullInput []json.RawMessage, fullInputExists, verifiedFullHistory bool) ([]byte, bool) {
+	if !fullInputExists || !verifiedFullHistory || openAIWSHasConversationReference(payload) {
+		return payload, false
+	}
+	candidate, classification, replayable := prepareCindyContinuationReplayPayload(payload, fullInput, true, true)
+	return candidate, replayable && classification.CanReplayWithoutAnchor()
 }
 
 func shouldKeepIngressPreviousResponseID(

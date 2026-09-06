@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -584,195 +583,62 @@ func TestLegacyCindyRuntimeCompatibilityPreservesOpaqueHTTPContinuation(t *testi
 	require.Equal(t, "cipher", gjson.GetBytes(upstream.bodies[0], "input.0.encrypted_content").String())
 }
 
-func requireCindyPortableOpaqueStateRemoved(t *testing.T, body []byte) {
-	t.Helper()
-	for _, value := range []string{
-		"stale-cipher-reasoning", "stale-cipher-compaction", "stale-cipher-compaction-summary",
-		"rs_deleted_account", "cmp_deleted_account", "cmp_summary_deleted_account",
-		"reasoning summary", "compaction summary", "compaction-summary summary",
-		"reasoning-phase", "compaction-phase", "compaction-summary-phase",
-	} {
-		require.NotContains(t, string(body), value, "the recovered request must drop the complete portable opaque state item")
+func TestCindyInvalidOpaqueHistoryDoesNotProveFullReplay(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	// A visible user message and paired tool IDs cannot replace the history
+	// represented only by these encrypted compaction items.
+	body := []byte(`{"model":"openai/gpt-5.6-luna","store":false,"input":[{"type":"message","role":"user","content":"continue"},{"type":"reasoning","id":"rs_old","encrypted_content":"stale-reasoning","summary":[{"type":"summary_text","text":"visible summary"}]},{"type":"compaction","id":"cmp_old","encrypted_content":"stale-compaction"},{"type":"compaction_summary","id":"cmp_summary_old","encrypted_content":"stale-compaction-summary"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"kept"}]}`)
+	errorBody := `{"error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}`
+	for _, platform := range []string{PlatformCindy, PlatformOpenAI} {
+		for _, transport := range []string{"http-passthrough", "http-native", "websocket"} {
+			t.Run(platform+"/"+transport, func(t *testing.T) {
+				account := cindyHTTPToWSV2TestAccount()
+				account.Platform = platform
+				if transport == "http-native" {
+					account.Extra = map[string]any{}
+				}
+				var svc *OpenAIGatewayService
+				var upstream *httpUpstreamRecorder
+				var dialer *cindyHTTPToWSV2SequenceDialer
+				var failed *openAIWSCaptureConn
+				if transport == "websocket" {
+					failed = &openAIWSCaptureConn{events: [][]byte{
+						[]byte(`{"type":"response.failed","response":{"id":"resp_invalid","status":"failed","error":{"code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}}`),
+					}}
+					svc, dialer = newCindyHTTPToWSV2TurnStateTestService(t, cindyHTTPToWSV2DialStep{conn: failed})
+				} else {
+					upstream = &httpUpstreamRecorder{resp: &http.Response{
+						StatusCode: http.StatusBadRequest,
+						Header:     http.Header{"Content-Type": {"application/json"}},
+						Body:       io.NopCloser(strings.NewReader(errorBody)),
+					}}
+					cfg := &config.Config{}
+					cfg.Security.URLAllowlist.Enabled = false
+					svc = &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream, toolCorrector: NewCodexToolCorrector()}
+				}
+				result, err := svc.Forward(context.Background(), cindyHTTPToWSV2TestContext("/v1/responses"), account, body)
+				require.Nil(t, result)
+				var stateErr *UpstreamFailoverError
+				require.ErrorAs(t, err, &stateErr)
+				require.True(t, stateErr.IsOpenAIContinuationStateUnavailable())
+				require.False(t, stateErr.ShouldRetryNextAccount())
+				var sent []byte
+				if transport == "websocket" {
+					require.Len(t, dialer.capturedHeaders(), 1, "invalid state must not open a cleaned retry")
+					failed.mu.Lock()
+					writes := append([]map[string]any(nil), failed.writes...)
+					failed.mu.Unlock()
+					require.Len(t, writes, 1)
+					sent = payloadAsJSONBytes(writes[0])
+				} else {
+					require.Len(t, upstream.bodies, 1, "invalid state must not start a cleaned retry")
+					sent = upstream.bodies[0]
+				}
+				require.JSONEq(t, gjson.GetBytes(body, "input").Raw, gjson.GetBytes(sent, "input").Raw)
+				require.Contains(t, string(sent), "stale-compaction-summary")
+			})
+		}
 	}
-	require.Equal(t, int64(3), gjson.GetBytes(body, "input.#").Int())
-	require.Equal(t, "message", gjson.GetBytes(body, "input.0.type").String())
-	require.Equal(t, "function_call", gjson.GetBytes(body, "input.1.type").String())
-	require.Equal(t, "call_1", gjson.GetBytes(body, "input.1.call_id").String())
-	require.Equal(t, "function_call_output", gjson.GetBytes(body, "input.2.type").String())
-	require.Equal(t, "call_1", gjson.GetBytes(body, "input.2.call_id").String())
-	require.Equal(t, "kept", gjson.GetBytes(body, "input.2.output").String())
-}
-
-func TestLegacyCindyRuntimeCompatibilityReplaysSelfContainedHistoryWithoutInvalidOpaqueState(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	upstream := &httpUpstreamRecorder{responses: []*http.Response{
-		{
-			StatusCode: http.StatusBadRequest,
-			Header:     http.Header{"Content-Type": []string{"application/json"}},
-			Body: io.NopCloser(strings.NewReader(
-				`{"error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}`,
-			)),
-		},
-		{
-			StatusCode: http.StatusOK,
-			Header:     http.Header{"Content-Type": []string{"application/json"}},
-			Body: io.NopCloser(strings.NewReader(
-				`{"id":"resp_recovered","status":"completed","model":"openai/gpt-5.6-luna","output":[],"usage":{"input_tokens":1,"output_tokens":1}}`,
-			)),
-		},
-	}}
-	cfg := &config.Config{}
-	cfg.Security.URLAllowlist.Enabled = false
-	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream, toolCorrector: NewCodexToolCorrector()}
-	account := cindyHTTPToWSV2TestAccount()
-	account.Platform = PlatformOpenAI
-	body := []byte(`{"model":"openai/gpt-5.6-luna","store":false,"input":[{"type":"message","role":"user","content":"continue"},{"type":"reasoning","id":"rs_deleted_account","encrypted_content":"stale-cipher-reasoning","summary":"reasoning summary","phase":"reasoning-phase"},{"type":"compaction","id":"cmp_deleted_account","encrypted_content":"stale-cipher-compaction","summary":"compaction summary","phase":"compaction-phase"},{"type":"compaction_summary","id":"cmp_summary_deleted_account","encrypted_content":"stale-cipher-compaction-summary","summary":"compaction-summary summary","phase":"compaction-summary-phase"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"kept"}]}`)
-
-	result, err := svc.Forward(context.Background(), cindyHTTPToWSV2TestContext("/v1/responses"), account, body)
-
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Len(t, upstream.bodies, 2)
-	require.Contains(t, string(upstream.bodies[0]), "stale-cipher-compaction-summary")
-	requireCindyPortableOpaqueStateRemoved(t, upstream.bodies[1])
-}
-
-func TestLegacyCindyRuntimeCompatibilityReplaysSelfContainedHistoryOverNonPassthroughHTTP(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	upstream := &httpUpstreamRecorder{responses: []*http.Response{
-		{
-			StatusCode: http.StatusBadRequest,
-			Header:     http.Header{"Content-Type": []string{"application/json"}},
-			Body: io.NopCloser(strings.NewReader(
-				`{"error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}`,
-			)),
-		},
-		{
-			StatusCode: http.StatusOK,
-			Header:     http.Header{"Content-Type": []string{"application/json"}},
-			Body: io.NopCloser(strings.NewReader(
-				`{"id":"resp_recovered","status":"completed","model":"openai/gpt-5.6-luna","output":[],"usage":{"input_tokens":1,"output_tokens":1}}`,
-			)),
-		},
-	}}
-	cfg := &config.Config{}
-	cfg.Security.URLAllowlist.Enabled = false
-	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream, toolCorrector: NewCodexToolCorrector()}
-	account := cindyHTTPToWSV2TestAccount()
-	account.Platform = PlatformOpenAI
-	account.Extra = map[string]any{}
-	body := []byte(`{"model":"openai/gpt-5.6-luna","store":false,"input":[{"type":"message","role":"user","content":"continue"},{"type":"reasoning","id":"rs_deleted_account","encrypted_content":"stale-cipher-reasoning","summary":"reasoning summary","phase":"reasoning-phase"},{"type":"compaction","id":"cmp_deleted_account","encrypted_content":"stale-cipher-compaction","summary":"compaction summary","phase":"compaction-phase"},{"type":"compaction_summary","id":"cmp_summary_deleted_account","encrypted_content":"stale-cipher-compaction-summary","summary":"compaction-summary summary","phase":"compaction-summary-phase"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"kept"}]}`)
-
-	result, err := svc.Forward(context.Background(), cindyHTTPToWSV2TestContext("/v1/responses"), account, body)
-
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Len(t, upstream.bodies, 2)
-	requireCindyPortableOpaqueStateRemoved(t, upstream.bodies[1])
-}
-
-func TestCanonicalCindyReplaysSelfContainedHistoryOverNonPassthroughHTTP(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	upstream := &httpUpstreamRecorder{responses: []*http.Response{
-		{
-			StatusCode: http.StatusBadRequest,
-			Header:     http.Header{"Content-Type": []string{"application/json"}},
-			Body: io.NopCloser(strings.NewReader(
-				`{"error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}`,
-			)),
-		},
-		{
-			StatusCode: http.StatusOK,
-			Header:     http.Header{"Content-Type": []string{"application/json"}},
-			Body: io.NopCloser(strings.NewReader(
-				`{"id":"resp_recovered","status":"completed","model":"openai/gpt-5.6-luna","output":[],"usage":{"input_tokens":1,"output_tokens":1}}`,
-			)),
-		},
-	}}
-	cfg := &config.Config{}
-	cfg.Security.URLAllowlist.Enabled = false
-	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream, toolCorrector: NewCodexToolCorrector()}
-	account := cindyHTTPToWSV2TestAccount()
-	account.Extra = map[string]any{}
-	body := []byte(`{"model":"openai/gpt-5.6-luna","store":false,"input":[{"type":"message","role":"user","content":"continue"},{"type":"reasoning","id":"rs_deleted_account","encrypted_content":"stale-cipher-reasoning","summary":"reasoning summary","phase":"reasoning-phase"},{"type":"compaction","id":"cmp_deleted_account","encrypted_content":"stale-cipher-compaction","summary":"compaction summary","phase":"compaction-phase"},{"type":"compaction_summary","id":"cmp_summary_deleted_account","encrypted_content":"stale-cipher-compaction-summary","summary":"compaction-summary summary","phase":"compaction-summary-phase"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"kept"}]}`)
-
-	result, err := svc.Forward(context.Background(), cindyHTTPToWSV2TestContext("/v1/responses"), account, body)
-
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Len(t, upstream.bodies, 2)
-	require.Contains(t, string(upstream.bodies[0]), "stale-cipher-compaction-summary")
-	requireCindyPortableOpaqueStateRemoved(t, upstream.bodies[1])
-}
-
-func TestLegacyCindyHTTPToWSV2RetriesSelfContainedHistoryAfterInvalidOpaqueState(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	failed := &openAIWSCaptureConn{events: [][]byte{
-		[]byte(`{"type":"response.failed","response":{"id":"resp_invalid","status":"failed","error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}}`),
-	}}
-	recovered := &openAIWSCaptureConn{events: [][]byte{
-		[]byte(`{"type":"response.completed","response":{"id":"resp_recovered_ws","model":"openai/gpt-5.6-luna","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
-	}}
-	svc, dialer := newCindyHTTPToWSV2TurnStateTestService(t,
-		cindyHTTPToWSV2DialStep{conn: failed},
-		cindyHTTPToWSV2DialStep{conn: recovered},
-	)
-	account := cindyHTTPToWSV2TestAccount()
-	account.Platform = PlatformOpenAI
-	body := []byte(`{"model":"openai/gpt-5.6-luna","store":false,"input":[{"type":"message","role":"user","content":"continue"},{"type":"reasoning","id":"rs_deleted_account","encrypted_content":"stale-cipher-reasoning","summary":"reasoning summary","phase":"reasoning-phase"},{"type":"compaction","id":"cmp_deleted_account","encrypted_content":"stale-cipher-compaction","summary":"compaction summary","phase":"compaction-phase"},{"type":"compaction_summary","id":"cmp_summary_deleted_account","encrypted_content":"stale-cipher-compaction-summary","summary":"compaction-summary summary","phase":"compaction-summary-phase"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"kept"}]}`)
-
-	result, err := svc.Forward(context.Background(), cindyHTTPToWSV2TestContext("/v1/responses"), account, body)
-
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Len(t, dialer.capturedHeaders(), 2, "the cleaned history must be sent on a fresh WS connection")
-	failed.mu.Lock()
-	failedWrites := append([]map[string]any(nil), failed.writes...)
-	failed.mu.Unlock()
-	recovered.mu.Lock()
-	recoveredWrites := append([]map[string]any(nil), recovered.writes...)
-	recovered.mu.Unlock()
-	require.Len(t, failedWrites, 1)
-	require.Len(t, recoveredWrites, 1)
-	recoveredPayload, marshalErr := json.Marshal(recoveredWrites[0])
-	require.NoError(t, marshalErr)
-	requireCindyPortableOpaqueStateRemoved(t, recoveredPayload)
-}
-
-func TestCanonicalCindyHTTPToWSV2RetriesSelfContainedHistoryAfterInvalidOpaqueState(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	failed := &openAIWSCaptureConn{events: [][]byte{
-		[]byte(`{"type":"response.failed","response":{"id":"resp_invalid","status":"failed","error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}}`),
-	}}
-	recovered := &openAIWSCaptureConn{events: [][]byte{
-		[]byte(`{"type":"response.completed","response":{"id":"resp_recovered_ws","model":"openai/gpt-5.6-luna","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
-	}}
-	svc, dialer := newCindyHTTPToWSV2TurnStateTestService(t,
-		cindyHTTPToWSV2DialStep{conn: failed},
-		cindyHTTPToWSV2DialStep{conn: recovered},
-	)
-	body := []byte(`{"model":"openai/gpt-5.6-luna","store":false,"input":[{"type":"message","role":"user","content":"continue"},{"type":"reasoning","id":"rs_deleted_account","encrypted_content":"stale-cipher-reasoning","summary":"reasoning summary","phase":"reasoning-phase"},{"type":"compaction","id":"cmp_deleted_account","encrypted_content":"stale-cipher-compaction","summary":"compaction summary","phase":"compaction-phase"},{"type":"compaction_summary","id":"cmp_summary_deleted_account","encrypted_content":"stale-cipher-compaction-summary","summary":"compaction-summary summary","phase":"compaction-summary-phase"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"kept"}]}`)
-
-	result, err := svc.Forward(
-		context.Background(),
-		cindyHTTPToWSV2TestContext("/v1/responses"),
-		cindyHTTPToWSV2TestAccount(),
-		body,
-	)
-
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Len(t, dialer.capturedHeaders(), 2, "the cleaned history must be sent on a fresh WS connection")
-	failed.mu.Lock()
-	failedWrites := append([]map[string]any(nil), failed.writes...)
-	failed.mu.Unlock()
-	recovered.mu.Lock()
-	recoveredWrites := append([]map[string]any(nil), recovered.writes...)
-	recovered.mu.Unlock()
-	require.Len(t, failedWrites, 1)
-	require.Len(t, recoveredWrites, 1)
-	require.Contains(t, string(payloadAsJSONBytes(failedWrites[0])), "stale-cipher-compaction-summary")
-	requireCindyPortableOpaqueStateRemoved(t, payloadAsJSONBytes(recoveredWrites[0]))
 }
 
 func TestPrepareOpenAICindyStatelessHTTPFallbackSafetyBoundary(t *testing.T) {

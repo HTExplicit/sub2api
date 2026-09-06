@@ -19,7 +19,7 @@ func TestWSPassthroughUsageMeta_InitFromFirstFrame_MappedModelCandidate(t *testi
 	require.Equal(t, "max", *got, "mapped model gpt-5.6-sol should preserve max")
 }
 
-func TestWSPassthroughUsageMeta_InitFromFirstFrame_NonGPT56FallsBackToXHigh(t *testing.T) {
+func TestWSPassthroughUsageMeta_InitFromFirstFrame_PreservesExplicitMax(t *testing.T) {
 	body := []byte(`{"type":"response.create","model":"gpt-5.4","reasoning":{"effort":"max"}}`)
 
 	meta := newOpenAIWSPassthroughUsageMeta("gpt-5.4", body)
@@ -28,7 +28,7 @@ func TestWSPassthroughUsageMeta_InitFromFirstFrame_NonGPT56FallsBackToXHigh(t *t
 
 	got := meta.reasoningEffort.Load()
 	require.NotNil(t, got)
-	require.Equal(t, "xhigh", *got, "non-5.6 model should normalize max to xhigh")
+	require.Equal(t, "max", *got, "usage metadata preserves the actual outbound effort")
 	requested := meta.requestedReasoningEffort.Load()
 	require.NotNil(t, requested)
 	require.Equal(t, "max", *requested, "usage should keep the pre-mapping requested effort")

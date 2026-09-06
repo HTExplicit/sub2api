@@ -38,76 +38,36 @@ func applyOpenAICompatModelNormalization(req *apicompat.AnthropicRequest) {
 		return
 	}
 
-	claudeEffort := openAIReasoningEffortToClaudeOutputEffort(derivedEffort)
-	if claudeEffort == "" {
+	if derivedEffort == "" {
 		return
 	}
 
 	if req.OutputConfig == nil {
 		req.OutputConfig = &apicompat.AnthropicOutputConfig{}
 	}
-	req.OutputConfig.Effort = claudeEffort
+	// This path targets an OpenAI-compatible endpoint, not native Anthropic.
+	// Keep the alias's exact effort: xhigh and max are distinct on modern
+	// models, so round-tripping through an Anthropic max alias loses intent.
+	req.OutputConfig.Effort = derivedEffort
 }
 
 func splitOpenAICompatReasoningModel(model string) (normalizedModel string, reasoningEffort string, ok bool) {
-	trimmed := strings.TrimSpace(model)
-	if trimmed == "" {
-		return "", "", false
+	if base, effort, recognized := resolveOpenAIModelReasoningAlias(model); recognized {
+		return base, effort, true
 	}
-
-	modelID := trimmed
-	if strings.Contains(modelID, "/") {
-		parts := strings.Split(modelID, "/")
-		modelID = parts[len(parts)-1]
-	}
-	modelID = strings.TrimSpace(modelID)
-	if !strings.HasPrefix(strings.ToLower(modelID), "gpt-") {
-		return trimmed, "", false
-	}
-
-	parts := strings.FieldsFunc(strings.ToLower(modelID), func(r rune) bool {
-		switch r {
-		case '-', '_', ' ':
-			return true
-		default:
-			return false
-		}
-	})
-	if len(parts) == 0 {
-		return trimmed, "", false
-	}
-
-	last := strings.NewReplacer("-", "", "_", "", " ", "").Replace(parts[len(parts)-1])
-	switch last {
-	case "none", "minimal":
-	case "low", "medium", "high":
-		reasoningEffort = last
-	case "xhigh", "extrahigh":
-		reasoningEffort = "xhigh"
-	default:
-		return trimmed, "", false
-	}
-
-	return normalizeCodexModel(modelID), reasoningEffort, true
-}
-
-func openAIReasoningEffortToClaudeOutputEffort(effort string) string {
-	switch strings.TrimSpace(effort) {
-	case "low", "medium", "high":
-		return effort
-	case "xhigh":
-		return "max"
-	default:
-		return ""
-	}
+	return strings.TrimSpace(model), "", false
 }
 
 // openAICompatAnthropicReasoningEffort resolves the effort emitted by the
 // Anthropic bridge after the final upstream model is known. Anthropic's max is
-// normally translated to OpenAI xhigh, but GPT-5.6 accepts the original max
-// value on Responses and Chat Completions.
+// translated to xhigh on the legacy scale. Only a destination with a known
+// distinct max level may retain max; native parameter normalization is not a
+// capability check.
 func openAICompatAnthropicReasoningEffort(req *apicompat.AnthropicRequest, upstreamModel, convertedEffort string) string {
 	if req == nil || req.OutputConfig == nil || !strings.EqualFold(strings.TrimSpace(req.OutputConfig.Effort), "max") {
+		return convertedEffort
+	}
+	if !supportsOpenAIReasoningEffortMax(upstreamModel) {
 		return convertedEffort
 	}
 	if normalized := normalizeOpenAIReasoningEffortForModel(req.OutputConfig.Effort, upstreamModel); normalized != "" {

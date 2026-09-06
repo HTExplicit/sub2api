@@ -146,7 +146,7 @@ func TestAnthropicToResponses_ToolUse(t *testing.T) {
 	assert.Equal(t, "Sunny, 72°F", items[3].Output)
 }
 
-func TestAnthropicToResponses_ThinkingWithoutSignatureIgnored(t *testing.T) {
+func TestAnthropicToResponses_ThinkingWithoutSignatureBecomesSummary(t *testing.T) {
 	req := &AnthropicRequest{
 		Model:     "gpt-5.2",
 		MaxTokens: 1024,
@@ -162,12 +162,15 @@ func TestAnthropicToResponses_ThinkingWithoutSignatureIgnored(t *testing.T) {
 
 	var items []ResponsesInputItem
 	require.NoError(t, json.Unmarshal(resp.Input, &items))
-	// user + assistant(text only, thinking without signature ignored) + user = 3
-	require.Len(t, items, 3)
-	assert.Equal(t, "assistant", items[1].Role)
+	// user + reasoning(summary only) + assistant(text) + user = 4
+	require.Len(t, items, 4)
+	assert.Equal(t, "reasoning", items[1].Type)
+	assert.Empty(t, items[1].EncryptedContent)
+	assert.Equal(t, []ResponsesSummary{{Type: "summary_text", Text: "deep thought"}}, items[1].Summary)
+	assert.Equal(t, "assistant", items[2].Role)
 	// Assistant content should only have text, not thinking.
 	var parts []ResponsesContentPart
-	require.NoError(t, json.Unmarshal(items[1].Content, &parts))
+	require.NoError(t, json.Unmarshal(items[2].Content, &parts))
 	require.Len(t, parts, 1)
 	assert.Equal(t, "output_text", parts[0].Type)
 	assert.Equal(t, "Hi!", parts[0].Text)
@@ -193,6 +196,7 @@ func TestAnthropicToResponses_ThinkingSignatureBecomesReasoning(t *testing.T) {
 	require.GreaterOrEqual(t, len(items), 4)
 	assert.Equal(t, "reasoning", items[1].Type)
 	assert.Equal(t, "enc-rs-1", items[1].EncryptedContent)
+	assert.Equal(t, []ResponsesSummary{{Type: "summary_text", Text: "plan"}}, items[1].Summary)
 	assert.Equal(t, "assistant", items[2].Role)
 	assert.Equal(t, "function_call", items[3].Type)
 }
