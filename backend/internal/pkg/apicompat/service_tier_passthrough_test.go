@@ -146,6 +146,8 @@ func TestChatCompletionsChunkToResponsesEvents_PreservesServiceTier(t *testing.T
 	require.Equal(t, "flex", created.Response.ServiceTier)
 
 	// 终止事件同样携带。
+	state.FinishReason = "stop"
+	_, _ = state.Text.WriteString("fixture")
 	final := FinalizeChatCompletionsResponsesStream(state)
 	completed := findEvent(final, "response.completed")
 	require.NotNil(t, completed)

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 )
@@ -21,21 +22,24 @@ const openAIRawStreamTruncatedUpstreamMessage = "Upstream Chat Completions strea
 // `HTTP 200 + usage 0/0`：客户端拿到半截回答，网关既不报错也不计入 SLA，
 // Ops 侧完全不可见。
 //
-// 三种终止信号任一出现即认为上游"讲完了"，只是尾巴可能丢失，不作截断处理：
-//
-//   - [DONE]        —— OpenAI CC 协议标准哨兵
-//   - usage chunk   —— include_usage 生效时的末尾用量帧（网关强制打开）
-//   - finish_reason —— 生成正常结束（stop/length/tool_calls/...）
-//
-// 只认 [DONE] 会误伤那些跑完最后一帧就直接 EOF 的兼容上游；只认 usage 会误伤
-// 不支持 include_usage 的上游。三者取并集，把误判压到"上游确实在生成中途被切断"。
+// Only each observed choice's finish_reason establishes semantic termination.
+// Usage and [DONE] are accounting/transport signals, not substitutes for it.
 type openAIRawStreamTerminalState struct {
 	// sawDataLine 表示上游至少发过一行 `data:`，即响应确实是 SSE 语义流。
-	// 非 SSE 响应体（上游对 stream 请求返回裸 JSON）不参与截断判定，保持既有透传行为。
 	sawDataLine     bool
 	sawDone         bool
 	sawUsage        bool
 	sawFinishReason bool
+	choices         map[int64]bool
+	tools           map[int64]map[int64]*openAIRawFunctionArguments
+	toolChoices     map[int64]bool
+	err             error
+}
+
+type openAIRawFunctionArguments struct {
+	hasID, hasName bool
+	kind           string
+	arguments      strings.Builder
 }
 
 // ObserveDataLine 从单行 SSE `data:` 载荷中提取终止信号。payload 需已 TrimSpace。
@@ -51,31 +55,73 @@ func (t *openAIRawStreamTerminalState) ObserveDataLine(payload string) {
 	if usage := gjson.Get(payload, "usage"); usage.Exists() && usage.IsObject() {
 		t.sawUsage = true
 	}
-	if t.sawFinishReason {
-		return
-	}
 	for _, choice := range gjson.Get(payload, "choices").Array() {
-		// finish_reason 为 null 时 String() 返回空串，不算终止。
-		if strings.TrimSpace(choice.Get("finish_reason").String()) != "" {
-			t.sawFinishReason = true
-			return
+		if t.choices == nil {
+			t.choices = make(map[int64]bool)
 		}
+		index := choice.Get("index").Int()
+		if _, exists := t.choices[index]; !exists {
+			t.choices[index] = false
+		}
+		for _, call := range choice.Get("delta.tool_calls").Array() {
+			if t.toolChoices == nil {
+				t.toolChoices = make(map[int64]bool)
+			}
+			t.toolChoices[index] = true
+			if t.tools == nil {
+				t.tools = make(map[int64]map[int64]*openAIRawFunctionArguments)
+			}
+			if t.tools[index] == nil {
+				t.tools[index] = make(map[int64]*openAIRawFunctionArguments)
+			}
+			toolIndex := call.Get("index").Int()
+			tool := t.tools[index][toolIndex]
+			if tool == nil {
+				tool = &openAIRawFunctionArguments{kind: "function"}
+				t.tools[index][toolIndex] = tool
+			}
+			if kind := call.Get("type").String(); kind != "" {
+				tool.kind = kind
+			}
+			if tool.kind != "function" {
+				continue // Non-function tools may intentionally have non-JSON input.
+			}
+			tool.hasID = tool.hasID || call.Get("id").String() != ""
+			tool.hasName = tool.hasName || call.Get("function.name").String() != ""
+			_, _ = tool.arguments.WriteString(call.Get("function.arguments").String())
+		}
+		if reason := choice.Get("finish_reason").String(); reason != "" {
+			terminal := apicompat.ChatCompletionTerminalForReason(reason)
+			t.choices[index] = terminal.Error == nil
+			if terminal.Status == "completed" {
+				invalid := reason == "tool_calls" && !t.toolChoices[index]
+				for _, tool := range t.tools[index] {
+					if tool.kind != "function" {
+						continue
+					}
+					invalid = invalid || !tool.hasID || !tool.hasName || !json.Valid([]byte(tool.arguments.String()))
+				}
+				if invalid {
+					t.err = ccStreamProtocolFailure("upstream_invalid_tool_call", "Upstream returned an incomplete or invalid tool call")
+				}
+			}
+		}
+	}
+	t.sawFinishReason = len(t.choices) > 0
+	for _, finished := range t.choices {
+		t.sawFinishReason = t.sawFinishReason && finished
 	}
 }
 
 // Terminated 表示上游给出过终止信号。
 func (t *openAIRawStreamTerminalState) Terminated() bool {
-	return t != nil && (t.sawDone || t.sawUsage || t.sawFinishReason)
+	return t != nil && t.err == nil && t.sawFinishReason
 }
 
-// IsTruncated 判定上游是否在任何终止信号之前结束。clientOutputStarted 用于放行
-// 非 SSE 响应体：那类响应本就没有 data: 行，既有行为是原样透传，不在本次判定范围内；
-// 但"一个字节都没收到"的空 200 依然算截断。
-func (t *openAIRawStreamTerminalState) IsTruncated(clientOutputStarted bool) bool {
-	if t == nil || t.Terminated() {
-		return false
-	}
-	return t.sawDataLine || !clientOutputStarted
+// A stream request receiving no semantic terminal (including a non-SSE body)
+// is incomplete regardless of whether a prefix was already forwarded.
+func (t *openAIRawStreamTerminalState) IsTruncated(_ bool) bool {
+	return t != nil && !t.Terminated()
 }
 
 // newOpenAIRawStreamTruncatedFailoverError 处理"上游截断且尚未向客户端写出任何

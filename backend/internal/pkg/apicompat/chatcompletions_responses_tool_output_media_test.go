@@ -160,27 +160,19 @@ func TestResponsesToolOutputMedia_InterleavedMessagesFollowMediaBatch(t *testing
 	require.JSONEq(t, `"continue"`, string(messages[4].Content))
 }
 
-func TestResponsesToolOutputMedia_DropsOrphanAndUnansweredCallMedia(t *testing.T) {
+func TestResponsesToolOutputMedia_RejectsOrphanAndUnansweredCallMedia(t *testing.T) {
 	t.Run("orphan", func(t *testing.T) {
-		messages := convertToolOutputMedia(t, `[
+		requireInvalidResponsesToolHistory(t, `[
 			{"type":"function_call_output","call_id":"call_ghost","output":[{"type":"input_image","image_url":"data:image/png;base64,AQID"}]}
 		]`)
-		require.Empty(t, messages)
 	})
 
 	t.Run("unanswered parallel call", func(t *testing.T) {
-		messages := convertToolOutputMedia(t, `[
+		requireInvalidResponsesToolHistory(t, `[
 			{"type":"function_call","call_id":"call_A","name":"view_image","arguments":"{}"},
 			{"type":"function_call","call_id":"call_B","name":"view_image","arguments":"{}"},
 			{"type":"function_call_output","call_id":"call_A","output":[{"type":"input_image","image_url":"data:image/png;base64,AQID"}]}
 		]`)
-
-		require.Len(t, messages, 3)
-		require.Len(t, messages[0].ToolCalls, 1)
-		require.Equal(t, "call_A", messages[0].ToolCalls[0].ID)
-		parts := chatContentParts(t, messages[2])
-		require.Len(t, parts, 2)
-		require.NotContains(t, string(messages[2].Content), "call_B")
 	})
 }
 
@@ -231,29 +223,21 @@ func TestResponsesToolOutputMedia_PreservesMediaFreeOutputBytes(t *testing.T) {
 	}
 }
 
-func TestResponsesToolOutputMedia_DuplicateCallIDIsLastWins(t *testing.T) {
+func TestResponsesToolOutputMedia_DuplicateCallIDIsRejected(t *testing.T) {
 	t.Run("later media replaces earlier media", func(t *testing.T) {
-		messages := convertToolOutputMedia(t, `[
+		requireInvalidResponsesToolHistory(t, `[
 			{"type":"function_call","call_id":"call_image","name":"view_image","arguments":"{}"},
 			{"type":"function_call_output","call_id":"call_image","output":[{"type":"input_image","image_url":{"url":"https://example.com/first.png"}}]},
 			{"type":"function_call_output","call_id":"call_image","output":[{"type":"input_image","image_url":{"url":"https://example.com/last.png"}}]}
 		]`)
-
-		require.Len(t, messages, 3)
-		require.NotContains(t, string(messages[1].Content), "first.png")
-		require.NotContains(t, string(messages[2].Content), "first.png")
-		require.Contains(t, string(messages[2].Content), "last.png")
 	})
 
 	t.Run("later text clears earlier media", func(t *testing.T) {
-		messages := convertToolOutputMedia(t, `[
+		requireInvalidResponsesToolHistory(t, `[
 			{"type":"function_call","call_id":"call_image","name":"view_image","arguments":"{}"},
 			{"type":"function_call_output","call_id":"call_image","output":[{"type":"input_image","image_url":"data:image/png;base64,AQID"}]},
 			{"type":"function_call_output","call_id":"call_image","output":"latest text"}
 		]`)
-
-		require.Len(t, messages, 2)
-		require.Equal(t, "latest text", chatToolContentString(t, messages[1]))
 	})
 }
 

@@ -308,15 +308,20 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	var firstTokenMs *int
 	clientDisconnected := false
 	clientOutputStarted := false
+	semanticOutputReady := false
+	var protocolErr error
 	pendingLines := make([]string, 0, 8)
 	refusalDetector := newOpenAIChatSilentRefusalDetector(requestBodyLen)
 	var terminal openAIRawStreamTerminalState
 
 	writeLine := func(line string) {
+		if c.Request.Context().Err() != nil {
+			clientDisconnected = true
+		}
 		if clientDisconnected {
 			return
 		}
-		if !clientOutputStarted && !refusalDetector.ShouldReleaseClientOutput() {
+		if !clientOutputStarted && (!semanticOutputReady || !refusalDetector.ShouldReleaseClientOutput()) {
 			pendingLines = append(pendingLines, line)
 			return
 		}
@@ -351,8 +356,25 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		refusalDetector.ObserveSSELine(line)
 		if payload, ok := extractOpenAISSEDataLine(line); ok {
 			trimmedPayload := strings.TrimSpace(payload)
+			if trimmedPayload == "" {
+				continue
+			}
 			terminal.ObserveDataLine(trimmedPayload)
+			if trimmedPayload == "[DONE]" && !terminal.Terminated() {
+				protocolErr = ccStreamProtocolFailure("upstream_incomplete_response", "Upstream stream ended before a completion finish reason")
+				break
+			}
 			if trimmedPayload != "[DONE]" {
+				chunk, err := s.decodeCCStreamChunk(c, account, resp.Header, trimmedPayload)
+				if err != nil {
+					protocolErr = err
+					break
+				}
+				if terminal.err != nil {
+					protocolErr = terminal.err
+					break
+				}
+				semanticOutputReady = semanticOutputReady || chatChunkStartsResponsesOutput(chunk) || terminal.Terminated()
 				observer.ObserveOpenAI([]byte(payload), strings.TrimSpace(gjson.Get(payload, "type").String()))
 				usageOnlyChunk := isOpenAIChatUsageOnlyStreamChunk(payload)
 				if u := extractCCStreamUsage(payload); u != nil {
@@ -362,6 +384,14 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 					elapsed := int(time.Since(startTime).Milliseconds())
 					firstTokenMs = &elapsed
 				}
+			}
+			if trimmedPayload == "[DONE]" {
+				writeLine(line)
+				writeLine("")
+				if !clientDisconnected && clientOutputStarted {
+					c.Writer.Flush()
+				}
+				break
 			}
 		}
 
@@ -393,10 +423,14 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 			Stream:                        true,
 			Duration:                      time.Since(startTime),
 			FirstTokenMs:                  firstTokenMs,
+			ClientDisconnect:              clientDisconnected || c.Request.Context().Err() != nil,
 		}
 	}
 
 	scanErr := scanner.Err()
+	if protocolErr != nil {
+		scanErr = protocolErr
+	}
 	if scanErr != nil && !errors.Is(scanErr, context.Canceled) && !errors.Is(scanErr, context.DeadlineExceeded) {
 		logger.L().Warn("openai chat_completions raw: stream read error",
 			zap.Error(scanErr),
@@ -404,16 +438,14 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		)
 	}
 
-	// 客户端取消/断开后上游读失败与上游截断不可区分（取消会连带取消上游请求），
-	// 沿用既有语义：按已收到的用量正常收尾计费，不判为上游故障。
-	clientAborted := clientDisconnected ||
-		errors.Is(scanErr, context.Canceled) ||
-		errors.Is(scanErr, context.DeadlineExceeded)
+	// Only the client context or a failed downstream write proves cancellation.
+	// An upstream deadline while the client is still connected is a real failure.
+	clientAborted := clientDisconnected || c.Request.Context().Err() != nil
 
 	// 上游在任何终止信号之前结束：连接被 reset（scanErr != nil）或干净 EOF。
 	// 两者都不能再记成功——此前统一返回 nil error，把上游截断伪装成
 	// `HTTP 200 + usage 0/0`，客户端收到半截回答且 Ops 侧完全无感。
-	if !clientAborted && terminal.IsTruncated(clientOutputStarted) {
+	if !clientAborted && (scanErr != nil || terminal.IsTruncated(clientOutputStarted)) {
 		cause := scanErr
 		if cause == nil {
 			cause = ErrOpenAIUpstreamStreamTruncated
@@ -427,16 +459,25 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 			zap.Bool("client_output_started", clientOutputStarted),
 		)
 		if !clientOutputStarted {
+			if protocolErr != nil {
+				recordOpenAIRawStreamTruncation(c, account, requestID, cause, "failover")
+				return nil, protocolErr
+			}
 			// 响应头尚未提交：可以透明换号重试，客户端不会看到半截流。
 			return nil, newOpenAIRawStreamTruncatedFailoverError(c, account, requestID, cause)
 		}
 		// 已写出语义字节：无法再 failover，改为带类型的上游错误。handler 会据此
 		// 补发 SSE error 帧并把本次请求计入 SLA 失败。
 		recordOpenAIRawStreamTruncation(c, account, requestID, cause, "http_error")
+		if protocolErr != nil {
+			// The original error can be a pre-output failover candidate. Never
+			// expose it through errors.As once semantic output has been sent.
+			cause = fmt.Errorf("upstream protocol failure: %v", cause)
+		}
 		return resultWithUsage(), newOpenAIUpstreamStreamReadError(cause)
 	}
 
-	if scanErr == nil && !clientDisconnected && !clientOutputStarted {
+	if scanErr == nil && !clientAborted && !clientOutputStarted {
 		if refusalDetector.IsSilentRefusal() {
 			return nil, newOpenAISilentRefusalFailoverError(c, account, requestID)
 		}

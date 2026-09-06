@@ -184,7 +184,7 @@ func TestForwardResponses_ForceChatCompletionsRoutesStreamingToChatCompletions(t
 	require.NotNil(t, result.FirstTokenMs)
 }
 
-func TestForwardResponses_ChatFallbackRejectsInvalidToolArgumentsAtOutputLimit(t *testing.T) {
+func TestForwardResponses_ChatFallbackMarksTruncatedToolsIncomplete(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	body := []byte(`{"model":"deepseek-v4-flash","input":"run the command","stream":true}`)
@@ -212,16 +212,17 @@ func TestForwardResponses_ChatFallbackRejectsInvalidToolArgumentsAtOutputLimit(t
 	}
 
 	result, err := svc.Forward(context.Background(), c, forceChatResponsesFallbackAccount(), body)
-	require.ErrorContains(t, err, "invalid JSON")
+	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, 4, result.Usage.InputTokens)
 	require.Equal(t, 6492, result.Usage.OutputTokens)
 	require.NotContains(t, rec.Body.String(), "response.function_call_arguments.done")
 	require.NotContains(t, rec.Body.String(), "response.output_item.done")
-	require.NotContains(t, rec.Body.String(), "data: [DONE]")
+	require.Contains(t, rec.Body.String(), "event: response.incomplete")
+	require.NotContains(t, rec.Body.String(), "event: response.completed")
 }
 
-func TestForwardResponses_DeepSeekReasoningOnlyStreamProducesVisibleText(t *testing.T) {
+func TestForwardResponses_ReasoningOnlyStreamPreservesReasoningWithoutAnswer(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	body := []byte(`{"model":"deepseek-reasoner","input":"hello","stream":true}`)
@@ -254,7 +255,8 @@ func TestForwardResponses_DeepSeekReasoningOnlyStreamProducesVisibleText(t *test
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.True(t, result.Stream)
-	require.Contains(t, rec.Body.String(), "event: response.output_text.delta")
+	require.NotContains(t, rec.Body.String(), "event: response.output_text.delta")
+	require.Contains(t, rec.Body.String(), "event: response.reasoning_summary_text.delta")
 	require.Contains(t, rec.Body.String(), `"delta":"visible fallback"`)
 	require.Contains(t, rec.Body.String(), `"status":"incomplete"`)
 	require.Contains(t, rec.Body.String(), "data: [DONE]")

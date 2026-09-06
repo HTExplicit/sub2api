@@ -875,11 +875,17 @@ func stripOpenAILegacyResponsesBeta(headers http.Header) {
 }
 
 func shouldFailoverOpenAIPassthroughResponse(account *Account, statusCode int, responseBody []byte) bool {
+	if isOpenAIRequestBudgetRejection(account, statusCode, responseBody) {
+		return true
+	}
 	if hit, _, _ := detectOpenAICyberPolicy(responseBody); hit {
 		return false
 	}
 	if isOpenAIContextWindowError("", responseBody) {
 		return false
+	}
+	if isOpenAIReportedUpstreamFailure(statusCode, responseBody) {
+		return true
 	}
 	if account != nil && IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
 		isOpenAIModelNotSupportedError(statusCode, "", responseBody) {

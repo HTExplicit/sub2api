@@ -90,7 +90,7 @@ func TestForwardAsRawChatCompletions_ForcesStreamUsageUpstreamAndPassesUsageDown
 	c.Request.Header.Set("Content-Type", "application/json")
 
 	upstreamBody := strings.Join([]string{
-		`data: {"id":"chatcmpl_1","object":"chat.completion.chunk","model":"gpt-5.4","choices":[{"index":0,"delta":{"content":"ok"}}]}`,
+		`data: {"id":"chatcmpl_1","object":"chat.completion.chunk","model":"gpt-5.4","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}`,
 		"",
 		`data: {"id":"chatcmpl_1","object":"chat.completion.chunk","model":"gpt-5.4","choices":[],"usage":{"prompt_tokens":9,"completion_tokens":4,"total_tokens":13,"prompt_tokens_details":{"cached_tokens":3}}}`,
 		"",
@@ -373,7 +373,7 @@ func TestForwardAsRawChatCompletions_PreservesDeepSeekReasoningContentStreaming(
 		"",
 		`data: {"id":"chatcmpl_reasoning","object":"chat.completion.chunk","model":"deepseek-reasoner","choices":[{"index":0,"delta":{"reasoning_content":"think first"},"finish_reason":null}]}`,
 		"",
-		`data: {"id":"chatcmpl_reasoning","object":"chat.completion.chunk","model":"deepseek-reasoner","choices":[{"index":0,"delta":{"content":"final answer"},"finish_reason":null}]}`,
+		`data: {"id":"chatcmpl_reasoning","object":"chat.completion.chunk","model":"deepseek-reasoner","choices":[{"index":0,"delta":{"content":"final answer"},"finish_reason":"stop"}]}`,
 		"",
 		`data: {"id":"chatcmpl_reasoning","object":"chat.completion.chunk","model":"deepseek-reasoner","choices":[],"usage":{"prompt_tokens":3,"completion_tokens":5,"total_tokens":8}}`,
 		"",
@@ -507,7 +507,7 @@ func TestForwardAsRawChatCompletions_SilentRefusalToolCallsExempt(t *testing.T) 
 	upstreamBody := strings.Join([]string{
 		`data: {"id":"chatcmpl_tool","object":"chat.completion.chunk","model":"gpt-5.5","choices":[{"index":0,"delta":{"role":"assistant"}}]}`,
 		"",
-		`data: {"id":"chatcmpl_tool","object":"chat.completion.chunk","model":"gpt-5.5","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"lookup","arguments":""}}]}}]}`,
+		`data: {"id":"chatcmpl_tool","object":"chat.completion.chunk","model":"gpt-5.5","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{}"}}]}}]}`,
 		"",
 		`data: {"id":"chatcmpl_tool","object":"chat.completion.chunk","model":"gpt-5.5","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`,
 		"",
@@ -841,9 +841,8 @@ func TestForwardAsRawChatCompletions_StreamReadErrorAfterOutputFailsRequest(t *t
 	require.Contains(t, rec.Body.String(), `"content":"partial"`)
 }
 
-// 边界：缺 [DONE] 但收到了 usage 帧 —— 生成已完整，只是尾巴丢失。必须继续按成功
-// 计费，否则会误伤那些跑完就直接 EOF 的兼容上游并白送 token。
-func TestForwardAsRawChatCompletions_MissingDoneWithUsageStillSucceeds(t *testing.T) {
+// Usage still belongs to the forwarded result, but cannot prove completion.
+func TestForwardAsRawChatCompletions_UsageWithoutFinishDoesNotProveCompletion(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	body := []byte(`{"model":"deepseek-v4-pro","messages":[{"role":"user","content":"hello"}],"stream":true}`)
@@ -870,7 +869,7 @@ func TestForwardAsRawChatCompletions_MissingDoneWithUsageStillSucceeds(t *testin
 	}
 
 	result, err := svc.forwardAsRawChatCompletions(context.Background(), c, rawChatCompletionsTestAccount(), body, "")
-	require.NoError(t, err)
+	require.Error(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, 11, result.Usage.InputTokens)
 	require.Equal(t, 6, result.Usage.OutputTokens)
@@ -958,11 +957,13 @@ func TestForwardAsRawChatCompletions_ClientDisconnectTruncationStillBills(t *tes
 // 客户端取消会连带取消上游请求，上游读因此报 context.Canceled：同样不判为上游截断。
 func TestForwardAsRawChatCompletions_ClientCancelTruncationStillBills(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	clientCtx, cancelClient := context.WithCancel(context.Background())
+	cancelClient()
 
 	body := []byte(`{"model":"deepseek-v4-pro","messages":[{"role":"user","content":"hello"}],"stream":true}`)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body)).WithContext(clientCtx)
 	c.Request.Header.Set("Content-Type", "application/json")
 
 	upstream := &httpUpstreamRecorder{resp: &http.Response{
@@ -995,16 +996,16 @@ func TestOpenAIRawStreamTerminalState(t *testing.T) {
 		wantTruncated  bool
 	}{
 		{
-			name:           "done sentinel",
-			payloads:       []string{`{"choices":[{"delta":{"content":"a"}}]}`, "[DONE]"},
-			clientStarted:  true,
-			wantTerminated: true,
+			name:          "done sentinel alone",
+			payloads:      []string{`{"choices":[{"delta":{"content":"a"}}]}`, "[DONE]"},
+			clientStarted: true,
+			wantTruncated: true,
 		},
 		{
-			name:           "usage chunk",
-			payloads:       []string{`{"choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1}}`},
-			clientStarted:  true,
-			wantTerminated: true,
+			name:          "usage chunk alone",
+			payloads:      []string{`{"choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1}}`},
+			clientStarted: true,
+			wantTruncated: true,
 		},
 		{
 			name:           "finish reason",
@@ -1025,10 +1026,16 @@ func TestOpenAIRawStreamTerminalState(t *testing.T) {
 			wantTruncated: true,
 		},
 		{
-			// 上游对 stream 请求回了裸 JSON：无 data: 行，既有行为是原样透传。
 			name:          "non-sse body already forwarded",
 			payloads:      nil,
 			clientStarted: true,
+			wantTruncated: true,
+		},
+		{
+			name:          "all choices must terminate",
+			payloads:      []string{`{"choices":[{"index":0,"delta":{},"finish_reason":"stop"},{"index":1,"delta":{"content":"partial"},"finish_reason":null}]}`},
+			clientStarted: true,
+			wantTruncated: true,
 		},
 		{
 			name:          "no bytes at all",
@@ -1062,7 +1069,7 @@ func TestForwardAsRawChatCompletions_ClientDisconnectDrainsUsage(t *testing.T) {
 	c.Request.Header.Set("Content-Type", "application/json")
 
 	upstreamBody := strings.Join([]string{
-		`data: {"id":"chatcmpl_1","object":"chat.completion.chunk","model":"gpt-5.4","choices":[{"index":0,"delta":{"content":"ok"}}]}`,
+		`data: {"id":"chatcmpl_1","object":"chat.completion.chunk","model":"gpt-5.4","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}`,
 		"",
 		`data: {"id":"chatcmpl_1","object":"chat.completion.chunk","model":"gpt-5.4","choices":[],"usage":{"prompt_tokens":17,"completion_tokens":8,"total_tokens":25,"prompt_tokens_details":{"cached_tokens":6}}}`,
 		"",

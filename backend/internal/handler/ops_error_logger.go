@@ -20,9 +20,11 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 const (
@@ -518,6 +520,12 @@ func markOpsRoutingCapacityLimitedIfNoAvailable(c *gin.Context, err error) {
 		return
 	}
 	markOpsRoutingCapacityLimited(c)
+	if details := service.GetOpenAISelectionDiagnostics(err); details != nil && c != nil && c.Request != nil {
+		if details.RetryAfterSeconds > 0 && !c.Writer.Written() {
+			c.Header("Retry-After", strconv.Itoa(details.RetryAfterSeconds))
+		}
+		logger.FromContext(c.Request.Context()).Warn("gateway.selection_unavailable", zap.Any("selection", details))
+	}
 }
 
 func isOpsRoutingCapacityLimited(c *gin.Context) bool {
