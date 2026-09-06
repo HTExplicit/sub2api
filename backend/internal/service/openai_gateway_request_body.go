@@ -1262,17 +1262,6 @@ func extractOpenAIReasoningEffortFromBody(body []byte, _ ...string) *string {
 	return &value
 }
 
-func explicitRequestedReasoningEffortFromBody(body []byte) string {
-	raw := strings.TrimSpace(gjson.GetBytes(body, "reasoning.effort").String())
-	if raw == "" {
-		raw = strings.TrimSpace(gjson.GetBytes(body, "reasoning_effort").String())
-	}
-	if raw == "" {
-		raw = strings.TrimSpace(gjson.GetBytes(body, "output_config.effort").String())
-	}
-	return raw
-}
-
 // CanonicalRequestedReasoningEffort extracts the client-requested effort before
 // group policy rewriting or deliberate endpoint translation.
 // Empty or unknown values return nil; supported explicit values stay distinct.

@@ -497,8 +497,7 @@ func TestOpenAIPassthroughCompactFallbackSecondStreamFailureUsesStandardErrorPat
 	account, proxy := compactFallbackManagedProxyAccount()
 
 	result, err := svc.forwardOpenAIPassthrough(
-		context.Background(), c, account, body, body, "gpt-5.5", false, nil, true, time.Now(),
-	)
+		context.Background(), c, account, body, body, "gpt-5.5", false, true, time.Now())
 
 	require.Error(t, err)
 	require.Nil(t, result)

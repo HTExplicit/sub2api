@@ -722,9 +722,6 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					c.Request.Header.Set(openAIWSTurnStateHeader, turnState)
 				}
 			}
-			if c != nil && sessionHash != "" {
-				c.Set(openAIWSIngressSessionHashContextKey, sessionHash)
-			}
 			bridgePayloadRaw := currentBridgePayload.payloadRaw
 			bridgePayloadBytes := currentBridgePayload.payloadBytes
 			toolOutputCoverage := AnalyzeToolCallOutputContextCoverageBytes(currentBridgePayload.payloadRaw)

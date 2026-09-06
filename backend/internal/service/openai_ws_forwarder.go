@@ -239,17 +239,6 @@ func isOpenAIWSIngressPreviousResponseNotFound(err error) bool {
 	return !turnErr.wroteDownstream
 }
 
-func isOpenAIWSIngressInvalidEncryptedContent(err error) bool {
-	var turnErr *openAIWSIngressTurnError
-	if !errors.As(err, &turnErr) || turnErr == nil {
-		return false
-	}
-	if strings.TrimSpace(turnErr.stage) != openAIWSIngressStageInvalidEncryptedContent {
-		return false
-	}
-	return !turnErr.wroteDownstream
-}
-
 // NewOpenAIWSClientCloseError 创建一个客户端 WS 关闭错误。
 func NewOpenAIWSClientCloseError(statusCode coderws.StatusCode, reason string, err error) error {
 	return &OpenAIWSClientCloseError{

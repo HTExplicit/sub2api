@@ -1,3 +1,6 @@
+// Historical lineage helpers are retained only as regression fixtures. New
+// requests must preserve their original state even if an old marker exists.
+// No state-erasing lineage operation is part of the production forwarding path.
 package service
 
 import (
@@ -6,7 +9,6 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 )
 
@@ -17,12 +19,6 @@ import (
 // 重连"。这里按会话记录已被上游拒绝过的 encrypted_content 摘要
 // （OpenAIWSStateStore，带 TTL 与容量自保护）；后续请求进场时仅剥离摘要命中
 // 的项，新生成的密文摘要不同，不会被误删。
-
-const openAIWSFallbackReasonInvalidEncryptedContent = "invalid_encrypted_content"
-
-// openAIWSIngressSessionHashContextKey 在 gin context 中携带 ingress 会话哈希，
-// 供 HTTP bridge turn 内的 lineage 记录复用同一会话键。
-const openAIWSIngressSessionHashContextKey = "openai_ws_ingress_session_hash"
 
 func openAIEncryptedContentDigest(encrypted string) string {
 	sum := sha256.Sum256([]byte(encrypted))
@@ -259,95 +255,4 @@ func stripOpenAIInvalidEncryptedContentRaw(payload []byte, invalid map[string]st
 		return payload, 0, err
 	}
 	return rebuilt, stripped, nil
-}
-
-// markOpenAIWSInvalidEncryptedContentLineage 把本次被上游拒绝的密文摘要写入
-// 会话 lineage。digests 须在剥离前收集。
-func (s *OpenAIGatewayService) markOpenAIWSInvalidEncryptedContentLineage(groupID int64, sessionHash string, digests []string) {
-	if s == nil || len(digests) == 0 || strings.TrimSpace(sessionHash) == "" {
-		return
-	}
-	stateStore := s.getOpenAIWSStateStore()
-	if stateStore == nil {
-		return
-	}
-	stateStore.MarkSessionInvalidEncryptedContent(groupID, sessionHash, digests, s.openAIWSSessionStickyTTL())
-}
-
-// sessionInvalidEncryptedContentDigests 返回会话已知失效密文摘要；全局无记录
-// 时（常态）零成本返回 nil。
-func (s *OpenAIGatewayService) sessionInvalidEncryptedContentDigests(groupID int64, sessionHash string) map[string]struct{} {
-	if s == nil || strings.TrimSpace(sessionHash) == "" {
-		return nil
-	}
-	stateStore := s.getOpenAIWSStateStore()
-	if stateStore == nil || !stateStore.HasAnySessionInvalidEncryptedContent() {
-		return nil
-	}
-	return stateStore.GetSessionInvalidEncryptedContentDigests(groupID, sessionHash)
-}
-
-// openAIWSLineageSessionHashFromContext 取 lineage 会话键：优先 ingress 循环
-// 写入的会话哈希（与读取侧同键），否则按请求体派生。
-func (s *OpenAIGatewayService) openAIWSLineageSessionHashFromContext(c *gin.Context, body []byte) string {
-	if c != nil {
-		if fromCtx := strings.TrimSpace(c.GetString(openAIWSIngressSessionHashContextKey)); fromCtx != "" {
-			return fromCtx
-		}
-	}
-	return s.GenerateSessionHash(c, body)
-}
-
-// markOpenAIWSInvalidEncryptedContentLineageFromPayload 在上游以
-// invalid_encrypted_content 拒绝 payload 时记录其密文摘要并输出观测日志。
-func (s *OpenAIGatewayService) markOpenAIWSInvalidEncryptedContentLineageFromPayload(
-	c *gin.Context,
-	payload []byte,
-	logKey string,
-	accountID int64,
-	turn int,
-) {
-	digests := collectOpenAIEncryptedContentDigestsRaw(payload)
-	if len(digests) == 0 {
-		return
-	}
-	s.markOpenAIWSInvalidEncryptedContentLineage(
-		getOpenAIGroupIDFromContext(c),
-		s.openAIWSLineageSessionHashFromContext(c, payload),
-		digests,
-	)
-	logOpenAIWSModeInfo("%s account_id=%d turn=%d digests=%d", logKey, accountID, turn, len(digests))
-}
-
-// stripSessionInvalidEncryptedContentLogged 对 payload 执行会话失效密文剥离并
-// 输出观测日志（logKey / logKey+"_skip"），返回（可能已替换的）payload 与剥离
-// 项数；未命中或剥离失败时原样返回。
-func (s *OpenAIGatewayService) stripSessionInvalidEncryptedContentLogged(
-	payload []byte,
-	invalid map[string]struct{},
-	logKey string,
-	accountID int64,
-	turn int,
-) ([]byte, int) {
-	strippedPayload, strippedCount, stripErr := stripOpenAIInvalidEncryptedContentRaw(payload, invalid)
-	if stripErr != nil {
-		logOpenAIWSModeInfo(
-			"%s_skip account_id=%d turn=%d reason=strip_error cause=%s",
-			logKey,
-			accountID,
-			turn,
-			truncateOpenAIWSLogValue(stripErr.Error(), openAIWSLogValueMaxLen),
-		)
-		return payload, 0
-	}
-	if strippedCount > 0 {
-		logOpenAIWSModeInfo(
-			"%s account_id=%d turn=%d stripped_items=%d",
-			logKey,
-			accountID,
-			turn,
-			strippedCount,
-		)
-	}
-	return strippedPayload, strippedCount
 }

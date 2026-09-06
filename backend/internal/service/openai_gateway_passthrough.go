@@ -131,7 +131,6 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	canonicalImageIntentBody []byte,
 	reqModel string,
 	attemptImageIntentInvalidated bool,
-	reasoningEffort *string,
 	reqStream bool,
 	startTime time.Time,
 ) (*OpenAIForwardResult, error) {
@@ -434,6 +433,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 
 	agentTaskRecoveryTried := false
 	compactModelFallbackRetried := false
+	var reasoningEffort *string
 
 retryUpstream:
 	var resp *http.Response

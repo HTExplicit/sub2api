@@ -144,7 +144,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		wsDecision = resolveOpenAIWSDecisionByClientTransport(wsDecision, GetOpenAIClientTransport(c))
 	}
 	if requestedPreviousResponseID != "" && wsDecision.Transport != OpenAIUpstreamTransportResponsesWebsocketV2 &&
-		(cindyRuntimeAccount || account.UsesOpenAICodexProtocol()) {
+		account.UsesOpenAICodexProtocol() {
 		// This endpoint-specific restriction is independent of the global WS
 		// switch. Native Responses API-key HTTP supports its own stored IDs.
 		MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalFeatureGate)
@@ -309,11 +309,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Stripped /responses image_generation tool for Codex client by account policy")
 			}
 		}
-		// 透传分支只需要轻量提取字段，避免热路径全量 Unmarshal。
-		mappedModel := account.GetMappedModel(reqModel)
-		reasoningEffort := extractOpenAIReasoningEffortFromBody(body, mappedModel)
-		// 国产模型默认 effort 补充：也要用 mappedModel 判定是否是 passback-required 上游。
-		reasoningEffort = ApplyThinkingEnabledFallback(reasoningEffort, body, mappedModel)
+		// Effort is recorded from the final passthrough wire request below.
 		return s.forwardOpenAIPassthrough(
 			ctx,
 			c,
@@ -322,7 +318,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			canonicalImageIntentBody,
 			reqModel,
 			attemptImageIntentInvalidated,
-			reasoningEffort,
 			reqStream,
 			startTime,
 		)
