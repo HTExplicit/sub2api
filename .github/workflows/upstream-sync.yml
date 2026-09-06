@@ -85,7 +85,7 @@ jobs:
 
           old_remote=$(git ls-remote --heads origin "refs/heads/${branch}" | awk '{print $1}')
           if [[ -n "$old_remote" ]]; then
-            echo "Candidate $branch already exists; preserving manual resolutions and requiring Upstream Reviewed Promotion." >&2
+            echo "Candidate $branch already exists; preserve manual resolutions and require Upstream Reviewed Promotion." >&2
             printf '## Upstream %s candidate already exists\\n\\n' "$tag" > /tmp/upstream-conflict.md
             printf 'The sync workflow did not overwrite the existing candidate branch.\\n\\n' >> /tmp/upstream-conflict.md
             printf 'Inspect and resolve the existing candidate PR, then run Upstream Reviewed Promotion.\\n' >> /tmp/upstream-conflict.md
