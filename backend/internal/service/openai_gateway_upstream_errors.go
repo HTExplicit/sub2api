@@ -314,6 +314,9 @@ func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponseForAccount(
 	upstreamMsg string,
 	upstreamBody []byte,
 ) bool {
+	if isOpenAIRequestBudgetRejection(account, statusCode, upstreamBody) {
+		return true
+	}
 	if isOpenAIModelNotSupportedError(statusCode, upstreamMsg, upstreamBody) {
 		return account != nil &&
 			IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials)

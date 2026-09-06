@@ -39,3 +39,19 @@ func TestAgentRequestBudgetRejectionDoesNotBecomeAccountAuthCooldown(t *testing.
 	s.CooldownOpenAIRetryExhausted(context.Background(), a, "fixture", failure)
 	require.False(t, s.isOpenAIAccountRuntimeBlocked(a))
 }
+
+func TestAgentRequestBudgetClassificationPrecedesHTTPFailover(t *testing.T) {
+	a := &Account{ID: 7, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Credentials: map[string]any{"base_url": "https://fixture.example"}}
+	s := &OpenAIGatewayService{}
+	body := []byte(`{"error":{"type":"balance_insufficient_error","code":"balance_insufficient"}}`)
+	for _, status := range []int{http.StatusPaymentRequired, http.StatusForbidden} {
+		require.True(t, s.shouldFailoverOpenAIUpstreamResponseForAccount(a, status, "", body), "status=%d", status)
+		require.True(t, shouldFailoverOpenAIPassthroughResponse(a, status, body), "status=%d", status)
+	}
+	for _, body := range []string{
+		`{"error":{"type":"balance_insufficient_error","code":"invalid_api_key"}}`,
+		`{"error":{"type":"authentication_error","code":"balance_insufficient"}}`,
+	} {
+		require.False(t, isOpenAIRequestBudgetRejection(a, http.StatusForbidden, []byte(body)))
+	}
+}
