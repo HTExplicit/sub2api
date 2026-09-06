@@ -63,8 +63,8 @@ type AnthropicContentBlock struct {
 
 	// type=thinking
 	Thinking string `json:"thinking,omitempty"`
-	// Signature carries provider encrypted reasoning (e.g. xAI encrypted_content)
-	// so multi-turn Claude clients can round-trip it back on subsequent turns.
+	// Signature carries opaque provider reasoning state so multi-turn clients
+	// can round-trip it verbatim. Its format does not identify its provider.
 	Signature string `json:"signature,omitempty"`
 
 	// type=image
@@ -268,7 +268,8 @@ type ResponsesInputItem struct {
 	Content json.RawMessage `json:"content,omitempty"` // string or []ResponsesContentPart
 
 	// type=reasoning (multi-turn replay of encrypted reasoning)
-	EncryptedContent string `json:"encrypted_content,omitempty"`
+	EncryptedContent string             `json:"encrypted_content,omitempty"`
+	Summary          []ResponsesSummary `json:"summary,omitempty"`
 
 	// type=function_call
 	CallID    string `json:"call_id,omitempty"`
@@ -279,6 +280,24 @@ type ResponsesInputItem struct {
 	// type=function_call_output
 	Output    string `json:"output,omitempty"`
 	outputRaw json.RawMessage
+}
+
+// Reasoning input items require a summary array, including signature-only
+// replay. Keep that requirement local to reasoning; other input item wire
+// shapes must not gain an unrelated summary field.
+func (i ResponsesInputItem) MarshalJSON() ([]byte, error) {
+	type alias ResponsesInputItem
+	if i.Type != "reasoning" {
+		return json.Marshal(alias(i))
+	}
+	summary := i.Summary
+	if summary == nil {
+		summary = []ResponsesSummary{}
+	}
+	return json.Marshal(struct {
+		alias
+		Summary []ResponsesSummary `json:"summary"`
+	}{alias: alias(i), Summary: summary})
 }
 
 func (i *ResponsesInputItem) UnmarshalJSON(data []byte) error {

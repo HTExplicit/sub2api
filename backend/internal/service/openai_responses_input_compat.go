@@ -1,20 +1,21 @@
 package service
 
 import (
+	"net/http"
 	"strings"
 )
 
 const openAIResponsesInputTextMaxChars = 10000000
 
-// sanitizeOpenAIResponsesOrphanToolOutputs removes tool-output items that have
-// no matching call or item reference anywhere in the current input.
-func sanitizeOpenAIResponsesOrphanToolOutputs(reqBody map[string]any, input []any, hasPreviousResponseID bool) bool {
+// validateOpenAIResponsesToolOutputs detects a locally provable missing call
+// without deleting tool results. Server-side references and compaction may own
+// the missing calls, in which case their actual upstream validates the history.
+func validateOpenAIResponsesToolOutputs(input []any, hasPreviousResponseID bool) error {
 	if len(input) == 0 || hasPreviousResponseID {
-		return false
+		return nil
 	}
 
 	toolCallIDs := make(map[string]struct{}, len(input))
-	referenceIDs := make(map[string]struct{}, len(input))
 	for _, rawItem := range input {
 		item, ok := rawItem.(map[string]any)
 		if !ok {
@@ -23,9 +24,12 @@ func sanitizeOpenAIResponsesOrphanToolOutputs(reqBody map[string]any, input []an
 		itemType := strings.TrimSpace(firstNonEmptyString(item["type"]))
 		if itemType == "item_reference" {
 			if id := strings.TrimSpace(firstNonEmptyString(item["id"])); id != "" {
-				referenceIDs[id] = struct{}{}
+				return nil
 			}
 			continue
+		}
+		if (itemType == "compaction" || itemType == "compaction_summary") && hasNonEmptyOpenAIContinuationCarrier(item["encrypted_content"]) {
+			return nil
 		}
 		if !isCodexToolCallContextItemType(itemType) {
 			continue
@@ -35,30 +39,20 @@ func sanitizeOpenAIResponsesOrphanToolOutputs(reqBody map[string]any, input []an
 		}
 	}
 
-	modified := false
-	normalized := make([]any, 0, len(input))
 	for _, rawItem := range input {
 		item, ok := rawItem.(map[string]any)
 		if !ok || !isCodexToolCallOutputItemType(strings.TrimSpace(firstNonEmptyString(item["type"]))) {
-			normalized = append(normalized, rawItem)
 			continue
 		}
 
 		callID := strings.TrimSpace(firstNonEmptyString(item["call_id"]))
 		_, hasToolCall := toolCallIDs[callID]
-		_, hasReference := referenceIDs[callID]
-		if callID != "" && (hasToolCall || hasReference) {
-			normalized = append(normalized, rawItem)
+		if callID != "" && hasToolCall {
 			continue
 		}
-
-		modified = true
+		return NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
 	}
-	if !modified {
-		return false
-	}
-	reqBody["input"] = normalized
-	return true
+	return nil
 }
 
 func truncateOpenAIResponsesInputText(_ map[string]any) bool {

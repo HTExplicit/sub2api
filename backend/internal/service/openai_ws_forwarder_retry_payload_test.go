@@ -18,11 +18,11 @@ func TestApplyOpenAIWSRetryPayloadStrategy_KeepPromptCacheKey(t *testing.T) {
 	}
 
 	strategy, removed := applyOpenAIWSRetryPayloadStrategy(payload, 3)
-	require.Equal(t, "trim_optional_fields", strategy)
-	require.Contains(t, removed, "include")
+	require.Equal(t, "full", strategy)
+	require.Empty(t, removed)
 	require.NotContains(t, removed, "prompt_cache_key")
 	require.Equal(t, "pcache_123", payload["prompt_cache_key"])
-	require.NotContains(t, payload, "include")
+	require.Equal(t, []any{"reasoning.encrypted_content"}, payload["include"])
 	require.Contains(t, payload, "text")
 }
 
@@ -38,8 +38,8 @@ func TestApplyOpenAIWSRetryPayloadStrategy_AttemptSixKeepsSemanticFields(t *test
 	}
 
 	strategy, removed := applyOpenAIWSRetryPayloadStrategy(payload, 6)
-	require.Equal(t, "trim_optional_fields", strategy)
-	require.Contains(t, removed, "include")
+	require.Equal(t, "full", strategy)
+	require.Empty(t, removed)
 	require.NotContains(t, removed, "prompt_cache_key")
 	require.Equal(t, "pcache_456", payload["prompt_cache_key"])
 	require.Contains(t, payload, "instructions")
@@ -47,4 +47,5 @@ func TestApplyOpenAIWSRetryPayloadStrategy_AttemptSixKeepsSemanticFields(t *test
 	require.Contains(t, payload, "tool_choice")
 	require.Contains(t, payload, "parallel_tool_calls")
 	require.Contains(t, payload, "text")
+	require.Equal(t, []any{"reasoning.encrypted_content"}, payload["include"])
 }

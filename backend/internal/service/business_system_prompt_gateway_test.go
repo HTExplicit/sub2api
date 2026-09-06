@@ -346,8 +346,7 @@ func TestBusinessSystemPromptOrdinaryPassthroughPromptCacheKeyRemainsOfficialAft
 	}
 
 	result, err := svc.forwardOpenAIPassthrough(
-		context.Background(), c, account, body, body, "gpt-5.4", false, nil, false, time.Now(),
-	)
+		context.Background(), c, account, body, body, "gpt-5.4", false, false, time.Now())
 
 	require.Error(t, err)
 	require.Nil(t, result)
@@ -564,8 +563,8 @@ func TestBusinessSystemPromptPassthroughCannotSatisfyOAuthInstructionsPreflight(
 	}
 
 	result, err := svc.forwardOpenAIPassthrough(
-		context.Background(), c, account, body, body, "gpt-5.1-codex", false, nil, false, time.Now(),
-	)
+		context.Background(), c, account, body, body, "gpt-5.1-codex", false, false, time.Now())
+
 	require.Error(t, err)
 	require.Nil(t, result)
 	require.Nil(t, upstream.lastReq)

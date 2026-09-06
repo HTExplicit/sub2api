@@ -410,10 +410,6 @@ func openAIContinuationStateErrorFromFailedEvent(statusCode int, responseHeaders
 	return NewOpenAIContinuationStateUnavailableError(statusCode, responseHeaders, append([]byte(nil), payload...))
 }
 
-func isOpenAIInvalidEncryptedContentError(upstreamMsg string, upstreamBody []byte) bool {
-	return classifyOpenAIContinuationStateError(upstreamMsg, upstreamBody) == openAIContinuationStateErrorInvalidEncryptedContent
-}
-
 // openAIOpaqueStreamPreflightReason identifies a stream:true request that a
 // compatibility upstream rejected with an otherwise unclassified 400 before it
 // emitted any Responses event.  It is request-scoped: changing accounts cannot

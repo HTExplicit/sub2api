@@ -120,7 +120,7 @@ func TestOpenAIGatewayService_Forward_PreservePreviousResponseIDWhenWSEnabled(t 
 	require.Nil(t, upstream.lastReq, "WS 模式下失败时不应回退 HTTP")
 }
 
-func TestOpenAIGatewayService_Forward_HTTPIngressRejectsContinuationWithoutCindyBridge(t *testing.T) {
+func TestOpenAIGatewayService_Forward_HTTPIngressPreservesNativeContinuationWhenWSConfigured(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	wsFallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
@@ -174,11 +174,13 @@ func TestOpenAIGatewayService_Forward_HTTPIngressRejectsContinuationWithoutCindy
 
 	body := []byte(`{"model":"gpt-5.1","stream":false,"previous_response_id":"resp_http_keep","input":[{"type":"input_text","text":"hello"}]}`)
 	result, err := svc.Forward(context.Background(), c, account, body)
-	require.Error(t, err)
-	require.Nil(t, result)
-	require.Nil(t, upstream.lastReq, "非 Cindy 桥接不得把 continuation 降级到 HTTP 上游")
-	require.Equal(t, http.StatusBadRequest, rec.Code)
-	require.Contains(t, rec.Body.String(), "Responses WebSocket v2")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.OpenAIWSMode, "原生 HTTP Responses 的续接不依赖 WebSocket 桥接")
+	require.NotNil(t, upstream.lastReq)
+	require.Equal(t, "resp_http_keep", gjson.GetBytes(upstream.lastBody, "previous_response_id").String())
+	require.JSONEq(t, gjson.GetBytes(body, "input").Raw, gjson.GetBytes(upstream.lastBody, "input").Raw)
+	require.Equal(t, http.StatusOK, rec.Code)
 
 	decision, _ := c.Get("openai_ws_transport_decision")
 	reason, _ := c.Get("openai_ws_transport_reason")
@@ -186,7 +188,7 @@ func TestOpenAIGatewayService_Forward_HTTPIngressRejectsContinuationWithoutCindy
 	require.Equal(t, "client_protocol_http", reason)
 }
 
-func TestOpenAIGatewayService_Forward_HTTPIngressRetriesInvalidEncryptedContentOnce(t *testing.T) {
+func TestOpenAIGatewayService_Forward_HTTPIngressInvalidEncryptedContentIsTerminal(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	wsFallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
@@ -249,20 +251,20 @@ func TestOpenAIGatewayService_Forward_HTTPIngressRetriesInvalidEncryptedContentO
 
 	body := []byte(`{"model":"gpt-5.1","stream":false,"input":[{"type":"reasoning","encrypted_content":"gAAA","summary":[{"type":"summary_text","text":"keep me"}]},{"type":"input_text","text":"hello"}]}`)
 	result, err := svc.Forward(context.Background(), c, account, body)
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.False(t, result.OpenAIWSMode, "HTTP 入站应保持 HTTP 转发")
-	require.Equal(t, 2, upstream.callCount, "命中 invalid_encrypted_content 后应只在 HTTP 路径重试一次")
-	require.Len(t, upstream.bodies, 2)
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
+	require.False(t, failoverErr.ShouldRetryNextAccount())
+	require.True(t, failoverErr.SuppressAccountHealthPenalty)
+	require.Equal(t, 1, upstream.callCount, "不能删除已拒绝的推理状态后重试")
+	require.Len(t, upstream.bodies, 1)
+	require.False(t, c.Writer.Written(), "continuation 应交由 handler 输出标准终态，不能伪造成功")
 
 	firstBody := upstream.bodies[0]
-	secondBody := upstream.bodies[1]
-	require.True(t, gjson.GetBytes(firstBody, "input.0.encrypted_content").Exists(), "首次请求不应做发送前预清理")
+	require.Equal(t, "gAAA", gjson.GetBytes(firstBody, "input.0.encrypted_content").String(), "首次请求不应做发送前预清理")
 	require.Equal(t, "keep me", gjson.GetBytes(firstBody, "input.0.summary.0.text").String())
-
-	require.False(t, gjson.GetBytes(secondBody, "input.0.encrypted_content").Exists(), "精确重试应移除 reasoning.encrypted_content")
-	require.Equal(t, "keep me", gjson.GetBytes(secondBody, "input.0.summary.0.text").String(), "精确重试应保留有效 reasoning summary")
-	require.Equal(t, "input_text", gjson.GetBytes(secondBody, "input.1.type").String(), "非 reasoning input 应保持原样")
+	require.JSONEq(t, gjson.GetBytes(body, "input").Raw, gjson.GetBytes(firstBody, "input").Raw)
 
 	decision, _ := c.Get("openai_ws_transport_decision")
 	reason, _ := c.Get("openai_ws_transport_reason")
@@ -270,7 +272,7 @@ func TestOpenAIGatewayService_Forward_HTTPIngressRetriesInvalidEncryptedContentO
 	require.Equal(t, "client_protocol_http", reason)
 }
 
-func TestOpenAIGatewayService_Forward_HTTPIngressRetriesWrappedInvalidEncryptedContentOnce(t *testing.T) {
+func TestOpenAIGatewayService_Forward_HTTPIngressWrappedInvalidEncryptedContentIsTerminal(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	wsFallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
@@ -336,17 +338,20 @@ func TestOpenAIGatewayService_Forward_HTTPIngressRetriesWrappedInvalidEncryptedC
 
 	body := []byte(`{"model":"gpt-5.1","stream":false,"input":[{"type":"reasoning","encrypted_content":"gAAA","summary":[{"type":"summary_text","text":"keep me too"}]},{"type":"input_text","text":"hello"}]}`)
 	result, err := svc.Forward(context.Background(), c, account, body)
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.False(t, result.OpenAIWSMode, "HTTP 入站应保持 HTTP 转发")
-	require.Equal(t, 2, upstream.callCount, "wrapped invalid_encrypted_content 也应只在 HTTP 路径重试一次")
-	require.Len(t, upstream.bodies, 2)
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
+	require.False(t, failoverErr.ShouldRetryNextAccount())
+	require.True(t, failoverErr.SuppressAccountHealthPenalty)
+	require.Equal(t, 1, upstream.callCount, "wrapped invalid_encrypted_content 也必须终止，不能删状态重试")
+	require.Len(t, upstream.bodies, 1)
+	require.False(t, c.Writer.Written(), "continuation 应交由 handler 输出标准终态，不能伪造成功")
 
 	firstBody := upstream.bodies[0]
-	secondBody := upstream.bodies[1]
-	require.True(t, gjson.GetBytes(firstBody, "input.0.encrypted_content").Exists(), "首次请求不应做发送前预清理")
-	require.False(t, gjson.GetBytes(secondBody, "input.0.encrypted_content").Exists(), "wrapped exact retry 应移除 reasoning.encrypted_content")
-	require.Equal(t, "keep me too", gjson.GetBytes(secondBody, "input.0.summary.0.text").String(), "wrapped exact retry 应保留有效 reasoning summary")
+	require.Equal(t, "gAAA", gjson.GetBytes(firstBody, "input.0.encrypted_content").String(), "首次请求不应做发送前预清理")
+	require.Equal(t, "keep me too", gjson.GetBytes(firstBody, "input.0.summary.0.text").String())
+	require.JSONEq(t, gjson.GetBytes(body, "input").Raw, gjson.GetBytes(firstBody, "input").Raw)
 
 	decision, _ := c.Get("openai_ws_transport_decision")
 	reason, _ := c.Get("openai_ws_transport_reason")
@@ -354,7 +359,7 @@ func TestOpenAIGatewayService_Forward_HTTPIngressRetriesWrappedInvalidEncryptedC
 	require.Equal(t, "client_protocol_http", reason)
 }
 
-func TestOpenAIGatewayService_Forward_RemovePreviousResponseIDWhenWSDisabled(t *testing.T) {
+func TestOpenAIGatewayService_Forward_PreservePreviousResponseIDWhenWSDisabled(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	wsFallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
@@ -407,7 +412,9 @@ func TestOpenAIGatewayService_Forward_RemovePreviousResponseIDWhenWSDisabled(t *
 	result, err := svc.Forward(context.Background(), c, account, body)
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.False(t, gjson.GetBytes(upstream.lastBody, "previous_response_id").Exists())
+	require.False(t, result.OpenAIWSMode)
+	require.Equal(t, "resp_123", gjson.GetBytes(upstream.lastBody, "previous_response_id").String(), "HTTP Responses 支持历史引用，不能由 WS 总开关删除")
+	require.JSONEq(t, gjson.GetBytes(body, "input").Raw, gjson.GetBytes(upstream.lastBody, "input").Raw)
 }
 
 func TestOpenAIGatewayService_Forward_WSv2Dial426FallbackHTTP(t *testing.T) {
@@ -1026,7 +1033,7 @@ func TestOpenAIGatewayService_Forward_WSv2ConnectionLimitReachedRetryThenFallbac
 	require.Equal(t, int32(openAIWSReconnectRetryLimit+1), wsAttempts.Load())
 }
 
-func TestOpenAIGatewayService_Forward_WSv2PreviousResponseNotFoundRecoversByDroppingPreviousResponseID(t *testing.T) {
+func TestOpenAIGatewayService_Forward_WSv2PreviousResponseNotFoundWithoutTrustedHistoryIsTerminal(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	var wsAttempts atomic.Int32
@@ -1127,20 +1134,22 @@ func TestOpenAIGatewayService_Forward_WSv2PreviousResponseNotFoundRecoversByDrop
 
 	body := []byte(`{"model":"gpt-5.3-codex","stream":false,"previous_response_id":"resp_prev_missing","input":[{"type":"input_text","text":"hello"}]}`)
 	result, err := svc.Forward(context.Background(), c, account, body)
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Equal(t, "resp_ws_prev_recover_ok", result.RequestID)
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
+	require.False(t, failoverErr.ShouldRetryNextAccount())
+	require.True(t, failoverErr.SuppressAccountHealthPenalty)
 	require.Nil(t, upstream.lastReq, "previous_response_not_found 不应回退 HTTP")
-	require.Equal(t, int32(2), wsAttempts.Load(), "previous_response_not_found 应触发一次去掉 previous_response_id 的恢复重试")
-	require.Equal(t, http.StatusOK, rec.Code)
-	require.Equal(t, "resp_ws_prev_recover_ok", gjson.Get(rec.Body.String(), "id").String())
+	require.Equal(t, int32(1), wsAttempts.Load(), "单次 Forward 不持有完整历史，不能去掉引用伪造恢复")
+	require.False(t, c.Writer.Written(), "continuation 应交由 handler 输出标准终态，不能伪造成功")
 
 	wsRequestMu.Lock()
 	requests := append([][]byte(nil), wsRequestPayloads...)
 	wsRequestMu.Unlock()
-	require.Len(t, requests, 2)
-	require.True(t, gjson.GetBytes(requests[0], "previous_response_id").Exists(), "首轮请求应保留 previous_response_id")
-	require.False(t, gjson.GetBytes(requests[1], "previous_response_id").Exists(), "恢复重试应移除 previous_response_id")
+	require.Len(t, requests, 1)
+	require.Equal(t, "resp_prev_missing", gjson.GetBytes(requests[0], "previous_response_id").String())
+	require.JSONEq(t, gjson.GetBytes(body, "input").Raw, gjson.GetBytes(requests[0], "input").Raw)
 }
 
 func TestOpenAIGatewayService_Forward_WSv2PreviousResponseNotFoundSkipsRecoveryForFunctionCallOutput(t *testing.T) {
@@ -1343,7 +1352,7 @@ func TestOpenAIGatewayService_Forward_WSv2PreviousResponseNotFoundSkipsRecoveryW
 	require.False(t, gjson.GetBytes(requests[0], "previous_response_id").Exists())
 }
 
-func TestOpenAIGatewayService_Forward_WSv2PreviousResponseNotFoundOnlyRecoversOnce(t *testing.T) {
+func TestOpenAIGatewayService_Forward_WSv2PreviousResponseNotFoundNeverRetriesMissingReference(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	var wsAttempts atomic.Int32
@@ -1431,20 +1440,21 @@ func TestOpenAIGatewayService_Forward_WSv2PreviousResponseNotFoundOnlyRecoversOn
 	var failoverErr *UpstreamFailoverError
 	require.ErrorAs(t, err, &failoverErr)
 	require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
+	require.False(t, failoverErr.ShouldRetryNextAccount())
 	require.True(t, failoverErr.SuppressAccountHealthPenalty)
 	require.Nil(t, upstream.lastReq, "WS 模式下 previous_response_not_found 不应回退 HTTP")
-	require.Equal(t, int32(2), wsAttempts.Load(), "应只允许一次自动恢复重试")
+	require.Equal(t, int32(1), wsAttempts.Load(), "首次状态错误后应终止，不能反复重试失效引用")
 	require.False(t, c.Writer.Written(), "continuation 应交由 handler 输出标准终态")
 
 	wsRequestMu.Lock()
 	requests := append([][]byte(nil), wsRequestPayloads...)
 	wsRequestMu.Unlock()
-	require.Len(t, requests, 2)
-	require.True(t, gjson.GetBytes(requests[0], "previous_response_id").Exists(), "首轮请求应包含 previous_response_id")
-	require.False(t, gjson.GetBytes(requests[1], "previous_response_id").Exists(), "恢复重试应移除 previous_response_id")
+	require.Len(t, requests, 1)
+	require.Equal(t, "resp_prev_missing", gjson.GetBytes(requests[0], "previous_response_id").String())
+	require.JSONEq(t, gjson.GetBytes(body, "input").Raw, gjson.GetBytes(requests[0], "input").Raw)
 }
 
-func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentRecoversOnce(t *testing.T) {
+func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentPreservesStateAndTerminates(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	var wsAttempts atomic.Int32
@@ -1545,24 +1555,24 @@ func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentRecoversOnce(t 
 
 	body := []byte(`{"model":"gpt-5.3-codex","stream":false,"previous_response_id":"resp_prev_encrypted","input":[{"type":"reasoning","encrypted_content":"gAAA"},{"type":"compaction","encrypted_content":"cAAA"},{"type":"input_text","text":"hello"}]}`)
 	result, err := svc.Forward(context.Background(), c, account, body)
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Equal(t, "resp_ws_invalid_encrypted_content_recover_ok", result.RequestID)
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
+	require.False(t, failoverErr.ShouldRetryNextAccount())
+	require.True(t, failoverErr.SuppressAccountHealthPenalty)
 	require.Nil(t, upstream.lastReq, "invalid_encrypted_content 不应回退 HTTP")
-	require.Equal(t, int32(2), wsAttempts.Load(), "invalid_encrypted_content 应触发一次清洗后重试")
-	require.Equal(t, http.StatusOK, rec.Code)
-	require.Equal(t, "resp_ws_invalid_encrypted_content_recover_ok", gjson.Get(rec.Body.String(), "id").String())
+	require.Equal(t, int32(1), wsAttempts.Load(), "invalid_encrypted_content 不得触发状态清洗或重试")
+	require.False(t, c.Writer.Written(), "continuation 应交由 handler 输出标准终态，不能伪造成功")
 
 	wsRequestMu.Lock()
 	requests := append([][]byte(nil), wsRequestPayloads...)
 	wsRequestMu.Unlock()
-	require.Len(t, requests, 2)
-	require.True(t, gjson.GetBytes(requests[0], "previous_response_id").Exists(), "首轮请求应保留 previous_response_id")
-	require.True(t, gjson.GetBytes(requests[0], `input.0.encrypted_content`).Exists(), "首轮请求应保留 encrypted reasoning")
-	require.True(t, gjson.GetBytes(requests[0], `input.1.encrypted_content`).Exists(), "首轮请求应保留 encrypted compaction")
-	require.False(t, gjson.GetBytes(requests[1], "previous_response_id").Exists(), "恢复重试应移除 previous_response_id")
-	require.False(t, gjson.GetBytes(requests[1], `input.0.encrypted_content`).Exists(), "恢复重试应移除 encrypted reasoning item")
-	require.Equal(t, "input_text", gjson.GetBytes(requests[1], `input.0.type`).String())
+	require.Len(t, requests, 1)
+	require.Equal(t, "resp_prev_encrypted", gjson.GetBytes(requests[0], "previous_response_id").String())
+	require.Equal(t, "gAAA", gjson.GetBytes(requests[0], `input.0.encrypted_content`).String())
+	require.Equal(t, "cAAA", gjson.GetBytes(requests[0], `input.1.encrypted_content`).String())
+	require.JSONEq(t, gjson.GetBytes(body, "input").Raw, gjson.GetBytes(requests[0], "input").Raw)
 }
 
 func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentSkipsRecoveryWithoutReasoningItem(t *testing.T) {
@@ -1666,7 +1676,7 @@ func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentSkipsRecoveryWi
 	require.False(t, gjson.GetBytes(requests[0], `input.0.encrypted_content`).Exists())
 }
 
-func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentRecoversSingleObjectInputAndKeepsSummary(t *testing.T) {
+func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentPreservesSingleObjectAndTerminates(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	var wsAttempts atomic.Int32
@@ -1767,21 +1777,24 @@ func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentRecoversSingleO
 
 	body := []byte(`{"model":"gpt-5.3-codex","stream":false,"previous_response_id":"resp_prev_encrypted","input":{"type":"reasoning","encrypted_content":"gAAA","summary":[{"type":"summary_text","text":"keep me"}]}}`)
 	result, err := svc.Forward(context.Background(), c, account, body)
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Equal(t, "resp_ws_invalid_encrypted_content_object_ok", result.RequestID)
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
+	require.False(t, failoverErr.ShouldRetryNextAccount())
+	require.True(t, failoverErr.SuppressAccountHealthPenalty)
 	require.Nil(t, upstream.lastReq, "invalid_encrypted_content 单对象 input 不应回退 HTTP")
-	require.Equal(t, int32(2), wsAttempts.Load(), "单对象 reasoning input 也应触发一次清洗后重试")
+	require.Equal(t, int32(1), wsAttempts.Load(), "单对象 reasoning input 也不得删密文或重试")
+	require.False(t, c.Writer.Written(), "continuation 应交由 handler 输出标准终态，不能伪造成功")
 
 	wsRequestMu.Lock()
 	requests := append([][]byte(nil), wsRequestPayloads...)
 	wsRequestMu.Unlock()
-	require.Len(t, requests, 2)
-	require.True(t, gjson.GetBytes(requests[0], `input.encrypted_content`).Exists(), "首轮单对象应保留 encrypted_content")
-	require.True(t, gjson.GetBytes(requests[1], `input.summary.0.text`).Exists(), "恢复重试应保留 reasoning summary")
-	require.False(t, gjson.GetBytes(requests[1], `input.encrypted_content`).Exists(), "恢复重试只应移除 encrypted_content")
-	require.Equal(t, "reasoning", gjson.GetBytes(requests[1], `input.type`).String())
-	require.False(t, gjson.GetBytes(requests[1], `previous_response_id`).Exists(), "恢复重试应移除 previous_response_id")
+	require.Len(t, requests, 1)
+	require.Equal(t, "resp_prev_encrypted", gjson.GetBytes(requests[0], "previous_response_id").String())
+	require.Equal(t, "gAAA", gjson.GetBytes(requests[0], `input.encrypted_content`).String())
+	require.Equal(t, "keep me", gjson.GetBytes(requests[0], `input.summary.0.text`).String())
+	require.JSONEq(t, gjson.GetBytes(body, "input").Raw, gjson.GetBytes(requests[0], "input").Raw)
 }
 
 func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentStopsForFunctionCallOutput(t *testing.T) {

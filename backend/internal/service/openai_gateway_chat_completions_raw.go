@@ -61,6 +61,15 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
 	startTime := time.Now()
+	if account != nil && account.IsOpenAI() {
+		requestedModel := gjson.GetBytes(body, "model").String()
+		mappedModel := resolveOpenAIForwardModel(account, requestedModel, defaultMappedModel)
+		withEffort, _, err := materializeOpenAIForwardReasoningEffort(ctx, body, mappedModel)
+		if err != nil {
+			return nil, err
+		}
+		body = withEffort
+	}
 
 	// 1. Parse minimal fields needed for routing/billing
 	originalModel := gjson.GetBytes(body, "model").String()

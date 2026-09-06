@@ -10,7 +10,7 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-func TestSanitizeOpenAIResponsesOrphanToolOutputs(t *testing.T) {
+func TestValidateOpenAIResponsesToolOutputs(t *testing.T) {
 	t.Run("preserves matches regardless of item order", func(t *testing.T) {
 		input := []any{
 			map[string]any{"type": "tool_search_output", "call_id": "search_1", "output": "first"},
@@ -20,7 +20,7 @@ func TestSanitizeOpenAIResponsesOrphanToolOutputs(t *testing.T) {
 		}
 		reqBody := map[string]any{"input": input}
 
-		require.False(t, sanitizeOpenAIResponsesOrphanToolOutputs(reqBody, input, false))
+		require.NoError(t, validateOpenAIResponsesToolOutputs(input, false))
 		require.Equal(t, input, reqBody["input"])
 	})
 
@@ -33,10 +33,13 @@ func TestSanitizeOpenAIResponsesOrphanToolOutputs(t *testing.T) {
 		}
 		reqBody := map[string]any{"input": input}
 
-		require.True(t, sanitizeOpenAIResponsesOrphanToolOutputs(reqBody, input, false))
+		err := validateOpenAIResponsesToolOutputs(input, false)
+		var stateErr *UpstreamFailoverError
+		require.ErrorAs(t, err, &stateErr)
+		require.True(t, stateErr.IsOpenAIContinuationStateUnavailable())
 		got, ok := reqBody["input"].([]any)
 		require.True(t, ok)
-		require.Empty(t, got)
+		require.Equal(t, input, got, "invalid history must remain intact, not turn into a different successful request")
 	})
 
 	t.Run("preserves all output variants with matching calls", func(t *testing.T) {
@@ -57,17 +60,22 @@ func TestSanitizeOpenAIResponsesOrphanToolOutputs(t *testing.T) {
 				map[string]any{"type": pair.outputType, "call_id": callID, "output": "ok"},
 			)
 		}
-		reqBody := map[string]any{"input": input}
-
-		require.False(t, sanitizeOpenAIResponsesOrphanToolOutputs(reqBody, input, false))
+		require.NoError(t, validateOpenAIResponsesToolOutputs(input, false))
 	})
 
 	t.Run("previous response may contain the missing call", func(t *testing.T) {
 		input := []any{map[string]any{"type": "function_call_output", "call_id": "remote", "output": "ok"}}
 		reqBody := map[string]any{"input": input, "previous_response_id": "resp_1"}
 
-		require.False(t, sanitizeOpenAIResponsesOrphanToolOutputs(reqBody, input, true))
+		require.NoError(t, validateOpenAIResponsesToolOutputs(input, true))
 		require.Equal(t, input, reqBody["input"])
+	})
+	t.Run("unresolved reference belongs to upstream validation", func(t *testing.T) {
+		input := []any{
+			map[string]any{"type": "item_reference", "id": "fc_remote"},
+			map[string]any{"type": "function_call_output", "call_id": "call_remote", "output": "ok"},
+		}
+		require.NoError(t, validateOpenAIResponsesToolOutputs(input, false))
 	})
 }
 
@@ -122,7 +130,7 @@ func TestOpenAIResponsesInputNeverRequestsPreemptiveTruncation(t *testing.T) {
 	require.False(t, openAIResponsesInputMayNeedTruncation(largeOutput))
 }
 
-func TestOpenAIGatewayService_OAuthDropsOrphanAfterDroppingPreviousResponse(t *testing.T) {
+func TestOpenAIGatewayService_OAuthRejectsHTTPAnchorWithoutDroppingToolResult(t *testing.T) {
 	body := []byte(`{"model":"gpt-5.5","stream":false,"previous_response_id":"resp_missing","input":[{"type":"function_call_output","call_id":"call_missing","output":"keep this result"}]}`)
 	upstream := &httpUpstreamRecorder{responses: []*http.Response{
 		newOpenAIRejectedFieldTestResponse(http.StatusOK, `{"id":"resp_ok","output":[],"usage":{"input_tokens":1,"output_tokens":1,"input_tokens_details":{"cached_tokens":0}}}`),
@@ -135,11 +143,11 @@ func TestOpenAIGatewayService_OAuthDropsOrphanAfterDroppingPreviousResponse(t *t
 		body,
 	)
 
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Len(t, upstream.bodies, 1)
-	require.False(t, gjson.GetBytes(upstream.bodies[0], "previous_response_id").Exists())
-	require.Empty(t, gjson.GetBytes(upstream.bodies[0], "input").Array())
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Empty(t, upstream.bodies)
+	require.Equal(t, "resp_missing", gjson.GetBytes(body, "previous_response_id").String())
+	require.Equal(t, "keep this result", gjson.GetBytes(body, "input.0.output").String())
 }
 
 func TestOpenAIGatewayService_PreservesOversizedToolOutputForUpstream(t *testing.T) {

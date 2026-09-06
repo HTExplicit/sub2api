@@ -845,7 +845,12 @@ func resolveOpenAIAccountUpstreamModelForRequest(account *Account, requestedMode
 			// precedence when it actually overrides the raw client spelling;
 			// otherwise retain the canonical Cindy upstream key.
 			if compactModel := strings.TrimSpace(resolveOpenAICompactForwardModelWithCanonical(account, requestedModel, upstreamModel)); compactModel != "" && compactModel != strings.TrimSpace(requestedModel) {
-				return compactModel
+				upstreamModel = compactModel
+			}
+		}
+		if account.IsOpenAIApiKey() {
+			if baseModel, _, accepted := resolveOpenAIModelReasoningAlias(upstreamModel); accepted {
+				return baseModel
 			}
 		}
 		return upstreamModel
@@ -853,6 +858,9 @@ func resolveOpenAIAccountUpstreamModelForRequest(account *Account, requestedMode
 	if requireCompact && account != nil {
 		if compactModel, matched := account.ResolveCompactMappedModel(strings.TrimSpace(requestedModel)); matched {
 			if compactModel = strings.TrimSpace(compactModel); compactModel != "" {
+				if account.IsOpenAIApiKey() {
+					return normalizeOpenAIModelForUpstream(account, compactModel)
+				}
 				return compactModel
 			}
 		}

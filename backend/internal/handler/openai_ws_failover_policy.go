@@ -8,22 +8,14 @@ import (
 )
 
 func openAIWSPreviousResponseCanMove(payload []byte, previousResponseID string, strictCindy bool) bool {
-	if strictCindy {
-		classification, err := service.ClassifyCindyContinuation(payload, service.CindyContinuationProof{})
-		if err != nil {
-			return false
-		}
-		return strings.TrimSpace(previousResponseID) == "" && classification.Mode == service.CindyContinuationFullReplay
-	}
-
-	if strings.TrimSpace(previousResponseID) == "" {
-		return true
-	}
-	if !gjson.ValidBytes(payload) || openAIWSPayloadHasEncryptedState(payload) {
+	// This initial frame has no trusted local history baseline. Even paired
+	// tool items cannot prove that the rest of a referenced response is present.
+	if strings.TrimSpace(previousResponseID) != "" {
 		return false
 	}
-	coverage := service.AnalyzeToolCallOutputContextCoverageBytes(payload)
-	return coverage.HasFunctionCallOutput && coverage.ContextCoversAllCallIDs
+	classification, err := service.ClassifyCindyContinuation(payload, service.CindyContinuationProof{})
+	return err == nil && !classification.HasAnchor && classification.CanSwitchAccount() &&
+		!openAIWSPayloadHasConversationReference(payload)
 }
 
 // openAIWSLegacyLaxaReplaySafe applies the same opaque/anchor boundary to the
@@ -39,30 +31,13 @@ func openAIWSInitialAccountSwitchReplaySafe(payload []byte, previousResponseCanM
 	if !previousResponseCanMove {
 		return false
 	}
-	if strictCindy {
-		classification, err := service.ClassifyCindyContinuation(payload, service.CindyContinuationProof{})
-		if err != nil || classification.HasAnchor {
-			return false
-		}
-		return classification.CanSwitchAccount()
-	}
-
-	if !gjson.ValidBytes(payload) || strings.TrimSpace(gjson.GetBytes(payload, "previous_response_id").String()) != "" {
-		return false
-	}
-	return !openAIWSPayloadHasEncryptedState(payload)
+	classification, err := service.ClassifyCindyContinuation(payload, service.CindyContinuationProof{})
+	return err == nil && !classification.HasAnchor && classification.CanSwitchAccount() &&
+		!openAIWSPayloadHasConversationReference(payload)
 }
 
-func openAIWSPayloadHasEncryptedState(payload []byte) bool {
-	input := gjson.GetBytes(payload, "input")
-	items := input.Array()
-	if input.IsObject() {
-		items = []gjson.Result{input}
-	}
-	for _, item := range items {
-		if item.Get("encrypted_content").Exists() {
-			return true
-		}
-	}
-	return false
+func openAIWSPayloadHasConversationReference(payload []byte) bool {
+	conversation := gjson.GetBytes(payload, "conversation")
+	return conversation.Exists() && conversation.Type != gjson.Null &&
+		(conversation.Type != gjson.String || strings.TrimSpace(conversation.String()) != "")
 }

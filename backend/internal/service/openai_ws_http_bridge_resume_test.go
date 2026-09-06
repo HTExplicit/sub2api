@@ -24,7 +24,7 @@ func TestBuildOpenAIWSCurrentTurnRetryPayloadRejectsOrphanToolOutput(t *testing.
 		json.RawMessage(`{"type":"function_call_output","call_id":"missing_call","output":"done"}`),
 	}
 
-	retryPayload, retrySafe, err := buildOpenAIWSCurrentTurnRetryPayload(payload, fullInput, true, "gpt-5.6-sol")
+	retryPayload, retrySafe, err := buildOpenAIWSCurrentTurnRetryPayload(payload, fullInput, true, true, "gpt-5.6-sol")
 
 	require.NoError(t, err)
 	require.False(t, retrySafe)
@@ -44,7 +44,7 @@ func TestProxyOpenAIWSHTTPBridgeTurnLaterTurn429FailsOverBeforeClientWrite(t *te
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
-	payload := []byte(`{"type":"response.create","model":"gpt-5.6-sol","previous_response_id":"resp_old","input":[{"role":"user","content":"continue"}]}`)
+	payload := []byte(`{"type":"response.create","model":"gpt-5.6-sol","input":[{"role":"user","content":"continue"}]}`)
 	writes := 0
 
 	result, err := svc.proxyOpenAIWSHTTPBridgeTurn(

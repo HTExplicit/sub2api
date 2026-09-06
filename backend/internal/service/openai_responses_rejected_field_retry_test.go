@@ -538,7 +538,7 @@ func TestOpenAIGatewayService_APIKeyStripsAllIndexedNamespacesBeforeFirstForward
 	require.False(t, gjson.GetBytes(upstream.bodies[0], "input.1.namespace").Exists())
 }
 
-func TestOpenAIGatewayServiceProactivelyStripsCrossProviderReasoningContent(t *testing.T) {
+func TestOpenAIGatewayServicePreservesCompatibleProviderReasoningContent(t *testing.T) {
 	body := []byte(`{"model":"gpt-5.5","stream":false,"store":true,"input":[` +
 		`{"type":"message","role":"user","content":"one"},` +
 		`{"type":"message","role":"assistant","content":"two"},` +
@@ -560,9 +560,9 @@ func TestOpenAIGatewayServiceProactivelyStripsCrossProviderReasoningContent(t *t
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Len(t, upstream.bodies, 1, "reasoning content should be normalized before the first upstream request")
+	require.Len(t, upstream.bodies, 1, "the selected compatible provider validates its own content")
 	require.Equal(t, "reasoning", gjson.GetBytes(upstream.bodies[0], "input.5.type").String())
-	require.False(t, gjson.GetBytes(upstream.bodies[0], "input.5.content").Exists())
+	require.JSONEq(t, gjson.GetBytes(body, "input.5.content").Raw, gjson.GetBytes(upstream.bodies[0], "input.5.content").Raw)
 	require.Equal(t, "keep", gjson.GetBytes(upstream.bodies[0], "input.5.summary.0.text").String())
 }
 

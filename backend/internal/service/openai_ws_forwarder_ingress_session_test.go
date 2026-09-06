@@ -1932,7 +1932,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ModeOffReturnsPo
 	}
 }
 
-func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPrevResponseStrictDropToFullCreate(t *testing.T) {
+func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPreviousResponsePreservedAcrossAnchorAndConfigChanges(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	cfg := &config.Config{}
@@ -1954,6 +1954,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPre
 		events: [][]byte{
 			[]byte(`{"type":"response.completed","response":{"id":"resp_preflight_rewrite_1","model":"gpt-5.1","usage":{"input_tokens":1,"output_tokens":1}}}`),
 			[]byte(`{"type":"response.completed","response":{"id":"resp_preflight_rewrite_2","model":"gpt-5.1","usage":{"input_tokens":1,"output_tokens":1}}}`),
+			[]byte(`{"type":"response.completed","response":{"id":"resp_preflight_rewrite_3","model":"gpt-5.1","usage":{"input_tokens":1,"output_tokens":1}}}`),
 		},
 	}
 	captureDialer := &openAIWSCaptureDialer{conn: captureConn}
@@ -2051,6 +2052,10 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPre
 	secondTurn := readMessage()
 	require.Equal(t, "resp_preflight_rewrite_2", gjson.GetBytes(secondTurn, "response.id").String())
 
+	writeMessage(`{"type":"response.create","model":"gpt-5.1","stream":false,"store":false,"instructions":"Use the updated turn instructions.","previous_response_id":"resp_preflight_rewrite_2","input":[{"type":"input_text","text":"third"}]}`)
+	thirdTurn := readMessage()
+	require.Equal(t, "resp_preflight_rewrite_3", gjson.GetBytes(thirdTurn, "response.id").String())
+
 	require.NoError(t, clientConn.Close(coderws.StatusNormalClosure, "done"))
 	select {
 	case serverErr := <-serverErrCh:
@@ -2059,16 +2064,20 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPre
 		t.Fatal("等待 ingress websocket 结束超时")
 	}
 
-	require.Equal(t, 1, captureDialer.DialCount(), "严格增量不成立时应在同一连接内降级为 full create")
-	require.Len(t, captureConn.writes, 2)
+	require.Equal(t, 1, captureDialer.DialCount(), "原生续接字段由同一上游连接验证，不因本地比较结果重建会话")
+	require.Len(t, captureConn.writes, 3)
 	secondWrite := requestToJSONString(captureConn.writes[1])
-	require.False(t, gjson.Get(secondWrite, "previous_response_id").Exists(), "严格增量不成立时应移除 previous_response_id，改为 full create")
-	require.Equal(t, 2, len(gjson.Get(secondWrite, "input").Array()), "严格降级为 full create 时应重放完整 input 上下文")
-	require.Equal(t, "hello", gjson.Get(secondWrite, "input.0.text").String())
-	require.Equal(t, "world", gjson.Get(secondWrite, "input.1.text").String())
+	require.Equal(t, "resp_stale_external", gjson.Get(secondWrite, "previous_response_id").String(), "外部锚点不得被删除或替换成本地上一轮")
+	require.Len(t, gjson.Get(secondWrite, "input").Array(), 1, "未验证外部锚点归属时不得拼接本地历史")
+	require.Equal(t, "world", gjson.Get(secondWrite, "input.0.text").String())
+	thirdWrite := requestToJSONString(captureConn.writes[2])
+	require.Equal(t, "resp_preflight_rewrite_2", gjson.Get(thirdWrite, "previous_response_id").String(), "非 input 配置变化不使原生 response 引用失效")
+	require.Equal(t, "Use the updated turn instructions.", gjson.Get(thirdWrite, "instructions").String())
+	require.Len(t, gjson.Get(thirdWrite, "input").Array(), 1)
+	require.Equal(t, "third", gjson.Get(thirdWrite, "input.0.text").String())
 }
 
-func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledPrevResponseStrictDropBeforePreflightPingFailClosesWithoutReplay(t *testing.T) {
+func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StoreDisabledExternalAnchorPreflightPingFailClosesWithoutReplay(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	prevPreflightPingIdle := openAIWSIngressPreflightPingIdle
 	openAIWSIngressPreflightPingIdle = 0
@@ -4196,37 +4205,34 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ContinuationErro
 	gin.SetMode(gin.TestMode)
 
 	tests := []struct {
-		name                   string
-		request                string
-		upstreamEvents         []string
-		expectedDialCount      int
-		expectedCode           string
-		expectPreviousRetained bool
+		name                string
+		request             string
+		upstreamEvents      []string
+		expectedDialCount   int
+		expectedCode        string
+		seedBoundConnection bool
 	}{
 		{
-			name:                   "store disabled strict previous response does not rewrite anchor",
-			request:                `{"type":"response.create","model":"gpt-5.1","stream":false,"store":false,"previous_response_id":"resp_strict_missing","input":[{"type":"input_text","text":"continue"}]}`,
-			upstreamEvents:         []string{`{"type":"error","error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"previous response not found"}}`},
-			expectedDialCount:      0,
-			expectedCode:           "previous_response_not_found",
-			expectPreviousRetained: true,
+			name:                "store disabled strict previous response does not rewrite anchor",
+			request:             `{"type":"response.create","model":"gpt-5.1","stream":false,"store":false,"previous_response_id":"resp_strict_missing","input":[{"type":"input_text","text":"continue"}]}`,
+			upstreamEvents:      []string{`{"type":"error","error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"previous response not found"}}`},
+			expectedDialCount:   0,
+			expectedCode:        "previous_response_not_found",
+			seedBoundConnection: true,
 		},
 		{
-			name:                   "store disabled strict encrypted state does not rewrite anchor",
-			request:                `{"type":"response.create","model":"gpt-5.1","stream":false,"store":false,"previous_response_id":"resp_strict_encrypted","input":[{"type":"reasoning","encrypted_content":"gAAA"}]}`,
-			upstreamEvents:         []string{`{"type":"error","error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}`},
-			expectedDialCount:      0,
-			expectedCode:           "invalid_encrypted_content",
-			expectPreviousRetained: true,
+			name:                "store disabled strict encrypted state does not rewrite anchor",
+			request:             `{"type":"response.create","model":"gpt-5.1","stream":false,"store":false,"previous_response_id":"resp_strict_encrypted","input":[{"type":"reasoning","encrypted_content":"gAAA"}]}`,
+			upstreamEvents:      []string{`{"type":"error","error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}`},
+			expectedDialCount:   0,
+			expectedCode:        "invalid_encrypted_content",
+			seedBoundConnection: true,
 		},
 		{
-			name:    "invalid encrypted content retries once then stops without raw downstream event",
-			request: `{"type":"response.create","model":"gpt-5.1","stream":false,"previous_response_id":"resp_invalid_encrypted","input":[{"type":"reasoning","encrypted_content":"gAAA"}]}`,
-			upstreamEvents: []string{
-				`{"type":"error","error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}`,
-				`{"type":"error","error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified again"}}`,
-			},
-			expectedDialCount: 2,
+			name:              "invalid encrypted content stops once without rewriting client state",
+			request:           `{"type":"response.create","model":"gpt-5.1","stream":false,"previous_response_id":"resp_invalid_encrypted","input":[{"type":"reasoning","id":"rs_invalid","encrypted_content":"gAAA","summary":[],"phase":"analysis"}]}`,
+			upstreamEvents:    []string{`{"type":"error","error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}`},
+			expectedDialCount: 1,
 			expectedCode:      "invalid_encrypted_content",
 		},
 		{
@@ -4237,14 +4243,18 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ContinuationErro
 			expectedCode:      "previous_response_not_found",
 		},
 		{
-			name:    "response.failed previous response recovery is bounded",
-			request: `{"type":"response.create","model":"gpt-5.1","stream":false,"previous_response_id":"resp_failed_stale","input":[{"type":"input_text","text":"continue"}]}`,
-			upstreamEvents: []string{
-				`{"type":"response.failed","response":{"error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"first failed anchor"}}}`,
-				`{"type":"response.failed","response":{"error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"second failed anchor"}}}`,
-			},
-			expectedDialCount: 2,
+			name:              "response.failed previous response without baseline never replays",
+			request:           `{"type":"response.create","model":"gpt-5.1","stream":false,"previous_response_id":"resp_failed_stale","input":[{"type":"input_text","text":"continue"}]}`,
+			upstreamEvents:    []string{`{"type":"response.failed","response":{"error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"first failed anchor"}}}`},
+			expectedDialCount: 1,
 			expectedCode:      "previous_response_not_found",
+		},
+		{
+			name:              "response.failed encrypted state stops without a tool continuation guard",
+			request:           `{"type":"response.create","model":"gpt-5.1","stream":false,"input":[{"type":"reasoning","id":"rs_failed","encrypted_content":"gAAA","summary":[],"phase":"analysis"}]}`,
+			upstreamEvents:    []string{`{"type":"response.failed","response":{"error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"encrypted content could not be verified"}}}`},
+			expectedDialCount: 1,
+			expectedCode:      "invalid_encrypted_content",
 		},
 		{
 			name:              "response.failed encrypted tool continuation stops without replay",
@@ -4254,13 +4264,10 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ContinuationErro
 			expectedCode:      "invalid_encrypted_content",
 		},
 		{
-			name:    "previous response recovery is attempted once",
-			request: `{"type":"response.create","model":"gpt-5.1","stream":false,"previous_response_id":"resp_stale_once","input":[{"type":"input_text","text":"continue"}]}`,
-			upstreamEvents: []string{
-				`{"type":"error","error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"first missing anchor"}}`,
-				`{"type":"error","error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"second missing anchor"}}`,
-			},
-			expectedDialCount: 2,
+			name:              "previous response error without baseline never replays",
+			request:           `{"type":"response.create","model":"gpt-5.1","stream":false,"previous_response_id":"resp_stale_once","input":[{"type":"input_text","text":"continue"}]}`,
+			upstreamEvents:    []string{`{"type":"error","error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"first missing anchor"}}`},
+			expectedDialCount: 1,
 			expectedCode:      "previous_response_not_found",
 		},
 	}
@@ -4348,7 +4355,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ContinuationErro
 					serverErrCh <- errors.New("unsupported websocket client message type")
 					return
 				}
-				if tt.expectPreviousRetained {
+				if tt.seedBoundConnection {
 					decision := svc.getOpenAIWSProtocolResolver().Resolve(account)
 					headers, _, headerErr := svc.buildOpenAIWSHeaders(
 						r.Context(), ginCtx, account, "sk-test", decision, false, "", "", "", "", "",
@@ -4409,27 +4416,10 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ContinuationErro
 				captureConn.mu.Lock()
 				writes := append([]map[string]any(nil), captureConn.writes...)
 				captureConn.mu.Unlock()
-				require.Len(t, writes, 1)
-			}
-			if tt.expectPreviousRetained {
-				captureConns[0].mu.Lock()
-				firstWrite := requestToJSONString(captureConns[0].writes[0])
-				captureConns[0].mu.Unlock()
-				require.True(t, gjson.Get(firstWrite, "previous_response_id").Exists(), "严格续链失败不得剥离锚点重放")
-			}
-			if len(captureConns) == 2 {
-				captureConns[0].mu.Lock()
-				firstWrite := requestToJSONString(captureConns[0].writes[0])
-				captureConns[0].mu.Unlock()
-				captureConns[1].mu.Lock()
-				secondWrite := requestToJSONString(captureConns[1].writes[0])
-				captureConns[1].mu.Unlock()
-				require.True(t, gjson.Get(firstWrite, "previous_response_id").Exists())
-				require.False(t, gjson.Get(secondWrite, "previous_response_id").Exists(), "安全恢复只能去掉续接锚点重放一次")
-				if tt.expectedCode == "invalid_encrypted_content" {
-					require.True(t, gjson.Get(firstWrite, "input.0.encrypted_content").Exists())
-					require.False(t, gjson.Get(secondWrite, "input.0.encrypted_content").Exists(), "恢复重试必须移除失效加密推理")
-				}
+				require.Len(t, writes, 1, "缺少已验证完整基线时不得发起第二次续接请求")
+				firstWrite := requestToJSONString(writes[0])
+				require.Equal(t, gjson.Get(tt.request, "previous_response_id").String(), gjson.Get(firstWrite, "previous_response_id").String(), "续接错误不得改写客户端锚点")
+				require.JSONEq(t, gjson.Get(tt.request, "input").Raw, gjson.Get(firstWrite, "input").Raw, "原生输入状态必须完整送交上游验证")
 			}
 		})
 	}
@@ -5242,7 +5232,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ClientDisconnect
 	require.Equal(t, oldAccountID, origin.accountID)
 }
 
-func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_InvalidEncryptedContentLineageStripsNextTurn(t *testing.T) {
+func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_InvalidEncryptedContentPreservesNextConnectionPayload(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	cfg := &config.Config{}
@@ -5260,18 +5250,23 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_InvalidEncrypted
 	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
 	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
 
-	upstreamConn := &openAIWSCaptureConn{
+	firstUpstreamConn := &openAIWSCaptureConn{
 		events: [][]byte{
 			[]byte(`{"type":"error","error":{"type":"invalid_request_error","code":"invalid_encrypted_content","message":"The encrypted content could not be verified"}}`),
 			[]byte(`{"type":"response.failed","response":{"id":"resp_enc_lineage_1","model":"gpt-5.1","error":{"code":"invalid_encrypted_content","message":"The encrypted content could not be verified"}}}`),
-			[]byte(`{"type":"response.completed","response":{"id":"resp_enc_lineage_2","model":"gpt-5.1","usage":{"input_tokens":1,"output_tokens":1}}}`),
+		},
+	}
+	secondUpstreamConn := &openAIWSCaptureConn{
+		events: [][]byte{
+			[]byte(`{"type":"response.completed","response":{"id":"resp_enc_lineage_2","model":"gpt-5.1","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"done"}]}],"usage":{"input_tokens":1,"output_tokens":1}}}`),
 		},
 	}
 	dialer := &openAIWSQueueDialer{
-		conns: []openAIWSClientConn{upstreamConn},
+		conns: []openAIWSClientConn{firstUpstreamConn, secondUpstreamConn},
 	}
 	pool := newOpenAIWSConnPool(cfg)
 	pool.setClientDialerForTest(dialer)
+	t.Cleanup(pool.Close)
 
 	svc := &OpenAIGatewayService{
 		cfg:              cfg,
@@ -5281,6 +5276,8 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_InvalidEncrypted
 		toolCorrector:    NewCodexToolCorrector(),
 		openaiWSPool:     pool,
 	}
+	stateStore := NewOpenAIWSStateStore(svc.cache)
+	svc.openaiWSStateStore = stateStore
 
 	account := &Account{
 		ID:          119,
@@ -5298,7 +5295,8 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_InvalidEncrypted
 		},
 	}
 
-	serverErrCh := make(chan error, 1)
+	serverErrCh := make(chan error, 2)
+	sessionHashCh := make(chan string, 2)
 	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := coderws.Accept(w, r, &coderws.AcceptOptions{
 			CompressionMode: coderws.CompressionContextTakeover,
@@ -5316,6 +5314,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_InvalidEncrypted
 		req := r.Clone(r.Context())
 		req.Header = req.Header.Clone()
 		req.Header.Set("User-Agent", "unit-test-agent/1.0")
+		req.Header.Set("session_id", "native-encrypted-content-session")
 		ginCtx.Request = req
 
 		readCtx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
@@ -5330,68 +5329,82 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_InvalidEncrypted
 			return
 		}
 
+		sessionHashCh <- svc.GenerateSessionHash(ginCtx, firstMessage)
 		serverErrCh <- svc.ProxyResponsesWebSocketFromClient(r.Context(), ginCtx, conn, account, "sk-test", firstMessage, nil)
 	}))
 	defer wsServer.Close()
 
-	dialCtx, cancelDial := context.WithTimeout(context.Background(), 3*time.Second)
-	clientConn, _, err := coderws.Dial(dialCtx, "ws"+strings.TrimPrefix(wsServer.URL, "http"), nil)
-	cancelDial()
-	require.NoError(t, err)
-	defer func() {
-		_ = clientConn.CloseNow()
-	}()
-
-	writeMessage := func(payload string) {
+	dialClient := func() *coderws.Conn {
+		t.Helper()
+		dialCtx, cancelDial := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancelDial()
+		conn, _, err := coderws.Dial(dialCtx, "ws"+strings.TrimPrefix(wsServer.URL, "http"), nil)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = conn.CloseNow() })
+		return conn
+	}
+	writeMessage := func(conn *coderws.Conn, payload string) {
+		t.Helper()
 		writeCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		require.NoError(t, clientConn.Write(writeCtx, coderws.MessageText, []byte(payload)))
+		require.NoError(t, conn.Write(writeCtx, coderws.MessageText, []byte(payload)))
 	}
-	readMessage := func() []byte {
+	readMessage := func(conn *coderws.Conn) []byte {
+		t.Helper()
 		readCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		msgType, message, readErr := clientConn.Read(readCtx)
+		msgType, message, readErr := conn.Read(readCtx)
 		require.NoError(t, readErr)
 		require.Equal(t, coderws.MessageText, msgType)
 		return message
 	}
 
-	// turn1：携带失效密文，上游以 invalid_encrypted_content 拒绝（error + response.failed 透传给客户端）。
-	writeMessage(`{"type":"response.create","model":"gpt-5.1","stream":false,"input":[{"type":"reasoning","id":"rs_1","encrypted_content":"stale-cipher","summary":[]},{"type":"input_text","text":"hi"}]}`)
-	firstEvent := readMessage()
-	require.Equal(t, "error", gjson.GetBytes(firstEvent, "type").String())
-	require.Equal(t, "invalid_encrypted_content", gjson.GetBytes(firstEvent, "error.code").String())
-	secondEvent := readMessage()
-	require.Equal(t, "response.failed", gjson.GetBytes(secondEvent, "type").String())
+	// 首请求的状态错误立即终止，不重试、不把失效密文写成后续请求的清洗规则。
+	firstPayload := `{"type":"response.create","model":"gpt-5.1","stream":false,"prompt_cache_key":"native-encrypted-content-session","input":[{"type":"reasoning","id":"rs_1","encrypted_content":"stale-cipher","summary":[],"phase":"analysis","extension":{"keep":true}},{"type":"input_text","text":"hi"}]}`
+	firstClient := dialClient()
+	writeMessage(firstClient, firstPayload)
+	select {
+	case serverErr := <-serverErrCh:
+		var failoverErr *UpstreamFailoverError
+		require.ErrorAs(t, serverErr, &failoverErr)
+		require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
+		require.Equal(t, GatewayFailureScopeRequest, failoverErr.Scope)
+		require.False(t, failoverErr.ShouldRetryNextAccount())
+		require.True(t, failoverErr.SuppressAccountHealthPenalty)
+	case <-time.After(5 * time.Second):
+		t.Fatal("等待失效密文请求终止超时")
+	}
+	_ = firstClient.CloseNow()
+	require.Equal(t, 1, dialer.DialCount(), "首请求的失效密文不得自动重试")
+	require.False(t, stateStore.HasAnySessionInvalidEncryptedContent(), "上游拒绝不得污染同会话后续请求")
 
-	// turn2：客户端历史仍带同一失效密文，进场应被 lineage 预剥离后再发上游。
-	writeMessage(`{"type":"response.create","model":"gpt-5.1","stream":false,"input":[{"type":"reasoning","id":"rs_1","encrypted_content":"stale-cipher","summary":[]},{"type":"input_text","text":"hi"},{"type":"input_text","text":"again"}]}`)
-	thirdEvent := readMessage()
-	require.Equal(t, "response.completed", gjson.GetBytes(thirdEvent, "type").String())
-	require.Equal(t, "resp_enc_lineage_2", gjson.GetBytes(thirdEvent, "response.id").String())
-
-	require.NoError(t, clientConn.Close(coderws.StatusNormalClosure, "done"))
+	// 同一会话的新客户端连接仍提交完整原始历史；不能继承失败请求的密文清洗行为。
+	secondPayload := `{"type":"response.create","model":"gpt-5.1","stream":false,"prompt_cache_key":"native-encrypted-content-session","input":[{"type":"reasoning","id":"rs_1","encrypted_content":"stale-cipher","summary":[],"phase":"analysis","extension":{"keep":true}},{"type":"input_text","text":"hi"},{"type":"input_text","text":"again"}]}`
+	secondClient := dialClient()
+	writeMessage(secondClient, secondPayload)
+	completed := readMessage(secondClient)
+	require.Equal(t, "response.completed", gjson.GetBytes(completed, "type").String())
+	require.Equal(t, "resp_enc_lineage_2", gjson.GetBytes(completed, "response.id").String())
+	require.NoError(t, secondClient.Close(coderws.StatusNormalClosure, "done"))
 	select {
 	case serverErr := <-serverErrCh:
 		require.NoError(t, serverErr)
 	case <-time.After(5 * time.Second):
-		t.Fatal("等待 ingress websocket 结束超时")
+		t.Fatal("等待同会话新连接结束超时")
 	}
 
-	upstreamConn.mu.Lock()
-	writes := append([]map[string]any(nil), upstreamConn.writes...)
-	upstreamConn.mu.Unlock()
-	require.Len(t, writes, 2, "两轮各应发送一次上游请求")
-
-	firstUpstream := requestToJSONString(writes[0])
-	require.Equal(t, "stale-cipher", gjson.Get(firstUpstream, "input.0.encrypted_content").String(), "首轮请求原样携带密文")
-
-	secondUpstream := requestToJSONString(writes[1])
-	secondInput := gjson.Get(secondUpstream, "input").Array()
-	require.Len(t, secondInput, 3, "剥离仅移除 encrypted_content 字段，reasoning 骨架保留")
-	for _, item := range secondInput {
-		require.False(t, item.Get("encrypted_content").Exists(), "第二轮请求不得再携带已失效密文: %s", item.Raw)
+	firstSessionHash, secondSessionHash := <-sessionHashCh, <-sessionHashCh
+	require.NotEmpty(t, firstSessionHash)
+	require.Equal(t, firstSessionHash, secondSessionHash, "测试必须在同一会话键下跨连接验证状态保留")
+	require.Equal(t, 2, dialer.DialCount())
+	for i, upstreamConn := range []*openAIWSCaptureConn{firstUpstreamConn, secondUpstreamConn} {
+		upstreamConn.mu.Lock()
+		writes := append([]map[string]any(nil), upstreamConn.writes...)
+		upstreamConn.mu.Unlock()
+		require.Len(t, writes, 1, "每个显式客户端请求只能发送一次上游请求")
+		original := []string{firstPayload, secondPayload}[i]
+		upstream := requestToJSONString(writes[0])
+		require.JSONEq(t, gjson.Get(original, "input").Raw, gjson.Get(upstream, "input").Raw, "密文、summary、phase、扩展字段及历史顺序必须原样保留")
 	}
-	require.Equal(t, "rs_1", gjson.Get(secondUpstream, "input.0.id").String())
-	require.Equal(t, "again", gjson.Get(secondUpstream, "input.2.text").String())
+	require.False(t, stateStore.HasAnySessionInvalidEncryptedContent())
 }

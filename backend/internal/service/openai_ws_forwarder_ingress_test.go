@@ -902,7 +902,7 @@ func TestBuildOpenAIWSReplayInputSequence(t *testing.T) {
 		require.Equal(t, "world", gjson.GetBytes(items[1], "text").String())
 	})
 
-	t.Run("previous_response_id_filters_orphan_historical_custom_tool_call", func(t *testing.T) {
+	t.Run("previous_response_id_preserves_unfinished_historical_custom_tool_call", func(t *testing.T) {
 		previousFull := []json.RawMessage{
 			json.RawMessage(`{"type":"input_text","text":"hello"}`),
 			json.RawMessage(`{"type":"custom_tool_call","id":"item_orphan","call_id":"call_orphan","name":"exec","input":"pwd"}`),
@@ -915,9 +915,10 @@ func TestBuildOpenAIWSReplayInputSequence(t *testing.T) {
 		)
 		require.NoError(t, err)
 		require.True(t, exists)
-		require.Len(t, items, 2)
+		require.Len(t, items, 3)
 		require.Equal(t, "hello", gjson.GetBytes(items[0], "text").String())
-		require.Equal(t, "user", gjson.GetBytes(items[1], "role").String())
+		require.JSONEq(t, string(previousFull[1]), string(items[1]))
+		require.Equal(t, "user", gjson.GetBytes(items[2], "role").String())
 	})
 
 	t.Run("previous_response_id_preserves_paired_historical_function_call", func(t *testing.T) {
@@ -968,9 +969,10 @@ func TestBuildOpenAIWSReplayInputSequence(t *testing.T) {
 		)
 		require.NoError(t, err)
 		require.True(t, exists)
-		require.Len(t, items, 2)
-		require.Equal(t, "item_reference", gjson.GetBytes(items[0], "type").String())
-		require.Equal(t, "user", gjson.GetBytes(items[1], "role").String())
+		require.Len(t, items, 3)
+		require.JSONEq(t, string(previousFull[0]), string(items[0]))
+		require.Equal(t, "item_reference", gjson.GetBytes(items[1], "type").String())
+		require.Equal(t, "user", gjson.GetBytes(items[2], "role").String())
 	})
 
 	t.Run("previous_response_id_preserves_current_orphan_custom_tool_call", func(t *testing.T) {

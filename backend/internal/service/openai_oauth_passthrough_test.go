@@ -216,10 +216,78 @@ func TestOpenAIGatewayService_NativeResponsesBodyModificationPreservesHTMLChars(
 	require.Nil(t, result)
 	require.NotNil(t, upstream.lastReq)
 	require.Equal(t, "http://upstream.example/v1/responses", upstream.lastReq.URL.String())
+	require.Equal(t, "resp_prev", gjson.GetBytes(upstream.lastBody, "previous_response_id").String())
 	require.Contains(t, string(upstream.lastBody), payloadText)
 	require.NotContains(t, string(upstream.lastBody), `\\u003c`)
 	require.NotContains(t, string(upstream.lastBody), `\\u003e`)
 	require.NotContains(t, string(upstream.lastBody), `\\u0026`)
+}
+
+func TestOpenAIGatewayService_HTTPPreviousResponseUsesEndpointContractIndependentOfWSConfig(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	for _, accountType := range []string{AccountTypeAPIKey, AccountTypeOAuth} {
+		for _, passthrough := range []bool{false, true} {
+			for _, wsEnabled := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/passthrough=%t/ws=%t", accountType, passthrough, wsEnabled), func(t *testing.T) {
+					requestBody := []byte(`{"model":"gpt-5.2","stream":false,"store":false,"previous_response_id":"resp_prev","input":[{"type":"reasoning","id":"rs_prev","encrypted_content":"gAAA-reasoning","summary":[{"type":"summary_text","text":"keep reasoning summary"}],"vendor_extension":{"nonce":9007199254740993}},{"type":"compaction","id":"cmp_prev","encrypted_content":"gAAA-compaction"},{"type":"message","role":"assistant","phase":"commentary","content":[{"type":"output_text","text":"Checking."}]},{"type":"function_call_output","call_id":"call_prev","output":"ok"}]}`)
+					originalBody := append([]byte(nil), requestBody...)
+					rec := httptest.NewRecorder()
+					c, _ := gin.CreateTestContext(rec)
+					c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(requestBody))
+					c.Request.Header.Set("Content-Type", "application/json")
+					SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+
+					upstream := &httpUpstreamRecorder{resp: &http.Response{
+						StatusCode: http.StatusOK,
+						Header:     http.Header{"Content-Type": []string{"application/json"}},
+						Body:       io.NopCloser(strings.NewReader(`{"id":"resp_continued","object":"response","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}`)),
+					}}
+					svc := &OpenAIGatewayService{
+						cfg: &config.Config{Gateway: config.GatewayConfig{OpenAIWS: config.GatewayOpenAIWSConfig{
+							Enabled: wsEnabled, OAuthEnabled: true, APIKeyEnabled: true, ResponsesWebsocketsV2: true,
+						}}},
+						httpUpstream:  upstream,
+						toolCorrector: NewCodexToolCorrector(),
+					}
+					account := &Account{
+						ID: 457, Name: "http-continuation-contract", Platform: PlatformOpenAI, Type: accountType, Concurrency: 1,
+						Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://api.example.test"},
+						Extra: map[string]any{
+							"openai_passthrough":                     passthrough,
+							openai_compat.ExtraKeyResponsesMode:      string(openai_compat.ResponsesSupportModeAuto),
+							openai_compat.ExtraKeyResponsesSupported: true,
+						},
+						Status: StatusActive, Schedulable: true,
+					}
+					if accountType == AccountTypeOAuth {
+						account.Credentials = map[string]any{"access_token": "oauth-token", "chatgpt_account_id": "chatgpt-acc"}
+					}
+
+					result, err := svc.Forward(context.Background(), c, account, requestBody)
+
+					require.Equal(t, originalBody, requestBody, "endpoint adaptation must not mutate the original continuation request")
+					if accountType == AccountTypeOAuth {
+						require.Error(t, err)
+						require.Nil(t, result)
+						require.Empty(t, upstream.requests, "Codex OAuth HTTP cannot resolve a response reference and must reject before sending")
+						require.Equal(t, http.StatusBadRequest, rec.Code)
+						require.Equal(t, "invalid_request_error", gjson.Get(rec.Body.String(), "error.type").String())
+						require.Contains(t, gjson.Get(rec.Body.String(), "error.message").String(), "previous_response_id")
+						return
+					}
+
+					require.NoError(t, err)
+					require.NotNil(t, result)
+					require.Len(t, upstream.requests, 1)
+					require.Equal(t, "https://api.example.test/v1/responses", upstream.lastReq.URL.String())
+					require.Equal(t, "resp_prev", gjson.GetBytes(upstream.lastBody, "previous_response_id").String())
+					require.Equal(t, gjson.GetBytes(originalBody, "store").Raw, gjson.GetBytes(upstream.lastBody, "store").Raw)
+					require.Equal(t, gjson.GetBytes(originalBody, "input").Raw, gjson.GetBytes(upstream.lastBody, "input").Raw, "native HTTP continuation must preserve reasoning, compaction, phase, tool state and extensions")
+				})
+			}
+		}
+	}
 }
 
 func TestOpenAIGatewayService_OAuthMessagesBridgeDoesNotInjectDefaultInstructions(t *testing.T) {
@@ -1743,7 +1811,7 @@ func TestOpenAIGatewayService_OpenAIPassthrough_RetryableStatusesTriggerFailover
 	}
 }
 
-func TestOpenAIGatewayService_OpenAIPassthrough_InvalidEncryptedContentRetriesSameAccountOnce(t *testing.T) {
+func TestOpenAIGatewayService_OpenAIPassthrough_InvalidEncryptedContentTerminatesWithoutMutatingState(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1773,7 +1841,7 @@ func TestOpenAIGatewayService_OpenAIPassthrough_InvalidEncryptedContentRetriesSa
 	}
 	account := &Account{
 		ID:          130,
-		Name:        "passthrough-continuation-recovery",
+		Name:        "passthrough-continuation-terminal",
 		Platform:    PlatformOpenAI,
 		Type:        AccountTypeAPIKey,
 		Concurrency: 1,
@@ -1782,24 +1850,28 @@ func TestOpenAIGatewayService_OpenAIPassthrough_InvalidEncryptedContentRetriesSa
 		Status:      StatusActive,
 		Schedulable: true,
 	}
-	requestBody := []byte(`{"model":"gpt-5.2","stream":false,"previous_response_id":"resp_stale","input":[{"type":"reasoning","encrypted_content":"gAAA","summary":[{"type":"summary_text","text":"keep me"}]},{"type":"message","content":[{"type":"input_text","text":"hi","nonce":9007199254740993}]}]}`)
+	requestBody := []byte(`{"model":"gpt-5.2","stream":false,"store":false,"previous_response_id":"resp_stale","input":[{"type":"reasoning","encrypted_content":"gAAA","summary":[{"type":"summary_text","text":"keep me"}]},{"type":"compaction","encrypted_content":"gAAA-compaction"},{"type":"message","role":"assistant","phase":"commentary","content":[{"type":"output_text","text":"Checking.","nonce":9007199254740993}]}]}`)
+	originalBody := append([]byte(nil), requestBody...)
 
 	result, err := svc.Forward(context.Background(), c, account, requestBody)
 
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Len(t, upstream.bodies, 2, "invalid encrypted content recovery must be bounded to one same-account replay")
-	require.Equal(t, "resp_stale", gjson.GetBytes(upstream.bodies[0], "previous_response_id").String())
-	require.False(t, gjson.GetBytes(upstream.bodies[1], "previous_response_id").Exists())
-	require.Equal(t, "gAAA", gjson.GetBytes(upstream.bodies[0], "input.0.encrypted_content").String())
-	require.False(t, gjson.GetBytes(upstream.bodies[1], "input.0.encrypted_content").Exists())
-	require.Equal(t, "summary_text", gjson.GetBytes(upstream.bodies[1], "input.0.summary.0.type").String())
-	require.Equal(t, "9007199254740993", gjson.GetBytes(upstream.bodies[1], "input.1.content.0.nonce").Raw)
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
+	require.False(t, failoverErr.ShouldRetryNextAccount())
+	require.True(t, failoverErr.SuppressAccountHealthPenalty)
+	require.Len(t, upstream.bodies, 1, "the first invalid encrypted response must terminate without stripping or replaying state")
+	require.Equal(t, originalBody, upstream.bodies[0])
+	require.Equal(t, originalBody, requestBody)
+	require.Len(t, upstream.responses, 1, "a later successful fixture must never be requested")
+	require.False(t, c.Writer.Written())
+	require.Empty(t, rec.Body.String())
 	require.Empty(t, repo.rateLimitCalls)
 	require.Empty(t, repo.overloadCalls)
 }
 
-func TestOpenAIGatewayService_OpenAIPassthrough_ResponseFailedInvalidEncryptedContentRetriesSameAccountOnce(t *testing.T) {
+func TestOpenAIGatewayService_OpenAIPassthrough_ResponseFailedInvalidEncryptedContentTerminatesWithoutReplay(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	tests := []struct {
 		name      string
@@ -1863,7 +1935,7 @@ func TestOpenAIGatewayService_OpenAIPassthrough_ResponseFailedInvalidEncryptedCo
 			}
 			account := &Account{
 				ID:          133,
-				Name:        "passthrough-response-failed-recovery",
+				Name:        "passthrough-response-failed-terminal",
 				Platform:    PlatformOpenAI,
 				Type:        AccountTypeAPIKey,
 				Concurrency: 1,
@@ -1873,23 +1945,31 @@ func TestOpenAIGatewayService_OpenAIPassthrough_ResponseFailedInvalidEncryptedCo
 				Schedulable: true,
 			}
 			requestBody := []byte(fmt.Sprintf(
-				`{"model":"gpt-5.2","stream":%t,"previous_response_id":"resp_stale","input":[{"type":"reasoning","encrypted_content":"gAAA"},{"type":"message","content":"hi"}]}`,
+				`{"model":"gpt-5.2","stream":%t,"store":false,"previous_response_id":"resp_stale","input":[{"type":"reasoning","encrypted_content":"gAAA","summary":[{"type":"summary_text","text":"keep me"}]},{"type":"compaction","encrypted_content":"gAAA-compaction"},{"type":"message","content":"hi"}]}`,
 				tt.stream,
 			))
+			originalBody := append([]byte(nil), requestBody...)
 
 			result, err := svc.Forward(context.Background(), c, account, requestBody)
 
-			require.NoError(t, err)
-			require.NotNil(t, result)
-			require.Len(t, upstream.bodies, 2)
-			require.False(t, gjson.GetBytes(upstream.bodies[1], "previous_response_id").Exists())
-			require.False(t, gjson.GetBytes(upstream.bodies[1], "input.0.encrypted_content").Exists())
-			require.NotContains(t, rec.Body.String(), "invalid_encrypted_content")
+			require.Nil(t, result)
+			var failoverErr *UpstreamFailoverError
+			require.ErrorAs(t, err, &failoverErr)
+			require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
+			require.False(t, failoverErr.ShouldRetryNextAccount())
+			require.True(t, failoverErr.SuppressAccountHealthPenalty)
+			require.Len(t, upstream.bodies, 1, "a failed event carried by HTTP 200 must not trigger state-stripping recovery")
+			require.Equal(t, originalBody, upstream.bodies[0])
+			require.Equal(t, originalBody, requestBody)
+			require.Len(t, upstream.responses, 1, "a later completed response must never replace the failed response")
+			require.NotContains(t, rec.Body.String(), "resp_recovered")
+			require.NotContains(t, rec.Body.String(), "response.completed")
+			require.NotContains(t, rec.Body.String(), "[DONE]")
 		})
 	}
 }
 
-func TestOpenAIGatewayService_OpenAIPassthrough_InvalidEncryptedContentDoesNotRetryTwice(t *testing.T) {
+func TestOpenAIGatewayService_OpenAIPassthrough_InvalidEncryptedContentFirstErrorStopsAdditionalResponses(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1929,7 +2009,8 @@ func TestOpenAIGatewayService_OpenAIPassthrough_InvalidEncryptedContentDoesNotRe
 		Status:      StatusActive,
 		Schedulable: true,
 	}
-	requestBody := []byte(`{"model":"gpt-5.2","stream":false,"previous_response_id":"resp_stale","input":[{"type":"reasoning","encrypted_content":"gAAA"},{"type":"message","content":"hi"}]}`)
+	requestBody := []byte(`{"model":"gpt-5.2","stream":false,"store":false,"previous_response_id":"resp_stale","input":[{"type":"reasoning","encrypted_content":"gAAA"},{"type":"compaction","encrypted_content":"gAAA-compaction"},{"type":"message","content":"hi"}]}`)
+	originalBody := append([]byte(nil), requestBody...)
 
 	result, err := svc.Forward(context.Background(), c, account, requestBody)
 
@@ -1939,8 +2020,12 @@ func TestOpenAIGatewayService_OpenAIPassthrough_InvalidEncryptedContentDoesNotRe
 	require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
 	require.False(t, failoverErr.ShouldRetryNextAccount())
 	require.True(t, failoverErr.SuppressAccountHealthPenalty)
-	require.Len(t, upstream.bodies, 2, "a second invalid encrypted response must terminate instead of replaying again")
+	require.Len(t, upstream.bodies, 1, "the first state error must terminate; no second error or eventual success should be requested")
+	require.Equal(t, originalBody, upstream.bodies[0])
+	require.Equal(t, originalBody, requestBody)
+	require.Len(t, upstream.responses, 2)
 	require.False(t, c.Writer.Written())
+	require.Empty(t, rec.Body.String())
 	require.Empty(t, repo.rateLimitCalls)
 	require.Empty(t, repo.overloadCalls)
 }
