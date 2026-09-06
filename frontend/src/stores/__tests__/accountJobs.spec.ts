@@ -143,32 +143,51 @@ describe('useAccountJobsStore', () => {
     }, { signal: expect.any(AbortSignal) })
   })
 
-  it('does not poll either the list or details, including after tracking a task', async () => {
+  it('polls active tasks and stops after they become terminal', async () => {
     const store = useAccountJobsStore()
     store.track(job('running'))
-    await vi.advanceTimersByTimeAsync(10_000)
     expect(list).not.toHaveBeenCalled()
-    expect(get).not.toHaveBeenCalled()
-    expect(listItems).not.toHaveBeenCalled()
+
+    list.mockResolvedValue({
+      items: [job('succeeded')],
+      total: 1,
+      page: 1,
+      page_size: 20,
+    })
+    await vi.advanceTimersByTimeAsync(3_000)
+    await vi.runOnlyPendingTimersAsync()
+    expect(list).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(6_000)
+    expect(list).toHaveBeenCalledTimes(1)
 
     store.clear()
     await vi.advanceTimersByTimeAsync(10_000)
 
-    expect(list).not.toHaveBeenCalled()
     expect(store.recentJobs).toEqual([])
     expect(store.currentJob).toBeNull()
     expect(store.items).toEqual([])
     expect(store.drawerOpen).toBe(false)
   })
 
-  it('refreshes the selected page and filters only on an explicit request', async () => {
+  it('performs one initial admin-session load and does not keep polling without active jobs', async () => {
+    list.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
+    const store = useAccountJobsStore()
+
+    store.startPolling()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(list).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(6_000)
+    expect(list).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshes the selected page and filters on an explicit request', async () => {
     const store = useAccountJobsStore()
     list.mockResolvedValue({ items: [], total: 0, page: 3, page_size: 25 })
     await store.loadRecent({ page: 3, page_size: 25, kind: 'account_import', status: 'running' })
     list.mockClear()
 
-    await vi.advanceTimersByTimeAsync(10_000)
-    expect(list).not.toHaveBeenCalled()
     await store.loadRecent()
 
     expect(list).toHaveBeenCalledWith({

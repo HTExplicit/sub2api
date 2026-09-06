@@ -10,6 +10,7 @@ import accountJobsAPI, {
 import { useAppStore } from '@/stores/app'
 import { i18n } from '@/i18n'
 
+const POLL_INTERVAL_MS = 3_000
 const TERMINAL_STATUSES = new Set(['succeeded', 'partially_succeeded', 'failed', 'canceled'])
 
 export function isTerminalAccountJob(job: AccountJob): boolean {
@@ -29,6 +30,9 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
   const listFilters = reactive({ kind: '', status: '' })
   const trackedStatuses = new Map<number, AccountJob['status']>()
   const notifiedJobs = new Set<number>()
+  let poller: ReturnType<typeof setInterval> | null = null
+  let pollingEnabled = false
+  let pollInFlight = false
   let generation = 0
   let listRequest: AbortController | null = null
   let currentRequest: AbortController | null = null
@@ -37,6 +41,33 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
 
   const activeJobs = computed(() => recentJobs.value.filter((job) => !isTerminalAccountJob(job)))
   const activeCount = computed(() => activeJobs.value.length)
+
+  function hasKnownActiveJobs(): boolean {
+    if (activeJobs.value.length > 0) return true
+    for (const status of trackedStatuses.values()) {
+      if (!TERMINAL_STATUSES.has(status)) return true
+    }
+    return false
+  }
+
+  function stopPolling(): void {
+    if (poller) {
+      clearInterval(poller)
+      poller = null
+    }
+    pollingEnabled = false
+  }
+
+  function syncPollingState(): void {
+    if (!pollingEnabled || pollInFlight) return
+    if (!hasKnownActiveJobs()) {
+      stopPolling()
+      return
+    }
+    if (!poller) {
+      poller = setInterval(() => { void poll() }, POLL_INTERVAL_MS)
+    }
+  }
 
   function notifyTerminal(job: AccountJob): void {
     const appStore = useAppStore()
@@ -61,7 +92,7 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
       notifiedJobs.add(job.id)
       notifyTerminal(job)
     }
-    if (previous) trackedStatuses.set(job.id, job.status)
+    trackedStatuses.set(job.id, job.status)
   }
 
   function updateRecent(job: AccountJob, allowInsert = false): void {
@@ -90,9 +121,7 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
   }
 
   function track(job: AccountJob, options: { open?: boolean } = {}): void {
-    const previous = trackedStatuses.get(job.id)
-    if (previous) observeTrackedTransition(job)
-    else trackedStatuses.set(job.id, job.status)
+    observeTrackedTransition(job)
     listRequest?.abort()
     listRequestSerial += 1
     loadingJobs.value = false
@@ -106,6 +135,7 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
       itemPage.page = 1
       drawerOpen.value = true
     }
+    if (!isTerminalAccountJob(job)) startPolling(false)
   }
 
   async function loadRecent(params: AccountJobListParams = {}): Promise<void> {
@@ -176,6 +206,7 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
       controller.abort()
       if ((error as { status?: number; response?: { status?: number } })?.status === 404
         || (error as { response?: { status?: number } })?.response?.status === 404) {
+        trackedStatuses.delete(jobID)
         selectedJobID.value = null
         currentJob.value = null
         items.value = []
@@ -231,6 +262,32 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
     }
   }
 
+  async function poll(): Promise<void> {
+    if (!pollingEnabled || pollInFlight) return
+    pollInFlight = true
+    try {
+      await loadRecent()
+      const jobID = selectedJobID.value
+      const selected = currentJob.value
+      if (drawerOpen.value && jobID !== null && (!selected || !isTerminalAccountJob(selected))) {
+        await loadCurrent(jobID)
+      }
+    } catch (error) {
+      if (!(error as { code?: string })?.code?.includes('CANCEL')) {
+        console.error('Account job polling failed', error)
+      }
+    } finally {
+      pollInFlight = false
+      syncPollingState()
+    }
+  }
+
+  function startPolling(immediate = true): void {
+    pollingEnabled = true
+    if (immediate) void poll()
+    syncPollingState()
+  }
+
   async function openDrawer(): Promise<void> {
     drawerOpen.value = true
     await refreshDrawer()
@@ -263,6 +320,7 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
   }
 
   function clear(): void {
+    stopPolling()
     listRequest?.abort()
     currentRequest?.abort()
     generation += 1
@@ -307,6 +365,8 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
     retryJob,
     reviewDuplicates,
     mergeDuplicates,
+    startPolling,
+    stopPolling,
     clear,
   }
 })

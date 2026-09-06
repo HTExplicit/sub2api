@@ -462,7 +462,7 @@ digest=$(awk '$1 == "Digest:" && digest == "" {digest=$2} END {if (digest == "")
 
 for input in operation release_tag expected_current_release_tag confirmation \
   cindy_health cindy_capability_catalog cindy_search image_studio \
-  cindy_responses_image_bridge overdraft interrupt_business; do
+  cindy_responses_image_bridge overdraft interrupt_business resource_profile; do
   grep -Fq "      ${input}:" "$WORKFLOW" || fail "missing typed workflow input: $input"
 done
 grep -Fq '          - deploy' "$WORKFLOW" || fail 'workflow operation is missing deploy'
@@ -502,6 +502,8 @@ grep -Fq 'version_strictly_less "$RELEASE_TAG" "$EXPECTED_CURRENT_RELEASE_TAG"' 
   fail 'rollback must require the target release to be older than expected-current'
 grep -Fq 'remote_command="deploy ${IMAGE_REF} ${CINDY_ROLLOUT} overdraft=${OVERDRAFT}"' "$WORKFLOW" ||
   fail 'deploy must pass the canonical rollout tuple to the forced command'
+grep -Fq 'remote_command+=" $RESOURCE_SPEC"' "$WORKFLOW" ||
+  fail 'deploy must pass an explicit Sub2API resource profile to the forced command'
 grep -Fq 'maintenance_spec=maintenance=interrupt' "$WORKFLOW" ||
   fail 'explicit business interruption must resolve to a fixed maintenance spec'
 grep -Fq 'remote_command+=" $MAINTENANCE_SPEC"' "$WORKFLOW" ||

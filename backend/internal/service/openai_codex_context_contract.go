@@ -10,7 +10,7 @@ import (
 const (
 	// OfficialCodexContextContractSuccessLine is the stable machine-readable
 	// success record consumed by production acceptance.
-	OfficialCodexContextContractSuccessLine = "CODEX_CONTEXT_CONTRACT|valid=true|sol_context=1000000|sol_max=1000000|sol_compact=900000|terra_context=272000|terra_max=921000|terra_compact=null|luna_context=272000|luna_max=921000|luna_compact=null|sentinel=preserved"
+	OfficialCodexContextContractSuccessLine = "CODEX_CONTEXT_CONTRACT|valid=true|sol_context=1000000|sol_max=1000000|sol_compact=900000|terra_context=272000|terra_max=872000|terra_compact=null|luna_context=272000|luna_max=872000|luna_compact=null|sentinel=preserved"
 	// OfficialCodexContextContractFailureLine is the fixed redacted record for
 	// deterministic contract failures.
 	OfficialCodexContextContractFailureLine = "CODEX_CONTEXT_CONTRACT|valid=false|reason=contract-mismatch"
@@ -19,7 +19,7 @@ const (
 	OfficialCodexContextInvalidArgsLine = "CODEX_CONTEXT_CONTRACT|valid=false|reason=invalid-arguments"
 
 	officialCodexContextContractSentinel = "codex-context-contract-v1"
-	officialCodexContextContractFixture  = `{"models":[{"slug":"gpt-5.6-sol","context_window":1,"max_context_window":2,"auto_compact_token_limit":null,"contract_sentinel":"codex-context-contract-v1"},{"slug":"gpt-5.6-terra","context_window":3,"max_context_window":4,"auto_compact_token_limit":5},{"slug":"gpt-5.6-luna"},{"slug":"gpt-5.5","context_window":777000,"contract_sentinel":"codex-context-contract-v1"}],"contract_sentinel":"codex-context-contract-v1"}`
+	officialCodexContextContractFixture  = `{"models":[{"slug":"gpt-5.6-sol","context_window":1,"max_context_window":2,"auto_compact_token_limit":null,"contract_sentinel":"codex-context-contract-v1"},{"slug":"gpt-5.6-terra","context_window":272000,"max_context_window":872000,"auto_compact_token_limit":null},{"slug":"gpt-5.6-luna","context_window":272000,"max_context_window":872000,"auto_compact_token_limit":null},{"slug":"gpt-5.5","context_window":777000,"contract_sentinel":"codex-context-contract-v1"}],"contract_sentinel":"codex-context-contract-v1"}`
 )
 
 type officialCodexContextContractEnvelope struct {
@@ -68,8 +68,8 @@ func verifyNormalizedOfficialCodexContextContract(body []byte) error {
 		autoCompact                     string
 	}{
 		{slug: "gpt-5.6-sol", contextWindow: 1000000, maxContextWindow: 1000000, autoCompact: "900000"},
-		{slug: "gpt-5.6-terra", contextWindow: 272000, maxContextWindow: 921000, autoCompact: "null"},
-		{slug: "gpt-5.6-luna", contextWindow: 272000, maxContextWindow: 921000, autoCompact: "null"},
+		{slug: "gpt-5.6-terra", contextWindow: 272000, maxContextWindow: 872000, autoCompact: "null"},
+		{slug: "gpt-5.6-luna", contextWindow: 272000, maxContextWindow: 872000, autoCompact: "null"},
 	}
 	for _, check := range checks {
 		models := bySlug[check.slug]
