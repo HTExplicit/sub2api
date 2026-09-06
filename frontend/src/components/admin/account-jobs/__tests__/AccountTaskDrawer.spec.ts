@@ -59,26 +59,42 @@ describe('AccountTaskDrawer', () => {
     vi.useRealTimers()
   })
 
-  it('refreshes the current snapshot only after clicking the explicit refresh button', async () => {
+  it('refreshes active tasks automatically and stops after completion', async () => {
     vi.useFakeTimers()
     const store = useAccountJobsStore()
-    store.track({ ...reviewJob, status: 'running' })
-    api.list.mockResolvedValue({ items: [store.currentJob], total: 1, page: 1, page_size: 20 })
-    api.get.mockResolvedValue(store.currentJob)
+    const runningJob = { ...reviewJob, status: 'running' as const, processed_count: 1 }
+    api.list.mockResolvedValue({ items: [runningJob], total: 1, page: 1, page_size: 20 })
+    api.get.mockResolvedValue(runningJob)
     api.listItems.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
+    store.track(runningJob)
     const wrapper = mount(AccountTaskDrawer, {
       global: { stubs: { Teleport: true, RouterLink: true, Icon: true } },
     })
 
-    await vi.advanceTimersByTimeAsync(10_000)
-    expect(api.list).not.toHaveBeenCalled()
-    expect(api.get).not.toHaveBeenCalled()
-    expect(api.listItems).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(3_000)
+    await flushPromises()
+    expect(api.list.mock.calls.length).toBeGreaterThanOrEqual(1)
+    expect(api.get.mock.calls.length).toBeGreaterThanOrEqual(1)
+    expect(api.listItems.mock.calls.length).toBeGreaterThanOrEqual(1)
+
+    api.list.mockResolvedValue({
+      items: [{ ...runningJob, status: 'succeeded', processed_count: 2 }],
+      total: 1,
+      page: 1,
+      page_size: 20,
+    })
+    api.get.mockResolvedValue({ ...runningJob, status: 'succeeded', processed_count: 2 })
+    const listCallsBeforeCompletion = api.list.mock.calls.length
+    await vi.advanceTimersByTimeAsync(3_000)
+    await flushPromises()
+    const listCallsAfterCompletion = api.list.mock.calls.length
+    await vi.advanceTimersByTimeAsync(6_000)
+    expect(api.list.mock.calls.length).toBe(listCallsAfterCompletion)
+    expect(listCallsAfterCompletion).toBeGreaterThan(listCallsBeforeCompletion)
+
     await wrapper.get('[data-test="task-refresh"]').trigger('click')
     await flushPromises()
-    expect(api.list).toHaveBeenCalledTimes(1)
-    expect(api.get).toHaveBeenCalledTimes(1)
-    expect(api.listItems).toHaveBeenCalledTimes(1)
+    expect(api.list.mock.calls.length).toBeGreaterThan(listCallsAfterCompletion)
     wrapper.unmount()
   })
 

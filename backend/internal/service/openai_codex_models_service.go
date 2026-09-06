@@ -2427,14 +2427,6 @@ var officialCodexContexts = map[string]officialCodexContext{
 		contextWindow: 1000000, maxContextWindow: 1000000,
 		autoCompactLimit: json.RawMessage("900000"),
 	},
-	"gpt-5.6-terra": {
-		contextWindow: 272000, maxContextWindow: 921000,
-		autoCompactLimit: json.RawMessage("null"),
-	},
-	"gpt-5.6-luna": {
-		contextWindow: 272000, maxContextWindow: 921000,
-		autoCompactLimit: json.RawMessage("null"),
-	},
 }
 
 func isOrdinaryOpenAIAPIKeyAccount(account *Account) bool {

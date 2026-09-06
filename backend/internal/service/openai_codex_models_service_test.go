@@ -1196,10 +1196,10 @@ func TestBuildGroupConfiguredCodexModelsManifestNormalizesFinalOrdinaryGPT56Cont
 	require.EqualValues(t, 1_000_000, bySlug["gpt-5.6-sol"]["max_context_window"])
 	require.EqualValues(t, 900_000, bySlug["gpt-5.6-sol"]["auto_compact_token_limit"])
 	require.EqualValues(t, 272_000, bySlug["gpt-5.6-terra"]["context_window"])
-	require.EqualValues(t, 921_000, bySlug["gpt-5.6-terra"]["max_context_window"])
+	require.EqualValues(t, 272_000, bySlug["gpt-5.6-terra"]["max_context_window"])
 	require.Nil(t, bySlug["gpt-5.6-terra"]["auto_compact_token_limit"])
 	require.EqualValues(t, 272_000, bySlug["gpt-5.6-luna"]["context_window"])
-	require.EqualValues(t, 921_000, bySlug["gpt-5.6-luna"]["max_context_window"])
+	require.EqualValues(t, 272_000, bySlug["gpt-5.6-luna"]["max_context_window"])
 	require.Nil(t, bySlug["gpt-5.6-luna"]["auto_compact_token_limit"])
 	notModified, configured, err := svc.BuildGroupConfiguredCodexModelsManifest(
 		context.Background(),
@@ -1244,8 +1244,8 @@ func TestMergeGroupConfiguredCodexModelsForAccountNormalizesAfterFinalMerge(t *t
 	require.EqualValues(t, 1_000_000, bySlug["gpt-5.6-sol"]["context_window"])
 	require.EqualValues(t, 1_000_000, bySlug["gpt-5.6-sol"]["max_context_window"])
 	require.EqualValues(t, 900_000, bySlug["gpt-5.6-sol"]["auto_compact_token_limit"])
-	require.EqualValues(t, 921_000, bySlug["gpt-5.6-terra"]["max_context_window"])
-	require.EqualValues(t, 921_000, bySlug["gpt-5.6-luna"]["max_context_window"])
+	require.EqualValues(t, 872_000, bySlug["gpt-5.6-terra"]["max_context_window"])
+	require.EqualValues(t, 872_000, bySlug["gpt-5.6-luna"]["max_context_window"])
 	require.Equal(t, codexModelsManifestBodyETag(manifest.Body), manifest.ETag)
 
 	repeated := &CodexModelsManifest{Body: []byte(`{"models":[
@@ -2524,8 +2524,8 @@ func TestNormalizeOfficialCodexModelContextsTargetsOnlyGPT56(t *testing.T) {
 	require.NoError(t, err)
 	require.JSONEq(t, `{"models":[`+
 		`{"slug":"gpt-5.6-sol","context_window":1000000,"max_context_window":1000000,"auto_compact_token_limit":900000,"other":"sol"},`+
-		`{"slug":"gpt-5.6-terra","context_window":272000,"max_context_window":921000,"auto_compact_token_limit":null},`+
-		`{"slug":"gpt-5.6-luna","context_window":272000,"max_context_window":921000,"auto_compact_token_limit":null},`+
+		`{"slug":"gpt-5.6-terra","context_window":1050000,"max_context_window":1050000,"auto_compact_token_limit":900000},`+
+		`{"slug":"gpt-5.6-luna"},`+
 		`{"slug":"gpt-5.5","context_window":272000,"other":"preserved"},`+
 		`null,"malformed"],"metadata":{"version":7}}`, string(got))
 }
@@ -3702,10 +3702,10 @@ func TestCompleteAPIKeyCodexModelsManifestForClientNormalizesFinalOrdinaryGPT56C
 	require.EqualValues(t, 1_000_000, bySlug["gpt-5.6-sol"]["max_context_window"])
 	require.EqualValues(t, 900_000, bySlug["gpt-5.6-sol"]["auto_compact_token_limit"])
 	require.EqualValues(t, 272_000, bySlug["gpt-5.6-terra"]["context_window"])
-	require.EqualValues(t, 921_000, bySlug["gpt-5.6-terra"]["max_context_window"])
+	require.EqualValues(t, 872_000, bySlug["gpt-5.6-terra"]["max_context_window"])
 	require.Nil(t, bySlug["gpt-5.6-terra"]["auto_compact_token_limit"])
 	require.EqualValues(t, 272_000, bySlug["gpt-5.6-luna"]["context_window"])
-	require.EqualValues(t, 921_000, bySlug["gpt-5.6-luna"]["max_context_window"])
+	require.EqualValues(t, 872_000, bySlug["gpt-5.6-luna"]["max_context_window"])
 	require.Nil(t, bySlug["gpt-5.6-luna"]["auto_compact_token_limit"])
 }
 

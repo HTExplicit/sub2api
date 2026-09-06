@@ -63,6 +63,15 @@ on:
         required: true
         default: false
         type: boolean
+      resource_profile:
+        description: 'Sub2API memory profile for this deployment'
+        required: true
+        default: preserve
+        type: choice
+        options:
+          - preserve
+          - auto
+          - high
 
 permissions:
   contents: read
@@ -83,6 +92,7 @@ jobs:
       overdraft: ${{ steps.resolve.outputs.overdraft }}
       maintenance_spec: ${{ steps.resolve.outputs.maintenance_spec }}
       runtime_spec: ${{ steps.resolve.outputs.runtime_spec }}
+      resource_spec: ${{ steps.resolve.outputs.resource_spec }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -104,15 +114,16 @@ jobs:
           CINDY_RESPONSES_IMAGE_BRIDGE: ${{ inputs.cindy_responses_image_bridge }}
           OVERDRAFT: ${{ inputs.overdraft }}
           INTERRUPT_BUSINESS: ${{ inputs.interrupt_business }}
+          RESOURCE_PROFILE: ${{ inputs.resource_profile }}
         shell: bash
         run: |
           set -euo pipefail
-
           runtime_mode=explicit
           if [[ "$OPERATION" == deploy-preserve ]]; then
             OPERATION=deploy
             runtime_mode=preserve
           fi
+          RESOURCE_PROFILE="${RESOURCE_PROFILE:-preserve}"
 
           validate_release_tag() {
             [[ "$1" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-codexrip\.[1-9][0-9]*$ ]]
@@ -200,9 +211,11 @@ jobs:
           esac
           [[ "$runtime_mode" == explicit || "$runtime_mode" == preserve ]] || exit 1
           [[ "$INTERRUPT_BUSINESS" == true || "$INTERRUPT_BUSINESS" == false ]] || exit 1
+          [[ "$RESOURCE_PROFILE" == preserve || "$RESOURCE_PROFILE" == auto || "$RESOURCE_PROFILE" == high ]] || exit 1
           if [[ "$runtime_mode" == preserve ]]; then
             [[ "$INTERRUPT_BUSINESS" == false ]] || exit 1
             [[ "$OPERATION" == deploy ]] || exit 1
+            [[ "$RESOURCE_PROFILE" == preserve ]] || exit 1
           else
             for flag in "$CINDY_HEALTH" "$CINDY_CAPABILITY_CATALOG" "$CINDY_SEARCH" "$IMAGE_STUDIO" "$CINDY_RESPONSES_IMAGE_BRIDGE"; do
               [[ "$flag" == true || "$flag" == false ]] || exit 1
@@ -234,6 +247,7 @@ jobs:
             echo 'cindy_rollout=' >> "$GITHUB_OUTPUT"
             echo 'overdraft=' >> "$GITHUB_OUTPUT"
             echo 'maintenance_spec=' >> "$GITHUB_OUTPUT"
+            echo 'resource_spec=resource=preserve' >> "$GITHUB_OUTPUT"
           else
             echo 'runtime_spec=runtime=explicit' >> "$GITHUB_OUTPUT"
             echo "cindy_rollout=cindy=${CINDY_HEALTH},${CINDY_CAPABILITY_CATALOG},${CINDY_SEARCH},${IMAGE_STUDIO},${CINDY_RESPONSES_IMAGE_BRIDGE}" >> "$GITHUB_OUTPUT"
@@ -243,6 +257,7 @@ jobs:
             else
               echo 'maintenance_spec=' >> "$GITHUB_OUTPUT"
             fi
+            echo "resource_spec=resource=${RESOURCE_PROFILE}" >> "$GITHUB_OUTPUT"
           fi
 
   deploy:
@@ -275,19 +290,22 @@ jobs:
           OVERDRAFT: ${{ needs.resolve.outputs.overdraft }}
           MAINTENANCE_SPEC: ${{ needs.resolve.outputs.maintenance_spec }}
           RUNTIME_SPEC: ${{ needs.resolve.outputs.runtime_spec }}
+          RESOURCE_SPEC: ${{ needs.resolve.outputs.resource_spec }}
         shell: bash
         run: |
           set -euo pipefail
+          RESOURCE_SPEC="${RESOURCE_SPEC:-resource=preserve}"
           [[ "$VPS_PORT" =~ ^[0-9]+$ ]] || exit 1
           [[ "$IMAGE_REF" =~ ^ghcr\.io/htexplicit/sub2api:[0-9]+\.[0-9]+\.[0-9]+-codexrip\.[1-9][0-9]*@sha256:[0-9a-f]{64}$ ]] || exit 1
           [[ "$RUNTIME_SPEC" == runtime=explicit || "$RUNTIME_SPEC" == runtime=preserve ]] || exit 1
+          [[ "$RESOURCE_SPEC" =~ ^resource=(preserve|auto|high)$ ]] || exit 1
           if [[ "$RUNTIME_SPEC" == runtime=explicit ]]; then
             [[ "$CINDY_ROLLOUT" =~ ^cindy=(true|false),(true|false),(true|false),(true|false),(true|false)$ ]] || exit 1
             [[ "$OVERDRAFT" == true || "$OVERDRAFT" == false ]] || exit 1
             [[ -z "$MAINTENANCE_SPEC" || "$MAINTENANCE_SPEC" == maintenance=interrupt ]] || exit 1
             [[ "$OPERATION" == deploy || "$OPERATION" == reconcile-runtime || -z "$MAINTENANCE_SPEC" ]] || exit 1
           else
-            [[ -z "$CINDY_ROLLOUT" && -z "$OVERDRAFT" && -z "$MAINTENANCE_SPEC" && "$OPERATION" == deploy ]] || exit 1
+            [[ -z "$CINDY_ROLLOUT" && -z "$OVERDRAFT" && -z "$MAINTENANCE_SPEC" && "$RESOURCE_SPEC" == resource=preserve && "$OPERATION" == deploy ]] || exit 1
           fi
           case "$OPERATION" in
             deploy)
@@ -296,6 +314,9 @@ jobs:
                 remote_command="deploy ${IMAGE_REF} runtime=preserve"
               else
                 remote_command="deploy ${IMAGE_REF} ${CINDY_ROLLOUT} overdraft=${OVERDRAFT}"
+                if [[ "$RESOURCE_SPEC" != resource=preserve ]]; then
+                  remote_command+=" $RESOURCE_SPEC"
+                fi
                 if [[ -n "$MAINTENANCE_SPEC" ]]; then
                   remote_command+=" $MAINTENANCE_SPEC"
                 fi
@@ -312,6 +333,7 @@ jobs:
             rollback)
               [[ "$EXPECTED_CURRENT_IMAGE_REF" =~ ^ghcr\.io/htexplicit/sub2api:[0-9]+\.[0-9]+\.[0-9]+-codexrip\.[1-9][0-9]*@sha256:[0-9a-f]{64}$ ]] || exit 1
               [[ "$EXPECTED_CURRENT_IMAGE_REF" != "$IMAGE_REF" ]] || exit 1
+              [[ "$RESOURCE_SPEC" == resource=preserve ]] || exit 1
               remote_command="rollback ${IMAGE_REF} from=${EXPECTED_CURRENT_IMAGE_REF} ${CINDY_ROLLOUT} overdraft=${OVERDRAFT}"
               ;;
             *)
