@@ -350,7 +350,40 @@ func responsesInputToChatMessagesWithOptions(instructions string, inputRaw json.
 	if err != nil {
 		return nil, err
 	}
+	if err := validateResponsesChatToolHistory(built); err != nil {
+		return nil, err
+	}
 	return normalizeChatMessagesWithToolOutputMedia(built, mediaByCallID), nil
+}
+
+// A stateless Chat request cannot resolve omitted tool results or ambiguous IDs.
+// Reject such histories before normalization can discard or overwrite an item.
+func validateResponsesChatToolHistory(messages []ChatMessage) error {
+	calls := make(map[string]bool)
+	invalid := func() error {
+		return &ResponsesConversionError{Code: "invalid_tool_history", Param: "input", Message: "Chat Completions conversion requires unique tool call IDs and one matching result for every call"}
+	}
+	for _, message := range messages {
+		for _, call := range message.ToolCalls {
+			if _, exists := calls[call.ID]; exists || call.ID == "" {
+				return invalid()
+			}
+			calls[call.ID] = false
+		}
+		if message.Role == "tool" {
+			answered, exists := calls[message.ToolCallID]
+			if !exists || answered {
+				return invalid()
+			}
+			calls[message.ToolCallID] = true
+		}
+	}
+	for _, answered := range calls {
+		if !answered {
+			return invalid()
+		}
+	}
+	return nil
 }
 
 // buildChatMessagesFromItems walks the Responses input items and appends the
@@ -371,8 +404,6 @@ func buildChatMessagesFromItems(messages []ChatMessage, rawItems []json.RawMessa
 	// a user-side item ends the turn and clears it.
 	var lastTurnReasoning string
 	mediaByCallID := make(toolOutputMediaByCallID)
-	invalidFunctionCallIDs := make(map[string]struct{})
-	invalidEmptyFunctionCallOutputs := 0
 
 	reasoningForAssistant := func() string {
 		if pendingReasoning != "" {
@@ -403,6 +434,9 @@ func buildChatMessagesFromItems(messages []ChatMessage, rawItems []json.RawMessa
 		role := chatCompletionsBridgeRole(rawString(item["role"]))
 		itemType := rawString(item["type"])
 		switch itemType {
+		case "additional_tools":
+			// EffectiveResponsesTools already incorporates this declaration.
+			continue
 		case "reasoning":
 			if txt := extractResponsesReasoningText(item); txt != "" {
 				pendingReasoning = txt
@@ -418,28 +452,15 @@ func buildChatMessagesFromItems(messages []ChatMessage, rawItems []json.RawMessa
 			}
 			if pendingReasoning != "" {
 				lastTurnReasoning = pendingReasoning
+			} else if rawString(item["encrypted_content"]) != "" {
+				return nil, nil, unsupportedResponsesInput()
 			}
 			continue
 		case "function_call":
 			arguments := rawString(item["arguments"])
-			if strings.TrimSpace(arguments) == "" {
-				arguments = "{}"
-			}
 			callID := rawString(item["call_id"])
 			if !json.Valid([]byte(arguments)) {
-				// A previous streamed turn can leave a truncated function_call in
-				// Codex history (for example after an upstream SSE parse failure or
-				// an output-limit interruption). Do not forward that item to a
-				// Chat Completions provider, which rejects the entire request. Its
-				// matching output is skipped below as well, allowing the next user
-				// turn to self-heal instead of repeatedly replaying the poison.
-				if callID != "" {
-					invalidFunctionCallIDs[callID] = struct{}{}
-				} else {
-					invalidEmptyFunctionCallOutputs++
-				}
-				pendingReasoning = ""
-				continue
+				return nil, nil, &ResponsesConversionError{Code: "invalid_tool_history", Param: "input", Message: "Function call history contains missing or invalid JSON arguments"}
 			}
 			name := rawString(item["name"])
 			// namespace 子工具的历史调用带 namespace 字段，需与请求方向的摊平
@@ -465,8 +486,8 @@ func buildChatMessagesFromItems(messages []ChatMessage, rawItems []json.RawMessa
 			if s := rawString(item["arguments"]); s != "" {
 				arguments = s
 			}
-			if arguments == "" || arguments == "null" {
-				arguments = "{}"
+			if arguments == "null" || !json.Valid([]byte(arguments)) {
+				return nil, nil, &ResponsesConversionError{Code: "invalid_tool_history", Param: "input", Message: "Tool search history contains missing or invalid JSON arguments"}
 			}
 			toolCall := ChatToolCall{
 				ID:   rawString(item["call_id"]),
@@ -503,15 +524,6 @@ func buildChatMessagesFromItems(messages []ChatMessage, rawItems []json.RawMessa
 				outputRaw = bytesTrimSpace(item["tools"])
 			}
 			callID := rawString(item["call_id"])
-			if callID == "" && invalidEmptyFunctionCallOutputs > 0 {
-				invalidEmptyFunctionCallOutputs--
-				pendingReasoning = ""
-				continue
-			}
-			if _, skipped := invalidFunctionCallIDs[callID]; skipped {
-				pendingReasoning = ""
-				continue
-			}
 			delete(mediaByCallID, callID)
 
 			outputText, media, rewritten := extractToolOutputMedia(outputRaw)
@@ -551,15 +563,9 @@ func buildChatMessagesFromItems(messages []ChatMessage, rawItems []json.RawMessa
 			continue
 		}
 
-		// Only genuine message items become chat messages. Codex emits other
-		// Responses item types with no Chat equivalent (web_search_call,
-		// local_shell_call, file_search_call, ...). Converting them via the
-		// generic path would insert a spurious message between an assistant
-		// tool_calls message and its tool reply, which DeepSeek rejects
-		// ("insufficient tool messages following tool_calls message"). Skip them.
+		// Non-message items without a Chat equivalent must remain native.
 		if itemType != "" && itemType != "message" {
-			pendingReasoning = ""
-			continue
+			return nil, nil, unsupportedResponsesInput()
 		}
 
 		content := item["content"]

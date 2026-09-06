@@ -306,6 +306,9 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	var terminal openAIRawStreamTerminalState
 
 	writeLine := func(line string) {
+		if c.Request.Context().Err() != nil {
+			clientDisconnected = true
+		}
 		if clientDisconnected {
 			return
 		}
@@ -356,6 +359,10 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 				chunk, err := s.decodeCCStreamChunk(c, account, resp.Header, trimmedPayload)
 				if err != nil {
 					protocolErr = err
+					break
+				}
+				if terminal.err != nil {
+					protocolErr = terminal.err
 					break
 				}
 				semanticOutputReady = semanticOutputReady || chatChunkStartsResponsesOutput(chunk) || terminal.Terminated()
@@ -422,12 +429,9 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		)
 	}
 
-	// 客户端取消/断开后上游读失败与上游截断不可区分（取消会连带取消上游请求），
-	// 沿用既有语义：按已收到的用量正常收尾计费，不判为上游故障。
-	clientAborted := clientDisconnected ||
-		c.Request.Context().Err() != nil ||
-		errors.Is(scanErr, context.Canceled) ||
-		errors.Is(scanErr, context.DeadlineExceeded)
+	// Only the client context or a failed downstream write proves cancellation.
+	// An upstream deadline while the client is still connected is a real failure.
+	clientAborted := clientDisconnected || c.Request.Context().Err() != nil
 
 	// 上游在任何终止信号之前结束：连接被 reset（scanErr != nil）或干净 EOF。
 	// 两者都不能再记成功——此前统一返回 nil error，把上游截断伪装成

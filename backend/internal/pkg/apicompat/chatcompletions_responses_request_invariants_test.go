@@ -87,17 +87,20 @@ func TestGolden_ParallelToolCalls(t *testing.T) {
 	require.Equal(t, 2, toolMsgs)
 }
 
-// Golden sample: an unknown item type (web_search_call from a 联网查询) sitting
-// between a function_call and its output must not break tool↔reply adjacency.
-func TestGolden_UnknownItemBetweenToolCallAndOutput(t *testing.T) {
-	msgs := convertGolden(t, `[
+// Hosted-tool history cannot be represented as stateless Chat messages.
+func TestGolden_UnknownItemBetweenToolCallAndOutputRequiresNative(t *testing.T) {
+	input := `[
 		{"type":"message","role":"user","content":[{"type":"input_text","text":"search"}]},
 		{"type":"reasoning","summary":[{"type":"summary_text","text":"let me search"}]},
 		{"type":"function_call","call_id":"c0","name":"exec_command","arguments":"{}"},
 		{"type":"web_search_call","id":"ws_1","status":"completed","action":{"type":"search","query":"x"}},
 		{"type":"function_call_output","call_id":"c0","output":"result"}
-	]`)
-	assertChatInvariants(t, msgs)
+	]`
+	msgs, err := responsesInputToChatMessages("", json.RawMessage(input))
+	require.Nil(t, msgs)
+	var conversion *ResponsesConversionError
+	require.ErrorAs(t, err, &conversion)
+	require.Equal(t, "unsupported_input_item", conversion.Code)
 }
 
 // Sequential tool calls (a tool reply between two calls) must stay in distinct
@@ -142,46 +145,31 @@ func TestGolden_MessageBetweenToolCallAndOutput(t *testing.T) {
 }
 
 // Golden sample: a parallel tool call where one sibling's output is missing
-// (codex interrupted/reconnected mid-execution). The unanswered tool_call must
-// be dropped so the remaining assistant tool_calls are all answered.
-func TestGolden_PartialParallelDropsUnansweredCall(t *testing.T) {
-	msgs := convertGolden(t, `[
+// (codex interrupted/reconnected mid-execution). Reject instead of losing a call.
+func TestGolden_PartialParallelRejectsUnansweredCall(t *testing.T) {
+	requireInvalidResponsesToolHistory(t, `[
 		{"type":"message","role":"user","content":[{"type":"input_text","text":"q"}]},
 		{"type":"reasoning","summary":[{"type":"summary_text","text":"r"}]},
 		{"type":"function_call","call_id":"A","name":"exec","arguments":"{}"},
 		{"type":"function_call","call_id":"B","name":"exec","arguments":"{}"},
 		{"type":"function_call_output","call_id":"A","output":"oa"}
 	]`)
-	assertChatInvariants(t, msgs)
-	for _, m := range msgs {
-		for _, tc := range m.ToolCalls {
-			require.NotEqual(t, "B", tc.ID, "unanswered tool_call B should have been dropped")
-		}
-	}
 }
 
 // Golden sample: a dangling tool_call at the end of the history (no output yet).
-// The assistant message holding only that call must be dropped entirely.
-func TestGolden_DanglingToolCallDropped(t *testing.T) {
-	msgs := convertGolden(t, `[
+// Its execution state must not be silently discarded to produce a valid request.
+func TestGolden_DanglingToolCallRejected(t *testing.T) {
+	requireInvalidResponsesToolHistory(t, `[
 		{"type":"message","role":"user","content":[{"type":"input_text","text":"q"}]},
 		{"type":"reasoning","summary":[{"type":"summary_text","text":"r"}]},
 		{"type":"function_call","call_id":"A","name":"exec","arguments":"{}"}
 	]`)
-	assertChatInvariants(t, msgs)
-	for _, m := range msgs {
-		require.Empty(t, m.ToolCalls, "dangling unanswered tool_call should have been dropped")
-	}
 }
 
-// normalizeChatMessages drops an orphan tool reply whose tool_call was never
-// announced.
-func TestNormalize_DropsOrphanToolReply(t *testing.T) {
-	msgs := convertGolden(t, `[
+// An orphan reply cannot be associated with a stateless Chat call.
+func TestNormalize_RejectsOrphanToolReply(t *testing.T) {
+	requireInvalidResponsesToolHistory(t, `[
 		{"type":"message","role":"user","content":[{"type":"input_text","text":"q"}]},
 		{"type":"function_call_output","call_id":"ghost","output":"orphan"}
 	]`)
-	for _, m := range msgs {
-		require.NotEqualf(t, "tool", m.Role, "orphan tool reply should have been dropped")
-	}
 }

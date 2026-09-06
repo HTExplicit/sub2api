@@ -17,7 +17,7 @@ func TestResponsesInputToChatMessages_DeveloperRoleMapsToSystem(t *testing.T) {
 	assert.JSONEq(t, `"follow project instructions"`, string(messages[0].Content))
 }
 
-func TestResponsesInputToChatMessages_SkipsInvalidHistoricalFunctionCall(t *testing.T) {
+func TestResponsesInputToChatMessages_RejectsInvalidHistoricalFunctionCall(t *testing.T) {
 	input := json.RawMessage(`[
 		{"type":"function_call","call_id":"call_bad","name":"exec_command","arguments":"{\"cmd\": \"ssh root@HOST"},
 		{"type":"function_call_output","call_id":"call_bad","output":"failed to parse function arguments"},
@@ -26,28 +26,17 @@ func TestResponsesInputToChatMessages_SkipsInvalidHistoricalFunctionCall(t *test
 		{"role":"user","content":"continue"}
 	]`)
 
-	messages, err := responsesInputToChatMessages("", input)
-	require.NoError(t, err)
-	require.Len(t, messages, 3)
-	require.Equal(t, "assistant", messages[0].Role)
-	require.Len(t, messages[0].ToolCalls, 1)
-	require.Equal(t, "call_ok", messages[0].ToolCalls[0].ID)
-	require.Equal(t, "tool", messages[1].Role)
-	require.Equal(t, "call_ok", messages[1].ToolCallID)
-	require.Equal(t, "user", messages[2].Role)
+	requireInvalidResponsesToolHistory(t, string(input))
 }
 
-func TestResponsesInputToChatMessages_SkipsInvalidEmptyCallIDOutput(t *testing.T) {
+func TestResponsesInputToChatMessages_RejectsInvalidEmptyCallIDOutput(t *testing.T) {
 	input := json.RawMessage(`[
 		{"type":"function_call","call_id":"","name":"exec_command","arguments":"{\"cmd\": \"ssh root@HOST"},
 		{"type":"function_call_output","call_id":"","output":"failed to parse function arguments"},
 		{"role":"user","content":"continue"}
 	]`)
 
-	messages, err := responsesInputToChatMessages("", input)
-	require.NoError(t, err)
-	require.Len(t, messages, 1)
-	require.Equal(t, "user", messages[0].Role)
+	requireInvalidResponsesToolHistory(t, string(input))
 }
 
 func TestChatCompletionsResponseToResponses_SkipsInvalidFunctionArguments(t *testing.T) {
@@ -78,7 +67,8 @@ func TestResponsesInputToChatMessages_KeepsChatCompletionRoles(t *testing.T) {
 		{"role":"system","content":"system message"},
 		{"role":"user","content":"user message"},
 		{"role":"assistant","content":"assistant message"},
-		{"role":"tool","content":"tool message"}
+		{"type":"function_call","call_id":"call_fixture","name":"read","arguments":"{}"},
+		{"type":"function_call_output","call_id":"call_fixture","output":"tool message"}
 	]`)
 
 	messages, err := responsesInputToChatMessages("", input)

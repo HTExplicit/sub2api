@@ -16,4 +16,4 @@ if [[ ! -d backend/internal/web/dist/assets ]]; then
 fi
 go -C backend test -p=1 -tags unit,embed ./internal/web -run 'Test(Agent|FrontendServer_Middleware|ServeEmbeddedFrontend|OverrideFilesNeverReceiveImmutableCacheHeaders)' -count=1
 go -C backend test -p=1 ./internal/pkg/apicompat -run 'Test(Agent|Stream_|.*Chat.*Responses|.*Responses.*Chat)' -count=1
-go -C backend test -p=1 -tags unit ./internal/service ./internal/handler -run 'Test(Agent|ForwardResponses_.*(Chat|Reasoning)|ForwardAsAnthropic_ForceChatCompletions|ForwardAsRawChatCompletions|OpenAIRawStreamTerminalState|.*NoAccount|.*SelectionFailure)' -count=1
+go -C backend test -p=1 -tags unit ./internal/service ./internal/handler -run 'Test(Agent|ForwardResponses_.*(Chat|Reasoning)|ForwardAsAnthropic_ForceChatCompletions|ForwardAsRawChatCompletions|ForwardAsChatCompletionsForGrokStreaming|OpenAIRawStreamTerminalState|.*NoAccount|.*SelectionFailure)' -count=1

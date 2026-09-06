@@ -31,6 +31,15 @@ type openAIRawStreamTerminalState struct {
 	sawUsage        bool
 	sawFinishReason bool
 	choices         map[int64]bool
+	tools           map[int64]map[int64]*openAIRawFunctionArguments
+	toolChoices     map[int64]bool
+	err             error
+}
+
+type openAIRawFunctionArguments struct {
+	hasID, hasName bool
+	kind           string
+	arguments      strings.Builder
 }
 
 // ObserveDataLine 从单行 SSE `data:` 载荷中提取终止信号。payload 需已 TrimSpace。
@@ -54,8 +63,48 @@ func (t *openAIRawStreamTerminalState) ObserveDataLine(payload string) {
 		if _, exists := t.choices[index]; !exists {
 			t.choices[index] = false
 		}
+		for _, call := range choice.Get("delta.tool_calls").Array() {
+			if t.toolChoices == nil {
+				t.toolChoices = make(map[int64]bool)
+			}
+			t.toolChoices[index] = true
+			if t.tools == nil {
+				t.tools = make(map[int64]map[int64]*openAIRawFunctionArguments)
+			}
+			if t.tools[index] == nil {
+				t.tools[index] = make(map[int64]*openAIRawFunctionArguments)
+			}
+			toolIndex := call.Get("index").Int()
+			tool := t.tools[index][toolIndex]
+			if tool == nil {
+				tool = &openAIRawFunctionArguments{kind: "function"}
+				t.tools[index][toolIndex] = tool
+			}
+			if kind := call.Get("type").String(); kind != "" {
+				tool.kind = kind
+			}
+			if tool.kind != "function" {
+				continue // Non-function tools may intentionally have non-JSON input.
+			}
+			tool.hasID = tool.hasID || call.Get("id").String() != ""
+			tool.hasName = tool.hasName || call.Get("function.name").String() != ""
+			_, _ = tool.arguments.WriteString(call.Get("function.arguments").String())
+		}
 		if reason := choice.Get("finish_reason").String(); reason != "" {
-			t.choices[index] = apicompat.ChatCompletionTerminalForReason(reason).Error == nil
+			terminal := apicompat.ChatCompletionTerminalForReason(reason)
+			t.choices[index] = terminal.Error == nil
+			if terminal.Status == "completed" {
+				invalid := reason == "tool_calls" && !t.toolChoices[index]
+				for _, tool := range t.tools[index] {
+					if tool.kind != "function" {
+						continue
+					}
+					invalid = invalid || !tool.hasID || !tool.hasName || !json.Valid([]byte(tool.arguments.String()))
+				}
+				if invalid {
+					t.err = ccStreamProtocolFailure("upstream_invalid_tool_call", "Upstream returned an incomplete or invalid tool call")
+				}
+			}
 		}
 	}
 	t.sawFinishReason = len(t.choices) > 0
@@ -66,7 +115,7 @@ func (t *openAIRawStreamTerminalState) ObserveDataLine(payload string) {
 
 // Terminated 表示上游给出过终止信号。
 func (t *openAIRawStreamTerminalState) Terminated() bool {
-	return t != nil && t.sawFinishReason
+	return t != nil && t.err == nil && t.sawFinishReason
 }
 
 // A stream request receiving no semantic terminal (including a non-SSE body)
