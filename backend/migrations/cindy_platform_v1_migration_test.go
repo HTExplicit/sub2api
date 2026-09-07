@@ -52,12 +52,54 @@ func TestMigration229UsesReservedPostUpstreamNumber(t *testing.T) {
 	require.True(t, found)
 }
 
+func TestMigration235ModelAllowlistPreservesLegacyJSONByRenamingOnly(t *testing.T) {
+	raw, err := FS.ReadFile("235_group_model_allowlist.sql")
+	require.NoError(t, err)
+
+	var lines []string
+	for _, line := range strings.Split(string(raw), "\n") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "--") {
+			lines = append(lines, line)
+		}
+	}
+
+	// A column rename preserves every legacy JSON value, including enabled-empty
+	// lists and old wildcard entries. Do not silently disable or normalize them.
+	const renameOnly = `
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'groups'
+          AND column_name = 'models_list_config'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'groups'
+          AND column_name = 'model_allowlist'
+    ) THEN
+        ALTER TABLE groups RENAME COLUMN models_list_config TO model_allowlist;
+    END IF;
+END
+$$;
+COMMENT ON COLUMN groups.model_allowlist IS
+    'Group model allowlist: constrains both model listing responses and request admission';
+`
+	require.Equal(t,
+		strings.Join(strings.Fields(renameOnly), " "),
+		strings.Join(strings.Fields(strings.Join(lines, "\n")), " "),
+		"the official migration must rename the column without rewriting legacy JSON")
+}
+
 func TestMigration235RestrictsLedgerReplayToLifecycleExcludedRows(t *testing.T) {
 	matches, err := fs.Glob(FS, "235_*.sql")
 	require.NoError(t, err)
-	require.Equal(t, []string{"235_preserve_mixed_openai_cindy_groups.sql"}, matches)
+	// Migration identity is the complete filename, not its numeric prefix.
+	require.Contains(t, matches, "235_group_model_allowlist.sql")
+	require.Contains(t, matches, "235_preserve_mixed_openai_cindy_groups.sql")
 
-	raw, err := FS.ReadFile(matches[0])
+	raw, err := FS.ReadFile("235_preserve_mixed_openai_cindy_groups.sql")
 	require.NoError(t, err)
 	sql := strings.ToLower(string(raw))
 

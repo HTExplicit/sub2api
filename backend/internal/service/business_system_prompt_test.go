@@ -315,19 +315,22 @@ func TestBusinessSystemPromptApplicationCapturesExposeDecision(t *testing.T) {
 
 func TestBusinessSystemPromptCacheKeyIncludesAppliedRevisionAndHash(t *testing.T) {
 	application := BusinessSystemPromptApplication{Applied: true, Revision: 9, SHA256: "abc123"}
-	require.Equal(t, "client-key:business-system-prompt:9:abc123", appendBusinessSystemPromptApplicationToCacheKey(" client-key ", application))
-	require.Equal(t, "client-key:business-system-prompt:9:abc123", appendBusinessSystemPromptApplicationToCacheKey("client-key:business-system-prompt:9:abc123", application))
-	require.Empty(t, appendBusinessSystemPromptApplicationToCacheKey("", application))
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	key := deriveBusinessSystemPromptCacheKey(c, " client-key ", application)
+	require.Regexp(t, `^[0-9a-f]{64}$`, key)
+	require.Equal(t, key, deriveBusinessSystemPromptCacheKey(c, key, application))
+	require.Empty(t, deriveBusinessSystemPromptCacheKey(c, "", application))
 
 	body, err := rewriteBusinessSystemPromptCacheKey(
+		c,
 		[]byte(`{"prompt_cache_key":"client-key","input":[]}`),
 		application,
 	)
 	require.NoError(t, err)
-	require.Equal(t, "client-key:business-system-prompt:9:abc123", gjson.GetBytes(body, "prompt_cache_key").String())
+	require.Equal(t, key, gjson.GetBytes(body, "prompt_cache_key").String())
 
 	withoutKey := []byte(`{"input":[]}`)
-	unchanged, err := rewriteBusinessSystemPromptCacheKey(withoutKey, application)
+	unchanged, err := rewriteBusinessSystemPromptCacheKey(c, withoutKey, application)
 	require.NoError(t, err)
 	require.Equal(t, withoutKey, unchanged)
 }
@@ -384,17 +387,17 @@ func TestBusinessSystemPromptRequestDoesNotDuplicateAfterCacheRewrite(t *testing
 		c, []byte(`{"instructions":"client","prompt_cache_key":"key"}`), account, BusinessSystemPromptProtocolResponses, false,
 	)
 	require.NoError(t, err)
-	body, err = rewriteBusinessSystemPromptCacheKey(body, application)
+	body, err = rewriteBusinessSystemPromptCacheKey(c, body, application)
 	require.NoError(t, err)
 
 	retry, retryApplication, err := gateway.applyBusinessSystemPromptForRequest(
 		c, body, account, BusinessSystemPromptProtocolResponses, false,
 	)
 	require.NoError(t, err)
-	retry, err = rewriteBusinessSystemPromptCacheKey(retry, retryApplication)
+	retry, err = rewriteBusinessSystemPromptCacheKey(c, retry, retryApplication)
 	require.NoError(t, err)
 	require.Equal(t, "client\n\nserver", gjson.GetBytes(retry, "instructions").String())
-	require.Equal(t, 1, strings.Count(gjson.GetBytes(retry, "prompt_cache_key").String(), ":business-system-prompt:"))
+	require.Equal(t, gjson.GetBytes(body, "prompt_cache_key").String(), gjson.GetBytes(retry, "prompt_cache_key").String())
 }
 
 func TestBusinessSystemPromptRetryPreservesRawSnapshotWhitespace(t *testing.T) {

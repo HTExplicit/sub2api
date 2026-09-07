@@ -23,7 +23,7 @@ func TestAgentReportedUpstream400IsNotClientValidation(t *testing.T) {
 		{"continuation", `{"error":{"code":"invalid_encrypted_content","type":"upstream_error"}}`, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.retry, s.shouldFailoverOpenAIUpstreamResponse(400, "", []byte(tc.body)))
+			require.Equal(t, tc.retry, s.shouldFailoverOpenAIUpstreamResponse(nil, 400, "", []byte(tc.body)))
 		})
 	}
 }

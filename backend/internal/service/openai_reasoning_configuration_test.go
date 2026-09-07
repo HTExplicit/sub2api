@@ -10,24 +10,35 @@ import (
 
 func TestOpenAIReasoningConfigurationNormalization(t *testing.T) {
 	for _, model := range []string{"gpt-5.6-sol", "gpt-6-astra", "gpt-5.4", "provider/custom-model"} {
-		for _, reasoning := range []string{
-			`{"mode":"pro"}`,
-			`{"mode":"pro","effort":"xhigh","context":"all_turns","future":{"budget":9007199254740993}}`,
-			`{"mode":"standard","effort":null,"summary":"","context":null}`,
-			`{"mode":"future-mode","future":{"precise":1.2345678901234567890123456789}}`,
+		for _, tc := range []struct {
+			reasoning    string
+			wantNonAstra string
+		}{
+			{`{"mode":"pro"}`, `{"effort":"max"}`},
+			{`{"mode":"pro","effort":"xhigh","context":"all_turns","future":{"budget":9007199254740993}}`, `{"effort":"xhigh","context":"all_turns","future":{"budget":9007199254740993}}`},
+			{`{"mode":"standard","effort":null,"summary":"","context":null}`, `{"effort":null,"summary":"","context":null}`},
+			{`{"mode":"future-mode","future":{"precise":1.2345678901234567890123456789}}`, `{"future":{"precise":1.2345678901234567890123456789}}`},
 		} {
-			t.Run(model+reasoning, func(t *testing.T) {
-				original := []byte(`{"model":"` + model + `","input":[],"reasoning":` + reasoning + `}`)
+			t.Run(model+tc.reasoning, func(t *testing.T) {
+				original := []byte(`{"model":"` + model + `","input":[],"reasoning":` + tc.reasoning + `}`)
 				originalSnapshot := append([]byte(nil), original...)
+				wantOfficial := tc.wantNonAstra
+				if model == "gpt-6-astra" {
+					wantOfficial = tc.reasoning
+				}
 				for _, compact := range []bool{false, true} {
 					body, _, err := normalizeOpenAIPassthroughOAuthBody(original, compact)
 					require.NoError(t, err)
-					assertOpenAIReasoningConfiguration(t, reasoning, body)
+					assertOpenAIReasoningConfiguration(t, wantOfficial, body)
 				}
 				for _, accountType := range []string{AccountTypeAPIKey, AccountTypeOAuth, AccountTypeSetupToken} {
 					body, _, err := normalizeOpenAIResponsesWebSocketCompatibilityBody(original, &Account{Platform: PlatformOpenAI, Type: accountType}, false)
 					require.NoError(t, err)
-					assertOpenAIReasoningConfiguration(t, reasoning, body)
+					want := tc.reasoning
+					if accountType != AccountTypeAPIKey {
+						want = wantOfficial
+					}
+					assertOpenAIReasoningConfiguration(t, want, body)
 				}
 				require.Equal(t, originalSnapshot, original)
 			})

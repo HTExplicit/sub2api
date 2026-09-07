@@ -83,10 +83,9 @@ func (s *OpenAIGatewayService) forwardAnthropicViaRawChatCompletions(
 	if account.Platform == PlatformOpenAI {
 		policyBody, changed, policyErr := ApplyOpenAIReasoningEffortPolicyFromContext(ctx, chatBody)
 		if policyErr != nil {
-			var overLimit *ReasoningEffortOverLimitError
-			if errors.As(policyErr, &overLimit) {
+			if IsReasoningEffortPolicyDenied(policyErr) {
 				MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalPolicyDenied)
-				writeAnthropicError(c, http.StatusForbidden, "forbidden_error", overLimit.Error())
+				writeAnthropicError(c, http.StatusForbidden, "forbidden_error", policyErr.Error())
 			}
 			return nil, policyErr
 		}
@@ -106,7 +105,7 @@ func (s *OpenAIGatewayService) forwardAnthropicViaRawChatCompletions(
 		return nil, promptErr
 	} else {
 		chatBody = updatedPromptBody
-		chatBody, promptErr = rewriteBusinessSystemPromptCacheKey(chatBody, application)
+		chatBody, promptErr = rewriteBusinessSystemPromptCacheKey(c, chatBody, application)
 		if promptErr != nil {
 			return nil, promptErr
 		}

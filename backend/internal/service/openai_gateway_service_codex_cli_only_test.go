@@ -356,9 +356,9 @@ func TestShouldFailoverOpenAIUpstreamResponseContextWindow502(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	body := []byte(`{"error":{"message":"Your input exceeds the context window of this model. Please adjust your input and try again.","type":"upstream_error","code":null}}`)
 
-	require.False(t, svc.shouldFailoverOpenAIUpstreamResponse(http.StatusBadGateway, "", body))
-	require.True(t, svc.shouldFailoverOpenAIUpstreamResponse(http.StatusBadGateway, "temporary upstream outage", []byte(`{"error":{"message":"temporary upstream outage"}}`)))
-	require.True(t, svc.shouldFailoverOpenAIUpstreamResponse(
+	require.False(t, svc.shouldFailoverOpenAIUpstreamResponse(newOpenAIUpstreamErrorTestAccount(), http.StatusBadGateway, "", body))
+	require.True(t, svc.shouldFailoverOpenAIUpstreamResponse(newOpenAIUpstreamErrorTestAccount(), http.StatusBadGateway, "temporary upstream outage", []byte(`{"error":{"message":"temporary upstream outage"}}`)))
+	require.True(t, svc.shouldFailoverOpenAIUpstreamResponse(newOpenAIUpstreamErrorTestAccount(),
 		http.StatusBadGateway,
 		"temporary upstream outage",
 		[]byte(`{"error":{"message":"temporary upstream outage"},"echo":"context_length_exceeded"}`),
@@ -370,7 +370,7 @@ func TestOpenAIRequestTimeoutTriggersFailover(t *testing.T) {
 	account := &Account{Type: AccountTypeOAuth}
 
 	require.True(t, svc.shouldFailoverUpstreamError(http.StatusRequestTimeout))
-	require.True(t, svc.shouldFailoverOpenAIUpstreamResponse(http.StatusRequestTimeout, "request timeout", nil))
+	require.True(t, svc.shouldFailoverOpenAIUpstreamResponse(account, http.StatusRequestTimeout, "request timeout", nil))
 	require.True(t, shouldFailoverOpenAIPassthroughResponse(account, http.StatusRequestTimeout, nil))
 }
 
@@ -407,7 +407,7 @@ func TestOpenAIContinuationStateErrorsStopAccountFailover(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			require.Equal(t, tt.wantKind, classifyOpenAIContinuationStateError(tt.message, tt.body))
 			require.True(t, isOpenAIContinuationStateError(tt.message, tt.body))
-			require.False(t, svc.shouldFailoverOpenAIUpstreamResponse(tt.statusCode, tt.message, tt.body))
+			require.False(t, svc.shouldFailoverOpenAIUpstreamResponse(nil, tt.statusCode, tt.message, tt.body))
 
 			failoverErr := newOpenAIUpstreamFailoverError(tt.statusCode, nil, tt.body, tt.message, true)
 			require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
@@ -424,6 +424,7 @@ func TestOpenAIContinuationStateErrorsStopAccountFailover(t *testing.T) {
 		[]byte(`{"error":{"code":"server_is_overloaded","message":"temporary upstream outage"}}`),
 	))
 	require.True(t, svc.shouldFailoverOpenAIUpstreamResponse(
+		nil,
 		http.StatusBadGateway,
 		"temporary upstream outage",
 		[]byte(`{"error":{"message":"temporary upstream outage"}}`),

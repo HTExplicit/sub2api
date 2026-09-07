@@ -57,9 +57,9 @@ func TestBusinessSystemPromptHybridCodexUsesFixedBodyAcrossAdapters(t *testing.T
 	require.Equal(t, expectedPrompt, fallbackApplication.ServerInstructions)
 	require.True(t, chatBodyHasSystemPrompt(chatBody, application.ServerInstructions))
 
-	cacheKey := appendBusinessSystemPromptApplicationToCacheKey("client-key", application)
-	require.Contains(t, cacheKey, application.EffectiveSHA256)
-	require.Equal(t, cacheKey, appendBusinessSystemPromptApplicationToCacheKey(cacheKey, application))
+	cacheKey := deriveBusinessSystemPromptCacheKey(c, "client-key", application)
+	require.Regexp(t, `^[0-9a-f]{64}$`, cacheKey)
+	require.Equal(t, cacheKey, deriveBusinessSystemPromptCacheKey(c, cacheKey, application))
 }
 
 func TestBusinessSystemPromptWSHybridCodexTurnsReuseFixedBody(t *testing.T) {

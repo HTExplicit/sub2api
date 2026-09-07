@@ -107,15 +107,18 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		}
 		compatPromptCacheInjected = promptCacheKey != ""
 	}
+	// Local continuation storage and recursive retries share the same source
+	// identity, even when an adapter rewrites or omits the upstream body key.
+	compatSessionSeed := promptCacheKey
 	compatReplayTrimmed := false
 	compatReplayGuardEnabled := shouldAutoInjectPromptCacheKeyForCompat(upstreamModel)
 	compatContinuationEnabled := openAICompatContinuationEnabled(account, upstreamModel)
 	previousResponseID := ""
 	if compatContinuationEnabled {
-		previousResponseID = s.getOpenAICompatSessionResponseID(ctx, c, account, promptCacheKey)
+		previousResponseID = s.getOpenAICompatSessionResponseID(ctx, c, account, compatSessionSeed)
 	}
 	compatContinuationDisabled := compatContinuationEnabled &&
-		s.isOpenAICompatSessionContinuationDisabled(ctx, c, account, promptCacheKey)
+		s.isOpenAICompatSessionContinuationDisabled(ctx, c, account, compatSessionSeed)
 	compatTurnState := ""
 	// OAuth/Plus relies on session_id + x-codex-turn-state; trimming to a
 	// sliding 12-message window makes the cached prefix stall at system/tools.
@@ -232,7 +235,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		applyCodexAccountIdentityClientMetadataMap(reqBody, codexAccountIdentitySource(c, account), apiKeyID)
 		delete(reqBody, "prompt_cache_key")
 		if shouldAutoInjectPromptCacheKeyForCompat(upstreamModel) {
-			compatTurnState = s.getOpenAICompatSessionTurnState(ctx, c, account, promptCacheKey)
+			compatTurnState = s.getOpenAICompatSessionTurnState(ctx, c, account, compatSessionSeed)
 		}
 		// OAuth codex transform forces stream=true upstream, so always use
 		// the streaming response handler regardless of what the client asked.
@@ -267,10 +270,9 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	if account.Platform == PlatformOpenAI {
 		policyBody, changed, policyErr := ApplyOpenAIReasoningEffortPolicyFromContext(ctx, responsesBody)
 		if policyErr != nil {
-			var overLimit *ReasoningEffortOverLimitError
-			if errors.As(policyErr, &overLimit) {
+			if IsReasoningEffortPolicyDenied(policyErr) {
 				MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalPolicyDenied)
-				writeAnthropicError(c, http.StatusForbidden, "forbidden_error", overLimit.Error())
+				writeAnthropicError(c, http.StatusForbidden, "forbidden_error", policyErr.Error())
 			}
 			return nil, policyErr
 		}
@@ -295,9 +297,10 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		return nil, policyErr
 	}
 	responsesBody = updatedBody
-	if updatedPromptBody, application, promptErr := s.applyBusinessSystemPromptForRequest(
+	updatedPromptBody, application, promptErr := s.applyBusinessSystemPromptForRequest(
 		c, responsesBody, account, BusinessSystemPromptProtocolResponses, false,
-	); promptErr != nil {
+	)
+	if promptErr != nil {
 		if errors.Is(promptErr, ErrBusinessSystemPromptUnavailable) {
 			writeAnthropicError(c, http.StatusServiceUnavailable, "system_prompt_unavailable", "business system prompt is temporarily unavailable")
 		}
@@ -305,19 +308,22 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	} else {
 		responsesBody = updatedPromptBody
 		if application.Applied {
-			promptCacheKey = appendBusinessSystemPromptApplicationToCacheKey(promptCacheKey, application)
-			responsesBody, promptErr = rewriteBusinessSystemPromptCacheKey(responsesBody, application)
+			responsesBody, promptErr = rewriteBusinessSystemPromptCacheKey(c, responsesBody, application)
 			if promptErr != nil {
 				return nil, promptErr
 			}
 		}
 	}
+	upstreamPromptCacheKey := promptCacheKey
 	if normalizedBody, changed, normalizeErr := normalizeCindyManagedPromptCacheKey(responsesBody, c, account); normalizeErr != nil {
 		return nil, fmt.Errorf("normalize final Messages-to-Responses Cindy prompt_cache_key: %w", normalizeErr)
 	} else if changed {
 		responsesBody = normalizedBody
-		promptCacheKey = strings.TrimSpace(gjson.GetBytes(responsesBody, "prompt_cache_key").String())
+		upstreamPromptCacheKey = strings.TrimSpace(gjson.GetBytes(responsesBody, "prompt_cache_key").String())
 		observeCindyManagedPromptCacheNormalization(c, true)
+	}
+	if application.Applied {
+		upstreamPromptCacheKey = businessSystemPromptUpstreamCacheKey(c, responsesBody, promptCacheKey, application)
 	}
 	responsesReq.ServiceTier = normalizedOpenAIServiceTierValue(gjson.GetBytes(responsesBody, "service_tier").String())
 	grokCacheIdentity := ""
@@ -356,7 +362,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	if account.Platform == PlatformGrok {
 		upstreamReq, err = buildGrokResponsesRequest(upstreamCtx, c, account, responsesBody, token, grokCacheIdentity, s.cfg, s.settingService)
 	} else {
-		upstreamReq, err = s.buildUpstreamRequest(upstreamCtx, c, account, responsesBody, token, isStream, promptCacheKey, false)
+		upstreamReq, err = s.buildUpstreamRequest(upstreamCtx, c, account, responsesBody, token, isStream, upstreamPromptCacheKey, false)
 	}
 	releaseUpstreamCtx()
 	if err != nil {
@@ -365,8 +371,8 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 
 	// Override session_id with a deterministic UUID derived from the isolated
 	// session key, ensuring different API keys produce different upstream sessions.
-	if account.Platform != PlatformGrok && promptCacheKey != "" {
-		isolatedSessionID := generateSessionUUID(isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), promptCacheKey))
+	if account.Platform != PlatformGrok && upstreamPromptCacheKey != "" {
+		isolatedSessionID := generateSessionUUID(isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), upstreamPromptCacheKey))
 		upstreamReq.Header.Set("session_id", isolatedSessionID)
 		if upstreamReq.Header.Get("conversation_id") != "" {
 			upstreamReq.Header.Set("conversation_id", isolatedSessionID)
@@ -457,20 +463,20 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 			if err := s.recoverAgentIdentityTask(ctx, account, expectedTaskID); err != nil {
 				return nil, fmt.Errorf("agent identity task recovery failed: %w", err)
 			}
-			return s.ForwardAsAnthropic(markAgentIdentityTaskRecoveryTried(ctx), c, account, body, promptCacheKey, defaultMappedModel)
+			return s.ForwardAsAnthropic(markAgentIdentityTaskRecoveryTried(ctx), c, account, body, compatSessionSeed, defaultMappedModel)
 		}
 		if previousResponseID != "" && (isOpenAICompatPreviousResponseNotFound(resp.StatusCode, upstreamMsg, respBody) || isOpenAICompatPreviousResponseUnsupported(resp.StatusCode, upstreamMsg, respBody)) {
 			if isOpenAICompatPreviousResponseUnsupported(resp.StatusCode, upstreamMsg, respBody) {
-				s.disableOpenAICompatSessionContinuation(ctx, c, account, promptCacheKey)
+				s.disableOpenAICompatSessionContinuation(ctx, c, account, compatSessionSeed)
 			} else {
-				s.deleteOpenAICompatSessionResponseID(ctx, c, account, promptCacheKey)
+				s.deleteOpenAICompatSessionResponseID(ctx, c, account, compatSessionSeed)
 			}
 			logger.L().Info("openai messages: previous_response_id unavailable, retrying without continuation",
 				zap.Int64("account_id", account.ID),
 				zap.String("previous_response_id", truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen)),
 				zap.String("upstream_model", upstreamModel),
 			)
-			return s.ForwardAsAnthropic(ctx, c, account, body, promptCacheKey, defaultMappedModel)
+			return s.ForwardAsAnthropic(ctx, c, account, body, compatSessionSeed, defaultMappedModel)
 		}
 		// Grok account-switched history often fails decrypt; strip encrypted
 		// reasoning once at the client-body level so failover accounts can accept
@@ -482,7 +488,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 				logger.L().Info("openai messages: stripping thinking signatures for Grok failover retry",
 					zap.Int64("account_id", account.ID),
 				)
-				return s.ForwardAsAnthropic(markGrokEncryptedContentStripRetried(ctx), c, account, strippedBody, promptCacheKey, defaultMappedModel)
+				return s.ForwardAsAnthropic(markGrokEncryptedContentStripRetried(ctx), c, account, strippedBody, compatSessionSeed, defaultMappedModel)
 			}
 		}
 		if foErr := s.failoverOpenAIUpstreamHTTPError(ctx, c, account, resp, respBody, upstreamModel); foErr != nil {
@@ -495,9 +501,9 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		s.updateGrokUsageFromResponse(withGrokTeamRateLimitModel(ctx, upstreamModel), account, resp.Header, resp.StatusCode)
 	}
 
-	if account.UsesOpenAICodexProtocol() && promptCacheKey != "" {
+	if account.UsesOpenAICodexProtocol() && compatSessionSeed != "" {
 		if turnState := strings.TrimSpace(resp.Header.Get("x-codex-turn-state")); turnState != "" {
-			s.bindOpenAICompatSessionTurnState(ctx, c, account, promptCacheKey, turnState)
+			s.bindOpenAICompatSessionTurnState(ctx, c, account, compatSessionSeed, turnState)
 		}
 	}
 
@@ -523,11 +529,11 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 
 	// Propagate ServiceTier and ReasoningEffort to result for billing
 	if handleErr == nil && result != nil {
-		if compatContinuationEnabled && promptCacheKey != "" && result.ResponseID != "" {
-			s.bindOpenAICompatSessionResponseID(ctx, c, account, promptCacheKey, result.ResponseID)
+		if compatContinuationEnabled && compatSessionSeed != "" && result.ResponseID != "" {
+			s.bindOpenAICompatSessionResponseID(ctx, c, account, compatSessionSeed, result.ResponseID)
 		}
-		if promptCacheKey != "" && anthropicDigestChain != "" {
-			s.bindOpenAICompatAnthropicDigestPromptCacheKey(account, apiKeyID, anthropicDigestChain, promptCacheKey, anthropicMatchedDigestChain)
+		if compatSessionSeed != "" && anthropicDigestChain != "" {
+			s.bindOpenAICompatAnthropicDigestPromptCacheKey(account, apiKeyID, anthropicDigestChain, compatSessionSeed, anthropicMatchedDigestChain)
 		}
 		if responsesReq.ServiceTier != "" {
 			st := responsesReq.ServiceTier

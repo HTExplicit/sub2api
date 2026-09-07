@@ -134,7 +134,7 @@
                 <th class="px-2 py-1.5">#</th>
                 <th class="px-2 py-1.5">{{ t('admin.accounts.accountName') }}</th>
                 <th class="px-2 py-1.5">{{ t('admin.accounts.dataImportPreviewAction') }}</th>
-                <th class="px-2 py-1.5">{{ t('admin.accounts.status') }}</th>
+                <th class="px-2 py-1.5">{{ t('common.status') }}</th>
               </tr>
             </thead>
             <tbody>

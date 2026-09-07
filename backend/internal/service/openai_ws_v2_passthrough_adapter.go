@@ -830,6 +830,11 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 	if capturedSessionModel != "" && capturedSessionModel != strings.TrimSpace(gjson.GetBytes(firstClientMessage, "model").String()) {
 		firstClientMessage = s.ReplaceModelInBody(firstClientMessage, capturedSessionModel)
 	}
+	if normalized, changed, normalizeErr := normalizeOpenAIWSPassthroughSelectedCompatibilityForModel(firstClientMessage, account, capturedSessionModel); normalizeErr != nil {
+		return fmt.Errorf("normalize first websocket response.create: %w", normalizeErr)
+	} else if changed {
+		firstClientMessage = normalized
+	}
 	usageMeta := newOpenAIWSPassthroughUsageMeta(initialRequestModel, firstClientMessage)
 	updatedFirst, blocked, policyErr := s.applyOpenAIFastPolicyToWSResponseCreate(ctx, account, capturedSessionModel, firstClientMessage)
 	if policyErr != nil {
@@ -1127,6 +1132,11 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 						return payload, nil, err
 					}
 				}
+				if hooks != nil && hooks.BeforeTurn != nil {
+					if err := hooks.BeforeTurn(turnNo); err != nil {
+						return payload, nil, err
+					}
+				}
 				if hooks != nil && hooks.MapRequestModel != nil {
 					upstreamModel, err := hooks.MapRequestModel(turnNo, requestModelForThisFrame)
 					if err != nil {
@@ -1202,6 +1212,13 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 			if isResponseCreate && model != "" && model != strings.TrimSpace(gjson.GetBytes(payload, "model").String()) {
 				payload = s.ReplaceModelInBody(payload, model)
 			}
+			if isResponseCreate {
+				if normalized, changed, normalizeErr := normalizeOpenAIWSPassthroughSelectedCompatibilityForModel(payload, account, model); normalizeErr != nil {
+					return payload, nil, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", normalizeErr)
+				} else if changed {
+					payload = normalized
+				}
+			}
 			out, blocked, policyErr := s.applyOpenAIFastPolicyToWSResponseCreate(ctx, account, model, payload)
 			// 多轮 passthrough usage：仅在成功（non-block / non-err）
 			// 的 response.create 帧上更新 usageMeta，使用
@@ -1247,13 +1264,13 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 		matcher = refusalRuntime.Matcher
 	}
 	strictCindy := cindyBalanceReplayBufferEnabled(account)
-	if refusalRuntime.CyberFailoverEnabled() || refusalRuntime.RewriteEnabled() || strictCindy {
+	if refusalRuntime.RewriteEnabled() || strictCindy {
 		// Cindy holds metadata-only preamble frames until semantic output so a
 		// first-turn budget terminal remains replay-safe. Ordinary passthrough
 		// accounts retain their legacy immediate preamble and timeout semantics.
 		refusalOutput = newOpenAIRefusalRecoveryWSOutput(
 			matcher,
-			refusalRuntime.CyberFailoverEnabled() || strictCindy,
+			strictCindy,
 			policyClientConn.WriteFrame,
 			func() {
 				logOpenAIWSV2Passthrough("refusal_recovery_buffer_limit account_id=%d transport=websocket", account.ID)
@@ -1482,29 +1499,6 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 				if isOpenAIWSTerminalEvent(eventType) {
 					s.handleOpenAIWSTerminalTransientFailure(ctx, account, capturedSessionModel, handshakeHeaders, payload)
 				}
-				if eventType == "response.failed" {
-					if hit, code, msg := detectOpenAICyberPolicy(payload); hit {
-						usage, _ := extractOpenAIUsageFromJSONBytes(payload)
-						MarkOpsCyberPolicy(c, CyberPolicyMark{
-							Code:           code,
-							Message:        msg,
-							Body:           truncateString(string(payload), 4096),
-							UpstreamStatus: http.StatusOK,
-							UpstreamInTok:  usage.InputTokens,
-							UpstreamOutTok: usage.OutputTokens,
-						})
-						if refusalRuntime.CyberFailoverEnabled() {
-							replaySafe := completedTurns.Load() == 0 && (refusalOutput == nil || !refusalOutput.SemanticOutputStarted())
-							if refusalOutput != nil {
-								refusalOutput.DropTurn()
-								if !replaySafe {
-									_ = refusalOutput.WriteRetryableFailure(ctx, payload)
-								}
-							}
-							return newOpenAIWSCyberRecoveryError(payload, handshakeHeaders, replaySafe)
-						}
-					}
-				}
 				if eventType == "error" {
 					s.handleOpenAIWSErrorEventTransientFailure(ctx, account, capturedSessionModel, handshakeHeaders, payload)
 				}
@@ -1523,11 +1517,14 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 					truncateOpenAIWSLogValue(errTypeRaw, openAIWSLogValueMaxLen),
 					truncateOpenAIWSLogValue(errMsgRaw, openAIWSLogValueMaxLen),
 				)
-				return &UpstreamFailoverError{
-					StatusCode:      http.StatusTooManyRequests,
-					ResponseBody:    append([]byte(nil), payload...),
-					ResponseHeaders: cloneHeader(handshakeHeaders),
+				if completedTurns.Load() > 0 {
+					return NewOpenAIWSClientCloseError(
+						coderws.StatusTryAgainLater,
+						"upstream rate limit exceeded; please reconnect",
+						errors.New("later passthrough turn was rate limited before output"),
+					)
 				}
+				return s.newOpenAIWSRateLimitFailoverError(account, handshakeHeaders, payload, errMsgRaw)
 			},
 			OnTrace: func(event openaiwsv2.RelayTraceEvent) {
 				logOpenAIWSV2Passthrough(

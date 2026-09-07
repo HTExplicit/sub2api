@@ -2,6 +2,7 @@ package apicompat
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -130,6 +131,7 @@ type ResponsesEventToChatState struct {
 	Usage                  *ChatUsage
 	ProtocolError          string // safe static error; never embeds upstream arguments
 	functionCalls          map[int]*responsesChatFunctionState
+	customToolArguments    map[int]*responsesChatFunctionState
 }
 
 // NewResponsesEventToChatState returns an initialised stream state.
@@ -161,6 +163,8 @@ func ResponsesEventToChatChunks(evt *ResponsesStreamEvent, state *ResponsesEvent
 		// 均按 OutputIndex 累加到对应工具调用。
 		"response.custom_tool_call_input.delta":
 		return resToChatHandleFuncArgsDelta(evt, state)
+	case "response.function_call_arguments.done", "response.custom_tool_call_input.done":
+		return resToChatHandleFuncArgsDone(evt, state)
 	case "response.reasoning_summary_text.delta",
 		// 原始推理文本增量（真实 Codex 客户端消费的 reasoning_text.delta），
 		// 与 reasoning summary 一样映射为 reasoning_content。
@@ -265,6 +269,10 @@ func resToChatHandleOutputItemAdded(evt *ResponsesStreamEvent, state *ResponsesE
 	idx := state.NextToolCallIndex
 	state.OutputIndexToToolIndex[evt.OutputIndex] = idx
 	state.NextToolCallIndex++
+	if state.customToolArguments == nil {
+		state.customToolArguments = make(map[int]*responsesChatFunctionState)
+	}
+	state.customToolArguments[evt.OutputIndex] = &responsesChatFunctionState{argumentHash: sha256.New()}
 
 	return []ChatCompletionsChunk{makeChatDeltaChunk(state, ChatDelta{
 		ToolCalls: []ChatToolCall{{
@@ -287,8 +295,12 @@ func resToChatHandleFuncArgsDelta(evt *ResponsesStreamEvent, state *ResponsesEve
 	if !ok {
 		return nil
 	}
-	if tool := state.functionCalls[evt.OutputIndex]; tool != nil {
-		if tool.completed {
+	tool := state.functionCalls[evt.OutputIndex]
+	if tool == nil {
+		tool = state.customToolArguments[evt.OutputIndex]
+	}
+	if tool != nil {
+		if tool.completed || tool.argumentsDone {
 			responseChatFunctionError(state)
 			return nil
 		}
@@ -301,6 +313,50 @@ func resToChatHandleFuncArgsDelta(evt *ResponsesStreamEvent, state *ResponsesEve
 			Index: &idx,
 			Function: ChatFunctionCall{
 				Arguments: evt.Delta,
+			},
+		}},
+	})}
+}
+
+func resToChatHandleFuncArgsDone(evt *ResponsesStreamEvent, state *ResponsesEventToChatState) []ChatCompletionsChunk {
+	idx, ok := state.OutputIndexToToolIndex[evt.OutputIndex]
+	if !ok {
+		return nil
+	}
+
+	if evt.Type == "response.function_call_arguments.done" {
+		if evt.Arguments == "" {
+			return nil
+		}
+		// Share the exact prefix digest and byte count with output_item.done and
+		// the final response. A separate accumulated string would duplicate the
+		// suffix later and keep an unbounded second copy of the arguments.
+		chunks := resToChatFunctionItem(&ResponsesOutput{
+			Type: "function_call", ID: evt.ItemID, CallID: evt.CallID,
+			Name: evt.Name, Arguments: evt.Arguments,
+		}, evt.OutputIndex, false, state)
+		if tool := state.functionCalls[evt.OutputIndex]; tool != nil && state.ProtocolError == "" {
+			tool.argumentsDone = json.Valid([]byte(evt.Arguments))
+		}
+		return chunks
+	}
+	tool := state.customToolArguments[evt.OutputIndex]
+	if tool == nil || evt.Input == "" {
+		return nil
+	}
+	remainder, ok := resToChatArgumentsSnapshotSuffix(evt.Input, tool, state)
+	if !ok {
+		return nil
+	}
+	tool.argumentsDone = true
+	if remainder == "" {
+		return nil
+	}
+	return []ChatCompletionsChunk{makeChatDeltaChunk(state, ChatDelta{
+		ToolCalls: []ChatToolCall{{
+			Index: &idx,
+			Function: ChatFunctionCall{
+				Arguments: remainder,
 			},
 		}},
 	})}
@@ -477,9 +533,11 @@ func generateChatCmplID() string {
 // ---------------------------------------------------------------------------
 
 type bufferedFuncCall struct {
-	CallID string
-	Name   string
-	Args   strings.Builder
+	OutputIndex int
+	CallID      string
+	Name        string
+	Args        strings.Builder
+	ArgsDone    bool
 }
 
 // BufferedResponseAccumulator collects content from Responses SSE delta events
@@ -513,14 +571,28 @@ func (a *BufferedResponseAccumulator) ProcessEvent(event *ResponsesStreamEvent) 
 			idx := len(a.funcCalls)
 			a.outputIndexToFuncIdx[event.OutputIndex] = idx
 			a.funcCalls = append(a.funcCalls, bufferedFuncCall{
-				CallID: event.Item.CallID,
-				Name:   event.Item.Name,
+				OutputIndex: event.OutputIndex,
+				CallID:      event.Item.CallID,
+				Name:        event.Item.Name,
 			})
 		}
 	case "response.function_call_arguments.delta", "response.custom_tool_call_input.delta":
 		if event.Delta != "" {
 			if idx, ok := a.outputIndexToFuncIdx[event.OutputIndex]; ok {
 				_, _ = a.funcCalls[idx].Args.WriteString(event.Delta)
+				a.funcCalls[idx].ArgsDone = false
+			}
+		}
+	case "response.function_call_arguments.done", "response.custom_tool_call_input.done":
+		completed := event.Arguments
+		if event.Type == "response.custom_tool_call_input.done" {
+			completed = event.Input
+		}
+		if completed != "" {
+			if idx, ok := a.outputIndexToFuncIdx[event.OutputIndex]; ok {
+				a.funcCalls[idx].Args.Reset()
+				_, _ = a.funcCalls[idx].Args.WriteString(completed)
+				a.funcCalls[idx].ArgsDone = event.Type == "response.custom_tool_call_input.done" || json.Valid([]byte(completed))
 			}
 		}
 	case "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
@@ -574,15 +646,42 @@ func (a *BufferedResponseAccumulator) BuildOutput() []ResponsesOutput {
 	return out
 }
 
-// SupplementResponseOutput fills resp.Output from accumulated delta content
-// when the terminal event delivered an empty output array. If resp.Output is
-// already populated, this is a no-op (preserves backward compatibility).
+// SupplementResponseOutput fills resp.Output from accumulated stream content
+// when the terminal event delivered an empty output array. It also fills empty
+// function-call arguments from authoritative argument-done events.
 func (a *BufferedResponseAccumulator) SupplementResponseOutput(resp *ResponsesResponse) {
-	if resp == nil || len(resp.Output) > 0 {
+	if resp == nil {
 		return
 	}
-	if !a.HasContent() {
+	if len(resp.Output) == 0 {
+		if a.HasContent() {
+			resp.Output = a.BuildOutput()
+		}
 		return
 	}
-	resp.Output = a.BuildOutput()
+
+	for outputIndex := range resp.Output {
+		item := &resp.Output[outputIndex]
+		if item.Type != "function_call" || item.Arguments != "" {
+			continue
+		}
+		for funcIndex := range a.funcCalls {
+			call := &a.funcCalls[funcIndex]
+			if !call.ArgsDone || (item.Name != "" && call.Name != "" && item.Name != call.Name) {
+				continue
+			}
+			// A concrete call ID takes precedence over array position: terminal
+			// output arrays may compact sparse indexes or reorder actual calls.
+			if item.CallID != "" && item.CallID != call.CallID {
+				continue
+			}
+			if item.CallID == "" && call.OutputIndex != outputIndex {
+				continue
+			}
+			if call.Args.Len() > 0 {
+				item.Arguments = call.Args.String()
+			}
+			break
+		}
+	}
 }

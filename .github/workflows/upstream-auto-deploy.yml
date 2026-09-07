@@ -41,14 +41,22 @@ jobs:
           git -C /tmp/candidate remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
           git -C /tmp/candidate fetch --depth=1 origin "$RELEASE_SHA"
           git -C /tmp/candidate checkout --detach FETCH_HEAD
-          [[ "$(jq -r .risk_class /tmp/candidate/.downstream/upstream-risk.json)" == safe ]]
+          risk=$(jq -er .risk_class /tmp/candidate/.downstream/upstream-risk.json)
+          if [[ "$risk" == review_required ]]; then
+            echo 'Reviewed/manual release: automatic deployment handoff is not applicable.'
+            echo 'eligible=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [[ "$risk" == safe ]]
           [[ "$(jq -r .overlap_file_count /tmp/candidate/.downstream/upstream-risk.json)" == 0 ]]
           [[ "$(jq -r .critical_file_count /tmp/candidate/.downstream/upstream-risk.json)" == 0 ]]
           expected="$(tr -d '\r\n' </tmp/candidate/.downstream/upstream-base)-codexrip.1"
           [[ "$RELEASE_TAG" == "$expected" ]]
           echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo 'eligible=true' >> "$GITHUB_OUTPUT"
 
       - name: Dispatch approval-gated production run once
+        if: steps.candidate.outputs.eligible == 'true'
         env:
           RELEASE_TAG: ${{ steps.candidate.outputs.release_tag }}
         shell: bash

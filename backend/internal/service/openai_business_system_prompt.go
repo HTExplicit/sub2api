@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strconv"
 	"strings"
@@ -17,7 +18,21 @@ const (
 	businessSystemPromptRequestSnapshotKey    = "openai_business_system_prompt_snapshot"
 	businessSystemPromptRequestCompiledKey    = "openai_business_system_prompt_compiled_snapshot"
 	businessSystemPromptRequestTurnKey        = "openai_business_system_prompt_turn"
+	businessSystemPromptCacheIdentityKey      = "openai_business_system_prompt_cache_identity"
 )
+
+// Cache identities belong to one logical request/WS turn, not an account or
+// adapter. Keep the source separate from the wire key so a retry or protocol
+// fallback can recognize our own output without guessing from its syntax.
+type businessSystemPromptCacheIdentity struct {
+	source    string
+	namespace string
+	wire      string
+}
+
+type businessSystemPromptCacheIdentities struct {
+	values []businessSystemPromptCacheIdentity
+}
 
 type businessSystemPromptRequestState struct {
 	application BusinessSystemPromptApplication
@@ -296,12 +311,14 @@ func beginBusinessSystemPromptRequestTurn(ctx *gin.Context) {
 		turn, _ = value.(int64)
 	}
 	ctx.Set(businessSystemPromptRequestTurnKey, turn+1)
+	ctx.Set(businessSystemPromptCacheIdentityKey, &businessSystemPromptCacheIdentities{})
 }
 
-func appendBusinessSystemPromptApplicationToCacheKey(key string, application BusinessSystemPromptApplication) string {
-	key = strings.TrimSpace(key)
-	if key == "" || !application.Applied || application.Revision < 1 || strings.TrimSpace(application.SHA256) == "" {
-		return key
+// This encoding is an internal namespace, never an upstream field. Preserve
+// its historical bytes so Cindy's SHA256(old expanded key) remains unchanged.
+func businessSystemPromptCacheNamespace(application BusinessSystemPromptApplication) string {
+	if !application.Applied || application.Revision < 1 || strings.TrimSpace(application.SHA256) == "" {
+		return ""
 	}
 	suffix := ":business-system-prompt:" + strconv.FormatInt(application.Revision, 10) + ":" + strings.TrimSpace(application.SHA256)
 	if application.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid && application.BundleEffectiveTreeSHA256 != "" && application.EffectiveSHA256 != "" {
@@ -313,18 +330,45 @@ func appendBusinessSystemPromptApplicationToCacheKey(key string, application Bus
 			":bundle-revision:" + strconv.FormatInt(application.BundleRevision, 10) +
 			":" + strings.ToLower(strings.TrimSpace(application.BundlePromptEffectiveSHA256))
 	}
-	if strings.HasSuffix(key, suffix) {
-		return key
-	}
-	return key + suffix
+	return suffix
 }
 
-func rewriteBusinessSystemPromptCacheKey(body []byte, application BusinessSystemPromptApplication) ([]byte, error) {
+func deriveBusinessSystemPromptCacheKey(c *gin.Context, key string, application BusinessSystemPromptApplication) string {
+	namespace := businessSystemPromptCacheNamespace(application)
+	if namespace == "" || strings.TrimSpace(key) == "" {
+		return key
+	}
+	source := strings.TrimSpace(key)
+	var identities *businessSystemPromptCacheIdentities
+	if c != nil {
+		value, _ := c.Get(businessSystemPromptCacheIdentityKey)
+		identities, _ = value.(*businessSystemPromptCacheIdentities)
+		if identities == nil {
+			identities = &businessSystemPromptCacheIdentities{}
+			c.Set(businessSystemPromptCacheIdentityKey, identities)
+		}
+		for _, identity := range identities.values {
+			if identity.namespace == namespace && (source == identity.source || source == identity.wire) {
+				return identity.wire
+			}
+		}
+	}
+	digest := sha256.Sum256([]byte(source + namespace))
+	wire := hex.EncodeToString(digest[:])
+	if identities != nil {
+		identities.values = append(identities.values, businessSystemPromptCacheIdentity{
+			source: source, namespace: namespace, wire: wire,
+		})
+	}
+	return wire
+}
+
+func rewriteBusinessSystemPromptCacheKey(c *gin.Context, body []byte, application BusinessSystemPromptApplication) ([]byte, error) {
 	value := gjson.GetBytes(body, "prompt_cache_key")
 	if !value.Exists() || value.Type != gjson.String {
 		return body, nil
 	}
-	effective := appendBusinessSystemPromptApplicationToCacheKey(value.String(), application)
+	effective := deriveBusinessSystemPromptCacheKey(c, value.String(), application)
 	if effective == "" || effective == value.String() {
 		return body, nil
 	}
@@ -333,4 +377,15 @@ func rewriteBusinessSystemPromptCacheKey(body []byte, application BusinessSystem
 		return nil, fmt.Errorf("rewrite business system prompt cache key: %w", err)
 	}
 	return updated, nil
+}
+
+// Read the final body after all wire transforms (including Cindy's separate
+// policy). Bridges that intentionally omit the body field retain their seed
+// for header fallback, without injecting a new field or mutating local state.
+func businessSystemPromptUpstreamCacheKey(c *gin.Context, body []byte, seed string, application BusinessSystemPromptApplication) string {
+	value := gjson.GetBytes(body, "prompt_cache_key")
+	if value.Type == gjson.String && strings.TrimSpace(value.String()) != "" {
+		return strings.TrimSpace(value.String())
+	}
+	return deriveBusinessSystemPromptCacheKey(c, seed, application)
 }

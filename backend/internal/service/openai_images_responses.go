@@ -916,6 +916,14 @@ func (s *OpenAIGatewayService) handleOpenAIImagesErrorResponse(
 	requestedModel ...string,
 ) (*OpenAIForwardResult, error) {
 	body := s.readUpstreamErrorBody(resp)
+	if isOpenAIRequestScopedSafetyRejection(body) {
+		markOpenAICyberPolicyFromResponse(c, resp.StatusCode, body)
+		message := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(body)))
+		setOpsUpstreamError(c, resp.StatusCode, message, truncateString(string(body), 2048))
+		upErr := openAIImagesUpstreamErrorFromHTTP(resp.StatusCode, resp.Header, body)
+		writeOpenAIImagesUpstreamErrorResponse(c, upErr)
+		return nil, upErr
+	}
 	if failoverErr, ok := s.handleCindyBalanceHTTPFailover(
 		ctx, account, resp.StatusCode, resp.Header, body, requestedModel...,
 	); ok {
@@ -1858,6 +1866,10 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 	if resp.StatusCode >= 400 {
 		respBody := s.readUpstreamErrorBody(resp)
 		_ = resp.Body.Close()
+		if isOpenAIRequestScopedSafetyRejection(respBody) {
+			resp.Body = io.NopCloser(bytes.NewReader(s.redactAgentIdentitySensitiveBody(upstreamCtx, account, respBody)))
+			return s.handleOpenAIImagesErrorResponse(upstreamCtx, resp, c, account, requestModel)
+		}
 		if failoverErr, ok := s.handleCindyBalanceHTTPFailover(
 			upstreamCtx, account, resp.StatusCode, resp.Header, respBody, requestModel,
 		); ok {
@@ -1874,7 +1886,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
 		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
-		if s.shouldFailoverOpenAIUpstreamResponseForAccount(account, resp.StatusCode, upstreamMsg, respBody) {
+		if s.shouldFailoverOpenAIUpstreamResponse(account, resp.StatusCode, upstreamMsg, respBody) {
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 				ProxyID:            opsUpstreamProxyID(account),
 				ProxyName:          opsUpstreamProxyName(account),

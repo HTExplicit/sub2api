@@ -522,7 +522,7 @@ func (s *GatewayService) ProjectModelListContextCapacities(ctx context.Context, 
 // ProjectCodexModelContextCapacities runs after all group/Cindy merges and
 // before conditional response handling. Local overlays never enter the raw
 // upstream cache; a changed override therefore changes the final ETag.
-func (s *OpenAIGatewayService) ProjectCodexModelContextCapacities(ctx context.Context, group *Group, manifest *CodexModelsManifest, ifNoneMatch string, source *Account) error {
+func (s *OpenAIGatewayService) ProjectCodexModelContextCapacities(ctx context.Context, group *Group, manifest *OpenAIModelsResponse, ifNoneMatch string, source *Account) error {
 	if manifest == nil || manifest.NotModified || len(manifest.Body) == 0 || group == nil {
 		return nil
 	}
@@ -530,9 +530,20 @@ func (s *OpenAIGatewayService) ProjectCodexModelContextCapacities(ctx context.Co
 	return projectCodexModelContextCapacities(ctx, group, manifest, ifNoneMatch, source, catalog)
 }
 
+// ProjectOpenAIModelsListContextCapacities is the final, request-local overlay
+// for upstream-discovered ordinary catalogs. Discovery sources supply raw
+// observations; capacity candidates still follow the actual forwarding pool.
+func (s *OpenAIGatewayService) ProjectOpenAIModelsListContextCapacities(ctx context.Context, group *Group, response *OpenAIModelsResponse, ifNoneMatch string) error {
+	if response == nil || response.NotModified || len(response.Body) == 0 || group == nil {
+		return nil
+	}
+	catalog := loadGroupModelCapacityCatalog(ctx, s.accountRepo, nil, s.channelService, s.cfg, &group.ID, group.Platform)
+	return projectOpenAIModelsContextCapacities(ctx, group, response, ifNoneMatch, nil, catalog, false)
+}
+
 // The shared gateway owns composite route configuration, including the
 // instance attached to the OpenAI-compatible handler for native dispatch.
-func (s *GatewayService) ProjectCodexModelContextCapacities(ctx context.Context, group *Group, manifest *CodexModelsManifest, ifNoneMatch string, source *Account) error {
+func (s *GatewayService) ProjectCodexModelContextCapacities(ctx context.Context, group *Group, manifest *OpenAIModelsResponse, ifNoneMatch string, source *Account) error {
 	if manifest == nil || manifest.NotModified || len(manifest.Body) == 0 || group == nil {
 		return nil
 	}
@@ -544,7 +555,11 @@ func (s *GatewayService) ProjectCodexModelContextCapacities(ctx context.Context,
 	return projectCodexModelContextCapacities(ctx, group, manifest, ifNoneMatch, source, catalog)
 }
 
-func projectCodexModelContextCapacities(ctx context.Context, group *Group, manifest *CodexModelsManifest, ifNoneMatch string, source *Account, catalog *groupModelCapacityCatalog) error {
+func projectCodexModelContextCapacities(ctx context.Context, group *Group, manifest *OpenAIModelsResponse, ifNoneMatch string, source *Account, catalog *groupModelCapacityCatalog) error {
+	return projectOpenAIModelsContextCapacities(ctx, group, manifest, ifNoneMatch, source, catalog, true)
+}
+
+func projectOpenAIModelsContextCapacities(ctx context.Context, group *Group, manifest *OpenAIModelsResponse, ifNoneMatch string, source *Account, catalog *groupModelCapacityCatalog, codex bool) error {
 	catalog.group = group
 	sources := manifest.capacitySources
 	if len(sources) == 0 && source != nil {
@@ -569,24 +584,11 @@ func projectCodexModelContextCapacities(ctx context.Context, group *Group, manif
 			}
 			continue
 		}
-		var envelope struct {
-			Models []struct {
-				Slug string `json:"slug"`
-			} `json:"models"`
-			Data []struct {
-				ID string `json:"id"`
-			} `json:"data"`
-		}
-		if json.Unmarshal(capacitySource.body, &envelope) == nil {
-			for _, model := range envelope.Models {
-				protected[model.Slug] = true
-			}
-			for _, model := range envelope.Data {
-				protected[model.ID] = true
-			}
+		for model := range rawModelCapacitySourceIDs(capacitySource.body) {
+			protected[model] = true
 		}
 	}
-	body, err := projectModelCapacityEnvelope(manifest.Body, true, func(model string) ResolvedModelContextCapacity {
+	body, err := projectModelCapacityEnvelope(manifest.Body, codex, func(model string) ResolvedModelContextCapacity {
 		return catalog.resolve(ctx, group.Platform, model)
 	}, protected)
 	if err != nil {

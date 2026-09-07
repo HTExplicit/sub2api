@@ -209,6 +209,9 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 		}
 	}
 
+	// Recursive retries must start from the session seed, never a wire key.
+	retryPromptCacheKey := promptCacheKey
+
 	// 3. Build the upstream (Responses API) body.
 	//
 	// Cursor compatibility: some clients (notably Cursor cloud) send Responses
@@ -341,9 +344,10 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 		return nil, policyErr
 	}
 	responsesBody = updatedBody
-	if updatedPromptBody, application, promptErr := s.applyBusinessSystemPromptForRequest(
+	updatedPromptBody, application, promptErr := s.applyBusinessSystemPromptForRequest(
 		c, responsesBody, account, BusinessSystemPromptProtocolResponses, false,
-	); promptErr != nil {
+	)
+	if promptErr != nil {
 		if errors.Is(promptErr, ErrBusinessSystemPromptUnavailable) {
 			writeChatCompletionsError(c, http.StatusServiceUnavailable, "system_prompt_unavailable", "business system prompt is temporarily unavailable")
 		}
@@ -351,19 +355,22 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 	} else {
 		responsesBody = updatedPromptBody
 		if application.Applied {
-			promptCacheKey = appendBusinessSystemPromptApplicationToCacheKey(promptCacheKey, application)
-			responsesBody, promptErr = rewriteBusinessSystemPromptCacheKey(responsesBody, application)
+			responsesBody, promptErr = rewriteBusinessSystemPromptCacheKey(c, responsesBody, application)
 			if promptErr != nil {
 				return nil, promptErr
 			}
 		}
 	}
+	upstreamPromptCacheKey := promptCacheKey
 	if normalizedBody, changed, normalizeErr := normalizeCindyManagedPromptCacheKey(responsesBody, c, account); normalizeErr != nil {
 		return nil, fmt.Errorf("normalize final Chat-to-Responses Cindy prompt_cache_key: %w", normalizeErr)
 	} else if changed {
 		responsesBody = normalizedBody
-		promptCacheKey = strings.TrimSpace(gjson.GetBytes(responsesBody, "prompt_cache_key").String())
+		upstreamPromptCacheKey = strings.TrimSpace(gjson.GetBytes(responsesBody, "prompt_cache_key").String())
 		observeCindyManagedPromptCacheNormalization(c, true)
+	}
+	if application.Applied {
+		upstreamPromptCacheKey = businessSystemPromptUpstreamCacheKey(c, responsesBody, promptCacheKey, application)
 	}
 	responsesReq.ServiceTier = normalizedOpenAIServiceTierValue(gjson.GetBytes(responsesBody, "service_tier").String())
 
@@ -375,17 +382,17 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 
 	// 6. Build upstream request
 	upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
-	upstreamReq, err := s.buildUpstreamRequest(upstreamCtx, c, account, responsesBody, token, true, promptCacheKey, false)
+	upstreamReq, err := s.buildUpstreamRequest(upstreamCtx, c, account, responsesBody, token, true, upstreamPromptCacheKey, false)
 	releaseUpstreamCtx()
 	if err != nil {
 		return nil, fmt.Errorf("build upstream request: %w", err)
 	}
 
-	if promptCacheKey != "" {
+	if upstreamPromptCacheKey != "" {
 		apiKeyID := getAPIKeyIDFromContext(c)
-		sessionKey := promptCacheKey
+		sessionKey := upstreamPromptCacheKey
 		if !compatPromptCacheTenantIsolated {
-			sessionKey = isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), promptCacheKey)
+			sessionKey = isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), upstreamPromptCacheKey)
 		}
 		upstreamReq.Header.Set("session_id", generateSessionUUID(sessionKey))
 	}
@@ -451,7 +458,7 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 				if err := s.recoverAgentIdentityTask(ctx, account, expectedTaskID); err != nil {
 					return nil, fmt.Errorf("agent identity task recovery failed: %w", err)
 				}
-				return s.forwardAsChatCompletions(markAgentIdentityTaskRecoveryTried(ctx), c, account, body, promptCacheKey, defaultMappedModel, compatPromptCacheTenantIsolated)
+				return s.forwardAsChatCompletions(markAgentIdentityTaskRecoveryTried(ctx), c, account, body, retryPromptCacheKey, defaultMappedModel, compatPromptCacheTenantIsolated)
 			}
 			if account.Type == AccountTypeAPIKey &&
 				openai_compat.ResolveResponsesSupport(account.Extra) == openai_compat.ResponsesSupportUnknown &&

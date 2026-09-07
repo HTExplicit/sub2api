@@ -5,12 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AdminGroup } from '@/types'
 import GroupsView from '@/views/admin/GroupsView.vue'
+import { adminAPI } from '@/api/admin'
 
 const {
   listGroups,
   duplicateGroup,
   updateGroup,
-  getModelsListCandidates,
+  getModelAllowlistCandidates,
   getUsageSummary,
   getCapacitySummary,
   getLiveCapability,
@@ -20,7 +21,7 @@ const {
   listGroups: vi.fn(),
   duplicateGroup: vi.fn(),
   updateGroup: vi.fn(),
-  getModelsListCandidates: vi.fn(),
+  getModelAllowlistCandidates: vi.fn(),
   getUsageSummary: vi.fn(),
   getCapacitySummary: vi.fn(),
   getLiveCapability: vi.fn(),
@@ -28,12 +29,14 @@ const {
   showError: vi.fn()
 }))
 
+const authState = vi.hoisted(() => ({ isSimpleMode: false }))
+
 vi.mock('@/api/admin', () => ({
   adminAPI: {
     groups: {
       list: listGroups,
       duplicate: duplicateGroup,
-      getModelsListCandidates,
+      getModelAllowlistCandidates,
       getUsageSummary,
       getCapacitySummary,
       getLiveCapability,
@@ -52,6 +55,10 @@ vi.mock('@/api/admin', () => ({
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({ showSuccess, showError })
+}))
+
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => authState
 }))
 
 vi.mock('@/stores/onboarding', () => ({
@@ -118,7 +125,7 @@ const sourceGroup: AdminGroup = {
   account_count: 1,
   active_account_count: 1,
   rate_limited_account_count: 0,
-  models_list_config: undefined,
+  model_allowlist: undefined,
   sort_order: 10
 }
 
@@ -175,13 +182,14 @@ function mountView(plugins: any[] = []) {
 
 describe('GroupsView duplicate action', () => {
   beforeEach(() => {
+    authState.isSimpleMode = false
     localStorage.clear()
     vi.spyOn(console, 'error').mockImplementation(() => {})
     for (const fn of [
       listGroups,
       duplicateGroup,
       updateGroup,
-      getModelsListCandidates,
+      getModelAllowlistCandidates,
       getUsageSummary,
       getCapacitySummary,
       getLiveCapability,
@@ -204,7 +212,7 @@ describe('GroupsView duplicate action', () => {
       name: 'Primary (Copy)',
       status: 'inactive'
     })
-    getModelsListCandidates.mockResolvedValue([])
+    getModelAllowlistCandidates.mockResolvedValue([])
     getUsageSummary.mockResolvedValue([])
     getCapacitySummary.mockResolvedValue([])
     getLiveCapability.mockResolvedValue({ supported: false })
@@ -249,6 +257,114 @@ describe('GroupsView duplicate action', () => {
     await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/admin/accounts'))
     expect(router.currentRoute.value.path).toBe('/admin/accounts')
     expect(router.currentRoute.value.query).toEqual({ platforms: 'cindy', cindy_only: 'true', group_id: '42' })
+    wrapper.unmount()
+  })
+
+  it('hides advanced group actions in simple mode', async () => {
+    authState.isSimpleMode = true
+    const compositeGroup = { ...sourceGroup, platform: 'composite' }
+    listGroups.mockResolvedValueOnce({ items: [compositeGroup], total: 1, page: 1, page_size: 20, pages: 1 })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="group-duplicate"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="group-composite-routes"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="group-rate-multipliers"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="group-rpm-overrides"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it.each([
+    { name: 'populated', models: ['saved-model', 'legacy-model'] },
+    { name: 'empty', models: [] }
+  ])('saves visible fields in simple mode without fetching or resubmitting a hidden enabled $name allowlist', async ({ models }) => {
+    authState.isSimpleMode = true
+    const modelAllowlist = { enabled: true, models: [...models] }
+    const group = { ...sourceGroup, model_allowlist: modelAllowlist }
+    listGroups.mockResolvedValue({ items: [group], total: 1, page: 1, page_size: 20, pages: 1 })
+    updateGroup.mockResolvedValue(group)
+    const wrapper = mountView()
+    await flushPromises()
+    expect(getModelAllowlistCandidates).not.toHaveBeenCalled()
+
+    const editButton = wrapper.findAll('button').find(button => button.text() === 'common.edit')!
+    await editButton.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="edit-model-allowlist"]').exists()).toBe(false)
+    await wrapper.get('#edit-group-form input[type="text"]').setValue('Renamed group')
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+
+    expect(updateGroup).toHaveBeenCalledWith(42, { name: 'Renamed group', description: '' })
+    expect(updateGroup.mock.calls[0][1]).not.toHaveProperty('model_allowlist')
+    expect(group.model_allowlist).toEqual({ enabled: true, models })
+    expect(showError).not.toHaveBeenCalled()
+    expect(getModelAllowlistCandidates).not.toHaveBeenCalled()
+
+    await wrapper.get('[data-tour="groups-create-btn"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="create-model-allowlist"]').exists()).toBe(false)
+    expect(getModelAllowlistCandidates).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('preserves saved allowlist models when a custom entry is added before candidates finish loading', async () => {
+    const group = {
+      ...sourceGroup,
+      model_allowlist: { enabled: true, models: ['saved-model', 'legacy-model'] }
+    }
+    listGroups.mockResolvedValue({ items: [group], total: 1, page: 1, page_size: 20, pages: 1 })
+    updateGroup.mockResolvedValue(group)
+    let resolveCandidates!: (models: string[]) => void
+    const pendingCandidates = new Promise<string[]>(resolve => { resolveCandidates = resolve })
+    getModelAllowlistCandidates.mockImplementation((groupID: number) =>
+      groupID === group.id ? pendingCandidates : Promise.resolve([]))
+    const wrapper = mountView()
+    await flushPromises()
+    const editButton = wrapper.findAll('button').find(button => button.text() === 'common.edit')!
+    await editButton.trigger('click')
+    await flushPromises()
+
+    const allowlist = wrapper.get('[data-testid="edit-model-allowlist"]')
+    expect(allowlist.get<HTMLInputElement>('[data-model-id="saved-model"] input').element.checked).toBe(true)
+    expect(allowlist.get<HTMLInputElement>('[data-model-id="legacy-model"] input').element.checked).toBe(true)
+    const customInput = allowlist.get('input[placeholder="admin.groups.modelAllowlist.customPlaceholder"]')
+    await customInput.setValue('custom-client-model')
+    await customInput.trigger('keydown', { key: 'Enter' })
+    expect(allowlist.get<HTMLInputElement>('[data-model-id="custom-client-model"] input').element.checked).toBe(true)
+
+    resolveCandidates(['legacy-model', 'new-candidate'])
+    await flushPromises()
+    expect(allowlist.get<HTMLInputElement>('[data-model-id="saved-model"] input').element.checked).toBe(true)
+    expect(allowlist.get<HTMLInputElement>('[data-model-id="legacy-model"] input').element.checked).toBe(true)
+    expect(allowlist.get<HTMLInputElement>('[data-model-id="custom-client-model"] input').element.checked).toBe(true)
+    expect(allowlist.get<HTMLInputElement>('[data-model-id="new-candidate"] input').element.checked).toBe(false)
+
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+    expect(updateGroup).toHaveBeenCalledWith(42, expect.objectContaining({
+      model_allowlist: { enabled: true, models: ['saved-model', 'legacy-model', 'custom-client-model'] }
+    }))
+    expect(updateGroup.mock.calls[0][1]).not.toHaveProperty('models_list_config')
+    expect(group.model_allowlist.models).toEqual(['saved-model', 'legacy-model'])
+    wrapper.unmount()
+  })
+
+  it('rejects an enabled allowlist when the actual submitted selection is empty', async () => {
+    const group = { ...sourceGroup, model_allowlist: { enabled: true, models: ['saved-model'] } }
+    listGroups.mockResolvedValue({ items: [group], total: 1, page: 1, page_size: 20, pages: 1 })
+    const wrapper = mountView()
+    await flushPromises()
+    const editButton = wrapper.findAll('button').find(button => button.text() === 'common.edit')!
+    await editButton.trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="edit-model-allowlist"] [data-model-id="saved-model"] input').setValue(false)
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+
+    expect(updateGroup).not.toHaveBeenCalled()
+    expect(showError).toHaveBeenCalledWith('admin.groups.modelAllowlist.emptySelectionError')
     wrapper.unmount()
   })
 
@@ -331,4 +447,70 @@ describe('GroupsView duplicate action', () => {
     expect(showError).toHaveBeenCalledWith('group name already exists')
     wrapper.unmount()
   })
+
+  it('updates manifest controls immediately and submits the displayed selection', async () => {
+    vi.useFakeTimers()
+    vi.mocked(adminAPI.accounts.list).mockResolvedValue({
+      items: [{ id: 5, name: 'Manifest account' }]
+    } as never)
+    updateGroup.mockResolvedValue(sourceGroup)
+    const wrapper = mountView()
+    try {
+      await flushPromises()
+      const editButton = wrapper.findAll('button').find((button) => button.text() === 'common.edit')!
+      await editButton.trigger('click')
+      await flushPromises()
+
+      const toggle = wrapper.get('[data-testid="codex-manifest-toggle"]')
+      await toggle.trigger('click')
+      expect(toggle.attributes('aria-checked')).toBe('true')
+      const search = wrapper.get('[data-testid="codex-manifest-search"]')
+      await search.trigger('focus')
+      await vi.advanceTimersByTimeAsync(300)
+      await flushPromises()
+      expect(adminAPI.accounts.list).toHaveBeenCalledWith(
+        1, 20, { search: '', platform: 'openai', group_id: '42' }, expect.anything()
+      )
+      await wrapper.get('[data-testid="codex-manifest-dropdown"] button').trigger('click')
+      expect(wrapper.get('[data-testid="codex-manifest-selected-tags"]').text()).toContain('Manifest account')
+
+      await wrapper.get('[aria-label="remove account 5"]').trigger('click')
+      expect(wrapper.find('[data-testid="codex-manifest-selected-tags"]').exists()).toBe(false)
+      await wrapper.get('#edit-group-form').trigger('submit')
+      expect(updateGroup).not.toHaveBeenCalled()
+      expect(wrapper.find('[data-testid="codex-manifest-validation-error"]').exists()).toBe(true)
+
+      await search.trigger('focus')
+      await wrapper.get('[data-testid="codex-manifest-dropdown"] button').trigger('click')
+      expect(wrapper.get('[data-testid="codex-manifest-selected-tags"]').text()).toContain('Manifest account')
+      const fallback = wrapper.get('[data-testid="codex-manifest-fallback-toggle"]')
+      await fallback.trigger('click')
+      expect(fallback.attributes('aria-checked')).toBe('true')
+      await fallback.trigger('click')
+      expect(fallback.attributes('aria-checked')).toBe('false')
+      await fallback.trigger('click')
+
+      await toggle.trigger('click')
+      expect(wrapper.find('[data-testid="codex-manifest-search"]').exists()).toBe(false)
+      await toggle.trigger('click')
+      expect(wrapper.get('[data-testid="codex-manifest-selected-tags"]').text()).toContain('Manifest account')
+      await wrapper.get('#edit-group-form').trigger('submit')
+      await flushPromises()
+      expect(updateGroup).toHaveBeenCalledWith(42, expect.objectContaining({
+        codex_models_manifest_config: {
+          enabled: true, account_ids: [5], fallback_to_scheduler: true
+        }
+      }))
+
+      // Reopening reads the saved group afresh, without retaining the prior draft.
+      await editButton.trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[data-testid="codex-manifest-toggle"]').attributes('aria-checked')).toBe('false')
+      expect(wrapper.find('[data-testid="codex-manifest-search"]').exists()).toBe(false)
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
 })

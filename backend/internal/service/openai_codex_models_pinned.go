@@ -114,18 +114,108 @@ func mergeCodexModelsManifestBodies(bodies [][]byte) ([]byte, error) {
 //   - every fetch failed → the last upstream error
 //   - partial failure → successful accounts are still merged and a warning
 //     naming the failed account IDs is logged.
-func (s *OpenAIGatewayService) FetchPinnedCodexModelsManifest(ctx context.Context, group *Group, clientVersion string) (*CodexModelsManifest, *Account, error) {
+func (s *OpenAIGatewayService) FetchPinnedCodexModelsManifest(ctx context.Context, group *Group, clientVersion string) (*OpenAIModelsResponse, *Account, error) {
+	results, err := s.fetchPinnedOpenAIModels(ctx, group, func(ctx context.Context, account *Account) (*OpenAIModelsResponse, error) {
+		manifest, err := s.FetchCodexModelsManifest(ctx, account, clientVersion, "")
+		if err != nil {
+			return nil, err
+		}
+		if err := s.CompleteAPIKeyCodexModelsManifestForClient(manifest, account); err != nil {
+			return nil, err
+		}
+		if err := ApplyPinnedCodexModelsMapping(manifest, account, group); err != nil {
+			return nil, err
+		}
+		return manifest, nil
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	bodies := make([][]byte, 0, len(results))
+	for _, result := range results {
+		bodies = append(bodies, result.response.Body)
+	}
+	merged, err := mergeCodexModelsManifestBodies(bodies)
+	if err != nil {
+		return nil, nil, fmt.Errorf("merge pinned codex models manifests: %w", err)
+	}
+	sources, protected, err := mergePinnedModelsCapacityProvenance(results, true)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &OpenAIModelsResponse{Body: merged, ETag: codexModelsManifestBodyETag(merged),
+		capacitySources: sources, capacityProtectedModels: protected}, results[0].account, nil
+}
+
+// Preserve every successful raw source for capacity aggregation, but only the
+// winning public rows determine protected provenance. Losing duplicates must
+// not change the identity or non-capacity fields of the first returned row.
+func mergePinnedModelsCapacityProvenance(results []pinnedOpenAIModelsResult, codex bool) ([]codexModelCapacitySource, map[string]bool, error) {
+	field, idField := "data", "id"
+	if codex {
+		field, idField = "models", "slug"
+	}
+	seen, protected := make(map[string]bool), make(map[string]bool)
+	sources := make([]codexModelCapacitySource, 0, len(results))
+	for _, result := range results {
+		_, entries, err := modelCatalogEntries(result.response.Body, field)
+		if err != nil {
+			return nil, nil, err
+		}
+		visible := make(map[string]bool)
+		for _, raw := range entries {
+			var entry map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &entry); err != nil {
+				continue
+			}
+			var id string
+			if json.Unmarshal(entry[idField], &id) != nil {
+				continue
+			}
+			id = strings.TrimSpace(id)
+			if id != "" && !seen[id] {
+				seen[id], visible[id] = true, true
+			}
+		}
+		cloned := cloneOpenAIModelsResponse(result.response)
+		for _, source := range cloned.capacitySources {
+			winning := make(map[string]bool)
+			for id := range visible {
+				if source.visibleModels == nil || source.visibleModels[id] {
+					winning[id] = true
+				}
+			}
+			source.visibleModels = winning
+			sources = append(sources, source)
+		}
+		for id := range cloned.capacityProtectedModels {
+			if visible[id] {
+				protected[id] = true
+			}
+		}
+	}
+	return sources, protected, nil
+}
+
+type pinnedOpenAIModelsResult struct {
+	account  *Account
+	response *OpenAIModelsResponse
+}
+
+// fetchPinnedOpenAIModels shares membership, eligibility, fanout and partial
+// failure policy between ordinary model lists and Codex manifests.
+func (s *OpenAIGatewayService) fetchPinnedOpenAIModels(ctx context.Context, group *Group, fetch func(context.Context, *Account) (*OpenAIModelsResponse, error)) ([]pinnedOpenAIModelsResult, error) {
 	if s == nil || s.accountRepo == nil || group == nil {
-		return nil, nil, ErrNoPinnedCodexModelsAccounts
+		return nil, ErrNoPinnedCodexModelsAccounts
 	}
 	cfg := group.CodexModelsManifestConfig
 	if group.Platform != PlatformOpenAI || !cfg.Enabled || len(cfg.AccountIDs) == 0 {
-		return nil, nil, ErrNoPinnedCodexModelsAccounts
+		return nil, ErrNoPinnedCodexModelsAccounts
 	}
 
 	members, err := s.accountRepo.ListByGroup(ctx, group.ID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("load pinned codex models manifest accounts: %w", err)
+		return nil, fmt.Errorf("load pinned codex models manifest accounts: %w", err)
 	}
 	memberByID := make(map[int64]Account, len(members))
 	for _, member := range members {
@@ -145,94 +235,46 @@ func (s *OpenAIGatewayService) FetchPinnedCodexModelsManifest(ctx context.Contex
 		usable = append(usable, member)
 	}
 	if len(usable) == 0 {
-		return nil, nil, ErrNoPinnedCodexModelsAccounts
+		return nil, ErrNoPinnedCodexModelsAccounts
 	}
 
-	bodies := make([][]byte, len(usable))
-	capacitySourcesByAccount := make([][]codexModelCapacitySource, len(usable))
+	results := make([]pinnedOpenAIModelsResult, len(usable))
 	fetchErrs := make([]error, len(usable))
-	// 各自独立完成、不取消兄弟请求，错误按下标收集，普通 WaitGroup 足够。
 	var fetchGroup sync.WaitGroup
 	for i := range usable {
-		account := usable[i]
-		index := i
 		fetchGroup.Add(1)
 		go func() {
 			defer fetchGroup.Done()
-			manifest, fetchErr := s.FetchCodexModelsManifest(ctx, &account, clientVersion, "")
-			if fetchErr != nil {
-				fetchErrs[index] = fetchErr
-				return
-			}
-			if completeErr := s.CompleteAPIKeyCodexModelsManifestForClient(manifest, &account); completeErr != nil {
-				fetchErrs[index] = completeErr
-				return
-			}
-			bodies[index] = manifest.Body
-			capacitySourcesByAccount[index] = cloneCodexModelsManifest(manifest).capacitySources
+			response, err := fetch(ctx, &usable[i])
+			results[i] = pinnedOpenAIModelsResult{account: &usable[i], response: response}
+			fetchErrs[i] = err
 		}()
 	}
 	fetchGroup.Wait()
-
-	successBodies := make([][]byte, 0, len(usable))
-	successAccounts := make([]*Account, 0, len(usable))
-	capacitySources := make([]codexModelCapacitySource, 0, len(usable))
-	capacitySeenModels := make(map[string]bool)
-	failedIDs := make([]int64, 0)
-	for i := range usable {
-		if fetchErrs[i] != nil || bodies[i] == nil {
-			failedIDs = append(failedIDs, usable[i].ID)
-			continue
-		}
-		successBodies = append(successBodies, bodies[i])
-		successAccounts = append(successAccounts, &usable[i])
-		// Preserve the same first-seen source identity as the body merge. A
-		// losing duplicate from a protected source is not the returned row.
-		visibleModels := make(map[string]bool)
-		var sourceEnvelope struct {
-			Models []struct {
-				Slug string `json:"slug"`
-			} `json:"models"`
-		}
-		if json.Unmarshal(bodies[i], &sourceEnvelope) == nil {
-			for _, model := range sourceEnvelope.Models {
-				if model.Slug != "" && !capacitySeenModels[model.Slug] {
-					visibleModels[model.Slug], capacitySeenModels[model.Slug] = true, true
-				}
-			}
-		}
-		for _, source := range capacitySourcesByAccount[i] {
-			source.visibleModels = visibleModels
-			capacitySources = append(capacitySources, source)
-		}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	if len(successBodies) == 0 {
-		var lastErr error
-		for i := range fetchErrs {
+	successes := make([]pinnedOpenAIModelsResult, 0, len(results))
+	failedIDs := make([]int64, 0)
+	var lastErr error
+	for i, result := range results {
+		if fetchErrs[i] != nil || result.response == nil {
+			failedIDs = append(failedIDs, usable[i].ID)
 			if fetchErrs[i] != nil {
 				lastErr = fetchErrs[i]
 			}
+			continue
 		}
+		successes = append(successes, result)
+	}
+	if len(successes) == 0 {
 		if lastErr == nil {
-			lastErr = infraerrors.New(http.StatusBadGateway, "OPENAI_CODEX_MODELS_UPSTREAM_FAILED", "pinned codex models manifest accounts all failed")
+			lastErr = infraerrors.New(http.StatusBadGateway, "OPENAI_MODELS_UPSTREAM_FAILED", "pinned model discovery accounts all failed")
 		}
-		return nil, nil, lastErr
+		return nil, lastErr
 	}
 	if len(failedIDs) > 0 {
-		slog.Warn("codex_models_manifest_pinned_partial_failure",
-			"group_id", group.ID,
-			"failed_account_ids", failedIDs,
-		)
+		slog.Warn("openai_models_pinned_partial_failure", "group_id", group.ID, "failed_account_ids", failedIDs)
 	}
-
-	merged, err := mergeCodexModelsManifestBodies(successBodies)
-	if err != nil {
-		return nil, nil, fmt.Errorf("merge pinned codex models manifests: %w", err)
-	}
-	firstAccount := *successAccounts[0]
-	return &CodexModelsManifest{
-		Body:            merged,
-		ETag:            codexModelsManifestBodyETag(merged),
-		capacitySources: capacitySources,
-	}, &firstAccount, nil
+	return successes, nil
 }

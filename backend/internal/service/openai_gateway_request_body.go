@@ -934,6 +934,99 @@ func normalizeOpenAIOAuthResponsesCompatibilityBody(body []byte) ([]byte, bool, 
 	return normalized, changed, nil
 }
 
+func normalizeOpenAIResponsesReasoningMode(body []byte) ([]byte, bool, error) {
+	return normalizeOpenAIResponsesReasoningModeForModel(body, gjson.GetBytes(body, "model").String())
+}
+
+// normalizeOpenAIResponsesReasoningModeForModel applies the compatibility rule
+// to the resolved upstream target, which may differ from a public alias or be
+// inherited from a prior WS turn. It never rewrites the request's model field.
+func normalizeOpenAIResponsesReasoningModeForModel(body []byte, resolvedModel string) ([]byte, bool, error) {
+	if len(body) == 0 {
+		return body, false, nil
+	}
+	// Astra 的 reasoning.mode 与 reasoning.effort 是独立参数，不做兼容替换；非 Astra 维持旧 strip-mode/pro->max 行为。
+	if isOpenAIGPT6AstraModel(resolvedModel) {
+		return body, false, nil
+	}
+	mode := gjson.GetBytes(body, "reasoning.mode")
+	if !mode.Exists() || mode.Type != gjson.String {
+		return body, false, nil
+	}
+	updated := body
+	effort := gjson.GetBytes(body, "reasoning.effort")
+	if (!effort.Exists() || effort.Type == gjson.Null || strings.TrimSpace(effort.String()) == "") &&
+		strings.EqualFold(strings.TrimSpace(mode.String()), "pro") {
+		var err error
+		updated, err = sjson.SetBytes(updated, "reasoning.effort", "max")
+		if err != nil {
+			return body, false, fmt.Errorf("set reasoning effort for mode=pro: %w", err)
+		}
+	}
+	updated, err := sjson.DeleteBytes(updated, "reasoning.mode")
+	if err != nil {
+		return body, false, fmt.Errorf("delete unsupported reasoning.mode: %w", err)
+	}
+	if reasoning := gjson.GetBytes(updated, "reasoning"); reasoning.Exists() && reasoning.IsObject() && len(reasoning.Map()) == 0 {
+		updated, err = sjson.DeleteBytes(updated, "reasoning")
+		if err != nil {
+			return body, false, fmt.Errorf("delete empty reasoning object: %w", err)
+		}
+	}
+	return updated, true, nil
+}
+
+// normalizeOpenAIWSPassthroughSelectedCompatibilityForModel applies only the two
+// selected official rules to OAuth/SetupToken native WS frames. In particular,
+// it does not run the general input, ID, schema, or tool adapters on opaque wire
+// history. Surviving input items and all unrelated fields retain their raw JSON.
+func normalizeOpenAIWSPassthroughSelectedCompatibilityForModel(body []byte, account *Account, resolvedModel string) ([]byte, bool, error) {
+	if account == nil || account.Platform != PlatformOpenAI || !account.IsOpenAIOAuthLike() {
+		return body, false, nil
+	}
+	normalized, changed, err := normalizeOpenAIResponsesReasoningModeForModel(body, resolvedModel)
+	if err != nil {
+		return body, false, err
+	}
+	inputJSON := gjson.GetBytes(normalized, "input")
+	if !inputJSON.IsArray() {
+		return normalized, changed, nil
+	}
+	previous := gjson.GetBytes(normalized, "previous_response_id")
+	if previous.Type == gjson.String && strings.TrimSpace(previous.String()) != "" {
+		return normalized, changed, nil
+	}
+	var input []any
+	if err := decodeOpenAIJSONUseNumber([]byte(inputJSON.Raw), &input); err != nil {
+		return body, false, fmt.Errorf("normalize selected websocket input compatibility: %w", err)
+	}
+	keep := openAIResponsesOrphanToolOutputKeepMask(input, false)
+	if keep == nil {
+		return normalized, changed, nil
+	}
+	rawItems := inputJSON.Array()
+	if len(rawItems) != len(keep) {
+		return body, false, errors.New("normalize selected websocket input compatibility: inconsistent input array")
+	}
+	filtered := make([]byte, 0, len(inputJSON.Raw))
+	filtered = append(filtered, '[')
+	for index, item := range rawItems {
+		if !keep[index] {
+			continue
+		}
+		if len(filtered) > 1 {
+			filtered = append(filtered, ',')
+		}
+		filtered = append(filtered, item.Raw...)
+	}
+	filtered = append(filtered, ']')
+	updated, err := sjson.SetRawBytes(normalized, "input", filtered)
+	if err != nil {
+		return body, false, fmt.Errorf("normalize selected websocket input compatibility: %w", err)
+	}
+	return updated, true, nil
+}
+
 func normalizeOpenAIResponseFormatSchemasBody(body []byte) ([]byte, bool, error) {
 	if len(body) == 0 {
 		return body, false, nil
@@ -958,6 +1051,10 @@ func normalizeOpenAIResponseFormatSchemasBody(body []byte) ([]byte, bool, error)
 }
 
 func normalizeOpenAIResponsesWebSocketCompatibilityBody(body []byte, account *Account, responsesLite bool) ([]byte, bool, error) {
+	return normalizeOpenAIResponsesWebSocketCompatibilityBodyForModel(body, account, responsesLite, gjson.GetBytes(body, "model").String())
+}
+
+func normalizeOpenAIResponsesWebSocketCompatibilityBodyForModel(body []byte, account *Account, responsesLite bool, resolvedModel string) ([]byte, bool, error) {
 	if account == nil || !account.IsOpenAI() {
 		return body, false, nil
 	}
@@ -994,7 +1091,15 @@ func normalizeOpenAIResponsesWebSocketCompatibilityBody(body []byte, account *Ac
 			changed = true
 		}
 	}
-	if account != nil && account.IsOpenAIOAuthLike() {
+	if account.IsOAuth() {
+		if reasoningBody, reasoningChanged, err := normalizeOpenAIResponsesReasoningModeForModel(normalized, resolvedModel); err != nil {
+			return body, false, err
+		} else if reasoningChanged {
+			normalized = reasoningBody
+			changed = true
+		}
+	}
+	if account.IsOpenAIOAuthLike() {
 		oauthBody, oauthChanged, err := normalizeOpenAIOAuthResponsesCompatibilityBody(normalized)
 		if err != nil {
 			return body, false, err
@@ -1013,19 +1118,21 @@ func normalizeOpenAIResponsesWebSocketCompatibilityBody(body []byte, account *Ac
 			changed = true
 		}
 	}
-	needsToolOutputValidation := account != nil && account.IsOpenAIOAuthLike() &&
+	needsOrphanCleanup := account.IsOpenAIOAuthLike() &&
 		gjson.GetBytes(normalized, "input").IsArray()
-	if needsToolOutputValidation || openAIResponsesInputMayNeedTruncation(normalized) {
+	if needsOrphanCleanup || openAIResponsesInputMayNeedTruncation(normalized) {
 		var reqBody map[string]any
 		if err := decodeOpenAIJSONUseNumber(normalized, &reqBody); err != nil {
 			return body, false, fmt.Errorf("normalize websocket Responses body: %w", err)
 		}
 		mapChanged := false
-		if needsToolOutputValidation {
-			if input, ok := reqBody["input"].([]any); ok {
-				if err := validateOpenAIResponsesToolOutputs(input, strings.TrimSpace(firstNonEmptyString(reqBody["previous_response_id"])) != ""); err != nil {
-					return body, false, err
-				}
+		if needsOrphanCleanup {
+			if input, ok := reqBody["input"].([]any); ok && sanitizeOpenAIResponsesOrphanToolOutputs(
+				reqBody,
+				input,
+				strings.TrimSpace(firstNonEmptyString(reqBody["previous_response_id"])) != "",
+			) {
+				mapChanged = true
 			}
 		}
 		if truncateOpenAIResponsesInputText(reqBody) {
@@ -1083,6 +1190,10 @@ func normalizeOpenAIResponsesWebSocketCompatibilityBody(body []byte, account *Ac
 // 1) 删除 ChatGPT internal API 不支持的顶层 Responses 参数
 // 2) store=false 3) 非 compact 保持 stream=true；compact 强制 stream=false
 func normalizeOpenAIPassthroughOAuthBody(body []byte, compact bool) ([]byte, bool, error) {
+	return normalizeOpenAIPassthroughOAuthBodyForModel(body, compact, gjson.GetBytes(body, "model").String())
+}
+
+func normalizeOpenAIPassthroughOAuthBodyForModel(body []byte, compact bool, resolvedModel string) ([]byte, bool, error) {
 	if len(body) == 0 {
 		return body, false, nil
 	}
@@ -1090,6 +1201,12 @@ func normalizeOpenAIPassthroughOAuthBody(body []byte, compact bool) ([]byte, boo
 	normalized, changed, err := normalizeOpenAIOAuthResponsesCompatibilityBody(body)
 	if err != nil {
 		return body, false, err
+	}
+	if reasoningBody, reasoningChanged, reasoningErr := normalizeOpenAIResponsesReasoningModeForModel(normalized, resolvedModel); reasoningErr != nil {
+		return body, false, reasoningErr
+	} else if reasoningChanged {
+		normalized = reasoningBody
+		changed = true
 	}
 
 	for _, field := range openAIChatGPTInternalUnsupportedFields {

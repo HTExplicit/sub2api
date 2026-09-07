@@ -244,8 +244,18 @@ func (s *OpenAIGatewayService) shouldFailoverUpstreamError(statusCode int) bool 
 	}
 }
 
-func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(statusCode int, upstreamMsg string, upstreamBody []byte) bool {
-	if hit, _, _ := detectOpenAICyberPolicy(upstreamBody); hit {
+// isOpenAIRequestScopedSafetyRejection must precede generic retry and error
+// policies. A provider safety refusal is not a credential or endpoint failure.
+func isOpenAIRequestScopedSafetyRejection(body []byte) bool {
+	hit, _, _ := detectOpenAICyberPolicy(body)
+	return hit
+}
+
+func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(account *Account, statusCode int, upstreamMsg string, upstreamBody []byte) bool {
+	// cyber_policy is request-scoped even when an intermediary wraps the
+	// provider response in a retryable 5xx status. Never punish or rotate the
+	// selected credential for it.
+	if isOpenAIRequestScopedSafetyRejection(upstreamBody) {
 		return false
 	}
 	// A continuation-state rejection is request-scoped: choosing a different
@@ -258,6 +268,16 @@ func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(statusCode i
 	if isOpenAIContextWindowError(upstreamMsg, upstreamBody) {
 		return false
 	}
+	if isOpenAIRequestBudgetRejection(account, statusCode, upstreamBody) {
+		return true
+	}
+	// Cindy/Laxa's structured capability rejection is distinct from the
+	// official model_not_found response below. Keep its account/model scope
+	// without teaching ordinary providers to rotate on this provider-only type.
+	if isOpenAIModelNotSupportedError(statusCode, upstreamMsg, upstreamBody) {
+		return account != nil &&
+			IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+	}
 	if isOpenAIReportedUpstreamFailure(statusCode, upstreamBody) {
 		return true
 	}
@@ -265,6 +285,19 @@ func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(statusCode i
 		return true
 	}
 	if isOpenAIRequestBodyTooLargeError(statusCode, upstreamMsg, upstreamBody) {
+		return true
+	}
+	// A missing model is account/provider availability, not a malformed client
+	// request. Keep this unconditional exception inside the OpenAI-compatible
+	// gateway and require an eligible account so Anthropic/Gemini paths retain
+	// their existing opt-in 400 behavior.
+	// A bare forwarding service has no account-selection owner to consume a
+	// failover sentinel. In that mode (used by direct/single-account callers),
+	// preserve the deterministic upstream 400 instead of returning an unwritten
+	// retry signal. Managed gateway instances always have an account repository;
+	// their handler can exclude this account and actually select another one.
+	if s != nil && s.accountRepo != nil && account != nil && account.IsOpenAICompatible() && statusCode == http.StatusBadRequest &&
+		isOpenAICompatibleModelNotFound400(upstreamBody) {
 		return true
 	}
 	if s.shouldFailoverUpstreamError(statusCode) {
@@ -303,25 +336,36 @@ func isOpenAIRequestBudgetRejection(account *Account, status int, body []byte) b
 		gjson.GetBytes(body, "error.code").String() == "balance_insufficient"
 }
 
-// shouldFailoverOpenAIUpstreamResponseForAccount adds the one capability
-// failure that is meaningful only for a Cindy/Laxa API-key credential.  Keep
-// the transport-only classifier above account-agnostic so a model_not_supported
-// payload from an ordinary OpenAI-compatible provider remains a deterministic
-// client 400 rather than being replayed across its pool.
+// shouldFailoverOpenAIUpstreamResponseForAccount retains the downstream call
+// surface while sharing the account-aware official classifier.
 func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponseForAccount(
 	account *Account,
 	statusCode int,
 	upstreamMsg string,
 	upstreamBody []byte,
 ) bool {
-	if isOpenAIRequestBudgetRejection(account, statusCode, upstreamBody) {
-		return true
+	return s.shouldFailoverOpenAIUpstreamResponse(account, statusCode, upstreamMsg, upstreamBody)
+}
+
+func isOpenAICompatibleModelNotFound400(respBody []byte) bool {
+	code := strings.TrimSpace(extractUpstreamErrorCode(respBody))
+	if code != "" {
+		return strings.EqualFold(code, "model_not_found")
 	}
-	if isOpenAIModelNotSupportedError(statusCode, upstreamMsg, upstreamBody) {
-		return account != nil &&
-			IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+
+	msg := strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(respBody)))
+	if msg == "" && !gjson.ValidBytes(respBody) {
+		msg = strings.ToLower(strings.TrimSpace(string(respBody)))
 	}
-	return s.shouldFailoverOpenAIUpstreamResponse(statusCode, upstreamMsg, upstreamBody)
+	return strings.Contains(msg, "unknown provider for model") ||
+		strings.Contains(msg, "model not found") ||
+		strings.Contains(msg, "model is not supported")
+}
+
+// IsOpenAICompatibleModelNotFound400 reports whether an OpenAI-compatible 400
+// is an account-specific missing-model response eligible for failover.
+func IsOpenAICompatibleModelNotFound400(respBody []byte) bool {
+	return isOpenAICompatibleModelNotFound400(respBody)
 }
 
 // OpenAIRequestBodyTooLargeClientMessage is the fixed downstream message used
@@ -709,16 +753,10 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 	body = s.redactAgentIdentitySensitiveBody(ctx, account, body)
 	body = s.rewriteBusinessSystemPromptJSONForRequest(c, body, BusinessSystemPromptProtocolResponses)
 
-	// cyber_policy 不冷却账号，并保留内部标记供 handler 事后写风控/邮件。
-	// 开关开启时只做请求级账号 failover；关闭时维持原始上游透传。
+	// Safety refusals are terminal for this request, independent of legacy
+	// recovery settings. Retain diagnostics without rotating or cooling accounts.
 	if hit, _, cyberMsg := detectOpenAICyberPolicy(body); hit {
 		markOpenAICyberPolicyFromResponse(c, resp.StatusCode, body)
-		if isOpenAIRefusalRecoveryResponsesRequest(c) {
-			runtime := s.openAIRefusalRecoveryRuntime(ctx)
-			if runtime.CyberFailoverEnabled() {
-				return nil, NewOpenAICyberFailoverError(body, resp.Header)
-			}
-		}
 		setOpsUpstreamError(c, resp.StatusCode, cyberMsg, truncateString(string(body), 2048))
 		writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 		contentType := resp.Header.Get("Content-Type")

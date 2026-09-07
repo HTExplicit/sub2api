@@ -142,7 +142,7 @@ func ReasoningFidelityDirectRequestForTest(ctx context.Context, svc *OpenAIGatew
 		return nil, err
 	}
 	if application.Applied {
-		body, err = rewriteBusinessSystemPromptCacheKey(body, application)
+		body, err = rewriteBusinessSystemPromptCacheKey(c, body, application)
 		if err != nil {
 			return nil, err
 		}

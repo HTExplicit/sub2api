@@ -163,9 +163,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				forceHTTPBridge = true
 				break
 			}
-			// 透传 relay 通过 TurnStarted 记录每个 turn 的开始时刻，但不触发
-			// BeforeTurn；因此仍只有建连时的利润准入门，没有 turn 级复核。
-			// handler 计费在 turn 定价未冻结时回退到对应的 turn 开始时刻。
+			// 首轮准入由握手路径完成；后续 response.create 会在写入上游前
+			// 依次回调 BeforeRequest 和 BeforeTurn，并在终止或失败时回调
+			// AfterTurn，从而覆盖 turn 级利润复核、定价冻结和并发槽位释放。
 			return s.proxyResponsesWebSocketV2Passthrough(
 				ctx,
 				c,
@@ -296,6 +296,52 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				nil,
 			)
 		}
+		originalModel := strings.TrimSpace(values[1].String())
+		modelMissing := originalModel == ""
+		if modelMissing {
+			// Later turns may reuse the last accepted client model. Resolve it
+			// before model-specific compatibility, without changing the client ID.
+			originalModel = ingressSessionOriginalModel
+			if originalModel == "" {
+				return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(
+					coderws.StatusPolicyViolation,
+					"model is required in response.create payload",
+					nil,
+				)
+			}
+		}
+		requestModel := originalModel
+		if hooks != nil && hooks.MapRequestModel != nil {
+			mappedModel, mapErr := hooks.MapRequestModel(turn, originalModel)
+			if mapErr != nil {
+				return openAIWSClientPayload{}, mapErr
+			}
+			if mappedModel = strings.TrimSpace(mappedModel); mappedModel != "" {
+				requestModel = mappedModel
+			}
+		}
+		legacyModel, legacyModelKnown := requestModel, false
+		if legacyLaxaAccount {
+			legacyModel, legacyModelKnown = cindyLegacyLaxaLiveUpstreamModel(requestModel)
+		}
+		if !legacyModelKnown {
+			legacyModel = requestModel
+		}
+		if legacyModelKnown {
+			// A stale account model_mapping must not override the verified live
+			// wire ID for a direct legacy Laxa public model or compatibility alias.
+			requestModel = legacyModel
+		}
+		mappedRequestModel := requestModel
+		if !legacyModelKnown {
+			mappedRequestModel = account.GetMappedModel(requestModel)
+		}
+		upstreamModel := normalizeOpenAIModelForUpstream(account, mappedRequestModel)
+		// Legacy Laxa API-key rows are still represented as PlatformOpenAI during
+		// the projection window. Their account mapping therefore does not enter
+		// the first-class Cindy resolver; apply the same provider-qualified live
+		// ID used by HTTP passthrough before writing every WS request frame.
+		upstreamModel = resolveLegacyCindyOpenAIModel(account, upstreamModel)
 		requestedReasoningEffort := CanonicalRequestedReasoningEffort(normalized, strings.TrimSpace(values[1].String()))
 		if next, policyErr := applyOpenAIWSReasoningEffortPolicy(normalized, hooks); policyErr != nil {
 			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, policyErr.Error(), policyErr)
@@ -304,7 +350,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		responsesLite := isOpenAIResponsesLiteWebSocketPayload(normalized)
 		if !IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-			if compatibilityBody, compatibilityChanged, compatibilityErr := normalizeOpenAIResponsesWebSocketCompatibilityBody(normalized, account, responsesLite); compatibilityErr != nil {
+			if compatibilityBody, compatibilityChanged, compatibilityErr := normalizeOpenAIResponsesWebSocketCompatibilityBodyForModel(normalized, account, responsesLite, upstreamModel); compatibilityErr != nil {
 				return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", compatibilityErr)
 			} else if compatibilityChanged {
 				normalized = compatibilityBody
@@ -321,23 +367,6 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			}
 		}
 
-		originalModel := strings.TrimSpace(values[1].String())
-		modelMissing := originalModel == ""
-		if originalModel == "" {
-			// 入站 WS 长会话里，部分客户端只在第一轮 response.create 上声明
-			// model，后续 turn 复用同一 session-level model。为避免因省略
-			// model 直接断开用户连接，这里回落到上一轮已通过校验的客户端模型，
-			// 并在下方写回上游 payload，保证账号模型映射/fast policy/图片权限
-			// 仍按同一模型执行。
-			originalModel = ingressSessionOriginalModel
-			if originalModel == "" {
-				return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(
-					coderws.StatusPolicyViolation,
-					"model is required in response.create payload",
-					nil,
-				)
-			}
-		}
 		promptCacheKey := strings.TrimSpace(values[2].String())
 		if turnMetadata := strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader)); turnMetadata != "" {
 			next, setErr := applyPayloadMutation(normalized, "client_metadata."+openAIWSTurnMetadataHeader, turnMetadata)
@@ -405,38 +434,6 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				normalized = rebuilt
 			}
 		}
-		requestModel := originalModel
-		if hooks != nil && hooks.MapRequestModel != nil {
-			mappedModel, mapErr := hooks.MapRequestModel(turn, originalModel)
-			if mapErr != nil {
-				return openAIWSClientPayload{}, mapErr
-			}
-			if mappedModel = strings.TrimSpace(mappedModel); mappedModel != "" {
-				requestModel = mappedModel
-			}
-		}
-		legacyModel, legacyModelKnown := requestModel, false
-		if legacyLaxaAccount {
-			legacyModel, legacyModelKnown = cindyLegacyLaxaLiveUpstreamModel(requestModel)
-		}
-		if !legacyModelKnown {
-			legacyModel = requestModel
-		}
-		if legacyModelKnown {
-			// A stale account model_mapping must not override the verified live
-			// wire ID for a direct legacy Laxa public model or compatibility alias.
-			requestModel = legacyModel
-		}
-		mappedRequestModel := requestModel
-		if !legacyModelKnown {
-			mappedRequestModel = account.GetMappedModel(requestModel)
-		}
-		upstreamModel := normalizeOpenAIModelForUpstream(account, mappedRequestModel)
-		// Legacy Laxa API-key rows are still represented as PlatformOpenAI during
-		// the projection window. Their account mapping therefore does not enter
-		// the first-class Cindy resolver; apply the same provider-qualified live
-		// ID used by HTTP passthrough before writing every WS request frame.
-		upstreamModel = resolveLegacyCindyOpenAIModel(account, upstreamModel)
 		if modelMissing || upstreamModel != originalModel {
 			next, setErr := applyPayloadMutation(normalized, "model", upstreamModel)
 			if setErr != nil {
@@ -514,6 +511,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		normalized = policyApplied
 		beginBusinessSystemPromptRequestTurn(c)
+		businessPromptApplied := false
 		if updatedPromptPayload, application, promptErr := s.applyBusinessSystemPromptForRequest(
 			c, normalized, account, BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c),
 		); promptErr != nil {
@@ -530,8 +528,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				promptErr,
 			)
 		} else {
+			businessPromptApplied = application.Applied
 			normalized = updatedPromptPayload
-			normalized, promptErr = rewriteBusinessSystemPromptCacheKey(normalized, application)
+			normalized, promptErr = rewriteBusinessSystemPromptCacheKey(c, normalized, application)
 			if promptErr != nil {
 				return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(
 					coderws.StatusPolicyViolation,
@@ -550,6 +549,11 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			normalized = normalizedPayload
 			promptCacheKey = strings.TrimSpace(gjson.GetBytes(normalized, "prompt_cache_key").String())
 			observeCindyManagedPromptCacheNormalization(c, true)
+		}
+		// Cache-key rewriting is independent of Cindy's compatibility policy.
+		// Carry the final wire value into handshake fallback on every path.
+		if businessPromptApplied {
+			promptCacheKey = strings.TrimSpace(gjson.GetBytes(normalized, "prompt_cache_key").String())
 		}
 		ingressSessionOriginalModel = originalModel
 
@@ -582,14 +586,10 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	}
 	writeClientMessage := rawWriteClientMessage
 	var refusalOutput *openAIRefusalRecoveryWSOutput
-	if refusalRuntime.CyberFailoverEnabled() || refusalRuntime.RewriteEnabled() {
-		matcher := (*OpenAIRefusalMatcher)(nil)
-		if refusalRuntime.RewriteEnabled() {
-			matcher = refusalRuntime.Matcher
-		}
+	if refusalRuntime.RewriteEnabled() {
 		refusalOutput = newOpenAIRefusalRecoveryWSOutput(
-			matcher,
-			refusalRuntime.CyberFailoverEnabled(),
+			refusalRuntime.Matcher,
+			false,
 			func(writeCtx context.Context, messageType coderws.MessageType, payload []byte) error {
 				if messageType != coderws.MessageText {
 					return errors.New("unsupported websocket response message type")
@@ -636,6 +636,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		return err
 	}
 
+	useHTTPBridge := forceHTTPBridge || s.shouldBridgeOpenAIWSHTTP(account, firstPayload.payloadBytes, firstPayload.previousResponseID)
 	turnState := strings.TrimSpace(c.GetHeader(openAIWSTurnStateHeader))
 	stateStore := s.getOpenAIWSStateStore()
 	groupID := getOpenAIGroupIDFromContext(c)
@@ -663,20 +664,25 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	storeDisabled := false
 	refreshIngressRouteState := func(payload openAIWSClientPayload) {
 		sessionHash = s.GenerateSessionHash(c, payload.rawForHash)
+		preferredConnID = ""
+		storeDisabled = s.isOpenAIWSStoreDisabledInRequestRaw(payload.payloadRaw, account)
+		if useHTTPBridge {
+			// Sticky account affinity may be shared, but an HTTP bridge must not
+			// inherit another connection's native WS turn state or socket binding.
+			return
+		}
 		if turnState == "" && stateStore != nil && sessionHash != "" {
 			if savedTurnState, ok := stateStore.GetSessionTurnState(groupID, sessionHash, account.ID); ok {
 				turnState = savedTurnState
 			}
 		}
 
-		preferredConnID = ""
 		if stateStore != nil && payload.previousResponseID != "" {
 			if connID, ok := stateStore.GetResponseConn(payload.previousResponseID); ok {
 				preferredConnID = connID
 			}
 		}
 
-		storeDisabled = s.isOpenAIWSStoreDisabledInRequestRaw(payload.payloadRaw, account)
 		if stateStore != nil && storeDisabled && payload.previousResponseID == "" && sessionHash != "" {
 			if connID, ok := stateStore.GetSessionConn(groupID, sessionHash); ok {
 				preferredConnID = connID
@@ -685,7 +691,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	}
 	refreshIngressRouteState(firstPayload)
 
-	if forceHTTPBridge || s.shouldBridgeOpenAIWSHTTP(account, firstPayload.payloadBytes, firstPayload.previousResponseID) {
+	if useHTTPBridge {
 		logOpenAIWSModeInfo(
 			"ingress_ws_http_bridge_start account_id=%d account_type=%s payload_bytes=%d threshold_bytes=%d has_session_hash=%v store_disabled=%v",
 			account.ID,
@@ -704,6 +710,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		bridgeReplayInputExists := false
 		bridgeReplayVerified := false
 		bridgeBaselineResponseID := ""
+		bridgeOwnedTurnState := openAIWSHTTPBridgeTurnState{accountID: account.ID}
 		for turn := 1; ; turn++ {
 			if turn > 1 && hooks != nil && hooks.BeforeRequest != nil {
 				if err := hooks.BeforeRequest(turn, currentBridgePayload.payloadRaw, currentBridgePayload.originalModel); err != nil {
@@ -796,13 +803,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				grokCacheIdentity,
 				turn,
 				writeClientMessage,
+				bridgeOwnedTurnState,
 			)
-			if bridgeErr != nil && IsOpenAIRefusalRecoveryFailover(bridgeErr) && turn > 1 {
-				if refusalOutput != nil {
-					_ = refusalOutput.WriteRetryableFailure(ctx)
-				}
-				bridgeErr = newOpenAIWSCyberRecoveryError(nil, nil, false)
-			}
 			if hooks != nil && hooks.AfterTurn != nil {
 				hooks.AfterTurn(turn, result, bridgeErr)
 			}
@@ -842,9 +844,12 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					ctx, c, account, cindyOpaqueBindingIDsFromRawItems(result.wsReplayInput),
 				)
 			}
+			// Replace this bridge's state even when the response omits it. An
+			// empty value invalidates the prior state without touching shared
+			// native-WS state or provenance belonging to independent connections.
 			bridgeTurnState := strings.TrimSpace(result.ResponseHeaders.Get(openAIWSTurnStateHeader))
 			turnState = bridgeTurnState
-			s.commitOpenAIWSSessionTurnState(c, account, stateStore, groupID, sessionHash, bridgeTurnState)
+			bridgeOwnedTurnState.value = bridgeTurnState
 			responseID := strings.TrimSpace(result.RequestID)
 			bridgeBaselineResponseID = responseID
 			if responseID != "" && stateStore != nil {
@@ -1418,16 +1423,6 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 						UpstreamInTok:  usage.InputTokens,
 						UpstreamOutTok: usage.OutputTokens,
 					})
-					if refusalRuntime.CyberFailoverEnabled() {
-						replaySafe := turn == 1 && (refusalOutput == nil || !refusalOutput.SemanticOutputStarted())
-						if refusalOutput != nil {
-							refusalOutput.DropTurn()
-							if !replaySafe {
-								_ = refusalOutput.WriteRetryableFailure(ctx, upstreamMessage)
-							}
-						}
-						return nil, newOpenAIWSCyberRecoveryError(upstreamMessage, lease.HandshakeHeaders(), replaySafe)
-					}
 				}
 			}
 

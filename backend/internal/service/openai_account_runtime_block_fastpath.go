@@ -450,6 +450,9 @@ func isOpenAIAccount(account *Account) bool {
 func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, canonicalModel ...string) bool {
 	// Classify request-local failures before any policy can mutate account health.
 	// The same predicates are used by the HTTP failover and error constructors.
+	if isOpenAIRequestScopedSafetyRejection(responseBody) {
+		return false
+	}
 	if isOpenAIRequestBudgetRejection(account, statusCode, responseBody) || isOpenAIReportedUpstreamFailure(statusCode, responseBody) {
 		return false
 	}

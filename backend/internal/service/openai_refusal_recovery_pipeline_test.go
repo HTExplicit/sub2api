@@ -16,6 +16,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 type openAIRefusalFlushRecorder struct {
@@ -192,7 +193,7 @@ func TestOpenAINonStreamingPassthroughSSEToJSONRewritesRefusal(t *testing.T) {
 	require.NotContains(t, recorder.Body.String(), "I cannot")
 }
 
-func TestOpenAIHTTPPassthroughCyberPolicyReturnsFailoverBeforeWriting(t *testing.T) {
+func TestOpenAIHTTPPassthroughCyberPolicyTerminatesWithoutFailover(t *testing.T) {
 	svc := newOpenAIRefusalRecoveryPipelineService(t, true, false)
 	c, recorder := newOpenAIRefusalRecoveryTestContext()
 	resp := &http.Response{StatusCode: http.StatusBadRequest, Header: http.Header{"X-Request-Id": []string{"req_cyber"}}}
@@ -201,16 +202,16 @@ func TestOpenAIHTTPPassthroughCyberPolicyReturnsFailoverBeforeWriting(t *testing
 	err := svc.handleErrorResponsePassthrough(context.Background(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI}, nil, body)
 
 	var failoverErr *UpstreamFailoverError
-	require.ErrorAs(t, err, &failoverErr)
-	require.Equal(t, http.StatusServiceUnavailable, failoverErr.ClientStatusCode)
-	require.Empty(t, recorder.Body.String())
-	require.False(t, c.Writer.Written())
+	require.Error(t, err)
+	require.False(t, errors.As(err, &failoverErr))
+	require.NotEmpty(t, recorder.Body.String())
+	require.True(t, c.Writer.Written())
 	mark := GetOpsCyberPolicy(c)
 	require.NotNil(t, mark)
 	require.Equal(t, 7, mark.UpstreamInTok)
 }
 
-func TestOpenAIHTTPPassthroughCyberPolicyUsesAccountFailoverWhenRewriteEnabled(t *testing.T) {
+func TestOpenAIHTTPPassthroughCyberPolicyTerminatesWhenRewriteEnabled(t *testing.T) {
 	svc := newOpenAIRefusalRecoveryPipelineService(t, true, true)
 	c, recorder := newOpenAIRefusalRecoveryTestContext()
 	resp := &http.Response{StatusCode: http.StatusBadRequest, Header: http.Header{"X-Request-Id": []string{"req_cyber"}}}
@@ -219,10 +220,11 @@ func TestOpenAIHTTPPassthroughCyberPolicyUsesAccountFailoverWhenRewriteEnabled(t
 	err := svc.handleErrorResponsePassthrough(context.Background(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI}, []byte(`{"model":"gpt-5.6-sol","input":"hello"}`), body)
 
 	var failoverErr *UpstreamFailoverError
-	require.ErrorAs(t, err, &failoverErr)
-	require.True(t, failoverErr.IsOpenAICyberFailover())
-	require.Empty(t, recorder.Body.String())
-	require.False(t, c.Writer.Written())
+	require.Error(t, err)
+	require.False(t, errors.As(err, &failoverErr))
+	require.NotEmpty(t, recorder.Body.String())
+	require.True(t, c.Writer.Written())
+	require.NotContains(t, recorder.Body.String(), "继续当前任务")
 }
 
 func TestOpenAIHTTPPassthroughCyberPolicyNeverFakesCompletion(t *testing.T) {
@@ -236,10 +238,11 @@ func TestOpenAIHTTPPassthroughCyberPolicyNeverFakesCompletion(t *testing.T) {
 	err := svc.handleErrorResponsePassthrough(context.Background(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI}, requestBody, body)
 
 	var failoverErr *UpstreamFailoverError
-	require.ErrorAs(t, err, &failoverErr)
-	require.True(t, failoverErr.IsOpenAICyberFailover())
-	require.Empty(t, recorder.Body.String())
-	require.False(t, IsResponseCommitted(c))
+	require.Error(t, err)
+	require.False(t, errors.As(err, &failoverErr))
+	require.NotEmpty(t, recorder.Body.String())
+	require.True(t, c.Writer.Written())
+	require.NotContains(t, recorder.Body.String(), "response.completed")
 }
 
 func TestOpenAIHTTPCyberPolicyNeverFakesCompletion(t *testing.T) {
@@ -257,10 +260,11 @@ func TestOpenAIHTTPCyberPolicyNeverFakesCompletion(t *testing.T) {
 
 	require.Nil(t, result)
 	var failoverErr *UpstreamFailoverError
-	require.ErrorAs(t, err, &failoverErr)
-	require.True(t, failoverErr.IsOpenAICyberFailover())
-	require.Empty(t, recorder.Body.String())
-	require.False(t, IsResponseCommitted(c))
+	require.Error(t, err)
+	require.False(t, errors.As(err, &failoverErr))
+	require.Contains(t, recorder.Body.String(), "cyber_policy")
+	require.True(t, c.Writer.Written())
+	require.NotContains(t, recorder.Body.String(), "response.completed")
 }
 
 func TestOpenAIHTTPPassthroughNonCyberErrorDoesNotTriggerRecoveryFailover(t *testing.T) {
@@ -277,7 +281,7 @@ func TestOpenAIHTTPPassthroughNonCyberErrorDoesNotTriggerRecoveryFailover(t *tes
 	require.Nil(t, GetOpsCyberPolicy(c))
 }
 
-func TestOpenAINonStreamingCyberPolicyReturnsFailoverBeforeWriting(t *testing.T) {
+func TestOpenAINonStreamingCyberPolicyPreservesFailedResponse(t *testing.T) {
 	tests := []struct {
 		name string
 		run  func(*OpenAIGatewayService, context.Context, *http.Response, *gin.Context) (any, error)
@@ -310,12 +314,13 @@ func TestOpenAINonStreamingCyberPolicyReturnsFailoverBeforeWriting(t *testing.T)
 
 			result, err := tc.run(svc, context.Background(), resp, c)
 
-			require.Nil(t, result)
+			require.NotNil(t, result)
 			var failoverErr *UpstreamFailoverError
-			require.ErrorAs(t, err, &failoverErr)
-			require.True(t, failoverErr.IsOpenAICyberFailover())
-			require.Empty(t, recorder.Body.String())
-			require.False(t, c.Writer.Written())
+			require.Error(t, err)
+			require.False(t, errors.As(err, &failoverErr))
+			require.Contains(t, recorder.Body.String(), "cyber_policy")
+			require.True(t, c.Writer.Written())
+			require.Equal(t, "failed", gjson.Get(recorder.Body.String(), "status").String())
 			mark := GetOpsCyberPolicy(c)
 			require.NotNil(t, mark)
 			require.Equal(t, 7, mark.UpstreamInTok)
@@ -342,7 +347,7 @@ func TestOpenAIStreamingCyberPolicyPassesThroughWhenSwitchDisabled(t *testing.T)
 	require.Contains(t, recorder.Body.String(), "blocked")
 }
 
-func TestOpenAINonStreamingSSECyberPolicyReturnsFailover(t *testing.T) {
+func TestOpenAINonStreamingSSECyberPolicyReturnsTerminalError(t *testing.T) {
 	tests := []struct {
 		name string
 		run  func(*OpenAIGatewayService, *http.Response, *gin.Context) (any, error)
@@ -372,14 +377,17 @@ func TestOpenAINonStreamingSSECyberPolicyReturnsFailover(t *testing.T) {
 
 			require.Nil(t, result)
 			var failoverErr *UpstreamFailoverError
-			require.ErrorAs(t, err, &failoverErr)
-			require.True(t, failoverErr.IsOpenAICyberFailover())
-			require.Empty(t, recorder.Body.String())
+			require.Error(t, err)
+			require.False(t, errors.As(err, &failoverErr))
+			require.Equal(t, http.StatusBadGateway, recorder.Code)
+			require.NotEmpty(t, gjson.Get(recorder.Body.String(), "error").Raw)
+			require.NotContains(t, recorder.Body.String(), "response.completed")
+			require.NotNil(t, GetOpsCyberPolicy(c))
 		})
 	}
 }
 
-func TestOpenAIStreamingPassthroughCyberPolicyReturnsFailoverBeforeSemanticOutput(t *testing.T) {
+func TestOpenAIStreamingPassthroughCyberPolicyWritesTerminalBeforeSemanticOutput(t *testing.T) {
 	svc := newOpenAIRefusalRecoveryPipelineService(t, true, false)
 	c, recorder := newOpenAIRefusalRecoveryTestContext()
 	upstream := "event: response.created\n" +
@@ -391,14 +399,16 @@ func TestOpenAIStreamingPassthroughCyberPolicyReturnsFailoverBeforeSemanticOutpu
 	_, err := svc.handleStreamingResponsePassthrough(context.Background(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI}, time.Now(), "", "")
 
 	var failoverErr *UpstreamFailoverError
-	require.True(t, errors.As(err, &failoverErr))
-	require.Empty(t, recorder.Body.String())
+	require.Error(t, err)
+	require.False(t, errors.As(err, &failoverErr))
+	require.Contains(t, recorder.Body.String(), "cyber_policy")
+	require.NotContains(t, recorder.Body.String(), "response.completed")
 	mark := GetOpsCyberPolicy(c)
 	require.NotNil(t, mark)
 	require.Equal(t, 11, mark.UpstreamInTok)
 }
 
-func TestOpenAIStreamingCyberPolicyFailsOverBeforeSemanticOutputEvenWithRewrite(t *testing.T) {
+func TestOpenAIStreamingCyberPolicyTerminatesBeforeSemanticOutputEvenWithRewrite(t *testing.T) {
 	tests := []struct {
 		name string
 		run  func(*OpenAIGatewayService, context.Context, *http.Response, *gin.Context, *Account) (*OpenAIUsage, error)
@@ -443,11 +453,13 @@ func TestOpenAIStreamingCyberPolicyFailsOverBeforeSemanticOutputEvenWithRewrite(
 			usage, err := tc.run(svc, context.Background(), resp, c, account)
 
 			var failoverErr *UpstreamFailoverError
-			require.ErrorAs(t, err, &failoverErr)
-			require.True(t, failoverErr.IsOpenAICyberFailover())
+			require.Error(t, err)
+			require.False(t, errors.As(err, &failoverErr))
 			require.NotNil(t, usage)
 			require.Equal(t, 11, usage.InputTokens)
-			require.Empty(t, recorder.Body.String())
+			require.Contains(t, recorder.Body.String(), "cyber_policy")
+			require.NotContains(t, recorder.Body.String(), "继续当前任务")
+			require.NotContains(t, recorder.Body.String(), "response.completed")
 			mark := GetOpsCyberPolicy(c)
 			require.NotNil(t, mark)
 			require.Equal(t, 11, mark.UpstreamInTok)
@@ -455,7 +467,7 @@ func TestOpenAIStreamingCyberPolicyFailsOverBeforeSemanticOutputEvenWithRewrite(
 	}
 }
 
-func TestOpenAIStreamingCyberPolicyAfterReasoningWritesNeutralFailure(t *testing.T) {
+func TestOpenAIStreamingCyberPolicyAfterReasoningPreservesTerminalFailure(t *testing.T) {
 	tests := []struct {
 		name string
 		run  func(*OpenAIGatewayService, context.Context, *http.Response, *gin.Context, *Account) (*OpenAIUsage, error)
@@ -518,17 +530,16 @@ func TestOpenAIStreamingCyberPolicyAfterReasoningWritesNeutralFailure(t *testing
 			body := recorder.Body.String()
 			require.Contains(t, body, "Reasoning summary")
 			require.Contains(t, body, `"id":"resp_cyber_reasoning_pipeline"`)
-			require.Contains(t, body, `"code":"upstream_retry_exhausted"`)
+			require.Contains(t, body, `"code":"cyber_policy"`)
 			require.Contains(t, body, `"total_tokens":12`)
 			require.Equal(t, 1, strings.Count(body, `"type":"response.failed"`))
 			require.NotContains(t, body, `"type":"response.completed"`)
-			require.NotContains(t, body, "cyber_policy")
-			require.NotContains(t, body, "blocked")
+			require.Contains(t, body, "blocked")
 		})
 	}
 }
 
-func TestOpenAIStreamingCyberPolicyAfterEarlyRefusalOutputWritesNeutralFailure(t *testing.T) {
+func TestOpenAIStreamingCyberPolicyAfterEarlyRefusalOutputPreservesTerminalFailure(t *testing.T) {
 	tests := []struct {
 		name string
 		run  func(*OpenAIGatewayService, context.Context, *http.Response, *gin.Context, *Account) (*OpenAIUsage, error)
@@ -579,12 +590,11 @@ func TestOpenAIStreamingCyberPolicyAfterEarlyRefusalOutputWritesNeutralFailure(t
 			require.Equal(t, 12, usage.InputTokens)
 			body := recorder.Body.String()
 			require.Contains(t, body, "继续当前任务")
-			require.Contains(t, body, `"code":"upstream_retry_exhausted"`)
+			require.Contains(t, body, `"code":"cyber_policy"`)
 			require.Equal(t, 1, strings.Count(body, `"type":"response.failed"`))
 			require.NotContains(t, body, "I cannot")
 			require.NotContains(t, body, `"type":"response.completed"`)
-			require.NotContains(t, body, "cyber_policy")
-			require.NotContains(t, body, "blocked")
+			require.Contains(t, body, "blocked")
 		})
 	}
 }
@@ -863,7 +873,7 @@ func TestOpenAINonStreamingTranslatedSSEToJSONRewritesRefusal(t *testing.T) {
 	require.NotContains(t, recorder.Body.String(), "I'm unable")
 }
 
-func TestOpenAIStreamingTranslatedResponseCyberPolicyReturnsFailoverBeforeSemanticOutput(t *testing.T) {
+func TestOpenAIStreamingTranslatedResponseCyberPolicyWritesTerminalBeforeSemanticOutput(t *testing.T) {
 	svc := newOpenAIRefusalRecoveryPipelineService(t, true, false)
 	c, recorder := newOpenAIRefusalRecoveryTestContext()
 	upstream := strings.Join([]string{
@@ -877,9 +887,10 @@ func TestOpenAIStreamingTranslatedResponseCyberPolicyReturnsFailoverBeforeSemant
 	_, err := svc.handleStreamingResponse(context.Background(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI}, time.Now(), "gpt-5.4", "gpt-5.4")
 
 	var failoverErr *UpstreamFailoverError
-	require.ErrorAs(t, err, &failoverErr)
-	require.True(t, failoverErr.IsOpenAIRefusalRecovery())
-	require.Empty(t, recorder.Body.String())
+	require.Error(t, err)
+	require.False(t, errors.As(err, &failoverErr))
+	require.Contains(t, recorder.Body.String(), "cyber_policy")
+	require.NotContains(t, recorder.Body.String(), "response.completed")
 	mark := GetOpsCyberPolicy(c)
 	require.NotNil(t, mark)
 	require.Equal(t, 13, mark.UpstreamInTok)
