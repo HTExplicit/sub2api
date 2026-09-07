@@ -3,13 +3,17 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -52,6 +56,56 @@ func setupAvailableModelsRouter(adminSvc service.AdminService) *gin.Engine {
 	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	router.GET("/api/v1/admin/accounts/:id/models", handler.GetAvailableModels)
 	return router
+}
+
+type accountModelsDisplayUpstream struct {
+	service.HTTPUpstream
+	body  string
+	calls atomic.Int32
+}
+
+func (u *accountModelsDisplayUpstream) Do(req *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
+	u.calls.Add(1)
+	if req.Method != http.MethodGet || req.URL.Path != "/v1/models" {
+		return nil, fmt.Errorf("unexpected non-catalog request")
+	}
+	return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(u.body))}, nil
+}
+
+func TestAccountHandlerGetAvailableModels_DiscoveryDisplayContract(t *testing.T) {
+	fixtureBytes, err := os.ReadFile("../../service/testdata/account_available_models_contract.json")
+	require.NoError(t, err)
+	var fixture struct {
+		Upstream json.RawMessage `json:"upstream"`
+		Expected []openai.Model  `json:"expected"`
+	}
+	require.NoError(t, json.Unmarshal(fixtureBytes, &fixture))
+	upstream := &accountModelsDisplayUpstream{body: string(fixture.Upstream)}
+	cfg := &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}}
+	gateway := service.NewOpenAIGatewayService(nil, nil, nil, nil, nil, nil, nil, cfg, nil, nil, nil, nil, nil, upstream, nil, nil, nil, nil, nil, nil, nil, nil)
+	accountTestSvc := service.NewAccountTestService(nil, nil, nil, nil, nil, upstream, cfg, nil)
+	accountTestSvc.SetOpenAIGatewayService(gateway)
+	adminSvc := &availableModelsAdminService{
+		stubAdminService: newStubAdminService(),
+		account:          service.Account{ID: 501, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey, Credentials: map[string]any{"api_key": "mock-key", "base_url": "https://models.example/v1"}},
+	}
+	gin.SetMode(gin.TestMode)
+	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, accountTestSvc, nil, nil, nil, nil, nil)
+	router := gin.New()
+	router.GET("/api/v1/admin/accounts/:id/models", handler.GetAvailableModels)
+	for i := 0; i < 2; i++ {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/501/models", nil))
+		require.Equal(t, http.StatusOK, rec.Code)
+		var payload struct {
+			Data []openai.Model `json:"data"`
+		}
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
+		require.Equal(t, fixture.Expected, payload.Data)
+		require.NotContains(t, rec.Body.String(), "mock-key")
+		require.NotContains(t, rec.Body.String(), "models.example")
+	}
+	require.EqualValues(t, 1, upstream.calls.Load())
 }
 
 type syncUpstreamHTTPUpstream struct {

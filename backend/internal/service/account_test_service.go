@@ -178,7 +178,8 @@ func (s *AccountTestService) SetOpenAIGatewayService(gateway *OpenAIGatewayServi
 	}
 }
 
-// FetchOpenAIAccountModels uses the shared cached discovery path for the test picker.
+// FetchOpenAIAccountModels projects shared discovery data into the account UI
+// contract. Public model catalogs do not require the UI's display fields.
 func (s *AccountTestService) FetchOpenAIAccountModels(ctx context.Context, account *Account) ([]openai.Model, error) {
 	if s == nil || s.openAIGatewayService == nil {
 		return nil, errors.New("OpenAI model discovery service is unavailable")
@@ -187,13 +188,7 @@ func (s *AccountTestService) FetchOpenAIAccountModels(ctx context.Context, accou
 	if err != nil {
 		return nil, err
 	}
-	var payload struct {
-		Data []openai.Model `json:"data"`
-	}
-	if err := json.Unmarshal(response.Body, &payload); err != nil {
-		return nil, fmt.Errorf("decode OpenAI account models: %w", err)
-	}
-	return payload.Data, nil
+	return buildOpenAIAccountAvailableModels(response.Body)
 }
 
 // NewAccountTestService creates a new AccountTestService

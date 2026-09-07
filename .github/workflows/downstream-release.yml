@@ -94,6 +94,8 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm run typecheck
           pnpm exec vitest run \
+            src/components/admin/account/__tests__/AccountTestModal.spec.ts \
+            src/components/admin/account/__tests__/AccountTestModal.displayContract.spec.ts \
             src/api/admin/__tests__/systemPrompts.spec.ts \
             src/utils/__tests__/cindyOpenAIDefaults.spec.ts \
             src/components/account/__tests__/CreateAccountModal.spec.ts \

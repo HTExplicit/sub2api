@@ -3,10 +3,12 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { h } from 'vue'
 import AccountsView from '../AccountsView.vue'
+import modelDisplayContract from '../../../../../backend/internal/service/testdata/account_available_models_contract.json'
 
 const {
   listAccounts,
   getById,
+  getAvailableModels,
   listWithEtag,
   getFacets,
   listFolders,
@@ -27,6 +29,7 @@ const {
 } = vi.hoisted(() => ({
   listAccounts: vi.fn(),
   getById: vi.fn(),
+  getAvailableModels: vi.fn(),
   listWithEtag: vi.fn(),
   getFacets: vi.fn(),
   listFolders: vi.fn(),
@@ -61,6 +64,7 @@ vi.mock('@/api/admin', () => ({
     accounts: {
       list: listAccounts,
       getById,
+      getAvailableModels,
       listWithEtag,
       getFacets,
       listFolders,
@@ -260,6 +264,7 @@ describe('admin AccountsView Cockpit console', () => {
     sessionStorage.clear()
     listAccounts.mockReset().mockResolvedValue({ items: [account], total: 1, page: 1, page_size: 20, pages: 1 })
     getById.mockReset().mockResolvedValue(account)
+    getAvailableModels.mockReset().mockResolvedValue(structuredClone(modelDisplayContract.expected))
     listWithEtag.mockReset().mockResolvedValue({ notModified: true, etag: null, data: null })
     getFacets.mockReset().mockResolvedValue({ total: 1, uncategorized_count: 1, platforms: [], types: [], statuses: [], plans: [], proxies: [], folders: [], tags: [] })
     listFolders.mockReset().mockResolvedValue([])
@@ -277,6 +282,18 @@ describe('admin AccountsView Cockpit console', () => {
     accountJobsState.store.recentJobs.splice(0)
     getAllProxies.mockReset().mockResolvedValue([])
     getAllGroups.mockReset().mockResolvedValue([])
+  })
+
+  it('uses the account model display contract for scheduled test options', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await (wrapper.vm as any).handleSchedule(account)
+    expect(getAvailableModels).toHaveBeenCalledWith(account.id)
+    expect((wrapper.vm as any).scheduleModelOptions).toEqual(modelDisplayContract.expected.map(model => ({
+      value: model.id,
+      label: model.display_name
+    })))
+    wrapper.unmount()
   })
 
   it('defaults to table and persists compact/card view selection', async () => {
