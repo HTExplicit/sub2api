@@ -2,6 +2,19 @@ export type ContextCapacityInputResult =
   | { valid: true; value: number | null }
   | { valid: false; error: 'invalid' | 'out_of_range' | 'fractional' }
 
+/** Resolve a public model without guessing when aliases or upstream IDs are ambiguous. */
+export function findContextCapacityRow<T extends { upstream_model_id: string; aliases: string[] }>(
+  rows: readonly T[],
+  publicID: string
+): T | undefined {
+  if (!publicID || publicID.trim() !== publicID) return undefined
+  const aliases = rows.filter(row => row.aliases.includes(publicID))
+  // An explicit public alias takes precedence over another row with the same upstream ID.
+  if (aliases.length) return aliases.length === 1 ? aliases[0] : undefined
+  const direct = rows.filter(row => row.upstream_model_id === publicID)
+  return direct.length === 1 ? direct[0] : undefined
+}
+
 /** Parse decimal K/M without floating-point rounding; an empty draft clears an override. */
 export function parseContextCapacityInput(raw: string): ContextCapacityInputResult {
   const input = raw.trim()

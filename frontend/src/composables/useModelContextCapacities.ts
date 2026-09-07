@@ -33,6 +33,9 @@ export function useModelContextCapacities(options: {
   const rows = ref<ModelContextCapacityRow[]>([])
   const drafts = ref<Record<string, string>>({})
   const syncedModels = ref<SyncUpstreamModelsResult>()
+  const syncedEvidence = ref<ModelContextCapacityRow[]>([])
+  const invalidFields = ref(new Set<object | string>())
+  const editingFields = ref(new Set<object | string>())
   const loading = ref(false)
   const loadFailed = ref(false)
   const syncing = ref(false)
@@ -40,9 +43,13 @@ export function useModelContextCapacities(options: {
   const initialSyncIdentity = ref('')
   const profileChanged = computed(() => initialProfile.value !== profileKey(options.params()) ||
     initialSyncIdentity.value !== (options.syncIdentity?.() ?? ''))
+  const syncSourceKey = computed(() => JSON.stringify([
+    options.identity(), profileKey(options.params()), options.syncIdentity?.() ?? ''
+  ]))
   const applicableDrafts = computed(() => Object.fromEntries(Object.entries(drafts.value)
     .filter(([id]) => rows.value.find(row => row.upstream_model_id === id)?.editable !== false)))
-  const valid = computed(() => areContextCapacityDraftsValid(applicableDrafts.value))
+  const valid = computed(() => invalidFields.value.size === 0 && editingFields.value.size === 0 &&
+    areContextCapacityDraftsValid(applicableDrafts.value))
   const ready = computed(() => {
     const touched = Object.keys(drafts.value)
     return touched.length === 0 || (!loading.value && !loadFailed.value &&
@@ -68,12 +75,15 @@ export function useModelContextCapacities(options: {
     rows.value = []
     drafts.value = {}
     syncedModels.value = undefined
+    syncedEvidence.value = []
+    invalidFields.value.clear()
+    editingFields.value.clear()
     loading.value = false
     loadFailed.value = false
   }
 
   const applyRows = (incoming: ModelContextCapacityRow[]) => {
-    const observations = new Map((syncedModels.value?.capacity_rows ?? []).map(row => [row.upstream_model_id, row]))
+    const observations = new Map(syncedEvidence.value.map(row => [row.upstream_model_id, row]))
     rows.value = incoming.map(row => {
       const observation = observations.get(row.upstream_model_id)
       if (!row.editable || row.upstream || !observation?.upstream) return row
@@ -108,14 +118,21 @@ export function useModelContextCapacities(options: {
     loadFailed.value = false
     try {
       const params = options.params()
-      const result = initial && params.account_id
-        ? await adminAPI.accounts.getModelContextCapacities(params.account_id, controller.signal)
+      const savedAccountId = initial ? params.account_id : undefined
+      const result = savedAccountId
+        ? await adminAPI.accounts.getModelContextCapacities(savedAccountId, controller.signal)
         : await adminAPI.accounts.previewModelContextCapacities({
           ...params,
           model_ids: [...new Set([...(params.model_ids ?? []), ...(syncedModels.value?.models ?? []), ...Object.keys(drafts.value)])]
         }, controller.signal)
       if (current !== sequence) return
       applyRows(result.capacity_rows ?? [])
+      // The saved snapshot need not contain unselected built-in candidates or
+      // draft compact targets. Populate those through the same local resolver.
+      if (savedAccountId && params.model_ids?.some(id =>
+        !rows.value.some(row => row.upstream_model_id === id))) {
+        await refresh()
+      }
     } catch {
       if (current === sequence) loadFailed.value = true
     } finally {
@@ -130,16 +147,26 @@ export function useModelContextCapacities(options: {
   }
 
   const acceptSync = (result?: SyncUpstreamModelsResult) => {
-    if (!result) return
+    if (!result || !options.enabled()) return
     cancelRequest()
     syncedModels.value = result
     loading.value = false
     loadFailed.value = false
-    if (result.capacity_rows) {
+    const savedAccount = Boolean(options.params().account_id)
+    // Saved-account sync deliberately uses persisted credentials. Its model IDs
+    // still belong in the selector, but a dirty form must not adopt capacity
+    // evidence from that different endpoint/product/credential identity.
+    syncedEvidence.value = savedAccount && profileChanged.value ? [] : result.capacity_rows ?? []
+    if (!savedAccount && result.capacity_rows) {
       const merged = new Map(rows.value.map(row => [row.upstream_model_id, row]))
       for (const row of result.capacity_rows) merged.set(row.upstream_model_id, row)
       applyRows([...merged.values()])
+    } else if (syncedEvidence.value.length > 0) {
+      // Keep current unsaved aliases until the local projection returns; the
+      // upstream sync response may contain the saved account's older mappings.
+      applyRows(rows.value)
     }
+    void refresh()
   }
 
   const synchronize = async (perform: () => Promise<SyncUpstreamModelsResult>) => {
@@ -152,9 +179,6 @@ export function useModelContextCapacities(options: {
       if (current !== syncSequence || !options.enabled() ||
         sourceKey !== JSON.stringify([options.identity(), options.params(), options.syncIdentity?.()])) return undefined
       acceptSync(result)
-      // The saved-account synchronization uses saved mappings. Reproject current
-      // unsaved aliases locally; create previews retain actual raw evidence above.
-      void refresh()
       return result
     } catch (error) {
       if (current !== syncSequence || !options.enabled()) return undefined
@@ -183,6 +207,7 @@ export function useModelContextCapacities(options: {
           // A draft endpoint/product change must not label an old provider's
           // observation as evidence for the new provider. Keep only the edit draft.
           syncedModels.value = undefined
+          syncedEvidence.value = []
           rows.value = []
         }
         scheduleRefresh()
@@ -203,5 +228,17 @@ export function useModelContextCapacities(options: {
     return Object.fromEntries(Object.entries(patch).filter(([id]) => editable.has(id)))
   }
 
-  return { rows, drafts, syncedModels, loading, loadFailed, syncing, profileChanged, valid, ready, acceptSync, synchronize, refresh, reset, buildPatch }
+  const setFieldValidity = (field: object | string, isValid: boolean) => {
+    if (isValid) invalidFields.value.delete(field)
+    else invalidFields.value.add(field)
+  }
+  const setFieldEditing = (field: object | string, isEditing: boolean) => {
+    if (isEditing) editingFields.value.add(field)
+    else editingFields.value.delete(field)
+  }
+
+  return {
+    rows, drafts, syncedModels, loading, loadFailed, syncing, profileChanged, syncSourceKey,
+    valid, ready, acceptSync, synchronize, refresh, reset, buildPatch, setFieldValidity, setFieldEditing
+  }
 }

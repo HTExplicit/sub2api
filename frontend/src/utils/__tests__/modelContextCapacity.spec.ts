@@ -2,11 +2,38 @@ import { describe, expect, it } from 'vitest'
 import {
   areContextCapacityDraftsValid,
   buildContextOverridePatch,
+  findContextCapacityRow,
   formatContextCapacity,
   parseContextCapacityInput
 } from '@/utils/modelContextCapacity'
 
 describe('modelContextCapacity', () => {
+  it('resolves a unique explicit alias before a colliding direct upstream ID', () => {
+    const direct = { upstream_model_id: 'public-model', aliases: [] }
+    const target = { upstream_model_id: 'real-target', aliases: ['public-model'] }
+    expect(findContextCapacityRow([direct, target], 'public-model')).toBe(target)
+    expect(findContextCapacityRow([direct, target], 'real-target')).toBe(target)
+    expect(findContextCapacityRow([target, direct], 'public-model')).toBe(target)
+  })
+
+  it('does not guess when multiple actual targets claim the same public alias', () => {
+    const rows = [
+      { upstream_model_id: 'public-model', aliases: [] },
+      { upstream_model_id: 'target-a', aliases: ['public-model'] },
+      { upstream_model_id: 'target-b', aliases: ['public-model'] }
+    ]
+    expect(findContextCapacityRow(rows, 'public-model')).toBeUndefined()
+    expect(findContextCapacityRow([{ upstream_model_id: 'same', aliases: [] }, { upstream_model_id: 'same', aliases: [] }], 'same')).toBeUndefined()
+  })
+
+  it('keeps lookups exact and returns no row for unknown or empty public IDs', () => {
+    const rows = [{ upstream_model_id: 'gpt-5.2', aliases: ['Public-Model'] }]
+    expect(findContextCapacityRow(rows, 'Public-Model')).toBe(rows[0])
+    for (const modelID of ['', ' ', ' gpt-5.2', 'public-model', 'GPT-5.2', 'missing']) {
+      expect(findContextCapacityRow(rows, modelID)).toBeUndefined()
+    }
+  })
+
   it.each([
     ['258K', 258_000],
     ['1M', 1_000_000],

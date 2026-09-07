@@ -80,6 +80,7 @@
     <!-- Multi-select Dropdown -->
     <div class="relative mb-3">
       <div
+        data-testid="model-selector-toggle"
         @click="toggleDropdown"
         class="cursor-pointer rounded-lg border border-gray-300 bg-white px-3 py-2 dark:border-dark-500 dark:bg-dark-700"
       >
@@ -87,14 +88,26 @@
           <span
             v-for="model in modelValue"
             :key="model"
-            class="inline-flex items-center justify-between gap-1 rounded bg-gray-100 px-2 py-1 text-xs text-gray-700 dark:bg-dark-600 dark:text-gray-300"
+            data-testid="selected-model"
+            :data-model-id="model"
+            class="inline-flex min-w-0 items-center justify-between gap-1 rounded bg-gray-100 px-2 py-1 text-xs text-gray-700 dark:bg-dark-600 dark:text-gray-300"
           >
-            <span class="flex items-center gap-1 truncate">
+            <span class="flex min-w-0 items-center gap-1 truncate">
               <ModelIcon :model="model" size="14px" />
-              <span class="truncate">{{ model }}</span>
+              <span data-testid="selected-model-name" class="truncate" :title="model">{{ model }}</span>
             </span>
+            <ModelContextCapacityField
+              class="ml-auto shrink-0"
+              :model-id="model"
+              :row="capacityRowFor(model)"
+              :draft="capacityDraftFor(model)"
+              @commit="setCapacityDraft(model, $event)"
+              @editing="setCapacityFieldEditing(`selected:${model}`, $event)"
+              @validity="setCapacityFieldValidity(`selected:${model}`, $event)"
+            />
             <button
               type="button"
+              data-testid="remove-model"
               @click.stop="removeModel(model)"
               class="shrink-0 rounded-full hover:bg-gray-200 dark:hover:bg-dark-500"
             >
@@ -128,6 +141,7 @@
             v-for="model in filteredModels"
             :key="model.value"
             data-testid="model-option"
+            :data-model-id="model.value"
             class="group flex items-center hover:bg-gray-100 dark:hover:bg-dark-600"
           >
             <button
@@ -149,23 +163,24 @@
                 </svg>
               </span>
               <ModelIcon :model="model.value" size="18px" />
-              <span class="min-w-0 flex-1">
-                <span class="block truncate text-gray-900 dark:text-white">{{ model.value }}</span>
-                <span
-                  v-if="modelContextSummary(model)"
-                  class="block truncate text-xs text-gray-500 dark:text-gray-400"
-                >
-                  {{ modelContextSummary(model) }}
-                </span>
-              </span>
+              <span data-testid="model-option-name" class="min-w-0 flex-1 truncate text-gray-900 dark:text-white" :title="model.value">{{ model.value }}</span>
             </button>
+            <ModelContextCapacityField
+              class="shrink-0"
+              :model-id="model.value"
+              :row="capacityRowFor(model.value)"
+              :draft="capacityDraftFor(model.value)"
+              @commit="setCapacityDraft(model.value, $event)"
+              @editing="setCapacityFieldEditing(`option:${model.value}`, $event)"
+              @validity="setCapacityFieldValidity(`option:${model.value}`, $event)"
+            />
             <button
               type="button"
               data-testid="copy-model-id"
               class="mr-2 rounded p-1.5 text-gray-400 opacity-70 transition-colors hover:bg-gray-200 hover:text-primary-600 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 group-hover:opacity-100 dark:text-gray-500 dark:hover:bg-dark-500 dark:hover:text-primary-400"
               :title="`${t('common.copy')} ${model.value}`"
               :aria-label="`${t('common.copy')} ${model.value}`"
-              @click="copyModelId(model.value)"
+              @click.stop="copyModelId(model.value)"
             >
               <Icon name="copy" size="sm" />
             </button>
@@ -181,14 +196,16 @@
     <div class="mb-4 flex flex-wrap gap-2">
       <button
         type="button"
+        data-testid="fill-related-models"
         @click="fillRelated"
         class="rounded-lg border border-blue-200 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/30"
       >
         {{ t('admin.accounts.fillRelatedModels') }}
       </button>
       <button
-        v-if="canSyncUpstream && !hideSync"
+        v-if="canSyncUpstream"
         type="button"
+        data-testid="sync-upstream-models"
         @click="syncUpstreamModels"
         :disabled="isSyncingUpstream || syncDisabled"
         :title="syncDisabledReason"
@@ -236,11 +253,13 @@ import { ref, computed, watch, onScopeDispose } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { accountsAPI } from '@/api/admin/accounts'
-import type { SyncUpstreamModelsResult, SyncUpstreamPreviewParams } from '@/api/admin/accounts'
+import type { ModelContextCapacityRow, SyncUpstreamModelsResult, SyncUpstreamPreviewParams } from '@/api/admin/accounts'
 import { useClipboard } from '@/composables/useClipboard'
+import ModelContextCapacityField from '@/components/account/ModelContextCapacityField.vue'
 import ModelIcon from '@/components/common/ModelIcon.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { allModels, getModelsByPlatform } from '@/composables/useModelWhitelist'
+import { findContextCapacityRow } from '@/utils/modelContextCapacity'
 import type { AccountAvailableModel } from '@/types'
 
 const { t } = useI18n()
@@ -252,7 +271,8 @@ const props = defineProps<{
   accountId?: number
   models?: AccountAvailableModel[]
   syncedModels?: SyncUpstreamModelsResult
-  hideSync?: boolean
+  capacityRows?: ModelContextCapacityRow[]
+  capacityDrafts?: Record<string, string>
   syncDisabled?: boolean
   syncDisabledReason?: string
   syncSourceKey?: string
@@ -267,6 +287,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:modelValue': [value: string[]]
+  'update:capacityDrafts': [value: Record<string, string>]
+  'capacity-validity': [valid: boolean]
   'upstream-synced': [result: SyncUpstreamModelsResult]
 }>()
 
@@ -279,6 +301,26 @@ const customModel = ref('')
 const isComposing = ref(false)
 const isSyncingUpstream = ref(false)
 const lastSyncResult = ref<SyncUpstreamModelsResult>()
+const capacityFieldStates = ref<Record<string, { editing?: boolean; valid?: boolean }>>({})
+const capacityFieldsValid = computed(() => Object.values(capacityFieldStates.value)
+  .every(state => !state.editing && state.valid !== false))
+watch(capacityFieldsValid, valid => emit('capacity-validity', valid), { immediate: true })
+const setCapacityFieldEditing = (key: string, editing: boolean) => {
+  capacityFieldStates.value[key] = { ...capacityFieldStates.value[key], editing }
+}
+const setCapacityFieldValidity = (key: string, valid: boolean) => {
+  capacityFieldStates.value[key] = { ...capacityFieldStates.value[key], valid }
+}
+const capacityRowFor = (model: string) => findContextCapacityRow(props.capacityRows ?? [], model)
+const capacityDraftFor = (model: string) => {
+  const row = capacityRowFor(model)
+  return row ? props.capacityDrafts?.[row.upstream_model_id] : undefined
+}
+const setCapacityDraft = (model: string, value: string) => {
+  const row = capacityRowFor(model)
+  if (!row?.editable) return
+  emit('update:capacityDrafts', { ...props.capacityDrafts, [row.upstream_model_id]: value })
+}
 let syncGeneration = 0
 watch(
   () => JSON.stringify([props.accountId, props.platform, props.platforms, props.syncCredentials, props.syncSourceKey, props.syncDisabled]),
@@ -288,7 +330,10 @@ watch(
     lastSyncResult.value = undefined
   }
 )
-onScopeDispose(() => { syncGeneration += 1 })
+onScopeDispose(() => {
+  syncGeneration += 1
+  emit('capacity-validity', true)
+})
 const normalizedPlatforms = computed(() => {
   const rawPlatforms =
     props.platforms && props.platforms.length > 0
@@ -391,6 +436,21 @@ const filteredModels = computed(() => {
     m => m.value.toLowerCase().includes(query) || m.label.toLowerCase().includes(query)
   )
 })
+
+// A selected chip and its open candidate row have independent edit buffers.
+// Do not let one instance's valid event mask the other instance's pending edit.
+watch(
+  () => props.readonly ? [] : [
+    ...props.modelValue.map(model => `selected:${model}`),
+    ...(showDropdown.value ? filteredModels.value.map(model => `option:${model.value}`) : [])
+  ],
+  keys => {
+    const renderedKeys = new Set(keys)
+    for (const key of Object.keys(capacityFieldStates.value)) {
+      if (!renderedKeys.has(key)) delete capacityFieldStates.value[key]
+    }
+  }
+)
 
 const toggleDropdown = () => {
   showDropdown.value = !showDropdown.value

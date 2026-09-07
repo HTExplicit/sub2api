@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import type { ModelContextCapacityRow, SyncUpstreamModelsResult } from '@/api/admin/accounts'
+import { getModelsByPlatform } from '@/composables/useModelWhitelist'
 
 const {
   copyToClipboard,
@@ -55,6 +57,21 @@ vi.mock('@/composables/useClipboard', () => ({
 }))
 
 import ModelWhitelistSelector from '../ModelWhitelistSelector.vue'
+import ModelContextCapacityField from '../ModelContextCapacityField.vue'
+
+function capacityRow(overrides: Partial<ModelContextCapacityRow> = {}): ModelContextCapacityRow {
+  return {
+    upstream_model_id: 'gpt-5.6-sol',
+    aliases: ['gpt-5.6-sol'],
+    editable: true,
+    automatic_context_window: 258_000,
+    automatic_source: 'default',
+    effective_context_window: 258_000,
+    effective_source: 'default',
+    capacity_basis: 'context_window',
+    ...overrides
+  }
+}
 
 function mountSelector(props: Record<string, unknown> = {}) {
   return mount(ModelWhitelistSelector, {
@@ -74,7 +91,7 @@ function mountSelector(props: Record<string, unknown> = {}) {
 function findModelRow(wrapper: ReturnType<typeof mountSelector>, modelId: string) {
   const row = wrapper
     .findAll('[data-testid="model-option"]')
-    .find(candidate => candidate.text().includes(modelId))
+    .find(candidate => candidate.attributes('data-model-id') === modelId)
 
   if (!row) {
     throw new Error(`Model row not found: ${modelId}`)
@@ -119,6 +136,178 @@ describe('ModelWhitelistSelector', () => {
 
     expect(wrapper.emitted('update:modelValue')).toEqual([[['gpt-5.6-sol']]])
     expect(copyToClipboard).not.toHaveBeenCalled()
+  })
+
+  it('keeps the original action order and fills platform-related models without a network request', async () => {
+    const manual = 'Manual.Exact-ID'
+    const wrapper = mountSelector({ modelValue: [manual, 'gpt-5.6-sol'], platforms: ['openai', 'anthropic'], accountId: 46 })
+    const actions = wrapper.findAll('button').filter(button => [
+      'admin.accounts.fillRelatedModels',
+      'admin.accounts.syncUpstreamModels',
+      'admin.accounts.clearAllModels'
+    ].includes(button.text()))
+    expect(actions.map(button => button.text())).toEqual([
+      'admin.accounts.fillRelatedModels',
+      'admin.accounts.syncUpstreamModels',
+      'admin.accounts.clearAllModels'
+    ])
+
+    await wrapper.get('[data-testid="fill-related-models"]').trigger('click')
+
+    expect(wrapper.emitted('update:modelValue')).toEqual([[[
+      ...new Set([manual, 'gpt-5.6-sol', ...getModelsByPlatform('openai'), ...getModelsByPlatform('anthropic')])
+    ]]])
+    expect(syncUpstreamModels).not.toHaveBeenCalled()
+    expect(syncUpstreamModelsPreview).not.toHaveBeenCalled()
+    expect(wrapper.emitted('update:capacityDrafts')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('calls the saved-account sync once and adds each new exact ID while preserving manual IDs', async () => {
+    let resolve!: (result: SyncUpstreamModelsResult) => void
+    syncUpstreamModels.mockReturnValue(new Promise(result => { resolve = result }))
+    const result: SyncUpstreamModelsResult = {
+      models: ['New.Exact-ID', 'New.Exact-ID', 'manual-model'],
+      metadata: { 'New.Exact-ID': { id: 'New.Exact-ID', context_window: 1_050_000 } },
+      capacity_rows: [capacityRow({ upstream_model_id: 'New.Exact-ID', aliases: ['New.Exact-ID'] })]
+    }
+    const wrapper = mountSelector({ modelValue: ['manual-model', 'user-only-model'], accountId: 46 })
+    const button = wrapper.get('[data-testid="sync-upstream-models"]')
+    await button.trigger('click')
+    await button.trigger('click')
+    expect(syncUpstreamModels).toHaveBeenCalledOnce()
+    expect(syncUpstreamModels).toHaveBeenCalledWith(46)
+    expect(syncUpstreamModelsPreview).not.toHaveBeenCalled()
+
+    resolve(result)
+    await flushPromises()
+
+    expect(wrapper.emitted('upstream-synced')).toEqual([[result]])
+    expect(wrapper.emitted('update:modelValue')).toEqual([[['manual-model', 'user-only-model', 'New.Exact-ID']]])
+    expect(wrapper.emitted('update:capacityDrafts')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('retains the saved OAuth account sync entry even when capacity editing is protected', async () => {
+    syncUpstreamModels.mockResolvedValue({ models: ['oauth-model'] })
+    const wrapper = mountSelector({
+      modelValue: ['gpt-5.6-sol'],
+      accountId: 91,
+      capacityRows: [capacityRow({ editable: false, effective_source: 'protected' })]
+    })
+
+    expect(wrapper.find('[data-testid="context-capacity-input"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="sync-upstream-models"]').trigger('click')
+    await flushPromises()
+
+    expect(syncUpstreamModels).toHaveBeenCalledOnce()
+    expect(syncUpstreamModels).toHaveBeenCalledWith(91)
+    expect(wrapper.emitted('update:modelValue')).toEqual([[['gpt-5.6-sol', 'oauth-model']]])
+    wrapper.unmount()
+  })
+
+  it('shows separate always-visible capacity and source beside unchanged selected and candidate names', async () => {
+    const wrapper = mountSelector({
+      modelValue: ['gpt-5.6-sol', 'Unknown.Exact-ID'],
+      capacityRows: [capacityRow({ effective_context_window: 1_050_000, effective_source: 'official' })]
+    })
+    const chips = wrapper.findAll('[data-testid="selected-model"]')
+    expect(chips[0].element.parentElement?.classList.contains('grid-cols-2')).toBe(true)
+    expect(chips.map(chip => chip.get('[data-testid="selected-model-name"]').text())).toEqual(['gpt-5.6-sol', 'Unknown.Exact-ID'])
+    expect(chips[0].get('[data-testid="context-capacity-value"]').text()).toContain('1.05M')
+    expect(chips[0].get('[data-testid="context-capacity-source"]').text()).toContain('official')
+    expect(chips[1].get('[data-testid="context-capacity-source"]').text()).not.toBe('')
+    expect(chips[1].find('[data-testid="context-capacity-edit"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="model-selector-toggle"]').trigger('click')
+    const candidate = findModelRow(wrapper, 'gpt-5.6-sol')
+    expect(candidate.get('[data-testid="model-option-name"]').text()).toBe('gpt-5.6-sol')
+    expect(candidate.get('[data-testid="context-capacity-value"]').text()).toContain('1.05M')
+    expect(candidate.get('[data-testid="context-capacity-source"]').text()).toContain('official')
+    expect(candidate.get('[data-testid="copy-model-id"]').attributes('aria-label')).toBe('复制 gpt-5.6-sol')
+    await candidate.get('[data-testid="copy-model-id"]').trigger('click')
+    expect(copyToClipboard).toHaveBeenCalledOnce()
+    expect(copyToClipboard).toHaveBeenCalledWith('gpt-5.6-sol')
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(wrapper.emitted('update:capacityDrafts')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('commits only the real alias target capacity without toggling the dropdown or changing the whitelist', async () => {
+    const wrapper = mountSelector({
+      modelValue: ['Public.Alias'],
+      capacityRows: [
+        capacityRow({ upstream_model_id: 'Public.Alias', aliases: ['other-alias'], effective_context_window: 999_000 }),
+        capacityRow({ upstream_model_id: 'Real.Upstream-ID', aliases: ['Public.Alias'] })
+      ],
+      capacityDrafts: { 'untouched-model': '300K' }
+    })
+    const chip = wrapper.get('[data-testid="selected-model"]')
+    expect(chip.get('[data-testid="context-capacity-value"]').text()).toContain('258K')
+    await chip.get('[data-testid="context-capacity-edit"]').trigger('click')
+    expect(wrapper.find('[data-testid="model-option"]').exists()).toBe(false)
+    expect(wrapper.emitted('capacity-validity')?.at(-1)).toEqual([false])
+    const input = chip.get('[data-testid="context-capacity-input"]')
+    await input.setValue('1.05M')
+    expect(wrapper.emitted('update:capacityDrafts')).toBeUndefined()
+    const keydown = vi.fn()
+    wrapper.element.addEventListener('keydown', keydown)
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    input.element.dispatchEvent(enter)
+    await flushPromises()
+
+    expect(enter.defaultPrevented).toBe(true)
+    expect(keydown).not.toHaveBeenCalled()
+    expect(wrapper.emitted('update:capacityDrafts')).toEqual([[{
+      'untouched-model': '300K', 'Real.Upstream-ID': '1.05M'
+    }]])
+    expect(wrapper.emitted('capacity-validity')?.at(-1)).toEqual([true])
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(chip.get('[data-testid="selected-model-name"]').text()).toBe('Public.Alias')
+    expect(wrapper.find('[data-testid="model-option"]').exists()).toBe(false)
+    expect(syncUpstreamModels).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('edits a candidate capacity independently of selection and cancels without a patch', async () => {
+    const wrapper = mountSelector({ modelValue: ['manual-model'], capacityRows: [capacityRow()] })
+    await wrapper.get('[data-testid="model-selector-toggle"]').trigger('click')
+    const candidate = findModelRow(wrapper, 'gpt-5.6-sol')
+    await candidate.get('[data-testid="context-capacity-edit"]').trigger('click')
+    await candidate.get('[data-testid="context-capacity-input"]').setValue('2M')
+    await candidate.get('[data-testid="context-capacity-input"]').trigger('keydown', { key: 'Escape' })
+
+    expect(candidate.find('[data-testid="context-capacity-input"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="model-option"]').exists()).toBe(true)
+    expect(wrapper.emitted('update:capacityDrafts')).toBeUndefined()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(wrapper.emitted('capacity-validity')?.at(-1)).toEqual([true])
+    expect(copyToClipboard).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('keeps Save blocked for either duplicate model field until every pending edit ends', async () => {
+    const wrapper = mountSelector({ modelValue: ['gpt-5.6-sol'], capacityRows: [capacityRow()] })
+    await wrapper.get('[data-testid="model-selector-toggle"]').trigger('click')
+    const selected = wrapper.get('[data-testid="selected-model"]').getComponent(ModelContextCapacityField)
+    const candidate = findModelRow(wrapper, 'gpt-5.6-sol').getComponent(ModelContextCapacityField)
+    selected.vm.$emit('editing', true)
+    selected.vm.$emit('validity', false)
+    candidate.vm.$emit('validity', true)
+    await flushPromises()
+    expect(wrapper.emitted('capacity-validity')?.at(-1)).toEqual([false])
+
+    candidate.vm.$emit('editing', true)
+    selected.vm.$emit('editing', false)
+    selected.vm.$emit('validity', true)
+    await flushPromises()
+    expect(wrapper.emitted('capacity-validity')?.at(-1)).toEqual([false])
+
+    candidate.vm.$emit('editing', false)
+    await flushPromises()
+    expect(wrapper.emitted('capacity-validity')?.at(-1)).toEqual([true])
+    wrapper.unmount()
+    expect(wrapper.emitted('capacity-validity')?.at(-1)).toEqual([true])
   })
 
   it('renders dynamic managed models with their real context without changing the whitelist', async () => {
@@ -294,7 +483,7 @@ describe('ModelWhitelistSelector', () => {
     const result = {
       models: ['dynamic-only'],
       metadata: { 'dynamic-only': { id: 'dynamic-only', context_window: 1_050_000 } },
-      capacity_rows: [{ upstream_model_id: 'dynamic-only', effective_context_window: 1_050_000 }]
+      capacity_rows: [capacityRow({ upstream_model_id: 'dynamic-only', aliases: ['dynamic-only'], effective_context_window: 1_050_000 })]
     }
     syncUpstreamModels.mockResolvedValue(result)
     const wrapper = mountSelector({ accountId: 46 })
@@ -303,9 +492,9 @@ describe('ModelWhitelistSelector', () => {
     expect(wrapper.emitted('upstream-synced')).toEqual([[result]])
     wrapper.unmount()
 
-    const remounted = mountSelector({ syncedModels: result })
+    const remounted = mountSelector({ syncedModels: result, capacityRows: result.capacity_rows })
     await remounted.get('div.cursor-pointer').trigger('click')
-    expect(findModelRow(remounted, 'dynamic-only').text()).toContain('1,050,000')
+    expect(findModelRow(remounted, 'dynamic-only').get('[data-testid="context-capacity-value"]').text()).toContain('1.05M')
     expect(remounted.emitted('update:modelValue')).toBeUndefined()
     remounted.unmount()
   })
@@ -347,9 +536,34 @@ describe('ModelWhitelistSelector', () => {
     wrapper.unmount()
   })
 
-  it('allows a shared parent sync entry to hide the selector action', () => {
-    const wrapper = mountSelector({ accountId: 42, hideSync: true })
-    expect(wrapper.findAll('button').some(button => button.text() === 'admin.accounts.syncUpstreamModels')).toBe(false)
+  it('invalidates an in-flight saved-account sync when the parent source generation changes', async () => {
+    let resolve!: (result: SyncUpstreamModelsResult) => void
+    syncUpstreamModels.mockReturnValue(new Promise(result => { resolve = result }))
+    const wrapper = mountSelector({ modelValue: ['manual-model'], accountId: 42, syncSourceKey: 'source-a' })
+    await wrapper.get('[data-testid="sync-upstream-models"]').trigger('click')
+    await wrapper.setProps({ syncSourceKey: 'source-b' })
+    resolve({ models: ['stale-model'], capacity_rows: [capacityRow()] })
+    await flushPromises()
+    expect(syncUpstreamModels).toHaveBeenCalledOnce()
+    expect(syncUpstreamModels).toHaveBeenCalledWith(42)
+    expect(wrapper.emitted('upstream-synced')).toBeUndefined()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(showSuccess).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('does not invalidate a sync when an independent capacity draft changes', async () => {
+    let resolve!: (result: SyncUpstreamModelsResult) => void
+    syncUpstreamModels.mockReturnValue(new Promise(result => { resolve = result }))
+    const wrapper = mountSelector({ accountId: 42, syncSourceKey: 'same-source' })
+    await wrapper.get('[data-testid="sync-upstream-models"]').trigger('click')
+    await wrapper.setProps({ capacityDrafts: { 'gpt-5.6-sol': '1M' } })
+    const result = { models: ['new-model'], capacity_rows: [capacityRow()] }
+    resolve(result)
+    await flushPromises()
+    expect(wrapper.emitted('upstream-synced')).toEqual([[result]])
+    expect(wrapper.emitted('update:modelValue')).toEqual([[['new-model']]])
+    expect(wrapper.props('capacityDrafts')).toEqual({ 'gpt-5.6-sol': '1M' })
     wrapper.unmount()
   })
 

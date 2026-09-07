@@ -144,6 +144,90 @@ describe('useModelContextCapacities', () => {
     expect(model.buildPatch()).toEqual({})
   })
 
+  it('locally projects missing unselected candidates after loading the saved account', async () => {
+    const saved = row({ custom_context_window: 1_050_000, effective_context_window: 1_050_000, effective_source: 'custom' })
+    const candidate = row({ upstream_model_id: 'unselected-model', aliases: [] })
+    getModelContextCapacities.mockResolvedValueOnce({ capacity_rows: [saved] })
+    previewModelContextCapacities.mockResolvedValueOnce({ capacity_rows: [saved, candidate] })
+    const model = setup({ account_id: 17, model_ids: ['real-model', 'unselected-model'] })
+    await settle()
+    expect(getModelContextCapacities).toHaveBeenCalledTimes(1)
+    expect(previewModelContextCapacities).toHaveBeenCalledWith(expect.objectContaining({
+      account_id: 17, model_ids: ['real-model', 'unselected-model']
+    }), expect.any(AbortSignal))
+    expect(model.rows.value).toEqual([saved, candidate])
+    expect(syncUpstreamModels).not.toHaveBeenCalled()
+    expect(syncUpstreamModelsPreview).not.toHaveBeenCalled()
+    expect(model.buildPatch()).toEqual({})
+  })
+
+  it('keeps saved-sync aliases out of the current draft projection while local reprojection is pending', async () => {
+    const currentRow = row({ upstream_model_id: 'dynamic-model', aliases: ['current-alias'] })
+    getModelContextCapacities.mockResolvedValueOnce({ capacity_rows: [currentRow] })
+    const model = setup({ account_id: 17, model_ids: ['dynamic-model'], model_mapping: { 'current-alias': 'dynamic-model' } })
+    await settle()
+    const local = deferred()
+    previewModelContextCapacities.mockImplementationOnce(() => local.promise)
+    const result = syncedResult()
+    model.acceptSync(result)
+    expect(model.syncedModels.value).toEqual(result)
+    expect(model.rows.value[0].aliases).toEqual(['current-alias'])
+    expect(model.rows.value[0].upstream).toEqual(result.capacity_rows![0].upstream)
+    expect(previewModelContextCapacities).toHaveBeenCalledWith(expect.objectContaining({
+      account_id: 17, model_mapping: { 'current-alias': 'dynamic-model' }
+    }), expect.any(AbortSignal))
+    local.resolve({ capacity_rows: [currentRow] })
+    await settle()
+    expect(model.rows.value[0].aliases).toEqual(['current-alias'])
+  })
+
+  it('still performs original saved-account sync for a dirty source but never adopts its capacity evidence', async () => {
+    const model = setup({ account_id: 17 })
+    await settle()
+    model.params.base_url = 'https://unsaved-provider.example/v1'
+    await nextTick()
+    expect(model.profileChanged.value).toBe(true)
+    const local = deferred()
+    previewModelContextCapacities.mockImplementationOnce(() => local.promise)
+    const result = syncedResult()
+    const perform = vi.fn().mockResolvedValue(result)
+    expect(await model.synchronize(perform)).toEqual(result)
+    expect(perform).toHaveBeenCalledTimes(1)
+    expect(model.syncedModels.value).toEqual(result)
+    expect(model.rows.value).toEqual([])
+    expect(previewModelContextCapacities).toHaveBeenCalledWith(expect.objectContaining({
+      account_id: 17, base_url: 'https://unsaved-provider.example/v1'
+    }), expect.any(AbortSignal))
+    const current = row({ upstream_model_id: 'dynamic-model', aliases: ['current-provider-alias'] })
+    local.resolve({ capacity_rows: [current] })
+    await settle()
+    expect(model.rows.value).toEqual([current])
+    expect(model.rows.value[0].upstream).toBeUndefined()
+    expect(model.rows.value[0].effective_source).toBe('default')
+  })
+
+  it('blocks saving for any unconfirmed or invalid inline editor and clears guards on cancel/reset', async () => {
+    const model = setup()
+    await settle()
+    const mapping = { from: 'public-model', to: 'real-model' }
+    model.setFieldEditing(mapping, true)
+    expect(model.valid.value).toBe(false)
+    model.setFieldValidity(mapping, false)
+    model.setFieldEditing(mapping, false)
+    expect(model.valid.value).toBe(false)
+    model.setFieldValidity('selector', false)
+    model.setFieldValidity(mapping, true)
+    expect(model.valid.value).toBe(false)
+    model.setFieldValidity('selector', true)
+    expect(model.valid.value).toBe(true)
+    expect(model.buildPatch()).toEqual({})
+    model.setFieldEditing(mapping, true)
+    model.setFieldValidity('selector', false)
+    model.reset()
+    expect(model.valid.value).toBe(true)
+    expect(model.drafts.value).toEqual({})
+  })
+
   it('debounces mapping changes while preserving drafts and real model identity', async () => {
     const model = setup()
     await settle()
