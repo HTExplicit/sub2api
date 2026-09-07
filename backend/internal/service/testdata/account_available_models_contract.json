@@ -1,0 +1,21 @@
+{
+  "upstream": {
+    "object": "list",
+    "data": [
+      {"id": "Case/Only-ID"},
+      {"id": "vendor.named-v1", "display_name": "保留上游显示名", "type": "custom_model", "created": 1700000000, "owned_by": "provider", "description": "existing metadata", "context_window": 400000, "max_input_tokens": 320000, "max_output_tokens": 8000},
+      {"id": "vendor.null", "display_name": null, "type": null},
+      {"id": "vendor.empty", "display_name": "", "type": ""},
+      {"id": "vendor.blank", "display_name": " \t\n", "type": " \t"},
+      {"id": "vendor.sixth"}
+    ]
+  },
+  "expected": [
+    {"id": "Case/Only-ID", "object": "model", "created": 0, "owned_by": "openai", "type": "model", "display_name": "Case/Only-ID"},
+    {"id": "vendor.named-v1", "object": "model", "created": 1700000000, "owned_by": "provider", "type": "custom_model", "display_name": "保留上游显示名", "description": "existing metadata", "context_window": 400000, "max_input_tokens": 320000, "max_output_tokens": 8000},
+    {"id": "vendor.null", "object": "model", "created": 0, "owned_by": "openai", "type": "model", "display_name": "vendor.null"},
+    {"id": "vendor.empty", "object": "model", "created": 0, "owned_by": "openai", "type": "model", "display_name": "vendor.empty"},
+    {"id": "vendor.blank", "object": "model", "created": 0, "owned_by": "openai", "type": "model", "display_name": "vendor.blank"},
+    {"id": "vendor.sixth", "object": "model", "created": 0, "owned_by": "openai", "type": "model", "display_name": "vendor.sixth"}
+  ]
+}

@@ -734,7 +734,6 @@ import type {
   Proxy as AccountProxy,
   AdminGroup,
   WindowStats,
-  ClaudeModel,
   UpstreamBillingProbeSnapshot
 } from '@/types'
 
@@ -3066,7 +3065,7 @@ const handleSchedule = async (a: Account) => {
   showSchedulePanel.value = true
   try {
     const models = await adminAPI.accounts.getAvailableModels(a.id)
-    scheduleModelOptions.value = models.map((m: ClaudeModel) => ({ value: m.id, label: m.display_name || m.id }))
+    scheduleModelOptions.value = models.map((m) => ({ value: m.id, label: m.display_name }))
   } catch {
     scheduleModelOptions.value = []
   }

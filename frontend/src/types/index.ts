@@ -918,10 +918,20 @@ export interface ClaudeModel {
   created_at: string
 }
 
-export interface AccountAvailableModel extends ClaudeModel {
+// Admin account-model view, not an unadapted upstream or Claude-only catalog.
+// The server supplies a nonempty display_name independently of the model id.
+export interface AccountAvailableModel {
+  id: string
+  type: string
+  display_name: string
+  object?: string
+  created?: number
+  created_at?: string
+  owned_by?: string
   live_upstream_id?: string
   description?: string
   context_window?: number
+  max_input_tokens?: number
   base_context_window?: number
   codex_context_window?: number
   max_output_tokens?: number
