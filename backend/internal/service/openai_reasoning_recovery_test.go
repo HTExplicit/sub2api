@@ -65,6 +65,7 @@ func TestOpenAIReasoningRecoveryStrictErrorsAndScope(t *testing.T) {
 		{"specific_despite_compaction", `{"model":"gpt-5.6-sol","input":[{"type":"reasoning","encrypted_content":"a"},{"type":"compaction","encrypted_content":"b"}]}`, `{"error":{"code":"invalid_encrypted_content","param":"input[0].encrypted_content"}}`, true},
 		{"reference_not_local_proof", `{"model":"gpt-5.6-sol","previous_response_id":"resp_old","input":[{"type":"reasoning","encrypted_content":"a"}]}`, `{"error":{"code":"invalid_encrypted_content"}}`, false},
 		{"no_reasoning_cipher", `{"model":"gpt-5.6-sol","input":[{"type":"compaction","encrypted_content":"a"}]}`, `{"error":{"code":"invalid_encrypted_content"}}`, false},
+		{"orphan_tool_is_not_repaired", `{"model":"gpt-5.6-sol","input":[{"type":"reasoning","encrypted_content":"a"},{"type":"function_call_output","call_id":"missing","output":"result"}]}`, `{"error":{"code":"invalid_encrypted_content","param":"input[0].encrypted_content"}}`, false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

@@ -164,7 +164,7 @@ func IsOpenAIReasoningCacheDigest(value string) bool {
 		return false
 	}
 	for _, ch := range value {
-		if !((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f')) {
+		if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
 			return false
 		}
 	}

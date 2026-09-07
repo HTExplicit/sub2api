@@ -756,7 +756,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 ) (*OpenAIForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
 	writeStreamHeaders := s.newStreamHeaderWriter(c, resp.Header)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	state := apicompat.NewResponsesEventToChatState()
 	state.Model = originalModel

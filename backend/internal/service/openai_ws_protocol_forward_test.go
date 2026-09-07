@@ -188,7 +188,7 @@ func TestOpenAIGatewayService_Forward_HTTPIngressPreservesNativeContinuationWhen
 	require.Equal(t, "client_protocol_http", reason)
 }
 
-func TestOpenAIGatewayService_Forward_HTTPIngressInvalidEncryptedContentIsTerminal(t *testing.T) {
+func TestOpenAIGatewayService_Forward_HTTPIngressInvalidEncryptedContentIsTerminalWhenRecoveryDisabled(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	wsFallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
@@ -245,7 +245,8 @@ func TestOpenAIGatewayService_Forward_HTTPIngressInvalidEncryptedContentIsTermin
 			"base_url": wsFallbackServer.URL,
 		},
 		Extra: map[string]any{
-			"responses_websockets_v2_enabled": true,
+			"responses_websockets_v2_enabled":               true,
+			OpenAIReasoningSignatureRecoveryEnabledExtraKey: false,
 		},
 	}
 

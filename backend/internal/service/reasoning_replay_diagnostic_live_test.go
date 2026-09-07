@@ -673,22 +673,39 @@ func (u *replayDiagnosticUpstream) record(slot int, body, data []byte, contentTy
 	_ = u.h.output.Encode(r)
 }
 func replayDiagnosticErrorCode(body []byte, contentType string) string {
-	if !strings.Contains(contentType, "text/event-stream") {
+	physical := bytes.ReplaceAll(bytes.ReplaceAll(body, []byte("\r\n"), []byte("\n")), []byte("\r"), []byte("\n"))
+	framed := bytes.HasPrefix(physical, []byte("data:")) || bytes.HasPrefix(physical, []byte("event:")) || bytes.Contains(physical, []byte("\ndata:")) || bytes.Contains(physical, []byte("\nevent:"))
+	if !strings.Contains(contentType, "text/event-stream") && !framed {
 		return service.ReasoningReplayDiagnosticRejectionCode(body)
 	}
 	scanner := bufio.NewScanner(bytes.NewReader(body))
 	scanner.Buffer(make([]byte, 4096), fidelityMaxBody)
 	scanner.Split(fidelitySSELine)
 	var data []byte
+	eventName := ""
 	found := ""
 	apply := func() {
 		if len(data) == 0 {
 			return
 		}
-		if code := service.ReasoningReplayDiagnosticRejectionCode(bytes.TrimSuffix(data, []byte{'\n'})); code != "" {
-			found = code
+		payload := bytes.TrimSuffix(data, []byte{'\n'})
+		object, err := fidelityJSONObject(payload)
+		if err != nil {
+			found = ""
+		} else {
+			kind := eventName
+			if raw := object["type"]; len(raw) > 0 {
+				_ = json.Unmarshal(raw, &kind)
+			}
+			switch kind {
+			case "response.completed", "response.incomplete", "response.cancelled", "response.canceled":
+				found = ""
+			case "response.failed", "response.done", "error":
+				found = service.ReasoningReplayDiagnosticRejectionCode(payload)
+			}
 		}
 		data = nil
+		eventName = ""
 	}
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -703,6 +720,8 @@ func replayDiagnosticErrorCode(body []byte, contentType string) string {
 			}
 			data = append(data, value...)
 			data = append(data, '\n')
+		} else if bytes.HasPrefix(line, []byte("event:")) {
+			eventName = strings.TrimSpace(string(line[6:]))
 		}
 	}
 	apply()

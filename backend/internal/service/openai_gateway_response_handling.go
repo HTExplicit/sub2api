@@ -109,7 +109,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, startTime time.Time, originalModel, mappedModel, reasoningEffort string) (*openaiStreamingResult, error) {
 	// This handler owns one HTTP response, not the shared transport or a WS
 	// session. Closing it on every exit also releases a scanner blocked in Read.
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	observer := upstreamResponseModelObserverFromContext(c)
 	if observer == nil {
 		observer = beginUpstreamResponseModelObservation(c)
@@ -1942,7 +1942,7 @@ func (s *OpenAIGatewayService) readOpenAIResponsesHTTPBody(ctx context.Context, 
 	if resp == nil || resp.Body == nil {
 		return nil, errors.New("response body is nil")
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	maxBytes := resolveUpstreamResponseReadLimit(s.cfg)
 	reader := bufio.NewReader(io.LimitReader(resp.Body, maxBytes+1))
 	var body bytes.Buffer
@@ -1964,7 +1964,7 @@ func (s *OpenAIGatewayService) readOpenAIResponsesHTTPBody(ctx context.Context, 
 	}
 	for {
 		chunk, readErr := reader.ReadSlice('\n')
-		body.Write(chunk)
+		_, _ = body.Write(chunk)
 		if int64(body.Len()) > maxBytes {
 			setOpsUpstreamError(c, http.StatusBadGateway, "upstream response too large", "")
 			if c != nil {
@@ -1972,7 +1972,7 @@ func (s *OpenAIGatewayService) readOpenAIResponsesHTTPBody(ctx context.Context, 
 			}
 			return nil, fmt.Errorf("%w: limit=%d", ErrUpstreamResponseBodyTooLarge, maxBytes)
 		}
-		line.Write(chunk)
+		_, _ = line.Write(chunk)
 		if errors.Is(readErr, bufio.ErrBufferFull) {
 			continue
 		}

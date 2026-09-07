@@ -213,6 +213,9 @@ func (r *openAIReasoningRecoveryState) skipRejectedHistory(body []byte) []byte {
 	if r.store == nil || r.scope.ScopeHash == "" {
 		return body
 	}
+	if !openAIReasoningToolHistoryAllowsRecovery(body) {
+		return body
+	}
 	items := openAIReasoningCipherItems(body)
 	if len(items) == 0 {
 		return body
@@ -322,8 +325,22 @@ func parseOpenAIReasoningRejection(payload []byte) (openAIReasoningRejection, bo
 
 var openAIReasoningErrorInputParam = regexp.MustCompile(`^input(?:\[(\d+)\]|\.(\d+))(?:\.encrypted_content)?$`)
 
+func openAIReasoningToolHistoryAllowsRecovery(body []byte) bool {
+	var input []any
+	if err := decodeOpenAIJSONUseNumber([]byte(gjson.GetBytes(body, "input").Raw), &input); err != nil {
+		return false
+	}
+	conversation := gjson.GetBytes(body, "conversation")
+	hasServerContext := gjson.GetBytes(body, "previous_response_id").String() != "" || (conversation.Exists() && conversation.Type != gjson.Null)
+	return validateOpenAIResponsesToolOutputs(input, hasServerContext) == nil
+}
+
 func openAIReasoningRejectedIndices(body []byte, rejection openAIReasoningRejection) ([]int, []string) {
 	if _, err := canonicalReasoningCacheJSON(body); err != nil {
+		return nil, nil
+	}
+	// Removing ciphertext cannot repair a locally provable orphan tool result.
+	if !openAIReasoningToolHistoryAllowsRecovery(body) {
 		return nil, nil
 	}
 	items := openAIReasoningCipherItems(body)

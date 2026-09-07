@@ -79,6 +79,20 @@ func replayDiagnosticReadClose(t *testing.T, resp *http.Response, err error) {
 	}
 }
 func TestReasoningReplayDiagnosticControl(t *testing.T) {
+	t.Run("authoritative_terminal_supersedes_preliminary_rejection", func(t *testing.T) {
+		bare := "data: {\"type\":\"error\",\"error\":{\"code\":\"invalid_encrypted_content\"}}\n\n"
+		for _, contentType := range []string{"text/event-stream", ""} {
+			if got := replayDiagnosticErrorCode([]byte(bare+"data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n"), contentType); got != "" {
+				t.Fatal("completed response incorrectly authorizes recovery")
+			}
+			if got := replayDiagnosticErrorCode([]byte(bare+"data: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"code\":\"server_error\"}}}\n\n"), contentType); got != "" {
+				t.Fatal("unrelated final rejection inherited an earlier code")
+			}
+			if got := replayDiagnosticErrorCode([]byte("event: response.done\ndata: {\"response\":{\"status\":\"failed\",\"error\":{\"code\":\"thinking_signature_invalid\"}}}\n\n"), contentType); got != "thinking_signature_invalid" {
+				t.Fatal("event-only failed terminal lost its exact code")
+			}
+		}
+	})
 	t.Run("one_send_and_private_attempt_evidence", func(t *testing.T) {
 		u, fake, out := replayDiagnosticOfflineBudget(t, 1, replayDiagnosticGrant(1, 1, 1))
 		resp, err := u.Do(fidelityOfflineRequest(t), "", 15522, 1)

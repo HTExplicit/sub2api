@@ -519,7 +519,7 @@ func projectOpenAIChatReasoningRawBatch(output []json.RawMessage) (json.RawMessa
 				if part.Get("type").String() != "summary_text" || part.Get("text").Type != gjson.String {
 					return nil, false
 				}
-				reasoning.WriteString(part.Get("text").String())
+				_, _ = reasoning.WriteString(part.Get("text").String())
 			}
 			cipher := gjson.GetBytes(raw, "encrypted_content")
 			if cipher.Exists() && cipher.Type != gjson.Null && cipher.Type != gjson.String {
@@ -534,7 +534,7 @@ func projectOpenAIChatReasoningRawBatch(output []json.RawMessage) (json.RawMessa
 				if part.Get("type").String() != "output_text" || part.Get("text").Type != gjson.String {
 					return nil, false
 				}
-				text.WriteString(part.Get("text").String())
+				_, _ = text.WriteString(part.Get("text").String())
 			}
 		case "function_call":
 			if namespace := gjson.GetBytes(raw, "namespace"); namespace.Exists() && namespace.Type != gjson.Null && namespace.String() != "" {

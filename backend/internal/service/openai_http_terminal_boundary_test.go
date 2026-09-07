@@ -68,7 +68,7 @@ func TestOpenAIHTTPTerminalDoesNotWaitForEOF(t *testing.T) {
 				c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 				terminal := strings.ReplaceAll(openAIHTTPTerminalCompletedFixture, "completed", status)
 				reader := newOpenAICompatBlockingReadCloser([]byte("event: response." + status + "\ndata: " + terminal + "\n\n"))
-				defer reader.Close()
+				defer func() { _ = reader.Close() }()
 				type outcome struct {
 					usage *OpenAIUsage
 					err   error
@@ -149,7 +149,7 @@ func TestOpenAIHTTPTerminalFailedKeepsAuthoritativeUsage(t *testing.T) {
 				"data: {\"type\":\"error\",\"error\":{\"code\":\"invalid_request_error\",\"message\":\"rejected\"}}\n\n" +
 				"data: {\"type\":\"response.failed\",\"response\":{\"id\":\"resp_failed\",\"status\":\"failed\",\"error\":{\"code\":\"invalid_request_error\",\"message\":\"rejected\"},\"usage\":{\"input_tokens\":9,\"output_tokens\":3}}}\n\n"
 			reader := newOpenAICompatBlockingReadCloser([]byte(body))
-			defer reader.Close()
+			defer func() { _ = reader.Close() }()
 			done := make(chan error, 1)
 			var usage *OpenAIUsage
 			go func() {
