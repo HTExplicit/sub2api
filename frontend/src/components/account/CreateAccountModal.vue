@@ -1228,6 +1228,14 @@
                   ]"
                   :placeholder="t('admin.accounts.actualModel')"
                 />
+                <ModelContextCapacityField
+                  :model-id="mapping.to"
+                  :row="capacityForTarget(mapping.to)"
+                  :draft="capacityDrafts[mapping.to]"
+                  @commit="commitCapacityTarget(mapping.to, $event)"
+                  @editing="setCapacityFieldEditing(mapping, $event)"
+                  @validity="setCapacityFieldValidity(mapping, $event)"
+                />
                 <button
                   type="button"
                   @click="removeAntigravityModelMapping(index)"
@@ -1417,6 +1425,10 @@
             <p v-if="cindyCreateCatalogLoading" class="mt-2 text-xs">{{ t('admin.accounts.cindyCatalogLoading') }}</p>
             <p v-else-if="cindyCreateCatalogLoadFailed" class="mt-2 text-xs text-red-600 dark:text-red-300">{{ t('admin.accounts.cindyCatalogLoadFailed') }}</p>
             <ModelWhitelistSelector
+              v-model:capacity-drafts="capacityDrafts"
+              :capacity-rows="capacityRows"
+              :sync-source-key="capacitySyncSourceKey"
+              @capacity-validity="setCapacityFieldValidity('selector', $event)"
               v-else
               class="mt-2"
               :model-value="[]"
@@ -1492,11 +1504,14 @@
             <!-- Whitelist Mode -->
             <div v-if="modelRestrictionMode === 'whitelist'">
               <ModelWhitelistSelector
+                v-model:capacity-drafts="capacityDrafts"
+                :capacity-rows="capacityRows"
+                :sync-source-key="capacitySyncSourceKey"
+                @capacity-validity="setCapacityFieldValidity('selector', $event)"
                 v-model="allowedModels"
                 :platform="form.platform"
                 :sync-credentials="syncPreviewCredentials"
                 :synced-models="capacitySyncedModels"
-                hide-sync
                 @upstream-synced="handleCapacityUpstreamSync"
               />
               <p class="text-xs text-gray-500 dark:text-gray-400">
@@ -1559,6 +1574,14 @@
                   type="text"
                   class="input flex-1"
                   :placeholder="t('admin.accounts.actualModel')"
+                />
+                <ModelContextCapacityField
+                  :model-id="mapping.to"
+                  :row="capacityForTarget(mapping.to)"
+                  :draft="capacityDrafts[mapping.to]"
+                  @commit="commitCapacityTarget(mapping.to, $event)"
+                  @editing="setCapacityFieldEditing(mapping, $event)"
+                  @validity="setCapacityFieldValidity(mapping, $event)"
                 />
                 <button
                   type="button"
@@ -1981,11 +2004,14 @@
           <!-- Whitelist Mode -->
           <div v-if="modelRestrictionMode === 'whitelist'">
             <ModelWhitelistSelector
+              v-model:capacity-drafts="capacityDrafts"
+              :capacity-rows="capacityRows"
+              :sync-source-key="capacitySyncSourceKey"
+              @capacity-validity="setCapacityFieldValidity('selector', $event)"
               v-model="allowedModels"
               platform="anthropic"
               :sync-credentials="syncPreviewCredentials"
               :synced-models="capacitySyncedModels"
-              hide-sync
               @upstream-synced="handleCapacityUpstreamSync"
             />
             <p class="text-xs text-gray-500 dark:text-gray-400">
@@ -1996,10 +2022,18 @@
 
           <!-- Mapping Mode -->
           <div v-else class="space-y-3">
-            <div v-for="(mapping, index) in modelMappings" :key="index" class="flex items-center gap-2">
+            <div v-for="(mapping, index) in modelMappings" :key="getModelMappingKey(mapping)" class="flex items-center gap-2">
               <input v-model="mapping.from" type="text" class="input flex-1" :placeholder="t('admin.accounts.fromModel')" />
               <span class="text-gray-400">→</span>
               <input v-model="mapping.to" type="text" class="input flex-1" :placeholder="t('admin.accounts.toModel')" />
+              <ModelContextCapacityField
+                :model-id="mapping.to"
+                :row="capacityForTarget(mapping.to)"
+                :draft="capacityDrafts[mapping.to]"
+                @commit="commitCapacityTarget(mapping.to, $event)"
+                @editing="setCapacityFieldEditing(mapping, $event)"
+                @validity="setCapacityFieldValidity(mapping, $event)"
+              />
               <button type="button" @click="modelMappings.splice(index, 1)" class="text-red-500 hover:text-red-700">
                 <Icon name="trash" size="sm" />
               </button>
@@ -2324,11 +2358,14 @@
           <!-- Whitelist Mode -->
           <div v-if="modelRestrictionMode === 'whitelist'">
             <ModelWhitelistSelector
+              v-model:capacity-drafts="capacityDrafts"
+              :capacity-rows="capacityRows"
+              :sync-source-key="capacitySyncSourceKey"
+              @capacity-validity="setCapacityFieldValidity('selector', $event)"
               v-model="allowedModels"
               :platform="form.platform"
               :sync-credentials="syncPreviewCredentials"
               :synced-models="capacitySyncedModels"
-              hide-sync
               @upstream-synced="handleCapacityUpstreamSync"
             />
             <p class="text-xs text-gray-500 dark:text-gray-400">
@@ -2377,6 +2414,14 @@
                   type="text"
                   class="input flex-1"
                   :placeholder="t('admin.accounts.actualModel')"
+                />
+                <ModelContextCapacityField
+                  :model-id="mapping.to"
+                  :row="capacityForTarget(mapping.to)"
+                  :draft="capacityDrafts[mapping.to]"
+                  @commit="commitCapacityTarget(mapping.to, $event)"
+                  @editing="setCapacityFieldEditing(mapping, $event)"
+                  @validity="setCapacityFieldValidity(mapping, $event)"
                 />
                 <button
                   type="button"
@@ -2987,17 +3032,6 @@
         <ProxySelector v-model="form.proxy_id" :proxies="proxies" />
       </div>
 
-      <ModelContextCapacityPanel
-        v-model="capacityDrafts"
-        :rows="capacityRows"
-        :loading="capacityLoading"
-        :error="capacityLoadFailed ? t('admin.accounts.contextCapacity.loadFailed') : undefined"
-        :can-sync="canCapacitySync"
-        :syncing="capacitySyncing"
-        :sync-disabled="!capacitySyncPreviewCredentials?.api_key.trim()"
-        @sync="syncCapacityModels"
-      />
-
       <UpstreamRequestIdHeaderField
         v-model="upstreamRequestIdHeader"
         :platform="form.platform"
@@ -3335,6 +3369,14 @@
               <input v-model="mapping.from" type="text" class="input flex-1" :placeholder="t('admin.accounts.fromModel')" />
               <span class="text-gray-400">→</span>
               <input v-model="mapping.to" type="text" class="input flex-1" :placeholder="t('admin.accounts.toModel')" />
+              <ModelContextCapacityField
+                :model-id="mapping.to"
+                :row="capacityForTarget(mapping.to)"
+                :draft="capacityDrafts[mapping.to]"
+                @commit="commitCapacityTarget(mapping.to, $event)"
+                @editing="setCapacityFieldEditing(mapping, $event)"
+                @validity="setCapacityFieldValidity(mapping, $event)"
+              />
               <button type="button" @click="removeOpenAICompactModelMapping(index)" class="text-red-500 hover:text-red-700">
                 <Icon name="trash" size="sm" />
               </button>
@@ -3928,7 +3970,7 @@ import ProxySelector from '@/components/common/ProxySelector.vue'
 import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
-import ModelContextCapacityPanel from '@/components/account/ModelContextCapacityPanel.vue'
+import ModelContextCapacityField from '@/components/account/ModelContextCapacityField.vue'
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import OpenAIReasoningPolicyFields from './OpenAIReasoningPolicyFields.vue'
@@ -5007,13 +5049,13 @@ const {
   rows: capacityRows,
   drafts: capacityDrafts,
   syncedModels: capacitySyncedModels,
-  loading: capacityLoading,
-  syncing: capacitySyncing,
+  syncSourceKey: capacitySyncSourceKey,
   loadFailed: capacityLoadFailed,
   valid: capacityValid,
   ready: capacityReady,
   acceptSync: acceptCapacitySync,
-  synchronize: synchronizeCapacity,
+  setFieldValidity: setCapacityFieldValidity,
+  setFieldEditing: setCapacityFieldEditing,
   reset: resetCapacityState,
   buildPatch: buildCapacityPatch
 } = useModelContextCapacities({
@@ -5038,6 +5080,7 @@ const {
       model_mapping: mappings ?? {},
       model_ids: [...new Set([
         ...getModelsByPlatform(form.platform), ...allowedModels.value,
+        ...openAICompactModelMappings.value.map(mapping => mapping.to),
         ...cindyCreateCatalog.value.map(model => model.id)
       ])]
     }
@@ -5049,37 +5092,12 @@ const handleCapacityUpstreamSync = (result?: SyncUpstreamModelsResult) => {
   acceptCapacitySync(result)
 }
 
-const canCapacitySync = computed(() => form.type === 'apikey' && form.platform !== 'cindy' && !isCindyOpenAIAccount.value)
-const capacitySyncPreviewCredentials = computed(() => {
-  if (form.platform === 'antigravity') {
-    return {
-      platform: form.platform,
-      type: 'apikey',
-      base_url: upstreamBaseUrl.value.trim(),
-      api_key: upstreamApiKey.value,
-      model_mapping: buildModelMappingObject('mapping', [], antigravityModelMappings.value) ?? {}
-    }
-  }
-  return syncPreviewCredentials.value
-})
-
-const syncCapacityModels = async () => {
-  const credentials = capacitySyncPreviewCredentials.value
-  if (!canCapacitySync.value || !credentials?.api_key.trim()) return
-  try {
-    const result = await synchronizeCapacity(() => adminAPI.accounts.syncUpstreamModelsPreview(credentials))
-    if (!result) return
-    upstreamModelsPreviewed.value = true
-    if (result.warnings?.some(warning => warning.code === 'upstream_model_metadata_incomplete')) {
-      appStore.showWarning(t('admin.accounts.syncUpstreamModelsMetadataIncomplete'))
-    } else if (result.warnings?.some(warning => warning.code === 'upstream_model_metadata_partial')) {
-      appStore.showWarning(t('admin.accounts.syncUpstreamModelsMetadataPartial'))
-    } else {
-      appStore.showSuccess(t('admin.accounts.contextCapacity.syncSuccess', { count: result.models.length }))
-    }
-  } catch {
-    appStore.showError(t('admin.accounts.syncUpstreamModelsFailed'))
-  }
+// Mapping targets are already real upstream IDs, even when the same string is
+// also another row's public alias. Never resolve these fields through aliases.
+const capacityForTarget = (modelID: string) => capacityRows.value.find(row => row.upstream_model_id === modelID)
+const commitCapacityTarget = (modelID: string, value: string) => {
+  const row = capacityForTarget(modelID)
+  if (row?.editable) capacityDrafts.value = { ...capacityDrafts.value, [row.upstream_model_id]: value }
 }
 
 // Model mapping helpers

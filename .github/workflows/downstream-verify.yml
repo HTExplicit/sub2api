@@ -139,7 +139,7 @@ jobs:
             src/utils/__tests__/openaiReasoningPolicy.spec.ts \
             src/components/account/__tests__/EditAccountModal.spec.ts \
             src/components/account/__tests__/ModelWhitelistSelector.spec.ts \
-            src/components/account/__tests__/ModelContextCapacityPanel.spec.ts \
+            src/components/account/__tests__/ModelContextCapacityField.spec.ts \
             src/utils/__tests__/modelContextCapacity.spec.ts \
             src/composables/__tests__/useModelContextCapacities.spec.ts \
             src/api/__tests__/admin.accounts.contextCapacity.spec.ts \

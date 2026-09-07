@@ -1,4 +1,4 @@
-import { defineComponent } from 'vue'
+import { defineComponent, type PropType } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -82,6 +82,8 @@ vi.mock('vue-i18n', async () => {
 })
 
 import CreateAccountModal from '../CreateAccountModal.vue'
+import ModelContextCapacityField from '../ModelContextCapacityField.vue'
+import type { ModelContextCapacityRow, SyncUpstreamModelsResult } from '@/api/admin/accounts'
 
 const BaseDialogStub = defineComponent({
   name: 'BaseDialog',
@@ -146,22 +148,65 @@ const GroupSelectorStub = defineComponent({
 
 const ModelWhitelistSelectorStub = defineComponent({
   name: 'ModelWhitelistSelector',
+  components: { ModelContextCapacityField },
   props: {
     modelValue: {
-      type: Array,
+      type: Array as PropType<string[]>,
       default: () => [],
     },
     platform: String,
     syncCredentials: Object,
     models: Array,
-	readonly: Boolean,
-	},
-	emits: ['update:modelValue', 'upstream-synced'],
-	template: `<button
-	  type="button"
-	  data-testid="model-whitelist-selector"
-	  @click="$emit('update:modelValue', ['public-glm']); $emit('upstream-synced')"
-	>{{ models?.map((model) => model.id).join(',') || 'models' }}</button>`,
+    readonly: Boolean,
+    hideSync: Boolean,
+    capacityRows: { type: Array as PropType<ModelContextCapacityRow[]>, default: () => [] },
+    capacityDrafts: { type: Object as PropType<Record<string, string>>, default: () => ({}) },
+    syncedModels: Object as PropType<SyncUpstreamModelsResult>,
+  },
+  emits: ['update:modelValue', 'upstream-synced', 'update:capacityDrafts', 'capacity-validity'],
+  data: () => ({
+    capacityEditing: {} as Record<string, boolean>,
+    capacityValidity: {} as Record<string, boolean>,
+  }),
+  methods: {
+    capacityRow(modelID: string): ModelContextCapacityRow | undefined {
+      const direct = this.capacityRows.find(row => row.upstream_model_id === modelID)
+      if (direct) return direct
+      const aliases = this.capacityRows.filter(row => row.aliases.includes(modelID))
+      return aliases.length === 1 ? aliases[0] : undefined
+    },
+    commitCapacity(modelID: string, draft: string) {
+      const upstreamID = this.capacityRow(modelID)?.upstream_model_id ?? modelID
+      this.$emit('update:capacityDrafts', { ...this.capacityDrafts, [upstreamID]: draft })
+    },
+    updateCapacityState(modelID: string, kind: 'editing' | 'validity', value: boolean) {
+      if (kind === 'editing') this.capacityEditing[modelID] = value
+      else this.capacityValidity[modelID] = value
+      this.$emit('capacity-validity',
+        !Object.values(this.capacityEditing).some(Boolean) &&
+        Object.values(this.capacityValidity).every(Boolean))
+    },
+  },
+  template: `
+    <div>
+      <button
+        type="button"
+        data-testid="model-whitelist-selector"
+        @click="$emit('update:modelValue', ['public-glm']); $emit('upstream-synced')"
+      >{{ models?.map((model) => model.id).join(',') || 'models' }}</button>
+      <template v-for="modelID in modelValue" :key="modelID">
+        <ModelContextCapacityField
+          v-if="capacityRow(modelID)"
+          :model-id="capacityRow(modelID).upstream_model_id"
+          :row="capacityRow(modelID)"
+          :draft="capacityDrafts[capacityRow(modelID).upstream_model_id]"
+          @commit="commitCapacity(modelID, $event)"
+          @editing="updateCapacityState(modelID, 'editing', $event)"
+          @validity="updateCapacityState(modelID, 'validity', $event)"
+        />
+      </template>
+    </div>
+  `,
 })
 
 function mountModal(groups: any[] = []) {
@@ -189,6 +234,50 @@ async function selectButtonByText(wrapper: ReturnType<typeof mountModal>, text: 
   const button = wrapper.findAll('button').find((candidate) => candidate.text().includes(text))
   expect(button).toBeDefined()
   await button?.trigger('click')
+}
+
+function buildCapacityRow(
+  modelID = 'gpt-5.6-sol',
+  values: Partial<ModelContextCapacityRow> = {}
+): ModelContextCapacityRow {
+  return {
+    upstream_model_id: modelID,
+    aliases: [],
+    editable: true,
+    automatic_context_window: 1_050_000,
+    automatic_source: 'official',
+    effective_context_window: 1_050_000,
+    effective_source: 'official',
+    capacity_basis: 'total_context',
+    ...values,
+  }
+}
+
+async function mountCapacityModal(rows: ModelContextCapacityRow[]) {
+  previewModelContextCapacitiesMock.mockResolvedValue({ capacity_rows: rows })
+  const wrapper = mountModal()
+  await selectButtonByText(wrapper, 'OpenAI')
+  await selectButtonByText(wrapper, 'API Key')
+  await wrapper.get('form#create-account-form input[type="text"]').setValue('capacity account')
+  await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
+  await vi.waitFor(() => {
+    expect(wrapper.getComponent(ModelWhitelistSelectorStub).props('capacityRows')).toEqual(rows)
+  })
+  return wrapper
+}
+
+function capacityField(wrapper: ReturnType<typeof mountModal>, modelID = 'gpt-5.6-sol') {
+  const field = wrapper.findAllComponents(ModelContextCapacityField)
+    .find(candidate => candidate.props('modelId') === modelID)
+  expect(field).toBeDefined()
+  return field!
+}
+
+async function commitCapacity(wrapper: ReturnType<typeof mountModal>, value: string, modelID = 'gpt-5.6-sol') {
+  const field = capacityField(wrapper, modelID)
+  await field.get('[data-testid="context-capacity-edit"]').trigger('click')
+  await field.get('[data-testid="context-capacity-input"]').setValue(value)
+  await field.get('[data-testid="context-capacity-input"]').trigger('keydown', { key: 'Enter' })
 }
 
 async function submitApiKeyAccount(
@@ -244,84 +333,201 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     previewModelContextCapacitiesMock.mockReset().mockResolvedValue({ capacity_rows: [] })
   })
 
-  it('keeps a precise capacity draft outside restriction modes and saves only a typed override', async () => {
-    previewModelContextCapacitiesMock.mockResolvedValue({ capacity_rows: [{
-      upstream_model_id: 'gpt-5.6-sol', aliases: ['public-sol'], editable: true,
-      automatic_context_window: 1_050_000, automatic_source: 'official',
-      effective_context_window: 1_050_000, effective_source: 'official', capacity_basis: 'total_context'
-    }] })
-    const wrapper = mountModal()
-    await selectButtonByText(wrapper, 'OpenAI')
-    await selectButtonByText(wrapper, 'API Key')
-    await flushPromises()
-    const inputSelector = '[data-model-id="gpt-5.6-sol"] [data-testid="context-capacity-input"]'
-    await wrapper.get(inputSelector).setValue('1.025M')
-    await selectButtonByText(wrapper, 'admin.accounts.modelMapping')
-    expect(wrapper.get(inputSelector).element).toHaveProperty('value', '1.025M')
-    await selectButtonByText(wrapper, 'admin.accounts.modelWhitelist')
-    expect(wrapper.get(inputSelector).element).toHaveProperty('value', '1.025M')
-    await wrapper.get('form#create-account-form input[type="text"]').setValue('capacity account')
-    await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
+  it('commits an exact inline capacity without changing the whitelist or its credential mapping', async () => {
+    const wrapper = await mountCapacityModal([buildCapacityRow()])
+    const selector = wrapper.getComponent(ModelWhitelistSelectorStub)
+    const selection = [...selector.props('modelValue')]
+    const field = capacityField(wrapper)
+    expect(selector.props('hideSync')).toBe(false)
+    expect(wrapper.find('[data-testid="model-context-capacity-panel"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="context-capacity-sync"]').exists()).toBe(false)
+    expect(field.get('[data-testid="context-capacity-source"]').text()).toContain('official')
+
+    await field.get('[data-testid="context-capacity-edit"]').trigger('click')
+    await field.get('[data-testid="context-capacity-input"]').setValue('1.025M')
+    expect(selector.props('capacityDrafts')).toEqual({})
+    expect(selector.props('modelValue')).toEqual(selection)
+    await field.get('[data-testid="context-capacity-input"]').trigger('keydown', { key: 'Enter' })
+    expect(selector.props('capacityDrafts')).toEqual({ 'gpt-5.6-sol': '1.025M' })
+    expect(field.get('[data-testid="context-capacity-source"]').text()).toContain('custom')
+    expect(selector.props('modelValue')).toEqual(selection)
+
     await vi.waitFor(() => expect(wrapper.get('[data-tour="account-form-submit"]').attributes('disabled')).toBeUndefined())
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
     await flushPromises()
-    expect(createAccountMock.mock.calls[0]?.[0]?.model_context_overrides).toEqual({ 'gpt-5.6-sol': 1_025_000 })
-    expect(createAccountMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty('model_context_overrides')
-    expect(previewModelContextCapacitiesMock.mock.calls.every(([payload]) => !('api_key' in payload))).toBe(true)
+    const payload = createAccountMock.mock.calls[0]?.[0]
+    expect(payload.model_context_overrides).toEqual({ 'gpt-5.6-sol': 1_025_000 })
+    expect(payload.credentials.model_mapping).toEqual(Object.fromEntries(selection.map(modelID => [modelID, modelID])))
+    expect(payload.extra).not.toHaveProperty('model_context_overrides')
+    expect(previewModelContextCapacitiesMock.mock.calls.every(([params]) => !('api_key' in params))).toBe(true)
     wrapper.unmount()
   })
 
-  it('adds full synced capacity rows without coupling capacity edits to selection and blocks invalid saves', async () => {
-    const wrapper = mountModal()
-    await selectButtonByText(wrapper, 'OpenAI')
-    await selectButtonByText(wrapper, 'API Key')
-    await flushPromises()
-    wrapper.findComponent(ModelWhitelistSelectorStub).vm.$emit('upstream-synced', {
-      models: ['brand-new-model'],
-      capacity_rows: [{ upstream_model_id: 'brand-new-model', aliases: [], editable: true,
-        automatic_context_window: 400_000, automatic_source: 'upstream',
-        effective_context_window: 400_000, effective_source: 'upstream', capacity_basis: 'total_context',
-        upstream: { context_window: 400_000, observed_at: '2026-09-07T00:00:00Z' } }]
-    })
-    await flushPromises()
-    const modelSelection = wrapper.findComponent(ModelWhitelistSelectorStub).props('modelValue')
-    await wrapper.get('[data-model-id="brand-new-model"] input').setValue('1.01')
-    expect(wrapper.findComponent(ModelWhitelistSelectorStub).props('modelValue')).toEqual(modelSelection)
+  it('blocks invalid and unconfirmed inline capacity edits, cancels on Escape and confirms on valid blur', async () => {
+    const wrapper = await mountCapacityModal([buildCapacityRow()])
+    const selector = wrapper.getComponent(ModelWhitelistSelectorStub)
+    const selection = [...selector.props('modelValue')]
+    const field = capacityField(wrapper)
+    await field.get('[data-testid="context-capacity-edit"]').trigger('click')
+    const input = field.get('[data-testid="context-capacity-input"]')
+    await input.setValue('1.01')
+    await input.trigger('keydown', { key: 'Enter' })
+    expect(input.attributes('aria-invalid')).toBe('true')
     expect(wrapper.get('[data-tour="account-form-submit"]').attributes('disabled')).toBeDefined()
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
     expect(createAccountMock).not.toHaveBeenCalled()
-    await selectButtonByText(wrapper, 'common.cancel')
-    expect(createAccountMock).not.toHaveBeenCalled()
-    wrapper.unmount()
-  })
 
-  it('syncs capacities from mapping mode without touching restrictions and persists the create preview after save', async () => {
-    const row = { upstream_model_id: 'dynamic-capacity-model', aliases: [], editable: true,
-      automatic_context_window: 600_000, automatic_source: 'upstream',
-      effective_context_window: 600_000, effective_source: 'upstream', capacity_basis: 'total_context',
-      upstream: { context_window: 600_000, observed_at: '2026-09-07T00:00:00Z' } }
-    syncUpstreamModelsPreviewMock.mockResolvedValue({ models: ['dynamic-capacity-model'], capacity_rows: [row] })
-    previewModelContextCapacitiesMock.mockResolvedValue({ capacity_rows: [row] })
-    const wrapper = mountModal()
-    await selectButtonByText(wrapper, 'OpenAI')
-    await selectButtonByText(wrapper, 'API Key')
-    await wrapper.get('form#create-account-form input[type="text"]').setValue('shared sync')
-    await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
-    await selectButtonByText(wrapper, 'admin.accounts.modelMapping')
-    await flushPromises()
-    const mappingInputs = wrapper.findAll('input').filter(input => input.attributes('placeholder')?.includes('model'))
-    const previousMappings = mappingInputs.map(input => (input.element as HTMLInputElement).value)
-    await wrapper.get('[data-testid="context-capacity-sync"]').trigger('click')
-    await flushPromises()
-    expect(syncUpstreamModelsPreviewMock).toHaveBeenCalledTimes(1)
-    expect(syncUpstreamModelsPreviewMock.mock.calls[0][0]).toMatchObject({ platform: 'openai', type: 'apikey', api_key: 'test-api-key' })
-    expect(mappingInputs.map(input => (input.element as HTMLInputElement).value)).toEqual(previousMappings)
-    await wrapper.get('[data-model-id="dynamic-capacity-model"] input').setValue('700K')
+    await input.setValue('700K')
+    expect(wrapper.get('[data-tour="account-form-submit"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    expect(createAccountMock).not.toHaveBeenCalled()
+    expect(selector.props('capacityDrafts')).toEqual({})
+    await input.trigger('keydown', { key: 'Escape' })
+    expect(field.find('[data-testid="context-capacity-input"]').exists()).toBe(false)
+    expect(selector.props('capacityDrafts')).toEqual({})
+    expect(selector.props('modelValue')).toEqual(selection)
+
+    await field.get('[data-testid="context-capacity-edit"]').trigger('click')
+    await field.get('[data-testid="context-capacity-input"]').setValue('700K')
+    await field.get('[data-testid="context-capacity-input"]').trigger('blur')
     await vi.waitFor(() => expect(wrapper.get('[data-tour="account-form-submit"]').attributes('disabled')).toBeUndefined())
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
     await flushPromises()
-    expect(createAccountMock.mock.calls[0]?.[0]?.model_context_overrides).toEqual({ 'dynamic-capacity-model': 700_000 })
+    expect(createAccountMock.mock.calls[0]?.[0]?.model_context_overrides).toEqual({ 'gpt-5.6-sol': 700_000 })
+    wrapper.unmount()
+  })
+
+  it('retains a confirmed capacity across whitelist and mapping modes, then resets it on modal cancel', async () => {
+    const row = buildCapacityRow()
+    const wrapper = await mountCapacityModal([row])
+    await commitCapacity(wrapper, '1.025M')
+    await selectButtonByText(wrapper, 'admin.accounts.modelMapping')
+    await selectButtonByText(wrapper, 'admin.accounts.addMapping')
+    await wrapper.get('input[placeholder="admin.accounts.requestModel"]').setValue('public-sol')
+    await wrapper.get('input[placeholder="admin.accounts.actualModel"]').setValue('gpt-5.6-sol')
+    expect(capacityField(wrapper).props('draft')).toBe('1.025M')
+    await selectButtonByText(wrapper, 'admin.accounts.modelWhitelist')
+    expect(wrapper.getComponent(ModelWhitelistSelectorStub).props('capacityDrafts')).toEqual({ 'gpt-5.6-sol': '1.025M' })
+    expect(capacityField(wrapper).props('draft')).toBe('1.025M')
+
+    await selectButtonByText(wrapper, 'common.cancel')
+    expect(createAccountMock).not.toHaveBeenCalled()
+    await wrapper.setProps({ show: false })
+    await wrapper.setProps({ show: true })
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'API Key')
+    await vi.waitFor(() => expect(wrapper.getComponent(ModelWhitelistSelectorStub).props('capacityRows')).toEqual([row]))
+    expect(wrapper.getComponent(ModelWhitelistSelectorStub).props('capacityDrafts')).toEqual({})
+    expect(capacityField(wrapper).props('draft')).toBeUndefined()
+    expect(capacityField(wrapper).get('[data-testid="context-capacity-source"]').text()).toContain('official')
+    wrapper.unmount()
+  })
+
+  it('owns mapping capacity by its exact target ID even when an earlier row advertises that target as an alias', async () => {
+    const decoy = buildCapacityRow('other-upstream-model', {
+      aliases: ['gpt-5.6-sol', 'alias-only-target'],
+      automatic_context_window: 900_000,
+      effective_context_window: 900_000,
+    })
+    const targetRow = buildCapacityRow('gpt-5.6-sol', {
+      aliases: ['public-sol'],
+      automatic_context_window: 400_000,
+      effective_context_window: 400_000,
+    })
+    const wrapper = await mountCapacityModal([decoy, targetRow])
+    await selectButtonByText(wrapper, 'admin.accounts.modelMapping')
+    await selectButtonByText(wrapper, 'admin.accounts.addMapping')
+    const requestInput = wrapper.get<HTMLInputElement>('input[placeholder="admin.accounts.requestModel"]')
+    const targetInput = wrapper.get<HTMLInputElement>('input[placeholder="admin.accounts.actualModel"]')
+    await requestInput.setValue('public-sol')
+    await targetInput.setValue('gpt-5.6-sol')
+    expect(capacityField(wrapper).props('row')).toEqual(targetRow)
+    await targetInput.setValue('alias-only-target')
+    expect(capacityField(wrapper, 'alias-only-target').props('row')).toBeUndefined()
+    await targetInput.setValue('gpt-5.6-sol')
+    await commitCapacity(wrapper, '750K')
+    expect(requestInput.element.value).toBe('public-sol')
+    expect(targetInput.element.value).toBe('gpt-5.6-sol')
+    await vi.waitFor(() => expect(wrapper.get('[data-tour="account-form-submit"]').attributes('disabled')).toBeUndefined())
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+    const payload = createAccountMock.mock.calls[0]?.[0]
+    expect(payload.credentials.model_mapping).toEqual({ 'public-sol': 'gpt-5.6-sol' })
+    expect(payload.model_context_overrides).toEqual({ 'gpt-5.6-sol': 750_000 })
+    wrapper.unmount()
+  })
+
+  it('reprojects selector synchronization without changing selection and persists its preview after create', async () => {
+    const row = buildCapacityRow('gpt-5.6-sol', {
+      aliases: ['current-projection'],
+      automatic_context_window: 258_000,
+      automatic_source: 'default',
+      effective_context_window: 258_000,
+      effective_source: 'default',
+    })
+    const observation = buildCapacityRow('gpt-5.6-sol', {
+      aliases: ['stale-synced-alias'],
+      automatic_context_window: 600_000,
+      automatic_source: 'upstream',
+      effective_context_window: 600_000,
+      effective_source: 'upstream',
+      upstream: { context_window: 600_000, observed_at: '2026-09-07T00:00:00Z' },
+    })
+    const result = { models: ['gpt-5.6-sol', 'dynamic-model'], capacity_rows: [observation] }
+    const wrapper = await mountCapacityModal([row])
+    const selector = wrapper.getComponent(ModelWhitelistSelectorStub)
+    const selection = [...selector.props('modelValue')]
+    const previewCount = previewModelContextCapacitiesMock.mock.calls.length
+    selector.vm.$emit('upstream-synced', result)
+    await vi.waitFor(() => expect(previewModelContextCapacitiesMock.mock.calls.length).toBeGreaterThan(previewCount))
+    await flushPromises()
+    expect(selector.props('modelValue')).toEqual(selection)
+    expect(selector.props('syncedModels')).toEqual(result)
+    expect(capacityField(wrapper).props('row')).toMatchObject({
+      aliases: ['current-projection'],
+      automatic_source: 'upstream',
+      effective_context_window: 600_000,
+      upstream: observation.upstream,
+    })
+    expect(previewModelContextCapacitiesMock.mock.lastCall?.[0]).toMatchObject({
+      model_ids: expect.arrayContaining(['dynamic-model']),
+      model_mapping: Object.fromEntries(selection.map(modelID => [modelID, modelID])),
+    })
+    await commitCapacity(wrapper, '700K')
+    await vi.waitFor(() => expect(wrapper.get('[data-tour="account-form-submit"]').attributes('disabled')).toBeUndefined())
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(createAccountMock.mock.calls[0]?.[0]?.model_context_overrides).toEqual({ 'gpt-5.6-sol': 700_000 })
     expect(syncUpstreamModelsMock).toHaveBeenCalledWith(42)
+    wrapper.unmount()
+  })
+
+  it('keeps a confirmed capacity draft but drops upstream evidence after the endpoint changes', async () => {
+    const row = buildCapacityRow('gpt-5.6-sol', {
+      automatic_context_window: 258_000,
+      automatic_source: 'default',
+      effective_context_window: 258_000,
+      effective_source: 'default',
+    })
+    const observation = buildCapacityRow('gpt-5.6-sol', {
+      automatic_context_window: 600_000,
+      automatic_source: 'upstream',
+      effective_context_window: 600_000,
+      effective_source: 'upstream',
+      upstream: { context_window: 600_000, observed_at: '2026-09-07T00:00:00Z' },
+    })
+    const wrapper = await mountCapacityModal([row])
+    const selector = wrapper.getComponent(ModelWhitelistSelectorStub)
+    selector.vm.$emit('upstream-synced', { models: ['gpt-5.6-sol'], capacity_rows: [observation] })
+    await flushPromises()
+    await commitCapacity(wrapper, '700K')
+    await wrapper.get('input[placeholder="https://api.openai.com"]').setValue('https://new-provider.example/v1')
+    await vi.waitFor(() => expect(selector.props('capacityRows')).toEqual([row]))
+    expect(selector.props('syncedModels')).toBeUndefined()
+    expect(selector.props('capacityDrafts')).toEqual({ 'gpt-5.6-sol': '700K' })
+    expect(capacityField(wrapper).props('row')).not.toHaveProperty('upstream')
+    expect(previewModelContextCapacitiesMock.mock.lastCall?.[0]?.base_url).toBe('https://new-provider.example/v1')
+    expect(createAccountMock).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
