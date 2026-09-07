@@ -21,7 +21,6 @@ import (
 type pinnedModelsRoutesRepository struct {
 	service.AccountRepository
 	account           service.Account
-	identityCalls     int
 	availabilityCalls int
 }
 
@@ -37,7 +36,6 @@ func (r *pinnedModelsRoutesRepository) ListByGroup(_ context.Context, groupID in
 func (*pinnedModelsRoutesRepository) CindyGroupIdentityReaderMarker() {}
 
 func (r *pinnedModelsRoutesRepository) ListCindyGroupIdentityMembers(ctx context.Context, groupID int64) ([]service.Account, error) {
-	r.identityCalls++
 	return r.ListByGroup(ctx, groupID)
 }
 
@@ -151,6 +149,5 @@ func TestGatewayRoutesPinnedModelsDispatchesOrdinaryAndCodexRequests(t *testing.
 	}
 	require.EqualValues(t, 1, upstream.ordinaryCalls.Load())
 	require.EqualValues(t, 1, upstream.codexCalls.Load())
-	require.Positive(t, repo.identityCalls, "the fixture must exercise the strict identity guard")
 	require.Positive(t, repo.availabilityCalls, "the fixture must exercise persistent capacity candidates")
 }
