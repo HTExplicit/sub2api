@@ -288,9 +288,8 @@ func TestCodexCapacityProjectionProvenanceCloneAndCacheBudget(t *testing.T) {
 	raw := []byte(`{"models":[{"slug":"unlisted","context_window":410000}]}`)
 	manifest := &CodexModelsManifest{Body: append([]byte(nil), raw...), upstreamSourceBody: append([]byte(nil), raw...),
 		capacityProtectedModels: map[string]bool{"protected": true}, capacitySources: []codexModelCapacitySource{newCodexModelCapacitySource(&account, raw)}}
-	cloned := cloneCodexModelsManifest(manifest)
 	manifest.capacitySources[0].visibleModels = map[string]bool{"protected": true}
-	cloned = cloneCodexModelsManifest(manifest)
+	cloned := cloneCodexModelsManifest(manifest)
 	cloned.Body[0], cloned.upstreamSourceBody[0], cloned.capacitySources[0].body[0] = 'x', 'y', 'z'
 	delete(cloned.capacityProtectedModels, "protected")
 	delete(cloned.capacitySources[0].visibleModels, "protected")
