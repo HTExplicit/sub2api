@@ -66,6 +66,16 @@ class UpstreamAutomationContractTest(unittest.TestCase):
         self.assertIn('"downstream-release.yml"', self.promoter)
         self.assertIn("workflow_dispatch:", self.publisher)
 
+    def test_reviewed_manual_release_does_not_trigger_auto_handoff_or_false_failure(self):
+        self.assertIn('if [[ "$risk" == review_required ]]; then', self.handoff)
+        manual_branch = self.handoff.split('if [[ "$risk" == review_required ]]; then', 1)[1].split("fi", 1)[0]
+        self.assertIn("echo 'eligible=false'", manual_branch)
+        self.assertIn("exit 0", manual_branch)
+        self.assertNotIn("gh workflow", manual_branch)
+        self.assertIn('[[ "$risk" == safe ]]', self.handoff)
+        self.assertIn("echo 'eligible=true'", self.handoff)
+        self.assertIn("if: steps.candidate.outputs.eligible == 'true'", self.handoff)
+
     def test_candidate_review_and_repository_contract(self):
         pr = {"head": {"repo": {"full_name": "HTExplicit/sub2api"}, "ref": "sync/upstream-0.2.1"},
               "base": {"ref": "main"}, "labels": []}

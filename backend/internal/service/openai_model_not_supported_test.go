@@ -200,7 +200,7 @@ func TestOpenAIModelNotSupportedIsCindyOnlyForHTTPFailover(t *testing.T) {
 		Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"},
 	}
 
-	require.False(t, svc.shouldFailoverOpenAIUpstreamResponse(http.StatusBadRequest, "", []byte(cindyModelNotSupportedBody)))
+	require.False(t, svc.shouldFailoverOpenAIUpstreamResponse(nil, http.StatusBadRequest, "", []byte(cindyModelNotSupportedBody)))
 	require.False(t, svc.shouldFailoverOpenAIUpstreamResponseForAccount(ordinary, http.StatusBadRequest, "", []byte(cindyModelNotSupportedBody)))
 	require.True(t, svc.shouldFailoverOpenAIUpstreamResponseForAccount(legacyLaxa, http.StatusBadRequest, "", []byte(cindyModelNotSupportedBody)))
 }

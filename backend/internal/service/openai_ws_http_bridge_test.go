@@ -872,8 +872,25 @@ func TestProxyOpenAIWSHTTPBridgeTurnHTTPStatusFailoverSafety(t *testing.T) {
 
 func TestProxyOpenAIWSHTTPBridgeTurnRetriesRejectedFieldBeforeClientOutput(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	for _, tt := range []struct {
+		name      string
+		ownerID   int64
+		wantState string
+	}{
+		{name: "bridge_owned_state", ownerID: 91, wantState: "owned-turn-state"},
+		{name: "different_account_state", ownerID: 92},
+		{name: "unproven_state"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			testProxyOpenAIWSHTTPBridgeRejectedFieldRetryState(t, tt.ownerID, tt.wantState)
+		})
+	}
+}
 
-	upstream := &httpUpstreamSequenceRecorder{responses: []*http.Response{
+func testProxyOpenAIWSHTTPBridgeRejectedFieldRetryState(t *testing.T, ownerID int64, wantState string) {
+	t.Helper()
+
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
 		{
 			StatusCode: http.StatusBadRequest,
 			Header:     make(http.Header),
@@ -894,22 +911,27 @@ func TestProxyOpenAIWSHTTPBridgeTurnRetriesRejectedFieldBeforeClientOutput(t *te
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
+	c.Request.Header.Set(openAIWSTurnStateHeader, "untrusted-client-state")
 	payload := []byte(`{"type":"response.create","model":"gpt-5","input":"hi","truncation":"auto"}`)
 	var writes [][]byte
 
 	result, err := svc.proxyOpenAIWSHTTPBridgeTurn(
 		context.Background(), c, account, "sk-test", payload, len(payload),
-		"gpt-5", "", "", "", "", 1,
+		"gpt-5", "", "", "", "", 2,
 		func(message []byte) error {
 			writes = append(writes, append([]byte(nil), message...))
 			return nil
 		},
+		openAIWSHTTPBridgeTurnState{accountID: ownerID, value: "owned-turn-state"},
 	)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, 2, upstream.callCount)
+	require.Len(t, upstream.requests, 2)
 	require.Len(t, upstream.bodies, 2)
+	for _, request := range upstream.requests {
+		require.Equal(t, wantState, request.Header.Get(openAIWSTurnStateHeader), "rebuilt requests must retain only the same bridge/account's proven state")
+	}
 	require.True(t, gjson.GetBytes(upstream.bodies[0], "truncation").Exists())
 	require.False(t, gjson.GetBytes(upstream.bodies[1], "truncation").Exists())
 	require.Len(t, writes, 1)

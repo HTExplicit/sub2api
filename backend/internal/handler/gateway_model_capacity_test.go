@@ -30,7 +30,7 @@ func (r *gatewayCapacityRepo) ListModelAvailabilityCandidates(ctx context.Contex
 
 func TestGatewayModelsContextCapacityPreservesShapeAliasesAndOrder(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	group := &service.Group{ID: 991, Platform: service.PlatformOpenAI, ModelsListConfig: service.GroupModelsListConfig{Enabled: true, Models: []string{"alias-b", "alias-a"}}}
+	group := &service.Group{ID: 991, Platform: service.PlatformOpenAI, ModelAllowlist: service.GroupModelAllowlist{Enabled: true, Models: []string{"alias-b", "alias-a"}}}
 	account := service.Account{ID: 1, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
 		Credentials: map[string]any{"base_url": "https://capacity.example/v1", "model_mapping": map[string]any{"alias-a": "native-model", "alias-b": "native-model"}},
 		Extra:       map[string]any{service.ModelContextOverridesExtraKey: map[string]int64{"native-model": 650001}},

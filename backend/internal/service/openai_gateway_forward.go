@@ -398,12 +398,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		return nil, errors.New("image generation disabled for group")
 	}
 
-	instructions := gjson.GetBytes(body, "instructions")
-	instructionsEmpty := !instructions.Exists() || instructions.Type != gjson.String || strings.TrimSpace(instructions.String()) == ""
-	if instructionsEmpty && account.UsesOpenAICodexProtocol() && !compatMessagesBridge && !nativeCNResponses {
-		markPatchSet("instructions", defaultCodexSynthInstructions(reqModel))
-	}
-
 	isCompactRequest := compactPath
 	requestedModel := reqModel
 	billingModel, upstreamModel := resolveOpenAIForwardMappedModels(account, requestedModel, isCompactRequest)
@@ -421,6 +415,11 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 	if account.IsOpenAIApiKey() {
 		upstreamModel = normalizeOpenAIModelForUpstream(account, upstreamModel)
+	}
+	instructions := gjson.GetBytes(body, "instructions")
+	instructionsEmpty := !instructions.Exists() || instructions.Type != gjson.String || strings.TrimSpace(instructions.String()) == ""
+	if instructionsEmpty && account.UsesOpenAICodexProtocol() && !compatMessagesBridge && !nativeCNResponses {
+		markPatchSet("instructions", defaultCodexSynthInstructions(upstreamModel))
 	}
 	if billingModel != requestedModel {
 		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Model mapping applied: %s -> %s (account: %s, isCodexCLI: %v)", requestedModel, billingModel, account.Name, isCodexCLI)
@@ -685,10 +684,12 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if decodeErr != nil {
 			return nil, decodeErr
 		}
-		if input, ok := decoded["input"].([]any); ok {
-			if err := validateOpenAIResponsesToolOutputs(input, requestedPreviousResponseID != ""); err != nil {
-				return nil, err
-			}
+		if input, ok := decoded["input"].([]any); ok && sanitizeOpenAIResponsesOrphanToolOutputs(
+			decoded,
+			input,
+			strings.TrimSpace(firstNonEmptyString(decoded["previous_response_id"])) != "",
+		) {
+			markDecodedModified()
 		}
 	}
 	if reqBody != nil || openAIResponsesInputMayNeedTruncation(body) {
@@ -721,6 +722,20 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				return nil, fmt.Errorf("serialize request body: %w", marshalErr)
 			}
 			requestView = newOpenAIRequestView(body)
+		}
+	}
+	if account.IsOpenAIOAuthLike() {
+		// Apply the official mode policy to the final account/compact target,
+		// after serializing pending request edits. Public aliases do not identify
+		// whether the actual upstream is Astra.
+		reasoningBody, reasoningChanged, reasoningErr := normalizeOpenAIResponsesReasoningModeForModel(body, upstreamModel)
+		if reasoningErr != nil {
+			return nil, fmt.Errorf("normalize OpenAI Responses reasoning.mode: %w", reasoningErr)
+		}
+		if reasoningChanged {
+			body = reasoningBody
+			requestView = newOpenAIRequestView(body)
+			reqBody = nil
 		}
 	}
 	if normalizedBody, changed, normalizeErr := NormalizeCompactionTriggerInputOrder(body); normalizeErr != nil {
@@ -1204,23 +1219,14 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				SetOpsUpstreamModel(c, fallbackModel)
 				continue
 			}
-			if reqStream && isOpenAIOpaqueCompatibilityBadRequest(resp.StatusCode, upstreamMsg, respBody) {
+			shouldFailover := s.shouldFailoverOpenAIUpstreamResponse(account, resp.StatusCode, upstreamMsg, respBody)
+			if reqStream && !shouldFailover && isOpenAIOpaqueCompatibilityBadRequest(resp.StatusCode, upstreamMsg, respBody) {
 				// Do not let a pre-first-byte generic 400 commit a JSON response.
 				// Return a request-scoped terminal instead so the handler can emit a
 				// single protocol-valid response.failed event for stream:true clients.
 				return nil, newOpenAIOpaqueStreamPreflightError(resp.StatusCode, resp.Header, respBody)
 			}
-			if resp.StatusCode == http.StatusForbidden &&
-				IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-				if hit, _, _ := detectOpenAICyberPolicy(respBody); hit {
-					markOpenAICyberPolicyFromResponse(c, resp.StatusCode, respBody)
-					if s.openAIRefusalRecoveryRuntime(ctx).CyberFailoverEnabled() {
-						return nil, NewOpenAICyberFailoverError(respBody, resp.Header)
-					}
-					return s.handleErrorResponse(ctx, resp, c, account, body, billingModel)
-				}
-			}
-			if s.shouldFailoverOpenAIUpstreamResponseForAccount(account, resp.StatusCode, upstreamMsg, respBody) {
+			if shouldFailover {
 				upstreamDetail := ""
 				if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
 					maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
@@ -1313,7 +1319,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 						_ = resp.Body.Close()
 					}
 					compactResp, compactBody := openAICompactFallbackErrorResponse(resp, signal)
-					if s.shouldFailoverOpenAIUpstreamResponseForAccount(account, compactResp.StatusCode, signal.message, compactBody) {
+					if s.shouldFailoverOpenAIUpstreamResponse(account, compactResp.StatusCode, signal.message, compactBody) {
 						appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 							ProxyID:            opsUpstreamProxyID(account),
 							ProxyName:          opsUpstreamProxyName(account),

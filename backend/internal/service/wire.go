@@ -398,7 +398,7 @@ func ProvideAccountTestService(
 		tlsFPProfileService,
 	)
 	service.agentIdentityWS = openAIGatewayService
-	service.openAIGatewayService = openAIGatewayService
+	service.SetOpenAIGatewayService(openAIGatewayService)
 	if openAIGatewayService != nil {
 		service.SetCodexQuotaOverdraftCoordinator(openAIGatewayService.codexQuotaOverdraftCoordinator(tlsFPProfileService))
 	}

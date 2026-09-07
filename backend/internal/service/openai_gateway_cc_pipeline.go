@@ -102,6 +102,10 @@ func (s *OpenAIGatewayService) failoverOpenAIUpstreamHTTPError(
 	if rewound, ok := resp.Body.(*rewoundOpenAIUpstreamErrorBody); ok && len(rewound.raw) > 0 {
 		classificationBody = rewound.raw
 	}
+	if isOpenAIRequestScopedSafetyRejection(classificationBody) {
+		markOpenAICyberPolicyFromResponse(c, resp.StatusCode, classificationBody)
+		return nil
+	}
 	if failoverErr, ok := s.handleCindyBalanceHTTPFailover(
 		ctx, account, resp.StatusCode, resp.Header, classificationBody, upstreamModel,
 	); ok {
@@ -112,7 +116,7 @@ func (s *OpenAIGatewayService) failoverOpenAIUpstreamHTTPError(
 	}
 	resp.Body = io.NopCloser(bytes.NewReader(respBody))
 	upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(respBody)))
-	shouldFailover := s.shouldFailoverOpenAIUpstreamResponseForAccount(account, resp.StatusCode, upstreamMsg, respBody)
+	shouldFailover := s.shouldFailoverOpenAIUpstreamResponse(account, resp.StatusCode, upstreamMsg, respBody)
 	tempUnscheduled := false
 	if c != nil && account != nil && account.Platform != PlatformGrok && !shouldFailover && !IsResponseCommitted(c) && s.rateLimitService != nil {
 		tempUnscheduled = s.rateLimitService.CheckErrorPolicy(ctx, account, resp.StatusCode, respBody, upstreamModel) == ErrorPolicyTempUnscheduled

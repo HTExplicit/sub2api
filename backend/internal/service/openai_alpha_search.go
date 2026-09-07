@@ -109,13 +109,16 @@ func (s *OpenAIGatewayService) ForwardAlphaSearch(ctx context.Context, c *gin.Co
 	if err != nil {
 		return nil, fmt.Errorf("read alpha search response: %w", err)
 	}
+	if s.forwardAlphaSearchSafetyRejection(c, resp, respBody) {
+		return nil, errOpenAICyberPolicyForwarded
+	}
 	if s.handleCindyAlphaSearchBalance(ctx, account, resp, respBody, upstreamModel) {
 		return nil, newCindyAlphaSearchBalanceFailover(resp, respBody)
 	}
 
 	if resp.StatusCode >= http.StatusBadRequest {
 		upstreamMessage := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(respBody)))
-		if s.shouldFailoverOpenAIUpstreamResponseForAccount(account, resp.StatusCode, upstreamMessage, respBody) ||
+		if s.shouldFailoverOpenAIUpstreamResponse(account, resp.StatusCode, upstreamMessage, respBody) ||
 			isOpenAIAlphaSearchEndpointUnsupported(account, resp.StatusCode) {
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
 			// alpha/search 是独立的工具端点，单次 401 不能证明账号的模型调用
@@ -207,6 +210,9 @@ func (s *OpenAIGatewayService) forwardCindyAlphaSearchViaNativeMessages(
 	respBody, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 	if err != nil {
 		return nil, fmt.Errorf("read Cindy native web search response: %w", err)
+	}
+	if s.forwardAlphaSearchSafetyRejection(c, resp, respBody) {
+		return nil, errOpenAICyberPolicyForwarded
 	}
 	// Exact balance exhaustion must be classified before bridge validation so
 	// it persists the durable account exclusion instead of becoming a harmless
@@ -494,6 +500,9 @@ func (s *OpenAIGatewayService) forwardAlphaSearchViaResponsesWebSearch(
 	if err != nil {
 		return nil, fmt.Errorf("read alpha search responses fallback response: %w", err)
 	}
+	if s.forwardAlphaSearchSafetyRejection(c, resp, respBody) {
+		return nil, errOpenAICyberPolicyForwarded
+	}
 	if s.handleCindyAlphaSearchBalance(ctx, account, resp, respBody, upstreamModel) {
 		return nil, newCindyAlphaSearchBalanceFailover(resp, respBody)
 	}
@@ -513,7 +522,7 @@ func (s *OpenAIGatewayService) forwardAlphaSearchViaResponsesWebSearch(
 		if strictCindy && cindyCapabilityError {
 			return nil, newCindyAlphaSearchMessagesFallbackError(resp.StatusCode, resp.Header, respBody)
 		}
-		if s.shouldFailoverOpenAIUpstreamResponseForAccount(account, resp.StatusCode, upstreamMessage, respBody) ||
+		if s.shouldFailoverOpenAIUpstreamResponse(account, resp.StatusCode, upstreamMessage, respBody) ||
 			bridgeCapabilityError {
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
 			shouldDisable := false
@@ -597,6 +606,47 @@ func (s *OpenAIGatewayService) forwardAlphaSearchViaResponsesWebSearch(
 		Duration:         time.Since(upstreamStart),
 		WebSearchCalls:   1,
 	}, nil
+}
+
+// A structured request-level refusal is not a missing search capability. Keep
+// it terminal before endpoint/model fallbacks, including a failed Responses
+// SSE event that would otherwise look like an empty web-search result.
+func (s *OpenAIGatewayService) forwardAlphaSearchSafetyRejection(c *gin.Context, resp *http.Response, body []byte) bool {
+	payload := body
+	streamEvent := false
+	if !gjson.ValidBytes(payload) || !isOpenAIRequestScopedSafetyRejection(payload) {
+		payload = nil
+		forEachOpenAISSEDataPayload(string(body), func(event []byte) {
+			if payload == nil && isOpenAIRequestScopedSafetyRejection(event) {
+				payload = append([]byte(nil), event...)
+				streamEvent = true
+			}
+		})
+	}
+	if len(payload) == 0 {
+		return false
+	}
+	markOpenAICyberPolicyFromResponse(c, resp.StatusCode, payload)
+	message := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(payload)))
+	setOpsUpstreamError(c, resp.StatusCode, message, truncateString(string(payload), 2048))
+	writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	MarkResponseCommitted(c)
+	if streamEvent {
+		// alpha/search is a non-streaming JSON tool endpoint even when its
+		// internal Responses bridge uses SSE upstream.
+		errorPayload := gjson.GetBytes(payload, "error")
+		if !errorPayload.Exists() {
+			errorPayload = gjson.GetBytes(payload, "response.error")
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": json.RawMessage(errorPayload.Raw)})
+		return true
+	}
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/json"
+	}
+	c.Data(resp.StatusCode, contentType, body)
+	return true
 }
 
 func (s *OpenAIGatewayService) handleCindyAlphaSearchBalance(

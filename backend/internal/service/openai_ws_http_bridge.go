@@ -31,6 +31,13 @@ type openAIWSHTTPBridgeToolState struct {
 	LoweredTools  json.RawMessage
 }
 
+// openAIWSHTTPBridgeTurnState is learned from this bridge's own received
+// upstream response. It never enters the shared native-WS session state store.
+type openAIWSHTTPBridgeTurnState struct {
+	accountID int64
+	value     string
+}
+
 func openAIWSHTTPBridgeToolStateFromContext(c *gin.Context) (openAIWSHTTPBridgeToolState, bool) {
 	if c == nil {
 		return openAIWSHTTPBridgeToolState{}, false
@@ -454,6 +461,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 	grokCacheIdentity string,
 	turn int,
 	writeClientMessage func([]byte) error,
+	bridgeStates ...openAIWSHTTPBridgeTurnState,
 ) (*OpenAIForwardResult, error) {
 	if s == nil {
 		return nil, errors.New("service is nil")
@@ -551,6 +559,18 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 	if err != nil {
 		return nil, err
 	}
+	applyBridgeOwnedTurnState := func(req *http.Request) {
+		if account.Platform != PlatformGrok && len(bridgeStates) > 0 {
+			state := bridgeStates[0]
+			if state.accountID > 0 && state.accountID == account.ID && strings.TrimSpace(state.value) != "" {
+				// The general HTTP builder strips unproven client-supplied state.
+				// This value is independently proven by the owning bridge, so carry
+				// it without publishing shared provenance for other connections.
+				req.Header.Set(openAIWSTurnStateHeader, state.value)
+			}
+		}
+	}
+	applyBridgeOwnedTurnState(upstreamReq)
 	if account.Platform != PlatformGrok && isOpenAIResponsesLiteWebSocketPayload(payload) {
 		upstreamReq.Header.Set(responsesLiteHeader, "true")
 	}
@@ -606,6 +626,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			if retryBuildErr != nil {
 				return nil, retryBuildErr
 			}
+			applyBridgeOwnedTurnState(retryReq)
 			resp, err = s.httpUpstream.Do(retryReq, proxyURL, account.ID, account.Concurrency)
 			if err != nil {
 				return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, true)
@@ -616,7 +637,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		if upstreamMsg == "" {
 			upstreamMsg = http.StatusText(resp.StatusCode)
 		}
-		shouldFailover := s.shouldFailoverOpenAIUpstreamResponseForAccount(account, resp.StatusCode, upstreamMsg, respBody)
+		shouldFailover := s.shouldFailoverOpenAIUpstreamResponse(account, resp.StatusCode, upstreamMsg, respBody)
 		if account.Platform == PlatformGrok {
 			shouldFailover = s.shouldFailoverGrokUpstreamError(resp.StatusCode, respBody)
 			s.handleGrokAccountUpstreamError(withGrokTeamRateLimitModel(ctx, resolveGrokWSUpstreamModel(account, body, originalModel)), account, resp.StatusCode, resp.Header, respBody)
@@ -864,7 +885,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			if eventType == "error" {
 				errCodeRaw, errTypeRaw, _ := parseOpenAIWSErrorEventFields(upstreamMessage)
 				statusCode = openAIWSErrorHTTPStatusFromRaw(errCodeRaw, errTypeRaw)
-				shouldFailover = s.shouldFailoverOpenAIUpstreamResponseForAccount(account, statusCode, errMessage, upstreamMessage)
+				shouldFailover = s.shouldFailoverOpenAIUpstreamResponse(account, statusCode, errMessage, upstreamMessage)
 				// A model_not_supported event is an account/model capability
 				// failure even when this bridge is carrying an HTTP-200 stream.
 				if account != nil &&

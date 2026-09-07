@@ -172,6 +172,30 @@ func (s *AccountTestService) SetPluginManager(pluginManager *PluginManager) {
 	}
 }
 
+func (s *AccountTestService) SetOpenAIGatewayService(gateway *OpenAIGatewayService) {
+	if s != nil {
+		s.openAIGatewayService = gateway
+	}
+}
+
+// FetchOpenAIAccountModels uses the shared cached discovery path for the test picker.
+func (s *AccountTestService) FetchOpenAIAccountModels(ctx context.Context, account *Account) ([]openai.Model, error) {
+	if s == nil || s.openAIGatewayService == nil {
+		return nil, errors.New("OpenAI model discovery service is unavailable")
+	}
+	response, err := s.openAIGatewayService.FetchOpenAIModelsList(ctx, account)
+	if err != nil {
+		return nil, err
+	}
+	var payload struct {
+		Data []openai.Model `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body, &payload); err != nil {
+		return nil, fmt.Errorf("decode OpenAI account models: %w", err)
+	}
+	return payload.Data, nil
+}
+
 // NewAccountTestService creates a new AccountTestService
 func NewAccountTestService(
 	accountRepo AccountRepository,

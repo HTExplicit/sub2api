@@ -16,6 +16,7 @@ type responsesChatFunctionState struct {
 	argumentBytes        int
 	argumentHash         hash.Hash
 	typeSent, completed  bool
+	argumentsDone        bool // a complete argument-done snapshot was observed
 }
 
 func responseChatFunctionError(state *ResponsesEventToChatState) {
@@ -69,24 +70,18 @@ func resToChatFunctionItem(item *ResponsesOutput, outputIndex int, complete bool
 	if tool.name == "" && item.Name != "" {
 		tool.name, delta.Function.Name = item.Name, item.Name
 	}
-	if complete && (tool.callID == "" || tool.name == "" || !json.Valid([]byte(item.Arguments)) ||
+	hasCompleteArguments := json.Valid([]byte(item.Arguments)) || (item.Arguments == "" && tool.argumentsDone)
+	if complete && (tool.callID == "" || tool.name == "" || !hasCompleteArguments ||
 		(item.Status != "" && item.Status != "completed")) {
 		responseChatFunctionError(state)
 		return nil
 	}
-	if complete || item.Arguments != "" {
-		if tool.argumentBytes > len(item.Arguments) {
-			responseChatFunctionError(state)
+	if item.Arguments != "" || (complete && !tool.argumentsDone) {
+		var ok bool
+		delta.Function.Arguments, ok = resToChatArgumentsSnapshotSuffix(item.Arguments, tool, state)
+		if !ok {
 			return nil
 		}
-		prefix := sha256.Sum256([]byte(item.Arguments[:tool.argumentBytes]))
-		if !bytes.Equal(prefix[:], tool.argumentHash.Sum(nil)) {
-			responseChatFunctionError(state)
-			return nil
-		}
-		delta.Function.Arguments = item.Arguments[tool.argumentBytes:]
-		_, _ = tool.argumentHash.Write([]byte(delta.Function.Arguments))
-		tool.argumentBytes = len(item.Arguments)
 	}
 	tool.completed = tool.completed || complete
 	state.SawToolCall = true
@@ -99,6 +94,22 @@ func resToChatFunctionItem(item *ResponsesOutput, outputIndex int, complete bool
 		state.SentRole = true
 	}
 	return []ChatCompletionsChunk{makeChatDeltaChunk(state, chatDelta)}
+}
+
+func resToChatArgumentsSnapshotSuffix(arguments string, tool *responsesChatFunctionState, state *ResponsesEventToChatState) (string, bool) {
+	if tool.argumentBytes > len(arguments) || ((tool.completed || tool.argumentsDone) && tool.argumentBytes != len(arguments)) {
+		responseChatFunctionError(state)
+		return "", false
+	}
+	prefix := sha256.Sum256([]byte(arguments[:tool.argumentBytes]))
+	if !bytes.Equal(prefix[:], tool.argumentHash.Sum(nil)) {
+		responseChatFunctionError(state)
+		return "", false
+	}
+	suffix := arguments[tool.argumentBytes:]
+	_, _ = tool.argumentHash.Write([]byte(suffix))
+	tool.argumentBytes = len(arguments)
+	return suffix, true
 }
 
 func firstNonemptyToolIdentity(existing, incoming string) string {

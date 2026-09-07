@@ -2,6 +2,7 @@ export default {
     accounts: {
       title: '账号管理',
       description: '管理 AI 平台账号和 Cookie',
+      importSessionFilter: '本次导入（{count}）',
       contextCapacity: {
         title: '模型上下文容量',
         description: '优先级：自定义 > 官方 > 上游 > 默认 258K。同一真实上游模型的公开别名共用设置；不改变路由，也不会扩大上游限制。',
@@ -1110,6 +1111,8 @@ export default {
       modelRestriction: '模型限制（可选）',
       modelWhitelist: '模型白名单',
       modelMapping: '模型映射',
+      fromModel: '请求模型',
+      toModel: '目标模型',
       selectAllowedModels: '选择允许的模型。留空则支持所有模型。',
       mapRequestModels: '将请求模型映射到实际模型。左边是请求的模型，右边是发送到 API 的实际模型。',
       selectedModels: '已选择 {count} 个模型',

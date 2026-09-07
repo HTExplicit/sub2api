@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -16,10 +18,14 @@ type groupCapacityAccountRepo struct {
 	err               error
 	availabilityCalls int
 	schedulableCalls  int
+	queryGroupID      *int64
+	includeGrouped    bool
 }
 
-func (r *groupCapacityAccountRepo) ListModelAvailabilityCandidates(_ context.Context, _ *int64, platforms []string, _ bool) ([]Account, error) {
+func (r *groupCapacityAccountRepo) ListModelAvailabilityCandidates(_ context.Context, groupID *int64, platforms []string, includeGrouped bool) ([]Account, error) {
 	r.availabilityCalls++
+	r.queryGroupID = groupID
+	r.includeGrouped = includeGrouped
 	if r.err != nil {
 		return nil, r.err
 	}
@@ -194,7 +200,7 @@ func TestCodexCapacityProjectionRefreshesETagWithoutChangingRawCache(t *testing.
 	raw := []byte(`{"models":[{"slug":"unlisted","context_window":410000,"max_context_window":800000,"auto_compact_token_limit":750000,"sentinel":{"ok":true}}]}`)
 	repo := &groupCapacityAccountRepo{accounts: []Account{account}}
 	svc := &OpenAIGatewayService{accountRepo: repo}
-	manifest := &CodexModelsManifest{Body: append([]byte(nil), raw...), upstreamSourceBody: append([]byte(nil), raw...), ETag: `"upstream"`}
+	manifest := &OpenAIModelsResponse{Body: append([]byte(nil), raw...), upstreamSourceBody: append([]byte(nil), raw...), ETag: `"upstream"`}
 	require.NoError(t, svc.ProjectCodexModelContextCapacities(context.Background(), group, manifest, "", &account))
 	firstETag := manifest.ETag
 	model := decodeCodexManifestModels(t, manifest.Body)[0]
@@ -220,7 +226,7 @@ func TestCodexCapacityProjectionLiveWinsOverSnapshotButNotOverride(t *testing.T)
 	account.SetUpstreamModelContextCapacitySnapshot(UpstreamModelContextCapacitySnapshot{Models: map[string]ModelContextCapacity{"unlisted": {ContextWindow: 300000}}})
 	raw := []byte(`{"models":[{"slug":"unlisted","context_window":410000,"max_context_window":800000,"auto_compact_token_limit":400000}]}`)
 	svc := &OpenAIGatewayService{accountRepo: &groupCapacityAccountRepo{accounts: []Account{account}}}
-	manifest := &CodexModelsManifest{Body: append([]byte(nil), raw...), upstreamSourceBody: append([]byte(nil), raw...)}
+	manifest := &OpenAIModelsResponse{Body: append([]byte(nil), raw...), upstreamSourceBody: append([]byte(nil), raw...)}
 	require.NoError(t, svc.ProjectCodexModelContextCapacities(context.Background(), group, manifest, "", &account))
 	model := decodeCodexManifestModels(t, manifest.Body)[0]
 	require.Equal(t, float64(410000), model["context_window"])
@@ -238,7 +244,7 @@ func TestCodexCapacityProjectionRejectsLiveFromChangedAccountSource(t *testing.T
 	current.SetUpstreamModelContextCapacitySnapshot(UpstreamModelContextCapacitySnapshot{Models: map[string]ModelContextCapacity{"unlisted": {ContextWindow: 300000}}})
 	raw := []byte(`{"models":[{"slug":"unlisted","context_window":900000,"max_context_window":1000000}]}`)
 	svc := &OpenAIGatewayService{accountRepo: &groupCapacityAccountRepo{accounts: []Account{current}}}
-	manifest := &CodexModelsManifest{Body: append([]byte(nil), raw...), upstreamSourceBody: append([]byte(nil), raw...)}
+	manifest := &OpenAIModelsResponse{Body: append([]byte(nil), raw...), upstreamSourceBody: append([]byte(nil), raw...)}
 	require.NoError(t, svc.ProjectCodexModelContextCapacities(context.Background(), group, manifest, "", &source))
 	model := decodeCodexManifestModels(t, manifest.Body)[0]
 	require.Equal(t, float64(300000), model["context_window"], "same account ID cannot authenticate observations from an old endpoint")
@@ -256,7 +262,7 @@ func TestCodexCapacityProjectionPinnedSourcesPreserveProtectedAndMergeOrder(t *t
 	rawProtected := []byte(`{"models":[{"slug":"shared","context_window":700001},{"slug":"protected-model","context_window":123456,"max_context_window":234567,"auto_compact_token_limit":999999,"sentinel":"preserve"}]}`)
 	merged, err := mergeCodexModelsManifestBodies([][]byte{rawFirst, rawSecond, rawProtected})
 	require.NoError(t, err)
-	manifest := &CodexModelsManifest{Body: merged, capacitySources: []codexModelCapacitySource{
+	manifest := &OpenAIModelsResponse{Body: merged, capacitySources: []codexModelCapacitySource{
 		newCodexModelCapacitySource(&first, rawFirst), newCodexModelCapacitySource(&second, rawSecond), newCodexModelCapacitySource(&oauth, rawProtected),
 	}}
 	manifest.capacitySources[0].visibleModels = map[string]bool{"model-a": true, "shared": true}
@@ -286,10 +292,10 @@ func TestCodexCapacityProjectionPinnedSourcesPreserveProtectedAndMergeOrder(t *t
 func TestCodexCapacityProjectionProvenanceCloneAndCacheBudget(t *testing.T) {
 	account := newGroupCapacityAccount(1, nil, nil)
 	raw := []byte(`{"models":[{"slug":"unlisted","context_window":410000}]}`)
-	manifest := &CodexModelsManifest{Body: append([]byte(nil), raw...), upstreamSourceBody: append([]byte(nil), raw...),
+	manifest := &OpenAIModelsResponse{Body: append([]byte(nil), raw...), upstreamSourceBody: append([]byte(nil), raw...),
 		capacityProtectedModels: map[string]bool{"protected": true}, capacitySources: []codexModelCapacitySource{newCodexModelCapacitySource(&account, raw)}}
 	manifest.capacitySources[0].visibleModels = map[string]bool{"protected": true}
-	cloned := cloneCodexModelsManifest(manifest)
+	cloned := cloneOpenAIModelsResponse(manifest)
 	cloned.Body[0], cloned.upstreamSourceBody[0], cloned.capacitySources[0].body[0] = 'x', 'y', 'z'
 	delete(cloned.capacityProtectedModels, "protected")
 	delete(cloned.capacitySources[0].visibleModels, "protected")
@@ -298,8 +304,8 @@ func TestCodexCapacityProjectionProvenanceCloneAndCacheBudget(t *testing.T) {
 	require.Equal(t, byte('{'), manifest.capacitySources[0].body[0])
 	require.True(t, manifest.capacityProtectedModels["protected"])
 	require.True(t, manifest.capacitySources[0].visibleModels["protected"])
-	cache := codexModelsManifestCache{}
-	manifest.capacitySources[0].body = make([]byte, codexModelsManifestCacheBodyLimit)
+	cache := openAIModelsCache{}
+	manifest.capacitySources[0].body = make([]byte, openAIModelsCacheBodyLimit)
 	cache.set("over-budget", manifest, time.Now())
 	require.Empty(t, cache.entries, "raw provenance is included in the existing body memory budget")
 }
@@ -310,7 +316,7 @@ func TestCodexCapacityProjectionCompositeUsesSharedRouteRepository(t *testing.T)
 	repo := &groupCapacityAccountRepo{accounts: []Account{account}}
 	routes := &groupCapacityRouteRepo{routes: []CompositeModelRoute{{ID: 1, PublicModel: "alias", MatchType: CompositeRouteMatchExact, TargetPlatform: PlatformOpenAI, UpstreamModel: "native-model", Endpoint: CompositeRouteEndpointAny, Enabled: true}}}
 	svc := &GatewayService{accountRepo: repo, compositeResolver: NewCompositeRouteResolver(routes)}
-	manifest := &CodexModelsManifest{Body: []byte(`{"models":[{"slug":"alias","context_window":900000,"sentinel":"unchanged"}]}`)}
+	manifest := &OpenAIModelsResponse{Body: []byte(`{"models":[{"slug":"alias","context_window":900000,"sentinel":"unchanged"}]}`)}
 	require.NoError(t, svc.ProjectCodexModelContextCapacities(context.Background(), group, manifest, "", &account))
 	model := decodeCodexManifestModels(t, manifest.Body)[0]
 	require.Equal(t, "alias", model["slug"])
@@ -319,4 +325,116 @@ func TestCodexCapacityProjectionCompositeUsesSharedRouteRepository(t *testing.T)
 	require.Equal(t, "custom", model["context_capacity_source"])
 	require.Equal(t, 1, repo.availabilityCalls)
 	require.Equal(t, 1, routes.calls)
+}
+
+func TestPinnedModelCapacityRetainsMappedSourcesAndFallbackCandidates(t *testing.T) {
+	for _, codex := range []bool{false, true} {
+		t.Run(fmt.Sprintf("codex=%t", codex), func(t *testing.T) {
+			first := newGroupCapacityAccount(1, map[string]any{"public-alias": "native-a"}, map[string]int64{"native-a": 600000})
+			second := newGroupCapacityAccount(2, map[string]any{"public-alias": "native-b"}, nil)
+			fallback := newGroupCapacityAccount(3, map[string]any{"public-alias": "native-c"}, map[string]int64{"native-c": 300000})
+			group := &Group{ID: 9, Platform: PlatformOpenAI, ModelRoutingEnabled: true,
+				ModelRouting:              map[string][]int64{"public-alias": {first.ID}},
+				CodexModelsManifestConfig: GroupCodexModelsManifestConfig{Enabled: true, AccountIDs: []int64{first.ID, second.ID}}}
+			makeResponse := func(account *Account, model string, capacity int, sentinel string) *OpenAIModelsResponse {
+				field, idField := "data", "id"
+				if codex {
+					field, idField = "models", "slug"
+				}
+				raw := []byte(fmt.Sprintf(`{"%s":[{"%s":%q,"context_window":%d,"sentinel":%q}]}`, field, idField, model, capacity, sentinel))
+				response := &OpenAIModelsResponse{Body: append([]byte(nil), raw...), capacitySources: []codexModelCapacitySource{newCodexModelCapacitySource(account, raw)}}
+				var err error
+				response.Body, err = projectAccountModelsBody(response.Body, account, group, codex)
+				require.NoError(t, err)
+				require.NoError(t, applyMappedModelsCapacityVisibility(response, account, codex))
+				return response
+			}
+			firstResponse := makeResponse(&first, "native-a", 900000, "first")
+			secondResponse := makeResponse(&second, "native-b", 410000, "second")
+			sources, protected, err := mergePinnedModelsCapacityProvenance([]pinnedOpenAIModelsResult{
+				{account: &first, response: firstResponse}, {account: &second, response: secondResponse},
+			}, codex)
+			require.NoError(t, err)
+			require.Len(t, sources, 2)
+			require.True(t, sources[0].visibleModels["public-alias"])
+			require.Empty(t, sources[1].visibleModels)
+			require.Contains(t, string(sources[1].body), "native-b")
+			require.NotContains(t, string(sources[1].body), "public-alias")
+			repo := &groupCapacityAccountRepo{accounts: []Account{first, second}}
+			svc := &OpenAIGatewayService{accountRepo: repo}
+			project := func() map[string]any {
+				response := &OpenAIModelsResponse{Body: append([]byte(nil), firstResponse.Body...), capacitySources: sources, capacityProtectedModels: protected}
+				if codex {
+					require.NoError(t, svc.ProjectCodexModelContextCapacities(context.Background(), group, response, "", nil))
+				} else {
+					require.NoError(t, svc.ProjectOpenAIModelsListContextCapacities(context.Background(), group, response, ""))
+				}
+				var envelope map[string][]map[string]any
+				require.NoError(t, json.Unmarshal(response.Body, &envelope))
+				if codex {
+					return envelope["models"][0]
+				}
+				return envelope["data"][0]
+			}
+			row := project()
+			require.Equal(t, float64(410000), row["context_window"], "losing ordinary source still narrows actual capacity")
+			require.Equal(t, "upstream", row["context_capacity_source"])
+			require.Equal(t, "first", row["sentinel"], "non-capacity fields keep the first discovered entry")
+			repo.accounts = append(repo.accounts, fallback)
+			row = project()
+			require.Equal(t, float64(300000), row["context_window"], "discovery/routed IDs are not an exclusive forwarding pool")
+			require.Equal(t, "custom", row["context_capacity_source"])
+			require.Contains(t, string(firstResponse.Body), `"context_window":900000`, "final overlays do not mutate discovery responses")
+		})
+	}
+}
+
+func TestMappedOAuthCapacityProtectionSurvivesCandidateQueryFailure(t *testing.T) {
+	for _, pinned := range []bool{false, true} {
+		t.Run(fmt.Sprintf("pinned=%t", pinned), func(t *testing.T) {
+			account := newGroupCapacityAccount(7, map[string]any{"public-alias": "upstream-model"}, nil)
+			account.Type = AccountTypeOAuth
+			group := &Group{ID: 9, Platform: PlatformOpenAI,
+				CodexModelsManifestConfig: GroupCodexModelsManifestConfig{Enabled: true, AccountIDs: []int64{7}}}
+			raw := []byte(`{"models":[{"slug":"upstream-model","context_window":123456,"max_context_window":234567,"auto_compact_token_limit":999999,"sentinel":{"keep":true}}]}`)
+			response := &OpenAIModelsResponse{Body: append([]byte(nil), raw...), capacitySources: []codexModelCapacitySource{newCodexModelCapacitySource(&account, raw)}}
+			require.NoError(t, ApplyPinnedCodexModelsMapping(response, &account, group))
+			if pinned {
+				var err error
+				response.capacitySources, response.capacityProtectedModels, err = mergePinnedModelsCapacityProvenance([]pinnedOpenAIModelsResult{{account: &account, response: response}}, true)
+				require.NoError(t, err)
+			}
+			require.True(t, response.capacitySources[0].visibleModels["public-alias"])
+			require.NotContains(t, response.capacitySources[0].visibleModels, "upstream-model")
+			svc := &OpenAIGatewayService{accountRepo: &groupCapacityAccountRepo{err: errors.New("fixture lookup failed")}}
+			require.NoError(t, svc.ProjectCodexModelContextCapacities(context.Background(), group, response, "", &account))
+			row := decodeCodexManifestModels(t, response.Body)[0]
+			require.Equal(t, "public-alias", row["slug"])
+			require.Equal(t, float64(123456), row["context_window"])
+			require.Equal(t, float64(999999), row["auto_compact_token_limit"])
+			require.Equal(t, map[string]any{"keep": true}, row["sentinel"])
+			require.NotContains(t, row, "context_capacity_source")
+			require.Equal(t, raw, response.capacitySources[0].body)
+		})
+	}
+}
+
+func TestGroupCapacitySimpleModeKeepsActualOpenAIFullPool(t *testing.T) {
+	groupID := int64(9)
+	for _, simple := range []bool{false, true} {
+		t.Run(fmt.Sprintf("simple=%t", simple), func(t *testing.T) {
+			repo := &groupCapacityAccountRepo{}
+			cfg := &config.Config{}
+			if simple {
+				cfg.RunMode = config.RunModeSimple
+			}
+			loadGroupModelCapacityCatalog(context.Background(), repo, nil, nil, cfg, &groupID, PlatformOpenAI)
+			require.Equal(t, simple, repo.includeGrouped)
+			if simple {
+				require.Nil(t, repo.queryGroupID, "simple-mode forwarding still uses the full OpenAI platform pool")
+			} else {
+				require.Equal(t, &groupID, repo.queryGroupID)
+			}
+		})
+	}
 }
