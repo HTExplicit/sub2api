@@ -1008,20 +1008,19 @@ func normalizeOpenAIWSPassthroughSelectedCompatibilityForModel(body []byte, acco
 	if len(rawItems) != len(keep) {
 		return body, false, errors.New("normalize selected websocket input compatibility: inconsistent input array")
 	}
-	var filtered bytes.Buffer
-	filtered.Grow(len(inputJSON.Raw))
-	filtered.WriteByte('[')
+	filtered := make([]byte, 0, len(inputJSON.Raw))
+	filtered = append(filtered, '[')
 	for index, item := range rawItems {
 		if !keep[index] {
 			continue
 		}
-		if filtered.Len() > 1 {
-			filtered.WriteByte(',')
+		if len(filtered) > 1 {
+			filtered = append(filtered, ',')
 		}
-		filtered.WriteString(item.Raw)
+		filtered = append(filtered, item.Raw...)
 	}
-	filtered.WriteByte(']')
-	updated, err := sjson.SetRawBytes(normalized, "input", filtered.Bytes())
+	filtered = append(filtered, ']')
+	updated, err := sjson.SetRawBytes(normalized, "input", filtered)
 	if err != nil {
 		return body, false, fmt.Errorf("normalize selected websocket input compatibility: %w", err)
 	}

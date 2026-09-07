@@ -58,7 +58,9 @@ func TestSanitizeOpenAIResponsesOrphanToolOutputs(t *testing.T) {
 		reqBody := map[string]any{"input": input}
 		require.True(t, sanitizeOpenAIResponsesOrphanToolOutputs(reqBody, input, false))
 		require.Empty(t, reqBody["input"])
-		require.False(t, sanitizeOpenAIResponsesOrphanToolOutputs(reqBody, reqBody["input"].([]any), false))
+		normalizedInput, ok := reqBody["input"].([]any)
+		require.True(t, ok)
+		require.False(t, sanitizeOpenAIResponsesOrphanToolOutputs(reqBody, normalizedInput, false))
 	})
 	t.Run("previous response preserves remote calls", func(t *testing.T) {
 		input := []any{map[string]any{"type": "function_call_output", "call_id": "remote", "output": "ok"}}

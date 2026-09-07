@@ -844,12 +844,12 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					ctx, c, account, cindyOpaqueBindingIDsFromRawItems(result.wsReplayInput),
 				)
 			}
-			if bridgeTurnState := strings.TrimSpace(result.ResponseHeaders.Get(openAIWSTurnStateHeader)); bridgeTurnState != "" {
-				// Follow-up turns on this bridge retain their own upstream state;
-				// publishing it by session hash would leak it to independent bridges.
-				turnState = bridgeTurnState
-				bridgeOwnedTurnState.value = bridgeTurnState
-			}
+			// Replace this bridge's state even when the response omits it. An
+			// empty value invalidates the prior state without touching shared
+			// native-WS state or provenance belonging to independent connections.
+			bridgeTurnState := strings.TrimSpace(result.ResponseHeaders.Get(openAIWSTurnStateHeader))
+			turnState = bridgeTurnState
+			bridgeOwnedTurnState.value = bridgeTurnState
 			responseID := strings.TrimSpace(result.RequestID)
 			bridgeBaselineResponseID = responseID
 			if responseID != "" && stateStore != nil {

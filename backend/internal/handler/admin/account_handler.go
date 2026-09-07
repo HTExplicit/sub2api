@@ -1988,6 +1988,12 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 		response.BadRequest(c, "No updates provided")
 		return
 	}
+	if req.GroupIDs != nil {
+		if err := h.adminService.ValidateAccountGroupBindings(c.Request.Context(), *req.GroupIDs); err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+	}
 
 	ids := normalizeInt64IDList(req.AccountIDs)
 	if service.HasOpenAIReasoningPolicyUpdates(req.Extra) {

@@ -251,3 +251,104 @@ func TestOpenAIWSHTTPBridgeSessionIsolationAcrossSameSessionHash(t *testing.T) {
 	_, sharedOrigin := svc.openaiCodexTurnStateOrigins.Load(originSeed)
 	require.False(t, sharedOrigin, "bridge-owned state must not publish shared provenance")
 }
+
+func TestOpenAIWSHTTPBridgeClearsOwnedStateWhenResponseOmitsHeader(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.ModeRouterV2Enabled = true
+	cfg.Gateway.OpenAIWS.IngressModeDefault = OpenAIWSIngressModeHTTPBridge
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+	upstream := &httpUpstreamRecorder{}
+	for turn := 1; turn <= 3; turn++ {
+		headers := http.Header{"Content-Type": []string{"text/event-stream"}}
+		if turn == 1 {
+			headers.Set(openAIWSTurnStateHeader, "state-from-first-turn")
+		}
+		upstream.responses = append(upstream.responses, &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     headers,
+			Body: io.NopCloser(strings.NewReader(fmt.Sprintf(
+				"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_clear_%d\",\"status\":\"completed\",\"output\":[]}}\n\n", turn,
+			))),
+		})
+	}
+	stateStore := NewOpenAIWSStateStore(nil)
+	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream, openaiWSResolver: NewOpenAIWSProtocolResolver(cfg), openaiWSStateStore: stateStore}
+	account := &Account{ID: 31, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
+		Credentials: map[string]any{"access_token": "test-token"},
+		Extra:       map[string]any{"openai_oauth_responses_websockets_v2_mode": OpenAIWSIngressModeHTTPBridge},
+		Concurrency: 1, Status: StatusActive, Schedulable: true}
+	groupID := int64(7)
+	newContext := func(r *http.Request) *gin.Context {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = r.Clone(ctx)
+		c.Request.Header.Set("session-id", "bridge-clear-state")
+		c.Set("api_key", &APIKey{ID: 11, GroupID: &groupID})
+		return c
+	}
+	seedContext := newContext(httptest.NewRequest(http.MethodGet, "/v1/responses", nil))
+	seedHash := svc.GenerateSessionHash(seedContext, nil)
+	stateStore.BindSessionTurnState(groupID, seedHash, account.ID, "native-state-sentinel", time.Hour)
+	stateStore.BindSessionConn(groupID, seedHash, "native-conn-sentinel", time.Hour)
+	thirdTurnIngressHeader := make(chan string, 1)
+	serverResult := make(chan error, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := coderws.Accept(w, r, nil)
+		if err != nil {
+			serverResult <- err
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
+		_, firstMessage, err := conn.Read(ctx)
+		if err != nil {
+			serverResult <- err
+			return
+		}
+		c := newContext(r)
+		hooks := &OpenAIWSIngressHooks{AfterTurn: func(turn int, _ *OpenAIForwardResult, _ error) {
+			if turn == 3 {
+				thirdTurnIngressHeader <- c.Request.Header.Get(openAIWSTurnStateHeader)
+			}
+		}}
+		serverResult <- svc.ProxyResponsesWebSocketFromClient(ctx, c, conn, account, "test-token", firstMessage, hooks)
+	}))
+	defer server.Close()
+	client, _, err := coderws.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	require.NoError(t, err)
+	defer func() { _ = client.CloseNow() }()
+	for turn := 1; turn <= 3; turn++ {
+		payload := fmt.Sprintf(`{"type":"response.create","model":"gpt-5","input":"turn %d"}`, turn)
+		require.NoError(t, client.Write(ctx, coderws.MessageText, []byte(payload)))
+		_, event, readErr := client.Read(ctx)
+		require.NoError(t, readErr)
+		require.Equal(t, fmt.Sprintf("resp_clear_%d", turn), gjson.GetBytes(event, "response.id").String())
+	}
+	require.NoError(t, client.Close(coderws.StatusNormalClosure, "done"))
+	select {
+	case err := <-serverResult:
+		require.NoError(t, err)
+	case <-ctx.Done():
+		t.Fatal("bridge did not finish the three-turn state-clear regression")
+	}
+	require.Len(t, upstream.requests, 3)
+	for index, want := range []string{"", "state-from-first-turn", ""} {
+		require.Equal(t, want, upstream.requests[index].Header.Get(openAIWSTurnStateHeader))
+	}
+	// The HTTP provenance guard could mask a stale ingress header. Observe it
+	// after third-turn header synchronization as well as the real upstream wire.
+	require.Empty(t, <-thirdTurnIngressHeader)
+	state, ok := stateStore.GetSessionTurnState(groupID, seedHash, account.ID)
+	require.True(t, ok)
+	require.Equal(t, "native-state-sentinel", state)
+	connID, ok := stateStore.GetSessionConn(groupID, seedHash)
+	require.True(t, ok)
+	require.Equal(t, "native-conn-sentinel", connID)
+	_, sharedOrigin := svc.openaiCodexTurnStateOrigins.Load(openAICodexTurnStateSeed(seedContext))
+	require.False(t, sharedOrigin)
+}
