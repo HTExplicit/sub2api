@@ -973,6 +973,19 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		}
 
 		chunks := apicompat.ResponsesEventToChatChunks(&event, state)
+		if state.ProtocolError != "" {
+			streamNonFailoverErr = errors.New(state.ProtocolError)
+			if !clientDisconnected {
+				if !c.Writer.Written() {
+					writeChatCompletionsError(c, http.StatusBadGateway, "upstream_error", state.ProtocolError)
+				} else {
+					_, _ = fmt.Fprint(c.Writer, buildChatStreamErrorSSE("upstream_protocol_error", state.ProtocolError)+"data: [DONE]\n\n")
+					c.Writer.Flush()
+				}
+				clientDisconnected = true
+			}
+			return true
+		}
 		if replay := openAIChatReasoningReplayFromContext(c); replay != nil {
 			replay.recorder.ObserveChunks(chunks)
 		}

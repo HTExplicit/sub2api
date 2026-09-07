@@ -633,14 +633,20 @@ func (r *openAIChatReasoningReplayRecorder) ObserveChunks(chunks []apicompat.Cha
 					return
 				}
 				if *call.Index == len(r.projection.Calls) {
-					if call.ID == "" || call.Type != "function" || call.Function.Name == "" {
-						r.invalid = true
-						return
-					}
-					r.projection.Calls = append(r.projection.Calls, openAIChatReasoningProjectionCall{ID: call.ID, Name: call.Function.Name})
-				} else if call.ID != "" || call.Type != "" || call.Function.Name != "" {
+					r.projection.Calls = append(r.projection.Calls, openAIChatReasoningProjectionCall{})
+				}
+				known := &r.projection.Calls[*call.Index]
+				if (call.Type != "" && call.Type != "function") ||
+					(call.ID != "" && known.ID != "" && call.ID != known.ID) ||
+					(call.Function.Name != "" && known.Name != "" && call.Function.Name != known.Name) {
 					r.invalid = true
 					return
+				}
+				if call.ID != "" {
+					known.ID = call.ID
+				}
+				if call.Function.Name != "" {
+					known.Name = call.Function.Name
 				}
 				r.projection.Calls[*call.Index].Arguments += call.Function.Arguments
 				r.bytes += len(call.ID) + len(call.Function.Name) + len(call.Function.Arguments)

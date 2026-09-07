@@ -128,6 +128,8 @@ type ResponsesEventToChatState struct {
 	OutputIndexToToolIndex map[int]int // Responses output_index → Chat tool_calls index
 	IncludeUsage           bool
 	Usage                  *ChatUsage
+	ProtocolError          string // safe static error; never embeds upstream arguments
+	functionCalls          map[int]*responsesChatFunctionState
 }
 
 // NewResponsesEventToChatState returns an initialised stream state.
@@ -142,6 +144,9 @@ func NewResponsesEventToChatState() *ResponsesEventToChatState {
 // ResponsesEventToChatChunks converts a single Responses SSE event into zero
 // or more Chat Completions chunks, updating state as it goes.
 func ResponsesEventToChatChunks(evt *ResponsesStreamEvent, state *ResponsesEventToChatState) []ChatCompletionsChunk {
+	if state.ProtocolError != "" {
+		return nil
+	}
 	switch evt.Type {
 	case "response.created":
 		return resToChatHandleCreated(evt, state)
@@ -149,6 +154,8 @@ func ResponsesEventToChatChunks(evt *ResponsesStreamEvent, state *ResponsesEvent
 		return resToChatHandleTextDelta(evt, state)
 	case "response.output_item.added":
 		return resToChatHandleOutputItemAdded(evt, state)
+	case "response.output_item.done":
+		return resToChatFunctionItem(evt.Item, evt.OutputIndex, true, state)
 	case "response.function_call_arguments.delta",
 		// custom/freeform 工具（如新版 apply_patch）的输入增量与 function_call 参数增量同形，
 		// 均按 OutputIndex 累加到对应工具调用。
@@ -245,6 +252,9 @@ func resToChatHandleTextDelta(evt *ResponsesStreamEvent, state *ResponsesEventTo
 }
 
 func resToChatHandleOutputItemAdded(evt *ResponsesStreamEvent, state *ResponsesEventToChatState) []ChatCompletionsChunk {
+	if evt.Item != nil && evt.Item.Type == "function_call" {
+		return resToChatFunctionItem(evt.Item, evt.OutputIndex, false, state)
+	}
 	// function_call 与 custom_tool_call（custom/freeform 工具）均按工具调用注册，
 	// 以便后续 *_input.delta / *_arguments.delta 能映射到正确的工具索引。
 	if evt.Item == nil || (evt.Item.Type != "function_call" && evt.Item.Type != "custom_tool_call") {
@@ -276,6 +286,14 @@ func resToChatHandleFuncArgsDelta(evt *ResponsesStreamEvent, state *ResponsesEve
 	idx, ok := state.OutputIndexToToolIndex[evt.OutputIndex]
 	if !ok {
 		return nil
+	}
+	if tool := state.functionCalls[evt.OutputIndex]; tool != nil {
+		if tool.completed {
+			responseChatFunctionError(state)
+			return nil
+		}
+		_, _ = tool.argumentHash.Write([]byte(evt.Delta))
+		tool.argumentBytes += len(evt.Delta)
 	}
 
 	return []ChatCompletionsChunk{makeChatDeltaChunk(state, ChatDelta{
@@ -330,7 +348,13 @@ func resToChatHandleCompleted(evt *ResponsesStreamEvent, state *ResponsesEventTo
 		finishReason = "tool_calls"
 	}
 
-	var chunks []ChatCompletionsChunk
+	chunks := resToChatCompleteFunctions(evt.Response, state)
+	if state.ProtocolError != "" {
+		return nil
+	}
+	if evt.Response != nil && evt.Response.Status == "completed" && state.SawToolCall {
+		finishReason = "tool_calls"
+	}
 	chunks = append(chunks, makeChatFinishChunk(state, finishReason))
 
 	if state.IncludeUsage && state.Usage != nil {

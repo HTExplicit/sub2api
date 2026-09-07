@@ -79,7 +79,7 @@ func TestOpenAIChatReasoningReplayRecorderRequiresMatchingCompletedProjection(t 
 
 func TestOpenAIChatReasoningReplayRecorderStreamingProjection(t *testing.T) {
 	t.Parallel()
-	for _, mutate := range []string{"none", "different_reasoning", "incomplete_arguments", "no_deltas"} {
+	for _, mutate := range []string{"none", "different_reasoning", "missing_delta_suffix", "conflicting_arguments", "no_deltas"} {
 		t.Run(mutate, func(t *testing.T) {
 			recorder := openAIChatReasoningReplayRecorder{}
 			state := apicompat.NewResponsesEventToChatState()
@@ -87,8 +87,11 @@ func TestOpenAIChatReasoningReplayRecorderStreamingProjection(t *testing.T) {
 			if mutate == "different_reasoning" {
 				payload = strings.Replace(payload, `"delta":"checking carefully "`, `"delta":"different reasoning"`, 1)
 			}
-			if mutate == "incomplete_arguments" {
+			if mutate == "missing_delta_suffix" {
 				payload = strings.Replace(payload, `"delta":"{}"`, `"delta":"{"`, 1)
+			}
+			if mutate == "conflicting_arguments" {
+				payload = strings.Replace(payload, `"delta":"{}"`, `"delta":"[]"`, 1)
 			}
 			for _, frame := range strings.Split(payload, "\n\n") {
 				raw := []byte(strings.TrimPrefix(frame, "data: "))
@@ -100,7 +103,7 @@ func TestOpenAIChatReasoningReplayRecorderStreamingProjection(t *testing.T) {
 				recorder.ObserveChunks(apicompat.ResponsesEventToChatChunks(&event, state))
 			}
 			_, ok := recorder.Batch()
-			require.Equal(t, mutate == "none", ok)
+			require.Equal(t, mutate == "none" || mutate == "missing_delta_suffix", ok)
 		})
 	}
 }
@@ -426,4 +429,35 @@ func TestOpenAIChatReasoningReplayRejectsDuplicateJSONMembers(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(ambiguous), &output))
 	_, ok := projectOpenAIChatReasoningRawBatch(output)
 	require.False(t, ok)
+}
+
+func TestOpenAIChatReasoningReplayTerminalFunctionSnapshotRoundTrip(t *testing.T) {
+	output := `[{"type":"reasoning","id":"rs_snapshot","status":"completed","summary":[],"encrypted_content":"opaque-snapshot"},{"type":"function_call","id":"fc_snapshot","call_id":"call_orders","name":"load_orders","arguments":"{}","status":"completed"}]`
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		openAIChatReplayTestResponse(openAIChatReplayTestSSE(output, false), 200),
+		openAIChatReplayTestResponse("data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\ndata: "+string(openAIChatReplayTestPayload(`[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}]`))+"\n\n", 200),
+	}}
+	svc := newOpenAIRejectedFieldTestService(upstream)
+	cache := newOpenAIChatReplayTestCache()
+	svc.cache = cache
+	account := newOpenAIRejectedFieldTestAccount()
+	first := openAIChatReplayTestBody(t, false, true, false)
+	c, writer := openAIChatReplayTestContext(t, first)
+	_, err := svc.ForwardAsChatCompletions(context.Background(), c, account, first, "", "")
+	require.NoError(t, err)
+	require.Contains(t, writer.Body.String(), `"arguments":"{}"`)
+	require.Len(t, cache.batches, 1)
+	var request map[string]any
+	require.NoError(t, decodeOpenAIJSONUseNumber(first, &request))
+	messages, ok := request["messages"].([]any)
+	require.True(t, ok)
+	request["messages"] = append(messages,
+		map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"id": "call_orders", "type": "function", "function": map[string]any{"name": "load_orders", "arguments": "{}"}}}},
+		map[string]any{"role": "tool", "tool_call_id": "call_orders", "content": "orders"})
+	second := mustJSONChatReplay(t, request)
+	c, _ = openAIChatReplayTestContext(t, second)
+	_, err = svc.ForwardAsChatCompletions(context.Background(), c, account, second, "", "")
+	require.NoError(t, err)
+	require.Equal(t, 1, c.GetInt("openai_chat_reasoning_replay_hits"))
+	require.Contains(t, string(upstream.bodies[1]), "opaque-snapshot")
 }
