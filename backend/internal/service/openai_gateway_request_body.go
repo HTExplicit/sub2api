@@ -934,37 +934,6 @@ func normalizeOpenAIOAuthResponsesCompatibilityBody(body []byte) ([]byte, bool, 
 	return normalized, changed, nil
 }
 
-func normalizeOpenAIResponsesReasoningMode(body []byte) ([]byte, bool, error) {
-	if len(body) == 0 {
-		return body, false, nil
-	}
-	mode := gjson.GetBytes(body, "reasoning.mode")
-	if !mode.Exists() || mode.Type != gjson.String {
-		return body, false, nil
-	}
-	updated := body
-	effort := gjson.GetBytes(body, "reasoning.effort")
-	if (!effort.Exists() || effort.Type == gjson.Null || strings.TrimSpace(effort.String()) == "") &&
-		strings.EqualFold(strings.TrimSpace(mode.String()), "pro") {
-		var err error
-		updated, err = sjson.SetBytes(updated, "reasoning.effort", "max")
-		if err != nil {
-			return body, false, fmt.Errorf("set reasoning effort for mode=pro: %w", err)
-		}
-	}
-	updated, err := sjson.DeleteBytes(updated, "reasoning.mode")
-	if err != nil {
-		return body, false, fmt.Errorf("delete unsupported reasoning.mode: %w", err)
-	}
-	if reasoning := gjson.GetBytes(updated, "reasoning"); reasoning.Exists() && reasoning.IsObject() && len(reasoning.Map()) == 0 {
-		updated, err = sjson.DeleteBytes(updated, "reasoning")
-		if err != nil {
-			return body, false, fmt.Errorf("delete empty reasoning object: %w", err)
-		}
-	}
-	return updated, true, nil
-}
-
 func normalizeOpenAIResponseFormatSchemasBody(body []byte) ([]byte, bool, error) {
 	if len(body) == 0 {
 		return body, false, nil
@@ -1025,14 +994,6 @@ func normalizeOpenAIResponsesWebSocketCompatibilityBody(body []byte, account *Ac
 			changed = true
 		}
 	}
-	if account != nil && account.IsOpenAI() && account.IsOAuth() {
-		if reasoningBody, reasoningChanged, err := normalizeOpenAIResponsesReasoningMode(normalized); err != nil {
-			return body, false, err
-		} else if reasoningChanged {
-			normalized = reasoningBody
-			changed = true
-		}
-	}
 	if account != nil && account.IsOpenAIOAuthLike() {
 		oauthBody, oauthChanged, err := normalizeOpenAIOAuthResponsesCompatibilityBody(normalized)
 		if err != nil {
@@ -1087,7 +1048,7 @@ func normalizeOpenAIResponsesWebSocketCompatibilityBody(body []byte, account *Ac
 	}
 	if openAIRequestBodyImageGenerationToolNeedsNormalization(normalized) {
 		var reqBody map[string]any
-		if err := json.Unmarshal(normalized, &reqBody); err != nil {
+		if err := decodeOpenAIJSONUseNumber(normalized, &reqBody); err != nil {
 			return body, false, fmt.Errorf("normalize websocket image tool body: %w", err)
 		}
 		if normalizeOpenAIResponsesImageGenerationTools(reqBody) {
@@ -1129,12 +1090,6 @@ func normalizeOpenAIPassthroughOAuthBody(body []byte, compact bool) ([]byte, boo
 	normalized, changed, err := normalizeOpenAIOAuthResponsesCompatibilityBody(body)
 	if err != nil {
 		return body, false, err
-	}
-	if reasoningBody, reasoningChanged, reasoningErr := normalizeOpenAIResponsesReasoningMode(normalized); reasoningErr != nil {
-		return body, false, reasoningErr
-	} else if reasoningChanged {
-		normalized = reasoningBody
-		changed = true
 	}
 
 	for _, field := range openAIChatGPTInternalUnsupportedFields {
@@ -1857,7 +1812,7 @@ func sanitizeEmptyBase64InputImagesInOpenAIBody(body []byte) ([]byte, bool, erro
 	}
 
 	var reqBody map[string]any
-	if err := json.Unmarshal(body, &reqBody); err != nil {
+	if err := decodeOpenAIJSONUseNumber(body, &reqBody); err != nil {
 		return body, false, fmt.Errorf("sanitize request body: %w", err)
 	}
 	if !sanitizeEmptyBase64InputImagesInOpenAIRequestBodyMap(reqBody) {

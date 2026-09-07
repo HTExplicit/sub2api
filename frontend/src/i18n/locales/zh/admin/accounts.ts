@@ -877,7 +877,15 @@ export default {
         apiKeyHint: '您的 OpenAI API Key',
         oauthPassthrough: '自动透传（仅替换认证）',
         oauthPassthroughDesc:
-          '开启后，该 OpenAI 账号将自动透传请求与响应，仅替换认证并保留计费/并发/审计及必要安全过滤；如遇兼容性问题可随时关闭回滚。',
+          '开启后，该 OpenAI 账号将自动透传请求与响应，仅替换认证并保留计费/并发/审计及必要安全过滤；下方已开启的失效密文恢复是明确例外，会留下有损恢复记录。',
+        reasoningPolicy: {
+          chatReplay: 'Chat 工具回合推理回注',
+          chatReplayDesc: '默认开启。将已完整完成、可无损投影为 Chat 的 function 工具批次缓存 24 小时；仅在账号、用户、模型、推理配置和历史完全匹配时回注原始 reasoning 与工具项。缓存故障不阻断请求，不缓存全会话输入。',
+          signatureRecovery: '失效推理密文恢复（有损）',
+          signatureRecoveryDesc: '默认开启。遇到明确验签错误且尚未输出语义内容时，只剥离被拒 reasoning 的密文字段，在同账号最多额外重试一次；记忆该旧密文 24 小时，不删除新推理。包括自动透传的恢复例外，可能增加调用费用，不代表恢复原推理链。',
+          applyField: '修改此项（未勾选则保持原值）',
+          boundaryHint: '仅适用于实际 HTTP/SSE 的原生 Responses、Compact 与 Chat→Responses 路径；回注只用于 Chat→Responses。Messages、WebSocket（包括 HTTP 入口转 WS）、原生 Chat-only 上游不启用本轮恢复。24 小时是逻辑期限，Redis 持久化文件与备份可能保留历史字节。'
+        },
         flattenNamespaces: '摊平 Codex namespace 工具（兼容）',
         flattenNamespacesDesc:
           '默认关闭：/responses 上的 namespace 工具声明原样转发，这正是 ChatGPT Codex 后端期望的形态。仅当该 OAuth 账号指向不认识 namespace 的兼容上游时才开启——摊平会把工具改名为 namespace__tool，使按 functions.<命名空间>.<工具> 寻址的模型（如 gpt-5.6 多智能体）无法调用。压缩（compact）请求不受该开关影响，始终摊平。',

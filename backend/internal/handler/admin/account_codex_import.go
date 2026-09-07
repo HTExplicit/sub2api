@@ -121,6 +121,10 @@ func (h *AccountHandler) ImportCodexSession(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	if err := service.ValidateOpenAIReasoningPolicyExtra(req.Extra); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
 	count := len(req.Contents)
 	if strings.TrimSpace(req.Content) != "" {
 		count++
@@ -250,7 +254,7 @@ func (h *AccountHandler) importCodexSessions(ctx context.Context, req CodexSessi
 				autoPauseOnExpired = nil
 			}
 			mergedCredentials := mergeCodexImportCredentials(existing.Credentials, credentials, item)
-			mergedExtra := mergeCodexImportMap(existing.Extra, extra)
+			mergedExtra := mergeAccountUpdateExtra(existing.Extra, extra)
 			updateInput := &service.UpdateAccountInput{
 				Credentials:        mergedCredentials,
 				Extra:              mergedExtra,

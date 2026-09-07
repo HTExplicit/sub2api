@@ -330,7 +330,7 @@ func (h *AccountHandler) updateImportedDataAccount(
 ) (*service.Account, []string, error) {
 	input := &service.UpdateAccountInput{Type: item.Type, Credentials: item.Credentials, ExpiresAt: item.ExpiresAt}
 	if len(item.Extra) > 0 {
-		input.Extra = mergeDataImportMaps(existing.Extra, item.Extra)
+		input.Extra = mergeAccountUpdateExtra(existing.Extra, item.Extra)
 	}
 	if overrides.Name != nil {
 		input.Name = strings.TrimSpace(*overrides.Name)

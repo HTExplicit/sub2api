@@ -63,6 +63,8 @@ jobs:
           cache-dependency-path: backend/go.sum
       - name: Agent protocol contracts
         run: bash .github/scripts/test_agent_protocol.sh
+      - name: Reasoning replay and recovery contracts
+        run: bash .github/scripts/test_reasoning_replay.sh
       - name: Backend downstream tests
         working-directory: backend
         run: |
@@ -93,6 +95,8 @@ jobs:
             src/api/admin/__tests__/systemPrompts.spec.ts \
             src/utils/__tests__/cindyOpenAIDefaults.spec.ts \
             src/components/account/__tests__/CreateAccountModal.spec.ts \
+            src/components/account/__tests__/OpenAIReasoningPolicyFields.spec.ts \
+            src/utils/__tests__/openaiReasoningPolicy.spec.ts \
             src/components/account/__tests__/EditAccountModal.spec.ts \
             src/components/account/__tests__/ModelWhitelistSelector.spec.ts \
             src/composables/__tests__/useModelWhitelist.spec.ts \

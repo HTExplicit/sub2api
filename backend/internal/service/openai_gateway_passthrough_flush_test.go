@@ -251,7 +251,7 @@ func TestOpenAIStreamingPassthroughFailedAfterOutputFlushesAtBoundaryAndKeepsUsa
 	require.Equal(t, 2, result.usage.OutputTokens)
 }
 
-func TestOpenAIStreamingPassthroughContinuationFailedEventIsNeverForwarded(t *testing.T) {
+func TestOpenAIStreamingPassthroughSignatureFailureRespectsCommitBoundary(t *testing.T) {
 	tests := []struct {
 		name       string
 		prefix     string
@@ -277,6 +277,13 @@ func TestOpenAIStreamingPassthroughContinuationFailedEventIsNeverForwarded(t *te
 			require.Error(t, err)
 			require.NotNil(t, result)
 			var failoverErr *UpstreamFailoverError
+			if tt.prefix != "" {
+				// Once semantic bytes have been delivered, report the real failure
+				// in this stream. Never expose a retry signal for a hidden replay.
+				require.False(t, errors.As(err, &failoverErr))
+				require.Equal(t, tt.wantPrefix+failed, recorder.Body.String())
+				return
+			}
 			require.ErrorAs(t, err, &failoverErr)
 			require.True(t, failoverErr.IsOpenAIContinuationStateUnavailable())
 			require.Equal(t, tt.wantPrefix, recorder.Body.String())

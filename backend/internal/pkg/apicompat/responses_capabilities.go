@@ -8,6 +8,22 @@ type ResponsesConversionError struct{ Code, Param, Message string }
 
 func (e *ResponsesConversionError) Error() string { return e.Message }
 
+// Chat Completions can represent effort but has no established equivalent for
+// mode, context, or future Responses configuration members. Preserve the
+// existing summary compatibility boundary; never silently drop independent
+// execution options merely to make a Chat-only route accept the request.
+func ResponsesReasoningRequiresNative(reasoning *ResponsesReasoning) bool {
+	if reasoning == nil {
+		return false
+	}
+	for name := range reasoning.rawFields {
+		if name != "effort" && name != "summary" {
+			return true
+		}
+	}
+	return reasoning.Mode != "" || reasoning.Context != "" || reasoning.GenerateSummary != ""
+}
+
 func ResponsesToolsRequireNative(tools []ResponsesTool) bool {
 	for _, tool := range tools {
 		switch tool.Type {

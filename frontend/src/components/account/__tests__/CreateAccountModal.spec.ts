@@ -236,6 +236,49 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     getCindyModelsMock.mockReset().mockResolvedValue(['gpt-5.6-luna', 'gpt-image-2'])
   })
 
+  it('reasoning policy defaults on without writing untouched switches during creation', async () => {
+    const wrapper = await submitApiKeyAccount('openai')
+    expect(wrapper.get('[data-testid="openai-reasoning-chatReplay-toggle"]').attributes('aria-checked')).toBe('true')
+    expect(wrapper.get('[data-testid="openai-reasoning-signatureRecovery-toggle"]').attributes('aria-checked')).toBe('true')
+    expect(createAccountMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty('openai_chat_reasoning_replay_enabled')
+    expect(createAccountMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty('openai_reasoning_signature_recovery_enabled')
+    wrapper.unmount()
+  })
+
+  it('reasoning policy creates an explicit independent opt-out', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'API Key')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('openai account')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
+    await wrapper.get('[data-testid="openai-reasoning-signatureRecovery-toggle"]').trigger('click')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(createAccountMock.mock.calls[0]?.[0]?.extra?.openai_reasoning_signature_recovery_enabled).toBe(false)
+    expect(createAccountMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty('openai_chat_reasoning_replay_enabled')
+    wrapper.unmount()
+  })
+
+  it('reasoning policy preserves untouched import settings and forwards explicit edits', async () => {
+    const untouched = await openCodexImportStep()
+    await untouched.get('[data-testid="import-codex-session"]').trigger('click')
+    await flushPromises()
+    expect(importCodexSessionMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty('openai_chat_reasoning_replay_enabled')
+    expect(importCodexSessionMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty('openai_reasoning_signature_recovery_enabled')
+    untouched.unmount()
+
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await wrapper.get('[data-testid="openai-reasoning-chatReplay-toggle"]').trigger('click')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Codex import')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await wrapper.get('[data-testid="import-codex-pat"]').trigger('click')
+    await flushPromises()
+    expect(createOpenAICodexPATMock.mock.calls[0]?.[0]?.extra?.openai_chat_reasoning_replay_enabled).toBe(false)
+    expect(createOpenAICodexPATMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty('openai_reasoning_signature_recovery_enabled')
+    wrapper.unmount()
+  })
+
   it('creates a canonical Cindy API-key account with fixed identity defaults', async () => {
     const wrapper = mountModal([
       { id: 1, name: 'Cindy', platform: 'cindy', wire_platform: 'openai', provider_profile: 'cindy_laxa_v1' }

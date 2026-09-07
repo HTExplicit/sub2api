@@ -32,14 +32,14 @@ func TestNormalizeOpenAIPassthroughOAuthBody_NormalizesCompatibilityFields(t *te
 	}
 }
 
-func TestNormalizeOpenAIPassthroughOAuthBody_NormalizesReasoningMode(t *testing.T) {
+func TestNormalizeOpenAIPassthroughOAuthBody_PreservesReasoningMode(t *testing.T) {
 	body := []byte(`{"model":"gpt-5.6-sol","input":"hello","reasoning":{"mode":"pro"}}`)
 
 	normalized, changed, err := normalizeOpenAIPassthroughOAuthBody(body, false)
 	require.NoError(t, err)
 	require.True(t, changed)
-	require.Equal(t, "max", gjson.GetBytes(normalized, "reasoning.effort").String())
-	require.False(t, gjson.GetBytes(normalized, "reasoning.mode").Exists())
+	require.False(t, gjson.GetBytes(normalized, "reasoning.effort").Exists())
+	require.Equal(t, "pro", gjson.GetBytes(normalized, "reasoning.mode").String())
 }
 
 func TestNormalizeOpenAIOAuthResponsesCompatibilityBody_PreservesExplicitInput(t *testing.T) {
@@ -118,35 +118,14 @@ func TestNormalizeOpenAIResponsesWebSocketCompatibilityBody_APIKeyStoreFalseRepl
 	require.Equal(t, "message", gjson.GetBytes(normalized, "input.2.type").String())
 }
 
-func TestNormalizeOpenAIResponsesReasoningMode(t *testing.T) {
-	tests := []struct {
-		name       string
-		body       string
-		wantEffort string
-	}{
-		{name: "pro maps to max", body: `{"reasoning":{"mode":"pro"}}`, wantEffort: "max"},
-		{name: "explicit effort wins", body: `{"reasoning":{"mode":"pro","effort":"high"}}`, wantEffort: "high"},
-		{name: "other mode only removed", body: `{"reasoning":{"mode":"standard"}}`},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			normalized, changed, err := normalizeOpenAIResponsesReasoningMode([]byte(tt.body))
-			require.NoError(t, err)
-			require.True(t, changed)
-			require.False(t, gjson.GetBytes(normalized, "reasoning.mode").Exists())
-			require.Equal(t, tt.wantEffort, gjson.GetBytes(normalized, "reasoning.effort").String())
-		})
-	}
-}
-
 func TestNormalizeOpenAIResponsesWebSocketCompatibilityBody_ReasoningModeAccountScope(t *testing.T) {
 	body := []byte(`{"type":"response.create","reasoning":{"mode":"pro"}}`)
 	for _, accountType := range []string{AccountTypeOAuth, AccountTypeSetupToken} {
 		normalized, changed, err := normalizeOpenAIResponsesWebSocketCompatibilityBody(body, &Account{Platform: PlatformOpenAI, Type: accountType}, false)
 		require.NoError(t, err)
-		require.True(t, changed)
-		require.Equal(t, "max", gjson.GetBytes(normalized, "reasoning.effort").String())
-		require.False(t, gjson.GetBytes(normalized, "reasoning.mode").Exists())
+		require.False(t, changed)
+		require.Equal(t, "pro", gjson.GetBytes(normalized, "reasoning.mode").String())
+		require.False(t, gjson.GetBytes(normalized, "reasoning.effort").Exists())
 	}
 	apiKeyBody, changed, err := normalizeOpenAIResponsesWebSocketCompatibilityBody(body, &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}, false)
 	require.NoError(t, err)

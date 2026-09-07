@@ -684,7 +684,7 @@ func TestOpenAIGatewayService_Forward_HTTPInvalidEncryptedContentStopsWithoutDro
 	require.NotContains(t, rec.Body.String(), `"output_tokens":2`)
 }
 
-func TestOpenAIGatewayService_Forward_HTTPWrappedInvalidEncryptedContentStopsWithoutReplay(t *testing.T) {
+func TestOpenAIGatewayService_Forward_HTTPWrappedInvalidEncryptedContentStopsWithoutReplayWhenRecoveryDisabled(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	upstream := &httpUpstreamRecorder{
 		responses: []*http.Response{
@@ -713,7 +713,7 @@ func TestOpenAIGatewayService_Forward_HTTPWrappedInvalidEncryptedContentStopsWit
 			"api_key":  "sk-test",
 			"base_url": "https://example.com",
 		},
-		Extra: map[string]any{"use_responses_api": true},
+		Extra: map[string]any{"use_responses_api": true, OpenAIReasoningSignatureRecoveryEnabledExtraKey: false},
 	}
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)

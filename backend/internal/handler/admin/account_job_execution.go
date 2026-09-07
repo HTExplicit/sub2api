@@ -214,6 +214,9 @@ func (h *AccountHandler) createAccountJobAccount(ctx context.Context, item Creat
 	if err := service.ValidateOpenAILongContextBillingExtra(item.Platform, item.Extra); err != nil {
 		return nil, err
 	}
+	if err := service.ValidateOpenAIReasoningPolicyExtra(item.Extra); err != nil {
+		return nil, err
+	}
 	if item.RateMultiplier != nil && *item.RateMultiplier < 0 {
 		return nil, errors.New("rate_multiplier must be >= 0")
 	}
@@ -565,6 +568,9 @@ func (h *AccountHandler) executeCodexImportJob(ctx context.Context, raw json.Raw
 		return accountJobFailed(item.ID, "payload_invalid")
 	}
 	if err := service.ValidateOpenAILongContextBillingExtra(service.PlatformOpenAI, req.Extra); err != nil {
+		return accountJobFailed(item.ID, "payload_invalid")
+	}
+	if err := service.ValidateOpenAIReasoningPolicyExtra(req.Extra); err != nil {
 		return accountJobFailed(item.ID, "payload_invalid")
 	}
 	entries, err := parseCodexSessionImportEntries(req)
