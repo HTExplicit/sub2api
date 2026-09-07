@@ -149,6 +149,7 @@ func (s *OpenAIGatewayService) FetchPinnedCodexModelsManifest(ctx context.Contex
 	}
 
 	bodies := make([][]byte, len(usable))
+	capacitySourcesByAccount := make([][]codexModelCapacitySource, len(usable))
 	fetchErrs := make([]error, len(usable))
 	// 各自独立完成、不取消兄弟请求，错误按下标收集，普通 WaitGroup 足够。
 	var fetchGroup sync.WaitGroup
@@ -168,12 +169,15 @@ func (s *OpenAIGatewayService) FetchPinnedCodexModelsManifest(ctx context.Contex
 				return
 			}
 			bodies[index] = manifest.Body
+			capacitySourcesByAccount[index] = cloneCodexModelsManifest(manifest).capacitySources
 		}()
 	}
 	fetchGroup.Wait()
 
 	successBodies := make([][]byte, 0, len(usable))
 	successAccounts := make([]*Account, 0, len(usable))
+	capacitySources := make([]codexModelCapacitySource, 0, len(usable))
+	capacitySeenModels := make(map[string]bool)
 	failedIDs := make([]int64, 0)
 	for i := range usable {
 		if fetchErrs[i] != nil || bodies[i] == nil {
@@ -182,6 +186,25 @@ func (s *OpenAIGatewayService) FetchPinnedCodexModelsManifest(ctx context.Contex
 		}
 		successBodies = append(successBodies, bodies[i])
 		successAccounts = append(successAccounts, &usable[i])
+		// Preserve the same first-seen source identity as the body merge. A
+		// losing duplicate from a protected source is not the returned row.
+		visibleModels := make(map[string]bool)
+		var sourceEnvelope struct {
+			Models []struct {
+				Slug string `json:"slug"`
+			} `json:"models"`
+		}
+		if json.Unmarshal(bodies[i], &sourceEnvelope) == nil {
+			for _, model := range sourceEnvelope.Models {
+				if model.Slug != "" && !capacitySeenModels[model.Slug] {
+					visibleModels[model.Slug], capacitySeenModels[model.Slug] = true, true
+				}
+			}
+		}
+		for _, source := range capacitySourcesByAccount[i] {
+			source.visibleModels = visibleModels
+			capacitySources = append(capacitySources, source)
+		}
 	}
 	if len(successBodies) == 0 {
 		var lastErr error
@@ -208,7 +231,8 @@ func (s *OpenAIGatewayService) FetchPinnedCodexModelsManifest(ctx context.Contex
 	}
 	firstAccount := *successAccounts[0]
 	return &CodexModelsManifest{
-		Body: merged,
-		ETag: codexModelsManifestBodyETag(merged),
+		Body:            merged,
+		ETag:            codexModelsManifestBodyETag(merged),
+		capacitySources: capacitySources,
 	}, &firstAccount, nil
 }

@@ -6,22 +6,26 @@ const {
   createAccountMock,
   probeUpstreamBillingMock,
   syncUpstreamModelsMock,
+  syncUpstreamModelsPreviewMock,
   showWarningMock,
   importCodexSessionMock,
   createOpenAICodexPATMock,
   authIsSimpleMode,
   showSuccess,
   getCindyModelsMock,
+  previewModelContextCapacitiesMock,
 } = vi.hoisted(() => ({
   createAccountMock: vi.fn(),
   probeUpstreamBillingMock: vi.fn(),
   syncUpstreamModelsMock: vi.fn(),
+  syncUpstreamModelsPreviewMock: vi.fn(),
   showWarningMock: vi.fn(),
   importCodexSessionMock: vi.fn(),
   createOpenAICodexPATMock: vi.fn(),
   authIsSimpleMode: { value: true },
   showSuccess: vi.fn(),
   getCindyModelsMock: vi.fn(),
+  previewModelContextCapacitiesMock: vi.fn(),
 }))
 
 vi.mock('@/stores/app', () => ({
@@ -46,6 +50,8 @@ vi.mock('@/api/admin', () => ({
       create: createAccountMock,
       probeUpstreamBilling: probeUpstreamBillingMock,
       syncUpstreamModels: syncUpstreamModelsMock,
+      syncUpstreamModelsPreview: syncUpstreamModelsPreviewMock,
+      previewModelContextCapacities: previewModelContextCapacitiesMock,
       checkMixedChannelRisk: vi.fn().mockResolvedValue({ has_risk: false }),
       importCodexSession: importCodexSessionMock,
       createOpenAICodexPAT: createOpenAICodexPATMock,
@@ -225,6 +231,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     createAccountMock.mockReset().mockResolvedValue({ id: 42, platform: 'openai', type: 'apikey' })
     probeUpstreamBillingMock.mockReset().mockResolvedValue({})
     syncUpstreamModelsMock.mockReset().mockResolvedValue({ models: [], metadata: {} })
+    syncUpstreamModelsPreviewMock.mockReset().mockResolvedValue({ models: [], capacity_rows: [] })
     showWarningMock.mockReset()
     importCodexSessionMock.mockReset().mockResolvedValue({
       id: 51,
@@ -234,6 +241,88 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     createOpenAICodexPATMock.mockReset().mockResolvedValue({})
     showSuccess.mockReset()
     getCindyModelsMock.mockReset().mockResolvedValue(['gpt-5.6-luna', 'gpt-image-2'])
+    previewModelContextCapacitiesMock.mockReset().mockResolvedValue({ capacity_rows: [] })
+  })
+
+  it('keeps a precise capacity draft outside restriction modes and saves only a typed override', async () => {
+    previewModelContextCapacitiesMock.mockResolvedValue({ capacity_rows: [{
+      upstream_model_id: 'gpt-5.6-sol', aliases: ['public-sol'], editable: true,
+      automatic_context_window: 1_050_000, automatic_source: 'official',
+      effective_context_window: 1_050_000, effective_source: 'official', capacity_basis: 'total_context'
+    }] })
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'API Key')
+    await flushPromises()
+    const inputSelector = '[data-model-id="gpt-5.6-sol"] [data-testid="context-capacity-input"]'
+    await wrapper.get(inputSelector).setValue('1.025M')
+    await selectButtonByText(wrapper, 'admin.accounts.modelMapping')
+    expect(wrapper.get(inputSelector).element).toHaveProperty('value', '1.025M')
+    await selectButtonByText(wrapper, 'admin.accounts.modelWhitelist')
+    expect(wrapper.get(inputSelector).element).toHaveProperty('value', '1.025M')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('capacity account')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
+    await vi.waitFor(() => expect(wrapper.get('[data-tour="account-form-submit"]').attributes('disabled')).toBeUndefined())
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(createAccountMock.mock.calls[0]?.[0]?.model_context_overrides).toEqual({ 'gpt-5.6-sol': 1_025_000 })
+    expect(createAccountMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty('model_context_overrides')
+    expect(previewModelContextCapacitiesMock.mock.calls.every(([payload]) => !('api_key' in payload))).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('adds full synced capacity rows without coupling capacity edits to selection and blocks invalid saves', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'API Key')
+    await flushPromises()
+    wrapper.findComponent(ModelWhitelistSelectorStub).vm.$emit('upstream-synced', {
+      models: ['brand-new-model'],
+      capacity_rows: [{ upstream_model_id: 'brand-new-model', aliases: [], editable: true,
+        automatic_context_window: 400_000, automatic_source: 'upstream',
+        effective_context_window: 400_000, effective_source: 'upstream', capacity_basis: 'total_context',
+        upstream: { context_window: 400_000, observed_at: '2026-09-07T00:00:00Z' } }]
+    })
+    await flushPromises()
+    const modelSelection = wrapper.findComponent(ModelWhitelistSelectorStub).props('modelValue')
+    await wrapper.get('[data-model-id="brand-new-model"] input').setValue('1.01')
+    expect(wrapper.findComponent(ModelWhitelistSelectorStub).props('modelValue')).toEqual(modelSelection)
+    expect(wrapper.get('[data-tour="account-form-submit"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    expect(createAccountMock).not.toHaveBeenCalled()
+    await selectButtonByText(wrapper, 'common.cancel')
+    expect(createAccountMock).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('syncs capacities from mapping mode without touching restrictions and persists the create preview after save', async () => {
+    const row = { upstream_model_id: 'dynamic-capacity-model', aliases: [], editable: true,
+      automatic_context_window: 600_000, automatic_source: 'upstream',
+      effective_context_window: 600_000, effective_source: 'upstream', capacity_basis: 'total_context',
+      upstream: { context_window: 600_000, observed_at: '2026-09-07T00:00:00Z' } }
+    syncUpstreamModelsPreviewMock.mockResolvedValue({ models: ['dynamic-capacity-model'], capacity_rows: [row] })
+    previewModelContextCapacitiesMock.mockResolvedValue({ capacity_rows: [row] })
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'API Key')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('shared sync')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
+    await selectButtonByText(wrapper, 'admin.accounts.modelMapping')
+    await flushPromises()
+    const mappingInputs = wrapper.findAll('input').filter(input => input.attributes('placeholder')?.includes('model'))
+    const previousMappings = mappingInputs.map(input => (input.element as HTMLInputElement).value)
+    await wrapper.get('[data-testid="context-capacity-sync"]').trigger('click')
+    await flushPromises()
+    expect(syncUpstreamModelsPreviewMock).toHaveBeenCalledTimes(1)
+    expect(syncUpstreamModelsPreviewMock.mock.calls[0][0]).toMatchObject({ platform: 'openai', type: 'apikey', api_key: 'test-api-key' })
+    expect(mappingInputs.map(input => (input.element as HTMLInputElement).value)).toEqual(previousMappings)
+    await wrapper.get('[data-model-id="dynamic-capacity-model"] input').setValue('700K')
+    await vi.waitFor(() => expect(wrapper.get('[data-tour="account-form-submit"]').attributes('disabled')).toBeUndefined())
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(createAccountMock.mock.calls[0]?.[0]?.model_context_overrides).toEqual({ 'dynamic-capacity-model': 700_000 })
+    expect(syncUpstreamModelsMock).toHaveBeenCalledWith(42)
+    wrapper.unmount()
   })
 
   it('reasoning policy defaults on without writing untouched switches during creation', async () => {

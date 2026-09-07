@@ -491,6 +491,7 @@ func (r *accountRepository) updateAccount(
 	}
 
 	account.UpdatedAt = updated.UpdatedAt
+	account.ModelContextOverridesPatch = nil
 	// 普通账号编辑（如 model_mapping / credentials）也需要立即刷新单账号快照，
 	// 否则网关在 outbox worker 延迟或异常时仍可能读到旧配置。
 	if contextTx == nil {
@@ -649,7 +650,10 @@ func lockAndMergeAccountProbeExtra(
 			extra -> 'upstream_billing_probe',
 			extra -> 'ollama_cloud_usage_session',
 			extra -> 'ollama_cloud_usage_auto_refresh',
-			extra -> 'ollama_cloud_usage_snapshot'
+			extra -> 'ollama_cloud_usage_snapshot',
+			extra -> 'upstream_model_context_capacities',
+			extra -> 'model_context_overrides',
+			extra -> 'upstream_model_metadata'
 		FROM accounts
 		WHERE id = $1 AND deleted_at IS NULL
 		FOR NO KEY UPDATE
@@ -676,6 +680,9 @@ func lockAndMergeAccountProbeExtra(
 		currentOllamaSession          []byte
 		currentOllamaAutoRefresh      []byte
 		currentOllamaSnapshot         []byte
+		currentContextCapacities      []byte
+		currentContextOverrides       []byte
+		currentModelMetadata          []byte
 	)
 	if err := rows.Scan(
 		&identityUnchanged,
@@ -688,6 +695,9 @@ func lockAndMergeAccountProbeExtra(
 		&currentOllamaSession,
 		&currentOllamaAutoRefresh,
 		&currentOllamaSnapshot,
+		&currentContextCapacities,
+		&currentContextOverrides,
+		&currentModelMetadata,
 	); err != nil {
 		return nil, false, err
 	}
@@ -695,7 +705,12 @@ func lockAndMergeAccountProbeExtra(
 		return nil, false, err
 	}
 
-	extra := copyJSONMap(normalizeJSONMap(account.Extra))
+	extra, err := mergeAccountModelContextExtra(
+		account, account.Extra, currentContextCapacities, currentContextOverrides, currentModelMetadata,
+	)
+	if err != nil {
+		return nil, false, err
+	}
 	for _, key := range []string{
 		service.UpstreamBillingProbeEnabledExtraKey,
 		service.UpstreamBillingRateSyncEnabledExtraKey,
@@ -781,6 +796,52 @@ func lockAndMergeAccountProbeExtra(
 		}
 	}
 	return extra, !credentialGenerationUnchanged, nil
+}
+
+// mergeAccountModelContextExtra protects service-owned snapshots from stale
+// whole-account edits. The caller supplies the current values read under the
+// account row lock, so patches to separate models compose even when both edits
+// were opened before either save. Sync writes continue to use UpdateExtra.
+func mergeAccountModelContextExtra(
+	account *service.Account,
+	extra map[string]any,
+	currentCapacities, currentOverrides, currentMetadata []byte,
+) (map[string]any, error) {
+	if err := service.ValidateModelContextOverrides(account, account.ModelContextOverridesPatch); err != nil {
+		return nil, err
+	}
+	merged := copyJSONMap(normalizeJSONMap(extra))
+	for _, field := range []struct {
+		key string
+		raw []byte
+	}{
+		{service.UpstreamModelContextCapacitiesExtraKey, currentCapacities},
+		{service.ModelContextOverridesExtraKey, currentOverrides},
+		{service.UpstreamModelMetadataExtraKey, currentMetadata},
+	} {
+		delete(merged, field.key)
+		value, ok, err := decodeAccountExtraJSON(field.raw)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			merged[field.key] = value
+		}
+	}
+	if account.ModelContextOverridesPatch != nil {
+		overrides, err := service.ApplyModelContextOverrides(
+			merged[service.ModelContextOverridesExtraKey], account.ModelContextOverridesPatch,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if len(overrides) == 0 {
+			delete(merged, service.ModelContextOverridesExtraKey)
+		} else {
+			merged[service.ModelContextOverridesExtraKey] = overrides
+		}
+	}
+	return merged, nil
 }
 
 func decodeAccountExtraJSON(raw []byte) (any, bool, error) {

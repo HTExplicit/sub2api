@@ -486,8 +486,10 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.DELETE("/:id/temp-unschedulable", h.Admin.Account.ClearTempUnschedulable)
 		accounts.POST("/:id/schedulable", h.Admin.Account.SetSchedulable)
 		accounts.POST("/models/sync-upstream-preview", h.Admin.Account.SyncUpstreamModelsPreview)
+		accounts.POST("/models/context-capacities-preview", h.Admin.Account.PreviewModelContextCapacities)
 		accounts.GET("/:id/models", h.Admin.Account.GetAvailableModels)
 		accounts.POST("/:id/models/sync-upstream", h.Admin.Account.SyncUpstreamModels)
+		accounts.GET("/:id/models/context-capacities", h.Admin.Account.GetModelContextCapacities)
 		accounts.POST("/batch", h.Admin.Account.BatchCreate)
 		// 账号导出泄露上游凭证原文——要求 step-up 2FA
 		accounts.GET("/data", gin.HandlerFunc(stepUpAuth), h.Admin.Account.ExportData)

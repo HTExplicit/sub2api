@@ -65,7 +65,7 @@ func main() {
 	verifyCodexContextContract := flag.Bool(
 		"verify-codex-context-contract",
 		false,
-		"Verify the embedded ordinary Codex context normalization contract",
+		"Verify ordinary-provider context capacity priority and protected-manifest contracts offline",
 	)
 	flag.Parse()
 	if *verifyCodexContextContract {

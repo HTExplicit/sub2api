@@ -2,10 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 
-const { updateAccountMock, checkMixedChannelRiskMock, getAvailableModelsMock, authIsSimpleMode } = vi.hoisted(() => ({
+const { updateAccountMock, checkMixedChannelRiskMock, getAvailableModelsMock, getModelContextCapacitiesMock, previewModelContextCapacitiesMock, syncUpstreamModelsMock, authIsSimpleMode } = vi.hoisted(() => ({
   updateAccountMock: vi.fn(),
   checkMixedChannelRiskMock: vi.fn(),
   getAvailableModelsMock: vi.fn(),
+  getModelContextCapacitiesMock: vi.fn(),
+  previewModelContextCapacitiesMock: vi.fn(),
+  syncUpstreamModelsMock: vi.fn(),
   authIsSimpleMode: { value: true }
 }))
 
@@ -30,7 +33,10 @@ vi.mock('@/api/admin', () => ({
     accounts: {
       update: updateAccountMock,
       checkMixedChannelRisk: checkMixedChannelRiskMock,
-      getAvailableModels: getAvailableModelsMock
+      getAvailableModels: getAvailableModelsMock,
+      getModelContextCapacities: getModelContextCapacitiesMock,
+      previewModelContextCapacities: previewModelContextCapacitiesMock,
+      syncUpstreamModels: syncUpstreamModelsMock
     },
     settings: {
       getWebSearchEmulationConfig: vi.fn().mockResolvedValue({ enabled: false, providers: [] }),
@@ -342,6 +348,103 @@ describe('EditAccountModal', () => {
     authIsSimpleMode.value = true
     getAvailableModelsMock.mockReset()
     getAvailableModelsMock.mockResolvedValue([])
+    getModelContextCapacitiesMock.mockReset().mockResolvedValue({ capacity_rows: [] })
+    previewModelContextCapacitiesMock.mockReset().mockResolvedValue({ capacity_rows: [] })
+    syncUpstreamModelsMock.mockReset().mockResolvedValue({ models: [], capacity_rows: [] })
+  })
+
+  it('clears only a named capacity override and never writes managed snapshot Extra back', async () => {
+    const account = buildAccount()
+    account.extra = {
+      model_context_overrides: { 'gpt-5.2': 500_000, untouched: 700_000 },
+      upstream_model_context_capacities: { stale: true },
+      upstream_model_metadata: { stale: true },
+      unrelated_setting: 'preserved'
+    }
+    getModelContextCapacitiesMock.mockResolvedValue({ capacity_rows: [{
+      upstream_model_id: 'gpt-5.2', aliases: [], editable: true, custom_context_window: 500_000,
+      automatic_context_window: 400_000, automatic_source: 'official',
+      effective_context_window: 500_000, effective_source: 'custom', capacity_basis: 'total_context'
+    }] })
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    const wrapper = mountModal(account)
+    await flushPromises()
+    expect(getModelContextCapacitiesMock).toHaveBeenCalledWith(1, expect.any(AbortSignal))
+    const modelSelection = wrapper.findComponent(ModelWhitelistSelectorStub).props('modelValue')
+    await wrapper.get('[data-testid="context-capacity-clear"]').trigger('click')
+    expect(wrapper.findComponent(ModelWhitelistSelectorStub).props('modelValue')).toEqual(modelSelection)
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+    const payload = updateAccountMock.mock.calls[0]?.[1]
+    expect(payload.model_context_overrides).toEqual({ 'gpt-5.2': null })
+    expect(payload.extra).not.toHaveProperty('model_context_overrides')
+    expect(payload.extra).not.toHaveProperty('upstream_model_context_capacities')
+    expect(payload.extra).not.toHaveProperty('upstream_model_metadata')
+    expect(payload.extra.unrelated_setting).toBe('preserved')
+    wrapper.unmount()
+  })
+
+  it('retains capacity drafts after changing restriction mode and resets on cancel', async () => {
+    const row = {
+      upstream_model_id: 'gpt-5.2', aliases: [], editable: true,
+      automatic_context_window: 400_000, automatic_source: 'official',
+      effective_context_window: 400_000, effective_source: 'official', capacity_basis: 'total_context'
+    }
+    getModelContextCapacitiesMock.mockResolvedValue({ capacity_rows: [row] })
+    previewModelContextCapacitiesMock.mockResolvedValue({ capacity_rows: [row] })
+    updateAccountMock.mockReset()
+    const wrapper = mountModal()
+    await flushPromises()
+    await wrapper.get('[data-testid="context-capacity-input"]').setValue('1.05M')
+    const mode = wrapper.findAll('button').find(button => button.text() === 'admin.accounts.modelMapping')
+    await mode!.trigger('click')
+    expect(wrapper.get('[data-testid="context-capacity-input"]').element).toHaveProperty('value', '1.05M')
+    const cancel = wrapper.findAll('button').find(button => button.text() === 'common.cancel')
+    await cancel!.trigger('click')
+    expect(updateAccountMock).not.toHaveBeenCalled()
+    await wrapper.setProps({ show: false })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="context-capacity-input"]').element).toHaveProperty('value', '')
+    wrapper.unmount()
+  })
+
+  it('shows protected capacity rows read-only and omits overrides on save', async () => {
+    const account = buildOpenAIOAuthParentAccount()
+    getModelContextCapacitiesMock.mockResolvedValue({ capacity_rows: [{
+      upstream_model_id: 'gpt-5.2', aliases: [], editable: false,
+      automatic_context_window: 272_000, automatic_source: 'protected',
+      effective_context_window: 272_000, effective_source: 'protected', capacity_basis: 'total_context'
+    }] })
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    const wrapper = mountModal(account)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="context-capacity-input"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="context-capacity-readonly"]').exists()).toBe(true)
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(updateAccountMock.mock.calls[0]?.[1]).not.toHaveProperty('model_context_overrides')
+    wrapper.unmount()
+  })
+
+  it('offers shared capacity sync in mapping mode without changing restrictions and blocks dirty source sync', async () => {
+    const account = buildAccount()
+    account.credentials.model_mapping = { 'public-sol': 'gpt-5.6-sol' }
+    const wrapper = mountModal(account)
+    await flushPromises()
+    const mappingInput = wrapper.findAll('input').find(input => (input.element as HTMLInputElement).value === 'gpt-5.6-sol')!
+    expect(mappingInput.exists()).toBe(true)
+    await wrapper.get('[data-testid="context-capacity-sync"]').trigger('click')
+    await flushPromises()
+    expect(syncUpstreamModelsMock).toHaveBeenCalledWith(1)
+    expect(mappingInput.element).toHaveProperty('value', 'gpt-5.6-sol')
+    const endpointInput = wrapper.findAll('input').find(input => (input.element as HTMLInputElement).value === 'https://api.openai.com')!
+    await endpointInput.setValue('https://new-provider.example/v1')
+    expect(wrapper.get('[data-testid="context-capacity-sync"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('admin.accounts.contextCapacity.saveBeforeSync')
+    await wrapper.get('[data-testid="context-capacity-sync"]').trigger('click')
+    expect(syncUpstreamModelsMock).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
   })
 
   it.each(['apikey', 'oauth', 'setup-token'])('reasoning policy defaults on and omits untouched edits for %s', async (type) => {

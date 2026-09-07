@@ -187,10 +187,11 @@
         {{ t('admin.accounts.fillRelatedModels') }}
       </button>
       <button
-        v-if="canSyncUpstream"
+        v-if="canSyncUpstream && !hideSync"
         type="button"
         @click="syncUpstreamModels"
-        :disabled="isSyncingUpstream"
+        :disabled="isSyncingUpstream || syncDisabled"
+        :title="syncDisabledReason"
         class="rounded-lg border border-emerald-200 px-3 py-1.5 text-sm text-emerald-600 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
       >
         {{ isSyncingUpstream ? t('admin.accounts.syncUpstreamModelsLoading') : t('admin.accounts.syncUpstreamModels') }}
@@ -231,11 +232,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onScopeDispose } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { accountsAPI } from '@/api/admin/accounts'
-import type { SyncUpstreamPreviewParams } from '@/api/admin/accounts'
+import type { SyncUpstreamModelsResult, SyncUpstreamPreviewParams } from '@/api/admin/accounts'
 import { useClipboard } from '@/composables/useClipboard'
 import ModelIcon from '@/components/common/ModelIcon.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -250,6 +251,11 @@ const props = defineProps<{
   platforms?: string[]
   accountId?: number
   models?: AccountAvailableModel[]
+  syncedModels?: SyncUpstreamModelsResult
+  hideSync?: boolean
+  syncDisabled?: boolean
+  syncDisabledReason?: string
+  syncSourceKey?: string
   readonly?: boolean
   syncCredentials?: {
     platform: string
@@ -261,7 +267,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:modelValue': [value: string[]]
-  'upstream-synced': []
+  'upstream-synced': [result: SyncUpstreamModelsResult]
 }>()
 
 const appStore = useAppStore()
@@ -272,6 +278,17 @@ const searchQuery = ref('')
 const customModel = ref('')
 const isComposing = ref(false)
 const isSyncingUpstream = ref(false)
+const lastSyncResult = ref<SyncUpstreamModelsResult>()
+let syncGeneration = 0
+watch(
+  () => JSON.stringify([props.accountId, props.platform, props.platforms, props.syncCredentials, props.syncSourceKey, props.syncDisabled]),
+  () => {
+    syncGeneration += 1
+    isSyncingUpstream.value = false
+    lastSyncResult.value = undefined
+  }
+)
+onScopeDispose(() => { syncGeneration += 1 })
 const normalizedPlatforms = computed(() => {
   const rawPlatforms =
     props.platforms && props.platforms.length > 0
@@ -321,7 +338,7 @@ interface ModelSelectorOption {
   endpoints?: string[]
 }
 
-const availableOptions = computed<ModelSelectorOption[]>(() => {
+const staticOptions = computed<ModelSelectorOption[]>(() => {
   if (props.models) {
     return props.models.map(model => ({
       value: model.id,
@@ -347,6 +364,24 @@ const availableOptions = computed<ModelSelectorOption[]>(() => {
   }
 
   return allModels.filter(model => allowedModels.has(model.value))
+})
+
+// A successful sync may contain models absent from the shipped selector catalog.
+// Keep their complete metadata and let the modal retain it across mode switches.
+const availableOptions = computed<ModelSelectorOption[]>(() => {
+  const options = new Map(staticOptions.value.map(model => [model.value, model]))
+  const result = props.syncedModels ?? lastSyncResult.value
+  for (const id of result?.models ?? []) {
+    const metadata = result?.metadata?.[id]
+    options.set(id, {
+      ...options.get(id),
+      value: id,
+      label: metadata?.display_name || id,
+      context_window: metadata?.context_window,
+      max_output_tokens: metadata?.max_output_tokens
+    })
+  }
+  return [...options.values()]
 })
 
 const filteredModels = computed(() => {
@@ -427,10 +462,11 @@ const fillRelated = () => {
 }
 
 const syncUpstreamModels = async () => {
-  if (isSyncingUpstream.value) return
+  if (isSyncingUpstream.value || props.syncDisabled) return
   if (!props.accountId && !props.syncCredentials) return
 
   isSyncingUpstream.value = true
+  const generation = ++syncGeneration
   try {
     let result
     if (props.accountId) {
@@ -441,14 +477,13 @@ const syncUpstreamModels = async () => {
       return
     }
 
+    if (generation !== syncGeneration) return
+    lastSyncResult.value = result
+    emit('upstream-synced', result)
     const upstreamModels = result.models.map(model => model.trim()).filter(Boolean)
     if (upstreamModels.length === 0) {
       appStore.showInfo(t('admin.accounts.syncUpstreamModelsEmpty'))
       return
-    }
-
-    if (!props.accountId) {
-      emit('upstream-synced')
     }
 
     const newModels = [...props.modelValue]
@@ -481,10 +516,11 @@ const syncUpstreamModels = async () => {
       appStore.showWarning(t('admin.accounts.syncUpstreamModelsMetadataPartial'))
     }
   } catch (error) {
+    if (generation !== syncGeneration) return
     const message = error instanceof Error ? error.message : t('admin.accounts.syncUpstreamModelsFailed')
     appStore.showError(t('admin.accounts.syncUpstreamModelsError', { message }))
   } finally {
-    isSyncingUpstream.value = false
+    if (generation === syncGeneration) isSyncingUpstream.value = false
   }
 }
 

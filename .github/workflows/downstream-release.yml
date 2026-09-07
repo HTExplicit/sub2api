@@ -78,6 +78,8 @@ jobs:
           go test -p=1 -tags integration ./internal/repository -run '^(Test(AccountTaxonomy.*|DeleteAccountFolder.*)Integration|TestAPIKeyRepoSuite/TestReleaseAcceptanceKeyIsHiddenButAuthenticates)$' -count=1
           python3 ../.github/scripts/test_upstream_risk.py
           python3 ../.github/scripts/test_upstream_automation_contract.py
+      - name: Model context capacity contracts
+        run: bash .github/scripts/test_model_context_capacity.sh
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 9.15.9
@@ -99,6 +101,10 @@ jobs:
             src/utils/__tests__/openaiReasoningPolicy.spec.ts \
             src/components/account/__tests__/EditAccountModal.spec.ts \
             src/components/account/__tests__/ModelWhitelistSelector.spec.ts \
+            src/components/account/__tests__/ModelContextCapacityPanel.spec.ts \
+            src/utils/__tests__/modelContextCapacity.spec.ts \
+            src/composables/__tests__/useModelContextCapacities.spec.ts \
+            src/api/__tests__/admin.accounts.contextCapacity.spec.ts \
             src/composables/__tests__/useModelWhitelist.spec.ts \
             src/components/account/__tests__/BulkEditAccountModal.spec.ts \
             src/components/account/__tests__/UsageProgressBar.spec.ts \

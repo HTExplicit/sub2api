@@ -88,8 +88,8 @@ func TestAstraCodexToolCapabilitiesPreserveLiveNullAndFalse(t *testing.T) {
 	require.Empty(t, fields)
 }
 
-// Scenario: mixed groups prefer capability metadata synced for the routed account.
-func TestBuildCodexModelsManifestForGroupUsesSyncedAccountMetadata(t *testing.T) {
+// Scenario: mixed groups retain synced capabilities without treating old registry capacity as an upstream observation.
+func TestBuildCodexModelsManifestForGroupUsesSyncedNonCapacityMetadataWithoutTrustingLegacyCapacity(t *testing.T) {
 	t.Parallel()
 
 	const groupID int64 = 735
@@ -121,7 +121,7 @@ func TestBuildCodexModelsManifestForGroupUsesSyncedAccountMetadata(t *testing.T)
 	}
 	svc := &GatewayService{accountRepo: codexModelsVisibilityAccountRepo{byGroup: map[int64][]Account{
 		groupID: {account},
-	}}}
+	}}, compositeResolver: NewCompositeRouteResolver(&groupCapacityRouteRepo{})}
 
 	body, err := svc.BuildCodexModelsManifestForGroup(
 		context.Background(),
@@ -137,7 +137,9 @@ func TestBuildCodexModelsManifestForGroupUsesSyncedAccountMetadata(t *testing.T)
 	require.Equal(t, "low", models[0]["default_reasoning_level"])
 	require.Equal(t, []string{"low", "high", "max"}, effortsFromManifestModel(t, models[0]))
 	require.Equal(t, []any{"text", "image"}, models[0]["input_modalities"])
-	require.EqualValues(t, 1_000_000, models[0]["context_window"])
+	require.EqualValues(t, 258_000, models[0]["context_window"])
+	require.Equal(t, "default", models[0]["context_capacity_source"])
+	require.Equal(t, "no_verified_capacity", models[0]["context_capacity_reason"])
 }
 
 // Scenario: an explicitly non-reasoning model remains directly selectable in Codex.
@@ -272,6 +274,12 @@ func TestBuildCodexModelsManifestForGroupIntersectsSyncedAccountMetadata(t *test
 				ContextWindow:            contextWindow,
 			},
 		}})
+		account.SetUpstreamModelContextCapacitySnapshot(UpstreamModelContextCapacitySnapshot{
+			ObservedAt: "2026-09-07T00:00:00Z",
+			Models: map[string]ModelContextCapacity{
+				"shared-model": {ContextWindow: contextWindow},
+			},
+		})
 		return account
 	}
 	svc := &GatewayService{accountRepo: codexModelsVisibilityAccountRepo{byGroup: map[int64][]Account{
@@ -279,7 +287,7 @@ func TestBuildCodexModelsManifestForGroupIntersectsSyncedAccountMetadata(t *test
 			newAccount(26, []string{"low", "high"}, []string{"text", "image"}, 256_000),
 			newAccount(27, []string{"high", "max"}, []string{"text"}, 128_000),
 		},
-	}}}
+	}}, compositeResolver: NewCompositeRouteResolver(&groupCapacityRouteRepo{})}
 
 	body, err := svc.BuildCodexModelsManifestForGroup(
 		context.Background(), &Group{ID: groupID, Platform: PlatformComposite}, "", []string{"shared-model"},
@@ -291,6 +299,7 @@ func TestBuildCodexModelsManifestForGroupIntersectsSyncedAccountMetadata(t *test
 	require.Equal(t, "high", models[0]["default_reasoning_level"])
 	require.Equal(t, []any{"text"}, models[0]["input_modalities"])
 	require.EqualValues(t, 128_000, models[0]["context_window"])
+	require.Equal(t, "upstream", models[0]["context_capacity_source"])
 }
 
 // Scenario: the same public alias may target different models on one platform when complete snapshots can be intersected.
@@ -315,6 +324,12 @@ func TestBuildCodexModelsManifestForGroupIntersectsDifferentMappedTargetsWithout
 				ContextWindow:            contextWindow,
 			},
 		}})
+		account.SetUpstreamModelContextCapacitySnapshot(UpstreamModelContextCapacitySnapshot{
+			ObservedAt: "2026-09-07T00:00:00Z",
+			Models: map[string]ModelContextCapacity{
+				target: {ContextWindow: contextWindow},
+			},
+		})
 		return account
 	}
 	openAIAccount := newAccount(
@@ -351,7 +366,8 @@ func TestBuildCodexModelsManifestForGroupIntersectsDifferentMappedTargetsWithout
 		require.Equal(t, "Custom model routed through Sub2API.", models[0]["description"])
 		require.Equal(t, []string{"low", "medium", "high"}, effortsFromManifestModel(t, models[0]))
 		require.Equal(t, []any{"text"}, models[0]["input_modalities"])
-		require.EqualValues(t, 272_000, models[0]["context_window"])
+		require.EqualValues(t, 1_000_000, models[0]["context_window"], "official capacities win before per-account minimum aggregation")
+		require.Equal(t, "official", models[0]["context_capacity_source"])
 	}
 }
 
@@ -373,8 +389,8 @@ func TestBuildCodexModelsManifestForGroupIntersectsTransientlyUnschedulableMappe
 	)
 	transientlyUnschedulable := newCodexCatalogMappedAccount(
 		42,
-		"glm-5.3",
-		"GLM 5.3",
+		"provider-coder-small",
+		"Provider Coder Small",
 		[]string{"low", "medium", "high"},
 		[]string{"text"},
 		272_000,
@@ -397,6 +413,7 @@ func TestBuildCodexModelsManifestForGroupIntersectsTransientlyUnschedulableMappe
 	require.Equal(t, []string{"low", "medium", "high"}, effortsFromManifestModel(t, models[0]))
 	require.Equal(t, []any{"text"}, models[0]["input_modalities"])
 	require.EqualValues(t, 272_000, models[0]["context_window"])
+	require.Equal(t, "upstream", models[0]["context_capacity_source"])
 }
 
 // Scenario: a persistently disabled account cannot narrow the advertised contract.
@@ -437,10 +454,11 @@ func TestBuildCodexModelsManifestForGroupIgnoresPersistentlyDisabledMappedAccoun
 	models := decodeCodexManifestModels(t, body)
 	require.Len(t, models, 1)
 	require.Equal(t, []any{"text", "image"}, models[0]["input_modalities"])
-	require.EqualValues(t, 1_000_000, models[0]["context_window"])
+	require.EqualValues(t, 1_050_000, models[0]["context_window"])
+	require.Equal(t, "official", models[0]["context_capacity_source"])
 }
 
-func TestBuildCodexModelsManifestForGroupFallsBackToSchedulableWhenAvailabilityLookupFails(t *testing.T) {
+func TestBuildCodexModelsManifestForGroupKeepsNonCapacityFallbackWhenAvailabilityLookupFails(t *testing.T) {
 	t.Parallel()
 
 	const groupID int64 = 743
@@ -464,10 +482,13 @@ func TestBuildCodexModelsManifestForGroupFallsBackToSchedulableWhenAvailabilityL
 	)
 	require.NoError(t, err)
 	require.Equal(t, int32(1), repo.calls.Load())
+	require.Equal(t, int32(1), repo.availabilityCalls.Load())
 	models := decodeCodexManifestModels(t, body)
 	require.Len(t, models, 1)
 	require.Equal(t, []any{"text", "image"}, models[0]["input_modalities"])
-	require.EqualValues(t, 1_000_000, models[0]["context_window"])
+	require.EqualValues(t, 258_000, models[0]["context_window"])
+	require.Equal(t, "default", models[0]["context_capacity_source"])
+	require.Equal(t, "account_query_failed", models[0]["context_capacity_reason"])
 }
 
 // Scenario: a Composite alias claimed across platforms remains ambiguous and fails closed.

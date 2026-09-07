@@ -276,6 +276,9 @@
                 v-model="allowedModels"
                 :platform="account?.platform || 'anthropic'"
                 :account-id="account?.id"
+                :synced-models="capacitySyncedModels"
+                hide-sync
+                @upstream-synced="acceptCapacitySync"
               />
               <p v-if="!isCindyAccount" class="text-xs text-gray-500 dark:text-gray-400">
                 {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
@@ -735,7 +738,7 @@
 
           <!-- Whitelist Mode -->
           <div v-if="modelRestrictionMode === 'whitelist'">
-            <ModelWhitelistSelector v-model="allowedModels" :platform="account?.platform || 'anthropic'" :account-id="account?.id" />
+            <ModelWhitelistSelector v-model="allowedModels" :platform="account?.platform || 'anthropic'" :account-id="account?.id" :synced-models="capacitySyncedModels" hide-sync @upstream-synced="acceptCapacitySync" />
             <p class="text-xs text-gray-500 dark:text-gray-400">
               {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
               <span v-if="allowedModels.length === 0 && modelMappings.length === 0">{{
@@ -947,7 +950,7 @@
 
           <!-- Whitelist Mode -->
           <div v-if="modelRestrictionMode === 'whitelist'">
-            <ModelWhitelistSelector v-model="allowedModels" :platform="account?.platform || 'anthropic'" :account-id="account?.id" />
+            <ModelWhitelistSelector v-model="allowedModels" :platform="account?.platform || 'anthropic'" :account-id="account?.id" :synced-models="capacitySyncedModels" hide-sync @upstream-synced="acceptCapacitySync" />
             <p class="text-xs text-gray-500 dark:text-gray-400">
               {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
               <span v-if="allowedModels.length === 0 && modelMappings.length === 0">{{
@@ -1606,6 +1609,18 @@
         </div>
         <ProxySelector v-model="form.proxy_id" :proxies="proxies" />
       </div>
+
+      <ModelContextCapacityPanel
+        v-model="capacityDrafts"
+        :rows="capacityRows"
+        :loading="capacityLoading"
+        :error="capacityLoadFailed ? t('admin.accounts.contextCapacity.loadFailed') : undefined"
+        :can-sync="canCapacitySync"
+        :syncing="capacitySyncing"
+        :sync-disabled="capacityProfileChanged"
+        :sync-disabled-reason="capacityProfileChanged ? t('admin.accounts.contextCapacity.saveBeforeSync') : undefined"
+        @sync="syncCapacityModels"
+      />
 
       <UpstreamRequestIdHeaderField
         v-model="upstreamRequestIdHeader"
@@ -2964,7 +2979,7 @@
         <button
           type="submit"
           form="edit-account-form"
-          :disabled="submitting || cindyCatalogLoading"
+          :disabled="submitting || cindyCatalogLoading || !capacityValid || !capacityReady"
           class="btn btn-primary"
           data-tour="account-form-submit"
         >
@@ -3044,6 +3059,8 @@ import ProxySelector from '@/components/common/ProxySelector.vue'
 import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
+import ModelContextCapacityPanel from '@/components/account/ModelContextCapacityPanel.vue'
+import { useModelContextCapacities, withoutManagedCapacityExtra } from '@/composables/useModelContextCapacities'
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import GrokBaseUrlPresets from '@/components/account/GrokBaseUrlPresets.vue'
 import CnBaseUrlPresets from '@/components/account/CnBaseUrlPresets.vue'
@@ -4373,6 +4390,67 @@ watch(
   { immediate: true }
 )
 
+const {
+  rows: capacityRows,
+  drafts: capacityDrafts,
+  syncedModels: capacitySyncedModels,
+  loading: capacityLoading,
+  syncing: capacitySyncing,
+  profileChanged: capacityProfileChanged,
+  loadFailed: capacityLoadFailed,
+  valid: capacityValid,
+  ready: capacityReady,
+  acceptSync: acceptCapacitySync,
+  synchronize: synchronizeCapacity,
+  reset: resetCapacityState,
+  buildPatch: buildCapacityPatch
+} = useModelContextCapacities({
+  enabled: () => props.show && Boolean(props.account),
+  identity: () => `${props.account?.id ?? ''}`,
+  syncIdentity: () => editApiKey.value,
+  params: () => ({
+    account_id: props.account?.id,
+    platform: props.account?.platform ?? '',
+    type: props.account?.type ?? '',
+    base_url: props.account?.type === 'apikey' || props.account?.type === 'upstream'
+      ? editBaseUrl.value.trim() || defaultBaseUrl.value
+      : undefined,
+    ...(isCNApiKeyAccount.value ? {
+      account_mode: editAccountMode.value,
+      api_protocol: editApiProtocol.value,
+      api_base_urls: editApiProtocol.value === 'adaptive' ? { ...editAdaptiveBaseUrls.value } : undefined
+    } : {}),
+    model_mapping: props.account?.platform === 'antigravity'
+      ? buildModelMappingObject('mapping', [], antigravityModelMappings.value) ?? {}
+      : buildModelRestrictionMapping() ?? {},
+    model_ids: [...new Set([
+      ...allowedModels.value, ...cindyManagedCatalog.value.map(model => model.id),
+      ...cindyManagedAliases.value.map(model => model.id)
+    ])]
+  })
+})
+
+const canCapacitySync = computed(() => !isCindyAccount.value &&
+  (props.account?.type === 'apikey' || props.account?.type === 'upstream'))
+
+const syncCapacityModels = async () => {
+  if (!props.account || !canCapacitySync.value || capacityProfileChanged.value) return
+  const accountID = props.account.id
+  try {
+    const result = await synchronizeCapacity(() => adminAPI.accounts.syncUpstreamModels(accountID))
+    if (!result) return
+    if (result.warnings?.some(warning => warning.code === 'upstream_model_metadata_incomplete')) {
+      appStore.showWarning(t('admin.accounts.syncUpstreamModelsMetadataIncomplete'))
+    } else if (result.warnings?.some(warning => warning.code === 'upstream_model_metadata_partial')) {
+      appStore.showWarning(t('admin.accounts.syncUpstreamModelsMetadataPartial'))
+    } else {
+      appStore.showSuccess(t('admin.accounts.contextCapacity.syncSuccess', { count: result.models.length }))
+    }
+  } catch {
+    appStore.showError(t('admin.accounts.syncUpstreamModelsFailed'))
+  }
+}
+
 // Model mapping helpers
 const addModelMapping = () => {
   modelMappings.value.push({ from: '', to: '' })
@@ -4421,7 +4499,9 @@ const syncAntigravityUpstreamModels = async () => {
 
   isSyncingAntigravityUpstream.value = true
   try {
-    const result = await adminAPI.accounts.syncUpstreamModels(props.account.id)
+    const accountID = props.account.id
+    const result = await synchronizeCapacity(() => adminAPI.accounts.syncUpstreamModels(accountID))
+    if (!result) return
     const upstreamModels = result.models.map((model) => model.trim()).filter(Boolean)
     if (upstreamModels.length === 0) {
       appStore.showInfo(t('admin.accounts.syncUpstreamModelsEmpty'))
@@ -4868,6 +4948,7 @@ const parseDateTimeLocal = parseDateTimeLocalInput
 
 // Methods
 const handleClose = () => {
+  resetCapacityState()
   antigravityMixedChannelConfirmed.value = false
   clearMixedChannelDialog()
   emit('close')
@@ -4899,6 +4980,14 @@ const submitUpdateAccount = async (accountID: number, updatePayload: Record<stri
 
 const handleSubmit = async () => {
   if (!props.account) return
+  if (!capacityReady.value) {
+    appStore.showError(t(capacityLoadFailed.value ? 'admin.accounts.contextCapacity.loadFailed' : 'admin.accounts.contextCapacity.loading'))
+    return
+  }
+  if (!capacityValid.value) {
+    appStore.showError(t('admin.accounts.contextCapacity.invalid'))
+    return
+  }
   const accountID = props.account.id
 
   if (form.status !== 'active' && form.status !== 'inactive' && form.status !== 'error') {
@@ -5662,6 +5751,12 @@ const handleSubmit = async () => {
         openAIReasoningPolicySelected.value
       )
     }
+
+    if (updatePayload.extra) {
+      updatePayload.extra = withoutManagedCapacityExtra(updatePayload.extra as Record<string, unknown>)
+    }
+    const overrides = buildCapacityPatch()
+    if (Object.keys(overrides).length) updatePayload.model_context_overrides = overrides
 
     const canContinue = await ensureAntigravityMixedChannelConfirmed(async () => {
       await submitUpdateAccount(accountID, updatePayload)
