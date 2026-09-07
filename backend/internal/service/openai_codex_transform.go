@@ -957,7 +957,7 @@ func stripOpenAIImageGenerationToolsFromRawPayload(payload []byte) ([]byte, bool
 		return payload, false, json.Unmarshal(payload, &invalidPayload)
 	}
 	payloadMap := make(map[string]any)
-	if err := json.Unmarshal(payload, &payloadMap); err != nil {
+	if err := decodeOpenAIJSONUseNumber(payload, &payloadMap); err != nil {
 		return payload, false, err
 	}
 	if !stripOpenAIImageGenerationTools(payloadMap) {
@@ -1389,7 +1389,7 @@ func mapCindyOpenAIResponsesImageModels(reqBody map[string]any, account *Account
 // Responses image_generation tool has no output-count field.
 func ResolveCindyResponsesImageTools(body []byte) ([]byte, error) {
 	var request map[string]any
-	if err := json.Unmarshal(body, &request); err != nil {
+	if err := decodeOpenAIJSONUseNumber(body, &request); err != nil {
 		return nil, fmt.Errorf("decode Responses image tools: %w", err)
 	}
 	changed := false
@@ -1488,8 +1488,20 @@ func validateCindyResponsesImageToolControls(location, model string, controls *C
 		}
 	}
 	if rawCount, exists := tool["n"]; exists {
-		count, ok := rawCount.(float64)
-		if !ok || count != math.Trunc(count) || count < 1 || count > float64(controls.MaxOutputCount) {
+		var count float64
+		switch value := rawCount.(type) {
+		case float64:
+			count = value
+		case json.Number:
+			var err error
+			count, err = value.Float64()
+			if err != nil {
+				return fmt.Errorf("%s.n must be between 1 and %d for model %q", location, controls.MaxOutputCount, model)
+			}
+		default:
+			return fmt.Errorf("%s.n must be between 1 and %d for model %q", location, controls.MaxOutputCount, model)
+		}
+		if count != math.Trunc(count) || count < 1 || count > float64(controls.MaxOutputCount) {
 			return fmt.Errorf("%s.n must be between 1 and %d for model %q", location, controls.MaxOutputCount, model)
 		}
 	}

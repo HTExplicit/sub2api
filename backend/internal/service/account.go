@@ -125,6 +125,11 @@ type OpenAIEndpointCapability string
 const openAILongContextBillingEnabledKey = "openai_long_context_billing_enabled"
 
 const (
+	OpenAIChatReasoningReplayEnabledExtraKey        = "openai_chat_reasoning_replay_enabled"
+	OpenAIReasoningSignatureRecoveryEnabledExtraKey = "openai_reasoning_signature_recovery_enabled"
+)
+
+const (
 	OpenAIEndpointCapabilityChatCompletions OpenAIEndpointCapability = "chat_completions"
 	OpenAIEndpointCapabilityMessages        OpenAIEndpointCapability = "messages"
 	OpenAIEndpointCapabilityCountTokens     OpenAIEndpointCapability = "count_tokens"
@@ -2117,6 +2122,44 @@ func (a *Account) IsOveragesEnabled() bool {
 		}
 	}
 	return false
+}
+
+// IsOpenAIChatReasoningReplayEnabled reports the account policy for replaying
+// completed tool reasoning on Chat-to-Responses routes. Endpoint eligibility is
+// checked by the caller; enabling this policy does not change the selected route.
+func (a *Account) IsOpenAIChatReasoningReplayEnabled() bool {
+	return a.isOpenAIReasoningPolicyEnabled(OpenAIChatReasoningReplayEnabledExtraKey)
+}
+
+// IsOpenAIReasoningSignatureRecoveryEnabled reports the account policy for the
+// bounded HTTP reasoning-signature recovery, including the passthrough exception.
+func (a *Account) IsOpenAIReasoningSignatureRecoveryEnabled() bool {
+	return a.isOpenAIReasoningPolicyEnabled(OpenAIReasoningSignatureRecoveryEnabledExtraKey)
+}
+
+func (a *Account) isOpenAIReasoningPolicyEnabled(key string) bool {
+	if !a.supportsOpenAIReasoningPolicies() {
+		return false
+	}
+	raw, exists := a.Extra[key]
+	if !exists {
+		return true
+	}
+	// Legacy malformed values are not a request to enable a stateful feature.
+	enabled, valid := raw.(bool)
+	return valid && enabled
+}
+
+func (a *Account) supportsOpenAIReasoningPolicies() bool {
+	if a == nil || !a.IsOpenAI() {
+		return false
+	}
+	switch a.Type {
+	case AccountTypeAPIKey, AccountTypeOAuth, AccountTypeSetupToken:
+		return true
+	default:
+		return false
+	}
 }
 
 // IsOpenAIPassthroughEnabled 返回 OpenAI 账号是否启用"自动透传（仅替换认证）"。

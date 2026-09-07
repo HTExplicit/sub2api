@@ -1706,6 +1706,7 @@ func TestOpenAIStreamingTerminalAndClientCancellationDoNotQuarantineProxy(t *tes
 				"event: response.completed",
 				`data: {"type":"response.completed","response":{"status":"completed","output":[],"usage":{"input_tokens":5,"output_tokens":3,"total_tokens":8}}}`,
 				"",
+				"",
 			}, "\n")),
 			err: io.ErrUnexpectedEOF,
 		},
@@ -2679,7 +2680,7 @@ func TestOpenAIStreamingPassthroughResponseDoneWithoutDoneMarkerStillSucceeds(t 
 	require.Equal(t, 1, result.usage.CacheReadInputTokens)
 }
 
-func TestOpenAIStreamingPassthroughResponseIncompleteWithoutDoneMarkerStillSucceeds(t *testing.T) {
+func TestOpenAIStreamingPassthroughResponseIncompletePreservesFailureAndUsage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cfg := &config.Config{
 		Gateway: config.GatewayConfig{
@@ -2706,7 +2707,7 @@ func TestOpenAIStreamingPassthroughResponseIncompleteWithoutDoneMarkerStillSucce
 
 	result, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "", "")
 	_ = pr.Close()
-	require.NoError(t, err)
+	require.ErrorContains(t, err, "incomplete")
 	require.NotNil(t, result)
 	require.NotNil(t, result.usage)
 	require.Equal(t, 2, result.usage.InputTokens)

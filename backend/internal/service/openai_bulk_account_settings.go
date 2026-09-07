@@ -12,12 +12,13 @@ type bulkOpenAISettings struct {
 	longContextBilling      bool
 	endpointCapabilities    bool
 	responsesMode           bool
+	reasoningPolicies       bool
 	capabilitiesIncludeChat bool
 	forcedResponsesMode     bool
 }
 
 func (s bulkOpenAISettings) any() bool {
-	return s.longContextBilling || s.endpointCapabilities || s.responsesMode
+	return s.longContextBilling || s.endpointCapabilities || s.responsesMode || s.reasoningPolicies
 }
 
 func normalizeBulkOpenAISettings(input *BulkUpdateAccountsInput) (bulkOpenAISettings, error) {
@@ -25,6 +26,7 @@ func normalizeBulkOpenAISettings(input *BulkUpdateAccountsInput) (bulkOpenAISett
 	if input == nil {
 		return settings, nil
 	}
+	settings.reasoningPolicies = HasOpenAIReasoningPolicyUpdates(input.Extra)
 
 	if _, exists := input.Extra[openAILongContextBillingEnabledKey]; exists {
 		settings.longContextBilling = true
@@ -162,6 +164,11 @@ func validateBulkOpenAISettingsTargets(
 		if !ok || account == nil {
 			return 0, invalidBulkOpenAITarget(accountID, "account does not exist")
 		}
+		if settings.reasoningPolicies {
+			if err := validateOpenAIReasoningPolicyTarget(accountID, account); err != nil {
+				return 0, err
+			}
+		}
 
 		if settings.longContextBilling {
 			if account.Platform != PlatformOpenAI || !supportsOpenAILongContextBilling(account.Type) {
@@ -201,6 +208,44 @@ func supportsOpenAILongContextBilling(accountType string) bool {
 	default:
 		return false
 	}
+}
+
+// HasOpenAIReasoningPolicyUpdates distinguishes explicit policy changes from
+// unrelated extra patches; the values are validated at the admin input boundary.
+func HasOpenAIReasoningPolicyUpdates(extra map[string]any) bool {
+	for _, key := range [...]string{OpenAIChatReasoningReplayEnabledExtraKey, OpenAIReasoningSignatureRecoveryEnabledExtraKey} {
+		if _, provided := extra[key]; provided {
+			return true
+		}
+	}
+	return false
+}
+
+// ValidateOpenAIReasoningPolicyTargets allows callers to validate and freeze a
+// complete bulk target set before an asynchronous job splits it into items.
+func ValidateOpenAIReasoningPolicyTargets(ids []int64, accounts []*Account) error {
+	byID := make(map[int64]*Account, len(accounts))
+	for _, account := range accounts {
+		if account != nil {
+			byID[account.ID] = account
+		}
+	}
+	for _, id := range ids {
+		if err := validateOpenAIReasoningPolicyTarget(id, byID[id]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateOpenAIReasoningPolicyTarget(id int64, account *Account) error {
+	if account == nil {
+		return invalidBulkOpenAITarget(id, "account does not exist")
+	}
+	if !account.supportsOpenAIReasoningPolicies() {
+		return invalidBulkOpenAITarget(id, "reasoning policies require an OpenAI-wire OAuth, setup-token, or API-key account")
+	}
+	return nil
 }
 
 func invalidBulkOpenAITarget(accountID int64, message string) error {

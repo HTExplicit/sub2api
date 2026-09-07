@@ -18,6 +18,9 @@ func OpenAIResponsesRequireNativeUpstream(body []byte) bool {
 	if json.Unmarshal(body, &request) != nil {
 		return false
 	}
+	if apicompat.ResponsesReasoningRequiresNative(request.Reasoning) {
+		return true
+	}
 	if apicompat.ResponsesInputRequiresNative(request.Input) {
 		return true
 	}

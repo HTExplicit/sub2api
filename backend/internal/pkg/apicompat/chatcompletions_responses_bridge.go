@@ -50,6 +50,9 @@ func ResponsesToChatCompletionsRequestWithOptions(req *ResponsesRequest, opts *R
 	if req.PreviousResponseID != "" {
 		return nil, &ResponsesConversionError{Code: "unsupported_feature", Param: "previous_response_id", Message: "previous_response_id requires a native Responses upstream"}
 	}
+	if ResponsesReasoningRequiresNative(req.Reasoning) {
+		return nil, &ResponsesConversionError{Code: "unsupported_feature", Param: "reasoning", Message: "The requested reasoning configuration requires a native Responses upstream"}
+	}
 
 	messages, err := responsesInputToChatMessagesWithOptions(req.Instructions, req.Input, opts)
 	if err != nil {

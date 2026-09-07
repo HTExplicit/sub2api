@@ -370,7 +370,7 @@ func setPreviousResponseIDToRawPayload(payload []byte, previousResponseID string
 	}
 
 	var reqBody map[string]any
-	if unmarshalErr := json.Unmarshal(payload, &reqBody); unmarshalErr != nil {
+	if unmarshalErr := decodeOpenAIJSONUseNumber(payload, &reqBody); unmarshalErr != nil {
 		return nil, err
 	}
 	reqBody["previous_response_id"] = normalizedPrevID
@@ -477,7 +477,7 @@ func normalizeOpenAIWSJSONForCompare(raw []byte) ([]byte, error) {
 		return nil, errors.New("json is empty")
 	}
 	var decoded any
-	if err := json.Unmarshal(trimmed, &decoded); err != nil {
+	if err := decodeOpenAIJSONUseNumber(trimmed, &decoded); err != nil {
 		return nil, err
 	}
 	return json.Marshal(decoded)
@@ -496,7 +496,7 @@ func normalizeOpenAIWSPayloadWithoutInputAndPreviousResponseID(payload []byte) (
 		return nil, errors.New("payload is empty")
 	}
 	var decoded map[string]any
-	if err := json.Unmarshal(payload, &decoded); err != nil {
+	if err := decodeOpenAIJSONUseNumber(payload, &decoded); err != nil {
 		return nil, err
 	}
 	delete(decoded, "input")

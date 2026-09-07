@@ -98,6 +98,58 @@ describe('BulkEditAccountModal', () => {
     } as any)
   })
 
+  it('reasoning policy omits unselected switches when changing another field', async () => {
+    const wrapper = mountModal({ selectedPlatforms: ['openai'], selectedTypes: ['apikey'] })
+    await wrapper.get('#bulk-edit-openai-passthrough-enabled').setValue(true)
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+      extra: { openai_passthrough: false, openai_oauth_passthrough: false }
+    })
+    wrapper.unmount()
+  })
+
+  it('reasoning policy applies only a selected switch and accepts explicit false', async () => {
+    const wrapper = mountModal({ selectedPlatforms: ['openai'], selectedTypes: ['oauth', 'setup-token', 'apikey'] })
+    await wrapper.get('[data-testid="openai-reasoning-signatureRecovery-selected"]').setValue(true)
+    await wrapper.get('[data-testid="openai-reasoning-signatureRecovery-toggle"]').trigger('click')
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+      extra: { openai_reasoning_signature_recovery_enabled: false }
+    })
+    wrapper.unmount()
+  })
+
+  it('reasoning policy applies explicit true to Cindy/OpenAI filter targets', async () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['anthropic'],
+      selectedTypes: ['apikey'],
+      target: { mode: 'filtered', previewCount: 4, selectedPlatforms: ['openai', 'cindy'], selectedTypes: ['apikey'], filters: { type: 'apikey' } }
+    })
+    await wrapper.get('[data-testid="openai-reasoning-chatReplay-selected"]').setValue(true)
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledTimes(1)
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith({
+      filters: { type: 'apikey' },
+      extra: { openai_chat_reasoning_replay_enabled: true }
+    })
+    wrapper.unmount()
+  })
+
+  it('reasoning policy drops stale selections if the bulk target becomes inapplicable', async () => {
+    const wrapper = mountModal({ selectedPlatforms: ['openai'], selectedTypes: ['apikey'] })
+    await wrapper.get('[data-testid="openai-reasoning-chatReplay-selected"]').setValue(true)
+    await wrapper.setProps({ selectedPlatforms: ['grok'] })
+    expect(wrapper.find('[data-testid="openai-reasoning-policy"]').exists()).toBe(false)
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(adminAPI.accounts.bulkUpdate).not.toHaveBeenCalled()
+    expect(showError).toHaveBeenCalledWith('admin.accounts.bulkEdit.noFieldsSelected')
+    wrapper.unmount()
+  })
+
   it('does not expose account-level compatibility selectors for bulk editing', () => {
     const wrapper = mountModal({
       selectedPlatforms: ['openai'],

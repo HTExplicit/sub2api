@@ -1065,6 +1065,8 @@ func filterSchedulerExtra(extra map[string]any) map[string]any {
 		"openai_ws_force_http",
 		"openai_responses_mode",
 		"openai_responses_supported",
+		service.OpenAIChatReasoningReplayEnabledExtraKey,
+		service.OpenAIReasoningSignatureRecoveryEnabledExtraKey,
 		// 透传开关必须进投影：候选过滤(ListSchedulableAccounts)读的是本投影，
 		// 而 Account.IsModelSupported 靠 extra 上的这两个键短路 model_mapping 白名单。
 		// 裁掉它们，透传账号在选号阶段会退回按(常为过期的)白名单判定并被误判为
@@ -1094,6 +1096,16 @@ func filterSchedulerExtra(extra map[string]any) map[string]any {
 	}
 	filtered := make(map[string]any)
 	for _, key := range keys {
+		if key == service.OpenAIChatReasoningReplayEnabledExtraKey || key == service.OpenAIReasoningSignatureRecoveryEnabledExtraKey {
+			if value, exists := extra[key]; exists {
+				// These policies default to enabled only when absent. Preserve the
+				// getter's fail-closed meaning of every present malformed value,
+				// including nil, instead of dropping it into the enabled default.
+				enabled, _ := value.(bool)
+				filtered[key] = enabled
+			}
+			continue
+		}
 		if value, ok := extra[key]; ok && value != nil {
 			if key == service.CodexQuotaOverdraftProbeExtraKey {
 				filteredProbe := filterSchedulerCodexQuotaOverdraftProbe(value)

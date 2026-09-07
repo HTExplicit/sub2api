@@ -245,10 +245,17 @@ type ResponsesRequest struct {
 	PreviousResponseID string              `json:"previous_response_id,omitempty"`
 }
 
-// ResponsesReasoning configures reasoning effort in the Responses API.
+// ResponsesReasoning preserves the independently selectable reasoning options.
+// Unknown members and explicit null/empty values survive typed round trips;
+// see responses_reasoning.go. No mode or effort is inferred by this type.
 type ResponsesReasoning struct {
-	Effort  string `json:"effort"`            // "low" | "medium" | "high" | "xhigh"
-	Summary string `json:"summary,omitempty"` // "auto" | "concise" | "detailed"
+	Effort          string `json:"effort,omitempty"`
+	Summary         string `json:"summary,omitempty"`
+	Mode            string `json:"mode,omitempty"`
+	Context         string `json:"context,omitempty"`
+	GenerateSummary string `json:"generate_summary,omitempty"`
+
+	rawFields map[string]json.RawMessage
 }
 
 // ResponsesText configures text output options in the Responses API.
@@ -383,12 +390,13 @@ type ResponsesResponse struct {
 	// it non-optional and abort with `missing field 'created_at'` when it is
 	// absent, so it is always emitted — no omitempty. Same rule as ID (see the
 	// "clients treat it as required" fallback in ChatCompletionsResponseToAnthropic).
-	CreatedAt   int64             `json:"created_at"`
-	Model       string            `json:"model"`
-	Status      string            `json:"status"` // "completed" | "incomplete" | "failed"
-	Output      []ResponsesOutput `json:"output"`
-	Usage       *ResponsesUsage   `json:"usage,omitempty"`
-	ServiceTier string            `json:"service_tier,omitempty"` // upstream tier, echoed back verbatim
+	CreatedAt   int64               `json:"created_at"`
+	Model       string              `json:"model"`
+	Status      string              `json:"status"` // "completed" | "incomplete" | "failed"
+	Output      []ResponsesOutput   `json:"output"`
+	Usage       *ResponsesUsage     `json:"usage,omitempty"`
+	ServiceTier string              `json:"service_tier,omitempty"` // upstream tier, echoed back verbatim
+	Reasoning   *ResponsesReasoning `json:"reasoning,omitempty"`
 
 	// incomplete_details is present when status="incomplete"
 	IncompleteDetails *ResponsesIncompleteDetails `json:"incomplete_details,omitempty"`
@@ -671,22 +679,23 @@ type ResponsesStreamEvent struct {
 
 // ChatCompletionsRequest is the request body for POST /v1/chat/completions.
 type ChatCompletionsRequest struct {
-	Model               string             `json:"model"`
-	Messages            []ChatMessage      `json:"messages"`
-	Instructions        string             `json:"instructions,omitempty"` // OpenAI Responses API compat
-	MaxTokens           *int               `json:"max_tokens,omitempty"`
-	MaxCompletionTokens *int               `json:"max_completion_tokens,omitempty"`
-	Temperature         *float64           `json:"temperature,omitempty"`
-	TopP                *float64           `json:"top_p,omitempty"`
-	Stream              bool               `json:"stream,omitempty"`
-	StreamOptions       *ChatStreamOptions `json:"stream_options,omitempty"`
-	Tools               []ChatTool         `json:"tools,omitempty"`
-	ParallelToolCalls   *bool              `json:"parallel_tool_calls,omitempty"`
-	ToolChoice          json.RawMessage    `json:"tool_choice,omitempty"`
-	ReasoningEffort     string             `json:"reasoning_effort,omitempty"` // "low" | "medium" | "high" | "xhigh"
-	ServiceTier         string             `json:"service_tier,omitempty"`
-	Stop                json.RawMessage    `json:"stop,omitempty"` // string or []string
-	ResponseFormat      json.RawMessage    `json:"response_format,omitempty"`
+	Model               string              `json:"model"`
+	Messages            []ChatMessage       `json:"messages"`
+	Instructions        string              `json:"instructions,omitempty"` // OpenAI Responses API compat
+	MaxTokens           *int                `json:"max_tokens,omitempty"`
+	MaxCompletionTokens *int                `json:"max_completion_tokens,omitempty"`
+	Temperature         *float64            `json:"temperature,omitempty"`
+	TopP                *float64            `json:"top_p,omitempty"`
+	Stream              bool                `json:"stream,omitempty"`
+	StreamOptions       *ChatStreamOptions  `json:"stream_options,omitempty"`
+	Tools               []ChatTool          `json:"tools,omitempty"`
+	ParallelToolCalls   *bool               `json:"parallel_tool_calls,omitempty"`
+	ToolChoice          json.RawMessage     `json:"tool_choice,omitempty"`
+	ReasoningEffort     string              `json:"reasoning_effort,omitempty"` // "low" | "medium" | "high" | "xhigh"
+	Reasoning           *ResponsesReasoning `json:"reasoning,omitempty"`        // Responses-compatible Chat ingress extension
+	ServiceTier         string              `json:"service_tier,omitempty"`
+	Stop                json.RawMessage     `json:"stop,omitempty"` // string or []string
+	ResponseFormat      json.RawMessage     `json:"response_format,omitempty"`
 
 	// Legacy function calling (deprecated but still supported)
 	Functions    []ChatFunction  `json:"functions,omitempty"`

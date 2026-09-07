@@ -741,6 +741,7 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 	c *gin.Context,
 	logPrefix string,
 	requestID string,
+	deferSignatureRejection ...bool,
 ) (*apicompat.ResponsesResponse, OpenAIUsage, *apicompat.BufferedResponseAccumulator, []byte, error) {
 	acc := apicompat.NewBufferedResponseAccumulator()
 	var usage OpenAIUsage
@@ -812,12 +813,17 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 	defer close(done)
 
 	var parser openAICompatSSEFrameParser
+	var pendingSignatureResponse *apicompat.ResponsesResponse
+	var pendingSignaturePayload []byte
+	deferSignature := len(deferSignatureRejection) > 0 && deferSignatureRejection[0]
 	for {
 		select {
 		case ev, ok := <-events:
 			if !ok {
 				if frame, ok := parser.Finish(); ok {
 					payload := openAICompatPayloadWithEventType(frame.Data, frame.EventType)
+					observeOpenAIReasoningAttemptUsage(c, []byte(payload))
+					observeOpenAIChatReasoningReplayPayload(c, []byte(payload))
 					payload = string(s.rewriteBusinessSystemPromptJSONForRequest(c, []byte(payload), BusinessSystemPromptProtocolResponses))
 					var event apicompat.ResponsesStreamEvent
 					if err := json.Unmarshal([]byte(payload), &event); err == nil {
@@ -840,7 +846,7 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 						}
 					}
 				}
-				return nil, usage, acc, nil, nil
+				return pendingSignatureResponse, usage, acc, pendingSignaturePayload, nil
 			}
 			resetTimeout()
 			if ev.err != nil {
@@ -854,13 +860,15 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 			}
 
 			if isOpenAICompatDoneSentinelLine(ev.line) {
-				return nil, usage, acc, nil, nil
+				return pendingSignatureResponse, usage, acc, pendingSignaturePayload, nil
 			}
 			frame, ok := parser.AddLine(ev.line)
 			if !ok {
 				continue
 			}
 			payload := openAICompatPayloadWithEventType(frame.Data, frame.EventType)
+			observeOpenAIReasoningAttemptUsage(c, []byte(payload))
+			observeOpenAIChatReasoningReplayPayload(c, []byte(payload))
 			payload = string(s.rewriteBusinessSystemPromptJSONForRequest(c, []byte(payload), BusinessSystemPromptProtocolResponses))
 
 			var event apicompat.ResponsesStreamEvent
@@ -888,6 +896,11 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 				return response, usage, acc, []byte(payload), nil
 			}
 			if failedResponse, ok := openAICompatBareErrorResponse(&event, []byte(payload)); ok {
+				if _, signatureRejected := parseOpenAIReasoningRejection([]byte(payload)); deferSignature && signatureRejected {
+					pendingSignatureResponse = failedResponse
+					pendingSignaturePayload = append([]byte(nil), []byte(payload)...)
+					continue
+				}
 				return failedResponse, usage, acc, []byte(payload), nil
 			}
 

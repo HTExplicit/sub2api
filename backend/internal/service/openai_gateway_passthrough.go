@@ -133,7 +133,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	attemptImageIntentInvalidated bool,
 	reqStream bool,
 	startTime time.Time,
-) (*OpenAIForwardResult, error) {
+) (_ *OpenAIForwardResult, forwardErr error) {
 	upstreamPassthroughModel := ""
 	// Legacy Laxa rows are stored as OpenAI API-key accounts and therefore do
 	// not pass through the first-class Cindy handler classification.  At the
@@ -431,6 +431,9 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		c.Set("openai_passthrough", true)
 	}
 
+	reasoningRecovery := s.newOpenAIReasoningRecoveryState(ctx, c, account, token)
+	defer reasoningRecovery.Close()
+	defer func() { forwardErr = reasoningRecovery.StopError(forwardErr) }()
 	agentTaskRecoveryTried := false
 	compactModelFallbackRetried := false
 	var reasoningEffort *string
@@ -453,11 +456,18 @@ retryUpstream:
 		if buildErr != nil {
 			return nil, buildErr
 		}
+		upstreamReq, body, buildErr = reasoningRecovery.PrepareRequest(upstreamReq, body, proxyURL)
+		if buildErr != nil {
+			return nil, buildErr
+		}
 
 		upstreamStart := time.Now()
 		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 		if err != nil {
+			if reasoningRecovery.RecoveryAttempt() {
+				return nil, err
+			}
 			// Transport-level failure (proxy/DNS/TCP/TLS — no HTTP response). Convert to
 			// a failover so the handler switches to a healthy account.
 			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, true)
@@ -471,6 +481,16 @@ retryUpstream:
 		probeBody := s.readUpstreamErrorBody(resp)
 		_ = resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(probeBody))
+		if retryBody, retry := reasoningRecovery.TryRecover(resp.StatusCode, resp.Header, probeBody, false); retry {
+			body = retryBody
+			continue
+		}
+		if reasoningRecovery.RecoveryAttempt() {
+			return nil, errors.New("reasoning recovery rejected by upstream")
+		}
+		if _, rejected := parseOpenAIReasoningRejection(probeBody); rejected {
+			return nil, NewOpenAIContinuationStateUnavailableError(resp.StatusCode, resp.Header, nil)
+		}
 		reqModel, _, _ := extractOpenAIRequestMetaFromBody(body)
 		canonicalModel := canonicalOpenAIAccountSchedulingModel(account, reqModel)
 		if failoverErr, ok := s.handleCindyBalanceHTTPFailover(
@@ -548,6 +568,14 @@ retryUpstream:
 		setOpenAIRefusalEarlyStreamEligibility(c, account, body)
 		result, err := s.handleStreamingResponsePassthrough(ctx, resp, c, account, startTime, reqModel, upstreamPassthroughModel)
 		if err != nil {
+			if retryBody, retry := reasoningRecovery.TryRecoverError(err); retry {
+				_ = resp.Body.Close()
+				body = retryBody
+				goto retryUpstream
+			}
+			if reasoningRecovery.RecoveryAttempt() {
+				return nil, err
+			}
 			if retryBody, fallbackModel, retry := s.applyOpenAIPassthroughCompactFallbackFromSignal(
 				c, account, reqModel, body, err, compactModelFallbackRetried, resp,
 			); retry {
@@ -575,6 +603,14 @@ retryUpstream:
 	} else {
 		result, err := s.handleNonStreamingResponsePassthrough(ctx, resp, c, account, reqModel, upstreamPassthroughModel)
 		if err != nil {
+			if retryBody, retry := reasoningRecovery.TryRecoverError(err); retry {
+				_ = resp.Body.Close()
+				body = retryBody
+				goto retryUpstream
+			}
+			if reasoningRecovery.RecoveryAttempt() {
+				return nil, err
+			}
 			if retryBody, fallbackModel, retry := s.applyOpenAIPassthroughCompactFallbackFromSignal(
 				c, account, reqModel, body, err, compactModelFallbackRetried, resp,
 			); retry {
@@ -2055,6 +2091,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	originalModel string,
 	mappedModel string,
 ) (*openaiStreamingResultPassthrough, error) {
+	defer resp.Body.Close()
 	observer := upstreamResponseModelObserverFromContext(c)
 	if observer == nil {
 		observer = beginUpstreamResponseModelObservation(c)
@@ -2106,8 +2143,12 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	opaqueBindingIDs := make([]string, 0, 2)
 	ttftMode := s.openAITTFTMode(ctx)
 	clientDisconnected := false
-	sawDone := false
 	sawTerminalEvent := false
+	terminalFramePending := false
+	terminalEventType := ""
+	var terminalResponseErr error
+	var pendingReasoningRecoveryErr error
+	pendingSSEEventType := ""
 	sawFailedEvent := false
 	sawBareError := false
 	sawResponseFailed := false
@@ -2119,7 +2160,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	pendingErrorEventHeader := false
 	failedMessage := ""
 	clientOutputStarted := false
-	codexFailureTerminal := account != nil && account.Platform == PlatformOpenAI
+	codexFailureTerminal := account.IsOpenAI()
 	var refusalStream *openAIRefusalStreamState
 	var refusalRuntime OpenAIRefusalRecoveryRuntime
 	refusalEarlyEmitted := false
@@ -2243,6 +2284,12 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 
 	for documentScanner.Scan() {
 		line := documentScanner.Text()
+		if line == "" {
+			pendingSSEEventType = ""
+		}
+		if eventType, ok := extractOpenAISSEEventLine(line); ok {
+			pendingSSEEventType = strings.TrimSpace(eventType)
+		}
 		if strings.TrimSpace(line) == "event: error" {
 			if codexFailureTerminal || openAIStreamClientOutputStarted(c, clientOutputStarted) {
 				pendingErrorEventHeader = true
@@ -2261,9 +2308,26 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		}
 		if data, ok := extractOpenAISSEDataLine(line); ok {
 			rawDataBytes := []byte(data)
+			observeOpenAIReasoningAttemptUsage(c, rawDataBytes)
+			if strings.TrimSpace(data) == "[DONE]" {
+				// Transport markers cannot supply a missing Responses terminal.
+				continue
+			}
 			opaqueBindingIDs = append(opaqueBindingIDs, cindyOpaqueBindingIDsFromResponsePayload(rawDataBytes)...)
-			upstreamEventType := strings.TrimSpace(gjson.GetBytes(rawDataBytes, "type").String())
-			if upstreamEventType == "response.failed" || upstreamEventType == "error" {
+			upstreamEventType := effectiveOpenAISSEEventType(rawDataBytes, pendingSSEEventType)
+			s.parseSSEUsageBytesWithType(rawDataBytes, upstreamEventType, usage)
+			if upstreamEventType == "response.failed" || upstreamEventType == "error" || (upstreamEventType == "response.done" && gjson.GetBytes(rawDataBytes, "response.status").String() == "failed") {
+				if upstreamEventType != "error" {
+					pendingReasoningRecoveryErr = nil
+				}
+				if recoveryErr := openAIHTTPReasoningRejectionBeforeOutput(c, rawDataBytes, openAIStreamClientOutputStarted(c, clientOutputStarted)); recoveryErr != nil {
+					if upstreamEventType != "error" {
+						return resultWithUsage(), recoveryErr
+					}
+					pendingReasoningRecoveryErr = recoveryErr
+					pendingErrorEventHeader = false
+					continue
+				}
 				if s.handleCindyBalanceHTTPResponseTerminalEvent(ctx, account, resp.StatusCode, resp.Header, rawDataBytes, mappedModel) {
 					// Classification must happen on the untouched event. Never pass the raw
 					// budget payload through error rules, namespace restoration, or the
@@ -2311,7 +2375,14 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 					line = "data: " + string(restoredData)
 				}
 			}
-			eventType := strings.TrimSpace(gjson.Get(trimmedData, "type").String())
+			eventType := effectiveOpenAISSEEventType(dataBytes, pendingSSEEventType)
+			if eventType == "response.completed" || eventType == "response.done" {
+				pendingReasoningRecoveryErr = nil
+				// A response terminal supersedes a non-authoritative bare error.
+				sawBareError = false
+				bareErrorPayload = nil
+				bareErrorAccountSideEffectsPending = false
+			}
 			cyberPolicyHit := false
 			if !capacityFailoverSuppressedLogged && account != nil && account.Platform == PlatformOpenAI &&
 				(eventType == "error" || eventType == "response.failed") &&
@@ -2380,8 +2451,10 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 						return resultWithUsage(), compactErr
 					}
 				}
-				if continuationErr := openAIContinuationStateErrorFromFailedEvent(resp.StatusCode, resp.Header, dataBytes); continuationErr != nil {
-					return resultWithUsage(), continuationErr
+				if _, rejectedReasoning := parseOpenAIReasoningRejection(dataBytes); !rejectedReasoning {
+					if continuationErr := openAIContinuationStateErrorFromFailedEvent(resp.StatusCode, resp.Header, dataBytes); continuationErr != nil {
+						return resultWithUsage(), continuationErr
+					}
 				}
 				if hit, code, msg := detectOpenAICyberPolicy(dataBytes); hit {
 					cyberPolicyHit = true
@@ -2445,18 +2518,11 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 					}
 				}
 			}
-			if trimmedData == "[DONE]" {
-				if sawBareError && !sawResponseFailed {
-					ensureResponseFailedTerminal()
-					break
-				}
-				if sawFailedEvent {
-					break
-				}
-				sawDone = true
-			}
-			if openAIStreamEventIsTerminal(trimmedData) {
+			if openAIHTTPAuthoritativeTerminalEvent(rawDataBytes, upstreamEventType) {
 				sawTerminalEvent = true
+				terminalFramePending = true
+				terminalEventType = eventType
+				terminalResponseErr = openAIHTTPResponseTerminalError([]byte(openAICompatPayloadWithEventType(string(rawDataBytes), upstreamEventType)))
 			}
 			if responseID == "" {
 				responseID = extractOpenAIResponseIDFromJSONBytes(dataBytes)
@@ -2584,13 +2650,18 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				}
 			}
 		}
+		if line == "" {
+			pendingSSEEventType = ""
+			if terminalFramePending {
+				break
+			}
+		}
+	}
+	if pendingReasoningRecoveryErr != nil && !openAIStreamClientOutputStarted(c, clientOutputStarted) {
+		return resultWithUsage(), pendingReasoningRecoveryErr
 	}
 	ensureResponseFailedTerminal()
 	if err := documentScanner.Err(); err != nil {
-		if (sawDone || sawTerminalEvent) && !sawFailedEvent {
-			s.clearOpenAIProxyStreamDisconnect(account)
-			return resultWithUsage(), nil
-		}
 		if sawFailedEvent {
 			return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
 		}
@@ -2624,20 +2695,30 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	if sawFailedEvent {
 		return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
 	}
-	if !clientDisconnected && !sawDone && !sawTerminalEvent && ctx.Err() == nil {
+	if terminalResponseErr != nil {
+		return resultWithUsage(), terminalResponseErr
+	}
+	if !sawTerminalEvent {
+		if ctx.Err() != nil {
+			return resultWithUsage(), fmt.Errorf("stream usage incomplete: %w", ctx.Err())
+		}
 		logger.FromContext(ctx).With(
 			zap.String("component", "service.openai_gateway"),
 			zap.Int64("account_id", account.ID),
 			zap.String("upstream_request_id", upstreamRequestID),
-		).Info("OpenAI passthrough 上游流在未收到 [DONE] 时结束，疑似断流")
+		).Info("OpenAI passthrough upstream stream ended without an authoritative terminal")
 		if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
 			return resultWithUsage(),
 				s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, nil, "OpenAI stream ended before a terminal event", resp.StatusCode)
 		}
+		s.recordOpenAIStreamUpstreamError(c, account, true, upstreamRequestID, "stream_error", nil, "OpenAI stream ended before an authoritative terminal event")
 		s.recordOpenAIProxyStreamDisconnect(account, errors.New("stream ended before terminal event"), upstreamRequestID)
 		return resultWithUsage(), errors.New("stream usage incomplete: missing terminal event")
 	}
-	if (sawDone || sawTerminalEvent) && !sawFailedEvent {
+	if terminalEventType != "response.completed" && terminalEventType != "response.done" {
+		return resultWithUsage(), fmt.Errorf("upstream response terminated with %s", terminalEventType)
+	}
+	if sawTerminalEvent && !sawFailedEvent {
 		s.clearOpenAIProxyStreamDisconnect(account)
 	}
 
@@ -2652,9 +2733,12 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	originalModel string,
 	mappedModel string,
 ) (*openaiNonStreamingResultPassthrough, error) {
-	body, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
+	body, err := s.readOpenAIResponsesHTTPBody(ctx, resp, c)
 	if err != nil {
 		return nil, err
+	}
+	if recoveryErr := openAIHTTPReasoningRejectionBeforeOutput(c, body, openAIStreamClientOutputStarted(c, false)); recoveryErr != nil {
+		return nil, recoveryErr
 	}
 	observer := upstreamResponseModelObserverFromContext(c)
 	if observer == nil {
@@ -2692,7 +2776,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	// Some upstreams (e.g. other sub2api instances) may return SSE even when
 	// stream=false was requested. Without this conversion the client would
 	// receive raw SSE text or a terminal event with empty output.
-	if isEventStreamResponse(resp.Header) {
+	if isEventStreamResponse(resp.Header) || bodyHasSSEFraming(body) {
 		return s.handlePassthroughSSEToJSON(resp, c, account, body, originalModel, mappedModel)
 	}
 	if continuationErr := openAIContinuationStateErrorFromFailedEvent(resp.StatusCode, resp.Header, body); continuationErr != nil {
@@ -2767,7 +2851,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 		imageCount:       countOpenAIResponseImageOutputsFromJSONBytes(body),
 		imageOutputSizes: collectOpenAIResponseImageOutputSizesFromJSONBytes(body),
 		opaqueBindingIDs: cindyOpaqueBindingIDsFromResponsePayload(body),
-	}, nil
+	}, openAIHTTPResponseTerminalError(body)
 }
 
 // handlePassthroughSSEToJSON converts an SSE response body into a JSON
@@ -2775,9 +2859,19 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 // preserving passthrough payloads, except compact-only model remapping may
 // rewrite model fields back to the original requested model.
 func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c *gin.Context, account *Account, body []byte, originalModel string, mappedModel string) (*openaiNonStreamingResultPassthrough, error) {
+	rawTerminalType, rawTerminalPayload, rawTerminalOK := extractOpenAISSETerminalEvent(string(body))
+	if rawTerminalOK && (rawTerminalType == "error" || rawTerminalType == "response.failed" || rawTerminalType == "response.done") {
+		if recoveryErr := openAIHTTPReasoningRejectionBeforeOutput(c, rawTerminalPayload, openAIStreamClientOutputStarted(c, false)); recoveryErr != nil {
+			return nil, recoveryErr
+		}
+	}
 	body = s.rewriteBusinessSystemPromptSSEForRequest(c, body, BusinessSystemPromptProtocolResponses)
 	bodyText := string(body)
 	terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText)
+	if !terminalOK {
+		return nil, s.writeOpenAINonStreamingProtocolError(resp, c, "OpenAI stream ended before an authoritative terminal event")
+	}
+	terminalErr := openAIHTTPResponseTerminalError([]byte(openAICompatPayloadWithEventType(string(terminalPayload), terminalType)))
 	if terminalOK && (terminalType == "response.failed" || terminalType == "error") {
 		msg := extractOpenAISSEErrorMessage(terminalPayload)
 		if msg == "" {
@@ -2893,7 +2987,7 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 		imageCount:       countOpenAIImageOutputsFromSSEBody(bodyText),
 		imageOutputSizes: collectOpenAIImageOutputSizesFromSSEBody(bodyText),
 		opaqueBindingIDs: cindyOpaqueBindingIDsFromResponsePayload(body),
-	}, nil
+	}, terminalErr
 }
 
 func writeOpenAIPassthroughResponseHeaders(dst http.Header, src http.Header, filter *responseheaders.CompiledHeaderFilter) {

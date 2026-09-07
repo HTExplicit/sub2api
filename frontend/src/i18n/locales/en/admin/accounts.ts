@@ -792,7 +792,15 @@ export default {
         apiKeyHint: 'Your OpenAI API Key',
         oauthPassthrough: 'Auto passthrough (auth only)',
         oauthPassthroughDesc:
-          'When enabled, this OpenAI account uses automatic passthrough: the gateway forwards request/response as-is and only swaps auth, while keeping billing/concurrency/audit and necessary safety filtering.',
+          'When enabled, this OpenAI account forwards requests/responses as-is and only swaps auth, while keeping billing/concurrency/audit and necessary safety filtering. Enabled signature recovery below is an explicit exception and is recorded as lossy recovery.',
+        reasoningPolicy: {
+          chatReplay: 'Replay reasoning for Chat tool turns',
+          chatReplayDesc: 'Enabled by default. Cache completed function-tool batches that can be represented faithfully in Chat for 24 hours. Restore raw reasoning and tool items only when account, user, model, reasoning configuration and history all match. Cache failures do not block requests; full input conversations are not cached.',
+          signatureRecovery: 'Recover invalid reasoning ciphertext (lossy)',
+          signatureRecoveryDesc: 'Enabled by default. After an explicit signature rejection and before semantic output, remove only the rejected reasoning ciphertext and retry the same account at most once. Remember that old ciphertext for 24 hours without removing new reasoning. This also applies as a passthrough exception, may incur extra upstream charges, and does not restore the original reasoning chain.',
+          applyField: 'Apply this setting (otherwise keep existing value)',
+          boundaryHint: 'Only actual HTTP/SSE native Responses, Compact and Chat-to-Responses paths are eligible; replay is Chat-to-Responses only. Messages, WebSocket (including HTTP ingress routed to WS), and native Chat-only upstreams do not use this recovery. The 24-hour limit is logical; Redis persistence files and backups may retain historical bytes.'
+        },
         flattenNamespaces: 'Flatten Codex namespace tools (compatibility)',
         flattenNamespacesDesc:
           'Disabled by default: Codex namespace tool declarations are forwarded as-is on /responses, which is what the ChatGPT Codex backend expects. Enable only when this OAuth account is routed to a relay that rejects namespace tools — flattening renames them to namespace__tool, which breaks models that address collaboration tools as functions.<namespace>.<tool>. Compaction requests always flatten regardless of this switch.',

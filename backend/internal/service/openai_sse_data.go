@@ -58,6 +58,12 @@ func forEachOpenAISSEFrame(body string, fn func(string, []byte)) {
 				return
 			}
 			data := []byte(value)
+			if documents, repaired := splitOpenAIConcatenatedJSONDocuments(data); repaired {
+				for _, document := range documents {
+					fn(effectiveOpenAISSEEventType(document, frame.EventType), document)
+				}
+				return
+			}
 			fn(effectiveOpenAISSEEventType(data, frame.EventType), data)
 		}
 		if gjson.Valid(frame.Data) {

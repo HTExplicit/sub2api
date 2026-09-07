@@ -348,9 +348,16 @@ const (
 	openAIContinuationStateErrorNone                     openAIContinuationStateErrorKind = ""
 	openAIContinuationStateErrorPreviousResponseNotFound openAIContinuationStateErrorKind = "previous_response_not_found"
 	openAIContinuationStateErrorInvalidEncryptedContent  openAIContinuationStateErrorKind = "invalid_encrypted_content"
+	openAIContinuationStateErrorThinkingSignatureInvalid openAIContinuationStateErrorKind = "thinking_signature_invalid"
 )
 
 func classifyOpenAIContinuationStateError(upstreamMsg string, upstreamBody []byte) openAIContinuationStateErrorKind {
+	// This new code is accepted only from a structured rejection envelope, never
+	// from a body substring. An unusable signature is request state even when
+	// recovery is disabled or cannot identify a safe, exact removal range.
+	if rejection, ok := parseOpenAIReasoningRejection(upstreamBody); ok && rejection.code == "thinking_signature_invalid" {
+		return openAIContinuationStateErrorThinkingSignatureInvalid
+	}
 	const (
 		previousResponseNotFound = "previous_response_not_found"
 		invalidEncryptedContent  = "invalid_encrypted_content"

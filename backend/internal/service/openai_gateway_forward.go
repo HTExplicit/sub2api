@@ -18,7 +18,7 @@ import (
 )
 
 // Forward forwards request to OpenAI API
-func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (*OpenAIForwardResult, error) {
+func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (_ *OpenAIForwardResult, forwardErr error) {
 	beginUpstreamResponseModelObservation(c)
 	ClearActualOpenAIUpstreamEndpoint(c)
 	// Capture the continuation requirement before any compatibility transform.
@@ -96,15 +96,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		return nil, toolSchemaErr
 	} else if toolSchemaSanitized {
 		body = sanitizedToolBody
-	}
-	if account.IsOpenAIOAuthLike() {
-		reasoningBody, reasoningChanged, reasoningErr := normalizeOpenAIResponsesReasoningMode(body)
-		if reasoningErr != nil {
-			return nil, fmt.Errorf("normalize OpenAI Responses reasoning.mode: %w", reasoningErr)
-		}
-		if reasoningChanged {
-			body = reasoningBody
-		}
 	}
 	responsesLite := account.IsOpenAI() && isOpenAIResponsesLiteHeader(c.GetHeader(responsesLiteHeader))
 	if responsesLite {
@@ -1036,6 +1027,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		return nil, wsErr
 	}
 
+	reasoningRecovery := s.newOpenAIReasoningRecoveryState(ctx, c, account, token)
+	defer reasoningRecovery.Close()
+	defer func() { forwardErr = reasoningRecovery.StopError(forwardErr) }()
 	compactModelFallbackRetried := false
 	agentTaskRecoveryTried := false
 	rejectedFieldRetryState := newOpenAIResponsesRejectedFieldRetryState(body)
@@ -1077,6 +1071,13 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if account.ProxyID != nil && account.Proxy != nil {
 			proxyURL = account.Proxy.URL()
 		}
+		upstreamReq, body, err = reasoningRecovery.PrepareRequest(upstreamReq, body, proxyURL)
+		if err != nil {
+			if headerGuard != nil {
+				headerGuard.close()
+			}
+			return nil, err
+		}
 
 		// Send request
 		upstreamStart := time.Now()
@@ -1087,6 +1088,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				_ = resp.Body.Close()
 			}
 			headerGuard.close()
+			if reasoningRecovery.RecoveryAttempt() {
+				return nil, errors.New("reasoning recovery upstream header timeout")
+			}
 			return nil, s.newOpenAIFirstOutputTimeoutError(
 				ctx, c, account, opsUpstreamProxyID(account), opsUpstreamProxyName(account),
 				startTime, originalModel, reasoningEffortValue,
@@ -1099,6 +1103,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 			if headerGuard != nil {
 				headerGuard.close()
+			}
+			if reasoningRecovery.RecoveryAttempt() {
+				return nil, err
 			}
 			// Transport-level failure (proxy/DNS/TCP/TLS — no HTTP response). Convert to
 			// a failover so the handler switches to a healthy account, and temporarily
@@ -1114,6 +1121,18 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			respBody := s.readUpstreamErrorBody(resp)
 			_ = resp.Body.Close()
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
+			if retryBody, retry := reasoningRecovery.TryRecover(resp.StatusCode, resp.Header, respBody, false); retry {
+				body = retryBody
+				requestView = newOpenAIRequestView(body)
+				reqBody = nil
+				continue
+			}
+			if reasoningRecovery.RecoveryAttempt() {
+				return nil, errors.New("reasoning recovery rejected by upstream")
+			}
+			if _, rejected := parseOpenAIReasoningRejection(respBody); rejected {
+				return nil, NewOpenAIContinuationStateUnavailableError(resp.StatusCode, resp.Header, nil)
+			}
 			if failoverErr, ok := s.handleCindyBalanceHTTPFailover(
 				ctx, account, resp.StatusCode, resp.Header, respBody, upstreamModel,
 			); ok {
@@ -1266,6 +1285,16 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			setOpenAIRefusalEarlyStreamEligibility(c, account, body)
 			streamResult, err := s.handleStreamingResponseWithReasoning(ctx, resp, c, account, startTime, originalModel, upstreamModel, reasoningEffortValue)
 			if err != nil {
+				if retryBody, retry := reasoningRecovery.TryRecoverError(err); retry {
+					_ = resp.Body.Close()
+					body = retryBody
+					requestView = newOpenAIRequestView(body)
+					reqBody = nil
+					continue
+				}
+				if reasoningRecovery.RecoveryAttempt() {
+					return nil, err
+				}
 				if signal, ok := asOpenAICompactFallbackSignal(err); ok {
 					if retryBody, fallbackModel, retry := s.prepareOpenAICompactFallbackRetry(
 						c, account, originalModel, body, http.StatusBadRequest, signal.message, signal.payload, compactModelFallbackRetried,
@@ -1316,6 +1345,16 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		} else {
 			nonStreamResult, err := s.handleNonStreamingResponse(ctx, resp, c, account, originalModel, upstreamModel)
 			if err != nil {
+				if retryBody, retry := reasoningRecovery.TryRecoverError(err); retry {
+					_ = resp.Body.Close()
+					body = retryBody
+					requestView = newOpenAIRequestView(body)
+					reqBody = nil
+					continue
+				}
+				if reasoningRecovery.RecoveryAttempt() {
+					return nil, err
+				}
 				if signal, ok := asOpenAICompactFallbackSignal(err); ok {
 					if retryBody, fallbackModel, retry := s.prepareOpenAICompactFallbackRetry(
 						c, account, originalModel, body, http.StatusBadRequest, signal.message, signal.payload, compactModelFallbackRetried,
