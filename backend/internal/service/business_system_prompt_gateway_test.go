@@ -266,13 +266,13 @@ func TestBusinessSystemPromptNativeResponsesAppliesForAPIKeyAndOAuth(t *testing.
 			require.Nil(t, result)
 			require.NotNil(t, upstream.lastReq)
 			require.Equal(t, "client\n\nbusiness-server", gjson.GetBytes(upstream.lastBody, "instructions").String())
-			require.Contains(t, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String(), ":business-system-prompt:7:")
+			require.Regexp(t, `^[0-9a-f]{64}$`, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
 			require.Equal(t, 1, strings.Count(string(upstream.lastBody), "business-server"))
 		})
 	}
 }
 
-func TestBusinessSystemPromptOrdinaryAPIKeyPromptCacheKeyRemainsOfficialAfterPromptRewrite(t *testing.T) {
+func TestBusinessSystemPromptOrdinaryAPIKeyPromptCacheKeyIsBoundedAfterPromptRewrite(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{"model":"gpt-5.4","stream":false,"instructions":"client","prompt_cache_key":"` + strings.Repeat("k", 363) + `","input":[]}`)
 	c, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
@@ -296,8 +296,7 @@ func TestBusinessSystemPromptOrdinaryAPIKeyPromptCacheKeyRemainsOfficialAfterPro
 	require.Error(t, err)
 	require.Nil(t, result)
 	ordinaryKey := gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String()
-	require.True(t, strings.HasPrefix(ordinaryKey, strings.Repeat("k", 363)+":business-system-prompt:"))
-	require.NotRegexp(t, `^[0-9a-f]{64}$`, ordinaryKey)
+	require.Regexp(t, `^[0-9a-f]{64}$`, ordinaryKey)
 }
 
 func TestBusinessSystemPromptManagedCindyPromptCacheKeyNormalizesAfterFinalRewrite(t *testing.T) {
@@ -325,7 +324,7 @@ func TestBusinessSystemPromptManagedCindyPromptCacheKeyNormalizesAfterFinalRewri
 	require.Equal(t, 1, strings.Count(string(upstream.lastBody), "business-server"))
 }
 
-func TestBusinessSystemPromptOrdinaryPassthroughPromptCacheKeyRemainsOfficialAfterPromptRewrite(t *testing.T) {
+func TestBusinessSystemPromptOrdinaryPassthroughPromptCacheKeyIsBoundedAfterPromptRewrite(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{"model":"gpt-5.4","stream":false,"instructions":"client","prompt_cache_key":"` + strings.Repeat("p", 363) + `","input":[]}`)
 	c, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
@@ -351,11 +350,10 @@ func TestBusinessSystemPromptOrdinaryPassthroughPromptCacheKeyRemainsOfficialAft
 	require.Error(t, err)
 	require.Nil(t, result)
 	ordinaryKey := gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String()
-	require.True(t, strings.HasPrefix(ordinaryKey, strings.Repeat("p", 363)+":business-system-prompt:"))
-	require.NotRegexp(t, `^[0-9a-f]{64}$`, ordinaryKey)
+	require.Regexp(t, `^[0-9a-f]{64}$`, ordinaryKey)
 }
 
-func TestBusinessSystemPromptOrdinaryWSV2PromptCacheKeyRemainsOfficialAfterPromptRewrite(t *testing.T) {
+func TestBusinessSystemPromptOrdinaryWSV2PromptCacheKeyIsBoundedAfterPromptRewrite(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	received := make(chan []byte, 1)
 	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
@@ -376,6 +374,10 @@ func TestBusinessSystemPromptOrdinaryWSV2PromptCacheKeyRemainsOfficialAfterPromp
 			return
 		}
 		received <- payload
+		if len(gjson.GetBytes(payload, "prompt_cache_key").String()) > 64 {
+			_ = conn.WriteJSON(map[string]any{"type": "error", "error": map[string]any{"type": "invalid_request_error", "message": "prompt_cache_key exceeds 64"}})
+			return
+		}
 		err = conn.WriteJSON(map[string]any{
 			"type": "response.completed",
 			"response": map[string]any{
@@ -420,8 +422,7 @@ func TestBusinessSystemPromptOrdinaryWSV2PromptCacheKeyRemainsOfficialAfterPromp
 	require.NotNil(t, result)
 	payload := <-received
 	ordinaryKey := gjson.GetBytes(payload, "prompt_cache_key").String()
-	require.True(t, strings.HasPrefix(ordinaryKey, strings.Repeat("w", 363)+":business-system-prompt:"))
-	require.NotRegexp(t, `^[0-9a-f]{64}$`, ordinaryKey)
+	require.Regexp(t, `^[0-9a-f]{64}$`, ordinaryKey)
 }
 
 func TestBusinessSystemPromptUpstreamErrorIsSanitizedBeforeInspection(t *testing.T) {

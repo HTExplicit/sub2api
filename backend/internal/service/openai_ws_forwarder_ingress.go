@@ -511,6 +511,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		normalized = policyApplied
 		beginBusinessSystemPromptRequestTurn(c)
+		businessPromptApplied := false
 		if updatedPromptPayload, application, promptErr := s.applyBusinessSystemPromptForRequest(
 			c, normalized, account, BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c),
 		); promptErr != nil {
@@ -527,8 +528,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				promptErr,
 			)
 		} else {
+			businessPromptApplied = application.Applied
 			normalized = updatedPromptPayload
-			normalized, promptErr = rewriteBusinessSystemPromptCacheKey(normalized, application)
+			normalized, promptErr = rewriteBusinessSystemPromptCacheKey(c, normalized, application)
 			if promptErr != nil {
 				return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(
 					coderws.StatusPolicyViolation,
@@ -547,6 +549,11 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			normalized = normalizedPayload
 			promptCacheKey = strings.TrimSpace(gjson.GetBytes(normalized, "prompt_cache_key").String())
 			observeCindyManagedPromptCacheNormalization(c, true)
+		}
+		// Cache-key rewriting is independent of Cindy's compatibility policy.
+		// Carry the final wire value into handshake fallback on every path.
+		if businessPromptApplied {
+			promptCacheKey = strings.TrimSpace(gjson.GetBytes(normalized, "prompt_cache_key").String())
 		}
 		ingressSessionOriginalModel = originalModel
 

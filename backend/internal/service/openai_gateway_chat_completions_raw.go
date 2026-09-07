@@ -129,7 +129,7 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 		return nil, promptErr
 	} else {
 		upstreamBody = updatedPromptBody
-		upstreamBody, promptErr = rewriteBusinessSystemPromptCacheKey(upstreamBody, application)
+		upstreamBody, promptErr = rewriteBusinessSystemPromptCacheKey(c, upstreamBody, application)
 		if promptErr != nil {
 			return nil, promptErr
 		}

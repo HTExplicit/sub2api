@@ -520,7 +520,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_KeepLeaseAcrossT
 		return message
 	}
 
-	writeMessage(`{"type":"response.create","model":"gpt-5.1","stream":false}`)
+	writeMessage(`{"type":"response.create","model":"gpt-5.1","stream":false,"prompt_cache_key":"business-cache-source"}`)
 	firstTurnImageEvent := readMessage()
 	require.Equal(t, "response.output_item.done", gjson.GetBytes(firstTurnImageEvent, "type").String())
 	require.Equal(t, "completed", gjson.GetBytes(firstTurnImageEvent, "item.status").String())
@@ -530,7 +530,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_KeepLeaseAcrossT
 	require.Equal(t, "resp_ingress_turn_1", gjson.GetBytes(firstTurnEvent, "response.id").String())
 	require.False(t, gjson.GetBytes(firstTurnEvent, "response.instructions").Exists())
 
-	writeMessage(`{"type":"response.create","model":"gpt-5.1","stream":false,"previous_response_id":"resp_ingress_turn_1"}`)
+	writeMessage(`{"type":"response.create","model":"gpt-5.1","stream":false,"prompt_cache_key":"business-cache-source","previous_response_id":"resp_ingress_turn_1"}`)
 	secondTurnEvent := readMessage()
 	require.Equal(t, "response.completed", gjson.GetBytes(secondTurnEvent, "type").String())
 	require.Equal(t, "resp_ingress_turn_2", gjson.GetBytes(secondTurnEvent, "response.id").String())
@@ -556,7 +556,10 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_KeepLeaseAcrossT
 		require.NoError(t, err)
 		require.Equal(t, "business-server", gjson.GetBytes(encoded, "instructions").String(), "turn %d", index+1)
 		require.Equal(t, 1, strings.Count(string(encoded), "business-server"), "turn %d", index+1)
+		require.Regexp(t, `^[0-9a-f]{64}$`, gjson.GetBytes(encoded, "prompt_cache_key").String())
 	}
+	require.Equal(t, captureConn.writes[0]["prompt_cache_key"], captureConn.writes[1]["prompt_cache_key"])
+	require.Equal(t, captureConn.writes[0]["prompt_cache_key"], captureDialer.lastHeaders.Get("session_id"), "handshake fallback must use the final wire key")
 	require.Equal(t, "resp_ingress_turn_1", captureConn.writes[1]["previous_response_id"])
 }
 

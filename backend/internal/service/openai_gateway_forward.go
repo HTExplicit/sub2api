@@ -765,7 +765,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	} else {
 		body = updatedBody
 		if promptApplication.Applied {
-			body, promptErr = rewriteBusinessSystemPromptCacheKey(body, promptApplication)
+			body, promptErr = rewriteBusinessSystemPromptCacheKey(c, body, promptApplication)
 			if promptErr != nil {
 				return nil, promptErr
 			}

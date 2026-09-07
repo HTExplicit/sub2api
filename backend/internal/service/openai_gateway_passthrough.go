@@ -333,7 +333,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		return nil, promptErr
 	} else {
 		body = updatedPromptBody
-		body, promptErr = rewriteBusinessSystemPromptCacheKey(body, promptApplication)
+		body, promptErr = rewriteBusinessSystemPromptCacheKey(c, body, promptApplication)
 		if promptErr != nil {
 			return nil, promptErr
 		}
@@ -803,9 +803,6 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 		// only that token while preserving any independent beta negotiation.
 		stripOpenAILegacyResponsesBeta(req.Header)
 		promptCacheKey := strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
-		if application, ok := businessSystemPromptApplicationFromRequest(c, BusinessSystemPromptProtocolResponses); ok && application.Applied {
-			promptCacheKey = appendBusinessSystemPromptApplicationToCacheKey(promptCacheKey, application)
-		}
 		req.Host = "chatgpt.com"
 		if err := resolveAndSetOpenAIChatGPTAccountHeaders(ctx, s.accountRepo, req.Header, account); err != nil {
 			return nil, fmt.Errorf("resolve chatgpt account headers: %w", err)
