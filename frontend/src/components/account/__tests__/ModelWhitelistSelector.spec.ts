@@ -281,8 +281,76 @@ describe('ModelWhitelistSelector', () => {
     await flushPromises()
 
     expect(syncUpstreamModelsPreview).toHaveBeenCalledOnce()
-    expect(wrapper.emitted('upstream-synced')).toEqual([[]])
+    expect(wrapper.emitted('upstream-synced')).toEqual([[{
+      models: ['x-preview-f-free'],
+      metadata: { 'x-preview-f-free': { id: 'x-preview-f-free', reasoning: true, supported_reasoning_levels: ['low', 'high', 'max'] } }
+    }]])
     expect(wrapper.emitted('update:modelValue')).toEqual([[['x-preview-f-free']]])
+    await wrapper.get('div.cursor-pointer').trigger('click')
+    expect(findModelRow(wrapper, 'x-preview-f-free')).toBeDefined()
+  })
+
+  it('forwards capacity rows for saved accounts and retains dynamic models after remount', async () => {
+    const result = {
+      models: ['dynamic-only'],
+      metadata: { 'dynamic-only': { id: 'dynamic-only', context_window: 1_050_000 } },
+      capacity_rows: [{ upstream_model_id: 'dynamic-only', effective_context_window: 1_050_000 }]
+    }
+    syncUpstreamModels.mockResolvedValue(result)
+    const wrapper = mountSelector({ accountId: 46 })
+    await wrapper.findAll('button').find(button => button.text() === 'admin.accounts.syncUpstreamModels')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('upstream-synced')).toEqual([[result]])
+    wrapper.unmount()
+
+    const remounted = mountSelector({ syncedModels: result })
+    await remounted.get('div.cursor-pointer').trigger('click')
+    expect(findModelRow(remounted, 'dynamic-only').text()).toContain('1,050,000')
+    expect(remounted.emitted('update:modelValue')).toBeUndefined()
+    remounted.unmount()
+  })
+
+  it('clears a locally cached dynamic model when sync source changes', async () => {
+    syncUpstreamModelsPreview.mockResolvedValue({ models: ['provider-a-only'] })
+    const wrapper = mountSelector({ syncCredentials: { platform: 'openai', type: 'apikey', base_url: 'https://a.example/v1', api_key: 'key-a' } })
+    await wrapper.findAll('button').find(button => button.text() === 'admin.accounts.syncUpstreamModels')!.trigger('click')
+    await flushPromises()
+    await wrapper.get('div.cursor-pointer').trigger('click')
+    expect(wrapper.text()).toContain('provider-a-only')
+    await wrapper.setProps({ syncedModels: undefined, syncCredentials: { platform: 'openai', type: 'apikey', base_url: 'https://b.example/v1', api_key: 'key-b' } })
+    expect(wrapper.text()).not.toContain('provider-a-only')
+    wrapper.unmount()
+  })
+
+  it('ignores an in-flight old-source response instead of forwarding stale rows or changing selection', async () => {
+    let resolve!: (result: { models: string[] }) => void
+    syncUpstreamModelsPreview.mockReturnValue(new Promise(result => { resolve = result }))
+    const wrapper = mountSelector({ syncCredentials: { platform: 'openai', type: 'apikey', base_url: 'https://a.example/v1', api_key: 'key-a' } })
+    await wrapper.findAll('button').find(button => button.text() === 'admin.accounts.syncUpstreamModels')!.trigger('click')
+    await wrapper.setProps({ syncCredentials: { platform: 'openai', type: 'apikey', base_url: 'https://b.example/v1', api_key: 'key-b' } })
+    resolve({ models: ['stale-provider-a-model'] })
+    await flushPromises()
+    expect(wrapper.emitted('upstream-synced')).toBeUndefined()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(showSuccess).not.toHaveBeenCalled()
+    expect(showError).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('does not synchronize when a parent marks saved connection changes as unsaved', async () => {
+    const wrapper = mountSelector({ accountId: 42, syncDisabled: true, syncDisabledReason: 'Save first' })
+    const button = wrapper.findAll('button').find(button => button.text() === 'admin.accounts.syncUpstreamModels')!
+    expect(button.attributes('disabled')).toBeDefined()
+    expect(button.attributes('title')).toBe('Save first')
+    await button.trigger('click')
+    expect(syncUpstreamModels).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('allows a shared parent sync entry to hide the selector action', () => {
+    const wrapper = mountSelector({ accountId: 42, hideSync: true })
+    expect(wrapper.findAll('button').some(button => button.text() === 'admin.accounts.syncUpstreamModels')).toBe(false)
+    wrapper.unmount()
   })
 
 })

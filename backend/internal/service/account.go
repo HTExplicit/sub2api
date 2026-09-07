@@ -82,6 +82,10 @@ type Account struct {
 	GroupIDs         []int64
 	Groups           []*Group
 
+	// ModelContextOverridesPatch is typed admin write intent, never persisted or
+	// serialized. The repository applies it to the latest Extra under its row lock.
+	ModelContextOverridesPatch map[string]*int64 `json:"-"`
+
 	// model_mapping 热路径缓存（非持久化字段）
 	modelMappingCache               map[string]string
 	modelMappingCacheReady          bool

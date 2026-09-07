@@ -1591,6 +1591,7 @@ export interface CreateAccountRequest {
   type: AccountType
   credentials: Record<string, unknown>
   extra?: Record<string, unknown>
+  model_context_overrides?: Record<string, number | null>
   proxy_id?: number | null
   concurrency?: number
   load_factor?: number | null
@@ -1609,6 +1610,7 @@ export interface UpdateAccountRequest {
   type?: AccountType
   credentials?: Record<string, unknown>
   extra?: Record<string, unknown>
+  model_context_overrides?: Record<string, number | null>
   proxy_id?: number | null
   concurrency?: number
   load_factor?: number | null

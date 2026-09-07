@@ -576,6 +576,77 @@ export interface SyncUpstreamModelsResult {
   models: string[]
   metadata?: Record<string, UpstreamModelMetadata>
   warnings?: UpstreamModelSyncWarning[]
+  capacity_rows?: ModelContextCapacityRow[]
+}
+
+export type ModelContextCapacitySource = 'custom' | 'official' | 'upstream' | 'default' | 'protected'
+
+export interface ModelContextCapacityValues {
+  context_window?: number
+  max_context_window?: number
+  max_input_tokens?: number
+  max_output_tokens?: number
+  capacity_basis?: string
+}
+
+export interface ModelContextCapacityRow {
+  upstream_model_id: string
+  aliases: string[]
+  editable: boolean
+  upstream?: ModelContextCapacityValues & { observed_at: string }
+  official?: ModelContextCapacityValues & {
+    model_id: string
+    aliases?: string[]
+    provider: string
+    product: string
+    source_url: string
+    source_urls?: string[]
+    verified_at: string
+    original_text: string
+    normalization_basis?: string
+    conditions?: string
+  }
+  custom_context_window?: number
+  automatic_context_window: number
+  automatic_source: ModelContextCapacitySource
+  effective_context_window: number
+  effective_source: ModelContextCapacitySource
+  capacity_basis: string
+  max_context_window?: number
+  max_input_tokens?: number
+  max_output_tokens?: number
+  reason?: string
+}
+
+export interface ModelContextCapacitiesResult {
+  capacity_rows: ModelContextCapacityRow[]
+}
+
+/** Read persisted observations and the local official catalog without contacting upstream. */
+export async function getModelContextCapacities(id: number, signal?: AbortSignal): Promise<ModelContextCapacitiesResult> {
+  const { data } = await apiClient.get<ModelContextCapacitiesResult>(`/admin/accounts/${id}/models/context-capacities`, { signal })
+  return data
+}
+
+export interface ModelContextCapacitiesPreviewParams {
+  account_id?: number
+  platform: string
+  type: string
+  base_url?: string
+  account_mode?: string
+  api_protocol?: string
+  api_base_urls?: Record<string, string>
+  model_mapping?: Record<string, string>
+  model_ids?: string[]
+}
+
+/** Local-only capacity projection for unsaved account/model edits; never sends credentials. */
+export async function previewModelContextCapacities(
+  params: ModelContextCapacitiesPreviewParams,
+  signal?: AbortSignal
+): Promise<ModelContextCapacitiesResult> {
+  const { data } = await apiClient.post<ModelContextCapacitiesResult>('/admin/accounts/models/context-capacities-preview', params, { signal })
+  return data
 }
 
 export interface UpstreamModelSyncWarning {
@@ -609,6 +680,9 @@ export interface SyncUpstreamPreviewParams {
   platform: string
   type: string
   base_url?: string
+  account_mode?: string
+  api_protocol?: string
+  api_base_urls?: Record<string, string>
   api_key: string
   model_mapping?: Record<string, string>
 }
@@ -1222,6 +1296,8 @@ export const accountsAPI = {
   resetTempUnschedulable,
   setSchedulable,
   getAvailableModels,
+  getModelContextCapacities,
+  previewModelContextCapacities,
   syncUpstreamModels,
   syncUpstreamModelsPreview,
   generateAuthUrl,

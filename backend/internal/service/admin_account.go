@@ -460,6 +460,9 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 	delete(accountExtra, OllamaCloudUsageSessionExtraKey)
 	delete(accountExtra, OllamaCloudUsageAutoRefreshExtraKey)
 	delete(accountExtra, OllamaCloudUsageSnapshotExtraKey)
+	delete(accountExtra, UpstreamModelContextCapacitiesExtraKey)
+	delete(accountExtra, ModelContextOverridesExtraKey)
+	delete(accountExtra, UpstreamModelMetadataExtraKey)
 	accountExtra = prepareCodexFingerprintExtraForCreate(input.Platform, input.Type, accountExtra)
 	account := &Account{
 		Name:        input.Name,
@@ -481,6 +484,21 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 	account.Platform = platform
 	account.WirePlatform = wirePlatform
 	account.ProviderProfile = providerProfile
+	if err := ValidateModelContextOverrides(account, input.ModelContextOverrides); err != nil {
+		return nil, err
+	}
+	if input.ModelContextOverrides != nil {
+		overrides, err := ApplyModelContextOverrides(nil, input.ModelContextOverrides)
+		if err != nil {
+			return nil, err
+		}
+		if len(overrides) > 0 {
+			if account.Extra == nil {
+				account.Extra = make(map[string]any)
+			}
+			account.Extra[ModelContextOverridesExtraKey] = overrides
+		}
+	}
 	if input.ProbeEnabled != nil && *input.ProbeEnabled {
 		if !isUpstreamBillingProbeAccount(account) {
 			return nil, ErrUpstreamBillingProbeAccountInvalid
@@ -658,6 +676,9 @@ func (s *adminServiceImpl) updateAccount(ctx context.Context, id int64, input *U
 	if err != nil {
 		return nil, err
 	}
+	if err := ValidateModelContextOverrides(account, input.ModelContextOverrides); err != nil {
+		return nil, err
+	}
 	originalPlatform := account.Platform
 	originalWirePlatform := account.EffectiveWirePlatform()
 	originalProviderProfile := account.EffectiveProviderProfile()
@@ -759,6 +780,9 @@ func (s *adminServiceImpl) updateAccount(ctx context.Context, id int64, input *U
 		delete(normalizedExtra, OllamaCloudUsageSessionExtraKey)
 		delete(normalizedExtra, OllamaCloudUsageAutoRefreshExtraKey)
 		delete(normalizedExtra, OllamaCloudUsageSnapshotExtraKey)
+		delete(normalizedExtra, UpstreamModelContextCapacitiesExtraKey)
+		delete(normalizedExtra, ModelContextOverridesExtraKey)
+		delete(normalizedExtra, UpstreamModelMetadataExtraKey)
 		// 保留配额用量和专用服务受管字段，防止普通账号编辑意外覆盖。
 		for _, key := range []string{
 			"quota_used",
@@ -773,6 +797,9 @@ func (s *adminServiceImpl) updateAccount(ctx context.Context, id int64, input *U
 			OllamaCloudUsageSessionExtraKey,
 			OllamaCloudUsageAutoRefreshExtraKey,
 			OllamaCloudUsageSnapshotExtraKey,
+			UpstreamModelContextCapacitiesExtraKey,
+			ModelContextOverridesExtraKey,
+			UpstreamModelMetadataExtraKey,
 		} {
 			if v, ok := account.Extra[key]; ok {
 				normalizedExtra[key] = v
@@ -933,6 +960,21 @@ func (s *adminServiceImpl) updateAccount(ctx context.Context, id int64, input *U
 		}
 	}
 
+	if err := ValidateModelContextOverrides(account, input.ModelContextOverrides); err != nil {
+		return nil, err
+	}
+	account.ModelContextOverridesPatch = input.ModelContextOverrides
+	if input.ModelContextOverrides != nil {
+		overrides, err := ApplyModelContextOverrides(account.Extra[ModelContextOverridesExtraKey], input.ModelContextOverrides)
+		if err != nil {
+			return nil, err
+		}
+		if account.Extra == nil {
+			account.Extra = make(map[string]any)
+		}
+		account.Extra[ModelContextOverridesExtraKey] = overrides
+	}
+
 	billingSettingsAppliedAtomically := false
 	updater := s.accountBillingRepo
 	if updater == nil {
@@ -1009,6 +1051,9 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 	delete(updates, OllamaCloudUsageSessionExtraKey)
 	delete(updates, OllamaCloudUsageAutoRefreshExtraKey)
 	delete(updates, OllamaCloudUsageSnapshotExtraKey)
+	delete(updates, UpstreamModelContextCapacitiesExtraKey)
+	delete(updates, ModelContextOverridesExtraKey)
+	delete(updates, UpstreamModelMetadataExtraKey)
 	if _, exists := updates[openAILongContextBillingEnabledKey]; exists {
 		account, err := s.accountRepo.GetByID(ctx, id)
 		if err != nil {
@@ -1039,6 +1084,9 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	delete(input.Extra, OllamaCloudUsageSessionExtraKey)
 	delete(input.Extra, OllamaCloudUsageAutoRefreshExtraKey)
 	delete(input.Extra, OllamaCloudUsageSnapshotExtraKey)
+	delete(input.Extra, UpstreamModelContextCapacitiesExtraKey)
+	delete(input.Extra, ModelContextOverridesExtraKey)
+	delete(input.Extra, UpstreamModelMetadataExtraKey)
 
 	if len(input.AccountIDs) == 0 && input.Filters != nil {
 		accountIDs, err := s.resolveBulkUpdateTargetIDs(ctx, input.Filters)

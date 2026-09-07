@@ -8,18 +8,11 @@ import (
 )
 
 const (
-	// OfficialCodexContextContractSuccessLine is the stable machine-readable
-	// success record consumed by production acceptance.
-	OfficialCodexContextContractSuccessLine = "CODEX_CONTEXT_CONTRACT|valid=true|sol_context=1000000|sol_max=1000000|sol_compact=900000|terra_context=272000|terra_max=872000|terra_compact=null|luna_context=272000|luna_max=872000|luna_compact=null|sentinel=preserved"
-	// OfficialCodexContextContractFailureLine is the fixed redacted record for
-	// deterministic contract failures.
+	// This deterministic self-test reports policy, not production model limits.
+	OfficialCodexContextContractSuccessLine = "CODEX_CONTEXT_CONTRACT|version=2|valid=true|priority=custom,official,upstream,default|default_context=258000|protected=preserved|sentinel=preserved"
 	OfficialCodexContextContractFailureLine = "CODEX_CONTEXT_CONTRACT|valid=false|reason=contract-mismatch"
-	// OfficialCodexContextInvalidArgsLine is emitted when the verification flag
-	// is combined with another execution mode or positional arguments.
-	OfficialCodexContextInvalidArgsLine = "CODEX_CONTEXT_CONTRACT|valid=false|reason=invalid-arguments"
-
-	officialCodexContextContractSentinel = "codex-context-contract-v1"
-	officialCodexContextContractFixture  = `{"models":[{"slug":"gpt-5.6-sol","context_window":1,"max_context_window":2,"auto_compact_token_limit":null,"contract_sentinel":"codex-context-contract-v1"},{"slug":"gpt-5.6-terra","context_window":272000,"max_context_window":872000,"auto_compact_token_limit":null},{"slug":"gpt-5.6-luna","context_window":272000,"max_context_window":872000,"auto_compact_token_limit":null},{"slug":"gpt-5.5","context_window":777000,"contract_sentinel":"codex-context-contract-v1"}],"contract_sentinel":"codex-context-contract-v1"}`
+	OfficialCodexContextInvalidArgsLine     = "CODEX_CONTEXT_CONTRACT|valid=false|reason=invalid-arguments"
+	officialCodexContextContractSentinel    = "codex-context-contract-v2"
 )
 
 type officialCodexContextContractEnvelope struct {
@@ -28,25 +21,61 @@ type officialCodexContextContractEnvelope struct {
 }
 
 type officialCodexContextContractModel struct {
-	Slug             string          `json:"slug"`
-	ContextWindow    *int            `json:"context_window"`
-	MaxContextWindow *int            `json:"max_context_window"`
-	AutoCompactLimit json.RawMessage `json:"auto_compact_token_limit"`
-	ContractSentinel string          `json:"contract_sentinel"`
+	Slug              string          `json:"slug"`
+	ContextWindow     *int64          `json:"context_window"`
+	MaxContextWindow  *int64          `json:"max_context_window"`
+	AutoCompactLimit  json.RawMessage `json:"auto_compact_token_limit"`
+	Source            string          `json:"context_capacity_source"`
+	Basis             string          `json:"context_capacity_basis"`
+	ContractSentinel  string          `json:"contract_sentinel"`
+	UnknownCapability json.RawMessage `json:"unknown_capability"`
 }
 
-// VerifyOfficialCodexContextContract exercises the exact runtime transformer
-// used for ordinary non-Cindy API-key manifests. It performs no network,
-// configuration, database, Redis, or credential access.
+// VerifyOfficialCodexContextContract exercises the production pure resolver and
+// final projection without configuration, network, credentials, DB, or Redis.
 func VerifyOfficialCodexContextContract() (string, error) {
-	normalized, err := normalizeOfficialCodexModelContexts([]byte(officialCodexContextContractFixture))
+	body, err := buildOfficialCodexContextContractFixture()
 	if err != nil {
-		return "", fmt.Errorf("normalize canonical manifest: %w", err)
+		return "", err
 	}
-	if err := verifyNormalizedOfficialCodexContextContract(normalized); err != nil {
+	if err := verifyNormalizedOfficialCodexContextContract(body); err != nil {
 		return "", err
 	}
 	return OfficialCodexContextContractSuccessLine, nil
+}
+
+func buildOfficialCodexContextContractFixture() ([]byte, error) {
+	custom := int64(512000)
+	official := &OfficialModelContextCapacity{
+		ModelContextCapacity: ModelContextCapacity{ContextWindow: 1000000},
+		ModelID:              "fixture-official",
+	}
+	upstream := &ModelContextCapacity{ContextWindow: 64000, MaxContextWindow: 128000}
+	cases := []struct {
+		slug     string
+		capacity ResolvedModelContextCapacity
+		compact  int64
+	}{
+		{"fixture-custom", ResolveModelContextCapacity(&custom, official, upstream), 9999999},
+		{"fixture-official", ResolveModelContextCapacity(nil, official, upstream), 9999999},
+		{"fixture-upstream", ResolveModelContextCapacity(nil, nil, upstream), 50000},
+		{"fixture-default", ResolveModelContextCapacity(nil, nil, nil), 9999999},
+		{"fixture-protected", ResolvedModelContextCapacity{Source: "protected"}, 666666},
+	}
+	models := make([]map[string]json.RawMessage, 0, len(cases))
+	for _, test := range cases {
+		fields := map[string]json.RawMessage{
+			"slug":                     json.RawMessage(fmt.Sprintf("%q", test.slug)),
+			"context_window":           json.RawMessage("777000"),
+			"max_context_window":       json.RawMessage("888000"),
+			"auto_compact_token_limit": json.RawMessage(fmt.Sprintf("%d", test.compact)),
+			"contract_sentinel":        json.RawMessage(fmt.Sprintf("%q", officialCodexContextContractSentinel)),
+			"unknown_capability":       json.RawMessage(`{"keep":true}`),
+		}
+		ApplyModelContextCapacityToFields(fields, test.capacity, true)
+		models = append(models, fields)
+	}
+	return json.Marshal(map[string]any{"models": models, "contract_sentinel": officialCodexContextContractSentinel})
 }
 
 func verifyNormalizedOfficialCodexContextContract(body []byte) error {
@@ -57,38 +86,38 @@ func verifyNormalizedOfficialCodexContextContract(body []byte) error {
 	if envelope.ContractSentinel != officialCodexContextContractSentinel {
 		return errors.New("top-level sentinel changed")
 	}
-
-	bySlug := make(map[string][]officialCodexContextContractModel, len(envelope.Models))
-	for _, model := range envelope.Models {
-		bySlug[model.Slug] = append(bySlug[model.Slug], model)
-	}
 	checks := []struct {
-		slug                            string
-		contextWindow, maxContextWindow int
-		autoCompact                     string
+		slug, source, basis, compact string
+		contextWindow, maxWindow     int64
 	}{
-		{slug: "gpt-5.6-sol", contextWindow: 1000000, maxContextWindow: 1000000, autoCompact: "900000"},
-		{slug: "gpt-5.6-terra", contextWindow: 272000, maxContextWindow: 872000, autoCompact: "null"},
-		{slug: "gpt-5.6-luna", contextWindow: 272000, maxContextWindow: 872000, autoCompact: "null"},
+		{"fixture-custom", "custom", "total_context", "null", 512000, 512000},
+		{"fixture-official", "official", "total_context", "null", 1000000, 1000000},
+		{"fixture-upstream", "upstream", "total_context", "50000", 64000, 128000},
+		{"fixture-default", "default", "total_context", "null", 258000, 258000},
+		{"fixture-protected", "", "", "666666", 777000, 888000},
+	}
+	if len(envelope.Models) != len(checks) {
+		return errors.New("model fixture count changed")
+	}
+	bySlug := make(map[string]officialCodexContextContractModel, len(envelope.Models))
+	for _, model := range envelope.Models {
+		if _, exists := bySlug[model.Slug]; exists {
+			return errors.New("duplicate model fixture")
+		}
+		bySlug[model.Slug] = model
 	}
 	for _, check := range checks {
-		models := bySlug[check.slug]
-		if len(models) != 1 {
-			return fmt.Errorf("model %q count is %d", check.slug, len(models))
+		model, exists := bySlug[check.slug]
+		if !exists || model.ContextWindow == nil || *model.ContextWindow != check.contextWindow ||
+			model.MaxContextWindow == nil || *model.MaxContextWindow != check.maxWindow ||
+			model.Source != check.source || model.Basis != check.basis ||
+			!bytes.Equal(bytes.TrimSpace(model.AutoCompactLimit), []byte(check.compact)) {
+			return fmt.Errorf("model %q policy mismatch", check.slug)
 		}
-		model := models[0]
-		if model.ContextWindow == nil || *model.ContextWindow != check.contextWindow ||
-			model.MaxContextWindow == nil || *model.MaxContextWindow != check.maxContextWindow ||
-			!bytes.Equal(bytes.TrimSpace(model.AutoCompactLimit), []byte(check.autoCompact)) {
-			return fmt.Errorf("model %q context contract mismatch", check.slug)
+		if model.ContractSentinel != officialCodexContextContractSentinel ||
+			!bytes.Equal(bytes.TrimSpace(model.UnknownCapability), []byte(`{"keep":true}`)) {
+			return errors.New("unrelated model capability changed")
 		}
-	}
-
-	sentinelModels := bySlug["gpt-5.5"]
-	if len(sentinelModels) != 1 || sentinelModels[0].ContextWindow == nil ||
-		*sentinelModels[0].ContextWindow != 777000 ||
-		sentinelModels[0].ContractSentinel != officialCodexContextContractSentinel {
-		return errors.New("unrelated model sentinel changed")
 	}
 	return nil
 }

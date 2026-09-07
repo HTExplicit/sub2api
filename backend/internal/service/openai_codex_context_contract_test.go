@@ -1,41 +1,65 @@
 package service
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-func TestGPT56OfficialCodexContextContractUsesRuntimeTransformer(t *testing.T) {
+func TestModelContextCapacityContractUsesRuntimePolicyAndProjection(t *testing.T) {
 	line, err := VerifyOfficialCodexContextContract()
 	require.NoError(t, err)
 	require.Equal(t, OfficialCodexContextContractSuccessLine, line)
+	require.Contains(t, line, "version=2")
+	require.NotContains(t, line, "sol_context=")
 }
 
-func TestGPT56NormalizedOfficialCodexContextContractFailsClosed(t *testing.T) {
-	valid := `{"models":[{"slug":"gpt-5.6-sol","context_window":1000000,"max_context_window":1000000,"auto_compact_token_limit":900000},{"slug":"gpt-5.6-terra","context_window":272000,"max_context_window":872000,"auto_compact_token_limit":null},{"slug":"gpt-5.6-luna","context_window":272000,"max_context_window":872000,"auto_compact_token_limit":null},{"slug":"gpt-5.5","context_window":777000,"contract_sentinel":"codex-context-contract-v1"}],"contract_sentinel":"codex-context-contract-v1"}`
-	tests := []struct {
-		name string
-		body string
-	}{
-		{name: "invalid envelope", body: `{"models":`},
-		{name: "missing target", body: strings.Replace(valid, `{"slug":"gpt-5.6-luna","context_window":272000,"max_context_window":872000,"auto_compact_token_limit":null},`, "", 1)},
-		{name: "duplicate target", body: strings.Replace(valid, `{"slug":"gpt-5.6-luna"`, `{"slug":"gpt-5.6-sol","context_window":1000000,"max_context_window":1000000,"auto_compact_token_limit":900000},{"slug":"gpt-5.6-luna"`, 1)},
-		{name: "wrong sol context", body: strings.Replace(valid, `"context_window":1000000`, `"context_window":1050000`, 1)},
-		{name: "numeric terra compact", body: strings.Replace(valid, `"auto_compact_token_limit":null`, `"auto_compact_token_limit":900000`, 1)},
-		{name: "missing luna compact", body: strings.Replace(valid, `,"auto_compact_token_limit":null},{"slug":"gpt-5.5"`, `},{"slug":"gpt-5.5"`, 1)},
-		{name: "top sentinel changed", body: strings.Replace(valid, `}],"contract_sentinel":"codex-context-contract-v1"}`, `}],"contract_sentinel":"changed"}`, 1)},
-		{name: "model sentinel changed", body: strings.Replace(valid, `"context_window":777000,"contract_sentinel":"codex-context-contract-v1"`, `"context_window":777000,"contract_sentinel":"changed"`, 1)},
+func TestModelContextCapacityContractFailsClosed(t *testing.T) {
+	body, err := buildOfficialCodexContextContractFixture()
+	require.NoError(t, err)
+	valid := string(body)
+	tests := []struct{ name, body string }{
+		{"invalid envelope", `{"models":`},
+		{"wrong custom context", strings.Replace(valid, `"context_window":512000`, `"context_window":512001`, 1)},
+		{"wrong priority source", strings.Replace(valid, `"context_capacity_source":"official"`, `"context_capacity_source":"upstream"`, 1)},
+		{"wrong default", strings.Replace(valid, `"context_window":258000`, `"context_window":272000`, 1)},
+		{"unsafe compact threshold", strings.Replace(valid, `"auto_compact_token_limit":null`, `"auto_compact_token_limit":9999999`, 1)},
+		{"protected model changed", strings.Replace(valid, `"context_window":777000`, `"context_window":258000`, 1)},
+		{"sentinel changed", strings.Replace(valid, officialCodexContextContractSentinel, "changed", 1)},
+		{"unknown capability changed", strings.Replace(valid, `"keep":true`, `"keep":false`, 1)},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			require.NotEqual(t, valid, test.body, "mutation must alter the fixture")
 			require.Error(t, verifyNormalizedOfficialCodexContextContract([]byte(test.body)))
 		})
 	}
+	var envelope map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(body, &envelope))
+	var models []json.RawMessage
+	require.NoError(t, json.Unmarshal(envelope["models"], &models))
+	t.Run("missing model", func(t *testing.T) {
+		envelope["models"], err = json.Marshal(models[1:])
+		require.NoError(t, err)
+		missing, marshalErr := json.Marshal(envelope)
+		require.NoError(t, marshalErr)
+		require.Error(t, verifyNormalizedOfficialCodexContextContract(missing))
+	})
+	t.Run("duplicate model", func(t *testing.T) {
+		duplicated := append([]json.RawMessage(nil), models...)
+		duplicated[1] = duplicated[0]
+		envelope["models"], err = json.Marshal(duplicated)
+		require.NoError(t, err)
+		duplicate, marshalErr := json.Marshal(envelope)
+		require.NoError(t, marshalErr)
+		require.Error(t, verifyNormalizedOfficialCodexContextContract(duplicate))
+	})
 }
 
-func TestGPT56NormalizedOfficialCodexContextContractAcceptsExactContract(t *testing.T) {
-	body := []byte(`{"models":[{"slug":"gpt-5.6-sol","context_window":1000000,"max_context_window":1000000,"auto_compact_token_limit":900000},{"slug":"gpt-5.6-terra","context_window":272000,"max_context_window":872000,"auto_compact_token_limit":null},{"slug":"gpt-5.6-luna","context_window":272000,"max_context_window":872000,"auto_compact_token_limit":null},{"slug":"gpt-5.5","context_window":777000,"contract_sentinel":"codex-context-contract-v1"}],"contract_sentinel":"codex-context-contract-v1"}`)
+func TestModelContextCapacityContractAcceptsDeterministicFixture(t *testing.T) {
+	body, err := buildOfficialCodexContextContractFixture()
+	require.NoError(t, err)
 	require.NoError(t, verifyNormalizedOfficialCodexContextContract(body))
 }

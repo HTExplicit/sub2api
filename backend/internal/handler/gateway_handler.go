@@ -1156,6 +1156,9 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 		writeCindyOpenAIModelsList(c, availableModels)
 		return
 	}
+	c.Set(modelCapacityProjectorContextKey, func(body []byte) ([]byte, error) {
+		return h.gatewayService.ProjectModelListContextCapacities(c.Request.Context(), authenticatedGroup, groupID, platform, body)
+	})
 
 	if platform == service.PlatformComposite {
 		availableModels := h.compositeAvailableModels(c.Request.Context(), groupID)
@@ -1188,7 +1191,7 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 
 	// Fallback to default models
 	if platform == service.PlatformOpenAI {
-		c.JSON(http.StatusOK, gin.H{
+		writePublicModelsJSON(c, gin.H{
 			"object": "list",
 			"data":   openai.DefaultModels,
 		})
@@ -1196,7 +1199,7 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	}
 
 	if platform == service.PlatformGemini {
-		c.JSON(http.StatusOK, gin.H{
+		writePublicModelsJSON(c, gin.H{
 			"object": "list",
 			"data":   geminicli.DefaultModels,
 		})
@@ -1207,7 +1210,7 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	writePublicModelsJSON(c, gin.H{
 		"object": "list",
 		"data":   claude.DefaultModels,
 	})
@@ -1372,6 +1375,26 @@ func (h *GatewayHandler) compositeAvailableModels(ctx context.Context, groupID *
 	return models
 }
 
+const modelCapacityProjectorContextKey = "gateway.model-capacity-projector"
+
+func writePublicModelsJSON(c *gin.Context, payload any) {
+	projectorValue, enabled := c.Get(modelCapacityProjectorContextKey)
+	if !enabled {
+		c.JSON(http.StatusOK, payload)
+		return
+	}
+	projector, ok := projectorValue.(func([]byte) ([]byte, error))
+	body, err := json.Marshal(payload)
+	if !ok || err != nil {
+		c.JSON(http.StatusOK, payload)
+		return
+	}
+	if projected, projectErr := projector(body); projectErr == nil {
+		body = projected
+	}
+	c.Data(http.StatusOK, "application/json; charset=utf-8", body)
+}
+
 func writeModelsList(c *gin.Context, platform string, modelIDs []string) {
 	if platform == service.PlatformGrok {
 		writeGrokModelsList(c, modelIDs)
@@ -1386,7 +1409,7 @@ func writeModelsList(c *gin.Context, platform string, modelIDs []string) {
 			CreatedAt:   "2024-01-01T00:00:00Z",
 		})
 	}
-	c.JSON(http.StatusOK, gin.H{
+	writePublicModelsJSON(c, gin.H{
 		"object": "list",
 		"data":   models,
 	})
@@ -1448,7 +1471,7 @@ func writeGrokModelsList(c *gin.Context, modelIDs []string) {
 		models = append(models, item)
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	writePublicModelsJSON(c, gin.H{
 		"object": "list",
 		"data":   models,
 	})
@@ -1484,7 +1507,7 @@ func writeOpenAIModelsList(c *gin.Context, modelIDs []string) {
 			DisplayName: modelID,
 		})
 	}
-	c.JSON(http.StatusOK, gin.H{
+	writePublicModelsJSON(c, gin.H{
 		"object": "list",
 		"data":   models,
 	})

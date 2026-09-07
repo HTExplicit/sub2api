@@ -1495,7 +1495,9 @@
                 v-model="allowedModels"
                 :platform="form.platform"
                 :sync-credentials="syncPreviewCredentials"
-                @upstream-synced="upstreamModelsPreviewed = true"
+                :synced-models="capacitySyncedModels"
+                hide-sync
+                @upstream-synced="handleCapacityUpstreamSync"
               />
               <p class="text-xs text-gray-500 dark:text-gray-400">
                 {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
@@ -1982,7 +1984,9 @@
               v-model="allowedModels"
               platform="anthropic"
               :sync-credentials="syncPreviewCredentials"
-              @upstream-synced="upstreamModelsPreviewed = true"
+              :synced-models="capacitySyncedModels"
+              hide-sync
+              @upstream-synced="handleCapacityUpstreamSync"
             />
             <p class="text-xs text-gray-500 dark:text-gray-400">
               {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
@@ -2323,7 +2327,9 @@
               v-model="allowedModels"
               :platform="form.platform"
               :sync-credentials="syncPreviewCredentials"
-              @upstream-synced="upstreamModelsPreviewed = true"
+              :synced-models="capacitySyncedModels"
+              hide-sync
+              @upstream-synced="handleCapacityUpstreamSync"
             />
             <p class="text-xs text-gray-500 dark:text-gray-400">
               {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
@@ -2981,6 +2987,17 @@
         <ProxySelector v-model="form.proxy_id" :proxies="proxies" />
       </div>
 
+      <ModelContextCapacityPanel
+        v-model="capacityDrafts"
+        :rows="capacityRows"
+        :loading="capacityLoading"
+        :error="capacityLoadFailed ? t('admin.accounts.contextCapacity.loadFailed') : undefined"
+        :can-sync="canCapacitySync"
+        :syncing="capacitySyncing"
+        :sync-disabled="!capacitySyncPreviewCredentials?.api_key.trim()"
+        @sync="syncCapacityModels"
+      />
+
       <UpstreamRequestIdHeaderField
         v-model="upstreamRequestIdHeader"
         :platform="form.platform"
@@ -3556,7 +3573,7 @@
         <button
           type="submit"
           form="create-account-form"
-          :disabled="submitting"
+          :disabled="submitting || !capacityValid || !capacityReady"
           class="btn btn-primary"
           data-tour="account-form-submit"
         >
@@ -3876,6 +3893,8 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { adminAPI } from '@/api/admin'
 import type { AccountJob } from '@/api/admin/accountJobs'
+import type { SyncUpstreamModelsResult } from '@/api/admin/accounts'
+import { useModelContextCapacities, withoutManagedCapacityExtra } from '@/composables/useModelContextCapacities'
 import { useQuotaNotifyState } from '@/composables/useQuotaNotifyState'
 import {
   useAccountOAuth,
@@ -3909,6 +3928,7 @@ import ProxySelector from '@/components/common/ProxySelector.vue'
 import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
+import ModelContextCapacityPanel from '@/components/account/ModelContextCapacityPanel.vue'
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import OpenAIReasoningPolicyFields from './OpenAIReasoningPolicyFields.vue'
@@ -4301,6 +4321,11 @@ const syncPreviewCredentials = computed(() => {
     platform: form.platform,
     type: form.type,
     base_url: baseUrl || undefined,
+    ...(isCNPlatform.value ? {
+      account_mode: accountMode.value,
+      api_protocol: apiProtocol.value,
+      api_base_urls: apiProtocol.value === 'adaptive' ? { ...adaptiveBaseUrls.value } : undefined
+    } : {}),
     api_key: apiKeyValue.value,
     ...(modelMapping ? { model_mapping: modelMapping } : {})
   }
@@ -4978,6 +5003,85 @@ watch(
   }
 )
 
+const {
+  rows: capacityRows,
+  drafts: capacityDrafts,
+  syncedModels: capacitySyncedModels,
+  loading: capacityLoading,
+  syncing: capacitySyncing,
+  loadFailed: capacityLoadFailed,
+  valid: capacityValid,
+  ready: capacityReady,
+  acceptSync: acceptCapacitySync,
+  synchronize: synchronizeCapacity,
+  reset: resetCapacityState,
+  buildPatch: buildCapacityPatch
+} = useModelContextCapacities({
+  enabled: () => props.show,
+  identity: () => `${form.platform}:${form.type}`,
+  syncIdentity: () => form.platform === 'antigravity' ? upstreamApiKey.value : apiKeyValue.value,
+  params: () => {
+    const mappings = form.platform === 'antigravity'
+      ? buildModelMappingObject('mapping', [], antigravityModelMappings.value)
+      : buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
+    return {
+      platform: form.platform,
+      type: form.type,
+      base_url: form.platform === 'antigravity' && antigravityAccountType.value === 'upstream'
+        ? upstreamBaseUrl.value.trim()
+        : form.type === 'apikey' ? apiKeyBaseUrl.value.trim() : undefined,
+      ...(isCNPlatform.value ? {
+        account_mode: accountMode.value,
+        api_protocol: apiProtocol.value,
+        api_base_urls: apiProtocol.value === 'adaptive' ? { ...adaptiveBaseUrls.value } : undefined
+      } : {}),
+      model_mapping: mappings ?? {},
+      model_ids: [...new Set([
+        ...getModelsByPlatform(form.platform), ...allowedModels.value,
+        ...cindyCreateCatalog.value.map(model => model.id)
+      ])]
+    }
+  }
+})
+
+const handleCapacityUpstreamSync = (result?: SyncUpstreamModelsResult) => {
+  upstreamModelsPreviewed.value = true
+  acceptCapacitySync(result)
+}
+
+const canCapacitySync = computed(() => form.type === 'apikey' && form.platform !== 'cindy' && !isCindyOpenAIAccount.value)
+const capacitySyncPreviewCredentials = computed(() => {
+  if (form.platform === 'antigravity') {
+    return {
+      platform: form.platform,
+      type: 'apikey',
+      base_url: upstreamBaseUrl.value.trim(),
+      api_key: upstreamApiKey.value,
+      model_mapping: buildModelMappingObject('mapping', [], antigravityModelMappings.value) ?? {}
+    }
+  }
+  return syncPreviewCredentials.value
+})
+
+const syncCapacityModels = async () => {
+  const credentials = capacitySyncPreviewCredentials.value
+  if (!canCapacitySync.value || !credentials?.api_key.trim()) return
+  try {
+    const result = await synchronizeCapacity(() => adminAPI.accounts.syncUpstreamModelsPreview(credentials))
+    if (!result) return
+    upstreamModelsPreviewed.value = true
+    if (result.warnings?.some(warning => warning.code === 'upstream_model_metadata_incomplete')) {
+      appStore.showWarning(t('admin.accounts.syncUpstreamModelsMetadataIncomplete'))
+    } else if (result.warnings?.some(warning => warning.code === 'upstream_model_metadata_partial')) {
+      appStore.showWarning(t('admin.accounts.syncUpstreamModelsMetadataPartial'))
+    } else {
+      appStore.showSuccess(t('admin.accounts.contextCapacity.syncSuccess', { count: result.models.length }))
+    }
+  } catch {
+    appStore.showError(t('admin.accounts.syncUpstreamModelsFailed'))
+  }
+}
+
 // Model mapping helpers
 const addModelMapping = () => {
   modelMappings.value.push({ from: '', to: '' })
@@ -5233,7 +5337,12 @@ const ensureAntigravityMixedChannelConfirmed = async (onConfirm: () => Promise<v
 const submitCreateAccount = async (payload: CreateAccountRequest) => {
   submitting.value = true
   try {
-    const account = await adminAPI.accounts.create(withAntigravityConfirmFlag(payload))
+    const overrides = buildCapacityPatch()
+    const account = await adminAPI.accounts.create(withAntigravityConfirmFlag({
+      ...payload,
+      ...(payload.extra ? { extra: withoutManagedCapacityExtra(payload.extra) } : {}),
+      ...(Object.keys(overrides).length ? { model_context_overrides: overrides } : {})
+    }))
     const modelMapping = payload.credentials.model_mapping
     const hasConcreteMappedTarget = payload.type === 'apikey' &&
       typeof modelMapping === 'object' &&
@@ -5286,6 +5395,7 @@ const submitCreateAccount = async (payload: CreateAccountRequest) => {
 
 // Methods
 const resetForm = () => {
+  resetCapacityState()
   step.value = 1
   form.name = ''
   form.notes = ''
@@ -5407,6 +5517,7 @@ const resetForm = () => {
 }
 
 const handleClose = () => {
+  resetCapacityState()
   antigravityMixedChannelConfirmed.value = false
   clearMixedChannelDialog()
   emit('close')
@@ -5627,6 +5738,14 @@ const handleVertexServiceAccountDrop = async (event: DragEvent) => {
 }
 
 const handleSubmit = async () => {
+  if (!capacityReady.value) {
+    appStore.showError(t(capacityLoadFailed.value ? 'admin.accounts.contextCapacity.loadFailed' : 'admin.accounts.contextCapacity.loading'))
+    return
+  }
+  if (!capacityValid.value) {
+    appStore.showError(t('admin.accounts.contextCapacity.invalid'))
+    return
+  }
   // For OAuth-based type, handle OAuth flow (goes to step 2)
   if (isOAuthFlow.value) {
     if (!isGrokSSOInputMethod.value && !form.name.trim()) {

@@ -114,46 +114,48 @@ func NewAccountHandler(
 
 // CreateAccountRequest represents create account request
 type CreateAccountRequest struct {
-	Name                    string         `json:"name" binding:"required"`
-	Notes                   *string        `json:"notes"`
-	Platform                string         `json:"platform" binding:"required"`
-	WirePlatform            string         `json:"wire_platform"`
-	ProviderProfile         string         `json:"provider_profile"`
-	Type                    string         `json:"type" binding:"required,oneof=oauth setup-token apikey upstream bedrock service_account"`
-	Credentials             map[string]any `json:"credentials" binding:"required"`
-	Extra                   map[string]any `json:"extra"`
-	ProxyID                 *int64         `json:"proxy_id"`
-	Concurrency             int            `json:"concurrency"`
-	Priority                int            `json:"priority"`
-	RateMultiplier          *float64       `json:"rate_multiplier"`
-	LoadFactor              *int           `json:"load_factor"`
-	GroupIDs                []int64        `json:"group_ids"`
-	ExpiresAt               *int64         `json:"expires_at"`
-	AutoPauseOnExpired      *bool          `json:"auto_pause_on_expired"`
-	ProbeEnabled            *bool          `json:"upstream_billing_probe_enabled"`
-	ConfirmMixedChannelRisk *bool          `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
+	Name                    string            `json:"name" binding:"required"`
+	Notes                   *string           `json:"notes"`
+	Platform                string            `json:"platform" binding:"required"`
+	WirePlatform            string            `json:"wire_platform"`
+	ProviderProfile         string            `json:"provider_profile"`
+	Type                    string            `json:"type" binding:"required,oneof=oauth setup-token apikey upstream bedrock service_account"`
+	Credentials             map[string]any    `json:"credentials" binding:"required"`
+	Extra                   map[string]any    `json:"extra"`
+	ModelContextOverrides   map[string]*int64 `json:"model_context_overrides"`
+	ProxyID                 *int64            `json:"proxy_id"`
+	Concurrency             int               `json:"concurrency"`
+	Priority                int               `json:"priority"`
+	RateMultiplier          *float64          `json:"rate_multiplier"`
+	LoadFactor              *int              `json:"load_factor"`
+	GroupIDs                []int64           `json:"group_ids"`
+	ExpiresAt               *int64            `json:"expires_at"`
+	AutoPauseOnExpired      *bool             `json:"auto_pause_on_expired"`
+	ProbeEnabled            *bool             `json:"upstream_billing_probe_enabled"`
+	ConfirmMixedChannelRisk *bool             `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
 }
 
 // UpdateAccountRequest represents update account request
 // 使用指针类型来区分"未提供"和"设置为0"
 type UpdateAccountRequest struct {
-	Name                    string         `json:"name"`
-	Notes                   *string        `json:"notes"`
-	Type                    string         `json:"type" binding:"omitempty,oneof=oauth setup-token apikey upstream bedrock service_account"`
-	Credentials             map[string]any `json:"credentials"`
-	Extra                   map[string]any `json:"extra"`
-	ProxyID                 *int64         `json:"proxy_id"`
-	Concurrency             *int           `json:"concurrency"`
-	Priority                *int           `json:"priority"`
-	RateMultiplier          *float64       `json:"rate_multiplier"`
-	LoadFactor              *int           `json:"load_factor"`
-	Status                  string         `json:"status" binding:"omitempty,oneof=active inactive error"`
-	GroupIDs                *[]int64       `json:"group_ids"`
-	ExpiresAt               *int64         `json:"expires_at"`
-	AutoPauseOnExpired      *bool          `json:"auto_pause_on_expired"`
-	ProbeEnabled            *bool          `json:"upstream_billing_probe_enabled"`
-	RateSyncEnabled         *bool          `json:"upstream_billing_rate_sync_enabled"`
-	ConfirmMixedChannelRisk *bool          `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
+	Name                    string            `json:"name"`
+	Notes                   *string           `json:"notes"`
+	Type                    string            `json:"type" binding:"omitempty,oneof=oauth setup-token apikey upstream bedrock service_account"`
+	Credentials             map[string]any    `json:"credentials"`
+	Extra                   map[string]any    `json:"extra"`
+	ModelContextOverrides   map[string]*int64 `json:"model_context_overrides"`
+	ProxyID                 *int64            `json:"proxy_id"`
+	Concurrency             *int              `json:"concurrency"`
+	Priority                *int              `json:"priority"`
+	RateMultiplier          *float64          `json:"rate_multiplier"`
+	LoadFactor              *int              `json:"load_factor"`
+	Status                  string            `json:"status" binding:"omitempty,oneof=active inactive error"`
+	GroupIDs                *[]int64          `json:"group_ids"`
+	ExpiresAt               *int64            `json:"expires_at"`
+	AutoPauseOnExpired      *bool             `json:"auto_pause_on_expired"`
+	ProbeEnabled            *bool             `json:"upstream_billing_probe_enabled"`
+	RateSyncEnabled         *bool             `json:"upstream_billing_rate_sync_enabled"`
+	ConfirmMixedChannelRisk *bool             `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
 }
 
 // BulkUpdateAccountsRequest represents the payload for bulk editing accounts
@@ -975,6 +977,7 @@ func (h *AccountHandler) Create(c *gin.Context) {
 			Type:                  req.Type,
 			Credentials:           req.Credentials,
 			Extra:                 req.Extra,
+			ModelContextOverrides: req.ModelContextOverrides,
 			ProxyID:               req.ProxyID,
 			Concurrency:           req.Concurrency,
 			Priority:              req.Priority,
@@ -1110,6 +1113,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		Type:                  req.Type,
 		Credentials:           req.Credentials,
 		Extra:                 req.Extra,
+		ModelContextOverrides: req.ModelContextOverrides,
 		ProxyID:               req.ProxyID,
 		Concurrency:           req.Concurrency, // 指针类型，nil 表示未提供
 		Priority:              req.Priority,    // 指针类型，nil 表示未提供
@@ -2586,6 +2590,88 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 	response.Success(c, models)
 }
 
+// GetModelContextCapacities reads the local snapshot, official directory and
+// overrides only. It never calls an upstream model endpoint or registry.
+func (h *AccountHandler) GetModelContextCapacities(c *gin.Context) {
+	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || accountID <= 0 {
+		response.BadRequest(c, "Invalid account ID")
+		return
+	}
+	account, err := h.adminService.GetAccount(c.Request.Context(), accountID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"capacity_rows": service.BuildAccountModelContextCapacityRows(account, c.QueryArray("model_ids"))})
+}
+
+// PreviewModelContextCapacities resolves unsaved model choices locally. This
+// endpoint deliberately accepts no API key, raw Extra or observed snapshots.
+func (h *AccountHandler) PreviewModelContextCapacities(c *gin.Context) {
+	var req struct {
+		AccountID    *int64            `json:"account_id"`
+		Platform     string            `json:"platform"`
+		Type         string            `json:"type"`
+		BaseURL      *string           `json:"base_url"`
+		AccountMode  *string           `json:"account_mode"`
+		APIProtocol  *string           `json:"api_protocol"`
+		APIBaseURLs  map[string]string `json:"api_base_urls"`
+		ModelMapping map[string]string `json:"model_mapping"`
+		ModelIDs     []string          `json:"model_ids"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	account := &service.Account{Platform: req.Platform, Type: req.Type, Credentials: make(map[string]any)}
+	protected := false
+	if req.AccountID != nil {
+		if *req.AccountID <= 0 {
+			response.BadRequest(c, "Invalid account ID")
+			return
+		}
+		stored, err := h.adminService.GetAccount(c.Request.Context(), *req.AccountID)
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		preview := *stored
+		account = &preview
+		account.Credentials = make(map[string]any, len(stored.Credentials))
+		for key, value := range stored.Credentials {
+			account.Credentials[key] = value
+		}
+		protected = service.IsModelContextCapacityProtected(stored)
+	} else if strings.TrimSpace(req.Platform) == "" || strings.TrimSpace(req.Type) == "" {
+		response.BadRequest(c, "platform and type are required for a new account preview")
+		return
+	}
+	// Stored protected identities cannot be reclassified by draft credentials.
+	if !protected {
+		for key, value := range map[string]*string{"base_url": req.BaseURL, "account_mode": req.AccountMode, "api_protocol": req.APIProtocol} {
+			if value != nil {
+				account.Credentials[key] = *value
+			}
+		}
+		if req.APIBaseURLs != nil {
+			baseURLs := make(map[string]any, len(req.APIBaseURLs))
+			for protocol, baseURL := range req.APIBaseURLs {
+				baseURLs[protocol] = baseURL
+			}
+			account.Credentials["api_base_urls"] = baseURLs
+		}
+	}
+	if req.ModelMapping != nil {
+		mapping := make(map[string]any, len(req.ModelMapping))
+		for publicID, upstreamID := range req.ModelMapping {
+			mapping[publicID] = upstreamID
+		}
+		account.Credentials["model_mapping"] = mapping
+	}
+	response.Success(c, gin.H{"capacity_rows": service.BuildAccountModelContextCapacityRows(account, req.ModelIDs)})
+}
+
 // SyncUpstreamModels handles syncing live supported models from an account's upstream.
 // POST /api/v1/admin/accounts/:id/models/sync-upstream
 func (h *AccountHandler) SyncUpstreamModels(c *gin.Context) {
@@ -2639,6 +2725,9 @@ func (h *AccountHandler) SyncUpstreamModelsPreview(c *gin.Context) {
 		BaseURL      string            `json:"base_url"`
 		APIKey       string            `json:"api_key" binding:"required"`
 		ModelMapping map[string]string `json:"model_mapping"`
+		AccountMode  string            `json:"account_mode"`
+		APIProtocol  string            `json:"api_protocol"`
+		APIBaseURLs  map[string]string `json:"api_base_urls"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
@@ -2648,6 +2737,10 @@ func (h *AccountHandler) SyncUpstreamModelsPreview(c *gin.Context) {
 	for sourceModel, upstreamModel := range req.ModelMapping {
 		modelMapping[sourceModel] = upstreamModel
 	}
+	baseURLs := make(map[string]any, len(req.APIBaseURLs))
+	for protocol, baseURL := range req.APIBaseURLs {
+		baseURLs[protocol] = baseURL
+	}
 
 	tempAccount := &service.Account{
 		Platform: req.Platform,
@@ -2656,6 +2749,9 @@ func (h *AccountHandler) SyncUpstreamModelsPreview(c *gin.Context) {
 			"api_key":       req.APIKey,
 			"base_url":      req.BaseURL,
 			"model_mapping": modelMapping,
+			"account_mode":  req.AccountMode,
+			"api_protocol":  req.APIProtocol,
+			"api_base_urls": baseURLs,
 		},
 	}
 
