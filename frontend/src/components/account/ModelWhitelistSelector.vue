@@ -97,6 +97,7 @@
               <span data-testid="selected-model-name" class="truncate" :title="model">{{ model }}</span>
             </span>
             <ModelContextCapacityField
+              v-if="capacityRows !== undefined"
               class="ml-auto shrink-0"
               :model-id="model"
               :row="capacityRowFor(model)"
@@ -166,6 +167,7 @@
               <span data-testid="model-option-name" class="min-w-0 flex-1 truncate text-gray-900 dark:text-white" :title="model.value">{{ model.value }}</span>
             </button>
             <ModelContextCapacityField
+              v-if="capacityRows !== undefined"
               class="shrink-0"
               :model-id="model.value"
               :row="capacityRowFor(model.value)"

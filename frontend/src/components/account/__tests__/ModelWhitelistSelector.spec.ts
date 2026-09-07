@@ -552,6 +552,26 @@ describe('ModelWhitelistSelector', () => {
     wrapper.unmount()
   })
 
+  it('keeps selectors without capacity data unchanged', async () => {
+    const wrapper = mountSelector({ modelValue: ['gpt-5.6-sol'] })
+    expect(wrapper.findComponent(ModelContextCapacityField).exists()).toBe(false)
+    expect(wrapper.get('[data-testid="selected-model-name"]').text()).toBe('gpt-5.6-sol')
+    await wrapper.get('[data-testid="model-selector-toggle"]').trigger('click')
+    expect(wrapper.findAll('[data-testid="model-option"]').length).toBeGreaterThan(0)
+    expect(wrapper.findComponent(ModelContextCapacityField).exists()).toBe(false)
+    expect(wrapper.find('[data-testid="fill-related-models"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('retains inline placeholders for an explicitly connected loading catalog', async () => {
+    const wrapper = mountSelector({ modelValue: ['gpt-5.6-sol'], capacityRows: [] })
+    expect(wrapper.findComponent(ModelContextCapacityField).exists()).toBe(true)
+    await wrapper.setProps({ capacityRows: [capacityRow({ effective_source: 'official', effective_context_window: 1_050_000 })] })
+    expect(wrapper.get('[data-testid="context-capacity-value"]').text()).toBe('[1.05M]')
+    expect(wrapper.get('[data-testid="context-capacity-source"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('does not invalidate a sync when an independent capacity draft changes', async () => {
     let resolve!: (result: SyncUpstreamModelsResult) => void
     syncUpstreamModels.mockReturnValue(new Promise(result => { resolve = result }))
