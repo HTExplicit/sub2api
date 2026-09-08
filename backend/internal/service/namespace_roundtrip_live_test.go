@@ -31,8 +31,9 @@ import (
 )
 
 const (
-	namespaceRunID          = "responses-namespace-20260908"
-	namespaceMaxAttempts    = 6
+	namespaceRunID          = "responses-namespace-20260908-r2"
+	namespacePriorAttempts  = 1
+	namespaceMaxAttempts    = 5
 	namespaceMaxDuration    = 15 * time.Minute
 	namespaceRequestTimeout = 180 * time.Second
 	namespaceFirstFunction  = "namespace_probe_first"
@@ -43,14 +44,16 @@ const (
 )
 
 type namespaceBootstrap struct {
-	SchemaVersion int            `json:"schema_version"`
-	ConfigMode    string         `json:"config_mode"`
-	Mode          string         `json:"mode"`
-	RunID         string         `json:"run_id"`
-	SourceSHA     string         `json:"source_sha"`
-	ManifestSHA   string         `json:"manifest_sha256"`
-	Source        fidelitySource `json:"source"`
-	Ledger        fidelityLedger `json:"ledger"`
+	SchemaVersion   int            `json:"schema_version"`
+	ConfigMode      string         `json:"config_mode"`
+	Mode            string         `json:"mode"`
+	RunID           string         `json:"run_id"`
+	SourceSHA       string         `json:"source_sha"`
+	ManifestSHA     string         `json:"manifest_sha256"`
+	PriorAttempts   int            `json:"prior_attempts"`
+	ParentLedgerSHA string         `json:"parent_ledger_sha256"`
+	Source          fidelitySource `json:"source"`
+	Ledger          fidelityLedger `json:"ledger"`
 }
 
 type namespaceGrant struct {
@@ -64,40 +67,41 @@ type namespaceGrant struct {
 }
 
 type namespaceResult struct {
-	Type                                string         `json:"type"`
-	Scenario                            string         `json:"scenario"`
-	Turn                                int            `json:"turn"`
-	Slot                                int            `json:"slot"`
-	Model                               string         `json:"model"`
-	Effort                              string         `json:"effort"`
-	Status                              string         `json:"status"`
-	ErrorClass                          string         `json:"error_class,omitempty"`
-	Completed                           bool           `json:"completed"`
-	HTTPStatus                          int            `json:"http_status"`
-	Attempted                           bool           `json:"attempted"`
-	Attempts                            int            `json:"attempts"`
-	BlockedRetries                      int            `json:"blocked_retries"`
-	DurationMS                          int64          `json:"duration_ms"`
-	NamespaceFields                     int            `json:"namespace_fields"`
-	NamespacePresent                    bool           `json:"namespace_present"`
-	NamespaceReplayedFields             int            `json:"namespace_replayed_fields"`
-	NamespaceReplayedWithoutDeclaration bool           `json:"namespace_replayed_without_declaration"`
-	HistoryPreserved                    bool           `json:"history_preserved"`
-	RawOutputPreserved                  bool           `json:"raw_output_preserved"`
-	ModelMatches                        bool           `json:"model_matches"`
-	EffortMatches                       bool           `json:"effort_matches"`
-	PromptApplied                       bool           `json:"prompt_applied"`
-	CacheKeyLength                      int            `json:"cache_key_length"`
-	CacheKeyStable                      bool           `json:"cache_key_stable"`
-	TerminalComplete                    bool           `json:"terminal_complete"`
-	ToolContractValid                   bool           `json:"tool_contract_valid"`
-	SentBodySHA                         string         `json:"sent_body_sha256,omitempty"`
-	ResponseOutputSHA                   string         `json:"response_output_sha256,omitempty"`
-	CacheKeySHA                         string         `json:"cache_key_sha256,omitempty"`
-	RequestIDSHA                        string         `json:"request_id_sha256,omitempty"`
-	ResponseIDSHA                       string         `json:"response_id_sha256,omitempty"`
-	PromptSHA                           string         `json:"prompt_sha256,omitempty"`
-	Usage                               *fidelityUsage `json:"usage"`
+	Type                                string          `json:"type"`
+	Scenario                            string          `json:"scenario"`
+	Turn                                int             `json:"turn"`
+	Slot                                int             `json:"slot"`
+	Model                               string          `json:"model"`
+	Effort                              string          `json:"effort"`
+	Status                              string          `json:"status"`
+	ErrorClass                          string          `json:"error_class,omitempty"`
+	ErrorDetail                         json.RawMessage `json:"error_detail,omitempty"`
+	Completed                           bool            `json:"completed"`
+	HTTPStatus                          int             `json:"http_status"`
+	Attempted                           bool            `json:"attempted"`
+	Attempts                            int             `json:"attempts"`
+	BlockedRetries                      int             `json:"blocked_retries"`
+	DurationMS                          int64           `json:"duration_ms"`
+	NamespaceFields                     int             `json:"namespace_fields"`
+	NamespacePresent                    bool            `json:"namespace_present"`
+	NamespaceReplayedFields             int             `json:"namespace_replayed_fields"`
+	NamespaceReplayedWithoutDeclaration bool            `json:"namespace_replayed_without_declaration"`
+	HistoryPreserved                    bool            `json:"history_preserved"`
+	RawOutputPreserved                  bool            `json:"raw_output_preserved"`
+	ModelMatches                        bool            `json:"model_matches"`
+	EffortMatches                       bool            `json:"effort_matches"`
+	PromptApplied                       bool            `json:"prompt_applied"`
+	CacheKeyLength                      int             `json:"cache_key_length"`
+	CacheKeyStable                      bool            `json:"cache_key_stable"`
+	TerminalComplete                    bool            `json:"terminal_complete"`
+	ToolContractValid                   bool            `json:"tool_contract_valid"`
+	SentBodySHA                         string          `json:"sent_body_sha256,omitempty"`
+	ResponseOutputSHA                   string          `json:"response_output_sha256,omitempty"`
+	CacheKeySHA                         string          `json:"cache_key_sha256,omitempty"`
+	RequestIDSHA                        string          `json:"request_id_sha256,omitempty"`
+	ResponseIDSHA                       string          `json:"response_id_sha256,omitempty"`
+	PromptSHA                           string          `json:"prompt_sha256,omitempty"`
+	Usage                               *fidelityUsage  `json:"usage"`
 }
 
 type namespaceHarness struct {
@@ -126,7 +130,7 @@ func TestNamespaceRoundtripLive(t *testing.T) {
 		t.Skip("explicit controlled runner opt-in required")
 	}
 	if flag.Lookup("test.run") == nil || flag.Lookup("test.run").Value.String() != "^TestNamespaceRoundtripLive$" ||
-		os.Getenv("SUB2API_REASONING_FIDELITY_LIVE") != "" {
+		os.Getenv("SUB2API_REASONING_FIDELITY_LIVE") != "" || os.Getenv("SUB2API_NAMESPACE_ROUNDTRIP_REVISION") != "2" {
 		t.Fatal("invalid_live_test_selection")
 	}
 	out := os.Stdout
@@ -205,30 +209,35 @@ func namespaceRun(input *bufio.Reader, output *json.Encoder) error {
 		return errors.New("broker_unavailable")
 	}
 	if os.Getenv("SUB2API_NAMESPACE_ROUNDTRIP_VALIDATE_ONLY") == "1" {
-		return output.Encode(map[string]any{"type": "summary", "status": "validated", "attempts": 0})
+		return output.Encode(map[string]any{"type": "summary", "status": "validated", "attempts": 0, "total_attempts": boot.PriorAttempts})
 	}
 	h.runSequences()
-	status := "completed"
-	if h.stopped != "" || !h.coverage || !h.astraCompleted || !h.lunaCompleted {
-		status = "failed"
-	}
-	summary := map[string]any{"type": "summary", "status": status,
-		"attempts": u.attempts, "blocked_retries": u.totalBlocked, "namespace_coverage": h.coverage,
-		"astra_completed": h.astraCompleted, "luna_completed": h.lunaCompleted, "results": h.results,
-		"source_sha256": boot.Source.Fingerprint, "duration_ms": time.Since(h.started).Milliseconds()}
-	if h.stopped != "" {
-		summary["error_class"] = h.stopped
-	}
-	if err := output.Encode(summary); err != nil {
+	if err := output.Encode(h.summary()); err != nil {
 		return errors.New("broker_unavailable")
 	}
 	return nil
 }
 
+func (h *namespaceHarness) summary() map[string]any {
+	status := "completed"
+	if h.stopped != "" || !h.coverage || !h.astraCompleted || !h.lunaCompleted {
+		status = "failed"
+	}
+	summary := map[string]any{"type": "summary", "status": status,
+		"attempts": h.upstream.attempts, "total_attempts": h.boot.PriorAttempts + h.upstream.attempts, "blocked_retries": h.upstream.totalBlocked, "namespace_coverage": h.coverage,
+		"astra_completed": h.astraCompleted, "luna_completed": h.lunaCompleted, "results": h.results,
+		"source_sha256": h.boot.Source.Fingerprint, "duration_ms": time.Since(h.started).Milliseconds()}
+	if h.stopped != "" {
+		summary["error_class"] = h.stopped
+	}
+	return summary
+}
+
 func namespaceValidateBootstrap(b namespaceBootstrap, expectedSource string) error {
-	if b.SchemaVersion != 1 || b.Mode != "namespace_roundtrip" || b.ConfigMode != "production_env" || b.RunID != namespaceRunID ||
+	if b.SchemaVersion != 1 || b.Mode != "namespace_roundtrip_r2" || b.ConfigMode != "production_env" || b.RunID != namespaceRunID ||
 		!regexp.MustCompile(`^[a-f0-9]{40}$`).MatchString(b.SourceSHA) || b.SourceSHA != expectedSource ||
-		!regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(b.ManifestSHA) {
+		!regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(b.ManifestSHA) || b.PriorAttempts != namespacePriorAttempts ||
+		!regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(b.ParentLedgerSHA) {
 		return errors.New("invalid_bootstrap_contract")
 	}
 	if !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(b.Source.Fingerprint) {
@@ -298,18 +307,11 @@ func (h *namespaceHarness) runSequences() {
 		return
 	}
 	if result.NamespaceFields == 0 {
-		// This is the only authorized alternate chain. Do not fabricate namespace
-		// on the first output or spend a second request on its unqualified chain.
-		scenario = "astra_namespace"
-		body = namespaceInitialBody("gpt-6-astra", "ultra", fidelityNewID(), true)
-		first, result = h.runTurn(scenario, 1, "gpt-6-astra", "ultra", body, namespaceFirstFunction)
-		if !result.Completed {
-			return
-		}
-		if result.NamespaceFields == 0 {
-			h.stopped = "namespace_sample_unavailable"
-			return
-		}
+		// The prior failed run already consumed one of the six authorized POSTs.
+		// The remaining five can cover only this chain and Luna; no replacement
+		// namespace declaration or restart is authorized when coverage is absent.
+		h.stopped = "namespace_sample_unavailable"
+		return
 	}
 	secondBody, err := namespaceContinuation(body, first, namespaceFirstFunction, namespaceSecondFunction)
 	if err != nil {
@@ -528,6 +530,9 @@ func (h *namespaceHarness) runTurn(scenario string, turn int, model, effort stri
 		}
 	} else {
 		r.ErrorClass = namespaceFailureClass(ctx, callErr, r, u.lastError, upstreamResponse.ErrorClass)
+		if len(u.rawResponse) > 0 && (u.responseStatus >= 400 || upstreamResponse.HasError) {
+			r.ErrorDetail = namespaceSafeErrorDetail(u.rawResponse, u.responseContentType)
+		}
 		h.stopped = r.ErrorClass
 	}
 	h.results++

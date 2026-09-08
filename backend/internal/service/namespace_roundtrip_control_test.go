@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
@@ -24,6 +25,9 @@ type namespaceOfflineUpstream struct {
 	bodies               [][]byte
 	firstNamespaceAbsent bool
 	firstIncomplete      bool
+	firstFailureBody     string
+	firstFailureStatus   int
+	firstFailureType     string
 }
 
 func (f *namespaceOfflineUpstream) Do(request *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
@@ -36,6 +40,9 @@ func (f *namespaceOfflineUpstream) Do(request *http.Request, _ string, _ int64, 
 		ToolChoice json.RawMessage `json:"tool_choice"`
 	}
 	_ = json.Unmarshal(body, &sent)
+	if f.calls == 1 && f.firstFailureBody != "" {
+		return &http.Response{StatusCode: f.firstFailureStatus, Header: http.Header{"Content-Type": {f.firstFailureType}}, Body: io.NopCloser(strings.NewReader(f.firstFailureBody))}, nil
+	}
 	var choice struct {
 		Name      string `json:"name"`
 		Namespace string `json:"namespace"`
@@ -70,8 +77,8 @@ func (f *namespaceOfflineUpstream) DoWithTLS(request *http.Request, proxy string
 
 func namespaceOfflineBootstrap() namespaceBootstrap {
 	prompt := "Frozen offline server prompt. Follow the isolated test instructions."
-	return namespaceBootstrap{SchemaVersion: 1, ConfigMode: "production_env", Mode: "namespace_roundtrip", RunID: namespaceRunID,
-		SourceSHA: strings.Repeat("a", 40), ManifestSHA: strings.Repeat("b", 64), Source: fidelitySource{
+	return namespaceBootstrap{SchemaVersion: 1, ConfigMode: "production_env", Mode: "namespace_roundtrip_r2", RunID: namespaceRunID,
+		SourceSHA: strings.Repeat("a", 40), ManifestSHA: strings.Repeat("b", 64), PriorAttempts: 1, ParentLedgerSHA: strings.Repeat("d", 64), Source: fidelitySource{
 			Account: service.Account{ID: 16050, Name: "白嫖-dmxapi", Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey, Concurrency: 1, Status: service.StatusActive, Schedulable: true,
 				Credentials: map[string]any{"api_key": "offline-private-key", "base_url": "https://upstream.invalid/v1", "model_mapping": map[string]any{"gpt-6-astra": "gpt-6-astra-ssvip", "gpt-5.6-luna": "gpt-5.6-luna-ssvip"}},
 				Extra:       map[string]any{"openai_responses_supported": true, "openai_responses_mode": "responses"}, GroupIDs: []int64{4}},
@@ -89,7 +96,7 @@ func namespaceOfflineHarness(t *testing.T, grants []namespaceGrant, fake *namesp
 			t.Fatal("offline grant encoding failed")
 		}
 	}
-	h := &namespaceHarness{boot: namespaceOfflineBootstrap(), input: bufio.NewReader(&input), output: json.NewEncoder(&output), ctx: context.Background(), cacheKeys: make(map[string]string), promptSHAs: make(map[string]string)}
+	h := &namespaceHarness{boot: namespaceOfflineBootstrap(), input: bufio.NewReader(&input), output: json.NewEncoder(&output), ctx: context.Background(), started: time.Now(), cacheKeys: make(map[string]string), promptSHAs: make(map[string]string)}
 	for _, change := range changes {
 		change(&h.boot)
 	}
@@ -104,17 +111,11 @@ func namespaceOfflineHarness(t *testing.T, grants []namespaceGrant, fake *namesp
 	return h, &output
 }
 
-func namespaceOfflineGrants(alternate bool) []namespaceGrant {
+func namespaceOfflineGrants() []namespaceGrant {
 	turns := []struct {
 		scenario string
 		turn     int
 	}{{"astra_flat", 1}, {"astra_flat", 2}, {"astra_flat", 3}, {"luna_flat", 1}, {"luna_flat", 2}}
-	if alternate {
-		turns = []struct {
-			scenario string
-			turn     int
-		}{{"astra_flat", 1}, {"astra_namespace", 1}, {"astra_namespace", 2}, {"astra_namespace", 3}, {"luna_flat", 1}, {"luna_flat", 2}}
-	}
 	var grants []namespaceGrant
 	for i, turn := range turns {
 		grants = append(grants, namespaceGrant{Type: "send_granted", Scenario: turn.scenario, Turn: turn.turn, Slot: i + 1, Attempt: i + 1, Fingerprint: strings.Repeat("c", 64)})
@@ -130,6 +131,12 @@ func TestNamespaceRoundtripControl(t *testing.T) {
 		}
 		for _, change := range []func(*namespaceBootstrap){
 			func(b *namespaceBootstrap) { b.Mode = "reasoning_fidelity" },
+			func(b *namespaceBootstrap) { b.Mode = "namespace_roundtrip" },
+			func(b *namespaceBootstrap) { b.RunID = "responses-namespace-20260908" },
+			func(b *namespaceBootstrap) { b.PriorAttempts = 0 },
+			func(b *namespaceBootstrap) { b.PriorAttempts = 2 },
+			func(b *namespaceBootstrap) { b.ParentLedgerSHA = "" },
+			func(b *namespaceBootstrap) { b.ParentLedgerSHA = strings.Repeat("A", 64) },
 			func(b *namespaceBootstrap) { b.Source.Account.ID = 15522 },
 			func(b *namespaceBootstrap) { b.Source.BusinessPrompt.Enabled = false },
 			func(b *namespaceBootstrap) { b.Source.BusinessPrompt.ExposeServerPrompt = true },
@@ -181,65 +188,67 @@ func TestNamespaceRoundtripControl(t *testing.T) {
 			t.Fatal("lossless replay comparison did not distinguish complete JSON values")
 		}
 	})
-	t.Run("normal_five_posts_and_authorized_six_post_branch", func(t *testing.T) {
-		for _, alternate := range []bool{false, true} {
-			fake := &namespaceOfflineUpstream{firstNamespaceAbsent: alternate}
-			grants := namespaceOfflineGrants(alternate)
-			h, output := namespaceOfflineHarness(t, grants, fake)
-			h.runSequences()
-			if h.stopped != "" || !h.astraCompleted || !h.lunaCompleted || !h.coverage || h.upstream.attempts != len(grants) || fake.calls != len(grants) {
-				t.Fatalf("offline sequence failed: stopped=%s calls=%d expected=%d", h.stopped, fake.calls, len(grants))
+	t.Run("remaining_five_posts_include_prior_attempt_in_total", func(t *testing.T) {
+		fake := &namespaceOfflineUpstream{}
+		grants := namespaceOfflineGrants()
+		h, output := namespaceOfflineHarness(t, grants, fake)
+		h.runSequences()
+		if h.stopped != "" || !h.astraCompleted || !h.lunaCompleted || !h.coverage || h.upstream.attempts != len(grants) || fake.calls != len(grants) {
+			t.Fatalf("offline sequence failed: stopped=%s calls=%d expected=%d", h.stopped, fake.calls, len(grants))
+		}
+		if strings.Contains(output.String(), "offline-private-key") || strings.Contains(output.String(), "offline-opaque") || strings.Contains(output.String(), "Frozen offline") || strings.Contains(output.String(), "upstream.invalid") {
+			t.Fatal("safe protocol leaked source material")
+		}
+		// Match the Python broker's per-turn contract: slot is cumulative,
+		// attempt_result.attempts is not. A cumulative 2 on turn two would
+		// halt the real batch even though the Go-only chain completed.
+		decoder := json.NewDecoder(strings.NewReader(output.String()))
+		sends, results := 0, 0
+		for {
+			var message struct {
+				Type        string          `json:"type"`
+				Scenario    string          `json:"scenario"`
+				Turn        int             `json:"turn"`
+				Slot        int             `json:"slot"`
+				Attempts    int             `json:"attempts"`
+				Completed   bool            `json:"completed"`
+				ErrorDetail json.RawMessage `json:"error_detail"`
 			}
-			if strings.Contains(output.String(), "offline-private-key") || strings.Contains(output.String(), "offline-opaque") || strings.Contains(output.String(), "Frozen offline") || strings.Contains(output.String(), "upstream.invalid") {
-				t.Fatal("safe protocol leaked source material")
-			}
-			// Match the Python broker's per-turn contract: slot is cumulative,
-			// attempt_result.attempts is not. A cumulative 2 on turn two would
-			// halt the real batch even though the Go-only chain completed.
-			decoder := json.NewDecoder(strings.NewReader(output.String()))
-			sends, results := 0, 0
-			for {
-				var message struct {
-					Type      string `json:"type"`
-					Scenario  string `json:"scenario"`
-					Turn      int    `json:"turn"`
-					Slot      int    `json:"slot"`
-					Attempts  int    `json:"attempts"`
-					Completed bool   `json:"completed"`
+			if err := decoder.Decode(&message); err != nil {
+				if err == io.EOF {
+					break
 				}
-				if err := decoder.Decode(&message); err != nil {
-					if err == io.EOF {
-						break
-					}
-					t.Fatal("invalid broker protocol output")
+				t.Fatal("invalid broker protocol output")
+			}
+			switch message.Type {
+			case "before_send":
+				sends++
+				if message.Slot != sends || results != sends-1 {
+					t.Fatal("broker sends are not cumulative and serial")
 				}
-				switch message.Type {
-				case "before_send":
-					sends++
-					if message.Slot != sends || results != sends-1 {
-						t.Fatal("broker sends are not cumulative and serial")
-					}
-				case "attempt_result":
-					if results >= len(grants) || message.Attempts != 1 || !message.Completed || message.Slot != results+1 || sends != results+1 ||
-						message.Scenario != grants[results].Scenario || message.Turn != grants[results].Turn {
-						t.Fatal("attempt result violates broker one-send turn contract")
-					}
-					results++
-				default:
-					t.Fatal("unexpected turn protocol message")
+			case "attempt_result":
+				if results >= len(grants) || message.Attempts != 1 || !message.Completed || message.Slot != results+1 || sends != results+1 ||
+					message.Scenario != grants[results].Scenario || message.Turn != grants[results].Turn || len(message.ErrorDetail) != 0 {
+					t.Fatal("attempt result violates broker one-send turn contract")
 				}
+				results++
+			default:
+				t.Fatal("unexpected turn protocol message")
 			}
-			if sends != len(grants) || results != len(grants) {
-				t.Fatal("broker protocol result count mismatch")
-			}
-			if fake.last.GetBody != nil || !service.HTTPUpstreamRedirectsDisabled(fake.last.Context()) {
-				t.Fatal("transport replay protections missing")
-			}
+		}
+		if sends != len(grants) || results != len(grants) {
+			t.Fatal("broker protocol result count mismatch")
+		}
+		if summary := h.summary(); summary["status"] != "completed" || summary["attempts"] != 5 || summary["total_attempts"] != 6 {
+			t.Fatal("summary lost the prior consumed request or exceeded the aggregate allowance")
+		}
+		if fake.last.GetBody != nil || !service.HTTPUpstreamRedirectsDisabled(fake.last.Context()) {
+			t.Fatal("transport replay protections missing")
 		}
 	})
 	t.Run("hybrid_uses_frozen_published_prompt_not_template_substring", func(t *testing.T) {
 		fake := &namespaceOfflineUpstream{}
-		h, _ := namespaceOfflineHarness(t, namespaceOfflineGrants(false), fake, func(boot *namespaceBootstrap) {
+		h, _ := namespaceOfflineHarness(t, namespaceOfflineGrants(), fake, func(boot *namespaceBootstrap) {
 			boot.Source.BusinessPrompt.CompositionMode = service.BusinessSystemPromptCompositionCodexSkillHybrid
 			boot.Source.BusinessPrompt.BundleID = service.BusinessSystemPromptRemoteSkillBundleID
 			raw, effective := "Raw paired prompt.", "Published effective server instructions."
@@ -259,7 +268,7 @@ func TestNamespaceRoundtripControl(t *testing.T) {
 	})
 	t.Run("incomplete_stops_without_fallback_or_luna", func(t *testing.T) {
 		fake := &namespaceOfflineUpstream{firstIncomplete: true}
-		h, _ := namespaceOfflineHarness(t, namespaceOfflineGrants(false), fake)
+		h, _ := namespaceOfflineHarness(t, namespaceOfflineGrants(), fake)
 		h.runSequences()
 		if fake.calls != 1 || h.upstream.attempts != 1 || h.stopped == "" || h.astraCompleted || h.lunaCompleted {
 			t.Fatal("incomplete response spent an additional request")
@@ -277,7 +286,7 @@ func TestNamespaceRoundtripControl(t *testing.T) {
 			func(h *namespaceHarness) { h.boot.Source.Group.MaxReasoningEffort = "high" },
 		} {
 			fake := &namespaceOfflineUpstream{}
-			h, _ := namespaceOfflineHarness(t, namespaceOfflineGrants(false), fake)
+			h, _ := namespaceOfflineHarness(t, namespaceOfflineGrants(), fake)
 			mutate(h)
 			h.runSequences()
 			if fake.calls != 0 || h.upstream.attempts != 0 || h.stopped == "" {
@@ -287,7 +296,7 @@ func TestNamespaceRoundtripControl(t *testing.T) {
 	})
 	t.Run("used_slot_and_total_limit_cannot_send", func(t *testing.T) {
 		fake := &namespaceOfflineUpstream{}
-		h, _ := namespaceOfflineHarness(t, namespaceOfflineGrants(false), fake)
+		h, _ := namespaceOfflineHarness(t, namespaceOfflineGrants(), fake)
 		body := namespaceInitialBody("gpt-6-astra", "ultra", "session", false)
 		_, result := h.runTurn("astra_flat", 1, "gpt-6-astra", "ultra", body, namespaceFirstFunction)
 		if !result.Completed {
@@ -296,9 +305,22 @@ func TestNamespaceRoundtripControl(t *testing.T) {
 		if _, err := h.upstream.DoWithTLS(fake.last, "", 16050, 1, &tlsfingerprint.Profile{}); err == nil || fake.calls != 1 || h.upstream.totalBlocked != 1 {
 			t.Fatal("used slot allowed TLS or compatibility retry")
 		}
-		h.upstream.activeSlot, h.upstream.attempts = 6, 6
+		h.upstream.activeSlot, h.upstream.attempts = 5, 5
 		if _, err := h.upstream.Do(nil, "", 16050, 1); err == nil || fake.calls != 1 {
-			t.Fatal("six-attempt limit escaped")
+			t.Fatal("five remaining attempts limit escaped")
+		}
+		h.upstream.activeSlot, h.upstream.attempts = 6, 4
+		if _, err := h.upstream.Do(nil, "", 16050, 1); err == nil || fake.calls != 1 {
+			t.Fatal("sixth local slot escaped")
+		}
+	})
+	t.Run("no_namespace_stops_without_any_replacement_chain", func(t *testing.T) {
+		fake := &namespaceOfflineUpstream{firstNamespaceAbsent: true}
+		h, output := namespaceOfflineHarness(t, namespaceOfflineGrants(), fake)
+		h.runSequences()
+		if fake.calls != 1 || h.upstream.attempts != 1 || h.stopped != "namespace_sample_unavailable" || h.coverage || h.astraCompleted || h.lunaCompleted ||
+			strings.Contains(output.String(), "astra_namespace") || h.summary()["total_attempts"] != 2 {
+			t.Fatal("missing namespace triggered a replacement chain or lost cumulative consumption")
 		}
 	})
 }
