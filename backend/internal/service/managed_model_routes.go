@@ -170,7 +170,7 @@ func ManagedModelAccountAllowed(ctx context.Context, account *Account, routingMo
 			continue
 		}
 		if fingerprint == "" {
-			fingerprint = ManagedModelAccountFingerprint(account)
+			fingerprint = managedModelSchedulingFingerprint(account)
 		}
 		if fingerprint != "" && fingerprint == member.AccountFingerprint {
 			return true
@@ -252,11 +252,17 @@ func validateManagedForwardAccount(ctx context.Context, repo AccountRepository, 
 	if !managed {
 		return nil
 	}
+	// A precomputed metadata digest is sufficient only while ranking candidates.
+	// The actual forwarder must have hydrated the full account and the final
+	// repository read must also be full; neither can borrow that cached proof.
+	if account == nil || account.SchedulerMetadata != nil {
+		return ErrManagedModelRouteUnavailable
+	}
 	if err := ValidateManagedModelAccount(ctx, account, routingModel); err != nil || repo == nil {
 		return ErrManagedModelRouteUnavailable
 	}
 	latest, err := repo.GetByID(ctx, account.ID)
-	if err != nil || latest == nil || !latest.IsSchedulable() || !managedModelAccountInGroup(latest, request.GroupID) || !ManagedModelAccountAllowed(ctx, latest, routingModel) {
+	if err != nil || latest == nil || latest.SchedulerMetadata != nil || !latest.IsSchedulable() || !managedModelAccountInGroup(latest, request.GroupID) || !ManagedModelAccountAllowed(ctx, latest, routingModel) {
 		return ErrManagedModelRouteUnavailable
 	}
 	if latest.ProxyID != nil && (latest.Proxy == nil || !latest.Proxy.IsActive() || latest.Proxy.IsExpired(time.Now())) {
@@ -361,7 +367,7 @@ func (s *GatewayService) ValidateManagedModelCompilation(ctx context.Context, gr
 // intentionally excluded: the route separately pins its exact selector target.
 // Only a digest is returned; original authentication bytes are never exposed.
 func ManagedModelAccountFingerprint(account *Account) string {
-	if account == nil {
+	if account == nil || account.SchedulerMetadata != nil {
 		return ""
 	}
 	credentials := make(map[string]any, len(account.Credentials))
