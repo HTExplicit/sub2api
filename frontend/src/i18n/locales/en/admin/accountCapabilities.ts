@@ -38,6 +38,7 @@ export default {
     reasonLabels: {
       configuration_changed: 'Account configuration changed; verify the current configuration again.',
       evidence_expired: 'Verification evidence is older than 24 hours and needs a fresh test.',
+      pricing_unavailable: 'No identified existing price is available for this model; another model price will not be substituted.',
       evidence_superseded: 'A newer result supersedes this evidence; it cannot be used for publication.',
       no_current_inference_evidence: 'No current successful model-inference evidence is available.',
       unsupported_public_protocol: 'This upstream protocol is not supported for public routing.',
