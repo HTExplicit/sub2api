@@ -55,7 +55,7 @@ func EffectiveManagedModelAllowlist(group *Group) GroupModelAllowlist {
 	seen := make(map[string]bool)
 	for _, route := range group.ManagedModelRoutes.Routes {
 		model := strings.TrimSpace(route.PublicModel)
-		if model == "" || strings.HasPrefix(strings.ToLower(model), "s2pub-") || len(route.Accounts) == 0 || seen[strings.ToLower(model)] {
+		if model == "" || IsManagedModelSelector(model) || len(route.Accounts) == 0 || seen[strings.ToLower(model)] {
 			continue
 		}
 		seen[strings.ToLower(model)] = true
@@ -95,7 +95,7 @@ func ResolveManagedModelRoute(group *Group, requestedModel, endpoint string) (*M
 	requestedModel = strings.TrimSpace(requestedModel)
 	if config.Version != ManagedModelRoutesVersion || group.ID <= 0 ||
 		group.Platform == PlatformCindy || requestedModel == "" ||
-		strings.HasPrefix(strings.ToLower(requestedModel), "s2pub-") || !managedModelEndpointAllowed(endpoint) {
+		IsManagedModelSelector(requestedModel) || !managedModelEndpointAllowed(endpoint) {
 		return nil, ErrManagedModelRouteUnavailable
 	}
 	candidates := groupModelAllowlistCandidates(requestedModel)
@@ -153,7 +153,7 @@ func ManagedModelRequestFromContext(ctx context.Context) (*ManagedModelRequest, 
 func ManagedModelAccountAllowed(ctx context.Context, account *Account, routingModel string) bool {
 	request, managed := ManagedModelRequestFromContext(ctx)
 	if !managed {
-		return true
+		return !managedSelectorWithoutPublishedContext(account, routingModel)
 	}
 	if account == nil || routingModel != request.Route.Selector || account.Platform != request.Route.TargetPlatform ||
 		account.IsOpenAIPassthroughEnabled() || account.IsAnthropicAPIKeyPassthroughEnabled() {
@@ -250,6 +250,9 @@ func PrepareManagedModelRequest(group *Group, endpoint string, body []byte, fall
 func validateManagedForwardAccount(ctx context.Context, repo AccountRepository, account *Account, routingModel string) error {
 	request, managed := ManagedModelRequestFromContext(ctx)
 	if !managed {
+		if managedSelectorWithoutPublishedContext(account, routingModel) {
+			return ErrManagedModelRouteUnavailable
+		}
 		return nil
 	}
 	// A precomputed metadata digest is sufficient only while ranking candidates.

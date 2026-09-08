@@ -2766,6 +2766,12 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "invalid JSON payload")
 		return
 	}
+	if err := managedModelWSClientFrameError(firstMessage); err != nil {
+		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalModelConfiguration)
+		middleware2.MarkIngressRejected(c, middleware2.IngressRejectModelNotAllowed)
+		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, managedModelWSReservedSelectorMessage)
+		return
+	}
 	managedWS := newManagedModelWSGuard(apiKey.Group, h.nativeAnthropicGatewayService, h.gatewayService)
 	firstAllowlistGroup := apiKey.Group
 	if managedWS != nil {
@@ -3461,6 +3467,11 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					if guardErr := managedWS.mappedTurn(ctx, turn, managedRequest, account); guardErr != nil {
 						return "", newOpenAIWSLocalTurnCloseError(coderws.StatusPolicyViolation, "public model route is unavailable", guardErr)
 					}
+				} else if guardErr := service.ValidateManagedModelAccount(ctx, account, mapping.MappedModel); guardErr != nil {
+					// Later turns do not re-enter the scheduler. An unmanaged
+					// alias must not acquire a reserved selector through either
+					// channel or account mapping on an already open connection.
+					return "", newOpenAIWSLocalTurnCloseError(coderws.StatusPolicyViolation, managedModelWSReservedSelectorMessage, guardErr)
 				}
 				mappedModelUnchanged := false
 				if previous := turnChannelMapping.Load(); previous != nil && previous.turn < turn {
@@ -3649,6 +3660,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				return prepared, "", nil
 			}
 		}
+		hooks.PrepareClientFrame = composeManagedModelWSClientFrameGuard(hooks.PrepareClientFrame)
 
 		wsFirstMessage := wsAttemptMessage
 		// Account selection does not prove that this first frame contains the
