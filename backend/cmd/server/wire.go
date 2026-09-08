@@ -138,6 +138,7 @@ func provideCleanup(
 	businessPrompt *service.BusinessSystemPromptService,
 	remoteSkillRegistry *service.RemoteSkillRegistryService,
 	accountJobs *service.AccountJobRuntime,
+	accountCapabilities *service.AccountCapabilityService,
 	cindyHealth *service.CindyHealthService,
 	cindyBalanceProbe *service.CindyBalanceProbeService,
 	imageStudioRuntime *service.ImageStudioRuntime,
@@ -153,6 +154,12 @@ func provideCleanup(
 
 		// 应用层清理步骤可并行执行，基础设施资源（Redis/Ent）最后按顺序关闭。
 		parallelSteps := []cleanupStep{
+			{"AccountCapabilityService", func() error {
+				if accountCapabilities != nil {
+					accountCapabilities.Stop()
+				}
+				return nil
+			}},
 			{"ImageStudioRuntime", func() error {
 				if imageStudioRuntime != nil {
 					return imageStudioRuntime.Stop(ctx)

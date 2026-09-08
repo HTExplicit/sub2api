@@ -14,7 +14,7 @@ import (
 	"github.com/dgraph-io/ristretto"
 )
 
-const apiKeyAuthSnapshotVersion = 25 // v25: enforcing group model_allowlist plus strict Cindy identity, Fast/reasoning and pinned Codex manifest
+const apiKeyAuthSnapshotVersion = 26 // v26: complete managed model routes for verified account/model enforcement
 
 type apiKeyAuthCacheConfig struct {
 	l1Size        int
@@ -295,24 +295,31 @@ func (s *APIKeyService) lookupAPIKeyForAuth(ctx context.Context, key string) (*A
 	if s == nil || s.apiKeyRepo == nil {
 		return nil, ErrAPIKeyNotFound
 	}
-	if s.authLookupSlots == nil {
-		return s.apiKeyRepo.GetByKeyForAuth(ctx, key)
+	if s.authLookupSlots != nil {
+		s.authLookupTotal.Add(1)
+		select {
+		case s.authLookupSlots <- struct{}{}:
+			s.authLookupInFlight.Add(1)
+			defer func() {
+				s.authLookupInFlight.Add(-1)
+				<-s.authLookupSlots
+			}()
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+			s.authLookupRejected.Add(1)
+			return nil, ErrAPIKeyAuthOverloaded
+		}
 	}
-	s.authLookupTotal.Add(1)
-	select {
-	case s.authLookupSlots <- struct{}{}:
-		s.authLookupInFlight.Add(1)
-		defer func() {
-			s.authLookupInFlight.Add(-1)
-			<-s.authLookupSlots
-		}()
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	default:
-		s.authLookupRejected.Add(1)
-		return nil, ErrAPIKeyAuthOverloaded
+	apiKey, err := s.apiKeyRepo.GetByKeyForAuth(ctx, key)
+	if err == nil && apiKey != nil && apiKey.Group != nil {
+		// Authentication uses the published public catalog even if an ordinary
+		// admin editor disabled the stored allowlist. Do not mutate a shared group.
+		authGroup := *apiKey.Group
+		authGroup.ModelAllowlist = EffectiveManagedModelAllowlist(&authGroup)
+		apiKey.Group = &authGroup
 	}
-	return s.apiKeyRepo.GetByKeyForAuth(ctx, key)
+	return apiKey, err
 }
 
 func (s *APIKeyService) applyAuthCacheEntry(key string, entry *APIKeyAuthCacheEntry) (*APIKey, bool, error) {
@@ -424,7 +431,8 @@ func (s *APIKeyService) snapshotFromAPIKey(ctx context.Context, apiKey *APIKey) 
 			FreeOpenAIFast:                  apiKey.Group.FreeOpenAIFast,
 			DefaultMappedModel:              apiKey.Group.DefaultMappedModel,
 			MessagesDispatchModelConfig:     apiKey.Group.MessagesDispatchModelConfig,
-			ModelAllowlist:                  apiKey.Group.ModelAllowlist,
+			ModelAllowlist:                  EffectiveManagedModelAllowlist(apiKey.Group),
+			ManagedModelRoutes:              apiKey.Group.ManagedModelRoutes,
 			CodexModelsManifestConfig:       apiKey.Group.CodexModelsManifestConfig,
 			RPMLimit:                        apiKey.Group.RPMLimit,
 			MaxReasoningEffort:              apiKey.Group.MaxReasoningEffort,
@@ -529,6 +537,7 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 			DefaultMappedModel:              snapshot.Group.DefaultMappedModel,
 			MessagesDispatchModelConfig:     snapshot.Group.MessagesDispatchModelConfig,
 			ModelAllowlist:                  snapshot.Group.ModelAllowlist,
+			ManagedModelRoutes:              snapshot.Group.ManagedModelRoutes,
 			CodexModelsManifestConfig:       snapshot.Group.CodexModelsManifestConfig,
 			RPMLimit:                        snapshot.Group.RPMLimit,
 			MaxReasoningEffort:              snapshot.Group.MaxReasoningEffort,
@@ -542,6 +551,7 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 			ProfitMinMargin:                 0,
 			ProfitSafetyBuffer:              0,
 		}
+		apiKey.Group.ModelAllowlist = EffectiveManagedModelAllowlist(apiKey.Group)
 	}
 	s.compileAPIKeyIPRules(apiKey)
 	return apiKey

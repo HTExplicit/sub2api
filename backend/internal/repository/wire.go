@@ -73,6 +73,8 @@ var ProviderSet = wire.NewSet(
 	NewAccountRepository,
 	NewAccountCredentialIdentityRepository,
 	NewAccountJobRepository,
+	NewAccountCapabilityRepository,
+	NewAccountCapabilityPublicationRepository,
 	NewAccountJobCindyMutationRunner,
 	NewImageStudioRepository,
 	NewAdminAccountRepository,

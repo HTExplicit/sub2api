@@ -393,6 +393,11 @@ func (catalog *groupModelCapacityCatalog) resolve(ctx context.Context, platform,
 	var minimumMax, minimumInput, minimumOutput int64
 	for i := range catalog.accounts {
 		account := &catalog.accounts[i]
+		if catalog.group != nil && catalog.group.ManagedModelRoutes.Enabled {
+			if _, allowed := managedCatalogAccountMappingWithScheduling(catalog.group, account, "", false)[model]; !allowed {
+				continue
+			}
+		}
 		if !capacityAccountMatchesPlatform(account, target.platform) || (target.owned && !explicitModelMappingClaims(*account, model)) {
 			continue
 		}

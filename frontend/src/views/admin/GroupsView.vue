@@ -49,6 +49,10 @@
           <div
             class="flex w-full flex-shrink-0 flex-wrap items-center justify-end gap-3 lg:w-auto"
           >
+            <router-link v-if="!authStore.isSimpleMode" to="/admin/account-capabilities" class="btn btn-secondary" data-test="group-capabilities-open">
+              <Icon name="grid" size="sm" />
+              <span class="hidden sm:inline">{{ t('admin.accountCapabilities.title') }}</span>
+            </router-link>
             <button
               @click="loadGroups"
               :disabled="loading"

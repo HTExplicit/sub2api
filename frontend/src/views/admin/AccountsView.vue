@@ -20,6 +20,10 @@
             @create="showCreate = true"
           >
             <template #after>
+              <router-link v-if="!authStore.isSimpleMode" to="/admin/account-capabilities" class="btn btn-secondary" data-test="account-capabilities-open">
+                <Icon name="grid" size="sm" />
+                <span class="hidden md:inline">{{ t('admin.accountCapabilities.title') }}</span>
+              </router-link>
               <AccountViewModeSwitcher v-model="viewMode" />
 
               <!-- Auto Refresh Dropdown -->
