@@ -85,7 +85,9 @@ func TestModelContextCapacityReferenceMatchingKeepsRawKeys(t *testing.T) {
 	after, err := json.Marshal(account)
 	require.NoError(t, err)
 	require.Equal(t, before, after)
-	delete(account.Extra[ModelContextOverridesExtraKey].(map[string]int64), "team/gpt-5.4")
+	overrides, ok := account.Extra[ModelContextOverridesExtraKey].(map[string]int64)
+	require.True(t, ok)
+	delete(overrides, "team/gpt-5.4")
 	require.Equal(t, int64(1000000), ResolveAccountModelContextCapacity(&account, "team/gpt-5.4").ContextWindow, "clearing raw override must not borrow the bare-ID override")
 }
 
