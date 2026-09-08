@@ -62,6 +62,8 @@ func (s *OpenAIGatewayService) forwardAnthropicViaRawChatCompletions(
 	billingModel := resolveOpenAIForwardModel(account, anthropicReq.Model, defaultMappedModel)
 	upstreamModel := normalizeOpenAIModelForUpstream(account, billingModel)
 	chatReq.Model = upstreamModel
+	managedDefaults := managedMessagesDefaultsForRequest(ctx, account, &anthropicReq, upstreamModel)
+	managedDefaults.applyChat(chatReq)
 	chatReq.ReasoningEffort = openAICompatAnthropicReasoningEffort(&anthropicReq, upstreamModel, chatReq.ReasoningEffort)
 	chatReq.Stream = clientStream
 	if clientStream {
@@ -69,13 +71,20 @@ func (s *OpenAIGatewayService) forwardAnthropicViaRawChatCompletions(
 	}
 
 	convertedEffort := chatReq.ReasoningEffort
-	reasoningEffort := &convertedEffort
+	var reasoningEffort *string
+	if convertedEffort != "" {
+		reasoningEffort = &convertedEffort
+	}
 	reasoningEffort = ApplyThinkingEnabledFallback(reasoningEffort, body, billingModel)
 	serviceTier := extractOpenAIServiceTierFromBody(body)
 
 	chatBody, err := json.Marshal(chatReq)
 	if err != nil {
 		return nil, fmt.Errorf("marshal chat completions request: %w", err)
+	}
+	chatBody, err = managedDefaults.patchChatBody(chatBody)
+	if err != nil {
+		return nil, fmt.Errorf("normalize managed Messages Chat thinking: %w", err)
 	}
 	if normalizedBody, normalized := NormalizeGLMOpenAIReasoningEffort(chatBody, upstreamModel); normalized {
 		chatBody = normalizedBody
