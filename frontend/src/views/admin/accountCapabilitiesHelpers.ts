@@ -25,6 +25,12 @@ export function isPublishableCandidate(item: CapabilityCandidate): boolean {
     : item.publishable === true
 }
 
+export function capabilityPublicationTier(publicModel: string, upstreamTier: CapabilityCandidate['tier']): 'standard' | 'vip' {
+  // Only GPT has separate public standard/VIP groups. Other brands share one
+  // public group while their exact upstream targets and displayed tiers remain intact.
+  return publicModel.startsWith('gpt-') && upstreamTier !== 'standard' ? 'vip' : 'standard'
+}
+
 export function selectCapabilityPublicationTargets(items: CapabilityCandidate[]): { selected: CapabilityCandidate[]; omittedCount: number } {
   const eligible = [...new Map(items.filter(isPublishableCandidate).map((item) => [item.candidate_id, item])).values()]
   const buckets = new Map<string, Map<string, CapabilityCandidate[]>>()

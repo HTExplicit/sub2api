@@ -97,6 +97,17 @@ func TestAccountCapabilityPublicationModelIdentityUsesTrustedCatalogue(t *testin
 	require.False(t, CapabilityCandidateMatches(&account, "gpt-5.6-sol", "gpt-5.6-sol", []string{"gpt-6-astra"}, "standard"))
 }
 
+func TestAccountCapabilityTierIsolationOnlyAppliesToGPTProducts(t *testing.T) {
+	account := capabilityCatalogTestAccount(10, nil)
+	require.True(t, CapabilityCandidateMatches(&account, "gemini-3.8-flash", "gemini-3.8-flash", nil, "standard"))
+	require.True(t, CapabilityCandidateMatches(&account, "gemini-3.8-flash-ssvip", "gemini-3.8-flash", nil, "standard"))
+	require.True(t, CapabilityCandidateMatches(&account, "grok-4.6-vip", "grok-4.6", nil, "standard"))
+	require.False(t, CapabilityCandidateMatches(&account, "gemini-3.8-flash-ssvip", "gemini-3.8-flash", nil, "vip"))
+	require.False(t, CapabilityCandidateMatches(&account, "gpt-6-astra-ssvip", "gpt-6-astra", nil, "standard"))
+	require.False(t, CapabilityCandidateMatches(&account, "gpt-6-astra", "gpt-6-astra", nil, "vip"))
+	require.True(t, CapabilityCandidateMatches(&account, "gpt-6-astra-ssvip", "gpt-6-astra", nil, "vip"))
+}
+
 func TestAccountCapabilityCatalogPreservesDistinctVIPAlternatives(t *testing.T) {
 	account := capabilityCatalogTestAccount(10, map[string]any{
 		"gpt-6-astra-vip": "gpt-6-astra-vip", "gpt-6-astra-ssvip": "gpt-6-astra-ssvip",

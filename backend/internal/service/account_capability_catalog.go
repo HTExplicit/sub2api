@@ -467,20 +467,26 @@ func CapabilityCandidateMatches(account *Account, upstream, public string, alias
 	if !ok || public != definition.ID {
 		return false
 	}
-	switch tier {
-	case "", "standard":
-		if actualTier != "standard" {
+	if definition.Group == "gpt" {
+		switch tier {
+		case "", "standard":
+			if actualTier != "standard" {
+				return false
+			}
+		case "vip":
+			if actualTier != "vip" && actualTier != "ssvip" {
+				return false
+			}
+		case "ssvip":
+			if actualTier != "ssvip" {
+				return false
+			}
+		default:
 			return false
 		}
-	case "vip":
-		if actualTier != "vip" && actualTier != "ssvip" {
-			return false
-		}
-	case "ssvip":
-		if actualTier != "ssvip" {
-			return false
-		}
-	default:
+	} else if tier != "" && tier != "standard" {
+		// Only GPT has separate public products. Other vendors retain their
+		// actual upstream suffix without inventing an additional VIP product.
 		return false
 	}
 	for _, alias := range aliases {

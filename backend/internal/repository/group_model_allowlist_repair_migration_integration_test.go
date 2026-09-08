@@ -85,7 +85,12 @@ func TestMigration236RecreatesMissingModelAllowlistColumn(t *testing.T) {
 	tx := testTx(t)
 	ctx := context.Background()
 
-	_, err := tx.ExecContext(ctx, "ALTER TABLE groups DROP COLUMN model_allowlist")
+	// Recreate the pre-236 schema inside this rollback-only fixture. Migration
+	// 240's later trigger depends on this column and did not exist in that
+	// historical state; do not weaken the production invalidation trigger.
+	_, err := tx.ExecContext(ctx, "DROP TRIGGER IF EXISTS trg_groups_managed_model_routes_invalidation ON groups")
+	require.NoError(t, err)
+	_, err = tx.ExecContext(ctx, "ALTER TABLE groups DROP COLUMN model_allowlist")
 	require.NoError(t, err)
 
 	var groupID int64

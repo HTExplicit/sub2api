@@ -268,7 +268,7 @@ import { getAllIncludingInactive } from '@/api/admin/groups'
 import api, { type CapabilityCandidate, type CapabilityChangeset, type CapabilityItem, type CapabilityItemStatus, type CapabilityPage, type CapabilityPreviewRequest, type CapabilityProbeTarget, type CapabilityProfile, type CapabilityProtocol, type CapabilityPublicationGroup, type CapabilityRun, type CapabilityRunStatus, type CapabilityScopeAccount, type CreateCapabilityRun } from '@/api/admin/accountCapabilities'
 import { useAppStore } from '@/stores/app'
 import type { AccountManagementFolder, AdminGroup } from '@/types'
-import { capabilityCodeLabel, deduplicateProbeTargets, isCapabilityRunActive, isCurrentCapability, isPublishableCandidate, makeCapabilityIdempotencyKey, parseCapabilityIDs, selectCapabilityPublicationTargets } from './accountCapabilitiesHelpers'
+import { capabilityCodeLabel, capabilityPublicationTier, deduplicateProbeTargets, isCapabilityRunActive, isCurrentCapability, isPublishableCandidate, makeCapabilityIdempotencyKey, parseCapabilityIDs, selectCapabilityPublicationTargets } from './accountCapabilitiesHelpers'
 
 type Tab = 'inventory' | 'runs' | 'preview'
 interface DraftRow { key: string; accountID: number; accountName: string; upstreamModel: string; protocol: CapabilityProtocol; publicModel: string; aliases: string; groupName: string; tier: 'standard' | 'vip'; evidenceID: number }
@@ -544,7 +544,7 @@ function preparePublication(): void {
   const preferred = selectCapabilityPublicationTargets(publishableCandidates.value)
   const selected = new Set(preferred.selected.map((item) => item.candidate_id))
   draftAlternatives.value = [...new Map(publishableCandidates.value.filter((item) => !selected.has(item.candidate_id)).map((item) => [item.candidate_id, item])).values()]
-  draftRows.value = preferred.selected.map((item) => ({ key: item.candidate_id, accountID: item.account_id, accountName: item.account_name, upstreamModel: item.upstream_model, protocol: item.protocol, publicModel: item.public_model, aliases: (item.aliases ?? []).join(', '), groupName: item.group_name, tier: item.tier === 'standard' ? 'standard' : 'vip', evidenceID: item.latest_probe_item_id! }))
+  draftRows.value = preferred.selected.map((item) => ({ key: item.candidate_id, accountID: item.account_id, accountName: item.account_name, upstreamModel: item.upstream_model, protocol: item.protocol, publicModel: item.public_model, aliases: (item.aliases ?? []).join(', '), groupName: item.group_name, tier: capabilityPublicationTier(item.public_model, item.tier), evidenceID: item.latest_probe_item_id! }))
   // Successful route evidence already enables scheduling in the server's
   // preview; this separate list is only for proven account-level failures.
   schedulingEvidenceIDs.value = []
