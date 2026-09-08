@@ -66,6 +66,7 @@ export interface CapabilityCandidate {
   latest_probe_item_id?: number
   probe_status?: CapabilityItemStatus | 'untested' | 'alive' | 'temporary_failure' | 'unsupported' | 'account_failure'
   publishable?: boolean
+  pricing_known?: boolean
   not_publishable_reasons?: string[]
   stale: boolean
   warnings: string[]

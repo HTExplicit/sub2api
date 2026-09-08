@@ -38,6 +38,7 @@ export default {
     reasonLabels: {
       configuration_changed: '账号配置已变化，需要按当前配置重新验证。',
       evidence_expired: '验证证据已超过 24 小时，需要重新测试。',
+      pricing_unavailable: '没有此型号的明确现有价格，暂不公开；不会套用其他型号的价格。',
       evidence_superseded: '已有更新结果取代这份证据，不能继续用于发布。',
       no_current_inference_evidence: '缺少当前有效的模型推理成功证据。',
       unsupported_public_protocol: '这条上游协议尚不支持公开路由。',

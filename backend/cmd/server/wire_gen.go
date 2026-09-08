@@ -234,10 +234,10 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		return nil, err
 	}
 	accountCapabilityHandler := admin.NewAccountCapabilityHandler(accountCapabilityService)
-	accountCapabilityCatalogService := service.NewAccountCapabilityCatalogService(accountCapabilityRepository, adminService, groupRepository)
+	accountCapabilityCatalogService := service.NewAccountCapabilityCatalogService(accountCapabilityRepository, adminService, groupRepository, billingService, channelService)
 	accountCapabilityCatalogHandler := admin.NewAccountCapabilityCatalogHandler(accountCapabilityCatalogService)
 	accountCapabilityPublicationRepository := repository.NewAccountCapabilityPublicationRepository(db)
-	accountCapabilityPublicationService := service.NewAccountCapabilityPublicationService(accountCapabilityPublicationRepository, pricingService, apiKeyAuthCacheInvalidator, channelService, gatewayService, schedulerSnapshotService)
+	accountCapabilityPublicationService := service.NewAccountCapabilityPublicationService(accountCapabilityPublicationRepository, billingService, apiKeyAuthCacheInvalidator, channelService, gatewayService, schedulerSnapshotService)
 	accountCapabilityPublicationHandler := admin.NewAccountCapabilityPublicationHandler(accountCapabilityPublicationService)
 	adminAnnouncementHandler := admin.NewAnnouncementHandler(announcementService)
 	dataManagementService := service.NewDataManagementService()

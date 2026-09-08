@@ -71,6 +71,7 @@ type AccountCapabilityCandidate struct {
 	Discovered            bool       `json:"discovered"`
 	Configured            bool       `json:"configured"`
 	Published             bool       `json:"published"`
+	PricingKnown          bool       `json:"pricing_known"`
 	Publishable           bool       `json:"publishable"`
 	NotPublishableReasons []string   `json:"not_publishable_reasons"`
 	DiscoveryStatus       string     `json:"discovery_status"`
@@ -114,13 +115,15 @@ type capabilityConsoleLister interface {
 }
 
 type AccountCapabilityCatalogService struct {
-	repo   AccountCapabilityRepository
-	admin  AdminService
-	groups GroupRepository
+	repo     AccountCapabilityRepository
+	admin    AdminService
+	groups   GroupRepository
+	billing  *BillingService
+	channels *ChannelService
 }
 
-func NewAccountCapabilityCatalogService(repo AccountCapabilityRepository, admin AdminService, groups GroupRepository) *AccountCapabilityCatalogService {
-	return &AccountCapabilityCatalogService{repo: repo, admin: admin, groups: groups}
+func NewAccountCapabilityCatalogService(repo AccountCapabilityRepository, admin AdminService, groups GroupRepository, billing *BillingService, channels *ChannelService) *AccountCapabilityCatalogService {
+	return &AccountCapabilityCatalogService{repo: repo, admin: admin, groups: groups, billing: billing, channels: channels}
 }
 
 func (s *AccountCapabilityCatalogService) Candidates(ctx context.Context, filter AccountCapabilityCandidateFilter) (*AccountCapabilityCandidatePage, error) {
@@ -176,6 +179,18 @@ func (s *AccountCapabilityCatalogService) Candidates(ctx context.Context, filter
 		}
 	}
 	rows := buildAccountCapabilityCandidates(accounts, latest, groupByName)
+	groupChannels := make(map[int64]*Channel)
+	for _, group := range groupByName {
+		if s.channels == nil {
+			continue
+		}
+		channel, channelErr := s.channels.GetChannelForGroup(ctx, group.ID)
+		if channelErr != nil {
+			return nil, channelErr
+		}
+		groupChannels[group.ID] = channel
+	}
+	applyCapabilityCandidatePricing(rows, s.billing, groupByName, groupChannels)
 	scopeAccounts := make([]AccountCapabilityScopeAccount, 0, len(accounts))
 	for _, account := range accounts {
 		if account.ManagementFolderID != nil {
@@ -221,6 +236,21 @@ func (s *AccountCapabilityCatalogService) Candidates(ctx context.Context, filter
 	}
 	end := min(start+filter.PageSize, len(filtered))
 	return &AccountCapabilityCandidatePage{Items: filtered[start:end], Accounts: scopeAccounts, Total: len(filtered), Page: filter.Page, PageSize: filter.PageSize}, nil
+}
+
+func applyCapabilityCandidatePricing(rows []AccountCapabilityCandidate, billing *BillingService, groupByName map[string]*Group, groupChannels map[int64]*Channel) {
+	for i := range rows {
+		group := groupByName[strings.ToLower(rows[i].GroupName)]
+		var channel *Channel
+		if group != nil {
+			channel = groupChannels[group.ID]
+		}
+		rows[i].PricingKnown = CapabilityHasIdentifiedPricing(billing, group, channel, rows[i].PublicModel)
+		if !rows[i].PricingKnown {
+			rows[i].Publishable = false
+			rows[i].NotPublishableReasons = append(rows[i].NotPublishableReasons, "pricing_unavailable")
+		}
+	}
 }
 
 func buildAccountCapabilityCandidates(accounts []Account, latest []AccountCapabilityItem, groups map[string]*Group) []AccountCapabilityCandidate {

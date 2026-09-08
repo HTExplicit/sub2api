@@ -108,6 +108,27 @@ func TestAccountCapabilityTierIsolationOnlyAppliesToGPTProducts(t *testing.T) {
 	require.True(t, CapabilityCandidateMatches(&account, "gpt-6-astra-ssvip", "gpt-6-astra", nil, "vip"))
 }
 
+func TestAccountCapabilityCatalogPricingDoesNotInventOrRevive(t *testing.T) {
+	inputPrice, outputPrice := 0.000001, 0.000002
+	group := &Group{ID: 23, ModelPricing: []ChannelModelPricing{{
+		Models: []string{"gpt-6-astra"}, InputPrice: &inputPrice, OutputPrice: &outputPrice,
+	}}}
+	rows := []AccountCapabilityCandidate{
+		{PublicModel: "qwen3.8-max", GroupName: "Qwen", Publishable: true, NotPublishableReasons: []string{}},
+		{PublicModel: "gpt-6-astra", GroupName: "gpt", Publishable: true, NotPublishableReasons: []string{}},
+		{PublicModel: "gpt-6-astra", GroupName: "gpt", Publishable: false, NotPublishableReasons: []string{"evidence_expired"}},
+	}
+	applyCapabilityCandidatePricing(rows, nil, map[string]*Group{"gpt": group}, nil)
+	require.False(t, rows[0].PricingKnown)
+	require.False(t, rows[0].Publishable)
+	require.Contains(t, rows[0].NotPublishableReasons, "pricing_unavailable")
+	require.True(t, rows[1].PricingKnown)
+	require.True(t, rows[1].Publishable)
+	require.True(t, rows[2].PricingKnown)
+	require.False(t, rows[2].Publishable)
+	require.Equal(t, []string{"evidence_expired"}, rows[2].NotPublishableReasons)
+}
+
 func TestAccountCapabilityCatalogPreservesDistinctVIPAlternatives(t *testing.T) {
 	account := capabilityCatalogTestAccount(10, map[string]any{
 		"gpt-6-astra-vip": "gpt-6-astra-vip", "gpt-6-astra-ssvip": "gpt-6-astra-ssvip",
