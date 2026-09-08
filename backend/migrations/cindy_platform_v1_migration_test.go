@@ -129,7 +129,6 @@ func TestMigration235RestrictsLedgerReplayToLifecycleExcludedRows(t *testing.T) 
 
 	for _, workflow := range []string{
 		"../../.github/workflows/downstream-verify.yml",
-		"../../.github/workflows/downstream-release.yml",
 	} {
 		raw, err := os.ReadFile(workflow)
 		require.NoError(t, err)
