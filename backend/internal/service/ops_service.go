@@ -576,6 +576,11 @@ func sanitizeOpsUpstreamErrors(entry *OpsInsertErrorLogInput) error {
 		// Only boundOpsUpstreamErrors may stamp this; never trust caller input.
 		out.DroppedEarlierAttempts = 0
 		keepBody := i >= firstEventWithBody
+		if keepBody {
+			out.ContinuationDiagnostic = sanitizeOpenAIContinuationDiagnostic(ev.ContinuationDiagnostic)
+		} else {
+			out.ContinuationDiagnostic = nil
+		}
 		urlMaxLen, messageMaxLen := 2048, 2048
 		if !keepBody {
 			urlMaxLen, messageMaxLen = opsUpstreamErrorsOlderURLMaxLen, opsUpstreamErrorsOlderMessageMaxLen
