@@ -1,10 +1,19 @@
 package service
 
 // This release-pinned catalog describes capacity, not model availability or routing.
-// IDs and explicit aliases are case-sensitive. MatchHosts and MatchAccountModes
+// Stored IDs/aliases are exact; matching-only namespace and GPT spelling variants
+// are handled by the resolver. MatchHosts and MatchAccountModes
 // constrain product-specific evidence; an equal self-hosted model ID is insufficient.
 // Zero input/output fields mean unknown, never a copy of the total context window.
 const officialModelContextCapacityVerifiedAt = "2026-09-07"
+
+const (
+	GPTContextCapacityReferenceRelease    = "rust-v0.153.4"
+	gptContextCapacityReferenceSource     = "https://github.com/openai/codex/blob/3d2ee51ca2d5db578f328aa75e20aa22c0197c9a/codex-rs/models-manager/models.json"
+	gptContextCapacityReferenceVerifiedAt = "2026-09-08"
+	gptLongContextSelection               = "本项目将订阅参考最大 872000 的 GPT 档选用 API 规格 1050000 作为规划基准；订阅参考原值未改写，不表示订阅服务端已返回 1050000。"
+	gptSubscriptionMaximumSelection       = "本项目按官方 Codex 内置目录的最大窗口规划；不是单个订阅账号的实时容量或可用性承诺。"
+)
 
 const (
 	claudeContextSource   = "https://platform.claude.com/docs/en/build-with-claude/context-windows"
@@ -28,6 +37,14 @@ const (
 	doubaoUnitsBasis      = "跨官方页面单位推导：模型表默认回答 4k，官方 API 的 max_tokens 默认值 4096，据此按 k=1024 归一；1024k=1048576，256k=262144，224k=229376。不是上下文原文直接整数证据。"
 )
 
+func codexModelContextCapacityReference(window, maximum int64) *ModelContextCapacityReference {
+	return &ModelContextCapacityReference{
+		Product: "codex_subscription", SourceURL: gptContextCapacityReferenceSource,
+		Release: GPTContextCapacityReferenceRelease, VerifiedAt: gptContextCapacityReferenceVerifiedAt,
+		ContextWindow: window, MaxContextWindow: maximum,
+	}
+}
+
 // Host sets contain only the documented regional API hosts applicable to the
 // corresponding entries. They deliberately do not use suffix or wildcard rules.
 var (
@@ -38,13 +55,16 @@ var (
 )
 
 var officialModelContextCapacityCatalog = []OfficialModelContextCapacity{
-	// OpenAI API. No inferred dated snapshots or Codex-only client aliases.
+	// Selected GPT planning baselines. API entries remain the fallback for models
+	// not covered by the pinned Codex reference; no model availability is changed.
 	{
-		ModelID: "gpt-6-astra", Provider: "openai", Product: "api",
+		ModelID: "gpt-6-astra", Aliases: []string{"gpt-6"}, Provider: "openai", Product: "api",
 		ModelContextCapacity: ModelContextCapacity{ContextWindow: 1050000, MaxOutputTokens: 128000, CapacityBasis: "total_context"},
 		SourceURL:            "https://developers.openai.com/api/docs/models/gpt-6-astra",
 		VerifiedAt:           officialModelContextCapacityVerifiedAt,
 		OriginalText:         "1,050,000 context window; 128,000 max output tokens",
+		Reference:            codexModelContextCapacityReference(272000, 872000),
+		Conditions:           gptLongContextSelection,
 	},
 	{
 		ModelID: "gpt-5.6-sol", Aliases: []string{"gpt-5.6"}, Provider: "openai", Product: "api",
@@ -52,7 +72,8 @@ var officialModelContextCapacityCatalog = []OfficialModelContextCapacity{
 		SourceURL:            "https://developers.openai.com/api/docs/models/gpt-5.6-sol",
 		VerifiedAt:           officialModelContextCapacityVerifiedAt,
 		OriginalText:         "1,050,000 context window; 128,000 max output tokens",
-		Conditions:           "gpt-5.6 是官方明确列出的 Sol 别名；不写回账号模型映射。",
+		Reference:            codexModelContextCapacityReference(272000, 872000),
+		Conditions:           gptLongContextSelection + " gpt-5.6 是 Sol 的明确别名；不写回账号模型映射。",
 	},
 	{
 		ModelID: "gpt-5.6-terra", Provider: "openai", Product: "api",
@@ -60,6 +81,8 @@ var officialModelContextCapacityCatalog = []OfficialModelContextCapacity{
 		SourceURL:            "https://developers.openai.com/api/docs/models/gpt-5.6-terra",
 		VerifiedAt:           officialModelContextCapacityVerifiedAt,
 		OriginalText:         "1,050,000 context window; 128,000 max output tokens",
+		Reference:            codexModelContextCapacityReference(272000, 872000),
+		Conditions:           gptLongContextSelection,
 	},
 	{
 		ModelID: "gpt-5.6-luna", Provider: "openai", Product: "api",
@@ -67,27 +90,35 @@ var officialModelContextCapacityCatalog = []OfficialModelContextCapacity{
 		SourceURL:            "https://developers.openai.com/api/docs/models/gpt-5.6-luna",
 		VerifiedAt:           officialModelContextCapacityVerifiedAt,
 		OriginalText:         "1,050,000 context window; 128,000 max output tokens",
+		Reference:            codexModelContextCapacityReference(272000, 872000),
+		Conditions:           gptLongContextSelection,
 	},
 	{
-		ModelID: "gpt-5.5", Provider: "openai", Product: "api",
-		ModelContextCapacity: ModelContextCapacity{ContextWindow: 1050000, MaxOutputTokens: 128000, CapacityBasis: "total_context"},
-		SourceURL:            "https://developers.openai.com/api/docs/models/gpt-5.5",
-		VerifiedAt:           officialModelContextCapacityVerifiedAt,
-		OriginalText:         "1,050,000 context window; 128,000 max output tokens",
+		ModelID: "gpt-5.5", Provider: "openai", Product: "codex_subscription",
+		ModelContextCapacity: ModelContextCapacity{MaxContextWindow: 272000, CapacityBasis: ModelContextCapacityBasisMaximum},
+		SourceURL:            gptContextCapacityReferenceSource,
+		VerifiedAt:           gptContextCapacityReferenceVerifiedAt,
+		OriginalText:         "context_window: 272000; max_context_window: 272000",
+		Reference:            codexModelContextCapacityReference(272000, 272000),
+		Conditions:           gptSubscriptionMaximumSelection,
 	},
 	{
-		ModelID: "gpt-5.4", Provider: "openai", Product: "api",
-		ModelContextCapacity: ModelContextCapacity{ContextWindow: 1050000, MaxOutputTokens: 128000, CapacityBasis: "total_context"},
-		SourceURL:            "https://developers.openai.com/api/docs/models/gpt-5.4",
-		VerifiedAt:           officialModelContextCapacityVerifiedAt,
-		OriginalText:         "1,050,000 context window; 128,000 max output tokens",
+		ModelID: "gpt-5.4", Provider: "openai", Product: "codex_subscription",
+		ModelContextCapacity: ModelContextCapacity{MaxContextWindow: 1000000, CapacityBasis: ModelContextCapacityBasisMaximum},
+		SourceURL:            gptContextCapacityReferenceSource,
+		VerifiedAt:           gptContextCapacityReferenceVerifiedAt,
+		OriginalText:         "context_window: 272000; max_context_window: 1000000",
+		Reference:            codexModelContextCapacityReference(272000, 1000000),
+		Conditions:           gptSubscriptionMaximumSelection,
 	},
 	{
-		ModelID: "gpt-5.4-mini", Provider: "openai", Product: "api",
-		ModelContextCapacity: ModelContextCapacity{ContextWindow: 400000, MaxOutputTokens: 128000, CapacityBasis: "total_context"},
-		SourceURL:            "https://developers.openai.com/api/docs/models/gpt-5.4-mini",
-		VerifiedAt:           officialModelContextCapacityVerifiedAt,
-		OriginalText:         "400,000 context window; 128,000 max output tokens",
+		ModelID: "gpt-5.4-mini", Provider: "openai", Product: "codex_subscription",
+		ModelContextCapacity: ModelContextCapacity{MaxContextWindow: 272000, CapacityBasis: ModelContextCapacityBasisMaximum},
+		SourceURL:            gptContextCapacityReferenceSource,
+		VerifiedAt:           gptContextCapacityReferenceVerifiedAt,
+		OriginalText:         "context_window: 272000; max_context_window: 272000",
+		Reference:            codexModelContextCapacityReference(272000, 272000),
+		Conditions:           gptSubscriptionMaximumSelection,
 	},
 	{
 		ModelID: "gpt-5.4-nano", Provider: "openai", Product: "api",
@@ -104,11 +135,31 @@ var officialModelContextCapacityCatalog = []OfficialModelContextCapacity{
 		OriginalText:         "400,000 context window; 128,000 max output tokens",
 	},
 	{
-		ModelID: "gpt-5.2", Provider: "openai", Product: "api",
-		ModelContextCapacity: ModelContextCapacity{ContextWindow: 400000, MaxOutputTokens: 128000, CapacityBasis: "total_context"},
-		SourceURL:            "https://developers.openai.com/api/docs/models/gpt-5.2",
-		VerifiedAt:           officialModelContextCapacityVerifiedAt,
-		OriginalText:         "400,000 context window; 128,000 max output tokens",
+		ModelID: "gpt-5.2", Provider: "openai", Product: "codex_subscription",
+		ModelContextCapacity: ModelContextCapacity{MaxContextWindow: 272000, CapacityBasis: ModelContextCapacityBasisMaximum},
+		SourceURL:            gptContextCapacityReferenceSource,
+		VerifiedAt:           gptContextCapacityReferenceVerifiedAt,
+		OriginalText:         "context_window: 272000; max_context_window: 272000",
+		Reference:            codexModelContextCapacityReference(272000, 272000),
+		Conditions:           gptSubscriptionMaximumSelection,
+	},
+	{
+		ModelID: "gpt-daybreak-blue-latest", Provider: "openai", Product: "api",
+		ModelContextCapacity: ModelContextCapacity{ContextWindow: 1050000, MaxOutputTokens: 128000, CapacityBasis: ModelContextCapacityBasisTotal},
+		SourceURL:            "https://developers.openai.com/api/docs/models/gpt-daybreak-blue-latest",
+		VerifiedAt:           gptContextCapacityReferenceVerifiedAt,
+		OriginalText:         "1,050,000 context window; 128,000 max output tokens",
+		Reference:            codexModelContextCapacityReference(272000, 872000),
+		Conditions:           gptLongContextSelection + " Daybreak 仍需单独授权，不据容量目录开放模型。",
+	},
+	{
+		ModelID: "gpt-daybreak-red-latest", Provider: "openai", Product: "codex_subscription",
+		ModelContextCapacity: ModelContextCapacity{MaxContextWindow: 372000, CapacityBasis: ModelContextCapacityBasisMaximum},
+		SourceURL:            gptContextCapacityReferenceSource,
+		VerifiedAt:           gptContextCapacityReferenceVerifiedAt,
+		OriginalText:         "context_window: 372000; max_context_window: 372000",
+		Reference:            codexModelContextCapacityReference(372000, 372000),
+		Conditions:           gptSubscriptionMaximumSelection + " Daybreak 仍需单独授权，不据容量目录开放模型。",
 	},
 	{
 		ModelID: "gpt-4.1", Provider: "openai", Product: "api",

@@ -22,8 +22,8 @@ func TestModelContextCapacityPriorityAndDistinctLimits(t *testing.T) {
 		{"custom over official", &custom, official, upstream, 768000, "custom", 128000},
 		{"official above smaller upstream", nil, official, upstream, 1050000, "official", 128000},
 		{"upstream", nil, nil, upstream, 128000, "upstream", 8000},
-		{"unknown", nil, nil, nil, 258000, "default", 0},
-		{"output alone is not context", nil, nil, &ModelContextCapacity{MaxOutputTokens: 64000}, 258000, "default", 64000},
+		{"unknown", nil, nil, nil, 200000, "default", 0},
+		{"output alone is not context", nil, nil, &ModelContextCapacity{MaxOutputTokens: 64000}, 200000, "default", 64000},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
@@ -204,7 +204,7 @@ func TestModelContextCapacityRowsUseTrueTargetsAndPreserveSources(t *testing.T) 
 		t.Fatalf("mapped aliases don't share real override: %+v", row.Aliases)
 	}
 	for _, id := range []string{"legacy-only", "unknown-actual", "dynamic-unknown"} {
-		if byID[id].EffectiveSource != "default" || byID[id].EffectiveContextWindow != 258000 || byID[id].Upstream != nil || byID[id].Official != nil {
+		if byID[id].EffectiveSource != "default" || byID[id].EffectiveContextWindow != 200000 || byID[id].Upstream != nil || byID[id].Official != nil {
 			t.Errorf("%s inferred capacity from public alias or mixed legacy: %+v", id, byID[id])
 		}
 	}
@@ -288,7 +288,7 @@ func TestModelContextCapacitySourceIdentityInvalidatesOnlyUpstreamIdentity(t *te
 				t.Fatal("stale upstream capacity reused after upstream identity change")
 			}
 			got := ResolveAccountModelContextCapacity(account, "actual")
-			if got.Source != "default" || got.ContextWindow != 258000 || got.Reason != "upstream_source_changed" {
+			if got.Source != "default" || got.ContextWindow != 200000 || got.Reason != "upstream_source_changed" {
 				t.Fatalf("changed source did not fail safely: %+v", got)
 			}
 			if ResolveAccountModelContextCapacity(account, "custom-model").ContextWindow != 700000 {

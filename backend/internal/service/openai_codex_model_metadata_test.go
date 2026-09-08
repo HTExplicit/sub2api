@@ -189,7 +189,7 @@ func TestBuildCodexModelsManifestForGroupUsesSyncedNonCapacityMetadataWithoutTru
 	require.Equal(t, "low", models[0]["default_reasoning_level"])
 	require.Equal(t, []string{"low", "high", "max"}, effortsFromManifestModel(t, models[0]))
 	require.Equal(t, []any{"text", "image"}, models[0]["input_modalities"])
-	require.EqualValues(t, 258_000, models[0]["context_window"])
+	require.EqualValues(t, 200_000, models[0]["context_window"])
 	require.Equal(t, "default", models[0]["context_capacity_source"])
 	require.Equal(t, "no_verified_capacity", models[0]["context_capacity_reason"])
 }
@@ -538,7 +538,7 @@ func TestBuildCodexModelsManifestForGroupKeepsNonCapacityFallbackWhenAvailabilit
 	models := decodeCodexManifestModels(t, body)
 	require.Len(t, models, 1)
 	require.Equal(t, []any{"text", "image"}, models[0]["input_modalities"])
-	require.EqualValues(t, 258_000, models[0]["context_window"])
+	require.EqualValues(t, 200_000, models[0]["context_window"])
 	require.Equal(t, "default", models[0]["context_capacity_source"])
 	require.Equal(t, "account_query_failed", models[0]["context_capacity_reason"])
 }

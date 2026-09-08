@@ -24,7 +24,7 @@ func TestModelContextCapacityContractFailsClosed(t *testing.T) {
 		{"invalid envelope", `{"models":`},
 		{"wrong custom context", strings.Replace(valid, `"context_window":512000`, `"context_window":512001`, 1)},
 		{"wrong priority source", strings.Replace(valid, `"context_capacity_source":"official"`, `"context_capacity_source":"upstream"`, 1)},
-		{"wrong default", strings.Replace(valid, `"context_window":258000`, `"context_window":272000`, 1)},
+		{"wrong default", strings.Replace(valid, `"context_window":200000`, `"context_window":272000`, 1)},
 		{"unsafe compact threshold", strings.Replace(valid, `"auto_compact_token_limit":null`, `"auto_compact_token_limit":9999999`, 1)},
 		{"protected model changed", strings.Replace(valid, `"context_window":777000`, `"context_window":258000`, 1)},
 		{"sentinel changed", strings.Replace(valid, officialCodexContextContractSentinel, "changed", 1)},
