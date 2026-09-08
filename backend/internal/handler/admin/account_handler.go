@@ -2542,47 +2542,7 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 			return
 		}
 
-		// Prefer the shared, account-keyed upstream catalog. If discovery fails,
-		// retain the legacy local catalog below so the test dialog remains usable.
-		if h.accountTestService != nil {
-			if models, fetchErr := h.accountTestService.FetchOpenAIAccountModels(c.Request.Context(), account); fetchErr == nil {
-				response.Success(c, models)
-				return
-			}
-		}
-		// OpenAI 自动透传会绕过常规模型改写，测试/模型列表也应回落到默认模型集。
-		if account.IsOpenAIPassthroughEnabled() {
-			response.Success(c, openai.DefaultModels)
-			return
-		}
-
-		mapping := account.GetModelMapping()
-		if len(mapping) == 0 {
-			response.Success(c, openai.DefaultModels)
-			return
-		}
-
-		// Return mapped models
-		var models []openai.Model
-		for requestedModel := range mapping {
-			var found bool
-			for _, dm := range openai.DefaultModels {
-				if dm.ID == requestedModel {
-					models = append(models, dm)
-					found = true
-					break
-				}
-			}
-			if !found {
-				models = append(models, openai.Model{
-					ID:          requestedModel,
-					Object:      "model",
-					Type:        "model",
-					DisplayName: requestedModel,
-				})
-			}
-		}
-		response.Success(c, models)
+		response.Success(c, h.openAIAccountTestModels(c.Request.Context(), account))
 		return
 	}
 
@@ -2726,6 +2686,84 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 	}
 
 	response.Success(c, models)
+}
+
+// openAIAccountTestModels selects request-side model IDs from this account's
+// saved configuration. Discovery enumerates unrestricted accounts and wildcard
+// candidates; it is not an availability gate for explicitly configured models.
+func (h *AccountHandler) openAIAccountTestModels(ctx context.Context, account *service.Account) []openai.Model {
+	mapping := account.GetModelMapping()
+	if account.IsOpenAIPassthroughEnabled() || len(mapping) == 0 {
+		return h.discoverOpenAIAccountTestModels(ctx, account)
+	}
+
+	concreteIDs := make([]string, 0, len(mapping))
+	hasWildcard := false
+	for id, target := range mapping {
+		if strings.TrimSpace(id) == "" || !concreteAccountTestModelID(target) {
+			continue
+		}
+		if strings.Contains(id, "*") {
+			// Saved mapping patterns support a single trailing wildcard only.
+			if strings.HasSuffix(id, "*") && strings.Count(id, "*") == 1 {
+				hasWildcard = true
+			}
+			continue
+		}
+		concreteIDs = append(concreteIDs, id)
+	}
+	sort.Strings(concreteIDs)
+
+	defaults := make(map[string]openai.Model, len(openai.DefaultModels))
+	for _, model := range openai.DefaultModels {
+		defaults[model.ID] = model
+	}
+	models := make([]openai.Model, 0, len(concreteIDs))
+	seen := make(map[string]struct{}, len(concreteIDs))
+	for _, id := range concreteIDs {
+		model, found := defaults[id]
+		if !found {
+			model = openai.Model{ID: id, Object: "model", Type: "model", DisplayName: id}
+		}
+		models = append(models, model)
+		seen[id] = struct{}{}
+	}
+	if !hasWildcard {
+		return models
+	}
+
+	for _, model := range h.discoverOpenAIAccountTestModels(ctx, account) {
+		if !concreteAccountTestModelID(model.ID) {
+			continue
+		}
+		if _, exists := seen[model.ID]; exists {
+			continue
+		}
+		// Keep the request ID. The test request resolves the actual target once,
+		// using the same exact/longest-wildcard rules as normal account mapping.
+		target, matched := account.ResolveMappedModel(model.ID)
+		if !matched || !concreteAccountTestModelID(target) {
+			continue
+		}
+		models = append(models, model)
+		seen[model.ID] = struct{}{}
+	}
+	return models
+}
+
+func concreteAccountTestModelID(id string) bool {
+	return strings.TrimSpace(id) != "" && !strings.Contains(id, "*")
+}
+
+// Only failed discovery falls back to built-ins. A successful empty catalog is
+// authoritative, and neither result is modified by the configured projection.
+func (h *AccountHandler) discoverOpenAIAccountTestModels(ctx context.Context, account *service.Account) []openai.Model {
+	if h.accountTestService != nil {
+		if models, err := h.accountTestService.FetchOpenAIAccountModels(ctx, account); err == nil {
+			return models
+		}
+	}
+	return openai.DefaultModels
 }
 
 // GetModelContextCapacities reads the local snapshot, official directory and
