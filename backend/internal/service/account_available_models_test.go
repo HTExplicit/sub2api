@@ -84,12 +84,37 @@ func TestAccountAvailableModelsProjectsOAuthDiscovery(t *testing.T) {
 }
 
 func TestAccountAvailableModelsPreservesEmptyAndInvalidCatalogSemantics(t *testing.T) {
-	models, err := buildOpenAIAccountAvailableModels([]byte(`{"data":[]}`))
-	require.NoError(t, err)
-	require.NotNil(t, models)
-	require.Empty(t, models)
-	for _, body := range []string{`{}`, `{"data":null}`, `{"error":{"message":"failure"}}`, `{"data":[{"id":""}]}`} {
-		_, err := buildOpenAIAccountAvailableModels([]byte(body))
-		require.Error(t, err, body)
+	for _, tc := range []struct {
+		name    string
+		body    string
+		invalid bool
+	}{
+		{"empty", `{"data":[]}`, false},
+		{"missing", `{}`, true},
+		{"null", `{"data":null}`, true},
+		{"error", `{"error":{"message":"failure"}}`, true},
+		{"empty_id", `{"data":[{"id":""}]}`, true},
+		{"blank_id", `{"data":[{"id":"  "}]}`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			upstream := &codexModelsHTTPUpstreamStub{do: func(req *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
+				require.Equal(t, http.MethodGet, req.Method)
+				require.Equal(t, "/v1/models", req.URL.Path)
+				return ordinaryModelsUpstreamResponse(tc.body), nil
+			}}
+			gateway := newCodexModelsAPIKeyTestService(upstream)
+			svc := &AccountTestService{}
+			svc.SetOpenAIGatewayService(gateway)
+			account := newCodexModelsAPIKeyTestAccount("https://models.example/v1")
+			models, err := svc.FetchOpenAIAccountModels(context.Background(), account)
+			if tc.invalid {
+				require.Error(t, err, "shared discovery must reject invalid catalogs before display conversion")
+				require.Nil(t, models)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, models)
+			require.Empty(t, models)
+		})
 	}
 }

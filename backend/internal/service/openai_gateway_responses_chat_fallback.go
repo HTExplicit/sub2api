@@ -121,6 +121,9 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 			return nil, promptErr
 		}
 	}
+	// /v1/responses 降级到 raw CC 的出站与 forwardAsRawChatCompletions 共用同一个
+	// 独立 Ollama Cloud token 钩子；chatReq.Model 已是模型映射后的 upstreamModel。
+	chatBody = clampOllamaCloudUpstreamMaxTokens(account, chatBody)
 	if serviceTier == nil {
 		serviceTier = extractOpenAIServiceTierFromBody(chatBody)
 	}

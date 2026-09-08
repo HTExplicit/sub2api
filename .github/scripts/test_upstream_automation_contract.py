@@ -57,6 +57,16 @@ class UpstreamAutomationContractTest(unittest.TestCase):
         self.assertIn("source_sha", self.publisher)
         self.assertIn("ref: ${{ env.RELEASE_TAG }}", self.publisher)
 
+    def test_publisher_reuses_pr_validation_without_duplicate_business_tests(self):
+        self.assertIn('git merge-base --is-ancestor "$source_sha" origin/main', self.publisher)
+        self.assertIn('ref: ${{ env.RELEASE_TAG }}', self.publisher)
+        self.assertIn('source_sha=$(git rev-parse HEAD)', self.publisher)
+        self.assertIn('Build and publish image', self.publisher)
+        self.assertIn('Attest image provenance', self.publisher)
+        self.assertIn('--verify-tag', self.publisher)
+        self.assertNotRegex(self.publisher, r'\bgo test\b|\bvitest\b|pnpm run typecheck')
+        self.assertNotIn('.github/scripts/test_', self.publisher)
+
     def test_bot_chain_is_explicit_and_does_not_overwrite_manual_resolutions(self):
         self.assertIn("upstream_tag:", self.sync)
         self.assertIn("preserve manual resolutions", self.sync)

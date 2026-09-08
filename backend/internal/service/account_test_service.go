@@ -188,7 +188,24 @@ func (s *AccountTestService) FetchOpenAIAccountModels(ctx context.Context, accou
 	if err != nil {
 		return nil, err
 	}
-	return buildOpenAIAccountAvailableModels(response.Body)
+	var payload struct {
+		Data []openai.Model `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body, &payload); err != nil {
+		return nil, fmt.Errorf("decode OpenAI account models: %w", err)
+	}
+	// Standard model catalogs do not require the fields used by the admin picker.
+	// Populate them here without changing the shared discovery response or cache.
+	for i := range payload.Data {
+		model := &payload.Data[i]
+		if strings.TrimSpace(model.DisplayName) == "" {
+			model.DisplayName = model.ID
+		}
+		if strings.TrimSpace(model.Type) == "" {
+			model.Type = "model"
+		}
+	}
+	return payload.Data, nil
 }
 
 // NewAccountTestService creates a new AccountTestService
@@ -459,7 +476,9 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 		req.Header.Set("Authorization", "Bearer "+authToken)
 	} else {
 		req.Header.Set("anthropic-beta", claude.APIKeyBetaHeader)
-		setAnthropicAPIKeyAuthHeader(req.Header, account, authToken)
+		// Ollama Cloud Anthropic 兼容端点按实际 base_url 强制 Bearer，
+		// 其余保持 extra/default 行为。
+		setAnthropicAPIKeyAuthHeader(req.Header, account, authToken, account.GetBaseURL())
 	}
 
 	// 账号级请求头覆写：测试请求与真实转发保持一致的最终头
