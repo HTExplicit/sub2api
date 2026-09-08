@@ -251,6 +251,9 @@ func registerAdminAPIKeyRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	ops := admin.Group("/ops")
 	{
+		ops.POST("/prompt-cache-diagnostics", h.Admin.Ops.StartPromptCacheDiagnostic)
+		ops.GET("/prompt-cache-diagnostics/:id", h.Admin.Ops.GetPromptCacheDiagnostic)
+		ops.DELETE("/prompt-cache-diagnostics/:id", h.Admin.Ops.StopPromptCacheDiagnostic)
 		// Realtime ops signals
 		ops.GET("/concurrency", h.Admin.Ops.GetConcurrencyStats)
 		ops.GET("/user-concurrency", h.Admin.Ops.GetUserConcurrencyStats)
