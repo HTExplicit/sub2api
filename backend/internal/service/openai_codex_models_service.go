@@ -46,8 +46,9 @@ const (
 	codexAutoModelPrefix              = "codex-auto-"
 )
 
-// FilterCodexModelIDsForGroup removes dedicated media-generation models,
-// wildcard mapping keys, and Codex automatic modes from a client catalog.
+// FilterCodexModelIDsForGroup removes reserved internal routing selectors,
+// dedicated media-generation models, wildcard keys, and Codex automatic modes
+// from a client catalog, including catalogs for unmanaged private groups.
 // Automatic modes are retained only when the group's enabled model allowlist
 // explicitly selects the exact slug; account model mappings describe routing
 // and are not feature opt-ins. Wildcard keys such as "foo-*" are routing
@@ -68,7 +69,7 @@ func FilterCodexModelIDsForGroup(modelIDs []string, group *Group) []string {
 	filtered := make([]string, 0, len(modelIDs))
 	for _, modelID := range modelIDs {
 		modelID = strings.TrimSpace(modelID)
-		if modelID == "" {
+		if modelID == "" || IsManagedModelSelector(modelID) {
 			continue
 		}
 		if isCodexDedicatedMediaModel(modelID) {
@@ -940,7 +941,7 @@ func buildCodexModelsManifest(
 	models := make([]json.RawMessage, 0, len(modelIDs))
 	for _, modelID := range modelIDs {
 		modelID = strings.TrimSpace(modelID)
-		if modelID == "" {
+		if modelID == "" || IsManagedModelSelector(modelID) {
 			continue
 		}
 		if _, exists := seen[modelID]; exists {
@@ -1368,7 +1369,7 @@ func mergeConfiguredCodexModelsManifest(
 			continue
 		}
 		descriptor.Slug = strings.TrimSpace(descriptor.Slug)
-		if isCodexDedicatedMediaModel(descriptor.Slug) {
+		if IsManagedModelSelector(descriptor.Slug) || isCodexDedicatedMediaModel(descriptor.Slug) {
 			changed = true
 			continue
 		}
@@ -1395,7 +1396,7 @@ func mergeConfiguredCodexModelsManifest(
 	}
 
 	for _, modelID := range configuredModels {
-		if isCodexDedicatedMediaModel(modelID) {
+		if IsManagedModelSelector(modelID) || isCodexDedicatedMediaModel(modelID) {
 			continue
 		}
 		if filterBySelection && !allowlist.Allows(modelID) {

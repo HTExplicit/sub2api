@@ -471,24 +471,39 @@ func projectModelCapacityEnvelope(body []byte, codex bool, resolve func(string) 
 		return nil, fmt.Errorf("decode model capacity rows: %w", err)
 	}
 	changed := false
-	for i, row := range rows {
+	visibleRows := make([]json.RawMessage, 0, len(rows))
+	for _, row := range rows {
 		var fields map[string]json.RawMessage
 		if json.Unmarshal(row, &fields) != nil || fields == nil {
+			visibleRows = append(visibleRows, row)
 			continue
 		}
 		var model string
-		if json.Unmarshal(fields[modelKey], &model) != nil || strings.TrimSpace(model) == "" || protected[model] {
+		if json.Unmarshal(fields[modelKey], &model) != nil || strings.TrimSpace(model) == "" {
+			visibleRows = append(visibleRows, row)
+			continue
+		}
+		// This is the final request-local envelope, including pinned upstream
+		// catalogs. Filter before capacity projection and ETag calculation, not
+		// from the source mappings or the shared upstream discovery cache.
+		if IsManagedModelSelector(model) {
+			changed = true
+			continue
+		}
+		if protected[model] {
+			visibleRows = append(visibleRows, row)
 			continue
 		}
 		if ApplyModelContextCapacityToFields(fields, resolve(model), codex) {
-			rows[i], _ = json.Marshal(fields)
+			row, _ = json.Marshal(fields)
 			changed = true
 		}
+		visibleRows = append(visibleRows, row)
 	}
 	if !changed {
 		return body, nil
 	}
-	envelope[listKey], _ = json.Marshal(rows)
+	envelope[listKey], _ = json.Marshal(visibleRows)
 	return json.Marshal(envelope)
 }
 
@@ -502,8 +517,9 @@ func buildDefaultCapacityCodexManifest(modelIDs []string, reason string) ([]byte
 	}, nil)
 }
 
-// ProjectModelListContextCapacities appends optional metadata without changing
-// the existing platform-specific /v1/models row shape, IDs, order or filters.
+// ProjectModelListContextCapacities applies the final reserved-selector filter
+// and appends optional metadata. Retained /v1/models rows keep their existing
+// platform-specific shape, IDs and order.
 func (s *GatewayService) ProjectModelListContextCapacities(ctx context.Context, group *Group, groupID *int64, platform string, body []byte) ([]byte, error) {
 	if platform == "" {
 		platform = PlatformAnthropic

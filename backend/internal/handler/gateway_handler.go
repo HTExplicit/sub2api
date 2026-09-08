@@ -1427,6 +1427,7 @@ func writeModelsList(c *gin.Context, platform string, modelIDs []string) {
 		writeGrokModelsList(c, modelIDs)
 		return
 	}
+	modelIDs = service.FilterManagedModelSelectors(modelIDs)
 	models := make([]claude.Model, 0, len(modelIDs))
 	for _, modelID := range modelIDs {
 		models = append(models, claude.Model{
@@ -1464,6 +1465,7 @@ type grokModelListItem struct {
 }
 
 func writeGrokModelsList(c *gin.Context, modelIDs []string) {
+	modelIDs = service.FilterManagedModelSelectors(modelIDs)
 	defaults := xai.DefaultModels()
 	defaultsByID := make(map[string]xai.Model, len(defaults))
 	for _, model := range defaults {
@@ -1514,6 +1516,7 @@ func grokModelSupportsConfigurableReasoning(modelID string) bool {
 }
 
 func writeOpenAIModelsList(c *gin.Context, modelIDs []string) {
+	modelIDs = service.FilterManagedModelSelectors(modelIDs)
 	defaultsByID := make(map[string]openai.Model, len(openai.DefaultModels))
 	for _, model := range openai.DefaultModels {
 		defaultsByID[model.ID] = model
@@ -1541,6 +1544,7 @@ func writeOpenAIModelsList(c *gin.Context, modelIDs []string) {
 }
 
 func writeCindyOpenAIModelsList(c *gin.Context, modelIDs []string) {
+	modelIDs = service.FilterManagedModelSelectors(modelIDs)
 	defaultsByID := make(map[string]openai.Model, len(openai.DefaultModels))
 	for _, model := range openai.DefaultModels {
 		defaultsByID[model.ID] = model
