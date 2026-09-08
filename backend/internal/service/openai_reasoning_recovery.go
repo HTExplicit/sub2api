@@ -421,6 +421,7 @@ func openAIReasoningUsageEvidence(payload []byte) map[string]int64 {
 }
 
 func observeOpenAIReasoningAttemptUsage(c *gin.Context, payload []byte) {
+	observeOpenAIPromptCacheDiagnosticPayload(c, payload)
 	if c == nil {
 		return
 	}
@@ -505,6 +506,9 @@ func (r *openAIReasoningRecoveryState) TryRecoverError(err error) ([]byte, bool)
 }
 
 func (r *openAIReasoningRecoveryState) TryRecover(status int, _ http.Header, payload []byte, semanticCommitted bool) ([]byte, bool) {
+	if r != nil {
+		observeOpenAIPromptCacheDiagnosticPayload(r.c, payload)
+	}
 	if r == nil || !r.enabled || r.retryUsed || semanticCommitted || r.ctx.Err() != nil || openAIReasoningRecoveryProtectedStatus(status) {
 		return nil, false
 	}

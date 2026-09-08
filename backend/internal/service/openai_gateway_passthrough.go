@@ -466,8 +466,12 @@ retryUpstream:
 			return nil, buildErr
 		}
 
+		diagnosticAttempt := beginOpenAIPromptCacheHTTPAttempt(c, account, upstreamReq, body, reasoningRecovery != nil && reasoningRecovery.enabled, proxyURL)
 		upstreamStart := time.Now()
 		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+		if diagnosticAttempt != nil {
+			diagnosticAttempt(resp, err)
+		}
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 		if err != nil {
 			if reasoningRecovery.RecoveryAttempt() {
