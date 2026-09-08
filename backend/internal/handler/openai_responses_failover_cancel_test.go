@@ -85,8 +85,9 @@ func (u *openAIResponsesContinuationStateUpstream) calls() []int64 {
 // still uphold the client-requested Responses streaming contract.
 type openAIResponsesGenericBadRequestUpstream struct {
 	service.HTTPUpstream
-	mu         sync.Mutex
-	accountIDs []int64
+	mu           sync.Mutex
+	accountIDs   []int64
+	responseBody string
 }
 
 type openAIResponsesModelNotSupportedUpstream struct {
@@ -191,10 +192,14 @@ func (u *openAIResponsesGenericBadRequestUpstream) Do(_ *http.Request, _ string,
 	u.mu.Lock()
 	u.accountIDs = append(u.accountIDs, accountID)
 	u.mu.Unlock()
+	body := u.responseBody
+	if body == "" {
+		body = `{"error":{"message":"must-not-leak"}}`
+	}
 	return &http.Response{
 		StatusCode: http.StatusBadRequest,
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
-		Body:       io.NopCloser(bytes.NewBufferString(`{"error":{"message":"must-not-leak"}}`)),
+		Body:       io.NopCloser(bytes.NewBufferString(body)),
 	}, nil
 }
 
@@ -204,7 +209,7 @@ func (u *openAIResponsesGenericBadRequestUpstream) calls() []int64 {
 	return append([]int64(nil), u.accountIDs...)
 }
 
-func newOpenAIResponsesFailoverTestHandler(t *testing.T, upstream service.HTTPUpstream) *OpenAIGatewayHandler {
+func newOpenAIResponsesFailoverTestHandler(t *testing.T, upstream service.HTTPUpstream, testAccounts ...service.Account) *OpenAIGatewayHandler {
 	t.Helper()
 	accounts := []service.Account{
 		{
@@ -229,6 +234,9 @@ func newOpenAIResponsesFailoverTestHandler(t *testing.T, upstream service.HTTPUp
 			Priority:    1,
 			Credentials: map[string]any{"access_token": "token-2"},
 		},
+	}
+	if len(testAccounts) > 0 {
+		accounts = testAccounts
 	}
 	accountRepo := openAIImagesFailoverAccountRepo{accounts: accounts}
 	cfg := &config.Config{RunMode: config.RunModeSimple}
@@ -429,14 +437,13 @@ func TestOpenAIGatewayHandlerResponses_StreamingGenericPreflightErrorEmitsTermin
 
 	resp, errObj := parseResponsesFailedSSE(t, rec.Body.String())
 	require.Equal(t, "failed", resp["status"])
-	require.NotEmpty(t, errObj["code"])
+	require.Equal(t, service.OpenAIRequestRejectedCode, errObj["code"])
+	require.Equal(t, service.OpenAIRequestRejectedClientMessage, errObj["message"])
 }
 
-// A compatibility proxy may erase a continuation-state code completely.  The
-// encrypted reasoning + function_call_output combination is not safely
-// replayable, so the generic 400 must become the same request-scoped terminal
-// rather than affecting the selected account or emitting a JSON body.
-func TestOpenAIGatewayHandlerResponses_StreamingOpaqueContinuationToolChainStopsWithoutFailover(t *testing.T) {
+// Request history cannot turn a generic validation rejection into proof that
+// its upstream state is permanently unavailable.
+func TestOpenAIGatewayHandlerResponses_StreamingOpaqueToolChainRejectionStopsWithoutFailover(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	upstream := &openAIResponsesGenericBadRequestUpstream{}
@@ -453,15 +460,16 @@ func TestOpenAIGatewayHandlerResponses_StreamingOpaqueContinuationToolChainStops
 	require.NotContains(t, rec.Body.String(), "must-not-leak")
 
 	_, errObj := parseResponsesFailedSSE(t, rec.Body.String())
-	require.Equal(t, service.OpenAIContinuationStateUnavailableCode, errObj["code"])
-	require.Equal(t, service.OpenAIContinuationStateUnavailableClientMessage, errObj["message"])
+	require.Equal(t, service.OpenAIRequestRejectedCode, errObj["code"])
+	require.Equal(t, service.OpenAIRequestRejectedClientMessage, errObj["message"])
+	require.NotContains(t, rec.Body.String(), service.OpenAIContinuationStateUnavailableCode)
 
 	rawEvents, ok := c.Get(service.OpsUpstreamErrorsKey)
 	require.True(t, ok)
 	events, ok := rawEvents.([]*service.OpsUpstreamErrorEvent)
 	require.True(t, ok)
 	require.Len(t, events, 1)
-	require.Equal(t, "continuation_state", events[0].Kind)
+	require.Equal(t, "request_rejected", events[0].Kind)
 }
 
 func TestLegacyLaxaContinuationModelNotSupportedDoesNotReplayAcrossAccounts(t *testing.T) {

@@ -102,6 +102,46 @@ func TestOpenAIContinuationDiagnosticPrivacy(t *testing.T) {
 		continuationDiagnosticTestNoPlaintext(t, encoded, "private-upstream-message-69317", "unlisted-debug-secret-49217")
 	})
 
+	t.Run("namespace_param_whitelist", func(t *testing.T) {
+		for _, tc := range []struct {
+			param   string
+			allowed bool
+		}{
+			{"input[11].namespace", true},
+			{"input.11.namespace", true},
+			{"tools[0].namespace", true},
+			{"input[11].namespace.private-field-51937", false},
+			{"input[11].namespace?token=private-token-71359", false},
+		} {
+			t.Run(tc.param, func(t *testing.T) {
+				body := []byte(`{"input":[]}`)
+				upstream := continuationDiagnosticTestJSON(t, map[string]any{"error": map[string]any{
+					"type": "invalid_request_error", "param": tc.param,
+					"message": "Missing namespace: private-upstream-message-31957",
+				}})
+				diagnostic := buildOpenAIContinuationDiagnostic(continuationDiagnosticTestContext(body), body, nil, body, upstream, "request_validation")
+				for _, candidate := range []*OpenAIContinuationDiagnostic{diagnostic, sanitizeOpenAIContinuationDiagnostic(diagnostic)} {
+					encoded, root := continuationDiagnosticTestEncoded(t, candidate)
+					param := root.Get("upstream_error.error_param")
+					if param.Get("sha256").String() != continuationDiagnosticTestDigest(tc.param) {
+						t.Fatal("namespace parameter must retain its complete fingerprint")
+					}
+					if tc.allowed {
+						if param.Get("value").String() != tc.param {
+							t.Fatal("safe indexed namespace parameter was lost")
+						}
+					} else {
+						if param.Get("value").Exists() {
+							t.Fatal("non-protocol namespace suffix retained a plaintext value")
+						}
+						continuationDiagnosticTestNoPlaintext(t, encoded, tc.param)
+					}
+					continuationDiagnosticTestNoPlaintext(t, encoded, "private-upstream-message-31957")
+				}
+			})
+		}
+	})
+
 	t.Run("non_json", func(t *testing.T) {
 		const message = "unknown parameter: prompt_cache_key; private-non-json-secret-71241"
 		body := []byte(`{"input":[]}`)
@@ -227,6 +267,7 @@ func TestOpenAIContinuationDiagnosticStructure(t *testing.T) {
 		t.Fatal("identical inputs must have deterministic diagnostic output")
 	}
 	for path, expected := range map[string]string{
+		"classification":                "opaque_tool_chain_400",
 		"incoming.body_source":          "forwarding_entry",
 		"wire.body_source":              "actual_request",
 		"incoming.prompt_cache.sha256":  continuationDiagnosticTestDigest(sourceKey),
@@ -409,5 +450,66 @@ func TestOpenAIContinuationDiagnosticOpsQueueRoundTrip(t *testing.T) {
 	_, stillOriginal := continuationDiagnosticTestEncoded(t, diagnostic)
 	if stillOriginal.Raw != before.Raw {
 		t.Fatal("queue sanitization modified the shared source diagnostic")
+	}
+}
+
+func TestOpenAIContinuationDiagnosticRequestRejectionOpsQueueRoundTrip(t *testing.T) {
+	body := []byte(`{"prompt_cache_key":"private-rejection-cache-57319","instructions":"private-rejection-instructions-73519","input":[]}`)
+	upstream := []byte(`{"error":{"type":"invalid_request_error","code":"missing_required_parameter","param":"input[11].namespace","message":"private-rejection-message-57319"}}`)
+	for _, tc := range []struct {
+		name, classification, expected, kind string
+	}{
+		{"validation", "request_validation", "request_validation", "request_rejected"},
+		{"generic_400", "unclassified_bad_request", "unclassified_bad_request", "request_rejected"},
+		{"empty", "", "unclassified", "continuation_state"},
+		{"legacy", "opaque_tool_chain_400", "opaque_tool_chain_400", "continuation_state"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			diagnostic := buildOpenAIContinuationDiagnostic(continuationDiagnosticTestContext(body), body, nil, body, upstream, tc.classification)
+			before, root := continuationDiagnosticTestEncoded(t, diagnostic)
+			if root.Get("classification").String() != tc.expected {
+				t.Fatal("producer classification did not use the explicit diagnostic contract")
+			}
+			message := OpenAIRequestRejectedClientMessage
+			if tc.kind == "continuation_state" {
+				message = OpenAIContinuationStateUnavailableClientMessage
+			}
+			entry := &OpsInsertErrorLogInput{UpstreamErrors: []*OpsUpstreamErrorEvent{{
+				AtUnixMs: 1, UpstreamStatusCode: http.StatusBadRequest,
+				Kind: tc.kind, Message: message, ContinuationDiagnostic: diagnostic,
+			}}}
+			if err := SanitizeOpsUpstreamErrorsForQueue(entry); err != nil {
+				t.Fatal(err)
+			}
+			if entry.UpstreamErrors != nil || entry.UpstreamErrorsJSON == nil {
+				t.Fatal("queue sanitization did not retain serialized diagnostic evidence")
+			}
+			events, err := ParseOpsUpstreamErrors(*entry.UpstreamErrorsJSON)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(events) != 1 || events[0].Kind != tc.kind || events[0].Message != message {
+				t.Fatal("request-rejection or legacy event semantics changed in storage")
+			}
+			_, after := continuationDiagnosticTestEncoded(t, events[0].ContinuationDiagnostic)
+			for path, expected := range map[string]string{
+				"classification":                    tc.expected,
+				"upstream_error.error_type.value":   "invalid_request_error",
+				"upstream_error.error_code.value":   "missing_required_parameter",
+				"upstream_error.error_param.value":  "input[11].namespace",
+				"upstream_error.error_param.sha256": continuationDiagnosticTestDigest("input[11].namespace"),
+				"wire.prompt_cache.sha256":          continuationDiagnosticTestDigest("private-rejection-cache-57319"),
+			} {
+				if after.Get(path).String() != expected {
+					t.Errorf("diagnostic field %s changed in request-rejection queue roundtrip", path)
+				}
+			}
+			continuationDiagnosticTestNoPlaintext(t, *entry.UpstreamErrorsJSON,
+				"private-rejection-cache-57319", "private-rejection-instructions-73519", "private-rejection-message-57319")
+			stillOriginal, _ := continuationDiagnosticTestEncoded(t, diagnostic)
+			if stillOriginal != before {
+				t.Fatal("queue sanitization changed the shared source diagnostic")
+			}
+		})
 	}
 }

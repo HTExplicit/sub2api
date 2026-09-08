@@ -265,7 +265,7 @@ func continuationDiagnosticHistory(input gjson.Result) openAIContinuationHistory
 	return shape
 }
 
-var continuationDiagnosticParam = regexp.MustCompile(`^(?:model|instructions|prompt_cache_key|previous_response_id|store|stream|input|tools|reasoning(?:\.(?:effort|mode|context))?|(?:input|tools)(?:\[[0-9]{1,6}\]|\.[0-9]{1,6})(?:\.(?:id|call_id|type|role|content|encrypted_content|name|arguments|output|function)(?:\.(?:name|arguments))?)?)$`)
+var continuationDiagnosticParam = regexp.MustCompile(`^(?:model|instructions|prompt_cache_key|previous_response_id|store|stream|input|tools|reasoning(?:\.(?:effort|mode|context))?|(?:input|tools)(?:\[[0-9]{1,6}\]|\.[0-9]{1,6})(?:\.(?:id|call_id|type|role|content|encrypted_content|name|namespace|arguments|output|function)(?:\.(?:name|arguments))?)?)$`)
 
 func continuationDiagnosticKnownError(value string) string {
 	switch value {
@@ -327,10 +327,10 @@ func continuationDiagnosticError(body []byte) openAIContinuationErrorShape {
 
 func continuationDiagnosticClassification(value string) string {
 	switch value {
-	case "previous_response_not_found", "invalid_encrypted_content", "thinking_signature_invalid", "opaque_tool_chain_400":
+	case "previous_response_not_found", "invalid_encrypted_content", "thinking_signature_invalid",
+		"request_validation", "unclassified_bad_request", "opaque_tool_chain_400":
+		// opaque_tool_chain_400 remains readable for historical diagnostics only.
 		return value
-	case "":
-		return "opaque_tool_chain_400" // Combined existing HTTP branch's no-code case.
 	default:
 		return "unclassified"
 	}

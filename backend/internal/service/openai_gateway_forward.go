@@ -159,7 +159,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 	if shouldStripOpenAIResponsesInputNamespaces(account, wsDecision.Transport, passthroughEnabled) {
 		keepToolCallNamespaces := shouldKeepOpenAIResponsesToolCallNamespaces(
-			account, wsDecision.Transport, passthroughEnabled, compactPath, body,
+			account, wsDecision.Transport, passthroughEnabled, compactPath,
 		)
 		body, err = stripOpenAIResponsesInputNamespaces(body, keepToolCallNamespaces)
 		if err != nil {
@@ -1194,25 +1194,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				})
 				return nil, NewOpenAIContinuationStateUnavailableError(resp.StatusCode, resp.Header, respBody)
 			}
-			if isOpenAIOpaqueContinuationToolChainBadRequest(resp.StatusCode, body, upstreamMsg, respBody) {
-				// Some compatibility upstreams collapse continuation-state failures
-				// into a code-less 400.  The encrypted reasoning + tool-output shape
-				// proves this is an upstream-bound continuation, not an account fault.
-				// Do not strip/replay the tool output or let it fan out across accounts.
-				appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
-					Platform:           account.Platform,
-					AccountID:          account.ID,
-					AccountName:        account.Name,
-					UpstreamStatusCode: resp.StatusCode,
-					UpstreamRequestID:  resp.Header.Get("x-request-id"),
-					Kind:               "continuation_state",
-					Message:            OpenAIContinuationStateUnavailableClientMessage,
-					ContinuationDiagnostic: buildOpenAIContinuationDiagnostic(
-						c, diagnosticIncomingBody, upstreamReq, body, respBody, "opaque_tool_chain_400",
-					),
-				})
-				return nil, NewOpenAIContinuationStateUnavailableError(resp.StatusCode, resp.Header, respBody)
-			}
 			if retryBody, reason, changed, retryErr := normalizeOpenAIResponsesRejectedFieldRetryBody(resp.StatusCode, body, respBody); retryErr != nil {
 				return nil, fmt.Errorf("normalize rejected Responses field retry body: %w", retryErr)
 			} else if changed && rejectedFieldRetryState.Allow(retryBody) {
@@ -1234,13 +1215,22 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				SetOpsUpstreamModel(c, fallbackModel)
 				continue
 			}
-			shouldFailover := s.shouldFailoverOpenAIUpstreamResponse(account, resp.StatusCode, upstreamMsg, respBody)
-			if reqStream && !shouldFailover && isOpenAIOpaqueCompatibilityBadRequest(resp.StatusCode, upstreamMsg, respBody) {
-				// Do not let a pre-first-byte generic 400 commit a JSON response.
-				// Return a request-scoped terminal instead so the handler can emit a
-				// single protocol-valid response.failed event for stream:true clients.
-				return nil, newOpenAIOpaqueStreamPreflightError(resp.StatusCode, resp.Header, respBody)
+			if classification := classifyOpenAIRequestRejection(resp.StatusCode, upstreamMsg, respBody); classification != "" {
+				appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+					Platform:           account.Platform,
+					AccountID:          account.ID,
+					AccountName:        account.Name,
+					UpstreamStatusCode: resp.StatusCode,
+					UpstreamRequestID:  resp.Header.Get("x-request-id"),
+					Kind:               "request_rejected",
+					Message:            OpenAIRequestRejectedClientMessage,
+					ContinuationDiagnostic: buildOpenAIContinuationDiagnostic(
+						c, diagnosticIncomingBody, upstreamReq, body, respBody, classification,
+					),
+				})
+				return nil, NewOpenAIRequestRejectedError(resp.StatusCode, resp.Header)
 			}
+			shouldFailover := s.shouldFailoverOpenAIUpstreamResponse(account, resp.StatusCode, upstreamMsg, respBody)
 			if shouldFailover {
 				upstreamDetail := ""
 				if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {

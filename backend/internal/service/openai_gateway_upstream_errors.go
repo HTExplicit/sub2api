@@ -461,113 +461,89 @@ func openAIContinuationStateErrorFromFailedEvent(statusCode int, responseHeaders
 	return NewOpenAIContinuationStateUnavailableError(statusCode, responseHeaders, append([]byte(nil), payload...))
 }
 
-// openAIOpaqueStreamPreflightReason identifies a stream:true request that a
-// compatibility upstream rejected with an otherwise unclassified 400 before it
-// emitted any Responses event.  It is request-scoped: changing accounts cannot
-// make an opaque client request valid, and treating it as an account failure
-// would contaminate scheduler health with a request-local condition.
-const openAIOpaqueStreamPreflightReason = GatewayFailureReason("openai_opaque_stream_preflight")
+// A residual HTTP 400 is a rejected request, not evidence that its history is
+// permanently unavailable. Keep the original upstream details in bounded Ops
+// diagnostics only; the client receives a stable, non-sensitive terminal.
+const OpenAIRequestRejectedCode = "upstream_request_rejected"
+const OpenAIRequestRejectedClientMessage = "The upstream rejected this request. Check the request parameters before trying again."
+const openAIRequestRejectedReason = GatewayFailureReason("openai_request_rejected")
 
-// isOpenAIOpaqueCompatibilityBadRequest detects the narrow compatibility
-// wrapper shape where an upstream exposes only a generic 400.  Explicit error
-// codes and the semantic cases handled elsewhere deliberately remain on their
-// existing paths; this is only the no-code fallback needed to preserve the
-// Responses streaming contract without retrying or penalizing an account.
-func isOpenAIOpaqueCompatibilityBadRequest(statusCode int, upstreamMsg string, upstreamBody []byte) bool {
+// classifyOpenAIRequestRejection depends only on the actual upstream rejection,
+// never on the presence of encrypted reasoning or tool outputs in the request.
+// Callers run their existing exact-field compatibility handling before this
+// residual classifier. Known semantic errors retain their dedicated policies.
+func classifyOpenAIRequestRejection(statusCode int, upstreamMsg string, upstreamBody []byte) string {
 	if statusCode != http.StatusBadRequest {
-		return false
+		return ""
 	}
-	if classifyOpenAIContinuationStateError(upstreamMsg, upstreamBody) != openAIContinuationStateErrorNone {
-		return false
+	if isOpenAIContinuationStateError(upstreamMsg, upstreamBody) ||
+		isOpenAIContextWindowError(upstreamMsg, upstreamBody) ||
+		isOpenAITransientProcessingError(statusCode, upstreamMsg, upstreamBody) ||
+		isOpenAIRequestScopedSafetyRejection(upstreamBody) ||
+		isOpenAICompatibleModelNotFound400(upstreamBody) ||
+		isOpenAIModelNotSupportedError(statusCode, upstreamMsg, upstreamBody) ||
+		isOpenAIHTTPUpstreamAccessStateError(statusCode, upstreamMsg, upstreamBody) ||
+		isOpenAIReportedUpstreamFailure(statusCode, upstreamBody) {
+		return ""
 	}
-	if hasOpenAIUpstreamStructuredErrorCode(upstreamBody) {
-		return false
-	}
-	if isOpenAIContextWindowError(upstreamMsg, upstreamBody) ||
-		isOpenAITransientProcessingError(statusCode, upstreamMsg, upstreamBody) {
-		return false
-	}
-	return true
-}
 
-func hasOpenAIUpstreamStructuredErrorCode(upstreamBody []byte) bool {
-	if strings.TrimSpace(extractUpstreamErrorCode(upstreamBody)) != "" {
-		return true
-	}
-	for _, path := range []string{
-		"error.code",
-		"response.error.code",
-		"code",
-		"response.code",
-	} {
-		if strings.TrimSpace(gjson.GetBytes(upstreamBody, path).String()) != "" {
-			return true
+	// RateLimitService.HandleUpstreamError already recognizes these two narrow
+	// HTTP 400 authentication cases. Use its exact extraction/redaction/512-byte
+	// message boundary so residual validation handling cannot swallow them or
+	// expand authentication detection to echoed fields elsewhere in the body.
+	authMessage := strings.TrimSpace(extractUpstreamErrorMessage(upstreamBody))
+	authMessage = sanitizeUpstreamErrorMessage(authMessage)
+	if authMessage != "" {
+		authMessage = strings.ToLower(truncateForLog([]byte(authMessage), 512))
+		if strings.Contains(authMessage, "organization has been disabled") ||
+			strings.Contains(authMessage, "identity verification is required") {
+			return ""
 		}
 	}
-	return false
+
+	for _, path := range []string{"error", "response.error", "@this"} {
+		envelope := gjson.GetBytes(upstreamBody, path)
+		if !envelope.IsObject() {
+			continue
+		}
+		if param := envelope.Get("param"); param.Type == gjson.String && strings.TrimSpace(param.String()) != "" {
+			return "request_validation"
+		}
+		switch strings.ToLower(strings.TrimSpace(envelope.Get("type").String())) {
+		case "invalid_request_error", "invalid_argument", "bad_request", "badrequest", "validation_error", "invalid_request":
+			return "request_validation"
+		}
+		switch strings.ToLower(strings.TrimSpace(envelope.Get("code").String())) {
+		case "unsupported_parameter", "unknown_parameter", "invalid_value", "missing_required_parameter", "invalid_request":
+			return "request_validation"
+		}
+	}
+	return "unclassified_bad_request"
 }
 
-// isOpenAIOpaqueContinuationToolChainBadRequest handles an upstream that has
-// removed the normal continuation-state code/message from a 400.  The request
-// shape is intentionally strict: an encrypted reasoning carrier plus a
-// function_call_output is an upstream-bound tool continuation and cannot be
-// safely replayed after its state disappears.  The caller must terminate it;
-// it must not strip the tool output, switch accounts, or downgrade health.
-func isOpenAIOpaqueContinuationToolChainBadRequest(
-	statusCode int,
-	requestBody []byte,
-	upstreamMsg string,
-	upstreamBody []byte,
-) bool {
-	if !isOpenAIOpaqueCompatibilityBadRequest(statusCode, upstreamMsg, upstreamBody) {
-		return false
-	}
-	if !ValidateFunctionCallOutputContextBytes(requestBody).HasFunctionCallOutput {
-		return false
-	}
-
-	input := parseRawJSONView(requestBody).Get("input")
-	if !input.IsArray() {
-		return false
-	}
-	hasEncryptedContinuationItem := false
-	input.ForEach(func(_, item gjson.Result) bool {
-		if !item.IsObject() {
-			return true
-		}
-		switch strings.TrimSpace(item.Get("type").String()) {
-		case "reasoning", "compaction", "compaction_summary":
-			if encrypted := strings.TrimSpace(item.Get("encrypted_content").String()); encrypted != "" {
-				hasEncryptedContinuationItem = true
-				return false
-			}
-		}
-		return true
-	})
-	return hasEncryptedContinuationItem
-}
-
-func newOpenAIOpaqueStreamPreflightError(
+// NewOpenAIRequestRejectedError stops the current request without retrying or
+// changing selected-account health. It deliberately carries no upstream body.
+func NewOpenAIRequestRejectedError(
 	statusCode int,
 	responseHeaders http.Header,
-	responseBody []byte,
 ) *UpstreamFailoverError {
 	return &UpstreamFailoverError{
 		StatusCode:                   statusCode,
-		ResponseBody:                 responseBody,
 		ResponseHeaders:              responseHeaders.Clone(),
 		Scope:                        GatewayFailureScopeRequest,
-		Reason:                       openAIOpaqueStreamPreflightReason,
+		Reason:                       openAIRequestRejectedReason,
 		NextAccountAction:            NextAccountStop,
+		ClientStatusCode:             http.StatusBadRequest,
+		ClientErrorType:              "invalid_request_error",
+		ClientErrorCode:              OpenAIRequestRejectedCode,
+		ClientMessage:                OpenAIRequestRejectedClientMessage,
 		SuppressAccountHealthPenalty: true,
 	}
 }
 
-// IsOpenAIOpaqueStreamPreflight reports the bounded no-code compatibility
-// wrapper that must be framed as a Responses terminal before any upstream
-// stream byte exists.  It is intentionally distinct from normal HTTP errors.
-func (e *UpstreamFailoverError) IsOpenAIOpaqueStreamPreflight() bool {
-	return e != nil && e.Reason == openAIOpaqueStreamPreflightReason
+// IsOpenAIRequestRejected identifies a request-local validation terminal.
+func (e *UpstreamFailoverError) IsOpenAIRequestRejected() bool {
+	return e != nil && e.Reason == openAIRequestRejectedReason
 }
 
 func isOpenAIRequestBodyTooLargeError(statusCode int, upstreamMsg string, upstreamBody []byte) bool {
