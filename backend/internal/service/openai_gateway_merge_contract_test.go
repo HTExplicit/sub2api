@@ -29,7 +29,7 @@ func TestOpenAIMergeStreamModelNotFoundPrecedesOpaque400(t *testing.T) {
 	require.ErrorAs(t, err, &failover)
 	require.Nil(t, result)
 	require.True(t, failover.ShouldRetryNextAccount())
-	require.False(t, failover.IsOpenAIOpaqueStreamPreflight())
+	require.False(t, failover.IsOpenAIRequestRejected())
 	require.Len(t, upstream.bodies, 1)
 	require.False(t, c.Writer.Written(), "missing-model failover must precede a generic streaming 400 terminal")
 }

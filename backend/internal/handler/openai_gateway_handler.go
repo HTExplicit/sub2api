@@ -4175,6 +4175,19 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 		h.handleFailoverExhaustedSimple(c, http.StatusBadGateway, streamStarted)
 		return
 	}
+	if failoverErr.IsOpenAIRequestRejected() {
+		service.SetOpsUpstreamError(c, http.StatusBadRequest, service.OpenAIRequestRejectedClientMessage, "")
+		// Record the semantic failure before the renderer can commit SSE HTTP
+		// 200 or add its non-SLA fallback mark. This branch must precede the
+		// generic ClientErrorCode JSON path, including pre-first-byte failures.
+		service.MarkOpsStreamFailure(c, "invalid_request_error", service.OpenAIRequestRejectedCode, service.OpenAIRequestRejectedClientMessage, http.StatusBadRequest)
+		h.handleStreamingAwareErrorWithCode(
+			c, http.StatusBadRequest, "invalid_request_error", service.OpenAIRequestRejectedCode,
+			service.OpenAIRequestRejectedClientMessage,
+			streamStarted || inboundResponsesStreamRequested(c), false,
+		)
+		return
+	}
 	if failoverErr.ClientErrorCode != "" {
 		errType := failoverErr.ClientErrorType
 		if errType == "" {
@@ -4257,12 +4270,6 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 			true,
 		)
 		return
-	}
-	if failoverErr.IsOpenAIOpaqueStreamPreflight() {
-		// Only the service-classified code-less compatibility 400 needs an
-		// in-band pre-first-byte terminal.  Do not apply this to normal 429/4xx
-		// responses: those retain their established HTTP semantics.
-		streamStarted = streamStarted || inboundResponsesStreamRequested(c)
 	}
 	copyFailoverRetryAfter(c, failoverErr.ResponseHeaders)
 	if failoverErr.IsOpenAIRefusalRecovery() {

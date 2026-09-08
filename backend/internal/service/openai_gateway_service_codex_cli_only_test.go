@@ -12,7 +12,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
-	"github.com/tidwall/gjson"
 )
 
 type stubCodexRestrictionDetector struct {
@@ -431,7 +430,7 @@ func TestOpenAIContinuationStateErrorsStopAccountFailover(t *testing.T) {
 	))
 }
 
-func TestOpenAIGatewayService_Forward_LogsInstructionsRequiredDetails(t *testing.T) {
+func TestOpenAIGatewayService_Forward_RecordsSafeInstructionsRequiredDiagnostic(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	logSink, restore := captureStructuredLog(t)
 	defer restore()
@@ -473,20 +472,39 @@ func TestOpenAIGatewayService_Forward_LogsInstructionsRequiredDetails(t *testing
 	body := []byte(`{"model":"gpt-5.1-codex","stream":false,"input":[{"type":"text","text":"hello"}],"prompt_cache_key":"pc-forward","access_token":"secret-token"}`)
 
 	_, err := svc.Forward(context.Background(), c, account, body)
-	require.Error(t, err)
-	// missing_required_parameter 是确定性的请求错误：换账号、重试都不会变。按真实的
-	// 400 回写并保留 param/code，客户端才知道该补哪个字段（而不是收到可重试的 502）。
-	require.Equal(t, http.StatusBadRequest, rec.Code)
-	require.Equal(t, "invalid_request_error", gjson.Get(rec.Body.String(), "error.type").String())
-	require.Equal(t, "missing_required_parameter", gjson.Get(rec.Body.String(), "error.code").String())
-	require.Equal(t, "instructions", gjson.Get(rec.Body.String(), "error.param").String())
-	require.Contains(t, err.Error(), "upstream error: 400")
+	var terminal *UpstreamFailoverError
+	require.ErrorAs(t, err, &terminal)
+	require.True(t, terminal.IsOpenAIRequestRejected())
+	require.Equal(t, http.StatusBadRequest, terminal.ClientStatusCode)
+	require.Equal(t, "invalid_request_error", terminal.ClientErrorType)
+	require.Equal(t, OpenAIRequestRejectedCode, terminal.ClientErrorCode)
+	require.Equal(t, OpenAIRequestRejectedClientMessage, terminal.ClientMessage)
+	require.Empty(t, terminal.ResponseBody)
+	require.False(t, terminal.ShouldRetryNextAccount())
+	require.False(t, c.Writer.Written(), "the handler owns request-rejection rendering")
+	require.Empty(t, rec.Body.String())
+	require.NotContains(t, err.Error(), "Missing required parameter")
+	require.NotContains(t, err.Error(), "secret-token")
+	require.Len(t, upstream.bodies, 1)
 
-	require.True(t, logSink.ContainsMessageAtLevel("OpenAI 上游返回 Instructions are required，已记录请求详情用于排查", "warn"))
-	require.True(t, logSink.ContainsFieldValue("request_user_agent", "codex_cli_rs/0.1.0"))
-	require.True(t, logSink.ContainsFieldValue("request_model", "gpt-5.1-codex"))
-	require.True(t, logSink.ContainsFieldValue("request_headers", "openai-beta"))
-	require.True(t, logSink.ContainsField("request_body_size"))
+	value, ok := c.Get(OpsUpstreamErrorsKey)
+	require.True(t, ok)
+	events, ok := value.([]*OpsUpstreamErrorEvent)
+	require.True(t, ok)
+	require.Len(t, events, 1)
+	require.Equal(t, "request_rejected", events[0].Kind)
+	require.Equal(t, OpenAIRequestRejectedClientMessage, events[0].Message)
+	require.Equal(t, http.StatusBadRequest, events[0].UpstreamStatusCode)
+	encoded, diagnostic := continuationDiagnosticTestEncoded(t, events[0].ContinuationDiagnostic)
+	require.Equal(t, "request_validation", diagnostic.Get("classification").String())
+	require.Equal(t, "invalid_request_error", diagnostic.Get("upstream_error.error_type.value").String())
+	require.Equal(t, "missing_required_parameter", diagnostic.Get("upstream_error.error_code.value").String())
+	require.Equal(t, "instructions", diagnostic.Get("upstream_error.error_param.value").String())
+	require.False(t, diagnostic.Get("upstream_error.message.value").Exists())
+	require.NotContains(t, encoded, "Missing required parameter")
+	require.NotContains(t, encoded, "secret-token")
+
+	require.False(t, logSink.ContainsMessageAtLevel("OpenAI 上游返回 Instructions are required，已记录请求详情用于排查", "warn"))
 	require.False(t, logSink.ContainsField("request_body_preview"))
 }
 

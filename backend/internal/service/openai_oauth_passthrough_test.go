@@ -1360,9 +1360,13 @@ func TestOpenAIGatewayService_OAuthPassthrough_UpstreamErrorIncludesPassthroughF
 	}
 
 	_, err := svc.Forward(context.Background(), c, account, originalBody)
-	require.Error(t, err)
-	require.True(t, c.Writer.Written(), "非 429/529 的 passthrough 错误应直接写回客户端")
-	require.Equal(t, http.StatusBadRequest, rec.Code)
+	var terminal *UpstreamFailoverError
+	require.ErrorAs(t, err, &terminal)
+	require.True(t, terminal.IsOpenAIRequestRejected())
+	require.Equal(t, http.StatusBadRequest, terminal.ClientStatusCode)
+	require.Equal(t, OpenAIRequestRejectedCode, terminal.ClientErrorCode)
+	require.False(t, c.Writer.Written(), "the handler owns request-rejection rendering")
+	require.Empty(t, rec.Body.String())
 
 	// should append an upstream error event with passthrough=true
 	v, ok := c.Get(OpsUpstreamErrorsKey)
@@ -1371,7 +1375,7 @@ func TestOpenAIGatewayService_OAuthPassthrough_UpstreamErrorIncludesPassthroughF
 	require.True(t, ok)
 	require.NotEmpty(t, arr)
 	require.True(t, arr[len(arr)-1].Passthrough)
-	require.Equal(t, "http_error", arr[len(arr)-1].Kind)
+	require.Equal(t, "request_rejected", arr[len(arr)-1].Kind)
 }
 
 func TestOpenAIGatewayService_APIKeyPassthrough_RebuildsUpstreamErrors(t *testing.T) {
@@ -1488,6 +1492,41 @@ func TestOpenAIGatewayService_APIKeyPassthrough_RebuildsUpstreamErrors(t *testin
 			_, err := svc.Forward(context.Background(), c, account, requestBody)
 
 			require.Error(t, err)
+			if tt.statusCode == http.StatusBadRequest {
+				var terminal *UpstreamFailoverError
+				require.ErrorAs(t, err, &terminal)
+				require.True(t, terminal.IsOpenAIRequestRejected())
+				require.Equal(t, http.StatusBadRequest, terminal.ClientStatusCode)
+				require.Equal(t, "invalid_request_error", terminal.ClientErrorType)
+				require.Equal(t, OpenAIRequestRejectedCode, terminal.ClientErrorCode)
+				require.Equal(t, OpenAIRequestRejectedClientMessage, terminal.ClientMessage)
+				require.Empty(t, terminal.ResponseBody)
+				require.False(t, c.Writer.Written(), "the handler owns request-rejection rendering")
+				require.Empty(t, rec.Body.String())
+				require.NotContains(t, err.Error(), "secret-upstream.example")
+				require.NotContains(t, err.Error(), "sk-upstream-secret")
+
+				opsValue, ok := c.Get(OpsUpstreamErrorsKey)
+				require.True(t, ok)
+				opsEvents, ok := opsValue.([]*OpsUpstreamErrorEvent)
+				require.True(t, ok)
+				require.Len(t, opsEvents, 1)
+				require.Equal(t, "request_rejected", opsEvents[0].Kind)
+				require.True(t, opsEvents[0].Passthrough)
+				require.Equal(t, tt.statusCode, opsEvents[0].UpstreamStatusCode)
+				require.Equal(t, OpenAIRequestRejectedClientMessage, opsEvents[0].Message)
+				encoded, diagnostic := continuationDiagnosticTestEncoded(t, opsEvents[0].ContinuationDiagnostic)
+				if tt.contentType == "application/json" {
+					require.Equal(t, "request_validation", diagnostic.Get("classification").String())
+				} else {
+					require.Equal(t, "unclassified_bad_request", diagnostic.Get("classification").String())
+				}
+				require.NotContains(t, encoded, "secret-upstream.example")
+				require.NotContains(t, encoded, "sk-upstream-secret")
+				require.NotContains(t, encoded, "upstream_secret_code")
+				require.NotContains(t, encoded, "private_field")
+				return
+			}
 			require.Equal(t, tt.wantStatus, rec.Code)
 			opsValue, ok := c.Get(OpsUpstreamErrorsKey)
 			require.True(t, ok)
@@ -1551,7 +1590,7 @@ func TestWriteOpenAIPassthroughErrorHeaders_StrictRetryAfter(t *testing.T) {
 	}
 }
 
-func TestOpenAIGatewayService_APIKeyPassthrough_CompactErrorBeforeKeepaliveIsSingleJSON(t *testing.T) {
+func TestOpenAIGatewayService_APIKeyPassthrough_CompactErrorBeforeKeepaliveDefersRendering(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1575,17 +1614,20 @@ func TestOpenAIGatewayService_APIKeyPassthrough_CompactErrorBeforeKeepaliveIsSin
 	}
 
 	_, err := svc.Forward(context.Background(), c, account, []byte(`{"model":"gpt-5.2","input":"hello"}`))
+	stop()
 
-	require.Error(t, err)
-	require.Equal(t, http.StatusBadRequest, rec.Code)
-	require.True(t, gjson.Valid(rec.Body.String()))
-	require.Equal(t, "upstream_error", gjson.Get(rec.Body.String(), "error.type").String())
-	require.NotContains(t, rec.Body.String(), "event:")
-	require.NotContains(t, rec.Body.String(), ": keepalive")
-	require.NotContains(t, rec.Body.String(), "secret-upstream.example")
+	var terminal *UpstreamFailoverError
+	require.ErrorAs(t, err, &terminal)
+	require.True(t, terminal.IsOpenAIRequestRejected())
+	require.Equal(t, http.StatusBadRequest, terminal.ClientStatusCode)
+	require.Equal(t, OpenAIRequestRejectedCode, terminal.ClientErrorCode)
+	require.Equal(t, OpenAIRequestRejectedClientMessage, terminal.ClientMessage)
+	require.Empty(t, terminal.ResponseBody)
+	require.False(t, c.Writer.Written(), "service must not commit JSON before the handler chooses compact framing")
+	require.Empty(t, rec.Body.String())
 }
 
-func TestOpenAIGatewayService_APIKeyPassthrough_CompactErrorAfterKeepaliveIsFailedSSE(t *testing.T) {
+func TestOpenAIGatewayService_APIKeyPassthrough_CompactErrorAfterKeepaliveDefersTerminalRendering(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1610,16 +1652,20 @@ func TestOpenAIGatewayService_APIKeyPassthrough_CompactErrorAfterKeepaliveIsFail
 	}
 
 	_, err := svc.Forward(context.Background(), c, account, []byte(`{"model":"gpt-5.2","input":"hello"}`))
+	stop()
 
-	require.Error(t, err)
+	var terminal *UpstreamFailoverError
+	require.ErrorAs(t, err, &terminal)
+	require.True(t, terminal.IsOpenAIRequestRejected())
+	require.Equal(t, http.StatusBadRequest, terminal.ClientStatusCode)
+	require.Equal(t, OpenAIRequestRejectedCode, terminal.ClientErrorCode)
+	require.Equal(t, OpenAIRequestRejectedClientMessage, terminal.ClientMessage)
+	require.Empty(t, terminal.ResponseBody)
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Contains(t, rec.Result().Header.Get("Content-Type"), "text/event-stream")
-	events := parseCompactBridgeSSE(t, stripKeepaliveComments(rec.Body.String()))
-	require.Len(t, events, 1)
-	require.Equal(t, "response.failed", events[0][0])
-	require.Equal(t, "failed", gjson.Get(events[0][1], "response.status").String())
-	require.Equal(t, "upstream_error", gjson.Get(events[0][1], "response.error.code").String())
-	require.Equal(t, "Upstream request failed", gjson.Get(events[0][1], "response.error.message").String())
+	require.Contains(t, rec.Body.String(), ": keepalive")
+	require.Empty(t, strings.TrimSpace(stripKeepaliveComments(rec.Body.String())), "only keepalive comments may precede handler terminal rendering")
+	require.NotContains(t, rec.Body.String(), "event:")
 	require.NotContains(t, rec.Body.String(), "secret-upstream.example")
 }
 
@@ -2101,12 +2147,6 @@ func TestOpenAIGatewayService_OpenAIPassthrough_ContinuationErrorsStopBeforeAcco
 			statusCode:   http.StatusServiceUnavailable,
 			responseBody: `{"error":{"message":"Encrypted content could not be verified"}}`,
 			requestBody:  `{"model":"gpt-5.2","stream":false,"input":"hi"}`,
-		},
-		{
-			name:         "opaque encrypted tool continuation 400",
-			statusCode:   http.StatusBadRequest,
-			responseBody: `{"error":{"message":"bad request"}}`,
-			requestBody:  `{"model":"gpt-5.2","stream":false,"input":[{"type":"reasoning","encrypted_content":"gAAA"},{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`,
 		},
 	}
 

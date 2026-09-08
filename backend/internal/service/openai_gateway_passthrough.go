@@ -517,8 +517,7 @@ retryUpstream:
 			continue
 		}
 		continuationStateError := classifyOpenAIContinuationStateError(upstreamMsg, probeBody)
-		if continuationStateError != openAIContinuationStateErrorNone ||
-			isOpenAIOpaqueContinuationToolChainBadRequest(resp.StatusCode, body, upstreamMsg, probeBody) {
+		if continuationStateError != openAIContinuationStateErrorNone {
 			// Continuation failures describe request history rather than account
 			// health.  Classify them before agent recovery, failover, response
 			// commitment, or any scheduler/rate-limit side effect.
@@ -545,6 +544,23 @@ retryUpstream:
 				return nil, fmt.Errorf("agent identity task recovery failed: %w", recoveryErr)
 			}
 			continue
+		}
+
+		if classification := classifyOpenAIRequestRejection(resp.StatusCode, upstreamMsg, probeBody); classification != "" {
+			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+				Platform:           account.Platform,
+				AccountID:          account.ID,
+				AccountName:        account.Name,
+				UpstreamStatusCode: resp.StatusCode,
+				UpstreamRequestID:  resp.Header.Get("x-request-id"),
+				Passthrough:        true,
+				Kind:               "request_rejected",
+				Message:            OpenAIRequestRejectedClientMessage,
+				ContinuationDiagnostic: buildOpenAIContinuationDiagnostic(
+					c, diagnosticIncomingBody, upstreamReq, body, probeBody, classification,
+				),
+			})
+			return nil, NewOpenAIRequestRejectedError(resp.StatusCode, resp.Header)
 		}
 
 		// 透传模式默认保持原样代理；容量错误以及 API-key 上游的瞬时
