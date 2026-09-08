@@ -2766,6 +2766,23 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "invalid JSON payload")
 		return
 	}
+	managedWS := newManagedModelWSGuard(apiKey.Group, h.nativeAnthropicGatewayService, h.gatewayService)
+	firstAllowlistGroup := apiKey.Group
+	if managedWS != nil {
+		var managedRequest *service.ManagedModelRequest
+		firstMessage, managedRequest, firstAllowlistGroup, err = managedWS.prepareFrame(ctx, 1, firstMessage, "", nil)
+		if err != nil {
+			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalModelConfiguration)
+			middleware2.MarkIngressRejected(c, middleware2.IngressRejectModelNotAllowed)
+			closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "public model route is unavailable")
+			return
+		}
+		ctx = service.WithManagedModelRequest(ctx, managedRequest)
+		if firstAllowlistGroup.Platform == service.PlatformComposite {
+			ctx = service.WithResolvedTargetPlatform(ctx, managedRequest.Route.TargetPlatform)
+		}
+		c.Request = c.Request.WithContext(ctx)
+	}
 	reqModel := strings.TrimSpace(gjson.GetBytes(firstMessage, "model").String())
 	if reqModel == "" {
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "model is required in first response.create payload")
@@ -2775,7 +2792,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	// 必须在 ensureCompositeTargetPlatform（合成路由改写）之前执行。
 	// 与 HTTP 准入一致：帧内重复 model 键/大小写变体可能被上游按末值绑定，
 	// 全部候选值逐一校验，任一未命中即拒绝。
-	if blocked := blockedModelAllowlistCandidate(apiKey.Group, requestmodel.FromBodyCandidates("", "application/json", firstMessage)); blocked != "" {
+	if blocked := blockedModelAllowlistCandidate(firstAllowlistGroup, requestmodel.FromBodyCandidates("", "application/json", firstMessage)); blocked != "" {
 		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalModelConfiguration)
 		middleware2.MarkIngressRejected(c, middleware2.IngressRejectModelNotAllowed)
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, fmt.Sprintf("Model %q is not available for this group", blocked))
@@ -2936,15 +2953,39 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 
 	// 解析渠道级模型映射。严格 Cindy 兼容别名属于基础路由能力，
 	// 优先于管理员渠道映射，且仅在完整分组身份确认后生效。
-	resolveWSChannelMapping := func(model string) service.ChannelMappingResult {
+	resolveWSChannelMapping := func(model string) (service.ChannelMappingResult, *service.ManagedModelRequest, error) {
+		if managedWS != nil {
+			group, request, err := managedWS.resolve(ctx, model)
+			if err != nil {
+				return service.ChannelMappingResult{}, nil, err
+			}
+			lookupModel := request.Route.PublicModel
+			if group.Platform == service.PlatformComposite {
+				lookupModel = request.Route.Selector
+			}
+			mappingCtx := service.WithResolvedTargetPlatform(ctx, request.Route.TargetPlatform)
+			mapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(mappingCtx, apiKey.GroupID, lookupModel)
+			mapping.Mapped = true
+			mapping.MappedModel = request.Route.Selector
+			mapping.BillingModelSource = service.BillingModelSourceRequested
+			return mapping, request, nil
+		}
 		mapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(ctx, apiKey.GroupID, model)
 		if mappedModel, mapped := service.CindyCompatibilityMappedUpstreamModel(model); mapped && cindyIdentityGroup {
 			mapping.Mapped = true
 			mapping.MappedModel = mappedModel
 		}
-		return mapping
+		return mapping, nil, nil
 	}
-	channelMappingWS := resolveWSChannelMapping(reqModel)
+	channelMappingWS, managedWSRequest, err := resolveWSChannelMapping(reqModel)
+	if err != nil {
+		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "public model route is unavailable")
+		return
+	}
+	if managedWSRequest != nil {
+		ctx = service.WithManagedModelRequest(ctx, managedWSRequest)
+		c.Request = c.Request.WithContext(ctx)
+	}
 	wsRoutingModel = openAIChannelForwardModel(channelMappingWS, reqModel)
 
 	var currentUserRelease func()
@@ -3365,6 +3406,18 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				if cyberBlockedThisConn {
 					return newOpenAIWSLocalTurnCloseError(coderws.StatusPolicyViolation, cyberSessionBlockedClientMsg, nil)
 				}
+				allowlistGroup := apiKey.Group
+				if managedWS != nil {
+					var request *service.ManagedModelRequest
+					var guardErr error
+					payload, allowlistGroup, request, guardErr = managedWS.validatePayload(ctx, turn, payload, originalModel, account)
+					if guardErr != nil {
+						service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalModelConfiguration)
+						middleware2.MarkIngressRejected(c, middleware2.IngressRejectModelNotAllowed)
+						return newOpenAIWSLocalTurnCloseError(coderws.StatusPolicyViolation, "public model route is unavailable", guardErr)
+					}
+					originalModel = request.Route.PublicModel
+				}
 				if turn == 1 {
 					return nil
 				}
@@ -3384,7 +3437,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				// 帧内重复 model 键/大小写变体/嵌套 session.model 额外逐一校验，
 				// 防止候选集非空时掩盖被轮换掉的禁用模型。
 				candidates := append([]string{model}, requestmodel.FromBodyCandidates("", "application/json", payload)...)
-				if blocked := blockedModelAllowlistCandidate(apiKey.Group, candidates); blocked != "" {
+				if blocked := blockedModelAllowlistCandidate(allowlistGroup, candidates); blocked != "" {
 					service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalModelConfiguration)
 					middleware2.MarkIngressRejected(c, middleware2.IngressRejectModelNotAllowed)
 					return newOpenAIWSLocalTurnCloseError(coderws.StatusPolicyViolation, fmt.Sprintf("Model %q is not available for this group", blocked), nil)
@@ -3400,7 +3453,15 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				if model == "" {
 					model = reqModel
 				}
-				mapping := resolveWSChannelMapping(model)
+				mapping, managedRequest, mappingErr := resolveWSChannelMapping(model)
+				if mappingErr != nil {
+					return "", newOpenAIWSLocalTurnCloseError(coderws.StatusPolicyViolation, "public model route is unavailable", mappingErr)
+				}
+				if managedWS != nil {
+					if guardErr := managedWS.mappedTurn(ctx, turn, managedRequest, account); guardErr != nil {
+						return "", newOpenAIWSLocalTurnCloseError(coderws.StatusPolicyViolation, "public model route is unavailable", guardErr)
+					}
+				}
 				mappedModelUnchanged := false
 				if previous := turnChannelMapping.Load(); previous != nil && previous.turn < turn {
 					mappedModelUnchanged = strings.TrimSpace(previous.mapping.MappedModel) == strings.TrimSpace(mapping.MappedModel)
@@ -3415,6 +3476,11 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				// turn==1 的会话屏蔽已由握手层检查覆盖；连接内 flag 只拦截后续 turn。
 				if cyberBlockedThisConn {
 					return newOpenAIWSLocalTurnCloseError(coderws.StatusPolicyViolation, cyberSessionBlockedClientMsg, nil)
+				}
+				if managedWS != nil {
+					if guardErr := managedWS.validateTurn(ctx, turn, account); guardErr != nil {
+						return newOpenAIWSLocalTurnCloseError(coderws.StatusPolicyViolation, "public model route is unavailable", guardErr)
+					}
 				}
 				// 长连接跨峰谷/倍率刷新防护：每个 turn 按当前时刻重装门并复核
 				// 当前账号，越线即要求客户端重连重选（连接绑定单一上游账号，
@@ -3479,11 +3545,19 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				if result != nil {
 					turnUpstreamModel = strings.TrimSpace(result.UpstreamModel)
 				}
+				if managedWS != nil {
+					if snapshot := managedWS.current.Load(); snapshot != nil && snapshot.turn == turn {
+						turnRequestedModel = snapshot.request.Route.PublicModel
+					}
+				}
 				var turnMapping service.ChannelMappingResult
 				if snapshot := turnChannelMapping.Load(); snapshot != nil && snapshot.turn == turn {
 					turnMapping = snapshot.mapping
 				} else {
-					turnMapping = resolveWSChannelMapping(turnRequestedModel)
+					turnMapping, _, _ = resolveWSChannelMapping(turnRequestedModel)
+					if managedWS != nil {
+						turnMapping.BillingModelSource = service.BillingModelSourceRequested
+					}
 				}
 				if turnUpstreamModel == "" {
 					turnUpstreamModel = turnRequestedModel
@@ -3551,6 +3625,29 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					}
 				})
 			},
+		}
+		if managedWS != nil {
+			hooks.PrepareClientFrame = func(turn int, payload []byte, fallbackModel string) ([]byte, string, error) {
+				prepared, request, _, guardErr := managedWS.prepareFrame(ctx, turn, payload, fallbackModel, account)
+				if guardErr != nil {
+					service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalModelConfiguration)
+					middleware2.MarkIngressRejected(c, middleware2.IngressRejectModelNotAllowed)
+					return nil, "", newOpenAIWSLocalTurnCloseError(coderws.StatusPolicyViolation, "public model route is unavailable", guardErr)
+				}
+				publicModel := ""
+				if request != nil {
+					publicModel = request.Route.PublicModel
+				}
+				return prepared, publicModel, nil
+			}
+		} else if apiKey.Group != nil && !apiKey.Group.IsExclusive && apiKey.Group.Platform != service.PlatformCindy && !cindyIdentityGroup {
+			hooks.PrepareClientFrame = func(_ int, payload []byte, _ string) ([]byte, string, error) {
+				prepared, guardErr := observeUnmanagedModelWSFrame(ctx, h.nativeAnthropicGatewayService, apiKey.Group, payload)
+				if guardErr != nil {
+					return nil, "", newOpenAIWSLocalTurnCloseError(coderws.StatusPolicyViolation, "public model routes changed; please reconnect", guardErr)
+				}
+				return prepared, "", nil
+			}
 		}
 
 		wsFirstMessage := wsAttemptMessage

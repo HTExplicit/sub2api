@@ -754,6 +754,15 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 	if err := validateOpenAIWSBearerToken(account, token); err != nil {
 		return err
 	}
+	preparedInitialRequestModel := ""
+	if hooks != nil && hooks.PrepareClientFrame != nil {
+		prepared, publicModel, prepareErr := hooks.PrepareClientFrame(1, firstClientMessage, hooks.InitialRequestModel)
+		if prepareErr != nil {
+			return prepareErr
+		}
+		firstClientMessage = prepared
+		preparedInitialRequestModel = strings.TrimSpace(publicModel)
+	}
 	refusalRuntime := s.openAIRefusalRecoveryRuntime(ctx)
 	if isOpenAIResponsesLiteWebSocketPayload(firstClientMessage) {
 		liteFirstMessage, _, liteErr := normalizeOpenAIResponsesLitePayloadForAccount(firstClientMessage, account)
@@ -800,8 +809,8 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 	// negotiated at session.update time. Without this fallback, an empty
 	// model would miss any admin-configured model whitelist and be silently
 	// passed through, defeating that policy on every frame after the first.
-	initialRequestModel := ""
-	if hooks != nil {
+	initialRequestModel := preparedInitialRequestModel
+	if initialRequestModel == "" && hooks != nil {
 		initialRequestModel = strings.TrimSpace(hooks.InitialRequestModel)
 	}
 	if initialRequestModel == "" {
@@ -1061,17 +1070,38 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 			if msgType != coderws.MessageText && msgType != coderws.MessageBinary {
 				return payload, nil, nil
 			}
+			preparedPublicModel := ""
+			preparedFrameReceivedAt := time.Time{}
+			if hooks != nil && hooks.PrepareClientFrame != nil {
+				preparedFrameReceivedAt = time.Now()
+				frameTurn := int(completedTurns.Load()) + 1
+				if frameTurn < 2 {
+					frameTurn = 2
+				}
+				prepared, publicModel, prepareErr := hooks.PrepareClientFrame(frameTurn, payload, usageMeta.requestModelForFrame(payload))
+				if prepareErr != nil {
+					return payload, nil, prepareErr
+				}
+				payload = prepared
+				preparedPublicModel = strings.TrimSpace(publicModel)
+			}
 			eventType := strings.TrimSpace(gjson.GetBytes(payload, "type").String())
 			isResponseCreate := eventType == "response.create"
 			originalSessionRequestModel := ""
 			if eventType == "session.update" {
-				originalSessionRequestModel = strings.TrimSpace(gjson.GetBytes(payload, "session.model").String())
+				originalSessionRequestModel = preparedPublicModel
+				if originalSessionRequestModel == "" {
+					originalSessionRequestModel = strings.TrimSpace(gjson.GetBytes(payload, "session.model").String())
+				}
 			}
 			responsesLite := isOpenAIResponsesLiteWebSocketPayload(payload)
 			responseCreateAt := time.Time{}
 			acceptedTurn := false
 			if isResponseCreate {
 				responseCreateAt = time.Now()
+				if !preparedFrameReceivedAt.IsZero() {
+					responseCreateAt = preparedFrameReceivedAt
+				}
 				if !turnLifecycle.beginResponseCreate(clientFrameConn.markTurnStarted) {
 					err := errors.New("overlapping response.create is not supported")
 					return payload, nil, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, err.Error(), err)
@@ -1123,7 +1153,10 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 			}
 			requestModelForThisFrame := ""
 			if isResponseCreate {
-				requestModelForThisFrame = usageMeta.requestModelForFrame(payload)
+				requestModelForThisFrame = preparedPublicModel
+				if requestModelForThisFrame == "" {
+					requestModelForThisFrame = usageMeta.requestModelForFrame(payload)
+				}
 				if requestModelForThisFrame == "" {
 					requestModelForThisFrame = capturedSessionModel
 				}

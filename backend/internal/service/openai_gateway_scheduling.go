@@ -397,6 +397,9 @@ func isOpenAICompatibleAccountEligibleForRequestBeforeProfit(ctx context.Context
 }
 
 func openAICompatibleAccountEligibilityBeforeProfit(ctx context.Context, account *Account, platform string, requestedModel string, requireCompact bool, requiredCapability OpenAIEndpointCapability) (bool, string) {
+	if !ManagedModelAccountAllowed(ctx, account, requestedModel) {
+		return false, "managed_model_route_unavailable"
+	}
 	platform = NormalizeOpenAICompatiblePlatform(platform)
 	if account == nil || account.Platform != platform || !account.IsOpenAICompatible() {
 		return false, "platform_mismatch"

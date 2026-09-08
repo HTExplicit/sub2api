@@ -2496,6 +2496,37 @@ type openAIResponsesWSUsageLogResult struct {
 	clientEvents         [][]byte
 }
 
+// Public WS connections read their current group through the same shared
+// gateway as production. Keep the fixture public and supply its real group;
+// an absent repository is a routing failure, not an unmanaged-group default.
+type openAIWSFixtureGroupRepo struct {
+	service.GroupRepository
+	group *service.Group
+}
+
+func (s *openAIWSFixtureGroupRepo) GetByID(_ context.Context, id int64) (*service.Group, error) {
+	if s.group == nil || s.group.ID != id {
+		return nil, nil
+	}
+	group := *s.group
+	return &group, nil
+}
+
+func (s *openAIWSFixtureGroupRepo) GetByIDLite(ctx context.Context, id int64) (*service.Group, error) {
+	return s.GetByID(ctx, id)
+}
+
+func wireOpenAIWSFixtureGroupReader(t *testing.T, h *OpenAIGatewayHandler, cfg *config.Config, group *service.Group) {
+	t.Helper()
+	require.NotNil(t, group)
+	groupRepo := &openAIWSFixtureGroupRepo{group: group}
+	h.SetNativeAnthropicGatewayService(service.NewGatewayService(
+		nil, groupRepo, nil, nil, nil, nil, nil, nil, cfg, nil, nil,
+		nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+	))
+}
+
 type openAIWSUsageHandlerAccountRepoStub struct {
 	service.AccountRepository
 	account service.Account
@@ -3206,6 +3237,7 @@ func TestOpenAIResponsesWebSocket_FailoverOnUpstreamUsageLimitEventWithoutPersis
 		User:    &service.User{ID: 1702, Status: service.StatusActive},
 		Group:   &service.Group{ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive},
 	}
+	wireOpenAIWSFixtureGroupReader(t, h, cfg, apiKey.Group)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyAPIKey), apiKey)
@@ -3392,6 +3424,7 @@ func TestOpenAIResponsesWebSocket_FirstOutputTimeoutWithoutDownstreamReusesClien
 		User:    &service.User{ID: 1712, Status: service.StatusActive},
 		Group:   &service.Group{ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive},
 	}
+	wireOpenAIWSFixtureGroupReader(t, h, cfg, apiKey.Group)
 	handlerDone := make(chan struct{})
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
@@ -3604,6 +3637,7 @@ func TestOpenAIResponsesWebSocket_CtxPoolReconnectsSameAccountOnceThenFailsOverW
 		User:    &service.User{ID: 1713, Status: service.StatusActive},
 		Group:   &service.Group{ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive},
 	}
+	wireOpenAIWSFixtureGroupReader(t, h, cfg, apiKey.Group)
 	handlerDone := make(chan struct{})
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
@@ -3842,6 +3876,7 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 	if tc.group != nil {
 		apiKey.Group = tc.group
 	}
+	wireOpenAIWSFixtureGroupReader(t, h, cfg, apiKey.Group)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyAPIKey), apiKey)

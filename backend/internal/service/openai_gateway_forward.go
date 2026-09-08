@@ -19,6 +19,10 @@ import (
 
 // Forward forwards request to OpenAI API
 func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (_ *OpenAIForwardResult, forwardErr error) {
+	if err := validateManagedForwardAccount(ctx, s.accountRepo, account, gjson.GetBytes(body, "model").String()); err != nil {
+		return nil, err
+	}
+	_, managedRoute := ManagedModelRequestFromContext(ctx)
 	diagnosticIncomingBody := body
 	beginUpstreamResponseModelObservation(c)
 	ClearActualOpenAIUpstreamEndpoint(c)
@@ -28,7 +32,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if account != nil && account.IsOpenAI() {
 		requestedModel := gjson.GetBytes(body, "model").String()
 		candidates := []string{account.GetMappedModel(requestedModel)}
-		if isOpenAIResponsesCompactPath(c) {
+		if isOpenAIResponsesCompactPath(c) && !managedRoute {
 			if compactModel, matched := account.ResolveCompactMappedModel(requestedModel); matched {
 				candidates = append([]string{compactModel}, candidates...)
 			} else if compactModel := s.resolveOpenAICompactFallbackModel(account, requestedModel); compactModel != "" {
@@ -401,7 +405,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 	isCompactRequest := compactPath
 	requestedModel := reqModel
-	billingModel, upstreamModel := resolveOpenAIForwardMappedModels(account, requestedModel, isCompactRequest)
+	billingModel, upstreamModel := resolveOpenAIForwardMappedModels(account, requestedModel, isCompactRequest && !managedRoute)
 	if cindyRuntimeAccount {
 		if mappedModel, mapped := CindyCompatibilityMappedUpstreamModel(requestedModel); mapped {
 			upstreamModel = mappedModel
@@ -409,7 +413,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			upstreamModel = mappedModel
 		}
 	}
-	if isCompactRequest {
+	if isCompactRequest && !managedRoute {
 		if compactModel := s.resolveOpenAICompactFallbackModel(account, requestedModel); compactModel != "" {
 			upstreamModel = compactModel
 		}

@@ -255,6 +255,19 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	}
 
 	parseClientPayload := func(turn int, raw []byte) (openAIWSClientPayload, error) {
+		preparedPublicModel := ""
+		if hooks != nil && hooks.PrepareClientFrame != nil {
+			fallbackModel := ingressSessionOriginalModel
+			if fallbackModel == "" {
+				fallbackModel = hooks.InitialRequestModel
+			}
+			prepared, publicModel, prepareErr := hooks.PrepareClientFrame(turn, raw, fallbackModel)
+			if prepareErr != nil {
+				return openAIWSClientPayload{}, prepareErr
+			}
+			raw = prepared
+			preparedPublicModel = strings.TrimSpace(publicModel)
+		}
 		trimmed := bytes.TrimSpace(raw)
 		if len(trimmed) == 0 {
 			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "empty websocket request payload", nil)
@@ -298,7 +311,10 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		originalModel := strings.TrimSpace(values[1].String())
 		modelMissing := originalModel == ""
-		if modelMissing {
+		if preparedPublicModel != "" {
+			originalModel = preparedPublicModel
+		}
+		if originalModel == "" {
 			// Later turns may reuse the last accepted client model. Resolve it
 			// before model-specific compatibility, without changing the client ID.
 			originalModel = ingressSessionOriginalModel

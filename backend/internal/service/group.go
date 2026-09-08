@@ -14,6 +14,9 @@ import (
 type OpenAIMessagesDispatchModelConfig = domain.OpenAIMessagesDispatchModelConfig
 type GroupCodexModelsManifestConfig = domain.GroupCodexModelsManifestConfig
 type ReasoningEffortMapping = domain.ReasoningEffortMapping
+type ManagedModelRoutesConfig = domain.ManagedModelRoutesConfig
+type ManagedModelRoute = domain.ManagedModelRoute
+type ManagedModelRouteAccount = domain.ManagedModelRouteAccount
 
 type Group struct {
 	ID              int64
@@ -114,6 +117,9 @@ type Group struct {
 	DefaultMappedModel          string
 	MessagesDispatchModelConfig OpenAIMessagesDispatchModelConfig
 	ModelAllowlist              GroupModelAllowlist
+	// ManagedModelRoutes contains group-specific published routes and verified
+	// account membership. It must not be exposed in ordinary user group DTOs.
+	ManagedModelRoutes ManagedModelRoutesConfig
 	// CodexModelsManifestConfig 开启后，普通模型列表与 Codex manifest 优先使用
 	// 固定账号列表拉取并合并，不经过调度器（仅 openai 平台）。
 	CodexModelsManifestConfig GroupCodexModelsManifestConfig

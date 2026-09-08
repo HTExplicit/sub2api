@@ -34,6 +34,30 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Codex models manifest is only available for Cindy, OpenAI, and Composite groups")
 		return
 	}
+	if apiKey.Group.ManagedModelRoutes.Enabled {
+		if h.nativeAnthropicGatewayService == nil {
+			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Published model catalog is unavailable")
+			return
+		}
+		models, catalogErr := h.nativeAnthropicGatewayService.ManagedPublicModelIDs(c.Request.Context(), apiKey.Group, service.CompositeRouteEndpointResponses)
+		if catalogErr != nil {
+			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Published model catalog is unavailable")
+			return
+		}
+		body, buildErr := h.nativeAnthropicGatewayService.BuildCodexModelsManifestForGroup(c.Request.Context(), apiKey.Group, "", models)
+		if buildErr != nil {
+			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Published model catalog is unavailable")
+			return
+		}
+		etag := service.CodexModelsManifestETag(body)
+		c.Header("ETag", etag)
+		if service.CodexModelsManifestETagMatches(c.GetHeader("If-None-Match"), etag) {
+			c.Status(http.StatusNotModified)
+			return
+		}
+		c.Data(http.StatusOK, "application/json", body)
+		return
+	}
 	cindyScope, err := h.gatewayService.ResolveCindyCodexModelsScope(c.Request.Context(), apiKey.Group)
 	if err != nil {
 		h.errorResponse(c, http.StatusServiceUnavailable, "upstream_error", "Cindy Codex models catalog is temporarily unavailable")

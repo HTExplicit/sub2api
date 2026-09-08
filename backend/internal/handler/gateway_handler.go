@@ -1159,6 +1159,15 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	c.Set(modelCapacityProjectorContextKey, func(body []byte) ([]byte, error) {
 		return h.gatewayService.ProjectModelListContextCapacities(c.Request.Context(), authenticatedGroup, groupID, platform, body)
 	})
+	if authenticatedGroup != nil && authenticatedGroup.ManagedModelRoutes.Enabled {
+		models, err := h.gatewayService.ManagedPublicModelIDs(c.Request.Context(), authenticatedGroup, "")
+		if err != nil {
+			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine published model availability")
+			return
+		}
+		writeAllowlistedModelsList(c, platform, models)
+		return
+	}
 	if platform == service.PlatformOpenAI && apiKey != nil && apiKey.Group != nil &&
 		apiKey.Group.Platform == service.PlatformOpenAI && apiKey.Group.CodexModelsManifestConfig.Enabled {
 		h.pinnedOpenAIModels(c, apiKey.Group)
@@ -1317,6 +1326,13 @@ func (h *GatewayHandler) CodexModels(c *gin.Context) {
 func (h *GatewayHandler) codexModelIDsForGroup(ctx context.Context, group *service.Group, platformOverride string) []string {
 	if h == nil || h.gatewayService == nil || group == nil {
 		return nil
+	}
+	if group.ManagedModelRoutes.Enabled {
+		models, err := h.gatewayService.ManagedPublicModelIDs(ctx, group, service.CompositeRouteEndpointResponses)
+		if err != nil {
+			return nil
+		}
+		return models
 	}
 
 	groupID := &group.ID

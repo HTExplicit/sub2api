@@ -858,6 +858,9 @@ func (s *GatewayService) BuildCodexModelsManifestForGroup(
 		// to current schedulable accounts; capacity remains explicitly default.
 		metadataAccounts, _ = s.accountRepo.ListSchedulableByGroupID(ctx, group.ID)
 	}
+	if group.ManagedModelRoutes.Enabled {
+		metadataAccounts = managedModelCatalogAccounts(group, metadataAccounts, CompositeRouteEndpointResponses)
+	}
 	body, err := buildCodexModelsManifestForAccounts(
 		effectivePlatform,
 		modelIDs,
