@@ -102,7 +102,7 @@ func TestCindyAnthropicAuthAlwaysUsesBearer(t *testing.T) {
 	t.Parallel()
 	account := &Account{Platform: PlatformCindy, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"}}
 	header := make(http.Header)
-	setAnthropicAPIKeyAuthHeader(header, account, "upstream-secret")
+	setAnthropicAPIKeyAuthHeader(header, account, "upstream-secret", account.GetAnthropicProtocolBaseURL())
 	require.Equal(t, "Bearer upstream-secret", header.Get("Authorization"))
 	require.Empty(t, header.Get("x-api-key"))
 }

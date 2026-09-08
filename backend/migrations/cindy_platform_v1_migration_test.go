@@ -142,9 +142,12 @@ func TestMigration235RestrictsLedgerReplayToLifecycleExcludedRows(t *testing.T) 
 func TestMigration236DefinesManagedCindyChannelAndDurableInvalidation(t *testing.T) {
 	matches, err := fs.Glob(FS, "236_*.sql")
 	require.NoError(t, err)
-	require.Equal(t, []string{"236_bind_strict_cindy_groups_to_catalog_channel.sql"}, matches)
+	require.Equal(t, []string{
+		"236_bind_strict_cindy_groups_to_catalog_channel.sql",
+		"236_group_model_allowlist_repair.sql",
+	}, matches)
 
-	raw, err := FS.ReadFile(matches[0])
+	raw, err := FS.ReadFile("236_bind_strict_cindy_groups_to_catalog_channel.sql")
 	require.NoError(t, err)
 	sql := strings.ToLower(string(raw))
 
