@@ -1,12 +1,12 @@
 <template>
   <AppLayout>
-    <TablePageLayout :content-framed="tab !== 'preview'">
+    <TablePageLayout class="capability-page" :content-framed="tab !== 'preview'">
       <template #filters>
-        <div class="space-y-4">
-          <div class="capability-notice">
-            <Icon name="shield" size="md" class="mt-0.5 shrink-0" />
-            <p>{{ t('admin.accountCapabilities.safetyNotice') }}</p>
-          </div>
+        <div class="capability-toolbar space-y-2">
+          <details class="capability-safety">
+            <summary>{{ t('admin.accountCapabilities.safetySummary') }}</summary>
+            <p class="mt-2 leading-relaxed">{{ t('admin.accountCapabilities.safetyNotice') }}</p>
+          </details>
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div role="tablist" :aria-label="t('admin.accountCapabilities.title')" class="flex gap-1 rounded-xl bg-gray-100 p-1 dark:bg-dark-800">
               <button v-for="value in tabs" :key="value" type="button" role="tab" :aria-selected="tab === value"
@@ -17,22 +17,26 @@
               <Icon name="refresh" size="sm" />{{ t('common.refresh') }}
             </button>
           </div>
-          <fieldset :disabled="busy" class="flex flex-wrap items-center gap-2">
-            <legend class="input-label mb-2">{{ t('admin.accountCapabilities.sourceFolders') }}</legend>
+          <fieldset :disabled="busy" class="capability-scope">
+            <legend class="sr-only">{{ t('admin.accountCapabilities.sourceFolders') }}</legend>
+            <span aria-hidden="true" class="text-xs font-medium text-gray-500 dark:text-dark-300">{{ t('admin.accountCapabilities.sourceFolders') }}</span>
             <label v-for="folder in folders" :key="folder.id" class="capability-folder">
               <input v-model="folderIDs" type="checkbox" :value="folder.id" :data-test="`capability-folder-${folder.id}`" @change="scopeChanged" />
               <span>{{ folder.name }}</span><span class="text-gray-400">{{ folder.account_count }}</span>
             </label>
             <span v-if="!folders.length" class="text-sm text-gray-500">{{ t('admin.accountCapabilities.noFolders') }}</span>
+            <details v-if="resolvedScopeAccounts.length" class="capability-scope-info">
+              <summary>{{ t('admin.accountCapabilities.scopeSummary', { count: resolvedScopeAccounts.length }) }}</summary>
+              <p class="mt-2 leading-relaxed">{{ t('admin.accountCapabilities.frozenScopeHint', { count: resolvedScopeAccounts.length }) }}</p>
+            </details>
           </fieldset>
-          <p v-if="resolvedScopeAccounts.length" class="text-xs text-gray-500">{{ t('admin.accountCapabilities.frozenScopeHint', { count: resolvedScopeAccounts.length }) }}</p>
           <p v-if="accountIDs.length" class="text-xs text-gray-500">{{ t('admin.accountCapabilities.accountScope', { ids: accountIDs.join(', ') }) }}</p>
           <p v-if="error" role="alert" class="text-sm text-red-600 dark:text-red-300">{{ error }}</p>
 
-          <div v-if="tab === 'inventory'" class="flex flex-wrap items-end justify-between gap-3">
+          <div v-if="tab === 'inventory'" class="flex flex-wrap items-end justify-between gap-2">
             <form class="flex flex-wrap items-center gap-2" @submit.prevent="loadCandidates(1)">
-              <input v-model="search" class="input w-64" :placeholder="t('admin.accountCapabilities.search')" :aria-label="t('admin.accountCapabilities.search')" />
-              <select v-model="candidateStatus" class="input w-40" :aria-label="t('common.status')" @change="loadCandidates(1)">
+              <input v-model="search" class="input capability-search" :placeholder="t('admin.accountCapabilities.search')" :aria-label="t('admin.accountCapabilities.search')" />
+              <select v-model="candidateStatus" class="input capability-status-filter" :aria-label="t('common.status')" @change="loadCandidates(1)">
                 <option value="">{{ t('common.all') }}</option>
                 <option value="alive">{{ t('admin.accountCapabilities.states.alive') }}</option>
                 <option value="failed">{{ t('admin.accountCapabilities.states.failed') }}</option>
@@ -41,7 +45,7 @@
               </select>
               <button type="submit" class="btn btn-secondary" :disabled="loading">{{ t('common.search') }}</button>
             </form>
-            <div class="flex flex-wrap gap-2">
+            <div class="capability-actions flex flex-wrap gap-2">
               <button type="button" class="btn btn-secondary" :disabled="busy || loading || !resolvedScopeAccounts.length" data-test="capability-discover" @click="discover">
                 <Icon name="refresh" size="sm" />{{ t('admin.accountCapabilities.discover') }}
               </button>
@@ -53,7 +57,7 @@
               </button>
             </div>
             <div class="flex w-full flex-wrap items-center justify-between gap-2 text-xs text-gray-500 dark:text-dark-300">
-              <span>{{ t('admin.accountCapabilities.mainstreamHint') }}</span>
+              <details class="capability-view-note"><summary>{{ t('admin.accountCapabilities.mainstreamSummary') }}</summary><p class="mt-2 leading-relaxed">{{ t('admin.accountCapabilities.mainstreamHint') }}</p></details>
               <button v-if="selectedCandidates.length" class="text-primary-600" @click="clearSelection">{{ t('admin.accountCapabilities.clearSelection') }}</button>
               <button type="button" class="text-primary-600" data-test="capability-catalog" @click="openCatalog">{{ t('admin.accountCapabilities.catalog') }}</button>
             </div>
@@ -77,26 +81,27 @@
       </template>
 
       <template #table>
-        <DataTable v-if="tab === 'inventory'" :columns="candidateColumns" :data="candidatePage.items" :loading="loading" row-key="candidate_id"
+        <div v-if="tab === 'inventory'" class="capability-inventory-table">
+        <DataTable :columns="candidateColumns" :data="candidatePage.items" :loading="loading" row-key="candidate_id"
           selectable :selected-keys="selectedKeys" @update:selected-keys="updateSelection">
           <template #cell-account="{ row }">
-            <div class="font-medium">{{ row.account_name }}</div>
+            <div class="break-words font-medium">{{ row.account_name }}</div>
             <div class="text-xs text-gray-500">{{ folderName(row.folder_id) }} · #{{ row.account_id }}</div>
           </template>
           <template #cell-model="{ row }">
-            <div class="font-mono text-xs">{{ row.public_model }}</div>
-            <div class="mt-1 max-w-sm break-all font-mono text-xs text-gray-500">→ {{ row.upstream_model }}</div>
+            <div class="capability-model font-mono text-xs font-medium">{{ row.public_model }}</div>
+            <div class="capability-model mt-1 font-mono text-xs text-gray-500">→ {{ row.upstream_model }}</div>
             <details v-if="row.aliases?.length" class="mt-1 text-xs text-gray-500">
               <summary class="cursor-pointer">{{ t('admin.accountCapabilities.aliases') }} ({{ row.aliases.length }})</summary>
-              <div class="max-w-sm whitespace-normal break-all">{{ row.aliases.join(', ') }}</div>
+              <div class="capability-model">{{ row.aliases.join(', ') }}</div>
             </details>
           </template>
-          <template #cell-protocol="{ row }"><span class="text-xs">{{ protocolLabel(row.protocol) }}</span></template>
           <template #cell-group="{ row }">
-            <div>{{ row.group_name }}</div><span class="text-xs text-gray-500">{{ t(`admin.accountCapabilities.tiers.${row.tier}`) }}</span>
+            <div class="break-words text-xs font-medium">{{ row.group_name }}</div>
+            <div class="capability-group-meta"><span>{{ t(`admin.accountCapabilities.tiers.${row.tier}`) }}</span><span>{{ protocolLabel(row.protocol) }}</span></div>
           </template>
           <template #cell-evidence="{ row }">
-            <div class="flex max-w-64 flex-wrap gap-1 whitespace-normal">
+            <div class="capability-evidence-grid">
               <span :class="evidenceClass(row.discovered)">{{ t('admin.accountCapabilities.declared') }}: {{ yesNo(row.discovered) }}</span>
               <span :class="evidenceClass(row.configured)">{{ t('admin.accountCapabilities.configured') }}: {{ yesNo(row.configured) }}</span>
               <span :class="evidenceClass(row.probe_status === 'alive' && !row.stale)">{{ t('admin.accountCapabilities.tested') }}: {{ row.probe_status ? stateLabel(row.probe_status) : t('admin.accountCapabilities.untested') }}</span>
@@ -114,6 +119,7 @@
           </template>
           <template #empty><div class="px-5 py-8 text-center text-sm text-gray-500">{{ t('admin.accountCapabilities.emptyCandidates') }}</div></template>
         </DataTable>
+        </div>
 
         <DataTable v-else-if="tab === 'runs'" :columns="runColumns" :data="runPage.items" :loading="loading" row-key="id">
           <template #cell-id="{ row }"><span class="font-medium">#{{ row.id }}</span><div class="text-xs text-gray-500">{{ t(`admin.accountCapabilities.kinds.${row.kind}`) }}</div></template>
@@ -227,13 +233,15 @@
           <select v-model="itemStatus" class="input w-48" :aria-label="t('common.status')" @change="loadRunItems(1)"><option value="">{{ t('common.all') }}</option><option v-for="value in itemStatuses" :key="value" :value="value">{{ stateLabel(value) }}</option></select>
           <div class="flex flex-wrap gap-2"><button class="btn btn-secondary" :disabled="busy || !retryableItems.length" data-test="capability-retest" @click="prepareRetest">{{ t('admin.accountCapabilities.retest', { count: retryableItems.length }) }}</button><button class="btn btn-secondary" :disabled="busy || !accountFailureItems.length" data-test="capability-scheduling-preview" @click="prepareSchedulingPreview">{{ t('admin.accountCapabilities.schedulingPreview') }}</button></div>
         </div>
+        <div class="capability-results-table">
         <DataTable :columns="itemColumns" :data="itemPage.items" :loading="loadingRun" row-key="id" selectable :selected-keys="selectedItemKeys" @update:selected-keys="updateItemSelection">
           <template #cell-account="{ row }"><span>{{ row.account_name }}</span><div class="text-xs text-gray-500">#{{ row.account_id }} · {{ folderName(row.folder_id) }}</div></template>
-          <template #cell-model="{ row }"><span class="font-mono text-xs">{{ row.upstream_model || t('admin.accountCapabilities.kinds.discover') }}</span><div class="text-xs text-gray-500">{{ protocolLabel(row.protocol) }} · {{ profileLabel(row) }}</div></template>
+          <template #cell-model="{ row }"><div class="capability-model font-mono text-xs">{{ row.upstream_model || t('admin.accountCapabilities.kinds.discover') }}</div><div class="capability-model mt-1 text-xs text-gray-500">{{ protocolLabel(row.protocol) }} · {{ profileLabel(row) }}</div></template>
           <template #cell-status="{ row }"><span :class="statusClass(row.status)">{{ stateLabel(row.status) }}</span><p v-if="!isCurrentCapability(row)" class="text-xs text-amber-600">{{ t('admin.accountCapabilities.staleHint') }}</p></template>
-          <template #cell-result="{ row }"><div class="max-w-sm whitespace-normal text-xs"><p>{{ resultSummary(row) }}</p><p v-if="row.result?.reason" class="mt-1 text-gray-500">{{ row.result.reason }}</p><p v-if="row.result?.models" class="text-gray-500">{{ t('admin.accountCapabilities.catalogCount', { count: row.result.models.length }) }}</p></div></template>
+          <template #cell-result="{ row }"><div class="capability-result text-xs"><p>{{ resultSummary(row) }}</p><p v-if="row.result?.reason" class="mt-1 text-gray-500">{{ row.result.reason }}</p><p v-if="row.result?.models" class="text-gray-500">{{ t('admin.accountCapabilities.catalogCount', { count: row.result.models.length }) }}</p></div></template>
           <template #cell-requests="{ row }"><span class="tabular-nums">{{ row.request_count }}</span><p v-if="row.request_count_unknown" class="text-xs text-amber-700">{{ t('admin.accountCapabilities.requestCountUnknown') }}</p><p v-if="row.result?.latency_ms != null" class="text-xs text-gray-500">{{ row.result.latency_ms }} ms</p></template>
         </DataTable>
+        </div>
         <Pagination v-if="itemPage.total" :total="itemPage.total" :page="itemPage.page" :page-size="itemPage.page_size" @update:page="loadRunItems" @update:page-size="changeItemPageSize" />
       </div>
     </BaseDialog>
@@ -336,7 +344,7 @@ const changesetMatchesCurrentScope = computed(() => {
 const canPreview = computed(() => draftScope.value.account_ids.length > 0 && (draftRows.value.length > 0 || schedulingEvidenceIDs.value.length > 0))
 const runStatuses: CapabilityRunStatus[] = ['pending', 'running', 'pausing', 'paused', 'completed', 'canceling', 'canceled']
 const itemStatuses: CapabilityItemStatus[] = ['pending', 'running', 'succeeded', 'failed', 'indeterminate', 'stale', 'canceled']
-const candidateColumns = computed(() => ['account', 'model', 'protocol', 'group', 'evidence'].map((key) => ({ key, label: t(`admin.accountCapabilities.columns.${key}`) })))
+const candidateColumns = computed(() => ['account', 'model', 'group', 'evidence'].map((key) => ({ key, label: t(`admin.accountCapabilities.columns.${key}`) })))
 const runColumns = computed(() => ['id', 'status', 'progress', 'request_count', 'created_at', 'actions'].map((key) => ({ key, label: t(`admin.accountCapabilities.columns.${key}`) })))
 const itemColumns = computed(() => ['account', 'model', 'status', 'result', 'requests'].map((key) => ({ key, label: t(`admin.accountCapabilities.columns.${key}`) })))
 const publicationGroups = computed<CapabilityPublicationGroup[]>(() => {
@@ -605,10 +613,44 @@ onBeforeUnmount(() => { mounted = false; readEpoch++; previewEpoch++; runEpoch++
 </script>
 
 <style scoped>
+.capability-page { height: auto; min-height: calc(100vh - 64px - 4rem); gap: 0.75rem; }
+.capability-page :deep(.layout-section-scrollable) { min-height: 320px; }
+.capability-page :deep(.table-scroll-container) { min-height: 320px; max-height: max(320px, calc(100vh - 300px)); }
+.capability-toolbar :deep(.btn) { padding: 0.45rem 0.65rem; font-size: 0.75rem; gap: 0.3rem; }
+.capability-toolbar .input { min-height: 2rem; padding-top: 0.4rem; padding-bottom: 0.4rem; font-size: 0.75rem; }
+.capability-search { width: 14rem; }
+.capability-status-filter { width: 7.5rem; }
+.capability-safety { @apply rounded-lg border border-primary-100 bg-primary-50/60 px-3 py-2 text-xs text-primary-800 dark:border-primary-900/50 dark:bg-primary-950/20 dark:text-primary-200; }
+.capability-safety summary, .capability-scope-info summary, .capability-view-note summary { cursor: pointer; }
+.capability-scope { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem; }
+.capability-scope-info { @apply text-xs text-gray-500 dark:text-dark-300; }
+.capability-scope-info[open], .capability-view-note[open] { flex-basis: 100%; }
+.capability-inventory-table { display: flex; flex: 1; min-height: 320px; flex-direction: column; }
+.capability-model, .capability-result { min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
+.capability-evidence-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.25rem; white-space: normal; }
+.capability-evidence-grid > span { min-width: 0; line-height: 1.45; }
+.capability-group-meta { @apply mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-gray-500 dark:text-dark-300; font-size: 0.6875rem; line-height: 1.4; overflow-wrap: anywhere; }
+.capability-inventory-table :deep(table), .capability-results-table :deep(table) { table-layout: fixed; width: 100%; min-width: 0 !important; }
+.capability-inventory-table :deep(th), .capability-inventory-table :deep(td), .capability-results-table :deep(th), .capability-results-table :deep(td) { padding: 0.65rem 0.7rem; white-space: normal; overflow-wrap: anywhere; vertical-align: top; }
+.capability-inventory-table :deep(th) { font-size: 0.75rem; }
+.capability-inventory-table :deep(th:nth-child(1)), .capability-results-table :deep(th:nth-child(1)) { width: 38px; min-width: 38px; padding-right: 0.35rem; padding-left: 0.35rem; }
+.capability-inventory-table :deep(th:nth-child(2)) { width: 16%; }
+.capability-inventory-table :deep(th:nth-child(3)) { width: 33%; }
+.capability-inventory-table :deep(th:nth-child(4)) { width: 20%; }
+.capability-results-table :deep(th:nth-child(2)) { width: 15%; }
+.capability-results-table :deep(th:nth-child(3)) { width: 31%; }
+.capability-results-table :deep(th:nth-child(4)) { width: 13%; }
+.capability-results-table :deep(th:nth-child(6)) { width: 11%; }
+@media (max-width: 767px) {
+  .capability-page { min-height: 0; }
+  .capability-page :deep(.layout-section-scrollable), .capability-page :deep(.table-scroll-container), .capability-inventory-table { min-height: 0; max-height: none; }
+  .capability-evidence-grid { min-width: 14rem; }
+  .capability-search { width: min(14rem, 100%); }
+}
 .capability-notice { @apply flex gap-2 rounded-xl border border-primary-100 bg-primary-50/60 p-3 text-xs leading-relaxed text-primary-800 dark:border-primary-900/50 dark:bg-primary-950/20 dark:text-primary-200; }
 .capability-tab { @apply rounded-lg px-3 py-2 text-sm font-medium text-gray-500 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-white; }
 .capability-tab-active { @apply bg-white text-primary-700 shadow-sm dark:bg-dark-700 dark:text-primary-300; }
-.capability-folder { @apply flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 px-3 py-1.5 text-sm dark:border-dark-600; }
+.capability-folder { @apply flex cursor-pointer items-center gap-1.5 rounded-lg border border-gray-200 px-2 py-1 text-xs dark:border-dark-600; }
 .capability-folder input { @apply rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500 dark:bg-dark-800; }
 .capability-diff { @apply mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg p-3 font-mono text-xs leading-relaxed; }
 </style>
