@@ -160,15 +160,15 @@ type AccountCapabilityPublicationRepository interface {
 
 type AccountCapabilityPublicationService struct {
 	repo      AccountCapabilityPublicationRepository
-	pricing   *PricingService
+	billing   *BillingService
 	auth      APIKeyAuthCacheInvalidator
 	channels  *ChannelService
 	gateway   *GatewayService
 	scheduler *SchedulerSnapshotService
 }
 
-func NewAccountCapabilityPublicationService(repo AccountCapabilityPublicationRepository, pricing *PricingService, auth APIKeyAuthCacheInvalidator, channels *ChannelService, gateway *GatewayService, scheduler *SchedulerSnapshotService) *AccountCapabilityPublicationService {
-	return &AccountCapabilityPublicationService{repo: repo, pricing: pricing, auth: auth, channels: channels, gateway: gateway, scheduler: scheduler}
+func NewAccountCapabilityPublicationService(repo AccountCapabilityPublicationRepository, billing *BillingService, auth APIKeyAuthCacheInvalidator, channels *ChannelService, gateway *GatewayService, scheduler *SchedulerSnapshotService) *AccountCapabilityPublicationService {
+	return &AccountCapabilityPublicationService{repo: repo, billing: billing, auth: auth, channels: channels, gateway: gateway, scheduler: scheduler}
 }
 
 func (s *AccountCapabilityPublicationService) Preview(ctx context.Context, req CapabilityPublicationRequest) (*CapabilityChangeSet, error) {
@@ -344,19 +344,32 @@ func publicationValidateSchedulingEvidence(snap *CapabilityPublicationSnapshot, 
 }
 
 func (s *AccountCapabilityPublicationService) hasPrice(group *CapabilityPublicationGroupSnapshot, model string) bool {
-	for _, p := range group.Group.ModelPricing {
-		for _, m := range p.Models {
-			if strings.EqualFold(m, model) && publicationHasTokenPrice(p) {
-				return true
+	if group == nil {
+		return CapabilityHasIdentifiedPricing(s.billing, nil, nil, model)
+	}
+	return CapabilityHasIdentifiedPricing(s.billing, group.Group, group.Channel, model)
+}
+
+// CapabilityHasIdentifiedPricing is the shared read-only pricing admission for
+// inventory and publication. Existing exact group/channel prices retain their
+// precedence; the billing service recognizes both exact dynamic token prices
+// and exact built-in fallback prices, without inventing a family/substr price.
+func CapabilityHasIdentifiedPricing(billing *BillingService, group *Group, channel *Channel, model string) bool {
+	if group != nil {
+		for _, p := range group.ModelPricing {
+			for _, m := range p.Models {
+				if strings.EqualFold(m, model) && publicationHasTokenPrice(p) {
+					return true
+				}
 			}
 		}
 	}
-	if group.Channel != nil {
-		if p := group.Channel.GetModelPricing(model); p != nil && publicationHasTokenPrice(*p) {
+	if channel != nil {
+		if p := channel.GetModelPricing(model); p != nil && publicationHasTokenPrice(*p) {
 			return true
 		}
 	}
-	return s.pricing != nil && s.pricing.GetIdentifiedModelPricing(model) != nil
+	return billing.HasIdentifiedTokenPricing(model)
 }
 
 func publicationHasTokenPrice(p ChannelModelPricing) bool {
