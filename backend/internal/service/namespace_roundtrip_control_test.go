@@ -23,6 +23,7 @@ type namespaceOfflineUpstream struct {
 	calls                int
 	last                 *http.Request
 	bodies               [][]byte
+	requestedEfforts     []string
 	firstNamespaceAbsent bool
 	firstIncomplete      bool
 	firstFailureBody     string
@@ -35,6 +36,11 @@ func (f *namespaceOfflineUpstream) Do(request *http.Request, _ string, _ int64, 
 	f.last = request
 	body, _ := io.ReadAll(request.Body)
 	f.bodies = append(f.bodies, append([]byte(nil), body...))
+	requestedEffort := ""
+	if effort := service.RequestedReasoningEffortFromContext(request.Context()); effort != nil {
+		requestedEffort = *effort
+	}
+	f.requestedEfforts = append(f.requestedEfforts, requestedEffort)
 	var sent struct {
 		Model      string          `json:"model"`
 		ToolChoice json.RawMessage `json:"tool_choice"`
@@ -206,13 +212,17 @@ func TestNamespaceRoundtripControl(t *testing.T) {
 		sends, results := 0, 0
 		for {
 			var message struct {
-				Type        string          `json:"type"`
-				Scenario    string          `json:"scenario"`
-				Turn        int             `json:"turn"`
-				Slot        int             `json:"slot"`
-				Attempts    int             `json:"attempts"`
-				Completed   bool            `json:"completed"`
-				ErrorDetail json.RawMessage `json:"error_detail"`
+				Type          string          `json:"type"`
+				Scenario      string          `json:"scenario"`
+				Turn          int             `json:"turn"`
+				Slot          int             `json:"slot"`
+				Attempts      int             `json:"attempts"`
+				Completed     bool            `json:"completed"`
+				Model         string          `json:"model"`
+				Effort        string          `json:"effort"`
+				WireEffort    string          `json:"wire_effort"`
+				EffortMatches bool            `json:"effort_matches"`
+				ErrorDetail   json.RawMessage `json:"error_detail"`
 			}
 			if err := decoder.Decode(&message); err != nil {
 				if err == io.EOF {
@@ -231,6 +241,11 @@ func TestNamespaceRoundtripControl(t *testing.T) {
 					message.Scenario != grants[results].Scenario || message.Turn != grants[results].Turn || len(message.ErrorDetail) != 0 {
 					t.Fatal("attempt result violates broker one-send turn contract")
 				}
+				profile, ok := namespaceProfileFor(message.Model, message.Effort)
+				if !ok || message.WireEffort != profile.WireEffort || !message.EffortMatches ||
+					fake.requestedEfforts[results] != profile.WireEffort || !profile.matchesWireEffort(fake.bodies[results]) {
+					t.Fatal("scenario label was substituted for actual wire or requested policy effort")
+				}
 				results++
 			default:
 				t.Fatal("unexpected turn protocol message")
@@ -244,6 +259,46 @@ func TestNamespaceRoundtripControl(t *testing.T) {
 		}
 		if fake.last.GetBody != nil || !service.HTTPUpstreamRedirectsDisabled(fake.last.Context()) {
 			t.Fatal("transport replay protections missing")
+		}
+	})
+	t.Run("fixed_profiles_enforce_wire_effort_and_frozen_policy", func(t *testing.T) {
+		for _, profile := range []struct{ model, label string }{{"gpt-6-astra", "ultra"}, {"gpt-5.6-luna", "max"}} {
+			fixed, ok := namespaceProfileFor(profile.model, profile.label)
+			body := namespaceInitialBody(profile.model, profile.label, "profile-check", false)
+			if !ok || fixed.WireEffort != "max" || !fixed.matchesWireEffort(body) {
+				t.Fatal("approved scenario did not derive max API effort")
+			}
+		}
+		for _, profile := range []struct{ model, label string }{{"gpt-6-astra", "max"}, {"gpt-5.6-luna", "ultra"}, {"other", "max"}} {
+			if _, ok := namespaceProfileFor(profile.model, profile.label); ok || namespaceInitialBody(profile.model, profile.label, "invalid-profile", false) != nil {
+				t.Fatal("unapproved scenario bypassed the fixed profile entry")
+			}
+		}
+		fake := &namespaceOfflineUpstream{}
+		h, _ := namespaceOfflineHarness(t, namespaceOfflineGrants(), fake)
+		body := namespaceInitialBody("gpt-6-astra", "ultra", "wire-check", false)
+		_, result := h.runTurn("astra_flat", 1, "gpt-6-astra", "ultra", body, namespaceFirstFunction)
+		if !result.Completed || result.Effort != "ultra" || result.WireEffort != "max" || !result.EffortMatches || fake.requestedEfforts[0] != "max" || !h.upstream.validWireBody(fake.bodies[0]) {
+			t.Fatal("approved profile was not applied before policy context and actual Forward")
+		}
+		for _, reasoning := range []string{`{"effort":"ultra"}`, `{"effort":"high"}`, `{"effort":"xhigh"}`, `{"effort":"max","mode":"pro"}`} {
+			var fields map[string]json.RawMessage
+			_ = json.Unmarshal(fake.bodies[0], &fields)
+			fields["reasoning"] = json.RawMessage(reasoning)
+			changed, _ := json.Marshal(fields)
+			if h.upstream.validWireBody(changed) {
+				t.Fatal("wire gate admitted a wrong API effort or an injected reasoning mode")
+			}
+		}
+		policyFake := &namespaceOfflineUpstream{}
+		policyHarness, _ := namespaceOfflineHarness(t, namespaceOfflineGrants(), policyFake, func(boot *namespaceBootstrap) {
+			boot.Source.Group.MaxReasoningEffort = "high"
+			boot.Source.Group.MaxReasoningEffortOverLimit = service.ReasoningEffortOverLimitDowngrade
+		})
+		frozen := fidelityHashJSON(&policyHarness.boot.Source)
+		policyHarness.runSequences()
+		if policyHarness.stopped != "source_group_policy_rejected" || policyFake.calls != 0 || policyHarness.upstream.attempts != 0 || fidelityHashJSON(&policyHarness.boot.Source) != frozen {
+			t.Fatal("frozen policy downgrade was hidden, bypassed, or sent upstream")
 		}
 	})
 	t.Run("hybrid_uses_frozen_published_prompt_not_template_substring", func(t *testing.T) {

@@ -43,6 +43,35 @@ const (
 	namespaceFinalAnswer    = "NAMESPACE_OK"
 )
 
+// These are the two approved test profiles, not a production model policy.
+// Ultra is the Desktop scenario label (max plus client orchestration), not an
+// API reasoning.effort value. This fixed local-function chain exercises only
+// max-effort Responses forwarding; it does not reproduce Desktop sub-agents.
+type namespaceProfile struct {
+	Model       string
+	EffortLabel string
+	WireEffort  string
+}
+
+func namespaceProfileFor(model, effortLabel string) (namespaceProfile, bool) {
+	if (model == "gpt-6-astra" && effortLabel == "ultra") || (model == "gpt-5.6-luna" && effortLabel == "max") {
+		return namespaceProfile{Model: model, EffortLabel: effortLabel, WireEffort: "max"}, true
+	}
+	return namespaceProfile{}, false
+}
+
+func (p namespaceProfile) matchesWireEffort(body []byte) bool {
+	var fields map[string]json.RawMessage
+	var reasoning map[string]json.RawMessage
+	var effort string
+	if json.Unmarshal(body, &fields) != nil || json.Unmarshal(fields["reasoning"], &reasoning) != nil ||
+		json.Unmarshal(reasoning["effort"], &effort) != nil || effort != p.WireEffort {
+		return false
+	}
+	_, hasMode := reasoning["mode"]
+	return !hasMode
+}
+
 type namespaceBootstrap struct {
 	SchemaVersion   int            `json:"schema_version"`
 	ConfigMode      string         `json:"config_mode"`
@@ -73,6 +102,7 @@ type namespaceResult struct {
 	Slot                                int             `json:"slot"`
 	Model                               string          `json:"model"`
 	Effort                              string          `json:"effort"`
+	WireEffort                          string          `json:"wire_effort"`
 	Status                              string          `json:"status"`
 	ErrorClass                          string          `json:"error_class,omitempty"`
 	ErrorDetail                         json.RawMessage `json:"error_detail,omitempty"`
@@ -185,12 +215,16 @@ func namespaceRun(input *bufio.Reader, output *json.Encoder) error {
 	}
 	// Construct, but do not send, using the same auth/endpoint/header policy as
 	// Forward. This also compiles the one frozen prompt in the isolated process.
-	probe := namespaceInitialBody("gpt-6-astra", "ultra", "endpoint-probe", false)
+	probeProfile, ok := namespaceProfileFor("gpt-6-astra", "ultra")
+	if !ok {
+		return errors.New("wire_contract_mismatch")
+	}
+	probe := namespaceInitialBody(probeProfile.Model, probeProfile.EffortLabel, "endpoint-probe", false)
 	probe, err = fidelityPrepareIngressBody(probe, boot.Source)
-	if err != nil {
+	if err != nil || !probeProfile.matchesWireEffort(probe) {
 		return errors.New("source_group_policy_rejected")
 	}
-	probeContext, _ := h.newContext(ctx, probe, "ultra")
+	probeContext, _ := h.newContext(ctx, probe, probeProfile.WireEffort)
 	request, err := service.ReasoningFidelityDirectRequestForTest(probeContext.Request.Context(), h.gateway, probeContext, &h.boot.Source.Account, probe)
 	if err != nil || request == nil || request.URL == nil {
 		return errors.New("source_endpoint_validation_failed")
@@ -287,7 +321,7 @@ func namespaceValidateBootstrap(b namespaceBootstrap, expectedSource string) err
 	return nil
 }
 
-func (h *namespaceHarness) newContext(ctx context.Context, body []byte, effort string) (*gin.Context, *httptest.ResponseRecorder) {
+func (h *namespaceHarness) newContext(ctx context.Context, body []byte, wireEffort string) (*gin.Context, *httptest.ResponseRecorder) {
 	r := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(r)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body)).WithContext(ctx)
@@ -295,7 +329,7 @@ func (h *namespaceHarness) newContext(ctx context.Context, body []byte, effort s
 	c.Request.Header.Set("Accept", "text/event-stream")
 	c.Request.Header.Set("User-Agent", "sub2api-namespace-roundtrip-diagnostic/1")
 	c.Request.Header.Set("X-Client-Request-Id", fidelityNewID())
-	service.ReasoningFidelityContextForTest(ctx, c, &h.boot.Source.Group, h.boot.Source.FastPolicy, h.boot.Source.UserID, effort)
+	service.ReasoningFidelityContextForTest(ctx, c, &h.boot.Source.Group, h.boot.Source.FastPolicy, h.boot.Source.UserID, wireEffort)
 	return c, r
 }
 
@@ -346,8 +380,12 @@ func (h *namespaceHarness) runSequences() {
 	h.lunaCompleted = result.Completed
 }
 
-func namespaceInitialBody(model, effort, key string, explicitNamespace bool) []byte {
-	v := map[string]any{"model": model, "reasoning": map[string]any{"effort": effort}, "stream": true, "store": false,
+func namespaceInitialBody(model, effortLabel, key string, explicitNamespace bool) []byte {
+	profile, ok := namespaceProfileFor(model, effortLabel)
+	if !ok {
+		return nil
+	}
+	v := map[string]any{"model": profile.Model, "reasoning": map[string]any{"effort": profile.WireEffort}, "stream": true, "store": false,
 		"max_output_tokens": 4096, "include": []string{"reasoning.encrypted_content"}, "prompt_cache_key": key,
 		"instructions": "This isolated protocol test has only two read-only constant tools. Follow the next requested tool call, then the final-answer instruction. Do not use any other tool.",
 		"input":        []any{map[string]any{"role": "user", "content": "Call namespace_probe_first exactly once with an empty JSON object. Do not answer yet."}}}
@@ -469,16 +507,23 @@ func namespaceCountFields(items []json.RawMessage) int {
 	return count
 }
 
-func (h *namespaceHarness) runTurn(scenario string, turn int, model, effort string, rawBody []byte, expectedTool string) (fidelityResponse, namespaceResult) {
+func (h *namespaceHarness) runTurn(scenario string, turn int, model, effortLabel string, rawBody []byte, expectedTool string) (fidelityResponse, namespaceResult) {
 	u := h.upstream
 	slot := u.attempts + 1
-	r := namespaceResult{Type: "attempt_result", Scenario: scenario, Turn: turn, Slot: slot, Model: model, Effort: effort, Status: "failed"}
+	profile, ok := namespaceProfileFor(model, effortLabel)
+	r := namespaceResult{Type: "attempt_result", Scenario: scenario, Turn: turn, Slot: slot, Model: model, Effort: effortLabel, WireEffort: profile.WireEffort, Status: "failed"}
 	if h.stopped != "" || h.ctx.Err() != nil || slot > namespaceMaxAttempts {
 		h.stopped = "batch_limit_reached"
 		return fidelityResponse{}, r
 	}
+	if !ok || !profile.matchesWireEffort(rawBody) {
+		h.stopped = "wire_contract_mismatch"
+		r.ErrorClass = h.stopped
+		_ = h.output.Encode(r)
+		return fidelityResponse{}, r
+	}
 	body, err := fidelityPrepareIngressBody(rawBody, h.boot.Source)
-	if err != nil {
+	if err != nil || !profile.matchesWireEffort(body) {
 		h.stopped = "source_group_policy_rejected"
 		r.ErrorClass = h.stopped
 		_ = h.output.Encode(r)
@@ -486,9 +531,9 @@ func (h *namespaceHarness) runTurn(scenario string, turn int, model, effort stri
 	}
 	ctx, cancel := context.WithTimeout(h.ctx, namespaceRequestTimeout)
 	defer cancel()
-	c, recorder := h.newContext(ctx, body, effort)
+	c, recorder := h.newContext(ctx, body, profile.WireEffort)
 	u.activeSlot, u.scenario, u.turn = slot, scenario, turn
-	u.expectedModel, u.expectedEffort = model+"-ssvip", effort
+	u.profile = profile
 	u.activeContext, u.inputBody = c.Request.Context(), append([]byte(nil), body...)
 	u.sentBody, u.rawResponse = nil, nil
 	u.responseContentType, u.lastError = "", ""
@@ -606,7 +651,9 @@ func (h *namespaceHarness) observeRequest(r *namespaceResult, before, sent []byt
 	r.HistoryPreserved = namespaceJSONEqual(a["input"], b["input"])
 	r.NamespaceReplayedFields = namespaceCountFields(input)
 	r.NamespaceReplayedWithoutDeclaration = r.NamespaceReplayedFields > 0 && !namespaceHasDeclaration(b["tools"])
-	r.ModelMatches, r.EffortMatches = model == r.Model+"-ssvip", reasoning.Effort == r.Effort
+	profile, knownProfile := namespaceProfileFor(r.Model, r.Effort)
+	r.ModelMatches = model == r.Model+"-ssvip"
+	r.EffortMatches = knownProfile && profile.matchesWireEffort(before) && profile.matchesWireEffort(sent) && reasoning.Effort == r.WireEffort
 	r.CacheKeyLength = len(key)
 	r.CacheKeySHA, r.PromptSHA, r.SentBodySHA = fidelityHash([]byte(key)), fidelityHash([]byte(prompt)), fidelityHash(sent)
 	r.PromptApplied = prompt != clientPrompt && prompt == namespaceExpectedInstructions(h.boot.Source, clientPrompt)
@@ -687,7 +734,8 @@ type namespaceBudgetUpstream struct {
 	inner                                       service.HTTPUpstream
 	activeSlot, attempts, blocked, totalBlocked int
 	turn                                        int
-	scenario, expectedModel, expectedEffort     string
+	scenario                                    string
+	profile                                     namespaceProfile
 	activeContext                               context.Context
 	used                                        map[int]bool
 	endpoint, authorizationSHA, proxyURL        string
@@ -802,14 +850,11 @@ func (u *namespaceBudgetUpstream) validWireBody(body []byte) bool {
 		return false
 	}
 	var model, key, instructions, clientInstructions string
-	var reasoning struct {
-		Effort string `json:"effort"`
-	}
 	var stream, store bool
 	var outputLimit int
 	var include []string
-	if json.Unmarshal(sent["model"], &model) != nil || model != u.expectedModel ||
-		json.Unmarshal(sent["reasoning"], &reasoning) != nil || reasoning.Effort != u.expectedEffort ||
+	if json.Unmarshal(sent["model"], &model) != nil || model != u.profile.Model+"-ssvip" ||
+		!u.profile.matchesWireEffort(body) || !u.profile.matchesWireEffort(u.inputBody) ||
 		json.Unmarshal(sent["max_output_tokens"], &outputLimit) != nil || outputLimit != 4096 ||
 		json.Unmarshal(sent["stream"], &stream) != nil || !stream || json.Unmarshal(sent["store"], &store) != nil || store ||
 		json.Unmarshal(sent["include"], &include) != nil || len(include) != 1 || include[0] != "reasoning.encrypted_content" ||

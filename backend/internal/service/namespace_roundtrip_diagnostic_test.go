@@ -225,7 +225,8 @@ func TestNamespaceRoundtripSafeFailureDiagnostic(t *testing.T) {
 					continue
 				}
 				results++
-				if result.Completed || result.Status != "failed" || result.Attempts != 1 || result.HTTPStatus != failure.status {
+				if result.Completed || result.Status != "failed" || result.Attempts != 1 || result.HTTPStatus != failure.status ||
+					result.Effort != "ultra" || result.WireEffort != "max" || !result.EffortMatches || fake.requestedEfforts[0] != "max" {
 					t.Fatal("failed attempt reported an invalid terminal result")
 				}
 				namespaceAssertFixtureDiagnostic(t, result.ErrorDetail)
