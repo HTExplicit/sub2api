@@ -540,9 +540,6 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		return
 	}
 
-	if finishDiagnostic := service.BeginOpenAIPromptCacheDiagnostic(c, apiKey.ID, body); finishDiagnostic != nil {
-		defer finishDiagnostic()
-	}
 	setOpsRequestContext(c, "", false)
 	sessionHashBody := body
 	body, ok = h.normalizeOpenAIResponsesCompactRequest(c, reqLog, body)
