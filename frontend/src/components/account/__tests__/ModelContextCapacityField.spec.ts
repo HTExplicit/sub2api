@@ -31,6 +31,38 @@ function mountField(row: ModelContextCapacityRow | undefined = capacityRow(), dr
 }
 
 describe('ModelContextCapacityField', () => {
+  it('explains the selected GPT reference without rewriting a namespaced model ID', () => {
+    const modelId = 'team/gpt-6'
+    const row = capacityRow({
+      upstream_model_id: modelId,
+      automatic_context_window: 1_050_000,
+      effective_context_window: 1_050_000,
+      official: {
+        model_id: 'gpt-6-astra', provider: 'openai', product: 'api',
+        source_url: 'https://developers.openai.com/api/docs/models/gpt-6-astra',
+        verified_at: '2026-09-07', original_text: '1,050,000 context window',
+        conditions: 'Project-selected API capacity; subscription reference remains unchanged.',
+        reference: { product: 'codex_subscription', source_url: 'https://github.com/openai/codex/pinned-models', release: 'rust-v0.153.4', verified_at: '2026-09-08', context_window: 272_000, max_context_window: 872_000 }
+      }
+    })
+    const wrapper = mountField(row, undefined, modelId)
+    expect(wrapper.get('[data-testid="context-capacity-value"]').text()).toBe('[1.05M]')
+    const title = wrapper.get('button').attributes('title')
+    for (const value of ['1050000', 'gpt-6-astra', 'products.api', '272K', '872K', 'rust-v0.153.4', 'Project-selected API capacity']) expect(title).toContain(value)
+    expect(wrapper.get('[data-testid="model-context-capacity-field"]').attributes('data-model-id')).toBe(modelId)
+    expect(wrapper.props('modelId')).toBe(modelId)
+    expect(row.upstream_model_id).toBe(modelId)
+    expect(wrapper.emitted('commit')).toBeUndefined()
+  })
+
+  it('compares an adopted maximum against the upstream maximum, not its smaller default', () => {
+    const wrapper = mountField(capacityRow({
+      upstream: { context_window: 272_000, max_context_window: 1_000_000, observed_at: '2026-09-08T00:00:00Z' },
+      automatic_context_window: 1_000_000, effective_context_window: 1_000_000
+    }))
+    expect(wrapper.get('button').attributes('title')).not.toContain('exceedsUpstream')
+  })
+
   it('shows compact capacity and its source without hover or another panel', () => {
     const wrapper = mountField()
     expect(wrapper.get('[data-testid="context-capacity-value"]').text()).toBe('[400K]')

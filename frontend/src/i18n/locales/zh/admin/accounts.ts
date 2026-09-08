@@ -5,7 +5,7 @@ export default {
       importSessionFilter: '本次导入（{count}）',
       contextCapacity: {
         title: '模型上下文容量',
-        description: '优先级：自定义 > 官方 > 上游 > 默认 258K。同一真实上游模型的公开别名共用设置；不改变路由，也不会扩大上游限制。',
+        description: '优先级：自定义 > 官方参考基准 > 上游 > 默认 200K。同一真实上游模型的公开别名共用设置；不改变路由，也不会扩大上游限制。',
         units: '输入采用十进制：258K = 258000、1.05M = 1050000 tokens。显示和保存均保留精确值。',
         saveBeforeSync: '请先保存此账号的端点、产品或凭据变更，再同步上游模型。',
         syncSuccess: '已同步 {count} 个模型的容量信息，未更改白名单或映射。',
@@ -28,6 +28,9 @@ export default {
         verifiedAt: '核实日期',
         officialEvidence: '来源和口径依据',
         officialSource: '官方来源',
+        matchedReference: '匹配参考型号：{model}（{product}）',
+        referenceWindows: 'Codex {release} 原始参考：默认 {context}，最大 {maximum}。',
+        products: { api: 'API 规格', codex_subscription: 'Codex 订阅目录最大窗口' },
         normalization: '单位归一依据',
         unknown: '未知',
         notMatched: '无适用的已核实规格',

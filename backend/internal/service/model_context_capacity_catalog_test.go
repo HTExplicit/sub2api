@@ -4,13 +4,14 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestOfficialModelContextCapacityCatalogIntegrity(t *testing.T) {
 	t.Parallel()
 
 	officialHosts := map[string][]string{
-		"openai":    {"developers.openai.com"},
+		"openai":    {"developers.openai.com", "github.com"},
 		"anthropic": {"platform.claude.com", "www-cdn.anthropic.com"},
 		"gemini":    {"ai.google.dev"},
 		"grok":      {"docs.x.ai"},
@@ -39,8 +40,8 @@ func TestOfficialModelContextCapacityCatalogIntegrity(t *testing.T) {
 					t.Errorf("%s must be nonempty and have no surrounding whitespace: %q", name, value)
 				}
 			}
-			if row.VerifiedAt != "2026-09-07" {
-				t.Errorf("verified date = %q, want 2026-09-07", row.VerifiedAt)
+			if _, err := time.Parse("2006-01-02", row.VerifiedAt); err != nil {
+				t.Errorf("invalid verified date %q", row.VerifiedAt)
 			}
 			if row.ContextWindow < 0 || row.MaxContextWindow < 0 || row.MaxInputTokens < 0 || row.MaxOutputTokens < 0 {
 				t.Errorf("capacity fields must not be negative: %+v", row.ModelContextCapacity)
@@ -53,6 +54,10 @@ func TestOfficialModelContextCapacityCatalogIntegrity(t *testing.T) {
 			case "input_limit":
 				if row.ContextWindow != 0 || row.MaxInputTokens <= 0 {
 					t.Errorf("input-only record must not invent a total context window: %+v", row.ModelContextCapacity)
+				}
+			case ModelContextCapacityBasisMaximum:
+				if row.ContextWindow != 0 || row.MaxContextWindow <= 0 {
+					t.Errorf("maximum-only reference must identify its explicit maximum: %+v", row.ModelContextCapacity)
 				}
 			default:
 				t.Errorf("unsupported official capacity basis %q", row.CapacityBasis)
@@ -73,6 +78,16 @@ func TestOfficialModelContextCapacityCatalogIntegrity(t *testing.T) {
 				}
 				if parsed.Port() != "" || !officialCapacityCatalogTestContains(allowedHosts, parsed.Hostname()) {
 					t.Errorf("source host %q is not an approved official source for %s", parsed.Host, row.Provider)
+				}
+				if parsed.Hostname() == "github.com" && source != gptContextCapacityReferenceSource {
+					t.Errorf("GitHub reference must be the pinned official Codex catalog: %q", source)
+				}
+			}
+			if ref := row.Reference; ref != nil {
+				if ref.Product != "codex_subscription" || ref.SourceURL != gptContextCapacityReferenceSource ||
+					ref.Release != GPTContextCapacityReferenceRelease || ref.VerifiedAt != gptContextCapacityReferenceVerifiedAt ||
+					ref.ContextWindow <= 0 || ref.MaxContextWindow < ref.ContextWindow || row.Conditions == "" {
+					t.Errorf("invalid or unexplained Codex reference: %+v", ref)
 				}
 			}
 		})
@@ -197,7 +212,7 @@ func TestOfficialModelContextCapacityCatalogVerifiedRepresentativeValues(t *test
 		contextWindow, maxInput, maxOut int64
 	}{
 		{"gpt-6-astra", 1050000, 0, 128000},
-		{"gpt-5.4-mini", 400000, 0, 0},
+		{"gpt-5.4-mini", 272000, 0, 0},
 		{"gpt-4.1", 1047576, 0, 32768},
 		{"claude-sonnet-4-5-20250929", 200000, 0, 64000},
 		{"deepseek-v4-pro", 1000000, 0, 384000},
@@ -216,8 +231,9 @@ func TestOfficialModelContextCapacityCatalogVerifiedRepresentativeValues(t *test
 				t.Fatalf("want one exact verified record, found %d", len(rows))
 			}
 			got := rows[0]
-			if got.ContextWindow != want.contextWindow {
-				t.Errorf("context window = %d, want %d", got.ContextWindow, want.contextWindow)
+			planning, ok := modelContextPlanningCapacity(got.ModelContextCapacity)
+			if !ok || planning.ContextWindow != want.contextWindow {
+				t.Errorf("planning context window = %d, want %d", planning.ContextWindow, want.contextWindow)
 			}
 			// Zero fixture fields are outside this representative value check;
 			// unknown independent limits are covered by the semantic test above.

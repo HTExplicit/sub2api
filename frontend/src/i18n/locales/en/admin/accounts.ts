@@ -5,7 +5,7 @@ export default {
       importSessionFilter: 'Imported accounts ({count})',
       contextCapacity: {
         title: 'Model context capacities',
-        description: 'Priority: custom > official > upstream > default 258K. Shared aliases use the same real upstream model setting; this does not change routing or increase upstream limits.',
+        description: 'Priority: custom > official reference > upstream > default 200K. Shared aliases use the same real upstream model setting; this does not change routing or increase upstream limits.',
         units: 'Decimal input: 258K = 258000, 1.05M = 1050000 tokens. Values retain every token.',
         saveBeforeSync: 'Save this account\'s endpoint, product or credential changes before syncing upstream models.',
         syncSuccess: 'Synced capacity information for {count} model(s); the whitelist and mappings were not changed.',
@@ -28,6 +28,9 @@ export default {
         verifiedAt: 'Verified',
         officialEvidence: 'Source and interpretation',
         officialSource: 'Official source',
+        matchedReference: 'Matched reference model: {model} ({product})',
+        referenceWindows: 'Original Codex {release} reference: default {context}, maximum {maximum}.',
+        products: { api: 'API specification', codex_subscription: 'Codex subscription catalog maximum' },
         normalization: 'Unit interpretation',
         unknown: 'Unknown',
         notMatched: 'No applicable verified specification',

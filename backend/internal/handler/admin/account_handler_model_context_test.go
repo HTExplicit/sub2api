@@ -80,7 +80,7 @@ func TestAccountHandlerModelContextCapacityPreviewNeedsNoAPIKeyAndDoesNotPersist
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
 	require.Len(t, payload.Data.Rows, 1)
 	require.Equal(t, "unknown-new-model", payload.Data.Rows[0].ID)
-	require.Equal(t, int64(258000), payload.Data.Rows[0].Effective)
+	require.Equal(t, int64(200000), payload.Data.Rows[0].Effective)
 	require.Equal(t, []string{"friendly-name"}, payload.Data.Rows[0].Aliases)
 	require.Empty(t, stub.createdAccounts)
 	require.Zero(t, stub.updateAccountCalls)
@@ -126,7 +126,7 @@ func TestAccountHandlerModelContextCapacityPreviewNewEndpointDoesNotReuseOldObse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
 	require.Len(t, payload.Data.Rows, 1)
 	require.Nil(t, payload.Data.Rows[0].Upstream)
-	require.Equal(t, int64(258000), payload.Data.Rows[0].Effective)
+	require.Equal(t, int64(200000), payload.Data.Rows[0].Effective)
 	require.Equal(t, "https://old-source.example/v1", stub.getAccountResult.Credentials["base_url"])
 	require.NotNil(t, stub.getAccountResult.GetUpstreamModelContextCapacitySnapshot(), "preview must not mutate saved observations")
 }

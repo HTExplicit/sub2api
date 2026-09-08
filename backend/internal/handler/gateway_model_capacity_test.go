@@ -80,7 +80,7 @@ func TestGatewayModelsContextCapacityQueryFailureKeepsList(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &envelope))
 	require.Equal(t, "unlisted", envelope.Data[0]["id"])
-	require.Equal(t, float64(258000), envelope.Data[0]["context_window"])
+	require.Equal(t, float64(200000), envelope.Data[0]["context_window"])
 	require.Equal(t, "account_query_failed", envelope.Data[0]["context_capacity_reason"])
 	require.NotContains(t, response.Body.String(), "sensitive internal failure")
 	require.Equal(t, 1, repo.availabilityCalls)

@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	DefaultModelContextWindow              int64 = 258000
+	DefaultModelContextWindow              int64 = 200000
 	MaxSafeModelContextTokens              int64 = 9007199254740991
 	UpstreamModelContextCapacitiesExtraKey       = "upstream_model_context_capacities"
 	ModelContextOverridesExtraKey                = "model_context_overrides"
@@ -39,22 +39,34 @@ type UpstreamModelContextCapacitySnapshot struct {
 	Models         map[string]ModelContextCapacity `json:"models"`
 }
 
-// OfficialModelContextCapacity is release-owned evidence. Match constraints are
-// deliberately not client-writeable, and model IDs/aliases are exact matches.
+// ModelContextCapacityReference preserves the raw product reference separately
+// from the planning capacity selected by this project.
+type ModelContextCapacityReference struct {
+	Product          string `json:"product"`
+	SourceURL        string `json:"source_url"`
+	Release          string `json:"release"`
+	VerifiedAt       string `json:"verified_at"`
+	ContextWindow    int64  `json:"context_window"`
+	MaxContextWindow int64  `json:"max_context_window"`
+}
+
+// OfficialModelContextCapacity is release-owned evidence. Match constraints and
+// reference values are not client-writeable.
 type OfficialModelContextCapacity struct {
 	ModelContextCapacity
-	ModelID            string   `json:"model_id"`
-	Aliases            []string `json:"aliases,omitempty"`
-	Provider           string   `json:"provider"`
-	Product            string   `json:"product"`
-	SourceURL          string   `json:"source_url"`
-	SourceURLs         []string `json:"source_urls,omitempty"`
-	VerifiedAt         string   `json:"verified_at"`
-	OriginalText       string   `json:"original_text"`
-	NormalizationBasis string   `json:"normalization_basis,omitempty"`
-	Conditions         string   `json:"conditions,omitempty"`
-	MatchHosts         []string `json:"-"`
-	MatchAccountModes  []string `json:"-"`
+	ModelID            string                         `json:"model_id"`
+	Aliases            []string                       `json:"aliases,omitempty"`
+	Provider           string                         `json:"provider"`
+	Product            string                         `json:"product"`
+	SourceURL          string                         `json:"source_url"`
+	SourceURLs         []string                       `json:"source_urls,omitempty"`
+	VerifiedAt         string                         `json:"verified_at"`
+	OriginalText       string                         `json:"original_text"`
+	NormalizationBasis string                         `json:"normalization_basis,omitempty"`
+	Conditions         string                         `json:"conditions,omitempty"`
+	Reference          *ModelContextCapacityReference `json:"reference,omitempty"`
+	MatchHosts         []string                       `json:"-"`
+	MatchAccountModes  []string                       `json:"-"`
 }
 
 type ResolvedModelContextCapacity struct {
@@ -435,17 +447,49 @@ func ResolveAccountModelContextCapacity(account *Account, upstreamModelID string
 	return NewAccountModelContextCapacityResolver(account)(upstreamModelID, nil)
 }
 
-// LookupOfficialModelContextCapacity expects the already-resolved upstream ID.
-// It deliberately does not invoke alias routing, lowercase IDs or strip vendor
-// prefixes. Explicit official aliases in the release catalog are the only ones
-// recognized here.
+// LookupOfficialModelContextCapacity receives the real upstream target. Matching
+// variants are only reference lookups: they never become request IDs, observation
+// keys or override keys. Exact catalog entries win before namespace/spelling
+// variants. Do not use the Codex routing map: it also upgrades older models.
 func LookupOfficialModelContextCapacity(account *Account, upstreamModelID string) *OfficialModelContextCapacity {
 	if account == nil || !validModelContextID(upstreamModelID) {
 		return nil
 	}
+	for _, candidate := range modelContextReferenceCandidates(upstreamModelID) {
+		if found, matched := lookupExactOfficialModelContextCapacity(account, candidate); matched {
+			return found
+		}
+	}
+	return nil
+}
+
+func modelContextReferenceCandidates(modelID string) []string {
+	candidates := []string{modelID}
+	add := func(candidate string) {
+		if validModelContextID(candidate) && !containsExactModelContextString(candidates, candidate) {
+			candidates = append(candidates, candidate)
+		}
+	}
+	if slash := strings.LastIndexByte(modelID, '/'); slash >= 0 {
+		add(strings.TrimSpace(modelID[slash+1:]))
+	}
+	spelling := canonicalizeOpenAIModelAliasSpelling(modelID)
+	add(spelling)
+	// Only the existing finite effort spellings are identity variants here.
+	// Date-looking and arbitrary suffixes are not evidence for a model family.
+	if dash := strings.LastIndexByte(spelling, '-'); dash >= 0 {
+		suffix := spelling[dash+1:]
+		if isKnownCodexModelSuffix(suffix) && !isCodexDateSuffix(suffix) {
+			add(spelling[:dash])
+		}
+	}
+	return candidates
+}
+
+func lookupExactOfficialModelContextCapacity(account *Account, modelID string) (*OfficialModelContextCapacity, bool) {
 	var found *OfficialModelContextCapacity
 	for _, entry := range officialModelContextCapacityCatalog {
-		if entry.ModelID != upstreamModelID && !containsExactModelContextString(entry.Aliases, upstreamModelID) {
+		if entry.ModelID != modelID && !containsExactModelContextString(entry.Aliases, modelID) {
 			continue
 		}
 		if !officialModelContextCapacityApplies(account, entry) {
@@ -456,14 +500,18 @@ func LookupOfficialModelContextCapacity(account *Account, upstreamModelID string
 		}
 		if found != nil && found.ModelContextCapacity != entry.ModelContextCapacity {
 			// No table order can resolve conflicting official records.
-			return nil
+			return nil, true
 		}
 		copy := entry
 		copy.Aliases = append([]string(nil), entry.Aliases...)
 		copy.SourceURLs = append([]string(nil), entry.SourceURLs...)
+		if entry.Reference != nil {
+			reference := *entry.Reference
+			copy.Reference = &reference
+		}
 		found = &copy
 	}
-	return found
+	return found, found != nil
 }
 
 func officialModelContextCapacityApplies(account *Account, entry OfficialModelContextCapacity) bool {
