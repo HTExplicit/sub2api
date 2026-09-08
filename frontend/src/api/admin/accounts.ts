@@ -605,6 +605,14 @@ export interface ModelContextCapacityRow {
     original_text: string
     normalization_basis?: string
     conditions?: string
+    reference?: {
+      product: string
+      source_url: string
+      release: string
+      verified_at: string
+      context_window: number
+      max_context_window: number
+    }
   }
   custom_context_window?: number
   automatic_context_window: number

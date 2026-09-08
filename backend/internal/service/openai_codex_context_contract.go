@@ -9,7 +9,7 @@ import (
 
 const (
 	// This deterministic self-test reports policy, not production model limits.
-	OfficialCodexContextContractSuccessLine = "CODEX_CONTEXT_CONTRACT|version=2|valid=true|priority=custom,official,upstream,default|default_context=258000|protected=preserved|sentinel=preserved"
+	OfficialCodexContextContractSuccessLine = "CODEX_CONTEXT_CONTRACT|version=2|valid=true|priority=custom,official,upstream,default|default_context=200000|protected=preserved|sentinel=preserved"
 	OfficialCodexContextContractFailureLine = "CODEX_CONTEXT_CONTRACT|valid=false|reason=contract-mismatch"
 	OfficialCodexContextInvalidArgsLine     = "CODEX_CONTEXT_CONTRACT|valid=false|reason=invalid-arguments"
 	officialCodexContextContractSentinel    = "codex-context-contract-v2"
@@ -93,7 +93,7 @@ func verifyNormalizedOfficialCodexContextContract(body []byte) error {
 		{"fixture-custom", "custom", "total_context", "null", 512000, 512000},
 		{"fixture-official", "official", "total_context", "null", 1000000, 1000000},
 		{"fixture-upstream", "upstream", "total_context", "50000", 64000, 128000},
-		{"fixture-default", "default", "total_context", "null", 258000, 258000},
+		{"fixture-default", "default", "total_context", "null", 200000, 200000},
 		{"fixture-protected", "", "", "666666", 777000, 888000},
 	}
 	if len(envelope.Models) != len(checks) {

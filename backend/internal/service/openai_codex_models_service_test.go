@@ -1062,7 +1062,7 @@ func TestBuildCodexModelsManifestForGroupUsesFallbackWhenTextOnlyPlatformHasNoSn
 	models := decodeCodexManifestModels(t, body)
 	require.Len(t, models, 1)
 	require.Equal(t, []any{"text"}, models[0]["input_modalities"])
-	require.EqualValues(t, 258_000, models[0]["context_window"])
+	require.EqualValues(t, 200_000, models[0]["context_window"])
 	require.Equal(t, "default", models[0]["context_capacity_source"])
 }
 
@@ -1089,7 +1089,7 @@ func TestBuildCodexModelsManifestForGroupFallsBackWhenCapabilityLookupFails(t *t
 	require.Equal(t, []any{"text"}, models[0]["input_modalities"])
 	require.Equal(t, []any{"text"}, models[1]["input_modalities"])
 	for _, model := range models {
-		require.EqualValues(t, 258_000, model["context_window"])
+		require.EqualValues(t, 200_000, model["context_window"])
 		require.Equal(t, "account_query_failed", model["context_capacity_reason"])
 	}
 }
@@ -1249,8 +1249,8 @@ func TestBuildGroupConfiguredCodexModelsManifestUsesResolvedTargetsForOrdinaryGP
 		bySlug[slug] = model
 	}
 	for _, slug := range []string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"} {
-		require.EqualValues(t, 258_000, bySlug[slug]["context_window"], "public GPT aliases must not identify unknown upstream targets")
-		require.EqualValues(t, 258_000, bySlug[slug]["max_context_window"])
+		require.EqualValues(t, 200_000, bySlug[slug]["context_window"], "public GPT aliases must not identify unknown upstream targets")
+		require.EqualValues(t, 200_000, bySlug[slug]["max_context_window"])
 		require.Equal(t, "default", bySlug[slug]["context_capacity_source"])
 		require.Nil(t, bySlug[slug]["auto_compact_token_limit"])
 	}

@@ -119,8 +119,28 @@ const detailsTitle = computed(() => {
   const row = boundRow.value
   const details = [t(`${key}.effective`), `${formattedValue.value} · ${sourceLabel.value}`]
   if (preview.value.value) details.push(t(`${key}.exactTokens`, { value: preview.value.value }))
-  const upstream = row?.upstream?.context_window || row?.upstream?.max_context_window || row?.upstream?.max_input_tokens
+  const declaredContext = row?.upstream?.context_window || row?.upstream?.max_input_tokens || 0
+  const declaredMaximum = row?.upstream?.max_context_window || 0
+  const upstream = declaredMaximum >= declaredContext ? declaredMaximum : declaredContext
   if (upstream && preview.value.value && preview.value.value > upstream) details.push(t(`${key}.exceedsUpstream`))
+  if (row?.official) {
+    const official = row.official
+    const product = ['api', 'codex_subscription'].includes(official.product)
+      ? t(`${key}.products.${official.product}`) : official.product
+    details.push(t(`${key}.matchedReference`, { model: official.model_id, product }))
+    if (official.reference) {
+      details.push(t(`${key}.referenceWindows`, {
+        release: official.reference.release,
+        context: formatContextCapacity(official.reference.context_window),
+        maximum: formatContextCapacity(official.reference.max_context_window)
+      }))
+    }
+    if (official.conditions) details.push(official.conditions)
+    details.push(`${t(`${key}.officialSource`)}: ${official.source_url}`)
+    if (official.reference && official.reference.source_url !== official.source_url) {
+      details.push(official.reference.source_url)
+    }
+  }
   details.push(t(`${key}.${editable.value ? 'editHint' : row ? 'readonly' : 'unavailable'}`))
   return details.join('\n')
 })
