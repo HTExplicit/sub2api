@@ -83,13 +83,19 @@ func (f *namespaceOfflineUpstream) DoWithTLS(request *http.Request, proxy string
 
 func namespaceOfflineBootstrap() namespaceBootstrap {
 	prompt := "Frozen offline server prompt. Follow the isolated test instructions."
-	return namespaceBootstrap{SchemaVersion: 1, ConfigMode: "production_env", Mode: "namespace_roundtrip_r2", RunID: namespaceRunID,
-		SourceSHA: strings.Repeat("a", 40), ManifestSHA: strings.Repeat("b", 64), PriorAttempts: 1, ParentLedgerSHA: strings.Repeat("d", 64), Source: fidelitySource{
+	modelMapping := make(map[string]any)
+	channelModels := make(map[string]string)
+	for _, profile := range namespaceProfiles() {
+		modelMapping[profile.Model] = profile.UpstreamModel
+		channelModels[profile.Model] = profile.Model
+	}
+	return namespaceBootstrap{SchemaVersion: 1, ConfigMode: "production_env", Mode: "namespace_roundtrip_r3", RunID: namespaceRunID,
+		SourceSHA: strings.Repeat("a", 40), ManifestSHA: strings.Repeat("b", 64), PriorAttempts: 1, ParentLedgerSHA: namespaceParentLedger, AncestorLedgerSHA: namespaceAncestorLedger, Source: fidelitySource{
 			Account: service.Account{ID: 16050, Name: "白嫖-dmxapi", Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey, Concurrency: 1, Status: service.StatusActive, Schedulable: true,
-				Credentials: map[string]any{"api_key": "offline-private-key", "base_url": "https://upstream.invalid/v1", "model_mapping": map[string]any{"gpt-6-astra": "gpt-6-astra-ssvip", "gpt-5.6-luna": "gpt-5.6-luna-ssvip"}},
+				Credentials: map[string]any{"api_key": "offline-private-key", "base_url": "https://upstream.invalid/v1", "model_mapping": modelMapping},
 				Extra:       map[string]any{"openai_responses_supported": true, "openai_responses_mode": "responses"}, GroupIDs: []int64{4}},
 			Group: service.Group{ID: 4, Platform: service.PlatformOpenAI, Status: service.StatusActive}, FastPolicy: service.DefaultOpenAIFastPolicySettings(), Settings: map[string]string{},
-			ChannelModels: map[string]string{"gpt-6-astra": "gpt-6-astra", "gpt-5.6-luna": "gpt-5.6-luna"}, Fingerprint: strings.Repeat("c", 64), UserID: 920000016050,
+			ChannelModels: channelModels, Fingerprint: strings.Repeat("c", 64), UserID: 920000016050,
 			BusinessPrompt: service.BusinessSystemPromptSnapshot{Enabled: true, TemplateID: 1, VersionID: 1, TemplateVersion: 1, Revision: 1, Body: prompt, SHA256: fidelityHash([]byte(prompt)), ByteLength: len(prompt)},
 		}}
 }
@@ -132,17 +138,33 @@ func namespaceOfflineGrants() []namespaceGrant {
 func TestNamespaceRoundtripControl(t *testing.T) {
 	t.Run("bootstrap_is_new_fixed_run_and_never_resume", func(t *testing.T) {
 		boot := namespaceOfflineBootstrap()
-		if namespaceValidateBootstrap(boot, boot.SourceSHA) != nil {
+		if namespaceValidateBootstrap(boot, boot.SourceSHA) != nil || boot.RunID != "responses-namespace-20260908-r3" ||
+			!namespaceLiveSelectionValid("^TestNamespaceRoundtripLive$", "", "3") {
 			t.Fatal("valid offline bootstrap rejected")
+		}
+		for _, selection := range [][3]string{
+			{"^TestNamespaceRoundtripLive$", "", "2"},
+			{"^TestNamespaceRoundtripLive$", "", ""},
+			{"^TestNamespaceRoundtripLive$", "1", "3"},
+			{"TestNamespaceRoundtrip", "", "3"},
+		} {
+			if namespaceLiveSelectionValid(selection[0], selection[1], selection[2]) {
+				t.Fatal("different live revision or broad selection accepted")
+			}
 		}
 		for _, change := range []func(*namespaceBootstrap){
 			func(b *namespaceBootstrap) { b.Mode = "reasoning_fidelity" },
 			func(b *namespaceBootstrap) { b.Mode = "namespace_roundtrip" },
+			func(b *namespaceBootstrap) { b.Mode = "namespace_roundtrip_r2" },
 			func(b *namespaceBootstrap) { b.RunID = "responses-namespace-20260908" },
+			func(b *namespaceBootstrap) { b.RunID = "responses-namespace-20260908-r2" },
 			func(b *namespaceBootstrap) { b.PriorAttempts = 0 },
 			func(b *namespaceBootstrap) { b.PriorAttempts = 2 },
 			func(b *namespaceBootstrap) { b.ParentLedgerSHA = "" },
 			func(b *namespaceBootstrap) { b.ParentLedgerSHA = strings.Repeat("A", 64) },
+			func(b *namespaceBootstrap) { b.ParentLedgerSHA = namespaceAncestorLedger },
+			func(b *namespaceBootstrap) { b.AncestorLedgerSHA = "" },
+			func(b *namespaceBootstrap) { b.AncestorLedgerSHA = namespaceParentLedger },
 			func(b *namespaceBootstrap) { b.Source.Account.ID = 15522 },
 			func(b *namespaceBootstrap) { b.Source.BusinessPrompt.Enabled = false },
 			func(b *namespaceBootstrap) { b.Source.BusinessPrompt.ExposeServerPrompt = true },
@@ -221,6 +243,8 @@ func TestNamespaceRoundtripControl(t *testing.T) {
 				Model         string          `json:"model"`
 				Effort        string          `json:"effort"`
 				WireEffort    string          `json:"wire_effort"`
+				WireModel     string          `json:"wire_model"`
+				ModelMatches  bool            `json:"model_matches"`
 				EffortMatches bool            `json:"effort_matches"`
 				ErrorDetail   json.RawMessage `json:"error_detail"`
 			}
@@ -242,7 +266,11 @@ func TestNamespaceRoundtripControl(t *testing.T) {
 					t.Fatal("attempt result violates broker one-send turn contract")
 				}
 				profile, ok := namespaceProfileFor(message.Model, message.Effort)
-				if !ok || message.WireEffort != profile.WireEffort || !message.EffortMatches ||
+				var sent struct {
+					Model string `json:"model"`
+				}
+				if json.Unmarshal(fake.bodies[results], &sent) != nil || !ok || message.WireModel != profile.UpstreamModel ||
+					sent.Model != profile.UpstreamModel || !message.ModelMatches || message.WireEffort != profile.WireEffort || !message.EffortMatches ||
 					fake.requestedEfforts[results] != profile.WireEffort || !profile.matchesWireEffort(fake.bodies[results]) {
 					t.Fatal("scenario label was substituted for actual wire or requested policy effort")
 				}
@@ -262,10 +290,10 @@ func TestNamespaceRoundtripControl(t *testing.T) {
 		}
 	})
 	t.Run("fixed_profiles_enforce_wire_effort_and_frozen_policy", func(t *testing.T) {
-		for _, profile := range []struct{ model, label string }{{"gpt-6-astra", "ultra"}, {"gpt-5.6-luna", "max"}} {
+		for _, profile := range []struct{ model, label, upstream string }{{"gpt-6-astra", "ultra", "gpt-6-astra-ssvip"}, {"gpt-5.6-luna", "max", "gpt-5.6-luna"}} {
 			fixed, ok := namespaceProfileFor(profile.model, profile.label)
 			body := namespaceInitialBody(profile.model, profile.label, "profile-check", false)
-			if !ok || fixed.WireEffort != "max" || !fixed.matchesWireEffort(body) {
+			if !ok || fixed.UpstreamModel != profile.upstream || fixed.WireEffort != "max" || !fixed.matchesWireEffort(body) {
 				t.Fatal("approved scenario did not derive max API effort")
 			}
 		}
@@ -299,6 +327,44 @@ func TestNamespaceRoundtripControl(t *testing.T) {
 		policyHarness.runSequences()
 		if policyHarness.stopped != "source_group_policy_rejected" || policyFake.calls != 0 || policyHarness.upstream.attempts != 0 || fidelityHashJSON(&policyHarness.boot.Source) != frozen {
 			t.Fatal("frozen policy downgrade was hidden, bypassed, or sent upstream")
+		}
+	})
+	t.Run("fixed_mapping_is_explicit_for_bootstrap_wire_and_safe_report", func(t *testing.T) {
+		for _, profile := range namespaceProfiles() {
+			boot := namespaceOfflineBootstrap()
+			mapping, ok := boot.Source.Account.Credentials["model_mapping"].(map[string]any)
+			if !ok {
+				t.Fatal("invalid offline mapping fixture")
+			}
+			mapping[profile.Model] = "gpt-5.6-luna-ssvip"
+			if namespaceValidateBootstrap(boot, boot.SourceSHA) == nil {
+				t.Fatal("mismatched fixed account mapping admitted")
+			}
+			fake := &namespaceOfflineUpstream{}
+			scenario := "astra_flat"
+			if profile.Model == "gpt-5.6-luna" {
+				scenario = "luna_flat"
+			}
+			grants := namespaceOfflineGrants()[:1]
+			grants[0].Scenario = scenario
+			h, _ := namespaceOfflineHarness(t, grants, fake)
+			body := namespaceInitialBody(profile.Model, profile.EffortLabel, "mapping-check", false)
+			_, result := h.runTurn(scenario, 1, profile.Model, profile.EffortLabel, body, namespaceFirstFunction)
+			if !result.Completed || !result.ModelMatches || result.WireModel != profile.UpstreamModel {
+				t.Fatal("actual Forward did not preserve the fixed upstream target")
+			}
+			var fields map[string]json.RawMessage
+			_ = json.Unmarshal(fake.bodies[0], &fields)
+			fields["model"] = json.RawMessage(`"unapproved-target-private"`)
+			changed, _ := json.Marshal(fields)
+			if h.upstream.validWireBody(changed) {
+				t.Fatal("wire gate admitted an unapproved target")
+			}
+			observation := namespaceResult{Model: profile.Model, Effort: profile.EffortLabel, WireEffort: profile.WireEffort}
+			h.observeRequest(&observation, body, changed)
+			if observation.ModelMatches || observation.WireModel != "" {
+				t.Fatal("safe report exposed or accepted an unapproved target")
+			}
 		}
 	})
 	t.Run("hybrid_uses_frozen_published_prompt_not_template_substring", func(t *testing.T) {

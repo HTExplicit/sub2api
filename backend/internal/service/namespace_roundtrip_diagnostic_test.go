@@ -226,7 +226,8 @@ func TestNamespaceRoundtripSafeFailureDiagnostic(t *testing.T) {
 				}
 				results++
 				if result.Completed || result.Status != "failed" || result.Attempts != 1 || result.HTTPStatus != failure.status ||
-					result.Effort != "ultra" || result.WireEffort != "max" || !result.EffortMatches || fake.requestedEfforts[0] != "max" {
+					result.Effort != "ultra" || result.WireEffort != "max" || result.WireModel != "gpt-6-astra-ssvip" ||
+					!result.ModelMatches || !result.EffortMatches || fake.requestedEfforts[0] != "max" {
 					t.Fatal("failed attempt reported an invalid terminal result")
 				}
 				namespaceAssertFixtureDiagnostic(t, result.ErrorDetail)

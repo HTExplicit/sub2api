@@ -31,7 +31,9 @@ import (
 )
 
 const (
-	namespaceRunID          = "responses-namespace-20260908-r2"
+	namespaceRunID          = "responses-namespace-20260908-r3"
+	namespaceParentLedger   = "78d583dba69ebb36e0bac31b43a9a4f32994206ae632a7c93e8cd44d7dc82f99"
+	namespaceAncestorLedger = "2df671e46a6faf81be856773e4c458cfc1d0562f2fedbbaff67a7a6b8005d15f"
 	namespacePriorAttempts  = 1
 	namespaceMaxAttempts    = 5
 	namespaceMaxDuration    = 15 * time.Minute
@@ -48,14 +50,24 @@ const (
 // API reasoning.effort value. This fixed local-function chain exercises only
 // max-effort Responses forwarding; it does not reproduce Desktop sub-agents.
 type namespaceProfile struct {
-	Model       string
-	EffortLabel string
-	WireEffort  string
+	Model         string
+	EffortLabel   string
+	WireEffort    string
+	UpstreamModel string
+}
+
+func namespaceProfiles() [2]namespaceProfile {
+	return [2]namespaceProfile{
+		{Model: "gpt-6-astra", EffortLabel: "ultra", WireEffort: "max", UpstreamModel: "gpt-6-astra-ssvip"},
+		{Model: "gpt-5.6-luna", EffortLabel: "max", WireEffort: "max", UpstreamModel: "gpt-5.6-luna"},
+	}
 }
 
 func namespaceProfileFor(model, effortLabel string) (namespaceProfile, bool) {
-	if (model == "gpt-6-astra" && effortLabel == "ultra") || (model == "gpt-5.6-luna" && effortLabel == "max") {
-		return namespaceProfile{Model: model, EffortLabel: effortLabel, WireEffort: "max"}, true
+	for _, profile := range namespaceProfiles() {
+		if model == profile.Model && effortLabel == profile.EffortLabel {
+			return profile, true
+		}
 	}
 	return namespaceProfile{}, false
 }
@@ -73,16 +85,17 @@ func (p namespaceProfile) matchesWireEffort(body []byte) bool {
 }
 
 type namespaceBootstrap struct {
-	SchemaVersion   int            `json:"schema_version"`
-	ConfigMode      string         `json:"config_mode"`
-	Mode            string         `json:"mode"`
-	RunID           string         `json:"run_id"`
-	SourceSHA       string         `json:"source_sha"`
-	ManifestSHA     string         `json:"manifest_sha256"`
-	PriorAttempts   int            `json:"prior_attempts"`
-	ParentLedgerSHA string         `json:"parent_ledger_sha256"`
-	Source          fidelitySource `json:"source"`
-	Ledger          fidelityLedger `json:"ledger"`
+	SchemaVersion     int            `json:"schema_version"`
+	ConfigMode        string         `json:"config_mode"`
+	Mode              string         `json:"mode"`
+	RunID             string         `json:"run_id"`
+	SourceSHA         string         `json:"source_sha"`
+	ManifestSHA       string         `json:"manifest_sha256"`
+	PriorAttempts     int            `json:"prior_attempts"`
+	ParentLedgerSHA   string         `json:"parent_ledger_sha256"`
+	AncestorLedgerSHA string         `json:"ancestor_ledger_sha256"`
+	Source            fidelitySource `json:"source"`
+	Ledger            fidelityLedger `json:"ledger"`
 }
 
 type namespaceGrant struct {
@@ -103,6 +116,7 @@ type namespaceResult struct {
 	Model                               string          `json:"model"`
 	Effort                              string          `json:"effort"`
 	WireEffort                          string          `json:"wire_effort"`
+	WireModel                           string          `json:"wire_model"`
 	Status                              string          `json:"status"`
 	ErrorClass                          string          `json:"error_class,omitempty"`
 	ErrorDetail                         json.RawMessage `json:"error_detail,omitempty"`
@@ -159,8 +173,8 @@ func TestNamespaceRoundtripLive(t *testing.T) {
 	if os.Getenv("SUB2API_NAMESPACE_ROUNDTRIP_LIVE") != "1" {
 		t.Skip("explicit controlled runner opt-in required")
 	}
-	if flag.Lookup("test.run") == nil || flag.Lookup("test.run").Value.String() != "^TestNamespaceRoundtripLive$" ||
-		os.Getenv("SUB2API_REASONING_FIDELITY_LIVE") != "" || os.Getenv("SUB2API_NAMESPACE_ROUNDTRIP_REVISION") != "2" {
+	if flag.Lookup("test.run") == nil || !namespaceLiveSelectionValid(flag.Lookup("test.run").Value.String(),
+		os.Getenv("SUB2API_REASONING_FIDELITY_LIVE"), os.Getenv("SUB2API_NAMESPACE_ROUNDTRIP_REVISION")) {
 		t.Fatal("invalid_live_test_selection")
 	}
 	out := os.Stdout
@@ -188,6 +202,10 @@ func TestNamespaceRoundtripLive(t *testing.T) {
 		_ = output.Encode(map[string]any{"type": "summary", "status": "failed", "error_class": err.Error()})
 		t.Fail()
 	}
+}
+
+func namespaceLiveSelectionValid(testRun, legacyLive, revision string) bool {
+	return testRun == "^TestNamespaceRoundtripLive$" && legacyLive == "" && revision == "3"
 }
 
 func namespaceRun(input *bufio.Reader, output *json.Encoder) error {
@@ -268,10 +286,10 @@ func (h *namespaceHarness) summary() map[string]any {
 }
 
 func namespaceValidateBootstrap(b namespaceBootstrap, expectedSource string) error {
-	if b.SchemaVersion != 1 || b.Mode != "namespace_roundtrip_r2" || b.ConfigMode != "production_env" || b.RunID != namespaceRunID ||
+	if b.SchemaVersion != 1 || b.Mode != "namespace_roundtrip_r3" || b.ConfigMode != "production_env" || b.RunID != namespaceRunID ||
 		!regexp.MustCompile(`^[a-f0-9]{40}$`).MatchString(b.SourceSHA) || b.SourceSHA != expectedSource ||
 		!regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(b.ManifestSHA) || b.PriorAttempts != namespacePriorAttempts ||
-		!regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(b.ParentLedgerSHA) {
+		b.ParentLedgerSHA != namespaceParentLedger || b.AncestorLedgerSHA != namespaceAncestorLedger {
 		return errors.New("invalid_bootstrap_contract")
 	}
 	if !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(b.Source.Fingerprint) {
@@ -302,9 +320,9 @@ func namespaceValidateBootstrap(b namespaceBootstrap, expectedSource string) err
 	if b.Source.FastPolicy == nil || b.Source.Settings == nil || len(b.Source.ChannelModels) != 2 {
 		return errors.New("missing_frozen_policy")
 	}
-	for model, mapped := range map[string]string{"gpt-6-astra": "gpt-6-astra-ssvip", "gpt-5.6-luna": "gpt-5.6-luna-ssvip"} {
-		channelModel := b.Source.ChannelModels[model]
-		if channelModel == "" || a.GetMappedModel(channelModel) != mapped {
+	for _, profile := range namespaceProfiles() {
+		channelModel := b.Source.ChannelModels[profile.Model]
+		if channelModel == "" || a.GetMappedModel(channelModel) != profile.UpstreamModel {
 			return errors.New("fixed_model_mapping_mismatch")
 		}
 	}
@@ -652,7 +670,11 @@ func (h *namespaceHarness) observeRequest(r *namespaceResult, before, sent []byt
 	r.NamespaceReplayedFields = namespaceCountFields(input)
 	r.NamespaceReplayedWithoutDeclaration = r.NamespaceReplayedFields > 0 && !namespaceHasDeclaration(b["tools"])
 	profile, knownProfile := namespaceProfileFor(r.Model, r.Effort)
-	r.ModelMatches = model == r.Model+"-ssvip"
+	r.ModelMatches = knownProfile && model == profile.UpstreamModel
+	if r.ModelMatches {
+		// Only the fixed allowlisted target may enter the safe wire report.
+		r.WireModel = model
+	}
 	r.EffortMatches = knownProfile && profile.matchesWireEffort(before) && profile.matchesWireEffort(sent) && reasoning.Effort == r.WireEffort
 	r.CacheKeyLength = len(key)
 	r.CacheKeySHA, r.PromptSHA, r.SentBodySHA = fidelityHash([]byte(key)), fidelityHash([]byte(prompt)), fidelityHash(sent)
@@ -853,7 +875,7 @@ func (u *namespaceBudgetUpstream) validWireBody(body []byte) bool {
 	var stream, store bool
 	var outputLimit int
 	var include []string
-	if json.Unmarshal(sent["model"], &model) != nil || model != u.profile.Model+"-ssvip" ||
+	if json.Unmarshal(sent["model"], &model) != nil || model != u.profile.UpstreamModel ||
 		!u.profile.matchesWireEffort(body) || !u.profile.matchesWireEffort(u.inputBody) ||
 		json.Unmarshal(sent["max_output_tokens"], &outputLimit) != nil || outputLimit != 4096 ||
 		json.Unmarshal(sent["stream"], &stream) != nil || !stream || json.Unmarshal(sent["store"], &store) != nil || store ||
