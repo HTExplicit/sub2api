@@ -402,6 +402,10 @@ type OpsUpstreamErrorEvent struct {
 	Message string `json:"message,omitempty"`
 	Detail  string `json:"detail,omitempty"`
 
+	// Bounded, content-free metadata. Never use this for passthrough-rule
+	// matching or to decide whether a request can be retried.
+	ContinuationDiagnostic *OpenAIContinuationDiagnostic `json:"continuation_diagnostic,omitempty"`
+
 	// SkipMonitoring is request-local rule state. It is intentionally excluded
 	// from persisted attempt JSON. The logger consults it only when this event is
 	// the final client-visible failure; recovered attempts remain provider-health

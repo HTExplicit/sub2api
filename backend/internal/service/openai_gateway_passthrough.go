@@ -134,6 +134,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	reqStream bool,
 	startTime time.Time,
 ) (_ *OpenAIForwardResult, forwardErr error) {
+	diagnosticIncomingBody := body
 	upstreamPassthroughModel := ""
 	// Legacy Laxa rows are stored as OpenAI API-key accounts and therefore do
 	// not pass through the first-class Cindy handler classification.  At the
@@ -531,6 +532,9 @@ retryUpstream:
 				Passthrough:        true,
 				Kind:               "continuation_state",
 				Message:            OpenAIContinuationStateUnavailableClientMessage,
+				ContinuationDiagnostic: buildOpenAIContinuationDiagnostic(
+					c, diagnosticIncomingBody, upstreamReq, body, probeBody, string(continuationStateError),
+				),
 			})
 			return nil, NewOpenAIContinuationStateUnavailableError(resp.StatusCode, resp.Header, redactedBody)
 		}

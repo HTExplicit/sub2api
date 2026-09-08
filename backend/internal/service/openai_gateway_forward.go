@@ -19,6 +19,7 @@ import (
 
 // Forward forwards request to OpenAI API
 func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (_ *OpenAIForwardResult, forwardErr error) {
+	diagnosticIncomingBody := body
 	beginUpstreamResponseModelObservation(c)
 	ClearActualOpenAIUpstreamEndpoint(c)
 	// Capture the continuation requirement before any compatibility transform.
@@ -1187,6 +1188,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 					UpstreamRequestID:  resp.Header.Get("x-request-id"),
 					Kind:               "continuation_state",
 					Message:            OpenAIContinuationStateUnavailableClientMessage,
+					ContinuationDiagnostic: buildOpenAIContinuationDiagnostic(
+						c, diagnosticIncomingBody, upstreamReq, body, respBody, string(continuationStateError),
+					),
 				})
 				return nil, NewOpenAIContinuationStateUnavailableError(resp.StatusCode, resp.Header, respBody)
 			}
@@ -1203,6 +1207,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 					UpstreamRequestID:  resp.Header.Get("x-request-id"),
 					Kind:               "continuation_state",
 					Message:            OpenAIContinuationStateUnavailableClientMessage,
+					ContinuationDiagnostic: buildOpenAIContinuationDiagnostic(
+						c, diagnosticIncomingBody, upstreamReq, body, respBody, "opaque_tool_chain_400",
+					),
 				})
 				return nil, NewOpenAIContinuationStateUnavailableError(resp.StatusCode, resp.Header, respBody)
 			}
