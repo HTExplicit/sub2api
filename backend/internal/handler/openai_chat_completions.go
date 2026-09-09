@@ -22,6 +22,7 @@ import (
 func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 	streamStarted := false
 	defer h.recoverResponsesPanic(c, &streamStarted)
+	c.Request = c.Request.WithContext(service.WithOpenAIOfficialHTTPFailover(c.Request.Context()))
 
 	requestStart := time.Now()
 
@@ -363,16 +364,23 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 						return
 					}
 					if c.Writer.Size() != writerSizeBeforeForward {
-						finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(routingModel), failoverErr, openAIFailoverRetryStop)
+						if isOpenAIOfficialHTTPFailover(c, account) {
+							h.gatewayService.ObserveOpenAIOfficialHTTPAccountHealthFailure(c.Request.Context(), account, err)
+						} else {
+							finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(routingModel), failoverErr, openAIFailoverRetryStop)
+						}
 						h.handleFailoverExhausted(c, failoverErr, true)
 						return
 					}
+					if isOpenAIOfficialHTTPFailover(c, account) && failoverErr.ShouldReportAccountScheduleFailure() {
+						h.reportOpenAIHTTPAccountScheduleResult(c, selection, account, routingModel, false, nil, false, nil, err)
+					}
 					if !failoverErr.ShouldRetryNextAccount() {
-						finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(routingModel), failoverErr, openAIFailoverRetryStop)
+						h.finalizeOpenAIHTTPFailoverSelection(c, selection, account, account.GetMappedModel(routingModel), failoverErr, openAIFailoverRetryStop)
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
-					retryAction := retryState.Handle(
+					retryAction := retryState.HandleHTTP(
 						c.Request.Context(),
 						h.gatewayService,
 						account,
@@ -382,8 +390,10 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 						sameAccountRetryDelay,
 						"chat_completions",
 					)
-					finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(routingModel), failoverErr, retryAction)
+					h.finalizeOpenAIHTTPFailoverSelection(c, selection, account, account.GetMappedModel(routingModel), failoverErr, retryAction)
 					switch retryAction {
+					case openAIFailoverRetryReselect:
+						continue
 					case openAIFailoverRetrySameAccount:
 						sameAccountRetrySelection = selection
 						lastFailoverErr = failoverErr
@@ -414,7 +424,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 					)
 					continue
 				}
-				h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(routingModel), false, nil)
+				h.reportOpenAIHTTPAccountScheduleResult(c, selection, account, routingModel, false, result, false, nil, err)
 				upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 				wroteFallback := false
 				if !upstreamErrorAlreadyCommunicated {
@@ -433,9 +443,9 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			}
 		}
 		if result != nil {
-			h.gatewayService.ReportOpenAIAccountScheduleResultForSelectionWithContext(selection, account.ID, account.GetMappedModel(routingModel), true, result.FirstTokenMs, c.Request.Context())
+			h.reportOpenAIHTTPAccountScheduleResult(c, selection, account, routingModel, false, result, true, result.FirstTokenMs, err)
 		} else {
-			h.gatewayService.ReportOpenAIAccountScheduleResultForSelectionWithContext(selection, account.ID, account.GetMappedModel(routingModel), true, nil, c.Request.Context())
+			h.reportOpenAIHTTPAccountScheduleResult(c, selection, account, routingModel, false, result, true, nil, err)
 		}
 
 		if shouldSubmitOpenAIUsage(err, result) {

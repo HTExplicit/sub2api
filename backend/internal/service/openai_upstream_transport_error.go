@@ -7,13 +7,17 @@ import (
 	"net/http"
 	"strings"
 	"syscall"
+	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 const (
-	OpenAITransientTransportFailureReason  GatewayFailureReason = "openai_transient_transport_failure"
-	OpenAIPersistentTransportFailureReason GatewayFailureReason = "openai_persistent_transport_failure"
+	OpenAITransientTransportFailureReason   GatewayFailureReason = "openai_transient_transport_failure"
+	OpenAIPersistentTransportFailureReason  GatewayFailureReason = "openai_persistent_transport_failure"
+	openAITransportErrorTempUnschedDuration                      = 10 * time.Minute
 )
 
 // openAITransportFailoverBody is the OpenAI-format error body attached to the
@@ -28,8 +32,8 @@ var openAITransportFailoverBody = []byte(`{"error":{"type":"upstream_error","mes
 type upstreamTransportErrorClass struct {
 	// Persistent marks failures where retrying the same proxy/account is
 	// unlikely to help: expired or rejected proxy credentials, a dead proxy
-	// endpoint, or DNS/routing failure. The request-level retry state uses this
-	// classification and installs a Redis cooldown only after its bounded retry.
+	// endpoint, or DNS/routing failure. The marked ordinary HTTP path persists
+	// the upstream cooldown immediately; other paths retain their retry policy.
 	Persistent bool
 }
 
@@ -48,8 +52,8 @@ var persistentUpstreamTransportErrorMarkers = []string{
 }
 
 // classifyUpstreamTransportError decides whether a transport-level upstream error
-// is durable or a transient blip. Both remain request-local until the bounded
-// retry state installs a runtime breaker cooldown.
+// is durable or a transient blip. The caller applies the appropriate scoped
+// scheduling policy without changing this shared classification.
 //
 // Motivating incident: a SOCKS5 proxy whose subscription lapsed returned
 // `username/password authentication failed`; the account was nonetheless
@@ -92,12 +96,10 @@ func classifyUpstreamTransportError(err error) upstreamTransportErrorClass {
 // handleOpenAIUpstreamTransportError handles a transport-level upstream failure
 // (Do/DoWithTLS returned a non-HTTP error: proxy/DNS/TCP/TLS). It:
 //  1. records the failure in Ops error logs (status 0, kind=request_error);
-//  2. classifies persistent versus transient transport failures without
-//     mutating durable account scheduling state;
-//  3. returns an error that is *UpstreamFailoverError (so the handler retries
-//     once on the same account, then installs a runtime cooldown and fails over
-//     to a healthy account) for all non-canceled errors, or a plain error for
-//     context.Canceled (client gone — no failover or cooldown).
+//  2. restores immediate durable cooldowns for persistent faults only on the
+//     marked ordinary HTTP path; other paths keep downstream classification;
+//  3. returns *UpstreamFailoverError for the handler's applicable retry policy,
+//     or a plain error when the client is gone or a plugin already sent it.
 //
 // It deliberately does NOT write to the response: the handler owns the response
 // (failover, or a protocol-correct error once failover is exhausted).
@@ -134,6 +136,18 @@ func (s *OpenAIGatewayService) handleOpenAIUpstreamTransportError(ctx context.Co
 	}
 
 	transportClass := classifyUpstreamTransportError(err)
+	if IsOpenAIOfficialHTTPFailover(ctx, account) {
+		if transportClass.Persistent {
+			s.tempUnscheduleOpenAITransportError(ctx, account, safeErr)
+		}
+		// Upstream does not opt transport failures into same-account replay.
+		// Transient failures remain request-local; persistent faults were
+		// already mirrored and persisted by the service above.
+		return &UpstreamFailoverError{
+			StatusCode:   http.StatusBadGateway,
+			ResponseBody: openAITransportFailoverBody,
+		}
+	}
 	reason := OpenAITransientTransportFailureReason
 	if transportClass.Persistent {
 		reason = OpenAIPersistentTransportFailureReason
@@ -144,4 +158,40 @@ func (s *OpenAIGatewayService) handleOpenAIUpstreamTransportError(ctx context.Co
 		ResponseBody: openAITransportFailoverBody,
 		Reason:       reason,
 	}
+}
+
+// tempUnscheduleOpenAITransportError restores the upstream ten-minute durable
+// transport policy only for the marked ordinary HTTP account path.
+func (s *OpenAIGatewayService) tempUnscheduleOpenAITransportError(ctx context.Context, account *Account, safeErr string) {
+	if s == nil || !IsOpenAIOfficialHTTPFailover(ctx, account) {
+		return
+	}
+	until := time.Now().Add(openAITransportErrorTempUnschedDuration)
+	reason := "upstream transport error (proxy/network): " + safeErr
+	// Mark this as a DB-cooldown mirror, so later authoritative recovery can
+	// clear it without leaving an independent downstream breaker behind.
+	s.BlockAccountSchedulingFromPersistedCooldown(account, until, "transport_error")
+	if s.accountRepo == nil {
+		logger.L().With(zap.String("component", "service.openai_gateway")).Warn(
+			"openai.account_temp_unscheduled_transport_memory_only",
+			zap.Int64("account_id", account.ID),
+			zap.Time("until", until),
+		)
+		return
+	}
+	bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), openAIAccountStateUpdateTimeout)
+	defer cancel()
+	if err := s.accountRepo.SetTempUnschedulable(bgCtx, account.ID, until, reason); err != nil {
+		logger.L().With(zap.String("component", "service.openai_gateway")).Warn(
+			"openai.account_temp_unscheduled_transport_failed",
+			zap.Int64("account_id", account.ID),
+			zap.Error(err),
+		)
+		return
+	}
+	logger.L().With(zap.String("component", "service.openai_gateway")).Warn(
+		"openai.account_temp_unscheduled_transport",
+		zap.Int64("account_id", account.ID),
+		zap.Time("until", until),
+	)
 }

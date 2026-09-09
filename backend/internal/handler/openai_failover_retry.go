@@ -119,6 +119,9 @@ const (
 	openAIFailoverRetrySameAccount
 	openAIFailoverRetryCanceled
 	openAIFailoverRetryStop
+	// Only the scoped HTTP Responses/Chat callers handle this action. The
+	// official pool retry returns through normal scheduling with its sticky key.
+	openAIFailoverRetryReselect
 )
 
 type openAIFailoverSelectionReporter interface {
@@ -253,4 +256,60 @@ func (s *openAIFailoverRetryState) Handle(
 		cooldowner.CooldownOpenAIRetryExhausted(ctx, account, canonicalModel, failoverErr)
 	}
 	return openAIFailoverRetrySwitchAccount
+}
+
+// HandleHTTP restores the official API-key retry policy only for the marked
+// Responses/Chat path. Other callers keep Handle's exact-account behavior.
+func (s *openAIFailoverRetryState) HandleHTTP(
+	ctx context.Context,
+	cooldowner openAIRetryCooldowner,
+	account *service.Account,
+	canonicalModel string,
+	failoverErr *service.UpstreamFailoverError,
+	allowTransportRetry bool,
+	retryDelay time.Duration,
+	logScope string,
+) openAIFailoverRetryAction {
+	if !service.IsOpenAIOfficialHTTPFailover(ctx, account) {
+		return s.Handle(ctx, cooldowner, account, canonicalModel, failoverErr, allowTransportRetry, retryDelay, logScope)
+	}
+	if ctx.Err() != nil {
+		return openAIFailoverRetryCanceled
+	}
+	if failoverErr == nil || !failoverErr.ShouldRetryNextAccount() {
+		return openAIFailoverRetryStop
+	}
+	if s == nil {
+		return openAIFailoverRetrySwitchAccount
+	}
+	if s.sameAccountRetryCount == nil {
+		s.sameAccountRetryCount = make(map[int64]int)
+	}
+	retryLimit := effectiveSameAccountRetryLimit(failoverErr, account)
+	if !sameAccountRetryAllowed(failoverErr, s.sameAccountRetryCount[account.ID], retryLimit) {
+		// The official service/error-policy and optional API-key health tracker
+		// own cooldowns. Do not add the downstream retry-exhausted breaker here.
+		return openAIFailoverRetrySwitchAccount
+	}
+	s.sameAccountRetryCount[account.ID]++
+	if retryDelay > 0 {
+		retryDelay = sameAccountRetryDelayFor(failoverErr, s.sameAccountRetryCount[account.ID])
+	}
+	logger.FromContext(ctx).Warn("openai.pool_mode_same_account_retry",
+		zap.String("scope", logScope),
+		zap.Int64("account_id", account.ID),
+		zap.Int("upstream_status", failoverErr.StatusCode),
+		zap.Int("retry_limit", retryLimit),
+		zap.Int("retry_count", s.sameAccountRetryCount[account.ID]),
+		zap.Duration("retry_delay", retryDelay),
+	)
+	if retryDelay <= 0 {
+		return openAIFailoverRetryReselect
+	}
+	select {
+	case <-ctx.Done():
+		return openAIFailoverRetryCanceled
+	case <-time.After(retryDelay):
+		return openAIFailoverRetryReselect
+	}
 }
