@@ -18,7 +18,6 @@ import (
 const (
 	openAIUpstreamAccessUnavailableClientMessage = "Upstream access is temporarily unavailable, please retry later"
 	OpenAIUpstreamAccessStateReason              = GatewayFailureReason("openai_upstream_access_state")
-	openAIImagesVerbatimPromptInstructions       = "When invoking the image_generation tool, use the user's image prompt verbatim. Do not rewrite, expand, summarize, embellish, translate, normalize punctuation, or add or remove visual details or constraints. Preserve the original language, wording, capitalization, quotes, and punctuation exactly."
 	defaultAntigravityTestModel                  = "claude-sonnet-4-6"
 )
 

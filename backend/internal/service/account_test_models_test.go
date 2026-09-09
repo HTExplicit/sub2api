@@ -75,7 +75,8 @@ func TestFetchOpenAIAccountModelsPreservesEmptyCatalog(t *testing.T) {
 
 func TestFetchOpenAIAccountModelsOAuthRespectsImageAllowlist(t *testing.T) {
 	newCodexModelsOAuthCacheServer(t, `{"models":[{"slug":"gpt-6-astra"}]}`)
-	svc := &AccountTestService{openaiGatewayService: &OpenAIGatewayService{}}
+	svc := &AccountTestService{}
+	svc.SetOpenAIGatewayService(&OpenAIGatewayService{})
 	account := newCodexModelsTestAccount()
 	account.Credentials["model_mapping"] = map[string]any{"gpt-image-2.5-flare": "gpt-image-2.5-flare"}
 	models, err := svc.FetchOpenAIAccountModels(context.Background(), account)
