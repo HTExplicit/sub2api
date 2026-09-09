@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/stretchr/testify/require"
 )
 
@@ -54,6 +55,10 @@ func newTestInternalRateConversionSettings(enabled bool) *SettingService {
 }
 
 func TestInternalRateConversionSettingsDefaultSaveAndCache(t *testing.T) {
+	// parseSettings publishes Grok defaults; isolate that existing side effect
+	// from unrelated mapping contracts in the same service test process.
+	originalGrokMapping := xai.RuntimeModelMappingOptions()
+	t.Cleanup(func() { xai.SetRuntimeModelMappingOptions(originalGrokMapping) })
 	ctx := context.Background()
 	repo := &internalRateSettingRepo{values: map[string]string{}}
 	svc := NewSettingService(repo, &config.Config{})
