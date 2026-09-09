@@ -29,6 +29,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 	"go.uber.org/zap"
 )
 
@@ -1111,6 +1112,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					zap.Error(err),
 				)
 			} else {
+				if h.handleReasoningRecoveryTerminal(c, err, selection, account, account.GetMappedModel(routingModel), streamStarted, h.gatewayService) {
+					return
+				}
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
 					if failoverClientGone(c) {
@@ -2022,14 +2026,16 @@ func normalizeCodexDelegationBootstrap(body []byte) ([]byte, bool) {
 	// 已有任务通过 send_message_to_thread 唤醒时会携带 previous_response_id；
 	// 完整历史回放还会带有已配对的调用项。delegation 仍是客户端注入的用户输入，
 	// 不属于这些历史调用的结果，因此允许它与可明确配对的历史上下文共存。
-	return normalizeCodexCallOutputBootstrap(body, isCodexDelegationCandidate, true)
+	return normalizeCodexCallOutputBootstrap(body, isCodexDelegationCandidate, true, nil)
 }
 
 func normalizeCodexAutomationBootstrap(body []byte) ([]byte, bool) {
-	return normalizeCodexCallOutputBootstrap(body, isCodexAutomationCandidate, false)
+	// Heartbeats are standalone client inputs even when they arrive during an
+	// existing conversation. Keep identifiable historical calls and references.
+	return normalizeCodexCallOutputBootstrap(body, isCodexAutomationCandidate, true, isCodexAutomationServerToolHistory)
 }
 
-func normalizeCodexCallOutputBootstrap(body []byte, isCandidate func(map[string]any) bool, allowHistoricalContext bool) ([]byte, bool) {
+func normalizeCodexCallOutputBootstrap(body []byte, isCandidate func(map[string]any) bool, allowHistoricalContext bool, isServerToolHistory func(map[string]any) bool) ([]byte, bool) {
 	if !hasUniqueJSONMembers(body) {
 		return body, false
 	}
@@ -2052,8 +2058,8 @@ func normalizeCodexCallOutputBootstrap(body []byte, isCandidate func(map[string]
 
 	// Responses built-ins follow the *_call / *_call_output naming convention,
 	// so classify by the wire type shape instead of maintaining an incomplete
-	// allowlist. Delegation may coexist with historical anchors only when their
-	// IDs make them unambiguous; automation retains the bootstrap-only boundary.
+	// allowlist. Standalone client inputs may coexist with historical anchors
+	// only when their IDs make them unambiguous.
 	for _, raw := range input {
 		item, ok := raw.(map[string]any)
 		if !ok {
@@ -2078,11 +2084,15 @@ func normalizeCodexCallOutputBootstrap(body []byte, isCandidate func(map[string]
 			if allowHistoricalContext && strings.TrimSpace(stringField(item, "call_id")) != "" {
 				continue
 			}
+			if allowHistoricalContext && isServerToolHistory != nil && isServerToolHistory(item) {
+				continue
+			}
 			return body, false
 		}
 	}
 
 	changed := false
+	normalized := body
 	for i, raw := range input {
 		item, ok := raw.(map[string]any)
 		if !ok || !isCandidate(item) {
@@ -2092,24 +2102,26 @@ func normalizeCodexCallOutputBootstrap(body []byte, isCandidate func(map[string]
 		if !ok {
 			continue
 		}
-		input[i] = map[string]any{
+		replacement, err := json.Marshal(map[string]any{
 			"type": "message",
 			"role": "user",
 			"content": []any{map[string]any{
 				"type": "input_text",
 				"text": output,
 			}},
+		})
+		if err != nil {
+			return body, false
+		}
+		// Replacing only the selected item preserves the original history,
+		// including opaque strings, exact numeric values and unrelated fields.
+		normalized, err = sjson.SetRawBytes(normalized, "input."+strconv.Itoa(i), replacement)
+		if err != nil {
+			return body, false
 		}
 		changed = true
 	}
-	if !changed {
-		return body, false
-	}
-	normalized, err := json.Marshal(request)
-	if err != nil {
-		return body, false
-	}
-	return normalized, true
+	return normalized, changed
 }
 
 func hasUniqueJSONMembers(body []byte) bool {
@@ -2185,8 +2197,32 @@ func isCodexAutomationCandidate(item map[string]any) bool {
 		stringField(item, "name") != "automation_update" {
 		return false
 	}
+	if callID, exists := item["call_id"]; exists {
+		value, ok := callID.(string)
+		if !ok || value != "" {
+			return false
+		}
+	}
 	output, ok := item["output"].(string)
 	return ok && (validCodexAutomationBootstrap(output) || validCodexAutomationHeartbeat(output))
+}
+
+func isCodexAutomationServerToolHistory(item map[string]any) bool {
+	if strings.TrimSpace(stringField(item, "id")) == "" {
+		return false
+	}
+	// Hosted tool calls use their item ID as the historical anchor; unlike
+	// client-executed calls, they do not require a call_id/result pair.
+	switch stringField(item, "type") {
+	case "web_search_call", "file_search_call", "code_interpreter_call", "image_generation_call", "mcp_call":
+		return true
+	case "tool_search_call":
+		// This type can also request client execution, which must retain the
+		// original call_id boundary rather than being inferred from item ID.
+		return stringField(item, "execution") == "server"
+	default:
+		return false
+	}
 }
 
 func stringField(item map[string]any, key string) string {
@@ -2266,15 +2302,27 @@ func validCodexAutomationLastRun(value string) bool {
 
 func validCodexAutomationHeartbeat(value string) bool {
 	decoder := xml.NewDecoder(strings.NewReader(value))
-	var rootSeen, automationIDSeen bool
-	var automationID bytes.Buffer
+	var rootSeen bool
+	fields := make(map[string]string, 3)
+	var childName string
+	var childText bytes.Buffer
 	depth := 0
 	for {
 		token, err := decoder.Token()
 		if err == io.EOF {
-			id := automationID.String()
-			return rootSeen && automationIDSeen && depth == 0 &&
-				strings.TrimSpace(id) == id && validCodexAutomationID(id)
+			if !rootSeen || depth != 0 || !validCodexAutomationID(fields["automation_id"]) {
+				return false
+			}
+			// Retain the legacy ID-only heartbeat. Current heartbeats must have
+			// both the timestamp and instructions, never a partial envelope.
+			if len(fields) == 1 {
+				return true
+			}
+			if len(fields) != 3 || strings.TrimSpace(fields["instructions"]) == "" {
+				return false
+			}
+			_, err := time.Parse(time.RFC3339Nano, fields["current_time_iso"])
+			return err == nil
 		}
 		if err != nil {
 			return false
@@ -2290,13 +2338,26 @@ func validCodexAutomationHeartbeat(value string) bool {
 					return false
 				}
 				rootSeen = true
-			} else if automationIDSeen || current.Name.Local != "automation_id" {
+				continue
+			}
+			if current.Name.Local != "automation_id" && current.Name.Local != "current_time_iso" && current.Name.Local != "instructions" {
 				return false
 			}
-			automationIDSeen = depth == 2
+			if _, duplicate := fields[current.Name.Local]; duplicate {
+				return false
+			}
+			childName = current.Name.Local
+			childText.Reset()
 		case xml.EndElement:
 			if current.Name.Space != "" {
 				return false
+			}
+			if depth == 2 {
+				if current.Name.Local != childName {
+					return false
+				}
+				fields[childName] = childText.String()
+				childName = ""
 			}
 			depth--
 			if depth < 0 {
@@ -2304,7 +2365,7 @@ func validCodexAutomationHeartbeat(value string) bool {
 			}
 		case xml.CharData:
 			if depth == 2 {
-				_, _ = automationID.Write(current)
+				_, _ = childText.Write(current)
 			} else if len(bytes.TrimSpace(current)) != 0 {
 				return false
 			}
@@ -4279,13 +4340,37 @@ func (h *OpenAIGatewayHandler) handleOpenAINoAccountError(c *gin.Context, classi
 	h.handleStreamingAwareErrorWithCode(c, classification.Status, classification.ErrType, code, classification.Message, streamStarted, false)
 }
 
+// A completed reasoning-recovery attempt is a terminal, not another scheduler
+// candidate. Preserve its classification without allowing refusal, account, or
+// transport retries to re-enter the loop.
+func (h *OpenAIGatewayHandler) handleReasoningRecoveryTerminal(c *gin.Context, err error, selection *service.AccountSelectionResult, account *service.Account, model string, streamStarted bool, reporter openAIFailoverSelectionReporter) bool {
+	var terminal *service.OpenAIReasoningRecoveryTerminalError
+	if !errors.As(err, &terminal) {
+		return false
+	}
+	if failoverClientGone(c) {
+		reporter.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
+		return true
+	}
+	finalizeOpenAIFailoverSelection(reporter, selection, account, model, terminal.Failure, openAIFailoverRetryStop)
+	if terminal.FailureTerminalForwarded {
+		return true
+	}
+	h.handleFailoverExhausted(c, terminal.Failure, streamStarted || c.Writer.Written())
+	return true
+}
+
 func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError, streamStarted bool) {
 	if failoverErr == nil {
 		h.handleFailoverExhaustedSimple(c, http.StatusBadGateway, streamStarted)
 		return
 	}
 	if failoverErr.IsOpenAIRequestRejected() {
-		service.SetOpsUpstreamError(c, http.StatusBadRequest, service.OpenAIRequestRejectedClientMessage, "")
+		upstreamStatus := failoverErr.StatusCode
+		if upstreamStatus <= 0 {
+			upstreamStatus = http.StatusBadRequest
+		}
+		service.SetOpsUpstreamError(c, upstreamStatus, service.OpenAIRequestRejectedClientMessage, "")
 		// Record the semantic failure before the renderer can commit SSE HTTP
 		// 200 or add its non-SLA fallback mark. This branch must precede the
 		// generic ClientErrorCode JSON path, including pre-first-byte failures.
@@ -4342,11 +4427,22 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 		if message == "" {
 			message = service.OpenAIContinuationStateUnavailableClientMessage
 		}
-		service.SetOpsUpstreamError(c, statusCode, message, "")
+		upstreamStatus := failoverErr.StatusCode
+		if upstreamStatus <= 0 {
+			upstreamStatus = statusCode
+		}
+		service.SetOpsUpstreamError(c, upstreamStatus, message, "")
+		errType := "invalid_request_error"
+		if statusCode >= http.StatusInternalServerError {
+			errType = "server_error"
+			// A local continuation-store outage shares the wire code with an
+			// invalid upstream history. Its explicit 503 must survive SSE parsing.
+			service.MarkOpsStreamFailure(c, errType, service.OpenAIContinuationStateUnavailableCode, message, statusCode)
+		}
 		h.handleStreamingAwareErrorWithCode(
 			c,
 			statusCode,
-			"invalid_request_error",
+			errType,
 			service.OpenAIContinuationStateUnavailableCode,
 			message,
 			// A stream:true request may fail before Forward writes its first byte.

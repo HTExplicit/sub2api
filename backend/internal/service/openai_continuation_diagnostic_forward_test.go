@@ -192,8 +192,8 @@ func TestOpenAIContinuationDiagnosticForwardPreservesTerminalBehavior(t *testing
 			diagnostic := event.ContinuationDiagnostic
 			require.Equal(t, tt.classification, diagnostic.Classification)
 			require.Equal(t, tt.param, diagnostic.UpstreamError.ErrorParam.Value)
-			require.Equal(t, "prepared_fallback", diagnostic.Wire.BodySource)
-			require.True(t, diagnostic.Wire.InspectionLimited)
+			require.Equal(t, "frozen_request", diagnostic.Wire.BodySource)
+			require.False(t, diagnostic.Wire.InspectionLimited)
 			require.Nil(t, upstream.lastReq.GetBody, "diagnostics must not restore transparent POST replay")
 			require.Equal(t, len(upstream.bodies[0]), diagnostic.Wire.BodyBytes)
 			wireCacheDigest := sha256.Sum256([]byte(gjson.GetBytes(upstream.bodies[0], "prompt_cache_key").String()))

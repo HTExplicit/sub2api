@@ -540,6 +540,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete: missing terminal event")
 		}
 		if sawFailedEvent {
+			if !clientDisconnected && (failureDelivered || !eventInProgress) {
+				markOpenAIReasoningFailureTerminalForwarded(c)
+			}
 			return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
 		}
 		if terminalResponseErr != nil {
@@ -921,6 +924,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 					}
 					clientOutputStarted = true
 					lastDownstreamWriteAt = time.Now()
+					markOpenAIReasoningFailureTerminalForwarded(c)
 				}
 				streamEarlyErr = fmt.Errorf("upstream response failed: %s", failedMessage)
 				return
@@ -1905,14 +1909,30 @@ func openAIHTTPReasoningRejectionBeforeOutput(c *gin.Context, payload []byte, se
 	} else {
 		observeOpenAIReasoningAttemptUsage(c, payload)
 	}
+	recovery := openAIReasoningRecoveryStateFromContext(c)
+	_, signatureRejected := parseOpenAIReasoningRejection(payload)
+	if recovery != nil && (signatureRejected || (gjson.ValidBytes(payload) && (gjson.GetBytes(payload, "type").String() == "error" || openAIHTTPResponseTerminalError(payload) != nil))) {
+		recovery.ObserveFailure(payload, semanticCommitted)
+	}
 	if semanticCommitted {
 		return nil
 	}
 	if recoveryErr := openAIReasoningRecoverySignal(c, payload, false); recoveryErr != nil {
 		return recoveryErr
 	}
-	if _, rejected := parseOpenAIReasoningRejection(payload); rejected {
-		return NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
+	if signatureRejected {
+		status, headers := http.StatusBadRequest, http.Header(nil)
+		if recovery != nil {
+			status, headers = recovery.upstreamStatus(status), recovery.responseHeaders
+		}
+		return NewOpenAIContinuationStateUnavailableError(status, headers, bytes.Clone(payload))
+	}
+	if recovery != nil {
+		// A retry's actual validation failure is still request-scoped. Handle it
+		// before generic stream-failure side effects can punish account health.
+		if rejected := recovery.requestRejectionFromStream(payload); rejected != nil {
+			return rejected
+		}
 	}
 	return nil
 }
