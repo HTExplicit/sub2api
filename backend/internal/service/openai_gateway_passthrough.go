@@ -465,9 +465,12 @@ retryUpstream:
 		if buildErr != nil {
 			return nil, buildErr
 		}
+		reasoningRecovery.BindDiagnosticRequest(diagnosticIncomingBody, upstreamReq)
 
 		upstreamStart := time.Now()
+		reasoningRecovery.MarkAttemptDispatched()
 		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+		reasoningRecovery.ObserveResponse(resp)
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 		if err != nil {
 			if reasoningRecovery.RecoveryAttempt() {
@@ -491,10 +494,10 @@ retryUpstream:
 			continue
 		}
 		if reasoningRecovery.RecoveryAttempt() {
-			return nil, errors.New("reasoning recovery rejected by upstream")
+			return nil, reasoningRecovery.FailureForResponse(resp.StatusCode, resp.Header, probeBody)
 		}
 		if _, rejected := parseOpenAIReasoningRejection(probeBody); rejected {
-			return nil, NewOpenAIContinuationStateUnavailableError(resp.StatusCode, resp.Header, nil)
+			return nil, NewOpenAIContinuationStateUnavailableError(resp.StatusCode, resp.Header, probeBody)
 		}
 		reqModel, _, _ := extractOpenAIRequestMetaFromBody(body)
 		canonicalModel := canonicalOpenAIAccountSchedulingModel(account, reqModel)
@@ -2278,6 +2281,9 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		failureDelivered = true
 		flushPending = true
 		flushPendingOutput()
+		if !clientDisconnected {
+			markOpenAIReasoningFailureTerminalForwarded(c)
+		}
 	}
 
 	scanner := bufio.NewScanner(resp.Body)
@@ -2554,6 +2560,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 						clientDisconnected = true
 					} else {
 						flusher.Flush()
+						markOpenAIReasoningFailureTerminalForwarded(c)
 					}
 				}
 				return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
@@ -2656,6 +2663,9 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				flushPending = true
 				if line == "" {
 					flushPendingOutput()
+					if terminalFramePending && sawFailedEvent && !clientDisconnected {
+						markOpenAIReasoningFailureTerminalForwarded(c)
+					}
 				}
 			}
 		}

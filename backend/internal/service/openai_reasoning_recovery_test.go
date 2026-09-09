@@ -307,6 +307,13 @@ func TestOpenAIReasoningRecoveryForwardHTTPAndPassthroughSingleRetry(t *testing.
 					require.Error(t, err)
 					var failover *UpstreamFailoverError
 					require.False(t, errors.As(err, &failover))
+					var stopped *OpenAIReasoningRecoveryTerminalError
+					require.ErrorAs(t, err, &stopped)
+					require.Equal(t, http.StatusServiceUnavailable, stopped.Failure.StatusCode)
+					require.False(t, stopped.Failure.IsOpenAIRequestRejected())
+					require.False(t, stopped.Failure.SuppressAccountHealthPenalty, "a genuine provider failure is not fabricated as a request validation error")
+					require.True(t, stopped.Failure.ShouldReportAccountScheduleFailure())
+					require.False(t, stopped.Failure.ShouldRetryNextAccount())
 					require.NotContains(t, err.Error(), "private upstream failure")
 				}
 			})
@@ -374,6 +381,9 @@ func TestOpenAIReasoningRecoveryNeverReplaysCommittedSSE(t *testing.T) {
 			require.Contains(t, recorder.Body.String(), "visible answer")
 			var failover *UpstreamFailoverError
 			require.False(t, errors.As(err, &failover), "post-commit terminal errors cannot be externally replayed")
+			var terminal *OpenAIReasoningRecoveryTerminalError
+			require.ErrorAs(t, err, &terminal)
+			require.True(t, terminal.FailureTerminalForwarded, "the existing failed terminal must not be rendered a second time")
 		})
 	}
 }

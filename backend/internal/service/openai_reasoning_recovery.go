@@ -47,6 +47,19 @@ type openAIReasoningRecoveryState struct {
 	stopRecorded  bool
 	onRejected    func([]string)
 	retryCleanups []func()
+
+	diagnosticIncoming       []byte
+	diagnosticRequest        *http.Request
+	responseStatus           int
+	responseHeaders          http.Header
+	failurePayload           []byte
+	semanticCommitted        bool
+	cacheSkippedItems        int
+	diagnosticState          string
+	retryDispatched          bool
+	diagnosticStopReason     string
+	failureObservedBytes     int
+	failureTerminalForwarded bool
 }
 
 func (s *OpenAIGatewayService) newOpenAIReasoningRecoveryState(ctx context.Context, c *gin.Context, account *Account, token string) *openAIReasoningRecoveryState {
@@ -81,6 +94,74 @@ func (r *openAIReasoningRecoveryState) SetRejectedCallback(fn func([]string)) {
 }
 
 func (r *openAIReasoningRecoveryState) RecoveryAttempt() bool { return r != nil && r.retryUsed }
+
+func openAIReasoningRecoveryStateFromContext(c *gin.Context) *openAIReasoningRecoveryState {
+	if c == nil {
+		return nil
+	}
+	value, _ := c.Get(openAIReasoningRecoveryContextKey)
+	state, _ := value.(*openAIReasoningRecoveryState)
+	return state
+}
+
+// BindDiagnosticRequest retains only the forwarding-entry body and the exact
+// request used by this attempt. The immutable wire snapshot already captured by
+// PrepareRequest remains the source of truth after GetBody is disabled.
+func (r *openAIReasoningRecoveryState) BindDiagnosticRequest(incoming []byte, req *http.Request) {
+	if r == nil {
+		return
+	}
+	if r.diagnosticIncoming == nil {
+		r.diagnosticIncoming = bytes.Clone(incoming)
+	}
+	r.diagnosticRequest = req
+	r.responseStatus, r.responseHeaders = 0, nil
+	r.failurePayload = nil
+	r.semanticCommitted = false
+	r.failureObservedBytes = 0
+	r.failureTerminalForwarded = false
+}
+
+func (r *openAIReasoningRecoveryState) ObserveResponse(resp *http.Response) {
+	if r == nil || resp == nil {
+		return
+	}
+	r.responseStatus, r.responseHeaders = resp.StatusCode, resp.Header.Clone()
+}
+
+func (r *openAIReasoningRecoveryState) MarkAttemptDispatched() {
+	if r != nil && r.retryUsed {
+		r.retryDispatched = true
+		r.diagnosticState = "retry_attempted"
+	}
+}
+
+// ObserveFailure is observation only. A bare SSE error can be superseded by a
+// completed response; neither the retry budget nor rejection cache changes here.
+func (r *openAIReasoningRecoveryState) ObserveFailure(payload []byte, semanticCommitted bool) {
+	if r == nil {
+		return
+	}
+	r.failurePayload = bytes.Clone(payload)
+	r.semanticCommitted = semanticCommitted
+	r.failureTerminalForwarded = false
+	if r.c != nil && r.c.Writer != nil {
+		r.failureObservedBytes = max(0, OpenAICompactKeepaliveAdjustedWrittenSize(r.c))
+	}
+}
+
+// Called only after a stream parser has dispatched and flushed a complete
+// failure terminal without a write error. Semantic output or an HTTP header
+// alone is not evidence that the client has received the failure itself.
+func markOpenAIReasoningFailureTerminalForwarded(c *gin.Context) {
+	r := openAIReasoningRecoveryStateFromContext(c)
+	if r == nil || r.diagnosticIncoming == nil || len(r.failurePayload) == 0 || c.Writer == nil {
+		return
+	}
+	if max(0, OpenAICompactKeepaliveAdjustedWrittenSize(c)) > r.failureObservedBytes {
+		r.failureTerminalForwarded = true
+	}
+}
 
 // buildOpenAIReasoningScope is shared by positive replay and rejection memory.
 // Credentials and route identity enter only a digest; neither is stored or logged.
@@ -145,6 +226,7 @@ func (r *openAIReasoningRecoveryState) PrepareRequest(req *http.Request, body []
 	if req == nil || req.URL == nil || req.Method != http.MethodPost ||
 		(!strings.HasSuffix(req.URL.Path, "/responses") && !strings.HasSuffix(req.URL.Path, "/responses/compact")) {
 		if r.retryUsed {
+			r.diagnosticStopReason = "endpoint_changed"
 			return nil, nil, r.StopError(errors.New("reasoning recovery endpoint changed"))
 		}
 		r.enabled = false
@@ -169,9 +251,11 @@ func (r *openAIReasoningRecoveryState) PrepareRequest(req *http.Request, body []
 	}
 	if r.retryUsed {
 		if r.ctx.Err() != nil {
+			r.diagnosticStopReason = "request_cancelled"
 			return nil, nil, r.StopError(r.ctx.Err())
 		}
 		if identity != r.identity || !bytes.Equal(body, r.retryBody) {
+			r.diagnosticStopReason = "source_changed"
 			return nil, nil, r.StopError(errors.New("reasoning recovery source changed"))
 		}
 		// The normal gateway may detach cancellation to drain usage. An extra
@@ -206,6 +290,7 @@ func (r *openAIReasoningRecoveryState) PrepareRequest(req *http.Request, body []
 	// POST-to-GET conversion. Clearing GetBody also disallows transparent POST
 	// replay on a reused-connection error.
 	req.GetBody = nil
+	r.diagnosticRequest = req
 	return req, body, nil
 }
 
@@ -251,6 +336,7 @@ func (r *openAIReasoningRecoveryState) skipRejectedHistory(body []byte) []byte {
 	if err != nil {
 		return body
 	}
+	r.cacheSkippedItems += len(indices)
 	r.record("rejected_history_skipped", 0, "", nil, len(indices))
 	return stripped
 }
@@ -498,13 +584,19 @@ func (*openAIReasoningRecoverySignalError) Error() string {
 
 func (r *openAIReasoningRecoveryState) TryRecoverError(err error) ([]byte, bool) {
 	var signal *openAIReasoningRecoverySignalError
-	if !errors.As(err, &signal) {
+	if r == nil || !errors.As(err, &signal) {
 		return nil, false
 	}
-	return r.TryRecover(http.StatusBadRequest, nil, signal.payload, false)
+	return r.TryRecover(r.upstreamStatus(http.StatusBadRequest), r.responseHeaders, signal.payload, false)
 }
 
-func (r *openAIReasoningRecoveryState) TryRecover(status int, _ http.Header, payload []byte, semanticCommitted bool) ([]byte, bool) {
+func (r *openAIReasoningRecoveryState) TryRecover(status int, headers http.Header, payload []byte, semanticCommitted bool) ([]byte, bool) {
+	if r != nil {
+		r.ObserveFailure(payload, semanticCommitted)
+		if r.responseStatus == 0 {
+			r.responseStatus, r.responseHeaders = status, headers.Clone()
+		}
+	}
 	if r == nil || !r.enabled || r.retryUsed || semanticCommitted || r.ctx.Err() != nil || openAIReasoningRecoveryProtectedStatus(status) {
 		return nil, false
 	}
@@ -522,6 +614,7 @@ func (r *openAIReasoningRecoveryState) TryRecover(status int, _ http.Header, pay
 	}
 	r.retryUsed = true
 	r.retryBody = bytes.Clone(stripped)
+	r.diagnosticState = "retry_prepared"
 	if r.onRejected != nil {
 		r.onRejected(append([]string(nil), hashes...))
 	}
@@ -543,17 +636,208 @@ func openAIReasoningRecoveryProtectedStatus(status int) bool {
 	}
 }
 
-// StopError intentionally does not unwrap. In particular an UpstreamFailoverError
-// from the one recovery attempt must never cause a third POST or account switch.
+// OpenAIReasoningRecoveryTerminalError preserves classification for rendering
+// and account-health accounting, but deliberately does not implement Unwrap.
+// A caller must handle this terminal explicitly, never feed Failure back into
+// scheduling: the single same-source recovery budget has already been spent.
+type OpenAIReasoningRecoveryTerminalError struct {
+	Failure *UpstreamFailoverError
+	// FailureTerminalForwarded is explicit parser/write evidence, not a claim
+	// inferred from semantic output or Writer.Written. Callers still finalize
+	// accounting and health, but must not append a second response.failed.
+	FailureTerminalForwarded bool
+}
+
+func (*OpenAIReasoningRecoveryTerminalError) Error() string {
+	return "reasoning signature recovery stopped; no further upstream retry permitted"
+}
+
+func newOpenAIReasoningRecoveryTerminalError(failure *UpstreamFailoverError) *OpenAIReasoningRecoveryTerminalError {
+	if failure == nil {
+		failure = &UpstreamFailoverError{StatusCode: http.StatusBadGateway}
+	}
+	copyFailure := *failure
+	copyFailure.ResponseBody = nil
+	copyFailure.ResponseHeaders = failure.ResponseHeaders.Clone()
+	copyFailure.NextAccountAction = NextAccountStop
+	copyFailure.RetryableOnSameAccount = false
+	copyFailure.SameAccountRetryDelay = 0
+	copyFailure.SameAccountRetryDeadline = time.Time{}
+	copyFailure.SameAccountRetryMax = 0
+	return &OpenAIReasoningRecoveryTerminalError{Failure: &copyFailure}
+}
+
+// FailureForResponse preserves the rejection's existing request/provider
+// classification without executing another compatibility retry or scheduler.
+func (r *openAIReasoningRecoveryState) FailureForResponse(status int, headers http.Header, payload []byte) *UpstreamFailoverError {
+	message := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(payload)))
+	if classifyOpenAIContinuationStateError(message, payload) != openAIContinuationStateErrorNone {
+		return NewOpenAIContinuationStateUnavailableError(status, headers, bytes.Clone(payload))
+	}
+	if classifyOpenAIRequestRejection(status, message, payload) != "" {
+		return NewOpenAIRequestRejectedError(status, headers)
+	}
+	return newOpenAIUpstreamFailoverError(status, headers, bytes.Clone(payload), message, false)
+}
+
+// StopError never erases request-level semantics in order to forbid retries.
+// It also captures signature exits where no safe recovery was possible; those
+// used to return only the fixed client message and lose the actual rejection.
 func (r *openAIReasoningRecoveryState) StopError(err error) error {
-	if err == nil || r == nil || !r.retryUsed {
+	if err == nil || r == nil {
 		return err
+	}
+	if r.diagnosticIncoming == nil {
+		// Protocol-conversion callers have their own error contract. This repair
+		// opts in only at native Responses/passthrough send boundaries.
+		if !r.retryUsed {
+			return err
+		}
+		if !r.stopRecorded {
+			r.stopRecorded = true
+			r.record("recovery_failed", 0, "", nil, 0)
+		}
+		return errors.New("reasoning signature recovery failed; no further upstream retry permitted")
+	}
+	var stopped *OpenAIReasoningRecoveryTerminalError
+	if errors.As(err, &stopped) {
+		return err
+	}
+	var failure *UpstreamFailoverError
+	var signal *openAIReasoningRecoverySignalError
+	if errors.As(err, &signal) {
+		r.ObserveFailure(signal.payload, false)
+		failure = NewOpenAIContinuationStateUnavailableError(r.upstreamStatus(http.StatusBadRequest), r.responseHeaders, signal.payload)
+	} else if errors.As(err, &failure) && len(failure.ResponseBody) > 0 && len(r.failurePayload) == 0 {
+		r.ObserveFailure(failure.ResponseBody, r.semanticCommitted)
+	}
+	rejection, signatureRejected := parseOpenAIReasoningRejection(r.failurePayload)
+	if failure == nil {
+		failure = r.requestRejectionFromStream(r.failurePayload)
+	}
+	cacheSkipRejected := r.cacheSkippedItems > 0 && failure != nil && failure.IsOpenAIRequestRejected()
+	if !r.retryUsed && !signatureRejected && !cacheSkipRejected {
+		return err
+	}
+	if failure == nil {
+		if signatureRejected {
+			failure = NewOpenAIContinuationStateUnavailableError(r.upstreamStatus(http.StatusBadRequest), r.responseHeaders, nil)
+		} else {
+			failure = &UpstreamFailoverError{StatusCode: r.upstreamStatus(http.StatusBadGateway), ResponseHeaders: r.responseHeaders.Clone()}
+		}
 	}
 	if !r.stopRecorded {
 		r.stopRecorded = true
-		r.record("recovery_failed", 0, "", nil, 0)
+		action := "recovery_not_attempted"
+		r.diagnosticState = "not_attempted"
+		if r.retryUsed {
+			action = "recovery_failed"
+			r.diagnosticState = "budget_exhausted"
+		}
+		r.record(action, r.upstreamStatus(failure.StatusCode), rejection.code, r.failurePayload, 0)
 	}
-	return errors.New("reasoning signature recovery failed; no further upstream retry permitted")
+	if !r.retryUsed && !r.semanticCommitted {
+		return failure
+	}
+	terminal := newOpenAIReasoningRecoveryTerminalError(failure)
+	terminal.FailureTerminalForwarded = r.failureTerminalForwarded
+	return terminal
+}
+
+func (r *openAIReasoningRecoveryState) upstreamStatus(fallback int) int {
+	if r != nil && r.responseStatus > 0 {
+		return r.responseStatus
+	}
+	return fallback
+}
+
+func (r *openAIReasoningRecoveryState) requestRejectionFromStream(payload []byte) *UpstreamFailoverError {
+	if r == nil || r.diagnosticIncoming == nil || (!r.retryUsed && r.cacheSkippedItems == 0) || !gjson.ValidBytes(payload) || openAIHTTPResponseTerminalError(payload) == nil {
+		return nil
+	}
+	message := extractOpenAISSEErrorMessage(payload)
+	semanticStatus := openAIStreamFailedEventSemanticStatus(payload, message)
+	if classifyOpenAIRequestRejection(semanticStatus, message, payload) == "" {
+		return nil
+	}
+	return NewOpenAIRequestRejectedError(r.upstreamStatus(semanticStatus), r.responseHeaders)
+}
+
+func (r *openAIReasoningRecoveryState) continuationDiagnosticRecovery(payload []byte) *openAIContinuationRecoveryShape {
+	shape := &openAIContinuationRecoveryShape{
+		CacheSkippedItems: r.cacheSkippedItems,
+		RetryAttempted:    r.retryDispatched,
+		Disposition:       r.diagnosticState,
+	}
+	if shape.Disposition == "" {
+		shape.Disposition = "not_attempted"
+	}
+	if shape.Disposition == "not_attempted" {
+		shape.NotAttemptedReason = r.recoveryNotAttemptedReason(payload)
+	} else if r.retryUsed && !r.retryDispatched && r.stopRecorded {
+		shape.NotAttemptedReason = r.diagnosticStopReason
+		if shape.NotAttemptedReason == "" {
+			shape.NotAttemptedReason = "recovery_not_dispatched"
+		}
+	}
+	return shape
+}
+
+func (r *openAIReasoningRecoveryState) recoveryNotAttemptedReason(payload []byte) string {
+	switch {
+	case !r.enabled:
+		return "disabled"
+	case r.semanticCommitted:
+		return "semantic_output_committed"
+	case r.ctx.Err() != nil:
+		return "request_cancelled"
+	case openAIReasoningRecoveryProtectedStatus(r.responseStatus):
+		return "protected_status"
+	}
+	rejection, ok := parseOpenAIReasoningRejection(payload)
+	if !ok {
+		return "not_signature_rejection"
+	}
+	if _, err := canonicalReasoningCacheJSON(r.wire); err != nil {
+		return "invalid_request_snapshot"
+	}
+	if !openAIReasoningToolHistoryAllowsRecovery(r.wire) {
+		return "invalid_tool_history"
+	}
+	items := openAIReasoningCipherItems(r.wire)
+	if len(items) == 0 {
+		return "no_reasoning_ciphertext"
+	}
+	indices, _ := openAIReasoningRejectedIndices(r.wire, rejection)
+	if len(indices) > 0 {
+		if _, err := stripOpenAIReasoningCipherIndices(r.wire, indices); err != nil {
+			return "rewrite_failed"
+		}
+		return "recovery_not_dispatched"
+	}
+	if openAIReasoningErrorInputParam.MatchString(rejection.param) {
+		return "target_not_reasoning_ciphertext"
+	}
+	if rejection.param != "" && rejection.param != "input" && rejection.param != "reasoning.encrypted_content" {
+		return "unsupported_error_param"
+	}
+	if gjson.GetBytes(r.wire, "previous_response_id").String() != "" ||
+		(gjson.GetBytes(r.wire, "conversation").Exists() && gjson.GetBytes(r.wire, "conversation").Type != gjson.Null) {
+		return "server_held_context"
+	}
+	return "ambiguous_encrypted_carriers"
+}
+
+func (r *openAIReasoningRecoveryState) diagnosticClassification(payload []byte) string {
+	message := extractOpenAISSEErrorMessage(payload)
+	if kind := classifyOpenAIContinuationStateError(message, payload); kind != openAIContinuationStateErrorNone {
+		return string(kind)
+	}
+	status := r.responseStatus
+	if status < 400 {
+		status = openAIStreamFailedEventSemanticStatus(payload, message)
+	}
+	return classifyOpenAIRequestRejection(status, message, payload)
 }
 
 func (r *openAIReasoningRecoveryState) record(action string, status int, code string, payload []byte, count int) {
@@ -588,5 +872,16 @@ func (r *openAIReasoningRecoveryState) record(action string, status int, code st
 		ProxyID: opsUpstreamProxyID(r.account), ProxyName: opsUpstreamProxyName(r.account),
 		Kind: "reasoning_recovery", Stage: "inference", Scope: "request", Reason: code,
 		UpstreamStatusCode: status, Message: action, Detail: string(encoded),
+		UpstreamRequestID:      r.responseHeaders.Get("x-request-id"),
+		ContinuationDiagnostic: r.diagnosticForRecordedAttempt(action, payload),
 	})
+}
+
+func (r *openAIReasoningRecoveryState) diagnosticForRecordedAttempt(action string, payload []byte) *OpenAIContinuationDiagnostic {
+	if r.diagnosticIncoming == nil || action == "rejected_history_skipped" {
+		// Called before PrepareRequest freezes the stripped wire. A later failure
+		// will report the final snapshot and skipped-item count together.
+		return nil
+	}
+	return buildOpenAIContinuationDiagnostic(r.c, r.diagnosticIncoming, r.diagnosticRequest, r.wire, payload, r.diagnosticClassification(payload))
 }
