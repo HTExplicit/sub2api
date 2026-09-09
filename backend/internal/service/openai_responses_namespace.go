@@ -102,10 +102,9 @@ func shouldKeepOpenAIResponsesToolCallNamespaces(
 	return !shouldFlattenOpenAIResponsesNamespaces(account, transport, passthroughEnabled, compactPath)
 }
 
-// openAIResponsesToolCallItemTypes 是携带 namespace 的调用项类型集合。与
-// removeOpenAIResponsesRejectedNamespaceAtIndex 的反应式白名单保持一致；codex-rs
-// protocol/src/models.rs 中只有 FunctionCall 与 CustomToolCall 序列化 namespace，
-// 其余类型带该字段一定是非 Codex 客户端或历史残留，清掉才安全。
+// openAIResponsesToolCallItemTypes 与反应式调用项清理白名单保持一致。
+// 具名独立 function_call_output 不是调用项，其 namespace 使用单独的原生 API
+// 保真边界，不能因此扩大 OAuth/Compact 的历史兼容行为。
 var openAIResponsesToolCallItemTypes = map[string]bool{
 	"function_call":    true,
 	"tool_call":        true,
@@ -115,6 +114,21 @@ var openAIResponsesToolCallItemTypes = map[string]bool{
 
 func isOpenAIResponsesToolCallItemType(itemType string) bool {
 	return openAIResponsesToolCallItemTypes[strings.ToLower(strings.TrimSpace(itemType))]
+}
+
+func shouldKeepOpenAIResponsesStandaloneOutputNamespaces(account *Account, compactPath bool) bool {
+	return account != nil && account.Platform == PlatformOpenAI && account.IsOpenAIApiKey() && !compactPath &&
+		!IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+}
+
+func isOpenAIResponsesNamedStandaloneOutput(item gjson.Result) bool {
+	if item.Get("type").String() != "function_call_output" {
+		return false
+	}
+	name, callID := item.Get("name"), item.Get("call_id")
+	return name.Type == gjson.String && strings.TrimSpace(name.String()) != "" &&
+		(!callID.Exists() || callID.Type == gjson.Null ||
+			(callID.Type == gjson.String && strings.TrimSpace(callID.String()) == ""))
 }
 
 func flattenOpenAIResponsesNamespaces(c *gin.Context, body []byte) ([]byte, error) {
@@ -147,8 +161,9 @@ func flattenOpenAIResponsesNamespaces(c *gin.Context, body []byte) ([]byte, erro
 //
 // keepToolCallNamespaces 保留工具调用项（function_call / custom_tool_call 等）上的
 // namespace，让 Codex 调用能按上游要求原样回传；判定见
-// shouldKeepOpenAIResponsesToolCallNamespaces。
-func stripOpenAIResponsesInputNamespaces(body []byte, keepToolCallNamespaces bool) ([]byte, error) {
+// shouldKeepOpenAIResponsesToolCallNamespaces。具名独立输出由单独的原生 API
+// 开关保护，不依赖当前 tools 中是否仍有原工具声明。
+func stripOpenAIResponsesInputNamespaces(body []byte, keepToolCallNamespaces, keepStandaloneOutputNamespaces bool) ([]byte, error) {
 	if !bytes.Contains(body, []byte(`"namespace"`)) {
 		return body, nil
 	}
@@ -171,8 +186,9 @@ func stripOpenAIResponsesInputNamespaces(body []byte, keepToolCallNamespaces boo
 		itemBody := []byte(item.Raw)
 		// 先判存在再判类型：长历史里绝大多数是 message/reasoning 等不带 namespace
 		// 的项，这样它们无需再扫一次 type。
-		if item.IsObject() && item.Get("namespace").Exists() &&
-			(!keepToolCallNamespaces || !isOpenAIResponsesToolCallItemType(item.Get("type").String())) {
+		keepNamespace := keepToolCallNamespaces && isOpenAIResponsesToolCallItemType(item.Get("type").String())
+		keepNamespace = keepNamespace || (keepStandaloneOutputNamespaces && isOpenAIResponsesNamedStandaloneOutput(item))
+		if item.IsObject() && item.Get("namespace").Exists() && !keepNamespace {
 			itemBody, stripErr = sjson.DeleteBytes(itemBody, "namespace")
 			if stripErr != nil {
 				return false

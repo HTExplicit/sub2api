@@ -74,9 +74,8 @@ func TestCalculateOpenAI429ResetTime_5hExhausted(t *testing.T) {
 	}
 }
 
-func TestCalculateOpenAI429ResetTime_NeitherExhausted_UsesOfficialWindowReset(t *testing.T) {
+func TestCalculateOpenAI429ResetTime_NeitherExhausted_ReturnsNil(t *testing.T) {
 
-	// Neither limit at 100%, should use the longer reset time
 	headers := http.Header{}
 	headers.Set("x-codex-primary-used-percent", "80")
 	headers.Set("x-codex-primary-reset-after-seconds", "100000")
@@ -86,9 +85,7 @@ func TestCalculateOpenAI429ResetTime_NeitherExhausted_UsesOfficialWindowReset(t 
 	headers.Set("x-codex-secondary-window-minutes", "300")
 
 	now := time.Now()
-	resetAt := calculateOpenAI429ResetTime(headers)
-	require.NotNil(t, resetAt)
-	require.WithinDuration(t, now.Add(100000*time.Second), *resetAt, time.Second)
+	require.Nil(t, calculateOpenAI429ResetTime(headers))
 	require.Nil(t, classifyOpenAIOAuth429At(headers, nil, now).ResetAt, "OAuth retains its transient classification")
 }
 
@@ -194,9 +191,6 @@ func (r *openAI429SnapshotRepo) SetRateLimited(_ context.Context, id int64, rese
 }
 
 func TestHandle429_OpenAITransientIncidentHeadersUseShortFallback(t *testing.T) {
-	repo := &openAI429SnapshotRepo{}
-	svc := NewRateLimitService(repo, nil, nil, nil, nil)
-	account := &Account{ID: 125, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 	headers := http.Header{}
 	headers.Set("x-codex-primary-used-percent", "28")
 	headers.Set("x-codex-primary-reset-after-seconds", "18000")
@@ -204,15 +198,60 @@ func TestHandle429_OpenAITransientIncidentHeadersUseShortFallback(t *testing.T) 
 	headers.Set("x-codex-secondary-used-percent", "69")
 	headers.Set("x-codex-secondary-reset-after-seconds", "604800")
 	headers.Set("x-codex-secondary-window-minutes", "10080")
-	now := time.Now()
+	for _, accountType := range []string{AccountTypeOAuth, AccountTypeAPIKey} {
+		t.Run(accountType, func(t *testing.T) {
+			repo := &openAI429SnapshotRepo{}
+			blocker := &runtimeBlockRecorder{}
+			svc := NewRateLimitService(repo, nil, nil, nil, nil)
+			svc.SetAccountRuntimeBlocker(blocker)
+			account := &Account{ID: 125, Platform: PlatformOpenAI, Type: accountType}
+			now := time.Now()
 
-	svc.handle429(context.Background(), account, headers, []byte(`{"error":{"type":"rate_limit_error"}}`))
+			svc.handle429(context.Background(), account, headers, []byte(`{"error":{"type":"rate_limit_error"}}`))
 
-	require.Equal(t, account.ID, repo.rateLimitedID)
-	require.WithinDuration(t, now.Add(openAIOAuth429FallbackCooldown), repo.rateLimitedAt, 2*time.Second)
-	require.Less(t, repo.rateLimitedAt.Sub(now), time.Minute)
-	require.Equal(t, 28.0, repo.updatedExtra["codex_5h_used_percent"])
-	require.Equal(t, 69.0, repo.updatedExtra["codex_7d_used_percent"])
+			require.Equal(t, account.ID, repo.rateLimitedID)
+			require.WithinDuration(t, now.Add(time.Duration(defaultRateLimit429CooldownSeconds)*time.Second), repo.rateLimitedAt, 2*time.Second)
+			require.Less(t, repo.rateLimitedAt.Sub(now), time.Minute)
+			require.Equal(t, []*Account{account}, blocker.accounts)
+			require.Equal(t, []time.Time{repo.rateLimitedAt}, blocker.until)
+			require.Equal(t, []string{"429_fallback"}, blocker.reasons)
+			require.Equal(t, 28.0, repo.updatedExtra["codex_5h_used_percent"])
+			require.Equal(t, 69.0, repo.updatedExtra["codex_7d_used_percent"])
+		})
+	}
+}
+
+func TestHandle429_OpenAITransientIncidentHeadersFallbackDisabledSkipsPenalty(t *testing.T) {
+	headers := http.Header{}
+	headers.Set("x-codex-primary-used-percent", "28")
+	headers.Set("x-codex-primary-reset-after-seconds", "18000")
+	headers.Set("x-codex-primary-window-minutes", "300")
+	headers.Set("x-codex-secondary-used-percent", "69")
+	headers.Set("x-codex-secondary-reset-after-seconds", "604800")
+	headers.Set("x-codex-secondary-window-minutes", "10080")
+	for _, accountType := range []string{AccountTypeOAuth, AccountTypeAPIKey} {
+		t.Run(accountType, func(t *testing.T) {
+			repo := &openAI429SnapshotRepo{}
+			blocker := &runtimeBlockRecorder{}
+			settingSvc := NewSettingService(newMockSettingRepo(), &config.Config{})
+			require.NoError(t, settingSvc.SetRateLimit429CooldownSettings(context.Background(), &RateLimit429CooldownSettings{
+				Enabled: false, CooldownSeconds: 12,
+			}))
+			svc := NewRateLimitService(repo, nil, nil, nil, nil)
+			svc.SetSettingService(settingSvc)
+			svc.SetAccountRuntimeBlocker(blocker)
+			account := &Account{ID: 126, Platform: PlatformOpenAI, Type: accountType}
+
+			svc.handle429(context.Background(), account, headers, []byte(`{"error":{"type":"rate_limit_error"}}`))
+
+			require.Zero(t, repo.rateLimitedID)
+			require.True(t, repo.rateLimitedAt.IsZero())
+			require.Empty(t, blocker.accounts)
+			require.Empty(t, blocker.reasons)
+			require.Equal(t, 28.0, repo.updatedExtra["codex_5h_used_percent"])
+			require.Equal(t, 69.0, repo.updatedExtra["codex_7d_used_percent"])
+		})
+	}
 }
 
 func (r *openAI429SnapshotRepo) UpdateExtra(_ context.Context, _ int64, updates map[string]any) error {

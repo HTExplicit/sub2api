@@ -122,6 +122,26 @@ describe('PlatformTypeBadge canonical Cindy identity', () => {
       global: { stubs: { PlatformIcon: true, Icon: true } }
     })
     expect(wrapper.text()).toContain('Cindy')
+    expect(wrapper.text()).toContain('Key')
     expect(wrapper.text()).not.toContain('Gemini')
+    expect(wrapper.text()).not.toContain('MiniMax')
+    expect(wrapper.html()).toContain('bg-cyan-100')
+  })
+})
+
+describe('PlatformTypeBadge MiniMax', () => {
+  it('labels MiniMax API keys as MiniMax, not Gemini', () => {
+    const wrapper = mount(PlatformTypeBadge, {
+      props: {
+        platform: 'minimax',
+        type: 'apikey',
+      },
+    })
+
+    expect(wrapper.text()).toContain('MiniMax')
+    expect(wrapper.text()).toContain('Key')
+    expect(wrapper.text()).not.toContain('Gemini')
+    expect(wrapper.text()).not.toContain('Cindy')
+    expect(wrapper.html()).toContain('bg-rose-100')
   })
 })

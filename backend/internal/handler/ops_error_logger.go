@@ -1151,6 +1151,7 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 		}
 		if status < 400 {
 			if parsed.StreamFailure {
+				parsed = applyOpsResponsesServerFailureMarker(c, parsed)
 				status = inferStreamFailureStatus(c, parsed)
 			} else {
 				// A marked in-band error is a visible request failure even though its
@@ -1272,7 +1273,11 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 			if message := strings.TrimSpace(parsed.Message); message != "" {
 				entry.UpstreamErrorMessage = &message
 			}
-			if status >= 400 {
+			// The SSE terminal determines the client-visible semantic status, not
+			// the HTTP status of an upstream attempt. Preserve recorded upstream
+			// facts (including account-auth's explicit zero) and infer only when
+			// no attempt status was available.
+			if entry.UpstreamStatusCode == nil && status >= 400 {
 				finalStatus := status
 				entry.UpstreamStatusCode = &finalStatus
 			}
@@ -2038,13 +2043,38 @@ func sanitizeOpsSSEDataForPersistence(body []byte) string {
 	return out.String()
 }
 
+// A local continuation-store outage shares the ordinary continuation rejection
+// code but is a server-side failure. Only a matching, request-local SLA marker
+// can supply that distinction; upstream attempt status and arbitrary codes must
+// not change the semantic classification of the emitted terminal.
+func applyOpsResponsesServerFailureMarker(c *gin.Context, parsed parsedOpsError) parsedOpsError {
+	if c == nil || !parsed.StreamFailure {
+		return parsed
+	}
+	switch parsed.Code {
+	case service.OpenAIRequestRejectedCode, service.OpenAIContinuationStateUnavailableCode:
+	default:
+		return parsed
+	}
+	for _, streamErr := range service.GetOpsStreamErrors(c) {
+		if streamErr.Code != parsed.Code || !streamErr.CountTowardsSLA || streamErr.Turn != 0 ||
+			streamErr.ErrType != "server_error" || streamErr.IntendedStatus < 500 || streamErr.IntendedStatus > 599 {
+			continue
+		}
+		parsed.StatusCode = streamErr.IntendedStatus
+		parsed.ErrorType = streamErr.ErrType
+		return parsed
+	}
+	return parsed
+}
+
 func inferResponsesFailedOpsErrorType(code string) string {
 	switch strings.TrimSpace(code) {
 	case "rate_limit_exceeded":
 		return "rate_limit_error"
 	case "permission_denied", "permission_error", "insufficient_permissions", "cyber_policy", "content_policy":
 		return "permission_error"
-	case "invalid_request", "context_length_exceeded":
+	case "invalid_request", "context_length_exceeded", service.OpenAIRequestRejectedCode, service.OpenAIContinuationStateUnavailableCode:
 		return "invalid_request_error"
 	case "server_is_overloaded":
 		return "overloaded_error"
@@ -2066,7 +2096,7 @@ func inferStreamFailureStatus(_ *gin.Context, parsed parsedOpsError) int {
 		return http.StatusTooManyRequests
 	case "permission_denied", "permission_error", "insufficient_permissions", "cyber_policy", "content_policy":
 		return http.StatusForbidden
-	case "invalid_request", "context_length_exceeded":
+	case "invalid_request", "context_length_exceeded", service.OpenAIRequestRejectedCode, service.OpenAIContinuationStateUnavailableCode:
 		return http.StatusBadRequest
 	case "server_is_overloaded":
 		return http.StatusServiceUnavailable

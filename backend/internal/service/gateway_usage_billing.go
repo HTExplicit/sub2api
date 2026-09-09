@@ -338,6 +338,7 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 	if p == nil || deps == nil {
 		return false, nil
 	}
+	prepareInternalRateConversion(ctx, deps.settingService, p.Cost, usageLog)
 
 	cmd := buildUsageBillingCommand(requestID, usageLog, p)
 	if cmd == nil || cmd.RequestID == "" || repo == nil {
@@ -544,6 +545,7 @@ func detachUpstreamContext(ctx context.Context) (context.Context, context.Cancel
 
 // billingDeps 扣费逻辑依赖的服务（由各 gateway service 提供）
 type billingDeps struct {
+	settingService        *SettingService
 	accountRepo           AccountRepository
 	userRepo              UserRepository
 	userSubRepo           UserSubscriptionRepository
@@ -556,6 +558,7 @@ type billingDeps struct {
 
 func (s *GatewayService) billingDeps() *billingDeps {
 	return &billingDeps{
+		settingService:        s.settingService,
 		accountRepo:           s.accountRepo,
 		userRepo:              s.userRepo,
 		userSubRepo:           s.userSubRepo,

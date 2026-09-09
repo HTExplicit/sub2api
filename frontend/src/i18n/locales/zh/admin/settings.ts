@@ -34,6 +34,9 @@ export default {
           showQuota: '向用户展示渠道用量/余额',
           showQuotaHint:
             '开启后，配额模式的渠道监控会在用户端渠道状态页展示关联账号的用量滚动窗口/余额。默认关闭；管理员始终可见。',
+          hideUserRanking: '对用户隐藏用户排行',
+          hideUserRankingHint:
+            '开启后，用户端渠道监控 V2 不再显示「用户排行」页，用户 API 也不返回排行数据。管理员仍可查看。',
         },
         availableChannels: {
           title: '可用渠道',
@@ -487,6 +490,8 @@ export default {
         saveFailed: '保存 Ollama Cloud 用量刷新设置失败'
       },
       gatewayForwarding: {
+        internalRateConversion: '内部倍率转换',
+        internalRateConversionHint: '默认开启，按固定结算系数转换全部分组的用户费用及订阅消耗；关闭后恢复原计费。分组倍率与账号侧成本保持不变。',
         title: '请求转发行为',
         description: '控制请求转发到上游 OAuth 账号时的行为',
         grokDefaultTextModel: '默认 Grok 文本模型',

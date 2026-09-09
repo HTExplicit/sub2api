@@ -253,6 +253,8 @@ func newOpenAIRecordUsageServiceForTest(usageRepo UsageLogRepository, userRepo U
 		nil,
 		"service.openai_gateway.test",
 	)
+	// These existing contracts test original pricing; conversion has separate default-on coverage.
+	svc.settingService = newTestInternalRateConversionSettings(false)
 	return svc
 }
 

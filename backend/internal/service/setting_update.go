@@ -426,6 +426,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	}
 	updates[SettingKeyChannelMonitorHideThroughput] = strconv.FormatBool(settings.ChannelMonitorHideThroughput)
 	updates[SettingKeyChannelMonitorShowQuota] = strconv.FormatBool(settings.ChannelMonitorShowQuota)
+	updates[SettingKeyChannelMonitorHideUserRanking] = strconv.FormatBool(settings.ChannelMonitorHideUserRanking)
 
 	// Grok model mapping policy
 	if v := strings.TrimSpace(settings.GrokDefaultTextModel); v != "" {
@@ -477,6 +478,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 
 	// Backend Mode
 	updates[SettingKeyBackendModeEnabled] = strconv.FormatBool(settings.BackendModeEnabled)
+	updates[SettingKeyInternalRateConversionEnabled] = strconv.FormatBool(settings.InternalRateConversionEnabled)
 
 	// Gateway forwarding behavior
 	mode := normalizeOpenAITTFTMode(settings.OpenAITTFTMode)
@@ -706,6 +708,7 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 	if settings == nil {
 		return
 	}
+	s.refreshInternalRateConversionCache(settings.InternalRateConversionEnabled)
 	keywordsJSON, err := json.Marshal(settings.OpenAIRefusalKeywords)
 	if err != nil {
 		keywordsJSON = []byte(defaultOpenAIRefusalKeywordsJSON)

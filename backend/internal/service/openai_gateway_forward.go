@@ -165,7 +165,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		keepToolCallNamespaces := shouldKeepOpenAIResponsesToolCallNamespaces(
 			account, wsDecision.Transport, passthroughEnabled, compactPath,
 		)
-		body, err = stripOpenAIResponsesInputNamespaces(body, keepToolCallNamespaces)
+		body, err = stripOpenAIResponsesInputNamespaces(body, keepToolCallNamespaces,
+			shouldKeepOpenAIResponsesStandaloneOutputNamespaces(account, compactPath))
 		if err != nil {
 			setOpsUpstreamError(c, http.StatusBadRequest, err.Error(), "")
 			c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
@@ -1106,10 +1107,13 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 			return nil, err
 		}
+		reasoningRecovery.BindDiagnosticRequest(diagnosticIncomingBody, upstreamReq)
 
 		// Send request
 		upstreamStart := time.Now()
+		reasoningRecovery.MarkAttemptDispatched()
 		resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+		reasoningRecovery.ObserveResponse(resp)
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 		if headerGuard != nil && headerGuard.stopHeaderWait() {
 			if resp != nil && resp.Body != nil {
@@ -1156,10 +1160,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				continue
 			}
 			if reasoningRecovery.RecoveryAttempt() {
-				return nil, errors.New("reasoning recovery rejected by upstream")
+				return nil, reasoningRecovery.FailureForResponse(resp.StatusCode, resp.Header, respBody)
 			}
 			if _, rejected := parseOpenAIReasoningRejection(respBody); rejected {
-				return nil, NewOpenAIContinuationStateUnavailableError(resp.StatusCode, resp.Header, nil)
+				return nil, NewOpenAIContinuationStateUnavailableError(resp.StatusCode, resp.Header, respBody)
 			}
 			if failoverErr, ok := s.handleCindyBalanceHTTPFailover(
 				ctx, account, resp.StatusCode, resp.Header, respBody, upstreamModel,

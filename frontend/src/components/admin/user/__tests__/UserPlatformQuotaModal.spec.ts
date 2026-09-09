@@ -79,7 +79,7 @@ describe('UserPlatformQuotaModal', () => {
     expect(apiMocks.getPlatformQuotas).toHaveBeenCalledWith(99)
   })
 
-  it('空数据渲染全部 9 个 concrete platform 行', async () => {
+  it('空数据渲染全部 10 个 concrete platform 行', async () => {
     const w = await mountAndOpen()
     const html = w.html()
     expect(html).toContain('anthropic')
@@ -91,6 +91,8 @@ describe('UserPlatformQuotaModal', () => {
     expect(html).toContain('zhipu')
     expect(html).toContain('deepseek')
     expect(html).toContain('cindy')
+    expect(html).toContain('minimax')
+    expect(w.findAll('tbody tr')).toHaveLength(10)
   })
 
   it('已有数据正确填充 limit input', async () => {
@@ -102,20 +104,27 @@ describe('UserPlatformQuotaModal', () => {
     })
     const w = await mountAndOpen()
     const inputs = w.findAll('input[type=number]')
-    // 9 platforms × 3 windows = 27 inputs
-    expect(inputs.length).toBe(27)
+    // 10 platforms × 3 windows = 30 inputs
+    expect(inputs.length).toBe(30)
     // 第一个 input 是 anthropic.daily = 10
     expect((inputs[0].element as HTMLInputElement).value).toBe('10')
   })
 
-  it('保存提交完整 9 platform payload', async () => {
+  it('保存提交完整 10 platform payload 并同时保留 Cindy 和 MiniMax 配额', async () => {
     apiMocks.getPlatformQuotas.mockResolvedValueOnce({
       platform_quotas: [
         { platform: 'openai', daily_limit_usd: null, weekly_limit_usd: 20, monthly_limit_usd: null,
           daily_usage_usd: 0, weekly_usage_usd: 0, monthly_usage_usd: 0 },
+        { platform: 'cindy', daily_limit_usd: 7, weekly_limit_usd: 35, monthly_limit_usd: 140,
+          daily_usage_usd: 1, weekly_usage_usd: 2, monthly_usage_usd: 3 },
+        { platform: 'minimax', daily_limit_usd: 0, weekly_limit_usd: 20, monthly_limit_usd: 80,
+          daily_usage_usd: 0, weekly_usage_usd: 0, monthly_usage_usd: 0 },
       ],
     })
     const w = await mountAndOpen()
+    const minimaxRow = w.findAll('tbody tr').find((row) => row.find('td').text() === 'minimax')
+    expect(minimaxRow).toBeTruthy()
+    await minimaxRow!.findAll('input[type=number]')[2].setValue('120')
     // 找到「保存」按钮（包含中文「保存」字样的按钮）
     const buttons = w.findAll('button')
     const saveBtn = buttons.find((b) => b.text() === 'admin.users.platformQuota.save')
@@ -125,10 +134,18 @@ describe('UserPlatformQuotaModal', () => {
     expect(apiMocks.updatePlatformQuotas).toHaveBeenCalledTimes(1)
     const [uid, payload] = apiMocks.updatePlatformQuotas.mock.calls[0]
     expect(uid).toBe(99)
-    expect(payload).toHaveLength(9)
-    expect(payload.map((p: any) => p.platform)).toContain('cindy')
+    expect(payload).toHaveLength(10)
+    expect(payload.map((p: any) => p.platform)).toEqual([
+      'anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kimi', 'zhipu', 'deepseek', 'cindy', 'minimax',
+    ])
     const openai = payload.find((p: any) => p.platform === 'openai')
     expect(openai.weekly_limit_usd).toBe(20)
+    expect(payload.find((p: any) => p.platform === 'cindy')).toEqual({
+      platform: 'cindy', daily_limit_usd: 7, weekly_limit_usd: 35, monthly_limit_usd: 140,
+    })
+    expect(payload.find((p: any) => p.platform === 'minimax')).toEqual({
+      platform: 'minimax', daily_limit_usd: 0, weekly_limit_usd: 20, monthly_limit_usd: 120,
+    })
   })
 
   it('全部清空把所有 limit 置 null（确认通过）', async () => {

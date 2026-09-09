@@ -488,6 +488,7 @@ type OpenAIGatewayService struct {
 	openaiAccountRuntimeBlockUntil      sync.Map // key: int64(accountID), value: time.Time
 	openaiAccountRuntimeBlockLocks      sync.Map // key: int64(accountID), value: *sync.Mutex
 	openaiAccountRuntimeBlockGeneration sync.Map // key: int64(accountID), value: uint64
+	openaiAccountRuntimeBlockSources    sync.Map // key: int64(accountID), value: openAIAccountRuntimeBlockSources
 	cindyBalanceRuntimeBlockFingerprint sync.Map // key: int64(accountID), value: opaque credential SHA-256
 	cindyHealthRuntimeBlocks            sync.Map // key: int64(accountID), value: cindyHealthRuntimeBlock
 	openaiAccountRuntimeBlockSequence   atomic.Uint64
@@ -721,6 +722,7 @@ func (s *OpenAIGatewayService) getCodexSnapshotThrottle() *accountWriteThrottle 
 
 func (s *OpenAIGatewayService) billingDeps() *billingDeps {
 	return &billingDeps{
+		settingService:        s.settingService,
 		accountRepo:           s.accountRepo,
 		userRepo:              s.userRepo,
 		userSubRepo:           s.userSubRepo,

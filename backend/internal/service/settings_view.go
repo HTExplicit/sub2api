@@ -209,6 +209,7 @@ type SystemSettings struct {
 	ChannelMonitorDefaultIntervalSeconds int    `json:"channel_monitor_default_interval_seconds"`
 	ChannelMonitorHideThroughput         bool   `json:"channel_monitor_hide_throughput"`
 	ChannelMonitorShowQuota              bool   `json:"channel_monitor_show_quota"`
+	ChannelMonitorHideUserRanking        bool   `json:"channel_monitor_hide_user_ranking"`
 
 	// Grok model mapping policy (admin settings; empty mapping falls back to these).
 	GrokDefaultTextModel           string `json:"grok_default_text_model"`
@@ -235,6 +236,7 @@ type SystemSettings struct {
 	BackendModeEnabled bool
 
 	// Gateway forwarding behavior
+	InternalRateConversionEnabled          bool
 	OpenAITTFTMode                         string // Responses first_token_ms 统计口径（默认 semantic）
 	EnableFingerprintUnification           bool   // 是否统一 OAuth 账号的指纹头（默认 true）
 	EnableMetadataPassthrough              bool   // 是否透传客户端原始 metadata（默认 false）
@@ -389,6 +391,7 @@ type PublicSettings struct {
 	ChannelMonitorDefaultIntervalSeconds int    `json:"channel_monitor_default_interval_seconds"`
 	ChannelMonitorHideThroughput         bool   `json:"channel_monitor_hide_throughput"`
 	ChannelMonitorShowQuota              bool   `json:"channel_monitor_show_quota"`
+	ChannelMonitorHideUserRanking        bool   `json:"channel_monitor_hide_user_ranking"`
 
 	// Grok model mapping policy (admin settings).
 	GrokDefaultTextModel           string `json:"grok_default_text_model"`

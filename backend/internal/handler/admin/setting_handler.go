@@ -294,6 +294,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		MaxClaudeCodeVersion:                                   settings.MaxClaudeCodeVersion,
 		AllowUngroupedKeyScheduling:                            settings.AllowUngroupedKeyScheduling,
 		BackendModeEnabled:                                     settings.BackendModeEnabled,
+		InternalRateConversionEnabled:                          settings.InternalRateConversionEnabled,
 		OpenAITTFTMode:                                         settings.OpenAITTFTMode,
 		EnableFingerprintUnification:                           settings.EnableFingerprintUnification,
 		EnableMetadataPassthrough:                              settings.EnableMetadataPassthrough,
@@ -382,6 +383,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		ChannelMonitorDefaultIntervalSeconds: settings.ChannelMonitorDefaultIntervalSeconds,
 		ChannelMonitorHideThroughput:         settings.ChannelMonitorHideThroughput,
 		ChannelMonitorShowQuota:              settings.ChannelMonitorShowQuota,
+		ChannelMonitorHideUserRanking:        settings.ChannelMonitorHideUserRanking,
 
 		GrokDefaultTextModel:           settings.GrokDefaultTextModel,
 		GrokCrossClientModelMapEnabled: settings.GrokCrossClientModelMapEnabled,

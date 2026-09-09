@@ -419,6 +419,8 @@ const (
 	openAIOAuth429QuotaReset
 )
 
+// classifyOpenAIOAuth429 区分账号配额耗尽信号与普通瞬时 429。只有窗口达到
+// 100% 或响应体明确给出 reset 时间时，才视为配额限流信号。
 func classifyOpenAIOAuth429(headers http.Header, responseBody []byte) (openAIOAuth429Disposition, *time.Time) {
 	classification := classifyOpenAIOAuth429At(headers, responseBody, time.Now())
 	return classification.Disposition, classification.ResetAt
@@ -569,11 +571,17 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	if s.rateLimitService == nil {
 		return false
 	}
+	beforeGeneration, _ := s.openaiAccountRuntimeBlockGeneration.Load(account.ID)
 	shouldDisable := s.rateLimitService.HandleUpstreamError(stateCtx, account, statusCode, headers, responseBody)
 	modelTempMatched := statusCode != http.StatusUnauthorized && tempUnschedulableModel(stateCtx, nil) != "" &&
 		len(matchTempUnschedulableRules(account, statusCode, responseBody)) > 0
 	if shouldDisable && !modelTempMatched {
-		s.BlockAccountScheduling(account, time.Time{}, "upstream_disable")
+		// A finite DB-cooldown notification already supplies the bridge for this
+		// error. Do not reclassify that notification as independent evidence.
+		snapshot := s.peekOpenAIAccountRuntimeBlock(account)
+		if !snapshot.blocked || !snapshot.sources.hasPersisted || snapshot.generation == beforeGeneration {
+			s.BlockAccountScheduling(account, time.Time{}, "upstream_disable")
+		}
 	}
 	// Pool-mode retryable upstream errors are already bounded by the request-local
 	// same-account retry budget. Recording the generic account+model transient
@@ -653,13 +661,17 @@ func (s *OpenAIGatewayService) markOpenAIOAuth429RateLimited(ctx context.Context
 	if disposition == openAIOAuth429Transient && s.openAIOAuth429RetryWindowActive(account) {
 		return
 	}
-	cooldownUntil := time.Now().Add(openAIOAuth429FallbackCooldown)
-	if resetAt != nil && resetAt.After(time.Now()) {
+	now := time.Now()
+	cooldownUntil := now.Add(openAIOAuth429FallbackCooldown)
+	if resetAt != nil && resetAt.After(now) {
 		cooldownUntil = *resetAt
 	} else if s.rateLimitService != nil {
-		if cooldown, ok := s.rateLimitService.get429FallbackCooldown(ctx, account); ok && cooldown > 0 {
-			cooldownUntil = time.Now().Add(cooldown)
+		cooldown, ok := s.rateLimitService.get429FallbackCooldown(ctx, account)
+		if !ok || cooldown <= 0 {
+			s.openaiOAuth429RetryStartedAt.Delete(account.ID)
+			return
 		}
+		cooldownUntil = now.Add(cooldown)
 	}
 	s.BlockAccountScheduling(account, cooldownUntil, "429")
 	s.openaiOAuth429RetryStartedAt.Delete(account.ID)
@@ -732,6 +744,21 @@ func openAIOAuth429SameAccountRetryDelay(headers http.Header, deadline time.Time
 }
 
 func (s *OpenAIGatewayService) BlockAccountScheduling(account *Account, until time.Time, reason string) {
+	s.blockAccountScheduling(account, until, reason, false)
+}
+
+// BlockAccountSchedulingFromPersistedCooldown mirrors only the ordinary DB
+// cooldown fields. Request-owned cooldowns, credential mutation guards and Cindy
+// health state continue to use BlockAccountScheduling instead.
+func (s *OpenAIGatewayService) BlockAccountSchedulingFromPersistedCooldown(account *Account, until time.Time, reason string) {
+	if until.IsZero() || (account != nil && IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials)) {
+		s.BlockAccountScheduling(account, until, reason)
+		return
+	}
+	s.blockAccountScheduling(account, until, reason, true)
+}
+
+func (s *OpenAIGatewayService) blockAccountScheduling(account *Account, until time.Time, reason string, fromPersistedCooldown bool) {
 	if s == nil || !isOpenAIAccount(account) {
 		return
 	}
@@ -742,15 +769,17 @@ func (s *OpenAIGatewayService) BlockAccountScheduling(account *Account, until ti
 	mu := s.openAIAccountRuntimeBlockLock(account.ID)
 	mu.Lock()
 	defer mu.Unlock()
-	_, _ = s.blockAccountSchedulingLocked(account, until, reason)
-	blockUntil := until
-	if value, ok := s.openaiAccountRuntimeBlockUntil.Load(account.ID); ok {
-		if current, valid := value.(time.Time); valid && current.After(blockUntil) {
-			blockUntil = current
-		}
+	_, _ = s.blockAccountSchedulingLockedWithSource(account, until, reason, fromPersistedCooldown)
+	if fromPersistedCooldown {
+		// A DB mirror is not an independent Redis breaker. Persisting its
+		// deadline there would keep vetoing the account after DB recovery.
+		return
 	}
 	if account.Type != AccountTypeAPIKey {
-		s.persistOpenAIRuntimeBreaker(context.Background(), account.ID, "", reason, blockUntil)
+		sources := s.openAIAccountRuntimeBlockSourcesLocked(account.ID)
+		if sources.hasIndependent {
+			s.persistOpenAIRuntimeBreaker(context.Background(), account.ID, "", reason, sources.independentUntil)
+		}
 	}
 }
 
@@ -796,6 +825,7 @@ func (s *OpenAIGatewayService) ClearCindyHealthEpisodeBlock(episode CindyHealthE
 	owner, _ := s.openaiAccountRuntimeBlockGeneration.Load(episode.AccountID)
 	if owner == current.Owner {
 		s.openaiAccountRuntimeBlockUntil.Delete(episode.AccountID)
+		s.openaiAccountRuntimeBlockSources.Delete(episode.AccountID)
 		s.cindyBalanceRuntimeBlockFingerprint.Delete(episode.AccountID)
 		s.openaiAccountRuntimeBlockGeneration.Store(episode.AccountID, s.openaiAccountRuntimeBlockSequence.Add(1))
 	}
@@ -983,6 +1013,7 @@ func (s *OpenAIGatewayService) ClearCindyBalanceRuntimeBlock(accountID int64) {
 		s.cindyBalanceRuntimeBlockFingerprint.Delete(accountID)
 	}
 	s.openaiAccountRuntimeBlockUntil.Delete(accountID)
+	s.openaiAccountRuntimeBlockSources.Delete(accountID)
 	s.openaiAccountRuntimeBlockGeneration.Store(accountID, s.openaiAccountRuntimeBlockSequence.Add(1))
 }
 
@@ -1137,7 +1168,59 @@ func (s *OpenAIGatewayService) openAIAccountRuntimeBlockLock(accountID int64) *s
 	return mu
 }
 
+type openAIAccountRuntimeBlockSources struct {
+	hasIndependent   bool
+	independentUntil time.Time
+	independentOwner uint64
+	hasPersisted     bool
+	persistedUntil   time.Time
+}
+
+func (sources openAIAccountRuntimeBlockSources) effectiveUntil() (time.Time, bool) {
+	if sources.hasIndependent {
+		if sources.independentUntil.IsZero() || !sources.hasPersisted || !sources.persistedUntil.After(sources.independentUntil) {
+			return sources.independentUntil, true
+		}
+	}
+	return sources.persistedUntil, sources.hasPersisted
+}
+
+func (sources *openAIAccountRuntimeBlockSources) expire(now time.Time) {
+	if sources.hasIndependent && !sources.independentUntil.IsZero() && !now.Before(sources.independentUntil) {
+		sources.hasIndependent = false
+		sources.independentUntil = time.Time{}
+		sources.independentOwner = 0
+	}
+	if sources.hasPersisted && !now.Before(sources.persistedUntil) {
+		sources.hasPersisted = false
+		sources.persistedUntil = time.Time{}
+	}
+}
+
+// Unknown entries retain the legacy independent meaning. Only an explicit
+// persisted-cooldown writer may make a block eligible for DB-authority cleanup.
+// Callers hold the per-account runtime block lock.
+func (s *OpenAIGatewayService) openAIAccountRuntimeBlockSourcesLocked(accountID int64) openAIAccountRuntimeBlockSources {
+	if raw, ok := s.openaiAccountRuntimeBlockSources.Load(accountID); ok {
+		if sources, valid := raw.(openAIAccountRuntimeBlockSources); valid {
+			return sources
+		}
+	}
+	if raw, ok := s.openaiAccountRuntimeBlockUntil.Load(accountID); ok {
+		if until, valid := raw.(time.Time); valid {
+			generation, _ := s.openaiAccountRuntimeBlockGeneration.Load(accountID)
+			owner, _ := generation.(uint64)
+			return openAIAccountRuntimeBlockSources{hasIndependent: true, independentUntil: until, independentOwner: owner}
+		}
+	}
+	return openAIAccountRuntimeBlockSources{}
+}
+
 func (s *OpenAIGatewayService) blockAccountSchedulingLocked(account *Account, until time.Time, reason string) (uint64, bool) {
+	return s.blockAccountSchedulingLockedWithSource(account, until, reason, false)
+}
+
+func (s *OpenAIGatewayService) blockAccountSchedulingLockedWithSource(account *Account, until time.Time, reason string, fromPersistedCooldown bool) (uint64, bool) {
 	now := time.Now()
 	blockUntil := until
 	indefinite := blockUntil.IsZero() && (reason == "cindy_balance_insufficient" || reason == "cindy_banned")
@@ -1145,32 +1228,38 @@ func (s *OpenAIGatewayService) blockAccountSchedulingLocked(account *Account, un
 		blockUntil = now.Add(openAIStopSchedulingBridgeCooldown)
 	}
 
-	if current, loaded := s.openaiAccountRuntimeBlockUntil.Load(account.ID); loaded {
-		currentUntil, ok := current.(time.Time)
-		if ok {
-			// A stored zero time is the Cindy balance fail-closed sentinel. It must
-			// dominate every later finite cooldown until an explicit clear removes it.
-			if currentUntil.IsZero() {
-				owner, _ := s.openaiAccountRuntimeBlockGeneration.Load(account.ID)
-				if generation, valid := owner.(uint64); valid {
-					return generation, false
-				}
-				return 0, false
-			}
-			if !blockUntil.IsZero() && !blockUntil.After(currentUntil) {
-				// The effective deadline is unchanged, but this independent block call
-				// owns the retained state. Advance the generation so an earlier
-				// tentative rollback cannot delete it.
-				generation := s.openaiAccountRuntimeBlockSequence.Add(1)
-				s.openaiAccountRuntimeBlockGeneration.Store(account.ID, generation)
-				return generation, false
-			}
+	current, loaded := s.openaiAccountRuntimeBlockUntil.Load(account.ID)
+	currentUntil, validCurrent := current.(time.Time)
+	if loaded && validCurrent && currentUntil.IsZero() {
+		// Cindy terminal state dominates finite cooldowns from either source.
+		owner, _ := s.openaiAccountRuntimeBlockGeneration.Load(account.ID)
+		if generation, valid := owner.(uint64); valid {
+			return generation, false
 		}
+		return 0, false
 	}
+	sources := s.openAIAccountRuntimeBlockSourcesLocked(account.ID)
+	sources.expire(now)
 	generation := s.openaiAccountRuntimeBlockSequence.Add(1)
-	s.openaiAccountRuntimeBlockUntil.Store(account.ID, blockUntil)
+	if fromPersistedCooldown {
+		if !sources.hasPersisted || blockUntil.After(sources.persistedUntil) {
+			sources.persistedUntil = blockUntil
+		}
+		sources.hasPersisted = true
+	} else {
+		if !sources.hasIndependent || blockUntil.IsZero() || (!sources.independentUntil.IsZero() && blockUntil.After(sources.independentUntil)) {
+			sources.independentUntil = blockUntil
+		}
+		sources.hasIndependent = true
+		// Even a shorter independent write takes ownership of that contribution.
+		// An unrelated DB mirror must not take over a tentative credential guard.
+		sources.independentOwner = generation
+	}
+	effectiveUntil, _ := sources.effectiveUntil()
+	s.openaiAccountRuntimeBlockUntil.Store(account.ID, effectiveUntil)
+	s.openaiAccountRuntimeBlockSources.Store(account.ID, sources)
 	s.openaiAccountRuntimeBlockGeneration.Store(account.ID, generation)
-	return generation, true
+	return generation, !loaded || !validCurrent || !effectiveUntil.Equal(currentUntil)
 }
 
 func (s *OpenAIGatewayService) ClearAccountSchedulingBlock(accountID int64) {
@@ -1181,6 +1270,7 @@ func (s *OpenAIGatewayService) ClearAccountSchedulingBlock(accountID int64) {
 	mu.Lock()
 	defer mu.Unlock()
 	s.openaiAccountRuntimeBlockUntil.Delete(accountID)
+	s.openaiAccountRuntimeBlockSources.Delete(accountID)
 	s.cindyBalanceRuntimeBlockFingerprint.Delete(accountID)
 	s.cindyHealthRuntimeBlocks.Delete(accountID)
 	s.openaiAccountRuntimeBlockGeneration.Store(accountID, s.openaiAccountRuntimeBlockSequence.Add(1))
@@ -1204,6 +1294,7 @@ func (s *OpenAIGatewayService) clearOpenAIAccountSchedulingBlockScope(accountID 
 		}
 	}
 	s.openaiAccountRuntimeBlockUntil.Delete(accountID)
+	s.openaiAccountRuntimeBlockSources.Delete(accountID)
 	s.cindyBalanceRuntimeBlockFingerprint.Delete(accountID)
 	s.openaiAccountRuntimeBlockGeneration.Store(accountID, s.openaiAccountRuntimeBlockSequence.Add(1))
 	mu.Unlock()
@@ -1228,6 +1319,7 @@ func (s *OpenAIGatewayService) isOpenAIAccountRuntimeBlockedContext(_ context.Co
 			_, fingerprintLoaded := s.cindyBalanceRuntimeBlockFingerprint.Load(account.ID)
 			if valid && cooldownUntil.IsZero() && fingerprintLoaded {
 				s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
+				s.openaiAccountRuntimeBlockSources.Delete(account.ID)
 				s.cindyBalanceRuntimeBlockFingerprint.Delete(account.ID)
 				s.openaiAccountRuntimeBlockGeneration.Store(account.ID, s.openaiAccountRuntimeBlockSequence.Add(1))
 			}
@@ -1239,6 +1331,7 @@ func (s *OpenAIGatewayService) isOpenAIAccountRuntimeBlockedContext(_ context.Co
 		cooldownUntil, valid := value.(time.Time)
 		if !valid {
 			s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
+			s.openaiAccountRuntimeBlockSources.Delete(account.ID)
 			s.cindyBalanceRuntimeBlockFingerprint.Delete(account.ID)
 			s.openaiAccountRuntimeBlockGeneration.Store(account.ID, s.openaiAccountRuntimeBlockSequence.Add(1))
 		} else if cooldownUntil.IsZero() {
@@ -1252,6 +1345,7 @@ func (s *OpenAIGatewayService) isOpenAIAccountRuntimeBlockedContext(_ context.Co
 					currentOwner, _ := s.openaiAccountRuntimeBlockGeneration.Load(account.ID)
 					if healthValid && currentOwner == health.Owner {
 						s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
+						s.openaiAccountRuntimeBlockSources.Delete(account.ID)
 						s.cindyHealthRuntimeBlocks.Delete(account.ID)
 						s.openaiAccountRuntimeBlockGeneration.Store(account.ID, s.openaiAccountRuntimeBlockSequence.Add(1))
 						mu.Unlock()
@@ -1273,6 +1367,7 @@ func (s *OpenAIGatewayService) isOpenAIAccountRuntimeBlockedContext(_ context.Co
 			)
 			if fingerprintLoaded && fingerprintErr == nil && storedFingerprint != currentFingerprint {
 				s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
+				s.openaiAccountRuntimeBlockSources.Delete(account.ID)
 				s.cindyBalanceRuntimeBlockFingerprint.Delete(account.ID)
 				s.openaiAccountRuntimeBlockGeneration.Store(account.ID, s.openaiAccountRuntimeBlockSequence.Add(1))
 				mu.Unlock()
@@ -1285,6 +1380,7 @@ func (s *OpenAIGatewayService) isOpenAIAccountRuntimeBlockedContext(_ context.Co
 			return true
 		} else {
 			s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
+			s.openaiAccountRuntimeBlockSources.Delete(account.ID)
 			s.cindyBalanceRuntimeBlockFingerprint.Delete(account.ID)
 			s.openaiAccountRuntimeBlockGeneration.Store(account.ID, s.openaiAccountRuntimeBlockSequence.Add(1))
 		}
@@ -1386,6 +1482,94 @@ func (s *OpenAIGatewayService) isOpenAIAccountModelRuntimeBlocked(account *Accou
 	return state.isBlocked(account.ID, openAIAccountModelTransientModel(canonicalModel), time.Now())
 }
 
+func accountPersistedSchedulingCooldownActive(account *Account) bool {
+	if account == nil {
+		return false
+	}
+	now := time.Now()
+	if account.TempUnschedulableUntil != nil && now.Before(*account.TempUnschedulableUntil) {
+		return true
+	}
+	if account.RateLimitResetAt != nil && now.Before(*account.RateLimitResetAt) {
+		return true
+	}
+	if account.OverloadUntil != nil && now.Before(*account.OverloadUntil) {
+		return true
+	}
+	return false
+}
+
+type openAIAccountRuntimeBlockSnapshot struct {
+	until      time.Time
+	generation uint64
+	blocked    bool
+	sources    openAIAccountRuntimeBlockSources
+}
+
+func (s *OpenAIGatewayService) peekOpenAIAccountRuntimeBlock(account *Account) openAIAccountRuntimeBlockSnapshot {
+	if s == nil || !isOpenAIAccount(account) {
+		return openAIAccountRuntimeBlockSnapshot{}
+	}
+	mu := s.openAIAccountRuntimeBlockLock(account.ID)
+	mu.Lock()
+	defer mu.Unlock()
+	value, ok := s.openaiAccountRuntimeBlockUntil.Load(account.ID)
+	if !ok {
+		return openAIAccountRuntimeBlockSnapshot{}
+	}
+	until, isTime := value.(time.Time)
+	if !isTime || (!until.IsZero() && !time.Now().Before(until)) {
+		s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
+		s.openaiAccountRuntimeBlockSources.Delete(account.ID)
+		s.openaiOAuth429RetryStartedAt.Delete(account.ID)
+		s.openaiAccountRuntimeBlockGeneration.Store(account.ID, s.openaiAccountRuntimeBlockSequence.Add(1))
+		return openAIAccountRuntimeBlockSnapshot{}
+	}
+	generation, _ := s.openaiAccountRuntimeBlockGeneration.Load(account.ID)
+	gen, _ := generation.(uint64)
+	return openAIAccountRuntimeBlockSnapshot{until: until, generation: gen, blocked: true, sources: s.openAIAccountRuntimeBlockSourcesLocked(account.ID)}
+}
+
+// clearOpenAIAccountRuntimeBlockIfUnchanged deletes the in-process account block
+// only when generation and deadline are unchanged. A newer block installed after
+// peek must be kept even if its deadline happens to match. Zero deadlines belong
+// to Cindy health/balance state and are never cleared through generic cooldowns.
+func (s *OpenAIGatewayService) clearOpenAIAccountRuntimeBlockIfUnchanged(accountID int64, snapshot openAIAccountRuntimeBlockSnapshot) {
+	if s == nil || accountID <= 0 || !snapshot.blocked || snapshot.until.IsZero() || !snapshot.sources.hasPersisted {
+		return
+	}
+	mu := s.openAIAccountRuntimeBlockLock(accountID)
+	mu.Lock()
+	defer mu.Unlock()
+	generation, ok := s.openaiAccountRuntimeBlockGeneration.Load(accountID)
+	if !ok || generation != snapshot.generation {
+		return
+	}
+	current, ok := s.openaiAccountRuntimeBlockUntil.Load(accountID)
+	currentUntil, isTime := current.(time.Time)
+	if !ok || !isTime || !currentUntil.Equal(snapshot.until) {
+		return
+	}
+	sources := snapshot.sources
+	sources.hasPersisted = false
+	sources.persistedUntil = time.Time{}
+	sources.expire(time.Now())
+	if until, blocked := sources.effectiveUntil(); blocked {
+		s.openaiAccountRuntimeBlockUntil.Store(accountID, until)
+		s.openaiAccountRuntimeBlockSources.Store(accountID, sources)
+	} else {
+		s.openaiAccountRuntimeBlockUntil.Delete(accountID)
+		s.openaiAccountRuntimeBlockSources.Delete(accountID)
+		s.openaiOAuth429RetryStartedAt.Delete(accountID)
+	}
+	s.openaiAccountRuntimeBlockGeneration.Store(accountID, s.openaiAccountRuntimeBlockSequence.Add(1))
+}
+
+// isOpenAIAccountRequestRuntimeBlocked treats persisted cooldown fields as the
+// source of truth only for explicitly mirrored DB cooldown contributions.
+// Empty/inactive fields remove that contribution with generation+deadline CAS;
+// an independent request/credential block keeps its own deadline and owner.
+// Cindy health/balance, model scopes and OAuth Redis leases remain independent.
 func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlocked(account *Account, requestedModel string) bool {
 	return s.isOpenAIAccountRequestRuntimeBlockedContext(ensureOpenAIRuntimeBreakerProbeOwner(context.Background()), account, requestedModel)
 }
@@ -1394,6 +1578,15 @@ func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlockedContext(ctx c
 	if s == nil || account == nil {
 		return false
 	}
+	if !IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		snapshot := s.peekOpenAIAccountRuntimeBlock(account)
+		if snapshot.blocked && snapshot.sources.hasPersisted && !snapshot.until.IsZero() && !accountPersistedSchedulingCooldownActive(account) {
+			s.clearOpenAIAccountRuntimeBlockIfUnchanged(account.ID, snapshot)
+		}
+	}
+	// Re-read after the conditional clear so a concurrent replacement remains
+	// blocked, and validate Cindy episode/generation/fingerprint ownership through
+	// its existing path instead of interpreting its zero deadline as expiration.
 	if s.isOpenAIAccountRuntimeBlockedContext(ctx, account) || s.isOpenAIAccountModelRuntimeBlocked(account, requestedModel) {
 		return true
 	}
@@ -1529,6 +1722,15 @@ func (s *OpenAIGatewayService) CooldownOpenAIRetryExhausted(
 			if until.After(maxResetAt) {
 				until = maxResetAt
 			}
+		} else if s.rateLimitService != nil {
+			// The retry owner must not reintroduce the fallback that the ordinary
+			// 429 path explicitly disabled. Proven quota resets and Retry-After
+			// above remain upstream-directed cooldowns, not fallback penalties.
+			cooldown, enabled := s.rateLimitService.get429FallbackCooldown(ctx, account)
+			if !enabled || cooldown <= 0 {
+				return
+			}
+			until = now.Add(cooldown)
 		}
 		slog.Info("codex_quota_429_classified",
 			"account_id", account.ID,

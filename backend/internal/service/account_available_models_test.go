@@ -71,10 +71,25 @@ func TestAccountAvailableModelsProjectsOAuthDiscovery(t *testing.T) {
 	require.NoError(t, err)
 	models, err := svc.FetchOpenAIAccountModels(context.Background(), account)
 	require.NoError(t, err)
-	require.Equal(t, []string{"Case/OAuth-A", "oauth-second"}, []string{models[0].ID, models[1].ID})
-	for _, model := range models {
-		require.Equal(t, model.ID, model.DisplayName)
-		require.Equal(t, "model", model.Type)
+	// Shared OAuth discovery lacks picker display fields, while the OAuth-only
+	// image additions retain their official built-in labels and exact IDs.
+	expected := []struct {
+		id          string
+		displayName string
+	}{
+		{"Case/OAuth-A", "Case/OAuth-A"},
+		{"oauth-second", "oauth-second"},
+		{"gpt-image-1", "GPT Image 1"},
+		{"gpt-image-1.5", "GPT Image 1.5"},
+		{"gpt-image-2", "GPT Image 2"},
+		{"gpt-image-2.5-flare", "GPT Image 2.5 Flare"},
+		{"gpt-image-2.5-sunburst", "GPT Image 2.5 Sunburst"},
+	}
+	require.Len(t, models, len(expected))
+	for i, want := range expected {
+		require.Equal(t, want.id, models[i].ID)
+		require.Equal(t, want.displayName, models[i].DisplayName)
+		require.Equal(t, "model", models[i].Type)
 	}
 	after, err := gateway.FetchOpenAIModelsList(context.Background(), account)
 	require.NoError(t, err)

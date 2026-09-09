@@ -44,6 +44,23 @@ type AccountRuntimeBlocker interface {
 	ClearAccountSchedulingBlock(accountID int64)
 }
 
+type accountPersistedSchedulingCooldownBlocker interface {
+	BlockAccountSchedulingFromPersistedCooldown(account *Account, until time.Time, reason string)
+}
+
+// notifyPersistedAccountSchedulingCooldown distinguishes DB cooldown mirrors
+// from independent request-owned blockers without changing legacy implementations.
+func notifyPersistedAccountSchedulingCooldown(blocker AccountRuntimeBlocker, account *Account, until time.Time, reason string) {
+	if blocker == nil || account == nil {
+		return
+	}
+	if persisted, ok := blocker.(accountPersistedSchedulingCooldownBlocker); ok {
+		persisted.BlockAccountSchedulingFromPersistedCooldown(account, until, reason)
+		return
+	}
+	blocker.BlockAccountScheduling(account, until, reason)
+}
+
 // SuccessfulTestRecoveryResult 表示测试成功后恢复了哪些运行时状态。
 type SuccessfulTestRecoveryResult struct {
 	ClearedError     bool
@@ -141,6 +158,10 @@ func (s *RateLimitService) IsOpenAIAdvancedSchedulerStickyWeightedEnabled(ctx co
 
 func (s *RateLimitService) notifyAccountSchedulingBlocked(account *Account, until time.Time, reason string) {
 	if s == nil || s.runtimeBlocker == nil || account == nil {
+		return
+	}
+	if !until.IsZero() {
+		notifyPersistedAccountSchedulingCooldown(s.runtimeBlocker, account, until, reason)
 		return
 	}
 	s.runtimeBlocker.BlockAccountScheduling(account, until, reason)
@@ -1403,17 +1424,9 @@ func calculateOpenAI429ResetTime(headers http.Header) *time.Time {
 		resetAt := now.Add(time.Duration(*normalized.Reset5hSeconds) * time.Second)
 		return &resetAt
 	}
-	var maxResetSecs int
-	if normalized.Reset7dSeconds != nil && *normalized.Reset7dSeconds > maxResetSecs {
-		maxResetSecs = *normalized.Reset7dSeconds
-	}
-	if normalized.Reset5hSeconds != nil && *normalized.Reset5hSeconds > maxResetSecs {
-		maxResetSecs = *normalized.Reset5hSeconds
-	}
-	if maxResetSecs > 0 {
-		resetAt := now.Add(time.Duration(maxResetSecs) * time.Second)
-		return &resetAt
-	}
+
+	// 未达到100%时，reset-after 只代表窗口信息，不能证明账号配额耗尽。
+	// 这类瞬时429必须回到可配置的兜底路径，避免未耗尽账号被长时间排除。
 	return nil
 }
 

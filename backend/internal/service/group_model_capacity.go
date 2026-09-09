@@ -179,7 +179,7 @@ func loadGroupModelCapacityCatalog(ctx context.Context, repo AccountRepository, 
 	if useMixed {
 		platforms = append(platforms, PlatformAntigravity)
 	} else if platform == PlatformComposite {
-		platforms = []string{PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformCindy}
+		platforms = []string{PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformCindy, PlatformMiniMax}
 	}
 	if managed {
 		// Native-branded groups can contain compatible-platform branches. Query

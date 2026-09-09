@@ -34,6 +34,9 @@ export default {
           showQuota: 'Show channel usage/balance to users',
           showQuotaHint:
             'When on, quota-mode channel monitors expose the linked account usage windows/balance on the user Channel Status page. Disabled by default; admins always see it.',
+          hideUserRanking: 'Hide user ranking from users',
+          hideUserRankingHint:
+            'When on, the user Channel Monitor V2 page hides the user ranking tab and the user API returns no ranking rows. Admins still see the ranking.',
         },
         availableChannels: {
           title: 'Available Channels',
@@ -494,6 +497,8 @@ export default {
         saveFailed: 'Failed to save Ollama Cloud usage refresh settings'
       },
       gatewayForwarding: {
+        internalRateConversion: 'Internal rate conversion',
+        internalRateConversionHint: 'Enabled by default. Apply the fixed settlement factor to user charges and subscription usage in all groups. Disable to restore original billing. Group multipliers and upstream account costs stay unchanged.',
         title: 'Request Forwarding',
         description: 'Control how requests are forwarded to upstream OAuth accounts',
         grokDefaultTextModel: 'Default Grok text model',

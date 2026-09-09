@@ -31,7 +31,7 @@ func TestManagedCindyCatalogChannelAdmissionUsesExactCatalogAndAliases(t *testin
 			return map[int64]string{groupID: PlatformCindy}, nil
 		},
 	}
-	svc := NewChannelService(repo, nil, nil, nil)
+	svc := NewChannelService(repo, nil, nil, nil, nil)
 
 	for _, model := range []string{
 		"gpt-5.6-luna", "openai/gpt-5.6-luna", "gpt-5.4-mini",
@@ -58,7 +58,7 @@ func (r managedCindyChannelGroupRepo) GetByID(_ context.Context, id int64) (*Gro
 
 func TestChannelServiceRejectsManagedCindyChannelCreation(t *testing.T) {
 	repo := &mockChannelRepository{}
-	svc := NewChannelService(repo, nil, nil, nil)
+	svc := NewChannelService(repo, nil, nil, nil, nil)
 
 	for _, input := range []*CreateChannelInput{
 		{Name: CindyCatalogChannelName},
@@ -79,7 +79,7 @@ func TestChannelServiceRejectsCindyGroupOnOrdinaryChannel(t *testing.T) {
 			ProviderProfile: ProviderProfileCindyLaxaV1,
 		},
 	}}
-	svc := NewChannelService(repo, groups, nil, nil)
+	svc := NewChannelService(repo, groups, nil, nil, nil)
 
 	channel, err := svc.Create(context.Background(), &CreateChannelInput{Name: "ordinary", GroupIDs: []int64{groupID}})
 
@@ -96,7 +96,7 @@ func TestChannelServiceRejectsManagedCindyChannelUpdate(t *testing.T) {
 		getByIDFn:     func(context.Context, int64) (*Channel, error) { return managed.Clone(), nil },
 		getGroupIDsFn: func(context.Context, int64) ([]int64, error) { return nil, nil },
 	}
-	svc := NewChannelService(repo, nil, nil, nil)
+	svc := NewChannelService(repo, nil, nil, nil, nil)
 
 	updated, err := svc.Update(context.Background(), managed.ID, &UpdateChannelInput{Name: "renamed"})
 	require.ErrorIs(t, err, ErrManagedCindyChannelImmutable)

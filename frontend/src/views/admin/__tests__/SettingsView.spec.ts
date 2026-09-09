@@ -789,6 +789,28 @@ describe("admin SettingsView payment visible method controls", () => {
     );
   });
 
+  it.each([
+    { saved: undefined, expected: true },
+    { saved: false, expected: false },
+    { saved: true, expected: true },
+  ])("loads and saves internal rate conversion ($saved)", async ({ saved, expected }) => {
+    getSettings.mockResolvedValue({
+      ...baseSettingsResponse,
+      internal_rate_conversion_enabled: saved,
+    });
+    const wrapper = mountView();
+    await flushPromises();
+    const toggle = wrapper.get('[data-testid="internal-rate-conversion-toggle"]');
+    expect((toggle.element as HTMLInputElement).checked).toBe(expected);
+    await toggle.setValue(!expected);
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ internal_rate_conversion_enabled: !expected }),
+    );
+    wrapper.unmount();
+  });
+
   it("renders panel rate limit card and saves settings", async () => {
     getPanelRateLimitSettings.mockClear();
     updatePanelRateLimitSettings.mockClear();
@@ -2123,9 +2145,10 @@ describe("admin SettingsView platform quota matrix", () => {
     expect(html).toContain("zhipu");
     expect(html).toContain("deepseek");
     expect(html).toContain("cindy");
+    expect(html).toContain("minimax");
   });
 
-  it("保存时 updateSettings payload 应包含嵌套 default_platform_quotas 对象（含全 9 平台）", async () => {
+  it("保存时 updateSettings payload 应包含嵌套 default_platform_quotas 对象（含全 10 平台）", async () => {
     const wrapper = mountView();
     await flushPromises();
     await openUsersTab(wrapper);
@@ -2141,7 +2164,8 @@ describe("admin SettingsView platform quota matrix", () => {
     // 应携带嵌套对象，而非扁平字段
     expect(payload).toHaveProperty("default_platform_quotas");
     const quotas = payload["default_platform_quotas"] as Record<string, unknown>;
-    const platforms = ["anthropic", "openai", "gemini", "antigravity", "grok", "kimi", "zhipu", "deepseek", "cindy"];
+    const platforms = ["anthropic", "openai", "gemini", "antigravity", "grok", "kimi", "zhipu", "deepseek", "cindy", "minimax"];
+    expect(Object.keys(quotas)).toEqual(platforms);
     for (const p of platforms) {
       expect(quotas).toHaveProperty(p);
       const pq = quotas[p] as Record<string, unknown>;
@@ -2155,12 +2179,14 @@ describe("admin SettingsView platform quota matrix", () => {
     expect(payload).not.toHaveProperty("default_platform_quota_openai_weekly");
   });
 
-  it("加载后 form.default_platform_quotas 含全 9 平台，从嵌套 JSON 正确读取数值", async () => {
+  it("加载后 form.default_platform_quotas 含全 10 平台并同时保留 Cindy 和 MiniMax 数值", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,
       default_platform_quotas: {
         anthropic: { daily: 5, weekly: null, monthly: null },
         openai:    { daily: null, weekly: 12.5, monthly: null },
+        cindy: { daily: 7, weekly: 35, monthly: 140 },
+        minimax: { daily: 0, weekly: 20, monthly: 80 },
         // gemini / antigravity 缺失 → 应被归一化为全 null
       },
     });
@@ -2177,10 +2203,12 @@ describe("admin SettingsView platform quota matrix", () => {
 
     expect(quotas["anthropic"]?.["daily"]).toBe(5);
     expect(quotas["openai"]?.["weekly"]).toBe(12.5);
+    expect(Object.keys(quotas)).toHaveLength(10);
+    expect(quotas["cindy"]).toEqual({ daily: 7, weekly: 35, monthly: 140 });
+    expect(quotas["minimax"]).toEqual({ daily: 0, weekly: 20, monthly: 80 });
     // 缺失平台应补全为 null
     expect(quotas["gemini"]).toEqual({ daily: null, weekly: null, monthly: null });
     expect(quotas["antigravity"]).toEqual({ daily: null, weekly: null, monthly: null });
-    expect(quotas["cindy"]).toEqual({ daily: null, weekly: null, monthly: null });
   });
 
   it("空输入（v-model.number 产出 \"\"）在提交时清洗为 null 而非空字符串", async () => {

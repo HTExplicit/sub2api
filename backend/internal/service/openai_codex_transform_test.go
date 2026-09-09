@@ -1421,10 +1421,11 @@ func TestNormalizeOpenAIResponsesImageOnlyModelWithModel_UsesOriginalBeforeCindy
 	require.Equal(t, "gpt-image-2", tool["model"])
 }
 
-func TestNormalizeOpenAIResponsesImageOnlyModel_UsesLegacyControllerExceptExactCindyMapping(t *testing.T) {
+func TestNormalizeOpenAIResponsesImageOnlyModel_UsesOfficialControllerAndExactCindyMapping(t *testing.T) {
+	t.Setenv("SUB2API_IMAGES_MAIN_MODEL", "")
 	ordinaryBody := map[string]any{"model": "gpt-image-2", "input": "draw"}
 	require.True(t, normalizeOpenAIResponsesImageOnlyModel(ordinaryBody))
-	require.Equal(t, "gpt-5.4-mini", ordinaryBody["model"])
+	require.Equal(t, "gpt-5.6-luna", ordinaryBody["model"])
 
 	ordinary := &Account{
 		Platform: PlatformOpenAI,
@@ -1434,10 +1435,11 @@ func TestNormalizeOpenAIResponsesImageOnlyModel_UsesLegacyControllerExceptExactC
 		},
 	}
 	require.False(t, mapCindyOpenAIResponsesImageModels(ordinaryBody, ordinary))
-	require.Equal(t, "gpt-5.4-mini", ordinaryBody["model"])
+	require.Equal(t, "gpt-5.6-luna", ordinaryBody["model"])
 
 	cindyBody := map[string]any{"model": "gpt-image-2", "input": "draw"}
 	require.True(t, normalizeOpenAIResponsesImageOnlyModel(cindyBody))
+	require.Equal(t, "gpt-5.6-luna", cindyBody["model"])
 	cindy := &Account{
 		Platform:        PlatformCindy,
 		WirePlatform:    WirePlatformOpenAI,
