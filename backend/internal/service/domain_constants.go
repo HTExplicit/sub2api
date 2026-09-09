@@ -627,6 +627,8 @@ const (
 
 	// SettingKeyBackendModeEnabled Backend 模式：禁用用户注册和自助服务，仅管理员可登录
 	SettingKeyBackendModeEnabled = "backend_mode_enabled"
+	// 内部结算转换：默认开启，仅放大最终用户费用，不修改分组倍率。
+	SettingKeyInternalRateConversionEnabled = "internal_rate_conversion_enabled"
 
 	// Gateway Forwarding Behavior
 	// SettingKeyOpenAITTFTMode 控制 first_token_ms 的统计口径。

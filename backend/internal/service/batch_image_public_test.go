@@ -721,6 +721,7 @@ func newTestBatchImagePublicService(enabled bool) (*BatchImagePublicService, *fa
 	gemini := &publicBatchImageProvider{name: BatchImageProviderGeminiAPI}
 	vertex := &publicBatchImageProvider{name: BatchImageProviderVertex}
 	svc := &BatchImagePublicService{
+		Settings:    newTestInternalRateConversionSettings(false), // Existing snapshot contracts use the unconverted branch.
 		Repo:        repo,
 		AccountRepo: &publicBatchImageAccountRepo{accounts: []Account{testBatchImageAccount(101, AccountTypeAPIKey), testBatchImageAccount(202, AccountTypeServiceAccount)}},
 		Queue:       queue,

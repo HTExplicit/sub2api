@@ -487,6 +487,8 @@ export default {
         saveFailed: '保存 Ollama Cloud 用量刷新设置失败'
       },
       gatewayForwarding: {
+        internalRateConversion: '内部倍率转换',
+        internalRateConversionHint: '默认开启，按固定结算系数转换全部分组的用户费用及订阅消耗；关闭后恢复原计费。分组倍率与账号侧成本保持不变。',
         title: '请求转发行为',
         description: '控制请求转发到上游 OAuth 账号时的行为',
         grokDefaultTextModel: '默认 Grok 文本模型',

@@ -268,7 +268,8 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyOpenAIAdvancedSchedulerWeightPreviousResponse:      "",
 		SettingKeyOpenAIAdvancedSchedulerWeightSessionSticky:         "",
 
-		SettingKeyAllowUserViewErrorRequests: "false",
+		SettingKeyAllowUserViewErrorRequests:    "false",
+		SettingKeyInternalRateConversionEnabled: "true",
 	}
 
 	return s.settingRepo.SetMultiple(ctx, defaults)
@@ -372,6 +373,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		CustomMenuItems:                        settings[SettingKeyCustomMenuItems],
 		CustomEndpoints:                        settings[SettingKeyCustomEndpoints],
 		BackendModeEnabled:                     settings[SettingKeyBackendModeEnabled] == "true",
+		InternalRateConversionEnabled:          parseInternalRateConversionEnabled(settings[SettingKeyInternalRateConversionEnabled]),
 	}
 	result.TableDefaultPageSize, result.TablePageSizeOptions = parseTablePreferences(
 		settings[SettingKeyTableDefaultPageSize],
