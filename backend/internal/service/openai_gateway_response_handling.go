@@ -1925,7 +1925,9 @@ func openAIHTTPReasoningRejectionBeforeOutput(c *gin.Context, payload []byte, se
 		if recovery != nil {
 			status, headers = recovery.upstreamStatus(status), recovery.responseHeaders
 		}
-		return NewOpenAIContinuationStateUnavailableError(status, headers, bytes.Clone(payload))
+		// ObserveFailure already retained the private payload for the bounded
+		// diagnostic. Keep the terminal's existing body-free error contract.
+		return NewOpenAIContinuationStateUnavailableError(status, headers, nil)
 	}
 	if recovery != nil {
 		// A retry's actual validation failure is still request-scoped. Handle it
