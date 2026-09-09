@@ -63,6 +63,7 @@ type continuationRepairSource struct {
 	RegistryPublication *continuationRepairPublication       `json:"registry_publication"`
 	Settings            map[string]string                    `json:"settings"`
 	ChannelModels       map[string]string                    `json:"channel_models"`
+	ChannelImageBridge  *bool                                `json:"channel_image_bridge"`
 	Fingerprint         string                               `json:"fingerprint"`
 	UserID              int64                                `json:"user_id"`
 }
@@ -182,18 +183,23 @@ func TestContinuationRepairLive(t *testing.T) {
 	log.SetOutput(io.Discard)
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	out := json.NewEncoder(protocol)
-	fallback := func() {
+	fallback := func(class string) {
 		_ = out.Encode(map[string]any{"type": "summary", "status": "failed", "requests": 0, "attempts": 0,
-			"astra_completed": false, "sol_completed": false, "blocked_retries": 0, "error_class": "handler_failed"})
+			"astra_completed": false, "sol_completed": false, "blocked_retries": 0, "error_class": class})
 		t.Fail()
 	}
 	defer func() {
 		if recover() != nil {
-			fallback()
+			fallback("handler_failed")
 		}
 	}()
 	if err := continuationRepairRun(bufio.NewReaderSize(os.Stdin, 64<<10), out); err != nil {
-		fallback()
+		class := "handler_failed"
+		var wireError continuationRepairWireError
+		if errors.As(err, &wireError) {
+			class = string(wireError)
+		}
+		fallback(class)
 	}
 }
 
@@ -212,6 +218,13 @@ func continuationRepairRun(in *bufio.Reader, out *json.Encoder) error {
 	endpoint, err := continuationRepairEndpoint(&boot.Source.Account)
 	if err != nil {
 		return err
+	}
+	if os.Getenv("SUB2API_CONTINUATION_REPAIR_VALIDATE_ONLY") == "1" {
+		if err := continuationRepairPreflight(ctx, cfg, boot.Source); err != nil {
+			return err
+		}
+		return out.Encode(map[string]any{"type": "summary", "status": "validated", "requests": 0, "attempts": 0,
+			"astra_completed": false, "sol_completed": false, "blocked_retries": 0})
 	}
 	u := &continuationRepairUpstream{h: h, inner: repository.NewHTTPUpstream(cfg), endpoint: endpoint,
 		authorizationHash: continuationRepairHash([]byte("Bearer " + boot.Source.Account.GetOpenAIProtocolAPIKey()))}
@@ -233,9 +246,6 @@ func continuationRepairRun(in *bufio.Reader, out *json.Encoder) error {
 	if err := out.Encode(map[string]any{"type": "ready", "run_id": boot.RunID, "source_sha": boot.SourceSHA,
 		"source_sha256": boot.Source.Fingerprint, "endpoint_sha256": continuationRepairHash([]byte(endpoint)), "attempts": 0}); err != nil {
 		return errors.New("broker_unavailable")
-	}
-	if os.Getenv("SUB2API_CONTINUATION_REPAIR_VALIDATE_ONLY") == "1" {
-		return out.Encode(h.summary("validated"))
 	}
 	for _, scenario := range []string{"astra", "sol"} {
 		if h.stop != "" || ctx.Err() != nil {
@@ -627,8 +637,11 @@ func (u *continuationRepairUpstream) send(req *http.Request, proxy string, accou
 	}
 	body, err := io.ReadAll(io.LimitReader(req.Body, continuationRepairMaxBody+1))
 	_ = req.Body.Close()
-	if err != nil || len(body) > continuationRepairMaxBody || !u.validateWire(body, ordinal) {
-		return fail("wire_contract_mismatch")
+	if err != nil || len(body) > continuationRepairMaxBody {
+		return fail("body_incomplete")
+	}
+	if err := u.validateWire(body, ordinal); err != nil {
+		return fail(err.Error())
 	}
 	cause := "initial"
 	if ordinal == 2 {
@@ -717,37 +730,49 @@ func (u *continuationRepairUpstream) finishOutstanding() {
 	}
 }
 
-func (u *continuationRepairUpstream) validateWire(body []byte, ordinal int) bool {
+type continuationRepairWireError string
+
+func (e continuationRepairWireError) Error() string { return string(e) }
+
+func (u *continuationRepairUpstream) validateWire(body []byte, ordinal int) error {
 	sent, err := continuationRepairObject(body)
 	if err != nil {
-		return false
+		return continuationRepairWireError("wire_json_mismatch")
 	}
 	var model string
 	var stream, store bool
-	if json.Unmarshal(sent["model"], &model) != nil || model != u.identity.WireModel ||
-		json.Unmarshal(sent["stream"], &stream) != nil || !stream || json.Unmarshal(sent["store"], &store) != nil || store {
-		return false
+	if json.Unmarshal(sent["model"], &model) != nil || model != u.identity.WireModel {
+		return continuationRepairWireError("wire_model_mismatch")
+	}
+	if json.Unmarshal(sent["stream"], &stream) != nil || !stream {
+		return continuationRepairWireError("wire_stream_mismatch")
+	}
+	if json.Unmarshal(sent["store"], &store) != nil || store {
+		return continuationRepairWireError("wire_store_mismatch")
 	}
 	if ordinal == 2 {
-		return continuationRepairOnlyCipherRemoval(u.firstSent, body)
+		if !continuationRepairOnlyCipherRemoval(u.firstSent, body) {
+			return continuationRepairWireError("wire_recovery_mismatch")
+		}
+		return nil
 	}
 	before, err := continuationRepairObject(u.body)
 	if err != nil || !continuationRepairJSONEqual(before["instructions"], sent["instructions"]) {
-		return false
+		return continuationRepairWireError("wire_instructions_mismatch")
 	}
 	var expected []json.RawMessage
 	if json.Unmarshal(before["input"], &expected) != nil {
-		return false
+		return continuationRepairWireError("wire_input_mismatch")
 	}
 	if u.identity.Turn == 2 {
 		if len(expected) < 4 {
-			return false
+			return continuationRepairWireError("wire_input_mismatch")
 		}
 		for i := len(expected) - 2; i < len(expected); i++ {
 			item, err := continuationRepairObject(expected[i])
 			var text string
 			if err != nil || json.Unmarshal(item["output"], &text) != nil {
-				return false
+				return continuationRepairWireError("wire_input_mismatch")
 			}
 			expected[i], _ = json.Marshal(map[string]any{"type": "message", "role": "user", "content": []any{map[string]any{"type": "input_text", "text": text}}})
 		}
@@ -755,7 +780,10 @@ func (u *continuationRepairUpstream) validateWire(body []byte, ordinal int) bool
 	normalized, _ := json.Marshal(expected)
 	u.historyPreserved = continuationRepairJSONEqual(normalized, sent["input"])
 	u.heartbeatNormalized = u.identity.Turn == 1 || u.historyPreserved
-	return u.historyPreserved
+	if !u.historyPreserved {
+		return continuationRepairWireError("wire_input_mismatch")
+	}
+	return nil
 }
 
 // A recovery grant cannot be used by a same-account compatibility retry. Its
@@ -1228,7 +1256,13 @@ func TestContinuationRepairOffline(t *testing.T) {
 			t.Fatal("local close must report one frozen capture without inventing EOF")
 		}
 	})
-	source := continuationRepairSource{
+	if err := continuationRepairPreflight(ctx, &config.Config{RunMode: config.RunModeStandard}, continuationRepairOfflineSource()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func continuationRepairOfflineSource() continuationRepairSource {
+	return continuationRepairSource{
 		Account: service.Account{ID: 16050, Name: "白嫖-dmxapi", Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
 			Status: service.StatusActive, Schedulable: true, Concurrency: 1, GroupIDs: []int64{35},
 			Credentials: map[string]any{"api_key": "offline-only", "base_url": "https://continuation.example.test",
@@ -1239,6 +1273,18 @@ func TestContinuationRepairOffline(t *testing.T) {
 		BusinessPrompt: service.BusinessSystemPromptSnapshot{Revision: 1, CompositionMode: service.BusinessSystemPromptCompositionCodexSkillHybrid},
 		ChannelModels:  map[string]string{"gpt-6-astra": "gpt-6-astra", "gpt-5.6-sol": "gpt-5.6-sol"},
 		Fingerprint:    strings.Repeat("a", 64), UserID: 920000016050,
+	}
+}
+
+// Exercise frozen production policy through the complete handler using only
+// in-memory grants and synthetic responses. This object cannot open a socket;
+// none of its requests, usage rows or counters belong to the live broker.
+func continuationRepairPreflight(ctx context.Context, cfg *config.Config, source continuationRepairSource) error {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	endpoint, err := continuationRepairEndpoint(&source.Account)
+	if err != nil {
+		return err
 	}
 	var grants, protocol bytes.Buffer
 	encoder := json.NewEncoder(&grants)
@@ -1252,15 +1298,17 @@ func TestContinuationRepairOffline(t *testing.T) {
 	}
 	h := &continuationRepairHarness{boot: continuationRepairBootstrap{Source: source}, input: bufio.NewReader(&grants), output: json.NewEncoder(&protocol),
 		ctx: ctx, finished: make(map[string]bool), sourceHash: continuationRepairHashJSON(source)}
-	fake := &continuationRepairOfflineUpstream{}
-	h.upstream = &continuationRepairUpstream{h: h, inner: fake, endpoint: "https://continuation.example.test/v1/responses",
-		authorizationHash: continuationRepairHash([]byte("Bearer offline-only"))}
-	var err error
-	h.fixture, err = continuationRepairBuildFixture(ctx, &config.Config{RunMode: config.RunModeStandard}, source, h.upstream)
-	if err != nil {
-		t.Fatalf("fixture construction failed: %v", err)
+	fake := &continuationRepairOfflineUpstream{endpoint: endpoint}
+	h.upstream = &continuationRepairUpstream{h: h, inner: fake, endpoint: endpoint,
+		authorizationHash: continuationRepairHash([]byte("Bearer " + source.Account.GetOpenAIProtocolAPIKey()))}
+	if source.Account.Proxy != nil {
+		h.upstream.proxy = source.Account.Proxy.URL()
 	}
-	t.Cleanup(h.fixture.close)
+	h.fixture, err = continuationRepairBuildFixture(ctx, cfg, source, h.upstream)
+	if err != nil {
+		return errors.New("handler_failed")
+	}
+	defer h.fixture.close()
 	opsErrorLogOnce.Do(func() {})
 	opsErrorLogMu.Lock()
 	opsErrorLogQueue = make(chan opsErrorLogJob, 32)
@@ -1269,27 +1317,26 @@ func TestContinuationRepairOffline(t *testing.T) {
 		initial := continuationRepairInitialBody(continuationRepairModel(scenario))
 		response, result := h.runTurn(scenario, 1, initial)
 		if result.Status != "completed" {
-			t.Fatalf("offline first turn failed: %+v; stop=%s", result, h.stop)
+			return continuationRepairPreflightError(result.ErrorClass)
 		}
 		body, err := continuationRepairContinuation(initial, response, scenario)
 		if err != nil {
-			t.Fatalf("offline continuation construction failed: %v", err)
+			return errors.New("handler_failed")
 		}
 		_, result = h.runTurn(scenario, 2, body)
 		if result.Status != "completed" || !result.HeartbeatNormalized || !result.HistoryPreserved || result.BillingRows != 1 {
-			t.Fatalf("offline continuation failed: %+v; stop=%s", result, h.stop)
+			return continuationRepairPreflightError(result.ErrorClass)
 		}
 	}
 	if h.requests != 4 || h.upstream.attempts != 4 || fake.calls != 4 || h.upstream.blocked != 0 || grants.Len() != 0 || h.stop != "" {
-		t.Fatalf("offline request accounting mismatch: requests=%d attempts=%d fake=%d blocked=%d unread_grants=%d stop=%s",
-			h.requests, h.upstream.attempts, fake.calls, h.upstream.blocked, grants.Len(), h.stop)
+		return errors.New("handler_failed")
 	}
 	counts := make(map[string]int)
 	decoder := json.NewDecoder(&protocol)
 	for decoder.More() {
 		var event map[string]json.RawMessage
 		if decoder.Decode(&event) != nil {
-			t.Fatal("invalid offline protocol record")
+			return errors.New("handler_failed")
 		}
 		var kind string
 		_ = json.Unmarshal(event["type"], &kind)
@@ -1297,15 +1344,104 @@ func TestContinuationRepairOffline(t *testing.T) {
 	}
 	for _, kind := range []string{"before_turn", "before_send", "attempt_result", "turn_result"} {
 		if counts[kind] != 4 {
-			t.Fatalf("offline broker ordering record count: %s=%d", kind, counts[kind])
+			return errors.New("handler_failed")
+		}
+	}
+	return nil
+}
+
+func TestContinuationRepairPreflightFrozenPolicy(t *testing.T) {
+	for _, override := range []bool{false, true} {
+		name := "global_bridge_rejected_before_send"
+		if override {
+			name = "channel_disable_overrides_global"
+		}
+		t.Run(name, func(t *testing.T) {
+			source := continuationRepairOfflineSource()
+			source.Group.AllowImageGeneration = true
+			if override {
+				disabled := false
+				source.ChannelImageBridge = &disabled
+			}
+			cfg := &config.Config{RunMode: config.RunModeStandard, Gateway: config.GatewayConfig{CodexImageGenerationBridgeEnabled: true}}
+			beforeSource, beforeConfig := continuationRepairHashJSON(source), continuationRepairHashJSON(cfg)
+			err := continuationRepairPreflight(context.Background(), cfg, source)
+			if override {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				var wireError continuationRepairWireError
+				if !errors.As(err, &wireError) || wireError != "wire_instructions_mismatch" {
+					t.Fatalf("unexpected preflight classification: %v", err)
+				}
+			}
+			if continuationRepairHashJSON(source) != beforeSource || continuationRepairHashJSON(cfg) != beforeConfig {
+				t.Fatal("preflight changed frozen source or configuration")
+			}
+		})
+	}
+}
+
+func TestContinuationRepairWireMismatchClassification(t *testing.T) {
+	initial := continuationRepairInitialBody("gpt-6-astra")
+	t.Run("invalid_json", func(t *testing.T) {
+		u := &continuationRepairUpstream{body: initial, identity: continuationRepairIdentity{Turn: 1, WireModel: "gpt-6-astra"}}
+		if err := u.validateWire([]byte(`{"model":"gpt-6-astra","model":"gpt-6-astra"}`), 1); err == nil || err.Error() != "wire_json_mismatch" {
+			t.Fatalf("unexpected JSON classification: %v", err)
+		}
+	})
+	for _, test := range []struct{ name, field, value, class string }{
+		{"model", "model", `"gpt-5.6-sol"`, "wire_model_mismatch"},
+		{"stream", "stream", "false", "wire_stream_mismatch"},
+		{"store", "store", "true", "wire_store_mismatch"},
+		{"instructions", "instructions", `"different"`, "wire_instructions_mismatch"},
+		{"unknown_input_field", "input", `[{"role":"user","content":"Call continuation_probe_value exactly once with an empty JSON object. Do not answer yet.","unknown":9007199254740993}]`, "wire_input_mismatch"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fields, _ := continuationRepairObject(initial)
+			fields[test.field] = json.RawMessage(test.value)
+			u := &continuationRepairUpstream{body: initial, identity: continuationRepairIdentity{Turn: 1, WireModel: "gpt-6-astra"}}
+			err := u.validateWire(continuationRepairMarshal(fields), 1)
+			if err == nil || err.Error() != test.class {
+				t.Fatalf("unexpected wire classification: %v", err)
+			}
+		})
+	}
+	first := []byte(`{"model":"gpt-6-astra","stream":true,"store":false,"input":[{"type":"reasoning","encrypted_content":"opaque","unknown":9007199254740993}],"unknown":{"large":9007199254740993}}`)
+	u := &continuationRepairUpstream{firstSent: first, identity: continuationRepairIdentity{Turn: 2, WireModel: "gpt-6-astra"}}
+	allowed := bytes.Replace(first, []byte(`"encrypted_content":"opaque",`), nil, 1)
+	if err := u.validateWire(allowed, 2); err != nil {
+		t.Fatal(err)
+	}
+	for _, changed := range [][]byte{
+		bytes.Replace(first, []byte("opaque"), []byte("changed"), 1),
+		bytes.Replace(allowed, []byte("9007199254740993"), []byte("9007199254740992"), 1),
+		bytes.ReplaceAll(allowed, []byte(`"unknown"`), []byte(`"changed"`)),
+	} {
+		if err := u.validateWire(changed, 2); err == nil || err.Error() != "wire_recovery_mismatch" {
+			t.Fatalf("recovery accepted a change beyond ciphertext omission: %v", err)
 		}
 	}
 }
 
-type continuationRepairOfflineUpstream struct{ calls int }
+func continuationRepairPreflightError(class string) error {
+	switch class {
+	case "wire_json_mismatch", "wire_model_mismatch", "wire_stream_mismatch", "wire_store_mismatch",
+		"wire_instructions_mismatch", "wire_input_mismatch", "wire_recovery_mismatch":
+		return continuationRepairWireError(class)
+	default:
+		return errors.New("handler_failed")
+	}
+}
+
+type continuationRepairOfflineUpstream struct {
+	calls    int
+	endpoint string
+}
 
 func (u *continuationRepairOfflineUpstream) Do(req *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
-	if req == nil || req.URL == nil || req.URL.Host != "continuation.example.test" || accountID != 16050 || req.GetBody != nil {
+	if req == nil || req.URL == nil || req.URL.String() != u.endpoint || accountID != 16050 || req.GetBody != nil {
 		return nil, errors.New("offline_transport_contract")
 	}
 	body, err := io.ReadAll(req.Body)

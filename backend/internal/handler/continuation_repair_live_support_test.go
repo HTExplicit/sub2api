@@ -85,7 +85,8 @@ func continuationRepairBuildFixture(ctx context.Context, cfg *config.Config, sou
 		acquireUserSlotFn:    func(context.Context, int64, int, string) (bool, error) { return true, nil },
 		acquireAccountSlotFn: func(context.Context, int64, int, string) (bool, error) { return true, nil },
 	})
-	channels := service.NewChannelService(&continuationRepairChannelStore{group: groups.group, models: frozen.ChannelModels}, groups, nil, nil)
+	channels := service.NewChannelService(&continuationRepairChannelStore{group: groups.group, models: frozen.ChannelModels,
+		imageBridge: frozen.ChannelImageBridge}, groups, nil, nil, nil)
 	rateLimits := service.NewRateLimitService(account, usage, cfg, nil, account)
 	rateLimits.SetSettingService(settingService)
 	rateLimits.SetOpenAIAPIKeyHealthCache(account)
@@ -204,14 +205,19 @@ func (s *continuationRepairGroupStore) GetByIDLite(ctx context.Context, id int64
 // without changing any account mapping or claiming a production channel ID.
 type continuationRepairChannelStore struct {
 	service.ChannelRepository
-	group  service.Group
-	models map[string]string
+	group       service.Group
+	models      map[string]string
+	imageBridge *bool
 }
 
 func (s *continuationRepairChannelStore) ListAll(context.Context) ([]service.Channel, error) {
-	return []service.Channel{{ID: -1, Name: "continuation-diagnostic-projection", Status: service.StatusActive,
+	channel := service.Channel{ID: -1, Name: "continuation-diagnostic-projection", Status: service.StatusActive,
 		BillingModelSource: service.BillingModelSourceRequested, GroupIDs: []int64{s.group.ID},
-		ModelMapping: map[string]map[string]string{s.group.Platform: s.models}}}, nil
+		ModelMapping: map[string]map[string]string{s.group.Platform: s.models}}
+	if s.imageBridge != nil {
+		channel.FeaturesConfig = map[string]any{"codex_image_generation_bridge": map[string]any{s.group.Platform: *s.imageBridge}}
+	}
+	return []service.Channel{channel}, nil
 }
 func (s *continuationRepairChannelStore) GetGroupPlatforms(context.Context, []int64) (map[int64]string, error) {
 	return map[int64]string{s.group.ID: s.group.Platform}, nil
