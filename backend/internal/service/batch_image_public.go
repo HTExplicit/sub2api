@@ -82,6 +82,7 @@ type BatchImageOwner struct {
 }
 
 type BatchImagePublicService struct {
+	Settings          *SettingService
 	Repo              BatchImageRepository
 	AccountRepo       BatchImageAccountSelectionRepository
 	GroupRepo         BatchImageGroupPricingRepository
@@ -95,6 +96,7 @@ type BatchImagePublicService struct {
 }
 
 type BatchImagePricingSnapshot struct {
+	Version                 int
 	BaseUnitPrice           float64
 	GroupRateMultiplier     float64
 	AccountRateMultiplier   float64
@@ -182,8 +184,9 @@ type BatchImageItemsQuery struct {
 	Cursor string
 }
 
-func NewBatchImagePublicService(repo BatchImageRepository, accountRepo AccountRepository, groupRepo GroupRepository, userGroupRateRepo UserGroupRateRepository, queue BatchImageQueue, pricing *BatchImageModelPricingResolver, billingRepo UsageBillingRepository, authCache APIKeyAuthCacheInvalidator, cfg *config.Config) *BatchImagePublicService {
+func NewBatchImagePublicService(repo BatchImageRepository, accountRepo AccountRepository, groupRepo GroupRepository, userGroupRateRepo UserGroupRateRepository, queue BatchImageQueue, pricing *BatchImageModelPricingResolver, billingRepo UsageBillingRepository, authCache APIKeyAuthCacheInvalidator, cfg *config.Config, settings *SettingService) *BatchImagePublicService {
 	return &BatchImagePublicService{
+		Settings:          settings,
 		Repo:              repo,
 		AccountRepo:       accountRepo,
 		GroupRepo:         groupRepo,
@@ -277,7 +280,7 @@ func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOw
 		HoldMultiplier:          pricingSnapshot.HoldMultiplier,
 		BillableUnitPrice:       pricingSnapshot.BillableUnitPrice,
 		HoldUnitPrice:           pricingSnapshot.HoldUnitPrice,
-		PricingSnapshotVersion:  1,
+		PricingSnapshotVersion:  pricingSnapshot.Version,
 		Currency:                "USD",
 		HoldID:                  &holdID,
 		IdempotencyKey:          batchImageOptionalStringPtr(idempotencyKey),
@@ -1074,7 +1077,21 @@ func (s *BatchImagePublicService) resolvePricingSnapshot(ctx context.Context, ow
 	standardUnitPrice := unit * groupMultiplier * accountMultiplier
 	billableUnitPrice := standardUnitPrice * discountMultiplier
 	holdUnitPrice := standardUnitPrice * holdMultiplier
+	// 单价快照与既有 DECIMAL(20,10) 对齐；结算复用快照，不再读取当前开关。
+	conversionEnabled := s.Settings.IsInternalRateConversionEnabled(ctx)
+	billableUnitPrice = convertInternalRateAmount(billableUnitPrice, conversionEnabled, 10)
+	holdUnitPrice = convertInternalRateAmount(holdUnitPrice, conversionEnabled, 10)
+	version := 1
+	estimatedCost := billableUnitPrice * float64(len(req.Items))
+	holdAmount := holdUnitPrice * float64(len(req.Items))
+	if conversionEnabled {
+		// 复用已有快照版本区分新结算口径，旧任务及其幂等指纹完全不变。
+		version = 2
+		estimatedCost = QuantizeUsageBillingAmount(estimatedCost)
+		holdAmount = QuantizeUsageBillingAmount(holdAmount)
+	}
 	return &BatchImagePricingSnapshot{
+		Version:                 version,
 		BaseUnitPrice:           unit,
 		GroupRateMultiplier:     groupMultiplier,
 		AccountRateMultiplier:   accountMultiplier,
@@ -1082,8 +1099,8 @@ func (s *BatchImagePublicService) resolvePricingSnapshot(ctx context.Context, ow
 		HoldMultiplier:          holdMultiplier,
 		BillableUnitPrice:       billableUnitPrice,
 		HoldUnitPrice:           holdUnitPrice,
-		EstimatedCost:           billableUnitPrice * float64(len(req.Items)),
-		HoldAmount:              holdUnitPrice * float64(len(req.Items)),
+		EstimatedCost:           estimatedCost,
+		HoldAmount:              holdAmount,
 	}, nil
 }
 

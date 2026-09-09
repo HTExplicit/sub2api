@@ -240,7 +240,8 @@ type UpdateSettingsRequest struct {
 	AllowUngroupedKeyScheduling bool `json:"allow_ungrouped_key_scheduling"`
 
 	// Backend Mode
-	BackendModeEnabled bool `json:"backend_mode_enabled"`
+	BackendModeEnabled            bool  `json:"backend_mode_enabled"`
+	InternalRateConversionEnabled *bool `json:"internal_rate_conversion_enabled"`
 
 	// Gateway forwarding behavior
 	OpenAITTFTMode                         *string `json:"openai_ttft_mode"`
@@ -1656,6 +1657,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		MaxClaudeCodeVersion:                   req.MaxClaudeCodeVersion,
 		AllowUngroupedKeyScheduling:            req.AllowUngroupedKeyScheduling,
 		BackendModeEnabled:                     req.BackendModeEnabled,
+		InternalRateConversionEnabled: func() bool {
+			if req.InternalRateConversionEnabled != nil {
+				return *req.InternalRateConversionEnabled
+			}
+			return previousSettings.InternalRateConversionEnabled
+		}(),
 		AllowUserViewErrorRequests: func() bool {
 			if req.AllowUserViewErrorRequests != nil {
 				return *req.AllowUserViewErrorRequests
@@ -2306,6 +2313,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		MaxClaudeCodeVersion:                                   updatedSettings.MaxClaudeCodeVersion,
 		AllowUngroupedKeyScheduling:                            updatedSettings.AllowUngroupedKeyScheduling,
 		BackendModeEnabled:                                     updatedSettings.BackendModeEnabled,
+		InternalRateConversionEnabled:                          updatedSettings.InternalRateConversionEnabled,
 		EnableFingerprintUnification:                           updatedSettings.EnableFingerprintUnification,
 		EnableMetadataPassthrough:                              updatedSettings.EnableMetadataPassthrough,
 		EnableCCHSigning:                                       updatedSettings.EnableCCHSigning,
