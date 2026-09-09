@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import AccountsView from '../AccountsView.vue'
@@ -6,22 +6,26 @@ import AccountsView from '../AccountsView.vue'
 const {
   listAccounts,
   listWithEtag,
+  batchRefresh,
   getBatchTodayStats,
   getUpstreamBillingProbeSettings,
   getAllProxies,
   getAllGroups,
   showError,
+  showSuccess,
   jobTrack,
   reviewDuplicates,
   batchRefreshTier
 } = vi.hoisted(() => ({
   listAccounts: vi.fn(),
   listWithEtag: vi.fn(),
+  batchRefresh: vi.fn(),
   getBatchTodayStats: vi.fn(),
   getUpstreamBillingProbeSettings: vi.fn(),
   getAllProxies: vi.fn(),
   getAllGroups: vi.fn(),
   showError: vi.fn(),
+  showSuccess: vi.fn(),
   jobTrack: vi.fn(),
   reviewDuplicates: vi.fn(),
   batchRefreshTier: vi.fn()
@@ -43,7 +47,7 @@ vi.mock('@/api/admin', () => ({
       getUpstreamBillingProbeSettings,
       batchDelete: vi.fn(),
       batchClearError: vi.fn(),
-      batchRefresh: vi.fn(),
+      batchRefresh,
       batchRefreshTier,
       bulkUpdate: vi.fn()
     },
@@ -59,7 +63,7 @@ vi.mock('@/api/admin', () => ({
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
     showError,
-    showSuccess: vi.fn(),
+    showSuccess,
     showInfo: vi.fn()
   })
 }))
@@ -93,7 +97,7 @@ const makeAccounts = (count: number) => Array.from({ length: count }, (_, index)
 
 const AccountBulkActionsBarStub = {
   props: ['selectedIds', 'totalResults', 'selectingAll', 'allResultsSelected'],
-  emits: ['select-all-results', 'select-page', 'clear', 'duplicate-review', 'refresh-tier'],
+  emits: ['select-all-results', 'select-page', 'clear', 'duplicate-review', 'refresh-tier', 'refresh-token'],
   template: `
     <div>
       <span data-test="selected-count">{{ selectedIds.length }}</span>
@@ -104,6 +108,7 @@ const AccountBulkActionsBarStub = {
       <button data-test="clear" @click="$emit('clear')">clear</button>
       <button data-test="duplicate-review" @click="$emit('duplicate-review')">duplicates</button>
       <button data-test="refresh-tier" @click="$emit('refresh-tier')">refresh tier</button>
+      <button data-test="refresh-token" @click="$emit('refresh-token')">refresh token</button>
     </div>
   `
 }
@@ -120,7 +125,10 @@ const mountView = () => mount(AccountsView, {
       TablePageLayout: {
         template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
       },
-      DataTable: { props: ['data'], template: '<div data-test="data-table"></div>' },
+      DataTable: {
+        props: ['data'],
+        template: '<div data-test="data-table"><div v-for="row in data" :key="row.id"><slot name="cell-select" :row="row" /></div></div>'
+      },
       Pagination: true,
       ConfirmDialog: true,
       AccountTableActions: { template: '<div><slot name="beforeCreate" /><slot name="after" /></div>' },
@@ -155,11 +163,13 @@ describe('admin AccountsView select all filtered results', () => {
     localStorage.clear()
     listAccounts.mockReset()
     listWithEtag.mockReset()
+    batchRefresh.mockReset()
     getBatchTodayStats.mockReset()
     getUpstreamBillingProbeSettings.mockReset()
     getAllProxies.mockReset()
     getAllGroups.mockReset()
     showError.mockReset()
+    showSuccess.mockReset()
     jobTrack.mockReset()
     reviewDuplicates.mockReset().mockResolvedValue({ id: 91, status: 'pending' })
     batchRefreshTier.mockReset().mockResolvedValue({ id: 92, kind: 'account_batch_refresh_tier', status: 'pending' })
@@ -173,6 +183,50 @@ describe('admin AccountsView select all filtered results', () => {
     getUpstreamBillingProbeSettings.mockResolvedValue({ enabled: true, interval_minutes: 30 })
     getAllProxies.mockResolvedValue([])
     getAllGroups.mockResolvedValue([])
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('tracks the asynchronous token refresh job without interpreting acceptance as completion', async () => {
+    listAccounts.mockResolvedValue({ items: makeAccounts(3), total: 3, page: 1, page_size: 20, pages: 1 })
+    const job = { id: 93, kind: 'account_batch_refresh', status: 'pending' }
+    batchRefresh.mockResolvedValue(job)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-test="select-page"]').trigger('click')
+    await wrapper.get('[data-test="refresh-token"]').trigger('click')
+    await flushPromises()
+
+    expect(batchRefresh).toHaveBeenCalledWith([1, 2, 3])
+    expect(jobTrack).toHaveBeenCalledWith(job)
+    expect(listAccounts).toHaveBeenCalledTimes(1)
+    expect(wrapper.getComponent(AccountBulkActionsBarStub).props('selectedIds')).toEqual([])
+    expect(wrapper.findAll<HTMLInputElement>('[data-test="data-table"] input').map(input => input.element.checked))
+      .toEqual([false, false, false])
+    expect(showError).not.toHaveBeenCalled()
+    expect(showSuccess).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('keeps selected accounts available for retry when the token refresh job cannot be submitted', async () => {
+    listAccounts.mockResolvedValue({ items: makeAccounts(3), total: 3, page: 1, page_size: 20, pages: 1 })
+    batchRefresh.mockRejectedValue(new Error('job submission failed'))
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-test="select-page"]').trigger('click')
+    await wrapper.get('[data-test="refresh-token"]').trigger('click')
+    await flushPromises()
+
+    expect(batchRefresh).toHaveBeenCalledWith([1, 2, 3])
+    expect(jobTrack).not.toHaveBeenCalled()
+    expect(wrapper.getComponent(AccountBulkActionsBarStub).props('selectedIds')).toEqual([1, 2, 3])
+    expect(showError).toHaveBeenCalledWith('Error: job submission failed')
+    wrapper.unmount()
   })
 
   it('selects all matching IDs in one commit and clears the selection when filters change', async () => {

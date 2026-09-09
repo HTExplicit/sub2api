@@ -174,7 +174,7 @@ func loadGroupModelCapacityCatalog(ctx context.Context, repo AccountRepository, 
 	if useMixed {
 		platforms = append(platforms, PlatformAntigravity)
 	} else if platform == PlatformComposite {
-		platforms = []string{PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformCindy}
+		platforms = []string{PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformCindy, PlatformMiniMax}
 	}
 	queryGroupID, includeGrouped := groupID, false
 	if cfg != nil && cfg.RunMode == config.RunModeSimple && (!useMixed || groupID == nil) {

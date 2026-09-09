@@ -430,32 +430,49 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 	var resp *http.Response
 	var result *OpenAIForwardResult
 	var handleErr error
+	// Keep the builder's transport context as the uncanceled base. Each stream
+	// attempt must cancel before closing its body without canceling the single
+	// same-source reasoning recovery; PrepareRequest reapplies client cancellation
+	// and its deadline to that recovery attempt.
+	upstreamRequestCtx := upstreamReq.Context()
 	for {
+		cancelUpstream := func() {}
+		if clientStream {
+			var attemptCtx context.Context
+			attemptCtx, cancelUpstream = context.WithCancel(upstreamRequestCtx)
+			upstreamReq = upstreamReq.WithContext(attemptCtx)
+		}
 		upstreamReq, responsesBody, err = recovery.PrepareRequest(upstreamReq, responsesBody, proxyURL)
 		if err != nil {
+			cancelUpstream()
 			return nil, recovery.StopError(err)
 		}
 		replay.SetSentBody(responsesBody)
 		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 		if err != nil {
+			cancelUpstream()
 			if recovery.RecoveryAttempt() {
 				return nil, recovery.StopError(err)
 			}
 			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
 		}
+		closeUpstreamResponse := func() {
+			cancelUpstream()
+			_ = resp.Body.Close()
+		}
 		if resp.StatusCode >= 400 {
 			respBody, upstreamMsg := s.readOpenAIUpstreamError(resp, c)
 			if retryBody, retry := recovery.TryRecover(resp.StatusCode, resp.Header, respBody, false); retry {
-				_ = resp.Body.Close()
+				closeUpstreamResponse()
 				upstreamReq = cloneOpenAIChatRequestWithBody(upstreamReq, retryBody)
 				responsesBody = retryBody
 				continue
 			}
 			if recovery.RecoveryAttempt() {
-				_ = resp.Body.Close()
+				closeUpstreamResponse()
 				return nil, recovery.StopError(errors.New("upstream rejected reasoning recovery"))
 			}
-			defer func() { _ = resp.Body.Close() }()
+			defer closeUpstreamResponse()
 			if !agentIdentityTaskRecoveryWasTried(ctx) && s.isAgentIdentityAccount(ctx, account) && isAgentIdentityTaskInvalidHTTPResponse(resp.StatusCode, respBody) {
 				expectedTaskID := account.GetCredential("task_id")
 				if err := s.recoverAgentIdentityTask(ctx, account, expectedTaskID); err != nil {
@@ -483,7 +500,7 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 		} else {
 			result, handleErr = s.handleChatBufferedStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, startTime)
 		}
-		_ = resp.Body.Close()
+		closeUpstreamResponse()
 		if retryBody, retry := recovery.TryRecoverError(handleErr); retry {
 			upstreamReq = cloneOpenAIChatRequestWithBody(upstreamReq, retryBody)
 			responsesBody = retryBody

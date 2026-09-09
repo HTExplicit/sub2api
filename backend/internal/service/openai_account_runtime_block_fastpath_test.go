@@ -354,7 +354,7 @@ func TestOpenAIRuntimeBreaker_DoesNotPartiallyClaimAccountWhenModelScopeIsBlocke
 		"denying the model scope must atomically roll back the earlier account claim")
 }
 
-func TestOpenAIStrictContinuation_RuntimeBlockStopsFallbackAndPreservesResponseBinding(t *testing.T) {
+func TestOpenAIStrictContinuation_ModelRuntimeBlockStopsFallbackAndPreservesResponseBinding(t *testing.T) {
 	ctx := context.Background()
 	groupID := int64(47)
 	bound := Account{
@@ -382,7 +382,9 @@ func TestOpenAIStrictContinuation_RuntimeBlockStopsFallbackAndPreservesResponseB
 		openaiWSStateStore: store,
 	}
 	require.NoError(t, store.BindResponseAccount(ctx, groupID, "resp_runtime_open", bound.ID, time.Hour))
-	svc.BlockAccountScheduling(&bound, time.Now().Add(time.Minute), "test_runtime_open")
+	svc.CooldownOpenAIRetryExhausted(ctx, &bound, "gpt-5.4", &UpstreamFailoverError{
+		StatusCode: http.StatusServiceUnavailable,
+	})
 
 	selection, _, err := svc.SelectAccountWithSchedulerForCapability(
 		ctx,
@@ -1018,9 +1020,12 @@ func TestOpenAIRuntimeBreaker_LateSuccessDoesNotClearActiveModelCooldown(t *test
 	svc.CooldownOpenAIRetryExhausted(context.Background(), account, "gpt-5.4", &UpstreamFailoverError{
 		StatusCode: http.StatusServiceUnavailable,
 	})
+	svc.BlockAccountScheduling(account, time.Now().Add(time.Minute), "stale_account_cooldown")
 	svc.ReportOpenAIAccountScheduleResult(account.ID, "gpt-5.4", true, nil)
 
 	require.True(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.4"))
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account), "cleared DB cooldown must release only the stale account scope")
+	require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.5"))
 	cache.mu.Lock()
 	_, exists := cache.entries[runtimeBreakerTestKey(account.ID, "gpt-5.4")]
 	cache.mu.Unlock()
@@ -1048,6 +1053,50 @@ func TestFirstClassCindyAccountUsesOpenAIRuntimeBlock(t *testing.T) {
 	svc.BlockAccountScheduling(account, time.Now().Add(time.Minute), "cindy_health_quarantine")
 
 	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	require.False(t, accountPersistedSchedulingCooldownActive(account))
+	require.True(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.6-luna"),
+		"generic persisted cooldown fields must not clear a Cindy quarantine")
+}
+
+func TestOpenAI429FastPath_DoesNotBlockOAuthWhenFallbackDisabled(t *testing.T) {
+	repo := &openAI429SnapshotRepo{}
+	settingRepo := newMockSettingRepo()
+	settingRepo.data[SettingKeyRateLimit429CooldownSettings] = `{"enabled":false,"cooldown_seconds":12}`
+	rateLimitService := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	rateLimitService.SetSettingService(NewSettingService(settingRepo, &config.Config{}))
+	svc := &OpenAIGatewayService{rateLimitService: rateLimitService}
+	rateLimitService.SetAccountRuntimeBlocker(svc)
+	account := &Account{ID: 425, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	svc.openaiOAuth429RetryStartedAt.Store(account.ID, time.Now().Add(-openAIOAuth429RetryWindow-time.Second))
+
+	svc.markOpenAIOAuth429RateLimited(context.Background(), account, http.Header{}, []byte(`{"detail":"Rate limit exceeded"}`))
+
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account), "disabled 429 fallback must not create an OAuth runtime cooldown")
+	require.Zero(t, repo.rateLimitedID, "disabled 429 fallback must not persist a scheduler cooldown")
+}
+
+func TestOpenAI429FastPath_DoesNotBlockOAuthWhenQuotaWindowIsNotExhausted(t *testing.T) {
+	repo := &openAI429SnapshotRepo{}
+	settingRepo := newMockSettingRepo()
+	settingRepo.data[SettingKeyRateLimit429CooldownSettings] = `{"enabled":false,"cooldown_seconds":12}`
+	rateLimitService := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	rateLimitService.SetSettingService(NewSettingService(settingRepo, &config.Config{}))
+	svc := &OpenAIGatewayService{rateLimitService: rateLimitService}
+	rateLimitService.SetAccountRuntimeBlocker(svc)
+	account := &Account{ID: 426, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	svc.openaiOAuth429RetryStartedAt.Store(account.ID, time.Now().Add(-openAIOAuth429RetryWindow-time.Second))
+	headers := http.Header{}
+	headers.Set("x-codex-primary-used-percent", "37")
+	headers.Set("x-codex-primary-reset-after-seconds", "604800")
+	headers.Set("x-codex-primary-window-minutes", "10080")
+	headers.Set("x-codex-secondary-used-percent", "20")
+	headers.Set("x-codex-secondary-reset-after-seconds", "3600")
+	headers.Set("x-codex-secondary-window-minutes", "300")
+
+	svc.handleOpenAIAccountUpstreamError(context.Background(), account, http.StatusTooManyRequests, headers, []byte(`{"detail":"Rate limit exceeded"}`))
+
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account), "non-exhausted quota headers must use the configurable fallback")
+	require.Zero(t, repo.rateLimitedID, "disabled 429 fallback must not persist a scheduler cooldown")
 }
 
 // TestOpenAI429FastPath_SkipsSparkShadow 外审第8轮 P1:spark 影子被选中后若 /responses 返回 429,
@@ -1351,6 +1400,31 @@ func TestCooldownOpenAIRetryExhausted_Transient429IgnoresUnderLimitCodexResets(t
 	require.Less(t, until.Sub(now), time.Minute)
 }
 
+func TestCooldownOpenAIRetryExhausted_DisabledFallbackDoesNotReopenRuntimeBreaker(t *testing.T) {
+	repo := &openAI429SnapshotRepo{}
+	settingRepo := newMockSettingRepo()
+	settingRepo.data[SettingKeyRateLimit429CooldownSettings] = `{"enabled":false,"cooldown_seconds":12}`
+	rateLimits := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	rateLimits.SetSettingService(NewSettingService(settingRepo, &config.Config{}))
+	cache := &runtimeBreakerTestCache{}
+	svc := &OpenAIGatewayService{rateLimitService: rateLimits, cache: cache}
+	account := &Account{ID: 4798, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	headers := http.Header{}
+	headers.Set("x-codex-primary-used-percent", "37")
+	headers.Set("x-codex-primary-reset-after-seconds", "604800")
+	headers.Set("x-codex-primary-window-minutes", "10080")
+
+	svc.CooldownOpenAIRetryExhausted(context.Background(), account, "gpt-5.4", &UpstreamFailoverError{
+		StatusCode:      http.StatusTooManyRequests,
+		ResponseHeaders: headers,
+		ResponseBody:    []byte(`{"error":{"type":"rate_limit_error"}}`),
+	})
+
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	require.Empty(t, cache.entries, "retry exhaustion must not restore a disabled OAuth Redis fallback")
+	require.Zero(t, repo.rateLimitedID)
+}
+
 func TestOpenAIPoolModeNonRetryable5xx_StillCreatesModelTransientBlock(t *testing.T) {
 	repo := &errorPolicyRepoStub{}
 	rateLimitService := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
@@ -1557,12 +1631,110 @@ func TestCindyBannedRuntimeBlockIsIndefiniteAndGenerationScopedAcrossABA(t *test
 	require.True(t, ok)
 	require.True(t, stored.(time.Time).IsZero(), "banned runtime block must be indefinite")
 	require.True(t, svc.isOpenAIAccountRuntimeBlockedContext(context.Background(), account))
+	require.False(t, accountPersistedSchedulingCooldownActive(account))
+	snapshot := svc.peekOpenAIAccountRuntimeBlock(account)
+	require.True(t, snapshot.blocked, "peeking must retain the zero-deadline terminal block")
+	svc.clearOpenAIAccountRuntimeBlockIfUnchanged(account.ID, snapshot)
+	require.True(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.6-luna"),
+		"ordinary cooldown CAS must not clear a Cindy health episode")
 	svc.BlockAccountScheduling(account, time.Now().Add(2*time.Minute), "cindy_health_quarantine")
 
 	currentABA := *account
 	currentABA.CindyCredentialGeneration = 6
-	require.False(t, svc.isOpenAIAccountRuntimeBlockedContext(context.Background(), &currentABA),
+	require.False(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(context.Background(), &currentABA, "gpt-5.6-luna"),
 		"generation 4 evidence must not block generation 6 even when the credential fingerprint repeats")
+}
+
+func TestRuntimeBlockHonorsClearedPersistedCooldown(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 92, Platform: PlatformGrok, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true}
+	svc.BlockAccountScheduling(account, time.Now().Add(30*time.Minute), "grok payment required")
+	require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "grok-3"))
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+}
+
+func TestRuntimeBlockConditionalClearSkipsNewerGeneration(t *testing.T) {
+	for _, testCase := range []struct {
+		name      string
+		extension time.Duration
+	}{
+		{name: "later deadline", extension: 20 * time.Minute},
+		{name: "same deadline new owner"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			svc := &OpenAIGatewayService{}
+			account := &Account{ID: 94, Platform: PlatformGrok, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true}
+			firstUntil := time.Now().Add(10 * time.Minute)
+			svc.BlockAccountScheduling(account, firstUntil, "stale")
+			snapshot := svc.peekOpenAIAccountRuntimeBlock(account)
+			require.True(t, snapshot.blocked)
+			svc.BlockAccountScheduling(account, firstUntil.Add(testCase.extension), "fresh")
+			svc.clearOpenAIAccountRuntimeBlockIfUnchanged(account.ID, snapshot)
+			require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+			require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "grok-3"))
+			require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+		})
+	}
+}
+
+func TestRuntimeBlockConditionalClearKeepsOAuthProbeOwnership(t *testing.T) {
+	cache := &runtimeBreakerTestCache{}
+	svc := &OpenAIGatewayService{cache: cache}
+	account := &Account{ID: 95, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	svc.BlockAccountScheduling(account, time.Now().Add(time.Minute), "stale_local_cooldown")
+	cache.mu.Lock()
+	cache.entries[runtimeBreakerTestKey(account.ID, "")] = runtimeBreakerTestEntry{
+		blockUntil: time.Now().Add(-time.Second), owner: "current-owner",
+	}
+	cache.mu.Unlock()
+
+	require.True(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(
+		withOpenAIRuntimeBreakerProbeOwner(context.Background(), "another-owner"), account, "gpt-5.4",
+	))
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account), "DB cleanup must release the stale local scope")
+	cache.mu.Lock()
+	entry, exists := cache.entries[runtimeBreakerTestKey(account.ID, "")]
+	cache.mu.Unlock()
+	require.True(t, exists)
+	require.Equal(t, "current-owner", entry.owner, "local CAS must not delete or steal a Redis half-open lease")
+	require.False(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(
+		withOpenAIRuntimeBreakerProbeOwner(context.Background(), "current-owner"), account, "gpt-5.4",
+	))
+}
+
+func TestRuntimeBlockConditionalClearKeepsCindyBalanceFingerprint(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := newCindyRateLimitAccount(99102, false)
+	svc.BlockAccountScheduling(account, time.Time{}, "cindy_balance_insufficient")
+	snapshot := svc.peekOpenAIAccountRuntimeBlock(account)
+	require.True(t, snapshot.blocked)
+	require.True(t, snapshot.until.IsZero())
+	svc.clearOpenAIAccountRuntimeBlockIfUnchanged(account.ID, snapshot)
+	require.False(t, accountPersistedSchedulingCooldownActive(account))
+	require.True(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.6-luna"))
+	_, exists := svc.cindyBalanceRuntimeBlockFingerprint.Load(account.ID)
+	require.True(t, exists, "ordinary cooldown cleanup must retain the balance block identity")
+
+	rotated := *account
+	rotated.Credentials = map[string]any{"base_url": "https://api.laxarouter.ai", "api_key": "rotated-balance-key"}
+	require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(&rotated, "gpt-5.6-luna"),
+		"a credential rotation must still invalidate the old balance fingerprint")
+}
+
+func TestRuntimeBlockKeepsActivePersistedCooldown(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	until := time.Now().Add(30 * time.Minute)
+	account := &Account{
+		ID:                     93,
+		Platform:               PlatformGrok,
+		Type:                   AccountTypeOAuth,
+		Status:                 StatusActive,
+		Schedulable:            true,
+		TempUnschedulableUntil: &until,
+	}
+	svc.BlockAccountScheduling(account, until, "grok payment required")
+	require.True(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "grok-3"))
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
 }
 
 func TestShouldStopOpenAIOAuth429Failover_OnlyDuringStorm(t *testing.T) {
