@@ -46,6 +46,7 @@ func RegisterGatewayRoutes(
 	// 保证校验发生在合成路由改写与调度之前，且只看客户端书写的模型名。
 	groupModelAllowlist := middleware.GroupModelAllowlist(cfg.Gateway.MaxBodySize)
 	managedModelRouteGuard := h.Gateway.ManagedModelRouteGuard(cfg.Gateway.MaxBodySize)
+	managedModelV2 := h.Gateway.ManagedModelV2(h.OpenAIGateway)
 
 	isOpenAIResponsesCompatibleGatewayPlatform := func(c *gin.Context) bool {
 		switch getGroupPlatform(c) {
@@ -192,8 +193,8 @@ func RegisterGatewayRoutes(
 	gateway.Use(gin.HandlerFunc(apiKeyAuth))
 	gateway.GET("/sub2api/billing", h.Gateway.KeyBillingInfo)
 	gateway.Use(managedModelRouteGuard, groupModelAllowlist)
-	gateway.Use(compositeTarget)
 	gateway.Use(requireGroupAnthropic)
+	gateway.Use(managedModelV2, compositeTarget)
 	{
 		// /v1/messages: auto-route based on group platform
 		gateway.POST("/messages", func(c *gin.Context) {
@@ -366,7 +367,7 @@ func RegisterGatewayRoutes(
 	// 根路径别名共用中间件链：白名单准入在 apiKeyAuth 之后、compositeTarget
 	// 之前，避免逐条路由手工维护链导致漏挂。
 	rootRoute := func(method, path string, limit gin.HandlerFunc, handler gin.HandlerFunc) {
-		r.Handle(method, path, limit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), managedModelRouteGuard, groupModelAllowlist, compositeTarget, requireGroupAnthropic, handler)
+		r.Handle(method, path, limit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), managedModelRouteGuard, groupModelAllowlist, requireGroupAnthropic, managedModelV2, compositeTarget, handler)
 	}
 	rootRoute(http.MethodPost, "/responses", bodyLimit, responsesHandler)
 	rootRoute(http.MethodPost, "/responses/*subpath", bodyLimit, guardResponsesSubpath(responsesHandler))
@@ -377,7 +378,7 @@ func RegisterGatewayRoutes(
 	rootRoute(http.MethodGet, "/models", bodyLimit, modelsHandler)
 	rootRoute(http.MethodPost, "/messages/count_tokens", bodyLimit, countTokensHandler)
 	codexDirect := r.Group("/backend-api/codex")
-	codexDirect.Use(bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), managedModelRouteGuard, groupModelAllowlist, compositeTarget, requireGroupAnthropic)
+	codexDirect.Use(bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), managedModelRouteGuard, groupModelAllowlist, requireGroupAnthropic, managedModelV2, compositeTarget)
 	{
 		codexDirect.POST("/realtime/calls", h.OpenAIGateway.Live)
 		codexDirect.GET("/:call_id", h.OpenAIGateway.LiveSideband)

@@ -21,16 +21,20 @@ var (
 	ErrAccountCapabilityConflict            = errors.New("capability state has changed")
 	ErrAccountCapabilityIdempotencyRequired = errors.New("capability idempotency key required")
 	ErrAccountCapabilityIdempotencyConflict = errors.New("capability idempotency key conflict")
+	ErrAccountCapabilityAlreadyAttempted    = errors.New("capability target was already attempted or has compatible success")
 )
 
 // Capability records contain only target identifiers and sanitized observations.
 // Authentication material is read from the current account immediately before use.
 type AccountCapabilityRun struct {
-	ID                int64      `json:"id"`
-	CreatedBy         int64      `json:"created_by"`
-	Kind              string     `json:"kind"`
-	IdempotencyKey    string     `json:"-"`
-	RequestHash       string     `json:"-"`
+	ID             int64  `json:"id"`
+	CreatedBy      int64  `json:"created_by"`
+	Kind           string `json:"kind"`
+	IdempotencyKey string `json:"-"`
+	RequestHash    string `json:"-"`
+	// OnlyUntested is a creation-time guard, not persisted operational state.
+	// The normalized request hash retains its idempotency semantics.
+	OnlyUntested      bool       `json:"-"`
 	FolderIDs         []int64    `json:"folder_ids"`
 	AccountIDs        []int64    `json:"account_ids"`
 	Status            string     `json:"status"`
@@ -81,10 +85,12 @@ type AccountCapabilityProbeTarget struct {
 }
 
 type AccountCapabilityCreateRequest struct {
-	Kind       string                         `json:"kind"`
-	FolderIDs  []int64                        `json:"folder_ids"`
-	AccountIDs []int64                        `json:"account_ids"`
-	Items      []AccountCapabilityProbeTarget `json:"items,omitempty"`
+	Kind                       string                         `json:"kind"`
+	FolderIDs                  []int64                        `json:"folder_ids"`
+	AccountIDs                 []int64                        `json:"account_ids"`
+	Items                      []AccountCapabilityProbeTarget `json:"items,omitempty"`
+	OnlyUntested               bool                           `json:"only_untested,omitempty"`
+	ExpectedConfigFingerprints map[int64]string               `json:"expected_config_fingerprints,omitempty"`
 }
 
 type AccountCapabilityFilter struct {

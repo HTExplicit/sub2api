@@ -47,3 +47,24 @@ func TestManagedModelRoutesConfigJSON(t *testing.T) {
 	require.NoError(t, json.Unmarshal(encoded, &got))
 	require.Equal(t, want, got)
 }
+
+func TestManagedModelRoutesV2JSONPreservesDistinctBranches(t *testing.T) {
+	config := ManagedModelRoutesConfig{Version: 2, Enabled: true, Routes: []ManagedModelRoute{{
+		PublicModel: "claude-fable-5.1", QuotaPlatform: "anthropic", Endpoints: []string{"responses", "messages"},
+		Branches: []ManagedModelRouteBranch{
+			{Selector: "s2pub-g23-bnative", TargetPlatform: "anthropic", UpstreamProtocol: "messages", Endpoints: []string{"responses", "messages"}, Accounts: []ManagedModelRouteAccount{{AccountID: 41, UpstreamModel: "claude-fable-5.1", AccountFingerprint: "native-proof", Endpoints: []string{"responses", "messages"}}}},
+			{Selector: "s2pub-g23-bcompatible", TargetPlatform: "openai", UpstreamProtocol: "chat_completions", Endpoints: []string{"responses", "messages"}, Accounts: []ManagedModelRouteAccount{{AccountID: 42, UpstreamModel: "provider/claude-fable-5.1-CC", AccountFingerprint: "compat-proof", Endpoints: []string{"responses", "messages"}}}},
+		},
+	}}}
+	body, err := json.Marshal(config)
+	require.NoError(t, err)
+	var decoded ManagedModelRoutesConfig
+	require.NoError(t, json.Unmarshal(body, &decoded))
+	require.Equal(t, config, decoded)
+	var envelope map[string]any
+	require.NoError(t, json.Unmarshal(body, &envelope))
+	route := envelope["routes"].([]any)[0].(map[string]any)
+	require.NotContains(t, route, "selector", "a v2 model has no single winning selector")
+	require.NotContains(t, route, "target_platform")
+	require.NotContains(t, route, "accounts")
+}

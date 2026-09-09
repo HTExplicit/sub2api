@@ -168,7 +168,12 @@ func (catalog *groupModelCapacityCatalog) bindLiveSource(source codexModelCapaci
 	}
 }
 
-func loadGroupModelCapacityCatalog(ctx context.Context, repo AccountRepository, routesRepo CompositeModelRouteRepository, channels *ChannelService, cfg *config.Config, groupID *int64, platform string) *groupModelCapacityCatalog {
+func loadGroupModelCapacityCatalog(ctx context.Context, repo AccountRepository, routesRepo CompositeModelRouteRepository, channels *ChannelService, cfg *config.Config, groupID *int64, platform string, groups ...*Group) *groupModelCapacityCatalog {
+	var group *Group
+	if len(groups) > 0 {
+		group = groups[0]
+	}
+	managed := group != nil && group.ManagedModelRoutes.Enabled
 	platforms := []string{platform}
 	useMixed := platform == PlatformAnthropic || platform == PlatformGemini
 	if useMixed {
@@ -176,8 +181,13 @@ func loadGroupModelCapacityCatalog(ctx context.Context, repo AccountRepository, 
 	} else if platform == PlatformComposite {
 		platforms = []string{PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformCindy}
 	}
+	if managed {
+		// Native-branded groups can contain compatible-platform branches. Query
+		// the published graph, not the brand, and keep this pool group-bound.
+		platforms = managedCatalogPlatforms(group)
+	}
 	queryGroupID, includeGrouped := groupID, false
-	if cfg != nil && cfg.RunMode == config.RunModeSimple && (!useMixed || groupID == nil) {
+	if !managed && cfg != nil && cfg.RunMode == config.RunModeSimple && (!useMixed || groupID == nil) {
 		queryGroupID, includeGrouped = nil, true
 	}
 	var accounts []Account
@@ -197,7 +207,9 @@ func loadGroupModelCapacityCatalog(ctx context.Context, repo AccountRepository, 
 			routesAvailable = err == nil
 		}
 	}
-	return newGroupModelCapacityCatalog(accounts, available, routes, routesAvailable, groupID, channels)
+	catalog := newGroupModelCapacityCatalog(accounts, available, routes, routesAvailable, groupID, channels)
+	catalog.group = group
+	return catalog
 }
 
 type capacityModelTarget struct {
@@ -362,6 +374,9 @@ func (catalog *groupModelCapacityCatalog) resolve(ctx context.Context, platform,
 	if !catalog.available {
 		return defaultGroupModelCapacity("account_query_failed")
 	}
+	if catalog.group != nil && catalog.group.ManagedModelRoutes.Enabled && catalog.group.ManagedModelRoutes.Version == ManagedModelRoutesVersion {
+		return catalog.resolveManaged(ctx, model)
+	}
 	target := capacityModelTarget{platform: platform, model: model}
 	if platform == PlatformComposite {
 		var reason string
@@ -457,6 +472,67 @@ func (catalog *groupModelCapacityCatalog) resolve(ctx context.Context, platform,
 	return result
 }
 
+// resolveManaged follows verified branch targets directly. Unlike ordinary
+// composite inference, differing platforms/targets are an intentional pool,
+// not ambiguity. Resolve against the original account so per-account snapshot
+// identities and exact upstream override keys remain authoritative.
+func (catalog *groupModelCapacityCatalog) resolveManaged(ctx context.Context, model string) ResolvedModelContextCapacity {
+	var result ResolvedModelContextCapacity
+	var minimumMax, minimumInput, minimumOutput int64
+	count := 0
+	for i := range catalog.accounts {
+		account := &catalog.accounts[i]
+		seenTargets := make(map[string]bool)
+		for _, target := range managedCatalogAccountTargets(catalog.group, account, "", false) {
+			if target.publicModel != model || seenTargets[target.upstreamModel] {
+				continue
+			}
+			lookup, ok := catalog.channel(ctx, target.branch.TargetPlatform)
+			if !ok {
+				return defaultGroupModelCapacity("channel_query_failed")
+			}
+			if lookup != nil && checkRestricted(lookup, *catalog.groupID, model) {
+				return defaultGroupModelCapacity("model_route_restricted")
+			}
+			if !CanManageModelContextCapacity(account) {
+				return ResolvedModelContextCapacity{Source: "protected"}
+			}
+			seenTargets[target.upstreamModel] = true
+			var live *ModelContextCapacity
+			if observed, exists := catalog.liveByAccount[account.ID][target.upstreamModel]; exists {
+				live = &observed
+			}
+			candidate := catalog.resolvers[i](target.upstreamModel, live)
+			maximum := candidate.MaxContextWindow
+			if maximum < candidate.ContextWindow {
+				maximum = candidate.ContextWindow
+			}
+			if count == 0 || maximum < minimumMax {
+				minimumMax = maximum
+			}
+			if count == 0 || candidate.MaxInputTokens < minimumInput {
+				minimumInput = candidate.MaxInputTokens
+			}
+			if count == 0 || candidate.MaxOutputTokens < minimumOutput {
+				minimumOutput = candidate.MaxOutputTokens
+			}
+			if count == 0 || candidate.ContextWindow < result.ContextWindow ||
+				(candidate.ContextWindow == result.ContextWindow && candidate.Source < result.Source) {
+				result = candidate
+			}
+			count++
+		}
+	}
+	if count == 0 {
+		return defaultGroupModelCapacity("no_model_candidate")
+	}
+	if count > 1 && result.Reason == "" {
+		result.Reason = "group_minimum"
+	}
+	result.MaxContextWindow, result.MaxInputTokens, result.MaxOutputTokens = minimumMax, minimumInput, minimumOutput
+	return result
+}
+
 func projectModelCapacityEnvelope(body []byte, codex bool, resolve func(string) ResolvedModelContextCapacity, protected map[string]bool) ([]byte, error) {
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(body, &envelope); err != nil {
@@ -532,7 +608,7 @@ func (s *GatewayService) ProjectModelListContextCapacities(ctx context.Context, 
 		if s.compositeResolver != nil {
 			routesRepo = s.compositeResolver.repo
 		}
-		catalog = loadGroupModelCapacityCatalog(ctx, s.accountRepo, routesRepo, s.channelService, s.cfg, groupID, platform)
+		catalog = loadGroupModelCapacityCatalog(ctx, s.accountRepo, routesRepo, s.channelService, s.cfg, groupID, platform, group)
 	}
 	catalog.group = group
 	return projectModelCapacityEnvelope(body, false, func(model string) ResolvedModelContextCapacity {
@@ -547,7 +623,7 @@ func (s *OpenAIGatewayService) ProjectCodexModelContextCapacities(ctx context.Co
 	if manifest == nil || manifest.NotModified || len(manifest.Body) == 0 || group == nil {
 		return nil
 	}
-	catalog := loadGroupModelCapacityCatalog(ctx, s.accountRepo, nil, s.channelService, s.cfg, &group.ID, group.Platform)
+	catalog := loadGroupModelCapacityCatalog(ctx, s.accountRepo, nil, s.channelService, s.cfg, &group.ID, group.Platform, group)
 	return projectCodexModelContextCapacities(ctx, group, manifest, ifNoneMatch, source, catalog)
 }
 
@@ -558,7 +634,7 @@ func (s *OpenAIGatewayService) ProjectOpenAIModelsListContextCapacities(ctx cont
 	if response == nil || response.NotModified || len(response.Body) == 0 || group == nil {
 		return nil
 	}
-	catalog := loadGroupModelCapacityCatalog(ctx, s.accountRepo, nil, s.channelService, s.cfg, &group.ID, group.Platform)
+	catalog := loadGroupModelCapacityCatalog(ctx, s.accountRepo, nil, s.channelService, s.cfg, &group.ID, group.Platform, group)
 	return projectOpenAIModelsContextCapacities(ctx, group, response, ifNoneMatch, nil, catalog, false)
 }
 
@@ -572,7 +648,7 @@ func (s *GatewayService) ProjectCodexModelContextCapacities(ctx context.Context,
 	if s.compositeResolver != nil {
 		routesRepo = s.compositeResolver.repo
 	}
-	catalog := loadGroupModelCapacityCatalog(ctx, s.accountRepo, routesRepo, s.channelService, s.cfg, &group.ID, group.Platform)
+	catalog := loadGroupModelCapacityCatalog(ctx, s.accountRepo, routesRepo, s.channelService, s.cfg, &group.ID, group.Platform, group)
 	return projectCodexModelContextCapacities(ctx, group, manifest, ifNoneMatch, source, catalog)
 }
 

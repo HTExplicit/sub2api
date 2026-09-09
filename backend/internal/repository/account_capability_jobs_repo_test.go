@@ -123,7 +123,7 @@ func TestAccountCapabilityJobsRepositorySupersededProjectionSurvivesCatalogRecov
 	require.Contains(t, capabilityPublicationSupersededSQL, "FROM admin_capability_items n")
 	require.Contains(t, capabilityPublicationSupersededSQL, "JOIN admin_capability_runs nr ON nr.id=n.run_id")
 	require.NotContains(t, capabilityPublicationSupersededSQL, "n.kind")
-	require.Contains(t, capabilityPublicationSupersededSQL, "OR (n.status='failed' AND n.result->>'account_failure'='true')")
+	require.Contains(t, capabilityPublicationSupersededSQL, "OR (n.status='failed' AND n.result->>'account_failure'='true'")
 	require.Contains(t, capabilityPublicationSupersededSQL, "nr.kind='discover' AND n.result->>'source'='upstream'")
 	for _, method := range []string{"latest", "run", "ids"} {
 		t.Run(method, func(t *testing.T) {

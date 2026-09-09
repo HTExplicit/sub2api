@@ -49,10 +49,11 @@
           <div
             class="flex w-full flex-shrink-0 flex-wrap items-center justify-end gap-3 lg:w-auto"
           >
-            <router-link v-if="!authStore.isSimpleMode" to="/admin/account-capabilities" class="btn btn-secondary" data-test="group-capabilities-open">
+            <button v-if="!authStore.isSimpleMode" type="button" class="btn btn-secondary" data-test="group-capabilities-open"
+              :disabled="openingPublicModelManager" :aria-busy="openingPublicModelManager" :title="t('admin.accountCapabilities.title')" @click="openPublicModelManager">
               <Icon name="grid" size="sm" />
               <span class="hidden sm:inline">{{ t('admin.accountCapabilities.title') }}</span>
-            </router-link>
+            </button>
             <button
               @click="loadGroups"
               :disabled="loading"
@@ -391,6 +392,16 @@
 
           <template #cell-actions="{ row }">
             <div class="flex items-center gap-1">
+              <router-link
+                v-if="!authStore.isSimpleMode"
+                :to="publicModelManagerLocation({ groupIDs: [row.id] })"
+                data-test="group-public-models"
+                :title="t('admin.accountCapabilities.title')"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400"
+              >
+                <Icon name="grid" size="sm" />
+                <span class="text-xs">{{ t('admin.accountCapabilities.title') }}</span>
+              </router-link>
               <button
                 @click="handleEdit(row)"
                 class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400"
@@ -4193,6 +4204,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
+import { publicModelManagerLocation } from "./accountCapabilitiesEntryPoints";
 import { useAppStore } from "@/stores/app";
 import { useAuthStore } from "@/stores/auth";
 import { useOnboardingStore } from "@/stores/onboarding";
@@ -5547,6 +5559,44 @@ const loadGroups = async () => {
     if (abortController === currentController && !signal.aborted) {
       loading.value = false;
     }
+  }
+};
+
+const openingPublicModelManager = ref(false);
+const openPublicModelManager = async () => {
+  if (openingPublicModelManager.value) return;
+  const requestFilters = {
+    platform: (filters.platform as GroupPlatform) || undefined,
+    status: (filters.status as "active" | "inactive") || undefined,
+    is_exclusive: filters.is_exclusive ? filters.is_exclusive === "true" : undefined,
+    search: searchQuery.value.trim() || undefined,
+    sort_by: "id",
+    sort_order: "asc" as const,
+  };
+  if (!requestFilters.platform && !requestFilters.status && requestFilters.is_exclusive === undefined && !requestFilters.search) {
+    await router.push(publicModelManagerLocation());
+    return;
+  }
+  openingPublicModelManager.value = true;
+  try {
+    // Freeze the complete filtered group set; the visible page is not the scope.
+    const first = await adminAPI.groups.list(1, 100, requestFilters);
+    const groupIDs = new Set(first.items.map((group) => group.id));
+    const pages = Math.max(first.pages || 0, Math.ceil(first.total / (first.page_size || 100)));
+    for (let page = 2; page <= pages; page++) {
+      const result = await adminAPI.groups.list(page, 100, requestFilters);
+      result.items.forEach((group) => groupIDs.add(group.id));
+    }
+    if (groupIDs.size !== first.total) throw new Error("Incomplete group scope");
+    if (!groupIDs.size) {
+      appStore.showError(t("admin.groups.noGroupsYet"));
+      return;
+    }
+    await router.push(publicModelManagerLocation({ groupIDs: [...groupIDs] }));
+  } catch {
+    appStore.showError(t("admin.groups.failedToLoad"));
+  } finally {
+    openingPublicModelManager.value = false;
   }
 };
 

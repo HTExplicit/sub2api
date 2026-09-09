@@ -90,6 +90,19 @@ func (h *AccountCapabilityHandler) GetRun(c *gin.Context) {
 	response.Success(c, run)
 }
 
+func (h *AccountCapabilityHandler) GetRunReceipt(c *gin.Context) {
+	actor, ok := accountJobActorID(c)
+	if !ok {
+		return
+	}
+	run, err := h.capabilities.FindCreationReceipt(c.Request.Context(), actor, c.GetHeader("Idempotency-Key"))
+	if err != nil {
+		response.ErrorFrom(c, accountCapabilityHTTPError(err))
+		return
+	}
+	response.Success(c, run)
+}
+
 func (h *AccountCapabilityHandler) ListItems(c *gin.Context) {
 	id, ok := accountCapabilityPathID(c)
 	if !ok {
@@ -183,6 +196,8 @@ func accountCapabilityHTTPError(err error) error {
 		return infraerrors.BadRequest("ACCOUNT_CAPABILITY_IDEMPOTENCY_REQUIRED", "Idempotency-Key is required")
 	case errors.Is(err, service.ErrAccountCapabilityIdempotencyConflict):
 		return infraerrors.Conflict("ACCOUNT_CAPABILITY_IDEMPOTENCY_CONFLICT", "Idempotency-Key was reused with a different request")
+	case errors.Is(err, service.ErrAccountCapabilityAlreadyAttempted):
+		return infraerrors.Conflict("ACCOUNT_CAPABILITY_ALREADY_ATTEMPTED", "Some proposed targets were already attempted or have compatible success; refresh the recommendation instead of replaying probes")
 	default:
 		return infraerrors.New(http.StatusInternalServerError, "ACCOUNT_CAPABILITY_INTERNAL", "Capability operation failed")
 	}

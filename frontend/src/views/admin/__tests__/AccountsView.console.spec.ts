@@ -284,6 +284,95 @@ describe('admin AccountsView Cockpit console', () => {
     getAllGroups.mockReset().mockResolvedValue([])
   })
 
+  it('opens the public model manager with the active folder from live taxonomy', async () => {
+    listFolders.mockResolvedValue([{ id: 17, name: 'dmxapi', sort_order: 0, account_count: 1 }])
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/admin/accounts', component: { template: '<div />' } },
+        { path: '/admin/account-capabilities', component: { template: '<div />' } }
+      ]
+    })
+    await router.push('/admin/accounts?folder=17')
+    await router.isReady()
+    const wrapper = mountView([router])
+    await flushPromises()
+
+    await wrapper.get('[data-test="account-capabilities-open"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/admin/account-capabilities')
+    expect(router.currentRoute.value.query).toEqual({ tab: 'overview', folder_ids: '17' })
+    wrapper.unmount()
+  })
+
+  it('keeps off-page selected accounts when opening the public model manager from another folder', async () => {
+    listFolders.mockResolvedValue([{ id: 7, name: 'dmxapi', sort_order: 0, account_count: 1 }])
+    listAccounts.mockResolvedValue({ items: [{ ...account, management_folder: { id: 7 } }], total: 1, page: 1, page_size: 20, pages: 1 })
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/admin/accounts', component: { template: '<div />' } },
+        { path: '/admin/account-capabilities', component: { template: '<div />' } }
+      ]
+    })
+    await router.push('/admin/accounts?folder=7&group_id=42')
+    await router.isReady()
+    const wrapper = mountView([router])
+    await flushPromises()
+    ;(wrapper.vm as any).setSelectedIds([1, 9])
+
+    await wrapper.get('[data-test="account-capabilities-open"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ tab: 'overview', account_ids: '1,9', group_ids: '42' })
+    wrapper.unmount()
+  })
+
+  it('resolves all filtered account IDs for the public model manager without leaking search into its URL', async () => {
+    sessionStorage.setItem('account-console-sensitive-filters-v1', JSON.stringify({ search: 'private search', account_ids: [] }))
+    listFolders.mockResolvedValue([{ id: 7, name: 'dmxapi', sort_order: 0, account_count: 2 }])
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/admin/accounts', component: { template: '<div />' } },
+        { path: '/admin/account-capabilities', component: { template: '<div />' } }
+      ]
+    })
+    await router.push('/admin/accounts?folder=7&statuses=active')
+    await router.isReady()
+    const wrapper = mountView([router])
+    await flushPromises()
+    listAccounts.mockResolvedValue({ items: [account, { ...account, id: 2 }], total: 2, page: 1, page_size: 1000, pages: 1 })
+
+    await wrapper.get('[data-test="account-capabilities-open"]').trigger('click')
+    await flushPromises()
+    expect(listAccounts).toHaveBeenCalledWith(1, 1000, expect.objectContaining({
+      folder: '7', statuses: 'active', search: 'private search', lite: '1', include_scheduler_score: '0'
+    }))
+    expect(router.currentRoute.value.query).toEqual({ tab: 'overview', account_ids: '1,2' })
+    wrapper.unmount()
+  })
+
+  it('does not widen an empty account filter when opening the public model manager', async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/admin/accounts', component: { template: '<div />' } },
+        { path: '/admin/account-capabilities', component: { template: '<div />' } }
+      ]
+    })
+    await router.push('/admin/accounts?statuses=inactive')
+    await router.isReady()
+    const wrapper = mountView([router])
+    await flushPromises()
+    listAccounts.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 1000, pages: 0 })
+
+    await wrapper.get('[data-test="account-capabilities-open"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/admin/accounts')
+    expect(wrapper.get('[data-test="account-capabilities-open"]').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
   it('uses the account model display contract for scheduled test options', async () => {
     const wrapper = mountView()
     await flushPromises()

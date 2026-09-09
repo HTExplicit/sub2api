@@ -105,6 +105,40 @@ func (r *accountCapabilityRepository) Create(ctx context.Context, run *service.A
 		return nil, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if run.OnlyUntested {
+		if run.Kind != service.AccountCapabilityKindProbe || len(items) == 0 {
+			return nil, false, service.ErrAccountCapabilityInvalid
+		}
+		// Serialize automatic creation with queue claims and other automatic
+		// batches. A new idempotency key must not authorize the same paid probe.
+		if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('admin_capability_queue'))`); err != nil {
+			return nil, false, err
+		}
+		existing, findErr := scanCapabilityRun(tx.QueryRowContext(ctx, `SELECT `+capabilityRunColumns+capabilityRunCounts+` FROM admin_capability_runs r WHERE r.created_by=$1 AND r.idempotency_key=$2`, run.CreatedBy, run.IdempotencyKey))
+		if findErr == nil {
+			if existing.RequestHash != run.RequestHash {
+				return nil, false, service.ErrAccountCapabilityIdempotencyConflict
+			}
+			if err = tx.Commit(); err != nil {
+				return nil, false, err
+			}
+			return existing, true, nil
+		}
+		if !errors.Is(findErr, service.ErrAccountCapabilityNotFound) {
+			return nil, false, findErr
+		}
+		for _, item := range items {
+			var attempted bool
+			err = tx.QueryRowContext(ctx, capabilityUnattemptedConflictSQL,
+				item.AccountID, item.ConfigFingerprint, item.UpstreamModel, item.Protocol).Scan(&attempted)
+			if err != nil {
+				return nil, false, err
+			}
+			if attempted {
+				return nil, false, service.ErrAccountCapabilityAlreadyAttempted
+			}
+		}
+	}
 	folders, err := json.Marshal(run.FolderIDs)
 	if err != nil {
 		return nil, false, err
@@ -153,6 +187,21 @@ func (r *accountCapabilityRepository) Create(ctx context.Context, run *service.A
 	}
 	return created, false, nil
 }
+
+// Canceled work is reusable only if it was certainly never dispatched.
+// Any prior basic success for this exact configuration/model prevents an
+// automatic extra-interface probe, even when its current readiness changed.
+const capabilityUnattemptedConflictSQL = `SELECT EXISTS (
+ SELECT 1 FROM admin_capability_items i
+ JOIN admin_capability_runs r ON r.id=i.run_id
+ WHERE r.kind='probe' AND i.profile='text'
+ AND i.account_id=$1 AND i.config_fingerprint=$2 AND i.upstream_model=$3
+ AND (
+   (i.protocol=$4 AND (i.status<>'canceled' OR i.dispatched_at IS NOT NULL
+     OR i.request_count>0 OR i.result->>'request_count_unknown'='true'))
+   OR (i.status='succeeded' AND i.result->>'status'='alive'
+     AND i.protocol IN ('responses','chat_completions','messages','responses_websocket'))
+ ))`
 
 func capabilityPage(filter service.AccountCapabilityFilter) service.AccountCapabilityFilter {
 	if filter.Page < 1 {

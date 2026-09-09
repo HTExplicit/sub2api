@@ -102,6 +102,9 @@ func PlatformFromAPIKey(apiKey *APIKey) string {
 // 后扣运行在 worker 池的 background ctx 上没有 ForcePlatform，因此后扣平台由 handler
 // 预先算定、经 RecordUsageInput.QuotaPlatform 传入，不要在后扣链路用 worker ctx 调用本函数。
 func QuotaPlatform(ctx context.Context, apiKey *APIKey) string {
+	if request, managed := ManagedModelRequestFromContext(ctx); managed && request.Version == ManagedModelRoutesVersion && isConcreteRequestPlatform(request.QuotaPlatform) {
+		return request.QuotaPlatform
+	}
 	if ctx != nil {
 		if fp, ok := ctx.Value(ctxkey.ForcePlatform).(string); ok && fp != "" {
 			return fp

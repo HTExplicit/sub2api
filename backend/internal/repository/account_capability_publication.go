@@ -219,6 +219,7 @@ type publicationGroupRow struct {
 	ProviderProfile       string                                    `json:"provider_profile"`
 	RateMultiplier        float64                                   `json:"rate_multiplier"`
 	Status                string                                    `json:"status"`
+	IsExclusive           bool                                      `json:"is_exclusive"`
 	ModelAllowlist        service.GroupModelAllowlist               `json:"model_allowlist"`
 	ManagedModelRoutes    domain.ManagedModelRoutesConfig           `json:"managed_model_routes"`
 	ModelPricing          []service.ChannelModelPricing             `json:"model_pricing"`
@@ -228,7 +229,7 @@ type publicationGroupRow struct {
 }
 
 func (row publicationGroupRow) group() *service.Group {
-	return &service.Group{ID: row.ID, Name: row.Name, Platform: row.Platform, WirePlatform: row.WirePlatform, ProviderProfile: row.ProviderProfile, RateMultiplier: row.RateMultiplier, Status: row.Status, ModelAllowlist: row.ModelAllowlist, ManagedModelRoutes: row.ManagedModelRoutes, ModelPricing: row.ModelPricing, MessagesDispatchModelConfig: row.MessagesDispatch, DefaultMappedModel: row.DefaultMappedModel, AllowMessagesDispatch: row.AllowMessagesDispatch}
+	return &service.Group{ID: row.ID, Name: row.Name, Platform: row.Platform, WirePlatform: row.WirePlatform, ProviderProfile: row.ProviderProfile, RateMultiplier: row.RateMultiplier, Status: row.Status, IsExclusive: row.IsExclusive, ModelAllowlist: row.ModelAllowlist, ManagedModelRoutes: row.ManagedModelRoutes, ModelPricing: row.ModelPricing, MessagesDispatchModelConfig: row.MessagesDispatch, DefaultMappedModel: row.DefaultMappedModel, AllowMessagesDispatch: row.AllowMessagesDispatch}
 }
 
 func (r *accountCapabilityPublicationRepository) snapshot(ctx context.Context, tx *sql.Tx, req service.CapabilityPublicationRequest, reserved map[int64]bool) (*service.CapabilityPublicationSnapshot, error) {
@@ -299,8 +300,10 @@ func (r *accountCapabilityPublicationRepository) snapshot(ctx context.Context, t
 	}
 	for _, gs := range snap.Groups {
 		for _, route := range gs.Group.ManagedModelRoutes.Routes {
-			for _, member := range route.Accounts {
-				accountSet[member.AccountID] = true
+			for _, branch := range service.ManagedModelRouteBranches(route) {
+				for _, member := range branch.Accounts {
+					accountSet[member.AccountID] = true
+				}
 			}
 		}
 	}
@@ -554,7 +557,7 @@ func publicationApplyGroup(ctx context.Context, tx *sql.Tx, gp service.Capabilit
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE groups SET platform=$2,wire_platform=$2,managed_model_routes=$3::jsonb,model_allowlist=$4::jsonb,messages_dispatch_model_config=$5::jsonb,allow_messages_dispatch=$6,default_mapped_model='',status=$7,updated_at=NOW() WHERE id=$1 AND deleted_at IS NULL`, gp.GroupID, gp.Platform, string(routes), string(allowlist), string(dispatch), len(gp.MessagesDispatch.ExactModelMappings) > 0, gp.Status)
+	_, err = tx.ExecContext(ctx, `UPDATE groups SET platform=$2,wire_platform=$2,managed_model_routes=$3::jsonb,model_allowlist=$4::jsonb,messages_dispatch_model_config=$5::jsonb,allow_messages_dispatch=$6,default_mapped_model=$8,status=$7,updated_at=NOW() WHERE id=$1 AND deleted_at IS NULL`, gp.GroupID, gp.Platform, string(routes), string(allowlist), string(dispatch), gp.AllowMessagesDispatch, gp.Status, gp.DefaultMappedModel)
 	if err != nil {
 		return err
 	}
@@ -612,14 +615,23 @@ func publicationApplyGroup(ctx context.Context, tx *sql.Tx, gp service.Capabilit
 	if err != nil {
 		return err
 	}
-	// Existing routes are retained as soft-deleted history; only this public
-	// group's exact, verified routing becomes active.
-	_, err = tx.ExecContext(ctx, `UPDATE composite_model_routes SET deleted_at=NOW(),updated_at=NOW() WHERE group_id=$1 AND deleted_at IS NULL`, gp.GroupID)
+	// Preserve unchanged manual routes (including identity, endpoint, priority
+	// and disabled state). Only routes absent from the frozen merge are retired.
+	retainedRouteIDs := make([]int64, 0, len(gp.CompositeRoutes))
+	for _, route := range gp.CompositeRoutes {
+		if route.ID > 0 {
+			retainedRouteIDs = append(retainedRouteIDs, route.ID)
+		}
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE composite_model_routes SET deleted_at=NOW(),updated_at=NOW() WHERE group_id=$1 AND deleted_at IS NULL AND NOT (id=ANY($2))`, gp.GroupID, pq.Array(retainedRouteIDs))
 	if err != nil {
 		return err
 	}
 	for _, route := range gp.CompositeRoutes {
-		_, err = tx.ExecContext(ctx, `INSERT INTO composite_model_routes(group_id,public_model,match_type,target_platform,upstream_model,endpoint,priority,enabled,notes) VALUES($1,$2,'exact',$3,$4,'any',$5,true,$6)`, gp.GroupID, route.PublicModel, route.TargetPlatform, route.UpstreamModel, route.Priority, route.Notes)
+		if route.ID > 0 {
+			continue
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO composite_model_routes(group_id,public_model,match_type,target_platform,upstream_model,endpoint,priority,enabled,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, gp.GroupID, route.PublicModel, route.MatchType, route.TargetPlatform, route.UpstreamModel, route.Endpoint, route.Priority, route.Enabled, route.Notes)
 		if err != nil {
 			return err
 		}

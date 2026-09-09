@@ -168,15 +168,39 @@ func cloneGroupForDuplicate(source *Group, operationID string) *Group {
 		if route.Selector != "" {
 			selectors[route.Selector] = struct{}{}
 		}
+		for _, branch := range ManagedModelRouteBranches(route) {
+			if branch.Selector != "" {
+				selectors[branch.Selector] = struct{}{}
+			}
+		}
+	}
+	for model := range cloned.ModelRouting {
+		if _, managed := selectors[model]; managed {
+			delete(cloned.ModelRouting, model)
+		}
 	}
 	if _, managed := selectors[cloned.DefaultMappedModel]; managed {
 		cloned.DefaultMappedModel = ""
 	}
+	for _, target := range []*string{&cloned.MessagesDispatchModelConfig.OpusMappedModel, &cloned.MessagesDispatchModelConfig.SonnetMappedModel, &cloned.MessagesDispatchModelConfig.HaikuMappedModel} {
+		if _, managed := selectors[*target]; managed {
+			*target = ""
+		}
+	}
 	for requested, target := range cloned.MessagesDispatchModelConfig.ExactModelMappings {
-		if _, managed := selectors[target]; managed {
+		_, managedRequest := selectors[requested]
+		_, managedTarget := selectors[target]
+		if managedRequest || managedTarget {
 			delete(cloned.MessagesDispatchModelConfig.ExactModelMappings, requested)
 		}
 	}
+	models := cloned.ModelAllowlist.Models[:0]
+	for _, model := range cloned.ModelAllowlist.Models {
+		if _, managed := selectors[model]; !managed {
+			models = append(models, model)
+		}
+	}
+	cloned.ModelAllowlist.Models = models
 	return cloned
 }
 

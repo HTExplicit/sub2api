@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -35,6 +36,7 @@ func TestManagedModelHTTPFirstPublicationCannotUseUnmanagedAuthSnapshot(t *testi
 			called = true
 			key, _ := middleware2.GetAPIKeyFromContext(c)
 			require.True(t, key.Group.ManagedModelRoutes.Enabled)
+			require.Same(t, key.Group, c.Request.Context().Value(ctxkey.Group), "scheduler and billing must use the same refreshed group as admission")
 			request, ok := service.ManagedModelRequestFromContext(c.Request.Context())
 			require.True(t, ok)
 			require.Equal(t, "PUBLIC-GPT", request.SubmittedModel, "allowlist must not normalize a prepared request twice")

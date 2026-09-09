@@ -69,34 +69,34 @@ describe('account capability publication target selection', () => {
     expect(result.omittedCount).toBe(0)
   })
 
-  it('prefers more distinct verified protocols over a higher tier', () => {
+  it('retains successful alternatives regardless of protocol coverage', () => {
     const response = candidate()
     const chat = candidate({ protocol: 'chat_completions', latest_probe_item_id: 102 })
     const vip = candidate({ upstream_model: 'gpt-6-astra-ssvip', tier: 'ssvip' })
     const result = selectCapabilityPublicationTargets([vip, response, chat])
-    expect(result.selected).toEqual([response, chat])
-    expect(result.omittedCount).toBe(1)
+    expect(result.selected).toEqual([vip, response, chat])
+    expect(result.omittedCount).toBe(0)
   })
 
-  it('prefers SSVIP then VIP over standard on equal protocol coverage, before exact spelling', () => {
+  it('does not discard different real targets based on tier', () => {
     const standard = candidate()
     const vip = candidate({ upstream_model: 'gpt-6-astra-vip', tier: 'vip' })
     const ssvip = candidate({ upstream_model: 'gpt-6-astra-ssvip', tier: 'ssvip' })
-    expect(selectCapabilityPublicationTargets([standard, vip, ssvip]).selected).toEqual([ssvip])
-    expect(selectCapabilityPublicationTargets([standard, vip]).selected).toEqual([vip])
+    expect(selectCapabilityPublicationTargets([standard, vip, ssvip]).selected).toEqual([standard, vip, ssvip])
+    expect(selectCapabilityPublicationTargets([standard, vip]).selected).toEqual([standard, vip])
   })
 
-  it('prefers exact public spelling after protocol and tier ties', () => {
+  it('keeps an eligible exact target and an eligible namespaced alternative', () => {
     const alias = candidate({ upstream_model: 'a/gpt-6-astra' })
     const exact = candidate()
-    expect(selectCapabilityPublicationTargets([alias, exact]).selected).toEqual([exact])
+    expect(selectCapabilityPublicationTargets([alias, exact]).selected).toEqual([alias, exact])
   })
 
-  it('uses deterministic exact-string lexical order for the final tie', () => {
+  it('preserves distinct case-sensitive targets instead of picking a lexical winner', () => {
     const lower = candidate({ upstream_model: 'ns/gpt-6-astra-ssvip', tier: 'ssvip' })
     const upper = candidate({ upstream_model: 'ns/GPT-6-Astra-ssvip', tier: 'ssvip' })
-    expect(selectCapabilityPublicationTargets([lower, upper]).selected).toEqual([upper])
-    expect(selectCapabilityPublicationTargets([upper, lower]).selected).toEqual([upper])
+    expect(selectCapabilityPublicationTargets([lower, upper]).selected).toEqual([lower, upper])
+    expect(selectCapabilityPublicationTargets([upper, lower]).selected).toEqual([upper, lower])
   })
 
   it('isolates account, group and public model buckets', () => {
@@ -109,7 +109,7 @@ describe('account capability publication target selection', () => {
     expect(result.omittedCount).toBe(0)
   })
 
-  it('keeps all protocols of the chosen target and deduplicates candidate IDs without mutating inventory', () => {
+  it('keeps all server-eligible evidence and deduplicates candidate IDs without mutating inventory', () => {
     const response = candidate()
     const chat = candidate({ protocol: 'chat_completions', latest_probe_item_id: 102 })
     const messages = candidate({ protocol: 'messages', latest_probe_item_id: 103 })
@@ -117,15 +117,22 @@ describe('account capability publication target selection', () => {
     const items = [response, chat, response, messages, alias]
     const before = structuredClone(items)
     const result = selectCapabilityPublicationTargets(items)
-    expect(result.selected).toEqual([response, chat, messages])
-    expect(result.omittedCount).toBe(1)
+    expect(result.selected).toEqual([response, chat, messages, alias])
+    expect(result.omittedCount).toBe(0)
     expect(items).toEqual(before)
   })
 
-  it('counts distinct protocols rather than repeated observations for the same protocol', () => {
+  it('leaves evidence consolidation to the server instead of pruning an alternative', () => {
     const response = candidate()
     const repeated = candidate({ candidate_id: 'another-observation', latest_probe_item_id: 102 })
     const vip = candidate({ upstream_model: 'gpt-6-astra-vip', tier: 'vip' })
-    expect(selectCapabilityPublicationTargets([response, repeated, vip]).selected).toEqual([vip])
+    expect(selectCapabilityPublicationTargets([response, repeated, vip]).selected).toEqual([response, repeated, vip])
+  })
+
+  it('reuses the explicitly accepted last success after a later temporary failure', () => {
+    const item = candidate({ latest_probe_item_id: 102, last_success_item_id: 101, last_success_reusable: true, probe_status: 'temporary_failure', publishable: true })
+    expect(isPublishableCandidate(item)).toBe(true)
+    expect(isPublishableCandidate({ ...item, latest_probe_item_id: undefined })).toBe(true)
+    expect(isPublishableCandidate({ ...item, publishable: false })).toBe(false)
   })
 })

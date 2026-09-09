@@ -32,7 +32,7 @@ func TestCapabilityPublicationPreservesPrivateStateAndScopesSelectors(t *testing
 	if !reflect.DeepEqual(ap.AddGroupIDs, []int64{23}) || len(ap.RemoveGroupIDs) != 0 || ap.Schedulable == nil || !*ap.Schedulable {
 		t.Fatalf("wrong scoped patch: %#v", ap)
 	}
-	selector := ManagedModelSelector(23, "gpt-6-astra")
+	selector := ManagedModelBranchSelector(23, "gpt-6-astra", PlatformOpenAI, "chat_completions", "gpt-6-astra")
 	if !reflect.DeepEqual(ap.ModelMapping, map[string]string{selector: "gpt-6-astra"}) {
 		t.Fatalf("private mapping leaked into patch: %#v", ap.ModelMapping)
 	}
@@ -79,10 +79,10 @@ func TestCapabilityPublicationRejectsInvalidEvidenceAndPrivateSemanticChanges(t 
 		}},
 		{"superseded by later terminal failure", func(s *CapabilityPublicationSnapshot) { e := s.Evidence[11]; e.Superseded = true; s.Evidence[11] = e }},
 		{"empty output is not alive", func(s *CapabilityPublicationSnapshot) { e := s.Evidence[11]; e.Status = "failed"; s.Evidence[11] = e }},
-		{"wrong actual wire", func(s *CapabilityPublicationSnapshot) {
+		{"unsupported actual wire", func(s *CapabilityPublicationSnapshot) {
 			e := s.Evidence[11]
-			e.Protocol = "responses"
-			e.Result = json.RawMessage(`{"status":"alive","protocol":"responses","profile":"text","upstream_model":"gpt-6-astra","request_count":1}`)
+			e.Protocol = "compact"
+			e.Result = json.RawMessage(`{"status":"alive","protocol":"compact","profile":"text","upstream_model":"gpt-6-astra","request_count":1}`)
 			s.Evidence[11] = e
 		}},
 		{"missing price", func(s *CapabilityPublicationSnapshot) { s.Groups[23].Group.ModelPricing = nil }},
@@ -110,8 +110,14 @@ func TestCapabilityPublicationOutOfScopeOnlyExplicitDetachment(t *testing.T) {
 	outside := &Account{ID: 99, Name: "outside", Platform: PlatformOpenAI, Schedulable: true}
 	snap.Accounts[99] = &CapabilityPublicationAccountSnapshot{Account: outside, Bindings: map[int64]int{23: 7, 88: 12}}
 	snap.Groups[23].Bindings[99] = 7
-	if _, err := (&AccountCapabilityPublicationService{}).build(snap); err == nil {
-		t.Fatal("undeclared outside account accepted")
+	initial, err := (&AccountCapabilityPublicationService{}).build(snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ap := range initial.Accounts {
+		if ap.AccountID == 99 {
+			t.Fatal("merge modified an unselected outside account")
+		}
 	}
 	snap.Request.DetachAccountIDs = []int64{99}
 	plan, err := (&AccountCapabilityPublicationService{}).build(snap)
@@ -174,7 +180,7 @@ func TestCapabilityPublicationCountMetadataOnlySupplementsInference(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !publicationHasString(plan.Groups[0].ManagedModelRoutes.Routes[0].Accounts[0].Endpoints, "count_tokens") {
+	if !publicationHasString(ManagedModelRouteBranches(plan.Groups[0].ManagedModelRoutes.Routes[0])[0].Accounts[0].Endpoints, "count_tokens") {
 		t.Fatal("valid metadata proof not attached")
 	}
 }
@@ -185,9 +191,9 @@ func TestCapabilityPublicationIngressCompilation(t *testing.T) {
 		want                           []string
 	}{
 		{"confirmed responses", PlatformOpenAI, "force_responses", "responses", []string{"chat_completions", "messages", "responses"}},
-		{"unknown responses excludes hidden Chat fallback", PlatformOpenAI, "", "responses", []string{"messages", "responses"}},
+		{"managed responses pins wire without hidden Chat fallback", PlatformOpenAI, "", "responses", []string{"chat_completions", "messages", "responses"}},
 		{"chat wire bridge", PlatformOpenAI, "force_chat_completions", "chat_completions", []string{"chat_completions", "messages", "responses"}},
-		{"wrong wire", PlatformOpenAI, "force_chat_completions", "responses", nil},
+		{"verified alternate wire does not change ordinary default", PlatformOpenAI, "force_chat_completions", "responses", []string{"chat_completions", "messages", "responses"}},
 		{"native messages bridge", PlatformAnthropic, "", "messages", []string{"chat_completions", "messages", "responses"}},
 		{"WS is independent", PlatformOpenAI, "force_responses", "responses_websocket", []string{"responses_websocket"}},
 		{"unknown protocol", PlatformOpenAI, "force_responses", "compact", nil},
@@ -258,6 +264,17 @@ func TestCapabilityPublicationDiscoverySchedulingEvidence(t *testing.T) {
 			t.Fatal("catalog failure became model evidence")
 		}
 	})
+	t.Run("historical unchanged credential failure retains its recorded meaning", func(t *testing.T) {
+		snap := makeDiscovery()
+		e := snap.Evidence[11]
+		old := time.Now().Add(-25 * time.Hour)
+		e.FinishedAt = &old
+		snap.Evidence[11] = e
+		plan, err := (&AccountCapabilityPublicationService{}).build(snap)
+		if err != nil || len(plan.Accounts) != 1 || plan.Accounts[0].Schedulable == nil || *plan.Accounts[0].Schedulable {
+			t.Fatalf("unchanged, unsuperseded evidence was expired solely by age: plan=%#v err=%v", plan, err)
+		}
+	})
 	for _, test := range []struct {
 		name string
 		edit func(*CapabilityPublicationSnapshot)
@@ -271,12 +288,6 @@ func TestCapabilityPublicationDiscoverySchedulingEvidence(t *testing.T) {
 			e := s.Evidence[11]
 			e.Status = "succeeded"
 			e.Result = json.RawMessage(`{"status":"discovered","classification":"catalog_discovered","http_status":200,"request_count":1,"account_failure":false,"source":"upstream"}`)
-			s.Evidence[11] = e
-		}},
-		{"expired discovery", func(s *CapabilityPublicationSnapshot) {
-			e := s.Evidence[11]
-			old := time.Now().Add(-25 * time.Hour)
-			e.FinishedAt = &old
 			s.Evidence[11] = e
 		}},
 		{"credential configuration changed", func(s *CapabilityPublicationSnapshot) {

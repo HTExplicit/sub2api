@@ -10,12 +10,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
 
-const ManagedModelRoutesVersion = 1
+const ManagedModelRoutesVersion = 2
 const ManagedModelEndpointResponsesWebSocket = "responses_websocket"
 
 // ErrManagedModelRouteUnavailable is deliberately independent of upstream
@@ -27,15 +28,137 @@ type managedModelRequestContextKey struct{}
 // ManagedModelRequest freezes the published route for one HTTP request or WS
 // turn. It never contains credentials, and is not part of a client response.
 type ManagedModelRequest struct {
+	Version        int
 	GroupID        int64
+	GroupPlatform  string
+	QuotaPlatform  string
 	Endpoint       string
 	SubmittedModel string
 	Route          ManagedModelRoute
+	Branch         *ManagedModelRouteBranch
+}
+
+// ManagedModelRoutesVersionSupported keeps existing publications readable;
+// merely opening or extending a group never rewrites its old account mappings.
+func ManagedModelRoutesVersionSupported(version int) bool {
+	return version == 1 || version == ManagedModelRoutesVersion
+}
+
+// ManagedModelRouteBranches returns a read-only projection of both formats.
+func ManagedModelRouteBranches(route ManagedModelRoute) []ManagedModelRouteBranch {
+	if len(route.Branches) > 0 {
+		return route.Branches
+	}
+	if route.Selector == "" && len(route.Accounts) == 0 {
+		return nil
+	}
+	return []ManagedModelRouteBranch{{Selector: route.Selector, TargetPlatform: route.TargetPlatform, Endpoints: route.Endpoints, Accounts: route.Accounts}}
+}
+
+func (request *ManagedModelRequest) RoutingModel() string {
+	if request == nil {
+		return ""
+	}
+	if request.Branch != nil {
+		return request.Branch.Selector
+	}
+	return request.Route.Selector
+}
+
+func (request *ManagedModelRequest) TargetPlatform() string {
+	if request == nil {
+		return ""
+	}
+	if request.Branch != nil {
+		return request.Branch.TargetPlatform
+	}
+	return request.Route.TargetPlatform
 }
 
 func ManagedModelSelector(groupID int64, publicModel string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(publicModel)))
 	return fmt.Sprintf("s2pub-g%d-m%s", groupID, hex.EncodeToString(sum[:8]))
+}
+
+// ManagedModelBranchSelector does not normalize real wire identifiers. Version,
+// VIP/CC suffixes, case and protocol remain distinct, including on one account.
+func ManagedModelBranchSelector(groupID int64, publicModel, platform, protocol, upstreamModel string) string {
+	identity, _ := json.Marshal([]string{strings.TrimSpace(publicModel), platform, protocol, upstreamModel})
+	sum := sha256.Sum256(identity)
+	return fmt.Sprintf("s2pub-g%d-b%s", groupID, hex.EncodeToString(sum[:12]))
+}
+
+func managedModelBranchValid(group *Group, route ManagedModelRoute, branch ManagedModelRouteBranch) bool {
+	if !isConcreteRequestPlatform(branch.TargetPlatform) || branch.TargetPlatform == PlatformCindy || len(branch.Accounts) == 0 || len(branch.Endpoints) == 0 {
+		return false
+	}
+	if branch.UpstreamProtocol == "" {
+		return branch.Selector == ManagedModelSelector(group.ID, route.PublicModel) &&
+			(group.Platform == PlatformComposite || branch.TargetPlatform == group.Platform)
+	}
+	if !ManagedModelBranchProtocolSupported(branch.TargetPlatform, branch.UpstreamProtocol) {
+		return false
+	}
+	upstream := branch.Accounts[0].UpstreamModel
+	if strings.TrimSpace(upstream) == "" || IsManagedModelSelector(upstream) || branch.Selector != ManagedModelBranchSelector(group.ID, route.PublicModel, branch.TargetPlatform, branch.UpstreamProtocol, upstream) {
+		return false
+	}
+	seen := make(map[int64]bool, len(branch.Accounts))
+	for _, member := range branch.Accounts {
+		if member.AccountID <= 0 || member.UpstreamModel != upstream || member.AccountFingerprint == "" || seen[member.AccountID] {
+			return false
+		}
+		seen[member.AccountID] = true
+		for _, endpoint := range member.Endpoints {
+			if !managedModelEndpointAllowed(endpoint) || !managedModelHasEndpoint(branch.Endpoints, endpoint) {
+				return false
+			}
+		}
+	}
+	for _, endpoint := range branch.Endpoints {
+		if endpoint != CompositeRouteEndpointResponses && endpoint != CompositeRouteEndpointMessages && endpoint != CompositeRouteEndpointChatCompletions {
+			return false
+		}
+	}
+	return true
+}
+
+func managedModelQuotaPlatform(group *Group, route ManagedModelRoute) string {
+	if group.Platform != PlatformComposite {
+		return group.Platform
+	}
+	if isConcreteRequestPlatform(route.QuotaPlatform) {
+		return route.QuotaPlatform
+	}
+	// Retaining a v1 route must retain the quota ledger it previously used,
+	// even when a new compatible provider joins the same public model.
+	if isConcreteRequestPlatform(route.TargetPlatform) {
+		return route.TargetPlatform
+	}
+	if platform, ok := DetectModelPlatform(route.PublicModel); ok {
+		return platform
+	}
+	platform := ""
+	for _, branch := range ManagedModelRouteBranches(route) {
+		if platform != "" && platform != branch.TargetPlatform {
+			return ""
+		}
+		platform = branch.TargetPlatform
+	}
+	return platform
+}
+
+// Only deterministic, existing production adapters are admitted. Metadata and
+// WebSocket protocols need their own evidence and are not generative branches.
+func ManagedModelBranchProtocolSupported(platform, protocol string) bool {
+	switch platform {
+	case PlatformAnthropic:
+		return protocol == CompositeRouteEndpointMessages
+	case PlatformOpenAI:
+		return protocol == CompositeRouteEndpointResponses || protocol == CompositeRouteEndpointChatCompletions
+	default:
+		return false
+	}
 }
 
 // EffectiveManagedModelAllowlist keeps the public catalog fail closed even if
@@ -49,13 +172,13 @@ func EffectiveManagedModelAllowlist(group *Group) GroupModelAllowlist {
 		return group.ModelAllowlist
 	}
 	allowlist := GroupModelAllowlist{Enabled: true}
-	if group.ManagedModelRoutes.Version != ManagedModelRoutesVersion {
+	if !ManagedModelRoutesVersionSupported(group.ManagedModelRoutes.Version) {
 		return allowlist
 	}
 	seen := make(map[string]bool)
 	for _, route := range group.ManagedModelRoutes.Routes {
 		model := strings.TrimSpace(route.PublicModel)
-		if model == "" || IsManagedModelSelector(model) || len(route.Accounts) == 0 || seen[strings.ToLower(model)] {
+		if model == "" || IsManagedModelSelector(model) || len(ManagedModelRouteBranches(route)) == 0 || seen[strings.ToLower(model)] {
 			continue
 		}
 		seen[strings.ToLower(model)] = true
@@ -93,7 +216,7 @@ func ResolveManagedModelRoute(group *Group, requestedModel, endpoint string) (*M
 	}
 	config := group.ManagedModelRoutes
 	requestedModel = strings.TrimSpace(requestedModel)
-	if config.Version != ManagedModelRoutesVersion || group.ID <= 0 ||
+	if !ManagedModelRoutesVersionSupported(config.Version) || group.ID <= 0 ||
 		group.Platform == PlatformCindy || requestedModel == "" ||
 		IsManagedModelSelector(requestedModel) || !managedModelEndpointAllowed(endpoint) {
 		return nil, ErrManagedModelRouteUnavailable
@@ -116,12 +239,26 @@ func ResolveManagedModelRoute(group *Group, requestedModel, endpoint string) (*M
 		if !matches {
 			continue
 		}
-		if matched != nil || route.PublicModel == "" || route.Selector != ManagedModelSelector(group.ID, route.PublicModel) ||
-			!isConcreteRequestPlatform(route.TargetPlatform) ||
-			(group.Platform != PlatformComposite && route.TargetPlatform != group.Platform) || len(route.Accounts) == 0 {
+		if matched != nil || strings.TrimSpace(route.PublicModel) == "" || IsManagedModelSelector(route.PublicModel) || len(ManagedModelRouteBranches(route)) == 0 || (config.Version == 1 && len(route.Branches) > 0) {
 			return nil, ErrManagedModelRouteUnavailable
 		}
-		matched = &ManagedModelRequest{GroupID: group.ID, Endpoint: endpoint, SubmittedModel: requestedModel, Route: route}
+		seenSelectors := make(map[string]bool)
+		endpointAvailable := false
+		for _, branch := range ManagedModelRouteBranches(route) {
+			if !managedModelBranchValid(group, route, branch) || seenSelectors[branch.Selector] {
+				return nil, ErrManagedModelRouteUnavailable
+			}
+			seenSelectors[branch.Selector] = true
+			endpointAvailable = endpointAvailable || managedModelHasEndpoint(branch.Endpoints, endpoint)
+		}
+		if !endpointAvailable {
+			return nil, ErrManagedModelRouteUnavailable
+		}
+		quotaPlatform := managedModelQuotaPlatform(group, route)
+		if config.Version == ManagedModelRoutesVersion && !isConcreteRequestPlatform(quotaPlatform) {
+			return nil, ErrManagedModelRouteUnavailable
+		}
+		matched = &ManagedModelRequest{Version: config.Version, GroupID: group.ID, GroupPlatform: group.Platform, QuotaPlatform: quotaPlatform, Endpoint: endpoint, SubmittedModel: requestedModel, Route: route}
 	}
 	if matched == nil {
 		return nil, ErrManagedModelRouteUnavailable
@@ -133,7 +270,17 @@ func WithManagedModelRequest(ctx context.Context, request *ManagedModelRequest) 
 	if ctx == nil || request == nil {
 		return ctx
 	}
-	return context.WithValue(ctx, managedModelRequestContextKey{}, *request)
+	copy := *request
+	if request.Version == ManagedModelRoutesVersion {
+		if existing, ok := ManagedModelRequestFromContext(ctx); ok && existing.GroupID == request.GroupID && existing.Route.PublicModel == request.Route.PublicModel {
+			copy.QuotaPlatform = existing.QuotaPlatform
+		} else if platform, ok := ctx.Value(ctxkey.ForcePlatform).(string); ok && isConcreteRequestPlatform(platform) {
+			// Freeze only the original ingress override, never an attempt's
+			// later ForcePlatform used solely to select the wire adapter.
+			copy.QuotaPlatform = platform
+		}
+	}
+	return context.WithValue(ctx, managedModelRequestContextKey{}, copy)
 }
 
 func ManagedModelRequestFromContext(ctx context.Context) (*ManagedModelRequest, bool) {
@@ -147,6 +294,41 @@ func ManagedModelRequestFromContext(ctx context.Context) (*ManagedModelRequest, 
 	return &request, true
 }
 
+// WithManagedModelBranch freezes an already published path, not an arbitrary
+// caller-supplied route. The platform override is request-local and never edits
+// the group's or account's private routing configuration.
+func WithManagedModelBranch(ctx context.Context, branch ManagedModelRouteBranch) context.Context {
+	request, ok := ManagedModelRequestFromContext(ctx)
+	if !ok {
+		return ctx
+	}
+	for _, published := range ManagedModelRouteBranches(request.Route) {
+		if published.Selector == branch.Selector {
+			copy := published
+			request.Branch = &copy
+			ctx = WithManagedModelRequest(ctx, request)
+			ctx = WithResolvedTargetPlatform(ctx, published.TargetPlatform)
+			ctx = context.WithValue(ctx, ctxkey.RequestedPublicModel, request.Route.PublicModel)
+			ctx = context.WithValue(ctx, ctxkey.ResolvedUpstreamModel, published.Selector)
+			return context.WithValue(ctx, ctxkey.ForcePlatform, published.TargetPlatform)
+		}
+	}
+	return ctx
+}
+
+func managedModelBillingModel(ctx context.Context, groupID int64, model string) string {
+	request, managed := ManagedModelRequestFromContext(ctx)
+	if !managed || request.Version != ManagedModelRoutesVersion || request.GroupID != groupID {
+		return model
+	}
+	for _, branch := range ManagedModelRouteBranches(request.Route) {
+		if model == branch.Selector && (request.Branch == nil || request.Branch.Selector == branch.Selector) {
+			return request.Route.PublicModel
+		}
+	}
+	return model
+}
+
 // ManagedModelAccountAllowed is an additional candidate/forwarding invariant,
 // not an alternative scheduler. It prevents a missing/edited channel mapping
 // from falling back to a preserved private model mapping on the same account.
@@ -155,25 +337,34 @@ func ManagedModelAccountAllowed(ctx context.Context, account *Account, routingMo
 	if !managed {
 		return !managedSelectorWithoutPublishedContext(account, routingModel)
 	}
-	if account == nil || routingModel != request.Route.Selector || account.Platform != request.Route.TargetPlatform ||
+	if account == nil ||
 		account.IsOpenAIPassthroughEnabled() || account.IsAnthropicAPIKeyPassthroughEnabled() {
 		return false
 	}
-	mapped, exact := account.GetModelMapping()[request.Route.Selector]
+	if request.Version == ManagedModelRoutesVersion && IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		return false
+	}
+	mapped, exact := account.GetModelMapping()[routingModel]
 	if !exact || mapped == "" {
 		return false
 	}
 	fingerprint := ""
-	for _, member := range request.Route.Accounts {
-		if member.AccountID != account.ID || member.UpstreamModel != mapped ||
-			!managedModelHasEndpoint(member.Endpoints, request.Endpoint) || member.AccountFingerprint == "" {
+	for _, branch := range ManagedModelRouteBranches(request.Route) {
+		if branch.Selector != routingModel || branch.TargetPlatform != account.Platform || !managedModelHasEndpoint(branch.Endpoints, request.Endpoint) ||
+			(request.Branch != nil && request.Branch.Selector != branch.Selector) {
 			continue
 		}
-		if fingerprint == "" {
-			fingerprint = managedModelSchedulingFingerprint(account)
-		}
-		if fingerprint != "" && fingerprint == member.AccountFingerprint {
-			return true
+		for _, member := range branch.Accounts {
+			if member.AccountID != account.ID || member.UpstreamModel != mapped ||
+				!managedModelHasEndpoint(member.Endpoints, request.Endpoint) || member.AccountFingerprint == "" {
+				continue
+			}
+			if fingerprint == "" {
+				fingerprint = managedModelFingerprintForRequest(ctx, account)
+			}
+			if fingerprint != "" && fingerprint == member.AccountFingerprint {
+				return true
+			}
 		}
 	}
 	return false
@@ -331,6 +522,22 @@ func (s *GatewayService) ValidateManagedModelCompilation(ctx context.Context, gr
 		return ErrManagedModelRouteUnavailable
 	}
 	route := request.Route
+	if request.Version == ManagedModelRoutesVersion {
+		// V2 is already an explicit route graph. Composite's single-target
+		// dispatcher must not decide which verified branch survives. Channels
+		// remain the source of price/restriction policy, never a second router.
+		for _, branch := range ManagedModelRouteBranches(route) {
+			if !managedModelBranchValid(group, route, branch) {
+				return ErrManagedModelRouteUnavailable
+			}
+			lookupCtx := WithManagedModelBranch(WithManagedModelRequest(ctx, request), branch)
+			mapping := s.channelService.ResolveChannelMapping(lookupCtx, group.ID, branch.Selector)
+			if mapping.ChannelID <= 0 || mapping.BillingModelSource != BillingModelSourceRequested || mapping.MappedModel != branch.Selector {
+				return ErrManagedModelRouteUnavailable
+			}
+		}
+		return nil
+	}
 	lookupModel := route.PublicModel
 	if group.Platform == PlatformComposite {
 		if s.compositeResolver == nil {

@@ -327,14 +327,17 @@ func TestAccountCapabilityPublicationIntegration(t *testing.T) {
 		require.Nil(t, stored.AppliedAt)
 	})
 
-	t.Run("later_negative_evidence_rejects_old_alive", func(t *testing.T) {
+	t.Run("only_later_definitive_evidence_rejects_old_alive", func(t *testing.T) {
 		for _, tc := range []struct {
 			name, status, classification string
 			evidenceIndex                int
 			sameFinishedAt               bool
+			superseded                   bool
 		}{
-			{name: "later_model_failure", status: "failed", classification: "model_unavailable", evidenceIndex: 0},
+			{name: "later_model_failure", status: "failed", classification: "model_unavailable", evidenceIndex: 0, superseded: true},
 			{name: "same_timestamp_timeout_with_larger_id", status: "indeterminate", classification: "timeout", evidenceIndex: 1, sameFinishedAt: true},
+			{name: "later_temporary_outage", status: "failed", classification: "upstream_unavailable", evidenceIndex: 1},
+			{name: "later_rate_limit", status: "failed", classification: "rate_limited", evidenceIndex: 1},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				oldID := evidenceIDs[tc.evidenceIndex]
@@ -359,6 +362,20 @@ func TestAccountCapabilityPublicationIntegration(t *testing.T) {
 				require.Greater(t, newerID, oldID, "equal timestamps are ordered by the durable item ID")
 				_, updateErr := integrationDB.ExecContext(ctx, `UPDATE admin_capability_runs SET status='completed',finished_at=$2 WHERE id=$1`, retest.ID, finishedAt)
 				require.NoError(t, updateErr)
+				if !tc.superseded {
+					observations, readErr := jobs.EvidenceItems(ctx, service.AccountCapabilityFilter{Kind: "probe", AccountID: live.ID, Model: item.UpstreamModel, PageSize: 100})
+					require.NoError(t, readErr)
+					byID := make(map[int64]service.AccountCapabilityItem, len(observations.Items))
+					for _, observation := range observations.Items {
+						byID[observation.ID] = observation
+					}
+					require.Contains(t, byID, oldID, "the catalog keeps the older successful observation")
+					require.Contains(t, byID, newerID, "the newest failure remains a separate immutable observation")
+					require.False(t, byID[oldID].PublicationSuperseded, "temporary failure does not revoke basic success")
+					require.Equal(t, "succeeded", byID[oldID].Status)
+					require.Equal(t, tc.status, byID[newerID].Status)
+					return
+				}
 				staleRequest := service.CapabilityPublicationRequest{
 					IdempotencyKey: prefix + "-stale-" + tc.name, Scope: request.Scope,
 					Groups: []service.CapabilityPublicationGroup{{ID: public.ID, Name: public.Name, Platform: service.PlatformOpenAI, RateMultiplier: 0.2, Models: []service.CapabilityPublicationModel{{PublicModel: "fixture-model", EvidenceIDs: []int64{oldID}}}}},
