@@ -535,7 +535,7 @@ func TestOpsCaptureWriter_CapturesSplitDataOnlyTerminalMarkers(t *testing.T) {
 	}
 }
 
-func TestOpsErrorLoggerMiddleware_StreamFailureUsesTerminalErrorOverAttemptContext(t *testing.T) {
+func TestOpsErrorLoggerMiddleware_StreamFailureKeepsTerminalSemanticsAndAttemptStatus(t *testing.T) {
 	setupOpsErrorLogTestQueue(t, 2)
 	gin.SetMode(gin.TestMode)
 
@@ -560,7 +560,7 @@ func TestOpsErrorLoggerMiddleware_StreamFailureUsesTerminalErrorOverAttemptConte
 	require.Equal(t, http.StatusBadRequest, job.entry.StatusCode)
 	require.Equal(t, "invalid_request_error", job.entry.ErrorType)
 	require.NotNil(t, job.entry.UpstreamStatusCode)
-	require.Equal(t, http.StatusBadRequest, *job.entry.UpstreamStatusCode)
+	require.Equal(t, http.StatusBadGateway, *job.entry.UpstreamStatusCode, "client semantic status must not replace the recorded upstream HTTP status")
 	require.NotNil(t, job.entry.UpstreamErrorMessage)
 	require.Equal(t, "input exceeds the context window", *job.entry.UpstreamErrorMessage)
 }

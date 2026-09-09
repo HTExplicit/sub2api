@@ -25,11 +25,19 @@ const (
 // The diagnostic is an observation of an existing failed attempt. It is not
 // a retry signal or a request replay record, and contains no arbitrary text.
 type OpenAIContinuationDiagnostic struct {
-	Version        int                            `json:"version"`
-	Classification string                         `json:"classification"`
-	UpstreamError  openAIContinuationErrorShape   `json:"upstream_error"`
-	Incoming       openAIContinuationRequestShape `json:"incoming"`
-	Wire           openAIContinuationRequestShape `json:"wire"`
+	Version        int                              `json:"version"`
+	Classification string                           `json:"classification"`
+	UpstreamError  openAIContinuationErrorShape     `json:"upstream_error"`
+	Incoming       openAIContinuationRequestShape   `json:"incoming"`
+	Wire           openAIContinuationRequestShape   `json:"wire"`
+	Recovery       *openAIContinuationRecoveryShape `json:"recovery,omitempty"`
+}
+
+type openAIContinuationRecoveryShape struct {
+	CacheSkippedItems  int    `json:"cache_skipped_items"`
+	RetryAttempted     bool   `json:"retry_attempted"`
+	Disposition        string `json:"disposition"`
+	NotAttemptedReason string `json:"not_attempted_reason,omitempty"`
 }
 
 type openAIContinuationFingerprint struct {
@@ -92,7 +100,17 @@ func buildOpenAIContinuationDiagnostic(c *gin.Context, incomingBody []byte, upst
 	if upstreamReq != nil {
 		wireHeaders = upstreamReq.Header
 	}
-	wireBody, wireSource, limited := continuationDiagnosticWireBody(upstreamReq, preparedBody)
+	recovery := openAIReasoningRecoveryStateFromContext(c)
+	var wireBody []byte
+	var wireSource string
+	var limited bool
+	if recovery != nil && recovery.diagnosticRequest == upstreamReq && recovery.wire != nil {
+		// PrepareRequest clears GetBody to prohibit transparent POST replay.
+		// Its immutable send-boundary snapshot is exact, not a prepared fallback.
+		wireBody, wireSource, limited = recovery.wire, "frozen_request", len(recovery.wire) > openAIContinuationDiagnosticBodyLimit
+	} else {
+		wireBody, wireSource, limited = continuationDiagnosticWireBody(upstreamReq, preparedBody)
+	}
 	diagnostic := &OpenAIContinuationDiagnostic{
 		Version: 1, Classification: continuationDiagnosticClassification(classification),
 		UpstreamError: continuationDiagnosticError(upstreamError),
@@ -100,6 +118,9 @@ func buildOpenAIContinuationDiagnostic(c *gin.Context, incomingBody []byte, upst
 		// earlier handler/protocol normalization has never run.
 		Incoming: continuationDiagnosticRequest(incomingBody, incomingHeaders, "forwarding_entry"),
 		Wire:     continuationDiagnosticRequest(wireBody, wireHeaders, wireSource),
+	}
+	if recovery != nil {
+		diagnostic.Recovery = recovery.continuationDiagnosticRecovery(upstreamError)
 	}
 	diagnostic.Wire.InspectionLimited = diagnostic.Wire.InspectionLimited || limited
 	if limited && upstreamReq != nil && upstreamReq.ContentLength > int64(diagnostic.Wire.BodyBytes) {
@@ -363,7 +384,7 @@ func sanitizeOpenAIContinuationDiagnostic(in *OpenAIContinuationDiagnostic) *Ope
 	}
 	cleanRequest := func(r openAIContinuationRequestShape) openAIContinuationRequestShape {
 		switch r.BodySource {
-		case "forwarding_entry", "actual_request", "prepared_fallback", "actual_request_unavailable":
+		case "forwarding_entry", "actual_request", "frozen_request", "prepared_fallback", "actual_request_unavailable":
 		default:
 			r.BodySource = "unknown"
 		}
@@ -378,6 +399,26 @@ func sanitizeOpenAIContinuationDiagnostic(in *OpenAIContinuationDiagnostic) *Ope
 		return r
 	}
 	out.Incoming, out.Wire = cleanRequest(in.Incoming), cleanRequest(in.Wire)
+	out.Recovery = nil
+	if in.Recovery != nil {
+		recovery := *in.Recovery
+		if recovery.CacheSkippedItems < 0 {
+			recovery.CacheSkippedItems = 0
+		}
+		switch recovery.Disposition {
+		case "not_attempted", "retry_prepared", "retry_attempted", "budget_exhausted":
+		default:
+			recovery.Disposition = "unknown"
+		}
+		switch recovery.NotAttemptedReason {
+		case "disabled", "semantic_output_committed", "request_cancelled", "protected_status", "not_signature_rejection",
+			"invalid_request_snapshot", "invalid_tool_history", "no_reasoning_ciphertext", "target_not_reasoning_ciphertext",
+			"unsupported_error_param", "server_held_context", "ambiguous_encrypted_carriers", "rewrite_failed", "recovery_not_dispatched", "source_changed", "endpoint_changed":
+		default:
+			recovery.NotAttemptedReason = ""
+		}
+		out.Recovery = &recovery
+	}
 	out.UpstreamError.ErrorType, out.UpstreamError.ErrorCode = cleanFingerprint(in.UpstreamError.ErrorType), cleanFingerprint(in.UpstreamError.ErrorCode)
 	out.UpstreamError.ErrorType.Value = continuationDiagnosticKnownError(in.UpstreamError.ErrorType.Value)
 	out.UpstreamError.ErrorCode.Value = continuationDiagnosticKnownError(in.UpstreamError.ErrorCode.Value)

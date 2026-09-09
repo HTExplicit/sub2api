@@ -156,7 +156,7 @@ func TestStripOpenAIResponsesInputNamespaces(t *testing.T) {
 		]
 	}`)
 
-	stripped, err := stripOpenAIResponsesInputNamespaces(body, false)
+	stripped, err := stripOpenAIResponsesInputNamespaces(body, false, false)
 	require.NoError(t, err)
 	for index := 0; index < 8; index++ {
 		require.False(t, gjson.GetBytes(stripped, "input."+strconv.Itoa(index)+".namespace").Exists())
@@ -178,7 +178,7 @@ func TestStripOpenAIResponsesInputNamespacesLeavesOtherShapesByteExact(t *testin
 	}
 	for _, body := range tests {
 		for _, keepToolCallNamespaces := range []bool{false, true} {
-			stripped, err := stripOpenAIResponsesInputNamespaces(body, keepToolCallNamespaces)
+			stripped, err := stripOpenAIResponsesInputNamespaces(body, keepToolCallNamespaces, false)
 			require.NoError(t, err)
 			require.Equal(t, body, stripped)
 		}
@@ -202,7 +202,7 @@ func TestStripOpenAIResponsesInputNamespacesKeepsToolCallNamespaces(t *testing.T
 		]
 	}`)
 
-	stripped, err := stripOpenAIResponsesInputNamespaces(body, true)
+	stripped, err := stripOpenAIResponsesInputNamespaces(body, true, false)
 	require.NoError(t, err)
 
 	require.Equal(t, "collaboration", gjson.GetBytes(stripped, "input.0.namespace").String())
@@ -218,18 +218,18 @@ func TestStripOpenAIResponsesInputNamespacesKeepsToolCallNamespaces(t *testing.T
 
 	// 类型比对不区分大小写与首尾空白。
 	mixedCase := []byte(`{"input":[{"type":" Function_Call ","namespace":"collaboration","name":"spawn_agent"}]}`)
-	keptMixedCase, err := stripOpenAIResponsesInputNamespaces(mixedCase, true)
+	keptMixedCase, err := stripOpenAIResponsesInputNamespaces(mixedCase, true, false)
 	require.NoError(t, err)
 	require.Equal(t, mixedCase, keptMixedCase)
 
 	// 全部为调用项时无改动，应原样返回。
 	callsOnly := []byte(`{"input":[{"type":"function_call","namespace":"collaboration","name":"spawn_agent"}]}`)
-	unchanged, err := stripOpenAIResponsesInputNamespaces(callsOnly, true)
+	unchanged, err := stripOpenAIResponsesInputNamespaces(callsOnly, true, false)
 	require.NoError(t, err)
 	require.Equal(t, callsOnly, unchanged)
 
 	// 关闭保留时回到全量清理。
-	strippedAll, err := stripOpenAIResponsesInputNamespaces(body, false)
+	strippedAll, err := stripOpenAIResponsesInputNamespaces(body, false, false)
 	require.NoError(t, err)
 	for index := 0; index < 8; index++ {
 		require.False(t, gjson.GetBytes(strippedAll, "input."+strconv.Itoa(index)+".namespace").Exists())
