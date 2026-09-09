@@ -763,11 +763,14 @@ func grokSupportsReasoningEffort(model string) bool {
 	}
 }
 
-var grokResponsesUnsupportedRecursiveFields = map[string]struct{}{
+// grokUnsupportedRecursiveFields 定义 Grok 平台（Responses 和 Chat Completions）不支持的字段
+var grokUnsupportedRecursiveFields = map[string]struct{}{
 	"external_web_access": {},
 }
 
-func sanitizeGrokResponsesUnsupportedFields(body []byte) ([]byte, error) {
+// sanitizeGrokUnsupportedFields 递归移除 Grok 平台不支持的字段
+// 适用于 Responses API 和 Chat Completions API
+func sanitizeGrokUnsupportedFields(body []byte) ([]byte, error) {
 	if !bytes.Contains(body, []byte(`"external_web_access"`)) {
 		return body, nil
 	}
@@ -776,11 +779,14 @@ func sanitizeGrokResponsesUnsupportedFields(body []byte) ([]byte, error) {
 	if err := decodeOpenAIJSONUseNumber(body, &payload); err != nil {
 		return nil, err
 	}
-	if !deleteJSONFields(payload, grokResponsesUnsupportedRecursiveFields) {
+	if !deleteJSONFields(payload, grokUnsupportedRecursiveFields) {
 		return body, nil
 	}
 	return marshalOpenAIUpstreamJSON(payload)
 }
+
+// sanitizeGrokResponsesUnsupportedFields 保留旧函数名作为别名，向后兼容
+var sanitizeGrokResponsesUnsupportedFields = sanitizeGrokUnsupportedFields
 
 func deleteJSONFields(value any, fields map[string]struct{}) bool {
 	switch typed := value.(type) {
@@ -1872,7 +1878,7 @@ func (s *OpenAIGatewayService) rateLimitGrok(ctx context.Context, account *Accou
 	if account.TempUnschedulableUntil != nil && account.TempUnschedulableUntil.After(runtimeUntil) {
 		runtimeUntil = *account.TempUnschedulableUntil
 	}
-	s.BlockAccountScheduling(account, runtimeUntil, "429")
+	s.BlockAccountSchedulingFromPersistedCooldown(account, runtimeUntil, "429")
 	persistGrokRateLimit(ctx, s.accountRepo, account, resetAt)
 
 	// Propagate a short team+model cool so sibling OAuth accounts on the same
@@ -2102,7 +2108,7 @@ func (s *OpenAIGatewayService) tempUnscheduleGrok(ctx context.Context, account *
 	if account.TempUnschedulableUntil != nil && account.TempUnschedulableUntil.After(until) {
 		until = *account.TempUnschedulableUntil
 	}
-	s.BlockAccountScheduling(account, until, reason)
+	s.BlockAccountSchedulingFromPersistedCooldown(account, until, reason)
 	if s.accountRepo != nil {
 		stateCtx, cancel := openAIAccountStateContext(ctx)
 		defer cancel()

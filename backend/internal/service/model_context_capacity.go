@@ -115,7 +115,7 @@ func CanManageModelContextCapacity(account *Account) bool {
 	}
 	switch account.Platform {
 	case PlatformOpenAI, PlatformAnthropic, PlatformGemini, PlatformGrok,
-		PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformAntigravity:
+		PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformAntigravity:
 		return true
 	default:
 		return false

@@ -26,4 +26,10 @@ func TestAllowedQuotaPlatformsIncludesCanonicalCindy(t *testing.T) {
 	if !IsAllowedQuotaPlatform(PlatformCindy) {
 		t.Fatal("canonical Cindy platform must participate in user platform quotas")
 	}
+	if !IsAllowedQuotaPlatform(PlatformMiniMax) {
+		t.Fatal("MiniMax platform must participate in user platform quotas alongside Cindy")
+	}
+	if len(AllowedQuotaPlatforms) != 10 {
+		t.Fatalf("quota platform count = %d, want 10", len(AllowedQuotaPlatforms))
+	}
 }

@@ -918,7 +918,8 @@ func (h *AccountHandler) importDataProxies(ctx context.Context, items []DataProx
 					expiresAt, fallbackMode, backupProxyID := dataImportProxySettings(item, proxyNameToID)
 					_, _ = h.adminService.UpdateProxy(ctx, existingID, &service.UpdateProxyInput{
 						Status: normalizedStatus, ExpiresAt: expiresAt, FallbackMode: fallbackMode,
-						BackupProxyID: backupProxyID, ExpiryWarnDays: item.ExpiryWarnDays,
+						ClearExpiresAt: expiresAt == nil, ClearBackupID: backupProxyID == nil,
+						BackupProxyID: backupProxyID, ExpiryWarnDays: &item.ExpiryWarnDays,
 						Name: proxy.Name, Protocol: proxy.Protocol, Host: proxy.Host, Port: proxy.Port,
 						Username: proxy.Username, Password: proxy.Password,
 					})
@@ -948,7 +949,8 @@ func (h *AccountHandler) importDataProxies(ctx context.Context, items []DataProx
 		if normalizedStatus != "" && normalizedStatus != created.Status {
 			_, _ = h.adminService.UpdateProxy(ctx, created.ID, &service.UpdateProxyInput{
 				Status: normalizedStatus, ExpiresAt: expiresAt, FallbackMode: fallbackMode,
-				BackupProxyID: backupProxyID, ExpiryWarnDays: item.ExpiryWarnDays,
+				ClearExpiresAt: expiresAt == nil, ClearBackupID: backupProxyID == nil,
+				BackupProxyID: backupProxyID, ExpiryWarnDays: &item.ExpiryWarnDays,
 				Name: created.Name, Protocol: created.Protocol, Host: created.Host, Port: created.Port,
 				Username: created.Username, Password: created.Password,
 			})
@@ -964,6 +966,11 @@ func dataImportProxySettings(item DataProxy, names map[string]int64) (*time.Time
 		expiresAt = &value
 	}
 	fallbackMode := item.FallbackMode
+	// A backup is a complete import value, not a partial proxy edit. Omitted
+	// fallback settings must reset to none when the backup ID is cleared.
+	if fallbackMode == "" {
+		fallbackMode = service.FallbackModeNone
+	}
 	var backupProxyID *int64
 	if item.BackupProxyName != "" {
 		if id, ok := names[item.BackupProxyName]; ok {

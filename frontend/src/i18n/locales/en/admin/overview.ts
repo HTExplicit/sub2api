@@ -1028,6 +1028,7 @@ export default {
         zhipu: 'Zhipu GLM',
         deepseek: 'DeepSeek',
         cindy: 'Cindy',
+        minimax: 'MiniMax',
         composite: 'Composite',
       },
       deleteConfirm:

@@ -748,7 +748,7 @@ func (c *CodexQuotaOverdraftCoordinator) ensureFailedPause(account *Account, sta
 		})
 	}
 	if c.runtimeBlocker != nil {
-		c.runtimeBlocker.BlockAccountScheduling(account, *state.RecoverAt, codexQuotaOverdraftPauseSource)
+		notifyPersistedAccountSchedulingCooldown(c.runtimeBlocker, account, *state.RecoverAt, codexQuotaOverdraftPauseSource)
 	}
 	slog.Info("codex_quota_overdraft_pause_applied", "account_id", account.ID, "until", state.RecoverAt, "cycle_key", state.CycleKey)
 	return true

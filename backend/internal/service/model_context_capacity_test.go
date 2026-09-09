@@ -154,7 +154,7 @@ func TestModelContextCapacityOverridesPatchValidationAndIsolation(t *testing.T) 
 }
 
 func TestModelContextCapacityManagedProviderBoundary(t *testing.T) {
-	for _, platform := range []string{PlatformOpenAI, PlatformAnthropic, PlatformGemini, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformAntigravity} {
+	for _, platform := range []string{PlatformOpenAI, PlatformAnthropic, PlatformGemini, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformAntigravity} {
 		account := &Account{Platform: platform, Type: AccountTypeAPIKey}
 		if !CanManageModelContextCapacity(account) {
 			t.Errorf("ordinary platform %s not editable", platform)

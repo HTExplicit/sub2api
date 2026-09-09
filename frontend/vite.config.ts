@@ -82,12 +82,15 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const backendUrl = env.VITE_DEV_PROXY_TARGET || 'http://localhost:8080'
   const devPort = Number(env.VITE_DEV_PORT || 3000)
+  // 镜像产物复用 PR 验证；日常 build 和开发模式仍保留类型检查。
+  const artifactBuild = process.env.SUB2API_ARTIFACT_BUILD === '1'
 
   return {
     plugins: [
       vue(),
       checker({
-        vueTsc: true
+        vueTsc: true,
+        enableBuild: !artifactBuild
       }),
       injectPublicSettings(backendUrl)
     ],

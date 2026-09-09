@@ -188,6 +188,10 @@ func (s *TokenRefreshService) notifyAccountSchedulingBlocked(account *Account, u
 	if s == nil || s.runtimeBlocker == nil || account == nil {
 		return
 	}
+	if !until.IsZero() {
+		notifyPersistedAccountSchedulingCooldown(s.runtimeBlocker, account, until, reason)
+		return
+	}
 	s.runtimeBlocker.BlockAccountScheduling(account, until, reason)
 }
 

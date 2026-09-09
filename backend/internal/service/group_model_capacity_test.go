@@ -327,6 +327,44 @@ func TestCodexCapacityProjectionCompositeUsesSharedRouteRepository(t *testing.T)
 	require.Equal(t, 1, routes.calls)
 }
 
+func TestMiniMaxCompositeCapacityIncludesFallbackAndKeepsExplicitRoutePrecedence(t *testing.T) {
+	group := &Group{ID: 9, Platform: PlatformComposite}
+	first := newGroupCapacityAccount(1, map[string]any{"routed-alias": "native-model"}, map[string]int64{"native-model": 625001})
+	first.Platform = PlatformMiniMax
+	fallback := newGroupCapacityAccount(2, map[string]any{"routed-alias": "fallback-model"}, map[string]int64{"fallback-model": 350001})
+	fallback.Platform = PlatformMiniMax
+	future := time.Now().Add(time.Hour)
+	fallback.RateLimitResetAt = &future
+	other := newGroupCapacityAccount(3, map[string]any{"gpt-6-astra": "other-model"}, map[string]int64{"other-model": 1050000})
+	cindy := newGroupCapacityAccount(4, map[string]any{"unrelated": "unrelated"}, nil)
+	cindy.Platform = PlatformCindy
+	repo := &groupCapacityAccountRepo{accounts: []Account{first, fallback, other, cindy}}
+	routes := &groupCapacityRouteRepo{routes: []CompositeModelRoute{{ID: 1, PublicModel: "gpt-6-astra", MatchType: CompositeRouteMatchExact, TargetPlatform: PlatformMiniMax, UpstreamModel: "routed-alias", Endpoint: CompositeRouteEndpointAny, Enabled: true}}}
+	svc := &GatewayService{accountRepo: repo, compositeResolver: NewCompositeRouteResolver(routes)}
+	raw := []byte(`{"models":[{"slug":"gpt-6-astra","context_window":900000,"sentinel":"unchanged"}]}`)
+	manifest := &OpenAIModelsResponse{Body: append([]byte(nil), raw...)}
+	require.NoError(t, svc.ProjectCodexModelContextCapacities(context.Background(), group, manifest, "", &first))
+	model := decodeCodexManifestModels(t, manifest.Body)[0]
+	require.Equal(t, "gpt-6-astra", model["slug"], "explicit MiniMax route must beat model-name and account-ownership inference")
+	require.Equal(t, "unchanged", model["sentinel"])
+	require.Equal(t, float64(350001), model["context_window"], "temporarily blocked MiniMax fallback still narrows the actual candidate pool")
+	require.Equal(t, "custom", model["context_capacity_source"])
+	require.Equal(t, "group_minimum", model["context_capacity_reason"])
+	require.Equal(t, codexModelsManifestBodyETag(manifest.Body), manifest.ETag)
+	require.Equal(t, 1, repo.availabilityCalls)
+	require.Equal(t, 1, routes.calls)
+	require.Zero(t, repo.schedulableCalls)
+
+	previousETag := manifest.ETag
+	repo.accounts[1].Extra[ModelContextOverridesExtraKey] = map[string]int64{"fallback-model": 300001}
+	manifest = &OpenAIModelsResponse{Body: append([]byte(nil), raw...)}
+	require.NoError(t, svc.ProjectCodexModelContextCapacities(context.Background(), group, manifest, previousETag, &first))
+	require.False(t, manifest.NotModified)
+	require.NotEqual(t, previousETag, manifest.ETag)
+	require.Equal(t, float64(300001), decodeCodexManifestModels(t, manifest.Body)[0]["context_window"])
+	require.Contains(t, string(raw), `"context_window":900000`, "capacity projection must leave the upstream source unchanged")
+}
+
 func TestPinnedModelCapacityRetainsMappedSourcesAndFallbackCandidates(t *testing.T) {
 	for _, codex := range []bool{false, true} {
 		t.Run(fmt.Sprintf("codex=%t", codex), func(t *testing.T) {
