@@ -19,6 +19,8 @@ REQUIRED_CHECKS = {
     "Downstream backend", "Downstream frontend", "Candidate OCI image",
     "backend-security", "frontend-security", "Upstream risk gate",
 }
+POLL_INTERVAL_SECONDS = 300
+UNCHANGED_POLL_INTERVAL_SECONDS = 600
 
 
 def command(*args: str) -> str:
@@ -53,8 +55,15 @@ def validate_candidate(pr, manifest, recorded_base: str) -> str:
     return f"{tag}-codexrip.1"
 
 
+def wait_for_next_poll(state: tuple, previous_state: tuple | None) -> tuple:
+    delay = UNCHANGED_POLL_INTERVAL_SECONDS if state == previous_state else POLL_INTERVAL_SECONDS
+    time.sleep(delay)
+    return state
+
+
 def require_checks(sha: str) -> None:
     deadline = time.monotonic() + 7200
+    previous_state = None
     while time.monotonic() < deadline:
         runs = json.loads(command("gh", "api", "--paginate", "--slurp",
             f"repos/{REPOSITORY}/commits/{sha}/check-runs?per_page=100"))
@@ -73,7 +82,12 @@ def require_checks(sha: str) -> None:
         if all(name in latest and latest[name]["conclusion"] == "success" for name in REQUIRED_CHECKS):
             return
         print("Waiting for required checks on " + sha, flush=True)
-        time.sleep(20)
+        state = tuple(
+            (name, latest.get(name, {}).get("id"), latest.get(name, {}).get("status"),
+             latest.get(name, {}).get("conclusion"))
+            for name in sorted(REQUIRED_CHECKS)
+        )
+        previous_state = wait_for_next_poll(state, previous_state)
     raise TimeoutError("required checks are still missing/pending; production unchanged")
 
 
@@ -93,6 +107,33 @@ def release_ready(tag: str, sha: str) -> bool:
     ):
         raise ValueError("release has no unique immutable image")
     return True
+
+
+def ensure_release(tag: str, sha: str) -> None:
+    if release_ready(tag, sha):
+        return
+    # GITHUB_TOKEN pushes do not trigger push workflows. Dispatch explicitly.
+    runs = api("actions/workflows/downstream-release.yml/runs?per_page=100")["workflow_runs"]
+    matches = [r for r in runs if r.get("display_title") == f"Release {tag}" or r.get("head_branch") == tag]
+    if matches and matches[0]["status"] == "completed" and matches[0]["conclusion"] != "success":
+        raise RuntimeError("previous release run failed; inspect it before retrying")
+    if not matches:
+        command("gh", "workflow", "run", "downstream-release.yml", "--repo", REPOSITORY,
+            "--ref", "main", "-f", f"release_tag={tag}")
+    deadline = time.monotonic() + 7200
+    previous_state = None
+    while time.monotonic() < deadline:
+        state = tuple((r["id"], r["status"], r["conclusion"]) for r in matches[:1])
+        previous_state = wait_for_next_poll(state, previous_state)
+        if time.monotonic() >= deadline:
+            break
+        if release_ready(tag, sha):
+            return
+        runs = api("actions/workflows/downstream-release.yml/runs?per_page=100")["workflow_runs"]
+        matches = [r for r in runs if r.get("display_title") == f"Release {tag}" or r.get("head_branch") == tag]
+        if matches and matches[0]["status"] == "completed" and matches[0]["conclusion"] != "success":
+            raise RuntimeError("release build failed: " + matches[0]["html_url"])
+    raise TimeoutError("immutable release is not ready")
 
 
 def promote(number: int) -> None:
@@ -141,24 +182,7 @@ def promote(number: int) -> None:
             raise ValueError("immutable release tag is already owned by another commit")
     else:
         api("git/refs", "-X", "POST", "-f", f"ref=refs/tags/{tag}", "-f", f"sha={merged}")
-    if not release_ready(tag, merged):
-        # GITHUB_TOKEN pushes do not trigger push workflows. Dispatch explicitly.
-        runs = api("actions/workflows/downstream-release.yml/runs?per_page=100")["workflow_runs"]
-        matches = [r for r in runs if r.get("display_title") == f"Release {tag}" or r.get("head_branch") == tag]
-        if matches and matches[0]["status"] == "completed" and matches[0]["conclusion"] != "success":
-            raise RuntimeError("previous release run failed; inspect it before retrying")
-        if not matches:
-            command("gh", "workflow", "run", "downstream-release.yml", "--repo", REPOSITORY,
-                "--ref", "main", "-f", f"release_tag={tag}")
-        deadline = time.monotonic() + 7200
-        while not release_ready(tag, merged):
-            runs = api("actions/workflows/downstream-release.yml/runs?per_page=30")["workflow_runs"]
-            matching = [r for r in runs if r.get("display_title") == f"Release {tag}" or r.get("head_branch") == tag]
-            if matching and matching[0]["status"] == "completed" and matching[0]["conclusion"] != "success":
-                raise RuntimeError("release build failed: " + matching[0]["html_url"])
-            if time.monotonic() >= deadline:
-                raise TimeoutError("immutable release is not ready")
-            time.sleep(20)
+    ensure_release(tag, merged)
     title = f"Deploy {tag} (preserve)"
     deployments = api("actions/workflows/production-deploy.yml/runs?per_page=100")["workflow_runs"]
     previous = [r for r in deployments if r.get("display_title") == title]

@@ -573,38 +573,43 @@ func (s *OpenAIGatewayService) blockGrokCredentialRuntime(account *Account, unti
 	}
 	mu := s.openAIAccountRuntimeBlockLock(account.ID)
 	mu.Lock()
-	before, hadBefore := s.openaiAccountRuntimeBlockUntil.Load(account.ID)
-	installedGeneration, changed := s.blockAccountSchedulingLocked(account, until, reason)
-	installed, installedOK := s.openaiAccountRuntimeBlockUntil.Load(account.ID)
-	installedUntil, isTime := installed.(time.Time)
+	before := s.openAIAccountRuntimeBlockSourcesLocked(account.ID)
+	_, _ = s.blockAccountSchedulingLocked(account, until, reason)
+	installed := s.openAIAccountRuntimeBlockSourcesLocked(account.ID)
 	mu.Unlock()
-	if !changed || !installedOK || !isTime {
+	if !installed.hasIndependent {
 		return func() {}
 	}
-	if hadBefore {
-		if beforeUntil, ok := before.(time.Time); ok && beforeUntil.Equal(installedUntil) {
-			return func() {}
-		}
+	if before.hasIndependent && before.independentUntil.Equal(installed.independentUntil) {
+		return func() {}
 	}
 	return func() {
 		mu.Lock()
 		defer mu.Unlock()
-		generation, ok := s.openaiAccountRuntimeBlockGeneration.Load(account.ID)
-		if !ok || generation != installedGeneration {
+		current := s.openAIAccountRuntimeBlockSourcesLocked(account.ID)
+		if !current.hasIndependent || current.independentOwner != installed.independentOwner ||
+			!current.independentUntil.Equal(installed.independentUntil) {
 			return
 		}
-		current, ok := s.openaiAccountRuntimeBlockUntil.Load(account.ID)
-		currentUntil, isTime := current.(time.Time)
-		if !ok || !isTime || !currentUntil.Equal(installedUntil) {
-			return
+		// Restore only the contribution owned by this tentative mutation. A DB
+		// mirror written meanwhile retains its own deadline; a newer independent
+		// writer above prevents rollback even if the aggregate deadline matched.
+		generation := s.openaiAccountRuntimeBlockSequence.Add(1)
+		current.hasIndependent = before.hasIndependent
+		current.independentUntil = before.independentUntil
+		current.independentOwner = 0
+		if current.hasIndependent {
+			current.independentOwner = generation
 		}
-		if hadBefore {
-			s.openaiAccountRuntimeBlockUntil.Store(account.ID, before)
-			s.openaiAccountRuntimeBlockGeneration.Store(account.ID, s.openaiAccountRuntimeBlockSequence.Add(1))
-			return
+		current.expire(time.Now())
+		if effectiveUntil, blocked := current.effectiveUntil(); blocked {
+			s.openaiAccountRuntimeBlockUntil.Store(account.ID, effectiveUntil)
+			s.openaiAccountRuntimeBlockSources.Store(account.ID, current)
+		} else {
+			s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
+			s.openaiAccountRuntimeBlockSources.Delete(account.ID)
 		}
-		s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
-		s.openaiAccountRuntimeBlockGeneration.Store(account.ID, s.openaiAccountRuntimeBlockSequence.Add(1))
+		s.openaiAccountRuntimeBlockGeneration.Store(account.ID, generation)
 	}
 }
 

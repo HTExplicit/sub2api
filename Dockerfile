@@ -41,7 +41,9 @@ RUN --mount=type=cache,id=sub2api-pnpm-store,target=/root/.local/share/pnpm/stor
 # Copy only that subtree to keep the build dependency minimal.
 COPY frontend/ ./
 COPY docs/legal/ /app/docs/legal/
-RUN pnpm run build
+# Required PR checks own validation; the image stage only compiles the artifact.
+# Scope this flag to the build command, not the runtime image or daily builds.
+RUN SUB2API_ARTIFACT_BUILD=1 pnpm exec vite build
 
 # -----------------------------------------------------------------------------
 # Stage 2: Backend Builder

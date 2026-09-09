@@ -456,6 +456,12 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 			}
 			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
 		}
+		if clientStream {
+			// Stream/error handlers can close the body before this outer loop
+			// regains control. Attach cancellation to Close itself so every
+			// cleanup path unblocks the reader before waiting for it to stop.
+			resp.Body = &openAIRequestContextReadCloser{ReadCloser: resp.Body, cleanup: cancelUpstream}
+		}
 		closeUpstreamResponse := func() {
 			cancelUpstream()
 			_ = resp.Body.Close()

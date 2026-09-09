@@ -44,6 +44,23 @@ type AccountRuntimeBlocker interface {
 	ClearAccountSchedulingBlock(accountID int64)
 }
 
+type accountPersistedSchedulingCooldownBlocker interface {
+	BlockAccountSchedulingFromPersistedCooldown(account *Account, until time.Time, reason string)
+}
+
+// notifyPersistedAccountSchedulingCooldown distinguishes DB cooldown mirrors
+// from independent request-owned blockers without changing legacy implementations.
+func notifyPersistedAccountSchedulingCooldown(blocker AccountRuntimeBlocker, account *Account, until time.Time, reason string) {
+	if blocker == nil || account == nil {
+		return
+	}
+	if persisted, ok := blocker.(accountPersistedSchedulingCooldownBlocker); ok {
+		persisted.BlockAccountSchedulingFromPersistedCooldown(account, until, reason)
+		return
+	}
+	blocker.BlockAccountScheduling(account, until, reason)
+}
+
 // SuccessfulTestRecoveryResult 表示测试成功后恢复了哪些运行时状态。
 type SuccessfulTestRecoveryResult struct {
 	ClearedError     bool
@@ -141,6 +158,10 @@ func (s *RateLimitService) IsOpenAIAdvancedSchedulerStickyWeightedEnabled(ctx co
 
 func (s *RateLimitService) notifyAccountSchedulingBlocked(account *Account, until time.Time, reason string) {
 	if s == nil || s.runtimeBlocker == nil || account == nil {
+		return
+	}
+	if !until.IsZero() {
+		notifyPersistedAccountSchedulingCooldown(s.runtimeBlocker, account, until, reason)
 		return
 	}
 	s.runtimeBlocker.BlockAccountScheduling(account, until, reason)

@@ -116,11 +116,11 @@ func TestHandleOpenAITransientError_DoesNotBlockParameter400(t *testing.T) {
 	require.False(t, svc.isOpenAIAccountModelRuntimeBlocked(account, "gpt-5.5"))
 }
 
-func TestHandleOpenAITransientError_HardDisableStillBlocksWholeAccount(t *testing.T) {
+func TestHandleOpenAITransientError_PersistedCooldownClearsWithDatabaseState(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	account := &Account{ID: 5106, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 
-	svc.BlockAccountScheduling(account, time.Now().Add(time.Minute), "upstream_disable")
+	svc.BlockAccountSchedulingFromPersistedCooldown(account, time.Now().Add(time.Minute), "upstream_disable")
 
 	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
 	require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.5"))

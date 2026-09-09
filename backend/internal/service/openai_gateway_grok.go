@@ -1878,7 +1878,7 @@ func (s *OpenAIGatewayService) rateLimitGrok(ctx context.Context, account *Accou
 	if account.TempUnschedulableUntil != nil && account.TempUnschedulableUntil.After(runtimeUntil) {
 		runtimeUntil = *account.TempUnschedulableUntil
 	}
-	s.BlockAccountScheduling(account, runtimeUntil, "429")
+	s.BlockAccountSchedulingFromPersistedCooldown(account, runtimeUntil, "429")
 	persistGrokRateLimit(ctx, s.accountRepo, account, resetAt)
 
 	// Propagate a short team+model cool so sibling OAuth accounts on the same
@@ -2108,7 +2108,7 @@ func (s *OpenAIGatewayService) tempUnscheduleGrok(ctx context.Context, account *
 	if account.TempUnschedulableUntil != nil && account.TempUnschedulableUntil.After(until) {
 		until = *account.TempUnschedulableUntil
 	}
-	s.BlockAccountScheduling(account, until, reason)
+	s.BlockAccountSchedulingFromPersistedCooldown(account, until, reason)
 	if s.accountRepo != nil {
 		stateCtx, cancel := openAIAccountStateContext(ctx)
 		defer cancel()
