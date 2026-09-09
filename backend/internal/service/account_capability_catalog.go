@@ -54,46 +54,48 @@ var capabilityLaunchModels = []capabilityModelDefinition{
 }
 
 type AccountCapabilityCandidate struct {
-	CandidateID           string                    `json:"candidate_id"`
-	AccountID             int64                     `json:"account_id"`
-	AccountName           string                    `json:"account_name"`
-	FolderID              int64                     `json:"folder_id"`
-	AccountPlatform       string                    `json:"account_platform"`
-	ConfigFingerprint     string                    `json:"config_fingerprint"`
-	PublicModel           string                    `json:"public_model"`
-	UpstreamModel         string                    `json:"upstream_model"`
-	Protocol              string                    `json:"protocol"`
-	ProbeProtocolPriority int                       `json:"-"`
-	Profile               string                    `json:"profile"`
-	Aliases               []string                  `json:"aliases"`
-	Tier                  string                    `json:"tier"`
-	GroupID               *int64                    `json:"group_id,omitempty"`
-	GroupName             string                    `json:"group_name"`
-	Mainstream            bool                      `json:"mainstream"`
-	Recognized            bool                      `json:"recognized"`
-	Recommended           bool                      `json:"recommended"`
-	NeedsNameConfirmation bool                      `json:"needs_name_confirmation"`
-	Discovered            bool                      `json:"discovered"`
-	Configured            bool                      `json:"configured"`
-	Published             bool                      `json:"published"`
-	RoutingReady          bool                      `json:"routing_ready"`
-	PricingKnown          bool                      `json:"pricing_known"`
-	Publishable           bool                      `json:"publishable"`
-	NotPublishableReasons []string                  `json:"not_publishable_reasons"`
-	DiscoveryStatus       string                    `json:"discovery_status"`
-	LatestProbeItemID     *int64                    `json:"latest_probe_item_id,omitempty"`
-	LatestAttempt         *AccountCapabilityAttempt `json:"latest_attempt,omitempty"`
-	LastSuccessItemID     *int64                    `json:"last_success_item_id,omitempty"`
-	LastSuccessAt         *time.Time                `json:"last_success_at,omitempty"`
-	LastSuccessReusable   bool                      `json:"last_success_reusable"`
-	AlreadyAttempted      bool                      `json:"already_attempted"`
-	HasCompatibleSuccess  bool                      `json:"has_compatible_success"`
-	ProbeEligible         bool                      `json:"probe_eligible"`
-	ProbeStatus           string                    `json:"probe_status"`
-	CheckedAt             *time.Time                `json:"checked_at,omitempty"`
-	Stale                 bool                      `json:"stale"`
-	Schedulable           bool                      `json:"schedulable"`
-	Warnings              []string                  `json:"warnings"`
+	CandidateID            string                    `json:"candidate_id"`
+	AccountID              int64                     `json:"account_id"`
+	AccountName            string                    `json:"account_name"`
+	FolderID               int64                     `json:"folder_id"`
+	AccountPlatform        string                    `json:"account_platform"`
+	ConfigFingerprint      string                    `json:"config_fingerprint"`
+	PublicModel            string                    `json:"public_model"`
+	UpstreamModel          string                    `json:"upstream_model"`
+	Protocol               string                    `json:"protocol"`
+	ProbeProtocolPriority  int                       `json:"-"`
+	Profile                string                    `json:"profile"`
+	Aliases                []string                  `json:"aliases"`
+	Tier                   string                    `json:"tier"`
+	GroupID                *int64                    `json:"group_id,omitempty"`
+	GroupName              string                    `json:"group_name"`
+	Mainstream             bool                      `json:"mainstream"`
+	Recognized             bool                      `json:"recognized"`
+	Recommended            bool                      `json:"recommended"`
+	NeedsNameConfirmation  bool                      `json:"needs_name_confirmation"`
+	Discovered             bool                      `json:"discovered"`
+	Configured             bool                      `json:"configured"`
+	Published              bool                      `json:"published"`
+	RoutingReady           bool                      `json:"routing_ready"`
+	PricingKnown           bool                      `json:"pricing_known"`
+	Publishable            bool                      `json:"publishable"`
+	NotPublishableReasons  []string                  `json:"not_publishable_reasons"`
+	DiscoveryStatus        string                    `json:"discovery_status"`
+	LatestProbeItemID      *int64                    `json:"latest_probe_item_id,omitempty"`
+	LatestAttempt          *AccountCapabilityAttempt `json:"latest_attempt,omitempty"`
+	LastSuccessItemID      *int64                    `json:"last_success_item_id,omitempty"`
+	LastSuccessAt          *time.Time                `json:"last_success_at,omitempty"`
+	LastSuccessReusable    bool                      `json:"last_success_reusable"`
+	AlreadyAttempted       bool                      `json:"already_attempted"`
+	HasCompatibleSuccess   bool                      `json:"has_compatible_success"`
+	HasPendingProbe        bool                      `json:"has_pending_probe"`
+	AttemptedProtocolCount int                       `json:"attempted_protocol_count"`
+	ProbeEligible          bool                      `json:"probe_eligible"`
+	ProbeStatus            string                    `json:"probe_status"`
+	CheckedAt              *time.Time                `json:"checked_at,omitempty"`
+	Stale                  bool                      `json:"stale"`
+	Schedulable            bool                      `json:"schedulable"`
+	Warnings               []string                  `json:"warnings"`
 }
 
 // AccountCapabilityAttempt is the most recent basic-text observation, not a
@@ -122,6 +124,7 @@ type accountCapabilityCatalogSnapshot struct {
 	Groups                      map[string]*Group
 	GroupChannels               map[int64]*Channel
 	AccountPublicationRevisions map[int64]string
+	ExpectedInputRevisions      *CapabilityPublicationInputRevisions
 }
 
 type AccountCapabilityCandidateFilter struct {
@@ -249,9 +252,16 @@ func (s *AccountCapabilityCatalogService) loadCapabilityCatalog(ctx context.Cont
 			return nil, ErrAccountCapabilityInvalid
 		}
 	}
-	groups, _, err := s.groups.List(ctx, pagination.PaginationParams{Page: 1, PageSize: 1000})
-	if err != nil {
-		return nil, err
+	groups := make([]Group, 0)
+	for page := 1; ; page++ {
+		batch, paging, listErr := s.groups.List(ctx, pagination.PaginationParams{Page: page, PageSize: 1000})
+		if listErr != nil {
+			return nil, listErr
+		}
+		groups = append(groups, batch...)
+		if len(batch) == 0 || (paging != nil && int64(len(groups)) >= paging.Total) || (paging == nil && len(batch) < 1000) {
+			break
+		}
 	}
 	groupByName := make(map[string]*Group)
 	for i := range groups {
@@ -278,26 +288,61 @@ func (s *AccountCapabilityCatalogService) loadCapabilityCatalog(ctx context.Cont
 	}
 	rows := buildAccountCapabilityCandidates(accounts, latest, groupByName)
 	groupChannels := make(map[int64]*Channel)
+	configuredChannels := make(map[int64]*Channel)
+	channelsByID := make(map[int64]*Channel)
 	for _, group := range groupByName {
 		if s.channels == nil {
 			continue
 		}
-		channel, channelErr := s.channels.GetChannelForGroup(ctx, group.ID)
+		if s.channels.repo == nil {
+			return nil, ErrAccountCapabilityInvalid
+		}
+		channelID, channelErr := s.channels.repo.GetChannelIDByGroupID(ctx, group.ID)
 		if channelErr != nil {
 			return nil, channelErr
 		}
-		groupChannels[group.ID] = channel
+		if channelID == 0 {
+			continue
+		}
+		channel := channelsByID[channelID]
+		if channel == nil {
+			channel, channelErr = s.channels.repo.GetByID(ctx, channelID)
+			if channelErr != nil {
+				return nil, channelErr
+			}
+			if channel == nil {
+				return nil, ErrAccountCapabilityConflict
+			}
+			channelsByID[channelID] = channel
+		}
+		// Management CAS includes inactive saved configuration, while price
+		// availability continues to use only an active channel. Read the fresh
+		// repository snapshot instead of the gateway's active-only cache.
+		configuredChannels[group.ID] = channel
+		if channel.IsActive() {
+			groupChannels[group.ID] = channel
+		}
 	}
 	applyCapabilityCandidatePricing(rows, s.billing, groupByName, groupChannels)
 	scopeAccounts := make([]AccountCapabilityScopeAccount, 0, len(accounts))
 	publicationRevisions := make(map[int64]string, len(accounts))
+	expectedInputRevisions := &CapabilityPublicationInputRevisions{Accounts: map[int64]string{}, Groups: map[int64]string{}}
+	for _, group := range groupByName {
+		revision := CapabilityPublicationGroupInputRevision(group, configuredChannels[group.ID])
+		if revision == "" {
+			return nil, ErrAccountCapabilityInvalid
+		}
+		expectedInputRevisions.Groups[group.ID] = revision
+	}
 	for _, account := range accounts {
 		if account.ManagementFolderID != nil {
 			revision := capabilityAccountPublicationRevision(&account)
-			if revision == "" {
+			inputRevision := CapabilityPublicationAccountInputRevision(&account)
+			if revision == "" || inputRevision == "" {
 				return nil, ErrAccountCapabilityInvalid
 			}
 			publicationRevisions[account.ID] = revision
+			expectedInputRevisions.Accounts[account.ID] = inputRevision
 			scopeAccounts = append(scopeAccounts, AccountCapabilityScopeAccount{
 				ID: account.ID, Name: account.Name, FolderID: *account.ManagementFolderID,
 				Platform: account.Platform, Status: account.Status, Schedulable: account.Schedulable,
@@ -305,7 +350,8 @@ func (s *AccountCapabilityCatalogService) loadCapabilityCatalog(ctx context.Cont
 			})
 		}
 	}
-	return &accountCapabilityCatalogSnapshot{Rows: rows, Accounts: scopeAccounts, Groups: groupByName, GroupChannels: groupChannels, AccountPublicationRevisions: publicationRevisions}, nil
+	return &accountCapabilityCatalogSnapshot{Rows: rows, Accounts: scopeAccounts, Groups: groupByName, GroupChannels: groupChannels,
+		AccountPublicationRevisions: publicationRevisions, ExpectedInputRevisions: expectedInputRevisions}, nil
 }
 
 func applyCapabilityCandidatePricing(rows []AccountCapabilityCandidate, billing *BillingService, groupByName map[string]*Group, groupChannels map[int64]*Channel) {
@@ -345,6 +391,7 @@ func buildAccountCapabilityCandidates(accounts []Account, latest []AccountCapabi
 		}
 		privateMappingsCompatible := publicationPreservePrivateMappings(account) == nil
 		accountEvidence := evidenceByAccount[account.ID]
+		accountFailure := capabilityHasCurrentAccountFailure(account, fingerprint, accountEvidence)
 		var discovery *AccountCapabilityItem
 		names := make(map[string]bool)
 		for n := range accountEvidence {
@@ -433,6 +480,9 @@ func buildAccountCapabilityCandidates(accounts []Account, latest []AccountCapabi
 					if !privateMappingsCompatible {
 						row.NotPublishableReasons = append(row.NotPublishableReasons, "private_mapping_requires_review")
 					}
+					if accountFailure {
+						row.NotPublishableReasons = append(row.NotPublishableReasons, "account_failure")
+					}
 					if !row.LastSuccessReusable {
 						row.NotPublishableReasons = append(row.NotPublishableReasons, "no_current_inference_evidence")
 					}
@@ -446,9 +496,17 @@ func buildAccountCapabilityCandidates(accounts []Account, latest []AccountCapabi
 				}
 			}
 			compatibleSuccess := capabilityHasCompatibleHistoricalSuccess(account, fingerprint, upstream, accountEvidence)
+			pending, attemptedProtocols := capabilityTargetProbeHistory(account, fingerprint, upstream, accountEvidence)
 			for n := start; n < len(rows); n++ {
 				rows[n].HasCompatibleSuccess = compatibleSuccess
-				rows[n].ProbeEligible = !rows[n].AlreadyAttempted && !compatibleSuccess && privateMappingsCompatible && !rows[n].NeedsNameConfirmation && ManagedModelBranchProtocolSupported(account.Platform, rows[n].Protocol) && len(CapabilityIngressEndpoints(account, rows[n].Protocol)) > 0
+				rows[n].HasPendingProbe, rows[n].AttemptedProtocolCount = pending, attemptedProtocols
+				if pending {
+					rows[n].NotPublishableReasons = append(rows[n].NotPublishableReasons, "check_in_progress")
+				}
+				if attemptedProtocols >= 2 && !compatibleSuccess {
+					rows[n].NotPublishableReasons = append(rows[n].NotPublishableReasons, "compatible_probe_limit_reached")
+				}
+				rows[n].ProbeEligible = !rows[n].AlreadyAttempted && !compatibleSuccess && !pending && !accountFailure && attemptedProtocols < 2 && privateMappingsCompatible && !rows[n].NeedsNameConfirmation && ManagedModelBranchProtocolSupported(account.Platform, rows[n].Protocol) && len(CapabilityIngressEndpoints(account, rows[n].Protocol)) > 0
 			}
 		}
 	}
@@ -495,10 +553,13 @@ func capabilityTargetTier(model string) string {
 
 func resolveCapabilityLaunchModel(model string) (capabilityModelDefinition, string, bool) {
 	tier := capabilityTargetTier(model)
-	name := model
+	// A commercial suffix is a concrete upstream product name, not evidence
+	// that it is interchangeable with the unsuffixed model. Account mappings
+	// may explicitly establish that relationship in resolveCapabilityAccountModel.
 	if tier != "standard" {
-		name = name[:len(name)-len(tier)-1]
+		return capabilityModelDefinition{}, tier, false
 	}
+	name := model
 	if prefix, tail, found := strings.Cut(name, "/"); found {
 		switch strings.ToLower(prefix) {
 		case "openai", "anthropic", "google", "xai", "deepseek-ai", "qwen", "moonshotai", "minimax", "z-ai", "zhipuai":
@@ -528,7 +589,16 @@ func resolveCapabilityAccountModel(account *Account, upstream string) (capabilit
 		return capabilityModelDefinition{}, tier, false
 	}
 	tail := upstream[strings.LastIndex(upstream, "/")+1:]
-	target, targetTier, targetOK := resolveCapabilityLaunchModel(tail)
+	// Only documented concrete suffix forms are considered, and stripping
+	// one here never establishes identity by itself. The exact mapped target
+	// and its base version must both agree with a recognized public name.
+	for _, suffix := range []string{"-ssvip", "-vip", "-cc"} {
+		if strings.HasSuffix(strings.ToLower(tail), suffix) {
+			tail = tail[:len(tail)-len(suffix)]
+			break
+		}
+	}
+	target, _, targetOK := resolveCapabilityLaunchModel(tail)
 	if !targetOK {
 		return capabilityModelDefinition{}, tier, false
 	}
@@ -537,8 +607,8 @@ func resolveCapabilityAccountModel(account *Account, upstream string) (capabilit
 			continue
 		}
 		hinted, _, hintOK := resolveCapabilityLaunchModel(public)
-		if hintOK && hinted.ID == target.ID {
-			return target, targetTier, true
+		if hintOK && strings.EqualFold(hinted.ID, target.ID) {
+			return target, tier, true
 		}
 	}
 	return capabilityModelDefinition{}, tier, false

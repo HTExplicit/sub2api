@@ -63,10 +63,11 @@ func capabilityKnownUnsentCancellation(item AccountCapabilityItem) bool {
 		return false
 	}
 	var result struct {
+		RequestCount        int  `json:"request_count"`
 		RequestCountUnknown bool `json:"request_count_unknown"`
 	}
 	_ = json.Unmarshal(item.Result, &result)
-	return !result.RequestCountUnknown
+	return result.RequestCount == 0 && !result.RequestCountUnknown
 }
 
 // capabilityEvidenceSupersededBy mirrors the durable ledger predicate for
@@ -178,6 +179,64 @@ func capabilityHasCompatibleHistoricalSuccess(account *Account, fingerprint, ups
 			capabilitySuccessfulTextEvidence(item) && len(CapabilityIngressEndpoints(account, item.Protocol)) > 0 {
 			// This suppresses new protocol-expansion calls even if the previous
 			// success was later superseded. Publication eligibility is separate.
+			return true
+		}
+	}
+	return false
+}
+
+func capabilityTargetProbeHistory(account *Account, fingerprint, upstream string, observations []AccountCapabilityItem) (bool, int) {
+	pending := false
+	protocols := map[string]bool{}
+	for _, item := range observations {
+		if item.UpstreamModel != upstream || !capabilityEvidenceCurrent(item, account, fingerprint) || !capabilityIsBasicTextEvidence(item) || capabilityKnownUnsentCancellation(item) {
+			continue
+		}
+		if item.Status == "pending" || item.Status == "running" {
+			pending = true
+		}
+		var result struct {
+			RequestCount        int  `json:"request_count"`
+			RequestCountUnknown bool `json:"request_count_unknown"`
+		}
+		_ = json.Unmarshal(item.Result, &result)
+		if item.RequestCount > 0 || item.RequestCountUnknown || item.DispatchedAt != nil || item.Status == "failed" || item.Status == "indeterminate" || result.RequestCount > 0 || result.RequestCountUnknown {
+			protocols[item.Protocol] = true
+		}
+	}
+	return pending, len(protocols)
+}
+
+func capabilityHasCurrentAccountFailure(account *Account, fingerprint string, observations []AccountCapabilityItem) bool {
+	for _, item := range observations {
+		if !capabilityEvidenceCurrent(item, account, fingerprint) || item.PublicationSuperseded ||
+			(item.Kind != AccountCapabilityKindDiscover && !capabilityIsBasicTextEvidence(item)) ||
+			(item.Status != "failed" && item.Status != "") || !capabilityEvidenceResult(item).AccountFailure {
+			continue
+		}
+		retired := false
+		for _, newer := range observations {
+			if !capabilityEvidenceCurrent(newer, account, fingerprint) || !capabilityItemNewer(newer, item) {
+				continue
+			}
+			if capabilitySuccessfulTextEvidence(newer) {
+				retired = true
+				break
+			}
+			if newer.Kind != AccountCapabilityKindDiscover || (newer.Status != "succeeded" && newer.Status != "") {
+				continue
+			}
+			var result struct {
+				Source string `json:"source"`
+				Status string `json:"status"`
+			}
+			_ = json.Unmarshal(newer.Result, &result)
+			if result.Source == "upstream" && (result.Status == "discovered" || result.Status == "empty" || result.Status == "partial") {
+				retired = true
+				break
+			}
+		}
+		if !retired {
 			return true
 		}
 	}

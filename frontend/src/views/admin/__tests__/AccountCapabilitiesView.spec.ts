@@ -105,6 +105,22 @@ describe('AccountCapabilitiesView', () => {
     expect(api.createRun).not.toHaveBeenCalled()
   })
 
+  it.each(['inventory', 'runs'])('reads an account-only advanced deep link in %s without substituting the default folders', async (tab) => {
+    routeQuery.tab = tab; routeQuery.account_ids = '99'
+    api.candidates.mockResolvedValue({ ...page([]), accounts: [{ ...scopeAccounts[0], id: 99, folder_id: 99 }] })
+    const wrapper = renderView(); await flushPromises()
+    if (tab === 'inventory') {
+      expect(api.candidates).toHaveBeenCalledWith(expect.objectContaining({ folder_ids: undefined, account_ids: '99' }), expect.any(AbortSignal))
+      expect(wrapper.get('[data-test="capability-folder-99"]').element).toHaveProperty('checked', true)
+    } else {
+      expect(api.listRuns).toHaveBeenCalledWith(expect.objectContaining({ folder_ids: undefined, account_ids: '99' }), expect.any(AbortSignal))
+    }
+    expect(wrapper.get('[data-test="capability-folder-17"]').element).toHaveProperty('checked', false)
+    expect(api.createRun).not.toHaveBeenCalled()
+    expect(api.preview).not.toHaveBeenCalled()
+    expect(api.apply).not.toHaveBeenCalled()
+  })
+
   it('resolves source folders by name, keeps the full scope and does not poll idle history or fetch full catalogs', async () => {
     vi.useFakeTimers()
     const wrapper = renderView(); await flushPromises()

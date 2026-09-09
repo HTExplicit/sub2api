@@ -368,18 +368,27 @@ func TestCapabilityPublicationV2CrossPlatformSuccessesAreAllRetained(t *testing.
 
 func TestCapabilityPublicationV2SameAccountDistinctTargetsUseIndependentSelectors(t *testing.T) {
 	for _, fixture := range []struct {
-		name, tier string
-		targets    []string
+		name, tier, publicModel string
+		targets                 []string
 	}{
-		{name: "recognized provider namespace", targets: []string{"gpt-6-astra", "openai/gpt-6-astra"}},
-		{name: "distinct vip upstream products", tier: "vip", targets: []string{"gpt-6-astra-vip", "gpt-6-astra-ssvip"}},
+		{name: "recognized provider namespace", publicModel: "gpt-6-astra", targets: []string{"gpt-6-astra", "openai/gpt-6-astra"}},
+		{name: "distinct vip upstream products with explicit equivalence", tier: "vip", publicModel: "gpt-5.6-sol", targets: []string{"gpt-5.6-sol-vip", "gpt-5.6-sol-ssvip"}},
 	} {
 		t.Run(fixture.name, func(t *testing.T) {
 			snap := publicationTestSnapshot()
+			snap.Request.Groups[0].Models[0].PublicModel = fixture.publicModel
 			snap.Request.Groups[0].Models[0].Tier = fixture.tier
 			snap.Request.Groups[0].Models[0].EvidenceIDs = []int64{11, 12}
+			snap.Groups[23].Group.ModelPricing[0].Models = []string{fixture.publicModel}
 			if fixture.tier == "vip" {
 				snap.Request.Groups[0].Name, snap.Groups[23].Group.Name = "gpt-vip", "gpt-vip"
+				// Suffixes alone are not equivalence proof. The account explicitly
+				// maps the canonical public name and its established alias to each
+				// exact, same-version upstream product.
+				account := snap.Accounts[7].Account
+				mapping := account.Credentials["model_mapping"].(map[string]any)
+				mapping["gpt-5.6-sol"], mapping["gpt-5.6"] = fixture.targets[0], fixture.targets[1]
+				account.modelMappingCacheReady = false
 			}
 			for i, target := range fixture.targets {
 				publicationV2Evidence(t, snap, int64(11+i), 7, target, "chat_completions")
@@ -388,7 +397,7 @@ func TestCapabilityPublicationV2SameAccountDistinctTargetsUseIndependentSelector
 			if err != nil {
 				t.Fatal(err)
 			}
-			route := publicationV2Route(t, publicationV2Group(t, plan, 23), "gpt-6-astra")
+			route := publicationV2Route(t, publicationV2Group(t, plan, 23), fixture.publicModel)
 			branches := ManagedModelRouteBranches(route)
 			if len(branches) != 2 {
 				t.Fatalf("same-account targets were overwritten or discarded: %#v", route)

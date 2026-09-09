@@ -85,7 +85,7 @@ func (g *managedModelWSGuard) resolve(ctx context.Context, model string) (*servi
 		return nil, nil, err
 	}
 	request, err := service.ResolveManagedModelRoute(group, model, service.ManagedModelEndpointResponsesWebSocket)
-	if err != nil || request == nil || !isResponsesWebSocketCompositePlatform(request.Route.TargetPlatform) {
+	if err != nil || request == nil || !isResponsesWebSocketCompositePlatform(request.TargetPlatform()) {
 		return nil, nil, service.ErrManagedModelRouteUnavailable
 	}
 	if err := g.groups.ValidateManagedModelCompilation(ctx, group, request); err != nil {
@@ -99,8 +99,8 @@ func (g *managedModelWSGuard) validateAccount(ctx context.Context, account *serv
 		return service.ErrManagedModelRouteUnavailable
 	}
 	ctx = service.WithManagedModelRequest(ctx, request)
-	ctx = service.WithResolvedTargetPlatform(ctx, request.Route.TargetPlatform)
-	if err := g.accounts.ValidateManagedModelAccountLatest(ctx, account, request.Route.Selector); err != nil {
+	ctx = service.WithResolvedTargetPlatform(ctx, request.TargetPlatform())
+	if err := g.accounts.ValidateManagedModelAccountLatest(ctx, account, request.RoutingModel()); err != nil {
 		return service.ErrManagedModelRouteUnavailable
 	}
 	return nil
@@ -194,7 +194,7 @@ func (g *managedModelWSGuard) prepareFrame(ctx context.Context, turn int, payloa
 		}
 	}
 	body, request, err := service.PrepareManagedModelRequest(group, service.ManagedModelEndpointResponsesWebSocket, body, fallbackModel)
-	if err != nil || request == nil || !isResponsesWebSocketCompositePlatform(request.Route.TargetPlatform) {
+	if err != nil || request == nil || !isResponsesWebSocketCompositePlatform(request.TargetPlatform()) {
 		return nil, nil, nil, service.ErrManagedModelRouteUnavailable
 	}
 	if err := g.groups.ValidateManagedModelCompilation(ctx, group, request); err != nil {
@@ -206,7 +206,7 @@ func (g *managedModelWSGuard) prepareFrame(ctx context.Context, turn int, payloa
 		}
 	}
 	if event == "session.update" {
-		body, err = sjson.SetBytes(body, "model", account.GetMappedModel(request.Route.Selector))
+		body, err = sjson.SetBytes(body, "model", account.GetMappedModel(request.RoutingModel()))
 		if err == nil {
 			body, err = sjson.SetRawBytes(payload, "session", body)
 		}
@@ -254,11 +254,11 @@ func (g *managedModelWSGuard) validatePayload(ctx context.Context, turn int, pay
 	expected := request.Route.PublicModel
 	mapped := false
 	if previous := g.current.Load(); previous != nil && previous.turn == turn && previous.mapped {
-		if previous.request.Route.PublicModel != request.Route.PublicModel || previous.request.Route.Selector != request.Route.Selector ||
-			previous.request.Route.TargetPlatform != request.Route.TargetPlatform {
+		if previous.request.Route.PublicModel != request.Route.PublicModel || previous.request.RoutingModel() != request.RoutingModel() ||
+			previous.request.TargetPlatform() != request.TargetPlatform() {
 			return nil, nil, nil, service.ErrManagedModelRouteUnavailable
 		}
-		expected, mapped = account.GetMappedModel(request.Route.Selector), true
+		expected, mapped = account.GetMappedModel(request.RoutingModel()), true
 	}
 	model := gjson.GetBytes(payload, "model")
 	if model.Type != gjson.String || model.String() != expected {
@@ -278,7 +278,7 @@ func (g *managedModelWSGuard) validateTurn(ctx context.Context, turn int, accoun
 		return service.ErrManagedModelRouteUnavailable
 	}
 	_, request, err := g.resolve(ctx, previous.request.Route.PublicModel)
-	if err != nil || request.Route.Selector != previous.request.Route.Selector || request.Route.TargetPlatform != previous.request.Route.TargetPlatform {
+	if err != nil || request.RoutingModel() != previous.request.RoutingModel() || request.TargetPlatform() != previous.request.TargetPlatform() {
 		return service.ErrManagedModelRouteUnavailable
 	}
 	return g.validateAccount(ctx, account, request)

@@ -113,13 +113,17 @@ func TestAccountCapabilityPublicationModelIdentityUsesTrustedCatalogue(t *testin
 	account := capabilityCatalogTestAccount(10, map[string]any{"gpt-6-astra": "deepseek-v4-pro", "gpt-5.6-luna": "cx/gpt-5.6-luna"})
 	require.False(t, CapabilityCandidateMatches(&account, "deepseek-v4-pro", "gpt-6-astra", nil, "standard"))
 	require.False(t, CapabilityCandidateMatches(&account, "gpt-6-astra-ssvip", "gpt-6-astra", nil, "standard"))
+	require.False(t, CapabilityCandidateMatches(&account, "gpt-6-astra-ssvip", "gpt-6-astra", nil, "vip"), "a suffix alone is not equivalence evidence")
+	account.Credentials["model_mapping"].(map[string]any)["gpt-6-astra"] = "gpt-6-astra-ssvip"
 	require.True(t, CapabilityCandidateMatches(&account, "gpt-6-astra-ssvip", "gpt-6-astra", nil, "vip"))
 	require.True(t, CapabilityCandidateMatches(&account, "cx/gpt-5.6-luna", "gpt-5.6-luna", nil, "standard"))
 	require.False(t, CapabilityCandidateMatches(&account, "gpt-5.6-sol", "gpt-5.6-sol", []string{"gpt-6-astra"}, "standard"))
 }
 
 func TestAccountCapabilityTierIsolationOnlyAppliesToGPTProducts(t *testing.T) {
-	account := capabilityCatalogTestAccount(10, nil)
+	account := capabilityCatalogTestAccount(10, map[string]any{
+		"gemini-3.8-flash": "gemini-3.8-flash-ssvip", "grok-4.6": "grok-4.6-vip", "gpt-6-astra": "gpt-6-astra-ssvip",
+	})
 	require.True(t, CapabilityCandidateMatches(&account, "gemini-3.8-flash", "gemini-3.8-flash", nil, "standard"))
 	require.True(t, CapabilityCandidateMatches(&account, "gemini-3.8-flash-ssvip", "gemini-3.8-flash", nil, "standard"))
 	require.True(t, CapabilityCandidateMatches(&account, "grok-4.6-vip", "grok-4.6", nil, "standard"))
@@ -152,14 +156,14 @@ func TestAccountCapabilityCatalogPricingDoesNotInventOrRevive(t *testing.T) {
 
 func TestAccountCapabilityCatalogPreservesDistinctVIPAlternatives(t *testing.T) {
 	account := capabilityCatalogTestAccount(10, map[string]any{
-		"gpt-6-astra-vip": "gpt-6-astra-vip", "gpt-6-astra-ssvip": "gpt-6-astra-ssvip",
+		"gpt-5.6-sol": "gpt-5.6-sol-vip", "gpt-5.6": "gpt-5.6-sol-ssvip",
 	})
 	fingerprint, err := AccountCapabilityFingerprint(&account)
 	require.NoError(t, err)
 	now := time.Now()
 	rows := buildAccountCapabilityCandidates([]Account{account}, []AccountCapabilityItem{
-		{ID: 1, Kind: "probe", AccountID: 10, FolderID: 7, UpstreamModel: "gpt-6-astra-vip", Protocol: "responses", Profile: "text", ConfigFingerprint: fingerprint, Result: json.RawMessage(`{"status":"alive"}`), FinishedAt: &now},
-		{ID: 2, Kind: "probe", AccountID: 10, FolderID: 7, UpstreamModel: "gpt-6-astra-ssvip", Protocol: "responses", Profile: "text", ConfigFingerprint: fingerprint, Result: json.RawMessage(`{"status":"failed"}`), FinishedAt: &now},
+		{ID: 1, Kind: "probe", AccountID: 10, FolderID: 7, UpstreamModel: "gpt-5.6-sol-vip", Protocol: "responses", Profile: "text", ConfigFingerprint: fingerprint, Result: json.RawMessage(`{"status":"alive"}`), FinishedAt: &now},
+		{ID: 2, Kind: "probe", AccountID: 10, FolderID: 7, UpstreamModel: "gpt-5.6-sol-ssvip", Protocol: "responses", Profile: "text", ConfigFingerprint: fingerprint, Result: json.RawMessage(`{"status":"failed"}`), FinishedAt: &now},
 	}, nil)
 	require.Len(t, rows, 4)
 	targets := map[string]AccountCapabilityCandidate{}
@@ -168,8 +172,8 @@ func TestAccountCapabilityCatalogPreservesDistinctVIPAlternatives(t *testing.T) 
 			targets[row.UpstreamModel] = row
 		}
 	}
-	require.True(t, targets["gpt-6-astra-vip"].Publishable)
-	require.False(t, targets["gpt-6-astra-ssvip"].Publishable)
+	require.True(t, targets["gpt-5.6-sol-vip"].Publishable)
+	require.False(t, targets["gpt-5.6-sol-ssvip"].Publishable)
 	require.NotEqual(t, rows[0].CandidateID, rows[1].CandidateID)
 }
 
@@ -190,7 +194,7 @@ func TestAccountCapabilityCatalogKeepsPublishedTargetAfterEmptyDiscovery(t *test
 	rows := buildAccountCapabilityCandidates([]Account{account}, []AccountCapabilityItem{
 		{ID: 2, Kind: "discover", AccountID: 10, FolderID: 7, ConfigFingerprint: fingerprint, Result: json.RawMessage(`{"status":"empty","models":[]}`)},
 	}, map[string]*Group{"gpt-vip": group})
-	require.Len(t, rows, 4)
+	require.Len(t, rows, 6, "both the exact unconfirmed target and its already-saved public name remain visible")
 	row := capabilityCatalogFindRow(t, rows, "gpt-6-astra-ssvip", "responses")
 	require.False(t, row.Discovered)
 	require.True(t, row.Published)

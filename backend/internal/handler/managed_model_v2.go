@@ -21,10 +21,17 @@ import (
 // adapter is called again during failover; an HTTP handler is never re-entered.
 // Legacy publications and unrelated/private requests keep their existing path.
 func (h *GatewayHandler) ManagedModelV2(openAI *OpenAIGatewayHandler) gin.HandlerFunc {
-	affinity := newManagedModelV2AffinityStore()
+	affinity := newManagedModelV2AffinityStore(h.gatewayService.ManagedModelAffinityCache())
 	return func(c *gin.Context) {
 		request, managed := service.ManagedModelRequestFromContext(c.Request.Context())
 		if !managed || request.Version < 2 || len(request.Route.Branches) == 0 {
+			c.Next()
+			return
+		}
+		if service.IsManagedModelLegacyMetadataRequest(request) {
+			if !prepareManagedModelLegacyMetadataHTTP(c, request) {
+				return
+			}
 			c.Next()
 			return
 		}
@@ -58,10 +65,33 @@ func (h *GatewayHandler) serveManagedModelV2(c *gin.Context, openAI *OpenAIGatew
 	setOpenAIClientTransportHTTP(c)
 	model := request.Route.PublicModel
 	reqLog := requestLogger(c, "handler.gateway.managed_v2", zap.Int64("api_key_id", apiKey.ID), zap.Int64("group_id", request.GroupID), zap.String("model", model))
+	defer func() {
+		if c.GetBool(managedModelV2AffinityPersistenceFailureKey) {
+			// Forwarding may already have delivered a successful response. Keep
+			// it intact while making unavailable continuation state observable;
+			// opaque references and cache errors must never enter the log.
+			reqLog.Warn("managed_model_v2.affinity_persistence_failed")
+		}
+	}()
 	body, err := readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
 	if err != nil || len(body) == 0 || !managedModelV2RoutingFieldsValid(body, model) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
 		return
+	}
+	if request.Endpoint == service.CompositeRouteEndpointResponses {
+		var normalized bool
+		body, normalized = openAI.normalizeOpenAIResponsesCompactRequest(c, reqLog, body)
+		if !normalized {
+			return
+		}
+		if isBareOpenAIResponsesPath(c) && isOpenAIRemoteCompactionV2Request(body) {
+			service.MarkOpenAINativeCompactionV2(c)
+		}
+		// Preserve the existing ingress normalization and keepalive once for
+		// the whole request, not once each time a verified branch is selected.
+		stopCompactKeepalive := service.StartOpenAICompactSSEKeepalive(c, openAI.openAICompactKeepaliveInterval())
+		defer stopCompactKeepalive()
+		defer openAI.logOpenAIRemoteCompactOutcome(c, startedAt)
 	}
 	stream, validStream := parseOpenAICompatibleStream(body)
 	if !validStream {
@@ -114,7 +144,7 @@ func (h *GatewayHandler) serveManagedModelV2(c *gin.Context, openAI *OpenAIGatew
 	if h.errorPassthroughService != nil {
 		service.BindErrorPassthroughService(c, h.errorPassthroughService)
 	}
-	pin, err := affinity.Resolve(apiKey.ID, request.GroupID, model, body)
+	pin, err := affinity.ResolveRequest(c.Request.Context(), apiKey.ID, request.GroupID, model, body, request, openAI.gatewayService.LookupManagedModelLegacyResponse)
 	if err != nil {
 		h.handleStreamingAwareErrorWithCode(c, http.StatusBadRequest, "invalid_request_error", "continuation_state_unavailable", service.OpenAIContinuationStateUnavailableClientMessage, false)
 		return
@@ -161,7 +191,7 @@ func (h *GatewayHandler) serveManagedModelV2(c *gin.Context, openAI *OpenAIGatew
 	}()
 	excluded := make(map[string]struct{})
 	retry := newManagedModelV2RetryState(h.maxAccountSwitches)
-	options := service.ManagedModelSelectionOptions{Excluded: excluded, SessionHash: sessionHash, MetadataUserID: parsed.MetadataUserID, UserID: subject.UserID, RequireCompact: strings.HasSuffix(c.Request.URL.Path, "/responses/compact")}
+	options := service.ManagedModelSelectionOptions{Excluded: excluded, SessionHash: sessionHash, MetadataUserID: parsed.MetadataUserID, UserID: subject.UserID, RequireCompact: strings.HasSuffix(c.Request.URL.Path, "/responses/compact"), RequireResponsesWire: service.IsOpenAINativeCompactionV2(c)}
 	if pin != nil {
 		options.PreferredAccountID, options.PreferredBranch = pin.AccountID, pin.BranchSelector
 	}
@@ -182,7 +212,7 @@ func (h *GatewayHandler) serveManagedModelV2(c *gin.Context, openAI *OpenAIGatew
 		}
 		c.Request = c.Request.WithContext(selected.Context)
 		c.Request.Header = canonicalHeaders.Clone()
-		if selected.Candidate.Branch.TargetPlatform != service.PlatformOpenAI {
+		if !service.ManagedModelUsesOpenAIAdapter(selected.Candidate.Branch.TargetPlatform) {
 			sessionAccounts[selected.Selection.Account.ID] = selected.Selection.Account
 		}
 		accountRelease, slotResult := h.acquireManagedModelV2Slot(c, openAI, selected, sessionHash, stream, &streamStarted, reqLog)
@@ -222,7 +252,8 @@ func (h *GatewayHandler) serveManagedModelV2(c *gin.Context, openAI *OpenAIGatew
 			continue
 		}
 		selected.Selection.Account = originalAccount
-		if selected.Candidate.Branch.TargetPlatform != service.PlatformOpenAI {
+		selected.Candidate.Account = originalAccount
+		if !service.ManagedModelUsesOpenAIAdapter(selected.Candidate.Branch.TargetPlatform) {
 			sessionAccounts[originalAccount.ID] = originalAccount
 		}
 		attemptCtx, account, overlayErr := service.WithManagedModelAccountProtocol(c.Request.Context(), originalAccount, selected.Candidate.Branch)
@@ -282,7 +313,7 @@ func (h *GatewayHandler) serveManagedModelV2(c *gin.Context, openAI *OpenAIGatew
 		}
 		lastFailover = failoverErr
 		action := retry.next(c.Request.Context(), selected.Candidate, failoverErr)
-		if branch.TargetPlatform == service.PlatformOpenAI {
+		if service.ManagedModelUsesOpenAIAdapter(branch.TargetPlatform) {
 			finalizeOpenAIFailoverSelection(openAI.gatewayService, selected.Selection, originalAccount, account.GetMappedModel(branch.Selector), failoverErr, action)
 		} else {
 			openAI.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selected.Selection)
@@ -293,7 +324,7 @@ func (h *GatewayHandler) serveManagedModelV2(c *gin.Context, openAI *OpenAIGatew
 		case openAIFailoverRetrySwitchAccount:
 			excluded[selected.Candidate.Key()] = struct{}{}
 			options.PreferredAccountID, options.PreferredBranch = 0, ""
-			if branch.TargetPlatform == service.PlatformOpenAI {
+			if service.ManagedModelUsesOpenAIAdapter(branch.TargetPlatform) {
 				openAI.gatewayService.CooldownOpenAIRetryExhausted(attemptCtx, originalAccount, account.GetMappedModel(branch.Selector), failoverErr)
 				openAI.gatewayService.RecordOpenAIAccountSwitch()
 			} else if failoverErr.RetryableOnSameAccount {

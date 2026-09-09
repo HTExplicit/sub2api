@@ -29,7 +29,7 @@ func TestCapabilityPublicationPreservesPrivateStateAndScopesSelectors(t *testing
 		t.Fatalf("unexpected plan: %#v", plan)
 	}
 	ap := plan.Accounts[0]
-	if !reflect.DeepEqual(ap.AddGroupIDs, []int64{23}) || len(ap.RemoveGroupIDs) != 0 || ap.Schedulable == nil || !*ap.Schedulable {
+	if !reflect.DeepEqual(ap.AddGroupIDs, []int64{23}) || len(ap.RemoveGroupIDs) != 0 || ap.Schedulable != nil {
 		t.Fatalf("wrong scoped patch: %#v", ap)
 	}
 	selector := ManagedModelBranchSelector(23, "gpt-6-astra", PlatformOpenAI, "chat_completions", "gpt-6-astra")
@@ -180,8 +180,38 @@ func TestCapabilityPublicationCountMetadataOnlySupplementsInference(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !publicationHasString(ManagedModelRouteBranches(plan.Groups[0].ManagedModelRoutes.Routes[0])[0].Accounts[0].Endpoints, "count_tokens") {
-		t.Fatal("valid metadata proof not attached")
+	if publicationHasString(ManagedModelRouteBranches(plan.Groups[0].ManagedModelRoutes.Routes[0])[0].Accounts[0].Endpoints, "count_tokens") {
+		t.Fatal("independent metadata invalidated a new HTTP generation branch")
+	}
+	group := *snap.Groups[23].Group
+	group.ManagedModelRoutes = plan.Groups[0].ManagedModelRoutes
+	if request, err := ResolveManagedModelRoute(&group, "gpt-6-astra", "responses"); err != nil || request == nil {
+		t.Fatalf("independent metadata made the verified inference route unusable: %v", err)
+	}
+	if _, err := ResolveManagedModelRoute(&group, "gpt-6-astra", "count_tokens"); err == nil {
+		t.Fatal("metadata silently enabled an unsupported v2 count endpoint")
+	}
+	if len(plan.Warnings) == 0 {
+		t.Fatal("the independent metadata result was not explained in the preview")
+	}
+}
+
+func TestCapabilityPublicationCountMetadataPreservesRetainedV1Endpoint(t *testing.T) {
+	snap := publicationV2MergeSnapshot()
+	snap.Request.Groups[0].Models = []CapabilityPublicationModel{{PublicModel: "gpt-5.6-sol", EvidenceIDs: []int64{12, 13}}}
+	publicationV2Evidence(t, snap, 12, 8, "gpt-5.6-sol", "chat_completions")
+	metadata := snap.Evidence[12]
+	metadata.ID, metadata.Protocol = 13, "responses_input_tokens"
+	metadata.Result = json.RawMessage(`{"status":"available","classification":"metadata_available","protocol":"responses_input_tokens","profile":"text","upstream_model":"gpt-5.6-sol","request_count":1}`)
+	snap.Evidence[13] = metadata
+	plan, err := (&AccountCapabilityPublicationService{}).build(snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route := publicationV2Route(t, publicationV2Group(t, plan, 23), "gpt-5.6-sol")
+	branches := ManagedModelRouteBranches(route)
+	if len(branches) != 1 || branches[0].UpstreamProtocol != "" || !publicationHasString(branches[0].Accounts[0].Endpoints, "count_tokens") {
+		t.Fatal("a retained v1 branch lost its independently verified legacy metadata adapter")
 	}
 }
 

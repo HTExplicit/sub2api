@@ -41,7 +41,7 @@ func TestAccountCapabilityCatalogEvidenceRepositoryPreservesBothLatestAttemptAnd
 
 func TestAccountCapabilityCatalogEvidenceRepositoryRetainsReservedAndPossiblySentTargets(t *testing.T) {
 	repo, mock := newCapabilityJobsRepoTest(t)
-	prefix := `WITH scoped AS \([\s\S]+FROM scoped WHERE NOT \(status='canceled' AND dispatched_at IS NULL AND request_count=0[\s\S]+result->>'request_count_unknown' IS DISTINCT FROM 'true'\)[\s\S]+`
+	prefix := `WITH scoped AS \([\s\S]+FROM scoped WHERE NOT \(status='canceled' AND dispatched_at IS NULL AND request_count=0[\s\S]+result->>'request_count_unknown' IS DISTINCT FROM 'true'[\s\S]+THEN \(result->>'request_count'\)::numeric ELSE 0 END<=0\)[\s\S]+`
 	mock.ExpectQuery(prefix + `SELECT COUNT\(\*\) FROM`).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 	now := time.Now().UTC()
 	mock.ExpectQuery(prefix+`SELECT `+regexp.QuoteMeta(capabilityItemColumns)+` FROM`).WithArgs(50, 0).
@@ -51,6 +51,35 @@ func TestAccountCapabilityCatalogEvidenceRepositoryRetainsReservedAndPossiblySen
 	require.Len(t, page.Items, 1)
 	require.Equal(t, "running", page.Items[0].Status)
 	require.Nil(t, page.Items[0].FinishedAt)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestAccountCapabilityCatalogEvidenceRepositoryKeepsEarlierUniqueCatalogDeclarations(t *testing.T) {
+	repo, mock := newCapabilityJobsRepoTest(t)
+	now := time.Now().UTC()
+	old := now.Add(-72 * time.Hour)
+	// A newer successful, non-empty subset must not hide an earlier Fable 5
+	// declaration simply because the newer catalog still contains Fable 5.1.
+	// Keep the original ledger rows so callers can distinguish historical hints
+	// from the latest directory's contents without manufacturing alive evidence.
+	prefix := `WITH scoped AS \([\s\S]+catalog_declarations AS \([\s\S]+DISTINCT ON \(s.account_id,s.folder_id,s.config_fingerprint,model->>'id'\) s.id[\s\S]+CASE WHEN jsonb_typeof\(s.result->'models'\)='array' THEN s.result->'models' ELSE '\[\]'::jsonb END[\s\S]+s.observation_kind='discover' AND NULLIF\(model->>'id',''\) IS NOT NULL[\s\S]+UNION SELECT id FROM catalog_declarations[\s\S]+`
+	mock.ExpectQuery(prefix+`SELECT COUNT\(\*\) FROM`).WithArgs("discover", int64(31)).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
+	rows := sqlmock.NewRows(capabilityJobsItemColumns()).
+		AddRow(12, 2, 1, 31, "fixture", 7, strings.Repeat("b", 64), "", "", "text", []byte(`[]`), "succeeded",
+			[]byte(`{"status":"discovered","source":"upstream","models":[{"id":"claude-fable-5-1"}]}`), 1, now, now, now, now, "discover", false).
+		AddRow(9, 1, 1, 31, "fixture", 7, strings.Repeat("b", 64), "", "", "text", []byte(`[]`), "succeeded",
+			[]byte(`{"status":"discovered","source":"upstream","models":[{"id":"claude-fable-5"},{"id":"claude-fable-5-1"}]}`), 1, old, old, old, old, "discover", false)
+	mock.ExpectQuery(prefix+`SELECT `+regexp.QuoteMeta(capabilityItemColumns)+` FROM`).
+		WithArgs("discover", int64(31), 50, 0).WillReturnRows(rows)
+	page, err := repo.EvidenceItems(context.Background(), service.AccountCapabilityFilter{Kind: "discover", AccountID: 31})
+	require.NoError(t, err)
+	require.EqualValues(t, 2, page.Total)
+	require.Len(t, page.Items, 2)
+	require.Equal(t, "discover", page.Items[1].Kind)
+	require.Contains(t, string(page.Items[1].Result), `"claude-fable-5"`)
+	require.NotContains(t, string(page.Items[1].Result), `"alive"`)
+	require.Equal(t, old, *page.Items[1].FinishedAt)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

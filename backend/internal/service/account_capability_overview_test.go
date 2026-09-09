@@ -345,11 +345,83 @@ func TestAccountCapabilityOverviewDoesNotOfferUnexecutableProbe(t *testing.T) {
 	overview, err := buildAccountCapabilityOverview(scope, snapshot, nil, "", nil)
 	require.NoError(t, err)
 	require.Equal(t, "view", capabilityOverviewFindModel(t, capabilityOverviewFindGroup(t, overview, ws.GroupName), ws.PublicModel).Action)
-	unassigned := capabilityOverviewFindModel(t, capabilityOverviewFindGroup(t, overview, capabilityUnclassifiedGroup), grok.PublicModel)
+	unassigned := capabilityOverviewFindModel(t, capabilityOverviewFindGroup(t, overview, "grok"), grok.PublicModel)
 	require.Equal(t, "view", unassigned.Action)
+	require.False(t, unassigned.NeedsNameConfirmation, "an unlisted but recognizable version is not an unknown name")
 	require.Contains(t, unassigned.Reasons, "group_missing")
 	recommendation, err := buildAccountCapabilityRecommendation(scope, snapshot, overview, AccountCapabilityRecommendationRequest{Scope: scope})
 	require.NoError(t, err)
 	require.Nil(t, recommendation.ProbeRequest)
 	require.Zero(t, recommendation.MaximumRequestCount)
+}
+
+func TestAccountCapabilityOverviewIncludesNonLaunchRecognizedFamilyGroup(t *testing.T) {
+	row := capabilityOverviewFixtureRow(1, "grok-4.5", "grok", "chat_completions", 101)
+	snapshot, scope := capabilityOverviewFixtureSnapshot([]AccountCapabilityCandidate{row}, capabilityOverviewFixtureGroup(45, "grok"))
+	overview, err := buildAccountCapabilityOverview(scope, snapshot, []int64{45}, "", nil)
+	require.NoError(t, err)
+	require.Len(t, overview.Groups, 1)
+	model := capabilityOverviewFindModel(t, overview.Groups[0], "grok-4.5")
+	require.Equal(t, "add", model.Action)
+	require.False(t, model.NeedsNameConfirmation)
+	recommendation, err := buildAccountCapabilityRecommendation(scope, snapshot, overview, AccountCapabilityRecommendationRequest{Scope: scope})
+	require.NoError(t, err)
+	require.Equal(t, int64(45), recommendation.PreviewRequest.Groups[0].ID)
+	require.Equal(t, []int64{101}, recommendation.PreviewRequest.Groups[0].Models[0].EvidenceIDs)
+	require.Nil(t, recommendation.ProbeRequest)
+}
+
+func TestAccountCapabilityRecommendationFreezesAllScopedAccountsAndOnlySelectedGroups(t *testing.T) {
+	row := capabilityOverviewFixtureRow(1, "claude-fable-5", "claude(非逆向渠道)", "responses", 101)
+	group := capabilityOverviewFixtureGroup(23, row.GroupName)
+	snapshot, scope := capabilityOverviewFixtureSnapshot([]AccountCapabilityCandidate{row}, group, capabilityOverviewFixtureGroup(24, "gpt"))
+	scope.AccountIDs = append(scope.AccountIDs, 77)
+	snapshot.ExpectedInputRevisions = &CapabilityPublicationInputRevisions{
+		Accounts: map[int64]string{1: strings.Repeat("a", 64), 77: strings.Repeat("b", 64)},
+		Groups:   map[int64]string{23: strings.Repeat("c", 64), 24: strings.Repeat("d", 64)},
+	}
+	overview, err := buildAccountCapabilityOverview(scope, snapshot, nil, "", nil)
+	require.NoError(t, err)
+	request := AccountCapabilityRecommendationRequest{Scope: scope, Models: []AccountCapabilityModelSelection{{GroupID: 23, PublicModel: row.PublicModel}}}
+	plan, err := buildAccountCapabilityRecommendation(scope, snapshot, overview, request)
+	require.NoError(t, err)
+	require.NotNil(t, plan.PreviewRequest)
+	require.Equal(t, snapshot.ExpectedInputRevisions.Accounts, plan.PreviewRequest.ExpectedConfigRevisions.Accounts)
+	require.Equal(t, map[int64]string{23: strings.Repeat("c", 64)}, plan.PreviewRequest.ExpectedConfigRevisions.Groups)
+	originalKey := plan.PreviewRequest.IdempotencyKey
+	snapshot.ExpectedInputRevisions.Groups[23] = strings.Repeat("e", 64)
+	plan, err = buildAccountCapabilityRecommendation(scope, snapshot, overview, request)
+	require.NoError(t, err)
+	require.NotEqual(t, originalKey, plan.PreviewRequest.IdempotencyKey)
+	delete(snapshot.ExpectedInputRevisions.Accounts, 77)
+	_, err = buildAccountCapabilityRecommendation(scope, snapshot, overview, request)
+	require.ErrorIs(t, err, ErrAccountCapabilityConflict, "a scoped account without a frozen revision must not produce an unguarded preview")
+}
+
+func TestAccountCapabilityOverviewPreservesPausedSuccessfulMemberWithoutEnableRecommendation(t *testing.T) {
+	row := capabilityOverviewFixtureRow(1, "claude-fable-5", "claude(非逆向渠道)", "responses", 101)
+	row.Published, row.Schedulable = true, false
+	group := capabilityOverviewFixtureGroup(23, row.GroupName, row.PublicModel)
+	group.ManagedModelRoutes.Routes[0].Branches = []ManagedModelRouteBranch{{Selector: "s2pub-fixture", TargetPlatform: row.AccountPlatform, UpstreamProtocol: row.Protocol,
+		Accounts: []ManagedModelRouteAccount{{AccountID: row.AccountID, UpstreamModel: row.UpstreamModel, AccountFingerprint: row.ConfigFingerprint}}}}
+	snapshot, scope := capabilityOverviewFixtureSnapshot([]AccountCapabilityCandidate{row}, group)
+	overview, err := buildAccountCapabilityOverview(scope, snapshot, []int64{23}, "", nil)
+	require.NoError(t, err)
+	model := overview.Groups[0].Models[0]
+	require.True(t, model.Published)
+	require.Equal(t, 1, model.VerifiedAccountCount)
+	require.Zero(t, model.RoutingReadyAccountCount)
+	require.Equal(t, "view", model.Action, "a retained paused route is not an addition or an instruction to enable scheduling")
+	require.Contains(t, model.Reasons, "account_scheduling_paused")
+	require.Equal(t, 1, overview.Groups[0].AttentionCount)
+	plan, err := buildAccountCapabilityRecommendation(scope, snapshot, overview, AccountCapabilityRecommendationRequest{Scope: scope})
+	require.NoError(t, err)
+	require.NotNil(t, plan.PreviewRequest)
+	require.Empty(t, plan.Impact.AddedRoutes)
+	require.Empty(t, plan.Impact.AddedAccounts)
+	require.Empty(t, plan.Impact.RemovedModels)
+	require.Len(t, plan.Impact.RetainedModels, 1)
+	raw, err := json.Marshal(plan.PreviewRequest)
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), `"enable_account_ids"`, "the default recommendation does not invent scheduling intent")
 }

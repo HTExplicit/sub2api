@@ -5,8 +5,61 @@ import "context"
 type managedModelProtocolOverlayKey struct{}
 
 type managedModelProtocolOverlay struct {
-	account       *Account
-	originalExtra map[string]any
+	account             *Account
+	originalExtra       map[string]any
+	originalCredentials map[string]any
+}
+
+// ManagedModelConfiguredProtocol is the actual fixed transport, not the
+// provider's brand. Adaptive CN accounts have no single protocol until an
+// ingress endpoint is selected, so callers must not infer equivalence from it.
+func ManagedModelConfiguredProtocol(account *Account) string {
+	if account == nil {
+		return ""
+	}
+	if account.Platform == PlatformAnthropic {
+		return CompositeRouteEndpointMessages
+	}
+	if account.IsCNProvider() {
+		switch account.GetAPIProtocol() {
+		case APIProtocolAnthropic:
+			return CompositeRouteEndpointMessages
+		case APIProtocolResponses:
+			return CompositeRouteEndpointResponses
+		case APIProtocolChatCompletions:
+			return CompositeRouteEndpointChatCompletions
+		default:
+			return ""
+		}
+	}
+	if account.Platform == PlatformOpenAI {
+		if shouldForwardOpenAIResponsesViaRawChatCompletions(account) {
+			return CompositeRouteEndpointChatCompletions
+		}
+		return CompositeRouteEndpointResponses
+	}
+	return ""
+}
+
+func managedModelEffectiveProtocol(account *Account, branch ManagedModelRouteBranch, endpoint string) string {
+	if branch.UpstreamProtocol != "" {
+		return branch.UpstreamProtocol
+	}
+	if protocol := ManagedModelConfiguredProtocol(account); protocol != "" {
+		return protocol
+	}
+	if account != nil && account.IsCNProvider() && account.IsAdaptiveAPIProtocol() {
+		switch endpoint {
+		case CompositeRouteEndpointMessages, CompositeRouteEndpointChatCompletions:
+			return endpoint
+		case CompositeRouteEndpointResponses:
+			if account.SupportsNativeCNResponses() {
+				return endpoint
+			}
+			return CompositeRouteEndpointChatCompletions
+		}
+	}
+	return ""
 }
 
 // WithManagedModelAccountProtocol selects the wire proven for this branch.
@@ -41,6 +94,28 @@ func WithManagedModelAccountProtocol(ctx context.Context, account *Account, bran
 	for key, value := range account.Extra {
 		clone.Extra[key] = value
 	}
+	if account.IsCNProvider() {
+		protocol := branch.UpstreamProtocol
+		baseURL := ""
+		switch {
+		case protocol == CompositeRouteEndpointMessages:
+			protocol = APIProtocolAnthropic
+			baseURL = account.GetAnthropicProtocolBaseURL()
+		case account.IsAnthropicProtocol():
+			// Match the evidence probe: never turn a configured Anthropic
+			// relay into a different provider's default OpenAI endpoint.
+			return ctx, nil, ErrManagedModelRouteUnavailable
+		case account.IsAdaptiveAPIProtocol():
+			baseURL = account.GetCNProtocolBaseURL(protocol)
+		default:
+			baseURL = account.GetOpenAIBaseURL()
+		}
+		if baseURL == "" {
+			return ctx, nil, ErrManagedModelRouteUnavailable
+		}
+		clone.Credentials["api_protocol"] = protocol
+		clone.Credentials["base_url"] = baseURL
+	}
 	if branch.UpstreamProtocol == CompositeRouteEndpointResponses {
 		clone.Extra["openai_responses_mode"] = "force_responses"
 		clone.Extra["openai_responses_supported"] = true
@@ -48,7 +123,7 @@ func WithManagedModelAccountProtocol(ctx context.Context, account *Account, bran
 		clone.Extra["openai_responses_mode"] = "force_chat_completions"
 		clone.Extra["openai_responses_supported"] = false
 	}
-	return context.WithValue(ctx, managedModelProtocolOverlayKey{}, managedModelProtocolOverlay{account: &clone, originalExtra: account.Extra}), &clone, nil
+	return context.WithValue(ctx, managedModelProtocolOverlayKey{}, managedModelProtocolOverlay{account: &clone, originalExtra: account.Extra, originalCredentials: account.Credentials}), &clone, nil
 }
 
 func managedModelFingerprintForRequest(ctx context.Context, account *Account) string {
@@ -66,6 +141,19 @@ func managedModelFingerprintForRequest(ctx context.Context, account *Account) st
 				original.Extra[key] = value
 			} else {
 				delete(original.Extra, key)
+			}
+		}
+		if account.IsCNProvider() {
+			original.Credentials = make(map[string]any, len(account.Credentials))
+			for key, value := range account.Credentials {
+				original.Credentials[key] = value
+			}
+			for _, key := range []string{"api_protocol", "base_url"} {
+				if value, exists := overlay.originalCredentials[key]; exists {
+					original.Credentials[key] = value
+				} else {
+					delete(original.Credentials, key)
+				}
 			}
 		}
 		return managedModelSchedulingFingerprint(&original)

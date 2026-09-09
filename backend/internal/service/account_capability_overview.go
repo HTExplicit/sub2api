@@ -251,6 +251,33 @@ func capabilityOverviewGroupNames() []string {
 	return names
 }
 
+// Editorial launch groups establish the familiar order, not the universe of
+// recognizable families. A concrete Grok version outside the 4.6 launch group,
+// for example, remains in its actual family instead of becoming an unknown
+// name. Unrelated account/private groups are deliberately not added here.
+func capabilityOverviewSnapshotGroupNames(snapshot *accountCapabilityCatalogSnapshot) []string {
+	names := capabilityOverviewGroupNames()
+	known := make(map[string]bool, len(names))
+	for _, name := range names {
+		known[strings.ToLower(name)] = true
+	}
+	present := make(map[string]bool, len(snapshot.Groups))
+	for name := range snapshot.Groups {
+		present[strings.ToLower(name)] = true
+	}
+	for _, row := range snapshot.Rows {
+		present[strings.ToLower(row.GroupName)] = true
+	}
+	for _, family := range capabilityFamilyPatterns {
+		key := strings.ToLower(family.group)
+		if !known[key] && present[key] {
+			known[key] = true
+			names = append(names, family.group)
+		}
+	}
+	return names
+}
+
 type capabilityOverviewModelState struct {
 	model     AccountCapabilityOverviewModel
 	verified  map[int64]bool
@@ -261,6 +288,7 @@ type capabilityOverviewModelState struct {
 	latest    *AccountCapabilityAttempt
 	canAdd    bool
 	canProbe  bool
+	waiting   bool
 }
 
 func newCapabilityOverviewModelState(publicModel, groupName string) *capabilityOverviewModelState {
@@ -281,7 +309,7 @@ func buildAccountCapabilityOverview(scope CapabilityPublicationScope, snapshot *
 		return nil, ErrAccountCapabilityInvalid
 	}
 	result := &AccountCapabilityOverview{Scope: scope, Accounts: append([]AccountCapabilityScopeAccount{}, snapshot.Accounts...), Groups: []AccountCapabilityOverviewGroup{}}
-	names := capabilityOverviewGroupNames()
+	names := capabilityOverviewSnapshotGroupNames(snapshot)
 	known := map[string]bool{}
 	knownIDs := map[int64]bool{}
 	for _, name := range names {
@@ -359,13 +387,17 @@ func buildAccountCapabilityOverview(scope CapabilityPublicationScope, snapshot *
 				state.untested[row.AccountID] = true
 			}
 			state.canProbe = state.canProbe || capabilityRecommendationCanProbe(row)
+			state.waiting = state.waiting || row.HasPendingProbe
 			if capabilityOverviewTemporaryAttempt(row.LatestAttempt) {
 				state.temporary[row.AccountID] = true
 			}
 			if capabilityOverviewAttemptNewer(row.LatestAttempt, state.latest) {
 				state.latest = row.LatestAttempt
 			}
-			state.canAdd = state.canAdd || (capabilityRecommendationCanPublish(row) && (!capabilityRecommendationHasRoute(group, row) || !row.Schedulable))
+			state.canAdd = state.canAdd || (capabilityRecommendationCanPublish(row) && !capabilityRecommendationHasRoute(group, row))
+			if row.LastSuccessReusable && !row.Schedulable {
+				state.model.Reasons = append(state.model.Reasons, "account_scheduling_paused")
+			}
 			state.model.Reasons = append(state.model.Reasons, row.NotPublishableReasons...)
 		}
 		if group != nil {
@@ -427,7 +459,7 @@ func buildAccountCapabilityOverview(scope CapabilityPublicationScope, snapshot *
 			case state.canProbe && (group != nil || name == "Qwen" || name == "MiniMax"):
 				model.Action = "check_untested"
 				model.Reasons = append(model.Reasons, "needs_basic_probe")
-			case model.TemporaryFailureAccountCount > 0 && model.RoutingReadyAccountCount == 0:
+			case state.waiting || (model.TemporaryFailureAccountCount > 0 && model.RoutingReadyAccountCount == 0):
 				model.Action = "wait"
 			default:
 				model.Action = "view"
@@ -445,7 +477,7 @@ func buildAccountCapabilityOverview(scope CapabilityPublicationScope, snapshot *
 			if model.Published {
 				view.PublishedModelCount++
 			}
-			if model.Action != "view" || model.TemporaryFailureAccountCount > 0 || (model.Published && model.RoutingReadyAccountCount == 0) {
+			if model.Action != "view" || model.TemporaryFailureAccountCount > 0 || (model.Published && model.RoutingReadyAccountCount == 0) || publicationHasString(model.Reasons, "account_scheduling_paused") {
 				view.AttentionCount++
 			}
 			for id := range state.verified {
@@ -664,6 +696,27 @@ func buildAccountCapabilityRecommendation(scope CapabilityPublicationScope, snap
 	}
 	result.Impact.ReusedSuccessCount = len(reused)
 	if len(preview.Groups) > 0 && len(scope.AccountIDs) > 0 {
+		if snapshot.ExpectedInputRevisions != nil {
+			expected := &CapabilityPublicationInputRevisions{Accounts: map[int64]string{}, Groups: map[int64]string{}}
+			for _, id := range scope.AccountIDs {
+				if revision := snapshot.ExpectedInputRevisions.Accounts[id]; len(revision) == 64 {
+					expected.Accounts[id] = revision
+				} else {
+					return nil, ErrAccountCapabilityConflict
+				}
+			}
+			for _, group := range preview.Groups {
+				if group.ID == 0 {
+					continue
+				}
+				if revision := snapshot.ExpectedInputRevisions.Groups[group.ID]; len(revision) == 64 {
+					expected.Groups[group.ID] = revision
+				} else {
+					return nil, ErrAccountCapabilityConflict
+				}
+			}
+			preview.ExpectedConfigRevisions = expected
+		}
 		key, err := capabilityRecommendationPreviewKey(preview, snapshot)
 		if err != nil {
 			return nil, err
@@ -814,6 +867,7 @@ func capabilityRecommendationCanPublish(row AccountCapabilityCandidate) bool {
 
 func capabilityRecommendationCanProbe(row AccountCapabilityCandidate) bool {
 	return row.ProbeEligible && row.Recognized && !row.NeedsNameConfirmation && !row.AlreadyAttempted && !row.HasCompatibleSuccess &&
+		!row.HasPendingProbe && row.AttemptedProtocolCount < 2 &&
 		ManagedModelBranchProtocolSupported(row.AccountPlatform, row.Protocol)
 }
 

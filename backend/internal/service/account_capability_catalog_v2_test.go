@@ -58,8 +58,9 @@ func TestAccountCapabilityCatalogV2KeepsFableVersionsUnknownSuffixesAndAllSource
 	require.Contains(t, cc.NotPublishableReasons, "needs_name_confirmation")
 	require.False(t, cc.ProbeEligible)
 	vip := capabilityCatalogFindRow(t, rows, "claude-fable-5-ssvip", "responses")
-	require.Equal(t, "claude-fable-5", vip.PublicModel)
+	require.Equal(t, "claude-fable-5-ssvip", vip.PublicModel, "commercial suffixes stay exact without explicit equivalence")
 	require.Equal(t, "claude-fable-5-ssvip", vip.UpstreamModel)
+	require.True(t, vip.NeedsNameConfirmation)
 	newer := capabilityCatalogFindRow(t, rows, "gpt-5.9-sol", "responses")
 	require.Equal(t, "gpt-5.9-sol", newer.PublicModel)
 	require.True(t, newer.Recognized)
@@ -280,6 +281,19 @@ type capabilityCatalogV2Groups struct {
 	groups []Group
 }
 
+type capabilityCatalogPagedGroups struct {
+	GroupRepository
+	groups []Group
+	pages  []int
+}
+
+func (g *capabilityCatalogPagedGroups) List(_ context.Context, params pagination.PaginationParams) ([]Group, *pagination.PaginationResult, error) {
+	g.pages = append(g.pages, params.Page)
+	start := min((params.Page-1)*params.PageSize, len(g.groups))
+	end := min(start+params.PageSize, len(g.groups))
+	return g.groups[start:end], &pagination.PaginationResult{Total: int64(len(g.groups)), Page: params.Page, PageSize: params.PageSize}, nil
+}
+
 func (g *capabilityCatalogV2Groups) List(context.Context, pagination.PaginationParams) ([]Group, *pagination.PaginationResult, error) {
 	return g.groups, nil, nil
 }
@@ -335,4 +349,122 @@ func TestAccountCapabilityCatalogV2RetainsWebSocketEvidenceWithoutPromotingNewBr
 	require.False(t, row.Publishable, "new v2 branches support only the explicit HTTP adapter set")
 	require.Contains(t, row.NotPublishableReasons, "unsupported_public_protocol")
 	require.False(t, row.ProbeEligible, "the assistant never expands testing into WebSocket")
+}
+
+func TestAccountCapabilityCatalogV2ReadsGroupsBeyondFirstRepositoryPage(t *testing.T) {
+	account := capabilityCatalogTestAccount(10, map[string]any{"claude-fable-5": "claude-fable-5"})
+	groups := &capabilityCatalogPagedGroups{groups: make([]Group, 1001)}
+	for i := range groups.groups {
+		groups.groups[i] = Group{ID: int64(i + 1), Name: "unrelated", IsExclusive: true}
+	}
+	groups.groups[1000] = Group{ID: 1001, Name: "claude(非逆向渠道)"}
+	svc := NewAccountCapabilityCatalogService(&capabilityCatalogV2Repository{}, &capabilityCatalogV2Admin{accounts: []Account{account}}, groups, nil, nil)
+	snapshot, err := svc.loadCapabilityCatalog(context.Background(), AccountCapabilityCandidateFilter{FolderIDs: []int64{7}})
+	require.NoError(t, err)
+	require.Equal(t, []int{1, 2}, groups.pages)
+	require.Equal(t, int64(1001), snapshot.Groups["claude(非逆向渠道)"].ID)
+	require.Len(t, snapshot.Rows, 2)
+	require.Equal(t, int64(1001), *snapshot.Rows[0].GroupID)
+}
+
+func TestAccountCapabilityCatalogV2SuffixEquivalenceRequiresExactVersionMapping(t *testing.T) {
+	for _, suffix := range []string{"-vip", "-ssvip", "-CC"} {
+		t.Run(suffix, func(t *testing.T) {
+			upstream := "claude-fable-5-1" + suffix
+			account := capabilityCatalogTestAccount(10, map[string]any{"claude-fable-5": upstream})
+			_, _, recognized := resolveCapabilityAccountModel(&account, upstream)
+			require.False(t, recognized, "a private alias cannot change Fable 5.1 into Fable 5")
+			account.Credentials["model_mapping"] = map[string]any{upstream: upstream}
+			_, _, recognized = resolveCapabilityAccountModel(&account, upstream)
+			require.False(t, recognized, "a self mapping does not assert base-model equivalence")
+			account.Credentials["model_mapping"] = map[string]any{"claude-fable-5-1": upstream}
+			definition, _, recognized := resolveCapabilityAccountModel(&account, upstream)
+			require.True(t, recognized)
+			require.Equal(t, "claude-fable-5-1", definition.ID)
+			require.True(t, CapabilityCandidateMatches(&account, upstream, "claude-fable-5-1", nil, "standard"))
+			require.False(t, CapabilityCandidateMatches(&account, upstream, "claude-fable-5", nil, "standard"))
+		})
+	}
+}
+
+func TestAccountCapabilityCatalogV2PendingAlternativeAndThirdProtocolAreNotOffered(t *testing.T) {
+	account := capabilityCatalogTestAccount(10, map[string]any{"claude-fable-5": "claude-fable-5"})
+	account.Platform = PlatformDeepseek
+	account.Credentials["api_protocol"] = APIProtocolAdaptive
+	now := time.Now()
+	one := capabilityCatalogV2Evidence(t, &account, 1, "claude-fable-5", "responses", "failed", "upstream_unavailable", now)
+	one.Status, one.RequestCount, one.Result = "pending", 0, json.RawMessage(`{}`)
+	rows := buildAccountCapabilityCandidates([]Account{account}, []AccountCapabilityItem{one}, nil)
+	alternate := capabilityCatalogFindRow(t, rows, "claude-fable-5", "chat_completions")
+	require.True(t, alternate.HasPendingProbe)
+	require.False(t, alternate.ProbeEligible, "another explicit batch cannot widen an in-flight check")
+	require.Contains(t, alternate.NotPublishableReasons, "check_in_progress")
+	one.Status, one.RequestCount, one.Result = "failed", 1, json.RawMessage(`{"status":"failed"}`)
+	two := capabilityCatalogV2Evidence(t, &account, 2, "claude-fable-5", "messages", "uncertain", "timeout", now.Add(time.Second))
+	rows = buildAccountCapabilityCandidates([]Account{account}, []AccountCapabilityItem{one, two}, nil)
+	alternate = capabilityCatalogFindRow(t, rows, "claude-fable-5", "chat_completions")
+	require.False(t, alternate.AlreadyAttempted)
+	require.Equal(t, 2, alternate.AttemptedProtocolCount)
+	require.False(t, alternate.ProbeEligible, "the first wire plus one compatible alternative exhaust this target's allowance")
+	require.Contains(t, alternate.NotPublishableReasons, "compatible_probe_limit_reached")
+	two.Status, two.RequestCount, two.Result = "canceled", 0, json.RawMessage(`{}`)
+	rows = buildAccountCapabilityCandidates([]Account{account}, []AccountCapabilityItem{one, two}, nil)
+	alternate = capabilityCatalogFindRow(t, rows, "claude-fable-5", "chat_completions")
+	require.Equal(t, 1, alternate.AttemptedProtocolCount)
+	require.True(t, alternate.ProbeEligible, "known-unsent cancellation does not consume the compatible attempt")
+	two.Result = json.RawMessage(`{"request_count":1}`)
+	rows = buildAccountCapabilityCandidates([]Account{account}, []AccountCapabilityItem{one, two}, nil)
+	alternate = capabilityCatalogFindRow(t, rows, "claude-fable-5", "chat_completions")
+	require.Equal(t, 2, alternate.AttemptedProtocolCount, "raw durable request counters cannot be mistaken for an unsent cancellation")
+	require.False(t, alternate.ProbeEligible)
+}
+
+func TestAccountCapabilityCatalogV2ExplicitAccountFailureDoesNotSpendAnotherProtocol(t *testing.T) {
+	account := capabilityCatalogTestAccount(10, map[string]any{"claude-fable-5": "claude-fable-5"})
+	now := time.Now()
+	failure := capabilityCatalogV2Evidence(t, &account, 1, "claude-fable-5", "responses", "failed", "credential_invalid", now)
+	failure.Result = json.RawMessage(`{"status":"failed","account_failure":true,"classification":"credential_invalid"}`)
+	rows := buildAccountCapabilityCandidates([]Account{account}, []AccountCapabilityItem{failure}, nil)
+	alternate := capabilityCatalogFindRow(t, rows, "claude-fable-5", "chat_completions")
+	require.False(t, alternate.ProbeEligible)
+	require.Contains(t, alternate.NotPublishableReasons, "account_failure")
+	later := now.Add(time.Hour)
+	discovery := AccountCapabilityItem{ID: 2, Kind: "discover", AccountID: account.ID, FolderID: 7, ConfigFingerprint: failure.ConfigFingerprint,
+		Status: "succeeded", FinishedAt: &later, Result: json.RawMessage(`{"status":"empty","source":"upstream","models":[]}`)}
+	rows = buildAccountCapabilityCandidates([]Account{account}, []AccountCapabilityItem{failure, discovery}, nil)
+	alternate = capabilityCatalogFindRow(t, rows, "claude-fable-5", "chat_completions")
+	require.True(t, alternate.ProbeEligible, "a subsequent explicit successful directory retires an old credential finding")
+	require.NotContains(t, alternate.NotPublishableReasons, "account_failure")
+}
+
+type capabilityCatalogChannelRepository struct {
+	ChannelRepository
+	channel *Channel
+	reads   int
+}
+
+func (r *capabilityCatalogChannelRepository) GetChannelIDByGroupID(context.Context, int64) (int64, error) {
+	return r.channel.ID, nil
+}
+
+func (r *capabilityCatalogChannelRepository) GetByID(context.Context, int64) (*Channel, error) {
+	r.reads++
+	return r.channel, nil
+}
+
+func TestAccountCapabilityCatalogV2FreezesInactiveChannelWithoutUsingItsPrice(t *testing.T) {
+	account := capabilityCatalogTestAccount(10, map[string]any{"gpt-9.9": "gpt-9.9"})
+	group := Group{ID: 23, Name: "gpt", Status: StatusActive}
+	price := 0.01
+	repo := &capabilityCatalogChannelRepository{channel: &Channel{ID: 17, Name: "saved inactive channel", Status: "inactive",
+		ModelPricing: []ChannelModelPricing{{Models: []string{"gpt-9.9"}, InputPrice: &price, OutputPrice: &price}}}}
+	svc := NewAccountCapabilityCatalogService(&capabilityCatalogV2Repository{}, &capabilityCatalogV2Admin{accounts: []Account{account}},
+		&capabilityCatalogV2Groups{groups: []Group{group}}, nil, &ChannelService{repo: repo})
+	snapshot, err := svc.loadCapabilityCatalog(context.Background(), AccountCapabilityCandidateFilter{FolderIDs: []int64{7}})
+	require.NoError(t, err)
+	require.Equal(t, 1, repo.reads)
+	require.Nil(t, snapshot.GroupChannels[23], "inactive pricing must not become available in the overview")
+	require.False(t, snapshot.Rows[0].PricingKnown)
+	require.Equal(t, CapabilityPublicationGroupInputRevision(&group, repo.channel), snapshot.ExpectedInputRevisions.Groups[23])
+	require.NotEqual(t, CapabilityPublicationGroupInputRevision(&group, nil), snapshot.ExpectedInputRevisions.Groups[23], "saved inactive channel still participates in plan-to-preview CAS")
 }

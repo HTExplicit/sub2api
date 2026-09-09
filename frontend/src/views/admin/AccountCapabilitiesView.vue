@@ -399,7 +399,7 @@ function evidenceClass(value: boolean): string { return `rounded px-1.5 py-0.5 t
 function formatTime(value: string): string { const date = new Date(value); return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString() }
 function formatDiff(value: unknown): string { return value == null ? '—' : typeof value === 'string' ? value : JSON.stringify(value, null, 2) }
 function resultSummary(item: CapabilityItem): string { return [item.result?.classification ? reasonLabel(item.result.classification) : stateLabel(item.result?.status || item.status), item.result?.http_status ? `HTTP ${item.result.http_status}` : '', item.result?.error_code].filter(Boolean).join(' · ') }
-function scopeParams() { return { folder_ids: folderIDs.value.join(','), account_ids: accountIDs.value.length ? accountIDs.value.join(',') : undefined, ...(groupIDs.value.length ? { group_ids: groupIDs.value.join(',') } : {}) } }
+function scopeParams() { return { folder_ids: folderIDs.value.length ? folderIDs.value.join(',') : undefined, account_ids: accountIDs.value.length ? accountIDs.value.join(',') : undefined, ...(groupIDs.value.length ? { group_ids: groupIDs.value.join(',') } : {}) } }
 function overviewResolved(value: CapabilityOverview): void { resolvedScopeAccounts.value = value.accounts; if (!folderIDs.value.length && accountIDs.value.length) folderIDs.value = [...value.scope.folder_ids] }
 function clearAccountScope(): void { if (busy.value || managerLocked.value) return; accountIDs.value = []; scopeChanged() }
 function clearGroupScope(): void { if (busy.value || managerLocked.value) return; groupIDs.value = []; scopeChanged() }
@@ -428,7 +428,7 @@ function scopeChanged(): void {
   if (tab.value === 'overview') return
   void (async () => { if (tab.value !== 'inventory') await loadCandidates(1); await refresh() })()
 }
-function changeTab(value: Tab): void { if (managerLocked.value && value !== 'overview') return; tab.value = value; error.value = ''; if (value === 'overview') { managerLoaded.value = true; stopPolling(); return }; void refresh() }
+function changeTab(value: Tab): void { if (managerLocked.value && value !== 'overview') return; tab.value = value; error.value = ''; if (value === 'overview') { managerLoaded.value = true; stopPolling(); return } void refresh() }
 function fail(key: 'loadFailed' | 'actionFailed' | 'previewFailed' | 'applyFailed'): void { error.value = t(`admin.accountCapabilities.${key}`) }
 function beginRead(): { epoch: number; signal: AbortSignal } {
   readController?.abort(); readController = new AbortController(); loading.value = true
@@ -436,12 +436,13 @@ function beginRead(): { epoch: number; signal: AbortSignal } {
 }
 async function loadCandidates(page = candidatePage.value.page): Promise<void> {
   const { epoch, signal } = beginRead()
-  if (!folderIDs.value.length) { candidatePage.value = emptyPage(); loading.value = false; return }
+  if (!folderIDs.value.length && !accountIDs.value.length) { candidatePage.value = emptyPage(); loading.value = false; return }
   try {
     const data = await api.candidates({ ...scopeParams(), page, page_size: pageSize.value, search: search.value || undefined, status: candidateStatus.value || undefined }, signal)
     if (epoch !== readEpoch || !mounted) return
     candidatePage.value = data
     resolvedScopeAccounts.value = data.accounts
+    if (!folderIDs.value.length && accountIDs.value.length) folderIDs.value = [...new Set(data.accounts.map((account) => account.folder_id))]
     // Refresh selected evidence from the latest page instead of retaining a
     // stale success badge while configuration has changed on the server.
     for (const item of data.items) if (selections.value.has(item.candidate_id)) selections.value.set(item.candidate_id, item)
@@ -451,7 +452,7 @@ async function loadCandidates(page = candidatePage.value.page): Promise<void> {
 }
 async function loadRuns(page = runPage.value.page): Promise<void> {
   const { epoch, signal } = beginRead()
-  if (!folderIDs.value.length) { runPage.value = emptyPage(); loading.value = false; return }
+  if (!folderIDs.value.length && !accountIDs.value.length) { runPage.value = emptyPage(); loading.value = false; return }
   try {
     const data = await api.listRuns({ ...scopeParams(), page, page_size: pageSize.value, kind: runKind.value || undefined, status: runStatus.value || undefined }, signal)
     if (epoch !== readEpoch || !mounted) return

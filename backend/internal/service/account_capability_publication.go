@@ -52,12 +52,14 @@ type CapabilityPublicationLineRemoval struct {
 }
 
 type CapabilityPublicationRequest struct {
-	IdempotencyKey        string                       `json:"idempotency_key,omitempty"`
-	Operation             string                       `json:"operation,omitempty"`
-	Scope                 CapabilityPublicationScope   `json:"scope"`
-	Groups                []CapabilityPublicationGroup `json:"groups"`
-	DetachAccountIDs      []int64                      `json:"detach_account_ids,omitempty"`
-	SchedulingEvidenceIDs []int64                      `json:"scheduling_evidence_ids,omitempty"`
+	IdempotencyKey          string                               `json:"idempotency_key,omitempty"`
+	Operation               string                               `json:"operation,omitempty"`
+	ExpectedConfigRevisions *CapabilityPublicationInputRevisions `json:"expected_config_revisions,omitempty"`
+	Scope                   CapabilityPublicationScope           `json:"scope"`
+	Groups                  []CapabilityPublicationGroup         `json:"groups"`
+	DetachAccountIDs        []int64                              `json:"detach_account_ids,omitempty"`
+	EnableAccountIDs        []int64                              `json:"enable_account_ids,omitempty"`
+	SchedulingEvidenceIDs   []int64                              `json:"scheduling_evidence_ids,omitempty"`
 }
 
 // These snapshots are server-owned and never serialized into an API response or
@@ -93,10 +95,11 @@ type CapabilityPublicationEvidence struct {
 }
 
 type CapabilityPublicationSnapshot struct {
-	Request  CapabilityPublicationRequest
-	Accounts map[int64]*CapabilityPublicationAccountSnapshot
-	Groups   map[int64]*CapabilityPublicationGroupSnapshot
-	Evidence map[int64]CapabilityPublicationEvidence
+	Request         CapabilityPublicationRequest
+	Accounts        map[int64]*CapabilityPublicationAccountSnapshot
+	DeletedAccounts map[int64]*CapabilityPublicationDeletedAccountSnapshot
+	Groups          map[int64]*CapabilityPublicationGroupSnapshot
+	Evidence        map[int64]CapabilityPublicationEvidence
 	// Fingerprint covers all modified fields and their dependencies, not secrets.
 	Fingerprint string
 }
@@ -235,8 +238,13 @@ func validateCapabilityPublicationRequest(req CapabilityPublicationRequest) erro
 	if (len(req.Groups) == 0 && len(req.SchedulingEvidenceIDs) == 0) || len(req.Groups) > 50 || len(req.Scope.AccountIDs) == 0 || len(req.Scope.AccountIDs) > 500 || len(req.Scope.FolderIDs) == 0 || len(req.IdempotencyKey) > 128 {
 		return ErrCapabilityPublicationInvalid
 	}
-	if !publicationPositiveUnique(req.Scope.AccountIDs) || !publicationPositiveUnique(req.Scope.FolderIDs) || !publicationPositiveUnique(req.DetachAccountIDs) || !publicationPositiveUnique(req.SchedulingEvidenceIDs) {
+	if !publicationPositiveUnique(req.Scope.AccountIDs) || !publicationPositiveUnique(req.Scope.FolderIDs) || !publicationPositiveUnique(req.DetachAccountIDs) || !publicationPositiveUnique(req.EnableAccountIDs) || !publicationPositiveUnique(req.SchedulingEvidenceIDs) {
 		return ErrCapabilityPublicationInvalid
+	}
+	for _, id := range req.EnableAccountIDs {
+		if !publicationHasID(req.Scope.AccountIDs, id) || publicationHasID(req.DetachAccountIDs, id) {
+			return publicationInvalid("explicit scheduling enable must remain in scope and cannot detach the same account")
+		}
 	}
 	seenGroups := map[int64]bool{}
 	seenNames := map[string]bool{}
@@ -397,7 +405,7 @@ func CapabilityHasIdentifiedPricing(billing *BillingService, group *Group, chann
 			}
 		}
 	}
-	if channel != nil {
+	if channel != nil && (channel.Status == "" || channel.IsActive()) {
 		if p := channel.GetModelPricing(model); p != nil && publicationHasTokenPrice(*p) {
 			return true
 		}
@@ -410,13 +418,13 @@ func publicationHasTokenPrice(p ChannelModelPricing) bool {
 }
 
 func (s *AccountCapabilityPublicationService) build(snap *CapabilityPublicationSnapshot) (*CapabilityPublicationPlan, error) {
+	if err := validateCapabilityPublicationInputRevisions(snap); err != nil {
+		return nil, err
+	}
 	// Scope protects removals too: an account without selected probe evidence can
 	// still lose old bindings/selectors and must remain in the approved folders.
-	for _, id := range snap.Request.Scope.AccountIDs {
-		as := snap.Accounts[id]
-		if as == nil || as.Account == nil || as.Account.ManagementFolderID == nil || !publicationHasID(snap.Request.Scope.FolderIDs, *as.Account.ManagementFolderID) {
-			return nil, ErrCapabilityPublicationConflict
-		}
+	if err := publicationValidateSnapshotScope(snap); err != nil {
+		return nil, err
 	}
 	plan := &CapabilityPublicationPlan{Groups: []CapabilityPublicationGroupPatch{}, Accounts: []CapabilityPublicationAccountPatch{}, Changes: []CapabilityPublicationChange{}, Warnings: []string{}}
 	patches := map[int64]*CapabilityPublicationAccountPatch{}
@@ -432,19 +440,32 @@ func (s *AccountCapabilityPublicationService) build(snap *CapabilityPublicationS
 			return nil, err
 		}
 	}
-	// Positive route evidence enables scheduling. Account-global disable requires
-	// a server-classified terminal credential failure, not merely a failed model.
+	// Publication and account-global scheduling are independent decisions. A
+	// successful historical probe may add a route, but must never reverse a
+	// browser/user pause that also protects the account's private groups.
 	for accountID, ids := range evidenceByAccount {
 		as := snap.Accounts[accountID]
 		if as.Account.Status != StatusActive {
 			plan.Warnings = append(plan.Warnings, fmt.Sprintf("account %d is not active; existing status is preserved", accountID))
 		}
-		if !as.Account.Schedulable {
-			v := true
-			getPatch(accountID).Schedulable = &v
+		if !as.Account.Schedulable && !publicationHasID(snap.Request.EnableAccountIDs, accountID) {
+			plan.Warnings = append(plan.Warnings, fmt.Sprintf("account %d remains paused for scheduling; the published member is retained but cannot take requests until explicitly enabled in account management", accountID))
 		}
 		evidenceByAccount[accountID] = publicationUniqueIDs(ids)
 	}
+	for _, id := range snap.Request.EnableAccountIDs {
+		as := snap.Accounts[id]
+		if !publicationHasID(snap.Request.Scope.AccountIDs, id) || publicationHasID(snap.Request.DetachAccountIDs, id) ||
+			as == nil || as.Account == nil || len(evidenceByAccount[id]) == 0 {
+			return nil, publicationInvalid("explicit scheduling enable requires selected current-configuration basic success evidence for the same in-scope account")
+		}
+		if !as.Account.Schedulable {
+			v := true
+			getPatch(id).Schedulable = &v
+		}
+	}
+	// Account-global disable still requires an explicit selected terminal
+	// credential failure, not merely a failed model or a temporary outage.
 	for _, eid := range snap.Request.SchedulingEvidenceIDs {
 		e, result, err := publicationValidateSchedulingEvidence(snap, eid)
 		if err != nil {
@@ -471,7 +492,10 @@ func (s *AccountCapabilityPublicationService) build(snap *CapabilityPublicationS
 	for _, id := range accountIDs {
 		ap, as := patches[id], snap.Accounts[id]
 		if as == nil {
-			return nil, ErrCapabilityPublicationConflict
+			if err := publicationPlanDeletedAccountPatch(snap, id, ap, plan); err != nil {
+				return nil, err
+			}
+			continue
 		}
 		ap.AddGroupIDs, ap.RemoveGroupIDs, ap.RemoveSelectors = publicationUniqueIDs(ap.AddGroupIDs), publicationUniqueIDs(ap.RemoveGroupIDs), publicationUniqueStrings(ap.RemoveSelectors)
 		beforeMappings := map[string]string{}
@@ -640,24 +664,10 @@ func CapabilityIngressEndpoints(a *Account, protocol string) []string {
 		}
 		return nil
 	}
-	if a.Platform == PlatformDeepseek {
-		if protocol == "responses" || protocol == "chat_completions" || protocol == "messages" {
-			return []string{"chat_completions", "messages", "responses"}
-		}
-		return nil
-	}
-	if a.Platform == PlatformAnthropic {
-		if protocol == "messages" {
-			return []string{"chat_completions", "messages", "responses"}
-		}
-		return nil
-	}
-	if a.Platform != PlatformOpenAI {
-		return nil
-	}
-	if protocol == "responses" || protocol == "chat_completions" {
-		// Both adapters already exist. The selected managed branch freezes the
-		// successful protocol even when the account's ordinary default differs.
+	if ManagedModelBranchProtocolSupported(a.Platform, protocol) {
+		// Publication and runtime share the adapter capability matrix. The
+		// model manufacturer is never a substitute for its verified wire, and
+		// adding a supported runtime adapter cannot leave a stale UI-only gate.
 		return []string{"chat_completions", "messages", "responses"}
 	}
 	return nil

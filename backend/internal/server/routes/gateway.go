@@ -554,6 +554,15 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver,
 			c.Next()
 			return
 		}
+		if c.Request != nil {
+			if request, managed := service.ManagedModelRequestFromContext(c.Request.Context()); managed && service.IsManagedModelLegacyMetadataRequest(request) {
+				// V2 metadata is already pinned to its retained v1 path. Re-running
+				// the scalar resolver would overwrite that path with model-family or
+				// unrelated manual routing, after publication removed old projections.
+				c.Next()
+				return
+			}
+		}
 		if c.Request == nil || c.Request.Method == http.MethodGet {
 			c.Next()
 			return

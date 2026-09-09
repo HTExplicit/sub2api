@@ -80,6 +80,8 @@ export interface CapabilityCandidate {
   needs_name_confirmation?: boolean
   already_attempted?: boolean
   has_compatible_success?: boolean
+  has_pending_probe?: boolean
+  attempted_protocol_count?: number
   probe_eligible?: boolean
   routing_ready?: boolean
   probe_status?: CapabilityItemStatus | 'untested' | 'alive' | 'temporary_failure' | 'unsupported' | 'account_failure'
@@ -177,6 +179,7 @@ export interface CapabilityPublicationGroup {
 export interface CapabilityPreviewRequest {
   idempotency_key?: string
   operation?: 'merge' | 'replace'
+  expected_config_revisions?: { accounts: Record<string, string>; groups: Record<string, string> }
   scope: { folder_ids: number[]; account_ids: number[] }
   groups: CapabilityPublicationGroup[]
   detach_account_ids?: number[]
@@ -302,6 +305,13 @@ const accountCapabilitiesAPI = {
   },
   async getRun(id: number, signal?: AbortSignal) {
     return (await apiClient.get<CapabilityRun>(`${BASE}/runs/${id}`, { signal })).data
+  },
+  // Resolve an uncertain creation receipt without replaying a billable request.
+  // Keep the key out of URLs and use the same administrator-scoped header.
+  async getRunReceipt(idempotencyKey: string, signal?: AbortSignal) {
+    return (await apiClient.get<CapabilityRun>(`${BASE}/runs/receipt`, {
+      headers: { 'Idempotency-Key': idempotencyKey }, signal,
+    })).data
   },
   async listItems(id: number, params: CapabilityListParams = {}, signal?: AbortSignal) {
     return (await apiClient.get<CapabilityPage<CapabilityItem>>(`${BASE}/runs/${id}/items`, { params, signal })).data

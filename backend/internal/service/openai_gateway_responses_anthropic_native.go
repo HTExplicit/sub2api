@@ -267,7 +267,7 @@ func (s *OpenAIGatewayService) handleResponsesBufferedFromNativeAnthropic(
 	}
 
 	responsesResp := apicompat.AnthropicToResponsesResponse(finalResp)
-	responsesResp.Model = originalModel
+	responsesResp.Model = managedModelResponseModel(managedModelResponseContext(c), originalModel)
 
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -323,7 +323,7 @@ func (s *OpenAIGatewayService) handleResponsesStreamingFromNativeAnthropic(
 	c.Writer.WriteHeader(http.StatusOK)
 
 	state := apicompat.NewAnthropicEventToResponsesState()
-	state.Model = originalModel
+	state.Model = managedModelResponseModel(managedModelResponseContext(c), originalModel)
 	clientToolRestorer := apicompat.NewResponsesClientToolStreamRestorer(clientToolMapping)
 
 	var usage ClaudeUsage

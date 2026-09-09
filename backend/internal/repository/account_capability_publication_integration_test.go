@@ -363,7 +363,7 @@ func TestAccountCapabilityPublicationIntegration(t *testing.T) {
 				_, updateErr := integrationDB.ExecContext(ctx, `UPDATE admin_capability_runs SET status='completed',finished_at=$2 WHERE id=$1`, retest.ID, finishedAt)
 				require.NoError(t, updateErr)
 				if !tc.superseded {
-					observations, readErr := jobs.EvidenceItems(ctx, service.AccountCapabilityFilter{Kind: "probe", AccountID: live.ID, Model: item.UpstreamModel, PageSize: 100})
+					observations, readErr := jobs.(service.AccountCapabilityCatalogEvidenceRepository).EvidenceItems(ctx, service.AccountCapabilityFilter{Kind: "probe", AccountID: live.ID, Model: item.UpstreamModel, PageSize: 100})
 					require.NoError(t, readErr)
 					byID := make(map[int64]service.AccountCapabilityItem, len(observations.Items))
 					for _, observation := range observations.Items {

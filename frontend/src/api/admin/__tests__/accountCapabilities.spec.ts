@@ -44,6 +44,15 @@ describe('accountCapabilitiesAPI', () => {
     expect(post).toHaveBeenNthCalledWith(5, '/admin/account-capabilities/runs/3/cancel')
   })
 
+  it('resolves an uncertain creation receipt with a read and keeps the original key out of URLs', async () => {
+    const signal = new AbortController().signal
+    await api.getRunReceipt('original-submission-key', signal)
+    expect(get).toHaveBeenCalledWith('/admin/account-capabilities/runs/receipt', {
+      headers: { 'Idempotency-Key': 'original-submission-key' }, signal,
+    })
+    expect(post).not.toHaveBeenCalled()
+  })
+
   it('previews and applies a saved changeset without mutating groups through another API', async () => {
     const request = { idempotency_key: 'preview-one', scope: { folder_ids: [17], account_ids: [] }, groups: [], scheduling_evidence_ids: [42] }
     await api.preview(request)

@@ -157,8 +157,19 @@ func ManagedModelBranchProtocolSupported(platform, protocol string) bool {
 	case PlatformOpenAI:
 		return protocol == CompositeRouteEndpointResponses || protocol == CompositeRouteEndpointChatCompletions
 	default:
-		return false
+		if !IsCNProvider(platform) {
+			return false
+		}
+		return protocol == CompositeRouteEndpointMessages || protocol == CompositeRouteEndpointChatCompletions ||
+			(protocol == CompositeRouteEndpointResponses && (&Account{Platform: platform}).SupportsNativeCNResponses())
 	}
+}
+
+// ManagedModelUsesOpenAIAdapter identifies the already deployed single-attempt
+// forwarding family, not a model manufacturer. Grok is included for retained
+// v1 routes only; it does not acquire an unproven new wire through this helper.
+func ManagedModelUsesOpenAIAdapter(platform string) bool {
+	return platform == PlatformOpenAI || platform == PlatformGrok || IsCNProvider(platform)
 }
 
 // EffectiveManagedModelAllowlist keeps the public catalog fail closed even if
@@ -259,6 +270,9 @@ func ResolveManagedModelRoute(group *Group, requestedModel, endpoint string) (*M
 			return nil, ErrManagedModelRouteUnavailable
 		}
 		matched = &ManagedModelRequest{Version: config.Version, GroupID: group.ID, GroupPlatform: group.Platform, QuotaPlatform: quotaPlatform, Endpoint: endpoint, SubmittedModel: requestedModel, Route: route}
+		if err := projectManagedModelLegacyMetadata(matched); err != nil {
+			return nil, err
+		}
 	}
 	if matched == nil {
 		return nil, ErrManagedModelRouteUnavailable

@@ -84,6 +84,11 @@ func (s *AccountCapabilityService) Create(ctx context.Context, actorID int64, ke
 		if expected := request.ExpectedConfigFingerprints[id]; expected != "" && expected != fingerprint {
 			return ErrAccountCapabilityScope
 		}
+		if request.OnlyUntested && (!ManagedModelBranchProtocolSupported(account.Platform, target.Protocol) || len(CapabilityIngressEndpoints(account, target.Protocol)) == 0) {
+			// Organizer jobs may only spend a basic request on a wire that the
+			// managed router can use. Manual diagnostic jobs remain separate.
+			return ErrAccountCapabilityInvalid
+		}
 		items = append(items, AccountCapabilityItem{Ordinal: len(items) + 1, Kind: request.Kind, AccountID: id,
 			AccountName: account.Name, FolderID: *account.ManagementFolderID, ConfigFingerprint: fingerprint,
 			UpstreamModel: target.UpstreamModel, Protocol: target.Protocol, Profile: target.Profile,
@@ -467,7 +472,7 @@ func (s *AccountCapabilityService) executeItem(ctx context.Context, item *Accoun
 	}
 	status := "failed"
 	switch resultStatus {
-	case "alive", "discovered", "empty", "available":
+	case "alive", "discovered", "empty", "partial", "available":
 		status = "succeeded"
 	case "uncertain":
 		status = "indeterminate"

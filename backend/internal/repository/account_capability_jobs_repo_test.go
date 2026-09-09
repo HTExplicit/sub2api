@@ -43,7 +43,7 @@ func capabilityJobsBegin(mock sqlmock.Sqlmock) {
 
 func TestAccountCapabilityJobsRepositoryCreateAtomicAndSecretFree(t *testing.T) {
 	repo, mock := newCapabilityJobsRepoTest(t)
-	mock.ExpectBegin()
+	capabilityJobsBegin(mock)
 	mock.ExpectQuery("INSERT INTO admin_capability_runs").WithArgs(int64(5), "probe", "key", strings.Repeat("a", 64), "[7,8]", "[31]", 1).WillReturnRows(capabilityJobsRunRows("pending"))
 	mock.ExpectExec("INSERT INTO admin_capability_items").WithArgs(int64(1), 1, int64(31), "fixture", int64(7), strings.Repeat("b", 64), "Real-Model", "responses", "text", "[\"public\"]").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()

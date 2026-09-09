@@ -30,9 +30,12 @@ type capabilityHandlerRepoStub struct {
 	service.AccountCapabilityRepository
 	run   *service.AccountCapabilityRun
 	items []service.AccountCapabilityItem
+	actor int64
+	key   string
 }
 
-func (s *capabilityHandlerRepoStub) FindIdempotent(context.Context, int64, string) (*service.AccountCapabilityRun, error) {
+func (s *capabilityHandlerRepoStub) FindIdempotent(_ context.Context, actor int64, key string) (*service.AccountCapabilityRun, error) {
+	s.actor, s.key = actor, key
 	if s.run == nil {
 		return nil, service.ErrAccountCapabilityNotFound
 	}
@@ -55,8 +58,41 @@ func capabilityHandlerRouter(h *AccountCapabilityHandler, auth bool) *gin.Engine
 		})
 	}
 	router.POST("/runs", h.CreateRun)
+	router.GET("/runs/receipt", h.GetRunReceipt)
 	router.GET("/inventory", h.Inventory)
 	return router
+}
+
+func TestAccountCapabilityJobsHandlerResolvesCreationReceiptWithoutCreatingWork(t *testing.T) {
+	repo := &capabilityHandlerRepoStub{}
+	accounts := &capabilityHandlerAccountsStub{}
+	router := capabilityHandlerRouter(NewAccountCapabilityHandler(service.NewAccountCapabilityService(repo, accounts, nil)), true)
+	request := httptest.NewRequest(http.MethodGet, "/runs/receipt", nil)
+	request.Header.Set("Idempotency-Key", "uncertain-create-key")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, request)
+	require.Equal(t, http.StatusNotFound, w.Code)
+	require.Equal(t, int64(77), repo.actor)
+	require.Equal(t, "uncertain-create-key", repo.key)
+	require.Zero(t, accounts.reads)
+	require.Empty(t, repo.items)
+	repo.run = &service.AccountCapabilityRun{ID: 10, CreatedBy: 77, Status: "running", IdempotencyKey: "uncertain-create-key", RequestHash: "internal-hash"}
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, request)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), `"id":10`)
+	require.NotContains(t, w.Body.String(), "uncertain-create-key")
+	require.NotContains(t, w.Body.String(), "internal-hash")
+	require.Zero(t, accounts.reads)
+	require.Empty(t, repo.items)
+	missingHeader := httptest.NewRequest(http.MethodGet, "/runs/receipt?idempotency_key=must-not-be-accepted", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, missingHeader)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	unauthenticated := capabilityHandlerRouter(NewAccountCapabilityHandler(nil), false)
+	w = httptest.NewRecorder()
+	unauthenticated.ServeHTTP(w, request)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
 func TestAccountCapabilityJobsHandlerCreatesFrozenSafeRunAndReplays(t *testing.T) {

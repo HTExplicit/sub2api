@@ -180,11 +180,22 @@ func (s *AccountCapabilityPublicationService) mergePublicationGroup(snap *Capabi
 		}
 		for bi := range route.Branches {
 			branch := &route.Branches[bi]
+			// The v2 HTTP executor admits generation wires only. Token-count
+			// evidence is independent metadata, not an extra generation adapter:
+			// attaching it to a new branch would invalidate the complete model.
+			// Retained v1 branches keep their already supported metadata path.
+			if branch.UpstreamProtocol != "" {
+				continue
+			}
 			for mi := range branch.Accounts {
 				member := &branch.Accounts[mi]
 				key := fmt.Sprintf("%d|%s", member.AccountID, member.UpstreamModel)
 				member.Endpoints = publicationUniqueStrings(append(member.Endpoints, metadata[key]...))
+				delete(metadata, key)
 			}
+		}
+		if len(metadata) > 0 {
+			plan.Warnings = append(plan.Warnings, input.Name+" / "+model.PublicModel+": token-count evidence is retained independently; it does not enable a new managed HTTP count endpoint")
 		}
 		if !publicationHasString(gp.ModelAllowlist.Models, model.PublicModel) {
 			gp.ModelAllowlist.Models = append(gp.ModelAllowlist.Models, model.PublicModel)
@@ -313,21 +324,7 @@ func publicationRouteIndex(routes []domain.ManagedModelRoute, name string) int {
 }
 
 func publicationConfiguredProtocol(account *Account) string {
-	if account.Platform == PlatformAnthropic {
-		return AccountCapabilityProtocolMessages
-	}
-	if account.Platform == PlatformDeepseek {
-		switch account.GetAPIProtocol() {
-		case APIProtocolAnthropic:
-			return AccountCapabilityProtocolMessages
-		case APIProtocolChatCompletions:
-			return AccountCapabilityProtocolChatCompletions
-		}
-	}
-	if shouldForwardOpenAIResponsesViaRawChatCompletions(account) {
-		return AccountCapabilityProtocolChatCompletions
-	}
-	return AccountCapabilityProtocolResponses
+	return ManagedModelConfiguredProtocol(account)
 }
 
 func publicationExistingLine(route domain.ManagedModelRoute, account *Account, evidence CapabilityPublicationEvidence) (int, int) {

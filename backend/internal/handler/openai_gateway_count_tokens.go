@@ -261,6 +261,9 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 	}
 	routingModel := service.NormalizeOpenAICompatRequestedModel(reqModel)
 	preferredMappedModel := resolveOpenAIMessagesDispatchMappedModel(c, apiKey, reqModel)
+	if request, managed := service.ManagedModelRequestFromContext(c.Request.Context()); managed && service.IsManagedModelLegacyMetadataRequest(request) {
+		preferredMappedModel = request.RoutingModel()
+	}
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", parsedReq.Stream))
 
 	setOpsRequestContext(c, reqModel, false)
@@ -339,7 +342,7 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 				err = service.ErrNoAvailableAccounts
 			}
 			reqLog.Warn("openai_count_tokens.account_select_failed", zap.Error(openAICompatibleSelectionErrorForLog(err, requestPlatform)))
-			cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, h.gatewayService, apiKey, currentRoutingModel, reqModel)
+			cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, h.gatewayService, apiKey, currentRoutingModel, managedModelMetadataPublicName(c, reqModel))
 			if !cls.ModelNotFound {
 				markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 			}

@@ -32,7 +32,7 @@ func TestAccountCapabilityRepositoryGuardRejectsPriorAttemptBeforeInsert(t *test
 	run, items := guardedCapabilityFixture()
 	expectGuardedCapabilityStart(mock)
 	mock.ExpectQuery(regexp.QuoteMeta(capabilityUnattemptedConflictSQL)).
-		WithArgs(int64(31), strings.Repeat("b", 64), "Real-Model", "responses").
+		WithArgs(int64(31), strings.Repeat("b", 64), "Real-Model", "responses", int64(7)).
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
 	mock.ExpectRollback()
 	_, replayed, err := repo.Create(context.Background(), run, items)
@@ -46,7 +46,7 @@ func TestAccountCapabilityRepositoryGuardCreatesOnlyUnattemptedWork(t *testing.T
 	run, items := guardedCapabilityFixture()
 	expectGuardedCapabilityStart(mock)
 	mock.ExpectQuery(regexp.QuoteMeta(capabilityUnattemptedConflictSQL)).
-		WithArgs(int64(31), strings.Repeat("b", 64), "Real-Model", "responses").
+		WithArgs(int64(31), strings.Repeat("b", 64), "Real-Model", "responses", int64(7)).
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
 	mock.ExpectQuery("INSERT INTO admin_capability_runs").
 		WithArgs(int64(5), "probe", "key", strings.Repeat("a", 64), "[7,8]", "[31]", 1).
@@ -79,8 +79,18 @@ func TestAccountCapabilityRepositoryGuardRecoversSameIdempotentRun(t *testing.T)
 func TestAccountCapabilityRepositoryGuardTracksPossibleSendsAndBasicSuccess(t *testing.T) {
 	for _, clause := range []string{"i.config_fingerprint=$2", "i.upstream_model=$3", "i.profile='text'", "i.protocol=$4",
 		"i.status<>'canceled'", "i.dispatched_at IS NOT NULL", "i.request_count>0", "request_count_unknown",
-		"i.status='succeeded'", "i.result->>'status'='alive'", "'chat_completions'", "'messages'"} {
+		"i.status IN ('pending','running')", "i.status='succeeded'", "i.result->>'status'='alive'", "'chat_completions'", "'messages'"} {
 		require.Contains(t, capabilityUnattemptedConflictSQL, clause)
 	}
 	require.NotContains(t, capabilityUnattemptedConflictSQL, "NOW()", "age must not authorize a repeat")
+	identityGuard := strings.Split(capabilityUnattemptedConflictSQL, "OR EXISTS (")[0]
+	require.NotContains(t, identityGuard, "folder_id", "moving a source folder must not authorize another paid request")
+	require.Contains(t, capabilityUnattemptedConflictSQL, "COUNT(DISTINCT i.protocol)")
+	require.Contains(t, capabilityUnattemptedConflictSQL, ") >= 2 OR EXISTS (")
+	require.Contains(t, capabilityUnattemptedConflictSQL, "OR i.status IN ('failed','indeterminate')")
+	require.Contains(t, capabilityUnattemptedConflictSQL, "THEN (i.result->>'request_count')::numeric ELSE 0 END>0")
+	require.NotContains(t, capabilityUnattemptedConflictSQL, "'stale'", "known-unsent stale work does not spend a fallback interface")
+	require.Contains(t, capabilityUnattemptedConflictSQL, "i.folder_id=$5")
+	require.Contains(t, capabilityUnattemptedConflictSQL, "AND i.status='failed' AND i.result->>'account_failure'='true'")
+	require.Contains(t, capabilityUnattemptedConflictSQL, "AND NOT ("+capabilityPublicationSupersededSQL+")")
 }

@@ -11,6 +11,9 @@ describe('account capability structured-code labels', () => {
     'protocol_unsupported', 'timeout', 'output_budget_exhausted', 'no_semantic_output',
     'tool_contract_mismatch', 'text_completed', 'tool_roundtrip_passed', 'metadata_available',
     'catalog_discovered', 'catalog_empty', 'catalog_partial',
+    'upstream_unavailable', 'catalog_unsupported', 'unsupported_protocol', 'unsupported_account',
+    'unsupported_profile', 'configuration_error', 'missing_credentials', 'permission_denied', 'not_publishable',
+    'check_in_progress', 'compatible_probe_limit_reached', 'account_scheduling_paused',
   ]
 
   it('provides matching nonempty Chinese and English labels for every requested fixed reason code', () => {

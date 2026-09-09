@@ -320,6 +320,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	var terminal openAIRawStreamTerminalState
 
 	writeLine := func(line string) {
+		line = managedModelResponseSSELine(managedModelResponseContext(c), line)
 		if c.Request.Context().Err() != nil {
 			clientDisconnected = true
 		}
@@ -594,6 +595,7 @@ func (s *OpenAIGatewayService) bufferRawChatCompletions(
 		c.Writer.Header().Set("Content-Type", "application/json")
 	}
 	c.Writer.WriteHeader(http.StatusOK)
+	respBody = managedModelResponseJSON(managedModelResponseContext(c), respBody)
 	_, _ = c.Writer.Write(respBody)
 
 	return &OpenAIForwardResult{

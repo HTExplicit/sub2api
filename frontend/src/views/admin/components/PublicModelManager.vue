@@ -18,10 +18,14 @@
         <p class="mt-1 text-sm leading-relaxed text-gray-600 dark:text-dark-300">{{ mt('gettingStartedHint') }}</p>
         <p class="mt-2 text-xs text-gray-500 dark:text-dark-300">{{ mt('readOnlyHint') }}</p>
       </div>
-      <button type="button" class="btn btn-primary shrink-0" :disabled="loading || busy || !overview?.accounts.length" data-test="manager-organize" @click="organizeCurrentScope">{{ run ? mt('continueAssistant') : selectedGroup ? mt('organizeGroup') : mt('organizeAll') }}</button>
+      <button type="button" class="btn btn-primary shrink-0" :disabled="loading || busy || !overview?.accounts.length || (!run && !resumePending && !displayGroups.length)" data-test="manager-organize" @click="organizeCurrentScope">{{ run || resumePending ? mt('continueAssistant') : selectedGroup ? mt('organizeGroup') : mt('organizeAll') }}</button>
     </section>
 
-    <section v-if="run && !assistantOpen" class="manager-run-banner" role="status">
+    <section v-if="resumePending && !assistantOpen" class="manager-run-banner" role="status">
+      <div><p class="font-medium">{{ changeset ? mt('savedRecommendation') : run ? activeRun ? mt('checkInProgress') : mt('checkFinished') : mt('receiptPending') }}</p><p class="mt-1 text-xs">{{ mt('resumeReadOnlyHint') }}</p></div>
+      <button type="button" class="btn btn-secondary" :disabled="busy || recovering" data-test="manager-resume" @click="resumeOperation">{{ run || changeset ? mt('continueAssistant') : mt('checkReceipt') }}</button>
+    </section>
+    <section v-else-if="run && !assistantOpen" class="manager-run-banner" role="status">
       <div><p class="font-medium">{{ activeRun ? mt('checkInProgress') : mt('checkFinished') }}</p><p class="mt-1 text-xs">{{ mt('runProgress', { done: run.processed_count, total: run.target_count, requests: run.request_count }) }}</p></div>
       <button type="button" class="btn btn-secondary" @click="assistantOpen = true">{{ mt('continueAssistant') }}</button>
     </section>
@@ -56,7 +60,7 @@
             <div class="min-w-0"><h3 class="break-words font-semibold text-gray-900 dark:text-white">{{ model.public_model }}</h3><span v-if="model.needs_name_confirmation" class="manager-badge manager-badge-amber mt-2">{{ mt('nameNeedsReview') }}</span></div>
             <div class="flex flex-wrap items-center gap-3">
               <RouterLink v-if="model.action === 'set_price'" to="/admin/channels/pricing" class="btn btn-secondary">{{ mt('setPrice') }}</RouterLink>
-              <button v-else-if="['add', 'check_untested'].includes(model.action)" type="button" class="btn btn-secondary" :disabled="busy || !!run" @click="openAssistant(group, model)">{{ model.action === 'add' ? mt('reviewRecommendation') : mt('checkUntested') }}</button>
+              <button v-else-if="['add', 'check_untested'].includes(model.action)" type="button" class="btn btn-secondary" :disabled="busy || !!run || resumePending" @click="openAssistant(group, model)">{{ model.action === 'add' ? mt('reviewRecommendation') : mt('checkUntested') }}</button>
               <button type="button" class="manager-link text-sm" @click="details = { group, model }">{{ model.action === 'review_name' ? mt('reviewName') : mt('viewAccounts') }}</button>
             </div>
           </div>
@@ -81,6 +85,7 @@
         <ol class="manager-steps" :aria-label="mt('assistantSteps')"><li v-for="(value, index) in steps" :key="value" :class="{ 'manager-step-active': step === value, 'manager-step-done': steps.indexOf(step) > index }" :aria-current="step === value ? 'step' : undefined"><span>{{ index + 1 }}</span>{{ mt(`steps.${value}`) }}</li></ol>
         <p class="text-xs text-gray-500">{{ mt('frozenSources', { sources: frozenSourceNames, count: plan?.scope.account_ids.length ?? planRequest?.scope.account_ids?.length ?? 0 }) }}</p>
         <p v-if="error" role="alert" class="manager-error">{{ error }}</p>
+        <div v-if="configurationConflict" class="manager-caution"><p>{{ mt('configurationConflict') }}</p><button type="button" class="btn btn-secondary mt-3" :disabled="busy" data-test="manager-regenerate" @click="regeneratePlan">{{ mt('regeneratePlan') }}</button></div>
         <div v-if="busy && !plan" class="py-8 text-center text-sm text-gray-500" role="status">{{ mt('readingSavedResults') }}</div>
 
         <template v-if="plan && step === 'discover'">
@@ -131,9 +136,9 @@
       <template #footer>
         <div class="flex w-full flex-wrap items-center justify-between gap-3">
           <button type="button" class="btn btn-secondary" :disabled="busy" @click="closeAssistant">{{ changeset?.status === 'applied' ? mt('backToOverview') : t('common.close') }}</button>
-          <div v-if="step === 'discover'" class="flex flex-wrap gap-2"><button v-if="plan?.preview_request" type="button" :class="['btn', hasUntested ? 'btn-secondary' : 'btn-primary']" :disabled="busy" data-test="manager-review-existing" @click="prepareReview(false)">{{ mt('useExistingResults') }}</button><button v-if="hasUntested" type="button" class="btn btn-primary" :disabled="busy" data-test="manager-start-checks" @click="startChecks">{{ mt('startChecks', { count: plan?.maximum_request_count ?? 0 }) }}</button></div>
+          <div v-if="step === 'discover'" class="flex flex-wrap gap-2"><button v-if="plan?.preview_request" type="button" :class="['btn', hasUntested ? 'btn-secondary' : 'btn-primary']" :disabled="busy || configurationConflict" data-test="manager-review-existing" @click="prepareReview(false)">{{ mt('useExistingResults') }}</button><button v-if="hasUntested" type="button" class="btn btn-primary" :disabled="busy || configurationConflict" data-test="manager-start-checks" @click="startChecks">{{ mt('startChecks', { count: plan?.maximum_request_count ?? 0 }) }}</button></div>
           <button v-if="step === 'check' && run && !activeRun && run.status !== 'paused'" type="button" class="btn btn-primary" :disabled="busy" data-test="manager-checks-next" @click="prepareReview(true)">{{ mt('continueToReview') }}</button>
-          <button v-if="step === 'review' && changeset && changeset.status !== 'applied'" type="button" class="btn btn-primary" :disabled="busy || !changeset.changes.length || unsafePlan" data-test="manager-confirm-apply" @click="applyRecommendation">{{ mt('confirmApply') }}</button>
+          <button v-if="step === 'review' && changeset && changeset.status !== 'applied'" type="button" class="btn btn-primary" :disabled="busy || !changeset.changes.length || unsafePlan || configurationConflict" data-test="manager-confirm-apply" @click="applyRecommendation">{{ mt('confirmApply') }}</button>
         </div>
       </template>
     </BaseDialog>
@@ -161,9 +166,10 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
 import BaseDialog from '@/components/common/BaseDialog.vue'
-import api, { type CapabilityCandidate, type CapabilityChangeset, type CapabilityGroupOverview, type CapabilityModelOverview, type CapabilityOverview, type CapabilityPlan, type CapabilityPlanModel, type CapabilityPlanRequest, type CapabilityRun } from '@/api/admin/accountCapabilities'
+import api, { type CapabilityCandidate, type CapabilityChangeset, type CapabilityGroupOverview, type CapabilityModelOverview, type CapabilityOverview, type CapabilityPlanModel, type CapabilityPlanRequest, type CapabilityRun } from '@/api/admin/accountCapabilities'
 import type { AccountManagementFolder } from '@/types'
 import { capabilityCodeLabel, isCapabilityRunActive, makeCapabilityIdempotencyKey } from '../accountCapabilitiesHelpers'
+import { capabilitySessionKey, capabilitySessionSummary, clearCapabilitySession, readCapabilitySession, writeCapabilitySession, type CapabilityDisplayPlan, type CapabilitySession } from '../accountCapabilitiesSession'
 
 const props = withDefaults(defineProps<{ folderIds: number[]; accountIds: number[]; groupIds?: number[]; folders: AccountManagementFolder[]; active?: boolean; initialSearch?: string }>(), { groupIds: () => [], active: true, initialSearch: '' })
 const emit = defineEmits<{ (event: 'resolved', value: CapabilityOverview): void; (event: 'locked', value: boolean): void; (event: 'advanced'): void }>()
@@ -173,6 +179,7 @@ const overview = ref<CapabilityOverview | null>(null)
 const loading = ref(false)
 const busy = ref(false)
 const error = ref('')
+const configurationConflict = ref(false)
 const search = ref(props.initialSearch)
 const selectedGroupKey = ref('')
 const selectedGroup = computed(() => overview.value?.groups.find((group) => groupKey(group) === selectedGroupKey.value))
@@ -181,10 +188,13 @@ const details = ref<{ group: CapabilityGroupOverview; model: CapabilityModelOver
 const assistantOpen = ref(false)
 const steps = ['discover', 'check', 'review'] as const
 const step = ref<(typeof steps)[number]>('discover')
-const plan = ref<CapabilityPlan | null>(null)
+const plan = ref<CapabilityDisplayPlan | null>(null)
 const planRequest = ref<CapabilityPlanRequest | null>(null)
 const changeset = ref<CapabilityChangeset | null>(null)
 const run = ref<CapabilityRun | null>(null)
+const resumePending = ref(false)
+const recovering = ref(false)
+const session = ref<CapabilitySession | null>(null)
 const activeRun = computed(() => !!run.value && isCapabilityRunActive(run.value.status))
 const hasUntested = computed(() => !!plan.value?.probe_request?.items?.length)
 const unsafePlan = computed(() => !!plan.value && ((!!plan.value.preview_request?.operation && plan.value.preview_request.operation !== 'merge') || plan.value.impact.removed_models.length > 0 || plan.value.impact.removed_accounts.length > 0))
@@ -243,6 +253,8 @@ let pollTimer: ReturnType<typeof setTimeout> | undefined
 let polling = false
 let pollStopped = false
 let canonicalScopeKey = ''
+let sessionKey = ''
+let recoveryRead = false
 const actionKeys = new Map<string, string>()
 const completedRuns = new Set<number>()
 
@@ -271,14 +283,78 @@ function modelHint(model: CapabilityModelOverview): string {
 }
 function fail(key: string): void { error.value = mt(key) }
 function responseStatus(value: unknown): number | undefined {
-  if (!value || typeof value !== 'object' || !('response' in value)) return undefined
+  if (!value || typeof value !== 'object') return undefined
+  // apiClient normalizes HTTP failures, while adapters may preserve Axios's
+  // response object. Neither shape is safe to display as raw upstream prose.
+  if ('status' in value && typeof value.status === 'number') return value.status
+  if (!('response' in value)) return undefined
   const response = value.response
   return response && typeof response === 'object' && 'status' in response && typeof response.status === 'number' ? response.status : undefined
 }
+function responseCode(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  if ('code' in value && typeof value.code === 'string') return value.code
+  if ('response' in value && value.response && typeof value.response === 'object' && 'data' in value.response) {
+    const data = value.response.data
+    if (data && typeof data === 'object' && 'code' in data && typeof data.code === 'string') return data.code
+  }
+  return undefined
+}
 function operationKey(request: unknown): { signature: string; key: string } { const signature = JSON.stringify(request); const key = actionKeys.get(signature) ?? makeCapabilityIdempotencyKey(); actionKeys.set(signature, key); return { signature, key } }
 function stopPolling(): void { if (pollTimer) clearTimeout(pollTimer); pollTimer = undefined }
-function schedulePolling(): void { stopPolling(); if (mounted && props.active && document.visibilityState !== 'hidden' && activeRun.value && !pollStopped) pollTimer = setTimeout(() => { void refreshRun() }, 4000) }
-function visibilityChanged(): void { if (document.visibilityState === 'hidden') stopPolling(); else if (activeRun.value && props.active && !pollStopped) void refreshRun() }
+function schedulePolling(): void { stopPolling(); if (mounted && props.active && document.visibilityState !== 'hidden' && activeRun.value && !pollStopped && !resumePending.value) pollTimer = setTimeout(() => { void refreshRun() }, 4000) }
+function visibilityChanged(): void { if (document.visibilityState === 'hidden') stopPolling(); else if (activeRun.value && props.active && !pollStopped && !resumePending.value) void refreshRun() }
+
+function saveSession(patch: Partial<CapabilitySession> = {}): void {
+  if (!planRequest.value || !sessionKey) return
+  session.value = { ...session.value, version: 1, request: planRequest.value, ...patch }
+  writeCapabilitySession(sessionKey, session.value)
+}
+function forgetSession(): void {
+  if (sessionKey) clearCapabilitySession(sessionKey)
+  session.value = null; resumePending.value = false
+}
+async function restoreSession(): Promise<void> {
+  if (!overview.value || recoveryRead) return
+  recoveryRead = true
+  sessionKey = capabilitySessionKey(overview.value.scope.folder_ids, props.accountIds, props.groupIds, props.initialSearch)
+  const saved = readCapabilitySession(sessionKey)
+  if (!saved) return
+  session.value = saved; resumePending.value = true; planRequest.value = saved.request
+  if (saved.summary) plan.value = { ...saved.summary, preview_request: null, probe_request: null, maximum_request_count: 0 }
+  await readSavedOperation()
+}
+async function readSavedOperation(): Promise<boolean> {
+  const saved = session.value
+  if (!saved || recovering.value) return false
+  const epoch = assistantEpoch; recovering.value = true; error.value = ''
+  try {
+    if (saved.changesetID) {
+      const value = await api.getChangeset(saved.changesetID)
+      if (!mounted || epoch !== assistantEpoch) return false
+      changeset.value = value; step.value = 'review'
+    } else {
+      const value = saved.runID ? await api.getRun(saved.runID) : await api.getRunReceipt(saved.receiptKey!)
+      if (!mounted || epoch !== assistantEpoch) return false
+      run.value = value; step.value = 'check'
+      saveSession({ runID: value.id })
+    }
+    return true
+  } catch (failure) {
+    if (mounted && epoch === assistantEpoch) fail(!saved.runID && !saved.changesetID && responseStatus(failure) === 404 ? 'receiptUnconfirmed' : 'resumeReadFailed')
+    return false
+  } finally { if (epoch === assistantEpoch) recovering.value = false }
+}
+async function resumeOperation(): Promise<void> {
+  if (busy.value || recovering.value || !session.value) return
+  // A missing receipt is not authorization to resubmit. Only the receipt GET
+  // can resolve the original operation after a page reload.
+  if (!run.value && !changeset.value && !(await readSavedOperation())) return
+  resumePending.value = false; assistantOpen.value = true; error.value = ''
+  if (changeset.value) return
+  if (run.value && !activeRun.value && run.value.status !== 'paused') await prepareReview(true)
+  schedulePolling()
+}
 
 async function refreshOverview(): Promise<void> {
   overviewController?.abort(); overviewController = new AbortController()
@@ -295,15 +371,21 @@ async function refreshOverview(): Promise<void> {
     canonicalScopeKey = [data.scope.folder_ids.join(','), props.accountIds.join(','), props.groupIds.join(',')].join('|')
     emit('resolved', data)
     if (!assistantOpen.value) error.value = ''
+    await restoreSession()
   } catch (failure) { if (!signal.aborted && mounted && epoch === overviewEpoch) fail(responseStatus(failure) === 400 ? 'scopeUnavailable' : 'readFailed') }
   finally { if (epoch === overviewEpoch) loading.value = false }
 }
-function organizeCurrentScope(): void { if (run.value) { assistantOpen.value = true; return }; void openAssistant(selectedGroup.value) }
+function organizeCurrentScope(): void {
+  if (resumePending.value) { void resumeOperation(); return }
+  if (run.value) { assistantOpen.value = true; return }
+  void openAssistant(selectedGroup.value)
+}
 async function openAssistant(group?: CapabilityGroupOverview, model?: CapabilityModelOverview): Promise<void> {
-  if (busy.value || !overview.value?.accounts.length) return
+  if (busy.value || recovering.value || resumePending.value || !overview.value?.accounts.length) return
   const scope = { folder_ids: [...overview.value.scope.folder_ids], account_ids: [...overview.value.scope.account_ids] }
-  planRequest.value = { scope, mainstream_only: true, ...(model && group ? { models: [{ group_id: group.id ?? undefined, group_name: group.name, public_model: model.public_model }] } : group?.id ? { group_ids: [group.id] } : group ? { models: group.models.map((item) => ({ group_name: group.name, public_model: item.public_model })) } : props.groupIds.length ? { group_ids: [...props.groupIds] } : {}) }
-  plan.value = null; changeset.value = null; run.value = null; step.value = 'discover'; error.value = ''; assistantOpen.value = true
+  const searchedModels = search.value.trim() ? (group ? [group] : displayGroups.value).flatMap((item) => matchingModels(item).map((entry) => ({ group_id: item.id ?? undefined, group_name: item.name, public_model: entry.public_model }))) : null
+  planRequest.value = { scope, mainstream_only: true, ...(model && group ? { models: [{ group_id: group.id ?? undefined, group_name: group.name, public_model: model.public_model }] } : searchedModels ? { models: searchedModels } : group?.id ? { group_ids: [group.id] } : group ? { models: group.models.map((item) => ({ group_name: group.name, public_model: item.public_model })) } : props.groupIds.length ? { group_ids: [...props.groupIds] } : {}) }
+  plan.value = null; changeset.value = null; run.value = null; step.value = 'discover'; error.value = ''; configurationConflict.value = false; assistantOpen.value = true
   const epoch = ++assistantEpoch; busy.value = true
   try { await readPlan(epoch) } catch { if (epoch === assistantEpoch) fail('planFailed') }
   finally { if (epoch === assistantEpoch) busy.value = false }
@@ -316,23 +398,46 @@ async function readPlan(epoch: number): Promise<boolean> {
   plan.value = data
   return true
 }
+async function regeneratePlan(): Promise<void> {
+  if (busy.value || !planRequest.value) return
+  const epoch = assistantEpoch; busy.value = true; error.value = ''
+  try {
+    if (!(await readPlan(epoch))) return
+    changeset.value = null; configurationConflict.value = false; step.value = 'discover'
+    // Drop only the browser handle of the obsolete preview, not its audit
+    // record or any business data. Completed checks remain reusable.
+    if (run.value) saveSession({ changesetID: undefined, summary: undefined })
+    else forgetSession()
+  } catch { if (epoch === assistantEpoch) fail('planFailed') }
+  finally { if (epoch === assistantEpoch) busy.value = false }
+}
 function closeAssistant(): void {
   if (busy.value) return
   assistantOpen.value = false; error.value = ''
+  if (session.value?.receiptKey && !run.value) { resumePending.value = true; return }
+  if (changeset.value?.status === 'preview') { resumePending.value = true; return }
   if (!run.value || (!activeRun.value && run.value.status !== 'paused')) { assistantEpoch++; planController?.abort(); plan.value = null; changeset.value = null; run.value = null }
+  if (!run.value) forgetSession()
 }
 async function startChecks(): Promise<void> {
-  if (busy.value || !plan.value?.probe_request || !hasUntested.value) return
+  if (busy.value || configurationConflict.value || !plan.value?.probe_request || !hasUntested.value) return
   busy.value = true; error.value = ''; pollStopped = false
   const epoch = assistantEpoch
   const request = plan.value.probe_request
   const { signature, key } = operationKey(request)
+  // Persist the receipt handle before dispatch, never the request targets.
+  saveSession({ receiptKey: key })
   try {
     const created = await api.createRun(request, key)
     actionKeys.delete(signature)
     if (!mounted || epoch !== assistantEpoch) return
-    run.value = created; step.value = 'check'
-  } catch { if (epoch === assistantEpoch) fail('startFailed') }
+    run.value = created; step.value = 'check'; saveSession({ runID: created.id })
+  } catch (failure) {
+    if (epoch === assistantEpoch) {
+      if (['ACCOUNT_CAPABILITY_SCOPE_CHANGED', 'ACCOUNT_CAPABILITY_ALREADY_ATTEMPTED'].includes(responseCode(failure) ?? '')) { configurationConflict.value = true; forgetSession() }
+      fail('startFailed')
+    }
+  }
   finally { if (epoch === assistantEpoch) busy.value = false }
   if (run.value && !activeRun.value && run.value.status !== 'paused') await finishChecks()
   schedulePolling()
@@ -350,7 +455,7 @@ async function refreshRun(): Promise<void> {
   finally { polling = false; schedulePolling() }
 }
 async function finishChecks(): Promise<void> {
-  if (!run.value || completedRuns.has(run.value.id)) return
+  if (!run.value || resumePending.value || completedRuns.has(run.value.id)) return
   completedRuns.add(run.value.id)
   await refreshOverview()
   await prepareReview(true)
@@ -378,31 +483,33 @@ async function prepareReview(refreshPlan: boolean): Promise<void> {
       actionKeys.delete(signature)
       if (!mounted || epoch !== assistantEpoch) return
       changeset.value = preview
+      saveSession({ changesetID: preview.id, summary: capabilitySessionSummary(plan.value) })
     }
     step.value = 'review'
-  } catch { if (epoch === assistantEpoch) fail('previewFailed') }
+  } catch (failure) { if (epoch === assistantEpoch) { configurationConflict.value = responseStatus(failure) === 409; fail('previewFailed') } }
   finally { if (epoch === assistantEpoch) busy.value = false }
 }
 async function applyRecommendation(): Promise<void> {
-  if (busy.value || !changeset.value || changeset.value.status === 'applied' || unsafePlan.value || !changeset.value.changes.length) return
+  if (busy.value || configurationConflict.value || !changeset.value || changeset.value.status === 'applied' || unsafePlan.value || !changeset.value.changes.length) return
   busy.value = true; error.value = ''; const epoch = assistantEpoch; const id = changeset.value.id
   try {
     const applied = await api.apply(id)
     if (!mounted || epoch !== assistantEpoch) return
     changeset.value = applied
+    forgetSession()
     await refreshOverview()
-  } catch { if (epoch === assistantEpoch) fail('applyFailed') }
+  } catch (failure) { if (epoch === assistantEpoch) { configurationConflict.value = responseStatus(failure) === 409; fail('applyFailed') } }
   finally { if (epoch === assistantEpoch) busy.value = false }
 }
 
 watch(() => [props.folderIds.join(','), props.accountIds.join(','), props.groupIds.join(',')], (parts) => {
   if (overview.value && parts.join('|') === canonicalScopeKey) { canonicalScopeKey = ''; return }
   canonicalScopeKey = ''
-  assistantEpoch++; planController?.abort(); stopPolling(); plan.value = null; planRequest.value = null; changeset.value = null; run.value = null; assistantOpen.value = false; details.value = null; overview.value = null; selectedGroupKey.value = ''; error.value = ''; busy.value = false
+  assistantEpoch++; planController?.abort(); stopPolling(); plan.value = null; planRequest.value = null; changeset.value = null; run.value = null; assistantOpen.value = false; details.value = null; overview.value = null; selectedGroupKey.value = ''; error.value = ''; configurationConflict.value = false; busy.value = false; recovering.value = false; resumePending.value = false; session.value = null; sessionKey = ''; recoveryRead = false
   if (mounted) void refreshOverview()
 })
-watch(() => props.active, (active) => { if (!active) stopPolling(); else if (activeRun.value && !pollStopped) void refreshRun() })
-watch(() => busy.value || assistantOpen.value || activeRun.value || run.value?.status === 'paused', (locked) => emit('locked', locked), { immediate: true })
+watch(() => props.active, (active) => { if (!active) stopPolling(); else if (activeRun.value && !pollStopped && !resumePending.value) void refreshRun() })
+watch(() => busy.value || recovering.value || assistantOpen.value || activeRun.value || run.value?.status === 'paused' || resumePending.value, (locked) => emit('locked', locked), { immediate: true })
 onMounted(() => { mounted = true; document.addEventListener('visibilitychange', visibilityChanged); void refreshOverview() })
 onBeforeUnmount(() => { mounted = false; overviewEpoch++; assistantEpoch++; overviewController?.abort(); planController?.abort(); stopPolling(); emit('locked', false); document.removeEventListener('visibilitychange', visibilityChanged) })
 defineExpose({ refresh: refreshOverview })

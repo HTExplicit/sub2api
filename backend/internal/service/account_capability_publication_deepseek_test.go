@@ -57,3 +57,51 @@ func TestCapabilityPublicationNativeDeepseekReusesAllExistingBasicWires(t *testi
 		t.Fatal("publication changed the account's private mappings or configured protocol")
 	}
 }
+
+func TestCapabilityPublicationNativeCNCompiledRoutesAreUsable(t *testing.T) {
+	for _, fixture := range []struct {
+		platform, group, model string
+		protocols              []string
+	}{
+		{PlatformKimi, "kimi", "kimi-k3", []string{"responses", "chat_completions", "messages"}},
+		{PlatformMiniMax, "MiniMax", "MiniMax-M3", []string{"responses", "chat_completions", "messages"}},
+		{PlatformZhipu, "glm", "glm-5.3", []string{"chat_completions", "messages"}},
+	} {
+		t.Run(fixture.platform, func(t *testing.T) {
+			snap := publicationTestSnapshot()
+			account := snap.Accounts[7].Account
+			account.Platform, account.WirePlatform = fixture.platform, fixture.platform
+			account.Credentials["api_protocol"] = APIProtocolAdaptive
+			group := snap.Groups[23].Group
+			group.Name, snap.Request.Groups[0].Name = fixture.group, fixture.group
+			group.ModelPricing[0].Models = []string{fixture.model}
+			selected := CapabilityPublicationModel{PublicModel: fixture.model}
+			for i, protocol := range fixture.protocols {
+				id := int64(11 + i)
+				publicationV2Evidence(t, snap, id, account.ID, fixture.model, protocol)
+				selected.EvidenceIDs = append(selected.EvidenceIDs, id)
+			}
+			snap.Request.Groups[0].Models = []CapabilityPublicationModel{selected}
+			before, _ := json.Marshal(account)
+			plan, err := (&AccountCapabilityPublicationService{}).build(snap)
+			if err != nil {
+				t.Fatal(err)
+			}
+			route := publicationV2Route(t, publicationV2Group(t, plan, 23), fixture.model)
+			if len(route.Branches) != len(fixture.protocols) {
+				t.Fatalf("publication discarded a supported successful CN wire: %#v", route)
+			}
+			compiled := *group
+			compiled.ManagedModelRoutes = plan.Groups[0].ManagedModelRoutes
+			for _, endpoint := range []string{"responses", "chat_completions", "messages"} {
+				if request, err := ResolveManagedModelRoute(&compiled, fixture.model, endpoint); err != nil || request == nil {
+					t.Fatalf("published CN branch is not usable by the shared runtime adapter on %s: %v", endpoint, err)
+				}
+			}
+			after, _ := json.Marshal(account)
+			if string(before) != string(after) {
+				t.Fatal("publication changed the account's private mappings or configured wire")
+			}
+		})
+	}
+}

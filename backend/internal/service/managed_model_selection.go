@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sort"
 	"strconv"
@@ -9,13 +10,26 @@ import (
 )
 
 type ManagedModelCandidate struct {
-	Branch  ManagedModelRouteBranch
-	Account *Account
+	Branch          ManagedModelRouteBranch
+	Account         *Account
+	IngressEndpoint string
+	requestIdentity string
 }
 
 func (candidate ManagedModelCandidate) Key() string {
+	if candidate.requestIdentity != "" {
+		return candidate.requestIdentity
+	}
 	if candidate.Account == nil {
 		return candidate.Branch.Selector + "/0"
+	}
+	if upstream, exact := candidate.Account.GetModelMapping()[candidate.Branch.Selector]; exact && upstream != "" {
+		if protocol := managedModelEffectiveProtocol(candidate.Account, candidate.Branch, candidate.IngressEndpoint); protocol != "" {
+			// A retained v1 selector and a new v2 selector can name the same
+			// physical request. Exclude that request once, not once per alias.
+			identity, _ := json.Marshal([]string{strconv.FormatInt(candidate.Account.ID, 10), candidate.Account.Platform, protocol, upstream})
+			return string(identity)
+		}
 	}
 	return candidate.Branch.Selector + "/" + strconv.FormatInt(candidate.Account.ID, 10)
 }
@@ -23,6 +37,10 @@ func (candidate ManagedModelCandidate) Key() string {
 // ListManagedModelCandidates hydrates every legitimate path. A map keyed only
 // by account ID would silently erase same-account alternate real targets.
 func (s *GatewayService) ListManagedModelCandidates(ctx context.Context, request *ManagedModelRequest) ([]ManagedModelCandidate, error) {
+	return s.listManagedModelCandidates(ctx, request, "")
+}
+
+func (s *GatewayService) listManagedModelCandidates(ctx context.Context, request *ManagedModelRequest, preferredBranch string) ([]ManagedModelCandidate, error) {
 	if s == nil || s.accountRepo == nil || request == nil || request.GroupID <= 0 {
 		return nil, ErrManagedModelRouteUnavailable
 	}
@@ -30,7 +48,9 @@ func (s *GatewayService) ListManagedModelCandidates(ctx context.Context, request
 	ids := make([]int64, 0)
 	seenIDs := make(map[int64]bool)
 	for _, branch := range ManagedModelRouteBranches(request.Route) {
-		if !managedModelHasEndpoint(branch.Endpoints, request.Endpoint) { continue }
+		if !managedModelHasEndpoint(branch.Endpoints, request.Endpoint) {
+			continue
+		}
 		for _, member := range branch.Accounts {
 			if member.AccountID > 0 && !seenIDs[member.AccountID] {
 				ids = append(ids, member.AccountID)
@@ -38,14 +58,20 @@ func (s *GatewayService) ListManagedModelCandidates(ctx context.Context, request
 			}
 		}
 	}
-	if len(ids) == 0 { return nil, nil }
+	if len(ids) == 0 {
+		return nil, nil
+	}
 	loaded, err := s.accountRepo.GetByIDs(ctx, ids)
-	if err != nil { return nil, ErrManagedModelRouteUnavailable }
+	if err != nil {
+		return nil, ErrManagedModelRouteUnavailable
+	}
 	accounts := make(map[int64]*Account, len(loaded))
 	for _, account := range loaded {
-		if account != nil && seenIDs[account.ID] { accounts[account.ID] = account }
+		if account != nil && seenIDs[account.ID] {
+			accounts[account.ID] = account
+		}
 	}
-	seen := make(map[string]bool)
+	seen := make(map[string]int)
 	candidates := make([]ManagedModelCandidate, 0)
 	for _, branch := range ManagedModelRouteBranches(request.Route) {
 		if !managedModelHasEndpoint(branch.Endpoints, request.Endpoint) {
@@ -60,11 +86,19 @@ func (s *GatewayService) ListManagedModelCandidates(ctx context.Context, request
 			if account.ProxyID != nil && (account.Proxy == nil || !account.Proxy.IsActive() || account.Proxy.IsExpired(time.Now())) {
 				continue
 			}
-			candidate := ManagedModelCandidate{Branch: branch, Account: account}
-			if !seen[candidate.Key()] {
-				candidates = append(candidates, candidate)
-				seen[candidate.Key()] = true
+			candidate := ManagedModelCandidate{Branch: branch, Account: account, IngressEndpoint: request.Endpoint}
+			candidate.requestIdentity = candidate.Key()
+			if previous, found := seen[candidate.Key()]; found {
+				if preferredBranch != "" && branch.Selector == preferredBranch {
+					// Existing opaque continuation state binds a selector as well
+					// as a physical target. Keep its exact retained alias when it
+					// wins the otherwise-equivalent deduplication.
+					candidates[previous] = candidate
+				}
+				continue
 			}
+			seen[candidate.Key()] = len(candidates)
+			candidates = append(candidates, candidate)
 		}
 	}
 	sort.SliceStable(candidates, func(i, j int) bool {
@@ -90,13 +124,14 @@ func (s *GatewayService) ListManagedModelCandidates(ctx context.Context, request
 }
 
 type ManagedModelSelectionOptions struct {
-	Excluded           map[string]struct{}
-	PreferredBranch    string
-	PreferredAccountID int64
-	SessionHash        string
-	MetadataUserID     string
-	UserID             int64
-	RequireCompact     bool
+	Excluded             map[string]struct{}
+	PreferredBranch      string
+	PreferredAccountID   int64
+	SessionHash          string
+	MetadataUserID       string
+	UserID               int64
+	RequireCompact       bool
+	RequireResponsesWire bool
 }
 
 type ManagedModelSelection struct {
@@ -111,7 +146,7 @@ type ManagedModelSelection struct {
 // with a publication-only boolean. Exclusions remain path-local, so a failure
 // of one real target does not erase another verified target on the same account.
 func (s *GatewayService) SelectManagedModelCandidate(ctx context.Context, openAI *OpenAIGatewayService, request *ManagedModelRequest, options ManagedModelSelectionOptions) (*ManagedModelSelection, error) {
-	candidates, err := s.ListManagedModelCandidates(ctx, request)
+	candidates, err := s.listManagedModelCandidates(ctx, request, options.PreferredBranch)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +158,7 @@ func (s *GatewayService) SelectManagedModelCandidate(ctx context.Context, openAI
 		if selection.Selection.ReleaseFunc != nil {
 			selection.Selection.ReleaseFunc()
 		}
-		if selection.Candidate.Branch.TargetPlatform == PlatformOpenAI {
+		if ManagedModelUsesOpenAIAdapter(selection.Candidate.Branch.TargetPlatform) {
 			if openAI != nil {
 				openAI.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection.Selection)
 			}
@@ -145,6 +180,9 @@ func (s *GatewayService) SelectManagedModelCandidate(ctx context.Context, openAI
 		if options.RequireCompact && (candidate.Branch.TargetPlatform != PlatformOpenAI || candidate.Branch.UpstreamProtocol == CompositeRouteEndpointChatCompletions || (candidate.Branch.UpstreamProtocol == "" && shouldForwardOpenAIResponsesViaRawChatCompletions(candidate.Account))) {
 			continue
 		}
+		if options.RequireResponsesWire && managedModelEffectiveProtocol(candidate.Account, candidate.Branch, request.Endpoint) != CompositeRouteEndpointResponses {
+			continue
+		}
 		branchCtx := WithManagedModelBranch(WithManagedModelRequest(ctx, request), candidate.Branch)
 		// The public group, not the adapter's platform, owns the profit gate.
 		// OpenAI's legacy gate alone intentionally covers only OpenAI/Grok groups.
@@ -156,11 +194,11 @@ func (s *GatewayService) SelectManagedModelCandidate(ctx context.Context, openAI
 			}
 		}
 		var selection *AccountSelectionResult
-		if candidate.Branch.TargetPlatform == PlatformOpenAI {
+		if ManagedModelUsesOpenAIAdapter(candidate.Branch.TargetPlatform) {
 			if openAI == nil {
 				return nil, ErrManagedModelRouteUnavailable
 			}
-			selection, _, err = openAI.SelectAccountWithSchedulerForCapability(branchCtx, &request.GroupID, "", options.SessionHash, candidate.Branch.Selector, excluded, OpenAIUpstreamTransportHTTPSSE, "", options.RequireCompact, false, true, PlatformOpenAI)
+			selection, _, err = openAI.SelectAccountWithSchedulerForCapability(branchCtx, &request.GroupID, "", options.SessionHash, candidate.Branch.Selector, excluded, OpenAIUpstreamTransportHTTPSSE, "", options.RequireCompact, false, true, candidate.Branch.TargetPlatform)
 		} else {
 			selection, err = s.SelectAccountWithLoadAwareness(branchCtx, &request.GroupID, options.SessionHash, candidate.Branch.Selector, excluded, options.MetadataUserID, options.UserID)
 		}

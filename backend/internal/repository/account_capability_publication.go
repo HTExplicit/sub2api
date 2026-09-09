@@ -36,8 +36,32 @@ func (r *accountCapabilityPublicationRepository) Preview(ctx context.Context, re
 	}
 	set, err := publicationReadChangeSet(ctx, tx, `idempotency_key = $1`, req.IdempotencyKey, false)
 	if err == nil {
-		if !publicationRequestsEqual(req, set.Request) {
+		if !publicationRequestsEqual(req, set.Request, set.Plan) {
 			return nil, service.ErrCapabilityPublicationConflict
+		}
+		if req.ExpectedConfigRevisions != nil && set.Status == "preview" {
+			// A retry may reuse the frozen preview, but never hide a browser
+			// edit that invalidated the organizer's already displayed impact.
+			reserved := map[int64]bool{}
+			for _, group := range set.Plan.Groups {
+				if group.Create {
+					reserved[group.GroupID] = true
+				}
+			}
+			snap, snapshotErr := r.snapshot(ctx, tx, set.Request, reserved)
+			if snapshotErr != nil {
+				return nil, publicationDBError(snapshotErr)
+			}
+			if snap.Fingerprint != set.BeforeFingerprint {
+				return nil, service.ErrCapabilityPublicationConflict
+			}
+			current, buildErr := build(snap)
+			if buildErr != nil {
+				return nil, buildErr
+			}
+			if !service.CapabilityPublicationPlansEqual(&set.Plan, current) {
+				return nil, service.ErrCapabilityPublicationConflict
+			}
 		}
 		return set, nil
 	}
@@ -171,15 +195,21 @@ func publicationReadChangeSet(ctx context.Context, q publicationQuerier, predica
 	return set, nil
 }
 
-func publicationRequestsEqual(in, stored service.CapabilityPublicationRequest) bool {
+func publicationRequestsEqual(in, stored service.CapabilityPublicationRequest, plan service.CapabilityPublicationPlan) bool {
 	// A saved preview contains reserved IDs for new groups; the caller still
 	// submits ID=0 on an idempotent retry.
 	if len(in.Groups) != len(stored.Groups) {
 		return false
 	}
 	stored.Groups = append([]service.CapabilityPublicationGroup(nil), stored.Groups...)
+	reserved := map[int64]bool{}
+	for _, group := range plan.Groups {
+		if group.Create {
+			reserved[group.GroupID] = true
+		}
+	}
 	for i := range in.Groups {
-		if in.Groups[i].ID == 0 {
+		if in.Groups[i].ID == 0 && reserved[stored.Groups[i].ID] {
 			stored.Groups[i].ID = 0
 		}
 	}
@@ -212,24 +242,25 @@ func publicationDBError(err error) error {
 }
 
 type publicationGroupRow struct {
-	ID                    int64                                     `json:"id"`
-	Name                  string                                    `json:"name"`
-	Platform              string                                    `json:"platform"`
-	WirePlatform          string                                    `json:"wire_platform"`
-	ProviderProfile       string                                    `json:"provider_profile"`
-	RateMultiplier        float64                                   `json:"rate_multiplier"`
-	Status                string                                    `json:"status"`
-	IsExclusive           bool                                      `json:"is_exclusive"`
-	ModelAllowlist        service.GroupModelAllowlist               `json:"model_allowlist"`
-	ManagedModelRoutes    domain.ManagedModelRoutesConfig           `json:"managed_model_routes"`
-	ModelPricing          []service.ChannelModelPricing             `json:"model_pricing"`
-	MessagesDispatch      service.OpenAIMessagesDispatchModelConfig `json:"messages_dispatch_model_config"`
-	DefaultMappedModel    string                                    `json:"default_mapped_model"`
-	AllowMessagesDispatch bool                                      `json:"allow_messages_dispatch"`
+	ID                        int64                                     `json:"id"`
+	Name                      string                                    `json:"name"`
+	Platform                  string                                    `json:"platform"`
+	WirePlatform              string                                    `json:"wire_platform"`
+	ProviderProfile           string                                    `json:"provider_profile"`
+	RateMultiplier            float64                                   `json:"rate_multiplier"`
+	Status                    string                                    `json:"status"`
+	IsExclusive               bool                                      `json:"is_exclusive"`
+	ModelAllowlist            service.GroupModelAllowlist               `json:"model_allowlist"`
+	ManagedModelRoutes        domain.ManagedModelRoutesConfig           `json:"managed_model_routes"`
+	ModelPricing              []service.ChannelModelPricing             `json:"model_pricing"`
+	LongContextPricingEnabled bool                                      `json:"long_context_pricing_enabled"`
+	MessagesDispatch          service.OpenAIMessagesDispatchModelConfig `json:"messages_dispatch_model_config"`
+	DefaultMappedModel        string                                    `json:"default_mapped_model"`
+	AllowMessagesDispatch     bool                                      `json:"allow_messages_dispatch"`
 }
 
 func (row publicationGroupRow) group() *service.Group {
-	return &service.Group{ID: row.ID, Name: row.Name, Platform: row.Platform, WirePlatform: row.WirePlatform, ProviderProfile: row.ProviderProfile, RateMultiplier: row.RateMultiplier, Status: row.Status, IsExclusive: row.IsExclusive, ModelAllowlist: row.ModelAllowlist, ManagedModelRoutes: row.ManagedModelRoutes, ModelPricing: row.ModelPricing, MessagesDispatchModelConfig: row.MessagesDispatch, DefaultMappedModel: row.DefaultMappedModel, AllowMessagesDispatch: row.AllowMessagesDispatch}
+	return &service.Group{ID: row.ID, Name: row.Name, Platform: row.Platform, WirePlatform: row.WirePlatform, ProviderProfile: row.ProviderProfile, RateMultiplier: row.RateMultiplier, Status: row.Status, IsExclusive: row.IsExclusive, ModelAllowlist: row.ModelAllowlist, ManagedModelRoutes: row.ManagedModelRoutes, ModelPricing: row.ModelPricing, LongContextPricingEnabled: row.LongContextPricingEnabled, MessagesDispatchModelConfig: row.MessagesDispatch, DefaultMappedModel: row.DefaultMappedModel, AllowMessagesDispatch: row.AllowMessagesDispatch}
 }
 
 func (r *accountCapabilityPublicationRepository) snapshot(ctx context.Context, tx *sql.Tx, req service.CapabilityPublicationRequest, reserved map[int64]bool) (*service.CapabilityPublicationSnapshot, error) {
@@ -355,8 +386,8 @@ func (r *accountCapabilityPublicationRepository) snapshot(ctx context.Context, t
 		return nil, err
 	}
 	_ = rows.Close()
-	if len(snap.Accounts) != len(accountIDs) {
-		return nil, service.ErrCapabilityPublicationConflict
+	if err = publicationLoadDeletedAccounts(ctx, tx, snap, accountIDs); err != nil {
+		return nil, err
 	}
 	proxyIDs := map[int64]bool{}
 	for _, as := range snap.Accounts {
@@ -403,7 +434,10 @@ func (r *accountCapabilityPublicationRepository) snapshot(ctx context.Context, t
 			_ = rows.Close()
 			return nil, err
 		}
-		snap.Accounts[aid].Bindings[gid] = priority
+		if err = publicationRecordAccountBinding(snap, aid, gid, priority); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
 	}
 	if err = rows.Err(); err != nil {
 		_ = rows.Close()
@@ -468,7 +502,11 @@ func (r *accountCapabilityPublicationRepository) snapshot(ctx context.Context, t
 	for id, gs := range snap.Groups {
 		groupRelations[id] = map[string]any{"channel": gs.Channel, "routes": gs.Routes, "bindings": gs.Bindings}
 	}
-	raw, err := json.Marshal(map[string]any{"groups": groupsRaw, "group_relations": groupRelations, "accounts": accountsCAS, "evidence": snap.Evidence})
+	cas := map[string]any{"groups": groupsRaw, "group_relations": groupRelations, "accounts": accountsCAS, "evidence": snap.Evidence}
+	if len(snap.DeletedAccounts) > 0 {
+		cas["deleted_accounts"] = snap.DeletedAccounts
+	}
+	raw, err := json.Marshal(cas)
 	if err != nil {
 		return nil, err
 	}

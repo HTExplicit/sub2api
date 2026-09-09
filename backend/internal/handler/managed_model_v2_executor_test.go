@@ -5,6 +5,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -23,6 +25,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 const managedExecutorPublicModel = "claude-fable-5.1"
@@ -172,6 +176,7 @@ func (r *managedExecutorBillingRepo) Apply(_ context.Context, command *service.U
 
 type managedExecutorFixture struct {
 	router      *gin.Engine
+	group       *service.Group
 	repo        *managedExecutorAccountRepo
 	upstream    *managedExecutorUpstream
 	concurrency *managedExecutorConcurrency
@@ -187,7 +192,7 @@ type managedExecutorBranch struct {
 	target  string
 }
 
-func newManagedExecutorFixture(t *testing.T, platforms []string, branches []managedExecutorBranch) *managedExecutorFixture {
+func newManagedExecutorFixture(t *testing.T, platforms []string, branches []managedExecutorBranch, caches ...service.GatewayCache) *managedExecutorFixture {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	groupID := int64(78300)
@@ -208,12 +213,15 @@ func newManagedExecutorFixture(t *testing.T, platforms []string, branches []mana
 	for _, spec := range branches {
 		account := &accounts[spec.account]
 		selector := service.ManagedModelBranchSelector(groupID, managedExecutorPublicModel, account.Platform, spec.wire, spec.target)
+		if spec.wire == "" {
+			selector = service.ManagedModelSelector(groupID, managedExecutorPublicModel)
+		}
 		account.Credentials["model_mapping"].(map[string]any)[selector] = spec.target
 		route.Branches = append(route.Branches, service.ManagedModelRouteBranch{Selector: selector, TargetPlatform: account.Platform, UpstreamProtocol: spec.wire, Endpoints: endpoints,
 			Accounts: []service.ManagedModelRouteAccount{{AccountID: account.ID, UpstreamModel: spec.target, AccountFingerprint: service.ManagedModelAccountFingerprint(account), Endpoints: endpoints}}})
 	}
 	group.ManagedModelRoutes.Routes = []service.ManagedModelRoute{route}
-	f := &managedExecutorFixture{repo: &managedExecutorAccountRepo{cindyHandlerFailoverAccountRepo: &cindyHandlerFailoverAccountRepo{accounts: accounts}}, upstream: &managedExecutorUpstream{respond: managedExecutorSuccess},
+	f := &managedExecutorFixture{group: group, repo: &managedExecutorAccountRepo{cindyHandlerFailoverAccountRepo: &cindyHandlerFailoverAccountRepo{accounts: accounts}}, upstream: &managedExecutorUpstream{respond: managedExecutorSuccess},
 		concurrency: &managedExecutorConcurrency{}, balance: &managedExecutorBillingCache{}, billing: &managedExecutorBillingRepo{}, usage: &managedExecutorUsageRepo{}}
 	cfg := &config.Config{}
 	cfg.Default.RateMultiplier = 1
@@ -226,9 +234,26 @@ func newManagedExecutorFixture(t *testing.T, platforms []string, branches []mana
 	t.Cleanup(billingCache.Stop)
 	concurrency := service.NewConcurrencyService(f.concurrency)
 	billing := service.NewBillingService(cfg, nil)
+	var pricingResolver *service.ModelPricingResolver
+	for _, platform := range platforms {
+		if !service.IsCNProvider(platform) {
+			continue
+		}
+		// Production publication requires an explicit price. A CN wire carrying
+		// this fixture's Claude-branded public name must not borrow the default
+		// Claude price card: the existing billing guard correctly refuses that.
+		input, output := 0.000001, 0.000002
+		group.ModelPricing = []service.ChannelModelPricing{{Models: []string{managedExecutorPublicModel}, BillingMode: service.BillingModeToken, InputPrice: &input, OutputPrice: &output}}
+		pricingResolver = service.NewModelPricingResolver(nil, billing)
+		break
+	}
 	deferred := &service.DeferredService{}
-	openAI := service.NewOpenAIGatewayService(f.repo, f.usage, f.billing, nil, nil, nil, nil, cfg, nil, concurrency, billing, nil, billingCache, f.upstream, deferred, nil, nil, nil, nil, nil, nil, quotaRepo)
-	native := service.NewGatewayService(f.repo, &fakeGroupRepo{group: group}, f.usage, f.billing, nil, nil, nil, nil, cfg, nil, concurrency, billing, nil, billingCache, nil, f.upstream, deferred, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, quotaRepo)
+	var cache service.GatewayCache
+	if len(caches) > 0 {
+		cache = caches[0]
+	}
+	openAI := service.NewOpenAIGatewayService(f.repo, f.usage, f.billing, nil, nil, nil, cache, cfg, nil, concurrency, billing, nil, billingCache, f.upstream, deferred, nil, nil, pricingResolver, nil, nil, nil, quotaRepo)
+	native := service.NewGatewayService(f.repo, &fakeGroupRepo{group: group}, f.usage, f.billing, nil, nil, nil, cache, cfg, nil, concurrency, billing, nil, billingCache, nil, f.upstream, deferred, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, quotaRepo)
 	apiKeys := service.NewAPIKeyService(nil, nil, nil, nil, nil, nil, cfg)
 	openAIHandler := NewOpenAIGatewayHandler(openAI, concurrency, billingCache, apiKeys, nil, nil, nil, nil, cfg)
 	nativeHandler := NewGatewayHandler(native, openAI, nil, nil, nil, concurrency, billingCache, nil, apiKeys, nil, nil, nil, nil, cfg, nil)
@@ -357,6 +382,123 @@ func TestManagedModelV2ExecutorPinnedContinuationCannotFailOver(t *testing.T) {
 	require.Equal(t, "resp_managed_offline", gjson.GetBytes(calls[1].body, "previous_response_id").String())
 	require.Len(t, f.billing.commands, 1, "the failed continuation must not bill another successful call")
 	require.Zero(t, f.nextCalls)
+}
+
+func TestManagedModelV2ExecutorAffinitySurvivesHandlerRebuildWithoutBranchFailover(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		platforms []string
+		branches  []managedExecutorBranch
+	}{
+		{
+			name:      "other account",
+			platforms: []string{service.PlatformOpenAI, service.PlatformOpenAI},
+			branches: []managedExecutorBranch{
+				{account: 0, wire: "responses", target: "claude-fable-5.1"},
+				{account: 1, wire: "responses", target: "alternate/fable-5.1"},
+			},
+		},
+		{
+			name:      "same account other target",
+			platforms: []string{service.PlatformOpenAI},
+			branches: []managedExecutorBranch{
+				{account: 0, wire: "responses", target: "claude-fable-5.1"},
+				{account: 0, wire: "responses", target: "alternate/fable-5.1"},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cache, _ := managedModelV2AffinityRedisFixture(t)
+			gatewayCache := cache.(service.GatewayCache)
+			first := newManagedExecutorFixture(t, tc.platforms, tc.branches, gatewayCache)
+			first.upstream.respond = func(call managedExecutorCall, n int) *http.Response {
+				if n == 1 {
+					return managedExecutorUnavailable()
+				}
+				return managedExecutorSuccess(call, n)
+			}
+			response := first.request("/v1/responses", `{"model":"claude-fable-5.1","input":"hello","stream":false}`)
+			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+			calls := first.upstream.snapshot()
+			require.Len(t, calls, 2)
+			success := calls[1]
+
+			// Construct fresh services, handler middleware and local stores. Only
+			// the production GatewayCache is shared with the first deployment.
+			rebuilt := newManagedExecutorFixture(t, tc.platforms, tc.branches, gatewayCache)
+			rebuilt.upstream.respond = func(managedExecutorCall, int) *http.Response { return managedExecutorUnavailable() }
+			continued := rebuilt.request("/v1/responses", `{"model":"claude-fable-5.1","previous_response_id":"resp_managed_offline","input":"continue","stream":false}`)
+			require.GreaterOrEqual(t, continued.Code, 400, continued.Body.String())
+			continuedCalls := rebuilt.upstream.snapshot()
+			require.Len(t, continuedCalls, 1, "a restored continuation must try its retained branch, not fail closed or fail over")
+			require.Equal(t, success.accountID, continuedCalls[0].accountID)
+			require.Equal(t, success.model, continuedCalls[0].model, "the same account's alternate target is a different continuation branch")
+			require.Equal(t, "resp_managed_offline", gjson.GetBytes(continuedCalls[0].body, "previous_response_id").String())
+			require.Empty(t, rebuilt.billing.commands, "a failed restored continuation does not bill a new success")
+			require.Zero(t, rebuilt.nextCalls)
+		})
+	}
+}
+
+func TestManagedModelV2ExecutorLegacyContinuationMigratesThroughProductionLookup(t *testing.T) {
+	cache, _ := managedModelV2AffinityRedisFixture(t)
+	gatewayCache := cache.(service.GatewayCache)
+	const groupID, accountID, userID, apiKeyID = int64(78300), int64(78302), int64(78398), int64(78399)
+	legacy := service.NewOpenAIWSStateStore(gatewayCache)
+	require.NoError(t, legacy.BindResponseAccount(context.Background(), groupID, "resp_legacy_executor", accountID, time.Hour))
+	require.NoError(t, legacy.BindHTTPResponseOwner(context.Background(), groupID, "resp_legacy_executor", userID, apiKeyID, time.Hour))
+	f := newManagedExecutorFixture(t, []string{service.PlatformOpenAI, service.PlatformOpenAI}, []managedExecutorBranch{
+		{account: 0, wire: "responses", target: "first-priority/fable-5.1"},
+		{account: 1, wire: "", target: "legacy/fable-5.1"},
+		{account: 1, wire: "responses", target: "new-alternate/fable-5.1"},
+	}, gatewayCache)
+	f.group.Platform = service.PlatformComposite
+	f.group.ManagedModelRoutes.Routes[0].QuotaPlatform = service.PlatformAnthropic
+	response := f.request("/v1/responses", `{"model":"claude-fable-5.1","previous_response_id":"resp_legacy_executor","input":"continue","stream":false}`)
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	calls := f.upstream.snapshot()
+	require.Len(t, calls, 1, "the handler must connect its legacy lookup rather than reject the missing v2 pin")
+	require.Equal(t, accountID, calls[0].accountID)
+	require.Equal(t, "legacy/fable-5.1", calls[0].model, "an account-only legacy binding can use only its retained original branch")
+	f.requireOnce(t, accountID)
+
+	// The production migration must persist the old reference, not merely
+	// select the old account for this one request in process memory.
+	pin, err := newManagedModelV2AffinityStore(cache).Resolve(apiKeyID, groupID, managedExecutorPublicModel, []byte(`{"previous_response_id":"resp_legacy_executor"}`))
+	require.NoError(t, err)
+	require.Equal(t, &managedModelV2Pin{AccountID: accountID, BranchSelector: service.ManagedModelSelector(groupID, managedExecutorPublicModel)}, pin)
+}
+
+type managedExecutorAffinityCache struct {
+	service.GatewayCache
+	service.ManagedModelAffinityCache
+}
+
+func TestManagedModelV2ExecutorAffinityPersistenceFailureIsObservable(t *testing.T) {
+	cache, _ := managedModelV2AffinityRedisFixture(t)
+	fault := &managedModelV2AffinityFaultCache{ManagedModelAffinityCache: cache, bindError: errors.New("private-cache-write-error")}
+	f := newManagedExecutorFixture(t, []string{service.PlatformOpenAI}, []managedExecutorBranch{
+		{account: 0, wire: "responses", target: "claude-fable-5.1"},
+	}, &managedExecutorAffinityCache{GatewayCache: cache.(service.GatewayCache), ManagedModelAffinityCache: fault})
+	core, logs := observer.New(zap.WarnLevel)
+	request := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"claude-fable-5.1","input":"private-user-prompt","stream":false}`))
+	request = request.WithContext(logger.IntoContext(request.Context(), zap.New(core)))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	f.router.ServeHTTP(response, request)
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	require.Contains(t, response.Body.String(), "managed recovered", "cache write failure must not replace already delivered success")
+	require.Positive(t, fault.bindCalls)
+	entries := logs.FilterMessage("managed_model_v2.affinity_persistence_failed").All()
+	require.Len(t, entries, 1, "the writer's persistence failure flag must be consumed by the production handler")
+	require.Equal(t, int64(78399), entries[0].ContextMap()["api_key_id"])
+	require.Equal(t, int64(78300), entries[0].ContextMap()["group_id"])
+	serialized, err := json.Marshal(entries)
+	require.NoError(t, err)
+	for _, private := range []string{"private-cache-write-error", "private-user-prompt", "resp_managed_offline"} {
+		require.NotContains(t, string(serialized), private)
+	}
+	f.requireOnce(t, f.repo.accounts[0].ID)
 }
 
 func TestManagedModelV2ExecutorRejectsInputTokensBeforeAdmission(t *testing.T) {

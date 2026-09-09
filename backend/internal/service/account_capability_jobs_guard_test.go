@@ -73,6 +73,41 @@ func TestAccountCapabilityGuardedCreateRejectsHiddenExtraProbes(t *testing.T) {
 	}
 }
 
+func TestAccountCapabilityGuardedCreateRejectsUnusableManagedProtocol(t *testing.T) {
+	for _, platform := range []string{PlatformOpenAI, PlatformAnthropic, PlatformGemini} {
+		t.Run(platform, func(t *testing.T) {
+			account := capabilityJobsAccount()
+			account.Platform = platform
+			request := capabilityGuardedRequest(t, account)
+			if platform == PlatformOpenAI {
+				for i := range request.Items {
+					request.Items[i].Protocol = AccountCapabilityProtocolMessages
+				}
+			}
+			repo := &capabilityJobsRepoStub{}
+			svc := NewAccountCapabilityService(repo, &capabilityJobsAccountsStub{accounts: []*Account{account}}, nil)
+			_, _, err := svc.Create(context.Background(), 1, "incompatible-plan", request)
+			require.ErrorIs(t, err, ErrAccountCapabilityInvalid)
+			require.Nil(t, repo.run, "an unusable organizer request must not enter the paid queue")
+		})
+	}
+}
+
+func TestAccountCapabilityJobsPartialDirectoryPreservesSuccessfulObservation(t *testing.T) {
+	account := capabilityJobsAccount()
+	fingerprint, err := AccountCapabilityFingerprint(account)
+	require.NoError(t, err)
+	repo := &capabilityJobsRepoStub{canDispatch: true}
+	executor := &capabilityJobsExecutorStub{discoveryStatus: "partial"}
+	svc := NewAccountCapabilityService(repo, &capabilityJobsAccountsStub{accounts: []*Account{account}}, executor)
+	svc.executeItem(context.Background(), &AccountCapabilityItem{ID: 1, RunID: 1, Kind: AccountCapabilityKindDiscover,
+		AccountID: account.ID, FolderID: *account.ManagementFolderID, ConfigFingerprint: fingerprint})
+	require.Equal(t, 1, executor.calls)
+	require.Equal(t, "succeeded", repo.completedStatus, "a successful but partial directory is not a credential failure")
+	require.Contains(t, string(repo.completedResult), `"status":"partial"`)
+	require.Equal(t, 1, repo.completedCount)
+}
+
 type capabilityReceiptRepo struct {
 	AccountCapabilityRepository
 	actor int64

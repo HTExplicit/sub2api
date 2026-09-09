@@ -24,7 +24,7 @@ func (h *GatewayHandler) forwardManagedModelV2Attempt(c *gin.Context, openAI *Op
 	result := &managedModelV2ForwardResult{}
 	var err error
 	setActualUpstreamEndpoint(c, "")
-	if account.Platform == service.PlatformOpenAI {
+	if service.ManagedModelUsesOpenAIAdapter(account.Platform) {
 		switch endpoint {
 		case service.CompositeRouteEndpointMessages:
 			result.OpenAI, err = openAI.gatewayService.ForwardAsAnthropic(ctx, c, account, body, "", "")
@@ -90,7 +90,7 @@ func (h *GatewayHandler) forwardManagedModelV2Attempt(c *gin.Context, openAI *Op
 func (h *GatewayHandler) acquireManagedModelV2Slot(c *gin.Context, openAI *OpenAIGatewayHandler, selected *service.ManagedModelSelection, sessionHash string, stream bool, streamStarted *bool, log *zap.Logger) (func(), openAISlotAcquireResult) {
 	selection := selected.Selection
 	request, _ := service.ManagedModelRequestFromContext(c.Request.Context())
-	if selected.Candidate.Branch.TargetPlatform == service.PlatformOpenAI {
+	if service.ManagedModelUsesOpenAIAdapter(selected.Candidate.Branch.TargetPlatform) {
 		return openAI.acquireResponsesAccountSlot(c, &request.GroupID, sessionHash, selection, stream, streamStarted, log)
 	}
 	ctx := service.ContextWithSelectionProfitGate(c.Request.Context(), selection)
@@ -138,6 +138,12 @@ func (h *GatewayHandler) recordManagedModelV2Usage(c *gin.Context, openAI *OpenA
 		return
 	}
 	if result.OpenAI != nil {
+		// Forward adapters see an internal selector. Publication pricing and
+		// usage rows are owned by the public model, including direct Responses
+		// forwards that do not pass through a response-conversion layer.
+		billable := *result.OpenAI
+		billable.Model, billable.BillingModel = model, model
+		result.OpenAI = &billable
 		stampOpenAIRequestedReasoningEffort(result.OpenAI, c)
 		snapshot := snapshotOpenAIUsageMetadata(c, apiKey, account, subscription, mapping, model, result.OpenAI, body)
 		input := snapshot.Input(result.OpenAI, h.apiKeyService, pricingAt)
@@ -151,6 +157,9 @@ func (h *GatewayHandler) recordManagedModelV2Usage(c *gin.Context, openAI *OpenA
 	if result.Native == nil {
 		return
 	}
+	billable := *result.Native
+	billable.Model = model
+	result.Native = &billable
 	stampForwardRequestedReasoningEffort(result.Native, service.RequestedReasoningEffortFromContext(c.Request.Context()))
 	// Reuse the immutable metadata snapshot so the usage worker never retains
 	// a recycled Gin context or the attempt-only protocol overlay.
@@ -211,7 +220,7 @@ func (state *managedModelV2RetryState) next(ctx context.Context, candidate servi
 		return openAIFailoverRetryStop
 	}
 	limit := candidate.Account.GetPoolModeRetryCount()
-	if candidate.Branch.TargetPlatform == service.PlatformOpenAI {
+	if service.ManagedModelUsesOpenAIAdapter(candidate.Branch.TargetPlatform) {
 		limit = openAISameAccountRetryLimit(candidate.Account, failover, true)
 	}
 	// Alternate targets have independent exclusions, not a new allowance for
@@ -227,7 +236,7 @@ func (state *managedModelV2RetryState) next(ctx context.Context, candidate servi
 	if state.switches >= state.maxSwitches {
 		return openAIFailoverRetryStop
 	}
-	if candidate.Branch.TargetPlatform == service.PlatformOpenAI && openAIFirstOutputFailoverExhausted(failover, &state.firstOutputSwitches) {
+	if service.ManagedModelUsesOpenAIAdapter(candidate.Branch.TargetPlatform) && openAIFirstOutputFailoverExhausted(failover, &state.firstOutputSwitches) {
 		return openAIFailoverRetryStop
 	}
 	state.switches++

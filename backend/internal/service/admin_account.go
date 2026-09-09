@@ -694,6 +694,12 @@ func (s *adminServiceImpl) updateAccount(ctx context.Context, id int64, input *U
 	originalPlatform := account.Platform
 	originalWirePlatform := account.EffectiveWirePlatform()
 	originalProviderProfile := account.EffectiveProviderProfile()
+	// 保存前的身份和成员关系只用于保留绑定，不证明修改后的配置仍可接单。
+	originalProviderAccount := *account
+	originalProviderAccount.Credentials = maps.Clone(account.Credentials)
+	originalProviderAccount.GroupIDs = append([]int64(nil), account.GroupIDs...)
+	originalProviderAccount.AccountGroups = append([]AccountGroup(nil), account.AccountGroups...)
+	originalProviderAccount.Groups = append([]*Group(nil), account.Groups...)
 	currentCindyExtra := maps.Clone(account.Extra)
 	var normalizedExtra map[string]any
 	if input.Extra != nil {
@@ -879,10 +885,16 @@ func (s *adminServiceImpl) updateAccount(ctx context.Context, id int64, input *U
 		// 0 表示清除代理（前端发送 0 而不是 null 来表达清除意图）
 		if *input.ProxyID == 0 {
 			account.ProxyID = nil
+			account.Proxy = nil
 		} else {
+			// 相同代理保留已加载的传输身份，避免普通编辑误使托管判活证据失效。
+			// 真正换代理时清除旧关联，不能用旧 Proxy 对象证明新配置。
+			if account.ProxyID == nil || *account.ProxyID != *input.ProxyID ||
+				(account.Proxy != nil && account.Proxy.ID != *input.ProxyID) {
+				account.Proxy = nil
+			}
 			account.ProxyID = input.ProxyID
 		}
-		account.Proxy = nil // 清除关联对象，防止 GORM Save 时根据 Proxy.ID 覆盖 ProxyID
 	}
 	if !reflect.DeepEqual(previousProbeIdentity, upstreamBillingProbeIdentity(account)) && account.Extra != nil {
 		delete(account.Extra, UpstreamBillingProbeExtraKey)
@@ -952,7 +964,7 @@ func (s *adminServiceImpl) updateAccount(ctx context.Context, id int64, input *U
 		if err := s.validateGroupIDsExist(ctx, *input.GroupIDs); err != nil {
 			return nil, err
 		}
-		if err := validateProviderIdentityGroupBindings(ctx, s.groupRepo, account, *input.GroupIDs); err != nil {
+		if err := validateProviderIdentityGroupBindingsForUpdate(ctx, s.groupRepo, &originalProviderAccount, account, *input.GroupIDs); err != nil {
 			return nil, err
 		}
 		if err := s.ValidateAccountGroupBindings(ctx, *input.GroupIDs); err != nil {
@@ -970,7 +982,7 @@ func (s *adminServiceImpl) updateAccount(ctx context.Context, id int64, input *U
 		originalWirePlatform != account.EffectiveWirePlatform() ||
 		originalProviderProfile != account.EffectiveProviderProfile()
 	if input.GroupIDs == nil && identityChanged {
-		if err := validateProviderIdentityGroupBindings(ctx, s.groupRepo, account, account.GroupIDs); err != nil {
+		if err := validateProviderIdentityGroupBindingsForUpdate(ctx, s.groupRepo, &originalProviderAccount, account, account.GroupIDs); err != nil {
 			return nil, err
 		}
 	}
