@@ -408,8 +408,7 @@ func TestManagedModelV2ExecutorAffinitySurvivesHandlerRebuildWithoutBranchFailov
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cache, _ := managedModelV2AffinityRedisFixture(t)
-			gatewayCache := cache.(service.GatewayCache)
+			gatewayCache := newManagedExecutorAffinityCache()
 			first := newManagedExecutorFixture(t, tc.platforms, tc.branches, gatewayCache)
 			first.upstream.respond = func(call managedExecutorCall, n int) *http.Response {
 				if n == 1 {
@@ -424,7 +423,7 @@ func TestManagedModelV2ExecutorAffinitySurvivesHandlerRebuildWithoutBranchFailov
 			success := calls[1]
 
 			// Construct fresh services, handler middleware and local stores. Only
-			// the production GatewayCache is shared with the first deployment.
+			// the backing cache is shared with the first deployment.
 			rebuilt := newManagedExecutorFixture(t, tc.platforms, tc.branches, gatewayCache)
 			rebuilt.upstream.respond = func(managedExecutorCall, int) *http.Response { return managedExecutorUnavailable() }
 			continued := rebuilt.request("/v1/responses", `{"model":"claude-fable-5.1","previous_response_id":"resp_managed_offline","input":"continue","stream":false}`)
@@ -441,17 +440,16 @@ func TestManagedModelV2ExecutorAffinitySurvivesHandlerRebuildWithoutBranchFailov
 }
 
 func TestManagedModelV2ExecutorLegacyContinuationMigratesThroughProductionLookup(t *testing.T) {
-	cache, _ := managedModelV2AffinityRedisFixture(t)
-	gatewayCache := cache.(service.GatewayCache)
+	cache := newManagedExecutorAffinityCache()
 	const groupID, accountID, userID, apiKeyID = int64(78300), int64(78302), int64(78398), int64(78399)
-	legacy := service.NewOpenAIWSStateStore(gatewayCache)
+	legacy := service.NewOpenAIWSStateStore(cache)
 	require.NoError(t, legacy.BindResponseAccount(context.Background(), groupID, "resp_legacy_executor", accountID, time.Hour))
 	require.NoError(t, legacy.BindHTTPResponseOwner(context.Background(), groupID, "resp_legacy_executor", userID, apiKeyID, time.Hour))
 	f := newManagedExecutorFixture(t, []string{service.PlatformOpenAI, service.PlatformOpenAI}, []managedExecutorBranch{
 		{account: 0, wire: "responses", target: "first-priority/fable-5.1"},
 		{account: 1, wire: "", target: "legacy/fable-5.1"},
 		{account: 1, wire: "responses", target: "new-alternate/fable-5.1"},
-	}, gatewayCache)
+	}, cache)
 	f.group.Platform = service.PlatformComposite
 	f.group.ManagedModelRoutes.Routes[0].QuotaPlatform = service.PlatformAnthropic
 	response := f.request("/v1/responses", `{"model":"claude-fable-5.1","previous_response_id":"resp_legacy_executor","input":"continue","stream":false}`)
@@ -474,12 +472,19 @@ type managedExecutorAffinityCache struct {
 	service.ManagedModelAffinityCache
 }
 
+func newManagedExecutorAffinityCache() *managedExecutorAffinityCache {
+	return &managedExecutorAffinityCache{
+		GatewayCache:              &grokCredentialHandlerGatewayCache{sessions: make(map[grokCredentialHandlerGatewayCacheKey]int64)},
+		ManagedModelAffinityCache: newManagedModelV2AffinityCacheStub(),
+	}
+}
+
 func TestManagedModelV2ExecutorAffinityPersistenceFailureIsObservable(t *testing.T) {
-	cache, _ := managedModelV2AffinityRedisFixture(t)
+	cache := newManagedExecutorAffinityCache()
 	fault := &managedModelV2AffinityFaultCache{ManagedModelAffinityCache: cache, bindError: errors.New("private-cache-write-error")}
 	f := newManagedExecutorFixture(t, []string{service.PlatformOpenAI}, []managedExecutorBranch{
 		{account: 0, wire: "responses", target: "claude-fable-5.1"},
-	}, &managedExecutorAffinityCache{GatewayCache: cache.(service.GatewayCache), ManagedModelAffinityCache: fault})
+	}, &managedExecutorAffinityCache{GatewayCache: cache, ManagedModelAffinityCache: fault})
 	core, logs := observer.New(zap.WarnLevel)
 	request := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"claude-fable-5.1","input":"private-user-prompt","stream":false}`))
 	request = request.WithContext(logger.IntoContext(request.Context(), zap.New(core)))
