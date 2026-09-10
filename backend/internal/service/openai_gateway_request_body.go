@@ -60,7 +60,7 @@ func buildOpenAIResponsesURLForPlatform(platform string, base string) string {
 	return buildOpenAIResponsesURL(base)
 }
 
-// PNNL's Astra deployment rejects detailed reasoning summaries but accepts auto.
+// Use auto summaries for the supported PNNL GPT deployments.
 // Apply this only at the verified HTTP endpoint after model mapping; all other
 // reasoning fields and the original tool/history payload remain unchanged.
 func normalizePNNLResponsesReasoningSummary(account *Account, targetURL string, body []byte) ([]byte, error) {
@@ -69,8 +69,13 @@ func normalizePNNLResponsesReasoningSummary(account *Account, targetURL string, 
 	}
 	model := gjson.GetBytes(body, "model")
 	summary := gjson.GetBytes(body, "reasoning.summary")
-	if model.Type != gjson.String || model.String() != "gpt-6-astra-project" ||
-		summary.Type != gjson.String || summary.String() != "detailed" {
+	if model.Type != gjson.String || summary.Type != gjson.String || summary.String() != "detailed" {
+		return body, nil
+	}
+	switch model.String() {
+	case "gpt-6-astra-project", "gpt-5.5-project", "gpt-5.6",
+		"gpt-5.6-sol-project", "gpt-5.6-terra-project", "gpt-5.6-luna-project":
+	default:
 		return body, nil
 	}
 	target, err := url.Parse(targetURL)

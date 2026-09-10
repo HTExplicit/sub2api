@@ -50,7 +50,8 @@ func TestNormalizePNNLResponsesReasoningSummary(t *testing.T) {
 		{"other port", account, "https://ai-incubator-api.pnnl.gov:8443/v1/responses", pnnlSummaryRequest},
 		{"HTTP", account, "http://ai-incubator-api.pnnl.gov/v1/responses", pnnlSummaryRequest},
 		{"compact", account, endpoint + "/compact", pnnlSummaryRequest},
-		{"other model", account, endpoint, strings.Replace(pnnlSummaryRequest, "gpt-6-astra-project", "gpt-5.6-sol-project", 1)},
+		{"other model", account, endpoint, strings.Replace(pnnlSummaryRequest, "gpt-6-astra-project", "gpt-5.4-project", 1)},
+		{"unlisted suffix", account, endpoint, strings.Replace(pnnlSummaryRequest, "gpt-6-astra-project", "gpt-5.6-sol-project-extra", 1)},
 		{"unmapped model", account, endpoint, strings.Replace(pnnlSummaryRequest, "gpt-6-astra-project", "gpt-6-astra", 1)},
 		{"auto", account, endpoint, want},
 		{"missing summary", account, endpoint, `{"model":"gpt-6-astra-project","reasoning":{"effort":"xhigh"}}`},
@@ -60,6 +61,22 @@ func TestNormalizePNNLResponsesReasoningSummary(t *testing.T) {
 			got, err := normalizePNNLResponsesReasoningSummary(tc.account, tc.url, []byte(tc.body))
 			require.NoError(t, err)
 			require.Equal(t, tc.body, string(got), "non-target requests must remain byte-for-byte unchanged")
+		})
+	}
+}
+
+func TestPNNLResponsesReasoningSummaryGPT55And56Models(t *testing.T) {
+	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	for _, model := range []string{
+		"gpt-5.5-project", "gpt-5.6", "gpt-5.6-sol-project",
+		"gpt-5.6-terra-project", "gpt-5.6-luna-project",
+	} {
+		t.Run(model, func(t *testing.T) {
+			body := strings.Replace(pnnlSummaryRequest, "gpt-6-astra-project", model, 1)
+			want := strings.Replace(body, `"effort":"xhigh","summary":"detailed"`, `"effort":"xhigh","summary":"auto"`, 1)
+			got, err := normalizePNNLResponsesReasoningSummary(account, "https://ai-incubator-api.pnnl.gov/v1/responses", []byte(body))
+			require.NoError(t, err)
+			require.Equal(t, want, string(got))
 		})
 	}
 }
