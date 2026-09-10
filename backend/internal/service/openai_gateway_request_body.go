@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
@@ -57,6 +58,29 @@ func buildOpenAIResponsesURLForPlatform(platform string, base string) string {
 		return buildOpenAIEndpointURL(base, "/responses")
 	}
 	return buildOpenAIResponsesURL(base)
+}
+
+// PNNL's Astra deployment rejects detailed reasoning summaries but accepts auto.
+// Apply this only at the verified HTTP endpoint after model mapping; all other
+// reasoning fields and the original tool/history payload remain unchanged.
+func normalizePNNLResponsesReasoningSummary(account *Account, targetURL string, body []byte) ([]byte, error) {
+	if account == nil || account.Platform != PlatformOpenAI || account.Type != AccountTypeAPIKey {
+		return body, nil
+	}
+	model := gjson.GetBytes(body, "model")
+	summary := gjson.GetBytes(body, "reasoning.summary")
+	if model.Type != gjson.String || model.String() != "gpt-6-astra-project" ||
+		summary.Type != gjson.String || summary.String() != "detailed" {
+		return body, nil
+	}
+	target, err := url.Parse(targetURL)
+	if err != nil || target.Scheme != "https" ||
+		!strings.EqualFold(target.Hostname(), "ai-incubator-api.pnnl.gov") ||
+		(target.Port() != "" && target.Port() != "443") ||
+		target.Path != "/v1/responses" || target.RawQuery != "" || target.Fragment != "" || target.User != nil {
+		return body, nil
+	}
+	return sjson.SetBytes(body, "reasoning.summary", "auto")
 }
 
 func shouldPreserveOpenAIResponsesNoneReasoningEffort(account *Account) bool {
