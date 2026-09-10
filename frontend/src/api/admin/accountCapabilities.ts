@@ -64,6 +64,26 @@ export interface CapabilityCandidate {
   published: boolean
   discovery_status: string
   latest_probe_item_id?: number
+  last_success_item_id?: number
+  last_success_at?: string
+  last_success_reusable?: boolean
+  latest_attempt?: {
+    item_id: number
+    status: string
+    classification: string
+    checked_at?: string
+    stale: boolean
+    account_failure: boolean
+  }
+  recognized?: boolean
+  recommended?: boolean
+  needs_name_confirmation?: boolean
+  already_attempted?: boolean
+  has_compatible_success?: boolean
+  has_pending_probe?: boolean
+  attempted_protocol_count?: number
+  probe_eligible?: boolean
+  routing_ready?: boolean
   probe_status?: CapabilityItemStatus | 'untested' | 'alive' | 'temporary_failure' | 'unsupported' | 'account_failure'
   publishable?: boolean
   pricing_known?: boolean
@@ -115,6 +135,7 @@ export interface CapabilityListParams {
   folder_ids?: string
   account_ids?: string
   account_id?: number
+  group_ids?: string
   model?: string
   search?: string
   status?: string
@@ -136,6 +157,8 @@ export interface CreateCapabilityRun {
   folder_ids: number[]
   account_ids: number[]
   items?: CapabilityProbeTarget[]
+  expected_config_fingerprints?: Record<string, string>
+  only_untested?: boolean
 }
 
 export interface CapabilityPublicationModel {
@@ -155,6 +178,8 @@ export interface CapabilityPublicationGroup {
 
 export interface CapabilityPreviewRequest {
   idempotency_key?: string
+  operation?: 'merge' | 'replace'
+  expected_config_revisions?: { accounts: Record<string, string>; groups: Record<string, string> }
   scope: { folder_ids: number[]; account_ids: number[] }
   groups: CapabilityPublicationGroup[]
   detach_account_ids?: number[]
@@ -181,7 +206,94 @@ export interface CapabilityChangeset {
   warnings: string[]
 }
 
+export interface CapabilityScope {
+  folder_ids: number[]
+  account_ids: number[]
+}
+
+export interface CapabilityModelOverview {
+  public_model: string
+  aliases: string[]
+  tier: 'standard' | 'vip' | 'ssvip'
+  published: boolean
+  verified_account_count: number
+  routing_ready_account_count: number
+  untested_account_count: number
+  temporary_failure_account_count: number
+  pricing_known: boolean
+  needs_name_confirmation: boolean
+  last_checked_at: string | null
+  last_check_status: string
+  action: 'add' | 'check_untested' | 'set_price' | 'review_name' | 'view' | 'wait'
+  reasons: string[]
+  candidates: CapabilityCandidate[]
+}
+
+export interface CapabilityGroupOverview {
+  id: number | null
+  name: string
+  platform: string
+  rate_multiplier: number
+  published_model_count: number
+  verified_account_count: number
+  routing_ready_account_count: number
+  attention_count: number
+  models: CapabilityModelOverview[]
+}
+
+export interface CapabilityOverview {
+  scope: CapabilityScope
+  accounts: CapabilityScopeAccount[]
+  groups: CapabilityGroupOverview[]
+  totals: {
+    group_count: number
+    published_model_count: number
+    verified_account_count: number
+    routing_ready_account_count: number
+    attention_count: number
+  }
+}
+
+export interface CapabilityPlanModel {
+  group_id?: number | null
+  group_name?: string
+  public_model: string
+}
+
+export interface CapabilityPlanRequest {
+  scope: { folder_ids: number[]; account_ids?: number[] }
+  group_ids?: number[]
+  models?: CapabilityPlanModel[]
+  mainstream_only?: boolean
+}
+
+export interface CapabilityPlan {
+  scope: CapabilityScope
+  preview_request: CapabilityPreviewRequest | null
+  probe_request: CreateCapabilityRun | null
+  maximum_request_count: number
+  impact: {
+    added_models: CapabilityPlanModel[]
+    added_accounts: Array<CapabilityPlanModel & { account_id: number; account_name: string }>
+    added_routes?: Array<CapabilityPlanModel & { account_id: number; account_name: string; upstream_model: string; protocol: CapabilityProtocol }>
+    retained_models: CapabilityPlanModel[]
+    removed_models: CapabilityPlanModel[]
+    removed_accounts: Array<CapabilityPlanModel & { account_id: number; account_name?: string }>
+    reused_success_count: number
+  }
+  exclusions: Array<{ account_id: number; public_model: string; upstream_model: string; reason: string }>
+  warnings: string[]
+}
+
 const accountCapabilitiesAPI = {
+  async overview(params: CapabilityListParams = {}, signal?: AbortSignal) {
+    return (await apiClient.get<CapabilityOverview>(`${BASE}/overview`, { params, signal })).data
+  },
+  // Planning only reads saved evidence. Starting probes and applying changes
+  // remain separate, explicit administrator actions.
+  async plan(request: CapabilityPlanRequest, signal?: AbortSignal) {
+    return (await apiClient.post<CapabilityPlan>(`${BASE}/plan`, request, { signal })).data
+  },
   async candidates(params: CapabilityListParams = {}, signal?: AbortSignal) {
     return (await apiClient.get<CapabilityCandidatePage>(`${BASE}/candidates`, { params, signal })).data
   },
@@ -193,6 +305,13 @@ const accountCapabilitiesAPI = {
   },
   async getRun(id: number, signal?: AbortSignal) {
     return (await apiClient.get<CapabilityRun>(`${BASE}/runs/${id}`, { signal })).data
+  },
+  // Resolve an uncertain creation receipt without replaying a billable request.
+  // Keep the key out of URLs and use the same administrator-scoped header.
+  async getRunReceipt(idempotencyKey: string, signal?: AbortSignal) {
+    return (await apiClient.get<CapabilityRun>(`${BASE}/runs/receipt`, {
+      headers: { 'Idempotency-Key': idempotencyKey }, signal,
+    })).data
   },
   async listItems(id: number, params: CapabilityListParams = {}, signal?: AbortSignal) {
     return (await apiClient.get<CapabilityPage<CapabilityItem>>(`${BASE}/runs/${id}/items`, { params, signal })).data

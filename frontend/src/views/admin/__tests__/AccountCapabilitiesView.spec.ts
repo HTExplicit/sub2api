@@ -4,7 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import type { CapabilityCandidate, CapabilityChangeset, CapabilityItem, CapabilityRun, CapabilityScopeAccount } from '@/api/admin/accountCapabilities'
 
 const { api, listFolders, getAllIncludingInactive, routeQuery } = vi.hoisted(() => ({
-  api: { candidates: vi.fn(), inventory: vi.fn(), listRuns: vi.fn(), getRun: vi.fn(), listItems: vi.fn(), createRun: vi.fn(), controlRun: vi.fn(), preview: vi.fn(), getChangeset: vi.fn(), apply: vi.fn() },
+  api: { overview: vi.fn(), candidates: vi.fn(), inventory: vi.fn(), listRuns: vi.fn(), getRun: vi.fn(), listItems: vi.fn(), createRun: vi.fn(), controlRun: vi.fn(), preview: vi.fn(), getChangeset: vi.fn(), apply: vi.fn() },
   listFolders: vi.fn(), getAllIncludingInactive: vi.fn(), routeQuery: {} as Record<string, string>,
 }))
 vi.mock('@/api/admin/accountCapabilities', () => ({ default: api }))
@@ -60,10 +60,14 @@ describe('AccountCapabilitiesView', () => {
   beforeEach(() => {
     vi.clearAllMocks(); setActivePinia(createPinia())
     for (const key of Object.keys(routeQuery)) delete routeQuery[key]
+    // These regression cases exercise the explicitly chosen advanced tools.
+    // The default overview has its own beginner-flow component tests.
+    routeQuery.tab = 'inventory'
     Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
     listFolders.mockResolvedValue([{ id: 17, name: 'dmxapi', account_count: 1 }, { id: 28, name: '白嫖', account_count: 2 }, { id: 99, name: 'Private', account_count: 1 }])
     getAllIncludingInactive.mockResolvedValue([{ id: 3, name: 'gpt', rate_multiplier: 0.2, platform: 'openai' }, { id: 4, name: 'gpt-vip', rate_multiplier: 0.3, platform: 'openai' }, { id: 5, name: 'claude(非逆向渠道)', rate_multiplier: 0.5, platform: 'anthropic' }])
     api.candidates.mockResolvedValue({ ...page([candidate]), accounts: scopeAccounts })
+    api.overview.mockResolvedValue({ scope: { folder_ids: [17, 28], account_ids: [71, 72, 73] }, accounts: scopeAccounts, groups: [], totals: { group_count: 0, published_model_count: 0, verified_account_count: 0, routing_ready_account_count: 0, attention_count: 0 } })
     api.inventory.mockResolvedValue(page([]))
     api.listRuns.mockResolvedValue(page([run]))
     api.getRun.mockResolvedValue(run)
@@ -78,6 +82,43 @@ describe('AccountCapabilitiesView', () => {
 
   it('exposes only an authenticated administrator route', () => {
     expect(router.getRoutes().find((value) => value.path === '/admin/account-capabilities')?.meta).toMatchObject({ requiresAuth: true, requiresAdmin: true })
+  })
+
+  it('opens the group overview by default without loading account tables, history or starting model requests', async () => {
+    delete routeQuery.tab
+    const wrapper = renderView(); await flushPromises()
+    expect(wrapper.get('[data-test="capability-tab-overview"]').attributes('aria-selected')).toBe('true')
+    expect(api.overview).toHaveBeenCalledTimes(1)
+    expect(api.candidates).not.toHaveBeenCalled()
+    expect(api.listRuns).not.toHaveBeenCalled()
+    expect(api.createRun).not.toHaveBeenCalled()
+  })
+
+  it('resolves account-only entry scope without silently intersecting the two default folders', async () => {
+    routeQuery.tab = 'overview'; routeQuery.account_ids = '99'
+    api.overview.mockResolvedValue({ scope: { folder_ids: [99], account_ids: [99] }, accounts: [{ ...scopeAccounts[0], id: 99, folder_id: 99 }], groups: [], totals: { group_count: 0, published_model_count: 0, verified_account_count: 0, routing_ready_account_count: 0, attention_count: 0 } })
+    const wrapper = renderView(); await flushPromises()
+    expect(api.overview).toHaveBeenCalledTimes(1)
+    expect(api.overview).toHaveBeenCalledWith(expect.objectContaining({ folder_ids: undefined, account_ids: '99' }), expect.any(AbortSignal))
+    expect(wrapper.get('[data-test="capability-folder-99"]').element).toHaveProperty('checked', true)
+    expect(wrapper.get('[data-test="capability-folder-17"]').element).toHaveProperty('checked', false)
+    expect(api.createRun).not.toHaveBeenCalled()
+  })
+
+  it.each(['inventory', 'runs'])('reads an account-only advanced deep link in %s without substituting the default folders', async (tab) => {
+    routeQuery.tab = tab; routeQuery.account_ids = '99'
+    api.candidates.mockResolvedValue({ ...page([]), accounts: [{ ...scopeAccounts[0], id: 99, folder_id: 99 }] })
+    const wrapper = renderView(); await flushPromises()
+    if (tab === 'inventory') {
+      expect(api.candidates).toHaveBeenCalledWith(expect.objectContaining({ folder_ids: undefined, account_ids: '99' }), expect.any(AbortSignal))
+      expect(wrapper.get('[data-test="capability-folder-99"]').element).toHaveProperty('checked', true)
+    } else {
+      expect(api.listRuns).toHaveBeenCalledWith(expect.objectContaining({ folder_ids: undefined, account_ids: '99' }), expect.any(AbortSignal))
+    }
+    expect(wrapper.get('[data-test="capability-folder-17"]').element).toHaveProperty('checked', false)
+    expect(api.createRun).not.toHaveBeenCalled()
+    expect(api.preview).not.toHaveBeenCalled()
+    expect(api.apply).not.toHaveBeenCalled()
   })
 
   it('resolves source folders by name, keeps the full scope and does not poll idle history or fetch full catalogs', async () => {
@@ -118,7 +159,7 @@ describe('AccountCapabilitiesView', () => {
     expect(wrapper.get('[data-test="capability-prepare-preview"]').attributes('disabled')).toBeUndefined()
     await wrapper.get('[data-test="capability-prepare-preview"]').trigger('click')
     await wrapper.get('[data-test="capability-generate-preview"]').trigger('click'); await flushPromises()
-    expect(api.preview).toHaveBeenCalledWith({ idempotency_key: expect.any(String), scope: { folder_ids: [17, 28], account_ids: [71, 72, 73] }, groups: [{ id: 4, name: 'gpt-vip', platform: 'openai', rate_multiplier: 0.3, models: [{ public_model: 'gpt-6-astra', aliases: [], tier: 'vip', evidence_ids: [41] }] }], detach_account_ids: [], scheduling_evidence_ids: [] })
+    expect(api.preview).toHaveBeenCalledWith({ operation: 'merge', idempotency_key: expect.any(String), scope: { folder_ids: [17, 28], account_ids: [71, 72, 73] }, groups: [{ id: 4, name: 'gpt-vip', platform: 'openai', rate_multiplier: 0.3, models: [{ public_model: 'gpt-6-astra', aliases: [], tier: 'vip', evidence_ids: [41] }] }], detach_account_ids: [], scheduling_evidence_ids: [] })
     expect(api.apply).not.toHaveBeenCalled()
     expect(wrapper.get('[data-test="capability-frozen-scope"]').text()).toContain('71, 72, 73')
     await wrapper.get('[data-test="capability-apply"]').trigger('click'); await flushPromises()
@@ -267,21 +308,22 @@ describe('AccountCapabilitiesView', () => {
     expect(api.preview).not.toHaveBeenCalled()
   })
 
-  it('publication alternatives: retains the chosen target protocols, explains omitted alternatives and allows removal', async () => {
+  it('publication alternatives: retains every eligible target and removing a draft row remains a merge', async () => {
     const vip = { ...candidate, candidate_id: 'vip-http', upstream_model: 'gpt-6-astra-vip', tier: 'vip' as const, publishable: true, latest_probe_item_id: 41 }
     const vipWS = { ...vip, candidate_id: 'vip-ws', protocol: 'responses_websocket' as const, latest_probe_item_id: 42 }
     const ssvip = { ...candidate, candidate_id: 'ssvip-http', upstream_model: 'gpt-6-astra-ssvip', publishable: true, latest_probe_item_id: 43 }
     api.candidates.mockResolvedValue({ ...page([vip, vipWS, ssvip]), accounts: scopeAccounts })
     const wrapper = renderView(); await flushPromises(); await selectCandidates(wrapper, ['vip-http', 'vip-ws', 'ssvip-http'])
     await wrapper.get('[data-test="capability-prepare-preview"]').trigger('click'); await flushPromises()
-    expect(wrapper.get('[data-test="capability-draft-alternatives"] summary').text()).toContain('"count":1')
-    expect(wrapper.findAll('[data-test^="capability-remove-draft-"]')).toHaveLength(2)
+    expect(wrapper.find('[data-test="capability-draft-alternatives"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-test^="capability-remove-draft-"]')).toHaveLength(3)
     await wrapper.get('[data-test="capability-generate-preview"]').trigger('click'); await flushPromises()
-    expect(api.preview.mock.calls[0][0].groups[0].models[0].evidence_ids).toEqual([41, 42])
+    expect(api.preview.mock.calls[0][0].groups[0].models[0].evidence_ids).toEqual([41, 42, 43])
     await wrapper.get('[data-test="capability-remove-draft-0"]').trigger('click'); await flushPromises()
     expect(wrapper.find('[data-test="capability-apply"]').exists()).toBe(false)
-    expect(wrapper.findAll('[data-test^="capability-remove-draft-"]')).toHaveLength(1)
+    expect(wrapper.findAll('[data-test^="capability-remove-draft-"]')).toHaveLength(2)
     await wrapper.get('[data-test="capability-generate-preview"]').trigger('click'); await flushPromises()
-    expect(api.preview.mock.calls[1][0].groups[0].models[0].evidence_ids).toEqual([42])
+    expect(api.preview.mock.calls[1][0].operation).toBe('merge')
+    expect(api.preview.mock.calls[1][0].groups[0].models[0].evidence_ids).toEqual([42, 43])
   })
 })

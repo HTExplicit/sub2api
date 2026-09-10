@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -58,6 +59,9 @@ func managedModelRouteGuard(source managedModelRouteSource, bodyLimit int64) gin
 		keyCopy := *apiKey
 		keyCopy.Group = &groupCopy
 		c.Set(string(middleware2.ContextKeyAPIKey), &keyCopy)
+		// Scheduling and billing read the typed request context, not Gin's
+		// API-key slot. Keep both views on this same current publication.
+		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), ctxkey.Group, &groupCopy))
 		if !middleware2.PrepareManagedModelRoute(c, &groupCopy, bodyLimit) {
 			return
 		}

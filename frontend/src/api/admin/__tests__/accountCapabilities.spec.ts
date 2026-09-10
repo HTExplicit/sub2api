@@ -21,6 +21,17 @@ describe('accountCapabilitiesAPI', () => {
     expect(get).toHaveBeenNthCalledWith(5, '/admin/account-capabilities/runs/3/items', { params: { status: 'indeterminate' }, signal })
   })
 
+  it('reads the complete overview and requests a server recommendation without starting a check', async () => {
+    const signal = new AbortController().signal
+    const params = { folder_ids: '17,28', account_ids: '71', group_ids: '4' }
+    const request = { scope: { folder_ids: [17, 28], account_ids: [71] }, group_ids: [4], mainstream_only: true }
+    await api.overview(params, signal)
+    await api.plan(request, signal)
+    expect(get).toHaveBeenCalledWith('/admin/account-capabilities/overview', { params, signal })
+    expect(post).toHaveBeenCalledTimes(1)
+    expect(post).toHaveBeenCalledWith('/admin/account-capabilities/plan', request, { signal })
+  })
+
   it('leaves run idempotency owned by the caller and routes all controls to the server', async () => {
     const request = { kind: 'discover' as const, folder_ids: [17, 28], account_ids: [] }
     await api.createRun(request, 'same-operation-key')
@@ -31,6 +42,15 @@ describe('accountCapabilitiesAPI', () => {
     expect(post).toHaveBeenNthCalledWith(3, '/admin/account-capabilities/runs/3/pause')
     expect(post).toHaveBeenNthCalledWith(4, '/admin/account-capabilities/runs/3/resume')
     expect(post).toHaveBeenNthCalledWith(5, '/admin/account-capabilities/runs/3/cancel')
+  })
+
+  it('resolves an uncertain creation receipt with a read and keeps the original key out of URLs', async () => {
+    const signal = new AbortController().signal
+    await api.getRunReceipt('original-submission-key', signal)
+    expect(get).toHaveBeenCalledWith('/admin/account-capabilities/runs/receipt', {
+      headers: { 'Idempotency-Key': 'original-submission-key' }, signal,
+    })
+    expect(post).not.toHaveBeenCalled()
   })
 
   it('previews and applies a saved changeset without mutating groups through another API', async () => {

@@ -236,6 +236,72 @@ describe('GroupsView duplicate action', () => {
     wrapper.unmount()
   })
 
+  it('deep-links a single group to the public model manager overview', async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/admin/groups', component: { template: '<div />' } },
+        { path: '/admin/account-capabilities', component: { template: '<div />' } }
+      ]
+    })
+    await router.push('/admin/groups')
+    await router.isReady()
+    const wrapper = mountView([router])
+    await flushPromises()
+
+    await wrapper.get('[data-test="group-public-models"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/admin/account-capabilities')
+    expect(router.currentRoute.value.query).toEqual({ tab: 'overview', group_ids: '42' })
+    wrapper.unmount()
+  })
+
+  it('resolves every page of the group filter before opening the public model manager', async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/admin/groups', component: { template: '<div />' } },
+        { path: '/admin/account-capabilities', component: { template: '<div />' } }
+      ]
+    })
+    await router.push('/admin/groups')
+    await router.isReady()
+    const wrapper = mountView([router])
+    await flushPromises()
+    ;(wrapper.vm as any).searchQuery = 'Primary'
+    listGroups.mockImplementation(async (page: number) => ({
+      items: [{ ...sourceGroup, id: page === 1 ? 42 : 84 }], total: 2, page, page_size: 1, pages: 2
+    }))
+
+    await wrapper.get('[data-test="group-capabilities-open"]').trigger('click')
+    await flushPromises()
+    expect(listGroups).toHaveBeenCalledWith(2, 100, expect.objectContaining({ search: 'Primary' }))
+    expect(router.currentRoute.value.query).toEqual({ tab: 'overview', group_ids: '42,84' })
+    wrapper.unmount()
+  })
+
+  it('does not widen an empty group filter when opening the public model manager', async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/admin/groups', component: { template: '<div />' } },
+        { path: '/admin/account-capabilities', component: { template: '<div />' } }
+      ]
+    })
+    await router.push('/admin/groups')
+    await router.isReady()
+    const wrapper = mountView([router])
+    await flushPromises()
+    ;(wrapper.vm as any).searchQuery = 'no matching group'
+    listGroups.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 100, pages: 0 })
+
+    await wrapper.get('[data-test="group-capabilities-open"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/admin/groups')
+    expect(showError).toHaveBeenCalledWith('admin.groups.noGroupsYet')
+    wrapper.unmount()
+  })
+
   it('deep-links a Cindy group to the canonical account console filters', async () => {
     const router = createRouter({
       history: createMemoryHistory(),

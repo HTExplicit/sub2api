@@ -150,7 +150,8 @@ func TestCapabilityPublicationPreviewIdempotencyDoesNotReserveAnotherGroupID(t *
 			storedRequest := request
 			storedRequest.Groups = append([]service.CapabilityPublicationGroup(nil), request.Groups...)
 			storedRequest.Groups[0].ID = 417 // Reserved by the first preview.
-			set := &service.CapabilityChangeSet{ID: 71, Status: "preview", Request: storedRequest, CreatedAt: time.Unix(1, 0)}
+			set := &service.CapabilityChangeSet{ID: 71, Status: "preview", Request: storedRequest, CreatedAt: time.Unix(1, 0),
+				Plan: service.CapabilityPublicationPlan{Groups: []service.CapabilityPublicationGroupPatch{{GroupID: 417, Create: true}}}}
 			if changedRequest {
 				request.Groups[0].RateMultiplier = 0.4
 			}
@@ -175,6 +176,71 @@ func TestCapabilityPublicationPreviewIdempotencyDoesNotReserveAnotherGroupID(t *
 			}
 		})
 	}
+}
+
+func TestCapabilityPublicationPreviewIdempotencyRejectsCreateForExistingGroup(t *testing.T) {
+	repo, mock := newPublicationRepoTest(t)
+	request := service.CapabilityPublicationRequest{
+		IdempotencyKey: "fixture-existing-group-key",
+		Scope:          service.CapabilityPublicationScope{FolderIDs: []int64{7}, AccountIDs: []int64{31}},
+		Groups:         []service.CapabilityPublicationGroup{{Name: "Qwen", Platform: service.PlatformOpenAI, RateMultiplier: 0.3}},
+	}
+	stored := request
+	stored.Groups = append([]service.CapabilityPublicationGroup(nil), request.Groups...)
+	stored.Groups[0].ID = 417
+	set := &service.CapabilityChangeSet{ID: 71, Status: "preview", Request: stored, CreatedAt: time.Unix(1, 0),
+		Plan: service.CapabilityPublicationPlan{Groups: []service.CapabilityPublicationGroupPatch{{GroupID: 417, Create: false}}}}
+	publicationTestBegin(mock)
+	mock.ExpectExec(regexp.QuoteMeta(`SELECT pg_advisory_xact_lock(hashtextextended($1, 481627))`)).
+		WithArgs(request.IdempotencyKey).WillReturnResult(sqlmock.NewResult(0, 0))
+	publicationTestExpectRead(mock, t, set, false)
+	mock.ExpectRollback()
+	got, err := repo.Preview(context.Background(), request, func(*service.CapabilityPublicationSnapshot) (*service.CapabilityPublicationPlan, error) {
+		t.Fatal("changed create intent must not rebuild or mutate the old preview")
+		return nil, nil
+	})
+	require.ErrorIs(t, err, service.ErrCapabilityPublicationConflict)
+	require.Nil(t, got)
+}
+
+func TestCapabilityPublicationGuardedPreviewRetryRejectsFreshDrift(t *testing.T) {
+	for _, drift := range []bool{false, true} {
+		t.Run(map[bool]string{false: "unchanged_input", true: "browser_scheduling_change"}[drift], func(t *testing.T) {
+			repo, mock := newPublicationRepoTest(t)
+			set := publicationTestCreateSchedulingPreview(t, repo, mock)
+			// The fixture builder owns its policy digest. This test exercises the
+			// real repository retry lock and its frozen snapshot comparison.
+			set.Request.ExpectedConfigRevisions = &service.CapabilityPublicationInputRevisions{
+				Accounts: map[int64]string{31: "fixture-builder-owned-revision"}, Groups: map[int64]string{},
+			}
+			publicationTestBegin(mock)
+			mock.ExpectExec(regexp.QuoteMeta(`SELECT pg_advisory_xact_lock(hashtextextended($1, 481627))`)).
+				WithArgs(set.Request.IdempotencyKey).WillReturnResult(sqlmock.NewResult(0, 0))
+			publicationTestExpectRead(mock, t, set, false)
+			publicationTestSnapshot(mock, drift, 7)
+			mock.ExpectRollback()
+			rebuilt := false
+			got, err := repo.Preview(context.Background(), set.Request, func(*service.CapabilityPublicationSnapshot) (*service.CapabilityPublicationPlan, error) {
+				rebuilt = true
+				return &set.Plan, nil
+			})
+			if drift {
+				require.ErrorIs(t, err, service.ErrCapabilityPublicationConflict)
+				require.Nil(t, got)
+				require.False(t, rebuilt, "a changed frozen snapshot must fail before rebuilding")
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, set.ID, got.ID)
+				require.True(t, rebuilt, "guarded retries must also recheck current builder policy")
+			}
+		})
+	}
+}
+
+func TestCapabilityPublicationGroupSnapshotRetainsLongContextPricingInput(t *testing.T) {
+	var row publicationGroupRow
+	require.NoError(t, json.Unmarshal([]byte(`{"id":23,"long_context_pricing_enabled":true}`), &row))
+	require.True(t, row.group().LongContextPricingEnabled, "the locked preview digest must see the same pricing mode as the organizer")
 }
 
 // A scheduling-only publication is sufficient to exercise the complete snapshot

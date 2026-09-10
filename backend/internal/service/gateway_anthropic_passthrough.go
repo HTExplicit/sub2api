@@ -511,11 +511,18 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 	currentEventLines := make([]string, 0, 4)
 	currentEventStartsOutput := false
 	currentEventTerminal := false
+	responseEventType := ""
 	writeLines := func(lines []string) {
 		if clientDisconnected {
 			return
 		}
 		for _, outputLine := range lines {
+			if eventType, ok := extractOpenAISSEEventLine(outputLine); ok {
+				responseEventType = eventType
+			} else if outputLine == "" {
+				responseEventType = ""
+			}
+			outputLine = managedModelResponseSSELine(ctx, outputLine, responseEventType)
 			if _, err := io.WriteString(w, outputLine+"\n"); err != nil {
 				clientDisconnected = true
 				logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] Client disconnected during streaming, continue draining upstream for usage: account=%d", account.ID)
@@ -1095,6 +1102,7 @@ func (s *GatewayService) handleNonStreamingResponseAnthropicAPIKeyPassthrough(
 		contentType = "application/json"
 	}
 	body = reverseToolNamesIfPresent(c, body)
+	body = managedModelResponseJSON(ctx, body)
 	c.Data(resp.StatusCode, contentType, body)
 	return usage, nil
 }

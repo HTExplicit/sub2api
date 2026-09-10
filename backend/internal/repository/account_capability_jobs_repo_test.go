@@ -43,7 +43,7 @@ func capabilityJobsBegin(mock sqlmock.Sqlmock) {
 
 func TestAccountCapabilityJobsRepositoryCreateAtomicAndSecretFree(t *testing.T) {
 	repo, mock := newCapabilityJobsRepoTest(t)
-	mock.ExpectBegin()
+	capabilityJobsBegin(mock)
 	mock.ExpectQuery("INSERT INTO admin_capability_runs").WithArgs(int64(5), "probe", "key", strings.Repeat("a", 64), "[7,8]", "[31]", 1).WillReturnRows(capabilityJobsRunRows("pending"))
 	mock.ExpectExec("INSERT INTO admin_capability_items").WithArgs(int64(1), 1, int64(31), "fixture", int64(7), strings.Repeat("b", 64), "Real-Model", "responses", "text", "[\"public\"]").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
@@ -123,7 +123,7 @@ func TestAccountCapabilityJobsRepositorySupersededProjectionSurvivesCatalogRecov
 	require.Contains(t, capabilityPublicationSupersededSQL, "FROM admin_capability_items n")
 	require.Contains(t, capabilityPublicationSupersededSQL, "JOIN admin_capability_runs nr ON nr.id=n.run_id")
 	require.NotContains(t, capabilityPublicationSupersededSQL, "n.kind")
-	require.Contains(t, capabilityPublicationSupersededSQL, "OR (n.status='failed' AND n.result->>'account_failure'='true')")
+	require.Contains(t, capabilityPublicationSupersededSQL, "OR (n.status='failed' AND n.result->>'account_failure'='true'")
 	require.Contains(t, capabilityPublicationSupersededSQL, "nr.kind='discover' AND n.result->>'source'='upstream'")
 	for _, method := range []string{"latest", "run", "ids"} {
 		t.Run(method, func(t *testing.T) {

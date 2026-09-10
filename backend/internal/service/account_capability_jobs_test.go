@@ -86,11 +86,15 @@ type capabilityJobsExecutorStub struct {
 	calls             int
 	model             string
 	status            string
+	discoveryStatus   string
 	deadlineRemaining time.Duration
 }
 
 func (s *capabilityJobsExecutorStub) Discover(context.Context, *Account) AccountCapabilityDiscoveryResult {
 	s.calls++
+	if s.discoveryStatus != "" {
+		return AccountCapabilityDiscoveryResult{Status: s.discoveryStatus, RequestCount: 1}
+	}
 	return AccountCapabilityDiscoveryResult{Status: "empty", RequestCount: 1}
 }
 func (s *capabilityJobsExecutorStub) Probe(ctx context.Context, _ *Account, model, _, _ string) AccountCapabilityProbeResult {

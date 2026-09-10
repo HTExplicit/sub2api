@@ -1,23 +1,26 @@
 <template>
   <AppLayout>
-    <TablePageLayout class="capability-page" :content-framed="tab !== 'preview'">
+    <TablePageLayout class="capability-page" :class="{ 'capability-overview': tab === 'overview' }" :content-framed="!['overview', 'preview'].includes(tab)">
       <template #filters>
         <div class="capability-toolbar space-y-2">
-          <details class="capability-safety">
+          <div class="pb-2"><h1 class="text-xl font-semibold text-gray-900 dark:text-white">{{ t('admin.accountCapabilities.title') }}</h1><p class="mt-1 text-sm leading-relaxed text-gray-500 dark:text-dark-300">{{ t('admin.accountCapabilities.description') }}</p></div>
+          <details v-if="tab !== 'overview'" class="capability-safety">
             <summary>{{ t('admin.accountCapabilities.safetySummary') }}</summary>
             <p class="mt-2 leading-relaxed">{{ t('admin.accountCapabilities.safetyNotice') }}</p>
           </details>
           <div class="flex flex-wrap items-center justify-between gap-3">
-            <div role="tablist" :aria-label="t('admin.accountCapabilities.title')" class="flex gap-1 rounded-xl bg-gray-100 p-1 dark:bg-dark-800">
-              <button v-for="value in tabs" :key="value" type="button" role="tab" :aria-selected="tab === value"
+            <div role="tablist" :aria-label="t('admin.accountCapabilities.title')" class="flex max-w-full flex-wrap gap-1 rounded-xl bg-gray-100 p-1 dark:bg-dark-800">
+              <button v-for="value in tabs" :key="value" type="button" role="tab" :aria-selected="tab === value" :disabled="managerLocked && value !== 'overview'"
                 :data-test="`capability-tab-${value}`" :class="['capability-tab', { 'capability-tab-active': tab === value }]"
                 @click="changeTab(value)">{{ t(`admin.accountCapabilities.tabs.${value}`) }}</button>
             </div>
-            <button type="button" class="btn btn-secondary" :disabled="loading || busy" data-test="capability-refresh" @click="refresh()">
+            <button type="button" class="btn btn-secondary" :disabled="loading || busy || managerLocked" data-test="capability-refresh" @click="refresh()">
               <Icon name="refresh" size="sm" />{{ t('common.refresh') }}
             </button>
           </div>
-          <fieldset :disabled="busy" class="capability-scope">
+          <details class="capability-source-details" :open="tab !== 'overview' || !sourceFolderNames">
+          <summary class="cursor-pointer text-xs text-gray-600 dark:text-dark-300">{{ t('admin.accountCapabilities.sourceFolders') }}：{{ sourceFolderNames || '—' }} <span v-if="resolvedScopeAccounts.length">· {{ t('admin.accountCapabilities.manager.accountCount', { count: resolvedScopeAccounts.length }) }}</span><span class="ml-2 text-primary-600 dark:text-primary-300">{{ t('admin.accountCapabilities.manager.adjustSources') }}</span></summary>
+          <fieldset :disabled="busy || managerLocked" class="capability-scope mt-2">
             <legend class="sr-only">{{ t('admin.accountCapabilities.sourceFolders') }}</legend>
             <span aria-hidden="true" class="text-xs font-medium text-gray-500 dark:text-dark-300">{{ t('admin.accountCapabilities.sourceFolders') }}</span>
             <label v-for="folder in folders" :key="folder.id" class="capability-folder">
@@ -30,7 +33,11 @@
               <p class="mt-2 leading-relaxed">{{ t('admin.accountCapabilities.frozenScopeHint', { count: resolvedScopeAccounts.length }) }}</p>
             </details>
           </fieldset>
-          <p v-if="accountIDs.length" class="text-xs text-gray-500">{{ t('admin.accountCapabilities.accountScope', { ids: accountIDs.join(', ') }) }}</p>
+          </details>
+          <div v-if="accountIDs.length || groupIDs.length" class="flex flex-wrap gap-3 text-xs text-gray-500">
+            <span v-if="accountIDs.length">{{ t('admin.accountCapabilities.manager.selectedAccounts', { count: accountIDs.length }) }} <button type="button" class="ml-1 text-primary-600" :disabled="busy || managerLocked" @click="clearAccountScope">{{ t('admin.accountCapabilities.manager.clearAccountScope') }}</button></span>
+            <span v-if="groupIDs.length">{{ t('admin.accountCapabilities.manager.selectedGroups', { count: groupIDs.length }) }} <button type="button" class="ml-1 text-primary-600" :disabled="busy || managerLocked" @click="clearGroupScope">{{ t('admin.accountCapabilities.manager.clearGroupScope') }}</button></span>
+          </div>
           <p v-if="error" role="alert" class="text-sm text-red-600 dark:text-red-300">{{ error }}</p>
 
           <div v-if="tab === 'inventory'" class="flex flex-wrap items-end justify-between gap-2">
@@ -81,6 +88,7 @@
       </template>
 
       <template #table>
+        <PublicModelManager v-if="sourcesReady && managerLoaded" v-show="tab === 'overview'" ref="managerView" :folder-ids="folderIDs" :account-ids="accountIDs" :group-ids="groupIDs" :folders="folders" :active="tab === 'overview'" :initial-search="initialModelSearch" @resolved="overviewResolved" @locked="managerLocked = $event" @advanced="changeTab('inventory')" />
         <div v-if="tab === 'inventory'" class="capability-inventory-table">
         <DataTable :columns="candidateColumns" :data="candidatePage.items" :loading="loading" row-key="candidate_id"
           selectable :selected-keys="selectedKeys" @update:selected-keys="updateSelection">
@@ -104,9 +112,10 @@
             <div class="capability-evidence-grid">
               <span :class="evidenceClass(row.discovered)">{{ t('admin.accountCapabilities.declared') }}: {{ yesNo(row.discovered) }}</span>
               <span :class="evidenceClass(row.configured)">{{ t('admin.accountCapabilities.configured') }}: {{ yesNo(row.configured) }}</span>
-              <span :class="evidenceClass(row.probe_status === 'alive' && !row.stale)">{{ t('admin.accountCapabilities.tested') }}: {{ row.probe_status ? stateLabel(row.probe_status) : t('admin.accountCapabilities.untested') }}</span>
+              <span :class="evidenceClass(row.last_success_reusable ?? (row.probe_status === 'alive' && !row.stale))">{{ t('admin.accountCapabilities.tested') }}: {{ (row.last_success_reusable ?? (row.probe_status === 'alive' && !row.stale)) ? stateLabel('alive') : t('admin.accountCapabilities.manager.notPassedYet') }}</span>
               <span :class="evidenceClass(row.published)">{{ t('admin.accountCapabilities.published') }}: {{ yesNo(row.published) }}</span>
             </div>
+            <p v-if="row.latest_probe_item_id" class="mt-1 text-xs text-gray-500">{{ t('admin.accountCapabilities.manager.latestCheck') }}：{{ stateLabel(row.probe_status || 'untested') }}</p>
             <p v-if="row.stale" class="mt-1 text-xs text-amber-600">{{ t('admin.accountCapabilities.staleHint') }}</p>
             <details v-if="row.not_publishable_reasons?.length" class="mt-1 text-xs text-amber-600">
               <summary class="cursor-pointer">{{ t('admin.accountCapabilities.notPublishable') }}</summary>
@@ -135,7 +144,7 @@
           </template>
         </DataTable>
 
-        <div v-else class="space-y-4 pb-6">
+        <div v-else-if="tab === 'preview'" class="space-y-4 pb-6">
           <section class="card p-5">
             <h2 class="text-base font-semibold">{{ t('admin.accountCapabilities.previewTitle') }}</h2>
             <p class="mt-2 text-sm text-gray-500">{{ t('admin.accountCapabilities.previewHint') }}</p>
@@ -199,7 +208,7 @@
           </section>
         </div>
       </template>
-      <template v-if="tab !== 'preview'" #pagination>
+      <template v-if="['inventory', 'runs'].includes(tab)" #pagination>
         <Pagination v-if="activePage.total" :total="activePage.total" :page="activePage.page" :page-size="activePage.page_size" @update:page="changePage" @update:page-size="changePageSize" />
       </template>
     </TablePageLayout>
@@ -271,25 +280,34 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import Icon from '@/components/icons/Icon.vue'
+import PublicModelManager from './components/PublicModelManager.vue'
 import { listFolders } from '@/api/admin/accounts'
 import { getAllIncludingInactive } from '@/api/admin/groups'
-import api, { type CapabilityCandidate, type CapabilityChangeset, type CapabilityItem, type CapabilityItemStatus, type CapabilityPage, type CapabilityPreviewRequest, type CapabilityProbeTarget, type CapabilityProfile, type CapabilityProtocol, type CapabilityPublicationGroup, type CapabilityRun, type CapabilityRunStatus, type CapabilityScopeAccount, type CreateCapabilityRun } from '@/api/admin/accountCapabilities'
+import api, { type CapabilityCandidate, type CapabilityChangeset, type CapabilityItem, type CapabilityItemStatus, type CapabilityOverview, type CapabilityPage, type CapabilityPreviewRequest, type CapabilityProbeTarget, type CapabilityProfile, type CapabilityProtocol, type CapabilityPublicationGroup, type CapabilityRun, type CapabilityRunStatus, type CapabilityScopeAccount, type CreateCapabilityRun } from '@/api/admin/accountCapabilities'
 import { useAppStore } from '@/stores/app'
 import type { AccountManagementFolder, AdminGroup } from '@/types'
 import { capabilityCodeLabel, capabilityPublicationTier, deduplicateProbeTargets, isCapabilityRunActive, isCurrentCapability, isPublishableCandidate, makeCapabilityIdempotencyKey, parseCapabilityIDs, selectCapabilityPublicationTargets } from './accountCapabilitiesHelpers'
 
-type Tab = 'inventory' | 'runs' | 'preview'
+type Tab = 'overview' | 'inventory' | 'runs' | 'preview'
 interface DraftRow { key: string; accountID: number; accountName: string; upstreamModel: string; protocol: CapabilityProtocol; publicModel: string; aliases: string; groupName: string; tier: 'standard' | 'vip'; evidenceID: number }
 const { t, te } = useI18n()
 const route = useRoute()
 const app = useAppStore()
-const tabs: Tab[] = ['inventory', 'runs', 'preview']
-const tab = ref<Tab>('inventory')
+const tabs = computed<Tab[]>(() => ['overview', 'runs', 'inventory', ...(tab.value === 'preview' ? ['preview' as const] : [])])
+const requestedTab = String(route.query.tab ?? '')
+const tab = ref<Tab>(['inventory', 'runs', 'preview'].includes(requestedTab) ? requestedTab as Tab : 'overview')
+const managerLoaded = ref(tab.value === 'overview')
+const managerLocked = ref(false)
+const managerView = ref<InstanceType<typeof PublicModelManager> | null>(null)
+const sourcesReady = ref(false)
+const initialModelSearch = String(route.query.model ?? '')
 const folders = ref<AccountManagementFolder[]>([])
 const groups = ref<AdminGroup[]>([])
 const folderIDs = ref<number[]>([])
 const accountIDs = ref(parseCapabilityIDs(route.query.account_ids))
+const groupIDs = ref(parseCapabilityIDs(route.query.group_ids))
 const resolvedScopeAccounts = ref<CapabilityScopeAccount[]>([])
+const sourceFolderNames = computed(() => folderIDs.value.map((id) => folders.value.find((folder) => folder.id === id)?.name ?? `#${id}`).join('、'))
 const draftScope = ref<{ folder_ids: number[]; account_ids: number[] }>({ folder_ids: [], account_ids: [] })
 const loading = ref(false)
 const busy = ref(false)
@@ -381,7 +399,10 @@ function evidenceClass(value: boolean): string { return `rounded px-1.5 py-0.5 t
 function formatTime(value: string): string { const date = new Date(value); return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString() }
 function formatDiff(value: unknown): string { return value == null ? '—' : typeof value === 'string' ? value : JSON.stringify(value, null, 2) }
 function resultSummary(item: CapabilityItem): string { return [item.result?.classification ? reasonLabel(item.result.classification) : stateLabel(item.result?.status || item.status), item.result?.http_status ? `HTTP ${item.result.http_status}` : '', item.result?.error_code].filter(Boolean).join(' · ') }
-function scopeParams() { return { folder_ids: folderIDs.value.join(','), account_ids: accountIDs.value.length ? accountIDs.value.join(',') : undefined } }
+function scopeParams() { return { folder_ids: folderIDs.value.length ? folderIDs.value.join(',') : undefined, account_ids: accountIDs.value.length ? accountIDs.value.join(',') : undefined, ...(groupIDs.value.length ? { group_ids: groupIDs.value.join(',') } : {}) } }
+function overviewResolved(value: CapabilityOverview): void { resolvedScopeAccounts.value = value.accounts; if (!folderIDs.value.length && accountIDs.value.length) folderIDs.value = [...value.scope.folder_ids] }
+function clearAccountScope(): void { if (busy.value || managerLocked.value) return; accountIDs.value = []; scopeChanged() }
+function clearGroupScope(): void { if (busy.value || managerLocked.value) return; groupIDs.value = []; scopeChanged() }
 function clearSelection(): void { selections.value = new Map() }
 function updateSelection(keys: Array<string | number>): void {
   const next = new Map(selections.value)
@@ -404,9 +425,10 @@ function scopeChanged(): void {
   clearSelection(); itemSelections.value = new Map(); draftRows.value = []; draftAlternatives.value = []; schedulingEvidenceIDs.value = []; resolvedScopeAccounts.value = []; draftScope.value = { folder_ids: [], account_ids: [] }
   currentRun.value = null; runDialog.value = false; closeCatalog(); catalogPage.value = emptyPage()
   candidatePage.value = emptyPage(); runPage.value = emptyPage(); stopPolling()
+  if (tab.value === 'overview') return
   void (async () => { if (tab.value !== 'inventory') await loadCandidates(1); await refresh() })()
 }
-function changeTab(value: Tab): void { tab.value = value; error.value = ''; void refresh() }
+function changeTab(value: Tab): void { if (managerLocked.value && value !== 'overview') return; tab.value = value; error.value = ''; if (value === 'overview') { managerLoaded.value = true; stopPolling(); return } void refresh() }
 function fail(key: 'loadFailed' | 'actionFailed' | 'previewFailed' | 'applyFailed'): void { error.value = t(`admin.accountCapabilities.${key}`) }
 function beginRead(): { epoch: number; signal: AbortSignal } {
   readController?.abort(); readController = new AbortController(); loading.value = true
@@ -414,12 +436,13 @@ function beginRead(): { epoch: number; signal: AbortSignal } {
 }
 async function loadCandidates(page = candidatePage.value.page): Promise<void> {
   const { epoch, signal } = beginRead()
-  if (!folderIDs.value.length) { candidatePage.value = emptyPage(); loading.value = false; return }
+  if (!folderIDs.value.length && !accountIDs.value.length) { candidatePage.value = emptyPage(); loading.value = false; return }
   try {
     const data = await api.candidates({ ...scopeParams(), page, page_size: pageSize.value, search: search.value || undefined, status: candidateStatus.value || undefined }, signal)
     if (epoch !== readEpoch || !mounted) return
     candidatePage.value = data
     resolvedScopeAccounts.value = data.accounts
+    if (!folderIDs.value.length && accountIDs.value.length) folderIDs.value = [...new Set(data.accounts.map((account) => account.folder_id))]
     // Refresh selected evidence from the latest page instead of retaining a
     // stale success badge while configuration has changed on the server.
     for (const item of data.items) if (selections.value.has(item.candidate_id)) selections.value.set(item.candidate_id, item)
@@ -429,7 +452,7 @@ async function loadCandidates(page = candidatePage.value.page): Promise<void> {
 }
 async function loadRuns(page = runPage.value.page): Promise<void> {
   const { epoch, signal } = beginRead()
-  if (!folderIDs.value.length) { runPage.value = emptyPage(); loading.value = false; return }
+  if (!folderIDs.value.length && !accountIDs.value.length) { runPage.value = emptyPage(); loading.value = false; return }
   try {
     const data = await api.listRuns({ ...scopeParams(), page, page_size: pageSize.value, kind: runKind.value || undefined, status: runStatus.value || undefined }, signal)
     if (epoch !== readEpoch || !mounted) return
@@ -439,6 +462,7 @@ async function loadRuns(page = runPage.value.page): Promise<void> {
 }
 async function refresh(): Promise<void> {
   stopPolling()
+  if (tab.value === 'overview') { await managerView.value?.refresh(); return }
   const trackRuns = hasActiveRun()
   if (tab.value === 'inventory') await loadCandidates()
   else if (tab.value === 'runs') await loadRuns()
@@ -552,7 +576,7 @@ function preparePublication(): void {
   const preferred = selectCapabilityPublicationTargets(publishableCandidates.value)
   const selected = new Set(preferred.selected.map((item) => item.candidate_id))
   draftAlternatives.value = [...new Map(publishableCandidates.value.filter((item) => !selected.has(item.candidate_id)).map((item) => [item.candidate_id, item])).values()]
-  draftRows.value = preferred.selected.map((item) => ({ key: item.candidate_id, accountID: item.account_id, accountName: item.account_name, upstreamModel: item.upstream_model, protocol: item.protocol, publicModel: item.public_model, aliases: (item.aliases ?? []).join(', '), groupName: item.group_name, tier: capabilityPublicationTier(item.public_model, item.tier), evidenceID: item.latest_probe_item_id! }))
+  draftRows.value = preferred.selected.map((item) => ({ key: item.candidate_id, accountID: item.account_id, accountName: item.account_name, upstreamModel: item.upstream_model, protocol: item.protocol, publicModel: item.public_model, aliases: (item.aliases ?? []).join(', '), groupName: item.group_name, tier: capabilityPublicationTier(item.public_model, item.tier), evidenceID: (item.last_success_item_id ?? item.latest_probe_item_id)! }))
   // Successful route evidence already enables scheduling in the server's
   // preview; this separate list is only for proven account-level failures.
   schedulingEvidenceIDs.value = []
@@ -573,7 +597,7 @@ function buildPreviewRequest(): CapabilityPreviewRequest {
     selectedGroups.set(source.name, group)
   }
   if (detachIDsInput.value.trim() && !/^\s*\d+(\s*,\s*\d+)*\s*$/.test(detachIDsInput.value)) throw new Error('invalid_account_ids')
-  return { scope: { folder_ids: [...draftScope.value.folder_ids], account_ids: [...draftScope.value.account_ids] }, groups: [...selectedGroups.values()], detach_account_ids: parseCapabilityIDs(detachIDsInput.value.replace(/\s/g, '')), scheduling_evidence_ids: [...new Set(schedulingEvidenceIDs.value)] }
+  return { operation: 'merge', scope: { folder_ids: [...draftScope.value.folder_ids], account_ids: [...draftScope.value.account_ids] }, groups: [...selectedGroups.values()], detach_account_ids: parseCapabilityIDs(detachIDsInput.value.replace(/\s/g, '')), scheduling_evidence_ids: [...new Set(schedulingEvidenceIDs.value)] }
 }
 async function generatePreview(): Promise<void> {
   if (busy.value || !canPreview.value) return
@@ -602,7 +626,9 @@ onMounted(async () => {
     if (!mounted) return
     folders.value = folderData; groups.value = groupData
     const requested = parseCapabilityIDs(route.query.folder_ids)
-    folderIDs.value = requested.length ? requested.filter((id) => folderData.some((folder) => folder.id === id)) : folderData.filter((folder) => ['dmxapi', '白嫖'].includes(folder.name.trim().toLowerCase())).map((folder) => folder.id)
+    folderIDs.value = requested.length ? requested.filter((id) => folderData.some((folder) => folder.id === id)) : accountIDs.value.length ? [] : folderData.filter((folder) => ['dmxapi', '白嫖'].includes(folder.name.trim().toLowerCase())).map((folder) => folder.id)
+    sourcesReady.value = true
+    if (tab.value === 'overview' && !route.query.changeset_id) return
     if (folderIDs.value.length) runPage.value = await api.listRuns({ ...scopeParams(), page: 1, page_size: pageSize.value })
     const previewID = parseCapabilityIDs(route.query.changeset_id)[0]
     if (previewID) { tab.value = 'preview'; restorePreviewID.value = String(previewID); await restorePreview() }
@@ -614,6 +640,8 @@ onBeforeUnmount(() => { mounted = false; readEpoch++; previewEpoch++; runEpoch++
 
 <style scoped>
 .capability-page { height: auto; min-height: calc(100vh - 64px - 4rem); gap: 0.75rem; }
+.capability-overview :deep(.table-scroll-container-unframed) { height: auto; overflow: visible; }
+.capability-overview :deep(.layout-section-scrollable) { display: block; }
 .capability-page :deep(.layout-section-scrollable) { min-height: 320px; }
 .capability-page :deep(.table-scroll-container) { min-height: 320px; max-height: max(320px, calc(100vh - 300px)); }
 .capability-toolbar :deep(.btn) { padding: 0.45rem 0.65rem; font-size: 0.75rem; gap: 0.3rem; }
@@ -652,5 +680,6 @@ onBeforeUnmount(() => { mounted = false; readEpoch++; previewEpoch++; runEpoch++
 .capability-tab-active { @apply bg-white text-primary-700 shadow-sm dark:bg-dark-700 dark:text-primary-300; }
 .capability-folder { @apply flex cursor-pointer items-center gap-1.5 rounded-lg border border-gray-200 px-2 py-1 text-xs dark:border-dark-600; }
 .capability-folder input { @apply rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500 dark:bg-dark-800; }
+.capability-source-details { @apply rounded-lg border border-gray-200 bg-white px-3 py-2 dark:border-dark-700 dark:bg-dark-800; }
 .capability-diff { @apply mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg p-3 font-mono text-xs leading-relaxed; }
 </style>

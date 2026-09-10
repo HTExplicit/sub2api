@@ -81,6 +81,14 @@ func (s *AccountCapabilityService) Create(ctx context.Context, actorID int64, ke
 		if fingerprintErr != nil {
 			return fingerprintErr
 		}
+		if expected := request.ExpectedConfigFingerprints[id]; expected != "" && expected != fingerprint {
+			return ErrAccountCapabilityScope
+		}
+		if request.OnlyUntested && (!ManagedModelBranchProtocolSupported(account.Platform, target.Protocol) || len(CapabilityIngressEndpoints(account, target.Protocol)) == 0) {
+			// Organizer jobs may only spend a basic request on a wire that the
+			// managed router can use. Manual diagnostic jobs remain separate.
+			return ErrAccountCapabilityInvalid
+		}
 		items = append(items, AccountCapabilityItem{Ordinal: len(items) + 1, Kind: request.Kind, AccountID: id,
 			AccountName: account.Name, FolderID: *account.ManagementFolderID, ConfigFingerprint: fingerprint,
 			UpstreamModel: target.UpstreamModel, Protocol: target.Protocol, Profile: target.Profile,
@@ -101,7 +109,7 @@ func (s *AccountCapabilityService) Create(ctx context.Context, actorID int64, ke
 		}
 	}
 	return s.repo.Create(ctx, &AccountCapabilityRun{CreatedBy: actorID, Kind: request.Kind, IdempotencyKey: key,
-		RequestHash: hash, FolderIDs: request.FolderIDs, AccountIDs: request.AccountIDs, Status: "pending", TargetCount: len(items)}, items)
+		RequestHash: hash, OnlyUntested: request.OnlyUntested, FolderIDs: request.FolderIDs, AccountIDs: request.AccountIDs, Status: "pending", TargetCount: len(items)}, items)
 }
 
 func normalizeCapabilityRequest(request AccountCapabilityCreateRequest) (AccountCapabilityCreateRequest, error) {
@@ -118,7 +126,7 @@ func normalizeCapabilityRequest(request AccountCapabilityCreateRequest) (Account
 		return request, ErrAccountCapabilityInvalid
 	}
 	if request.Kind == AccountCapabilityKindDiscover {
-		if len(request.Items) != 0 {
+		if len(request.Items) != 0 || request.OnlyUntested || len(request.ExpectedConfigFingerprints) != 0 {
 			return request, ErrAccountCapabilityInvalid
 		}
 		return request, nil
@@ -130,7 +138,16 @@ func normalizeCapabilityRequest(request AccountCapabilityCreateRequest) (Account
 	for _, id := range request.AccountIDs {
 		accountSet[id] = true
 	}
+	for id, fingerprint := range request.ExpectedConfigFingerprints {
+		if !accountSet[id] || len(fingerprint) != 64 {
+			return request, ErrAccountCapabilityInvalid
+		}
+		if _, err := hex.DecodeString(fingerprint); err != nil {
+			return request, ErrAccountCapabilityInvalid
+		}
+	}
 	targets := make(map[string]AccountCapabilityProbeTarget)
+	untestedProtocols := make(map[string]string)
 	for _, target := range request.Items {
 		if !accountSet[target.AccountID] || !validCapabilityModelID(target.UpstreamModel) {
 			return request, ErrAccountCapabilityInvalid
@@ -145,6 +162,17 @@ func normalizeCapabilityRequest(request AccountCapabilityCreateRequest) (Account
 		}
 		if target.Profile != "text" && target.Profile != "tool_roundtrip" {
 			return request, ErrAccountCapabilityInvalid
+		}
+		if request.OnlyUntested {
+			if target.Profile != "text" || request.ExpectedConfigFingerprints[target.AccountID] == "" ||
+				(target.Protocol != "responses" && target.Protocol != "chat_completions" && target.Protocol != "messages") {
+				return request, ErrAccountCapabilityInvalid
+			}
+			modelIdentity, _ := json.Marshal([]any{target.AccountID, target.UpstreamModel})
+			if previous, found := untestedProtocols[string(modelIdentity)]; found && previous != target.Protocol {
+				return request, ErrAccountCapabilityInvalid
+			}
+			untestedProtocols[string(modelIdentity)] = target.Protocol
 		}
 		if (target.Protocol == "responses_input_tokens" || target.Protocol == "messages_count_tokens") && target.Profile != "text" {
 			return request, ErrAccountCapabilityInvalid
@@ -209,6 +237,19 @@ func capabilityStrings(input []string) []string {
 
 func (s *AccountCapabilityService) GetRun(ctx context.Context, id int64) (*AccountCapabilityRun, error) {
 	return s.repo.GetRun(ctx, id)
+}
+
+// FindCreationReceipt resolves an uncertain submission without replaying its
+// request. A missing receipt does not prove an in-flight create cannot commit.
+func (s *AccountCapabilityService) FindCreationReceipt(ctx context.Context, actorID int64, key string) (*AccountCapabilityRun, error) {
+	key = strings.TrimSpace(key)
+	if actorID <= 0 {
+		return nil, ErrAccountCapabilityInvalid
+	}
+	if key == "" || len(key) > 255 {
+		return nil, ErrAccountCapabilityIdempotencyRequired
+	}
+	return s.repo.FindIdempotent(ctx, actorID, key)
 }
 func (s *AccountCapabilityService) ListRuns(ctx context.Context, filter AccountCapabilityFilter) (*AccountCapabilityRunPage, error) {
 	return s.repo.ListRuns(ctx, filter)
@@ -431,7 +472,7 @@ func (s *AccountCapabilityService) executeItem(ctx context.Context, item *Accoun
 	}
 	status := "failed"
 	switch resultStatus {
-	case "alive", "discovered", "empty", "available":
+	case "alive", "discovered", "empty", "partial", "available":
 		status = "succeeded"
 	case "uncertain":
 		status = "indeterminate"
