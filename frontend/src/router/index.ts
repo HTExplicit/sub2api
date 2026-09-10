@@ -538,18 +538,6 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
-    path: '/admin/account-capabilities',
-    name: 'AdminAccountCapabilities',
-    component: () => import('@/views/admin/AccountCapabilitiesView.vue'),
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: true,
-      title: 'Public Model Manager',
-      titleKey: 'admin.accountCapabilities.title',
-      descriptionKey: 'admin.accountCapabilities.description'
-    }
-  },
-  {
     path: '/admin/plugins',
     name: 'AdminPlugins',
     component: () => import('@/views/admin/PluginsView.vue'),
@@ -1005,7 +993,6 @@ router.beforeEach(async (to, _from, next) => {
   // 简易模式下限制访问某些页面
   if (authStore.isSimpleMode) {
     const restrictedPaths = [
-      '/admin/account-capabilities',
       '/admin/subscriptions',
       '/admin/redeem',
       '/subscriptions',

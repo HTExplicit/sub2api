@@ -33,9 +33,6 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	promptCacheKey string,
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
-	if err := validateManagedForwardAccount(ctx, s.accountRepo, account, gjson.GetBytes(body, "model").String()); err != nil {
-		return nil, err
-	}
 	beginUpstreamResponseModelObservation(c)
 	ClearActualOpenAIUpstreamEndpoint(c)
 	if shouldForwardOpenAIResponsesViaRawChatCompletions(account) {
@@ -147,7 +144,6 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	}
 
 	responsesReq.Model = upstreamModel
-	managedMessagesDefaultsForRequest(ctx, account, &anthropicReq, upstreamModel).applyResponses(responsesReq)
 	if responsesReq.Reasoning != nil {
 		responsesReq.Reasoning.Effort = openAICompatAnthropicReasoningEffort(&anthropicReq, upstreamModel, responsesReq.Reasoning.Effort)
 	}
@@ -667,7 +663,7 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 	// accumulated delta events so the client receives the full content.
 	acc.SupplementResponseOutput(finalResponse)
 
-	anthropicResp := apicompat.ResponsesToAnthropic(finalResponse, managedModelResponseModel(managedModelResponseContext(c), originalModel))
+	anthropicResp := apicompat.ResponsesToAnthropic(finalResponse, originalModel)
 
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -963,7 +959,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	writeStreamHeaders := s.newStreamHeaderWriter(c, resp.Header)
 
 	state := apicompat.NewResponsesEventToAnthropicState()
-	state.Model = managedModelResponseModel(managedModelResponseContext(c), originalModel)
+	state.Model = originalModel
 	var usage OpenAIUsage
 	responseID := ""
 	var firstTokenMs *int

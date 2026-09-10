@@ -2275,7 +2275,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			return
 		}
 		prepareTurnStateHeader()
-		if _, err := fmt.Fprint(w, buildOpenAIResponseFailedSSE(responseID, managedModelResponseModel(ctx, originalModel), bareErrorPayload, failedMessage)); err != nil {
+		if _, err := fmt.Fprint(w, buildOpenAIResponseFailedSSE(responseID, originalModel, bareErrorPayload, failedMessage)); err != nil {
 			clientDisconnected = true
 			return
 		}
@@ -2561,7 +2561,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			}
 			if cyberPolicyTerminal && refusalEarlyEmitted {
 				if !clientDisconnected {
-					if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", eventType, managedModelResponseJSON(ctx, dataBytes, eventType)); err != nil {
+					if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", eventType, dataBytes); err != nil {
 						clientDisconnected = true
 					} else {
 						flusher.Flush()
@@ -2599,7 +2599,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				refusalEarlyEmitted = true
 				if !clientDisconnected {
 					prepareTurnStateHeader()
-					if _, err := io.WriteString(w, managedModelResponseSSEBody(ctx, string(refusalReplacement))); err != nil {
+					if _, err := w.Write(refusalReplacement); err != nil {
 						clientDisconnected = true
 					} else {
 						commitTurnStateAfterWrite()
@@ -2619,7 +2619,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				pendingLines = pendingLines[:0]
 				if !clientDisconnected {
 					prepareTurnStateHeader()
-					if _, err := io.WriteString(w, managedModelResponseSSEBody(ctx, string(refusalReplacement))); err != nil {
+					if _, err := w.Write(refusalReplacement); err != nil {
 						clientDisconnected = true
 					} else {
 						commitTurnStateAfterWrite()
@@ -2643,7 +2643,6 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			continue
 		}
 
-		line = managedModelResponseSSELine(ctx, line, pendingSSEEventType)
 		if !clientDisconnected {
 			if !clientOutputStarted && !lineStartsClientOutput {
 				pendingLines = append(pendingLines, line)
@@ -2832,7 +2831,6 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	if originalModel != "" && mappedModel != "" && originalModel != mappedModel {
 		body = s.replaceModelInResponseBody(body, mappedModel, originalModel)
 	}
-	body = managedModelResponseJSON(ctx, body)
 	body, err = restoreOpenAIResponsesNamespacePayload(c, body)
 	if err != nil {
 		return nil, fmt.Errorf("restore OpenAI passthrough namespace response: %w", err)
@@ -2930,7 +2928,6 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 		if originalModel != "" && mappedModel != "" && originalModel != mappedModel {
 			body = s.replaceModelInResponseBody(body, mappedModel, originalModel)
 		}
-		body = managedModelResponseJSON(managedModelResponseContext(c), body)
 		// Correct tool calls in final response
 		body = s.correctToolCallsInResponseBody(body)
 		restoredBody, restoreErr := restoreOpenAIResponsesNamespacePayload(c, body)
@@ -2969,7 +2966,6 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 		if originalModel != "" && mappedModel != "" && originalModel != mappedModel {
 			bodyText = s.replaceModelInSSEBody(bodyText, mappedModel, originalModel)
 		}
-		bodyText = managedModelResponseSSEBody(managedModelResponseContext(c), bodyText)
 		body = []byte(bodyText)
 	}
 

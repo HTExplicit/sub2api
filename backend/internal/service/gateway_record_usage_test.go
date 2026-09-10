@@ -17,7 +17,7 @@ import (
 func newGatewayRecordUsageServiceForTest(usageRepo UsageLogRepository, userRepo UserRepository, subRepo UserSubscriptionRepository) *GatewayService {
 	cfg := &config.Config{}
 	cfg.Default.RateMultiplier = 1.1
-	svc := NewGatewayService(
+	return NewGatewayService(
 		nil,
 		nil,
 		usageRepo,
@@ -47,9 +47,6 @@ func newGatewayRecordUsageServiceForTest(usageRepo UsageLogRepository, userRepo 
 		nil,
 		nil, // userPlatformQuotaRepo
 	)
-	// Original price/source contracts explicitly select the unconverted branch.
-	svc.settingService = newTestInternalRateConversionSettings(false)
-	return svc
 }
 
 func newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo UsageLogRepository, billingRepo UsageBillingRepository, userRepo UserRepository, subRepo UserSubscriptionRepository) *GatewayService {

@@ -24608,7 +24608,6 @@ type GroupMutation struct {
 	default_mapped_model                    *string
 	messages_dispatch_model_config          *domain.OpenAIMessagesDispatchModelConfig
 	model_allowlist                         *domain.GroupModelAllowlist
-	managed_model_routes                    *domain.ManagedModelRoutesConfig
 	codex_models_manifest_config            *domain.GroupCodexModelsManifestConfig
 	rpm_limit                               *int
 	addrpm_limit                            *int
@@ -27716,42 +27715,6 @@ func (m *GroupMutation) ResetModelAllowlist() {
 	m.model_allowlist = nil
 }
 
-// SetManagedModelRoutes sets the "managed_model_routes" field.
-func (m *GroupMutation) SetManagedModelRoutes(dmrc domain.ManagedModelRoutesConfig) {
-	m.managed_model_routes = &dmrc
-}
-
-// ManagedModelRoutes returns the value of the "managed_model_routes" field in the mutation.
-func (m *GroupMutation) ManagedModelRoutes() (r domain.ManagedModelRoutesConfig, exists bool) {
-	v := m.managed_model_routes
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldManagedModelRoutes returns the old "managed_model_routes" field's value of the Group entity.
-// If the Group object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *GroupMutation) OldManagedModelRoutes(ctx context.Context) (v domain.ManagedModelRoutesConfig, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldManagedModelRoutes is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldManagedModelRoutes requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldManagedModelRoutes: %w", err)
-	}
-	return oldValue.ManagedModelRoutes, nil
-}
-
-// ResetManagedModelRoutes resets all changes to the "managed_model_routes" field.
-func (m *GroupMutation) ResetManagedModelRoutes() {
-	m.managed_model_routes = nil
-}
-
 // SetCodexModelsManifestConfig sets the "codex_models_manifest_config" field.
 func (m *GroupMutation) SetCodexModelsManifestConfig(dcmmc domain.GroupCodexModelsManifestConfig) {
 	m.codex_models_manifest_config = &dcmmc
@@ -28473,7 +28436,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 69)
+	fields := make([]string, 0, 68)
 	if m.created_at != nil {
 		fields = append(fields, group.FieldCreatedAt)
 	}
@@ -28654,9 +28617,6 @@ func (m *GroupMutation) Fields() []string {
 	if m.model_allowlist != nil {
 		fields = append(fields, group.FieldModelAllowlist)
 	}
-	if m.managed_model_routes != nil {
-		fields = append(fields, group.FieldManagedModelRoutes)
-	}
 	if m.codex_models_manifest_config != nil {
 		fields = append(fields, group.FieldCodexModelsManifestConfig)
 	}
@@ -28809,8 +28769,6 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.MessagesDispatchModelConfig()
 	case group.FieldModelAllowlist:
 		return m.ModelAllowlist()
-	case group.FieldManagedModelRoutes:
-		return m.ManagedModelRoutes()
 	case group.FieldCodexModelsManifestConfig:
 		return m.CodexModelsManifestConfig()
 	case group.FieldRpmLimit:
@@ -28956,8 +28914,6 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldMessagesDispatchModelConfig(ctx)
 	case group.FieldModelAllowlist:
 		return m.OldModelAllowlist(ctx)
-	case group.FieldManagedModelRoutes:
-		return m.OldManagedModelRoutes(ctx)
 	case group.FieldCodexModelsManifestConfig:
 		return m.OldCodexModelsManifestConfig(ctx)
 	case group.FieldRpmLimit:
@@ -29402,13 +29358,6 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetModelAllowlist(v)
-		return nil
-	case group.FieldManagedModelRoutes:
-		v, ok := value.(domain.ManagedModelRoutesConfig)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetManagedModelRoutes(v)
 		return nil
 	case group.FieldCodexModelsManifestConfig:
 		v, ok := value.(domain.GroupCodexModelsManifestConfig)
@@ -30156,9 +30105,6 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldModelAllowlist:
 		m.ResetModelAllowlist()
-		return nil
-	case group.FieldManagedModelRoutes:
-		m.ResetManagedModelRoutes()
 		return nil
 	case group.FieldCodexModelsManifestConfig:
 		m.ResetCodexModelsManifestConfig()

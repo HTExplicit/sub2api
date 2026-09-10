@@ -265,7 +265,7 @@ func (s *OpenAIGatewayService) handleCCBufferedFromNativeAnthropic(
 	}
 
 	responsesResp := apicompat.AnthropicToResponsesResponse(finalResp)
-	ccResp := apicompat.ResponsesToChatCompletions(responsesResp, managedModelResponseModel(managedModelResponseContext(c), originalModel))
+	ccResp := apicompat.ResponsesToChatCompletions(responsesResp, originalModel)
 
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -317,9 +317,9 @@ func (s *OpenAIGatewayService) handleCCStreamingFromNativeAnthropic(
 	c.Writer.WriteHeader(http.StatusOK)
 
 	anthState := apicompat.NewAnthropicEventToResponsesState()
-	anthState.Model = managedModelResponseModel(managedModelResponseContext(c), originalModel)
+	anthState.Model = originalModel
 	ccState := apicompat.NewResponsesEventToChatState()
-	ccState.Model = managedModelResponseModel(managedModelResponseContext(c), originalModel)
+	ccState.Model = originalModel
 	ccState.IncludeUsage = includeUsage
 
 	var usage ClaudeUsage

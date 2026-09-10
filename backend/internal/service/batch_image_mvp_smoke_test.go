@@ -46,7 +46,6 @@ func TestBatchImageMVPFlow(t *testing.T) {
 	owner := testBatchImageOwner()
 
 	publicSvc := &BatchImagePublicService{
-		Settings:         newTestInternalRateConversionSettings(false), // Preserve this original-price lifecycle contract.
 		Repo:             repo,
 		AccountRepo:      accountRepo,
 		Queue:            queue,

@@ -99,7 +99,6 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		nil, // businessPrompt
 		nil, // remoteSkillRegistry
 		nil, // accountJobRuntime
-		service.NewAccountCapabilityService(nil, nil, nil), // idle capability worker lifecycle
 		nil, // cindyHealth
 		nil, // cindyBalanceProbe
 		nil, // imageStudioRuntime

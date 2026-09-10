@@ -4439,21 +4439,6 @@
 
         <!-- Tab: Gateway — Claude Code, Scheduling -->
         <div v-show="activeTab === 'gateway'" class="space-y-6">
-          <div class="card flex items-center justify-between gap-6 px-6 py-4">
-            <div>
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                {{ t("admin.settings.gatewayForwarding.internalRateConversion") }}
-              </h2>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {{ t("admin.settings.gatewayForwarding.internalRateConversionHint") }}
-              </p>
-            </div>
-            <Toggle
-              v-model="form.internal_rate_conversion_enabled"
-              data-testid="internal-rate-conversion-toggle"
-              :aria-label="t('admin.settings.gatewayForwarding.internalRateConversion')"
-            />
-          </div>
           <!-- Claude Code Settings -->
           <div class="card">
             <div
@@ -9812,7 +9797,6 @@ const form = reactive<SettingsForm>({
   home_content: "",
   compact_home_enabled: false,
   backend_mode_enabled: false,
-  internal_rate_conversion_enabled: true,
   hide_ccs_import_button: false,
   payment_enabled: false,
   risk_control_enabled: false,
@@ -11199,7 +11183,6 @@ async function loadSettings() {
       settings.account_scheduling_thresholds,
     );
     form.backend_mode_enabled = settings.backend_mode_enabled;
-    form.internal_rate_conversion_enabled = settings.internal_rate_conversion_enabled ?? true;
     form.default_subscriptions = normalizeDefaultSubscriptionSettings(
       settings.default_subscriptions,
     );
@@ -11635,7 +11618,6 @@ async function saveSettings() {
       home_content: form.home_content,
       compact_home_enabled: form.compact_home_enabled,
       backend_mode_enabled: form.backend_mode_enabled,
-      internal_rate_conversion_enabled: form.internal_rate_conversion_enabled,
       hide_ccs_import_button: form.hide_ccs_import_button,
       table_default_page_size: form.table_default_page_size,
       table_page_size_options: form.table_page_size_options,

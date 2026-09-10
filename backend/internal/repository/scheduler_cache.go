@@ -305,12 +305,6 @@ func (c *schedulerCache) GetSnapshot(ctx context.Context, bucket service.Schedul
 		if err != nil {
 			return nil, false, err
 		}
-		if !service.ValidSchedulerMetadataIdentity(account) {
-			// Pre-identity projections cannot prove which complete account was
-			// projected. Miss the whole bucket so the existing DB fallback warms
-			// a current full/meta pair instead of admitting an incomplete account.
-			return nil, false, nil
-		}
 		if err := applySchedulerLastUsed(account, lastUsedValues[i]); err != nil {
 			return nil, false, err
 		}
@@ -427,9 +421,6 @@ func (c *schedulerCache) SetSnapshot(ctx context.Context, bucket service.Schedul
 	if !token.ValidFor(bucket) {
 		return fmt.Errorf("%w: bucket=%s", service.ErrSchedulerBucketWriteFenced, bucket.String())
 	}
-	if err := validateSchedulerFullAccountSources(accounts); err != nil {
-		return err
-	}
 	// 分配版本与激活指针是两个 fencing 边界；中间写入的数据只有通过第二次校验才能发布。
 	version, err := c.allocateSnapshotVersion(ctx, bucket, token)
 	if err != nil {
@@ -448,9 +439,6 @@ func (c *schedulerCache) SetSnapshot(ctx context.Context, bucket service.Schedul
 func (c *schedulerCache) SetSnapshotAndReturnAccountIDs(ctx context.Context, bucket service.SchedulerBucket, token service.SchedulerBucketWriteToken, accounts []service.Account) ([]int64, error) {
 	if !token.ValidFor(bucket) {
 		return nil, fmt.Errorf("%w: bucket=%s", service.ErrSchedulerBucketWriteFenced, bucket.String())
-	}
-	if err := validateSchedulerFullAccountSources(accounts); err != nil {
-		return nil, err
 	}
 	// 分配版本与激活指针是两个 fencing 边界；中间写入的数据只有通过第二次校验才能发布。
 	version, err := c.allocateSnapshotVersion(ctx, bucket, token)
@@ -598,11 +586,6 @@ func (c *schedulerCache) GetAccount(ctx context.Context, accountID int64) (*serv
 	account, err := decodeCachedAccount(values[0])
 	if err != nil {
 		return nil, err
-	}
-	if account.SchedulerMetadata != nil {
-		// Never hydrate a forwarding account from a projection, even when its
-		// identity marker is valid. A miss asks the service for the full DB row.
-		return nil, nil
 	}
 	if err := applySchedulerLastUsed(account, values[1]); err != nil {
 		return nil, err
@@ -825,12 +808,6 @@ func (c *schedulerCache) writeAccountIDs(ctx context.Context, accounts []service
 	if len(accounts) == 0 {
 		return nil, nil
 	}
-	// Preflight the entire batch before any chunk can be flushed. Projection
-	// input is not a serialization failure: sending it through the ordinary
-	// skip/delete branch would remove a previously valid complete cache entry.
-	if err := validateSchedulerFullAccountSources(accounts); err != nil {
-		return nil, err
-	}
 
 	// Each chunk must atomically publish the new full/meta payloads and remove
 	// the legacy metadata copy. A regular pipeline may partially execute across
@@ -901,9 +878,6 @@ func (c *schedulerCache) writeAccountIDs(ctx context.Context, accounts []service
 }
 
 func marshalSchedulerCacheAccount(account service.Account) ([]byte, []byte, error) {
-	if account.SchedulerMetadata != nil {
-		return nil, nil, fmt.Errorf("scheduler metadata account %d cannot be a full cache source", account.ID)
-	}
 	fullPayload, err := json.Marshal(account)
 	if err != nil {
 		return nil, nil, fmt.Errorf("marshal account: %w", err)
@@ -913,15 +887,6 @@ func marshalSchedulerCacheAccount(account service.Account) ([]byte, []byte, erro
 		return nil, nil, fmt.Errorf("marshal account metadata: %w", err)
 	}
 	return fullPayload, metaPayload, nil
-}
-
-func validateSchedulerFullAccountSources(accounts []service.Account) error {
-	for i := range accounts {
-		if accounts[i].SchedulerMetadata != nil {
-			return fmt.Errorf("scheduler metadata account %d cannot be a full cache source", accounts[i].ID)
-		}
-	}
-	return nil
 }
 
 func (c *schedulerCache) mgetChunked(ctx context.Context, keys []string) ([]any, error) {
@@ -949,17 +914,7 @@ func (c *schedulerCache) mgetChunked(ctx context.Context, keys []string) ([]any,
 }
 
 func buildSchedulerMetadataAccount(account service.Account) service.Account {
-	// Compute the identity before removing credentials, nullable policy fields,
-	// and proxy data. A projection must never be re-signed as a complete source.
-	identityFingerprint := ""
-	if account.SchedulerMetadata == nil {
-		identityFingerprint = service.ManagedModelAccountFingerprint(&account)
-	}
 	return service.Account{
-		SchedulerMetadata: &service.AccountSchedulerMetadata{
-			Version:             service.AccountSchedulerMetadataVersion,
-			IdentityFingerprint: identityFingerprint,
-		},
 		ID:                      account.ID,
 		Name:                    account.Name,
 		Platform:                account.Platform,

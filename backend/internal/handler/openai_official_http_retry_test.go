@@ -112,13 +112,11 @@ func TestOpenAIOfficialHTTPRetryScopeIsolation(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		marked    bool
-		managed   bool
 		configure func(*service.Account)
 		want      openAIFailoverRetryAction
 	}{
 		{name: "marked ordinary API key reselects", marked: true, want: openAIFailoverRetryReselect},
 		{name: "unmarked API key remains exact", want: openAIFailoverRetrySameAccount},
-		{name: "managed route remains exact", marked: true, managed: true, want: openAIFailoverRetrySameAccount},
 		{name: "OAuth keeps its current policy", marked: true, configure: func(account *service.Account) { account.Type = service.AccountTypeOAuth }, want: openAIFailoverRetrySwitchAccount},
 		{name: "Cindy keeps exact retries", marked: true, configure: func(account *service.Account) { account.Platform = service.PlatformCindy }, want: openAIFailoverRetrySameAccount},
 		{name: "legacy Laxa keeps exact retries", marked: true, configure: func(account *service.Account) { account.Credentials["base_url"] = "https://api.laxarouter.ai" }, want: openAIFailoverRetrySameAccount},
@@ -131,9 +129,6 @@ func TestOpenAIOfficialHTTPRetryScopeIsolation(t *testing.T) {
 			ctx := context.Background()
 			if tc.marked {
 				ctx = service.WithOpenAIOfficialHTTPFailover(ctx)
-			}
-			if tc.managed {
-				ctx = service.WithManagedModelRequest(ctx, &service.ManagedModelRequest{GroupID: 17})
 			}
 			failure := &service.UpstreamFailoverError{StatusCode: http.StatusForbidden, RetryableOnSameAccount: true}
 			require.Equal(t, tc.want, newOpenAIFailoverRetryState().HandleHTTP(ctx, nil, account, "model", failure, true, 0, "test"))

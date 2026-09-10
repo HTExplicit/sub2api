@@ -35,9 +35,6 @@ func (s *GatewayService) ForwardAsResponses(
 	body []byte,
 	parsed *ParsedRequest,
 ) (*ForwardResult, error) {
-	if err := validateManagedForwardAccount(ctx, s.accountRepo, account, gjson.GetBytes(body, "model").String()); err != nil {
-		return nil, err
-	}
 	startTime := time.Now()
 
 	normalizedBody, normalized, err := normalizeOpenAIResponsesLegacyIngress(body)
@@ -447,7 +444,7 @@ func (s *GatewayService) handleResponsesBufferedStreamingResponse(
 
 	// Convert to Responses format
 	responsesResp := apicompat.AnthropicToResponsesResponse(finalResp)
-	responsesResp.Model = managedModelResponseModel(managedModelResponseContext(c), originalModel)
+	responsesResp.Model = originalModel // Use original model name
 
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -504,7 +501,7 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 	c.Writer.WriteHeader(http.StatusOK)
 
 	state := apicompat.NewAnthropicEventToResponsesState()
-	state.Model = managedModelResponseModel(managedModelResponseContext(c), originalModel)
+	state.Model = originalModel
 	clientToolRestorer := apicompat.NewResponsesClientToolStreamRestorer(clientToolMapping)
 	var usage ClaudeUsage
 	var firstTokenMs *int

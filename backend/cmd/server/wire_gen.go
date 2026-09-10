@@ -228,18 +228,6 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	accountJobRepository := repository.NewAccountJobRepository(db)
 	accountJobService := service.NewAccountJobService(accountJobRepository, secretEncryptor)
 	accountJobHandler := admin.NewAccountJobHandler(accountJobService)
-	accountCapabilityRepository := repository.NewAccountCapabilityRepository(db)
-	accountCapabilityProbeService := service.NewAccountCapabilityProbeService(accountTestService)
-	accountCapabilityService, err := service.ProvideAccountCapabilityService(accountCapabilityRepository, accountRepository, accountCapabilityProbeService)
-	if err != nil {
-		return nil, err
-	}
-	accountCapabilityHandler := admin.NewAccountCapabilityHandler(accountCapabilityService)
-	accountCapabilityCatalogService := service.NewAccountCapabilityCatalogService(accountCapabilityRepository, adminService, groupRepository, billingService, channelService)
-	accountCapabilityCatalogHandler := admin.NewAccountCapabilityCatalogHandler(accountCapabilityCatalogService)
-	accountCapabilityPublicationRepository := repository.NewAccountCapabilityPublicationRepository(db)
-	accountCapabilityPublicationService := service.NewAccountCapabilityPublicationService(accountCapabilityPublicationRepository, billingService, apiKeyAuthCacheInvalidator, channelService, gatewayService, schedulerSnapshotService)
-	accountCapabilityPublicationHandler := admin.NewAccountCapabilityPublicationHandler(accountCapabilityPublicationService)
 	adminAnnouncementHandler := admin.NewAnnouncementHandler(announcementService)
 	dataManagementService := service.NewDataManagementService()
 	dataManagementHandler := admin.NewDataManagementHandler(dataManagementService)
@@ -324,7 +312,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	}
 	upstreamBillingProbeService := service.ProvideUpstreamBillingProbeService(accountRepository, accountTestService, settingService, leaderLockCache, db)
 	ollamaCloudUsageService := service.ProvideOllamaCloudUsageService(accountRepository, httpUpstream, settingService, secretEncryptor, configConfig, leaderLockCache, db)
-	adminHandlers := handler.ProvideAdminHandlers(dashboardHandler, adminUserHandler, groupHandler, accountHandler, accountJobHandler, accountCapabilityHandler, accountCapabilityCatalogHandler, accountCapabilityPublicationHandler, adminAnnouncementHandler, dataManagementHandler, backupHandler, oAuthHandler, openAIOAuthHandler, geminiOAuthHandler, antigravityOAuthHandler, grokOAuthHandler, cnProviderHandler, proxyHandler, adminRedeemHandler, promoHandler, settingHandler, opsHandler, systemHandler, adminSubscriptionHandler, adminUsageHandler, userAttributeHandler, errorPassthroughHandler, tlsFingerprintProfileHandler, adminAPIKeyHandler, scheduledTestHandler, channelHandler, channelMonitorHandler, channelMonitorRequestTemplateHandler, contentModerationHandler, promptAdminHandler, paymentHandler, affiliateHandler, complianceHandler, auditLogHandler, systemPromptHandler, cindyBalanceProbeHandler, accountJobRuntime, upstreamBillingProbeService, ollamaCloudUsageService)
+	adminHandlers := handler.ProvideAdminHandlers(dashboardHandler, adminUserHandler, groupHandler, accountHandler, accountJobHandler, adminAnnouncementHandler, dataManagementHandler, backupHandler, oAuthHandler, openAIOAuthHandler, geminiOAuthHandler, antigravityOAuthHandler, grokOAuthHandler, cnProviderHandler, proxyHandler, adminRedeemHandler, promoHandler, settingHandler, opsHandler, systemHandler, adminSubscriptionHandler, adminUsageHandler, userAttributeHandler, errorPassthroughHandler, tlsFingerprintProfileHandler, adminAPIKeyHandler, scheduledTestHandler, channelHandler, channelMonitorHandler, channelMonitorRequestTemplateHandler, contentModerationHandler, promptAdminHandler, paymentHandler, affiliateHandler, complianceHandler, auditLogHandler, systemPromptHandler, cindyBalanceProbeHandler, accountJobRuntime, upstreamBillingProbeService, ollamaCloudUsageService)
 	usageRecordWorkerPool := service.NewUsageRecordWorkerPool(configConfig)
 	userMsgQueueCache := repository.NewUserMsgQueueCache(redisClient)
 	userMessageQueueService := service.ProvideUserMessageQueueService(userMsgQueueCache, rpmCache, configConfig)
@@ -352,7 +340,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	batchImageRepository := repository.NewBatchImageRepository(db)
 	batchImageQueue := repository.NewBatchImageQueue(redisClient, configConfig)
 	batchImageModelPricingResolver := service.ProvideBatchImageModelPricingResolver(modelPricingResolver)
-	batchImagePublicService := service.NewBatchImagePublicService(batchImageRepository, accountRepository, groupRepository, userGroupRateRepository, batchImageQueue, batchImageModelPricingResolver, usageBillingRepository, apiKeyAuthCacheInvalidator, configConfig, settingService)
+	batchImagePublicService := service.NewBatchImagePublicService(batchImageRepository, accountRepository, groupRepository, userGroupRateRepository, batchImageQueue, batchImageModelPricingResolver, usageBillingRepository, apiKeyAuthCacheInvalidator, configConfig)
 	batchImageDownloadLimiter := repository.NewBatchImageDownloadLimiter(redisClient, configConfig)
 	batchImageDownloadService := service.NewBatchImageDownloadService(batchImageRepository, accountRepository, batchImageDownloadLimiter, configConfig)
 	batchImageCleanupService := service.ProvideBatchImageCleanupService(batchImageRepository, accountRepository, configConfig)
@@ -399,7 +387,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	if err != nil {
 		return nil, err
 	}
-	v := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, cnProviderBalanceCheckService, openAICodexVersionSyncService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, batchImageCleanupService, batchImageWorkerRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, channelMonitorRunner, channelMonitorV2Aggregator, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, auditLogService, openAIQuotaAutoResetService, promptService, businessSystemPromptService, remoteSkillRegistryService, accountJobRuntime, accountCapabilityService, cindyHealthService, cindyBalanceProbeService, imageStudioRuntime)
+	v := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, cnProviderBalanceCheckService, openAICodexVersionSyncService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, batchImageCleanupService, batchImageWorkerRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, channelMonitorRunner, channelMonitorV2Aggregator, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, auditLogService, openAIQuotaAutoResetService, promptService, businessSystemPromptService, remoteSkillRegistryService, accountJobRuntime, cindyHealthService, cindyBalanceProbeService, imageStudioRuntime)
 	application := &Application{
 		Server:        httpServer,
 		PromptAudit:   promptService,
@@ -491,7 +479,6 @@ func provideCleanup(
 	businessPrompt *service.BusinessSystemPromptService,
 	remoteSkillRegistry *service.RemoteSkillRegistryService,
 	accountJobs *service.AccountJobRuntime,
-	accountCapabilities *service.AccountCapabilityService,
 	cindyHealth *service.CindyHealthService,
 	cindyBalanceProbe *service.CindyBalanceProbeService,
 	imageStudioRuntime *service.ImageStudioRuntime,
@@ -506,12 +493,6 @@ func provideCleanup(
 		}
 
 		parallelSteps := []cleanupStep{
-			{"AccountCapabilityService", func() error {
-				if accountCapabilities != nil {
-					accountCapabilities.Stop()
-				}
-				return nil
-			}},
 			{"ImageStudioRuntime", func() error {
 				if imageStudioRuntime != nil {
 					return imageStudioRuntime.Stop(ctx)

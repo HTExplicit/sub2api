@@ -245,11 +245,6 @@ func (s *OpenAIGatewayService) prepareOpenAICompactFallbackRetry(
 	upstreamBody []byte,
 	alreadyRetried bool,
 ) ([]byte, string, bool) {
-	if c != nil && c.Request != nil {
-		if _, managed := ManagedModelRequestFromContext(c.Request.Context()); managed {
-			return currentBody, "", false
-		}
-	}
 	if alreadyRetried || !isExplicitOpenAICompactRequest(c, currentBody) ||
 		!isOpenAICompactModelFailure(statusCode, upstreamMsg, upstreamBody) {
 		return currentBody, "", false

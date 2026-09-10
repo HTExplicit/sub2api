@@ -49,10 +49,6 @@ type Account struct {
 	UpdatedAt          time.Time
 
 	Schedulable bool
-	// SchedulerMetadata marks a lightweight Redis candidate projection. It is
-	// never populated by the database/admin mappers or accepted as a full
-	// account at an upstream forwarding boundary.
-	SchedulerMetadata *AccountSchedulerMetadata `json:"scheduler_metadata,omitempty"`
 	// CindyBalanceInsufficientAt is set after recognized Cindy budget exhaustion.
 	CindyBalanceInsufficientAt *time.Time
 	// CindyBannedAt is the durable projection of a generation-bound strict Cindy 401 terminal state.

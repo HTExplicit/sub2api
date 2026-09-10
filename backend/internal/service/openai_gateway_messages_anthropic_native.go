@@ -249,7 +249,6 @@ func (s *OpenAIGatewayService) handleNativeAnthropicBufferedResponse(
 		contentType = "application/json"
 	}
 	body = reverseToolNamesIfPresent(c, body)
-	body = managedModelResponseJSON(ctx, body)
 	c.Data(resp.StatusCode, contentType, body)
 
 	return &OpenAIForwardResult{
@@ -397,7 +396,6 @@ func (s *OpenAIGatewayService) handleNativeAnthropicStreamingResponse(
 		keepaliveTimer.Reset(keepaliveInterval)
 	}
 	inPartialEvent := false
-	responseEventType := ""
 
 	for {
 		select {
@@ -433,11 +431,6 @@ func (s *OpenAIGatewayService) handleNativeAnthropicStreamingResponse(
 			}
 
 			line := ev.line
-			if eventType, ok := extractOpenAISSEEventLine(line); ok {
-				responseEventType = eventType
-			} else if line == "" {
-				responseEventType = ""
-			}
 			if data, ok := extractAnthropicSSEDataLine(line); ok {
 				trimmed := strings.TrimSpace(data)
 				observer.ObserveAnthropic([]byte(trimmed))
@@ -458,7 +451,6 @@ func (s *OpenAIGatewayService) handleNativeAnthropicStreamingResponse(
 
 			if !clientDisconnected {
 				restored := string(reverseToolNamesIfPresent(c, []byte(line)))
-				restored = managedModelResponseSSELine(ctx, restored, responseEventType)
 				if _, err := io.WriteString(w, restored); err != nil {
 					clientDisconnected = true
 					logger.LegacyPrintf("service.gateway", "[CN Anthropic 直通] Client disconnected during streaming, continue draining upstream for usage: account=%d", account.ID)

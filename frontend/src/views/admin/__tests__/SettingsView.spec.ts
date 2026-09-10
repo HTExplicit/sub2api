@@ -789,28 +789,6 @@ describe("admin SettingsView payment visible method controls", () => {
     );
   });
 
-  it.each([
-    { saved: undefined, expected: true },
-    { saved: false, expected: false },
-    { saved: true, expected: true },
-  ])("loads and saves internal rate conversion ($saved)", async ({ saved, expected }) => {
-    getSettings.mockResolvedValue({
-      ...baseSettingsResponse,
-      internal_rate_conversion_enabled: saved,
-    });
-    const wrapper = mountView();
-    await flushPromises();
-    const toggle = wrapper.get('[data-testid="internal-rate-conversion-toggle"]');
-    expect((toggle.element as HTMLInputElement).checked).toBe(expected);
-    await toggle.setValue(!expected);
-    await wrapper.find("form").trigger("submit.prevent");
-    await flushPromises();
-    expect(updateSettings).toHaveBeenCalledWith(
-      expect.objectContaining({ internal_rate_conversion_enabled: !expected }),
-    );
-    wrapper.unmount();
-  });
-
   it("renders panel rate limit card and saves settings", async () => {
     getPanelRateLimitSettings.mockClear();
     updatePanelRateLimitSettings.mockClear();

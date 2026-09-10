@@ -19,12 +19,6 @@ import (
 // ForwardCountTokens 转发 count_tokens 请求到上游 API
 // 特点：不记录使用量、仅支持非流式响应
 func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context, account *Account, parsed *ParsedRequest) error {
-	if parsed != nil {
-		if err := validateManagedForwardAccount(ctx, s.accountRepo, account, parsed.Model); err != nil {
-			s.countTokensError(c, http.StatusNotFound, "not_found_error", ErrManagedModelRouteUnavailable.Error())
-			return err
-		}
-	}
 	if parsed == nil {
 		s.countTokensError(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
 		return fmt.Errorf("parse request: empty request")
@@ -100,11 +94,7 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 	if reqModel != "" {
 		mappedModel := reqModel
 		mappingSource := ""
-		_, managed := ManagedModelRequestFromContext(ctx)
-		if account.Type == AccountTypeAPIKey || managed {
-			// Managed metadata already validated its exact selector mapping.
-			// OAuth/setup-token accounts must use it as well, never normalize or
-			// forward the internal selector as an upstream model name.
+		if account.Type == AccountTypeAPIKey {
 			mappedModel = account.GetMappedModel(reqModel)
 			if mappedModel != reqModel {
 				mappingSource = "account"

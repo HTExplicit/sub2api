@@ -13,7 +13,6 @@ import (
 
 func TestOpenAIOfficialHTTPFailoverRequiresMarkerAndOrdinaryAPIKeyIdentity(t *testing.T) {
 	marked := WithOpenAIOfficialHTTPFailover(context.Background())
-	managed := WithManagedModelRequest(marked, &ManagedModelRequest{GroupID: 23})
 	ordinary := &Account{ID: 42, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 
 	tests := []struct {
@@ -27,7 +26,6 @@ func TestOpenAIOfficialHTTPFailoverRequiresMarkerAndOrdinaryAPIKeyIdentity(t *te
 		{name: "missing marker", ctx: context.Background(), account: ordinary},
 		{name: "nil context", account: ordinary},
 		{name: "nil account", ctx: marked},
-		{name: "managed publication", ctx: managed, account: ordinary},
 		{name: "canonical Cindy", ctx: marked, account: &Account{Platform: PlatformCindy, Type: AccountTypeAPIKey, Credentials: cindyCredentials()}},
 		{name: "legacy OpenAI Laxa", ctx: marked, account: &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: cindyCredentials()}},
 		{name: "OpenAI Cindy profile", ctx: marked, account: &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, ProviderProfile: ProviderProfileCindyLaxaV1}},

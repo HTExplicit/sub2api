@@ -38,12 +38,6 @@ func GroupModelAllowlist(maxNormalizedBytes ...int64) gin.HandlerFunc {
 	}
 	return func(c *gin.Context) {
 		apiKey, ok := GetAPIKeyFromContext(c)
-		if ok && apiKey != nil && !rejectClientManagedModelSelectors(c, bodyLimit) {
-			return
-		}
-		if ok && apiKey != nil && !PrepareManagedModelRoute(c, apiKey.Group, bodyLimit) {
-			return
-		}
 		if !ok || apiKey == nil || apiKey.Group == nil || !apiKey.Group.ModelAllowlistEnabled() {
 			c.Next()
 			return

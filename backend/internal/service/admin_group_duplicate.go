@@ -94,7 +94,7 @@ func cloneGroupMessagesDispatchModelConfig(value OpenAIMessagesDispatchModelConf
 }
 
 func cloneGroupForDuplicate(source *Group, operationID string) *Group {
-	cloned := &Group{
+	return &Group{
 		Name:                            duplicateGroupName(source.Name, 1),
 		Description:                     source.Description,
 		Platform:                        source.Platform,
@@ -151,9 +151,6 @@ func cloneGroupForDuplicate(source *Group, operationID string) *Group {
 			Enabled: source.ModelAllowlist.Enabled,
 			Models:  append([]string(nil), source.ModelAllowlist.Models...),
 		},
-		// Published selectors belong to the source group ID. A new group must be
-		// verified and published independently, including Cindy split copies.
-		ManagedModelRoutes: ManagedModelRoutesConfig{},
 		// 固定账号 manifest 配置指向源分组的账号 ID，复制后成员关系可能变化，重置为关闭且列表为空。
 		CodexModelsManifestConfig:   GroupCodexModelsManifestConfig{},
 		RPMLimit:                    source.RPMLimit,
@@ -161,47 +158,6 @@ func cloneGroupForDuplicate(source *Group, operationID string) *Group {
 		MaxReasoningEffortOverLimit: source.MaxReasoningEffortOverLimit,
 		ReasoningEffortMappings:     append([]ReasoningEffortMapping(nil), source.ReasoningEffortMappings...),
 	}
-	// Derived mappings can also contain the source group's published selectors.
-	// Remove only exact known selectors; unrelated private mappings stay intact.
-	selectors := make(map[string]struct{}, len(source.ManagedModelRoutes.Routes))
-	for _, route := range source.ManagedModelRoutes.Routes {
-		if route.Selector != "" {
-			selectors[route.Selector] = struct{}{}
-		}
-		for _, branch := range ManagedModelRouteBranches(route) {
-			if branch.Selector != "" {
-				selectors[branch.Selector] = struct{}{}
-			}
-		}
-	}
-	for model := range cloned.ModelRouting {
-		if _, managed := selectors[model]; managed {
-			delete(cloned.ModelRouting, model)
-		}
-	}
-	if _, managed := selectors[cloned.DefaultMappedModel]; managed {
-		cloned.DefaultMappedModel = ""
-	}
-	for _, target := range []*string{&cloned.MessagesDispatchModelConfig.OpusMappedModel, &cloned.MessagesDispatchModelConfig.SonnetMappedModel, &cloned.MessagesDispatchModelConfig.HaikuMappedModel} {
-		if _, managed := selectors[*target]; managed {
-			*target = ""
-		}
-	}
-	for requested, target := range cloned.MessagesDispatchModelConfig.ExactModelMappings {
-		_, managedRequest := selectors[requested]
-		_, managedTarget := selectors[target]
-		if managedRequest || managedTarget {
-			delete(cloned.MessagesDispatchModelConfig.ExactModelMappings, requested)
-		}
-	}
-	models := cloned.ModelAllowlist.Models[:0]
-	for _, model := range cloned.ModelAllowlist.Models {
-		if _, managed := selectors[model]; !managed {
-			models = append(models, model)
-		}
-	}
-	cloned.ModelAllowlist.Models = models
-	return cloned
 }
 
 // RecoverDuplicateGroup performs a read-only lookup for a copy that was already

@@ -432,9 +432,6 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.BackendModeEnabled != after.BackendModeEnabled {
 		changed = append(changed, "backend_mode_enabled")
 	}
-	if before.InternalRateConversionEnabled != after.InternalRateConversionEnabled {
-		changed = append(changed, "internal_rate_conversion_enabled")
-	}
 	if before.PurchaseSubscriptionEnabled != after.PurchaseSubscriptionEnabled {
 		changed = append(changed, "purchase_subscription_enabled")
 	}

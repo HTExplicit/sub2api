@@ -151,10 +151,6 @@ func validateProviderIdentityAccountsForGroup(ctx context.Context, repo AccountR
 }
 
 func validateProviderIdentityGroupBindings(ctx context.Context, repo GroupRepository, account *Account, groupIDs []int64) error {
-	return validateProviderIdentityGroupBindingsForUpdate(ctx, repo, account, account, groupIDs)
-}
-
-func validateProviderIdentityGroupBindingsForUpdate(ctx context.Context, repo GroupRepository, existingAccount, account *Account, groupIDs []int64) error {
 	if account == nil || len(groupIDs) == 0 {
 		return nil
 	}
@@ -172,7 +168,7 @@ func validateProviderIdentityGroupBindingsForUpdate(ctx context.Context, repo Gr
 			}
 			continue
 		}
-		if !ProviderIdentityCompatible(account, group) && !retainsManagedPublicProviderBinding(existingAccount, account, group) {
+		if !ProviderIdentityCompatible(account, group) {
 			return fmt.Errorf(
 				"account provider identity %s/%s/%s does not match group %d identity %s/%s/%s",
 				account.Platform, account.EffectiveWirePlatform(), account.EffectiveProviderProfile(),
@@ -181,48 +177,4 @@ func validateProviderIdentityGroupBindingsForUpdate(ctx context.Context, repo Gr
 		}
 	}
 	return nil
-}
-
-// retainsManagedPublicProviderBinding only preserves an existing binding that
-// the published v2 graph still contains. A credential or mapping edit can make
-// that member unavailable without revoking its administrative membership; only
-// the runtime gate decides whether the exact target and fingerprint may run.
-func retainsManagedPublicProviderBinding(existingAccount, account *Account, group *Group) bool {
-	if existingAccount == nil || account == nil || group == nil || account.ID <= 0 ||
-		existingAccount.ID != account.ID || existingAccount.Platform != account.Platform ||
-		existingAccount.EffectiveWirePlatform() != account.EffectiveWirePlatform() ||
-		existingAccount.EffectiveProviderProfile() != account.EffectiveProviderProfile() ||
-		existingAccount.Type != AccountTypeAPIKey || account.SchedulerMetadata != nil ||
-		account.Type != AccountTypeAPIKey || !group.ManagedModelRoutes.Enabled ||
-		group.ManagedModelRoutes.Version != ManagedModelRoutesVersion ||
-		!managedModelAccountInGroup(existingAccount, group.ID) {
-		return false
-	}
-	if account.Platform == PlatformCindy || group.Platform == PlatformCindy ||
-		IsCindyRuntimeCompatibleAPIKeyAccount(existingAccount.Platform, existingAccount.Type, existingAccount.Credentials) ||
-		IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) ||
-		account.EffectiveProviderProfile() != "" || group.EffectiveProviderProfile() != "" ||
-		account.EffectiveWirePlatform() != account.Platform || group.EffectiveWirePlatform() != group.Platform {
-		return false
-	}
-	for _, route := range group.ManagedModelRoutes.Routes {
-		for _, endpoint := range route.Endpoints {
-			request, err := ResolveManagedModelRoute(group, route.PublicModel, endpoint)
-			if err != nil || request == nil {
-				continue
-			}
-			for _, branch := range ManagedModelRouteBranches(request.Route) {
-				if branch.UpstreamProtocol == "" || branch.TargetPlatform != existingAccount.Platform ||
-					!managedModelHasEndpoint(branch.Endpoints, endpoint) {
-					continue
-				}
-				for _, member := range branch.Accounts {
-					if member.AccountID == existingAccount.ID && managedModelHasEndpoint(member.Endpoints, endpoint) {
-						return true
-					}
-				}
-			}
-		}
-	}
-	return false
 }

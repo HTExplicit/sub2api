@@ -61,9 +61,6 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	promptCacheKey string,
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
-	if err := validateManagedForwardAccount(ctx, s.accountRepo, account, gjson.GetBytes(body, "model").String()); err != nil {
-		return nil, err
-	}
 	return s.forwardAsChatCompletions(ctx, c, account, body, promptCacheKey, defaultMappedModel, false)
 }
 
@@ -688,7 +685,7 @@ func (s *OpenAIGatewayService) handleChatBufferedStreamingResponse(
 	// accumulated delta events so the client receives the full content.
 	acc.SupplementResponseOutput(finalResponse)
 
-	chatResp := apicompat.ResponsesToChatCompletions(finalResponse, managedModelResponseModel(managedModelResponseContext(c), originalModel))
+	chatResp := apicompat.ResponsesToChatCompletions(finalResponse, originalModel)
 
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -792,7 +789,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 	defer func() { _ = resp.Body.Close() }()
 
 	state := apicompat.NewResponsesEventToChatState()
-	state.Model = managedModelResponseModel(managedModelResponseContext(c), originalModel)
+	state.Model = originalModel
 	// 网关作为计费链路的一环，不能把下游 usage 输出绑定到客户端是否显式请求。
 	// raw Chat Completions 直转路径已经强制透出 usage，这里保持同样行为，避免级联代理计费为 0。
 	state.IncludeUsage = true

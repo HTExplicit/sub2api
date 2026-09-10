@@ -45,7 +45,6 @@ func RegisterAdminRoutes(
 
 		// 账号管理
 		registerAccountJobRoutes(admin, h)
-		registerAccountCapabilityRoutes(admin, h)
 		registerAccountRoutes(admin, h, stepUpAuth)
 		registerCindyBalanceProbeRoutes(admin, h)
 

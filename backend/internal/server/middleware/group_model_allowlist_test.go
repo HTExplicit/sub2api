@@ -78,7 +78,7 @@ func (b *readTrackingBody) Read(p []byte) (int, error) {
 
 func (b *readTrackingBody) Close() error { return nil }
 
-func TestGroupModelAllowlistDisabledStillChecksReservedModelNamespace(t *testing.T) {
+func TestGroupModelAllowlistDisabledDoesNotReadBody(t *testing.T) {
 	router, calls := newGroupModelAllowlistTestRouter(allowlistAPIKey(false, "claude-sonnet-4.5"), "/v1")
 
 	body := &readTrackingBody{Reader: strings.NewReader(`{"model":"claude-opus-4.6"}`)}
@@ -93,19 +93,8 @@ func TestGroupModelAllowlistDisabledStillChecksReservedModelNamespace(t *testing
 	if len(*calls) != 1 {
 		t.Fatalf("expected handler to run once, got %v", *calls)
 	}
-	if !body.read {
-		t.Fatal("an authenticated request must still check the reserved model namespace when the group allowlist is disabled")
-	}
-}
-
-func TestGroupModelAllowlistWithoutAuthenticatedKeyDoesNotReadBody(t *testing.T) {
-	router, _ := newGroupModelAllowlistTestRouter(nil, "/v1")
-	body := &readTrackingBody{Reader: strings.NewReader(`{"model":"ordinary-model"}`)}
-	request := httptest.NewRequest(http.MethodPost, "/v1/messages", body)
-	request.Header.Set("Content-Type", "application/json")
-	router.ServeHTTP(httptest.NewRecorder(), request)
 	if body.read {
-		t.Fatal("the authenticated gateway guard must not inspect an unauthenticated body")
+		t.Fatal("allowlist disabled: middleware must not read the request body")
 	}
 }
 

@@ -136,9 +136,6 @@ func (s *BatchImageSettlementService) Settle(ctx context.Context, batchID string
 		return nil, err
 	}
 	actualCost := float64(job.SuccessCount) * unitPrice
-	if job.PricingSnapshotVersion >= 2 {
-		actualCost = QuantizeUsageBillingAmount(actualCost)
-	}
 	result.ActualCost = actualCost
 	holdAmount := job.EstimatedCost
 	if job.HoldAmount != nil {
@@ -261,12 +258,6 @@ func (s *BatchImageSettlementService) recordUsageLog(ctx context.Context, job *B
 	inboundEndpoint := "/v1/images/batches"
 	upstreamEndpoint := "vertex:batchPredictionJobs"
 	imageSize := "1K"
-	// 保留原始分项/账号统计口径。最终应付费用来自创建时冻结的单价，
-	// 不能拿转换后的 actualCost 充当原始美元成本，也不能重读当前开关。
-	standardCost := actualCost
-	if job.PricingSnapshotVersion >= 2 {
-		standardCost = float64(job.SuccessCount) * job.BaseUnitPrice * job.GroupRateMultiplier * job.AccountRateMultiplier * job.BatchDiscountMultiplier
-	}
 	usageLog := &UsageLog{
 		UserID:                job.UserID,
 		APIKeyID:              *job.APIKeyID,
@@ -277,8 +268,8 @@ func (s *BatchImageSettlementService) recordUsageLog(ctx context.Context, job *B
 		InboundEndpoint:       &inboundEndpoint,
 		UpstreamEndpoint:      &upstreamEndpoint,
 		ImageCount:            job.SuccessCount,
-		ImageOutputCost:       standardCost,
-		TotalCost:             standardCost,
+		ImageOutputCost:       actualCost,
+		TotalCost:             actualCost,
 		ActualCost:            actualCost,
 		RateMultiplier:        job.GroupRateMultiplier * job.BatchDiscountMultiplier,
 		AccountRateMultiplier: &accountRateMultiplier,

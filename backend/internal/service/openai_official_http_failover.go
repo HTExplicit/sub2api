@@ -8,7 +8,7 @@ import (
 type openAIOfficialHTTPFailoverContextKey struct{}
 
 // WithOpenAIOfficialHTTPFailover opts the ordinary HTTP handler into the
-// upstream retry/state policy. Identity and managed-route checks remain at
+// upstream retry/state policy. Identity checks remain at
 // every use site so a shared handler cannot change Cindy or OAuth behavior.
 func WithOpenAIOfficialHTTPFailover(ctx context.Context) context.Context {
 	if ctx == nil {
@@ -26,8 +26,7 @@ func IsOpenAIOfficialHTTPFailover(ctx context.Context, account *Account) bool {
 		IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		return false
 	}
-	_, managed := ManagedModelRequestFromContext(ctx)
-	return !managed
+	return true
 }
 
 // ResolveOpenAIAccountUpstreamModelForRequest exposes the scheduler's exact
