@@ -499,7 +499,7 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 		}
 		return true
 	}
-	if isOpenAIAccount(account) && account.Type == AccountTypeAPIKey {
+	if isOpenAIAccount(account) && account.Type == AccountTypeAPIKey && !IsOpenAIOfficialHTTPFailover(ctx, account) {
 		switch statusCode {
 		case http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests:
 			// Authentication and quota responses are handled exclusively by the
@@ -1699,6 +1699,11 @@ func (s *OpenAIGatewayService) CooldownOpenAIRetryExhausted(
 	failoverErr *UpstreamFailoverError,
 ) {
 	if s == nil || account == nil || failoverErr == nil || !isOpenAIAccount(account) {
+		return
+	}
+	// The marked HTTP API-key path uses upstream's service-side transient
+	// streaks and durable transport policy, not a second exhaustion penalty.
+	if IsOpenAIOfficialHTTPFailover(ctx, account) {
 		return
 	}
 	if failoverErr.RequestScopedTransient || failoverErr.SuppressAccountHealthPenalty ||

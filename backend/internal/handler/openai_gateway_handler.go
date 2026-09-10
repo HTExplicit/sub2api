@@ -486,6 +486,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	compactStartedAt := time.Now()
 	defer h.logOpenAIRemoteCompactOutcome(c, compactStartedAt)
 	setOpenAIClientTransportHTTP(c)
+	c.Request = c.Request.WithContext(service.WithOpenAIOfficialHTTPFailover(c.Request.Context()))
 
 	requestStart := time.Now()
 
@@ -1142,7 +1143,11 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						return
 					}
 					if !openAIForwardMayFailover(c, writerSizeBeforeForward, failoverErr) {
-						finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(routingModel), failoverErr, openAIFailoverRetryStop)
+						if isOpenAIOfficialHTTPFailover(c, account) {
+							h.gatewayService.ObserveOpenAIOfficialHTTPAccountHealthFailure(c.Request.Context(), account, err)
+						} else {
+							finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(routingModel), failoverErr, openAIFailoverRetryStop)
+						}
 						h.handleFailoverExhausted(c, failoverErr, true)
 						return
 					}
@@ -1150,6 +1155,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					// 但重试耗尽时仍须按已提交的 SSE 响应返回流内错误。
 					if c.Writer.Written() {
 						streamStarted = true
+					}
+					if isOpenAIOfficialHTTPFailover(c, account) && failoverErr.ShouldReportAccountScheduleFailure() {
+						h.reportOpenAIHTTPAccountScheduleResult(c, selection, account, routingModel, requireCompact, nil, false, nil, err)
 					}
 					if repairedBody, repaired, repairErr := prepareOpenAIRefusalPromptRetry(c, forwardBody, failoverErr); repairErr != nil {
 						reqLog.Warn("openai.refusal_prompt_retry_prepare_failed", zap.Error(repairErr))
@@ -1163,7 +1171,13 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						continue
 					}
 					if !failoverErr.ShouldRetryNextAccount() {
-						finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(routingModel), failoverErr, openAIFailoverRetryStop)
+						h.finalizeOpenAIHTTPFailoverSelection(c, selection, account, account.GetMappedModel(routingModel), failoverErr, openAIFailoverRetryStop)
+						h.handleFailoverExhausted(c, failoverErr, streamStarted)
+						return
+					}
+					// The official first-output switch bound precedes its pool retry.
+					// Keep the existing ordering for the other, exact-account policies.
+					if isOpenAIOfficialHTTPFailover(c, account) && openAIFirstOutputFailoverExhausted(failoverErr, &firstOutputTimeoutSwitchCount) {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
@@ -1172,11 +1186,11 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					// not replay any account-bound response anchor or opaque carrier on
 					// another credential, regardless of the upstream failure reason.
 					if !legacyLaxaContinuationCanSwitchAccount(account, body) {
-						finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(routingModel), failoverErr, openAIFailoverRetryStop)
+						h.finalizeOpenAIHTTPFailoverSelection(c, selection, account, account.GetMappedModel(routingModel), failoverErr, openAIFailoverRetryStop)
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
-					retryAction := retryState.Handle(
+					retryAction := retryState.HandleHTTP(
 						c.Request.Context(),
 						h.gatewayService,
 						account,
@@ -1186,8 +1200,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						sameAccountRetryDelay,
 						"responses",
 					)
-					finalizeOpenAIFailoverSelection(h.gatewayService, selection, account, account.GetMappedModel(routingModel), failoverErr, retryAction)
+					h.finalizeOpenAIHTTPFailoverSelection(c, selection, account, account.GetMappedModel(routingModel), failoverErr, retryAction)
 					switch retryAction {
+					case openAIFailoverRetryReselect:
+						continue
 					case openAIFailoverRetrySameAccount:
 						sameAccountRetrySelection = selection
 						lastFailoverErr = failoverErr
@@ -1198,7 +1214,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
-					if openAIFirstOutputFailoverExhausted(failoverErr, &firstOutputTimeoutSwitchCount) {
+					if !isOpenAIOfficialHTTPFailover(c, account) && openAIFirstOutputFailoverExhausted(failoverErr, &firstOutputTimeoutSwitchCount) {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
@@ -1250,7 +1266,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					continue
 				}
 				if !cyberAttempt {
-					h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(routingModel), false, nil)
+					h.reportOpenAIHTTPAccountScheduleResult(c, selection, account, routingModel, requireCompact, result, false, nil, err)
 				} else {
 					h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 				}
@@ -1278,9 +1294,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			if account.Type == service.AccountTypeOAuth && !account.IsShadow() {
 				h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(c.Request.Context(), account.ID, result.ResponseHeaders)
 			}
-			h.gatewayService.ReportOpenAIAccountScheduleResultForSelectionWithContext(selection, account.ID, account.GetMappedModel(routingModel), openAIForwardSucceededForScheduling(result), result.FirstTokenMs, c.Request.Context())
+			h.reportOpenAIHTTPAccountScheduleResult(c, selection, account, routingModel, requireCompact, result, openAIForwardSucceededForScheduling(result), result.FirstTokenMs, err)
 		} else {
-			h.gatewayService.ReportOpenAIAccountScheduleResultForSelectionWithContext(selection, account.ID, account.GetMappedModel(routingModel), openAIForwardSucceededForScheduling(result), nil, c.Request.Context())
+			h.reportOpenAIHTTPAccountScheduleResult(c, selection, account, routingModel, requireCompact, result, openAIForwardSucceededForScheduling(result), nil, err)
 		}
 
 		// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。

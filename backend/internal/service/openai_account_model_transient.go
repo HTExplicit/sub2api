@@ -142,6 +142,18 @@ func (s *openAIAccountModelTransientState) recordSuccess(accountID int64, model 
 	return true
 }
 
+// recordOfficialSuccess is the upstream success contract for the explicitly
+// marked ordinary HTTP path. Other paths keep their active-cooldown protection.
+func (s *openAIAccountModelTransientState) recordOfficialSuccess(accountID int64, model string) {
+	key, ok := openAIAccountModelTransientKey(accountID, model)
+	if s == nil || !ok {
+		return
+	}
+	s.mu.Lock()
+	delete(s.entries, key)
+	s.mu.Unlock()
+}
+
 func (s *openAIAccountModelTransientState) clearAccount(accountID int64) {
 	if s == nil || accountID <= 0 {
 		return

@@ -1269,7 +1269,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 					respBody,
 					upstreamMsg,
 					shouldDisable,
-					!shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
+					openAIHTTPPoolRetryable(ctx, account, resp.StatusCode, upstreamMsg, respBody, shouldDisable),
 				)
 				if resp.StatusCode == http.StatusForbidden &&
 					IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
