@@ -320,7 +320,7 @@ func (s *GatewayService) handleCCBufferedFromAnthropic(
 
 	// Chain: Anthropic → Responses → Chat Completions
 	responsesResp := apicompat.AnthropicToResponsesResponse(finalResp)
-	ccResp := apicompat.ResponsesToChatCompletions(responsesResp, originalModel)
+	ccResp := apicompat.ResponsesToChatCompletions(responsesResp, managedModelResponseModel(managedModelResponseContext(c), originalModel))
 
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -376,9 +376,9 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 
 	// Use Anthropic→Responses state machine, then convert Responses→CC
 	anthState := apicompat.NewAnthropicEventToResponsesState()
-	anthState.Model = originalModel
+	anthState.Model = managedModelResponseModel(managedModelResponseContext(c), originalModel)
 	ccState := apicompat.NewResponsesEventToChatState()
-	ccState.Model = originalModel
+	ccState.Model = managedModelResponseModel(managedModelResponseContext(c), originalModel)
 	ccState.IncludeUsage = includeUsage
 
 	var usage ClaudeUsage

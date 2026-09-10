@@ -180,7 +180,7 @@ func (s *OpenAIGatewayService) bufferChatCompletionsAsResponses(
 	if err != nil {
 		return nil, err
 	}
-	responsesResp := apicompat.ChatCompletionsResponseToResponses(ccResp, originalModel, customTools, functionTools, toolSearch, namespaceTools)
+	responsesResp := apicompat.ChatCompletionsResponseToResponses(ccResp, managedModelResponseModel(managedModelResponseContext(c), originalModel), customTools, functionTools, toolSearch, namespaceTools)
 	if responsesResp.Status == "failed" {
 		return nil, ccStreamProtocolFailure(responsesResp.Error.Code, responsesResp.Error.Message)
 	}
@@ -224,7 +224,7 @@ func (s *OpenAIGatewayService) streamChatCompletionsAsResponses(
 	requestID := resp.Header.Get("x-request-id")
 	writeStreamHeaders := s.newStreamHeaderWriter(c, resp.Header)
 
-	state := apicompat.NewChatCompletionsToResponsesStreamState(originalModel)
+	state := apicompat.NewChatCompletionsToResponsesStreamState(managedModelResponseModel(managedModelResponseContext(c), originalModel))
 	state.CustomTools = customTools
 	state.FunctionTools = functionTools
 	state.ToolSearchDeclared = toolSearch

@@ -260,6 +260,7 @@ func (s *OpenAIGatewayService) ForwardCountTokensAsAnthropic(
 	defaultMappedModel string,
 ) error {
 	if err := validateManagedForwardAccount(ctx, s.accountRepo, account, gjson.GetBytes(body, "model").String()); err != nil {
+		writeAnthropicCountTokensError(c, http.StatusNotFound, "not_found_error", ErrManagedModelRouteUnavailable.Error())
 		return err
 	}
 	if account == nil {

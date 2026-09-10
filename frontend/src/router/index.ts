@@ -544,7 +544,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: true,
-      title: 'Account Capabilities',
+      title: 'Public Model Manager',
       titleKey: 'admin.accountCapabilities.title',
       descriptionKey: 'admin.accountCapabilities.description'
     }

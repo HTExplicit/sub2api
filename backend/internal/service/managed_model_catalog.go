@@ -2,42 +2,87 @@ package service
 
 import (
 	"context"
-	"strings"
 	"time"
 )
 
-// managedCatalogAccountMapping is a read-only, request-local projection. The
-// account's private mappings are never edited merely to make public IDs visible.
-func managedCatalogAccountMapping(group *Group, account *Account, endpoint string) map[string]string {
-	return managedCatalogAccountMappingWithScheduling(group, account, endpoint, true)
+// A public model may have more than one real target on the same account. Keep
+// those paths separate until the catalog capability intersection is complete.
+type managedCatalogAccountTarget struct {
+	publicModel   string
+	upstreamModel string
+	branch        ManagedModelRouteBranch
+	request       *ManagedModelRequest
 }
 
-func managedCatalogAccountMappingWithScheduling(group *Group, account *Account, endpoint string, requireSchedulable bool) map[string]string {
-	out := make(map[string]string)
-	if group == nil || !group.ManagedModelRoutes.Enabled || group.ManagedModelRoutes.Version != ManagedModelRoutesVersion ||
-		account == nil || !account.IsActive() || !account.Schedulable || !managedModelAccountInGroup(account, group.ID) {
-		return out
-	}
-	if requireSchedulable && !account.IsSchedulable() {
-		return out
-	}
-	if account.ProxyID != nil && (account.Proxy == nil || !account.Proxy.IsActive() || account.Proxy.IsExpired(time.Now())) {
-		return out
+func managedCatalogPlatforms(group *Group) []string {
+	platforms := make([]string, 0)
+	seen := make(map[string]bool)
+	if group == nil || !group.ManagedModelRoutes.Enabled || !ManagedModelRoutesVersionSupported(group.ManagedModelRoutes.Version) {
+		return platforms
 	}
 	for _, route := range group.ManagedModelRoutes.Routes {
-		for _, candidateEndpoint := range route.Endpoints {
-			if endpoint != "" && candidateEndpoint != endpoint {
-				continue
+		for _, branch := range ManagedModelRouteBranches(route) {
+			if isConcreteRequestPlatform(branch.TargetPlatform) && !seen[branch.TargetPlatform] {
+				platforms = append(platforms, branch.TargetPlatform)
+				seen[branch.TargetPlatform] = true
 			}
-			request, err := ResolveManagedModelRoute(group, route.PublicModel, candidateEndpoint)
-			if err != nil || request == nil || !ManagedModelAccountAllowed(WithManagedModelRequest(context.Background(), request), account, route.Selector) {
-				continue
-			}
-			upstream := account.GetModelMapping()[route.Selector]
-			out[route.PublicModel] = upstream
-			out[route.Selector] = upstream
-			break
 		}
+	}
+	return platforms
+}
+
+func managedCatalogAccountTargets(group *Group, account *Account, endpoint string, requireSchedulable bool) []managedCatalogAccountTarget {
+	if group == nil || !group.ManagedModelRoutes.Enabled || !ManagedModelRoutesVersionSupported(group.ManagedModelRoutes.Version) ||
+		account == nil || !account.IsActive() || !account.Schedulable || !managedModelAccountInGroup(account, group.ID) {
+		return nil
+	}
+	if requireSchedulable && !account.IsSchedulable() {
+		return nil
+	}
+	if account.ProxyID != nil && (account.Proxy == nil || !account.Proxy.IsActive() || account.Proxy.IsExpired(time.Now())) {
+		return nil
+	}
+	if group.RequirePrivacySet && !account.IsPrivacySet() {
+		return nil
+	}
+	targets := make([]managedCatalogAccountTarget, 0)
+	for _, route := range group.ManagedModelRoutes.Routes {
+		for _, branch := range ManagedModelRouteBranches(route) {
+			if branch.UpstreamProtocol != "" && account.Type != AccountTypeAPIKey {
+				continue
+			}
+			for _, candidateEndpoint := range branch.Endpoints {
+				if endpoint != "" && candidateEndpoint != endpoint {
+					continue
+				}
+				request, err := ResolveManagedModelRoute(group, route.PublicModel, candidateEndpoint)
+				if err != nil || request == nil {
+					continue
+				}
+				ctx := WithManagedModelBranch(WithManagedModelRequest(context.Background(), request), branch)
+				if !ManagedModelAccountAllowed(ctx, account, branch.Selector) {
+					continue
+				}
+				targets = append(targets, managedCatalogAccountTarget{publicModel: route.PublicModel,
+					upstreamModel: account.GetModelMapping()[branch.Selector], branch: branch, request: request})
+				break
+			}
+		}
+	}
+	return targets
+}
+
+// This is a read-only, request-local projection. The account's private mappings
+// are never edited merely to make public IDs visible.
+func managedCatalogAccountMappingWithScheduling(group *Group, account *Account, endpoint string, requireSchedulable bool) map[string]string {
+	out := make(map[string]string)
+	for _, target := range managedCatalogAccountTargets(group, account, endpoint, requireSchedulable) {
+		// This compatibility view is useful for membership, not for intersecting
+		// v2 capabilities. The latter must retain every exact branch target.
+		if _, exists := out[target.publicModel]; !exists {
+			out[target.publicModel] = target.upstreamModel
+		}
+		out[target.branch.Selector] = target.upstreamModel
 	}
 	return out
 }
@@ -49,10 +94,10 @@ func managedPublicModelIDsForAccounts(group *Group, accounts []Account, endpoint
 	}
 	available := make(map[string]bool)
 	for i := range accounts {
-		for model := range managedCatalogAccountMapping(group, &accounts[i], endpoint) {
-			if !strings.HasPrefix(model, "s2pub-") {
-				available[model] = true
-			}
+		// V1 keeps its established live-only listing policy. V2 exposes the
+		// published, valid pool independently of momentary cooldowns.
+		for _, target := range managedCatalogAccountTargets(group, &accounts[i], endpoint, group.ManagedModelRoutes.Version == 1) {
+			available[target.publicModel] = true
 		}
 	}
 	for _, route := range group.ManagedModelRoutes.Routes {
@@ -72,21 +117,16 @@ func managedModelCatalogAccounts(group *Group, accounts []Account, endpoint stri
 	for i := range accounts {
 		// Capability/context ceilings include temporary cooling members because
 		// they may rejoin the same published pool during the client's session.
-		mapping := managedCatalogAccountMappingWithScheduling(group, &accounts[i], endpoint, false)
-		if len(mapping) == 0 {
-			continue
+		for _, target := range managedCatalogAccountTargets(group, &accounts[i], endpoint, false) {
+			account := accounts[i]
+			account.Credentials = make(map[string]any, len(accounts[i].Credentials))
+			for key, value := range accounts[i].Credentials {
+				account.Credentials[key] = value
+			}
+			account.Credentials["model_mapping"] = map[string]any{target.publicModel: target.upstreamModel, target.branch.Selector: target.upstreamModel}
+			account.modelMappingCacheReady = false
+			projected = append(projected, account)
 		}
-		account := accounts[i]
-		account.Credentials = make(map[string]any, len(accounts[i].Credentials))
-		for key, value := range accounts[i].Credentials {
-			account.Credentials[key] = value
-		}
-		rawMapping := make(map[string]any, len(mapping))
-		for model, upstream := range mapping {
-			rawMapping[model] = upstream
-		}
-		account.Credentials["model_mapping"] = rawMapping
-		projected = append(projected, account)
 	}
 	return projected
 }
@@ -97,7 +137,13 @@ func (s *GatewayService) ManagedPublicModelIDs(ctx context.Context, group *Group
 	if s == nil || s.accountRepo == nil || group == nil || !group.ManagedModelRoutes.Enabled {
 		return nil, ErrManagedModelRouteUnavailable
 	}
-	accounts, err := s.accountRepo.ListSchedulableByGroupID(ctx, group.ID)
+	var accounts []Account
+	var err error
+	if group.ManagedModelRoutes.Version == ManagedModelRoutesVersion {
+		accounts, err = s.accountRepo.ListModelAvailabilityCandidates(ctx, &group.ID, managedCatalogPlatforms(group), false)
+	} else {
+		accounts, err = s.accountRepo.ListSchedulableByGroupID(ctx, group.ID)
+	}
 	if err != nil {
 		return nil, ErrManagedModelRouteUnavailable
 	}

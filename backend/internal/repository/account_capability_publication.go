@@ -36,8 +36,32 @@ func (r *accountCapabilityPublicationRepository) Preview(ctx context.Context, re
 	}
 	set, err := publicationReadChangeSet(ctx, tx, `idempotency_key = $1`, req.IdempotencyKey, false)
 	if err == nil {
-		if !publicationRequestsEqual(req, set.Request) {
+		if !publicationRequestsEqual(req, set.Request, set.Plan) {
 			return nil, service.ErrCapabilityPublicationConflict
+		}
+		if req.ExpectedConfigRevisions != nil && set.Status == "preview" {
+			// A retry may reuse the frozen preview, but never hide a browser
+			// edit that invalidated the organizer's already displayed impact.
+			reserved := map[int64]bool{}
+			for _, group := range set.Plan.Groups {
+				if group.Create {
+					reserved[group.GroupID] = true
+				}
+			}
+			snap, snapshotErr := r.snapshot(ctx, tx, set.Request, reserved)
+			if snapshotErr != nil {
+				return nil, publicationDBError(snapshotErr)
+			}
+			if snap.Fingerprint != set.BeforeFingerprint {
+				return nil, service.ErrCapabilityPublicationConflict
+			}
+			current, buildErr := build(snap)
+			if buildErr != nil {
+				return nil, buildErr
+			}
+			if !service.CapabilityPublicationPlansEqual(&set.Plan, current) {
+				return nil, service.ErrCapabilityPublicationConflict
+			}
 		}
 		return set, nil
 	}
@@ -171,15 +195,21 @@ func publicationReadChangeSet(ctx context.Context, q publicationQuerier, predica
 	return set, nil
 }
 
-func publicationRequestsEqual(in, stored service.CapabilityPublicationRequest) bool {
+func publicationRequestsEqual(in, stored service.CapabilityPublicationRequest, plan service.CapabilityPublicationPlan) bool {
 	// A saved preview contains reserved IDs for new groups; the caller still
 	// submits ID=0 on an idempotent retry.
 	if len(in.Groups) != len(stored.Groups) {
 		return false
 	}
 	stored.Groups = append([]service.CapabilityPublicationGroup(nil), stored.Groups...)
+	reserved := map[int64]bool{}
+	for _, group := range plan.Groups {
+		if group.Create {
+			reserved[group.GroupID] = true
+		}
+	}
 	for i := range in.Groups {
-		if in.Groups[i].ID == 0 {
+		if in.Groups[i].ID == 0 && reserved[stored.Groups[i].ID] {
 			stored.Groups[i].ID = 0
 		}
 	}
@@ -212,23 +242,25 @@ func publicationDBError(err error) error {
 }
 
 type publicationGroupRow struct {
-	ID                    int64                                     `json:"id"`
-	Name                  string                                    `json:"name"`
-	Platform              string                                    `json:"platform"`
-	WirePlatform          string                                    `json:"wire_platform"`
-	ProviderProfile       string                                    `json:"provider_profile"`
-	RateMultiplier        float64                                   `json:"rate_multiplier"`
-	Status                string                                    `json:"status"`
-	ModelAllowlist        service.GroupModelAllowlist               `json:"model_allowlist"`
-	ManagedModelRoutes    domain.ManagedModelRoutesConfig           `json:"managed_model_routes"`
-	ModelPricing          []service.ChannelModelPricing             `json:"model_pricing"`
-	MessagesDispatch      service.OpenAIMessagesDispatchModelConfig `json:"messages_dispatch_model_config"`
-	DefaultMappedModel    string                                    `json:"default_mapped_model"`
-	AllowMessagesDispatch bool                                      `json:"allow_messages_dispatch"`
+	ID                        int64                                     `json:"id"`
+	Name                      string                                    `json:"name"`
+	Platform                  string                                    `json:"platform"`
+	WirePlatform              string                                    `json:"wire_platform"`
+	ProviderProfile           string                                    `json:"provider_profile"`
+	RateMultiplier            float64                                   `json:"rate_multiplier"`
+	Status                    string                                    `json:"status"`
+	IsExclusive               bool                                      `json:"is_exclusive"`
+	ModelAllowlist            service.GroupModelAllowlist               `json:"model_allowlist"`
+	ManagedModelRoutes        domain.ManagedModelRoutesConfig           `json:"managed_model_routes"`
+	ModelPricing              []service.ChannelModelPricing             `json:"model_pricing"`
+	LongContextPricingEnabled bool                                      `json:"long_context_pricing_enabled"`
+	MessagesDispatch          service.OpenAIMessagesDispatchModelConfig `json:"messages_dispatch_model_config"`
+	DefaultMappedModel        string                                    `json:"default_mapped_model"`
+	AllowMessagesDispatch     bool                                      `json:"allow_messages_dispatch"`
 }
 
 func (row publicationGroupRow) group() *service.Group {
-	return &service.Group{ID: row.ID, Name: row.Name, Platform: row.Platform, WirePlatform: row.WirePlatform, ProviderProfile: row.ProviderProfile, RateMultiplier: row.RateMultiplier, Status: row.Status, ModelAllowlist: row.ModelAllowlist, ManagedModelRoutes: row.ManagedModelRoutes, ModelPricing: row.ModelPricing, MessagesDispatchModelConfig: row.MessagesDispatch, DefaultMappedModel: row.DefaultMappedModel, AllowMessagesDispatch: row.AllowMessagesDispatch}
+	return &service.Group{ID: row.ID, Name: row.Name, Platform: row.Platform, WirePlatform: row.WirePlatform, ProviderProfile: row.ProviderProfile, RateMultiplier: row.RateMultiplier, Status: row.Status, IsExclusive: row.IsExclusive, ModelAllowlist: row.ModelAllowlist, ManagedModelRoutes: row.ManagedModelRoutes, ModelPricing: row.ModelPricing, LongContextPricingEnabled: row.LongContextPricingEnabled, MessagesDispatchModelConfig: row.MessagesDispatch, DefaultMappedModel: row.DefaultMappedModel, AllowMessagesDispatch: row.AllowMessagesDispatch}
 }
 
 func (r *accountCapabilityPublicationRepository) snapshot(ctx context.Context, tx *sql.Tx, req service.CapabilityPublicationRequest, reserved map[int64]bool) (*service.CapabilityPublicationSnapshot, error) {
@@ -299,8 +331,10 @@ func (r *accountCapabilityPublicationRepository) snapshot(ctx context.Context, t
 	}
 	for _, gs := range snap.Groups {
 		for _, route := range gs.Group.ManagedModelRoutes.Routes {
-			for _, member := range route.Accounts {
-				accountSet[member.AccountID] = true
+			for _, branch := range service.ManagedModelRouteBranches(route) {
+				for _, member := range branch.Accounts {
+					accountSet[member.AccountID] = true
+				}
 			}
 		}
 	}
@@ -352,8 +386,8 @@ func (r *accountCapabilityPublicationRepository) snapshot(ctx context.Context, t
 		return nil, err
 	}
 	_ = rows.Close()
-	if len(snap.Accounts) != len(accountIDs) {
-		return nil, service.ErrCapabilityPublicationConflict
+	if err = publicationLoadDeletedAccounts(ctx, tx, snap, accountIDs); err != nil {
+		return nil, err
 	}
 	proxyIDs := map[int64]bool{}
 	for _, as := range snap.Accounts {
@@ -400,7 +434,10 @@ func (r *accountCapabilityPublicationRepository) snapshot(ctx context.Context, t
 			_ = rows.Close()
 			return nil, err
 		}
-		snap.Accounts[aid].Bindings[gid] = priority
+		if err = publicationRecordAccountBinding(snap, aid, gid, priority); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
 	}
 	if err = rows.Err(); err != nil {
 		_ = rows.Close()
@@ -465,7 +502,11 @@ func (r *accountCapabilityPublicationRepository) snapshot(ctx context.Context, t
 	for id, gs := range snap.Groups {
 		groupRelations[id] = map[string]any{"channel": gs.Channel, "routes": gs.Routes, "bindings": gs.Bindings}
 	}
-	raw, err := json.Marshal(map[string]any{"groups": groupsRaw, "group_relations": groupRelations, "accounts": accountsCAS, "evidence": snap.Evidence})
+	cas := map[string]any{"groups": groupsRaw, "group_relations": groupRelations, "accounts": accountsCAS, "evidence": snap.Evidence}
+	if len(snap.DeletedAccounts) > 0 {
+		cas["deleted_accounts"] = snap.DeletedAccounts
+	}
+	raw, err := json.Marshal(cas)
 	if err != nil {
 		return nil, err
 	}
@@ -554,7 +595,7 @@ func publicationApplyGroup(ctx context.Context, tx *sql.Tx, gp service.Capabilit
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE groups SET platform=$2,wire_platform=$2,managed_model_routes=$3::jsonb,model_allowlist=$4::jsonb,messages_dispatch_model_config=$5::jsonb,allow_messages_dispatch=$6,default_mapped_model='',status=$7,updated_at=NOW() WHERE id=$1 AND deleted_at IS NULL`, gp.GroupID, gp.Platform, string(routes), string(allowlist), string(dispatch), len(gp.MessagesDispatch.ExactModelMappings) > 0, gp.Status)
+	_, err = tx.ExecContext(ctx, `UPDATE groups SET platform=$2,wire_platform=$2,managed_model_routes=$3::jsonb,model_allowlist=$4::jsonb,messages_dispatch_model_config=$5::jsonb,allow_messages_dispatch=$6,default_mapped_model=$8,status=$7,updated_at=NOW() WHERE id=$1 AND deleted_at IS NULL`, gp.GroupID, gp.Platform, string(routes), string(allowlist), string(dispatch), gp.AllowMessagesDispatch, gp.Status, gp.DefaultMappedModel)
 	if err != nil {
 		return err
 	}
@@ -612,14 +653,23 @@ func publicationApplyGroup(ctx context.Context, tx *sql.Tx, gp service.Capabilit
 	if err != nil {
 		return err
 	}
-	// Existing routes are retained as soft-deleted history; only this public
-	// group's exact, verified routing becomes active.
-	_, err = tx.ExecContext(ctx, `UPDATE composite_model_routes SET deleted_at=NOW(),updated_at=NOW() WHERE group_id=$1 AND deleted_at IS NULL`, gp.GroupID)
+	// Preserve unchanged manual routes (including identity, endpoint, priority
+	// and disabled state). Only routes absent from the frozen merge are retired.
+	retainedRouteIDs := make([]int64, 0, len(gp.CompositeRoutes))
+	for _, route := range gp.CompositeRoutes {
+		if route.ID > 0 {
+			retainedRouteIDs = append(retainedRouteIDs, route.ID)
+		}
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE composite_model_routes SET deleted_at=NOW(),updated_at=NOW() WHERE group_id=$1 AND deleted_at IS NULL AND NOT (id=ANY($2))`, gp.GroupID, pq.Array(retainedRouteIDs))
 	if err != nil {
 		return err
 	}
 	for _, route := range gp.CompositeRoutes {
-		_, err = tx.ExecContext(ctx, `INSERT INTO composite_model_routes(group_id,public_model,match_type,target_platform,upstream_model,endpoint,priority,enabled,notes) VALUES($1,$2,'exact',$3,$4,'any',$5,true,$6)`, gp.GroupID, route.PublicModel, route.TargetPlatform, route.UpstreamModel, route.Priority, route.Notes)
+		if route.ID > 0 {
+			continue
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO composite_model_routes(group_id,public_model,match_type,target_platform,upstream_model,endpoint,priority,enabled,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, gp.GroupID, route.PublicModel, route.MatchType, route.TargetPlatform, route.UpstreamModel, route.Endpoint, route.Priority, route.Enabled, route.Notes)
 		if err != nil {
 			return err
 		}

@@ -78,3 +78,15 @@ func TestCapabilityPublicationPricingPreservesExplicitOverrides(t *testing.T) {
 		t.Fatal("pricing admission changed an existing override amount or configuration")
 	}
 }
+
+func TestCapabilityPublicationPricingDoesNotAdmitInactiveChannelOverride(t *testing.T) {
+	price := 0.000002
+	channel := &Channel{Status: "inactive", ModelPricing: []ChannelModelPricing{{Models: []string{"fixture-inactive-only"}, InputPrice: &price, OutputPrice: &price}}}
+	if CapabilityHasIdentifiedPricing(nil, nil, channel, "fixture-inactive-only") {
+		t.Fatal("an inactive channel's unused price authorized a new public model")
+	}
+	group := &Group{ModelPricing: []ChannelModelPricing{{Models: []string{"fixture-inactive-only"}, InputPrice: &price, OutputPrice: &price}}}
+	if !CapabilityHasIdentifiedPricing(nil, group, channel, "fixture-inactive-only") || channel.Status != "inactive" {
+		t.Fatal("an independent group override must not require enabling the inactive channel")
+	}
+}

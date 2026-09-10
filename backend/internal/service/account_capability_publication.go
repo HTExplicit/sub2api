@@ -12,7 +12,6 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
 )
 
 var (
@@ -34,19 +33,33 @@ type CapabilityPublicationModel struct {
 }
 
 type CapabilityPublicationGroup struct {
-	ID             int64                        `json:"id,omitempty"`
-	Name           string                       `json:"name"`
-	Platform       string                       `json:"platform"`
-	RateMultiplier float64                      `json:"rate_multiplier"`
-	Models         []CapabilityPublicationModel `json:"models"`
+	ID             int64                              `json:"id,omitempty"`
+	Name           string                             `json:"name"`
+	Platform       string                             `json:"platform"`
+	RateMultiplier float64                            `json:"rate_multiplier"`
+	Models         []CapabilityPublicationModel       `json:"models"`
+	RemoveModels   []string                           `json:"remove_models,omitempty"`
+	RemoveLines    []CapabilityPublicationLineRemoval `json:"remove_lines,omitempty"`
+}
+
+// Deletions are an explicit, exact instruction. Omitting a model or evidence
+// from a merge request never removes its existing publication.
+type CapabilityPublicationLineRemoval struct {
+	PublicModel   string `json:"public_model"`
+	AccountID     int64  `json:"account_id"`
+	UpstreamModel string `json:"upstream_model"`
+	Protocol      string `json:"protocol"`
 }
 
 type CapabilityPublicationRequest struct {
-	IdempotencyKey        string                       `json:"idempotency_key,omitempty"`
-	Scope                 CapabilityPublicationScope   `json:"scope"`
-	Groups                []CapabilityPublicationGroup `json:"groups"`
-	DetachAccountIDs      []int64                      `json:"detach_account_ids,omitempty"`
-	SchedulingEvidenceIDs []int64                      `json:"scheduling_evidence_ids,omitempty"`
+	IdempotencyKey          string                               `json:"idempotency_key,omitempty"`
+	Operation               string                               `json:"operation,omitempty"`
+	ExpectedConfigRevisions *CapabilityPublicationInputRevisions `json:"expected_config_revisions,omitempty"`
+	Scope                   CapabilityPublicationScope           `json:"scope"`
+	Groups                  []CapabilityPublicationGroup         `json:"groups"`
+	DetachAccountIDs        []int64                              `json:"detach_account_ids,omitempty"`
+	EnableAccountIDs        []int64                              `json:"enable_account_ids,omitempty"`
+	SchedulingEvidenceIDs   []int64                              `json:"scheduling_evidence_ids,omitempty"`
 }
 
 // These snapshots are server-owned and never serialized into an API response or
@@ -82,10 +95,11 @@ type CapabilityPublicationEvidence struct {
 }
 
 type CapabilityPublicationSnapshot struct {
-	Request  CapabilityPublicationRequest
-	Accounts map[int64]*CapabilityPublicationAccountSnapshot
-	Groups   map[int64]*CapabilityPublicationGroupSnapshot
-	Evidence map[int64]CapabilityPublicationEvidence
+	Request         CapabilityPublicationRequest
+	Accounts        map[int64]*CapabilityPublicationAccountSnapshot
+	DeletedAccounts map[int64]*CapabilityPublicationDeletedAccountSnapshot
+	Groups          map[int64]*CapabilityPublicationGroupSnapshot
+	Evidence        map[int64]CapabilityPublicationEvidence
 	// Fingerprint covers all modified fields and their dependencies, not secrets.
 	Fingerprint string
 }
@@ -111,16 +125,18 @@ type CapabilityPublicationAccountPatch struct {
 }
 
 type CapabilityPublicationGroupPatch struct {
-	GroupID            int64                             `json:"group_id"`
-	Create             bool                              `json:"create"`
-	Name               string                            `json:"name"`
-	Platform           string                            `json:"platform"`
-	RateMultiplier     float64                           `json:"rate_multiplier"`
-	Status             string                            `json:"status"`
-	ManagedModelRoutes domain.ManagedModelRoutesConfig   `json:"managed_model_routes"`
-	ModelAllowlist     GroupModelAllowlist               `json:"model_allowlist"`
-	MessagesDispatch   OpenAIMessagesDispatchModelConfig `json:"messages_dispatch_model_config"`
-	ChannelMapping     map[string]map[string]string      `json:"channel_mapping"`
+	GroupID               int64                             `json:"group_id"`
+	Create                bool                              `json:"create"`
+	Name                  string                            `json:"name"`
+	Platform              string                            `json:"platform"`
+	RateMultiplier        float64                           `json:"rate_multiplier"`
+	Status                string                            `json:"status"`
+	ManagedModelRoutes    domain.ManagedModelRoutesConfig   `json:"managed_model_routes"`
+	ModelAllowlist        GroupModelAllowlist               `json:"model_allowlist"`
+	MessagesDispatch      OpenAIMessagesDispatchModelConfig `json:"messages_dispatch_model_config"`
+	AllowMessagesDispatch bool                              `json:"allow_messages_dispatch"`
+	DefaultMappedModel    string                            `json:"default_mapped_model"`
+	ChannelMapping        map[string]map[string]string      `json:"channel_mapping"`
 	// Existing prices are copied without inventing prices or modifying the old channel.
 	ChannelPricing                    []ChannelModelPricing     `json:"channel_pricing"`
 	ChannelFeatures                   string                    `json:"channel_features"`
@@ -216,11 +232,19 @@ func (s *AccountCapabilityPublicationService) Apply(ctx context.Context, id int6
 }
 
 func validateCapabilityPublicationRequest(req CapabilityPublicationRequest) error {
+	if req.Operation != "" && req.Operation != "merge" {
+		return publicationInvalid("only explicit merge operations are supported; removals must name models or lines")
+	}
 	if (len(req.Groups) == 0 && len(req.SchedulingEvidenceIDs) == 0) || len(req.Groups) > 50 || len(req.Scope.AccountIDs) == 0 || len(req.Scope.AccountIDs) > 500 || len(req.Scope.FolderIDs) == 0 || len(req.IdempotencyKey) > 128 {
 		return ErrCapabilityPublicationInvalid
 	}
-	if !publicationPositiveUnique(req.Scope.AccountIDs) || !publicationPositiveUnique(req.Scope.FolderIDs) || !publicationPositiveUnique(req.DetachAccountIDs) || !publicationPositiveUnique(req.SchedulingEvidenceIDs) {
+	if !publicationPositiveUnique(req.Scope.AccountIDs) || !publicationPositiveUnique(req.Scope.FolderIDs) || !publicationPositiveUnique(req.DetachAccountIDs) || !publicationPositiveUnique(req.EnableAccountIDs) || !publicationPositiveUnique(req.SchedulingEvidenceIDs) {
 		return ErrCapabilityPublicationInvalid
+	}
+	for _, id := range req.EnableAccountIDs {
+		if !publicationHasID(req.Scope.AccountIDs, id) || publicationHasID(req.DetachAccountIDs, id) {
+			return publicationInvalid("explicit scheduling enable must remain in scope and cannot detach the same account")
+		}
 	}
 	seenGroups := map[int64]bool{}
 	seenNames := map[string]bool{}
@@ -247,6 +271,23 @@ func validateCapabilityPublicationRequest(req CapabilityPublicationRequest) erro
 				}
 				seenModels[key] = true
 			}
+		}
+		removedModels := map[string]bool{}
+		for _, model := range gp.RemoveModels {
+			key := strings.ToLower(model)
+			if !publicationValidModel(model) || removedModels[key] || seenModels[key] {
+				return ErrCapabilityPublicationInvalid
+			}
+			removedModels[key] = true
+		}
+		removedLines := map[string]bool{}
+		for _, line := range gp.RemoveLines {
+			key := fmt.Sprintf("%s|%d|%s|%s", strings.ToLower(line.PublicModel), line.AccountID, line.UpstreamModel, line.Protocol)
+			if !publicationValidModel(line.PublicModel) || !publicationValidModel(line.UpstreamModel) || line.AccountID <= 0 || removedLines[key] || removedModels[strings.ToLower(line.PublicModel)] ||
+				(line.Protocol != "" && line.Protocol != "responses" && line.Protocol != "chat_completions" && line.Protocol != "messages") {
+				return ErrCapabilityPublicationInvalid
+			}
+			removedLines[key] = true
 		}
 	}
 	return nil
@@ -293,7 +334,7 @@ type publicationProbeResult struct {
 func publicationValidateEvidenceScope(snap *CapabilityPublicationSnapshot, id int64) (CapabilityPublicationEvidence, error) {
 	e, ok := snap.Evidence[id]
 	as := snap.Accounts[e.AccountID]
-	if !ok || as == nil || as.Account == nil || e.Superseded || e.FinishedAt == nil || e.FinishedAt.Before(time.Now().Add(-24*time.Hour)) || !publicationHasID(snap.Request.Scope.AccountIDs, e.AccountID) {
+	if !ok || as == nil || as.Account == nil || e.Superseded || e.FinishedAt == nil || !publicationHasID(snap.Request.Scope.AccountIDs, e.AccountID) {
 		return e, ErrCapabilityPublicationInvalid
 	}
 	a := as.Account
@@ -364,7 +405,7 @@ func CapabilityHasIdentifiedPricing(billing *BillingService, group *Group, chann
 			}
 		}
 	}
-	if channel != nil {
+	if channel != nil && (channel.Status == "" || channel.IsActive()) {
 		if p := channel.GetModelPricing(model); p != nil && publicationHasTokenPrice(*p) {
 			return true
 		}
@@ -377,13 +418,13 @@ func publicationHasTokenPrice(p ChannelModelPricing) bool {
 }
 
 func (s *AccountCapabilityPublicationService) build(snap *CapabilityPublicationSnapshot) (*CapabilityPublicationPlan, error) {
+	if err := validateCapabilityPublicationInputRevisions(snap); err != nil {
+		return nil, err
+	}
 	// Scope protects removals too: an account without selected probe evidence can
 	// still lose old bindings/selectors and must remain in the approved folders.
-	for _, id := range snap.Request.Scope.AccountIDs {
-		as := snap.Accounts[id]
-		if as == nil || as.Account == nil || as.Account.ManagementFolderID == nil || !publicationHasID(snap.Request.Scope.FolderIDs, *as.Account.ManagementFolderID) {
-			return nil, ErrCapabilityPublicationConflict
-		}
+	if err := publicationValidateSnapshotScope(snap); err != nil {
+		return nil, err
 	}
 	plan := &CapabilityPublicationPlan{Groups: []CapabilityPublicationGroupPatch{}, Accounts: []CapabilityPublicationAccountPatch{}, Changes: []CapabilityPublicationChange{}, Warnings: []string{}}
 	patches := map[int64]*CapabilityPublicationAccountPatch{}
@@ -395,196 +436,36 @@ func (s *AccountCapabilityPublicationService) build(snap *CapabilityPublicationS
 		return patches[id]
 	}
 	for _, input := range snap.Request.Groups {
-		gs := snap.Groups[input.ID]
-		if gs == nil || gs.Group == nil {
-			return nil, ErrCapabilityPublicationConflict
+		if err := s.mergePublicationGroup(snap, input, plan, getPatch, evidenceByAccount); err != nil {
+			return nil, err
 		}
-		group := gs.Group
-		if group.Name != input.Name || group.RateMultiplier != input.RateMultiplier || group.Platform == PlatformCindy || group.StrictCindy || group.ProviderProfile == "cindy" || (gs.Channel != nil && gs.Channel.ID == 1) {
-			return nil, ErrCapabilityPublicationConflict
-		}
-		gp := CapabilityPublicationGroupPatch{GroupID: input.ID, Create: gs.IsNew, Name: input.Name, Platform: input.Platform, RateMultiplier: input.RateMultiplier, Status: StatusActive, ManagedModelRoutes: domain.ManagedModelRoutesConfig{Version: 1, Enabled: true}, ModelAllowlist: GroupModelAllowlist{Enabled: true, Models: []string{}}, MessagesDispatch: OpenAIMessagesDispatchModelConfig{ExactModelMappings: map[string]string{}}, ChannelMapping: map[string]map[string]string{}, CompositeRoutes: []CompositeModelRoute{}}
-		if gs.Channel != nil {
-			gp.ChannelPricing = gs.Channel.ModelPricing
-			gp.ChannelFeatures = gs.Channel.Features
-			gp.ChannelFeaturesConfig = gs.Channel.FeaturesConfig
-			gp.ChannelApplyPricingToAccountStats = gs.Channel.ApplyPricingToAccountStats
-			gp.ChannelAccountStatsPricingRules = gs.Channel.AccountStatsPricingRules
-		}
-		desired := map[int64]bool{}
-		groupEvidence := []int64{}
-		for _, model := range input.Models {
-			if !s.hasPrice(gs, model.PublicModel) {
-				return nil, publicationInvalid("public model has no identified price: " + model.PublicModel)
-			}
-			selector := CapabilityPublicationSelector(input.ID, model.PublicModel)
-			byPlatform := map[string][]domain.ManagedModelRouteAccount{}
-			byPlatformEndpoints := map[string]map[string]bool{}
-			memberIndex := map[string]int{}
-			for _, eid := range model.EvidenceIDs {
-				e, result, err := publicationValidateEvidence(snap, eid)
-				if err != nil {
-					return nil, err
-				}
-				metadata := e.Protocol == "responses_input_tokens" || e.Protocol == "messages_count_tokens"
-				if e.Status != "succeeded" || result.AccountFailure || (!metadata && result.Status != "alive") || (metadata && (result.Status != "available" || result.Classification != "metadata_available")) {
-					return nil, ErrCapabilityPublicationInvalid
-				}
-				platform := snap.Accounts[e.AccountID].Account.Platform
-				account := snap.Accounts[e.AccountID].Account
-				if !CapabilityCandidateMatches(account, e.UpstreamModel, model.PublicModel, model.Aliases, model.Tier) {
-					return nil, publicationInvalid("public model or alias does not match the verified upstream model")
-				}
-				if err := publicationPreservePrivateMappings(account); err != nil {
-					return nil, err
-				}
-				if platform != PlatformAnthropic && platform != PlatformOpenAI {
-					return nil, ErrCapabilityPublicationInvalid
-				}
-				if input.Platform == PlatformOpenAI && platform != PlatformOpenAI {
-					return nil, ErrCapabilityPublicationInvalid
-				}
-				ingress := CapabilityIngressEndpoints(account, e.Protocol)
-				if len(ingress) == 0 {
-					return nil, publicationInvalid("probe protocol does not match this account's current forwarding configuration")
-				}
-				key := fmt.Sprintf("%s:%d", platform, e.AccountID)
-				if byPlatformEndpoints[platform] == nil {
-					byPlatformEndpoints[platform] = map[string]bool{}
-				}
-				for _, endpoint := range ingress {
-					byPlatformEndpoints[platform][endpoint] = true
-				}
-				if idx, exists := memberIndex[key]; exists {
-					member := &byPlatform[platform][idx]
-					if member.UpstreamModel != e.UpstreamModel {
-						return nil, ErrCapabilityPublicationInvalid
-					}
-					for _, endpoint := range ingress {
-						if !publicationHasString(member.Endpoints, endpoint) {
-							member.Endpoints = append(member.Endpoints, endpoint)
-						}
-					}
-				} else {
-					memberIndex[key] = len(byPlatform[platform])
-					byPlatform[platform] = append(byPlatform[platform], domain.ManagedModelRouteAccount{AccountID: e.AccountID, UpstreamModel: e.UpstreamModel, AccountFingerprint: e.ConfigFingerprint, Endpoints: ingress})
-				}
-			}
-			// A composite model has one explicit platform; native Anthropic wins.
-			// No implicit fallback pool is published for an uncovered protocol.
-			platform := PlatformOpenAI
-			if len(byPlatform[PlatformAnthropic]) > 0 {
-				platform = PlatformAnthropic
-			}
-			members := byPlatform[platform]
-			if len(members) == 0 {
-				return nil, ErrCapabilityPublicationInvalid
-			}
-			for _, member := range members {
-				inference := false
-				for _, endpoint := range member.Endpoints {
-					if endpoint != "count_tokens" {
-						inference = true
-					}
-				}
-				if !inference {
-					return nil, publicationInvalid("token-count metadata cannot establish a live inference route")
-				}
-			}
-			endpoints := publicationSortedKeys(byPlatformEndpoints[platform])
-			sort.Slice(members, func(i, j int) bool { return members[i].AccountID < members[j].AccountID })
-			for i := range members {
-				sort.Strings(members[i].Endpoints)
-				member := members[i]
-				ap := getPatch(member.AccountID)
-				if v, ok := ap.ModelMapping[selector]; ok && v != member.UpstreamModel {
-					return nil, ErrCapabilityPublicationInvalid
-				}
-				ap.ModelMapping[selector] = member.UpstreamModel
-				desired[member.AccountID] = true
-				for _, eid := range model.EvidenceIDs {
-					if snap.Evidence[eid].AccountID == member.AccountID {
-						evidenceByAccount[member.AccountID] = append(evidenceByAccount[member.AccountID], eid)
-						groupEvidence = append(groupEvidence, eid)
-					}
-				}
-			}
-			gp.ManagedModelRoutes.Routes = append(gp.ManagedModelRoutes.Routes, domain.ManagedModelRoute{PublicModel: model.PublicModel, Aliases: append([]string{}, model.Aliases...), Selector: selector, TargetPlatform: platform, Endpoints: endpoints, Accounts: members})
-			gp.ModelAllowlist.Models = append(gp.ModelAllowlist.Models, model.PublicModel)
-			if gp.ChannelMapping[platform] == nil {
-				gp.ChannelMapping[platform] = map[string]string{}
-			}
-			for _, publicName := range append([]string{model.PublicModel}, model.Aliases...) {
-				gp.ChannelMapping[platform][publicName] = selector
-				if publicationHasString(endpoints, "messages") {
-					gp.MessagesDispatch.ExactModelMappings[publicName] = selector
-				}
-				if input.Platform == PlatformComposite {
-					gp.CompositeRoutes = append(gp.CompositeRoutes, CompositeModelRoute{GroupID: input.ID, PublicModel: publicName, MatchType: CompositeRouteMatchExact, TargetPlatform: platform, UpstreamModel: selector, Endpoint: CompositeRouteEndpointAny, Priority: 100, Enabled: true, Notes: "account-capabilities managed"})
-				}
-			}
-		}
-		if len(gp.ModelAllowlist.Models) == 0 {
-			gp.Status = "inactive"
-			plan.Warnings = append(plan.Warnings, input.Name+": no verified public models; group is inactive and existing keys are retained")
-		}
-		for accountID := range gs.Bindings {
-			if desired[accountID] {
-				continue
-			}
-			if !publicationHasID(snap.Request.Scope.AccountIDs, accountID) && !publicationHasID(snap.Request.DetachAccountIDs, accountID) {
-				return nil, publicationInvalid("an out-of-scope account is still bound to a target public group; explicitly list it for detachment")
-			}
-			getPatch(accountID).RemoveGroupIDs = append(getPatch(accountID).RemoveGroupIDs, input.ID)
-		}
-		for accountID := range desired {
-			if _, bound := gs.Bindings[accountID]; !bound {
-				getPatch(accountID).AddGroupIDs = append(getPatch(accountID).AddGroupIDs, input.ID)
-			}
-		}
-		// Revoke only selectors previously owned by this group's managed routes.
-		// A stale selector must not survive even after an account is unbound.
-		for _, old := range group.ManagedModelRoutes.Routes {
-			if old.Selector != ManagedModelSelector(group.ID, old.PublicModel) {
-				return nil, ErrCapabilityPublicationConflict
-			}
-			for _, member := range old.Accounts {
-				if !publicationHasID(snap.Request.Scope.AccountIDs, member.AccountID) {
-					continue
-				}
-				if snap.Accounts[member.AccountID] == nil {
-					return nil, ErrCapabilityPublicationConflict
-				}
-				ap := getPatch(member.AccountID)
-				if _, retained := ap.ModelMapping[old.Selector]; !retained {
-					ap.RemoveSelectors = append(ap.RemoveSelectors, old.Selector)
-				}
-			}
-		}
-		if gp.Create {
-			plan.Changes = append(plan.Changes, CapabilityPublicationChange{Kind: "group", GroupID: input.ID, Label: input.Name, Before: nil, After: map[string]any{"name": input.Name, "rate_multiplier": input.RateMultiplier, "platform": input.Platform}, EvidenceIDs: groupEvidence})
-		}
-		plan.Changes = append(plan.Changes,
-			CapabilityPublicationChange{Kind: "allowlist", GroupID: input.ID, Label: input.Name, Before: group.ModelAllowlist, After: gp.ModelAllowlist, EvidenceIDs: groupEvidence},
-			CapabilityPublicationChange{Kind: "routes", GroupID: input.ID, Label: input.Name, Before: group.ManagedModelRoutes, After: gp.ManagedModelRoutes, EvidenceIDs: groupEvidence},
-			CapabilityPublicationChange{Kind: "group", GroupID: input.ID, Label: input.Name + " platform/status", Before: map[string]string{"platform": group.Platform, "wire_platform": group.WirePlatform, "status": group.Status}, After: map[string]string{"platform": gp.Platform, "wire_platform": gp.Platform, "status": gp.Status}, EvidenceIDs: groupEvidence},
-			CapabilityPublicationChange{Kind: "routes", GroupID: input.ID, Label: input.Name + " protocol dispatch", Before: map[string]any{"messages_dispatch_model_config": group.MessagesDispatchModelConfig, "allow_messages_dispatch": group.AllowMessagesDispatch, "default_mapped_model": group.DefaultMappedModel, "composite_routes": gs.Routes}, After: map[string]any{"messages_dispatch_model_config": gp.MessagesDispatch, "allow_messages_dispatch": len(gp.MessagesDispatch.ExactModelMappings) > 0, "default_mapped_model": "", "composite_routes": gp.CompositeRoutes}, EvidenceIDs: groupEvidence},
-			CapabilityPublicationChange{Kind: "channel", GroupID: input.ID, Label: input.Name + " dedicated channel", Before: publicationChannelView(gs.Channel), After: map[string]any{"name": fmt.Sprintf("public-capabilities-g%d", input.ID), "billing_model_source": BillingModelSourceRequested, "restrict_models": false, "model_mapping": gp.ChannelMapping, "model_pricing": gp.ChannelPricing, "features": gp.ChannelFeatures, "features_config": gp.ChannelFeaturesConfig, "apply_pricing_to_account_stats": gp.ChannelApplyPricingToAccountStats, "account_stats_pricing_rules": gp.ChannelAccountStatsPricingRules}, EvidenceIDs: groupEvidence})
-		plan.Groups = append(plan.Groups, gp)
 	}
-	// Positive route evidence enables scheduling. Account-global disable requires
-	// a server-classified terminal credential failure, not merely a failed model.
+	// Publication and account-global scheduling are independent decisions. A
+	// successful historical probe may add a route, but must never reverse a
+	// browser/user pause that also protects the account's private groups.
 	for accountID, ids := range evidenceByAccount {
 		as := snap.Accounts[accountID]
 		if as.Account.Status != StatusActive {
 			plan.Warnings = append(plan.Warnings, fmt.Sprintf("account %d is not active; existing status is preserved", accountID))
 		}
-		if !as.Account.Schedulable {
-			v := true
-			getPatch(accountID).Schedulable = &v
+		if !as.Account.Schedulable && !publicationHasID(snap.Request.EnableAccountIDs, accountID) {
+			plan.Warnings = append(plan.Warnings, fmt.Sprintf("account %d remains paused for scheduling; the published member is retained but cannot take requests until explicitly enabled in account management", accountID))
 		}
 		evidenceByAccount[accountID] = publicationUniqueIDs(ids)
 	}
+	for _, id := range snap.Request.EnableAccountIDs {
+		as := snap.Accounts[id]
+		if !publicationHasID(snap.Request.Scope.AccountIDs, id) || publicationHasID(snap.Request.DetachAccountIDs, id) ||
+			as == nil || as.Account == nil || len(evidenceByAccount[id]) == 0 {
+			return nil, publicationInvalid("explicit scheduling enable requires selected current-configuration basic success evidence for the same in-scope account")
+		}
+		if !as.Account.Schedulable {
+			v := true
+			getPatch(id).Schedulable = &v
+		}
+	}
+	// Account-global disable still requires an explicit selected terminal
+	// credential failure, not merely a failed model or a temporary outage.
 	for _, eid := range snap.Request.SchedulingEvidenceIDs {
 		e, result, err := publicationValidateSchedulingEvidence(snap, eid)
 		if err != nil {
@@ -611,7 +492,10 @@ func (s *AccountCapabilityPublicationService) build(snap *CapabilityPublicationS
 	for _, id := range accountIDs {
 		ap, as := patches[id], snap.Accounts[id]
 		if as == nil {
-			return nil, ErrCapabilityPublicationConflict
+			if err := publicationPlanDeletedAccountPatch(snap, id, ap, plan); err != nil {
+				return nil, err
+			}
+			continue
 		}
 		ap.AddGroupIDs, ap.RemoveGroupIDs, ap.RemoveSelectors = publicationUniqueIDs(ap.AddGroupIDs), publicationUniqueIDs(ap.RemoveGroupIDs), publicationUniqueStrings(ap.RemoveSelectors)
 		beforeMappings := map[string]string{}
@@ -648,10 +532,12 @@ func (s *AccountCapabilityPublicationService) build(snap *CapabilityPublicationS
 func publicationOwnedSelector(snap *CapabilityPublicationSnapshot, accountID int64, selector string) bool {
 	for _, gs := range snap.Groups {
 		for _, rt := range gs.Group.ManagedModelRoutes.Routes {
-			if rt.Selector == selector {
-				for _, member := range rt.Accounts {
-					if member.AccountID == accountID {
-						return true
+			for _, branch := range ManagedModelRouteBranches(rt) {
+				if branch.Selector == selector {
+					for _, member := range branch.Accounts {
+						if member.AccountID == accountID {
+							return true
+						}
 					}
 				}
 			}
@@ -701,6 +587,10 @@ func publicationChannelView(ch *Channel) any {
 	if ch == nil {
 		return nil
 	}
+	return publicationChannelFields(ch)
+}
+
+func publicationChannelFields(ch *Channel) map[string]any {
 	return map[string]any{"id": ch.ID, "name": ch.Name, "billing_model_source": ch.BillingModelSource, "restrict_models": ch.RestrictModels, "model_mapping": ch.ModelMapping, "model_pricing": ch.ModelPricing, "features": ch.Features, "features_config": ch.FeaturesConfig, "apply_pricing_to_account_stats": ch.ApplyPricingToAccountStats, "account_stats_pricing_rules": ch.AccountStatsPricingRules}
 }
 func publicationBindingView(bindings map[int64]int) []map[string]any {
@@ -754,8 +644,8 @@ func publicationPreservePrivateMappings(a *Account) error {
 }
 
 // CapabilityIngressEndpoints compiles successful *wire* evidence into client
-// entry points whose existing adapter deterministically uses that wire. It does
-// not modify account routing flags, enable WS, or invent a count-token test.
+// entry points whose managed-v2 adapter deterministically pins that wire. This
+// per-request choice never changes stored account routing flags or enables WS.
 func CapabilityIngressEndpoints(a *Account, protocol string) []string {
 	if a == nil || a.Type != AccountTypeAPIKey {
 		return nil
@@ -778,27 +668,10 @@ func CapabilityIngressEndpoints(a *Account, protocol string) []string {
 		}
 		return nil
 	}
-	if a.Platform == PlatformAnthropic {
-		if protocol == "messages" {
-			return []string{"chat_completions", "messages", "responses"}
-		}
-		return nil
-	}
-	if a.Platform != PlatformOpenAI {
-		return nil
-	}
-	if shouldForwardOpenAIResponsesViaRawChatCompletions(a) {
-		if protocol == "chat_completions" {
-			return []string{"chat_completions", "messages", "responses"}
-		}
-		return nil
-	}
-	if protocol == "responses" {
-		// Unknown capability has a Chat ingress error-triggered fallback to Chat
-		// Completions. Without independent evidence that ingress stays unpublished.
-		if openai_compat.ResolveResponsesSupport(a.Extra) == openai_compat.ResponsesSupportUnknown {
-			return []string{"messages", "responses"}
-		}
+	if ManagedModelBranchProtocolSupported(a.Platform, protocol) {
+		// Publication and runtime share the adapter capability matrix. The
+		// model manufacturer is never a substitute for its verified wire, and
+		// adding a supported runtime adapter cannot leave a stale UI-only gate.
 		return []string{"chat_completions", "messages", "responses"}
 	}
 	return nil

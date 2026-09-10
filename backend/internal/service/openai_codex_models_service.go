@@ -161,7 +161,7 @@ func (s *OpenAIGatewayService) BuildGroupConfiguredCodexModelsManifest(
 	if len(configuredModels) == 0 {
 		return nil, false, nil
 	}
-	capacityCatalog := loadGroupModelCapacityCatalog(ctx, s.accountRepo, nil, s.channelService, s.cfg, &group.ID, group.Platform)
+	capacityCatalog := loadGroupModelCapacityCatalog(ctx, s.accountRepo, nil, s.channelService, s.cfg, &group.ID, group.Platform, group)
 	capacityCatalog.group = group
 	catalog := capacityCatalog.accounts
 	if !capacityCatalog.available {
@@ -844,7 +844,7 @@ func (s *GatewayService) BuildCodexModelsManifestForGroup(
 	if s.compositeResolver != nil {
 		routesRepo = s.compositeResolver.repo
 	}
-	capacityCatalog := loadGroupModelCapacityCatalog(ctx, s.accountRepo, routesRepo, s.channelService, s.cfg, &group.ID, effectivePlatform)
+	capacityCatalog := loadGroupModelCapacityCatalog(ctx, s.accountRepo, routesRepo, s.channelService, s.cfg, &group.ID, effectivePlatform, group)
 	capacityCatalog.group = group
 	metadataAccounts := capacityCatalog.accounts
 	metadataRoutesAvailable := capacityCatalog.routesAvailable
@@ -859,7 +859,7 @@ func (s *GatewayService) BuildCodexModelsManifestForGroup(
 		// to current schedulable accounts; capacity remains explicitly default.
 		metadataAccounts, _ = s.accountRepo.ListSchedulableByGroupID(ctx, group.ID)
 	}
-	if group.ManagedModelRoutes.Enabled {
+	if group.ManagedModelRoutes.Enabled && group.ManagedModelRoutes.Version == 1 {
 		metadataAccounts = managedModelCatalogAccounts(group, metadataAccounts, CompositeRouteEndpointResponses)
 	}
 	body, err := buildCodexModelsManifestForAccounts(
@@ -886,6 +886,9 @@ func buildCodexModelsManifestForAccounts(
 	compositeRoutes []CompositeModelRoute,
 	compositeRoutesAvailable bool,
 ) ([]byte, error) {
+	if group != nil && group.ManagedModelRoutes.Enabled && group.ManagedModelRoutes.Version == ManagedModelRoutesVersion {
+		return buildManagedCodexModelsManifestForAccounts(modelIDs, accounts, group)
+	}
 	imageInputModels := make(map[string]bool, len(modelIDs))
 	searchToolModels := make(map[string]bool, len(modelIDs))
 	metadataModels := codexCatalogMetadataModels(
@@ -926,6 +929,72 @@ func buildCodexModelsManifestForAccounts(
 		); ok {
 			modelMetadata[modelID] = metadata
 		}
+	}
+	return buildCodexModelsManifest(modelIDs, imageInputModels, searchToolModels, metadataModels, modelMetadata)
+}
+
+// The managed graph already proves ownership. Intersect every branch rather
+// than feeding a many-platform publication into composite's single-platform
+// detector (or overwriting a same-account public alias with its last target).
+func buildManagedCodexModelsManifestForAccounts(modelIDs []string, accounts []Account, group *Group) ([]byte, error) {
+	type modelCandidates struct {
+		metadata        []UpstreamModelMetadata
+		targets         map[string]bool
+		missingMetadata bool
+		imageInput      bool
+		searchTool      bool
+	}
+	byModel := make(map[string]*modelCandidates)
+	for _, model := range modelIDs {
+		byModel[strings.TrimSpace(model)] = &modelCandidates{targets: make(map[string]bool), imageInput: true, searchTool: true}
+	}
+	for i := range accounts {
+		account := &accounts[i]
+		for _, target := range managedCatalogAccountTargets(group, account, CompositeRouteEndpointResponses, false) {
+			candidate := byModel[target.publicModel]
+			if candidate == nil {
+				continue
+			}
+			// Routing overlays describe the adapter, not the source of upstream
+			// observations. Read snapshots from the original account/real target.
+			metadata, known := account.GetUpstreamModelMetadata(target.upstreamModel)
+			candidate.missingMetadata = candidate.missingMetadata || !known
+			ctx := WithManagedModelRequest(context.Background(), target.request)
+			_, protocolAccount, err := WithManagedModelAccountProtocol(ctx, account, target.branch)
+			if err != nil {
+				protocolAccount = account
+				candidate.missingMetadata = true
+			}
+			metadata.CodexToolCapabilities = accountCodexToolCapabilities(protocolAccount, target.upstreamModel)
+			candidate.metadata = append(candidate.metadata, metadata)
+			candidate.targets[target.upstreamModel] = true
+			candidate.imageInput = candidate.imageInput && accountCodexModelSupportsImageInput(account, target.upstreamModel)
+			candidate.searchTool = candidate.searchTool && protocolAccount.Platform == PlatformOpenAI && shouldForwardOpenAIResponsesViaRawChatCompletions(protocolAccount)
+		}
+	}
+	imageInputModels := make(map[string]bool)
+	searchToolModels := make(map[string]bool)
+	metadataModels := make(map[string]string)
+	modelMetadata := make(map[string]codexModelMetadataOverride)
+	for model, candidate := range byModel {
+		if len(candidate.metadata) == 0 {
+			continue
+		}
+		imageInputModels[model], searchToolModels[model] = candidate.imageInput, candidate.searchTool
+		metadata := intersectUpstreamModelMetadata(model, candidate.metadata)
+		if candidate.missingMetadata {
+			metadata = codexModelMetadataOverride{UpstreamModelMetadata: UpstreamModelMetadata{CodexToolCapabilities: metadata.CodexToolCapabilities}}
+		}
+		if len(candidate.targets) == 1 {
+			for target := range candidate.targets {
+				metadataModels[model] = target
+			}
+		}
+		if len(candidate.targets) > 1 || !candidate.targets[model] {
+			metadata.DisplayName = model
+			metadata.Description = configuredCodexCustomDescription
+		}
+		modelMetadata[model] = metadata
 	}
 	return buildCodexModelsManifest(modelIDs, imageInputModels, searchToolModels, metadataModels, modelMetadata)
 }

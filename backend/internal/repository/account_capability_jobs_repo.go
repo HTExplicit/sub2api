@@ -100,11 +100,44 @@ func (r *accountCapabilityRepository) GetRun(ctx context.Context, id int64) (*se
 }
 
 func (r *accountCapabilityRepository) Create(ctx context.Context, run *service.AccountCapabilityRun, items []service.AccountCapabilityItem) (*service.AccountCapabilityRun, bool, error) {
-	tx, err := r.db.BeginTx(ctx, nil)
+	// Every creator participates in the queue lock: otherwise an ordinary
+	// batch could insert an uncommitted reservation while an OnlyUntested
+	// batch is checking the same paid probe, and both would be accepted.
+	tx, err := r.beginControl(ctx)
 	if err != nil {
 		return nil, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if run.OnlyUntested {
+		if run.Kind != service.AccountCapabilityKindProbe || len(items) == 0 {
+			return nil, false, service.ErrAccountCapabilityInvalid
+		}
+		// A new idempotency key must not authorize the same paid probe.
+		existing, findErr := scanCapabilityRun(tx.QueryRowContext(ctx, `SELECT `+capabilityRunColumns+capabilityRunCounts+` FROM admin_capability_runs r WHERE r.created_by=$1 AND r.idempotency_key=$2`, run.CreatedBy, run.IdempotencyKey))
+		if findErr == nil {
+			if existing.RequestHash != run.RequestHash {
+				return nil, false, service.ErrAccountCapabilityIdempotencyConflict
+			}
+			if err = tx.Commit(); err != nil {
+				return nil, false, err
+			}
+			return existing, true, nil
+		}
+		if !errors.Is(findErr, service.ErrAccountCapabilityNotFound) {
+			return nil, false, findErr
+		}
+		for _, item := range items {
+			var attempted bool
+			err = tx.QueryRowContext(ctx, capabilityUnattemptedConflictSQL,
+				item.AccountID, item.ConfigFingerprint, item.UpstreamModel, item.Protocol, item.FolderID).Scan(&attempted)
+			if err != nil {
+				return nil, false, err
+			}
+			if attempted {
+				return nil, false, service.ErrAccountCapabilityAlreadyAttempted
+			}
+		}
+	}
 	folders, err := json.Marshal(run.FolderIDs)
 	if err != nil {
 		return nil, false, err
@@ -153,6 +186,48 @@ func (r *accountCapabilityRepository) Create(ctx context.Context, run *service.A
 	}
 	return created, false, nil
 }
+
+// Canceled work is reusable only if it was certainly never dispatched.
+// Any prior basic success for this exact configuration/model prevents an
+// automatic extra-interface probe, even when its current readiness changed.
+// A basic probe reserved through another protocol must finish before the
+// planner can decide whether an additional, previously untested one is needed.
+// Automatic work can try an original interface and at most one previously
+// untested fallback, never a succession of third/fourth-interface batches.
+// A current account-wide credential failure blocks any new target until genuine
+// later discovery/basic evidence retires it. Manual diagnostic runs are separate.
+const capabilityUnattemptedConflictSQL = `SELECT EXISTS (
+ SELECT 1 FROM admin_capability_items i
+ JOIN admin_capability_runs r ON r.id=i.run_id
+ WHERE r.kind='probe' AND i.profile='text'
+ AND i.account_id=$1 AND i.config_fingerprint=$2 AND i.upstream_model=$3
+ AND (
+   (i.protocol=$4 AND (i.status<>'canceled' OR i.dispatched_at IS NOT NULL
+     OR i.request_count>0 OR i.result->>'request_count_unknown'='true'
+     OR CASE WHEN jsonb_typeof(i.result->'request_count')='number'
+      THEN (i.result->>'request_count')::numeric ELSE 0 END>0))
+   OR ((i.status IN ('pending','running') OR (i.status='succeeded' AND i.result->>'status'='alive'))
+     AND i.protocol IN ('responses','chat_completions','messages','responses_websocket'))
+ )) OR (
+ SELECT COUNT(DISTINCT i.protocol) FROM admin_capability_items i
+ JOIN admin_capability_runs r ON r.id=i.run_id
+ WHERE r.kind='probe' AND i.profile='text'
+ AND i.account_id=$1 AND i.config_fingerprint=$2 AND i.upstream_model=$3
+ AND i.protocol IN ('responses','chat_completions','messages','responses_websocket')
+ AND (i.dispatched_at IS NOT NULL OR i.request_count>0
+  OR i.result->>'request_count_unknown'='true'
+  OR CASE WHEN jsonb_typeof(i.result->'request_count')='number'
+   THEN (i.result->>'request_count')::numeric ELSE 0 END>0
+  OR i.status IN ('failed','indeterminate'))
+ ) >= 2 OR EXISTS (
+ SELECT 1 FROM admin_capability_items i
+ JOIN admin_capability_runs r ON r.id=i.run_id
+ WHERE i.account_id=$1 AND i.config_fingerprint=$2 AND i.folder_id=$5
+ AND i.status='failed' AND i.result->>'account_failure'='true'
+ AND (r.kind='discover' OR (r.kind='probe' AND i.profile='text'
+  AND i.protocol IN ('responses','chat_completions','messages','responses_websocket')))
+ AND NOT (` + capabilityPublicationSupersededSQL + `)
+ )`
 
 func capabilityPage(filter service.AccountCapabilityFilter) service.AccountCapabilityFilter {
 	if filter.Page < 1 {

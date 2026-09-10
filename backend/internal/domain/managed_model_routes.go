@@ -13,10 +13,24 @@ type ManagedModelRoutesConfig struct {
 type ManagedModelRoute struct {
 	PublicModel    string                     `json:"public_model"`
 	Aliases        []string                   `json:"aliases,omitempty"`
-	Selector       string                     `json:"selector"`
-	TargetPlatform string                     `json:"target_platform"`
+	QuotaPlatform  string                     `json:"quota_platform,omitempty"`
+	Selector       string                     `json:"selector,omitempty"`
+	TargetPlatform string                     `json:"target_platform,omitempty"`
 	Endpoints      []string                   `json:"endpoints"`
-	Accounts       []ManagedModelRouteAccount `json:"accounts"`
+	Accounts       []ManagedModelRouteAccount `json:"accounts,omitempty"`
+	Branches       []ManagedModelRouteBranch  `json:"branches,omitempty"`
+}
+
+// ManagedModelRouteBranch is one independently verified upstream path. New
+// branches bind an exact platform, wire protocol and real upstream model; the
+// same account may participate in several paths without overwriting its other
+// mappings. Empty UpstreamProtocol is reserved for retained version-1 paths.
+type ManagedModelRouteBranch struct {
+	Selector         string                     `json:"selector"`
+	TargetPlatform   string                     `json:"target_platform"`
+	UpstreamProtocol string                     `json:"upstream_protocol,omitempty"`
+	Endpoints        []string                   `json:"endpoints"`
+	Accounts         []ManagedModelRouteAccount `json:"accounts"`
 }
 
 // ManagedModelRouteAccount identifies one verified account/model combination.

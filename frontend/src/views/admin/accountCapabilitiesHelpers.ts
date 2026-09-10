@@ -18,7 +18,7 @@ export function canPublishCapability(item: CapabilityItem): boolean {
 }
 
 export function isPublishableCandidate(item: CapabilityCandidate): boolean {
-  if (!item.latest_probe_item_id) return false
+  if (!item.last_success_item_id && !item.latest_probe_item_id) return false
   // An explicit server refusal must not fall back to a successful old probe.
   return item.publishable === undefined
     ? item.probe_status === 'alive' && !item.stale
@@ -32,34 +32,10 @@ export function capabilityPublicationTier(publicModel: string, upstreamTier: Cap
 }
 
 export function selectCapabilityPublicationTargets(items: CapabilityCandidate[]): { selected: CapabilityCandidate[]; omittedCount: number } {
-  const eligible = [...new Map(items.filter(isPublishableCandidate).map((item) => [item.candidate_id, item])).values()]
-  const buckets = new Map<string, Map<string, CapabilityCandidate[]>>()
-  for (const item of eligible) {
-    const key = JSON.stringify([item.account_id, item.group_name, item.public_model])
-    const targets = buckets.get(key) ?? new Map<string, CapabilityCandidate[]>()
-    const evidence = targets.get(item.upstream_model) ?? []
-    evidence.push(item)
-    targets.set(item.upstream_model, evidence)
-    buckets.set(key, targets)
-  }
-  const tierRank = { standard: 0, vip: 1, ssvip: 2 }
-  const lexical = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0
-  const selected: CapabilityCandidate[] = []
-  for (const targets of buckets.values()) {
-    const ranked = [...targets.entries()].map(([upstream, evidence]) => ({
-      upstream,
-      evidence,
-      protocols: new Set(evidence.map((item) => item.protocol)).size,
-      tier: Math.max(...evidence.map((item) => tierRank[item.tier])),
-      exact: upstream === evidence[0]!.public_model,
-    }))
-    ranked.sort((left, right) => right.protocols - left.protocols || right.tier - left.tier ||
-      Number(right.exact) - Number(left.exact) || lexical(left.upstream, right.upstream))
-    // Keep every selected protocol observation for the chosen exact target.
-    // Other targets stay in the inventory; only this publication draft narrows.
-    selected.push(...ranked[0]!.evidence)
-  }
-  return { selected, omittedCount: eligible.length - selected.length }
+  // The server owns eligibility and multi-branch routing. A browser-side
+  // preference must not discard a successful alternative target or platform.
+  const selected = [...new Map(items.filter(isPublishableCandidate).map((item) => [item.candidate_id, item])).values()]
+  return { selected, omittedCount: 0 }
 }
 
 export function deduplicateProbeTargets(items: CapabilityProbeTarget[]): CapabilityProbeTarget[] {

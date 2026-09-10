@@ -176,7 +176,7 @@ func (s *OpenAIGatewayService) bufferChatCompletionsAsAnthropic(
 	if err != nil {
 		return nil, err
 	}
-	anthropicResp := apicompat.ChatCompletionsResponseToAnthropic(ccResp, originalModel)
+	anthropicResp := apicompat.ChatCompletionsResponseToAnthropic(ccResp, managedModelResponseModel(managedModelResponseContext(c), originalModel))
 
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -212,7 +212,7 @@ func (s *OpenAIGatewayService) streamChatCompletionsAsAnthropic(
 	requestID := resp.Header.Get("x-request-id")
 	writeStreamHeaders := s.newStreamHeaderWriter(c, resp.Header)
 
-	anthropicState := apicompat.NewChatCompletionsToAnthropicStreamState(originalModel)
+	anthropicState := apicompat.NewChatCompletionsToAnthropicStreamState(managedModelResponseModel(managedModelResponseContext(c), originalModel))
 	clientDisconnected := false
 
 	// 与 responses 兄弟不同：客户端断开后仍继续做事件转换（喂 anthropicState），

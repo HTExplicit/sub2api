@@ -16,6 +16,7 @@ type GroupCodexModelsManifestConfig = domain.GroupCodexModelsManifestConfig
 type ReasoningEffortMapping = domain.ReasoningEffortMapping
 type ManagedModelRoutesConfig = domain.ManagedModelRoutesConfig
 type ManagedModelRoute = domain.ManagedModelRoute
+type ManagedModelRouteBranch = domain.ManagedModelRouteBranch
 type ManagedModelRouteAccount = domain.ManagedModelRouteAccount
 
 type Group struct {
