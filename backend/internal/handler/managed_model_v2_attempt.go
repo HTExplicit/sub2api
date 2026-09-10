@@ -43,7 +43,8 @@ func (h *GatewayHandler) forwardManagedModelV2Attempt(c *gin.Context, openAI *Op
 	}
 	parsed.GroupID, parsed.SessionContext = ingress.GroupID, ingress.SessionContext
 	c.Set("parsed_request", parsed)
-	if endpoint == service.CompositeRouteEndpointMessages {
+	switch endpoint {
+	case service.CompositeRouteEndpointMessages:
 		if err := parsed.ReplaceBody(h.gatewayService.ApplyBedrockCCCompat(c, body, parsed.Model, account, parsed.GroupID)); err != nil {
 			return nil, err
 		}
@@ -63,7 +64,7 @@ func (h *GatewayHandler) forwardManagedModelV2Attempt(c *gin.Context, openAI *Op
 			setActualUpstreamEndpoint(c, "/v1/messages")
 			result.Native, err = h.gatewayService.Forward(ctx, c, account, parsed)
 		}
-	} else if endpoint == service.CompositeRouteEndpointResponses {
+	case service.CompositeRouteEndpointResponses:
 		if shouldUseAntigravityCompat(account) {
 			if h.antigravityGatewayService == nil {
 				return nil, fmt.Errorf("antigravity compatibility service is unavailable")
@@ -72,7 +73,7 @@ func (h *GatewayHandler) forwardManagedModelV2Attempt(c *gin.Context, openAI *Op
 		} else {
 			result.Native, err = h.gatewayService.ForwardAsResponses(ctx, c, account, body, parsed)
 		}
-	} else if endpoint == service.CompositeRouteEndpointChatCompletions {
+	case service.CompositeRouteEndpointChatCompletions:
 		if shouldUseAntigravityCompat(account) {
 			if h.antigravityGatewayService == nil {
 				return nil, fmt.Errorf("antigravity compatibility service is unavailable")
@@ -81,7 +82,7 @@ func (h *GatewayHandler) forwardManagedModelV2Attempt(c *gin.Context, openAI *Op
 		} else {
 			result.Native, err = h.gatewayService.ForwardAsChatCompletions(ctx, c, account, body, parsed)
 		}
-	} else {
+	default:
 		return nil, service.ErrManagedModelRouteUnavailable
 	}
 	return result, err

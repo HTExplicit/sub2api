@@ -37,7 +37,8 @@ func TestManagedModelAffinityCacheRoundTripAcrossInstances(t *testing.T) {
 	// A fresh Redis client and gateway cache have no process-local state.
 	client := redis.NewClient(&redis.Options{Addr: server.Addr(), MaxRetries: -1})
 	t.Cleanup(func() { _ = client.Close() })
-	restarted := NewGatewayCache(client).(service.ManagedModelAffinityCache)
+	restarted, ok := NewGatewayCache(client).(service.ManagedModelAffinityCache)
+	require.True(t, ok)
 	got, err := restarted.GetManagedModelAffinity(ctx, []string{first, missing, second, first})
 	require.NoError(t, err)
 	require.Equal(t, map[string]service.ManagedModelAffinityBinding{first: binding, second: binding}, got)

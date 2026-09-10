@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
+	"github.com/stretchr/testify/require"
 )
 
 func publicationV2AddAccount(snap *CapabilityPublicationSnapshot, id int64, platform string, folderID int64) *Account {
@@ -54,7 +55,7 @@ func publicationV2MergeSnapshot() *CapabilityPublicationSnapshot {
 	snap.Request.Scope.AccountIDs = []int64{7, 8}
 	oldModel := "gpt-5.6-sol"
 	selector := ManagedModelSelector(23, oldModel)
-	a.Credentials["model_mapping"].(map[string]any)[selector] = oldModel
+	a.Credentials["model_mapping"] = map[string]any{"private-model": "private-upstream", selector: oldModel}
 	snap.Accounts[8].Bindings[23] = 31
 	snap.Groups[23].Bindings[8] = 31
 	endpoints := []string{"chat_completions", "messages", "responses"}
@@ -278,7 +279,9 @@ func TestCapabilityPublicationV2LineRemovalKeepsOtherTargetsAndMembers(t *testin
 		}
 		for _, accountID := range []int64{7, 8} {
 			account := snap.Accounts[accountID].Account
-			account.Credentials["model_mapping"].(map[string]any)[selector] = upstream
+			mapping, ok := account.Credentials["model_mapping"].(map[string]any)
+			require.True(t, ok)
+			mapping[selector] = upstream
 			branch.Accounts = append(branch.Accounts, domain.ManagedModelRouteAccount{
 				AccountID: accountID, UpstreamModel: upstream, AccountFingerprint: ManagedModelAccountFingerprint(account), Endpoints: endpoints,
 			})
@@ -386,7 +389,8 @@ func TestCapabilityPublicationV2SameAccountDistinctTargetsUseIndependentSelector
 				// maps the canonical public name and its established alias to each
 				// exact, same-version upstream product.
 				account := snap.Accounts[7].Account
-				mapping := account.Credentials["model_mapping"].(map[string]any)
+				mapping, ok := account.Credentials["model_mapping"].(map[string]any)
+				require.True(t, ok)
 				mapping["gpt-5.6-sol"], mapping["gpt-5.6"] = fixture.targets[0], fixture.targets[1]
 				account.modelMappingCacheReady = false
 			}

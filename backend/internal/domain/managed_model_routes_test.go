@@ -63,7 +63,11 @@ func TestManagedModelRoutesV2JSONPreservesDistinctBranches(t *testing.T) {
 	require.Equal(t, config, decoded)
 	var envelope map[string]any
 	require.NoError(t, json.Unmarshal(body, &envelope))
-	route := envelope["routes"].([]any)[0].(map[string]any)
+	routes, ok := envelope["routes"].([]any)
+	require.True(t, ok)
+	require.Len(t, routes, 1)
+	route, ok := routes[0].(map[string]any)
+	require.True(t, ok)
 	require.NotContains(t, route, "selector", "a v2 model has no single winning selector")
 	require.NotContains(t, route, "target_platform")
 	require.NotContains(t, route, "accounts")

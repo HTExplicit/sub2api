@@ -72,12 +72,8 @@ func managedCatalogAccountTargets(group *Group, account *Account, endpoint strin
 	return targets
 }
 
-// managedCatalogAccountMapping is a read-only, request-local projection. The
-// account's private mappings are never edited merely to make public IDs visible.
-func managedCatalogAccountMapping(group *Group, account *Account, endpoint string) map[string]string {
-	return managedCatalogAccountMappingWithScheduling(group, account, endpoint, true)
-}
-
+// This is a read-only, request-local projection. The account's private mappings
+// are never edited merely to make public IDs visible.
 func managedCatalogAccountMappingWithScheduling(group *Group, account *Account, endpoint string, requireSchedulable bool) map[string]string {
 	out := make(map[string]string)
 	for _, target := range managedCatalogAccountTargets(group, account, endpoint, requireSchedulable) {

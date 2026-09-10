@@ -30,7 +30,9 @@ func managedV2Fixture(t *testing.T) (*Group, []*Account) {
 	} {
 		account := accounts[item.account]
 		selector := ManagedModelBranchSelector(groupID, public, account.Platform, item.protocol, item.target)
-		account.Credentials["model_mapping"].(map[string]any)[selector] = item.target
+		mapping, ok := account.Credentials["model_mapping"].(map[string]any)
+		require.True(t, ok)
+		mapping[selector] = item.target
 		route.Branches = append(route.Branches, ManagedModelRouteBranch{Selector: selector, TargetPlatform: account.Platform, UpstreamProtocol: item.protocol, Endpoints: endpoints,
 			Accounts: []ManagedModelRouteAccount{{AccountID: account.ID, UpstreamModel: item.target, AccountFingerprint: ManagedModelAccountFingerprint(account), Endpoints: endpoints}}})
 	}
@@ -121,8 +123,8 @@ func TestManagedModelV2RejectsForgedBranchAndKeepsLegacyProjection(t *testing.T)
 
 type managedV2AccountRepo struct {
 	AccountRepository
-	accounts map[int64]*Account
-	reads    map[int64]int
+	accounts   map[int64]*Account
+	reads      map[int64]int
 	batchReads int
 }
 
@@ -136,7 +138,9 @@ func (r *managedV2AccountRepo) GetByIDs(_ context.Context, ids []int64) ([]*Acco
 	out := make([]*Account, 0, len(ids))
 	for _, id := range ids {
 		r.reads[id]++
-		if account := r.accounts[id]; account != nil { out = append(out, account) }
+		if account := r.accounts[id]; account != nil {
+			out = append(out, account)
+		}
 	}
 	return out, nil
 }
@@ -269,13 +273,15 @@ func TestManagedModelV2SelectionPrefersAvailableBranchAndKeepsNormalGate(t *test
 	selected.Selection.ReleaseFunc()
 }
 
-type managedV2SchedulerRepo struct { schedulerTestOpenAIAccountRepo }
+type managedV2SchedulerRepo struct{ schedulerTestOpenAIAccountRepo }
 
 func (r managedV2SchedulerRepo) GetByIDs(ctx context.Context, ids []int64) ([]*Account, error) {
 	accounts := make([]*Account, 0, len(ids))
 	for _, id := range ids {
 		account, err := r.GetByID(ctx, id)
-		if err == nil { accounts = append(accounts, account) }
+		if err == nil {
+			accounts = append(accounts, account)
+		}
 	}
 	return accounts, nil
 }

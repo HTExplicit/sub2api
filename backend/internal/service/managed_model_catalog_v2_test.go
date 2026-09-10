@@ -19,18 +19,19 @@ func managedCatalogV2Fixture() (*Group, []Account) {
 		ModelAllowlist:     GroupModelAllowlist{Enabled: true, Models: []string{model, "claude-fable-5"}},
 		ManagedModelRoutes: ManagedModelRoutesConfig{Version: ManagedModelRoutesVersion, Enabled: true},
 	}
+	mappings := []map[string]any{{model: "private-native"}, {model: "private-compatible"}}
 	accounts := []Account{
 		{ID: 1, Platform: PlatformAnthropic, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, GroupIDs: []int64{groupID},
-			Credentials: map[string]any{"base_url": "https://native.example/v1", "api_key": "synthetic-test-only", "model_mapping": map[string]any{model: "private-native"}},
+			Credentials: map[string]any{"base_url": "https://native.example/v1", "api_key": "synthetic-test-only", "model_mapping": mappings[0]},
 			Extra:       map[string]any{ModelContextOverridesExtraKey: map[string]int64{model: 900000, "claude-fable-5": 800000}}},
 		{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, GroupIDs: []int64{groupID},
-			Credentials: map[string]any{"base_url": "https://compatible.example/v1", "api_key": "synthetic-test-only", "model_mapping": map[string]any{model: "private-compatible"}},
+			Credentials: map[string]any{"base_url": "https://compatible.example/v1", "api_key": "synthetic-test-only", "model_mapping": mappings[1]},
 			Extra:       map[string]any{"openai_responses_mode": "force_responses", ModelContextOverridesExtraKey: map[string]int64{"wire/fable-5.1": 500000, "wire/fable-5.1-cc": 123456}}},
 	}
 	branch := func(index int, public, actual, protocol string) ManagedModelRouteBranch {
 		account := &accounts[index]
 		selector := ManagedModelBranchSelector(group.ID, public, account.Platform, protocol, actual)
-		account.Credentials["model_mapping"].(map[string]any)[selector] = actual
+		mappings[index][selector] = actual
 		return ManagedModelRouteBranch{Selector: selector, TargetPlatform: account.Platform, UpstreamProtocol: protocol, Endpoints: endpoints,
 			Accounts: []ManagedModelRouteAccount{{AccountID: account.ID, UpstreamModel: actual, AccountFingerprint: ManagedModelAccountFingerprint(account), Endpoints: endpoints}}}
 	}

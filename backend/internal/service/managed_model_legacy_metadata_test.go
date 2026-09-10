@@ -22,7 +22,11 @@ func managedLegacyMetadataV2Fixture() (*Group, *Account) {
 	route := &group.ManagedModelRoutes.Routes[0]
 	legacy := ManagedModelRouteBranches(*route)[0]
 	selector := ManagedModelBranchSelector(group.ID, route.PublicModel, PlatformOpenAI, CompositeRouteEndpointResponses, "new-generative-wire-model")
-	account.Credentials["model_mapping"].(map[string]any)[selector] = "new-generative-wire-model"
+	account.Credentials["model_mapping"] = map[string]any{
+		route.PublicModel: "private-ssvip",
+		legacy.Selector:   legacy.Accounts[0].UpstreamModel,
+		selector:          "new-generative-wire-model",
+	}
 	newBranch := ManagedModelRouteBranch{Selector: selector, TargetPlatform: PlatformOpenAI, UpstreamProtocol: CompositeRouteEndpointResponses,
 		Endpoints: []string{CompositeRouteEndpointResponses}, Accounts: []ManagedModelRouteAccount{{AccountID: account.ID, UpstreamModel: "new-generative-wire-model",
 			AccountFingerprint: ManagedModelAccountFingerprint(account), Endpoints: []string{CompositeRouteEndpointResponses}}}}

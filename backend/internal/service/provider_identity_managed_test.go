@@ -50,7 +50,7 @@ func TestValidateProviderIdentityGroupBindingsRetainsOnlyVerifiedManagedMembers(
 		{name: "new binding even with old route entry", mutate: func(_ *Group, a *Account) { a.GroupIDs = []int64{24} }},
 		{name: "different account with identical credentials", mutate: func(_ *Group, a *Account) { a.ID++ }},
 		{name: "changed exact target", allow: true, mutate: func(g *Group, a *Account) {
-			a.Credentials["model_mapping"].(map[string]any)[g.ManagedModelRoutes.Routes[0].Branches[0].Selector] = "other-target"
+			a.Credentials["model_mapping"] = map[string]any{g.ManagedModelRoutes.Routes[0].Branches[0].Selector: "other-target", "private": "private-target"}
 		}},
 		{name: "changed credential identity", allow: true, mutate: func(_ *Group, a *Account) { a.Credentials["api_key"] = "new-key" }},
 		{name: "malformed publication", mutate: func(g *Group, _ *Account) { g.ManagedModelRoutes.Routes[0].Branches[0].Selector += "forged" }},
@@ -73,7 +73,9 @@ func TestValidateProviderIdentityGroupBindingsRetainsOnlyVerifiedManagedMembers(
 			if tt.mutate != nil {
 				tt.mutate(group, account)
 			}
-			before := maps.Clone(account.Credentials["model_mapping"].(map[string]any))
+			mapping, ok := account.Credentials["model_mapping"].(map[string]any)
+			require.True(t, ok)
+			before := maps.Clone(mapping)
 			repo := providerIdentityGroupRepoStub{groups: map[int64]*Group{group.ID: group}}
 			err := validateProviderIdentityGroupBindings(context.Background(), repo, account, []int64{group.ID})
 			if tt.allow {

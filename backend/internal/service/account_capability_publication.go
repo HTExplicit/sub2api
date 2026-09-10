@@ -587,6 +587,10 @@ func publicationChannelView(ch *Channel) any {
 	if ch == nil {
 		return nil
 	}
+	return publicationChannelFields(ch)
+}
+
+func publicationChannelFields(ch *Channel) map[string]any {
 	return map[string]any{"id": ch.ID, "name": ch.Name, "billing_model_source": ch.BillingModelSource, "restrict_models": ch.RestrictModels, "model_mapping": ch.ModelMapping, "model_pricing": ch.ModelPricing, "features": ch.Features, "features_config": ch.FeaturesConfig, "apply_pricing_to_account_stats": ch.ApplyPricingToAccountStats, "account_stats_pricing_rules": ch.AccountStatsPricingRules}
 }
 func publicationBindingView(bindings map[int64]int) []map[string]any {

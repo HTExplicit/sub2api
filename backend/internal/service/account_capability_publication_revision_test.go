@@ -28,7 +28,7 @@ func TestCapabilityPublicationInputRevisionRejectsOrganizerDrift(t *testing.T) {
 			s.Accounts[7].Account.Schedulable = !s.Accounts[7].Account.Schedulable
 		}},
 		{"private mapping", func(s *CapabilityPublicationSnapshot) {
-			s.Accounts[7].Account.Credentials["model_mapping"].(map[string]any)["private-model"] = "browser-edited-target"
+			s.Accounts[7].Account.Credentials["model_mapping"] = map[string]any{"private-model": "browser-edited-target"}
 		}},
 		{"private binding priority", func(s *CapabilityPublicationSnapshot) { s.Accounts[7].Bindings[55] = 99 }},
 		{"retained model removed in browser", func(s *CapabilityPublicationSnapshot) { s.Groups[23].Group.ManagedModelRoutes.Routes = nil }},

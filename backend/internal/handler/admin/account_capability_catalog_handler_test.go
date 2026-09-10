@@ -14,7 +14,6 @@ import (
 )
 
 type capabilityCatalogReaderStub struct {
-	accountCapabilityCatalogReader
 	overviewFilter  service.AccountCapabilityOverviewFilter
 	candidateFilter service.AccountCapabilityCandidateFilter
 	planRequest     service.AccountCapabilityRecommendationRequest

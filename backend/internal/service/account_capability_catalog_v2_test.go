@@ -17,9 +17,10 @@ func capabilityCatalogV2Evidence(t *testing.T, account *Account, id int64, model
 	result, err := json.Marshal(AccountCapabilityProbeResult{Status: status, Classification: classification, RequestCount: 1})
 	require.NoError(t, err)
 	itemStatus := "failed"
-	if status == "alive" {
+	switch status {
+	case "alive":
 		itemStatus = "succeeded"
-	} else if status == "uncertain" {
+	case "uncertain":
 		itemStatus = "indeterminate"
 	}
 	return AccountCapabilityItem{ID: id, Kind: "probe", AccountID: account.ID, FolderID: *account.ManagementFolderID,
@@ -198,7 +199,9 @@ func TestAccountCapabilityCatalogV2PublicationIsIndependentOfCoolingAndDrift(t *
 	fingerprint, err := AccountCapabilityFingerprint(&account)
 	require.NoError(t, err)
 	selector := ManagedModelBranchSelector(23, "claude-fable-5", PlatformOpenAI, "chat_completions", "claude-fable-5")
-	account.Credentials["model_mapping"].(map[string]any)[selector] = "claude-fable-5"
+	mapping, ok := account.Credentials["model_mapping"].(map[string]any)
+	require.True(t, ok)
+	mapping[selector] = "claude-fable-5"
 	group := &Group{ID: 23, Name: "claude(非逆向渠道)", Status: StatusActive, Platform: PlatformComposite,
 		ManagedModelRoutes: ManagedModelRoutesConfig{Enabled: true, Version: 2, Routes: []ManagedModelRoute{{
 			PublicModel: "claude-fable-5", Endpoints: []string{"responses"}, Branches: []ManagedModelRouteBranch{{
@@ -254,7 +257,9 @@ func TestAccountCapabilityCatalogV2PublicationRevisionCatchesMappingAndBindingCh
 	account.AccountGroups[0].Priority++
 	require.NotEqual(t, original, capabilityAccountPublicationRevision(&account))
 	account.AccountGroups[0].Priority--
-	account.Credentials["model_mapping"].(map[string]any)["s2pub-fixture"] = "claude-fable-5"
+	mapping, ok := account.Credentials["model_mapping"].(map[string]any)
+	require.True(t, ok)
+	mapping["s2pub-fixture"] = "claude-fable-5"
 	mappingChanged := capabilityAccountPublicationRevision(&account)
 	require.NotEqual(t, original, mappingChanged)
 	require.Equal(t, probeIdentity, ManagedModelAccountFingerprint(&account), "management CAS must not invalidate previously paid probe evidence")

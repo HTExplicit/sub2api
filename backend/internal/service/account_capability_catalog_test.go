@@ -114,7 +114,9 @@ func TestAccountCapabilityPublicationModelIdentityUsesTrustedCatalogue(t *testin
 	require.False(t, CapabilityCandidateMatches(&account, "deepseek-v4-pro", "gpt-6-astra", nil, "standard"))
 	require.False(t, CapabilityCandidateMatches(&account, "gpt-6-astra-ssvip", "gpt-6-astra", nil, "standard"))
 	require.False(t, CapabilityCandidateMatches(&account, "gpt-6-astra-ssvip", "gpt-6-astra", nil, "vip"), "a suffix alone is not equivalence evidence")
-	account.Credentials["model_mapping"].(map[string]any)["gpt-6-astra"] = "gpt-6-astra-ssvip"
+	mapping, ok := account.Credentials["model_mapping"].(map[string]any)
+	require.True(t, ok)
+	mapping["gpt-6-astra"] = "gpt-6-astra-ssvip"
 	require.True(t, CapabilityCandidateMatches(&account, "gpt-6-astra-ssvip", "gpt-6-astra", nil, "vip"))
 	require.True(t, CapabilityCandidateMatches(&account, "cx/gpt-5.6-luna", "gpt-5.6-luna", nil, "standard"))
 	require.False(t, CapabilityCandidateMatches(&account, "gpt-5.6-sol", "gpt-5.6-sol", []string{"gpt-6-astra"}, "standard"))

@@ -13,20 +13,66 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 )
 
-func managedModelV2AffinityRedisFixture(t *testing.T) (service.ManagedModelAffinityCache, *miniredis.Miniredis) {
-	t.Helper()
-	server := miniredis.RunT(t)
-	client := redis.NewClient(&redis.Options{Addr: server.Addr(), MaxRetries: -1})
-	t.Cleanup(func() { _ = client.Close() })
-	return repository.NewGatewayCache(client).(service.ManagedModelAffinityCache), server
+type managedModelV2AffinityCacheRecord struct {
+	binding   service.ManagedModelAffinityBinding
+	expiresAt time.Time
+}
+
+// Handler tests exercise the persistence contract. Redis encoding, atomic
+// conflicts and expiration precision are covered by repository cache tests.
+type managedModelV2AffinityCacheStub struct {
+	mu      sync.Mutex
+	now     time.Time
+	records map[string]managedModelV2AffinityCacheRecord
+}
+
+func newManagedModelV2AffinityCacheStub() *managedModelV2AffinityCacheStub {
+	return &managedModelV2AffinityCacheStub{
+		now:     time.Date(2026, 9, 9, 0, 0, 0, 0, time.UTC),
+		records: make(map[string]managedModelV2AffinityCacheRecord),
+	}
+}
+
+func (s *managedModelV2AffinityCacheStub) GetManagedModelAffinity(ctx context.Context, keys []string) (map[string]service.ManagedModelAffinityBinding, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	bindings := make(map[string]service.ManagedModelAffinityBinding, len(keys))
+	for _, key := range keys {
+		if record, exists := s.records[key]; exists && s.now.Before(record.expiresAt) {
+			bindings[key] = record.binding
+		}
+	}
+	return bindings, nil
+}
+
+func (s *managedModelV2AffinityCacheStub) BindManagedModelAffinity(ctx context.Context, keys []string, binding service.ManagedModelAffinityBinding, ttl time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, key := range keys {
+		value := binding
+		if record, exists := s.records[key]; exists && s.now.Before(record.expiresAt) && record.binding != binding {
+			value = service.ManagedModelAffinityBinding{Ambiguous: true}
+		}
+		s.records[key] = managedModelV2AffinityCacheRecord{binding: value, expiresAt: s.now.Add(ttl)}
+	}
+	return nil
+}
+
+func (s *managedModelV2AffinityCacheStub) fastForward(elapsed time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.now = s.now.Add(elapsed)
 }
 
 func recordManagedModelV2AffinityJSON(t *testing.T, store *managedModelV2AffinityStore, pin managedModelV2Pin, body string) {
@@ -41,7 +87,8 @@ func recordManagedModelV2AffinityJSON(t *testing.T, store *managedModelV2Affinit
 	require.NoError(t, err)
 	_, err = c.Writer.WriteString(body[middle:])
 	require.NoError(t, err)
-	observer := c.Writer.(*managedModelV2AffinityWriter)
+	observer, ok := c.Writer.(*managedModelV2AffinityWriter)
+	require.True(t, ok)
 	restore()
 	restore()
 	require.Same(t, original, c.Writer)
@@ -87,7 +134,9 @@ func TestManagedModelV2AffinityJSONReferencesAndIsolation(t *testing.T) {
 	require.Equal(t, &pin, got)
 	for key, element := range store.entries {
 		require.IsType(t, [sha256.Size]byte{}, key)
-		require.Equal(t, pin, element.Value.(*managedModelV2AffinityEntry).pin)
+		entry, ok := element.Value.(*managedModelV2AffinityEntry)
+		require.True(t, ok)
+		require.Equal(t, pin, entry.pin)
 	}
 }
 
@@ -242,7 +291,8 @@ func TestManagedModelV2AffinitySSEOverflowDropsWholeFrameThenRecovers(t *testing
 	for _, chunk := range chunks {
 		_, err := c.Writer.WriteString(chunk)
 		require.NoError(t, err)
-		observer := c.Writer.(*managedModelV2AffinityWriter)
+		observer, ok := c.Writer.(*managedModelV2AffinityWriter)
+		require.True(t, ok)
 		require.LessOrEqual(t, len(observer.frame), managedModelV2AffinityFrameMax)
 		require.LessOrEqual(t, len(observer.line), managedModelV2AffinityFrameMax)
 	}
@@ -351,8 +401,8 @@ func TestManagedModelV2AffinityTTLBoundedLRUAndConcurrentAccess(t *testing.T) {
 	require.Len(t, concurrentStore.entries, 128)
 }
 
-func TestManagedModelV2AffinityRedisSurvivesProcessStoreReplacement(t *testing.T) {
-	cache, server := managedModelV2AffinityRedisFixture(t)
+func TestManagedModelV2AffinityPersistenceSurvivesProcessStoreReplacement(t *testing.T) {
+	cache := newManagedModelV2AffinityCacheStub()
 	first := newManagedModelV2AffinityStore(cache)
 	pin := managedModelV2Pin{AccountID: 41, BranchSelector: "legacy-original"}
 	recordManagedModelV2AffinityJSON(t, first, pin, `{"object":"response","id":"resp_durable","output":[{"type":"reasoning","id":"rs_durable","encrypted_content":"private-durable-cipher"}]}`)
@@ -363,12 +413,12 @@ func TestManagedModelV2AffinityRedisSurvivesProcessStoreReplacement(t *testing.T
 	got, err := fresh.Resolve(7, 9, "public-model", body)
 	require.NoError(t, err)
 	require.Equal(t, &pin, got)
-	for _, key := range server.Keys() {
-		value, err := server.Get(key)
-		require.NoError(t, err)
-		require.NotContains(t, key+value, "private-durable")
-		require.NotContains(t, key+value, "resp_durable")
-		require.NotContains(t, key+value, "rs_durable")
+	for key, record := range cache.records {
+		require.Len(t, key, sha256.Size*2)
+		value := fmt.Sprintf("%s%+v", key, record.binding)
+		require.NotContains(t, value, "private-durable")
+		require.NotContains(t, value, "resp_durable")
+		require.NotContains(t, value, "rs_durable")
 	}
 	_, err = fresh.Resolve(8, 9, "public-model", body)
 	require.ErrorIs(t, err, errManagedModelV2AffinityMissing)
@@ -377,7 +427,7 @@ func TestManagedModelV2AffinityRedisSurvivesProcessStoreReplacement(t *testing.T
 	recordManagedModelV2AffinityJSON(t, fresh, managedModelV2Pin{AccountID: 42, BranchSelector: "other-target"}, `{"object":"response","id":"resp_durable"}`)
 	_, err = first.Resolve(7, 9, "public-model", []byte(`{"previous_response_id":"resp_durable"}`))
 	require.ErrorIs(t, err, errManagedModelV2AffinityConflict)
-	server.FastForward(managedModelV2AffinityTTL)
+	cache.fastForward(managedModelV2AffinityTTL)
 	_, err = first.Resolve(7, 9, "public-model", []byte(`{"input":[{"type":"reasoning","encrypted_content":"private-durable-cipher"}]}`))
 	require.ErrorIs(t, err, errManagedModelV2AffinityMissing)
 }
@@ -408,8 +458,8 @@ func (s *managedModelV2AffinityFaultCache) BindManagedModelAffinity(ctx context.
 	return s.ManagedModelAffinityCache.BindManagedModelAffinity(ctx, keys, pin, ttl)
 }
 
-func TestManagedModelV2AffinityRedisFailuresNeverFallBackToProcessPin(t *testing.T) {
-	cache, _ := managedModelV2AffinityRedisFixture(t)
+func TestManagedModelV2AffinityPersistenceFailuresNeverFallBackToProcessPin(t *testing.T) {
+	cache := newManagedModelV2AffinityCacheStub()
 	fault := &managedModelV2AffinityFaultCache{ManagedModelAffinityCache: cache}
 	store := newManagedModelV2AffinityStore(fault)
 	pin := managedModelV2Pin{AccountID: 41, BranchSelector: "branch-a"}
@@ -432,7 +482,7 @@ func TestManagedModelV2AffinityRedisFailuresNeverFallBackToProcessPin(t *testing
 }
 
 func TestManagedModelV2AffinityPersistenceBudgetMeasuresIOInsteadOfStreamAge(t *testing.T) {
-	cache, _ := managedModelV2AffinityRedisFixture(t)
+	cache := newManagedModelV2AffinityCacheStub()
 	fault := &managedModelV2AffinityFaultCache{ManagedModelAffinityCache: cache}
 	store := newManagedModelV2AffinityStore(fault)
 	pin := managedModelV2Pin{AccountID: 41, BranchSelector: "branch-a"}
@@ -465,7 +515,7 @@ func managedModelV2AffinityLegacyRequest() *service.ManagedModelRequest {
 }
 
 func TestManagedModelV2AffinityLegacyMigrationKeepsOnlyProvenOriginalBranch(t *testing.T) {
-	cache, _ := managedModelV2AffinityRedisFixture(t)
+	cache := newManagedModelV2AffinityCacheStub()
 	store := newManagedModelV2AffinityStore(cache)
 	request := managedModelV2AffinityLegacyRequest()
 	lookup := func(ctx context.Context, group int64, id string) (*service.ManagedModelLegacyResponseBinding, error) {
@@ -519,7 +569,7 @@ func TestManagedModelV2AffinityLegacyMigrationKeepsOnlyProvenOriginalBranch(t *t
 }
 
 func TestManagedModelV2AffinityLegacyMigrationReadsBackConcurrentConflict(t *testing.T) {
-	cache, _ := managedModelV2AffinityRedisFixture(t)
+	cache := newManagedModelV2AffinityCacheStub()
 	fault := &managedModelV2AffinityFaultCache{ManagedModelAffinityCache: cache}
 	fault.beforeBind = func(ctx context.Context, keys []string, _ service.ManagedModelAffinityBinding, ttl time.Duration) {
 		require.NoError(t, cache.BindManagedModelAffinity(ctx, keys, service.ManagedModelAffinityBinding{AccountID: 42, BranchSelector: "concurrent-other"}, ttl))

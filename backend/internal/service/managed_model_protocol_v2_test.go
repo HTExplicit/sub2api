@@ -63,7 +63,9 @@ func TestManagedModelCandidateDeduplicatesLegacyWireWithoutLosingPinnedAlias(t *
 	route.QuotaPlatform = PlatformAnthropic
 	legacy := route.Branches[1]
 	legacy.Selector, legacy.UpstreamProtocol = ManagedModelSelector(group.ID, route.PublicModel), ""
-	accounts[1].Credentials["model_mapping"].(map[string]any)[legacy.Selector] = legacy.Accounts[0].UpstreamModel
+	mapping, ok := accounts[1].Credentials["model_mapping"].(map[string]any)
+	require.True(t, ok)
+	mapping[legacy.Selector] = legacy.Accounts[0].UpstreamModel
 	route.Branches = append(route.Branches, legacy)
 	request, err := ResolveManagedModelRoute(group, route.PublicModel, CompositeRouteEndpointResponses)
 	require.NoError(t, err)

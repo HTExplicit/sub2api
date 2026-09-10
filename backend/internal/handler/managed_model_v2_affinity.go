@@ -54,6 +54,16 @@ type managedModelV2AffinityEntry struct {
 	ambiguous bool
 }
 
+// Every list element is created by remember with this concrete entry type.
+// Keep an invariant violation explicit instead of accepting a missing pin.
+func managedModelV2AffinityEntryValue(element *list.Element) *managedModelV2AffinityEntry {
+	entry, ok := element.Value.(*managedModelV2AffinityEntry)
+	if !ok || entry == nil {
+		panic("invalid managed model affinity LRU entry")
+	}
+	return entry
+}
+
 // Only scoped digests and routing identity are retained. Production Redis is
 // authoritative across deployments and instances; the bounded local cache is
 // also usable by isolated tests. Missing/expired state always fails closed.
@@ -114,7 +124,7 @@ func (s *managedModelV2AffinityStore) remember(key [sha256.Size]byte, pin manage
 	defer s.mu.Unlock()
 	now := s.now()
 	if element := s.entries[key]; element != nil {
-		entry := element.Value.(*managedModelV2AffinityEntry)
+		entry := managedModelV2AffinityEntryValue(element)
 		if now.Before(entry.expiresAt) {
 			// A provider reusing an ID on another route is ambiguous, not a new
 			// assignment. An old client must never silently follow the new pin.
@@ -136,7 +146,7 @@ func (s *managedModelV2AffinityStore) remember(key [sha256.Size]byte, pin manage
 }
 
 func (s *managedModelV2AffinityStore) remove(element *list.Element) {
-	delete(s.entries, element.Value.(*managedModelV2AffinityEntry).key)
+	delete(s.entries, managedModelV2AffinityEntryValue(element).key)
 	s.lru.Remove(element)
 }
 
@@ -324,7 +334,7 @@ func (s *managedModelV2AffinityStore) bindings(ctx context.Context, keys map[[sh
 	now := s.now()
 	for key := range keys {
 		if element := s.entries[key]; element != nil {
-			entry := element.Value.(*managedModelV2AffinityEntry)
+			entry := managedModelV2AffinityEntryValue(element)
 			if !now.Before(entry.expiresAt) {
 				s.remove(element)
 				continue

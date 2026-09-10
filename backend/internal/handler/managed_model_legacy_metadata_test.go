@@ -22,7 +22,12 @@ func retainedManagedModelWSFixture() (*managedModelWSGuard, *managedModelWSFixtu
 	legacy.Endpoints = append(legacy.Endpoints, service.CompositeRouteEndpointCountTokens)
 	legacy.Accounts[0].Endpoints = append(legacy.Accounts[0].Endpoints, service.CompositeRouteEndpointCountTokens)
 	selector := service.ManagedModelBranchSelector(fixture.group.ID, route.PublicModel, service.PlatformOpenAI, service.CompositeRouteEndpointResponses, "new-generative-target")
-	account.Credentials["model_mapping"].(map[string]any)[selector] = "new-generative-target"
+	mapping := make(map[string]any)
+	for model, target := range account.GetModelMapping() {
+		mapping[model] = target
+	}
+	mapping[selector] = "new-generative-target"
+	account.Credentials["model_mapping"] = mapping
 	newBranch := service.ManagedModelRouteBranch{Selector: selector, TargetPlatform: service.PlatformOpenAI, UpstreamProtocol: service.CompositeRouteEndpointResponses,
 		Endpoints: []string{service.CompositeRouteEndpointResponses}, Accounts: []service.ManagedModelRouteAccount{{AccountID: account.ID, UpstreamModel: "new-generative-target",
 			AccountFingerprint: service.ManagedModelAccountFingerprint(account), Endpoints: []string{service.CompositeRouteEndpointResponses}}}}

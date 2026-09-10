@@ -54,7 +54,7 @@ func managedModelAffinityKeys(hashes []string) ([]string, error) {
 			return nil, errManagedModelAffinityInput
 		}
 		for _, char := range []byte(digest) {
-			if !(char >= '0' && char <= '9' || char >= 'a' && char <= 'f') {
+			if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
 				return nil, errManagedModelAffinityInput
 			}
 		}
@@ -150,7 +150,7 @@ func (c *gatewayCache) BindManagedModelAffinity(ctx context.Context, hashes []st
 	}
 	// Redis has millisecond precision. A positive sub-millisecond duration must
 	// not truncate to PX 0, nor may rounding exceed the 24-hour upper bound.
-	ttlMS := (ttl + time.Millisecond - 1) / time.Millisecond
+	ttlMilliseconds := int64((ttl + time.Millisecond - 1) / time.Millisecond)
 	if len(keys) == 0 {
 		return nil
 	}
@@ -160,5 +160,5 @@ func (c *gatewayCache) BindManagedModelAffinity(ctx context.Context, hashes []st
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return c.rdb.Eval(ctx, bindManagedModelAffinityScript, keys, value, int64(ttlMS)).Err()
+	return c.rdb.Eval(ctx, bindManagedModelAffinityScript, keys, value, ttlMilliseconds).Err()
 }

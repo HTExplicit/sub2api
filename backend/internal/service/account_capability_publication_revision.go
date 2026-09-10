@@ -90,7 +90,7 @@ func capabilityPublicationChannelRevisionView(channel *Channel) any {
 		rule.CreatedAt, rule.UpdatedAt = time.Time{}, time.Time{}
 		rule.Pricing = capabilityPublicationPricingRevisionView(rule.Pricing)
 	}
-	view := publicationChannelView(copy).(map[string]any)
+	view := publicationChannelFields(copy)
 	view["status"] = copy.Status
 	return view
 }

@@ -132,11 +132,12 @@ func (h *GatewayHandler) serveManagedModelV2(c *gin.Context, openAI *OpenAIGatew
 	setOpsRequestContext(c, model, stream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(stream, false)))
 	if decision := h.checkSecurityAudit(c, reqLog, apiKey, subject, managedModelV2AuditProtocol(request.Endpoint), model, body); decision != nil && !decision.AllowNextStage {
-		if request.Endpoint == service.CompositeRouteEndpointMessages {
+		switch request.Endpoint {
+		case service.CompositeRouteEndpointMessages:
 			h.anthropicSecurityAuditError(c, decision)
-		} else if request.Endpoint == service.CompositeRouteEndpointResponses {
+		case service.CompositeRouteEndpointResponses:
 			h.responsesSecurityAuditError(c, decision)
-		} else {
+		default:
 			h.openAISecurityAuditError(c, decision)
 		}
 		return
@@ -393,11 +394,12 @@ func restoreManagedModelV2Headers(target, original http.Header) {
 }
 
 func (h *GatewayHandler) managedModelV2FailoverError(c *gin.Context, openAI *OpenAIGatewayHandler, endpoint string, err *service.UpstreamFailoverError, streamStarted bool) {
-	if endpoint == service.CompositeRouteEndpointResponses {
+	switch endpoint {
+	case service.CompositeRouteEndpointResponses:
 		h.handleResponsesFailoverExhausted(c, err, streamStarted)
-	} else if endpoint == service.CompositeRouteEndpointMessages {
+	case service.CompositeRouteEndpointMessages:
 		h.handleFailoverExhausted(c, err, service.PlatformAnthropic, streamStarted)
-	} else {
+	default:
 		openAI.handleFailoverExhausted(c, err, streamStarted)
 	}
 }
