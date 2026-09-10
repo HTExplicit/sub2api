@@ -62,8 +62,6 @@ func (s *OpenAIGatewayService) forwardAnthropicViaRawChatCompletions(
 	billingModel := resolveOpenAIForwardModel(account, anthropicReq.Model, defaultMappedModel)
 	upstreamModel := normalizeOpenAIModelForUpstream(account, billingModel)
 	chatReq.Model = upstreamModel
-	managedDefaults := managedMessagesDefaultsForRequest(ctx, account, &anthropicReq, upstreamModel)
-	managedDefaults.applyChat(chatReq)
 	chatReq.ReasoningEffort = openAICompatAnthropicReasoningEffort(&anthropicReq, upstreamModel, chatReq.ReasoningEffort)
 	chatReq.Stream = clientStream
 	if clientStream {
@@ -71,20 +69,13 @@ func (s *OpenAIGatewayService) forwardAnthropicViaRawChatCompletions(
 	}
 
 	convertedEffort := chatReq.ReasoningEffort
-	var reasoningEffort *string
-	if convertedEffort != "" {
-		reasoningEffort = &convertedEffort
-	}
+	reasoningEffort := &convertedEffort
 	reasoningEffort = ApplyThinkingEnabledFallback(reasoningEffort, body, billingModel)
 	serviceTier := extractOpenAIServiceTierFromBody(body)
 
 	chatBody, err := json.Marshal(chatReq)
 	if err != nil {
 		return nil, fmt.Errorf("marshal chat completions request: %w", err)
-	}
-	chatBody, err = managedDefaults.patchChatBody(chatBody)
-	if err != nil {
-		return nil, fmt.Errorf("normalize managed Messages Chat thinking: %w", err)
 	}
 	if normalizedBody, normalized := NormalizeGLMOpenAIReasoningEffort(chatBody, upstreamModel); normalized {
 		chatBody = normalizedBody
@@ -176,7 +167,7 @@ func (s *OpenAIGatewayService) bufferChatCompletionsAsAnthropic(
 	if err != nil {
 		return nil, err
 	}
-	anthropicResp := apicompat.ChatCompletionsResponseToAnthropic(ccResp, managedModelResponseModel(managedModelResponseContext(c), originalModel))
+	anthropicResp := apicompat.ChatCompletionsResponseToAnthropic(ccResp, originalModel)
 
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -212,7 +203,7 @@ func (s *OpenAIGatewayService) streamChatCompletionsAsAnthropic(
 	requestID := resp.Header.Get("x-request-id")
 	writeStreamHeaders := s.newStreamHeaderWriter(c, resp.Header)
 
-	anthropicState := apicompat.NewChatCompletionsToAnthropicStreamState(managedModelResponseModel(managedModelResponseContext(c), originalModel))
+	anthropicState := apicompat.NewChatCompletionsToAnthropicStreamState(originalModel)
 	clientDisconnected := false
 
 	// 与 responses 兄弟不同：客户端断开后仍继续做事件转换（喂 anthropicState），

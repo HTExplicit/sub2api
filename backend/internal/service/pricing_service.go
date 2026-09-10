@@ -1451,6 +1451,25 @@ func (s *PricingService) matchOpenAIModel(model string) *LiteLLMModelPricing {
 		}
 	}
 
+	// Exact provider aliases were already checked by GetModelPricing. Keep a
+	// named GPT-5.6 family ahead of the numeric gpt-5.6 fallback: otherwise a
+	// missing "-project" card makes Luna, Terra and Sol share the generic rate.
+	for _, family := range []struct {
+		name     string
+		fallback *LiteLLMModelPricing
+	}{
+		{"gpt-5.6-sol", openAIGPT56SolFallbackPricing},
+		{"gpt-5.6-terra", openAIGPT56TerraFallbackPricing},
+		{"gpt-5.6-luna", openAIGPT56LunaFallbackPricing},
+	} {
+		if model == family.name || strings.HasPrefix(model, family.name+"-") {
+			if pricing, ok := s.pricingData[family.name]; ok {
+				return pricing
+			}
+			return family.fallback
+		}
+	}
+
 	// 尝试的回退变体
 	variants := s.generateOpenAIModelVariants(model, openAIModelDatePattern)
 

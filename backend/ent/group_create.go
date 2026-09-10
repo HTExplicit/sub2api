@@ -830,20 +830,6 @@ func (_c *GroupCreate) SetNillableModelAllowlist(v *domain.GroupModelAllowlist) 
 	return _c
 }
 
-// SetManagedModelRoutes sets the "managed_model_routes" field.
-func (_c *GroupCreate) SetManagedModelRoutes(v domain.ManagedModelRoutesConfig) *GroupCreate {
-	_c.mutation.SetManagedModelRoutes(v)
-	return _c
-}
-
-// SetNillableManagedModelRoutes sets the "managed_model_routes" field if the given value is not nil.
-func (_c *GroupCreate) SetNillableManagedModelRoutes(v *domain.ManagedModelRoutesConfig) *GroupCreate {
-	if v != nil {
-		_c.SetManagedModelRoutes(*v)
-	}
-	return _c
-}
-
 // SetCodexModelsManifestConfig sets the "codex_models_manifest_config" field.
 func (_c *GroupCreate) SetCodexModelsManifestConfig(v domain.GroupCodexModelsManifestConfig) *GroupCreate {
 	_c.mutation.SetCodexModelsManifestConfig(v)
@@ -1229,10 +1215,6 @@ func (_c *GroupCreate) defaults() error {
 		v := group.DefaultModelAllowlist
 		_c.mutation.SetModelAllowlist(v)
 	}
-	if _, ok := _c.mutation.ManagedModelRoutes(); !ok {
-		v := group.DefaultManagedModelRoutes
-		_c.mutation.SetManagedModelRoutes(v)
-	}
 	if _, ok := _c.mutation.CodexModelsManifestConfig(); !ok {
 		v := group.DefaultCodexModelsManifestConfig
 		_c.mutation.SetCodexModelsManifestConfig(v)
@@ -1453,9 +1435,6 @@ func (_c *GroupCreate) check() error {
 	}
 	if _, ok := _c.mutation.ModelAllowlist(); !ok {
 		return &ValidationError{Name: "model_allowlist", err: errors.New(`ent: missing required field "Group.model_allowlist"`)}
-	}
-	if _, ok := _c.mutation.ManagedModelRoutes(); !ok {
-		return &ValidationError{Name: "managed_model_routes", err: errors.New(`ent: missing required field "Group.managed_model_routes"`)}
 	}
 	if _, ok := _c.mutation.CodexModelsManifestConfig(); !ok {
 		return &ValidationError{Name: "codex_models_manifest_config", err: errors.New(`ent: missing required field "Group.codex_models_manifest_config"`)}
@@ -1757,10 +1736,6 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.ModelAllowlist(); ok {
 		_spec.SetField(group.FieldModelAllowlist, field.TypeJSON, value)
 		_node.ModelAllowlist = value
-	}
-	if value, ok := _c.mutation.ManagedModelRoutes(); ok {
-		_spec.SetField(group.FieldManagedModelRoutes, field.TypeJSON, value)
-		_node.ManagedModelRoutes = value
 	}
 	if value, ok := _c.mutation.CodexModelsManifestConfig(); ok {
 		_spec.SetField(group.FieldCodexModelsManifestConfig, field.TypeJSON, value)
@@ -2913,18 +2888,6 @@ func (u *GroupUpsert) SetModelAllowlist(v domain.GroupModelAllowlist) *GroupUpse
 // UpdateModelAllowlist sets the "model_allowlist" field to the value that was provided on create.
 func (u *GroupUpsert) UpdateModelAllowlist() *GroupUpsert {
 	u.SetExcluded(group.FieldModelAllowlist)
-	return u
-}
-
-// SetManagedModelRoutes sets the "managed_model_routes" field.
-func (u *GroupUpsert) SetManagedModelRoutes(v domain.ManagedModelRoutesConfig) *GroupUpsert {
-	u.Set(group.FieldManagedModelRoutes, v)
-	return u
-}
-
-// UpdateManagedModelRoutes sets the "managed_model_routes" field to the value that was provided on create.
-func (u *GroupUpsert) UpdateManagedModelRoutes() *GroupUpsert {
-	u.SetExcluded(group.FieldManagedModelRoutes)
 	return u
 }
 
@@ -4214,20 +4177,6 @@ func (u *GroupUpsertOne) SetModelAllowlist(v domain.GroupModelAllowlist) *GroupU
 func (u *GroupUpsertOne) UpdateModelAllowlist() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateModelAllowlist()
-	})
-}
-
-// SetManagedModelRoutes sets the "managed_model_routes" field.
-func (u *GroupUpsertOne) SetManagedModelRoutes(v domain.ManagedModelRoutesConfig) *GroupUpsertOne {
-	return u.Update(func(s *GroupUpsert) {
-		s.SetManagedModelRoutes(v)
-	})
-}
-
-// UpdateManagedModelRoutes sets the "managed_model_routes" field to the value that was provided on create.
-func (u *GroupUpsertOne) UpdateManagedModelRoutes() *GroupUpsertOne {
-	return u.Update(func(s *GroupUpsert) {
-		s.UpdateManagedModelRoutes()
 	})
 }
 
@@ -5702,20 +5651,6 @@ func (u *GroupUpsertBulk) SetModelAllowlist(v domain.GroupModelAllowlist) *Group
 func (u *GroupUpsertBulk) UpdateModelAllowlist() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateModelAllowlist()
-	})
-}
-
-// SetManagedModelRoutes sets the "managed_model_routes" field.
-func (u *GroupUpsertBulk) SetManagedModelRoutes(v domain.ManagedModelRoutesConfig) *GroupUpsertBulk {
-	return u.Update(func(s *GroupUpsert) {
-		s.SetManagedModelRoutes(v)
-	})
-}
-
-// UpdateManagedModelRoutes sets the "managed_model_routes" field to the value that was provided on create.
-func (u *GroupUpsertBulk) UpdateManagedModelRoutes() *GroupUpsertBulk {
-	return u.Update(func(s *GroupUpsert) {
-		s.UpdateManagedModelRoutes()
 	})
 }
 

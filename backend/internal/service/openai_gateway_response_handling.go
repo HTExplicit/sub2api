@@ -506,7 +506,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		}
 		if codexFailureTerminal && sawBareError && !sawResponseFailed && !clientDisconnected {
 			applyAttemptResponseHeaders()
-			if _, err := writePendingString(buildOpenAIResponseFailedSSE(responseID, managedModelResponseModel(ctx, originalModel), bareErrorPayload, failedMessage)); err != nil {
+			if _, err := writePendingString(buildOpenAIResponseFailedSSE(responseID, originalModel, bareErrorPayload, failedMessage)); err != nil {
 				handlePendingWriteError(err)
 			} else {
 				failureDelivered = true
@@ -912,7 +912,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			}
 			if cyberPolicyHit && eventType == "response.failed" && refusalEarlyEmitted {
 				applyAttemptResponseHeaders()
-				terminal := "event: response.failed\ndata: " + string(managedModelResponseJSON(ctx, dataBytes, eventType)) + "\n\n"
+				terminal := "event: response.failed\ndata: " + string(dataBytes) + "\n\n"
 				if !clientDisconnected {
 					if _, err := baseWritePendingString(terminal); err != nil {
 						handlePendingWriteError(err)
@@ -953,7 +953,6 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			if needModelReplace && mappedModel != "" && strings.Contains(line, mappedModel) {
 				line = s.replaceModelInSSELine(line, mappedModel, originalModel)
 			}
-			line = managedModelResponseSSELine(ctx, line, eventType)
 			s.parseSSEUsageBytesWithType(dataBytes, eventType, usage)
 			if refusalCompletionErr != nil {
 				streamEarlyErr = refusalCompletionErr
@@ -963,7 +962,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				refusalPending.Reset()
 				refusalEarlyEmitted = true
 				applyAttemptResponseHeaders()
-				if _, err := baseWritePendingString(managedModelResponseSSEBody(ctx, string(refusalReplacement))); err != nil {
+				if _, err := baseWritePendingString(string(refusalReplacement)); err != nil {
 					handlePendingWriteError(err)
 					return
 				}
@@ -993,7 +992,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				refusalCompleted = true
 				applyAttemptResponseHeaders()
 				if !clientDisconnected {
-					if _, err := baseWritePendingString(managedModelResponseSSEBody(ctx, string(refusalReplacement))); err != nil {
+					if _, err := baseWritePendingString(string(refusalReplacement)); err != nil {
 						handlePendingWriteError(err)
 						return
 					}
@@ -1816,7 +1815,6 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	if originalModel != mappedModel {
 		body = s.replaceModelInResponseBody(body, mappedModel, originalModel)
 	}
-	body = managedModelResponseJSON(ctx, body)
 	body, err = restoreGrokResponsesClientToolPayload(c, body)
 	if err != nil {
 		return nil, fmt.Errorf("restore Grok Responses client tool response: %w", err)
@@ -2097,7 +2095,6 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 		if originalModel != mappedModel {
 			body = s.replaceModelInResponseBody(body, mappedModel, originalModel)
 		}
-		body = managedModelResponseJSON(managedModelResponseContext(c), body)
 		// Correct tool calls in final response
 		body = s.correctToolCallsInResponseBody(body)
 		restoredBody, restoreErr := restoreGrokResponsesClientToolPayload(c, body)
@@ -2144,7 +2141,6 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 		if originalModel != mappedModel {
 			bodyText = s.replaceModelInSSEBody(bodyText, mappedModel, originalModel)
 		}
-		bodyText = managedModelResponseSSEBody(managedModelResponseContext(c), bodyText)
 		body = []byte(bodyText)
 	}
 

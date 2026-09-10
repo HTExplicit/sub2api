@@ -1159,15 +1159,6 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	c.Set(modelCapacityProjectorContextKey, func(body []byte) ([]byte, error) {
 		return h.gatewayService.ProjectModelListContextCapacities(c.Request.Context(), authenticatedGroup, groupID, platform, body)
 	})
-	if authenticatedGroup != nil && authenticatedGroup.ManagedModelRoutes.Enabled {
-		models, err := h.gatewayService.ManagedPublicModelIDs(c.Request.Context(), authenticatedGroup, "")
-		if err != nil {
-			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine published model availability")
-			return
-		}
-		writeAllowlistedModelsList(c, platform, models)
-		return
-	}
 	if platform == service.PlatformOpenAI && apiKey != nil && apiKey.Group != nil &&
 		apiKey.Group.Platform == service.PlatformOpenAI && apiKey.Group.CodexModelsManifestConfig.Enabled {
 		h.pinnedOpenAIModels(c, apiKey.Group)
@@ -1327,13 +1318,6 @@ func (h *GatewayHandler) codexModelIDsForGroup(ctx context.Context, group *servi
 	if h == nil || h.gatewayService == nil || group == nil {
 		return nil
 	}
-	if group.ManagedModelRoutes.Enabled {
-		models, err := h.gatewayService.ManagedPublicModelIDs(ctx, group, service.CompositeRouteEndpointResponses)
-		if err != nil {
-			return nil
-		}
-		return models
-	}
 
 	groupID := &group.ID
 	platform := strings.TrimSpace(platformOverride)
@@ -1427,7 +1411,6 @@ func writeModelsList(c *gin.Context, platform string, modelIDs []string) {
 		writeGrokModelsList(c, modelIDs)
 		return
 	}
-	modelIDs = service.FilterManagedModelSelectors(modelIDs)
 	models := make([]claude.Model, 0, len(modelIDs))
 	for _, modelID := range modelIDs {
 		models = append(models, claude.Model{
@@ -1465,7 +1448,6 @@ type grokModelListItem struct {
 }
 
 func writeGrokModelsList(c *gin.Context, modelIDs []string) {
-	modelIDs = service.FilterManagedModelSelectors(modelIDs)
 	defaults := xai.DefaultModels()
 	defaultsByID := make(map[string]xai.Model, len(defaults))
 	for _, model := range defaults {
@@ -1516,7 +1498,6 @@ func grokModelSupportsConfigurableReasoning(modelID string) bool {
 }
 
 func writeOpenAIModelsList(c *gin.Context, modelIDs []string) {
-	modelIDs = service.FilterManagedModelSelectors(modelIDs)
 	defaultsByID := make(map[string]openai.Model, len(openai.DefaultModels))
 	for _, model := range openai.DefaultModels {
 		defaultsByID[model.ID] = model
@@ -1544,7 +1525,6 @@ func writeOpenAIModelsList(c *gin.Context, modelIDs []string) {
 }
 
 func writeCindyOpenAIModelsList(c *gin.Context, modelIDs []string) {
-	modelIDs = service.FilterManagedModelSelectors(modelIDs)
 	defaultsByID := make(map[string]openai.Model, len(openai.DefaultModels))
 	for _, model := range openai.DefaultModels {
 		defaultsByID[model.ID] = model
@@ -2351,7 +2331,7 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 	account, err := h.gatewayService.SelectAccountForModel(c.Request.Context(), apiKey.GroupID, sessionHash, parsedReq.Model)
 	if err != nil {
 		reqLog.Warn("gateway.count_tokens_select_account_failed", zap.Error(err))
-		cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, parsedReq.Model, managedModelMetadataPublicName(c, parsedReq.Model), service.PlatformAnthropic)
+		cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, parsedReq.Model, parsedReq.Model, service.PlatformAnthropic)
 		if !cls.ModelNotFound {
 			markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 		}

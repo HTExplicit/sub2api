@@ -33,9 +33,6 @@ func (s *GatewayService) ForwardAsChatCompletions(
 	body []byte,
 	parsed *ParsedRequest,
 ) (*ForwardResult, error) {
-	if err := validateManagedForwardAccount(ctx, s.accountRepo, account, gjson.GetBytes(body, "model").String()); err != nil {
-		return nil, err
-	}
 	startTime := time.Now()
 
 	// 1. Parse Chat Completions request
@@ -320,7 +317,7 @@ func (s *GatewayService) handleCCBufferedFromAnthropic(
 
 	// Chain: Anthropic → Responses → Chat Completions
 	responsesResp := apicompat.AnthropicToResponsesResponse(finalResp)
-	ccResp := apicompat.ResponsesToChatCompletions(responsesResp, managedModelResponseModel(managedModelResponseContext(c), originalModel))
+	ccResp := apicompat.ResponsesToChatCompletions(responsesResp, originalModel)
 
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -376,9 +373,9 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 
 	// Use Anthropic→Responses state machine, then convert Responses→CC
 	anthState := apicompat.NewAnthropicEventToResponsesState()
-	anthState.Model = managedModelResponseModel(managedModelResponseContext(c), originalModel)
+	anthState.Model = originalModel
 	ccState := apicompat.NewResponsesEventToChatState()
-	ccState.Model = managedModelResponseModel(managedModelResponseContext(c), originalModel)
+	ccState.Model = originalModel
 	ccState.IncludeUsage = includeUsage
 
 	var usage ClaudeUsage

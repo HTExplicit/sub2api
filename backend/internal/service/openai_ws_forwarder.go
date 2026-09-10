@@ -299,13 +299,8 @@ type OpenAIWSIngressHooks struct {
 	// ReasoningEffortMappings rewrites explicit effort values for this WS session.
 	ReasoningEffortMappings []ReasoningEffortMapping
 	TurnStarted             func(turn int, startedAt time.Time)
-	// PrepareClientFrame optionally validates and prepares an untouched client
-	// frame before event dispatch, model mapping, or compatibility policies.
-	// fallbackModel and the returned publicModel are client-facing identities;
-	// the latter stays separate from a rewritten session.model for usage.
-	PrepareClientFrame func(turn int, payload []byte, fallbackModel string) (prepared []byte, publicModel string, err error)
-	BeforeTurn         func(turn int) error
-	BeforeRequest      func(turn int, payload []byte, originalModel string) error
+	BeforeTurn              func(turn int) error
+	BeforeRequest           func(turn int, payload []byte, originalModel string) error
 	// MapRequestModel resolves the current turn's client model to the model
 	// that must be written into the upstream response.create frame.
 	MapRequestModel func(turn int, originalModel string) (string, error)

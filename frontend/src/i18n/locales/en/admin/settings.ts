@@ -497,8 +497,6 @@ export default {
         saveFailed: 'Failed to save Ollama Cloud usage refresh settings'
       },
       gatewayForwarding: {
-        internalRateConversion: 'Internal rate conversion',
-        internalRateConversionHint: 'Enabled by default. Apply the fixed settlement factor to user charges and subscription usage in all groups. Disable to restore original billing. Group multipliers and upstream account costs stay unchanged.',
         title: 'Request Forwarding',
         description: 'Control how requests are forwarded to upstream OAuth accounts',
         grokDefaultTextModel: 'Default Grok text model',

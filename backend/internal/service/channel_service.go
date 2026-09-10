@@ -379,11 +379,6 @@ func matchingPlatforms(groupPlatform string) []string {
 
 func channelLookupPlatform(ctx context.Context, groupPlatform string) string {
 	if ctx != nil {
-		if request, managed := ManagedModelRequestFromContext(ctx); managed && request.Version == ManagedModelRoutesVersion && groupPlatform != PlatformComposite {
-			// A mixed-platform managed route does not change the public group's
-			// price table. ForcePlatform only selects an upstream adapter.
-			return groupPlatform
-		}
 		if forcePlatform, ok := ctx.Value(ctxkey.ForcePlatform).(string); ok && strings.TrimSpace(forcePlatform) != "" {
 			return strings.TrimSpace(forcePlatform)
 		}
@@ -561,7 +556,7 @@ func (s *ChannelService) GetChannelModelPricing(ctx context.Context, groupID int
 		return nil
 	}
 
-	modelLower := strings.ToLower(managedModelBillingModel(ctx, groupID, model))
+	modelLower := strings.ToLower(model)
 	pricing := lookupPricingAcrossPlatforms(lk.cache, groupID, lk.platform, modelLower)
 	if pricing == nil {
 		return nil
@@ -595,7 +590,7 @@ func (s *ChannelService) IsModelRestricted(ctx context.Context, groupID int64, m
 	if lk == nil {
 		return false
 	}
-	return checkRestricted(lk, groupID, managedModelBillingModel(ctx, groupID, model))
+	return checkRestricted(lk, groupID, model)
 }
 
 // ResolveChannelMappingAndRestrict 解析渠道映射。

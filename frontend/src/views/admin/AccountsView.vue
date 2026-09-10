@@ -20,11 +20,6 @@
             @create="showCreate = true"
           >
             <template #after>
-              <button v-if="!authStore.isSimpleMode" type="button" class="btn btn-secondary" data-test="account-capabilities-open"
-                :disabled="openingPublicModelManager" :aria-busy="openingPublicModelManager" :title="t('admin.accountCapabilities.title')" @click="openPublicModelManager">
-                <Icon name="grid" size="sm" />
-                <span class="hidden md:inline">{{ t('admin.accountCapabilities.title') }}</span>
-              </button>
               <AccountViewModeSwitcher v-model="viewMode" />
 
               <!-- Auto Refresh Dropdown -->
@@ -528,12 +523,6 @@
           </template>
           <template #cell-actions="{ row }">
             <div class="flex items-center gap-1" @click.stop>
-              <router-link v-if="!authStore.isSimpleMode" :to="accountPublicModelManagerLocation(row)"
-                data-test="account-public-models" :title="t('admin.accountCapabilities.title')"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400">
-                <Icon name="grid" size="sm" />
-                <span class="text-xs">{{ t('admin.accountCapabilities.title') }}</span>
-              </router-link>
               <button @click.stop="handleEdit(row)" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400">
                 <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" /></svg>
                 <span class="text-xs">{{ t('common.edit') }}</span>
@@ -724,7 +713,6 @@ import Icon from '@/components/icons/Icon.vue'
 import ErrorPassthroughRulesModal from '@/components/admin/ErrorPassthroughRulesModal.vue'
 import TLSFingerprintProfilesModal from '@/components/admin/TLSFingerprintProfilesModal.vue'
 import { fetchAllAccountIds } from '@/utils/accountSelection'
-import { knownAccountFolderIDs, publicModelManagerLocation } from './accountCapabilitiesEntryPoints'
 import { buildGrokUsageRefreshKey, buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { formatDateTime, formatRelativeTime } from '@/utils/format'
 import { proxyExpiryBadgeClass, proxyExpiryLabelKey } from '@/utils/proxyExpiry'
@@ -2634,52 +2622,6 @@ const handleSelectAllResults = async () => {
     if (requestVersion === selectionRequestVersion.value) {
       selectingAllResults.value = false
     }
-  }
-}
-
-const openingPublicModelManager = ref(false)
-const accountPublicModelManagerLocation = (account: AccountListItem) => publicModelManagerLocation({
-  accountIDs: [account.id],
-  folderIDs: knownAccountFolderIDs([account.id], [account]),
-  groupIDs: [Number(consoleFilters.value.group_id)]
-})
-
-const openPublicModelManager = async () => {
-  if (openingPublicModelManager.value) return
-  const state = consoleFilters.value
-  const sourceFolder = activeFolder.value
-  const groupIDs = [Number(state.group_id)]
-  const requestFilters = buildBulkEditFilterSnapshot()
-  let accountIDs = [...selIds.value]
-  let folderIDs: number[] = []
-  const hasAdditionalFilters = Boolean(
-    state.search.trim() || state.account_ids.length || state.platforms.length || state.types.length ||
-    state.statuses.length || state.plans.length || state.proxies.length || state.tags.length ||
-    state.group_id || state.privacy_mode || isCindyScope.value || cindyView.value !== 'all' ||
-    sourceFolder === 'uncategorized'
-  )
-  openingPublicModelManager.value = true
-  try {
-    // Resolve all matching IDs, not just the visible page, only after an explicit
-    // entry click. An explicit checkbox selection takes precedence over filters.
-    if (!accountIDs.length && hasAdditionalFilters) {
-      accountIDs = await fetchAllAccountIds(
-        (page, pageSize, filters) => adminAPI.accounts.list(page, pageSize, filters),
-        requestFilters
-      )
-      if (!accountIDs.length) {
-        appStore.showInfo(t('admin.accounts.noAccountsYet'))
-        return
-      }
-    }
-    folderIDs = accountIDs.length
-      ? knownAccountFolderIDs(accountIDs, accounts.value)
-      : [Number(sourceFolder)]
-    await router.push(publicModelManagerLocation({ accountIDs, folderIDs, groupIDs }))
-  } catch {
-    appStore.showError(t('admin.accounts.failedToLoad'))
-  } finally {
-    openingPublicModelManager.value = false
   }
 }
 

@@ -192,9 +192,6 @@ type AdminGroup struct {
 	DefaultMappedModel          string                                   `json:"default_mapped_model"`
 	MessagesDispatchModelConfig domain.OpenAIMessagesDispatchModelConfig `json:"messages_dispatch_model_config"`
 	ModelAllowlist              service.GroupModelAllowlist              `json:"model_allowlist"`
-	// ManagedModelRoutes includes internal selectors, account IDs and fingerprints.
-	// Keep it on AdminGroup only; ordinary users must not receive these details.
-	ManagedModelRoutes domain.ManagedModelRoutesConfig `json:"managed_model_routes"`
 	// 固定账号获取 Codex Model Manifest 配置（仅 openai 平台使用）。
 	CodexModelsManifestConfig domain.GroupCodexModelsManifestConfig `json:"codex_models_manifest_config"`
 
