@@ -99,7 +99,6 @@ jobs:
         with:
           fetch-depth: 0
           ref: main
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
@@ -159,12 +158,12 @@ jobs:
             version="${tag#v}"
             image="ghcr.io/htexplicit/sub2api:${version}"
             log "inspect-tag"
-            inspect=$(docker buildx imagetools inspect --builder default "$image") || return 1
+            inspect=$(docker buildx imagetools inspect "$image") || return 1
             digest=$(awk '$1 == "Digest:" && digest == "" {digest=$2} END {if (digest == "") exit 1; print digest}' <<<"$inspect") || return 1
             [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
-            image_revision=$(docker buildx imagetools inspect --builder default "${image}@${digest}" --format '{{ index .Image.Config.Labels "org.opencontainers.image.revision" }}') || return 1
+            image_revision=$(docker buildx imagetools inspect "${image}@${digest}" --format '{{ index .Image.Config.Labels "org.opencontainers.image.revision" }}') || return 1
             [[ "$image_revision" == "$tag_commit" ]] || return 1
-            image_platform_v1=$(docker buildx imagetools inspect --builder default "${image}@${digest}" --format '{{ index .Image.Config.Labels "io.github.htexplicit.cindy-platform-v1" }}') || return 1
+            image_platform_v1=$(docker buildx imagetools inspect "${image}@${digest}" --format '{{ index .Image.Config.Labels "io.github.htexplicit.cindy-platform-v1" }}') || return 1
             case "$image_role" in
               platform)
                 [[ "$image_platform_v1" == true ]] || return 1
