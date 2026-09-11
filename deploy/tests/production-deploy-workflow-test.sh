@@ -11,6 +11,10 @@ fail() {
   exit 1
 }
 
+grep -Fq 'packages: read' "$WORKFLOW" ||
+  fail 'production resolve must request GHCR package read permission'
+grep -Fq 'docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9' "$WORKFLOW" ||
+  fail 'production resolve must authenticate to GHCR before imagetools inspect'
 grep -Fq 'inspect=$(docker buildx imagetools inspect "$image")' "$WORKFLOW" ||
   fail 'production digest resolution must consume the complete buildx output'
 grep -Fq 'END {if (digest == "") exit 1; print digest}' "$WORKFLOW" ||
