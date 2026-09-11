@@ -56,7 +56,7 @@ func newCindyInventoryImageCapability(publicID, liveID, displayName string) Cind
 		DisplayName: displayName, Description: "Metadata pending verification", Kind: CindyModelKindImage,
 		InputModalities: []string{"text", "image"}, OutputModalities: []string{"image"},
 		MetadataSourceRevision: CindyModelMetadataSourceRevision,
-		PublicModel: false,
+		PublicModel:            false,
 	}
 }
 
