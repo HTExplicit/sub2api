@@ -145,6 +145,9 @@ func cindyTextPricingForServiceTier(model string, pricing CindyTextPricing, serv
 			pricing.LongContextInputCostPerToken = pricing.LongContextInputCostPerTokenPriority
 			pricing.LongContextOutputCostPerToken = pricing.LongContextOutputCostPerTokenPriority
 			pricing.LongContextCacheReadInputTokenCost = pricing.LongContextCacheReadInputTokenCostPriority
+			if pricing.CacheCreationInputTokenCost > 0 && pricing.InputCostPerToken > 0 {
+				pricing.LongContextCacheCreationTokenCost = pricing.CacheCreationInputTokenCost * (pricing.LongContextInputCostPerToken / pricing.InputCostPerToken)
+			}
 		}
 		return pricing, nil
 	default:

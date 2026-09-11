@@ -7,19 +7,17 @@ import (
 
 // CindyCapabilityCatalogVersion is bumped whenever the fixed Cindy data-plane
 // catalogue or one of its verified endpoint decisions changes.
-const CindyCapabilityCatalogVersion = "2026-09-05.1"
+const CindyCapabilityCatalogVersion = "2026-09-11.1"
 
 // CindyModelMetadataSourceRevision pins the shipped Cindy registry used for
 // display, context-window, output-limit, and reasoning metadata.
-const CindyModelMetadataSourceRevision = "makecindy/cindy@1b4f9f42bf3a0517a45c776161278ed22891b5f0"
-
-const CindyCatalogAdditionsMetadataSourceRevision = "makecindy/cindy@81e383b5acb43ff4c7ff388a4103f77492c530e6"
+const CindyModelMetadataSourceRevision = "makecindy/cindy@2128cd45e08e3419a36ad474d8c01e42a34ea328"
 
 // CindyFreeModelCatalogSourceRevision and SHA256 pin the authenticated model
 // inventory returned by the newest eligible production free-trial key.
 const (
-	CindyFreeModelCatalogSourceRevision = "laxarouter-free-key@2026-09-05"
-	CindyFreeModelCatalogSHA256         = "9f27de4e91b54efe44c9ac8107882cbe971dc94be3ea715bfd6dfaae7fd2d07a"
+	CindyFreeModelCatalogSourceRevision = "laxarouter-free-key@2026-09-11"
+	CindyFreeModelCatalogSHA256         = "38045af0a5a90c360ba44013d90a1ccbff65c903db7f9b99701c30ce15ca8821"
 )
 
 // CindyCompatibilityAliasSourceRevision identifies downstream aliases managed
@@ -232,8 +230,8 @@ func init() {
 	}
 }
 
-// CindyCapabilities returns a defensive copy of the complete 11-item free
-// inventory: nine ordinary reasoning models and two special IDs.
+// CindyCapabilities returns a defensive copy of the complete authenticated
+// free inventory.
 func CindyCapabilities() []CindyCapability {
 	result := make([]CindyCapability, len(cindyCapabilityCatalog))
 	for i := range cindyCapabilityCatalog {

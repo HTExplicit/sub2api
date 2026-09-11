@@ -10,9 +10,9 @@ import (
 func TestCindyFreeCatalogRetainsExistingModelsAndAddsVerifiedInventory(t *testing.T) {
 	t.Parallel()
 
-	require.Equal(t, "2026-09-05.1", CindyCapabilityCatalogVersion)
-	require.Equal(t, "9f27de4e91b54efe44c9ac8107882cbe971dc94be3ea715bfd6dfaae7fd2d07a", CindyFreeModelCatalogSHA256)
-	require.Equal(t, "laxarouter-free-key@2026-09-05", CindyFreeModelCatalogSourceRevision)
+	require.Equal(t, "2026-09-11.1", CindyCapabilityCatalogVersion)
+	require.Equal(t, "38045af0a5a90c360ba44013d90a1ccbff65c903db7f9b99701c30ce15ca8821", CindyFreeModelCatalogSHA256)
+	require.Equal(t, "laxarouter-free-key@2026-09-11", CindyFreeModelCatalogSourceRevision)
 
 	type expectedModel struct {
 		publicID, liveID            string
@@ -21,10 +21,10 @@ func TestCindyFreeCatalogRetainsExistingModelsAndAddsVerifiedInventory(t *testin
 		input, out, cache, discount float64
 	}
 	wantOrdinary := []expectedModel{
-		{"deepseek-v4-flash", "deepseek/deepseek-v4-flash", CindyModelKindText, 1000000, 384000, 0.44e-6, 1.32e-6, 0.014e-6, 0},
-		{"deepseek-v4-flash-vision-exp", "deepseek/deepseek-v4-flash-vision-exp", CindyModelKindText, 1000000, 384000, 0.44e-6, 1.32e-6, 0.014e-6, 0},
-		{"deepseek-v4-pro", "deepseek/deepseek-v4-pro", CindyModelKindText, 1000000, 384000, 1.32e-6, 3.96e-6, 0.044e-6, 0},
-		{"gemini-3.6-flash", "google/gemini-3.6-flash", CindyModelKindText, 1048576, 65536, 1.5e-6, 7.5e-6, 0.15e-6, 0},
+		{"deepseek-v4-flash", "deepseek/deepseek-v4-flash", CindyModelKindText, 1048576, 384000, 0.3e-6, 1.2e-6, 0.006e-6, 0},
+		{"deepseek-v4-flash-vision-exp", "deepseek/deepseek-v4-flash-vision-exp", CindyModelKindText, 1048576, 384000, 0.3e-6, 1.2e-6, 0.006e-6, 0},
+		{"deepseek-v4-pro", "deepseek/deepseek-v4-pro", CindyModelKindText, 1048576, 384000, 1.32e-6, 3.96e-6, 0.044e-6, 0},
+		{"gemini-3.6-flash", "google/gemini-3.6-flash", CindyModelKindText, 1000000, 65536, 0.75e-6, 3.75e-6, 0.075e-6, 0},
 		{"gpt-5.6-luna", "openai/gpt-5.6-luna", CindyModelKindText, 1050000, 128000, 0.2e-6, 1.2e-6, 0.02e-6, 0},
 		{"qwen3.8-27b", "qwen/qwen3.8-27b", CindyModelKindText, 991808, 131072, 0.425e-6, 2.55e-6, 0.085e-6, 0},
 		{"qwen3.8-flash", "qwen/qwen3.8-flash", CindyModelKindText, 991808, 131072, 0.16e-6, 0.47e-6, 0.016e-6, 0},
@@ -33,7 +33,7 @@ func TestCindyFreeCatalogRetainsExistingModelsAndAddsVerifiedInventory(t *testin
 	}
 
 	got := CindyCapabilities()
-	require.Len(t, got, 15)
+	require.Len(t, got, 17)
 	byID := make(map[string]CindyCapability, len(got))
 	for _, capability := range got {
 		_, duplicate := byID[capability.PublicID]
@@ -85,7 +85,7 @@ func TestCindyFreeCatalogRoutingRetainsExistingProtocolsAndAliases(t *testing.T)
 		"qwen3.8-27b",
 		"qwen3.8-flash",
 	}
-	wantPublic := append(append([]string(nil), wantOrdinary...), "gpt-6-astra")
+	wantPublic := append([]string(nil), wantOrdinary...)
 	sort.Strings(wantPublic)
 	require.Equal(t, wantPublic, CindyPublicModelIDs())
 	require.Equal(t, wantPublic, CindyCodexPublicModelIDs())
@@ -129,11 +129,11 @@ func TestCindyFreeCatalogRoutingRetainsExistingProtocolsAndAliases(t *testing.T)
 	require.Equal(t, "openai/gpt-5.6-luna", mustCindyCompatibilityTarget(t, "gpt-5.4-mini"))
 }
 
-func TestCindyFreeCatalogManagementProjectionIsExactlyFifteen(t *testing.T) {
+func TestCindyFreeCatalogManagementProjectionIsExactlySeventeen(t *testing.T) {
 	t.Parallel()
 
 	models := CindyCatalogModels()
-	require.Len(t, models, 15)
+	require.Len(t, models, 17)
 	ids := make([]string, 0, len(models))
 	for _, model := range models {
 		ids = append(ids, model.ID)
@@ -143,6 +143,7 @@ func TestCindyFreeCatalogManagementProjectionIsExactlyFifteen(t *testing.T) {
 	require.Equal(t, []string{
 		"cindy/auto-review",
 		"cindy/web-search",
+		"deepseek-flash",
 		"deepseek-v4-flash",
 		"deepseek-v4-flash-vision-exp",
 		"deepseek-v4-pro",
@@ -150,7 +151,8 @@ func TestCindyFreeCatalogManagementProjectionIsExactlyFifteen(t *testing.T) {
 		"gemini-3.8-flash",
 		"glm-5.3-flash",
 		"gpt-5.6-luna",
-		"gpt-6-astra",
+		"gpt-image-2.5-flare",
+		"gpt-image-2.5-sunburst",
 		"hy3",
 		"hy4-preview",
 		"muse-spark-1.3",
@@ -160,7 +162,7 @@ func TestCindyFreeCatalogManagementProjectionIsExactlyFifteen(t *testing.T) {
 
 	for _, removed := range []string{
 		"claude-opus-5", "gemini-3.5-flash", "gpt-5.6-sol", "gpt-5.6-terra",
-		"qwen3.8-max", "gemini-3-pro-image", "gpt-image-2",
+		"gpt-6-astra", "qwen3.8-max", "gemini-3-pro-image", "gpt-image-2",
 	} {
 		_, known := resolveKnownCindyCapability(removed)
 		require.False(t, known, removed)
@@ -172,16 +174,19 @@ func TestCindyFreeLunaPricingPreservesLongContextContract(t *testing.T) {
 
 	luna, ok := CindyTextPricingForModel("gpt-5.6-luna")
 	require.True(t, ok)
-	require.Equal(t, 2e-6, luna.InputCostPerTokenPriority)
-	require.Equal(t, 12e-6, luna.OutputCostPerTokenPriority)
-	require.Equal(t, 0.2e-6, luna.CacheReadInputTokenCostPriority)
+	require.Equal(t, 0.4e-6, luna.InputCostPerTokenPriority)
+	require.Equal(t, 2.4e-6, luna.OutputCostPerTokenPriority)
+	require.Equal(t, 0.04e-6, luna.CacheReadInputTokenCostPriority)
+	require.Equal(t, 0.25e-6, luna.CacheCreationInputTokenCost)
+	require.Equal(t, 0.5e-6, luna.CacheCreationInputTokenCostPriority)
 	require.Equal(t, 272000, luna.LongContextInputTokenThreshold)
-	require.Equal(t, 2e-6, luna.LongContextInputCostPerToken)
-	require.Equal(t, 9e-6, luna.LongContextOutputCostPerToken)
-	require.Equal(t, 0.2e-6, luna.LongContextCacheReadInputTokenCost)
-	require.Equal(t, 4e-6, luna.LongContextInputCostPerTokenPriority)
-	require.Equal(t, 18e-6, luna.LongContextOutputCostPerTokenPriority)
-	require.Equal(t, 0.4e-6, luna.LongContextCacheReadInputTokenCostPriority)
+	require.Equal(t, 0.4e-6, luna.LongContextInputCostPerToken)
+	require.Equal(t, 1.8e-6, luna.LongContextOutputCostPerToken)
+	require.Equal(t, 0.04e-6, luna.LongContextCacheReadInputTokenCost)
+	require.Equal(t, 0.5e-6, luna.LongContextCacheCreationTokenCost)
+	require.Equal(t, 0.8e-6, luna.LongContextInputCostPerTokenPriority)
+	require.Equal(t, 3.6e-6, luna.LongContextOutputCostPerTokenPriority)
+	require.Equal(t, 0.08e-6, luna.LongContextCacheReadInputTokenCostPriority)
 }
 
 func TestCindyCatalogAdditionsKeepProtocolAndMetadataEvidenceSeparate(t *testing.T) {
@@ -195,21 +200,26 @@ func TestCindyCatalogAdditionsKeepProtocolAndMetadataEvidenceSeparate(t *testing
 		require.False(t, CindyFreePoolModelAllowed(id), id)
 		require.False(t, CindyAlphaSearchModelAvailable(id), id)
 	}
-	astra, ok := ResolveCindyCapability("gpt-6-astra")
-	require.True(t, ok)
-	require.Equal(t, []CindyEndpoint{CindyEndpointResponses, CindyEndpointAlphaSearch}, astra.VerifiedEndpoints)
-	require.True(t, CindyModelSupportsEndpoint("gpt-6-astra", CindyEndpointResponses))
-	require.False(t, CindyModelSupportsEndpoint("gpt-6-astra", CindyEndpointMessages))
-	require.True(t, CindyAlphaSearchModelAvailable("gpt-6-astra"))
-	require.Equal(t, 272000, astra.MaxInputTokens)
-	require.Equal(t, CindyCatalogAdditionsMetadataSourceRevision, astra.PricingSource)
-	standard, err := cindyTextPricingForServiceTier("gpt-6-astra", *astra.TextPricing, "default")
-	require.NoError(t, err)
-	require.Equal(t, 12.5e-6, standard.CacheCreationInputTokenCost)
-	priority, err := cindyTextPricingForServiceTier("gpt-6-astra", *astra.TextPricing, "priority")
-	require.NoError(t, err)
-	require.Equal(t, 25e-6, priority.CacheCreationInputTokenCost)
-	require.Equal(t, 20e-6, priority.InputCostPerToken)
+	flash, known := resolveKnownCindyCapability("deepseek-flash")
+	require.True(t, known)
+	require.False(t, flash.PublicModel)
+	require.Empty(t, flash.VerifiedEndpoints)
+	require.Nil(t, flash.TextPricing)
+	require.Equal(t, 1000000, flash.MaxInputTokens)
+	require.Equal(t, 384000, flash.MaxOutputTokens)
+	_, routable := ResolveCindyCapability("deepseek-flash")
+	require.False(t, routable)
+
+	for _, id := range []string{"gpt-image-2.5-flare", "gpt-image-2.5-sunburst"} {
+		capability, known := resolveKnownCindyCapability(id)
+		require.True(t, known, id)
+		require.Equal(t, CindyModelKindImage, capability.Kind, id)
+		require.False(t, capability.PublicModel, id)
+		require.Empty(t, capability.VerifiedEndpoints, id)
+		require.Nil(t, capability.TextPricing, id)
+		_, imageRoutable := ResolveCindyCapability(id)
+		require.False(t, imageRoutable, id)
+	}
 }
 
 func mustCindyCompatibilityTarget(t *testing.T, model string) string {

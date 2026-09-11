@@ -55,7 +55,7 @@ func TestCalculateCindyCatalogTextCostUsesTargetPricingAndCacheTiers(t *testing.
 		tokens := UsageTokens{CacheCreationTokens: 200}
 		cost, err := calculateCindyCatalogTextCost(billingService, "gpt-5.6-luna", tokens, 1, "fast", true)
 		require.NoError(t, err)
-		require.InDelta(t, 200*2.5e-6, cost.CacheCreationCost, 1e-12)
+		require.InDelta(t, 200*0.5e-6, cost.CacheCreationCost, 1e-12)
 	})
 
 	t.Run("GPT-5.6 long-context cache creation follows the long input tier", func(t *testing.T) {
@@ -63,7 +63,7 @@ func TestCalculateCindyCatalogTextCostUsesTargetPricingAndCacheTiers(t *testing.
 		cost, err := calculateCindyCatalogTextCost(billingService, "gpt-5.6-luna", tokens, 1, "", true)
 		require.NoError(t, err)
 		require.True(t, cost.LongContextBillingApplied)
-		require.InDelta(t, 272001*2.5e-6, cost.CacheCreationCost, 1e-12)
+		require.InDelta(t, 272001*0.5e-6, cost.CacheCreationCost, 1e-12)
 	})
 
 	t.Run("non-GPT missing cache creation price remains fail closed", func(t *testing.T) {
@@ -95,7 +95,7 @@ func TestCalculateCindyCatalogTextCostOpenAI272KBoundary(t *testing.T) {
 		longCacheRead float64
 		longOutput    float64
 	}{
-		{model: "gpt-5.6-luna", baseInput: 0.2e-6, baseCacheRead: 0.02e-6, baseOutput: 1.2e-6, longInput: 2e-6, longCacheRead: 0.2e-6, longOutput: 9e-6},
+		{model: "gpt-5.6-luna", baseInput: 0.2e-6, baseCacheRead: 0.02e-6, baseOutput: 1.2e-6, longInput: 0.4e-6, longCacheRead: 0.04e-6, longOutput: 1.8e-6},
 	}
 
 	for _, test := range tests {
@@ -243,8 +243,8 @@ func TestLegacyCindyRuntimeCompatibilityUsesExactModelPricing(t *testing.T) {
 		outputPrice float64
 	}{
 		{model: "gpt-5.4-mini", inputPrice: 0.2e-6, outputPrice: 1.2e-6},
-		{model: "gpt-5.6-luna", serviceTier: "priority", inputPrice: 2e-6, outputPrice: 12e-6},
-		{model: "openai/gpt-5.6-luna", serviceTier: "priority", inputPrice: 2e-6, outputPrice: 12e-6},
+		{model: "gpt-5.6-luna", serviceTier: "priority", inputPrice: 0.4e-6, outputPrice: 2.4e-6},
+		{model: "openai/gpt-5.6-luna", serviceTier: "priority", inputPrice: 0.4e-6, outputPrice: 2.4e-6},
 	} {
 		t.Run(test.model, func(t *testing.T) {
 			cost, err := svc.calculateOpenAIRecordUsageTokenCost(
@@ -487,9 +487,9 @@ func TestCalculateCindyCatalogTextCostUsesExactPriorityTier(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	require.InDelta(t, 100*2e-6, cost.InputCost, 1e-12)
-	require.InDelta(t, 10*12e-6, cost.OutputCost, 1e-12)
-	require.InDelta(t, 20*0.2e-6, cost.CacheReadCost, 1e-12)
+	require.InDelta(t, 100*0.4e-6, cost.InputCost, 1e-12)
+	require.InDelta(t, 10*2.4e-6, cost.OutputCost, 1e-12)
+	require.InDelta(t, 20*0.04e-6, cost.CacheReadCost, 1e-12)
 }
 
 func TestCalculateCindyCatalogTextCostFailsClosedForMissingNeededPrice(t *testing.T) {
