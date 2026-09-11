@@ -25,17 +25,17 @@ type cindyFreeFixtureModel struct {
 	OrdinaryRoutable bool           `json:"ordinaryRoutable"`
 }
 
-func TestCindyFreeCatalogFixtureMatchesExactFifteenItemInventory(t *testing.T) {
+func TestCindyFreeCatalogFixtureMatchesExactSeventeenItemInventory(t *testing.T) {
 	t.Parallel()
 
-	raw, err := os.ReadFile("testdata/cindy_free_catalog_2026-09-05.json")
+	raw, err := os.ReadFile("testdata/cindy_free_catalog_2026-09-11.json")
 	require.NoError(t, err)
 
 	var fixture cindyFreeCatalogFixture
 	require.NoError(t, json.Unmarshal(raw, &fixture))
 	require.Equal(t, 1, fixture.SchemaVersion)
 	require.Equal(t, CindyFreeModelCatalogSourceRevision, fixture.SourceRevision)
-	require.Len(t, fixture.Models, 15)
+	require.Len(t, fixture.Models, 17)
 
 	capabilities := CindyCapabilities()
 	require.Len(t, capabilities, len(fixture.Models))
@@ -50,6 +50,7 @@ func TestCindyFreeCatalogFixtureMatchesExactFifteenItemInventory(t *testing.T) {
 	ordinaryCount := 0
 	specialCount := 0
 	pendingCount := 0
+	imageCount := 0
 	for _, model := range fixture.Models {
 		ids = append(ids, model.ID)
 		capability, ok := byUpstreamID[model.ID]
@@ -64,15 +65,21 @@ func TestCindyFreeCatalogFixtureMatchesExactFifteenItemInventory(t *testing.T) {
 		} else if model.Kind == CindyModelKindSpecial {
 			specialCount++
 			require.Equal(t, CindyModelKindSpecial, capability.Kind, model.ID)
+		} else if model.Kind == CindyModelKindImage {
+			imageCount++
+			require.Equal(t, CindyModelKindImage, capability.Kind, model.ID)
+			require.Nil(t, capability.TextPricing, model.ID)
+			require.Empty(t, capability.VerifiedEndpoints, model.ID)
 		} else {
 			pendingCount++
 			require.Equal(t, CindyModelKindText, capability.Kind, model.ID)
 			require.Nil(t, capability.TextPricing, model.ID)
 		}
 	}
-	require.Equal(t, 10, ordinaryCount)
+	require.Equal(t, 9, ordinaryCount)
 	require.Equal(t, 2, specialCount)
-	require.Equal(t, 3, pendingCount)
+	require.Equal(t, 4, pendingCount)
+	require.Equal(t, 2, imageCount)
 
 	sort.Strings(ids)
 	sum := sha256.Sum256([]byte(strings.Join(ids, "\n") + "\n"))

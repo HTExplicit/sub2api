@@ -1,0 +1,16 @@
+{
+  "observedAt": "2026-09-11T16:00:22Z",
+  "catalogSha256": "38045af0a5a90c360ba44013d90a1ccbff65c903db7f9b99701c30ce15ca8821",
+  "catalogCount": 17,
+  "accountsUsed": 1,
+  "nativeRequests": 0,
+  "retries": 0,
+  "accountSwitches": 0,
+  "metadataSource": "makecindy/cindy@2128cd45e08e3419a36ad474d8c01e42a34ea328",
+  "probeEvidence": "us-capability-probe-2026-09-11_160022_753793.log",
+  "models": [
+    {"id": "deepseek/deepseek-flash", "responsesVerified": false, "searchVerified": false, "messagesVerified": false, "metadataComplete": false, "public": false},
+    {"id": "openai/gpt-image-2.5-flare", "responsesVerified": false, "searchVerified": false, "messagesVerified": false, "metadataComplete": false, "public": false},
+    {"id": "openai/gpt-image-2.5-sunburst", "responsesVerified": false, "searchVerified": false, "messagesVerified": false, "metadataComplete": false, "public": false}
+  ]
+}

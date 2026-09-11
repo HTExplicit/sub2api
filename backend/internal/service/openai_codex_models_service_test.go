@@ -2331,10 +2331,10 @@ func TestBuildCindyCodexModelsManifestMatchesRustV01470ModelInfoContract(t *test
 		require.Equal(t, truncationMode, truncation.Mode)
 		require.Equal(t, int64(10000), truncation.Limit)
 	}
-	assertCodexModel("gpt-5.6-luna", 1050000, "medium", []string{"medium", "high", "xhigh"}, "tokens")
-	assertCodexModel("deepseek-v4-pro", 1000000, "high", []string{"medium", "high", "max"}, "bytes")
-	assertCodexModel("qwen3.8-flash", 991808, "xhigh", []string{"low", "medium", "high", "xhigh"}, "bytes")
-	assertCodexModel("glm-5.3-flash", 1000000, "max", []string{"low", "medium", "high", "max"}, "bytes")
+	assertCodexModel("gpt-5.6-luna", 1050000, "medium", []string{"low", "medium", "high", "xhigh", "max"}, "tokens")
+	assertCodexModel("deepseek-v4-pro", 1048576, "high", []string{"low", "high", "max"}, "bytes")
+	assertCodexModel("qwen3.8-flash", 991808, "medium", []string{"low", "medium", "xhigh"}, "bytes")
+	assertCodexModel("glm-5.3-flash", 1000000, "high", []string{"low", "high", "max"}, "bytes")
 }
 
 func TestMergeCindyCodexModelsManifestPreservesOrdinaryKnownModelIDs(t *testing.T) {
