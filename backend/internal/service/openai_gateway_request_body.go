@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -60,32 +61,49 @@ func buildOpenAIResponsesURLForPlatform(platform string, base string) string {
 	return buildOpenAIResponsesURL(base)
 }
 
-// Use auto summaries for the supported PNNL GPT deployments.
-// Apply this only at the verified HTTP endpoint after model mapping; all other
-// reasoning fields and the original tool/history payload remain unchanged.
-func normalizePNNLResponsesReasoningSummary(account *Account, targetURL string, body []byte) ([]byte, error) {
-	if account == nil || account.Platform != PlatformOpenAI || account.Type != AccountTypeAPIKey {
-		return body, nil
-	}
-	model := gjson.GetBytes(body, "model")
-	summary := gjson.GetBytes(body, "reasoning.summary")
-	if model.Type != gjson.String || summary.Type != gjson.String || summary.String() != "detailed" {
-		return body, nil
-	}
-	switch model.String() {
-	case "gpt-6-astra-project", "gpt-5.5-project", "gpt-5.6",
-		"gpt-5.6-sol-project", "gpt-5.6-terra-project", "gpt-5.6-luna-project":
-	default:
+// normalizeOpenAICompatibleResponsesReasoningSummary applies the destination
+// reasoning.summary contract after model mapping. Official OpenAI stays
+// passthrough; OpenAI API Key compatible hosts default to auto. Extra may
+// override. All other fields and history remain unchanged.
+func normalizeOpenAICompatibleResponsesReasoningSummary(account *Account, targetURL string, body []byte) ([]byte, error) {
+	if account == nil || account.Platform != PlatformOpenAI || account.Type != AccountTypeAPIKey || len(body) == 0 {
 		return body, nil
 	}
 	target, err := url.Parse(targetURL)
 	if err != nil || target.Scheme != "https" ||
-		!strings.EqualFold(target.Hostname(), "ai-incubator-api.pnnl.gov") ||
 		(target.Port() != "" && target.Port() != "443") ||
 		target.Path != "/v1/responses" || target.RawQuery != "" || target.Fragment != "" || target.User != nil {
 		return body, nil
 	}
-	return sjson.SetBytes(body, "reasoning.summary", "auto")
+	mode := openai_compat.ResolveReasoningSummaryMode(account.Extra, isOfficialOpenAIModelsBaseURL(targetURL))
+	if mode == openai_compat.ReasoningSummaryModePassthrough {
+		return body, nil
+	}
+	summary := gjson.GetBytes(body, "reasoning.summary")
+	if !summary.Exists() {
+		return body, nil
+	}
+	switch mode {
+	case openai_compat.ReasoningSummaryModeAuto:
+		if summary.Type != gjson.String || summary.String() == "auto" {
+			return body, nil
+		}
+		return sjson.SetBytes(body, "reasoning.summary", "auto")
+	case openai_compat.ReasoningSummaryModeOmit:
+		updated, err := sjson.DeleteBytes(body, "reasoning.summary")
+		if err != nil {
+			return body, err
+		}
+		if reasoning := gjson.GetBytes(updated, "reasoning"); reasoning.Exists() && reasoning.IsObject() && len(reasoning.Map()) == 0 {
+			updated, err = sjson.DeleteBytes(updated, "reasoning")
+			if err != nil {
+				return body, err
+			}
+		}
+		return updated, nil
+	default:
+		return body, nil
+	}
 }
 
 func shouldPreserveOpenAIResponsesNoneReasoningEffort(account *Account) bool {

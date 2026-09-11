@@ -58,6 +58,53 @@ const ExtraKeyResponsesMode = "openai_responses_mode"
 // 值类型为 bool：true=支持、false=不支持、键缺失=未探测。
 const ExtraKeyResponsesSupported = "openai_responses_supported"
 
+// ExtraKeyReasoningSummaryMode 是 accounts.extra JSON 中存储 Responses
+// reasoning.summary 兼容契约的键名。
+// 值类型为 string：passthrough=原样转发，auto=非 auto 字符串夹到 auto，
+// omit=删除该字段。缺失或非法值按目的地默认处理。
+const ExtraKeyReasoningSummaryMode = "openai_reasoning_summary_mode"
+
+// ReasoningSummaryMode 描述账号级 reasoning.summary 兼容模式。
+type ReasoningSummaryMode string
+
+const (
+	// ReasoningSummaryModePassthrough 原样转发客户端 summary。
+	ReasoningSummaryModePassthrough ReasoningSummaryMode = "passthrough"
+
+	// ReasoningSummaryModeAuto 只保留 auto。
+	ReasoningSummaryModeAuto ReasoningSummaryMode = "auto"
+
+	// ReasoningSummaryModeOmit 删除 reasoning.summary。
+	ReasoningSummaryModeOmit ReasoningSummaryMode = "omit"
+)
+
+// ParseReasoningSummaryMode 解析显式 summary 契约。非法值返回 false，
+// 由调用方回退到目的地默认。
+func ParseReasoningSummaryMode(mode string) (ReasoningSummaryMode, bool) {
+	switch ReasoningSummaryMode(mode) {
+	case ReasoningSummaryModePassthrough, ReasoningSummaryModeAuto, ReasoningSummaryModeOmit:
+		return ReasoningSummaryMode(mode), true
+	default:
+		return "", false
+	}
+}
+
+// ResolveReasoningSummaryMode 读取 Extra 覆盖；缺失时官方 OpenAI 为
+// passthrough，其余 OpenAI 兼容 API Key 目的地为 auto。
+func ResolveReasoningSummaryMode(extra map[string]any, official bool) ReasoningSummaryMode {
+	if extra != nil {
+		if raw, ok := extra[ExtraKeyReasoningSummaryMode].(string); ok {
+			if mode, valid := ParseReasoningSummaryMode(raw); valid {
+				return mode
+			}
+		}
+	}
+	if official {
+		return ReasoningSummaryModePassthrough
+	}
+	return ReasoningSummaryModeAuto
+}
+
 // NormalizeResponsesSupportMode 归一化账号级 Responses API 路由覆盖模式。
 // 缺失或非法值按 auto 处理，以保持存量行为。
 func NormalizeResponsesSupportMode(mode string) ResponsesSupportMode {
