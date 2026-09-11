@@ -68,6 +68,8 @@ type AccountHandler struct {
 	accountJobs             *service.AccountJobService
 	cindyJobMutations       service.AccountJobCindyMutationRunner
 	cfg                     *config.Config
+	apiKeyRevealMu          sync.RWMutex
+	apiKeyRevealUsers       map[int64]struct{}
 }
 
 // SetUpstreamBillingProbeService attaches the optional remote billing probe service.
@@ -1000,7 +1002,7 @@ func (h *AccountHandler) GetByID(c *gin.Context) {
 		}
 	}
 
-	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
+	response.Success(c, h.buildAccountResponseWithRevealedAPIKey(c, account))
 }
 
 // CheckMixedChannel handles checking mixed channel risk for account-group binding.
@@ -1265,7 +1267,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		h.scheduleOpenAIResponsesProbe(account)
 	}
 
-	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
+	response.Success(c, h.buildAccountResponseWithRevealedAPIKey(c, account))
 }
 
 // scheduleOpenAIResponsesProbe 异步触发 OpenAI APIKey 账号的 Responses API 能力探测。

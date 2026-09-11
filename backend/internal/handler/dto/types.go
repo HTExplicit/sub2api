@@ -214,8 +214,9 @@ type Account struct {
 	WirePlatform    string  `json:"wire_platform"`
 	ProviderProfile string  `json:"provider_profile"`
 	Type            string  `json:"type"`
-	// Credentials 经 RedactCredentials 处理后只含非敏感子键；敏感 token / api_key / 私钥
-	// 的存在性通过 CredentialsStatus（has_<key>）暴露，原始值不返回前端。
+	// Credentials 经 RedactCredentials 处理后默认只含非敏感子键；敏感 token / api_key / 私钥
+	// 的存在性通过 CredentialsStatus（has_<key>）暴露。账号详情在管理员开启 API Key
+	// 可见性后可额外恢复 api_key 原文，其它敏感键仍不返回。
 	Credentials             map[string]any                 `json:"credentials"`
 	CredentialsStatus       map[string]bool                `json:"credentials_status,omitempty"`
 	Extra                   map[string]any                 `json:"extra"`

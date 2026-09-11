@@ -20,6 +20,13 @@
             @create="showCreate = true"
           >
             <template #after>
+              <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+                <span class="hidden md:inline">{{ t('admin.accounts.apiKeyReveal') }}</span>
+                <Toggle
+                  :model-value="apiKeyRevealEnabled"
+                  @update:model-value="handleAPIKeyRevealToggle"
+                />
+              </label>
               <AccountViewModeSwitcher v-model="viewMode" />
 
               <!-- Auto Refresh Dropdown -->
@@ -629,6 +636,36 @@
     </ConfirmDialog>
     <ErrorPassthroughRulesModal :show="showErrorPassthrough" @close="showErrorPassthrough = false" />
     <TLSFingerprintProfilesModal :show="showTLSFingerprintProfiles" @close="showTLSFingerprintProfiles = false" />
+    <BaseDialog
+      :show="showAPIKeyRevealPassword"
+      :title="t('admin.accounts.apiKeyRevealPasswordTitle')"
+      width="narrow"
+      @close="closeAPIKeyRevealPassword"
+    >
+      <form id="api-key-reveal-password-form" class="space-y-3" @submit.prevent="confirmAPIKeyRevealPassword">
+        <label class="input-label">{{ t('admin.accounts.apiKeyRevealPasswordLabel') }}</label>
+        <input
+          v-model="apiKeyRevealPassword"
+          type="password"
+          class="input"
+          autocomplete="off"
+          data-1p-ignore
+        />
+      </form>
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="closeAPIKeyRevealPassword">
+          {{ t('common.cancel') }}
+        </button>
+        <button
+          type="submit"
+          form="api-key-reveal-password-form"
+          class="btn btn-primary"
+          :disabled="apiKeyRevealSaving"
+        >
+          {{ t('admin.accounts.apiKeyRevealPasswordConfirm') }}
+        </button>
+      </template>
+    </BaseDialog>
     <AccountDetailsDrawer
       :account="detailsAccount"
       :folders="folders"
@@ -683,6 +720,8 @@ import DataTable from '@/components/common/DataTable.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
+import Toggle from '@/components/common/Toggle.vue'
 import { CreateAccountModal, EditAccountModal, BulkEditAccountModal, SyncFromCrsModal, TempUnschedStatusModal } from '@/components/account'
 import AccountTableActions from '@/components/admin/account/AccountTableActions.vue'
 import AccountBulkActionsBar from '@/components/admin/account/AccountBulkActionsBar.vue'
@@ -886,6 +925,10 @@ const selTypes = computed<AccountType[]>(() => {
 })
 const showCreate = ref(false)
 const showEdit = ref(false)
+const apiKeyRevealEnabled = ref(false)
+const showAPIKeyRevealPassword = ref(false)
+const apiKeyRevealPassword = ref('')
+const apiKeyRevealSaving = ref(false)
 const showSync = ref(false)
 const showImportData = ref(false)
 const showExportDataDialog = ref(false)
@@ -2483,6 +2526,67 @@ const handleEdit = async (a: AccountListItem) => {
   edAcc.value = account
   showEdit.value = true
 }
+
+const refreshOpenEditAccount = async () => {
+  if (!showEdit.value || !edAcc.value) return
+  const account = await loadAccountDetails(edAcc.value)
+  if (account) edAcc.value = account
+}
+
+const closeAPIKeyRevealPassword = () => {
+  if (apiKeyRevealSaving.value) return
+  showAPIKeyRevealPassword.value = false
+  apiKeyRevealPassword.value = ''
+}
+
+const loadAPIKeyVisibility = async () => {
+  try {
+    const state = await adminAPI.accounts.getAPIKeyVisibility()
+    apiKeyRevealEnabled.value = Boolean(state?.enabled)
+  } catch {
+    apiKeyRevealEnabled.value = false
+  }
+}
+
+const handleAPIKeyRevealToggle = async (enabled: boolean) => {
+  if (enabled) {
+    apiKeyRevealPassword.value = ''
+    showAPIKeyRevealPassword.value = true
+    return
+  }
+  if (apiKeyRevealSaving.value) return
+  apiKeyRevealSaving.value = true
+  try {
+    await adminAPI.accounts.setAPIKeyVisibility({ enabled: false })
+    apiKeyRevealEnabled.value = false
+    await refreshOpenEditAccount()
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('admin.accounts.apiKeyRevealFailed')))
+  } finally {
+    apiKeyRevealSaving.value = false
+  }
+}
+
+const confirmAPIKeyRevealPassword = async () => {
+  const password = apiKeyRevealPassword.value.trim()
+  if (!password) {
+    appStore.showError(t('admin.accounts.apiKeyRevealPasswordRequired'))
+    return
+  }
+  if (apiKeyRevealSaving.value) return
+  apiKeyRevealSaving.value = true
+  try {
+    const state = await adminAPI.accounts.setAPIKeyVisibility({ enabled: true, password })
+    apiKeyRevealEnabled.value = Boolean(state?.enabled)
+    showAPIKeyRevealPassword.value = false
+    apiKeyRevealPassword.value = ''
+    await refreshOpenEditAccount()
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('admin.accounts.apiKeyRevealFailed')))
+  } finally {
+    apiKeyRevealSaving.value = false
+  }
+}
 const openMenu = (a: Account, e: MouseEvent) => {
   menu.acc = a
   const target = e.currentTarget as HTMLElement
@@ -3231,7 +3335,7 @@ onMounted(async () => {
   }
 
   if (isCindyScope.value) syncConsoleRoute('replace')
-  await Promise.all([load(), loadFacets(), loadTaxonomy(), loadCindyDeleteCandidateCount()])
+  await Promise.all([load(), loadFacets(), loadTaxonomy(), loadCindyDeleteCandidateCount(), loadAPIKeyVisibility()])
   loadUpstreamBillingProbeGlobalState()
   const [proxiesResult, groupsResult] = await Promise.allSettled([
     adminAPI.proxies.getAll(),

@@ -446,6 +446,8 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.GET("/cindy/banned-delete-preview", h.Admin.Account.PreviewCindyBannedDeletion)
 		accounts.POST("/cindy/delete-banned", h.Admin.Account.DeleteCindyBanned)
 		accounts.GET("/cindy/duplicate-identity-inventory", h.Admin.Account.GetCindyDuplicateIdentityInventory)
+		accounts.GET("/api-key-visibility", h.Admin.Account.GetAPIKeyVisibility)
+		accounts.PUT("/api-key-visibility", h.Admin.Account.SetAPIKeyVisibility)
 		accounts.GET("/:id", h.Admin.Account.GetByID)
 		accounts.POST("", h.Admin.Account.Create)
 		accounts.POST("/:id/duplicate", h.Admin.Account.Duplicate)

@@ -99,3 +99,22 @@ func TestRedactCredentials_AllKnownSensitiveKeys(t *testing.T) {
 		require.True(t, status["has_"+k], "key %s 应在 status 中标记为已配置", k)
 	}
 }
+
+func TestRestoreAPIKey_OnlyCopiesAPIKey(t *testing.T) {
+	original := map[string]any{
+		"api_key":       "sk-secret",
+		"refresh_token": "rt-secret",
+		"base_url":      "https://api.example.com",
+	}
+	out, _ := RedactCredentials(original)
+	out = RestoreAPIKey(out, original)
+	require.Equal(t, "sk-secret", out["api_key"])
+	require.Equal(t, "https://api.example.com", out["base_url"])
+	require.NotContains(t, out, "refresh_token")
+}
+
+func TestRestoreAPIKey_IgnoresEmptyOrMissing(t *testing.T) {
+	require.Nil(t, RestoreAPIKey(nil, nil))
+	out := RestoreAPIKey(map[string]any{"base_url": "x"}, map[string]any{"api_key": ""})
+	require.NotContains(t, out, "api_key")
+}

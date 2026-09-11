@@ -733,6 +733,9 @@ type SecurityConfig struct {
 	TrustForwardedIPForAPIKeyACL  bool                                       `mapstructure:"trust_forwarded_ip_for_api_key_acl"`
 	ForwardedClientIPHeaders      []string                                   `mapstructure:"forwarded_client_ip_headers" json:"forwarded_client_ip_headers" yaml:"forwarded_client_ip_headers"`
 	forwardedClientIPSettingsLive *atomic.Pointer[ForwardedClientIPSettings] `mapstructure:"-" json:"-" yaml:"-"`
+	// AccountAPIKeyRevealPassword gates the admin account-edit API key reveal
+	// switch. Empty disables the feature. Never serialize this value in JSON.
+	AccountAPIKeyRevealPassword string `mapstructure:"account_api_key_reveal_password" json:"-" yaml:"account_api_key_reveal_password"`
 }
 
 func NormalizeForwardedClientIPHeaders(headers []string) ([]string, error) {
@@ -2071,6 +2074,7 @@ func setDefaults() {
 	viper.SetDefault("security.csp.policy", DefaultCSPPolicy)
 	viper.SetDefault("security.proxy_probe.insecure_skip_verify", false)
 	viper.SetDefault("security.trust_forwarded_ip_for_api_key_acl", true)
+	viper.SetDefault("security.account_api_key_reveal_password", "")
 
 	// Security - disable direct fallback on proxy error
 	viper.SetDefault("security.proxy_fallback.allow_direct_on_error", false)
