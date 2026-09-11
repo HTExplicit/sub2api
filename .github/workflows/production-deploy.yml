@@ -157,11 +157,24 @@ jobs:
             git merge-base --is-ancestor "$tag_commit" origin/main || return 1
             version="${tag#v}"
             image="ghcr.io/htexplicit/sub2api:${version}"
-            log "inspect-tag"
-            inspect=$(docker buildx imagetools inspect "$image") || { log "inspect-cmd-failed"; return 1; }
-            digest=$(awk '$1 == "Digest:" && digest == "" {digest=$2} END {if (digest == "") exit 1; print digest}' <<<"$inspect") || { log "digest-parse-failed"; printf '%s\n' "$inspect" >&2; return 1; }
+            release_body=$(gh release view "$tag" --json body --jq .body) || return 1
+            while IFS= read -r line; do
+              if [[ "$line" =~ $image_line_re ]]; then
+                release_image_ref=${BASH_REMATCH[1]}
+                ((release_image_count += 1))
+              elif [[ "$line" =~ $source_line_re ]]; then
+                release_source=${BASH_REMATCH[1]}
+                ((release_source_count += 1))
+              fi
+            done <<<"$release_body"
+            [[ "$release_image_count" -eq 1 && "$release_source_count" -eq 1 ]] || { log "release-body-parse-failed"; return 1; }
+            log "release_ref=$release_image_ref"
+            [[ "$release_image_ref" == "${image}@"* ]] || { log "release-image-mismatch"; return 1; }
+            digest="${release_image_ref#${image}@}"
             log "digest=$digest"
             [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { log "digest-format-failed"; return 1; }
+            [[ "$release_image_ref" == "${image}@${digest}" ]] || { log "release-digest-mismatch"; return 1; }
+            [[ "$release_source" == "$tag_commit" ]] || { log "release-source-mismatch"; return 1; }
             image_revision=$(docker buildx imagetools inspect "${image}@${digest}" --format '{{ index .Image.Config.Labels "org.opencontainers.image.revision" }}') || { log "revision-inspect-failed"; return 1; }
             log "revision=$image_revision"
             [[ "$image_revision" == "$tag_commit" ]] || { log "revision-mismatch"; return 1; }
@@ -178,20 +191,6 @@ jobs:
                 return 1
                 ;;
             esac
-            release_body=$(gh release view "$tag" --json body --jq .body) || return 1
-            while IFS= read -r line; do
-              if [[ "$line" =~ $image_line_re ]]; then
-                release_image_ref=${BASH_REMATCH[1]}
-                ((release_image_count += 1))
-              elif [[ "$line" =~ $source_line_re ]]; then
-                release_source=${BASH_REMATCH[1]}
-                ((release_source_count += 1))
-              fi
-            done <<<"$release_body"
-            [[ "$release_image_count" -eq 1 && "$release_source_count" -eq 1 ]] || { log "release-body-parse-failed"; return 1; }
-            log "release_ref=$release_image_ref"
-            [[ "$release_image_ref" == "${image}@${digest}" ]] || { log "release-digest-mismatch"; return 1; }
-            [[ "$release_source" == "$tag_commit" ]] || { log "release-source-mismatch"; return 1; }
             printf '%s@%s\n' "$image" "$digest"
           }
 
