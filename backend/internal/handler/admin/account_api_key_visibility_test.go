@@ -174,5 +174,7 @@ func TestAPIKeyVisibilityDisableClearsReveal(t *testing.T) {
 	require.Equal(t, false, decodeData(t, disable)["enabled"])
 
 	detail := doAPIKeyVisibilityJSON(t, router, http.MethodGet, "/api/v1/admin/accounts/42", nil)
-	require.NotContains(t, decodeData(t, detail)["credentials"].(map[string]any), "api_key")
+	disabledCreds, ok := decodeData(t, detail)["credentials"].(map[string]any)
+	require.True(t, ok)
+	require.NotContains(t, disabledCreds, "api_key")
 }
