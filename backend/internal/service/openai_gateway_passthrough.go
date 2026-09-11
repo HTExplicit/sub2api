@@ -781,9 +781,9 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	// DeepSeek / Kimi 原生 Responses 端点为无状态实现（见 normalizeDeepSeekResponsesRequestBody）。
 	body = normalizeDeepSeekResponsesRequestBody(account, body)
 
-	body, err := normalizePNNLResponsesReasoningSummary(account, targetURL, body)
+	body, err := normalizeOpenAICompatibleResponsesReasoningSummary(account, targetURL, body)
 	if err != nil {
-		return nil, fmt.Errorf("normalize PNNL Responses reasoning summary: %w", err)
+		return nil, fmt.Errorf("normalize compatible Responses reasoning summary: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(body))

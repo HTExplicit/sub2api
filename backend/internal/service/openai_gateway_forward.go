@@ -1498,9 +1498,9 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	// previous_response_id，避免携带状态字段被上游拒绝。
 	body = normalizeDeepSeekResponsesRequestBody(account, body)
 
-	body, err := normalizePNNLResponsesReasoningSummary(account, targetURL, body)
+	body, err := normalizeOpenAICompatibleResponsesReasoningSummary(account, targetURL, body)
 	if err != nil {
-		return nil, fmt.Errorf("normalize PNNL Responses reasoning summary: %w", err)
+		return nil, fmt.Errorf("normalize compatible Responses reasoning summary: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewReader(body))
