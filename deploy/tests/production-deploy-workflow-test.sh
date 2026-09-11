@@ -11,14 +11,16 @@ fail() {
   exit 1
 }
 
-grep -Fq 'inspect=$(docker buildx imagetools inspect "$image")' "$WORKFLOW" ||
-  fail 'production digest resolution must consume the complete buildx output'
-grep -Fq 'END {if (digest == "") exit 1; print digest}' "$WORKFLOW" ||
-  fail 'production digest resolution must validate the parsed digest after EOF'
+grep -Fq 'packages: read' "$WORKFLOW" ||
+  fail 'production resolve must request GHCR package read permission'
+grep -Fq 'docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9' "$WORKFLOW" ||
+  fail 'production resolve must authenticate to GHCR before imagetools inspect'
+grep -Fq 'digest="${release_image_ref#${image}@}"' "$WORKFLOW" ||
+  fail 'production resolution must take the immutable digest from the Release body'
 grep -Fq 'release_body=$(gh release view "$tag" --json body --jq .body)' "$WORKFLOW" ||
   fail 'production resolution must read the immutable image reference recorded in the Release body'
 grep -Fq '[[ "$release_image_ref" == "${image}@${digest}" ]]' "$WORKFLOW" ||
-  fail 'production resolution must bind the mutable registry tag to the Release digest'
+  fail 'production resolution must bind the Release digest to the image tag'
 grep -Fq 'image_revision=$(docker buildx imagetools inspect "${image}@${digest}" --format' "$WORKFLOW" ||
   fail 'production resolution must inspect source metadata from the immutable image digest'
 grep -Fq '[[ "$image_revision" == "$tag_commit" ]]' "$WORKFLOW" ||
@@ -176,6 +178,10 @@ if [[ "${MOCK_OVERRIDE_TAG:-}" == "$tag" ]]; then
   digest=${MOCK_REGISTRY_DIGEST_OVERRIDE:-$digest}
   revision=${MOCK_IMAGE_REVISION_OVERRIDE:-$revision}
   platform_v1=${MOCK_IMAGE_PLATFORM_V1_OVERRIDE:-$platform_v1}
+fi
+if [[ "$image_ref" == *@sha256:* ]]; then
+  requested=${image_ref##*@}
+  [[ "$requested" == "$digest" ]] || exit 3
 fi
 if [[ " $* " == *'io.github.htexplicit.cindy-platform-v1'* ]]; then
   printf '%s\n' "$platform_v1"
