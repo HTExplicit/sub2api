@@ -185,6 +185,23 @@ export async function getById(id: number): Promise<Account> {
   return data
 }
 
+export interface AccountAPIKeyVisibility {
+  enabled: boolean
+}
+
+export async function getAPIKeyVisibility(): Promise<AccountAPIKeyVisibility> {
+  const { data } = await apiClient.get<AccountAPIKeyVisibility>('/admin/accounts/api-key-visibility')
+  return data
+}
+
+export async function setAPIKeyVisibility(payload: {
+  enabled: boolean
+  password?: string
+}): Promise<AccountAPIKeyVisibility> {
+  const { data } = await apiClient.put<AccountAPIKeyVisibility>('/admin/accounts/api-key-visibility', payload)
+  return data
+}
+
 /**
  * Create new account
  * @param accountData - Account data
@@ -1302,6 +1319,8 @@ export const accountsAPI = {
   listWithEtag,
   getUpstreamBillingRatesWithEtag,
   getById,
+  getAPIKeyVisibility,
+  setAPIKeyVisibility,
   create,
   duplicate,
   update,

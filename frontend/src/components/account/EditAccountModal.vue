@@ -155,7 +155,7 @@
           <label class="input-label">{{ t('admin.accounts.apiKey') }}</label>
           <input
             v-model="editApiKey"
-            type="password"
+            :type="editApiKey ? 'text' : 'password'"
             class="input font-mono"
             autocomplete="new-password"
             data-1p-ignore
@@ -175,7 +175,7 @@
                       : 'sk-ant-...'
             "
           />
-          <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
+          <p v-if="!editApiKey" class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
         </div>
 
         <!-- Model Restriction Section (不适用于 Antigravity) -->
@@ -924,11 +924,11 @@
           <label class="input-label">{{ t('admin.accounts.upstream.apiKey') }}</label>
           <input
             v-model="editApiKey"
-            type="password"
+            :type="editApiKey ? 'text' : 'password'"
             class="input font-mono"
             placeholder="sk-..."
           />
-          <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
+          <p v-if="!editApiKey" class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
         </div>
       </div>
 
@@ -4491,7 +4491,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     customErrorCodesEnabled.value = false
     selectedErrorCodes.value = []
   }
-  editApiKey.value = ''
+  const revealedKey = newAccount.credentials?.api_key
+  editApiKey.value = typeof revealedKey === 'string' ? revealedKey : ''
 }
 
 async function loadTLSProfiles() {

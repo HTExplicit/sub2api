@@ -2119,6 +2119,25 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('api_key')
   })
 
+  it('shows revealed api_key as visible text', async () => {
+    const wrapper = mountModal(buildAccount())
+    await flushPromises()
+    const input = wrapper.get('input[autocomplete="new-password"]')
+    expect((input.element as HTMLInputElement).value).toBe('sk-test')
+    expect(input.attributes('type')).toBe('text')
+  })
+
+  it('keeps redacted api_key field blank as a password input', async () => {
+    const account = buildAccount()
+    account.credentials = { base_url: 'https://api.openai.com' }
+    account.credentials_status = { has_api_key: true }
+    const wrapper = mountModal(account)
+    await flushPromises()
+    const input = wrapper.get('input[autocomplete="new-password"]')
+    expect((input.element as HTMLInputElement).value).toBe('')
+    expect(input.attributes('type')).toBe('password')
+  })
+
   it('allows saving apikey account against legacy backend without credentials_status', async () => {
     // 新前端 + 旧后端：credentials_status 缺失，但 credentials.api_key 仍是明文，应允许保存
     const account = buildAccount()

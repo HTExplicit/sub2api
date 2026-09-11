@@ -122,6 +122,9 @@ security:
   # 旧版兼容开关。开启时原始转发头会接管 server.trusted_proxies；关闭后严格
   # 使用上方配置的可信代理链。示例配置采用高安全模式。
   trust_forwarded_ip_for_api_key_acl: false
+  # Password for the account-page API key reveal switch. Empty disables it.
+  # Environment: SECURITY_ACCOUNT_API_KEY_REVEAL_PASSWORD
+  # account_api_key_reveal_password: ""
   # Optional client-IP headers for third-party CDNs, checked in list order before
   # CF-Connecting-IP, X-Real-IP, and X-Forwarded-For. Valid only while the legacy
   # compatibility switch above is true; maximum 16 unique HTTP header names.

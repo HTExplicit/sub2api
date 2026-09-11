@@ -42,3 +42,30 @@ func isCredentialValuePresent(v any) bool {
 		return true
 	}
 }
+
+const revealedAPIKeyCredential = "api_key"
+
+// RestoreAPIKey copies the original api_key into a redacted credentials map.
+// Other sensitive keys stay omitted. Returns out, allocating it when needed.
+func RestoreAPIKey(out map[string]any, original map[string]any) map[string]any {
+	if original == nil {
+		return out
+	}
+	key, ok := original[revealedAPIKeyCredential].(string)
+	if !ok || key == "" {
+		return out
+	}
+	if out == nil {
+		out = make(map[string]any, 1)
+	}
+	out[revealedAPIKeyCredential] = key
+	return out
+}
+
+// RestoreAccountAPIKey writes the original api_key onto a redacted account DTO.
+func RestoreAccountAPIKey(account *Account, original *service.Account) {
+	if account == nil || original == nil {
+		return
+	}
+	account.Credentials = RestoreAPIKey(account.Credentials, original.Credentials)
+}
