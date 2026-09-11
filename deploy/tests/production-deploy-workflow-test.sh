@@ -179,6 +179,10 @@ if [[ "${MOCK_OVERRIDE_TAG:-}" == "$tag" ]]; then
   revision=${MOCK_IMAGE_REVISION_OVERRIDE:-$revision}
   platform_v1=${MOCK_IMAGE_PLATFORM_V1_OVERRIDE:-$platform_v1}
 fi
+if [[ "$image_ref" == *@sha256:* ]]; then
+  requested=${image_ref##*@}
+  [[ "$requested" == "$digest" ]] || exit 3
+fi
 if [[ " $* " == *'io.github.htexplicit.cindy-platform-v1'* ]]; then
   printf '%s\n' "$platform_v1"
 elif [[ " $* " == *' --format '* ]]; then
