@@ -3100,10 +3100,10 @@ const handleExportData = async () => {
   }
 }
 const accountExportStepUp = useStepUp()
-const closeTestModal = async () => {
+const closeTestModal = () => {
   showTest.value = false
   testingAcc.value = null
-  await Promise.all([reload(), loadFacets(), loadCindyDeleteCandidateCount()])
+  enterAutoRefreshSilentWindow()
 }
 const closeStatsModal = () => { showStats.value = false; statsAcc.value = null }
 const closeReAuthModal = () => { showReAuth.value = false; reAuthAcc.value = null }

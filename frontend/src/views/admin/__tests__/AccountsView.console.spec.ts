@@ -672,20 +672,76 @@ describe('admin AccountsView Cockpit console', () => {
     expect(listAccounts.mock.calls.length).toBeGreaterThan(1)
   })
 
-  it('refreshes accounts, Cindy facets, and delete candidates when account testing closes', async () => {
+  it('preserves the account list and performs no reads when account testing closes', async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/admin/accounts', component: { template: '<div />' } }]
+    })
+    await router.push('/admin/accounts?group_id=23&cindy_balance_status=insufficient&page=3&page_size=100&sort_by=id&sort_order=desc')
+    await router.isReady()
+    const rows = Array.from({ length: 100 }, (_, index) => ({ ...account, id: index + 201 }))
+    listAccounts.mockResolvedValue({ items: rows, total: 400, page: 3, page_size: 100, pages: 4 })
+    const wrapper = mountView([router])
+    try {
+      await flushPromises()
+      const vm = wrapper.vm as any
+      vm.toggleSel(rows[50].id)
+      getById.mockResolvedValue(rows[50])
+      await vm.handleTest(rows[50])
+      await flushPromises()
+      const modal = wrapper.findComponent(AccountTestModalStub)
+      expect(modal.props('show')).toBe(true)
+      const currentRows = vm.accounts
+      const currentPagination = { ...vm.pagination }
+      const currentFilters = JSON.stringify(vm.consoleFilters)
+      const currentSort = { ...vm.sortState }
+      const currentURL = router.currentRoute.value.fullPath
+      const reads = [listAccounts, listWithEtag, getById, getFacets, listFolders, listTags,
+        getBatchTodayStats, previewCindyInsufficientDeletion, previewCindyBannedDeletion]
+      reads.forEach(read => read.mockClear())
+
+      await wrapper.get('[data-test="close-account-test"]').trigger('click')
+      await flushPromises()
+
+      reads.forEach(read => expect(read).not.toHaveBeenCalled())
+      expect(modal.props('show')).toBe(false)
+      expect(modal.props('account')).toBeNull()
+      expect(vm.loading).toBe(false)
+      expect(vm.accounts).toBe(currentRows)
+      expect(vm.pagination).toEqual(currentPagination)
+      expect(vm.pagination.page).toBe(3)
+      expect(JSON.stringify(vm.consoleFilters)).toBe(currentFilters)
+      expect(vm.sortState).toEqual(currentSort)
+      expect(router.currentRoute.value.fullPath).toBe(currentURL)
+      expect(wrapper.get('[data-test="selected-ids"]').text()).toBe(String(rows[50].id))
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('defers automatic refresh for 15 seconds after account testing closes and then resumes', async () => {
+    vi.useFakeTimers()
+    const visibility = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+    localStorage.setItem('account-auto-refresh', JSON.stringify({ enabled: true, interval_seconds: 5 }))
     const wrapper = mountView()
-    await flushPromises()
-    await wrapper.get('[data-test="cindy-account-view"]').findAll('button')[2].trigger('click')
-    await flushPromises()
-    listAccounts.mockClear()
-    getFacets.mockClear()
-    previewCindyInsufficientDeletion.mockClear()
+    try {
+      await flushPromises()
+      await (wrapper.vm as any).handleTest(account)
+      await vi.advanceTimersByTimeAsync(6000)
+      expect(listWithEtag).not.toHaveBeenCalled()
 
-    await wrapper.get('[data-test="close-account-test"]').trigger('click')
-    await flushPromises()
-
-    expect(listAccounts).toHaveBeenCalled()
-    expect(getFacets).toHaveBeenCalled()
-    expect(previewCindyInsufficientDeletion).toHaveBeenCalled()
+      await wrapper.get('[data-test="close-account-test"]').trigger('click')
+      await vi.advanceTimersByTimeAsync(14999)
+      expect(listWithEtag).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(2001)
+      expect(listWithEtag).toHaveBeenCalledTimes(1)
+      expect(listAccounts).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(6000)
+      expect(listWithEtag).toHaveBeenCalledTimes(2)
+    } finally {
+      wrapper.unmount()
+      visibility.mockRestore()
+      vi.useRealTimers()
+    }
   })
 })
