@@ -1,5 +1,16 @@
-export default {
-    accounts: {
+export default {accounts: {
+      batchTest: {
+        title: '批量测试连接',
+        description: '测试已选中的 {count} 个账号，最多同时测试 5 个。关闭进度窗口后任务继续。',
+        model: '测试模型（可选）',
+        defaultModel: '各账号默认模型',
+        start: '开始测试',
+        submitFailed: '创建批量测试任务失败',
+      },
+  selectImportedResults: '选中本次导入结果',
+  retryImportSelection: '重试获取并选中导入结果',
+  importResultSelectionFailed: '导入结果获取失败，请重试选择；无需重新导入。',
+
       title: '账号管理',
       description: '管理 AI 平台账号和 Cookie',
       importSessionFilter: '本次导入（{count}）',
@@ -760,6 +771,7 @@ export default {
       bulkActions: {
         selected: '已选择 {count} 个账号',
         selectedAll: '已选择全部 {count} 个账号',
+        selectPage: '本页全选',
         selectCurrentPage: '本页全选',
         selectAllResults: '全选所有结果（{count}）',
         selectingAll: '正在选择全部结果...',

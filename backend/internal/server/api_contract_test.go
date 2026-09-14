@@ -1633,6 +1633,10 @@ func (*contractAccountJobRepo) Get(context.Context, int64) (*service.AccountJob,
 func (*contractAccountJobRepo) List(context.Context, int64, string, string, int, int) (*service.AccountJobList, error) {
 	return &service.AccountJobList{}, nil
 }
+func (*contractAccountJobRepo) ResultAccountIDs(context.Context, int64) ([]int64, error) {
+	return []int64{}, nil
+}
+
 func (*contractAccountJobRepo) ListItems(context.Context, int64, string, int, int) (*service.AccountJobItemList, error) {
 	return &service.AccountJobItemList{}, nil
 }

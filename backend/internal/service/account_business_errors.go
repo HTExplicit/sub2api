@@ -31,6 +31,10 @@ type accountBusinessMessage struct {
 }
 
 var accountBusinessMessageCatalog = map[string]accountBusinessMessage{
+	"test_unavailable":                   {message: "account testing is unavailable", failure: true},
+	"test_failed":                        {message: "account connection test failed or did not complete", failure: true},
+	"test_timeout":                       {message: "account connection test timed out", failure: true},
+	"test_model_unsupported":             {message: "selected model is not supported by this account", failure: true},
 	AccountJobCodePayloadExpired:         {message: "account job payload expired", failure: true},
 	AccountJobCodePayloadUnavailable:     {message: "account job payload is unavailable", failure: true},
 	AccountJobCodeCancelCheckFailed:      {message: "account job cancellation state is unavailable", failure: true},

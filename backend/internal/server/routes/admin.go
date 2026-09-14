@@ -144,6 +144,7 @@ func registerAccountJobRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		jobs.GET("", h.Admin.AccountJob.List)
 		jobs.GET("/:id", h.Admin.AccountJob.Get)
 		jobs.GET("/:id/items", h.Admin.AccountJob.ListItems)
+		jobs.GET("/:id/result-account-ids", h.Admin.AccountJob.ResultAccountIDs)
 		jobs.POST("/:id/cancel", h.Admin.AccountJob.Cancel)
 		jobs.POST("/:id/retry-failed", h.Admin.AccountJob.RetryFailed)
 	}
@@ -505,6 +506,7 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.POST("/batch-delete", h.Admin.Account.BatchDelete)
 		accounts.POST("/batch-clear-error", h.Admin.Account.BatchClearError)
 		accounts.POST("/batch-refresh", h.Admin.Account.BatchRefresh)
+		accounts.POST("/batch-test", h.Admin.Account.BatchTest)
 
 		// Antigravity 默认模型映射
 		accounts.GET("/antigravity/default-model-mapping", h.Admin.Account.GetAntigravityDefaultModelMapping)

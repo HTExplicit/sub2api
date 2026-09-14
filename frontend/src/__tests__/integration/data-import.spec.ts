@@ -17,6 +17,10 @@ vi.mock('@/api/admin', () => ({ adminAPI: { accounts: { importData, previewImpor
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({ showError, showSuccess, showWarning, showInfo: vi.fn() }),
 }))
+vi.mock('@/utils/accountImportWorker', async () => {
+  const { parseAccountImportFiles } = await vi.importActual<typeof import('@/utils/accountImportParser')>('@/utils/accountImportParser')
+  return { readAccountImportFiles: (files: File[]) => parseAccountImportFiles(files) }
+})
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: (key: string) => key }),
 }))

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -13,6 +14,28 @@ import (
 )
 
 type accountJobRepository struct{ db *sql.DB }
+
+func (r *accountJobRepository) ResultAccountIDs(ctx context.Context, jobID int64) ([]int64, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT DISTINCT account_id FROM (
+			SELECT CASE WHEN jsonb_typeof(metadata->'account_id')='number'
+				AND metadata->>'account_id' ~ '^[1-9][0-9]*$'
+				THEN (metadata->>'account_id')::bigint ELSE target_account_id END AS account_id
+			FROM admin_account_job_items WHERE job_id=$1 AND status='succeeded'
+		) projected WHERE account_id>0 ORDER BY account_id`, jobID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	ids := make([]int64, 0)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
 
 func NewAccountJobRepository(db *sql.DB) service.AccountJobRepository {
 	return &accountJobRepository{db: db}
@@ -131,14 +154,22 @@ func (r *accountJobRepository) Create(ctx context.Context, params service.Create
 	if err != nil {
 		return nil, false, err
 	}
-	for index, seed := range params.Items {
-		ordinal := seed.Ordinal
-		if ordinal <= 0 {
-			ordinal = index + 1
+	for start := 0; start < len(params.Items); start += service.AccountJobBatchSize {
+		end := min(start+service.AccountJobBatchSize, len(params.Items))
+		values := make([]string, 0, end-start)
+		args := make([]any, 0, (end-start)*5)
+		for index := start; index < end; index++ {
+			seed := params.Items[index]
+			ordinal := seed.Ordinal
+			if ordinal <= 0 {
+				ordinal = index + 1
+			}
+			n := len(args)
+			values = append(values, fmt.Sprintf("($%d,$%d,$%d,$%d,$%d::jsonb)", n+1, n+2, n+3, n+4, n+5))
+			args = append(args, job.ID, ordinal, seed.Action, seed.TargetAccountID, string(normalizeRepositoryJobMetadata(seed.Metadata)))
 		}
 		if _, err = tx.ExecContext(ctx, `INSERT INTO admin_account_job_items
-			(job_id, ordinal, action, target_account_id, metadata) VALUES ($1,$2,$3,$4,$5::jsonb)`,
-			job.ID, ordinal, seed.Action, seed.TargetAccountID, string(normalizeRepositoryJobMetadata(seed.Metadata))); err != nil {
+			(job_id, ordinal, action, target_account_id, metadata) VALUES `+strings.Join(values, ","), args...); err != nil {
 			return nil, false, err
 		}
 	}
@@ -398,22 +429,44 @@ func (r *accountJobRepository) CompleteItems(ctx context.Context, jobID int64, r
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	var succeeded, failed, canceled int64
 	for _, result := range results {
 		status := result.Status
 		if status != service.AccountJobItemStatusSucceeded && status != service.AccountJobItemStatusFailed && status != service.AccountJobItemStatusCanceled {
 			status = service.AccountJobItemStatusFailed
 		}
 		metadata := normalizeRepositoryJobMetadata(result.Metadata)
-		if _, err = tx.ExecContext(ctx, `UPDATE admin_account_job_items
+		updated, updateErr := tx.ExecContext(ctx, `UPDATE admin_account_job_items
 			SET status=$3, metadata=$4::jsonb, error_code=NULLIF($5,''), error_message=NULLIF($6,''),
 			    finished_at=NOW(), updated_at=NOW()
 			WHERE job_id=$1 AND id=$2 AND status='running'`,
-			jobID, result.ItemID, status, string(metadata), result.ErrorCode, result.ErrorMessage); err != nil {
-			return err
+			jobID, result.ItemID, status, string(metadata), result.ErrorCode, result.ErrorMessage)
+		if updateErr != nil {
+			return updateErr
+		}
+		changed, countErr := updated.RowsAffected()
+		if countErr != nil {
+			return countErr
+		}
+		switch status {
+		case service.AccountJobItemStatusSucceeded:
+			succeeded += changed
+		case service.AccountJobItemStatusFailed:
+			failed += changed
+		case service.AccountJobItemStatusCanceled:
+			canceled += changed
 		}
 	}
-	if err = refreshAccountJobCounts(ctx, tx, jobID); err != nil {
-		return err
+	// Count only transitions claimed by this transaction. Replayed completions
+	// update zero rows, so they cannot increment progress a second time.
+	if succeeded+failed+canceled > 0 {
+		if _, err = tx.ExecContext(ctx, `UPDATE admin_account_jobs
+			SET processed_count=processed_count+$2+$3+$4,
+			    succeeded_count=succeeded_count+$2, failed_count=failed_count+$3,
+			    canceled_count=canceled_count+$4, updated_at=NOW() WHERE id=$1`,
+			jobID, succeeded, failed, canceled); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }

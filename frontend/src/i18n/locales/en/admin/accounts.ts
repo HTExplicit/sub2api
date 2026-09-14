@@ -1,5 +1,16 @@
-export default {
-    accounts: {
+export default {accounts: {
+      batchTest: {
+        title: 'Batch connection test',
+        description: 'Test {count} selected accounts, up to 5 at a time. Closing progress keeps the job running.',
+        model: 'Test model (optional)',
+        defaultModel: 'Each account’s default model',
+        start: 'Start tests',
+        submitFailed: 'Could not create the batch test job',
+      },
+  selectImportedResults: 'Select imported accounts',
+  retryImportSelection: 'Retry imported account selection',
+  importResultSelectionFailed: 'Could not load import results. Retry selection without importing again.',
+
       title: 'Account Management',
       description: 'Manage AI platform accounts and credentials',
       importSessionFilter: 'Imported accounts ({count})',
@@ -671,6 +682,7 @@ export default {
       bulkActions: {
         selected: '{count} account(s) selected',
         selectedAll: 'All {count} account(s) selected',
+        selectPage: 'Select this page',
         selectCurrentPage: 'Select this page',
         selectAllResults: 'Select all results ({count})',
         selectingAll: 'Selecting all results...',

@@ -497,7 +497,7 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 		return nil, err
 	}
 	if input.ModelContextOverrides != nil {
-		overrides, err := ApplyModelContextOverrides(nil, input.ModelContextOverrides)
+		overrides, err := ApplyAccountModelContextOverrides(account, nil, input.ModelContextOverrides)
 		if err != nil {
 			return nil, err
 		}
@@ -980,7 +980,7 @@ func (s *adminServiceImpl) updateAccount(ctx context.Context, id int64, input *U
 	}
 	account.ModelContextOverridesPatch = input.ModelContextOverrides
 	if input.ModelContextOverrides != nil {
-		overrides, err := ApplyModelContextOverrides(account.Extra[ModelContextOverridesExtraKey], input.ModelContextOverrides)
+		overrides, err := ApplyAccountModelContextOverrides(account, account.Extra[ModelContextOverridesExtraKey], input.ModelContextOverrides)
 		if err != nil {
 			return nil, err
 		}

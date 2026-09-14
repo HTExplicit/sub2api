@@ -173,6 +173,15 @@ async function mergeDuplicates(request: DuplicateMergeRequest): Promise<AccountJ
 }
 
 const accountJobsAPI = {
+  async batchTest(accountIDs: number[], modelID: string): Promise<AccountJob> {
+    const { data } = await apiClient.post<AccountJob>('/admin/accounts/batch-test',
+      { account_ids: accountIDs, model_id: modelID }, accountJobIdempotencyHeaders('account_batch_test'))
+    return data
+  },
+  async resultAccountIDs(jobID: number): Promise<number[]> {
+    const { data } = await apiClient.get<{ account_ids: number[] }>(`${BASE_PATH}/${jobID}/result-account-ids`)
+    return data.account_ids
+  },
   list,
   get,
   listItems,

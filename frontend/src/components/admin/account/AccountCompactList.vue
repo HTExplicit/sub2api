@@ -7,47 +7,31 @@
       <Icon name="inbox" size="xl" />
       <span class="mt-2 text-sm">{{ t('empty.noData') }}</span>
     </div>
-    <button
+    <div
       v-for="account in accounts"
       v-else
       :key="account.id"
-      type="button"
       class="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 border-b border-gray-100 px-3 py-2.5 text-left transition-colors last:border-b-0 hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-800 lg:grid-cols-[auto_minmax(12rem,1.2fr)_minmax(8rem,0.65fr)_minmax(16rem,1fr)_minmax(12rem,0.9fr)_auto] lg:gap-y-0"
-      :class="selectedIds.includes(account.id) ? 'bg-primary-50/50 dark:bg-primary-900/10' : ''"
+      :class="selectedSet.has(account.id) ? 'bg-primary-50/50 dark:bg-primary-900/10' : ''"
       @click="emit('rowClick', account)"
     >
-      <input
-        type="checkbox"
-        class="row-span-2 h-4 w-4 self-start rounded border-gray-300 text-primary-600 focus:ring-primary-500 lg:row-span-1 lg:self-center"
-        :checked="selectedIds.includes(account.id)"
-        :aria-label="t('admin.accounts.selectAccount', { name: account.name })"
-        @click.stop
-        @change.stop="emit('toggle', account.id)"
-      />
+      <AccountSelectionCheckbox :checked="selectedSet.has(account.id)"
+          :label="t('admin.accounts.selectAccount', { name: account.name })"
+          @change="emit('toggle', account.id)" />
 
       <div class="min-w-0">
         <div class="flex min-w-0 items-center gap-2">
-          <span class="truncate text-sm font-semibold text-gray-900 dark:text-white">{{ account.name }}</span>
+          <button type="button" class="truncate text-left text-sm font-semibold text-gray-900 dark:text-white" @click.stop="emit('rowClick', account)">{{ account.name }}</button>
           <span class="shrink-0 font-mono text-[10px] text-gray-400">#{{ account.id }}</span>
         </div>
         <div class="mt-0.5 truncate text-xs text-gray-500 dark:text-dark-300">{{ displayEmail(account) || '-' }}</div>
         <div class="mt-1 flex flex-wrap gap-1 lg:hidden">
-          <PlatformTypeBadge
-            :platform="account.platform"
-            :type="account.type"
-            :auth-mode="authMode(account)"
-            :plan-type="planType(account)"
-          />
+          <AccountIdentityBadges :account="account" />
         </div>
       </div>
 
       <div class="hidden min-w-0 lg:block">
-        <PlatformTypeBadge
-          :platform="account.platform"
-          :type="account.type"
-          :auth-mode="authMode(account)"
-          :plan-type="planType(account)"
-        />
+        <AccountIdentityBadges :account="account" />
       </div>
 
       <div class="col-start-2 row-start-2 min-w-0 lg:col-start-auto lg:row-start-auto" data-test="account-compact-usage">
@@ -79,7 +63,7 @@
           <span class="text-xs text-gray-400">{{ account.management_folder?.name || t('admin.accounts.folderUncategorized') }}</span>
         </div>
         <div class="mt-1 truncate text-xs text-gray-500 dark:text-dark-300">
-          <span class="mr-1 text-[10px] font-medium uppercase text-gray-400">{{ t('admin.accounts.routing') }}</span>{{ routeSummary(account) }}
+          <span class="mr-1 text-[10px] font-medium uppercase text-gray-400">{{ t('admin.accounts.routing') }}</span><AccountGroupsCell :groups="account.groups" /><span>{{ account.proxy?.name || t('admin.accounts.directConnection') }}</span>
         </div>
         <CindyBalanceProbeSummary v-if="showCindyProbe" :account="account" show-label class="mt-2" />
       </div>
@@ -92,21 +76,24 @@
           <Icon name="more" size="sm" />
         </button>
       </div>
-    </button>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
 import AccountStatusIndicator from '@/components/account/AccountStatusIndicator.vue'
 import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
-import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
+import AccountIdentityBadges from '@/components/account/AccountIdentityBadges.vue'
+import AccountSelectionCheckbox from '@/components/account/AccountSelectionCheckbox.vue'
+import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
 import Icon from '@/components/icons/Icon.vue'
 import CindyBalanceProbeSummary from '@/features/cindy-balance-probe/CindyBalanceProbeSummary.vue'
 import type { Account, WindowStats } from '@/types'
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   accounts: Account[]
   loading: boolean
   selectedIds: number[]
@@ -130,24 +117,10 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const selectedSet = computed(() => new Set(props.selectedIds))
 
 const displayEmail = (account: Account) => String(
   account.extra?.email_address || account.extra?.email || account.credentials?.email || account.parent_email || ''
 )
 
-const authMode = (account: Account) => typeof account.credentials?.auth_mode === 'string'
-  ? account.credentials.auth_mode
-  : undefined
-
-const planType = (account: Account) => String(
-  (account.extra?.grok_billing_snapshot as Record<string, unknown> | undefined)?.plan ||
-  (account.extra?.grok_quota_snapshot as Record<string, unknown> | undefined)?.subscription_tier ||
-  account.credentials?.subscription_tier || account.extra?.subscription_tier || account.credentials?.plan_type || ''
-)
-
-const routeSummary = (account: Account) => {
-  const groups = account.groups?.map(group => group.name).filter(Boolean) || []
-  const proxy = account.proxy?.name || t('admin.accounts.directConnection')
-  return groups.length ? `${groups.join(', ')} · ${proxy}` : proxy
-}
 </script>

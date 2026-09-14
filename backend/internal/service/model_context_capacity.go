@@ -78,6 +78,7 @@ type ResolvedModelContextCapacity struct {
 type AccountModelContextCapacityRow struct {
 	UpstreamModelID        string                        `json:"upstream_model_id"`
 	Aliases                []string                      `json:"aliases"`
+	UpstreamModelIDs       []string                      `json:"upstream_model_ids,omitempty"`
 	Editable               bool                          `json:"editable"`
 	Upstream               *ModelContextCapacity         `json:"upstream,omitempty"`
 	Official               *OfficialModelContextCapacity `json:"official,omitempty"`
@@ -415,8 +416,10 @@ func NewAccountModelContextCapacityResolver(account *Account) func(string, *Mode
 		}
 	}
 	snapshot, snapshotReason := readModelContextCapacitySnapshot(account)
-	custom := modelContextOverridesFromExtra(account.Extra[ModelContextOverridesExtraKey])
+	observations, observationConflicts := capacitySnapshotTargets(account, snapshot)
+	custom, conflicts := resolveCapacityOverrides(account)
 	return func(modelID string, live *ModelContextCapacity) ResolvedModelContextCapacity {
+		modelID = capacityCanonicalUpstreamID(account, modelID)
 		if !validModelContextID(modelID) {
 			result := ResolveModelContextCapacity(nil, nil, nil)
 			result.Reason = "upstream_model_unresolved"
@@ -427,15 +430,19 @@ func NewAccountModelContextCapacityResolver(account *Account) func(string, *Mode
 			override = &value
 		}
 		var upstream *ModelContextCapacity
-		if snapshot != nil {
-			if value, ok := snapshot.Models[modelID]; ok {
-				upstream = &value
-			}
+		if value, ok := observations[modelID]; ok {
+			upstream = &value
 		}
 		if live != nil {
 			upstream = live
 		}
 		result := ResolveModelContextCapacity(override, LookupOfficialModelContextCapacity(account, modelID), upstream)
+		if conflicts[modelID] {
+			result.Reason = "conflicting_alias_overrides"
+		}
+		if result.Source == "default" && observationConflicts[modelID] {
+			result.Reason = "conflicting_upstream_alias_capacities"
+		}
 		if result.Source == "default" && snapshotReason != "" {
 			result.Reason = snapshotReason
 		}
@@ -489,7 +496,7 @@ func modelContextReferenceCandidates(modelID string) []string {
 func lookupExactOfficialModelContextCapacity(account *Account, modelID string) (*OfficialModelContextCapacity, bool) {
 	var found *OfficialModelContextCapacity
 	for _, entry := range officialModelContextCapacityCatalog {
-		if entry.ModelID != modelID && !containsExactModelContextString(entry.Aliases, modelID) {
+		if !strings.EqualFold(entry.ModelID, modelID) && !containsFoldModelContextString(entry.Aliases, modelID) {
 			continue
 		}
 		if !officialModelContextCapacityApplies(account, entry) {
@@ -568,6 +575,15 @@ func containsExactModelContextString(values []string, target string) bool {
 	return false
 }
 
+func containsFoldModelContextString(values []string, target string) bool {
+	for _, value := range values {
+		if strings.EqualFold(value, target) {
+			return true
+		}
+	}
+	return false
+}
+
 func protectedAccountModelContextCapacity(account *Account, modelID string, live *ModelContextCapacity) ResolvedModelContextCapacity {
 	result := ResolvedModelContextCapacity{Source: "protected", Reason: "dedicated_catalog_read_only"}
 	if account == nil {
@@ -611,9 +627,14 @@ func BuildAccountModelContextCapacityRows(account *Account, modelIDs []string) [
 		return rows
 	}
 	ids := make(map[string]struct{})
+	variants := make(map[string][]string)
 	add := func(modelID string) {
 		if validModelContextID(modelID) {
-			ids[modelID] = struct{}{}
+			target := capacityCanonicalUpstreamID(account, modelID)
+			ids[target] = struct{}{}
+			if modelID != target {
+				variants[target] = append(variants[target], modelID)
+			}
 		}
 	}
 	for _, modelID := range modelIDs {
@@ -623,17 +644,22 @@ func BuildAccountModelContextCapacityRows(account *Account, modelIDs []string) [
 	for alias, target := range account.GetModelMapping() {
 		add(target)
 		if validModelContextID(target) && validModelContextID(alias) && alias != target {
-			aliases[target] = append(aliases[target], alias)
+			canonical := capacityCanonicalUpstreamID(account, target)
+			aliases[canonical] = append(aliases[canonical], alias)
 		}
 	}
 	snapshot := account.GetUpstreamModelContextCapacitySnapshot()
+	observations, _ := capacitySnapshotTargets(account, snapshot)
 	if snapshot != nil {
 		for modelID := range snapshot.Models {
 			add(modelID)
 		}
 	}
-	custom := modelContextOverridesFromExtra(account.Extra[ModelContextOverridesExtraKey])
+	custom, conflicts := resolveCapacityOverrides(account)
 	for modelID := range custom {
+		add(modelID)
+	}
+	for modelID := range conflicts {
 		add(modelID)
 	}
 	if !CanManageModelContextCapacity(account) {
@@ -650,14 +676,12 @@ func BuildAccountModelContextCapacityRows(account *Account, modelIDs []string) [
 	sort.Strings(ordered)
 	resolve := NewAccountModelContextCapacityResolver(account)
 	for _, modelID := range ordered {
-		row := AccountModelContextCapacityRow{UpstreamModelID: modelID, Aliases: []string{}, Editable: CanManageModelContextCapacity(account)}
-		if len(aliases[modelID]) > 0 {
-			row.Aliases = dedupeAndSortModelIDs(aliases[modelID])
+		row := AccountModelContextCapacityRow{UpstreamModelID: modelID, UpstreamModelIDs: dedupeAndSortModelIDs(variants[modelID]), Aliases: []string{}, Editable: CanManageModelContextCapacity(account)}
+		if len(aliases[modelID])+len(variants[modelID]) > 0 {
+			row.Aliases = dedupeAndSortModelIDs(append(aliases[modelID], variants[modelID]...))
 		}
-		if snapshot != nil {
-			if capacity, ok := snapshot.Models[modelID]; ok && modelContextCapacityHasLimits(capacity) {
-				row.Upstream = &capacity
-			}
+		if capacity, ok := observations[modelID]; ok && modelContextCapacityHasLimits(capacity) {
+			row.Upstream = &capacity
 		}
 		var automatic ResolvedModelContextCapacity
 		if row.Editable {

@@ -114,6 +114,10 @@ func (r *accountJobTestRepo) List(context.Context, int64, string, string, int, i
 	return &AccountJobList{}, nil
 }
 
+func (r *accountJobTestRepo) ResultAccountIDs(context.Context, int64) ([]int64, error) {
+	return []int64{}, nil
+}
+
 func (r *accountJobTestRepo) ListItems(context.Context, int64, string, int, int) (*AccountJobItemList, error) {
 	return &AccountJobItemList{}, nil
 }
@@ -255,6 +259,58 @@ type accountJobTestExecutor struct {
 	processedItemIDs []int64
 	prepareCalls     int
 	cleanupCalls     int
+}
+
+type batchTestConcurrencyExecutor struct {
+	mu        sync.Mutex
+	active    int
+	maxActive int
+	processed int
+}
+
+func (e *batchTestConcurrencyExecutor) ExecuteAccountJob(ctx context.Context, _ *AccountJob, _ json.RawMessage, items []AccountJobItem) ([]AccountJobExecutionResult, error) {
+	if len(items) != 1 {
+		return nil, errors.New("expected one batch test item")
+	}
+	e.mu.Lock()
+	e.active++
+	if e.active > e.maxActive {
+		e.maxActive = e.active
+	}
+	e.processed++
+	e.mu.Unlock()
+	defer func() {
+		e.mu.Lock()
+		e.active--
+		e.mu.Unlock()
+	}()
+	select {
+	case <-time.After(5 * time.Millisecond):
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	return []AccountJobExecutionResult{{ItemID: items[0].ID, Status: AccountJobItemStatusSucceeded, Metadata: json.RawMessage(`{"account_id":1}`)}}, nil
+}
+
+func TestAccountBatchTestRuntimeUsesFiveSharedSlots(t *testing.T) {
+	repo := newAccountJobTestRepo()
+	jobs := NewAccountJobService(repo, accountJobTestCipher{})
+	seeds := make([]AccountJobItemSeed, 12)
+	for index := range seeds {
+		seeds[index].Ordinal = index + 1
+	}
+	job, _, err := jobs.Submit(context.Background(), 9, AccountJobKindBatchTest, "batch-test-slots",
+		json.RawMessage(`{"model_id":""}`), nil, seeds)
+	require.NoError(t, err)
+	executor := &batchTestConcurrencyExecutor{}
+	runtime := NewAccountJobRuntime(jobs, executor)
+	runtime.ctx = context.Background()
+
+	code, message := runtime.execute(job)
+	require.Empty(t, code)
+	require.Empty(t, message)
+	require.Equal(t, 12, executor.processed)
+	require.LessOrEqual(t, executor.maxActive, 5)
 }
 
 func (e *accountJobTestExecutor) PrepareAccountJob(ctx context.Context, _ *AccountJob, _ json.RawMessage) (context.Context, func(), error) {

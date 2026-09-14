@@ -181,6 +181,10 @@
                     <span :class="statusClass(item.status)">{{ statusLabel(item.status) }}</span>
                   </div>
                   <p v-if="item.error_message" class="mt-1 break-words text-red-600 dark:text-red-300">{{ item.error_message }}</p>
+                  <p v-if="store.currentJob.kind === 'account_batch_test'" class="mt-1 text-gray-500 dark:text-gray-300">
+                    {{ item.metadata.model_id || t('admin.accounts.batchTest.defaultModel') }}
+                    <span v-if="typeof item.metadata.latency_ms === 'number'"> · {{ item.metadata.latency_ms }} ms</span>
+                  </p>
                 </div>
               </div>
               <div v-if="store.itemPage.total > store.itemPage.pageSize" class="mt-2 flex justify-end gap-2">

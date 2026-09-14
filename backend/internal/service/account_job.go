@@ -15,6 +15,7 @@ const (
 	AccountJobKindImportData             = "account_import"
 	AccountJobKindImportCodex            = "account_import_codex"
 	AccountJobKindBatchCreate            = "account_batch_create"
+	AccountJobKindBatchTest              = "account_batch_test"
 	AccountJobKindBulkUpdate             = "account_bulk_update"
 	AccountJobKindBulkTaxonomy           = "account_bulk_taxonomy"
 	AccountJobKindBatchDelete            = "account_batch_delete"
@@ -139,6 +140,7 @@ type AccountJobExecutionResult struct {
 }
 
 type AccountJobRepository interface {
+	ResultAccountIDs(context.Context, int64) ([]int64, error)
 	Create(context.Context, CreateAccountJobParams) (*AccountJob, bool, error)
 	FindIdempotent(context.Context, int64, string, string) (*AccountJob, error)
 	Get(context.Context, int64) (*AccountJob, error)
@@ -243,6 +245,13 @@ func (s *AccountJobService) ListItems(ctx context.Context, jobID int64, status s
 	return s.repo.ListItems(ctx, jobID, status, page, pageSize)
 }
 
+func (s *AccountJobService) ResultAccountIDs(ctx context.Context, jobID int64) ([]int64, error) {
+	if _, err := s.repo.Get(ctx, jobID); err != nil {
+		return nil, err
+	}
+	return s.repo.ResultAccountIDs(ctx, jobID)
+}
+
 func (s *AccountJobService) Cancel(ctx context.Context, jobID, createdBy int64) (*AccountJob, error) {
 	return s.repo.Cancel(ctx, jobID, createdBy)
 }
@@ -287,16 +296,17 @@ func (s *AccountJobService) RetryFailed(ctx context.Context, jobID, createdBy in
 }
 
 type AccountJobRuntime struct {
-	jobs     *AccountJobService
-	executor AccountJobExecutor
-	ctx      context.Context
-	cancel   context.CancelFunc
-	stopOnce sync.Once
-	wg       sync.WaitGroup
+	jobs           *AccountJobService
+	executor       AccountJobExecutor
+	ctx            context.Context
+	cancel         context.CancelFunc
+	stopOnce       sync.Once
+	wg             sync.WaitGroup
+	batchTestSlots chan struct{}
 }
 
 func NewAccountJobRuntime(jobs *AccountJobService, executor AccountJobExecutor) *AccountJobRuntime {
-	return &AccountJobRuntime{jobs: jobs, executor: executor}
+	return &AccountJobRuntime{jobs: jobs, executor: executor, batchTestSlots: make(chan struct{}, 5)}
 }
 
 func (r *AccountJobRuntime) Start(parent context.Context) error {
@@ -388,6 +398,9 @@ func (r *AccountJobRuntime) execute(job *AccountJob) (string, string) {
 		}
 	}
 	defer cleanup()
+	if job.Kind == AccountJobKindBatchTest {
+		return r.executeBatchTests(executionCtx, job, payload)
+	}
 	for {
 		canceled, cancelErr := r.jobs.repo.CancelRequested(r.ctx, job.ID)
 		if cancelErr != nil {
@@ -416,23 +429,7 @@ func (r *AccountJobRuntime) execute(job *AccountJob) (string, string) {
 				_ = r.jobs.repo.CompleteItems(r.ctx, job.ID, remaining)
 				return "", ""
 			}
-			result := AccountJobExecutionResult{ItemID: item.ID, Status: AccountJobItemStatusFailed,
-				ErrorCode: "execution_failed", ErrorMessage: "account job item failed"}
-			if r.executor != nil {
-				results, executeErr := r.executor.ExecuteAccountJob(executionCtx, job, payload, []AccountJobItem{item})
-				if executeErr == nil && len(results) == 1 && results[0].ItemID == item.ID {
-					result = results[0]
-				}
-			}
-			if err := ValidateAccountJobMetadata(result.Metadata); err != nil {
-				result = AccountJobExecutionResult{ItemID: item.ID, Status: AccountJobItemStatusFailed,
-					ErrorCode: "result_redacted", ErrorMessage: "account job result was rejected"}
-			}
-			if result.Status == AccountJobItemStatusFailed {
-				result.ErrorCode, result.ErrorMessage = normalizeAccountJobFailure(result.ErrorCode)
-			} else {
-				result.ErrorCode, result.ErrorMessage = "", ""
-			}
+			result := r.executeItem(executionCtx, job, payload, item)
 			if completeErr := r.jobs.repo.CompleteItems(r.ctx, job.ID, []AccountJobExecutionResult{result}); completeErr != nil {
 				return normalizeAccountJobFailure("item_completion_failed")
 			}
@@ -464,7 +461,7 @@ func (r *AccountJobRuntime) cleanup(now time.Time) {
 
 func validAccountJobKind(kind string) bool {
 	switch kind {
-	case AccountJobKindImportData, AccountJobKindImportCodex, AccountJobKindBatchCreate,
+	case AccountJobKindImportData, AccountJobKindImportCodex, AccountJobKindBatchCreate, AccountJobKindBatchTest,
 		AccountJobKindBulkUpdate, AccountJobKindBulkTaxonomy, AccountJobKindBatchDelete,
 		AccountJobKindBatchClearError, AccountJobKindBatchRefresh, AccountJobKindBatchRefreshTier,
 		AccountJobKindBatchUpdateCredentials, AccountJobKindDuplicateReview,
