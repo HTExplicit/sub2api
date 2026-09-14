@@ -19,6 +19,7 @@ export function isTerminalAccountJob(job: AccountJob): boolean {
 
 export const useAccountJobsStore = defineStore('accountJobs', () => {
   const recentJobs = ref<AccountJob[]>([])
+  const completedJobs = ref<AccountJob[]>([])
   const currentJob = ref<AccountJob | null>(null)
   const selectedJobID = ref<number | null>(null)
   const items = ref<AccountJobItem[]>([])
@@ -91,6 +92,9 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
     ) {
       notifiedJobs.add(job.id)
       notifyTerminal(job)
+    }
+    if (previous && isTerminalAccountJob(job) && !TERMINAL_STATUSES.has(previous)) {
+      completedJobs.value = [...completedJobs.value, job]
     }
     trackedStatuses.set(job.id, job.status)
   }
@@ -325,6 +329,7 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
     currentRequest?.abort()
     generation += 1
     recentJobs.value = []
+    completedJobs.value = []
     currentJob.value = null
     selectedJobID.value = null
     items.value = []
@@ -345,6 +350,7 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
 
   return {
     recentJobs,
+    completedJobs,
     activeJobs,
     activeCount,
     currentJob,

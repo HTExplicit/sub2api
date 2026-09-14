@@ -4611,6 +4611,7 @@ const {
 
 // These inputs hold actual upstream IDs, not public aliases.
 const capacityForTarget = (modelID: string) => capacityRows.value.find(row => row.upstream_model_id === modelID)
+  ?? capacityRows.value.find(row => row.upstream_model_ids?.includes(modelID))
 const commitCapacityTarget = (modelID: string, value: string) => {
   const row = capacityForTarget(modelID)
   if (row?.editable) capacityDrafts.value = { ...capacityDrafts.value, [row.upstream_model_id]: value }

@@ -58,6 +58,19 @@ func (h *AccountJobHandler) ListItems(c *gin.Context) {
 	response.Success(c, items)
 }
 
+func (h *AccountJobHandler) ResultAccountIDs(c *gin.Context) {
+	jobID, ok := accountJobPathID(c)
+	if !ok {
+		return
+	}
+	ids, err := h.jobs.ResultAccountIDs(c.Request.Context(), jobID)
+	if err != nil {
+		response.ErrorFrom(c, accountJobHTTPError(err))
+		return
+	}
+	response.Success(c, gin.H{"account_ids": ids})
+}
+
 func (h *AccountJobHandler) Cancel(c *gin.Context) {
 	jobID, ok := accountJobPathID(c)
 	if !ok {
@@ -144,6 +157,28 @@ func accountJobHTTPError(err error) error {
 
 type accountIDsJobPayload struct {
 	AccountIDs []int64 `json:"account_ids"`
+}
+
+type batchTestJobPayload struct {
+	AccountIDs []int64 `json:"account_ids"`
+	ModelID    string  `json:"model_id,omitempty"`
+}
+
+type batchTestModelContextKey struct{}
+
+func (h *AccountHandler) BatchTest(c *gin.Context) {
+	var req batchTestJobPayload
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "invalid batch test request")
+		return
+	}
+	req.AccountIDs = normalizeInt64IDList(req.AccountIDs)
+	req.ModelID = strings.TrimSpace(req.ModelID)
+	if len(req.AccountIDs) == 0 || len(req.ModelID) > 256 {
+		response.BadRequest(c, "invalid account_ids or model_id")
+		return
+	}
+	h.submitAccountJob(c, service.AccountJobKindBatchTest, req, accountJobSeeds(req.AccountIDs))
 }
 
 type batchCreateJobPayload struct {

@@ -138,7 +138,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="item in preview.items" :key="item.index" class="border-t border-gray-100 dark:border-dark-700">
+              <tr v-for="item in previewItems" :key="item.index" class="border-t border-gray-100 dark:border-dark-700">
                 <td class="px-2 py-1.5 text-gray-500">{{ item.index + 1 }}</td>
                 <td class="max-w-[16rem] truncate px-2 py-1.5">{{ redactedItemLabel(item.index) }}</td>
                 <td class="px-2 py-1.5">{{ item.action }}</td>
@@ -146,6 +146,11 @@
               </tr>
             </tbody>
           </table>
+        </div>
+        <div v-if="previewPages > 1" class="flex items-center justify-end gap-3 text-xs">
+          <button type="button" class="btn btn-secondary btn-sm" :disabled="previewPage <= 1" @click="previewPage--">{{ t('admin.accountTasks.previousPage') }}</button>
+          <span>{{ previewPage }} / {{ previewPages }}</span>
+          <button type="button" class="btn btn-secondary btn-sm" :disabled="previewPage >= previewPages" @click="previewPage++">{{ t('admin.accountTasks.nextPage') }}</button>
         </div>
       </div>
     </form>
@@ -168,7 +173,7 @@
         form="account-import-job-form"
         data-test="submit-import-job"
         class="btn btn-primary"
-        :disabled="busy || !payload || !preview || !proxySelectionValid"
+        :disabled="busy || !payload || parsing || !proxySelectionValid"
       >
         {{ busy ? t('admin.accounts.dataImporting') : t('admin.accounts.dataImportSubmitJob') }}
       </button>
@@ -177,7 +182,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onScopeDispose, ref, shallowRef, watch } from 'vue'
+import { readAccountImportFiles } from '@/utils/accountImportWorker'
+import { AccountImportParseError } from '@/utils/accountImportParser'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import AccountImportSettingsEditor, { type AccountImportSettingsDraft } from './AccountImportSettingsEditor.vue'
@@ -216,7 +223,7 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const busy = ref(false)
 const files = ref<File[]>([])
-const payload = ref<AdminDataPayload | null>(null)
+const payload = shallowRef<AdminDataPayload | null>(null)
 const uniformDraft = ref(makeSettingsDraft())
 const targetGroupID = ref('')
 type ImportProxyStrategy = 'preserve' | 'direct' | 'existing'
@@ -227,6 +234,25 @@ const previewLoading = ref(false)
 const dragDepth = ref(0)
 const fileInput = ref<HTMLInputElement | null>(null)
 let selectionGeneration = 0
+let parseRequest: AbortController | undefined
+let previewGeneration = 0
+const parsing = ref(false)
+const previewPage = ref(1)
+const previewPages = computed(() => Math.max(1, Math.ceil((preview.value?.items.length || 0) / 100)))
+const previewItems = computed(() => preview.value?.items.slice((previewPage.value - 1) * 100, previewPage.value * 100) || [])
+function invalidatePreview() {
+  previewGeneration += 1
+  preview.value = null
+  previewLoading.value = false
+  previewPage.value = 1
+}
+function cancelParsing() {
+  selectionGeneration += 1
+  parseRequest?.abort()
+  parseRequest = undefined
+  parsing.value = false
+}
+onScopeDispose(cancelParsing)
 
 const dragActive = computed(() => dragDepth.value > 0)
 const selectedFilesLabel = computed(() => {
@@ -290,7 +316,8 @@ function makeSettingsDraft(): AccountImportSettingsDraft {
 }
 
 function reset(): void {
-  selectionGeneration += 1
+  cancelParsing()
+  invalidatePreview()
   busy.value = false
   files.value = []
   payload.value = null
@@ -306,6 +333,7 @@ function reset(): void {
 
 watch(() => props.show, (open) => {
   if (open) reset()
+  else { cancelParsing(); invalidatePreview() }
 })
 
 function handleClose(): void {
@@ -328,7 +356,10 @@ function isJsonFile(file: File): boolean {
 
 async function setSelectedFiles(source: FileList | File[] | null | undefined): Promise<void> {
   if (busy.value) return
-  const requestGeneration = ++selectionGeneration
+  cancelParsing()
+  invalidatePreview()
+  payload.value = null
+  const requestGeneration = selectionGeneration
   const incoming = Array.from(source || [])
   const accepted = incoming.filter(isJsonFile)
   if (!accepted.length) {
@@ -340,8 +371,10 @@ async function setSelectedFiles(source: FileList | File[] | null | undefined): P
   if (accepted.length !== incoming.length) {
     appStore.showWarning(t('admin.accounts.dataImportIgnoredFiles', { count: incoming.length - accepted.length }))
   }
+  parseRequest = new AbortController()
+  parsing.value = true
   try {
-    const parsed = await parseFiles(accepted)
+    const parsed = await readAccountImportFiles(accepted, parseRequest.signal)
     if (requestGeneration !== selectionGeneration) return
     files.value = accepted
     payload.value = parsed
@@ -350,7 +383,11 @@ async function setSelectedFiles(source: FileList | File[] | null | undefined): P
     if (requestGeneration !== selectionGeneration) return
     files.value = []
     payload.value = null
-    appStore.showError(error instanceof Error ? error.message : t('admin.accounts.dataImportFailed'))
+    appStore.showError(error instanceof AccountImportParseError
+      ? t(error.code === 'parse' ? 'admin.accounts.dataImportParseFailedFile' : 'admin.accounts.dataImportInvalidFile', { name: accepted[error.fileIndex]?.name || '' })
+      : t('admin.accounts.dataImportFailed'))
+  } finally {
+    if (requestGeneration === selectionGeneration) parsing.value = false
   }
 }
 
@@ -365,50 +402,6 @@ function handleDragLeave(): void {
 function handleDrop(event: DragEvent): void {
   dragDepth.value = 0
   void setSelectedFiles(event.dataTransfer?.files)
-}
-
-async function readFileAsText(file: File): Promise<string> {
-  if (typeof file.text === 'function') return file.text()
-  if (typeof file.arrayBuffer === 'function') return new TextDecoder().decode(await file.arrayBuffer())
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result || ''))
-    reader.onerror = () => reject(reader.error || new Error('Failed to read file'))
-    reader.readAsText(file)
-  })
-}
-
-function isValidDataPayload(value: unknown): value is AdminDataPayload {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
-  const candidate = value as Partial<AdminDataPayload>
-  if (candidate.type && !['sub2api-data', 'sub2api-bundle'].includes(candidate.type)) return false
-  if (candidate.version && ![1, 2].includes(candidate.version)) return false
-  return Array.isArray(candidate.accounts) && Array.isArray(candidate.proxies)
-}
-
-async function parseFiles(selectedFiles: File[]): Promise<AdminDataPayload> {
-  const parsedPayloads: AdminDataPayload[] = []
-  for (const file of selectedFiles) {
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(await readFileAsText(file))
-    } catch {
-      throw new Error(t('admin.accounts.dataImportParseFailedFile', { name: file.name }))
-    }
-    if (!isValidDataPayload(parsed)) {
-      throw new Error(t('admin.accounts.dataImportInvalidFile', { name: file.name }))
-    }
-    parsedPayloads.push(parsed)
-  }
-  if (parsedPayloads.length === 1) return parsedPayloads[0]!
-  return {
-    type: 'sub2api-data',
-    version: Math.max(1, ...parsedPayloads.map((item) => item.version || 1)),
-    exported_at: new Date().toISOString(),
-    proxies: parsedPayloads.flatMap((item) => item.proxies),
-    accounts: parsedPayloads.flatMap((item) => item.accounts),
-    skipped_shadows: parsedPayloads.reduce((sum, item) => sum + Number(item.skipped_shadows || 0), 0),
-  }
 }
 
 function parseTags(value: string): string[] {
@@ -448,10 +441,15 @@ async function handlePreview(): Promise<void> {
     appStore.showError(t('admin.accounts.importProxyRequired'))
     return
   }
+  const generation = ++previewGeneration
   previewLoading.value = true
   try {
-    preview.value = await adminAPI.accounts.previewImportData(buildImportRequest())
+    const result = await adminAPI.accounts.previewImportData(buildImportRequest())
+    if (generation !== previewGeneration) return
+    preview.value = result
+    previewPage.value = 1
   } catch (error: any) {
+    if (generation !== previewGeneration) return
     preview.value = null
     if (error?.response?.status === 409) {
       appStore.showWarning(t('admin.accounts.dataImportStalePreview'))
@@ -459,14 +457,13 @@ async function handlePreview(): Promise<void> {
       appStore.showError(error instanceof Error ? error.message : t('admin.accounts.dataImportFailed'))
     }
   } finally {
-    previewLoading.value = false
+    if (generation === previewGeneration) previewLoading.value = false
   }
 }
 
 async function handleSubmit(): Promise<void> {
-  if (!payload.value || !preview.value || busy.value || !proxySelectionValid.value) {
+  if (!payload.value || parsing.value || busy.value || !proxySelectionValid.value) {
     if (!proxySelectionValid.value) appStore.showError(t('admin.accounts.importProxyRequired'))
-    if (payload.value && !preview.value) appStore.showInfo(t('admin.accounts.dataImportPreviewRequired'))
     return
   }
   busy.value = true
@@ -488,6 +485,6 @@ async function handleSubmit(): Promise<void> {
 }
 
 watch([uniformDraft, targetGroupID, proxyStrategy, selectedProxyID], () => {
-  preview.value = null
+  invalidatePreview()
 }, { deep: true })
 </script>

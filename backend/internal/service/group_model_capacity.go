@@ -162,7 +162,8 @@ func (catalog *groupModelCapacityCatalog) bindLiveSource(source codexModelCapaci
 	for i := range catalog.accounts {
 		account := &catalog.accounts[i]
 		if account.ID == source.accountID && ModelContextCapacitySourceIdentity(account) == source.identity {
-			catalog.liveByAccount[source.accountID], _ = ParseUpstreamModelContextCapacities(source.body, source.platform)
+			models, _ := ParseUpstreamModelContextCapacities(source.body, source.platform)
+			catalog.liveByAccount[source.accountID], _ = capacitySnapshotTargets(account, &UpstreamModelContextCapacitySnapshot{Models: models})
 			return
 		}
 	}

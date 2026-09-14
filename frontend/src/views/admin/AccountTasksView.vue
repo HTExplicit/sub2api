@@ -101,6 +101,7 @@ const jobKinds = [
   'account_bulk_taxonomy',
   'account_batch_delete',
   'account_batch_clear_error',
+  'account_batch_test',
   'account_batch_refresh',
   'account_batch_refresh_tier',
   'account_batch_update_credentials',

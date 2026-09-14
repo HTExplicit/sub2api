@@ -12,21 +12,16 @@
         v-for="account in accounts"
         :key="account.id"
         class="cursor-pointer rounded-md border bg-white p-4 transition-colors hover:border-gray-300 hover:bg-gray-50/60 dark:bg-dark-900 dark:hover:border-dark-500 dark:hover:bg-dark-800/70"
-        :class="selectedIds.includes(account.id) ? 'border-primary-300 ring-1 ring-primary-200 dark:border-primary-700 dark:ring-primary-900' : 'border-gray-200 dark:border-dark-700'"
+        :class="selectedSet.has(account.id) ? 'border-primary-300 ring-1 ring-primary-200 dark:border-primary-700 dark:ring-primary-900' : 'border-gray-200 dark:border-dark-700'"
         @click="emit('rowClick', account)"
       >
         <div class="flex items-start gap-3">
-          <input
-            type="checkbox"
-            class="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-            :checked="selectedIds.includes(account.id)"
-            :aria-label="t('admin.accounts.selectAccount', { name: account.name })"
-            @click.stop
-            @change.stop="emit('toggle', account.id)"
-          />
+          <AccountSelectionCheckbox :checked="selectedSet.has(account.id)"
+          :label="t('admin.accounts.selectAccount', { name: account.name })"
+          @change="emit('toggle', account.id)" />
           <div class="min-w-0 flex-1">
             <div class="flex min-w-0 items-center gap-2">
-              <h3 class="truncate text-sm font-semibold text-gray-900 dark:text-white">{{ account.name }}</h3>
+              <button type="button" class="truncate text-left text-sm font-semibold text-gray-900 dark:text-white" @click.stop="emit('rowClick', account)">{{ account.name }}</button>
               <span class="shrink-0 font-mono text-[10px] text-gray-400">#{{ account.id }}</span>
             </div>
             <p class="mt-0.5 truncate text-xs text-gray-500 dark:text-dark-300">{{ displayEmail(account) || '-' }}</p>
@@ -42,12 +37,7 @@
         </div>
 
         <div class="mt-3 flex flex-wrap items-center gap-1.5">
-          <PlatformTypeBadge
-            :platform="account.platform"
-            :type="account.type"
-            :auth-mode="authMode(account)"
-            :plan-type="planType(account)"
-          />
+          <AccountIdentityBadges :account="account" />
           <AccountStatusIndicator :account="account" @show-temp-unsched="emit('showTempUnsched', account)" />
         </div>
 
@@ -85,7 +75,7 @@
           </div>
           <div class="min-w-0">
             <div class="text-[10px] font-medium uppercase text-gray-400">{{ t('admin.accounts.routing') }}</div>
-            <div class="mt-1 truncate text-xs text-gray-700 dark:text-gray-200">{{ groupSummary(account) }}</div>
+            <AccountGroupsCell class="mt-1" :groups="account.groups" />
             <div class="mt-1 truncate text-xs text-gray-500 dark:text-dark-300">
               {{ account.proxy?.name || t('admin.accounts.directConnection') }}
             </div>
@@ -98,16 +88,19 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
 import AccountStatusIndicator from '@/components/account/AccountStatusIndicator.vue'
 import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
-import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
+import AccountIdentityBadges from '@/components/account/AccountIdentityBadges.vue'
+import AccountSelectionCheckbox from '@/components/account/AccountSelectionCheckbox.vue'
+import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
 import Icon from '@/components/icons/Icon.vue'
 import CindyBalanceProbeSummary from '@/features/cindy-balance-probe/CindyBalanceProbeSummary.vue'
 import type { Account, WindowStats } from '@/types'
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   accounts: Account[]
   loading: boolean
   selectedIds: number[]
@@ -131,18 +124,9 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const selectedSet = computed(() => new Set(props.selectedIds))
 
 const displayEmail = (account: Account) => String(
   account.extra?.email_address || account.extra?.email || account.credentials?.email || account.parent_email || ''
 )
-const authMode = (account: Account) => typeof account.credentials?.auth_mode === 'string'
-  ? account.credentials.auth_mode
-  : undefined
-const planType = (account: Account) => String(
-  (account.extra?.grok_billing_snapshot as Record<string, unknown> | undefined)?.plan ||
-  (account.extra?.grok_quota_snapshot as Record<string, unknown> | undefined)?.subscription_tier ||
-  account.credentials?.subscription_tier || account.extra?.subscription_tier || account.credentials?.plan_type || ''
-)
-const groupSummary = (account: Account) => account.groups?.map(group => group.name).filter(Boolean).join(', ')
-  || t('admin.accounts.ungroupedGroup')
 </script>

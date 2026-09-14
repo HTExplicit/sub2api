@@ -834,7 +834,8 @@ func mergeAccountModelContextExtra(
 		}
 	}
 	if account.ModelContextOverridesPatch != nil {
-		overrides, err := service.ApplyModelContextOverrides(
+		overrides, err := service.ApplyAccountModelContextOverrides(
+			account,
 			merged[service.ModelContextOverridesExtraKey], account.ModelContextOverridesPatch,
 		)
 		if err != nil {

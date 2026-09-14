@@ -63,6 +63,13 @@ func (h *AccountHandler) PrepareAccountJob(
 	job *service.AccountJob,
 	raw json.RawMessage,
 ) (context.Context, func(), error) {
+	if job != nil && job.Kind == service.AccountJobKindBatchTest {
+		var req batchTestJobPayload
+		if err := json.Unmarshal(raw, &req); err != nil {
+			return ctx, nil, err
+		}
+		return context.WithValue(ctx, batchTestModelContextKey{}, req.ModelID), func() {}, nil
+	}
 	if h == nil || job == nil || job.Kind != service.AccountJobKindImportData {
 		return ctx, func() {}, nil
 	}

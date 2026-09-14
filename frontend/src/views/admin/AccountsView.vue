@@ -230,11 +230,18 @@
           @retry="loadFacets"
         />
         <div class="flex min-h-0 min-w-0 flex-1 flex-col p-3 sm:p-4">
+        <div v-if="completedImportJobIDs.length" class="mb-2 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+          <button type="button" data-test="select-imported-results" class="btn btn-secondary btn-sm" :disabled="selectingImportedResults" @click="selectImportedResults()">
+            {{ t(importResultSelectionFailed ? 'admin.accounts.retryImportSelection' : 'admin.accounts.selectImportedResults') }}
+          </button>
+          <span>#{{ completedImportJobIDs.join(', #') }}</span>
+        </div>
         <AccountBulkActionsBar
           :selected-ids="selIds"
           :total-results="pagination.total"
           :selecting-all="selectingAllResults"
           :all-results-selected="allResultsSelected"
+          @test="openBatchTest"
           @delete="handleBulkDelete"
           @reset-status="handleBulkResetStatus"
           @refresh-token="handleBulkRefreshToken"
@@ -270,16 +277,13 @@
           @row-click="openDetails"
         >
           <template #header-select>
-            <input
-              type="checkbox"
-              class="h-4 w-4 cursor-pointer rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-              :checked="allVisibleSelected"
-              @click.stop
-              @change="toggleSelectAllVisible($event)"
-            />
+            <AccountSelectionCheckbox :checked="allVisibleSelected"
+              :indeterminate="!allVisibleSelected && accounts.some(account => isSelected(account.id))"
+              :label="t('admin.accounts.bulkActions.selectPage')" @change="toggleVisible" />
           </template>
           <template #cell-select="{ row }">
-            <input type="checkbox" :checked="isSelected(row.id)" @click.stop @change="toggleSel(row.id)" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+            <AccountSelectionCheckbox :checked="isSelected(row.id)"
+              :label="t('admin.accounts.selectAccount', { name: row.name })" @change="toggleSel(row.id)" />
           </template>
           <template #cell-id="{ value }">
             <span class="font-mono text-xs text-gray-500 dark:text-gray-400">#{{ value }}</span>
@@ -320,32 +324,7 @@
             <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
           </template>
           <template #cell-platform_type="{ row }">
-            <div class="flex min-w-0 flex-col gap-1">
-              <div class="flex flex-wrap items-center gap-1">
-                <PlatformTypeBadge :platform="row.platform" :type="row.type"
-                  :auth-mode="getOpenAIAuthMode(row)"
-                  :plan-type="getAccountPlanType(row)"
-                  :privacy-mode="row.extra?.privacy_mode || row.parent_privacy_mode"
-                  :subscription-expires-at="row.credentials?.subscription_expires_at || row.parent_subscription_expires_at" />
-                <span
-                  v-if="getAntigravityTierLabel(row)"
-                  :class="['inline-block rounded px-1.5 py-0.5 text-[10px] font-medium', getAntigravityTierClass(row)]"
-                >
-                  {{ getAntigravityTierLabel(row) }}
-                </span>
-              </div>
-              <div
-                v-if="getOpenAICompactMeta(row)"
-                :class="[
-                  'inline-flex items-center gap-1.5 pl-0.5 text-[11px] font-medium leading-4',
-                  getOpenAICompactMeta(row)?.className
-                ]"
-                :title="getOpenAICompactTitle(row)"
-              >
-                <span :class="['h-1.5 w-1.5 rounded-full', getOpenAICompactMeta(row)?.dotClass]" />
-                <span>{{ getOpenAICompactMeta(row)?.label }}</span>
-              </div>
-            </div>
+            <AccountIdentityBadges :account="row" />
           </template>
           <template #cell-capacity="{ row }">
             <AccountCapacityCell :account="row" />
@@ -591,6 +570,7 @@
     <EditAccountModal :show="showEdit" :account="edAcc" :proxies="proxies" :groups="groups" @close="showEdit = false" @updated="handleAccountUpdated" />
     <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
+    <BatchTestAccountModal :show="showBatchTest" :account-ids="batchTestAccountIDs" @close="showBatchTest = false; enterAutoRefreshSilentWindow()" @submitted="accountJobsStore.track" />
     <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
     <ScheduledTestsPanel :show="showSchedulePanel" :account-id="scheduleAcc?.id ?? null" :model-options="scheduleModelOptions" @close="closeSchedulePanel" />
     <AccountActionMenu :show="menu.show" :account="menu.acc" :anchor-rect="menu.anchorRect" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @recover-cindy-balance="handleRecoverCindyBalance" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" />
@@ -708,7 +688,7 @@ import { useAuthStore } from '@/stores/auth'
 import { isTerminalAccountJob, useAccountJobsStore } from '@/stores/accountJobs'
 import { adminAPI } from '@/api/admin'
 import type { AccountListFilters, CindyInsufficientDeletePreview } from '@/api/admin/accounts'
-import type { AccountJob } from '@/api/admin/accountJobs'
+import accountJobsAPI, { type AccountJob } from '@/api/admin/accountJobs'
 import { useTableLoader } from '@/composables/useTableLoader'
 import { useSwipeSelect, type SwipeSelectVirtualContext } from '@/composables/useSwipeSelect'
 import { useTableSelection } from '@/composables/useTableSelection'
@@ -747,7 +727,10 @@ import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
 import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
 import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
 import UpstreamBillingRateCell from '@/components/account/UpstreamBillingRateCell.vue'
-import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
+import BatchTestAccountModal from '@/components/admin/account/BatchTestAccountModal.vue'
+import AccountIdentityBadges from '@/components/account/AccountIdentityBadges.vue'
+import AccountSelectionCheckbox from '@/components/account/AccountSelectionCheckbox.vue'
+import { getAccountPlanType } from '@/utils/accountPresentation'
 import Icon from '@/components/icons/Icon.vue'
 import ErrorPassthroughRulesModal from '@/components/admin/ErrorPassthroughRulesModal.vue'
 import TLSFingerprintProfilesModal from '@/components/admin/TLSFingerprintProfilesModal.vue'
@@ -786,7 +769,18 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const accountJobsStore = useAccountJobsStore()
-const pendingDataImportJobIDs = new Set<number>()
+const pendingDataImportJobIDs = new Map<number, number>()
+const completedImportJobIDs = ref<number[]>([])
+const showBatchTest = ref(false)
+const batchTestAccountIDs = ref<number[]>([])
+const openBatchTest = () => { batchTestAccountIDs.value = [...selIds.value]; showBatchTest.value = true }
+watch(() => accountJobsStore.drawerOpen, (open, wasOpen) => {
+  if (wasOpen && !open && accountJobsStore.currentJob?.kind === 'account_batch_test') enterAutoRefreshSilentWindow()
+})
+const selectingImportedResults = ref(false)
+const importResultSelectionFailed = ref(false)
+let importSelectionRevision = 0
+let applyingImportSelection = false
 let importCompletionRefreshRunning = false
 let importCompletionRefreshQueued = false
 const isCindyScope = computed(() => props.scope === 'cindy')
@@ -1752,6 +1746,9 @@ const {
   getId: (account) => account.id
 })
 
+watch(selectedSet, () => {
+  if (!applyingImportSelection) importSelectionRevision += 1
+}, { flush: 'sync' })
 const selectingAllResults = ref(false)
 const selectedAllResultIDs = ref<Set<number> | null>(null)
 const selectionRequestVersion = ref(0)
@@ -2023,6 +2020,7 @@ const isAnyModalOpen = computed(() => {
     showCindyDeleteDialog.value ||
     showReAuth.value ||
     showTest.value ||
+    showBatchTest.value ||
     showStats.value ||
     showSchedulePanel.value ||
     showTaxonomyManager.value ||
@@ -2235,141 +2233,6 @@ const { pause: pauseAutoRefresh, resume: resumeAutoRefresh } = useIntervalFn(
   { immediate: false }
 )
 
-const GROK_QUOTA_SIGNAL_MAX_AGE_MS = 24 * 60 * 60 * 1000
-const GROK_QUOTA_SIGNAL_MAX_FUTURE_SKEW_MS = 5 * 60 * 1000
-
-function firstNonBlankString(...values: unknown[]): string | undefined {
-  return values.find((value): value is string => (
-    typeof value === 'string' && value.trim().length > 0
-  ))
-}
-
-function normalizeGrokPlanKey(value: unknown): string {
-  if (typeof value !== 'string') return ''
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[\s_-]+/g, '')
-}
-
-function grokPersistedQuotaSnapshot(extra: Record<string, any>): Record<string, any> | undefined {
-  const usage = extra.grok_usage_snapshot
-  if (usage && typeof usage === 'object' && !Array.isArray(usage)) {
-    return usage as Record<string, any>
-  }
-  const legacy = extra.grok_quota_snapshot
-  if (legacy && typeof legacy === 'object' && !Array.isArray(legacy)) {
-    return legacy as Record<string, any>
-  }
-  return undefined
-}
-
-function isGrokQuotaTimestampFresh(raw: unknown): boolean {
-  const value = String(raw || '').trim()
-  if (!value) return false
-  const observedAt = Date.parse(value)
-  if (!Number.isFinite(observedAt)) return false
-  const age = Date.now() - observedAt
-  return age <= GROK_QUOTA_SIGNAL_MAX_AGE_MS && age >= -GROK_QUOTA_SIGNAL_MAX_FUTURE_SKEW_MS
-}
-
-function isGrok45ResponsesQuotaModel(model: unknown): boolean {
-  const value = String(model || '')
-    .trim()
-    .toLowerCase()
-    .replace(/^(x-ai|xai)\//, '')
-  return value === 'grok-4.5' || value.startsWith('grok-4.5-')
-}
-
-function grokQuotaLooksHeavy(snapshot: Record<string, any> | undefined): boolean {
-  const req = Number(snapshot?.requests?.limit ?? 0)
-  const tok = Number(snapshot?.tokens?.limit ?? 0)
-  return req >= 8300 || tok >= 53_000_000
-}
-
-function grok45ResponsesPlanIsHeavy(snapshot: Record<string, any> | undefined): boolean {
-  if (!snapshot) return false
-  const hint = normalizeGrokPlanKey(snapshot.plan_from_45_responses)
-  if (hint === 'supergrokheavy' && isGrokQuotaTimestampFresh(snapshot.plan_from_45_responses_at)) {
-    return true
-  }
-  const observedAt = snapshot.last_headers_seen_at || snapshot.updated_at
-  return (
-    isGrok45ResponsesQuotaModel(snapshot.model) &&
-    isGrokQuotaTimestampFresh(observedAt) &&
-    grokQuotaLooksHeavy(snapshot)
-  )
-}
-
-// JWT / unambiguous credentials outrank snapshots. SuperGrokPro is ambiguous
-// (covers SuperGrok and Heavy). 8300/53M only upgrades when the window came
-// from grok-4.5 Responses (or a carried 4.5 hint).
-function getAccountPlanType(row: any): string | undefined {
-  if (!row) return undefined
-  if (row.platform === 'grok') {
-    const extra = (row.extra || {}) as Record<string, any>
-    const billing = extra.grok_billing_snapshot as Record<string, any> | undefined
-    const usage = extra.grok_usage_snapshot as Record<string, any> | undefined
-    const legacyQuota = extra.grok_quota_snapshot as Record<string, any> | undefined
-    const quota = grokPersistedQuotaSnapshot(extra)
-    const cred = firstNonBlankString(row.credentials?.subscription_tier)
-    const credKey = normalizeGrokPlanKey(cred)
-    if (credKey && credKey !== 'supergrokpro') {
-      return cred
-    }
-    if (
-      grok45ResponsesPlanIsHeavy(quota) &&
-      (credKey === 'supergrokpro' ||
-        normalizeGrokPlanKey(billing?.plan) === 'supergrok' ||
-        normalizeGrokPlanKey(billing?.plan) === 'supergrokpro')
-    ) {
-      return 'SuperGrok Heavy'
-    }
-    if (credKey === 'supergrokpro') {
-      return firstNonBlankString(billing?.plan) || 'SuperGrok'
-    }
-    return firstNonBlankString(
-      billing?.plan,
-      usage?.subscription_tier,
-      legacyQuota?.subscription_tier,
-      extra.subscription_tier,
-      row.credentials?.plan_type,
-      row.parent_plan_type
-    )
-  }
-  return firstNonBlankString(row.credentials?.plan_type, row.parent_plan_type)
-}
-
-function getOpenAIAuthMode(row: any): string | undefined {
-  if (!row || row.platform !== 'openai' || row.type !== 'oauth') return undefined
-  const authMode = row.credentials?.auth_mode
-  return typeof authMode === 'string' && authMode.trim() ? authMode : undefined
-}
-
-// Antigravity 订阅等级辅助函数
-function getAntigravityTierFromRow(row: any): string | null {
-  if (row.platform !== 'antigravity') return null
-  const extra = row.extra as Record<string, unknown> | undefined
-  if (!extra) return null
-  const lca = extra.load_code_assist as Record<string, unknown> | undefined
-  if (!lca) return null
-  const paid = lca.paidTier as Record<string, unknown> | undefined
-  if (paid && typeof paid.id === 'string') return paid.id
-  const current = lca.currentTier as Record<string, unknown> | undefined
-  if (current && typeof current.id === 'string') return current.id
-  return null
-}
-
-function getAntigravityTierLabel(row: any): string | null {
-  const tier = getAntigravityTierFromRow(row)
-  switch (tier) {
-    case 'free-tier': return t('admin.accounts.tier.free')
-    case 'g1-pro-tier': return t('admin.accounts.tier.pro')
-    case 'g1-ultra-tier': return t('admin.accounts.tier.ultra')
-    default: return null
-  }
-}
-
 // 账号显示邮箱:优先账号自身(extra/credentials),影子账号回退母账号 parent_email。
 // 供名称单元格 v-if/标题/文本三处共用,避免同一回退链在模板里重复三次。
 function accountDisplayEmail(row: any): string {
@@ -2392,63 +2255,6 @@ function accountHomepageUrl(row: Account): string {
   if (row.type !== 'apikey' || typeof row.credentials?.base_url !== 'string') return ''
   const baseUrl = sanitizeUrl(row.credentials.base_url)
   return baseUrl ? new URL(baseUrl).origin : ''
-}
-
-type OpenAICompactBadgeState = 'active' | 'blocked' | 'auto'
-
-function getOpenAICompactState(row: any): OpenAICompactBadgeState | null {
-  if (row.platform !== 'openai' || (row.type !== 'oauth' && row.type !== 'apikey')) return null
-  const extra = row.extra as Record<string, unknown> | undefined
-  const mode = typeof extra?.openai_compact_mode === 'string' ? extra.openai_compact_mode : 'auto'
-  if (mode === 'force_on') return 'active'
-  if (mode === 'force_off') return 'blocked'
-  if (typeof extra?.openai_compact_supported === 'boolean') {
-    return extra.openai_compact_supported ? 'active' : 'blocked'
-  }
-  return 'auto'
-}
-
-function getOpenAICompactMeta(row: any): { label: string; className: string; dotClass: string } | null {
-  const state = getOpenAICompactState(row)
-  if (!state) return null
-  switch (state) {
-    case 'active':
-      return {
-        label: t('admin.accounts.openai.compactSupported'),
-        className: 'text-emerald-600 dark:text-emerald-300',
-        dotClass: 'bg-emerald-500 shadow-[0_0_0_2px_rgba(16,185,129,0.14)]'
-      }
-    case 'blocked':
-      return {
-        label: t('admin.accounts.openai.compactUnsupported'),
-        className: 'text-rose-600 dark:text-rose-300',
-        dotClass: 'bg-rose-500 shadow-[0_0_0_2px_rgba(244,63,94,0.14)]'
-      }
-    case 'auto':
-      return {
-        label: t('admin.accounts.openai.compactAuto'),
-        className: 'text-slate-500 dark:text-slate-400',
-        dotClass: 'bg-slate-300 dark:bg-slate-500'
-      }
-  }
-}
-
-function getOpenAICompactTitle(row: any): string {
-  const extra = row.extra as Record<string, unknown> | undefined
-  const checkedAt = typeof extra?.openai_compact_checked_at === 'string' ? extra.openai_compact_checked_at : ''
-  const label = getOpenAICompactMeta(row)?.label || ''
-  if (!checkedAt) return label
-  return `${label} | ${t('admin.accounts.openai.compactLastChecked')}: ${formatDateTime(new Date(checkedAt))}`
-}
-
-function getAntigravityTierClass(row: any): string {
-  const tier = getAntigravityTierFromRow(row)
-  switch (tier) {
-    case 'free-tier': return 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300'
-    case 'g1-pro-tier': return 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
-    case 'g1-ultra-tier': return 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300'
-    default: return ''
-  }
 }
 
 // All available columns
@@ -2592,10 +2398,6 @@ const openMenu = (a: Account, e: MouseEvent) => {
   const target = e.currentTarget as HTMLElement
   menu.anchorRect = target.getBoundingClientRect()
   menu.show = true
-}
-const toggleSelectAllVisible = (event: Event) => {
-  const target = event.target as HTMLInputElement
-  toggleVisible(target.checked)
 }
 const handleBulkDelete = async () => {
   const accountIds = [...selIds.value]
@@ -2804,9 +2606,30 @@ const handleBulkUpdated = (job: AccountJob) => {
 }
 const handleDataImported = (job: AccountJob) => {
   showImportData.value = false
-  clearSelection()
-  pendingDataImportJobIDs.add(job.id)
+  pendingDataImportJobIDs.set(job.id, importSelectionRevision)
   accountJobsStore.track(job)
+}
+
+const completedImportQueue = new Map<number, number>()
+const selectImportedResults = async (jobIDs = completedImportJobIDs.value, expectedRevision = importSelectionRevision) => {
+  if (selectingImportedResults.value || !jobIDs.length) return
+  selectingImportedResults.value = true
+  importResultSelectionFailed.value = false
+  try {
+    const results = await Promise.all(jobIDs.map(id => accountJobsAPI.resultAccountIDs(id)))
+    if (importSelectionRevision !== expectedRevision) return
+    const ids = [...new Set(results.flat())]
+    if (!ids.length) return
+    applyingImportSelection = true
+    setSelectedIds(ids)
+    selectedAllResultIDs.value = null
+  } catch {
+    importResultSelectionFailed.value = true
+    appStore.showError(t('admin.accounts.importResultSelectionFailed'))
+  } finally {
+    applyingImportSelection = false
+    selectingImportedResults.value = false
+  }
 }
 
 const refreshCompletedImports = async () => {
@@ -2818,23 +2641,31 @@ const refreshCompletedImports = async () => {
   try {
     do {
       importCompletionRefreshQueued = false
-      await Promise.all([reload(), loadFacets(), loadTaxonomy()])
+      const completed = new Map(completedImportQueue)
+      completedImportQueue.clear()
+      completedImportJobIDs.value = [...completed.keys()]
+      await Promise.all([load(), loadFacets(), loadTaxonomy()])
+      const selectable = [...completed].filter(([, revision]) => revision === importSelectionRevision).map(([id]) => id)
+      if (selectable.length) await selectImportedResults(selectable)
     } while (importCompletionRefreshQueued)
+  } catch {
+    appStore.showError(t('common.error'))
   } finally {
     importCompletionRefreshRunning = false
   }
 }
 
+const observedAccountJobs = computed(() => [...(accountJobsStore.recentJobs || []), ...(accountJobsStore.completedJobs || [])])
 watch(
-  () => (accountJobsStore.recentJobs || []).map((job) => `${job.id}:${job.status}`).join('|'),
+  () => observedAccountJobs.value.map(job => `${job.id}:${job.status}`).join('|'),
   () => {
-    let completed = false
-    for (const job of accountJobsStore.recentJobs || []) {
-      if (!pendingDataImportJobIDs.has(job.id) || !isTerminalAccountJob(job)) continue
+    for (const job of observedAccountJobs.value) {
+      const revision = pendingDataImportJobIDs.get(job.id)
+      if (revision === undefined || !isTerminalAccountJob(job)) continue
       pendingDataImportJobIDs.delete(job.id)
-      completed = true
+      completedImportQueue.set(job.id, revision)
     }
-    if (completed) void refreshCompletedImports()
+    if (completedImportQueue.size) void refreshCompletedImports()
   }
 )
 const handleAccountCreated = (job?: AccountJob) => {

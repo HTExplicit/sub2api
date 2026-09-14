@@ -9,6 +9,10 @@ const { importData, previewImportData, showError } = vi.hoisted(() => ({
 
 vi.mock('@/api/admin', () => ({ adminAPI: { accounts: { importData, previewImportData } } }))
 vi.mock('@/stores/app', () => ({ useAppStore: () => ({ showError, showWarning: vi.fn() }) }))
+vi.mock('@/utils/accountImportWorker', async () => {
+  const { parseAccountImportFiles } = await vi.importActual<typeof import('@/utils/accountImportParser')>('@/utils/accountImportParser')
+  return { readAccountImportFiles: (files: File[]) => parseAccountImportFiles(files) }
+})
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 
 import ImportDataModal from '../ImportDataModal.vue'

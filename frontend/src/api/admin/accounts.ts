@@ -661,6 +661,7 @@ export interface ModelContextCapacityRow {
   max_input_tokens?: number
   max_output_tokens?: number
   reason?: string
+  upstream_model_ids?: string[]
 }
 
 export interface ModelContextCapacitiesResult {

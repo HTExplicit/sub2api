@@ -29,6 +29,7 @@ export default {
       actions: 'Actions',
     },
     kinds: {
+      account_batch_test: 'Batch connection tests',
       account_import: 'Data import',
       account_import_codex: 'Codex import',
       account_batch_create: 'Batch create',

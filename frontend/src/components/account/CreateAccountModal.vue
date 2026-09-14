@@ -5121,6 +5121,7 @@ const handleCapacityUpstreamSync = (result?: SyncUpstreamModelsResult) => {
 // Mapping targets are already real upstream IDs, even when the same string is
 // also another row's public alias. Never resolve these fields through aliases.
 const capacityForTarget = (modelID: string) => capacityRows.value.find(row => row.upstream_model_id === modelID)
+  ?? capacityRows.value.find(row => row.upstream_model_ids?.includes(modelID))
 const commitCapacityTarget = (modelID: string, value: string) => {
   const row = capacityForTarget(modelID)
   if (row?.editable) capacityDrafts.value = { ...capacityDrafts.value, [row.upstream_model_id]: value }

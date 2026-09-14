@@ -72,6 +72,56 @@ func TestAccountJobRepositoryCreatePersistsJobAndItemsAtomically(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestAccountJobRepositoryBulkInsertUsesBoundedStatements(t *testing.T) {
+	repo, mock := newAccountJobRepoTest(t)
+	now := time.Now()
+	seeds := make([]service.AccountJobItemSeed, 250)
+	mock.ExpectBegin()
+	mock.ExpectQuery("INSERT INTO admin_account_jobs").WillReturnRows(accountJobRows(now, 41, service.AccountJobStatusPending))
+	for range 3 {
+		mock.ExpectExec("INSERT INTO admin_account_job_items").WillReturnResult(sqlmock.NewResult(1, 100))
+	}
+	mock.ExpectCommit()
+	_, _, err := repo.Create(context.Background(), service.CreateAccountJobParams{Items: seeds})
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestAccountJobRepositoryCompletionCountsOnlyTransitions(t *testing.T) {
+	repo, mock := newAccountJobRepoTest(t)
+	results := []service.AccountJobExecutionResult{
+		{ItemID: 1, Status: service.AccountJobItemStatusSucceeded},
+		{ItemID: 2, Status: service.AccountJobItemStatusFailed},
+		{ItemID: 3, Status: service.AccountJobItemStatusCanceled},
+	}
+	mock.ExpectBegin()
+	for range results {
+		mock.ExpectExec("UPDATE admin_account_job_items.*").WillReturnResult(sqlmock.NewResult(0, 1))
+	}
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE admin_account_jobs SET processed_count=processed_count+$2+$3+$4")).
+		WithArgs(int64(41), int64(1), int64(1), int64(1)).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	require.NoError(t, repo.CompleteItems(context.Background(), 41, results))
+	// A retry of the same result set must neither recount the job nor increment it.
+	mock.ExpectBegin()
+	for range results {
+		mock.ExpectExec("UPDATE admin_account_job_items.*").WillReturnResult(sqlmock.NewResult(0, 0))
+	}
+	mock.ExpectCommit()
+	require.NoError(t, repo.CompleteItems(context.Background(), 41, results))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestAccountJobRepositoryResultIDsProjectsSuccessfulResults(t *testing.T) {
+	repo, mock := newAccountJobRepoTest(t)
+	mock.ExpectQuery("SELECT DISTINCT account_id FROM.*jsonb_typeof.*FROM admin_account_job_items WHERE job_id=\\$1 AND status='succeeded'").
+		WithArgs(int64(41)).WillReturnRows(sqlmock.NewRows([]string{"account_id"}).AddRow(7).AddRow(12))
+	ids, err := repo.ResultAccountIDs(context.Background(), 41)
+	require.NoError(t, err)
+	require.Equal(t, []int64{7, 12}, ids)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestAccountJobRepositoryMarkInterruptedFailsRunningItemsAndJobs(t *testing.T) {
 	repo, mock := newAccountJobRepoTest(t)
 	mock.ExpectBegin()
@@ -130,3 +180,4 @@ func TestAccountJobRepositoryPruneOnlyFinishedBeforeCutoff(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(migration), "job_id BIGINT NOT NULL REFERENCES admin_account_jobs(id) ON DELETE CASCADE")
 }
+

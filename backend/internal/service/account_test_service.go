@@ -68,9 +68,12 @@ type TestEvent struct {
 // AccountTestOptions carries optional media for admin connectivity tests.
 // ImageDataURL / AudioDataURL are full data URLs (data:<mime>;base64,...).
 type AccountTestOptions struct {
-	ImageDataURL string
-	AudioDataURL string
+	ImageDataURL          string
+	AudioDataURL          string
+	requireSupportedModel bool
 }
+
+var ErrAccountTestModelUnsupported = errors.New("test model is not supported by this account")
 
 func firstAccountTestOptions(opts []AccountTestOptions) AccountTestOptions {
 	if len(opts) == 0 {
@@ -337,6 +340,10 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	account, err := s.accountRepo.GetByID(ctx, accountID)
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Account not found")
+	}
+	if testOpts.requireSupportedModel && strings.TrimSpace(modelID) != "" && !account.IsModelSupported(strings.TrimSpace(modelID)) {
+		s.sendEvent(c, TestEvent{Type: "error", Error: ErrAccountTestModelUnsupported.Error()})
+		return ErrAccountTestModelUnsupported
 	}
 
 	// Synthetic UI load-test accounts exercise the real SSE parsing and modal
@@ -3212,6 +3219,10 @@ func (s *AccountTestService) sendEvent(c *gin.Context, event TestEvent) {
 			}
 		}
 	}
+	if collector, ok := c.Get("account_test_event_collector"); ok {
+		collector.(*accountTestEventCollector).Add(event) //nolint:errcheck
+		return
+	}
 	eventJSON, _ := json.Marshal(event)
 	if _, err := fmt.Fprintf(c.Writer, "data: %s\n\n", eventJSON); err != nil {
 		log.Printf("failed to write SSE event: %v", err)
@@ -3227,61 +3238,52 @@ func (s *AccountTestService) sendErrorAndEnd(c *gin.Context, errorMsg string) er
 	return fmt.Errorf("%s", errorMsg)
 }
 
-// RunTestBackground executes an account test in-memory (no real HTTP client),
-// capturing SSE output via httptest.NewRecorder, then parses the result.
-func (s *AccountTestService) RunTestBackground(ctx context.Context, accountID int64, modelID string) (*ScheduledTestResult, error) {
-	startedAt := time.Now()
-
-	w := httptest.NewRecorder()
-	ginCtx, _ := gin.CreateTestContext(w)
-	ginCtx.Request = (&http.Request{}).WithContext(ctx)
-
-	testErr := s.TestAccountConnection(ginCtx, accountID, modelID, "", AccountTestModeDefault)
-
-	finishedAt := time.Now()
-	body := w.Body.String()
-	responseText, errMsg := parseTestSSEOutput(body)
-
-	status := "success"
-	if testErr != nil || errMsg != "" {
-		status = "failed"
-		if errMsg == "" && testErr != nil {
-			errMsg = testErr.Error()
-		}
-	}
-
-	return &ScheduledTestResult{
-		Status:       status,
-		ResponseText: responseText,
-		ErrorMessage: errMsg,
-		LatencyMs:    finishedAt.Sub(startedAt).Milliseconds(),
-		StartedAt:    startedAt,
-		FinishedAt:   finishedAt,
-	}, nil
+// Background tests consume the same typed events as the HTTP SSE adapter.
+// Receiving text or reaching EOF alone never proves that a test completed.
+type accountTestEventCollector struct {
+	text         strings.Builder
+	errorMessage string
+	completed    bool
 }
 
-// parseTestSSEOutput extracts response text and error message from captured SSE output.
-func parseTestSSEOutput(body string) (responseText, errMsg string) {
-	var texts []string
-	for _, line := range strings.Split(body, "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-		jsonStr := strings.TrimPrefix(line, "data: ")
-		var event TestEvent
-		if err := json.Unmarshal([]byte(jsonStr), &event); err != nil {
-			continue
-		}
-		switch event.Type {
-		case "content":
-			if event.Text != "" {
-				texts = append(texts, event.Text)
-			}
-		case "error":
-			errMsg = event.Error
+func (c *accountTestEventCollector) Add(event TestEvent) {
+	switch event.Type {
+	case "content":
+		_, _ = c.text.WriteString(event.Text)
+	case "error":
+		c.errorMessage = event.Error
+	case "test_complete":
+		c.completed = event.Success
+	}
+}
+func (s *AccountTestService) RunTestBackground(ctx context.Context, accountID int64, modelID string) (*ScheduledTestResult, error) {
+	result, _ := s.runTestBackground(ctx, accountID, modelID, false)
+	return result, nil
+}
+func (s *AccountTestService) RunBatchTestBackground(ctx context.Context, accountID int64, modelID string) (*ScheduledTestResult, error) {
+	return s.runTestBackground(ctx, accountID, modelID, true)
+}
+func (s *AccountTestService) runTestBackground(ctx context.Context, accountID int64, modelID string, requireSupported bool) (*ScheduledTestResult, error) {
+	startedAt := time.Now()
+	collector := &accountTestEventCollector{}
+	ginCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ginCtx.Request = (&http.Request{}).WithContext(ctx)
+	ginCtx.Set("account_test_event_collector", collector)
+	testErr := s.TestAccountConnection(ginCtx, accountID, modelID, "", AccountTestModeDefault, AccountTestOptions{requireSupportedModel: requireSupported})
+	if testErr == nil {
+		testErr = ctx.Err()
+	}
+	if testErr == nil && !collector.completed {
+		testErr = errors.New("test did not emit a successful completion")
+	}
+	status := "success"
+	if testErr != nil || collector.errorMessage != "" {
+		status = "failed"
+		if collector.errorMessage == "" && testErr != nil {
+			collector.errorMessage = testErr.Error()
 		}
 	}
-	responseText = strings.Join(texts, "")
-	return
+	finishedAt := time.Now()
+	return &ScheduledTestResult{Status: status, ResponseText: collector.text.String(), ErrorMessage: collector.errorMessage,
+		LatencyMs: finishedAt.Sub(startedAt).Milliseconds(), StartedAt: startedAt, FinishedAt: finishedAt}, testErr
 }

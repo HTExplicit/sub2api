@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
@@ -26,6 +27,43 @@ func (h *AccountHandler) ExecuteAccountJob(
 
 func (h *AccountHandler) executeAccountJobItem(ctx context.Context, kind string, raw json.RawMessage, item service.AccountJobItem) service.AccountJobExecutionResult {
 	switch kind {
+	case service.AccountJobKindBatchTest:
+		id, ok := accountJobTarget(item)
+		var req batchTestJobPayload
+		if model, prepared := ctx.Value(batchTestModelContextKey{}).(string); prepared {
+			req.ModelID = model
+		} else if json.Unmarshal(raw, &req) != nil {
+			return accountJobFailed(item.ID, "payload_invalid")
+		}
+		if !ok {
+			return accountJobFailed(item.ID, "target_missing")
+		}
+		if h.accountTestService == nil {
+			return accountJobFailed(item.ID, "test_unavailable")
+		}
+		testCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
+		defer cancel()
+		result, err := h.accountTestService.RunBatchTestBackground(testCtx, id, req.ModelID)
+		if ctx.Err() != nil {
+			return service.AccountJobExecutionResult{ItemID: item.ID, Status: service.AccountJobItemStatusCanceled}
+		}
+		metadata := map[string]any{"account_id": id, "model_id": req.ModelID}
+		if result != nil {
+			metadata["latency_ms"] = result.LatencyMs
+		}
+		if err != nil || result == nil || result.Status != "success" {
+			code := "test_failed"
+			if errors.Is(err, service.ErrAccountTestModelUnsupported) {
+				code = "test_model_unsupported"
+			}
+			if testCtx.Err() == context.DeadlineExceeded {
+				code = "test_timeout"
+			}
+			failure := accountJobFailed(item.ID, code)
+			failure.Metadata, _ = json.Marshal(metadata)
+			return failure
+		}
+		return accountJobSucceeded(item.ID, metadata)
 	case service.AccountJobKindBatchDelete:
 		id, ok := accountJobTarget(item)
 		if !ok {
@@ -458,11 +496,16 @@ func (h *AccountHandler) executeRefreshTierJob(ctx context.Context, raw json.Raw
 
 func (h *AccountHandler) executeDataImportJob(ctx context.Context, raw json.RawMessage, item service.AccountJobItem) service.AccountJobExecutionResult {
 	var req DataImportRequest
-	if json.Unmarshal(raw, &req) != nil || validateDataHeader(req.Data) != nil || item.Ordinal <= 0 || item.Ordinal > len(req.Data.Accounts) {
+	preparedState, prepared := dataImportJobStateFromContext(ctx)
+	if prepared {
+		req = preparedState.request
+	} else if json.Unmarshal(raw, &req) != nil || validateDataHeader(req.Data) != nil {
+		return accountJobFailed(item.ID, "payload_invalid")
+	}
+	if item.Ordinal <= 0 || item.Ordinal > len(req.Data.Accounts) {
 		return accountJobFailed(item.ID, "payload_invalid")
 	}
 	originalIndex := item.Ordinal - 1
-	preparedState, prepared := dataImportJobStateFromContext(ctx)
 	var decisions []dataImportDecision
 	if prepared {
 		decisions = preparedState.decisions
