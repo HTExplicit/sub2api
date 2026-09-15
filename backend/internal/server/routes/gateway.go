@@ -2,6 +2,7 @@ package routes
 
 import (
 	"errors"
+	"mime"
 	"net/http"
 	"strings"
 
@@ -540,9 +541,16 @@ func getGroupPlatform(c *gin.Context) string {
 	return apiKey.Group.Platform
 }
 
-func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver) gin.HandlerFunc {
+// compositeTargetPlatformMiddleware resolves a composite group's target
+// platform from the request model. The optional body-size argument is kept
+// for callers/tests that need the same normalized limit used by the gateway.
+func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver, maxBodySize ...int64) gin.HandlerFunc {
 	if resolver == nil {
 		resolver = service.NewCompositeRouteResolver(nil)
+	}
+	maxNormalizedBytes := int64(0)
+	if len(maxBodySize) > 0 {
+		maxNormalizedBytes = maxBodySize[0]
 	}
 	return func(c *gin.Context) {
 		apiKey, ok := middleware.GetAPIKeyFromContext(c)
@@ -555,7 +563,7 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver)
 			return
 		}
 
-		body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
+		body, err := readCompositeRequestBody(c.Request, maxNormalizedBytes)
 		if err != nil {
 			status := http.StatusBadRequest
 			message := "Failed to read request body"
@@ -594,6 +602,33 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver)
 		requestmodel.ResetRequestBody(c.Request, body)
 		c.Next()
 	}
+}
+
+// readCompositeRequestBody relaxes the known malformed-EOF condition for JSON
+// family media types. Multipart and binary paths retain the strict reader so
+// partial uploads cannot be mistaken for complete requests.
+func readCompositeRequestBody(req *http.Request, maxNormalizedBytes int64) ([]byte, error) {
+	if req != nil && compositeJSONContentType(req.Header.Get("Content-Type")) {
+		return pkghttputil.ReadLenientJSONRequestBodyWithPrealloc(req, maxNormalizedBytes)
+	}
+	body, err := pkghttputil.ReadRequestBodyWithPrealloc(req)
+	if err != nil {
+		return body, err
+	}
+	if maxNormalizedBytes > 0 && int64(len(body)) > maxNormalizedBytes {
+		return nil, &http.MaxBytesError{Limit: maxNormalizedBytes}
+	}
+	return body, nil
+}
+
+func compositeJSONContentType(contentType string) bool {
+	mediaType, _, err := mime.ParseMediaType(strings.TrimSpace(contentType))
+	if err != nil {
+		return false
+	}
+	mediaType = strings.ToLower(strings.TrimSpace(mediaType))
+	return mediaType == "application/json" ||
+		(strings.HasPrefix(mediaType, "application/") && strings.HasSuffix(mediaType, "+json"))
 }
 
 func compositeGeminiTargetPlatformMiddleware(resolver *service.CompositeRouteResolver) gin.HandlerFunc {

@@ -114,6 +114,17 @@ func ReadRequestBodyWithPrealloc(req *http.Request) ([]byte, error) {
 	enc := strings.ToLower(strings.TrimSpace(req.Header.Get("Content-Encoding")))
 	if enc == "" || enc == "identity" {
 		if readErr != nil {
+			// Preserve bytes for a lone transport UnexpectedEOF so callers that
+			// can validate a complete JSON document may recover it. Other read
+			// failures remain fail-closed and do not expose partial content.
+			if isOnlyUnexpectedEOF(readErr) {
+				return raw, &RequestBodyReadError{
+					Stage:         "read",
+					ReceivedBytes: receivedBytes,
+					DecodedBytes:  int64(len(raw)),
+					Err:           readErr,
+				}
+			}
 			return nil, &RequestBodyReadError{
 				Stage:         "read",
 				ReceivedBytes: receivedBytes,
