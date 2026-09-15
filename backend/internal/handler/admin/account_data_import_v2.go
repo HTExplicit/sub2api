@@ -921,7 +921,7 @@ func (h *AccountHandler) importDataProxies(ctx context.Context, items []DataProx
 						ClearExpiresAt: expiresAt == nil, ClearBackupID: backupProxyID == nil,
 						BackupProxyID: backupProxyID, ExpiryWarnDays: &item.ExpiryWarnDays,
 						Name: proxy.Name, Protocol: proxy.Protocol, Host: proxy.Host, Port: proxy.Port,
-						Username: proxy.Username, Password: proxy.Password,
+						Username: &proxy.Username, Password: &proxy.Password,
 					})
 				}
 			}
@@ -952,7 +952,7 @@ func (h *AccountHandler) importDataProxies(ctx context.Context, items []DataProx
 				ClearExpiresAt: expiresAt == nil, ClearBackupID: backupProxyID == nil,
 				BackupProxyID: backupProxyID, ExpiryWarnDays: &item.ExpiryWarnDays,
 				Name: created.Name, Protocol: created.Protocol, Host: created.Host, Port: created.Port,
-				Username: created.Username, Password: created.Password,
+				Username: &created.Username, Password: &created.Password,
 			})
 		}
 	}

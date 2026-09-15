@@ -1548,13 +1548,18 @@ func (s *OpenAIGatewayService) parseSSEUsageBytesWithType(data []byte, eventType
 		return
 	}
 	if openAIStreamEventTypeIsTerminal(effectiveOpenAISSEEventType(data, eventType)) {
-		if !openAIUsageHasTokens(&parsedUsage) && openAIUsageHasTokens(usage) {
+		parsedHasTokens := openAIUsageHasTokens(&parsedUsage) || parsedUsage.ImageCacheReadTokens > 0
+		usageHasTokens := openAIUsageHasTokens(usage) || (usage != nil && usage.ImageCacheReadTokens > 0)
+		if !parsedHasTokens && usageHasTokens {
 			return
 		}
 		*usage = parsedUsage
 		return
 	}
 	mergeOpenAIUsageNonZero(usage, parsedUsage)
+	if usage != nil && parsedUsage.ImageCacheReadTokens > 0 {
+		usage.ImageCacheReadTokens = parsedUsage.ImageCacheReadTokens
+	}
 }
 
 func extractOpenAIUsageFromJSONBytes(body []byte) (OpenAIUsage, bool) {

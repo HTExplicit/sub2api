@@ -1527,12 +1527,17 @@ func normalizeOpenAIModelForUpstream(account *Account, model string) string {
 	if account == nil || account.UsesOpenAICodexProtocol() {
 		return normalizeCodexModel(model)
 	}
+	model = strings.TrimSpace(model)
 	if account.IsOpenAIApiKey() {
 		if base, _, accepted := resolveOpenAIModelReasoningAlias(model); accepted {
-			return base
+			model = base
 		}
 	}
-	return strings.TrimSpace(model)
+	if account.Platform == PlatformDeepseek {
+		// DeepSeek 走 OpenAI 兼容入口，不经 Anthropic 入站的 [1m] 后缀归一。
+		return normalizeClaudeCodeLongContextModel(model)
+	}
+	return model
 }
 
 func SupportsVerbosity(model string) bool {

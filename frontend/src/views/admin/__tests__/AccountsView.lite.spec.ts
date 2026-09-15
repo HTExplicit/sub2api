@@ -17,7 +17,9 @@ const {
   getFacets,
   listFolders,
   listTags,
-  showError
+  refreshCredentials,
+  showError,
+  showWarning
 } = vi.hoisted(() => ({
   listAccounts: vi.fn(),
   listWithEtag: vi.fn(),
@@ -29,7 +31,9 @@ const {
   getFacets: vi.fn(),
   listFolders: vi.fn(),
   listTags: vi.fn(),
-  showError: vi.fn()
+  refreshCredentials: vi.fn(),
+  showError: vi.fn(),
+  showWarning: vi.fn()
 }))
 
 vi.mock('@/api/admin', () => ({
@@ -46,7 +50,8 @@ vi.mock('@/api/admin', () => ({
       delete: vi.fn(),
       batchClearError: vi.fn(),
       batchRefresh: vi.fn(),
-      toggleSchedulable: vi.fn()
+      toggleSchedulable: vi.fn(),
+      refreshCredentials
     },
     proxies: { getAll: getAllProxies },
     groups: { getAll: getAllGroups }
@@ -54,7 +59,7 @@ vi.mock('@/api/admin', () => ({
 }))
 
 vi.mock('@/stores/app', () => ({
-  useAppStore: () => ({ showError, showSuccess: vi.fn(), showInfo: vi.fn() })
+  useAppStore: () => ({ showError, showWarning, showSuccess: vi.fn(), showInfo: vi.fn() })
 }))
 
 vi.mock('@/stores/auth', () => ({
@@ -70,7 +75,7 @@ const DataTableStub = defineComponent({
   props: { data: { type: Array, default: () => [] } },
   template: `
     <div>
-      <div v-for="row in data" :key="row.id">
+      <div v-for="row in data" :key="row.id" :data-account-name="row.name">
         <slot name="cell-groups" :row="row" />
         <slot name="cell-actions" :row="row" />
       </div>
@@ -177,7 +182,9 @@ describe('admin AccountsView lite account list', () => {
     getFacets.mockReset().mockResolvedValue({ total: 1, platforms: [], types: [], statuses: [], plans: [], proxies: [], folders: [], tags: [] })
     listFolders.mockReset().mockResolvedValue([])
     listTags.mockReset().mockResolvedValue([])
+    refreshCredentials.mockReset()
     showError.mockReset()
+    showWarning.mockReset()
   })
 
   afterEach(() => {
@@ -295,6 +302,24 @@ describe('admin AccountsView lite account list', () => {
     await flushPromises()
     expect(getById).toHaveBeenCalledTimes(3)
     expect(wrapper.get('[data-test="stats-account"]').text()).toBe('compact row')
+    wrapper.unmount()
+  })
+
+  it('shows the warning and patches the account after a partial Antigravity refresh', async () => {
+    refreshCredentials.mockResolvedValue({
+      account: { ...fullAccount, name: 'refreshed account' },
+      message: 'Token refreshed, but project_id is temporarily unavailable',
+      warning: 'missing_project_id_temporary'
+    })
+    const wrapper = mountView(false)
+    await flushPromises()
+
+    wrapper.findComponent(AccountActionMenu).vm.$emit('refresh-token', listRow)
+    await flushPromises()
+
+    expect(refreshCredentials).toHaveBeenCalledWith(42)
+    expect(wrapper.get('[data-account-name]').attributes('data-account-name')).toBe('refreshed account')
+    expect(showWarning).toHaveBeenCalledWith('Token refreshed, but project_id is temporarily unavailable')
     wrapper.unmount()
   })
 

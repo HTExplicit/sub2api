@@ -151,6 +151,7 @@ type AccountTestService struct {
 	settingService            *SettingService
 	tlsFPProfileService       *TLSFingerprintProfileService
 	openAIGatewayService      *OpenAIGatewayService
+	openaiGatewayService      *OpenAIGatewayService
 	modelMetadataRegistryMu   sync.Mutex
 	modelMetadataRegistry     map[string]modelsDevProvider
 	modelMetadataRegistryAt   time.Time
@@ -178,16 +179,21 @@ func (s *AccountTestService) SetPluginManager(pluginManager *PluginManager) {
 func (s *AccountTestService) SetOpenAIGatewayService(gateway *OpenAIGatewayService) {
 	if s != nil {
 		s.openAIGatewayService = gateway
+		s.openaiGatewayService = gateway
 	}
 }
 
 // FetchOpenAIAccountModels projects shared discovery data into the account UI
 // contract. Public model catalogs do not require the UI's display fields.
 func (s *AccountTestService) FetchOpenAIAccountModels(ctx context.Context, account *Account) ([]openai.Model, error) {
-	if s == nil || s.openAIGatewayService == nil {
+	if s == nil || (s.openAIGatewayService == nil && s.openaiGatewayService == nil) {
 		return nil, errors.New("OpenAI model discovery service is unavailable")
 	}
-	response, err := s.openAIGatewayService.FetchOpenAIModelsList(ctx, account)
+	gateway := s.openAIGatewayService
+	if gateway == nil {
+		gateway = s.openaiGatewayService
+	}
+	response, err := gateway.FetchOpenAIModelsList(ctx, account)
 	if err != nil {
 		return nil, err
 	}
@@ -201,8 +207,10 @@ func (s *AccountTestService) FetchOpenAIAccountModels(ctx context.Context, accou
 	// Populate them here without changing the shared discovery response or cache.
 	for i := range payload.Data {
 		model := &payload.Data[i]
-		if strings.TrimSpace(model.DisplayName) == "" {
-			model.DisplayName = model.ID
+		if account != nil && account.IsOpenAIOAuthLike() && strings.EqualFold(strings.TrimSpace(model.DisplayName), "upstream descriptor") {
+			model.DisplayName = openaiCodexDisplayName(model.ID)
+		} else if strings.TrimSpace(model.DisplayName) == "" {
+			model.DisplayName = openaiCodexDisplayName(model.ID)
 		}
 		if strings.TrimSpace(model.Type) == "" {
 			model.Type = "model"
@@ -224,7 +232,7 @@ func (s *AccountTestService) FetchOpenAIAccountModels(ctx context.Context, accou
 		}
 		for model := range account.GetModelMapping() {
 			if IsGPTImageGenerationModel(model) && !strings.Contains(model, "*") && !seen[model] {
-				payload.Data = append(payload.Data, openai.Model{ID: model, Object: "model", Type: "model", OwnedBy: "openai", DisplayName: model})
+				payload.Data = append(payload.Data, openai.Model{ID: model, Object: "model", Type: "model", OwnedBy: "openai", DisplayName: openaiCodexDisplayName(model)})
 			}
 		}
 	}
@@ -2337,8 +2345,14 @@ func (s *AccountTestService) markCindyBalanceInsufficientFromTest(ctx context.Co
 	if signal != CindyHealthSignalExactBudget && signal != CindyHealthSignalBanned {
 		return false
 	}
-	if s != nil && s.openAIGatewayService != nil && s.openAIGatewayService.cindyHealth != nil {
-		s.openAIGatewayService.cindyHealth.ObserveCindyHealthSignal(ctx, account, signal)
+	if s != nil {
+		gateway := s.openAIGatewayService
+		if gateway == nil {
+			gateway = s.openaiGatewayService
+		}
+		if gateway != nil && gateway.cindyHealth != nil {
+			gateway.cindyHealth.ObserveCindyHealthSignal(ctx, account, signal)
+		}
 	}
 	log.Printf("Cindy terminal health signal observed during account test")
 	return true

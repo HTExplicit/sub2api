@@ -771,6 +771,32 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(wrapper.findAll('[data-testid="cindy-managed-models"] span')).toHaveLength(9);
     expect(wrapper.find('input[name="openai_apikey_alpha_search_responses_bridge_enabled"]').exists()).toBe(false);
     expect(wrapper.find('input[name="openai_apikey_prompt_cache_key_normalization_enabled"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("loads and saves the open button visibility for each custom menu", async () => {
+    const menuItems = [
+      { id: "docs", label: "Docs", url: "https://example.com/docs", icon_svg: "", visibility: "user", sort_order: 0 },
+      { id: "help", label: "Help", url: "https://example.com/help", icon_svg: "", visibility: "user", sort_order: 1, hide_open_button: true },
+    ];
+    getSettings.mockResolvedValue({ ...baseSettingsResponse, custom_menu_items: menuItems });
+    const wrapper = mountView();
+    await flushPromises();
+
+    const toggles = wrapper.findAll<HTMLInputElement>('[data-testid="custom-menu-hide-open-button"]');
+    expect(toggles.map(toggle => toggle.element.checked)).toEqual([false, true]);
+    await toggles[0].setValue(true);
+    await toggles[1].setValue(false);
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({
+      custom_menu_items: [
+        { ...menuItems[0], hide_open_button: true },
+        { ...menuItems[1], hide_open_button: false },
+      ],
+    }));
+    wrapper.unmount();
   });
 
   it("submits the compact home page toggle", async () => {
@@ -2142,7 +2168,7 @@ describe("admin SettingsView platform quota matrix", () => {
     // 应携带嵌套对象，而非扁平字段
     expect(payload).toHaveProperty("default_platform_quotas");
     const quotas = payload["default_platform_quotas"] as Record<string, unknown>;
-    const platforms = ["anthropic", "openai", "gemini", "antigravity", "grok", "kimi", "zhipu", "deepseek", "cindy", "minimax"];
+    const platforms = ["anthropic", "openai", "gemini", "antigravity", "grok", "kimi", "zhipu", "deepseek", "cindy", "minimax", "opencode_go"];
     expect(Object.keys(quotas)).toEqual(platforms);
     for (const p of platforms) {
       expect(quotas).toHaveProperty(p);
@@ -2181,7 +2207,7 @@ describe("admin SettingsView platform quota matrix", () => {
 
     expect(quotas["anthropic"]?.["daily"]).toBe(5);
     expect(quotas["openai"]?.["weekly"]).toBe(12.5);
-    expect(Object.keys(quotas)).toHaveLength(10);
+    expect(Object.keys(quotas)).toHaveLength(11);
     expect(quotas["cindy"]).toEqual({ daily: 7, weekly: 35, monthly: 140 });
     expect(quotas["minimax"]).toEqual({ daily: 0, weekly: 20, monthly: 80 });
     // 缺失平台应补全为 null

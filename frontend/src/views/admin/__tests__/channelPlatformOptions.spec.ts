@@ -7,7 +7,7 @@ describe('Composite channel platform options', () => {
     const source = readFileSync(resolve('src/views/admin/ChannelsView.vue'), 'utf8')
     const declaration = source.match(/const compositePlatforms:[^=]+=[^\n]+/)?.[0]
     const order = source.match(/const platformOrder:[^=]+=[^\n]+/)?.[0]
-    const expectedPlatforms = ['anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kimi', 'zhipu', 'deepseek', 'minimax', 'cindy']
+    const expectedPlatforms = ['anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kimi', 'zhipu', 'deepseek', 'minimax', 'cindy', 'opencode_go']
 
     expect(declaration?.match(/'([^']+)'/g)?.map(value => value.slice(1, -1))).toEqual(expectedPlatforms)
     expect(order?.match(/'([^']+)'/g)?.map(value => value.slice(1, -1))).toEqual(expectedPlatforms)

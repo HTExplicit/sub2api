@@ -78,6 +78,7 @@ func TestShouldKeepOpenAIResponsesToolCallNamespaces(t *testing.T) {
 		transport          OpenAIUpstreamTransport
 		passthroughEnabled bool
 		compactPath        bool
+		body               []byte
 		want               bool
 	}{
 		// 上游按 namespace 解析历史调用，缺字段会 400 "Missing namespace for function_call"。
@@ -92,17 +93,23 @@ func TestShouldKeepOpenAIResponsesToolCallNamespaces(t *testing.T) {
 		// WSv2 + compact 是唯一「不摊平但仍必须清理」的组合，钉住 compact 判定本身，
 		// 使其不会被误当成可由 shouldFlatten 推导出的冗余分支。
 		{name: "oauth_compact_wsv2_strips", account: oauth, transport: OpenAIUpstreamTransportResponsesWebsocketV2, compactPath: true, want: false},
-		// 历史身份与本轮工具声明无关；接口不再接受 body 作为策略依据。
-		{name: "apikey_http_keeps", account: apiKey, transport: OpenAIUpstreamTransportHTTPSSE, want: true},
-		{name: "apikey_http_passthrough_keeps", account: apiKey, transport: OpenAIUpstreamTransportHTTPSSE, passthroughEnabled: true, want: true},
-		{name: "apikey_compact_strips", account: apiKey, transport: OpenAIUpstreamTransportHTTPSSE, compactPath: true, want: false},
+		// API Key 默认按标准 Responses API 清理；请求显式声明 namespace 工具时，
+		// 自定义上游需要原样接收对应的历史调用。
+		{name: "apikey_without_namespace_tool_strips", account: apiKey, transport: OpenAIUpstreamTransportHTTPSSE, want: false},
+		{name: "apikey_with_namespace_tool_keeps", account: apiKey, transport: OpenAIUpstreamTransportHTTPSSE, body: []byte(`{"tools":[{"type":"namespace","name":"mcp__codex_app","tools":[]}]}`), want: true},
+		{name: "apikey_with_mixed_case_namespace_tool_keeps", account: apiKey, transport: OpenAIUpstreamTransportHTTPSSE, body: []byte(`{"tools":[{"type":" Namespace ","name":"mcp__codex_app","tools":[]}]}`), want: true},
+		{name: "apikey_with_lite_additional_namespace_tool_keeps", account: apiKey, transport: OpenAIUpstreamTransportHTTPSSE, body: []byte(`{"input":[{"type":"additional_tools","role":"developer","tools":[{"type":"namespace","name":"mcp__cua_repl","tools":[{"type":"function","name":"js"}]}]}]}`), want: true},
+		{name: "apikey_with_mixed_case_lite_carrier_keeps", account: apiKey, transport: OpenAIUpstreamTransportHTTPSSE, body: []byte(`{"input":[{"type":" Additional_Tools ","tools":[{"type":" Namespace ","name":"mcp__cua_repl","tools":[]}]}]}`), want: true},
+		{name: "apikey_with_lite_function_only_strips", account: apiKey, transport: OpenAIUpstreamTransportHTTPSSE, body: []byte(`{"input":[{"type":"additional_tools","tools":[{"type":"function","name":"js","namespace":"mcp__cua_repl"}]}]}`), want: false},
+		{name: "apikey_function_tool_with_namespace_field_strips", account: apiKey, transport: OpenAIUpstreamTransportHTTPSSE, body: []byte(`{"tools":[{"type":"function","name":"automation_update","namespace":"mcp__codex_app"}]}`), want: false},
+		{name: "apikey_compact_with_namespace_tool_strips", account: apiKey, transport: OpenAIUpstreamTransportHTTPSSE, compactPath: true, body: []byte(`{"tools":[{"type":"namespace","name":"mcp__codex_app","tools":[]}]}`), want: false},
 		{name: "setup_token_keeps", account: setupToken, transport: OpenAIUpstreamTransportHTTPSSE, want: true},
 		{name: "nil_account", account: nil, transport: OpenAIUpstreamTransportHTTPSSE, want: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			require.Equal(t, tt.want, shouldKeepOpenAIResponsesToolCallNamespaces(
-				tt.account, tt.transport, tt.passthroughEnabled, tt.compactPath,
+				tt.account, tt.transport, tt.passthroughEnabled, tt.compactPath, tt.body,
 			))
 		})
 	}
@@ -156,7 +163,7 @@ func TestStripOpenAIResponsesInputNamespaces(t *testing.T) {
 		]
 	}`)
 
-	stripped, err := stripOpenAIResponsesInputNamespaces(body, false, false)
+	stripped, err := stripOpenAIResponsesInputNamespaces(body, false)
 	require.NoError(t, err)
 	for index := 0; index < 8; index++ {
 		require.False(t, gjson.GetBytes(stripped, "input."+strconv.Itoa(index)+".namespace").Exists())
@@ -178,7 +185,7 @@ func TestStripOpenAIResponsesInputNamespacesLeavesOtherShapesByteExact(t *testin
 	}
 	for _, body := range tests {
 		for _, keepToolCallNamespaces := range []bool{false, true} {
-			stripped, err := stripOpenAIResponsesInputNamespaces(body, keepToolCallNamespaces, false)
+			stripped, err := stripOpenAIResponsesInputNamespaces(body, keepToolCallNamespaces)
 			require.NoError(t, err)
 			require.Equal(t, body, stripped)
 		}
@@ -202,7 +209,7 @@ func TestStripOpenAIResponsesInputNamespacesKeepsToolCallNamespaces(t *testing.T
 		]
 	}`)
 
-	stripped, err := stripOpenAIResponsesInputNamespaces(body, true, false)
+	stripped, err := stripOpenAIResponsesInputNamespaces(body, true)
 	require.NoError(t, err)
 
 	require.Equal(t, "collaboration", gjson.GetBytes(stripped, "input.0.namespace").String())
@@ -218,18 +225,18 @@ func TestStripOpenAIResponsesInputNamespacesKeepsToolCallNamespaces(t *testing.T
 
 	// 类型比对不区分大小写与首尾空白。
 	mixedCase := []byte(`{"input":[{"type":" Function_Call ","namespace":"collaboration","name":"spawn_agent"}]}`)
-	keptMixedCase, err := stripOpenAIResponsesInputNamespaces(mixedCase, true, false)
+	keptMixedCase, err := stripOpenAIResponsesInputNamespaces(mixedCase, true)
 	require.NoError(t, err)
 	require.Equal(t, mixedCase, keptMixedCase)
 
 	// 全部为调用项时无改动，应原样返回。
 	callsOnly := []byte(`{"input":[{"type":"function_call","namespace":"collaboration","name":"spawn_agent"}]}`)
-	unchanged, err := stripOpenAIResponsesInputNamespaces(callsOnly, true, false)
+	unchanged, err := stripOpenAIResponsesInputNamespaces(callsOnly, true)
 	require.NoError(t, err)
 	require.Equal(t, callsOnly, unchanged)
 
 	// 关闭保留时回到全量清理。
-	strippedAll, err := stripOpenAIResponsesInputNamespaces(body, false, false)
+	strippedAll, err := stripOpenAIResponsesInputNamespaces(body, false)
 	require.NoError(t, err)
 	for index := 0; index < 8; index++ {
 		require.False(t, gjson.GetBytes(strippedAll, "input."+strconv.Itoa(index)+".namespace").Exists())
