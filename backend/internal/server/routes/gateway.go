@@ -35,7 +35,7 @@ func RegisterGatewayRoutes(
 	clientRequestID := middleware.ClientRequestID()
 	opsErrorLogger := handler.OpsErrorLoggerMiddleware(opsService)
 	endpointNorm := handler.InboundEndpointMiddleware()
-	compositeTarget := compositeTargetPlatformMiddleware(compositeResolver, cfg.Gateway.MaxBodySize)
+	compositeTarget := compositeTargetPlatformMiddleware(compositeResolver)
 	compositeGeminiTarget := compositeGeminiTargetPlatformMiddleware(compositeResolver)
 
 	// 未分组 Key 拦截中间件（按协议格式区分错误响应）
@@ -44,12 +44,13 @@ func RegisterGatewayRoutes(
 
 	// 分组级模型白名单准入：在 apiKeyAuth 之后、compositeTarget 之前，
 	// 保证校验发生在合成路由改写与调度之前，且只看客户端书写的模型名。
-	groupModelAllowlist := middleware.GroupModelAllowlist(cfg.Gateway.MaxBodySize)
+	groupModelAllowlist := middleware.GroupModelAllowlist()
 
 	isOpenAIResponsesCompatibleGatewayPlatform := func(c *gin.Context) bool {
 		switch getGroupPlatform(c) {
 		case service.PlatformOpenAI, service.PlatformGrok,
-			service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformMiniMax:
+			service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek,
+			service.PlatformMiniMax, service.PlatformOpenCodeGo:
 			// 国产 OpenAI 兼容供应商与 openai/grok 一样经 OpenAI 网关转发。
 			return true
 		default:
@@ -58,7 +59,7 @@ func RegisterGatewayRoutes(
 	}
 	countTokensHandler := func(c *gin.Context) {
 		switch getGroupPlatform(c) {
-		case service.PlatformCindy, service.PlatformOpenAI, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformMiniMax:
+		case service.PlatformCindy, service.PlatformOpenAI, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformMiniMax, service.PlatformOpenCodeGo:
 			h.OpenAIGateway.CountTokens(c)
 		case service.PlatformGrok:
 			h.OpenAIGateway.GrokCountTokens(c)
@@ -70,7 +71,10 @@ func RegisterGatewayRoutes(
 		dispatchCodexModelsGateway(c, h.OpenAIGateway.CodexModels, h.Gateway.CodexModels)
 	}
 	modelsHandler := func(c *gin.Context) {
-		if c.Query("client_version") != "" {
+		// A client_version query selects the Codex manifest for collection
+		// requests.  Single-model lookups must still flow through the regular
+		// catalogue handler so the returned object matches the visible list.
+		if c.Param("model") == "" && c.Query("client_version") != "" {
 			codexModelsHandler(c)
 			return
 		}
@@ -210,6 +214,8 @@ func RegisterGatewayRoutes(
 		// Codex manifest format; other clients keep the OpenAI-style list.
 		gateway.GET("/models", modelsHandler)
 		gateway.GET("/models/capabilities", h.Gateway.ModelCapabilities)
+		// Single-model discovery never selects the Codex client_version manifest.
+		gateway.GET("/models/:model", h.Gateway.Models)
 		gateway.GET("/usage", h.Gateway.Usage)
 		gateway.POST("/live", h.OpenAIGateway.Live)
 		gateway.GET("/live/:call_id", h.OpenAIGateway.LiveSideband)
@@ -374,6 +380,7 @@ func RegisterGatewayRoutes(
 		h.OpenAIGateway.ResponsesWebSocket(c)
 	})
 	rootRoute(http.MethodGet, "/models", bodyLimit, modelsHandler)
+	rootRoute(http.MethodGet, "/models/:model", bodyLimit, h.Gateway.Models)
 	rootRoute(http.MethodPost, "/messages/count_tokens", bodyLimit, countTokensHandler)
 	codexDirect := r.Group("/backend-api/codex")
 	codexDirect.Use(bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic)
@@ -516,8 +523,7 @@ func RegisterGatewayRoutes(
 }
 
 func dispatchCodexModelsGateway(c *gin.Context, openAIHandler, generatedHandler gin.HandlerFunc) {
-	switch getGroupPlatform(c) {
-	case service.PlatformCindy, service.PlatformOpenAI:
+	if getGroupPlatform(c) == service.PlatformOpenAI {
 		openAIHandler(c)
 		return
 	}
@@ -535,9 +541,12 @@ func getGroupPlatform(c *gin.Context) string {
 			return platform
 		}
 	}
-	return apiKey.Group.EffectiveWirePlatform()
+	return apiKey.Group.Platform
 }
 
+// compositeTargetPlatformMiddleware resolves a composite group's target
+// platform from the request model. The optional body-size argument is kept
+// for callers/tests that need the same normalized limit used by the gateway.
 func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver, maxBodySize ...int64) gin.HandlerFunc {
 	if resolver == nil {
 		resolver = service.NewCompositeRouteResolver(nil)
@@ -598,9 +607,9 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver,
 	}
 }
 
-// readCompositeRequestBody only relaxes the known malformed-EOF condition for
-// JSON family media types. Multipart and binary paths retain their strict byte
-// reader so a partial upload can never be mistaken for a complete request.
+// readCompositeRequestBody relaxes the known malformed-EOF condition for JSON
+// family media types. Multipart and binary paths retain the strict reader so
+// partial uploads cannot be mistaken for complete requests.
 func readCompositeRequestBody(req *http.Request, maxNormalizedBytes int64) ([]byte, error) {
 	if req != nil && compositeJSONContentType(req.Header.Get("Content-Type")) {
 		return pkghttputil.ReadLenientJSONRequestBodyWithPrealloc(req, maxNormalizedBytes)

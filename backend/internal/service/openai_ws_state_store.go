@@ -433,7 +433,7 @@ func (s *defaultOpenAIWSStateStore) GetSessionTurnState(groupID int64, sessionHa
 		accountID = accountIDs[0]
 	}
 	key := openAIWSSessionTurnStateKey(groupID, sessionHash)
-	if key == "" || accountID <= 0 {
+	if key == "" {
 		return "", false
 	}
 	s.maybeCleanup()
@@ -442,7 +442,7 @@ func (s *defaultOpenAIWSStateStore) GetSessionTurnState(groupID int64, sessionHa
 	s.sessionToTurnStateMu.RLock()
 	binding, ok := s.sessionToTurnState[key]
 	s.sessionToTurnStateMu.RUnlock()
-	if !ok || binding.accountID != accountID || now.After(binding.expiresAt) || strings.TrimSpace(binding.turnState) == "" {
+	if !ok || (accountID > 0 && binding.accountID != accountID) || now.After(binding.expiresAt) || strings.TrimSpace(binding.turnState) == "" {
 		return "", false
 	}
 	return binding.turnState, true

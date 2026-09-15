@@ -79,7 +79,7 @@ describe('UserPlatformQuotaModal', () => {
     expect(apiMocks.getPlatformQuotas).toHaveBeenCalledWith(99)
   })
 
-  it('空数据渲染全部 10 个 concrete platform 行', async () => {
+  it('空数据渲染全部 11 个 concrete platform 行', async () => {
     const w = await mountAndOpen()
     const html = w.html()
     expect(html).toContain('anthropic')
@@ -92,7 +92,7 @@ describe('UserPlatformQuotaModal', () => {
     expect(html).toContain('deepseek')
     expect(html).toContain('cindy')
     expect(html).toContain('minimax')
-    expect(w.findAll('tbody tr')).toHaveLength(10)
+    expect(w.findAll('tbody tr')).toHaveLength(11)
   })
 
   it('已有数据正确填充 limit input', async () => {
@@ -104,13 +104,13 @@ describe('UserPlatformQuotaModal', () => {
     })
     const w = await mountAndOpen()
     const inputs = w.findAll('input[type=number]')
-    // 10 platforms × 3 windows = 30 inputs
-    expect(inputs.length).toBe(30)
+    // 11 platforms × 3 windows = 33 inputs
+    expect(inputs.length).toBe(33)
     // 第一个 input 是 anthropic.daily = 10
     expect((inputs[0].element as HTMLInputElement).value).toBe('10')
   })
 
-  it('保存提交完整 10 platform payload 并同时保留 Cindy 和 MiniMax 配额', async () => {
+  it('保存提交完整 11 platform payload 并同时保留 Cindy 和 MiniMax 配额', async () => {
     apiMocks.getPlatformQuotas.mockResolvedValueOnce({
       platform_quotas: [
         { platform: 'openai', daily_limit_usd: null, weekly_limit_usd: 20, monthly_limit_usd: null,
@@ -134,9 +134,9 @@ describe('UserPlatformQuotaModal', () => {
     expect(apiMocks.updatePlatformQuotas).toHaveBeenCalledTimes(1)
     const [uid, payload] = apiMocks.updatePlatformQuotas.mock.calls[0]
     expect(uid).toBe(99)
-    expect(payload).toHaveLength(10)
+    expect(payload).toHaveLength(11)
     expect(payload.map((p: any) => p.platform)).toEqual([
-      'anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kimi', 'zhipu', 'deepseek', 'cindy', 'minimax',
+      'anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kimi', 'zhipu', 'deepseek', 'cindy', 'minimax', 'opencode_go',
     ])
     const openai = payload.find((p: any) => p.platform === 'openai')
     expect(openai.weekly_limit_usd).toBe(20)
@@ -190,7 +190,42 @@ describe('UserPlatformQuotaModal', () => {
     confirmSpy.mockRestore()
   })
 
+  // 只有已保存限额的平台在后端有配额记录，重置按钮才可用
+  const anthropicConfigured = {
+    platform_quotas: [
+      {
+        platform: 'anthropic',
+        daily_limit_usd: 10,
+        weekly_limit_usd: null,
+        monthly_limit_usd: null,
+        daily_usage_usd: 0,
+        weekly_usage_usd: 0,
+        monthly_usage_usd: 0,
+      },
+    ],
+  }
+
+  it('未配置限额的平台重置按钮禁用并提示不可用', async () => {
+    const w = await mountAndOpen()
+    const resetBtns = w.findAll('button').filter((b) => b.text() === '↻')
+    expect(resetBtns.length).toBe(33) // 11 平台 × 3 窗口
+    for (const b of resetBtns) {
+      expect((b.element as HTMLButtonElement).disabled).toBe(true)
+      expect(b.attributes('title')).toBe('admin.users.platformQuota.reset.unavailable')
+    }
+  })
+
+  it('已保存限额的平台重置按钮可用，其余仍禁用', async () => {
+    apiMocks.getPlatformQuotas.mockResolvedValue(anthropicConfigured)
+    const w = await mountAndOpen()
+    const resetBtns = w.findAll('button').filter((b) => b.text() === '↻')
+    const enabled = resetBtns.filter((b) => !(b.element as HTMLButtonElement).disabled)
+    expect(enabled.length).toBe(3) // anthropic 的 daily/weekly/monthly
+    expect(enabled[0].attributes('title')).toBe('admin.users.platformQuota.reset.button')
+  })
+
   it('重置按钮 confirm 取消则不调用 API', async () => {
+    apiMocks.getPlatformQuotas.mockResolvedValue(anthropicConfigured)
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
     const w = await mountAndOpen()
     const resetBtns = w.findAll('button').filter((b) => b.text() === '↻')
@@ -202,6 +237,7 @@ describe('UserPlatformQuotaModal', () => {
   })
 
   it('重置按钮 confirm 确认则调用 API', async () => {
+    apiMocks.getPlatformQuotas.mockResolvedValue(anthropicConfigured)
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
     const w = await mountAndOpen()
     const resetBtns = w.findAll('button').filter((b) => b.text() === '↻')

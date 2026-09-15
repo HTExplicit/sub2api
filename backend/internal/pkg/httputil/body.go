@@ -114,7 +114,19 @@ func ReadRequestBodyWithPrealloc(req *http.Request) ([]byte, error) {
 	enc := strings.ToLower(strings.TrimSpace(req.Header.Get("Content-Encoding")))
 	if enc == "" || enc == "identity" {
 		if readErr != nil {
-			return raw, &RequestBodyReadError{
+			// Recover only a complete JSON document after a lone transport EOF.
+			// Retain the transport error; lenient JSON callers may accept the
+			// validated document, while other readers still fail closed.
+			normalized, normalizeErr := NormalizeLenientJSONRequestBody(raw, int64(len(raw))*6)
+			if isOnlyUnexpectedEOF(readErr) && normalizeErr == nil && json.Valid(normalized) {
+				return raw, &RequestBodyReadError{
+					Stage:         "read",
+					ReceivedBytes: receivedBytes,
+					DecodedBytes:  int64(len(raw)),
+					Err:           readErr,
+				}
+			}
+			return nil, &RequestBodyReadError{
 				Stage:         "read",
 				ReceivedBytes: receivedBytes,
 				DecodedBytes:  int64(len(raw)),

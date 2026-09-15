@@ -351,8 +351,8 @@ func TestSchedulerCanonicalBucketsIncludeCindyAndMiniMax(t *testing.T) {
 		bucketCount      int
 		queryCount       int
 	}{
-		{name: "standard", bucketCount: 22, queryCount: 12},
-		{name: "codex_overdraft", overdraftEnabled: true, bucketCount: 24, queryCount: 13},
+		{name: "standard", bucketCount: 24, queryCount: 13},
+		{name: "codex_overdraft", overdraftEnabled: true, bucketCount: 26, queryCount: 14},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			SetCodexQuotaOverdraftEnabled(tc.overdraftEnabled)

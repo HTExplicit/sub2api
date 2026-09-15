@@ -110,7 +110,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			ctx = withOpenAIFastPolicyContext(ctx, settings)
 		}
 	}
-	if preemptCtx, cleanupPreempt, armed := s.BeginOpenAIWSIngressSessionPreemption(ctx, c, account, firstClientMessage); armed {
+	// The handler normally owns this registration across retry attempts. Direct
+	// callers still get the same session-scoped preemption behavior here.
+	if preemptCtx, cleanupPreempt, armed := s.BeginOpenAIWSIngressSessionPreemptionWithClient(ctx, c, account, firstClientMessage, clientConn); armed {
 		ctx = preemptCtx
 		defer cleanupPreempt()
 		defer func() {
@@ -659,11 +661,18 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		return boundConnID, nil
 	}
+	apiKeyID := getAPIKeyIDFromContext(c)
 	sessionHash := ""
 	preferredConnID := ""
 	storeDisabled := false
 	refreshIngressRouteState := func(payload openAIWSClientPayload) {
+		// 会话级状态按执行作用域隔离：codex 多智能体共用 session-id，只有线程标识能把
+		// 父线程与子智能体区分开；没有声明身份时沿用原会话哈希。账号粘性仍由 handler 决定。
 		sessionHash = s.GenerateSessionHash(c, payload.rawForHash)
+		if scope, _ := resolveOpenAIWSExecutionScope(c, payload.rawForHash, apiKeyID); scope != "" &&
+			!IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+			sessionHash = scope
+		}
 		preferredConnID = ""
 		storeDisabled = s.isOpenAIWSStoreDisabledInRequestRaw(payload.payloadRaw, account)
 		if useHTTPBridge {
@@ -992,13 +1001,13 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 
 	agentTaskRecoveryTried := false
 	initialTransportRetryUsed := false
-	var acquireTurnLease func(int, string, bool) (*openAIWSConnLease, error)
-	acquireTurnLease = func(turn int, preferred string, forcePreferredConn bool) (*openAIWSConnLease, error) {
+	var acquireTurnLease func(int, string, bool, bool) (*openAIWSConnLease, error)
+	acquireTurnLease = func(turn int, preferred string, forcePreferredConn bool, forceNewConn bool) (*openAIWSConnLease, error) {
 		req := cloneOpenAIWSAcquireRequest(baseAcquireReq)
 		req.PreferredConnID = strings.TrimSpace(preferred)
 		req.ForcePreferredConn = forcePreferredConn
-		// dedicated 模式下每次获取均新建连接，避免跨会话复用残留上下文。
-		req.ForceNewConn = dedicatedMode || (turn == 1 && initialTransportRetryUsed)
+		// dedicated 模式及重试均新建连接，避免复用陈旧上下文。
+		req.ForceNewConn = dedicatedMode || forceNewConn || (turn == 1 && initialTransportRetryUsed)
 		acquireCtx, acquireCancel := context.WithTimeout(ctx, acquireTimeout)
 		lease, acquireErr := pool.Acquire(acquireCtx, req)
 		acquireCancel()
@@ -1008,7 +1017,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			if recoveryErr := s.recoverAgentIdentityTask(ctx, account, account.GetCredential("task_id")); recoveryErr != nil {
 				return nil, fmt.Errorf("agent identity task recovery failed: %w", recoveryErr)
 			}
-			return acquireTurnLease(turn, preferred, forcePreferredConn)
+			return acquireTurnLease(turn, preferred, forcePreferredConn, forceNewConn)
 		}
 		if acquireErr != nil {
 			canonicalModel := canonicalOpenAIAccountSchedulingModel(account, ingressSessionOriginalModel)
@@ -1039,9 +1048,19 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				return nil, s.newOpenAIWSRateLimitFailoverError(account, dialErr.ResponseHeaders, nil, acquireErr.Error())
 			}
 			if errors.Is(acquireErr, errOpenAIWSPreferredConnUnavailable) {
+				status := coderws.StatusPolicyViolation
+				reason := "upstream continuation connection is unavailable; please restart the conversation"
+				// For store=false external anchors, a preferred connection that
+				// drops during preflight is transient. Signal retry (1013) so the
+				// client can reconnect without replaying the stale anchor. Cindy
+				// strict continuation keeps the policy close contract.
+				if turn > 1 && storeDisabled && !strictCindyContinuation {
+					status = coderws.StatusTryAgainLater
+					reason = openAIWSNonInitialTurnRetryCloseReason
+				}
 				return nil, NewOpenAIWSClientCloseError(
-					coderws.StatusPolicyViolation,
-					"upstream continuation connection is unavailable; please restart the conversation",
+					status,
+					reason,
 					acquireErr,
 				)
 			}
@@ -1065,7 +1084,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 						turn,
 						failoverErr.StatusCode,
 					)
-					return acquireTurnLease(turn, preferred, forcePreferredConn)
+					return acquireTurnLease(turn, preferred, forcePreferredConn, true)
 				}
 				if turn > 1 {
 					s.CooldownOpenAIRetryExhausted(ctx, account, canonicalModel, failoverErr)
@@ -1083,11 +1102,14 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		connID := strings.TrimSpace(lease.ConnID())
 		logOpenAIWSModeInfo(
-			"ingress_ws_upstream_connected account_id=%d turn=%d conn_id=%s conn_reused=%v conn_pick_ms=%d queue_wait_ms=%d preferred_conn_id=%s",
+			"ingress_ws_upstream_connected account_id=%d turn=%d conn_id=%s conn_reused=%v conn_idle_ms=%d conn_age_ms=%d upstream_pings=%d conn_pick_ms=%d queue_wait_ms=%d preferred_conn_id=%s",
 			account.ID,
 			turn,
 			truncateOpenAIWSLogValue(connID, openAIWSIDValueMaxLen),
 			lease.Reused(),
+			lease.IdleBefore().Milliseconds(),
+			lease.AgeBefore().Milliseconds(),
+			lease.UpstreamPingCount(),
 			lease.ConnPickDuration().Milliseconds(),
 			lease.QueueWaitDuration().Milliseconds(),
 			truncateOpenAIWSLogValue(preferred, openAIWSIDValueMaxLen),
@@ -1880,7 +1902,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		forcePreferredConn := isStrictAffinityTurn(currentPayload) && strings.TrimSpace(preferredConnID) != ""
 		if sessionLease == nil {
-			acquiredLease, acquireErr := acquireTurnLease(turn, preferredConnID, forcePreferredConn)
+			acquiredLease, acquireErr := acquireTurnLease(turn, preferredConnID, forcePreferredConn, turnRetry > 0)
 			if acquireErr != nil {
 				return normalizeOpenAIWSNonInitialTurnError(turn, fmt.Errorf("acquire upstream websocket: %w", acquireErr))
 			}
@@ -1899,7 +1921,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			}
 		}
 		if shouldPreflightPing {
-			if pingErr := sessionLease.PingWithTimeout(openAIWSConnHealthCheckTO); pingErr != nil {
+			if pingErr := sessionLease.PingWithTimeout(openAIWSProbePingTO); pingErr != nil {
 				logOpenAIWSModeInfo(
 					"ingress_ws_upstream_preflight_ping_fail account_id=%d turn=%d conn_id=%s cause=%s",
 					account.ID,
@@ -1907,11 +1929,15 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					truncateOpenAIWSLogValue(sessionConnID, openAIWSIDValueMaxLen),
 					truncateOpenAIWSLogValue(pingErr.Error(), openAIWSLogValueMaxLen),
 				)
+				// A failed preflight ping means the pooled connection may have
+				// consumed or reordered state. Never replay the current turn on a
+				// replacement socket: close with a retryable status and let the
+				// client resubmit the request explicitly.
 				resetSessionLease(true)
 				return NewOpenAIWSClientCloseError(
 					coderws.StatusTryAgainLater,
 					openAIWSNonInitialTurnRetryCloseReason,
-					fmt.Errorf("upstream websocket preflight ping failed: %w", pingErr),
+					pingErr,
 				)
 			}
 		}

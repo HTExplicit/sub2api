@@ -151,6 +151,7 @@ type AccountTestService struct {
 	settingService            *SettingService
 	tlsFPProfileService       *TLSFingerprintProfileService
 	openAIGatewayService      *OpenAIGatewayService
+	openaiGatewayService      *OpenAIGatewayService
 	modelMetadataRegistryMu   sync.Mutex
 	modelMetadataRegistry     map[string]modelsDevProvider
 	modelMetadataRegistryAt   time.Time
@@ -178,16 +179,21 @@ func (s *AccountTestService) SetPluginManager(pluginManager *PluginManager) {
 func (s *AccountTestService) SetOpenAIGatewayService(gateway *OpenAIGatewayService) {
 	if s != nil {
 		s.openAIGatewayService = gateway
+		s.openaiGatewayService = gateway
 	}
 }
 
 // FetchOpenAIAccountModels projects shared discovery data into the account UI
 // contract. Public model catalogs do not require the UI's display fields.
 func (s *AccountTestService) FetchOpenAIAccountModels(ctx context.Context, account *Account) ([]openai.Model, error) {
-	if s == nil || s.openAIGatewayService == nil {
+	if s == nil || (s.openAIGatewayService == nil && s.openaiGatewayService == nil) {
 		return nil, errors.New("OpenAI model discovery service is unavailable")
 	}
-	response, err := s.openAIGatewayService.FetchOpenAIModelsList(ctx, account)
+	gateway := s.openAIGatewayService
+	if gateway == nil {
+		gateway = s.openaiGatewayService
+	}
+	response, err := gateway.FetchOpenAIModelsList(ctx, account)
 	if err != nil {
 		return nil, err
 	}
@@ -201,8 +207,10 @@ func (s *AccountTestService) FetchOpenAIAccountModels(ctx context.Context, accou
 	// Populate them here without changing the shared discovery response or cache.
 	for i := range payload.Data {
 		model := &payload.Data[i]
-		if strings.TrimSpace(model.DisplayName) == "" {
-			model.DisplayName = model.ID
+		if account != nil && account.IsOpenAIOAuthLike() && strings.EqualFold(strings.TrimSpace(model.DisplayName), "upstream descriptor") {
+			model.DisplayName = openaiCodexDisplayName(model.ID)
+		} else if strings.TrimSpace(model.DisplayName) == "" {
+			model.DisplayName = openaiCodexDisplayName(model.ID)
 		}
 		if strings.TrimSpace(model.Type) == "" {
 			model.Type = "model"
@@ -224,7 +232,7 @@ func (s *AccountTestService) FetchOpenAIAccountModels(ctx context.Context, accou
 		}
 		for model := range account.GetModelMapping() {
 			if IsGPTImageGenerationModel(model) && !strings.Contains(model, "*") && !seen[model] {
-				payload.Data = append(payload.Data, openai.Model{ID: model, Object: "model", Type: "model", OwnedBy: "openai", DisplayName: model})
+				payload.Data = append(payload.Data, openai.Model{ID: model, Object: "model", Type: "model", OwnedBy: "openai", DisplayName: openaiCodexDisplayName(model)})
 			}
 		}
 	}
@@ -361,6 +369,9 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	}
 
 	// Route to platform-specific test method
+	if account.IsOpenCodeGo() {
+		return s.testOpenCodeGoConnection(c, account, modelID, prompt)
+	}
 	if account.IsCNProvider() {
 		switch account.GetAPIProtocol() {
 		case APIProtocolAdaptive:
@@ -2337,8 +2348,14 @@ func (s *AccountTestService) markCindyBalanceInsufficientFromTest(ctx context.Co
 	if signal != CindyHealthSignalExactBudget && signal != CindyHealthSignalBanned {
 		return false
 	}
-	if s != nil && s.openAIGatewayService != nil && s.openAIGatewayService.cindyHealth != nil {
-		s.openAIGatewayService.cindyHealth.ObserveCindyHealthSignal(ctx, account, signal)
+	if s != nil {
+		gateway := s.openAIGatewayService
+		if gateway == nil {
+			gateway = s.openaiGatewayService
+		}
+		if gateway != nil && gateway.cindyHealth != nil {
+			gateway.cindyHealth.ObserveCindyHealthSignal(ctx, account, signal)
+		}
 	}
 	log.Printf("Cindy terminal health signal observed during account test")
 	return true
@@ -3078,6 +3095,9 @@ func (s *AccountTestService) testOpenAIImageAPIKey(c *gin.Context, ctx context.C
 
 // testOpenAIImageOAuth tests OpenAI image generation using an OAuth account via Codex /responses API.
 func (s *AccountTestService) testOpenAIImageOAuth(c *gin.Context, ctx context.Context, account *Account, modelID, prompt string) error {
+	if usesCodexDirectImages(modelID) {
+		return s.testOpenAIImageOAuthDirect(c, ctx, account, modelID, prompt)
+	}
 	credentialAccount := account
 	if account.IsShadow() {
 		resolved, err := resolveCredentialAccount(ctx, s.accountRepo, account)
@@ -3229,6 +3249,67 @@ func (s *AccountTestService) sendEvent(c *gin.Context, event TestEvent) {
 		return
 	}
 	c.Writer.Flush()
+}
+
+// testOpenAIImageOAuthDirect exercises the native Codex Images endpoint for
+// image models that bypass the Responses image tool.
+func (s *AccountTestService) testOpenAIImageOAuthDirect(c *gin.Context, ctx context.Context, account *Account, modelID, prompt string) error {
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no")
+	c.Writer.Flush()
+	s.sendEvent(c, TestEvent{Type: "test_start", Model: modelID})
+	s.sendEvent(c, TestEvent{Type: "content", Text: "Calling Codex Images endpoint...\n"})
+	authToken := account.GetOpenAIAccessToken()
+	if authToken == "" && !account.IsOpenAIAgentIdentity() {
+		return s.sendErrorAndEnd(c, "No access token available")
+	}
+	parsed := &OpenAIImagesRequest{Endpoint: openAIImagesGenerationsEndpoint, Model: strings.TrimSpace(modelID), Prompt: prompt}
+	applyOpenAIImagesDefaults(parsed)
+	payload, apiURL, err := buildOpenAIImagesOAuthPayload(parsed, modelID)
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to build image request: %s", err.Error()))
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(payload))
+	if err != nil {
+		return s.sendErrorAndEnd(c, "Failed to create request")
+	}
+	req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
+	account.ApplyHeaderOverrides(req.Header)
+	proxyURL := ""
+	if account.ProxyID != nil && account.Proxy != nil {
+		proxyURL = account.Proxy.URL()
+	}
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to read response: %s", err.Error()))
+	}
+	if resp.StatusCode >= 400 {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("API returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body))))
+	}
+	results, err := parseCodexDirectImagesResponse(body)
+	if err != nil {
+		return s.sendErrorAndEnd(c, err.Error())
+	}
+	for _, item := range results {
+		if item.RevisedPrompt != "" {
+			s.sendEvent(c, TestEvent{Type: "content", Text: item.RevisedPrompt})
+		}
+		s.sendEvent(c, TestEvent{Type: "image", ImageURL: "data:" + openAIImageOutputMIMEType(item.OutputFormat) + ";base64," + item.Result, MimeType: openAIImageOutputMIMEType(item.OutputFormat)})
+	}
+	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+	return nil
 }
 
 // sendErrorAndEnd sends an error event and ends the stream

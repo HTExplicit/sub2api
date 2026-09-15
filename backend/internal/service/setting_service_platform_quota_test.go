@@ -76,7 +76,7 @@ func TestGetDefaultPlatformQuotas_ReturnsAllowedPlatforms(t *testing.T) {
 			t.Errorf("missing platform key: %q", platform)
 		}
 	}
-	require.Len(t, got, 10)
+	require.Len(t, got, len(AllowedQuotaPlatforms))
 	require.Equal(t, floatPtrPQ(7.5), got[PlatformCindy].DailyLimitUSD)
 	require.Equal(t, &DefaultPlatformQuotaSetting{}, got[PlatformMiniMax], "new platform must not inherit Cindy's quota")
 	// anthropic daily = 10.5
@@ -182,7 +182,7 @@ func TestSystemPlatformQuotas_WriteReadRoundTrip(t *testing.T) {
 			t.Errorf("allowed-platform contract violated: missing platform %q", p)
 		}
 	}
-	require.Len(t, got, 10)
+	require.Len(t, got, len(AllowedQuotaPlatforms))
 	require.Equal(t, floatPtrPQ(7.5), got[PlatformCindy].DailyLimitUSD)
 	require.Equal(t, floatPtrPQ(42), got[PlatformMiniMax].MonthlyLimitUSD)
 	require.Nil(t, got[PlatformMiniMax].DailyLimitUSD)

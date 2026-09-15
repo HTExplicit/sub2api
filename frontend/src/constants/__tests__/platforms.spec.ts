@@ -11,14 +11,15 @@ const concretePlatforms = [
   'zhipu',
   'deepseek',
   'cindy',
-  'minimax'
+  'minimax',
+  'opencode_go'
 ]
 
 describe('platform option catalogs', () => {
   it('exposes every concrete account platform', () => {
     expect(CONCRETE_PLATFORM_OPTIONS.map((option) => option.value)).toEqual(concretePlatforms)
     expect(CONCRETE_PLATFORM_VALUES).toEqual(concretePlatforms)
-    expect(new Set(CONCRETE_PLATFORM_VALUES).size).toBe(10)
+    expect(new Set(CONCRETE_PLATFORM_VALUES).size).toBe(11)
   })
 
   it('adds composite for group-backed filters', () => {

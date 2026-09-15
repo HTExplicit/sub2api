@@ -1140,7 +1140,13 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	// account model_mapping keys. Compatibility aliases and unverified
 	// candidates are intentionally absent from the public list.
 	strictCindy := false
-	if platform == service.PlatformOpenAI || platform == service.PlatformCindy {
+	// Pinned OpenAI manifests are resolved directly from their configured
+	// account set; they must not be gated by Cindy availability classification
+	// (the two contracts use different account pools).
+	pinnedOpenAIConfigured := apiKey != nil && apiKey.Group != nil &&
+		apiKey.Group.Platform == service.PlatformOpenAI && apiKey.Group.CodexModelsManifestConfig.Enabled
+	pinnedOpenAI := platform == service.PlatformOpenAI && pinnedOpenAIConfigured
+	if (platform == service.PlatformOpenAI || platform == service.PlatformCindy) && !pinnedOpenAIConfigured {
 		var err error
 		strictCindy, err = h.gatewayService.ClassifyStrictCindyGroup(c.Request.Context(), authenticatedGroup)
 		if err != nil {
@@ -1159,8 +1165,7 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	c.Set(modelCapacityProjectorContextKey, func(body []byte) ([]byte, error) {
 		return h.gatewayService.ProjectModelListContextCapacities(c.Request.Context(), authenticatedGroup, groupID, platform, body)
 	})
-	if platform == service.PlatformOpenAI && apiKey != nil && apiKey.Group != nil &&
-		apiKey.Group.Platform == service.PlatformOpenAI && apiKey.Group.CodexModelsManifestConfig.Enabled {
+	if pinnedOpenAI {
 		h.pinnedOpenAIModels(c, apiKey.Group)
 		return
 	}
@@ -1386,18 +1391,25 @@ const modelCapacityProjectorContextKey = "gateway.model-capacity-projector"
 
 func writePublicModelsJSON(c *gin.Context, payload any) {
 	projectorValue, enabled := c.Get(modelCapacityProjectorContextKey)
-	if !enabled {
-		c.JSON(http.StatusOK, payload)
-		return
-	}
-	projector, ok := projectorValue.(func([]byte) ([]byte, error))
 	body, err := json.Marshal(payload)
-	if !ok || err != nil {
+	if err != nil {
 		c.JSON(http.StatusOK, payload)
 		return
 	}
-	if projected, projectErr := projector(body); projectErr == nil {
-		body = projected
+	if enabled {
+		if projector, ok := projectorValue.(func([]byte) ([]byte, error)); ok {
+			if projected, projectErr := projector(body); projectErr == nil {
+				body = projected
+			}
+		}
+	}
+	// Collection routes and single-model routes share the same catalogue
+	// representation.  Resolve a requested model from the final projected
+	// payload so metadata (context window, ownership, extensions, ...) exactly
+	// matches the visible collection item.
+	if c.Param("model") != "" {
+		writeRetrievedModel(c, body)
+		return
 	}
 	c.Data(http.StatusOK, "application/json; charset=utf-8", body)
 }
@@ -1578,7 +1590,7 @@ func modelListingSource(platform string, availableModels, fallbackModels []strin
 func defaultCodexModelIDsForPlatform(platform string) []string {
 	switch platform {
 	case service.PlatformDeepseek:
-		return []string{"deepseek-v4-pro", "deepseek-v4-flash"}
+		return []string{"deepseek-v4-pro", "deepseek-v4-flash", "deepseek-flash"}
 	case service.PlatformMiniMax:
 		return []string{"MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.5"}
 	default:

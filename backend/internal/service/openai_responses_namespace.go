@@ -86,6 +86,7 @@ func shouldKeepOpenAIResponsesToolCallNamespaces(
 	transport OpenAIUpstreamTransport,
 	passthroughEnabled bool,
 	compactPath bool,
+	body ...[]byte,
 ) bool {
 	if account == nil || compactPath {
 		return false
@@ -94,7 +95,14 @@ func shouldKeepOpenAIResponsesToolCallNamespaces(
 		return true
 	}
 	if account.IsOpenAIApiKey() {
-		return true
+		if len(body) == 0 {
+			return false
+		}
+		// Preserve declarations and any namespace-qualified historical calls.
+		// A continuation may omit tools entirely, so the latter cannot be
+		// inferred from the current declaration set alone.
+		return hasOpenAIResponsesNamespaceToolDeclaration(body[0]) ||
+			hasOpenAIResponsesToolCallNamespace(body[0])
 	}
 	if !account.IsOpenAIOAuthLike() {
 		return false
@@ -102,9 +110,73 @@ func shouldKeepOpenAIResponsesToolCallNamespaces(
 	return !shouldFlattenOpenAIResponsesNamespaces(account, transport, passthroughEnabled, compactPath)
 }
 
-// openAIResponsesToolCallItemTypes 与反应式调用项清理白名单保持一致。
-// 具名独立 function_call_output 不是调用项，其 namespace 使用单独的原生 API
-// 保真边界，不能因此扩大 OAuth/Compact 的历史兼容行为。
+// hasOpenAIResponsesToolCallNamespace reports whether input history contains a
+// namespace-qualified tool call. API-key Responses upstreams may require the
+// field on replay even when the follow-up request omits its tool declarations.
+func hasOpenAIResponsesToolCallNamespace(body []byte) bool {
+	input := gjson.GetBytes(body, "input")
+	if !input.IsArray() {
+		return false
+	}
+	found := false
+	input.ForEach(func(_, item gjson.Result) bool {
+		if !isOpenAIResponsesToolCallItemType(item.Get("type").String()) {
+			return true
+		}
+		if item.Get("namespace").Exists() {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
+}
+
+// hasOpenAIResponsesNamespaceToolDeclaration reports whether a request carries
+// a namespace declaration in top-level tools or Responses Lite's
+// input.additional_tools carrier.
+func hasOpenAIResponsesNamespaceToolDeclaration(body []byte) bool {
+	hasNamespaceTool := func(tools gjson.Result) bool {
+		if !tools.IsArray() {
+			return false
+		}
+		found := false
+		tools.ForEach(func(_, tool gjson.Result) bool {
+			if strings.EqualFold(strings.TrimSpace(tool.Get("type").String()), "namespace") {
+				found = true
+				return false
+			}
+			return true
+		})
+		return found
+	}
+
+	if hasNamespaceTool(gjson.GetBytes(body, "tools")) {
+		return true
+	}
+
+	input := gjson.GetBytes(body, "input")
+	if !input.IsArray() {
+		return false
+	}
+	found := false
+	input.ForEach(func(_, item gjson.Result) bool {
+		if !strings.EqualFold(strings.TrimSpace(item.Get("type").String()), "additional_tools") {
+			return true
+		}
+		if hasNamespaceTool(item.Get("tools")) {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
+}
+
+// openAIResponsesToolCallItemTypes 是携带 namespace 的调用项类型集合。与
+// removeOpenAIResponsesRejectedNamespaceAtIndex 的反应式白名单保持一致；codex-rs
+// protocol/src/models.rs 中只有 FunctionCall 与 CustomToolCall 序列化 namespace，
+// 其余类型带该字段一定是非 Codex 客户端或历史残留，清掉才安全。
 var openAIResponsesToolCallItemTypes = map[string]bool{
 	"function_call":    true,
 	"tool_call":        true,
@@ -163,7 +235,7 @@ func flattenOpenAIResponsesNamespaces(c *gin.Context, body []byte) ([]byte, erro
 // namespace，让 Codex 调用能按上游要求原样回传；判定见
 // shouldKeepOpenAIResponsesToolCallNamespaces。具名独立输出由单独的原生 API
 // 开关保护，不依赖当前 tools 中是否仍有原工具声明。
-func stripOpenAIResponsesInputNamespaces(body []byte, keepToolCallNamespaces, keepStandaloneOutputNamespaces bool) ([]byte, error) {
+func stripOpenAIResponsesInputNamespaces(body []byte, keepToolCallNamespaces bool, standalone ...bool) ([]byte, error) {
 	if !bytes.Contains(body, []byte(`"namespace"`)) {
 		return body, nil
 	}
@@ -173,6 +245,7 @@ func stripOpenAIResponsesInputNamespaces(body []byte, keepToolCallNamespaces, ke
 	}
 
 	var rebuilt bytes.Buffer
+	keepStandaloneOutputNamespaces := len(standalone) > 0 && standalone[0]
 	rebuilt.Grow(len(input.Raw))
 	_ = rebuilt.WriteByte('[')
 	changed := false

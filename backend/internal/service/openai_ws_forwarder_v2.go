@@ -19,12 +19,35 @@ import (
 	"go.uber.org/zap"
 )
 
+// forwardOpenAIWSV2 retains the pre-v0.2.5 call shape used by downstream tests.
+// New callers should use forwardOpenAIWSV2WithScope to provide an execution scope.
 func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	ctx context.Context,
 	c *gin.Context,
 	account *Account,
 	reqBody map[string]any,
 	clientPromptCacheKey string,
+	token string,
+	decision OpenAIWSProtocolDecision,
+	isCodexCLI bool,
+	reqStream bool,
+	originalModel string,
+	mappedModel string,
+	startTime time.Time,
+	attempt int,
+	lastFailureReason string,
+	agentTaskRecoveryTried *bool,
+) (*OpenAIForwardResult, error) {
+	return s.forwardOpenAIWSV2WithScope(ctx, c, account, reqBody, clientPromptCacheKey, "", token, decision, isCodexCLI, reqStream, originalModel, mappedModel, startTime, attempt, lastFailureReason, agentTaskRecoveryTried)
+}
+
+func (s *OpenAIGatewayService) forwardOpenAIWSV2WithScope(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	reqBody map[string]any,
+	clientPromptCacheKey string,
+	executionScope string,
 	token string,
 	decision OpenAIWSProtocolDecision,
 	isCodexCLI bool,
@@ -132,6 +155,12 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		var legacySessionHash string
 		sessionHash, legacySessionHash = openAIWSSessionHashesFromID(promptCacheKey)
 		attachOpenAILegacySessionHashToGin(c, legacySessionHash)
+	}
+	// 与 WS 接入路径共用执行作用域：codex 多智能体共用 session-id，turn state 与
+	// store=false 的连接绑定必须按线程隔离，同一线程在两条路径之间也才能共享状态。
+	// 作用域由 Forward 从改写前的原始请求算出后传入，reqBody 此时已带账号 namespace。
+	if executionScope = strings.TrimSpace(executionScope); executionScope != "" {
+		sessionHash = executionScope
 	}
 	if turnState == "" && stateStore != nil && sessionHash != "" {
 		if savedTurnState, ok := stateStore.GetSessionTurnState(groupID, sessionHash, account.ID); ok {
@@ -277,12 +306,15 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	}()
 	connID := strings.TrimSpace(lease.ConnID())
 	logOpenAIWSModeDebug(
-		"connected account_id=%d account_type=%s transport=%s conn_id=%s conn_reused=%v conn_pick_ms=%d queue_wait_ms=%d has_previous_response_id=%v",
+		"connected account_id=%d account_type=%s transport=%s conn_id=%s conn_reused=%v conn_idle_ms=%d conn_age_ms=%d upstream_pings=%d conn_pick_ms=%d queue_wait_ms=%d has_previous_response_id=%v",
 		account.ID,
 		account.Type,
 		normalizeOpenAIWSLogValue(string(decision.Transport)),
 		connID,
 		lease.Reused(),
+		lease.IdleBefore().Milliseconds(),
+		lease.AgeBefore().Milliseconds(),
+		lease.UpstreamPingCount(),
 		lease.ConnPickDuration().Milliseconds(),
 		lease.QueueWaitDuration().Milliseconds(),
 		previousResponseID != "",

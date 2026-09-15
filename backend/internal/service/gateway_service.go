@@ -629,6 +629,13 @@ type AccountSelectionResult struct {
 	profitGate *openAIProfitControlGate
 }
 
+// HasOpenAIRuntimeBreakerProbe reports whether selection carries a breaker
+// probe lease that must be released on an early exit.
+func (r *AccountSelectionResult) HasOpenAIRuntimeBreakerProbe() bool {
+	return r != nil && (r.runtimeBreakerProbeLease != nil ||
+		(strings.TrimSpace(r.runtimeBreakerProbeOwner) != "" && len(r.runtimeBreakerProbeModels) > 0))
+}
+
 // ProfitGateActive reports whether this selection was made under profit control.
 func (r *AccountSelectionResult) ProfitGateActive() bool {
 	return r != nil && r.profitGate != nil
