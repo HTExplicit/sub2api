@@ -3287,7 +3287,7 @@ func (s *AccountTestService) testOpenAIImageOAuthDirect(c *gin.Context, ctx cont
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to read response: %s", err.Error()))
