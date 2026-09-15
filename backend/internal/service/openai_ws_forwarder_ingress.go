@@ -669,7 +669,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		// 会话级状态按执行作用域隔离：codex 多智能体共用 session-id，只有线程标识能把
 		// 父线程与子智能体区分开；没有声明身份时沿用原会话哈希。账号粘性仍由 handler 决定。
 		sessionHash = s.GenerateSessionHash(c, payload.rawForHash)
-		if scope, _ := resolveOpenAIWSExecutionScope(c, payload.rawForHash, apiKeyID); scope != "" {
+		if scope, _ := resolveOpenAIWSExecutionScope(c, payload.rawForHash, apiKeyID); scope != "" &&
+			!IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 			sessionHash = scope
 		}
 		preferredConnID = ""
@@ -1047,8 +1048,16 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				return nil, s.newOpenAIWSRateLimitFailoverError(account, dialErr.ResponseHeaders, nil, acquireErr.Error())
 			}
 			if errors.Is(acquireErr, errOpenAIWSPreferredConnUnavailable) {
+				status := coderws.StatusPolicyViolation
+				// For store=false external anchors, a preferred connection that
+				// drops during preflight is transient. Signal retry (1013) so the
+				// client can reconnect without replaying the stale anchor. Cindy
+				// strict continuation keeps the policy close contract.
+				if turn > 1 && storeDisabled && !strictCindyContinuation {
+					status = coderws.StatusTryAgainLater
+				}
 				return nil, NewOpenAIWSClientCloseError(
-					coderws.StatusPolicyViolation,
+					status,
 					"upstream continuation connection is unavailable; please restart the conversation",
 					acquireErr,
 				)

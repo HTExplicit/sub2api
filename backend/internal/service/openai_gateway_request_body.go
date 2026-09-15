@@ -2359,10 +2359,17 @@ func normalizeOpenAIReasoningEffort(raw string) string {
 	}
 }
 
-func normalizeOpenAIReasoningEffortForModel(raw, _ string) string {
-	// Capability-specific translations belong to the endpoint adapter. This
-	// helper is also used by usage metadata and must not relabel a sent value.
-	return normalizeOpenAIReasoningEffort(raw)
+func normalizeOpenAIReasoningEffortForModel(raw, model string) string {
+	value := normalizeOpenAIReasoningEffort(raw)
+	// Legacy GPT-5.5 and earlier endpoints expose xhigh as their highest
+	// reasoning tier; translate the newer max alias for those models.
+	if value == "max" && !supportsOpenAIReasoningEffortMax(model) {
+		normalizedModel := strings.ToLower(lastOpenAIModelSegment(model))
+		if strings.HasPrefix(normalizedModel, "gpt-5.5") || strings.HasPrefix(normalizedModel, "gpt-5.4") {
+			return "xhigh"
+		}
+	}
+	return value
 }
 
 // supportsOpenAIReasoningEffortMax reports model families whose upstream scale

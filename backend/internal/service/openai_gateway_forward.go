@@ -139,6 +139,13 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		// 普通账号仍只允许 WS 入站走 WS 上游。Cindy 的 HTTP -> WSv2 是独立、严格受控的例外。
 		wsDecision = resolveOpenAIWSDecisionByClientTransport(wsDecision, GetOpenAIClientTransport(c))
 	}
+	// Cindy HTTP -> WSv2 keeps the legacy session affinity key. The bridge is
+	// intentionally single-turn and must share turn-state with the HTTP path;
+	// execution-scope derivation is reserved for native WS ingress where
+	// multi-agent thread isolation is required.
+	if cindyHTTPToWSV2 {
+		wsExecutionScope = ""
+	}
 	if requestedPreviousResponseID != "" && wsDecision.Transport != OpenAIUpstreamTransportResponsesWebsocketV2 &&
 		account.UsesOpenAICodexProtocol() {
 		// This endpoint-specific restriction is independent of the global WS
