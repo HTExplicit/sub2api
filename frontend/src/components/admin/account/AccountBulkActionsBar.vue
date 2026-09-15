@@ -1,13 +1,13 @@
 <template>
-  <div class="mb-4 flex flex-col gap-3 rounded-none bg-primary-50 p-3 dark:bg-primary-900/20 xl:flex-row xl:items-center xl:justify-between">
+  <div class="mb-4 flex flex-col gap-3 rounded-none border border-line border-l-2 border-l-primary-500 bg-raised p-3 xl:flex-row xl:items-center xl:justify-between">
     <div class="flex flex-wrap items-center gap-2">
-      <span v-if="allResultsSelected" class="text-sm font-medium text-primary-900 dark:text-primary-100">
+      <span v-if="allResultsSelected" class="text-sm font-medium text-ink">
         {{ t('admin.accounts.bulkActions.selectedAll', { count: selectedIds.length }) }}
       </span>
-      <span v-else-if="selectedIds.length > 0" class="text-sm font-medium text-primary-900 dark:text-primary-100">
+      <span v-else-if="selectedIds.length > 0" class="text-sm font-medium text-ink">
         {{ t('admin.accounts.bulkActions.selected', { count: selectedIds.length }) }}
       </span>
-      <span v-else class="text-sm font-medium text-primary-900 dark:text-primary-100">
+      <span v-else class="text-sm font-medium text-ink">
         {{ t('admin.accounts.bulkEdit.title') }}
       </span>
       <template v-if="selectedIds.length > 0">

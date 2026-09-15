@@ -777,3 +777,50 @@
     padding-bottom: env(safe-area-inset-bottom);
   }
 }
+
+/* --------------------------------------------------------------------------
+ * Shared list surfaces
+ *
+ * A number of admin and user list views render small native tables alongside
+ * the shared DataTable component. Keep those tables on the same neutral
+ * editorial surface so a page cannot fall back to the old blue-gray utility
+ * palette when it is switched between themes.
+ * -------------------------------------------------------------------------- */
+@layer components {
+  table thead[class*='bg-gray-50'],
+  table thead[class*='bg-gray-100'],
+  table thead[class*='dark:bg-dark-700'],
+  table thead[class*='dark:bg-dark-800'],
+  table thead[class*='dark:bg-dark-900'] {
+    background-color: rgb(var(--ui-raised)) !important;
+  }
+
+  table tbody[class*='bg-white'],
+  table tbody[class*='dark:bg-dark-700'],
+  table tbody[class*='dark:bg-dark-800'],
+  table tbody[class*='dark:bg-dark-900'] {
+    background-color: rgb(var(--ui-canvas)) !important;
+  }
+
+  table thead,
+  table tbody,
+  table tr,
+  table td,
+  table th {
+    border-color: rgb(var(--ui-line)) !important;
+  }
+
+  table tbody tr:hover {
+    background-color: rgb(var(--ui-raised) / 0.72) !important;
+  }
+
+  .list-surface {
+    background-color: rgb(var(--ui-canvas));
+    border-color: rgb(var(--ui-line));
+  }
+
+  .list-surface-raised {
+    background-color: rgb(var(--ui-raised));
+    border-color: rgb(var(--ui-line));
+  }
+}

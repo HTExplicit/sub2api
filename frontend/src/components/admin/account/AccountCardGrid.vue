@@ -11,8 +11,8 @@
       <article
         v-for="account in accounts"
         :key="account.id"
-        class="cursor-pointer rounded-none border bg-white p-4 transition-colors hover:border-gray-300 hover:bg-gray-50/60 dark:bg-dark-900 dark:hover:border-dark-500 dark:hover:bg-dark-800"
-        :class="selectedSet.has(account.id) ? 'border-primary-300 ring-1 ring-primary-200 dark:border-primary-700 dark:ring-primary-900' : 'border-gray-200 dark:border-dark-700'"
+        class="cursor-pointer rounded-none border border-line bg-canvas p-4 transition-colors hover:border-line-strong hover:bg-raised"
+        :class="selectedSet.has(account.id) ? 'border-l-2 border-l-primary-500' : ''"
         @click="emit('rowClick', account)"
       >
         <div class="flex items-start gap-3">
