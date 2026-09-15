@@ -3092,6 +3092,9 @@ func (s *AccountTestService) testOpenAIImageAPIKey(c *gin.Context, ctx context.C
 
 // testOpenAIImageOAuth tests OpenAI image generation using an OAuth account via Codex /responses API.
 func (s *AccountTestService) testOpenAIImageOAuth(c *gin.Context, ctx context.Context, account *Account, modelID, prompt string) error {
+	if usesCodexDirectImages(modelID) {
+		return s.testOpenAIImageOAuthDirect(c, ctx, account, modelID, prompt)
+	}
 	credentialAccount := account
 	if account.IsShadow() {
 		resolved, err := resolveCredentialAccount(ctx, s.accountRepo, account)
@@ -3243,6 +3246,60 @@ func (s *AccountTestService) sendEvent(c *gin.Context, event TestEvent) {
 		return
 	}
 	c.Writer.Flush()
+}
+
+// testOpenAIImageOAuthDirect exercises the native Codex Images endpoint for
+// image models that bypass the Responses image tool.
+func (s *AccountTestService) testOpenAIImageOAuthDirect(c *gin.Context, ctx context.Context, account *Account, modelID, prompt string) error {
+	authToken := account.GetOpenAIAccessToken()
+	if authToken == "" && !account.IsOpenAIAgentIdentity() {
+		return s.sendErrorAndEnd(c, "No access token available")
+	}
+	parsed := &OpenAIImagesRequest{Endpoint: openAIImagesGenerationsEndpoint, Model: strings.TrimSpace(modelID), Prompt: prompt}
+	applyOpenAIImagesDefaults(parsed)
+	payload, apiURL, err := buildOpenAIImagesOAuthPayload(parsed, modelID)
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to build image request: %s", err.Error()))
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(payload))
+	if err != nil {
+		return s.sendErrorAndEnd(c, "Failed to create request")
+	}
+	req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
+	account.ApplyHeaderOverrides(req.Header)
+	proxyURL := ""
+	if account.ProxyID != nil && account.Proxy != nil {
+		proxyURL = account.Proxy.URL()
+	}
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to read response: %s", err.Error()))
+	}
+	if resp.StatusCode >= 400 {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("API returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body))))
+	}
+	results, err := parseCodexDirectImagesResponse(body)
+	if err != nil {
+		return s.sendErrorAndEnd(c, err.Error())
+	}
+	for _, item := range results {
+		if item.RevisedPrompt != "" {
+			s.sendEvent(c, TestEvent{Type: "content", Text: item.RevisedPrompt})
+		}
+		s.sendEvent(c, TestEvent{Type: "image", ImageURL: "data:" + openAIImageOutputMIMEType(item.OutputFormat) + ";base64," + item.Result, MimeType: openAIImageOutputMIMEType(item.OutputFormat)})
+	}
+	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+	return nil
 }
 
 // sendErrorAndEnd sends an error event and ends the stream

@@ -1049,16 +1049,18 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			}
 			if errors.Is(acquireErr, errOpenAIWSPreferredConnUnavailable) {
 				status := coderws.StatusPolicyViolation
+				reason := "upstream continuation connection is unavailable; please restart the conversation"
 				// For store=false external anchors, a preferred connection that
 				// drops during preflight is transient. Signal retry (1013) so the
 				// client can reconnect without replaying the stale anchor. Cindy
 				// strict continuation keeps the policy close contract.
 				if turn > 1 && storeDisabled && !strictCindyContinuation {
 					status = coderws.StatusTryAgainLater
+					reason = openAIWSNonInitialTurnRetryCloseReason
 				}
 				return nil, NewOpenAIWSClientCloseError(
 					status,
-					"upstream continuation connection is unavailable; please restart the conversation",
+					reason,
 					acquireErr,
 				)
 			}
