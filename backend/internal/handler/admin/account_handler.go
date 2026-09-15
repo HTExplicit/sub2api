@@ -2527,6 +2527,16 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 		return
 	}
 
+	models, err := h.accountTestModels(c.Request.Context(), account)
+	if err != nil {
+		response.Error(c, http.StatusBadGateway, "Unable to load account test models")
+		return
+	}
+	response.Success(c, models)
+}
+
+// accountTestModels is shared by the single-account and batch catalog endpoints.
+func (h *AccountHandler) accountTestModels(ctx context.Context, account *service.Account) (any, error) {
 	// Handle OpenAI accounts
 	if account.IsOpenAI() {
 		if service.IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
@@ -2540,12 +2550,10 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 					CreatedAt:         "",
 				})
 			}
-			response.Success(c, models)
-			return
+			return models, nil
 		}
 
-		response.Success(c, h.openAIAccountTestModels(c.Request.Context(), account))
-		return
+		return h.openAIAccountTestModels(ctx, account)
 	}
 
 	// Handle Gemini accounts
@@ -2555,18 +2563,15 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 		// channel cannot serve.
 		if account.IsOAuth() {
 			if account.IsGeminiGoogleOne() {
-				response.Success(c, geminicli.GoogleOneModels)
-				return
+				return geminicli.GoogleOneModels, nil
 			}
-			response.Success(c, geminicli.DefaultModels)
-			return
+			return geminicli.DefaultModels, nil
 		}
 
 		// For API Key accounts: return models based on model_mapping
 		mapping := account.GetModelMapping()
 		if len(mapping) == 0 {
-			response.Success(c, geminicli.DefaultModels)
-			return
+			return geminicli.DefaultModels, nil
 		}
 
 		var models []geminicli.Model
@@ -2588,15 +2593,13 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 				})
 			}
 		}
-		response.Success(c, models)
-		return
+		return models, nil
 	}
 
 	// Handle Antigravity accounts: return Claude + Gemini models
 	if account.Platform == service.PlatformAntigravity {
 		// 直接复用 antigravity.DefaultModels()，与 /v1/models 端点保持同步
-		response.Success(c, antigravity.DefaultModels())
-		return
+		return antigravity.DefaultModels(), nil
 	}
 
 	// Handle Grok accounts
@@ -2611,14 +2614,12 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 			hasExplicitMapping = len(rawMapping) > 0
 		}
 		if !hasExplicitMapping {
-			response.Success(c, defaultModels)
-			return
+			return defaultModels, nil
 		}
 
 		mapping := account.GetModelMapping()
 		if len(mapping) == 0 {
-			response.Success(c, defaultModels)
-			return
+			return defaultModels, nil
 		}
 
 		defaultByID := make(map[string]xai.Model, len(defaultModels))
@@ -2645,23 +2646,20 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 				DisplayName: requestedModel,
 			})
 		}
-		response.Success(c, models)
-		return
+		return models, nil
 	}
 
 	// Handle Claude/Anthropic accounts
 	// For OAuth and Setup-Token accounts: return default models
 	if account.IsOAuth() {
-		response.Success(c, claude.DefaultModels)
-		return
+		return claude.DefaultModels, nil
 	}
 
 	// For API Key accounts: return models based on model_mapping
 	mapping := account.GetModelMapping()
 	if len(mapping) == 0 {
 		// No mapping configured, return default models
-		response.Success(c, claude.DefaultModels)
-		return
+		return claude.DefaultModels, nil
 	}
 
 	// Return mapped models (keys of the mapping are the available model IDs)
@@ -2687,13 +2685,13 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 		}
 	}
 
-	response.Success(c, models)
+	return models, nil
 }
 
 // openAIAccountTestModels selects request-side model IDs from this account's
 // saved configuration. Discovery enumerates unrestricted accounts and wildcard
 // candidates; it is not an availability gate for explicitly configured models.
-func (h *AccountHandler) openAIAccountTestModels(ctx context.Context, account *service.Account) []openai.Model {
+func (h *AccountHandler) openAIAccountTestModels(ctx context.Context, account *service.Account) ([]openai.Model, error) {
 	mapping := account.GetModelMapping()
 	if account.IsOpenAIPassthroughEnabled() || len(mapping) == 0 {
 		return h.discoverOpenAIAccountTestModels(ctx, account)
@@ -2731,10 +2729,14 @@ func (h *AccountHandler) openAIAccountTestModels(ctx context.Context, account *s
 		seen[id] = struct{}{}
 	}
 	if !hasWildcard {
-		return models
+		return models, nil
 	}
 
-	for _, model := range h.discoverOpenAIAccountTestModels(ctx, account) {
+	discovered, err := h.discoverOpenAIAccountTestModels(ctx, account)
+	if err != nil {
+		return nil, err
+	}
+	for _, model := range discovered {
 		if !concreteAccountTestModelID(model.ID) {
 			continue
 		}
@@ -2750,22 +2752,19 @@ func (h *AccountHandler) openAIAccountTestModels(ctx context.Context, account *s
 		models = append(models, model)
 		seen[model.ID] = struct{}{}
 	}
-	return models
+	return models, nil
 }
 
 func concreteAccountTestModelID(id string) bool {
 	return strings.TrimSpace(id) != "" && !strings.Contains(id, "*")
 }
 
-// Only failed discovery falls back to built-ins. A successful empty catalog is
-// authoritative, and neither result is modified by the configured projection.
-func (h *AccountHandler) discoverOpenAIAccountTestModels(ctx context.Context, account *service.Account) []openai.Model {
-	if h.accountTestService != nil {
-		if models, err := h.accountTestService.FetchOpenAIAccountModels(ctx, account); err == nil {
-			return models
-		}
+// Discovery errors must remain errors so the picker can retry without guessing.
+func (h *AccountHandler) discoverOpenAIAccountTestModels(ctx context.Context, account *service.Account) ([]openai.Model, error) {
+	if h.accountTestService == nil {
+		return nil, errors.New("model discovery unavailable")
 	}
-	return openai.DefaultModels
+	return h.accountTestService.FetchOpenAIAccountModels(ctx, account)
 }
 
 // GetModelContextCapacities reads the local snapshot, official directory and

@@ -34,6 +34,8 @@ func TestAccountJobRoutesExposeImportPreviewAndJobContract(t *testing.T) {
 		http.MethodPost + " /api/v1/admin/account-jobs/:id/cancel",
 		http.MethodPost + " /api/v1/admin/account-jobs/:id/retry-failed",
 		http.MethodPost + " /api/v1/admin/accounts/data/preview",
+		http.MethodPost + " /api/v1/admin/accounts/batch-test",
+		http.MethodPost + " /api/v1/admin/accounts/batch-test-models",
 		http.MethodPost + " /api/v1/admin/accounts/duplicates/review",
 		http.MethodPost + " /api/v1/admin/accounts/duplicates/merge",
 	} {

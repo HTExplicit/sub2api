@@ -117,6 +117,11 @@ apiClient.interceptors.response.use(
       // Validate `data` shape to avoid HTML error pages breaking our error handling.
       const apiData = (typeof data === 'object' && data !== null ? data : {}) as Record<string, any>
 
+      if (status === 413 && error.response.headers?.['cf-ray']) {
+        return Promise.reject({ status, code: 'CLOUDFLARE_UPLOAD_TOO_LARGE', url,
+          message: getLocale().startsWith('zh') ? '上传内容超过 Cloudflare 的 100 MB 单次请求上限，请减小文件或请求大小。' : 'Upload exceeds Cloudflare’s 100 MB per-request limit. Reduce the file or request size.' })
+      }
+
       // Ops monitoring disabled: treat as feature-flagged 404, and proactively redirect away
       // from ops pages to avoid broken UI states.
       if (status === 404 && apiData.message === 'Ops monitoring is disabled') {

@@ -46,6 +46,15 @@ describe('accountJobsAPI', () => {
     expect(post).toHaveBeenNthCalledWith(1, '/admin/account-jobs/41/cancel')
   })
 
+  it('uses batched discovery and persists individual model IDs', async () => {
+    const signal = new AbortController().signal
+    post.mockResolvedValueOnce({ data: { items: [{ account_id: 7, models: [] }] } })
+    expect(await accountJobsAPI.batchTestModels([7], signal)).toEqual([{ account_id: 7, models: [] }])
+    await accountJobsAPI.batchTest([{ account_id: 7, model_id: 'raw-alias' }])
+    expect(post).toHaveBeenNthCalledWith(1, '/admin/accounts/batch-test-models', { account_ids: [7] }, { signal })
+    expect(post).toHaveBeenNthCalledWith(2, '/admin/accounts/batch-test', { items: [{ account_id: 7, model_id: 'raw-alias' }] }, { headers: { 'Idempotency-Key': expect.stringMatching(/^account_batch_test-/) } })
+  })
+
   it('adds a fresh Idempotency-Key to retry and duplicate job submissions', async () => {
     await accountJobsAPI.retryFailed(41)
     await accountJobsAPI.reviewDuplicates([7, 8])

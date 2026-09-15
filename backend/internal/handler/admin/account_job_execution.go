@@ -29,13 +29,23 @@ func (h *AccountHandler) executeAccountJobItem(ctx context.Context, kind string,
 	switch kind {
 	case service.AccountJobKindBatchTest:
 		id, ok := accountJobTarget(item)
-		var req batchTestJobPayload
-		if model, prepared := ctx.Value(batchTestModelContextKey{}).(string); prepared {
-			req.ModelID = model
-		} else if json.Unmarshal(raw, &req) != nil {
-			return accountJobFailed(item.ID, "payload_invalid")
-		}
 		if !ok {
+			return accountJobFailed(item.ID, "target_missing")
+		}
+		models, prepared := ctx.Value(batchTestModelContextKey{}).(map[int64]string)
+		if !prepared {
+			var req batchTestJobPayload
+			if json.Unmarshal(raw, &req) != nil {
+				return accountJobFailed(item.ID, "payload_invalid")
+			}
+			var err error
+			_, models, err = req.normalize()
+			if err != nil {
+				return accountJobFailed(item.ID, "payload_invalid")
+			}
+		}
+		model, exists := models[id]
+		if !exists {
 			return accountJobFailed(item.ID, "target_missing")
 		}
 		if h.accountTestService == nil {
@@ -43,11 +53,11 @@ func (h *AccountHandler) executeAccountJobItem(ctx context.Context, kind string,
 		}
 		testCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 		defer cancel()
-		result, err := h.accountTestService.RunBatchTestBackground(testCtx, id, req.ModelID)
+		result, err := h.accountTestService.RunBatchTestBackground(testCtx, id, model)
 		if ctx.Err() != nil {
 			return service.AccountJobExecutionResult{ItemID: item.ID, Status: service.AccountJobItemStatusCanceled}
 		}
-		metadata := map[string]any{"account_id": id, "model_id": req.ModelID}
+		metadata := map[string]any{"account_id": id, "model_id": model}
 		if result != nil {
 			metadata["latency_ms"] = result.LatencyMs
 		}

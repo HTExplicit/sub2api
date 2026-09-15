@@ -126,12 +126,6 @@ func TestAccountHandlerGetAvailableModels_ConfiguredModels(t *testing.T) {
 }
 
 func TestAccountHandlerGetAvailableModels_ConfiguredModelWildcards(t *testing.T) {
-	fallbackIDs := []string{"Public/A"}
-	for _, model := range openai.DefaultModels {
-		if strings.HasPrefix(model.ID, "gpt-image-") {
-			fallbackIDs = append(fallbackIDs, model.ID)
-		}
-	}
 	for _, tc := range []struct {
 		name    string
 		mapping map[string]any
@@ -154,7 +148,7 @@ func TestAccountHandlerGetAvailableModels_ConfiguredModelWildcards(t *testing.T)
 		},
 		{
 			name: "failed_discovery", mapping: map[string]any{"Public/A": "absent-target", "gpt-image-*": "image-target"},
-			body: `{"error":"unavailable"}`, status: http.StatusBadGateway, want: fallbackIDs,
+			body: `{"error":"unavailable"}`, status: http.StatusBadGateway, want: nil,
 		},
 		{
 			name: "empty_catalog", mapping: map[string]any{"Public/A": "absent-target", "gpt-*": "target"},
@@ -172,6 +166,11 @@ func TestAccountHandlerGetAvailableModels_ConfiguredModelWildcards(t *testing.T)
 			require.NoError(t, err)
 			upstream := &configuredModelsUpstream{body: tc.body, status: tc.status}
 			router, adminSvc, gateway := configuredModelsRouter(account, upstream)
+			if tc.name == "failed_discovery" {
+				requireCatalogFailure(t, router)
+				require.EqualValues(t, 1, upstream.calls.Load())
+				return
+			}
 			models := getConfiguredTestModels(t, router)
 			require.Equal(t, tc.want, configuredTestModelIDs(models))
 			require.EqualValues(t, 1, upstream.calls.Load())
@@ -215,10 +214,10 @@ func TestAccountHandlerGetAvailableModels_UnconfiguredModels(t *testing.T) {
 					upstream.status = http.StatusBadGateway
 				}
 				router, _, _ := configuredModelsRouter(account, upstream)
-				models := getConfiguredTestModels(t, router)
 				if failed {
-					require.Equal(t, openai.DefaultModels, models)
+					requireCatalogFailure(t, router)
 				} else {
+					models := getConfiguredTestModels(t, router)
 					require.Equal(t, []string{"upstream-only"}, configuredTestModelIDs(models))
 					require.Equal(t, "Live model", models[0].DisplayName)
 				}
@@ -226,4 +225,12 @@ func TestAccountHandlerGetAvailableModels_UnconfiguredModels(t *testing.T) {
 			})
 		}
 	}
+}
+
+func requireCatalogFailure(t *testing.T, router *gin.Engine) {
+	t.Helper()
+	out := httptest.NewRecorder()
+	router.ServeHTTP(out, httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/601/models", nil))
+	require.Equal(t, http.StatusBadGateway, out.Code, out.Body.String())
+	require.NotContains(t, out.Body.String(), "gpt-")
 }

@@ -451,7 +451,9 @@ async function handlePreview(): Promise<void> {
   } catch (error: any) {
     if (generation !== previewGeneration) return
     preview.value = null
-    if (error?.response?.status === 409) {
+    if (error?.code === 'CLOUDFLARE_UPLOAD_TOO_LARGE') {
+      appStore.showError(error.message)
+    } else if (error?.response?.status === 409) {
       appStore.showWarning(t('admin.accounts.dataImportStalePreview'))
     } else {
       appStore.showError(error instanceof Error ? error.message : t('admin.accounts.dataImportFailed'))
@@ -472,7 +474,9 @@ async function handleSubmit(): Promise<void> {
     emit('imported', job)
     emit('close')
   } catch (error: any) {
-    if (error?.response?.status === 409) {
+    if (error?.code === 'CLOUDFLARE_UPLOAD_TOO_LARGE') {
+      appStore.showError(error.message)
+    } else if (error?.response?.status === 409) {
       preview.value = null
       appStore.showWarning(t('admin.accounts.dataImportStalePreview'))
       await handlePreview()

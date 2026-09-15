@@ -436,6 +436,11 @@ describe('API Client', () => {
 
   // --- 网络错误 ---
 
+  it('reports the Cloudflare upload limit when the edge rejects an import', async () => {
+    apiClient.defaults.adapter = vi.fn().mockRejectedValue({ config: { url: '/admin/accounts/data' }, response: { status: 413, headers: { 'cf-ray': 'mock-ray' }, data: '<html>Request Entity Too Large</html>' } })
+    await expect(apiClient.post('/admin/accounts/data', {})).rejects.toEqual(expect.objectContaining({ code: 'CLOUDFLARE_UPLOAD_TOO_LARGE', message: expect.stringContaining('100 MB') }))
+  })
+
   describe('网络错误', () => {
     it('网络错误返回 status 0 的错误', async () => {
       const adapter = vi.fn().mockRejectedValue({
