@@ -1,82 +1,54 @@
 # HTExplicit Sub2API Downstream
 
-This public fork carries the maintained `codexrip` patch set for Sub2API. It includes
-OpenAI refusal recovery, API-key pool scheduling fixes, Cindy budget-exhaustion handling,
-and the account management console extensions used by the downstream deployment.
+This fork maintains the `codexrip` patch set over official Sub2API releases.
 
-## Current production baseline
+## Source baseline
 
-- Official baseline: `v0.1.176` at `e803e3851c0a7e222cfadeafad7b8636ab959d11`.
-- Downstream release: `v0.1.176-codexrip.1` at
-  `4e590b3ad92674a938dfb88dc72772e670798aa2`.
-- Production image digest:
-  `sha256:09c42953a6e21d2d6eee23b2a0d86f631c8ea30f6b594e3e46444bf950ba48b5`.
+- Official baseline: `v0.2.5`, peeled commit `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea`.
+- Version-only sync: `881f3202694c6bc932446931a30c27d9675178b9`; embedded version `0.2.5`.
+- Integration starts at production `v0.2.4-codexrip.11`, commit `4c96fb375a68744ddf356ffb3f64afac5e21894b`.
+- Conflict decisions and validation: [v0.2.5 review](.downstream/upstream-review-v0.2.5.md).
+- The operator workspace `docs/sub2api.md` owns the current production pointer.
+  A source merge or Release alone does not establish deployment completion.
 
-## Release model
+## Official behavior and downstream contracts
 
-- `main` is the tested downstream production line.
-- `.downstream/upstream-base` records the official stable release merged into `main`.
-- New custom tags use `vX.Y.Z-codexrip.N`.
-- Existing `vX.Y.Z-refusal-recovery.N` images are legacy inputs only. Production can
-  move from that channel to `codexrip`, but cannot deploy a new legacy image or move back.
-- Release images are published only as immutable version tags under `ghcr.io/htexplicit/sub2api`.
-- Production deployment always resolves and pins the registry digest.
+OpenCode Zen/GO, site billing states, WebSocket execution scope and pooling,
+Responses Lite namespaces, native Codex Images, model metadata/provider filters,
+batch administration and Ollama asynchronous quota reset follow official behavior.
+
+Cindy keeps its platform identity, catalog, health/budget handling and existing group
+membership. Continuation, opaque lineage, refusal recovery and destination-specific
+reasoning summaries remain supported. Account test model choices persist; API-key
+reveal requires the configured password. The account test dialog keeps list position.
+Image Studio and the Responses image bridge default off. Public model management
+remains retired; catalog changes do not restore its routes or navigation.
+
+Quota storage, aggregation, cleanup and resets follow official semantics. Missing
+quota rows represent unlimited access; rows with three NULL limits are purged by
+the official migration. Existing overdraft behavior must not alter these semantics.
+The three `238_*` migrations retain separate filenames and checksums.
+
+## Release and production deployment
+
+- `main` is admitted through the normal required PR checks.
+- `.downstream/upstream-base` records the integrated official release.
+- New releases use immutable `vX.Y.Z-codexrip.N` tags on `main`.
+- Images use the tag without `v`: `ghcr.io/htexplicit/sub2api:X.Y.Z-codexrip.N`.
+- Downstream Release authenticates to GHCR, verifies source/build materials and
+  publishes an image digest and provenance. It reuses PR validation.
+- Production Deploy resolves the fixed digest through the existing restricted SSH
+  updater. Ordinary updates use `operation=deploy-preserve`, preserving runtime
+  settings and resources, naturally draining requests, and rebuilding only Sub2API.
+- Ordinary updates do not run business backups, canaries, long observation or
+  automatic rollback. A failure preserves the runtime state for diagnosis.
+- SSH identity checks, fixed image validation, mutual exclusion and command error
+  reporting remain required. Other services, networking, accounts, subscriptions
+  and manual routing stay within their existing configuration; CPA stays stopped.
+- Container/public health confirms availability, not actual model functionality.
 
 ## Upstream updates
 
-The scheduled upstream workflow checks the latest non-draft, non-prerelease release from
-`Wei-Shaw/sub2api`. A clean merge opens a candidate pull request and builds a short-lived
-OCI artifact. Merge conflicts create an issue and leave `main` unchanged. No upstream-sync
-workflow can deploy production.
-
-## OpenAI API-key pool scheduling
-
-OpenAI API-key accounts use an in-process account/model cooldown rather than the Redis
-half-open probe lease used by OAuth accounts. Same-account retries occur only when pool
-mode is enabled and the response status is explicitly configured for that account. The
-default configured statuses remain `401`, `403`, and `429`; `503` is not a global default.
-OAuth and other breaker-managed account types continue to use the distributed circuit
-breaker.
-
-## Cindy budget exhaustion
-
-Cindy accounts are identified strictly as OpenAI API-key accounts using
-`https://api.laxarouter.ai`. HTTP `402`, structured `429` responses with
-`error.type=budget_exceeded`, and a fallback where the type is missing and the parsed message
-contains both normalized `ExceededBudget` and `over budget` mark the account as budget
-exhausted. Ordinary or malformed `429` responses and non-Cindy accounts are not marked. A
-matching request switches accounts immediately, and future scheduling excludes the marked
-account without changing its administrator-managed enabled state.
-
-The admin account test paths use the same classifier; closing the test dialog refreshes the
-account list, Cindy aggregates, and deletion candidates. Recovery clears only the exhaustion
-marker. Preview-and-confirm deletion is fingerprint protected and can permanently delete
-only marked, enabled Cindy accounts. Non-Cindy, unmarked, and manually disabled accounts are
-preserved. No balance amount is queried or displayed.
-
-## Production deployment
-
-The production workflow is manual and protected by the `production` environment. It accepts
-only an existing custom release tag, resolves the public GHCR digest, and connects with a
-restricted SSH key whose forced command can only invoke the Sub2API updater. Secrets and
-server-specific identifiers are stored in the environment, not in this repository.
-
-The workflow requires five typed Cindy rollout booleans plus the Codex quota-overdraft
-boolean. After resolution, an explicit deploy sends only
-`deploy <immutable-ref> cindy=<health>,<catalog>,<search>,<studio>,<responses-image> overdraft=<boolean>`
-to the forced command. The host persists those values in one fixed Compose override; changing
-only runtime flags for the same digest backs up and checksum-verifies the prior state, recreates
-only `sub2api`, and restores the prior override and process flags if any gate fails.
-
-`reconcile-runtime` is a separate recovery operation for a container known to have been
-recreated from the base Compose file while the canonical override remained on disk. It requires
-the exact current Release, the `RECONCILE` confirmation, and the explicit canonical tuple. Set
-the typed `interrupt_business` input to `true` only when a controlled stop is required; the
-forced command then carries the exact `maintenance=interrupt` suffix. The host rejects any
-other drift before mutation, captures the non-Sub2 container snapshot, drains loopback
-connections and Redis-backed in-flight leases after the stop, and on failure recreates only
-`sub2api` from the verified prior base-only runtime.
-Because this operation does not pull or change the image, it records a fixed
-`SKIP|native-responses|reason=runtime-reconcile-same-image` marker instead of
-creating a temporary protocol-canary credential; health, tuple, snapshot, and
-observation gates remain mandatory.
+Scheduled discovery may identify newer official releases. It cannot deploy
+production. Each integration records its selected official commit, conflicts and
+retained downstream contracts before a new immutable release is published.

@@ -9,7 +9,7 @@
 
 ## Conflict inventory
 
-The three-way merge reported 54 content conflicts: 37 backend and 17 frontend. Every path was resolved and staged:
+The three-way merge reported 54 content conflicts: 37 backend and 17 frontend. Every path was resolved in the integration commit:
 
 ### Backend (37)
 
@@ -82,12 +82,56 @@ Downstream contracts retained are Cindy identity/catalog/health and production g
 
 Official quota semantics are selected. `238_opencode_go_platform.sql` and `238_purge_unlimited_user_platform_quotas.sql` remain independent alongside `238_cindy_account_stats_reset_at.sql`; the platform check includes both `cindy` and `opencode_go`, while Cindy is not reintroduced as a composite/monitor provider. The runner keys migrations by complete filename and lexicographically orders them, so the three `238_*` files do not collide.
 
-Production NULL-quota row count and post-deploy purge deletion count are **not yet measured** in this checkout; they must be captured by the deployment procedure before/after migration. No historical migration was renamed.
+The fixed read-only production audit on 2026-09-15 returned **82 total rows, all 82
+with three NULL limits**. The already applied MiniMax and Cindy checksums match
+both the integration tree and the original production baseline. The two official
+238 migrations are not yet applied. No historical migration was renamed or edited.
+
+| Migration, in execution order | SHA256 of trimmed SQL | Pre-deploy state |
+|---|---|---|
+| `237_add_minimax_platform.sql` | `259520a95b7ce0c6989fabb928e80fc4eae787fdae0cb82d04dee7f71f6d975a` | Applied, checksum matches |
+| `238_cindy_account_stats_reset_at.sql` | `15c06d93de465e6e115d235cf592e0de7da6f0dcfb493236b62427f086c6489c` | Applied, checksum matches |
+| `238_opencode_go_platform.sql` | `69e8b061418372f636e04b289d794ffd74d5fd2cd63b37e3226897ea32ff787b` | Pending |
+| `238_purge_unlimited_user_platform_quotas.sql` | `052756d1b1ac951f002034bf0434f8a6ea943ec0a2a34541ca4374ba6278cce7` | Pending |
+
+The runner uses `sort.Strings`, a filename primary key and SHA256 after
+`strings.TrimSpace`; it skips applied files only after verifying checksums.
+The official purge is idempotent because it deletes only three-NULL rows. Its
+production effect and post-deploy checksum verification remain pending.
+
+## Decisions by conflict group
+
+The path inventory above is exhaustive. Decisions apply to all listed paths in
+each group, including their accompanying tests and generated code.
+
+| Group | Final decision and preserved invariant |
+|---|---|
+| Schema, quota repository/admin, setup and API contracts | Official quota filtering, aggregation and reset; keep Cindy and OpenCode Go in the supported platform list; regenerate Ent/Wire from source. |
+| Account DTO, group/platform validation, scheduler cache/snapshots | Add official OpenCode taxonomy and routing while preserving Cindy identity, health, budget exclusions and production membership. |
+| Account test service and image test path | Official native OAuth Images and OpenCode protocol-specific endpoints; persisted test models and existing direct-image defaults remain. |
+| Gateway/model handlers, gateway routes and Grok media | Official catalog metadata and provider projection; enforce group membership for pinned accounts, preserve model-retrieve metadata, maintain Grok media ownership and release admission slots on every failure. |
+| OpenAI request/forward/response/usage and compatibility helpers | Official Lite declarations/history, system/agent restoration, usage and images; retain Cindy continuation, lineage and reasoning/refusal recovery. |
+| WebSocket ingress, scheduling and preemption | Official execution scope, pool and preemption behavior; Cindy session compatibility is retained without replaying a failed stale lease. |
+| Settings handlers, public settings and payload tests | Official site billing tri-state plus downstream switches; API-key reveal remains password-gated. |
+| Frontend platform/types, account usage/create/edit and account tests | OpenCode Zen/GO and Cindy display; official quota semantics and persisted account model selection. |
+| Router, sidebar, app store and feature flags | Site billing states respected; public model management stays retired; Image Studio and Responses image bridge remain off by default. |
+| Channels, settings and platform/whitelist tests | Official provider/catalog options and site settings with Cindy catalog/account boundaries. |
 
 ## Verification
 
-- **Passed:** `go test ./migrations ./internal/pkg/apicompat -count=1`; backend package compile (`go test ./internal/service ./internal/handler ./internal/repository ./internal/setup -run '^$'`); targeted account model tests; frontend type-check and targeted Vitest suites (see handoff).
-- **Passed:** `git diff --check`; no unresolved Git index conflicts.
-- **Not completed:** full service suite still has downstream behavioral failures in Cindy WS turn-state and direct-image account-test fixtures; these require runtime fixture follow-up.
-- **Not run:** production migration, image build/push, SSH deploy, post-deploy checks.
-- **Unverified:** target GHCR digest, production NULL-row counts, deployed health and model functionality.
+- **Passed locally:** migration/apicompat tests; backend compile; targeted quota,
+  OpenCode, namespace, native Images, Cindy WS/continuation/reasoning, catalog and
+  model-retrieve, bootstrap, request-body and Grok admission-release regressions.
+- **Passed locally:** Ent/Wire generation, frontend type-check and targeted
+  platform/account/sidebar/settings/feature-access suites; `git diff --check` and
+  no unmerged index entries or conflict markers.
+- **Passed for code commit `ebc1cd5db`:** CI lint, frontend, shell and security;
+  Downstream frontend. The three latest unit failures were corrected and their
+  affected packages passed targeted verification before this push.
+- **Not completed:** final required backend CI, release build/push, deployment,
+  post-deploy quota/health/digest/runtime checks. See [integration PR #167](https://github.com/HTExplicit/sub2api/pull/167)
+  for the authoritative required-check status.
+- **Not run:** additional local full/race suites, canaries, long observation and
+  real model calls. Existing required CI suites run under branch protection.
+- **Unverified:** target image digest and model functionality. Historical live
+  continuation/cache problems are not declared fixed by passing unit or health checks.
