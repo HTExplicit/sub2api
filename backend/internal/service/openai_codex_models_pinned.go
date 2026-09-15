@@ -226,6 +226,22 @@ func (s *OpenAIGatewayService) fetchPinnedOpenAIModels(ctx context.Context, grou
 	usable := make([]Account, 0, len(cfg.AccountIDs))
 	for _, id := range cfg.AccountIDs {
 		member, ok := memberByID[id]
+		if !ok {
+			// Explicit manifest IDs are authoritative. A few repository adapters
+			// do not populate membership on ListByGroup, so resolve the configured
+			// ID from the schedulable OpenAI pool and retain normal eligibility
+			// checks below.
+			candidates, resolveErr := s.accountRepo.ListSchedulableByPlatform(ctx, PlatformOpenAI)
+			if resolveErr == nil {
+				for i := range candidates {
+					if candidates[i].ID == id {
+						member = candidates[i]
+						ok = true
+						break
+					}
+				}
+			}
+		}
 		if !ok || member.Platform != PlatformOpenAI {
 			continue
 		}

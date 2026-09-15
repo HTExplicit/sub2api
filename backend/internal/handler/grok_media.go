@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
@@ -225,20 +226,16 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			scheduleDecision.Layer = "same_account_retry"
 
 		} else {
-			selection, scheduleDecision, err = h.gatewayService.SelectAccountWithSchedulerForCapability(
-				requestCtx,
-				apiKey.GroupID,
-				"",
-				sessionHash,
-				routingModel,
-				failedAccountIDs,
-				service.OpenAIUpstreamTransportHTTPSSE,
-				requiredCapability,
-				false,
-				false,
-				false,
-				service.PlatformGrok,
-			)
+			if boundLookupAccountID > 0 {
+				selection, scheduleDecision, err = h.gatewayService.SelectGrokMediaVideoRequestAccount(
+					requestCtx, apiKey.GroupID, service.GrokMediaVideoRequestSessionHash(requestID, subject.UserID, apiKey.ID), boundLookupAccountID, routingModel,
+				)
+			} else {
+				selection, scheduleDecision, err = h.gatewayService.SelectAccountWithSchedulerForCapability(
+					requestCtx, apiKey.GroupID, "", sessionHash, routingModel, failedAccountIDs,
+					service.OpenAIUpstreamTransportHTTPSSE, requiredCapability, false, false, false, service.PlatformGrok,
+				)
+			}
 		}
 		// Forwarding owns the selected account slot release.
 
@@ -293,7 +290,23 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			h.errorResponse(c, cls.Status, cls.ErrType, cls.Message)
 			return
 		}
+		// Scheduler selection acquires the account slot before the media
+		// eligibility probe. Release it on paths that exit before normal
+		// account-slot admission transfers ownership to forwarding.
+		var releaseSelectionOnce sync.Once
+		releaseSelection := func() {
+			releaseSelectionOnce.Do(func() {
+				if selection.HasOpenAIRuntimeBreakerProbe() {
+					h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
+				}
+				if selection.ReleaseFunc != nil {
+					selection.ReleaseFunc()
+					selection.ReleaseFunc = nil
+				}
+			})
+		}
 		if failoverClientGone(c) {
+			releaseSelection()
 			return
 		}
 		if boundLookupAccountID > 0 && selection.Account.ID != boundLookupAccountID {
@@ -301,6 +314,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 				zap.Int64("bound_account_id", boundLookupAccountID),
 				zap.Int64("selected_account_id", selection.Account.ID),
 			)
+			releaseSelection()
 			h.errorResponse(c, http.StatusNotFound, "not_found_error", "Video request not found")
 			return
 		}
@@ -316,9 +330,18 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 
 		account := selection.Account
 		if endpoint.IsGenerationRequest() {
+			probeDone := make(chan struct{})
+			go func() {
+				select {
+				case <-requestCtx.Done():
+					releaseSelection()
+				case <-probeDone:
+				}
+			}()
 			eligible, eligibilityReason, eligibilityErr := h.ensureGrokMediaAccountEligibility(requestCtx, account)
+			close(probeDone)
 			if !eligible {
-				releaseAccount()
+				releaseSelection()
 				mediaEligibilityRejected = true
 				failedAccountIDs[account.ID] = struct{}{}
 				reqLog.Warn("grok_media.account_eligibility_rejected",
@@ -336,12 +359,18 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			}
 		}
 		if failoverClientGone(c) {
+			releaseSelection()
 			return
 		}
-		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
+		// Video lookups are bound to the persisted task owner and must never
+		// refresh or overwrite the task's ownership binding while probing or
+		// forwarding the status request. Pool-mode retry hashes are therefore
+		// generated only for ordinary generation requests.
+		if boundLookupAccountID == 0 {
+			sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
+		}
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		var accountReleaseFunc func()
 		var slotResult openAISlotAcquireResult
 		admissionSessionHash := sessionHash
 		if boundLookupAccountID > 0 {
@@ -378,7 +407,6 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		writerSizeBeforeForward := c.Writer.Size()
 		result, err := func() (*service.OpenAIForwardResult, error) {
 			defer releaseAccount()
-			defer accountReleaseFunc()
 			return h.gatewayService.ForwardGrokMedia(requestCtx, c, account, endpoint, requestID, body, contentType)
 		}()
 

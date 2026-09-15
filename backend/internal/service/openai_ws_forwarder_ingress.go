@@ -1929,16 +1929,16 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					truncateOpenAIWSLogValue(sessionConnID, openAIWSIDValueMaxLen),
 					truncateOpenAIWSLogValue(pingErr.Error(), openAIWSLogValueMaxLen),
 				)
+				// A failed preflight ping means the pooled connection may have
+				// consumed or reordered state. Never replay the current turn on a
+				// replacement socket: close with a retryable status and let the
+				// client resubmit the request explicitly.
 				resetSessionLease(true)
-				acquiredLease, acquireErr := acquireTurnLease(turn, preferredConnID, forcePreferredConn, false)
-				if acquireErr != nil {
-					return fmt.Errorf("acquire upstream websocket after preflight ping fail: %w", acquireErr)
-				}
-				sessionLease = acquiredLease
-				sessionConnID = strings.TrimSpace(sessionLease.ConnID())
-				if storeDisabled {
-					pinSessionConn(sessionConnID)
-				}
+				return NewOpenAIWSClientCloseError(
+					coderws.StatusTryAgainLater,
+					openAIWSNonInitialTurnRetryCloseReason,
+					pingErr,
+				)
 			}
 		}
 		connID := sessionConnID

@@ -71,7 +71,10 @@ func RegisterGatewayRoutes(
 		dispatchCodexModelsGateway(c, h.OpenAIGateway.CodexModels, h.Gateway.CodexModels)
 	}
 	modelsHandler := func(c *gin.Context) {
-		if c.Query("client_version") != "" {
+		// A client_version query selects the Codex manifest for collection
+		// requests.  Single-model lookups must still flow through the regular
+		// catalogue handler so the returned object matches the visible list.
+		if c.Param("model") == "" && c.Query("client_version") != "" {
 			codexModelsHandler(c)
 			return
 		}

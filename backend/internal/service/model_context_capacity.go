@@ -128,7 +128,18 @@ func CanManageModelContextCapacity(account *Account) bool {
 // evidence when compatible with that planning context. They are never filled
 // from the default, clamped or synthesized from the context window.
 func ResolveModelContextCapacity(custom *int64, official *OfficialModelContextCapacity, upstream *ModelContextCapacity) ResolvedModelContextCapacity {
-	result := resolveModelContextPlanningWindow(custom, official, upstream)
+	// When the live upstream observation exactly matches the pinned product
+	// reference carried by an official record, preserve that observation as the
+	// planning source. The official entry still contributes independent limits
+	// (for example max output), while its normalized window must not overwrite
+	// the provider's explicit contract.
+	planningOfficial := official
+	if official != nil && official.Reference != nil && upstream != nil &&
+		((official.Reference.ContextWindow <= 0 || upstream.ContextWindow == official.Reference.ContextWindow) &&
+			(official.Reference.MaxContextWindow <= 0 || upstream.MaxContextWindow == 0 || upstream.MaxContextWindow == official.Reference.MaxContextWindow)) {
+		planningOfficial = nil
+	}
+	result := resolveModelContextPlanningWindow(custom, planningOfficial, upstream)
 	var officialLimits, upstreamLimits ModelContextCapacity
 	if official != nil {
 		officialLimits = official.ModelContextCapacity

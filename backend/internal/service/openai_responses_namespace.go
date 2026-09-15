@@ -98,7 +98,11 @@ func shouldKeepOpenAIResponsesToolCallNamespaces(
 		if len(body) == 0 {
 			return false
 		}
-		return hasOpenAIResponsesNamespaceToolDeclaration(body[0])
+		// Preserve declarations and any namespace-qualified historical calls.
+		// A continuation may omit tools entirely, so the latter cannot be
+		// inferred from the current declaration set alone.
+		return hasOpenAIResponsesNamespaceToolDeclaration(body[0]) ||
+			hasOpenAIResponsesToolCallNamespace(body[0])
 	}
 	if !account.IsOpenAIOAuthLike() {
 		return false
@@ -106,9 +110,31 @@ func shouldKeepOpenAIResponsesToolCallNamespaces(
 	return !shouldFlattenOpenAIResponsesNamespaces(account, transport, passthroughEnabled, compactPath)
 }
 
-// openAIResponsesToolCallItemTypes 与反应式调用项清理白名单保持一致。
-// 具名独立 function_call_output 不是调用项，其 namespace 使用单独的原生 API
-// 保真边界，不能因此扩大 OAuth/Compact 的历史兼容行为。
+// hasOpenAIResponsesToolCallNamespace reports whether input history contains a
+// namespace-qualified tool call. API-key Responses upstreams may require the
+// field on replay even when the follow-up request omits its tool declarations.
+func hasOpenAIResponsesToolCallNamespace(body []byte) bool {
+	input := gjson.GetBytes(body, "input")
+	if !input.IsArray() {
+		return false
+	}
+	found := false
+	input.ForEach(func(_, item gjson.Result) bool {
+		if !isOpenAIResponsesToolCallItemType(item.Get("type").String()) {
+			return true
+		}
+		if item.Get("namespace").Exists() {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
+}
+
+// hasOpenAIResponsesNamespaceToolDeclaration reports whether a request carries
+// a namespace declaration in top-level tools or Responses Lite's
+// input.additional_tools carrier.
 func hasOpenAIResponsesNamespaceToolDeclaration(body []byte) bool {
 	hasNamespaceTool := func(tools gjson.Result) bool {
 		if !tools.IsArray() {
@@ -129,10 +155,6 @@ func hasOpenAIResponsesNamespaceToolDeclaration(body []byte) bool {
 		return true
 	}
 
-	// Responses Lite moves private namespace declarations out of top-level
-	// tools and into an input.additional_tools carrier. API-key requests are
-	// intentionally not rewritten by normalizeOpenAIResponsesLiteTools, so the
-	// declaration can arrive here only in this form.
 	input := gjson.GetBytes(body, "input")
 	if !input.IsArray() {
 		return false

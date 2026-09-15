@@ -256,7 +256,7 @@ func resolveOpenAIMessagesDispatchMappedModel(c *gin.Context, apiKey *service.AP
 	// 默认值是 openai 专属,发给这些上游必错）,模型改写交给账号级 model_mapping。
 	if apiKey.Group.Platform == service.PlatformComposite && c != nil && c.Request != nil {
 		if platform, ok := service.ResolvedTargetPlatformFromContext(c.Request.Context()); ok &&
-			(platform == service.PlatformGrok || service.IsCNProvider(platform)) {
+			(platform == service.PlatformGrok || service.IsCNProvider(platform) || service.IsOpenCodeGo(platform)) {
 			return ""
 		}
 	}
@@ -370,7 +370,7 @@ func allowOpenAICompatibleMessagesDispatch(c *gin.Context, apiKey *service.APIKe
 	// 协议账号原生直通 Claude Code),无需 allow_messages_dispatch 开关授权——
 	// 该开关对非 openai 平台恒被 sanitizeGroupMessagesDispatchFields 置 false,
 	// 若不豁免,CN 分组将永远 403。
-	if service.IsCNProvider(apiKey.Group.Platform) {
+	if service.IsCNProvider(apiKey.Group.Platform) || service.IsOpenCodeGo(apiKey.Group.Platform) {
 		return true
 	}
 	// composite 分组解析到 grok/CN 目标时与对应独立分组同语义豁免：sanitize
@@ -378,7 +378,7 @@ func allowOpenAICompatibleMessagesDispatch(c *gin.Context, apiKey *service.APIKe
 	// 解析到 openai 目标仍受开关控制,维持现状。
 	if apiKey.Group.Platform == service.PlatformComposite && c != nil && c.Request != nil {
 		if platform, ok := service.ResolvedTargetPlatformFromContext(c.Request.Context()); ok &&
-			(platform == service.PlatformGrok || service.IsCNProvider(platform)) {
+			(platform == service.PlatformGrok || service.IsCNProvider(platform) || service.IsOpenCodeGo(platform)) {
 			return true
 		}
 	}
@@ -2077,11 +2077,13 @@ func normalizeCodexCallOutputBootstrap(body []byte, isCandidate func(map[string]
 	if err := decoder.Decode(&request); err != nil {
 		return body, false
 	}
+	previousResponseIDValue := ""
 	if previousResponseID, exists := request["previous_response_id"]; exists {
 		value, ok := previousResponseID.(string)
 		if !ok || (!allowHistoricalContext && strings.TrimSpace(value) != "") {
 			return body, false
 		}
+		previousResponseIDValue = strings.TrimSpace(value)
 	}
 	input, ok := request["input"].([]any)
 	if !ok {
@@ -2092,6 +2094,7 @@ func normalizeCodexCallOutputBootstrap(body []byte, isCandidate func(map[string]
 	// so classify by the wire type shape instead of maintaining an incomplete
 	// allowlist. Standalone client inputs may coexist with historical anchors
 	// only when their IDs make them unambiguous.
+	hasHistoricalContext := false
 	for _, raw := range input {
 		item, ok := raw.(map[string]any)
 		if !ok {
@@ -2106,6 +2109,7 @@ func normalizeCodexCallOutputBootstrap(body []byte, isCandidate func(map[string]
 			}
 			continue
 		}
+		hasHistoricalContext = true
 		if typ == "item_reference" {
 			if allowHistoricalContext && strings.TrimSpace(stringField(item, "id")) != "" {
 				continue
@@ -2121,6 +2125,13 @@ func normalizeCodexCallOutputBootstrap(body []byte, isCandidate func(map[string]
 			}
 			return body, false
 		}
+	}
+	// A previous_response_id alone does not establish a safe historical boundary
+	// for a standalone automation heartbeat. Require at least one other input
+	// item before permitting normalization; full conversation replays retain the
+	// identifier and continue through this path.
+	if previousResponseIDValue != "" && !hasHistoricalContext {
+		return body, false
 	}
 
 	changed := false
