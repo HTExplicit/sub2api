@@ -9,7 +9,7 @@
           {{ jobLabel }}
         </span>
         <span
-          class="max-w-full break-words rounded px-1.5 py-0.5 text-[10px] font-medium leading-4"
+          class="max-w-full break-words rounded-none px-1.5 py-0.5 text-[10px] font-medium leading-4"
           :class="outcomeClass"
           data-test="cindy-probe-summary-outcome"
         >

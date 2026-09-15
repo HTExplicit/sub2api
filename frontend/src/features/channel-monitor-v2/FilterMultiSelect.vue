@@ -10,7 +10,7 @@
       class="select-trigger flex cursor-pointer list-none items-center justify-between gap-1.5 text-left"
       :class="[
         isOpen ? 'select-trigger-open' : '',
-        compact ? 'h-8 rounded-lg !px-2 !py-1 text-xs' : 'h-[42px]',
+        compact ? 'h-8 rounded-none !px-2 !py-1 text-xs' : 'h-[42px]',
       ]"
       :aria-expanded="isOpen"
       aria-haspopup="listbox"
@@ -62,7 +62,7 @@
           >
             <span class="flex min-w-0 flex-1 items-center gap-2">
               <span
-                class="checkbox flex h-4 w-4 items-center justify-center rounded border border-gray-300 bg-white text-primary-500 dark:border-dark-600 dark:bg-dark-900"
+                class="checkbox flex h-4 w-4 items-center justify-center rounded-none border border-gray-300 bg-white text-primary-500 dark:border-dark-600 dark:bg-dark-900"
                 :class="modelValue.includes(option.value) ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30' : ''"
               >
                 <Icon v-if="modelValue.includes(option.value)" name="check" size="sm" class="text-primary-500" />
@@ -233,7 +233,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .select-trigger {
   @apply flex w-full items-center justify-between gap-2;
-  @apply rounded-xl px-4 py-2.5 text-sm;
+  @apply rounded-none px-4 py-2.5 text-sm;
   @apply bg-white dark:bg-dark-800;
   @apply border border-gray-200 dark:border-dark-600;
   @apply text-gray-900 dark:text-gray-100;
@@ -252,7 +252,7 @@ onBeforeUnmount(() => {
 }
 
 .filter-dropdown {
-  @apply w-max min-w-[200px] max-h-[min(50vh,360px)] overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg dark:border-dark-600 dark:bg-dark-800;
+  @apply w-max min-w-[200px] max-h-[min(50vh,360px)] overflow-y-auto rounded-none border border-gray-200 bg-white shadow-outline dark:border-dark-600 dark:bg-dark-800;
 }
 
 .dropdown-item {

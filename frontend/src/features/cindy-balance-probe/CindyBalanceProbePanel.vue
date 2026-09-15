@@ -1,12 +1,12 @@
 <template>
-  <section class="mb-4 overflow-hidden rounded-md border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-800" data-test="cindy-probe-panel">
+  <section class="mb-4 overflow-hidden rounded-none border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-800" data-test="cindy-probe-panel">
     <header class="flex flex-wrap items-start justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-dark-700">
       <div>
         <h2 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.accounts.cindyProbe.title') }}</h2>
         <p class="mt-1 text-xs text-gray-500 dark:text-dark-300">{{ t('admin.accounts.cindyProbe.description') }}</p>
       </div>
       <div class="flex items-center gap-2">
-        <span v-if="activeJob && !expanded" class="rounded px-2 py-1 text-xs font-medium" :class="jobStatusClass(activeJob.status)">
+        <span v-if="activeJob && !expanded" class="rounded-none px-2 py-1 text-xs font-medium" :class="jobStatusClass(activeJob.status)">
           {{ jobStatusLabel(activeJob.status) }}
         </span>
         <button type="button" class="icon-button" :title="t('common.refresh')" :disabled="loading.jobs" @click="loadJobs">
@@ -22,12 +22,12 @@
       <div class="min-w-0 space-y-4">
         <div>
           <div class="mb-2 text-xs font-medium text-gray-600 dark:text-dark-300">{{ t('admin.accounts.cindyProbe.scope') }}</div>
-          <div class="grid grid-cols-3 rounded-md bg-gray-100 p-1 dark:bg-dark-900" role="group">
+          <div class="grid grid-cols-3 rounded-none bg-gray-100 p-1 dark:bg-dark-900" role="group">
             <button
               v-for="option in scopeOptions"
               :key="option.value"
               type="button"
-              class="min-h-9 rounded px-2 text-xs font-medium transition-colors"
+              class="min-h-9 rounded-none px-2 text-xs font-medium transition-colors"
               :class="scopeMode === option.value ? activeSegmentClass : inactiveSegmentClass"
               :disabled="loading.preview || loading.create"
               :data-test="`cindy-probe-scope-${option.value}`"
@@ -73,7 +73,7 @@
           {{ loading.preview ? t('admin.accounts.cindyProbe.previewing') : t('admin.accounts.cindyProbe.preview') }}
         </button>
 
-        <div v-if="preview" class="rounded-md border border-primary-200 bg-primary-50/60 p-3 dark:border-primary-800/60 dark:bg-primary-900/10" data-test="cindy-probe-preview-result">
+        <div v-if="preview" class="rounded-none border border-primary-200 bg-primary-50/60 p-3 dark:border-primary-800/60 dark:bg-primary-900/10" data-test="cindy-probe-preview-result">
           <div class="grid grid-cols-3 gap-2 text-center">
             <div v-for="metric in previewMetrics" :key="metric.label" class="min-w-0">
               <div class="text-base font-semibold tabular-nums text-gray-900 dark:text-white">{{ metric.value }}</div>
@@ -114,7 +114,7 @@
               </option>
             </select>
           </div>
-          <span v-if="activeJob" class="rounded px-2 py-1 text-xs font-medium" :class="jobStatusClass(activeJob.status)" data-test="cindy-probe-job-status">
+          <span v-if="activeJob" class="rounded-none px-2 py-1 text-xs font-medium" :class="jobStatusClass(activeJob.status)" data-test="cindy-probe-job-status">
             {{ jobStatusLabel(activeJob.status) }}
           </span>
         </div>
@@ -125,13 +125,13 @@
               <span>{{ t('admin.accounts.cindyProbe.progress') }}</span>
               <span class="tabular-nums">{{ completedCount }} / {{ activeJob.candidate_count }}</span>
             </div>
-            <div class="h-2 overflow-hidden rounded bg-gray-100 dark:bg-dark-900">
+            <div class="h-2 overflow-hidden rounded-none bg-gray-100 dark:bg-dark-900">
               <div class="h-full bg-primary-500 transition-[width]" :style="{ width: `${progressPercent}%` }" />
             </div>
           </div>
 
           <div class="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7" data-test="cindy-probe-counts">
-            <div v-for="metric in jobCountMetrics" :key="metric.key" class="rounded border border-gray-200 px-2 py-2 text-center dark:border-dark-700">
+            <div v-for="metric in jobCountMetrics" :key="metric.key" class="rounded-none border border-gray-200 px-2 py-2 text-center dark:border-dark-700">
               <div class="text-sm font-semibold tabular-nums text-gray-900 dark:text-white">{{ metric.value }}</div>
               <div class="mt-0.5 truncate text-[11px] text-gray-500 dark:text-dark-300">{{ metric.label }}</div>
             </div>
@@ -164,7 +164,7 @@
                 <option v-for="state in itemStateOptions" :key="state" :value="state">{{ itemStateLabel(state) }}</option>
               </select>
             </div>
-            <div class="overflow-x-auto rounded-md border border-gray-200 dark:border-dark-700">
+            <div class="overflow-x-auto rounded-none border border-gray-200 dark:border-dark-700">
               <table class="min-w-full divide-y divide-gray-200 text-xs dark:divide-dark-700">
                 <thead class="bg-gray-50 text-left text-gray-500 dark:bg-dark-900 dark:text-dark-300">
                   <tr>
@@ -206,7 +206,7 @@
           </div>
         </div>
 
-        <div v-else class="mt-4 rounded-md border border-dashed border-gray-200 px-4 py-8 text-center text-sm text-gray-400 dark:border-dark-700">
+        <div v-else class="mt-4 rounded-none border border-dashed border-gray-200 px-4 py-8 text-center text-sm text-gray-400 dark:border-dark-700">
           {{ loading.jobs ? t('common.loading') : t('admin.accounts.cindyProbe.noJobs') }}
         </div>
       </div>
@@ -269,7 +269,7 @@ let pollTimer: ReturnType<typeof setInterval> | null = null
 let itemsRequestSequence = 0
 let itemsLoadQueued = false
 
-const activeSegmentClass = 'bg-white text-gray-950 shadow-sm dark:bg-dark-700 dark:text-white'
+const activeSegmentClass = 'bg-white text-gray-950 shadow-outline dark:bg-dark-700 dark:text-white'
 const inactiveSegmentClass = 'text-gray-500 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'
 const scopeOptions = computed(() => [
   { value: 'all' as const, label: t('admin.accounts.cindyProbe.scopeAll') },

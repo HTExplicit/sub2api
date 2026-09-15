@@ -8,7 +8,7 @@
                   :subscription-expires-at="String(account.credentials?.subscription_expires_at || account.parent_subscription_expires_at || '')" />
                 <span
                   v-if="getAntigravityTierLabel(account)"
-                  :class="['inline-block rounded px-1.5 py-0.5 text-[10px] font-medium', getAntigravityTierClass(account)]"
+                  :class="['inline-block rounded-none px-1.5 py-0.5 text-[10px] font-medium', getAntigravityTierClass(account)]"
                 >
                   {{ getAntigravityTierLabel(account) }}
                 </span>

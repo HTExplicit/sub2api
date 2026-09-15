@@ -37,3 +37,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## MiSans
+
+The frontend includes original MiSans Web fonts by Xiaomi, from the [official MiSans distribution](https://hyperos.mi.com/font/zh/). The fonts are distributed under the MiSans Font Intellectual Property License, included at `frontend/public/fonts/misans/MiSans-Font-Intellectual-Property-License.pdf`. Source and checksums are in `frontend/public/fonts/misans/NOTICE.md`. The font files are unmodified.

@@ -8,21 +8,21 @@
     <div v-if="account" class="space-y-4">
       <!-- Account Info -->
       <div
-        class="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-dark-600 dark:bg-dark-700"
+        class="rounded-none border border-gray-200 bg-gray-50 p-4 dark:border-dark-600 dark:bg-dark-700"
       >
         <div class="flex items-center gap-3">
           <div
             :class="[
-              'flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br',
+              'flex h-10 w-10 items-center justify-center rounded-none ',
               isOpenAILike
-                ? 'from-green-500 to-green-600'
+                ? 'bg-green-500 '
                 : isGemini
-                  ? 'from-blue-500 to-blue-600'
+                  ? 'bg-blue-500 '
                   : isAntigravity
-                    ? 'from-purple-500 to-purple-600'
+                    ? 'bg-purple-500 '
                     : isGrok
-                      ? 'from-zinc-700 to-zinc-900'
-                      : 'from-orange-500 to-orange-600'
+                      ? 'bg-zinc-700 '
+                      : 'bg-orange-500 '
             ]"
           >
             <Icon name="sparkles" size="md" class="text-white" />
@@ -78,14 +78,14 @@
       </fieldset>
 
       <!-- Gemini OAuth Type Display (read-only) -->
-      <div v-if="isGemini" class="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-dark-600 dark:bg-dark-700">
+      <div v-if="isGemini" class="rounded-none border border-gray-200 bg-gray-50 p-4 dark:border-dark-600 dark:bg-dark-700">
         <div class="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
           {{ t('admin.accounts.oauth.gemini.oauthTypeLabel') }}
         </div>
         <div class="flex items-center gap-3">
           <div
             :class="[
-              'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
+              'flex h-8 w-8 shrink-0 items-center justify-center rounded-none',
               geminiOAuthType === 'google_one'
                 ? 'bg-purple-500 text-white'
                 : geminiOAuthType === 'code_assist'

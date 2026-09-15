@@ -4,7 +4,7 @@
     class="mb-0.5 flex items-center gap-1.5 text-[9px] text-red-600 dark:text-red-400"
     :title="title"
   >
-    <span class="rounded bg-red-50 px-1.5 py-0.5 font-medium dark:bg-red-950/40">
+    <span class="rounded-none bg-red-50 px-1.5 py-0.5 font-medium dark:bg-red-950/40">
       {{ t('usage.overdraftActive') }}
     </span>
     <span v-if="stats" class="text-gray-500 dark:text-gray-400">

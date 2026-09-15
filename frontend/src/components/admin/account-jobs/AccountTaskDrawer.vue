@@ -11,7 +11,7 @@
         role="dialog"
         aria-modal="true"
         :aria-label="t('admin.accountTasks.drawerTitle')"
-        class="relative flex h-full w-full max-w-md flex-col border-l border-gray-200 bg-white shadow-xl dark:border-dark-700 dark:bg-dark-900"
+        class="relative flex h-full w-full max-w-md flex-col border-l border-gray-200 bg-white shadow-outline dark:border-dark-700 dark:bg-dark-900"
       >
         <header class="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-dark-700">
           <div class="min-w-0">
@@ -43,7 +43,7 @@
               v-for="job in store.recentJobs.slice(0, 8)"
               :key="job.id"
               type="button"
-              class="w-full rounded-md border px-3 py-2 text-left transition-colors"
+              class="w-full rounded-none border px-3 py-2 text-left transition-colors"
               :class="store.currentJob?.id === job.id
                 ? 'border-primary-400 bg-primary-50 dark:border-primary-600 dark:bg-primary-900/20'
                 : 'border-gray-200 hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-800'"
@@ -125,7 +125,7 @@
               </button>
             </div>
 
-            <div v-if="duplicateReview" class="mt-5 rounded-md border border-gray-200 p-3 dark:border-dark-700">
+            <div v-if="duplicateReview" class="mt-5 rounded-none border border-gray-200 p-3 dark:border-dark-700">
               <h4 class="text-sm font-semibold text-gray-900 dark:text-white">
                 {{ t('admin.accountTasks.duplicate.title') }}
               </h4>
@@ -136,7 +136,7 @@
                 <label
                   v-for="account in duplicateReview.accounts"
                   :key="account.account_id"
-                  class="flex cursor-pointer items-start gap-3 rounded-md border border-gray-200 p-3 dark:border-dark-700"
+                  class="flex cursor-pointer items-start gap-3 rounded-none border border-gray-200 p-3 dark:border-dark-700"
                 >
                   <input
                     v-model="survivorID"
@@ -174,7 +174,7 @@
               <h4 class="mb-2 text-sm font-semibold text-gray-900 dark:text-white">
                 {{ t('admin.accountTasks.results') }}
               </h4>
-              <div class="divide-y divide-gray-100 rounded-md border border-gray-200 dark:divide-dark-700 dark:border-dark-700">
+              <div class="divide-y divide-gray-100 rounded-none border border-gray-200 dark:divide-dark-700 dark:border-dark-700">
                 <div v-for="item in store.items" :key="item.id" class="px-3 py-2 text-xs">
                   <div class="flex items-center justify-between gap-2">
                     <span class="text-gray-700 dark:text-dark-200">{{ itemLabel(item) }}</span>

@@ -7,14 +7,14 @@
     @close="emit('close')"
   >
     <div class="space-y-5">
-      <div class="rounded-md border border-primary-200 bg-primary-50 px-3 py-2 text-sm text-primary-900 dark:border-primary-800 dark:bg-primary-900/20 dark:text-primary-100">
+      <div class="rounded-none border border-primary-200 bg-primary-50 px-3 py-2 text-sm text-primary-900 dark:border-primary-800 dark:bg-primary-900/20 dark:text-primary-100">
         <p class="font-medium">{{ targetLabel }}</p>
         <p class="mt-1 text-xs opacity-80">{{ operationSummary }}</p>
       </div>
 
       <fieldset class="space-y-2">
         <legend class="text-sm font-semibold text-gray-800 dark:text-gray-100">{{ t('admin.accounts.folder') }}</legend>
-        <label v-for="option in folderOptions" :key="option.value" class="flex min-h-11 cursor-pointer items-center gap-3 rounded-md border border-gray-200 px-3 text-sm dark:border-dark-700">
+        <label v-for="option in folderOptions" :key="option.value" class="flex min-h-11 cursor-pointer items-center gap-3 rounded-none border border-gray-200 px-3 text-sm dark:border-dark-700">
           <input v-model="folderAction" type="radio" :value="option.value" :data-test="`bulk-taxonomy-folder-${option.value || 'keep'}`" class="h-4 w-4 text-primary-600 focus:ring-primary-500" />
           <span>{{ option.label }}</span>
         </label>
@@ -27,20 +27,20 @@
       <div>
         <h3 class="mb-2 text-sm font-semibold text-gray-800 dark:text-gray-100">{{ t('admin.accounts.tags') }}</h3>
         <p class="mb-3 text-xs text-gray-500 dark:text-dark-300">{{ t('admin.accounts.bulkTaxonomy.tagsHint') }}</p>
-        <div v-if="tags.length" class="overflow-hidden rounded-md border border-gray-200 dark:border-dark-700">
+        <div v-if="tags.length" class="overflow-hidden rounded-none border border-gray-200 dark:border-dark-700">
           <div v-for="tag in tags" :key="tag.id" class="grid min-h-11 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 border-b border-gray-100 px-3 last:border-b-0 dark:border-dark-700">
             <span class="truncate text-sm text-gray-800 dark:text-gray-100">{{ tag.name }}</span>
             <label class="flex min-h-11 cursor-pointer items-center gap-2 text-xs text-emerald-700 dark:text-emerald-300">
-              <input :checked="tagAddIDs.includes(tag.id)" type="checkbox" :data-test="`bulk-taxonomy-tag-add-${tag.id}`" class="h-4 w-4 rounded text-emerald-600" @change="toggleTag('add', tag.id)" />
+              <input :checked="tagAddIDs.includes(tag.id)" type="checkbox" :data-test="`bulk-taxonomy-tag-add-${tag.id}`" class="h-4 w-4 rounded-none text-emerald-600" @change="toggleTag('add', tag.id)" />
               <span>{{ t('admin.accounts.bulkTaxonomy.addTag') }}</span>
             </label>
             <label class="flex min-h-11 cursor-pointer items-center gap-2 text-xs text-red-600 dark:text-red-300">
-              <input :checked="tagRemoveIDs.includes(tag.id)" type="checkbox" :data-test="`bulk-taxonomy-tag-remove-${tag.id}`" class="h-4 w-4 rounded text-red-600" @change="toggleTag('remove', tag.id)" />
+              <input :checked="tagRemoveIDs.includes(tag.id)" type="checkbox" :data-test="`bulk-taxonomy-tag-remove-${tag.id}`" class="h-4 w-4 rounded-none text-red-600" @change="toggleTag('remove', tag.id)" />
               <span>{{ t('admin.accounts.bulkTaxonomy.removeTag') }}</span>
             </label>
           </div>
         </div>
-        <p v-else class="rounded-md border border-dashed border-gray-200 px-3 py-6 text-center text-sm text-gray-400 dark:border-dark-700">{{ t('admin.accounts.noTags') }}</p>
+        <p v-else class="rounded-none border border-dashed border-gray-200 px-3 py-6 text-center text-sm text-gray-400 dark:border-dark-700">{{ t('admin.accounts.noTags') }}</p>
       </div>
     </div>
 

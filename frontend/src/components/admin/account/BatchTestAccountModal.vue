@@ -4,7 +4,7 @@
       <p class="mb-4 text-sm text-gray-600 dark:text-gray-300">{{ t('admin.accounts.batchTest.description', { count: rows.length }) }}</p>
       <p v-if="applicationResult" class="mb-3 text-sm text-blue-600" role="status">{{ applicationResult }}</p>
       <div class="space-y-3">
-        <div v-for="row in visibleRows" :key="row.account_id" :data-account-id="row.account_id" class="rounded-lg border border-gray-200 p-3 dark:border-dark-600">
+        <div v-for="row in visibleRows" :key="row.account_id" :data-account-id="row.account_id" class="rounded-none border border-gray-200 p-3 dark:border-dark-600">
           <div class="mb-2 flex items-center justify-between gap-3">
             <span class="min-w-0 truncate font-medium">{{ row.name || `#${row.account_id}` }} <span class="text-xs text-gray-500">{{ row.platform }}</span></span>
             <button type="button" class="btn btn-secondary" :disabled="busy" @click="remove(row.account_id)">{{ t('admin.accounts.batchTest.remove') }}</button>

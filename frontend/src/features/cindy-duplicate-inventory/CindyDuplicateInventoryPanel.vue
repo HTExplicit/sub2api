@@ -1,5 +1,5 @@
 <template>
-  <section class="min-w-0 rounded-lg border border-gray-200 bg-white p-3 dark:border-dark-700 dark:bg-dark-800" data-testid="cindy-duplicate-inventory">
+  <section class="min-w-0 rounded-none border border-gray-200 bg-white p-3 dark:border-dark-700 dark:bg-dark-800" data-testid="cindy-duplicate-inventory">
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div class="min-w-0">
         <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.accounts.cindy.duplicateTitle') }}</h3>
@@ -17,7 +17,7 @@
       <article
         v-for="cluster in inventory"
         :key="cluster.identity_hash"
-        class="min-w-0 rounded-md border border-gray-100 bg-gray-50 px-3 py-2 text-xs dark:border-dark-700 dark:bg-dark-900"
+        class="min-w-0 rounded-none border border-gray-100 bg-gray-50 px-3 py-2 text-xs dark:border-dark-700 dark:bg-dark-900"
       >
         <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
           <span class="font-mono text-gray-500 dark:text-dark-300">{{ shortHash(cluster.identity_hash) }}</span>

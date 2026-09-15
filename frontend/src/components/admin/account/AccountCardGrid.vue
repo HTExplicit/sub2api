@@ -1,7 +1,7 @@
 <template>
   <div data-test="account-card-grid" class="min-h-0 overflow-y-auto p-0.5">
     <div v-if="loading" class="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-      <div v-for="index in 6" :key="index" class="h-52 animate-pulse rounded-md border border-gray-200 bg-gray-50 dark:border-dark-700 dark:bg-dark-800" />
+      <div v-for="index in 6" :key="index" class="h-52 animate-pulse rounded-none border border-gray-200 bg-gray-50 dark:border-dark-700 dark:bg-dark-800" />
     </div>
     <div v-else-if="accounts.length === 0" class="flex min-h-52 flex-col items-center justify-center text-gray-400">
       <Icon name="inbox" size="xl" />
@@ -11,7 +11,7 @@
       <article
         v-for="account in accounts"
         :key="account.id"
-        class="cursor-pointer rounded-md border bg-white p-4 transition-colors hover:border-gray-300 hover:bg-gray-50/60 dark:bg-dark-900 dark:hover:border-dark-500 dark:hover:bg-dark-800/70"
+        class="cursor-pointer rounded-none border bg-white p-4 transition-colors hover:border-gray-300 hover:bg-gray-50/60 dark:bg-dark-900 dark:hover:border-dark-500 dark:hover:bg-dark-800"
         :class="selectedSet.has(account.id) ? 'border-primary-300 ring-1 ring-primary-200 dark:border-primary-700 dark:ring-primary-900' : 'border-gray-200 dark:border-dark-700'"
         @click="emit('rowClick', account)"
       >
@@ -67,7 +67,7 @@
               {{ account.management_folder?.name || t('admin.accounts.folderUncategorized') }}
             </div>
             <div class="mt-1 flex min-h-5 flex-wrap gap-1">
-              <span v-for="tag in account.tags || []" :key="tag.id" class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-600 dark:bg-dark-700 dark:text-gray-300">
+              <span v-for="tag in account.tags || []" :key="tag.id" class="rounded-none bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-600 dark:bg-dark-700 dark:text-gray-300">
                 {{ tag.name }}
               </span>
               <span v-if="!(account.tags || []).length" class="text-xs text-gray-400">-</span>

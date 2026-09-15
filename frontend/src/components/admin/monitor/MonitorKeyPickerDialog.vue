@@ -28,7 +28,7 @@
       <div v-else-if="filteredKeys.length === 0" class="py-6 text-center text-sm text-gray-500">
         {{ t('admin.channelMonitor.form.noActiveKey') }}
       </div>
-      <div v-else class="max-h-96 overflow-auto rounded-lg border border-gray-200 dark:border-dark-600">
+      <div v-else class="max-h-96 overflow-auto rounded-none border border-gray-200 dark:border-dark-600">
         <table class="w-full text-sm">
           <thead class="bg-gray-50 dark:bg-dark-800 sticky top-0 z-10">
             <tr class="text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">

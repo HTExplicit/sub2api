@@ -12,7 +12,7 @@
       <div v-for="menu in menus" :key="menu.key" class="relative">
         <button
           type="button"
-          class="inline-flex h-9 items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-700 transition-colors hover:border-gray-400 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500/30 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-200 dark:hover:bg-dark-700"
+          class="inline-flex h-9 items-center gap-1.5 rounded-none border border-gray-300 bg-white px-3 text-sm text-gray-700 transition-colors hover:border-gray-400 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500/30 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-200 dark:hover:bg-dark-700"
           :aria-expanded="openMenu === menu.key"
           :data-test="`account-filter-${menu.key}`"
           @click.stop="toggleMenu(menu.key)"
@@ -20,7 +20,7 @@
           <span>{{ menu.label }}</span>
           <span
             v-if="selectedValues(menu.key).length"
-            class="min-w-5 rounded-full bg-primary-100 px-1.5 text-center text-xs font-semibold text-primary-700 dark:bg-primary-900/40 dark:text-primary-300"
+            class="min-w-5 rounded-none bg-primary-100 px-1.5 text-center text-xs font-semibold text-primary-700 dark:bg-primary-900/40 dark:text-primary-300"
           >
             {{ selectedValues(menu.key).length }}
           </span>
@@ -29,18 +29,18 @@
 
         <div
           v-if="openMenu === menu.key"
-          class="absolute left-0 z-50 mt-1 w-64 overflow-hidden rounded-md border border-gray-200 bg-white shadow-lg dark:border-dark-700 dark:bg-dark-800"
+          class="absolute left-0 z-50 mt-1 w-64 overflow-hidden rounded-none border border-gray-200 bg-white shadow-outline dark:border-dark-700 dark:bg-dark-800"
           @click.stop
         >
           <div class="max-h-72 overflow-y-auto p-1.5">
             <label
               v-for="option in menu.options"
               :key="String(option.value)"
-              class="flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700"
+              class="flex cursor-pointer items-center gap-2 rounded-none px-2.5 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700"
             >
               <input
                 type="checkbox"
-                class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                class="h-4 w-4 rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
                 :checked="selectedValues(menu.key).includes(String(option.value))"
                 @change="toggleOption(menu.key, String(option.value))"
               />
@@ -54,7 +54,7 @@
           <div v-if="selectedValues(menu.key).length" class="border-t border-gray-100 p-1.5 dark:border-dark-700">
             <button
               type="button"
-              class="w-full rounded px-2.5 py-1.5 text-left text-xs font-medium text-gray-500 hover:bg-gray-100 dark:text-dark-300 dark:hover:bg-dark-700"
+              class="w-full rounded-none px-2.5 py-1.5 text-left text-xs font-medium text-gray-500 hover:bg-gray-100 dark:text-dark-300 dark:hover:bg-dark-700"
               @click="clearMenu(menu.key)"
             >
               {{ t('common.clear') }}
@@ -80,7 +80,7 @@
         v-for="chip in activeChips"
         :key="chip.key"
         type="button"
-        class="inline-flex max-w-full items-center gap-1 rounded bg-gray-100 px-2 py-1 text-xs text-gray-700 hover:bg-gray-200 dark:bg-dark-700 dark:text-gray-200 dark:hover:bg-dark-600"
+        class="inline-flex max-w-full items-center gap-1 rounded-none bg-gray-100 px-2 py-1 text-xs text-gray-700 hover:bg-gray-200 dark:bg-dark-700 dark:text-gray-200 dark:hover:bg-dark-600"
         :title="chip.label"
         :data-test="`account-filter-chip-${chip.key}`"
         @click="removeChip(chip)"

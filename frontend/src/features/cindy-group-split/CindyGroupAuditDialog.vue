@@ -28,7 +28,7 @@
         <div
           v-for="metric in summaryMetrics"
           :key="metric.key"
-          class="rounded-md border border-gray-200 px-3 py-3 dark:border-dark-700"
+          class="rounded-none border border-gray-200 px-3 py-3 dark:border-dark-700"
         >
           <div class="text-lg font-semibold tabular-nums text-gray-900 dark:text-white">
             {{ metric.value }}
@@ -37,7 +37,7 @@
         </div>
       </div>
 
-      <div class="overflow-x-auto rounded-md border border-gray-200 dark:border-dark-700">
+      <div class="overflow-x-auto rounded-none border border-gray-200 dark:border-dark-700">
         <table class="min-w-[760px] w-full divide-y divide-gray-200 text-sm dark:divide-dark-700">
           <thead class="bg-gray-50 text-left text-xs text-gray-500 dark:bg-dark-900 dark:text-dark-300">
             <tr>
@@ -56,7 +56,7 @@
                 <div class="mt-0.5 text-xs text-gray-400">#{{ group.group_id }} · {{ group.status }}</div>
               </td>
               <td class="px-3 py-2">
-                <span class="rounded px-2 py-1 text-xs font-medium" :class="classificationClass(group.classification)">
+                <span class="rounded-none px-2 py-1 text-xs font-medium" :class="classificationClass(group.classification)">
                   {{ classificationLabel(group.classification) }}
                 </span>
               </td>
@@ -122,7 +122,7 @@
               <label
                 v-for="option in sourceKeepOptions"
                 :key="option.value"
-                class="flex cursor-pointer items-start gap-3 rounded-md border px-3 py-3 transition-colors"
+                class="flex cursor-pointer items-start gap-3 rounded-none border px-3 py-3 transition-colors"
                 :class="sourceKeeps === option.value
                   ? 'border-primary-400 bg-primary-50/60 dark:border-primary-700 dark:bg-primary-900/10'
                   : 'border-gray-200 dark:border-dark-700'"
@@ -158,7 +158,7 @@
             />
           </div>
 
-          <div class="rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600 dark:border-dark-700 dark:bg-dark-900 dark:text-dark-300">
+          <div class="rounded-none border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600 dark:border-dark-700 dark:bg-dark-900 dark:text-dark-300">
             {{ t('admin.groups.cindyAudit.privacyNote') }}
           </div>
         </div>
@@ -174,7 +174,7 @@
             </span>
           </div>
 
-          <div class="max-h-72 overflow-y-auto rounded-md border border-gray-200 dark:border-dark-700" data-test="cindy-group-api-keys">
+          <div class="max-h-72 overflow-y-auto rounded-none border border-gray-200 dark:border-dark-700" data-test="cindy-group-api-keys">
             <label
               v-for="apiKey in apiKeys"
               :key="apiKey.id"
@@ -205,14 +205,14 @@
         </div>
       </div>
 
-      <div v-if="driftDetected" class="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/15 dark:text-amber-200" data-test="cindy-group-split-drift">
+      <div v-if="driftDetected" class="rounded-none border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/15 dark:text-amber-200" data-test="cindy-group-split-drift">
         {{ t('admin.groups.cindyAudit.drift') }}
       </div>
 
-      <section v-if="preview" class="rounded-md border border-primary-200 bg-primary-50/50 p-4 dark:border-primary-800/60 dark:bg-primary-900/10" data-test="cindy-group-split-preview">
+      <section v-if="preview" class="rounded-none border border-primary-200 bg-primary-50/50 p-4 dark:border-primary-800/60 dark:bg-primary-900/10" data-test="cindy-group-split-preview">
         <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h4 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.groups.cindyAudit.previewTitle') }}</h4>
-          <code class="rounded bg-white px-2 py-1 text-xs text-gray-600 dark:bg-dark-800 dark:text-dark-300">
+          <code class="rounded-none bg-white px-2 py-1 text-xs text-gray-600 dark:bg-dark-800 dark:text-dark-300">
             {{ shortFingerprint(preview.member_fingerprint) }}
           </code>
         </div>
