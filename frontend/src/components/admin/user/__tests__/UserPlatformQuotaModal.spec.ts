@@ -79,7 +79,7 @@ describe('UserPlatformQuotaModal', () => {
     expect(apiMocks.getPlatformQuotas).toHaveBeenCalledWith(99)
   })
 
-  it('空数据渲染全部 10 个 concrete platform 行', async () => {
+  it('空数据渲染全部 11 个 concrete platform 行', async () => {
     const w = await mountAndOpen()
     const html = w.html()
     expect(html).toContain('anthropic')
@@ -92,7 +92,7 @@ describe('UserPlatformQuotaModal', () => {
     expect(html).toContain('deepseek')
     expect(html).toContain('cindy')
     expect(html).toContain('minimax')
-    expect(w.findAll('tbody tr')).toHaveLength(10)
+    expect(w.findAll('tbody tr')).toHaveLength(11)
   })
 
   it('已有数据正确填充 limit input', async () => {
@@ -104,13 +104,13 @@ describe('UserPlatformQuotaModal', () => {
     })
     const w = await mountAndOpen()
     const inputs = w.findAll('input[type=number]')
-    // 10 platforms × 3 windows = 30 inputs
-    expect(inputs.length).toBe(30)
+    // 11 platforms × 3 windows = 33 inputs
+    expect(inputs.length).toBe(33)
     // 第一个 input 是 anthropic.daily = 10
     expect((inputs[0].element as HTMLInputElement).value).toBe('10')
   })
 
-  it('保存提交完整 10 platform payload 并同时保留 Cindy 和 MiniMax 配额', async () => {
+  it('保存提交完整 11 platform payload 并同时保留 Cindy 和 MiniMax 配额', async () => {
     apiMocks.getPlatformQuotas.mockResolvedValueOnce({
       platform_quotas: [
         { platform: 'openai', daily_limit_usd: null, weekly_limit_usd: 20, monthly_limit_usd: null,
@@ -134,9 +134,9 @@ describe('UserPlatformQuotaModal', () => {
     expect(apiMocks.updatePlatformQuotas).toHaveBeenCalledTimes(1)
     const [uid, payload] = apiMocks.updatePlatformQuotas.mock.calls[0]
     expect(uid).toBe(99)
-    expect(payload).toHaveLength(10)
+    expect(payload).toHaveLength(11)
     expect(payload.map((p: any) => p.platform)).toEqual([
-      'anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kimi', 'zhipu', 'deepseek', 'cindy', 'minimax',
+      'anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kimi', 'zhipu', 'deepseek', 'cindy', 'minimax', 'opencode_go',
     ])
     const openai = payload.find((p: any) => p.platform === 'openai')
     expect(openai.weekly_limit_usd).toBe(20)

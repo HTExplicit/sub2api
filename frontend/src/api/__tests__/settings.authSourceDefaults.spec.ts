@@ -24,6 +24,7 @@ const allNullQuotas: DefaultPlatformQuotasMap = {
   deepseek: { daily: null, weekly: null, monthly: null },
   cindy: { daily: null, weekly: null, monthly: null },
   minimax: { daily: null, weekly: null, monthly: null },
+  opencode_go: { daily: null, weekly: null, monthly: null },
 }
 
 describe("admin settings auth source defaults helpers", () => {
@@ -256,9 +257,9 @@ describe("normalizePlatformQuotasMap", () => {
     expect(result.grok).toEqual({ daily: null, weekly: null, monthly: null });
   });
 
-  it("无参数时返回全部 10 平台全 null", () => {
+  it("无参数时返回全部 11 平台全 null", () => {
     const result = normalizePlatformQuotasMap();
-    expect(Object.keys(result)).toHaveLength(10);
+    expect(Object.keys(result)).toHaveLength(11);
     expect(result).toEqual(allNullQuotas);
     for (const v of Object.values(result)) {
       expect(v).toEqual({ daily: null, weekly: null, monthly: null });
@@ -307,7 +308,7 @@ describe("sanitizePlatformQuotasMap", () => {
 
   it("缺失平台填充为全 null", () => {
     const result = sanitizePlatformQuotasMap({});
-    expect(Object.keys(result)).toHaveLength(10);
+    expect(Object.keys(result)).toHaveLength(11);
     expect(result).toEqual(allNullQuotas);
     for (const v of Object.values(result)) {
       expect(v).toEqual({ daily: null, weekly: null, monthly: null });
@@ -318,12 +319,12 @@ describe("sanitizePlatformQuotasMap", () => {
 describe("MiniMax scheduling threshold compatibility", () => {
   it("initializes and saves the MiniMax threshold without treating Cindy as a CN quota provider", () => {
     expect(SCHEDULING_THRESHOLD_PLATFORMS).toEqual([
-      "openai", "anthropic", "grok", "kimi", "zhipu", "minimax",
+      "openai", "anthropic", "grok", "kimi", "zhipu", "minimax", "opencode_go",
     ]);
     expect(normalizeAccountSchedulingThresholdsMap().minimax).toBe(100);
     const thresholds = normalizeAccountSchedulingThresholdsMap({ openai: 92, minimax: 73 });
     expect(sanitizeAccountSchedulingThresholdsMap(thresholds)).toEqual({
-      openai: 92, anthropic: 100, grok: 100, kimi: 100, zhipu: 100, minimax: 73,
+      openai: 92, anthropic: 100, grok: 100, kimi: 100, zhipu: 100, minimax: 73, opencode_go: 100,
     });
   });
 });
