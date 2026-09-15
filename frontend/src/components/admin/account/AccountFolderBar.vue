@@ -1,5 +1,5 @@
 <template>
-  <div class="min-w-0 bg-gray-50/80 dark:bg-dark-900">
+  <div class="min-w-0 border-b border-line bg-surface/70">
     <div class="relative border-b border-gray-200 p-3 dark:border-dark-700 lg:hidden" ref="mobileMenuRef">
       <button
         ref="mobileTriggerRef"
@@ -79,7 +79,7 @@
             :key="item.value || 'all'"
             type="button"
             class="flex min-h-10 shrink-0 items-center justify-between gap-2 rounded-none px-3 text-left text-sm transition-colors"
-            :class="activeFolder === item.value ? 'bg-primary-50 font-semibold text-primary-700 dark:bg-primary-900/25 dark:text-primary-300' : 'text-gray-600 hover:bg-gray-100 dark:text-dark-300 dark:hover:bg-dark-800'"
+            :class="activeFolder === item.value ? 'font-semibold text-primary-700 dark:text-primary-300 border-b-2 border-primary-500' : 'text-gray-600 hover:bg-gray-100 dark:text-dark-300 dark:hover:bg-dark-800'"
             data-test="desktop-taxonomy-option"
             @click="emit('select', item.value)"
           >

@@ -11,8 +11,8 @@
       v-for="account in accounts"
       v-else
       :key="account.id"
-      class="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 border-b border-gray-100 px-3 py-2.5 text-left transition-colors last:border-b-0 hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-800 lg:grid-cols-[auto_minmax(12rem,1.2fr)_minmax(8rem,0.65fr)_minmax(16rem,1fr)_minmax(12rem,0.9fr)_auto] lg:gap-y-0"
-      :class="selectedSet.has(account.id) ? 'bg-primary-50/50 dark:bg-primary-900/10' : ''"
+      class="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 border-b border-line px-3 py-2.5 text-left transition-colors last:border-b-0 hover:bg-raised lg:grid-cols-[auto_minmax(12rem,1.2fr)_minmax(8rem,0.65fr)_minmax(16rem,1fr)_minmax(12rem,0.9fr)_auto] lg:gap-y-0"
+      :class="selectedSet.has(account.id) ? 'border-l-2 border-l-primary-500 bg-raised' : ''"
       @click="emit('rowClick', account)"
     >
       <AccountSelectionCheckbox :checked="selectedSet.has(account.id)"

@@ -101,13 +101,13 @@
                         </div>
                       </div>
                       <button class="account-tools-menu-item" @click="openSyncFromCrs">
-                        <span class="account-tools-menu-icon bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300">
+                        <span class="account-tools-menu-icon border border-line bg-surface text-muted">
                           <Icon name="sync" size="sm" />
                         </span>
                         <span class="flex-1 text-left">{{ t('admin.accounts.syncFromCrs') }}</span>
                       </button>
                       <button class="account-tools-menu-item" @click="openImportData">
-                        <span class="account-tools-menu-icon bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300">
+                        <span class="account-tools-menu-icon border border-line bg-surface text-primary-600 dark:text-primary-300">
                           <Icon name="upload" size="sm" />
                         </span>
                         <span class="flex-1 text-left">{{ t('admin.accounts.dataImport') }}</span>
@@ -135,13 +135,13 @@
                         </div>
                       </div>
                       <button class="account-tools-menu-item" @click="openErrorPassthrough">
-                        <span class="account-tools-menu-icon bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300">
+                        <span class="account-tools-menu-icon border border-line bg-surface text-amber-600 dark:text-amber-300">
                           <Icon name="shield" size="sm" />
                         </span>
                         <span class="flex-1 text-left">{{ t('admin.errorPassthrough.title') }}</span>
                       </button>
                       <button class="account-tools-menu-item" @click="openTLSFingerprintProfiles">
-                        <span class="account-tools-menu-icon bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200">
+                        <span class="account-tools-menu-icon border border-line bg-surface text-muted">
                           <Icon name="lock" size="sm" />
                         </span>
                         <span class="flex-1 text-left">{{ t('admin.tlsFingerprintProfiles.title') }}</span>
@@ -188,14 +188,14 @@
           </button>
         </div>
         <div class="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-3 dark:border-dark-700">
-          <div class="inline-flex rounded-none border border-gray-200 bg-gray-50 p-1 dark:border-dark-700 dark:bg-dark-900" data-test="cindy-account-view">
+          <div class="inline-flex rounded-none border border-line bg-raised p-1" data-test="cindy-account-view">
             <button
               v-for="option in cindyViewOptions"
               :key="option.value"
               type="button"
               class="rounded-none px-3 py-1.5 text-sm font-medium transition-colors"
               :class="cindyView === option.value
-                ? 'bg-white text-gray-900 shadow-outline dark:bg-dark-700 dark:text-white'
+                ? 'border-b-2 border-primary-500 text-primary-700 dark:text-primary-300'
                 : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'"
               @click="handleCindyViewChange(option.value)"
             >
