@@ -3251,6 +3251,13 @@ func (s *AccountTestService) sendEvent(c *gin.Context, event TestEvent) {
 // testOpenAIImageOAuthDirect exercises the native Codex Images endpoint for
 // image models that bypass the Responses image tool.
 func (s *AccountTestService) testOpenAIImageOAuthDirect(c *gin.Context, ctx context.Context, account *Account, modelID, prompt string) error {
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no")
+	c.Writer.Flush()
+	s.sendEvent(c, TestEvent{Type: "test_start", Model: modelID})
+	s.sendEvent(c, TestEvent{Type: "content", Text: "Calling Codex Images endpoint...\n"})
 	authToken := account.GetOpenAIAccessToken()
 	if authToken == "" && !account.IsOpenAIAgentIdentity() {
 		return s.sendErrorAndEnd(c, "No access token available")
