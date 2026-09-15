@@ -254,7 +254,7 @@ func TestAccountHandlerGetAvailableModels_OpenAIOAuthUsesExplicitModelMapping(t 
 	require.Equal(t, "gpt-5", resp.Data[0].ID)
 }
 
-func TestAccountHandlerGetAvailableModels_OpenAIOAuthPassthroughFallsBackToDefaults(t *testing.T) {
+func TestAccountHandlerGetAvailableModels_OpenAIOAuthPassthroughReportsUnavailableDiscovery(t *testing.T) {
 	svc := &availableModelsAdminService{
 		stubAdminService: newStubAdminService(),
 		account: service.Account{
@@ -279,19 +279,11 @@ func TestAccountHandlerGetAvailableModels_OpenAIOAuthPassthroughFallsBackToDefau
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/43/models", nil)
 	router.ServeHTTP(rec, req)
 
-	require.Equal(t, http.StatusOK, rec.Code)
-
-	var resp struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
-	require.NotEmpty(t, resp.Data)
-	require.NotEqual(t, "gpt-5", resp.Data[0].ID)
+	require.Equal(t, http.StatusBadGateway, rec.Code)
+	require.NotContains(t, rec.Body.String(), "gpt-")
 }
 
-func TestAccountHandlerGetAvailableModels_OpenAIAPIKeyDefaultsToConcreteGPT56Sol(t *testing.T) {
+func TestAccountHandlerGetAvailableModels_OpenAIAPIKeyReportsUnavailableDiscovery(t *testing.T) {
 	svc := &availableModelsAdminService{
 		stubAdminService: newStubAdminService(),
 		account: service.Account{
@@ -313,16 +305,8 @@ func TestAccountHandlerGetAvailableModels_OpenAIAPIKeyDefaultsToConcreteGPT56Sol
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/46/models", nil)
 	router.ServeHTTP(rec, req)
 
-	require.Equal(t, http.StatusOK, rec.Code)
-
-	var resp struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
-	require.NotEmpty(t, resp.Data)
-	require.Equal(t, "gpt-5.6-sol", resp.Data[0].ID)
+	require.Equal(t, http.StatusBadGateway, rec.Code)
+	require.NotContains(t, rec.Body.String(), "gpt-")
 }
 
 func TestAccountHandlerGetAvailableModels_CindyUsesManagedCatalogInsteadOfStoredMapping(t *testing.T) {

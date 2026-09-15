@@ -1,4 +1,5 @@
 import { apiClient } from '../client'
+import type { AccountAvailableModel } from '@/types'
 
 const BASE_PATH = '/admin/account-jobs'
 
@@ -172,11 +173,27 @@ async function mergeDuplicates(request: DuplicateMergeRequest): Promise<AccountJ
   return data
 }
 
+export interface BatchTestSelection { account_id: number; model_id: string }
+export interface BatchTestModelRow {
+  account_id: number
+  name: string
+  platform: string
+  type: string
+  is_cindy: boolean
+  models: AccountAvailableModel[]
+  error_code?: string
+}
+
 const accountJobsAPI = {
-  async batchTest(accountIDs: number[], modelID: string): Promise<AccountJob> {
+  async batchTest(items: BatchTestSelection[]): Promise<AccountJob> {
     const { data } = await apiClient.post<AccountJob>('/admin/accounts/batch-test',
-      { account_ids: accountIDs, model_id: modelID }, accountJobIdempotencyHeaders('account_batch_test'))
+      { items }, accountJobIdempotencyHeaders('account_batch_test'))
     return data
+  },
+  async batchTestModels(accountIDs: number[], signal?: AbortSignal): Promise<BatchTestModelRow[]> {
+    const { data } = await apiClient.post<{ items: BatchTestModelRow[] }>('/admin/accounts/batch-test-models',
+      { account_ids: accountIDs }, { signal })
+    return data.items
   },
   async resultAccountIDs(jobID: number): Promise<number[]> {
     const { data } = await apiClient.get<{ account_ids: number[] }>(`${BASE_PATH}/${jobID}/result-account-ids`)

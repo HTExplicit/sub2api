@@ -60,9 +60,9 @@
         <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
           {{ t('admin.accounts.selectTestModel') }}
         </label>
-        <Select
+        <AccountTestModelSelect
           v-model="selectedModelId"
-          :options="modelOptionsForMode"
+          :models="modelOptionsForMode"
           :disabled="loadingModels || status === 'connecting'"
           value-key="id"
           label-key="display_name"
@@ -369,6 +369,7 @@ import { computed, ref, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select from '@/components/common/Select.vue'
+import AccountTestModelSelect from './AccountTestModelSelect.vue'
 import TextArea from '@/components/common/TextArea.vue'
 import { Icon } from '@/components/icons'
 import { useClipboard } from '@/composables/useClipboard'
@@ -376,10 +377,9 @@ import { buildApiUrl } from '@/api/client'
 import { ADMIN_UI_REQUEST_HEADER } from '@/api/adminUIRequest'
 import { adminAPI } from '@/api/admin'
 import {
-  filterCindyAccountTestModels,
-  pickCindyAccountTestDefault,
   isCindyOpenAIAPIKeyAccount
 } from '@/utils/cindyOpenAIDefaults'
+import { prepareAccountTestModels, accountTestModelsForMode, defaultAccountTestModel } from '@/utils/accountTestModels'
 import type { Account, AccountAvailableModel } from '@/types'
 
 const { t } = useI18n()
@@ -444,7 +444,6 @@ const grokTestModeOptions = computed(() => [
   { value: 'stt', label: t('admin.accounts.grok.testModeSTT') },
   { value: 'realtime', label: t('admin.accounts.grok.testModeRealtime') }
 ])
-const prioritizedGeminiModels = ['gemini-3.1-flash-image', 'gemini-2.5-flash-image', 'gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-3-flash-preview', 'gemini-3-pro-preview', 'gemini-2.0-flash']
 const supportsGeminiImageTest = computed(() => {
   const modelID = selectedModelId.value.toLowerCase()
   if (!modelID.startsWith('gemini-') || !modelID.includes('-image')) return false
@@ -457,20 +456,6 @@ const supportsOpenAIImageTest = computed(() => {
   if (!modelID.startsWith('gpt-image-')) return false
   return props.account?.platform === 'openai' || isCindyOpenAIAPIKeyAccount(props.account)
 })
-
-const isGrokImageModel = (id: string) => {
-  const modelID = id.toLowerCase()
-  return (
-    modelID === 'grok-imagine' ||
-    modelID === 'grok-imagine-edit' ||
-    modelID.startsWith('grok-imagine-image')
-  )
-}
-const isGrokVideoModel = (id: string) => {
-  const modelID = id.toLowerCase()
-  return modelID.startsWith('grok-imagine-video') || modelID.startsWith('grok-video')
-}
-const isGrokTextModel = (id: string) => !isGrokImageModel(id) && !isGrokVideoModel(id)
 
 const supportsGrokImageTest = computed(
   () => isGrokAccount.value && grokTestMode.value === 'image'
@@ -489,19 +474,7 @@ const showModelSelect = computed(() => {
   return grokTestMode.value === 'text' || grokTestMode.value === 'image' || grokTestMode.value === 'video'
 })
 
-const modelOptionsForMode = computed(() => {
-  if (!isGrokAccount.value) return availableModels.value
-  if (grokTestMode.value === 'image') {
-    return availableModels.value.filter((m) => isGrokImageModel(m.id))
-  }
-  if (grokTestMode.value === 'video') {
-    return availableModels.value.filter((m) => isGrokVideoModel(m.id))
-  }
-  if (grokTestMode.value === 'text') {
-    return availableModels.value.filter((m) => isGrokTextModel(m.id))
-  }
-  return []
-})
+const modelOptionsForMode = computed(() => accountTestModelsForMode(props.account, availableModels.value, grokTestMode.value))
 
 const supportsPromptInput = computed(() => {
   if (!isGrokAccount.value) {
@@ -696,17 +669,6 @@ const canStartTest = computed(() => {
   return Boolean(selectedModelId.value)
 })
 
-const sortTestModels = (models: AccountAvailableModel[]) => {
-  const priorityMap = new Map(prioritizedGeminiModels.map((id, index) => [id, index]))
-
-  return [...models].sort((a, b) => {
-    const aPriority = priorityMap.get(a.id) ?? Number.MAX_SAFE_INTEGER
-    const bPriority = priorityMap.get(b.id) ?? Number.MAX_SAFE_INTEGER
-    if (aPriority !== bPriority) return aPriority - bPriority
-    return 0
-  })
-}
-
 // Load available models when modal opens
 const applyDefaultPromptForMode = () => {
   if (!supportsPromptInput.value) return
@@ -729,15 +691,7 @@ const pickDefaultModelForMode = () => {
     return
   }
   if (opts.some((m) => m.id === selectedModelId.value)) return
-  if (grokTestMode.value === 'text') {
-    const preferred =
-      opts.find((m) => m.id.includes('grok-4.5')) ||
-      opts.find((m) => m.id === 'grok') ||
-      opts[0]
-    selectedModelId.value = preferred.id
-    return
-  }
-  selectedModelId.value = opts[0].id
+  selectedModelId.value = defaultAccountTestModel(props.account, opts, grokTestMode.value)
 }
 
 watch(
@@ -773,26 +727,8 @@ const loadAvailableModels = async () => {
   loadingModels.value = true
   selectedModelId.value = '' // Reset selection before loading
   try {
-    const models = filterCindyAccountTestModels(
-      props.account,
-      await adminAPI.accounts.getAvailableModels(props.account.id)
-    )
-    availableModels.value = props.account.platform === 'gemini' || props.account.platform === 'antigravity'
-      ? sortTestModels(models)
-      : models
-    // Default selection by platform
-    if (availableModels.value.length > 0) {
-      const cindyDefault = pickCindyAccountTestDefault(props.account, availableModels.value)
-      if (cindyDefault) {
-        selectedModelId.value = cindyDefault.id
-      } else if (props.account.platform === 'gemini') {
-        selectedModelId.value = availableModels.value[0].id
-      } else {
-        // Try to select Sonnet as default, otherwise use first model
-        const sonnetModel = availableModels.value.find((m) => m.id.includes('sonnet'))
-        selectedModelId.value = sonnetModel?.id || availableModels.value[0].id
-      }
-    }
+    availableModels.value = prepareAccountTestModels(props.account, await adminAPI.accounts.getAvailableModels(props.account.id))
+    selectedModelId.value = defaultAccountTestModel(props.account, modelOptionsForMode.value, grokTestMode.value)
   } catch (error) {
     console.error('Failed to load available models:', error)
     // Fallback to empty list

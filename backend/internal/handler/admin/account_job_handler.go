@@ -159,28 +159,6 @@ type accountIDsJobPayload struct {
 	AccountIDs []int64 `json:"account_ids"`
 }
 
-type batchTestJobPayload struct {
-	AccountIDs []int64 `json:"account_ids"`
-	ModelID    string  `json:"model_id,omitempty"`
-}
-
-type batchTestModelContextKey struct{}
-
-func (h *AccountHandler) BatchTest(c *gin.Context) {
-	var req batchTestJobPayload
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "invalid batch test request")
-		return
-	}
-	req.AccountIDs = normalizeInt64IDList(req.AccountIDs)
-	req.ModelID = strings.TrimSpace(req.ModelID)
-	if len(req.AccountIDs) == 0 || len(req.ModelID) > 256 {
-		response.BadRequest(c, "invalid account_ids or model_id")
-		return
-	}
-	h.submitAccountJob(c, service.AccountJobKindBatchTest, req, accountJobSeeds(req.AccountIDs))
-}
-
 type batchCreateJobPayload struct {
 	Accounts []CreateAccountRequest `json:"accounts"`
 }
