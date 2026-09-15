@@ -749,6 +749,11 @@
     @apply text-primary-600 dark:text-primary-400;
   }
 
+  /* Legacy radius utility names remain in source contracts, but the refreshed visual system renders them flat. */
+  .rounded, .rounded-sm, .rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl, .rounded-3xl {
+    border-radius: 0 !important;
+  }
+
   /* Flat surfaces */
   .glass {
     @apply bg-white dark:bg-dark-800;

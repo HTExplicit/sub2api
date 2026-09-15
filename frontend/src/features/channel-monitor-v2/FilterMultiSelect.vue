@@ -10,7 +10,7 @@
       class="select-trigger flex cursor-pointer list-none items-center justify-between gap-1.5 text-left"
       :class="[
         isOpen ? 'select-trigger-open' : '',
-        compact ? 'h-8 rounded-none !px-2 !py-1 text-xs' : 'h-[42px]',
+        compact ? 'h-8 rounded-none rounded-xl !px-2 !py-1 text-xs' : 'h-[42px]',
       ]"
       :aria-expanded="isOpen"
       aria-haspopup="listbox"

@@ -803,7 +803,7 @@
           </div>
           <div
             v-if="createModelAllowlistState.enabled"
-            class="overflow-hidden rounded-none border border-gray-200 bg-gray-50/50 dark:border-dark-600 dark:bg-dark-800"
+            class="overflow-hidden rounded-lg border rounded-none border-gray-200 bg-gray-50/50 dark:border-dark-600 dark:bg-dark-800"
           >
             <div
               v-if="!createModelAllowlistLoading && createModelAllowlistState.items.length > 0"
