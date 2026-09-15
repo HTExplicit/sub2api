@@ -113,7 +113,7 @@ func TestCodexContextWindowRegistryEnrichment(t *testing.T) {
 		wantMax    int64
 	}{
 		{"preserve upstream limits", `"context_window":272000,"max_context_window":872000`, 272000, 872000},
-		{"upstream default remains ceiling", `"context_window":272000`, 272000, 272000},
+		{"upstream default without maximum", `"context_window":272000`, 272000, 0},
 		{"registry supplies missing limits", `"description":"Model without context metadata"`, 1050000, 1050000},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -145,9 +145,14 @@ func TestCodexContextWindowRegistryEnrichment(t *testing.T) {
 			require.NoError(t, err)
 			require.Empty(t, catalog.Warnings)
 			require.Len(t, upstream.requests, 2)
+			// Synchronization preserves the upstream observation; public capacity
+			// projection independently applies the release-owned official registry.
+			require.EqualValues(t, tc.wantWindow, catalog.Metadata["gpt-6-astra"].ContextWindow)
+			require.EqualValues(t, tc.wantMax, catalog.Metadata["gpt-6-astra"].MaxContextWindow)
 			model := codexContextWindowManifest(t, []Account{account})
-			require.EqualValues(t, tc.wantWindow, model["context_window"])
-			require.EqualValues(t, tc.wantMax, model["max_context_window"])
+			require.EqualValues(t, 1050000, model["context_window"])
+			require.EqualValues(t, 1050000, model["max_context_window"])
+			require.Equal(t, "official", model["context_capacity_source"])
 		})
 	}
 }

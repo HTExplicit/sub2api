@@ -2130,7 +2130,7 @@ func normalizeCodexCallOutputBootstrap(body []byte, isCandidate func(map[string]
 	// for a standalone automation heartbeat. Require at least one other input
 	// item before permitting normalization; full conversation replays retain the
 	// identifier and continue through this path.
-	if previousResponseIDValue != "" && !hasHistoricalContext {
+	if isServerToolHistory != nil && previousResponseIDValue != "" && !hasHistoricalContext {
 		return body, false
 	}
 

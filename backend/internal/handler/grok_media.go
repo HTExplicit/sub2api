@@ -331,15 +331,22 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		account := selection.Account
 		if endpoint.IsGenerationRequest() {
 			probeDone := make(chan struct{})
+			probeStopped := make(chan struct{})
 			go func() {
+				defer close(probeStopped)
 				select {
 				case <-requestCtx.Done():
 					releaseSelection()
 				case <-probeDone:
 				}
 			}()
-			eligible, eligibilityReason, eligibilityErr := h.ensureGrokMediaAccountEligibility(requestCtx, account)
-			close(probeDone)
+			eligible, eligibilityReason, eligibilityErr := func() (bool, string, error) {
+				defer func() {
+					close(probeDone)
+					<-probeStopped // Transfer slot ownership only after cancellation cleanup stops.
+				}()
+				return h.ensureGrokMediaAccountEligibility(requestCtx, account)
+			}()
 			if !eligible {
 				releaseSelection()
 				mediaEligibilityRejected = true

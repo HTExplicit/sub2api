@@ -157,6 +157,7 @@ func TestGatewayRoutesRetrievePinnedModel(t *testing.T) {
 	repo := &pinnedModelsRoutesRepository{account: service.Account{
 		ID: 7, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
 		Status: service.StatusActive, Schedulable: true,
+		GroupIDs:    []int64{1},
 		Credentials: map[string]any{"api_key": "test-models-key", "base_url": "https://models.example/v1"},
 	}}
 	upstream := &pinnedModelsRoutesUpstream{}
