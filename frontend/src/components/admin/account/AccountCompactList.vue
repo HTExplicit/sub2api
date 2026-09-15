@@ -1,7 +1,7 @@
 <template>
   <div class="min-h-0 overflow-y-auto" data-test="account-compact-list">
     <div v-if="loading" class="space-y-px">
-      <div v-for="index in 6" :key="index" class="h-16 animate-pulse border-b border-gray-100 bg-gray-50/70 dark:border-dark-700 dark:bg-dark-800/60" />
+      <div v-for="index in 6" :key="index" class="h-16 animate-pulse border-b border-gray-100 bg-gray-50/70 dark:border-dark-700 dark:bg-dark-800" />
     </div>
     <div v-else-if="accounts.length === 0" class="flex min-h-52 flex-col items-center justify-center text-gray-400">
       <Icon name="inbox" size="xl" />

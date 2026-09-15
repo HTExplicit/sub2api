@@ -37,7 +37,7 @@
 
           <div
             v-if="selectedJobIds.size"
-            class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-sm dark:border-dark-700 dark:bg-dark-800"
+            class="flex flex-wrap items-center justify-between gap-3 rounded-none border border-gray-200 bg-white px-3 py-2 shadow-outline dark:border-dark-700 dark:bg-dark-800"
           >
             <i18n-t
               keypath="batchImage.list.selectedJobs"
@@ -85,7 +85,7 @@
           <template #header-select>
             <input
               type="checkbox"
-              class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              class="h-4 w-4 rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
               :checked="allVisibleSelected"
               :indeterminate="someVisibleSelected"
               @change="toggleAllVisible(($event.target as HTMLInputElement).checked)"
@@ -95,7 +95,7 @@
           <template #cell-select="{ row }">
             <input
               type="checkbox"
-              class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              class="h-4 w-4 rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
               :checked="selectedJobIds.has(row.id)"
               @change="toggleJobSelection(row.id, ($event.target as HTMLInputElement).checked)"
               @click.stop
@@ -107,23 +107,23 @@
 	              <button
 	                v-if="row.child_count > 0 && !row.is_child"
 	                type="button"
-	                class="mt-1 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 dark:text-gray-400 dark:hover:bg-dark-700 dark:hover:text-white"
+	                class="mt-1 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-none text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 dark:text-gray-400 dark:hover:bg-dark-700 dark:hover:text-white"
 	                :title="expandedParentIds.has(row.id) ? t('batchImage.list.collapseChildren') : t('batchImage.list.expandChildren', { n: row.child_count }, row.child_count)"
 	                @click.stop="toggleChildRows(row.id)"
 	              >
 	                <Icon :name="expandedParentIds.has(row.id) ? 'chevronDown' : 'chevronRight'" size="xs" />
 	              </button>
 	              <span v-else class="w-6 flex-shrink-0" />
-	              <button type="button" class="min-w-0 flex-1 rounded-lg py-1 text-left transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 dark:hover:bg-dark-700" @click="selectJob(row.id)">
+	              <button type="button" class="min-w-0 flex-1 rounded-none py-1 text-left transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 dark:hover:bg-dark-700" @click="selectJob(row.id)">
 	                <span
 	                  class="flex min-w-0 items-center gap-2 text-sm font-medium"
 	                  :class="row.task_name ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'"
                 >
                   <span class="min-w-0 truncate">{{ row.task_name || defaultTaskName(row.created_at) }}</span>
-                  <span v-if="row.child_count > 0 && !row.is_child" class="flex-shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-normal text-gray-600 dark:bg-dark-700 dark:text-gray-300">
+                  <span v-if="row.child_count > 0 && !row.is_child" class="flex-shrink-0 rounded-none bg-gray-100 px-2 py-0.5 text-xs font-normal text-gray-600 dark:bg-dark-700 dark:text-gray-300">
                     {{ t('batchImage.list.childCount', { n: row.child_count }, row.child_count) }}
                   </span>
-                  <span v-if="row.is_child" class="flex-shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-normal text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+                  <span v-if="row.is_child" class="flex-shrink-0 rounded-none bg-amber-50 px-2 py-0.5 text-xs font-normal text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
                     {{ t('batchImage.list.childBadge') }}
                   </span>
 	                </span>
@@ -179,7 +179,7 @@
 	            <div class="flex items-center justify-center gap-1">
               <button
                 type="button"
-                class="batch-row-action flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 dark:hover:bg-dark-700 dark:hover:text-primary-400"
+                class="batch-row-action flex flex-col items-center gap-0.5 rounded-none p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 dark:hover:bg-dark-700 dark:hover:text-primary-400"
                 :title="t('batchImage.actions.viewDetail')"
                 @click="selectJob(row.id)"
               >
@@ -188,7 +188,7 @@
               </button>
               <button
                 type="button"
-                class="batch-row-action flex flex-col items-center gap-0.5 rounded-lg p-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30"
+                class="batch-row-action flex flex-col items-center gap-0.5 rounded-none p-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30"
                 :class="canDownload(row) ? 'text-gray-500 hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/20 dark:hover:text-green-400' : 'text-gray-300 dark:text-dark-500'"
                 :disabled="!canDownload(row) || downloading"
                 :title="t('batchImage.actions.downloadZip')"
@@ -204,7 +204,7 @@
               <div v-if="canRetry(row) || canDeleteRecord(row)">
                 <button
                   type="button"
-                  class="batch-row-action flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 dark:hover:bg-dark-700 dark:hover:text-white"
+                  class="batch-row-action flex flex-col items-center gap-0.5 rounded-none p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 dark:hover:bg-dark-700 dark:hover:text-white"
                   :class="{ 'bg-gray-100 text-gray-900 dark:bg-dark-700 dark:text-white': openMoreJobId === row.id }"
                   :title="t('batchImage.actions.moreActions')"
                   @click.stop="toggleMoreMenu(row, $event)"
@@ -281,7 +281,7 @@
     <Teleport to="body">
       <div
         v-if="openMoreJobId"
-        class="fixed z-[9999] w-44 overflow-hidden rounded-xl bg-white py-1 text-sm shadow-lg ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
+        class="fixed z-[9999] w-44 overflow-hidden rounded-none bg-white py-1 text-sm shadow-outline ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
         :style="moreMenuStyle"
         @click.stop
       >
@@ -315,7 +315,7 @@
     <Teleport to="body">
       <div
         v-if="promptPopover.visible"
-        class="batch-prompt-popover fixed z-[9999] rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-800 shadow-xl ring-1 ring-black/5 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-100 dark:ring-white/10"
+        class="batch-prompt-popover fixed z-[9999] rounded-none border border-gray-200 bg-white p-3 text-sm text-gray-800 shadow-outline ring-1 ring-black/5 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-100 dark:ring-white/10"
         :style="promptPopover.style"
         @mouseenter="cancelPromptPopoverClose"
         @mouseleave="schedulePromptPopoverClose"
@@ -324,7 +324,7 @@
           <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('batchImage.promptPopover.title') }}</span>
           <button
             type="button"
-            class="rounded-md px-2 py-1 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 dark:text-primary-300 dark:hover:bg-primary-900/20"
+            class="rounded-none px-2 py-1 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 dark:text-primary-300 dark:hover:bg-primary-900/20"
             @click="copyPromptPopover"
           >
             {{ t('common.copy') }}
@@ -338,7 +338,7 @@
 
     <BaseDialog :show="!!currentJob" :title="t('batchImage.detail.title')" width="extra-wide" @close="closeDetail">
       <div v-if="currentJob" class="space-y-4">
-        <div class="rounded-lg border border-gray-200 bg-gray-50/70 px-4 py-3 dark:border-dark-700 dark:bg-dark-900/40">
+        <div class="rounded-none border border-gray-200 bg-gray-50/70 px-4 py-3 dark:border-dark-700 dark:bg-dark-900">
           <div class="grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
             <div class="min-w-0 text-center">
               <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('common.status') }}</p>
@@ -377,7 +377,7 @@
           </button>
         </div>
 
-        <div v-if="items.length" class="overflow-x-auto rounded-lg border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-900">
+        <div v-if="items.length" class="overflow-x-auto rounded-none border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-900">
           <table class="w-full min-w-[860px] table-fixed divide-y divide-gray-200 text-sm dark:divide-dark-700">
             <colgroup>
               <col class="w-[18%]" />
@@ -386,7 +386,7 @@
               <col class="w-[10%]" />
               <col class="w-[26%]" />
             </colgroup>
-            <thead class="bg-gray-50 dark:bg-dark-800/80">
+            <thead class="bg-gray-50 dark:bg-dark-800">
               <tr>
                 <th class="px-3 py-3 text-center text-sm font-medium text-gray-500 dark:text-gray-400">Custom ID</th>
                 <th class="px-3 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">Prompt</th>
@@ -413,7 +413,7 @@
                 </td>
                 <td class="px-3 py-2.5 text-left" :class="isRecoveredOriginalFailure(item) ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-300'">
                   <div
-                    class="batch-prompt-trigger cursor-default truncate rounded px-1 text-sm leading-6 focus:outline-none"
+                    class="batch-prompt-trigger cursor-default truncate rounded-none px-1 text-sm leading-6 focus:outline-none"
                     tabindex="0"
                     @pointerenter="schedulePromptPopoverOpen($event, item.prompt_preview || '-')"
                     @pointerleave="schedulePromptPopoverClose"
@@ -433,7 +433,7 @@
                   </span>
                 </td>
                 <td class="px-3 py-2.5 text-center">
-                  <div class="mx-auto h-12 w-12 overflow-hidden rounded-md border border-gray-200 bg-gray-50 dark:border-dark-700 dark:bg-dark-800">
+                  <div class="mx-auto h-12 w-12 overflow-hidden rounded-none border border-gray-200 bg-gray-50 dark:border-dark-700 dark:bg-dark-800">
                     <button
                       v-if="itemPreviewUrls[itemPreviewKey(item)] && !previewErrorIds.has(itemPreviewKey(item))"
                       type="button"
@@ -465,7 +465,7 @@
                 </td>
                 <td class="px-3 py-2.5 text-center">
                   <span
-                    class="inline-flex max-w-full items-center justify-center truncate rounded-md px-2.5 py-1 text-xs font-medium leading-5 ring-1 ring-inset"
+                    class="inline-flex max-w-full items-center justify-center truncate rounded-none px-2.5 py-1 text-xs font-medium leading-5 ring-1 ring-inset"
                     :class="itemResultClass(item)"
                     :title="itemResultLabel(item)"
                   >
@@ -476,7 +476,7 @@
             </tbody>
           </table>
         </div>
-        <div v-else class="rounded-lg border border-dashed border-gray-200 py-10 text-center dark:border-dark-700">
+        <div v-else class="rounded-none border border-dashed border-gray-200 py-10 text-center dark:border-dark-700">
           <Icon name="refresh" size="lg" class="mx-auto mb-3 text-gray-400" :class="loadingItems ? 'animate-spin' : ''" />
           <p class="text-sm font-medium text-gray-700 dark:text-gray-200">
             {{ loadingItems ? t('batchImage.detail.loadingItems') : t('batchImage.detail.noItems') }}
@@ -523,14 +523,14 @@
 
     <BaseDialog :show="!!previewImageItem" :title="previewImageItem?.custom_id || t('batchImage.imagePreview.title')" width="extra-wide" :z-index="60" @close="closeImagePreview">
       <div class="space-y-3">
-        <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
+        <div class="rounded-none border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
           {{ t('batchImage.imagePreview.notice') }}
         </div>
-        <div class="flex min-h-[420px] items-center justify-center rounded-lg bg-gray-50 p-4 dark:bg-dark-900">
+        <div class="flex min-h-[420px] items-center justify-center rounded-none bg-gray-50 p-4 dark:bg-dark-900">
           <img
             v-if="previewImageUrl"
             :src="previewImageUrl"
-            class="max-h-[70vh] max-w-full rounded-md object-contain"
+            class="max-h-[70vh] max-w-full rounded-none object-contain"
             :alt="previewImageItem?.custom_id || ''"
           />
         </div>
@@ -611,11 +611,11 @@
             <label class="input-label mb-0">Prompt</label>
             <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('batchImage.create.promptAdded', { count: promptRows.length }) }}</span>
           </div>
-          <div class="rounded-lg border border-gray-200 p-3 dark:border-dark-700">
+          <div class="rounded-none border border-gray-200 p-3 dark:border-dark-700">
             <textarea
               v-model="promptDraft"
               rows="3"
-              class="h-[76px] w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm leading-5 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100 dark:border-dark-600 dark:bg-dark-900 dark:text-gray-100 dark:focus:border-primary-500 dark:focus:ring-primary-900/40"
+              class="h-[76px] w-full resize-y rounded-none border border-gray-300 px-3 py-2 text-sm leading-5 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100 dark:border-dark-600 dark:bg-dark-900 dark:text-gray-100 dark:focus:border-primary-500 dark:focus:ring-primary-900/40"
               :placeholder="t('batchImage.create.promptPlaceholder')"
             />
             <div class="mt-2 grid gap-2 md:grid-cols-[minmax(0,1fr)_112px_132px_112px] md:items-center">
@@ -660,7 +660,7 @@
               <span
                 v-for="(ref, refIndex) in referenceImageDrafts"
                 :key="`${ref.name}-${refIndex}`"
-                class="inline-flex max-w-full items-center gap-1 rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-700 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-200"
+                class="inline-flex max-w-full items-center gap-1 rounded-none border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-700 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-200"
               >
                 <span class="max-w-[180px] truncate">{{ ref.name }}</span>
                 <button type="button" class="text-gray-400 hover:text-red-600" :title="t('batchImage.create.removeReferenceImage')" @click="removeReferenceImageDraft(refIndex)">
@@ -672,7 +672,7 @@
               {{ t('batchImage.create.limitsHint', { maxPerItem: BATCH_IMAGE_MAX_OUTPUTS_PER_ITEM, maxPerJob: BATCH_IMAGE_MAX_OUTPUTS_PER_JOB, refLimit: selectedModelReferenceLimit }) }}
             </p>
           </div>
-          <div v-if="promptRows.length" class="overflow-hidden rounded-lg border border-gray-200 dark:border-dark-700">
+          <div v-if="promptRows.length" class="overflow-hidden rounded-none border border-gray-200 dark:border-dark-700">
             <div
               v-for="(row, index) in promptRows"
               :key="row.localId"
@@ -691,15 +691,15 @@
               </button>
             </div>
           </div>
-          <div v-else class="rounded-lg border border-dashed border-gray-200 px-3 py-6 text-center text-sm text-gray-500 dark:border-dark-700 dark:text-gray-400">
+          <div v-else class="rounded-none border border-dashed border-gray-200 px-3 py-6 text-center text-sm text-gray-500 dark:border-dark-700 dark:text-gray-400">
             {{ t('batchImage.create.noPrompts') }}
           </div>
         </div>
 
-	        <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
+	        <div class="rounded-none border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
 	          {{ t('batchImage.create.cancelNotice') }}
 	        </div>
-	        <div v-if="submitting" class="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm leading-6 text-sky-800 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-100">
+	        <div v-if="submitting" class="rounded-none border border-sky-200 bg-sky-50 p-3 text-sm leading-6 text-sky-800 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-100">
 	          {{ t('batchImage.create.submittingNotice') }}
 	        </div>
 	      </form>
@@ -719,7 +719,7 @@
 	      <div class="space-y-5">
 	        <section class="space-y-3">
 	          <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('batchImage.guide.uiTitle') }}</h3>
-	          <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm leading-6 text-gray-700 dark:border-dark-700 dark:bg-dark-900/50 dark:text-gray-200">
+	          <div class="rounded-none border border-gray-200 bg-gray-50 p-3 text-sm leading-6 text-gray-700 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-200">
 	            <p>{{ t('batchImage.guide.step1') }}</p>
 	            <p>{{ t('batchImage.guide.step2') }}</p>
 	            <p>{{ t('batchImage.guide.step3') }}</p>
@@ -734,7 +734,7 @@
 	        <textarea
 	          :value="agentInstruction"
 	          readonly
-	          class="min-h-[420px] w-full resize-y rounded-md border border-gray-200 bg-gray-50 p-4 font-mono text-sm leading-6 text-gray-800 outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100 dark:border-dark-600 dark:bg-dark-900 dark:text-gray-100 dark:focus:border-primary-500 dark:focus:ring-primary-900/40"
+	          class="min-h-[420px] w-full resize-y rounded-none border border-gray-200 bg-gray-50 p-4 font-mono text-sm leading-6 text-gray-800 outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100 dark:border-dark-600 dark:bg-dark-900 dark:text-gray-100 dark:focus:border-primary-500 dark:focus:ring-primary-900/40"
 	        />
 	        </section>
 	      </div>
@@ -1989,9 +1989,9 @@ function isRecoveredOriginalFailure(item: BatchImageDetailItem) {
 
 function detailItemRowClass(item: BatchImageDetailItem) {
   if (isRecoveredOriginalFailure(item)) {
-    return 'bg-gray-50/80 text-gray-400 hover:bg-gray-100/80 dark:bg-dark-900/60 dark:text-gray-500 dark:hover:bg-dark-800/70'
+    return 'bg-gray-50/80 text-gray-400 hover:bg-gray-100/80 dark:bg-dark-900 dark:text-gray-500 dark:hover:bg-dark-800'
   }
-  return 'hover:bg-gray-50/70 dark:hover:bg-dark-800/60'
+  return 'hover:bg-gray-50/70 dark:hover:bg-dark-800'
 }
 
 function previewCacheSupported() {

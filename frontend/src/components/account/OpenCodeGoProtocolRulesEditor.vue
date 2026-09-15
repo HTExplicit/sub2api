@@ -41,7 +41,7 @@
         </select>
         <button
           type="button"
-          class="rounded-lg p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
+          class="rounded-none p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
           :aria-label="t('admin.accounts.opencodeGo.protocolRules.remove')"
           @click="removeRow(index)"
         >
@@ -50,7 +50,7 @@
       </div>
     </div>
     <div
-      class="mb-2 flex items-center gap-2 rounded-lg border border-dashed border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:border-dark-600 dark:bg-dark-800/60 dark:text-gray-400"
+      class="mb-2 flex items-center gap-2 rounded-none border border-dashed border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-400"
       data-testid="opencode-go-protocol-fallback"
     >
       <span class="flex-1 font-mono">*</span>
@@ -58,7 +58,7 @@
     </div>
     <button
       type="button"
-      class="w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
+      class="w-full rounded-none border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
       data-testid="opencode-go-protocol-add-rule"
       @click="addRow"
     >

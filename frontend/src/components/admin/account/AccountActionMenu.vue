@@ -5,7 +5,7 @@
       <div class="fixed inset-0 z-[9998]" @click="emit('close')"></div>
       <div
         ref="menuRef"
-        class="action-menu-content fixed z-[9999] w-52 overflow-y-auto overscroll-contain rounded-xl bg-white shadow-lg ring-1 ring-black/5 dark:bg-dark-800"
+        class="action-menu-content fixed z-[9999] w-52 overflow-y-auto overscroll-contain rounded-none bg-white shadow-outline ring-1 ring-black/5 dark:bg-dark-800"
         :style="menuStyle"
         @click.stop
       >
@@ -135,7 +135,7 @@ const isAntigravityOAuth = computed(() => props.account?.platform === 'antigravi
 const isOpenAIOAuth = computed(() => props.account?.platform === 'openai' && props.account?.type === 'oauth')
 // 影子账号(链接型,持 parent_account_id)不持凭据、type 不可变,凭据/隐私类操作对其无效。
 const isShadow = computed(() => props.account?.parent_account_id != null)
-// A "parent" OpenAI OAuth account is one that is NOT itself a shadow (parent_account_id == null)
+// A "parent" OpenAI OAuth account is one that is NOT itself a shadow-outline (parent_account_id == null)
 const isOpenAIOAuthParent = computed(() => isOpenAIOAuth.value && !isShadow.value)
 const supportsPrivacy = computed(() => (isAntigravityOAuth.value || isOpenAIOAuth.value) && !isShadow.value)
 const hasQuotaLimit = computed(() => {

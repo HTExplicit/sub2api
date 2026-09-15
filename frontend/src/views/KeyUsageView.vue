@@ -4,7 +4,7 @@
     <header class="relative z-20 px-6 py-4">
       <nav class="mx-auto flex max-w-6xl items-center justify-between">
         <router-link to="/home" class="flex items-center gap-3">
-          <div class="h-10 w-10 overflow-hidden rounded-xl shadow-md">
+          <div class="h-10 w-10 overflow-hidden rounded-none shadow-outline">
             <img :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
           </div>
           <span class="text-lg font-semibold tracking-tight text-gray-900 dark:text-white">{{ siteName }}</span>
@@ -16,14 +16,14 @@
             :href="docUrl"
             target="_blank"
             rel="noopener noreferrer"
-            class="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+            class="rounded-none p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
             :title="t('home.viewDocs')"
           >
             <Icon name="book" size="md" />
           </a>
           <button
             @click="toggleTheme"
-            class="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+            class="rounded-none p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
             :title="isDark ? t('home.switchToLight') : t('home.switchToDark')"
           >
             <Icon v-if="isDark" name="sun" size="md" />
@@ -58,7 +58,7 @@
               v-model="apiKey"
               :type="keyVisible ? 'text' : 'password'"
               :placeholder="t('keyUsage.placeholder')"
-              class="input-ring w-full h-12 pl-12 pr-12 rounded-xl border border-gray-200 bg-white text-sm text-gray-900 placeholder:text-gray-400 transition-all dark:border-dark-700 dark:bg-dark-900 dark:text-white dark:placeholder:text-dark-500"
+              class="input-ring w-full h-12 pl-12 pr-12 rounded-none border border-gray-200 bg-white text-sm text-gray-900 placeholder:text-gray-400 transition-all dark:border-dark-700 dark:bg-dark-900 dark:text-white dark:placeholder:text-dark-500"
               @keydown.enter="queryKey"
             />
             <button
@@ -77,7 +77,7 @@
           <button
             @click="queryKey"
             :disabled="isQuerying"
-            class="h-12 px-7 rounded-xl bg-primary-500 hover:bg-primary-600 text-white font-medium text-sm transition-all active:scale-[0.97] flex items-center gap-2 whitespace-nowrap disabled:opacity-60"
+            class="h-12 px-7 rounded-none bg-primary-500 hover:bg-primary-600 text-white font-medium text-sm transition-all active:scale-[0.97] flex items-center gap-2 whitespace-nowrap disabled:opacity-60"
           >
             <svg v-if="isQuerying" class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
               <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" opacity="0.25"/>
@@ -101,7 +101,7 @@
               v-for="range in dateRanges"
               :key="range.key"
               @click="setDateRange(range.key)"
-              class="text-xs px-3 py-1.5 rounded-lg border transition-all"
+              class="text-xs px-3 py-1.5 rounded-none border transition-all"
               :class="currentRange === range.key
                 ? 'bg-primary-500 text-white border-primary-500'
                 : 'border-gray-200 bg-white text-gray-700 dark:border-dark-700 dark:bg-dark-900 dark:text-dark-200 hover:border-primary-300 dark:hover:border-dark-600'"
@@ -110,17 +110,17 @@
               <input
                 v-model="customStartDate"
                 type="date"
-                class="input-ring text-xs px-2 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-900 dark:border-dark-700 dark:bg-dark-900 dark:text-white"
+                class="input-ring text-xs px-2 py-1.5 rounded-none border border-gray-200 bg-white text-gray-900 dark:border-dark-700 dark:bg-dark-900 dark:text-white"
               />
               <span class="text-xs text-gray-400">-</span>
               <input
                 v-model="customEndDate"
                 type="date"
-                class="input-ring text-xs px-2 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-900 dark:border-dark-700 dark:bg-dark-900 dark:text-white"
+                class="input-ring text-xs px-2 py-1.5 rounded-none border border-gray-200 bg-white text-gray-900 dark:border-dark-700 dark:bg-dark-900 dark:text-white"
               />
               <button
                 @click="queryKey"
-                class="text-xs px-3 py-1.5 rounded-lg bg-primary-500 text-white hover:bg-primary-600"
+                class="text-xs px-3 py-1.5 rounded-none bg-primary-500 text-white hover:bg-primary-600"
               >{{ t('keyUsage.apply') }}</button>
             </div>
           </div>
@@ -132,16 +132,16 @@
         <!-- Loading Skeleton -->
         <div v-if="showLoading" class="space-y-6">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div class="rounded-2xl border border-gray-200 bg-white p-8 dark:border-dark-700 dark:bg-dark-900">
+            <div class="rounded-none border border-gray-200 bg-white p-8 dark:border-dark-700 dark:bg-dark-900">
               <div class="skeleton h-5 w-24 mb-6"></div>
               <div class="flex justify-center"><div class="skeleton w-44 h-44 rounded-full"></div></div>
             </div>
-            <div class="rounded-2xl border border-gray-200 bg-white p-8 dark:border-dark-700 dark:bg-dark-900">
+            <div class="rounded-none border border-gray-200 bg-white p-8 dark:border-dark-700 dark:bg-dark-900">
               <div class="skeleton h-5 w-24 mb-6"></div>
               <div class="flex justify-center"><div class="skeleton w-44 h-44 rounded-full"></div></div>
             </div>
           </div>
-          <div class="rounded-2xl border border-gray-200 bg-white p-8 dark:border-dark-700 dark:bg-dark-900">
+          <div class="rounded-none border border-gray-200 bg-white p-8 dark:border-dark-700 dark:bg-dark-900">
             <div class="skeleton h-5 w-32 mb-6"></div>
             <div class="space-y-4">
               <div class="skeleton h-4 w-full"></div>
@@ -156,7 +156,7 @@
         <div v-else-if="resultData" class="space-y-6">
           <!-- Status Badge -->
           <div v-if="statusInfo" class="fade-up flex items-center justify-center mb-2">
-            <div class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full border border-gray-200 bg-white/90 shadow-sm backdrop-blur-sm dark:border-dark-700 dark:bg-dark-900/90">
+            <div class="inline-flex items-center gap-2 px-5 py-2.5 rounded-none border border-gray-200 bg-white shadow-outline dark:border-dark-700 dark:bg-dark-900">
               <span
                 class="w-2.5 h-2.5 rounded-full pulse-dot"
                 :class="statusInfo.isActive ? 'bg-emerald-500' : 'bg-rose-500'"
@@ -172,7 +172,7 @@
             <div
               v-for="(ring, i) in ringItems"
               :key="i"
-              class="fade-up rounded-2xl border border-gray-200 bg-white/90 p-8 backdrop-blur-sm transition-all duration-300 hover:shadow-lg dark:border-dark-700 dark:bg-dark-900/90"
+              class="fade-up rounded-none border border-gray-200 bg-white p-8 transition-all duration-300 hover:shadow-outline dark:border-dark-700 dark:bg-dark-900"
               :class="`fade-up-delay-${Math.min(i + 1, 4)}`"
             >
               <div class="flex items-center justify-between mb-6">
@@ -239,7 +239,7 @@
           <!-- Detail Card -->
           <div
             v-if="detailRows.length > 0"
-            class="fade-up fade-up-delay-3 rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-sm overflow-hidden dark:border-dark-700 dark:bg-dark-900/90"
+            class="fade-up fade-up-delay-3 rounded-none border border-gray-200 bg-white overflow-hidden dark:border-dark-700 dark:bg-dark-900"
           >
             <div class="px-8 py-5 border-b border-gray-200 dark:border-dark-700">
               <h3 class="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-dark-400">{{ t('keyUsage.detailInfo') }}</h3>
@@ -251,7 +251,7 @@
                 class="px-8 py-4 flex items-center justify-between"
               >
                 <div class="flex items-center gap-3">
-                  <div class="w-8 h-8 rounded-lg flex items-center justify-center" :class="row.iconBg">
+                  <div class="w-8 h-8 rounded-none flex items-center justify-center" :class="row.iconBg">
                     <svg
                       class="w-4 h-4"
                       :class="row.iconColor"
@@ -272,7 +272,7 @@
           <!-- Usage Stats Card -->
           <div
             v-if="usageStatCells.length > 0"
-            class="fade-up fade-up-delay-3 rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-sm overflow-hidden dark:border-dark-700 dark:bg-dark-900/90"
+            class="fade-up fade-up-delay-3 rounded-none border border-gray-200 bg-white overflow-hidden dark:border-dark-700 dark:bg-dark-900"
           >
             <div class="px-8 py-5 border-b border-gray-200 dark:border-dark-700">
               <h3 class="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-dark-400">{{ t('keyUsage.tokenStats') }}</h3>
@@ -292,16 +292,16 @@
           <!-- Daily Usage Table -->
           <div
             v-if="showDailyUsage"
-            class="fade-up fade-up-delay-4 rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-sm overflow-hidden dark:border-dark-700 dark:bg-dark-900/90"
+            class="fade-up fade-up-delay-4 rounded-none border border-gray-200 bg-white overflow-hidden dark:border-dark-700 dark:bg-dark-900"
           >
             <div class="flex flex-col gap-3 px-8 py-5 border-b border-gray-200 dark:border-dark-700 sm:flex-row sm:items-center sm:justify-between">
               <h3 class="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-dark-400">{{ t('keyUsage.dailyDetail') }}</h3>
-              <div class="inline-flex rounded-lg border border-gray-200 bg-white p-0.5 dark:border-dark-700 dark:bg-dark-950">
+              <div class="inline-flex rounded-none border border-gray-200 bg-white p-0.5 dark:border-dark-700 dark:bg-dark-950">
                 <button
                   v-for="option in dailyUsageOptions"
                   :key="option.value"
                   @click="setDailyUsageDays(option.value)"
-                  class="min-w-12 rounded-md px-3 py-1.5 text-xs font-medium transition-colors"
+                  class="min-w-12 rounded-none px-3 py-1.5 text-xs font-medium transition-colors"
                   :class="dailyUsageDays === option.value
                     ? 'bg-primary-500 text-white'
                     : 'text-gray-600 hover:bg-gray-100 dark:text-dark-300 dark:hover:bg-dark-800'"
@@ -348,7 +348,7 @@
           <!-- Model Stats Table -->
           <div
             v-if="modelStats.length > 0"
-            class="fade-up fade-up-delay-4 rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-sm overflow-hidden dark:border-dark-700 dark:bg-dark-900/90"
+            class="fade-up fade-up-delay-4 rounded-none border border-gray-200 bg-white overflow-hidden dark:border-dark-700 dark:bg-dark-900"
           >
             <div class="px-8 py-5 border-b border-gray-200 dark:border-dark-700">
               <h3 class="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-dark-400">{{ t('keyUsage.modelStats') }}</h3>
@@ -391,7 +391,7 @@
     </main>
 
     <!-- Footer (same pattern as HomeView) -->
-    <footer class="relative z-10 border-t border-gray-200/50 px-6 py-8 dark:border-dark-800/50">
+    <footer class="relative z-10 border-t border-gray-200 px-6 py-8 dark:border-dark-800">
       <div class="mx-auto flex max-w-6xl flex-col items-center justify-center gap-4 text-center sm:flex-row sm:text-left">
         <p class="text-sm text-gray-500 dark:text-dark-400">
           &copy; {{ currentYear }} {{ siteName }}. {{ t('home.footer.allRightsReserved') }}
@@ -529,7 +529,7 @@ function setDailyUsageDays(days: 7 | 30 | 90) {
 
 const CIRCUMFERENCE = 2 * Math.PI * 68
 const RING_GRADIENTS = [
-  { from: '#14b8a6', to: '#5eead4' },
+  { from: '#168a49', to: '#5eead4' },
   { from: '#6366F1', to: '#A5B4FC' },
   { from: '#10B981', to: '#6EE7B7' },
   { from: '#F59E0B', to: '#FCD34D' },
@@ -949,9 +949,9 @@ onUnmounted(() => {
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 .input-ring:focus {
-  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.2);
-  border-color: #14b8a6;
-  outline: none;
+  border-color: #168a49;
+  outline: 2px solid rgba(22, 138, 73, 0.2);
+  outline-offset: 1px;
 }
 
 /* Ring animation */
@@ -962,19 +962,17 @@ onUnmounted(() => {
 }
 
 /* Skeleton loading */
-@keyframes shimmer-kv {
-  0%   { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+@keyframes pulse-opacity-kv {
+  0%, 100% { opacity: 0.72; }
+  50% { opacity: 1; }
 }
 .skeleton {
-  background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
-  background-size: 200% 100%;
-  animation: shimmer-kv 1.8s ease-in-out infinite;
-  border-radius: 8px;
+  background: rgb(var(--ui-surface));
+  animation: pulse-opacity-kv 1.8s ease-in-out infinite;
+  border-radius: 0;
 }
 :global(.dark) .skeleton {
-  background: linear-gradient(90deg, #334155 25%, #1e293b 50%, #334155 75%);
-  background-size: 200% 100%;
+  background: rgb(var(--ui-raised));
 }
 
 /* Fade up animation */
@@ -992,8 +990,8 @@ onUnmounted(() => {
 
 /* Pulse dot */
 @keyframes pulse-dot-kv {
-  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 currentColor; }
-  50% { opacity: 0.6; box-shadow: 0 0 8px 2px currentColor; }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
 }
 .pulse-dot {
   animation: pulse-dot-kv 2s ease-in-out infinite;

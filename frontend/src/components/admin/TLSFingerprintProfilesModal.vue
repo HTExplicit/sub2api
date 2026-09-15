@@ -34,7 +34,7 @@
         </p>
       </div>
 
-      <div v-else class="max-h-96 overflow-auto rounded-lg border border-gray-200 dark:border-dark-600">
+      <div v-else class="max-h-96 overflow-auto rounded-none border border-gray-200 dark:border-dark-600">
         <table class="min-w-full divide-y divide-gray-200 dark:divide-dark-700">
           <thead class="sticky top-0 bg-gray-50 dark:bg-dark-700">
             <tr>
@@ -187,7 +187,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
                 form.enable_grease ? 'translate-x-4' : 'translate-x-0'
               ]"
             />

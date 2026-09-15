@@ -1,10 +1,10 @@
 <template>
   <section
-    class="overflow-hidden rounded-2xl border bg-white shadow-card dark:bg-dark-800/50"
+    class="overflow-hidden rounded-none border bg-white dark:bg-dark-800"
     :class="[platformBorderStrongClass(group.platform)]"
   >
     <!-- 分组头部:名称/平台/倍率徽章/专属/订阅徽章 + 描述 -->
-    <header class="border-b border-gray-100 px-5 py-4 dark:border-dark-700/60">
+    <header class="border-b border-gray-100 px-5 py-4 dark:border-dark-700">
       <div class="flex flex-wrap items-center gap-2">
         <GroupBadge
           :name="group.name"
@@ -20,14 +20,14 @@
         />
         <span
           v-if="group.is_exclusive"
-          class="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-600 dark:bg-purple-900/20 dark:text-purple-400"
+          class="inline-flex items-center gap-1 rounded-none bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-600 dark:bg-purple-900/20 dark:text-purple-400"
         >
           <Icon name="shield" size="xs" class="h-3 w-3" />
           {{ t('modelPlaza.badges.exclusive') }}
         </span>
         <span
           v-if="group.subscription_type === 'subscription'"
-          class="inline-flex items-center rounded-md bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-600 dark:bg-violet-900/20 dark:text-violet-400"
+          class="inline-flex items-center rounded-none bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-600 dark:bg-violet-900/20 dark:text-violet-400"
         >
           {{ t('modelPlaza.badges.subscription') }}
         </span>

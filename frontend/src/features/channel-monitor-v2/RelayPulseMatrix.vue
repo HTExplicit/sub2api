@@ -1,6 +1,6 @@
 <template>
   <section
-    class="card flex min-h-[360px] flex-col overflow-visible !rounded-3xl !border-0 !p-6 shadow-sm ring-1 ring-gray-900/5 dark:!bg-dark-800 dark:ring-dark-700"
+    class="card flex min-h-[360px] flex-col overflow-visible !rounded-none rounded-3xl !border-0 !p-6 shadow-outline ring-1 ring-gray-900/5 dark:!bg-dark-800 dark:ring-dark-700"
   >
     <div class="card-header mb-4 flex shrink-0 flex-wrap items-start justify-between gap-3 !border-0 !p-0">
       <div class="min-w-0">
@@ -19,7 +19,7 @@
         <span class="hidden text-[11px] text-gray-400 dark:text-dark-400 sm:inline">{{ t('channelMonitorV2.matrix.wheelZoomX') }}</span>
         <button
           type="button"
-          class="inline-flex shrink-0 items-center rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300 dark:hover:bg-dark-800"
+          class="inline-flex shrink-0 items-center rounded-none border border-gray-200 bg-white px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300 dark:hover:bg-dark-800"
           :disabled="!zoomed"
           @click="resetMatrixZoom"
         >
@@ -32,7 +32,7 @@
       <div
         v-if="rows.length"
         ref="scrollRef"
-        class="matrix-scroll max-h-[min(42vh,420px)] max-w-full overflow-auto rounded-2xl bg-gray-50/60 p-2 dark:bg-dark-900/30"
+        class="matrix-scroll max-h-[min(42vh,420px)] max-w-full overflow-auto rounded-none bg-gray-50/60 p-2 dark:bg-dark-900"
         @wheel="onMatrixWheel"
       >
         <div class="matrix-table w-full" :style="tableStyle">
@@ -53,7 +53,7 @@
           <div
             v-for="entry in alignedRows"
             :key="rowKey(entry.row)"
-            class="matrix-row border-b border-gray-100/80 dark:border-dark-700/60"
+            class="matrix-row border-b border-gray-100 dark:border-dark-700"
             :class="showThroughput ? 'matrix-row--with-tps' : ''"
           >
             <div class="dimension-cell flex min-w-0 items-center gap-2 bg-white dark:bg-dark-800" :title="rowLabel(entry.row)">
@@ -85,7 +85,7 @@
               <span
                 v-for="slot in entry.slots"
                 :key="slot.start"
-                class="pulse-cell relative rounded-sm border-0 p-0 outline-offset-1"
+                class="pulse-cell relative rounded-none border-0 p-0 outline-offset-1"
                 :class="[
                   slot.bucket ? cellClass(slot.bucket.health, slot.bucket.metrics.request_count) : 'health-unknown',
                   slot.bucket ? 'has-data' : 'is-empty',
@@ -523,7 +523,7 @@ function formatBucketRange(value: string) {
 .health-healthy  { background: #22c55e; }
 .health-warning  { background: #f59e0b; }
 .health-critical { background: #ef4444; }
-.health-unknown  { background: #9ca3af; }
+.health-unknown  { background: #8a8b8d; }
 
 .score-legend {
   background: linear-gradient(
@@ -569,11 +569,11 @@ function formatBucketRange(value: string) {
   min-width: 11.5rem;
   max-width: 16rem;
   transform: translateX(-50%) translateY(4px);
-  border-radius: 0.75rem;
+  border-radius: 0;
   border: 1px solid rgb(229 231 235);
   background: rgb(255 255 255);
   padding: 0.5rem 0.625rem;
-  box-shadow: 0 10px 25px -5px rgb(0 0 0 / 0.15);
+  box-shadow: none;
   opacity: 0;
   visibility: hidden;
   transition: opacity 0.12s ease, transform 0.12s ease, visibility 0.12s;
@@ -619,11 +619,11 @@ function formatBucketRange(value: string) {
   min-width: 11.5rem;
   max-width: min(18rem, calc(100vw - 1.5rem));
   transform: translate(-50%, -100%);
-  border-radius: 0.75rem;
+  border-radius: 0;
   border: 1px solid rgb(229 231 235);
   background: rgb(255 255 255);
   padding: 0.5rem 0.625rem;
-  box-shadow: 0 18px 40px -12px rgb(0 0 0 / 0.28);
+  box-shadow: none;
   white-space: nowrap;
 }
 :global(.dark) .matrix-floating-tooltip {

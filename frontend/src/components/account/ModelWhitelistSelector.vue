@@ -3,7 +3,7 @@
     <div
       v-if="readonly"
       data-testid="managed-model-catalog"
-      class="overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-dark-600 dark:bg-dark-700"
+      class="overflow-hidden rounded-none border border-gray-200 bg-white dark:border-dark-600 dark:bg-dark-700"
     >
       <div class="border-b border-gray-200 p-2 dark:border-dark-600">
         <input
@@ -33,7 +33,7 @@
               <span
                 data-testid="model-verification-status"
                 :class="[
-                  'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium',
+                  'shrink-0 rounded-none px-1.5 py-0.5 text-[11px] font-medium',
                   model.verified
                     ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
                     : 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'
@@ -53,7 +53,7 @@
               <span
                 v-for="endpoint in model.endpoints"
                 :key="endpoint"
-                class="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600 dark:bg-dark-600 dark:text-gray-300"
+                class="rounded-none bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600 dark:bg-dark-600 dark:text-gray-300"
               >
                 {{ endpoint }}
               </span>
@@ -62,7 +62,7 @@
           <button
             type="button"
             data-testid="copy-model-id"
-            class="shrink-0 rounded p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-500 dark:hover:text-primary-400"
+            class="shrink-0 rounded-none p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-500 dark:hover:text-primary-400"
             :title="`${t('common.copy')} ${model.value}`"
             :aria-label="`${t('common.copy')} ${model.value}`"
             @click="copyModelId(model.value)"
@@ -82,7 +82,7 @@
       <div
         data-testid="model-selector-toggle"
         @click="toggleDropdown"
-        class="cursor-pointer rounded-lg border border-gray-300 bg-white px-3 py-2 dark:border-dark-500 dark:bg-dark-700"
+        class="cursor-pointer rounded-none border border-gray-300 bg-white px-3 py-2 dark:border-dark-500 dark:bg-dark-700"
       >
         <div class="grid grid-cols-2 gap-1.5">
           <span
@@ -90,7 +90,7 @@
             :key="model"
             data-testid="selected-model"
             :data-model-id="model"
-            class="inline-flex min-w-0 items-center justify-between gap-1 rounded bg-gray-100 px-2 py-1 text-xs text-gray-700 dark:bg-dark-600 dark:text-gray-300"
+            class="inline-flex min-w-0 items-center justify-between gap-1 rounded-none bg-gray-100 px-2 py-1 text-xs text-gray-700 dark:bg-dark-600 dark:text-gray-300"
           >
             <span class="flex min-w-0 items-center gap-1 truncate">
               <ModelIcon :model="model" size="14px" />
@@ -126,7 +126,7 @@
       <!-- Dropdown List -->
       <div
         v-if="showDropdown"
-        class="absolute left-0 right-0 top-full z-50 mt-1 rounded-lg border border-gray-200 bg-white shadow-lg dark:border-dark-600 dark:bg-dark-700"
+        class="absolute left-0 right-0 top-full z-50 mt-1 rounded-none border border-gray-200 bg-white shadow-outline dark:border-dark-600 dark:bg-dark-700"
       >
         <div class="sticky top-0 border-b border-gray-200 bg-white p-2 dark:border-dark-600 dark:bg-dark-700">
           <input
@@ -153,7 +153,7 @@
             >
               <span
                 :class="[
-                  'flex h-4 w-4 shrink-0 items-center justify-center rounded border',
+                  'flex h-4 w-4 shrink-0 items-center justify-center rounded-none border',
                   modelValue.includes(model.value)
                     ? 'border-primary-500 bg-primary-500 text-white'
                     : 'border-gray-300 dark:border-dark-500'
@@ -179,7 +179,7 @@
             <button
               type="button"
               data-testid="copy-model-id"
-              class="mr-2 rounded p-1.5 text-gray-400 opacity-70 transition-colors hover:bg-gray-200 hover:text-primary-600 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 group-hover:opacity-100 dark:text-gray-500 dark:hover:bg-dark-500 dark:hover:text-primary-400"
+              class="mr-2 rounded-none p-1.5 text-gray-400 opacity-70 transition-colors hover:bg-gray-200 hover:text-primary-600 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 group-hover:opacity-100 dark:text-gray-500 dark:hover:bg-dark-500 dark:hover:text-primary-400"
               :title="`${t('common.copy')} ${model.value}`"
               :aria-label="`${t('common.copy')} ${model.value}`"
               @click.stop="copyModelId(model.value)"
@@ -200,7 +200,7 @@
         type="button"
         data-testid="fill-related-models"
         @click="fillRelated"
-        class="rounded-lg border border-blue-200 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/30"
+        class="rounded-none border border-blue-200 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/30"
       >
         {{ t('admin.accounts.fillRelatedModels') }}
       </button>
@@ -211,14 +211,14 @@
         @click="syncUpstreamModels"
         :disabled="isSyncingUpstream || syncDisabled"
         :title="syncDisabledReason"
-        class="rounded-lg border border-emerald-200 px-3 py-1.5 text-sm text-emerald-600 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
+        class="rounded-none border border-emerald-200 px-3 py-1.5 text-sm text-emerald-600 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
       >
         {{ isSyncingUpstream ? t('admin.accounts.syncUpstreamModelsLoading') : t('admin.accounts.syncUpstreamModels') }}
       </button>
       <button
         type="button"
         @click="clearAll"
-        class="rounded-lg border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/30"
+        class="rounded-none border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/30"
       >
         {{ t('admin.accounts.clearAllModels') }}
       </button>
@@ -240,7 +240,7 @@
         <button
           type="button"
           @click="addCustom"
-          class="rounded-lg bg-primary-50 px-4 py-2 text-sm font-medium text-primary-600 hover:bg-primary-100 dark:bg-primary-900/30 dark:text-primary-400 dark:hover:bg-primary-900/50"
+          class="rounded-none bg-primary-50 px-4 py-2 text-sm font-medium text-primary-600 hover:bg-primary-100 dark:bg-primary-900/30 dark:text-primary-400 dark:hover:bg-primary-900/50"
         >
           {{ t('admin.accounts.addModel') }}
         </button>

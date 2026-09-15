@@ -23,7 +23,7 @@
         data-testid="image-studio-layout"
       >
         <form
-          class="h-fit min-w-0 space-y-5 rounded-md border border-gray-200 bg-white p-5 shadow-sm dark:border-dark-700 dark:bg-dark-900"
+          class="h-fit min-w-0 space-y-5 rounded-none border border-gray-200 bg-white p-5 shadow-outline dark:border-dark-700 dark:bg-dark-900"
           @submit.prevent="submit"
         >
           <div>
@@ -69,10 +69,10 @@
             </p>
           </div>
 
-          <div class="grid grid-cols-2 rounded-md bg-gray-100 p-1 dark:bg-dark-800" role="group">
+          <div class="grid grid-cols-2 rounded-none bg-gray-100 p-1 dark:bg-dark-800" role="group">
             <button
               type="button"
-              class="h-9 rounded px-3 text-sm font-medium transition-colors"
+              class="h-9 rounded-none px-3 text-sm font-medium transition-colors"
               :class="form.mode === 'generate' ? activeModeClass : inactiveModeClass"
               :disabled="!supportsGeneration || submitting"
               data-testid="mode-generate"
@@ -82,7 +82,7 @@
             </button>
             <button
               type="button"
-              class="h-9 rounded px-3 text-sm font-medium transition-colors"
+              class="h-9 rounded-none px-3 text-sm font-medium transition-colors"
               :class="form.mode === 'edit' ? activeModeClass : inactiveModeClass"
               :disabled="!supportsEdit || submitting"
               data-testid="mode-edit"
@@ -182,7 +182,7 @@
                 {{ activeJob.counts.processed }}/{{ activeJob.count }}
               </span>
             </div>
-            <div class="h-2 overflow-hidden rounded bg-gray-100 dark:bg-dark-800">
+            <div class="h-2 overflow-hidden rounded-none bg-gray-100 dark:bg-dark-800">
               <div class="h-full bg-primary-500 transition-[width]" :style="{ width: `${activeJobProgress}%` }" />
             </div>
             <button
@@ -223,7 +223,7 @@
             <article
               v-for="record in history"
               :key="record.id"
-              class="min-w-0 overflow-hidden rounded-md border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-900"
+              class="min-w-0 overflow-hidden rounded-none border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-900"
             >
               <div class="grid gap-1 border-b border-gray-100 px-4 py-3 dark:border-dark-800">
                 <div class="flex min-w-0 items-start justify-between gap-3">
@@ -276,7 +276,7 @@
                   </button>
                   <button
                     type="button"
-                    class="absolute bottom-2 right-2 flex h-9 w-9 items-center justify-center rounded bg-black/70 text-white opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
+                    class="absolute bottom-2 right-2 flex h-9 w-9 items-center justify-center rounded-none bg-black/70 text-white opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
                     :title="t('imageStudio.download')"
                     @click="downloadImage(record, image)"
                   >
@@ -350,7 +350,7 @@ type DisplayHistoryImage = ImageStudioHistoryRecord['images'][number] & { url: s
 type DisplayHistoryRecord = Omit<ImageStudioHistoryRecord, 'images'> & { images: DisplayHistoryImage[] }
 
 const ALLOWED_UPLOAD_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
-const activeModeClass = 'bg-white text-gray-950 shadow-sm dark:bg-dark-700 dark:text-white'
+const activeModeClass = 'bg-white text-gray-950 shadow-outline dark:bg-dark-700 dark:text-white'
 const inactiveModeClass = 'text-gray-500 enabled:hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:enabled:hover:text-white'
 
 const ImageFileField = defineComponent({
@@ -366,7 +366,7 @@ const ImageFileField = defineComponent({
   setup(props, { emit, attrs }) {
     return () => h('div', { class: 'min-w-0', ...attrs }, [
       h('label', { class: 'input-label' }, [props.label, props.required ? ' *' : '']),
-      h('div', { class: 'relative aspect-square overflow-hidden rounded-md border border-dashed border-gray-300 bg-gray-50 dark:border-dark-600 dark:bg-dark-950' }, [
+      h('div', { class: 'relative aspect-square overflow-hidden rounded-none border border-dashed border-gray-300 bg-gray-50 dark:border-dark-600 dark:bg-dark-950' }, [
         props.previewUrl
           ? h('img', { src: props.previewUrl, alt: '', class: 'h-full w-full object-contain' })
           : h(Icon, { name: 'upload', size: 'lg', class: 'absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-gray-400' }),

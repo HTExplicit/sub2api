@@ -16,7 +16,7 @@
   <div
     v-else-if="compactHomeEnabled"
     data-testid="compact-home"
-    class="flex min-h-screen flex-col bg-gray-50 text-gray-900 dark:bg-dark-950 dark:text-white"
+    class="public-texture relative flex min-h-screen flex-col bg-canvas text-gray-900 dark:bg-dark-950 dark:text-white"
   >
     <header class="border-b border-gray-200 px-4 py-4 sm:px-6 dark:border-dark-800">
       <nav class="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 sm:gap-4">
@@ -24,7 +24,7 @@
           <img
             :src="siteLogo || '/logo.svg'"
             alt="Logo"
-            class="h-9 w-9 shrink-0 rounded-lg object-contain"
+            class="h-9 w-9 shrink-0 rounded-none object-contain"
           />
           <span class="min-w-0 truncate text-base font-semibold">{{ siteName }}</span>
         </div>
@@ -35,7 +35,7 @@
             :href="docUrl"
             target="_blank"
             rel="noopener noreferrer"
-            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:text-dark-400 dark:hover:bg-dark-800"
+            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-none text-gray-500 hover:bg-gray-100 dark:text-dark-400 dark:hover:bg-dark-800"
             :title="t('home.viewDocs')"
           >
             <Icon name="book" size="md" />
@@ -43,14 +43,14 @@
           <router-link
             v-if="showModelPlazaEntry"
             to="/model-plaza"
-            class="flex h-10 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+            class="flex h-10 shrink-0 items-center gap-1.5 rounded-none px-2.5 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
             :title="t('nav.modelPlaza')"
           >
             <Icon name="grid" size="md" />
             <span class="hidden sm:inline">{{ t('nav.modelPlaza') }}</span>
           </router-link>
           <button
-            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:text-dark-400 dark:hover:bg-dark-800"
+            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-none text-gray-500 hover:bg-gray-100 dark:text-dark-400 dark:hover:bg-dark-800"
             :title="isDark ? t('home.switchToLight') : t('home.switchToDark')"
             @click="toggleTheme"
           >
@@ -59,7 +59,7 @@
           </button>
           <router-link
             :to="isAuthenticated ? dashboardPath : '/login'"
-            class="inline-flex min-h-10 shrink-0 items-center justify-center rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
+            class="inline-flex min-h-10 shrink-0 items-center justify-center rounded-none bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
           >
             {{ isAuthenticated ? t('home.dashboard') : t('home.login') }}
           </router-link>
@@ -72,13 +72,13 @@
         <img
           :src="siteLogo || '/logo.svg'"
           alt="Logo"
-          class="mx-auto mb-6 h-20 w-20 rounded-2xl object-contain"
+          class="mx-auto mb-6 h-20 w-20 rounded-none object-contain"
         />
         <h1 class="[overflow-wrap:anywhere] text-3xl font-bold md:text-4xl">{{ siteName }}</h1>
         <p class="mt-4 whitespace-pre-wrap [overflow-wrap:anywhere] text-base text-gray-600 dark:text-dark-300">{{ siteSubtitle }}</p>
         <router-link
           :to="isAuthenticated ? dashboardPath : '/login'"
-          class="mt-8 inline-flex min-h-10 items-center justify-center rounded-lg bg-primary-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-primary-700"
+          class="mt-8 inline-flex min-h-10 items-center justify-center rounded-none bg-primary-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-primary-700"
         >
           {{ isAuthenticated ? t('home.goToDashboard') : t('home.login') }}
         </router-link>
@@ -93,33 +93,14 @@
   <!-- Default Home Page -->
   <div
     v-else
-    class="relative flex min-h-screen flex-col overflow-hidden bg-gradient-to-br from-gray-50 via-primary-50/30 to-gray-100 dark:from-dark-950 dark:via-dark-900 dark:to-dark-950"
+    class="public-texture relative flex min-h-screen flex-col overflow-hidden bg-canvas dark:bg-dark-950"
   >
-    <!-- Background Decorations -->
-    <div class="pointer-events-none absolute inset-0 overflow-hidden">
-      <div
-        class="absolute -right-40 -top-40 h-96 w-96 rounded-full bg-primary-400/20 blur-3xl"
-      ></div>
-      <div
-        class="absolute -bottom-40 -left-40 h-96 w-96 rounded-full bg-primary-500/15 blur-3xl"
-      ></div>
-      <div
-        class="absolute left-1/3 top-1/4 h-72 w-72 rounded-full bg-primary-300/10 blur-3xl"
-      ></div>
-      <div
-        class="absolute bottom-1/4 right-1/4 h-64 w-64 rounded-full bg-primary-400/10 blur-3xl"
-      ></div>
-      <div
-        class="absolute inset-0 bg-[linear-gradient(rgba(20,184,166,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(20,184,166,0.03)_1px,transparent_1px)] bg-[size:64px_64px]"
-      ></div>
-    </div>
-
     <!-- Header -->
-    <header class="relative z-20 px-6 py-4">
+    <header class="relative z-20 border-b border-line px-6 py-4">
       <nav class="mx-auto flex max-w-6xl items-center justify-between">
         <!-- Logo -->
         <div class="flex items-center">
-          <div class="h-10 w-10 overflow-hidden rounded-xl shadow-md">
+          <div class="h-10 w-10 overflow-hidden rounded-none shadow-outline">
             <img :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
           </div>
         </div>
@@ -135,7 +116,7 @@
             :href="docUrl"
             target="_blank"
             rel="noopener noreferrer"
-            class="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+            class="rounded-none p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
             :title="t('home.viewDocs')"
           >
             <Icon name="book" size="md" />
@@ -145,7 +126,7 @@
           <router-link
             v-if="showModelPlazaEntry"
             to="/model-plaza"
-            class="inline-flex items-center gap-1.5 rounded-lg p-2 text-sm text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+            class="inline-flex items-center gap-1.5 rounded-none p-2 text-sm text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
             :title="t('nav.modelPlaza')"
           >
             <Icon name="grid" size="md" />
@@ -155,7 +136,7 @@
           <!-- Theme Toggle -->
           <button
             @click="toggleTheme"
-            class="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+            class="rounded-none p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
             :title="isDark ? t('home.switchToLight') : t('home.switchToDark')"
           >
             <Icon v-if="isDark" name="sun" size="md" />
@@ -166,10 +147,10 @@
           <router-link
             v-if="isAuthenticated"
             :to="dashboardPath"
-            class="inline-flex items-center gap-1.5 rounded-full bg-gray-900 py-1 pl-1 pr-2.5 transition-colors hover:bg-gray-800 dark:bg-gray-800 dark:hover:bg-gray-700"
+            class="inline-flex items-center gap-1.5 rounded-none bg-gray-900 py-1 pl-1 pr-2.5 transition-colors hover:bg-gray-800 dark:bg-gray-800 dark:hover:bg-gray-700"
           >
             <span
-              class="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-primary-400 to-primary-600 text-[10px] font-semibold text-white"
+              class="flex h-5 w-5 items-center justify-center rounded-full bg-primary-400 text-[10px] font-semibold text-white"
             >
               {{ userInitial }}
             </span>
@@ -191,7 +172,7 @@
           <router-link
             v-else
             to="/login"
-            class="inline-flex items-center rounded-full bg-gray-900 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-gray-800 dark:bg-gray-800 dark:hover:bg-gray-700"
+            class="inline-flex items-center rounded-none bg-gray-900 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-gray-800 dark:bg-gray-800 dark:hover:bg-gray-700"
           >
             {{ t('home.login') }}
           </router-link>
@@ -219,7 +200,7 @@
             <div>
               <router-link
                 :to="isAuthenticated ? dashboardPath : '/login'"
-                class="btn btn-primary px-8 py-3 text-base shadow-lg shadow-primary-500/30"
+                class="btn btn-primary px-8 py-3 text-base shadow-outline"
               >
                 {{ isAuthenticated ? t('home.goToDashboard') : t('home.getStarted') }}
                 <Icon name="arrowRight" size="md" class="ml-2" :stroke-width="2" />
@@ -268,7 +249,7 @@
         <!-- Feature Tags - Centered -->
         <div class="mb-12 flex flex-wrap items-center justify-center gap-4 md:gap-6">
           <div
-            class="inline-flex items-center gap-2.5 rounded-full border border-gray-200/50 bg-white/80 px-5 py-2.5 shadow-sm backdrop-blur-sm dark:border-dark-700/50 dark:bg-dark-800/80"
+            class="inline-flex items-center gap-2.5 rounded-none border border-gray-200 bg-white px-5 py-2.5 shadow-outline dark:border-dark-700 dark:bg-dark-800"
           >
             <Icon name="swap" size="sm" class="text-primary-500" />
             <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{
@@ -276,7 +257,7 @@
             }}</span>
           </div>
           <div
-            class="inline-flex items-center gap-2.5 rounded-full border border-gray-200/50 bg-white/80 px-5 py-2.5 shadow-sm backdrop-blur-sm dark:border-dark-700/50 dark:bg-dark-800/80"
+            class="inline-flex items-center gap-2.5 rounded-none border border-gray-200 bg-white px-5 py-2.5 shadow-outline dark:border-dark-700 dark:bg-dark-800"
           >
             <Icon name="shield" size="sm" class="text-primary-500" />
             <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{
@@ -284,7 +265,7 @@
             }}</span>
           </div>
           <div
-            class="inline-flex items-center gap-2.5 rounded-full border border-gray-200/50 bg-white/80 px-5 py-2.5 shadow-sm backdrop-blur-sm dark:border-dark-700/50 dark:bg-dark-800/80"
+            class="inline-flex items-center gap-2.5 rounded-none border border-gray-200 bg-white px-5 py-2.5 shadow-outline dark:border-dark-700 dark:bg-dark-800"
           >
             <Icon name="chart" size="sm" class="text-primary-500" />
             <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{
@@ -297,10 +278,10 @@
         <div class="mb-12 grid gap-6 md:grid-cols-3">
           <!-- Feature 1: Unified Gateway -->
           <div
-            class="group rounded-2xl border border-gray-200/50 bg-white/60 p-6 backdrop-blur-sm transition-all duration-300 hover:shadow-xl hover:shadow-primary-500/10 dark:border-dark-700/50 dark:bg-dark-800/60"
+            class="group rounded-none border border-gray-200 bg-white p-6 transition-all duration-300 hover:shadow-outline dark:border-dark-700 dark:bg-dark-800"
           >
             <div
-              class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/30 transition-transform group-hover:scale-110"
+              class="mb-4 flex h-12 w-12 items-center justify-center rounded-none bg-surface text-ink border border-line"
             >
               <Icon name="server" size="lg" class="text-white" />
             </div>
@@ -314,13 +295,13 @@
 
           <!-- Feature 2: Account Pool -->
           <div
-            class="group rounded-2xl border border-gray-200/50 bg-white/60 p-6 backdrop-blur-sm transition-all duration-300 hover:shadow-xl hover:shadow-primary-500/10 dark:border-dark-700/50 dark:bg-dark-800/60"
+            class="group rounded-none border border-gray-200 bg-white p-6 transition-all duration-300 hover:shadow-outline dark:border-dark-700 dark:bg-dark-800"
           >
             <div
-              class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 shadow-lg shadow-primary-500/30 transition-transform group-hover:scale-110"
+              class="mb-4 flex h-12 w-12 items-center justify-center rounded-none bg-surface text-ink border border-line"
             >
               <svg
-                class="h-6 w-6 text-white"
+                class="h-6 w-6 text-primary-600 dark:text-primary-400"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -343,13 +324,13 @@
 
           <!-- Feature 3: Billing & Quota -->
           <div
-            class="group rounded-2xl border border-gray-200/50 bg-white/60 p-6 backdrop-blur-sm transition-all duration-300 hover:shadow-xl hover:shadow-primary-500/10 dark:border-dark-700/50 dark:bg-dark-800/60"
+            class="group rounded-none border border-gray-200 bg-white p-6 transition-all duration-300 hover:shadow-outline dark:border-dark-700 dark:bg-dark-800"
           >
             <div
-              class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 shadow-lg shadow-purple-500/30 transition-transform group-hover:scale-110"
+              class="mb-4 flex h-12 w-12 items-center justify-center rounded-none bg-surface text-ink border border-line"
             >
               <svg
-                class="h-6 w-6 text-white"
+                class="h-6 w-6 text-primary-600 dark:text-primary-400"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -384,76 +365,76 @@
         <div class="mb-16 flex flex-wrap items-center justify-center gap-4">
           <!-- Claude - Supported -->
           <div
-            class="flex items-center gap-2 rounded-xl border border-primary-200 bg-white/60 px-5 py-3 ring-1 ring-primary-500/20 backdrop-blur-sm dark:border-primary-800 dark:bg-dark-800/60"
+            class="flex items-center gap-2 rounded-none border border-primary-200 bg-white px-5 py-3 ring-1 ring-primary-500/20 dark:border-primary-800 dark:bg-dark-800"
           >
             <div
-              class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-orange-400 to-orange-500"
+              class="flex h-8 w-8 items-center justify-center rounded-none bg-orange-400"
             >
               <span class="text-xs font-bold text-white">C</span>
             </div>
             <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{ t('home.providers.claude') }}</span>
             <span
-              class="rounded bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 dark:bg-primary-900/30 dark:text-primary-400"
+              class="rounded-none bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 dark:bg-primary-900/30 dark:text-primary-400"
               >{{ t('home.providers.supported') }}</span
             >
           </div>
           <!-- GPT - Supported -->
           <div
-            class="flex items-center gap-2 rounded-xl border border-primary-200 bg-white/60 px-5 py-3 ring-1 ring-primary-500/20 backdrop-blur-sm dark:border-primary-800 dark:bg-dark-800/60"
+            class="flex items-center gap-2 rounded-none border border-primary-200 bg-white px-5 py-3 ring-1 ring-primary-500/20 dark:border-primary-800 dark:bg-dark-800"
           >
             <div
-              class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-green-500 to-green-600"
+              class="flex h-8 w-8 items-center justify-center rounded-none bg-green-500"
             >
               <span class="text-xs font-bold text-white">G</span>
             </div>
             <span class="text-sm font-medium text-gray-700 dark:text-dark-200">GPT</span>
             <span
-              class="rounded bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 dark:bg-primary-900/30 dark:text-primary-400"
+              class="rounded-none bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 dark:bg-primary-900/30 dark:text-primary-400"
               >{{ t('home.providers.supported') }}</span
             >
           </div>
           <!-- Gemini - Supported -->
           <div
-            class="flex items-center gap-2 rounded-xl border border-primary-200 bg-white/60 px-5 py-3 ring-1 ring-primary-500/20 backdrop-blur-sm dark:border-primary-800 dark:bg-dark-800/60"
+            class="flex items-center gap-2 rounded-none border border-primary-200 bg-white px-5 py-3 ring-1 ring-primary-500/20 dark:border-primary-800 dark:bg-dark-800"
           >
             <div
-              class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-blue-600"
+              class="flex h-8 w-8 items-center justify-center rounded-none bg-blue-500"
             >
               <span class="text-xs font-bold text-white">G</span>
             </div>
             <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{ t('home.providers.gemini') }}</span>
             <span
-              class="rounded bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 dark:bg-primary-900/30 dark:text-primary-400"
+              class="rounded-none bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 dark:bg-primary-900/30 dark:text-primary-400"
               >{{ t('home.providers.supported') }}</span
             >
           </div>
           <!-- Antigravity - Supported -->
           <div
-            class="flex items-center gap-2 rounded-xl border border-primary-200 bg-white/60 px-5 py-3 ring-1 ring-primary-500/20 backdrop-blur-sm dark:border-primary-800 dark:bg-dark-800/60"
+            class="flex items-center gap-2 rounded-none border border-primary-200 bg-white px-5 py-3 ring-1 ring-primary-500/20 dark:border-primary-800 dark:bg-dark-800"
           >
             <div
-              class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-rose-500 to-pink-600"
+              class="flex h-8 w-8 items-center justify-center rounded-none bg-rose-500"
             >
               <span class="text-xs font-bold text-white">A</span>
             </div>
             <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{ t('home.providers.antigravity') }}</span>
             <span
-              class="rounded bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 dark:bg-primary-900/30 dark:text-primary-400"
+              class="rounded-none bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 dark:bg-primary-900/30 dark:text-primary-400"
               >{{ t('home.providers.supported') }}</span
             >
           </div>
           <!-- More - Coming Soon -->
           <div
-            class="flex items-center gap-2 rounded-xl border border-gray-200/50 bg-white/40 px-5 py-3 opacity-60 backdrop-blur-sm dark:border-dark-700/50 dark:bg-dark-800/40"
+            class="flex items-center gap-2 rounded-none border border-gray-200 bg-white px-5 py-3 opacity-60 dark:border-dark-700 dark:bg-dark-800"
           >
             <div
-              class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-gray-500 to-gray-600"
+              class="flex h-8 w-8 items-center justify-center rounded-none bg-gray-500"
             >
               <span class="text-xs font-bold text-white">+</span>
             </div>
             <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{ t('home.providers.more') }}</span>
             <span
-              class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-dark-700 dark:text-dark-400"
+              class="rounded-none bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-dark-700 dark:text-dark-400"
               >{{ t('home.providers.soon') }}</span
             >
           </div>
@@ -462,7 +443,7 @@
     </main>
 
     <!-- Footer -->
-    <footer class="relative z-10 border-t border-gray-200/50 px-6 py-8 dark:border-dark-800/50">
+    <footer class="relative z-10 border-t border-gray-200 px-6 py-8 dark:border-dark-800">
       <div
         class="mx-auto flex max-w-6xl flex-col items-center justify-center gap-4 text-center sm:flex-row sm:text-left"
       >
@@ -589,20 +570,19 @@ onMounted(() => {
 
 /* Terminal Window */
 .terminal-window {
-  width: 420px;
-  background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%);
-  border-radius: 14px;
-  box-shadow:
-    0 25px 50px -12px rgba(0, 0, 0, 0.4),
-    0 0 0 1px rgba(255, 255, 255, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  width: min(420px, calc(100vw - 3rem));
+  background: rgb(var(--ui-surface));
+  border: 1px solid rgb(var(--ui-line));
+  color: rgb(var(--ui-ink));
+  border-radius: 0;
+  box-shadow: none;
   overflow: hidden;
-  transform: perspective(1000px) rotateX(2deg) rotateY(-2deg);
+  transform: none;
   transition: transform 0.3s ease;
 }
 
 .terminal-window:hover {
-  transform: perspective(1000px) rotateX(0deg) rotateY(0deg) translateY(-4px);
+  transform: none;
 }
 
 /* Terminal Header */
@@ -610,8 +590,8 @@ onMounted(() => {
   display: flex;
   align-items: center;
   padding: 12px 16px;
-  background: rgba(30, 41, 59, 0.8);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgb(var(--ui-raised));
+  border-bottom: 1px solid rgb(var(--ui-line));
 }
 
 .terminal-buttons {
@@ -640,14 +620,14 @@ onMounted(() => {
   text-align: center;
   font-size: 12px;
   font-family: ui-monospace, monospace;
-  color: #64748b;
+  color: rgb(var(--ui-muted));
   margin-right: 52px;
 }
 
 /* Terminal Body */
 .terminal-body {
   padding: 20px 24px;
-  font-family: ui-monospace, 'Fira Code', monospace;
+  font-family: ui-monospace, monospace;
   font-size: 14px;
   line-height: 2;
 }
@@ -658,20 +638,20 @@ onMounted(() => {
   gap: 8px;
   flex-wrap: wrap;
   opacity: 0;
-  animation: line-appear 0.5s ease forwards;
+  animation: line-appear 0.15s ease forwards;
 }
 
 .line-1 {
-  animation-delay: 0.3s;
+  animation-delay: 0s;
 }
 .line-2 {
-  animation-delay: 1s;
+  animation-delay: 0.1s;
 }
 .line-3 {
-  animation-delay: 1.8s;
+  animation-delay: 0.15s;
 }
 .line-4 {
-  animation-delay: 2.5s;
+  animation-delay: 0.2s;
 }
 
 @keyframes line-appear {
@@ -686,31 +666,31 @@ onMounted(() => {
 }
 
 .code-prompt {
-  color: #22c55e;
+  color: var(--ui-link);
   font-weight: bold;
 }
 .code-cmd {
-  color: #38bdf8;
+  color: rgb(var(--ui-ink));
 }
 .code-flag {
-  color: #a78bfa;
+  color: rgb(var(--ui-muted));
 }
 .code-url {
-  color: #14b8a6;
+  color: var(--ui-link);
 }
 .code-comment {
-  color: #64748b;
+  color: rgb(var(--ui-muted));
   font-style: italic;
 }
 .code-success {
-  color: #22c55e;
+  color: var(--ui-link);
   background: rgba(34, 197, 94, 0.15);
   padding: 2px 8px;
-  border-radius: 4px;
+  border-radius: 0;
   font-weight: 600;
 }
 .code-response {
-  color: #fbbf24;
+  color: rgb(var(--ui-ink));
 }
 
 /* Blinking Cursor */
@@ -735,10 +715,6 @@ onMounted(() => {
 
 /* Dark mode adjustments */
 :deep(.dark) .terminal-window {
-  box-shadow:
-    0 25px 50px -12px rgba(0, 0, 0, 0.6),
-    0 0 0 1px rgba(20, 184, 166, 0.2),
-    0 0 40px rgba(20, 184, 166, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  box-shadow: none;
 }
 </style>

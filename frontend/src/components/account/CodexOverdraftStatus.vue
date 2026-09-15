@@ -5,7 +5,7 @@
     :class="status.textClass"
     :title="status.title"
   >
-    <span class="rounded px-1.5 py-0.5 font-medium" :class="status.badgeClass">
+    <span class="rounded-none px-1.5 py-0.5 font-medium" :class="status.badgeClass">
       {{ status.label }}
     </span>
     <span v-if="status.detail" class="text-gray-500 dark:text-gray-400">

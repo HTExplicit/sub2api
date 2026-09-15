@@ -3,9 +3,9 @@
     <div class="mx-auto max-w-2xl space-y-6">
       <!-- Current Balance Card -->
       <div class="card overflow-hidden">
-        <div class="bg-gradient-to-br from-primary-500 to-primary-600 px-6 py-8 text-center">
+        <div class="bg-primary-500 px-6 py-8 text-center">
           <div
-            class="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm"
+            class="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-none bg-white"
           >
             <Icon name="creditCard" size="xl" class="text-white" />
           </div>
@@ -87,7 +87,7 @@
           <div class="p-6">
             <div class="flex items-start gap-4">
               <div
-                class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-900/30"
+                class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-none bg-emerald-100 dark:bg-emerald-900/30"
               >
                 <Icon name="checkCircle" size="md" class="text-emerald-600 dark:text-emerald-400" />
               </div>
@@ -141,7 +141,7 @@
           <div class="p-6">
             <div class="flex items-start gap-4">
               <div
-                class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-red-100 dark:bg-red-900/30"
+                class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-none bg-red-100 dark:bg-red-900/30"
               >
                 <Icon
                   name="exclamationCircle"
@@ -169,7 +169,7 @@
         <div class="p-6">
           <div class="flex items-start gap-4">
             <div
-              class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary-100 dark:bg-primary-900/30"
+              class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-none bg-primary-100 dark:bg-primary-900/30"
             >
               <Icon name="infoCircle" size="md" class="text-primary-600 dark:text-primary-400" />
             </div>
@@ -186,7 +186,7 @@
                   {{ t('redeem.codeRule3') }}
                   <span
                     v-if="contactInfo"
-                    class="ml-1.5 inline-flex items-center rounded-md bg-primary-200/50 px-2 py-0.5 text-xs font-medium text-primary-800 dark:bg-primary-800/40 dark:text-primary-200"
+                    class="ml-1.5 inline-flex items-center rounded-none bg-primary-200/50 px-2 py-0.5 text-xs font-medium text-primary-800 dark:bg-primary-800/40 dark:text-primary-200"
                   >
                     {{ contactInfo }}
                   </span>
@@ -230,12 +230,12 @@
             <div
               v-for="item in history"
               :key="item.id"
-              class="flex items-center justify-between rounded-xl bg-gray-50 p-4 dark:bg-dark-800"
+              class="flex items-center justify-between rounded-none bg-gray-50 p-4 dark:bg-dark-800"
             >
               <div class="flex items-center gap-4">
                 <div
                   :class="[
-                    'flex h-10 w-10 items-center justify-center rounded-xl',
+                    'flex h-10 w-10 items-center justify-center rounded-none',
                     isBalanceType(item.type)
                       ? item.value >= 0
                         ? 'bg-emerald-100 dark:bg-emerald-900/30'
@@ -327,7 +327,7 @@
           <!-- Empty State -->
           <div v-else class="empty-state py-8">
             <div
-              class="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100 dark:bg-dark-800"
+              class="mb-4 flex h-16 w-16 items-center justify-center rounded-none bg-gray-100 dark:bg-dark-800"
             >
               <Icon name="clock" size="xl" class="text-gray-400 dark:text-dark-500" />
             </div>

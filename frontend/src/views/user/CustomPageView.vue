@@ -464,7 +464,7 @@ onUnmounted(() => {
     width: 70%;
     max-width: 240px;
     height: 100%;
-    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
+    border-right: 1px solid rgb(var(--ui-line));
   }
 }
 
@@ -477,7 +477,7 @@ onUnmounted(() => {
 }
 
 .toc-close-btn {
-  @apply p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-dark-200 hover:bg-gray-200 dark:hover:bg-dark-600 transition-colors;
+  @apply p-1 rounded-none text-gray-400 hover:text-gray-600 dark:hover:text-dark-200 hover:bg-gray-200 dark:hover:bg-dark-600 transition-colors;
 }
 
 .toc-nav {
@@ -485,7 +485,7 @@ onUnmounted(() => {
 }
 
 .toc-item {
-  @apply block px-2 py-1.5 text-sm rounded transition-colors truncate;
+  @apply block px-2 py-1.5 text-sm rounded-none transition-colors truncate;
   @apply text-gray-600 dark:text-dark-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-dark-600;
 }
 
@@ -499,22 +499,22 @@ onUnmounted(() => {
 .toc-level-4 { padding-left: 44px; }
 
 .toc-toggle-btn {
-  @apply absolute left-2 top-2 z-10 flex items-center px-2 py-1.5 rounded-md text-sm;
+  @apply absolute left-2 top-2 z-10 flex items-center px-2 py-1.5 rounded-none text-sm;
   @apply bg-white dark:bg-dark-700 border border-gray-200 dark:border-dark-500;
   @apply text-gray-600 dark:text-dark-300 hover:bg-gray-100 dark:hover:bg-dark-600;
-  @apply shadow-sm transition-colors cursor-pointer;
+  @apply shadow-outline transition-colors cursor-pointer;
 }
 
 .custom-embed-shell {
   @apply relative;
-  @apply h-full w-full overflow-hidden rounded-2xl;
-  @apply bg-gradient-to-b from-gray-50 to-white dark:from-dark-900 dark:to-dark-950;
+  @apply h-full w-full overflow-hidden rounded-none;
+  @apply bg-gray-50 dark:bg-dark-900;
   @apply p-0;
 }
 
 .custom-open-fab {
   @apply absolute right-3 top-3 z-10 w-max max-w-full touch-none select-none transition-colors;
-  @apply shadow-sm backdrop-blur supports-[backdrop-filter]:bg-white/80 dark:supports-[backdrop-filter]:bg-dark-800/80;
+  @apply shadow-outline supports-[backdrop-filter]:bg-white dark:supports-[backdrop-filter]:bg-dark-800;
 }
 
 .custom-embed-frame {
@@ -544,12 +544,12 @@ onUnmounted(() => {
 .markdown-page-content li { @apply mb-1; }
 .markdown-page-content a { @apply text-primary-500 hover:text-primary-600 underline; }
 .markdown-page-content blockquote { @apply border-l-4 border-gray-300 dark:border-dark-500 pl-4 italic text-gray-600 dark:text-dark-300 my-4; }
-.markdown-page-content img { @apply max-w-full h-auto rounded-lg my-4; }
+.markdown-page-content img { @apply max-w-full h-auto rounded-none my-4; }
 .markdown-page-content table { @apply w-full border-collapse my-4; }
 .markdown-page-content th { @apply border border-gray-300 dark:border-dark-500 px-3 py-2 bg-gray-50 dark:bg-dark-700 font-semibold text-left; }
 .markdown-page-content td { @apply border border-gray-300 dark:border-dark-500 px-3 py-2; }
-.markdown-page-content code { @apply bg-gray-100 dark:bg-dark-700 px-1.5 py-0.5 rounded text-sm font-mono; }
-.markdown-page-content pre { @apply bg-gray-900 dark:bg-dark-900 text-gray-100 p-4 rounded-lg overflow-x-auto my-4 relative; }
+.markdown-page-content code { @apply bg-gray-100 dark:bg-dark-700 px-1.5 py-0.5 rounded-none text-sm font-mono; }
+.markdown-page-content pre { @apply bg-gray-900 dark:bg-dark-900 text-gray-100 p-4 rounded-none overflow-x-auto my-4 relative; }
 .markdown-page-content pre code { @apply bg-transparent p-0 text-inherit; }
 .markdown-page-content hr { @apply my-6 border-gray-200 dark:border-dark-600; }
 
@@ -559,9 +559,9 @@ onUnmounted(() => {
   right: 8px;
   padding: 4px 10px;
   font-size: 12px;
-  border-radius: 4px;
+  border-radius: 0;
   background: rgba(255, 255, 255, 0.15);
-  color: #e2e8f0;
+  color: #dcdcdc;
   border: 1px solid rgba(255, 255, 255, 0.2);
   cursor: pointer;
   opacity: 0;

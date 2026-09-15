@@ -21,7 +21,7 @@
           {{ tab.label }}
           <span
             v-if="countByProvider[tab.value] > 0"
-            class="ml-1.5 rounded-full bg-gray-100 px-2 py-0.5 text-xs dark:bg-dark-700"
+            class="ml-1.5 rounded-none bg-gray-100 px-2 py-0.5 text-xs dark:bg-dark-700"
           >
             {{ countByProvider[tab.value] }}
           </span>
@@ -53,21 +53,21 @@
         v-for="tpl in templatesForActiveProvider"
         v-else
         :key="tpl.id"
-        class="rounded-lg border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800"
+        class="rounded-none border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800"
       >
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2">
               <span class="font-medium text-gray-900 dark:text-white">{{ tpl.name }}</span>
               <span
-                class="inline-flex items-center rounded-md px-1.5 py-0.5 text-xs"
+                class="inline-flex items-center rounded-none px-1.5 py-0.5 text-xs"
                 :class="modeBadgeClass(tpl.body_override_mode)"
               >
                 {{ modeLabel(tpl.body_override_mode) }}
               </span>
               <span
                 v-if="tpl.provider === PROVIDER_OPENAI"
-                class="inline-flex items-center rounded-md px-1.5 py-0.5 text-xs"
+                class="inline-flex items-center rounded-none px-1.5 py-0.5 text-xs"
                 :class="apiModeBadgeClass(tpl.api_mode)"
               >
                 {{ apiModeLabel(tpl.api_mode) }}
@@ -135,7 +135,7 @@
             v-for="opt in providerTabs"
             :key="opt.value"
             type="button"
-            class="rounded-lg border-2 px-3 py-2 text-sm font-medium transition-colors"
+            class="rounded-none border-2 px-3 py-2 text-sm font-medium transition-colors"
             :class="providerPickerClass(opt.value, form.provider === opt.value)"
             @click="form.provider = opt.value"
           >
@@ -144,14 +144,14 @@
         </div>
       </div>
 
-      <div v-if="form.provider === PROVIDER_OPENAI" class="rounded-lg border border-blue-100 bg-blue-50/50 p-3 dark:border-blue-500/20 dark:bg-blue-500/10">
+      <div v-if="form.provider === PROVIDER_OPENAI" class="rounded-none border border-blue-100 bg-blue-50/50 p-3 dark:border-blue-500/20 dark:bg-blue-500/10">
         <label class="input-label">{{ t('admin.channelMonitor.form.apiMode') }}</label>
         <div class="grid gap-3 sm:grid-cols-2">
           <button
             v-for="opt in apiModeOptions"
             :key="opt.value"
             type="button"
-            class="rounded-lg border-2 px-3 py-2 text-left transition-colors"
+            class="rounded-none border-2 px-3 py-2 text-left transition-colors"
             :class="apiModeButtonClass(opt.value)"
             @click="form.api_mode = opt.value"
           >
@@ -516,9 +516,9 @@ function normalizeAPIMode(mode: APIMode | undefined | null): APIMode {
 function apiModeButtonClass(mode: APIMode): string {
   const active = form.api_mode === mode
   if (active) {
-    return 'border-primary-500 bg-white text-primary-700 shadow-sm dark:border-primary-400 dark:bg-primary-500/15 dark:text-primary-300'
+    return 'border-primary-500 bg-white text-primary-700 shadow-outline dark:border-primary-400 dark:bg-primary-500/15 dark:text-primary-300'
   }
-  return 'border-blue-100 bg-white/70 text-gray-600 hover:border-primary-300 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-400'
+  return 'border-blue-100 bg-white text-gray-600 hover:border-primary-300 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-400'
 }
 
 function apiModeLabel(mode: APIMode): string {

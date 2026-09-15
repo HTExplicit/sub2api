@@ -11,7 +11,7 @@
     >
       <aside
         v-if="open"
-        class="fixed inset-y-0 right-0 z-[10001] flex w-full max-w-2xl flex-col border-l border-gray-200 bg-white shadow-2xl dark:border-dark-700 dark:bg-dark-900"
+        class="fixed inset-y-0 right-0 z-[10001] flex w-full max-w-2xl flex-col border-l border-gray-200 bg-white shadow-outline dark:border-dark-700 dark:bg-dark-900"
         role="dialog"
         aria-modal="true"
         :aria-label="t('admin.systemPrompts.advanced.title')"
@@ -129,7 +129,7 @@
                 </div>
                 <details class="mt-3 border-t border-amber-200 pt-3 dark:border-amber-800" open>
                   <summary class="cursor-pointer font-medium">{{ t('admin.systemPrompts.skillRegistry.promptDiff') }}</summary>
-                  <pre data-test="system-prompt-skill-prompt-diff" class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words bg-white/70 p-2 font-mono text-[11px] dark:bg-dark-950/50">{{ skillCandidate.prompt.diff }}</pre>
+                  <pre data-test="system-prompt-skill-prompt-diff" class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words bg-white p-2 font-mono text-[11px] dark:bg-dark-950">{{ skillCandidate.prompt.diff }}</pre>
                 </details>
                 <details v-if="skillCandidate.file_changes.length" class="mt-3 border-t border-amber-200 pt-3 dark:border-amber-800">
                   <summary class="cursor-pointer font-medium">{{ t('admin.systemPrompts.skillRegistry.fileDiff') }} ({{ skillCandidate.file_changes.length }})</summary>

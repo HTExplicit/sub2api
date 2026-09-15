@@ -38,7 +38,7 @@
         <span
           v-for="id in config.account_ids"
           :key="id"
-          class="inline-flex items-center gap-1 rounded-full bg-primary-100 px-2.5 py-1 text-xs font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300"
+          class="inline-flex items-center gap-1 rounded-none bg-primary-100 px-2.5 py-1 text-xs font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300"
         >
           {{ accountLabel(id) }}
           <button
@@ -65,7 +65,7 @@
         />
         <div
           v-if="showDropdown && (searchResults.length > 0 || searchKeyword.trim() !== '')"
-          class="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-lg border bg-white shadow-lg dark:border-dark-600 dark:bg-dark-800"
+          class="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-none border bg-white shadow-outline dark:border-dark-600 dark:bg-dark-800"
           data-testid="codex-manifest-dropdown"
         >
           <p

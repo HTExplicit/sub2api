@@ -9,11 +9,11 @@
       <!-- Account Info Header -->
       <div
         v-if="account"
-        class="flex items-center justify-between rounded-xl border border-primary-200 bg-gradient-to-r from-primary-50 to-primary-100 p-3 dark:border-primary-700/50 dark:from-primary-900/20 dark:to-primary-800/20"
+        class="flex items-center justify-between rounded-none border border-primary-200 bg-primary-50 p-3 dark:border-primary-700/50 dark:bg-primary-900/20"
       >
         <div class="flex items-center gap-3">
           <div
-            class="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary-500 to-primary-600"
+            class="flex h-10 w-10 items-center justify-center rounded-none bg-primary-500"
           >
             <Icon name="chartBar" size="md" class="text-white" />
           </div>
@@ -26,7 +26,7 @@
         </div>
         <span
           :class="[
-            'rounded-full px-2.5 py-1 text-xs font-semibold',
+            'rounded-none px-2.5 py-1 text-xs font-semibold',
             account.status === 'active'
               ? 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400'
               : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
@@ -46,13 +46,13 @@
         <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <!-- 30-Day Total Cost -->
           <div
-            class="card border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4 dark:border-emerald-800/30 dark:from-emerald-900/10 dark:to-dark-700"
+            class="card border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-800/30 dark:bg-emerald-900/10"
           >
             <div class="mb-2 flex items-center justify-between">
               <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{
                 t('admin.accounts.stats.totalCost')
               }}</span>
-              <div class="rounded-lg bg-emerald-100 p-1.5 dark:bg-emerald-900/30">
+              <div class="rounded-none bg-emerald-100 p-1.5 dark:bg-emerald-900/30">
                 <Icon name="dollar" size="sm" class="text-emerald-600 dark:text-emerald-400" />
               </div>
             </div>
@@ -72,13 +72,13 @@
 
           <!-- 30-Day Total Requests -->
           <div
-            class="card border-blue-200 bg-gradient-to-br from-blue-50 to-white p-4 dark:border-blue-800/30 dark:from-blue-900/10 dark:to-dark-700"
+            class="card border-blue-200 bg-blue-50 p-4 dark:border-blue-800/30 dark:bg-blue-900/10"
           >
             <div class="mb-2 flex items-center justify-between">
               <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{
                 t('admin.accounts.stats.totalRequests')
               }}</span>
-              <div class="rounded-lg bg-blue-100 p-1.5 dark:bg-blue-900/30">
+              <div class="rounded-none bg-blue-100 p-1.5 dark:bg-blue-900/30">
                 <Icon name="bolt" size="sm" class="text-blue-600 dark:text-blue-400" />
               </div>
             </div>
@@ -92,13 +92,13 @@
 
           <!-- Daily Average Cost -->
           <div
-            class="card border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4 dark:border-amber-800/30 dark:from-amber-900/10 dark:to-dark-700"
+            class="card border-amber-200 bg-amber-50 p-4 dark:border-amber-800/30 dark:bg-amber-900/10"
           >
             <div class="mb-2 flex items-center justify-between">
               <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{
                 t('admin.accounts.stats.avgDailyCost')
               }}</span>
-              <div class="rounded-lg bg-amber-100 p-1.5 dark:bg-amber-900/30">
+              <div class="rounded-none bg-amber-100 p-1.5 dark:bg-amber-900/30">
                 <Icon
                   name="calculator"
                   size="sm"
@@ -123,13 +123,13 @@
 
           <!-- Daily Average Requests -->
           <div
-            class="card border-purple-200 bg-gradient-to-br from-purple-50 to-white p-4 dark:border-purple-800/30 dark:from-purple-900/10 dark:to-dark-700"
+            class="card border-purple-200 bg-purple-50 p-4 dark:border-purple-800/30 dark:bg-purple-900/10"
           >
             <div class="mb-2 flex items-center justify-between">
               <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{
                 t('admin.accounts.stats.avgDailyRequests')
               }}</span>
-              <div class="rounded-lg bg-purple-100 p-1.5 dark:bg-purple-900/30">
+              <div class="rounded-none bg-purple-100 p-1.5 dark:bg-purple-900/30">
                 <svg
                   class="h-4 w-4 text-purple-600 dark:text-purple-400"
                   fill="none"
@@ -159,7 +159,7 @@
           <!-- Today Overview -->
           <div class="card p-4">
             <div class="mb-3 flex items-center gap-2">
-              <div class="rounded-lg bg-cyan-100 p-1.5 dark:bg-cyan-900/30">
+              <div class="rounded-none bg-cyan-100 p-1.5 dark:bg-cyan-900/30">
                 <Icon name="clock" size="sm" class="text-cyan-600 dark:text-cyan-400" />
               </div>
               <span class="text-sm font-semibold text-gray-900 dark:text-white">{{
@@ -201,7 +201,7 @@
           <!-- Highest Cost Day -->
           <div class="card p-4">
             <div class="mb-3 flex items-center gap-2">
-              <div class="rounded-lg bg-orange-100 p-1.5 dark:bg-orange-900/30">
+              <div class="rounded-none bg-orange-100 p-1.5 dark:bg-orange-900/30">
                 <Icon name="fire" size="sm" class="text-orange-600 dark:text-orange-400" />
               </div>
               <span class="text-sm font-semibold text-gray-900 dark:text-white">{{
@@ -243,7 +243,7 @@
           <!-- Highest Request Day -->
           <div class="card p-4">
             <div class="mb-3 flex items-center gap-2">
-              <div class="rounded-lg bg-indigo-100 p-1.5 dark:bg-indigo-900/30">
+              <div class="rounded-none bg-indigo-100 p-1.5 dark:bg-indigo-900/30">
                 <Icon
                   name="trendingUp"
                   size="sm"
@@ -292,7 +292,7 @@
           <!-- Accumulated Tokens -->
           <div class="card p-4">
             <div class="mb-3 flex items-center gap-2">
-              <div class="rounded-lg bg-teal-100 p-1.5 dark:bg-teal-900/30">
+              <div class="rounded-none bg-teal-100 p-1.5 dark:bg-teal-900/30">
                 <Icon name="cube" size="sm" class="text-teal-600 dark:text-teal-400" />
               </div>
               <span class="text-sm font-semibold text-gray-900 dark:text-white">{{
@@ -322,7 +322,7 @@
           <!-- Performance -->
           <div class="card p-4">
             <div class="mb-3 flex items-center gap-2">
-              <div class="rounded-lg bg-rose-100 p-1.5 dark:bg-rose-900/30">
+              <div class="rounded-none bg-rose-100 p-1.5 dark:bg-rose-900/30">
                 <Icon name="bolt" size="sm" class="text-rose-600 dark:text-rose-400" />
               </div>
               <span class="text-sm font-semibold text-gray-900 dark:text-white">{{
@@ -352,7 +352,7 @@
           <!-- Recent Activity -->
           <div class="card p-4">
             <div class="mb-3 flex items-center gap-2">
-              <div class="rounded-lg bg-lime-100 p-1.5 dark:bg-lime-900/30">
+              <div class="rounded-none bg-lime-100 p-1.5 dark:bg-lime-900/30">
                 <Icon
                   name="clipboard"
                   size="sm"
@@ -438,7 +438,7 @@
       <div class="flex justify-end">
         <button
           @click="handleClose"
-          class="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-300 dark:hover:bg-dark-500"
+          class="rounded-none bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-300 dark:hover:bg-dark-500"
         >
           {{ t('common.close') }}
         </button>
@@ -502,8 +502,8 @@ const isDarkMode = computed(() => {
 
 // Chart colors
 const chartColors = computed(() => ({
-  text: isDarkMode.value ? '#e5e7eb' : '#374151',
-  grid: isDarkMode.value ? '#374151' : '#e5e7eb'
+  text: isDarkMode.value ? '#dcdcdc' : '#3a3b40',
+  grid: isDarkMode.value ? '#3a3b40' : '#dcdcdc'
 }))
 
 // Line chart data

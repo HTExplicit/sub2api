@@ -9,13 +9,13 @@
       <div class="flex flex-wrap items-center justify-end gap-2">
         <div
           v-if="showSourceToggle"
-          class="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-800"
+          class="inline-flex rounded-none border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-800"
         >
           <button
             type="button"
-            class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
+            class="rounded-none px-2.5 py-1 text-xs font-medium transition-colors"
             :class="source === 'requested'
-              ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-700 dark:text-white'
+              ? 'bg-white text-gray-900 shadow-outline dark:bg-dark-700 dark:text-white'
               : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
             @click="emit('update:source', 'requested')"
           >
@@ -23,9 +23,9 @@
           </button>
           <button
             type="button"
-            class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
+            class="rounded-none px-2.5 py-1 text-xs font-medium transition-colors"
             :class="source === 'upstream'
-              ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-700 dark:text-white'
+              ? 'bg-white text-gray-900 shadow-outline dark:bg-dark-700 dark:text-white'
               : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
             @click="emit('update:source', 'upstream')"
           >
@@ -33,9 +33,9 @@
           </button>
           <button
             type="button"
-            class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
+            class="rounded-none px-2.5 py-1 text-xs font-medium transition-colors"
             :class="source === 'mapping'
-              ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-700 dark:text-white'
+              ? 'bg-white text-gray-900 shadow-outline dark:bg-dark-700 dark:text-white'
               : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
             @click="emit('update:source', 'mapping')"
           >
@@ -44,13 +44,13 @@
         </div>
         <div
           v-if="showMetricToggle"
-          class="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-800"
+          class="inline-flex rounded-none border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-800"
         >
           <button
             type="button"
-            class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
+            class="rounded-none px-2.5 py-1 text-xs font-medium transition-colors"
             :class="metric === 'tokens'
-              ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-700 dark:text-white'
+              ? 'bg-white text-gray-900 shadow-outline dark:bg-dark-700 dark:text-white'
               : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
             @click="emit('update:metric', 'tokens')"
           >
@@ -58,22 +58,22 @@
           </button>
           <button
             type="button"
-            class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
+            class="rounded-none px-2.5 py-1 text-xs font-medium transition-colors"
             :class="metric === 'actual_cost'
-              ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-700 dark:text-white'
+              ? 'bg-white text-gray-900 shadow-outline dark:bg-dark-700 dark:text-white'
               : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
             @click="emit('update:metric', 'actual_cost')"
           >
             {{ t('admin.dashboard.metricActualCost') }}
           </button>
         </div>
-        <div v-if="enableRankingView" class="inline-flex rounded-lg bg-gray-100 p-1 dark:bg-dark-800">
+        <div v-if="enableRankingView" class="inline-flex rounded-none bg-gray-100 p-1 dark:bg-dark-800">
           <button
             type="button"
-            class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
+            class="rounded-none px-2.5 py-1 text-xs font-medium transition-colors"
             :class="
               activeView === 'model_distribution'
-                ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-700 dark:text-white'
+                ? 'bg-white text-gray-900 shadow-outline dark:bg-dark-700 dark:text-white'
                 : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
             "
             @click="activeView = 'model_distribution'"
@@ -82,10 +82,10 @@
           </button>
           <button
             type="button"
-            class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
+            class="rounded-none px-2.5 py-1 text-xs font-medium transition-colors"
             :class="
               activeView === 'spending_ranking'
-                ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-700 dark:text-white'
+                ? 'bg-white text-gray-900 shadow-outline dark:bg-dark-700 dark:text-white'
                 : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
             "
             @click="activeView = 'spending_ranking'"
@@ -122,7 +122,7 @@
             <template v-for="model in displayModelStats" :key="model.model">
               <tr
                 class="border-t border-gray-100 transition-colors dark:border-dark-700"
-                :class="enableBreakdown ? 'cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-700/40' : ''"
+                :class="enableBreakdown ? 'cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-700' : ''"
                 @click="enableBreakdown && toggleBreakdown('model', model.model)"
               >
                 <td
@@ -202,8 +202,8 @@
               :key="item.isOther ? 'others' : `${item.user_id}-${index}`"
               class="border-t border-gray-100 transition-colors dark:border-dark-700"
               :class="item.isOther
-                ? 'bg-gray-50/70 dark:bg-dark-700/20'
-                : 'cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-700/40'"
+                ? 'bg-gray-50/70 dark:bg-dark-700'
+                : 'cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-700'"
               @click="item.isOther ? undefined : emit('ranking-click', item)"
             >
               <td class="py-1.5">
@@ -346,7 +346,7 @@ const chartColors = [
   '#ef4444',
   '#8b5cf6',
   '#ec4899',
-  '#14b8a6',
+  '#168a49',
   '#f97316',
   '#6366f1',
   '#84cc16',
@@ -391,7 +391,7 @@ const rankingChartData = computed(() => {
   if (otherRankingItem.value) {
     labels.push(t('admin.dashboard.spendingRankingOther'))
     data.push(otherRankingItem.value.actual_cost)
-    backgroundColor.push('#94a3b8')
+    backgroundColor.push('#8a8b8d')
   }
 
   return {

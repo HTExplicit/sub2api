@@ -17,7 +17,7 @@
         >
           <th
             rowspan="2"
-            class="border-r border-gray-100 py-2.5 pl-5 pr-4 text-left align-middle dark:border-dark-700/60"
+            class="border-r border-gray-100 py-2.5 pl-5 pr-4 text-left align-middle dark:border-dark-700"
           >
             {{ t('modelPlaza.table.model') }}
           </th>
@@ -29,7 +29,7 @@
           </th>
           <th
             colspan="3"
-            class="border-l border-gray-100 pt-2 text-center dark:border-dark-700/60"
+            class="border-l border-gray-100 pt-2 text-center dark:border-dark-700"
           >
             <div class="border-b border-gray-200 pb-2 text-gray-400 dark:border-dark-600 dark:text-dark-500">
               {{ t('modelPlaza.table.officialPrice') }}
@@ -38,7 +38,7 @@
           </th>
           <th
             rowspan="2"
-            class="border-l border-gray-100 py-2.5 pl-3 pr-5 text-right align-middle dark:border-dark-700/60"
+            class="border-l border-gray-100 py-2.5 pl-3 pr-5 text-right align-middle dark:border-dark-700"
           >
             {{ t('modelPlaza.table.rate') }}
           </th>
@@ -49,7 +49,7 @@
           <th class="pz-bg px-3 py-2 font-medium">{{ t('modelPlaza.table.input') }}</th>
           <th class="pz-bg px-3 py-2 font-medium">{{ t('modelPlaza.table.output') }}</th>
           <th class="pz-bg px-3 py-2 font-medium">{{ t('modelPlaza.table.cache') }}</th>
-          <th class="border-l border-gray-100 px-3 py-2 font-medium dark:border-dark-700/60">
+          <th class="border-l border-gray-100 px-3 py-2 font-medium dark:border-dark-700">
             {{ t('modelPlaza.table.input') }}
           </th>
           <th class="px-3 py-2 font-medium">{{ t('modelPlaza.table.output') }}</th>
@@ -60,16 +60,16 @@
         <tr
           v-for="{ model: m, period, key } in rows"
           :key="key"
-          class="border-b border-gray-100 transition-colors last:border-b-0 hover:bg-gray-50/70 dark:border-dark-800 dark:hover:bg-dark-800/50"
+          class="border-b border-gray-100 transition-colors last:border-b-0 hover:bg-gray-50/70 dark:border-dark-800 dark:hover:bg-dark-800"
         >
           <!-- 模型名 + 非 token 计费模式徽章;分时时段行额外标注时段 -->
-          <td class="border-r border-gray-100 py-2.5 pl-5 pr-4 align-middle dark:border-dark-700/60">
+          <td class="border-r border-gray-100 py-2.5 pl-5 pr-4 align-middle dark:border-dark-700">
             <div class="flex flex-wrap items-center gap-1.5">
               <span class="font-medium text-gray-900 dark:text-white">{{ m.name }}</span>
               <!-- 时段徽章紧跟模型名,其余徽章排在后面,空间不足时先换行的是它们 -->
               <span
                 v-if="period"
-                class="inline-flex items-center whitespace-nowrap rounded-md bg-gray-100 px-1 py-0.5 font-mono text-[10px] font-medium text-gray-500 dark:bg-dark-700/70 dark:text-dark-300"
+                class="inline-flex items-center whitespace-nowrap rounded-none bg-gray-100 px-1 py-0.5 font-mono text-[10px] font-medium text-gray-500 dark:bg-dark-700 dark:text-dark-300"
                 :title="timePricingRowHint(m)"
               >
                 <span v-if="m.time_pricing?.weekdays_only" class="mr-1 font-sans">{{
@@ -80,7 +80,7 @@
               <span
                 v-if="platform && m.platform !== platform"
                 :class="[
-                  'inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium',
+                  'inline-flex items-center rounded-none px-1.5 py-0.5 text-[10px] font-medium',
                   platformBadgeLightClass(m.platform)
                 ]"
               >
@@ -88,20 +88,20 @@
               </span>
               <span
                 v-if="billingMode(m) !== BILLING_MODE_TOKEN"
-                class="rounded-md bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-dark-700/70 dark:text-dark-300"
+                class="rounded-none bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-dark-700 dark:text-dark-300"
               >
                 {{ billingModeLabel(m) }}
               </span>
               <span
                 v-if="m.long_context_basis === 'marginal'"
-                class="rounded-md bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-dark-700/70 dark:text-dark-300"
+                class="rounded-none bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-dark-700 dark:text-dark-300"
                 :title="t('modelPlaza.table.tierHintMarginal')"
               >
                 {{ t('modelPlaza.table.marginalBadge') }}
               </span>
               <span
                 v-if="m.pricing?.max_reasoning_effort_multiplier"
-                class="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
+                class="rounded-none bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
                 :title="t('modelPlaza.table.maxReasoningMultiplierHint', { multiplier: m.pricing.max_reasoning_effort_multiplier })"
               >
                 {{ t('modelPlaza.table.maxReasoningMultiplierBadge', { multiplier: m.pricing.max_reasoning_effort_multiplier }) }}
@@ -189,7 +189,7 @@
                 <span
                   v-for="(iv, idx) in requestIntervals(m)"
                   :key="idx"
-                  class="inline-flex items-center gap-1 rounded-md bg-gray-100 px-2 py-0.5 font-mono text-xs text-gray-800 dark:bg-dark-700/60 dark:text-gray-200"
+                  class="inline-flex items-center gap-1 rounded-none bg-gray-100 px-2 py-0.5 font-mono text-xs text-gray-800 dark:bg-dark-700 dark:text-gray-200"
                 >
                   <span class="font-sans text-gray-400 dark:text-dark-500">{{ tierLabel(iv) }}</span>
                   {{ paidRequestPrice(m, iv.per_request_price)
@@ -208,7 +208,7 @@
 
           <!-- 官方价格(参考价,不乘倍率;官方有阶梯时每档一行) -->
           <td
-            class="border-l border-gray-100 px-3 py-2.5 align-middle font-mono text-xs text-gray-500 dark:border-dark-700/60 dark:text-dark-400"
+            class="border-l border-gray-100 px-3 py-2.5 align-middle font-mono text-xs text-gray-500 dark:border-dark-700 dark:text-dark-400"
           >
             <template v-if="officialIntervals(m).length">
               <div
@@ -278,7 +278,7 @@
 
           <!-- 折扣倍率(分时时段行展示 生效倍率×时段倍率;生图独立倍率行展示独立倍率;专属倍率划线展示原倍率) -->
           <td
-            class="border-l border-gray-100 py-2.5 pl-3 pr-5 text-right align-middle font-mono text-xs dark:border-dark-700/60"
+            class="border-l border-gray-100 py-2.5 pl-3 pr-5 text-right align-middle font-mono text-xs dark:border-dark-700"
           >
             <span
               v-if="period"

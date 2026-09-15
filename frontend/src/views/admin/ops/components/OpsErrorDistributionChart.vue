@@ -26,8 +26,8 @@ const colors = computed(() => ({
   blue: '#3b82f6',
   red: '#ef4444',
   orange: '#f59e0b',
-  gray: '#9ca3af',
-  text: isDarkMode.value ? '#9ca3af' : '#6b7280'
+  gray: '#8a8b8d',
+  text: isDarkMode.value ? '#8a8b8d' : '#6f6f6f'
 }))
 
 const totalSlaErrors = computed(() =>
@@ -100,16 +100,16 @@ const options = computed(() => ({
   plugins: {
     legend: { display: false },
     tooltip: {
-      backgroundColor: isDarkMode.value ? '#1f2937' : '#ffffff',
-      titleColor: isDarkMode.value ? '#f3f4f6' : '#111827',
-      bodyColor: isDarkMode.value ? '#d1d5db' : '#4b5563'
+      backgroundColor: isDarkMode.value ? '#26272b' : '#ffffff',
+      titleColor: isDarkMode.value ? '#f5f5f5' : '#111411',
+      bodyColor: isDarkMode.value ? '#bdbdbd' : '#56575a'
     }
   }
 }))
 </script>
 
 <template>
-  <div class="flex h-full flex-col rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
+  <div class="flex h-full flex-col rounded-none bg-white p-6 shadow-outline ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
     <div class="mb-4 flex items-center justify-between">
       <h3 class="flex items-center gap-2 text-sm font-bold text-gray-900 dark:text-white">
         <svg class="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -125,7 +125,7 @@ const options = computed(() => ({
       </h3>
       <button
         type="button"
-        class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300 dark:hover:bg-dark-800"
+        class="inline-flex items-center rounded-none border border-gray-200 bg-white px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300 dark:hover:bg-dark-800"
         :disabled="state !== 'ready'"
         :title="t('admin.ops.errorTrend')"
         @click="emit('openDetails')"

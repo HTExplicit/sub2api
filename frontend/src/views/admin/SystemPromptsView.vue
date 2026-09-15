@@ -3,7 +3,7 @@
     <div class="mx-auto max-w-[1500px] space-y-4 px-1">
       <header class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 pb-4 dark:border-dark-700">
         <div class="flex min-w-0 items-center gap-3">
-          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-300">
+          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-none bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-300">
             <Icon name="document" size="md" />
           </span>
           <h1 class="truncate text-xl font-semibold text-gray-900 dark:text-white">{{ t('admin.systemPrompts.title') }}</h1>
@@ -81,7 +81,7 @@
                 <button v-if="!isRemoteSkillManaged" type="button" class="icon-button" data-test="system-prompt-template-menu" :title="t('admin.systemPrompts.actions.more')" @click="templateMenuOpen = !templateMenuOpen">
                   <Icon name="more" size="sm" />
                 </button>
-                <div v-if="templateMenuOpen" class="absolute right-0 top-10 z-10 w-40 border border-gray-200 bg-white py-1 shadow-lg dark:border-dark-700 dark:bg-dark-800">
+                <div v-if="templateMenuOpen" class="absolute right-0 top-10 z-10 w-40 border border-gray-200 bg-white py-1 shadow-outline dark:border-dark-700 dark:bg-dark-800">
                   <button type="button" class="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 dark:text-dark-200 dark:hover:bg-dark-700" @click="openMetadata">{{ t('admin.systemPrompts.actions.editMetadata') }}</button>
                   <button type="button" class="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 dark:text-dark-200 dark:hover:bg-dark-700" @click="openDuplicate">{{ t('admin.systemPrompts.actions.duplicate') }}</button>
                   <button type="button" class="block w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-900/20" @click="openConfirm({ kind: 'delete' })">{{ t('admin.systemPrompts.actions.delete') }}</button>
@@ -100,8 +100,8 @@
             <div v-if="activeTab === 'editor'" class="space-y-3 pt-4">
               <template v-if="isRemoteSkillManaged">
                 <div class="inline-flex border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-800" role="group" :aria-label="t('admin.systemPrompts.editor.managedBody')">
-                  <button type="button" data-test="system-prompt-managed-effective" class="px-3 py-1.5 text-sm font-medium transition-colors" :aria-pressed="managedPromptView === 'effective'" :class="managedPromptView === 'effective' ? 'bg-white text-primary-600 shadow-sm dark:bg-dark-900 dark:text-primary-300' : 'text-gray-500 hover:text-gray-900 dark:text-dark-400 dark:hover:text-white'" @click="managedPromptView = 'effective'">{{ t('admin.systemPrompts.editor.effectiveBody') }}</button>
-                  <button type="button" data-test="system-prompt-managed-raw" class="px-3 py-1.5 text-sm font-medium transition-colors" :aria-pressed="managedPromptView === 'raw'" :class="managedPromptView === 'raw' ? 'bg-white text-primary-600 shadow-sm dark:bg-dark-900 dark:text-primary-300' : 'text-gray-500 hover:text-gray-900 dark:text-dark-400 dark:hover:text-white'" @click="managedPromptView = 'raw'">{{ t('admin.systemPrompts.editor.rawBody') }}</button>
+                  <button type="button" data-test="system-prompt-managed-effective" class="px-3 py-1.5 text-sm font-medium transition-colors" :aria-pressed="managedPromptView === 'effective'" :class="managedPromptView === 'effective' ? 'bg-white text-primary-600 shadow-outline dark:bg-dark-900 dark:text-primary-300' : 'text-gray-500 hover:text-gray-900 dark:text-dark-400 dark:hover:text-white'" @click="managedPromptView = 'effective'">{{ t('admin.systemPrompts.editor.effectiveBody') }}</button>
+                  <button type="button" data-test="system-prompt-managed-raw" class="px-3 py-1.5 text-sm font-medium transition-colors" :aria-pressed="managedPromptView === 'raw'" :class="managedPromptView === 'raw' ? 'bg-white text-primary-600 shadow-outline dark:bg-dark-900 dark:text-primary-300' : 'text-gray-500 hover:text-gray-900 dark:text-dark-400 dark:hover:text-white'" @click="managedPromptView = 'raw'">{{ t('admin.systemPrompts.editor.rawBody') }}</button>
                 </div>
                 <div v-if="managedPromptLoading" data-test="system-prompt-managed-loading" class="flex min-h-[430px] items-center justify-center border border-gray-200 bg-gray-50 text-sm text-gray-500 dark:border-dark-700 dark:bg-dark-950 dark:text-dark-400">{{ t('admin.systemPrompts.editor.managedBodyLoading') }}</div>
                 <div v-else-if="managedPromptUnavailable" data-test="system-prompt-managed-unavailable" class="flex min-h-[430px] items-center justify-center border border-red-200 bg-red-50 px-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-900/20 dark:text-red-300">{{ t('admin.systemPrompts.editor.managedBodyUnavailable') }}</div>
@@ -128,7 +128,7 @@
                 <table class="min-w-full text-left text-sm">
                   <thead class="bg-gray-50 text-xs text-gray-500 dark:bg-dark-800 dark:text-dark-400"><tr><th class="px-3 py-3">{{ t('admin.systemPrompts.history.version') }}</th><th class="px-3 py-3">{{ t('admin.systemPrompts.history.status') }}</th><th class="px-3 py-3">{{ t('admin.systemPrompts.history.created') }}</th><th class="px-3 py-3 text-right">{{ t('admin.systemPrompts.history.actions') }}</th></tr></thead>
                   <tbody class="divide-y divide-gray-100 dark:divide-dark-800">
-                    <tr v-for="version in detail.versions" :key="version.id" class="hover:bg-gray-50 dark:hover:bg-dark-800/60">
+                    <tr v-for="version in detail.versions" :key="version.id" class="hover:bg-gray-50 dark:hover:bg-dark-800">
                       <td class="whitespace-nowrap px-3 py-3"><button type="button" class="font-semibold text-primary-600 dark:text-primary-300" @click="selectVersion(version)">v{{ version.version }}</button></td>
                       <td class="whitespace-nowrap px-3 py-3"><span :class="version.id === runtimeVersionId ? 'badge-success' : 'badge-gray'" class="badge">{{ version.id === runtimeVersionId ? t('admin.systemPrompts.history.active') : t('admin.systemPrompts.history.candidate') }}</span></td>
                       <td class="whitespace-nowrap px-3 py-3 text-gray-500 dark:text-dark-400">{{ formatDate(version.created_at) }}</td>

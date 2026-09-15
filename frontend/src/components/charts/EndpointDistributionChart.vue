@@ -7,13 +7,13 @@
       <div class="flex flex-wrap items-center justify-end gap-2">
         <div
           v-if="showSourceToggle"
-          class="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-800"
+          class="inline-flex rounded-none border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-800"
         >
           <button
             type="button"
-            class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
+            class="rounded-none px-2.5 py-1 text-xs font-medium transition-colors"
             :class="source === 'inbound'
-              ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-700 dark:text-white'
+              ? 'bg-white text-gray-900 shadow-outline dark:bg-dark-700 dark:text-white'
               : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
             @click="emit('update:source', 'inbound')"
           >
@@ -21,9 +21,9 @@
           </button>
           <button
             type="button"
-            class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
+            class="rounded-none px-2.5 py-1 text-xs font-medium transition-colors"
             :class="source === 'upstream'
-              ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-700 dark:text-white'
+              ? 'bg-white text-gray-900 shadow-outline dark:bg-dark-700 dark:text-white'
               : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
             @click="emit('update:source', 'upstream')"
           >
@@ -31,9 +31,9 @@
           </button>
           <button
             type="button"
-            class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
+            class="rounded-none px-2.5 py-1 text-xs font-medium transition-colors"
             :class="source === 'path'
-              ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-700 dark:text-white'
+              ? 'bg-white text-gray-900 shadow-outline dark:bg-dark-700 dark:text-white'
               : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
             @click="emit('update:source', 'path')"
           >
@@ -43,13 +43,13 @@
 
         <div
           v-if="showMetricToggle"
-          class="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-800"
+          class="inline-flex rounded-none border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-800"
         >
           <button
             type="button"
-            class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
+            class="rounded-none px-2.5 py-1 text-xs font-medium transition-colors"
             :class="metric === 'tokens'
-              ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-700 dark:text-white'
+              ? 'bg-white text-gray-900 shadow-outline dark:bg-dark-700 dark:text-white'
               : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
             @click="emit('update:metric', 'tokens')"
           >
@@ -57,9 +57,9 @@
           </button>
           <button
             type="button"
-            class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
+            class="rounded-none px-2.5 py-1 text-xs font-medium transition-colors"
             :class="metric === 'actual_cost'
-              ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-700 dark:text-white'
+              ? 'bg-white text-gray-900 shadow-outline dark:bg-dark-700 dark:text-white'
               : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
             @click="emit('update:metric', 'actual_cost')"
           >
@@ -90,7 +90,7 @@
             <template v-for="item in displayEndpointStats" :key="item.endpoint">
               <tr
                 class="border-t border-gray-100 transition-colors dark:border-dark-700"
-                :class="enableBreakdown ? 'cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-700/40' : ''"
+                :class="enableBreakdown ? 'cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-700' : ''"
                 @click="enableBreakdown && toggleBreakdown(item.endpoint)"
               >
                 <td class="max-w-[180px] truncate py-1.5 font-medium" :class="enableBreakdown ? 'text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300' : 'text-gray-900 dark:text-white'" :title="item.endpoint">
@@ -218,7 +218,7 @@ const chartColors = [
   '#ef4444',
   '#8b5cf6',
   '#ec4899',
-  '#14b8a6',
+  '#168a49',
   '#f97316',
   '#6366f1',
   '#84cc16',
