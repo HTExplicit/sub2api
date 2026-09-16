@@ -136,6 +136,7 @@ var (
 // LiteLLMModelPricing LiteLLM价格数据结构
 // 只保留我们需要的字段，使用指针来处理可能缺失的值
 type LiteLLMModelPricing struct {
+	deepseekIdentity                    *deepseekPricingIdentity
 	InputCostPerToken                   float64 `json:"input_cost_per_token"`
 	InputCostPerTokenPriority           float64 `json:"input_cost_per_token_priority"`
 	OutputCostPerToken                  float64 `json:"output_cost_per_token"`
@@ -957,7 +958,8 @@ func (s *PricingService) mergeOverrideOnlyModels(data map[string]*LiteLLMModelPr
 	return data
 }
 
-// buildPricingData 解析目录正文并依次叠加 fallback、override 两层，返回合并结果与
+// buildPricingData merges the catalog and custom layers, then materializes the
+// official DeepSeek cards with admin overrides last. It returns the catalog and
 // 叠加层文件指纹。指纹在合并读取之前采样：并发改文件只会让存下的指纹落后于实际
 // 合并的数据、不会领先，下一轮定时比对因此会再次重建。
 func (s *PricingService) buildPricingData(body []byte) (map[string]*LiteLLMModelPricing, string, error) {
@@ -968,6 +970,7 @@ func (s *PricingService) buildPricingData(body []byte) (map[string]*LiteLLMModel
 	}
 	data = s.mergeFallbackPricingData(data)
 	data = s.mergeOverrideOnlyModels(data)
+	data = s.mergeDeepSeekPricing(data)
 	return data, fingerprint, nil
 }
 
@@ -1135,6 +1138,9 @@ func (s *PricingService) GetModelPricing(modelName string) *LiteLLMModelPricing 
 
 	// 标准化模型名称（同时兼容 "models/xxx"、VertexAI 资源名等前缀）
 	modelLower := strings.ToLower(strings.TrimSpace(modelName))
+	if pricing, handled := s.lookupDeepseekPricingLocked(modelLower); handled {
+		return pricing
+	}
 	lookupCandidates := s.buildModelLookupCandidates(modelLower)
 
 	// 1~3. 确定性识别（精确名 / 已知拼写变体 / 去掉日期版本后缀）
@@ -1209,6 +1215,9 @@ func (s *PricingService) GetIdentifiedModelPricing(modelName string) *LiteLLMMod
 	modelLower := strings.ToLower(strings.TrimSpace(modelName))
 	if modelLower == "" {
 		return nil
+	}
+	if pricing, handled := s.lookupDeepseekPricingLocked(modelLower); handled {
+		return pricing
 	}
 	return s.lookupIdentifiedModelPricingLocked(s.buildModelLookupCandidates(modelLower))
 }

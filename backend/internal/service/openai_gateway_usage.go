@@ -774,12 +774,9 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageTokenCost(
 			LongContextBillingEnabled: longContextBillingGate,
 		})
 	}
-	breakdown, err := s.billingService.calculateCostWithServiceTierPolicy(
-		billingModel,
-		tokens,
-		multiplier,
-		serviceTier,
-		longContextBillingGate == nil || *longContextBillingGate,
+	breakdown, err := s.billingService.calculateCostInternalWithPolicy(
+		billingModel, tokens, multiplier, serviceTier, nil,
+		longContextBillingGate == nil || *longContextBillingGate, pricingAt,
 	)
 	if err == nil {
 		applyCostBreakdownMultiplier(breakdown, maxReasoningEffortBillingMultiplier(billingModel, reasoningEffort, nil))

@@ -111,6 +111,11 @@ func (s *BillingService) ResolveContextPricingSchedule(ctx context.Context, reso
 		Resolver:       resolver,
 		Resolved:       resolved,
 	}
+	if usesDeepseekOfficialTimePricing(resolved) {
+		// Display the base card plus its schedule, never a wall-clock-dependent
+		// peak card that clients would multiply for a second time.
+		req.PricingAt = timezone.Now().UTC().Truncate(24 * time.Hour)
+	}
 	probe := func(tokens UsageTokens) (*CostBreakdown, error) {
 		r := req
 		r.Tokens = tokens
@@ -139,6 +144,9 @@ func (s *BillingService) ResolveContextPricingSchedule(ctx context.Context, reso
 // 在时段内取值：定价来源不是渠道（分组价卡覆盖）、配置非法等情况下计费按 1 计，
 // 这里也就自然得到"无分时"。倍率为 1 的时段不列出。
 func resolvedTimePricingSchedule(resolved *ResolvedPricing) *TimePricingSchedule {
+	if usesDeepseekOfficialTimePricing(resolved) {
+		return deepseekTimePricingSchedule()
+	}
 	if resolved == nil || resolved.channelPricing == nil || resolved.channelPricing.TimePricing == nil {
 		return nil
 	}
@@ -224,10 +232,8 @@ func (s *BillingService) contextPricingBreakpoints(resolver *ModelPricingResolve
 	if pricing == nil {
 		return plan
 	}
-	// 该路径无既有计费时点（ContextPricingScheduleInput 无时间字段），显式传
-	// 当前时刻；此处 pricing 仅取 LongContextInputThreshold 等时间无关字段，
-	// DeepSeek pro→Flash 切换不影响断点结果。
-	pricing = s.applyModelSpecificPricingPolicyEx(model, pricing, true, timezone.Now())
+	// Only time-independent context thresholds are inspected here.
+	pricing = s.applyModelSpecificPricingPolicy(model, pricing)
 	if pricing.LongContextInputThreshold <= 0 {
 		return plan
 	}
