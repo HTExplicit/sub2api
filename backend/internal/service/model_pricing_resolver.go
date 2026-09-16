@@ -158,6 +158,18 @@ func (r *ModelPricingResolver) resolveConfiguredPricing(config *ChannelModelPric
 }
 
 func matchGroupModelPricing(group *Group, model string) *ChannelModelPricing {
+	if pricing := matchGroupModelPricingLiteral(group, model); pricing != nil {
+		return pricing
+	}
+	for _, alias := range deepseekPricingAliases(model) {
+		if pricing := matchGroupModelPricingLiteral(group, alias); pricing != nil {
+			return pricing
+		}
+	}
+	return nil
+}
+
+func matchGroupModelPricingLiteral(group *Group, model string) *ChannelModelPricing {
 	if group == nil {
 		return nil
 	}
@@ -188,6 +200,9 @@ func (r *ModelPricingResolver) resolveBasePricing(model string) (*ModelPricing, 
 			"model", model, "error", err)
 		return nil, PricingSourceFallback
 	}
+	if pricing.deepseekIdentity != nil && pricing.deepseekIdentity.Match == "fallback" {
+		return pricing, PricingSourceFallback
+	}
 	return pricing, PricingSourceLiteLLM
 }
 
@@ -199,14 +214,19 @@ func (r *ModelPricingResolver) resolveBasePricing(model string) (*ModelPricing, 
 // 只认字面名。两者不对称导致：管理员只配基名、请求模型带 effort 后缀时，渠道定价
 // 未命中而官方兜底命中，计费候选循环首个成功即返回，渠道定价永远轮不到（issue #5256）。
 //
-// 字面名优先，保证管理员对具体变体的显式配价不被基名覆盖；非 OpenAI 模型
-// normalizeKnownOpenAICodexModel 返回空串，此处天然 no-op。
+// 字面名优先；DeepSeek 使用注册表中明确声明的同身份别名，其他模型保留
+// 原有 OpenAI/Codex 归一化规则。
 func (r *ModelPricingResolver) lookupChannelPricingNormalized(ctx context.Context, groupID int64, model string) *ChannelModelPricing {
 	if r.channelService == nil {
 		return nil
 	}
 	if pricing := r.channelService.GetChannelModelPricing(ctx, groupID, model); pricing != nil {
 		return pricing
+	}
+	for _, alias := range deepseekPricingAliases(model) {
+		if pricing := r.channelService.GetChannelModelPricing(ctx, groupID, alias); pricing != nil {
+			return pricing
+		}
 	}
 	normalized := normalizeKnownOpenAICodexModel(model)
 	if normalized == "" || strings.EqualFold(normalized, strings.TrimSpace(model)) {

@@ -93,6 +93,7 @@ type BillingCache interface {
 
 // ModelPricing 模型价格配置（per-token价格，与LiteLLM格式一致）
 type ModelPricing struct {
+	deepseekIdentity                   *deepseekPricingIdentity
 	InputPricePerToken                 float64  // 每token输入价格 (USD)
 	InputPricePerTokenPriority         float64  // priority service tier 下每token输入价格 (USD)
 	ImageInputPricePerToken            float64  // 图片输入 token 价格 (USD)，用于多模态 embedding 等图文不同价场景；为 0 时回退到 InputPricePerToken
@@ -263,74 +264,6 @@ func resolvedChannelTimeMultiplier(resolved *ResolvedPricing, at time.Time) floa
 // ErrModelPricingUnavailable indicates that none of the configured pricing
 // sources can price the requested model.
 var ErrModelPricingUnavailable = errors.New("pricing not found")
-
-// ---- DeepSeek 官方低谷价（$/token）----
-// 2026-09-10 官方公告：DeepSeek-V4.1-Flash（新名 deepseek-flash）大幅降价，
-// Flash 低谷价降为 $0.15/$0.60/$0.003 per MTok（输入缓存未命中/输出/缓存命中）；
-// deepseek-v4-pro 名义价格暂不变，但自北京时间 2026-09-14 12:00（04:00 UTC）起
-// 其请求被上游路由到 V4.1-Flash 并按 Flash 价计费（见 deepseekProBilledAsFlash）。
-// Source: https://api-docs.deepseek.com/news/news260910
-//
-//	https://api-docs.deepseek.com/quick_start/pricing
-//
-// 高峰价 = 2× 低谷价；高峰时段 01:00–04:00 与 06:00–10:00 UTC（仅工作日），
-// 北京时间周六/周日全天低谷。时段判定见 deepseekPeakMultiplierAt。
-const (
-	deepseekFlashOffPeakInputPrice  = 1.5e-7  // $0.15 per MTok (cache miss)
-	deepseekFlashOffPeakOutputPrice = 6.0e-7  // $0.60 per MTok
-	deepseekFlashOffPeakCacheRead   = 3e-9    // $0.003 per MTok (cache hit)
-	deepseekProOffPeakInputPrice    = 6.6e-7  // $0.66 per MTok (cache miss)
-	deepseekProOffPeakOutputPrice   = 1.98e-6 // $1.98 per MTok
-	deepseekProOffPeakCacheRead     = 2.2e-8  // $0.022 per MTok (cache hit)
-)
-
-// isDeepSeekModel 判断模型名是否为 DeepSeek 模型（大小写不敏感）。
-// 任意 deepseek- 前缀均视为 DeepSeek 模型：官方模型（v4-flash / v4-pro /
-// v4-flash-vision-exp）按各自价卡计价，其余 deepseek-*（含已停服的
-// deepseek-chat / deepseek-reasoner 与未知型号）统一按 flash 价兜底，
-// 避免计费中断；新名字由 fallback warn 日志（每模型每进程一条）暴露，
-// 运营者据此更新价卡。
-func isDeepSeekModel(model string) bool {
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "deepseek-")
-}
-
-// deepseekPeakMultiplierAt 返回指定时刻的 DeepSeek 官方峰谷定价因子。
-// 官方口径（2026-08-23 起生效）：高峰价 = 2× 低谷价；高峰时段为
-// 01:00–04:00 与 06:00–10:00 UTC（半开区间），仅工作日；
-// 周末（北京时间周六/周日）全天低谷。北京时间用固定 +8 偏移（无夏令时）。
-func deepseekPeakMultiplierAt(now time.Time) float64 {
-	beijing := now.In(time.FixedZone("Asia/Shanghai", 8*3600))
-	switch beijing.Weekday() {
-	case time.Saturday, time.Sunday:
-		return 1.0
-	}
-	switch h := now.UTC().Hour(); {
-	case h >= 1 && h < 4, h >= 6 && h < 10:
-		return 2.0
-	}
-	return 1.0
-}
-
-// deepseekProRoutesToFlashAt：官方公告自北京时间 2026-09-14 12:00（04:00 UTC）起，
-// 所有 deepseek-v4-pro 请求被上游路由到 V4.1-Flash 并按 Flash 价计费（直至未来
-// V4.1 Pro 上线）。Source: https://api-docs.deepseek.com/news/news260910
-var deepseekProRoutesToFlashAt = time.Date(2026, 9, 14, 4, 0, 0, 0, time.UTC)
-
-// deepseekProBilledAsFlash 报告指定计费时点 deepseek-v4-pro 是否已按 Flash 价
-// 计费：计费时点到达或晚于切换时点返回 true；零值时点回退当前时刻（与峰谷
-// 倍率的取时点方式一致，见 calculateTokenCost）。
-func deepseekProBilledAsFlash(pricingAt time.Time) bool {
-	if pricingAt.IsZero() {
-		pricingAt = timezone.Now()
-	}
-	return !pricingAt.Before(deepseekProRoutesToFlashAt)
-}
-
-// isDeepSeekProModel 判断模型名是否归入 deepseek-v4-pro 档（含版本化名称，
-// 如 deepseek-v4-pro-0813）。
-func isDeepSeekProModel(model string) bool {
-	return strings.Contains(strings.ToLower(strings.TrimSpace(model)), "deepseek-v4-pro")
-}
 
 // BillingService 计费服务
 type BillingService struct {
@@ -608,34 +541,6 @@ func (s *BillingService) initFallbackPricing() {
 	// 顺序：DeepSeek → 智谱 GLM → 月之暗面 Kimi → MiniMax
 	// 覆盖逻辑见同文件 getFallbackPricing()
 	// ============================================================
-
-	// ---- DeepSeek 系列 ----
-	// Source: https://api-docs.deepseek.com/quick_start/pricing
-	// 官方口径（2026-09-10 公告降价后）：现行模型为 deepseek-flash（=
-	// DeepSeek-V4.1-Flash，旧名 deepseek-v4-flash 兼容路由）/ deepseek-v4-pro /
-	// deepseek-v4-flash-vision-exp；deepseek-chat / deepseek-reasoner 已停止服务，
-	// 其余 deepseek-*（含未知型号）统一按 flash 价兜底（见 getFallbackPricing），
-	// 避免计费中断。
-	// 以下均为官方低谷价；高峰价 = 2× 低谷价（高峰时段 01:00–04:00
-	// 与 06:00–10:00 UTC，仅工作日；北京时间周六/周日全天低谷），见 deepseekPeakMultiplierAt。
-	s.fallbackPrices["deepseek-v4-pro"] = &ModelPricing{
-		InputPricePerToken:     deepseekProOffPeakInputPrice,  // $0.66 per MTok (cache miss, off-peak)
-		OutputPricePerToken:    deepseekProOffPeakOutputPrice, // $1.98 per MTok
-		CacheReadPricePerToken: deepseekProOffPeakCacheRead,   // $0.022 per MTok (cache hit)
-		SupportsCacheBreakdown: false,
-	}
-	s.fallbackPrices["deepseek-v4-flash"] = &ModelPricing{
-		InputPricePerToken:     deepseekFlashOffPeakInputPrice,  // $0.15 per MTok (cache miss, off-peak)
-		OutputPricePerToken:    deepseekFlashOffPeakOutputPrice, // $0.60 per MTok
-		CacheReadPricePerToken: deepseekFlashOffPeakCacheRead,   // $0.003 per MTok (cache hit)
-		SupportsCacheBreakdown: false,
-	}
-	s.fallbackPrices["deepseek-v4-flash-vision-exp"] = &ModelPricing{
-		InputPricePerToken:     deepseekFlashOffPeakInputPrice,
-		OutputPricePerToken:    deepseekFlashOffPeakOutputPrice,
-		CacheReadPricePerToken: deepseekFlashOffPeakCacheRead,
-		SupportsCacheBreakdown: false,
-	}
 
 	// ---- 智谱 GLM（Z.AI）----
 	// Source: https://docs.z.ai/guides/overview/pricing (USD per 1M tokens)
@@ -976,22 +881,8 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 		return s.fallbackPrices["gemini-3.8-flash"]
 	}
 
-	// DeepSeek 系列：官方模型 V4 Pro/Flash（含 vision-exp）按各自价卡；
-	// 其余 deepseek-*（含已停服的 deepseek-chat / deepseek-reasoner 与未知型号）
-	// 统一按 flash 价兜底，避免计费中断。新名字由 fallback warn 日志
-	// （每模型每进程一条）暴露，运营者据此更新价卡。
-	// "deepseek-v4-flash-vision-exp" 含 "deepseek-v4-flash" 子串，显式分支置于 flash 之前，语义清晰。
-	if strings.Contains(modelLower, "deepseek-v4-flash-vision-exp") {
-		return s.fallbackPrices["deepseek-v4-flash-vision-exp"]
-	}
-	if strings.Contains(modelLower, "deepseek-v4-flash") {
-		return s.fallbackPrices["deepseek-v4-flash"]
-	}
-	if strings.Contains(modelLower, "deepseek-v4-pro") {
-		return s.fallbackPrices["deepseek-v4-pro"]
-	}
-	if strings.HasPrefix(modelLower, "deepseek-") {
-		return s.fallbackPrices["deepseek-v4-flash"]
+	if identity, ok := deepseekBillingIdentity(model, true); ok {
+		return modelPricingFromCatalog(deepseekOfficialPrice(identity))
 	}
 
 	// ---- 国产 LLM 兜底匹配 ----
@@ -1222,22 +1113,18 @@ func (s *BillingService) HasIdentifiedTokenPricing(model string) bool {
 			return true
 		}
 	}
+	if _, ok := deepseekBillingIdentity(model, false); ok {
+		return true
+	}
 	pricing, ok := s.fallbackPrices[model]
 	return ok && pricing != nil
 }
 
 // GetModelPricing 获取模型价格配置
 func (s *BillingService) GetModelPricing(model string) (*ModelPricing, error) {
-	// 无显式计费时点，DeepSeek pro→Flash 切换按当前时刻判定。
-	return s.getModelPricingAt(model, timezone.Now())
-}
-
-// getModelPricingAt 是 GetModelPricing 的带计费时点内部变体：pricingAt 显式
-// 驱动 DeepSeek pro→Flash 切换判定（切换点前 Pro 价、之后 Flash 价），使
-// 展示/估算路径可与历史补账同刻复算，测试也能用固定时点钉住断言。
-func (s *BillingService) getModelPricingAt(model string, pricingAt time.Time) (*ModelPricing, error) {
+	// Price lookup returns base rates; time pricing is applied once by calculators.
 	// 标准化模型名称（转小写）
-	model = strings.ToLower(model)
+	model = strings.ToLower(strings.TrimSpace(model))
 
 	// 1. 优先从动态价格服务获取
 	if s.pricingService != nil {
@@ -1251,34 +1138,12 @@ func (s *BillingService) getModelPricingAt(model string, pricingAt time.Time) (*
 			litellmPricing = nil
 		}
 		if litellmPricing != nil {
-			// 启用 5m/1h 分类计费的条件：
-			// 1. 存在 1h 价格
-			// 2. 1h 价格 > 5m 价格（防止 LiteLLM 数据错误导致少收费）
-			price5m := litellmPricing.CacheCreationInputTokenCost
-			price1h := litellmPricing.CacheCreationInputTokenCostAbove1hr
-			enableBreakdown := price1h > 0 && price1h > price5m
-			return s.applyModelSpecificPricingPolicyEx(model, &ModelPricing{
-				InputPricePerToken:                 litellmPricing.InputCostPerToken,
-				InputPricePerTokenPriority:         litellmPricing.InputCostPerTokenPriority,
-				OutputPricePerToken:                litellmPricing.OutputCostPerToken,
-				OutputPricePerTokenPriority:        litellmPricing.OutputCostPerTokenPriority,
-				CacheCreationPricePerToken:         litellmPricing.CacheCreationInputTokenCost,
-				CacheCreationPricePerTokenPriority: litellmPricing.CacheCreationInputTokenCostPriority,
-				CacheReadPricePerToken:             litellmPricing.CacheReadInputTokenCost,
-				CacheReadPricePerTokenPriority:     litellmPricing.CacheReadInputTokenCostPriority,
-				CacheCreation5mPrice:               price5m,
-				CacheCreation1hPrice:               price1h,
-				SupportsCacheBreakdown:             enableBreakdown,
-				LongContextInputThreshold:          litellmPricing.LongContextInputTokenThreshold,
-				// xAI 的长上下文阈值语义为"达到即进高档"（LiteLLM 同口径），其余提供商为严格大于。
-				LongContextThresholdInclusive: strings.EqualFold(litellmPricing.LiteLLMProvider, "xai"),
-				LongContextInputMultiplier:    litellmPricing.LongContextInputCostMultiplier,
-				LongContextOutputMultiplier:   litellmPricing.LongContextOutputCostMultiplier,
-				ImageInputPricePerToken:       litellmPricing.InputCostPerImageToken,
-				ImageCacheReadPricePerToken:   litellmPricing.CacheReadInputImageTokenCost,
-				ImageOutputPricePerToken:      litellmPricing.OutputCostPerImageToken,
-			}, true, pricingAt), nil
+			return s.applyModelSpecificPricingPolicy(model, modelPricingFromCatalog(litellmPricing)), nil
 		}
+	}
+
+	if identity, ok := deepseekBillingIdentity(model, false); ok {
+		return modelPricingFromCatalog(deepseekOfficialPrice(identity)), nil
 	}
 
 	// 2. 使用硬编码回退价格
@@ -1289,7 +1154,7 @@ func (s *BillingService) getModelPricingAt(model string, pricingAt time.Time) (*
 		if _, seen := s.fallbackWarnSeen.LoadOrStore(model, struct{}{}); !seen {
 			log.Printf("[Billing] Using fallback pricing for model: %s", model)
 		}
-		return s.applyModelSpecificPricingPolicyEx(model, fallback, true, pricingAt), nil
+		return s.applyModelSpecificPricingPolicy(model, fallback), nil
 	}
 
 	return nil, fmt.Errorf("%w for model: %s", ErrModelPricingUnavailable, model)
@@ -1408,6 +1273,7 @@ func (s *BillingService) CalculateCostUnified(input CostInput) (*CostBreakdown, 
 			input.ServiceTier,
 			nil,
 			applyLongContextBilling,
+			input.PricingAt,
 		)
 		if err == nil {
 			applyCostBreakdownMultiplier(breakdown, maxReasoningEffortBillingMultiplier(input.Model, input.ReasoningEffort, nil))
@@ -1468,29 +1334,16 @@ func (s *BillingService) calculateTokenCost(resolved *ResolvedPricing, input Cos
 		return nil, fmt.Errorf("no pricing available for model: %s: %w", input.Model, ErrModelPricingUnavailable)
 	}
 
-	// 计费时点：优先请求级 PricingAt（历史补账与 DeepSeek pro→Flash 切换判定
-	// 同源），零值回退当前时刻。
+	// Freeze time pricing at the request start, including asynchronous usage
+	// recording across a peak boundary. Callers without a timestamp use now.
 	pricingAt := input.PricingAt
 	if pricingAt.IsZero() {
 		pricingAt = timezone.Now()
 	}
 
-	// 默认价卡（Source=LiteLLM）应用 DeepSeek 官方价强制覆盖（幂等，GetModelPricing
-	// 内部已强制过）；分组/渠道自定义定价保留运营者配置，不强制覆盖官方价。
-	pricing = s.applyModelSpecificPricingPolicyEx(input.Model, pricing, resolved.Source == PricingSourceLiteLLM, pricingAt)
-
-	// DeepSeek 模型默认价卡按官方峰谷口径调整：高峰时段（01:00–04:00 与
-	// 06:00–10:00 UTC，仅工作日；北京时间周末全天低谷）按 2× 低谷价计费。
-	// 仅作用于默认价卡（Source=LiteLLM，无分组/渠道自定义定价）——分组/渠道
-	// 自定义定价保持运营者语义，不叠加。先克隆再乘，避免污染共享 fallbackPrices 指针。
-	if resolved.Source == PricingSourceLiteLLM && isDeepSeekModel(input.Model) {
-		if mult := deepseekPeakMultiplierAt(pricingAt); mult > 1 {
-			cloned := *pricing
-			cloned.InputPricePerToken *= mult
-			cloned.OutputPricePerToken *= mult
-			cloned.CacheReadPricePerToken *= mult
-			pricing = &cloned
-		}
+	pricing = s.applyModelSpecificPricingPolicy(input.Model, pricing)
+	if resolved.Source != PricingSourceGroup && resolved.Source != PricingSourceChannel {
+		pricing = applyDeepseekTimePricing(pricing, pricingAt)
 	}
 
 	// 官方长上下文阶梯仅在无区间定价时应用（区间定价已包含上下文分层）。
@@ -1726,7 +1579,12 @@ func (s *BillingService) calculateCostInternalWithPolicy(
 	serviceTier string,
 	channelPricing *ChannelModelPricing,
 	longContextBillingEnabled bool,
+	pricingTimes ...time.Time,
 ) (*CostBreakdown, error) {
+	pricingAt := timezone.Now()
+	if len(pricingTimes) > 0 && !pricingTimes[0].IsZero() {
+		pricingAt = pricingTimes[0]
+	}
 	var pricing *ModelPricing
 	var err error
 	if channelPricing != nil {
@@ -1738,55 +1596,17 @@ func (s *BillingService) calculateCostInternalWithPolicy(
 		return nil, err
 	}
 
+	if channelPricing == nil {
+		pricing = applyDeepseekTimePricing(pricing, pricingAt)
+	}
 	return s.computeTokenBreakdown(pricing, tokens, rateMultiplier, serviceTier, longContextBillingEnabled), nil
 }
 
-// applyModelSpecificPricingPolicy 对目录数据做模型特定修正：DeepSeek 官方价
-// 强制覆盖；GPT-5.6 缺 cache_write 价时按官方规则补 1.25 倍输入价；Fast/priority
-// 档按业务倍率改写（本地/远程目录的 priority 价可能沿用官方旧口径）。长上下文
-// 阶梯不在此处补齐：一律由目录数据（above_XXXk 折算或显式 long_context_* 字段）
-// 驱动。强制 DeepSeek 官方价且无显式计费时点（pro→Flash 切换按当前时刻判定），
-// 供无既有时点的策略修正场景与测试使用；计费/展示主路径分别经
-// calculateTokenCost 与 getModelPricingAt 显式传时点，分组/渠道自定义定价
-// 用 applyModelSpecificPricingPolicyEx 关闭强制，保留运营者配置。
+// applyModelSpecificPricingPolicy retains non-DeepSeek model policies. DeepSeek
+// identities and effective price cards are resolved at catalog load time.
 func (s *BillingService) applyModelSpecificPricingPolicy(model string, pricing *ModelPricing) *ModelPricing {
-	return s.applyModelSpecificPricingPolicyEx(model, pricing, true, time.Time{})
-}
-
-// applyModelSpecificPricingPolicyEx 与 applyModelSpecificPricingPolicy 相同，
-// 但由调用方控制是否强制 DeepSeek 官方价（forceDeepSeekRates），并显式传入
-// 计费时点 pricingAt（零值表示按当前时刻判定）。
-// calculateTokenCost 对分组/渠道自定义定价（Source 非 LiteLLM）传 false：
-// 强制覆盖会把运营者配置的售价盖回官方价，违反自定义定价语义。
-func (s *BillingService) applyModelSpecificPricingPolicyEx(model string, pricing *ModelPricing, forceDeepSeekRates bool, pricingAt time.Time) *ModelPricing {
 	if pricing == nil {
 		return nil
-	}
-	// DeepSeek 模型：无论 JSON/远端价格表给什么价，一律强制官方低谷价
-	// （Flash 三档为 2026-09-10 官方降价后口径）。这是覆盖远端旧价的关键——远端
-	// 仓库不可改，生产会先拉到旧价，必须在此兜底修正；克隆后再覆盖，避免污染
-	// 共享 fallbackPrices 指针。
-	// 档位判定：含 "deepseek-v4-pro" 的版本化名称（如 deepseek-v4-pro-0813）归 pro 档，
-	// 其余 deepseek-*（含已停服的 chat/reasoner 与未知型号）统一归 flash 档。
-	// 2026-09-14 04:00 UTC 起上游把 pro 请求路由到 V4.1-Flash，pro 档改按
-	// Flash 三档价计费；历史时点（早于切换时刻）仍按 Pro 价。
-	// 高峰时段倍率不在本函数处理，由 calculateTokenCost 按 deepseekPeakMultiplierAt
-	// 对默认价卡另行叠加（分组/渠道自定义定价不叠加）。
-	if forceDeepSeekRates && isDeepSeekModel(model) {
-		cloned := *pricing
-		if isDeepSeekProModel(model) && !deepseekProBilledAsFlash(pricingAt) {
-			cloned.InputPricePerToken = deepseekProOffPeakInputPrice
-			cloned.OutputPricePerToken = deepseekProOffPeakOutputPrice
-			cloned.CacheReadPricePerToken = deepseekProOffPeakCacheRead
-		} else {
-			// deepseek-flash（= V4.1-Flash）、deepseek-v4-flash /
-			// deepseek-v4-flash-vision-exp 与其余 deepseek-* 共用 flash 价；
-			// 切换时点之后的 pro 请求同样按 flash 价计费。
-			cloned.InputPricePerToken = deepseekFlashOffPeakInputPrice
-			cloned.OutputPricePerToken = deepseekFlashOffPeakOutputPrice
-			cloned.CacheReadPricePerToken = deepseekFlashOffPeakCacheRead
-		}
-		return &cloned
 	}
 	normalized := normalizeKnownOpenAICodexModel(model)
 	isGPT56 := isOpenAIGPT56Model(normalized)
@@ -2298,5 +2118,36 @@ func getDefaultGrokImagineVideoPrice(model string, resolution string) (float64, 
 		}
 	default:
 		return 0, false
+	}
+}
+
+func modelPricingFromCatalog(litellmPricing *LiteLLMModelPricing) *ModelPricing {
+	// 启用 5m/1h 分类计费的条件：
+	// 1. 存在 1h 价格
+	// 2. 1h 价格 > 5m 价格（防止 LiteLLM 数据错误导致少收费）
+	price5m := litellmPricing.CacheCreationInputTokenCost
+	price1h := litellmPricing.CacheCreationInputTokenCostAbove1hr
+	enableBreakdown := price1h > 0 && price1h > price5m
+	return &ModelPricing{
+		deepseekIdentity:                   litellmPricing.deepseekIdentity,
+		InputPricePerToken:                 litellmPricing.InputCostPerToken,
+		InputPricePerTokenPriority:         litellmPricing.InputCostPerTokenPriority,
+		OutputPricePerToken:                litellmPricing.OutputCostPerToken,
+		OutputPricePerTokenPriority:        litellmPricing.OutputCostPerTokenPriority,
+		CacheCreationPricePerToken:         litellmPricing.CacheCreationInputTokenCost,
+		CacheCreationPricePerTokenPriority: litellmPricing.CacheCreationInputTokenCostPriority,
+		CacheReadPricePerToken:             litellmPricing.CacheReadInputTokenCost,
+		CacheReadPricePerTokenPriority:     litellmPricing.CacheReadInputTokenCostPriority,
+		CacheCreation5mPrice:               price5m,
+		CacheCreation1hPrice:               price1h,
+		SupportsCacheBreakdown:             enableBreakdown,
+		LongContextInputThreshold:          litellmPricing.LongContextInputTokenThreshold,
+		// xAI 的长上下文阈值语义为"达到即进高档"（LiteLLM 同口径），其余提供商为严格大于。
+		LongContextThresholdInclusive: strings.EqualFold(litellmPricing.LiteLLMProvider, "xai"),
+		LongContextInputMultiplier:    litellmPricing.LongContextInputCostMultiplier,
+		LongContextOutputMultiplier:   litellmPricing.LongContextOutputCostMultiplier,
+		ImageInputPricePerToken:       litellmPricing.InputCostPerImageToken,
+		ImageCacheReadPricePerToken:   litellmPricing.CacheReadInputImageTokenCost,
+		ImageOutputPricePerToken:      litellmPricing.OutputCostPerImageToken,
 	}
 }
