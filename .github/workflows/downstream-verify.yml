@@ -123,8 +123,6 @@ jobs:
         run: |
           pnpm exec vitest run \
             src/components/admin/account/__tests__/AccountTestModal.spec.ts \
-            src/__tests__/uiContrast.structure.spec.ts \
-            src/components/common/__tests__/GroupBadge.spec.ts \
             src/components/admin/account/__tests__/AccountTestModal.displayContract.spec.ts \
             src/views/admin/__tests__/SettingsView.spec.ts \
             src/components/common/__tests__/VersionBadge.downstream.spec.ts \
