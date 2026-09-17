@@ -12,7 +12,7 @@
           <div
             :class="[
               'flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold',
-              step >= 1 ? 'bg-primary-500 text-white' : 'bg-gray-200 text-gray-500 dark:bg-dark-600'
+              step >= 1 ? 'bg-primary-500 text-white' : 'bg-gray-200 text-gray-700 dark:bg-dark-600'
             ]"
           >
             1
@@ -26,7 +26,7 @@
           <div
             :class="[
               'flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold',
-              step >= 2 ? 'bg-primary-500 text-white' : 'bg-gray-200 text-gray-500 dark:bg-dark-600'
+              step >= 2 ? 'bg-primary-500 text-white' : 'bg-gray-200 text-gray-700 dark:bg-dark-600'
             ]"
           >
             2
@@ -277,7 +277,7 @@
                 'flex h-8 w-8 shrink-0 items-center justify-center rounded-none',
                 accountCategory === 'oauth-based'
                   ? 'bg-orange-500 text-white'
-                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-dark-300'
               ]"
             >
               <Icon name="sparkles" size="sm" />
@@ -307,7 +307,7 @@
                 'flex h-8 w-8 shrink-0 items-center justify-center rounded-none',
                 accountCategory === 'apikey'
                   ? 'bg-purple-500 text-white'
-                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-dark-300'
               ]"
             >
               <Icon name="key" size="sm" />
@@ -337,7 +337,7 @@
                 'flex h-8 w-8 shrink-0 items-center justify-center rounded-none',
                 accountCategory === 'bedrock'
                   ? 'bg-amber-500 text-white'
-                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-dark-300'
               ]"
             >
               <Icon name="cloud" size="sm" />
@@ -367,7 +367,7 @@
                 'flex h-8 w-8 shrink-0 items-center justify-center rounded-none',
                 accountCategory === 'service_account'
                   ? 'bg-sky-500 text-white'
-                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-dark-300'
               ]"
             >
               <Icon name="cloud" size="sm" />
@@ -407,7 +407,7 @@
                 'flex h-8 w-8 shrink-0 items-center justify-center rounded-none',
                 accountCategory === 'oauth-based'
                   ? 'bg-green-500 text-white'
-                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-dark-300'
               ]"
             >
               <Icon name="key" size="sm" />
@@ -433,7 +433,7 @@
                 'flex h-8 w-8 shrink-0 items-center justify-center rounded-none',
                 accountCategory === 'apikey'
                   ? 'bg-purple-500 text-white'
-                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-dark-300'
               ]"
             >
               <Icon name="key" size="sm" />
@@ -466,7 +466,7 @@
                 'flex h-8 w-8 shrink-0 items-center justify-center rounded-none',
                 accountCategory === 'oauth-based'
                   ? 'bg-zinc-900 text-white'
-                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-dark-300'
               ]"
             >
               <PlatformIcon platform="grok" size="sm" />
@@ -493,7 +493,7 @@
                 'flex h-8 w-8 shrink-0 items-center justify-center rounded-none',
                 accountCategory === 'apikey'
                   ? 'bg-purple-500 text-white'
-                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-dark-300'
               ]"
             >
               <Icon name="key" size="sm" />
@@ -523,7 +523,7 @@
             <div
               :class="[
                 'flex h-8 w-8 shrink-0 items-center justify-center rounded-none',
-                openCodeAccountMode === 'zen' ? cnAccentIconClass : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+                openCodeAccountMode === 'zen' ? cnAccentIconClass : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-dark-300'
               ]"
             >
               <Icon name="creditCard" size="sm" />
@@ -546,7 +546,7 @@
             <div
               :class="[
                 'flex h-8 w-8 shrink-0 items-center justify-center rounded-none',
-                openCodeAccountMode === 'go' ? cnAccentIconClass : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+                openCodeAccountMode === 'go' ? cnAccentIconClass : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-dark-300'
               ]"
             >
               <Icon name="bolt" size="sm" />
@@ -579,7 +579,7 @@
                 'flex h-8 w-8 shrink-0 items-center justify-center rounded-none',
                 accountMode === 'payg'
                   ? cnAccentIconClass
-                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-dark-300'
               ]"
             >
               <Icon name="creditCard" size="sm" />
@@ -606,7 +606,7 @@
                 'flex h-8 w-8 shrink-0 items-center justify-center rounded-none',
                 accountMode === 'coding'
                   ? cnAccentIconClass
-                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-dark-300'
               ]"
             >
               <Icon name="bolt" size="sm" />
@@ -640,7 +640,7 @@
                 'flex h-8 w-8 shrink-0 items-center justify-center rounded-none',
                 apiProtocol === opt.value
                   ? cnAccentIconClass
-                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-dark-300'
               ]"
             >
               <Icon :name="opt.value === 'adaptive' ? 'swap' : opt.value === 'anthropic' ? 'sparkles' : opt.value === 'responses' ? 'terminal' : 'chat'" size="sm" />
@@ -714,7 +714,7 @@
                 'flex h-8 w-8 shrink-0 items-center justify-center rounded-none',
                 accountCategory === 'oauth-based'
                   ? 'bg-blue-500 text-white'
-                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-dark-300'
               ]"
             >
               <Icon name="key" size="sm" />
@@ -744,7 +744,7 @@
                 'flex h-8 w-8 shrink-0 items-center justify-center rounded-none',
                 accountCategory === 'apikey'
                   ? 'bg-purple-500 text-white'
-                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-dark-300'
               ]"
             >
               <svg
@@ -786,7 +786,7 @@
                 'flex h-8 w-8 shrink-0 items-center justify-center rounded-none',
                 accountCategory === 'service_account'
                   ? 'bg-sky-500 text-white'
-                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-dark-300'
               ]"
             >
               <Icon name="cloud" size="sm" />
@@ -846,7 +846,7 @@
                   'flex h-8 w-8 shrink-0 items-center justify-center rounded-none',
                   geminiOAuthType === 'google_one'
                     ? 'bg-purple-500 text-white'
-                    : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+                    : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-dark-300'
                 ]"
               >
                 <Icon name="user" size="sm" />
@@ -889,7 +889,7 @@
                   'flex h-8 w-8 shrink-0 items-center justify-center rounded-none',
                   geminiOAuthType === 'code_assist'
                     ? 'bg-blue-500 text-white'
-                    : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+                    : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-dark-300'
                 ]"
               >
                 <Icon name="cloud" size="sm" />
@@ -973,7 +973,7 @@
                   'flex h-8 w-8 shrink-0 items-center justify-center rounded-none',
                   geminiOAuthType === 'ai_studio'
                     ? 'bg-amber-500 text-white'
-                    : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+                    : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-dark-300'
                 ]"
               >
                 <svg
@@ -1085,7 +1085,7 @@
                 'flex h-8 w-8 shrink-0 items-center justify-center rounded-none',
                 antigravityAccountType === 'oauth'
                   ? 'bg-purple-500 text-white'
-                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-dark-300'
               ]"
             >
               <Icon name="key" size="sm" />
@@ -1111,7 +1111,7 @@
                 'flex h-8 w-8 shrink-0 items-center justify-center rounded-none',
                 antigravityAccountType === 'upstream'
                   ? 'bg-purple-500 text-white'
-                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-dark-300'
               ]"
             >
               <Icon name="cloud" size="sm" />
@@ -1540,7 +1540,7 @@
                   'flex-1 rounded-none px-4 py-2 text-sm font-medium transition-all',
                   modelRestrictionMode === 'whitelist'
                     ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
                 ]"
               >
                 <svg
@@ -1565,7 +1565,7 @@
                   'flex-1 rounded-none px-4 py-2 text-sm font-medium transition-all',
                   modelRestrictionMode === 'mapping'
                     ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
                 ]"
               >
                 <svg
@@ -1830,7 +1830,7 @@
                   'rounded-none px-3 py-1.5 text-sm font-medium transition-colors',
                   selectedErrorCodes.includes(code.value)
                     ? 'bg-red-100 text-red-700 ring-1 ring-red-500 dark:bg-red-900/30 dark:text-red-400'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
                 ]"
               >
                 {{ code.value }} {{ code.label }}
@@ -2066,7 +2066,7 @@
                 'flex-1 rounded-none px-4 py-2 text-sm font-medium transition-all',
                 modelRestrictionMode === 'whitelist'
                   ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
               ]"
             >
               {{ t('admin.accounts.modelWhitelist') }}
@@ -2078,7 +2078,7 @@
                 'flex-1 rounded-none px-4 py-2 text-sm font-medium transition-all',
                 modelRestrictionMode === 'mapping'
                   ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
               ]"
             >
               {{ t('admin.accounts.modelMapping') }}
@@ -2420,7 +2420,7 @@
                 'flex-1 rounded-none px-4 py-2 text-sm font-medium transition-all',
                 modelRestrictionMode === 'whitelist'
                   ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
               ]"
             >
               {{ t('admin.accounts.modelWhitelist') }}
@@ -2432,7 +2432,7 @@
                 'flex-1 rounded-none px-4 py-2 text-sm font-medium transition-all',
                 modelRestrictionMode === 'mapping'
                   ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
               ]"
             >
               {{ t('admin.accounts.modelMapping') }}
@@ -2908,7 +2908,7 @@
                     'flex-1 rounded-none px-3 py-2 text-sm font-medium transition-all',
                     rpmStrategy === 'tiered'
                       ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
                   ]"
                 >
                   <div class="text-center">
@@ -2923,7 +2923,7 @@
                     'flex-1 rounded-none px-3 py-2 text-sm font-medium transition-all',
                     rpmStrategy === 'sticky_exempt'
                       ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
                   ]"
                 >
                   <div class="text-center">
@@ -3604,7 +3604,7 @@
           </label>
           <div class="group relative">
             <span
-              class="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-gray-200 text-xs text-gray-500 hover:bg-gray-300 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500"
+              class="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-gray-200 text-xs text-gray-700 hover:bg-gray-300 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600"
             >
               ?
             </span>
@@ -3632,7 +3632,7 @@
           </label>
           <div class="group relative">
             <span
-              class="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-gray-200 text-xs text-gray-500 hover:bg-gray-300 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500"
+              class="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-gray-200 text-xs text-gray-700 hover:bg-gray-300 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600"
             >
               ?
             </span>
