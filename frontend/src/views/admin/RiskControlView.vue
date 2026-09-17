@@ -144,7 +144,7 @@
                   </div>
                 </div>
               </div>
-              <p v-else class="rounded-none bg-gray-50 p-4 text-sm text-gray-500 dark:bg-dark-700 dark:text-gray-400">
+              <p v-else class="rounded-none bg-gray-50 p-4 text-sm text-gray-500 dark:bg-dark-700 dark:text-dark-300">
                 {{ t('admin.riskControl.preBlockAPIKeyLoadEmpty') }}
               </p>
             </div>
@@ -742,7 +742,7 @@
                 >
                   <span class="min-w-0">
                     <span class="block truncate text-sm font-semibold text-gray-900 dark:text-white">{{ group.name }}</span>
-                    <span class="mt-1 inline-flex rounded-none bg-gray-100 px-2 py-0.5 text-xs text-gray-500 dark:bg-dark-700 dark:text-gray-400">{{ group.platform }}</span>
+                    <span class="mt-1 inline-flex rounded-none bg-gray-100 px-2 py-0.5 text-xs text-gray-500 dark:bg-dark-700 dark:text-dark-300">{{ group.platform }}</span>
                   </span>
                   <span
                     class="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border"
@@ -1530,7 +1530,7 @@ const overviewItems = computed<OverviewItem[]>(() => [
     icon: 'shield',
     iconClass: configForm.enabled
       ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-300'
-      : 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-gray-400',
+      : 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-dark-300',
     badge: runtimeBadgeText.value,
     badgeClass: runtimeBadgeClass.value,
   },

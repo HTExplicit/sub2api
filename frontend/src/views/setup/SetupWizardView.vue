@@ -26,7 +26,7 @@
                     ? 'bg-primary-500 text-white'
                     : currentStep === index
                       ? 'bg-primary-500 text-white ring-4 ring-primary-100 dark:ring-primary-900'
-                      : 'bg-gray-200 text-gray-500 dark:bg-dark-700 dark:text-dark-400'
+                      : 'bg-gray-200 text-gray-700 dark:bg-dark-700 dark:text-dark-300'
                 ]"
               >
                 <Icon
