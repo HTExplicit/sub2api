@@ -386,9 +386,14 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	// session key, ensuring different API keys produce different upstream sessions.
 	if account.Platform != PlatformGrok && upstreamPromptCacheKey != "" {
 		isolatedSessionID := generateSessionUUID(isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), upstreamPromptCacheKey))
-		upstreamReq.Header.Set("session_id", isolatedSessionID)
-		if upstreamReq.Header.Get("conversation_id") != "" {
-			upstreamReq.Header.Set("conversation_id", isolatedSessionID)
+		if account.UsesOpenAICodexProtocol() {
+			// Codex 协议账号：最终形态只有连字符会话头，不再发送下划线 session_id / conversation_id。
+			setCodexSessionIdentityHeaders(upstreamReq.Header, isolatedSessionID)
+		} else {
+			upstreamReq.Header.Set("session_id", isolatedSessionID)
+			if upstreamReq.Header.Get("conversation_id") != "" {
+				upstreamReq.Header.Set("conversation_id", isolatedSessionID)
+			}
 		}
 	}
 	if account.UsesOpenAICodexProtocol() && account.Platform != PlatformGrok {

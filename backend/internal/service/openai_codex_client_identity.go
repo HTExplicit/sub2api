@@ -339,7 +339,9 @@ func (s *CodexClientIdentityBackfillService) RunOnce(ctx context.Context) (int, 
 	if s == nil || s.accountRepo == nil {
 		return 0, 0, nil
 	}
-	accounts, err := s.accountRepo.ListByPlatform(ctx, PlatformOpenAI)
+	// 任务内取全部状态的 OpenAI 账号：ListByPlatform 只返回 active，而停用/异常账号恢复后
+	// 同样要以持久化身份出站；不改动全局共享的 active 过滤，也不触碰账号状态。
+	accounts, err := s.accountRepo.ListAllWithFilters(ctx, PlatformOpenAI, "", "", "", 0, "")
 	if err != nil {
 		return 0, 0, fmt.Errorf("list openai accounts: %w", err)
 	}

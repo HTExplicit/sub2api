@@ -139,9 +139,14 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	applyCodexAccountIdentityHeaders(headers, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
 	applyStagedCodexFingerprintHeaders(c, account, headers)
 	if account != nil && account.UsesOpenAICodexProtocol() {
-		// 入站缺失连字符会话头时，用同一账号作用域映射从客户端会话标识补齐，
-		// 与 WS 帧 client_metadata 的改写结果同源。
-		ensureCodexSessionIdentityHeaders(headers, scopeCodexAccountIdentityValue(codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), sessionResolution.SessionID))
+		// 入站缺失连字符会话头时补齐：来自帧体 prompt_cache_key 的回退值由调用方传入最终线上值
+		//（已随帧体做过账号作用域改写），不再二次映射；来自入站下划线头的原始值仍按账号作用域
+		// 改写。两者都与 WS 帧 client_metadata 的改写结果同源。
+		fallback := sessionResolution.SessionID
+		if sessionResolution.SessionSource != "prompt_cache_key" {
+			fallback = scopeCodexAccountIdentityValue(codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), fallback)
+		}
+		ensureCodexSessionIdentityHeaders(headers, fallback)
 	}
 
 	if account != nil && account.UsesOpenAICodexProtocol() {

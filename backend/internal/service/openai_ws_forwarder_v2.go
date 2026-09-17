@@ -191,7 +191,8 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2WithScope(
 		isCodexCLI,
 		turnState,
 		turnMetadata,
-		promptCacheKey,
+		// 握手回退与即将发出的帧体 prompt_cache_key 同源（builder 不再二次映射）。
+		openAIWSPayloadString(payload, "prompt_cache_key"),
 		openAIWSPayloadString(payload, "model"),
 		openAIWSPayloadString(payload, "service_tier"),
 	)

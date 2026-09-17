@@ -2,11 +2,15 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
@@ -103,6 +107,80 @@ func TestCodexClientIdentityIsSystemManagedAndSchemaChecked(t *testing.T) {
 func (id codexClientIdentity) withoutGeneratedAt() codexClientIdentity {
 	id.GeneratedAt = ""
 	return id
+}
+
+// 凭据面与推理面共用显式 UA 策略：ForceCodexCLI 开启时忽略账号自定义 UA，刷新 token 也用派生身份。
+func TestRefreshAccountTokenSharesForceCodexCLIOverridePolicy(t *testing.T) {
+	t.Cleanup(func() { SetCodexForceCLIEnabled(false) })
+	customUA := "codex_cli_rs/0.150.0 (Windows 10.0.19045; x86_64) unknown"
+	account := &Account{ID: 12, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
+		Credentials: map[string]any{"refresh_token": "rt", "chatgpt_account_id": "acct-12", "user_agent": customUA},
+		Extra:       map[string]any{codexFingerprintSeedExtraKey: "3b7f1c2d-9e8a-4b6c-8d5e-2f1a0b9c8d7e"}}
+
+	SetCodexForceCLIEnabled(false)
+	stub := &identityRefreshingOAuthClientStub{}
+	_, err := NewOpenAIOAuthService(nil, stub).RefreshAccountToken(context.Background(), account)
+	require.NoError(t, err)
+	require.Equal(t, resolveCodexOutboundIdentity(customUA).userAgent, stub.userAgent, "未强制时账号显式 UA 生效")
+
+	SetCodexForceCLIEnabled(true)
+	stub = &identityRefreshingOAuthClientStub{}
+	_, err = NewOpenAIOAuthService(nil, stub).RefreshAccountToken(context.Background(), account)
+	require.NoError(t, err)
+	require.Equal(t, resolveCodexOutboundIdentityForAccount(account, "").userAgent, stub.userAgent, "ForceCodexCLI 时与推理面一样忽略显式 UA")
+}
+
+// codexTestSeedForOS 返回一个派生出指定操作系统身份的合法种子（确定性搜索）。
+func codexTestSeedForOS(t *testing.T, osType string) string {
+	t.Helper()
+	for i := 0; i < 4096; i++ {
+		seed := fmt.Sprintf("00000000-0000-4000-8000-%012d", i)
+		if deriveCodexClientIdentity(seed).OSType == osType {
+			return seed
+		}
+	}
+	t.Fatalf("no seed derives %s", osType)
+	return ""
+}
+
+// 影子账号：staging 的 sandbox 跟随构造器实际使用的父账号身份，而不是子账号自己的种子。
+func TestStagedFingerprintSandboxFollowsParentIdentitySource(t *testing.T) {
+	seedFor := func(osType string) string { return codexTestSeedForOS(t, osType) }
+	child := &Account{ID: 21, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
+		Credentials: map[string]any{"chatgpt_account_id": "acct-21"},
+		Extra:       map[string]any{codexFingerprintSeedExtraKey: seedFor(codexClientOSWindows)}}
+	parent := &Account{ID: 20, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
+		Credentials: map[string]any{"chatgpt_account_id": "acct-20"},
+		Extra:       map[string]any{codexFingerprintSeedExtraKey: seedFor(codexClientOSMac)}}
+
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	c.Set(codexAccountIdentitySourceContextKey, parent)
+	svc := &OpenAIGatewayService{cfg: &config.Config{}}
+
+	ids := svc.resolveStagedCodexFingerprintIDs(c, child, c.Request.Header)
+	require.NotNil(t, ids)
+	require.Equal(t, codexClientSandboxMac, ids.sandbox, "sandbox 跟随父账号（最终 UA）的系统")
+	require.Equal(t, codexClientSandboxWindows, svc.resolveStagedCodexFingerprintIDs(nil, child, nil).sandbox, "无父账号时跟随自身身份")
+}
+
+// 全局强制统一关闭时终态只做配对、保留合法客户端 UA，staging 的 sandbox 必须跟随该客户端 UA。
+func TestStagedFingerprintSandboxFollowsPairedClientUAWhenEnforcementOff(t *testing.T) {
+	t.Cleanup(func() { SetCodexIdentityEnforcementEnabled(true) })
+	account := &Account{ID: 22, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
+		Credentials: map[string]any{"chatgpt_account_id": "acct-22"},
+		Extra:       map[string]any{codexFingerprintSeedExtraKey: codexTestSeedForOS(t, codexClientOSMac)}}
+	clientHeaders := http.Header{}
+	clientHeaders.Set("user-agent", "codex_cli_rs/0.150.0 (Windows 10.0.19045; x86_64) unknown")
+	svc := &OpenAIGatewayService{cfg: &config.Config{}}
+
+	SetCodexIdentityEnforcementEnabled(true)
+	require.Equal(t, codexClientSandboxMac, svc.resolveStagedCodexFingerprintIDs(nil, account, clientHeaders).sandbox, "强制统一开启：跟随账号身份")
+	SetCodexIdentityEnforcementEnabled(false)
+	require.Equal(t, codexClientSandboxWindows, svc.resolveStagedCodexFingerprintIDs(nil, account, clientHeaders).sandbox, "强制统一关闭：跟随配对后的客户端 UA")
+	clientHeaders.Set("user-agent", "curl/8.0")
+	require.Equal(t, codexSandboxForUserAgent(resolveCodexOutboundIdentity("").userAgent), svc.resolveStagedCodexFingerprintIDs(nil, account, clientHeaders).sandbox, "不合法客户端 UA 回落规范身份")
 }
 
 // turn metadata 的 sandbox 跟随最终出站 UA，而不是账号身份：管理员显式 UA 覆盖时二者可能不同。

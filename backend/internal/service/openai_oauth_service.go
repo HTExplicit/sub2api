@@ -400,7 +400,7 @@ func (s *OpenAIOAuthService) RefreshAccountToken(ctx context.Context, account *A
 	}
 
 	clientID := account.GetCredential("client_id")
-	identity := resolveCodexOutboundIdentityForAccount(account, account.GetOpenAIUserAgent())
+	identity := resolveCodexOutboundIdentityForAccount(account, codexAccountIdentityOverrideUA(account))
 	return s.refreshTokenWithIdentity(ctx, refreshToken, proxyURL, clientID, identity)
 }
 

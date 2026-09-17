@@ -318,6 +318,26 @@ func applyCodexAccountIdentityHeaders(headers http.Header, account *Account, api
 // 连字符会话头：session-id 缺失时取最终（已按账号作用域改写的）会话标识，
 // thread-id 缺失时等于 session-id（root 线程不变式），x-client-request-id 缺失时等于
 // thread-id。sessionID 必须已经是出站形态，这里不再二次改写。
+// setCodexSessionIdentityHeaders 用给定会话 ID 覆写非 compact Codex 路径的连字符会话头：
+// session-id 总是覆写；thread-id / x-client-request-id 为空或仍跟随旧 session-id 时一并改写，
+// 客户端显式给出的不同值保留；同时删除下划线 session_id / conversation_id（真实 Codex 不发送）。
+func setCodexSessionIdentityHeaders(h http.Header, sessionID string) {
+	sessionID = strings.TrimSpace(sessionID)
+	if h == nil || sessionID == "" {
+		return
+	}
+	previous := strings.TrimSpace(h.Get("session-id"))
+	h.Set("session-id", sessionID)
+	for _, name := range []string{"thread-id", "x-client-request-id"} {
+		current := strings.TrimSpace(h.Get(name))
+		if current == "" || current == previous {
+			h.Set(name, sessionID)
+		}
+	}
+	h.Del("session_id")
+	h.Del("conversation_id")
+}
+
 func ensureCodexSessionIdentityHeaders(h http.Header, sessionID string) {
 	if h == nil {
 		return

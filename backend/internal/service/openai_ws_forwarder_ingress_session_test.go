@@ -989,6 +989,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CodexImageBridge
 			AllowImageGeneration: true,
 		},
 	}
+	fingerprintSeed := codexTestSeedForOS(t, codexClientOSMac)
 	account := &Account{
 		ID:          31,
 		Name:        "openai-codex-image-ws",
@@ -998,11 +999,13 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CodexImageBridge
 		Schedulable: true,
 		Concurrency: 1,
 		Credentials: map[string]any{
-			"access_token": "test-token",
+			"access_token":       "test-token",
+			"chatgpt_account_id": "chatgpt-image-ws",
 		},
 		Extra: map[string]any{
 			"openai_oauth_responses_websockets_v2_enabled": true,
 			"codex_image_generation_bridge":                true,
+			codexFingerprintSeedExtraKey:                   fingerprintSeed,
 		},
 	}
 
@@ -1052,7 +1055,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CodexImageBridge
 	}()
 
 	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
-	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.create","model":"gpt-5.5","stream":false,"input":"draw a cat"}`))
+	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.create","model":"gpt-5.5","stream":false,"input":"draw a cat","client_metadata":{"installation_id":"user-install-1","x-codex-turn-metadata":"{\"sandbox\":\"seccomp\"}"}}`))
 	cancelWrite()
 	require.NoError(t, err)
 
@@ -1089,7 +1092,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CodexImageBridge
 	require.Equal(t, "resp_codex_image_lite", gjson.GetBytes(message, "response.id").String())
 
 	writeCtx, cancelWrite = context.WithTimeout(context.Background(), 3*time.Second)
-	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(`{
+	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(`{"client_metadata":{"installation_id":"user-install-3","x-codex-turn-metadata":"{\"sandbox\":\"seccomp\"}"},
 		"type":"response.create",
 		"model":"gpt-5.5",
 		"stream":false,
@@ -1141,6 +1144,17 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CodexImageBridge
 	require.False(t, gjson.Get(functionPayload, `tools.#(type=="image_generation")`).Exists())
 	require.False(t, gjson.Get(functionPayload, "tool_choice").Exists())
 	require.NotContains(t, gjson.Get(functionPayload, "instructions").String(), codexImageGenerationBridgeMarker)
+
+	// 原生 ctx_pool 入口：默认 device 收敛在首帧与后续帧都落地，sandbox 跟随账号身份（Mac→seatbelt），
+	// workspaces 不改写。
+	expectedInstallation := resolveConvergedInstallationID(account, fingerprintSeed)
+	require.Equal(t, expectedInstallation, gjson.Get(nonLitePayload, "client_metadata.x-codex-installation-id").String(), "首帧 installation 收敛为账号级设备")
+	require.Equal(t, expectedInstallation, gjson.Get(functionPayload, "client_metadata.x-codex-installation-id").String(), "后续帧同一设备")
+	require.Equal(t, expectedInstallation, gjson.Get(gjson.Get(nonLitePayload, "client_metadata.x-codex-turn-metadata").String(), "installation_id").String())
+	require.Equal(t, expectedInstallation, gjson.Get(gjson.Get(functionPayload, "client_metadata.x-codex-turn-metadata").String(), "installation_id").String())
+	require.Equal(t, codexClientSandboxMac, gjson.Get(gjson.Get(nonLitePayload, "client_metadata.x-codex-turn-metadata").String(), "sandbox").String(), "首帧 sandbox 跟随最终 UA 的系统")
+	require.Equal(t, codexClientSandboxMac, gjson.Get(gjson.Get(functionPayload, "client_metadata.x-codex-turn-metadata").String(), "sandbox").String(), "后续帧 sandbox 同样改写")
+	require.False(t, gjson.Get(nonLitePayload, "client_metadata.workspaces").Exists(), "workspaces 保持原样（本例未提供）")
 }
 
 func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_DedicatedModeDoesNotReuseConnAcrossSessions(t *testing.T) {
@@ -1593,10 +1607,12 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughHeade
 		Schedulable: true,
 		Concurrency: 1,
 		Credentials: map[string]any{
-			"access_token": "oauth-token",
+			"access_token":       "oauth-token",
+			"chatgpt_account_id": "chatgpt-passthrough-headers",
 		},
 		Extra: map[string]any{
 			"openai_oauth_responses_websockets_v2_mode": OpenAIWSIngressModePassthrough,
+			codexFingerprintSeedExtraKey:                "5d2e8c1a-7b4f-4e3d-9a6c-0f1e2d3c4b5a",
 		},
 	}
 
@@ -1678,11 +1694,20 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughHeade
 	}
 
 	require.Empty(t, captureDialer.lastHeaders.Get("session_id"), "真实 Codex 不发下划线 session_id")
-	require.Equal(t, scopeCodexAccountIdentityValue(account, 0, "pcache_passthrough"), captureDialer.lastHeaders.Get("session-id"))
+	require.Equal(t, scopeCodexAccountIdentityValue(account, 0, "pcache_passthrough"), captureDialer.lastHeaders.Get("session-id"), "只做一次账号作用域映射")
 	require.Empty(t, captureDialer.lastHeaders.Get(openAIWSTurnStateHeader), "client turn state without account provenance must fail closed")
-	require.Equal(t, "turn-meta-1", captureDialer.lastHeaders.Get(openAIWSTurnMetadataHeader))
+	// 握手 turn metadata 经指纹层重建：非 JSON 的客户端值被替换为最小合法 metadata，
+	// installation 收敛为账号级设备，sandbox 跟随最终 UA 的系统。
+	handshakeTurnMetadata := captureDialer.lastHeaders.Get(openAIWSTurnMetadataHeader)
+	require.True(t, gjson.Valid(handshakeTurnMetadata), handshakeTurnMetadata)
+	require.Equal(t, resolveConvergedInstallationID(account, "5d2e8c1a-7b4f-4e3d-9a6c-0f1e2d3c4b5a"), gjson.Get(handshakeTurnMetadata, "installation_id").String())
+	passthroughIdentity, ok := account.CodexClientIdentity()
+	require.True(t, ok)
+	require.Equal(t, passthroughIdentity.Sandbox, gjson.Get(handshakeTurnMetadata, "sandbox").String())
 	require.Len(t, upstreamConn.writes, 1)
 	forwarded := requestToJSONString(upstreamConn.writes[0])
+	require.Equal(t, gjson.Get(forwarded, "prompt_cache_key").String(), captureDialer.lastHeaders.Get("session-id"), "握手回退与首帧 prompt_cache_key 同源")
+	require.Equal(t, resolveConvergedInstallationID(account, "5d2e8c1a-7b4f-4e3d-9a6c-0f1e2d3c4b5a"), gjson.Get(forwarded, "client_metadata.x-codex-installation-id").String(), "passthrough 首帧默认 device 收敛")
 	require.False(t, gjson.Get(forwarded, `tools.#(type=="namespace")`).Exists())
 	require.Equal(t, "collaboration", gjson.Get(forwarded, `input.#(type=="additional_tools").tools.0.name`).String())
 	require.Equal(t, "namespace", gjson.Get(forwarded, "tool_choice.type").String())

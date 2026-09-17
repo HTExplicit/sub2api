@@ -385,6 +385,11 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		if accountScoped {
 			normalized = accountScopedPayload
 		}
+		fingerprintPayload, fingerprintErr := s.stageCodexFingerprintForWSFrame(c, account, normalized)
+		if fingerprintErr != nil {
+			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket identity metadata", fingerprintErr)
+		}
+		normalized = fingerprintPayload
 		if responsesLite {
 			litePayload, _, liteErr := normalizeOpenAIResponsesLitePayloadForAccount(normalized, account)
 			if liteErr != nil {
@@ -921,7 +926,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		isCodexCLI,
 		turnState,
 		strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader)),
-		firstPayload.promptCacheKey,
+		// 握手回退使用最终帧体的 prompt_cache_key（已作用域改写），builder 不再二次映射。
+		strings.TrimSpace(gjson.GetBytes(firstPayload.payloadRaw, "prompt_cache_key").String()),
 		firstRoutingFields[0].String(),
 		firstRoutingFields[1].String(),
 	)
@@ -2084,7 +2090,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				isCodexCLI,
 				turnState,
 				strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader)),
-				nextPayload.promptCacheKey,
+				strings.TrimSpace(gjson.GetBytes(nextPayload.payloadRaw, "prompt_cache_key").String()),
 				nextRoutingFields[0].String(),
 				nextRoutingFields[1].String(),
 			)

@@ -596,8 +596,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			if c != nil && c.Request != nil {
 				clientHeaders = c.Request.Header
 			}
-			fpIDs := resolveCodexFingerprintIDsFromRequest(account, clientHeaders)
-			fpIDs.alignSandboxWithUserAgent(resolveCodexOutboundIdentityForAccount(account, s.codexIdentityOverrideUA(account)).userAgent)
+			fpIDs := s.resolveStagedCodexFingerprintIDs(c, account, clientHeaders)
 			if fpIDs != nil {
 				if applyCodexFingerprintClientMetadata(decoded, fpIDs) {
 					markDecodedModified()
@@ -1658,5 +1657,66 @@ func (s *OpenAIGatewayService) codexIdentityOverrideUA(account *Account) string 
 	if s != nil && s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
 		return ""
 	}
-	return account.GetOpenAIUserAgent()
+	return codexAccountIdentityOverrideUA(account)
+}
+
+// resolveStagedCodexFingerprintIDs 解析本次请求的收敛 ID，并让 turn metadata 的 sandbox 跟随
+// 最终出站 UA：UA 来源与构造器/收口点一致——影子账号取 staged 的父账号身份，账号显式 UA
+// 按 ForceCodexCLI 策略生效——否则父/子系统不同或显式 UA 覆盖时 sandbox 会与 UA 分裂。
+func (s *OpenAIGatewayService) resolveStagedCodexFingerprintIDs(c *gin.Context, account *Account, clientHeaders http.Header) *codexFingerprintIDs {
+	ids := resolveCodexFingerprintIDsFromRequest(account, clientHeaders)
+	if ids == nil {
+		return nil
+	}
+	ids.alignSandboxWithUserAgent(s.effectiveCodexOutboundUserAgent(c, account, clientHeaders))
+	return ids
+}
+
+// effectiveCodexOutboundUserAgent 预测构造器终态收口后实际发出的 User-Agent，与
+// enforceCodexIdentityHeadersForAccount 使用同一套来源与策略：
+//   - 强制统一开启：账号显式 UA（按 ForceCodexCLI 策略）> staged 父账号 / 自身派生身份 > 规范身份；
+//   - 强制统一关闭（gateway.disable_codex_identity_enforcement）：终态只做 UA↔originator 配对，
+//     保留构造器写入的 UA——ForceCodexCLI 时为规范 UA，否则账号显式 UA，否则客户端 UA；
+//     不合法的 UA 回落规范身份。该全局开关与 fingerprint mode 是不同门控。
+func (s *OpenAIGatewayService) effectiveCodexOutboundUserAgent(c *gin.Context, account *Account, clientHeaders http.Header) string {
+	overrideUA := s.codexIdentityOverrideUA(account)
+	if codexIdentityEnforcement.Load() {
+		return resolveCodexOutboundIdentityForAccount(codexAccountIdentitySource(c, account), overrideUA).userAgent
+	}
+	candidate := overrideUA
+	if candidate == "" {
+		if s != nil && s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
+			candidate = CodexCanonicalUserAgent()
+		} else if clientHeaders != nil {
+			candidate = clientHeaders.Get("user-agent")
+		}
+	}
+	if _, paired, ok := openai.PairCodexClientIdentity(candidate); ok {
+		return paired
+	}
+	return resolveCodexOutboundIdentity("").userAgent
+}
+
+// stageCodexFingerprintForWSFrame 为原生 WS 入口的每一帧解析、暂存并应用收敛 ID：原生
+// Proxy 不经过 HTTP Forward，握手头（buildOpenAIWSHeaders → applyStagedCodexFingerprintHeaders）
+// 与帧体 client_metadata 由此共用同一份 IDs；每帧重算使 session/full 模式的 turn_id 逐轮更新，
+// device 模式只收敛 installation 与 sandbox。返回改写后的帧（未变化时原样返回）。
+func (s *OpenAIGatewayService) stageCodexFingerprintForWSFrame(c *gin.Context, account *Account, frame []byte) ([]byte, error) {
+	var clientHeaders http.Header
+	if c != nil && c.Request != nil {
+		clientHeaders = c.Request.Header
+	}
+	ids := s.resolveStagedCodexFingerprintIDs(c, account, clientHeaders)
+	stageCodexFingerprintIDs(c, ids)
+	if ids == nil {
+		return frame, nil
+	}
+	next, changed, err := applyCodexFingerprintClientMetadataRaw(frame, ids)
+	if err != nil {
+		return frame, err
+	}
+	if changed {
+		return next, nil
+	}
+	return frame, nil
 }

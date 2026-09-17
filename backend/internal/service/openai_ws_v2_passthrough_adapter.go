@@ -842,6 +842,11 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 	if accountScoped {
 		firstClientMessage = accountScopedFirst
 	}
+	fingerprintFirst, fingerprintErr := s.stageCodexFingerprintForWSFrame(c, account, firstClientMessage)
+	if fingerprintErr != nil {
+		return NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket identity metadata", fingerprintErr)
+	}
+	firstClientMessage = fingerprintFirst
 	usageMeta := newOpenAIWSPassthroughUsageMeta(initialRequestModel, firstClientMessage)
 	updatedFirst, blocked, policyErr := s.applyOpenAIFastPolicyToWSResponseCreate(ctx, account, capturedSessionModel, firstClientMessage)
 	if policyErr != nil {
@@ -1105,6 +1110,13 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 				}
 				if accountScoped {
 					payload = accountScopedPayload
+				}
+				if isResponseCreate {
+					fingerprintPayload, fingerprintErr := s.stageCodexFingerprintForWSFrame(c, account, payload)
+					if fingerprintErr != nil {
+						return payload, nil, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket identity metadata", fingerprintErr)
+					}
+					payload = fingerprintPayload
 				}
 			}
 			if isResponseCreate {
