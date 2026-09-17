@@ -596,7 +596,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			if c != nil && c.Request != nil {
 				clientHeaders = c.Request.Header
 			}
-			fpIDs := resolveCodexFingerprintIDsFromRequest(account, clientHeaders)
+			fpIDs := s.resolveStagedCodexFingerprintIDs(c, account, clientHeaders)
 			if fpIDs != nil {
 				if applyCodexFingerprintClientMetadata(decoded, fpIDs) {
 					markDecodedModified()
@@ -1578,8 +1578,8 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	s.guardOpenAICodexTurnStateEcho(c, account, req.Header)
 	if account.UsesOpenAICodexProtocol() {
 		compatMessagesBridge := isOpenAICompatMessagesBridgeContext(c) || isOpenAICompatMessagesBridgeBody(body)
-		// 清除客户端透传的 session 头，后续用隔离后的值重新设置，防止跨用户会话碰撞。
-		clientConversationID := strings.TrimSpace(req.Header.Get("conversation_id"))
+		// 真实 Codex 只发送连字符形式的 session-id / thread-id；下划线形式的
+		// session_id / conversation_id 只在 legacy compact 桥接上保留，其余路径一律清除。
 		req.Header.Del("conversation_id")
 		req.Header.Del("session_id")
 
@@ -1599,13 +1599,6 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 			req.Header.Set("session_id", isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), compactSession))
 		} else {
 			req.Header.Set("accept", "text/event-stream")
-		}
-		if promptCacheKey != "" {
-			isolated := isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), promptCacheKey)
-			req.Header.Set("session_id", isolated)
-			if !compatMessagesBridge || clientConversationID != "" {
-				req.Header.Set("conversation_id", isolated)
-			}
 		}
 	} else if isOpenAIResponsesCompactPath(c) {
 		// compact 上游是 unary JSON 协议：API-key 账号也显式声明 Accept，
@@ -1628,11 +1621,16 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	applyCodexAccountIdentityHeaders(req.Header, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
 	// 指纹收敛：使用 Forward() 中预计算的收敛 ID 改写出站头，与请求体使用同一份 IDs。
 	applyStagedCodexFingerprintHeaders(c, account, req.Header)
+	// 真实 Codex 必带的连字符会话头：入站缺失时以最终请求体的 prompt_cache_key
+	// （已作用域改写，与 client_metadata.session_id 同源）补齐，保持 root 线程不变式。
+	if account.UsesOpenAICodexProtocol() && !isOpenAIResponsesCompactPath(c) {
+		ensureCodexSessionIdentityHeaders(req.Header, gjson.GetBytes(body, "prompt_cache_key").String())
+	}
 
-	// 终态收口：强制统一 OAuth 出站身份（User-Agent / originator / version 同源自洽）。
-	// 客户端自报身份不参与构造，浏览器型 UA 也因此不会再到达上游（原浏览器 UA 兜底已被吸收）。
+	// 终态收口：强制统一 OAuth 出站身份（User-Agent / originator / version 同源自洽），
+	// 身份取自该 OAuth 凭据的账号级 Codex TUI 身份；客户端自报身份不参与构造。
 	if account.UsesOpenAICodexProtocol() {
-		enforceCodexIdentityHeadersWithUA(req.Header, s.codexIdentityOverrideUA(account))
+		enforceCodexIdentityHeadersForAccount(req.Header, codexAccountIdentitySource(c, account), s.codexIdentityOverrideUA(account))
 	}
 
 	// Ensure required headers exist
@@ -1659,5 +1657,81 @@ func (s *OpenAIGatewayService) codexIdentityOverrideUA(account *Account) string 
 	if s != nil && s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
 		return ""
 	}
-	return account.GetOpenAIUserAgent()
+	return codexAccountIdentityOverrideUA(account)
+}
+
+// resolveStagedCodexFingerprintIDs 解析本次请求的收敛 ID，并让 turn metadata 的 sandbox 跟随
+// 最终出站 UA：UA 来源与构造器/收口点一致——影子账号取 staged 的父账号身份，账号显式 UA
+// 按 ForceCodexCLI 策略生效——否则父/子系统不同或显式 UA 覆盖时 sandbox 会与 UA 分裂。
+func (s *OpenAIGatewayService) resolveStagedCodexFingerprintIDs(c *gin.Context, account *Account, clientHeaders http.Header) *codexFingerprintIDs {
+	ids := resolveCodexFingerprintIDsFromRequest(account, clientHeaders)
+	if ids == nil {
+		return nil
+	}
+	ids.alignSandboxWithUserAgent(s.effectiveCodexOutboundUserAgent(c, account, clientHeaders))
+	return ids
+}
+
+// effectiveCodexOutboundUserAgent 预测构造器终态收口后实际发出的 User-Agent，与
+// enforceCodexIdentityHeadersForAccount 使用同一套来源与策略：
+//   - 强制统一开启：账号显式 UA（按 ForceCodexCLI 策略）> staged 父账号 / 自身派生身份 > 规范身份；
+//   - 强制统一关闭（gateway.disable_codex_identity_enforcement）：终态只做 UA↔originator 配对，
+//     保留构造器写入的 UA——ForceCodexCLI 时为规范 UA，否则账号显式 UA，否则客户端 UA；
+//     不合法的 UA 回落规范身份。该全局开关与 fingerprint mode 是不同门控。
+func (s *OpenAIGatewayService) effectiveCodexOutboundUserAgent(c *gin.Context, account *Account, clientHeaders http.Header) string {
+	if isOpenAICompatMessagesBridgeContext(c) {
+		// 兼容 Messages 桥接：构造器删除 originator，终态收口早退，不做 ForAccount 统一；
+		// 线上 UA 就是构造器写入的值（ForceCodexCLI 规范 UA > 账号显式 UA > 客户端 UA），
+		// 保持"不补回桥接 originator"的既有契约，只让 metadata 跟随该实际 UA。
+		if s != nil && s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
+			return CodexCanonicalUserAgent()
+		}
+		if custom := account.GetOpenAIUserAgent(); custom != "" {
+			return custom
+		}
+		if clientHeaders != nil {
+			return clientHeaders.Get("user-agent")
+		}
+		return ""
+	}
+	overrideUA := s.codexIdentityOverrideUA(account)
+	if codexIdentityEnforcement.Load() {
+		return resolveCodexOutboundIdentityForAccount(codexAccountIdentitySource(c, account), overrideUA).userAgent
+	}
+	candidate := overrideUA
+	if candidate == "" {
+		if s != nil && s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
+			candidate = CodexCanonicalUserAgent()
+		} else if clientHeaders != nil {
+			candidate = clientHeaders.Get("user-agent")
+		}
+	}
+	if _, paired, ok := openai.PairCodexClientIdentity(candidate); ok {
+		return paired
+	}
+	return resolveCodexOutboundIdentity("").userAgent
+}
+
+// stageCodexFingerprintForWSFrame 为原生 WS 入口的每一帧解析、暂存并应用收敛 ID：原生
+// Proxy 不经过 HTTP Forward，握手头（buildOpenAIWSHeaders → applyStagedCodexFingerprintHeaders）
+// 与帧体 client_metadata 由此共用同一份 IDs；每帧重算使 session/full 模式的 turn_id 逐轮更新，
+// device 模式只收敛 installation 与 sandbox。返回改写后的帧（未变化时原样返回）。
+func (s *OpenAIGatewayService) stageCodexFingerprintForWSFrame(c *gin.Context, account *Account, frame []byte) ([]byte, error) {
+	var clientHeaders http.Header
+	if c != nil && c.Request != nil {
+		clientHeaders = c.Request.Header
+	}
+	ids := s.resolveStagedCodexFingerprintIDs(c, account, clientHeaders)
+	stageCodexFingerprintIDs(c, ids)
+	if ids == nil {
+		return frame, nil
+	}
+	next, changed, err := applyCodexFingerprintClientMetadataRaw(frame, ids)
+	if err != nil {
+		return frame, err
+	}
+	if changed {
+		return next, nil
+	}
+	return frame, nil
 }

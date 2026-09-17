@@ -114,7 +114,9 @@ func TestCodexAccountIdentitySourceResolvesShadowAndOverwritesFailoverContext(t 
 		"token", true, "client-session", true,
 	)
 	require.NoError(t, err)
-	require.Equal(t, isolateOpenAIUpstreamSessionID(0, parent, "client-session"), req.Header.Get("session_id"))
+	require.Equal(t, resolveCodexOutboundIdentityForAccount(parent, "").userAgent, req.Header.Get("user-agent"), "影子账号使用凭据账号的身份")
+	require.Empty(t, req.Header.Get("session_id"))
+	require.Equal(t, "client-session", req.Header.Get("session-id"), "缺失连字符会话头时以最终 prompt_cache_key 补齐")
 
 	next := &Account{ID: 19, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Credentials: map[string]any{
 		"chatgpt_account_id": "other-account",
@@ -133,6 +135,7 @@ func TestBuildOpenAIWSHeadersNamespacesCodexIdentityByOAuthAccount(t *testing.T)
 	c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
 	c.Set("api_key_id", int64(77))
 	c.Request.Header.Set("x-codex-installation-id", "client-installation")
+	c.Request.Header.Set("session-id", "client-session")
 	c.Request.Header.Set("thread-id", "client-thread")
 	c.Request.Header.Set("x-codex-window-id", "client-window")
 	c.Request.Header.Set("x-client-request-id", "client-request")
@@ -153,19 +156,22 @@ func TestBuildOpenAIWSHeadersNamespacesCodexIdentityByOAuthAccount(t *testing.T)
 	first := build(account11)
 	firstAgain := build(account11)
 	second := build(account19)
-	for _, header := range []string{"session_id", "x-codex-installation-id", "thread-id", "x-codex-window-id", "x-client-request-id"} {
+	for _, header := range []string{"session-id", "thread-id", "x-codex-window-id", "x-client-request-id"} {
 		require.NotEmpty(t, first.Get(header), header)
 		require.Equal(t, first.Get(header), firstAgain.Get(header), header)
 		require.NotEqual(t, first.Get(header), second.Get(header), header)
 	}
+	require.Empty(t, first.Get("x-codex-installation-id"), "installation id never travels as a header")
+	require.Empty(t, first.Get("session_id"), "no underscore session header on the Codex path")
 
+	scopedBody := []byte(`{"model":"gpt-5.6-codex","stream":true,"prompt_cache_key":"` + scopeCodexAccountIdentityValue(account11, 77, "client-session") + `"}`)
 	httpRequest, err := service.buildUpstreamRequest(
 		context.Background(), c, account11,
-		[]byte(`{"model":"gpt-5.6-codex","stream":true,"prompt_cache_key":"client-session"}`),
+		scopedBody,
 		"token", true, "client-session", true,
 	)
 	require.NoError(t, err)
-	require.Equal(t, httpRequest.Header.Get("session_id"), first.Get("session_id"), "HTTP and WS must derive the same identity from the raw client key")
+	require.Equal(t, httpRequest.Header.Get("session-id"), first.Get("session-id"), "HTTP and WS must derive the same identity from the raw client key")
 }
 
 func TestBuildUpstreamRequestNamespacesCodexIdentityByOAuthAccount(t *testing.T) {

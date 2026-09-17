@@ -59,6 +59,25 @@ func SetCodexIdentityEnforcementEnabled(enabled bool) {
 	codexIdentityEnforcement.Store(enabled)
 }
 
+// codexForceCLI 是 gateway.force_codex_cli 的进程级快照：凭据面（token 刷新）拿不到网关配置，
+// 但账号显式 UA 是否生效必须与推理面同一套策略，否则同一账号会以两种 UA 出站。
+var codexForceCLI atomic.Bool
+
+// SetCodexForceCLIEnabled 由持有配置的网关服务在构造时发布。
+func SetCodexForceCLIEnabled(enabled bool) {
+	codexForceCLI.Store(enabled)
+}
+
+// codexAccountIdentityOverrideUA 返回账号级显式配置的出站 User-Agent，供强制统一身份时作为
+// 覆写来源。ForceCodexCLI 语义是「强制使用 Codex 身份」，等价于忽略账号自定义 UA，故返回空串；
+// 该优先级与历史行为一致（ForceCodexCLI 在账号自定义 UA 之后生效）。推理面与凭据面共用。
+func codexAccountIdentityOverrideUA(account *Account) string {
+	if codexForceCLI.Load() {
+		return ""
+	}
+	return account.GetOpenAIUserAgent()
+}
+
 // codexCanonicalUserAgentResolver 返回当前生效的规范 Codex User-Agent（后台设置 / 自动同步版本号）。
 // 由 SettingService 在装配时注入；解析器内部自带 TTL 缓存，热路径不触库。
 type codexCanonicalUserAgentResolver func() string
@@ -247,4 +266,44 @@ func pairCodexIdentityHeaders(h http.Header) {
 	if v := strings.TrimSpace(h.Get("version")); v != "" && CompareVersions(v, codexUpstreamMinVersion) < 0 {
 		h.Set("version", resolveCodexOutboundIdentity("").version)
 	}
+}
+
+// resolveCodexOutboundIdentityForAccount 返回某个 OAuth 账号的出站身份三元组。
+// 优先级：管理员显式配置的账号级 User-Agent（只贡献客户端名与 OS / 架构 / 终端指纹，
+// 版本段仍由生效版本重建）> 账号持久化 / 种子派生的 Codex TUI 身份 > 全局规范身份。
+// 版本号三处同源：UA 首段、UA 尾部括号组与 version 头都取当前生效的官方版本。
+func resolveCodexOutboundIdentityForAccount(account *Account, overrideUA string) codexOutboundIdentity {
+	if strings.TrimSpace(overrideUA) != "" {
+		return resolveCodexOutboundIdentity(overrideUA)
+	}
+	canonical := resolveCodexOutboundIdentity("")
+	if account == nil {
+		return canonical
+	}
+	identity, ok := account.CodexClientIdentity()
+	if !ok {
+		return canonical
+	}
+	return codexOutboundIdentity{
+		userAgent:  identity.UserAgent(canonical.version),
+		originator: codexTUIOriginator,
+		version:    canonical.version,
+	}
+}
+
+// enforceCodexIdentityHeadersForAccount 与 enforceCodexIdentityHeadersWithUA 语义相同，
+// 但强制统一时使用账号级身份而不是全局规范身份，使同一账号的所有出站请求
+// 表现为同一台机器上的同一个 Codex TUI。
+func enforceCodexIdentityHeadersForAccount(h http.Header, account *Account, overrideUA string) {
+	if h == nil || h.Get("originator") == "" {
+		return
+	}
+	if !codexIdentityEnforcement.Load() {
+		pairCodexIdentityHeaders(h)
+		return
+	}
+	identity := resolveCodexOutboundIdentityForAccount(account, overrideUA)
+	h.Set("user-agent", identity.userAgent)
+	h.Set("originator", identity.originator)
+	h.Set("version", identity.version)
 }

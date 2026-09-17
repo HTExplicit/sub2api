@@ -430,7 +430,13 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 		if !compatPromptCacheTenantIsolated {
 			sessionKey = isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), upstreamPromptCacheKey)
 		}
-		upstreamReq.Header.Set("session_id", generateSessionUUID(sessionKey))
+		if account.UsesOpenAICodexProtocol() {
+			// Codex 协议账号：最终形态只有连字符会话头；构造器已就位的连字符头保留，
+			// 缺失时才用隔离会话 ID 补齐。
+			fillCodexSessionIdentityHeaders(upstreamReq.Header, generateSessionUUID(sessionKey))
+		} else {
+			upstreamReq.Header.Set("session_id", generateSessionUUID(sessionKey))
+		}
 	}
 
 	// 7. Send request

@@ -386,9 +386,15 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	// session key, ensuring different API keys produce different upstream sessions.
 	if account.Platform != PlatformGrok && upstreamPromptCacheKey != "" {
 		isolatedSessionID := generateSessionUUID(isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), upstreamPromptCacheKey))
-		upstreamReq.Header.Set("session_id", isolatedSessionID)
-		if upstreamReq.Header.Get("conversation_id") != "" {
-			upstreamReq.Header.Set("conversation_id", isolatedSessionID)
+		if account.UsesOpenAICodexProtocol() {
+			// Codex 协议账号：最终形态只有连字符会话头；构造器已就位的连字符头保留，
+			// 缺失时才用按 API Key 隔离的会话 ID 补齐。
+			fillCodexSessionIdentityHeaders(upstreamReq.Header, isolatedSessionID)
+		} else {
+			upstreamReq.Header.Set("session_id", isolatedSessionID)
+			if upstreamReq.Header.Get("conversation_id") != "" {
+				upstreamReq.Header.Set("conversation_id", isolatedSessionID)
+			}
 		}
 	}
 	if account.UsesOpenAICodexProtocol() && account.Platform != PlatformGrok {
@@ -396,7 +402,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		// 清除身份头。真正发送前恢复完整 Codex 身份，避免 ChatGPT Codex 上游因缺失
 		// originator/OpenAI-Beta 返回 404（issue #3901）。
 		ensureCodexIdentityHeaders(upstreamReq.Header)
-		enforceCodexIdentityHeaders(upstreamReq.Header)
+		enforceCodexIdentityHeadersForAccount(upstreamReq.Header, codexAccountIdentitySource(c, account), s.codexIdentityOverrideUA(account))
 		logger.L().Debug("openai messages: upstream identity restored",
 			zap.Int64("account_id", account.ID),
 			zap.String("upstream_model", upstreamModel),

@@ -83,6 +83,25 @@ func (s *openaiOAuthService) RefreshTokenWithClientID(ctx context.Context, refre
 }
 
 func (s *openaiOAuthService) refreshTokenWithClientID(ctx context.Context, refreshToken, proxyURL, clientID string) (*openai.TokenResponse, error) {
+	authUA, authOriginator := service.CodexCanonicalAuthIdentity()
+	return s.refreshTokenWithIdentity(ctx, refreshToken, proxyURL, clientID, authUA, authOriginator)
+}
+
+// RefreshTokenWithIdentity refreshes with an explicit per-account Codex identity
+// (User-Agent + originator); empty values fall back to the canonical identity.
+func (s *openaiOAuthService) RefreshTokenWithIdentity(ctx context.Context, refreshToken, proxyURL, clientID, userAgent, originator string) (*openai.TokenResponse, error) {
+	clientID = strings.TrimSpace(clientID)
+	if clientID == "" {
+		clientID = openai.ClientID
+	}
+	authUA, authOriginator := service.CodexCanonicalAuthIdentity()
+	if strings.TrimSpace(userAgent) != "" && strings.TrimSpace(originator) != "" {
+		authUA, authOriginator = strings.TrimSpace(userAgent), strings.TrimSpace(originator)
+	}
+	return s.refreshTokenWithIdentity(ctx, refreshToken, proxyURL, clientID, authUA, authOriginator)
+}
+
+func (s *openaiOAuthService) refreshTokenWithIdentity(ctx context.Context, refreshToken, proxyURL, clientID, authUA, authOriginator string) (*openai.TokenResponse, error) {
 	client, err := createOpenAIReqClient(proxyURL)
 	if err != nil {
 		return nil, infraerrors.Newf(http.StatusBadGateway, "OPENAI_OAUTH_CLIENT_INIT_FAILED", "create HTTP client: %v", err)
@@ -96,7 +115,6 @@ func (s *openaiOAuthService) refreshTokenWithClientID(ctx context.Context, refre
 
 	var tokenResp openai.TokenResponse
 
-	authUA, authOriginator := service.CodexCanonicalAuthIdentity()
 	resp, err := client.R().
 		SetContext(ctx).
 		SetHeader("User-Agent", authUA).

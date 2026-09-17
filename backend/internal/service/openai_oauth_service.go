@@ -214,7 +214,21 @@ func (s *OpenAIOAuthService) RefreshToken(ctx context.Context, refreshToken stri
 
 // RefreshTokenWithClientID refreshes an OpenAI OAuth token with optional client_id.
 func (s *OpenAIOAuthService) RefreshTokenWithClientID(ctx context.Context, refreshToken string, proxyURL string, clientID string) (*OpenAITokenInfo, error) {
-	tokenResp, err := s.oauthClient.RefreshTokenWithClientID(ctx, refreshToken, proxyURL, clientID)
+	return s.refreshTokenWithIdentity(ctx, refreshToken, proxyURL, clientID, codexOutboundIdentity{})
+}
+
+// refreshTokenWithIdentity 用给定的 Codex 出站身份刷新 token：已有账号刷新时使用与推理
+// 一致的账号级身份（真实 Codex 客户端以自己的 UA/originator 刷新）；身份为空或客户端
+// 不支持时退回全局规范身份。
+func (s *OpenAIOAuthService) refreshTokenWithIdentity(ctx context.Context, refreshToken, proxyURL, clientID string, identity codexOutboundIdentity) (*OpenAITokenInfo, error) {
+	var tokenResp *openai.TokenResponse
+	var err error
+	refresher, ok := s.oauthClient.(OpenAIOAuthIdentityRefresher)
+	if ok && strings.TrimSpace(identity.userAgent) != "" && strings.TrimSpace(identity.originator) != "" {
+		tokenResp, err = refresher.RefreshTokenWithIdentity(ctx, refreshToken, proxyURL, clientID, identity.userAgent, identity.originator)
+	} else {
+		tokenResp, err = s.oauthClient.RefreshTokenWithClientID(ctx, refreshToken, proxyURL, clientID)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -386,7 +400,8 @@ func (s *OpenAIOAuthService) RefreshAccountToken(ctx context.Context, account *A
 	}
 
 	clientID := account.GetCredential("client_id")
-	return s.RefreshTokenWithClientID(ctx, refreshToken, proxyURL, clientID)
+	identity := resolveCodexOutboundIdentityForAccount(account, codexAccountIdentityOverrideUA(account))
+	return s.refreshTokenWithIdentity(ctx, refreshToken, proxyURL, clientID, identity)
 }
 
 // BuildAccountCredentials builds credentials map from token info
