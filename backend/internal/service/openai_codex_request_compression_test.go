@@ -36,6 +36,8 @@ func TestPrepareOpenAICodexWireRequestCompressesOnlyCodexStreamingTurns(t *testi
 	require.NoError(t, err)
 	require.Equal(t, int64(len(compressed)), wire.ContentLength)
 	require.Less(t, len(compressed), len(body))
+	require.Equal(t, []byte{0x28, 0xb5, 0x2f, 0xfd}, compressed[:4], "zstd magic")
+	require.Zero(t, compressed[4]&0x04, "帧头不写校验和（与官方客户端一致）")
 	dec, err := zstd.NewReader(bytes.NewReader(compressed))
 	require.NoError(t, err)
 	decoded, err := io.ReadAll(dec)

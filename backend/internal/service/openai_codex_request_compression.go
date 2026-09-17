@@ -21,8 +21,10 @@ import (
 // codexRequestZstdWindowSize 与 zstd level 3 的默认 windowLog=21 一致。
 const codexRequestZstdWindowSize = 1 << 21
 
-// codexRequestZstdEncoders 复用流式编码器：与 Rust `zstd::stream::encode_all` 一样按流写出
-// （帧头不带内容长度、不带校验和），避免每次请求分配窗口缓冲。
+// codexRequestZstdEncoders 复用流式编码器，避免每次请求分配窗口缓冲。帧形态与官方客户端
+// （Rust `zstd::stream::encode_all(body, 3)`）的差异如实记录：两者都不写校验和、窗口 2MB；
+// klauspost 对能一次编码完的请求体（小于一个块、约 128KB 以内）会在帧头写入内容长度并使用
+// single-segment，Rust 流式编码器不写内容长度。这是合法的 zstd 帧差异，不影响解压。
 var codexRequestZstdEncoders = sync.Pool{New: func() any {
 	enc, err := zstd.NewWriter(nil,
 		zstd.WithEncoderLevel(zstd.SpeedDefault),
