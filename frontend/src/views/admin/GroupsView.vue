@@ -11,7 +11,7 @@
               <Icon
                 name="search"
                 size="md"
-                class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500"
+                class="absolute left-3 top-1/2 -translate-y-1/2 text-muted"
               />
               <input
                 v-model="searchQuery"
@@ -209,7 +209,7 @@
                   <span v-if="row.daily_limit_usd" class="whitespace-nowrap">
                     <span
                       v-if="usageLoading"
-                      class="font-medium text-gray-400 dark:text-gray-500"
+                      class="font-medium text-muted"
                       >—</span
                     >
                     <span
@@ -224,7 +224,7 @@
                         formatUsd(usageMap.get(row.id)?.today_cost ?? 0)
                       }}</span
                     >
-                    <span class="text-gray-400 dark:text-gray-500">
+                    <span class="text-muted">
                       / {{ formatUsd(row.daily_limit_usd) }}/{{
                         t("admin.groups.limitDay")
                       }}</span
@@ -254,10 +254,10 @@
                     }}</span
                   >
                 </div>
-                <span v-else class="text-gray-400 dark:text-gray-500">{{
+                <span v-else class="text-muted">{{
                   t("admin.groups.subscription.noLimit")
                 }}</span>
-                <div class="text-gray-400 dark:text-gray-500">
+                <div class="text-muted">
                   {{ t("admin.groups.usageTotal") }}
                   <span class="ml-1 font-medium text-gray-600 dark:text-gray-300"
                     >{{
@@ -346,7 +346,7 @@
             <div v-if="usageLoading" class="text-xs text-gray-400">—</div>
             <div v-else class="space-y-0.5 text-xs">
               <div class="text-gray-500 dark:text-gray-400">
-                <span class="text-gray-400 dark:text-gray-500">{{
+                <span class="text-muted">{{
                   t("admin.groups.usageToday")
                 }}</span>
                 <span class="ml-1 font-medium text-gray-700 dark:text-gray-300"
@@ -356,7 +356,7 @@
                 >
               </div>
               <div class="text-gray-500 dark:text-gray-400">
-                <span class="text-gray-400 dark:text-gray-500">{{
+                <span class="text-muted">{{
                   t("admin.groups.usageYesterday")
                 }}</span>
                 <span class="ml-1 font-medium text-gray-700 dark:text-gray-300"
@@ -366,7 +366,7 @@
                 >
               </div>
               <div class="text-gray-500 dark:text-gray-400">
-                <span class="text-gray-400 dark:text-gray-500">{{
+                <span class="text-muted">{{
                   t("admin.groups.usageTotal")
                 }}</span>
                 <span class="ml-1 font-medium text-gray-700 dark:text-gray-300"

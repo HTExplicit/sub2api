@@ -96,7 +96,7 @@
                   >
                     <div class="overflow-y-auto p-2" :style="{ maxHeight: `${accountToolsDropdownPosition.maxHeight}px` }">
                       <div class="px-2 py-2">
-                        <div class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                        <div class="text-xs font-semibold uppercase tracking-wide text-muted">
                           {{ t('admin.accounts.dataActions') }}
                         </div>
                       </div>
@@ -130,7 +130,7 @@
                       <template v-if="viewMode === 'table'">
                       <div class="my-2 border-t border-gray-100 dark:border-dark-700"></div>
                       <div class="px-2 py-2">
-                        <div class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                        <div class="text-xs font-semibold uppercase tracking-wide text-muted">
                           {{ t('admin.accounts.toolActions') }}
                         </div>
                       </div>
@@ -150,7 +150,7 @@
                       <div class="my-2 border-t border-gray-100 dark:border-dark-700"></div>
                       <div class="px-2 py-2">
                         <div class="flex items-center justify-between gap-3">
-                          <span class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                          <span class="text-xs font-semibold uppercase tracking-wide text-muted">
                             {{ t('admin.accounts.viewColumns') }}
                           </span>
                           <Icon name="grid" size="sm" class="text-gray-400" />

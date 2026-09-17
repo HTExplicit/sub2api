@@ -9,7 +9,7 @@
               <Icon
                 name="search"
                 size="md"
-                class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500"
+                class="absolute left-3 top-1/2 -translate-y-1/2 text-muted"
               />
               <input
                 v-model="searchQuery"
@@ -473,7 +473,7 @@
               <!-- Filter rules for this platform's groups -->
               <p
                 v-if="section.account_stats_pricing_rules.length === 0"
-                class="text-xs italic text-gray-400 dark:text-gray-500"
+                class="text-xs italic text-muted"
               >
                 {{ t('admin.channels.form.noRulesConfigured') }}
               </p>

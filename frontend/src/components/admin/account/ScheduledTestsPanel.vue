@@ -102,7 +102,7 @@
                 <Toggle v-model="newPlan.auto_recover" />
                 {{ t('admin.scheduledTests.autoRecover') }}
               </label>
-              <p class="mt-0.5 text-xs text-gray-400 dark:text-gray-500">
+              <p class="mt-0.5 text-xs text-muted">
                 {{ t('admin.scheduledTests.autoRecoverHelp') }}
               </p>
             </div>
@@ -312,7 +312,7 @@
                     <Toggle v-model="editForm.auto_recover" />
                     {{ t('admin.scheduledTests.autoRecover') }}
                   </label>
-                  <p class="mt-0.5 text-xs text-gray-400 dark:text-gray-500">
+                  <p class="mt-0.5 text-xs text-muted">
                     {{ t('admin.scheduledTests.autoRecoverHelp') }}
                   </p>
                 </div>

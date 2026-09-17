@@ -288,7 +288,7 @@
               </div>
             </div>
           </div>
-          <p class="text-xs text-gray-400 dark:text-gray-500">{{ t('admin.settings.payment.limitsHint') }}</p>
+          <p class="text-xs text-muted">{{ t('admin.settings.payment.limitsHint') }}</p>
         </div>
       </div>
     </form>

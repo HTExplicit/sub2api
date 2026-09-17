@@ -226,7 +226,7 @@
                         class="text-sm font-semibold mt-1 tabular-nums"
                         :style="{ color: RING_GRADIENTS[i % 4].from }"
                       >{{ ring.amount }}</span>
-                      <p v-if="ring.resetAt && formatResetTime(ring.resetAt)" class="text-xs text-gray-400 dark:text-gray-500 mt-0.5 tabular-nums">
+                      <p v-if="ring.resetAt && formatResetTime(ring.resetAt)" class="text-xs text-muted mt-0.5 tabular-nums">
                         ⟳ {{ formatResetTime(ring.resetAt) }}
                       </p>
                     </template>

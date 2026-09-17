@@ -47,7 +47,7 @@
         v-else
         :class="[
           'text-xs',
-          hasFetchFailureWithoutData ? 'text-red-500' : 'text-gray-400 dark:text-gray-500'
+          hasFetchFailureWithoutData ? 'text-red-500' : 'text-muted'
         ]"
         :data-test="hasFetchFailureWithoutData ? 'usage-fetch-failed' : 'usage-no-data'"
       >
@@ -141,7 +141,7 @@
         <div class="flex items-center gap-1.5 mt-0.5">
           <span
             v-if="usageInfo.source === 'passive'"
-            class="text-[9px] text-gray-400 dark:text-gray-500 italic"
+            class="text-[9px] text-muted italic"
           >
             {{ t('admin.accounts.usageWindow.passiveSampled') }}
           </span>
@@ -643,7 +643,7 @@
             :window-stats="bar.windowStats"
             :color="bar.color"
           />
-          <p class="mt-1 text-[9px] leading-tight text-gray-400 dark:text-gray-500 italic">
+          <p class="mt-1 text-[9px] leading-tight text-muted italic">
             * {{ t('admin.accounts.gemini.quotaPolicy.simulatedNote') || 'Simulated quota' }}
           </p>
         </div>

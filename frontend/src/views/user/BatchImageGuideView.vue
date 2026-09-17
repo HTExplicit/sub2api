@@ -158,8 +158,8 @@
             <div class="flex items-center justify-center gap-2 text-sm tabular-nums">
               <span class="text-emerald-600 dark:text-emerald-300">{{ displayJob(row).success_count }}</span>
               <span class="text-gray-300 dark:text-dark-500">/</span>
-              <span :class="displayJob(row).fail_count > 0 ? 'text-red-600 dark:text-red-300' : 'text-gray-400 dark:text-gray-500'">{{ displayJob(row).fail_count }}</span>
-              <span class="text-xs text-gray-400 dark:text-gray-500">{{ t('batchImage.list.totalCount', { n: displayJob(row).item_count }) }}</span>
+              <span :class="displayJob(row).fail_count > 0 ? 'text-red-600 dark:text-red-300' : 'text-muted'">{{ displayJob(row).fail_count }}</span>
+              <span class="text-xs text-muted">{{ t('batchImage.list.totalCount', { n: displayJob(row).item_count }) }}</span>
             </div>
           </template>
 
@@ -353,7 +353,7 @@
               <p class="mt-1 flex items-center justify-center gap-2 font-medium tabular-nums">
               <span class="text-emerald-600 dark:text-emerald-300">{{ (currentDisplayJob || currentJob).success_count }}</span>
               <span class="text-gray-300 dark:text-dark-500">/</span>
-              <span :class="(currentDisplayJob || currentJob).fail_count > 0 ? 'text-red-600 dark:text-red-300' : 'text-gray-400 dark:text-gray-500'">{{ (currentDisplayJob || currentJob).fail_count }}</span>
+              <span :class="(currentDisplayJob || currentJob).fail_count > 0 ? 'text-red-600 dark:text-red-300' : 'text-muted'">{{ (currentDisplayJob || currentJob).fail_count }}</span>
             </p>
             </div>
             <div class="min-w-0 text-center">
@@ -405,13 +405,13 @@
                 <td class="px-3 py-2.5 text-center">
                   <span
                     class="block min-w-0 truncate font-mono text-sm"
-                    :class="isRecoveredOriginalFailure(item) ? 'text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-white'"
+                    :class="isRecoveredOriginalFailure(item) ? 'text-muted' : 'text-gray-900 dark:text-white'"
                     :title="item.custom_id"
                   >
                     {{ item.custom_id }}
                   </span>
                 </td>
-                <td class="px-3 py-2.5 text-left" :class="isRecoveredOriginalFailure(item) ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-300'">
+                <td class="px-3 py-2.5 text-left" :class="isRecoveredOriginalFailure(item) ? 'text-muted' : 'text-gray-700 dark:text-gray-300'">
                   <div
                     class="batch-prompt-trigger cursor-default truncate rounded-none px-1 text-sm leading-6 focus:outline-none"
                     tabindex="0"

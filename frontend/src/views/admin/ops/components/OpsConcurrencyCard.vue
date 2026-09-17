@@ -417,7 +417,7 @@ watch(
               <span class="truncate text-[11px] font-bold text-gray-900 dark:text-white" :title="row.username || row.user_email">
                 {{ row.username || row.user_email }}
               </span>
-              <span v-if="row.username" class="shrink-0 truncate text-[10px] text-gray-400 dark:text-gray-500" :title="row.user_email">
+              <span v-if="row.username" class="shrink-0 truncate text-[10px] text-muted" :title="row.user_email">
                 {{ row.user_email }}
               </span>
             </div>
@@ -450,7 +450,7 @@ watch(
               <div class="truncate text-[11px] font-bold text-gray-900 dark:text-white" :title="row.name">
                 {{ row.name }}
               </div>
-              <span v-if="displayDimension === 'group' && row.platform" class="text-[10px] text-gray-400 dark:text-gray-500">
+              <span v-if="displayDimension === 'group' && row.platform" class="text-[10px] text-muted">
                 {{ row.platform.toUpperCase() }}
               </span>
             </div>
@@ -485,7 +485,7 @@ watch(
                 <span class="font-bold text-green-600 dark:text-green-400">{{ row.available_accounts }}</span
                 >/{{ row.total_accounts }}
               </span>
-              <span class="text-gray-400 dark:text-gray-500">{{ row.availability_percentage }}%</span>
+              <span class="text-muted">{{ row.availability_percentage }}%</span>
             </div>
 
             <!-- 限流账号 -->
@@ -524,7 +524,7 @@ watch(
               <div class="truncate text-[11px] font-bold text-gray-900 dark:text-white" :title="row.name">
                 {{ row.name }}
               </div>
-              <div class="mt-0.5 text-[9px] text-gray-400 dark:text-gray-500">
+              <div class="mt-0.5 text-[9px] text-muted">
                 {{ row.group_name }}
               </div>
             </div>

@@ -73,7 +73,7 @@
             </p>
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
               {{ t('admin.accounts.stats.accumulatedCost') }}
-              <span class="text-gray-400 dark:text-gray-500">
+              <span class="text-muted">
                 ({{ t('usage.userBilled') }}: ${{ formatCost(stats.summary.total_user_cost) }} ·
                 {{ t('admin.accounts.stats.standardCost') }}: ${{
                   formatCost(stats.summary.total_standard_cost)
@@ -128,7 +128,7 @@
                   days: stats.summary.actual_days_used
                 })
               }}
-              <span class="text-gray-400 dark:text-gray-500">
+              <span class="text-muted">
                 ({{ t('usage.userBilled') }}: ${{ formatCost(stats.summary.avg_daily_user_cost) }})
               </span>
             </p>

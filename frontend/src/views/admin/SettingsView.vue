@@ -879,7 +879,7 @@
                         t('admin.settings.betaPolicy.errorMessagePlaceholder')
                       "
                     />
-                    <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                    <p class="mt-1 text-xs text-muted">
                       {{ t("admin.settings.betaPolicy.errorMessageHint") }}
                     </p>
                   </div>
@@ -912,7 +912,7 @@
                     >
                       {{ t("admin.settings.betaPolicy.modelWhitelist") }}
                     </label>
-                    <p class="mb-2 text-xs text-gray-400 dark:text-gray-500">
+                    <p class="mb-2 text-xs text-muted">
                       {{ t("admin.settings.betaPolicy.modelWhitelistHint") }}
                     </p>
                     <!-- Existing patterns -->
@@ -975,7 +975,7 @@
                     </button>
                     <!-- Common pattern chips -->
                     <div class="flex flex-wrap items-center gap-1.5">
-                      <span class="text-xs text-gray-400 dark:text-gray-500"
+                      <span class="text-xs text-muted"
                         >{{
                           t("admin.settings.betaPolicy.commonPatterns")
                         }}:</span
@@ -1009,7 +1009,7 @@
                       @update:modelValue="rule.fallback_action = $event as any"
                       :options="betaPolicyActionOptions"
                     />
-                    <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                    <p class="mt-1 text-xs text-muted">
                       {{ t("admin.settings.betaPolicy.fallbackActionHint") }}
                     </p>
                     <!-- Fallback Error Message (only when fallback_action=block) -->
@@ -1024,7 +1024,7 @@
                           )
                         "
                       />
-                      <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                      <p class="mt-1 text-xs text-muted">
                         {{ t("admin.settings.betaPolicy.errorMessageHint") }}
                       </p>
                     </div>
@@ -1238,7 +1238,7 @@
                   >
                     {{ t("admin.settings.openaiFastPolicy.userIds") }}
                   </label>
-                  <p class="mb-2 text-xs text-gray-400 dark:text-gray-500">
+                  <p class="mb-2 text-xs text-muted">
                     {{ t("admin.settings.openaiFastPolicy.userIdsHint") }}
                   </p>
                   <OpenAIFastPolicyUserSelector
@@ -1264,7 +1264,7 @@
                       )
                     "
                   />
-                  <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                  <p class="mt-1 text-xs text-muted">
                     {{ t("admin.settings.openaiFastPolicy.errorMessageHint") }}
                   </p>
                 </div>
@@ -1284,7 +1284,7 @@
                   </label>
                   <p
                     :id="`openai-fast-policy-models-hint-${ruleIndex}`"
-                    class="mb-2 text-xs text-gray-400 dark:text-gray-500"
+                    class="mb-2 text-xs text-muted"
                   >
                     {{
                       t("admin.settings.openaiFastPolicy.modelWhitelistHint")
@@ -1370,7 +1370,7 @@
                     "
                     :options="openaiFastPolicyActionOptions"
                   />
-                  <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                  <p class="mt-1 text-xs text-muted">
                     {{
                       t("admin.settings.openaiFastPolicy.fallbackActionHint")
                     }}
@@ -1412,7 +1412,7 @@
                   </svg>
                   {{ t("admin.settings.openaiFastPolicy.addRule") }}
                 </button>
-                <p class="mt-2 text-xs text-gray-400 dark:text-gray-500">
+                <p class="mt-2 text-xs text-muted">
                   {{ t("admin.settings.openaiFastPolicy.saveHint") }}
                 </p>
               </div>
@@ -3310,7 +3310,7 @@
                         />
                       </div>
                     </div>
-                    <p v-if="form.dingtalk_connect_sync_display_name" class="text-xs text-gray-400 dark:text-gray-500">
+                    <p v-if="form.dingtalk_connect_sync_display_name" class="text-xs text-muted">
                       {{ t("admin.settings.dingtalk.syncDisplayNameTargetHint") }}
                     </p>
                   </div>
@@ -3356,7 +3356,7 @@
                         />
                       </div>
                     </div>
-                    <p v-if="form.dingtalk_connect_sync_corp_email" class="text-xs text-gray-400 dark:text-gray-500">
+                    <p v-if="form.dingtalk_connect_sync_corp_email" class="text-xs text-muted">
                       {{ t("admin.settings.dingtalk.syncCorpEmailTargetHint") }}
                     </p>
                   </div>
@@ -3402,7 +3402,7 @@
                         />
                       </div>
                     </div>
-                    <p v-if="form.dingtalk_connect_sync_dept" class="text-xs text-gray-400 dark:text-gray-500">
+                    <p v-if="form.dingtalk_connect_sync_dept" class="text-xs text-muted">
                       {{ t("admin.settings.dingtalk.syncDeptTargetHint") }}
                     </p>
                   </div>
@@ -7099,7 +7099,7 @@
                       : t('admin.settings.features.channelMonitor.modeV2Hint')
                   }}
                 </p>
-                <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                <p class="mt-1 text-xs text-muted">
                   {{ t('admin.settings.features.channelMonitor.modeHint') }}
                 </p>
               </div>
@@ -8450,7 +8450,7 @@
                       {{ pt.label }}
                     </button>
                   </div>
-                  <p class="mt-2 text-xs text-gray-400 dark:text-gray-500">
+                  <p class="mt-2 text-xs text-muted">
                     {{ t("admin.settings.payment.enabledPaymentTypesHint") }}
                     <a
                       :href="paymentMethodsHref"
@@ -8535,7 +8535,7 @@
                 <Icon
                   name="mail"
                   size="md"
-                  class="mt-0.5 flex-shrink-0 text-gray-400 dark:text-gray-500"
+                  class="mt-0.5 flex-shrink-0 text-muted"
                 />
                 <div>
                   <h3 class="font-medium text-gray-900 dark:text-white">

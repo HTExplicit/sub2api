@@ -161,7 +161,7 @@
               <div v-else class="flex flex-col items-center justify-center py-16">
                 <div class="relative mb-4">
                   <div class="flex h-20 w-20 items-center justify-center rounded-full bg-gray-100 dark:bg-dark-700">
-                    <Icon name="inbox" size="xl" class="text-gray-400 dark:text-gray-500" />
+                    <Icon name="inbox" size="xl" class="text-muted" />
                   </div>
                   <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-green-500 text-white">
                     <svg class="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20">

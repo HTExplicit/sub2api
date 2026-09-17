@@ -215,7 +215,7 @@
                     :class="[
                       'flex w-full items-center justify-between px-4 py-2 text-left text-sm',
                       isForcedVisibleColumn(col.key)
-                        ? 'cursor-not-allowed text-gray-400 dark:text-gray-500'
+                        ? 'cursor-not-allowed text-muted'
                         : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700'
                     ]"
                     :title="isForcedVisibleColumn(col.key) ? t('admin.users.columnAlwaysVisible') : ''"
@@ -225,7 +225,7 @@
                       v-if="isColumnVisible(col.key)"
                       name="check"
                       size="sm"
-                      :class="isForcedVisibleColumn(col.key) ? 'text-gray-400 dark:text-gray-500' : 'text-primary-500'"
+                      :class="isForcedVisibleColumn(col.key) ? 'text-muted' : 'text-primary-500'"
                       :stroke-width="2"
                     />
                   </button>

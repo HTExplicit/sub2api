@@ -28,7 +28,7 @@
           <td v-if="showAccountCost" class="py-1 text-right text-orange-500 dark:text-orange-400">
             ${{ formatCost(user.account_cost) }}
           </td>
-          <td class="py-1 pr-1 text-right text-gray-400 dark:text-gray-500">
+          <td class="py-1 pr-1 text-right text-muted">
             ${{ formatCost(user.cost) }}
           </td>
         </tr>
