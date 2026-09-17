@@ -1080,8 +1080,6 @@ func filterSchedulerExtra(extra map[string]any) map[string]any {
 		"codex_5h_reset_after_seconds",
 		"codex_7d_reset_after_seconds",
 		"codex_usage_updated_at",
-		service.CodexQuotaOverdraftEnabledExtraKey,
-		service.CodexQuotaOverdraftProbeExtraKey,
 		"auto_pause_5h_threshold",
 		"auto_pause_7d_threshold",
 		"auto_pause_5h_disabled",
@@ -1104,13 +1102,6 @@ func filterSchedulerExtra(extra map[string]any) map[string]any {
 			continue
 		}
 		if value, ok := extra[key]; ok && value != nil {
-			if key == service.CodexQuotaOverdraftProbeExtraKey {
-				filteredProbe := filterSchedulerCodexQuotaOverdraftProbe(value)
-				if filteredProbe == nil {
-					continue
-				}
-				value = filteredProbe
-			}
 			if key == service.UpstreamBillingProbeExtraKey {
 				filteredProbe := filterSchedulerUpstreamBillingProbe(value)
 				if filteredProbe == nil {
@@ -1122,31 +1113,6 @@ func filterSchedulerExtra(extra map[string]any) map[string]any {
 		}
 	}
 	if len(filtered) == 0 {
-		return nil
-	}
-	return filtered
-}
-
-func filterSchedulerCodexQuotaOverdraftProbe(value any) map[string]any {
-	source, ok := value.(map[string]any)
-	if !ok {
-		return nil
-	}
-	keys := []string{
-		"status", "quota_window", "cycle_key", "started_at", "retry_at", "recover_at",
-		"five_hour_recover_at", "seven_day_recover_at", "overdraft_started_at",
-		"five_hour_overdraft_started_at", "seven_day_overdraft_started_at",
-	}
-	filtered := make(map[string]any, len(keys))
-	for _, key := range keys {
-		if raw, exists := source[key]; exists && raw != nil {
-			filtered[key] = raw
-		}
-	}
-	if _, ok := filtered["status"].(string); !ok {
-		return nil
-	}
-	if _, ok := filtered["cycle_key"].(string); !ok {
 		return nil
 	}
 	return filtered

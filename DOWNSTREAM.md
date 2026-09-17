@@ -26,7 +26,7 @@ remains retired; catalog changes do not restore its routes or navigation.
 
 Quota storage, aggregation, cleanup and resets follow official semantics. Missing
 quota rows represent unlimited access; rows with three NULL limits are purged by
-the official migration. Existing overdraft behavior must not alter these semantics.
+the official migration.
 The three `238_*` migrations retain separate filenames and checksums.
 
 ## Release and production deployment

@@ -51,7 +51,7 @@ func (h *OpenAIGatewayHandler) reportOpenAIHTTPAccountScheduleResult(
 		return
 	}
 	if success {
-		h.gatewayService.ReportOpenAIAccountScheduleResultForSelectionWithContext(selection, account.ID, account.GetMappedModel(forwardModel), true, firstTokenMs, c.Request.Context())
+		h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(forwardModel), true, firstTokenMs)
 		return
 	}
 	h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(forwardModel), false, firstTokenMs)

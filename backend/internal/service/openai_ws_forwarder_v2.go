@@ -390,7 +390,6 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2WithScope(
 	); err != nil {
 		return nil, err
 	}
-	payload = s.prepareCodexQuotaOverdraftPayload(ctx, account, payload)
 
 	if err := lease.WriteJSONWithContextTimeout(ctx, payload, s.openAIWSWriteTimeout()); err != nil {
 		lease.MarkBroken()

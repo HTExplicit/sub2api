@@ -156,7 +156,6 @@ type AccountTestService struct {
 	modelMetadataRegistry     map[string]modelsDevProvider
 	modelMetadataRegistryAt   time.Time
 	pluginManager             *PluginManager
-	codexQuotaOverdraft       *CodexQuotaOverdraftCoordinator
 	agentIdentityTaskMu       sync.Mutex
 	agentIdentityWS           agentIdentityWSConnectionInvalidator
 	// grokWSDialer is optional; realtime account tests use the default OpenAI-style
@@ -830,10 +829,6 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	}
 	payload := createOpenAITestPayload(upstreamTestModelID, isOAuth)
 	payloadBytes, _ := json.Marshal(payload)
-	var overdraftInjected bool
-	if isOAuth && !account.IsShadow() {
-		ctx, payloadBytes, overdraftInjected = s.prepareCodexQuotaOverdraftTestRequest(ctx, credentialAccount, payloadBytes)
-	}
 
 	// Send test_start event once. A task-invalid Agent Identity response may
 	// restart this probe after registering a replacement task.
@@ -918,10 +913,6 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 			c.Request = c.Request.WithContext(markAgentIdentityTaskRecoveryTried(ctx))
 			return s.testOpenAIAccountConnection(c, account, modelID, prompt, mode)
 		}
-		if resp.StatusCode == http.StatusTooManyRequests && !cindyTerminal &&
-			s.handleCodexQuotaOverdraftTest429(ctx, credentialAccount, resp.Header, body, upstreamTestModelID) {
-			return s.sendErrorAndEnd(c, fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(body)))
-		}
 		if resp.StatusCode == http.StatusTooManyRequests && !cindyTerminal {
 			s.reconcileOpenAI429State(ctx, account, resp.Header, body)
 		}
@@ -936,9 +927,6 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	// Process SSE stream
 	if err := s.processOpenAIStream(c, ctx, account, resp.Body); err != nil {
 		return err
-	}
-	if isOAuth && !account.IsShadow() {
-		s.observeCodexQuotaOverdraftTestResult(credentialAccount, upstreamTestModelID, overdraftInjected)
 	}
 	return nil
 }

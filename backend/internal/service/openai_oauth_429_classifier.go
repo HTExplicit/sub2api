@@ -201,3 +201,11 @@ func openAI429Int64(value any) (int64, bool) {
 		return 0, false
 	}
 }
+
+// laterTime returns the later of two instants; used when merging 5h/7d reset windows.
+func laterTime(left, right time.Time) time.Time {
+	if right.After(left) {
+		return right
+	}
+	return left
+}
