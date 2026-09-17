@@ -36,7 +36,13 @@ func newGroupModelAllowlistTestRouter(apiKey *service.APIKey, pathPrefix string)
 	register(http.MethodPost, pathPrefix+"/responses")
 	register(http.MethodPost, pathPrefix+"/chat/completions")
 	register(http.MethodPost, pathPrefix+"/embeddings")
-	register(http.MethodGet, pathPrefix+"/models/:model")
+	if pathPrefix == "/v1beta" {
+		register(http.MethodGet, pathPrefix+"/models/:model")
+	} else {
+		// Production registers the OpenAI/Anthropic single-model route as a
+		// catch-all so namespaced IDs resolve; the parameter keeps a leading slash.
+		register(http.MethodGet, pathPrefix+"/models/*model")
+	}
 	register(http.MethodPost, pathPrefix+"/models/*modelAction")
 	register(http.MethodGet, pathPrefix+"/realtime")
 	register(http.MethodPost, pathPrefix+"/images/edits")
@@ -227,6 +233,17 @@ func TestGroupModelAllowlistGeminiGetModelRouteParam(t *testing.T) {
 	router.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 for listed GET model, got %d", w.Code)
+	}
+}
+
+func TestGroupModelAllowlistCatchAllModelRouteParamKeepsNamespace(t *testing.T) {
+	router, _ := newGroupModelAllowlistTestRouter(allowlistAPIKey(true, "openai/gpt-5.4"), "/v1")
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/models/openai/gpt-5.4", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("catch-all model param must be matched without its leading slash, got %d: %s", w.Code, w.Body.String())
 	}
 }
 

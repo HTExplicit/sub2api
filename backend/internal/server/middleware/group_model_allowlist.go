@@ -150,10 +150,11 @@ func groupModelAllowlistModelsFromBody(c *gin.Context, maxNormalizedBytes int64)
 }
 
 // groupModelAllowlistModelFromParams 从路由参数提取模型名：Gemini 原生 URL 的
-// `model` / `modelAction`（去掉 `:action` 后缀）。提取不到返回空串，
-// 由调用方决定是否继续读请求体或查询参数。
+// `model` / `modelAction`（去掉 `:action` 后缀）。`/v1/models/*model` 为通配
+// 路由，参数自带前导斜杠且模型 ID 可含命名空间（openai/gpt-5.4），这里只去掉
+// 首尾斜杠。提取不到返回空串，由调用方决定是否继续读请求体或查询参数。
 func groupModelAllowlistModelFromParams(c *gin.Context) string {
-	if model := strings.TrimSpace(c.Param("model")); model != "" {
+	if model := strings.Trim(strings.TrimSpace(c.Param("model")), "/"); model != "" {
 		return model
 	}
 	if modelAction := strings.TrimSpace(c.Param("modelAction")); modelAction != "" {
