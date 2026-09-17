@@ -412,4 +412,15 @@ describe('ui contrast guard', () => {
     expect(fieldset).toMatch(/h-6 w-6 shrink-0/)
     expect(fieldset).toMatch(/<PlatformIcon :platform="platform" size="md" \/>/)
   })
+
+  it('(7) inline scripts in index.html carry the CSP nonce placeholder', () => {
+    // The backend serves index.html under a nonce-mode Content-Security-Policy and swaps
+    // __CSP_NONCE_VALUE__ for the per-request nonce; an inline <script> without it is
+    // silently blocked in production (the pre-paint theme script regressed this way once).
+    const html = read('index.html')
+    const inlineScripts = [...html.matchAll(/<script\b([^>]*)>/g)].filter(([, attrs]) => !/\bsrc=/.test(attrs))
+    expect(inlineScripts.length, 'expected the pre-paint theme script to be inline in index.html').toBeGreaterThan(0)
+    const missingNonce = inlineScripts.filter(([, attrs]) => !attrs.includes('nonce="__CSP_NONCE_VALUE__"')).map(([tag]) => tag)
+    expect(missingNonce, `inline <script> tags without nonce="__CSP_NONCE_VALUE__":\n${missingNonce.join('\n')}`).toEqual([])
+  })
 })
