@@ -69,7 +69,7 @@
 
       <!-- Desktop pagination buttons -->
       <nav
-        class="relative z-0 inline-flex -space-x-px rounded-none shadow-outline"
+        class="relative z-0 inline-flex -space-x-px rounded-none"
         aria-label="Pagination"
       >
         <!-- Previous button -->

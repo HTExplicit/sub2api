@@ -5,7 +5,7 @@
       <div class="card overflow-hidden">
         <div class="bg-primary-500 px-6 py-8 text-center">
           <div
-            class="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-none bg-white"
+            class="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-none bg-white/20"
           >
             <Icon name="creditCard" size="xl" class="text-white" />
           </div>

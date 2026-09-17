@@ -594,7 +594,7 @@
                                 </div>
                                 <button
                                   @click="copyToClipboard(activeManualCommand)"
-                                  class="flex items-center gap-1 rounded-none px-1.5 py-0.5 text-[11px] text-gray-400 transition-colors hover:bg-gray-200 hover:text-gray-600 dark:text-dark-400 dark:hover:bg-dark-600 dark:hover:text-dark-200"
+                                  class="flex items-center gap-1 rounded-none px-1.5 py-0.5 text-[11px] text-muted transition-colors hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-dark-600 dark:hover:text-dark-200"
                                 >
                                   <Icon
                                     :name="copied ? 'check' : 'copy'"

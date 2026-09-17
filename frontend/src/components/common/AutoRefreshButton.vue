@@ -2,7 +2,7 @@
   <div class="relative" ref="dropdownRef">
     <button
       @click="showDropdown = !showDropdown"
-      class="inline-flex items-center gap-1.5 rounded-none border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 shadow-outline transition-colors hover:bg-gray-50 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-300 dark:hover:bg-dark-700"
+      class="inline-flex items-center gap-1.5 rounded-none border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-300 dark:hover:bg-dark-700"
       :title="t('common.autoRefresh.title')"
     >
       <svg
@@ -22,7 +22,7 @@
 
     <div
       v-if="showDropdown"
-      class="absolute right-0 z-20 mt-1 w-44 rounded-none border border-gray-200 bg-white shadow-outline dark:border-dark-600 dark:bg-dark-800"
+      class="absolute right-0 z-20 mt-1 w-44 rounded-none border border-gray-200 bg-white dark:border-dark-600 dark:bg-dark-800"
     >
       <div class="p-1.5">
         <button

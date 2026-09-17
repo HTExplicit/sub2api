@@ -188,7 +188,7 @@
             <!-- Plan list -->
             <template v-else>
               <div v-if="checkout.plans.length === 0" class="card py-16 text-center">
-                <Icon name="gift" size="xl" class="mx-auto mb-3 text-gray-300 dark:text-dark-600" />
+                <Icon name="gift" size="xl" class="mx-auto mb-3 text-muted" />
                 <p class="text-gray-500 dark:text-gray-400">{{ t('payment.noPlans') }}</p>
               </div>
               <div v-else :class="planGridClass">

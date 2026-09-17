@@ -525,7 +525,7 @@ onUnmounted(() => {
 }
 
 .select-trigger-disabled {
-  @apply cursor-not-allowed bg-gray-100 opacity-60 dark:bg-dark-900;
+  @apply cursor-not-allowed bg-gray-100 text-muted dark:bg-dark-900 dark:text-muted;
 }
 
 .select-value {

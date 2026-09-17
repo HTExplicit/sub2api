@@ -558,7 +558,7 @@ const applySortState = (state: PersistedSortState | null) => {
 const getSortIndicatorClass = (key: string, order: 'asc' | 'desc') => {
   return sortKey.value === key && sortOrder.value === order
     ? 'text-primary-600 dark:text-primary-400'
-    : 'text-gray-300 transition-colors dark:text-dark-500'
+    : 'text-muted transition-colors'
 }
 
 const getColumnAriaSort = (key: string) => {

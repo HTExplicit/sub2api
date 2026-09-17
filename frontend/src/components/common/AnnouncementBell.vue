@@ -58,7 +58,7 @@
                   </button>
                   <button
                     @click="closeModal"
-                    class="flex h-9 w-9 items-center justify-center rounded-none bg-white text-gray-500 transition-all hover:bg-white hover:text-gray-700 dark:bg-dark-700 dark:text-gray-400 dark:hover:bg-dark-700 dark:hover:text-gray-300"
+                    class="flex h-9 w-9 items-center justify-center rounded-none bg-gray-100 text-muted transition-colors hover:bg-gray-200 hover:text-gray-700 dark:bg-dark-700 dark:hover:bg-dark-600 dark:hover:text-dark-200"
                     :aria-label="t('common.close')"
                   >
                     <Icon name="x" size="sm" />
@@ -104,7 +104,7 @@
                     </div>
                     <div
                       v-else
-                      class="flex h-10 w-10 items-center justify-center rounded-none bg-gray-100 text-gray-400 dark:bg-dark-700 dark:text-gray-600"
+                      class="flex h-10 w-10 items-center justify-center rounded-none bg-gray-100 text-muted dark:bg-dark-700"
                     >
                       <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -138,7 +138,7 @@
                     <!-- Arrow -->
                     <div class="flex-shrink-0">
                       <svg
-                        class="h-5 w-5 text-gray-400 transition-transform group-hover:translate-x-1 dark:text-gray-600"
+                        class="h-5 w-5 text-muted transition-transform group-hover:translate-x-1"
                         fill="none"
                         viewBox="0 0 24 24"
                         stroke="currentColor"
@@ -249,7 +249,7 @@
                 <!-- Close button -->
                 <button
                   @click="closeDetail"
-                  class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-none bg-white text-gray-500 transition-all hover:bg-white hover:text-gray-700 hover:shadow-outline dark:bg-dark-700 dark:text-gray-400 dark:hover:bg-dark-700 dark:hover:text-gray-300"
+                  class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-none bg-gray-100 text-muted transition-colors hover:bg-gray-200 hover:text-gray-700 dark:bg-dark-700 dark:hover:bg-dark-600 dark:hover:text-dark-200"
                   :aria-label="t('common.close')"
                 >
                   <Icon name="x" size="md" />

@@ -2,7 +2,7 @@
   <div>
     <label class="input-label">
       {{ t('admin.users.groups') }}
-      <span class="font-normal text-gray-400">{{ t('common.selectedCount', { count: modelValue.length }) }}</span>
+      <span class="font-normal text-muted">{{ t('common.selectedCount', { count: modelValue.length }) }}</span>
     </label>
     <div
       v-if="isSearchable"
@@ -27,7 +27,7 @@
       <label
         v-for="group in filteredGroups"
         :key="group.id"
-        class="flex cursor-pointer items-center gap-2 rounded-none px-2 py-1.5 transition-colors hover:bg-white dark:hover:bg-dark-700"
+        class="flex cursor-pointer items-center gap-2 rounded-none px-2 py-1.5 transition-colors hover:bg-gray-100 dark:hover:bg-dark-700"
         :title="group.rate_multiplier == null ? group.name : t('admin.groups.rateAndAccounts', { rate: group.rate_multiplier, count: group.account_count || 0 })"
       >
         <input
@@ -44,7 +44,7 @@
           :rate-multiplier="group.rate_multiplier == null ? undefined : group.rate_multiplier"
           class="min-w-0 flex-1"
         />
-        <span class="shrink-0 text-xs text-gray-400">{{ group.account_count || 0 }}</span>
+        <span class="shrink-0 text-xs text-muted">{{ group.account_count || 0 }}</span>
       </label>
       <div
         v-if="filteredGroups.length === 0"
