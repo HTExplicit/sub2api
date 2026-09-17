@@ -38,7 +38,7 @@
       </div>
       <button
         type="button"
-        class="self-start text-xs text-primary-600 hover:text-primary-700 sm:self-end sm:pb-2"
+        class="self-start text-xs text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 sm:self-end sm:pb-2"
         data-testid="add-time-period"
         @click="addPeriod"
       >
