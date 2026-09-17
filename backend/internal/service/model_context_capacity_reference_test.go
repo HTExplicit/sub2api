@@ -23,6 +23,8 @@ func TestModelContextCapacitySelectedGPTReferenceAndExactVariants(t *testing.T) 
 		{"gpt-daybreak-blue-latest", 1050000, "gpt-daybreak-blue-latest"},
 		{"gpt-daybreak-red-latest", 372000, "gpt-daybreak-red-latest"},
 		{"vendor/gpt-5.4", 1000000, "gpt-5.4"},
+		{"gpt-5.4-2026-03-05", 1000000, "gpt-5.4"},
+		{"gpt-5.2-pro-2025-12-11", 400000, "gpt-5.2-pro"},
 		{"gpt-5.5", 272000, "gpt-5.5"},
 		{"vendor/GPT5.4mini", 272000, "gpt-5.4-mini"},
 		{"gpt-5.2", 272000, "gpt-5.2"},
@@ -77,7 +79,7 @@ func TestModelContextCapacityReferenceMatchingKeepsRawKeys(t *testing.T) {
 	require.Equal(t, []string{"public"}, matched.Aliases)
 	require.Equal(t, "gpt-5.4", matched.Official.ModelID)
 	require.Equal(t, int64(258000), matched.EffectiveContextWindow)
-	require.Equal(t, int64(1000000), matched.AutomaticContextWindow)
+	require.Equal(t, int64(256000), matched.AutomaticContextWindow, "a third-party host follows its own declaration before the official reference")
 	require.Equal(t, "custom", matched.EffectiveSource)
 	upstream := ResolveAccountModelContextCapacity(&account, "team/unknown")
 	require.Equal(t, int64(258000), upstream.ContextWindow)
@@ -88,7 +90,7 @@ func TestModelContextCapacityReferenceMatchingKeepsRawKeys(t *testing.T) {
 	overrides, ok := account.Extra[ModelContextOverridesExtraKey].(map[string]int64)
 	require.True(t, ok)
 	delete(overrides, "team/gpt-5.4")
-	require.Equal(t, int64(1000000), ResolveAccountModelContextCapacity(&account, "team/gpt-5.4").ContextWindow, "clearing raw override must not borrow the bare-ID override")
+	require.Equal(t, int64(256000), ResolveAccountModelContextCapacity(&account, "team/gpt-5.4").ContextWindow, "clearing raw override must not borrow the bare-ID override")
 }
 
 func TestModelContextCapacityReferenceCandidateMinimumAndWireIdentity(t *testing.T) {

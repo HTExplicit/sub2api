@@ -243,8 +243,11 @@ func TestPinnedModelsAllowlistExpandsWildcardsForBothRepresentations(t *testing.
 				ModelAllowlist:            service.GroupModelAllowlist{Enabled: true, Models: []string{"public-b", "public-*"}},
 				CodexModelsManifestConfig: service.GroupCodexModelsManifestConfig{Enabled: true, AccountIDs: []int64{1}}}
 			wantCapacity := service.ResolveAccountModelContextCapacity(&accounts[0], "gpt-5.5")
-			require.Equal(t, "official", wantCapacity.Source, "the public aliases retain the official real-upstream capacity contract")
+			require.Equal(t, "official", wantCapacity.Source, "without an upstream declaration the public aliases retain the official real-upstream capacity contract")
 			if codex {
+				// The relay's live manifest declares its own window; on a
+				// third-party host that outranks the official reference.
+				wantCapacity = service.ResolvedModelContextCapacity{ModelContextCapacity: service.ModelContextCapacity{ContextWindow: 424242}, Source: "upstream"}
 				recorder := performPinnedCodexModelsRequest(t, h, group, "")
 				require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 				require.Equal(t, []string{"public-b", "public-a"}, codexHandlerManifestSlugs(t, recorder))
@@ -289,7 +292,12 @@ func TestPinnedModelsMappingFollowsUpstreamDiscoveryForBothRepresentations(t *te
 			require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 			require.Equal(t, []int64{2}, upstream.accountIDs(), "mappings must not bypass pinned discovery")
 			wantCapacity := service.ResolveAccountModelContextCapacity(&accounts[1], "gpt-5.5")
-			require.Equal(t, "official", wantCapacity.Source, "upstream metadata must not override the official capacity catalog")
+			require.Equal(t, "official", wantCapacity.Source, "without an upstream declaration the official capacity catalog applies")
+			if codex {
+				// The live manifest of this third-party host declares its own
+				// window, which outranks the official reference on relay hosts.
+				wantCapacity = service.ResolvedModelContextCapacity{ModelContextCapacity: service.ModelContextCapacity{ContextWindow: 424242}, Source: "upstream"}
+			}
 			requirePinnedModelContextCapacity(t, recorder, codex, wantCapacity)
 			if codex {
 				require.Equal(t, []string{"custom-concrete", "public-alias"}, codexHandlerManifestSlugs(t, recorder))

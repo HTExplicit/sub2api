@@ -62,6 +62,15 @@ func TestModelContextCapacityPriorityAndDistinctLimits(t *testing.T) {
 	if got.MaxOutputTokens != 0 {
 		t.Fatalf("larger official output was falsely clamped to the custom window: %+v", got)
 	}
+	relay := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://relay.example/v1"}}
+	got = ResolveModelContextCapacityForAccount(relay, nil, official, upstream)
+	if got.ContextWindow != 128000 || got.Source != "upstream" || got.MaxOutputTokens != 8000 {
+		t.Fatalf("third-party host must prefer its own declaration: %+v", got)
+	}
+	vendor := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.openai.com/v1"}}
+	if got = ResolveModelContextCapacityForAccount(vendor, nil, official, upstream); got.Source != "official" {
+		t.Fatalf("vendor host must keep the official-first order: %+v", got)
+	}
 }
 
 func TestModelContextCapacityParserSafeNumbersAndFieldTolerance(t *testing.T) {

@@ -418,8 +418,8 @@ func TestBuildCodexModelsManifestForGroupIntersectsDifferentMappedTargetsWithout
 		require.Equal(t, "Custom model routed through Sub2API.", models[0]["description"])
 		require.Equal(t, []string{"low", "medium", "high"}, effortsFromManifestModel(t, models[0]))
 		require.Equal(t, []any{"text"}, models[0]["input_modalities"])
-		require.EqualValues(t, 1_000_000, models[0]["context_window"], "official capacities win before per-account minimum aggregation")
-		require.Equal(t, "official", models[0]["context_capacity_source"])
+		require.EqualValues(t, 272_000, models[0]["context_window"], "relay-declared capacities win on third-party hosts before per-account minimum aggregation")
+		require.Equal(t, "upstream", models[0]["context_capacity_source"])
 	}
 }
 
@@ -506,8 +506,8 @@ func TestBuildCodexModelsManifestForGroupIgnoresPersistentlyDisabledMappedAccoun
 	models := decodeCodexManifestModels(t, body)
 	require.Len(t, models, 1)
 	require.Equal(t, []any{"text", "image"}, models[0]["input_modalities"])
-	require.EqualValues(t, 1_050_000, models[0]["context_window"])
-	require.Equal(t, "official", models[0]["context_capacity_source"])
+	require.EqualValues(t, 1_000_000, models[0]["context_window"], "the remaining relay account's own declaration is advertised, not the disabled account's narrower one")
+	require.Equal(t, "upstream", models[0]["context_capacity_source"])
 }
 
 func TestBuildCodexModelsManifestForGroupKeepsNonCapacityFallbackWhenAvailabilityLookupFails(t *testing.T) {

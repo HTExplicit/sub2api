@@ -123,18 +123,60 @@ func CanManageModelContextCapacity(account *Account) bool {
 	}
 }
 
-// ResolveModelContextCapacity chooses context/default-maximum as one source
-// tuple. Independent input/output limits retain their own official > upstream
-// evidence when compatible with that planning context. They are never filled
-// from the default, clamped or synthesized from the context window.
+// officialModelContextCapacityAPIHosts are the vendors' own API hosts. Their
+// model lists rarely declare capacities, so the release catalog stays
+// authoritative there. Any other host is a third-party relay that may serve a
+// smaller window than the vendor product: its own declaration outranks the
+// catalog, and official evidence only fills the fields it left blank.
+var officialModelContextCapacityAPIHosts = []string{
+	"api.openai.com", "api.anthropic.com", "generativelanguage.googleapis.com", "api.x.ai", "api.deepseek.com",
+	"dashscope.aliyuncs.com", "dashscope-intl.aliyuncs.com", "dashscope-us.aliyuncs.com", "cn-hongkong.dashscope.aliyuncs.com",
+	"api.moonshot.cn", "api.moonshot.ai", "api.kimi.com", "open.bigmodel.cn", "api.z.ai",
+	"api.minimax.io", "api.minimaxi.com", "api.minimax.chat", "ark.cn-beijing.volces.com",
+}
+
+// modelContextCapacityUpstreamFirst reports whether the account's model list
+// comes from a third-party host. An empty or unparsable endpoint keeps the
+// official-first order rather than guessing a relay.
+func modelContextCapacityUpstreamFirst(account *Account) bool {
+	if account == nil {
+		return false
+	}
+	parsed, err := url.Parse(strings.TrimSpace(upstreamModelRegistryBaseURL(account)))
+	if err != nil || parsed == nil || parsed.Hostname() == "" {
+		return false
+	}
+	return !containsFoldModelContextString(officialModelContextCapacityAPIHosts, parsed.Hostname())
+}
+
+// ResolveModelContextCapacity applies the official-first order used on the
+// vendors' own hosts: custom > official > upstream > default.
 func ResolveModelContextCapacity(custom *int64, official *OfficialModelContextCapacity, upstream *ModelContextCapacity) ResolvedModelContextCapacity {
-	result := resolveModelContextPlanningWindow(custom, official, upstream)
+	return resolveModelContextCapacity(custom, official, upstream, false)
+}
+
+// ResolveModelContextCapacityForAccount follows the account's host: official
+// first on vendor API hosts, upstream first on third-party relays.
+func ResolveModelContextCapacityForAccount(account *Account, custom *int64, official *OfficialModelContextCapacity, upstream *ModelContextCapacity) ResolvedModelContextCapacity {
+	return resolveModelContextCapacity(custom, official, upstream, modelContextCapacityUpstreamFirst(account))
+}
+
+// resolveModelContextCapacity chooses context/default-maximum as one source
+// tuple. Independent input/output limits retain their own evidence in the same
+// source order when compatible with that planning context. They are never
+// filled from the default, clamped or synthesized from the context window.
+func resolveModelContextCapacity(custom *int64, official *OfficialModelContextCapacity, upstream *ModelContextCapacity, upstreamFirst bool) ResolvedModelContextCapacity {
+	result := resolveModelContextPlanningWindow(custom, official, upstream, upstreamFirst)
 	var officialLimits, upstreamLimits ModelContextCapacity
 	if official != nil {
 		officialLimits = official.ModelContextCapacity
 	}
 	if upstream != nil {
 		upstreamLimits = *upstream
+	}
+	primary, secondary := officialLimits, upstreamLimits
+	if upstreamFirst {
+		primary, secondary = upstreamLimits, officialLimits
 	}
 	compatibleLimit := func(values ...int64) int64 {
 		for _, value := range values {
@@ -144,27 +186,36 @@ func ResolveModelContextCapacity(custom *int64, official *OfficialModelContextCa
 		}
 		return 0
 	}
-	result.MaxInputTokens = compatibleLimit(officialLimits.MaxInputTokens, upstreamLimits.MaxInputTokens)
-	result.MaxOutputTokens = compatibleLimit(officialLimits.MaxOutputTokens, upstreamLimits.MaxOutputTokens)
+	result.MaxInputTokens = compatibleLimit(primary.MaxInputTokens, secondary.MaxInputTokens)
+	result.MaxOutputTokens = compatibleLimit(primary.MaxOutputTokens, secondary.MaxOutputTokens)
 	return result
 }
 
-func resolveModelContextPlanningWindow(custom *int64, official *OfficialModelContextCapacity, upstream *ModelContextCapacity) ResolvedModelContextCapacity {
+func resolveModelContextPlanningWindow(custom *int64, official *OfficialModelContextCapacity, upstream *ModelContextCapacity, upstreamFirst bool) ResolvedModelContextCapacity {
 	if custom != nil && validModelContextTokens(*custom) {
 		return ResolvedModelContextCapacity{
 			ModelContextCapacity: ModelContextCapacity{ContextWindow: *custom, MaxContextWindow: *custom, CapacityBasis: ModelContextCapacityBasisTotal},
 			Source:               "custom",
 		}
 	}
+	var candidates []ResolvedModelContextCapacity
 	if official != nil {
 		if capacity, ok := modelContextPlanningCapacity(official.ModelContextCapacity); ok {
-			return ResolvedModelContextCapacity{ModelContextCapacity: capacity, Source: "official"}
+			candidates = append(candidates, ResolvedModelContextCapacity{ModelContextCapacity: capacity, Source: "official"})
 		}
 	}
 	if upstream != nil {
 		if capacity, ok := modelContextPlanningCapacity(*upstream); ok {
-			return ResolvedModelContextCapacity{ModelContextCapacity: capacity, Source: "upstream"}
+			candidate := ResolvedModelContextCapacity{ModelContextCapacity: capacity, Source: "upstream"}
+			if upstreamFirst {
+				candidates = append([]ResolvedModelContextCapacity{candidate}, candidates...)
+			} else {
+				candidates = append(candidates, candidate)
+			}
 		}
+	}
+	if len(candidates) > 0 {
+		return candidates[0]
 	}
 	return ResolvedModelContextCapacity{
 		ModelContextCapacity: ModelContextCapacity{
@@ -436,7 +487,7 @@ func NewAccountModelContextCapacityResolver(account *Account) func(string, *Mode
 		if live != nil {
 			upstream = live
 		}
-		result := ResolveModelContextCapacity(override, LookupOfficialModelContextCapacity(account, modelID), upstream)
+		result := ResolveModelContextCapacityForAccount(account, override, LookupOfficialModelContextCapacity(account, modelID), upstream)
 		if conflicts[modelID] {
 			result.Reason = "conflicting_alias_overrides"
 		}
@@ -689,7 +740,7 @@ func BuildAccountModelContextCapacityRows(account *Account, modelIDs []string) [
 			if value, ok := custom[modelID]; ok {
 				row.CustomContextWindow = &value
 			}
-			automatic = ResolveModelContextCapacity(nil, row.Official, row.Upstream)
+			automatic = ResolveModelContextCapacityForAccount(account, nil, row.Official, row.Upstream)
 		} else {
 			automatic = resolve(modelID, nil)
 		}
