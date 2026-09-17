@@ -433,12 +433,12 @@ const empty = computed(() => events.value.length === 0 && !loading.value)
                   v-else
                   name="ban"
                   size="xs"
-                  class="text-gray-400 dark:text-gray-500"
+                  class="text-muted"
                 />
                 {{ row.email_sent ? t('admin.ops.alertEvents.table.emailSent') : t('admin.ops.alertEvents.table.emailIgnored') }}
               </span>
             </div>
-            <div class="text-[11px] text-gray-400 dark:text-gray-500">{{ formatDimensionsSummary(row) }}</div>
+            <div class="text-[11px] text-muted">{{ formatDimensionsSummary(row) }}</div>
           </div>
         </div>
         <table v-else class="min-w-full divide-y divide-gray-200 dark:divide-dark-700">
@@ -524,7 +524,7 @@ const empty = computed(() => events.value.length === 0 && !loading.value)
                     v-else
                     name="ban"
                     size="sm"
-                    class="text-gray-400 dark:text-gray-500"
+                    class="text-muted"
                   />
                   <span class="text-[11px] font-bold text-gray-600 dark:text-gray-300">
                     {{ row.email_sent ? t('admin.ops.alertEvents.table.emailSent') : t('admin.ops.alertEvents.table.emailIgnored') }}

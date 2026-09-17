@@ -17,7 +17,7 @@
       >{{ value }}</strong>
       <div
         v-if="detailParts.length > 1"
-        class="mt-1.5 flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] leading-snug text-gray-400 dark:text-dark-400"
+        class="mt-1.5 flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] leading-snug text-muted"
       >
         <span
           v-for="(part, index) in detailParts"
@@ -27,7 +27,7 @@
       </div>
       <small
         v-else-if="detail"
-        class="mt-1.5 block text-[11px] leading-snug text-gray-400 dark:text-dark-400"
+        class="mt-1.5 block text-[11px] leading-snug text-muted"
       >{{ detail }}</small>
     </div>
   </div>

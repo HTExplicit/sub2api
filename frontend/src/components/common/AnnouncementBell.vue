@@ -35,7 +35,7 @@
               <div class="relative z-10 flex items-start justify-between">
                 <div>
                   <div class="flex items-center gap-2">
-                    <div class="flex h-8 w-8 items-center justify-center rounded-none bg-blue-500 text-white shadow-outline">
+                    <div class="flex h-8 w-8 items-center justify-center rounded-none bg-blue-500 text-white">
                       <Icon name="bell" size="sm" />
                     </div>
                     <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
@@ -52,13 +52,13 @@
                     v-if="unreadCount > 0"
                     @click="markAllAsRead"
                     :disabled="loading"
-                    class="rounded-none bg-blue-600 px-4 py-2 text-xs font-medium text-white shadow-outline transition-all hover:bg-blue-700 hover:shadow-outline disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600"
+                    class="rounded-none bg-blue-600 px-4 py-2 text-xs font-medium text-white transition-all hover:bg-blue-700 disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600"
                   >
                     {{ t('announcements.markAllRead') }}
                   </button>
                   <button
                     @click="closeModal"
-                    class="flex h-9 w-9 items-center justify-center rounded-none bg-white text-gray-500 transition-all hover:bg-white hover:text-gray-700 dark:bg-dark-700 dark:text-gray-400 dark:hover:bg-dark-700 dark:hover:text-gray-300"
+                    class="flex h-9 w-9 items-center justify-center rounded-none bg-gray-100 text-muted transition-colors hover:bg-gray-200 hover:text-gray-700 dark:bg-dark-700 dark:hover:bg-dark-600 dark:hover:text-dark-200"
                     :aria-label="t('common.close')"
                   >
                     <Icon name="x" size="sm" />
@@ -93,7 +93,7 @@
                   <div class="flex h-10 w-10 flex-shrink-0 items-center justify-center">
                     <div
                       v-if="!item.read_at"
-                      class="relative flex h-10 w-10 items-center justify-center rounded-none bg-blue-500 text-white shadow-outline"
+                      class="relative flex h-10 w-10 items-center justify-center rounded-none bg-blue-500 text-white"
                     >
                       <!-- Pulse ring -->
                       <span class="absolute inline-flex h-full w-full animate-ping rounded-none bg-blue-400 opacity-75"></span>
@@ -104,7 +104,7 @@
                     </div>
                     <div
                       v-else
-                      class="flex h-10 w-10 items-center justify-center rounded-none bg-gray-100 text-gray-400 dark:bg-dark-700 dark:text-gray-600"
+                      class="flex h-10 w-10 items-center justify-center rounded-none bg-gray-100 text-muted dark:bg-dark-700"
                     >
                       <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -138,7 +138,7 @@
                     <!-- Arrow -->
                     <div class="flex-shrink-0">
                       <svg
-                        class="h-5 w-5 text-gray-400 transition-transform group-hover:translate-x-1 dark:text-gray-600"
+                        class="h-5 w-5 text-muted transition-transform group-hover:translate-x-1"
                         fill="none"
                         viewBox="0 0 24 24"
                         stroke="currentColor"
@@ -161,7 +161,7 @@
               <div v-else class="flex flex-col items-center justify-center py-16">
                 <div class="relative mb-4">
                   <div class="flex h-20 w-20 items-center justify-center rounded-full bg-gray-100 dark:bg-dark-700">
-                    <Icon name="inbox" size="xl" class="text-gray-400 dark:text-gray-500" />
+                    <Icon name="inbox" size="xl" class="text-muted" />
                   </div>
                   <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-green-500 text-white">
                     <svg class="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20">
@@ -201,7 +201,7 @@
                 <div class="flex-1 min-w-0">
                   <!-- Icon and Category -->
                   <div class="mb-3 flex items-center gap-2">
-                    <div class="flex h-10 w-10 items-center justify-center rounded-none bg-blue-500 text-white shadow-outline">
+                    <div class="flex h-10 w-10 items-center justify-center rounded-none bg-blue-500 text-white">
                       <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
@@ -212,7 +212,7 @@
                       </span>
                       <span
                         v-if="!selectedAnnouncement.read_at"
-                        class="inline-flex items-center gap-1.5 rounded-none bg-blue-500 px-2.5 py-1 text-xs font-medium text-white shadow-outline"
+                        class="inline-flex items-center gap-1.5 rounded-none bg-blue-500 px-2.5 py-1 text-xs font-medium text-white"
                       >
                         <span class="relative flex h-2 w-2">
                           <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75"></span>
@@ -249,7 +249,7 @@
                 <!-- Close button -->
                 <button
                   @click="closeDetail"
-                  class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-none bg-white text-gray-500 transition-all hover:bg-white hover:text-gray-700 hover:shadow-outline dark:bg-dark-700 dark:text-gray-400 dark:hover:bg-dark-700 dark:hover:text-gray-300"
+                  class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-none bg-gray-100 text-muted transition-colors hover:bg-gray-200 hover:text-gray-700 dark:bg-dark-700 dark:hover:bg-dark-600 dark:hover:text-dark-200"
                   :aria-label="t('common.close')"
                 >
                   <Icon name="x" size="md" />
@@ -285,14 +285,14 @@
                 <div class="flex items-center gap-3">
                   <button
                     @click="closeDetail"
-                    class="rounded-none border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 shadow-outline transition-all hover:bg-gray-50 hover:shadow-outline dark:border-dark-600 dark:bg-dark-700 dark:text-gray-300 dark:hover:bg-dark-600"
+                    class="rounded-none border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition-all hover:bg-gray-50 dark:border-dark-600 dark:bg-dark-700 dark:text-gray-300 dark:hover:bg-dark-600"
                   >
                     {{ t('common.close') }}
                   </button>
                   <button
                     v-if="!selectedAnnouncement.read_at"
                     @click="markAsReadAndClose(selectedAnnouncement.id)"
-                    class="rounded-none bg-blue-600 px-5 py-2.5 text-sm font-medium text-white shadow-outline transition-all hover:shadow-outline"
+                    class="rounded-none bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition-all"
                   >
                     <span class="flex items-center gap-2">
                       <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">

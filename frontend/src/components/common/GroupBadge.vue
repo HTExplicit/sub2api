@@ -1,14 +1,14 @@
 <template>
   <span
     :class="[
-      'inline-flex items-center gap-1.5 rounded-none px-2 py-0.5 text-xs font-medium transition-colors',
+      'inline-flex max-w-full items-center gap-1.5 rounded-none px-2 py-0.5 text-xs font-medium transition-colors',
       badgeClass
     ]"
   >
     <!-- Platform logo -->
     <PlatformIcon v-if="platform" :platform="platform" size="sm" />
     <!-- Group name -->
-    <span class="truncate">{{ name }}</span>
+    <span class="min-w-0 truncate">{{ name }}</span>
     <!-- Right side label -->
     <span v-if="showLabel" :class="labelClass">
       <template v-if="hasCustomRate">
@@ -130,8 +130,9 @@ const labelClass = computed(() => {
   const base = 'px-1.5 py-0.5 rounded-none text-[10px] font-semibold'
 
   if (!isSubscription.value) {
-    // Standard: subtle background (不再为专属倍率使用不同的背景色)
-    return `${base} bg-black/10 dark:bg-white`
+    // Standard: translucent white pill in both themes (不再为专属倍率使用不同的背景色).
+    // A dark overlay would pull the inherited 700-shade text below 4.5:1 on the pastel chip.
+    return `${base} bg-white/50 dark:bg-white/10`
   }
 
   // 订阅类型：根据剩余天数显示不同颜色

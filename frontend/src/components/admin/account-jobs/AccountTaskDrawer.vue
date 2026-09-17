@@ -144,7 +144,7 @@
                     name="duplicate-survivor"
                     :value="account.account_id"
                     :data-test="`duplicate-survivor-${account.account_id}`"
-                    class="mt-0.5 h-4 w-4 text-primary-600"
+                    class="mt-0.5 h-4 w-4 text-primary-600 dark:text-primary-400"
                   />
                   <span class="min-w-0 flex-1">
                     <span class="block truncate text-sm font-medium text-gray-900 dark:text-white">{{ account.name }}</span>

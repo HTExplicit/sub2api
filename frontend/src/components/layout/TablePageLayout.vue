@@ -66,7 +66,7 @@ onUnmounted(() => {
 
 /* 表格滚动容器 - 增强版表体滚动方案 */
 .table-scroll-container {
-  @apply flex flex-col overflow-hidden h-full bg-white dark:bg-dark-800 rounded-none border border-gray-200 dark:border-dark-700 shadow-outline;
+  @apply flex flex-col overflow-hidden h-full bg-white dark:bg-dark-800 rounded-none border border-gray-200 dark:border-dark-700;
 }
 
 .table-scroll-container :deep(.table-wrapper) {

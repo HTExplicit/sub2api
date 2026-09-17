@@ -114,7 +114,7 @@
       <div
         v-if="showResetCreditDetails && resetCreditExpirations.length > 1"
         data-testid="reset-credit-expiry-details"
-        class="inline-grid max-w-full gap-0.5 rounded-none border border-gray-200 bg-white px-1.5 py-1 text-[10px] leading-4 text-gray-600 shadow-outline dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300"
+        class="inline-grid max-w-full gap-0.5 rounded-none border border-gray-200 bg-white px-1.5 py-1 text-[10px] leading-4 text-gray-600 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300"
       >
         <span class="sr-only">{{ t('admin.accounts.openaiQuotaReset.expirationDetails') }}</span>
         <span

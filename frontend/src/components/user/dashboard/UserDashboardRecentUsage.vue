@@ -12,7 +12,7 @@
         <EmptyState :title="t('dashboard.noUsageRecords')" :description="t('dashboard.startUsingApi')" />
       </div>
       <div v-else class="space-y-3">
-        <div v-for="log in data" :key="log.id" class="flex items-center justify-between rounded-none bg-gray-50 p-4 transition-colors hover:bg-gray-100 dark:bg-dark-800 dark:hover:bg-dark-800">
+        <div v-for="log in data" :key="log.id" class="flex items-center justify-between rounded-none bg-gray-50 p-4 transition-colors hover:bg-gray-100 dark:bg-dark-800 dark:hover:bg-dark-700">
           <div class="flex items-center gap-4">
             <div class="flex h-10 w-10 items-center justify-center rounded-none bg-primary-100 dark:bg-primary-900/30">
               <Icon name="beaker" size="md" class="text-primary-600 dark:text-primary-400" />
@@ -25,7 +25,7 @@
           <div class="text-right">
             <p class="text-sm font-semibold">
               <span class="text-green-600 dark:text-green-400" :title="t('dashboard.actual')">${{ formatCost(log.actual_cost) }}</span>
-              <span class="font-normal text-gray-400 dark:text-gray-500" :title="t('dashboard.standard')"> / ${{ formatCost(log.total_cost) }}</span>
+              <span class="font-normal text-muted" :title="t('dashboard.standard')"> / ${{ formatCost(log.total_cost) }}</span>
             </p>
             <p class="text-xs text-gray-500 dark:text-dark-400">{{ (log.input_tokens + log.output_tokens).toLocaleString() }} tokens</p>
           </div>

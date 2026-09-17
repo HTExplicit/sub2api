@@ -23,7 +23,7 @@
         <!-- Empty placeholder -->
         <svg
           v-else
-          class="text-gray-400 dark:text-dark-500"
+          class="text-muted"
           :class="placeholderSizeClass"
           fill="none"
           viewBox="0 0 24 24"

@@ -17,7 +17,7 @@
         {{ t('admin.accounts.syncFromCrsDesc') }}
       </div>
       <div
-        class="rounded-none bg-gray-50 p-3 text-xs text-gray-500 dark:bg-dark-700 dark:text-dark-400"
+        class="rounded-none bg-gray-50 p-3 text-xs text-gray-500 dark:bg-dark-700 dark:text-dark-300"
       >
         {{ t('admin.accounts.crsUpdateBehaviorNote') }}
       </div>
@@ -142,7 +142,7 @@
       <!-- Sync options summary -->
       <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-dark-400">
         <span>{{ t('admin.accounts.syncProxies') }}:</span>
-        <span :class="form.sync_proxies ? 'text-green-600 dark:text-green-400' : 'text-gray-400 dark:text-dark-500'">
+        <span :class="form.sync_proxies ? 'text-green-600 dark:text-green-400' : 'text-muted'">
           {{ form.sync_proxies ? t('common.yes') : t('common.no') }}
         </span>
       </div>
@@ -150,7 +150,7 @@
       <!-- No new accounts -->
       <div
         v-if="!previewResult.new_accounts.length"
-        class="rounded-none bg-gray-50 p-4 text-center text-sm text-gray-500 dark:bg-dark-700 dark:text-dark-400"
+        class="rounded-none bg-gray-50 p-4 text-center text-sm text-gray-500 dark:bg-dark-700 dark:text-dark-300"
       >
         {{ t('admin.accounts.crsNoNewAccounts') }}
         <span v-if="previewResult.existing_accounts.length">

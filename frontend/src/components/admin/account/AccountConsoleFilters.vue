@@ -29,7 +29,7 @@
 
         <div
           v-if="openMenu === menu.key"
-          class="absolute left-0 z-50 mt-1 w-64 overflow-hidden rounded-none border border-gray-200 bg-white shadow-outline dark:border-dark-700 dark:bg-dark-800"
+          class="absolute left-0 z-50 mt-1 w-64 overflow-hidden rounded-none border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-800"
           @click.stop
         >
           <div class="max-h-72 overflow-y-auto p-1.5">
@@ -45,7 +45,7 @@
                 @change="toggleOption(menu.key, String(option.value))"
               />
               <span class="min-w-0 flex-1 truncate text-gray-700 dark:text-gray-200">{{ option.label }}</span>
-              <span class="text-xs tabular-nums text-gray-400 dark:text-dark-400">{{ option.count }}</span>
+              <span class="text-xs tabular-nums text-muted">{{ option.count }}</span>
             </label>
             <div v-if="menu.options.length === 0" class="px-3 py-5 text-center text-sm text-gray-400">
               {{ t('common.noData') }}

@@ -11,7 +11,7 @@
 
   <div
     v-else-if="entry.status === 'loading'"
-    class="mt-0.5 flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500"
+    class="mt-0.5 flex items-center gap-1 text-xs text-muted"
   >
     <svg class="h-3 w-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path
@@ -53,7 +53,7 @@
     </button>
   </div>
 
-  <div v-else class="mt-0.5 text-xs text-gray-400 dark:text-gray-500">
+  <div v-else class="mt-0.5 text-xs text-muted">
     {{ t('usage.ipGeo.private') }}
   </div>
 </template>

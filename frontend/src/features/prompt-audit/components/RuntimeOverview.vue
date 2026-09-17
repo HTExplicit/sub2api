@@ -48,7 +48,7 @@
               done: runtime.queue.done,
               failed: runtime.queue.failed,
             }) }}
-            <span class="mx-1.5 text-gray-300 dark:text-dark-600">·</span>
+            <span class="mx-1.5 text-gray-300 dark:text-dark-500">·</span>
             {{ t('admin.promptAudit.runtime.deliveryTotals', { enqueued: runtime.enqueued_total, dropped: runtime.dropped_total, processed: runtime.processed_total, failed: runtime.failed_total }) }}
           </p>
         </div>

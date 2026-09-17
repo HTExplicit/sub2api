@@ -252,7 +252,7 @@ onBeforeUnmount(() => {
 }
 
 .filter-dropdown {
-  @apply w-max min-w-[200px] max-h-[min(50vh,360px)] overflow-y-auto rounded-none border border-gray-200 bg-white shadow-outline dark:border-dark-600 dark:bg-dark-800;
+  @apply w-max min-w-[200px] max-h-[min(50vh,360px)] overflow-y-auto rounded-none border border-gray-200 bg-white dark:border-dark-600 dark:bg-dark-800;
 }
 
 .dropdown-item {

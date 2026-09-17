@@ -23,7 +23,7 @@
         data-testid="image-studio-layout"
       >
         <form
-          class="h-fit min-w-0 space-y-5 rounded-none border border-gray-200 bg-white p-5 shadow-outline dark:border-dark-700 dark:bg-dark-900"
+          class="h-fit min-w-0 space-y-5 rounded-none border border-gray-200 bg-white p-5 dark:border-dark-700 dark:bg-dark-900"
           @submit.prevent="submit"
         >
           <div>

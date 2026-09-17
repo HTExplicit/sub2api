@@ -25,14 +25,14 @@
       <RouterLink
         v-if="isAuthenticated"
         :to="backTarget"
-        class="inline-flex flex-shrink-0 items-center justify-center gap-1.5 rounded-none bg-primary-500 px-4 py-2 text-sm font-semibold text-white shadow-outline transition-all duration-200 hover:bg-primary-600 hover:shadow-outline active:scale-[0.98]"
+        class="inline-flex flex-shrink-0 items-center justify-center gap-1.5 rounded-none bg-primary-500 px-4 py-2 text-sm font-semibold text-white transition-all duration-200 hover:bg-primary-600 active:scale-[0.98]"
       >
         {{ t('modelPlaza.nav.backToDashboard') }}
       </RouterLink>
       <RouterLink
         v-else
         :to="{ path: '/login', query: { redirect: '/model-plaza' } }"
-        class="inline-flex flex-shrink-0 items-center justify-center rounded-none bg-primary-500 px-4 py-2 text-sm font-semibold text-white shadow-outline transition-all duration-200 hover:bg-primary-600 hover:shadow-outline active:scale-[0.98]"
+        class="inline-flex flex-shrink-0 items-center justify-center rounded-none bg-primary-500 px-4 py-2 text-sm font-semibold text-white transition-all duration-200 hover:bg-primary-600 active:scale-[0.98]"
       >
         {{ t('modelPlaza.nav.login') }}
       </RouterLink>
