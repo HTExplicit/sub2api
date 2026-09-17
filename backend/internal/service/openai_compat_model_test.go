@@ -20,6 +20,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -1063,6 +1064,50 @@ func TestForwardAsAnthropic_DoesNotAttachPreviousResponseIDForOAuthCompat(t *tes
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.False(t, gjson.GetBytes(upstream.lastBody, "previous_response_id").Exists())
+}
+
+// 显式入站连字符会话头 R 与 prompt_cache_key K 不同：构造器保留并作用域改写 R，后置会话回退
+// 不得再用 K 派生值覆盖；下划线头不出站。
+func TestForwardAsAnthropic_KeepsInboundHyphenSessionHeaderOverCacheKeyFallback(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{openAICompatSSECompletedResponse("resp_oauth_hyphen", "gpt-5.4")}}
+	svc := &OpenAIGatewayService{
+		httpUpstream: upstream,
+		cfg:          &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}},
+	}
+	account := &Account{
+		ID:          1,
+		Name:        "openai-oauth",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token":       "oauth-token",
+			"chatgpt_account_id": "chatgpt-acc",
+		},
+	}
+	inboundSession := uuid.Must(uuid.NewV7()).String()
+
+	body := []byte(`{"model":"claude-sonnet-4-5","max_tokens":16,"messages":[{"role":"user","content":"first"}],"stream":false}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Request.Header.Set("session-id", inboundSession)
+	c.Request.Header.Set("thread-id", inboundSession)
+
+	result, err := svc.ForwardAsAnthropic(context.Background(), c, account, body, "stable-cache-key", "gpt-5.4")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.requests, 1)
+	scoped := scopeCodexAccountIdentityValue(account, 0, inboundSession)
+	require.Equal(t, scoped, upstream.requests[0].Header.Get("session-id"), "入站 R 只作用域改写一次，不被 K 回退覆盖")
+	require.Equal(t, scoped, upstream.requests[0].Header.Get("thread-id"))
+	require.NotEqual(t, generateSessionUUID(isolateOpenAIUpstreamSessionID(0, account, "stable-cache-key")), upstream.requests[0].Header.Get("session-id"))
+	require.Empty(t, upstream.requests[0].Header.Get("session_id"))
+	require.Empty(t, upstream.requests[0].Header.Get("conversation_id"))
 }
 
 func TestForwardAsAnthropic_ReusesOAuthCodexTurnState(t *testing.T) {

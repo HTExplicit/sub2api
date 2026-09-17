@@ -431,8 +431,9 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 			sessionKey = isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), upstreamPromptCacheKey)
 		}
 		if account.UsesOpenAICodexProtocol() {
-			// Codex 协议账号：最终形态只有连字符会话头，不再发送下划线 session_id。
-			setCodexSessionIdentityHeaders(upstreamReq.Header, generateSessionUUID(sessionKey))
+			// Codex 协议账号：最终形态只有连字符会话头；构造器已就位的连字符头保留，
+			// 缺失时才用隔离会话 ID 补齐。
+			fillCodexSessionIdentityHeaders(upstreamReq.Header, generateSessionUUID(sessionKey))
 		} else {
 			upstreamReq.Header.Set("session_id", generateSessionUUID(sessionKey))
 		}

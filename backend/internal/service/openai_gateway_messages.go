@@ -387,8 +387,9 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	if account.Platform != PlatformGrok && upstreamPromptCacheKey != "" {
 		isolatedSessionID := generateSessionUUID(isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), upstreamPromptCacheKey))
 		if account.UsesOpenAICodexProtocol() {
-			// Codex 协议账号：最终形态只有连字符会话头，不再发送下划线 session_id / conversation_id。
-			setCodexSessionIdentityHeaders(upstreamReq.Header, isolatedSessionID)
+			// Codex 协议账号：最终形态只有连字符会话头；构造器已就位的连字符头保留，
+			// 缺失时才用按 API Key 隔离的会话 ID 补齐。
+			fillCodexSessionIdentityHeaders(upstreamReq.Header, isolatedSessionID)
 		} else {
 			upstreamReq.Header.Set("session_id", isolatedSessionID)
 			if upstreamReq.Header.Get("conversation_id") != "" {

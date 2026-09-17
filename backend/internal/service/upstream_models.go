@@ -1160,14 +1160,14 @@ func (s *AccountTestService) buildOpenAIOAuthUpstreamModelsRequest(ctx context.C
 		req.Header.Set("Authorization", "Bearer "+accessToken)
 	}
 
-	identity := resolveCodexOutboundIdentityForAccount(credentialAccount, credentialAccount.GetOpenAIUserAgent())
+	identity := resolveCodexOutboundIdentityForAccount(credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Originator", identity.originator)
 	req.Header.Set("User-Agent", identity.userAgent)
 	req.Header.Set("Version", identity.version)
 	setOpenAIChatGPTAccountHeaders(req.Header, credentialAccount)
 	credentialAccount.ApplyHeaderOverrides(req.Header)
-	enforceCodexIdentityHeadersForAccount(req.Header, credentialAccount, credentialAccount.GetOpenAIUserAgent())
+	enforceCodexIdentityHeadersForAccount(req.Header, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
 	return req, nil
 }
 

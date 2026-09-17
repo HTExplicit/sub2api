@@ -165,6 +165,26 @@ func TestStagedFingerprintSandboxFollowsParentIdentitySource(t *testing.T) {
 	require.Equal(t, codexClientSandboxWindows, svc.resolveStagedCodexFingerprintIDs(nil, child, nil).sandbox, "无父账号时跟随自身身份")
 }
 
+// 兼容 Messages 桥接删除 originator 后不做 ForAccount 收口：sandbox 跟随构造器实际写入的 UA
+// （客户端 UA / 账号显式 UA / ForceCodexCLI 规范 UA），而不是账号 profile。
+func TestEffectiveCodexOutboundUserAgentFollowsBridgeContract(t *testing.T) {
+	account := &Account{ID: 23, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
+		Credentials: map[string]any{"chatgpt_account_id": "acct-23"},
+		Extra:       map[string]any{codexFingerprintSeedExtraKey: codexTestSeedForOS(t, codexClientOSMac)}}
+	clientHeaders := http.Header{}
+	clientHeaders.Set("user-agent", "codex_cli_rs/0.150.0 (Windows 10.0.19045; x86_64) unknown")
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	svc := &OpenAIGatewayService{cfg: &config.Config{}}
+
+	require.Equal(t, codexClientSandboxMac, svc.resolveStagedCodexFingerprintIDs(c, account, clientHeaders).sandbox, "非桥接：跟随账号身份")
+	setOpenAICompatMessagesBridgeContext(c, true)
+	require.Equal(t, codexClientSandboxWindows, svc.resolveStagedCodexFingerprintIDs(c, account, clientHeaders).sandbox, "桥接：跟随构造器保留的客户端 UA")
+	svc.cfg.Gateway.ForceCodexCLI = true
+	require.Equal(t, codexSandboxForUserAgent(CodexCanonicalUserAgent()), svc.resolveStagedCodexFingerprintIDs(c, account, clientHeaders).sandbox, "桥接 + ForceCodexCLI：跟随规范 UA")
+}
+
 // 全局强制统一关闭时终态只做配对、保留合法客户端 UA，staging 的 sandbox 必须跟随该客户端 UA。
 func TestStagedFingerprintSandboxFollowsPairedClientUAWhenEnforcementOff(t *testing.T) {
 	t.Cleanup(func() { SetCodexIdentityEnforcementEnabled(true) })

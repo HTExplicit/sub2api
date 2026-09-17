@@ -768,9 +768,9 @@ func (s *OpenAIGatewayService) buildOpenAIAlphaSearchResponsesWebSearchRequest(c
 	}
 	apiKeyID := getAPIKeyIDFromContext(c)
 	if sessionID := strings.TrimSpace(gjson.GetBytes(alphaBody, "id").String()); sessionID != "" {
-		// 搜索会话 id 以连字符会话头（UUID 形态）出站；账号/Key 作用域改写由下面的
-		// applyCodexAccountIdentityHeaders 统一完成，与其他 Codex 路径一致。
-		setCodexSessionIdentityHeaders(req.Header, generateSessionUUID(sessionID))
+		// 搜索会话 id 以连字符会话头（UUID 形态）补齐缺失的会话头；账号/Key 作用域改写由
+		// 下面的 applyCodexAccountIdentityHeaders 统一完成，与其他 Codex 路径一致。
+		fillCodexSessionIdentityHeaders(req.Header, generateSessionUUID(sessionID))
 	}
 	applyCodexAccountIdentityHeaders(req.Header, codexAccountIdentitySource(c, account), apiKeyID)
 	enforceCodexIdentityHeadersForAccount(req.Header, codexAccountIdentitySource(c, account), s.codexIdentityOverrideUA(account))

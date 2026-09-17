@@ -1679,6 +1679,21 @@ func (s *OpenAIGatewayService) resolveStagedCodexFingerprintIDs(c *gin.Context, 
 //     保留构造器写入的 UA——ForceCodexCLI 时为规范 UA，否则账号显式 UA，否则客户端 UA；
 //     不合法的 UA 回落规范身份。该全局开关与 fingerprint mode 是不同门控。
 func (s *OpenAIGatewayService) effectiveCodexOutboundUserAgent(c *gin.Context, account *Account, clientHeaders http.Header) string {
+	if isOpenAICompatMessagesBridgeContext(c) {
+		// 兼容 Messages 桥接：构造器删除 originator，终态收口早退，不做 ForAccount 统一；
+		// 线上 UA 就是构造器写入的值（ForceCodexCLI 规范 UA > 账号显式 UA > 客户端 UA），
+		// 保持"不补回桥接 originator"的既有契约，只让 metadata 跟随该实际 UA。
+		if s != nil && s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
+			return CodexCanonicalUserAgent()
+		}
+		if custom := account.GetOpenAIUserAgent(); custom != "" {
+			return custom
+		}
+		if clientHeaders != nil {
+			return clientHeaders.Get("user-agent")
+		}
+		return ""
+	}
 	overrideUA := s.codexIdentityOverrideUA(account)
 	if codexIdentityEnforcement.Load() {
 		return resolveCodexOutboundIdentityForAccount(codexAccountIdentitySource(c, account), overrideUA).userAgent
