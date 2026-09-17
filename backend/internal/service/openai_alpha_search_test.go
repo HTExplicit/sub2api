@@ -15,6 +15,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/gin-gonic/gin"
+	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -136,6 +137,7 @@ func TestForwardAlphaSearchPATUsesResponsesWebSearchFallback(t *testing.T) {
 		Body:       io.NopCloser(strings.NewReader(alphaSearchResponsesSSE("search result"))),
 	}}
 	service := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	service.cfg.Gateway.OpenAICodexRequestZstd = true
 	account := &Account{
 		ID:          43,
 		Platform:    PlatformOpenAI,
@@ -174,13 +176,21 @@ func TestForwardAlphaSearchPATUsesResponsesWebSearchFallback(t *testing.T) {
 	require.Empty(t, upstream.lastReq.Header.Get("X-Codex-Turn-State"))
 	require.Empty(t, upstream.lastReq.Header.Get(responsesLiteHeaderKey))
 	require.Empty(t, upstream.lastReq.Header.Get("Accept-Language"))
-	require.False(t, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").Exists())
-	require.False(t, gjson.GetBytes(upstream.lastBody, "prompt_cache_retention").Exists())
-	require.Equal(t, "gpt-5.6-sol", gjson.GetBytes(upstream.lastBody, "model").String())
-	require.True(t, gjson.GetBytes(upstream.lastBody, "stream").Bool())
-	require.False(t, gjson.GetBytes(upstream.lastBody, "store").Bool())
-	require.Equal(t, "web_search", gjson.GetBytes(upstream.lastBody, "tools.0.type").String())
-	require.Contains(t, gjson.GetBytes(upstream.lastBody, "input.0.content.0.text").String(), `"search_query"`)
+	// PAT/OAuth 的 Responses web-search fallback 是真实 Codex turn：开关开启时同样 zstd 出站，
+	// 解压后语义不变。
+	require.Equal(t, "zstd", upstream.lastReq.Header.Get("Content-Encoding"))
+	zstdReader, err := zstd.NewReader(bytes.NewReader(upstream.lastBody))
+	require.NoError(t, err)
+	wireBody, err := io.ReadAll(zstdReader)
+	zstdReader.Close()
+	require.NoError(t, err)
+	require.False(t, gjson.GetBytes(wireBody, "prompt_cache_key").Exists())
+	require.False(t, gjson.GetBytes(wireBody, "prompt_cache_retention").Exists())
+	require.Equal(t, "gpt-5.6-sol", gjson.GetBytes(wireBody, "model").String())
+	require.True(t, gjson.GetBytes(wireBody, "stream").Bool())
+	require.False(t, gjson.GetBytes(wireBody, "store").Bool())
+	require.Equal(t, "web_search", gjson.GetBytes(wireBody, "tools.0.type").String())
+	require.Contains(t, gjson.GetBytes(wireBody, "input.0.content.0.text").String(), `"search_query"`)
 }
 
 func TestForwardAlphaSearchOrdinaryAPIKeyIgnoresLegacyBridgeSettings(t *testing.T) {

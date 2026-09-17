@@ -980,6 +980,11 @@ type GatewayConfig struct {
 	// ForceCodexCLI: 强制将 OpenAI `/v1/responses` 请求按 Codex CLI 处理。
 	// 用于网关未透传/改写 User-Agent 时的兼容兜底（默认关闭，避免影响其他客户端）。
 	ForceCodexCLI bool `mapstructure:"force_codex_cli"`
+	// OpenAICodexRequestZstd: 对 OpenAI OAuth-like 账号发往 ChatGPT 后端的流式 /responses 请求体
+	// 做 zstd（level 3）压缩并带 Content-Encoding: zstd，与官方 Codex 客户端一致；compact 等其他
+	// 请求不压缩。默认开启；出现兼容问题时置 false 回退为明文 JSON。零值为关闭，手工构造的
+	// Config 不会意外压缩。
+	OpenAICodexRequestZstd bool `mapstructure:"openai_codex_request_zstd"`
 	// DisableCodexIdentityEnforcement: 关闭「强制统一 Codex 出站身份」。上游 /backend-api/codex
 	// 在容量紧张时按客户端身份分优先级降载，被降载的请求会拿到 HTTP 200 + 流内
 	// server_is_overloaded，该次请求失败。默认强制统一出口：所有 OAuth 出站的
@@ -2383,6 +2388,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.max_account_switches", 10)
 	viper.SetDefault("gateway.max_account_switches_gemini", 3)
 	viper.SetDefault("gateway.force_codex_cli", false)
+	viper.SetDefault("gateway.openai_codex_request_zstd", true)
 	viper.SetDefault("gateway.disable_codex_identity_enforcement", false)
 	viper.SetDefault("gateway.disable_codex_originator_normalization", false)
 	viper.SetDefault("gateway.codex_image_generation_bridge_enabled", false)

@@ -1335,6 +1335,12 @@ func buildUpstreamTransport(settings poolSettings, proxyURL *url.URL, protocolMo
 		IdleConnTimeout:       settings.idleConnTimeout,
 		ResponseHeaderTimeout: settings.responseHeaderTimeout,
 	}
+	if isOpenAIUpstreamProtocolMode(protocolMode) {
+		// 真实 Codex 客户端（reqwest，未启用压缩特性）不发送 Accept-Encoding；关闭 Go 的自动
+		// gzip 协商，避免出站多出一条 `Accept-Encoding: gzip`。上游若仍返回 Content-Encoding，
+		// 由 decompressResponseBody 手动解压，业务层语义不变。
+		transport.DisableCompression = true
+	}
 	switch protocolMode {
 	case upstreamProtocolModeLongStreamH2, upstreamProtocolModeOpenAIH2:
 		transport.ForceAttemptHTTP2 = true
@@ -1355,6 +1361,15 @@ func buildUpstreamTransport(settings poolSettings, proxyURL *url.URL, protocolMo
 		return nil, err
 	}
 	return transport, nil
+}
+
+// isOpenAIUpstreamProtocolMode 判断协议模式是否属于 OpenAI 专用传输（H2 / H1 / H1 回退）。
+func isOpenAIUpstreamProtocolMode(mode string) bool {
+	switch mode {
+	case upstreamProtocolModeOpenAIH1, upstreamProtocolModeOpenAIH2, upstreamProtocolModeOpenAIH1Fallback:
+		return true
+	}
+	return false
 }
 
 // enableHTTP2KeepAlive 在 http.Transport 上显式配置 HTTP/2 并启用连接健康探测。

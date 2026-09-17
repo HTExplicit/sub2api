@@ -1137,7 +1137,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		// Send request
 		upstreamStart := time.Now()
 		reasoningRecovery.MarkAttemptDispatched()
-		resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+		resp, err := s.doOpenAICodexUpstream(upstreamReq, account, proxyURL)
 		reasoningRecovery.ObserveResponse(resp)
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 		if headerGuard != nil && headerGuard.stopHeaderWait() {

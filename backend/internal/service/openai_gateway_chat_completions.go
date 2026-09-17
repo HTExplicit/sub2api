@@ -488,7 +488,7 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 			return nil, recovery.StopError(err)
 		}
 		replay.SetSentBody(responsesBody)
-		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+		resp, err = s.doOpenAICodexUpstream(upstreamReq, account, proxyURL)
 		if err != nil {
 			cancelUpstream()
 			if recovery.RecoveryAttempt() {
