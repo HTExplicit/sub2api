@@ -85,19 +85,21 @@ Official quota semantics are selected. `238_opencode_go_platform.sql` and `238_p
 The fixed read-only production audit on 2026-09-15 returned **82 total rows, all 82
 with three NULL limits**. The already applied MiniMax and Cindy checksums match
 both the integration tree and the original production baseline. The two official
-238 migrations are not yet applied. No historical migration was renamed or edited.
+238 migrations were pending before deployment and are now applied. No historical migration was renamed or edited.
 
-| Migration, in execution order | SHA256 of trimmed SQL | Pre-deploy state |
-|---|---|---|
-| `237_add_minimax_platform.sql` | `259520a95b7ce0c6989fabb928e80fc4eae787fdae0cb82d04dee7f71f6d975a` | Applied, checksum matches |
-| `238_cindy_account_stats_reset_at.sql` | `15c06d93de465e6e115d235cf592e0de7da6f0dcfb493236b62427f086c6489c` | Applied, checksum matches |
-| `238_opencode_go_platform.sql` | `69e8b061418372f636e04b289d794ffd74d5fd2cd63b37e3226897ea32ff787b` | Pending |
-| `238_purge_unlimited_user_platform_quotas.sql` | `052756d1b1ac951f002034bf0434f8a6ea943ec0a2a34541ca4374ba6278cce7` | Pending |
+| Migration, in execution order | SHA256 of trimmed SQL | Pre-deploy state | Post-deploy state |
+|---|---|---|---|
+| `237_add_minimax_platform.sql` | `259520a95b7ce0c6989fabb928e80fc4eae787fdae0cb82d04dee7f71f6d975a` | Applied, checksum matches | Applied, checksum matches |
+| `238_cindy_account_stats_reset_at.sql` | `15c06d93de465e6e115d235cf592e0de7da6f0dcfb493236b62427f086c6489c` | Applied, checksum matches | Applied, checksum matches |
+| `238_opencode_go_platform.sql` | `69e8b061418372f636e04b289d794ffd74d5fd2cd63b37e3226897ea32ff787b` | Pending | Applied, checksum matches |
+| `238_purge_unlimited_user_platform_quotas.sql` | `052756d1b1ac951f002034bf0434f8a6ea943ec0a2a34541ca4374ba6278cce7` | Pending | Applied, checksum matches |
 
 The runner uses `sort.Strings`, a filename primary key and SHA256 after
 `strings.TrimSpace`; it skips applied files only after verifying checksums.
-The official purge is idempotent because it deletes only three-NULL rows. Its
-production effect and post-deploy checksum verification remain pending.
+The official purge is idempotent because it deletes only three-NULL rows. After
+deployment, both total and three-NULL rows are **0**, an observed net reduction of
+**82 rows**. All four checksums match the release source. The runner does not retain
+a per-statement affected-row log; 82 is the before/after count difference.
 
 ## Decisions by conflict group
 
@@ -125,13 +127,29 @@ each group, including their accompanying tests and generated code.
 - **Passed locally:** Ent/Wire generation, frontend type-check and targeted
   platform/account/sidebar/settings/feature-access suites; `git diff --check` and
   no unmerged index entries or conflict markers.
-- **Passed for code commit `ebc1cd5db`:** CI lint, frontend, shell and security;
-  Downstream frontend. The three latest unit failures were corrected and their
-  affected packages passed targeted verification before this push.
-- **Not completed:** final required backend CI, release build/push, deployment,
-  post-deploy quota/health/digest/runtime checks. See [integration PR #167](https://github.com/HTExplicit/sub2api/pull/167)
-  for the authoritative required-check status.
+- **Passed in required CI:** both push and PR CI (lint, unit/integration, frontend,
+  shell, backend/frontend security); Downstream backend/frontend, including Cindy
+  continuation/reasoning/WS and required race checks; candidate OCI build.
+  Validated head: `8449c96fcdb4db3528f430a90d3e4190625ab33d`.
+- **Passed:** [PR #167](https://github.com/HTExplicit/sub2api/pull/167) merged as
+  `54d36753197bdd479343dd92dbcb182daee4b21f`; the merge tree exactly matches the
+  validated head. The exact VERSION-only change from `881f320` is included.
+- **Passed:** immutable tag `v0.2.5-codexrip.1`, source/material verification,
+  GHCR login, build/push and provenance in [Release workflow](https://github.com/HTExplicit/sub2api/actions/runs/34992437001).
+  Published image: `ghcr.io/htexplicit/sub2api:0.2.5-codexrip.1@sha256:e33d9719cd484198f81ef7ed8cbfcde8315dd91aa9d27c49697534ac16e28e52`.
+- **Passed:** [deploy-preserve](https://github.com/HTExplicit/sub2api/actions/runs/34993020613)
+  completed at 2026-09-15 16:13 UTC (2026-09-16 00:13 Asia/Shanghai), after normal
+  environment approval and three zero-workload samples. The later instruction
+  allowing interruption arrived after completion; no extra interruption was needed.
+- **Passed post-deploy:** container `healthy`, restart count 0, no OOM; image
+  reference, RepoDigests and source revision match the release. Runtime environment,
+  resources, override checksum and deploy guard checksums match the preflight.
+  Every other inspected container retained its identity/state, including stopped CPA.
+- **Passed post-deploy:** all four migration checksums match, quota rows 82 to 0,
+  and Cindy/MiniMax/OpenCode Go constraint markers are present. Origin health is
+  HTTP 200; the workflow public-health step succeeded after two startup 502 retries.
 - **Not run:** additional local full/race suites, canaries, long observation and
   real model calls. Existing required CI suites run under branch protection.
-- **Unverified:** target image digest and model functionality. Historical live
+- **Not completed:** none of the authorized implementation/release/deploy checks.
+- **Unverified:** real model functionality. Historical live
   continuation/cache problems are not declared fixed by passing unit or health checks.
