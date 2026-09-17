@@ -29,7 +29,7 @@
             'rounded-none px-2.5 py-1 text-xs font-semibold',
             account.status === 'active'
               ? 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400'
-              : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+              : 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-dark-300'
           ]"
         >
           {{ account.status }}
