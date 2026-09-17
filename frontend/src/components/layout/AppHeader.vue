@@ -126,7 +126,7 @@
             class="flex items-center gap-2 rounded-none p-1.5 transition-colors hover:bg-gray-100 dark:hover:bg-dark-800"
             :aria-label="t('common.userMenu')"
           >
-            <div class="flex h-8 w-8 items-center justify-center overflow-hidden rounded-none bg-primary-500 text-sm font-medium text-white shadow-outline">
+            <div class="flex h-8 w-8 items-center justify-center overflow-hidden rounded-none bg-primary-500 text-sm font-medium text-white">
               <img
                 v-if="avatarUrl"
                 :src="avatarUrl"

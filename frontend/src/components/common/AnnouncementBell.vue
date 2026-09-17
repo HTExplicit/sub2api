@@ -35,7 +35,7 @@
               <div class="relative z-10 flex items-start justify-between">
                 <div>
                   <div class="flex items-center gap-2">
-                    <div class="flex h-8 w-8 items-center justify-center rounded-none bg-blue-500 text-white shadow-outline">
+                    <div class="flex h-8 w-8 items-center justify-center rounded-none bg-blue-500 text-white">
                       <Icon name="bell" size="sm" />
                     </div>
                     <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
@@ -52,7 +52,7 @@
                     v-if="unreadCount > 0"
                     @click="markAllAsRead"
                     :disabled="loading"
-                    class="rounded-none bg-blue-600 px-4 py-2 text-xs font-medium text-white shadow-outline transition-all hover:bg-blue-700 hover:shadow-outline disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600"
+                    class="rounded-none bg-blue-600 px-4 py-2 text-xs font-medium text-white transition-all hover:bg-blue-700 disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600"
                   >
                     {{ t('announcements.markAllRead') }}
                   </button>
@@ -93,7 +93,7 @@
                   <div class="flex h-10 w-10 flex-shrink-0 items-center justify-center">
                     <div
                       v-if="!item.read_at"
-                      class="relative flex h-10 w-10 items-center justify-center rounded-none bg-blue-500 text-white shadow-outline"
+                      class="relative flex h-10 w-10 items-center justify-center rounded-none bg-blue-500 text-white"
                     >
                       <!-- Pulse ring -->
                       <span class="absolute inline-flex h-full w-full animate-ping rounded-none bg-blue-400 opacity-75"></span>
@@ -201,7 +201,7 @@
                 <div class="flex-1 min-w-0">
                   <!-- Icon and Category -->
                   <div class="mb-3 flex items-center gap-2">
-                    <div class="flex h-10 w-10 items-center justify-center rounded-none bg-blue-500 text-white shadow-outline">
+                    <div class="flex h-10 w-10 items-center justify-center rounded-none bg-blue-500 text-white">
                       <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
@@ -212,7 +212,7 @@
                       </span>
                       <span
                         v-if="!selectedAnnouncement.read_at"
-                        class="inline-flex items-center gap-1.5 rounded-none bg-blue-500 px-2.5 py-1 text-xs font-medium text-white shadow-outline"
+                        class="inline-flex items-center gap-1.5 rounded-none bg-blue-500 px-2.5 py-1 text-xs font-medium text-white"
                       >
                         <span class="relative flex h-2 w-2">
                           <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75"></span>
@@ -292,7 +292,7 @@
                   <button
                     v-if="!selectedAnnouncement.read_at"
                     @click="markAsReadAndClose(selectedAnnouncement.id)"
-                    class="rounded-none bg-blue-600 px-5 py-2.5 text-sm font-medium text-white shadow-outline transition-all hover:shadow-outline"
+                    class="rounded-none bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition-all"
                   >
                     <span class="flex items-center gap-2">
                       <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">

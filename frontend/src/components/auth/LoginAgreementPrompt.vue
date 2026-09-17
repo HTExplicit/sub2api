@@ -129,7 +129,7 @@
               </button>
               <button
                 type="button"
-                class="rounded-none bg-primary-600 px-4 py-3 text-sm font-semibold text-white shadow-outline transition hover:bg-primary-700"
+                class="rounded-none bg-primary-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-primary-700"
                 @click="emit('accept')"
               >
                 {{ t('legal.loginAgreementPrompt.accept') }}

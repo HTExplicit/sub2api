@@ -18,7 +18,7 @@
         </RouterLink>
         <RouterLink
           to="/login"
-          class="inline-flex flex-shrink-0 items-center justify-center rounded-none bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-outline transition hover:bg-primary-700"
+          class="inline-flex flex-shrink-0 items-center justify-center rounded-none bg-primary-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary-700"
         >
           {{ t('home.login') }}
         </RouterLink>
