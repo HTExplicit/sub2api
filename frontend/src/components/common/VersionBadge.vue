@@ -586,7 +586,7 @@
                                     :class="
                                       manualTab === tab.key
                                         ? 'bg-white text-gray-700 shadow-outline dark:bg-dark-800 dark:text-dark-100'
-                                        : 'text-gray-400 hover:text-gray-600 dark:text-dark-400 dark:hover:text-dark-200'
+                                        : 'text-muted hover:text-gray-600 dark:hover:text-dark-200'
                                     "
                                   >
                                     {{ tab.label }}

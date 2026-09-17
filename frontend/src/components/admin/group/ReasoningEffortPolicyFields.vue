@@ -153,7 +153,7 @@
               </p>
             </div>
 
-            <div class="hidden h-11 items-center justify-center self-end text-gray-400 md:flex dark:text-dark-400">
+            <div class="hidden h-11 items-center justify-center self-end text-muted md:flex">
               <Icon name="arrowRight" size="sm" />
             </div>
 

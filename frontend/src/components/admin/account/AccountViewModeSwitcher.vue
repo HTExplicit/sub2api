@@ -11,7 +11,7 @@
       class="inline-flex h-7 w-8 items-center justify-center rounded-none transition-colors"
       :class="modelValue === option.value
         ? 'border-b-2 border-primary-500 text-primary-700 dark:text-primary-300'
-        : 'text-gray-400 hover:text-gray-700 dark:text-dark-400 dark:hover:text-gray-200'"
+        : 'text-muted hover:text-gray-700 dark:hover:text-gray-200'"
       :title="option.label"
       :aria-label="option.label"
       :aria-pressed="modelValue === option.value"

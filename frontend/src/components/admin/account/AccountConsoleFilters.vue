@@ -45,7 +45,7 @@
                 @change="toggleOption(menu.key, String(option.value))"
               />
               <span class="min-w-0 flex-1 truncate text-gray-700 dark:text-gray-200">{{ option.label }}</span>
-              <span class="text-xs tabular-nums text-gray-400 dark:text-dark-400">{{ option.count }}</span>
+              <span class="text-xs tabular-nums text-muted">{{ option.count }}</span>
             </label>
             <div v-if="menu.options.length === 0" class="px-3 py-5 text-center text-sm text-gray-400">
               {{ t('common.noData') }}
