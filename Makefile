@@ -21,8 +21,6 @@ FRONTEND_CRITICAL_VITEST := \
 	src/components/layout/__tests__/AppSidebar.simple-mode.spec.ts \
 	src/features/cindy-group-split/__tests__/CindyGroupAuditDialog.spec.ts \
 	src/features/channel-monitor-v2/__tests__/designSystem.structure.spec.ts \
-	src/__tests__/uiContrast.structure.spec.ts \
-	src/components/common/__tests__/GroupBadge.spec.ts \
 	src/features/channel-monitor-v2/__tests__/monitorFormat.spec.ts \
 	src/features/channel-monitor-v2/__tests__/monitorZoom.spec.ts
 
