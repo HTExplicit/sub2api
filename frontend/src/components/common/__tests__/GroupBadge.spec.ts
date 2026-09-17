@@ -76,7 +76,7 @@ describe('GroupBadge label contrast', () => {
     expect(label).toBeDefined()
 
     const classes = label!.classes()
-    expect(classes).toContain('bg-black/10')
+    expect(classes).toContain('bg-white/50')
     expect(classes).toContain('dark:bg-white/10')
     expect(classes).not.toContain('dark:bg-white')
     expect(classes.some((cls) => cls.startsWith('dark:text-'))).toBe(false)

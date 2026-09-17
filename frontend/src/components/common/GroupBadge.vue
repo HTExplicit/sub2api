@@ -130,8 +130,9 @@ const labelClass = computed(() => {
   const base = 'px-1.5 py-0.5 rounded-none text-[10px] font-semibold'
 
   if (!isSubscription.value) {
-    // Standard: subtle background (不再为专属倍率使用不同的背景色)
-    return `${base} bg-black/10 dark:bg-white/10`
+    // Standard: translucent white pill in both themes (不再为专属倍率使用不同的背景色).
+    // A dark overlay would pull the inherited 700-shade text below 4.5:1 on the pastel chip.
+    return `${base} bg-white/50 dark:bg-white/10`
   }
 
   // 订阅类型：根据剩余天数显示不同颜色
