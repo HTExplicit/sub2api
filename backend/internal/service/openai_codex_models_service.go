@@ -1769,10 +1769,11 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 	}
 	headers.Set("Accept", "application/json")
 	overrideUA := ""
+	identity := resolveCodexOutboundIdentity(overrideUA)
 	if !useAPIKeyUpstream {
 		overrideUA = credAccount.GetOpenAIUserAgent()
+		identity = resolveCodexOutboundIdentityForAccount(credAccount, overrideUA)
 	}
-	identity := resolveCodexOutboundIdentity(overrideUA)
 	headers.Set("Originator", identity.originator)
 	headers.Set("User-Agent", identity.userAgent)
 	// Version 头优先与 client_version 查询参数同源：客户端自报版本合法且不低于上游

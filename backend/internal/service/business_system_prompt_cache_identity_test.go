@@ -361,12 +361,11 @@ func TestBusinessSystemPromptCacheIdentityPassthroughHeaderPriority(t *testing.T
 			for attempt := 0; attempt < 2; attempt++ {
 				req, err := svc.buildUpstreamRequestOpenAIPassthrough(context.Background(), c, account, body, "test-token")
 				require.NoError(t, err)
-				session, conversation := wire, wire
-				if explicit {
-					session, conversation = "explicit-session", "explicit-conversation"
-				}
-				require.Equal(t, isolateOpenAIUpstreamSessionID(getAPIKeyIDFromContext(c), codexAccountIdentitySource(c, account), session), req.Header.Get("session_id"))
-				require.Equal(t, isolateOpenAIUpstreamSessionID(getAPIKeyIDFromContext(c), codexAccountIdentitySource(c, account), conversation), req.Header.Get("conversation_id"))
+				// 真实 Codex 不发下划线 session_id / conversation_id；缺失连字符会话头时
+				// 以最终 prompt_cache_key（缓存键改写后的线上值）补齐 session-id。
+				require.Empty(t, req.Header.Get("session_id"))
+				require.Empty(t, req.Header.Get("conversation_id"))
+				require.Equal(t, wire, req.Header.Get("session-id"))
 				sent := readCacheStrictBody(req)
 				require.Equal(t, wire, gjson.GetBytes(sent, "prompt_cache_key").String())
 			}

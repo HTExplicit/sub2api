@@ -534,6 +534,14 @@ func ProvideOpenAICodexVersionSyncService(
 	return svc
 }
 
+// ProvideCodexClientIdentityBackfillService creates and starts the one-shot backfill that
+// persists a Codex client identity for every existing OpenAI OAuth-like account.
+func ProvideCodexClientIdentityBackfillService(accountRepo AccountRepository) *CodexClientIdentityBackfillService {
+	svc := NewCodexClientIdentityBackfillService(accountRepo)
+	svc.Start()
+	return svc
+}
+
 // ProvideProxyExpiryService creates and starts ProxyExpiryService.
 func ProvideProxyExpiryService(proxyRepo ProxyRepository) *ProxyExpiryService {
 	svc := NewProxyExpiryService(proxyRepo, time.Minute)
@@ -1049,6 +1057,7 @@ var ProviderSet = wire.NewSet(
 	wire.Bind(new(GrokOAuthReconciler), new(*TokenRefreshService)),
 	ProvideAccountExpiryService,
 	ProvideOpenAICodexVersionSyncService,
+	ProvideCodexClientIdentityBackfillService,
 	ProvideProxyExpiryService,
 	ProvideSubscriptionExpiryService,
 	ProvideTimingWheelService,

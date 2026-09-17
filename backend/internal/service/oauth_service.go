@@ -18,6 +18,13 @@ type OpenAIOAuthClient interface {
 	RefreshTokenWithClientID(ctx context.Context, refreshToken, proxyURL string, clientID string) (*openai.TokenResponse, error)
 }
 
+// OpenAIOAuthIdentityRefresher is the optional credential-plane extension that lets an
+// existing account refresh its token with the same per-account Codex identity used for
+// inference (a real Codex client refreshes with the User-Agent / originator it runs as).
+type OpenAIOAuthIdentityRefresher interface {
+	RefreshTokenWithIdentity(ctx context.Context, refreshToken, proxyURL, clientID, userAgent, originator string) (*openai.TokenResponse, error)
+}
+
 // GrokOAuthClient interface for xAI/Grok OAuth operations.
 type GrokOAuthClient interface {
 	ExchangeCode(ctx context.Context, code, codeVerifier, redirectURI, proxyURL, clientID string) (*xai.TokenResponse, error)

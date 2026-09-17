@@ -312,8 +312,8 @@ func TestAccountTestService_TestAccountConnection_OpenAICompactProbeIdentityMatc
 	converged := resolveConvergedSessionID(seed)
 	require.Equal(t, converged, upstream.lastReq.Header.Get("session-id"))
 	require.Equal(t, converged, upstream.lastReq.Header.Get("session_id"))
-	require.Equal(t, resolveConvergedInstallationID(&account, seed), upstream.lastReq.Header.Get("x-codex-installation-id"),
-		"真实 Codex 每个请求必带 installation-id，探测不得缺失")
+	require.Empty(t, upstream.lastReq.Header.Get("x-codex-installation-id"),
+		"真实 Codex 从不以请求头形式发送 installation id")
 	require.NotContains(t, upstream.lastReq.Header.Get("session-id"), "probe_compact",
 		"探测标识不得是可被上游一眼识别的字面量")
 	<-updateCalls

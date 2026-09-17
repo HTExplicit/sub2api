@@ -105,7 +105,6 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 		}
 		for _, name := range [...]string{
 			"x-codex-window-id",
-			"x-codex-installation-id",
 			"session-id",
 			"thread-id",
 			"x-client-request-id",
@@ -121,16 +120,9 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	// 之外：该头是账号/会话级属性，不依赖入站请求是否存在，也避免预热与
 	// 实际请求因头差异落进不同的连接池兼容分桶。
 	applyOpenAICodexBetaFeatures(c, account, headers)
-	// OAuth 账号：将 apiKeyID 混入 session 标识符，防止跨用户会话碰撞。
-	if account != nil && account.UsesOpenAICodexProtocol() {
-		apiKeyID := getAPIKeyIDFromContext(c)
-		if sessionResolution.SessionID != "" {
-			headers.Set("session_id", isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), sessionResolution.SessionID))
-		}
-		if sessionResolution.ConversationID != "" {
-			headers.Set("conversation_id", isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), sessionResolution.ConversationID))
-		}
-	} else {
+	// OAuth（Codex 协议）账号：真实 Codex 握手只带连字符 session-id / thread-id，
+	// 下划线形式的 session_id / conversation_id 不再发送；其他账号类型保持原样。
+	if account == nil || !account.UsesOpenAICodexProtocol() {
 		if sessionResolution.SessionID != "" {
 			headers.Set("session_id", sessionResolution.SessionID)
 		}
@@ -146,6 +138,11 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	}
 	applyCodexAccountIdentityHeaders(headers, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
 	applyStagedCodexFingerprintHeaders(c, account, headers)
+	if account != nil && account.UsesOpenAICodexProtocol() {
+		// 入站缺失连字符会话头时，用同一账号作用域映射从客户端会话标识补齐，
+		// 与 WS 帧 client_metadata 的改写结果同源。
+		ensureCodexSessionIdentityHeaders(headers, scopeCodexAccountIdentityValue(codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), sessionResolution.SessionID))
+	}
 
 	if account != nil && account.UsesOpenAICodexProtocol() {
 		if err := resolveAndSetOpenAIChatGPTAccountHeaders(ctx, s.accountRepo, headers, account); err != nil {
@@ -177,7 +174,7 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	// 终态收口：WS 握手与 HTTP 出站共用同一套身份语义，账号级自定义 UA 同样作为
 	// 管理员显式配置传入（上面写进 headers 的值只在强制统一被关闭时才参与配对）。
 	if account != nil && account.UsesOpenAICodexProtocol() {
-		enforceCodexIdentityHeadersWithUA(headers, s.codexIdentityOverrideUA(account))
+		enforceCodexIdentityHeadersForAccount(headers, codexAccountIdentitySource(c, account), s.codexIdentityOverrideUA(account))
 	}
 
 	// 账号级请求头覆写（仅 openai api_key 账号启用时生效；OAuth 路径 no-op）。
