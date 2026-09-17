@@ -2153,7 +2153,7 @@ function workerSlotClass(state: WorkerSlotState): string {
   if (state === 'idle') {
     return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-900/20 dark:text-emerald-300'
   }
-  return 'border-gray-100 bg-white text-gray-400 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-500'
+  return 'border-gray-100 bg-white text-muted dark:border-dark-700 dark:bg-dark-800'
 }
 
 function workerDotClass(state: WorkerSlotState): string {

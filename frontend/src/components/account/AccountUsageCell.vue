@@ -560,7 +560,7 @@
           class="group relative cursor-help"
         >
           <svg
-            class="h-3.5 w-3.5 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+            class="h-3.5 w-3.5 text-muted hover:text-gray-600 dark:hover:text-gray-300"
             fill="currentColor"
             viewBox="0 0 20 20"
           >

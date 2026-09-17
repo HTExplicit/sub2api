@@ -112,7 +112,7 @@ onBeforeUnmount(() => {
           class="rounded-none p-0.5 transition-colors"
           :class="copiedEndpoint === item.endpoint
             ? 'text-emerald-500 dark:text-emerald-400'
-            : 'text-gray-400 hover:text-primary-500 dark:text-gray-500 dark:hover:text-primary-400'"
+            : 'text-muted hover:text-primary-500 dark:hover:text-primary-400'"
           :aria-label="tooltipHint(item.endpoint)"
           @click="copy(item.endpoint)"
         >
@@ -128,7 +128,7 @@ onBeforeUnmount(() => {
           :href="speedTestUrl(item.endpoint)"
           target="_blank"
           rel="noopener noreferrer"
-          class="rounded-none p-0.5 text-gray-400 transition-colors hover:text-amber-500 dark:text-gray-500 dark:hover:text-amber-400"
+          class="rounded-none p-0.5 text-muted transition-colors hover:text-amber-500 dark:hover:text-amber-400"
           :title="t('keys.endpoints.speedTest')"
         >
           <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">

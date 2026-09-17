@@ -36,7 +36,7 @@
               'rounded-none px-2 py-0.5 text-xs font-medium transition-all',
               isSelected(pt.value)
                 ? 'bg-primary-500 text-white'
-                : 'bg-gray-100 text-gray-400 dark:bg-dark-700 dark:text-gray-500',
+                : 'bg-gray-100 text-muted dark:bg-dark-700',
             ]"
           >{{ pt.label }}</button>
         </div>

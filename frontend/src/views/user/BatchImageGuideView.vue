@@ -1989,7 +1989,7 @@ function isRecoveredOriginalFailure(item: BatchImageDetailItem) {
 
 function detailItemRowClass(item: BatchImageDetailItem) {
   if (isRecoveredOriginalFailure(item)) {
-    return 'bg-gray-50/80 text-gray-400 hover:bg-gray-100/80 dark:bg-dark-900 dark:text-gray-500 dark:hover:bg-dark-800'
+    return 'bg-gray-50/80 text-muted hover:bg-gray-100/80 dark:bg-dark-900 dark:hover:bg-dark-800'
   }
   return 'hover:bg-gray-50/70 dark:hover:bg-dark-800'
 }
