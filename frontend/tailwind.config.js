@@ -11,6 +11,7 @@ export default {
         surface: 'rgb(var(--ui-surface) / <alpha-value>)',
         raised: 'rgb(var(--ui-raised) / <alpha-value>)',
         line: 'rgb(var(--ui-line) / <alpha-value>)',
+        'line-strong': 'rgb(var(--ui-line-strong) / <alpha-value>)',
         ink: 'rgb(var(--ui-ink) / <alpha-value>)',
         muted: 'rgb(var(--ui-muted) / <alpha-value>)',
 

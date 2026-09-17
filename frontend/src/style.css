@@ -83,15 +83,15 @@
 
   .btn-primary {
     @apply bg-primary-500;
-    @apply text-white shadow-outline;
-    @apply hover:bg-primary-600 hover:shadow-outline;
+    @apply text-white;
+    @apply hover:bg-primary-600;
   }
 
   .btn-secondary {
     @apply bg-white dark:bg-dark-800;
     @apply text-gray-700 dark:text-gray-200;
     @apply border border-gray-200 dark:border-dark-600;
-    @apply shadow-outline hover:bg-gray-50 dark:hover:bg-dark-700;
+    @apply hover:bg-gray-50 dark:hover:bg-dark-700;
     @apply hover:border-gray-300 dark:hover:border-dark-500;
   }
 
@@ -102,46 +102,46 @@
 
   .btn-danger {
     @apply bg-red-500;
-    @apply text-white shadow-outline;
-    @apply hover:bg-red-600 hover:shadow-outline;
+    @apply text-white;
+    @apply hover:bg-red-600;
   }
 
   .btn-success {
     @apply bg-emerald-500;
-    @apply text-white shadow-outline;
-    @apply hover:bg-emerald-600 hover:shadow-outline;
+    @apply text-white;
+    @apply hover:bg-emerald-600;
   }
 
   .btn-warning {
     @apply bg-amber-500;
-    @apply text-white shadow-outline;
-    @apply hover:bg-amber-600 hover:shadow-outline;
+    @apply text-white;
+    @apply hover:bg-amber-600;
   }
 
   .btn-stripe {
-    @apply bg-[#635bff] text-white shadow-outline;
-    @apply hover:bg-[#5851ea] hover:shadow-outline;
+    @apply bg-[#635bff] text-white;
+    @apply hover:bg-[#5851ea];
     @apply dark:bg-[#7a73ff];
     @apply dark:hover:bg-[#635bff];
   }
 
   .btn-airwallex {
-    @apply bg-[#14171A] text-white shadow-outline;
-    @apply hover:bg-[#20252a] hover:shadow-outline;
+    @apply bg-[#14171A] text-white;
+    @apply hover:bg-[#20252a];
     @apply dark:bg-[#7AF0C4] dark:text-gray-950;
     @apply dark:hover:bg-[#62d9ad];
   }
 
   .btn-alipay {
-    @apply bg-[#00AEEF] text-white shadow-outline;
-    @apply hover:bg-[#009dd6] hover:shadow-outline;
+    @apply bg-[#00AEEF] text-white;
+    @apply hover:bg-[#009dd6];
     @apply active:bg-[#008cbe];
 
   }
 
   .btn-wxpay {
-    @apply bg-[#2BB741] text-white shadow-outline;
-    @apply hover:bg-[#24a038] hover:shadow-outline;
+    @apply bg-[#2BB741] text-white;
+    @apply hover:bg-[#24a038];
     @apply active:bg-[#1d8a2f];
 
   }
@@ -217,8 +217,7 @@
   .glass-card {
     @apply bg-white dark:bg-dark-800;
     @apply rounded-none;
-    @apply border border-white/20 dark:border-dark-700;
-    @apply shadow-outline;
+    @apply border border-line;
     @apply transition-all duration-300;
   }
 
@@ -226,23 +225,21 @@
   .card {
     @apply bg-white dark:bg-dark-800;
     @apply rounded-none;
-    @apply border border-gray-100 dark:border-dark-700;
+    @apply border border-line;
     @apply transition-all duration-300;
   }
 
   .card-hover {
-    @apply hover:border-line;
-    @apply hover:border-gray-200 dark:hover:border-dark-600;
+    @apply hover:border-line-strong;
   }
 
   .card-glass {
     @apply bg-white dark:bg-dark-800;
-    @apply border border-white/20 dark:border-dark-700;
-    @apply shadow-outline;
+    @apply border border-line;
   }
 
   .card-header {
-    @apply border-b border-gray-100 dark:border-dark-700;
+    @apply border-b border-line;
     @apply px-6 py-4;
   }
 
@@ -251,7 +248,7 @@
   }
 
   .card-footer {
-    @apply border-t border-gray-100 dark:border-dark-700;
+    @apply border-t border-line;
     @apply px-6 py-4;
   }
 
@@ -370,7 +367,6 @@
     @apply bg-white dark:bg-dark-800;
     @apply rounded-none;
     @apply border border-gray-200 dark:border-dark-700;
-    @apply shadow-outline;
     @apply py-1;
     @apply origin-top-right animate-scale-in;
   }
@@ -394,7 +390,7 @@
     @apply w-full;
     @apply max-h-[95vh] sm:max-h-[90vh];
     @apply bg-white dark:bg-dark-800;
-    @apply rounded-none shadow-outline;
+    @apply rounded-none;
     @apply border border-gray-200 dark:border-dark-700;
     @apply flex flex-col;
   }
@@ -580,7 +576,7 @@
   .sidebar-section-title {
     @apply mb-2 px-3;
     @apply text-xs font-semibold uppercase tracking-wider;
-    @apply text-gray-400 dark:text-dark-500;
+    @apply text-muted;
   }
 
   /* ============ 页面头部 ============ */
@@ -604,7 +600,7 @@
 
   .empty-state-icon {
     @apply mb-4 h-16 w-16;
-    @apply text-gray-300 dark:text-dark-600;
+    @apply text-muted;
   }
 
   .empty-state-title {
@@ -752,11 +748,6 @@
   /* Legacy radius utility names remain in source contracts, but the refreshed visual system renders them flat. */
   .rounded, .rounded-sm, .rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl, .rounded-3xl {
     border-radius: 0 !important;
-  }
-
-  /* Flat surfaces */
-  .glass {
-    @apply bg-white dark:bg-dark-800;
   }
 
   /* 隐藏滚动条 */
