@@ -33,13 +33,6 @@
       </div>
     </div>
 
-    <CodexOverdraftStats
-      :active="overdraftActive"
-      :stats="overdraftStats"
-      :started-at="overdraftStartedAt"
-      :recover-at="overdraftRecoverAt"
-    />
-
     <!-- Progress bar row -->
 	<div :class="['flex min-w-0 items-center', density === 'compact' ? 'gap-0.5' : 'gap-1']">
 	  <!-- Label badge: density controls compact layout; label-width controls long labels. -->
@@ -86,7 +79,6 @@ import { useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import type { WindowStats } from '@/types'
 import { formatCompactNumber } from '@/utils/format'
-import CodexOverdraftStats from './CodexOverdraftStats.vue'
 
 const props = withDefaults(defineProps<{
   label: string
@@ -98,10 +90,6 @@ const props = withDefaults(defineProps<{
   showNowWhenIdle?: boolean
   remainingCapacity?: boolean
   density?: 'detail' | 'list' | 'compact'
-  overdraftActive?: boolean
-  overdraftStats?: WindowStats | null
-  overdraftStartedAt?: string | null
-  overdraftRecoverAt?: string | null
   /** fixed: 定宽居中徽章（账号页纵向对齐）；auto: 限宽截断左对齐（监控页组合标签） */
   labelWidth?: 'fixed' | 'auto'
 }>(), {

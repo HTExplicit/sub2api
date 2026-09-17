@@ -335,27 +335,19 @@ func schedulerCanonicalAccountQueryCount() int {
 		if platform == PlatformAnthropic || platform == PlatformGemini {
 			count++
 		}
-		if platform == PlatformOpenAI && CodexQuotaOverdraftEnabled() {
-			count++
-		}
 	}
 	return count
 }
 
 func TestSchedulerCanonicalBucketsIncludeCindyAndMiniMax(t *testing.T) {
-	previousOverdraftEnabled := CodexQuotaOverdraftEnabled()
-	t.Cleanup(func() { SetCodexQuotaOverdraftEnabled(previousOverdraftEnabled) })
 	for _, tc := range []struct {
-		name             string
-		overdraftEnabled bool
-		bucketCount      int
-		queryCount       int
+		name        string
+		bucketCount int
+		queryCount  int
 	}{
 		{name: "standard", bucketCount: 24, queryCount: 13},
-		{name: "codex_overdraft", overdraftEnabled: true, bucketCount: 26, queryCount: 14},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			SetCodexQuotaOverdraftEnabled(tc.overdraftEnabled)
 			require.Equal(t, tc.bucketCount, schedulerCanonicalBucketCount())
 			require.Equal(t, tc.queryCount, schedulerCanonicalAccountQueryCount())
 			for _, groupID := range []int64{0, 81} {
@@ -492,11 +484,7 @@ func TestSchedulerGroupLifecycleActiveReopensAndRebuildsAllCurrentBuckets(t *tes
 	require.Contains(t, bucketStrings(registered), historical.String())
 	require.Len(t, cache.tokens(), len(current))
 	require.Equal(t, schedulerCanonicalAccountQueryCount(), accounts.callCount())
-	openAIQueryCount := 1
-	if CodexQuotaOverdraftEnabled() {
-		openAIQueryCount++
-	}
-	require.Equal(t, openAIQueryCount, accounts.platformCallCount(PlatformOpenAI))
+	require.Equal(t, 1, accounts.platformCallCount(PlatformOpenAI))
 	require.Equal(t, 1, accounts.platformCallCount(PlatformCindy))
 	require.Equal(t, 1, accounts.platformCallCount(PlatformMiniMax))
 	for _, bucket := range current {

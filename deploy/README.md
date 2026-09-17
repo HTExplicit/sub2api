@@ -208,14 +208,13 @@ gh workflow run production-deploy.yml \
   -f cindy_capability_catalog=false \
   -f cindy_search=false \
   -f image_studio=false \
-  -f cindy_responses_image_bridge=false \
-  -f overdraft=false
+  -f cindy_responses_image_bridge=false
 ```
 
 The workflow resolves the release to an immutable digest, requires the Release
 body to record that exact image and source commit, and requires the immutable
 image's OCI revision and Cindy platform-v1 capability label to match the release.
-It sends only `deploy <immutable-ref> cindy=<health>,<catalog>,<search>,<studio>,<responses-image> overdraft=<boolean>`
+It sends only `deploy <immutable-ref> cindy=<health>,<catalog>,<search>,<studio>,<responses-image>`
 to the restricted host command. The host persists the tuple in
 `/opt/sub2api/docker-compose.cindy-rollout.yml`; a tuple-only change for the
 same digest recreates only `sub2api`, with the prior override included in the
@@ -242,7 +241,6 @@ gh workflow run production-deploy.yml \
   -f cindy_search=true \
   -f image_studio=false \
   -f cindy_responses_image_bridge=false \
-  -f overdraft=true \
   -f interrupt_business=false
 ```
 
@@ -280,14 +278,13 @@ gh workflow run production-deploy.yml \
   -f cindy_capability_catalog=false \
   -f cindy_search=false \
   -f image_studio=false \
-  -f cindy_responses_image_bridge=false \
-  -f overdraft=false
+  -f cindy_responses_image_bridge=false
 ```
 
 The resolver requires both Releases, their recorded immutable references, and
 their OCI source revisions to match valid `main` ancestors, and requires
 `CURRENT` to be strictly newer than `TARGET`. The forced command is exactly
-`rollback <target-ref> from=<current-ref> cindy=... overdraft=...`; the
+`rollback <target-ref> from=<current-ref> cindy=...`; the
 host rejects it before pulling or mutating state unless the running image is
 byte-for-byte equal to `from=`. Ordinary deploys remain unable to downgrade.
 

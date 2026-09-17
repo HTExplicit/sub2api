@@ -439,7 +439,7 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 		proxyURL = account.Proxy.URL()
 	}
 
-	// The builder can make final endpoint/overdraft adaptations. Both the
+	// The builder can make final endpoint adaptations. Both the
 	// positive cache and recovery state must observe that exact wire request.
 	if upstreamReq.GetBody != nil {
 		reader, readErr := upstreamReq.GetBody()

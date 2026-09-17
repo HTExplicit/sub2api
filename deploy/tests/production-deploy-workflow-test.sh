@@ -98,7 +98,6 @@ CINDY_CAPABILITY_CATALOG=false \
   CINDY_SEARCH=false \
   IMAGE_STUDIO=false \
   CINDY_RESPONSES_IMAGE_BRIDGE=false \
-  OVERDRAFT=false \
   INTERRUPT_BUSINESS=false \
   GITHUB_OUTPUT="$tmpdir/github-output" \
 bash "$resolve_script" >"$tmpdir/resolve-output" 2>&1
@@ -223,14 +222,13 @@ run_resolve() {
     CINDY_SEARCH=false \
     IMAGE_STUDIO=false \
     CINDY_RESPONSES_IMAGE_BRIDGE=false \
-    OVERDRAFT=false \
     INTERRUPT_BUSINESS="$interrupt" \
     GITHUB_OUTPUT="$tmpdir/github-output" \
     bash "$resolve_script" >"$tmpdir/resolve-output" 2>&1
 }
 
 run_apply() {
-  local operation=$1 image_ref=$2 expected_current=$3 rollout=$4 overdraft=${5-false} runtime_spec=${6-runtime=explicit} maintenance_spec=${7-}
+  local operation=$1 image_ref=$2 expected_current=$3 rollout=$4 runtime_spec=${5-runtime=explicit} maintenance_spec=${6-}
   : >"$tmpdir/ssh-capture"
   : >"$tmpdir/ssh-calls"
   : >"$tmpdir/apply-output"
@@ -245,7 +243,6 @@ run_apply() {
     IMAGE_REF="$image_ref" \
     EXPECTED_CURRENT_IMAGE_REF="$expected_current" \
     CINDY_ROLLOUT="$rollout" \
-    OVERDRAFT="$overdraft" \
     MAINTENANCE_SPEC="$maintenance_spec" \
     RUNTIME_SPEC="$runtime_spec" \
     bash "$apply_script" >"$tmpdir/apply-output" 2>&1
@@ -392,37 +389,33 @@ fi
 
 run_apply deploy "$rollback_current_ref" '' 'cindy=true,true,true,false,false' ||
   fail 'valid deploy operation did not execute successfully'
-assert_ssh_invocation "deploy $rollback_current_ref cindy=true,true,true,false,false overdraft=false"
+assert_ssh_invocation "deploy $rollback_current_ref cindy=true,true,true,false,false"
 
 run_apply rollback "$rollback_target_ref" "$rollback_current_ref" 'cindy=true,false,false,false,false' ||
   fail 'valid rollback operation did not execute successfully'
-assert_ssh_invocation "rollback $rollback_target_ref from=$rollback_current_ref cindy=true,false,false,false,false overdraft=false"
+assert_ssh_invocation "rollback $rollback_target_ref from=$rollback_current_ref cindy=true,false,false,false,false"
 
-run_apply deploy "$rollback_current_ref" '' 'cindy=true,true,true,false,false' true ||
-  fail 'valid overdraft-enabled deploy operation did not execute successfully'
-assert_ssh_invocation "deploy $rollback_current_ref cindy=true,true,true,false,false overdraft=true"
-
-run_apply deploy "$rollback_current_ref" '' 'cindy=true,true,true,false,false' true runtime=explicit maintenance=interrupt ||
+run_apply deploy "$rollback_current_ref" '' 'cindy=true,true,true,false,false' runtime=explicit maintenance=interrupt ||
   fail 'valid maintenance-interrupt deploy operation did not execute successfully'
-assert_ssh_invocation "deploy $rollback_current_ref cindy=true,true,true,false,false overdraft=true maintenance=interrupt"
+assert_ssh_invocation "deploy $rollback_current_ref cindy=true,true,true,false,false maintenance=interrupt"
 
-run_apply deploy "$rollback_current_ref" '' '' '' runtime=preserve ||
+run_apply deploy "$rollback_current_ref" '' '' runtime=preserve ||
   fail 'valid runtime-preserve deploy operation did not execute successfully'
 assert_ssh_invocation "deploy $rollback_current_ref runtime=preserve"
 
-run_apply reconcile-runtime "$rollback_current_ref" '' 'cindy=true,true,true,false,false' true ||
+run_apply reconcile-runtime "$rollback_current_ref" '' 'cindy=true,true,true,false,false' ||
   fail 'valid runtime reconciliation did not execute successfully'
-assert_ssh_invocation "reconcile-runtime $rollback_current_ref cindy=true,true,true,false,false overdraft=true"
+assert_ssh_invocation "reconcile-runtime $rollback_current_ref cindy=true,true,true,false,false"
 
-run_apply reconcile-runtime "$rollback_current_ref" '' 'cindy=true,true,true,false,false' true runtime=explicit maintenance=interrupt ||
+run_apply reconcile-runtime "$rollback_current_ref" '' 'cindy=true,true,true,false,false' runtime=explicit maintenance=interrupt ||
   fail 'valid interrupted runtime reconciliation did not execute successfully'
-assert_ssh_invocation "reconcile-runtime $rollback_current_ref cindy=true,true,true,false,false overdraft=true maintenance=interrupt"
+assert_ssh_invocation "reconcile-runtime $rollback_current_ref cindy=true,true,true,false,false maintenance=interrupt"
 
-if run_apply reconcile-runtime "$rollback_current_ref" "$rollback_target_ref" 'cindy=true,true,true,false,false' true; then
+if run_apply reconcile-runtime "$rollback_current_ref" "$rollback_target_ref" 'cindy=true,true,true,false,false'; then
   fail 'runtime reconciliation accepted a second expected-current image'
 fi
 assert_ssh_not_invoked
-if run_apply reconcile-runtime "$rollback_current_ref" '' 'cindy=true,true,true,false,false' true runtime=preserve; then
+if run_apply reconcile-runtime "$rollback_current_ref" '' 'cindy=true,true,true,false,false' runtime=preserve; then
   fail 'runtime reconciliation accepted runtime-preserve mode'
 fi
 assert_ssh_not_invoked
@@ -456,10 +449,6 @@ if run_apply invalid "$rollback_current_ref" '' 'cindy=true,true,true,false,fals
   fail 'immutable release operation accepted an unknown operation'
 fi
 assert_ssh_not_invoked
-if run_apply deploy "$rollback_current_ref" '' 'cindy=true,true,true,false,false' 1; then
-  fail 'immutable release operation accepted a non-boolean overdraft flag'
-fi
-assert_ssh_not_invoked
 
 inspect=$'Name: image\nDigest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nManifest: amd64\nManifest: attestation'
 digest=$(awk '$1 == "Digest:" && digest == "" {digest=$2} END {if (digest == "") exit 1; print digest}' <<<"$inspect")
@@ -468,7 +457,7 @@ digest=$(awk '$1 == "Digest:" && digest == "" {digest=$2} END {if (digest == "")
 
 for input in operation release_tag expected_current_release_tag confirmation \
   cindy_health cindy_capability_catalog cindy_search image_studio \
-  cindy_responses_image_bridge overdraft interrupt_business resource_profile; do
+  cindy_responses_image_bridge interrupt_business resource_profile; do
   grep -Fq "      ${input}:" "$WORKFLOW" || fail "missing typed workflow input: $input"
 done
 grep -Fq '          - deploy' "$WORKFLOW" || fail 'workflow operation is missing deploy'
@@ -506,7 +495,7 @@ grep -Fq '\tfalse\tfalse' "$WORKFLOW" ||
   fail 'deploy and rollback releases must be published and non-prerelease'
 grep -Fq 'version_strictly_less "$RELEASE_TAG" "$EXPECTED_CURRENT_RELEASE_TAG"' "$WORKFLOW" ||
   fail 'rollback must require the target release to be older than expected-current'
-grep -Fq 'remote_command="deploy ${IMAGE_REF} ${CINDY_ROLLOUT} overdraft=${OVERDRAFT}"' "$WORKFLOW" ||
+grep -Fq 'remote_command="deploy ${IMAGE_REF} ${CINDY_ROLLOUT}"' "$WORKFLOW" ||
   fail 'deploy must pass the canonical rollout tuple to the forced command'
 grep -Fq 'remote_command+=" $RESOURCE_SPEC"' "$WORKFLOW" ||
   fail 'deploy must pass an explicit Sub2API resource profile to the forced command'
@@ -520,13 +509,13 @@ grep -Fq '[[ "$INTERRUPT_BUSINESS" == false ]]' "$WORKFLOW" ||
   fail 'preserve/rollback paths must reject business interruption'
 grep -Fq 'remote_command="deploy ${IMAGE_REF} runtime=preserve"' "$WORKFLOW" ||
   fail 'automatic deploy must preserve the locked runtime tuple'
-grep -Fq 'remote_command="reconcile-runtime ${IMAGE_REF} ${CINDY_ROLLOUT} overdraft=${OVERDRAFT}"' "$WORKFLOW" ||
+grep -Fq 'remote_command="reconcile-runtime ${IMAGE_REF} ${CINDY_ROLLOUT}"' "$WORKFLOW" ||
   fail 'runtime reconciliation must bind the exact current image and explicit runtime tuple'
 grep -Fq 'remote_command+=" $MAINTENANCE_SPEC"' "$WORKFLOW" ||
   fail 'runtime reconciliation must append only the validated maintenance interrupt spec'
 grep -Fq 'if [[ ("$OPERATION" == deploy || "$OPERATION" == reconcile-runtime) && "$INTERRUPT_BUSINESS" == true ]]; then' "$WORKFLOW" ||
   fail 'runtime reconciliation interruption was not bound to the fixed maintenance spec'
-grep -Fq 'remote_command="rollback ${IMAGE_REF} from=${EXPECTED_CURRENT_IMAGE_REF} ${CINDY_ROLLOUT} overdraft=${OVERDRAFT}"' "$WORKFLOW" ||
+grep -Fq 'remote_command="rollback ${IMAGE_REF} from=${EXPECTED_CURRENT_IMAGE_REF} ${CINDY_ROLLOUT}"' "$WORKFLOW" ||
   fail 'rollback must bind the target to the exact expected-current image'
 
 validate_rollout() {
