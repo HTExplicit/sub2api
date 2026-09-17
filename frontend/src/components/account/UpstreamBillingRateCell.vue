@@ -80,7 +80,7 @@
       <Icon name="refresh" size="xs" :class="{ 'animate-spin': probing }" />
     </button>
   </div>
-  <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
+  <span v-else class="text-sm text-muted">-</span>
 </template>
 
 <script setup lang="ts">

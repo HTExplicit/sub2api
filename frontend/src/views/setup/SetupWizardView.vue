@@ -42,7 +42,7 @@
                 :class="
                   currentStep >= index
                     ? 'text-gray-900 dark:text-white'
-                    : 'text-gray-400 dark:text-dark-500'
+                    : 'text-muted'
                 "
               >
                 {{ step.title }}

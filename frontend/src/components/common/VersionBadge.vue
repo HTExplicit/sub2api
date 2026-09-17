@@ -86,7 +86,7 @@
                     class="text-2xl font-bold text-gray-900 dark:text-white"
                     >v{{ currentVersion }}</span
                   >
-                  <span v-else class="text-2xl font-bold text-gray-400 dark:text-dark-500">--</span>
+                  <span v-else class="text-2xl font-bold text-muted">--</span>
                   <!-- Show check mark when up to date -->
                   <span
                     v-if="!badgeNeedsAttention"
@@ -425,7 +425,7 @@
                 <div class="border-t border-gray-100 pt-2 dark:border-dark-700">
                   <button
                     @click="toggleRollbackPanel"
-                    class="group flex w-full items-center justify-between rounded-none px-2 py-1.5 text-xs text-gray-400 transition-colors hover:bg-gray-50 hover:text-gray-600 dark:text-dark-500 dark:hover:bg-dark-700 dark:hover:text-dark-300"
+                    class="group flex w-full items-center justify-between rounded-none px-2 py-1.5 text-xs text-muted transition-colors hover:bg-gray-50 hover:text-gray-600 dark:hover:bg-dark-700 dark:hover:text-dark-300"
                   >
                     <span class="flex items-center gap-1.5">
                       <Icon name="clock" size="xs" :stroke-width="2" />
@@ -509,14 +509,14 @@
                       <!-- No versions available -->
                       <p
                         v-else-if="rollbackVersions.length === 0"
-                        class="py-3 text-center text-xs text-gray-400 dark:text-dark-500"
+                        class="py-3 text-center text-xs text-muted"
                       >
                         {{ t('version.noRollbackVersions') }}
                       </p>
 
                       <!-- Version list -->
                       <template v-else>
-                        <p class="px-0.5 text-[11px] text-gray-400 dark:text-dark-500">
+                        <p class="px-0.5 text-[11px] text-muted">
                           {{ t('version.rollbackSelectVersion') }}
                         </p>
 
@@ -556,7 +556,7 @@
                               >v{{ item.version }}</span
                             >
                           </span>
-                          <span class="text-[11px] tabular-nums text-gray-400 dark:text-dark-500">
+                          <span class="text-[11px] tabular-nums text-muted">
                             {{ formatPublishedAt(item.published_at) }}
                           </span>
                         </button>
@@ -564,7 +564,7 @@
                         <!-- Selected version: manual command (per deploy method) + confirm -->
                         <transition name="rollback">
                           <div v-if="selectedRollbackVersion" class="space-y-2">
-                            <p class="px-0.5 text-[11px] text-gray-400 dark:text-dark-500">
+                            <p class="px-0.5 text-[11px] text-muted">
                               {{ t('version.manualRollbackCommand') }}
                             </p>
 

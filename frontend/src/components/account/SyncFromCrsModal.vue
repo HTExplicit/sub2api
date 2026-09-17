@@ -142,7 +142,7 @@
       <!-- Sync options summary -->
       <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-dark-400">
         <span>{{ t('admin.accounts.syncProxies') }}:</span>
-        <span :class="form.sync_proxies ? 'text-green-600 dark:text-green-400' : 'text-gray-400 dark:text-dark-500'">
+        <span :class="form.sync_proxies ? 'text-green-600 dark:text-green-400' : 'text-muted'">
           {{ form.sync_proxies ? t('common.yes') : t('common.no') }}
         </span>
       </div>

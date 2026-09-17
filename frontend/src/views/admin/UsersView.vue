@@ -387,9 +387,9 @@
                 v-if="getUserGroups(row).publicGroups.length > 0"
                 class="group/pub relative inline-flex cursor-default items-center gap-1 whitespace-nowrap text-xs"
               >
-                <Icon name="globe" size="xs" class="h-3.5 w-3.5 text-gray-400 dark:text-dark-500" />
+                <Icon name="globe" size="xs" class="h-3.5 w-3.5 text-muted" />
                 <span class="font-medium text-gray-600 dark:text-dark-300">{{ getUserGroups(row).publicGroups.length }}</span>
-                <span class="text-gray-400 dark:text-dark-500">{{ t('admin.users.publicLabel') }}</span>
+                <span class="text-muted">{{ t('admin.users.publicLabel') }}</span>
                 <!-- Tooltip: 向下弹出 -->
                 <div class="pointer-events-none absolute left-0 top-full z-50 mt-1.5 rounded-none bg-gray-900 px-2.5 py-1.5 text-xs text-white opacity-0 shadow-outline transition-opacity duration-75 group-hover/pub:opacity-100 dark:bg-dark-600">
                   <div class="absolute left-4 bottom-full border-4 border-transparent border-b-gray-900 dark:border-b-dark-600"></div>
@@ -401,10 +401,10 @@
               <!-- 都没有 -->
               <span
                 v-if="getUserGroups(row).exclusive.length === 0 && getUserGroups(row).publicGroups.length === 0"
-                class="text-xs text-gray-400 dark:text-dark-500"
+                class="text-xs text-muted"
               >-</span>
             </div>
-            <span v-else class="text-xs text-gray-400 dark:text-dark-500">-</span>
+            <span v-else class="text-xs text-muted">-</span>
           </template>
 
           <template #cell-subscriptions="{ row }">
@@ -425,7 +425,7 @@
             </div>
             <span
               v-else
-              class="inline-flex items-center gap-1.5 rounded-none bg-gray-50 px-2 py-1 text-xs text-gray-400 dark:bg-dark-700 dark:text-dark-500"
+              class="inline-flex items-center gap-1.5 rounded-none bg-gray-50 px-2 py-1 text-xs text-muted dark:bg-dark-700"
             >
               <Icon name="ban" size="xs" class="h-3.5 w-3.5" />
               <span>{{ t('admin.users.noSubscription') }}</span>
@@ -484,7 +484,7 @@
                   class="flex items-center gap-1 rounded-none px-1 py-0.5 transition-colors hover:bg-gray-200 dark:hover:bg-dark-700"
                   :class="usageSort && usageSort.key === usageKey
                     ? 'text-primary-600 dark:text-primary-400'
-                    : 'text-gray-400 dark:text-dark-500'"
+                    : 'text-muted'"
                   :title="t('admin.users.sortBy')"
                   :data-test="`usage-sort-trigger-${usageKey}`"
                   @click.stop="toggleUsageSortMenu(usageKey)"
@@ -541,7 +541,7 @@
                       />
                     </svg>
                   </button>
-                  <div class="mt-1 border-t border-gray-100 px-3 py-1 text-[10px] normal-case tracking-normal text-gray-400 dark:border-dark-700 dark:text-dark-500">
+                  <div class="mt-1 border-t border-gray-100 px-3 py-1 text-[10px] normal-case tracking-normal text-muted dark:border-dark-700">
                     {{ t('admin.users.sortCurrentPageOnly') }}
                   </div>
                 </div>

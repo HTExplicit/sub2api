@@ -174,7 +174,7 @@
                   :peak-end="row.group.peak_end"
                   :peak-rate-multiplier="row.group.peak_rate_multiplier"
                 />
-                <span v-else class="text-sm text-gray-400 dark:text-dark-500">{{
+                <span v-else class="text-sm text-muted">{{
                   t('keys.noGroup')
                 }}</span>
                 <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('keys.selectGroup') }}</span>
@@ -347,7 +347,7 @@
                 {{ t('keys.resetUsage') }}
               </button>
             </div>
-            <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
+            <span v-else class="text-sm text-muted">-</span>
           </template>
 
           <template #cell-expires_at="{ value }">
@@ -357,7 +357,7 @@
             ]">
               {{ formatDateTime(value) }}
             </span>
-            <span v-else class="text-sm text-gray-400 dark:text-dark-500">{{ t('keys.noExpiration') }}</span>
+            <span v-else class="text-sm text-muted">{{ t('keys.noExpiration') }}</span>
           </template>
 
           <template #cell-status="{ value }">
@@ -376,14 +376,14 @@
             <span v-if="value" class="text-sm text-gray-500 dark:text-dark-400">
               {{ formatDateTime(value) }}
             </span>
-            <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
+            <span v-else class="text-sm text-muted">-</span>
           </template>
 
           <template #cell-last_used_ip="{ value }">
             <span v-if="value" class="text-sm text-gray-500 dark:text-dark-400">
               {{ value }}
             </span>
-            <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
+            <span v-else class="text-sm text-muted">-</span>
           </template>
 
           <template #cell-created_at="{ value }">

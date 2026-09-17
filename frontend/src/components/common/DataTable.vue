@@ -21,7 +21,7 @@
             <Icon
               name="inbox"
               size="xl"
-              class="mb-4 h-12 w-12 text-gray-400 dark:text-dark-500"
+              class="mb-4 h-12 w-12 text-muted"
             />
             <p class="text-lg font-medium text-gray-900 dark:text-gray-100">
               {{ t('empty.noData') }}
@@ -190,7 +190,7 @@
                 <Icon
                   name="inbox"
                   size="xl"
-                  class="mb-4 h-12 w-12 text-gray-400 dark:text-dark-500"
+                  class="mb-4 h-12 w-12 text-muted"
                 />
                 <p class="text-lg font-medium text-gray-900 dark:text-gray-100">
                   {{ t('empty.noData') }}

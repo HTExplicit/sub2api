@@ -64,7 +64,7 @@
         :peak-window="peakWindow"
         :peak-rate-multiplier="group.peak_rate_multiplier"
       />
-      <p v-else class="px-5 py-4 text-center text-sm text-gray-400 dark:text-dark-500">
+      <p v-else class="px-5 py-4 text-center text-sm text-muted">
         {{ t('modelPlaza.detail.noModels') }}
       </p>
     </div>

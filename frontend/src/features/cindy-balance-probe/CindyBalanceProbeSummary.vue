@@ -24,7 +24,7 @@
         {{ checkedAtLabel }}
       </div>
     </div>
-    <span v-else class="text-gray-400 dark:text-dark-500" data-test="cindy-probe-summary-empty">{{ emptyValue }}</span>
+    <span v-else class="text-muted" data-test="cindy-probe-summary-empty">{{ emptyValue }}</span>
   </div>
 </template>
 

@@ -29,7 +29,7 @@
         <p class="mt-2 text-sm text-gray-500 dark:text-dark-400">
           {{ t('admin.users.attributes.noAttributes') }}
         </p>
-        <p class="text-xs text-gray-400 dark:text-dark-500">
+        <p class="text-xs text-muted">
           {{ t('admin.users.attributes.noAttributesHint') }}
         </p>
       </div>

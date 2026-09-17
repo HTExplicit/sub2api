@@ -64,7 +64,7 @@
       </div>
 
       <!-- Help Link -->
-      <p class="mt-8 text-sm text-gray-400 dark:text-dark-500">
+      <p class="mt-8 text-sm text-muted">
         Need help?
         <a
           href="#"
