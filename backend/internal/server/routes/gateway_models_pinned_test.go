@@ -205,6 +205,9 @@ func TestGatewayRoutesRetrievePinnedModel(t *testing.T) {
 		missing := request(base+"unknown-model", "Bearer client-key", "")
 		require.Equal(t, http.StatusNotFound, missing.Code)
 		require.Contains(t, missing.Body.String(), `"error"`)
+		namespaced := request(base+"vendor/unknown-model", "Bearer client-key", "")
+		require.Equal(t, http.StatusNotFound, namespaced.Code)
+		require.Contains(t, namespaced.Body.String(), `"model_not_found"`, "namespaced IDs must reach the catalogue handler")
 	}
 	require.Zero(t, upstream.codexCalls.Load(), "retrieve never dispatches a Codex manifest")
 }

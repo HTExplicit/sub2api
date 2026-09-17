@@ -1366,7 +1366,7 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     'gpt-5.2': {
       name: 'GPT-5.2',
       limit: {
-        context: 400000,
+        context: 272000,
         output: 128000
       },
       options: {
@@ -1450,7 +1450,7 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     'gpt-5.5': {
       name: 'GPT-5.5',
       limit: {
-        context: 1050000,
+        context: 272000,
         output: 128000
       },
       options: {
@@ -1466,7 +1466,7 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     'gpt-5.4': {
       name: 'GPT-5.4',
       limit: {
-        context: 1050000,
+        context: 1000000,
         output: 128000
       },
       options: {
@@ -1482,7 +1482,7 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     'gpt-5.4-mini': {
       name: 'GPT-5.4 Mini',
       limit: {
-        context: 400000,
+        context: 272000,
         output: 128000
       },
       options: {
@@ -1532,7 +1532,7 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
       name: 'Gemini 2.0 Flash',
       limit: {
         context: 1048576,
-        output: 65536
+        output: 8192
       },
       modalities: {
         input: ['text', 'image', 'pdf'],
@@ -1553,7 +1553,7 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     'gemini-2.5-pro': {
       name: 'Gemini 2.5 Pro',
       limit: {
-        context: 2097152,
+        context: 1048576,
         output: 65536
       },
       modalities: {
@@ -1767,7 +1767,7 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     'claude-fable-5-1': {
       name: 'Claude Fable 5.1',
       limit: {
-        context: 1048576,
+        context: 1000000,
         output: 128000
       },
       modalities: {
@@ -1783,7 +1783,7 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     'claude-fable-5': {
       name: 'Claude Fable 5',
       limit: {
-        context: 1048576,
+        context: 1000000,
         output: 128000
       },
       modalities: {
@@ -1799,7 +1799,7 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     'claude-opus-4-6-thinking': {
       name: 'Claude 4.6 Opus (Thinking)',
       limit: {
-        context: 200000,
+        context: 1000000,
         output: 128000
       },
       modalities: {
@@ -1816,8 +1816,8 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     'claude-sonnet-4-6': {
       name: 'Claude 4.6 Sonnet',
       limit: {
-        context: 200000,
-        output: 64000
+        context: 1000000,
+        output: 128000
       },
       modalities: {
         input: ['text', 'image', 'pdf'],

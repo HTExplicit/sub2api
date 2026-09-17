@@ -1531,8 +1531,8 @@ func TestBuildGroupConfiguredCodexModelsManifestIgnoresPersistentlyDisabledMappe
 	require.Equal(t, "my-coder", models[0]["slug"])
 	require.Equal(t, []string{"low", "medium", "high", "xhigh"}, effortsFromManifestModel(t, models[0]))
 	require.Equal(t, []any{"text", "image"}, models[0]["input_modalities"])
-	require.EqualValues(t, 1_050_000, models[0]["context_window"])
-	require.Equal(t, "official", models[0]["context_capacity_source"])
+	require.EqualValues(t, 1_000_000, models[0]["context_window"], "the remaining relay account's own declaration is advertised, not the disabled account's narrower one")
+	require.Equal(t, "upstream", models[0]["context_capacity_source"])
 }
 
 // Scenario: 没有管理员模型配置时保留现有上游发现路径。
