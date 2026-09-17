@@ -101,7 +101,7 @@
 }
 
 .markdown-body img {
-  @apply my-5 max-w-full rounded-none border border-gray-200 shadow-outline dark:border-dark-600;
+  @apply my-5 max-w-full rounded-none border border-gray-200 dark:border-dark-600;
 }
 
 .markdown-body strong {

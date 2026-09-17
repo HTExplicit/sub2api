@@ -149,7 +149,7 @@
                 <!-- Dropdown menu -->
                 <div
                   v-if="showFilterDropdown"
-                  class="absolute right-0 top-full z-50 mt-1 w-48 rounded-none border border-gray-200 bg-white py-1 shadow-outline dark:border-dark-600 dark:bg-dark-800"
+                  class="absolute right-0 top-full z-50 mt-1 w-48 rounded-none border border-gray-200 bg-white py-1 dark:border-dark-600 dark:bg-dark-800"
                 >
                   <!-- Built-in filters -->
                   <button
@@ -205,7 +205,7 @@
                 <!-- Dropdown menu -->
                 <div
                   v-if="showColumnDropdown"
-                  class="absolute right-0 top-full z-50 mt-1 max-h-80 w-48 overflow-y-auto rounded-none border border-gray-200 bg-white py-1 shadow-outline dark:border-dark-600 dark:bg-dark-800"
+                  class="absolute right-0 top-full z-50 mt-1 max-h-80 w-48 overflow-y-auto rounded-none border border-gray-200 bg-white py-1 dark:border-dark-600 dark:bg-dark-800"
                 >
                   <button
                     v-for="col in toggleableColumns"
@@ -366,7 +366,7 @@
                 <!-- 点击展开分组操作菜单 -->
                 <div
                   v-if="expandedGroupUserId === row.id"
-                  class="absolute left-0 top-full z-50 mt-1.5 min-w-[160px] overflow-hidden rounded-none border border-gray-200 bg-white py-1 text-xs shadow-outline dark:border-dark-600 dark:bg-dark-700"
+                  class="absolute left-0 top-full z-50 mt-1.5 min-w-[160px] overflow-hidden rounded-none border border-gray-200 bg-white py-1 text-xs dark:border-dark-600 dark:bg-dark-700"
                 >
                   <div class="border-b border-gray-100 px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted dark:border-dark-600">
                     {{ t('admin.users.clickToReplace') }}
@@ -513,7 +513,7 @@
                 <!-- 弹出菜单：今日 / 近30天，点击进行三态循环切换。 -->
                 <div
                   v-if="openUsageSortMenu === usageKey"
-                  class="absolute right-0 top-full z-50 mt-1 min-w-[120px] rounded-none border border-gray-200 bg-white py-1 shadow-outline dark:border-dark-600 dark:bg-dark-800"
+                  class="absolute right-0 top-full z-50 mt-1 min-w-[120px] rounded-none border border-gray-200 bg-white py-1 dark:border-dark-600 dark:bg-dark-800"
                 >
                   <button
                     v-for="metric in (['today', 'total'] as const)"

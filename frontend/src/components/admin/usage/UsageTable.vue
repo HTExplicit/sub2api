@@ -319,7 +319,7 @@
         top: tokenTooltipPosition.y + 'px'
       }"
     >
-      <div class="whitespace-nowrap rounded-none border border-gray-700 bg-gray-900 px-3 py-2.5 text-xs text-white shadow-outline dark:border-gray-600 dark:bg-gray-800">
+      <div class="whitespace-nowrap rounded-none border border-gray-700 bg-gray-900 px-3 py-2.5 text-xs text-white dark:border-gray-600 dark:bg-gray-800">
         <div class="space-y-1.5">
           <div>
             <div class="text-xs font-semibold text-gray-300 mb-1">{{ t('usage.tokenDetails') }}</div>
@@ -403,7 +403,7 @@
         top: tooltipPosition.y + 'px'
       }"
     >
-      <div class="whitespace-nowrap rounded-none border border-gray-700 bg-gray-900 px-3 py-2.5 text-xs text-white shadow-outline dark:border-gray-600 dark:bg-gray-800">
+      <div class="whitespace-nowrap rounded-none border border-gray-700 bg-gray-900 px-3 py-2.5 text-xs text-white dark:border-gray-600 dark:bg-gray-800">
         <div class="space-y-1.5">
           <!-- Cost Breakdown -->
           <div class="mb-2 border-b border-gray-700 pb-1.5">

@@ -139,7 +139,7 @@
           <div
             v-for="(image, index) in generatedImages"
             :key="`${image.url}-${index}`"
-            class="group/img relative cursor-pointer overflow-hidden rounded-none border border-gray-200 bg-white shadow-outline transition hover:border-primary-300 hover:shadow-outline dark:border-dark-500 dark:bg-dark-700"
+            class="group/img relative cursor-pointer overflow-hidden rounded-none border border-gray-200 bg-white transition hover:border-primary-300 dark:border-dark-500 dark:bg-dark-700"
             @click="previewImageUrl = image.url"
           >
             <img :src="image.url" :alt="`test-image-${index + 1}`" class="max-h-[360px] w-full object-contain" />

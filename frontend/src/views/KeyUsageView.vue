@@ -156,7 +156,7 @@
         <div v-else-if="resultData" class="space-y-6">
           <!-- Status Badge -->
           <div v-if="statusInfo" class="fade-up flex items-center justify-center mb-2">
-            <div class="inline-flex items-center gap-2 px-5 py-2.5 rounded-none border border-gray-200 bg-white shadow-outline dark:border-dark-700 dark:bg-dark-900">
+            <div class="inline-flex items-center gap-2 px-5 py-2.5 rounded-none border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-900">
               <span
                 class="w-2.5 h-2.5 rounded-full pulse-dot"
                 :class="statusInfo.isActive ? 'bg-emerald-500' : 'bg-rose-500'"
@@ -172,7 +172,7 @@
             <div
               v-for="(ring, i) in ringItems"
               :key="i"
-              class="fade-up rounded-none border border-gray-200 bg-white p-8 transition-all duration-300 hover:shadow-outline dark:border-dark-700 dark:bg-dark-900"
+              class="fade-up rounded-none border border-gray-200 bg-white p-8 transition-all duration-300 dark:border-dark-700 dark:bg-dark-900"
               :class="`fade-up-delay-${Math.min(i + 1, 4)}`"
             >
               <div class="flex items-center justify-between mb-6">

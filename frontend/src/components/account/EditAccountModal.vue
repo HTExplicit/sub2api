@@ -1938,7 +1938,7 @@
         v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
-        <div class="overflow-hidden rounded-none border border-sky-100 bg-sky-50/60 shadow-outline dark:border-sky-900/50 dark:bg-sky-950/20">
+        <div class="overflow-hidden rounded-none border border-sky-100 bg-sky-50/60 dark:border-sky-900/50 dark:bg-sky-950/20">
           <div class="flex items-start gap-3 px-4 py-3">
             <div class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-none bg-white text-sky-600 shadow-outline ring-1 ring-sky-100 dark:bg-dark-800 dark:text-sky-300 dark:ring-sky-900/60">
               <Icon name="sparkles" size="sm" />
@@ -3025,7 +3025,7 @@
             <label class="input-label text-xs">{{ t('admin.accounts.quotaControl.cacheTTLOverride.target') }}</label>
             <select
               v-model="cacheTTLOverrideTarget"
-              class="mt-1 block w-full rounded-none border border-gray-300 bg-white px-3 py-2 text-sm shadow-outline focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-dark-500 dark:bg-dark-700 dark:text-white"
+              class="mt-1 block w-full rounded-none border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-dark-500 dark:bg-dark-700 dark:text-white"
             >
               <option value="5m">5m</option>
               <option value="1h">1h</option>

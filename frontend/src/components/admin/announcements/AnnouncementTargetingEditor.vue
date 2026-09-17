@@ -62,7 +62,7 @@
       <div
         v-for="(group, groupIndex) in anyOf"
         :key="groupIndex"
-        class="rounded-none border border-gray-200 bg-white p-4 shadow-outline dark:border-dark-700 dark:bg-dark-800"
+        class="rounded-none border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800"
       >
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0">

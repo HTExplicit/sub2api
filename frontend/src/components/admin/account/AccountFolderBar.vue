@@ -4,7 +4,7 @@
       <button
         ref="mobileTriggerRef"
         type="button"
-        class="flex min-h-11 w-full items-center justify-between gap-3 rounded-none border border-gray-200 bg-white px-3 text-left text-sm text-gray-800 shadow-outline dark:border-dark-700 dark:bg-dark-800 dark:text-gray-100"
+        class="flex min-h-11 w-full items-center justify-between gap-3 rounded-none border border-gray-200 bg-white px-3 text-left text-sm text-gray-800 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-100"
         aria-haspopup="listbox"
         :aria-expanded="mobileOpen"
         @click="mobileOpen = !mobileOpen"
@@ -20,7 +20,7 @@
       </button>
       <div
         v-if="mobileOpen"
-        class="absolute inset-x-3 top-[calc(100%-0.5rem)] z-30 max-h-72 overflow-y-auto rounded-none border border-gray-200 bg-white p-1 shadow-outline dark:border-dark-700 dark:bg-dark-800"
+        class="absolute inset-x-3 top-[calc(100%-0.5rem)] z-30 max-h-72 overflow-y-auto rounded-none border border-gray-200 bg-white p-1 dark:border-dark-700 dark:bg-dark-800"
         role="listbox"
         :aria-label="t('admin.accounts.managementClassification')"
         @keydown="handleMobileMenuKeydown"

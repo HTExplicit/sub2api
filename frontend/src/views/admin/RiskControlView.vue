@@ -27,7 +27,7 @@
           <div
             v-for="item in overviewItems"
             :key="item.key"
-            class="rounded-none border border-gray-100 bg-white px-4 py-3 shadow-outline dark:border-dark-700 dark:bg-dark-800"
+            class="rounded-none border border-gray-100 bg-white px-4 py-3 dark:border-dark-700 dark:bg-dark-800"
           >
             <div class="flex min-w-0 items-center gap-3">
               <div class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-none" :class="item.iconClass">
@@ -431,7 +431,7 @@
               </div>
             </div>
 
-            <div class="overflow-hidden rounded-none border border-gray-100 bg-white shadow-outline dark:border-dark-700 dark:bg-dark-800">
+            <div class="overflow-hidden rounded-none border border-gray-100 bg-white dark:border-dark-700 dark:bg-dark-800">
               <div class="flex flex-col gap-4 border-b border-gray-100 bg-gray-50 px-4 py-4 dark:border-dark-700 dark:bg-dark-800 lg:flex-row lg:items-center lg:justify-between">
                 <div class="flex items-start gap-3">
                   <span class="mt-0.5 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-none bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-300">
@@ -609,7 +609,7 @@
                       <div
                         v-for="(row, index) in visibleApiKeyRows"
                         :key="apiKeyRowKey(row, index)"
-                        class="rounded-none border bg-white p-2.5 shadow-outline dark:bg-dark-800"
+                        class="rounded-none border bg-white p-2.5 dark:bg-dark-800"
                         :class="isStoredApiKeyPendingDelete(row) ? 'border-amber-200 opacity-70 dark:border-amber-800/60' : 'border-gray-100 dark:border-dark-700'"
                       >
                         <div class="flex items-start justify-between gap-2">
@@ -1092,7 +1092,7 @@
             </div>
           </div>
 
-          <div class="rounded-none border border-gray-100 bg-white p-4 shadow-outline dark:border-dark-700 dark:bg-dark-800">
+          <div class="rounded-none border border-gray-100 bg-white p-4 dark:border-dark-700 dark:bg-dark-800">
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.inputDetailContent') }}</p>

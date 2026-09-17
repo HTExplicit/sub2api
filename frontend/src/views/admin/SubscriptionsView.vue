@@ -37,7 +37,7 @@
               <!-- User Dropdown -->
               <div
                 v-if="showFilterUserDropdown && (filterUserResults.length > 0 || filterUserKeyword)"
-                class="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-none border border-gray-200 bg-white shadow-outline dark:border-dark-700 dark:bg-dark-800"
+                class="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-none border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-800"
               >
                 <div
                   v-if="filterUserLoading"
@@ -116,7 +116,7 @@
               <!-- Dropdown menu -->
               <div
                 v-if="showColumnDropdown"
-                class="absolute right-0 z-50 mt-2 w-48 origin-top-right rounded-none border border-gray-200 bg-white shadow-outline dark:border-dark-700 dark:bg-dark-800"
+                class="absolute right-0 z-50 mt-2 w-48 origin-top-right rounded-none border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-800"
               >
                 <div class="p-2">
                   <!-- User column mode selection -->
@@ -529,7 +529,7 @@
             <!-- User Dropdown -->
             <div
               v-if="showUserDropdown && (userSearchResults.length > 0 || userSearchKeyword)"
-              class="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-none border border-gray-200 bg-white shadow-outline dark:border-dark-700 dark:bg-dark-800"
+              class="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-none border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-800"
             >
               <div
                 v-if="userSearchLoading"

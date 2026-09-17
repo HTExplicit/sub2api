@@ -100,7 +100,7 @@
             {{ balanceFrozenLabel }}
           </span>
           <div
-            class="pointer-events-none absolute right-0 top-full mt-2 hidden w-56 rounded-none border border-gray-200 bg-white p-3 text-xs shadow-outline group-hover:block dark:border-dark-700 dark:bg-dark-800"
+            class="pointer-events-none absolute right-0 top-full mt-2 hidden w-56 rounded-none border border-gray-200 bg-white p-3 text-xs group-hover:block dark:border-dark-700 dark:bg-dark-800"
           >
             <div class="flex items-center justify-between">
               <span class="text-gray-500 dark:text-dark-400">{{ balanceAvailableText }}</span>

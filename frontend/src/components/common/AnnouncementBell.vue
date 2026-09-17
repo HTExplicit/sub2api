@@ -285,7 +285,7 @@
                 <div class="flex items-center gap-3">
                   <button
                     @click="closeDetail"
-                    class="rounded-none border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 shadow-outline transition-all hover:bg-gray-50 hover:shadow-outline dark:border-dark-600 dark:bg-dark-700 dark:text-gray-300 dark:hover:bg-dark-600"
+                    class="rounded-none border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition-all hover:bg-gray-50 dark:border-dark-600 dark:bg-dark-700 dark:text-gray-300 dark:hover:bg-dark-600"
                   >
                     {{ t('common.close') }}
                   </button>

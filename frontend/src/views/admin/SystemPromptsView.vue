@@ -81,7 +81,7 @@
                 <button v-if="!isRemoteSkillManaged" type="button" class="icon-button" data-test="system-prompt-template-menu" :title="t('admin.systemPrompts.actions.more')" @click="templateMenuOpen = !templateMenuOpen">
                   <Icon name="more" size="sm" />
                 </button>
-                <div v-if="templateMenuOpen" class="absolute right-0 top-10 z-10 w-40 border border-gray-200 bg-white py-1 shadow-outline dark:border-dark-700 dark:bg-dark-800">
+                <div v-if="templateMenuOpen" class="absolute right-0 top-10 z-10 w-40 border border-gray-200 bg-white py-1 dark:border-dark-700 dark:bg-dark-800">
                   <button type="button" class="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 dark:text-dark-200 dark:hover:bg-dark-700" @click="openMetadata">{{ t('admin.systemPrompts.actions.editMetadata') }}</button>
                   <button type="button" class="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 dark:text-dark-200 dark:hover:bg-dark-700" @click="openDuplicate">{{ t('admin.systemPrompts.actions.duplicate') }}</button>
                   <button type="button" class="block w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-900/20" @click="openConfirm({ kind: 'delete' })">{{ t('admin.systemPrompts.actions.delete') }}</button>

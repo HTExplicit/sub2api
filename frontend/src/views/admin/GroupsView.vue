@@ -84,7 +84,7 @@
               </button>
               <div
                 v-if="showColumnDropdown"
-                class="absolute right-0 top-full z-50 mt-1 max-h-80 w-48 overflow-y-auto rounded-none border border-gray-200 bg-white py-1 shadow-outline dark:border-dark-600 dark:bg-dark-800"
+                class="absolute right-0 top-full z-50 mt-1 max-h-80 w-48 overflow-y-auto rounded-none border border-gray-200 bg-white py-1 dark:border-dark-600 dark:bg-dark-800"
               >
                 <button
                   v-for="col in toggleableColumns"
@@ -1615,7 +1615,7 @@
             class="mt-3"
           >
             <div
-              class="relative overflow-hidden rounded-none border border-gray-200 bg-white shadow-outline dark:border-dark-600 dark:bg-dark-800"
+              class="relative overflow-hidden rounded-none border border-gray-200 bg-white dark:border-dark-600 dark:bg-dark-800"
             >
               <div
                 class="border-b border-gray-100 bg-gray-50/80 px-4 py-3 dark:border-dark-700 dark:bg-dark-700"
@@ -1679,7 +1679,7 @@
             </div>
 
             <div
-              class="mt-5 relative overflow-hidden rounded-none border border-primary-200 bg-white shadow-outline dark:border-primary-900/50 dark:bg-dark-800"
+              class="mt-5 relative overflow-hidden rounded-none border border-primary-200 bg-white dark:border-primary-900/50 dark:bg-dark-800"
             >
               <div
                 class="border-b border-primary-100 bg-primary-50/80 px-4 py-3 dark:border-primary-900/40 dark:bg-primary-900/20"
@@ -1726,7 +1726,7 @@
                   <div
                     v-for="row in createForm.exact_model_mappings"
                     :key="getCreateMessagesDispatchRowKey(row)"
-                    class="group relative rounded-none border border-gray-200 bg-white p-4 shadow-outline transition-all hover:border-primary-300 hover:shadow-outline dark:border-dark-600 dark:bg-dark-700 dark:hover:border-primary-700"
+                    class="group relative rounded-none border border-gray-200 bg-white p-4 transition-all hover:border-primary-300 dark:border-dark-600 dark:bg-dark-700 dark:hover:border-primary-700"
                   >
                     <div class="flex items-center gap-4">
                       <div
@@ -1987,7 +1987,7 @@
                           accountSearchResults[getCreateRuleSearchKey(rule)]
                             ?.length > 0
                         "
-                        class="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-none border bg-white shadow-outline dark:border-dark-600 dark:bg-dark-800"
+                        class="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-none border bg-white dark:border-dark-600 dark:bg-dark-800"
                       >
                         <button
                           v-for="account in accountSearchResults[
@@ -3215,7 +3215,7 @@
             class="mt-3"
           >
             <div
-              class="relative overflow-hidden rounded-none border border-gray-200 bg-white shadow-outline dark:border-dark-600 dark:bg-dark-800"
+              class="relative overflow-hidden rounded-none border border-gray-200 bg-white dark:border-dark-600 dark:bg-dark-800"
             >
               <div
                 class="border-b border-gray-100 bg-gray-50/80 px-4 py-3 dark:border-dark-700 dark:bg-dark-700"
@@ -3279,7 +3279,7 @@
             </div>
 
             <div
-              class="mt-5 relative overflow-hidden rounded-none border border-primary-200 bg-white shadow-outline dark:border-primary-900/50 dark:bg-dark-800"
+              class="mt-5 relative overflow-hidden rounded-none border border-primary-200 bg-white dark:border-primary-900/50 dark:bg-dark-800"
             >
               <div
                 class="border-b border-primary-100 bg-primary-50/80 px-4 py-3 dark:border-primary-900/40 dark:bg-primary-900/20"
@@ -3326,7 +3326,7 @@
                   <div
                     v-for="row in editForm.exact_model_mappings"
                     :key="getEditMessagesDispatchRowKey(row)"
-                    class="group relative rounded-none border border-gray-200 bg-white p-4 shadow-outline transition-all hover:border-primary-300 hover:shadow-outline dark:border-dark-600 dark:bg-dark-700 dark:hover:border-primary-700"
+                    class="group relative rounded-none border border-gray-200 bg-white p-4 transition-all hover:border-primary-300 dark:border-dark-600 dark:bg-dark-700 dark:hover:border-primary-700"
                   >
                     <div class="flex items-center gap-4">
                       <div
@@ -3587,7 +3587,7 @@
                           accountSearchResults[getEditRuleSearchKey(rule)]
                             ?.length > 0
                         "
-                        class="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-none border bg-white shadow-outline dark:border-dark-600 dark:bg-dark-800"
+                        class="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-none border bg-white dark:border-dark-600 dark:bg-dark-800"
                       >
                         <button
                           v-for="account in accountSearchResults[
@@ -3727,7 +3727,7 @@
           <div
             v-for="group in sortableGroups"
             :key="group.id"
-            class="flex cursor-grab items-center gap-3 rounded-none border border-gray-200 bg-white p-3 transition-shadow hover:shadow-outline active:cursor-grabbing dark:border-dark-600 dark:bg-dark-700"
+            class="flex cursor-grab items-center gap-3 rounded-none border border-gray-200 bg-white p-3 transition-shadow active:cursor-grabbing dark:border-dark-600 dark:bg-dark-700"
           >
             <div class="text-gray-400">
               <Icon name="menu" size="md" />

@@ -50,7 +50,7 @@
                 </button>
                 <div
                   v-if="showAutoRefreshDropdown"
-                  class="absolute right-0 z-50 mt-2 w-56 origin-top-right rounded-none border border-gray-200 bg-white shadow-outline dark:border-dark-700 dark:bg-dark-800"
+                  class="absolute right-0 z-50 mt-2 w-56 origin-top-right rounded-none border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-800"
                 >
                   <div class="p-2">
                     <button
@@ -90,7 +90,7 @@
                 <Teleport to="body">
                   <div
                     v-if="showAccountToolsDropdown"
-                    class="fixed z-[9999] origin-top-right overflow-hidden rounded-none border border-gray-200 bg-white shadow-outline dark:border-dark-700 dark:bg-dark-800"
+                    class="fixed z-[9999] origin-top-right overflow-hidden rounded-none border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-800"
                     :style="accountToolsDropdownStyle"
                     @click.stop
                   >

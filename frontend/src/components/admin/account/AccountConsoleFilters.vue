@@ -29,7 +29,7 @@
 
         <div
           v-if="openMenu === menu.key"
-          class="absolute left-0 z-50 mt-1 w-64 overflow-hidden rounded-none border border-gray-200 bg-white shadow-outline dark:border-dark-700 dark:bg-dark-800"
+          class="absolute left-0 z-50 mt-1 w-64 overflow-hidden rounded-none border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-800"
           @click.stop
         >
           <div class="max-h-72 overflow-y-auto p-1.5">

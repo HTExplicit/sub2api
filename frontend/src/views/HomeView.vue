@@ -249,7 +249,7 @@
         <!-- Feature Tags - Centered -->
         <div class="mb-12 flex flex-wrap items-center justify-center gap-4 md:gap-6">
           <div
-            class="inline-flex items-center gap-2.5 rounded-none border border-gray-200 bg-white px-5 py-2.5 shadow-outline dark:border-dark-700 dark:bg-dark-800"
+            class="inline-flex items-center gap-2.5 rounded-none border border-gray-200 bg-white px-5 py-2.5 dark:border-dark-700 dark:bg-dark-800"
           >
             <Icon name="swap" size="sm" class="text-primary-500" />
             <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{
@@ -257,7 +257,7 @@
             }}</span>
           </div>
           <div
-            class="inline-flex items-center gap-2.5 rounded-none border border-gray-200 bg-white px-5 py-2.5 shadow-outline dark:border-dark-700 dark:bg-dark-800"
+            class="inline-flex items-center gap-2.5 rounded-none border border-gray-200 bg-white px-5 py-2.5 dark:border-dark-700 dark:bg-dark-800"
           >
             <Icon name="shield" size="sm" class="text-primary-500" />
             <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{
@@ -265,7 +265,7 @@
             }}</span>
           </div>
           <div
-            class="inline-flex items-center gap-2.5 rounded-none border border-gray-200 bg-white px-5 py-2.5 shadow-outline dark:border-dark-700 dark:bg-dark-800"
+            class="inline-flex items-center gap-2.5 rounded-none border border-gray-200 bg-white px-5 py-2.5 dark:border-dark-700 dark:bg-dark-800"
           >
             <Icon name="chart" size="sm" class="text-primary-500" />
             <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{
@@ -278,7 +278,7 @@
         <div class="mb-12 grid gap-6 md:grid-cols-3">
           <!-- Feature 1: Unified Gateway -->
           <div
-            class="group rounded-none border border-gray-200 bg-white p-6 transition-all duration-300 hover:shadow-outline dark:border-dark-700 dark:bg-dark-800"
+            class="group rounded-none border border-gray-200 bg-white p-6 transition-all duration-300 dark:border-dark-700 dark:bg-dark-800"
           >
             <div
               class="mb-4 flex h-12 w-12 items-center justify-center rounded-none bg-surface text-ink border border-line"
@@ -295,7 +295,7 @@
 
           <!-- Feature 2: Account Pool -->
           <div
-            class="group rounded-none border border-gray-200 bg-white p-6 transition-all duration-300 hover:shadow-outline dark:border-dark-700 dark:bg-dark-800"
+            class="group rounded-none border border-gray-200 bg-white p-6 transition-all duration-300 dark:border-dark-700 dark:bg-dark-800"
           >
             <div
               class="mb-4 flex h-12 w-12 items-center justify-center rounded-none bg-surface text-ink border border-line"
@@ -324,7 +324,7 @@
 
           <!-- Feature 3: Billing & Quota -->
           <div
-            class="group rounded-none border border-gray-200 bg-white p-6 transition-all duration-300 hover:shadow-outline dark:border-dark-700 dark:bg-dark-800"
+            class="group rounded-none border border-gray-200 bg-white p-6 transition-all duration-300 dark:border-dark-700 dark:bg-dark-800"
           >
             <div
               class="mb-4 flex h-12 w-12 items-center justify-center rounded-none bg-surface text-ink border border-line"
