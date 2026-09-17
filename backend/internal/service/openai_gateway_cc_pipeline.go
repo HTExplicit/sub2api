@@ -257,7 +257,7 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	resp, err := s.httpUpstream.Do(s.prepareOpenAICodexWireRequest(upstreamReq, account), proxyURL, account.ID, account.Concurrency)
+	resp, err := s.doOpenAICodexUpstream(upstreamReq, account, proxyURL)
 	if err != nil {
 		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
 	}

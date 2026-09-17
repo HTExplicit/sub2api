@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -68,35 +69,54 @@ func isCodexStreamingResponsesRequest(req *http.Request) bool {
 }
 
 // prepareOpenAICodexWireRequest 返回真正发往上游的请求。满足条件时返回一个请求体已
-// zstd 压缩、Content-Encoding/Content-Length 已改写的克隆；其余情况原样返回。调用方
-// 传入的请求在返回后仍可按明文重复读取（Body 已被重新填充）。任何失败都退回明文发送。
-func (s *OpenAIGatewayService) prepareOpenAICodexWireRequest(req *http.Request, account *Account) *http.Request {
+// zstd 压缩、Content-Encoding/Content-Length 已改写的克隆；其余情况原样返回。
+//
+// 明文来源：可重放请求（GetBody 非空）从 GetBody 的独立副本取明文，原请求 Body 完全不动；
+// 不可重放请求（GetBody 已被 PrepareRequest 清空）只能读取 Body，读取成功后用同一份明文
+// 重新填充。读取失败时绝不把已读出的前缀当作完整请求发送：可重放请求退回原请求明文发送，
+// 不可重放请求显式返回错误（该请求本就无法完整发出）。编码失败一律退回明文。
+func (s *OpenAIGatewayService) prepareOpenAICodexWireRequest(req *http.Request, account *Account) (*http.Request, error) {
 	if !s.codexRequestZstdEnabled() || account == nil || !account.IsOpenAIOAuthLike() {
-		return req
+		return req, nil
 	}
 	if !isCodexStreamingResponsesRequest(req) || req.Body == nil || req.Body == http.NoBody {
-		return req
+		return req, nil
 	}
 	if strings.TrimSpace(req.Header.Get("Content-Encoding")) != "" {
-		return req
+		return req, nil
 	}
 	if contentType := strings.ToLower(req.Header.Get("Content-Type")); contentType != "" && !strings.Contains(contentType, "json") {
-		return req
+		return req, nil
 	}
-	raw, err := io.ReadAll(req.Body)
-	_ = req.Body.Close()
-	req.Body = io.NopCloser(bytes.NewReader(raw))
-	if err != nil {
-		slog.Debug("codex_request_zstd_skipped", "reason", "read_body", "error", err)
-		return req
+	var raw []byte
+	if req.GetBody != nil {
+		snapshot, err := req.GetBody()
+		if err != nil {
+			slog.Debug("codex_request_zstd_skipped", "reason", "snapshot_body", "error", err)
+			return req, nil
+		}
+		raw, err = io.ReadAll(snapshot)
+		_ = snapshot.Close()
+		if err != nil {
+			slog.Debug("codex_request_zstd_skipped", "reason", "read_snapshot", "error", err)
+			return req, nil
+		}
+	} else {
+		var err error
+		raw, err = io.ReadAll(req.Body)
+		_ = req.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("codex request zstd: read request body: %w", err)
+		}
+		req.Body = io.NopCloser(bytes.NewReader(raw))
 	}
 	if len(raw) == 0 {
-		return req
+		return req, nil
 	}
 	compressed, err := compressCodexRequestBodyZstd(raw)
 	if err != nil {
 		slog.Debug("codex_request_zstd_skipped", "reason", "encode", "error", err)
-		return req
+		return req, nil
 	}
 	wire := req.Clone(req.Context())
 	wire.Body = io.NopCloser(bytes.NewReader(compressed))
@@ -109,5 +129,15 @@ func (s *OpenAIGatewayService) prepareOpenAICodexWireRequest(req *http.Request, 
 	} else {
 		wire.GetBody = nil
 	}
-	return wire
+	return wire, nil
+}
+
+// doOpenAICodexUpstream 是 OpenAI 网关所有 Responses 端点 POST 的统一发送入口：先按上述
+// 规则生成线上请求（满足条件时压缩），再交给 httpUpstream。读取失败作为传输错误返回。
+func (s *OpenAIGatewayService) doOpenAICodexUpstream(req *http.Request, account *Account, proxyURL string) (*http.Response, error) {
+	wire, err := s.prepareOpenAICodexWireRequest(req, account)
+	if err != nil {
+		return nil, err
+	}
+	return s.httpUpstream.Do(wire, proxyURL, account.ID, account.Concurrency)
 }

@@ -437,7 +437,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 				return nil, fmt.Errorf("build grok retry request: %w", err)
 			}
 		}
-		resp, err = s.httpUpstream.Do(s.prepareOpenAICodexWireRequest(upstreamReq, account), proxyURL, account.ID, account.Concurrency)
+		resp, err = s.doOpenAICodexUpstream(upstreamReq, account, proxyURL)
 		if err != nil {
 			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
 		}
