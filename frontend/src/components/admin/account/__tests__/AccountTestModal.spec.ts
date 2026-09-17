@@ -248,4 +248,52 @@ describe('AccountTestModal', () => {
     ])
     expect((wrapper.vm as any).selectedModelId).toBe('gpt-5.6-luna')
   })
+
+  it('renders the type chip and inactive status chip with readable dark-mode contrast', async () => {
+    const wrapper = mountModal({
+      id: 7,
+      name: 'Paused Account',
+      platform: 'gemini',
+      type: 'apikey',
+      status: 'inactive'
+    })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    const chipsByText = (text: string) =>
+      wrapper.findAll('span').filter((span) => span.text().trim() === text)
+
+    const typeChips = chipsByText('apikey')
+    expect(typeChips).toHaveLength(1)
+    const typeClasses = typeChips[0].classes()
+    expect(typeClasses).toContain('border-line')
+    expect(typeClasses).toContain('text-gray-700')
+    expect(typeClasses).toContain('dark:text-dark-200')
+    expect(typeClasses).toContain('font-mono')
+    expect(typeClasses).toContain('uppercase')
+    expect(typeClasses).not.toContain('bg-gray-200')
+    expect(typeClasses).not.toContain('dark:bg-dark-500')
+
+    const statusChips = chipsByText('inactive')
+    expect(statusChips).toHaveLength(1)
+    const statusClasses = statusChips[0].classes()
+    expect(statusClasses).toContain('dark:text-dark-300')
+    expect(statusClasses).not.toContain('dark:text-gray-400')
+  })
+
+  it('renders the active status chip with the green dark-mode text token', async () => {
+    const wrapper = mountModal({
+      id: 8,
+      name: 'Live Account',
+      platform: 'gemini',
+      type: 'apikey',
+      status: 'active'
+    })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    const statusChips = wrapper.findAll('span').filter((span) => span.text().trim() === 'active')
+    expect(statusChips).toHaveLength(1)
+    expect(statusChips[0].classes()).toContain('dark:text-green-400')
+  })
 })

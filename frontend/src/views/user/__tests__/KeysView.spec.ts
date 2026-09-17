@@ -640,5 +640,36 @@ describe('user KeysView column settings', () => {
       expect(wrapper.find('[data-tour="key-form-provider"]').exists()).toBe(false)
       expect(optionIds(wrapper)).toHaveLength(11)
     })
+
+    it('provider cards keep icon tiles inside the card', async () => {
+      const wrapper = await openCreate()
+      const cards = wrapper.findAll('[data-tour="key-form-provider"] label')
+      expect(cards).toHaveLength(4)
+
+      for (const card of cards) {
+        // The selected card also renders an aria-hidden check badge (stubbed Icon, no svg);
+        // the icon row is the aria-hidden element hosting the real PlatformIcon svgs.
+        const rows = card.findAll('[aria-hidden="true"]').filter((el) => el.find('svg').exists())
+        expect(rows).toHaveLength(1)
+        const row = rows[0]
+        expect(row.classes()).toContain('overflow-hidden')
+        expect(row.classes()).toContain('min-w-0')
+        expect(row.classes()).toContain('w-full')
+
+        const tiles = Array.from(row.element.children)
+        expect(tiles.length).toBeGreaterThan(0)
+        expect(tiles.length).toBeLessThanOrEqual(3)
+        for (const tile of tiles) {
+          const tileClasses = Array.from(tile.classList)
+          expect(tileClasses).toContain('shrink-0')
+          expect(tileClasses).toContain('h-6')
+          expect(tileClasses).toContain('w-6')
+
+          const svg = tile.querySelector('svg')
+          expect(svg).not.toBeNull()
+          expect(Array.from(svg!.classList)).toContain('w-4')
+        }
+      }
+    })
   })
 })
