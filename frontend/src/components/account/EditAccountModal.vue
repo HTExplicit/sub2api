@@ -1985,7 +1985,7 @@
                 </span>
                 <span class="min-w-0">
                   <span class="block text-sm font-medium">{{ option.label }}</span>
-                  <span class="mt-0.5 block text-xs leading-4 text-slate-500 dark:text-slate-400">{{ option.description }}</span>
+                  <span class="mt-0.5 block text-xs leading-4 text-muted">{{ option.description }}</span>
                 </span>
               </button>
             </div>
