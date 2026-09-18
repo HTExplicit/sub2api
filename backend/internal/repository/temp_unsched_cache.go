@@ -57,6 +57,14 @@ var tempUnschedSetScript = redis.NewScript(`
 	return 1
 `)
 
+// 与清理入口相同的整值 CAS：旧键过期后以同一截止秒重建的新载荷也必须保留。
+var tempUnschedDeleteIfMatchScript = redis.NewScript(`
+	if redis.call('GET', KEYS[1]) ~= ARGV[1] then
+		return 0
+	end
+	return redis.call('DEL', KEYS[1])
+`)
+
 type tempUnschedCache struct {
 	rdb *redis.Client
 }
@@ -90,22 +98,25 @@ func (c *tempUnschedCache) SetTempUnsched(ctx context.Context, accountID int64, 
 
 // GetTempUnsched 获取临时不可调度状态
 func (c *tempUnschedCache) GetTempUnsched(ctx context.Context, accountID int64) (*service.TempUnschedState, error) {
-	key := fmt.Sprintf("%s%d", tempUnschedPrefix, accountID)
+	state, _, err := c.GetTempUnschedSnapshot(ctx, accountID)
+	return state, err
+}
 
+// GetTempUnschedSnapshot 用同一次 GET 返回状态与原始字节，不能把重新编码的 JSON 当原值。
+func (c *tempUnschedCache) GetTempUnschedSnapshot(ctx context.Context, accountID int64) (*service.TempUnschedState, string, error) {
+	key := fmt.Sprintf("%s%d", tempUnschedPrefix, accountID)
 	val, err := c.rdb.Get(ctx, key).Result()
 	if err == redis.Nil {
-		return nil, nil
+		return nil, "", nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-
 	var state service.TempUnschedState
 	if err := json.Unmarshal([]byte(val), &state); err != nil {
-		return nil, fmt.Errorf("unmarshal state: %w", err)
+		return nil, "", fmt.Errorf("unmarshal state: %w", err)
 	}
-
-	return &state, nil
+	return &state, val, nil
 }
 
 // DeleteTempUnsched 删除临时不可调度状态
@@ -113,6 +124,21 @@ func (c *tempUnschedCache) DeleteTempUnsched(ctx context.Context, accountID int6
 	key := fmt.Sprintf("%s%d", tempUnschedPrefix, accountID)
 	return c.rdb.Del(ctx, key).Err()
 }
+
+// DeleteTempUnschedIfMatch 只删除 DB CAS 前读到的原值；没有快照时不退回无条件删除。
+func (c *tempUnschedCache) DeleteTempUnschedIfMatch(ctx context.Context, accountID int64, snapshot string) (bool, error) {
+	if snapshot == "" {
+		return false, nil
+	}
+	key := fmt.Sprintf("%s%d", tempUnschedPrefix, accountID)
+	deleted, err := tempUnschedDeleteIfMatchScript.Run(ctx, c.rdb, []string{key}, snapshot).Int64()
+	if err != nil {
+		return false, fmt.Errorf("delete temp unsched if match: %w", err)
+	}
+	return deleted == 1, nil
+}
+
+var _ service.TempUnschedGuardedCache = (*tempUnschedCache)(nil)
 
 func (c *tempUnschedCache) openAIAPIKeyHealthKey(accountID int64) string {
 	// The hash tag keeps the rolling window and sequence key in one Redis

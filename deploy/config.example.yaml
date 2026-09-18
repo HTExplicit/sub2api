@@ -266,6 +266,15 @@ gateway:
   # 对 OpenAI OAuth 账号发往 ChatGPT 后端的流式 /responses 请求体做 zstd 压缩（level 3），与官方 Codex 客户端一致；
   # compact 等其他请求不压缩。出现兼容问题时置 false 回退为明文 JSON。
   openai_codex_request_zstd: true
+  # Observe-only per-account traffic telemetry for the OpenAI-family gateway (Redis counters only; no scheduling/admission change).
+  # 账号级流量遥测（只观察）：仅写 Redis 计数器 account_traffic_observe:{id}:*（24h TTL），
+  # 由 GET /api/v1/admin/accounts/:id/traffic-telemetry 读取；不改变调度/准入。置 true 关闭。
+  account_traffic_telemetry_disabled: false
+  # Compare the client /responses body with the final upstream body for OpenAI OAuth accounts: off | observe | enforce.
+  # 对 OpenAI OAuth 账号比较客户端 /responses 请求体与最终出站请求体的语义字段：off | observe | enforce。
+  # observe 仅按账号限频记录 openai_request_integrity_difference 日志（只含字段名），不拒绝、不改写请求；
+  # 账号 extra.request_integrity_mode 可按账号覆盖。默认 off。
+  openai_request_integrity_mode: off
   # Stop rewriting load-shed Codex originators to the official CLI identity.
   # 关闭「把落在上游降载桶的 Codex originator 改写为官方 CLI 身份（codex_cli_rs）」。
   #

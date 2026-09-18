@@ -46,6 +46,9 @@ type tokenRefreshAccountRepo struct {
 	setErrorErr                  error
 	setTempUnschedErr            error
 	beforeConditionalState       func()
+	clearIfMatchMiss             bool // true: ClearTempUnschedulableIfMatch 报告快照不匹配（CAS 未命中）
+	lastClearIfMatchReason       string
+	lastClearIfMatchUntil        time.Time
 }
 
 func (r *tokenRefreshAccountRepo) Update(ctx context.Context, account *Account) error {
@@ -109,6 +112,13 @@ func (r *tokenRefreshAccountRepo) SetError(ctx context.Context, id int64, errorM
 func (r *tokenRefreshAccountRepo) ClearTempUnschedulable(ctx context.Context, id int64) error {
 	r.clearTempCalls++
 	return nil
+}
+
+func (r *tokenRefreshAccountRepo) ClearTempUnschedulableIfMatch(ctx context.Context, id int64, reason string, until time.Time) (bool, error) {
+	r.clearTempCalls++
+	r.lastClearIfMatchReason = reason
+	r.lastClearIfMatchUntil = until
+	return !r.clearIfMatchMiss, nil
 }
 
 func (r *tokenRefreshAccountRepo) SetTempUnschedulable(ctx context.Context, id int64, until time.Time, reason string) error {
@@ -352,9 +362,12 @@ func (s *tokenRefreshSchedulerCache) SetAccount(ctx context.Context, account *Ac
 }
 
 type tempUnschedCacheStub struct {
-	deleteCalls int
-	setCalls    int
-	lastState   *TempUnschedState
+	deleteCalls        int
+	setCalls           int
+	lastState          *TempUnschedState
+	lastDeleteSnapshot string
+	snapshot           string
+	snapshotErr        error
 }
 
 func (s *tempUnschedCacheStub) SetTempUnsched(ctx context.Context, accountID int64, state *TempUnschedState) error {
@@ -367,9 +380,19 @@ func (s *tempUnschedCacheStub) GetTempUnsched(ctx context.Context, accountID int
 	return nil, nil
 }
 
+func (s *tempUnschedCacheStub) GetTempUnschedSnapshot(ctx context.Context, accountID int64) (*TempUnschedState, string, error) {
+	return s.lastState, s.snapshot, s.snapshotErr
+}
+
 func (s *tempUnschedCacheStub) DeleteTempUnsched(ctx context.Context, accountID int64) error {
 	s.deleteCalls++
 	return nil
+}
+
+func (s *tempUnschedCacheStub) DeleteTempUnschedIfMatch(ctx context.Context, accountID int64, snapshot string) (bool, error) {
+	s.deleteCalls++
+	s.lastDeleteSnapshot = snapshot
+	return true, nil
 }
 
 type tokenRefresherStub struct {
@@ -827,7 +850,7 @@ func TestTokenRefreshService_RefreshWithRetry_AntigravityNonRetryableError(t *te
 func TestTokenRefreshService_RefreshWithRetry_ClearsTempUnschedulable(t *testing.T) {
 	repo := &tokenRefreshAccountRepo{}
 	invalidator := &tokenCacheInvalidatorStub{}
-	tempCache := &tempUnschedCacheStub{}
+	tempCache := &tempUnschedCacheStub{snapshot: `{"until_unix":1,"status_code":429}`}
 	cfg := &config.Config{
 		TokenRefresh: config.TokenRefreshConfig{
 			MaxRetries:          1,
@@ -837,10 +860,11 @@ func TestTokenRefreshService_RefreshWithRetry_ClearsTempUnschedulable(t *testing
 	service := NewTokenRefreshService(repo, nil, nil, nil, nil, invalidator, nil, cfg, tempCache)
 	until := time.Now().Add(10 * time.Minute)
 	account := &Account{
-		ID:                     15,
-		Platform:               PlatformGemini,
-		Type:                   AccountTypeOAuth,
-		TempUnschedulableUntil: &until,
+		ID:                      15,
+		Platform:                PlatformGemini,
+		Type:                    AccountTypeOAuth,
+		TempUnschedulableUntil:  &until,
+		TempUnschedulableReason: "OAuth 401: unauthorized",
 	}
 	refresher := &tokenRefresherStub{
 		credentials: map[string]any{
@@ -853,6 +877,35 @@ func TestTokenRefreshService_RefreshWithRetry_ClearsTempUnschedulable(t *testing
 	require.Equal(t, 1, repo.updateCalls)
 	require.Equal(t, 1, repo.clearTempCalls)   // DB 清除
 	require.Equal(t, 1, tempCache.deleteCalls) // Redis 缓存也应清除
+	// 原值受限 CAS 收到的是加载时的 DB 快照，而不是裸 id；Redis 删除同样按快照 until 受限。
+	require.Equal(t, "OAuth 401: unauthorized", repo.lastClearIfMatchReason)
+	require.True(t, until.Equal(repo.lastClearIfMatchUntil))
+	require.Equal(t, tempCache.snapshot, tempCache.lastDeleteSnapshot)
+
+	t.Run("snapshot mismatch skips redis delete", func(t *testing.T) {
+		missRepo := &tokenRefreshAccountRepo{clearIfMatchMiss: true}
+		missCache := &tempUnschedCacheStub{}
+		missService := NewTokenRefreshService(missRepo, nil, nil, nil, nil, &tokenCacheInvalidatorStub{}, nil, cfg, missCache)
+		blocker := &runtimeBlockRecorder{}
+		missService.SetAccountRuntimeBlocker(blocker)
+		scheduler := &tokenRefreshSchedulerCache{}
+		missService.schedulerCache = scheduler
+		missUntil := time.Now().Add(10 * time.Minute)
+		missAccount := &Account{
+			ID:                      15,
+			Platform:                PlatformGemini,
+			Type:                    AccountTypeOAuth,
+			TempUnschedulableUntil:  &missUntil,
+			TempUnschedulableReason: "OAuth 401: unauthorized",
+		}
+		missRefresher := &tokenRefresherStub{credentials: map[string]any{"access_token": "new-token"}}
+
+		require.NoError(t, missService.refreshWithRetry(context.Background(), missAccount, missRefresher, missRefresher, time.Hour))
+		require.Equal(t, 1, missRepo.clearTempCalls) // CAS 被尝试…
+		require.Zero(t, missCache.deleteCalls)       // …未命中时不得触碰 Redis
+		require.Empty(t, blocker.clearedIDs)         // …也不得通知运行时解封
+		require.Zero(t, scheduler.setAccountCalls)   // …不得把旧 pause 写回调度缓存
+	})
 }
 
 // TestTokenRefreshService_RefreshWithRetry_NonRetryableErrorAllPlatforms 测试所有平台不可重试错误都 SetError

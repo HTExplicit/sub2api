@@ -1179,27 +1179,78 @@ func (s *TokenRefreshService) postRefreshActions(ctx context.Context, account *A
 		}
 	}
 	// 刷新成功后清除临时不可调度状态（处理 OAuth 401 恢复场景）
+	guardedClearAttempted := false
+	guardedClearApplied := false
+	guardedClearNeedsSchedulerSkip := false
 	if account.TempUnschedulableUntil != nil && time.Now().Before(*account.TempUnschedulableUntil) {
-		if clearErr := s.accountRepo.ClearTempUnschedulable(ctx, account.ID); clearErr != nil {
-			slog.Warn("token_refresh.clear_temp_unschedulable_failed",
-				"account_id", account.ID,
-				"error", clearErr,
-			)
-		} else {
-			slog.Info("token_refresh.cleared_temp_unschedulable", "account_id", account.ID)
-			s.notifyAccountSchedulingBlockCleared(account.ID)
-		}
-		// 同步清除 Redis 缓存，避免调度器读到过期的临时不可调度状态
+		// 原值受限 CAS：只清除候选加载时观察到的那一次停调（DB 快照 reason+until），
+		// 快照被并发改写时不清 DB、不通知运行时解封、不动 Redis。谓词保持与 reason 无关
+		// （刷新成功清除加载到的任何停调，是既有契约）。
+		snapshotUntil := *account.TempUnschedulableUntil
+		snapshotReason := account.TempUnschedulableReason
+		// Capture the exact Redis payload before the DB CAS. A later delete must
+		// compare this whole value so a same-second replacement cannot be removed.
+		var cachedSnapshot string
+		var cachedGuarded TempUnschedGuardedCache
 		if s.tempUnschedCache != nil {
-			if clearErr := s.tempUnschedCache.DeleteTempUnsched(ctx, account.ID); clearErr != nil {
-				slog.Warn("token_refresh.clear_temp_unsched_cache_failed",
+			if guarded, ok := s.tempUnschedCache.(TempUnschedGuardedCache); ok {
+				cachedGuarded = guarded
+				var cacheErr error
+				_, cachedSnapshot, cacheErr = guarded.GetTempUnschedSnapshot(ctx, account.ID)
+				if cacheErr != nil {
+					slog.Warn("token_refresh.read_temp_unsched_cache_failed", "account_id", account.ID, "error", cacheErr)
+					cachedSnapshot = ""
+				}
+			}
+		}
+		applied := false
+		if guarded, ok := s.accountRepo.(TempUnschedGuardedClearRepository); ok {
+			guardedClearAttempted = true
+			var clearErr error
+			applied, clearErr = guarded.ClearTempUnschedulableIfMatch(ctx, account.ID, snapshotReason, snapshotUntil)
+			if clearErr != nil {
+				slog.Warn("token_refresh.clear_temp_unschedulable_failed",
 					"account_id", account.ID,
 					"error", clearErr,
 				)
+			} else if !applied {
+				slog.Warn("token_refresh.temp_unschedulable_changed_concurrently", "account_id", account.ID)
 			}
+		} else {
+			// A test double or an old repository without the guarded contract must
+			// not fall back to an unconditional clear. Keep the pause and avoid
+			// publishing a potentially stale account snapshot below.
+			guardedClearAttempted = true
+			slog.Warn("token_refresh.guarded_clear_unavailable", "account_id", account.ID)
+		}
+		if applied {
+			guardedClearApplied = true
+			slog.Info("token_refresh.cleared_temp_unschedulable", "account_id", account.ID)
+			s.notifyAccountSchedulingBlockCleared(account.ID)
+			// 同步清除 Redis 缓存，避免调度器读到过期的临时不可调度状态；
+			// Delete only the exact payload captured before the DB CAS. Missing or
+			// unreadable snapshots intentionally skip the Redis leg.
+			if cachedGuarded != nil && cachedSnapshot != "" {
+				var delErr error
+				_, delErr = cachedGuarded.DeleteTempUnschedIfMatch(ctx, account.ID, cachedSnapshot)
+				if delErr != nil {
+					slog.Warn("token_refresh.clear_temp_unsched_cache_failed",
+						"account_id", account.ID,
+						"error", delErr,
+					)
+				}
+			}
+		} else if guardedClearAttempted {
+			guardedClearNeedsSchedulerSkip = true
 		}
 	}
-	s.postRefreshStateSync(ctx, account)
+	if guardedClearApplied {
+		// The DB CAS cleared this exact pause; make the object sent to the
+		// scheduler reflect the durable state instead of the old in-memory copy.
+		account.TempUnschedulableUntil = nil
+		account.TempUnschedulableReason = ""
+	}
+	s.postRefreshStateSyncWithOptions(ctx, account, !guardedClearNeedsSchedulerSkip)
 	// OpenAI OAuth: 刷新成功后，检查是否已设置 privacy_mode，未设置则尝试关闭训练数据共享
 	s.ensureOpenAIPrivacy(ctx, account)
 	// Antigravity OAuth: 刷新成功后，检查是否已设置 privacy_mode，未设置则调用 setUserSettings
@@ -1221,6 +1272,10 @@ func (s *TokenRefreshService) postRefreshStateSyncWithCleanup(parent context.Con
 }
 
 func (s *TokenRefreshService) postRefreshStateSync(ctx context.Context, account *Account) {
+	s.postRefreshStateSyncWithOptions(ctx, account, true)
+}
+
+func (s *TokenRefreshService) postRefreshStateSyncWithOptions(ctx context.Context, account *Account, syncScheduler bool) {
 	// 对所有 OAuth 账号调用缓存失效（InvalidateToken 内部根据平台判断是否需要处理）
 	if s.cacheInvalidator != nil && account.Type == AccountTypeOAuth {
 		if err := s.cacheInvalidator.InvalidateToken(ctx, account); err != nil {
@@ -1233,7 +1288,7 @@ func (s *TokenRefreshService) postRefreshStateSync(ctx context.Context, account 
 		}
 	}
 	// 同步更新调度器缓存，确保调度获取的 Account 对象包含最新的 credentials
-	if s.schedulerCache != nil {
+	if syncScheduler && s.schedulerCache != nil {
 		if err := s.schedulerCache.SetAccount(ctx, account); err != nil {
 			slog.Warn("token_refresh.sync_scheduler_cache_failed",
 				"account_id", account.ID,

@@ -1,6 +1,26 @@
 package service
 
-import "net/http"
+import (
+	"context"
+	"net/http"
+)
+
+type codexWireObserverKey struct{}
+
+func withCodexWireObserver(ctx context.Context, observer func(*http.Request)) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, codexWireObserverKey{}, observer)
+}
+
+func codexWireObserverFromContext(ctx context.Context) func(*http.Request) {
+	if ctx == nil {
+		return nil
+	}
+	observer, _ := ctx.Value(codexWireObserverKey{}).(func(*http.Request))
+	return observer
+}
 
 func (s *OpenAIGatewayService) SetPluginManager(manager *PluginManager) {
 	s.pluginManager = manager
@@ -39,6 +59,9 @@ func (s *AccountTestService) doOpenAIAccountTestUpstream(
 	wire, err := prepareOpenAICodexWireRequestWithConfig(s.cfg, request, account)
 	if err != nil {
 		return nil, err
+	}
+	if observer := codexWireObserverFromContext(wire.Context()); observer != nil {
+		observer(wire)
 	}
 	if useTLSFallback {
 		return s.httpUpstream.DoWithTLS(

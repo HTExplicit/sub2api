@@ -475,6 +475,14 @@ retryUpstream:
 		if buildErr != nil {
 			return nil, buildErr
 		}
+		// Final plaintext wire body (before zstd in doOpenAICodexUpstream). The
+		// snapshot and the replay options were staged by Forward; direct callers
+		// without a snapshot are a no-op.
+		integrityOpts := requestIntegrityForwardOptionsFromContext(c)
+		integrityOpts.UpstreamModel = actualModel
+		if integrityErr := s.checkStagedRequestIntegrity(c, account, "http_passthrough", body, integrityOpts); integrityErr != nil {
+			return nil, integrityErr
+		}
 		reasoningRecovery.BindDiagnosticRequest(diagnosticIncomingBody, upstreamReq)
 
 		upstreamStart := time.Now()
@@ -695,6 +703,7 @@ retryUpstream:
 		UpstreamModel:                 upstreamPassthroughModel,
 		UpstreamResponseModel:         observedUpstreamResponseModel(c),
 		UpstreamResponseModelConflict: observedUpstreamResponseModelConflict(c),
+		UpstreamResponseServiceTier:   observedUpstreamResponseServiceTier(c),
 		ServiceTier:                   serviceTier,
 		ReasoningEffort:               reasoningEffort,
 		Stream:                        reqStream,
@@ -2764,6 +2773,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	if sawTerminalEvent && !sawFailedEvent {
 		s.clearOpenAIProxyStreamDisconnect(account)
 	}
+	logOpenAISuccessMissingUsage(ctx, c, account, resp, usage, terminalEventType, clientDisconnected)
 
 	return resultWithUsage(), nil
 }
@@ -2838,6 +2848,9 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	if !usageParsed {
 		// 兜底：尝试从 SSE 文本中解析 usage
 		usage = s.parseSSEUsageFromBody(string(body))
+	}
+	if openAIHTTPResponseTerminalError(body) == nil {
+		logOpenAISuccessMissingUsage(ctx, c, account, resp, usage, "json", false)
 	}
 
 	writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -2989,6 +3002,9 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 	}
 
 	writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	if terminalErr == nil {
+		logOpenAISuccessMissingUsage(c.Request.Context(), c, account, resp, usage, terminalType, false)
+	}
 	stagedTurnState, turnStateHeaderApplied := stageOpenAIHTTPResponseTurnState(c, resp.Header)
 
 	contentType := "application/json; charset=utf-8"

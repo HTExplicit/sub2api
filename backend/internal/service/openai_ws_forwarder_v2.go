@@ -103,6 +103,16 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2WithScope(
 	}
 	setOpenAIWSTurnMetadata(payload, turnMetadata)
 	applyStagedCodexFingerprintClientMetadata(c, account, payload)
+	// Final response.create payload versus the client body Forward staged. The
+	// envelope edits above (type/stream/store/background, client_metadata) are
+	// outside the compared set; the marshal only happens when a snapshot exists.
+	if s.requestIntegrityStaged(c, account) {
+		integrityOpts := requestIntegrityForwardOptionsFromContext(c)
+		integrityOpts.UpstreamModel = mappedModel
+		if integrityErr := s.checkStagedRequestIntegrity(c, account, "ws_forward", payloadAsJSONBytes(payload), integrityOpts); integrityErr != nil {
+			return nil, wrapOpenAIWSFallback("request_integrity", integrityErr)
+		}
+	}
 	previousResponseID := openAIWSPayloadString(payload, "previous_response_id")
 	previousResponseIDKind := ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
 	promptCacheKey := strings.TrimSpace(clientPromptCacheKey)
@@ -434,6 +444,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2WithScope(
 	firstEventType := ""
 	lastEventType := ""
 	upstreamTerminalEvent := ""
+	upstreamTerminalStatus := 0
 	clientDisconnected := false
 	clientDisconnectDrainStartedAt := time.Time{}
 	readTimeout := s.openAIWSReadTimeout()
@@ -482,6 +493,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2WithScope(
 			Stream:                        reqStream,
 			OpenAIWSMode:                  true,
 			UpstreamTerminalEvent:         upstreamTerminalEvent,
+			UpstreamTerminalStatus:        upstreamTerminalStatus,
 			ResponseHeaders:               lease.HandshakeHeaders(),
 			Duration:                      time.Since(startTime),
 			FirstTokenMs:                  firstTokenMs,
@@ -980,6 +992,7 @@ readLoop:
 				markOpenAIWSClientVisibleFailure(c, eventType, message)
 			}
 			upstreamTerminalEvent = s.handleOpenAIWSTerminalTransientFailure(ctx, account, mappedModel, lease.HandshakeHeaders(), message)
+			upstreamTerminalStatus = openAIWSPayloadStatus(message)
 			// A terminal event must be the final JSON document in its WS message.
 			// Ignore any tail for the completed client turn, but never reuse the
 			// ambiguous upstream connection for another request.

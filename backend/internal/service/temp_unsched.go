@@ -31,6 +31,25 @@ type OpenAIAPIKeyHealthCache interface {
 	RecordOpenAIAPIKeyHealthFailure(ctx context.Context, accountID int64, windowMinutes, threshold int) (count int64, tripped bool, err error)
 }
 
+// TempUnschedGuardedClearRepository is an optional AccountRepository extension
+// that clears a temp-unschedulable pause only when the row still carries the
+// exact (reason, until) snapshot the caller loaded from the database
+// (original-value compare-and-clear). reason/until MUST be DB-sourced: a NULL
+// reason is passed as "" and until must be the timestamptz value read through
+// the repository rather than a deadline recomputed from the local clock. Returns
+// (false, nil) when the row no longer matches; nothing is written then.
+type TempUnschedGuardedClearRepository interface {
+	ClearTempUnschedulableIfMatch(ctx context.Context, id int64, reason string, until time.Time) (bool, error)
+}
+
+// TempUnschedGuardedCache captures the exact cached payload before a DB CAS
+// and deletes it only if that payload is still current. Matching just the
+// deadline cannot distinguish a recreated pause with the same expiry second.
+type TempUnschedGuardedCache interface {
+	GetTempUnschedSnapshot(ctx context.Context, accountID int64) (*TempUnschedState, string, error)
+	DeleteTempUnschedIfMatch(ctx context.Context, accountID int64, snapshot string) (bool, error)
+}
+
 // TimeoutCounterCache 超时计数器缓存接口
 type TimeoutCounterCache interface {
 	// IncrementTimeoutCount 增加账户的超时计数，返回当前计数值

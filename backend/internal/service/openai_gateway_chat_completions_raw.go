@@ -605,6 +605,7 @@ func (s *OpenAIGatewayService) bufferRawChatCompletions(
 		UpstreamModel:                 upstreamModel,
 		UpstreamResponseModel:         observedUpstreamResponseModel(c),
 		UpstreamResponseModelConflict: observedUpstreamResponseModelConflict(c),
+		UpstreamResponseServiceTier:   observedUpstreamResponseServiceTier(c),
 		ReasoningEffort:               reasoningEffort,
 		ServiceTier:                   serviceTier,
 		Stream:                        false,

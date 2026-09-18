@@ -562,6 +562,23 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		if businessPromptApplied {
 			promptCacheKey = strings.TrimSpace(gjson.GetBytes(normalized, "prompt_cache_key").String())
 		}
+		// Per-frame request integrity check: the client frame versus the frame
+		// this parser produced. The later native wire stage (verified full replay,
+		// inferred previous_response_id) rewrites input on purpose and is not
+		// compared in v1; the HTTP bridge turn compares its own built body.
+		if integrityErr := s.checkRequestIntegrity(c, account, "ws_ingress", "parse", trimmed, normalized, requestIntegrityOptions{
+			UpstreamModel:        upstreamModel,
+			Compact:              isOpenAIResponsesCompactPath(c),
+			ResponsesLite:        responsesLite,
+			Platform:             account.Platform,
+			ImageToolPolicyStrip: isCodexCLI && codexImageGenerationExplicitToolPolicy == codexImageGenerationExplicitToolPolicyStrip,
+			ImageBridgeEnabled:   codexBridgeEnabled,
+			EffortPolicy: func(frame []byte) ([]byte, error) {
+				return applyOpenAIWSReasoningEffortPolicy(frame, hooks)
+			},
+		}); integrityErr != nil {
+			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, integrityErr.Error(), integrityErr)
+		}
 		ingressSessionOriginalModel = originalModel
 
 		return openAIWSClientPayload{
@@ -1545,6 +1562,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					Stream:                        reqStream,
 					OpenAIWSMode:                  true,
 					UpstreamTerminalEvent:         terminalEvent,
+					UpstreamTerminalStatus:        openAIWSPayloadStatus(upstreamMessage),
 					ResponseHeaders:               lease.HandshakeHeaders(),
 					Duration:                      time.Since(turnStart),
 					FirstTokenMs:                  firstTokenMs,

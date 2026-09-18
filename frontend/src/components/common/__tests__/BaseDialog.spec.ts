@@ -34,4 +34,29 @@ describe('BaseDialog', () => {
     expect(document.body.querySelector<HTMLElement>('.modal-body')?.scrollTop).toBe(0)
     wrapper.unmount()
   })
+
+  it('only the top-most dialog closes on Escape and the scroll lock survives closing it', async () => {
+    const outer = mount(BaseDialog, {
+      attachTo: document.body,
+      props: { show: true, title: 'Outer' },
+      global: { stubs: { Icon: true } }
+    })
+    const inner = mount(BaseDialog, {
+      attachTo: document.body,
+      props: { show: true, title: 'Inner' },
+      global: { stubs: { Icon: true } }
+    })
+    await nextTick()
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+
+    expect(inner.emitted('close')).toHaveLength(1)
+    expect(outer.emitted('close')).toBeUndefined()
+
+    await inner.setProps({ show: false })
+    expect(document.body.classList.contains('modal-open')).toBe(true)
+
+    inner.unmount()
+    outer.unmount()
+  })
 })

@@ -1073,6 +1073,9 @@ func filterSchedulerExtra(extra map[string]any) map[string]any {
 		"openai_oauth_passthrough",
 		"codex_fingerprint_mode",
 		"codex_fingerprint_seed",
+		// 请求完整性检查的账号级覆盖（off|observe|enforce）在转发阶段读取，不投影则对
+		// 经调度缓存选出的账号不可见。
+		"request_integrity_mode",
 		service.CodexClientIdentityExtraKey,
 		"codex_5h_used_percent",
 		"codex_7d_used_percent",
