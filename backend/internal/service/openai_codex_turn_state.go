@@ -156,9 +156,8 @@ func (s *OpenAIGatewayService) commitOpenAIWSSessionTurnState(
 
 // guardOpenAICodexTurnStateEcho 出站守卫：客户端回带的 turn-state 只有在
 // 能证明由当前账号铸造时才保留。来源未知、过期、缺少会话标识或来自其他
-// 账号的值均剥离。只剥离、不注入——
-// /responses 路径的客户端是真实 Codex，会按自身回合语义自行回带；服务端
-// 注入是 Claude 兼容桥（无法回带的客户端）的专属行为。
+// 账号的值均剥离。此守卫只处理回显；开启票据功能后，后续注入步骤会
+// 按当前 OpenAI OAuth/Setup Token 账号和出站模型覆盖为有效的服务端票据。
 func (s *OpenAIGatewayService) guardOpenAICodexTurnStateEcho(c *gin.Context, account *Account, h http.Header) {
 	if h == nil {
 		return

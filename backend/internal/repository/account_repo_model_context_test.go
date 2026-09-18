@@ -182,9 +182,9 @@ func TestLockAndMergeAccountProbeExtraUsesLockedModelContextValues(t *testing.T)
 				WillReturnRows(sqlmock.NewRows([]string{
 					"identity_unchanged", "credential_generation_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged",
 					"enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot",
-					"upstream_context_capacities", "model_context_overrides", "upstream_model_metadata",
+					"upstream_context_capacities", "model_context_overrides", "upstream_model_metadata", "current_extra",
 				}).AddRow(identityUnchanged, identityUnchanged, false, true, nil, nil, nil, nil, nil, nil,
-					[]byte(`{"fresh":true}`), []byte(`{"other-model":700000}`), []byte(`{"fresh":true}`)))
+					[]byte(`{"fresh":true}`), []byte(`{"other-model":700000}`), []byte(`{"fresh":true}`), nil))
 			account := modelContextRepositoryAccount(map[string]*int64{"model-a": modelContextRepositoryInt64(1050000)})
 			account.Extra = map[string]any{
 				service.UpstreamModelContextCapacitiesExtraKey: map[string]any{"stale": true},
@@ -229,9 +229,9 @@ func TestUpdateAccountModelContextPatchClearsOnlyAfterSuccessfulWrite(t *testing
 				WillReturnRows(sqlmock.NewRows([]string{
 					"identity_unchanged", "credential_generation_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged",
 					"enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot",
-					"upstream_context_capacities", "model_context_overrides", "upstream_model_metadata",
+					"upstream_context_capacities", "model_context_overrides", "upstream_model_metadata", "current_extra",
 				}).AddRow(true, true, false, true, nil, nil, nil, nil, nil, nil,
-					[]byte(`{"fresh":true}`), []byte(`{"other-model":700000}`), []byte(`{"fresh":true}`)))
+					[]byte(`{"fresh":true}`), []byte(`{"other-model":700000}`), []byte(`{"fresh":true}`), nil))
 			mock.ExpectExec(`(?s)UPDATE .*accounts.*SET.*WHERE .*id.*`).
 				WillReturnResult(sqlmock.NewResult(0, 1))
 			mock.ExpectQuery(`(?s)SELECT .* FROM "accounts" WHERE "id" = \$1`).

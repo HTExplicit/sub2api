@@ -999,7 +999,7 @@ func (s *OpenAIGatewayService) tryStickySessionHit(ctx context.Context, groupID 
 		_ = s.deleteStickySessionAccountIDIfMatches(ctx, groupID, sessionHash, accountID)
 		return nil
 	}
-	if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, accountRequestedModel) {
+	if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, accountRequestedModel, requireCompact) {
 		// Runtime blocks and half-open probe ownership are temporary. Preserve the
 		// sticky binding until replacement or permanent invalidation.
 		return nil
@@ -1229,7 +1229,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 						_ = s.deleteStickySessionAccountIDIfMatches(ctx, groupID, sessionHash, accountID)
 					} else if !s.openAIAccountMatchesSchedulingGroup(account, groupID) {
 						_ = s.deleteStickySessionAccountIDIfMatches(ctx, groupID, sessionHash, accountID)
-					} else if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, accountRequestedModel) {
+					} else if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, accountRequestedModel, requireCompact) {
 						// Keep temporary runtime-blocked sticky bindings.
 					} else if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, account, accountRequestedModel, requireCompact) {
 						_ = s.deleteStickySessionAccountIDIfMatches(ctx, groupID, sessionHash, accountID)
@@ -1298,7 +1298,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			continue
 		}
 		accountRequestedModel := openAIRequestedModelForAccount(ctx, acc, requestedModel)
-		if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, acc, accountRequestedModel) {
+		if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, acc, accountRequestedModel, requireCompact) {
 			filterStats.exclude("runtime_blocked")
 			filterStats.observeRuntimeCooldown(s, acc.ID)
 			continue
@@ -1583,7 +1583,7 @@ func (s *OpenAIGatewayService) resolveFreshSchedulableOpenAIAccountBeforeProfit(
 	if !parentHealthyForShadow(fresh, s.parentAccountLookup(ctx)) {
 		return nil
 	}
-	if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, fresh, openAIRequestedModelForAccount(ctx, fresh, requestedModel)) {
+	if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, fresh, openAIRequestedModelForAccount(ctx, fresh, requestedModel), requireCompact) {
 		return nil
 	}
 	if s.isOpenAIAccountBlockedBySchedulingThreshold(ctx, fresh) {
@@ -1654,7 +1654,7 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDBBeforeProfit(ct
 	if !parentHealthyForShadow(latest, s.parentAccountLookup(ctx)) {
 		return nil
 	}
-	if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, latest, openAIRequestedModelForAccount(ctx, latest, requestedModel)) {
+	if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, latest, openAIRequestedModelForAccount(ctx, latest, requestedModel), requireCompact) {
 		return nil
 	}
 	if s.isOpenAIAccountBlockedBySchedulingThreshold(ctx, latest) {

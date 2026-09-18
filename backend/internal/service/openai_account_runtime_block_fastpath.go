@@ -1567,13 +1567,21 @@ func (s *OpenAIGatewayService) clearOpenAIAccountRuntimeBlockIfUnchanged(account
 // Empty/inactive fields remove that contribution with generation+deadline CAS;
 // an independent request/credential block keeps its own deadline and owner.
 // Cindy health/balance, model scopes and OAuth Redis leases remain independent.
-func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlocked(account *Account, requestedModel string) bool {
-	return s.isOpenAIAccountRequestRuntimeBlockedContext(ensureOpenAIRuntimeBreakerProbeOwner(context.Background()), account, requestedModel)
+func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlocked(account *Account, requestedModel string, requireCompact ...bool) bool {
+	return s.isOpenAIAccountRequestRuntimeBlockedContext(ensureOpenAIRuntimeBreakerProbeOwner(context.Background()), account, requestedModel, requireCompact...)
 }
 
-func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlockedContext(ctx context.Context, account *Account, requestedModel string) bool {
+func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlockedContext(ctx context.Context, account *Account, requestedModel string, requireCompact ...bool) bool {
 	if s == nil || account == nil {
 		return false
+	}
+	// Only OAuth/setup-token accounts can own tickets; API-key paths stay unchanged.
+	if isOpenAICodexTicketAccount(account) {
+		compact := len(requireCompact) > 0 && requireCompact[0]
+		outboundModel := s.openAICodexTicketOutboundModel(account, requestedModel, compact)
+		if s.openAICodexTicketBlocksAccount(account, outboundModel) {
+			return true
+		}
 	}
 	if !IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		snapshot := s.peekOpenAIAccountRuntimeBlock(account)
@@ -1660,8 +1668,9 @@ func (s *OpenAIGatewayService) isOpenAIAccountStrictContinuationBlockedContext(
 	ctx context.Context,
 	account *Account,
 	requestedModel string,
+	requireCompact ...bool,
 ) bool {
-	if !s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, requestedModel) {
+	if !s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, requestedModel, requireCompact...) {
 		return false
 	}
 	if account == nil || !IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
