@@ -12,7 +12,7 @@ export default {accounts: {
   ticketProxy: {
     address: 'Full harvest proxy address', protocol: 'Protocol', test: 'Test connection', clear: 'Clear proxy and disable tickets', hint: 'Blur only parses the input. Testing uses the draft without saving, OAuth credentials or model requests. Full proxy credentials are visible to administrators only.',
     trust: 'Certificate verification', copyFailed: 'Could not copy. Copy the address manually.', testFailed: 'Proxy test did not complete. Try again.',
-    stages: { parse: 'Input parsing', dns: 'Proxy DNS', tcp: 'Proxy TCP', connect: 'CONNECT', tls: 'TLS', http: 'ChatGPT response', protocol: 'Protocol handshake', auth: 'Proxy authentication' },
+    stages: { parse: 'Input parsing', dns: 'Proxy DNS', tcp: 'Proxy TCP', connect: 'CONNECT', tls: 'TLS', http: 'ChatGPT response', protocol: 'Protocol handshake', auth: 'Proxy authentication', pinned_connection: 'Reconnect using pinned trust' },
     errors: { too_long: 'Proxy input is too long.', unknown_field: 'Unknown field. Use host, port, username and password labels.', duplicate_field: 'Duplicate field. Check the unchanged input.', incomplete: 'Host, port or credentials are incomplete.', ambiguous: 'Ambiguous fields. Use labeled lines.', invalid_url: 'Invalid or unsupported proxy URL.', invalid_port: 'Enter a port between 1 and 65535.' }
   },
       batchTest: {

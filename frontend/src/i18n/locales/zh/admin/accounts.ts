@@ -12,7 +12,7 @@ export default {accounts: {
   ticketProxy: {
     address: '打票代理完整地址', protocol: '协议', test: '测试连接', clear: '清除代理并关闭开关', hint: '失焦仅解析格式；测试使用草稿，不保存配置，不发送OAuth凭据或模型请求。完整账密仅管理员可见。',
     trust: '证书验证', copyFailed: '复制失败，请手动复制。', testFailed: '代理测试未完成，请重试。',
-    stages: { parse: '输入解析', dns: '代理DNS', tcp: '代理TCP', connect: 'CONNECT', tls: 'TLS', http: 'ChatGPT响应', protocol: '协议握手', auth: '代理鉴权' },
+    stages: { parse: '输入解析', dns: '代理DNS', tcp: '代理TCP', connect: 'CONNECT', tls: 'TLS', http: 'ChatGPT响应', protocol: '协议握手', auth: '代理鉴权', pinned_connection: '固定证书后的再次连接' },
     errors: { too_long: '代理输入过长。', unknown_field: '无法识别字段，请使用主机、端口、用户名、密码标签。', duplicate_field: '存在重复字段，保留原输入，请检查。', incomplete: '主机、端口或账密不完整。', ambiguous: '字段存在歧义，请用带标签的分行格式。', invalid_url: '代理URL无法识别或包含不支持的内容。', invalid_port: '请填写1至65535之间的端口。' }
   },
       batchTest: {

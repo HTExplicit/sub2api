@@ -367,7 +367,33 @@ func (s *OpenAIGatewayService) TestCodexTicketProxy(ctx context.Context, raw str
 	configured, _ := NormalizeCodexTicketProxy(s.openAICodexTicketHarvestProxyURLContext(ctx))
 	prepared, result, err := s.prepareCodexTicketProxy(ctx, raw, true, normalized != "" && normalized == configured)
 	if prepared != nil {
-		prepared.transport.CloseIdleConnections()
+		defer prepared.transport.CloseIdleConnections()
+		// Validate the next, pinned connection too. Harvesting uses this same
+		// verifier after preflight, so a rotating certificate cannot falsely pass
+		// a draft test that only exercised first-use learning.
+		if err == nil {
+			started := time.Now()
+			req, requestErr := http.NewRequestWithContext(ctx, http.MethodHead, codexTicketProxyTarget, nil)
+			if requestErr != nil {
+				return nil, requestErr
+			}
+			resp, followErr := prepared.client.Do(req)
+			if followErr != nil {
+				result.Success = false
+				result.Code = codexTicketTransportFailureCode(followErr)
+				result.Message = CodexTicketFailure(result.Code).Message
+				result.Stages = append(result.Stages, CodexTicketProxyStage{Name: "pinned_connection", Success: false, DurationMS: time.Since(started).Milliseconds(), Message: result.Message})
+				return result, nil
+			}
+			_ = resp.Body.Close()
+			result.HTTPStatus = resp.StatusCode
+			result.Success = resp.StatusCode >= 200 && resp.StatusCode < 400
+			result.Stages = append(result.Stages, CodexTicketProxyStage{Name: "pinned_connection", Success: true, DurationMS: time.Since(started).Milliseconds(), Message: fmt.Sprintf("HTTP %d", resp.StatusCode)})
+			if !result.Success {
+				result.Code = "target_http_status"
+				result.Message = fmt.Sprintf("连接和固定证书验证正常，目标返回HTTP %d；未发送OAuth凭据，尚未验证打票能力", resp.StatusCode)
+			}
+		}
 	}
 	if err != nil && result != nil && result.Code != "" {
 		return result, nil
