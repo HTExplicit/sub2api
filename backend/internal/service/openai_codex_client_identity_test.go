@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -51,6 +52,25 @@ func TestRefreshAccountTokenUsesAccountCodexIdentity(t *testing.T) {
 	expected := resolveCodexOutboundIdentityForAccount(account, "")
 	require.Equal(t, expected.userAgent, stub.userAgent)
 	require.Equal(t, "codex-tui", stub.originator)
+}
+
+func TestCodexIdentitySnapshotIsSecretFreeAndConsistent(t *testing.T) {
+	seed := "1c0a3d9e-58b2-4f8c-a2d1-7f3b9e6c4a55"
+	account := &Account{ID: 9, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
+		Credentials: map[string]any{"chatgpt_account_id": "acct-9"},
+		Extra:       map[string]any{codexFingerprintSeedExtraKey: seed}}
+
+	snapshot := resolveCodexIdentitySnapshot(account, account, "", true)
+	require.Equal(t, "account", snapshot.IdentitySource)
+	require.Equal(t, resolveCodexOutboundIdentityForAccount(account, "").userAgent, snapshot.UserAgent)
+	raw, err := json.Marshal(snapshot)
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), seed)
+
+	t.Cleanup(func() { SetCodexForceCLIEnabled(false) })
+	account.Credentials["user_agent"] = "codex_cli_rs/0.150.0 (Windows 10.0.19045; x86_64) unknown"
+	SetCodexForceCLIEnabled(true)
+	require.Equal(t, "canonical", resolveCodexIdentitySnapshot(account, account, codexAccountIdentityOverrideUA(account), true).IdentitySource)
 }
 
 // 账号级身份：由种子确定性派生，UA 三处版本同源，形态与 codex-rs 的

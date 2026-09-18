@@ -883,8 +883,26 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
+	var codexWireObserved bool
+	if isOAuth {
+		base := resolveCodexIdentitySnapshot(account, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount), s.cfg != nil && s.cfg.Gateway.OpenAICodexRequestZstd)
+		req = req.WithContext(withCodexWireObserver(req.Context(), func(wire *http.Request) {
+			codexWireObserved = true
+			snapshot := base.withWire("http", wire.Header)
+			s.sendEvent(c, TestEvent{Type: "status", Text: snapshot.summary(), Data: snapshot})
+		}))
+	}
 
 	resp, err := s.doOpenAIAccountTestUpstream(req, proxyURL, account, true)
+	if isOAuth && !codexWireObserved {
+		transport := "http"
+		if s.pluginManager != nil && s.pluginManager.ShouldRouteOpenAIOAuth(account) {
+			transport = "plugin"
+		}
+		base := resolveCodexIdentitySnapshot(account, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount), s.cfg != nil && s.cfg.Gateway.OpenAICodexRequestZstd)
+		snapshot := base.withWire(transport, req.Header)
+		s.sendEvent(c, TestEvent{Type: "status", Text: snapshot.summary(), Data: snapshot})
+	}
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
