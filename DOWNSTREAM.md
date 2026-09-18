@@ -11,6 +11,13 @@ This fork maintains the `codexrip` patch set over official Sub2API releases.
 - The operator workspace `docs/sub2api.md` owns the current production pointer.
   A source merge or Release alone does not establish deployment completion.
 
+### Recovered upstream v0.2.6
+
+- The withdrawn upstream release is recovered from exact merge commit `49a39b6dc1abed30fd227611e8af1108bc427610`; the remote `v0.2.6` tag is not used as a source.
+- The merge includes the official changes after v0.2.5 and the six Codex ticket patches. The ticket feature remains runtime-disabled in the published deployment until an administrator supplies a harvest proxy and enables it from the settings page.
+- Ticket collection and injection apply only to OpenAI OAuth and Setup Token accounts. Cindy/API-key accounts retain their existing identity, health, quota and sticky-session behavior.
+- The integration review and one-off exact-SHA risk evidence are recorded in `.downstream/upstream-review-v0.2.6.md` and `.downstream/upstream-risk.json`.
+
 ## Official behavior and downstream contracts
 
 OpenCode Zen/GO, site billing states, WebSocket execution scope and pooling,

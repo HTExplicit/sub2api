@@ -1,6 +1,8 @@
 import { defineComponent, h, type PropType } from "vue";
 import { flushPromises, mount } from "@vue/test-utils";
 import { createMemoryHistory, createRouter } from "vue-router";
+import { createPinia } from "pinia";
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AdminGroup, CodexModelsManifestConfig } from "@/types";
@@ -212,7 +214,7 @@ const mountView = () =>
       plugins: [createRouter({
         history: createMemoryHistory(),
         routes: [{ path: "/", component: { template: "<div />" } }],
-      })],
+      }), createPinia()],
       stubs: {
         AppLayout: AppLayoutStub,
         TablePageLayout: TablePageLayoutStub,

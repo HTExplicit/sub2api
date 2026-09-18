@@ -1520,7 +1520,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			filterStats.exclude("platform_mismatch")
 			continue
 		}
-		if s.service.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, openAIRequestedModelForAccount(ctx, account, req.RequestedModel)) {
+		if s.service.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, openAIRequestedModelForAccount(ctx, account, req.RequestedModel), req.RequireCompact) {
 			filterStats.exclude("runtime_blocked")
 			filterStats.observeRuntimeCooldown(s.service, account.ID)
 			continue
@@ -1846,7 +1846,7 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleReason(ctx con
 		return false, "provider_identity_mismatch"
 	}
 	requestedModel := openAIRequestedModelForAccount(ctx, account, req.RequestedModel)
-	if s != nil && s.service != nil && s.service.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, requestedModel) {
+	if s != nil && s.service != nil && s.service.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, requestedModel, req.RequireCompact) {
 		return false, "runtime_blocked"
 	}
 	// The scheduler's candidate filter already checks the account's ordinary
