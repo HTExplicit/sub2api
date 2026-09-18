@@ -16,6 +16,7 @@ import {
   defaultCNBaseUrl,
   defaultOpenCodeProtocolRules,
   isCustomGrokBaseUrl,
+  normalizeAccountBaseUrl,
   resolveOpenCodeAccountMode,
   isHeaderOverrideCapable,
   GROK_BASE_URL_PRESETS,
@@ -27,6 +28,18 @@ import {
   splitHeaderOverridesObject,
   validateHeaderOverrideRows
 } from '../credentialsBuilder'
+
+describe('normalizeAccountBaseUrl', () => {
+  it('adds https to a host/path pasted without a scheme', () => {
+    expect(normalizeAccountBaseUrl(' api2.aigcbest.top/v1 ')).toBe('https://api2.aigcbest.top/v1')
+  })
+
+  it('preserves explicit schemes and empty input', () => {
+    expect(normalizeAccountBaseUrl('https://relay.example/v1')).toBe('https://relay.example/v1')
+    expect(normalizeAccountBaseUrl('http://relay.example')).toBe('http://relay.example')
+    expect(normalizeAccountBaseUrl('')).toBe('')
+  })
+})
 
 describe('applyInterceptWarmup', () => {
   it('create + enabled=true: should set intercept_warmup_requests to true', () => {
