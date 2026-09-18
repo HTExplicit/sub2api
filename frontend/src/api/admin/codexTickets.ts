@@ -7,6 +7,7 @@ export interface TicketResult {
   duration_ms?: number; expires_at?: string; fingerprint?: string
 }
 export interface ProxyTestResult {
+  failure_detail?: string
   success: boolean; network_reachable: boolean; protocol: string; http_status?: number; code: string; message: string
   stages: Array<{ name: string; success: boolean; duration_ms: number; message?: string }>
   certificate_trust?: string; certificate_fingerprint?: string; protocol_suggestion?: string
