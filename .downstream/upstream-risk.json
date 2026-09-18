@@ -2064,7 +2064,9 @@
     "frontend/src/views/user/RedeemView.vue",
     "frontend/src/views/user/UserOrdersView.vue"
   ],
-  "review_status": "resolutions_implemented_validation_pending",
+  "release_commit": "4bb9eabca65d17c9c392945b332e3914b2ff16c3",
+  "review_gate_execution": "ordinary_branch_skipped_exact_sha_review_recorded",
+  "review_status": "reviewed_validated_released",
   "risk_class": "review_required",
   "schema": 1,
   "temporary_tag_created": false,
@@ -2213,5 +2215,6 @@
   "upstream_tag": "v0.2.6",
   "upstream_tag_checked_at": "2026-09-18",
   "upstream_tag_status": "withdrawn_not_advertised",
-  "upstream_tree": "61de86700f217d58c337998f3c51a89969493267"
+  "upstream_tree": "61de86700f217d58c337998f3c51a89969493267",
+  "validation_reference": "https://github.com/HTExplicit/sub2api/pull/184"
 }

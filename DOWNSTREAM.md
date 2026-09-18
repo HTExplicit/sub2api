@@ -4,19 +4,12 @@ This fork maintains the `codexrip` patch set over official Sub2API releases.
 
 ## Source baseline
 
-- Official baseline: `v0.2.5`, peeled commit `86f93c28ee34cc74b629dafb748bd5ac5ca8c5ea`.
-- Version-only sync: `881f3202694c6bc932446931a30c27d9675178b9`; embedded version `0.2.5`.
-- Integration starts at production `v0.2.4-codexrip.11`, commit `4c96fb375a68744ddf356ffb3f64afac5e21894b`.
-- Conflict decisions and validation: [v0.2.5 review](.downstream/upstream-review-v0.2.5.md).
-- The operator workspace `docs/sub2api.md` owns the current production pointer.
-  A source merge or Release alone does not establish deployment completion.
-
-### Recovered upstream v0.2.6
-
-- The withdrawn upstream release is recovered from exact merge commit `49a39b6dc1abed30fd227611e8af1108bc427610`; the remote `v0.2.6` tag is not used as a source.
-- The merge includes the official changes after v0.2.5 and the six Codex ticket patches. The ticket feature remains runtime-disabled in the published deployment until an administrator supplies a harvest proxy and enables it from the settings page.
-- Ticket collection and injection apply only to OpenAI OAuth and Setup Token accounts. Cindy/API-key accounts retain their existing identity, health, quota and sticky-session behavior.
-- The integration review and one-off exact-SHA risk evidence are recorded in `.downstream/upstream-review-v0.2.6.md` and `.downstream/upstream-risk.json`.
+- Integrated upstream: recovered `v0.2.6`, exact commit `49a39b6dc1abed30fd227611e8af1108bc427610`. The public tag was withdrawn when recovered; source is pinned to the commit, not a recreated official tag.
+- Integration base: production `v0.2.5-codexrip.14`, commit `a2f13d34a41bb89225e5d6864d466b4a35d6448f`; embedded version is `0.2.6`.
+- Conflict decisions and validation: [v0.2.6 review](.downstream/upstream-review-v0.2.6.md); exact-SHA evidence: [risk manifest](.downstream/upstream-risk.json).
+- The operator workspace `docs/sub2api.md` owns the current production pointer. A source merge or Release alone does not establish deployment completion.
+- The full recovered tree includes the official changes after v0.2.5 and all six Codex ticket patches. Ticket collection/injection is disabled in this deployment; the admin settings expose the proxy and live switch for later explicit activation.
+- Tickets apply only to OpenAI OAuth/Setup Token accounts, excluding shadows. Cindy/API-key paths retain their existing identity, health, quota and sticky-session behavior.
 
 ## Official behavior and downstream contracts
 
