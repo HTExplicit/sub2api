@@ -164,6 +164,16 @@ func TestCodexTicketProxyCONNECTPreflightAndHarvestShareTrust(t *testing.T) {
 	require.Equal(t, []string{"HEAD", "POST"}, methods)
 	require.Equal(t, []string{"", "Bearer synthetic-oauth"}, auth)
 	mu.Unlock()
+	// Draft testing also reconnects with the pinned verifier, without credentials.
+	tested, testErr := svc.TestCodexTicketProxy(ctx, proxyURL.String())
+	require.NoError(t, testErr)
+	require.False(t, tested.Success)
+	require.Equal(t, 401, tested.HTTPStatus)
+	require.Equal(t, "pinned_connection", tested.Stages[len(tested.Stages)-1].Name)
+	mu.Lock()
+	require.Equal(t, []string{"HEAD", "POST", "HEAD", "HEAD"}, methods)
+	require.Equal(t, []string{"", "Bearer synthetic-oauth", "", ""}, auth)
+	mu.Unlock()
 	// A regular system-verifying client remains unable to trust this certificate.
 	tr := &http.Transport{Proxy: http.ProxyURL(proxyURL)}
 	defer tr.CloseIdleConnections()

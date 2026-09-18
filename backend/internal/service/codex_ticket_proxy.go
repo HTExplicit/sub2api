@@ -392,6 +392,9 @@ func (s *OpenAIGatewayService) TestCodexTicketProxy(ctx context.Context, raw str
 			if !result.Success {
 				result.Code = "target_http_status"
 				result.Message = fmt.Sprintf("连接和固定证书验证正常，目标返回HTTP %d；未发送OAuth凭据，尚未验证打票能力", resp.StatusCode)
+			} else {
+				result.Code = "proxy_reachable"
+				result.Message = "代理连接和固定证书验证正常；连接测试不代表已取得292票据"
 			}
 		}
 	}
