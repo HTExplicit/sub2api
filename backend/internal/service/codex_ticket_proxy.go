@@ -406,7 +406,7 @@ var ticketSensitiveValuePattern = regexp.MustCompile(`(?i)(?:bearer\s+\S+|(?:htt
 
 func codexTicketSafeUpstreamMessage(raw string, secretValues ...string) string {
 	for _, v := range secretValues {
-		if len(v) > 3 {
+		if v != "" {
 			raw = strings.ReplaceAll(raw, v, "[redacted]")
 		}
 	}

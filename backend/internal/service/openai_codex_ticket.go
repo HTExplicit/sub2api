@@ -434,7 +434,12 @@ func (s *OpenAIGatewayService) fireCodexTicketProbe(ctx context.Context, account
 		var detail string
 		if resp.Body != nil {
 			raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-			detail = codexTicketSafeUpstreamMessage(extractUpstreamErrorMessage(raw), token)
+			secrets := []string{token, proxyURL}
+			if parsed, parseErr := url.Parse(proxyURL); parseErr == nil && parsed.User != nil {
+				password, _ := parsed.User.Password()
+				secrets = append(secrets, parsed.User.Username(), password)
+			}
+			detail = codexTicketSafeUpstreamMessage(extractUpstreamErrorMessage(raw), secrets...)
 		}
 		return state, resp.StatusCode, &codexTicketUpstreamError{message: detail}
 	}
