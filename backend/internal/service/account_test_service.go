@@ -265,6 +265,10 @@ func (s *AccountTestService) validateUpstreamBaseURL(raw string) (string, error)
 	if s.cfg == nil {
 		return "", errors.New("config is not available")
 	}
+	// The admin form accepts a host/path shorthand. Normalize it before the
+	// shared URL validator so model previews, connection tests, and billing
+	// probes all interpret the same input consistently.
+	raw = NormalizeUpstreamBaseURLInput(raw)
 	if !s.cfg.Security.URLAllowlist.Enabled {
 		return urlvalidator.ValidateURLFormat(raw, s.cfg.Security.URLAllowlist.AllowInsecureHTTP)
 	}

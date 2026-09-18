@@ -4088,6 +4088,7 @@ import {
   defaultOpenCodeProtocolRules,
   isCNProviderPlatform,
   isHeaderOverrideCapable,
+  normalizeAccountBaseUrl,
   validateHeaderOverrideRows,
   type CnAccountMode,
   type CnApiProtocol,
@@ -4509,6 +4510,12 @@ const syncPreviewCredentials = computed(() => {
   const baseUrl = isMultiProtocolPlatform.value && apiProtocol.value === 'adaptive'
     ? adaptiveBaseUrls.value.chat_completions.trim() || apiKeyBaseUrl.value.trim()
     : apiKeyBaseUrl.value.trim()
+  const apiBaseUrls = apiProtocol.value === 'adaptive'
+    ? Object.fromEntries(Object.entries(adaptiveBaseUrls.value).map(([protocol, value]) => [
+      protocol,
+      normalizeAccountBaseUrl(value)
+    ]))
+    : undefined
   const modelMapping = buildModelMappingObject(
     modelRestrictionMode.value,
     allowedModels.value,
@@ -4517,11 +4524,11 @@ const syncPreviewCredentials = computed(() => {
   return {
     platform: form.platform,
     type: form.type,
-    base_url: baseUrl || undefined,
+    base_url: baseUrl ? normalizeAccountBaseUrl(baseUrl) : undefined,
     ...(isCNPlatform.value ? {
       account_mode: accountMode.value,
       api_protocol: apiProtocol.value,
-      api_base_urls: apiProtocol.value === 'adaptive' ? { ...adaptiveBaseUrls.value } : undefined
+      api_base_urls: apiBaseUrls
     } : {}),
     api_key: apiKeyValue.value,
     ...(modelMapping ? { model_mapping: modelMapping } : {})
@@ -5226,12 +5233,17 @@ const {
       platform: form.platform,
       type: form.type,
       base_url: form.platform === 'antigravity' && antigravityAccountType.value === 'upstream'
-        ? upstreamBaseUrl.value.trim()
-        : form.type === 'apikey' ? apiKeyBaseUrl.value.trim() : undefined,
+        ? normalizeAccountBaseUrl(upstreamBaseUrl.value)
+        : form.type === 'apikey' ? normalizeAccountBaseUrl(apiKeyBaseUrl.value) : undefined,
       ...(isCNPlatform.value ? {
         account_mode: accountMode.value,
         api_protocol: apiProtocol.value,
-        api_base_urls: apiProtocol.value === 'adaptive' ? { ...adaptiveBaseUrls.value } : undefined
+        api_base_urls: apiProtocol.value === 'adaptive'
+          ? Object.fromEntries(Object.entries(adaptiveBaseUrls.value).map(([protocol, value]) => [
+            protocol,
+            normalizeAccountBaseUrl(value)
+          ]))
+          : undefined
       } : {}),
       model_mapping: mappings ?? {},
       model_ids: [...new Set([
@@ -6013,7 +6025,7 @@ const handleSubmit = async () => {
 
     // Build upstream credentials (and optional model restriction)
     const credentials: Record<string, unknown> = {
-      base_url: upstreamBaseUrl.value.trim(),
+      base_url: normalizeAccountBaseUrl(upstreamBaseUrl.value),
       api_key: upstreamApiKey.value.trim()
     }
 
@@ -6089,7 +6101,7 @@ const handleSubmit = async () => {
 
   // Build credentials with optional model mapping
   const credentials: Record<string, unknown> = {
-    base_url: apiKeyBaseUrl.value.trim() || defaultBaseUrl,
+    base_url: normalizeAccountBaseUrl(apiKeyBaseUrl.value.trim() || defaultBaseUrl),
     api_key: apiKeyValue.value.trim()
   }
   if (form.platform === 'gemini') {
@@ -6109,7 +6121,9 @@ const handleSubmit = async () => {
       )
       const protocolBaseUrls: Record<string, string> = {}
       for (const item of cnAdaptiveProtocolOptions.value) {
-        protocolBaseUrls[item.value] = (adaptiveBaseUrls.value[item.value] || defaults[item.value]).trim()
+        protocolBaseUrls[item.value] = normalizeAccountBaseUrl(
+          (adaptiveBaseUrls.value[item.value] || defaults[item.value]).trim()
+        )
       }
       credentials.api_base_urls = protocolBaseUrls
       credentials.base_url = protocolBaseUrls.chat_completions
@@ -6118,7 +6132,7 @@ const handleSubmit = async () => {
       apiKeyBaseUrl.value.trim() || defaultCNBaseUrl(form.platform, currentOpenCodeOrCNMode(), apiProtocol.value)
     ).trim()
     if (apiProtocol.value !== 'adaptive' && resolvedCNBase) {
-      credentials.base_url = resolvedCNBase
+      credentials.base_url = normalizeAccountBaseUrl(resolvedCNBase)
     }
     // 智谱团队版 Coding Plan：组织/项目 ID 写入凭据（非空才写）
     if (form.platform === 'zhipu' && accountMode.value === 'coding') {
@@ -6291,7 +6305,7 @@ const createAccountAndFinish = async (
   }
   if (platform === 'grok') {
     if (!credentials.base_url) {
-      credentials.base_url = apiKeyBaseUrl.value.trim() || 'https://api.x.ai/v1'
+      credentials.base_url = normalizeAccountBaseUrl(apiKeyBaseUrl.value.trim() || 'https://api.x.ai/v1')
     }
     const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
     if (modelMapping) {

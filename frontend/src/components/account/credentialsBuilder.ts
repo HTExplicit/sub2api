@@ -1,5 +1,24 @@
 import { openAIPlanTypeLabel } from '@/utils/planType'
 
+/**
+ * Normalize the endpoint text accepted by the account form. Users commonly
+ * paste a host/path without a scheme; treating that as HTTPS keeps the model
+ * preview, account creation, and later forwarding paths on the same URL.
+ * Explicit schemes remain unchanged and are still validated by the backend.
+ */
+export function normalizeAccountBaseUrl(value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  if (trimmed.startsWith('//')) return `https:${trimmed}`
+  try {
+    const parsed = new URL(trimmed)
+    if (parsed.protocol && trimmed.includes('://')) return trimmed
+  } catch {
+    // The backend will provide the authoritative validation error.
+  }
+  return `https://${trimmed}`
+}
+
 export function applyInterceptWarmup(
   credentials: Record<string, unknown>,
   enabled: boolean,

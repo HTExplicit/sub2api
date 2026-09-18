@@ -2964,13 +2964,16 @@ func (h *AccountHandler) SyncUpstreamModelsPreview(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	// Accept the same host/path shorthand as the account form. The service
+	// validator also normalizes this defensively for non-HTTP callers.
+	req.BaseURL = service.NormalizeUpstreamBaseURLInput(req.BaseURL)
 	modelMapping := make(map[string]any, len(req.ModelMapping))
 	for sourceModel, upstreamModel := range req.ModelMapping {
 		modelMapping[sourceModel] = upstreamModel
 	}
 	baseURLs := make(map[string]any, len(req.APIBaseURLs))
 	for protocol, baseURL := range req.APIBaseURLs {
-		baseURLs[protocol] = baseURL
+		baseURLs[protocol] = service.NormalizeUpstreamBaseURLInput(baseURL)
 	}
 
 	tempAccount := &service.Account{

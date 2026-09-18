@@ -553,6 +553,12 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 }
 
 func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccountInput) (*Account, error) {
+	if input != nil {
+		// Keep the persisted credential endpoint in the same canonical form used
+		// by model previews and connection tests.  This also makes the Cindy
+		// mutation decision see the same normalized identity as the create path.
+		NormalizeAccountCredentialBaseURLs(input.Credentials)
+	}
 	if dbent.TxFromContext(ctx) == nil && isCanonicalCindyAccountInput(input.Platform, input.Type, input.Credentials) {
 		if s.cindyAccountMutations == nil {
 			return nil, errors.New("cindy account mutation is unavailable")
@@ -565,6 +571,7 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 }
 
 func (s *adminServiceImpl) createAccount(ctx context.Context, input *CreateAccountInput) (*Account, error) {
+	NormalizeAccountCredentialBaseURLs(input.Credentials)
 	if err := ValidateOpenAIReasoningPolicyExtra(input.Extra); err != nil {
 		return nil, err
 	}
@@ -694,6 +701,7 @@ func (s *adminServiceImpl) updateAccount(ctx context.Context, id int64, input *U
 	if err != nil {
 		return nil, err
 	}
+	NormalizeAccountCredentialBaseURLs(input.Credentials)
 	if err := ValidateModelContextOverrides(account, input.ModelContextOverrides); err != nil {
 		return nil, err
 	}
@@ -765,6 +773,7 @@ func (s *adminServiceImpl) updateAccount(ctx context.Context, id int64, input *U
 		// 敏感子键采用"incoming 没提供就保留"的合并语义：前端响应已脱敏，
 		// 全对象 PUT 编辑时不会再带回 token，避免覆盖时清空已有凭证。
 		account.Credentials = MergePreservingSensitiveCreds(account.Credentials, input.Credentials)
+		NormalizeAccountCredentialBaseURLs(account.Credentials)
 		// 校验并规范化请求头覆写配置（header 名小写化、格式检查）
 		if err := NormalizeHeaderOverrideCredentials(account.Credentials); err != nil {
 			return nil, err
