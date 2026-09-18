@@ -29,7 +29,9 @@ Ticket runtime defaults remain safe: `enabled=false`, empty harvest proxy, `fail
 ## Validation status
 
 - Passed: Wire regeneration, focused backend ticket/account/DTO tests, focused frontend settings/account/dialog/manifest tests, frontend production build and `git diff --check`.
-- Pending: full compile/vet and required PR checks.
+- Passed: full backend compile (`go test -run '^$' ./...`), `go vet ./...`, `go mod verify`, focused runtime/continuation/Cindy tests and risk/automation contract tests.
+- Passed: US `resource-preflight` baseline; evidence `artifacts/evidence/us-runtime-audit-2026-09-18_140357_769694.log` records the `.14` image, digest, healthy container, resource profile, guard hashes and unchanged companion services.
+- Pending: required PR checks, Release and production deployment.
 - Not run: real upstream model calls, harvest-proxy calls, management-page activation, canary, long observation and production deployment.
 
 ## Release boundary
