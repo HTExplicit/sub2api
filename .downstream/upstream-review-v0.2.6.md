@@ -30,10 +30,12 @@ Ticket runtime defaults remain safe: `enabled=false`, empty harvest proxy, `fail
 
 - Passed: Wire regeneration, focused backend ticket/account/DTO tests, focused frontend settings/account/dialog/manifest tests, frontend production build and `git diff --check`.
 - Passed: full backend compile (`go test -run '^$' ./...`), `go vet ./...`, `go mod verify`, focused runtime/continuation/Cindy tests and risk/automation contract tests.
-- Passed: US `resource-preflight` baseline; evidence `artifacts/evidence/us-runtime-audit-2026-09-18_140357_769694.log` records the `.14` image, digest, healthy container, resource profile, guard hashes and unchanged companion services.
-- Pending: required PR checks, Release and production deployment.
-- Not run: real upstream model calls, harvest-proxy calls, management-page activation, canary, long observation and production deployment.
+- Passed: US pre-deploy and post-deploy `resource-preflight` baselines; evidence `artifacts/evidence/us-runtime-audit-2026-09-18_140357_769694.log` and `artifacts/evidence/us-runtime-audit-2026-09-18_150841_483754.log` record the `.14` and `v0.2.6-codexrip.1` images, digest, healthy container, resource profile, guard hashes and unchanged companion services.
+- Passed: applicable PR checks and main CI/security/Downstream Verify; PR and release trees match (`970fb93bb74577d46469d63b744a125dfa343b9c`). The ordinary-branch Upstream risk gate was skipped by its existing condition, not executed as a successful classification; the exact-SHA manifest is the review evidence.
+- Passed: [Release](https://github.com/HTExplicit/sub2api/actions/runs/35358623663) and [deploy-preserve](https://github.com/HTExplicit/sub2api/actions/runs/35359519253). Runtime digest `sha256:fc8a1d7ec4dc66820ac2fbffde74f8c3109459e61c6f5c57b62c799e97afc6ca` and revision match the Release. Health passed after two startup 502 retries.
+- Read-only admin verification: ticket disabled, harvest proxy absent, OpenAI OAuth and Setup Token account counts both zero. No real model quality result is claimed.
+- Not run: real upstream model calls, harvest-proxy calls, management-page activation, canary, long observation and automatic rollback.
 
 ## Release boundary
 
-The candidate release is `v0.2.6-codexrip.1`. Production deployment uses the existing immutable-digest `deploy-preserve` path and changes only the `sub2api` container. The release does not claim that ticket quality improvements have been model-validated while the feature remains disabled.
+Released and deployed: `v0.2.6-codexrip.1`, source `4bb9eabca65d17c9c392945b332e3914b2ff16c3`. Production deployment uses the existing immutable-digest `deploy-preserve` path and changes only the `sub2api` container. The release does not claim that ticket quality improvements have been model-validated while the feature remains disabled.
