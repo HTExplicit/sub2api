@@ -50,6 +50,8 @@ func TestAccountTestService_TestAccountConnection_OpenAICompactOAuthSuccessPersi
 	svc := &AccountTestService{
 		accountRepo:  repo,
 		httpUpstream: upstream,
+		// 原生 v2 探测走普通 /responses 线，与真实转发同一 zstd 压缩边界。
+		cfg: &config.Config{Gateway: config.GatewayConfig{OpenAICodexRequestZstd: true}},
 	}
 
 	rec := httptest.NewRecorder()
@@ -69,10 +71,12 @@ func TestAccountTestService_TestAccountConnection_OpenAICompactOAuthSuccessPersi
 	require.Equal(t, codexCLIUserAgent, upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, "chatgpt-acc", upstream.lastReq.Header.Get("chatgpt-account-id"))
 	require.Equal(t, "true", upstream.lastReq.Header.Get("x-openai-fedramp"))
-	require.Equal(t, "gpt-5.4", gjson.GetBytes(upstream.lastBody, "model").String())
-	require.True(t, gjson.GetBytes(upstream.lastBody, "stream").Bool())
-	require.False(t, gjson.GetBytes(upstream.lastBody, "store").Bool())
-	inputItems := gjson.GetBytes(upstream.lastBody, "input").Array()
+	require.Equal(t, "zstd", upstream.lastReq.Header.Get("Content-Encoding"))
+	probeBody := zstdDecodeForTest(t, upstream.lastBody)
+	require.Equal(t, "gpt-5.4", gjson.GetBytes(probeBody, "model").String())
+	require.True(t, gjson.GetBytes(probeBody, "stream").Bool())
+	require.False(t, gjson.GetBytes(probeBody, "store").Bool())
+	inputItems := gjson.GetBytes(probeBody, "input").Array()
 	require.NotEmpty(t, inputItems)
 	require.Equal(t, "compaction_trigger", inputItems[len(inputItems)-1].Get("type").String())
 
@@ -316,6 +320,8 @@ func TestAccountTestService_TestAccountConnection_OpenAICompactProbeIdentityMatc
 		"真实 Codex 从不以请求头形式发送 installation id")
 	require.NotContains(t, upstream.lastReq.Header.Get("session-id"), "probe_compact",
 		"探测标识不得是可被上游一眼识别的字面量")
+	// 出站 UA = 该账号（种子派生）的 Codex TUI 身份，而不是全局规范身份。
+	require.Equal(t, resolveCodexOutboundIdentityForAccount(&account, "").userAgent, upstream.lastReq.Header.Get("User-Agent"))
 	<-updateCalls
 }
 
