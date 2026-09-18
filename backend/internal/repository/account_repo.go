@@ -2310,21 +2310,14 @@ func (r *accountRepository) ListModelAvailabilityCandidates(
 	return r.accountsToService(ctx, accounts)
 }
 
+// SetRateLimited marks an account rate limited until resetAt. It delegates to
+// SetRateLimitedIfLater, so the write is monotonic: a later, shorter reset can
+// never shorten a longer window that is already stored, and rate_limited_at is
+// refreshed only on extending writes (a no-op write keeps the first
+// observation). Only an explicit clear (ClearRateLimit, ClearRateLimitIfObserved
+// and the admin update path) shortens or removes the window.
 func (r *accountRepository) SetRateLimited(ctx context.Context, id int64, resetAt time.Time) error {
-	now := time.Now()
-	_, err := r.client.Account.Update().
-		Where(dbaccount.IDEQ(id)).
-		SetRateLimitedAt(now).
-		SetRateLimitResetAt(resetAt).
-		Save(ctx)
-	if err != nil {
-		return err
-	}
-	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &id, nil, nil); err != nil {
-		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue rate limit failed: account=%d err=%v", id, err)
-	}
-	r.syncSchedulerAccountSnapshot(ctx, id)
-	return nil
+	return r.SetRateLimitedIfLater(ctx, id, resetAt)
 }
 
 // SetRateLimitedIfLater atomically extends an account-level rate limit. Grok
@@ -2600,6 +2593,40 @@ func (r *accountRepository) ClearTempUnschedulable(ctx context.Context, id int64
 	}
 	r.syncSchedulerAccountSnapshot(ctx, id)
 	return nil
+}
+
+// ClearTempUnschedulableIfMatch 原值受限清除临时停调：仅当该行当前的
+// (temp_unschedulable_reason, temp_unschedulable_until) 与调用方读到的快照完全一致时才清除，
+// 并在同一条语句中为「确实被更新的行」写入 scheduler_outbox（无行匹配则不写 outbox、
+// 不同步调度器快照，返回 (false, nil)）。
+//
+// reason/until 必须是从数据库读出的快照值：NULL reason 以 "" 传入（SQL 侧用 COALESCE 匹配）；
+// until 为 timestamptz（微秒精度），应直接使用仓储读回的值，不重新按本地时钟计算期限。
+func (r *accountRepository) ClearTempUnschedulableIfMatch(ctx context.Context, id int64, reason string, until time.Time) (bool, error) {
+	result, err := r.sql.ExecContext(ctx, `
+		WITH updated AS (
+		UPDATE accounts AS a
+		SET temp_unschedulable_until = NULL,
+			temp_unschedulable_reason = NULL,
+			updated_at = NOW()
+		WHERE a.id = $1
+			AND a.deleted_at IS NULL
+			AND COALESCE(a.temp_unschedulable_reason, '') = $2
+			AND a.temp_unschedulable_until = $3
+		RETURNING a.id
+		)
+		INSERT INTO scheduler_outbox (event_type, account_id, group_id, payload)
+		SELECT $4, updated.id, NULL, NULL FROM updated
+	`, id, reason, until, service.SchedulerOutboxEventAccountChanged)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil || affected == 0 {
+		return false, err
+	}
+	r.syncSchedulerAccountSnapshotDetached(ctx, id)
+	return true, nil
 }
 
 func (r *accountRepository) ClearRateLimit(ctx context.Context, id int64) error {

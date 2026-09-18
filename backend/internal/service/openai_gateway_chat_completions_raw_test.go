@@ -309,7 +309,7 @@ func TestForwardAsRawChatCompletions_NonStreamingCapturesCacheWriteUsage(t *test
 				StatusCode: http.StatusOK,
 				Header:     http.Header{"Content-Type": []string{"application/json"}},
 				Body: io.NopCloser(strings.NewReader(
-					`{"id":"chatcmpl_cache","object":"chat.completion","model":"gpt-5.6","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":` + tt.usageJSON + `}`,
+					`{"id":"chatcmpl_cache","object":"chat.completion","model":"gpt-5.6","service_tier":"flex","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":` + tt.usageJSON + `}`,
 				)),
 			}}
 			svc := &OpenAIGatewayService{
@@ -324,6 +324,7 @@ func TestForwardAsRawChatCompletions_NonStreamingCapturesCacheWriteUsage(t *test
 			require.Equal(t, 12, result.Usage.InputTokens)
 			require.Equal(t, 4, result.Usage.CacheReadInputTokens)
 			require.Equal(t, tt.wantWrite, result.Usage.CacheCreationInputTokens)
+			require.Equal(t, "flex", result.UpstreamResponseServiceTier)
 		})
 	}
 }

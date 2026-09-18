@@ -321,3 +321,23 @@ func TestGatewayCacheDeleteSessionAccountIDIfMatches(t *testing.T) {
 	_, err = cache.GetSessionAccountID(ctx, 9, "session")
 	require.ErrorIs(t, err, service.ErrStickySessionNotFound)
 }
+
+func TestGatewayCacheOpenAIResponsesSessionWindowClaimReturnsPreviousOwner(t *testing.T) {
+	redisServer := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: redisServer.Addr()})
+	cache, ok := NewGatewayCache(client).(service.OpenAIWSSessionPreemptionCache)
+	require.True(t, ok, "gateway cache must implement the WS session preemption window")
+	ctx := context.Background()
+
+	previous, err := cache.ClaimOpenAIResponsesSessionWindow(ctx, 7, "wspreempt:3:session", []byte("owner-1"), time.Minute)
+	require.NoError(t, err)
+	require.Empty(t, previous)
+
+	previous, err = cache.ClaimOpenAIResponsesSessionWindow(ctx, 7, "wspreempt:3:session", []byte("owner-2"), time.Minute)
+	require.NoError(t, err)
+	require.Equal(t, []byte("owner-1"), previous)
+
+	owned, err := cache.CompareAndRefreshOpenAIResponsesSessionWindow(ctx, 7, "wspreempt:3:session", []byte("owner-1"), time.Minute)
+	require.NoError(t, err)
+	require.False(t, owned)
+}

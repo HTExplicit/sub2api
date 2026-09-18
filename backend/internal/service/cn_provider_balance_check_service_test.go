@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
@@ -35,13 +36,27 @@ func (f *fakeCNQuotaProber) Probed() []int64 {
 	return append([]int64(nil), f.probed...)
 }
 
+// cnClearCall 记录一次原值受限清除收到的快照参数。
+type cnClearCall struct {
+	id     int64
+	reason string
+	until  time.Time
+}
+
 type fakeCNCheckRepo struct {
 	AccountRepository
-	byPlatform map[string][]Account
+	byPlatform       map[string][]Account
+	clearIfMatch     []cnClearCall
+	clearIfMatchMiss bool // true: 报告快照不匹配（CAS 未命中）
 }
 
 func (r *fakeCNCheckRepo) ListByPlatform(ctx context.Context, platform string) ([]Account, error) {
 	return r.byPlatform[platform], nil
+}
+
+func (r *fakeCNCheckRepo) ClearTempUnschedulableIfMatch(_ context.Context, id int64, reason string, until time.Time) (bool, error) {
+	r.clearIfMatch = append(r.clearIfMatch, cnClearCall{id: id, reason: reason, until: until})
+	return !r.clearIfMatchMiss, nil
 }
 
 func TestCNProviderBalanceCheckRunOnceProbesCodingPlanQuota(t *testing.T) {
@@ -129,6 +144,39 @@ func TestCNProviderBalanceCheckRunOnceSkipsOllamaCloudUsageAccounts(t *testing.T
 
 	require.Equal(t, []int64{1}, prober.probed)
 	require.Empty(t, loadRepo.getByIDIDs, "ollama 账号不得进入 payg 检查队列")
+}
+
+// 余额恢复后仅按本轮快照 (reason, until) 做原值受限清除：CAS 命中 → 恢复并报 cleared；
+// 快照被并发改写（CAS 未命中）→ 不清除、不报恢复，等下一轮重新评估。
+func TestCNProviderBalanceCheckCheckOneClearsOnlyMatchingBalanceLowPause(t *testing.T) {
+	until := time.Now().Add(20 * time.Minute)
+	reason := cnBalanceLowReason("余额 0.5 CNY 低于阈值 1.00")
+	newService := func(repo *fakeCNCheckRepo) *CNProviderBalanceCheckService {
+		probeRepo := &cnBalanceProbeRepo{account: newDeepSeekBalanceProbeAccount()}
+		upstream := &cnBalanceResponseUpstream{
+			statusCode: 200,
+			body:       `{"is_available":true,"balance_infos":[{"currency":"CNY","total_balance":"100"}]}`,
+		}
+		return &CNProviderBalanceCheckService{
+			accountRepo:    repo,
+			balanceService: NewCNProviderBalanceService(probeRepo, nil, upstream, nil),
+			cfg:            &config.Config{},
+		}
+	}
+	newPausedAccount := func() *Account {
+		acc := newDeepSeekBalanceProbeAccount()
+		acc.TempUnschedulableUntil = &until
+		acc.TempUnschedulableReason = reason
+		return acc
+	}
+
+	repo := &fakeCNCheckRepo{}
+	require.Equal(t, cnBalanceCleared, newService(repo).checkOne(context.Background(), newPausedAccount(), 1.0))
+	require.Equal(t, []cnClearCall{{id: 42, reason: reason, until: until}}, repo.clearIfMatch, "CAS 必须收到加载时的完整快照而非裸 id")
+
+	missRepo := &fakeCNCheckRepo{clearIfMatchMiss: true}
+	require.Equal(t, cnBalanceNoChange, newService(missRepo).checkOne(context.Background(), newPausedAccount(), 1.0))
+	require.Len(t, missRepo.clearIfMatch, 1)
 }
 
 // 双币种（deepseek CNY+USD）停调判定：任一币种达标即不停调，全部低于阈值才停；

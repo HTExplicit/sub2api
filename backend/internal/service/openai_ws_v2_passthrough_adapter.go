@@ -755,6 +755,9 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 		return err
 	}
 	refusalRuntime := s.openAIRefusalRecoveryRuntime(ctx)
+	// Request integrity snapshot of the client frame before the Lite/Laxa
+	// normalizers; nil when the check is off.
+	integrityOriginalFirst := s.requestIntegrityFrameSnapshot(account, firstClientMessage)
 	if isOpenAIResponsesLiteWebSocketPayload(firstClientMessage) {
 		liteFirstMessage, _, liteErr := normalizeOpenAIResponsesLitePayloadForAccount(firstClientMessage, account)
 		if liteErr != nil {
@@ -870,6 +873,17 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 		return NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, blocked.Message, blocked)
 	}
 	firstClientMessage = updatedFirst
+	// Last rewrite of the first frame is done; compare before it is written upstream.
+	if integrityErr := s.checkRequestIntegrity(c, account, "ws_passthrough", "first_frame", integrityOriginalFirst, firstClientMessage, requestIntegrityOptions{
+		UpstreamModel: capturedSessionModel,
+		ResponsesLite: isOpenAIResponsesLiteWebSocketPayload(integrityOriginalFirst),
+		Platform:      account.Platform,
+		EffortPolicy: func(frame []byte) ([]byte, error) {
+			return applyOpenAIWSReasoningEffortPolicy(frame, hooks)
+		},
+	}); integrityErr != nil {
+		return NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, integrityErr.Error(), integrityErr)
+	}
 
 	// 在 policy filter 之后再提取 service_tier / reasoning_effort 用于
 	// usage 上报：filter 命中时 service_tier 已经从 firstClientMessage 中删除，
@@ -1074,6 +1088,12 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 			}
 			eventType := strings.TrimSpace(gjson.GetBytes(payload, "type").String())
 			isResponseCreate := eventType == "response.create"
+			// Request integrity snapshot of the client frame before any rewrite in
+			// this filter (response.create only; other frames carry no compared field).
+			var integrityOriginalFrame []byte
+			if isResponseCreate {
+				integrityOriginalFrame = s.requestIntegrityFrameSnapshot(account, payload)
+			}
 			originalSessionRequestModel := ""
 			if eventType == "session.update" {
 				originalSessionRequestModel = strings.TrimSpace(gjson.GetBytes(payload, "session.model").String())
@@ -1238,6 +1258,21 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 				}
 			}
 			out, blocked, policyErr := s.applyOpenAIFastPolicyToWSResponseCreate(ctx, account, model, payload)
+			// Last rewrite of the frame is done; compare before it is written
+			// upstream. Runs on the client->upstream goroutine; gin Context.Set is
+			// mutex-guarded.
+			if isResponseCreate && policyErr == nil && blocked == nil && integrityOriginalFrame != nil {
+				if integrityErr := s.checkRequestIntegrity(c, account, "ws_passthrough", "frame", integrityOriginalFrame, out, requestIntegrityOptions{
+					UpstreamModel: model,
+					ResponsesLite: responsesLite,
+					Platform:      account.Platform,
+					EffortPolicy: func(frame []byte) ([]byte, error) {
+						return applyOpenAIWSReasoningEffortPolicy(frame, hooks)
+					},
+				}); integrityErr != nil {
+					return payload, nil, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, integrityErr.Error(), integrityErr)
+				}
+			}
 			// 多轮 passthrough usage：仅在成功（non-block / non-err）
 			// 的 response.create 帧上更新 usageMeta，使用
 			// filter 处理后的 payload，与首帧 policy-after-extract 语义
@@ -1377,6 +1412,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 					UpstreamModel:                 openAIWSDifferentModel(turnRequestModel, turnUpstreamModel),
 					UpstreamResponseModel:         turn.ResponseModel,
 					UpstreamResponseModelConflict: turn.ResponseModelConflict,
+					UpstreamResponseServiceTier:   normalizeObservedOpenAIServiceTier(turn.ResponseServiceTier),
 					ServiceTier:                   usageMeta.serviceTier.Load(),
 					ReasoningEffort:               usageMeta.reasoningEffort.Load(),
 					RequestedReasoningEffort:      usageMeta.requestedReasoningEffort.Load(),
@@ -1584,6 +1620,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 		UpstreamModel:                 openAIWSDifferentModel(resultRequestModel, resultUpstreamModel),
 		UpstreamResponseModel:         relayResult.ResponseModel,
 		UpstreamResponseModelConflict: relayResult.ResponseModelConflict,
+		UpstreamResponseServiceTier:   normalizeObservedOpenAIServiceTier(relayResult.ResponseServiceTier),
 		ServiceTier:                   usageMeta.serviceTier.Load(),
 		ReasoningEffort:               usageMeta.reasoningEffort.Load(),
 		RequestedReasoningEffort:      usageMeta.requestedReasoningEffort.Load(),

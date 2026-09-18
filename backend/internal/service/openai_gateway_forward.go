@@ -20,11 +20,15 @@ import (
 // Forward forwards request to OpenAI API
 func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (_ *OpenAIForwardResult, forwardErr error) {
 	diagnosticIncomingBody := body
+	// Snapshot the client body for the request integrity check before any
+	// rewrite; re-staged on every entry so a failover never reuses a stale copy.
+	s.stageRequestIntegrityOriginal(c, account, "responses", body)
 	beginUpstreamResponseModelObservation(c)
 	ClearActualOpenAIUpstreamEndpoint(c)
 	// Capture the continuation requirement before any compatibility transform.
 	// Its absence after normalization cannot prove this was a stateless request.
 	requestedPreviousResponseID := strings.TrimSpace(gjson.GetBytes(body, "previous_response_id").String())
+	var integrityEffortPolicy func([]byte) ([]byte, error)
 	if account != nil && account.IsOpenAI() {
 		requestedModel := gjson.GetBytes(body, "model").String()
 		candidates := []string{account.GetMappedModel(requestedModel)}
@@ -40,6 +44,12 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			return nil, err
 		}
 		body = withEffort
+		// The request integrity check replays this exact policy (same candidates)
+		// on the client snapshot so governed effort values are not differences.
+		integrityEffortPolicy = func(raw []byte) ([]byte, error) {
+			governed, _, policyErr := materializeOpenAIForwardReasoningEffort(ctx, raw, candidates...)
+			return governed, policyErr
+		}
 	}
 	if shouldForwardOpenAIResponsesViaRawChatCompletions(account) {
 		SetActualOpenAIUpstreamEndpoint(c, "/v1/chat/completions")
@@ -158,7 +168,19 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 	passthroughEnabled := account.IsOpenAIPassthroughEnabled() && !cindyHTTPToWSV2
 	compactPath := isOpenAIResponsesCompactPath(c)
+	// Records which service-owned rewrites this attempt applies so the request
+	// integrity check can replay them on the client snapshot
+	// (openai_request_integrity_semantics.go). Published to the gin context once
+	// the Codex CLI predicates are known and again with the resolved upstream
+	// model, for forwardOpenAIPassthrough and the WS forwarder.
+	integrityOpts := requestIntegrityOptions{
+		Compact:       compactPath,
+		ResponsesLite: responsesLite,
+		Platform:      account.Platform,
+		EffortPolicy:  integrityEffortPolicy,
+	}
 	if shouldFlattenOpenAIResponsesNamespaces(account, wsDecision.Transport, passthroughEnabled, compactPath) {
+		integrityOpts.FlattenNamespaces = true
 		body, err = flattenOpenAIResponsesNamespaces(c, body)
 		if err != nil {
 			setOpsUpstreamError(c, http.StatusBadRequest, err.Error(), "")
@@ -172,8 +194,11 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		keepToolCallNamespaces := shouldKeepOpenAIResponsesToolCallNamespaces(
 			account, wsDecision.Transport, passthroughEnabled, compactPath, body,
 		)
-		body, err = stripOpenAIResponsesInputNamespaces(body, keepToolCallNamespaces,
-			shouldKeepOpenAIResponsesStandaloneOutputNamespaces(account, compactPath))
+		keepStandaloneOutputNamespaces := shouldKeepOpenAIResponsesStandaloneOutputNamespaces(account, compactPath)
+		integrityOpts.StripInputNamespaces = true
+		integrityOpts.KeepToolCallNamespaces = keepToolCallNamespaces
+		integrityOpts.KeepStandaloneOutputNamespaces = keepStandaloneOutputNamespaces
+		body, err = stripOpenAIResponsesInputNamespaces(body, keepToolCallNamespaces, keepStandaloneOutputNamespaces)
 		if err != nil {
 			setOpsUpstreamError(c, http.StatusBadRequest, err.Error(), "")
 			c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
@@ -286,6 +311,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if isCodexCLI {
 		codexImageGenerationExplicitToolPolicy = account.CodexImageGenerationExplicitToolPolicy()
 	}
+	integrityOpts.ImageToolPolicyStrip = isCodexCLI && codexImageGenerationExplicitToolPolicy == codexImageGenerationExplicitToolPolicyStrip
+	stageRequestIntegrityForwardOptions(c, integrityOpts)
 	if c != nil {
 		c.Set("openai_ws_transport_decision", string(wsDecision.Transport))
 		c.Set("openai_ws_transport_reason", wsDecision.Reason)
@@ -405,6 +432,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		imageGenerationAllowed &&
 		codexImageGenerationExplicitToolPolicy != codexImageGenerationExplicitToolPolicyStrip &&
 		s.isCodexImageGenerationBridgeEnabled(ctx, account, apiKey)
+	integrityOpts.ImageBridgeEnabled = codexImageGenerationBridgeEnabled
 	var imageIntent bool
 	canonicalImageIntent := resolveOpenAIImageIntentHint(c, reqModel, canonicalImageIntentBody, IsImageGenerationIntent)
 	if isCodexCLI && codexImageGenerationExplicitToolPolicy == codexImageGenerationExplicitToolPolicyStrip {
@@ -855,6 +883,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		return nil, err
 	}
 	SetOpsUpstreamModel(c, upstreamModel)
+	integrityOpts.UpstreamModel = upstreamModel
+	stageRequestIntegrityForwardOptions(c, integrityOpts)
 
 	// 命中 WS 时仅走 WebSocket Mode；不再自动回退 HTTP。
 	if wsDecision.Transport == OpenAIUpstreamTransportResponsesWebsocketV2 {
@@ -1131,6 +1161,16 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				headerGuard.close()
 			}
 			return nil, err
+		}
+		// Final plaintext wire body: after every semantic rewrite (including the
+		// recovery retry edits) and before zstd inside doOpenAICodexUpstream. The
+		// check compares the slice held here and never reads req.Body.
+		integrityOpts.UpstreamModel = upstreamModel
+		if integrityErr := s.checkStagedRequestIntegrity(c, account, "http_forward", body, integrityOpts); integrityErr != nil {
+			if headerGuard != nil {
+				headerGuard.close()
+			}
+			return nil, integrityErr
 		}
 		reasoningRecovery.BindDiagnosticRequest(diagnosticIncomingBody, upstreamReq)
 

@@ -173,6 +173,60 @@ func TestOpenAIGatewayService_OAuthResponsesPromotesSystemMessageWithoutDuplicat
 	require.Equal(t, 1, strings.Count(string(upstream.lastBody), systemPrompt))
 }
 
+// 请求完整性检查（observe，仅在本测试中强制开启）：system 提升 + 已有 instructions 是合法转换，不打差异标记；
+// 孤儿 function_call_output 被丢弃是有损转换，标记为 input，且 observe 不阻止发送。
+func TestOpenAIGatewayService_OAuthResponsesRequestIntegrityObserve(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	forward := func(t *testing.T, body []byte) (*gin.Context, *httpUpstreamRecorder) {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+		c.Request.Header.Set("Content-Type", "application/json")
+		upstream := &httpUpstreamRecorder{err: errors.New("stop after capture")}
+		cfg := &config.Config{}
+		cfg.Gateway.OpenAIRequestIntegrityMode = "observe"
+		svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream}
+		account := &Account{
+			ID:          125,
+			Name:        "openai-oauth",
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeOAuth,
+			Concurrency: 1,
+			Credentials: map[string]any{
+				"access_token":       "oauth-token",
+				"chatgpt_account_id": "chatgpt-acc",
+			},
+			Status:      StatusActive,
+			Schedulable: true,
+		}
+		result, err := svc.Forward(context.Background(), c, account, body)
+		require.Error(t, err)
+		require.Nil(t, result)
+		require.NotEmpty(t, upstream.lastBody, "observe must never block the send")
+		return c, upstream
+	}
+
+	legit := []byte(`{"model":"gpt-5.4","stream":false,"instructions":"Existing instructions.","input":[{"role":"system","content":"policy"},{"role":"user","content":"hello"}]}`)
+	c, _ := forward(t, legit)
+	_, flagged := c.Get("openai_request_integrity_difference")
+	require.False(t, flagged)
+
+	lossy := []byte(`{"model":"gpt-5.4","stream":false,"instructions":"Existing instructions.","input":[{"role":"system","content":"policy"},{"role":"user","content":"hello"},{"type":"function_call_output","call_id":"call_orphan","output":"r"}]}`)
+	c, upstream := forward(t, lossy)
+	require.Equal(t, int64(1), gjson.GetBytes(upstream.lastBody, "input.#").Int(), "orphan tool output is dropped by the transform")
+	require.Equal(t, true, c.MustGet("openai_request_integrity_difference"))
+	require.Equal(t, []string{"input"}, c.MustGet("openai_request_integrity_fields"))
+
+	// 生效模式优先级：显式账号 extra 覆盖全局 off；非 OAuth-like 账号即使全局 enforce 也为 off。
+	require.Equal(t, requestIntegrityObserve, requestIntegrityModeFor(&config.Config{}, &Account{
+		Platform: PlatformOpenAI, Type: AccountTypeOAuth, Extra: map[string]any{"request_integrity_mode": " observe "},
+	}))
+	enforceCfg := &config.Config{}
+	enforceCfg.Gateway.OpenAIRequestIntegrityMode = "enforce"
+	require.Equal(t, requestIntegrityOff, requestIntegrityModeFor(enforceCfg, &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}))
+}
+
 func TestOpenAIGatewayService_NativeResponsesBodyModificationPreservesHTMLChars(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -569,10 +623,13 @@ func TestOpenAIGatewayService_OAuthPassthrough_GroupForceOpenAIFastInjectsMissin
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
 	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.144.1")
 	body := []byte(`{"model":"gpt-5.6-sol","stream":true,"instructions":"test","input":"hi"}`)
+	// The terminal event declares the tier the upstream actually used; it must be
+	// surfaced separately from the injected outbound tier.
+	upstreamSSE := `data: {"type":"response.completed","response":{"id":"resp_fixture","status":"completed","model":"gpt-5.6-sol","service_tier":"default","output":[],"usage":{"input_tokens":9,"output_tokens":3,"total_tokens":12}}}` + "\n\n"
 	upstream := &httpUpstreamRecorder{resp: &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
-		Body:       io.NopCloser(strings.NewReader(openAIOAuthPassthroughCompletedSSE)),
+		Body:       io.NopCloser(strings.NewReader(upstreamSSE)),
 	}}
 	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
 	account := &Account{
@@ -592,6 +649,7 @@ func TestOpenAIGatewayService_OAuthPassthrough_GroupForceOpenAIFastInjectsMissin
 	require.Equal(t, OpenAIFastTierPriority, gjson.GetBytes(upstream.lastBody, "service_tier").String())
 	require.NotNil(t, result.ServiceTier)
 	require.Equal(t, OpenAIFastTierPriority, *result.ServiceTier)
+	require.Equal(t, "default", result.UpstreamResponseServiceTier)
 }
 
 // 「自动透传（仅替换认证）」的默认行为必须真的只替换认证：namespace 声明、

@@ -242,10 +242,22 @@ func (s *CNProviderBalanceCheckService) checkOne(ctx context.Context, account *A
 		return cnBalancePaused
 	}
 
-	// 余额健康：仅清除「本服务写入」的临时停调（reason 前缀匹配），不触碰其他子系统。
+	// 余额健康：仅清除「本服务写入」且与本轮快照 (reason, until) 完全一致的临时停调
+	// （reason 前缀匹配 + 原值受限 CAS），不触碰其他子系统；快照被并发改写时跳过，
+	// 下一轮 runOnce 重新读取账号后再评估。
 	if account.TempUnschedulableUntil != nil && strings.HasPrefix(account.TempUnschedulableReason, cnBalanceLowReasonPrefix) {
-		if err := s.accountRepo.ClearTempUnschedulable(ctx, account.ID); err != nil {
+		guarded, ok := s.accountRepo.(TempUnschedGuardedClearRepository)
+		if !ok {
+			log.Printf("[CNBalance] guarded clear unavailable for account %d, skip clear", account.ID)
+			return cnBalanceNoChange
+		}
+		applied, err := guarded.ClearTempUnschedulableIfMatch(ctx, account.ID, account.TempUnschedulableReason, *account.TempUnschedulableUntil)
+		if err != nil {
 			log.Printf("[CNBalance] clear account %d failed: %v", account.ID, err)
+			return cnBalanceNoChange
+		}
+		if !applied {
+			log.Printf("[CNBalance] account %d pause changed since snapshot, skip clear", account.ID)
 			return cnBalanceNoChange
 		}
 		log.Printf("[CNBalance] reactivated account %d (%s): balance=%.4g %s", account.ID, account.Platform, result.Balance, result.Currency)

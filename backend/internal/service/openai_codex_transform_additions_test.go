@@ -66,3 +66,85 @@ func TestDefaultCodexSynthInstructionsModelAware(t *testing.T) {
 	require.True(t, strings.Contains(defaultCodexSynthInstructions("gpt-5.2"), "You are GPT-5.2 running in the Codex CLI"))
 	require.True(t, strings.Contains(defaultCodexSynthInstructions("gpt-5.1"), "You are GPT-5.1 running in the Codex CLI"))
 }
+
+// compareRequestIntegrity：已记录的无损 Codex 兼容转换两侧归一后相等；真实丢失/改写只报告首个差异字段名。
+func TestRequestIntegrityCanonicalizationCases(t *testing.T) {
+	account := &Account{
+		ID: 7, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
+		Credentials: map[string]any{"model_mapping": map[string]any{"my-model": "gpt-5.5"}},
+	}
+	cases := []struct {
+		name, before, after, want string
+		opts                      requestIntegrityOptions
+	}{
+		{
+			name:   "string input becomes message array",
+			before: `{"model":"gpt-5.4","input":"hi"}`,
+			after:  `{"model":"gpt-5.4","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}],"store":false,"stream":true}`,
+		},
+		{
+			name:   "reserved tool alias",
+			before: `{"tools":[{"type":"function","name":"python"}]}`,
+			after:  `{"tools":[{"type":"function","name":"python__sub2api"}]}`,
+		},
+		{
+			name:   "namespace flatten",
+			before: `{"tools":[{"type":"namespace","name":"ns","tools":[{"type":"function","name":"lookup"}]}]}`,
+			after:  `{"tools":[{"type":"function","name":"ns__lookup"}]}`,
+			opts:   requestIntegrityOptions{FlattenNamespaces: true},
+		},
+		{
+			name:   "lite additional_tools move",
+			before: `{"tools":[{"type":"namespace","name":"ns","tools":[{"type":"function","name":"lookup"}]}],"reasoning":{"effort":"low"}}`,
+			after:  `{"input":[{"type":"additional_tools","role":"developer","tools":[{"type":"namespace","name":"ns","tools":[{"type":"function","name":"lookup"}]}]}],"reasoning":{"effort":"low","context":"all_turns"},"parallel_tool_calls":false}`,
+			opts:   requestIntegrityOptions{ResponsesLite: true},
+		},
+		{
+			name:   "account model mapping",
+			before: `{"model":"my-model"}`,
+			after:  `{"model":"gpt-5.5"}`,
+		},
+		{
+			name:   "service-owned instructions suffix",
+			before: `{"instructions":"client"}`,
+			after:  `{"instructions":"client\n\nserver"}`,
+		},
+		{
+			name:   "image tool injected when bridge allowed",
+			before: `{"tools":[{"type":"function","name":"lookup"}]}`,
+			after:  `{"tools":[{"type":"function","name":"lookup"},{"type":"image_generation","output_format":"png"}],"tool_choice":"auto"}`,
+			opts:   requestIntegrityOptions{ImageBridgeEnabled: true},
+		},
+		{
+			name:   "dropped input item",
+			before: `{"input":[{"type":"message","role":"user","content":"a"},{"type":"message","role":"user","content":"b"}]}`,
+			after:  `{"input":[{"type":"message","role":"user","content":"a"}]}`,
+			want:   "input",
+		},
+		{
+			name:   "dropped tool",
+			before: `{"tools":[{"type":"function","name":"lookup"}]}`,
+			after:  `{"tools":[]}`,
+			want:   "tools",
+		},
+		{
+			name:   "changed previous_response_id",
+			before: `{"previous_response_id":"resp_a"}`,
+			after:  `{"previous_response_id":"resp_b"}`,
+			want:   "previous_response_id",
+		},
+		{
+			name:   "lost encrypted reasoning item",
+			before: `{"input":[{"type":"reasoning","id":"rs_1","encrypted_content":"opaque","summary":[]},{"type":"message","role":"user","content":"hi"}]}`,
+			after:  `{"input":[{"type":"message","role":"user","content":"hi"}]}`,
+			want:   "input",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			field, err := compareRequestIntegrity(account, tc.opts, []byte(tc.before), []byte(tc.after))
+			require.NoError(t, err)
+			require.Equal(t, tc.want, field)
+		})
+	}
+}

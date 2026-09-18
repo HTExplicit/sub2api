@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -301,4 +302,28 @@ func (c *openAIWSCancelSafeConn) ReadMessage(ctx context.Context) ([]byte, error
 		c.readDelays = c.readDelays[1:]
 	}
 	return event, nil
+}
+
+func TestClassifyAccountTrafficOutcome(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		result          *OpenAIForwardResult
+		err             error
+		clientCancelled bool
+		want            AccountTrafficOutcome
+	}{
+		{name: "http_success", result: &OpenAIForwardResult{Stream: true}, want: AccountTrafficOutcomeCompleted2xx},
+		{name: "failover_429", err: &UpstreamFailoverError{StatusCode: http.StatusTooManyRequests}, want: AccountTrafficOutcomeUpstream429},
+		{name: "failover_503", err: &UpstreamFailoverError{StatusCode: http.StatusServiceUnavailable}, want: AccountTrafficOutcomeUpstream5xx},
+		{name: "client_cancelled_wins", result: &OpenAIForwardResult{OpenAIWSMode: true, UpstreamTerminalEvent: "response.completed"}, clientCancelled: true, want: AccountTrafficOutcomeCancelled},
+		{name: "ws_failed_terminal_status_429", result: &OpenAIForwardResult{OpenAIWSMode: true, UpstreamTerminalEvent: "response.failed", UpstreamTerminalStatus: http.StatusTooManyRequests}, want: AccountTrafficOutcomeUpstream429},
+		{name: "ws_incomplete_is_cancelled", result: &OpenAIForwardResult{OpenAIWSMode: true, UpstreamTerminalEvent: "response.incomplete"}, want: AccountTrafficOutcomeCancelled},
+		{name: "ws_empty_terminal_is_not_success", result: &OpenAIForwardResult{OpenAIWSMode: true}, want: AccountTrafficOutcomeFailedOther},
+		{name: "unknown_error", err: errors.New("boom"), want: AccountTrafficOutcomeFailedOther},
+		{name: "safety_net_nil_nil", want: AccountTrafficOutcomeFailedOther},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, classifyAccountTrafficOutcome(tc.result, tc.err, tc.clientCancelled))
+		})
+	}
 }

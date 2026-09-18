@@ -294,11 +294,13 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 
 		forwardBody := openAIModelMappedBody(body, forwardMapped, forwardMappedModel, h.gatewayService.ReplaceModelInBody)
 		writerSizeBeforeForward := c.Writer.Size()
-		result, err := func() (*service.OpenAIForwardResult, error) {
+		trafficTurn := h.trafficObserver.Begin(c.Request.Context(), account.ID, service.AccountTrafficProtocolHTTP)
+		result, err := func() (res *service.OpenAIForwardResult, ferr error) {
 			defer func() {
 				if accountReleaseFunc != nil {
 					accountReleaseFunc()
 				}
+				trafficTurn.Finish(res, ferr, c.Request.Context().Err() != nil)
 			}()
 			return h.gatewayService.ForwardAsChatCompletions(c.Request.Context(), c, account, forwardBody, promptCacheKey, "")
 		}()

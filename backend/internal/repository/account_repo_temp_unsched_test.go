@@ -25,6 +25,19 @@ func TestAccountRepository_SetTempUnschedulable_NoRowsAffectedDoesNotWriteOutbox
 	require.NotContains(t, strings.Join(exec.execQueries, "\n"), "scheduler_outbox")
 }
 
+func TestAccountRepository_ClearTempUnschedulableIfMatch_NoRowsAffectedDoesNotWriteOutbox(t *testing.T) {
+	exec := &recordingSQLExecutor{result: rowsAffectedResult(0)}
+	repo := newAccountRepositoryWithSQL(nil, exec, nil)
+	until := time.Now().Add(10 * time.Minute)
+
+	applied, err := repo.ClearTempUnschedulableIfMatch(context.Background(), 42, "", until)
+	require.NoError(t, err)
+	require.False(t, applied)
+	// CTE 把 UPDATE 与 outbox INSERT 收在同一条语句里；未命中时不得再单独 enqueue outbox。
+	require.Len(t, exec.execQueries, 1)
+	require.Equal(t, []any{int64(42), "", until, service.SchedulerOutboxEventAccountChanged}, exec.execArgs[0])
+}
+
 func TestAccountRepository_ResetQuotaUsedAndClearRateLimitCooldown_NoRowsAffectedReturnsNotFoundWithoutOutbox(t *testing.T) {
 	exec := &recordingSQLExecutor{result: rowsAffectedResult(0)}
 	repo := newAccountRepositoryWithSQL(nil, exec, nil)

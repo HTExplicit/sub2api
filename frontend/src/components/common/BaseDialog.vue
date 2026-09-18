@@ -11,7 +11,7 @@
         @click.self="handleClose"
       >
         <!-- Modal panel -->
-        <div ref="dialogRef" :class="['modal-content', widthClasses]" @click.stop>
+        <div ref="dialogRef" :class="['modal-content', widthClasses]" tabindex="-1" @click.stop>
           <!-- Header -->
           <div class="modal-header">
             <h3 :id="dialogId" class="modal-title">
@@ -45,10 +45,17 @@
 <script setup lang="ts">
 import { computed, watch, onMounted, onUnmounted, ref, nextTick } from 'vue'
 import Icon from '@/components/icons/Icon.vue'
+import {
+  DEFAULT_DIALOG_Z_INDEX,
+  dialogLayer,
+  isTopDialog,
+  nextDialogId,
+  registerDialog,
+  unregisterDialog
+} from './dialogStack'
 
-// 生成唯一ID以避免多个对话框时ID冲突
-let dialogIdCounter = 0
-const dialogId = `modal-title-${++dialogIdCounter}`
+// 生成唯一ID以避免多个对话框时ID冲突(计数器位于 dialogStack 模块作用域,不会随实例重置)
+const dialogId = nextDialogId()
 
 // 焦点管理
 const dialogRef = ref<HTMLElement | null>(null)
@@ -81,9 +88,11 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<Emits>()
 
-// Custom z-index style (overrides the default z-50 from CSS)
+// Custom z-index style (overrides the default z-50 from CSS). Nested dialogs are layered by the
+// shared dialog stack so a child always paints above its parent; an explicit z-index still applies.
 const zIndexStyle = computed(() => {
-  return props.zIndex !== 50 ? { zIndex: props.zIndex } : undefined
+  const layer = dialogLayer(dialogId, props.zIndex)
+  return layer !== DEFAULT_DIALOG_Z_INDEX ? { zIndex: layer } : undefined
 })
 
 const widthClasses = computed(() => {
@@ -106,9 +115,47 @@ const handleClose = () => {
   }
 }
 
-const handleEscape = (event: KeyboardEvent) => {
-  if (props.show && props.closeOnEscape && event.key === 'Escape') {
+const FOCUSABLE_SELECTOR =
+  'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+
+// Tab / Shift+Tab 在栈顶对话框内循环焦点,避免焦点逃逸到被遮罩的页面
+const cycleFocus = (event: KeyboardEvent) => {
+  const panel = dialogRef.value
+  if (!panel) return
+  const focusable = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+    (element) => !element.closest('[hidden], [inert], [style*="display: none"]')
+  )
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  const active = document.activeElement
+  // 仅当焦点落在页面本身(body/html/面板自身)时才拉回;焦点位于对话框 teleport 到 body 的弹层(下拉、灯箱)时不干预
+  const lost =
+    !active ||
+    active === document.body ||
+    active === document.documentElement ||
+    active === panel
+  if (!first) {
+    event.preventDefault()
+    panel.focus()
+  } else if (event.shiftKey && (active === first || lost)) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && (active === last || lost)) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
+// 只有栈顶对话框响应键盘:嵌套确认框按 Esc 时不再连带关闭父级对话框
+const handleKeydown = (event: KeyboardEvent) => {
+  if (!props.show || !isTopDialog(dialogId)) return
+  if (event.key === 'Escape') {
+    if (!props.closeOnEscape) return
+    event.preventDefault()
+    event.stopImmediatePropagation()
     emit('close')
+  } else if (event.key === 'Tab') {
+    cycleFocus(event)
   }
 }
 
@@ -119,24 +166,24 @@ watch(
     if (isOpen) {
       // 保存当前焦点元素
       previousActiveElement = document.activeElement as HTMLElement
-      // 使用CSS类而不是直接操作style,更易于管理多个对话框
-      document.body.classList.add('modal-open')
+      // 注册到共享对话框栈:body.modal-open 按引用计数管理,关闭嵌套子级时父级仍保持滚动锁定
+      registerDialog(dialogId, props.zIndex)
 
-      // 等待DOM更新后设置焦点到对话框
+      // 等待DOM更新后设置焦点到对话框(仅当自己仍是栈顶,避免抢走更晚打开的对话框的焦点)
       await nextTick()
       if (modalBodyRef.value) {
         modalBodyRef.value.scrollTop = 0
       }
-      if (dialogRef.value) {
+      if (dialogRef.value && props.show && isTopDialog(dialogId)) {
         const firstFocusable = dialogRef.value.querySelector<HTMLElement>(
           'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
         )
         firstFocusable?.focus()
       }
     } else {
-      document.body.classList.remove('modal-open')
-      // 恢复之前的焦点
-      if (previousActiveElement && typeof previousActiveElement.focus === 'function') {
+      unregisterDialog(dialogId)
+      // 恢复之前的焦点(仅当该元素仍在文档中)
+      if (previousActiveElement?.isConnected && typeof previousActiveElement.focus === 'function') {
         previousActiveElement.focus()
       }
       previousActiveElement = null
@@ -146,12 +193,12 @@ watch(
 )
 
 onMounted(() => {
-  document.addEventListener('keydown', handleEscape)
+  document.addEventListener('keydown', handleKeydown)
 })
 
 onUnmounted(() => {
-  document.removeEventListener('keydown', handleEscape)
-  // 确保组件卸载时移除滚动锁定
-  document.body.classList.remove('modal-open')
+  document.removeEventListener('keydown', handleKeydown)
+  // 确保组件卸载时退出对话框栈(最后一个对话框退出时解除滚动锁定)
+  unregisterDialog(dialogId)
 })
 </script>

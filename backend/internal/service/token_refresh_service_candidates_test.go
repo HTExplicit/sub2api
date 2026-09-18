@@ -99,6 +99,13 @@ func (r *tokenRefreshCandidateRepo) ClearTempUnschedulable(context.Context, int6
 	return nil
 }
 
+func (r *tokenRefreshCandidateRepo) ClearTempUnschedulableIfMatch(context.Context, int64, string, time.Time) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.clearTempCalls++
+	return true, nil
+}
+
 type tokenRefreshTestRefresher struct {
 	err error
 }

@@ -985,6 +985,13 @@ type GatewayConfig struct {
 	// 请求不压缩。默认开启；出现兼容问题时置 false 回退为明文 JSON。零值为关闭，手工构造的
 	// Config 不会意外压缩。
 	OpenAICodexRequestZstd bool `mapstructure:"openai_codex_request_zstd"`
+	// OpenAIRequestIntegrityMode: off|observe|enforce。对 OpenAI OAuth-like 账号，把客户端 /responses
+	// 请求体与最终出站明文请求体（zstd 之前）按语义字段比较（model/input/instructions/reasoning/tools/
+	// tool_choice/parallel_tool_calls/text/previous_response_id/max_*_tokens），两侧先归一已记录的
+	// 无损 Codex 兼容转换。observe 仅按账号限频记录 openai_request_integrity_difference（只含字段名）
+	// 并打 gin 标记，不拒绝、不改写、不影响调度；enforce 返回校验错误交调用方拒绝（已接线、默认不启用）。
+	// 零值 "" 与非法值均视为 off；账号 extra.request_integrity_mode 可按账号覆盖。
+	OpenAIRequestIntegrityMode string `mapstructure:"openai_request_integrity_mode"`
 	// DisableCodexIdentityEnforcement: 关闭「强制统一 Codex 出站身份」。上游 /backend-api/codex
 	// 在容量紧张时按客户端身份分优先级降载，被降载的请求会拿到 HTTP 200 + 流内
 	// server_is_overloaded，该次请求失败。默认强制统一出口：所有 OAuth 出站的
@@ -1046,6 +1053,9 @@ type GatewayConfig struct {
 	// ConcurrencySlotTTLMinutes: 并发槽位过期时间（分钟）
 	// 应大于最长 LLM 请求时间，防止请求完成前槽位过期
 	ConcurrencySlotTTLMinutes int `mapstructure:"concurrency_slot_ttl_minutes"`
+	// AccountTrafficTelemetryDisabled: 关闭 OpenAI 系网关的账号级流量遥测（只观察：仅写 Redis 计数器
+	// account_traffic_observe:{id}:*，不改变调度/准入）。零值为开启，手工构造的 Config 也能观测。
+	AccountTrafficTelemetryDisabled bool `mapstructure:"account_traffic_telemetry_disabled"`
 	// SessionIdleTimeoutMinutes: 会话空闲超时时间（分钟），默认 5 分钟
 	// 用于 Anthropic OAuth/SetupToken 账号的会话数量限制功能
 	// 空闲超过此时间的会话将被自动释放
@@ -2389,6 +2399,8 @@ func setDefaults() {
 	viper.SetDefault("gateway.max_account_switches_gemini", 3)
 	viper.SetDefault("gateway.force_codex_cli", false)
 	viper.SetDefault("gateway.openai_codex_request_zstd", true)
+	viper.SetDefault("gateway.account_traffic_telemetry_disabled", false)
+	viper.SetDefault("gateway.openai_request_integrity_mode", "off")
 	viper.SetDefault("gateway.disable_codex_identity_enforcement", false)
 	viper.SetDefault("gateway.disable_codex_originator_normalization", false)
 	viper.SetDefault("gateway.codex_image_generation_bridge_enabled", false)

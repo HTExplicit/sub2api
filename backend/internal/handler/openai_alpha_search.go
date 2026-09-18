@@ -234,7 +234,11 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 		var result *service.OpenAIForwardResult
 		service.SetActualOpenAIUpstreamEndpoint(c, "")
 		setActualUpstreamEndpoint(c, "")
-		result, err = func() (*service.OpenAIForwardResult, error) {
+		trafficTurn := h.trafficObserver.Begin(c.Request.Context(), account.ID, service.AccountTrafficProtocolHTTP)
+		result, err = func() (res *service.OpenAIForwardResult, ferr error) {
+			defer func() {
+				trafficTurn.Finish(res, ferr, c.Request.Context().Err() != nil)
+			}()
 			if accountRelease != nil {
 				defer accountRelease()
 			}

@@ -16,6 +16,7 @@ import (
 )
 
 const stickySessionPrefix = "sticky_session:"
+const openAIResponsesSessionWindowPrefix = "openai_responses_session_window:"
 const liveCallPrefix = "live:call:"
 const openAIRuntimeBreakerPrefix = "openai_runtime_breaker:"
 const cindyBalancePendingPrefix = "cindy_balance_pending:v2:"
@@ -35,6 +36,10 @@ func NewGatewayCache(rdb *redis.Client) service.GatewayCache {
 // 格式: sticky_session:{groupID}:{sessionHash}
 func buildSessionKey(groupID int64, sessionHash string) string {
 	return fmt.Sprintf("%s%d:%s", stickySessionPrefix, groupID, sessionHash)
+}
+
+func buildOpenAIResponsesSessionWindowKey(groupID int64, sessionHash string) string {
+	return fmt.Sprintf("%s%d:%s", openAIResponsesSessionWindowPrefix, groupID, sessionHash)
 }
 
 func (c *gatewayCache) GetSessionAccountID(ctx context.Context, groupID int64, sessionHash string) (int64, error) {
@@ -91,6 +96,97 @@ func (c *gatewayCache) DeleteSessionAccountIDIfMatches(ctx context.Context, grou
 	).Int()
 	return deleted == 1, err
 }
+
+var claimOpenAIResponsesSessionWindowScript = redis.NewScript(`
+local previous = redis.call('GET', KEYS[1])
+redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2])
+return previous
+`)
+
+var compareAndRefreshOpenAIResponsesSessionWindowScript = redis.NewScript(`
+local current = redis.call('GET', KEYS[1])
+if current == false or current ~= ARGV[1] then
+  return 0
+end
+redis.call('PEXPIRE', KEYS[1], ARGV[2])
+return 1
+`)
+
+var compareAndDeleteOpenAIResponsesSessionWindowScript = redis.NewScript(`
+local current = redis.call('GET', KEYS[1])
+if current == false or current ~= ARGV[1] then
+  return 0
+end
+redis.call('DEL', KEYS[1])
+return 1
+`)
+
+func (c *gatewayCache) ClaimOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string, owner []byte, ttl time.Duration) ([]byte, error) {
+	if c == nil || c.rdb == nil {
+		return nil, errors.New("gateway cache unavailable")
+	}
+	if len(owner) == 0 || strings.TrimSpace(sessionHash) == "" || ttl <= 0 {
+		return nil, errors.New("invalid OpenAI Responses session-window claim")
+	}
+	result, err := claimOpenAIResponsesSessionWindowScript.Run(
+		ctx,
+		c.rdb,
+		[]string{buildOpenAIResponsesSessionWindowKey(groupID, sessionHash)},
+		owner,
+		ttl.Milliseconds(),
+	).Result()
+	if errors.Is(err, redis.Nil) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	switch value := result.(type) {
+	case nil:
+		return nil, nil
+	case string:
+		return []byte(value), nil
+	case []byte:
+		return append([]byte(nil), value...), nil
+	default:
+		return nil, fmt.Errorf("unexpected OpenAI Responses session-window claim result %T", result)
+	}
+}
+
+func (c *gatewayCache) CompareAndRefreshOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string, expected []byte, ttl time.Duration) (bool, error) {
+	if c == nil || c.rdb == nil {
+		return false, errors.New("gateway cache unavailable")
+	}
+	if len(expected) == 0 || strings.TrimSpace(sessionHash) == "" || ttl <= 0 {
+		return false, errors.New("invalid OpenAI Responses session-window refresh")
+	}
+	n, err := compareAndRefreshOpenAIResponsesSessionWindowScript.Run(
+		ctx,
+		c.rdb,
+		[]string{buildOpenAIResponsesSessionWindowKey(groupID, sessionHash)},
+		expected,
+		ttl.Milliseconds(),
+	).Int()
+	return n == 1, err
+}
+
+func (c *gatewayCache) CompareAndDeleteOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string, expected []byte) (bool, error) {
+	if c == nil || c.rdb == nil {
+		return false, errors.New("gateway cache unavailable")
+	}
+	if len(expected) == 0 || strings.TrimSpace(sessionHash) == "" {
+		return false, errors.New("invalid OpenAI Responses session-window delete")
+	}
+	n, err := compareAndDeleteOpenAIResponsesSessionWindowScript.Run(
+		ctx,
+		c.rdb,
+		[]string{buildOpenAIResponsesSessionWindowKey(groupID, sessionHash)},
+		expected,
+	).Int()
+	return n == 1, err
+}
+
+var _ service.OpenAIWSSessionPreemptionCache = (*gatewayCache)(nil)
 
 const (
 	grokVideoPendingBillingPrefix = "grok_video_pending:"
