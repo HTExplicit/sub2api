@@ -123,15 +123,21 @@ func TestCodexTicketProxyCONNECTPreflightAndHarvestShareTrust(t *testing.T) {
 			w.WriteHeader(502)
 			return
 		}
-		conn, _, err := w.(http.Hijacker).Hijack()
+		hijacker, ok := w.(http.Hijacker)
+		if !ok {
+			_ = dst.Close()
+			w.WriteHeader(500)
+			return
+		}
+		conn, _, err := hijacker.Hijack()
 		if err != nil {
 			_ = dst.Close()
 			return
 		}
 		_, _ = io.WriteString(conn, "HTTP/1.1 200 Connection Established\r\n\r\n")
 		go func() {
-			defer conn.Close()
-			defer dst.Close()
+			defer func() { _ = conn.Close() }()
+			defer func() { _ = dst.Close() }()
 			go func() { _, _ = io.Copy(dst, conn) }()
 			_, _ = io.Copy(conn, dst)
 		}()
