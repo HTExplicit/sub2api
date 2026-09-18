@@ -32,23 +32,26 @@ CREATE TABLE IF NOT EXISTS openai_codex_ticket_proxy_trust (
 -- Invalidate in-flight claims at the moment an account becomes unavailable or
 -- changes principal, even if it is re-enabled before the old request finishes.
 CREATE OR REPLACE FUNCTION invalidate_codex_ticket_account_claims() RETURNS TRIGGER AS $$
+DECLARE principal_changed BOOLEAN;
 BEGIN
-    IF (OLD.status = 'active' AND NEW.status <> 'active')
-       OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at
-       OR NEW.platform IS DISTINCT FROM OLD.platform
+    principal_changed := NEW.platform IS DISTINCT FROM OLD.platform
        OR NEW.type IS DISTINCT FROM OLD.type
        OR NEW.parent_account_id IS DISTINCT FROM OLD.parent_account_id
-       OR (NEW.credentials->>'chatgpt_account_id') IS DISTINCT FROM (OLD.credentials->>'chatgpt_account_id')
-       OR (NEW.credentials->>'chatgpt_user_id') IS DISTINCT FROM (OLD.credentials->>'chatgpt_user_id')
-       OR (NEW.credentials->>'organization_id') IS DISTINCT FROM (OLD.credentials->>'organization_id')
+       OR COALESCE(NEW.credentials->>'chatgpt_account_id','') IS DISTINCT FROM COALESCE(OLD.credentials->>'chatgpt_account_id','')
+       OR COALESCE(NEW.credentials->>'chatgpt_user_id','') IS DISTINCT FROM COALESCE(OLD.credentials->>'chatgpt_user_id','')
+       OR COALESCE(NEW.credentials->>'organization_id','') IS DISTINCT FROM COALESCE(OLD.credentials->>'organization_id','')
        OR (COALESCE(NEW.credentials->>'chatgpt_account_id','')='' AND COALESCE(NEW.credentials->>'chatgpt_user_id','')='' AND
-           (NEW.credentials->>'email') IS DISTINCT FROM (OLD.credentials->>'email')) THEN
+           COALESCE(NEW.credentials->>'email','') IS DISTINCT FROM COALESCE(OLD.credentials->>'email',''));
+    IF (OLD.status = 'active' AND NEW.status <> 'active')
+       OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at OR principal_changed THEN
         UPDATE openai_codex_ticket_runtime SET phase='stopped',next_at=NULL,lease_id='',lease_until=NULL,updated_at=NOW()
           WHERE account_id=NEW.id;
-        -- Secret tickets stay untouched; the gateway checks their owner and expiry.
+        -- Disablement keeps valid tickets; a principal change also drops legacy
+        -- tickets that predate owner stamping, so startup cannot misattribute them.
         NEW.extra := (SELECT COALESCE(jsonb_object_agg(e.key, CASE WHEN e.key LIKE 'codex_ticket_runtime:%'
           THEN e.value || '{"phase":"stopped","next_attempt_at":null}'::jsonb ELSE e.value END), '{}'::jsonb)
-          FROM jsonb_each(CASE WHEN jsonb_typeof(NEW.extra)='object' THEN NEW.extra ELSE '{}'::jsonb END) e);
+          FROM jsonb_each(CASE WHEN jsonb_typeof(NEW.extra)='object' THEN NEW.extra ELSE '{}'::jsonb END) e
+          WHERE NOT (principal_changed AND e.key LIKE 'codex_turn_ticket:%'));
     END IF;
     RETURN NEW;
 END;

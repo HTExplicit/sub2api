@@ -232,6 +232,11 @@ func (s *OpenAIGatewayService) lookupOpenAICodexTicket(account *Account, model s
 		extra = parseOpenAICodexTicketFromAny(account.ID, model, account.Extra[openAICodexTicketExtraKey(model)])
 	}
 	identity := CodexTicketAccountIdentity(account)
+	// Bind legacy blobs to the principal at the first read, before publishing
+	// them in memory. A later principal change must not reuse an unstamped cache.
+	if extra != nil && extra.Identity == "" {
+		extra.Identity = identity
+	}
 	if mem != nil && mem.Identity != "" && mem.Identity != identity {
 		mem = nil
 		s.openaiCodexTickets.Delete(key)

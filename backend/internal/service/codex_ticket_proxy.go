@@ -170,7 +170,7 @@ func verifyCodexTicketProxyTLS(cs tls.ConnectionState, trust *CodexTicketProxyTr
 	}
 	opts := x509.VerifyOptions{DNSName: name, Intermediates: intermediates}
 	if _, err := leaf.Verify(opts); err == nil {
-		return trust, nil
+		return nil, nil
 	}
 	if name != "chatgpt.com" {
 		return nil, errors.New("proxy TLS issuer is not trusted")

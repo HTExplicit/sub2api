@@ -4,6 +4,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"strings"
 	"sync"
@@ -18,6 +19,18 @@ func newTicketIntegrationAccount(t *testing.T) (*accountRepository, *service.Acc
 	t.Helper()
 	ctx := context.Background()
 	client := testEntClient(t)
+	var oldSetting string
+	settingErr := integrationDB.QueryRowContext(ctx, `SELECT value FROM settings WHERE key='openai_codex_ticket_enabled'`).Scan(&oldSetting)
+	require.True(t, settingErr == nil || settingErr == sql.ErrNoRows)
+	_, err := integrationDB.ExecContext(ctx, `INSERT INTO settings(key,value) VALUES('openai_codex_ticket_enabled','true') ON CONFLICT(key) DO UPDATE SET value='true'`)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		if settingErr == sql.ErrNoRows {
+			_, _ = integrationDB.ExecContext(ctx, `DELETE FROM settings WHERE key='openai_codex_ticket_enabled'`)
+		} else {
+			_, _ = integrationDB.ExecContext(ctx, `UPDATE settings SET value=$1 WHERE key='openai_codex_ticket_enabled'`, oldSetting)
+		}
+	})
 	account := mustCreateAccount(t, client, &service.Account{Name: t.Name(), Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth, Status: service.StatusActive, Credentials: map[string]any{"access_token": "fixture", "chatgpt_account_id": "principal-one"}, Extra: map[string]any{"model_context_windows": map[string]any{"gpt-5.6-sol": 200000}}})
 	t.Cleanup(func() { _, _ = integrationDB.ExecContext(ctx, `DELETE FROM accounts WHERE id=$1`, account.ID) })
 	return newAccountRepositoryWithSQL(client, integrationDB, nil), account, time.Now().UTC().Truncate(time.Second)
@@ -105,6 +118,15 @@ func TestCodexTicketRepositoryConcurrentLeaseAndAccountInvalidation(t *testing.T
 	applied, err := r.FinishCodexTicket(ctx, claims[0], successfulTicket(a, model, now), service.CodexTicketResult{Success: true}, now)
 	require.NoError(t, err)
 	require.False(t, applied)
+	// A legacy ticket without an identity stamp cannot survive changing owner.
+	raw, _ := json.Marshal(map[string]any{"codex_turn_ticket:" + model: map[string]any{"state": "gAAAAA" + strings.Repeat("B", 286), "length": 292, "expires_at": now.Add(time.Hour)}})
+	_, err = integrationDB.ExecContext(ctx, `UPDATE accounts SET extra=extra||$2::jsonb WHERE id=$1`, a.ID, string(raw))
+	require.NoError(t, err)
+	_, err = integrationDB.ExecContext(ctx, `UPDATE accounts SET credentials=credentials||'{"chatgpt_account_id":"principal-two"}'::jsonb WHERE id=$1`, a.ID)
+	require.NoError(t, err)
+	loaded, err := r.GetByID(ctx, a.ID)
+	require.NoError(t, err)
+	require.NotContains(t, loaded.Extra, "codex_turn_ticket:"+model)
 }
 
 func TestCodexTicketRepositoryInterruptedRenewalIsConsumed(t *testing.T) {
