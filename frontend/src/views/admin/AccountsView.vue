@@ -242,6 +242,7 @@
           :selecting-all="selectingAllResults"
           :all-results-selected="allResultsSelected"
           @test="openBatchTest"
+          @harvest-tickets="openTicketHarvest(selIds)"
           @delete="handleBulkDelete"
           @reset-status="handleBulkResetStatus"
           @refresh-token="handleBulkRefreshToken"
@@ -571,9 +572,10 @@
     <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
     <BatchTestAccountModal :show="showBatchTest" :account-ids="batchTestAccountIDs" @close="showBatchTest = false; enterAutoRefreshSilentWindow()" @submitted="accountJobsStore.track" />
+    <CodexTicketHarvestModal :show="showTicketHarvest" :account-ids="ticketAccountIDs" @close="showTicketHarvest = false; enterAutoRefreshSilentWindow()" @submitted="accountJobsStore.track" />
     <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
     <ScheduledTestsPanel :show="showSchedulePanel" :account-id="scheduleAcc?.id ?? null" :model-options="scheduleModelOptions" @close="closeSchedulePanel" />
-    <AccountActionMenu :show="menu.show" :account="menu.acc" :anchor-rect="menu.anchorRect" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @recover-cindy-balance="handleRecoverCindyBalance" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" />
+    <AccountActionMenu :show="menu.show" :account="menu.acc" :anchor-rect="menu.anchorRect" @close="menu.show = false" @harvest-tickets="account => openTicketHarvest([account.id])" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @recover-cindy-balance="handleRecoverCindyBalance" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" />
     <SyncFromCrsModal :show="showSync" @close="showSync = false" @synced="reload" />
     <ImportDataModal
       :show="showImportData"
@@ -728,6 +730,7 @@ import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
 import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
 import UpstreamBillingRateCell from '@/components/account/UpstreamBillingRateCell.vue'
 import BatchTestAccountModal from '@/components/admin/account/BatchTestAccountModal.vue'
+import CodexTicketHarvestModal from '@/components/admin/account/CodexTicketHarvestModal.vue'
 import AccountIdentityBadges from '@/components/account/AccountIdentityBadges.vue'
 import AccountSelectionCheckbox from '@/components/account/AccountSelectionCheckbox.vue'
 import { getAccountPlanType } from '@/utils/accountPresentation'
@@ -773,6 +776,9 @@ const pendingDataImportJobIDs = new Map<number, number>()
 const completedImportJobIDs = ref<number[]>([])
 const showBatchTest = ref(false)
 const batchTestAccountIDs = ref<number[]>([])
+const showTicketHarvest = ref(false)
+const ticketAccountIDs = ref<number[]>([])
+const openTicketHarvest = (ids: number[]) => { ticketAccountIDs.value = [...ids]; showTicketHarvest.value = true }
 const openBatchTest = () => { batchTestAccountIDs.value = [...selIds.value]; showBatchTest.value = true }
 watch(() => accountJobsStore.drawerOpen, (open, wasOpen) => {
   if (wasOpen && !open && accountJobsStore.currentJob?.kind === 'account_batch_test') enterAutoRefreshSilentWindow()

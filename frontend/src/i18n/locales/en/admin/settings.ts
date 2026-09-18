@@ -579,12 +579,12 @@ export default {
         codexHardeningTitle: "Codex Settings",
         codexTicketEnabled: "292 ticket harvest",
         codexTicketEnabledDesc:
-          "When off, the gateway neither harvests nor injects x-codex-turn-state and forwards traffic as usual. When on, it harvests tickets in the background and overwrites that header on production requests.",
+          "When off, no tickets are harvested or injected. When on, manual harvesting is available. Only successful account/model pairs renew with a limited retry; missing tickets still block the corresponding models.",
         codexTicketHarvestProxy: "292 harvest proxy",
         codexTicketHarvestProxyDesc:
-          "Used only for minting 292 tickets when the ticket feature is enabled. Changes apply to subsequent probes without a restart. Production traffic still uses each account's residential proxy. Paste a full HTTP or SOCKS5h proxy URL including username and password. The proxy provider must handle IP rotation. Leave blank when saving to keep the stored value.",
+          "Used only for harvesting. Saved changes apply in about 5 seconds without restart. Supports HTTP(S), SOCKS5(H), and labeled fields in any order. Business traffic uses account proxies. Use Clear and save to remove the proxy.",
         codexTicketHarvestProxyPlaceholder: "http://user:pass{'@'}proxy.example.com:1080",
-        codexTicketHarvestProxyConfigured: "Configured (password hidden). Paste a full new proxy URL to replace it.",
+        codexTicketHarvestProxyConfigured: "Configured. Administrators can view and copy the full credentials.",
         codexClientRestrictionTitle: "Codex client restriction",
         codexHardeningDesc:
           "Only affects OpenAI OAuth accounts with 'Codex official clients only' enabled (global). Beyond User-Agent/Originator, harden the decision with a version range, an engine-fingerprint gate, and black/whitelists.",

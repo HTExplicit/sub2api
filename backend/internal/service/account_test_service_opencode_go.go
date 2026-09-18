@@ -44,14 +44,14 @@ func (s *AccountTestService) testOpenCodeGoConnection(c *gin.Context, account *A
 	switch protocol {
 	case APIProtocolAnthropic:
 		apiURL = buildOpenAIEndpointURL(normalizedBaseURL, "/v1/messages")
-		payload, payloadErr := createTestPayload(testModelID)
+		payload, payloadErr := createTestPayload(testModelID, prompt)
 		if payloadErr != nil {
 			return s.sendErrorAndEnd(c, "Failed to create OpenCode Go Anthropic test payload")
 		}
 		payloadBytes, err = json.Marshal(payload)
 	case APIProtocolResponses:
 		apiURL = buildOpenAIResponsesURL(normalizedBaseURL)
-		payloadBytes, err = json.Marshal(createOpenAITestPayload(testModelID, false))
+		payloadBytes, err = json.Marshal(createOpenAITestPayload(testModelID, false, prompt))
 	default:
 		apiURL = buildOpenAIChatCompletionsURL(normalizedBaseURL)
 		payloadBytes, err = json.Marshal(createOpenAIChatCompletionsTestPayload(testModelID, prompt))

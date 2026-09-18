@@ -17,6 +17,7 @@ type batchTestJobItem struct {
 }
 
 type batchTestJobPayload struct {
+	Prompt     string             `json:"prompt,omitempty"`
 	AccountIDs []int64            `json:"account_ids,omitempty"`
 	ModelID    string             `json:"model_id,omitempty"`
 	Items      []batchTestJobItem `json:"items,omitempty"`
@@ -45,6 +46,9 @@ func (p *batchTestJobPayload) UnmarshalJSON(raw []byte) error {
 // Normalize once before persistence and again on recovery of an older payload.
 // Models are keyed by account identity, never by task ordinals (which change on retry).
 func (p *batchTestJobPayload) normalize() ([]int64, map[int64]string, error) {
+	if err := service.ValidateAccountTestPrompt(p.Prompt); err != nil {
+		return nil, nil, err
+	}
 	invalid := errors.New("invalid or mixed batch test selections")
 	if p.hasItems && p.hasLegacy {
 		return nil, nil, invalid

@@ -191,6 +191,9 @@
           <span v-if="ticket.ready" class="text-emerald-600 dark:text-emerald-400">{{ formatCodexTicketRemaining(ticket.remaining_seconds) }}</span>
           <span v-else-if="ticket.blocked" class="text-amber-600 dark:text-amber-400">{{ t('admin.accounts.openai.codexTurnTicketPaused') }}</span>
           <span v-else class="text-gray-500">{{ t('admin.accounts.openai.codexTurnTicketMissing') }}</span>
+          <span :title="[ticket.last_result?.message, ticket.last_attempt_at, ticket.next_attempt_at].filter(Boolean).join(' · ')">{{ t('admin.accounts.tickets.states.' + (ticket.renewal_state || 'idle')) }}</span>
+          <span v-if="ticket.last_result && !ticket.last_result.success" class="text-red-600" :title="ticket.last_result.message">{{ ticket.last_result.http_status ? 'HTTP ' + ticket.last_result.http_status : ticket.last_result.message }} {{ ticket.last_result.observed_length || '' }}</span>
+          <time v-if="ticket.next_attempt_at" :datetime="ticket.next_attempt_at" :title="t('admin.accounts.tickets.next')">{{ new Date(ticket.next_attempt_at).toLocaleTimeString() }}</time>
         </div>
       </div>
       <div v-if="hasOpenAIUsageFallback" class="space-y-1">

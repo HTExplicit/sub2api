@@ -1190,6 +1190,10 @@ export interface Account {
   credentials_status?: Record<string, boolean>
   ollama_cloud_usage?: OllamaCloudUsageState
   codex_turn_tickets?: Array<{
+    renewal_state?: string
+    next_attempt_at?: string
+    last_attempt_at?: string
+    last_result?: import('@/api/admin/codexTickets').TicketResult
     model: string
     length?: number
     ready: boolean

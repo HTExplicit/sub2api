@@ -537,6 +537,7 @@ type OpenAIGatewayService struct {
 	openaiCodexTicketCancel      context.CancelFunc
 	openaiCodexTicketDone        chan struct{}
 	openaiCodexTicketStopped     bool
+	openaiCodexTicketSlots       chan struct{}
 }
 
 // SetBusinessSystemPromptService attaches the global business prompt policy to

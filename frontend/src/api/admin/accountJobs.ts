@@ -185,9 +185,9 @@ export interface BatchTestModelRow {
 }
 
 const accountJobsAPI = {
-  async batchTest(items: BatchTestSelection[]): Promise<AccountJob> {
+  async batchTest(items: BatchTestSelection[], prompt = ''): Promise<AccountJob> {
     const { data } = await apiClient.post<AccountJob>('/admin/accounts/batch-test',
-      { items }, accountJobIdempotencyHeaders('account_batch_test'))
+      { items, prompt }, accountJobIdempotencyHeaders('account_batch_test'))
     return data
   },
   async batchTestModels(accountIDs: number[], signal?: AbortSignal): Promise<BatchTestModelRow[]> {

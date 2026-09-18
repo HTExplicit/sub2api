@@ -181,10 +181,11 @@
                     <span :class="statusClass(item.status)">{{ statusLabel(item.status) }}</span>
                   </div>
                   <p v-if="item.error_message" class="mt-1 break-words text-red-600 dark:text-red-300">{{ item.error_message }}</p>
-                  <p v-if="store.currentJob.kind === 'account_batch_test'" class="mt-1 text-gray-500 dark:text-gray-300">
+                  <p v-if="['account_batch_test', 'codex_ticket_harvest'].includes(store.currentJob.kind)" class="mt-1 text-gray-500 dark:text-gray-300">
                     {{ item.metadata.model_id || t('admin.accounts.batchTest.defaultModel') }}
                     <span v-if="typeof item.metadata.latency_ms === 'number'"> · {{ item.metadata.latency_ms }} ms</span>
                   </p>
+                  <p v-if="item.metadata.ticket_result" class="mt-1 text-gray-600 dark:text-gray-300">{{ ticketResultLabel(item.metadata.ticket_result) }}</p>
                 </div>
               </div>
               <div v-if="store.itemPage.total > store.itemPage.pageSize" class="mt-2 flex justify-end gap-2">
@@ -321,6 +322,12 @@ const canRetry = computed(() => {
 function kindLabel(kind: string): string {
   const key = `admin.accountTasks.kinds.${kind}`
   return String(t(key))
+}
+
+function ticketResultLabel(value: unknown): string {
+  if (!value || typeof value !== 'object') return ''
+  const result = value as { stage?: string; message?: string; http_status?: number; observed_length?: number; duration_ms?: number }
+  return [result.stage ? t('admin.accounts.tickets.stages.' + result.stage) : '', result.message, result.http_status ? 'HTTP ' + result.http_status : '', result.observed_length ? t('admin.accounts.tickets.length') + ': ' + result.observed_length : '', result.duration_ms ? result.duration_ms + ' ms' : ''].filter(Boolean).join(' · ')
 }
 
 function statusLabel(status: AccountJobStatus | AccountJobItem['status']): string {

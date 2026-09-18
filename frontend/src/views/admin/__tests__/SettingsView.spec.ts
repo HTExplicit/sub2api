@@ -790,17 +790,17 @@ describe("admin SettingsView payment visible method controls", () => {
     wrapper.unmount();
   });
 
-  it("loads the masked Codex harvest proxy and submits a replacement URL", async () => {
+  it("loads the full administrator Codex proxy and submits a replacement URL", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,
-      openai_codex_ticket_harvest_proxy_url: "http://user:***@old.example.com:8080",
+      openai_codex_ticket_harvest_proxy_url: "http://user:fixture-old@old.example.com:8080",
       openai_codex_ticket_harvest_proxy_configured: true,
     });
     const wrapper = mountView();
     await flushPromises();
     await openGatewayTab(wrapper);
     const input = wrapper.get<HTMLInputElement>("#codex-ticket-harvest-proxy");
-    expect(input.element.value).toBe("http://user:***@old.example.com:8080");
+    expect(input.element.value).toBe("http://user:fixture-old@old.example.com:8080");
     await input.setValue("socks5h://user:new-secret@new.example.com:1080");
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();

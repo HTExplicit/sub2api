@@ -4523,14 +4523,7 @@
                   <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
                     {{ t("admin.settings.gatewayForwarding.codexTicketHarvestProxyDesc") }}
                   </p>
-                  <input
-                    id="codex-ticket-harvest-proxy"
-                    v-model="form.openai_codex_ticket_harvest_proxy_url"
-                    type="text"
-                    class="input mt-3 w-full font-mono text-sm"
-                    :placeholder="t('admin.settings.gatewayForwarding.codexTicketHarvestProxyPlaceholder')"
-                    autocomplete="off"
-                  />
+                  <CodexTicketProxyEditor v-model="form.openai_codex_ticket_harvest_proxy_url" @clear="form.openai_codex_ticket_harvest_proxy_url = ''; form.openai_codex_ticket_enabled = false; clearTicketProxy = true" />
                   <p
                     v-if="form.openai_codex_ticket_harvest_proxy_configured"
                     class="mt-1.5 text-xs text-gray-500 dark:text-gray-400"
@@ -9063,6 +9056,7 @@
 </template>
 
 <script setup lang="ts">
+import CodexTicketProxyEditor from '@/components/admin/CodexTicketProxyEditor.vue'
 import { ref, reactive, computed, onMounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { adminAPI } from "@/api";
@@ -9840,6 +9834,7 @@ type SettingsForm = Omit<
 const schedulingThresholdPlatforms = SCHEDULING_THRESHOLD_PLATFORMS;
 const platformQuotaPlatforms = CONCRETE_PLATFORM_VALUES;
 
+const clearTicketProxy = ref(false)
 const form = reactive<SettingsForm>({
   registration_enabled: true,
   email_verify_enabled: false,
@@ -11888,6 +11883,7 @@ async function saveSettings() {
       openai_codex_version_auto_sync_enabled:
         form.openai_codex_version_auto_sync_enabled,
       openai_codex_ticket_enabled: form.openai_codex_ticket_enabled,
+      openai_codex_ticket_clear_proxy: clearTicketProxy.value && !form.openai_codex_ticket_harvest_proxy_url.trim(),
       openai_codex_ticket_harvest_proxy_url:
         form.openai_codex_ticket_harvest_proxy_url?.trim() || "",
       min_codex_version: form.min_codex_version?.trim() || "",
