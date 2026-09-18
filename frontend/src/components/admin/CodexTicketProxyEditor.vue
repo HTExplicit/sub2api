@@ -14,6 +14,7 @@
     <p v-if="error" role="alert" class="text-red-600 text-sm">{{ error }}</p>
     <div v-if="result" role="status" class="space-y-1 border p-3 text-sm">
       <p :class="result.success ? 'text-emerald-600' : 'text-amber-600'">{{ result.message }}</p>
+      <p v-if="result.failure_detail" class="break-words text-red-600">{{ result.failure_detail }}</p>
       <p v-for="(stage, index) in result.stages" :key="index">{{ t('admin.accounts.ticketProxy.stages.' + stage.name) }} · {{ stage.success ? '✓' : '✗' }} {{ stage.message }} {{ stage.duration_ms }} ms</p>
       <p v-if="result.certificate_trust">{{ t('admin.accounts.ticketProxy.trust') }}: {{ result.certificate_trust }} {{ result.certificate_fingerprint }}</p>
       <p v-if="result.protocol_suggestion">{{ result.protocol_suggestion }}</p>

@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"errors"
 	"io"
 	"math/big"
 	"net"
@@ -195,4 +196,16 @@ func TestCodexTicketProxyAuthenticationFailureAndErrorRedaction(t *testing.T) {
 	require.NotContains(t, msg, "u:p")
 	require.NotContains(t, msg, "secret-value")
 	require.False(t, strings.Contains(msg, "gAAAAA"))
+}
+
+func TestCodexTicketProxyDisconnectCauseIsRedacted(t *testing.T) {
+	proxyURL := "http://diagnostic-user:diagnostic-password@proxy.example.com:8080"
+	err := &url.Error{Op: "Head", URL: proxyURL, Err: io.EOF}
+	require.Equal(t, "ticket_proxy_eof", codexTicketTransportFailureCode(err))
+	detail := codexTicketProxyFailureDetail(err, proxyURL)
+	require.Contains(t, detail, "EOF")
+	require.NotContains(t, detail, "diagnostic-user")
+	require.NotContains(t, detail, "diagnostic-password")
+	require.Equal(t, "ticket_proxy_reset", codexTicketTransportFailureCode(errors.New("read: connection reset by peer")))
+	require.LessOrEqual(t, len([]rune(codexTicketProxyFailureDetail(errors.New(strings.Repeat("failure ", 100)), proxyURL))), 256)
 }

@@ -27,4 +27,11 @@ describe('draft ticket proxy editor', () => {
     expect(wrapper.get('[role="alert"]').text()).toContain('duplicate_field')
     wrapper.unmount()
   })
+  it('shows the safe transport cause supplied by the server', async () => {
+    const wrapper = mount(CodexTicketProxyEditor, { props: { modelValue: 'http://proxy.example.com:8080' } })
+    mocks.testProxy.mockResolvedValue({ success: false, network_reachable: false, code: 'ticket_proxy_eof', message: 'Connection closed', failure_detail: 'Head [redacted]: EOF', stages: [] })
+    await wrapper.findAll('button').find(b => b.text().endsWith('.test'))!.trigger('click'); await flushPromises()
+    expect(wrapper.get('[role="status"]').text()).toContain('Head [redacted]: EOF')
+    wrapper.unmount()
+  })
 })

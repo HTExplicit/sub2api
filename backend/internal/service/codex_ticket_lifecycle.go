@@ -112,6 +112,8 @@ func CodexTicketFailure(code string) CodexTicketResult {
 		"ticket_proxy_protocol": "代理协议握手失败，请核对HTTP或SOCKS协议",
 		"ticket_proxy_dns":      "代理主机DNS解析失败",
 		"ticket_proxy_connect":  "代理连接被拒绝或CONNECT失败",
+		"ticket_proxy_eof":      "连接被对端提前关闭（EOF）",
+		"ticket_proxy_reset":    "连接被对端重置",
 		"ticket_proxy_tls":      "代理TLS证书验证失败，请测试代理连接",
 	}
 	message, ok := messages[code]

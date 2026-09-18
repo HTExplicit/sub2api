@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptrace"
@@ -42,6 +43,7 @@ type CodexTicketProxyStage struct {
 }
 
 type CodexTicketProxyTestResult struct {
+	FailureDetail          string                  `json:"failure_detail,omitempty"`
 	Success                bool                    `json:"success"`
 	NetworkReachable       bool                    `json:"network_reachable"`
 	Protocol               string                  `json:"protocol"`
@@ -327,6 +329,7 @@ func (s *OpenAIGatewayService) prepareCodexTicketProxy(ctx context.Context, raw 
 	if err != nil {
 		result.Code = codexTicketTransportFailureCode(err)
 		result.Message = CodexTicketFailure(result.Code).Message
+		result.FailureDetail = codexTicketProxyFailureDetail(err, normal)
 		if strings.HasPrefix(u.Scheme, "socks") && errors.Is(err, context.DeadlineExceeded) {
 			result.ProtocolSuggestion = "尝试确认该端口是否为HTTP CONNECT代理"
 		}
@@ -382,6 +385,7 @@ func (s *OpenAIGatewayService) TestCodexTicketProxy(ctx context.Context, raw str
 				result.Success = false
 				result.Code = codexTicketTransportFailureCode(followErr)
 				result.Message = CodexTicketFailure(result.Code).Message
+				result.FailureDetail = codexTicketProxyFailureDetail(followErr, normalized)
 				result.Stages = append(result.Stages, CodexTicketProxyStage{Name: "pinned_connection", Success: false, DurationMS: time.Since(started).Milliseconds(), Message: result.Message})
 				return result, nil
 			}
@@ -428,7 +432,26 @@ func codexTicketTransportFailureCode(err error) string {
 	if strings.Contains(t, "connection refused") || strings.Contains(t, "connect rejected") {
 		return "ticket_proxy_connect"
 	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return "ticket_proxy_eof"
+	}
+	if strings.Contains(t, "connection reset") || strings.Contains(t, "forcibly closed") {
+		return "ticket_proxy_reset"
+	}
 	return "ticket_transport"
+}
+
+func codexTicketProxyFailureDetail(err error, proxyURL string) string {
+	secrets := []string{proxyURL}
+	if parsed, parseErr := url.Parse(proxyURL); parseErr == nil && parsed.User != nil {
+		password, _ := parsed.User.Password()
+		secrets = append(secrets, parsed.User.Username(), password)
+	}
+	text := []rune(codexTicketSafeUpstreamMessage(err.Error(), secrets...))
+	if len(text) > 256 {
+		text = text[:256]
+	}
+	return string(text)
 }
 
 var ticketSensitiveValuePattern = regexp.MustCompile(`(?i)(?:bearer\s+\S+|(?:https?|socks5h?)://\S+|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|sk-[A-Za-z0-9_-]+|gAAAAA[A-Za-z0-9_=-]+)`)
