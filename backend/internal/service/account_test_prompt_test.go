@@ -40,6 +40,37 @@ func TestAccountTestPromptBuildersPreserveUserText(t *testing.T) {
 	}
 }
 
+func TestAccountTestPromptAntigravityScheduledDefaults(t *testing.T) {
+	svc := &AntigravityGatewayService{}
+	for _, tc := range []struct {
+		name, model string
+		build       func(string, string, ...string) ([]byte, error)
+	}{
+		{"gemini", "gemini-3.1-pro", svc.buildGeminiTestRequest},
+		{"claude", "claude-sonnet-4-6", svc.buildClaudeTestRequest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, input := range []struct {
+				name    string
+				prompts []string
+				want    string
+				limit   int64
+			}{
+				{"scheduled", nil, ".", 1},
+				{"blank manual", []string{""}, "hi", 1},
+				{"custom manual", []string{"custom question"}, "custom question", 1024},
+			} {
+				t.Run(input.name, func(t *testing.T) {
+					raw, err := tc.build("project", tc.model, input.prompts...)
+					require.NoError(t, err)
+					require.Equal(t, input.want, gjson.GetBytes(raw, "request.contents.0.parts.0.text").String())
+					require.Equal(t, input.limit, gjson.GetBytes(raw, "request.generationConfig.maxOutputTokens").Int())
+				})
+			}
+		})
+	}
+}
+
 func TestAccountTestPromptAdaptiveAndOpenCodeFinalRequests(t *testing.T) {
 	prompt := "  preserve 用户原文\n"
 	account := adaptiveCNAccountTestAccount(991, PlatformDeepseek)

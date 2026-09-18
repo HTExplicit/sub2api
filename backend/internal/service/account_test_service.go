@@ -2495,7 +2495,11 @@ func (s *AccountTestService) testAntigravityAccountConnection(c *gin.Context, ac
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
 
 	// 调用 AntigravityGatewayService.TestConnection（复用协议转换逻辑）
-	result, err := s.antigravityGatewayService.TestConnection(ctx, account, testModelID, c.GetString(accountTestPromptContextKey))
+	prompts := []string{c.GetString(accountTestPromptContextKey)}
+	if c.GetBool(accountTestScheduledDefaultsContextKey) {
+		prompts = nil
+	}
+	result, err := s.antigravityGatewayService.TestConnection(ctx, account, testModelID, prompts...)
 	if err != nil {
 		return s.sendErrorAndEnd(c, err.Error())
 	}
@@ -3372,7 +3376,12 @@ func (s *AccountTestService) runTestBackground(ctx context.Context, accountID in
 	ginCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ginCtx.Request = (&http.Request{}).WithContext(ctx)
 	ginCtx.Set("account_test_event_collector", collector)
-	testErr := s.TestAccountConnection(ginCtx, accountID, modelID, resolveAccountTestPrompt(prompts...), AccountTestModeDefault, AccountTestOptions{requireSupportedModel: requireSupported})
+	ginCtx.Set(accountTestScheduledDefaultsContextKey, !requireSupported)
+	prompt := ""
+	if len(prompts) > 0 {
+		prompt = prompts[0]
+	}
+	testErr := s.TestAccountConnection(ginCtx, accountID, modelID, prompt, AccountTestModeDefault, AccountTestOptions{requireSupportedModel: requireSupported})
 	if testErr == nil {
 		testErr = ctx.Err()
 	}

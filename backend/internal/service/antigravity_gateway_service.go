@@ -457,7 +457,7 @@ func (s *AntigravityGatewayService) buildGeminiTestRequest(projectID, model stri
 			{
 				"role": "user",
 				"parts": []map[string]any{
-					{"text": resolveAccountTestPrompt(prompts...)},
+					{"text": resolveAntigravityTestPrompt(prompts...)},
 				},
 			},
 		},
@@ -478,7 +478,7 @@ func (s *AntigravityGatewayService) buildGeminiTestRequest(projectID, model stri
 // buildClaudeTestRequest 构建 Claude 格式测试请求并转换为 Gemini 格式
 // 使用最小 token 消耗：输入 "." + MaxTokens: 1
 func (s *AntigravityGatewayService) buildClaudeTestRequest(projectID, mappedModel string, prompts ...string) ([]byte, error) {
-	content, err := json.Marshal(resolveAccountTestPrompt(prompts...))
+	content, err := json.Marshal(resolveAntigravityTestPrompt(prompts...))
 	if err != nil {
 		return nil, err
 	}

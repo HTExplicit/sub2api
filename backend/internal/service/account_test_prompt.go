@@ -20,6 +20,14 @@ func accountTextTestOutputLimit(prompts ...string) int {
 }
 
 const accountTestPromptContextKey = "account_test_user_prompt"
+const accountTestScheduledDefaultsContextKey = "account_test_scheduled_defaults"
+
+func resolveAntigravityTestPrompt(prompts ...string) string {
+	if len(prompts) == 0 {
+		return "."
+	}
+	return resolveAccountTestPrompt(prompts...)
+}
 
 func ValidateAccountTextTestPrompt(prompt, model, mode string) error {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
