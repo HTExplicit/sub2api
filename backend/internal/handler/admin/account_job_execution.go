@@ -21,6 +21,9 @@ func (h *AccountHandler) ExecuteAccountJob(
 		return nil, errors.New("invalid account job execution")
 	}
 	item := items[0]
+	if job.Kind == service.AccountJobKindCodexTicketHarvest {
+		return []service.AccountJobExecutionResult{h.executeCodexTicketHarvest(ctx, job, payload, item)}, nil
+	}
 	result := h.executeAccountJobItem(ctx, job.Kind, payload, item)
 	return []service.AccountJobExecutionResult{result}, nil
 }
@@ -28,6 +31,10 @@ func (h *AccountHandler) ExecuteAccountJob(
 func (h *AccountHandler) executeAccountJobItem(ctx context.Context, kind string, raw json.RawMessage, item service.AccountJobItem) service.AccountJobExecutionResult {
 	switch kind {
 	case service.AccountJobKindBatchTest:
+		var request batchTestJobPayload
+		if json.Unmarshal(raw, &request) != nil || service.ValidateAccountTestPrompt(request.Prompt) != nil {
+			return accountJobFailed(item.ID, "payload_invalid")
+		}
 		id, ok := accountJobTarget(item)
 		if !ok {
 			return accountJobFailed(item.ID, "target_missing")
@@ -53,7 +60,7 @@ func (h *AccountHandler) executeAccountJobItem(ctx context.Context, kind string,
 		}
 		testCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 		defer cancel()
-		result, err := h.accountTestService.RunBatchTestBackground(testCtx, id, model)
+		result, err := h.accountTestService.RunBatchTestBackground(testCtx, id, model, request.Prompt)
 		if ctx.Err() != nil {
 			return service.AccountJobExecutionResult{ItemID: item.ID, Status: service.AccountJobItemStatusCanceled}
 		}

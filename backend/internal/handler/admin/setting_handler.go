@@ -51,6 +51,7 @@ func firstNonEmpty(values ...string) string {
 
 // SettingHandler 系统设置处理器
 type SettingHandler struct {
+	codexTicketGateway       *service.OpenAIGatewayService
 	settingService           *service.SettingService
 	emailService             *service.EmailService
 	turnstileService         *service.TurnstileService
@@ -101,6 +102,7 @@ func (h *SettingHandler) SetStepUpDeps(totpService *service.TotpService, userSer
 // GetSettings 获取所有系统设置
 // GET /api/v1/admin/settings
 func (h *SettingHandler) GetSettings(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
 	settings, err := h.settingService.GetAllSettings(c.Request.Context())
 	if err != nil {
 		response.ErrorFrom(c, err)
@@ -310,7 +312,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		OpenAICodexClientVersionSynced:                         settings.OpenAICodexClientVersionSynced,
 		OpenAICodexVersionAutoSyncEnabled:                      settings.OpenAICodexVersionAutoSyncEnabled,
 		OpenAICodexTicketEnabled:                               settings.OpenAICodexTicketEnabled,
-		OpenAICodexTicketHarvestProxyURL:                       service.MaskProxyURL(settings.OpenAICodexTicketHarvestProxyURL),
+		OpenAICodexTicketHarvestProxyURL:                       settings.OpenAICodexTicketHarvestProxyURL,
 		OpenAICodexTicketHarvestProxyConfigured:                strings.TrimSpace(settings.OpenAICodexTicketHarvestProxyURL) != "",
 		MinCodexVersion:                                        settings.MinCodexVersion,
 		MaxCodexVersion:                                        settings.MaxCodexVersion,

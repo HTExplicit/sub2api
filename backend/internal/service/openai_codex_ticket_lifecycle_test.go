@@ -75,6 +75,27 @@ type codexTicketLifecycleRepo struct {
 	persist func(context.Context) error
 }
 
+func (r *codexTicketLifecycleRepo) SeedCodexTicketRenewals(ctx context.Context, _ []string, _ int, _ time.Time) error {
+	_, err := r.ListByPlatform(ctx, PlatformOpenAI)
+	return err
+}
+func (r *codexTicketLifecycleRepo) DueCodexTickets(context.Context, []string, time.Time, int) ([]CodexTicketLifecycle, error) {
+	return []CodexTicketLifecycle{{AccountID: r.account.ID, Model: "gpt-6-astra"}}, nil
+}
+func (r *codexTicketLifecycleRepo) ClaimCodexTicket(_ context.Context, id int64, model, operation string, _ int64, _, _ bool, _ time.Time) (*CodexTicketLifecycle, error) {
+	return &CodexTicketLifecycle{AccountID: id, Model: model, Identity: CodexTicketAccountIdentity(&r.account), Phase: "pre_running", LeaseID: operation}, nil
+}
+func (r *codexTicketLifecycleRepo) FinishCodexTicket(ctx context.Context, _ *CodexTicketLifecycle, ticket *CodexTicketRecord, _ CodexTicketResult, _ time.Time) (bool, error) {
+	return ticket != nil, r.UpdateExtra(ctx, r.account.ID, nil)
+}
+func (r *codexTicketLifecycleRepo) StopCodexTicket(context.Context, int64, []string, time.Time) error {
+	return nil
+}
+func (r *codexTicketLifecycleRepo) GetByID(context.Context, int64) (*Account, error) {
+	a := r.account
+	return &a, nil
+}
+
 func (r *codexTicketLifecycleRepo) ListByPlatform(ctx context.Context, _ string) ([]Account, error) {
 	if r.list != nil {
 		return r.list(ctx)
@@ -98,15 +119,16 @@ func (r *codexTicketLifecycleSettings) GetValue(ctx context.Context, key string)
 }
 
 func TestCodexTicketHarvesterStopCancelsInFlightWork(t *testing.T) {
-	for _, stage := range []string{"settings-enabled", "settings-proxy", "accounts", "upstream", "persist"} {
+	for _, stage := range []string{"settings-enabled", "settings-proxy", "accounts", "upstream"} {
 		t.Run(stage, func(t *testing.T) {
 			started := make(chan struct{})
 			cancelled := make(chan struct{})
 			var once sync.Once
+			var canceledOnce sync.Once
 			block := func(ctx context.Context) error {
 				once.Do(func() { close(started) })
 				<-ctx.Done()
-				close(cancelled)
+				canceledOnce.Do(func() { close(cancelled) })
 				return ctx.Err()
 			}
 			account := ticketTestAccount(41)

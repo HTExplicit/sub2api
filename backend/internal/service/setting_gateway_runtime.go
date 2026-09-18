@@ -461,6 +461,12 @@ func (s *SettingService) InvalidateOpenAICodexTicketEnabledCache() {
 type cachedOpenAICodexTicketHarvestProxy struct {
 	value     string
 	expiresAt int64
+	found     bool
+}
+
+func (s *SettingService) codexTicketProxySettingExists() bool {
+	value, _ := s.openAICodexTicketHarvestProxyCache.Load().(*cachedOpenAICodexTicketHarvestProxy)
+	return value != nil && value.found
 }
 
 const openAICodexTicketHarvestProxyCacheTTL = 5 * time.Second
@@ -495,11 +501,14 @@ func (s *SettingService) GetOpenAICodexTicketHarvestProxyURL(ctx context.Context
 		}
 		if err != nil && !errors.Is(err, ErrSettingNotFound) {
 			// Keep the last known proxy during transient storage failures.
+			found := false
 			if cached, ok := s.openAICodexTicketHarvestProxyCache.Load().(*cachedOpenAICodexTicketHarvestProxy); ok && cached != nil {
 				value = cached.value
+				found = cached.found
 			}
 			s.openAICodexTicketHarvestProxyCache.Store(&cachedOpenAICodexTicketHarvestProxy{
 				value:     value,
+				found:     found,
 				expiresAt: time.Now().Add(time.Second).UnixNano(),
 			})
 			return value, nil
@@ -507,6 +516,7 @@ func (s *SettingService) GetOpenAICodexTicketHarvestProxyURL(ctx context.Context
 		value = strings.TrimSpace(value)
 		s.openAICodexTicketHarvestProxyCache.Store(&cachedOpenAICodexTicketHarvestProxy{
 			value:     value,
+			found:     err == nil,
 			expiresAt: time.Now().Add(openAICodexTicketHarvestProxyCacheTTL).UnixNano(),
 		})
 		return value, nil

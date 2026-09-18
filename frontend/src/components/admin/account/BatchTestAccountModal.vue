@@ -3,6 +3,7 @@
     <form id="batch-test-accounts" @submit.prevent="submit">
       <p class="mb-4 text-sm text-gray-600 dark:text-gray-300">{{ t('admin.accounts.batchTest.description', { count: rows.length }) }}</p>
       <p v-if="applicationResult" class="mb-3 text-sm text-blue-600" role="status">{{ applicationResult }}</p>
+      <AccountTextTestPrompt v-model="prompt" :disabled="busy" />
       <div class="space-y-3">
         <div v-for="row in visibleRows" :key="row.account_id" :data-account-id="row.account_id" class="rounded-none border border-gray-200 p-3 dark:border-dark-600">
           <div class="mb-2 flex items-center justify-between gap-3">
@@ -43,10 +44,13 @@ import AccountTestModelSelect from './AccountTestModelSelect.vue'
 import accountJobsAPI, { type AccountJob, type BatchTestModelRow } from '@/api/admin/accountJobs'
 import { prepareAccountTestModels, accountTestModelsForMode, defaultAccountTestModel } from '@/utils/accountTestModels'
 import { useAppStore } from '@/stores/app'
+import AccountTextTestPrompt from './AccountTextTestPrompt.vue'
+import { useAccountTestPrompt } from '@/composables/useAccountTestPrompt'
 
 const props = defineProps<{ show: boolean; accountIds: number[] }>()
 const emit = defineEmits<{ close: []; submitted: [job: AccountJob] }>()
 const { t } = useI18n()
+const { prompt, valid: promptValid } = useAccountTestPrompt()
 type Row = BatchTestModelRow & { model: string; loading: boolean }
 const rows = ref<Row[]>([])
 const busy = ref(false)
@@ -57,7 +61,7 @@ let controller = new AbortController()
 const pages = computed(() => Math.max(1, Math.ceil(rows.value.length / 100)))
 const visibleRows = computed(() => rows.value.slice((page.value - 1) * 100, page.value * 100))
 const pending = computed(() => rows.value.some(row => row.loading))
-const ready = computed(() => rows.value.length > 0 && rows.value.every(row => !row.loading && !row.error_code && row.models.some(model => model.id === row.model)))
+const ready = computed(() => promptValid.value && rows.value.length > 0 && rows.value.every(row => !row.loading && !row.error_code && row.models.some(model => model.id === row.model)))
 
 async function load(ids: number[], version: number) {
   const idSet = new Set(ids)
@@ -110,7 +114,7 @@ async function submit() {
   const items = rows.value.map(row => ({ account_id: row.account_id, model_id: row.model }))
   busy.value = true
   try {
-    emit('submitted', await accountJobsAPI.batchTest(items))
+    emit('submitted', await accountJobsAPI.batchTest(items, prompt.value))
     emit('close')
   } catch { useAppStore().showError(t('admin.accounts.batchTest.submitFailed')) }
   finally { busy.value = false }

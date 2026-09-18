@@ -57,7 +57,10 @@ func ProvideAdminHandlers(
 	ollamaCloudUsage *service.OllamaCloudUsageService,
 	accountTrafficObserver *service.AccountTrafficObserver,
 	settingService *service.SettingService,
+	codexTicketGateway *service.OpenAIGatewayService,
 ) *AdminHandlers {
+	accountHandler.SetCodexTicketGateway(codexTicketGateway)
+	settingHandler.SetCodexTicketGateway(codexTicketGateway)
 	accountHandler.SetUpstreamBillingProbeService(upstreamBillingProbe)
 	accountHandler.SetOllamaCloudUsageService(ollamaCloudUsage)
 	accountHandler.SetAccountTrafficObserver(accountTrafficObserver)

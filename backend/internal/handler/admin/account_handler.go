@@ -69,6 +69,7 @@ type AccountHandler struct {
 	accountJobs             *service.AccountJobService
 	cindyJobMutations       service.AccountJobCindyMutationRunner
 	codexTicketSettings     *service.SettingService
+	codexTicketGateway      *service.OpenAIGatewayService
 
 	cfg               *config.Config
 	apiKeyRevealMu    sync.RWMutex
@@ -1375,6 +1376,10 @@ func (h *AccountHandler) Test(c *gin.Context) {
 	var req TestAccountRequest
 	// Allow empty body, model_id is optional
 	_ = c.ShouldBindJSON(&req)
+	if err := service.ValidateAccountTextTestPrompt(req.Prompt, req.ModelID, req.Mode); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
 
 	opts := service.AccountTestOptions{
 		ImageDataURL: req.ImageDataURL,

@@ -21,7 +21,8 @@ func TestSettingsCodexTicketProxyWriteReadAndHotReload(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	require.Equal(t, newProxy, repo.values[key])
 	require.Equal(t, newProxy, h.settingService.GetOpenAICodexTicketHarvestProxyURL(context.Background()))
-	require.NotContains(t, rec.Body.String(), "new-secret")
+	require.Contains(t, rec.Body.String(), "new-secret")
+	require.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
 	require.Contains(t, rec.Body.String(), `"openai_codex_ticket_harvest_proxy_configured":true`)
 	// Omission, empty input and the masked GET value all preserve the real secret.
 	for _, body := range []map[string]any{{"site_name": "updated"}, {key: ""}, {key: service.MaskProxyURL(newProxy)}} {
@@ -34,8 +35,13 @@ func TestSettingsCodexTicketProxyWriteReadAndHotReload(t *testing.T) {
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/settings", nil)
 	h.GetSettings(c)
 	require.Equal(t, http.StatusOK, get.Code)
-	require.NotContains(t, get.Body.String(), "new-secret")
+	require.Contains(t, get.Body.String(), "new-secret")
+	require.Equal(t, "no-store", get.Header().Get("Cache-Control"))
 	require.Contains(t, get.Body.String(), "new.example.com")
+	rec = doUpdateSettings(t, h, map[string]any{"openai_codex_ticket_clear_proxy": true}, nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Empty(t, repo.values[key])
+	require.Equal(t, "false", repo.values[service.SettingKeyOpenAICodexTicketEnabled])
 }
 
 func TestSettingsCodexTicketRejectInvalidProxyWithoutLeakingPassword(t *testing.T) {

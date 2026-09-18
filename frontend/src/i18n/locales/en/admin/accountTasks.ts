@@ -29,6 +29,7 @@ export default {
       actions: 'Actions',
     },
     kinds: {
+      codex_ticket_harvest: 'Manual 292 harvest',
       account_batch_test: 'Batch connection tests',
       account_import: 'Data import',
       account_import_codex: 'Codex import',

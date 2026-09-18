@@ -372,7 +372,12 @@ func TestRefreshOpenAICodexTickets_ConcurrentModelsPreserveAccountSnapshot(t *te
 	account := ticketTestAccount(41)
 	account.Status = StatusActive
 	account.Extra = map[string]any{"existing": true}
-	repo := &codexTicketRefreshRepo{accounts: []Account{*account}}
+	repo := newCodexTicketMemoryStore(account)
+	expiry := time.Now().Add(30 * time.Second)
+	due := expiry.Add(-time.Minute)
+	for _, model := range []string{openAICodexTicketDefaultModel, openAICodexTicketDefaultSolModel} {
+		repo.states[model] = &CodexTicketLifecycle{AccountID: account.ID, Model: model, Identity: CodexTicketAccountIdentity(account), Phase: "ready", ExpiresAt: &expiry, NextAt: &due}
+	}
 	upstream := &codexTicketConcurrentUpstream{ready: make(chan struct{})}
 	svc := ticketTestService(t, config.OpenAICodexTicketConfig{Enabled: true, HarvestProxyURL: "socks5h://proxy.example.com:1080"}, upstream)
 	svc.accountRepo = repo

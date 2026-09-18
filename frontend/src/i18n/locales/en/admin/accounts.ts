@@ -1,4 +1,20 @@
 export default {accounts: {
+
+  textTestPrompt: { label: 'Text test prompt', hint: 'Blank uses hi. Remembered only for this site and administrator in this browser.', reset: 'Restore default', tooLong: 'Prompt exceeds 8192 characters. Shorten it to continue.' },
+  tickets: {
+    stages: { request: 'Request', configuration: 'Configuration', lifecycle: 'Task state', account_auth: 'Account authentication', proxy_auth: 'Proxy authentication', proxy_protocol: 'Proxy protocol', proxy_dns: 'Proxy DNS', proxy_connect: 'Proxy connection', tls: 'TLS certificate', ticket_validation: 'Ticket validation', upstream_http: 'Upstream HTTP', persistence: 'Persistence' },
+    title: 'Harvest 292 / renewal', description: 'One request per account and model. Valid tickets are skipped by default. Success enrolls renewal at 1 minute before expiry, with one retry at 1 minute after expiry. Submitted jobs continue when this window closes.',
+    disabled: 'The ticket switch is off.', force: 'Harvest again even with a valid ticket', ineligible: 'Not eligible: requires an active non-shadow OpenAI OAuth or Setup Token account.',
+    valid: 'Valid', stop: 'Stop automatic renewal', start: 'Submit harvest', limit: 'Select up to 100 accounts.', loadFailed: 'Could not load accounts or ticket configuration.',
+    submitFailed: 'Operation failed. Check the current status before retrying.', next: 'Next renewal', last: 'Last attempt', length: 'Ticket length',
+    states: { idle: 'Awaiting manual harvest', ready: 'Renewal scheduled', retry: 'Waiting for retry after expiry', stopped: 'Automatic renewal stopped', manual_running: 'Manual harvest running', pre_running: 'Renewing before expiry', post_running: 'Retrying after expiry' }
+  },
+  ticketProxy: {
+    address: 'Full harvest proxy address', protocol: 'Protocol', test: 'Test connection', clear: 'Clear proxy and disable tickets', hint: 'Blur only parses the input. Testing uses the draft without saving, OAuth credentials or model requests. Full proxy credentials are visible to administrators only.',
+    trust: 'Certificate verification', copyFailed: 'Could not copy. Copy the address manually.', testFailed: 'Proxy test did not complete. Try again.',
+    stages: { parse: 'Input parsing', dns: 'Proxy DNS', tcp: 'Proxy TCP', connect: 'CONNECT', tls: 'TLS', http: 'ChatGPT response', protocol: 'Protocol handshake', auth: 'Proxy authentication', pinned_connection: 'Reconnect using pinned trust' },
+    errors: { too_long: 'Proxy input is too long.', unknown_field: 'Unknown field. Use host, port, username and password labels.', duplicate_field: 'Duplicate field. Check the unchanged input.', incomplete: 'Host, port or credentials are incomplete.', ambiguous: 'Ambiguous fields. Use labeled lines.', invalid_url: 'Invalid or unsupported proxy URL.', invalid_port: 'Enter a port between 1 and 65535.' }
+  },
       batchTest: {
         title: 'Batch connection test',
         description: 'Test {count} selected accounts, up to 5 at a time. Closing progress keeps the job running.',

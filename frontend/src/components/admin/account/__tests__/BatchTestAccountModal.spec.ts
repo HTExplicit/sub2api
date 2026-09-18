@@ -4,6 +4,7 @@ import BatchTestAccountModal from '../BatchTestAccountModal.vue'
 const { batchTestModels, batchTest } = vi.hoisted(() => ({ batchTestModels: vi.fn(), batchTest: vi.fn() }))
 vi.mock('@/api/admin/accountJobs', () => ({ default: { batchTestModels, batchTest } }))
 vi.mock('@/stores/app', () => ({ useAppStore: () => ({ showError: vi.fn() }) }))
+vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ user: { id: 1 } }) }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string, args?: unknown) => key + (args ? JSON.stringify(args) : '') }) }))
 function catalog(id: number, models = ['first', 'shared']) {
   return { account_id: id, name: `Account ${id}`, platform: 'openai', type: 'apikey', is_cindy: false, models: models.map(id => ({ id, display_name: `Display ${id}` })) }
@@ -27,7 +28,7 @@ describe('BatchTestAccountModal per-account selections', () => {
   expect((wrapper.get('#batch-model-3').element as HTMLSelectElement).value).toBe('shared')
   expect(wrapper.text()).toContain('"applied":2,"skipped":1')
   await wrapper.get('form').trigger('submit'); await flushPromises()
-  expect(batchTest).toHaveBeenCalledWith([{ account_id: 1, model_id: 'shared' }, { account_id: 2, model_id: 'other' }, { account_id: 3, model_id: 'shared' }])
+  expect(batchTest).toHaveBeenCalledWith([{ account_id: 1, model_id: 'shared' }, { account_id: 2, model_id: 'other' }, { account_id: 3, model_id: 'shared' }], '')
   expect(wrapper.emitted('submitted')?.[0]).toEqual([{ id: 12, status: 'pending' }]); expect(wrapper.emitted('close')).toHaveLength(1)
   wrapper.unmount()
  })

@@ -472,6 +472,10 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.POST("/:id/ollama-cloud-usage/refresh", h.Admin.Account.RefreshOllamaCloudUsage)
 		accounts.DELETE("/:id", h.Admin.Account.Delete)
 		accounts.POST("/:id/test", h.Admin.Account.Test)
+		accounts.GET("/codex-tickets/policy", h.Admin.Account.CodexTicketPolicy)
+		accounts.POST("/:id/codex-tickets/harvest", h.Admin.Account.HarvestCodexTicket)
+		accounts.POST("/codex-tickets/batch-harvest", h.Admin.Account.BatchHarvestCodexTickets)
+		accounts.POST("/:id/codex-tickets/stop", h.Admin.Account.StopCodexTicketRenewal)
 		accounts.POST("/:id/recover-state", h.Admin.Account.RecoverState)
 		accounts.POST("/:id/cindy-balance/recover", h.Admin.Account.ClearCindyBalanceInsufficient)
 		accounts.POST("/:id/refresh", h.Admin.Account.Refresh)
@@ -655,6 +659,7 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	{
 		adminSettings.GET("", h.Admin.Setting.GetSettings)
 		adminSettings.PUT("", h.Admin.Setting.UpdateSettings)
+		adminSettings.POST("/openai-codex-ticket/proxy-test", h.Admin.Setting.TestCodexTicketProxy)
 		adminSettings.POST("/test-smtp", h.Admin.Setting.TestSMTPConnection)
 		adminSettings.POST("/send-test-email", h.Admin.Setting.SendTestEmail)
 		adminSettings.GET("/email-templates", h.Admin.Setting.ListEmailTemplates)

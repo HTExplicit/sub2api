@@ -81,7 +81,8 @@
         />
       </div>
 
-      <div v-if="supportsPromptInput" class="space-y-1.5">
+      <AccountTextTestPrompt v-if="supportsTextPrompt" v-model="textPrompt" :disabled="status === 'connecting'" />
+      <div v-else-if="supportsPromptInput" class="space-y-1.5">
         <TextArea
           v-model="testPrompt"
           :label="promptInputLabel"
@@ -365,6 +366,8 @@
 </template>
 
 <script setup lang="ts">
+import AccountTextTestPrompt from './AccountTextTestPrompt.vue'
+import { useAccountTestPrompt } from '@/composables/useAccountTestPrompt'
 import { computed, ref, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -411,7 +414,10 @@ const streamingContent = ref('')
 const errorMessage = ref('')
 const availableModels = ref<AccountAvailableModel[]>([])
 const selectedModelId = ref('')
-const testPrompt = ref('')
+const { prompt: textPrompt, valid: textPromptValid } = useAccountTestPrompt()
+const mediaTestPrompt = ref('')
+const testPrompt = computed({ get: () => supportsTextPrompt.value ? textPrompt.value : mediaTestPrompt.value,
+  set: value => { if (supportsTextPrompt.value) textPrompt.value = value; else mediaTestPrompt.value = value } })
 const loadingModels = ref(false)
 let abortController: AbortController | null = null
 const generatedImages = ref<PreviewMedia[]>([])
@@ -476,7 +482,9 @@ const showModelSelect = computed(() => {
 
 const modelOptionsForMode = computed(() => accountTestModelsForMode(props.account, availableModels.value, grokTestMode.value))
 
+const supportsTextPrompt = computed(() => testMode.value !== 'compact' && !supportsImageTest.value && (!isGrokAccount.value || grokTestMode.value === 'text'))
 const supportsPromptInput = computed(() => {
+  if (supportsTextPrompt.value) return true
   if (!isGrokAccount.value) {
     return supportsImageTest.value
   }
@@ -654,6 +662,7 @@ const testModeSummary = computed(() => {
 })
 
 const canStartTest = computed(() => {
+  if (supportsTextPrompt.value && !textPromptValid.value) return false
   if (status.value === 'connecting') return false
   if (isGrokAccount.value) {
     if (
@@ -698,7 +707,7 @@ watch(
   () => props.show,
   async (newVal) => {
     if (newVal && props.account) {
-      testPrompt.value = ''
+      mediaTestPrompt.value = ''
       testMode.value = 'default'
       grokTestMode.value = 'text'
       resetState()
@@ -715,7 +724,7 @@ watch(
 
 watch(grokTestMode, () => {
   if (!isGrokAccount.value) return
-  testPrompt.value = ''
+  mediaTestPrompt.value = ''
   clearMediaUploads()
   pickDefaultModelForMode()
   applyDefaultPromptForMode()
@@ -801,7 +810,7 @@ const startTest = async () => {
       audio_data_url?: string
     } = {
       model_id: showModelSelect.value ? selectedModelId.value : '',
-      prompt: supportsPromptInput.value ? testPrompt.value.trim() : ''
+      prompt: supportsPromptInput.value ? testPrompt.value : ''
     }
     if (isOpenAIAccount.value) {
       requestBody.mode = testMode.value

@@ -8,8 +8,18 @@ This fork maintains the `codexrip` patch set over official Sub2API releases.
 - Integration base: production `v0.2.5-codexrip.14`, commit `a2f13d34a41bb89225e5d6864d466b4a35d6448f`; embedded version is `0.2.6`.
 - Conflict decisions and validation: [v0.2.6 review](.downstream/upstream-review-v0.2.6.md); exact-SHA evidence: [risk manifest](.downstream/upstream-risk.json).
 - The operator workspace `docs/sub2api.md` owns the current production pointer. A source merge or Release alone does not establish deployment completion.
-- The full recovered tree includes the official changes after v0.2.5 and all six Codex ticket patches. Ticket collection/injection is disabled in this deployment; the admin settings expose the proxy and live switch for later explicit activation.
+- The full recovered tree includes the official changes after v0.2.5 and all six Codex ticket patches. Deployment preserves the existing live ticket switch and proxy; source defaults remain disabled.
 - Tickets apply only to OpenAI OAuth/Setup Token accounts, excluding shadows. Cindy/API-key paths retain their existing identity, health, quota and sticky-session behavior.
+
+## Account tests and ticket lifecycle
+
+- Single and batch text tests accept an optional user prompt, up to 8192 Unicode characters; blank uses `hi`. The browser remembers text separately from media, per site and administrator. Batch prompts are held in the existing encrypted task payload, while scheduled tests retain their defaults.
+- Initial 292 harvesting is manual, per account and model, with one model request per item, up to 100 accounts and five concurrent requests. Valid tickets are skipped unless explicitly refreshed. The existing task drawer provides progress, cancellation and failed-item retry.
+- Successful account/model pairs renew once 60 seconds before expiry, then once 60 seconds after expiry if needed. Two failures stop renewal until another manual success. Startup imports only still-valid legacy tickets and never revives stopped enrollments.
+- Migration `244_codex_ticket_lifecycle.sql` stores durable stages and execution leases. Ticket material remains solely in account Extra; ticket and lifecycle writes commit together. Account disablement, deletion or principal changes invalidate in-flight claims; token refresh preserves the principal.
+- The ticket proxy editor accepts URLs, colon-separated fields and labeled fields in any order. Only authenticated administrator settings responses reveal the full proxy credentials; those responses prohibit caching. Explicit clearing also disables tickets.
+- Draft connection tests send no OAuth credentials or model requests. Private certificates can be learned only during an unauthenticated ChatGPT preflight, remain bound to that proxy configuration generation and hostname, and must pass hostname/validity checks. Automatic renewal does not learn certificate changes; manual harvesting or testing the configured proxy can update its trust. Business transports and system roots are unchanged.
+- OpenAI OAuth text tests apply the same account/model ticket policy as forwarding. Diagnostic events expose presence, length and a SHA-256 fingerprint, never the ticket itself. A successful connection or a 292 header does not establish model quality.
 
 ## Official behavior and downstream contracts
 

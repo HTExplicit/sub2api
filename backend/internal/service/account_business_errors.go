@@ -80,6 +80,12 @@ var accountBusinessMessageCatalog = map[string]accountBusinessMessage{
 // AccountBusinessMessage returns a fixed, credential-safe business message.
 // Callers must not fall back to raw errors when the code is unknown.
 func AccountBusinessMessage(code string) (string, bool) {
+	if strings.HasPrefix(code, "ticket_") {
+		r := CodexTicketFailure(code)
+		if r.Code == code {
+			return r.Message, true
+		}
+	}
 	entry, ok := accountBusinessMessageCatalog[strings.TrimSpace(code)]
 	return entry.message, ok
 }
@@ -88,6 +94,10 @@ func AccountBusinessMessage(code string) (string, bool) {
 // failure results. Preview success codes are deliberately rejected here.
 func NormalizeAccountBusinessFailure(code string) (string, string) {
 	code = strings.TrimSpace(code)
+	if strings.HasPrefix(code, "ticket_") {
+		r := CodexTicketFailure(code)
+		return r.Code, r.Message
+	}
 	if entry, ok := accountBusinessMessageCatalog[code]; ok && entry.failure {
 		return code, entry.message
 	}

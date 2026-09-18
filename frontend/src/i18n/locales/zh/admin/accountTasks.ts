@@ -29,6 +29,7 @@ export default {
       actions: '操作',
     },
     kinds: {
+      codex_ticket_harvest: '手动打292',
       account_batch_test: '批量测试连接',
       account_import: '数据导入',
       account_import_codex: 'Codex 导入',

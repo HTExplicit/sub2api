@@ -16,6 +16,7 @@ const (
 	AccountJobKindImportCodex            = "account_import_codex"
 	AccountJobKindBatchCreate            = "account_batch_create"
 	AccountJobKindBatchTest              = "account_batch_test"
+	AccountJobKindCodexTicketHarvest     = "codex_ticket_harvest"
 	AccountJobKindBulkUpdate             = "account_bulk_update"
 	AccountJobKindBulkTaxonomy           = "account_bulk_taxonomy"
 	AccountJobKindBatchDelete            = "account_batch_delete"
@@ -398,7 +399,7 @@ func (r *AccountJobRuntime) execute(job *AccountJob) (string, string) {
 		}
 	}
 	defer cleanup()
-	if job.Kind == AccountJobKindBatchTest {
+	if job.Kind == AccountJobKindBatchTest || job.Kind == AccountJobKindCodexTicketHarvest {
 		return r.executeBatchTests(executionCtx, job, payload)
 	}
 	for {
@@ -461,6 +462,8 @@ func (r *AccountJobRuntime) cleanup(now time.Time) {
 
 func validAccountJobKind(kind string) bool {
 	switch kind {
+	case AccountJobKindCodexTicketHarvest:
+		return true
 	case AccountJobKindImportData, AccountJobKindImportCodex, AccountJobKindBatchCreate, AccountJobKindBatchTest,
 		AccountJobKindBulkUpdate, AccountJobKindBulkTaxonomy, AccountJobKindBatchDelete,
 		AccountJobKindBatchClearError, AccountJobKindBatchRefresh, AccountJobKindBatchRefreshTier,

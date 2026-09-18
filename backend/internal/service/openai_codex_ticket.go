@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"net/http"
 	"net/url"
@@ -35,6 +36,7 @@ const (
 var ErrOpenAICodexTicketUnavailable = errors.New("codex turn-state ticket unavailable")
 
 type openAICodexTicket struct {
+	Identity   string    `json:"identity,omitempty"`
 	AccountID  int64     `json:"account_id"`
 	Model      string    `json:"model"`
 	State      string    `json:"state"`
@@ -72,7 +74,7 @@ func (s *OpenAIGatewayService) openAICodexTicketConfig() config.OpenAICodexTicke
 		cfg.TTLSeconds = 3600
 	}
 	if cfg.RefreshBeforeSeconds <= 0 {
-		cfg.RefreshBeforeSeconds = 600
+		cfg.RefreshBeforeSeconds = 60
 	}
 	if cfg.HarvestProbeIntervalSeconds <= 0 {
 		cfg.HarvestProbeIntervalSeconds = 6
@@ -87,8 +89,12 @@ func (s *OpenAIGatewayService) openAICodexTicketConfig() config.OpenAICodexTicke
 }
 
 func (s *OpenAIGatewayService) openAICodexTicketGatedModel(model string) bool {
+	return s.openAICodexTicketEnabled() && s.openAICodexTicketConfiguredModel(model)
+}
+
+func (s *OpenAIGatewayService) openAICodexTicketConfiguredModel(model string) bool {
 	model = normalizeOpenAICodexTicketModel(model)
-	if model == "" || !s.openAICodexTicketEnabled() {
+	if model == "" {
 		return false
 	}
 	for _, item := range s.openAICodexTicketConfig().Models {
@@ -101,12 +107,16 @@ func (s *OpenAIGatewayService) openAICodexTicketGatedModel(model string) bool {
 
 // OpenAICodexTicketStatus 是给管理端看的门票摘要，不含 state blob。
 type OpenAICodexTicketStatus struct {
-	Model            string     `json:"model"`
-	Length           int        `json:"length,omitempty"`
-	Ready            bool       `json:"ready"`
-	RemainingSeconds int64      `json:"remaining_seconds"`
-	Blocked          bool       `json:"blocked"`
-	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
+	Model            string             `json:"model"`
+	Length           int                `json:"length,omitempty"`
+	Ready            bool               `json:"ready"`
+	RemainingSeconds int64              `json:"remaining_seconds"`
+	Blocked          bool               `json:"blocked"`
+	ExpiresAt        *time.Time         `json:"expires_at,omitempty"`
+	RenewalState     string             `json:"renewal_state"`
+	NextAttemptAt    *time.Time         `json:"next_attempt_at,omitempty"`
+	LastAttemptAt    *time.Time         `json:"last_attempt_at,omitempty"`
+	LastResult       *CodexTicketResult `json:"last_result,omitempty"`
 }
 
 func OpenAICodexTicketStatuses(account *Account, cfg config.OpenAICodexTicketConfig, now time.Time) []OpenAICodexTicketStatus {
@@ -126,12 +136,18 @@ func OpenAICodexTicketStatuses(account *Account, cfg config.OpenAICodexTicketCon
 		if model == "" {
 			continue
 		}
-		status := OpenAICodexTicketStatus{Model: model}
+		status := OpenAICodexTicketStatus{Model: model, RenewalState: "idle"}
+		if runtime := codexTicketRuntimeFromExtra(account, model); runtime != nil {
+			status.RenewalState = runtime.Phase
+			status.NextAttemptAt = runtime.NextAt
+			status.LastAttemptAt = runtime.LastAttemptAt
+			status.LastResult = runtime.LastResult
+		}
 		ticket := parseOpenAICodexTicketFromAny(0, model, nil)
 		if account != nil && account.Extra != nil {
 			ticket = parseOpenAICodexTicketFromAny(account.ID, model, account.Extra[openAICodexTicketExtraKey(model)])
 		}
-		if ticket.valid(now, targetLen) {
+		if ticket.valid(now, targetLen) && (ticket.Identity == "" || ticket.Identity == CodexTicketAccountIdentity(account)) {
 			status.Ready = true
 			status.Length = ticket.Length
 			remaining := int64(ticket.ExpiresAt.Sub(now) / time.Second)
@@ -172,6 +188,9 @@ func (s *OpenAIGatewayService) openAICodexTicketHarvestProxyURLContext(ctx conte
 		if proxy := s.settingService.GetOpenAICodexTicketHarvestProxyURL(ctx); proxy != "" {
 			return proxy
 		}
+		if s.settingService.codexTicketProxySettingExists() {
+			return ""
+		}
 	}
 	return strings.TrimSpace(s.openAICodexTicketConfig().HarvestProxyURL)
 }
@@ -188,13 +207,6 @@ func (t *openAICodexTicket) valid(now time.Time, targetLen int) bool {
 		return false
 	}
 	return true
-}
-
-func (t *openAICodexTicket) needsRefresh(now time.Time, refreshBefore time.Duration) bool {
-	if t == nil || t.ExpiresAt.IsZero() {
-		return true
-	}
-	return !t.ExpiresAt.After(now.Add(refreshBefore))
 }
 
 func (s *OpenAIGatewayService) lookupOpenAICodexTicket(account *Account, model string) *openAICodexTicket {
@@ -218,6 +230,19 @@ func (s *OpenAIGatewayService) lookupOpenAICodexTicket(account *Account, model s
 	var extra *openAICodexTicket
 	if account.Extra != nil {
 		extra = parseOpenAICodexTicketFromAny(account.ID, model, account.Extra[openAICodexTicketExtraKey(model)])
+	}
+	identity := CodexTicketAccountIdentity(account)
+	// Bind legacy blobs to the principal at the first read, before publishing
+	// them in memory. A later principal change must not reuse an unstamped cache.
+	if extra != nil && extra.Identity == "" {
+		extra.Identity = identity
+	}
+	if mem != nil && mem.Identity != "" && mem.Identity != identity {
+		mem = nil
+		s.openaiCodexTickets.Delete(key)
+	}
+	if extra != nil && extra.Identity != "" && extra.Identity != identity {
+		extra = nil
 	}
 	if extra.valid(now, targetLen) && (mem == nil || extra.CapturedAt.After(mem.CapturedAt)) {
 		s.openaiCodexTickets.Store(key, extra)
@@ -358,6 +383,10 @@ func (s *OpenAIGatewayService) openAICodexTicketBlocksAccount(account *Account, 
 }
 
 func (s *OpenAIGatewayService) fireOpenAICodexTicketProbe(ctx context.Context, account *Account, token, model, proxyURL string, attemptTimeout time.Duration) (state string, status int, err error) {
+	return s.fireCodexTicketProbe(ctx, account, token, model, proxyURL, attemptTimeout, nil)
+}
+
+func (s *OpenAIGatewayService) fireCodexTicketProbe(ctx context.Context, account *Account, token, model, proxyURL string, attemptTimeout time.Duration, prepared *codexTicketPreparedProxy) (state string, status int, err error) {
 	attemptCtx, cancel := context.WithTimeout(ctx, attemptTimeout)
 	defer cancel()
 
@@ -382,7 +411,12 @@ func (s *OpenAIGatewayService) fireOpenAICodexTicketProbe(ctx context.Context, a
 	// Synthetic probes must use the dedicated no-reuse transport even when the
 	// production account is bound to a plugin. This also avoids reading pluginManager
 	// while handlers are still wiring it during gateway construction.
-	resp, err := s.httpUpstream.Do(req, proxyURL, account.ID, account.Concurrency)
+	var resp *http.Response
+	if prepared != nil {
+		resp, err = prepared.client.Do(req)
+	} else {
+		resp, err = s.httpUpstream.Do(req, proxyURL, account.ID, account.Concurrency)
+	}
 	if err != nil {
 		return "", 0, err
 	}
@@ -395,7 +429,21 @@ func (s *OpenAIGatewayService) fireOpenAICodexTicketProbe(ctx context.Context, a
 			_ = resp.Body.Close()
 		}
 	}()
-	return extractOpenAICodexTurnState(resp.Header), resp.StatusCode, nil
+	state = extractOpenAICodexTurnState(resp.Header)
+	if resp.StatusCode != http.StatusOK {
+		var detail string
+		if resp.Body != nil {
+			raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+			secrets := []string{token, proxyURL}
+			if parsed, parseErr := url.Parse(proxyURL); parseErr == nil && parsed.User != nil {
+				password, _ := parsed.User.Password()
+				secrets = append(secrets, parsed.User.Username(), password)
+			}
+			detail = codexTicketSafeUpstreamMessage(extractUpstreamErrorMessage(raw), secrets...)
+		}
+		return state, resp.StatusCode, &codexTicketUpstreamError{message: detail}
+	}
+	return state, resp.StatusCode, nil
 }
 
 func jsonString(v string) string {
@@ -463,6 +511,15 @@ func (s *OpenAIGatewayService) StopOpenAICodexTicketHarvester() {
 }
 
 func (s *OpenAIGatewayService) openAICodexTicketHarvestLoop(ctx context.Context) {
+	store, ok := s.accountRepo.(CodexTicketRepository)
+	if !ok {
+		return
+	}
+	// Import only still-valid legacy tickets. Existing runtime rows (including
+	// stopped rows) are never re-enrolled by this startup step.
+	if err := store.SeedCodexTicketRenewals(ctx, s.openAICodexTicketConfig().Models, s.openAICodexTicketConfig().TargetLength, time.Now()); err != nil {
+		logger.L().Warn("codex_ticket_seed_failed")
+	}
 	timer := time.NewTimer(0)
 	defer timer.Stop()
 	for {
@@ -471,58 +528,35 @@ func (s *OpenAIGatewayService) openAICodexTicketHarvestLoop(ctx context.Context)
 			return
 		case <-timer.C:
 			s.refreshOpenAICodexTickets(ctx)
-			timer.Reset(time.Duration(s.openAICodexTicketConfig().HarvestProbeIntervalSeconds) * time.Second)
+			timer.Reset(time.Second)
 		}
 	}
 }
 
-// refreshOpenAICodexTickets probes each account/model with a missing or soon-to-expire
-// ticket once. The loop waits for all probes, then waits the configured interval
-// before starting the next cycle.
+// Only durable successful enrollments have due rows. Missing tickets are never
+// harvested by a background scan.
 func (s *OpenAIGatewayService) refreshOpenAICodexTickets(ctx context.Context) {
 	if s == nil || s.accountRepo == nil || ctx.Err() != nil || !s.openAICodexTicketEnabledContext(ctx) {
 		return
 	}
-	accounts, err := s.accountRepo.ListByPlatform(ctx, PlatformOpenAI)
-	if err != nil {
-		logger.L().Warn("openai_codex_ticket list accounts failed", zap.Error(err))
+	store, ok := s.accountRepo.(CodexTicketRepository)
+	if !ok {
 		return
 	}
-	cfg := s.openAICodexTicketConfig()
-	now := time.Now()
-	refreshBefore := time.Duration(cfg.RefreshBeforeSeconds) * time.Second
+	items, err := store.DueCodexTickets(ctx, s.openAICodexTicketConfig().Models, time.Now(), 5)
+	if err != nil {
+		logger.L().Warn("codex_ticket_due_read_failed")
+		return
+	}
 	var wg sync.WaitGroup
-	probed := 0
-	for i := range accounts {
-		account := accounts[i]
-		if account.Status != StatusActive || !isOpenAICodexTicketAccount(&account) {
-			continue
-		}
-		for _, model := range cfg.Models {
-			model := normalizeOpenAICodexTicketModel(model)
-			if model == "" {
-				continue
-			}
-			// 已有一张有效且未临近过期的票 → 本周期不打，省得白刷。
-			if t := s.lookupOpenAICodexTicket(&account, model); t.valid(now, cfg.TargetLength) && !t.needsRefresh(now, refreshBefore) {
-				continue
-			}
-			acc := account
-			// Token/header helpers may update account metadata; each model owns its maps.
-			acc.Extra = maps.Clone(account.Extra)
-			acc.Credentials = maps.Clone(account.Credentials)
-			probed++
-			wg.Add(1)
-			go func(acc Account, model string) {
-				defer wg.Done()
-				s.probeOnceOpenAICodexTicket(ctx, &acc, model)
-			}(acc, model)
-		}
+	for _, item := range items {
+		wg.Add(1)
+		go func(item CodexTicketLifecycle) {
+			defer wg.Done()
+			s.runCodexTicketAttempt(ctx, item.AccountID, item.Model, "renewal", 0, false, false)
+		}(item)
 	}
 	wg.Wait()
-	if probed > 0 {
-		logger.L().Info("openai_codex_ticket probe cycle", zap.Int("probed", probed))
-	}
 }
 
 // probeOnceOpenAICodexTicket 走打票代理打一发。命中合格 292（HTTP 200、长度==target、
@@ -579,7 +613,7 @@ func (s *OpenAIGatewayService) probeOnceOpenAICodexTicket(ctx context.Context, a
 
 // IsOpenAICodexTicketExtraKey identifies server-managed ticket material.
 func IsOpenAICodexTicketExtraKey(key string) bool {
-	return strings.HasPrefix(key, openAICodexTicketExtraKeyPrefix)
+	return strings.HasPrefix(key, openAICodexTicketExtraKeyPrefix) || strings.HasPrefix(key, CodexTicketRuntimeExtraPrefix)
 }
 
 // MergeOpenAICodexTicketExtra preserves only persisted tickets, never summaries or
