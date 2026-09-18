@@ -19,7 +19,9 @@ func (s *OpenAIGatewayService) doOpenAIUpstream(request *http.Request, proxyURL 
 }
 
 // doOpenAIAccountTestUpstream 让 OpenAI OAuth 账号测试与真实转发使用同一插件路径。
-// API Key 和未命中插件的账号保持各自原有的 HTTPUpstream 行为。
+// API Key 和未命中插件的账号保持各自原有的 HTTPUpstream 行为。未命中插件时，发往
+// /backend-api/codex/responses 的 OAuth POST 与真实转发（doOpenAICodexUpstream）走同一
+// zstd 压缩准备函数、同一门控；TLS 指纹 / 代理 / 凭据来源不变。
 func (s *AccountTestService) doOpenAIAccountTestUpstream(
 	request *http.Request,
 	proxyURL string,
@@ -32,14 +34,20 @@ func (s *AccountTestService) doOpenAIAccountTestUpstream(
 			return response, err
 		}
 	}
+	// 插件 round-trip 有意拿到明文请求；zstd 压缩是网关传输层的事，只在真正经
+	// HTTPUpstream 发出的副本上做。
+	wire, err := prepareOpenAICodexWireRequestWithConfig(s.cfg, request, account)
+	if err != nil {
+		return nil, err
+	}
 	if useTLSFallback {
 		return s.httpUpstream.DoWithTLS(
-			request,
+			wire,
 			proxyURL,
 			account.ID,
 			account.Concurrency,
 			s.tlsFPProfileService.ResolveTLSProfile(account),
 		)
 	}
-	return s.httpUpstream.Do(request, proxyURL, account.ID, account.Concurrency)
+	return s.httpUpstream.Do(wire, proxyURL, account.ID, account.Concurrency)
 }

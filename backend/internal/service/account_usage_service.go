@@ -907,11 +907,20 @@ func (s *AccountUsageService) probeOpenAICodexSnapshot(ctx context.Context, acco
 		ProxyURL:              proxyURL,
 		Timeout:               15 * time.Second,
 		ResponseHeaderTimeout: 10 * time.Second,
+		// 与 OpenAI HTTPUpstream 传输一致：不让 Go 自动协商 Accept-Encoding: gzip，
+		// 真实 Codex 客户端不发该头。
+		DisableCompression: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build openai probe client: %w", err)
 	}
-	resp, err := client.Do(req)
+	// 与推理面同一 zstd 压缩边界：探针同样是发往 /backend-api/codex/responses 的 OAuth POST；
+	// 本服务拿不到网关配置，开关取进程级快照。
+	wire, err := prepareOpenAICodexWireRequestSnapshot(req, account)
+	if err != nil {
+		return nil, fmt.Errorf("openai codex probe request failed: %w", err)
+	}
+	resp, err := client.Do(wire)
 	if err != nil {
 		return nil, fmt.Errorf("openai codex probe request failed: %w", err)
 	}

@@ -1587,7 +1587,10 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughHeade
 	upstreamConn := &openAIWSCaptureConn{
 		events: [][]byte{
 			[]byte(`{"type":"response.completed","response":{"id":"resp_passthrough_headers","model":"gpt-5.1","usage":{"input_tokens":1,"output_tokens":1}}}`),
+			[]byte(`{"type":"response.completed","response":{"id":"resp_passthrough_headers_2","model":"gpt-5.1","usage":{"input_tokens":1,"output_tokens":1}}}`),
 		},
+		// 两个终态分别等待 fake 收到对应的实际出站帧，不以调度时延猜测第二轮已写入。
+		writeSignals: make(chan struct{}, 2),
 	}
 	captureDialer := &openAIWSCaptureDialer{conn: upstreamConn}
 	svc := &OpenAIGatewayService{
@@ -1682,6 +1685,23 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughHeade
 	cancelRead()
 	require.NoError(t, readErr)
 	require.Equal(t, "resp_passthrough_headers", gjson.GetBytes(event, "response.id").String())
+
+	// 第二帧：后续 response.create 也必须以同一账号级设备身份出站。
+	writeCtx, cancelWrite = context.WithTimeout(context.Background(), 3*time.Second)
+	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(`{
+		"type":"response.create",
+		"model":"gpt-5.1",
+		"stream":false,
+		"prompt_cache_key":"pcache_passthrough",
+		"input":[{"type":"message","role":"user","content":"again"}]
+	}`))
+	cancelWrite()
+	require.NoError(t, err)
+	readCtx, cancelRead = context.WithTimeout(context.Background(), 3*time.Second)
+	_, event, readErr = clientConn.Read(readCtx)
+	cancelRead()
+	require.NoError(t, readErr)
+	require.Equal(t, "resp_passthrough_headers_2", gjson.GetBytes(event, "response.id").String())
 	_ = clientConn.Close(coderws.StatusNormalClosure, "done")
 
 	select {
@@ -1704,10 +1724,11 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughHeade
 	passthroughIdentity, ok := account.CodexClientIdentity()
 	require.True(t, ok)
 	require.Equal(t, passthroughIdentity.Sandbox, gjson.Get(handshakeTurnMetadata, "sandbox").String())
-	require.Len(t, upstreamConn.writes, 1)
+	require.Len(t, upstreamConn.writes, 2)
 	forwarded := requestToJSONString(upstreamConn.writes[0])
 	require.Equal(t, gjson.Get(forwarded, "prompt_cache_key").String(), captureDialer.lastHeaders.Get("session-id"), "握手回退与首帧 prompt_cache_key 同源")
 	require.Equal(t, resolveConvergedInstallationID(account, "5d2e8c1a-7b4f-4e3d-9a6c-0f1e2d3c4b5a"), gjson.Get(forwarded, "client_metadata.x-codex-installation-id").String(), "passthrough 首帧默认 device 收敛")
+	require.Equal(t, gjson.Get(forwarded, "client_metadata.x-codex-installation-id").String(), gjson.Get(requestToJSONString(upstreamConn.writes[1]), "client_metadata.x-codex-installation-id").String(), "passthrough 后续帧与首帧同一设备")
 	require.False(t, gjson.Get(forwarded, `tools.#(type=="namespace")`).Exists())
 	require.Equal(t, "collaboration", gjson.Get(forwarded, `input.#(type=="additional_tools").tools.0.name`).String())
 	require.Equal(t, "namespace", gjson.Get(forwarded, "tool_choice.type").String())

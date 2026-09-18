@@ -69,6 +69,32 @@ func TestPrepareOpenAICodexWireRequestCompressesOnlyCodexStreamingTurns(t *testi
 	same, err = svc.prepareOpenAICodexWireRequest(disabled, oauth)
 	require.NoError(t, err)
 	require.Same(t, disabled, same)
+
+	// 进程级快照门控（用量探针等拿不到配置的边界）走同一实现：开启时压缩，关闭时原样返回。
+	t.Cleanup(func() { SetCodexRequestZstdEnabled(false) })
+	SetCodexRequestZstdEnabled(true)
+	snapshotWire, err := prepareOpenAICodexWireRequestSnapshot(newReq("/backend-api/codex/responses"), oauth)
+	require.NoError(t, err)
+	require.Equal(t, "zstd", snapshotWire.Header.Get("Content-Encoding"))
+	snapshotCompressed, err := io.ReadAll(snapshotWire.Body)
+	require.NoError(t, err)
+	require.Equal(t, body, zstdDecodeForTest(t, snapshotCompressed))
+	SetCodexRequestZstdEnabled(false)
+	snapshotOff := newReq("/backend-api/codex/responses")
+	same, err = prepareOpenAICodexWireRequestSnapshot(snapshotOff, oauth)
+	require.NoError(t, err)
+	require.Same(t, snapshotOff, same)
+}
+
+// zstdDecodeForTest 解压 zstd 压缩的请求体，供断言「压缩后语义不变」的 fixture 复用。
+func zstdDecodeForTest(t *testing.T, compressed []byte) []byte {
+	t.Helper()
+	dec, err := zstd.NewReader(bytes.NewReader(compressed))
+	require.NoError(t, err)
+	defer dec.Close()
+	decoded, err := io.ReadAll(dec)
+	require.NoError(t, err)
+	return decoded
 }
 
 type prefixThenErrorReader struct {

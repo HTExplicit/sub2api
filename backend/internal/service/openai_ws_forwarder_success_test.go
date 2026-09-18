@@ -1955,9 +1955,11 @@ type openAIWSCaptureConn struct {
 	mu         sync.Mutex
 	readDelays []time.Duration
 	events     [][]byte
-	lastWrite  map[string]any
-	writes     []map[string]any
-	closed     bool
+	// 可选：每次实际写帧后才释放一条响应，避免两轮交互依赖固定 sleep。
+	writeSignals chan struct{}
+	lastWrite    map[string]any
+	writes       []map[string]any
+	closed       bool
 }
 
 func (c *openAIWSCaptureConn) WriteJSON(ctx context.Context, value any) error {
@@ -1984,6 +1986,12 @@ func (c *openAIWSCaptureConn) WriteJSON(ctx context.Context, value any) error {
 			c.writes = append(c.writes, cloneMapStringAny(parsed))
 		}
 	}
+	if c.writeSignals != nil {
+		select {
+		case c.writeSignals <- struct{}{}:
+		default:
+		}
+	}
 	return nil
 }
 
@@ -2008,6 +2016,13 @@ func (c *openAIWSCaptureConn) ReadMessage(ctx context.Context) ([]byte, error) {
 	event := c.events[0]
 	c.events = c.events[1:]
 	c.mu.Unlock()
+	if c.writeSignals != nil {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-c.writeSignals:
+		}
+	}
 	if delay > 0 {
 		timer := time.NewTimer(delay)
 		defer timer.Stop()

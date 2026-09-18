@@ -2201,7 +2201,9 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 	}
 	applyOpenAICodexProbeHeaders(req.Header)
 	if isOAuth {
-		enforceCodexIdentityHeadersWithUA(req.Header, credentialAccount.GetOpenAIUserAgent())
+		// 与真实转发一致：使用该账号的 Codex TUI 身份，账号级自定义 UA 经 ForceCodexCLI
+		// 策略过滤后作为管理员显式配置传入（同普通 OAuth 连接测试）。
+		enforceCodexIdentityHeadersForAccount(req.Header, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
 	}
 	probeSessionID := compactProbeSessionID(account.ID)
 	req.Header.Set("Session_ID", probeSessionID)
@@ -3144,22 +3146,24 @@ func (s *AccountTestService) testOpenAIImageOAuth(c *gin.Context, ctx context.Co
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("OpenAI-Beta", "responses=experimental")
-	canonical := resolveCodexOutboundIdentity("")
+	canonical := resolveCodexOutboundIdentityForAccount(credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
 	req.Header.Set("originator", canonical.originator)
-	if customUA := strings.TrimSpace(credentialAccount.GetOpenAIUserAgent()); customUA != "" {
-		req.Header.Set("User-Agent", customUA)
-	} else {
-		req.Header.Set("User-Agent", canonical.userAgent)
-	}
+	req.Header.Set("User-Agent", canonical.userAgent)
 	setOpenAIChatGPTAccountHeaders(req.Header, credentialAccount)
-	// 与真实转发一致：使用该账号的 Codex TUI 身份，账号级自定义 UA 同样作为管理员显式配置传入。
-	enforceCodexIdentityHeadersForAccount(req.Header, credentialAccount, credentialAccount.GetOpenAIUserAgent())
+	// 与真实转发一致（同普通 OAuth 连接测试）：使用该账号的 Codex TUI 身份，账号级自定义 UA
+	// 经 ForceCodexCLI 策略过滤后作为管理员显式配置传入。
+	enforceCodexIdentityHeadersForAccount(req.Header, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	resp, err := s.httpUpstream.Do(req, proxyURL, account.ID, account.Concurrency)
+	// 复用压缩准备，但保留图像探针原来的直接 Do 路由；不顺带启用插件或 TLS 回退。
+	wire, err := prepareOpenAICodexWireRequestWithConfig(s.cfg, req, credentialAccount)
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Responses API request failed: %s", err.Error()))
+	}
+	resp, err := s.httpUpstream.Do(wire, proxyURL, account.ID, account.Concurrency)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Responses API request failed: %s", err.Error()))
 	}

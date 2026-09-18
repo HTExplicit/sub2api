@@ -324,7 +324,11 @@ func TestAccountTestService_OpenAISuccessPersistsSnapshotFromHeaders(t *testing.
 
 	repo := &openAIAccountTestRepo{}
 	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
-	svc := &AccountTestService{accountRepo: repo, httpUpstream: upstream}
+	svc := &AccountTestService{
+		accountRepo:  repo,
+		httpUpstream: upstream,
+		cfg:          &config.Config{Gateway: config.GatewayConfig{OpenAICodexRequestZstd: true}},
+	}
 	account := &Account{
 		ID:          89,
 		Platform:    PlatformOpenAI,
@@ -337,6 +341,11 @@ func TestAccountTestService_OpenAISuccessPersistsSnapshotFromHeaders(t *testing.
 	require.NoError(t, err)
 	require.Len(t, upstream.requests, 1)
 	require.Equal(t, HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileFromContext(upstream.requests[0].Context()))
+	// 普通 OAuth 连接测试与真实转发同一 zstd 压缩边界：线上副本带 Content-Encoding: zstd，解压后语义不变。
+	require.Equal(t, "zstd", upstream.requests[0].Header.Get("Content-Encoding"))
+	compressedProbe, err := io.ReadAll(upstream.requests[0].Body)
+	require.NoError(t, err)
+	require.Equal(t, "gpt-5.4", gjson.GetBytes(zstdDecodeForTest(t, compressedProbe), "model").String())
 	require.NotEmpty(t, repo.updatedExtra)
 	require.Equal(t, 42.0, repo.updatedExtra["codex_5h_used_percent"])
 	require.Equal(t, 88.0, repo.updatedExtra["codex_7d_used_percent"])
