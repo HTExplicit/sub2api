@@ -154,3 +154,58 @@ func TestCodexTicketRepositoryInterruptedRenewalIsConsumed(t *testing.T) {
 	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT phase FROM openai_codex_ticket_runtime WHERE account_id=$1 AND model=$2`, a.ID, model).Scan(&phase))
 	require.Equal(t, "stopped", phase)
 }
+
+type codexTicketSnapshotRecorder struct {
+	service.SchedulerCache
+	mu         sync.Mutex
+	accountIDs []int64
+}
+
+func (r *codexTicketSnapshotRecorder) SetAccount(_ context.Context, account *service.Account) error {
+	if r == nil || account == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.accountIDs = append(r.accountIDs, account.ID)
+	return nil
+}
+
+func (r *codexTicketSnapshotRecorder) contains(accountID int64) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, id := range r.accountIDs {
+		if id == accountID {
+			return true
+		}
+	}
+	return false
+}
+
+func TestCodexTicketSeedRefreshesAuthoritativeSchedulerSnapshot(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	model := "gpt-6-astra"
+	account := mustCreateAccount(t, client, &service.Account{
+		Name:        t.Name(),
+		Platform:    service.PlatformOpenAI,
+		Type:        service.AccountTypeOAuth,
+		Status:      service.StatusActive,
+		Credentials: map[string]any{"access_token": "seed-refresh-token", "chatgpt_account_id": "seed-refresh-principal"},
+		Extra:       map[string]any{},
+	})
+	t.Cleanup(func() {
+		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM accounts WHERE id=$1`, account.ID)
+	})
+	account.Extra["codex_turn_ticket:"+model] = successfulTicket(account, model, now)
+	raw, err := json.Marshal(account.Extra)
+	require.NoError(t, err)
+	_, err = integrationDB.ExecContext(ctx, `UPDATE accounts SET extra=$2::jsonb WHERE id=$1`, account.ID, string(raw))
+	require.NoError(t, err)
+
+	recorder := &codexTicketSnapshotRecorder{}
+	repo := newAccountRepositoryWithSQL(client, integrationDB, recorder)
+	require.NoError(t, repo.SeedCodexTicketRenewals(ctx, []string{model}, 292, now))
+	require.True(t, recorder.contains(account.ID), "startup seeding must refresh the full authoritative scheduler snapshot")
+}

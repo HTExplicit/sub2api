@@ -1520,7 +1520,10 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			filterStats.exclude("platform_mismatch")
 			continue
 		}
-		if s.service.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, openAIRequestedModelForAccount(ctx, account, req.RequestedModel), req.RequireCompact) {
+		// This is the partial scheduler projection. Ticket and other
+		// credential-bound gates are evaluated on the authoritative account
+		// during the fresh/recheck steps below.
+		if s.service.isOpenAIAccountCandidateRuntimeBlockedContext(ctx, account, openAIRequestedModelForAccount(ctx, account, req.RequestedModel), req.RequireCompact) {
 			filterStats.exclude("runtime_blocked")
 			filterStats.observeRuntimeCooldown(s.service, account.ID)
 			continue
@@ -1531,7 +1534,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			filterStats.exclude("privacy_not_set")
 			continue
 		}
-		if compatible, reason := s.isAccountRequestCompatibleReason(ctx, account, req); !compatible {
+		if compatible, reason := s.isCandidateAccountRequestCompatibleReason(ctx, account, req); !compatible {
 			filterStats.exclude(reason)
 			continue
 		}
@@ -1836,6 +1839,18 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatible(ctx context.C
 // openAISelectionFilterStats so that "no available accounts" errors state why
 // each candidate was dropped instead of failing silently (#4599).
 func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleReason(ctx context.Context, account *Account, req OpenAIAccountScheduleRequest) (bool, string) {
+	return s.isAccountRequestCompatibleReasonWithRuntimeGate(ctx, account, req, true)
+}
+
+// isCandidateAccountRequestCompatibleReason is the projection-safe variant used
+// while filtering the partial scheduler snapshot. The authoritative variant runs
+// again after the account is hydrated/rechecked, so ticket and other
+// credential-bound gates are never lost.
+func (s *defaultOpenAIAccountScheduler) isCandidateAccountRequestCompatibleReason(ctx context.Context, account *Account, req OpenAIAccountScheduleRequest) (bool, string) {
+	return s.isAccountRequestCompatibleReasonWithRuntimeGate(ctx, account, req, false)
+}
+
+func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleReasonWithRuntimeGate(ctx context.Context, account *Account, req OpenAIAccountScheduleRequest, authoritative bool) (bool, string) {
 	if account == nil {
 		return false, "account_nil"
 	}
@@ -1846,8 +1861,16 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleReason(ctx con
 		return false, "provider_identity_mismatch"
 	}
 	requestedModel := openAIRequestedModelForAccount(ctx, account, req.RequestedModel)
-	if s != nil && s.service != nil && s.service.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, requestedModel, req.RequireCompact) {
-		return false, "runtime_blocked"
+	if s != nil && s.service != nil {
+		blocked := false
+		if authoritative {
+			blocked = s.service.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, requestedModel, req.RequireCompact)
+		} else {
+			blocked = s.service.isOpenAIAccountCandidateRuntimeBlockedContext(ctx, account, requestedModel, req.RequireCompact)
+		}
+		if blocked {
+			return false, "runtime_blocked"
+		}
 	}
 	// The scheduler's candidate filter already checks the account's ordinary
 	// active/schedulable state.  This gate is intentionally only the per-model
