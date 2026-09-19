@@ -1,5 +1,5 @@
 <template>
-  <BaseDialog
+  <AccountOperationDialog :job="operationJob"
     :show="show"
     :title="t('admin.accounts.dataImportTitle')"
     width="wide"
@@ -178,7 +178,7 @@
         {{ busy ? t('admin.accounts.dataImporting') : t('admin.accounts.dataImportSubmitJob') }}
       </button>
     </template>
-  </BaseDialog>
+  </AccountOperationDialog>
 </template>
 
 <script setup lang="ts">
@@ -186,7 +186,7 @@ import { computed, onScopeDispose, ref, shallowRef, watch } from 'vue'
 import { readAccountImportFiles } from '@/utils/accountImportWorker'
 import { AccountImportParseError } from '@/utils/accountImportParser'
 import { useI18n } from 'vue-i18n'
-import BaseDialog from '@/components/common/BaseDialog.vue'
+import AccountOperationDialog from '@/components/admin/account-jobs/AccountOperationDialog.vue'
 import AccountImportSettingsEditor, { type AccountImportSettingsDraft } from './AccountImportSettingsEditor.vue'
 import { adminAPI } from '@/api/admin'
 import type { AccountImportPreview } from '@/api/admin/accounts'
@@ -220,6 +220,8 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const operationJob = ref<AccountJob | null>(null)
+watch(() => props.show, show => { if (show) operationJob.value = null })
 const appStore = useAppStore()
 const busy = ref(false)
 const files = ref<File[]>([])
@@ -471,8 +473,8 @@ async function handleSubmit(): Promise<void> {
   busy.value = true
   try {
     const job = await adminAPI.accounts.importData(buildImportRequest())
+    operationJob.value = job
     emit('imported', job)
-    emit('close')
   } catch (error: any) {
     if (error?.code === 'CLOUDFLARE_UPLOAD_TOO_LARGE') {
       appStore.showError(error.message)

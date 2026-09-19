@@ -1,3 +1,4 @@
+vi.mock('@/components/admin/account-jobs/AccountOperationDialog.vue', () => ({ default: { props: ['job', 'show'], template: '<div><slot/><slot name="footer"/></div>' } }))
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import BatchTestAccountModal from '../BatchTestAccountModal.vue'
@@ -29,7 +30,7 @@ describe('BatchTestAccountModal per-account selections', () => {
   expect(wrapper.text()).toContain('"applied":2,"skipped":1')
   await wrapper.get('form').trigger('submit'); await flushPromises()
   expect(batchTest).toHaveBeenCalledWith([{ account_id: 1, model_id: 'shared' }, { account_id: 2, model_id: 'other' }, { account_id: 3, model_id: 'shared' }], '')
-  expect(wrapper.emitted('submitted')?.[0]).toEqual([{ id: 12, status: 'pending' }]); expect(wrapper.emitted('close')).toHaveLength(1)
+  expect(wrapper.emitted('submitted')?.[0]).toEqual([{ id: 12, status: 'pending' }]); expect(wrapper.emitted('close')).toBeUndefined()
   wrapper.unmount()
  })
  it('blocks empty/error results until explicitly removed or successfully retried', async () => {

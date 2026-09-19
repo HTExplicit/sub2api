@@ -1,3 +1,4 @@
+vi.mock('@/components/admin/account-jobs/AccountOperationDialog.vue', () => ({ default: { name: 'AccountOperationDialog', props: ['job', 'show'], template: '<div v-if="show"><slot/><slot name="footer"/></div>' } }))
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -157,6 +158,7 @@ const DataTableStub = {
     <div data-test="view-table" :data-columns="columns.map(column => column.key).join(',')" :data-name-class="columnClass('name')">
       <div v-for="row in data" :key="row.id">
         <button data-test="open-row" @click="$emit('row-click', row)">{{ row.name }}</button>
+        <slot name="cell-select" :row="row" />
         <slot name="cell-name" :row="row" :value="row.name" />
         <slot v-if="columns.some(column => column.key === 'cindy_probe')" name="cell-cindy_probe" :row="row" :value="row.cindy_balance_probe_outcome" />
       </div>
@@ -214,7 +216,7 @@ const commonStubs = {
     emits: ['refresh'],
     template: '<div><button data-test="page-refresh" @click="$emit(\'refresh\')">refresh</button><slot name="beforeCreate" /><slot name="after" /></div>'
   },
-  AccountBulkActionsBar: { props: ['selectedIds'], template: '<div data-test="selected-ids">{{ selectedIds.join(\',\') }}</div>' },
+  AccountBulkActionsBar: { name: 'AccountBulkActionsBar', emits: ['edit-selected'], props: ['selectedIds'], template: '<div data-test="selected-ids">{{ selectedIds.join(\',\') }}</div>' },
   AccountActionMenu: true,
   ImportDataModal: ImportDataModalStub,
   AccountDetailsDrawer: DetailsDrawerStub,
@@ -260,6 +262,22 @@ const mountView = (
 })
 
 describe('admin AccountsView Cockpit console', () => {
+  it('preserves the submitted bulk-edit selection in the original window after clearing page selection', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get<HTMLInputElement>('input[type="checkbox"]').setValue(true)
+    wrapper.findComponent({ name: 'AccountBulkActionsBar' }).vm.$emit('edit-selected')
+    await flushPromises()
+    const modal = wrapper.findComponent({ name: 'BulkEditAccountModal' })
+    const ids = modal.props('accountIds')
+    expect(ids).toEqual([account.id])
+    modal.vm.$emit('updated', { id: 91, kind: 'account_bulk_update', status: 'pending' })
+    await flushPromises()
+    expect(wrapper.get('[data-test="selected-ids"]').text()).toBe('')
+    expect(modal.props('show')).toBe(true)
+    expect(modal.props('accountIds')).toEqual(ids)
+    wrapper.unmount()
+  })
   beforeEach(() => {
     localStorage.clear()
     sessionStorage.clear()
@@ -427,7 +445,7 @@ describe('admin AccountsView Cockpit console', () => {
     await wrapper.get('[data-test="emit-import-result"]').trigger('click')
     await flushPromises()
 
-    expect(jobTrack).toHaveBeenCalledWith({ id: 71, kind: 'account_import', status: 'pending' })
+    expect(jobTrack).toHaveBeenCalledWith({ id: 71, kind: 'account_import', status: 'pending' }, { open: false })
     expect(wrapper.get('[data-test="console-account-ids"]').text()).toBe('')
     expect(wrapper.get('[data-test="selected-ids"]').text()).toBe('')
     wrapper.unmount()
@@ -597,7 +615,7 @@ describe('admin AccountsView Cockpit console', () => {
     await wrapper.get('[data-test="emit-import-result"]').trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-test="scope-tools-context"]').attributes('data-selected')).toBe('')
-    expect(jobTrack).toHaveBeenCalledWith({ id: 71, kind: 'account_import', status: 'pending' })
+    expect(jobTrack).toHaveBeenCalledWith({ id: 71, kind: 'account_import', status: 'pending' }, { open: false })
   })
 
   it('deletes Cindy insufficient accounts only with the server preview fingerprint', async () => {
@@ -621,7 +639,7 @@ describe('admin AccountsView Cockpit console', () => {
     await wrapper.get('[data-test="confirm-dialog-submit"]').trigger('click')
     await flushPromises()
     expect(deleteCindyInsufficient).toHaveBeenCalledWith({ count: 2, fingerprint: 'fingerprint-2' })
-    expect(jobTrack).toHaveBeenCalledWith({ id: 72, kind: 'cindy_cleanup', status: 'pending' })
+    expect(wrapper.findComponent({ name: 'AccountOperationConfirmDialog' }).findComponent({ name: 'AccountOperationDialog' }).props('job')).toMatchObject({ id: 72, kind: 'cindy_cleanup', status: 'pending' })
     expect(showSuccess).not.toHaveBeenCalled()
   })
 
@@ -659,7 +677,7 @@ describe('admin AccountsView Cockpit console', () => {
     await wrapper.get('[data-test="confirm-dialog-submit"]').trigger('click')
     await flushPromises()
     expect(deleteCindyBanned).toHaveBeenCalledWith({ count: 1, fingerprint: 'banned-fingerprint' })
-    expect(jobTrack).toHaveBeenCalledWith({ id: 73, kind: 'cindy_banned_cleanup', status: 'pending' })
+    expect(wrapper.findComponent({ name: 'AccountOperationConfirmDialog' }).findComponent({ name: 'AccountOperationDialog' }).props('job')).toMatchObject({ id: 73, kind: 'cindy_banned_cleanup', status: 'pending' })
   })
 
   it('manual Cindy recovery calls the dedicated endpoint and refreshes the filtered list', async () => {

@@ -110,14 +110,14 @@ func TestCodexTicketRepositoryConcurrentLeaseAndAccountInvalidation(t *testing.T
 	var lease string
 	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT lease_id FROM openai_codex_ticket_runtime WHERE account_id=$1 AND model=$2`, a.ID, model).Scan(&lease))
 	require.Equal(t, claims[0].LeaseID, lease)
-	// Disable and re-enable before IO completes must still reject its old result.
+	// Business status changes do not revoke a credential owner's ticket claim.
 	_, err = integrationDB.ExecContext(ctx, `UPDATE accounts SET status='disabled' WHERE id=$1`, a.ID)
 	require.NoError(t, err)
 	_, err = integrationDB.ExecContext(ctx, `UPDATE accounts SET status='active' WHERE id=$1`, a.ID)
 	require.NoError(t, err)
 	applied, err := r.FinishCodexTicket(ctx, claims[0], successfulTicket(a, model, now), service.CodexTicketResult{Success: true}, now)
 	require.NoError(t, err)
-	require.False(t, applied)
+	require.True(t, applied)
 	// A legacy ticket without an identity stamp cannot survive changing owner.
 	raw, _ := json.Marshal(map[string]any{"codex_turn_ticket:" + model: map[string]any{"state": "gAAAAA" + strings.Repeat("B", 286), "length": 292, "expires_at": now.Add(time.Hour)}})
 	_, err = integrationDB.ExecContext(ctx, `UPDATE accounts SET extra=extra||$2::jsonb WHERE id=$1`, a.ID, string(raw))
@@ -127,6 +127,47 @@ func TestCodexTicketRepositoryConcurrentLeaseAndAccountInvalidation(t *testing.T
 	loaded, err := r.GetByID(ctx, a.ID)
 	require.NoError(t, err)
 	require.NotContains(t, loaded.Extra, "codex_turn_ticket:"+model)
+}
+
+func TestCodexTicketInactiveAccountsHarvestAndRenewWithoutEnabling(t *testing.T) {
+	for _, accountType := range []string{service.AccountTypeOAuth, service.AccountTypeSetupToken} {
+		for _, status := range []string{"disabled", "error"} {
+			t.Run(accountType+"/"+status, func(t *testing.T) {
+				ctx := context.Background()
+				r, a, now := newTicketIntegrationAccount(t)
+				_, err := integrationDB.ExecContext(ctx, `UPDATE accounts SET type=$2,status=$3,schedulable=false,error_message='keep diagnostic' WHERE id=$1`, a.ID, accountType, status)
+				require.NoError(t, err)
+				a, err = r.GetByID(ctx, a.ID)
+				require.NoError(t, err)
+				const model = "gpt-6-astra"
+				claim, err := r.ClaimCodexTicket(ctx, a.ID, model, "manual", 0, true, false, now)
+				require.NoError(t, err)
+				ticket := successfulTicket(a, model, now)
+				applied, err := r.FinishCodexTicket(ctx, claim, ticket, service.CodexTicketResult{Success: true}, now)
+				require.NoError(t, err)
+				require.True(t, applied)
+				renewAt := ticket.ExpiresAt.Add(-time.Minute)
+				renewal, err := r.ClaimCodexTicket(ctx, a.ID, model, "renewal", 0, false, false, renewAt)
+				require.NoError(t, err)
+				applied, err = r.FinishCodexTicket(ctx, renewal, successfulTicket(a, model, renewAt), service.CodexTicketResult{Success: true}, renewAt)
+				require.NoError(t, err)
+				require.True(t, applied)
+				loaded, err := r.GetByID(ctx, a.ID)
+				require.NoError(t, err)
+				require.Equal(t, status, loaded.Status)
+				require.False(t, loaded.Schedulable)
+				require.Equal(t, "keep diagnostic", loaded.ErrorMessage)
+				// Deletion still revokes a live claim and rejects the late result.
+				claim, err = r.ClaimCodexTicket(ctx, a.ID, model, "manual-again", 0, true, true, renewAt)
+				require.NoError(t, err)
+				_, err = integrationDB.ExecContext(ctx, `UPDATE accounts SET deleted_at=NOW() WHERE id=$1`, a.ID)
+				require.NoError(t, err)
+				applied, err = r.FinishCodexTicket(ctx, claim, successfulTicket(a, model, renewAt), service.CodexTicketResult{Success: true}, renewAt)
+				require.NoError(t, err)
+				require.False(t, applied)
+			})
+		}
+	}
 }
 
 func TestCodexTicketRepositoryInterruptedRenewalIsConsumed(t *testing.T) {

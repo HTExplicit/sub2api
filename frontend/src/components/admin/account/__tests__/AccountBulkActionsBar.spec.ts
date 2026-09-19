@@ -10,6 +10,15 @@ vi.mock('vue-i18n', () => ({
 }))
 
 describe('AccountBulkActionsBar', () => {
+  it('hides unverified/mixed ticket selections and enforces the 100-account limit', async () => {
+    const wrapper = mount(AccountBulkActionsBar, { props: { selectedIds: [1, 2], totalResults: 101, selectingAll: false, allResultsSelected: false } })
+    expect(wrapper.find('[data-test="batch-ticket"]').exists()).toBe(false)
+    await wrapper.setProps({ canHarvestTickets: true })
+    expect(wrapper.get('[data-test="batch-ticket"]').attributes('disabled')).toBeUndefined()
+    await wrapper.setProps({ selectedIds: Array.from({ length: 101 }, (_, i) => i + 1) })
+    expect(wrapper.get('[data-test="batch-ticket"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
   it('allows selecting all results before any row is selected', async () => {
     const wrapper = mount(AccountBulkActionsBar, {
       props: {

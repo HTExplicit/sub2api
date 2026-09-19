@@ -1,3 +1,4 @@
+vi.mock('@/components/admin/account-jobs/AccountOperationDialog.vue', () => ({ default: { props: ['job', 'show'], template: '<div><slot/><slot name="footer"/></div>' } }))
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
@@ -84,6 +85,6 @@ describe('ImportDataModal', () => {
       target_group_id: 12,
     })
     expect(wrapper.emitted('imported')?.[0]?.[0]).toMatchObject({ id: 71, status: 'pending' })
-    expect(wrapper.emitted('close')).toHaveLength(1)
+    expect(wrapper.emitted('close')).toBeUndefined()
   })
 })

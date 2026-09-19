@@ -191,3 +191,39 @@ func TestCodexTicketManualOnlyOneRequestAndPersistence(t *testing.T) {
 		})
 	}
 }
+
+func TestCodexTicketEligibilityIndependentOfAccountStatus(t *testing.T) {
+	for _, accountType := range []string{AccountTypeOAuth, AccountTypeSetupToken} {
+		for _, status := range []string{StatusActive, "disabled", "error"} {
+			t.Run(accountType+"/"+status, func(t *testing.T) {
+				a := ticketTestAccount(41)
+				a.Type, a.Status, a.Schedulable, a.ErrorMessage = accountType, status, false, "preserve diagnostic"
+				r := newCodexTicketMemoryStore(a)
+				var calls atomic.Int64
+				upstream := &codexTicketFuncUpstream{do: func(*http.Request) (*http.Response, error) {
+					calls.Add(1)
+					resp := codexTicketResponse()
+					resp.Header.Set(openAICodexTurnStateHeader, fakeCodexTicketState(292))
+					return resp, nil
+				}}
+				s := ticketTestService(t, config.OpenAICodexTicketConfig{Enabled: true, HarvestProxyURL: "http://proxy.example.com:8080"}, upstream)
+				s.accountRepo = r
+				result := s.HarvestCodexTicket(context.Background(), a.ID, "gpt-6-astra", "manual", 0, false)
+				require.True(t, result.Success)
+				require.Equal(t, int64(1), calls.Load())
+				require.Equal(t, "ready", r.states["gpt-6-astra"].Phase)
+				require.Equal(t, status, a.Status)
+				require.False(t, a.Schedulable)
+				require.Equal(t, "preserve diagnostic", a.ErrorMessage)
+			})
+		}
+	}
+	for _, a := range []*Account{
+		{Platform: PlatformOpenAI, Type: AccountTypeAPIKey},
+		{Platform: PlatformAnthropic, Type: AccountTypeOAuth},
+		{Platform: PlatformOpenAI, Type: AccountTypeOAuth, ParentAccountID: func() *int64 { id := int64(1); return &id }()},
+		nil,
+	} {
+		require.False(t, CodexTicketAccountEligible(a))
+	}
+}

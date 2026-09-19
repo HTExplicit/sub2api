@@ -1,5 +1,5 @@
 <template>
-  <BaseDialog
+  <AccountOperationDialog :job="operationJob"
     :show="show"
     :title="t('admin.accounts.createAccount')"
     width="wide"
@@ -3778,7 +3778,7 @@
         </button>
       </div>
     </template>
-  </BaseDialog>
+  </AccountOperationDialog>
 
   <!-- Gemini Help Dialog -->
   <BaseDialog
@@ -4051,6 +4051,7 @@ import type {
   AccountAvailableModel
 } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import AccountOperationDialog from '@/components/admin/account-jobs/AccountOperationDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Select from '@/components/common/Select.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
@@ -4221,6 +4222,8 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+const operationJob = ref<AccountJob | null>(null)
+watch(() => props.show, show => { if (show) operationJob.value = null })
 const emit = defineEmits<{
   close: []
   created: [job?: AccountJob]
@@ -6773,8 +6776,8 @@ const handleOpenAIImportCodexSession = async (content: string) => {
       update_existing: true
     })
 
+    operationJob.value = job
     emit('created', job)
-    handleClose()
   } catch (error: any) {
     oauthClient.error.value =
       error.response?.data?.detail ||

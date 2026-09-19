@@ -45,11 +45,12 @@ describe('useAccountJobsStore', () => {
     vi.useFakeTimers()
     vi.clearAllMocks()
     list.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
-    get.mockResolvedValue(job('running'))
+    get.mockImplementation(async (id: number) => job('running', { id }))
     listItems.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
   })
 
   afterEach(() => {
+    useAccountJobsStore().clear()
     vi.useRealTimers()
     vi.restoreAllMocks()
   })
@@ -57,7 +58,7 @@ describe('useAccountJobsStore', () => {
   it('notifies once only when a job tracked in this session becomes terminal', async () => {
     const store = useAccountJobsStore()
     const app = useAppStore()
-    store.track(job('running'))
+    store.track(job('running'), { open: false })
     list
       .mockResolvedValueOnce({ items: [job('succeeded')], total: 1, page: 1, page_size: 20 })
       .mockResolvedValueOnce({ items: [job('succeeded')], total: 1, page: 1, page_size: 20 })
@@ -107,7 +108,7 @@ describe('useAccountJobsStore', () => {
     await store.openJob(19, { page: 2, page_size: 1 })
 
     expect(store.recentJobs.map((item) => item.id)).toEqual([19, 20])
-    expect(store.activeJobs.map((item) => item.id)).toEqual([19])
+    expect(store.activeJobs.map(item => item.id)).toEqual([19]) // Opening an active result resumes tracking.
     expect(store.currentJob?.processed_count).toBe(5)
     expect(store.items.map((item) => item.id)).toEqual([90])
     expect(store.jobPage).toEqual({ total: 7, page: 2, pageSize: 2 })
@@ -138,48 +139,87 @@ describe('useAccountJobsStore', () => {
 
     expect(listItems).toHaveBeenCalledWith(20, {
       page: 1,
-      page_size: 10,
+      page_size: 20,
       status: undefined,
     }, { signal: expect.any(AbortSignal) })
   })
 
-  it('polls active tasks and stops after they become terminal', async () => {
+  it('polls tracked operations independently of history and stops at terminal state', async () => {
     const store = useAccountJobsStore()
-    store.track(job('running'))
-    expect(list).not.toHaveBeenCalled()
-
-    list.mockResolvedValue({
-      items: [job('succeeded')],
-      total: 1,
-      page: 1,
-      page_size: 20,
-    })
+    store.track(job('running'), { open: false })
+    list.mockResolvedValue({ items: [job('failed', { id: 80 })], total: 40, page: 2, page_size: 20 })
+    await store.loadRecent({ page: 2, status: 'failed' })
+    list.mockClear()
+    get.mockResolvedValue(job('succeeded'))
     await vi.advanceTimersByTimeAsync(3_000)
-    await vi.runOnlyPendingTimersAsync()
-    expect(list).toHaveBeenCalledTimes(1)
-
+    expect(get).toHaveBeenCalledTimes(1)
+    expect(store.completedJobs.map(j => j.id)).toEqual([19])
+    expect(store.activeCount).toBe(0)
+    expect(store.recentJobs.map(j => j.id)).toEqual([80])
     await vi.advanceTimersByTimeAsync(6_000)
-    expect(list).toHaveBeenCalledTimes(1)
-
-    store.clear()
-    await vi.advanceTimersByTimeAsync(10_000)
-
-    expect(store.recentJobs).toEqual([])
-    expect(store.currentJob).toBeNull()
-    expect(store.items).toEqual([])
-    expect(store.drawerOpen).toBe(false)
+    expect(get).toHaveBeenCalledTimes(1)
+    expect(list).not.toHaveBeenCalled()
   })
 
-  it('performs one initial admin-session load and does not keep polling without active jobs', async () => {
-    list.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
+  it('recovers pending and running operations once and stops polling when empty', async () => {
     const store = useAccountJobsStore()
-
     store.startPolling()
     await vi.advanceTimersByTimeAsync(0)
-    expect(list).toHaveBeenCalledTimes(1)
-
+    expect(list.mock.calls.map(call => call[0].status)).toEqual(['pending', 'running'])
     await vi.advanceTimersByTimeAsync(6_000)
-    expect(list).toHaveBeenCalledTimes(1)
+    expect(list).toHaveBeenCalledTimes(2)
+  })
+
+  it('recovers all pages without inheriting history filters or losing in-flight operations', async () => {
+    const store = useAccountJobsStore()
+    list.mockImplementation(async ({ status, page }: { status: string; page: number }) => ({
+      items: status === 'pending' ? [job('pending', { id: page })] : [job('running', { id: 3 })],
+      total: status === 'pending' ? 2 : 1, page, page_size: 1,
+    }))
+    store.startPolling()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(store.activeJobs.map(j => j.id).sort()).toEqual([1, 2, 3])
+    expect(list.mock.calls.map(call => [call[0].status, call[0].page])).toEqual([['pending', 1], ['pending', 2], ['running', 1]])
+  })
+
+  it('retains unknown outcomes on network loss and reconnects without resubmitting', async () => {
+    const store = useAccountJobsStore()
+    store.track(job('running'), { open: false })
+    get.mockRejectedValueOnce(new Error('offline'))
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(store.connectionLost).toBe(true)
+    expect(store.activeJobs[0].status).toBe('running')
+    get.mockResolvedValue(job('succeeded'))
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(store.connectionLost).toBe(false)
+    expect(store.activeCount).toBe(0)
+    expect(retryFailed).not.toHaveBeenCalled()
+  })
+
+  it('resumes an operation opened from history even after the initial recovery was idle', async () => {
+    const store = useAccountJobsStore()
+    store.startPolling()
+    await vi.advanceTimersByTimeAsync(0)
+    await store.openJob(19)
+    expect(store.activeCount).toBe(1)
+    store.closeDrawer()
+    get.mockResolvedValue(job('succeeded'))
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(store.activeCount).toBe(0)
+    expect(store.completedJobs.map(j => j.id)).toEqual([19])
+  })
+
+  it('focuses terminal failures once and restores an explicit all-results page after minimizing', async () => {
+    const store = useAccountJobsStore()
+    get.mockResolvedValue(job('partially_succeeded', { failed_count: 1 }))
+    listItems.mockImplementation(async (_id, params) => ({ items: [], total: 60, page: params.page, page_size: 20 }))
+    await store.openJob(19)
+    expect(store.itemFilter).toBe('failed')
+    await store.loadCurrent(19, { status: '', page: 2 })
+    store.closeDrawer()
+    await store.openJob(19)
+    expect(store.itemFilter).toBe('')
+    expect(store.itemPage.page).toBe(2)
   })
 
   it('refreshes the selected page and filters on an explicit request', async () => {
