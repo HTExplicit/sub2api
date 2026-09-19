@@ -158,6 +158,7 @@ const DataTableStub = {
     <div data-test="view-table" :data-columns="columns.map(column => column.key).join(',')" :data-name-class="columnClass('name')">
       <div v-for="row in data" :key="row.id">
         <button data-test="open-row" @click="$emit('row-click', row)">{{ row.name }}</button>
+        <slot name="cell-select" :row="row" />
         <slot name="cell-name" :row="row" :value="row.name" />
         <slot v-if="columns.some(column => column.key === 'cindy_probe')" name="cell-cindy_probe" :row="row" :value="row.cindy_balance_probe_outcome" />
       </div>
@@ -215,7 +216,7 @@ const commonStubs = {
     emits: ['refresh'],
     template: '<div><button data-test="page-refresh" @click="$emit(\'refresh\')">refresh</button><slot name="beforeCreate" /><slot name="after" /></div>'
   },
-  AccountBulkActionsBar: { props: ['selectedIds'], template: '<div data-test="selected-ids">{{ selectedIds.join(\',\') }}</div>' },
+  AccountBulkActionsBar: { name: 'AccountBulkActionsBar', emits: ['edit-selected'], props: ['selectedIds'], template: '<div data-test="selected-ids">{{ selectedIds.join(\',\') }}</div>' },
   AccountActionMenu: true,
   ImportDataModal: ImportDataModalStub,
   AccountDetailsDrawer: DetailsDrawerStub,
@@ -261,6 +262,22 @@ const mountView = (
 })
 
 describe('admin AccountsView Cockpit console', () => {
+  it('preserves the submitted bulk-edit selection in the original window after clearing page selection', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get<HTMLInputElement>('input[type="checkbox"]').setValue(true)
+    wrapper.findComponent({ name: 'AccountBulkActionsBar' }).vm.$emit('edit-selected')
+    await flushPromises()
+    const modal = wrapper.findComponent({ name: 'BulkEditAccountModal' })
+    const ids = modal.props('accountIds')
+    expect(ids).toEqual([account.id])
+    modal.vm.$emit('updated', { id: 91, kind: 'account_bulk_update', status: 'pending' })
+    await flushPromises()
+    expect(wrapper.get('[data-test="selected-ids"]').text()).toBe('')
+    expect(modal.props('show')).toBe(true)
+    expect(modal.props('accountIds')).toEqual(ids)
+    wrapper.unmount()
+  })
   beforeEach(() => {
     localStorage.clear()
     sessionStorage.clear()
