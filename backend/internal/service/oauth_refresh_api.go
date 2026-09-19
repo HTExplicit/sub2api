@@ -225,7 +225,8 @@ func (api *OAuthRefreshAPI) RefreshIfNeeded(
 	if freshAccount.ID != account.ID {
 		return nil, fmt.Errorf("%w: account identity mismatch", errOAuthRefreshAccountRereadFailed)
 	}
-	if !freshAccount.IsActive() {
+	ticketRefresh := isCodexTicketCredentialContext(ctx) && CodexTicketAccountEligible(freshAccount)
+	if !freshAccount.IsActive() && !ticketRefresh {
 		if requestPath {
 			return nil, fmt.Errorf("%w: account is not active", errOAuthRefreshAccountStateChanged)
 		}
