@@ -29,9 +29,10 @@ const (
 )
 
 type PluginPackageInstaller struct {
-	cfg      *config.Config
-	hostInfo PluginHostInfo
-	rootDir  string
+	bundledPublishers map[string]string
+	cfg               *config.Config
+	hostInfo          PluginHostInfo
+	rootDir           string
 }
 
 func NewPluginPackageInstaller(cfg *config.Config, hostInfo PluginHostInfo) *PluginPackageInstaller {
@@ -271,6 +272,9 @@ func (i *PluginPackageInstaller) verifySignature(file *zip.File, manifestRaw []b
 		return "", errors.New("插件签名算法或密钥 ID 无效")
 	}
 	encodedKey := trustedPluginPublisherKey(i.cfg, signature.KeyID, pluginID)
+	if encodedKey == "" && strings.HasPrefix(pluginID, "codexrip.") {
+		encodedKey = i.bundledPublishers[signature.KeyID]
+	}
 	if encodedKey == "" {
 		return "", fmt.Errorf("插件发布者密钥不受信任: %s", signature.KeyID)
 	}

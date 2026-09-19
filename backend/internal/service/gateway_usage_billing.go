@@ -586,13 +586,21 @@ func writeUsageLogBestEffort(ctx context.Context, repo UsageLogRepository, usage
 			}
 			if _, syncErr := repo.Create(fallbackCtx, usageLog); syncErr != nil {
 				logger.LegacyPrintf(logKey, "Create usage log sync fallback failed: %v", syncErr)
+				MarkQuotaLogFailed(ctx, usageLog.AccountID)
+			} else {
+				MarkQuotaLogPersisted(ctx, usageLog.AccountID)
 			}
+		} else {
+			MarkQuotaLogPersisted(ctx, usageLog.AccountID)
 		}
 		return
 	}
 
 	if _, err := repo.Create(usageCtx, usageLog); err != nil {
 		logger.LegacyPrintf(logKey, "Create usage log failed: %v", err)
+		MarkQuotaLogFailed(ctx, usageLog.AccountID)
+	} else {
+		MarkQuotaLogPersisted(ctx, usageLog.AccountID)
 	}
 }
 

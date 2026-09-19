@@ -8,9 +8,9 @@ import (
 )
 
 type PluginJobPayload struct {
-	PluginID  int64                     `json:"plugin_id"`
-	Operation string                    `json:"operation"`
-	Items     map[int64]json.RawMessage `json:"items"`
+	PluginID  int64                      `json:"plugin_id"`
+	Operation string                     `json:"operation"`
+	Items     map[string]json.RawMessage `json:"items"`
 }
 
 // PluginJobExecutor preserves the host's durable job, cancellation, retry and
@@ -48,33 +48,44 @@ func (e *PluginJobExecutor) ExecuteAccountJob(ctx context.Context, job *AccountJ
 	}
 	id := *item.TargetAccountID
 	var operation map[string]json.RawMessage
-	if json.Unmarshal(request.Items[id], &operation) != nil || operation == nil {
+	if json.Unmarshal(request.Items[item.Action], &operation) != nil || operation == nil {
 		return []AccountJobExecutionResult{result}, nil
 	}
-	operation["operation_id"], _ = json.Marshal(fmt.Sprintf("job-%d-item-%d", job.ID, item.ID))
+	operation["operation_id"], _ = json.Marshal(fmt.Sprintf("job-%d", job.ID))
 	raw, err := json.Marshal(operation)
 	if err != nil {
 		return nil, err
 	}
 	out, err := e.manager.InvokeAdminExtension(ctx, request.PluginID, id, request.Operation, raw)
-	if ctx.Err() != nil {
-		result.Status = AccountJobItemStatusCanceled
-		result.ErrorCode = ""
-		result.ErrorMessage = ""
-		return []AccountJobExecutionResult{result}, nil
-	}
 	if err != nil {
+		if ctx.Err() != nil {
+			result.Status = AccountJobItemStatusCanceled
+			result.ErrorCode = ""
+			result.ErrorMessage = ""
+		}
 		return []AccountJobExecutionResult{result}, nil
 	}
 	if ValidateAccountJobMetadata(out.Payload) != nil {
 		return []AccountJobExecutionResult{result}, nil
 	}
-	result.Metadata = out.Payload
+	metadata := map[string]any{}
+	_ = json.Unmarshal(item.Metadata, &metadata)
+	var details map[string]any
+	if json.Unmarshal(out.Payload, &details) == nil {
+		for key, value := range details {
+			metadata[key] = value
+		}
+	}
+	result.Metadata, _ = json.Marshal(metadata)
 	var outcome struct {
 		Success bool `json:"success"`
 	}
 	if out.Code == "" && json.Unmarshal(out.Payload, &outcome) == nil && outcome.Success {
 		result.Status = AccountJobItemStatusSucceeded
+		result.ErrorCode = ""
+		result.ErrorMessage = ""
+	} else if ctx.Err() != nil {
+		result.Status = AccountJobItemStatusCanceled
 		result.ErrorCode = ""
 		result.ErrorMessage = ""
 	}

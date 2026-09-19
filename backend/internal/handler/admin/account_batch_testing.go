@@ -107,8 +107,16 @@ func (h *AccountHandler) BatchTest(c *gin.Context) {
 		return
 	}
 	seeds := accountJobSeeds(ids)
+	efforts := make(map[int64]string, len(req.Items))
+	for _, item := range req.Items {
+		efforts[item.AccountID] = item.ReasoningEffort
+	}
 	for i, id := range ids {
-		seeds[i].Metadata, _ = json.Marshal(map[string]any{"model_id": models[id]})
+		metadata := map[string]any{"model_id": models[id]}
+		if effort := efforts[id]; effort != "" {
+			metadata["reasoning_effort"] = effort
+		}
+		seeds[i].Metadata, _ = json.Marshal(metadata)
 	}
 	h.submitAccountJob(c, service.AccountJobKindBatchTest, req, seeds)
 }

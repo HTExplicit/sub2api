@@ -103,6 +103,7 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		nil, // cindyHealth
 		nil, // cindyBalanceProbe
 		nil, // imageStudioRuntime
+		nil, // pluginManager
 	)
 
 	require.NotPanics(t, func() {

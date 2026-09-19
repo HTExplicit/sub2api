@@ -70,6 +70,37 @@ func TestBatchTestRejectsAmbiguousSelections(t *testing.T) {
 	}
 }
 
+func TestBatchTestReasoningPersistsPerAccountForRetry(t *testing.T) {
+	h := &AccountHandler{}
+	router := gin.New()
+	repo := attachAccountJobSubmitter(router, h)
+	router.POST("/batch-test", h.BatchTest)
+	req := httptest.NewRequest(http.MethodPost, "/batch-test", strings.NewReader(`{"items":[{"account_id":9,"model_id":"alias-a","reasoning_effort":"ultra"},{"account_id":3,"model_id":"other","reasoning_effort":"low"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	setAccountJobTestIdempotencyKey(req)
+	out := httptest.NewRecorder()
+	router.ServeHTTP(out, req)
+	require.Equal(t, http.StatusAccepted, out.Code, out.Body.String())
+	var payload batchTestJobPayload
+	params := requireSubmittedAccountJob(t, repo, service.AccountJobKindBatchTest, &payload)
+	want := map[int64]string{9: "ultra", 3: "low"}
+	for _, item := range payload.Items {
+		require.Equal(t, want[item.AccountID], item.ReasoningEffort)
+	}
+	for _, seed := range params.Items {
+		var metadata map[string]any
+		require.NoError(t, json.Unmarshal(seed.Metadata, &metadata))
+		require.Equal(t, want[*seed.TargetAccountID], metadata["reasoning_effort"])
+	}
+	// Restore and normalize the persisted payload as the failed-item retry path
+	// does. Choices stay attached to account IDs despite changed item ordinals.
+	_, _, err := payload.normalize()
+	require.NoError(t, err)
+	for _, item := range payload.Items {
+		require.Equal(t, want[item.AccountID], item.ReasoningEffort)
+	}
+}
+
 type batchCatalogAdmin struct {
 	service.AdminService
 	calls    atomic.Int32

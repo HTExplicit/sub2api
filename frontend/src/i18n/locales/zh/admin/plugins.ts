@@ -1,7 +1,9 @@
 export default {
   plugins: {
     title: '插件管理',
-    description: '安装和管理独立运行的 OAuth 出站传输插件。API Key 流程不受影响。',
+    description: '安装、配置并启用独立功能插件。停用后会撤下对应入口，已有数据保留。',
+    extensionUnavailable: '插件暂不可用，请在插件管理中查看原因',
+    accountLimit: '一次最多操作 100 个账号',
     upload: '安装插件',
     uploadHint: '仅接受 .s2plugin 包；默认要求可信发布者签名。',
     runtimeNotice: '插件安装、启用、停用和配置由 Sub2API 宿主动态处理，通常不需要重启宿主实例。只有宿主版本或宿主配置本身变化时，才按部署方式执行重启。',
@@ -44,7 +46,7 @@ export default {
     confirmUntested: '该插件兼容当前版本范围，但未声明已测试当前 Sub2API 版本。确定承担风险并启用吗？',
     fileRequired: '请选择 .s2plugin 文件',
     bridgeRejected: '插件 UI 消息校验失败',
-    onlyOpenAI: '初期能力：仅 OpenAI OAuth 出站传输',
-    noAccountCoupling: '作用域为平台与账号类型，不修改账号数据，也不需要在账号页逐个开启。'
+    onlyOpenAI: '按声明能力提供独立功能',
+    noAccountCoupling: '安装与启用分开管理，停用不会删除已有数据。'
   }
 }

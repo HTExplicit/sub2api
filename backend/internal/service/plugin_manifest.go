@@ -150,6 +150,10 @@ func (m PluginManifest) RuntimeKey() string {
 }
 
 func (m PluginManifest) Validate() error {
+	return m.ValidateForRuntime(m.RuntimeKey())
+}
+
+func (m PluginManifest) ValidateForRuntime(runtimeKey string) error {
 	if m.SchemaVersion != 1 {
 		return fmt.Errorf("不支持的插件清单版本: %d", m.SchemaVersion)
 	}
@@ -178,6 +182,9 @@ func (m PluginManifest) Validate() error {
 			if m.Requires.ExtensionAPI != extensionv1.Version || capability.Platform == "" || capability.AccountType == "" {
 				return errors.New("扩展能力必须声明兼容版本及明确作用范围")
 			}
+			if capability.ID == extensionv1.CapabilityProvider && (capability.Platform == "*" || capability.AccountType == "*") {
+				return errors.New("Provider能力必须声明具体平台与账号类型")
+			}
 		} else if capability.ID != PluginCapabilityOpenAIOAuthOutbound || capability.Platform != PlatformOpenAI || capability.AccountType != AccountTypeOAuth {
 			return fmt.Errorf("不支持插件能力 %s", capability.ID)
 		}
@@ -201,9 +208,9 @@ func (m PluginManifest) Validate() error {
 			return errors.New("插件依赖能力未知")
 		}
 	}
-	runtimeEntry, ok := m.Runtimes[m.RuntimeKey()]
+	runtimeEntry, ok := m.Runtimes[runtimeKey]
 	if !ok || !safePluginRelativePath(runtimeEntry.Path) {
-		return fmt.Errorf("插件不支持当前运行平台 %s", m.RuntimeKey())
+		return fmt.Errorf("插件不支持当前运行平台 %s", runtimeKey)
 	}
 	if !safePluginRelativePath(m.UI.Entrypoint) || !strings.HasPrefix(m.UI.Entrypoint, "ui/") {
 		return errors.New("插件 UI 入口必须位于 ui/ 目录")

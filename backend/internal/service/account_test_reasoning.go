@@ -17,6 +17,9 @@ func AccountTestReasoningOptions(account *Account, model string) ([]string, stri
 		return nil, ""
 	}
 	model = account.GetMappedModel(strings.TrimSpace(model))
+	if !accountTestSupportsReasoningWire(account, model) || isOpenAIImageModel(model) || isGrokVideoGenerationModel(model) {
+		return nil, ""
+	}
 	if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		if capability, ok := ResolveCindyCapability(model); ok {
 			return capability.CodexReasoningEfforts(), capability.DefaultReasoningEffort
@@ -41,6 +44,24 @@ func AccountTestReasoningOptions(account *Account, model string) ([]string, stri
 		out = append(out, level.Effort)
 	}
 	return out, ""
+}
+
+func accountTestSupportsReasoningWire(account *Account, model string) bool {
+	switch {
+	case account.IsOpenCodeGo():
+		protocol := openCodeGoNativeProtocol(account, model)
+		return protocol == APIProtocolResponses || protocol == APIProtocolChatCompletions
+	case account.IsCNProvider():
+		protocol := account.GetAPIProtocol()
+		// The adaptive test verifies all native endpoints, including Messages,
+		// whose effort contract differs. Never silently omit a chosen effort on
+		// one leg of that test.
+		return protocol == APIProtocolResponses || protocol == APIProtocolChatCompletions
+	case account.IsOpenAI(), account.Platform == PlatformGrok:
+		return true
+	default:
+		return false
+	}
 }
 
 func ValidateAccountTestReasoning(account *Account, model, mode, effort string) error {

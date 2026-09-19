@@ -29,6 +29,7 @@ type Application struct {
 	Server        *http.Server
 	PromptAudit   *securityaudit.PromptService
 	PluginManager *service.PluginManager
+	AccountJobs   *service.AccountJobRuntime
 	Cleanup       func()
 }
 
@@ -60,7 +61,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		provideCleanup,
 
 		// Application struct
-		wire.Struct(new(Application), "Server", "PromptAudit", "PluginManager", "Cleanup"),
+		wire.Struct(new(Application), "Server", "PromptAudit", "PluginManager", "AccountJobs", "Cleanup"),
 	)
 	return nil, nil
 }
@@ -142,6 +143,7 @@ func provideCleanup(
 	cindyHealth *service.CindyHealthService,
 	cindyBalanceProbe *service.CindyBalanceProbeService,
 	imageStudioRuntime *service.ImageStudioRuntime,
+	pluginManager *service.PluginManager,
 ) func() {
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -374,12 +376,6 @@ func provideCleanup(
 				}
 				return nil
 			}},
-			{"OpenAICodexTicketHarvester", func() error {
-				if openAIGateway != nil {
-					openAIGateway.StopOpenAICodexTicketHarvester()
-				}
-				return nil
-			}},
 			{"ScheduledTestRunnerService", func() error {
 				if scheduledTestRunner != nil {
 					scheduledTestRunner.Stop()
@@ -474,6 +470,9 @@ func provideCleanup(
 		}
 
 		runParallel(parallelSteps)
+		if pluginManager != nil {
+			pluginManager.Stop()
+		}
 		runSequential(infraSteps)
 
 		// Check if context timed out

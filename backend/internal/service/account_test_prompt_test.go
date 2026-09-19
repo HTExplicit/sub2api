@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -106,9 +107,20 @@ func TestAccountTestPromptOAuthFinalTicketUsesMappedModel(t *testing.T) {
 	a.Credentials["model_mapping"] = map[string]any{"alias": "gpt-5.6-sol"}
 	a.Credentials["header_override_enabled"] = true
 	a.Credentials["header_overrides"] = map[string]any{openAICodexTurnStateHeader: fakeCodexTicketState(312)}
-	a.Extra = map[string]any{openAICodexTicketExtraKey("gpt-5.6-sol"): &openAICodexTicket{State: fakeCodexTicketState(292), Length: 292, AccountID: a.ID, Model: "gpt-5.6-sol", ExpiresAt: time.Now().Add(time.Hour)}}
+	a.Extra = map[string]any{openAICodexTicketExtraKey("gpt-5.6-sol"): &CodexTicketRecord{State: fakeCodexTicketState(292), Length: 292, AccountID: a.ID, Model: "gpt-5.6-sol", ExpiresAt: time.Now().Add(time.Hour)}}
 	upstream := &queuedHTTPUpstream{responses: []*http.Response{newJSONResponse(200, "data: {\"type\":\"response.completed\"}\n\n")}}
 	gateway := &OpenAIGatewayService{cfg: cfg}
+	available := true
+	gateway.pluginManager = ticketTestManager(t, cfg.Gateway.OpenAICodexTicket, func(in extensionv1.Invocation) (extensionv1.Result, error) {
+		var request extensionv1.SchedulingRequest
+		require.NoError(t, json.Unmarshal(in.Payload, &request))
+		require.Equal(t, "gpt-5.6-sol", request.Model)
+		if !available {
+			return extensionv1.Result{Code: "ticket_missing"}, nil
+		}
+		raw, _ := json.Marshal(map[string]any{"headers": map[string]string{openAICodexTurnStateHeader: fakeCodexTicketState(292)}})
+		return extensionv1.Result{Payload: raw}, nil
+	})
 	svc := &AccountTestService{cfg: cfg, httpUpstream: upstream, openAIGatewayService: gateway}
 	c, rec := newTestContext()
 	prompt := "你的知识库库截止日期是什么时间,直接回复不要联网"
@@ -124,8 +136,7 @@ func TestAccountTestPromptOAuthFinalTicketUsesMappedModel(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "ticket_fingerprint")
 	require.NotContains(t, rec.Body.String(), fakeCodexTicketState(292))
 	c, rec = newTestContext()
-	delete(a.Extra, openAICodexTicketExtraKey("gpt-5.6-sol"))
-	svc.openAIGatewayService = &OpenAIGatewayService{cfg: cfg}
+	available = false // Legacy Extra still has a ticket; only the plugin may provide it.
 	require.Error(t, svc.testOpenAIAccountConnection(c, a, "alias", prompt, ""))
 	require.Len(t, upstream.requests, 1)
 	require.Contains(t, rec.Body.String(), "没有有效292")

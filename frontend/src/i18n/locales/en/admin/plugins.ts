@@ -1,7 +1,9 @@
 export default {
   plugins: {
     title: 'Plugin Management',
-    description: 'Install and manage isolated OAuth outbound transport plugins. API Key flows are unchanged.',
+    description: 'Install, configure and enable independent feature plugins. Disabling a plugin removes its features while retaining existing data.',
+    extensionUnavailable: 'Plugin unavailable; check its status in plugin management',
+    accountLimit: 'At most 100 accounts can be operated at once',
     upload: 'Install plugin',
     uploadHint: 'Only .s2plugin packages are accepted; trusted publisher signatures are required by default.',
     runtimeNotice: 'Plugin installation, enable/disable, and configuration are handled dynamically by the Sub2API host and normally do not require a host restart. Restart only when the host version or host configuration changes according to your deployment process.',
@@ -44,7 +46,7 @@ export default {
     confirmUntested: 'This plugin is compatible but has not declared the current Sub2API version as tested. Enable it anyway?',
     fileRequired: 'Select a .s2plugin file',
     bridgeRejected: 'Plugin UI message validation failed',
-    onlyOpenAI: 'Initial capability: OpenAI OAuth outbound transport only',
-    noAccountCoupling: 'The scope is platform and account type. Account records are not changed and no per-account toggle is required.'
+    onlyOpenAI: 'Independent features with declared capabilities',
+    noAccountCoupling: 'Installation and activation are separate. Disabling retains existing data.'
   }
 }

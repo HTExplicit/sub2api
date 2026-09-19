@@ -27,14 +27,19 @@ import (
 )
 
 type pluginRuntime struct {
-	installation *PluginInstallation
-	client       *hcplugin.Client
-	api          pluginv1.TransportPluginClient
-	extension    *extensionv1.Client
-	inFlight     atomic.Int64
-	draining     atomic.Bool
-	done         chan struct{}
-	doneOnce     sync.Once
+	installation     *PluginInstallation
+	client           *hcplugin.Client
+	api              pluginv1.TransportPluginClient
+	extension        *extensionv1.Client
+	scheduling       atomic.Pointer[[]extensionv1.SchedulingRule]
+	configSnapshot   atomic.Pointer[json.RawMessage]
+	configRevision   atomic.Uint64
+	catalogCache     sync.Map
+	catalogCacheSize atomic.Int64
+	inFlight         atomic.Int64
+	draining         atomic.Bool
+	done             chan struct{}
+	doneOnce         sync.Once
 }
 
 func startPluginRuntime(ctx context.Context, installation *PluginInstallation, startTimeout time.Duration, socketDir string, hostServices pluginv1.HostServiceServer) (*pluginRuntime, error) {
@@ -202,6 +207,35 @@ func (r *pluginRuntime) validateAndApplyNormalizedConfig(ctx context.Context, co
 	if !applied.Applied {
 		return nil, fmt.Errorf("插件拒绝应用配置: %s", applied.Message)
 	}
+	var capabilities []PluginCapability
+	if r.installation != nil {
+		capabilities = r.installation.Manifest.Capabilities
+	}
+	for _, capability := range capabilities {
+		if capability.ID != extensionv1.CapabilityScheduling {
+			continue
+		}
+		result, err := r.extension.Invoke(ctx, extensionv1.Invocation{Capability: extensionv1.CapabilityScheduling, Operation: "describe", Payload: json.RawMessage(`{}`)})
+		if err != nil {
+			return nil, fmt.Errorf("read plugin scheduling contract: %w", err)
+		}
+		var rules []extensionv1.SchedulingRule
+		if json.Unmarshal(result.Payload, &rules) != nil {
+			return nil, errors.New("invalid plugin scheduling contract")
+		}
+		for _, rule := range rules {
+			if (rule.Default != "allow" && rule.Default != "deny") || len(rule.Models) == 0 {
+				return nil, errors.New("invalid plugin scheduling rule")
+			}
+		}
+		r.scheduling.Store(&rules)
+		break
+	}
+	snapshot := json.RawMessage(append([]byte(nil), configJSON...))
+	r.configSnapshot.Store(&snapshot)
+	r.configRevision.Add(1)
+	r.catalogCache.Clear()
+	r.catalogCacheSize.Store(0)
 	return configJSON, nil
 }
 

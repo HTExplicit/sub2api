@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS sub2api_plugin_state (
     state_key VARCHAR(256) NOT NULL,
     revision BIGINT NOT NULL DEFAULT 1 CHECK (revision > 0),
     value JSONB NOT NULL,
-	 next_at TIMESTAMPTZ,
+    next_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (plugin_key, namespace, state_key)
 );

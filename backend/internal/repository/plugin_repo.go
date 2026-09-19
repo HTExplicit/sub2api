@@ -11,7 +11,16 @@ import (
 )
 
 type pluginRepository struct {
-	db *sql.DB
+	db             *sql.DB
+	refreshAccount func(context.Context, int64)
+}
+
+func ProvidePluginRepository(db *sql.DB, accounts service.AccountRepository) service.PluginRepository {
+	repo := &pluginRepository{db: db}
+	if concrete, ok := accounts.(*accountRepository); ok {
+		repo.refreshAccount = concrete.syncSchedulerAccountSnapshotDetached
+	}
+	return repo
 }
 
 func NewPluginRepository(db *sql.DB) service.PluginRepository {
@@ -116,6 +125,9 @@ func (r *pluginRepository) Install(ctx context.Context, plugin *service.PluginIn
 	if err := replacePluginBindings(ctx, tx, id, bindings); err != nil {
 		return nil, err
 	}
+	if _, err := tx.ExecContext(ctx, `UPDATE sub2api_plugin_bootstrap SET user_removed=false,desired_enabled=false,updated_at=NOW() WHERE plugin_key=$1`, plugin.PluginKey); err != nil {
+		return nil, err
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
@@ -129,22 +141,28 @@ func (r *pluginRepository) GetArtifact(ctx context.Context, id int64) ([]byte, e
 }
 
 func (r *pluginRepository) Delete(ctx context.Context, id int64, expectedBinarySHA256 string) error {
-	result, err := r.db.ExecContext(ctx, `
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var key string
+	err = tx.QueryRowContext(ctx, `
 		DELETE FROM sub2api_plugin_installations p
 		WHERE p.id = $1 AND p.binary_sha256 = $2 AND p.state NOT IN ('starting', 'enabled')
 		  AND NOT EXISTS (SELECT 1 FROM sub2api_plugin_bindings b WHERE b.plugin_id = p.id AND b.enabled = TRUE)
-	`, id, expectedBinarySHA256)
-	if err != nil {
-		return err
-	}
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if rows != 1 {
+		RETURNING p.plugin_key
+	`, id, expectedBinarySHA256).Scan(&key)
+	if err == sql.ErrNoRows {
 		return service.ErrPluginStateChanged
 	}
-	return nil
+	if err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE sub2api_plugin_bootstrap SET user_removed=true,desired_enabled=false,updated_at=NOW() WHERE plugin_key=$1`, key); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *pluginRepository) BeginEnable(ctx context.Context, id int64, binarySHA256, expectedState string) error {
@@ -257,7 +275,49 @@ func (r *pluginRepository) UpdateBindingsAndState(
 	if err := replacePluginBindings(ctx, tx, pluginID, bindings); err != nil {
 		return err
 	}
+	desired := false
+	for _, binding := range bindings {
+		desired = desired || binding.Enabled
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE sub2api_plugin_bootstrap SET desired_enabled=$2,updated_at=NOW() WHERE plugin_key=(SELECT plugin_key FROM sub2api_plugin_installations WHERE id=$1)`, pluginID, desired); err != nil {
+		return err
+	}
+	if state == service.PluginStateDisabled {
+		if err := cancelPluginAccountJobs(ctx, tx, pluginID); err != nil {
+			return err
+		}
+	}
 	return tx.Commit()
+}
+
+func cancelPluginAccountJobs(ctx context.Context, tx *sql.Tx, pluginID int64) error {
+	rows, err := tx.QueryContext(ctx, `SELECT `+accountJobSelectColumns+` FROM admin_account_jobs WHERE kind=$1 AND metadata->>'plugin_id'=$2 AND status IN ('pending','running') ORDER BY id FOR UPDATE`, service.AccountJobKindExtensionOperation, fmt.Sprint(pluginID))
+	if err != nil {
+		return err
+	}
+	var jobs []*service.AccountJob
+	for rows.Next() {
+		job, scanErr := scanAccountJob(rows)
+		if scanErr != nil {
+			_ = rows.Close()
+			return scanErr
+		}
+		jobs = append(jobs, job)
+	}
+	readErr := rows.Err()
+	closeErr := rows.Close()
+	if readErr != nil {
+		return readErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	for _, job := range jobs {
+		if _, err := cancelLockedAccountJob(ctx, tx, job); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type pluginBindingExecutor interface {

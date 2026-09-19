@@ -255,7 +255,12 @@ func TestHandle429_OpenAITransientIncidentHeadersFallbackDisabledSkipsPenalty(t 
 }
 
 func (r *openAI429SnapshotRepo) UpdateExtra(_ context.Context, _ int64, updates map[string]any) error {
-	r.updatedExtra = updates
+	if r.updatedExtra == nil {
+		r.updatedExtra = make(map[string]any)
+	}
+	for key, value := range updates {
+		r.updatedExtra[key] = value
+	}
 	return nil
 }
 
@@ -280,9 +285,9 @@ func TestHandle429_OpenAIPersistsCodexSnapshotImmediately(t *testing.T) {
 
 	svc.handle429(context.Background(), account, headers, nil)
 
-	if repo.rateLimitedID != account.ID {
-		t.Fatalf("rateLimitedID = %d, want %d", repo.rateLimitedID, account.ID)
-	}
+	require.Zero(t, repo.rateLimitedID, "quota restrictions must not be duplicated as an unrelated 429 cooldown")
+	require.True(t, account.QuotaState(time.Now()).Blocked)
+	require.NotNil(t, account.QuotaState(time.Now()).Until)
 	if len(repo.updatedExtra) == 0 {
 		t.Fatal("expected codex snapshot to be persisted on 429")
 	}
@@ -603,17 +608,16 @@ func TestCalculateOpenAI429ResetTime_UserProvidedScenario(t *testing.T) {
 	t.Logf("User scenario: reset_at=%v, duration=%.2f days", resetAt, actualDays)
 }
 
-func TestOpenAIOAuth429_HardQuotaWithoutResetUsesWindowFallback(t *testing.T) {
+func TestOpenAIOAuth429_HardQuotaWithoutResetKeepsDeadlineUnknown(t *testing.T) {
 
 	headers := http.Header{}
 	headers.Set("x-codex-primary-used-percent", "100")
 	// No reset_after_seconds!
 
 	before := time.Now()
-	resetAt := classifyOpenAIOAuth429At(headers, nil, before).ResetAt
-	require.NotNil(t, resetAt)
-	require.GreaterOrEqual(t, resetAt.Sub(before), 5*time.Hour-time.Second)
-	require.LessOrEqual(t, resetAt.Sub(before), 7*24*time.Hour+time.Second)
+	classification := classifyOpenAIOAuth429At(headers, nil, before)
+	require.NotEqual(t, openAIOAuth429Transient, classification.Disposition)
+	require.Nil(t, classification.ResetAt, "missing upstream evidence is not a five-hour or seven-day deadline")
 	require.Nil(t, calculateOpenAI429ResetTime(headers), "ordinary accounts do not invent OAuth quota windows")
 }
 

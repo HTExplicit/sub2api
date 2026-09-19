@@ -2,7 +2,10 @@ module github.com/Wei-Shaw/sub2api
 
 go 1.27.0
 
+replace github.com/HTExplicit/sub2api-plugins/modelpolicy => ../plugins/model-policy
+
 require (
+	github.com/HTExplicit/sub2api-plugins/modelpolicy v0.0.0
 	entgo.io/ent v0.14.5
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/alibabacloud-go/captcha-20230305 v1.1.3

@@ -1,4 +1,5 @@
 import { apiClient } from '../client'
+import { accountJobIdempotencyHeaders, type AccountJob } from './accountJobs'
 
 export interface PluginCapability {
   id: string
@@ -76,6 +77,7 @@ export interface PluginInstallation {
 }
 
 export interface PluginContribution {
+  account_filter?: { platforms?: string[]; types?: string[]; statuses?: string[]; exclude_shadows?: boolean }
   id: string
   slot: string
   label: Record<string, string>
@@ -94,7 +96,13 @@ export async function contributions(): Promise<PluginContribution[]> {
 }
 
 export async function invokeAdmin(id: number, operation: string, accountID: number | undefined, payload: Record<string, unknown>): Promise<{ payload?: unknown; code?: string; message?: string }> {
-  const { data } = await apiClient.post(`/admin/plugins/${id}/actions`, { operation, account_id: accountID, payload })
+  const { data } = await apiClient.post(`/admin/plugins/${id}/actions`, { operation, account_id: accountID, payload }, { timeout: 30000 })
+  return data
+}
+
+export async function submitJob(id: number, operation: string, items: Array<{ account_id: number; payload: Record<string, unknown>; label?: string }>, key?: string): Promise<AccountJob> {
+  const config = key ? { headers: { 'Idempotency-Key': key } } : accountJobIdempotencyHeaders('plugin_operation')
+  const { data } = await apiClient.post<AccountJob>(`/admin/plugins/${id}/jobs`, { operation, items }, config)
   return data
 }
 
@@ -142,16 +150,19 @@ export async function enable(
     rollout_percent: rolloutPercent,
     accept_untested: acceptUntested
   })
+  changed()
   return data
 }
 
 export async function disable(id: number): Promise<PluginInstallation> {
   const { data } = await apiClient.post<PluginInstallation>(`/admin/plugins/${id}/disable`)
+  changed()
   return data
 }
 
 export async function remove(id: number): Promise<void> {
   await apiClient.delete(`/admin/plugins/${id}`)
+  changed()
 }
 
 export async function getConfig(id: number): Promise<Record<string, unknown>> {
@@ -164,6 +175,7 @@ export async function saveConfig(
   config: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
   const { data } = await apiClient.put<Record<string, unknown>>(`/admin/plugins/${id}/config`, config)
+  changed()
   return data
 }
 
@@ -183,6 +195,9 @@ export async function createUISession(id: number): Promise<PluginUISession> {
 }
 
 export default {
+  contributions,
+  invokeAdmin,
+  submitJob,
   list,
   upload,
   enable,
@@ -194,3 +209,5 @@ export default {
   status,
   createUISession
 }
+
+function changed() { if (typeof window !== 'undefined') window.dispatchEvent(new Event('sub2api:plugins-changed')) }

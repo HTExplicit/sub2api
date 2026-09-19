@@ -211,7 +211,7 @@
               </p>
             </div>
 
-            <div class="md:col-span-2">
+            <div v-if="!plugin.manifest.requires.extension_api" class="md:col-span-2">
               <label
                 class="flex items-center justify-between gap-4 text-xs font-medium text-gray-600 dark:text-gray-300"
               >
@@ -292,39 +292,8 @@
         width="full"
         @close="closeConfiguration"
       >
-        <div
-          class="relative min-h-[520px] overflow-hidden bg-gray-50 dark:bg-dark-900"
-          :style="{ height: `${iframeHeight}px` }"
-        >
-          <div
-            v-if="uiLoading"
-            class="absolute inset-0 z-10 flex items-center justify-center text-sm text-gray-500"
-          >
-            {{ t("admin.plugins.loadingUI") }}
-          </div>
-          <div
-            v-if="uiError"
-            class="absolute inset-0 z-20 flex flex-col items-center justify-center p-8 text-center"
-          >
-            <Icon name="exclamationTriangle" size="xl" class="text-amber-500" />
-            <p class="mt-3 font-medium text-gray-800 dark:text-gray-200">
-              {{ t("admin.plugins.uiUnavailable") }}
-            </p>
-            <p class="mt-1 max-w-xl text-sm text-gray-500">{{ uiError }}</p>
-          </div>
-          <iframe
-            v-if="uiSession"
-            ref="pluginFrame"
-            :src="uiSession.url"
-            sandbox="allow-scripts"
-            referrerpolicy="no-referrer"
-            class="h-full w-full border-0 bg-white dark:bg-dark-900"
-            :title="
-              t('admin.plugins.configTitle', { name: configPlugin?.name || '' })
-            "
-            @load="handlePluginFrameLoad"
-          />
-        </div>
+        <PluginFrame v-if="configPlugin" :plugin-id="configPlugin.id" :title="configPlugin.name"
+          :context="{ mode: 'configuration' }" @saved="loadPlugins" />
       </BaseDialog>
 
       <TotpStepUpDialog :controller="pluginStepUp" />
@@ -333,16 +302,16 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import {
   adminAPI,
   type PluginInstallation,
-  type PluginUISession,
 } from "@/api/admin";
 import { useAppStore } from "@/stores";
 import AppLayout from "@/components/layout/AppLayout.vue";
 import BaseDialog from "@/components/common/BaseDialog.vue";
+import PluginFrame from '@/components/plugins/PluginFrame.vue';
 import Icon from "@/components/icons/Icon.vue";
 import TotpStepUpDialog from "@/components/auth/TotpStepUpDialog.vue";
 import {
@@ -351,17 +320,6 @@ import {
   stepUpBlockReason,
   useStepUp,
 } from "@/composables/useStepUp";
-
-interface PluginBridgeMessage {
-  source?: string;
-  bridge_token?: string;
-  type?: string;
-  request_id?: string;
-  config?: unknown;
-  height?: unknown;
-  level?: unknown;
-  message?: unknown;
-}
 
 const { t } = useI18n();
 const appStore = useAppStore();
@@ -373,13 +331,6 @@ const busyID = ref<number | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
 const rolloutValues = ref<Record<number, number>>({});
 const configPlugin = ref<PluginInstallation | null>(null);
-const uiSession = ref<PluginUISession | null>(null);
-const pluginFrame = ref<HTMLIFrameElement | null>(null);
-const uiLoading = ref(false);
-const uiError = ref("");
-const iframeHeight = ref(640);
-const pluginFrameLoaded = ref(false);
-const pendingBridgeRequests = new Map<string, number>();
 
 function errorMessage(error: unknown): string {
   if (typeof error === "object" && error !== null && "message" in error) {
@@ -522,178 +473,12 @@ async function testPlugin(plugin: PluginInstallation): Promise<void> {
   }
 }
 
-async function openConfiguration(plugin: PluginInstallation): Promise<void> {
+function openConfiguration(plugin: PluginInstallation): void {
   configPlugin.value = plugin;
-  uiSession.value = null;
-  pluginFrameLoaded.value = false;
-  clearPendingBridgeRequests();
-  uiLoading.value = true;
-  uiError.value = "";
-  iframeHeight.value = 640;
-  try {
-    uiSession.value = await adminAPI.plugins.createUISession(plugin.id);
-  } catch (error: unknown) {
-    uiLoading.value = false;
-    uiError.value = errorMessage(error);
-  }
 }
 
 function closeConfiguration(): void {
-  clearPendingBridgeRequests();
-  pluginFrameLoaded.value = false;
   configPlugin.value = null;
-  uiSession.value = null;
-  uiLoading.value = false;
-  uiError.value = "";
-}
-
-function clearPendingBridgeRequests(): void {
-  for (const timeout of pendingBridgeRequests.values()) window.clearTimeout(timeout);
-  pendingBridgeRequests.clear();
-}
-
-function handlePluginFrameLoad(): void {
-  // A load can also be caused by a plugin navigating its iframe. Drop all
-  // outstanding responses so a late config response is never sent to the new document.
-  if (pluginFrameLoaded.value) clearPendingBridgeRequests();
-  pluginFrameLoaded.value = true;
-  uiLoading.value = false;
-}
-
-function registerBridgeRequest(requestID: string): void {
-  const timeout = window.setTimeout(() => {
-    pendingBridgeRequests.delete(requestID);
-  }, 30_000);
-  pendingBridgeRequests.set(requestID, timeout);
-}
-
-function postBridgeResult(
-  request: PluginBridgeMessage,
-  payload: Record<string, unknown>,
-): void {
-  if (!pluginFrame.value?.contentWindow || !uiSession.value) return;
-  const requestID = typeof request.request_id === "string" ? request.request_id.trim() : "";
-  const timeout = pendingBridgeRequests.get(requestID);
-  if (!requestID || timeout === undefined) return;
-  window.clearTimeout(timeout);
-  pendingBridgeRequests.delete(requestID);
-  pluginFrame.value.contentWindow.postMessage(
-    {
-      source: "sub2api-plugin-host",
-      bridge_token: uiSession.value.bridge_token,
-      type: `${request.type}.result`,
-      request_id: requestID,
-      ...payload,
-    },
-    // The sandboxed iframe has an opaque origin, so no fixed target origin exists.
-    // Pending request tracking plus load invalidation prevents cross-navigation leaks.
-    "*",
-  );
-}
-
-async function handleBridgeMessage(event: MessageEvent): Promise<void> {
-  if (
-    !uiSession.value ||
-    !configPlugin.value ||
-    event.source !== pluginFrame.value?.contentWindow ||
-    event.origin !== "null"
-  )
-    return;
-  const message = event.data as PluginBridgeMessage;
-  if (
-    !message ||
-    message.source !== "sub2api-plugin-ui" ||
-    message.bridge_token !== uiSession.value.bridge_token
-  )
-    return;
-
-  const requestID = typeof message.request_id === "string" ? message.request_id.trim() : "";
-  const expectsResponse =
-    message.type === "config.load" ||
-    message.type === "config.save" ||
-    message.type === "config.test" ||
-    message.type === "plugin.status";
-  if (expectsResponse) {
-    if (!requestID || pendingBridgeRequests.has(requestID)) return;
-    registerBridgeRequest(requestID);
-  }
-
-  try {
-    switch (message.type) {
-      case "sub2api.plugin.ready":
-        uiLoading.value = false;
-        break;
-      case "config.load": {
-        const config = await adminAPI.plugins.getConfig(configPlugin.value.id);
-        postBridgeResult(message, { ok: true, config });
-        break;
-      }
-      case "config.save": {
-        if (
-          !message.config ||
-          typeof message.config !== "object" ||
-          Array.isArray(message.config)
-        ) {
-          throw new Error(t("admin.plugins.bridgeRejected"));
-        }
-        const config = await pluginStepUp.run(() =>
-          adminAPI.plugins.saveConfig(
-            configPlugin.value!.id,
-            message.config as Record<string, unknown>,
-          ),
-        );
-        postBridgeResult(message, { ok: true, config });
-        appStore.showSuccess(t("common.saved"));
-        break;
-      }
-      case "config.test": {
-        const result = await pluginStepUp.run(() =>
-          adminAPI.plugins.test(configPlugin.value!.id),
-        );
-        postBridgeResult(message, { ok: result.success, result });
-        // A successful result is delivered back to the plugin UI, which owns how it
-        // presents it (inline status, or an explicit ui.notify). Only force a host
-        // toast on failure so genuine errors are never silently dropped — plugins
-        // may call config.test for lightweight status polling, not just as an
-        // explicit "test" action, and those must not spam a success toast.
-        if (!result.success)
-          appStore.showError(result.message || t("common.error"));
-        break;
-      }
-      case "plugin.status": {
-        // Read-only runtime status (the plugin's Health snapshot). It has no side
-        // effects, so it is intentionally NOT step-up gated and never raises a host
-        // toast — the plugin UI renders it however it likes. This is the generic
-        // channel for any plugin to surface live state without abusing config.test.
-        const result = await adminAPI.plugins.status(configPlugin.value!.id);
-        postBridgeResult(message, { ok: true, result });
-        break;
-      }
-      case "ui.resize": {
-        const height = Number(message.height);
-        if (Number.isFinite(height))
-          iframeHeight.value = Math.min(960, Math.max(520, Math.round(height)));
-        break;
-      }
-      case "ui.notify": {
-        const text =
-          typeof message.message === "string"
-            ? message.message.slice(0, 500)
-            : "";
-        if (!text) break;
-        if (message.level === "error") appStore.showError(text);
-        else if (message.level === "success") appStore.showSuccess(text);
-        else appStore.showInfo(text);
-        break;
-      }
-    }
-  } catch (error: unknown) {
-    if (isStepUpBlocked(error)) reportSensitiveActionError(error);
-    postBridgeResult(message, {
-      ok: false,
-      error: isStepUpCancelled(error) ? t("common.cancel") : errorMessage(error),
-    });
-  }
 }
 
 function stateClass(state: PluginInstallation["state"]): string {
@@ -717,12 +502,6 @@ function compatibilityClass(
 }
 
 onMounted(() => {
-  window.addEventListener("message", handleBridgeMessage);
   void loadPlugins();
-});
-
-onBeforeUnmount(() => {
-  window.removeEventListener("message", handleBridgeMessage);
-  clearPendingBridgeRequests();
 });
 </script>

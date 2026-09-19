@@ -146,6 +146,7 @@ func normalizeGrokAccountTestMode(mode string) string {
 
 // AccountTestService handles account testing operations
 type AccountTestService struct {
+	quotaActivity             *QuotaActivityService
 	accountRepo               AccountRepository
 	geminiTokenProvider       *GeminiTokenProvider
 	claudeTokenProvider       *ClaudeTokenProvider
@@ -385,6 +386,10 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	}
 
 	// Route to platform-specific test method
+	ctx, finishObservation := s.quotaActivity.Attach(ctx)
+	c.Request = c.Request.WithContext(ctx)
+	ObserveQuotaAccount(ctx, account.ID)
+	defer finishObservation()
 	if account.IsOpenCodeGo() {
 		return s.testOpenCodeGoConnection(c, account, modelID, prompt)
 	}

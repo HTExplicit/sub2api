@@ -553,6 +553,19 @@ func (r *accountJobRepository) Cancel(ctx context.Context, jobID, createdBy int6
 	if err != nil {
 		return nil, err
 	}
+	job, err = cancelLockedAccountJob(ctx, tx, job)
+	if err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	return job, nil
+}
+
+func cancelLockedAccountJob(ctx context.Context, tx *sql.Tx, job *service.AccountJob) (*service.AccountJob, error) {
+	jobID := job.ID
+	var err error
 	switch job.Status {
 	case service.AccountJobStatusPending:
 		if _, err = tx.ExecContext(ctx, `UPDATE admin_account_job_items SET status='canceled', finished_at=NOW(), updated_at=NOW()
@@ -569,9 +582,6 @@ func (r *accountJobRepository) Cancel(ctx context.Context, jobID, createdBy int6
 		// Terminal jobs are idempotent cancellation responses.
 	}
 	if err != nil {
-		return nil, err
-	}
-	if err = tx.Commit(); err != nil {
 		return nil, err
 	}
 	return job, nil

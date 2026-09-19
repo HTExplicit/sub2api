@@ -63,8 +63,9 @@ func EstimateQuotaValue(base, latest *QuotaEstimateObservation, current AccountQ
 
 type quotaMeasurementFence struct {
 	point    QuotaCostPoint
-	pool     UsageRecordWorkerPoolStats
+	activity QuotaActivityStamp
 	identity string
+	shadow   bool
 }
 
 // Only existing /wham/usage queries can create calibration observations. A
@@ -72,43 +73,55 @@ type quotaMeasurementFence struct {
 // settled local bill. No extra upstream query is made for estimates.
 func (s *OpenAIQuotaService) beginQuotaMeasurement(ctx context.Context, id int64) *quotaMeasurementFence {
 	store, ok := s.accountRepo.(QuotaEstimateRepository)
-	if !ok || s.concurrency == nil || s.usagePool == nil {
+	if !ok || s.activity == nil {
 		return nil
 	}
-	pool := s.usagePool.Stats()
-	if pool.WaitingTasks != 0 || pool.SubmittedTasks != pool.CompletedTasks+pool.DroppedTasks {
-		return nil
-	}
-	counts, err := s.concurrency.GetAccountConcurrencyBatch(ctx, []int64{id})
-	if err != nil || counts[id] != 0 {
+	activity, known := s.activity.Read(ctx, id)
+	if !known || activity.Active != 0 {
 		return nil
 	}
 	account, err := s.accountRepo.GetByID(ctx, id)
 	if err != nil || account == nil {
 		return nil
 	}
+	account, err = s.quotaEstimateAccount(ctx, account)
+	if err != nil {
+		return nil
+	}
 	point, err := store.QuotaCostPoint(ctx, id)
 	if err != nil {
 		return nil
 	}
-	return &quotaMeasurementFence{point: point, pool: pool, identity: quotaEstimateIdentity(account)}
+	return &quotaMeasurementFence{point: point, activity: activity, identity: quotaEstimateBasis(account, activity), shadow: account.IsShadow()}
 }
 
 func (s *OpenAIQuotaService) finishQuotaMeasurement(ctx context.Context, id int64, usage *OpenAIQuotaUsage, before *quotaMeasurementFence) {
-	if before == nil || usage == nil || usage.RateLimit == nil {
+	if before == nil || usage == nil {
 		return
 	}
 	after := s.beginQuotaMeasurement(ctx, id)
-	if after == nil || before.identity != after.identity || before.point != after.point ||
-		before.pool.SubmittedTasks != after.pool.SubmittedTasks || before.pool.FailedTasks != after.pool.FailedTasks || before.pool.DroppedTasks != after.pool.DroppedTasks {
+	if after == nil || before.identity != after.identity || before.point != after.point || before.activity != after.activity {
 		return
 	}
 	store := s.accountRepo.(QuotaEstimateRepository)
+	limits := usage.RateLimit
+	if after.shadow {
+		limits = nil
+		for _, additional := range usage.AdditionalRateLimits {
+			if additional.MeteredFeature == "codex_bengalfox" {
+				limits = additional.RateLimit
+				break
+			}
+		}
+	}
+	if limits == nil {
+		return
+	}
 	observed := time.Unix(usage.FetchedAt, 0).UTC()
 	for _, entry := range []struct {
 		id     string
 		window *OpenAIRateLimitWindow
-	}{{"primary", usage.RateLimit.PrimaryWindow}, {"secondary", usage.RateLimit.SecondaryWindow}} {
+	}{{"primary", limits.PrimaryWindow}, {"secondary", limits.SecondaryWindow}} {
 		w := entry.window
 		if w == nil || w.LimitWindowSeconds <= 0 || w.ResetAt <= 0 {
 			continue
@@ -120,4 +133,40 @@ func (s *OpenAIQuotaService) finishQuotaMeasurement(ctx context.Context, id int6
 		}
 		_ = store.ObserveQuotaEstimate(ctx, QuotaEstimateObservation{AccountID: id, Identity: after.identity, Period: window.PeriodKey(), ObservedAt: observed, ResetsAt: reset, Utilization: w.UsedPercent, Cost: after.point.Cost})
 	}
+}
+
+func quotaEstimateBasis(account *Account, stamp QuotaActivityStamp) string {
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s/epoch=%s/gaps=%d", quotaEstimateIdentity(account), stamp.Epoch, stamp.Gaps)))
+	return hex.EncodeToString(sum[:])
+}
+
+func (s *OpenAIQuotaService) estimateBasis(ctx context.Context, account *Account) (string, bool) {
+	if s == nil || account == nil {
+		return "", false
+	}
+	stamp, ok := s.activity.Read(ctx, account.ID)
+	if !ok {
+		return "", false
+	}
+	account, err := s.quotaEstimateAccount(ctx, account)
+	if err != nil {
+		return "", false
+	}
+	return quotaEstimateBasis(account, stamp), true
+}
+
+// Spark consumes a separate upstream window but bills the parent credential's
+// current account rate. Keep the child usage-log identity while binding its
+// calibration to the same principal and rate used at billing time.
+func (s *OpenAIQuotaService) quotaEstimateAccount(ctx context.Context, account *Account) (*Account, error) {
+	if !account.IsShadow() {
+		return account, nil
+	}
+	parent, err := resolveCredentialAccount(ctx, s.accountRepo, account)
+	if err != nil {
+		return nil, err
+	}
+	copy := *account
+	copy.Credentials, copy.RateMultiplier = parent.Credentials, parent.RateMultiplier
+	return &copy, nil
 }

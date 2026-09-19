@@ -159,7 +159,7 @@ func createAccountRecord(ctx context.Context, client *dbent.Client, account *ser
 		SetProviderProfile(account.ProviderProfile).
 		SetType(account.Type).
 		SetCredentials(normalizeJSONMap(account.Credentials)).
-		SetExtra(normalizeJSONMap(account.Extra)).
+		SetExtra(normalizeJSONMap(withoutPluginAccountProjection(account.Extra))).
 		SetConcurrency(account.Concurrency).
 		SetPriority(account.Priority).
 		SetStatus(account.Status).
@@ -738,6 +738,7 @@ func lockAndMergeAccountProbeExtra(
 		}
 	}
 	extra = service.MergeOpenAICodexTicketExtra(extra, currentExtra)
+	extra = preservePluginAccountProjection(extra, currentExtra)
 	for _, key := range []string{
 		service.UpstreamBillingProbeEnabledExtraKey,
 		service.UpstreamBillingRateSyncEnabledExtraKey,
@@ -2831,6 +2832,7 @@ func (r *accountRepository) AutoPauseExpiredAccounts(ctx context.Context, now ti
 }
 
 func (r *accountRepository) UpdateExtra(ctx context.Context, id int64, updates map[string]any) error {
+	updates = withoutPluginAccountProjection(updates)
 	updates = stripCodexFingerprintSeedFromExtraUpdate(updates)
 	if len(updates) == 0 {
 		return nil
@@ -2860,7 +2862,16 @@ func (r *accountRepository) UpdateExtra(ctx context.Context, id int64, updates m
 			client = tx.Client()
 		}
 	}
-	extraExpression := "COALESCE(extra, '{}'::jsonb) || $1::jsonb"
+	candidateUpdatedAt, monotonicSnapshot := codexUsageUpdatedAtFromExtraUpdates(updates)
+	baseExtraExpression := "COALESCE(extra, '{}'::jsonb)"
+	if monotonicSnapshot {
+		// Freeze legacy per-window observation times before replacing the shared
+		// timestamp. A partial primary update must not advance the secondary clock.
+		baseExtraExpression += ` || jsonb_strip_nulls(jsonb_build_object(
+			'codex_primary_observed_at', COALESCE(extra->'codex_primary_observed_at', extra->'codex_usage_updated_at'),
+			'codex_secondary_observed_at', COALESCE(extra->'codex_secondary_observed_at', extra->'codex_usage_updated_at')))`
+	}
+	extraExpression := baseExtraExpression + " || $1::jsonb"
 	if clearProbeSnapshot {
 		extraExpression = "(" + extraExpression + ") - 'upstream_billing_probe'"
 	}
@@ -2868,13 +2879,13 @@ func (r *accountRepository) UpdateExtra(ctx context.Context, id int64, updates m
 		extraExpression = ensureCodexFingerprintSeedSQL(extraExpression)
 	}
 	affected := int64(0)
-	candidateUpdatedAt, monotonicSnapshot := codexUsageUpdatedAtFromExtraUpdates(updates)
 	if monotonicSnapshot {
 		rows, queryErr := client.QueryContext(ctx, `
 			WITH target AS MATERIALIZED (
 				SELECT id, extra ->> 'codex_usage_updated_at' AS current_updated_at
 				FROM accounts
 				WHERE id = $2 AND deleted_at IS NULL
+				FOR NO KEY UPDATE
 			), updated AS (
 				UPDATE accounts AS a
 				SET extra = `+extraExpression+`, updated_at = NOW()
@@ -3177,6 +3188,7 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 		return 0, nil
 	}
 	updates.Extra = stripCodexFingerprintSeedFromExtraUpdate(updates.Extra)
+	updates.Extra = withoutPluginAccountProjection(updates.Extra)
 
 	setClauses := make([]string, 0, 8)
 	args := make([]any, 0, 8)

@@ -2,6 +2,7 @@ package admin
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -11,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -43,29 +43,47 @@ func (h *PluginHandler) SubmitJob(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Operation string                    `json:"operation"`
-		Items     map[int64]json.RawMessage `json:"items"`
+		Operation string                  `json:"operation"`
+		Items     []extensionv1.JobTarget `json:"items"`
 	}
-	if c.ShouldBindJSON(&req) != nil || len(req.Items) == 0 || len(req.Items) > 100 || req.Operation == "" || h.jobs == nil {
+	if c.ShouldBindJSON(&req) != nil || len(req.Items) == 0 || len(req.Items) > 3200 || req.Operation == "" || h.jobs == nil {
 		response.BadRequest(c, "invalid plugin job")
 		return
 	}
-	var ids []int64
-	for accountID, payload := range req.Items {
-		if accountID <= 0 || !json.Valid(payload) {
+	accounts := make(map[int64]bool)
+	payloads := make(map[string]json.RawMessage)
+	var seeds []service.AccountJobItemSeed
+	for _, target := range req.Items {
+		accountID, payload := target.AccountID, target.Payload
+		var fields map[string]json.RawMessage
+		if accountID <= 0 || json.Unmarshal(payload, &fields) != nil || fields == nil || len([]rune(target.Label)) > 256 {
 			response.BadRequest(c, "invalid plugin job target")
 			return
 		}
-		if err := h.manager.ValidateAdminExtension(c.Request.Context(), id, accountID, req.Operation); err != nil {
-			response.Error(c, http.StatusConflict, "Plugin operation is unavailable")
-			return
+		if !accounts[accountID] {
+			if err := h.manager.ValidateAdminExtension(c.Request.Context(), id, accountID, req.Operation); err != nil {
+				response.Error(c, http.StatusConflict, "Plugin operation is unavailable")
+				return
+			}
+			accounts[accountID] = true
+			if len(accounts) > 100 {
+				response.BadRequest(c, "plugin jobs support at most 100 accounts")
+				return
+			}
 		}
-		ids = append(ids, accountID)
+		payload, _ = json.Marshal(fields)
+		fingerprint := sha256.Sum256(append([]byte(strconv.FormatInt(accountID, 10)+"\x00"), payload...))
+		action := hex.EncodeToString(fingerprint[:])
+		if _, exists := payloads[action]; exists {
+			continue
+		}
+		payloads[action] = payload
+		itemMeta, _ := json.Marshal(map[string]any{"label": target.Label})
+		seeds = append(seeds, service.AccountJobItemSeed{Ordinal: len(seeds) + 1, Action: action, TargetAccountID: &accountID, Metadata: itemMeta})
 	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-	raw, _ := json.Marshal(service.PluginJobPayload{PluginID: id, Operation: req.Operation, Items: req.Items})
-	metadata, _ := json.Marshal(map[string]any{"plugin_id": id, "operation": req.Operation, "target_count": len(ids)})
-	job, replayed, err := h.jobs.Submit(c.Request.Context(), actor, service.AccountJobKindExtensionOperation, c.GetHeader("Idempotency-Key"), raw, metadata, accountJobSeeds(ids))
+	raw, _ := json.Marshal(service.PluginJobPayload{PluginID: id, Operation: req.Operation, Items: payloads})
+	metadata, _ := json.Marshal(map[string]any{"plugin_id": id, "operation": req.Operation, "target_count": len(seeds), "account_count": len(accounts)})
+	job, replayed, err := h.jobs.Submit(c.Request.Context(), actor, service.AccountJobKindExtensionOperation, c.GetHeader("Idempotency-Key"), raw, metadata, seeds)
 	if err != nil {
 		response.ErrorFrom(c, accountJobHTTPError(err))
 		return

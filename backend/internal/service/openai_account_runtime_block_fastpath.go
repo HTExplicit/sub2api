@@ -647,8 +647,8 @@ func (s *OpenAIGatewayService) markOpenAIOAuth429RateLimited(ctx context.Context
 	}
 	s.recordOpenAIOAuth429()
 	classification := classifyOpenAIOAuth429At(headers, responseBody, time.Now())
-	disposition, resetAt := classification.Disposition, classification.ResetAt
-	if disposition != openAIOAuth429Transient && resetAt == nil {
+	disposition := classification.Disposition
+	if disposition != openAIOAuth429Transient {
 		if err := persistOpenAIQuotaClassification(ctx, s.accountRepo, account, classification, time.Now()); err != nil {
 			slog.Warn("quota_state_write_failed", "account_id", account.ID)
 		}
@@ -667,9 +667,7 @@ func (s *OpenAIGatewayService) markOpenAIOAuth429RateLimited(ctx context.Context
 	}
 	now := time.Now()
 	cooldownUntil := now.Add(openAIOAuth429FallbackCooldown)
-	if resetAt != nil && resetAt.After(now) {
-		cooldownUntil = *resetAt
-	} else if s.rateLimitService != nil {
+	if s.rateLimitService != nil {
 		cooldown, ok := s.rateLimitService.get429FallbackCooldown(ctx, account)
 		if !ok || cooldown <= 0 {
 			s.openaiOAuth429RetryStartedAt.Delete(account.ID)
@@ -1313,6 +1311,9 @@ func (s *OpenAIGatewayService) isOpenAIAccountRuntimeBlockedContext(_ context.Co
 	if s == nil || account == nil || account.ID <= 0 {
 		return false
 	}
+	if quota := account.QuotaState(time.Now()); quota != nil && quota.Blocked {
+		return true
+	}
 	isOpenAI := isOpenAIAccount(account)
 	mu := s.openAIAccountRuntimeBlockLock(account.ID)
 	mu.Lock()
@@ -1754,6 +1755,12 @@ func (s *OpenAIGatewayService) CooldownOpenAIRetryExhausted(
 		return
 	case http.StatusTooManyRequests:
 		classification := classifyOpenAIOAuth429At(failoverErr.ResponseHeaders, failoverErr.ResponseBody, now)
+		if isOpenAIOAuthAccount(account) && classification.Disposition != openAIOAuth429Transient {
+			if err := persistOpenAIQuotaClassification(ctx, s.accountRepo, account, classification, now); err != nil {
+				slog.Warn("quota_state_write_failed", "account_id", account.ID)
+			}
+			return
+		}
 		until := now.Add(openAIOAuth429FallbackCooldown)
 		if classification.Disposition != openAIOAuth429Transient && classification.ResetAt != nil && classification.ResetAt.After(now) {
 			until = *classification.ResetAt

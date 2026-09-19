@@ -64,7 +64,6 @@ func ProvideAdminHandlers(
 	accountHandler.SetUpstreamBillingProbeService(upstreamBillingProbe)
 	accountHandler.SetOllamaCloudUsageService(ollamaCloudUsage)
 	accountHandler.SetAccountTrafficObserver(accountTrafficObserver)
-	accountHandler.SetCodexTicketSettings(settingService)
 	return &AdminHandlers{
 		Dashboard:              dashboardHandler,
 		User:                   userHandler,
@@ -324,9 +323,6 @@ var ProviderSet = wire.NewSet(
 func ProvideAccountJobRuntime(jobs *service.AccountJobService, accountHandler *admin.AccountHandler, pluginManager *service.PluginManager) (*service.AccountJobRuntime, error) {
 	accountHandler.SetAccountJobService(jobs)
 	runtime := service.NewAccountJobRuntime(jobs, service.NewPluginJobExecutor(pluginManager, accountHandler))
-	if err := runtime.Start(context.Background()); err != nil {
-		return nil, err
-	}
 	return runtime, nil
 }
 

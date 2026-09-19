@@ -498,6 +498,7 @@ func setOpsSelectedAccount(c *gin.Context, accountID int64, platform ...string) 
 	c.Set(opsAccountIDKey, accountID)
 	if c.Request != nil {
 		ctx := context.WithValue(c.Request.Context(), ctxkey.AccountID, accountID)
+		service.ObserveQuotaAccount(ctx, accountID)
 		if len(platform) > 0 {
 			p := strings.TrimSpace(platform[0])
 			if p != "" {
@@ -1108,6 +1109,11 @@ func (state *opsCaptureWriterState) shouldCapture() bool {
 // - Streaming errors after the response has started (SSE) may still need explicit logging.
 func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if c.Request != nil {
+			ctx, finish := ops.AttachQuotaActivity(c.Request.Context())
+			c.Request = c.Request.WithContext(ctx)
+			defer finish()
+		}
 		originalWriter := c.Writer
 		w := acquireOpsCaptureWriter(originalWriter)
 		w.setContext(c)

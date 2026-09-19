@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "id": "codexrip.codex-runtime",
+  "name": "Codex 运行扩展",
+  "version": "0.2.7",
+  "description": "292票据、有限续期与代理诊断",
+  "author": "HTExplicit",
+  "requires": {
+    "sub2api": ">=0.2.7-0 <0.2.8",
+    "tested_sub2api_versions": [],
+    "plugin_protocol": 1,
+    "transport_api": 1,
+    "ui_bridge": 1,
+    "extension_api": 1
+  },
+  "capabilities": [
+    { "id": "extensions.admin.v1", "platform": "openai", "account_type": "oauth" },
+    { "id": "extensions.admin.v1", "platform": "openai", "account_type": "setup-token" },
+    { "id": "extensions.scheduling.v1", "platform": "openai", "account_type": "oauth" },
+    { "id": "extensions.scheduling.v1", "platform": "openai", "account_type": "setup-token" },
+    { "id": "extensions.request.v1", "platform": "openai", "account_type": "oauth" },
+    { "id": "extensions.request.v1", "platform": "openai", "account_type": "setup-token" },
+    { "id": "extensions.jobs.v1", "platform": "openai", "account_type": "oauth" },
+    { "id": "extensions.jobs.v1", "platform": "openai", "account_type": "setup-token" }
+  ],
+  "contributions": [
+    {
+      "id": "proxy-settings", "slot": "admin.settings", "action": "proxy.test", "entrypoint": "ui/index.html", "permission": "admin",
+      "label": { "zh": "Codex 票据设置", "en": "Codex ticket settings" }
+    },
+    {
+      "id": "ticket-harvest", "slot": "account.actions", "action": "harvest", "entrypoint": "ui/index.html", "permission": "admin",
+      "label": { "zh": "采集292票据", "en": "Acquire 292 tickets" },
+      "account_filter": { "platforms": ["openai"], "types": ["oauth", "setup-token"], "exclude_shadows": true }
+    },
+    {
+      "id": "ticket-stop", "slot": "account.actions", "action": "stop", "entrypoint": "ui/index.html", "permission": "admin",
+      "label": { "zh": "停止票据续期", "en": "Stop ticket renewal" },
+      "account_filter": { "platforms": ["openai"], "types": ["oauth", "setup-token"], "exclude_shadows": true }
+    }
+  ],
+  "runtimes": {},
+  "ui": { "entrypoint": "ui/index.html" },
+  "files": {}
+}

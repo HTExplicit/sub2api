@@ -26,6 +26,8 @@ type PluginExtensionAccountDirectory interface {
 // The owning plugin comes from the authenticated broker connection. No payload
 // field can select another plugin namespace or a database table/SQL statement.
 type pluginExtensionHost struct {
+	active       func() bool
+	activity     *QuotaActivityService
 	key          string
 	state        PluginExtensionStateStore
 	directory    PluginExtensionAccountDirectory
@@ -33,6 +35,9 @@ type pluginExtensionHost struct {
 }
 
 func (h *pluginExtensionHost) Call(ctx context.Context, in extensionv1.HostInvocation) (extensionv1.Result, error) {
+	if (in.Operation == extensionv1.HostResolveIdentity || in.Operation == extensionv1.HostLeaseAcquire || in.Operation == extensionv1.HostStateDue || in.Operation == extensionv1.HostJobSubmit) && h.active != nil && !h.active() {
+		return extensionv1.Result{}, status.Error(codes.Unavailable, "plugin capability is no longer active")
+	}
 	if h.state == nil {
 		return extensionv1.Result{}, status.Error(codes.Unavailable, "extension state unavailable")
 	}
@@ -45,7 +50,7 @@ func (h *pluginExtensionHost) Call(ctx context.Context, in extensionv1.HostInvoc
 			return extensionv1.Result{}, status.Error(codes.InvalidArgument, "invalid due-state query")
 		}
 		value, err = h.state.DueExtensionStates(ctx, h.key, req)
-	case extensionv1.HostAccountRead, extensionv1.HostAccountList, extensionv1.HostResolveIdentity:
+	case extensionv1.HostAccountRead, extensionv1.HostAccountList, extensionv1.HostResolveIdentity, extensionv1.HostFinishObservation:
 		if h.directory == nil {
 			return extensionv1.Result{}, status.Error(codes.Unavailable, "account directory unavailable")
 		}
@@ -78,8 +83,16 @@ func (h *pluginExtensionHost) Call(ctx context.Context, in extensionv1.HostInvoc
 			}
 			if in.Operation == extensionv1.HostAccountRead {
 				value = account
+			} else if in.Operation == extensionv1.HostFinishObservation {
+				err = h.activity.FinishUnbilled(ctx, req.AccountID, h.key, req.ObservationID)
+				value = map[string]bool{"finished": err == nil}
 			} else {
-				value, err = h.directory.ResolveExtensionIdentity(ctx, req)
+				identity, resolveErr := h.directory.ResolveExtensionIdentity(ctx, req)
+				err = resolveErr
+				if err == nil && identity != nil && req.PrepareCredentials {
+					identity.ObservationID, err = h.activity.BeginUnbilled(ctx, req.AccountID, h.key)
+				}
+				value = identity
 			}
 		}
 	case extensionv1.HostStateRead, extensionv1.HostStateCompareSwap:
@@ -92,6 +105,28 @@ func (h *pluginExtensionHost) Call(ctx context.Context, in extensionv1.HostInvoc
 		} else {
 			if !json.Valid(req.Value) || len(req.Value) > pluginKVMaxValueBytes {
 				return extensionv1.Result{}, status.Error(codes.InvalidArgument, "invalid state value")
+			}
+			if projection := req.Projection; projection != nil {
+				if h.directory == nil || projection.AccountID <= 0 || projection.Identity == "" || len(projection.Scheduling) > 64 {
+					return extensionv1.Result{}, status.Error(codes.InvalidArgument, "invalid account projection")
+				}
+				account, lookupErr := h.directory.ReadExtensionAccount(ctx, projection.AccountID)
+				if lookupErr != nil || account == nil || account.Identity != projection.Identity || !h.permitsAccount(account.Platform, account.Type, false) {
+					return extensionv1.Result{}, status.Error(codes.PermissionDenied, "account projection outside credential scope")
+				}
+				for _, constraint := range projection.Scheduling {
+					if constraint.Model == "" || len(constraint.Model) > 256 || (constraint.Effect != "allow" && constraint.Effect != "deny") || len(constraint.Reason) > 80 {
+						return extensionv1.Result{}, status.Error(codes.InvalidArgument, "invalid scheduling projection")
+					}
+				}
+				if len(projection.Observations) > 64 {
+					return extensionv1.Result{}, status.Error(codes.InvalidArgument, "too many observations")
+				}
+				for _, observation := range projection.Observations {
+					if observation.Key == "" || len(observation.Key) > 256 || len(observation.Kind) > 64 || len(observation.State) > 64 || len(observation.Code) > 80 {
+						return extensionv1.Result{}, status.Error(codes.InvalidArgument, "invalid account observation")
+					}
+				}
 			}
 			value, err = h.state.CompareSwapExtensionState(ctx, h.key, req)
 		}

@@ -46,7 +46,7 @@
       <template v-if="selectedIds.length > 0">
         <button @click="$emit('delete')" class="btn btn-danger btn-sm">{{ t('admin.accounts.bulkActions.delete') }}</button>
         <button data-test="batch-test" @click="$emit('test')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.batchTest.title') }}</button>
-        <button v-if="canHarvestTickets" data-test="batch-ticket" :disabled="selectedIds.length > 100" :title="selectedIds.length > 100 ? t('admin.accounts.tickets.limit') : undefined" @click="$emit('harvest-tickets')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.tickets.title') }}</button>
+        <ExtensionSlot name="account.actions" :account-ids="selectedIds" :accounts="selectedAccounts" />
         <button @click="$emit('reset-status')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkActions.resetStatus') }}</button>
         <button @click="$emit('refresh-token')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkActions.refreshToken') }}</button>
         <button data-test="refresh-tier" @click="$emit('refresh-tier')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkActions.refreshTier') }}</button>
@@ -77,17 +77,18 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import type { AccountSelectionIdentity } from '@/composables/useAccountSelectionMetadata'
+import ExtensionSlot from '@/components/plugins/ExtensionSlot.vue'
 
 defineProps<{
   selectedIds: number[]
   totalResults: number
   selectingAll: boolean
   allResultsSelected: boolean
-  canHarvestTickets?: boolean
+  selectedAccounts?: AccountSelectionIdentity[]
 }>()
 
 defineEmits([
-  'harvest-tickets',
   'test',
   'delete',
   'edit-selected',

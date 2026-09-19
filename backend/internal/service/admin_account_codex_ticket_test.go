@@ -9,7 +9,7 @@ import (
 
 func TestUpdateAccountPreservesCodexTicketOnEdit(t *testing.T) {
 	account := ticketTestAccount(41)
-	ticket := &openAICodexTicket{Model: "gpt-6-astra", State: fakeCodexTicketState(292), Length: 292, ExpiresAt: time.Now().Add(time.Hour)}
+	ticket := &CodexTicketRecord{Model: "gpt-6-astra", State: fakeCodexTicketState(292), Length: 292, ExpiresAt: time.Now().Add(time.Hour)}
 	key := openAICodexTicketExtraKey(ticket.Model)
 	account.Extra = map[string]any{key: ticket}
 	repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{41: account}}

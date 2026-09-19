@@ -1245,7 +1245,17 @@ func buildCodexUsageExtraUpdates(snapshot *OpenAICodexUsageSnapshot, fallbackNow
 	if snapshot.PrimaryOverSecondaryPercent != nil {
 		updates["codex_primary_over_secondary_percent"] = *snapshot.PrimaryOverSecondaryPercent
 	}
-	updates["codex_usage_updated_at"] = baseTime.Format(time.RFC3339)
+	updates["codex_usage_updated_at"] = baseTime.Format(time.RFC3339Nano)
+	for _, window := range snapshot.Windows(baseTime) {
+		prefix := "codex_" + window.ID + "_"
+		updates[prefix+"observed_at"] = baseTime.Format(time.RFC3339Nano)
+		if window.ResetsAt != nil {
+			updates[prefix+"reset_at"] = window.ResetsAt.UTC().Format(time.RFC3339Nano)
+		} else {
+			// A missing countdown must not be rebound to a newer sampling time.
+			updates[prefix+"reset_after_seconds"] = nil
+		}
+	}
 
 	// 归一化到 5h/7d 规范字段
 	if normalized := snapshot.Normalize(); normalized != nil {

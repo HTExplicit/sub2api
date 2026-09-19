@@ -74,30 +74,67 @@ WORKDIR /app/backend
 
 # Copy go mod files first (better caching)
 COPY backend/go.mod backend/go.sum ./
+COPY plugins/codex-runtime/go.mod plugins/codex-runtime/go.sum /app/plugins/codex-runtime/
+COPY plugins/model-policy/go.mod plugins/model-policy/go.sum /app/plugins/model-policy/
 # Cache mount keeps the module cache across builds so a transient CDN blip on
 # retry resumes instead of re-fetching every zip from scratch.
 RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
-    go mod download
+    go mod download && \
+    cd /app/plugins/codex-runtime && go mod download && \
+    cd /app/plugins/model-policy && go mod download
 
 # Copy backend source first
 COPY backend/ ./
+COPY plugins/codex-runtime/ /app/plugins/codex-runtime/
+COPY plugins/model-policy/ /app/plugins/model-policy/
 
 # Copy frontend dist from previous stage (must be after backend copy to avoid being overwritten)
 COPY --from=frontend-builder /app/backend/internal/web/dist ./internal/web/dist
 
-# Build the binary (BuildType=release for CI builds, embed frontend)
+# Build the host and its independent first-party plugin. The signing key exists
+# only inside this build step and is removed before the immutable bundle is
+# copied into the final image; OCI provenance remains the publisher trust root.
 # Version precedence: build arg VERSION > exact git tag > cmd/server/VERSION
 RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
     --mount=type=cache,id=sub2api-gobuild,target=/root/.cache/go-build \
     VERSION_VALUE="${VERSION}" && \
     if [ -z "${VERSION_VALUE}" ]; then VERSION_VALUE="$(./scripts/resolve-version.sh)"; fi && \
     DATE_VALUE="${DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}" && \
-    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build \
+    TARGET_OS="${TARGETOS:-linux}" && TARGET_ARCH="${TARGETARCH:-amd64}" && \
+    CGO_ENABLED=0 GOOS=${TARGET_OS} GOARCH=${TARGET_ARCH} go build \
     -tags embed \
     -ldflags="-s -w -X main.Version=${VERSION_VALUE} -X main.Commit=${COMMIT} -X main.Date=${DATE_VALUE} -X main.BuildType=release" \
     -trimpath \
     -o /app/sub2api \
-    ./cmd/server
+    ./cmd/server && \
+    cd /app/plugins/codex-runtime && \
+    CGO_ENABLED=0 GOOS=${TARGET_OS} GOARCH=${TARGET_ARCH} go build -trimpath -o /tmp/codex-runtime-plugin ./cmd/plugin && \
+    cd /app/plugins/model-policy && \
+    CGO_ENABLED=0 GOOS=${TARGET_OS} GOARCH=${TARGET_ARCH} go build -trimpath -o /tmp/model-policy-plugin ./cmd/plugin && \
+    cd /app/backend && \
+    go run ./cmd/package-plugin -generate-key /tmp/codex-runtime-publisher.key >/tmp/codex-runtime-publisher.json && \
+    mkdir -p /app/bundled-plugins && \
+    go run ./cmd/package-plugin \
+      -source /app/plugins/codex-runtime \
+      -binary /tmp/codex-runtime-plugin \
+      -platform "${TARGET_OS}-${TARGET_ARCH}" \
+      -tested-host-version "${VERSION_VALUE}" \
+      -output /app/bundled-plugins/codex-runtime.s2plugin \
+      -bundle-lock /app/bundled-plugins/lock.json \
+      -migration codex-tickets-v1 \
+      -signing-key-file /tmp/codex-runtime-publisher.key \
+      -key-id codexrip-image-plugins-v1 && \
+    go run ./cmd/package-plugin \
+      -source /app/plugins/model-policy \
+      -binary /tmp/model-policy-plugin \
+      -platform "${TARGET_OS}-${TARGET_ARCH}" \
+      -tested-host-version "${VERSION_VALUE}" \
+      -output /app/bundled-plugins/model-policy.s2plugin \
+      -bundle-lock /app/bundled-plugins/lock.json \
+      -default-enabled \
+      -signing-key-file /tmp/codex-runtime-publisher.key \
+      -key-id codexrip-image-plugins-v1 && \
+    rm -f /tmp/codex-runtime-plugin /tmp/model-policy-plugin /tmp/codex-runtime-publisher.key /tmp/codex-runtime-publisher.json
 
 # -----------------------------------------------------------------------------
 # Stage 3: PostgreSQL Client (version-matched with docker-compose)
@@ -146,6 +183,7 @@ WORKDIR /app
 
 # Copy binary/resources with ownership to avoid extra full-layer chown copy
 COPY --from=backend-builder --chown=sub2api:sub2api /app/sub2api /app/sub2api
+COPY --from=backend-builder --chown=sub2api:sub2api /app/bundled-plugins /app/bundled-plugins
 COPY --from=backend-builder --chown=sub2api:sub2api /app/backend/resources /app/resources
 COPY --chown=sub2api:sub2api THIRD_PARTY_NOTICES.md /app/THIRD_PARTY_NOTICES.md
 

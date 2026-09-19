@@ -41,11 +41,13 @@ type pluginRoute struct {
 
 // PluginManager 管理插件安装、配置、进程生命周期和 OpenAI OAuth 能力绑定。
 type PluginManager struct {
-	repo      PluginRepository
-	encryptor SecretEncryptor
-	cfg       *config.Config
-	hostInfo  PluginHostInfo
-	installer *PluginPackageInstaller
+	bundlePath    string
+	quotaActivity *QuotaActivityService
+	repo          PluginRepository
+	encryptor     SecretEncryptor
+	cfg           *config.Config
+	hostInfo      PluginHostInfo
+	installer     *PluginPackageInstaller
 	// kvStore 为运行中的插件提供通用宿主键值存储；为 nil 时不向插件暴露宿主服务。
 	kvStore PluginKVStore
 	// accountDirectory 为声明了对应能力的插件提供账号目录与出站身份解析（敏感能力）；
@@ -64,7 +66,7 @@ type PluginManager struct {
 }
 
 func NewPluginManager(repo PluginRepository, encryptor SecretEncryptor, cfg *config.Config, hostInfo PluginHostInfo, kvStore PluginKVStore) *PluginManager {
-	return &PluginManager{
+	manager := &PluginManager{
 		repo:               repo,
 		encryptor:          encryptor,
 		cfg:                cfg,
@@ -74,6 +76,8 @@ func NewPluginManager(repo PluginRepository, encryptor SecretEncryptor, cfg *con
 		runtimes:           make(map[int64]*pluginRuntime),
 		localInstallations: make(map[int64]*PluginInstallation),
 	}
+	manager.extensions.Store(&pluginExtensionRegistry{installations: map[int64]*PluginInstallation{}, runtimes: map[int64]*pluginRuntime{}, unavailable: "plugin registry not initialized"})
+	return manager
 }
 
 func (m *PluginManager) MaxUploadBytes() int64 {
@@ -90,6 +94,11 @@ func (m *PluginManager) Start(ctx context.Context) error {
 		m.mu.Unlock()
 		m.operationMu.Unlock()
 		return nil
+	}
+	if err := m.bootstrapBundle(ctx); err != nil {
+		m.mu.Unlock()
+		m.operationMu.Unlock()
+		return err
 	}
 	if err := os.MkdirAll(filepath.Join(m.installer.RootDir(), "runtime"), 0o700); err != nil {
 		m.mu.Unlock()
@@ -112,6 +121,9 @@ func (m *PluginManager) Start(ctx context.Context) error {
 }
 
 func (m *PluginManager) Stop() {
+	if provider := processExtensionCatalog.Load(); provider != nil && provider.resolver == m {
+		processExtensionCatalog.CompareAndSwap(provider, nil)
+	}
 	m.mu.Lock()
 	cancel := m.reconcileCancel
 	done := m.reconcileDone
@@ -284,6 +296,13 @@ func (m *PluginManager) reconcileOnce(ctx context.Context) error {
 		return fmt.Errorf("读取插件启用状态: %w", err)
 	}
 	m.cleanupStaleLocalInstallations(installations)
+	if err := validatePluginRegistry(installations); err != nil {
+		m.publishUnavailableRoute(0, 100, err.Error())
+		m.mu.Lock()
+		m.publishExtensionRegistryLocked(installations, "plugin bindings invalid")
+		m.mu.Unlock()
+		return err
+	}
 	desired := make(map[int64]bool)
 	var failures []error
 	var transport *PluginInstallation
@@ -585,10 +604,14 @@ func (m *PluginManager) Enable(ctx context.Context, id int64, acceptUntested boo
 	if err != nil {
 		return nil, err
 	}
+	if installation.Manifest.Requires.ExtensionAPI > 0 && rolloutPercent != 100 {
+		return nil, errors.New("功能插件整体启用，不支持按流量比例启用")
+	}
 	if active := m.route.Load(); active != nil && active.pluginID != id && pluginDeclaresOpenAIOAuthCapability(installation.Manifest) {
 		return nil, errors.New("OpenAI OAuth 出站能力已有启用插件，请先停用当前插件")
 	}
 	if installation.State == PluginStateEnabled && hasEnabledPluginBinding(installation.Bindings) {
+		installation.DesiredEnabled = true
 		installation.Compatibility = EvaluatePluginCompatibility(installation.Manifest, m.hostInfo)
 		m.mu.Lock()
 		runtime := m.runtimes[id]
@@ -619,7 +642,12 @@ func (m *PluginManager) Enable(ctx context.Context, id int64, acceptUntested boo
 	if err != nil {
 		return nil, err
 	}
-	if err := pluginDependenciesReady(installation, all); err != nil {
+	for i, candidate := range all {
+		if candidate.ID == installation.ID {
+			all[i] = installation
+		}
+	}
+	if err := validatePluginRegistry(all); err != nil {
 		return nil, err
 	}
 	if err := m.repo.UpdateBindingsAndState(ctx, id, installation.Bindings, PluginStateStarting, "", installation.EnabledAt, installation.State, installation.BinarySHA256); err != nil {
@@ -654,6 +682,7 @@ func (m *PluginManager) Enable(ctx context.Context, id int64, acceptUntested boo
 		return nil, err
 	}
 	result.Compatibility = compatibility
+	result.DesiredEnabled = hasEnabledPluginBinding(result.Bindings)
 	result.RuntimeHealthy = true
 	result.RuntimeMessage = "插件进程运行中"
 	return result, nil
@@ -1117,7 +1146,14 @@ func (m *PluginManager) buildHostServices(installation *PluginInstallation) plug
 	if installation.Manifest.Requires.ExtensionAPI > 0 {
 		state, _ := m.repo.(PluginExtensionStateStore)
 		directory, _ := m.accountDirectory.(PluginExtensionAccountDirectory)
-		host.extension = &pluginExtensionHost{key: installation.PluginKey, state: state, directory: directory, installation: installation}
+		host.extension = &pluginExtensionHost{key: installation.PluginKey, state: state, directory: directory, installation: installation, activity: m.quotaActivity, active: func() bool {
+			registry := m.extensions.Load()
+			if registry == nil || registry.unavailable != "" {
+				return false
+			}
+			current := registry.installations[installation.ID]
+			return current != nil && hasEnabledPluginBinding(current.Bindings) && pluginDependenciesHealthy(current, registry, map[int64]bool{})
+		}}
 	}
 	return host
 }

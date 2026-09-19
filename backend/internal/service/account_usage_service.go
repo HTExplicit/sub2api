@@ -771,9 +771,11 @@ func (s *AccountUsageService) getOpenAIUsage(ctx context.Context, account *Accou
 	for i := range usage.QuotaWindows {
 		window := &usage.QuotaWindows[i]
 		window.Estimate = &QuotaEstimate{Status: "insufficient_data"}
-		if store, ok := s.accountRepo.(QuotaEstimateRepository); ok && window.PeriodKey() != "" {
-			if base, latest, err := store.ReadQuotaEstimate(ctx, account.ID, quotaEstimateIdentity(account), window.PeriodKey()); err == nil {
-				window.Estimate = EstimateQuotaValue(base, latest, *window)
+		if store, ok := s.accountRepo.(QuotaEstimateRepository); ok && s.openAIQuotaService != nil && window.PeriodKey() != "" {
+			if basis, known := s.openAIQuotaService.estimateBasis(ctx, account); known {
+				if base, latest, err := store.ReadQuotaEstimate(ctx, account.ID, basis, window.PeriodKey()); err == nil {
+					window.Estimate = EstimateQuotaValue(base, latest, *window)
+				}
 			}
 		}
 		if start := window.StatsStart(); start != nil && s.usageLogRepo != nil {
@@ -860,6 +862,12 @@ func (s *AccountUsageService) shouldProbeOpenAICodexSnapshot(accountID int64, no
 func (s *AccountUsageService) probeOpenAICodexSnapshot(ctx context.Context, account *Account) (map[string]any, error) {
 	if account == nil || !account.IsOAuth() {
 		return nil, nil
+	}
+	if s.openAIQuotaService != nil {
+		var finish func()
+		ctx, finish = s.openAIQuotaService.activity.Attach(ctx)
+		ObserveQuotaAccount(ctx, account.ID)
+		defer finish()
 	}
 	accessToken := ""
 	if !account.IsOpenAIAgentIdentity() {

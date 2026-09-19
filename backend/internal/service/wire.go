@@ -305,13 +305,11 @@ func ProvideOpenAIQuotaService(
 	tokenProvider *OpenAITokenProvider,
 	privacyClientFactory PrivacyClientFactory,
 	openAIGatewayService *OpenAIGatewayService,
-	concurrencyService *ConcurrencyService,
-	usagePool *UsageRecordWorkerPool,
+	activity *QuotaActivityService,
 ) *OpenAIQuotaService {
 	service := NewOpenAIQuotaService(accountRepo, proxyRepo, tokenProvider, privacyClientFactory)
 	service.agentIdentityWS = openAIGatewayService
-	service.concurrency = concurrencyService
-	service.usagePool = usagePool
+	service.activity = activity
 	return service
 }
 
@@ -387,6 +385,7 @@ func ProvideAccountTestService(
 	openAIGatewayService *OpenAIGatewayService,
 	settingService *SettingService,
 	pluginManager *PluginManager,
+	activity *QuotaActivityService,
 ) *AccountTestService {
 	service := NewAccountTestService(
 		accountRepo,
@@ -402,6 +401,7 @@ func ProvideAccountTestService(
 	service.SetOpenAIGatewayService(openAIGatewayService)
 	service.SetSettingService(settingService)
 	service.SetPluginManager(pluginManager)
+	service.quotaActivity = activity
 	return service
 }
 
@@ -863,6 +863,7 @@ func ProvideOpsService(
 	settingService *SettingService,
 	authCacheInvalidationWorker *AuthCacheInvalidationWorker,
 	apiKeyService *APIKeyService,
+	activity *QuotaActivityService,
 ) *OpsService {
 	svc := NewOpsService(
 		opsRepo,
@@ -885,6 +886,7 @@ func ProvideOpsService(
 	}
 	svc.authCacheInvalidationWorker = authCacheInvalidationWorker
 	svc.apiKeyService = apiKeyService
+	svc.quotaActivity = activity
 	svc.StartRuntimeSettingsRefresh(context.Background())
 	return svc
 }
@@ -1018,6 +1020,7 @@ var ProviderSet = wire.NewSet(
 	ProvideGrokTokenProvider,
 	ProvideOpenAITokenProvider,
 	ProvideOpenAIQuotaService,
+	NewQuotaActivityService,
 	ProvideOpenAIQuotaAutoResetService,
 	ProvideGrokQuotaService,
 	ProvideCNProviderQuotaService,
@@ -1076,7 +1079,7 @@ var ProviderSet = wire.NewSet(
 	NewTotpService,
 	NewErrorPassthroughService,
 	NewTLSFingerprintProfileService,
-	NewPluginManager,
+	ProvidePluginManager,
 	NewDigestSessionStore,
 	ProvideIdempotencyCoordinator,
 	ProvideSystemOperationLockService,

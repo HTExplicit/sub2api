@@ -166,12 +166,16 @@ output/
 # third-party projects remain outside the source tree.
 /plugins/*
 !/plugins/codex-runtime/
+!/plugins/codex-runtime/scripts/
+!/plugins/codex-runtime/scripts/check-ui.py
 !/plugins/cindy-provider/
 !/plugins/account-tools/
 !/plugins/prompt-skills/
 !/plugins/model-catalog/
+!/plugins/model-policy/
 !/plugins/image-tools/
 !/plugins/admin-observability/
 /plugins/*/dist/
 /plugins/*/node_modules/
 /plugins/*/*.s2plugin
+/plugins/**/*.key

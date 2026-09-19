@@ -12,7 +12,7 @@
         <p v-if="busy" role="status" class="border-b border-line px-4 py-2 text-xs text-muted">{{ t('common.processing') }}</p>
         <fieldset :disabled="busy" class="py-1 disabled:opacity-60">
           <template v-if="account">
-            <button v-if="canManageCodexTickets(account)" data-test="ticket-harvest" @click="$emit('harvest-tickets', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700"><Icon name="shield" size="sm" class="text-primary-600" />{{ t('admin.accounts.tickets.title') }}</button>
+            <ExtensionSlot name="account.actions" :account="account" external variant="menu" @open="openExtension" />
             <button @click="$emit('test', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700">
               <Icon name="play" size="sm" class="text-green-500" :stroke-width="2" />
               {{ t('admin.accounts.testConnection') }}
@@ -66,6 +66,12 @@
       </div>
     </div>
   </Teleport>
+  <ExtensionDialog
+    :contribution="selectedExtension"
+    :account-id="extensionAccountID"
+    mode="account.actions"
+    @close="selectedExtension = null"
+  />
 </template>
 
 <script setup lang="ts">
@@ -74,12 +80,21 @@ import { useResizeObserver, useWindowSize } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@/components/icons'
 import type { Account } from '@/types'
-import { canManageCodexTickets } from '@/utils/codexTicketEligibility'
+import type { PluginContribution } from '@/api/admin/plugins'
+import ExtensionDialog from '@/components/plugins/ExtensionDialog.vue'
+import ExtensionSlot from '@/components/plugins/ExtensionSlot.vue'
 
 const props = defineProps<{ show: boolean; account: Account | null; anchorRect: DOMRect | null; busy?: boolean }>()
-const emit = defineEmits(['harvest-tickets', 'close', 'test', 'stats', 'schedule', 'duplicate', 'reauth', 'refresh-token', 'recover-state', 'recover-cindy-balance', 'reset-quota', 'set-privacy', 'create-spark-shadow'])
+const emit = defineEmits(['close', 'test', 'stats', 'schedule', 'duplicate', 'reauth', 'refresh-token', 'recover-state', 'recover-cindy-balance', 'reset-quota', 'set-privacy', 'create-spark-shadow'])
 const { t } = useI18n()
 const menuRef = ref<HTMLElement | null>(null)
+const selectedExtension = ref<PluginContribution | null>(null)
+const extensionAccountID = ref<number | undefined>()
+function openExtension(contribution: PluginContribution) {
+  selectedExtension.value = contribution
+  extensionAccountID.value = props.account?.id
+  emit('close')
+}
 const { width: viewportWidth, height: viewportHeight } = useWindowSize()
 const viewportPadding = 8
 const menuPosition = ref({ top: viewportPadding, left: viewportPadding })

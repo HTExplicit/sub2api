@@ -39,3 +39,30 @@ func TestAccountTestReasoningSurvivesMappingAndWireCompression(t *testing.T) {
 	require.Error(t, svc.TestAccountConnection(c, a.ID, "friendly", "test", AccountTestModeCompact, AccountTestOptions{ReasoningEffort: "ultra"}))
 	require.Len(t, upstream.requests, 1, "unsupported mode must fail before any upstream request")
 }
+
+func TestAccountTestReasoningOpenCodeGoSerializesNativeProtocol(t *testing.T) {
+	for _, protocol := range []string{APIProtocolResponses, APIProtocolChatCompletions} {
+		t.Run(protocol, func(t *testing.T) {
+			account := openCodeGoTestAccount(44)
+			account.Credentials["api_protocol"] = protocol
+			supported := true
+			account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: map[string]UpstreamModelMetadata{"test-model": {Reasoning: &supported, SupportedReasoningLevels: []string{"high"}}}})
+			response := adaptiveCNChatTestResponse()
+			if protocol == APIProtocolResponses {
+				response = adaptiveCNResponsesTestResponse()
+			}
+			svc, upstream := adaptiveCNAccountTestService(account, response)
+			c, recorded := newTestContext()
+			require.NoError(t, svc.TestAccountConnection(c, account.ID, "test-model", "test", AccountTestModeDefault, AccountTestOptions{ReasoningEffort: "high"}))
+			require.Len(t, upstream.requests, 1)
+			body, err := io.ReadAll(upstream.requests[0].Body)
+			require.NoError(t, err)
+			field := "reasoning_effort"
+			if protocol == APIProtocolResponses {
+				field = "reasoning.effort"
+			}
+			require.Equal(t, "high", gjson.GetBytes(body, field).String())
+			require.Contains(t, recorded.Body.String(), `"effective_reasoning_effort":"high"`)
+		})
+	}
+}

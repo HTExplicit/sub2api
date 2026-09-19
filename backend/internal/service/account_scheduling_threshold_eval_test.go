@@ -163,7 +163,7 @@ func TestEvaluateAccountSchedulingThreshold_OpenAIPreservesPercentageSemantics(t
 	require.Equal(t, 91.0, openAIDecision.UsedPercent)
 }
 
-func TestEvaluateAccountSchedulingThreshold_OpenAISkipsStaleSnapshot(t *testing.T) {
+func TestEvaluateAccountSchedulingThreshold_OpenAIKeepsKnownDeadlineFromStaleSnapshot(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
@@ -178,7 +178,10 @@ func TestEvaluateAccountSchedulingThreshold_OpenAISkipsStaleSnapshot(t *testing.
 
 	decision := EvaluateAccountSchedulingThreshold(account, map[string]int{PlatformOpenAI: 90}, now)
 
-	require.False(t, decision.ShouldPause)
+	require.True(t, decision.ShouldPause)
+	delete(account.Extra, "codex_5h_reset_at")
+	decision = EvaluateAccountSchedulingThreshold(account, map[string]int{PlatformOpenAI: 90}, now)
+	require.False(t, decision.ShouldPause, "an advisory pause without a deadline still needs fresh evidence")
 }
 
 func TestEvaluateAccountSchedulingThreshold_OpenAISkipsResetWindow(t *testing.T) {

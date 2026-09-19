@@ -1253,16 +1253,9 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 			if err := persistOpenAIQuotaClassification(ctx, s.accountRepo, account, classification, time.Now()); err != nil {
 				slog.Warn("quota_state_write_failed", "account_id", account.ID)
 			}
-			if classification.ResetAt == nil {
-				return
-			}
-			resetAt := classification.ResetAt
-			s.notifyAccountSchedulingBlocked(account, *resetAt, "429")
-			if err := s.accountRepo.SetRateLimited(ctx, account.ID, *resetAt); err != nil {
-				slog.Warn("rate_limit_set_failed", "account_id", account.ID, "error", err)
-				return
-			}
-			slog.Info("openai_account_rate_limited", "account_id", account.ID, "reset_at", *resetAt)
+			// Quota observations own this restriction. Writing the same deadline
+			// into the ordinary 429 field would survive a verified quota reset and
+			// could only be cleared by also clearing unrelated transient limits.
 			return
 		}
 		s.apply429FallbackRateLimit(ctx, account, "openai_transient_429")

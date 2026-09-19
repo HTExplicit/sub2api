@@ -2679,8 +2679,12 @@ func (h *GatewayHandler) submitUsageRecordTask(parent context.Context, task serv
 		return
 	}
 	task = wrapUsageRecordTaskContext(parent, task)
+	task, abandon := service.TrackQuotaUsageTask(parent, task)
 	if h.usageRecordWorkerPool != nil {
 		if mode := h.usageRecordWorkerPool.Submit(task); mode != service.UsageRecordSubmitModeDroppedStopped {
+			if mode.Dropped() {
+				abandon()
+			}
 			return
 		}
 		// 池已停止（进程关停窗口）：计费任务不能静默丢失，降级为内联同步执行。
@@ -2709,6 +2713,7 @@ func (h *GatewayHandler) submitMandatoryUsageRecordTask(parent context.Context, 
 		return
 	}
 	task = wrapUsageRecordTaskContext(parent, task)
+	task, _ = service.TrackQuotaUsageTask(parent, task)
 	if h.usageRecordWorkerPool != nil {
 		if mode := h.usageRecordWorkerPool.Submit(task); !mode.Dropped() {
 			return

@@ -239,13 +239,12 @@
           <span>#{{ completedImportJobIDs.join(', #') }}</span>
         </div>
         <AccountBulkActionsBar
-          :can-harvest-tickets="canHarvestTickets"
           :selected-ids="selIds"
+          :selected-accounts="selectedAccounts"
           :total-results="pagination.total"
           :selecting-all="selectingAllResults"
           :all-results-selected="allResultsSelected"
           @test="openBatchTest"
-          @harvest-tickets="openTicketHarvest(selIds)"
           @delete="handleBulkDelete"
           @reset-status="handleBulkResetStatus"
           @refresh-token="handleBulkRefreshToken"
@@ -576,11 +575,10 @@
     <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
     <BatchTestAccountModal :show="showBatchTest" :account-ids="batchTestAccountIDs" @close="showBatchTest = false; enterAutoRefreshSilentWindow()" />
-    <CodexTicketHarvestModal :show="showTicketHarvest" :account-ids="ticketAccountIDs" @close="showTicketHarvest = false; enterAutoRefreshSilentWindow()" />
     <AccountOperationConfirmDialog v-if="pendingOperation" :show="true" :title="pendingOperation.title" :message="pendingOperation.message" :danger="pendingOperation.danger" :execute="pendingOperation.execute" @close="pendingOperation = null" @submitted="clearSelection()" />
     <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
     <ScheduledTestsPanel :show="showSchedulePanel" :account-id="scheduleAcc?.id ?? null" :model-options="scheduleModelOptions" @close="closeSchedulePanel" />
-    <AccountActionMenu :busy="!!menu.acc && immediateAccountActions.has(menu.acc.id)" :show="menu.show" :account="menu.acc" :anchor-rect="menu.anchorRect" @close="menu.show = false" @harvest-tickets="account => openTicketHarvest([account.id])" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @recover-cindy-balance="handleRecoverCindyBalance" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" />
+    <AccountActionMenu :busy="!!menu.acc && immediateAccountActions.has(menu.acc.id)" :show="menu.show" :account="menu.acc" :anchor-rect="menu.anchorRect" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @recover-cindy-balance="handleRecoverCindyBalance" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" />
     <SyncFromCrsModal :show="showSync" @close="showSync = false" @synced="reload" />
     <ImportDataModal
       :show="showImportData"
@@ -735,9 +733,8 @@ import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
 import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
 import UpstreamBillingRateCell from '@/components/account/UpstreamBillingRateCell.vue'
 import BatchTestAccountModal from '@/components/admin/account/BatchTestAccountModal.vue'
-import CodexTicketHarvestModal from '@/components/admin/account/CodexTicketHarvestModal.vue'
 import AccountOperationConfirmDialog from '@/components/admin/account-jobs/AccountOperationConfirmDialog.vue'
-import { useTicketSelection } from '@/composables/useTicketSelection'
+import { useAccountSelectionMetadata } from '@/composables/useAccountSelectionMetadata'
 import AccountIdentityBadges from '@/components/account/AccountIdentityBadges.vue'
 import AccountSelectionCheckbox from '@/components/account/AccountSelectionCheckbox.vue'
 import { getAccountPlanType } from '@/utils/accountPresentation'
@@ -787,9 +784,6 @@ const pendingDataImportJobIDs = new Map<number, number>()
 const completedImportJobIDs = ref<number[]>([])
 const showBatchTest = ref(false)
 const batchTestAccountIDs = ref<number[]>([])
-const showTicketHarvest = ref(false)
-const ticketAccountIDs = ref<number[]>([])
-const openTicketHarvest = (ids: number[]) => { ticketAccountIDs.value = [...ids]; showTicketHarvest.value = true }
 const openBatchTest = () => { batchTestAccountIDs.value = [...selIds.value]; showBatchTest.value = true }
 watch(() => accountJobsStore.drawerOpen, (open, wasOpen) => {
   if (wasOpen && !open && accountJobsStore.currentJob?.kind === 'account_batch_test') enterAutoRefreshSilentWindow()
@@ -1762,7 +1756,7 @@ const {
   rows: accounts,
   getId: (account) => account.id
 })
-const { canHarvestTickets, remember: rememberTicketAccounts } = useTicketSelection(selIds, accounts)
+const { selectedAccounts, remember: rememberAccountIdentities } = useAccountSelectionMetadata(selIds, accounts)
 
 watch(selectedSet, () => {
   if (!applyingImportSelection) importSelectionRevision += 1
@@ -2490,7 +2484,7 @@ const handleSelectAllResults = async () => {
     const ids = await fetchAllAccountIds(
       async (page, pageSize, requestFilters) => {
         const result = await adminAPI.accounts.list(page, pageSize, requestFilters)
-        rememberTicketAccounts(result.items)
+        rememberAccountIdentities(result.items)
         return result
       },
       filters

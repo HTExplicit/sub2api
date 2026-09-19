@@ -557,47 +557,7 @@ func buildOpenAIAutoResetUsageUpdates(usage *OpenAIQuotaUsage, now time.Time) ma
 	if usage == nil || usage.RateLimit == nil {
 		return nil
 	}
-	rateLimit := usage.RateLimit
-	snapshot := &OpenAICodexUsageSnapshot{UpdatedAt: now.UTC().Format(time.RFC3339)}
-	applyWindow := func(window *OpenAIRateLimitWindow, primary bool) {
-		if window == nil {
-			return
-		}
-		used := window.UsedPercent
-		resetAfter := int(window.ResetAfterSeconds)
-		windowMinutes := int(window.LimitWindowSeconds / 60)
-		if primary {
-			snapshot.PrimaryUsedPercent = &used
-			snapshot.PrimaryResetAfterSeconds = &resetAfter
-			snapshot.PrimaryWindowMinutes = &windowMinutes
-		} else {
-			snapshot.SecondaryUsedPercent = &used
-			snapshot.SecondaryResetAfterSeconds = &resetAfter
-			snapshot.SecondaryWindowMinutes = &windowMinutes
-		}
-	}
-	applyWindow(rateLimit.PrimaryWindow, true)
-	applyWindow(rateLimit.SecondaryWindow, false)
-	updates := buildCodexUsageExtraUpdates(snapshot, now)
-	// /wham supplies absolute reset timestamps. Preserve them rather than
-	// recreating the period identity from a rounded countdown plus network delay.
-	for _, entry := range []struct {
-		name   string
-		window *OpenAIRateLimitWindow
-	}{{"primary", rateLimit.PrimaryWindow}, {"secondary", rateLimit.SecondaryWindow}} {
-		if entry.window == nil || entry.window.ResetAt <= 0 {
-			continue
-		}
-		reset := time.Unix(entry.window.ResetAt, 0).UTC().Format(time.RFC3339)
-		updates["codex_"+entry.name+"_reset_at"] = reset
-		switch entry.window.LimitWindowSeconds {
-		case 18000:
-			updates["codex_5h_reset_at"] = reset
-		case 604800:
-			updates["codex_7d_reset_at"] = reset
-		}
-	}
-	return updates
+	return buildCodexRateLimitExtraUpdates(usage.RateLimit, now)
 }
 
 func (s *OpenAIQuotaAutoResetService) persistFreshUsage(ctx context.Context, accountID int64, usage *OpenAIQuotaUsage, now time.Time) error {

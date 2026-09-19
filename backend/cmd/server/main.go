@@ -222,6 +222,13 @@ func runMainServer() {
 			log.Printf("Prompt Audit started in degraded state: %v", err)
 		}
 	}
+	if app.AccountJobs != nil {
+		if err := app.AccountJobs.Start(context.Background()); err != nil {
+			log.Printf("Account jobs could not start: %v", err)
+			app.Cleanup()
+			os.Exit(1)
+		}
+	}
 
 	// 启动服务器
 	go func() {

@@ -58,7 +58,16 @@
           "label": { "type": "object", "minProperties": 1, "additionalProperties": { "type": "string" } },
           "permission": { "type": "string", "minLength": 1 },
           "action": { "type": "string" }, "entrypoint": { "type": "string", "pattern": "^ui/.+" },
-          "order": { "type": "integer" }
+          "order": { "type": "integer" },
+          "account_filter": {
+            "type": "object", "additionalProperties": false,
+            "properties": {
+              "platforms": { "type": "array", "items": { "type": "string" } },
+              "types": { "type": "array", "items": { "type": "string" } },
+              "statuses": { "type": "array", "items": { "type": "string" } },
+              "exclude_shadows": { "type": "boolean" }
+            }
+          }
         }
       }
     },

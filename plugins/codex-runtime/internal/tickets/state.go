@@ -30,6 +30,7 @@ func (t *Ticket) Valid(now time.Time, accountID int64, identity, model string) b
 // State includes the spent automatic attempt before any network IO. A process
 // restart resumes only persisted pending stages, never a running/spent attempt.
 type State struct {
+	Identity          string     `json:"identity"`
 	OperationID       string     `json:"operation_id,omitempty"`
 	Phase             string     `json:"phase"`
 	NextAt            *time.Time `json:"next_attempt_at,omitempty"`

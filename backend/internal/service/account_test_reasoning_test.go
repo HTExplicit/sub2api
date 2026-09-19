@@ -35,3 +35,15 @@ func TestAccountTestReasoningFinalPayload(t *testing.T) {
 	applyAccountTestReasoning(c, defaultPayload, false)
 	require.NotContains(t, defaultPayload, "reasoning")
 }
+
+func TestAccountTestReasoningDoesNotAdvertiseUnsupportedProtocol(t *testing.T) {
+	for _, platform := range []string{PlatformAnthropic, PlatformGemini, PlatformDeepseek} {
+		account := &Account{Platform: platform, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_protocol": APIProtocolAnthropic}}
+		supported := true
+		account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: map[string]UpstreamModelMetadata{"test-model": {Reasoning: &supported, SupportedReasoningLevels: []string{"high"}}}})
+		levels, _ := AccountTestReasoningOptions(account, "test-model")
+		require.Empty(t, levels)
+		require.Error(t, ValidateAccountTestReasoning(account, "test-model", "default", "high"))
+		require.NoError(t, ValidateAccountTestReasoning(account, "test-model", "default", ""))
+	}
+}

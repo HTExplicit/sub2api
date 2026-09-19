@@ -3,6 +3,17 @@ import { mount } from '@vue/test-utils'
 
 import AccountBulkActionsBar from '../AccountBulkActionsBar.vue'
 
+vi.mock('@/components/plugins/ExtensionSlot.vue', () => ({
+  default: {
+    props: {
+      name: String,
+      accountIds: { type: Array, default: () => [] },
+      accounts: { type: Array, default: () => [] }
+    },
+    template: '<span data-test="extension-slot">{{ name }}:{{ accountIds.length }}:{{ accounts.length }}</span>'
+  }
+}))
+
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
     t: (key: string) => key
@@ -10,14 +21,17 @@ vi.mock('vue-i18n', () => ({
 }))
 
 describe('AccountBulkActionsBar', () => {
-  it('hides unverified/mixed ticket selections and enforces the 100-account limit', async () => {
-    const wrapper = mount(AccountBulkActionsBar, { props: { selectedIds: [1, 2], totalResults: 101, selectingAll: false, allResultsSelected: false } })
-    expect(wrapper.find('[data-test="batch-ticket"]').exists()).toBe(false)
-    await wrapper.setProps({ canHarvestTickets: true })
-    expect(wrapper.get('[data-test="batch-ticket"]').attributes('disabled')).toBeUndefined()
-    await wrapper.setProps({ selectedIds: Array.from({ length: 101 }, (_, i) => i + 1) })
-    expect(wrapper.get('[data-test="batch-ticket"]').attributes('disabled')).toBeDefined()
-    wrapper.unmount()
+  it('passes only verified selected account identities to the extension slot', () => {
+    const wrapper = mount(AccountBulkActionsBar, {
+      props: {
+        selectedIds: [1, 2],
+        selectedAccounts: [{ id: 1, platform: 'openai', type: 'oauth', parent_account_id: null }],
+        totalResults: 2,
+        selectingAll: false,
+        allResultsSelected: false
+      }
+    })
+    expect(wrapper.get('[data-test="extension-slot"]').text()).toBe('account.actions:2:1')
   })
   it('allows selecting all results before any row is selected', async () => {
     const wrapper = mount(AccountBulkActionsBar, {

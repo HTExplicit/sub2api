@@ -34,13 +34,39 @@ type Dependency struct {
 }
 
 type Contribution struct {
-	ID         string            `json:"id"`
-	Slot       string            `json:"slot"`
-	Label      map[string]string `json:"label"`
-	Action     string            `json:"action,omitempty"`
-	Entrypoint string            `json:"entrypoint,omitempty"`
-	Permission string            `json:"permission"`
-	Order      int               `json:"order,omitempty"`
+	AccountFilter *AccountFilter    `json:"account_filter,omitempty"`
+	ID            string            `json:"id"`
+	Slot          string            `json:"slot"`
+	Label         map[string]string `json:"label"`
+	Action        string            `json:"action,omitempty"`
+	Entrypoint    string            `json:"entrypoint,omitempty"`
+	Permission    string            `json:"permission"`
+	Order         int               `json:"order,omitempty"`
+}
+
+type AccountFilter struct {
+	Platforms      []string `json:"platforms,omitempty"`
+	Types          []string `json:"types,omitempty"`
+	Statuses       []string `json:"statuses,omitempty"`
+	ExcludeShadows bool     `json:"exclude_shadows,omitempty"`
+}
+
+func AccountMatchesFilter(account Account, filter *AccountFilter) bool {
+	if filter == nil {
+		return true
+	}
+	contains := func(choices []string, value string) bool {
+		if len(choices) == 0 {
+			return true
+		}
+		for _, choice := range choices {
+			if choice == value {
+				return true
+			}
+		}
+		return false
+	}
+	return contains(filter.Platforms, account.Platform) && contains(filter.Types, account.Type) && contains(filter.Statuses, account.Status) && (!filter.ExcludeShadows || !account.Shadow)
 }
 
 var slots = map[string]bool{
@@ -64,6 +90,7 @@ type Account struct {
 }
 
 type AccountQuery struct {
+	ObservationID      string `json:"observation_id,omitempty"`
 	AccountID          int64  `json:"account_id,omitempty"`
 	Platform           string `json:"platform,omitempty"`
 	AccountType        string `json:"account_type,omitempty"`
@@ -72,11 +99,12 @@ type AccountQuery struct {
 }
 
 type OutboundIdentity struct {
-	AccountID int64               `json:"account_id"`
-	Identity  string              `json:"identity"`
-	Token     string              `json:"token"`
-	ProxyURL  string              `json:"proxy_url,omitempty"`
-	Headers   map[string][]string `json:"headers"`
+	ObservationID string              `json:"observation_id,omitempty"`
+	AccountID     int64               `json:"account_id"`
+	Identity      string              `json:"identity"`
+	Token         string              `json:"token"`
+	ProxyURL      string              `json:"proxy_url,omitempty"`
+	Headers       map[string][]string `json:"headers"`
 }
 
 type SchedulingRequest struct {
@@ -93,6 +121,38 @@ type SchedulingDecision struct {
 	Until   *time.Time `json:"until,omitempty"`
 }
 
+type SchedulingRule struct {
+	ExcludeShadows bool     `json:"exclude_shadows,omitempty"`
+	Models         []string `json:"models"`
+	Default        string   `json:"default"`
+	Reason         string   `json:"reason"`
+}
+
+type SchedulingConstraint struct {
+	Model  string     `json:"model"`
+	Effect string     `json:"effect"`
+	Until  *time.Time `json:"until,omitempty"`
+	Reason string     `json:"reason"`
+}
+
+type AccountProjection struct {
+	AccountID    int64                  `json:"account_id"`
+	Identity     string                 `json:"identity"`
+	Scheduling   []SchedulingConstraint `json:"scheduling"`
+	Observations []AccountObservation   `json:"observations,omitempty"`
+}
+
+type AccountObservation struct {
+	Key       string     `json:"key"`
+	Kind      string     `json:"kind"`
+	State     string     `json:"state"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	NextAt    *time.Time `json:"next_at,omitempty"`
+	CheckedAt *time.Time `json:"checked_at,omitempty"`
+	Code      string     `json:"code,omitempty"`
+	Count     int        `json:"count,omitempty"`
+}
+
 // Invocation carries one declared capability and a domain operation. The host
 // validates the capability binding before crossing the process boundary.
 type Invocation struct {
@@ -107,21 +167,34 @@ type Result struct {
 	Message string          `json:"message,omitempty"`
 }
 
+type JobTarget struct {
+	AccountID int64           `json:"account_id"`
+	Payload   json.RawMessage `json:"payload"`
+	Label     string          `json:"label,omitempty"`
+}
+
+type DisplayFact struct {
+	Label     map[string]string `json:"label"`
+	Value     string            `json:"value"`
+	Timestamp bool              `json:"timestamp,omitempty"`
+}
+
 type HostOperation string
 
 const (
-	HostAccountRead      HostOperation = "account.read"
-	HostAccountList      HostOperation = "account.list"
-	HostResolveIdentity  HostOperation = "account.resolve_identity"
-	HostUsageQuery       HostOperation = "usage.query"
-	HostStateRead        HostOperation = "state.read"
-	HostStateDue         HostOperation = "state.due"
-	HostStateCompareSwap HostOperation = "state.compare_swap"
-	HostLeaseAcquire     HostOperation = "lease.acquire"
-	HostLeaseRelease     HostOperation = "lease.release"
-	HostJobRead          HostOperation = "job.read"
-	HostJobSubmit        HostOperation = "job.submit"
-	HostJobComplete      HostOperation = "job.complete"
+	HostAccountRead       HostOperation = "account.read"
+	HostAccountList       HostOperation = "account.list"
+	HostResolveIdentity   HostOperation = "account.resolve_identity"
+	HostUsageQuery        HostOperation = "usage.query"
+	HostFinishObservation HostOperation = "usage.observation_finish"
+	HostStateRead         HostOperation = "state.read"
+	HostStateDue          HostOperation = "state.due"
+	HostStateCompareSwap  HostOperation = "state.compare_swap"
+	HostLeaseAcquire      HostOperation = "lease.acquire"
+	HostLeaseRelease      HostOperation = "lease.release"
+	HostJobRead           HostOperation = "job.read"
+	HostJobSubmit         HostOperation = "job.submit"
+	HostJobComplete       HostOperation = "job.complete"
 )
 
 type HostInvocation struct {
@@ -130,11 +203,12 @@ type HostInvocation struct {
 }
 
 type StateRequest struct {
-	Namespace        string          `json:"namespace"`
-	Key              string          `json:"key"`
-	ExpectedRevision int64           `json:"expected_revision"`
-	Value            json.RawMessage `json:"value,omitempty"`
-	NextAt           *time.Time      `json:"next_at,omitempty"`
+	Namespace        string             `json:"namespace"`
+	Key              string             `json:"key"`
+	ExpectedRevision int64              `json:"expected_revision"`
+	Value            json.RawMessage    `json:"value,omitempty"`
+	NextAt           *time.Time         `json:"next_at,omitempty"`
+	Projection       *AccountProjection `json:"account_projection,omitempty"`
 }
 
 type DueStateRequest struct {

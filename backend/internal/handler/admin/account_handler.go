@@ -68,7 +68,6 @@ type AccountHandler struct {
 	trafficObserver         *service.AccountTrafficObserver
 	accountJobs             *service.AccountJobService
 	cindyJobMutations       service.AccountJobCindyMutationRunner
-	codexTicketSettings     *service.SettingService
 	codexTicketGateway      *service.OpenAIGatewayService
 
 	cfg               *config.Config
@@ -88,11 +87,6 @@ func (h *AccountHandler) SetOllamaCloudUsageService(usage *service.OllamaCloudUs
 // SetAccountTrafficObserver attaches the optional observe-only traffic telemetry.
 func (h *AccountHandler) SetAccountTrafficObserver(observer *service.AccountTrafficObserver) {
 	h.trafficObserver = observer
-}
-
-// SetCodexTicketSettings supplies the live policy without mutating shared config.
-func (h *AccountHandler) SetCodexTicketSettings(settings *service.SettingService) {
-	h.codexTicketSettings = settings
 }
 
 // NewAccountHandler creates a new admin account handler
@@ -402,12 +396,8 @@ func (h *AccountHandler) accountListResponseFromService(account *service.Account
 }
 
 func (h *AccountHandler) enrichCodexTicketStatus(account *service.Account, out *dto.Account) {
-	if h != nil && h.cfg != nil && out != nil {
-		cfg := h.cfg.Gateway.OpenAICodexTicket
-		if h.codexTicketSettings != nil {
-			cfg.Enabled = h.codexTicketSettings.GetOpenAICodexTicketEnabled(context.Background(), cfg.Enabled)
-		}
-		out.CodexTurnTickets = service.OpenAICodexTicketStatuses(account, cfg, time.Now())
+	if h != nil && h.codexTicketGateway != nil && out != nil {
+		out.CodexTurnTickets = h.codexTicketGateway.CodexTicketStatuses(account)
 	}
 }
 

@@ -51,10 +51,14 @@ func (s *AccountTestService) testOpenCodeGoConnection(c *gin.Context, account *A
 		payloadBytes, err = json.Marshal(payload)
 	case APIProtocolResponses:
 		apiURL = buildOpenAIResponsesURL(normalizedBaseURL)
-		payloadBytes, err = json.Marshal(createOpenAITestPayload(testModelID, false, prompt))
+		payload := createOpenAITestPayload(testModelID, false, prompt)
+		applyAccountTestReasoning(c, payload, false)
+		payloadBytes, err = json.Marshal(payload)
 	default:
 		apiURL = buildOpenAIChatCompletionsURL(normalizedBaseURL)
-		payloadBytes, err = json.Marshal(createOpenAIChatCompletionsTestPayload(testModelID, prompt))
+		payload := createOpenAIChatCompletionsTestPayload(testModelID, prompt)
+		applyAccountTestReasoning(c, payload, true)
+		payloadBytes, err = json.Marshal(payload)
 		protocol = APIProtocolChatCompletions
 	}
 	if err != nil {
