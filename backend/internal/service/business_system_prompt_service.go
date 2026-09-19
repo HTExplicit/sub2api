@@ -8,6 +8,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 var (
@@ -21,30 +23,9 @@ var (
 
 const (
 	BusinessSystemPromptManagedSourceRemoteSkill = "remote_skill_registry"
-	gpt56InstructPromptSeedSlug                  = "gpt_5_6_instruct"
 )
 
-type BusinessSystemPromptSeed struct {
-	Slug                 string
-	Name                 string
-	Description          string
-	ManagedSource        string
-	Body                 string
-	Note                 string
-	SHA256               string
-	ByteLength           int
-	CompositionMode      string
-	BundleID             string
-	BundleManifestSHA256 string
-	SourceRepository     string
-	SourceCommit         string
-	SourceVersion        string
-	SourceArtifact       string
-	SourceArtifactSHA256 string
-	SourceLicenseSHA256  string
-	UpgradeExistingSeed  bool
-	AutoActivateFromSHA  []string
-}
+type BusinessSystemPromptSeed = extensionv1.PromptSeed
 
 type BusinessSystemPromptTemplate struct {
 	ID            int64      `json:"id"`
@@ -184,7 +165,7 @@ type BusinessSystemPromptService struct {
 func NewBusinessSystemPromptService(store BusinessSystemPromptStore, bus BusinessSystemPromptRevisionBus) *BusinessSystemPromptService {
 	return &BusinessSystemPromptService{
 		store: store, bus: bus,
-		source: NewGitHubGPT56PromptSource(nil),
+		source: NewGitHubGPT56PromptSource(),
 	}
 }
 
@@ -223,8 +204,17 @@ func (s *BusinessSystemPromptService) SyncManagedSource(
 	if !ok {
 		return BusinessSystemPromptSourceSyncResult{}, ErrBusinessSystemPromptSourceUnavailable
 	}
+	bound, release, err := bindProcessExtensionContext(ctx, PlatformOpenAI, "*", extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "prompt.source.fetch"})
+	if err != nil {
+		return BusinessSystemPromptSourceSyncResult{}, ErrBusinessSystemPromptSourceUnavailable
+	}
+	defer release()
+	ctx = bound
 	candidate, err := s.source.Fetch(ctx)
 	if err != nil {
+		return BusinessSystemPromptSourceSyncResult{}, err
+	}
+	if err := ctx.Err(); err != nil {
 		return BusinessSystemPromptSourceSyncResult{}, err
 	}
 	if err := ValidateBusinessSystemPromptSourceCandidate(candidate); err != nil {
@@ -239,22 +229,9 @@ func (s *BusinessSystemPromptService) Initialize(ctx context.Context) error {
 	if s == nil || s.store == nil {
 		return errors.New("business system prompt store unavailable")
 	}
-	seeds := []BusinessSystemPromptSeed{
-		{
-			Slug:                 gpt56InstructPromptSeedSlug,
-			Name:                 "GPT-5.6 Instruct v45",
-			Description:          "MDX-Tom/gpt-5.6-instruct 的内置可选提示词。",
-			ManagedSource:        BusinessSystemPromptManagedSourceGPT56,
-			Body:                 embeddedGPT56InstructPrompt,
-			Note:                 "Imported from MDX-Tom/gpt-5.6-instruct v45",
-			CompositionMode:      BusinessSystemPromptCompositionInline,
-			SourceRepository:     gpt56PromptRepository,
-			SourceCommit:         "77e7a649903f9556f2d7bfa0223fa99e123aad52",
-			SourceVersion:        "v45",
-			SourceArtifact:       "gpt-5.6-sol-unrestricted-v45.zip",
-			SourceArtifactSHA256: "c86c2c6d20a4d1155d87422f485eb37b77539132270918c002b5d8237a5adf54",
-			SourceLicenseSHA256:  GPT56PromptLicenseSHA256,
-		},
+	var seeds []BusinessSystemPromptSeed
+	if err := invokePromptManagementPolicy(ctx, "prompt.seeds", struct{}{}, &seeds, true); err != nil {
+		return err
 	}
 	for i := range seeds {
 		hash, byteLength, err := ValidateBusinessSystemPromptBody(seeds[i].Body)
@@ -364,6 +341,9 @@ func (s *BusinessSystemPromptService) Stop() {
 func (s *BusinessSystemPromptService) CurrentSnapshot() (BusinessSystemPromptSnapshot, bool) {
 	if s == nil {
 		return BusinessSystemPromptSnapshot{}, false
+	}
+	if errors.Is(promptPolicyAvailability(context.Background()), ErrExtensionOperationDisabled) {
+		return BusinessSystemPromptSnapshot{}, true
 	}
 	current := s.snapshot.Load()
 	if current == nil {
@@ -752,12 +732,11 @@ func (s *BusinessSystemPromptService) GetTemplate(ctx context.Context, id int64)
 }
 
 func (s *BusinessSystemPromptService) CreateTemplate(ctx context.Context, req BusinessSystemPromptTemplateCreate, actorID, expectedRevision int64) (BusinessSystemPromptTemplateDetail, error) {
-	req.Slug = strings.TrimSpace(req.Slug)
-	req.Name = strings.TrimSpace(req.Name)
-	req.Description = strings.TrimSpace(req.Description)
-	if req.Slug == "" || req.Name == "" {
-		return BusinessSystemPromptTemplateDetail{}, fmt.Errorf("%w: slug and name are required", ErrBusinessSystemPromptInvalid)
+	plan, err := planPromptTemplate(ctx, extensionv1.PromptTemplatePolicyRequest{Action: "create", Slug: req.Slug, Name: &req.Name, Description: &req.Description})
+	if err != nil {
+		return BusinessSystemPromptTemplateDetail{}, err
 	}
+	req.Slug, req.Name, req.Description = plan.Slug, *plan.Name, *plan.Description
 	if _, _, err := ValidateBusinessSystemPromptBody(req.Body); err != nil {
 		return BusinessSystemPromptTemplateDetail{}, err
 	}
@@ -778,33 +757,24 @@ func (s *BusinessSystemPromptService) UpdateTemplate(ctx context.Context, id int
 	if err := s.rejectRemoteSkillManagedTemplate(ctx, id); err != nil {
 		return BusinessSystemPromptTemplate{}, err
 	}
-	if req.Name != nil {
-		name := strings.TrimSpace(*req.Name)
-		if name == "" {
-			return BusinessSystemPromptTemplate{}, fmt.Errorf("%w: name is required", ErrBusinessSystemPromptInvalid)
-		}
-		req.Name = &name
+	plan, err := planPromptTemplate(ctx, extensionv1.PromptTemplatePolicyRequest{Action: "update", Name: req.Name, Description: req.Description})
+	if err != nil {
+		return BusinessSystemPromptTemplate{}, err
 	}
-	if req.Description != nil {
-		description := strings.TrimSpace(*req.Description)
-		req.Description = &description
-	}
+	req.Name, req.Description = plan.Name, plan.Description
 	return s.store.UpdateBusinessSystemPromptTemplate(ctx, id, req, actorID, expectedRevision)
 }
 
 func (s *BusinessSystemPromptService) DuplicateTemplate(ctx context.Context, id int64, slug, name string, actorID, expectedRevision int64) (BusinessSystemPromptTemplateDetail, error) {
-	slug = strings.TrimSpace(slug)
-	name = strings.TrimSpace(name)
-	if slug == "" || name == "" {
-		return BusinessSystemPromptTemplateDetail{}, fmt.Errorf("%w: slug and name are required", ErrBusinessSystemPromptInvalid)
-	}
 	detail, err := s.store.GetBusinessSystemPromptTemplate(ctx, id)
 	if err != nil {
 		return BusinessSystemPromptTemplateDetail{}, err
 	}
-	if detail.Template.ManagedSource == BusinessSystemPromptManagedSourceRemoteSkill {
-		return BusinessSystemPromptTemplateDetail{}, ErrBusinessSystemPromptSourceNotManaged
+	plan, err := planPromptTemplate(ctx, extensionv1.PromptTemplatePolicyRequest{Action: "duplicate", ManagedSource: detail.Template.ManagedSource, Slug: slug, Name: &name})
+	if err != nil {
+		return BusinessSystemPromptTemplateDetail{}, err
 	}
+	slug, name = plan.Slug, *plan.Name
 	for _, version := range detail.Versions {
 		_, normalizeErr := NormalizeBusinessSystemPromptComposition(version.CompositionMode, version.BundleID, version.BundleManifestSHA256)
 		if normalizeErr != nil {
@@ -829,8 +799,6 @@ func (s *BusinessSystemPromptService) rejectRemoteSkillManagedTemplate(ctx conte
 	if err != nil {
 		return err
 	}
-	if detail.Template.ManagedSource == BusinessSystemPromptManagedSourceRemoteSkill {
-		return ErrBusinessSystemPromptSourceNotManaged
-	}
-	return nil
+	_, err = planPromptTemplate(ctx, extensionv1.PromptTemplatePolicyRequest{Action: "version", ManagedSource: detail.Template.ManagedSource})
+	return err
 }

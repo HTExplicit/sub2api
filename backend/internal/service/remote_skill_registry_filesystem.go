@@ -3,7 +3,6 @@ package service
 import (
 	"bytes"
 	"context"
-	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,9 +24,6 @@ const (
 	remoteSkillPromptDiffFile        = "prompt.diff"
 	remoteSkillSeedFetchedAt         = "2026-08-11T00:00:00Z"
 )
-
-//go:embed remote_skill_seed/manifest.json all:remote_skill_seed/tree all:remote_skill_seed/pinned
-var remoteSkillSeedFS embed.FS
 
 type remoteSkillCandidateMetadata struct {
 	Version remoteSkillContentVersionMetadata `json:"version"`
@@ -72,14 +68,18 @@ func (f *RemoteSkillRegistryFilesystem) LoadSeed(ctx context.Context) (RemoteSki
 	if err := ctx.Err(); err != nil {
 		return RemoteSkillCandidate{}, err
 	}
-	_, rawFiles, err := loadRemoteSkillSeedFiles()
+	_, rawFiles, err := loadRemoteSkillSeedFilesContext(ctx)
 	if err != nil {
 		return RemoteSkillCandidate{}, err
 	}
 	if err := validateCurrentRemoteSkillTree(rawFiles); err != nil {
 		return RemoteSkillCandidate{}, err
 	}
-	prompt, err := buildRemoteSkillPromptCapture([]byte(embeddedBusinessSystemPrompt))
+	var promptBody string
+	if err := invokePromptManagementPolicy(ctx, "skills.prompt.seed", struct{}{}, &promptBody, true); err != nil {
+		return RemoteSkillCandidate{}, err
+	}
+	prompt, err := buildRemoteSkillPromptCapture([]byte(promptBody))
 	if err != nil {
 		return RemoteSkillCandidate{}, err
 	}
@@ -87,27 +87,11 @@ func (f *RemoteSkillRegistryFilesystem) LoadSeed(ctx context.Context) (RemoteSki
 	if err != nil {
 		return RemoteSkillCandidate{}, err
 	}
-	return buildPairedRemoteSkillCandidate(rawFiles, rewriteRemoteSkillPublishedFiles(rawFiles), prompt, nil, fetchedAt)
-}
-
-func readRemoteSkillTreeFS(tree fs.FS, root string) (map[string][]byte, error) {
-	files := make(map[string][]byte)
-	err := fs.WalkDir(tree, root, func(name string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		relative := strings.TrimPrefix(strings.TrimPrefix(name, root), "/")
-		raw, readErr := fs.ReadFile(tree, name)
-		if readErr != nil {
-			return readErr
-		}
-		files[relative] = raw
-		return nil
-	})
-	return files, err
+	effective, err := rewriteRemoteSkillPublishedFilesChecked(ctx, rawFiles)
+	if err != nil {
+		return RemoteSkillCandidate{}, err
+	}
+	return buildPairedRemoteSkillCandidate(rawFiles, effective, prompt, nil, fetchedAt)
 }
 
 func (f *RemoteSkillRegistryFilesystem) InstallCandidate(ctx context.Context, candidate RemoteSkillCandidate) error {
@@ -267,7 +251,10 @@ func validatePairedRemoteSkillCandidatePolicy(candidate RemoteSkillCandidate, re
 	} else if err := validateGenericRemoteSkillTree(candidate.RawFiles); err != nil {
 		return err
 	}
-	expectedEffective := rewriteRemoteSkillPublishedFiles(candidate.RawFiles)
+	expectedEffective, rewriteErr := rewriteRemoteSkillPublishedFilesChecked(context.Background(), candidate.RawFiles)
+	if rewriteErr != nil {
+		return rewriteErr
+	}
 	if len(expectedEffective) != len(candidate.EffectiveFiles) {
 		return fmt.Errorf("%w: paired candidate published tree shape mismatch", ErrBusinessSystemPromptBundleInvalid)
 	}
@@ -355,9 +342,17 @@ func validateRemoteSkillFileChanges(candidate RemoteSkillCandidate) error {
 		default:
 			return fmt.Errorf("%w: candidate file change type invalid", ErrBusinessSystemPromptBundleInvalid)
 		}
+		var kind string
+		if hasRaw {
+			plan, err := remoteSkillFilePlan(context.Background(), change.Path, effectiveBody)
+			if err != nil {
+				return err
+			}
+			kind = plan.Kind
+		}
 		if hasRaw && (change.RawSHA256 != hashBusinessSystemPromptBundleBytes(rawBody) ||
 			change.EffectiveSHA256 != hashBusinessSystemPromptBundleBytes(effectiveBody) ||
-			change.Kind != remoteSkillFileKind(change.Path, effectiveBody)) {
+			change.Kind != kind) {
 			return fmt.Errorf("%w: candidate file change hash mismatch", ErrBusinessSystemPromptBundleInvalid)
 		}
 		if change.Kind == "script" {
@@ -459,22 +454,6 @@ func remoteSkillContentVersionMetadataFrom(version RemoteSkillBundleVersion) rem
 
 func remoteSkillContentPromptMetadataFrom(prompt RemoteSkillPromptVersion) remoteSkillContentPromptMetadata {
 	return remoteSkillContentPromptMetadata{RawSHA256: prompt.RawSHA256, EffectiveSHA256: prompt.EffectiveSHA256}
-}
-
-func (f *RemoteSkillRegistryFilesystem) CleanupLegacy(ctx context.Context) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	for _, name := range []string{"private", "public", "staging"} {
-		target := filepath.Clean(filepath.Join(f.root, filepath.FromSlash(name)))
-		if !strings.HasPrefix(target, f.root+string(os.PathSeparator)) {
-			return fmt.Errorf("legacy cleanup target escaped registry root")
-		}
-		if err := os.RemoveAll(target); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (f *RemoteSkillRegistryFilesystem) candidateRoot(treeSHA, promptSHA string) string {

@@ -161,8 +161,8 @@ func TestRemoteSkillRegistryStartupRequiresAndActivatesPairedSeed(t *testing.T) 
 	require.Equal(t, RemoteSkillUpstreamSourceID, current.Active.UpstreamSourceID)
 	require.Equal(t, current.Active.PromptVersionID, current.ActivePrompt.ID)
 	require.True(t, files.installed)
-	require.True(t, files.cleaned)
-	require.True(t, store.cleaned)
+	require.False(t, files.cleaned, "startup must preserve existing directories")
+	require.False(t, store.cleaned, "startup must preserve historical records")
 }
 
 func TestRemoteSkillRegistrySyncCreatesCandidateWithoutPublishingAndReusesPromptByDefault(t *testing.T) {

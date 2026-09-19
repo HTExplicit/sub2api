@@ -48,9 +48,8 @@ func ProvideUpdateService(cache UpdateCache, githubClient GitHubReleaseClient, b
 	return NewUpdateService(cache, githubClient, buildInfo.Version, buildInfo.BuildType)
 }
 
-// ProvideBusinessSystemPromptService initializes the durable prompt catalog
-// before the gateway starts serving requests. The service remains disabled by
-// the migration/runtime defaults until an administrator publishes a toggle.
+// PromptDomainRuntime initializes storage after the policy process is ready.
+// Construction does not execute plugin-dependent operations.
 func ProvideBusinessSystemPromptService(
 	store BusinessSystemPromptStore,
 	bus BusinessSystemPromptRevisionBus,
@@ -60,9 +59,6 @@ func ProvideBusinessSystemPromptService(
 	svc := NewBusinessSystemPromptService(store, bus)
 	svc.SetRemoteSkillRegistryService(remoteSkillRegistry)
 	svc.SetRemoteSkillRegistryRevisionBus(remoteSkillRegistryBus)
-	if err := svc.Start(context.Background()); err != nil {
-		return nil, err
-	}
 	return svc, nil
 }
 
@@ -81,9 +77,6 @@ func ProvideRemoteSkillRegistryService(
 	source RemoteSkillCandidateSource,
 ) (*RemoteSkillRegistryService, error) {
 	svc := NewRemoteSkillRegistryService(store, bus, files, source)
-	if err := svc.Start(context.Background()); err != nil {
-		return nil, err
-	}
 	return svc, nil
 }
 

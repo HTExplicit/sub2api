@@ -45,14 +45,14 @@ func (h *RemoteSkillHandler) Serve(c *gin.Context) {
 	}
 	file, err := h.reader.LoadPublishedFile(c.Request.Context(), name)
 	if err != nil {
-		if errors.Is(err, service.ErrRemoteSkillPublicFileNotFound) || errors.Is(err, service.ErrBusinessSystemPromptBundleUnavailable) {
+		if errors.Is(err, service.ErrRemoteSkillPublicFileNotFound) {
 			c.Status(http.StatusNotFound)
 			return
 		}
 		c.Status(http.StatusServiceUnavailable)
 		return
 	}
-	c.Header("Cache-Control", "public, max-age=300")
+	c.Header("Cache-Control", "public, no-cache")
 	c.Header("ETag", file.ETag)
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Header("Content-Type", file.ContentType)

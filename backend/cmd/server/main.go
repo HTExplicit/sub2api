@@ -222,6 +222,9 @@ func runMainServer() {
 			log.Printf("Prompt Audit started in degraded state: %v", err)
 		}
 	}
+	if app.PromptDomain != nil {
+		app.PromptDomain.Start(context.Background())
+	}
 	if app.AccountJobs != nil {
 		if err := app.AccountJobs.Start(context.Background()); err != nil {
 			log.Printf("Account jobs could not start: %v", err)

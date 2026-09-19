@@ -110,6 +110,30 @@ func TestPromptExtensionRuntimeUsesIndependentProcess(t *testing.T) {
 	require.NoError(t, json.Unmarshal(out.Payload, &application))
 	require.True(t, application.Applied)
 	require.Equal(t, "fixture-server", application.ServerInstructions)
+	index, err := runtime.extension.Invoke(context.Background(), extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "skills.seed.index", Payload: []byte(`{}`)})
+	require.NoError(t, err)
+	var manifest extensionv1.SkillManifest
+	require.NoError(t, json.Unmarshal(index.Payload, &manifest))
+	total := 0
+	for _, entry := range manifest.Files {
+		digest := sha256.New()
+		for offset := 0; offset < entry.ByteLength; {
+			query, _ := json.Marshal(extensionv1.SkillSeedChunkRequest{Path: entry.Path, Offset: offset, Limit: 256 << 10})
+			result, err := runtime.extension.Invoke(context.Background(), extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "skills.seed.chunk", Payload: query})
+			require.NoError(t, err)
+			require.Empty(t, result.Code)
+			require.Less(t, len(result.Payload), extensionv1.MaxPayloadBytes)
+			var chunk extensionv1.SkillSeedChunk
+			require.NoError(t, json.Unmarshal(result.Payload, &chunk))
+			require.Equal(t, entry.ByteLength, chunk.TotalBytes)
+			require.NotEmpty(t, chunk.Data)
+			_, _ = digest.Write(chunk.Data)
+			offset += len(chunk.Data)
+			total += len(chunk.Data)
+		}
+		require.Equal(t, entry.SHA256, hex.EncodeToString(digest.Sum(nil)))
+	}
+	require.Greater(t, total, extensionv1.MaxPayloadBytes, "a complete seed larger than the RPC ceiling must remain loadable")
 }
 
 func TestObservabilityExtensionRuntimeUsesScopedMetricsBroker(t *testing.T) {

@@ -14,7 +14,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -53,7 +52,7 @@ func (s *MoxinggangRemoteSkillCandidateSource) Build(
 	if prompt.RawSHA256 == "" || prompt.EffectiveSHA256 == "" {
 		return RemoteSkillCandidate{}, fmt.Errorf("%w: prompt capture is required", ErrBusinessSystemPromptInvalid)
 	}
-	manifest, err := loadRemoteSkillManifest()
+	manifest, err := loadRemoteSkillManifestContext(ctx)
 	if err != nil {
 		return RemoteSkillCandidate{}, err
 	}
@@ -98,7 +97,10 @@ func (s *MoxinggangRemoteSkillCandidateSource) Build(
 	if err := validateCurrentRemoteSkillTree(rawFiles); err != nil {
 		return RemoteSkillCandidate{}, err
 	}
-	effectiveFiles := rewriteRemoteSkillPublishedFiles(rawFiles)
+	effectiveFiles, err := rewriteRemoteSkillPublishedFilesChecked(ctx, rawFiles)
+	if err != nil {
+		return RemoteSkillCandidate{}, err
+	}
 	fetchedAt := time.Now().UTC()
 	if s.now != nil {
 		fetchedAt = s.now().UTC()
@@ -228,7 +230,11 @@ func buildPairedRemoteSkillCandidate(
 		RawFiles:       cloneRemoteSkillFiles(rawFiles),
 		EffectiveFiles: cloneRemoteSkillFiles(effectiveFiles),
 	}
-	candidate.FileChanges = remoteSkillFileChanges(active, candidate)
+	changes, err := remoteSkillFileChangesChecked(context.Background(), active, candidate)
+	if err != nil {
+		return RemoteSkillCandidate{}, err
+	}
+	candidate.FileChanges = changes
 	for _, change := range candidate.FileChanges {
 		switch change.Change {
 		case "added":
@@ -248,7 +254,7 @@ func buildPairedRemoteSkillCandidate(
 	return candidate, nil
 }
 
-func remoteSkillFileChanges(active *RemoteSkillCandidate, candidate RemoteSkillCandidate) []RemoteSkillFileChange {
+func remoteSkillFileChangesChecked(ctx context.Context, active *RemoteSkillCandidate, candidate RemoteSkillCandidate) ([]RemoteSkillFileChange, error) {
 	oldFiles := map[string][]byte{}
 	if active != nil {
 		oldFiles = active.EffectiveFiles
@@ -281,46 +287,26 @@ func remoteSkillFileChanges(active *RemoteSkillCandidate, candidate RemoteSkillC
 			change.Change = "modified"
 		}
 		if hasNew {
-			change.Kind = remoteSkillFileKind(name, newBody)
+			plan, err := remoteSkillFilePlan(ctx, name, newBody)
+			if err != nil {
+				return nil, err
+			}
+			change.Kind = plan.Kind
 			change.EffectiveSHA256 = hashBusinessSystemPromptBundleBytes(newBody)
 			change.RawSHA256 = hashBusinessSystemPromptBundleBytes(candidate.RawFiles[name])
 		} else {
-			change.Kind = remoteSkillFileKind(name, oldBody)
+			plan, err := remoteSkillFilePlan(ctx, name, oldBody)
+			if err != nil {
+				return nil, err
+			}
+			change.Kind = plan.Kind
 		}
 		if hadOld {
 			change.PreviousEffectiveSHA256 = hashBusinessSystemPromptBundleBytes(oldBody)
 		}
 		changes = append(changes, change)
 	}
-	return changes
-}
-
-func remoteSkillMoxinggangReferences(raw []byte) []string {
-	const marker = "https://moxinggang.com/skills/security-research/current/"
-	seen := make(map[string]struct{})
-	result := make([]string, 0)
-	text := string(raw)
-	for start := 0; ; {
-		index := strings.Index(text[start:], marker)
-		if index < 0 {
-			break
-		}
-		index += start + len(marker)
-		end := index
-		for end < len(text) && !strings.ContainsRune(" \t\r\n<>()[]{}'\"`", rune(text[end])) {
-			end++
-		}
-		name := strings.TrimRight(text[index:end], ".,;:!?")
-		if normalized, err := normalizeBundleRelativePath(name); err == nil && normalized == name {
-			if _, ok := seen[name]; !ok {
-				seen[name] = struct{}{}
-				result = append(result, name)
-			}
-		}
-		start = end
-	}
-	sort.Strings(result)
-	return result
+	return changes, nil
 }
 
 func hashRemoteSkillFileSet(entries map[string]string) string {
@@ -337,20 +323,4 @@ func hashRemoteSkillFileSet(entries map[string]string) string {
 		_, _ = hash.Write([]byte{'\n'})
 	}
 	return hex.EncodeToString(hash.Sum(nil))
-}
-
-func remoteSkillFileKind(name string, data []byte) string {
-	if bytes.HasPrefix(data, []byte("#!")) {
-		return "script"
-	}
-	switch strings.ToLower(path.Ext(name)) {
-	case ".ps1", ".psm1", ".sh", ".bash", ".zsh", ".fish", ".py", ".rb", ".pl", ".lua", ".js", ".mjs", ".cjs", ".ts", ".bat", ".cmd":
-		return "script"
-	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".jar", ".zip", ".gz", ".7z", ".exe", ".dll", ".so", ".pdf", ".docx":
-		return "binary"
-	}
-	if !utf8.Valid(data) {
-		return "binary"
-	}
-	return "text"
 }

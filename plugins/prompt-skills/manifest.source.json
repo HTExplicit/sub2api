@@ -10,8 +10,9 @@
     { "id": "extensions.request.v1", "platform": "openai", "account_type": "*" },
     { "id": "extensions.admin.v1", "platform": "*", "account_type": "*" }
   ],
-  "operations": { "extensions.request.v1": ["prompt.plan"] },
+  "operations": { "extensions.request.v1": ["prompt.plan", "prompt.availability", "prompt.composition", "prompt.template", "prompt.seeds", "prompt.source.fetch", "prompt.source.validate", "skills.capture", "skills.prompt.seed", "skills.profile", "skills.seed.index", "skills.seed.chunk", "skills.manifest.validate", "skills.tree.check", "skills.file.plan"] },
   "contributions": [
+    { "id": "prompt-management", "slot": "surface", "permission": "admin", "label": { "zh": "提示词与技能管理", "en": "Prompt and skill management" } },
     { "id": "prompt-policy", "slot": "admin.settings", "action": "prompt.describe", "entrypoint": "ui/index.html", "permission": "admin", "label": { "zh": "提示词应用策略", "en": "Prompt application policy" } }
   ],
   "runtimes": {},

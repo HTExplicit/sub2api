@@ -2,9 +2,11 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"strings"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/pmezard/go-difflib/difflib"
 )
 
@@ -18,13 +20,7 @@ const (
 	remoteSkillSecurityResearchRoutingEnd   = "<!-- END  SECURITY-RESEARCH ROUTING -->"
 )
 
-type RemoteSkillPromptCapture struct {
-	RawBody         []byte
-	EffectiveBody   []byte
-	RawSHA256       string
-	EffectiveSHA256 string
-	Diff            string
-}
+type RemoteSkillPromptCapture = extensionv1.SkillPromptCapture
 
 type remoteSkillPromptBlock struct {
 	begin int
@@ -32,46 +28,17 @@ type remoteSkillPromptBlock struct {
 }
 
 func buildRemoteSkillPromptCapture(raw []byte) (RemoteSkillPromptCapture, error) {
-	if _, _, err := ValidateBusinessSystemPromptBody(string(raw)); err != nil {
-		return RemoteSkillPromptCapture{}, err
-	}
-	effective, err := rewriteRemoteSkillPromptRoot(raw)
+	var capture RemoteSkillPromptCapture
+	err := invokePromptManagement(context.Background(), "skills.capture", map[string]any{"body": raw}, &capture)
 	if err != nil {
-		return RemoteSkillPromptCapture{}, err
+		return capture, err
 	}
-	if _, _, err := ValidateBusinessSystemPromptBody(string(effective)); err != nil {
-		return RemoteSkillPromptCapture{}, err
+	if !bytes.Equal(raw, capture.RawBody) || hashBusinessSystemPromptBundleBytes(raw) != capture.RawSHA256 || hashBusinessSystemPromptBundleBytes(capture.EffectiveBody) != capture.EffectiveSHA256 {
+		return RemoteSkillPromptCapture{}, fmt.Errorf("%w: inconsistent prompt capture", ErrBusinessSystemPromptInvalid)
 	}
-
-	diff, err := remoteSkillPromptUnifiedDiff(raw, effective)
-	if err != nil {
-		return RemoteSkillPromptCapture{}, err
-	}
-	return RemoteSkillPromptCapture{
-		RawBody:         bytes.Clone(raw),
-		EffectiveBody:   effective,
-		RawSHA256:       hashBusinessSystemPromptBundleBytes(raw),
-		EffectiveSHA256: hashBusinessSystemPromptBundleBytes(effective),
-		Diff:            diff,
-	}, nil
+	return capture, nil
 }
 
-func rewriteRemoteSkillPromptRoot(raw []byte) ([]byte, error) {
-	block, err := locateUniqueRemoteSkillPromptBlock(raw, remoteSkillSecurityResearchRoutingBegin, remoteSkillSecurityResearchRoutingEnd)
-	if err != nil {
-		return nil, err
-	}
-
-	upstreamRoot := []byte(RemoteSkillMoxinggangRoot)
-	if bytes.Count(raw, upstreamRoot) != 1 {
-		return nil, fmt.Errorf("%w: upstream Skill root must appear exactly once", ErrBusinessSystemPromptInvalid)
-	}
-	rootStart := bytes.Index(raw, upstreamRoot)
-	if rootStart < block.begin || rootStart+len(upstreamRoot) > block.end {
-		return nil, fmt.Errorf("%w: upstream Skill root must be inside the routing block", ErrBusinessSystemPromptInvalid)
-	}
-	return bytes.Replace(raw, upstreamRoot, []byte(RemoteSkillPublicRoot), 1), nil
-}
 
 // rewriteRemoteSkillPromptBlocks supports self-consistency validation fixtures
 // for historical dual-marker pairs. New candidates use rewriteRemoteSkillPromptBlock.
@@ -125,14 +92,27 @@ func locateUniqueRemoteSkillPromptBlock(raw []byte, beginMarker, endMarker strin
 	return remoteSkillPromptBlock{begin: begin, end: endStart + len(endBytes)}, nil
 }
 
-func rewriteRemoteSkillPublishedFiles(raw map[string][]byte) map[string][]byte {
+func rewriteRemoteSkillPublishedFilesChecked(ctx context.Context, raw map[string][]byte) (map[string][]byte, error) {
 	effective := make(map[string][]byte, len(raw))
+	var total int64
 	for name, data := range raw {
+		plan, err := remoteSkillFilePlan(ctx, name, data)
+		if err != nil {
+			return nil, err
+		}
+		expected := int64(len(data))
+		if plan.ReplaceFrom != "" {
+			expected += int64(bytes.Count(data, []byte(plan.ReplaceFrom))) * int64(len(plan.ReplaceTo)-len(plan.ReplaceFrom))
+		}
+		total += expected
+		if expected <= 0 || expected > businessSystemPromptBundleMaxFileBytes || total > remoteSkillMaxTotalBytes {
+			return nil, ErrBusinessSystemPromptBundleInvalid
+		}
 		cloned := bytes.Clone(data)
-		if remoteSkillFileKind(name, data) == "text" {
-			cloned = []byte(strings.ReplaceAll(string(data), RemoteSkillMoxinggangRoot, RemoteSkillPublicRoot))
+		if plan.ReplaceFrom != "" {
+			cloned = []byte(strings.ReplaceAll(string(data), plan.ReplaceFrom, plan.ReplaceTo))
 		}
 		effective[name] = cloned
 	}
-	return effective
+	return effective, nil
 }

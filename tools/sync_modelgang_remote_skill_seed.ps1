@@ -13,7 +13,7 @@ $expectedPinnedFiles = 1
 $maximumFileBytes = 64MB
 $deadline = [DateTimeOffset]::UtcNow.AddMinutes(5)
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$seedRoot = Join-Path $repository 'backend\internal\service\remote_skill_seed'
+$seedRoot = Join-Path $repository 'plugins\prompt-skills\registry\seed'
 $manifestPath = Join-Path $seedRoot 'manifest.json'
 $output = [IO.Path]::GetFullPath($OutputRoot)
 
@@ -74,7 +74,23 @@ $downloaded = @($upstreamEntries | ForEach-Object -Parallel {
             if ($response.RequestMessage.RequestUri.AbsoluteUri -ne $uri) {
                 throw "Upstream redirect rejected for $($entry.path)"
             }
-            $body = $response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
+            $bodyDeadline = [Threading.CancellationTokenSource]::new($using:deadline - [DateTimeOffset]::UtcNow)
+            $stream = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+            $buffer = [byte[]]::new(8192)
+            $collected = [IO.MemoryStream]::new()
+            try {
+                while (($read = $stream.ReadAsync($buffer, 0, $buffer.Length, $bodyDeadline.Token).GetAwaiter().GetResult()) -gt 0) {
+                    if ($collected.Length + $read -gt [int64]$entry.byte_length -or $collected.Length + $read -gt $using:maximumFileBytes) {
+                        throw "Upstream response exceeded declared size for $($entry.path)"
+                    }
+                    $collected.Write($buffer, 0, $read)
+                }
+                $body = $collected.ToArray()
+            } finally {
+                $collected.Dispose()
+                $stream.Dispose()
+                $bodyDeadline.Dispose()
+            }
             $declaredLength = $response.Content.Headers.ContentLength
             if ($body.Length -ne [int]$entry.byte_length -or $body.Length -gt $using:maximumFileBytes -or
                 ($null -ne $declaredLength -and $declaredLength -ne $body.Length)) {

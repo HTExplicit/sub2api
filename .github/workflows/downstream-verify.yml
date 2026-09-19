@@ -82,9 +82,9 @@ jobs:
           python -m pip install 'PyYAML==6.0.2'
           candidate=$(mktemp -d)/security-research
           mkdir -p "$candidate"
-          cp -a backend/internal/service/remote_skill_seed/tree/. "$candidate/"
+          cp -a plugins/prompt-skills/registry/seed/tree/. "$candidate/"
           install -D -m 0644 \
-            backend/internal/service/remote_skill_seed/pinned/waf-bypass.md \
+            plugins/prompt-skills/registry/seed/pinned/waf-bypass.md \
             "$candidate/skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/waf-bypass.md"
           python "$candidate/scripts/validate_skill.py" "$candidate" --require-evals --json
       - name: Account taxonomy migration integration test

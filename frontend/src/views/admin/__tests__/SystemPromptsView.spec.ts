@@ -87,6 +87,7 @@ function mountView() {
   return mount(SystemPromptsView, {
     global: {
       stubs: {
+        ExtensionSurface: { template: '<div><slot /></div>' },
         AppLayout: { template: '<div><slot /></div>' },
         Icon: true,
         Toggle: ToggleStub,

@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"strings"
+
+	"github.com/HTExplicit/sub2api-plugins/promptskills/registry"
+	"github.com/HTExplicit/sub2api-plugins/promptskills/source"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 type BusinessSystemPromptSnapshot = extensionv1.BusinessSystemPromptSnapshot
@@ -111,9 +114,14 @@ func Plan(snapshot BusinessSystemPromptSnapshot, target BusinessSystemPromptTarg
 	return application, nil
 }
 
-type Module struct{}
+type Module struct {
+	registry *registry.Controller
+	source   *source.GitHubGPT56PromptSource
+}
 
-func New() *Module { return &Module{} }
+func New() *Module {
+	return &Module{registry: registry.New(), source: source.NewGitHubGPT56PromptSource(nil)}
+}
 func (m *Module) ValidateConfig(_ context.Context, raw json.RawMessage) (json.RawMessage, error) {
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(raw, &fields) != nil || fields == nil || len(fields) != 0 {
@@ -126,15 +134,40 @@ func (m *Module) ApplyConfig(ctx context.Context, raw json.RawMessage) error {
 	return err
 }
 func (m *Module) Status(context.Context) (json.RawMessage, error) {
+	if err := registry.Ready(); err != nil {
+		return nil, err
+	}
 	return json.Marshal(map[string]any{"document_limit": BusinessSystemPromptMaxBytes, "compiled_limit": BusinessSystemPromptBundleMaxBytes})
 }
 func (m *Module) Invoke(ctx context.Context, in extensionv1.Invocation) (extensionv1.Result, error) {
+	if err := ctx.Err(); err != nil {
+		return extensionv1.Result{}, err
+	}
 	if in.Capability == extensionv1.CapabilityAdmin && in.Operation == "prompt.describe" {
 		raw, err := m.Status(ctx)
 		return extensionv1.Result{Payload: raw}, err
 	}
-	if in.Capability != extensionv1.CapabilityRequest || in.Operation != "prompt.plan" {
+	if in.Capability != extensionv1.CapabilityRequest {
 		return extensionv1.Result{}, errors.New("unsupported prompt policy operation")
+	}
+	if in.Operation == "prompt.availability" {
+		if err := registry.Ready(); err != nil {
+			return extensionv1.Result{Code: "skills_unavailable", HTTPStatus: 503, Message: "Skill registry is unavailable"}, nil
+		}
+		return extensionv1.Result{Payload: []byte(`{"ready":true}`)}, nil
+	}
+	if strings.HasPrefix(in.Operation, "skills.") && in.Operation != "skills.capture" {
+		return m.registry.Invoke(ctx, in)
+	}
+	if in.Operation == "prompt.seeds" {
+		raw, err := json.Marshal([]extensionv1.PromptSeed{source.DefaultSeed()})
+		return extensionv1.Result{Payload: raw}, err
+	}
+	if strings.HasPrefix(in.Operation, "prompt.source.") {
+		return m.invokeSource(ctx, in)
+	}
+	if in.Operation != "prompt.plan" {
+		return invokeManagement(in.Operation, in.Payload)
 	}
 	var request extensionv1.PromptPlanRequest
 	if json.Unmarshal(in.Payload, &request) != nil {

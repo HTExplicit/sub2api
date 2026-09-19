@@ -7,12 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 const (
@@ -270,42 +271,7 @@ func (b *BusinessSystemPromptBundle) ReadText(rel string) (string, error) {
 }
 
 func normalizeBundleRelativePath(value string) (string, error) {
-	if value == "" || strings.ContainsRune(value, '\x00') || strings.ContainsRune(value, '\\') {
-		return "", errors.New("empty, NUL, or backslash path")
-	}
-	for _, r := range value {
-		if r < 0x20 || strings.ContainsRune(`<>:"|?*`, r) {
-			return "", errors.New("invalid path character")
-		}
-	}
-	if strings.HasPrefix(value, "/") || filepath.IsAbs(filepath.FromSlash(value)) {
-		return "", errors.New("absolute path")
-	}
-	clean := path.Clean(value)
-	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
-		return "", errors.New("path traversal")
-	}
-	if clean != value || strings.Contains(value, "//") {
-		return "", errors.New("non-canonical path")
-	}
-	for _, segment := range strings.Split(clean, "/") {
-		if strings.TrimRight(segment, " .") != segment || isWindowsReservedBundlePathSegment(segment) {
-			return "", errors.New("ambiguous or reserved path segment")
-		}
-	}
-	return clean, nil
-}
-
-func isWindowsReservedBundlePathSegment(segment string) bool {
-	base := strings.ToUpper(strings.SplitN(segment, ".", 2)[0])
-	switch base {
-	case "CON", "PRN", "AUX", "NUL":
-		return true
-	}
-	if len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) && base[3] >= '1' && base[3] <= '9' {
-		return true
-	}
-	return false
+	return extensionv1.NormalizeDocumentPath(value)
 }
 
 func rejectSymlinkPath(value string) error {

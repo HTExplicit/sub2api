@@ -1,5 +1,6 @@
 <template>
   <AppLayout>
+    <ExtensionSurface name="prompt-management">
     <div class="mx-auto max-w-[1500px] space-y-4 px-1">
       <header class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 pb-4 dark:border-dark-700">
         <div class="flex min-w-0 items-center gap-3">
@@ -216,6 +217,7 @@
       @confirm="confirmAction"
       @cancel="confirmState = null"
     />
+    </ExtensionSurface>
   </AppLayout>
 </template>
 
@@ -223,6 +225,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import ExtensionSurface from '@/components/plugins/ExtensionSurface.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Icon from '@/components/icons/Icon.vue'

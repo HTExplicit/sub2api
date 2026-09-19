@@ -8,6 +8,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 const (
@@ -120,14 +122,12 @@ type RemoteSkillRegistryStore interface {
 	FailRemoteSkillSyncJob(context.Context, int64, string) error
 	GetRemoteSkillSyncJob(context.Context, int64) (RemoteSkillSyncJob, error)
 	PublishRemoteSkillVersion(context.Context, int64, int64, int64) (RemoteSkillRegistrySnapshot, error)
-	CleanupLegacyRemoteSkillData(context.Context) error
 }
 
 type RemoteSkillRegistryFiles interface {
 	LoadSeed(context.Context) (RemoteSkillCandidate, error)
 	InstallCandidate(context.Context, RemoteSkillCandidate) error
 	LoadCandidate(context.Context, RemoteSkillBundleVersion, RemoteSkillPromptVersion, []RemoteSkillFileChange) (RemoteSkillCandidate, error)
-	CleanupLegacy(context.Context) error
 }
 
 type RemoteSkillCandidateSource interface {
@@ -181,12 +181,6 @@ func (s *RemoteSkillRegistryService) Initialize(ctx context.Context) error {
 	}
 	if err := s.Reload(ctx); err != nil {
 		return err
-	}
-	if err := s.store.CleanupLegacyRemoteSkillData(ctx); err != nil {
-		return fmt.Errorf("remove legacy remote skill database state: %w", err)
-	}
-	if err := s.files.CleanupLegacy(ctx); err != nil {
-		return fmt.Errorf("remove legacy remote skill files: %w", err)
 	}
 	return nil
 }
@@ -341,8 +335,15 @@ func (s *RemoteSkillRegistryService) resolvePromptCapture(raw []byte) (RemoteSki
 }
 
 func (s *RemoteSkillRegistryService) runSyncJob(ctx context.Context, job RemoteSkillSyncJob, prompt RemoteSkillPromptCapture) {
+	bound, release, err := bindProcessExtensionContext(ctx, PlatformOpenAI, "*", extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "skills.tree.check"})
+	if err != nil {
+		s.failSyncJob(ctx, job.ID, "service_stopped")
+		return
+	}
+	defer release()
+	ctx = bound
 	if err := s.store.UpdateRemoteSkillSyncJobStage(ctx, job.ID, "fetching_source"); err != nil {
-		_ = s.store.FailRemoteSkillSyncJob(ctx, job.ID, "storage_error")
+		s.failSyncJob(ctx, job.ID, "storage_error")
 		return
 	}
 	var active *RemoteSkillCandidate
@@ -350,23 +351,32 @@ func (s *RemoteSkillRegistryService) runSyncJob(ctx context.Context, job RemoteS
 		active = remoteSkillCandidateFromPublication(*publication)
 	}
 	candidate, err := s.source.Build(ctx, prompt, active)
+	if err == nil {
+		err = ctx.Err()
+	}
 	if err != nil {
-		_ = s.store.FailRemoteSkillSyncJob(ctx, job.ID, remoteSkillSyncErrorCode(err))
+		s.failSyncJob(ctx, job.ID, remoteSkillSyncErrorCode(err))
 		return
 	}
 	if err := s.store.UpdateRemoteSkillSyncJobStage(ctx, job.ID, "verifying_candidate"); err != nil {
-		_ = s.store.FailRemoteSkillSyncJob(ctx, job.ID, "storage_error")
+		s.failSyncJob(ctx, job.ID, "storage_error")
 		return
 	}
 	candidate.Version.CreatedBy = job.CreatedBy
 	candidate.Prompt.CreatedBy = job.CreatedBy
 	if err := s.files.InstallCandidate(ctx, candidate); err != nil {
-		_ = s.store.FailRemoteSkillSyncJob(ctx, job.ID, remoteSkillSyncErrorCode(err))
+		s.failSyncJob(ctx, job.ID, remoteSkillSyncErrorCode(err))
 		return
 	}
 	if _, err := s.store.CompleteRemoteSkillSyncJob(ctx, job.ID, candidate); err != nil {
-		_ = s.store.FailRemoteSkillSyncJob(ctx, job.ID, "storage_error")
+		s.failSyncJob(ctx, job.ID, "storage_error")
 	}
+}
+
+func (s *RemoteSkillRegistryService) failSyncJob(ctx context.Context, id int64, code string) {
+	finish, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+	defer cancel()
+	_ = s.store.FailRemoteSkillSyncJob(finish, id, code)
 }
 
 func (s *RemoteSkillRegistryService) PublishVersion(ctx context.Context, versionID, expectedRevision, actorID int64) (RemoteSkillRegistrySnapshot, error) {

@@ -250,20 +250,23 @@ func TestRemoteSkillFilesystemRejectsLinkedMetadataAndPromptFiles(t *testing.T) 
 	}
 }
 
-func TestRemoteSkillFilesystemLegacyCleanupLeavesPairedCandidates(t *testing.T) {
+func TestRemoteSkillFilesystemInstallPreservesExistingDirectories(t *testing.T) {
 	root := t.TempDir()
 	files := NewRemoteSkillRegistryFilesystem(root)
 	seed, err := files.LoadSeed(context.Background())
 	require.NoError(t, err)
-	require.NoError(t, files.InstallCandidate(context.Background(), seed))
 	for _, name := range []string{"private/seed", "private/versions", "public/reverse-skill", "public/bootstrap", "public/versions", "staging/incomplete"} {
 		require.NoError(t, os.MkdirAll(filepath.Join(root, filepath.FromSlash(name)), 0o750))
 	}
-	require.NoError(t, files.CleanupLegacy(context.Background()))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "private", "seed", "history.txt"), []byte("preserve history"), 0600))
+	require.NoError(t, files.InstallCandidate(context.Background(), seed))
 	for _, name := range []string{"private", "public", "staging"} {
 		_, err := os.Stat(filepath.Join(root, filepath.FromSlash(name)))
-		require.ErrorIs(t, err, os.ErrNotExist)
+		require.NoError(t, err)
 	}
+	history, err := os.ReadFile(filepath.Join(root, "private", "seed", "history.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "preserve history", string(history))
 	_, err = os.Stat(files.candidateRoot(seed.Version.EffectiveTreeSHA256, seed.Prompt.EffectiveSHA256))
 	require.NoError(t, err)
 }

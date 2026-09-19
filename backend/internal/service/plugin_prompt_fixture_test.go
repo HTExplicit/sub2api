@@ -17,6 +17,8 @@ import (
 
 type promptPolicyFixture struct{}
 
+var promptFixtureModule = policy.New()
+
 func (promptPolicyFixture) InvokeOperation(ctx context.Context, _ string, _ string, in extensionv1.Invocation) (extensionv1.Result, error) {
 	if strings.HasPrefix(in.Operation, "observability.") {
 		return observability.New().Invoke(ctx, in)
@@ -40,7 +42,7 @@ func (promptPolicyFixture) InvokeOperation(ctx context.Context, _ string, _ stri
 	if strings.HasPrefix(in.Operation, "taxonomy.") || strings.HasPrefix(in.Operation, "test.") || in.Operation == "tools.describe" {
 		return accounttools.New().Invoke(ctx, in)
 	}
-	return policy.New().Invoke(ctx, in)
+	return promptFixtureModule.Invoke(ctx, in)
 }
 func init() {
 	processExtensionOperations.Store(&extensionOperationProvider{invoker: promptPolicyFixture{}})

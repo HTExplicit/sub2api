@@ -126,8 +126,6 @@ scripts
 !.github/scripts/*.py
 !backend/scripts/
 !backend/scripts/resolve-version.sh
-!backend/internal/service/remote_skill_seed/tree/scripts/
-!backend/internal/service/remote_skill_seed/tree/scripts/**
 .code-review-state
 #openspec/
 code-reviews/
@@ -172,6 +170,8 @@ output/
 !/plugins/cindy-provider/
 !/plugins/account-tools/
 !/plugins/prompt-skills/
+!/plugins/prompt-skills/registry/seed/tree/scripts/
+!/plugins/prompt-skills/registry/seed/tree/scripts/**
 !/plugins/model-catalog/
 !/plugins/model-policy/
 !/plugins/image-tools/

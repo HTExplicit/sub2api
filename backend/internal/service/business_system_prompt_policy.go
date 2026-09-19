@@ -3,7 +3,6 @@ package service
 import (
 	"bytes"
 	"context"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,14 +29,6 @@ var (
 	ErrBusinessSystemPromptInvalid     = errors.New("invalid business system prompt")
 	ErrBusinessSystemPromptUnavailable = errors.New("business system prompt unavailable")
 )
-
-//go:embed prompts/codexrip_reverse_skill_system_prompt.txt
-var embeddedBusinessSystemPromptRaw string
-
-var embeddedBusinessSystemPrompt = strings.TrimSuffix(embeddedBusinessSystemPromptRaw, "\n")
-
-//go:embed prompts/gpt_5_6_instruct_v45.md
-var embeddedGPT56InstructPrompt string
 
 type BusinessSystemPromptSnapshot = extensionv1.BusinessSystemPromptSnapshot
 
@@ -97,6 +88,9 @@ func applyBusinessSystemPromptWithInvoker(parent context.Context, body []byte, s
 		return body, BusinessSystemPromptApplication{}, nil
 	}
 	if err != nil || result.Code != "" {
+		if !snapshot.Enabled {
+			return body, BusinessSystemPromptApplication{}, nil
+		}
 		return nil, BusinessSystemPromptApplication{}, ErrBusinessSystemPromptUnavailable
 	}
 	var application BusinessSystemPromptApplication

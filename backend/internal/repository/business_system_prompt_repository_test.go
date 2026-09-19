@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	promptsource "github.com/HTExplicit/sub2api-plugins/promptskills/source"
+
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
@@ -324,7 +326,7 @@ func TestEnsureBusinessSystemPromptSeedPersistsManagedSourceProvenanceWithoutRep
 	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO system_prompt_runtime")).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO system_prompt_templates")).
-		WithArgs("gpt_5_6_instruct", "GPT-5.6 Instruct v45", "optional", service.BusinessSystemPromptManagedSourceGPT56).
+		WithArgs("gpt_5_6_instruct", "GPT-5.6 Instruct v45", "optional", promptsource.BusinessSystemPromptManagedSourceGPT56).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(templateID))
 	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO system_prompt_template_versions")).
 		WithArgs(
@@ -332,7 +334,7 @@ func TestEnsureBusinessSystemPromptSeedPersistsManagedSourceProvenanceWithoutRep
 			nil, nil, "Imported from MDX-Tom/gpt-5.6-instruct v45",
 			"MDX-Tom/gpt-5.6-instruct", "77e7a649903f9556f2d7bfa0223fa99e123aad52", "v45",
 			"gpt-5.6-sol-unrestricted-v45.zip", "c86c2c6d20a4d1155d87422f485eb37b77539132270918c002b5d8237a5adf54",
-			service.GPT56PromptLicenseSHA256,
+			promptsource.GPT56PromptLicenseSHA256,
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(versionID))
 	mock.ExpectExec(regexp.QuoteMeta("UPDATE system_prompt_runtime")).
@@ -343,13 +345,13 @@ func TestEnsureBusinessSystemPromptSeedPersistsManagedSourceProvenanceWithoutRep
 	store := NewBusinessSystemPromptRepository(db)
 	err = store.EnsureBusinessSystemPromptSeed(context.Background(), service.BusinessSystemPromptSeed{
 		Slug: "gpt_5_6_instruct", Name: "GPT-5.6 Instruct v45", Description: "optional",
-		ManagedSource: service.BusinessSystemPromptManagedSourceGPT56,
+		ManagedSource: promptsource.BusinessSystemPromptManagedSourceGPT56,
 		Body:          body, SHA256: bodySHA, ByteLength: len(body), CompositionMode: service.BusinessSystemPromptCompositionInline,
 		Note:             "Imported from MDX-Tom/gpt-5.6-instruct v45",
 		SourceRepository: "MDX-Tom/gpt-5.6-instruct", SourceCommit: "77e7a649903f9556f2d7bfa0223fa99e123aad52",
 		SourceVersion: "v45", SourceArtifact: "gpt-5.6-sol-unrestricted-v45.zip",
 		SourceArtifactSHA256: "c86c2c6d20a4d1155d87422f485eb37b77539132270918c002b5d8237a5adf54",
-		SourceLicenseSHA256:  service.GPT56PromptLicenseSHA256,
+		SourceLicenseSHA256:  promptsource.GPT56PromptLicenseSHA256,
 	})
 	require.NoError(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -377,7 +379,7 @@ func TestEnsureBusinessSystemPromptSeedRejectsPartialManagedSourceProvenance(t *
 	store := NewBusinessSystemPromptRepository(db)
 	err = store.EnsureBusinessSystemPromptSeed(context.Background(), service.BusinessSystemPromptSeed{
 		Slug: "gpt_5_6_instruct", Name: "GPT-5.6", Body: "prompt",
-		ManagedSource: service.BusinessSystemPromptManagedSourceGPT56,
+		ManagedSource: promptsource.BusinessSystemPromptManagedSourceGPT56,
 	})
 	require.ErrorIs(t, err, service.ErrBusinessSystemPromptSourceInvalid)
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -395,11 +397,11 @@ func TestBusinessSystemPromptRepositoryReturnsManagedSourceProvenance(t *testing
 			"id", "slug", "name", "description", "is_seed", "managed_source", "deleted_at",
 			"created_by", "updated_by", "created_at", "updated_at",
 		}).AddRow(int64(12), "gpt_5_6_instruct", "GPT-5.6", "optional", true,
-			service.BusinessSystemPromptManagedSourceGPT56, nil, nil, nil, now, now))
+			promptsource.BusinessSystemPromptManagedSourceGPT56, nil, nil, nil, now, now))
 
 	template, err := queryBusinessSystemPromptTemplate(context.Background(), db, 12)
 	require.NoError(t, err)
-	require.Equal(t, service.BusinessSystemPromptManagedSourceGPT56, template.ManagedSource)
+	require.Equal(t, promptsource.BusinessSystemPromptManagedSourceGPT56, template.ManagedSource)
 
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, template_id, version, body, sha256, byte_length")).
 		WithArgs(int64(12)).
@@ -412,7 +414,7 @@ func TestBusinessSystemPromptRepositoryReturnsManagedSourceProvenance(t *testing
 		}).AddRow(int64(34), int64(12), int64(1), "body", strings.Repeat("a", 64), 4,
 			service.BusinessSystemPromptCompositionInline, nil, nil, "imported",
 			"MDX-Tom/gpt-5.6-instruct", strings.Repeat("b", 40), "v45", "gpt-5.6-sol-unrestricted-v45.zip",
-			strings.Repeat("c", 64), service.GPT56PromptLicenseSHA256,
+			strings.Repeat("c", 64), promptsource.GPT56PromptLicenseSHA256,
 			nil, nil, nil, now))
 
 	versions, err := queryBusinessSystemPromptVersions(context.Background(), db, 12)
@@ -422,7 +424,7 @@ func TestBusinessSystemPromptRepositoryReturnsManagedSourceProvenance(t *testing
 	require.Equal(t, strings.Repeat("b", 40), versions[0].SourceCommit)
 	require.Equal(t, "v45", versions[0].SourceVersion)
 	require.Equal(t, strings.Repeat("c", 64), versions[0].SourceArtifactSHA256)
-	require.Equal(t, service.GPT56PromptLicenseSHA256, versions[0].SourceLicenseSHA256)
+	require.Equal(t, promptsource.GPT56PromptLicenseSHA256, versions[0].SourceLicenseSHA256)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -435,10 +437,10 @@ func TestSyncBusinessSystemPromptSourceVersionCreatesInactiveCandidate(t *testin
 	digest := sha256.Sum256([]byte(body))
 	bodySHA := hex.EncodeToString(digest[:])
 	candidate := service.BusinessSystemPromptSourceCandidate{
-		ManagedSource:    service.BusinessSystemPromptManagedSourceGPT56,
+		ManagedSource:    promptsource.BusinessSystemPromptManagedSourceGPT56,
 		SourceRepository: "MDX-Tom/gpt-5.6-instruct", SourceCommit: strings.Repeat("d", 40),
 		SourceVersion: "v46", SourceArtifact: "gpt-5.6-sol-unrestricted-v46.zip",
-		SourceArtifactSHA256: strings.Repeat("e", 64), SourceLicenseSHA256: service.GPT56PromptLicenseSHA256,
+		SourceArtifactSHA256: strings.Repeat("e", 64), SourceLicenseSHA256: promptsource.GPT56PromptLicenseSHA256,
 		Body: body, SHA256: bodySHA, ByteLength: len(body),
 	}
 	now := time.Date(2026, 8, 8, 2, 3, 4, 0, time.UTC)
@@ -447,7 +449,7 @@ func TestSyncBusinessSystemPromptSourceVersionCreatesInactiveCandidate(t *testin
 		WillReturnRows(sqlmock.NewRows([]string{"revision"}).AddRow(int64(4)))
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT managed_source FROM system_prompt_templates")).
 		WithArgs(int64(12)).
-		WillReturnRows(sqlmock.NewRows([]string{"managed_source"}).AddRow(service.BusinessSystemPromptManagedSourceGPT56))
+		WillReturnRows(sqlmock.NewRows([]string{"managed_source"}).AddRow(promptsource.BusinessSystemPromptManagedSourceGPT56))
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT version, sha256, source_repository, source_commit, source_artifact_sha256")).
 		WithArgs(int64(12)).
 		WillReturnRows(sqlmock.NewRows([]string{
@@ -493,10 +495,10 @@ func TestSyncBusinessSystemPromptSourceVersionReturnsUpToDateWithoutInsert(t *te
 	body := "same prompt"
 	digest := sha256.Sum256([]byte(body))
 	candidate := service.BusinessSystemPromptSourceCandidate{
-		ManagedSource:    service.BusinessSystemPromptManagedSourceGPT56,
+		ManagedSource:    promptsource.BusinessSystemPromptManagedSourceGPT56,
 		SourceRepository: "MDX-Tom/gpt-5.6-instruct", SourceCommit: strings.Repeat("f", 40),
 		SourceVersion: "v45", SourceArtifact: "gpt-5.6-sol-unrestricted-v45.zip",
-		SourceArtifactSHA256: strings.Repeat("e", 64), SourceLicenseSHA256: service.GPT56PromptLicenseSHA256,
+		SourceArtifactSHA256: strings.Repeat("e", 64), SourceLicenseSHA256: promptsource.GPT56PromptLicenseSHA256,
 		Body: body, SHA256: hex.EncodeToString(digest[:]), ByteLength: len(body),
 	}
 	mock.ExpectBegin()
@@ -504,7 +506,7 @@ func TestSyncBusinessSystemPromptSourceVersionReturnsUpToDateWithoutInsert(t *te
 		WillReturnRows(sqlmock.NewRows([]string{"revision"}).AddRow(int64(4)))
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT managed_source FROM system_prompt_templates")).
 		WithArgs(int64(12)).
-		WillReturnRows(sqlmock.NewRows([]string{"managed_source"}).AddRow(service.BusinessSystemPromptManagedSourceGPT56))
+		WillReturnRows(sqlmock.NewRows([]string{"managed_source"}).AddRow(promptsource.BusinessSystemPromptManagedSourceGPT56))
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT version, sha256, source_repository, source_commit, source_artifact_sha256")).
 		WithArgs(int64(12)).
 		WillReturnRows(sqlmock.NewRows([]string{"version", "sha256", "source_repository", "source_commit", "source_artifact_sha256"}).
@@ -528,10 +530,10 @@ func TestSyncBusinessSystemPromptSourceVersionReturnsNoPromptChangeWithoutInsert
 	body := "unchanged prompt body"
 	digest := sha256.Sum256([]byte(body))
 	candidate := service.BusinessSystemPromptSourceCandidate{
-		ManagedSource:    service.BusinessSystemPromptManagedSourceGPT56,
+		ManagedSource:    promptsource.BusinessSystemPromptManagedSourceGPT56,
 		SourceRepository: "MDX-Tom/gpt-5.6-instruct", SourceCommit: strings.Repeat("f", 40),
 		SourceVersion: "v46", SourceArtifact: "gpt-5.6-sol-unrestricted-v46.zip",
-		SourceArtifactSHA256: strings.Repeat("e", 64), SourceLicenseSHA256: service.GPT56PromptLicenseSHA256,
+		SourceArtifactSHA256: strings.Repeat("e", 64), SourceLicenseSHA256: promptsource.GPT56PromptLicenseSHA256,
 		Body: body, SHA256: hex.EncodeToString(digest[:]), ByteLength: len(body),
 	}
 	mock.ExpectBegin()
@@ -539,7 +541,7 @@ func TestSyncBusinessSystemPromptSourceVersionReturnsNoPromptChangeWithoutInsert
 		WillReturnRows(sqlmock.NewRows([]string{"revision"}).AddRow(int64(4)))
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT managed_source FROM system_prompt_templates")).
 		WithArgs(int64(12)).
-		WillReturnRows(sqlmock.NewRows([]string{"managed_source"}).AddRow(service.BusinessSystemPromptManagedSourceGPT56))
+		WillReturnRows(sqlmock.NewRows([]string{"managed_source"}).AddRow(promptsource.BusinessSystemPromptManagedSourceGPT56))
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT version, sha256, source_repository, source_commit, source_artifact_sha256")).
 		WithArgs(int64(12)).
 		WillReturnRows(sqlmock.NewRows([]string{"version", "sha256", "source_repository", "source_commit", "source_artifact_sha256"}).
@@ -563,10 +565,10 @@ func TestSyncBusinessSystemPromptSourceVersionRejectsStaleExpectedLatestVersion(
 	body := "new prompt"
 	digest := sha256.Sum256([]byte(body))
 	candidate := service.BusinessSystemPromptSourceCandidate{
-		ManagedSource:    service.BusinessSystemPromptManagedSourceGPT56,
+		ManagedSource:    promptsource.BusinessSystemPromptManagedSourceGPT56,
 		SourceRepository: "MDX-Tom/gpt-5.6-instruct", SourceCommit: strings.Repeat("d", 40),
 		SourceVersion: "v46", SourceArtifact: "gpt-5.6-sol-unrestricted-v46.zip",
-		SourceArtifactSHA256: strings.Repeat("e", 64), SourceLicenseSHA256: service.GPT56PromptLicenseSHA256,
+		SourceArtifactSHA256: strings.Repeat("e", 64), SourceLicenseSHA256: promptsource.GPT56PromptLicenseSHA256,
 		Body: body, SHA256: hex.EncodeToString(digest[:]), ByteLength: len(body),
 	}
 	mock.ExpectBegin()
@@ -574,7 +576,7 @@ func TestSyncBusinessSystemPromptSourceVersionRejectsStaleExpectedLatestVersion(
 		WillReturnRows(sqlmock.NewRows([]string{"revision"}).AddRow(int64(4)))
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT managed_source FROM system_prompt_templates")).
 		WithArgs(int64(12)).
-		WillReturnRows(sqlmock.NewRows([]string{"managed_source"}).AddRow(service.BusinessSystemPromptManagedSourceGPT56))
+		WillReturnRows(sqlmock.NewRows([]string{"managed_source"}).AddRow(promptsource.BusinessSystemPromptManagedSourceGPT56))
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT version, sha256, source_repository, source_commit, source_artifact_sha256")).
 		WithArgs(int64(12)).
 		WillReturnRows(sqlmock.NewRows([]string{"version", "sha256", "source_repository", "source_commit", "source_artifact_sha256"}).

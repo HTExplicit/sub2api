@@ -78,6 +78,12 @@ func (s *RemoteSkillRegistryService) LoadPublishedFile(ctx context.Context, name
 	if err := ctx.Err(); err != nil {
 		return RemoteSkillPublicFile{}, err
 	}
+	if err := promptPolicyAvailability(ctx); err != nil {
+		if errors.Is(err, ErrExtensionOperationDisabled) {
+			return RemoteSkillPublicFile{}, ErrRemoteSkillPublicFileNotFound
+		}
+		return RemoteSkillPublicFile{}, ErrBusinessSystemPromptBundleUnavailable
+	}
 	if s == nil {
 		return RemoteSkillPublicFile{}, ErrRemoteSkillPublicFileNotFound
 	}

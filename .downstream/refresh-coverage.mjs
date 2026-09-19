@@ -33,7 +33,7 @@ function roleOf(file, bytes) {
   if (/\.(?:png|jpg|jpeg|webp|svg|ico|woff2|pdf)$/.test(file)) return 'asset'
   if (/(?:^|\/)(?:go\.sum|pnpm-lock\.yaml|package-lock\.json)$/.test(file)) return 'dependency-lock'
   if (/\.pb\.go$/.test(file) || /^backend\/ent\//.test(file) && !/^backend\/ent\/schema\//.test(file) || /Code generated.*DO NOT EDIT/.test(bytes.subarray(0, 400).toString('utf8'))) return 'generated'
-  if (/remote_skill_seed\/tree\//.test(file)) return 'bundled-source'
+  if (/remote_skill_seed\/tree\/|plugins\/prompt-skills\/registry\/seed\/(?:tree|pinned)\//.test(file)) return 'bundled-source'
   if (/\.md$|^\.downstream\/.+\.json$|^\.superpowers\//.test(file)) return 'documentation'
   if (/(?:_test\.go|\.spec\.ts|\.test\.[jt]s)$|\/testdata\//.test(file)) return 'test-or-fixture'
   return 'source'

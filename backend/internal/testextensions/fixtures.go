@@ -21,6 +21,8 @@ import (
 
 type operations struct{ imageConfig *extensionv1.ImageToolsConfig }
 
+var promptFixtureModule = prompt.New()
+
 func (fixture operations) InvokeOperation(ctx context.Context, _, _ string, in extensionv1.Invocation) (extensionv1.Result, error) {
 	if strings.HasPrefix(in.Operation, "observability.") {
 		return observability.New().Invoke(ctx, in)
@@ -48,8 +50,8 @@ func (fixture operations) InvokeOperation(ctx context.Context, _, _ string, in e
 	if strings.HasPrefix(in.Operation, "taxonomy.") || strings.HasPrefix(in.Operation, "test.") || in.Operation == "tools.describe" {
 		return accounttools.New().Invoke(ctx, in)
 	}
-	if strings.HasPrefix(in.Operation, "prompt.") {
-		return prompt.New().Invoke(ctx, in)
+	if strings.HasPrefix(in.Operation, "prompt.") || strings.HasPrefix(in.Operation, "skills.") {
+		return promptFixtureModule.Invoke(ctx, in)
 	}
 	return extensionv1.Result{}, service.ErrExtensionOperationDisabled
 }

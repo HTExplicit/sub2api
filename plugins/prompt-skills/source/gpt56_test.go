@@ -1,4 +1,4 @@
-package service
+package source
 
 import (
 	"archive/zip"
@@ -77,6 +77,18 @@ func TestGitHubGPT56PromptSourceFetchesVerifiedCandidate(t *testing.T) {
 	require.Equal(t, "82e48be49cf325ca5c62c7382f3738fe1d53528b0a9c0362606a3f6ecf3ffa61", candidate.SHA256)
 	require.Equal(t, len(body), candidate.ByteLength)
 	require.Len(t, client.requests, 4)
+}
+
+func TestSourceProvenanceRequiresCompleteArchiveDigest(t *testing.T) {
+	seed := DefaultSeed()
+	hash, length, err := ValidateBusinessSystemPromptBody(seed.Body)
+	require.NoError(t, err)
+	candidate := BusinessSystemPromptSourceCandidate{ManagedSource: seed.ManagedSource, SourceRepository: seed.SourceRepository, SourceCommit: seed.SourceCommit, SourceVersion: seed.SourceVersion, SourceArtifact: seed.SourceArtifact, SourceArtifactSHA256: seed.SourceArtifactSHA256, SourceLicenseSHA256: seed.SourceLicenseSHA256, Body: seed.Body, SHA256: hash, ByteLength: length}
+	require.NoError(t, ValidateBusinessSystemPromptSourceCandidate(candidate))
+	for _, digest := range []string{"", "abcdef", strings.Repeat("a", 63), strings.Repeat("a", 65)} {
+		candidate.SourceArtifactSHA256 = digest
+		require.ErrorIs(t, ValidateBusinessSystemPromptSourceCandidate(candidate), ErrBusinessSystemPromptSourceInvalid)
+	}
 }
 
 func TestGPT56PromptLicenseHashCanonicalizesLineEndings(t *testing.T) {

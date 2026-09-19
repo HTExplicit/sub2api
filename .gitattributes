@@ -6,15 +6,15 @@ backend/migrations/*.sql text eol=lf
 
 # Embedded system prompt seed must retain the exact LF byte sequence used for
 # its published SHA-256 and UTF-8 byte-length invariants.
-backend/internal/service/prompts/*.txt text eol=lf
-backend/internal/service/prompts/*.md text eol=lf
+plugins/prompt-skills/registry/prompts/*.txt text eol=lf
+plugins/prompt-skills/source/prompts/*.md text eol=lf
 backend/internal/service/testdata/codexrip_reverse_skill_system_prompt_legacy_dual_marker.txt text eol=lf
 
 # The approved ModelGang seed is UTF-8 text, including extensionless and
 # Unicode-named files. Keep every embedded byte sequence stable cross-platform.
-backend/internal/service/remote_skill_seed/manifest.json text eol=lf -whitespace
-backend/internal/service/remote_skill_seed/tree/** text eol=lf -whitespace
-backend/internal/service/remote_skill_seed/pinned/** text eol=lf -whitespace
+plugins/prompt-skills/registry/seed/manifest.json text eol=lf -whitespace
+plugins/prompt-skills/registry/seed/tree/** text eol=lf -whitespace
+plugins/prompt-skills/registry/seed/pinned/** text eol=lf -whitespace
 
 # 前端 源代码文件
 *.ts text eol=lf
