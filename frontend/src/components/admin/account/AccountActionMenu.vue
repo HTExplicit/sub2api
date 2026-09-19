@@ -9,9 +9,10 @@
         :style="menuStyle"
         @click.stop
       >
-        <div class="py-1">
+        <p v-if="busy" role="status" class="border-b border-line px-4 py-2 text-xs text-muted">{{ t('common.processing') }}</p>
+        <fieldset :disabled="busy" class="py-1 disabled:opacity-60">
           <template v-if="account">
-            <button @click="$emit('harvest-tickets', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700">{{ t('admin.accounts.tickets.title') }}</button>
+            <button v-if="canManageCodexTickets(account)" data-test="ticket-harvest" @click="$emit('harvest-tickets', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700"><Icon name="shield" size="sm" class="text-primary-600" />{{ t('admin.accounts.tickets.title') }}</button>
             <button @click="$emit('test', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700">
               <Icon name="play" size="sm" class="text-green-500" :stroke-width="2" />
               {{ t('admin.accounts.testConnection') }}
@@ -61,7 +62,7 @@
               {{ t('admin.accounts.resetQuota') }}
             </button>
           </template>
-        </div>
+        </fieldset>
       </div>
     </div>
   </Teleport>
@@ -73,8 +74,9 @@ import { useResizeObserver, useWindowSize } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@/components/icons'
 import type { Account } from '@/types'
+import { canManageCodexTickets } from '@/utils/codexTicketEligibility'
 
-const props = defineProps<{ show: boolean; account: Account | null; anchorRect: DOMRect | null }>()
+const props = defineProps<{ show: boolean; account: Account | null; anchorRect: DOMRect | null; busy?: boolean }>()
 const emit = defineEmits(['harvest-tickets', 'close', 'test', 'stats', 'schedule', 'duplicate', 'reauth', 'refresh-token', 'recover-state', 'recover-cindy-balance', 'reset-quota', 'set-privacy', 'create-spark-shadow'])
 const { t } = useI18n()
 const menuRef = ref<HTMLElement | null>(null)

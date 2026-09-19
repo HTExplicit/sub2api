@@ -1,3 +1,4 @@
+vi.mock('@/components/admin/account-jobs/AccountOperationDialog.vue', () => ({ default: { name: 'AccountOperationDialog', props: ['job', 'show'], template: '<div v-if="show"><slot/><slot name="footer"/></div>' } }))
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
@@ -30,6 +31,8 @@ const {
   reviewDuplicates: vi.fn(),
   batchRefreshTier: vi.fn()
 }))
+
+vi.mock('@/api/admin/accountJobs', async () => ({ ...await vi.importActual<typeof import('@/api/admin/accountJobs')>('@/api/admin/accountJobs'), default: { reviewDuplicates } }))
 
 vi.mock('@/stores/accountJobs', () => ({
   useAccountJobsStore: () => ({ track: jobTrack, reviewDuplicates })
@@ -202,9 +205,12 @@ describe('admin AccountsView select all filtered results', () => {
     await wrapper.get('[data-test="select-page"]').trigger('click')
     await wrapper.get('[data-test="refresh-token"]').trigger('click')
     await flushPromises()
+    expect(batchRefresh).not.toHaveBeenCalled()
+    await wrapper.get('[data-test="confirm-dialog-submit"]').trigger('click')
+    await flushPromises()
 
     expect(batchRefresh).toHaveBeenCalledWith([1, 2, 3])
-    expect(jobTrack).toHaveBeenCalledWith(job)
+    expect(wrapper.findComponent({ name: 'AccountOperationConfirmDialog' }).findComponent({ name: 'AccountOperationDialog' }).props('job')).toEqual(job)
     expect(listAccounts).toHaveBeenCalledTimes(1)
     expect(wrapper.getComponent(AccountBulkActionsBarStub).props('selectedIds')).toEqual([])
     expect(wrapper.findAll<HTMLInputElement>('[data-test="data-table"] input').map(input => input.element.checked))
@@ -224,11 +230,14 @@ describe('admin AccountsView select all filtered results', () => {
     await wrapper.get('[data-test="select-page"]').trigger('click')
     await wrapper.get('[data-test="refresh-token"]').trigger('click')
     await flushPromises()
+    expect(batchRefresh).not.toHaveBeenCalled()
+    await wrapper.get('[data-test="confirm-dialog-submit"]').trigger('click')
+    await flushPromises()
 
     expect(batchRefresh).toHaveBeenCalledWith([1, 2, 3])
     expect(jobTrack).not.toHaveBeenCalled()
     expect(wrapper.getComponent(AccountBulkActionsBarStub).props('selectedIds')).toEqual([1, 2, 3])
-    expect(showError).toHaveBeenCalledWith('Error: job submission failed')
+    expect(wrapper.text()).toContain('admin.accountTasks.actionFailed')
     wrapper.unmount()
   })
 
@@ -318,6 +327,8 @@ describe('admin AccountsView select all filtered results', () => {
     await wrapper.get('[data-test="select-page"]').trigger('click')
     await wrapper.get('[data-test="duplicate-review"]').trigger('click')
     await flushPromises()
+    await wrapper.get('[data-test="confirm-dialog-submit"]').trigger('click')
+    await flushPromises()
 
     expect(reviewDuplicates).toHaveBeenCalledWith(currentPage.map((account) => account.id))
     expect(wrapper.get('[data-test="selected-count"]').text()).toBe('0')
@@ -325,9 +336,11 @@ describe('admin AccountsView select all filtered results', () => {
     await wrapper.get('[data-test="select-page"]').trigger('click')
     await wrapper.get('[data-test="refresh-tier"]').trigger('click')
     await flushPromises()
+    await wrapper.get('[data-test="confirm-dialog-submit"]').trigger('click')
+    await flushPromises()
 
     expect(batchRefreshTier).toHaveBeenCalledWith(currentPage.map((account) => account.id))
-    expect(jobTrack).toHaveBeenCalledWith({ id: 92, kind: 'account_batch_refresh_tier', status: 'pending' })
+    expect(wrapper.findComponent({ name: 'AccountOperationConfirmDialog' }).findComponent({ name: 'AccountOperationDialog' }).props('job')).toMatchObject({ id: 92, kind: 'account_batch_refresh_tier', status: 'pending' })
     expect(wrapper.get('[data-test="selected-count"]').text()).toBe('0')
   })
 })

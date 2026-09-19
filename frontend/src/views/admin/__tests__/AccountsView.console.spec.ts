@@ -1,3 +1,4 @@
+vi.mock('@/components/admin/account-jobs/AccountOperationDialog.vue', () => ({ default: { name: 'AccountOperationDialog', props: ['job', 'show'], template: '<div v-if="show"><slot/><slot name="footer"/></div>' } }))
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -427,7 +428,7 @@ describe('admin AccountsView Cockpit console', () => {
     await wrapper.get('[data-test="emit-import-result"]').trigger('click')
     await flushPromises()
 
-    expect(jobTrack).toHaveBeenCalledWith({ id: 71, kind: 'account_import', status: 'pending' })
+    expect(jobTrack).toHaveBeenCalledWith({ id: 71, kind: 'account_import', status: 'pending' }, { open: false })
     expect(wrapper.get('[data-test="console-account-ids"]').text()).toBe('')
     expect(wrapper.get('[data-test="selected-ids"]').text()).toBe('')
     wrapper.unmount()
@@ -597,7 +598,7 @@ describe('admin AccountsView Cockpit console', () => {
     await wrapper.get('[data-test="emit-import-result"]').trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-test="scope-tools-context"]').attributes('data-selected')).toBe('')
-    expect(jobTrack).toHaveBeenCalledWith({ id: 71, kind: 'account_import', status: 'pending' })
+    expect(jobTrack).toHaveBeenCalledWith({ id: 71, kind: 'account_import', status: 'pending' }, { open: false })
   })
 
   it('deletes Cindy insufficient accounts only with the server preview fingerprint', async () => {
@@ -621,7 +622,7 @@ describe('admin AccountsView Cockpit console', () => {
     await wrapper.get('[data-test="confirm-dialog-submit"]').trigger('click')
     await flushPromises()
     expect(deleteCindyInsufficient).toHaveBeenCalledWith({ count: 2, fingerprint: 'fingerprint-2' })
-    expect(jobTrack).toHaveBeenCalledWith({ id: 72, kind: 'cindy_cleanup', status: 'pending' })
+    expect(wrapper.findComponent({ name: 'AccountOperationConfirmDialog' }).findComponent({ name: 'AccountOperationDialog' }).props('job')).toMatchObject({ id: 72, kind: 'cindy_cleanup', status: 'pending' })
     expect(showSuccess).not.toHaveBeenCalled()
   })
 
@@ -659,7 +660,7 @@ describe('admin AccountsView Cockpit console', () => {
     await wrapper.get('[data-test="confirm-dialog-submit"]').trigger('click')
     await flushPromises()
     expect(deleteCindyBanned).toHaveBeenCalledWith({ count: 1, fingerprint: 'banned-fingerprint' })
-    expect(jobTrack).toHaveBeenCalledWith({ id: 73, kind: 'cindy_banned_cleanup', status: 'pending' })
+    expect(wrapper.findComponent({ name: 'AccountOperationConfirmDialog' }).findComponent({ name: 'AccountOperationDialog' }).props('job')).toMatchObject({ id: 73, kind: 'cindy_banned_cleanup', status: 'pending' })
   })
 
   it('manual Cindy recovery calls the dedicated endpoint and refreshes the filtered list', async () => {

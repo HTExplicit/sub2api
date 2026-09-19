@@ -49,6 +49,17 @@ const getBodyText = () => document.body.textContent ?? ''
 const getBodyButtons = () => Array.from(document.body.querySelectorAll('button'))
 
 describe('AccountActionMenu — spark shadow 按钮可见性', () => {
+  it.each([
+    [{ platform: 'openai', type: 'oauth', status: 'error' }, true],
+    [{ platform: 'openai', type: 'setup-token', status: 'disabled' }, true],
+    [{ platform: 'openai', type: 'apikey' }, false],
+    [{ platform: 'anthropic', type: 'oauth' }, false],
+    [{ platform: 'openai', type: 'oauth', parent_account_id: 9 }, false],
+  ] as [Partial<Account>, boolean][])('restricts ticket actions by ownership, not account status: %j', (overrides, visible) => {
+    const wrapper = mount(AccountActionMenu, { props: { show: true, account: makeAccount(overrides), anchorRect }, attachTo: document.body })
+    expect(!!document.body.querySelector('[data-test="ticket-harvest"]')).toBe(visible)
+    wrapper.unmount()
+  })
   it('仅已标记账号显示 Cindy 恢复入口并发送专用事件', async () => {
     const account = makeAccount({ cindy_balance_insufficient: true })
     const wrapper = mount(AccountActionMenu, {

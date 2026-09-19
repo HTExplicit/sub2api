@@ -86,14 +86,16 @@ func CodexTicketAccountIdentity(a *Account) string {
 }
 
 func CodexTicketAccountEligible(a *Account) bool {
-	return isOpenAICodexTicketAccount(a) && a.Status == StatusActive
+	// Ticket ownership is independent of business scheduling. Administrators may
+	// prepare and renew tickets while an OAuth-like account is disabled/in error.
+	return isOpenAICodexTicketAccount(a)
 }
 
 func CodexTicketFailure(code string) CodexTicketResult {
 	messages := map[string]string{
 		"ticket_disabled":       "票据总开关未开启",
 		"ticket_proxy_missing":  "未配置打票代理",
-		"ticket_ineligible":     "仅启用状态的 OpenAI OAuth/Setup Token 非影子账号可打票",
+		"ticket_ineligible":     "仅 OpenAI OAuth/Setup Token 非影子账号可打票",
 		"ticket_model_invalid":  "模型不在票据配置范围内",
 		"ticket_busy":           "该账号和模型已有打票任务",
 		"ticket_interrupted":    "上次请求已开始，结果未确认；不会自动重复发送",

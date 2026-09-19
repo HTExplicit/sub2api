@@ -553,7 +553,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/admin/tasks',
     name: 'AdminAccountTasks',
-    component: () => import('@/views/admin/AccountTasksView.vue'),
+    redirect: { path: '/admin/accounts', query: { operations: 'history' } },
     meta: {
       requiresAuth: true,
       requiresAdmin: true,

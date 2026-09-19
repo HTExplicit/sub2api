@@ -1,5 +1,5 @@
 <template>
-  <BaseDialog
+  <AccountOperationDialog :job="operationJob"
     :show="show"
     :title="t('admin.accounts.bulkEdit.title')"
     width="wide"
@@ -1466,7 +1466,7 @@
         </button>
       </div>
     </template>
-  </BaseDialog>
+  </AccountOperationDialog>
 
   <ConfirmDialog
     :show="showMixedChannelWarning"
@@ -1495,7 +1495,7 @@ import type {
   OpenAIEndpointCapability,
   OpenAIResponsesMode
 } from '@/types'
-import BaseDialog from '@/components/common/BaseDialog.vue'
+import AccountOperationDialog from '@/components/admin/account-jobs/AccountOperationDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Select from '@/components/common/Select.vue'
 import ProxySelector from '@/components/common/ProxySelector.vue'
@@ -1555,6 +1555,8 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const operationJob = ref<AccountJob | null>(null)
+watch(() => props.show, show => { if (show) operationJob.value = null })
 const appStore = useAppStore()
 
 // Platform awareness
@@ -2318,8 +2320,8 @@ const submitBulkUpdate = async (baseUpdates: Record<string, unknown>) => {
       })
       : await adminAPI.accounts.bulkUpdate(props.accountIds, updates)
     pendingUpdatesForConfirm.value = null
+    operationJob.value = job
     emit('updated', job)
-    handleClose()
   } catch (error: any) {
     // 兜底：多平台混合场景下，预检查跳过，由后端 409 触发确认框
     if (error.status === 409 && error.error === 'mixed_channel_warning') {

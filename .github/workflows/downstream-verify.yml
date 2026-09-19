@@ -130,6 +130,13 @@ jobs:
             src/i18n/__tests__/accountConsoleLocales.spec.ts \
             src/__tests__/integration/data-import.spec.ts \
             src/components/admin/account-jobs/__tests__/AccountTaskDrawer.spec.ts \
+            src/stores/__tests__/accountJobs.spec.ts \
+            src/composables/__tests__/useTicketSelection.spec.ts \
+            src/api/__tests__/accountOperationIdempotency.spec.ts \
+            src/components/admin/account/__tests__/CodexTicketHarvestModal.spec.ts \
+            src/components/admin/account/__tests__/BatchTestAccountModal.spec.ts \
+            src/components/admin/account/__tests__/AccountBulkActionsBar.spec.ts \
+            src/components/admin/account/__tests__/AccountActionMenu.spark_shadow.spec.ts \
             src/components/admin/account/__tests__/AccountConsoleFilters.spec.ts \
             src/components/admin/account/__tests__/AccountUsageViews.spec.ts \
             src/components/account/__tests__/AccountUsageCell.spec.ts \

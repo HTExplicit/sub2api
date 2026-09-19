@@ -1,5 +1,5 @@
 <template>
-  <BaseDialog
+  <AccountOperationDialog :job="operationJob"
     :show="show"
     :title="t('admin.accounts.bulkTaxonomy.title')"
     width="wide"
@@ -50,7 +50,7 @@
         {{ saving ? t('common.saving') : t('admin.accounts.bulkTaxonomy.submit') }}
       </button>
     </template>
-  </BaseDialog>
+  </AccountOperationDialog>
 </template>
 
 <script setup lang="ts">
@@ -60,7 +60,7 @@ import { adminAPI } from '@/api/admin'
 import type { AccountListFilters } from '@/api/admin/accounts'
 import type { AccountJob } from '@/api/admin/accountJobs'
 import { useAppStore } from '@/stores/app'
-import BaseDialog from '@/components/common/BaseDialog.vue'
+import AccountOperationDialog from '@/components/admin/account-jobs/AccountOperationDialog.vue'
 import type { AccountBulkTaxonomyRequest, AccountManagementFolder, AccountManagementTag } from '@/types'
 
 export type AccountBulkTaxonomyTarget =
@@ -79,6 +79,8 @@ const emit = defineEmits<{
   stale: []
 }>()
 const { t } = useI18n()
+const operationJob = ref<AccountJob | null>(null)
+watch(() => props.show, show => { if (show) operationJob.value = null })
 const appStore = useAppStore()
 const folderAction = ref<'' | 'set' | 'clear'>('')
 const folderID = ref('')
@@ -141,6 +143,7 @@ const submit = async () => {
   saving.value = true
   try {
     const job = await adminAPI.accounts.bulkUpdateTaxonomy(payload)
+    operationJob.value = job
     emit('updated', job)
   } catch (error: any) {
     if (error?.response?.status === 409) {

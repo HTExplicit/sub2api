@@ -1,5 +1,5 @@
 <template>
-  <BaseDialog :show="show" :title="t('admin.accounts.batchTest.title')" width="wide" @close="emit('close')">
+  <AccountOperationDialog :job="operationJob" :show="show" :title="t('admin.accounts.batchTest.title')" width="wide" @close="emit('close')">
     <form id="batch-test-accounts" @submit.prevent="submit">
       <p class="mb-4 text-sm text-gray-600 dark:text-gray-300">{{ t('admin.accounts.batchTest.description', { count: rows.length }) }}</p>
       <p v-if="applicationResult" class="mb-3 text-sm text-blue-600" role="status">{{ applicationResult }}</p>
@@ -33,13 +33,13 @@
       <button type="button" class="btn btn-secondary" :disabled="busy" @click="emit('close')">{{ t('common.cancel') }}</button>
       <button type="submit" form="batch-test-accounts" class="btn btn-primary" :disabled="busy || !ready">{{ t(busy ? 'common.submitting' : 'admin.accounts.batchTest.start') }}</button>
     </template>
-  </BaseDialog>
+  </AccountOperationDialog>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import BaseDialog from '@/components/common/BaseDialog.vue'
+import AccountOperationDialog from '@/components/admin/account-jobs/AccountOperationDialog.vue'
 import AccountTestModelSelect from './AccountTestModelSelect.vue'
 import accountJobsAPI, { type AccountJob, type BatchTestModelRow } from '@/api/admin/accountJobs'
 import { prepareAccountTestModels, accountTestModelsForMode, defaultAccountTestModel } from '@/utils/accountTestModels'
@@ -50,6 +50,8 @@ import { useAccountTestPrompt } from '@/composables/useAccountTestPrompt'
 const props = defineProps<{ show: boolean; accountIds: number[] }>()
 const emit = defineEmits<{ close: []; submitted: [job: AccountJob] }>()
 const { t } = useI18n()
+const operationJob = ref<AccountJob | null>(null)
+watch(() => props.show, show => { if (show) operationJob.value = null })
 const { prompt, valid: promptValid } = useAccountTestPrompt()
 type Row = BatchTestModelRow & { model: string; loading: boolean }
 const rows = ref<Row[]>([])
@@ -114,8 +116,8 @@ async function submit() {
   const items = rows.value.map(row => ({ account_id: row.account_id, model_id: row.model }))
   busy.value = true
   try {
-    emit('submitted', await accountJobsAPI.batchTest(items, prompt.value))
-    emit('close')
+    operationJob.value = await accountJobsAPI.batchTest(items, prompt.value)
+    emit('submitted', operationJob.value)
   } catch { useAppStore().showError(t('admin.accounts.batchTest.submitFailed')) }
   finally { busy.value = false }
 }

@@ -1,5 +1,6 @@
 <template>
   <AppLayout>
+    <div v-if="immediateAccountActions.size" role="status" class="mb-3 flex items-center gap-2 text-xs text-muted"><Icon name="refresh" size="sm" class="animate-spin" />{{ t('common.processing') }}</div>
     <slot
       name="scope-tools"
       :selected-ids="selIds"
@@ -20,6 +21,7 @@
             @create="showCreate = true"
           >
             <template #after>
+              <button class="btn btn-ghost px-2" data-test="operation-history" @click="accountJobsStore.openDrawer()"><Icon name="clock" size="sm" /><span class="hidden md:inline">{{ t('admin.accountTasks.historyAction') }}</span></button>
               <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
                 <span class="hidden md:inline">{{ t('admin.accounts.apiKeyReveal') }}</span>
                 <Toggle
@@ -237,6 +239,7 @@
           <span>#{{ completedImportJobIDs.join(', #') }}</span>
         </div>
         <AccountBulkActionsBar
+          :can-harvest-tickets="canHarvestTickets"
           :selected-ids="selIds"
           :total-results="pagination.total"
           :selecting-all="selectingAllResults"
@@ -509,6 +512,7 @@
             </div>
           </template>
           <template #cell-actions="{ row }">
+            <span v-if="immediateAccountActions.has(row.id)" role="status" class="inline-flex items-center gap-1 text-xs text-muted"><Icon name="refresh" size="sm" class="animate-spin" />{{ t('common.processing') }}</span>
             <div class="flex items-center gap-1" @click.stop>
               <button @click.stop="handleEdit(row)" class="flex flex-col items-center gap-0.5 rounded-none p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400">
                 <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" /></svg>
@@ -571,11 +575,12 @@
     <EditAccountModal :show="showEdit" :account="edAcc" :proxies="proxies" :groups="groups" @close="showEdit = false" @updated="handleAccountUpdated" />
     <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
-    <BatchTestAccountModal :show="showBatchTest" :account-ids="batchTestAccountIDs" @close="showBatchTest = false; enterAutoRefreshSilentWindow()" @submitted="accountJobsStore.track" />
-    <CodexTicketHarvestModal :show="showTicketHarvest" :account-ids="ticketAccountIDs" @close="showTicketHarvest = false; enterAutoRefreshSilentWindow()" @submitted="accountJobsStore.track" />
+    <BatchTestAccountModal :show="showBatchTest" :account-ids="batchTestAccountIDs" @close="showBatchTest = false; enterAutoRefreshSilentWindow()" />
+    <CodexTicketHarvestModal :show="showTicketHarvest" :account-ids="ticketAccountIDs" @close="showTicketHarvest = false; enterAutoRefreshSilentWindow()" />
+    <AccountOperationConfirmDialog v-if="pendingOperation" :show="true" :title="pendingOperation.title" :message="pendingOperation.message" :danger="pendingOperation.danger" :execute="pendingOperation.execute" @close="pendingOperation = null" @submitted="clearSelection()" />
     <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
     <ScheduledTestsPanel :show="showSchedulePanel" :account-id="scheduleAcc?.id ?? null" :model-options="scheduleModelOptions" @close="closeSchedulePanel" />
-    <AccountActionMenu :show="menu.show" :account="menu.acc" :anchor-rect="menu.anchorRect" @close="menu.show = false" @harvest-tickets="account => openTicketHarvest([account.id])" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @recover-cindy-balance="handleRecoverCindyBalance" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" />
+    <AccountActionMenu :busy="!!menu.acc && immediateAccountActions.has(menu.acc.id)" :show="menu.show" :account="menu.acc" :anchor-rect="menu.anchorRect" @close="menu.show = false" @harvest-tickets="account => openTicketHarvest([account.id])" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @recover-cindy-balance="handleRecoverCindyBalance" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" />
     <SyncFromCrsModal :show="showSync" @close="showSync = false" @synced="reload" />
     <ImportDataModal
       :show="showImportData"
@@ -599,15 +604,15 @@
     />
     <TempUnschedStatusModal :show="showTempUnsched" :account="tempUnschedAcc" @close="showTempUnsched = false" @reset="handleTempUnschedReset" />
     <ConfirmDialog :show="showDeleteDialog" :title="t('admin.accounts.deleteAccount')" :message="t('admin.accounts.deleteConfirm', { name: deletingAcc?.name })" :confirm-text="t('common.delete')" :cancel-text="t('common.cancel')" :danger="true" @confirm="confirmDelete" @cancel="showDeleteDialog = false" />
-    <ConfirmDialog
+    <AccountOperationConfirmDialog
       :show="showCindyDeleteDialog"
       :title="cindyView === 'banned' ? t('admin.accounts.cindy.deleteBanned') : t('admin.accounts.cindy.deleteInsufficient')"
       :message="t(cindyView === 'banned' ? 'admin.accounts.cindy.deleteBannedConfirm' : 'admin.accounts.cindy.deleteConfirm', { count: cindyDeletePreview?.count ?? 0 })"
       :confirm-text="t('common.delete')"
-      :cancel-text="t('common.cancel')"
       :danger="true"
-      @confirm="confirmCindyTerminalDelete"
-      @cancel="closeCindyDeleteDialog"
+      :execute="confirmCindyTerminalDelete"
+      @submitted="clearSelection()"
+      @close="closeCindyDeleteDialog"
     />
     <ConfirmDialog :show="showCreateShadowDialog" :title="t('admin.accounts.createSparkShadow')" :message="t('admin.accounts.createSparkShadowConfirm', { name: creatingShadowAcc?.name })" @confirm="confirmCreateSparkShadow" @cancel="showCreateShadowDialog = false" />
     <ConfirmDialog :show="showExportDataDialog" :title="t('admin.accounts.dataExport')" :message="t('admin.accounts.dataExportConfirmMessage')" :confirm-text="t('admin.accounts.dataExportConfirm')" :cancel-text="t('common.cancel')" @confirm="handleExportData" @cancel="showExportDataDialog = false">
@@ -731,6 +736,8 @@ import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
 import UpstreamBillingRateCell from '@/components/account/UpstreamBillingRateCell.vue'
 import BatchTestAccountModal from '@/components/admin/account/BatchTestAccountModal.vue'
 import CodexTicketHarvestModal from '@/components/admin/account/CodexTicketHarvestModal.vue'
+import AccountOperationConfirmDialog from '@/components/admin/account-jobs/AccountOperationConfirmDialog.vue'
+import { useTicketSelection } from '@/composables/useTicketSelection'
 import AccountIdentityBadges from '@/components/account/AccountIdentityBadges.vue'
 import AccountSelectionCheckbox from '@/components/account/AccountSelectionCheckbox.vue'
 import { getAccountPlanType } from '@/utils/accountPresentation'
@@ -772,6 +779,10 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const accountJobsStore = useAccountJobsStore()
+const pendingOperation = ref<{ title: string; message: string; danger?: boolean; execute: () => Promise<AccountJob> } | null>(null)
+function confirmAccountOperation(kind: string, ids: number[], execute: () => Promise<AccountJob>, danger = false) {
+  pendingOperation.value = { title: t(`admin.accountTasks.kinds.${kind}`), message: t('admin.accountTasks.confirmAction', { count: ids.length }), execute, danger }
+}
 const pendingDataImportJobIDs = new Map<number, number>()
 const completedImportJobIDs = ref<number[]>([])
 const showBatchTest = ref(false)
@@ -1751,6 +1762,7 @@ const {
   rows: accounts,
   getId: (account) => account.id
 })
+const { canHarvestTickets, remember: rememberTicketAccounts } = useTicketSelection(selIds, accounts)
 
 watch(selectedSet, () => {
   if (!applyingImportSelection) importSelectionRevision += 1
@@ -2407,60 +2419,24 @@ const openMenu = (a: Account, e: MouseEvent) => {
 }
 const handleBulkDelete = async () => {
   const accountIds = [...selIds.value]
-  if (!confirm(t('admin.accounts.bulkActions.confirmDelete', { count: accountIds.length }))) return
-  try {
-    const job = await adminAPI.accounts.batchDelete(accountIds)
-    clearSelection()
-    accountJobsStore.track(job)
-  } catch (error) {
-    console.error('Failed to bulk delete accounts:', error)
-    appStore.showError(String(error))
-  }
+  confirmAccountOperation('account_batch_delete', accountIds, () => adminAPI.accounts.batchDelete(accountIds), true)
 }
 const handleBulkResetStatus = async () => {
-  if (!confirm(t('common.confirm'))) return
-  try {
-    const job = await adminAPI.accounts.batchClearError([...selIds.value])
-    clearSelection()
-    accountJobsStore.track(job)
-  } catch (error) {
-    console.error('Failed to bulk reset status:', error)
-    appStore.showError(String(error))
-  }
+  const ids = [...selIds.value]
+  confirmAccountOperation('account_batch_clear_error', ids, () => adminAPI.accounts.batchClearError(ids))
 }
 const handleBulkRefreshToken = async () => {
-  if (!confirm(t('common.confirm'))) return
   const accountIds = [...selIds.value]
-  try {
-    const job = await adminAPI.accounts.batchRefresh(accountIds)
-    clearSelection()
-    accountJobsStore.track(job)
-  } catch (error) {
-    console.error('Failed to bulk refresh token:', error)
-    appStore.showError(String(error))
-  }
+  confirmAccountOperation('account_batch_refresh', accountIds, () => adminAPI.accounts.batchRefresh(accountIds))
 }
 const handleBulkRefreshTier = async () => {
-  if (!confirm(t('common.confirm'))) return
-  try {
-    const job = await adminAPI.accounts.batchRefreshTier([...selIds.value])
-    clearSelection()
-    accountJobsStore.track(job)
-  } catch (error) {
-    console.error('Failed to bulk refresh account tiers:', error)
-    appStore.showError(String(error))
-  }
+  const ids = [...selIds.value]
+  confirmAccountOperation('account_batch_refresh_tier', ids, () => adminAPI.accounts.batchRefreshTier(ids))
 }
 const handleDuplicateReview = async () => {
   const accountIDs = [...selIds.value]
   if (accountIDs.length < 2 || accountIDs.length > 100) return
-  try {
-    await accountJobsStore.reviewDuplicates(accountIDs)
-    clearSelection()
-  } catch (error) {
-    console.error('Failed to review duplicate accounts:', error)
-    appStore.showError(t('common.operationFailed'))
-  }
+  confirmAccountOperation('account_duplicate_review', accountIDs, () => accountJobsAPI.reviewDuplicates(accountIDs))
 }
 const handleBulkProbeUpstreamBilling = async () => {
   const accountIDs = [...selIds.value]
@@ -2498,14 +2474,7 @@ const handleBulkProbeUpstreamBilling = async () => {
 }
 const handleBulkToggleSchedulable = async (schedulable: boolean) => {
   const accountIds = [...selIds.value]
-  try {
-    const job = await adminAPI.accounts.bulkUpdate(accountIds, { schedulable })
-    clearSelection()
-    accountJobsStore.track(job)
-  } catch (error) {
-    console.error('Failed to bulk toggle schedulable:', error)
-    appStore.showError(t('common.error'))
-  }
+  confirmAccountOperation('account_bulk_update', accountIds, () => adminAPI.accounts.bulkUpdate(accountIds, { schedulable }))
 }
 const buildBulkEditFilterSnapshot = () => {
   return buildAccountQueryFilters()
@@ -2519,7 +2488,11 @@ const handleSelectAllResults = async () => {
   selectingAllResults.value = true
   try {
     const ids = await fetchAllAccountIds(
-      (page, pageSize, requestFilters) => adminAPI.accounts.list(page, pageSize, requestFilters),
+      async (page, pageSize, requestFilters) => {
+        const result = await adminAPI.accounts.list(page, pageSize, requestFilters)
+        rememberTicketAccounts(result.items)
+        return result
+      },
       filters
     )
     if (requestVersion !== selectionRequestVersion.value) return
@@ -2594,9 +2567,8 @@ const closeBulkTaxonomy = () => {
 }
 
 const handleBulkTaxonomyUpdated = (job: AccountJob) => {
-  closeBulkTaxonomy()
   clearSelection()
-  accountJobsStore.track(job)
+  accountJobsStore.track(job, { open: false })
 }
 
 const handleBulkTaxonomyStale = async () => {
@@ -2605,15 +2577,12 @@ const handleBulkTaxonomyStale = async () => {
 }
 
 const handleBulkUpdated = (job: AccountJob) => {
-  showBulkEdit.value = false
-  bulkEditTarget.value = null
   clearSelection()
-  accountJobsStore.track(job)
+  accountJobsStore.track(job, { open: false })
 }
 const handleDataImported = (job: AccountJob) => {
-  showImportData.value = false
   pendingDataImportJobIDs.set(job.id, importSelectionRevision)
-  accountJobsStore.track(job)
+  accountJobsStore.track(job, { open: false })
 }
 
 const completedImportQueue = new Map<number, number>()
@@ -2662,10 +2631,18 @@ const refreshCompletedImports = async () => {
 }
 
 const observedAccountJobs = computed(() => [...(accountJobsStore.recentJobs || []), ...(accountJobsStore.completedJobs || [])])
+const refreshedOperations = new Set<number>()
 watch(
   () => observedAccountJobs.value.map(job => `${job.id}:${job.status}`).join('|'),
   () => {
     for (const job of observedAccountJobs.value) {
+      if (isTerminalAccountJob(job) && accountJobsStore.completedJobs?.some(done => done.id === job.id) && !refreshedOperations.has(job.id)) {
+        refreshedOperations.add(job.id)
+        if (!pendingDataImportJobIDs.has(job.id) && job.kind !== 'account_batch_test' && job.kind !== 'account_duplicate_review') {
+          void load()
+          if (['account_bulk_taxonomy', 'account_bulk_update', 'account_batch_delete', 'account_duplicate_merge', 'cindy_confirmed_cleanup', 'cindy_banned_cleanup'].includes(job.kind)) void loadFacets()
+        }
+      }
       const revision = pendingDataImportJobIDs.get(job.id)
       if (revision === undefined || !isTerminalAccountJob(job)) continue
       pendingDataImportJobIDs.delete(job.id)
@@ -2677,7 +2654,7 @@ watch(
 const handleAccountCreated = (job?: AccountJob) => {
   if (job) {
     clearSelection()
-    accountJobsStore.track(job)
+    accountJobsStore.track(job, { open: false })
     return
   }
   void reload()
@@ -2838,18 +2815,15 @@ const openCindyTerminalDelete = async () => {
     cindyDeleteLoading.value = false
   }
 }
-const confirmCindyTerminalDelete = async () => {
+const confirmCindyTerminalDelete = async (): Promise<AccountJob> => {
   const preview = cindyDeletePreview.value
-  if (!preview || cindyDeleteLoading.value) return
+  if (!preview || cindyDeleteLoading.value) throw new Error('No pending cleanup')
   cindyDeleteLoading.value = true
   try {
     const job = cindyView.value === 'banned'
       ? await adminAPI.accounts.deleteCindyBanned(preview)
       : await adminAPI.accounts.deleteCindyInsufficient(preview)
-    showCindyDeleteDialog.value = false
-    cindyDeletePreview.value = null
-    clearSelection()
-    accountJobsStore.track(job)
+    return job
   } catch (error: any) {
     showCindyDeleteDialog.value = false
     cindyDeletePreview.value = null
@@ -2863,11 +2837,14 @@ const confirmCindyTerminalDelete = async () => {
       console.error('Failed to delete Cindy insufficient accounts:', error)
       appStore.showError(extractApiErrorMessage(error, t(cindyView.value === 'banned' ? 'admin.accounts.cindy.deleteBannedFailed' : 'admin.accounts.cindy.deleteFailed')))
     }
+    throw error
   } finally {
     cindyDeleteLoading.value = false
   }
 }
 const handleRecoverCindyBalance = async (account: Account) => {
+  if (immediateAccountActions.has(account.id)) return
+  immediateAccountActions.add(account.id)
   try {
     const updated = await adminAPI.accounts.clearCindyBalanceInsufficient(account.id)
     handleAccountUpdated(updated)
@@ -2876,7 +2853,7 @@ const handleRecoverCindyBalance = async (account: Account) => {
   } catch (error) {
     console.error('Failed to clear Cindy insufficient balance marker:', error)
     appStore.showError(extractApiErrorMessage(error, t('admin.accounts.cindy.recoverFailed')))
-  }
+  } finally { immediateAccountActions.delete(account.id) }
 }
 const handleTaxonomyAccountUpdated = async (updatedAccount: Account) => {
   handleAccountUpdated(updatedAccount)
@@ -2970,6 +2947,7 @@ const handleSchedule = async (a: Account) => {
 const closeSchedulePanel = () => { showSchedulePanel.value = false; scheduleAcc.value = null; scheduleModelOptions.value = [] }
 const handleReAuth = (a: Account) => { reAuthAcc.value = a; showReAuth.value = true }
 const duplicatingAccountIDs = new Set<number>()
+const immediateAccountActions = reactive(new Set<number>())
 const handleDuplicateAccount = async (a: Account) => {
   if (duplicatingAccountIDs.has(a.id)) return
   duplicatingAccountIDs.add(a.id)
@@ -2985,16 +2963,22 @@ const handleDuplicateAccount = async (a: Account) => {
   }
 }
 const handleRefresh = async (a: Account) => {
+  if (immediateAccountActions.has(a.id)) return
+  immediateAccountActions.add(a.id)
   try {
     const result = await adminAPI.accounts.refreshCredentials(a.id)
     patchAccountInList(result.account)
     enterAutoRefreshSilentWindow()
     if (result.warning) appStore.showWarning(result.message)
+    else appStore.showSuccess(t('common.success'))
   } catch (error) {
     console.error('Failed to refresh credentials:', error)
-  }
+    appStore.showError(t('common.operationFailed'))
+  } finally { immediateAccountActions.delete(a.id) }
 }
 const handleRecoverState = async (a: Account) => {
+  if (immediateAccountActions.has(a.id)) return
+  immediateAccountActions.add(a.id)
   try {
     const updated = await adminAPI.accounts.recoverState(a.id)
     patchAccountInList(updated)
@@ -3003,9 +2987,11 @@ const handleRecoverState = async (a: Account) => {
   } catch (error: any) {
     console.error('Failed to recover account state:', error)
     appStore.showError(error?.message || t('admin.accounts.recoverStateFailed'))
-  }
+  } finally { immediateAccountActions.delete(a.id) }
 }
 const handleResetQuota = async (a: Account) => {
+  if (immediateAccountActions.has(a.id)) return
+  immediateAccountActions.add(a.id)
   try {
     const updated = await adminAPI.accounts.resetAccountQuota(a.id)
     patchAccountInList(updated)
@@ -3013,7 +2999,8 @@ const handleResetQuota = async (a: Account) => {
     appStore.showSuccess(t('common.success'))
   } catch (error) {
     console.error('Failed to reset quota:', error)
-  }
+    appStore.showError(t('common.operationFailed'))
+  } finally { immediateAccountActions.delete(a.id) }
 }
 
 const privacyResultMessageKey = (account: Account): { type: 'success' | 'error'; key: string } => {
@@ -3038,6 +3025,8 @@ const privacyResultMessageKey = (account: Account): { type: 'success' | 'error';
 }
 
 const handleSetPrivacy = async (a: Account) => {
+  if (immediateAccountActions.has(a.id)) return
+  immediateAccountActions.add(a.id)
   try {
     const updated = await adminAPI.accounts.setPrivacy(a.id)
     patchAccountInList(updated)
@@ -3051,9 +3040,11 @@ const handleSetPrivacy = async (a: Account) => {
   } catch (error: any) {
     console.error('Failed to set privacy:', error)
     appStore.showError(error?.response?.data?.message || t('admin.accounts.privacyFailed'))
-  }
+  } finally { immediateAccountActions.delete(a.id) }
 }
 const onRevertFallback = async (a: Account) => {
+  if (immediateAccountActions.has(a.id)) return
+  immediateAccountActions.add(a.id)
   try {
     await adminAPI.accounts.revertProxyFallback(a.id)
     appStore.showSuccess(t('admin.accounts.revertProxySuccess'))
@@ -3061,7 +3052,7 @@ const onRevertFallback = async (a: Account) => {
   } catch (error: any) {
     console.error('Failed to revert proxy fallback:', error)
     appStore.showError(error?.response?.data?.message || t('admin.accounts.revertProxyFailed'))
-  }
+  } finally { immediateAccountActions.delete(a.id) }
 }
 const handleCreateSparkShadow = (a: Account) => {
   creatingShadowAcc.value = a
@@ -3069,7 +3060,8 @@ const handleCreateSparkShadow = (a: Account) => {
 }
 const confirmCreateSparkShadow = async () => {
   const a = creatingShadowAcc.value
-  if (!a) return
+  if (!a || immediateAccountActions.has(a.id)) return
+  immediateAccountActions.add(a.id)
   try {
     await adminAPI.accounts.createSparkShadow(a.id, { name: `${a.name} (Spark)` })
     showCreateShadowDialog.value = false
@@ -3079,10 +3071,21 @@ const confirmCreateSparkShadow = async () => {
   } catch (error: any) {
     console.error('Failed to create spark shadow-outline:', error)
     appStore.showError(error?.response?.data?.message || t('admin.accounts.createSparkShadowFailed'))
-  }
+  } finally { immediateAccountActions.delete(a.id) }
 }
 const handleDelete = (a: Account) => { deletingAcc.value = a; showDeleteDialog.value = true }
-const confirmDelete = async () => { if(!deletingAcc.value) return; try { await adminAPI.accounts.delete(deletingAcc.value.id); showDeleteDialog.value = false; deletingAcc.value = null; reload() } catch (error) { console.error('Failed to delete account:', error) } }
+const confirmDelete = async () => {
+  const account = deletingAcc.value
+  if (!account || immediateAccountActions.has(account.id)) return
+  immediateAccountActions.add(account.id)
+  try {
+    await adminAPI.accounts.delete(account.id)
+    showDeleteDialog.value = false; deletingAcc.value = null
+    await load()
+  } catch {
+    appStore.showError(t('common.operationFailed'))
+  } finally { immediateAccountActions.delete(account.id) }
+}
 const updateSchedulableInList = (accountIds: number[], schedulable: boolean) => {
   const idSet = new Set(accountIds)
   accounts.value = accounts.value.map((account) => (
@@ -3159,6 +3162,7 @@ const handleClickOutside = (event: MouseEvent) => {
 }
 
 onMounted(async () => {
+  if (route.query.operations === 'history') void accountJobsStore.openDrawer()
   if (typeof window !== 'undefined') {
     desktopViewportMediaQuery = window.matchMedia(desktopViewportQuery)
     isDesktopViewport.value = desktopViewportMediaQuery.matches
