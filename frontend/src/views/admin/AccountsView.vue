@@ -52,12 +52,12 @@
                 </button>
                 <div
                   v-if="showAutoRefreshDropdown"
-                  class="absolute right-0 z-50 mt-2 w-56 origin-top-right rounded-none border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-800"
+                  class="absolute right-0 z-50 mt-2 w-56 origin-top-right rounded-lg border border-gray-200 bg-white shadow-lg dark:border-dark-700 dark:bg-dark-800"
                 >
                   <div class="p-2">
                     <button
                       @click="setAutoRefreshEnabled(!autoRefreshEnabled)"
-                      class="flex w-full items-center justify-between rounded-none px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-dark-700"
+                      class="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-dark-700"
                     >
                       <span>{{ t('admin.accounts.enableAutoRefresh') }}</span>
                       <Icon v-if="autoRefreshEnabled" name="check" size="sm" class="text-primary-500" />
@@ -67,7 +67,7 @@
                       v-for="sec in autoRefreshIntervals"
                       :key="sec"
                       @click="setAutoRefreshInterval(sec)"
-                      class="flex w-full items-center justify-between rounded-none px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-dark-700"
+                      class="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-dark-700"
                     >
                       <span>{{ autoRefreshIntervalLabel(sec) }}</span>
                       <Icon v-if="autoRefreshIntervalSeconds === sec" name="check" size="sm" class="text-primary-500" />
@@ -92,7 +92,7 @@
                 <Teleport to="body">
                   <div
                     v-if="showAccountToolsDropdown"
-                    class="fixed z-[9999] origin-top-right overflow-hidden rounded-none border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-800"
+                    class="fixed z-[9999] origin-top-right overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl dark:border-dark-700 dark:bg-dark-800"
                     :style="accountToolsDropdownStyle"
                     @click.stop
                   >
@@ -123,7 +123,7 @@
                         </span>
                         <span
                           v-if="selIds.length"
-                          class="rounded-none bg-primary-100 px-2 py-0.5 text-xs font-medium text-primary-700 dark:bg-primary-900/40 dark:text-primary-300"
+                          class="rounded-full bg-primary-100 px-2 py-0.5 text-xs font-medium text-primary-700 dark:bg-primary-900/40 dark:text-primary-300"
                         >
                           {{ t('admin.accounts.selectedCount', { count: selIds.length }) }}
                         </span>
@@ -163,7 +163,7 @@
                           v-for="col in toggleableColumns"
                           :key="col.key"
                           @click="toggleColumn(col.key)"
-                          class="flex w-full items-center justify-between rounded-none px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-dark-700"
+                          class="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-dark-700"
                         >
                           <span class="truncate">{{ col.label }}</span>
                           <Icon v-if="isColumnVisible(col.key)" name="check" size="sm" class="text-primary-500" />
@@ -179,7 +179,7 @@
         </div>
         <div
           v-if="hasPendingListSync"
-          class="mt-2 flex items-center justify-between rounded-none border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700/40 dark:bg-amber-900/20 dark:text-amber-200"
+          class="mt-2 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700/40 dark:bg-amber-900/20 dark:text-amber-200"
         >
           <span>{{ t('admin.accounts.listPendingSyncHint') }}</span>
           <button
@@ -421,7 +421,7 @@
                 <span :class="proxyExpiryBadge(row.proxy)">{{ proxyExpiryText(row.proxy) }}</span>
               </div>
               <div v-if="row.proxy_fallback_origin_id" class="flex items-center gap-1">
-                <span class="inline-flex items-center px-1.5 py-0.5 rounded-none text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200" :title="t('admin.accounts.fallbackActiveTip', { origin: row.proxy_fallback_origin_name })">
+                <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200" :title="t('admin.accounts.fallbackActiveTip', { origin: row.proxy_fallback_origin_name })">
                   {{ t('admin.accounts.fallbackActive') }}
                 </span>
                 <button class="text-xs px-1.5 py-0.5 rounded-none border border-gray-300 dark:border-dark-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-700" @click.stop="onRevertFallback(row)">{{ t('admin.accounts.revertProxy') }}</button>
@@ -497,13 +497,13 @@
               <div v-if="isExpired(value) || (row.auto_pause_on_expired && value)" class="flex items-center gap-1">
                 <span
                   v-if="isExpired(value)"
-                  class="inline-flex items-center rounded-none bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                  class="inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
                 >
                   {{ t('admin.accounts.expired') }}
                 </span>
                 <span
                   v-if="row.auto_pause_on_expired && value"
-                  class="inline-flex items-center rounded-none bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                  class="inline-flex items-center rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
                 >
                   {{ t('admin.accounts.autoPauseOnExpired') }}
                 </span>
@@ -615,7 +615,7 @@
     <ConfirmDialog :show="showCreateShadowDialog" :title="t('admin.accounts.createSparkShadow')" :message="t('admin.accounts.createSparkShadowConfirm', { name: creatingShadowAcc?.name })" @confirm="confirmCreateSparkShadow" @cancel="showCreateShadowDialog = false" />
     <ConfirmDialog :show="showExportDataDialog" :title="t('admin.accounts.dataExport')" :message="t('admin.accounts.dataExportConfirmMessage')" :confirm-text="t('admin.accounts.dataExportConfirm')" :cancel-text="t('common.cancel')" @confirm="handleExportData" @cancel="showExportDataDialog = false">
       <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-        <input type="checkbox" class="h-4 w-4 rounded-none border-gray-300 text-primary-600 focus:ring-primary-500" v-model="includeProxyOnExport" />
+        <input type="checkbox" class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" v-model="includeProxyOnExport" />
         <span>{{ t('admin.accounts.dataExportIncludeProxies') }}</span>
       </label>
     </ConfirmDialog>

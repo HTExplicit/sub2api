@@ -1,11 +1,11 @@
 <template>
   <section class="mx-auto w-full max-w-6xl space-y-5 px-1 py-2 sm:px-2">
     <header
-      class="page-header mb-0 flex flex-wrap items-center justify-between gap-3 rounded-none bg-white p-5 shadow-outline ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700 sm:p-6"
+      class="page-header mb-0 flex flex-wrap items-center justify-between gap-3 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700 sm:p-6"
     >
       <div class="min-w-0">
         <h2 class="page-title flex items-center gap-2 text-xl font-black text-gray-900 dark:text-white">
-          <span class="inline-flex h-8 w-8 items-center justify-center rounded-none bg-blue-50 text-blue-500 dark:bg-blue-900/30 dark:text-blue-400">
+          <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-blue-50 text-blue-500 dark:bg-blue-900/30 dark:text-blue-400">
             <Icon name="chart" size="sm" />
           </span>
           {{ t('channelMonitorV2.settings.title') }}
@@ -27,7 +27,7 @@
 
     <div
       v-if="!systemModeV2"
-      class="rounded-none border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-900 dark:border-amber-800/50 dark:bg-amber-900/20 dark:text-amber-100"
+      class="rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-900 dark:border-amber-800/50 dark:bg-amber-900/20 dark:text-amber-100"
       role="status"
     >
       {{
@@ -145,7 +145,7 @@
             >
               <input
                 type="checkbox"
-                class="h-4 w-4 rounded-none border-gray-300 text-primary-600 focus:ring-primary-500/40"
+                class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500/40"
                 :checked="draft.group_ids.includes(group.id)"
                 @change="toggleGroup(group.id)"
               />
@@ -173,7 +173,7 @@
             >
               <input
                 type="checkbox"
-                class="h-4 w-4 rounded-none border-gray-300 text-primary-600 focus:ring-primary-500/40"
+                class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500/40"
                 :checked="isCategoryIgnored(category)"
                 @change="toggleIgnoredCategory(category)"
               />
@@ -238,7 +238,7 @@
       </div>
 
       <div class="space-y-2">
-        <div class="rounded-none border border-primary-200 bg-primary-50/80 px-4 py-3 text-sm text-primary-900 dark:border-primary-800/50 dark:bg-primary-900/20 dark:text-primary-100">
+        <div class="rounded-2xl border border-primary-200 bg-primary-50/80 px-4 py-3 text-sm text-primary-900 dark:border-primary-800/50 dark:bg-primary-900/20 dark:text-primary-100">
           <template v-if="namedModelCount === 0">
             {{ t('channelMonitorV2.settings.namedModelsEmpty') }}
           </template>

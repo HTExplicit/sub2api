@@ -22,7 +22,7 @@
         {{ t('admin.accounts.crsUpdateBehaviorNote') }}
       </div>
       <div
-        class="rounded-none border border-amber-200 bg-amber-50 p-3 text-xs text-amber-600 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400"
+        class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-600 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400"
       >
         {{ t('admin.accounts.crsVersionRequirement') }}
       </div>
@@ -62,7 +62,7 @@
           <input
             v-model="form.sync_proxies"
             type="checkbox"
-            class="rounded-none border-gray-300 dark:border-dark-600"
+            class="rounded border-gray-300 dark:border-dark-600"
           />
           {{ t('admin.accounts.syncProxies') }}
         </label>
@@ -87,7 +87,7 @@
             class="flex items-center gap-2 py-0.5"
           >
             <span
-              class="inline-block rounded-none bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+              class="inline-block rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
             >{{ acc.platform }} / {{ acc.type }}</span>
             <span class="truncate">{{ acc.name }}</span>
           </div>
@@ -115,7 +115,7 @@
           </div>
         </div>
         <div
-          class="max-h-48 overflow-auto rounded-none border border-gray-200 p-2 dark:border-dark-600"
+          class="max-h-48 overflow-auto rounded-lg border border-gray-200 p-2 dark:border-dark-600"
         >
           <label
             v-for="acc in previewResult.new_accounts"
@@ -125,11 +125,11 @@
             <input
               type="checkbox"
               :checked="selectedIds.has(acc.crs_account_id)"
-              class="rounded-none border-gray-300 dark:border-dark-600"
+              class="rounded border-gray-300 dark:border-dark-600"
               @change="toggleSelect(acc.crs_account_id)"
             />
             <span
-              class="inline-block rounded-none bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400"
+              class="inline-block rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400"
             >{{ acc.platform }} / {{ acc.type }}</span>
             <span class="truncate text-sm text-gray-700 dark:text-dark-300">{{ acc.name }}</span>
           </label>
@@ -162,7 +162,7 @@
     <!-- Step 3: Result -->
     <div v-else-if="currentStep === 'result' && result" class="space-y-4">
       <div
-        class="space-y-2 rounded-none border border-gray-200 p-4 dark:border-dark-700"
+        class="space-y-2 rounded-xl border border-gray-200 p-4 dark:border-dark-700"
       >
         <div class="text-sm font-medium text-gray-900 dark:text-white">
           {{ t('admin.accounts.syncResult') }}
@@ -176,7 +176,7 @@
             {{ t('admin.accounts.syncErrors') }}
           </div>
           <div
-            class="mt-2 max-h-48 overflow-auto rounded-none bg-gray-50 p-3 font-mono text-xs dark:bg-dark-800"
+            class="mt-2 max-h-48 overflow-auto rounded-lg bg-gray-50 p-3 font-mono text-xs dark:bg-dark-800"
           >
             <div v-for="(item, idx) in errorItems" :key="idx" class="whitespace-pre-wrap">
               {{ item.kind }} {{ item.crs_account_id }} — {{ item.action

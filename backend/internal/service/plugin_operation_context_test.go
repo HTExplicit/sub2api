@@ -29,3 +29,19 @@ func TestPluginPolicyContextsStopOnConfigurationChangeAndDisable(t *testing.T) {
 	releaseFirst()
 	releaseSecond()
 }
+
+func TestSavingIdenticalPluginConfigurationDoesNotCancelHostWork(t *testing.T) {
+	client := &normalizingPluginClient{normalized: []byte(`{"enabled":true}`)}
+	runtime := &pluginRuntime{api: client}
+	require.NoError(t, runtime.validateAndApplyConfig(context.Background(), []byte(`{}`)))
+	work, release, err := runtime.bindPolicyContext(context.Background())
+	require.NoError(t, err)
+	defer release()
+	client.applied = nil
+	require.NoError(t, runtime.validateAndApplyConfig(context.Background(), []byte(`{"enabled":true}`)))
+	require.Empty(t, client.applied)
+	require.NoError(t, work.Err())
+	client.normalized = []byte(`{"enabled":false}`)
+	require.NoError(t, runtime.validateAndApplyConfig(context.Background(), []byte(`{"enabled":false}`)))
+	require.ErrorIs(t, work.Err(), context.Canceled)
+}

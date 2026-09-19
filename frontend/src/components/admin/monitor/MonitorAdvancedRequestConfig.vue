@@ -27,7 +27,7 @@
           />
           <button
             type="button"
-            class="flex-none rounded-none p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+            class="flex-none rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-400"
             :title="t('common.delete')"
             @click="removeRow(i)"
           >
@@ -38,7 +38,7 @@
         </div>
         <button
           type="button"
-          class="inline-flex items-center gap-1 rounded-none border border-dashed border-gray-300 px-2 py-1 text-xs text-gray-500 hover:border-primary-400 hover:text-primary-600 dark:border-dark-600 dark:text-gray-400 dark:hover:border-primary-500 dark:hover:text-primary-400"
+          class="inline-flex items-center gap-1 rounded border border-dashed border-gray-300 px-2 py-1 text-xs text-gray-500 hover:border-primary-400 hover:text-primary-600 dark:border-dark-600 dark:text-gray-400 dark:hover:border-primary-500 dark:hover:text-primary-400"
           @click="addRow"
         >
           <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -61,7 +61,7 @@
           v-for="opt in bodyModeOptions"
           :key="opt.value"
           type="button"
-          class="rounded-none border-2 px-3 py-2 text-sm font-medium transition-colors"
+          class="rounded-lg border-2 px-3 py-2 text-sm font-medium transition-colors"
           :class="bodyModeButtonClass(opt.value)"
           @click="updateBodyMode(opt.value)"
         >

@@ -55,14 +55,14 @@
         </button>
       </div>
 
-      <div v-if="anyOf.length === 0" class="rounded-none border border-dashed border-gray-300 p-4 text-sm text-gray-500 dark:border-dark-600 dark:text-dark-400">
+      <div v-if="anyOf.length === 0" class="rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-500 dark:border-dark-600 dark:text-dark-400">
         {{ t('admin.announcements.form.targetingCustom') }}: {{ t('admin.announcements.form.addOrGroup') }}
       </div>
 
       <div
         v-for="(group, groupIndex) in anyOf"
         :key="groupIndex"
-        class="rounded-none border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800"
+        class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-800"
       >
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0">
@@ -157,7 +157,7 @@
         </div>
       </div>
 
-      <div v-if="validationError" class="rounded-none border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/30 dark:bg-red-900/10 dark:text-red-300">
+      <div v-if="validationError" class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/30 dark:bg-red-900/10 dark:text-red-300">
         {{ validationError }}
       </div>
     </div>

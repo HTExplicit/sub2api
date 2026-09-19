@@ -225,7 +225,8 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	pluginRepository := repository.ProvidePluginRepository(db, accountRepository)
 	pluginHostInfo := providePluginHostInfo(buildInfo)
 	pluginKVStore := repository.NewPluginKVStore(redisClient)
-	pluginManager := service.ProvidePluginManager(pluginRepository, secretEncryptor, configConfig, pluginHostInfo, pluginKVStore, quotaActivityService, openAIGatewayService)
+	accountTrafficObserveCache := repository.ProvideAccountTrafficObserveCache(redisClient, configConfig)
+	pluginManager := service.ProvidePluginManager(pluginRepository, secretEncryptor, configConfig, pluginHostInfo, pluginKVStore, quotaActivityService, openAIGatewayService, accountTrafficObserveCache)
 	accountTestService := service.ProvideAccountTestService(accountRepository, geminiTokenProvider, claudeTokenProvider, grokTokenProvider, antigravityGatewayService, httpUpstream, configConfig, tlsFingerprintProfileService, openAIGatewayService, settingService, pluginManager, quotaActivityService)
 	crsSyncService := service.NewCRSSyncService(accountRepository, proxyRepository, oAuthService, openAIOAuthService, geminiOAuthService, configConfig)
 	accountHandler := admin.ProvideAccountHandler(configConfig, adminService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, rateLimitService, accountUsageService, accountTestService, concurrencyService, crsSyncService, sessionLimitCache, rpmCache, compositeTokenCacheInvalidator, grokQuotaService, accountJobCindyMutationRunner)
@@ -316,7 +317,6 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		return nil, err
 	}
 	upstreamBillingProbeService := service.ProvideUpstreamBillingProbeService(accountRepository, accountTestService, settingService, leaderLockCache, db)
-	accountTrafficObserveCache := repository.ProvideAccountTrafficObserveCache(redisClient, configConfig)
 	accountTrafficObserver := service.NewAccountTrafficObserver(accountTrafficObserveCache, configConfig)
 	adminHandlers := handler.ProvideAdminHandlers(dashboardHandler, adminUserHandler, groupHandler, accountHandler, accountJobHandler, adminAnnouncementHandler, dataManagementHandler, backupHandler, oAuthHandler, openAIOAuthHandler, geminiOAuthHandler, antigravityOAuthHandler, grokOAuthHandler, cnProviderHandler, proxyHandler, adminRedeemHandler, promoHandler, settingHandler, opsHandler, systemHandler, adminSubscriptionHandler, adminUsageHandler, userAttributeHandler, errorPassthroughHandler, tlsFingerprintProfileHandler, pluginHandler, adminAPIKeyHandler, scheduledTestHandler, channelHandler, channelMonitorHandler, channelMonitorRequestTemplateHandler, contentModerationHandler, promptAdminHandler, paymentHandler, affiliateHandler, complianceHandler, auditLogHandler, systemPromptHandler, cindyBalanceProbeHandler, accountJobRuntime, upstreamBillingProbeService, ollamaCloudUsageService, accountTrafficObserver, settingService, openAIGatewayService)
 	usageRecordWorkerPool := service.NewUsageRecordWorkerPool(configConfig)

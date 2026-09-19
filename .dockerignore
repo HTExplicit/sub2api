@@ -66,6 +66,8 @@ coverage/
 !/plugins/cindy-provider/**
 !/plugins/image-tools/
 !/plugins/image-tools/**
+!/plugins/admin-observability/
+!/plugins/admin-observability/**
 /plugins/codex-runtime/dist/
 /plugins/model-policy/dist/
 /plugins/*/dist/

@@ -10,21 +10,23 @@ import (
 )
 
 const (
-	Version               = 1
-	CapabilityProvider    = "extensions.provider.v1"
-	CapabilityCatalog     = "extensions.catalog.v1"
-	CapabilityRequest     = "extensions.request.v1"
-	CapabilityScheduling  = "extensions.scheduling.v1"
-	CapabilityJobs        = "extensions.jobs.v1"
-	CapabilityAdmin       = "extensions.admin.v1"
-	CapabilityUI          = "extensions.ui.v1"
-	CapabilityCredentials = "extensions.credentials.v1"
+	Version                 = 1
+	CapabilityProvider      = "extensions.provider.v1"
+	CapabilityCatalog       = "extensions.catalog.v1"
+	CapabilityRequest       = "extensions.request.v1"
+	CapabilityScheduling    = "extensions.scheduling.v1"
+	CapabilityJobs          = "extensions.jobs.v1"
+	CapabilityAdmin         = "extensions.admin.v1"
+	CapabilityUI            = "extensions.ui.v1"
+	CapabilityCredentials   = "extensions.credentials.v1"
+	CapabilityObservability = "extensions.observability.v1"
 )
 
 var capabilities = map[string]bool{
 	CapabilityProvider: true, CapabilityCatalog: true, CapabilityRequest: true,
 	CapabilityScheduling: true, CapabilityJobs: true, CapabilityAdmin: true, CapabilityUI: true,
-	CapabilityCredentials: true,
+	CapabilityCredentials:   true,
+	CapabilityObservability: true,
 }
 
 func IsCapability(id string) bool { return capabilities[id] }
@@ -36,6 +38,7 @@ type Dependency struct {
 }
 
 type Contribution struct {
+	Assets        []string          `json:"assets,omitempty"`
 	ConfigFlag    string            `json:"config_flag,omitempty"`
 	Fields        []FormField       `json:"fields,omitempty"`
 	AccountFilter *AccountFilter    `json:"account_filter,omitempty"`
@@ -199,6 +202,7 @@ type HostOperation string
 
 const (
 	HostAccountRead       HostOperation = "account.read"
+	HostMetricsQuery      HostOperation = "metrics.account_traffic"
 	HostAccountList       HostOperation = "account.list"
 	HostResolveIdentity   HostOperation = "account.resolve_identity"
 	HostUsageQuery        HostOperation = "usage.query"

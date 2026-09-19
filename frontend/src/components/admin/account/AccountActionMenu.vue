@@ -5,7 +5,7 @@
       <div class="fixed inset-0 z-[9998]" @click="emit('close')"></div>
       <div
         ref="menuRef"
-        class="action-menu-content fixed z-[9999] w-52 overflow-y-auto overscroll-contain rounded-none bg-white shadow-outline ring-1 ring-black/5 dark:bg-dark-800"
+        class="action-menu-content fixed z-[9999] w-52 overflow-y-auto overscroll-contain rounded-xl bg-white shadow-lg ring-1 ring-black/5 dark:bg-dark-800"
         :style="menuStyle"
         @click.stop
       >

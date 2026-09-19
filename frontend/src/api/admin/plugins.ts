@@ -77,6 +77,7 @@ export interface PluginInstallation {
 }
 
 export interface PluginContribution {
+  stylesheet_url?: string
   config_flag?: string
   fields?: PluginFormField[]
   account_filter?: { platforms?: string[]; types?: string[]; statuses?: string[]; exclude_shadows?: boolean }
@@ -107,7 +108,7 @@ export async function contributions(): Promise<PluginContribution[]> {
 }
 
 export async function publicContributions(): Promise<PluginContribution[]> {
-  const { data } = await apiClient.get<PluginContribution[]>('/settings/plugins')
+  const { data } = await apiClient.get<PluginContribution[]>('/settings/plugins', { timeout: 5000 })
   return data || []
 }
 

@@ -28,7 +28,7 @@
     </div>
     <div
       v-else-if="error"
-      class="rounded-none border border-red-200 bg-red-50 px-5 py-8 text-center text-sm text-red-600 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
+      class="rounded-2xl border border-red-200 bg-red-50 px-5 py-8 text-center text-sm text-red-600 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
     >
       {{ t('modelPlaza.loadFailed') }}
     </div>
@@ -54,7 +54,7 @@
       </div>
       <div
         v-else
-        class="rounded-none border border-dashed border-gray-300 px-5 py-12 text-center text-sm text-gray-500 dark:border-dark-600 dark:text-dark-400"
+        class="rounded-2xl border border-dashed border-gray-300 px-5 py-12 text-center text-sm text-gray-500 dark:border-dark-600 dark:text-dark-400"
       >
         {{ searchActive ? t('modelPlaza.noSearchResult') : t('modelPlaza.empty') }}
       </div>

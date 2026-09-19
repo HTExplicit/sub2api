@@ -146,6 +146,9 @@ func (m *PluginManager) bootstrapBundle(ctx context.Context) error {
 		if entry.Migration == "image-tools-v1" {
 			seed.Config, _ = json.Marshal(LegacyImageToolsConfig())
 		}
+		if entry.Migration == "admin-observability-v1" {
+			seed.Config, _ = json.Marshal(LegacyAdminObservabilityConfig(m.cfg))
+		}
 		seed, err = store.LegacyBundleSeed(ctx, entry.ID, entry.Migration, seed)
 		if err != nil {
 			return fmt.Errorf("read plugin migration seed: %w", err)

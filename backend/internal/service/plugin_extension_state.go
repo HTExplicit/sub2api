@@ -27,6 +27,8 @@ type PluginExtensionAccountDirectory interface {
 // field can select another plugin namespace or a database table/SQL statement.
 type pluginExtensionHost struct {
 	active       func() bool
+	allows       func(string, string, string) bool
+	traffic      AccountTrafficObserveCache
 	activity     *QuotaActivityService
 	key          string
 	state        PluginExtensionStateStore
@@ -35,15 +37,41 @@ type pluginExtensionHost struct {
 }
 
 func (h *pluginExtensionHost) Call(ctx context.Context, in extensionv1.HostInvocation) (extensionv1.Result, error) {
-	if (in.Operation == extensionv1.HostResolveIdentity || in.Operation == extensionv1.HostLeaseAcquire || in.Operation == extensionv1.HostStateDue || in.Operation == extensionv1.HostJobSubmit) && h.active != nil && !h.active() {
+	if (in.Operation == extensionv1.HostResolveIdentity || in.Operation == extensionv1.HostLeaseAcquire || in.Operation == extensionv1.HostStateDue || in.Operation == extensionv1.HostJobSubmit || in.Operation == extensionv1.HostMetricsQuery) && h.active != nil && !h.active() {
 		return extensionv1.Result{}, status.Error(codes.Unavailable, "plugin capability is no longer active")
 	}
-	if h.state == nil {
+	if h.state == nil && in.Operation != extensionv1.HostMetricsQuery {
 		return extensionv1.Result{}, status.Error(codes.Unavailable, "extension state unavailable")
 	}
 	var value any
 	var err error
 	switch in.Operation {
+	case extensionv1.HostMetricsQuery:
+		var request extensionv1.AccountQuery
+		if json.Unmarshal(in.Payload, &request) != nil || request.AccountID <= 0 {
+			return extensionv1.Result{}, status.Error(codes.InvalidArgument, "invalid metrics query")
+		}
+		if h.directory == nil || h.traffic == nil {
+			return extensionv1.Result{}, status.Error(codes.Unavailable, "account metrics unavailable")
+		}
+		account, queryErr := h.directory.ReadExtensionAccount(ctx, request.AccountID)
+		if queryErr != nil || account == nil {
+			return extensionv1.Result{}, status.Error(codes.NotFound, "account unavailable")
+		}
+		if !h.permitsCapability(extensionv1.CapabilityObservability, account.Platform, account.Type) {
+			return extensionv1.Result{}, status.Error(codes.PermissionDenied, "metrics are outside plugin capability")
+		}
+		counters, queryErr := h.traffic.Snapshot(ctx, request.AccountID)
+		if queryErr != nil {
+			return extensionv1.Result{}, status.Error(codes.Unavailable, "account metrics unavailable")
+		}
+		snapshot := extensionv1.AccountTrafficSnapshot{AccountID: account.ID, Protocols: map[string]extensionv1.AccountTrafficCounters{}}
+		for protocol, counter := range counters {
+			if protocol.Valid() {
+				snapshot.Protocols[string(protocol)] = counter
+			}
+		}
+		value = snapshot
 	case extensionv1.HostStateDue:
 		var req extensionv1.DueStateRequest
 		if json.Unmarshal(in.Payload, &req) != nil || validatePluginKVNamespace(req.Namespace) != nil || req.Limit < 1 || req.Limit > 100 {
@@ -170,7 +198,22 @@ func (h *pluginExtensionHost) permitsAccount(platform, accountType string, crede
 		if !credentials && capability.ID == extensionv1.CapabilityUI {
 			continue
 		}
+		if h.allows != nil && !h.allows(capability.ID, platform, accountType) {
+			continue
+		}
 		return true
+	}
+	return false
+}
+
+func (h *pluginExtensionHost) permitsCapability(id, platform, accountType string) bool {
+	if h.installation == nil {
+		return false
+	}
+	for _, capability := range h.installation.Manifest.Capabilities {
+		if capability.ID == id && pluginScopeMatches(capability.Platform, platform) && pluginScopeMatches(capability.AccountType, accountType) && (h.allows == nil || h.allows(id, platform, accountType)) {
+			return true
+		}
 	}
 	return false
 }

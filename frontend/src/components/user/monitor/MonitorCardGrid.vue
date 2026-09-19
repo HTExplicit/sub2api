@@ -10,10 +10,10 @@
         class="p-5 rounded-none min-h-[280px] bg-white dark:bg-dark-800 border border-gray-200 dark:border-dark-700 animate-pulse"
       >
         <div class="flex items-start gap-3">
-          <div class="w-9 h-9 rounded-none bg-gray-200 dark:bg-dark-700"></div>
+          <div class="w-9 h-9 rounded-xl bg-gray-200 dark:bg-dark-700"></div>
           <div class="flex-1 space-y-2">
-            <div class="h-4 w-2/3 rounded-none bg-gray-200 dark:bg-dark-700"></div>
-            <div class="h-3 w-1/2 rounded-none bg-gray-200 dark:bg-dark-700"></div>
+            <div class="h-4 w-2/3 rounded bg-gray-200 dark:bg-dark-700"></div>
+            <div class="h-3 w-1/2 rounded bg-gray-200 dark:bg-dark-700"></div>
           </div>
           <div class="h-6 w-16 rounded-full bg-gray-200 dark:bg-dark-700"></div>
         </div>

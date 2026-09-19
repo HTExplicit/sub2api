@@ -5,9 +5,10 @@ import (
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
-func ProvidePluginManager(repo PluginRepository, encryptor SecretEncryptor, cfg *config.Config, hostInfo PluginHostInfo, kv PluginKVStore, activity *QuotaActivityService, gateway *OpenAIGatewayService) *PluginManager {
+func ProvidePluginManager(repo PluginRepository, encryptor SecretEncryptor, cfg *config.Config, hostInfo PluginHostInfo, kv PluginKVStore, activity *QuotaActivityService, gateway *OpenAIGatewayService, traffic AccountTrafficObserveCache) *PluginManager {
 	manager := NewPluginManager(repo, encryptor, cfg, hostInfo, kv)
 	manager.quotaActivity = activity
+	manager.traffic = traffic
 	manager.SetAccountDirectory(gateway)
 	ConfigureProcessExtensionServices(manager, manager)
 	return manager

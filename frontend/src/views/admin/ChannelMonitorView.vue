@@ -2,10 +2,10 @@
   <AppLayout>
     <div class="w-full min-w-0 space-y-6 pb-8">
       <header
-        class="page-header mb-0 rounded-none bg-white p-5 shadow-outline ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700 sm:p-6"
+        class="page-header mb-0 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700 sm:p-6"
       >
         <h1 class="page-title flex items-center gap-2 text-xl font-black text-gray-900 dark:text-white">
-          <span class="inline-flex h-8 w-8 items-center justify-center rounded-none bg-blue-50 text-blue-500 dark:bg-blue-900/30 dark:text-blue-400">
+          <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-blue-50 text-blue-500 dark:bg-blue-900/30 dark:text-blue-400">
             <Icon name="chart" size="sm" />
           </span>
           {{ t('admin.channelMonitor.title') }}
@@ -75,11 +75,11 @@
           </template>
 
           <template #cell-provider="{ row }">
-            <span class="inline-flex items-center rounded-none px-2 py-0.5 text-xs font-medium" :class="providerBadgeClass(row.provider)">
+            <span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium" :class="providerBadgeClass(row.provider)">
               {{ providerLabel(row.provider) }}
             </span>
             <!-- 三种检测模式并列展示，quota 系配额数据源与纯探活一眼可分 -->
-            <span class="ml-1 inline-flex items-center rounded-none px-2 py-0.5 text-xs font-medium" :class="checkModeBadgeClass(row.check_mode)">
+            <span class="ml-1 inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium" :class="checkModeBadgeClass(row.check_mode)">
               {{ checkModeLabel(row.check_mode) }}
             </span>
           </template>

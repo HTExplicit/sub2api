@@ -105,7 +105,7 @@
                   />
                   <span
                     v-if="hasPeakRate(g)"
-                    class="inline-flex items-center gap-1 rounded-none bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
+                    class="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
                     :title="peakRateTitle(g)"
                   >
                     <Icon name="clock" size="xs" class="h-3 w-3" />
@@ -139,7 +139,7 @@
                   />
                   <span
                     v-if="hasPeakRate(g)"
-                    class="inline-flex items-center gap-1 rounded-none bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
+                    class="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
                     :title="peakRateTitle(g)"
                   >
                     <Icon name="clock" size="xs" class="h-3 w-3" />
@@ -244,7 +244,7 @@
                       />
                       <span
                         v-if="hasPeakRate(g)"
-                        class="inline-flex items-center gap-1 rounded-none bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
+                        class="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
                         :title="peakRateTitle(g)"
                       >
                         <Icon name="clock" size="xs" class="h-3 w-3" />
@@ -279,7 +279,7 @@
                       />
                       <span
                         v-if="hasPeakRate(g)"
-                        class="inline-flex items-center gap-1 rounded-none bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
+                        class="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
                         :title="peakRateTitle(g)"
                       >
                         <Icon name="clock" size="xs" class="h-3 w-3" />

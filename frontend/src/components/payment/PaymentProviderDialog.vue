@@ -70,7 +70,7 @@
         </div>
       </div>
 
-      <div v-if="form.provider_key === 'easypay'" class="space-y-3 rounded-none border border-gray-100 p-3 dark:border-dark-700">
+      <div v-if="form.provider_key === 'easypay'" class="space-y-3 rounded-lg border border-gray-100 p-3 dark:border-dark-700">
         <div class="flex items-center justify-between gap-3">
           <div>
             <h5 class="text-sm font-medium text-gray-900 dark:text-white">
@@ -104,7 +104,7 @@
             </div>
             <button
               type="button"
-              class="rounded-none border border-red-200 px-2.5 py-2 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-800/60 dark:text-red-300 dark:hover:bg-red-900/20"
+              class="rounded-lg border border-red-200 px-2.5 py-2 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-800/60 dark:text-red-300 dark:hover:bg-red-900/20"
               @click="removeEasyPayCustomMethod(index)"
             >
               {{ t('common.delete') }}
@@ -230,11 +230,11 @@
         </div>
 
         <!-- 服务商 Webhook 提示 -->
-        <div v-if="providerWebhookUrl" class="mt-3 rounded-none border border-blue-200 bg-blue-50 p-3 dark:border-blue-800/50 dark:bg-blue-900/20">
+        <div v-if="providerWebhookUrl" class="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800/50 dark:bg-blue-900/20">
           <p class="text-xs text-blue-700 dark:text-blue-300">
             {{ t(providerWebhookHint) }}
           </p>
-          <code class="mt-1 block break-all rounded-none bg-blue-100 px-2 py-1 text-xs text-blue-800 dark:bg-blue-900/40 dark:text-blue-200">
+          <code class="mt-1 block break-all rounded bg-blue-100 px-2 py-1 text-xs text-blue-800 dark:bg-blue-900/40 dark:text-blue-200">
             {{ providerWebhookUrl }}
           </code>
           <p v-if="form.provider_key === 'stripe'" class="mt-2 text-xs leading-relaxed text-blue-700 dark:text-blue-300">
@@ -255,7 +255,7 @@
           <div
             v-for="lt in limitableTypes"
             :key="lt.value"
-            class="rounded-none border border-gray-100 p-3 dark:border-dark-700"
+            class="rounded-lg border border-gray-100 p-3 dark:border-dark-700"
           >
             <p class="mb-2 text-xs font-medium text-gray-700 dark:text-gray-300">{{ lt.label }}</p>
             <div class="grid grid-cols-3 gap-3">

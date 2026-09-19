@@ -8,7 +8,7 @@
     <div v-if="account" class="space-y-4">
       <!-- Account Info -->
       <div
-        class="rounded-none border border-gray-200 bg-gray-50 p-4 dark:border-dark-600 dark:bg-dark-700"
+        class="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-dark-600 dark:bg-dark-700"
       >
         <div class="flex items-center gap-3">
           <div
@@ -74,7 +74,7 @@
       </fieldset>
 
       <!-- Gemini OAuth Type Display (read-only) -->
-      <div v-if="isGemini" class="rounded-none border border-gray-200 bg-gray-50 p-4 dark:border-dark-600 dark:bg-dark-700">
+      <div v-if="isGemini" class="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-dark-600 dark:bg-dark-700">
         <div class="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
           {{ t('admin.accounts.oauth.gemini.oauthTypeLabel') }}
         </div>

@@ -6,7 +6,7 @@
     </label>
     <div
       v-if="isSearchable"
-      class="flex items-center gap-2 rounded-none border border-b-0 border-gray-200 bg-gray-50 px-3 py-2 dark:border-dark-600 dark:bg-dark-800"
+      class="flex items-center gap-2 rounded-t-lg border border-b-0 border-gray-200 bg-gray-50 px-3 py-2 dark:border-dark-600 dark:bg-dark-800"
     >
       <Icon name="search" size="sm" class="shrink-0 text-gray-400" />
       <input
@@ -35,7 +35,7 @@
           :value="group.id"
           :checked="modelValue.includes(group.id)"
           @change="handleChange(group.id, ($event.target as HTMLInputElement).checked)"
-          class="h-3.5 w-3.5 shrink-0 rounded-none border-gray-300 text-primary-500 focus:ring-primary-500 dark:border-dark-500"
+          class="h-3.5 w-3.5 shrink-0 rounded border-gray-300 text-primary-500 focus:ring-primary-500 dark:border-dark-500"
         />
         <GroupBadge
           :name="group.name"

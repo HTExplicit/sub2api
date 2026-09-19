@@ -7,7 +7,7 @@
   >
     <form id="bulk-edit-account-form" class="space-y-5" @submit.prevent="() => handleSubmit()">
       <!-- Info -->
-      <div class="rounded-none bg-blue-50 p-4 dark:bg-blue-900/20">
+      <div class="rounded-lg bg-blue-50 p-4 dark:bg-blue-900/20">
         <p class="text-sm text-blue-700 dark:text-blue-400">
           <svg class="mr-1.5 inline h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path
@@ -22,7 +22,7 @@
       </div>
 
       <!-- Mixed platform warning -->
-      <div v-if="isMixedPlatform" class="rounded-none bg-amber-50 p-4 dark:bg-amber-900/20">
+      <div v-if="isMixedPlatform" class="rounded-lg bg-amber-50 p-4 dark:bg-amber-900/20">
         <p class="text-sm text-amber-700 dark:text-amber-400">
           <svg class="mr-1.5 inline h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -62,7 +62,7 @@
             id="bulk-edit-openai-passthrough-enabled"
             type="checkbox"
             aria-controls="bulk-edit-openai-passthrough-body"
-            class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div
@@ -113,7 +113,7 @@
             id="bulk-edit-openai-flatten-namespaces-enabled"
             type="checkbox"
             aria-controls="bulk-edit-openai-flatten-namespaces-body"
-            class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div
@@ -164,7 +164,7 @@
             id="bulk-edit-openai-long-context-billing-enabled"
             type="checkbox"
             aria-controls="bulk-edit-openai-long-context-billing-body"
-            class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div
@@ -194,7 +194,7 @@
           </button>
         </div>
         <p
-          class="mt-3 rounded-none bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
+          class="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
           data-testid="bulk-edit-openai-long-context-shadow-hint"
         >
           {{ t('admin.accounts.bulkEdit.longContextShadowHint') }}
@@ -216,7 +216,7 @@
             id="bulk-edit-base-url-enabled"
             type="checkbox"
             aria-controls="bulk-edit-base-url"
-            class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <input
@@ -254,7 +254,7 @@
             id="bulk-edit-model-restriction-enabled"
             type="checkbox"
             aria-controls="bulk-edit-model-restriction-body"
-            class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
 
@@ -266,7 +266,7 @@
         >
           <div
             v-if="isOpenAIModelRestrictionDisabled"
-            class="rounded-none bg-amber-50 p-3 dark:bg-amber-900/20"
+            class="rounded-lg bg-amber-50 p-3 dark:bg-amber-900/20"
           >
             <p class="text-xs text-amber-700 dark:text-amber-400">
               {{ t('admin.accounts.openai.modelRestrictionDisabledByPassthrough') }}
@@ -330,7 +330,7 @@
 
             <!-- Whitelist Mode -->
             <div v-if="modelRestrictionMode === 'whitelist'">
-              <div class="mb-3 rounded-none bg-blue-50 p-3 dark:bg-blue-900/20">
+              <div class="mb-3 rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
                 <p class="text-xs text-blue-700 dark:text-blue-400">
                   <svg
                     class="mr-1 inline h-4 w-4"
@@ -364,7 +364,7 @@
 
             <!-- Mapping Mode -->
             <div v-else>
-              <div class="mb-3 rounded-none bg-purple-50 p-3 dark:bg-purple-900/20">
+              <div class="mb-3 rounded-lg bg-purple-50 p-3 dark:bg-purple-900/20">
                 <p class="text-xs text-purple-700 dark:text-purple-400">
                   <svg
                     class="mr-1 inline h-4 w-4"
@@ -417,7 +417,7 @@
                   />
                   <button
                     type="button"
-                    class="rounded-none p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
+                    class="rounded-lg p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
                     @click="removeModelMapping(index)"
                   >
                     <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -434,7 +434,7 @@
 
               <button
                 type="button"
-                class="mb-3 w-full rounded-none border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
+                class="mb-3 w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
                 @click="addModelMapping"
               >
                 <svg
@@ -459,7 +459,7 @@
                   v-for="preset in filteredPresets"
                   :key="preset.label"
                   type="button"
-                  :class="['rounded-none px-3 py-1 text-xs transition-colors', preset.color]"
+                  :class="['rounded-lg px-3 py-1 text-xs transition-colors', preset.color]"
                   @click="addPresetMapping(preset.from, preset.to)"
                 >
                   + {{ preset.label }}
@@ -490,12 +490,12 @@
             id="bulk-edit-custom-error-codes-enabled"
             type="checkbox"
             aria-controls="bulk-edit-custom-error-codes-body"
-            class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
 
         <div v-if="enableCustomErrorCodes" id="bulk-edit-custom-error-codes-body" class="space-y-3">
-          <div class="rounded-none bg-amber-50 p-3 dark:bg-amber-900/20">
+          <div class="rounded-lg bg-amber-50 p-3 dark:bg-amber-900/20">
             <p class="text-xs text-amber-700 dark:text-amber-400">
               <Icon name="exclamationTriangle" size="sm" class="mr-1 inline" :stroke-width="2" />
               {{ t('admin.accounts.customErrorCodesWarning') }}
@@ -550,7 +550,7 @@
             <span
               v-for="code in selectedErrorCodes.sort((a, b) => a - b)"
               :key="code"
-              class="inline-flex items-center gap-1 rounded-none bg-red-100 px-2.5 py-0.5 text-sm font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400"
+              class="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-sm font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400"
             >
               {{ code }}
               <button
@@ -588,7 +588,7 @@
             id="bulk-edit-intercept-warmup-enabled"
             type="checkbox"
             aria-controls="bulk-edit-intercept-warmup-body"
-            class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div v-if="enableInterceptWarmup" id="bulk-edit-intercept-warmup-body" class="mt-3">
@@ -630,7 +630,7 @@
             id="bulk-edit-header-override-enabled"
             type="checkbox"
             aria-controls="bulk-edit-header-override-body"
-            class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div v-if="enableHeaderOverride" id="bulk-edit-header-override-body" class="mt-3 space-y-3">
@@ -651,7 +651,7 @@
           </button>
 
           <div v-if="headerOverrideEnabled" class="space-y-3">
-            <div class="rounded-none bg-blue-50 p-3 dark:bg-blue-900/20">
+            <div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
               <p class="text-xs text-blue-700 dark:text-blue-400">
                 <Icon name="exclamationCircle" size="sm" class="mr-1 inline" :stroke-width="2" />
                 {{ t('admin.accounts.headerOverride.info') }}
@@ -688,7 +688,7 @@
             id="bulk-edit-proxy-enabled"
             type="checkbox"
             aria-controls="bulk-edit-proxy-body"
-            class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div id="bulk-edit-proxy-body" :class="!enableProxy && 'pointer-events-none opacity-50'">
@@ -716,7 +716,7 @@
               id="bulk-edit-concurrency-enabled"
               type="checkbox"
               aria-controls="bulk-edit-concurrency"
-              class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+              class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
             />
           </div>
           <input
@@ -745,7 +745,7 @@
               id="bulk-edit-load-factor-enabled"
               type="checkbox"
               aria-controls="bulk-edit-load-factor"
-              class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+              class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
             />
           </div>
           <input
@@ -775,7 +775,7 @@
               id="bulk-edit-priority-enabled"
               type="checkbox"
               aria-controls="bulk-edit-priority"
-              class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+              class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
             />
           </div>
           <input
@@ -803,7 +803,7 @@
               id="bulk-edit-rate-multiplier-enabled"
               type="checkbox"
               aria-controls="bulk-edit-rate-multiplier"
-              class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+              class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
             />
           </div>
           <input
@@ -844,7 +844,7 @@
             id="bulk-edit-status-enabled"
             type="checkbox"
             aria-controls="bulk-edit-status"
-            class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div id="bulk-edit-status" :class="!enableStatus && 'pointer-events-none opacity-50'">
@@ -871,7 +871,7 @@
             id="bulk-edit-openai-ws-mode-enabled"
             type="checkbox"
             aria-controls="bulk-edit-openai-ws-mode"
-            class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div
@@ -908,7 +908,7 @@
             id="bulk-edit-openai-codex-cli-only-enabled"
             type="checkbox"
             aria-controls="bulk-edit-openai-codex-cli-only"
-            class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div
@@ -952,7 +952,7 @@
             id="bulk-edit-openai-codex-app-server-enabled"
             type="checkbox"
             aria-controls="bulk-edit-openai-codex-app-server"
-            class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div
@@ -989,7 +989,7 @@
             id="bulk-edit-openai-codex-fingerprint-mode-enabled"
             v-model="enableCodexFingerprintMode"
             type="checkbox"
-            class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div :class="!enableCodexFingerprintMode && 'pointer-events-none opacity-50'">
@@ -1020,7 +1020,7 @@
             id="bulk-edit-upstream-billing-auto-probe-enabled"
             type="checkbox"
             aria-controls="bulk-edit-upstream-billing-auto-probe"
-            class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div
@@ -1059,7 +1059,7 @@
             id="bulk-edit-openai-endpoint-capabilities-enabled"
             type="checkbox"
             aria-controls="bulk-edit-openai-endpoint-capabilities-body"
-            class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div
@@ -1072,12 +1072,12 @@
             <label
               v-for="option in openAIEndpointCapabilityOptions"
               :key="option.value"
-              class="flex cursor-pointer items-center gap-2 rounded-none border border-gray-200 px-3 py-2 text-sm dark:border-dark-600"
+              class="flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-dark-600"
             >
               <input
                 type="checkbox"
                 :disabled="!enableOpenAIEndpointCapabilities"
-                class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500"
+                class="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500"
                 :data-testid="`bulk-edit-openai-endpoint-capability-${option.value}`"
                 :checked="openAIEndpointCapabilities.includes(option.value)"
                 @change="toggleOpenAIEndpointCapability(option.value, $event)"
@@ -1108,7 +1108,7 @@
             id="bulk-edit-openai-responses-mode-enabled"
             type="checkbox"
             aria-controls="bulk-edit-openai-responses-mode-body"
-            class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div
@@ -1126,7 +1126,7 @@
           />
           <p
             v-if="enableOpenAIEndpointCapabilities && !openAITextGenerationCapabilityEnabled"
-            class="mt-2 rounded-none bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
+            class="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
             data-testid="bulk-edit-openai-responses-mode-not-applicable"
           >
             {{ t('admin.accounts.openai.responsesModeTextDisabledHint') }}
@@ -1149,7 +1149,7 @@
             id="bulk-edit-openai-apikey-ws-mode-enabled"
             type="checkbox"
             aria-controls="bulk-edit-openai-apikey-ws-mode"
-            class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div
@@ -1191,7 +1191,7 @@
             id="bulk-edit-openai-compact-mode-enabled"
             type="checkbox"
             aria-controls="bulk-edit-openai-compact-mode"
-            class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div
@@ -1227,7 +1227,7 @@
             id="bulk-edit-openai-compact-model-mapping-enabled"
             type="checkbox"
             aria-controls="bulk-edit-openai-compact-model-mapping"
-            class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div
@@ -1257,7 +1257,7 @@
               />
               <button
                 type="button"
-                class="rounded-none p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
+                class="rounded-lg p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
                 @click="removeOpenAICompactModelMapping(index)"
               >
                 <Icon name="trash" size="sm" />
@@ -1266,7 +1266,7 @@
           </div>
           <button
             type="button"
-            class="mb-3 w-full rounded-none border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
+            class="mb-3 w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
             data-testid="bulk-edit-openai-compact-model-mapping-add"
             @click="addOpenAICompactModelMapping"
           >
@@ -1290,7 +1290,7 @@
             id="bulk-edit-rpm-limit-enabled"
             type="checkbox"
             aria-controls="bulk-edit-rpm-limit-body"
-            class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
 
@@ -1416,7 +1416,7 @@
             id="bulk-edit-groups-enabled"
             type="checkbox"
             aria-controls="bulk-edit-groups"
-            class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div id="bulk-edit-groups" :class="!enableGroups && 'pointer-events-none opacity-50'">

@@ -31,7 +31,7 @@
           <div class="flex min-w-0 flex-1 items-start gap-4">
             <div
               :class="providerIconClass(item.provider)"
-              class="flex h-11 w-11 shrink-0 items-center justify-center rounded-none text-sm font-semibold"
+              class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-sm font-semibold"
             >
               <Icon
                 v-if="item.provider === 'email'"

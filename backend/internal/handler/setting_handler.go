@@ -3,6 +3,7 @@ package handler
 import (
 	"html"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
@@ -28,6 +29,27 @@ func (h *SettingHandler) GetPublicPluginContributions(c *gin.Context) {
 		return
 	}
 	response.Success(c, h.pluginManager.PublicContributions())
+}
+
+func (h *SettingHandler) GetPublicPluginThemeAsset(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 || h.pluginManager == nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	data, path, err := h.pluginManager.ReadPublicThemeAsset(c.Request.Context(), id, c.Param("revision"), strings.TrimPrefix(c.Param("path"), "/"))
+	if err != nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	contentType := "text/css; charset=utf-8"
+	if strings.HasSuffix(path, ".woff2") {
+		contentType = "font/woff2"
+	}
+	c.Header("Cache-Control", "no-store")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Cross-Origin-Resource-Policy", "same-origin")
+	c.Data(http.StatusOK, contentType, data)
 }
 
 // NewSettingHandler 创建公开设置处理器

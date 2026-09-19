@@ -96,7 +96,7 @@
                 <template v-if="testResults[proxy.id]">
                   <span
                     v-if="testResults[proxy.id].success"
-                    class="inline-flex flex-shrink-0 items-center gap-1 rounded-none bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                    class="inline-flex flex-shrink-0 items-center gap-1 rounded bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
                   >
                     <span v-if="testResults[proxy.id].country">{{
                       testResults[proxy.id].country
@@ -107,7 +107,7 @@
                   </span>
                   <span
                     v-else
-                    class="inline-flex flex-shrink-0 items-center rounded-none bg-red-100 px-1.5 py-0.5 text-xs text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                    class="inline-flex flex-shrink-0 items-center rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-700 dark:bg-red-900/30 dark:text-red-400"
                   >
                     {{ t('admin.proxies.testFailed') }}
                   </span>

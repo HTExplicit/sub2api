@@ -8,6 +8,7 @@ import (
 	cindy "github.com/HTExplicit/sub2api-plugins/cindyprovider/catalog"
 
 	accounttools "github.com/HTExplicit/sub2api-plugins/accounttools/policy"
+	observability "github.com/HTExplicit/sub2api-plugins/adminobservability/policy"
 	imagetools "github.com/HTExplicit/sub2api-plugins/imagetools/policy"
 
 	policy "github.com/HTExplicit/sub2api-plugins/promptskills/policy"
@@ -17,6 +18,9 @@ import (
 type promptPolicyFixture struct{}
 
 func (promptPolicyFixture) InvokeOperation(ctx context.Context, _ string, _ string, in extensionv1.Invocation) (extensionv1.Result, error) {
+	if strings.HasPrefix(in.Operation, "observability.") {
+		return observability.New().Invoke(ctx, in)
+	}
 	if strings.HasPrefix(in.Operation, "image.") {
 		module := imagetools.New()
 		raw, _ := json.Marshal(LegacyImageToolsConfig())

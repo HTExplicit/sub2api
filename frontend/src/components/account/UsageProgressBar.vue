@@ -6,18 +6,18 @@
       class="mb-0.5 flex min-w-0 items-center"
     >
       <div class="flex flex-wrap items-center gap-1.5 text-[9px] text-gray-500 dark:text-gray-400">
-        <span class="rounded-none bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">
+        <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">
           {{ formatRequests }} req
         </span>
-        <span class="rounded-none bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">
+        <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">
           {{ formatTokens }}
         </span>
-        <span class="rounded-none bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800" :title="t('usage.accountBilled')">
+        <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800" :title="t('usage.accountBilled')">
           A ${{ formatAccountCost }}
         </span>
         <span
           v-if="windowStats?.user_cost != null"
-          class="rounded-none bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800"
+          class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800"
           :title="t('usage.userBilled')"
         >
           U ${{ formatUserCost }}
@@ -25,7 +25,7 @@
         <span
           v-if="estimatedTotalCost != null"
           data-test="estimated-total-cost"
-          class="rounded-none bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800"
+          class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800"
           :title="t('admin.accounts.usageWindow.estimatedTotalCostTooltip')"
         >
           {{ t('admin.accounts.usageWindow.estimatedTotalCost', { cost: estimatedTotalCost.toFixed(2) }) }}

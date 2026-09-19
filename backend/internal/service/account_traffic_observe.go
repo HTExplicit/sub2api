@@ -3,12 +3,13 @@ package service
 import (
 	"context"
 	"errors"
-	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"go.uber.org/zap"
 )
 
@@ -99,24 +100,7 @@ const AccountTrafficObserveTTLSeconds = 24 * 60 * 60
 const accountTrafficObserveRedisTimeout = 2 * time.Second
 
 // AccountTrafficObserveState is the per-protocol counter snapshot of one account.
-type AccountTrafficObserveState struct {
-	Started      int64 `json:"started"`
-	Completed2xx int64 `json:"completed_2xx"`
-	Upstream429  int64 `json:"upstream_429"`
-	Upstream5xx  int64 `json:"upstream_5xx"`
-	Cancelled    int64 `json:"cancelled"`
-	FailedOther  int64 `json:"failed_other"`
-	// PeakInFlight is the highest slot count observed at any Begin, read from the
-	// existing concurrency:account:{id} / concurrency:live:account:{id} ZSETs. It
-	// includes scheduler-acquired slots and Live leases of the same account and is
-	// only meaningful for accounts with Concurrency > 0: unlimited accounts never
-	// write slot members, so it reads 0 for them regardless of load.
-	PeakInFlight int `json:"peak_in_flight"`
-	// RequestsLast60s is the rolling count of turns started in the last 60s.
-	RequestsLast60s int `json:"requests_last_60s"`
-	// ObservedSinceMs is when the current 24h window first saw this protocol.
-	ObservedSinceMs int64 `json:"observed_since_ms"`
-}
+type AccountTrafficObserveState = extensionv1.AccountTrafficCounters
 
 // AccountTrafficObserveCache is the Redis-backed counter store (repository).
 type AccountTrafficObserveCache interface {
@@ -132,33 +116,39 @@ var ErrAccountTrafficTelemetryUnavailable = errors.New("account traffic telemetr
 // AccountTrafficObserver hands out turns to the gateway seams. A nil observer,
 // a disabled one, or one without a cache is a no-op everywhere.
 type AccountTrafficObserver struct {
-	cache    AccountTrafficObserveCache
-	disabled bool
+	cache AccountTrafficObserveCache
 }
 
-// NewAccountTrafficObserver builds the observer; gateway.account_traffic_telemetry_disabled
-// is the kill switch (zero value = enabled). A nil cfg means enabled.
-func NewAccountTrafficObserver(cache AccountTrafficObserveCache, cfg *config.Config) *AccountTrafficObserver {
+// The legacy gateway flag is imported during plugin bootstrap. Runtime intent
+// and classification come from the observability plugin.
+func NewAccountTrafficObserver(cache AccountTrafficObserveCache, _ *config.Config) *AccountTrafficObserver {
 	return &AccountTrafficObserver{
-		cache:    cache,
-		disabled: cfg != nil && cfg.Gateway.AccountTrafficTelemetryDisabled,
+		cache: cache,
 	}
 }
 
 // Enabled reports whether Begin will record anything.
 func (o *AccountTrafficObserver) Enabled() bool {
-	return o != nil && !o.disabled && o.cache != nil
+	if o == nil || o.cache == nil {
+		return false
+	}
+	policy, ok := currentTrafficObservationPolicy(context.Background())
+	return ok && policy.Enabled
 }
 
 // Begin records one started turn for accountID/protocol and samples in-flight
 // slots. It never returns an error: on failure it debug-logs and returns nil,
 // whose Finish is a no-op, so started and outcomes stay reconciled.
 func (o *AccountTrafficObserver) Begin(ctx context.Context, accountID int64, protocol AccountTrafficProtocol) *AccountTrafficTurn {
-	if !o.Enabled() || !protocol.Valid() {
+	if o == nil || o.cache == nil || !protocol.Valid() {
 		return nil
 	}
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	policy, available := currentTrafficObservationPolicy(ctx)
+	if !available || !policy.Enabled {
+		return nil
 	}
 	beginCtx, cancel := context.WithTimeout(ctx, accountTrafficObserveRedisTimeout)
 	defer cancel()
@@ -170,7 +160,7 @@ func (o *AccountTrafficObserver) Begin(ctx context.Context, accountID int64, pro
 		)
 		return nil
 	}
-	return &AccountTrafficTurn{cache: o.cache, accountID: accountID, protocol: protocol}
+	return &AccountTrafficTurn{cache: o.cache, accountID: accountID, protocol: protocol, classification: policy.Classification}
 }
 
 // Snapshot returns the per-protocol counters of one account.
@@ -188,10 +178,11 @@ func (o *AccountTrafficObserver) Snapshot(ctx context.Context, accountID int64) 
 
 // AccountTrafficTurn is one started turn awaiting its single Finish.
 type AccountTrafficTurn struct {
-	cache     AccountTrafficObserveCache
-	accountID int64
-	protocol  AccountTrafficProtocol
-	once      sync.Once
+	classification extensionv1.DecisionTable
+	cache          AccountTrafficObserveCache
+	accountID      int64
+	protocol       AccountTrafficProtocol
+	once           sync.Once
 }
 
 // Finish classifies the turn and increments exactly one outcome bucket. It is
@@ -204,7 +195,7 @@ func (t *AccountTrafficTurn) Finish(result *OpenAIForwardResult, err error, clie
 		return
 	}
 	t.once.Do(func() {
-		outcome := classifyAccountTrafficOutcome(result, err, clientCancelled)
+		outcome := evaluateAccountTrafficOutcome(t.classification, result, err, clientCancelled)
 		// Detached like the ConcurrencyService ReleaseFunc: the request context
 		// is usually already cancelled when a cancelled turn finishes.
 		finishCtx, cancel := context.WithTimeout(context.Background(), accountTrafficObserveRedisTimeout)
@@ -220,56 +211,29 @@ func (t *AccountTrafficTurn) Finish(result *OpenAIForwardResult, err error, clie
 	})
 }
 
-// classifyAccountTrafficOutcome is the pure bucket classifier, in priority order:
-//  1. client cancellation (flag, result.ClientDisconnect) or the WS terminals
-//     response.cancelled / response.incomplete → cancelled;
-//  2. err carrying an *UpstreamFailoverError → 429 / 5xx / failed_other by its
-//     StatusCode; any other err → failed_other;
-//  3. no err: a nil result (safety net) → failed_other; a non-WS result →
-//     completed_2xx; a WS result by terminal: completed/done → completed_2xx,
-//     response.failed → by UpstreamTerminalStatus, "" or unknown → failed_other
-//     (an empty WS terminal, e.g. the passthrough zero-turn fallback, is not a
-//     demonstrated success even though SucceededForScheduling tolerates it).
+// Compatibility facade for callers without a begun turn. Started observations
+// instead evaluate the immutable rule table captured before incrementing.
 func classifyAccountTrafficOutcome(result *OpenAIForwardResult, err error, clientCancelled bool) AccountTrafficOutcome {
-	if clientCancelled || (result != nil && result.ClientDisconnect) {
-		return AccountTrafficOutcomeCancelled
-	}
-	if result != nil && result.OpenAIWSMode {
-		switch result.UpstreamTerminalEvent {
-		case "response.cancelled", "response.incomplete":
-			return AccountTrafficOutcomeCancelled
-		}
-	}
-	if err != nil {
-		var failoverErr *UpstreamFailoverError
-		if errors.As(err, &failoverErr) && failoverErr != nil {
-			return accountTrafficOutcomeForStatus(failoverErr.StatusCode)
-		}
+	policy, ok := currentTrafficObservationPolicy(context.Background())
+	if !ok {
 		return AccountTrafficOutcomeFailedOther
 	}
-	if result == nil {
-		return AccountTrafficOutcomeFailedOther
-	}
-	if !result.OpenAIWSMode {
-		return AccountTrafficOutcomeCompleted2xx
-	}
-	switch result.UpstreamTerminalEvent {
-	case "response.completed", "response.done":
-		return AccountTrafficOutcomeCompleted2xx
-	case "response.failed":
-		return accountTrafficOutcomeForStatus(result.UpstreamTerminalStatus)
-	default:
-		return AccountTrafficOutcomeFailedOther
-	}
+	return evaluateAccountTrafficOutcome(policy.Classification, result, err, clientCancelled)
 }
 
-func accountTrafficOutcomeForStatus(status int) AccountTrafficOutcome {
-	switch {
-	case status == http.StatusTooManyRequests:
-		return AccountTrafficOutcomeUpstream429
-	case status >= 500 && status < 600:
-		return AccountTrafficOutcomeUpstream5xx
-	default:
+func evaluateAccountTrafficOutcome(table extensionv1.DecisionTable, result *OpenAIForwardResult, err error, clientCancelled bool) AccountTrafficOutcome {
+	facts := map[string]string{"client_cancelled": strconv.FormatBool(clientCancelled || (result != nil && result.ClientDisconnect)), "has_result": strconv.FormatBool(result != nil), "has_error": strconv.FormatBool(err != nil), "ws": "false", "terminal": "", "terminal_status": "0", "error_status": "0"}
+	if result != nil {
+		facts["ws"] = strconv.FormatBool(result.OpenAIWSMode)
+		facts["terminal"], facts["terminal_status"] = result.UpstreamTerminalEvent, strconv.Itoa(result.UpstreamTerminalStatus)
+	}
+	var failover *UpstreamFailoverError
+	if errors.As(err, &failover) && failover != nil {
+		facts["error_status"] = strconv.Itoa(failover.StatusCode)
+	}
+	value, evalErr := table.Evaluate(facts)
+	if evalErr != nil || !AccountTrafficOutcome(value).Valid() {
 		return AccountTrafficOutcomeFailedOther
 	}
+	return AccountTrafficOutcome(value)
 }

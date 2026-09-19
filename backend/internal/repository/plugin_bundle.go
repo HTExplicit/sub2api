@@ -130,7 +130,7 @@ func (r *pluginRepository) LegacyBundleSeed(ctx context.Context, key, profile st
 	if imported {
 		return fallback, nil
 	}
-	if profile == "" || profile == "cindy-provider-v1" || profile == "image-tools-v1" {
+	if profile == "" || profile == "cindy-provider-v1" || profile == "image-tools-v1" || profile == "admin-observability-v1" {
 		return fallback, nil
 	}
 	if profile != "codex-tickets-v1" {

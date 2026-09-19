@@ -59,7 +59,7 @@
 }
 
 .markdown-body code {
-  @apply rounded-none bg-gray-100 px-2 py-1 font-mono text-[13px] text-pink-600 dark:bg-dark-700 dark:text-pink-400;
+  @apply rounded-lg bg-gray-100 px-2 py-1 font-mono text-[13px] text-pink-600 dark:bg-dark-700 dark:text-pink-400;
 }
 
 .markdown-body pre {
@@ -75,7 +75,7 @@
 }
 
 .markdown-body table {
-  @apply mb-5 w-full overflow-hidden rounded-none border border-gray-200 dark:border-dark-600;
+  @apply mb-5 w-full overflow-hidden rounded-lg border border-gray-200 dark:border-dark-600;
 }
 
 .markdown-body th,

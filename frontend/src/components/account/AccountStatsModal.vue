@@ -52,7 +52,7 @@
               <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{
                 t('admin.accounts.stats.totalCost')
               }}</span>
-              <div class="rounded-none bg-emerald-100 p-1.5 dark:bg-emerald-900/30">
+              <div class="rounded-lg bg-emerald-100 p-1.5 dark:bg-emerald-900/30">
                 <svg
                   class="h-4 w-4 text-emerald-600 dark:text-emerald-400"
                   fill="none"
@@ -90,7 +90,7 @@
               <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{
                 t('admin.accounts.stats.totalRequests')
               }}</span>
-              <div class="rounded-none bg-blue-100 p-1.5 dark:bg-blue-900/30">
+              <div class="rounded-lg bg-blue-100 p-1.5 dark:bg-blue-900/30">
                 <Icon name="bolt" size="sm" class="text-blue-600 dark:text-blue-400" :stroke-width="2" />
               </div>
             </div>
@@ -110,7 +110,7 @@
               <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{
                 t('admin.accounts.stats.avgDailyCost')
               }}</span>
-              <div class="rounded-none bg-amber-100 p-1.5 dark:bg-amber-900/30">
+              <div class="rounded-lg bg-amber-100 p-1.5 dark:bg-amber-900/30">
                 <Icon
                   name="calculator"
                   size="sm"
@@ -142,7 +142,7 @@
               <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{
                 t('admin.accounts.stats.avgDailyRequests')
               }}</span>
-              <div class="rounded-none bg-purple-100 p-1.5 dark:bg-purple-900/30">
+              <div class="rounded-lg bg-purple-100 p-1.5 dark:bg-purple-900/30">
                 <svg
                   class="h-4 w-4 text-purple-600 dark:text-purple-400"
                   fill="none"
@@ -172,7 +172,7 @@
           <!-- Today Overview -->
           <div class="card p-4">
             <div class="mb-3 flex items-center gap-2">
-              <div class="rounded-none bg-cyan-100 p-1.5 dark:bg-cyan-900/30">
+              <div class="rounded-lg bg-cyan-100 p-1.5 dark:bg-cyan-900/30">
                 <svg
                   class="h-4 w-4 text-cyan-600 dark:text-cyan-400"
                   fill="none"
@@ -226,7 +226,7 @@
           <!-- Highest Cost Day -->
           <div class="card p-4">
             <div class="mb-3 flex items-center gap-2">
-              <div class="rounded-none bg-orange-100 p-1.5 dark:bg-orange-900/30">
+              <div class="rounded-lg bg-orange-100 p-1.5 dark:bg-orange-900/30">
                 <Icon
                   name="fire"
                   size="sm"
@@ -273,7 +273,7 @@
           <!-- Highest Request Day -->
           <div class="card p-4">
             <div class="mb-3 flex items-center gap-2">
-              <div class="rounded-none bg-indigo-100 p-1.5 dark:bg-indigo-900/30">
+              <div class="rounded-lg bg-indigo-100 p-1.5 dark:bg-indigo-900/30">
                 <Icon
                   name="trendingUp"
                   size="sm"
@@ -323,7 +323,7 @@
           <!-- Accumulated Tokens -->
           <div class="card p-4">
             <div class="mb-3 flex items-center gap-2">
-              <div class="rounded-none bg-teal-100 p-1.5 dark:bg-teal-900/30">
+              <div class="rounded-lg bg-teal-100 p-1.5 dark:bg-teal-900/30">
                 <Icon name="cube" size="sm" class="text-teal-600 dark:text-teal-400" :stroke-width="2" />
               </div>
               <span class="text-sm font-semibold text-gray-900 dark:text-white">{{
@@ -353,7 +353,7 @@
           <!-- Performance -->
           <div class="card p-4">
             <div class="mb-3 flex items-center gap-2">
-              <div class="rounded-none bg-rose-100 p-1.5 dark:bg-rose-900/30">
+              <div class="rounded-lg bg-rose-100 p-1.5 dark:bg-rose-900/30">
                 <Icon name="bolt" size="sm" class="text-rose-600 dark:text-rose-400" :stroke-width="2" />
               </div>
               <span class="text-sm font-semibold text-gray-900 dark:text-white">{{
@@ -383,7 +383,7 @@
           <!-- Recent Activity -->
           <div class="card p-4">
             <div class="mb-3 flex items-center gap-2">
-              <div class="rounded-none bg-lime-100 p-1.5 dark:bg-lime-900/30">
+              <div class="rounded-lg bg-lime-100 p-1.5 dark:bg-lime-900/30">
                 <Icon
                   name="clipboard"
                   size="sm"
@@ -474,7 +474,7 @@
       <div class="flex justify-end">
         <button
           @click="handleClose"
-          class="rounded-none bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-300 dark:hover:bg-dark-500"
+          class="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-300 dark:hover:bg-dark-500"
         >
           {{ t('common.close') }}
         </button>

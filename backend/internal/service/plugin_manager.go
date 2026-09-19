@@ -43,6 +43,7 @@ type pluginRoute struct {
 type PluginManager struct {
 	bundlePath    string
 	quotaActivity *QuotaActivityService
+	traffic       AccountTrafficObserveCache
 	repo          PluginRepository
 	encryptor     SecretEncryptor
 	cfg           *config.Config
@@ -1149,7 +1150,10 @@ func (m *PluginManager) buildHostServices(installation *PluginInstallation) plug
 	if installation.Manifest.Requires.ExtensionAPI > 0 {
 		state, _ := m.repo.(PluginExtensionStateStore)
 		directory, _ := m.accountDirectory.(PluginExtensionAccountDirectory)
-		host.extension = &pluginExtensionHost{key: installation.PluginKey, state: state, directory: directory, installation: installation, activity: m.quotaActivity, active: func() bool {
+		host.extension = &pluginExtensionHost{key: installation.PluginKey, state: state, directory: directory, installation: installation, activity: m.quotaActivity, traffic: m.traffic, allows: func(capability, platform, accountType string) bool {
+			registry := m.extensions.Load()
+			return registry != nil && registry.unavailable == "" && pluginHasCapability(registry.installations[installation.ID], capability, platform, accountType)
+		}, active: func() bool {
 			registry := m.extensions.Load()
 			if registry == nil || registry.unavailable != "" {
 				return false

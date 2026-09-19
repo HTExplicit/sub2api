@@ -14,10 +14,10 @@
           <div
             class="mt-3 flex flex-wrap gap-2 text-xs text-gray-600 dark:text-gray-300"
           >
-            <span class="rounded-none bg-gray-100 px-2 py-1 dark:bg-dark-700">{{
+            <span class="rounded bg-gray-100 px-2 py-1 dark:bg-dark-700">{{
               t("admin.plugins.onlyOpenAI")
             }}</span>
-            <span class="rounded-none bg-gray-100 px-2 py-1 dark:bg-dark-700">{{
+            <span class="rounded bg-gray-100 px-2 py-1 dark:bg-dark-700">{{
               t("admin.plugins.noAccountCoupling")
             }}</span>
           </div>
@@ -104,7 +104,7 @@
                   >v{{ plugin.version }}</span
                 >
                 <span
-                  class="rounded-none px-2 py-0.5 text-xs font-medium"
+                  class="rounded px-2 py-0.5 text-xs font-medium"
                   :class="stateClass(plugin.state)"
                 >
                   {{ t(`admin.plugins.${plugin.state}`) }}
@@ -138,7 +138,7 @@
               </p>
               <div class="mt-2 flex items-center gap-2">
                 <span
-                  class="rounded-none px-2 py-0.5 text-xs font-medium"
+                  class="rounded px-2 py-0.5 text-xs font-medium"
                   :class="compatibilityClass(plugin.compatibility.status)"
                 >
                   {{ t(`admin.plugins.${plugin.compatibility.status}`) }}
@@ -177,7 +177,7 @@
               </p>
               <div class="mt-2 flex flex-wrap gap-2 text-xs">
                 <span
-                  class="rounded-none px-2 py-0.5"
+                  class="rounded px-2 py-0.5"
                   :class="
                     plugin.runtime_healthy
                       ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
@@ -191,7 +191,7 @@
                   }}
                 </span>
                 <span
-                  class="rounded-none bg-gray-100 px-2 py-0.5 text-gray-600 dark:bg-dark-700 dark:text-gray-300"
+                  class="rounded bg-gray-100 px-2 py-0.5 text-gray-600 dark:bg-dark-700 dark:text-gray-300"
                 >
                   {{ t("admin.plugins.signature") }}:
                   {{ t(`admin.plugins.${plugin.signature_status}`) }}

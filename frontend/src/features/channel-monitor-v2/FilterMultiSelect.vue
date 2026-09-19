@@ -62,7 +62,7 @@
           >
             <span class="flex min-w-0 flex-1 items-center gap-2">
               <span
-                class="checkbox flex h-4 w-4 items-center justify-center rounded-none border border-gray-300 bg-white text-primary-500 dark:border-dark-600 dark:bg-dark-900"
+                class="checkbox flex h-4 w-4 items-center justify-center rounded border border-gray-300 bg-white text-primary-500 dark:border-dark-600 dark:bg-dark-900"
                 :class="modelValue.includes(option.value) ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30' : ''"
               >
                 <Icon v-if="modelValue.includes(option.value)" name="check" size="sm" class="text-primary-500" />

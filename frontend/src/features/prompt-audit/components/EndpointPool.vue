@@ -61,8 +61,8 @@
           <div>
             <p class="mb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400 xl:hidden">{{ t('admin.promptAudit.pool.limits') }}</p>
             <div class="flex flex-wrap gap-1.5 text-xs text-gray-600 dark:text-dark-300">
-              <span class="rounded-none bg-gray-100 px-2 py-1 tabular-nums dark:bg-dark-800">{{ endpoint.timeout_ms }} ms</span>
-              <span class="rounded-none bg-gray-100 px-2 py-1 tabular-nums dark:bg-dark-800">{{ endpoint.input_limit }} chars</span>
+              <span class="rounded-md bg-gray-100 px-2 py-1 tabular-nums dark:bg-dark-800">{{ endpoint.timeout_ms }} ms</span>
+              <span class="rounded-md bg-gray-100 px-2 py-1 tabular-nums dark:bg-dark-800">{{ endpoint.input_limit }} chars</span>
             </div>
           </div>
 

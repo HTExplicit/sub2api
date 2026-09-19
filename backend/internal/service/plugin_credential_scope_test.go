@@ -39,4 +39,8 @@ func TestRequestPolicyCapabilityDoesNotImplyCredentialAccess(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, directory.calls)
 	require.Contains(t, string(result.Payload), "synthetic-only")
+	host.allows = func(capability, _, _ string) bool { return capability != extensionv1.CapabilityCredentials }
+	_, err = host.Call(context.Background(), extensionv1.HostInvocation{Operation: extensionv1.HostResolveIdentity, Payload: raw})
+	require.Equal(t, codes.PermissionDenied, status.Code(err), "a declaration cannot override a revoked live capability")
+	require.Equal(t, 1, directory.calls)
 }

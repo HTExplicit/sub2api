@@ -209,9 +209,10 @@ func pluginDependenciesHealthy(installation *PluginInstallation, registry *plugi
 
 type PluginContribution struct {
 	extensionv1.Contribution
-	PluginID  int64  `json:"plugin_id"`
-	Available bool   `json:"available"`
-	Reason    string `json:"reason,omitempty"`
+	StylesheetURL string `json:"stylesheet_url,omitempty"`
+	PluginID      int64  `json:"plugin_id"`
+	Available     bool   `json:"available"`
+	Reason        string `json:"reason,omitempty"`
 }
 
 func hasEnabledPluginBinding(bindings []PluginBinding) bool {
@@ -273,6 +274,9 @@ func (m *PluginManager) Contributions() []PluginContribution {
 		runtime := registry.runtimes[id]
 		available := registry.unavailable == "" && runtime != nil && !runtime.draining.Load() && !runtime.client.Exited() && pluginDependenciesHealthy(installation, registry, map[int64]bool{})
 		for _, contribution := range installation.Manifest.Contributions {
+			if contribution.Slot == "theme" && !pluginHasCapability(installation, extensionv1.CapabilityUI, "*", "*") {
+				continue
+			}
 			flag, known := m.contributionConfigured(installation, runtime, contribution.ConfigFlag)
 			if known && !flag {
 				continue
@@ -334,11 +338,19 @@ func (m *PluginManager) contributionConfigured(installation *PluginInstallation,
 func (m *PluginManager) PublicContributions() []PluginContribution {
 	out := make([]PluginContribution, 0)
 	for _, item := range m.Contributions() {
-		if item.Permission != "user" || item.Slot != "surface" {
+		isTheme := item.Permission == "public" && item.Slot == "theme"
+		if !isTheme && (item.Permission != "user" || item.Slot != "surface") {
 			continue
 		}
+		if isTheme {
+			installation, _ := m.installedByID(item.PluginID)
+			if installation == nil {
+				continue
+			}
+			item.StylesheetURL = publicThemeAssetURL(installation, item.Entrypoint)
+		}
 		item.Action, item.Entrypoint, item.ConfigFlag = "", "", ""
-		item.Fields, item.AccountFilter = nil, nil
+		item.Fields, item.AccountFilter, item.Assets = nil, nil, nil
 		out = append(out, item)
 	}
 	return out

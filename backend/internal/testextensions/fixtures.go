@@ -11,6 +11,7 @@ import (
 	cindy "github.com/HTExplicit/sub2api-plugins/cindyprovider/catalog"
 
 	accounttools "github.com/HTExplicit/sub2api-plugins/accounttools/policy"
+	observability "github.com/HTExplicit/sub2api-plugins/adminobservability/policy"
 	imagetools "github.com/HTExplicit/sub2api-plugins/imagetools/policy"
 	catalog "github.com/HTExplicit/sub2api-plugins/modelpolicy/catalog"
 	prompt "github.com/HTExplicit/sub2api-plugins/promptskills/policy"
@@ -21,6 +22,9 @@ import (
 type operations struct{ imageConfig *extensionv1.ImageToolsConfig }
 
 func (fixture operations) InvokeOperation(ctx context.Context, _, _ string, in extensionv1.Invocation) (extensionv1.Result, error) {
+	if strings.HasPrefix(in.Operation, "observability.") {
+		return observability.New().Invoke(ctx, in)
+	}
 	if strings.HasPrefix(in.Operation, "image.") {
 		module := imagetools.New()
 		config := service.LegacyImageToolsConfig()

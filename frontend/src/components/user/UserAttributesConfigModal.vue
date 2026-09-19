@@ -39,7 +39,7 @@
         <div
           v-for="attr in attributes"
           :key="attr.id"
-          class="flex items-center gap-3 rounded-none border border-gray-200 bg-white p-3 dark:border-dark-600 dark:bg-dark-800"
+          class="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 dark:border-dark-600 dark:bg-dark-800"
         >
           <!-- Drag Handle -->
           <div class="cursor-move text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" :title="t('admin.users.attributes.dragToReorder')">
@@ -70,14 +70,14 @@
           <div class="flex items-center gap-1">
             <button
               @click="openEditModal(attr)"
-              class="rounded-none p-1.5 text-gray-500 hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400"
+              class="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400"
               :title="t('common.edit')"
             >
               <Icon name="edit" size="sm" />
             </button>
             <button
               @click="confirmDelete(attr)"
-              class="rounded-none p-1.5 text-gray-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
+              class="rounded-lg p-1.5 text-gray-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
               :title="t('common.delete')"
             >
               <Icon name="trash" size="sm" />
@@ -161,7 +161,7 @@
           <button
             type="button"
             @click="removeOption(index)"
-            class="rounded-none p-1.5 text-gray-500 hover:bg-red-50 hover:text-red-600"
+            class="rounded-lg p-1.5 text-gray-500 hover:bg-red-50 hover:text-red-600"
           >
             <Icon name="x" size="sm" :stroke-width="2" />
           </button>
@@ -197,11 +197,11 @@
       <!-- Required & Enabled -->
       <div class="flex items-center gap-6">
         <label class="flex items-center gap-2">
-          <input v-model="form.required" type="checkbox" class="h-4 w-4 rounded-none border-gray-300 text-primary-600" />
+          <input v-model="form.required" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-primary-600" />
           <span class="text-sm text-gray-700 dark:text-gray-300">{{ t('admin.users.attributes.required') }}</span>
         </label>
         <label class="flex items-center gap-2">
-          <input v-model="form.enabled" type="checkbox" class="h-4 w-4 rounded-none border-gray-300 text-primary-600" />
+          <input v-model="form.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-primary-600" />
           <span class="text-sm text-gray-700 dark:text-gray-300">{{ t('admin.users.attributes.enabled') }}</span>
         </label>
       </div>

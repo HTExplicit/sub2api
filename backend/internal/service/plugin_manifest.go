@@ -214,6 +214,18 @@ func (m PluginManifest) ValidateForRuntime(runtimeKey string) error {
 	}
 	seen := make(map[string]bool)
 	for _, contribution := range m.Contributions {
+		if contribution.Slot == "theme" {
+			if contribution.Permission != "public" || !strings.HasSuffix(contribution.Entrypoint, ".css") || len(contribution.Assets) > 32 {
+				return errors.New("主题贡献必须声明公开 CSS 和有界资源集合")
+			}
+		} else if len(contribution.Assets) != 0 {
+			return errors.New("只有主题贡献可公开资源")
+		}
+		for _, asset := range contribution.Assets {
+			if !safePluginRelativePath(asset) || !strings.HasPrefix(asset, "ui/") || !strings.HasSuffix(asset, ".woff2") {
+				return errors.New("主题附加资源必须是包内 WOFF2 字体")
+			}
+		}
 		if contribution.ConfigFlag != "" && !regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`).MatchString(contribution.ConfigFlag) {
 			return errors.New("插件界面条件必须引用布尔配置字段")
 		}

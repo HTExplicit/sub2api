@@ -33,7 +33,7 @@
           :href="docUrl"
           target="_blank"
           rel="noopener noreferrer"
-          class="hidden items-center gap-1.5 rounded-none px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white sm:flex"
+          class="hidden items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white sm:flex"
         >
           <Icon name="book" size="sm" />
           <span class="hidden sm:inline">{{ t('nav.docs') }}</span>
@@ -45,7 +45,7 @@
           :to="{ path: '/model-plaza', query: { embedded: '1' } }"
           :title="t('nav.modelPlaza')"
           :aria-label="t('nav.modelPlaza')"
-          class="flex items-center gap-1.5 rounded-none px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+          class="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
         >
           <Icon name="grid" size="sm" />
           <span class="hidden sm:inline">{{ t('nav.modelPlaza') }}</span>
@@ -60,7 +60,7 @@
         <!-- Balance Display -->
         <div
           v-if="user"
-          class="group relative hidden items-center gap-2 rounded-none bg-primary-50 px-3 py-1.5 dark:bg-primary-900/20 sm:flex"
+          class="group relative hidden items-center gap-2 rounded-xl bg-primary-50 px-3 py-1.5 dark:bg-primary-900/20 sm:flex"
         >
           <svg
             class="h-4 w-4 text-primary-600 dark:text-primary-400"
@@ -80,12 +80,12 @@
           </span>
           <span
             v-if="frozenBalance > 0"
-            class="rounded-none bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"
+            class="rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"
           >
             {{ balanceFrozenLabel }}
           </span>
           <div
-            class="pointer-events-none absolute right-0 top-full mt-2 hidden w-56 rounded-none border border-gray-200 bg-white p-3 text-xs group-hover:block dark:border-dark-700 dark:bg-dark-800"
+            class="pointer-events-none absolute right-0 top-full mt-2 hidden w-56 rounded-lg border border-gray-200 bg-white p-3 text-xs shadow-lg group-hover:block dark:border-dark-700 dark:bg-dark-800"
           >
             <div class="flex items-center justify-between">
               <span class="text-gray-500 dark:text-dark-400">{{ balanceAvailableText }}</span>
@@ -108,7 +108,7 @@
         <div v-if="user" class="relative" ref="dropdownRef">
           <button
             @click="toggleDropdown"
-            class="flex items-center gap-2 rounded-none p-1.5 transition-colors hover:bg-gray-100 dark:hover:bg-dark-800"
+            class="flex items-center gap-2 rounded-xl p-1.5 transition-colors hover:bg-gray-100 dark:hover:bg-dark-800"
             :aria-label="t('common.userMenu')"
           >
             <div class="flex h-8 w-8 items-center justify-center overflow-hidden rounded-none bg-primary-500 text-sm font-medium text-white">

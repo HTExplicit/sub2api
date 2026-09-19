@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -203,6 +204,9 @@ func (r *pluginRuntime) validateAndApplyNormalizedConfig(ctx context.Context, co
 	configJSON, err = json.Marshal(normalized)
 	if err != nil {
 		return nil, fmt.Errorf("序列化插件规范化配置: %w", err)
+	}
+	if previous := r.configSnapshot.Load(); previous != nil && bytes.Equal(*previous, configJSON) {
+		return configJSON, nil
 	}
 	r.configuring.Store(true)
 	defer r.configuring.Store(false)

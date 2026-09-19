@@ -176,6 +176,8 @@ output/
 !/plugins/model-policy/
 !/plugins/image-tools/
 !/plugins/admin-observability/
+!/plugins/admin-observability/scripts/
+!/plugins/admin-observability/scripts/check-theme.py
 /plugins/*/dist/
 /plugins/*/node_modules/
 /plugins/*/*.s2plugin

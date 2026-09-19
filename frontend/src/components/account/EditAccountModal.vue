@@ -191,7 +191,7 @@
                 <li>{{ t('admin.accounts.cnProviders.zhipuTeam.help.step3') }}</li>
                 <li>{{ t('admin.accounts.cnProviders.zhipuTeam.help.step4') }}</li>
               </ol>
-              <p class="mt-2 break-all rounded-none bg-black/20 p-1.5 font-mono text-[11px] leading-relaxed">
+              <p class="mt-2 break-all rounded bg-black/20 p-1.5 font-mono text-[11px] leading-relaxed">
                 {{ t('admin.accounts.cnProviders.zhipuTeam.help.example') }}
               </p>
             </HelpTooltip>
@@ -241,7 +241,7 @@
 
           <div
             v-if="isOpenAIModelRestrictionDisabled"
-            class="mb-3 rounded-none bg-amber-50 p-3 dark:bg-amber-900/20"
+            class="mb-3 rounded-lg bg-amber-50 p-3 dark:bg-amber-900/20"
           >
             <p class="text-xs text-amber-700 dark:text-amber-400">
               {{ t('admin.accounts.openai.modelRestrictionDisabledByPassthrough') }}
@@ -355,7 +355,7 @@
 
             <!-- Mapping Mode -->
             <div v-else>
-              <div class="mb-3 rounded-none bg-purple-50 p-3 dark:bg-purple-900/20">
+              <div class="mb-3 rounded-lg bg-purple-50 p-3 dark:bg-purple-900/20">
                 <p class="text-xs text-purple-700 dark:text-purple-400">
                   <svg
                     class="mr-1 inline h-4 w-4"
@@ -447,7 +447,7 @@
                 <button
                   type="button"
                   @click="removeModelMapping(index)"
-                  class="rounded-none p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
+                  class="rounded-lg p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
                 >
                   <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path
@@ -464,7 +464,7 @@
             <button
               type="button"
               @click="addModelMapping"
-              class="mb-3 w-full rounded-none border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
+              class="mb-3 w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
             >
               <svg
                 class="mr-1 inline h-4 w-4"
@@ -489,7 +489,7 @@
                   :key="preset.label"
                   type="button"
                   @click="addPresetMapping(preset.from, preset.to)"
-                  :class="['rounded-none px-3 py-1 text-xs transition-colors', preset.color]"
+                  :class="['rounded-lg px-3 py-1 text-xs transition-colors', preset.color]"
                 >
                   + {{ preset.label }}
                 </button>
@@ -523,7 +523,7 @@
               />
             </button>
           </div>
-          <div v-if="poolModeEnabled" class="rounded-none bg-blue-50 p-3 dark:bg-blue-900/20">
+          <div v-if="poolModeEnabled" class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
             <p class="text-xs text-blue-700 dark:text-blue-400">
               <Icon name="exclamationCircle" size="sm" class="mr-1 inline" :stroke-width="2" />
               {{ t('admin.accounts.poolModeInfo') }}
@@ -589,7 +589,7 @@
           </div>
 
           <div v-if="customErrorCodesEnabled" class="space-y-3">
-            <div class="rounded-none bg-amber-50 p-3 dark:bg-amber-900/20">
+            <div class="rounded-lg bg-amber-50 p-3 dark:bg-amber-900/20">
               <p class="text-xs text-amber-700 dark:text-amber-400">
                 <Icon name="exclamationTriangle" size="sm" class="mr-1 inline" :stroke-width="2" />
                 {{ t('admin.accounts.customErrorCodesWarning') }}
@@ -642,7 +642,7 @@
               <span
                 v-for="code in selectedErrorCodes.sort((a, b) => a - b)"
                 :key="code"
-                class="inline-flex items-center gap-1 rounded-none bg-red-100 px-2.5 py-0.5 text-sm font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                class="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-sm font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400"
               >
                 {{ code }}
                 <button
@@ -711,7 +711,7 @@
           <p v-else-if="grokMediaEligibilityError" class="text-xs text-red-600 dark:text-red-400">
             {{ grokMediaEligibilityError }}
           </p>
-          <div v-else-if="grokMediaEligibilityState" class="rounded-none bg-gray-50 p-3 text-xs dark:bg-dark-700">
+          <div v-else-if="grokMediaEligibilityState" class="rounded-lg bg-gray-50 p-3 text-xs dark:bg-dark-700">
             <span class="font-medium">{{ t('admin.accounts.grokMediaEligibility.current') }}</span>
             <span class="ml-1" data-testid="grok-media-eligibility-status">
               {{ grokMediaEligibilityState.eligible ? t('admin.accounts.grokMediaEligibility.eligible') : t('admin.accounts.grokMediaEligibility.ineligible') }}
@@ -720,7 +720,7 @@
           </div>
           <div
             v-if="grokMediaEligibilityMode === 'enabled'"
-            class="rounded-none bg-amber-50 p-3 dark:bg-amber-900/20"
+            class="rounded-lg bg-amber-50 p-3 dark:bg-amber-900/20"
           >
             <p class="text-xs text-amber-700 dark:text-amber-400">
               <Icon name="exclamationTriangle" size="sm" class="mr-1 inline" :stroke-width="2" />
@@ -801,7 +801,7 @@
         </div>
 
         <div v-if="headerOverrideEnabled" class="space-y-3">
-          <div class="rounded-none bg-blue-50 p-3 dark:bg-blue-900/20">
+          <div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
             <p class="text-xs text-blue-700 dark:text-blue-400">
               <Icon name="exclamationCircle" size="sm" class="mr-1 inline" :stroke-width="2" />
               {{ t('admin.accounts.headerOverride.info') }}
@@ -824,7 +824,7 @@
 
         <div
           v-if="isOpenAIModelRestrictionDisabled"
-          class="mb-3 rounded-none bg-amber-50 p-3 dark:bg-amber-900/20"
+          class="mb-3 rounded-lg bg-amber-50 p-3 dark:bg-amber-900/20"
         >
           <p class="text-xs text-amber-700 dark:text-amber-400">
             {{ t('admin.accounts.openai.modelRestrictionDisabledByPassthrough') }}
@@ -879,7 +879,7 @@
 
           <!-- Mapping Mode -->
           <div v-else>
-            <div class="mb-3 rounded-none bg-purple-50 p-3 dark:bg-purple-900/20">
+            <div class="mb-3 rounded-lg bg-purple-50 p-3 dark:bg-purple-900/20">
               <p class="text-xs text-purple-700 dark:text-purple-400">
                 {{ t('admin.accounts.mapRequestModels') }}
               </p>
@@ -927,7 +927,7 @@
                 <button
                   type="button"
                   @click="removeModelMapping(index)"
-                  class="rounded-none p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
+                  class="rounded-lg p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
                 >
                   <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path
@@ -944,7 +944,7 @@
             <button
               type="button"
               @click="addModelMapping"
-              class="mb-3 w-full rounded-none border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
+              class="mb-3 w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
             >
               + {{ t('admin.accounts.addMapping') }}
             </button>
@@ -956,7 +956,7 @@
                 :key="'oauth-' + preset.label"
                 type="button"
                 @click="addPresetMapping(preset.from, preset.to)"
-                :class="['rounded-none px-3 py-1 text-xs transition-colors', preset.color]"
+                :class="['rounded-lg px-3 py-1 text-xs transition-colors', preset.color]"
               >
                 + {{ preset.label }}
               </button>
@@ -1105,7 +1105,7 @@
 
           <!-- Mapping Mode -->
           <div v-else>
-            <div class="mb-3 rounded-none bg-purple-50 p-3 dark:bg-purple-900/20">
+            <div class="mb-3 rounded-lg bg-purple-50 p-3 dark:bg-purple-900/20">
               <p class="text-xs text-purple-700 dark:text-purple-400">
                 <svg
                   class="mr-1 inline h-4 w-4"
@@ -1167,7 +1167,7 @@
                 <button
                   type="button"
                   @click="removeModelMapping(index)"
-                  class="rounded-none p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
+                  class="rounded-lg p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
                 >
                   <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path
@@ -1184,7 +1184,7 @@
             <button
               type="button"
               @click="addModelMapping"
-              class="mb-3 w-full rounded-none border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
+              class="mb-3 w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
             >
               <svg
                 class="mr-1 inline h-4 w-4"
@@ -1209,7 +1209,7 @@
                 :key="preset.label"
                 type="button"
                 @click="addPresetMapping(preset.from, preset.to)"
-                :class="['rounded-none px-3 py-1 text-xs transition-colors', preset.color]"
+                :class="['rounded-lg px-3 py-1 text-xs transition-colors', preset.color]"
               >
                 + {{ preset.label }}
               </button>
@@ -1283,7 +1283,7 @@
             <input
               v-model="editBedrockForceGlobal"
               type="checkbox"
-              class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500"
+              class="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500"
             />
             <span class="text-sm text-gray-700 dark:text-gray-300">{{ t('admin.accounts.bedrockForceGlobal') }}</span>
           </label>
@@ -1365,7 +1365,7 @@
                 :key="preset.from"
                 type="button"
                 @click="modelMappings.push({ from: preset.from, to: preset.to })"
-                :class="['rounded-none px-3 py-1 text-xs transition-colors', preset.color]"
+                :class="['rounded-lg px-3 py-1 text-xs transition-colors', preset.color]"
               >
                 + {{ preset.label }}
               </button>
@@ -1398,7 +1398,7 @@
               />
             </button>
           </div>
-          <div v-if="poolModeEnabled" class="rounded-none bg-blue-50 p-3 dark:bg-blue-900/20">
+          <div v-if="poolModeEnabled" class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
             <p class="text-xs text-blue-700 dark:text-blue-400">
               <Icon name="exclamationCircle" size="sm" class="mr-1 inline" :stroke-width="2" />
               {{ t('admin.accounts.poolModeInfo') }}
@@ -1460,7 +1460,7 @@
 
         <!-- Mapping Mode Only (no toggle for Antigravity) -->
         <div>
-          <div class="mb-3 rounded-none bg-purple-50 p-3 dark:bg-purple-900/20">
+          <div class="mb-3 rounded-lg bg-purple-50 p-3 dark:bg-purple-900/20">
             <p class="text-xs text-purple-700 dark:text-purple-400">{{ t('admin.accounts.mapRequestModels') }}</p>
           </div>
 
@@ -1469,7 +1469,7 @@
               type="button"
               @click="syncAntigravityUpstreamModels"
               :disabled="isSyncingAntigravityUpstream || !account?.id"
-              class="rounded-none border border-emerald-200 px-3 py-1.5 text-sm text-emerald-600 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
+              class="rounded-lg border border-emerald-200 px-3 py-1.5 text-sm text-emerald-600 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
             >
               {{ isSyncingAntigravityUpstream ? t('admin.accounts.syncUpstreamModelsLoading') : t('admin.accounts.syncUpstreamModels') }}
             </button>
@@ -1515,7 +1515,7 @@
                 <button
                   type="button"
                   @click="removeAntigravityModelMapping(index)"
-                  class="rounded-none p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
+                  class="rounded-lg p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
                 >
                   <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path
@@ -1540,7 +1540,7 @@
           <button
             type="button"
             @click="addAntigravityModelMapping"
-            class="mb-3 w-full rounded-none border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
+            class="mb-3 w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
           >
             <svg class="mr-1 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -1554,7 +1554,7 @@
               :key="preset.label"
               type="button"
               @click="addAntigravityPresetMapping(preset.from, preset.to)"
-              :class="['rounded-none px-3 py-1 text-xs transition-colors', preset.color]"
+              :class="['rounded-lg px-3 py-1 text-xs transition-colors', preset.color]"
             >
               + {{ preset.label }}
             </button>
@@ -1589,7 +1589,7 @@
         </div>
 
         <div v-if="tempUnschedEnabled" class="space-y-3">
-          <div class="rounded-none bg-blue-50 p-3 dark:bg-blue-900/20">
+          <div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
             <p class="text-xs text-blue-700 dark:text-blue-400">
               <Icon name="exclamationTriangle" size="sm" class="mr-1 inline" :stroke-width="2" />
               {{ t('admin.accounts.tempUnschedulable.notice') }}
@@ -1602,7 +1602,7 @@
               :key="preset.label"
               type="button"
               @click="addTempUnschedRule(preset.rule)"
-              class="rounded-none bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-300 dark:hover:bg-dark-500"
+              class="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-300 dark:hover:bg-dark-500"
             >
               + {{ preset.label }}
             </button>
@@ -1612,7 +1612,7 @@
             <div
               v-for="(rule, index) in tempUnschedRules"
               :key="getTempUnschedRuleKey(rule)"
-              class="rounded-none border border-gray-200 p-3 dark:border-dark-600"
+              class="rounded-lg border border-gray-200 p-3 dark:border-dark-600"
             >
               <div class="mb-2 flex items-center justify-between">
                 <span class="text-xs font-medium text-gray-500 dark:text-gray-400">
@@ -1623,7 +1623,7 @@
                     type="button"
                     :disabled="index === 0"
                     @click="moveTempUnschedRule(index, -1)"
-                    class="rounded-none p-1 text-gray-400 transition-colors hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:text-gray-200"
+                    class="rounded p-1 text-gray-400 transition-colors hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:text-gray-200"
                   >
                     <Icon name="chevronUp" size="sm" :stroke-width="2" />
                   </button>
@@ -1631,7 +1631,7 @@
                     type="button"
                     :disabled="index === tempUnschedRules.length - 1"
                     @click="moveTempUnschedRule(index, 1)"
-                    class="rounded-none p-1 text-gray-400 transition-colors hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:text-gray-200"
+                    class="rounded p-1 text-gray-400 transition-colors hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:text-gray-200"
                   >
                     <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
@@ -1640,7 +1640,7 @@
                   <button
                     type="button"
                     @click="removeTempUnschedRule(index)"
-                    class="rounded-none p-1 text-red-500 transition-colors hover:text-red-600"
+                    class="rounded p-1 text-red-500 transition-colors hover:text-red-600"
                   >
                     <Icon name="x" size="sm" :stroke-width="2" />
                   </button>
@@ -1695,7 +1695,7 @@
           <button
             type="button"
             @click="addTempUnschedRule()"
-            class="w-full rounded-none border-2 border-dashed border-gray-300 px-4 py-2 text-sm text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
+            class="w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-2 text-sm text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
           >
             <svg
               class="mr-1 inline h-4 w-4"
@@ -1727,7 +1727,7 @@
             v-model="accountSchedulingThresholdOverrideEnabled"
             data-testid="account-scheduling-threshold-override-enabled"
             type="checkbox"
-            class="h-4 w-4 rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+            class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div v-if="accountSchedulingThresholdOverrideEnabled">
@@ -1938,16 +1938,16 @@
         v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
-        <div class="overflow-hidden rounded-none border border-sky-100 bg-sky-50/60 dark:border-sky-900/50 dark:bg-sky-950/20">
+        <div class="overflow-hidden rounded-lg border border-sky-100 bg-sky-50/60 shadow-sm dark:border-sky-900/50 dark:bg-sky-950/20">
           <div class="flex items-start gap-3 px-4 py-3">
-            <div class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-none bg-white text-sky-600 shadow-outline ring-1 ring-sky-100 dark:bg-dark-800 dark:text-sky-300 dark:ring-sky-900/60">
+            <div class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-white text-sky-600 shadow-sm ring-1 ring-sky-100 dark:bg-dark-800 dark:text-sky-300 dark:ring-sky-900/60">
               <Icon name="sparkles" size="sm" />
             </div>
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-center gap-2">
                 <label class="input-label mb-0">{{ t('admin.accounts.openai.codexImageTool') }}</label>
                 <span
-                  class="rounded-none px-2 py-0.5 text-[11px] font-medium"
+                  class="rounded-full px-2 py-0.5 text-[11px] font-medium"
                   :class="codexImageToolBadgeClass"
                 >
                   {{ codexImageToolBadgeLabel }}
@@ -2044,13 +2044,13 @@
         </div>
         <div
           v-if="openAITextGenerationCapabilityEnabled"
-          class="rounded-none bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:bg-dark-700 dark:text-gray-300"
+          class="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:bg-dark-700 dark:text-gray-300"
         >
           <span class="font-medium">{{ t(openAIResponsesStatusKey) }}</span>
         </div>
         <div
           v-else
-          class="rounded-none bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
+          class="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
           data-testid="openai-responses-mode-not-applicable"
         >
           {{ t('admin.accounts.openai.responsesModeTextDisabledHint') }}
@@ -2061,11 +2061,11 @@
             <label
               v-for="option in openAIEndpointCapabilityOptions"
               :key="option.value"
-              class="flex cursor-pointer items-center gap-2 rounded-none border border-gray-200 px-3 py-2 text-sm dark:border-dark-600"
+              class="flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-dark-600"
             >
               <input
                 type="checkbox"
-                class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500"
+                class="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500"
                 :data-testid="`openai-endpoint-capability-${option.value}`"
                 :checked="openAIEndpointCapabilities.includes(option.value)"
                 @change="toggleOpenAIEndpointCapability(option.value, $event)"
@@ -2465,7 +2465,7 @@
             <Select v-model="openAICompactMode" :options="openAICompactModeOptions" />
           </div>
         </div>
-        <div class="rounded-none bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:bg-dark-700 dark:text-gray-300">
+        <div class="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:bg-dark-700 dark:text-gray-300">
           <span class="font-medium">{{ t(openAICompactStatusKey) }}</span>
           <span
             v-if="account?.extra?.openai_compact_checked_at"
@@ -2695,7 +2695,7 @@
         </div>
 
         <!-- Window Cost Limit -->
-        <div class="rounded-none border border-gray-200 p-4 dark:border-dark-600">
+        <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-600">
           <div class="mb-3 flex items-center justify-between">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.windowCost.label') }}</label>
@@ -2755,7 +2755,7 @@
         </div>
 
         <!-- Session Limit -->
-        <div class="rounded-none border border-gray-200 p-4 dark:border-dark-600">
+        <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-600">
           <div class="mb-3 flex items-center justify-between">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.sessionLimit.label') }}</label>
@@ -2812,7 +2812,7 @@
         </div>
 
         <!-- RPM Limit -->
-        <div class="rounded-none border border-gray-200 p-4 dark:border-dark-600">
+        <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-600">
           <div class="mb-3 flex items-center justify-between">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.rpmLimit.label') }}</label>
@@ -2925,7 +2925,7 @@
         </div>
 
         <!-- TLS Fingerprint -->
-        <div class="rounded-none border border-gray-200 p-4 dark:border-dark-600">
+        <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-600">
           <div class="flex items-center justify-between">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.tlsFingerprint.label') }}</label>
@@ -2960,7 +2960,7 @@
         </div>
 
         <!-- Session ID Masking -->
-        <div class="rounded-none border border-gray-200 p-4 dark:border-dark-600">
+        <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-600">
           <div class="flex items-center justify-between">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.sessionIdMasking.label') }}</label>
@@ -2987,7 +2987,7 @@
         </div>
 
         <!-- Cache TTL Override -->
-        <div class="rounded-none border border-gray-200 p-4 dark:border-dark-600">
+        <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-600">
           <div class="flex items-center justify-between">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.cacheTTLOverride.label') }}</label>
@@ -3015,7 +3015,7 @@
             <label class="input-label text-xs">{{ t('admin.accounts.quotaControl.cacheTTLOverride.target') }}</label>
             <select
               v-model="cacheTTLOverrideTarget"
-              class="mt-1 block w-full rounded-none border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-dark-500 dark:bg-dark-700 dark:text-white"
+              class="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-dark-500 dark:bg-dark-700 dark:text-white"
             >
               <option value="5m">5m</option>
               <option value="1h">1h</option>
@@ -3027,7 +3027,7 @@
         </div>
 
         <!-- Custom Base URL Relay -->
-        <div class="rounded-none border border-gray-200 p-4 dark:border-dark-600">
+        <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-600">
           <div class="flex items-center justify-between">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.customBaseUrl.label') }}</label>
@@ -3075,7 +3075,7 @@
               type="checkbox"
               v-model="mixedScheduling"
               disabled
-              class="h-4 w-4 cursor-not-allowed rounded-none border-gray-300 text-primary-500 focus:ring-primary-500 dark:border-dark-500"
+              class="h-4 w-4 cursor-not-allowed rounded border-gray-300 text-primary-500 focus:ring-primary-500 dark:border-dark-500"
             />
             <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
               {{ t('admin.accounts.mixedScheduling') }}
@@ -3089,7 +3089,7 @@
             </span>
             <!-- Tooltip（向下显示避免被弹窗裁剪） -->
             <div
-              class="pointer-events-none absolute left-0 top-full z-[100] mt-1.5 w-72 rounded-none bg-gray-900 px-3 py-2 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-gray-700"
+              class="pointer-events-none absolute left-0 top-full z-[100] mt-1.5 w-72 rounded bg-gray-900 px-3 py-2 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-gray-700"
             >
               {{ t('admin.accounts.mixedSchedulingTooltip') }}
               <div
@@ -3103,7 +3103,7 @@
             <input
               type="checkbox"
               v-model="allowOverages"
-              class="h-4 w-4 rounded-none border-gray-300 text-primary-500 focus:ring-primary-500 dark:border-dark-500"
+              class="h-4 w-4 rounded border-gray-300 text-primary-500 focus:ring-primary-500 dark:border-dark-500"
             />
             <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
               {{ t('admin.accounts.allowOverages') }}
@@ -3116,7 +3116,7 @@
               ?
             </span>
             <div
-              class="pointer-events-none absolute left-0 top-full z-[100] mt-1.5 w-72 rounded-none bg-gray-900 px-3 py-2 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-gray-700"
+              class="pointer-events-none absolute left-0 top-full z-[100] mt-1.5 w-72 rounded bg-gray-900 px-3 py-2 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-gray-700"
             >
               {{ t('admin.accounts.allowOveragesTooltip') }}
               <div

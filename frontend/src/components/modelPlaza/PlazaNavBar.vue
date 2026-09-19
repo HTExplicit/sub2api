@@ -7,7 +7,7 @@
       <div class="flex min-w-0 items-center gap-3">
         <template v-if="settings">
           <span
-            class="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-none bg-white shadow-outline ring-1 ring-gray-200 dark:bg-dark-800 dark:ring-dark-700"
+            class="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-dark-800 dark:ring-dark-700"
           >
             <img :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
           </span>
@@ -16,8 +16,8 @@
           </span>
         </template>
         <template v-else>
-          <span class="h-9 w-9 flex-shrink-0 animate-pulse rounded-none bg-gray-200 dark:bg-dark-700" aria-hidden="true"></span>
-          <span class="h-5 w-28 animate-pulse rounded-none bg-gray-200 dark:bg-dark-700" aria-hidden="true"></span>
+          <span class="h-9 w-9 flex-shrink-0 animate-pulse rounded-xl bg-gray-200 dark:bg-dark-700" aria-hidden="true"></span>
+          <span class="h-5 w-28 animate-pulse rounded bg-gray-200 dark:bg-dark-700" aria-hidden="true"></span>
         </template>
       </div>
 
