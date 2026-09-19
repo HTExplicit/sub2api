@@ -213,6 +213,10 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
       }, { signal: controller.signal })
       if (generation !== requestGeneration || requestSerial !== currentRequestSerial || selectedJobID.value !== jobID) return
       observeTrackedTransition(job)
+      if (!isTerminalAccountJob(job)) {
+        trackedJobs.value[job.id] = job
+        startPolling(false)
+      }
       currentJob.value = job
       updateRecent(job)
       items.value = page.items

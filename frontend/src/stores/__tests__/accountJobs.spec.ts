@@ -108,7 +108,7 @@ describe('useAccountJobsStore', () => {
     await store.openJob(19, { page: 2, page_size: 1 })
 
     expect(store.recentJobs.map((item) => item.id)).toEqual([19, 20])
-    expect(store.activeJobs).toEqual([]) // Browsing history never enrolls active tracking.
+    expect(store.activeJobs.map(item => item.id)).toEqual([19]) // Opening an active result resumes tracking.
     expect(store.currentJob?.processed_count).toBe(5)
     expect(store.items.map((item) => item.id)).toEqual([90])
     expect(store.jobPage).toEqual({ total: 7, page: 2, pageSize: 2 })
@@ -194,6 +194,19 @@ describe('useAccountJobsStore', () => {
     expect(store.connectionLost).toBe(false)
     expect(store.activeCount).toBe(0)
     expect(retryFailed).not.toHaveBeenCalled()
+  })
+
+  it('resumes an operation opened from history even after the initial recovery was idle', async () => {
+    const store = useAccountJobsStore()
+    store.startPolling()
+    await vi.advanceTimersByTimeAsync(0)
+    await store.openJob(19)
+    expect(store.activeCount).toBe(1)
+    store.closeDrawer()
+    get.mockResolvedValue(job('succeeded'))
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(store.activeCount).toBe(0)
+    expect(store.completedJobs.map(j => j.id)).toEqual([19])
   })
 
   it('focuses terminal failures once and restores an explicit all-results page after minimizing', async () => {
