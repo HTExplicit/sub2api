@@ -9,11 +9,6 @@ import (
 	"time"
 )
 
-const (
-	openAIOAuth429FiveHourFallback = 5 * time.Hour
-	openAIOAuth429WeeklyFallback   = 7 * 24 * time.Hour
-)
-
 type openAIOAuth429Classification struct {
 	Disposition openAIOAuth429Disposition
 	ResetAt     *time.Time
@@ -25,22 +20,40 @@ type openAIOAuth429Classification struct {
 func classifyOpenAIOAuth429At(headers http.Header, responseBody []byte, now time.Time) openAIOAuth429Classification {
 	now = now.UTC()
 	if snapshot := ParseCodexRateLimitHeaders(headers); snapshot != nil {
-		if normalized := snapshot.Normalize(); normalized != nil {
-			fiveExhausted := normalized.Used5hPercent != nil && *normalized.Used5hPercent >= 100
-			sevenExhausted := normalized.Used7dPercent != nil && *normalized.Used7dPercent >= 100
-			if fiveExhausted || sevenExhausted {
-				fiveReset := resetTimeFromSeconds(now, normalized.Reset5hSeconds, openAIOAuth429FiveHourFallback)
-				sevenReset := resetTimeFromSeconds(now, normalized.Reset7dSeconds, openAIOAuth429WeeklyFallback)
-				switch {
-				case fiveExhausted && sevenExhausted:
-					resetAt := laterTime(fiveReset, sevenReset)
-					return openAIOAuth429Classification{Disposition: openAIOAuth429QuotaReset, ResetAt: &resetAt, Window: "multiple", Source: "usage_headers"}
-				case sevenExhausted:
-					return openAIOAuth429Classification{Disposition: openAIOAuth429Quota7d, ResetAt: &sevenReset, Window: "7d", Source: "usage_headers"}
-				default:
-					return openAIOAuth429Classification{Disposition: openAIOAuth429Quota5h, ResetAt: &fiveReset, Window: "5h", Source: "usage_headers"}
-				}
+		result := openAIOAuth429Classification{Disposition: openAIOAuth429QuotaReset, Source: "usage_headers"}
+		count, unknown := 0, false
+		for _, window := range snapshot.Windows(now) {
+			if window.Utilization < 100 || window.Expired {
+				continue
 			}
+			count++
+			result.Window = "unknown"
+			switch window.WindowMinutes {
+			case 300:
+				result.Window = "5h"
+				result.Disposition = openAIOAuth429Quota5h
+			case 10080:
+				result.Window = "7d"
+				result.Disposition = openAIOAuth429Quota7d
+			case 43200:
+				result.Window = "30d"
+				result.Disposition = openAIOAuth429QuotaReset
+			}
+			if window.ResetsAt == nil {
+				unknown = true
+			} else if result.ResetAt == nil || window.ResetsAt.After(*result.ResetAt) {
+				result.ResetAt = cloneTimePtr(window.ResetsAt)
+			}
+		}
+		if count > 0 {
+			if count > 1 {
+				result.Window = "multiple"
+				result.Disposition = openAIOAuth429QuotaReset
+			}
+			if unknown {
+				result.ResetAt = nil
+			}
+			return result
 		}
 	}
 
@@ -49,30 +62,16 @@ func classifyOpenAIOAuth429At(headers http.Header, responseBody []byte, now time
 		return openAIOAuth429Classification{Disposition: openAIOAuth429Transient, Window: "transient", Source: "transient_429"}
 	}
 
-	weekly := code == "weekly_limit_reached"
-	window := "5h"
-	disposition := openAIOAuth429Quota5h
-	fallback := openAIOAuth429FiveHourFallback
-	if weekly {
+	window := "unknown"
+	disposition := openAIOAuth429QuotaReset
+	if code == "weekly_limit_reached" {
 		window = "7d"
 		disposition = openAIOAuth429Quota7d
-		fallback = openAIOAuth429WeeklyFallback
+	} else if code == "monthly_limit_reached" {
+		window = "30d"
 	}
-	if resetAt == nil {
-		if snapshot := ParseCodexRateLimitHeaders(headers); snapshot != nil {
-			if normalized := snapshot.Normalize(); normalized != nil {
-				seconds := normalized.Reset5hSeconds
-				if weekly {
-					seconds = normalized.Reset7dSeconds
-				}
-				parsed := resetTimeFromSeconds(now, seconds, fallback)
-				resetAt = &parsed
-			}
-		}
-	}
-	if resetAt == nil || !resetAt.After(now) {
-		parsed := now.Add(fallback)
-		resetAt = &parsed
+	if resetAt != nil && !resetAt.After(now) {
+		resetAt = nil
 	}
 	return openAIOAuth429Classification{
 		Disposition: disposition,
@@ -81,13 +80,6 @@ func classifyOpenAIOAuth429At(headers http.Header, responseBody []byte, now time
 		Source:      "structured_code",
 		Code:        code,
 	}
-}
-
-func resetTimeFromSeconds(now time.Time, seconds *int, fallback time.Duration) time.Time {
-	if seconds != nil && *seconds > 0 {
-		return now.Add(time.Duration(*seconds) * time.Second)
-	}
-	return now.Add(fallback)
 }
 
 func findOpenAIHardQuotaSignal(body []byte, now time.Time) (string, *time.Time) {

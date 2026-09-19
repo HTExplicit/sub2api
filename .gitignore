@@ -162,5 +162,16 @@ output/
 
 # Vitest / Vite cache at repo root
 .vite/
-# 本地闭源插件开发目录及构建产物不进入 Sub2API 仓库
-/plugins/
+# First-party extension sources are versioned; installed packages and local
+# third-party projects remain outside the source tree.
+/plugins/*
+!/plugins/codex-runtime/
+!/plugins/cindy-provider/
+!/plugins/account-tools/
+!/plugins/prompt-skills/
+!/plugins/model-catalog/
+!/plugins/image-tools/
+!/plugins/admin-observability/
+/plugins/*/dist/
+/plugins/*/node_modules/
+/plugins/*/*.s2plugin

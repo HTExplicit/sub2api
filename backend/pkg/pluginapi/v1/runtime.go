@@ -40,7 +40,14 @@ type HostBrokerReceiver interface {
 // 本连接的 go-plugin broker，宿主据此把 HostService 反向暴露给插件。
 type TransportClient struct {
 	TransportPluginClient
-	Broker *hcplugin.GRPCBroker
+	Broker     *hcplugin.GRPCBroker
+	Connection *grpc.ClientConn
+}
+
+// AdditionalServiceRegistrar allows a plugin to expose separately versioned
+// capabilities without changing the official transport RPC contract.
+type AdditionalServiceRegistrar interface {
+	RegisterAdditionalServices(grpc.ServiceRegistrar)
 }
 
 // GRPCPlugin 把生成的 gRPC 服务注册到 go-plugin 子进程。
@@ -51,6 +58,9 @@ type GRPCPlugin struct {
 
 func (p *GRPCPlugin) GRPCServer(broker *hcplugin.GRPCBroker, server *grpc.Server) error {
 	RegisterTransportPluginServer(server, p.Impl)
+	if registrar, ok := p.Impl.(AdditionalServiceRegistrar); ok {
+		registrar.RegisterAdditionalServices(server)
+	}
 	// 插件侧：把 broker 交给需要反向访问宿主服务的实现（可选能力）。
 	if receiver, ok := p.Impl.(HostBrokerReceiver); ok {
 		receiver.SetHostBroker(broker)
@@ -60,7 +70,7 @@ func (p *GRPCPlugin) GRPCServer(broker *hcplugin.GRPCBroker, server *grpc.Server
 
 func (p *GRPCPlugin) GRPCClient(_ context.Context, broker *hcplugin.GRPCBroker, conn *grpc.ClientConn) (any, error) {
 	// 宿主侧：捆绑 broker，供 startPluginRuntime 反向暴露 HostService。
-	return &TransportClient{TransportPluginClient: NewTransportPluginClient(conn), Broker: broker}, nil
+	return &TransportClient{TransportPluginClient: NewTransportPluginClient(conn), Broker: broker, Connection: conn}, nil
 }
 
 // ClientPluginMap 返回宿主侧使用的插件声明。

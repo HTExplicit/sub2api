@@ -60,6 +60,7 @@ func TestBatchTestRejectsAmbiguousSelections(t *testing.T) {
 	for _, body := range []string{
 		`{"items":[],"account_ids":[1]}`, `{"items":[{"account_id":1,"model_id":"a"}],"model_id":null}`,
 		`{"items":[{"account_id":1,"model_id":"a"},{"account_id":1,"model_id":"b"}]}`,
+		`{"items":[{"account_id":1,"model_id":"a","reasoning_effort":"low"},{"account_id":1,"model_id":"a","reasoning_effort":"high"}]}`,
 		`{"items":[{"account_id":1,"model_id":" "}]}`, `{"items":[{"account_id":0,"model_id":"a"}]}`, `{"items":null}`, `{}`,
 	} {
 		var payload batchTestJobPayload

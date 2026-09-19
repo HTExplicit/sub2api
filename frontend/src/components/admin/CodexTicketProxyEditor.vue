@@ -2,13 +2,13 @@
   <div class="space-y-2 mt-3">
     <textarea id="codex-ticket-harvest-proxy" :value="modelValue" class="input w-full font-mono text-sm" rows="4" autocomplete="off" spellcheck="false"
       :aria-label="t('admin.accounts.ticketProxy.address')" @input="input(($event.target as HTMLTextAreaElement).value)" @blur="normalize" />
-    <div class="flex flex-wrap gap-2 items-center">
-      <label>{{ t('admin.accounts.ticketProxy.protocol') }}
-        <select v-model="protocol" class="input" @change="changeProtocol"><option>http</option><option>https</option><option>socks5</option><option>socks5h</option></select>
+    <div class="flex flex-wrap items-end gap-2">
+      <label class="flex min-w-32 flex-col gap-1 text-sm font-medium">{{ t('admin.accounts.ticketProxy.protocol') }}
+        <select v-model="protocol" class="input h-10" @change="changeProtocol"><option>http</option><option>https</option><option>socks5</option><option>socks5h</option></select>
       </label>
-      <button type="button" class="btn btn-secondary" :disabled="busy || !modelValue.trim()" @click="test">{{ t('admin.accounts.ticketProxy.test') }}</button>
-      <button type="button" class="btn btn-secondary" :disabled="!modelValue" @click="copy">{{ t('common.copy') }}</button>
-      <button type="button" class="btn btn-secondary" @click="emit('clear')">{{ t('admin.accounts.ticketProxy.clear') }}</button>
+      <button type="button" class="btn btn-secondary min-h-10" :disabled="busy || !modelValue.trim()" @click="test">{{ t('admin.accounts.ticketProxy.test') }}</button>
+      <button type="button" class="btn btn-secondary min-h-10" :disabled="!modelValue" @click="copy">{{ t('common.copy') }}</button>
+      <button type="button" class="btn btn-secondary min-h-10" @click="emit('clear')">{{ t('admin.accounts.ticketProxy.clear') }}</button>
     </div>
     <p class="text-xs text-gray-500">{{ t('admin.accounts.ticketProxy.hint') }}</p>
     <p v-if="error" role="alert" class="text-red-600 text-sm">{{ error }}</p>

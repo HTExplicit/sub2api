@@ -173,7 +173,7 @@ async function mergeDuplicates(request: DuplicateMergeRequest): Promise<AccountJ
   return data
 }
 
-export interface BatchTestSelection { account_id: number; model_id: string }
+export interface BatchTestSelection { account_id: number; model_id: string; reasoning_effort?: string }
 export interface BatchTestModelRow {
   account_id: number
   name: string

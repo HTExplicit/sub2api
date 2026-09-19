@@ -1249,7 +1249,13 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 			"code", classification.Code,
 			"path", "rate_limit_service",
 		)
-		if classification.Disposition != openAIOAuth429Transient && classification.ResetAt != nil {
+		if classification.Disposition != openAIOAuth429Transient {
+			if err := persistOpenAIQuotaClassification(ctx, s.accountRepo, account, classification, time.Now()); err != nil {
+				slog.Warn("quota_state_write_failed", "account_id", account.ID)
+			}
+			if classification.ResetAt == nil {
+				return
+			}
 			resetAt := classification.ResetAt
 			s.notifyAccountSchedulingBlocked(account, *resetAt, "429")
 			if err := s.accountRepo.SetRateLimited(ctx, account.ID, *resetAt); err != nil {

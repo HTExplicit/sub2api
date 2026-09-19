@@ -60,13 +60,26 @@ func (h *AccountHandler) executeAccountJobItem(ctx context.Context, kind string,
 		}
 		testCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 		defer cancel()
-		result, err := h.accountTestService.RunBatchTestBackground(testCtx, id, model, request.Prompt)
+		effort := ""
+		for _, selected := range request.Items {
+			if selected.AccountID == id {
+				effort = selected.ReasoningEffort
+				break
+			}
+		}
+		result, err := h.accountTestService.RunBatchTestBackgroundWithOptions(testCtx, id, model, request.Prompt, service.AccountTestOptions{ReasoningEffort: effort})
 		if ctx.Err() != nil {
 			return service.AccountJobExecutionResult{ItemID: item.ID, Status: service.AccountJobItemStatusCanceled}
 		}
 		metadata := map[string]any{"account_id": id, "model_id": model}
+		if effort != "" {
+			metadata["reasoning_effort"] = effort
+		}
 		if result != nil {
 			metadata["latency_ms"] = result.LatencyMs
+			if result.EffectiveReasoningEffort != "" {
+				metadata["effective_reasoning_effort"] = result.EffectiveReasoningEffort
+			}
 		}
 		if err != nil || result == nil || result.Status != "success" {
 			code := "test_failed"

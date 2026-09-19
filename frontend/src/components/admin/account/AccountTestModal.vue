@@ -81,6 +81,8 @@
         />
       </div>
 
+      <AccountTestReasoningSelect v-if="supportsTextPrompt" v-model="reasoningEffort"
+        :model="modelOptionsForMode.find(model => model.id === selectedModelId)" :disabled="status === 'connecting'" />
       <AccountTextTestPrompt v-if="supportsTextPrompt" v-model="textPrompt" :disabled="status === 'connecting'" />
       <div v-else-if="supportsPromptInput" class="space-y-1.5">
         <TextArea
@@ -366,6 +368,7 @@
 </template>
 
 <script setup lang="ts">
+import AccountTestReasoningSelect from './AccountTestReasoningSelect.vue'
 import AccountTextTestPrompt from './AccountTextTestPrompt.vue'
 import { useAccountTestPrompt } from '@/composables/useAccountTestPrompt'
 import { computed, ref, watch, nextTick } from 'vue'
@@ -425,6 +428,7 @@ const generatedAudios = ref<PreviewMedia[]>([])
 const generatedVideos = ref<PreviewMedia[]>([])
 const previewImageUrl = ref('')
 const testMode = ref<'default' | 'compact'>('default')
+const reasoningEffort = ref('')
 const grokTestMode = ref<'text' | 'image' | 'video' | 'search' | 'tts' | 'stt' | 'realtime'>('text')
 const uploadImageDataURL = ref('')
 const uploadImagePreview = ref('')
@@ -709,6 +713,7 @@ watch(
     if (newVal && props.account) {
       mediaTestPrompt.value = ''
       testMode.value = 'default'
+      reasoningEffort.value = ''
       grokTestMode.value = 'text'
       resetState()
       await loadAvailableModels()
@@ -808,10 +813,12 @@ const startTest = async () => {
       mode?: string
       image_data_url?: string
       audio_data_url?: string
+      reasoning_effort?: string
     } = {
       model_id: showModelSelect.value ? selectedModelId.value : '',
       prompt: supportsPromptInput.value ? testPrompt.value : ''
     }
+    if (supportsTextPrompt.value && reasoningEffort.value) requestBody.reasoning_effort = reasoningEffort.value
     if (isOpenAIAccount.value) {
       requestBody.mode = testMode.value
     }

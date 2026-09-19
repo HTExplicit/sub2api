@@ -305,9 +305,13 @@ func ProvideOpenAIQuotaService(
 	tokenProvider *OpenAITokenProvider,
 	privacyClientFactory PrivacyClientFactory,
 	openAIGatewayService *OpenAIGatewayService,
+	concurrencyService *ConcurrencyService,
+	usagePool *UsageRecordWorkerPool,
 ) *OpenAIQuotaService {
 	service := NewOpenAIQuotaService(accountRepo, proxyRepo, tokenProvider, privacyClientFactory)
 	service.agentIdentityWS = openAIGatewayService
+	service.concurrency = concurrencyService
+	service.usagePool = usagePool
 	return service
 }
 

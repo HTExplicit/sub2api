@@ -12,6 +12,7 @@ import (
 )
 
 const (
+	AccountJobKindExtensionOperation     = "extension_operation"
 	AccountJobKindImportData             = "account_import"
 	AccountJobKindImportCodex            = "account_import_codex"
 	AccountJobKindBatchCreate            = "account_batch_create"
@@ -399,7 +400,7 @@ func (r *AccountJobRuntime) execute(job *AccountJob) (string, string) {
 		}
 	}
 	defer cleanup()
-	if job.Kind == AccountJobKindBatchTest || job.Kind == AccountJobKindCodexTicketHarvest {
+	if job.Kind == AccountJobKindBatchTest || job.Kind == AccountJobKindCodexTicketHarvest || job.Kind == AccountJobKindExtensionOperation {
 		return r.executeBatchTests(executionCtx, job, payload)
 	}
 	for {
@@ -462,7 +463,7 @@ func (r *AccountJobRuntime) cleanup(now time.Time) {
 
 func validAccountJobKind(kind string) bool {
 	switch kind {
-	case AccountJobKindCodexTicketHarvest:
+	case AccountJobKindCodexTicketHarvest, AccountJobKindExtensionOperation:
 		return true
 	case AccountJobKindImportData, AccountJobKindImportCodex, AccountJobKindBatchCreate, AccountJobKindBatchTest,
 		AccountJobKindBulkUpdate, AccountJobKindBulkTaxonomy, AccountJobKindBatchDelete,

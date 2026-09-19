@@ -1341,9 +1341,10 @@ func (h *AccountHandler) Delete(c *gin.Context) {
 
 // TestAccountRequest represents the request body for testing an account
 type TestAccountRequest struct {
-	ModelID string `json:"model_id"`
-	Prompt  string `json:"prompt"`
-	Mode    string `json:"mode"`
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	ModelID         string `json:"model_id"`
+	Prompt          string `json:"prompt"`
+	Mode            string `json:"mode"`
 	// Optional media for Grok (and future) real generation tests.
 	// ImageDataURL / AudioDataURL are data:<mime>;base64,... payloads.
 	ImageDataURL string `json:"image_data_url"`
@@ -1382,8 +1383,9 @@ func (h *AccountHandler) Test(c *gin.Context) {
 	}
 
 	opts := service.AccountTestOptions{
-		ImageDataURL: req.ImageDataURL,
-		AudioDataURL: req.AudioDataURL,
+		ReasoningEffort: req.ReasoningEffort,
+		ImageDataURL:    req.ImageDataURL,
+		AudioDataURL:    req.AudioDataURL,
 	}
 
 	// Use AccountTestService to test the account with SSE streaming
@@ -2769,7 +2771,15 @@ func (h *AccountHandler) accountTestModels(ctx context.Context, account *service
 // openAIAccountTestModels selects request-side model IDs from this account's
 // saved configuration. Discovery enumerates unrestricted accounts and wildcard
 // candidates; it is not an availability gate for explicitly configured models.
-func (h *AccountHandler) openAIAccountTestModels(ctx context.Context, account *service.Account) ([]openai.Model, error) {
+func (h *AccountHandler) openAIAccountTestModels(ctx context.Context, account *service.Account) (result []openai.Model, resultErr error) {
+	defer func() {
+		if resultErr != nil {
+			return
+		}
+		for i := range result {
+			result[i].ReasoningEfforts, result[i].DefaultReasoningEffort = service.AccountTestReasoningOptions(account, result[i].ID)
+		}
+	}()
 	mapping := account.GetModelMapping()
 	if account.IsOpenAIPassthroughEnabled() || len(mapping) == 0 {
 		return h.discoverOpenAIAccountTestModels(ctx, account)

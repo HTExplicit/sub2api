@@ -854,6 +854,7 @@ func registerPluginRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAut
 	plugins := admin.Group("/plugins")
 	{
 		plugins.GET("", h.Admin.Plugin.List)
+		plugins.GET("/contributions", h.Admin.Plugin.Contributions)
 		plugins.GET("/:id", h.Admin.Plugin.Get)
 		plugins.POST("/upload", gin.HandlerFunc(stepUpAuth), h.Admin.Plugin.Upload)
 		plugins.POST("/:id/enable", gin.HandlerFunc(stepUpAuth), h.Admin.Plugin.Enable)
@@ -864,6 +865,8 @@ func registerPluginRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAut
 		plugins.PUT("/:id/config", gin.HandlerFunc(stepUpAuth), h.Admin.Plugin.SaveConfig)
 		plugins.POST("/:id/test", gin.HandlerFunc(stepUpAuth), h.Admin.Plugin.Test)
 		plugins.POST("/:id/ui-session", h.Admin.Plugin.CreateUISession)
+		plugins.POST("/:id/actions", h.Admin.Plugin.InvokeAdmin)
+		plugins.POST("/:id/jobs", h.Admin.Plugin.SubmitJob)
 	}
 }
 

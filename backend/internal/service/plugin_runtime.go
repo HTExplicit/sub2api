@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	pluginv1 "github.com/Wei-Shaw/sub2api/pkg/pluginapi/v1"
 	hclog "github.com/hashicorp/go-hclog"
 	hcplugin "github.com/hashicorp/go-plugin"
@@ -29,6 +30,7 @@ type pluginRuntime struct {
 	installation *PluginInstallation
 	client       *hcplugin.Client
 	api          pluginv1.TransportPluginClient
+	extension    *extensionv1.Client
 	inFlight     atomic.Int64
 	draining     atomic.Bool
 	done         chan struct{}
@@ -80,6 +82,7 @@ func startPluginRuntime(ctx context.Context, installation *PluginInstallation, s
 		installation: installation,
 		client:       client,
 		api:          api,
+		extension:    extensionv1.NewClient(transportClient.Connection),
 		done:         make(chan struct{}),
 	}
 	infoCtx, cancel := context.WithTimeout(ctx, startTimeout)
@@ -104,14 +107,17 @@ func startPluginRuntime(ctx context.Context, installation *PluginInstallation, s
 	}
 	// 可选地把宿主服务（HostService）反向暴露给插件。这是叠加在传输契约之上的能力：
 	// 老插件不实现 InitHostServices（返回 Unimplemented），此处静默跳过，绝不阻断启动。
-	offerPluginHostServices(ctx, installation, api, transportClient.Broker, hostServices, startTimeout)
+	if err := offerPluginHostServices(ctx, installation, api, transportClient.Broker, hostServices, startTimeout); err != nil && installation.Manifest.Requires.ExtensionAPI > 0 {
+		runtime.kill()
+		return nil, fmt.Errorf("扩展插件需要可用的宿主服务: %w", err)
+	}
 	return runtime, nil
 }
 
 // offerPluginHostServices 在 go-plugin broker 上启动一个宿主服务实例，并通过
 // InitHostServices 把 broker 流 id 交给插件。服务生命周期与插件进程绑定：client.Kill()
-// 会关闭 broker，AcceptAndServe 随之 GracefulStop，无需手动清理。整个过程尽力而为，
-// 任何失败都只记录日志、不影响插件转发能力。
+// 会关闭 broker，AcceptAndServe 随之 GracefulStop，无需手动清理。官方旧传输插件
+// 可以不使用此能力；声明扩展协议的插件必须成功握手，失败时禁止启用。
 func offerPluginHostServices(
 	ctx context.Context,
 	installation *PluginInstallation,
@@ -119,14 +125,17 @@ func offerPluginHostServices(
 	broker *hcplugin.GRPCBroker,
 	hostServices pluginv1.HostServiceServer,
 	startTimeout time.Duration,
-) {
+) error {
 	if broker == nil || hostServices == nil || api == nil {
-		return
+		return errors.New("host broker unavailable")
 	}
 	brokerID := broker.NextId()
 	go broker.AcceptAndServe(brokerID, func(opts []grpc.ServerOption) *grpc.Server {
 		server := grpc.NewServer(opts...)
 		pluginv1.RegisterHostServiceServer(server, hostServices)
+		if registrar, ok := hostServices.(pluginv1.AdditionalServiceRegistrar); ok {
+			registrar.RegisterAdditionalServices(server)
+		}
 		return server
 	})
 	initCtx, cancel := context.WithTimeout(ctx, startTimeout)
@@ -145,11 +154,12 @@ func offerPluginHostServices(
 		} else {
 			slog.Warn("plugin_host_services_init_failed", "plugin", pluginKey, "error", err)
 		}
-		return
+		return err
 	}
-	if resp != nil && !resp.Ready {
-		slog.Debug("plugin_host_services_declined", "plugin", pluginKey, "message", resp.Message)
+	if resp == nil || !resp.Ready {
+		return errors.New("plugin did not initialize host services")
 	}
+	return nil
 }
 
 func (r *pluginRuntime) validateAndApplyConfig(ctx context.Context, configJSON []byte) error {

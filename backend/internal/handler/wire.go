@@ -301,7 +301,7 @@ var ProviderSet = wire.NewSet(
 	admin.NewUserAttributeHandler,
 	admin.NewErrorPassthroughHandler,
 	admin.NewTLSFingerprintProfileHandler,
-	admin.NewPluginHandler,
+	ProvidePluginHandler,
 	admin.NewAdminAPIKeyHandler,
 	admin.NewScheduledTestHandler,
 	admin.NewChannelHandler,
@@ -321,13 +321,19 @@ var ProviderSet = wire.NewSet(
 	ProvideHandlers,
 )
 
-func ProvideAccountJobRuntime(jobs *service.AccountJobService, accountHandler *admin.AccountHandler) (*service.AccountJobRuntime, error) {
+func ProvideAccountJobRuntime(jobs *service.AccountJobService, accountHandler *admin.AccountHandler, pluginManager *service.PluginManager) (*service.AccountJobRuntime, error) {
 	accountHandler.SetAccountJobService(jobs)
-	runtime := service.NewAccountJobRuntime(jobs, accountHandler)
+	runtime := service.NewAccountJobRuntime(jobs, service.NewPluginJobExecutor(pluginManager, accountHandler))
 	if err := runtime.Start(context.Background()); err != nil {
 		return nil, err
 	}
 	return runtime, nil
+}
+
+func ProvidePluginHandler(manager *service.PluginManager, jobs *service.AccountJobService) *admin.PluginHandler {
+	handler := admin.NewPluginHandler(manager)
+	handler.SetAccountJobs(jobs)
+	return handler
 }
 
 func ProvideImageStudioRuntime(

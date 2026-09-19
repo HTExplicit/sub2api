@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"time"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	pluginv1 "github.com/Wei-Shaw/sub2api/pkg/pluginapi/v1"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -63,6 +65,13 @@ type pluginHostServiceServer struct {
 	pluginKey string
 	store     PluginKVStore
 	directory PluginAccountDirectory
+	extension extensionv1.HostHandler
+}
+
+func (s *pluginHostServiceServer) RegisterAdditionalServices(server grpc.ServiceRegistrar) {
+	if s.extension != nil {
+		extensionv1.RegisterHost(server, s.extension)
+	}
 }
 
 func newPluginHostServiceServer(pluginKey string, store PluginKVStore, directory PluginAccountDirectory) *pluginHostServiceServer {

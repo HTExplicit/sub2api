@@ -52,12 +52,14 @@ const (
 
 // TestEvent represents a SSE event for account testing
 type TestEvent struct {
-	Type     string `json:"type"`
-	Text     string `json:"text,omitempty"`
-	Model    string `json:"model,omitempty"`
-	Status   string `json:"status,omitempty"`
-	Code     string `json:"code,omitempty"`
-	ImageURL string `json:"image_url,omitempty"`
+	RequestedReasoningEffort string `json:"requested_reasoning_effort,omitempty"`
+	EffectiveReasoningEffort string `json:"effective_reasoning_effort,omitempty"`
+	Type                     string `json:"type"`
+	Text                     string `json:"text,omitempty"`
+	Model                    string `json:"model,omitempty"`
+	Status                   string `json:"status,omitempty"`
+	Code                     string `json:"code,omitempty"`
+	ImageURL                 string `json:"image_url,omitempty"`
 	// AudioURL / VideoURL are data: or https URLs for in-browser media players.
 	AudioURL string `json:"audio_url,omitempty"`
 	VideoURL string `json:"video_url,omitempty"`
@@ -70,6 +72,7 @@ type TestEvent struct {
 // AccountTestOptions carries optional media for admin connectivity tests.
 // ImageDataURL / AudioDataURL are full data URLs (data:<mime>;base64,...).
 type AccountTestOptions struct {
+	ReasoningEffort       string
 	ImageDataURL          string
 	AudioDataURL          string
 	requireSupportedModel bool
@@ -362,6 +365,10 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 		s.sendEvent(c, TestEvent{Type: "error", Error: ErrAccountTestModelUnsupported.Error()})
 		return ErrAccountTestModelUnsupported
 	}
+	if err := ValidateAccountTestReasoning(account, modelID, mode, testOpts.ReasoningEffort); err != nil {
+		return s.sendErrorAndEnd(c, err.Error())
+	}
+	c.Set(accountTestReasoningContextKey, testOpts.ReasoningEffort)
 
 	// Synthetic UI load-test accounts exercise the real SSE parsing and modal
 	// interactions, but intentionally do not send their placeholder credentials
@@ -838,6 +845,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		upstreamTestModelID = normalizeOpenAIModelForUpstream(credentialAccount, testModelID)
 	}
 	payload := createOpenAITestPayload(upstreamTestModelID, isOAuth, prompt)
+	applyAccountTestReasoning(c, payload, false)
 	payloadBytes, _ := json.Marshal(payload)
 
 	// Send test_start event once. A task-invalid Agent Identity response may
@@ -1228,6 +1236,13 @@ func (s *AccountTestService) testGrokResponsesConnection(c *gin.Context, ctx con
 	payloadBytes, err := buildGrokQuotaProbeBody(testModelID)
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create Grok test payload")
+	}
+	if effort := c.GetString(accountTestReasoningContextKey); effort != "" {
+		payloadBytes, err = sjson.SetBytes(payloadBytes, "reasoning.effort", effort)
+		if err != nil {
+			return s.sendErrorAndEnd(c, "Failed to set test reasoning effort")
+		}
+		c.Set("account_test_effective_reasoning_effort", effort)
 	}
 	if custom := c.GetString(accountTestPromptContextKey); strings.TrimSpace(custom) != "" {
 		payloadBytes, err = sjson.SetBytes(payloadBytes, "input", custom)
@@ -2111,6 +2126,7 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 	c.Writer.Flush()
 
 	payload := createOpenAIChatCompletionsTestPayload(testModelID, prompt)
+	applyAccountTestReasoning(c, payload, true)
 	payloadBytes, _ := json.Marshal(payload)
 
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
@@ -3258,6 +3274,10 @@ func (s *AccountTestService) testOpenAIImageOAuth(c *gin.Context, ctx context.Co
 }
 
 func (s *AccountTestService) sendEvent(c *gin.Context, event TestEvent) {
+	if event.Type == "test_start" || event.Type == "test_complete" {
+		event.RequestedReasoningEffort = c.GetString(accountTestReasoningContextKey)
+		event.EffectiveReasoningEffort = c.GetString("account_test_effective_reasoning_effort")
+	}
 	if event.Type == "test_complete" {
 		if suppress, ok := c.Get(accountTestSuppressCompletionContextKey); ok {
 			if suppressCompletion, _ := suppress.(bool); suppressCompletion {
@@ -3371,17 +3391,26 @@ func (s *AccountTestService) RunBatchTestBackground(ctx context.Context, account
 	return s.runTestBackground(ctx, accountID, modelID, true, prompts...)
 }
 func (s *AccountTestService) runTestBackground(ctx context.Context, accountID int64, modelID string, requireSupported bool, prompts ...string) (*ScheduledTestResult, error) {
+	prompt := ""
+	if len(prompts) > 0 {
+		prompt = prompts[0]
+	}
+	return s.runTestBackgroundWithOptions(ctx, accountID, modelID, prompt, AccountTestOptions{requireSupportedModel: requireSupported})
+}
+
+func (s *AccountTestService) RunBatchTestBackgroundWithOptions(ctx context.Context, accountID int64, modelID, prompt string, opts AccountTestOptions) (*ScheduledTestResult, error) {
+	opts.requireSupportedModel = true
+	return s.runTestBackgroundWithOptions(ctx, accountID, modelID, prompt, opts)
+}
+
+func (s *AccountTestService) runTestBackgroundWithOptions(ctx context.Context, accountID int64, modelID, prompt string, opts AccountTestOptions) (*ScheduledTestResult, error) {
 	startedAt := time.Now()
 	collector := &accountTestEventCollector{}
 	ginCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ginCtx.Request = (&http.Request{}).WithContext(ctx)
 	ginCtx.Set("account_test_event_collector", collector)
-	ginCtx.Set(accountTestScheduledDefaultsContextKey, !requireSupported)
-	prompt := ""
-	if len(prompts) > 0 {
-		prompt = prompts[0]
-	}
-	testErr := s.TestAccountConnection(ginCtx, accountID, modelID, prompt, AccountTestModeDefault, AccountTestOptions{requireSupportedModel: requireSupported})
+	ginCtx.Set(accountTestScheduledDefaultsContextKey, !opts.requireSupportedModel)
+	testErr := s.TestAccountConnection(ginCtx, accountID, modelID, prompt, AccountTestModeDefault, opts)
 	if testErr == nil {
 		testErr = ctx.Err()
 	}
@@ -3397,5 +3426,6 @@ func (s *AccountTestService) runTestBackground(ctx context.Context, accountID in
 	}
 	finishedAt := time.Now()
 	return &ScheduledTestResult{Status: status, ResponseText: collector.text.String(), ErrorMessage: collector.errorMessage,
+		RequestedReasoningEffort: opts.ReasoningEffort, EffectiveReasoningEffort: ginCtx.GetString("account_test_effective_reasoning_effort"),
 		LatencyMs: finishedAt.Sub(startedAt).Milliseconds(), StartedAt: startedAt, FinishedAt: finishedAt}, testErr
 }

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/gin-gonic/gin"
 )
 
@@ -26,6 +28,52 @@ const pluginUISessionTTL = 30 * time.Minute
 // PluginHandler 提供插件安装、生命周期、配置和隔离 UI 资源接口。
 type PluginHandler struct {
 	manager *service.PluginManager
+	jobs    *service.AccountJobService
+}
+
+func (h *PluginHandler) SetAccountJobs(jobs *service.AccountJobService) { h.jobs = jobs }
+
+func (h *PluginHandler) SubmitJob(c *gin.Context) {
+	id, ok := pluginIDParam(c)
+	if !ok {
+		return
+	}
+	actor, ok := accountJobActorID(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		Operation string                    `json:"operation"`
+		Items     map[int64]json.RawMessage `json:"items"`
+	}
+	if c.ShouldBindJSON(&req) != nil || len(req.Items) == 0 || len(req.Items) > 100 || req.Operation == "" || h.jobs == nil {
+		response.BadRequest(c, "invalid plugin job")
+		return
+	}
+	var ids []int64
+	for accountID, payload := range req.Items {
+		if accountID <= 0 || !json.Valid(payload) {
+			response.BadRequest(c, "invalid plugin job target")
+			return
+		}
+		if err := h.manager.ValidateAdminExtension(c.Request.Context(), id, accountID, req.Operation); err != nil {
+			response.Error(c, http.StatusConflict, "Plugin operation is unavailable")
+			return
+		}
+		ids = append(ids, accountID)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	raw, _ := json.Marshal(service.PluginJobPayload{PluginID: id, Operation: req.Operation, Items: req.Items})
+	metadata, _ := json.Marshal(map[string]any{"plugin_id": id, "operation": req.Operation, "target_count": len(ids)})
+	job, replayed, err := h.jobs.Submit(c.Request.Context(), actor, service.AccountJobKindExtensionOperation, c.GetHeader("Idempotency-Key"), raw, metadata, accountJobSeeds(ids))
+	if err != nil {
+		response.ErrorFrom(c, accountJobHTTPError(err))
+		return
+	}
+	if replayed {
+		c.Header("Idempotency-Replayed", "true")
+	}
+	response.Accepted(c, job)
 }
 
 func NewPluginHandler(manager *service.PluginManager) *PluginHandler {
@@ -39,6 +87,34 @@ func (h *PluginHandler) List(c *gin.Context) {
 		return
 	}
 	response.Success(c, plugins)
+}
+
+func (h *PluginHandler) Contributions(c *gin.Context) {
+	response.Success(c, h.manager.Contributions())
+}
+
+// InvokeAdmin accepts only the admin capability. Credential-bearing request
+// hooks and host storage operations are never callable through a browser route.
+func (h *PluginHandler) InvokeAdmin(c *gin.Context) {
+	id, ok := pluginIDParam(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		Operation string          `json:"operation"`
+		AccountID int64           `json:"account_id"`
+		Payload   json.RawMessage `json:"payload"`
+	}
+	if c.ShouldBindJSON(&req) != nil || req.Operation == "" || len(req.Payload) > extensionv1.MaxPayloadBytes {
+		response.BadRequest(c, "invalid plugin admin operation")
+		return
+	}
+	result, err := h.manager.InvokeAdminExtension(c.Request.Context(), id, req.AccountID, req.Operation, req.Payload)
+	if err != nil {
+		response.Error(c, http.StatusConflict, "Plugin operation is unavailable")
+		return
+	}
+	response.Success(c, result)
 }
 
 func (h *PluginHandler) Get(c *gin.Context) {

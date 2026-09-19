@@ -666,6 +666,8 @@ export default {accounts: {
         unschedulable: '不可调度',
         rateLimitedUntil: '限流中，当前不参与调度，预计 {time} 自动恢复',
         rateLimitedAutoResume: '{time} 自动恢复',
+        upstreamQuotaExhausted: '上游额度已耗尽',
+        quotaResetUnknown: '恢复时间未知，等待上游额度更新',
         modelRateLimitedUntil: '{model} 限流至 {time}',
         modelCreditOveragesUntil: '{model} 正在使用 AI Credits，至 {time}',
         creditsExhausted: '积分已用尽',
@@ -721,6 +723,7 @@ export default {accounts: {
           unavailableDesc: '服务不可用 - 暂停 30 分钟'
         }
       },
+      testReasoning: { label: '推理强度', default: '默认（沿用模型默认行为）' },
       usageWindow: {
         statsTitle: '5小时窗口用量统计',
         statsTitleDaily: '每日用量统计',
@@ -752,8 +755,11 @@ export default {accounts: {
         grokLastHeadersSeen: '响应头 {time}',
         passiveSampled: '被动采样',
         activeQuery: '查询',
-        estimatedTotalCost: '预计总费用 ${cost}',
-        estimatedTotalCostTooltip: '根据当前窗口费用和使用率估算达到 100% 使用率时的总费用'
+        estimatedTotalCost: '预计整窗额度价值 ${cost}',
+        estimatedRemainingCost: '预计剩余额度价值 ${cost}',
+        estimatePending: '待估算：同窗口有效样本不足',
+        unknownPeriod: '周期未知',
+        estimatedTotalCostTooltip: '根据同一窗口的账号费用和上游使用率增量估算，不包含可确认的导入前费用；模型使用结构及本站外消耗会影响估值。不同窗口的额度不可相加。'
       },
       openaiQuotaReset: {
         count: '次数',

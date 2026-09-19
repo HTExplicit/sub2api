@@ -648,6 +648,13 @@ func (s *OpenAIGatewayService) markOpenAIOAuth429RateLimited(ctx context.Context
 	s.recordOpenAIOAuth429()
 	classification := classifyOpenAIOAuth429At(headers, responseBody, time.Now())
 	disposition, resetAt := classification.Disposition, classification.ResetAt
+	if disposition != openAIOAuth429Transient && resetAt == nil {
+		if err := persistOpenAIQuotaClassification(ctx, s.accountRepo, account, classification, time.Now()); err != nil {
+			slog.Warn("quota_state_write_failed", "account_id", account.ID)
+		}
+		s.openaiOAuth429RetryStartedAt.Delete(account.ID)
+		return
+	}
 	slog.Info("codex_quota_429_classified",
 		"account_id", account.ID,
 		"classification", map[bool]string{true: "transient", false: "hard_quota"}[disposition == openAIOAuth429Transient],

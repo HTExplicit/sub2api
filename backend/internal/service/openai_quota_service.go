@@ -121,6 +121,8 @@ type OpenAIQuotaService struct {
 	privacyClientFactory PrivacyClientFactory
 	agentIdentityTaskMu  sync.Mutex
 	agentIdentityWS      agentIdentityWSConnectionInvalidator
+	concurrency          *ConcurrencyService
+	usagePool            *UsageRecordWorkerPool
 }
 
 // NewOpenAIQuotaService constructs a quota service. token provider is required —
@@ -144,6 +146,7 @@ func NewOpenAIQuotaService(
 // OAuth account. Returns infraerrors so the handler layer can map them to
 // stable error codes / HTTP statuses.
 func (s *OpenAIQuotaService) QueryUsage(ctx context.Context, accountID int64) (*OpenAIQuotaUsage, error) {
+	measurement := s.beginQuotaMeasurement(ctx, accountID)
 	accessToken, chatGPTAccountID, proxyURL, fedRAMP, err := s.prepareUpstreamCall(ctx, accountID)
 	if err != nil {
 		return nil, err
@@ -210,6 +213,7 @@ func (s *OpenAIQuotaService) QueryUsage(ctx context.Context, accountID int64) (*
 			payload.RateLimitResetCredits.AvailableCount = details.AvailableCreditCount
 		}
 	}
+	s.finishQuotaMeasurement(ctx, accountID, &payload, measurement)
 	return &payload, nil
 }
 

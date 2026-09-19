@@ -459,6 +459,8 @@ export default {accounts: {
         unschedulable: 'Unschedulable',
         rateLimitedUntil: 'Rate limited and removed from scheduling. Auto resumes at {time}',
         rateLimitedAutoResume: 'Auto resumes in {time}',
+        upstreamQuotaExhausted: 'Upstream quota exhausted',
+        quotaResetUnknown: 'Reset time unknown; awaiting upstream quota update',
         modelRateLimitedUntil: '{model} rate limited until {time}',
         modelCreditOveragesUntil: '{model} using AI Credits until {time}',
         creditsExhausted: 'Credits Exhausted',
@@ -1896,6 +1898,7 @@ export default {accounts: {
         usageTrend: '30-Day Cost & Request Trend',
         noData: 'No usage data available for this account'
       },
+      testReasoning: { label: 'Reasoning effort', default: 'Default (model behavior)' },
       usageWindow: {
         statsTitle: '5-Hour Window Usage Statistics',
         statsTitleDaily: 'Daily Usage Statistics',
@@ -1927,8 +1930,11 @@ export default {accounts: {
         grokLastHeadersSeen: 'Headers {time}',
         passiveSampled: 'Passive',
         activeQuery: 'Query',
-        estimatedTotalCost: 'Est. total ${cost}',
-        estimatedTotalCostTooltip: 'Estimated total cost at 100% utilization, based on current window cost and utilization'
+        estimatedTotalCost: 'Est. window value ${cost}',
+        estimatedRemainingCost: 'Est. remaining value ${cost}',
+        estimatePending: 'Awaiting paired observations in this window',
+        unknownPeriod: 'Unknown period',
+        estimatedTotalCostTooltip: 'Estimated from account-cost and upstream utilization changes in the same window. Pre-import costs are unknown; model mix and external usage affect the estimate. Overlapping window values cannot be added.'
       },
       openaiQuotaReset: {
         count: 'Credits',

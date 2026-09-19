@@ -578,7 +578,26 @@ func buildOpenAIAutoResetUsageUpdates(usage *OpenAIQuotaUsage, now time.Time) ma
 	}
 	applyWindow(rateLimit.PrimaryWindow, true)
 	applyWindow(rateLimit.SecondaryWindow, false)
-	return buildCodexUsageExtraUpdates(snapshot, now)
+	updates := buildCodexUsageExtraUpdates(snapshot, now)
+	// /wham supplies absolute reset timestamps. Preserve them rather than
+	// recreating the period identity from a rounded countdown plus network delay.
+	for _, entry := range []struct {
+		name   string
+		window *OpenAIRateLimitWindow
+	}{{"primary", rateLimit.PrimaryWindow}, {"secondary", rateLimit.SecondaryWindow}} {
+		if entry.window == nil || entry.window.ResetAt <= 0 {
+			continue
+		}
+		reset := time.Unix(entry.window.ResetAt, 0).UTC().Format(time.RFC3339)
+		updates["codex_"+entry.name+"_reset_at"] = reset
+		switch entry.window.LimitWindowSeconds {
+		case 18000:
+			updates["codex_5h_reset_at"] = reset
+		case 604800:
+			updates["codex_7d_reset_at"] = reset
+		}
+	}
+	return updates
 }
 
 func (s *OpenAIQuotaAutoResetService) persistFreshUsage(ctx context.Context, accountID int64, usage *OpenAIQuotaUsage, now time.Time) error {

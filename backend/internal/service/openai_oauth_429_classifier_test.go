@@ -53,17 +53,21 @@ func TestClassifyOpenAIOAuth429_StructuredHardCodesAcrossTransports(t *testing.T
 		wantWindow string
 		wantReset  time.Duration
 	}{
-		{name: "http json", body: `{"error":{"type":"usage_limit_reached"}}`, wantWindow: "5h", wantReset: 5 * time.Hour},
-		{name: "sse response failed", body: "data: {\"type\":\"response.failed\",\"response\":{\"error\":{\"code\":\"weekly_limit_reached\"}}}\n\n", wantWindow: "7d", wantReset: 7 * 24 * time.Hour},
-		{name: "websocket error", body: `{"type":"error","error":{"code":"quota_exhausted","resets_in_seconds":90}}`, wantWindow: "5h", wantReset: 90 * time.Second},
+		{name: "http json", body: `{"error":{"type":"usage_limit_reached"}}`, wantWindow: "unknown"},
+		{name: "sse response failed", body: "data: {\"type\":\"response.failed\",\"response\":{\"error\":{\"code\":\"weekly_limit_reached\"}}}\n\n", wantWindow: "7d"},
+		{name: "websocket error", body: `{"type":"error","error":{"code":"quota_exhausted","resets_in_seconds":90}}`, wantWindow: "unknown", wantReset: 90 * time.Second},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			classification := classifyOpenAIOAuth429At(nil, []byte(test.body), now)
 			require.NotEqual(t, openAIOAuth429Transient, classification.Disposition)
 			require.Equal(t, test.wantWindow, classification.Window)
-			require.NotNil(t, classification.ResetAt)
-			require.Equal(t, now.Add(test.wantReset), *classification.ResetAt)
+			if test.wantReset == 0 {
+				require.Nil(t, classification.ResetAt, "missing reset evidence must not become an invented deadline")
+			} else {
+				require.NotNil(t, classification.ResetAt)
+				require.Equal(t, now.Add(test.wantReset), *classification.ResetAt)
+			}
 		})
 	}
 }

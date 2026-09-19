@@ -1177,6 +1177,7 @@ export interface OllamaCloudUsageSettings {
 }
 
 export interface Account {
+	quota_state?: { blocked: boolean; until: string | null; windows: AccountQuotaWindow[] }
   id: number
   name: string
   notes?: string | null
@@ -1444,6 +1445,18 @@ export interface UsageProgress {
   limit_requests?: number
 }
 
+export interface AccountQuotaWindow {
+  id: string
+  window_minutes: number
+  utilization: number
+  observed_at?: string
+  resets_at: string | null
+  expired: boolean
+  remaining_seconds: number
+  window_stats?: WindowStats
+  estimate?: { status: string; total?: number; remaining?: number }
+}
+
 // Antigravity 单个模型的配额信息
 export interface AntigravityModelQuota {
   utilization: number // 使用率 0-100
@@ -1494,6 +1507,7 @@ export interface GrokBillingSummary {
 }
 
 export interface AccountUsageInfo {
+  quota_windows?: AccountQuotaWindow[]
   source?: 'passive' | 'active'
   updated_at: string | null
   five_hour: UsageProgress | null

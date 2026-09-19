@@ -7,6 +7,7 @@ export interface PluginCapability {
 }
 
 export interface PluginRequirements {
+	extension_api?: number
   sub2api: string
   recommended_sub2api_version?: string
   tested_sub2api_versions?: string[]
@@ -16,6 +17,8 @@ export interface PluginRequirements {
 }
 
 export interface PluginManifest {
+	dependencies?: Array<{ capability: string; platform?: string; account_type?: string }>
+	contributions?: Array<Omit<PluginContribution, 'plugin_id' | 'available' | 'reason'>>
   schema_version: number
   id: string
   name: string
@@ -51,6 +54,7 @@ export interface PluginBinding {
 }
 
 export interface PluginInstallation {
+	desired_enabled?: boolean
   id: number
   plugin_key: string
   name: string
@@ -69,6 +73,29 @@ export interface PluginInstallation {
   compatibility: PluginCompatibility
   runtime_healthy: boolean
   runtime_message: string
+}
+
+export interface PluginContribution {
+  id: string
+  slot: string
+  label: Record<string, string>
+  permission: string
+  action?: string
+  entrypoint?: string
+  order?: number
+  plugin_id: number
+  available: boolean
+  reason?: string
+}
+
+export async function contributions(): Promise<PluginContribution[]> {
+  const { data } = await apiClient.get<PluginContribution[]>('/admin/plugins/contributions')
+  return data || []
+}
+
+export async function invokeAdmin(id: number, operation: string, accountID: number | undefined, payload: Record<string, unknown>): Promise<{ payload?: unknown; code?: string; message?: string }> {
+  const { data } = await apiClient.post(`/admin/plugins/${id}/actions`, { operation, account_id: accountID, payload })
+  return data
 }
 
 export interface PluginTestResult {

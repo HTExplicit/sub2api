@@ -12,8 +12,9 @@ import (
 )
 
 type batchTestJobItem struct {
-	AccountID int64  `json:"account_id"`
-	ModelID   string `json:"model_id"`
+	AccountID       int64  `json:"account_id"`
+	ModelID         string `json:"model_id"`
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 }
 
 type batchTestJobPayload struct {
@@ -54,22 +55,24 @@ func (p *batchTestJobPayload) normalize() ([]int64, map[int64]string, error) {
 		return nil, nil, invalid
 	}
 	models := make(map[int64]string)
+	efforts := make(map[int64]string)
 	ids := make([]int64, 0)
 	if p.hasItems || p.Items != nil {
 		items := make([]batchTestJobItem, 0, len(p.Items))
 		for _, item := range p.Items {
 			item.ModelID = strings.TrimSpace(item.ModelID)
-			if item.AccountID <= 0 || item.ModelID == "" || len(item.ModelID) > 256 {
+			if item.AccountID <= 0 || item.ModelID == "" || len(item.ModelID) > 256 || len(item.ReasoningEffort) > 32 || strings.TrimSpace(item.ReasoningEffort) != item.ReasoningEffort {
 				return nil, nil, invalid
 			}
 			if previous, exists := models[item.AccountID]; exists {
-				if previous != item.ModelID {
+				if previous != item.ModelID || efforts[item.AccountID] != item.ReasoningEffort {
 					return nil, nil, invalid
 				}
 				continue
 			}
 			ids = append(ids, item.AccountID)
 			models[item.AccountID] = item.ModelID
+			efforts[item.AccountID] = item.ReasoningEffort
 			items = append(items, item)
 		}
 		p.Items = items

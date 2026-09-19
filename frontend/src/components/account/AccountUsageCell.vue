@@ -198,25 +198,18 @@
       </div>
       <div v-if="hasOpenAIUsageFallback" class="space-y-1">
         <UsageProgressBar
-          v-if="usageInfo?.five_hour"
+          v-for="window in openAIQuotaWindows"
+          :key="window.id"
           :density="usageBarDensity"
-          label="5h"
-          :utilization="usageInfo.five_hour.utilization"
-          :resets-at="usageInfo.five_hour.resets_at"
-          :window-stats="usageInfo.five_hour.window_stats"
+          :label="quotaWindowLabel(window.window_minutes)"
+          :utilization="window.utilization"
+          :resets-at="window.resets_at"
+          :window-stats="window.window_stats"
+          :estimated-total-cost="window.estimate?.total"
+          :estimated-remaining-cost="window.estimate?.remaining"
+          :estimate-status="window.estimate?.status"
           :show-now-when-idle="true"
           color="indigo"
-        />
-        <UsageProgressBar
-          v-if="usageInfo?.seven_day"
-          :density="usageBarDensity"
-          label="7d"
-          :utilization="usageInfo.seven_day.utilization"
-          :resets-at="usageInfo.seven_day.resets_at"
-          :window-stats="usageInfo.seven_day.window_stats"
-          :estimated-total-cost="openAISevenDayEstimatedTotalCost"
-          :show-now-when-idle="true"
-          color="emerald"
         />
         <!--
           Upstream codex /wham/usage quota query + reset. The local active-sampling
@@ -806,6 +799,7 @@ import { adminAPI } from '@/api/admin'
 import type { GrokQuotaProbeResult } from '@/api/admin/grok'
 import type { Account, AccountUsageInfo, GeminiCredentials, WindowStats } from '@/types'
 import { buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
+import { accountQuotaWindows } from '@/utils/accountQuotaWindows'
 import { enqueueUsageRequest } from '@/utils/usageLoadQueue'
 import { formatCompactNumber, formatRelativeTime } from '@/utils/format'
 import UsageProgressBar from './UsageProgressBar.vue'
@@ -984,9 +978,10 @@ const geminiUsageAvailable = computed(() => {
   )
 })
 
+const openAIQuotaWindows = computed(() => accountQuotaWindows(usageInfo.value))
 const hasOpenAIUsageFallback = computed(() => {
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return false
-  return !!usageInfo.value?.five_hour || !!usageInfo.value?.seven_day
+  return openAIQuotaWindows.value.length > 0
 })
 
 const codexTurnTickets = computed(() => props.account.codex_turn_tickets ?? [])
@@ -1004,24 +999,12 @@ function formatCodexTicketRemaining(seconds: number) {
   return `${m}m${String(s).padStart(2, '0')}s`
 }
 
-const openAISevenDayEstimatedTotalCost = computed(() => {
-  const sevenDay = usageInfo.value?.seven_day
-  const utilization = sevenDay?.utilization
-  const currentCost = sevenDay?.window_stats?.cost
-  if (
-    typeof utilization !== 'number' ||
-    typeof currentCost !== 'number' ||
-    !Number.isFinite(utilization) ||
-    !Number.isFinite(currentCost) ||
-    utilization <= 0 ||
-    currentCost <= 0
-  ) {
-    return null
-  }
-
-  const estimate = (currentCost * 100) / utilization
-  return Number.isFinite(estimate) && estimate > 0 ? estimate : null
-})
+function quotaWindowLabel(minutes: number): string {
+  if (minutes <= 0) return t('admin.accounts.usageWindow.unknownPeriod')
+  if (minutes % 1440 === 0) return `${minutes / 1440}d`
+  if (minutes % 60 === 0) return `${minutes / 60}h`
+  return `${minutes}m`
+}
 
 const openAIUsageRefreshKey = computed(() => buildOpenAIUsageRefreshKey(props.account))
 

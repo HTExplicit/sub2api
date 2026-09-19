@@ -222,6 +222,7 @@ type Account struct {
 	Extra                   map[string]any                    `json:"extra"`
 	OllamaCloudUsage        *service.OllamaCloudUsageState    `json:"ollama_cloud_usage,omitempty"`
 	CodexTurnTickets        []service.OpenAICodexTicketStatus `json:"codex_turn_tickets,omitempty"`
+	QuotaState              *service.UpstreamQuotaState       `json:"quota_state,omitempty"`
 	ProxyID                 *int64                            `json:"proxy_id"`
 	ProxyFallbackOriginID   *int64                            `json:"proxy_fallback_origin_id"`
 	ProxyFallbackOriginName *string                           `json:"proxy_fallback_origin_name,omitempty"`
@@ -383,21 +384,22 @@ type AccountFacetOption struct {
 // repeated account_groups and groups object graphs. Fetch /admin/accounts/:id
 // for the complete Account DTO when editing or inspecting an account.
 type AccountListItem struct {
-	WirePlatform               string                   `json:"wire_platform"`
-	ProviderProfile            string                   `json:"provider_profile"`
-	ManagementFolder           *AccountManagementFolder `json:"management_folder,omitempty"`
-	Tags                       []AccountManagementTag   `json:"tags"`
-	IsCindy                    bool                     `json:"is_cindy"`
-	CindyBalanceInsufficient   bool                     `json:"cindy_balance_insufficient"`
-	CindyBanned                bool                     `json:"cindy_banned"`
-	CindyBalanceProbeJobID     *int64                   `json:"cindy_balance_probe_job_id"`
-	CindyBalanceProbeOutcome   *string                  `json:"cindy_balance_probe_outcome"`
-	CindyBalanceProbeCheckedAt *time.Time               `json:"cindy_balance_probe_checked_at"`
-	ID                         int64                    `json:"id"`
-	Name                       string                   `json:"name"`
-	Notes                      *string                  `json:"notes"`
-	Platform                   string                   `json:"platform"`
-	Type                       string                   `json:"type"`
+	QuotaState                 *service.UpstreamQuotaState `json:"quota_state,omitempty"`
+	WirePlatform               string                      `json:"wire_platform"`
+	ProviderProfile            string                      `json:"provider_profile"`
+	ManagementFolder           *AccountManagementFolder    `json:"management_folder,omitempty"`
+	Tags                       []AccountManagementTag      `json:"tags"`
+	IsCindy                    bool                        `json:"is_cindy"`
+	CindyBalanceInsufficient   bool                        `json:"cindy_balance_insufficient"`
+	CindyBanned                bool                        `json:"cindy_banned"`
+	CindyBalanceProbeJobID     *int64                      `json:"cindy_balance_probe_job_id"`
+	CindyBalanceProbeOutcome   *string                     `json:"cindy_balance_probe_outcome"`
+	CindyBalanceProbeCheckedAt *time.Time                  `json:"cindy_balance_probe_checked_at"`
+	ID                         int64                       `json:"id"`
+	Name                       string                      `json:"name"`
+	Notes                      *string                     `json:"notes"`
+	Platform                   string                      `json:"platform"`
+	Type                       string                      `json:"type"`
 
 	Credentials       map[string]any                    `json:"credentials,omitempty"`
 	CredentialsStatus map[string]bool                   `json:"credentials_status,omitempty"`

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	pluginv1 "github.com/Wei-Shaw/sub2api/pkg/pluginapi/v1"
 )
 
@@ -31,17 +32,19 @@ var ErrPluginStateChanged = errors.New("插件状态已在其他实例中变化�
 
 // PluginManifest 是 .s2plugin 包中可在执行二进制前检查的声明。
 type PluginManifest struct {
-	SchemaVersion int                      `json:"schema_version"`
-	ID            string                   `json:"id"`
-	Name          string                   `json:"name"`
-	Version       string                   `json:"version"`
-	Description   string                   `json:"description,omitempty"`
-	Author        string                   `json:"author,omitempty"`
-	Requires      PluginRequirements       `json:"requires"`
-	Capabilities  []PluginCapability       `json:"capabilities"`
-	Runtimes      map[string]PluginRuntime `json:"runtimes"`
-	UI            PluginUIManifest         `json:"ui"`
-	Files         map[string]string        `json:"files"`
+	SchemaVersion int                        `json:"schema_version"`
+	ID            string                     `json:"id"`
+	Name          string                     `json:"name"`
+	Version       string                     `json:"version"`
+	Description   string                     `json:"description,omitempty"`
+	Author        string                     `json:"author,omitempty"`
+	Requires      PluginRequirements         `json:"requires"`
+	Capabilities  []PluginCapability         `json:"capabilities"`
+	Runtimes      map[string]PluginRuntime   `json:"runtimes"`
+	UI            PluginUIManifest           `json:"ui"`
+	Files         map[string]string          `json:"files"`
+	Dependencies  []extensionv1.Dependency   `json:"dependencies,omitempty"`
+	Contributions []extensionv1.Contribution `json:"contributions,omitempty"`
 }
 
 type PluginRequirements struct {
@@ -51,6 +54,7 @@ type PluginRequirements struct {
 	PluginProtocol            int      `json:"plugin_protocol"`
 	TransportAPI              int      `json:"transport_api"`
 	UIBridge                  int      `json:"ui_bridge"`
+	ExtensionAPI              int      `json:"extension_api,omitempty"`
 }
 
 type PluginCapability struct {
@@ -112,6 +116,7 @@ type PluginInstallation struct {
 	Compatibility   PluginCompatibility `json:"compatibility"`
 	RuntimeHealthy  bool                `json:"runtime_healthy"`
 	RuntimeMessage  string              `json:"runtime_message"`
+	DesiredEnabled  bool                `json:"desired_enabled"`
 }
 
 type PluginBinding struct {
@@ -169,8 +174,31 @@ func (m PluginManifest) Validate() error {
 		return errors.New("插件必须声明至少一个能力")
 	}
 	for _, capability := range m.Capabilities {
-		if capability.ID != PluginCapabilityOpenAIOAuthOutbound || capability.Platform != PlatformOpenAI || capability.AccountType != AccountTypeOAuth {
-			return fmt.Errorf("初期仅支持能力 %s", PluginCapabilityOpenAIOAuthOutbound)
+		if extensionv1.IsCapability(capability.ID) {
+			if m.Requires.ExtensionAPI != extensionv1.Version || capability.Platform == "" || capability.AccountType == "" {
+				return errors.New("扩展能力必须声明兼容版本及明确作用范围")
+			}
+		} else if capability.ID != PluginCapabilityOpenAIOAuthOutbound || capability.Platform != PlatformOpenAI || capability.AccountType != AccountTypeOAuth {
+			return fmt.Errorf("不支持插件能力 %s", capability.ID)
+		}
+	}
+	if m.Requires.ExtensionAPI != 0 && m.Requires.ExtensionAPI != extensionv1.Version {
+		return errors.New("扩展 API 版本不兼容")
+	}
+	seen := make(map[string]bool)
+	for _, contribution := range m.Contributions {
+		if contribution.ID == "" || seen[contribution.ID] || !extensionv1.ValidSlot(contribution.Slot) ||
+			contribution.Permission == "" || len(contribution.Label) == 0 {
+			return errors.New("插件界面贡献的标识、挂载点或权限无效")
+		}
+		seen[contribution.ID] = true
+		if contribution.Entrypoint != "" && (!safePluginRelativePath(contribution.Entrypoint) || !strings.HasPrefix(contribution.Entrypoint, "ui/")) {
+			return errors.New("插件界面贡献入口必须位于 ui/ 目录")
+		}
+	}
+	for _, dependency := range m.Dependencies {
+		if !extensionv1.IsCapability(dependency.Capability) && dependency.Capability != PluginCapabilityOpenAIOAuthOutbound {
+			return errors.New("插件依赖能力未知")
 		}
 	}
 	runtimeEntry, ok := m.Runtimes[m.RuntimeKey()]
